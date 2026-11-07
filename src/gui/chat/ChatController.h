@@ -501,6 +501,7 @@ private:
   void OnAskAiOnceReply(const AgentEvent& event) override { ask_ai_.OnOnceReply(event); }
   // The ask-AI panel's side of the screen (AskAiPanelHost).
   bool AskAiCompact() const override;
+  void AskAiOpenEmoji(std::function<void(const std::string& emoji)> insert) override;
   std::string AskAiSharedThread(bool create) override;
   std::string AskAiNewThread() override;
   std::vector<AskAiRow> AskAiRecentRows(const std::string& thread_id, size_t limit) override;

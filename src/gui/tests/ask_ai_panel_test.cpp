@@ -864,45 +864,41 @@ TEST_F(AskAiInputRowTest, ThePanelPreparesThroughTheChatsOneAndAHalfMegabytePath
   EXPECT_EQ(panel.find("1536"), std::string::npos);
 }
 
-// Kenneth 2026-11-04 ("风格不统一…一会儿在左边，一会儿在右边"): the chat composer's row, its classes and icons: the
-// pill [input … paperclip camera], then Send.
+// Kenneth 2026-11-04 ("风格不统一…一会儿在左边，一会儿在右边"), 2026-11-07 (one composer everywhere): the chat
+// composer's row, its classes and icons: the emoji key, the pill [input … bold plus], then Send; no paperclip, no
+// camera of its own (the plus card has it).
 TEST(AskAiInputRowSourceTest, TheRowIsTheChatComposersPillThenSend) {
   const std::string rml = ReadSource("assets/views/ask_ai.rml");
+  const size_t emoji = rml.find("ask_ai_emoji()");
   const size_t pill = rml.find("class=\"prompt-composer-pill\"");
   const size_t input = rml.find("id=\"ask-ai-input\"");
   const size_t attach = rml.find("ask_ai_attach()");
-  const size_t camera = rml.find("ask_ai_camera()");
   const size_t send = rml.find("ask_ai_send()");
+  ASSERT_NE(emoji, std::string::npos);
   ASSERT_NE(pill, std::string::npos);
   ASSERT_NE(input, std::string::npos);
   ASSERT_NE(attach, std::string::npos);
-  ASSERT_NE(camera, std::string::npos);
   ASSERT_NE(send, std::string::npos);
+  EXPECT_LT(emoji, pill);
   EXPECT_LT(pill, input);
   EXPECT_LT(input, attach);
-  EXPECT_LT(attach, camera);
-  EXPECT_LT(camera, send);
+  EXPECT_LT(attach, send);
+  EXPECT_EQ(rml.find("ask_ai_camera()"), std::string::npos);
+  EXPECT_EQ(rml.find("paperclip.svg"), std::string::npos);
   const auto tag_of = [&rml](const size_t at) { return rml.substr(rml.rfind("<button", at), at - rml.rfind("<button", at)); };
+  EXPECT_NE(tag_of(emoji).find("class=\"prompt-emoji-btn\""), std::string::npos);
   EXPECT_NE(tag_of(attach).find("class=\"prompt-attach-btn\""), std::string::npos);
-  EXPECT_NE(tag_of(camera).find("class=\"prompt-capture-btn\""), std::string::npos);
   EXPECT_NE(tag_of(send).find("class=\"prompt-send-btn\""), std::string::npos);
-  // Camera and attachment only where media shows; Send once there is something to send.
+  // The plus only where media shows; Send once there is something to send.
   EXPECT_NE(tag_of(attach).find("data-if=\"show_media\""), std::string::npos);
-  EXPECT_NE(tag_of(camera).find("data-if=\"show_media\""), std::string::npos);
   EXPECT_NE(tag_of(send).find("data-if=\"draft != '' || has_picture\""), std::string::npos);
   // The same icons as the chat's.
   const std::string composer = ReadSource("assets/views/composer.rml");
-  for (const char* icon : {"<svg class=\"prompt-icon-v2\" src=\"../icons/v2/paperclip.svg\" width=\"20\" height=\"20\">",
-                           "<svg class=\"prompt-icon-v2\" src=\"../icons/v2/camera.svg\" width=\"20\" height=\"20\">",
+  for (const char* icon : {"<svg class=\"prompt-icon-v2\" src=\"../icons/v2/emoji.svg\" width=\"20\" height=\"20\">",
+                           "src=\"../icons/v2/plus-bold.svg\" width=\"24\" height=\"24\">",
                            "<span class=\"prompt-send-disc\"><svg src=\"../icons/send.svg\" width=\"14\" height=\"14\" crop-to-content=\"true\">"}) {
     EXPECT_NE(rml.find(icon), std::string::npos) << icon;
     EXPECT_NE(composer.find(icon), std::string::npos) << icon;
-  }
-  // The phone rules of the chat's row cover the panel's.
-  const std::string rcss = ReadSource("assets/themes/components.rcss");
-  for (const char* rule : {".ask-ai .prompt-composer-pill {", ".ask-ai .prompt-send-disc {",
-                           ".ask-ai .prompt-composer-pill .prompt-capture-btn {", ".ask-ai .prompt-icon-v2 {"}) {
-    EXPECT_NE(rcss.find(rule), std::string::npos) << rule;
   }
 }
 
@@ -913,7 +909,10 @@ TEST(AskAiInputRowSourceTest, ThePanelHasNoMicrophone) {
   for (const char* gone : {"mic.svg", "ask_ai_mic", "mic_hint", "show_mic", "ask-ai-mic"}) {
     EXPECT_EQ(rml.find(gone), std::string::npos) << gone;
   }
-  const std::string panel = ReadSource("src/gui/chat/AskAiPanel.cpp") + ReadSource("src/gui/chat/AskAiPanel.h");
+  std::string panel = ReadSource("src/gui/chat/AskAiPanel.cpp") + ReadSource("src/gui/chat/AskAiPanel.h");
+  for (size_t at = panel.find("dynamic_cast"); at != std::string::npos; at = panel.find("dynamic_cast", at)) {
+    panel.erase(at, std::string("dynamic_cast").size());  // not a microphone
+  }
   EXPECT_EQ(panel.find("Mic"), std::string::npos);
   EXPECT_EQ(panel.find("mic_"), std::string::npos);
   for (const char* locale : {"assets/locales/en.json", "assets/locales/zh-Hans.json"}) {

@@ -3491,6 +3491,16 @@ input.checkbox:checked {
   color: {{label}};
 }
 
+/* The ask-AI panel's input bar: the bar colour, frosted with Transparency on (like a chat's composer). */
+.ask-ai-composer {
+  background-color: {{x-bar}};
+}
+
+.shell-page-sheet--frost .ask-ai-composer {
+  background-color: {{x-bar-blur}};
+  backdrop-filter: blur(20px);
+}
+
 /* The drawer's top bar and "you" row: the bar colour, frosted with Transparency on (like .pane-nav-bg). */
 .ai-drawer-top,
 .ai-drawer-me,

@@ -280,8 +280,10 @@ std::string ShellLayoutRml::Overlays() const {
       out << "<div class=\"shell-layer shell-layer-overlay shell-layer-sheet" << layer_stop << "\" data-model=\"window\">";
       out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
       // The view's key as a modifier class: a page with its own edge-to-edge rows (New chat) drops the side padding.
-      out << "<div class=\"shell-page-sheet shell-page-sheet--" << overlay.key << stop << "\" id=\"shell-page-sheet-"
-          << overlay.id << "\">";
+      // Frosted bars inside it (the ask-AI panel's input bar) follow the Transparency setting like the top bars.
+      out << "<div class=\"shell-page-sheet shell-page-sheet--" << overlay.key << stop
+          << (ChromeFrostEnabled() ? " shell-page-sheet--frost" : "") << "\" id=\"shell-page-sheet-" << overlay.id
+          << "\">";
       out << "<div class=\"shell-page-sheet-grabber\"></div>";
       out << "<button class=\"shell-close-btn shell-page-sheet-close\" type=\"button\" data-event-click=\"close_layer("
           << overlay.id << ")\">";

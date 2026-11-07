@@ -1971,6 +1971,9 @@ bool Application::MountPresenters(ui::Context* context) {
       chat_->InsertEmojiIntoDraft(emoji, restore_focus);
     });
   };
+  emoji_notify.open_insert_into = [this](std::function<void(const std::string& emoji)> insert) {
+    emoji_picker_->OpenInsert([insert = std::move(insert)](std::string emoji, bool) { insert(emoji); });
+  };
   emoji_notify.open_react = [this](const std::string& message_id) {
     emoji_picker_->OpenReact(message_id, [this, message_id](std::string emoji) {
       chat_->ReactWithEmoji(message_id, emoji);

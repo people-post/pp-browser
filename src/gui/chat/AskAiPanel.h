@@ -24,6 +24,8 @@ namespace pbr {
 struct AskAiImagePorts {
   std::function<void(std::function<void(std::string path)>)> pick;
   std::function<void(std::function<void(std::string path)>)> capture;
+  /** The plus card's Photos (`files_app` false) and File. */
+  std::function<void(bool files_app, std::function<void(std::string path)>)> pick_from;
   std::function<void(std::string path, std::function<void(Roe<AgentTurnController::PendingAiImage>)>)> prepare;
   std::function<AgentTurnController::ImageSend(const std::string& thread_id, const std::string& text,
                                                AgentTurnController::PendingAiImage image)>
@@ -107,6 +109,8 @@ public:
   virtual bool AskAiIntroSeen() const = 0;
   virtual void AskAiMarkIntroSeen() = 0;
   virtual void AskAiToast(const std::string& text) = 0;
+  /** The emoji sheet for the panel's input: `insert` runs with each emoji picked. */
+  virtual void AskAiOpenEmoji(std::function<void(const std::string& emoji)> insert) { (void)insert; }
 };
 
 /**
@@ -152,6 +156,10 @@ public:
   void OpenLink(const std::string& entry_id, int link_index);
   /** The camera / the attachment button: one picture for the next question. */
   void PickPicture(bool camera);
+  /** The bold plus (Kenneth 2026-11-07): the chat composer's floating Camera / Photos / File card above `anchor`. */
+  void ShowAttachMenu(ui::Element* anchor);
+  /** The emoji key: an emoji picked in the sheet goes at the end of the draft. */
+  void InsertEmoji(const std::string& emoji);
   void RemovePicture();
 
   // --- from the chat screen -------------------------------------------------------------------------
@@ -205,6 +213,8 @@ private:
   void RefreshStreaming(bool force);
   void Dirty(const char* field);
   void DirtyAll();
+  /** The input bar floats (frosted) over the bubbles: the scroll's end spacer is kept as tall as the bar. */
+  void SyncComposerClear();
 
   AskAiPanelHost& host_;
   AgentTurnController& agent_;

@@ -30,41 +30,45 @@
     <p class="ask-ai-error" data-if="error">{{i18n:ask_ai.error}}</p>
     <button class="ask-ai-support" type="button" data-if="show_support"
             data-event-click="ask_ai_support()">{{i18n:ask_ai.ask_support}}</button>
+    <div class="ask-ai-scroll-end" id="ask-ai-scroll-end"></div>
   </div>
-  <!-- The picture waiting for its question: a small thumbnail and an X (a 44dp target). -->
-  <div class="ask-ai-picture" data-if="has_picture">
-    <div class="ask-ai-picture-box">
-      <img class="ask-ai-picture-img" data-if="!picture_preparing && picture_src != ''" data-attr-src="picture_src"/>
-    </div>
-    <p class="ask-ai-picture-note" data-if="picture_preparing">{{i18n:chat.image.preparing}}</p>
-    <button class="ask-ai-picture-remove" type="button" data-event-click="ask_ai_remove_picture()"
-            title="{{i18n:chat.image.remove}}">
-      <svg src="../icons/close.svg" width="14" height="14" crop-to-content="true"></svg>
-    </button>
-  </div>
-  <!-- The chat composer's row (Kenneth 2026-11-04: one layout everywhere), its classes and icons: the pill with the
-       paperclip and the camera at its right end, then Send once there is text or a picture. No microphone. -->
-  <div class="prompt-composer-row ask-ai-input-row">
-    <div class="prompt-composer-pill">
-      <textarea id="ask-ai-input" class="prompt-composer-input" rows="1" max-rows="4" maxlength="4000"
-                data-value="draft"></textarea>
-      <!-- The engine draws no placeholder on phones: a label over the empty input. -->
-      <p class="prompt-composer-label" data-if="draft == ''">{{i18n:chat.ai_thread.placeholder}}</p>
-      <!-- A setting's "?" is explanation only: no attachment, no camera. -->
-      <button class="prompt-attach-btn" type="button" data-if="show_media" data-event-click="ask_ai_attach()"
-              title="{{i18n:chat.attach_file}}">
-        <svg class="prompt-icon-v2" src="../icons/v2/paperclip.svg" width="20" height="20"></svg>
-      </button>
-      <button class="prompt-capture-btn" type="button" data-if="show_media" data-event-click="ask_ai_camera()"
-              title="{{i18n:chat.attach.capture_photo}}">
-        <svg class="prompt-icon-v2" src="../icons/v2/camera.svg" width="20" height="20"></svg>
+  <!-- The input bar floats, frosted, over the bubbles (Kenneth 2026-11-07, like a chat's): the scroll above runs under
+       it and its end spacer (#ask-ai-scroll-end, AskAiPanel::SyncComposerClear) keeps the last bubble clear of it. -->
+  <div class="ask-ai-composer" id="ask-ai-composer">
+    <!-- The picture waiting for its question: a small thumbnail and an X (a 44dp target). -->
+    <div class="ask-ai-picture" data-if="has_picture">
+      <div class="ask-ai-picture-box">
+        <img class="ask-ai-picture-img" data-if="!picture_preparing && picture_src != ''" data-attr-src="picture_src"/>
+      </div>
+      <p class="ask-ai-picture-note" data-if="picture_preparing">{{i18n:chat.image.preparing}}</p>
+      <button class="ask-ai-picture-remove" type="button" data-event-click="ask_ai_remove_picture()"
+              title="{{i18n:chat.image.remove}}">
+        <svg src="../icons/close.svg" width="14" height="14" crop-to-content="true"></svg>
       </button>
     </div>
-    <button class="prompt-send-btn" type="button" data-if="draft != '' || has_picture"
-            data-attrif-disabled="thinking || picture_preparing"
-            data-event-click="ask_ai_send()" title="{{i18n:ask_ai.send}}">
-      <span class="prompt-send-disc"><svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg></span>
-    </button>
+    <!-- The chat composer's row (Kenneth 2026-11-07: one composer everywhere), its classes and icons: inside the pill
+         the bold plus (its Camera / Photos / File card) and the emoji key at the bottom left, Send at the bottom right
+         once there is text or a picture. No microphone. A setting's "?" is explanation only: no plus. -->
+    <div class="prompt-composer-row ask-ai-input-row" data-class-ask-ai-input-row--text-only="!show_media">
+      <button class="prompt-emoji-btn" type="button" data-event-click="ask_ai_emoji()" title="{{i18n:chat.insert_emoji}}">
+        <svg class="prompt-icon-v2" src="../icons/v2/emoji.svg" width="20" height="20"></svg>
+      </button>
+      <div class="prompt-composer-pill">
+        <textarea id="ask-ai-input" class="prompt-composer-input" rows="1" max-rows="4" maxlength="4000"
+                  data-value="draft"></textarea>
+        <!-- The engine draws no placeholder on phones: a label over the empty input. -->
+        <p class="prompt-composer-label" data-if="draft == ''">{{i18n:chat.ai_thread.placeholder}}</p>
+        <button class="prompt-attach-btn" type="button" data-if="show_media" data-event-click="ask_ai_attach()"
+                title="{{i18n:chat.attach_file}}">
+          <svg class="prompt-icon-plus" src="../icons/v2/plus-bold.svg" width="24" height="24"></svg>
+        </button>
+      </div>
+      <button class="prompt-send-btn" type="button" data-if="draft != '' || has_picture"
+              data-attrif-disabled="thinking || picture_preparing"
+              data-event-click="ask_ai_send()" title="{{i18n:ask_ai.send}}">
+        <span class="prompt-send-disc"><svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg></span>
+      </button>
+    </div>
+    <p class="ask-ai-reminder">{{i18n:ask_ai.reminder}}</p>
   </div>
-  <p class="ask-ai-reminder">{{i18n:ask_ai.reminder}}</p>
 </div>

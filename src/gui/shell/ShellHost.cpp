@@ -1865,7 +1865,14 @@ void ShellHost::ApplySafeAreaLayout() {
     if (overlay.page_sheet) {
       const std::string sheet_id = "shell-page-sheet-" + std::to_string(overlay.id);
       ui::Element* sheet = doc->GetElementById(sheet_id.c_str());
-      set_dp(sheet, "padding-bottom", strip_dp);
+      if (overlay.key == "ask_ai") {
+        // The ask-AI panel's frosted input bar runs down to the sheet's bottom edge; its content clears the home
+        // indicator (Kenneth 2026-11-07: one bar, no band under it).
+        set_dp(sheet, "padding-bottom", 0.f);
+        set_dp(doc->GetElementById("ask-ai-composer"), "padding-bottom", strip_dp);
+      } else {
+        set_dp(sheet, "padding-bottom", strip_dp);
+      }
       if (sheet) {
         const SheetDetent shown = PageSheetModel::Shown(overlay.sheet_detent, keyboard_up);
         const bool half = shown == SheetDetent::Half;

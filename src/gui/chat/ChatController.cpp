@@ -4885,6 +4885,12 @@ void ChatController::OnAgentTurnEnded(const std::string& thread_id) {
 
 // --- the ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a) ---------------------------------------------------
 
+void ChatController::AskAiOpenEmoji(std::function<void(const std::string& emoji)> insert) {
+  if (emoji_picker_notify_.open_insert_into) {
+    emoji_picker_notify_.open_insert_into(std::move(insert));
+  }
+}
+
 bool ChatController::AskAiCompact() const {
   return ChromeSnapshot().layout_mode == LayoutMode::Compact;
 }

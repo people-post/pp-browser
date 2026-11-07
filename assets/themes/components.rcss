@@ -4756,10 +4756,27 @@ select selectbox option {
 }
 
 .ask-ai {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* The input bar (picture, input row, reminder) floats over the bubbles, frosted (colors.rcss.tmpl); the scroll runs
+   down under it and its end spacer (AskAiPanel::SyncComposerClear) keeps the last bubble above it. ShellHost pads its
+   bottom by the home indicator, so the bar reaches the sheet's bottom edge. */
+.ask-ai-composer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+}
+
+.ask-ai-scroll-end {
+  display: block;
+  height: 96dp;
 }
 
 /* Left of the sheet's X (right 4dp, 44dp wide): the same 44dp target and grey disc. */
@@ -4862,12 +4879,13 @@ select selectbox option {
   line-height: 44dp;
 }
 
+/* Margin, not padding: the row is the keys' positioning box, so it must be exactly the pill. */
 .ask-ai-input-row {
   display: flex;
   flex-direction: row;
   align-items: flex-end;
   flex-shrink: 0;
-  padding: 8dp 16dp 0 16dp;
+  margin: 8dp 16dp 0 16dp;
 }
 
 /* The picture waiting to be sent: a thumbnail and an X. */
