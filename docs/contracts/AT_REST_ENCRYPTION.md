@@ -33,7 +33,7 @@ Interactive `crypto_pwhash` ops/mem limits are stored in `vault.bin` so unlock m
 profiles/{id}/
   preferences.json  # profile prefs incl. pin_is_default (schema v4)
   vault.bin       # wrapped DEK + KDF params
-  grace.bin       # PIN grace window: DEK under K_grace (iOS only; absent outside a window)
+  grace.bin       # PIN grace window: DEK under K_grace (iOS, Android 9+; absent outside a window)
   identity.enc    # AEAD(identity JSON) under DEK
   contacts.json   # plaintext (atomic write)
   threads/
@@ -62,14 +62,14 @@ After a PIN unlock the DEK is kept for the window the user chose (default 15 min
 | Piece | Where | Holds |
 |-------|-------|-------|
 | `grace.bin` | the profile directory | `EncryptedPayload` (XChaCha20-Poly1305, as § Payload AEAD) of the DEK under `K_grace`; AAD `grace|{profile_id}` |
-| `{profile_id}/unlock_grace` | the OS secure store (iOS Keychain, `WhenUnlockedThisDeviceOnly`) | version `1` (1 byte), `K_grace` (32), `boot_id` (16), `expires_mono` (i64 LE, seconds) |
+| `{profile_id}/unlock_grace` | the OS secure store (iOS Keychain, `WhenUnlockedThisDeviceOnly`; Android 9+ / API 28+ an AES-256-GCM file sealed by an AndroidKeyStore key made with `setUnlockedDeviceRequired`, [DATA_LAYOUT](DATA_LAYOUT.md#pin-grace-window-ios-keychain--android-keystore-outside-the-data-dir)) | version `1` (1 byte), `K_grace` (32), `boot_id` (16), `expires_mono` (i64 LE, seconds) |
 
 - **Never stored:** the PIN, or the DEK in the clear. The keychain alone holds no DEK; `grace.bin` alone (a backup copy) cannot be opened.
-- **Device clocks, not the wall clock:** the window ends at `expires_mono` on the device's monotonic clock of the boot `boot_id` (iOS `kern.bootsessionuuid` + `mach_continuous_time`). Another boot reads as expired (a restart asks for the PIN again); changing the system time changes nothing.
+- **Device clocks, not the wall clock:** the window ends at `expires_mono` on the device's monotonic clock of the boot `boot_id` (iOS `kern.bootsessionuuid` + `mach_continuous_time`; Android `Settings.Global.BOOT_COUNT` + `CLOCK_BOOTTIME`). Another boot reads as expired (a restart asks for the PIN again); changing the system time changes nothing.
 - **Read** before the dev PIN and the unlock screen, never with `pin_is_default`. Expired, one piece missing, or not decryptable (another profile's): both pieces are deleted and the PIN is asked. The keychain not readable (the phone locked): nothing is deleted; the read is retried when the phone is unlocked or the app comes to the foreground, and a call answered on the locked phone waits up to 3 minutes for that unlock before the PIN screen.
 - **Written** after a PIN unlock (typed, dev PIN, link import, recovery restore; not the default PIN). **Extended** (the keychain entry alone) only from the foreground: entering or leaving it, every minute while in it. A push wake or a background sync unlocks through an open window but never extends it.
 - **Deleted** on Change PIN, a profile reset, the window set to 0, or expiry.
-- Where the store has no such entry (macOS, Windows, Linux; Android until its store lands) nothing is written and the unlock is as before.
+- Where the store has no such entry (macOS, Windows, Linux; Android below 9 / API 28) nothing is written and the unlock is as before.
 
 ### Payload AEAD
 
@@ -119,7 +119,7 @@ Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vau
 |------------|--------------|
 | Offline read of identity / PSK without PIN | AEAD + Argon2id |
 | Offline read when `pin_is_default` | **Weak** — known default PIN in source |
-| Reading the DEK through the PIN grace window | Only within a window, from the unlocked device itself: the keychain entry (`WhenUnlockedThisDeviceOnly`) never leaves the device and `grace.bin` alone is useless. Expiry is judged by the app: until it next runs, someone who can dump the keychain of an unlocked phone (jailbreak, forensics) gets the DEK. |
+| Reading the DEK through the PIN grace window | Only within a window, from the unlocked device itself: the keychain entry (`WhenUnlockedThisDeviceOnly`) never leaves the device and `grace.bin` alone is useless. Expiry is judged by the app: until it next runs, someone who can dump the keychain of an unlocked phone (jailbreak, forensics) gets the DEK (Android: the Keystore key never leaves the device, but root on the unlocked phone can use it). |
 | Crash mid JSON write | Atomic rename |
 | Transcript theft from `thread.db` | AEAD under DEK when vault exists (D102); metadata plaintext |
 
