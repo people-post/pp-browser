@@ -50,8 +50,8 @@ void ProfileUnlockGate::BindPorts(ProfileUnlockPorts ports) {
   grace_pending_ = false;
   waiting_device_unlock_ = false;
   ++device_unlock_wait_generation_;
-  // A prompt still running answers a gate bound afresh: dropped.
-  biometric_in_flight_ = false;
+  // A prompt still running answers a gate bound afresh: dropped by its generation when it comes (still in flight
+  // until then: no PIN or retry starts beside it).
   ++door_generation_;
   ports_ = std::move(ports);
 }
@@ -92,12 +92,15 @@ void ProfileUnlockGate::DeclineSubmit() {
   // Another unlock (a grace read, a face / fingerprint prompt) is running: this one is not started. The door is told,
   // so a pad that went busy on its full PIN takes keys again.
   log().info << "Unlock not started: another one is running";
-  if (ports_.ui.set_unlock_in_progress) {
-    ports_.ui.set_unlock_in_progress(false);
+  if (ports_.ui.submit_declined) {
+    ports_.ui.submit_declined();
   }
 }
 
 void ProfileUnlockGate::Finish(const bool unlocked) {
+  if (unlocked && biometric_in_flight_) {
+    unlocked_beside_prompt_ = true;  // the prompt's late Found must not lock this unlock away
+  }
   StopGrace();
   // The door closes: a face / fingerprint answer still on its way is for a door that is gone.
   unlock_door_up_ = false;
@@ -681,12 +684,14 @@ void ProfileUnlockGate::TryBiometric() {
 void ProfileUnlockGate::StartBiometric() {
   biometric_prompted_this_door_ = true;
   biometric_in_flight_ = true;
+  unlocked_beside_prompt_ = false;
   const uint64_t door = door_generation_;
   std::string prompt = ports_.biometric_prompt_text ? ports_.biometric_prompt_text() : std::string();
   auto got = std::make_shared<std::optional<BiometricUnlock::Result>>();
-  // The system prompt blocks its thread until answered: never the UI thread. The door stays usable meanwhile.
-  auto work = [this, got, prompt = std::move(prompt)]() -> Roe<void> {
-    auto result = ports_.try_biometric_unlock(prompt);
+  // The system prompt blocks its thread until answered: never the UI thread. The worker holds its own copy of the
+  // port (BindPorts may replace ports_ meanwhile).
+  auto work = [try_unlock = ports_.try_biometric_unlock, got, prompt = std::move(prompt)]() -> Roe<void> {
+    auto result = try_unlock(prompt);
     if (!result) {
       return result.error();
     }
@@ -705,8 +710,13 @@ void ProfileUnlockGate::OnBiometricDone(const uint64_t door, std::optional<Biome
                                         Roe<void> result) {
   biometric_in_flight_ = false;
   if (door != door_generation_ || !unlock_door_up_ || unlock_in_progress_) {
-    // The PIN opened (or is opening) the door, or the door closed, while the prompt ran: the answer is void.
+    // The door closed, or was raised again, while the prompt ran: the answer is void. A Found has already opened the
+    // vault on the worker: locked again, unless another unlock finished (or is running on that open vault) meanwhile.
     log().info << "Face / fingerprint answer dropped: the door moved on";
+    if (result && got && got->status == BiometricUnlock::Status::Found && !unlocked_beside_prompt_ &&
+        !unlock_in_progress_ && secrets_) {
+      secrets_->Lock();
+    }
     return;
   }
   if (!result) {
@@ -721,12 +731,12 @@ void ProfileUnlockGate::OnBiometricDone(const uint64_t door, std::optional<Biome
     // The vault is open; messaging starts off the UI thread, the PIN held back like after a typed one.
     SetUnlockInProgress(true);
     StartupMark("biometric_unlock_ok");
-    auto work = [this]() -> Roe<void> {
-      return ports_.ensure_messaging_ready ? ports_.ensure_messaging_ready() : Roe<void>{};
-    };
+    auto work = [ensure = ports_.ensure_messaging_ready]() -> Roe<void> { return ensure ? ensure() : Roe<void>{}; };
     auto on_ready = [this](Roe<void> ready) {
       if (!ready) {
         StartupMark("biometric_unlock_fail");
+        // Locked again, so the face / fingerprint key and the PIN both start over (an open vault would refuse both).
+        Secrets().Lock();
         ReportError(ready.error());
         return;
       }

@@ -415,7 +415,9 @@ Roe<void> Application::ResetActiveProfile() {
   // The PIN grace window's keychain entry outlives the profile directory: deleted right before the wipe, so a reset
   // that stopped short above keeps the window. The face / fingerprint entry too (the DEK goes with the profile).
   ForgetGrace();
-  secrets_->DisableBiometric();
+  if (secrets_) {
+    secrets_->DisableBiometric();
+  }
 
   std::error_code ec;
   std::filesystem::remove_all(profile_dir, ec);
@@ -996,9 +998,18 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   };
   // Face / fingerprint unlock (at-rest A014): Me → Security's switch. Enabling runs Argon2 (the caller is a worker).
   settings_commands.biometric_kind = [this]() { return BiometricKind(); };
-  settings_commands.biometric_enabled = [this]() { return secrets_->BiometricEnabled(); };
-  settings_commands.enable_biometric = [this](const SecretText& pin) { return secrets_->EnableBiometric(pin.Reveal()); };
-  settings_commands.disable_biometric = [this]() { secrets_->DisableBiometric(); };
+  settings_commands.biometric_enabled = [this]() { return secrets_ && secrets_->BiometricEnabled(); };
+  settings_commands.enable_biometric = [this](const SecretText& pin) -> Roe<void> {
+    if (!secrets_) {
+      return AppError::Pin(Err::Pin::VaultUnavailable, "Profile secrets unavailable");
+    }
+    return secrets_->EnableBiometric(pin.Reveal());
+  };
+  settings_commands.disable_biometric = [this]() {
+    if (secrets_) {
+      secrets_->DisableBiometric();
+    }
+  };
   settings_commands.recovery_phrase = [&facade](const SecretText& pin) { return facade.RecoveryPhrase(pin); };
   settings_commands.verify_pin = [this](const SecretText& pin) { return secrets_->VerifyPin(pin.Reveal()); };
   settings_commands.has_recovery_phrase = [&facade]() { return facade.HasRecoveryPhrase(); };
@@ -1502,7 +1513,7 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.import_link_device = [this, &facade](const SecretText& pin,
                                                    const std::string& bundle_json) -> Roe<void> {
     auto imported = facade.ImportLinkDevice(bundle_json, pin);
-    if (imported) {
+    if (imported && secrets_) {
       secrets_->DisableBiometric();
     }
     return imported;
@@ -1510,7 +1521,7 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.restore_recovery_phrase = [this, &facade](const SecretText& pin, const SecretText& phrase,
                                                          const std::vector<std::string>& saved_copies) -> Roe<void> {
     auto restored = facade.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
-    if (restored) {
+    if (restored && secrets_) {
       secrets_->DisableBiometric();
     }
     return restored;
@@ -1549,8 +1560,13 @@ void Application::WireUnlockPinAndFlow() {
   };
   // Face / fingerprint unlock (at-rest A014, DEV/PLAN-pin-gate-redesign.md C): after the grace window.
   AttachBiometric();
-  unlock_ports.biometric_enabled = [this]() { return secrets_->BiometricEnabled(); };
-  unlock_ports.try_biometric_unlock = [this](const std::string& prompt) { return secrets_->TryBiometricUnlock(prompt); };
+  unlock_ports.biometric_enabled = [this]() { return secrets_ && secrets_->BiometricEnabled(); };
+  unlock_ports.try_biometric_unlock = [this](const std::string& prompt) -> Roe<BiometricUnlock::Result> {
+    if (!secrets_) {
+      return BiometricUnlock::Result{};  // Missing: nothing to prompt for
+    }
+    return secrets_->TryBiometricUnlock(prompt);
+  };
   unlock_ports.biometric_prompt_text = []() { return Tr("pin.biometric_prompt"); };
   unlock_ports.app_shown = []() { return os::AppShownNow(); };
   unlock_ports.on_biometric_lost = [this]() {
@@ -1559,6 +1575,7 @@ void Application::WireUnlockPinAndFlow() {
     }
   };
   unlock_ports.ui.show_biometric_reset = [this](const std::string& hint) { pin_gate_->ShowBiometricReset(hint); };
+  unlock_ports.ui.submit_declined = [this]() { pin_gate_->OnSubmitDeclined(); };
   unlock_ports.has_pending_push_call = []() { return ICallSystemUi::Instance().HasPendingPushCall(); };
   unlock_ports.protected_data_available = []() { return os::ProtectedDataAvailable(); };
   unlock_ports.on_protected_data_available = [](std::function<void()> fn) {

@@ -48,6 +48,11 @@ struct ProfileUnlockUiPorts {
    * face / fingerprint key goes and `hint` (pin.biometric_reset_hint) shows on it.
    */
   std::function<void(const std::string& hint)> show_biometric_reset;
+  /**
+   * A PIN / import submitted while another unlock or a face / fingerprint prompt runs was not started: the door's pad
+   * takes keys again (the shell's unlock indicator is left as it is).
+   */
+  std::function<void()> submit_declined;
 };
 
 /**
@@ -205,7 +210,7 @@ private:
   void RequestShowChooser(std::function<void(bool)> done);
   void RequestShowUnlock(std::function<void(bool)> done);
   void SetUnlockInProgress(bool in_progress);
-  /** A PIN / import submitted while another unlock or a prompt runs: not started, and the UI told it is not busy. */
+  /** A PIN / import submitted while another unlock or a prompt runs: not started, and the door told so. */
   void DeclineSubmit();
   void Finish(bool unlocked);
   void DrainQueue(bool unlocked);
@@ -230,6 +235,8 @@ private:
   /** The automatic prompt ran at this door (cleared when the door rises and when it closes). */
   bool biometric_prompted_this_door_ = false;
   bool biometric_in_flight_ = false;
+  /** An unlock finished while the prompt was in flight: its late Found does not lock the vault. */
+  bool unlocked_beside_prompt_ = false;
   /** Bumped when the door rises and when it closes: a prompt's answer for another door is dropped. */
   uint64_t door_generation_ = 0;
 };

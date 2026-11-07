@@ -45,6 +45,8 @@ public:
   void ShowUnlock();
   void Dismiss();
   void SetUnlockInProgressUi(bool in_progress);
+  /** The gate did not start the submitted PIN (another unlock was running): the pad is usable again. */
+  void OnSubmitDeclined();
   void ShowError(const std::string& message);
   /** A call is waiting for the unlock (or no longer is): the unlock screen's words follow. */
   void RefreshCallHint();

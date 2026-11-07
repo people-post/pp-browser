@@ -602,7 +602,7 @@ TEST_F(PinGateControllerTest, ChangeTextModeWhenUnknown) {
   ASSERT_EQ(changes_, (std::vector<std::pair<std::string, std::string>>{{"old secret", "new secret"}}));
 }
 
-// The gate declined a full pad's PIN (another unlock was running) and said it is not busy: the pad takes keys again.
+// The gate declined a full pad's PIN (another unlock was running) and said so: the pad takes keys again.
 TEST_F(PinGateControllerTest, ADeclinedPinLeavesThePadUsable) {
   pin_digits_ = 4;
   controller_.ShowUnlock();
@@ -610,7 +610,7 @@ TEST_F(PinGateControllerTest, ADeclinedPinLeavesThePadUsable) {
   ASSERT_TRUE(shown_.keypad_busy);
   ASSERT_EQ(completes_, 1);
 
-  controller_.SetUnlockInProgressUi(false);
+  controller_.OnSubmitDeclined();
   EXPECT_FALSE(shown_.keypad_busy);
   EXPECT_EQ(Pin(), "");
   EXPECT_EQ(shown_.keypad_filled, 0);

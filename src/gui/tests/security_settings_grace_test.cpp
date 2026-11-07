@@ -345,7 +345,8 @@ TEST_F(SecuritySettingsBiometricTest, OnAsksForThePinFirstOffDoesNot) {
   EXPECT_FALSE(host.UiState().security_biometric_on) << "not before the PIN";
   EXPECT_EQ(host.pushes, 0);
   ASSERT_TRUE(on_ok_);
-  on_ok_();  // the gate took the PIN (the engine sealed the DEK) and closed
+  enabled_ = true;  // the gate's check ran enable_biometric with the PIN: the engine sealed the DEK
+  on_ok_();         // and the gate closed
   EXPECT_TRUE(host.UiState().security_biometric_on);
   EXPECT_EQ(host.pushes, 1) << "the switch redrawn";
 
@@ -355,6 +356,12 @@ TEST_F(SecuritySettingsBiometricTest, OnAsksForThePinFirstOffDoesNot) {
   EXPECT_FALSE(host.UiState().security_biometric_on);
   EXPECT_EQ(host.pushes, 2);
   EXPECT_EQ(host.failures, 0);
+
+  // The switch shows what the engine holds, not what was asked for (here nothing was sealed).
+  actions.ToggleBiometric();
+  ASSERT_TRUE(on_ok_);
+  on_ok_();
+  EXPECT_FALSE(host.UiState().security_biometric_on);
 }
 
 TEST_F(SecuritySettingsBiometricTest, ThePageHasTheSwitchItsHelpAndBothLanguages) {

@@ -220,7 +220,7 @@ void SettingsSecurityActions::ToggleBiometric() {
     if (commands_.disable_biometric) {
       commands_.disable_biometric();
     }
-    state.security_biometric_on = false;
+    state.security_biometric_on = commands_.biometric_enabled && commands_.biometric_enabled();
     host_.PushToView(false);
     return;
   }
@@ -240,9 +240,13 @@ void SettingsSecurityActions::ToggleBiometric() {
       },
       [this]() {
         host_.PullFromView();
-        host_.UiState().security_biometric_on = true;
+        // What the engine holds now, not what was asked for.
+        const bool on = commands_.biometric_enabled && commands_.biometric_enabled();
+        host_.UiState().security_biometric_on = on;
         host_.PushToView(false);
-        UserFeedback::Ok(Tr("settings.security.biometric.enabled"));
+        if (on) {
+          UserFeedback::Ok(Tr("settings.security.biometric.enabled"));
+        }
       });
 }
 
