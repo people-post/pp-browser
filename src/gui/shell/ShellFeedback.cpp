@@ -99,10 +99,6 @@ void ShellFeedback::ShowBanner(ShellState& state, const std::string& message, co
 }
 
 void ShellFeedback::ShowStickyBanner(ShellState& state, const std::string& message) {
-  if (state.layout_mode == LayoutMode::Compact) {
-    ShowToast(state, message, ToastDuration::Long);
-    return;
-  }
   state.banner_message = ui::String(message.c_str());
   state.banner_expires_at_ms = 0.f;
 }

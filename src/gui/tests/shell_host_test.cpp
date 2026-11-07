@@ -173,8 +173,10 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_TRUE(phone_toasts.banner_message.empty());
   EXPECT_STREQ(phone_toasts.toasts.back().message.c_str(), "Invalid API key");
   ShellFeedback::ShowStickyBanner(phone_toasts, "Still wrong");
-  EXPECT_TRUE(phone_toasts.banner_message.empty());
-  EXPECT_STREQ(phone_toasts.toasts.back().message.c_str(), "Still wrong");
+  // A sticky notice (connecting, client compat, call) stays a persistent banner on phones.
+  EXPECT_STREQ(phone_toasts.banner_message.c_str(), "Still wrong");
+  EXPECT_STREQ(phone_toasts.toasts.back().message.c_str(), "Invalid API key");
+  ShellFeedback::DismissBanner(phone_toasts);
 
   ShellFeedback::ShowBanner(toast_state, "Offline");
   EXPECT_FALSE(toast_state.banner_message.empty());
