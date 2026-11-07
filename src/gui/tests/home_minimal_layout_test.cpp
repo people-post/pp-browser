@@ -1,6 +1,6 @@
 // Phone minimal AI Home (DEV/PLAN-minimal-nav.md B): the real stylesheets over the real markup of the centre block
 // (logo, field mount, chips), laid out in the area left above the keyboard. The field must stay inside it, the logo
-// is 72dp (56dp on a screen under 600dp tall), and the chips wrap onto more rows when they do not fit.
+// is 100dp (72dp on a screen under 600dp tall), and the chips wrap onto more rows when they do not fit.
 #include <ui/core/Core.h>
 #include <ui/dom/Context.h>
 #include <ui/dom/ElementDocument.h>
@@ -123,10 +123,10 @@ protected:
   float visible_height = 0;
 };
 
-// iPhone 14 class, no keyboard: 72dp logo, the field two lines (76dp) tall, everything on screen.
+// iPhone 14 class, no keyboard: 100dp logo, the field two lines (76dp) tall, everything on screen.
 TEST_F(HomeMinimalLayoutTest, TallScreenShowsLogoAndTwoLineField) {
   Load(390, 844, 0);
-  EXPECT_FLOAT_EQ(First("home-logo").height, 72.f);
+  EXPECT_FLOAT_EQ(First("home-logo").height, 100.f);
   const Box pill = First("prompt-composer-pill");
   EXPECT_GE(pill.height, 76.f);
   EXPECT_LE(pill.bottom(), visible_height);
@@ -137,7 +137,7 @@ TEST_F(HomeMinimalLayoutTest, TallScreenShowsLogoAndTwoLineField) {
 // on top of the keyboard; the logo and chips give way (they shrink and clip) rather than push it out.
 TEST_F(HomeMinimalLayoutTest, KeyboardUpOnSmallScreenKeepsFieldAboveTheKeyboard) {
   Load(320, 568, 260);
-  EXPECT_FLOAT_EQ(First("home-logo").height <= 56.f ? 1.f : 0.f, 1.f) << "56dp logo (or less) under 600dp";
+  EXPECT_FLOAT_EQ(First("home-logo").height <= 72.f ? 1.f : 0.f, 1.f) << "72dp logo (or less) under 600dp";
   const Box pill = First("prompt-composer-pill");
   EXPECT_GE(pill.top, 90.f) << "below the bar";
   EXPECT_LE(pill.bottom(), visible_height) << "the field's bottom is inside the area above the keyboard";
@@ -147,7 +147,7 @@ TEST_F(HomeMinimalLayoutTest, KeyboardUpOnSmallScreenKeepsFieldAboveTheKeyboard)
 
 TEST_F(HomeMinimalLayoutTest, SmallScreenWithoutKeyboardUsesTheSmallLogoAndWrapsChips) {
   Load(320, 568, 0);
-  EXPECT_FLOAT_EQ(First("home-logo").height, 56.f);
+  EXPECT_FLOAT_EQ(First("home-logo").height, 72.f);
   ui::ElementList chips;
   document->GetElementsByClassName(chips, "chat-suggestion");
   ASSERT_EQ(chips.size(), 5u);

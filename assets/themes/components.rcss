@@ -3359,8 +3359,8 @@ select selectbox option {
 
 .shell-layer-compact .pane-nav-back {
   position: absolute;
-  top: 0;
-  left: 0;
+  top: 1dp;
+  left: 12dp;
   z-index: 1;
 }
 
@@ -3410,9 +3410,9 @@ select selectbox option {
 
 .pane-nav-actions {
   position: absolute;
-  top: 0;
-  right: 0;
-  height: 44dp;
+  top: 1dp;
+  right: 12dp;
+  height: 48dp;
   align-items: center;
 }
 
@@ -3552,11 +3552,15 @@ select selectbox option {
   box-sizing: border-box;
 }
 
+.shell-layer-compact .shell-chat-overlay-chrome {
+  padding-left: 12dp;
+}
+
 .shell-chat-overlay-chrome .shell-back-btn,
 .shell-layer-compact .shell-transient-chrome .shell-back-btn {
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
+  width: 48dp;
+  height: 48dp;
+  min-width: 48dp;
   border-radius: 0;
 }
 
@@ -3576,7 +3580,7 @@ select selectbox option {
   position: relative;
   z-index: 3;
   height: 55dp;
-  margin: -56dp -12dp 8dp 32dp;
+  margin: -56dp -12dp 8dp 48dp;
   padding: 0 8dp 0 0;
   border-radius: 0;
   border-left-width: 0;
@@ -3920,6 +3924,10 @@ select selectbox option {
   text-align: center;
 }
 
+.shell-layer-compact .shell-transient-chrome {
+  padding: 0 0 0 12dp;
+}
+
 .shell-transient-chrome {
   position: absolute;
   top: 0;
@@ -3952,8 +3960,8 @@ select selectbox option {
   height: 18dp;
 }
 
-/* Phone round button (DEV/PLAN-minimal-nav.md G, Kenneth 2026-11-07 "像苹果一样"): a 44dp target around a 34dp grey disc
-   holding an 18dp icon; darker while pressed (colors-*.rcss). Back, menu, avatar, plus, new, close alike. The desktop
+/* Phone round button (DEV/PLAN-minimal-nav.md G, Kenneth 2026-11-07 "像苹果一样"): a 48dp target around a 40dp grey disc
+   holding a 22dp icon, the disc 16dp from the screen edge; darker while pressed (colors-*.rcss). Back, menu, avatar, plus, new, close alike. The desktop
    keeps its own buttons. */
 .shell-circle-btn-face {
   display: flex;
@@ -3965,9 +3973,9 @@ select selectbox option {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
+  width: 48dp;
+  height: 48dp;
+  min-width: 48dp;
   margin: 0;
   padding: 0;
   border: 0;
@@ -3976,15 +3984,15 @@ select selectbox option {
 }
 
 .shell-layer-compact .shell-circle-btn-face {
-  width: 34dp;
-  height: 34dp;
-  border-radius: 17dp;
+  width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
 }
 
 .shell-layer-compact .shell-circle-btn-face svg {
   flex-shrink: 0;
-  width: 18dp;
-  height: 18dp;
+  width: 22dp;
+  height: 22dp;
 }
 
 /* Phone AI drawer (DEV/PLAN-minimal-nav.md C): the AI conversation list slides in from the left over the AI page,
@@ -4153,8 +4161,8 @@ select selectbox option {
 .shell-layer-compact .shell-chat-new-slot {
   display: flex;
   position: absolute;
-  top: 6dp;
-  right: 4dp;
+  top: 4dp;
+  right: 12dp;
   z-index: 4;
 }
 
@@ -4163,11 +4171,11 @@ select selectbox option {
 }
 
 /* Chats bar (DEV/PLAN-minimal-nav.md D): the round avatar sits where the other pages' round back does; the plus is a
-   plain round button in the actions slot. The photo or letter fills the 34dp disc. */
+   plain round button in the actions slot. The photo or letter fills the 44dp disc. */
 .shell-layer-compact .pane-nav-avatar {
   position: absolute;
-  top: 0;
-  left: 0;
+  top: 1dp;
+  left: 10dp;
   z-index: 1;
 }
 
@@ -4175,26 +4183,34 @@ select selectbox option {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34dp;
-  height: 34dp;
-  border-radius: 17dp;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
   overflow: hidden;
 }
 
 .shell-circle-avatar .avatar-letter {
-  font-size: 15dp;
+  font-size: 18dp;
 }
 
 .shell-circle-avatar-image {
-  width: 34dp;
-  height: 34dp;
+  width: 44dp;
+  height: 44dp;
+}
+
+/* The Chats avatar is the one circle bigger than its 40dp face: its disc is the 44dp photo (list avatars are 44dp too
+   but sit in a column of text; here it stands alone). */
+.shell-layer-compact .pane-nav-avatar .shell-circle-btn-face {
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
 }
 
 /* Phone contact page and blocked list: a 48dp bar over the page (which scrolls under it) with the back arrow. */
 .shell-layer-compact .shell-transient-chrome--titled {
   min-height: 48dp;
   height: 48dp;
-  padding: 2dp 0;
+  padding: 0 0 0 12dp;
 }
 
 .shell-layer-transient {
@@ -8887,7 +8903,7 @@ input.checkbox {
 
 .shell-layer-compact .people-picker-back-circle {
   display: flex;
-  flex: 0 0 44dp;
+  flex: 0 0 48dp;
   align-self: center;
 }
 
@@ -9777,17 +9793,17 @@ input.checkbox {
   align-items: center;
   justify-content: center;
   align-self: flex-start;
-  width: 44dp;
-  height: 44dp;
-  margin: 0 0 0 8dp;
+  width: 48dp;
+  height: 48dp;
+  margin: 0 0 0 12dp;
   padding: 0;
   border: 0;
   cursor: pointer;
 }
 
 .shell-layer-compact .qr-scan-back svg {
-  width: 18dp;
-  height: 18dp;
+  width: 22dp;
+  height: 22dp;
 }
 
 .shell-layer-compact .qr-scan-tools {
@@ -11389,11 +11405,11 @@ input.checkbox {
 
 .shell-layer-compact .settings-back-btn {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
+  top: 1dp;
+  left: 12dp;
+  width: 48dp;
+  height: 48dp;
+  min-width: 48dp;
   margin: 0;
   border-radius: 0;
   z-index: 1;
@@ -12648,27 +12664,27 @@ textarea:composing ~ .prompt-composer-label,
   flex: 0 1 auto;
   min-height: 0;
   overflow: hidden;
-  height: 72dp;
+  height: 100dp;
   margin: 0 0 16dp 0;
   text-align: center;
 }
 
 .shell-layer-compact .home-landing--minimal .home-logo img {
-  width: 72dp;
-  height: 72dp;
-  border-radius: 16dp;
+  width: 100dp;
+  height: 100dp;
+  border-radius: 22dp;
 }
 
 /* iPhone SE class screens (under 600dp tall): a smaller logo so logo, field and two chip rows fit. */
 @media (max-height: 599dp) {
   .shell-layer-compact .home-landing--minimal .home-logo {
-    height: 56dp;
+    height: 72dp;
     margin-bottom: 10dp;
   }
   .shell-layer-compact .home-landing--minimal .home-logo img {
-    width: 56dp;
-    height: 56dp;
-    border-radius: 13dp;
+    width: 72dp;
+    height: 72dp;
+    border-radius: 16dp;
   }
   .shell-layer-compact .home-landing--minimal .home-landing-inner {
     padding-bottom: 24dp;

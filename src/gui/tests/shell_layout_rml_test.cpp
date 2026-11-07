@@ -172,17 +172,17 @@ TEST(ShellLayoutRmlTest, ThePhoneBacksAreRoundButtons) {
   // The scanner's back over the camera is the same round button (dark glass), with no text.
   const std::string scan = ReadAsset("views/qr_scan.rml");
   EXPECT_TRUE(Has(scan, "class=\"qr-scan-back shell-circle-btn\" type=\"button\" data-event-click=\"cancel_scan()\""));
-  EXPECT_TRUE(Has(scan, "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/back.svg\" width=\"18\""));
+  EXPECT_TRUE(Has(scan, "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/back.svg\" width=\"22\""));
   // Every phone back that is a button of its own has no "Back" word beside the round one.
   EXPECT_EQ(Count(ReadAsset("views/settings.rml"), "common.back"), 0u);
   EXPECT_EQ(Count(ReadAsset("views/contacts.rml"), "common.back"), 0u);
   const std::string css = ReadAsset("themes/components.rcss");
   const size_t face = css.find(".shell-layer-compact .shell-circle-btn-face {");
   ASSERT_NE(face, std::string::npos);
-  EXPECT_EQ(css.find("width: 34dp;\n  height: 34dp;", face), css.find("width:", face)) << "a 34dp disc";
+  EXPECT_EQ(css.find("width: 40dp;\n  height: 40dp;", face), css.find("width:", face)) << "a 40dp disc";
   const size_t button = css.find(".shell-layer-compact .shell-circle-btn {");
   ASSERT_NE(button, std::string::npos);
-  EXPECT_NE(css.find("width: 44dp;\n  height: 44dp;", button), std::string::npos) << "in a 44dp target";
+  EXPECT_NE(css.find("width: 48dp;\n  height: 48dp;", button), std::string::npos) << "in a 48dp target";
 }
 
 // Kenneth 2026-11-03: on Home the dock and the tab bar read as two hard lines; there they are one bottom area.

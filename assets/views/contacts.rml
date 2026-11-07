@@ -4,7 +4,7 @@
     <div class="pane-nav-bg"></div>
     <div class="bar-fade"></div>
     <button class="pane-nav-back shell-circle-btn" type="button" data-model="window" data-event-click="hidden_tab_back()">
-      <span class="shell-circle-btn-face"><svg src="../icons/v2/back.svg" width="18" height="18"></svg></span>
+      <span class="shell-circle-btn-face"><svg src="../icons/v2/back.svg" width="22" height="22"></svg></span>
     </button>
     <p class="pane-nav-title">{{i18n:nav.contacts}}</p>
     <div class="pane-nav-actions row">
