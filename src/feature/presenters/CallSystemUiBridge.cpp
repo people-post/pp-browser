@@ -127,8 +127,13 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
     return;
   }
 
+  if (ring && screen.conflict) {
+    LeaveRingToApp(screen.ring_call_id);
+    return;
+  }
+
   // A ring for the system screen.
-  if (ring && TakesRing(app_foreground)) {
+  if (ring && TakesRing(app_foreground, screen.conflict)) {
     const bool fits = ChoiceFits(screen.ring_call_id);
     const bool declined = fits && ChoiceLive(decline_pending_at_ms_);
     const bool answered = fits && ChoiceLive(answer_pending_at_ms_);
@@ -155,6 +160,25 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
   }
 }
 
+void CallSystemUiBridge::LeaveRingToApp(const std::string& ring_call_id) {
+  const bool fits = ChoiceFits(ring_call_id);
+  const bool declined = fits && ChoiceLive(decline_pending_at_ms_);
+  if (fits && ChoiceLive(answer_pending_at_ms_)) {
+    // Answered on the push's call before the ring showed: the user did not know it ends the call they are in.
+    Note("answer_over_call");
+    ClearChoice();
+  } else if (declined) {
+    ClearChoice();
+  }
+  if (ui_.HasPendingPushCall()) {
+    Note("pending_over_call");
+    ui_.EndPendingPushCall(); // the app's own ring takes it
+  }
+  if (declined) {
+    ApplyDecline(); // declining it ends nothing
+  }
+}
+
 void CallSystemUiBridge::AcceptShown(const bool voice_only) {
   shown_answered_ = true;
   shown_taken_ = false;
@@ -169,8 +193,8 @@ bool CallSystemUiBridge::StillTaking() const {
   return shown_answered_ && !shown_taken_ && Now() - answered_at_ms_ < kAnswerSettleMs;
 }
 
-bool CallSystemUiBridge::TakesRing(const bool app_foreground) const {
-  return ui_.Available() && shown_.empty() && (!app_foreground || ui_.HasPendingPushCall());
+bool CallSystemUiBridge::TakesRing(const bool app_foreground, const bool over_call) const {
+  return ui_.Available() && shown_.empty() && !over_call && (!app_foreground || ui_.HasPendingPushCall());
 }
 
 bool CallSystemUiBridge::SystemRings(const std::string& call_id) const {

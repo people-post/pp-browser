@@ -201,12 +201,8 @@ void CallPresenter::Refresh() {
     next.thread_id = top.origin_thread_id.value_or(std::string{});
     if (surface.active) {
       // Ringing over the call we are in: answering ends that one. Keep it as the active call.
-      next.conflict = true;
       active_call_id_ = surface.active->call_id;
-      if (auto peer = backend->PeerIdentityForCall(surface.active->call_id); peer && peer->has_value()) {
-        next.conflict_peer_identity = **peer;
-        next.conflict_same_peer = **peer == top.inviter_identity;
-      }
+      FillEndingCall(next, *backend, *surface.active);
     }
     // P001: waive / take-all when the inviter offered a positive initiation amount.
     next.offer_minor = backend->InitiationOfferMinorForPeer(top.inviter_identity);
@@ -225,6 +221,8 @@ void CallPresenter::Refresh() {
       CallNotice notice;
       notice.kind = CallNotice::Kind::IncomingCall;
       notice.identity = top.inviter_identity;
+      notice.conflict = next.conflict; // V064: its alert says answering ends the call we are in
+      notice.ending = next.ending;
       Notify(notice);
     }
   } else if (surface.kind == SurfaceKind::InCall) {
@@ -265,12 +263,37 @@ void CallPresenter::Refresh() {
     Notify(notice);
   }
   WatchForNoMedia(*backend, next, now);
+  OfferCallBack(next, surface);
   if (next.kind == CallScreen::Kind::None && !surface.active && AudioSession::IsSpeakerphoneOn()) {
     // No call left: the speaker choice was that call's (AudioSession keeps it across a media rebuild).
     AudioSession::SetSpeakerphoneOn(false);
   }
   screen_ = std::move(next);
   Changed();
+}
+
+void CallPresenter::FillEndingCall(CallScreen& s, CallUiBackend& backend, const CallSession& active) {
+  s.conflict = true;
+  CallScreen::EndingCall& ending = s.ending;
+  ending.call_id = active.call_id;
+  ending.group = active.origin_group_id.has_value();
+  ending.thread_id = active.origin_thread_id.value_or(std::string{});
+  ending.video = active.video_allowed;
+  if (auto peer = backend.PeerIdentityForCall(active.call_id); peer && peer->has_value()) {
+    ending.peer_identity = **peer;
+    ending.same_peer = **peer == s.caller_identity;
+  }
+}
+
+void CallPresenter::OfferCallBack(const CallScreen& next, const CallUiBackend::Surface& surface) {
+  const std::string live = surface.active ? surface.active->call_id : std::string();
+  if (auto offer = call_back_.OnFrame(next, live)) {
+    CallNotice notice;
+    notice.kind = CallNotice::Kind::CallBack;
+    notice.identity = offer->peer_identity;
+    notice.ending = std::move(*offer);
+    Notify(notice);
+  }
 }
 
 void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std::string& call_id, const bool video,
@@ -834,6 +857,7 @@ std::string CallPresenter::Accept(const bool voice_only, const std::string& answ
   ringing_call_id_.clear();
   ring_shown_ = false;
   answered_call_id_ = call_id;
+  call_back_.OnAccept(screen_, call_id); // End & accept over a 1:1 call: offer it again afterwards (V064)
   screen_ = AnsweringFrom(screen_, call_id);
   Changed();
   log().warning << "Accept → lifecycle AcceptClicked call_id=" << call_id << " charge=waive"
@@ -870,6 +894,7 @@ std::string CallPresenter::AcceptWithCharge() {
   ringing_call_id_.clear();
   ring_shown_ = false;
   answered_call_id_ = call_id;
+  call_back_.OnAccept(screen_, call_id); // End & accept over a 1:1 call: offer it again afterwards (V064)
   screen_ = AnsweringFrom(screen_, call_id);
   Changed();
   log().warning << "AcceptWithCharge → lifecycle AcceptClicked call_id=" << call_id << " charge=take_all";

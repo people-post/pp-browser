@@ -8,6 +8,7 @@
 #include "gui/UiLatencyProbe.h"
 #include "common/media/CallMediaHealth.h"
 #include "lib/call_audio/CallRingtone.h"
+#include "lib/ui/CallConflictCopy.h"
 #include "lib/ui/ShellTypes.h"
 #include "common/Module.h"
 #include "feature/calls/CallFunctionalPorts.h"
@@ -170,6 +171,10 @@ private:
   void FillStoryLines();
   /** A group's name for the phone page (read once per thread). */
   std::string GroupTitle(const std::string& thread_id);
+  /** V064: who a ring over a call names — its caller, and the call answering ends (its peer, or its group). */
+  CallConflictNames ConflictNames(const std::string& caller_label, bool conflict, const CallScreen::EndingCall& ending);
+  /** V064: "Call {name} back?" once the call taken in its place is over; Call back calls from its chat. */
+  void OfferCallBack(const CallScreen::EndingCall& ended);
   static std::string FormatElapsed(int64_t connected_at_ms);
   static std::string FormatMinSec(int64_t seconds);
 
@@ -294,6 +299,9 @@ private:
   std::string group_title_thread_;
   std::string group_title_;
   int64_t group_title_read_ms_ = 0;
+  /** The group's name of the call a ring over it would end (read once per ending call). */
+  std::string ending_title_call_;
+  std::string ending_title_;
 };
 
 } // namespace pbr

@@ -4,29 +4,41 @@
 
 namespace pbr {
 
-CallConflictCopy MakeCallConflictCopy(const bool has_conflict, const bool same_peer,
-                                      const std::string& caller_label, const std::string& active_peer_label) {
+namespace {
+
+/** What answering ends, in the words of the call it ends (V064). */
+std::string EndingHint(const CallConflictNames& names, const std::string& caller) {
+  if (names.same_peer) {
+    return Tr("call.ring.conflict_hint_same_peer", {{"caller", caller}});
+  }
+  if (names.ending_group) {
+    return names.ending.empty() ? Tr("call.ring.conflict_hint_group_unnamed")
+                                : Tr("call.ring.conflict_hint_group", {{"group", names.ending}});
+  }
+  return names.ending.empty() ? Tr("call.ring.conflict_hint_unnamed")
+                              : Tr("call.ring.conflict_hint", {{"peer", names.ending}});
+}
+
+} // namespace
+
+CallConflictCopy MakeCallConflictCopy(const bool has_conflict, const CallConflictNames& names) {
   if (!has_conflict) {
     return {
         .eyebrow = Tr("call.ring.eyebrow"),
+        .title = {},
         .accept_label = Tr("call.ring.accept"),
         .decline_label = Tr("call.ring.decline"),
         .hint = {},
     };
   }
 
+  const std::string caller = names.caller.empty() ? Tr("call.label.someone") : names.caller;
   CallConflictCopy copy;
   copy.eyebrow = Tr("call.ring.already_calling");
+  copy.title = Tr("call.ring.conflict_title", {{"caller", caller}});
   copy.accept_label = Tr("call.ring.end_and_accept");
   copy.decline_label = Tr("call.ring.ignore");
-
-  const std::string caller = caller_label.empty() ? Tr("call.label.someone") : caller_label;
-  const std::string active_peer = active_peer_label.empty() ? Tr("call.label.them") : active_peer_label;
-  if (same_peer) {
-    copy.hint = Tr("call.ring.callback_hint", {{"caller", caller}});
-  } else {
-    copy.hint = Tr("call.ring.conflict_hint", {{"peer", active_peer}});
-  }
+  copy.hint = EndingHint(names, caller);
   return copy;
 }
 
