@@ -18,6 +18,10 @@ services:
     image: pp-node:local
     environment:
       PP_BROWSER_PIN: local-test-pin
+      # A fixed identity, as org seeds have (PP_NODE_IDENTITY_SEED): the seed has no volume, and a new identity on
+      # every recreate left the old one in the lab directory at the same address — clients dialed it and failed
+      # ("authenticated peer id does not match"), and calls through the seed with them.
+      PP_NODE_IDENTITY_SEED: "a1ab5eed00000000000000000000000000000000000000000000000000000001"
       PP_NODE_AMP_UDP_PORT: 18517
       PP_NODE_DATA_DIR: /var/lib/pp-node
       PP_NODE_STATUS_ADDR: 0.0.0.0:18518
@@ -48,6 +52,7 @@ services:
     image: pp-node:local
     environment:
       PP_BROWSER_PIN: local-test-pin
+      PP_NODE_IDENTITY_SEED: "a1ab5eed00000000000000000000000000000000000000000000000000000002"
       PP_NODE_AMP_UDP_PORT: 18517
       PP_NODE_DATA_DIR: /var/lib/pp-node
       PP_NODE_STATUS_ADDR: 0.0.0.0:18518
