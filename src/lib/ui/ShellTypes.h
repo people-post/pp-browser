@@ -417,10 +417,12 @@ struct CallInProgressState {
   /** Expanded (top bar), Immersive (people grid), or Minimized (corner chip). */
   CallChromeMode mode = CallChromeMode::Expanded;
   /**
-   * Minimized chip corner: 0 top-right, 1 top-left, 2 bottom-right, 3 bottom-left.
-   * Applied when mode == Minimized.
+   * #166: where the minimised chip rests after a drag (CallChipDock): 0 never dragged this call (the default top-right
+   * corner class), 1 left side, 2 right side; and its height in the band, 0 (top) .. 1000 (bottom), ignored for 0.
+   * Applied when mode == Minimized; reset with each call (CallController).
    */
-  int minimized_corner = 0;
+  int minimized_side = 0;
+  int minimized_y_permille = 0;
   int participant_count = 0;
   std::vector<CallRosterParticipantState> roster;
   /** Immersive's spotlit roster row (its stream_id; empty: the grid) — V059, CallSpotlight.h. */
@@ -619,6 +621,12 @@ struct ShellState {
   NavBadgeState nav_badges;
 
   float shell_width_dp = 1280.f;
+  /**
+   * #166: the minimised call chip's layer (the call mount) height and the chip's own height in dp, as last laid out
+   * (ShellHost). The chip's markup places a dragged chip with them (CallChipDock::Place); 0: not laid out yet.
+   */
+  float call_chip_area_height_dp = 0.f;
+  float call_chip_height_dp = 0.f;
   /** Top safe-area inset in dp (SDL and/or machine prefs); clears status bar / notch. */
   int safe_area_top_dp = 0;
   /** Bottom safe-area inset in dp (SDL and/or machine prefs). */

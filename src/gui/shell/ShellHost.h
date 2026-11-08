@@ -349,6 +349,8 @@ private:
   void FlushPendingSyncLayout();
   void RemountCallChromeNow();
   void FlushRemountCallChrome();
+  /** #166: the call layer's and the minimised chip's heights as laid out, for the chip's markup (ShellState). */
+  void MeasureCallChip(ui::ElementDocument* doc);
   void RemountDialogChromeNow();
   void FlushRemountDialogChrome();
   void RemountPinGateChromeNow();
@@ -433,6 +435,8 @@ private:
   std::string running_sync_reason_ = "direct";
   int running_sync_requests_ = 1;
   bool remount_call_chrome_pending_ = false;
+  /** #166: a call chrome remount kept the minimised chip as it was (a drag still owned it): rebuild once it settles. */
+  bool call_chip_rebuild_held_ = false;
   bool remount_dialog_chrome_pending_ = false;
   bool remount_pin_gate_chrome_pending_ = false;
   bool remount_ai_drawer_pending_ = false;

@@ -1,7 +1,9 @@
 #include "gui/shell/ShellCallChromeRml.h"
 
 #include "foundation/i18n/LocalizationService.h"
+#include "lib/ui/CallChipDock.h"
 
+#include <cstdio>
 #include <sstream>
 
 namespace pbr {
@@ -755,24 +757,29 @@ std::string CallInProgressRml(const ShellState& state) {
   std::ostringstream out;
 
   if (call.mode == CallChromeMode::Minimized) {
-    const char* corner_class = "shell-call-minimized-chip--tr";
-    switch (call.minimized_corner) {
-    case 1:
-      corner_class = "shell-call-minimized-chip--tl";
-      break;
-    case 2:
-      corner_class = "shell-call-minimized-chip--br";
-      break;
-    case 3:
-      corner_class = "shell-call-minimized-chip--bl";
-      break;
-    default:
-      break;
-    }
     out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-minimized\" "
            "data-model=\"window\">";
-    out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row " << corner_class
-        << "\">";
+    if (call.minimized_side == CallChipDock::kSideDefault) {
+      // Never dragged this call: the default top-right corner, exactly as before #166.
+      out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row "
+             "shell-call-minimized-chip--tr\">";
+    } else {
+      // #166: dropped on a side, its height a share of the band, clamped for the layer and the chip as last laid out
+      // (CallChipDock::Place, the same point ShellCallChromeGesture slid it to). Anchored on its own side, so a chip
+      // that grows (the quality words, the mute icon) grows away from the edge, never past it.
+      const CallChipArea area{state.shell_width_dp, state.call_chip_area_height_dp};
+      const CallChipPoint at =
+          CallChipDock::Place({call.minimized_side, call.minimized_y_permille}, area, 0.f, state.call_chip_height_dp);
+      char style[96];
+      if (call.minimized_side == CallChipDock::kSideLeft) {
+        std::snprintf(style, sizeof(style), "left:%.0fdp;right:auto;top:%.1fdp;bottom:auto;", CallChipDock::kEdgeDp,
+                      at.top_dp);
+      } else {
+        std::snprintf(style, sizeof(style), "right:%.0fdp;left:auto;top:%.1fdp;bottom:auto;", CallChipDock::kEdgeDp,
+                      at.top_dp);
+      }
+      out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row\" style=\"" << style << "\">";
+    }
     out << "<div class=\"shell-call-minimized-main\">";
     out << "<p class=\"text-sm shell-call-minimized-title\">{{call_in_progress_title}}</p>";
     out << "<p class=\"text-xs shell-call-minimized-subtitle\">{{call_in_progress_subtitle}}</p>";

@@ -1,5 +1,6 @@
 #include "gui/shell/ShellCallChromeRml.h"
 #include "gui/CallChromeSync.h"
+#include "lib/ui/CallChipDock.h"
 
 #include <gtest/gtest.h>
 
@@ -307,6 +308,39 @@ TEST(ShellCallChromeRmlTest, PhoneVideoFlipButtonIsLitOnTheFrontCamera) {
   const std::string rml = CallInProgressRml(state);
   EXPECT_TRUE(Has(rml, "data-event-click=\"call_flip_camera()\" "
                        "data-class-call-phone-control--on=\"call_in_progress_camera_front\""));
+}
+
+// #166: the minimised chip. Never dragged this call: the default top-right corner class, no inline place — as before.
+// Dropped on a side: anchored on that side by an inline style, its top from CallChipDock::Place, no corner class.
+TEST(ShellCallChromeRmlTest, TheMinimisedChipKeepsItsCornerUntilDraggedThenSitsWhereItWasDropped) {
+  for (const LayoutMode layout : {LayoutMode::Compact, LayoutMode::Expanded}) {
+    ShellState state;
+    state.layout_mode = layout;
+    state.call_in_progress.active = true;
+    state.call_in_progress.mode = CallChromeMode::Minimized;
+    const std::string corner = CallInProgressRml(state);
+    EXPECT_TRUE(Has(corner, "class=\"shell-call-minimized-chip row shell-call-minimized-chip--tr\">"));
+    EXPECT_FALSE(Has(corner, "style=")) << "no inline place before a drag";
+
+    // The layer and the chip as last laid out (ShellHost::MeasureCallChip): the band is [12, 780 - 72 - 56 = 652].
+    state.call_chip_area_height_dp = 780.f;
+    state.call_chip_height_dp = 56.f;
+    state.call_in_progress.minimized_side = CallChipDock::kSideRight;
+    state.call_in_progress.minimized_y_permille = 500;
+    const std::string right = CallInProgressRml(state);
+    EXPECT_TRUE(Has(right, "style=\"right:12dp;left:auto;top:332.0dp;bottom:auto;\"")) << right;
+    EXPECT_FALSE(Has(right, "shell-call-minimized-chip--"));
+
+    state.call_in_progress.minimized_side = CallChipDock::kSideLeft;
+    state.call_in_progress.minimized_y_permille = 1000;
+    const std::string left = CallInProgressRml(state);
+    EXPECT_TRUE(Has(left, "style=\"left:12dp;right:auto;top:652.0dp;bottom:auto;\"")) << left;
+    EXPECT_FALSE(Has(left, "shell-call-minimized-chip--"));
+
+    // The chip grew since (the quality words): re-clamped, its bottom still 72dp above the layer's.
+    state.call_chip_height_dp = 80.f;
+    EXPECT_TRUE(Has(CallInProgressRml(state), "top:628.0dp;"));
+  }
 }
 
 // The group video page has the flip button too, lit the same way, next to the camera; none while the camera is off.

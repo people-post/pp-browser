@@ -66,7 +66,8 @@ struct CallChromeLayer {
   CallChromeMode in_call_mode = CallChromeMode::Expanded;
   std::string in_call_spotlight;
   bool in_call_spotlight_fill = true;
-  int in_call_minimized_corner = 0;
+  int in_call_minimized_side = 0;
+  int in_call_minimized_y_permille = 0;
   int in_call_quality_bars = 4;
   bool in_call_quality_ok = true;
   bool in_call_quality_warn = false;
