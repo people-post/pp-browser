@@ -327,4 +327,42 @@ TEST_F(IdentityStoreTest, SeededMintIsDeterministicAndFailClosed) {
   EXPECT_EQ(again->account_id, account_id);
 }
 
+// A write that fails leaves the identity in memory as it was: Get() never shows an unsaved field (a guest key that
+// would stop a re-mint, then reach the disk with a later unrelated save).
+TEST_F(IdentityStoreTest, AFailedSaveLeavesTheIdentityAsItWas) {
+  IdentityStore store(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(store.SetDek(MakeTestDek()));
+  auto created = store.LoadOrCreate();
+  ASSERT_TRUE(static_cast<bool>(created)) << created.error().message;
+
+  // identity.enc can no longer be replaced: a non-empty directory where the file was.
+  const std::filesystem::path file = data_dir_ / "identity.enc";
+  std::filesystem::remove(file);
+  std::filesystem::create_directories(file);
+  { std::ofstream(file / "keep") << "x"; }
+
+  auto modified = store.Modify([](LocalIdentity& identity) {
+    identity.brief_llm_guest_api_key = "brf_guest_unsaved";
+    return true;
+  });
+  EXPECT_FALSE(static_cast<bool>(modified));
+  EXPECT_TRUE(store.Get().value().brief_llm_guest_api_key.empty()) << "Modify: nothing half-applied";
+
+  LocalIdentity changed = store.Get().value();
+  changed.nickname = "unsaved-name";
+  EXPECT_FALSE(static_cast<bool>(store.Update(changed)));
+  EXPECT_EQ(store.Get().value().nickname, created->nickname) << "Update: nothing half-applied";
+
+  std::filesystem::remove_all(file);
+  store.Flush(); // nothing pending: the failed writes left nothing to flush
+  EXPECT_FALSE(std::filesystem::exists(file));
+
+  ASSERT_TRUE(static_cast<bool>(store.Modify([](LocalIdentity& identity) {
+    identity.brief_llm_guest_api_key = "brf_guest_saved";
+    return true;
+  })));
+  EXPECT_EQ(store.Get().value().brief_llm_guest_api_key.Reveal(), "brf_guest_saved");
+  EXPECT_TRUE(std::filesystem::exists(file));
+}
+
 } // namespace

@@ -136,8 +136,12 @@ public:
   void MintBriefKey(const std::string& llm_base_url);
   /** The last MintBriefKey asked again (a 401 renewal held the run meanwhile and the key may still be missing). */
   void RetryBriefKeyMint();
-  /** A new messaging session began: a run of the old one that never ended no longer holds its slot. */
-  void OnNewSession();
+  /**
+   * Messaging was torn down (profile reset, shutdown): a run whose work the teardown dropped never ends, so it no
+   * longer holds its slot. Not for a plain session change (WireMessagingBindings): a run still out then keeps its slot
+   * (one at a time); its stale result is dropped and a trigger meanwhile runs once more after it.
+   */
+  void OnMessagingTornDown();
 
   bool PushInFlight() const;
   bool RenewInFlight() const;

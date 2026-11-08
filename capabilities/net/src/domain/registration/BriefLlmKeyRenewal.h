@@ -43,7 +43,8 @@ Roe<std::string> StoreBriefGuestKeyIfNone(const BriefLlmKeyStore& store, const S
                                           const std::string& expected_account_id);
 
 /**
- * The gateway refused `rejected`. When the stored key is another one, that one (reused). Else mint a guest key at
+ * The gateway refused `rejected`. When the stored key is another one, that one (reused); when the refused one is the
+ * registered key and a different guest key is stored beside it, the guest key (reused, nothing minted). Else mint a guest key at
  * `llm_base_url` and store it beside the registered key, which is kept until a retry with the guest key is answered
  * (CommitBriefLlmKey). One modify after the mint: the stored key is never empty meanwhile; a key other than
  * `rejected` stored during the mint is kept (reused), and an identity of another account then is refused.

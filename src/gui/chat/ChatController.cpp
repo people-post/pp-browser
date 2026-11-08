@@ -1258,6 +1258,9 @@ void ChatController::OnProfileDataReset() {
   CloseSearch(); // nothing decrypted from the old profile stays in memory
   messaging_ready_ = false;
   ++messaging_session_; // a task result of the old profile never reaches the new one
+  if (ready_tasks_) {
+    ready_tasks_->OnMessagingTornDown(); // the teardown dropped work still queued: free its runs
+  }
   mesh_ready_ = false;
   // profile.db is recreated: nothing read from the old one may be written back into the new one.
   presenter_.ResetForNewProfile();
@@ -4107,11 +4110,9 @@ void ChatController::WireMessagingBindings() {
     return;
   }
   messaging_ready_ = true;
-  // A new session: results of tasks the last one sent off are dropped when they come back.
+  // A new session: results of tasks the last one sent off are dropped when they come back. A run still out keeps its
+  // slot (one at a time); what is triggered below runs once more after it.
   ++messaging_session_;
-  if (ready_tasks_) {
-    ready_tasks_->OnNewSession();
-  }
   // Pre-send image previews are session files; a crash or a kill leaves them behind, so start clean.
   if (const std::string profile_dir = facade_ ? facade_->ProfileDataDir() : std::string(); !profile_dir.empty()) {
     std::error_code ec;
@@ -4823,6 +4824,9 @@ void ChatController::Shutdown() {
   // Hub + ProfileSecrets lifetime is owned by Application::ShutdownMessaging.
   messaging_ready_ = false;
   ++messaging_session_; // a task result still on its way is dropped
+  if (ready_tasks_) {
+    ready_tasks_->OnMessagingTornDown();
+  }
   mesh_ready_ = false;
   pending_reply_.reset();
   agent_.Reset();

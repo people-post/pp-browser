@@ -47,10 +47,12 @@ public:
    */
   Roe<std::optional<ByteVector>> RecoverySeed() const;
   Roe<LocalIdentity> Get() const;
+  /** Writes `identity`; on a failed write the identity in memory stays as it was (nothing half-applied). */
   Roe<LocalIdentity> Update(const LocalIdentity& identity);
   /**
    * One read-modify-write under the store's lock: `change` edits the identity as stored now and returns whether to
-   * save it (false: nothing is written). Two writers off different threads cannot overwrite each other's fields this
+   * save it (false: nothing is written). The stored copy in memory changes only once the write succeeded: a failed
+   * save leaves Get() as it was. Two writers off different threads cannot overwrite each other's fields this
    * way, as Get + Update can. `change` must not call back into this store. Returns the identity after it.
    */
   Roe<LocalIdentity> Modify(const std::function<bool(LocalIdentity& identity)>& change);
@@ -74,6 +76,8 @@ public:
 private:
   Roe<void> EnsureLoaded() const;
   Roe<void> Save() const;
+  /** Seals and writes `identity` (not necessarily identity_): Update / Modify commit to memory only after it. */
+  Roe<void> SaveIdentity(const LocalIdentity& identity) const;
   Roe<void> RequireDek() const;
   std::string StorePath() const;
   std::string ProfileId() const;

@@ -81,7 +81,11 @@ void ProfileUnlockGate::DrainQueue(const bool unlocked) {
 void ProfileUnlockGate::SetUnlockInProgress(const bool in_progress) {
   unlock_in_progress_ = in_progress;
   if (in_progress) {
-    unlock_started_ = std::chrono::steady_clock::now();
+    // unlock.done ms= is the time since the door's FIRST unlock.start: a wrong PIN and the retry do not restart it.
+    if (!unlock_started_) {
+      unlock_started_ = std::chrono::steady_clock::now();
+      unlock_started_by_grace_ = false;
+    }
     DiagLine("unlock.start").Emit();
   }
   if (ports_.ui.set_unlock_in_progress) {
@@ -112,6 +116,7 @@ void ProfileUnlockGate::Finish(const bool unlocked) {
                             std::chrono::steady_clock::now() - *unlock_started_).count()
                       : 0;
   unlock_started_.reset();
+  unlock_started_by_grace_ = false;
   DiagLine("unlock.done").Add("unlocked", unlocked).Add("ms", elapsed_ms).Emit();
   SetUnlockInProgress(false);
   if (ports_.ui.dismiss) {
@@ -499,8 +504,10 @@ void ProfileUnlockGate::SetGraceAttemptInProgress(const bool in_progress) {
   // Holds EnsureUnlocked callers and a typed PIN back like any unlock; unlock.start stays for a PIN or the
   // default PIN (a grace attempt says unlock.grace).
   unlock_in_progress_ = in_progress;
-  if (in_progress) {
-    unlock_started_ = std::chrono::steady_clock::now();  // unlock.done ms= covers a grace attempt too
+  if (in_progress && !unlock_started_) {
+    // A grace unlock is timed from its attempt's start; a PIN door already timing keeps its own start.
+    unlock_started_ = std::chrono::steady_clock::now();
+    unlock_started_by_grace_ = true;
   }
   if (ports_.ui.set_unlock_in_progress) {
     ports_.ui.set_unlock_in_progress(in_progress);
@@ -532,6 +539,11 @@ void ProfileUnlockGate::RunGraceAttempt(const GraceStep step) {
 void ProfileUnlockGate::OnGraceAttemptDone(const GraceStep step, const std::optional<GraceUnlock::Status> status,
                                            Roe<void> result) {
   SetGraceAttemptInProgress(false);
+  if (unlock_started_by_grace_ && !(status == GraceUnlock::Status::Found && result)) {
+    // The attempt did not open the door: its time is not the PIN's that follows (that one starts its own).
+    unlock_started_.reset();
+    unlock_started_by_grace_ = false;
+  }
   if (status == GraceUnlock::Status::Found) {
     DiagLine("unlock.grace").Add("result", "hit").Emit();
     if (!result) {

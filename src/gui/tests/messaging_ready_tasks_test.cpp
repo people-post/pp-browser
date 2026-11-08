@@ -277,16 +277,33 @@ TEST_F(MessagingReadyTasksTest, ATriggerWhileOneRunsGivesExactlyOneMoreRun) {
   EXPECT_FALSE(tasks_->PushInFlight());
 }
 
-TEST_F(MessagingReadyTasksTest, ANewSessionFreesARunWhoseWorkWasDropped) {
+TEST_F(MessagingReadyTasksTest, ATeardownFreesARunWhoseWorkWasDropped) {
   tasks_->SyncPushDevices();
   jobs_.clear(); // a teardown dropped it: its UI part never comes
   EXPECT_TRUE(tasks_->PushInFlight());
   ++session_;
-  tasks_->OnNewSession();
+  tasks_->OnMessagingTornDown();
   tasks_->SyncPushDevices();
   ASSERT_EQ(jobs_.size(), 1u);
   RunAll();
   EXPECT_EQ(push_calls_, 1);
+  EXPECT_FALSE(tasks_->PushInFlight());
+}
+
+// A plain session change (the link import's binding, then WireMessagingBindings) while a binding is out: still one at
+// a time; the running one ends (its result stale) and exactly one more runs after it.
+TEST_F(MessagingReadyTasksTest, ASessionChangeKeepsOneRunAtATime) {
+  tasks_->SyncPushDevices(); // on_link_imported
+  ASSERT_EQ(jobs_.size(), 1u);
+  RunWorkerPart();           // its worker is running
+  ++session_;                // WireMessagingBindings
+  tasks_->SyncPushDevices();
+  EXPECT_EQ(jobs_.size(), 1u) << "no second binding beside the running one";
+  EXPECT_EQ(push_calls_, 1);
+  RunUiPart();               // the first ends: one more is due
+  ASSERT_EQ(jobs_.size(), 1u);
+  RunAll();
+  EXPECT_EQ(push_calls_, 2);
   EXPECT_FALSE(tasks_->PushInFlight());
 }
 

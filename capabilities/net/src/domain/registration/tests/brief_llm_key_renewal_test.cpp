@@ -199,5 +199,25 @@ TEST_F(BriefLlmKeyRenewalTest, AnEmptyAccountIdIsRefused) {
   EXPECT_EQ(identity_.brief_llm_guest_api_key, "brf_guest_old");
 }
 
+// The registered key refused while a guest key is stored beside it: that guest key is asked with, nothing minted.
+TEST_F(BriefLlmKeyRenewalTest, ARefusedRegisteredKeyFallsBackToTheStoredGuestKey) {
+  identity_.brief_llm_api_key = "brf_llm_old";
+  identity_.brief_llm_guest_api_key = "brf_guest_stored";
+  auto renewed = RenewBriefLlmKey(Store(), "brf_llm_old", "u");
+  ASSERT_TRUE(renewed) << renewed.error().message;
+  EXPECT_EQ(renewed->key, "brf_guest_stored");
+  EXPECT_TRUE(renewed->reused);
+  EXPECT_TRUE(mint_urls_.empty());
+  EXPECT_EQ(saves_, 0);
+
+  // That guest key is the refused one too: now a key is minted.
+  identity_.brief_llm_api_key.clear();
+  renewed = RenewBriefLlmKey(Store(), "brf_guest_stored", "u");
+  ASSERT_TRUE(renewed);
+  EXPECT_FALSE(renewed->reused);
+  EXPECT_EQ(renewed->key, "brf_guest_new");
+  EXPECT_EQ(mint_urls_.size(), 1u);
+}
+
 } // namespace
 } // namespace pbr
