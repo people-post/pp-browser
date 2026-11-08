@@ -1282,7 +1282,7 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
     in_call.subtitle = Tr("call.status.disconnected").c_str();
     break;
   case Status::SendingOnly:
-    in_call.subtitle = Tr("call.quality.hint.sending_only").c_str();
+    in_call.subtitle = Tr(media_hint_.SendingOnlyKey(in_call.video)).c_str();
     break;
   case Status::Connected:
     in_call.subtitle = in_call.elapsed.empty() ? Tr("call.status.connected").c_str() : in_call.elapsed;
@@ -1835,6 +1835,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
   const CallMediaHealthView view = BuildMediaHealthView(media, backend, media_reconnect);
   const int64_t now_ms = util::NowUnixMs();
   NoteActiveSpeaker(view.engine, in_call.muted ? 0.f : media.LocalInputLevel(), now_ms);
+  media_hint_.Update(presenter_.ActiveCallId(), view.asymmetry == CallAudioAsymmetry::SendingOnly, now_ms);
 
   if (metrics_.Tracking() && now_ms - last_metrics_media_ms_ >= 500) {
     last_metrics_media_ms_ = now_ms;
@@ -1858,7 +1859,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
   } else {
     in_call.quality_label = "";
   }
-  if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+  if (const char* hint_key = media_hint_.KeyFor(view.asymmetry, in_call.video); hint_key && hint_key[0]) {
     in_call.quality_hint = Tr(hint_key).c_str();
   } else {
     in_call.quality_hint = "";
@@ -1873,7 +1874,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
        backend->MediaStatus() == CallMediaStatus::DegradedTxOnly);
   // Reconnecting says it all: no path means no audio either way.
   if (media_broken && !(backend && backend->Available() && backend->MediaStatus() == CallMediaStatus::Reconnecting)) {
-    if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+    if (const char* hint_key = media_hint_.KeyFor(view.asymmetry, in_call.video); hint_key && hint_key[0]) {
       in_call.subtitle = Tr(hint_key).c_str();
     } else if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key &&
                                                                               label_key[0]) {
@@ -1932,7 +1933,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
   const bool audio_fault =
       view.quality == CallPathQuality::NoAudio || view.asymmetry != CallAudioAsymmetry::None;
   if (audio_fault_gate_.Update(presenter_.ActiveCallId(), audio_fault, now_ms)) {
-    if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+    if (const char* hint_key = media_hint_.KeyFor(view.asymmetry, in_call.video); hint_key && hint_key[0]) {
       UserFeedback::Fail(Tr(hint_key));
     } else if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key && label_key[0]) {
       UserFeedback::Fail(Tr(label_key));
@@ -1983,7 +1984,7 @@ void CallController::ShowCallDetails() {
   copy.quality_label = Tr(CallPathQualityDetailsLabelKey(view.quality));
   copy.mic_label = LevelHint(in_call.mic_level, false, in_call.muted);
   copy.incoming_label = LevelHint(in_call.peer_level, true, false);
-  if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+  if (const char* hint_key = media_hint_.KeyFor(view.asymmetry, in_call.video); hint_key && hint_key[0]) {
     copy.asymmetry_hint = Tr(hint_key);
   }
   if (view.link.available && view.link.rtt_ms >= 0) {

@@ -13,6 +13,7 @@
 #include "common/Module.h"
 #include "feature/calls/CallFunctionalPorts.h"
 #include "feature/presenters/CallConnectStory.h"
+#include "feature/presenters/CallMediaHintClock.h"
 #include "feature/presenters/CallPresenter.h"
 #include "feature/presenters/CallSystemUiBridge.h"
 #include "gui/CallChromeSync.h"
@@ -198,6 +199,7 @@ private:
   static constexpr std::chrono::milliseconds kDebugSubtitleInterval{1000};
   /** Lasting audio faults toast once per call (see CallAudioFaultToastGate). */
   CallAudioFaultToastGate audio_fault_gate_;
+  CallMediaHintClock media_hint_;
   /** Display rotation last pushed to the engine while the camera is on (-1: none). */
   int pushed_camera_rotation_ = -1;
   int64_t last_video_refresh_ms_ = 0;
