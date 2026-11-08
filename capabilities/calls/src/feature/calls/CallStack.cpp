@@ -239,6 +239,7 @@ void CallStack::PublishUiState() {
       state.remote_ended_call_id = ended->Id();
       state.remote_ended_declined = ended->EndReason() == LiveCallEndReason::DeclinedByPeer;
     }
+    state.calls_over = call_device_->CallsOver();
     state.recovery = call_device_->Recovery();
     state.direct_connect_failed = call_device_->IsDirectConnectFailed();
     state.direct_connect_missing_mic = call_device_->DirectConnectMissingMic();

@@ -98,6 +98,8 @@ public:
     std::function<void(const std::string& call_id, bool video)> on_outbound_started;
     std::function<void(const std::string& call_id, bool voice_only)> on_accept;
     std::function<void(const std::string& call_id)> on_decline;
+    /** P017: the calls layer learned `call_id` is over (each once): the phone's call screen lets a push's call go. */
+    std::function<void(const std::string& call_id)> on_call_over;
   };
   using StartDone = std::function<void(const CallStartResult&)>;
 
