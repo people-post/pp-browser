@@ -1,5 +1,6 @@
 #include "gui/shell/ShellCallChromeGesture.h"
 
+#include <ui/base/SystemInterface.h>
 #include <ui/base/Tween.h>
 #include <ui/dom/Context.h>
 #include <ui/dom/Element.h>
@@ -23,6 +24,11 @@ constexpr float kTapSlopDp = 10.f;
  * one a press caught (it ends where it starts, on the next frame). */
 constexpr float kSlideSeconds = 0.25f;
 constexpr float kCutSeconds = 0.01f;
+/** A slide whose end never came (the animation did not start, or no Animationend: a hidden chip) is ended by Reflow
+ * this long after the drop, so the chip is anchored and its rebuild no longer held. */
+constexpr double kSlideDeadlineSeconds = 0.4;
+/** How often Reflow re-reads a docked chip's box (it only moves for a size change: a new window, the chip's words). */
+constexpr double kReflowIntervalSeconds = 0.25;
 constexpr const char* kDefaultCornerClass = "shell-call-minimized-chip--tr";
 
 int EventMouseX(const ui::Event& event) {
@@ -31,6 +37,12 @@ int EventMouseX(const ui::Event& event) {
 
 int EventMouseY(const ui::Event& event) {
   return event.GetParameter<int>("mouse_y", 0);
+}
+
+/** The UI clock the element animations run on (a test's fake clock too). */
+double NowSeconds() {
+  ui::SystemInterface* system = ui::GetSystemInterface();
+  return system ? system->GetElapsedTime() : 0.0;
 }
 
 void SetDp(ui::Element* element, const char* property, const float dp) {
@@ -85,6 +97,7 @@ void ShellCallChromeGesture::Detach() {
   settling_ = false;
   target_.reset();
   docked_ = true;
+  next_reflow_s_ = 0.0;
 }
 
 void ShellCallChromeGesture::Abort() {
@@ -352,6 +365,7 @@ void ShellCallChromeGesture::DropChip() {
   root_->Animate("left", ui::Property(end.left_dp, ui::Unit::DP), kSlideSeconds, tween, 1, false, 0.f, &from_x);
   root_->Animate("top", ui::Property(end.top_dp, ui::Unit::DP), kSlideSeconds, tween, 1, false, 0.f, &from_y);
   settling_ = true;
+  slide_deadline_s_ = NowSeconds() + kSlideDeadlineSeconds;
   docked_ = false;
   target_ = place;
   // ⑤ comes when the slide ends (FinishSlide). ⑥ The place goes to the call state now, so a restore mid-slide
@@ -423,19 +437,44 @@ bool ShellCallChromeGesture::HoldsChip(const CallInProgressState& call) const {
   return target_ && (call.minimized_side != target_->side || call.minimized_y_permille != target_->y_permille);
 }
 
+ui::Element* CallChromeGestureElement(ui::ElementDocument* doc, const CallChromeMode mode) {
+  if (!doc) {
+    return nullptr;
+  }
+  if (mode == CallChromeMode::Minimized) {
+    if (ui::Element* chip = doc->GetElementById("shell-call-minimized-chip")) {
+      return chip;
+    }
+  }
+  return doc->GetElementById("shell-call-chrome-root");
+}
+
 bool KeepMinimizedChipOnRemount(const CallInProgressState& call, const ui::Element* chip,
                                 const ShellCallChromeGesture& gesture) {
   return call.active && call.mode == CallChromeMode::Minimized && gesture.AttachedTo(chip) && gesture.HoldsChip(call);
 }
 
 void ShellCallChromeGesture::Reflow(const CallInProgressState& call) {
-  if (!attached_ || !root_ || mode_ != CallChromeMode::Minimized || tracking_ || settling_) {
+  if (!attached_ || !root_ || mode_ != CallChromeMode::Minimized || tracking_) {
     return;
+  }
+  const double now = NowSeconds();
+  if (settling_) {
+    if (now < slide_deadline_s_) {
+      return;
+    }
+    FinishSlide(); // its Animationend never came
   }
   const CallChipPlace place = target_ ? *target_ : CallChipPlace{call.minimized_side, call.minimized_y_permille};
   if (place.side == CallChipDock::kSideDefault) {
     return;
   }
+  // A docked chip that showed in place is looked at again only every kReflowIntervalSeconds, or for a new place.
+  if (docked_ && place == reflowed_place_ && now < next_reflow_s_) {
+    return;
+  }
+  next_reflow_s_ = now + kReflowIntervalSeconds;
+  reflowed_place_ = place;
   CallChipRect chip;
   CallChipArea area;
   if (!MeasureChip(&chip, &area)) {

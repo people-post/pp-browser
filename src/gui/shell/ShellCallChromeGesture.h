@@ -125,6 +125,11 @@ private:
   bool settling_ = false;
   std::optional<CallChipPlace> target_;
   bool docked_ = true;
+  /** #166: when Reflow ends a slide whose Animationend never came; when it next re-reads a docked chip, and for which
+   * place it last did (UI clock, seconds). */
+  double slide_deadline_s_ = 0.0;
+  double next_reflow_s_ = 0.0;
+  CallChipPlace reflowed_place_;
 };
 
 /**
@@ -132,6 +137,13 @@ private:
  * `gesture`, attached to that chip, still owns its position (HoldsChip). ShellHost::RemountCallChromeNow then only
  * dirties the chip's (bound) text and rebuilds it when the slide has ended and `call` has the dropped place.
  */
+/**
+ * The element the call chrome gesture attaches to (ShellHost::AttachCallChromeGesture): minimised, the chip itself —
+ * never its full-screen layer, which takes no touches and is what the chip is placed in (#166: the chip's measurement,
+ * its drop, its slide and the remount hold all act on this element); otherwise the call chrome root.
+ */
+ui::Element* CallChromeGestureElement(ui::ElementDocument* doc, CallChromeMode mode);
+
 bool KeepMinimizedChipOnRemount(const CallInProgressState& call, const ui::Element* chip,
                                 const ShellCallChromeGesture& gesture);
 
