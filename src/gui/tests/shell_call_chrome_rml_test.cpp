@@ -323,8 +323,8 @@ TEST(ShellCallChromeRmlTest, TheMinimisedChipKeepsItsCornerUntilDraggedThenSitsW
     EXPECT_FALSE(Has(corner, "style=")) << "no inline place before a drag";
 
     // The layer and the chip as last laid out (ShellHost::MeasureCallChip): the band is [12, 780 - 72 - 56 = 652].
-    state.call_chip_area_height_dp = 780.f;
-    state.call_chip_height_dp = 56.f;
+    state.call_chip_layout.area_height_dp = 780.f;
+    state.call_chip_layout.chip_height_dp = 56.f;
     state.call_in_progress.minimized_side = CallChipDock::kSideRight;
     state.call_in_progress.minimized_y_permille = 500;
     const std::string right = CallInProgressRml(state);
@@ -338,9 +338,43 @@ TEST(ShellCallChromeRmlTest, TheMinimisedChipKeepsItsCornerUntilDraggedThenSitsW
     EXPECT_FALSE(Has(left, "shell-call-minimized-chip--"));
 
     // The chip grew since (the quality words): re-clamped, its bottom still 72dp above the layer's.
-    state.call_chip_height_dp = 80.f;
+    state.call_chip_layout.chip_height_dp = 80.f;
     EXPECT_TRUE(Has(CallInProgressRml(state), "top:628.0dp;"));
   }
+}
+
+// #166 (iPhone, 2026-11-08): a dropped chip showed at the top of its side and then moved down to where it was dropped
+// (a rebuild placed it with no height measured: the band's top). The markup now reuses where the gesture put it, and
+// never falls back to the band's top.
+TEST(ShellCallChromeRmlTest, ARebuiltChipKeepsTheTopTheGesturePutItAtAndNeverFallsBackToTheBandsTop) {
+  ShellState state;
+  state.call_in_progress.active = true;
+  state.call_in_progress.mode = CallChromeMode::Minimized;
+  state.call_in_progress.minimized_side = CallChipDock::kSideRight;
+  state.call_in_progress.minimized_y_permille = 545;
+
+  // Nothing measured at all: no top (never "top:12.0dp", the band's top), the side anchor still there.
+  const std::string unknown = CallInProgressRml(state);
+  EXPECT_TRUE(Has(unknown, "style=\"right:12dp;left:auto;bottom:auto;\"")) << unknown;
+  EXPECT_FALSE(Has(unknown, "top:"));
+
+  // The gesture's top for this place, with no heights in the state: exactly that top.
+  state.call_chip_layout.place = {CallChipDock::kSideRight, 545};
+  state.call_chip_layout.top_dp = 372.2f;
+  EXPECT_TRUE(Has(CallInProgressRml(state), "style=\"right:12dp;left:auto;top:372.2dp;bottom:auto;\""));
+
+  // With the heights it was worked out with: the same top (inside the band).
+  state.call_chip_layout.area_height_dp = 800.f;
+  state.call_chip_layout.chip_height_dp = 56.f;
+  EXPECT_TRUE(Has(CallInProgressRml(state), "top:372.2dp;"));
+  // The window got shorter since: kept in the band.
+  state.call_chip_layout.area_height_dp = 400.f;
+  EXPECT_TRUE(Has(CallInProgressRml(state), "top:272.0dp;")); // 400 - 72 - 56
+
+  // A top for another place (an older drop): the share of the band instead, with the heights known.
+  state.call_chip_layout.area_height_dp = 800.f;
+  state.call_in_progress.minimized_y_permille = 1000;
+  EXPECT_TRUE(Has(CallInProgressRml(state), "top:672.0dp;")); // 800 - 72 - 56
 }
 
 // The group video page has the flip button too, lit the same way, next to the camera; none while the camera is off.

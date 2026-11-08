@@ -3,6 +3,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/ui/CallChipDock.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <sstream>
 
@@ -764,19 +765,31 @@ std::string CallInProgressRml(const ShellState& state) {
       out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row "
              "shell-call-minimized-chip--tr\">";
     } else {
-      // #166: dropped on a side, its height a share of the band, clamped for the layer and the chip as last laid out
-      // (CallChipDock::Place, the same point ShellCallChromeGesture slid it to). Anchored on its own side, so a chip
-      // that grows (the quality words, the mute icon) grows away from the edge, never past it.
-      const CallChipArea area{state.shell_width_dp, state.call_chip_area_height_dp};
-      const CallChipPoint at =
-          CallChipDock::Place({call.minimized_side, call.minimized_y_permille}, area, 0.f, state.call_chip_height_dp);
-      char style[96];
+      // #166: dropped on a side. Anchored on its own side, so a chip that grows (the quality words, the mute icon)
+      // grows away from the edge, never past it. Its top: where ShellCallChromeGesture last put it for this place
+      // (kept in the band), else its height's share of the band (CallChipDock::Place) with the heights last measured;
+      // with no height known at all, no top (never the band's top: the chip would show there first, B-#166 device).
+      const CallChipLayout& layout = state.call_chip_layout;
+      const CallChipPlace place{call.minimized_side, call.minimized_y_permille};
+      const CallChipArea area{state.shell_width_dp, layout.area_height_dp};
+      const bool heights_known = layout.area_height_dp > 0.f && layout.chip_height_dp > 0.f;
+      float top_dp = -1.f;
+      if (layout.top_dp > 0.f && layout.place == place) {
+        top_dp = heights_known ? std::clamp(layout.top_dp, CallChipDock::MinTop(),
+                                            CallChipDock::MaxTop(area, layout.chip_height_dp))
+                               : layout.top_dp;
+      } else if (heights_known) {
+        top_dp = CallChipDock::Place(place, area, 0.f, layout.chip_height_dp).top_dp;
+      }
+      char top[32] = "";
+      if (top_dp >= 0.f) {
+        std::snprintf(top, sizeof(top), "top:%.1fdp;", top_dp);
+      }
+      char style[112];
       if (call.minimized_side == CallChipDock::kSideLeft) {
-        std::snprintf(style, sizeof(style), "left:%.0fdp;right:auto;top:%.1fdp;bottom:auto;", CallChipDock::kEdgeDp,
-                      at.top_dp);
+        std::snprintf(style, sizeof(style), "left:%.0fdp;right:auto;%sbottom:auto;", CallChipDock::kEdgeDp, top);
       } else {
-        std::snprintf(style, sizeof(style), "right:%.0fdp;left:auto;top:%.1fdp;bottom:auto;", CallChipDock::kEdgeDp,
-                      at.top_dp);
+        std::snprintf(style, sizeof(style), "right:%.0fdp;left:auto;%sbottom:auto;", CallChipDock::kEdgeDp, top);
       }
       out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row\" style=\"" << style << "\">";
     }

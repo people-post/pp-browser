@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lib/ui/CallChipDock.h"
+
 #include <ui/base/Types.h>
 
 #include <functional>
@@ -622,11 +624,11 @@ struct ShellState {
 
   float shell_width_dp = 1280.f;
   /**
-   * #166: the minimised call chip's layer (the call mount) height and the chip's own height in dp, as last laid out
-   * (ShellHost). The chip's markup places a dragged chip with them (CallChipDock::Place); 0: not laid out yet.
+   * #166: the dropped call chip's last top, the place it was for, and the layer / chip heights in dp (ShellHost, from
+   * ShellCallChromeGesture and the laid-out elements; each kept until a newer one is known). The chip's markup puts a
+   * rebuilt chip there (ShellCallChromeRml); 0: not known yet.
    */
-  float call_chip_area_height_dp = 0.f;
-  float call_chip_height_dp = 0.f;
+  CallChipLayout call_chip_layout;
   /** Top safe-area inset in dp (SDL and/or machine prefs); clears status bar / notch. */
   int safe_area_top_dp = 0;
   /** Bottom safe-area inset in dp (SDL and/or machine prefs). */

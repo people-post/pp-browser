@@ -39,6 +39,18 @@ struct CallChipPoint {
   float top_dp = 0.f;
 };
 
+/**
+ * Where a dropped chip was last put on screen (ShellCallChromeGesture: at the drop, at the end of its slide, at each
+ * correction) and the heights that was worked out with — kept so the chip's markup puts a rebuilt chip exactly there
+ * (ShellCallChromeRml). 0: not known yet.
+ */
+struct CallChipLayout {
+  CallChipPlace place;
+  float top_dp = 0.f;
+  float area_height_dp = 0.f;
+  float chip_height_dp = 0.f;
+};
+
 class CallChipDock {
 public:
   static constexpr int kSideDefault = 0;

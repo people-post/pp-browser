@@ -14,6 +14,7 @@
 #include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
+#include <cstdio>
 #include <optional>
 #include <string>
 #include <utility>
@@ -586,8 +587,7 @@ TEST_F(ShellCallChipMountedTest, TheGestureMovesTheChipNotItsLayer) {
   state_.call_in_progress.minimized_y_permille = placed_->y_permille;
   call_ = state_.call_in_progress;
   EXPECT_FALSE(KeepMinimizedChipOnRemount(call_, chip_, gesture_));
-  state_.call_chip_area_height_dp = 800.f;
-  state_.call_chip_height_dp = chip_->GetBox().GetSize(ui::BoxArea::Border).y;
+  RememberCallChipLayout(gesture_, state_.call_chip_layout);
   gesture_.Detach();
   document_->GetElementById("shell-call-in-progress-mount")->SetInnerRML(CallInProgressRml(state_));
   context_->Update();
@@ -600,6 +600,74 @@ TEST_F(ShellCallChipMountedTest, TheGestureMovesTheChipNotItsLayer) {
   EXPECT_TRUE(layer_->GetLocalStyleProperties().empty()) << "the rendered place is the chip's, not the layer's";
   EXPECT_FLOAT_EQ(At().x, 208.f);
   EXPECT_NEAR(At().y, docked_top, 0.1f);
+}
+
+// #166 (iPhone, 2026-11-08): dragged down and let go, the chip showed at the top of its side and then moved down to the
+// drop. As on the device: the chip is rebuilt from the state while the ShellState has no heights measured (0) — mid
+// slide (a full layout rebuild is never held) and after it. It must come back at the drop's target, never at 12dp.
+TEST_F(ShellCallChipMountedTest, ARebuildAfterTheDropLandsOnItsTargetNotTheTopCorner) {
+  Attach();
+  Drag(300, 40, 350, 400); // down the right side
+  ASSERT_TRUE(placed_.has_value());
+  const float target = CallChipDock::Place(*placed_, {400.f, 800.f}, 180.f, 56.f).top_dp;
+  Frame(0.0);
+  Frame(0.1);
+  state_.call_in_progress.minimized_side = placed_->side;
+  state_.call_in_progress.minimized_y_permille = placed_->y_permille;
+  ASSERT_EQ(state_.call_chip_layout.area_height_dp, 0.f);
+  ASSERT_EQ(state_.call_chip_layout.chip_height_dp, 0.f);
+
+  // RemountCallChromeNow: remember the layout (ShellHost::MeasureCallChip), detach, mount from the state.
+  RememberCallChipLayout(gesture_, state_.call_chip_layout);
+  const std::string rml = CallInProgressRml(state_);
+  char expected[32];
+  std::snprintf(expected, sizeof(expected), "top:%.1fdp;", target);
+  EXPECT_NE(rml.find(expected), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("top:12.0dp"), std::string::npos);
+  gesture_.Detach();
+  document_->GetElementById("shell-call-in-progress-mount")->SetInnerRML(rml);
+  context_->Update();
+  chip_ = document_->GetElementById("shell-call-minimized-chip");
+  ASSERT_NE(chip_, nullptr);
+  // Its first frame: already at the target, on its side.
+  EXPECT_FLOAT_EQ(At().x, 208.f);
+  EXPECT_NEAR(At().y, target, 0.1f);
+
+  // Attached again, its first Reflow finds nothing to correct, and the next rebuild (from the state alone, the new
+  // gesture has no layout of its own yet) lands there too.
+  Attach();
+  gesture_.Reflow(state_.call_in_progress);
+  Frame(0.0);
+  EXPECT_NEAR(At().y, target, 0.1f);
+  gesture_.Detach();
+  ShellState fresh = state_;
+  RememberCallChipLayout(gesture_, fresh.call_chip_layout); // nothing: keeps what the state had
+  EXPECT_NE(CallInProgressRml(fresh).find(expected), std::string::npos);
+}
+
+// Reflow's first correction after a rebuild (here: rendered with no height known, so with no top) puts the chip in
+// place at once: no slide from where the rebuild left it.
+TEST_F(ShellCallChipMountedTest, ReflowsFirstCorrectionAfterARebuildIsNotAnimated) {
+  state_.call_in_progress.minimized_side = CallChipDock::kSideRight;
+  state_.call_in_progress.minimized_y_permille = 545;
+  call_ = state_.call_in_progress;
+  document_->GetElementById("shell-call-in-progress-mount")->SetInnerRML(CallInProgressRml(state_));
+  chip_ = document_->GetElementById("shell-call-minimized-chip");
+  ASSERT_NE(chip_, nullptr);
+  Attach();
+  // Just mounted, not laid out: nothing to measure; the very next frame tries again (not 250ms later).
+  gesture_.Reflow(call_);
+  context_->Update();
+  gesture_.Reflow(call_);
+  const float target = CallChipDock::Place({CallChipDock::kSideRight, 545}, {400.f, 800.f}, 180.f, 56.f).top_dp;
+  // Set, not slid: the value is there before any frame runs an animation (rendered with no top, a slide would leave
+  // none until a frame), and the first frame shows it.
+  ASSERT_FALSE(Local("top").empty());
+  EXPECT_NEAR(std::stof(Local("top")), target, 0.1f);
+  Frame(0.0);
+  EXPECT_NEAR(At().y, target, 0.1f);
+  EXPECT_FALSE(gesture_.IsSettling());
+  EXPECT_EQ(settled_, 0);
 }
 
 } // namespace
