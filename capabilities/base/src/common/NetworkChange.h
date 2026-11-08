@@ -25,6 +25,11 @@ struct NetworkState {
   /** Metered or expensive (cellular, hotspot, Windows variable cost). */
   bool expensive = false;
   /**
+   * Online only through a tunnel (VPN) with no Wi-Fi, cellular or wired interface under it — airplane mode with a
+   * VPN left on: the OS still calls the path satisfied, but nothing gets through. Darwin only so far.
+   */
+  bool tunnel_only = false;
+  /**
    * The backend's identity of the attachment: default-route interfaces and their addresses (plus the
    * OS network handle where there is one). A different value means our addresses or route changed.
    */

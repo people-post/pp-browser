@@ -41,13 +41,18 @@ NetworkState Snapshot(nw_path_t path) {
   if (!state.online) {
     return state;
   }
-  if (nw_path_uses_interface_type(path, nw_interface_type_wifi)) {
+  const bool wifi = nw_path_uses_interface_type(path, nw_interface_type_wifi);
+  const bool cellular = nw_path_uses_interface_type(path, nw_interface_type_cellular);
+  const bool wired = nw_path_uses_interface_type(path, nw_interface_type_wired);
+  if (wifi) {
     state.transport = NetworkTransport::Wifi;
-  } else if (nw_path_uses_interface_type(path, nw_interface_type_cellular)) {
+  } else if (cellular) {
     state.transport = NetworkTransport::Cellular;
   } else {
     state.transport = NetworkTransport::Other;
   }
+  // iPhone 2026-11-08: airplane mode with Clash on kept the path satisfied over utun alone, so "online" never dropped.
+  state.tunnel_only = !wifi && !cellular && !wired;
   state.expensive = nw_path_is_expensive(path);
   if (@available(macOS 10.15, iOS 13.0, *)) {
     state.expensive = state.expensive || nw_path_is_constrained(path);  // Low Data Mode
