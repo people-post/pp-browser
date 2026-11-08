@@ -3990,8 +3990,14 @@ void ChatController::WireMessagingBindings() {
     std::error_code ec;
     std::filesystem::remove_all(AttachmentViewRoot(profile_dir, kAiImageViewThread), ec);
   }
-  agent_.EnsureBriefGuestLlmKey();
-  agent_.RefreshLlmSetupBanner();
+  {
+    StartupPhase phase("ChatController::WireMessagingBindings/EnsureBriefGuestLlmKey");
+    agent_.EnsureBriefGuestLlmKey();
+  }
+  {
+    StartupPhase phase("ChatController::WireMessagingBindings/RefreshLlmSetupBanner");
+    agent_.RefreshLlmSetupBanner();
+  }
   if (IThreadStore* store = facade_ ? facade_->ThreadStore() : nullptr) {
     if (agent_.Ports().set_thread_store) {
       agent_.Ports().set_thread_store(store);
@@ -4083,6 +4089,7 @@ void ChatController::WireMessagingBindings() {
     });
   });
   if (facade_) {
+    StartupPhase phase("ChatController::WireMessagingBindings/SyncPushDevices");
     (void)facade_->SyncPushDevices();
   }
   facade_->SetOnThreadChanged([this]() {
@@ -4107,12 +4114,16 @@ void ChatController::WireMessagingBindings() {
     NotifySurfaceChanged();
   });
   RefreshFromMessaging();
-  facade_->TailSyncActiveE2eThread();
+  {
+    StartupPhase phase("ChatController::WireMessagingBindings/TailSyncActiveE2eThread");
+    facade_->TailSyncActiveE2eThread();
+  }
 
   const bool auto_renew = Store().Snapshot().profile_prefs.auto_renew_registration;
-  auto renew = facade_
-      ? facade_->MaybeAutoRenewRegistration(auto_renew)
-      : Roe<bool>(false);
+  auto renew = [&]() -> Roe<bool> {
+    StartupPhase phase("ChatController::WireMessagingBindings/MaybeAutoRenewRegistration");
+    return facade_ ? facade_->MaybeAutoRenewRegistration(auto_renew) : Roe<bool>(false);
+  }();
   if (!renew) {
     log().warning << "Auto-renew registration failed: " << renew.error().message;
   } else if (*renew) {
@@ -4124,8 +4135,14 @@ void ChatController::WireMessagingBindings() {
     }
   }
   // Always reload so Brief key from identity is applied after unlock (not only on renew).
-  agent_.ReloadAgentConfig();
-  agent_.RefreshLlmSetupBanner();
+  {
+    StartupPhase phase("ChatController::WireMessagingBindings/ReloadAgentConfig");
+    agent_.ReloadAgentConfig();
+  }
+  {
+    StartupPhase phase("ChatController::WireMessagingBindings/RefreshLlmSetupBanner");
+    agent_.RefreshLlmSetupBanner();
+  }
 }
 
 void ChatController::BindSharedEvents(ui::DataModelConstructor& ctor) {
@@ -4496,6 +4513,7 @@ void ChatController::OnMessagingReady() {
   UpdateThreadChrome();
   DirtyChatChrome();
   if (ChromeSnapshot().nav_tab == NavTab::Home) {
+    StartupPhase phase("ChatController::OnMessagingReady/OnHomeTabActivated");
     OnHomeTabActivated();
   }
 }

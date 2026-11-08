@@ -2179,8 +2179,14 @@ void Application::WireHubCallbacks() {
         log().warning << "Retired Keychain backup not removed: " << removed.error().message;
       }
     });
-    chat_->OnMessagingReady();
-    call_->OnMessagingReady();
+    {
+      StartupPhase phase("ChatController::OnMessagingReady");
+      chat_->OnMessagingReady();
+    }
+    {
+      StartupPhase phase("CallController::OnMessagingReady");
+      call_->OnMessagingReady();
+    }
     contacts_->Refresh();
     if (messaging_facade_ && support_discovery_ && support_discovery_->enabled) {
       messaging_facade_->SetSupportAccountId(support_discovery_->account_id);

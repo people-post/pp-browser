@@ -3,6 +3,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
+#include "common/Diag.h"
 #include "foundation/error/AppError.h"
 
 #include <chrono>
@@ -10,6 +11,7 @@
 #include <filesystem>
 #include <functional>
 #include <gtest/gtest.h>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -92,6 +94,12 @@ TEST_F(ProfileUnlockGateTest, CancelWithoutVaultReturnsToIdentityFork) {
 // then unlocked; no first-run wizard (as after a link). A phrase that finds no account leaves the vault absent.
 TEST_F(ProfileUnlockGateTest, APhraseRestoreUnlocksUnderThePinChosenHere) {
   ASSERT_FALSE(engine_.HasVault());
+  struct DiagCapture : logging::Handler {
+    void emit(logging::Level, const std::string&, const std::string& message) override { lines.push_back(message); }
+    std::vector<std::string> lines;
+  };
+  auto diag = std::make_shared<DiagCapture>();
+  DiagLog().addHandler(diag);
   std::vector<std::pair<std::string, std::string>> restores;  // pin, phrase
   int imported_notices = 0;
   int errors = 0;
@@ -127,6 +135,13 @@ TEST_F(ProfileUnlockGateTest, APhraseRestoreUnlocksUnderThePinChosenHere) {
   EXPECT_EQ(imported_notices, 1) << "no first-run wizard for an account that came back";
   ASSERT_TRUE(pin_is_default.has_value());
   EXPECT_FALSE(*pin_is_default);
+  bool saw_done_with_ms = false;
+  for (const auto& line : diag->lines) {
+    if (line.find("event=unlock.done") != std::string::npos && line.find(" ms=") != std::string::npos) {
+      saw_done_with_ms = true;
+    }
+  }
+  EXPECT_TRUE(saw_done_with_ms) << "unlock.done carries the time since unlock.start";
 }
 
 
