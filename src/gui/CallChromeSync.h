@@ -110,6 +110,10 @@ struct CallChromeLayer {
   std::string in_call_notice_text;
   bool in_call_notice_warn = false;
   bool in_call_notice_fading = false;
+  std::string in_call_reconnect_text;
+  bool in_call_reconnect_ok = false;
+  bool in_call_reconnect_fading = false;
+  bool in_call_reconnect_dim = false;
 };
 
 enum class CallChromeUpdate {

@@ -140,17 +140,12 @@ TEST(CallConnectStoryTest, AGroupCallHasNoResultLineAndGoesStraightToTheBar) {
   EXPECT_TRUE(v.signal_shown);
 }
 
-TEST(CallConnectStoryTest, AReconnectRaisesItsPillOnceAndThePillGoesAfterThreeSeconds) {
+TEST(CallConnectStoryTest, AReconnectRaisesNoTopPillTheCapsuleAboveTheButtonsOwnsIt) {
   CallConnectStory story;
   story.Step(At(0, Status::Connected, true, "direct"));
-  CallStoryView v = story.Step(At(10'000, Status::Reconnecting, false, "direct", CallPathQuality::Reconnecting, 0));
-  EXPECT_EQ(v.notice, CallStoryNotice::Reconnecting);
-  v = story.Step(At(11'000, Status::Reconnecting, false, "direct", CallPathQuality::Reconnecting, 0));
-  EXPECT_EQ(v.notice, CallStoryNotice::Reconnecting);
-  v = story.Step(At(13'000, Status::Reconnecting, false, "direct", CallPathQuality::Reconnecting, 0));
-  EXPECT_TRUE(v.notice_fading);
-  v = story.Step(At(13'300, Status::Reconnecting, false, "direct", CallPathQuality::Reconnecting, 0));
-  EXPECT_EQ(v.notice, CallStoryNotice::None) << "not raised again while it stays reconnecting";
+  const CallStoryView v =
+      story.Step(At(10'000, Status::Reconnecting, false, "direct", CallPathQuality::Reconnecting, 0));
+  EXPECT_EQ(v.notice, CallStoryNotice::None);
 }
 
 TEST(CallConnectStoryTest, ARelayedCallThatMovesCloserSaysSoAndLogsItInTheTimeline) {
@@ -231,13 +226,16 @@ TEST(CallConnectStoryTest, EveryWordExistsInEnglishAndChineseAndNoneIsATechWord)
     keys.emplace_back(CallRouteHowKey(route));
     keys.emplace_back(CallRouteEventKey(route));
   }
-  for (const CallStoryNotice notice : {CallStoryNotice::Slow, CallStoryNotice::Reconnecting, CallStoryNotice::Closer}) {
+  for (const CallStoryNotice notice : {CallStoryNotice::Slow, CallStoryNotice::Closer}) {
     keys.emplace_back(CallStoryNoticeKey(notice));
   }
   for (const char* tip : kCallStoryTipKeys) {
     keys.emplace_back(tip);
   }
-  for (const char* key : {"call.story.result", "call.story.step.calling", "call.story.step.peer_answered",
+  for (const char* key : {"call.reconnect.restored", "call.reconnect.offline", "call.status.reconnecting",
+                          "call.quality.hint.connecting_voice", "call.quality.hint.connecting_video",
+                          "call.quality.hint.retrying_voice", "call.quality.hint.retrying_video",
+                          "call.story.result", "call.story.step.calling", "call.story.step.peer_answered",
                           "call.story.step.you_answered", "call.story.step.securing", "call.story.step.connected",
                           "call.story.step.group_joined", "call.story.step.group_calling", "call.story.step.group_line",
                           "call.story.step.group_heard", "call.story.sheet.title", "call.story.sheet.lead",

@@ -531,7 +531,7 @@ std::string CallPhoneRml(const ShellState& state) {
   if (group) {
     out << "<div class=\"call-phone-head\">";
     out << "<p class=\"call-phone-group-name\">{{call_in_progress_phone_title}}</p>";
-    out << "<div class=\"call-phone-sub-row\"><p class=\"call-phone-sub\">{{call_in_progress_subtitle}}</p>";
+    out << "<div class=\"call-phone-sub-row\"><p class=\"call-phone-sub\" data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">{{call_in_progress_subtitle}}</p>";
     AppendSignalSlot(out, "call-phone-signal--compact");
     out << "</div>";
     AppendHints(out);
@@ -569,7 +569,7 @@ std::string CallPhoneRml(const ShellState& state) {
     out << "<div class=\"call-phone-video-body\"><div class=\"call-phone-who\">";
     out << "<p class=\"call-phone-who-name\">{{call_in_progress_phone_title}}</p>";
     AppendHoldPill(out, "call_in_progress_on_hold", " call-hold-pill--who");
-    out << "<p class=\"call-phone-who-status\">{{call_in_progress_subtitle}}</p>";
+    out << "<p class=\"call-phone-who-status\" data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">{{call_in_progress_subtitle}}</p>";
     AppendResult(out);
     AppendSignalSlot(out, "call-phone-signal--compact");
     AppendHints(out);
@@ -595,7 +595,8 @@ std::string CallPhoneRml(const ShellState& state) {
                  call.peer_avatar_letter.c_str(), call.peer_avatar_tone);
     out << "<p class=\"call-phone-name\">{{call_in_progress_phone_title}}</p>";
     AppendHoldPill(out, "call_in_progress_on_hold", " call-hold-pill--hero");
-    out << "<p class=\"call-phone-status\">{{call_in_progress_subtitle}}</p>";
+    out << "<p class=\"call-phone-status\" data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">"
+           "{{call_in_progress_subtitle}}</p>";
     AppendResult(out);
     AppendSignalSlot(out, "");
     AppendHints(out);
@@ -606,6 +607,14 @@ std::string CallPhoneRml(const ShellState& state) {
     AppendTips(out);
   }
 
+  // The reconnect capsule (#171) sits at a fixed place just above the button bar; the call page stays as it is.
+  out << "<div class=\"call-phone-reconnect-slot\"><div class=\"call-phone-reconnect\" "
+         "data-if=\"call_in_progress_reconnect_text != ''\" "
+         "data-class-call-phone-reconnect--ok=\"call_in_progress_reconnect_ok\" "
+         "data-class-call-phone-reconnect--fading=\"call_in_progress_reconnect_fading\">"
+         "<span class=\"call-phone-reconnect-icon\"><svg data-attr-src=\"call_in_progress_reconnect_ok ? "
+         "'../icons/v2/check.svg' : '../icons/v2/info.svg'\" width=\"14\" height=\"14\"></svg></span>"
+         "<p class=\"call-phone-reconnect-text\">{{call_in_progress_reconnect_text}}</p></div></div>";
   AppendGroupOffer(out, call, true);
   AppendGuestActions(out, call, true);
   AppendControls(out, call, video_layout);

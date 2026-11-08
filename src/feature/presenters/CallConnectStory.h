@@ -30,7 +30,7 @@ CallRoute CallRouteFromPathKind(const std::string& path_kind);
 enum class CallSignalTone { Good, Fair, Poor };
 
 /** The top pill (DESIGN-pp-ui 8.11) the story raises on a real change. */
-enum class CallStoryNotice { None, Slow, Reconnecting, Closer };
+enum class CallStoryNotice { None, Slow, Closer };
 
 struct CallStoryInput {
   std::string call_id;

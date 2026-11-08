@@ -242,6 +242,10 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_notice_text", &host.state_.call_in_progress.notice_text);
     ctor.Bind("call_in_progress_notice_warn", &host.state_.call_in_progress.notice_warn);
     ctor.Bind("call_in_progress_notice_fading", &host.state_.call_in_progress.notice_fading);
+    ctor.Bind("call_in_progress_reconnect_text", &host.state_.call_in_progress.reconnect_text);
+    ctor.Bind("call_in_progress_reconnect_ok", &host.state_.call_in_progress.reconnect_ok);
+    ctor.Bind("call_in_progress_reconnect_fading", &host.state_.call_in_progress.reconnect_fading);
+    ctor.Bind("call_in_progress_reconnect_dim", &host.state_.call_in_progress.reconnect_dim);
     if (auto roster_handle = ctor.RegisterStruct<CallRosterParticipantState>()) {
       roster_handle.RegisterMember("name", &CallRosterParticipantState::name);
       roster_handle.RegisterMember("stream_id", &CallRosterParticipantState::stream_id);
@@ -1406,7 +1410,9 @@ void ShellHost::DirtyCallChrome() {
                            "call_in_progress_signal_shown", "call_in_progress_signal_bars",
                            "call_in_progress_signal_tone", "call_in_progress_signal_word",
                            "call_in_progress_notice_text", "call_in_progress_notice_warn",
-                           "call_in_progress_notice_fading"}) {
+                           "call_in_progress_notice_fading", "call_in_progress_reconnect_text",
+                           "call_in_progress_reconnect_ok", "call_in_progress_reconnect_fading",
+                           "call_in_progress_reconnect_dim"}) {
     DataModelHost::Instance().Dirty("window", name);
   }
 }

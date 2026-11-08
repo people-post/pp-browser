@@ -499,6 +499,12 @@ struct CallInProgressState {
   ui::String notice_text;
   bool notice_warn = false;
   bool notice_fading = false;
+  /** The reconnect capsule above the button bar (#171; empty text: hidden). Bound. */
+  ui::String reconnect_text;
+  bool reconnect_ok = false;
+  bool reconnect_fading = false;
+  /** The call timer greys while the line is down. */
+  bool reconnect_dim = false;
   /** The "how this call got through" sheet (a tap on the signal bar). */
   bool story_sheet_open = false;
   std::vector<CallStoryLine> story_lines;

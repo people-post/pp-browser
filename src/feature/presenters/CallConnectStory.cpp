@@ -135,9 +135,6 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
 
   if (connected_) {
     const bool reconnecting = in.status == Status::Reconnecting;
-    if (reconnecting && last_status_ != Status::Reconnecting) {
-      Raise(CallStoryNotice::Reconnecting, now);
-    }
     if (in.media_connected && !reconnecting) {
       const CallRoute route = CallRouteFromPathKind(in.path_kind);
       if (view_.route == CallRoute::Relayed && (route == CallRoute::Direct || route == CallRoute::AroundLimits)) {
@@ -246,8 +243,6 @@ const char* CallStoryNoticeKey(const CallStoryNotice notice) {
   switch (notice) {
   case CallStoryNotice::Slow:
     return "call.story.notice.slow";
-  case CallStoryNotice::Reconnecting:
-    return "call.story.notice.reconnecting";
   case CallStoryNotice::Closer:
     return "call.story.notice.closer";
   case CallStoryNotice::None:

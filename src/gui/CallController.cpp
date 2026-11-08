@@ -344,6 +344,10 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_notice_text = in_call.notice_text.c_str(),
       .in_call_notice_warn = in_call.notice_warn,
       .in_call_notice_fading = in_call.notice_fading,
+      .in_call_reconnect_text = in_call.reconnect_text.c_str(),
+      .in_call_reconnect_ok = in_call.reconnect_ok,
+      .in_call_reconnect_fading = in_call.reconnect_fading,
+      .in_call_reconnect_dim = in_call.reconnect_dim,
   };
 }
 
@@ -404,11 +408,6 @@ CallVideoTileRenderer::Frame DemoCameraFrame(const uint64_t seq, const uint8_t t
   return frame;
 }
 
-/** "0:43 · 重新连接中…" — the call timer keeps running while the path is being found again. */
-std::string ReconnectingSubtitle(const std::string& elapsed) {
-  const std::string reconnecting = Tr("call.status.reconnecting");
-  return elapsed.empty() ? reconnecting : elapsed + " · " + reconnecting;
-}
 
 std::string ComposeP2pStatusHint(bool missing_mic, bool seed_unreachable) {
   std::string hint;
@@ -616,6 +615,8 @@ void CallController::ClearInCall() {
   video_start_since_ms_ = 0;
   camera_sync_off_done_ = false;
   story_.Reset();
+  reconnect_ = CallReconnectCapsule{};
+  reconnecting_now_ = false;
   story_sheet_open_ = false;
   in_call_ = {};
   CallVideoTileRenderer::Instance().Clear();
@@ -1270,7 +1271,7 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
     break;
   case Status::Reconnecting:
     // k4: the call lost its path and waits for a new one; the call timer keeps running.
-    in_call.subtitle = ReconnectingSubtitle(in_call.elapsed.c_str()).c_str();
+    in_call.subtitle = in_call.elapsed;  // greyed; the capsule says "Reconnecting…"
     break;
   case Status::WaitingForOthers: {
     // V053: everyone else left; counts down to leaving by itself.
@@ -1628,6 +1629,7 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
       (path_lost || (!on_hold && (stalling || missing_after_video ||
                                   (backend && backend->Available() &&
                                    CallMediaDropped(*backend, media, presenter_.ActiveCallId())))));
+  reconnecting_now_ = media_reconnect;
 
   // Live or soft-stall: keep painting the last frame. Hard stall / camera-off clears HasRemoteVideo.
   in_call.remote_video = media.HasRemoteVideo() && expect_remote_video;
@@ -1739,8 +1741,6 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
         Tr(peer_video_paused_ ? "call.placeholder.camera_paused" : "call.placeholder.camera_off").c_str();
   } else if (mesh_messaging_failed) {
     in_call.remote_placeholder = Tr("call.status.couldnt_connect").c_str();
-  } else if (media_reconnect) {
-    in_call.remote_placeholder = Tr("call.status.reconnecting").c_str();
   } else {
     in_call.remote_placeholder = "";
   }
@@ -1761,9 +1761,9 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
              (media_reconnect && backend && CallMediaDropped(*backend, media, presenter_.ActiveCallId()))) {
     // The call lost its path, or its media stopped being live while it runs.
     in_call.elapsed = FormatElapsed(call_live_since_ms);
-    in_call.subtitle = ReconnectingSubtitle(in_call.elapsed.c_str()).c_str();
+    in_call.subtitle = in_call.elapsed;  // greyed; the capsule says "Reconnecting…"
   } else if (stalling) {
-    in_call.subtitle = Tr("call.status.reconnecting").c_str();
+    in_call.subtitle = in_call.elapsed;
   } else if (backend && backend->Available() && backend->MediaChromeLive()) {
     // Provisional Connected — ApplyMediaHealth may override for NoAudio / TX-only / Degraded.
     in_call.elapsed = FormatElapsed(call_live_since_ms);
@@ -2294,7 +2294,14 @@ void CallController::ApplyConnectStory(const CallScreen& screen, const std::stri
   in_call.signal_word = word[0] ? Tr(word).c_str() : "";
   const char* notice = CallStoryNoticeKey(v.notice);
   in_call.notice_text = notice[0] ? Tr(notice).c_str() : "";
-  in_call.notice_warn = v.notice == CallStoryNotice::Slow || v.notice == CallStoryNotice::Reconnecting;
+  in_call.notice_warn = v.notice == CallStoryNotice::Slow;
+  const CallReconnectView& rc =
+      reconnect_.Step(in.call_id, in.status == CallScreen::Status::Reconnecting || reconnecting_now_, now_ms);
+  const char* rc_key = CallReconnectKey(rc.kind);
+  in_call.reconnect_text = rc_key[0] ? Tr(rc_key).c_str() : "";
+  in_call.reconnect_ok = rc.kind == CallReconnectKind::Restored;
+  in_call.reconnect_fading = rc.fading;
+  in_call.reconnect_dim = rc.timer_dim;
   in_call.notice_fading = v.notice_fading;
   if (story_sheet_open_) {
     FillStoryLines();

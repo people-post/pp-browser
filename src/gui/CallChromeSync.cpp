@@ -149,6 +149,10 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                              synced.in_call_notice_text != next.in_call_notice_text ||
                              synced.in_call_notice_warn != next.in_call_notice_warn ||
                              synced.in_call_notice_fading != next.in_call_notice_fading ||
+                             synced.in_call_reconnect_text != next.in_call_reconnect_text ||
+                             synced.in_call_reconnect_ok != next.in_call_reconnect_ok ||
+                             synced.in_call_reconnect_fading != next.in_call_reconnect_fading ||
+                             synced.in_call_reconnect_dim != next.in_call_reconnect_dim ||
                              synced.in_call_show_debug_subtitle != next.in_call_show_debug_subtitle ||
                              synced.in_call_debug_subtitle != next.in_call_debug_subtitle ||
                              synced.in_call_speaking != next.in_call_speaking;
@@ -199,6 +203,10 @@ std::vector<const char*> CallChromeChangedVariables(const CallInProgressState& b
   add(before.notice_text != after.notice_text, "call_in_progress_notice_text");
   add(before.notice_warn != after.notice_warn, "call_in_progress_notice_warn");
   add(before.notice_fading != after.notice_fading, "call_in_progress_notice_fading");
+  add(before.reconnect_text != after.reconnect_text, "call_in_progress_reconnect_text");
+  add(before.reconnect_ok != after.reconnect_ok, "call_in_progress_reconnect_ok");
+  add(before.reconnect_fading != after.reconnect_fading, "call_in_progress_reconnect_fading");
+  add(before.reconnect_dim != after.reconnect_dim, "call_in_progress_reconnect_dim");
   add(before.show_debug_subtitle != after.show_debug_subtitle, "call_in_progress_show_debug_subtitle");
   add(before.debug_subtitle != after.debug_subtitle, "call_in_progress_debug_subtitle");
   // The phone page's speaking rings: only the arrays whose rows' ring changed.
