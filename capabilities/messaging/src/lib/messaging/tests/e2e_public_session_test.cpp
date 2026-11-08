@@ -1281,5 +1281,126 @@ TEST_F(LinkedDevicesTest, AnAccountPairOpenerLeavesTheDevicePairsAlone) {
   EXPECT_TRUE(phone_->Receive(bob_->Lane(phone_->account)));
 }
 
+// ---- A lane message held for its sender's card (#555) ----
+
+/** The last Diag line naming `event`; empty when none. */
+std::string LastLine(DiagCapture& diag, const std::string& event) {
+  const std::vector<std::string> lines = diag.Lines();
+  for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
+    if (it->find("event=" + event + " ") != std::string::npos) {
+      return *it;
+    }
+  }
+  return {};
+}
+
+// #555: a device just linked to Alice's account knows nobody's card yet. Bob's call accept to it is held, not
+// dropped, and takes effect once Bob's card is kept — here by Bob's next lane message, which carries it.
+TEST_F(LinkedDevicesTest, ALaneMessageHeldForTheSendersCardLandsOnceTheCardComes) {
+  auto diag = std::make_shared<DiagCapture>();
+  DiagLog().addHandler(diag);
+  Side tablet("alice-tablet", 0x30, phone_.get()); // no cards: just linked
+  tablet.pipeline->SetOnSenderCard([&tablet](const AccountCard& card) { tablet.cards[card.keys.account_id] = card; });
+  tablet.own_devices = 3;
+  bob_->KnowAccount({phone_.get(), laptop_.get(), &tablet});
+
+  const RelayEnvelope accept = bob_->Lane(phone_->account);
+  ASSERT_FALSE(accept.body.e2e.sender_card) << "Bob does not think the tablet lacks it";
+  const RelayReceiveOutcome held = tablet.pipeline->ProcessEnvelope(accept, tablet.account);
+  EXPECT_EQ(tablet.landed, 0);
+  EXPECT_TRUE(held.held_for_card);
+  EXPECT_FALSE(held.sender_verified);
+  EXPECT_TRUE(tablet.pipeline->HoldsControlFrom(bob_->account));
+  EXPECT_TRUE(tablet.pipeline->ProcessEnvelope(accept, tablet.account).held_for_card)
+      << "its other copy (relay and link both) waits with it, once";
+  const std::string line = LastLine(*diag, "control.unverified");
+  EXPECT_NE(line.find("reason=no_card card=none card_refused=0 copy=device held=1"), std::string::npos) << line;
+  EXPECT_EQ(line.find(bob_->account), std::string::npos) << "no raw id";
+
+  // Bob's next lane message carries his card: it verifies, and the held accept is checked again.
+  bob_->carry_keys = true;
+  bob_->own_card = Side::CardOf({bob_.get()});
+  const RelayReceiveOutcome next = tablet.pipeline->ProcessEnvelope(bob_->Lane(phone_->account), tablet.account);
+  EXPECT_TRUE(next.sender_verified);
+  EXPECT_EQ(next.replay_held_from, std::optional<std::string>(bob_->account)) << "the caller replays, off this ingest";
+  EXPECT_EQ(tablet.landed, 1) << "the message that carried the card";
+  const auto replayed = tablet.pipeline->ReplayHeldControl(bob_->account, tablet.account);
+  ASSERT_EQ(replayed.size(), 1u);
+  EXPECT_EQ(replayed.front().envelope.message_id, accept.message_id);
+  EXPECT_EQ(replayed.front().outcome.decision, IngestDecision::AcceptControl);
+  EXPECT_EQ(tablet.landed, 2) << "the accept took effect";
+  EXPECT_FALSE(tablet.pipeline->HoldsControlFrom(bob_->account));
+  EXPECT_TRUE(tablet.pipeline->ReplayHeldControl(bob_->account, tablet.account).empty()) << "once";
+  EXPECT_FALSE(tablet.Receive(accept)) << "first sight still holds: a redelivery is a duplicate";
+}
+
+// Bob linked a device Alice's card for him does not list yet: its message waits for the newer card.
+TEST_F(LinkedDevicesTest, ALaneMessageFromADeviceNotOnTheCardWaitsForTheNewerCard) {
+  auto diag = std::make_shared<DiagCapture>();
+  DiagLog().addHandler(diag);
+  Side bobs_tablet("bob-tablet", 0x50, bob_.get());
+  bobs_tablet.KnowAccount({phone_.get(), laptop_.get()});
+  bobs_tablet.own_devices = 2;
+  const RelayEnvelope signal = bobs_tablet.Lane(phone_->account);
+  const RelayReceiveOutcome held = phone_->pipeline->ProcessEnvelope(signal, phone_->account);
+  EXPECT_TRUE(held.held_for_card);
+  EXPECT_EQ(phone_->landed, 0);
+  const std::string line = LastLine(*diag, "control.unverified");
+  EXPECT_NE(line.find("reason=device_not_on_card card=kept"), std::string::npos) << line;
+
+  phone_->cards[bob_->account] = Side::CardOf({bob_.get(), &bobs_tablet}, 2); // the newer card, kept another way
+  const auto replayed = phone_->pipeline->ReplayHeldControl(bob_->account, phone_->account);
+  ASSERT_EQ(replayed.size(), 1u);
+  EXPECT_TRUE(replayed.front().outcome.sender_verified);
+  EXPECT_EQ(phone_->landed, 1);
+}
+
+// A card kept that still does not list the device: the message waits again, its first hold time kept.
+TEST_F(LinkedDevicesTest, AReplayThatStillCannotBeCheckedWaitsAgain) {
+  Side bobs_tablet("bob-tablet", 0x50, bob_.get());
+  bobs_tablet.KnowAccount({phone_.get(), laptop_.get()});
+  bobs_tablet.own_devices = 2;
+  ASSERT_TRUE(phone_->pipeline->ProcessEnvelope(bobs_tablet.Lane(phone_->account), phone_->account).held_for_card);
+  const auto replayed = phone_->pipeline->ReplayHeldControl(bob_->account, phone_->account);
+  ASSERT_EQ(replayed.size(), 1u);
+  EXPECT_TRUE(replayed.front().outcome.held_for_card);
+  EXPECT_TRUE(phone_->pipeline->HoldsControlFrom(bob_->account));
+}
+
+// A signature that does not verify with the device's key is not a want of a card: never held, and said plainly.
+TEST_F(LinkedDevicesTest, ASignatureMismatchIsNotHeldAndSaysSo) {
+  auto diag = std::make_shared<DiagCapture>();
+  DiagLog().addHandler(diag);
+  RelayEnvelope forged = bob_->Lane(phone_->account);
+  forged.timestamp += 1;
+  const RelayReceiveOutcome outcome = phone_->pipeline->ProcessEnvelope(forged, phone_->account);
+  EXPECT_FALSE(outcome.held_for_card);
+  EXPECT_FALSE(outcome.sender_verified);
+  EXPECT_FALSE(phone_->pipeline->HoldsControlFrom(bob_->account));
+  const std::string line = LastLine(*diag, "control.unverified");
+  EXPECT_NE(line.find("reason=signature_mismatch card=kept card_refused=0 copy=device held=0"), std::string::npos)
+      << line;
+}
+
+// A held message is still checked for freshness when it lands: its wait counts as time on its way.
+TEST_F(LinkedDevicesTest, AHeldMessageTooOldOnceItsCardCameIsStillDropped) {
+  Side tablet("alice-tablet", 0x30, phone_.get());
+  tablet.own_devices = 3;
+  bob_->KnowAccount({phone_.get(), laptop_.get(), &tablet});
+  const int64_t max_age = SystemControlFamily{}.lane_max_age_ms;
+  RelayEnvelope late = bob_->Lane(phone_->account);
+  // At the relay just short of the lane's age: fresh when read at once.
+  late.relay_created_at_ms = 1'000'000;
+  late.relay_server_time_ms = 1'000'000 + max_age - 1;
+  ASSERT_TRUE(tablet.pipeline->ProcessEnvelope(late, tablet.account).held_for_card);
+  std::this_thread::sleep_for(std::chrono::milliseconds(5)); // the wait for the card
+  tablet.Know(*bob_);
+  const auto replayed = tablet.pipeline->ReplayHeldControl(bob_->account, tablet.account);
+  ASSERT_EQ(replayed.size(), 1u);
+  EXPECT_TRUE(replayed.front().outcome.sender_verified);
+  EXPECT_EQ(replayed.front().outcome.decision, IngestDecision::SilentDiscard) << "stale: the wait made it too old";
+  EXPECT_EQ(tablet.landed, 0);
+}
+
 } // namespace
 } // namespace pbr

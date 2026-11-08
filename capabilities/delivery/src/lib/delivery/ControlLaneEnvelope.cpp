@@ -5,14 +5,34 @@
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/delivery/EnvelopeSigner.h"
 
+#include <algorithm>
 #include <utility>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-bool ControlLaneCarriesCard(const bool opens_session, const bool asked, const std::optional<int64_t> told_at,
-                            const int64_t card_at) {
-  return opens_session || asked || !told_at || *told_at != card_at;
+std::vector<std::string> ControlLaneAddressedDevices(const std::vector<ControlLaneCopy>& copies,
+                                                     const std::vector<std::string>& card_devices) {
+  std::vector<std::string> devices;
+  for (const ControlLaneCopy& copy : copies) {
+    if (!copy.recipient_device.empty()) {
+      devices.push_back(copy.recipient_device);
+    } else if (!card_devices.empty()) {
+      devices.insert(devices.end(), card_devices.begin(), card_devices.end()); // every device reads the account copy
+    } else {
+      devices.emplace_back(); // a first contact: the account, its devices unknown
+    }
+  }
+  return devices;
+}
+
+bool ControlLaneCarriesCard(const bool opens_session, const bool asked,
+                            const std::vector<std::optional<int64_t>>& told_at, const int64_t card_at) {
+  if (opens_session || asked || told_at.empty()) {
+    return true;
+  }
+  return std::any_of(told_at.begin(), told_at.end(),
+                     [card_at](const std::optional<int64_t>& told) { return !told || *told != card_at; });
 }
 
 bool ControlLaneUsesAccountCopy(const size_t peer_devices, const size_t own_devices) {

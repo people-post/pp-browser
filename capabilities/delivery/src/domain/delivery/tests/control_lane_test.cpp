@@ -137,6 +137,39 @@ protected:
     std::filesystem::remove_all(dir_);
   }
 
+  /** Keep `card` as the newest one of its account (signed by `owner`). */
+  void KeepCard(const test::TestAccount& owner, std::vector<AccountCardDevice> devices, const int64_t issued_at) {
+    AccountCard card{.keys = owner.Card(), .nickname = "peer", .devices = std::move(devices), .issued_at = issued_at};
+    card = SignAccountCard(card, [&owner](const ByteVector& bytes) { return owner.Sign(bytes); }).value();
+    ASSERT_TRUE(account_keys_->AddAccountCard(card, util::NowUnixMs(), "test"));
+  }
+
+  /** The peer was heard under every session we hold with it: no opener rides, so none forces the card. */
+  void HeardUnderEverySession(const std::string& account) {
+    auto records = psk_->List();
+    ASSERT_TRUE(records);
+    for (PeerSessionRecord record : *records) {
+      if (record.key.peer_identity_value == account && record.auto_key_init_pending) {
+        record.auto_key_init_pending.reset();
+        ASSERT_TRUE(psk_->Save(record));
+      }
+    }
+  }
+
+  /** A quiet lane message to `account` (no opener of the caller's, not urgent, no card asked for), as sent. */
+  RelayEnvelope SendQuiet(const std::string& account) {
+    const size_t before = relay_.Sent().size();
+    ControlSend send = To(account);
+    EXPECT_TRUE(lane_->Send(send.peer_identity, send.control));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (relay_.Sent().size() == before && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    const std::vector<RelayEnvelope> sent = relay_.Sent();
+    EXPECT_EQ(sent.size(), before + 1);
+    return sent.empty() ? RelayEnvelope{} : sent.back();
+  }
+
   static ControlSend To(const std::string& peer) {
     ThreadMessage control;
     control.id = util::GenerateUuid();
@@ -284,6 +317,52 @@ TEST_F(ControlLaneTest, APeerWithNoCardGetsTheAccountCopy) {
   ASSERT_EQ(copies.size(), 1u);
   EXPECT_TRUE(copies.front().recipient_device.empty());
   EXPECT_TRUE(copies.front().key_init_b64) << "opened to the account KEM";
+}
+
+// #555: our card went to Bob's account once — then Bob linked a tablet. Its first record from us carries the card
+// (the tablet holds no card of ours), though Bob's phone has it and the tablet's session needs no opener.
+TEST_F(ControlLaneTest, ADeviceLinkedAfterWeToldTheAccountGetsOurCard) {
+  const test::TestAccount bob = test::TestAccount::Make();
+  const test::TestDevice laptop = test::TestDevice::Make();
+  KeepCard(bob, {bob.device.Entry(), laptop.Entry()}, 1);
+  routes_->NoteAccountRoute(bob.account_id, "relay:bob");
+  EXPECT_TRUE(SendQuiet(bob.account_id).body.e2e.sender_card) << "opens both device sessions";
+  HeardUnderEverySession(bob.account_id);
+  EXPECT_FALSE(SendQuiet(bob.account_id).body.e2e.sender_card) << "every device addressed was told: no card";
+
+  const test::TestDevice tablet = test::TestDevice::Make();
+  KeepCard(bob, {bob.device.Entry(), laptop.Entry(), tablet.Entry()}, 2);
+  // The tablet wrote first (its session is the one it opened, adopted here): no opener of ours rides to it.
+  ASSERT_TRUE(keys_->ResolveDevice(bob.account_id, tablet.Entry()));
+  HeardUnderEverySession(bob.account_id);
+  const RelayEnvelope to_tablet_too = SendQuiet(bob.account_id);
+  const std::vector<RelayCopy> copies = RelayCopiesOf(to_tablet_too);
+  ASSERT_EQ(copies.size(), 3u);
+  EXPECT_TRUE(std::none_of(copies.begin(), copies.end(), [](const RelayCopy& c) { return c.key_init_b64; }));
+  ASSERT_TRUE(to_tablet_too.body.e2e.sender_card) << "the tablet was never told our card";
+  EXPECT_FALSE(SendQuiet(bob.account_id).body.e2e.sender_card) << "once: now every device was told";
+}
+
+// The single-device bridge (an account copy): a device that replaced the peer's only one was told nothing either.
+TEST_F(ControlLaneTest, AnAccountCopyCarriesOurCardToADeviceNewOnThePeersCard) {
+  if (!kControlLaneAccountCopyBetweenSingleDevices) {
+    GTEST_SKIP() << "the M024 bridge is gone";
+  }
+  ASSERT_TRUE(own_->Card(util::NowUnixMs())) << "our card, listing this one device";
+  const test::TestAccount bob = test::TestAccount::Make();
+  KeepCard(bob, {bob.device.Entry()}, 1);
+  routes_->NoteAccountRoute(bob.account_id, "relay:bob");
+  const RelayEnvelope first = SendQuiet(bob.account_id);
+  ASSERT_TRUE(RelayCopiesOf(first).front().recipient_device.empty()) << "two single devices: the account copy";
+  HeardUnderEverySession(bob.account_id);
+  EXPECT_FALSE(SendQuiet(bob.account_id).body.e2e.sender_card);
+
+  const test::TestDevice reinstalled = test::TestDevice::Make(); // Bob's one device, linked anew
+  KeepCard(bob, {reinstalled.Entry()}, 2);
+  const RelayEnvelope after = SendQuiet(bob.account_id);
+  ASSERT_TRUE(RelayCopiesOf(after).front().recipient_device.empty());
+  EXPECT_FALSE(RelayCopiesOf(after).front().key_init_b64) << "the account pair's session goes on";
+  EXPECT_TRUE(after.body.e2e.sender_card) << "the new device reads the account copy, and holds no card of ours";
 }
 
 TEST_F(ControlLaneTest, ASendToNobodyIsDoneAtOnce) {

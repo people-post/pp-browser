@@ -11,6 +11,7 @@
 #include "lib/messaging/GroupRosterSync.h"
 
 #include <cstdlib>
+#include <sstream>
 
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/ReactionTypes.h"
@@ -981,9 +982,29 @@ ReplayWindow& RelayReceivePipeline::ReplayWindowFor(const std::string& thread_id
 
 Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope,
                                               const DirectChatTarget& target) const {
+  const SenderSignatureCheck check = CheckSignature(envelope, target);
+  switch (check.result) {
+    case SenderSignatureCheck::Result::Verified:
+      return true;
+    case SenderSignatureCheck::Result::Mismatch:
+      return false;
+    case SenderSignatureCheck::Result::NoCard:
+      return Error("No account card for the sender");
+    case SenderSignatureCheck::Result::DeviceNotOnCard:
+      return Error("The sending device is not on the sender's account card");
+    case SenderSignatureCheck::Result::Invalid:
+      break;
+  }
+  return Error(check.error);
+}
+
+SenderSignatureCheck RelayReceivePipeline::CheckSignature(const RelayEnvelope& envelope,
+                                                          const DirectChatTarget& target) const {
+  SenderSignatureCheck check;
   if (target.peer_identity_kind != ContactIdKindToString(mesh::ContactIdKind::Account) ||
       envelope.sender_device.empty()) {
-    return Error("Envelope names no sending device of an account");
+    check.error = "Envelope names no sending device of an account";
+    return check;
   }
   std::optional<AccountCard> kept = account_cards_ ? account_cards_(target.peer_identity_value) : std::nullopt;
   // The opening message of a session carries the sender's card: one that proves itself for this sender and
@@ -998,8 +1019,13 @@ Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope,
         card->issued_at >= floor && (!kept || card->issued_at > kept->issued_at)) {
       carried = std::move(card.value());
     }
+    check.carried_refused = !carried;
   }
   const AccountCard* card = carried ? &*carried : (kept ? &*kept : nullptr);
+  if (card) {
+    check.card_at = card->issued_at;
+    check.card_carried = carried.has_value();
+  }
   const AccountCardDevice* device = card ? FindCardDevice(*card, envelope.sender_device) : nullptr;
   if (!device) {
     // Nothing to check it with: ask the sending device for its card, which a later envelope then verifies with.
@@ -1007,18 +1033,28 @@ Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope,
         (!card || *envelope.body.e2e.sender_card_at > card->issued_at)) {
       on_unknown_sender_device_(target.peer_identity_value, envelope.sender_device, *envelope.body.e2e.sender_card_at);
     }
-    return Error(card ? "The sending device is not on the sender's account card" : "No account card for the sender");
+    check.result = card ? SenderSignatureCheck::Result::DeviceNotOnCard : SenderSignatureCheck::Result::NoCard;
+    return check;
   }
   auto verified = EnvelopeSigner::Verify(envelope, device->signing_public_key_b64);
-  if (verified && *verified && carried && on_sender_card_) {
+  if (!verified) {
+    check.error = verified.error().message;
+    return check;
+  }
+  if (!*verified) {
+    check.result = SenderSignatureCheck::Result::Mismatch;
+    return check;
+  }
+  check.result = SenderSignatureCheck::Result::Verified;
+  if (carried && on_sender_card_) {
     on_sender_card_(*carried);
   }
   // M021 d6: the sender says its list is newer than the one we checked with — fetch it from the sending device.
-  if (verified && *verified && on_sender_card_version_ && envelope.body.e2e.sender_card_at &&
+  if (on_sender_card_version_ && envelope.body.e2e.sender_card_at &&
       *envelope.body.e2e.sender_card_at > card->issued_at) {
     on_sender_card_version_(target.peer_identity_value, envelope.sender_device, *envelope.body.e2e.sender_card_at);
   }
-  return verified;
+  return check;
 }
 
 RelayReceivePipeline::CopyTo RelayReceivePipeline::WhoseCopy(const RelayEnvelope& envelope) const {
@@ -1117,8 +1153,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& r
   // only, the message is theirs (or one is missing for us).
   auto self = local_keys_.device_peer_id ? local_keys_.device_peer_id() : Roe<std::string>(Error("no device"));
   const std::optional<RelayEnvelope> selected = SelectRelayCopy(received, self ? *self : std::string());
+  RelayReceiveOutcome outcome;
   if (!selected) {
-    RelayReceiveOutcome outcome;
     outcome.decision = IngestDecision::SilentDiscard;
     const bool chat = received.route.kind == kRelayRouteGroup || received.route.kind == kRelayRouteDirect;
     if (chat && self && !received.sender_contact_id.empty() && received.sender_contact_id != local_relay_user_id &&
@@ -1140,16 +1176,47 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& r
     if (received.route.kind == kRelayRouteControl && self) {
       NoteMissingControlCopy(received, local_relay_user_id, outcome);
     }
-    return outcome;
+  } else if (selected->route.kind == kRelayRouteGroup) {
+    outcome = ProcessGroupEnvelope(*selected, local_relay_user_id, authorized_older_backfill, transport);
+  } else if (selected->route.kind == kRelayRouteControl) {
+    outcome = ProcessControlEnvelope(*selected, local_relay_user_id);
+  } else {
+    outcome = ProcessDirectEnvelope(*selected, local_relay_user_id, authorized_older_backfill, transport);
   }
-  const RelayEnvelope& envelope = *selected;
-  if (envelope.route.kind == kRelayRouteGroup) {
-    return ProcessGroupEnvelope(envelope, local_relay_user_id, authorized_older_backfill, transport);
+  // A sender that verified has a card kept now: what of its waited for one may be checked (#555).
+  if (outcome.sender_verified && HoldsControlFrom(received.sender_contact_id)) {
+    outcome.replay_held_from = received.sender_contact_id;
   }
-  if (envelope.route.kind == kRelayRouteControl) {
-    return ProcessControlEnvelope(envelope, local_relay_user_id);
+  return outcome;
+}
+
+bool RelayReceivePipeline::HoldsControlFrom(const std::string& sender) const {
+  std::lock_guard lock(control_hold_mutex_);
+  return control_hold_.Holds(sender);
+}
+
+std::vector<RelayReceivePipeline::HeldControlReplay> RelayReceivePipeline::ReplayHeldControl(
+    const std::string& sender, const std::string& local_relay_user_id) {
+  const int64_t now_ms = util::NowUnixMs();
+  std::vector<HeldControlEnvelope> held;
+  ControlLaneHoldDrops drops;
+  {
+    std::lock_guard lock(control_hold_mutex_);
+    held = control_hold_.Take(sender, now_ms, &drops);
   }
-  return ProcessDirectEnvelope(envelope, local_relay_user_id, authorized_older_backfill, transport);
+  if (drops.expired > 0) {
+    log().info << "control lane: " << drops.expired << " held message(s) waited past " << kControlLaneHoldMaxMs
+               << " ms for a card and were dropped";
+  }
+  std::vector<HeldControlReplay> replayed;
+  replayed.reserve(held.size());
+  for (HeldControlEnvelope& entry : held) {
+    log().info << "control lane: checking again message_id=" << entry.envelope.message_id << " sender=" << sender
+               << " held_ms=" << (now_ms - entry.held_since_ms);
+    RelayReceiveOutcome outcome = ProcessControlEnvelope(entry.envelope, local_relay_user_id, entry.held_since_ms);
+    replayed.push_back(HeldControlReplay{std::move(entry.envelope), std::move(outcome)});
+  }
+  return replayed;
 }
 
 bool ControlLaneFresh(const RelayEnvelope& envelope, const int64_t max_age_ms, const int64_t now_ms) {
@@ -1165,8 +1232,15 @@ bool ControlLaneFresh(const RelayEnvelope& envelope, const int64_t max_age_ms, c
   return true;  // direct (Amp): delivered as sent
 }
 
-RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnvelope& envelope,
-                                                                 const std::string& local_relay_user_id) {
+RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnvelope& received,
+                                                                 const std::string& local_relay_user_id,
+                                                                 const std::optional<int64_t> held_since_ms) {
+  // Checked again after a wait for the sender's card: the wait counts in its age (ControlLaneHold).
+  std::optional<RelayEnvelope> aged;
+  if (held_since_ms) {
+    aged = AgedByHold(received, *held_since_ms, util::NowUnixMs());
+  }
+  const RelayEnvelope& envelope = aged ? *aged : received;
   RelayReceiveOutcome outcome;
   outcome.decision = IngestDecision::HardReject;
   if (envelope.envelope_version != kRelayEnvelopeVersion ||
@@ -1189,8 +1263,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
   if (envelope.sender_contact_id == local_relay_user_id) {
     // A sibling's notice (M022): the account card it carries — the device list — is what counts, taken once
     // the envelope verifies with it (SetOnSenderCard). Nothing else to apply.
-    auto verified = VerifySignature(envelope, inbound_target);
-    outcome.sender_verified = verified && *verified;
+    outcome.sender_verified = CheckControlSender(received, inbound_target, held_since_ms, outcome);
     outcome.from_sibling = outcome.sender_verified;
     outcome.decision = IngestDecision::SilentDiscard;
     if (outcome.sender_verified) {
@@ -1198,11 +1271,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
     }
     return outcome;
   }
-  auto verified = VerifySignature(envelope, inbound_target);
-  if (!verified || !*verified) {
-    log().warning << "control lane: signature check failed message_id=" << envelope.message_id
-                  << " sender=" << envelope.sender_contact_id
-                  << (verified ? std::string() : " err=" + verified.error().message);
+  if (!CheckControlSender(received, inbound_target, held_since_ms, outcome)) {
     return outcome;
   }
   outcome.sender_verified = true;
@@ -1269,6 +1338,117 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
   return outcome;
 }
 
+namespace {
+
+/** A lane copy's kind, for the diag lines. */
+constexpr ShareWord kCopyAccount = "account";
+constexpr ShareWord kCopyDevice = "device";
+
+} // namespace
+
+bool RelayReceivePipeline::CheckControlSender(const RelayEnvelope& envelope, const DirectChatTarget& target,
+                                              const std::optional<int64_t> held_since_ms,
+                                              RelayReceiveOutcome& outcome) {
+  const SenderSignatureCheck check = CheckSignature(envelope, target);
+  if (check.result == SenderSignatureCheck::Result::Verified) {
+    return true;
+  }
+  // Only a want of the card waits for it (#555): it is asked for (SetOnUnknownSenderDevice), and the message is
+  // checked again once a card is kept. A signature that does not verify will not verify later.
+  const bool wants_card = check.result == SenderSignatureCheck::Result::NoCard ||
+                          check.result == SenderSignatureCheck::Result::DeviceNotOnCard;
+  outcome.held_for_card = wants_card && HoldForCard(envelope, held_since_ms);
+  ReportUnverifiedControl(envelope, check, outcome.held_for_card);
+  return false;
+}
+
+bool RelayReceivePipeline::HoldForCard(const RelayEnvelope& envelope, const std::optional<int64_t> held_since_ms) {
+  const int64_t now_ms = util::NowUnixMs();
+  ControlLaneHoldDrops drops;
+  bool held = false;
+  {
+    std::lock_guard lock(control_hold_mutex_);
+    held = control_hold_.Hold(envelope.sender_contact_id, envelope, held_since_ms.value_or(now_ms), now_ms, &drops);
+  }
+  if (drops.expired + drops.over_sender + drops.over_total > 0) {
+    log().info << "control lane: held messages dropped expired=" << drops.expired
+               << " over_sender=" << drops.over_sender << " over_total=" << drops.over_total;
+  }
+  return held;
+}
+
+namespace {
+
+/** Why a lane message's sender did not check, for the diag line. */
+ShareWord UnverifiedReasonWord(const SenderSignatureCheck::Result result) {
+  switch (result) {
+    case SenderSignatureCheck::Result::NoCard:
+      return "no_card";
+    case SenderSignatureCheck::Result::DeviceNotOnCard:
+      return "device_not_on_card";
+    case SenderSignatureCheck::Result::Mismatch:
+      return "signature_mismatch";
+    case SenderSignatureCheck::Result::Verified:
+    case SenderSignatureCheck::Result::Invalid:
+      break;
+  }
+  return "invalid";
+}
+
+/** Which card a check used, for the diag line: the one riding, the one kept, none. */
+ShareWord CheckedCardWord(const SenderSignatureCheck& check) {
+  if (!check.card_at) {
+    return "none";
+  }
+  if (check.card_carried) {
+    return "carried";
+  }
+  return "kept";
+}
+
+std::string OptionalMs(const std::optional<int64_t>& value) {
+  return value ? std::to_string(*value) : std::string("-");
+}
+
+/** The start of a device id, for the developer log: enough to tell the sender's devices apart. */
+std::string DevicePrefix(const std::string& device) {
+  constexpr size_t kPrefix = 16;
+  return device.size() > kPrefix ? device.substr(0, kPrefix) : device;
+}
+
+} // namespace
+
+void RelayReceivePipeline::ReportUnverifiedControl(const RelayEnvelope& envelope, const SenderSignatureCheck& check,
+                                                   const bool held) const {
+  const ShareWord reason = UnverifiedReasonWord(check.result);
+  const bool account_copy = envelope.recipient_device.empty();
+  std::ostringstream text;
+  text << "control lane: signature check failed reason=" << reason.view() << " message_id=" << envelope.message_id
+       << " sender=" << envelope.sender_contact_id << " sender_device=" << DevicePrefix(envelope.sender_device)
+       << " card=" << CheckedCardWord(check).view() << " card_issued_at=" << OptionalMs(check.card_at)
+       << " sender_card_at=" << OptionalMs(envelope.body.e2e.sender_card_at)
+       << " card_rode=" << (envelope.body.e2e.sender_card ? (check.carried_refused ? "refused" : "taken") : "no")
+       << " route=" << envelope.route.kind << " channel=" << ThreadChannelToString(envelope.route.channel)
+       << " copy=" << (account_copy ? "account" : "device") << " held_for_card=" << (held ? 1 : 0);
+  if (check.result == SenderSignatureCheck::Result::Mismatch) {
+    // The key of the sending device, from the card, does not verify it: a forgery, a record changed on its way — or
+    // a sender on a build before sign v4 (2026-11-06), whose signed bytes differ. Not held: it will not verify later.
+    text << " — the signature does not verify with that device's key (a sender on a build before sign v4, "
+            "2026-11-06, shows so)";
+  } else if (check.result == SenderSignatureCheck::Result::Invalid) {
+    text << " err=" << check.error;
+  }
+  log().warning << text.str();
+  DiagLine("control.unverified")
+      .Add("reason", reason)
+      .Add("card", CheckedCardWord(check))
+      .Add("card_refused", check.carried_refused)
+      .Add("copy", account_copy ? kCopyAccount : kCopyDevice)
+      .Add("held", held)
+      .Ref("sender", envelope.sender_contact_id)
+      .Emit();
+}
+
 void RelayReceivePipeline::NoteMissingControlCopy(const RelayEnvelope& received, const std::string& local_account,
                                                   RelayReceiveOutcome& outcome) {
   if (received.sender_contact_id.empty() || received.sender_contact_id == local_account ||
@@ -1286,14 +1466,6 @@ void RelayReceivePipeline::NoteMissingControlCopy(const RelayEnvelope& received,
              << " copies=" << received.body.e2e.copies.size();
   outcome.show_card_to = received.sender_contact_id;
 }
-
-namespace {
-
-/** A lane copy's kind, for the diag line. */
-constexpr ShareWord kCopyAccount = "account";
-constexpr ShareWord kCopyDevice = "device";
-
-} // namespace
 
 void RelayReceivePipeline::ReportUnreadableControl(const RelayEnvelope& envelope, const PeerSessionKey& target_key,
                                                    const Error& error, RelayReceiveOutcome& outcome) const {

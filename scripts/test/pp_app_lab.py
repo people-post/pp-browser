@@ -2824,6 +2824,34 @@ def scenario_a_call_rings_on_every_device_after_each_called_out(lab):
     assert_idle(a, b, laptop, timeout=40)
 
 
+def scenario_a_restored_device_hears_the_answer_to_its_call(lab):
+    """#555 (iPhone call 1): Alice calls Bob, who answers — his card reaches her account. Her phone is gone; she
+    restores on a new one (a fresh list holding only it, no cards kept) and calls Bob. Bob answers with the account
+    copy (one device each, the M024 bridge) under the session her invite opened; the restored phone had dropped
+    such an answer when it held no card of Bob's, and stayed waiting. Now Bob's card rides it (told per device), and
+    a lane record of his that comes before any card waits for one: the call connects, and no record of Bob's is
+    dropped for want of his card. (Here the shared mailbox's backlog may bring his card first: its records verify
+    before their old account copies fail to open.)"""
+    a, a_thread, b, b_thread = open_pair(lab)
+    connect(a, a_thread, b)
+    a.cmd("leave")
+    assert_idle(a, b, timeout=40)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    a.cmd("locker_publish", timeout=60)
+    logged_before = len(a.log_text())
+    a.restore_from_phrase(phrase)
+    a.wait_mesh()
+    a_thread = a.cmd("chat_with", account=b.account)["thread"]
+    connect(a, a_thread, b)
+    dropped = [line for line in a.log_text()[logged_before:].splitlines()
+               if "signature check failed" in line and "sender=%s " % b.account in line
+               and "held_for_card=1" not in line]
+    if dropped:
+        raise ProbeError("restored phone: dropped bob's lane record(s) it could not check: %s" % dropped[0])
+    a.cmd("leave")
+    assert_idle(a, b, timeout=40)
+
+
 def scenario_a_newer_device_list_follows_the_messages(lab):
     """Every envelope says how new its sender's device list is (M021 d6): Carol shares a group with Bob but is
     not his contact, so what his main device announces never reaches her. Bob links a laptop: his next group
@@ -3820,6 +3848,7 @@ SCENARIOS = [
     ("a_device_asks_for_a_copy_it_missed", scenario_a_device_asks_for_a_copy_it_missed),
     ("a_call_rings_every_device_and_stops_once_answered", scenario_a_call_rings_every_device_and_stops_once_answered),
     ("a_call_rings_on_every_device_after_each_called_out", scenario_a_call_rings_on_every_device_after_each_called_out),
+    ("a_restored_device_hears_the_answer_to_its_call", scenario_a_restored_device_hears_the_answer_to_its_call),
     ("a_newer_device_list_follows_the_messages", scenario_a_newer_device_list_follows_the_messages),
     ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention),
     ("group_owner_appoints_an_admin", scenario_group_owner_appoints_an_admin),

@@ -196,6 +196,8 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
                                                    member.member_identity);
           !kept) {
         log().warning << "roster card not kept: " << kept.error().message;
+      } else {
+        ReplayHeldControl(member.member_identity); // its lane messages that waited for a card (#555)
       }
     }
     if (IsRelayUserIdValue(member.relay_user_id)) {
@@ -818,6 +820,31 @@ void FollowUpMembershipAfterIngest(GroupMembershipWorkflow* groups, const RelayR
 
 } // namespace
 
+void MeshDeliveryOrchestrator::ReplayHeldControl(const std::string& account) {
+  if (account.empty() || !receive_pipeline_->HoldsControlFrom(account)) {
+    return;
+  }
+  // Off the ingest that found the card (its envelope is still being read): signaling, so the critical lane.
+  AppRuntime::PostWorkerCritical([this, account]() {
+    auto identity = identity_.Get();
+    if (!identity) {
+      return;
+    }
+    for (const auto& replayed : receive_pipeline_->ReplayHeldControl(account, identity->account_id)) {
+      const RelayReceiveOutcome& outcome = replayed.outcome;
+      routes_.RememberFromEnvelope(replayed.envelope, outcome.sender_verified);
+      FollowUpMembershipAfterIngest(groups_, outcome);
+      if (outcome.from_sibling && on_sibling_notice_) {
+        on_sibling_notice_();
+      }
+      MaybeSurfaceReceiveFailure(outcome);
+      if (outcome.show_card_to) {
+        ShowCardTo(*outcome.show_card_to);
+      }
+    }
+  });
+}
+
 void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome) {
   if (!outcome.receive_failure) {
     return;
@@ -908,6 +935,9 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
   MaybeSurfaceReceiveFailure(outcome);
   if (outcome.show_card_to) {
     ShowCardTo(*outcome.show_card_to);
+  }
+  if (outcome.replay_held_from) {
+    ReplayHeldControl(*outcome.replay_held_from);
   }
   if (outcome.decision == IngestDecision::AcceptGap) {
     auto thread = store_.FindDirectThread(InboundTargetFromEnvelope(envelope));
@@ -2188,6 +2218,9 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
           }
           if (outcome.show_card_to) {
             ShowCardTo(*outcome.show_card_to);
+          }
+          if (outcome.replay_held_from) {
+            ReplayHeldControl(*outcome.replay_held_from);
           }
           if (outcome.decision == IngestDecision::AcceptGap) {
             const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);

@@ -446,6 +446,12 @@ private:
    * once per account per kShowCardGapMs. The message itself is not asked for: signaling is stale by then.
    */
   void ShowCardTo(const std::string& account);
+  /**
+   * #555: a card of `account`'s may be kept now (a verified envelope of its, a roster's card): the lane messages of
+   * its held for one (RelayReceivePipeline::ReplayHeldControl) are checked again on a worker, and followed up as
+   * on arrival.
+   */
+  void ReplayHeldControl(const std::string& account);
   static constexpr int64_t kShowCardGapMs = 10 * 60 * 1000;
   std::map<std::string, int64_t> cards_shown_; // account → when last told (under card_asks_mutex_)
   Roe<void> ResendDirectCopy(const Thread& thread, const ThreadMessage& message, const std::string& asker,

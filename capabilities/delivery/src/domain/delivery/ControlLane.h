@@ -59,9 +59,10 @@ public:
   /**
    * Send `control` to `peer_identity`. `key_init_b64`: an account-pair session init the caller holds (its old-form
    * media-key wrap opened it, M024) — it rides an account copy only, never a device's. `urgent`: wake the peer at
-   * once, the platform's most urgent push (an incoming call's). Our account card rides it only when the peer may
-   * not hold it (ControlLaneCarriesCard): `with_card` (or `urgent`) when the caller knows it may not. The relay
-   * keeps it kControlLaneRelayTtlMs.
+   * once, the platform's most urgent push (an incoming call's). Our account card rides it only when a device it
+   * addresses may not hold it (ControlLaneCarriesCard: one this device has not sent the card yet, a device just
+   * linked to the peer's account too): `with_card` (or `urgent`) when the caller knows it may not. The relay keeps
+   * it kControlLaneRelayTtlMs.
    */
   Roe<void> Send(const std::string& peer_identity, const ThreadMessage& control,
                  const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false,
@@ -93,8 +94,14 @@ private:
   /** The account copy to `peer_identity` (a first contact, the single-device bridge). */
   Roe<ControlLaneCopy> AccountCopyFor(const std::string& peer_identity,
                                       const std::optional<std::string>& account_key_init);
-  /** Whether our card at `card_at` rides this send to `account` (ControlLaneCarriesCard); noted when it does. */
-  bool CarryCard(const std::string& account, bool opens_session, bool asked, int64_t card_at);
+  /** The ids of the devices on `peer_identity`'s newest card we hold (none: no card). */
+  std::vector<std::string> CardDevicesOf(const std::string& peer_identity);
+  /**
+   * Whether our card at `card_at` rides a record to `devices` of `account` (ControlLaneCarriesCard, per device);
+   * noted for each of them when it does.
+   */
+  bool CarryCard(const std::string& account, const std::vector<std::string>& devices, bool opens_session, bool asked,
+                 int64_t card_at);
 
   IdentityStore& identity_;
   OwnCards& own_keys_;
@@ -107,9 +114,12 @@ private:
   std::function<IDirectMessageClient*()> direct_chat_;
   DeliveryOutbox& outbox_;
   std::atomic<uint64_t> order_key_{0};
-  /** Per account (ours too): the version of our card this device last sent it, while it runs. */
+  /**
+   * Per account (ours too), per device of it (empty: the account, its devices unknown): the version of our card this
+   * device last sent it, while it runs — a restart sends each device the card once more.
+   */
   std::mutex cards_sent_mutex_;
-  std::unordered_map<std::string, int64_t> cards_sent_;
+  std::unordered_map<std::string, std::unordered_map<std::string, int64_t>> cards_sent_;
   pp::Lifetime lifetime_;
 };
 

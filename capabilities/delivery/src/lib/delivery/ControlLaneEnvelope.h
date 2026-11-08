@@ -65,12 +65,24 @@ inline constexpr bool kControlLaneAccountCopyBetweenSingleDevices = true;
 bool ControlLaneUsesAccountCopy(size_t peer_devices, size_t own_devices);
 
 /**
- * Whether a lane envelope carries our account card: when it opens the session (`opens_session`), when the caller
- * says the peer may hold none of our cards (`asked`: a device list, an ask, a restored device's member check, a
- * ringing invite), or when this device has not sent this peer the card at `card_at` yet (`told_at`: the version
- * last sent, none). Otherwise the peer checks the envelope with the card it keeps, and asks for a newer one.
+ * The devices of the peer's a lane record addresses, for telling them our card (ControlLaneCarriesCard): each device
+ * copy's device; for an account copy, every device on the peer's card we hold (`card_devices`) — or, holding none (a
+ * first contact), the account itself (an empty id).
  */
-bool ControlLaneCarriesCard(bool opens_session, bool asked, std::optional<int64_t> told_at, int64_t card_at);
+std::vector<std::string> ControlLaneAddressedDevices(const std::vector<ControlLaneCopy>& copies,
+                                                     const std::vector<std::string>& card_devices);
+
+/**
+ * Whether a lane envelope carries our account card: when it opens a session (`opens_session`), when the caller
+ * says the peer may hold none of our cards (`asked`: a device list, an ask, a restored device's member check, a
+ * ringing invite), or when any device it addresses (ControlLaneAddressedDevices) has not been sent the card at
+ * `card_at` by this device yet (`told_at`, one per addressed device: the version last sent it, none). A device just
+ * linked to the peer's account has been told nothing, though its account was: it checks the envelope with the card
+ * it rides, and holds no other. Otherwise the peer checks the envelope with the card it keeps, and asks for a newer
+ * one. One record carries the card once, whichever of its copies needed it.
+ */
+bool ControlLaneCarriesCard(bool opens_session, bool asked, const std::vector<std::optional<int64_t>>& told_at,
+                            int64_t card_at);
 
 /**
  * A signed control-lane envelope carrying `control` (an identified system message): route

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/messaging/ControlLaneHold.h"
 #include "lib/messaging/SentCopy.h"
 
 #include "common/directory/IContactTrustAccess.h"
@@ -22,6 +23,7 @@
 #include "common/Module.h"
 
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -78,6 +80,16 @@ struct RelayReceiveOutcome {
    * message itself is not asked for again — signaling is stale by then.
    */
   std::optional<std::string> show_card_to;
+  /**
+   * A control-lane message that could not be checked for want of its sender's card (none kept, or the sending device
+   * not on it): held for the card (ControlLaneHold), then checked again (ReplayHeldControl).
+   */
+  bool held_for_card = false;
+  /**
+   * The sender verified, and lane messages of its wait for its card (ControlLaneHold): the caller has them checked
+   * again (ReplayHeldControl), off this ingest.
+   */
+  std::optional<std::string> replay_held_from;
   /**
    * When set, the local user (owner) should publish owner-signed member_joined after ingest.
    * Filled on successful group_invite_accept apply.
@@ -154,6 +166,32 @@ inline constexpr int64_t kControlLaneSignedSkewMs = 60 * 60 * 1000;
  */
 bool ControlLaneFresh(const RelayEnvelope& envelope, int64_t max_age_ms, int64_t now_ms);
 
+/** How a sender's signature check went (RelayReceivePipeline::CheckSignature). */
+struct SenderSignatureCheck {
+  enum class Result {
+    Verified,
+    /** No card kept for the sender, and none riding that speaks for it: nothing to check with yet. */
+    NoCard,
+    /** The card checked with does not list the sending device (a device linked since). */
+    DeviceNotOnCard,
+    /**
+     * Checked with the sending device's key from the card, and the signature does not verify: a forgery, a changed
+     * record — or a sender whose signed bytes differ (an app before sign v4, 2026-11-06).
+     */
+    Mismatch,
+    /** Not checkable at all: no sending device of an account, a malformed signature or key (`error` says). */
+    Invalid,
+  };
+  Result result = Result::Invalid;
+  /** The card checked with (or the one held, when it lacks the device): its issued_at; none with no card. */
+  std::optional<int64_t> card_at;
+  /** That card rode the envelope (newer than any kept); else it is the kept one. */
+  bool card_carried = false;
+  /** A card rode the envelope but did not speak for the sender (not its, not signed, not newer than kept / floor). */
+  bool carried_refused = false;
+  std::string error;
+};
+
 /** An account's newest kept account card — its device list (docs/contracts/ACCOUNT_CARD.md); none when not known. */
 using AccountCardLookup = std::function<std::optional<AccountCard>(const std::string& account_id)>;
 
@@ -218,6 +256,20 @@ public:
                                       bool authorized_older_backfill = false,
                                       MessageTransport transport = MessageTransport::Relay);
 
+  /** A held lane message checked again (ReplayHeldControl): the envelope as received, and how it went now. */
+  struct HeldControlReplay {
+    RelayEnvelope envelope;
+    RelayReceiveOutcome outcome;
+  };
+  /**
+   * `sender`'s lane messages held for its card (ControlLaneHold), checked again now that a card of its may be kept
+   * (`replay_held_from`, a card kept another way): each as on arrival — freshness counting its wait, first sight,
+   * the family's own checks — oldest first. One still not checkable waits again until its time is up.
+   */
+  std::vector<HeldControlReplay> ReplayHeldControl(const std::string& sender, const std::string& local_relay_user_id);
+  /** Whether lane messages of `sender`'s wait for its card. */
+  bool HoldsControlFrom(const std::string& sender) const;
+
 private:
   /** A retract from the target's own sender tombstones the target (when it is here already). */
   void ApplyInboundRetract(const ThreadMessage& persisted, RelayReceiveOutcome& outcome);
@@ -236,7 +288,19 @@ private:
    * The control lane: verified, decrypted under the pair's e2e_public session, handed to the family
    * that sends it on the lane while fresh and not seen before. Never stored.
    */
-  RelayReceiveOutcome ProcessControlEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id);
+  RelayReceiveOutcome ProcessControlEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
+                                             std::optional<int64_t> held_since_ms = std::nullopt);
+  /**
+   * The lane message's sender check (CheckSignature). When it fails, the warning and the `control.unverified` line
+   * say why; one that could not be checked for want of the sender's card is held for it (`held_since_ms`: a replayed
+   * one's first hold) — a signature that does not verify is not.
+   */
+  bool CheckControlSender(const RelayEnvelope& envelope, const DirectChatTarget& target,
+                          std::optional<int64_t> held_since_ms, RelayReceiveOutcome& outcome);
+  /** The failed check's warning (developer log) and `control.unverified` line. */
+  void ReportUnverifiedControl(const RelayEnvelope& envelope, const SenderSignatureCheck& check, bool held) const;
+  /** Hold a lane message for its sender's card (ControlLaneHold); false when its time is up (held already: waits). */
+  bool HoldForCard(const RelayEnvelope& envelope, std::optional<int64_t> held_since_ms);
   /**
    * A control record from another account with copies for our other devices only (M024): once it verifies, its
    * sender is told our card (`show_card_to`) — it may not know this device yet.
@@ -297,6 +361,8 @@ private:
    * not list is refused.
    */
   Roe<bool> VerifySignature(const RelayEnvelope& envelope, const DirectChatTarget& target) const;
+  /** VerifySignature, with why it failed (the card it checked with; a missing card or device apart from a mismatch). */
+  SenderSignatureCheck CheckSignature(const RelayEnvelope& envelope, const DirectChatTarget& target) const;
   /** Which copy of a message an envelope is, to this device (M021). */
   enum class CopyTo { ThisDevice, Account, Sibling };
   CopyTo WhoseCopy(const RelayEnvelope& envelope) const;
@@ -400,6 +466,9 @@ private:
   PublicPskLockCoordinator public_lock_;
   group_roster_sync::CatchUpLimiter catch_up_limiter_;
   std::unordered_map<ReplayKey, ReplayWindow, ReplayKeyHash> replay_windows_;
+  /** Lane messages waiting for their sender's card; ingest runs on more than one thread (relay poll, links). */
+  mutable std::mutex control_hold_mutex_;
+  ControlLaneHold control_hold_;
 };
 
 } // namespace pbr

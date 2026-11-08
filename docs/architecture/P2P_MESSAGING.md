@@ -314,9 +314,12 @@ ordered chat stream:
 - **What it costs the relay:** a lane record asks the relay to keep it an hour (`ttl_s` 3660,
   `kControlLaneRelayTtlMs`; no family takes one older, and `SystemControlRegistry::Bind` clamps a family's
   `lane_max_age_ms` to it), not the 90 days chat keeps. Our account card (~13 KB + 4 KB per device) rides a lane
-  message only when the peer may not hold it (`ControlLaneCarriesCard`: the first to that account after the card
-  changed, an opener, a device list, an ask, a member check, a ringing invite); the rest are checked with the card
-  the peer keeps, and a peer that keeps none asks for it ([ACCOUNT_CARD § Where cards travel](../contracts/ACCOUNT_CARD.md#where-cards-travel)).
+  message only when a device it addresses may not hold it (`ControlLaneCarriesCard`, told **per device** of the
+  peer's — `ControlLane::cards_sent_`, in memory, so a restart tells each device once more: a device copy's
+  device, or every device on the peer's card for an account copy; the first record to a device after our card
+  changed, or since this device started — a device just linked to the peer's account too —, an opener, a device
+  list, an ask, a member check, a ringing invite). One record carries it once, whichever copy needed it. The rest
+  are checked with the card the peer keeps, and a peer that keeps none asks for it ([ACCOUNT_CARD § Where cards travel](../contracts/ACCOUNT_CARD.md#where-cards-travel)).
   Before both, every lane message carried the card for 90 days: ~30 KB a record filled the relay's store.
 - **To many** (`ControlLane::SendToMany`): each recipient resolved (route, maybe a directory lookup;
   the pair's session, maybe opened) and sealed for its pair on the workers, in parallel, never on the
@@ -331,6 +334,19 @@ ordered chat stream:
   in profile.db, per sender and id, kept three hours), then the pair's session is reconciled
   (`ReconcileE2ePublicSession`, as for a chat message) and the family's `apply`. Never stored, never a transcript
   row, no inbox chrome.
+- **When the sender cannot be checked yet** — no card kept for it, or the sending device not on the card kept (a
+  device just linked or restored here keeps no cards; a device the sender linked since; a later record over a live
+  link that overtook the relay copy of the one carrying the card — a first call's answer, in the lab): the record is **held**
+  in memory for the sender's card (`ControlLaneHold`, owned by the pipeline: at most 16 per sender and 128 in all,
+  each at most two minutes, the oldest dropped first), and the sending device is asked for the card (`card_ask`,
+  as above). Once a card of the sender's is kept — any envelope of its that verifies (its answer to the ask, one
+  carrying its card), a group roster's card — its held records are checked again in order
+  (`ReplayHeldControl`): every step above, the wait counted in their age (`AgedByHold`), so a call invite too old
+  by then is dropped as stale. The relay has the record acked already (the cursor moved on); a restart loses what
+  is held, and the family recovers as for a lost message. A signature that does not verify with the device's key
+  is never held: it will not verify later. Either is a developer-log warning saying why (the reason, the card
+  checked with and its `issued_at`, carried or kept, the sending device's prefix, the route) and a
+  `control.unverified` diag line ([DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md)).
 - **When a copy cannot be read:** a verified record with copies for our other devices only (the sender's list of
   ours is older than this device), or an account copy that does not open: this device shows the sender its card
   (a `device_list` notice, at most once per account per 10 minutes — `MeshDeliveryOrchestrator::ShowCardTo`), so

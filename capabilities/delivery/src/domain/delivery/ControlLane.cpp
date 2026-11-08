@@ -50,15 +50,32 @@ ControlLane::~ControlLane() {
   lifetime_.InvalidateAndWait();
 }
 
-bool ControlLane::CarryCard(const std::string& account, const bool opens_session, const bool asked,
-                            const int64_t card_at) {
+std::vector<std::string> ControlLane::CardDevicesOf(const std::string& peer_identity) {
+  std::vector<std::string> ids;
+  if (auto kept = peer_cards_.Kept(peer_identity); kept && kept->has_value() && (*kept)->newest_card) {
+    for (const AccountCardDevice& device : (*kept)->newest_card->devices) {
+      ids.push_back(device.peer_id);
+    }
+  }
+  return ids;
+}
+
+bool ControlLane::CarryCard(const std::string& account, const std::vector<std::string>& devices,
+                            const bool opens_session, const bool asked, const int64_t card_at) {
   std::lock_guard lock(cards_sent_mutex_);
-  auto it = cards_sent_.find(account);
-  const std::optional<int64_t> told = it != cards_sent_.end() ? std::optional<int64_t>(it->second) : std::nullopt;
-  if (!ControlLaneCarriesCard(opens_session, asked, told, card_at)) {
+  std::unordered_map<std::string, int64_t>& told = cards_sent_[account];
+  std::vector<std::optional<int64_t>> told_at;
+  told_at.reserve(devices.size());
+  for (const std::string& device : devices) {
+    auto it = told.find(device);
+    told_at.push_back(it != told.end() ? std::optional<int64_t>(it->second) : std::nullopt);
+  }
+  if (!ControlLaneCarriesCard(opens_session, asked, told_at, card_at)) {
     return false;
   }
-  cards_sent_[account] = card_at;
+  for (const std::string& device : devices) {
+    told[device] = card_at;
+  }
   return true;
 }
 
@@ -169,16 +186,18 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
   const bool opens_session = std::any_of(copies->begin(), copies->end(), [](const ControlLaneCopy& copy) {
     return copy.key_init_b64 && !copy.key_init_b64->empty();
   });
+  const std::vector<std::string> addressed = ControlLaneAddressedDevices(*copies, CardDevicesOf(peer_identity));
   params.copies = std::move(*copies);
   auto device = own_keys_.DevicePeerId();
   if (!device) {
     return device.error();
   }
   params.sender_device = *device;
-  // The card (~13 KB + 4 KB a device) only when the peer may not hold it; the version always (M021 d6).
+  // The card (~13 KB + 4 KB a device) only when a device addressed may not hold it — once per record, whichever
+  // copy needed it; the version always (M021 d6).
   if (auto own = own_keys_.Card(util::NowUnixMs())) {
     params.sender_card_at = own->issued_at;
-    if (CarryCard(peer_identity, opens_session, with_card || urgent, own->issued_at)) {
+    if (CarryCard(peer_identity, addressed, opens_session, with_card || urgent, own->issued_at)) {
       params.sender_card = AccountCardToJson(*own);
     }
   }
@@ -273,7 +292,14 @@ Roe<void> ControlLane::NotifySiblings(const ThreadMessage& notice, const Sibling
   params.sender_relay_id = identity->relay_user_id;
   params.sender_device = *device;
   params.sender_card_at = card->issued_at;
-  if (CarryCard(identity->account_id, false, kind == SiblingNotice::DeviceList, card->issued_at)) {
+  std::vector<std::string> siblings;
+  for (const AccountCardDevice& sibling : card->devices) {
+    if (sibling.peer_id != *device) {
+      siblings.push_back(sibling.peer_id);
+    }
+  }
+  const std::vector<std::string> addressed = ControlLaneAddressedDevices({ControlLaneCopy{}}, siblings);
+  if (CarryCard(identity->account_id, addressed, false, kind == SiblingNotice::DeviceList, card->issued_at)) {
     params.sender_card = AccountCardToJson(*card);
   }
   params.peer_account_id = identity->account_id;
