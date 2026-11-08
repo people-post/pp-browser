@@ -165,10 +165,16 @@ std::string CallSummaryRowText(const CallSummaryRow& row) {
 }
 
 /** A call summary: icon + duration / outcome in a small pill on the starter's side (Kenneth 2026-10-23). */
-std::string CallRowRml(const CallSummaryRow& row) {
+std::string CallRowRml(const CallSummaryRow& row, bool tappable) {
   std::string html = "<div class=\"chat-call-row";
   if (!row.connected) {
     html += " muted";
+  }
+  if (tappable) {
+    // Tap = call back, same type as the record, the way the header's call button starts one.
+    html += " chat-call-row--tappable\" data-event-click=\"call_back('";
+    html += row.video ? "1" : "0";
+    html += "')";
   }
   html += "\"><svg class=\"chat-call-row-icon\" src=\"";
   html += row.video ? "../icons/video.svg" : "../icons/phone.svg";
@@ -181,7 +187,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   const ThreadMessage& message = entry.message;
   if (entry.control) {
     if (call_row) {
-      return CallRowRml(*call_row);
+      return CallRowRml(*call_row, !facts.thread_is_group && !call_row->group);
     }
     // A feature's message: its own line, names included, else the message's text.
     const auto line = facts.control_line ? facts.control_line(message) : std::nullopt;
