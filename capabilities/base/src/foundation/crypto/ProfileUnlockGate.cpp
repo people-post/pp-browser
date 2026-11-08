@@ -81,6 +81,7 @@ void ProfileUnlockGate::DrainQueue(const bool unlocked) {
 void ProfileUnlockGate::SetUnlockInProgress(const bool in_progress) {
   unlock_in_progress_ = in_progress;
   if (in_progress) {
+    unlock_started_ = std::chrono::steady_clock::now();
     DiagLine("unlock.start").Emit();
   }
   if (ports_.ui.set_unlock_in_progress) {
@@ -106,7 +107,12 @@ void ProfileUnlockGate::Finish(const bool unlocked) {
   unlock_door_up_ = false;
   biometric_prompted_this_door_ = false;
   ++door_generation_;
-  DiagLine("unlock.done").Add("unlocked", unlocked).Emit();
+  const int64_t elapsed_ms =
+      unlock_started_ ? std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - *unlock_started_).count()
+                      : 0;
+  unlock_started_.reset();
+  DiagLine("unlock.done").Add("unlocked", unlocked).Add("ms", elapsed_ms).Emit();
   SetUnlockInProgress(false);
   if (ports_.ui.dismiss) {
     ports_.ui.dismiss();
@@ -493,6 +499,9 @@ void ProfileUnlockGate::SetGraceAttemptInProgress(const bool in_progress) {
   // Holds EnsureUnlocked callers and a typed PIN back like any unlock; unlock.start stays for a PIN or the
   // default PIN (a grace attempt says unlock.grace).
   unlock_in_progress_ = in_progress;
+  if (in_progress) {
+    unlock_started_ = std::chrono::steady_clock::now();  // unlock.done ms= covers a grace attempt too
+  }
   if (ports_.ui.set_unlock_in_progress) {
     ports_.ui.set_unlock_in_progress(in_progress);
   }

@@ -49,7 +49,10 @@ struct BriefKeyRenewal {
  * `rejected` for good and let the sessions take the new key. `stored_key`: the Bearer stored now ("" when none).
  */
 struct BriefKeyPorts {
-  std::function<Roe<BriefKeyRenewal>(const std::string& rejected, const std::string& llm_base_url)> renew;
+  /** `cancelled`: the turn's stop flag; a renewal that waits (for a mint in flight) gives up when it is set. */
+  std::function<Roe<BriefKeyRenewal>(const std::string& rejected, const std::string& llm_base_url,
+                                     const std::atomic<bool>& cancelled)>
+      renew;
   std::function<void(const std::string& rejected)> commit;
   std::function<std::string()> stored_key;
 };

@@ -1,4 +1,5 @@
 #include "domain/registration/RegistrationClient.h"
+#include "domain/registration/BriefLlmKeyRenewal.h"
 #include "common/directory/IdentityTypes.h"
 #include "common/Utilities.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
@@ -7,6 +8,7 @@
 #include "foundation/crypto/KemKeyBinding.h"
 
 #include <filesystem>
+#include <thread>
 
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"
@@ -220,6 +222,136 @@ TEST_F(KemBindingPublishTest, ARelayThatDidNotStoreItLeavesItToPublishAgain) {
   ASSERT_TRUE(static_cast<bool>(MaybeAutoRenewRegistration(client_, *identity_, false)));
   EXPECT_FALSE(identity_->Get().value().kem_binding_published);
   EXPECT_TRUE(ShouldPublishKemBinding(identity_->Get().value()));
+}
+
+// DEV/PLAN-unlock-gate-early-dismiss.md A.2: the renewal in two halves (network off the UI thread, store back on it).
+// RenewNetworkOnly then PersistRenewal stores exactly what FinishAndPersistRegistration did; the network half stores
+// nothing; the store half reads the identity again, so a field written in between is kept.
+void ExpectSameRegistrationFields(const LocalIdentity& a, const LocalIdentity& b) {
+  EXPECT_EQ(a.registered, b.registered);
+  EXPECT_EQ(a.relay_user_id, b.relay_user_id);
+  EXPECT_EQ(a.brief_llm_api_key.Reveal(), b.brief_llm_api_key.Reveal());
+  EXPECT_EQ(a.brief_llm_guest_api_key.Reveal(), b.brief_llm_guest_api_key.Reveal());
+  EXPECT_EQ(a.registration_expires_at, b.registration_expires_at);
+  EXPECT_EQ(a.initiation_floor, b.initiation_floor);
+  EXPECT_EQ(a.kem_binding_published, b.kem_binding_published);
+  EXPECT_EQ(a.nickname, b.nickname);
+  EXPECT_EQ(a.account_id, b.account_id);
+  EXPECT_EQ(a.peer_id, b.peer_id);
+  EXPECT_EQ(a.kem_public_key_b64, b.kem_public_key_b64);
+}
+
+TEST_F(KemBindingPublishTest, TheSplitHalvesStoreWhatFinishAndPersistStored) {
+  const LocalIdentity initial = identity_->Get().value();
+
+  auto old_applied = FinishAndPersistRegistration(client_, *identity_, initial.nickname);
+  ASSERT_TRUE(static_cast<bool>(old_applied)) << old_applied.error().message;
+  const LocalIdentity after_old = identity_->Get().value();
+  ExpectSameRegistrationFields(*old_applied, after_old);
+
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(initial)));
+  auto result = RenewNetworkOnly(client_, *identity_, initial.nickname);
+  ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
+  auto new_applied = PersistRenewal(*identity_, *result, initial.account_id);
+  ASSERT_TRUE(static_cast<bool>(new_applied)) << new_applied.error().message;
+  const LocalIdentity after_new = identity_->Get().value();
+
+  ExpectSameRegistrationFields(after_old, after_new);
+  ExpectSameRegistrationFields(*new_applied, after_new);
+  EXPECT_EQ(client_.finish_calls, 2);
+  EXPECT_TRUE(after_new.kem_binding_published);
+  EXPECT_EQ(after_new.brief_llm_api_key.Reveal(), "brf_llm_mock_key");
+}
+
+TEST_F(KemBindingPublishTest, RenewNetworkOnlyStoresNothing) {
+  const LocalIdentity before = identity_->Get().value();
+  auto result = RenewNetworkOnly(client_, *identity_, before.nickname);
+  ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
+  EXPECT_EQ(client_.finish_calls, 1);
+  ExpectSameRegistrationFields(before, identity_->Get().value());
+}
+
+TEST_F(KemBindingPublishTest, PersistRenewalReadsTheIdentityAgain) {
+  auto result = RenewNetworkOnly(client_, *identity_, identity_->Get().value().nickname);
+  ASSERT_TRUE(static_cast<bool>(result));
+  LocalIdentity meanwhile = identity_->Get().value();
+  meanwhile.nickname = "renamed-meanwhile"; // written while the network half was out
+  ASSERT_TRUE(static_cast<bool>(identity_->Update(meanwhile)));
+  ASSERT_TRUE(static_cast<bool>(PersistRenewal(*identity_, *result, meanwhile.account_id)));
+  const LocalIdentity after = identity_->Get().value();
+  EXPECT_EQ(after.nickname, "renamed-meanwhile") << "only the registration fields are the renewal's";
+  EXPECT_TRUE(after.kem_binding_published);
+}
+
+TEST_F(KemBindingPublishTest, MaybeAutoRenewNetworkOnlyFollowsTheSameRule) {
+  auto due = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/false);
+  ASSERT_TRUE(static_cast<bool>(due)) << due.error().message;
+  ASSERT_TRUE(due->has_value()) << "an unpublished KEM binding is due even without auto-renew";
+  EXPECT_FALSE(identity_->Get().value().kem_binding_published) << "nothing stored by the network half";
+  ASSERT_TRUE(static_cast<bool>(PersistRenewal(*identity_, **due, identity_->Get().value().account_id)));
+
+  auto not_due = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_TRUE(static_cast<bool>(not_due));
+  EXPECT_FALSE(not_due->has_value()) << "published and far from expiry: nothing due";
+  EXPECT_EQ(client_.finish_calls, 1);
+}
+
+// A renewal stored on the UI thread and a guest-key write off it (the 401 renewal, the diagnostics Bearer) at the
+// same time: both are one modify under the store's lock, so neither overwrites the other's field.
+TEST_F(KemBindingPublishTest, ConcurrentRenewalAndGuestKeyWritesKeepBothFields) {
+  const std::string account = identity_->Get().value().account_id;
+  BriefLlmKeyStore keys;
+  keys.get = [this]() -> std::optional<LocalIdentity> {
+    auto got = identity_->Get();
+    return got ? std::optional<LocalIdentity>(*got) : std::nullopt;
+  };
+  keys.modify = [this](const std::function<bool(LocalIdentity&)>& change) -> Roe<void> {
+    if (auto changed = identity_->Modify(change); !changed) {
+      return changed.error();
+    }
+    return {};
+  };
+  constexpr int kRounds = 60;
+  std::thread renewals([&]() {
+    for (int i = 0; i < kRounds; ++i) {
+      RegistrationResult result{.success = true, .relay_user_id = "relay:u1",
+                                .expires_at = "2099-01-01T00:00:" + std::to_string(10 + i) + ".000Z",
+                                .kem_bound = true};
+      ASSERT_TRUE(static_cast<bool>(PersistRenewal(*identity_, result, account)));
+    }
+  });
+  std::thread guest_keys([&]() {
+    for (int i = 0; i < kRounds; ++i) {
+      ASSERT_TRUE(static_cast<bool>(keys.modify([&](LocalIdentity& identity) {
+        identity.brief_llm_guest_api_key = SecretText(("brf_guest_" + std::to_string(i)).c_str());
+        return true;
+      })));
+    }
+  });
+  renewals.join();
+  guest_keys.join();
+  const LocalIdentity after = identity_->Get().value();
+  EXPECT_EQ(after.registration_expires_at, "2099-01-01T00:00:" + std::to_string(10 + kRounds - 1) + ".000Z");
+  EXPECT_EQ(after.brief_llm_guest_api_key.Reveal(), "brf_guest_" + std::to_string(kRounds - 1));
+  EXPECT_TRUE(after.kem_binding_published);
+
+  // The unlock's guest key arriving after a key is stored keeps that key.
+  auto kept = StoreBriefGuestKeyIfNone(keys, SecretText("brf_guest_late"), account);
+  ASSERT_TRUE(static_cast<bool>(kept));
+  EXPECT_EQ(*kept, "brf_guest_" + std::to_string(kRounds - 1));
+}
+
+// Hardening: a renewal that ran for one account is not stored into another (the profile changed meanwhile).
+TEST_F(KemBindingPublishTest, PersistRenewalRefusesAnotherAccount) {
+  auto result = RenewNetworkOnly(client_, *identity_, identity_->Get().value().nickname);
+  ASSERT_TRUE(static_cast<bool>(result));
+  const LocalIdentity before = identity_->Get().value();
+  EXPECT_FALSE(static_cast<bool>(PersistRenewal(*identity_, *result, "account:someone-else")));
+  ExpectSameRegistrationFields(before, identity_->Get().value());
+  EXPECT_FALSE(static_cast<bool>(PersistRenewal(*identity_, *result, ""))) << "no account: refused, not a pass";
+  ExpectSameRegistrationFields(before, identity_->Get().value());
+  EXPECT_TRUE(static_cast<bool>(PersistRenewal(*identity_, *result, before.account_id)));
+  EXPECT_TRUE(identity_->Get().value().kem_binding_published);
 }
 
 } // namespace

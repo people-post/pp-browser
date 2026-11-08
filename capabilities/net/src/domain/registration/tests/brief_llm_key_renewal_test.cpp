@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,8 @@ namespace {
 
 class BriefLlmKeyRenewalTest : public ::testing::Test {
 protected:
+  BriefLlmKeyRenewalTest() { identity_.account_id = "account:a"; }
+
   BriefLlmKeyStore Store() {
     BriefLlmKeyStore store;
     store.get = [this]() -> std::optional<LocalIdentity> {
@@ -22,16 +25,26 @@ protected:
       }
       return identity_;
     };
-    store.save = [this](const LocalIdentity& identity) -> Roe<void> {
+    store.modify = [this](const std::function<bool(LocalIdentity&)>& change) -> Roe<void> {
+      if (!readable_) {
+        return AppError::Internal("locked");
+      }
+      LocalIdentity changed = identity_;
+      if (!change(changed)) {
+        return {};
+      }
       ++saves_;
       if (!save_ok_) {
         return AppError::Internal("disk full");
       }
-      identity_ = identity;
+      identity_ = changed;
       return {};
     };
     store.mint = [this](const std::string& base_url) -> Roe<BriefGuestLlmMintResult> {
       mint_urls_.push_back(base_url);
+      if (during_mint_) {
+        during_mint_(identity_); // another writer while the mint is out
+      }
       if (!mint_ok_) {
         return AppError::Network(Err::Network::HttpError, "Guest LLM mint failed (HTTP 503)");
       }
@@ -43,6 +56,7 @@ protected:
   }
 
   LocalIdentity identity_;
+  std::function<void(LocalIdentity&)> during_mint_;
   bool readable_ = true;
   bool save_ok_ = true;
   bool mint_ok_ = true;
@@ -125,6 +139,64 @@ TEST_F(BriefLlmKeyRenewalTest, AnUnreadableIdentityIsAnError) {
   EXPECT_FALSE(CommitBriefLlmKey(Store(), "k"));
   EXPECT_EQ(StoredBriefLlmKey(Store()), "");
   EXPECT_TRUE(mint_urls_.empty());
+}
+
+// A key stored while the mint was out (the unlock's guest-key mint, another turn) stays: no overwrite, it is reused.
+TEST_F(BriefLlmKeyRenewalTest, AKeyStoredDuringTheMintIsKeptAndReused) {
+  identity_.brief_llm_api_key = "brf_llm_old";
+  during_mint_ = [](LocalIdentity& identity) { identity.brief_llm_guest_api_key = "brf_guest_meanwhile"; };
+  auto renewed = RenewBriefLlmKey(Store(), "brf_llm_old", "u");
+  ASSERT_TRUE(renewed) << renewed.error().message;
+  EXPECT_TRUE(renewed->reused);
+  EXPECT_EQ(renewed->key, "brf_guest_meanwhile");
+  EXPECT_EQ(identity_.brief_llm_guest_api_key, "brf_guest_meanwhile");
+  EXPECT_EQ(saves_, 0);
+}
+
+// The profile changed while the mint was out: the key is not written into the other account.
+TEST_F(BriefLlmKeyRenewalTest, AnotherAccountStoredDuringTheMintIsRefused) {
+  identity_.account_id = "account:a";
+  identity_.brief_llm_guest_api_key = "brf_guest_old";
+  during_mint_ = [](LocalIdentity& identity) {
+    identity = LocalIdentity{};
+    identity.account_id = "account:b";
+  };
+  EXPECT_FALSE(RenewBriefLlmKey(Store(), "brf_guest_old", "u"));
+  EXPECT_EQ(saves_, 0);
+  EXPECT_TRUE(identity_.brief_llm_guest_api_key.empty());
+}
+
+TEST_F(BriefLlmKeyRenewalTest, StoreGuestKeyIfNoneStoresKeepsOrRefuses) {
+  auto stored = StoreBriefGuestKeyIfNone(Store(), SecretText("brf_guest_new"), "account:a");
+  ASSERT_TRUE(stored) << stored.error().message;
+  EXPECT_EQ(*stored, "brf_guest_new");
+  EXPECT_EQ(identity_.brief_llm_guest_api_key, "brf_guest_new");
+  EXPECT_EQ(saves_, 1);
+
+  stored = StoreBriefGuestKeyIfNone(Store(), SecretText("brf_guest_second"), "account:a");
+  ASSERT_TRUE(stored);
+  EXPECT_EQ(*stored, "brf_guest_new") << "a key already stored stays";
+  EXPECT_EQ(saves_, 1);
+
+  identity_ = LocalIdentity{};
+  identity_.account_id = "account:b";
+  EXPECT_FALSE(StoreBriefGuestKeyIfNone(Store(), SecretText("brf_guest_x"), "account:a"))
+      << "minted for another account";
+  EXPECT_TRUE(identity_.brief_llm_guest_api_key.empty());
+  EXPECT_EQ(saves_, 1);
+}
+
+// An empty account id is a refusal, never a pass: nothing minted, nothing written.
+TEST_F(BriefLlmKeyRenewalTest, AnEmptyAccountIdIsRefused) {
+  EXPECT_FALSE(StoreBriefGuestKeyIfNone(Store(), SecretText("brf_guest_x"), ""));
+  EXPECT_TRUE(identity_.brief_llm_guest_api_key.empty());
+
+  identity_.account_id.clear(); // an identity without one (not yet made)
+  identity_.brief_llm_guest_api_key = "brf_guest_old";
+  EXPECT_FALSE(RenewBriefLlmKey(Store(), "brf_guest_old", "u"));
+  EXPECT_TRUE(mint_urls_.empty());
+  EXPECT_EQ(saves_, 0);
+  EXPECT_EQ(identity_.brief_llm_guest_api_key, "brf_guest_old");
 }
 
 } // namespace

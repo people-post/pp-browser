@@ -1235,7 +1235,8 @@ protected:
   // is counted, and the refused key and base URL kept.
   void Renewer(const std::string& key) {
     BriefKeyPorts ports;
-    ports.renew = [this, key](const std::string& rejected, const std::string& base_url) -> Roe<BriefKeyRenewal> {
+    ports.renew = [this, key](const std::string& rejected, const std::string& base_url,
+                              const std::atomic<bool>&) -> Roe<BriefKeyRenewal> {
       ++renew_calls_;
       {
         std::lock_guard lock(mu_);
@@ -1322,6 +1323,56 @@ TEST_F(AgentSessionBriefKeyRenewTest, A401AfterTheRenewalEndsInTheErrorWithoutAn
   EXPECT_EQ(renew_calls_.load(), 1);
   EXPECT_EQ(stream_calls_.load(), 3u);
   EXPECT_EQ(Of(events, AgentEventType::Error).size(), 1u);
+}
+
+// Stop during a 401 renewal (the turn waited for the unlock's mint, or minted): the renewal did not finish, so the
+// next turn's 401 renews again instead of "already renewed since the last answer".
+TEST_F(AgentSessionBriefKeyRenewTest, AStopDuringTheRenewalLeavesTheNextTurnFreeToRenew) {
+  Start();
+  ScriptOutcomes({Http(401), Http(401), BriefAiOutcome::Done});
+  std::atomic<bool> in_renew{false};
+  std::atomic<bool> first_returned{false};
+  BriefKeyPorts ports;
+  ports.renew = [&](const std::string&, const std::string&, const std::atomic<bool>& cancelled) -> Roe<BriefKeyRenewal> {
+    if (++renew_calls_ == 1) {
+      in_renew = true;
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+      while (!cancelled.load() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+      }
+      first_returned = true;
+      return AppError::Network(Err::Network::HttpError, "Brief key renewal stopped"); // as the app's wait gives up
+    }
+    return BriefKeyRenewal{.key = "brf_guest_new"};
+  };
+  ports.commit = [this](const std::string&) { ++commit_calls_; };
+  ports.stored_key = [this]() {
+    std::lock_guard lock(mu_);
+    return stored_;
+  };
+  session_->SetBriefKeyPorts(std::move(ports));
+
+  session_->Submit("q");
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (!in_renew && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  ASSERT_TRUE(in_renew.load());
+  session_->Cancel(); // Stop while the renewal waits
+  while (!first_returned && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  ASSERT_TRUE(first_returned.load());
+  std::this_thread::sleep_for(std::chrono::milliseconds(100)); // the stopped turn runs to its end
+  (void)WaitForTurn(std::chrono::milliseconds(1000));
+
+  session_->Submit("q2");
+  const auto events = WaitForTurn();
+  EXPECT_EQ(renew_calls_.load(), 2) << "the stopped renewal did not count as one";
+  EXPECT_EQ(stream_calls_.load(), 3u); // q (401), q2 (401), q2 again with the renewed key
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  EXPECT_EQ(Of(events, AgentEventType::AssistantReady).size(), 1u);
+  EXPECT_EQ(commit_calls_.load(), 1);
 }
 
 TEST_F(AgentSessionBriefKeyRenewTest, OtherStatusesNeverRenew) {

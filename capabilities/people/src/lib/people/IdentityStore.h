@@ -8,6 +8,7 @@
 #include "foundation/crypto/IDekConsumer.h"
 #include "common/directory/IdentityTypes.h"
 
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -47,6 +48,12 @@ public:
   Roe<std::optional<ByteVector>> RecoverySeed() const;
   Roe<LocalIdentity> Get() const;
   Roe<LocalIdentity> Update(const LocalIdentity& identity);
+  /**
+   * One read-modify-write under the store's lock: `change` edits the identity as stored now and returns whether to
+   * save it (false: nothing is written). Two writers off different threads cannot overwrite each other's fields this
+   * way, as Get + Update can. `change` must not call back into this store. Returns the identity after it.
+   */
+  Roe<LocalIdentity> Modify(const std::function<bool(LocalIdentity& identity)>& change);
   Roe<std::string> SignPayload(const std::string& canonical_json) const;
   Roe<std::string> SignBytes(const std::vector<uint8_t>& sign_bytes) const;
   Roe<std::string> SignAccountBytes(const AccountSignBytes& sign_bytes) const override;

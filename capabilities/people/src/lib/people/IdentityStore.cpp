@@ -560,6 +560,28 @@ Roe<LocalIdentity> IdentityStore::Update(const LocalIdentity& identity) {
   return Error("Failed to save identity");
 }
 
+Roe<LocalIdentity> IdentityStore::Modify(const std::function<bool(LocalIdentity& identity)>& change) {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  LocalIdentity changed = identity_;
+  if (!change || !change(changed)) {
+    return identity_;
+  }
+  if (auto peer = DerivePeerId(changed); !peer) {
+    return peer.error();
+  }
+  identity_ = std::move(changed);
+  dirty_ = true;
+  if (Save()) {
+    dirty_ = false;
+    return identity_;
+  }
+  return Error("Failed to save identity");
+}
+
 Roe<std::string> IdentityStore::SignPayload(const std::string& canonical_json) const {
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();

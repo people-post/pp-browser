@@ -222,6 +222,8 @@ private:
   std::vector<std::function<void(bool)>> pending_;
   bool showing_ = false;
   bool unlock_in_progress_ = false;
+  /** Set at unlock.start; unlock.done reports the time since (ms=0 when no start was recorded, e.g. grace). */
+  std::optional<std::chrono::steady_clock::time_point> unlock_started_;
   bool deferred_unlock_started_ = false;
   /** The grace entry was Unavailable: retried when protected data comes back or the app comes forward. */
   bool grace_pending_ = false;

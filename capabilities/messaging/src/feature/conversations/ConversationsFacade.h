@@ -72,6 +72,16 @@ public:
   IThreadStore* ThreadStore();
   void BindAgentInbound(AgentInboundPorts ports);
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);
+  /**
+   * MaybeAutoRenewRegistration in two halves, so the network half can run off the UI thread: nullopt when nothing is
+   * due, else the finished registration; nothing stored. PersistRegistrationRenewal then reads the identity again and
+   * saves only the registration fields.
+   */
+  Roe<std::optional<RegistrationResult>> MaybeAutoRenewRegistrationNetworkOnly(bool auto_renew_registration);
+  /** `expected_account_id`: the account the network half ran for; another one stored now is refused. */
+  Roe<LocalIdentity> PersistRegistrationRenewal(const RegistrationResult& result,
+                                                const std::string& expected_account_id);
+  /** Blocking (HTTP): binds this device's push tokens. Called off the UI thread (gui MessagingReadyTasks). */
   Roe<void> SyncPushDevices();
   /** Whether the saved backend differs from the running one: push is unbound from the running backend meanwhile. */
   void SetBackendSwitchPending(bool pending);
@@ -430,6 +440,8 @@ public:
   Roe<std::vector<Contact>> SearchLocalContacts(const std::string& query);
   Roe<LocalIdentity> GetLocalIdentity();
   Roe<LocalIdentity> UpdateLocalIdentity(const LocalIdentity& identity);
+  /** One read-modify-write under the identity store's lock (IdentityStore::Modify); for writers off the UI thread. */
+  Roe<LocalIdentity> ModifyLocalIdentity(const std::function<bool(LocalIdentity& identity)>& change);
   Roe<LocalIdentity> FinishAndPersistRegistration(const std::string& nickname);
   Roe<RegistrationResult> UpdateRegisteredNickname(const std::string& nickname);
   /** #328: take this account off the directory (profile reset / delete account). */

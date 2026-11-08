@@ -1446,6 +1446,9 @@ void AgentTurnController::RefreshLlmSetupBanner() {
       }
     }
     const std::string brief_key = ResolveBriefLlmApiKey(registered, guest);
+    if (brief_key.empty() && brief_key_run_->InFlight()) {
+      return; // a key is on its way: keep the banner as it is until the mint ends (OnBriefKeyMintEnded)
+    }
     if (brief_key.empty()) {
       // The mint hint can be the server's own wording, so remember what was shown to dismiss it later.
       last_brief_banner_ = !brief_guest_mint_user_hint_.empty() ? brief_guest_mint_user_hint_ : kBriefUnavailable;
@@ -1488,20 +1491,29 @@ void AgentTurnController::EnsureBriefGuestLlmKey() {
   if (ResolvePreset(host_.Store().Snapshot().config) != "brief" || base_url.empty()) {
     base_url = BriefLlmBaseUrl();
   }
-  auto minted = MintBriefGuestLlmKey(base_url);
-  if (!minted) {
-    brief_guest_mint_user_hint_ = AppError::Display(minted.error());
+  // The HTTP goes off the UI thread; the key is stored back on it, and OnBriefKeyMintEnded says how it went.
+  host_.MintBriefGuestKey(base_url);
+}
+
+void AgentTurnController::OnBriefKeyMintEnded(const BriefKeyMintEnd& end) {
+  switch (end.outcome) {
+  case BriefKeyMintOutcome::Stored:
+    brief_guest_mint_user_hint_.clear();
+    return; // after_identity_changed reloads the agent and refreshes the banner
+  case BriefKeyMintOutcome::MintFailed:
+    brief_guest_mint_user_hint_ = end.error ? AppError::Display(*end.error) : std::string();
     if (brief_guest_mint_user_hint_.empty()) {
       brief_guest_mint_user_hint_ = Tr("chat.hint.brief_unavailable_temp");
     }
+    break;
+  case BriefKeyMintOutcome::SaveFailed:
+    brief_guest_mint_user_hint_ = Tr("chat.hint.brief_key_save_failed");
+    break;
+  case BriefKeyMintOutcome::Discarded:
+    brief_guest_mint_attempted_ = false; // nothing was written: the next session mints again
     return;
   }
-  brief_guest_mint_user_hint_.clear();
-  LocalIdentity updated = *identity;
-  updated.brief_llm_guest_api_key = minted->llm_api_key;
-  if (!host_.Facade()->UpdateLocalIdentity(updated)) {
-    brief_guest_mint_user_hint_ = Tr("chat.hint.brief_key_save_failed");
-  }
+  RefreshLlmSetupBanner(); // it kept the banner while the mint was in flight
 }
 
 AgentTurnController::AgentConfig AgentTurnController::ProjectAgent(const AppConfig& config) {

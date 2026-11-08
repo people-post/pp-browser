@@ -17,7 +17,12 @@ namespace pbr {
  */
 struct BriefLlmKeyStore {
   std::function<std::optional<LocalIdentity>()> get;
-  std::function<Roe<void>(const LocalIdentity& identity)> save;
+  /**
+   * One read-modify-write under the identity store's lock (IdentityStore::Modify): `change` edits the identity as
+   * stored now and returns whether to save it. Never a whole identity read earlier: a writer on another thread (the
+   * registration renewal) keeps its fields. `change` must not call back into the store.
+   */
+  std::function<Roe<void>(const std::function<bool(LocalIdentity& identity)>& change)> modify;
   std::function<Roe<BriefGuestLlmMintResult>(const std::string& llm_base_url)> mint;
 };
 
@@ -30,9 +35,18 @@ struct BriefLlmKeyRenewal {
 std::string StoredBriefLlmKey(const BriefLlmKeyStore& store);
 
 /**
+ * Stores `key` as the guest key unless a key is stored already (registered or guest: kept, and returned), in one
+ * modify. `expected_account_id`: the account `key` was minted for; another account stored now (the profile changed
+ * meanwhile), or an empty `expected_account_id`, is refused and nothing is written. Returns the Bearer stored after it.
+ */
+Roe<std::string> StoreBriefGuestKeyIfNone(const BriefLlmKeyStore& store, const SecretText& key,
+                                          const std::string& expected_account_id);
+
+/**
  * The gateway refused `rejected`. When the stored key is another one, that one (reused). Else mint a guest key at
  * `llm_base_url` and store it beside the registered key, which is kept until a retry with the guest key is answered
- * (CommitBriefLlmKey). One read-modify-write after the mint: the stored key is never empty meanwhile.
+ * (CommitBriefLlmKey). One modify after the mint: the stored key is never empty meanwhile; a key other than
+ * `rejected` stored during the mint is kept (reused), and an identity of another account then is refused.
  */
 Roe<BriefLlmKeyRenewal> RenewBriefLlmKey(const BriefLlmKeyStore& store, const std::string& rejected,
                                          const std::string& llm_base_url);

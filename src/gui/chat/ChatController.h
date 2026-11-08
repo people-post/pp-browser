@@ -31,6 +31,7 @@
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/HeldAgentSend.h"
+#include "gui/chat/MessagingReadyTasks.h"
 #include "gui/chat/SessionListWindow.h"
 #include "gui/chat/ThreadDrafts.h"
 #include "gui/chat/WorkingSetController.h"
@@ -106,6 +107,12 @@ public:
   void BindAgentPorts(AgentUiPorts ports) { agent_.BindPorts(std::move(ports)); }
   void ReloadAgentConfig() { agent_.ReloadAgentConfig(); }
   void ReloadAgentConfigWhenIdle() { agent_.ReloadAgentConfigWhenIdle(); }
+  /** Binds this device's push tokens off the UI thread (one run at a time; MessagingReadyTasks). */
+  void SyncPushDevices();
+  /** The Brief key's mint run, shared with the 401 renewal (B183, Application). */
+  const std::shared_ptr<CoalescedRun>& BriefKeyRun() const { return agent_.BriefKeyRun(); }
+  /** A 401 renewal held the Brief key run while a mint was asked for: ask again (does nothing once a key is stored). */
+  void RetryBriefKeyMint();
 
   /**
    * A peer's photo was fetched (new path: files are named after their bytes). Rebuilds what shows photos: the open
@@ -617,6 +624,14 @@ private:
   ChatState chat_;
   ShellState shell_;
   bool messaging_ready_ = false;
+  /**
+   * One up per WireMessagingBindings (and when messaging goes away): a messaging-ready task's result is stored only
+   * when the session it started in is still this one (MessagingReadyTasks).
+   */
+  uint64_t messaging_session_ = 0;
+  /** Push binding, registration renewal and the Brief key mint off the UI thread. Made in BindConversationsFacade. */
+  std::unique_ptr<MessagingReadyTasks> ready_tasks_;
+  void MakeReadyTasks();
   /** Its AppLifecycle background listener (removed at Shutdown). */
   uint64_t lifecycle_background_id_ = 0;
   bool mesh_ready_ = false;
@@ -657,6 +672,11 @@ private:
   // AgentTurnHost, ChatMenusHost
   ConversationsFacade* Facade() const override { return facade_; }
   bool MessagingIsReady() const override { return messaging_ready_; }
+  void MintBriefGuestKey(const std::string& llm_base_url) override {
+    if (ready_tasks_) {
+      ready_tasks_->MintBriefKey(llm_base_url);
+    }
+  }
   void RegisterMessagingTools(ToolRegistry& tools) override {
     if (register_messaging_tools_) {
       register_messaging_tools_(tools);
