@@ -392,6 +392,12 @@ void ConversationsHub::OnLocalNetworkChanged(const NetworkChange& change) {
   for (HubParticipant* participant : Participants()) {
     participant->OnLocalNetworkChanged(change, local ? &*local : nullptr);
   }
+  {
+    const int online = change.current.online ? 1 : 0;
+    if (network_online_.exchange(online) != online && on_network_online_changed_) {
+      on_network_online_changed_(true, change.current.online);
+    }
+  }
   // Offline or an unknown link keeps the last known kind of network.
   if (const AutoDownloadNetwork network = AutoDownloadNetworkOf(change.current, host_.mobile);
       network != AutoDownloadNetwork::Unknown) {
@@ -1500,6 +1506,10 @@ bool ConversationsHub::IsHelpNetworkEnabled() const {
 
 void ConversationsHub::SetOnReachabilityUpdated(std::function<void()> callback) {
   on_reachability_updated_ = std::move(callback);
+}
+
+void ConversationsHub::SetOnNetworkOnlineChanged(std::function<void(bool known, bool online)> callback) {
+  on_network_online_changed_ = std::move(callback);
 }
 
 void ConversationsHub::SetOnStoredAttachmentsChanged(std::function<void()> callback) {

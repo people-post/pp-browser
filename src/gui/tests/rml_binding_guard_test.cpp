@@ -82,6 +82,33 @@ TEST(RmlBindingGuardTest, TheChatsBarAvatarAndNameResolveInTheSettingsModel) {
   }
 }
 
+// The status line under the name binds two window-model fields (ShellHost::SetChatsLink); both are registered there, and
+// the line shows only while the state is non-empty (unknown = nothing).
+TEST(RmlBindingGuardTest, TheChatsStatusLineBindsTheWindowModelsLinkFields) {
+  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "sidebar.rml");
+  EXPECT_NE(rml.find("class=\"pane-nav-avatar-sub\" data-if=\"chats_link_state != ''\""), std::string::npos);
+  EXPECT_NE(rml.find("{{chats_link_text}}"), std::string::npos);
+  const std::string host = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellHost.cpp");
+  EXPECT_NE(host.find("ctor.Bind(\"chats_link_state\""), std::string::npos);
+  EXPECT_NE(host.find("ctor.Bind(\"chats_link_text\""), std::string::npos);
+}
+
+// The drawer's "you" row is 64dp: the stylesheet's row, the spacer under the list and ShellHost's constant agree.
+TEST(RmlBindingGuardTest, TheAiDrawerMeRowHeightIsOneNumber) {
+  const std::string css = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "themes" / "components.rcss");
+  const std::string host = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellHost.cpp");
+  EXPECT_NE(host.find("kAiDrawerMeHeightDp = 64.f"), std::string::npos);
+  const size_t row = css.find(".ai-drawer-me {");
+  const size_t spacer = css.find(".ai-drawer-list-end {");
+  ASSERT_NE(row, std::string::npos);
+  ASSERT_NE(spacer, std::string::npos);
+  EXPECT_NE(css.substr(row, 400).find("min-height: 64dp;"), std::string::npos);
+  EXPECT_NE(css.substr(spacer, 120).find("height: 64dp;"), std::string::npos);
+  const size_t avatar = css.find(".ai-drawer-me-avatar {");
+  ASSERT_NE(avatar, std::string::npos);
+  EXPECT_NE(css.substr(avatar, 260).find("width: 44dp;"), std::string::npos);
+}
+
 // The Chats avatar's tap is the window model's event (ShellHost registers open_settings_from_avatar there); inside the
 // page's shell model it found no handler and the tap did nothing on the phone. The button declares the window model.
 TEST(RmlBindingGuardTest, TheChatsAvatarTapIsHandledByTheWindowModel) {

@@ -1663,7 +1663,7 @@ input.checkbox:checked {
 }
 
 .chat-search {
-  background-color: #f2f2f7;
+  background-color: #f4f4f8;
 }
 
 .chat-search-icon {
@@ -3392,6 +3392,30 @@ input.checkbox:checked {
 .shell-layer-compact .shell-circle-btn:active .shell-circle-btn-face {
   background-color: #78788033;
   decorator: linear-gradient(to bottom, #78788033, #78788033);
+}
+
+/* Chats header plus (B3): a flat teal-tint disc with a teal plus; no 3-D gradient, no shadow. */
+.shell-layer-compact .pane-nav-plus .shell-circle-btn-face,
+.shell-layer-compact .pane-nav-plus:active .shell-circle-btn-face {
+  background-color: #30b0c71f;
+  decorator: none;
+  box-shadow: none;
+}
+
+.shell-layer-compact .pane-nav-actions .pane-nav-plus .shell-circle-btn-face svg {
+  image-color: #30b0c7;
+}
+
+.pane-nav-link-icon--ok {
+  image-color: #30b0c7;
+}
+
+.pane-nav-link-icon--offline {
+  image-color: #ff3b30;
+}
+
+.pane-nav-link-text {
+  color: #3c3c4399;
 }
 
 .shell-layer-compact .shell-circle-btn .shell-circle-btn-face svg {

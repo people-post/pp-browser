@@ -544,6 +544,10 @@ struct ShellState {
   bool sidebar_collapsed = false;
   /** Phone layout: the active root page (Chats / Contacts / Me) has scrolled its 52dp large title away. */
   bool large_title_collapsed = false;
+  /** Phone Chats header status line (this device's link to our service): "ok", "offline", or empty = unknown, nothing shown.
+   * Set by event only (ShellHost::SetChatsLink); chats_link_text is the translated label. */
+  ui::String chats_link_state;
+  ui::String chats_link_text;
   /** Expanded layout only: auxiliary pane width (dp, clamped by ShellLayout). */
   int auxiliary_width_dp = 320;
 

@@ -175,6 +175,10 @@ void SettingsController::BindOpenUiPerfTest(std::function<void()> open) {
   open_ui_perf_test_ = std::move(open);
 }
 
+void SettingsController::BindSimulateChatsLink(std::function<void(bool online)> simulate) {
+  simulate_chats_link_ = std::move(simulate);
+}
+
 void SettingsController::BindShellFeedback(ShellFeedbackPorts ports) {
   shell_feedback_ = std::move(ports);
 }
@@ -696,6 +700,16 @@ bool SettingsController::RegisterModel(ui::Context* context) {
         }
       }
     }));
+    for (const bool online : {false, true}) {
+      ctor.BindEventCallback(online ? "simulate_chats_link_online" : "simulate_chats_link_offline", DataEvent<>([this, online]() {
+        (void)online;
+        if constexpr (kDevToolsBuild) {
+          if (simulate_chats_link_) {
+            simulate_chats_link_(online);
+          }
+        }
+      }));
+    }
     ctor.BindEventCallback("open_home_edit", DataEvent<>([this]() {
       if (open_home_edit_) {
         open_home_edit_();

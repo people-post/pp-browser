@@ -20,7 +20,15 @@
         <img class="shell-circle-avatar-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
         <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
       </div>
-      <p class="pane-nav-avatar-name" data-model="settings">{{profile_nickname}}</p>
+      <div class="pane-nav-avatar-text">
+        <p class="pane-nav-avatar-name" data-model="settings">{{profile_nickname}}</p>
+        <!-- The device's link to our service (ShellHost::SetChatsLink, event-driven): empty while unknown. -->
+        <p class="pane-nav-avatar-sub" data-if="chats_link_state != ''">
+          <svg class="pane-nav-link-icon pane-nav-link-icon--ok" data-if="chats_link_state == 'ok'" src="../icons/v2/cloud-ok.svg" width="14" height="14"></svg>
+          <svg class="pane-nav-link-icon pane-nav-link-icon--offline" data-if="chats_link_state == 'offline'" src="../icons/v2/cloud-off.svg" width="14" height="14"></svg>
+          <span class="pane-nav-link-text">{{chats_link_text}}</span>
+        </p>
+      </div>
     </button>
     <div class="pane-nav-actions row">
       <button class="pane-nav-plus shell-circle-btn" type="button" data-event-click="open_new_session_menu()">
@@ -36,7 +44,7 @@
       </button>
     </div>
   </div>
-  <div id="sidebar-sessions" class="sidebar-sessions root-scroll" data-event-scroll="sessions_scroll()">
+  <div id="sidebar-sessions" class="sidebar-sessions root-scroll" collapse-at="20" data-event-scroll="sessions_scroll()">
     <div class="chat-search">
       <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
       <input class="chat-search-input" type="text" data-value="sessions_query"
