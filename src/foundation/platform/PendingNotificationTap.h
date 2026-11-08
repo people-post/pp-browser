@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Diag.h"
+
 #include <chrono>
 #include <functional>
 #include <mutex>
@@ -15,7 +17,7 @@ namespace pbr {
  * here. Only the newest tap is kept. Thread-safe: taps arrive off the UI thread.
  *
  * A push tap carries the push's `wake_hint`: the call id of a call alert, the message id of a message
- * alert. Once synced, the ring or message with that id is the one the user tapped. A tap without a hint
+ * alert. Once synced, the ring, message or call summary with that id is the one the user tapped. A tap without a hint
  * (an older push) falls back to the first ring.
  */
 class PendingNotificationTap {
@@ -43,6 +45,8 @@ public:
       call_ = call_wake;
       hint_ = std::move(wake_hint);
       route_until_ = std::nullopt;
+      miss_logged_ = false;
+      Report("recorded", thread_id_.empty() ? (call_wake ? Kind::Call : Kind::Msg) : Kind::Thread);
       if (call_wake) {
         route_until_ = now + kCallRouteTtl;
       } else if (!hint_.empty()) {
@@ -85,35 +89,85 @@ public:
     if (!call_) {
       return false;
     }
-    if (!route_until_ || now > *route_until_) {
-      ClearRoute();
+    if (!Fresh(now)) {
       return false;
     }
     if (!hint_.empty() && hint_ != call_id) {
+      ReportMismatch();
       return false;
     }
+    Report("routed", Kind::Call);
     ClearRoute();
     return true;
   }
 
-  /** True once if a fresh message-alert tap is for the synced message `message_id`. An expired tap is dropped. */
-  bool TakeMessageRoute(const std::string& message_id, const Clock::time_point now) {
+  /** The hint of a fresh message or call tap, or empty; an expired tap is dropped. Does not consume. */
+  std::string FreshHint(const Clock::time_point now) {
     std::lock_guard<std::mutex> lock(mu_);
-    if (call_ || hint_.empty()) {
+    return hint_.empty() || !Fresh(now) ? std::string{} : hint_;
+  }
+
+  /**
+   * True once if a fresh tap's hint is `id`: a synced message's id, or the call id of a call summary that
+   * synced. A tap without a hint never matches. An expired tap is dropped.
+   */
+  bool TakeHintedRoute(const std::string& id, const Clock::time_point now) {
+    std::lock_guard<std::mutex> lock(mu_);
+    if (hint_.empty() || !Fresh(now)) {
       return false;
     }
-    if (!route_until_ || now > *route_until_) {
-      ClearRoute();
+    if (hint_ != id) {
+      ReportMismatch();
       return false;
     }
-    if (hint_ != message_id) {
-      return false;
-    }
+    Report("routed", CurrentKind());
     ClearRoute();
     return true;
   }
 
 private:
+  enum class Kind { Msg, Call, Thread };
+
+  Kind CurrentKind() const { return call_ ? Kind::Call : Kind::Msg; }
+
+  void Report(const ShareWord what, const Kind kind) const {
+    DiagLine line("notification.tap");
+    line.Add("what", what);
+    switch (kind) {
+    case Kind::Call:
+      line.Add("kind", "call");
+      break;
+    case Kind::Thread:
+      line.Add("kind", "thread");
+      break;
+    case Kind::Msg:
+      line.Add("kind", "msg");
+      break;
+    }
+    line.Add("has_hint", !hint_.empty()).Emit();
+  }
+
+  /** Whether a route is still waiting and in time; an expired one is reported and dropped. Caller holds `mu_`. */
+  bool Fresh(const Clock::time_point now) {
+    if (!route_until_) {
+      return false;
+    }
+    if (now > *route_until_) {
+      Report("expired", CurrentKind());
+      ClearRoute();
+      return false;
+    }
+    return true;
+  }
+
+  /** At most one line per tap: every synced message that is not the tapped one would otherwise log. */
+  void ReportMismatch() {
+    if (!miss_logged_) {
+      miss_logged_ = true;
+      Report("mismatch", CurrentKind());
+    }
+  }
+
   void ClearRoute() {
     call_ = false;
     hint_.clear();
@@ -125,6 +179,7 @@ private:
   bool call_ = false;
   std::string hint_;
   std::optional<Clock::time_point> route_until_;
+  bool miss_logged_ = false;
   std::function<void()> on_recorded_;
 };
 

@@ -154,3 +154,11 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
 
 **Rationale:** the push is all CallKit sees before the app can read anything; its age is the one fact that tells a live call from a dead one there. Ending a waiting push's call from what the catch-up learns keeps a late push that still slips through (an older relay, a clock off) to seconds, not a full ring.
 **Cross-link:** `CallSystemUi_Ios.mm`, `CallPushAge` (`call_push_age_test.cpp`), `CallSystemUiBridge::OnCallOver` (`call_system_ui_bridge_test.cpp`), `RecentCallsOver` (`recent_calls_over_test.cpp`), `CallSessionWorkflow` (`call_session_inbound_compose_test.cpp`); relay: `sent_at` (app-static-api).
+
+## P018 — A tap finds its chat by looking the message up, not by waiting for the sync
+
+**Status:** Accepted. Amends P015's tap matching (message taps on every build, call-alert taps on builds without CallKit).  
+**Decision:** The tap's `wake_hint` is looked up in a recent-inbound index (`InboundThreadIndex`, 256 entries, filled at ingest whether or not a handler is wired): a message id maps to its chat, and the call id of a received `call_summary` maps to the chat of the missed call. When messaging is wired after the unlock the pending tap is resolved from the index at once; a miss keeps the tap waiting for later ingests, which announce on the UI thread (the handler is checked there, so ingest before the wiring is not lost). A call tap with no ring on screen opens its chat the same way once the caller's summary has synced.  
+**Rationale:** the message usually synced in the background before the tap, so waiting for a new ingest event could never match; the old tap then expired unused and the user landed on the home screen.  
+**Diagnostics:** `notification.tap` (`what`: `recorded` / `routed` / `expired` / `mismatch` once per tap / `lookup_found` / `lookup_notfound`; `kind`; `has_hint`), listed in `docs/contracts/DIAGNOSTICS.md`.  
+**Cross-link:** `PendingNotificationTap` (`pending_notification_tap_test.cpp`), `InboundThreadIndex` (`inbound_thread_index_test.cpp`).
