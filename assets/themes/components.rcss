@@ -5800,6 +5800,49 @@ call-video-tile {
   transition: opacity 0.3s cubic-out;
 }
 
+/* The reconnect capsule (#171): fixed just above the button bar, centred; the slot lets taps through. */
+.call-phone-reconnect-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 140dp;
+  z-index: 6;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+
+.call-phone-reconnect {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  padding: 8dp 16dp 8dp 10dp;
+  border-radius: 20dp;
+  opacity: 1;
+  transition: opacity 0.3s cubic-out;
+}
+
+.call-phone-reconnect--fading {
+  opacity: 0;
+}
+
+.call-phone-reconnect-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22dp;
+  height: 22dp;
+  border-radius: 11dp;
+}
+
+.call-phone-reconnect-text {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
 .call-phone-notice--fading {
   opacity: 0;
 }

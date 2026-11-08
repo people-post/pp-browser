@@ -486,6 +486,10 @@ struct CallInProgressState {
   ui::String story_step1;
   ui::String story_step2;
   ui::String story_step3;
+  ui::String story_step4;
+  ui::String story_step5;
+  /** How many of the step lines show: 3 (group), 4 (this device answered), 5 (this device called; #172). */
+  int story_step_count = 3;
   /** Just connected (1:1): "Connected directly, 0.9 s" for 4 s, then it fades (bound). */
   ui::String result_text;
   bool result_fading = false;
@@ -499,6 +503,12 @@ struct CallInProgressState {
   ui::String notice_text;
   bool notice_warn = false;
   bool notice_fading = false;
+  /** The reconnect capsule above the button bar (#171; empty text: hidden). Bound. */
+  ui::String reconnect_text;
+  bool reconnect_ok = false;
+  bool reconnect_fading = false;
+  /** The call timer greys while the line is down. */
+  bool reconnect_dim = false;
   /** The "how this call got through" sheet (a tap on the signal bar). */
   bool story_sheet_open = false;
   std::vector<CallStoryLine> story_lines;

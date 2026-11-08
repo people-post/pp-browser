@@ -30,7 +30,7 @@ CallRoute CallRouteFromPathKind(const std::string& path_kind);
 enum class CallSignalTone { Good, Fair, Poor };
 
 /** The top pill (DESIGN-pp-ui 8.11) the story raises on a real change. */
-enum class CallStoryNotice { None, Slow, Reconnecting, Closer };
+enum class CallStoryNotice { None, Slow, Closer };
 
 struct CallStoryInput {
   std::string call_id;
@@ -80,9 +80,11 @@ struct CallStoryEvent {
 struct CallStoryView {
   // --- Before connect: the moving line, the steps and the rotating tips.
   bool connecting = false;
-  /** The stage on screen (only it and the ones before it show): 0: the other side is being called; 1: answered,
-   *  the encrypted line is being set up. Follows the real stage, but a "calling" answered within kStageQuickMs is
-   *  held until kStageMinShowMs. */
+  /** The stage on screen (the ones before it are done). A group call: 0 the group is being called, 1 joined and the
+   *  line is being set up. A 1:1 call (the five steps, #172): 0 calling, 1 the other side answered, 2 matching the
+   *  fastest line (the time between the answer and live media), 3 setting up the encrypted channel, 5 everything
+   *  done, "connected" included (4 is never shown: connected is only ever the finished list). Follows the real
+   *  stage, but each stage stays on screen at least kStepMinShowMs, and the finished list stays kListHoldMs. */
   int stage = 0;
   /** This device placed the call (the first step reads "Calling X…" then "X answered"). */
   bool outgoing = false;
@@ -124,10 +126,16 @@ public:
   static constexpr int64_t kSlowNoticeEveryMs = 30'000;
   /** After media connects the bar waits this long at most for audio to settle (or the first good sample). */
   static constexpr int64_t kSettleMs = 2'000;
-  /** A stage over sooner than this after it began is still shown kStageMinShowMs in all (#11). */
-  static constexpr int64_t kStageQuickMs = 300;
-  static constexpr int64_t kStageMinShowMs = 600;
-
+  /** Each step of a 1:1 call's list stays on screen at least this long (only the text waits, never the call). */
+  static constexpr int64_t kStepMinShowMs = 450;
+  /** After "connected" the finished list stays this long before the call page takes over. */
+  static constexpr int64_t kListHoldMs = 1'500;
+  /** Stage values of a 1:1 call (CallStoryView::stage). */
+  static constexpr int kStageCalling = 0;
+  static constexpr int kStageAnswered = 1;
+  static constexpr int kStageMatching = 2;
+  static constexpr int kStageSecuring = 3;
+  static constexpr int kStageDone = 5;
   /** Steps the story with this poll's facts and returns what the call page shows now. */
   const CallStoryView& Step(const CallStoryInput& in);
   const CallStoryView& View() const { return view_; }
@@ -145,6 +153,9 @@ private:
   int64_t began_ms_ = 0;
   int64_t answered_ms_ = 0;
   int64_t connected_ms_ = 0;
+  /** The 1:1 list: when the shown stage began, and when the finished list began its hold. */
+  int64_t stage_began_ms_ = 0;
+  int64_t done_ms_ = 0;
   int64_t notice_ms_ = 0;
   int64_t slow_notice_ms_ = 0;
   int64_t signal_changed_ms_ = 0;

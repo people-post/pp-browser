@@ -3076,6 +3076,22 @@ input.checkbox:checked {
   background-color: #3a3a3ceb;
 }
 
+.call-phone-reconnect {
+  background-color: #784800eb;
+}
+
+.call-phone-reconnect--ok {
+  background-color: #1f6f4aeb;
+}
+
+.call-phone-reconnect-icon {
+  background-color: #ffffff24;
+}
+
+.call-phone-timer--dim {
+  color: #ffffff80;
+}
+
 .call-phone-notice--warn {
   background-color: #784800eb;
 }
