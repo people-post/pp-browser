@@ -107,6 +107,7 @@ CallController::CallController()
     metrics_.NoteAccept(call_id, voice_only, util::NowUnixMs());
   };
   callbacks.on_decline = [this](const std::string& call_id) { metrics_.NoteDecline(call_id); };
+  callbacks.on_call_over = [this](const std::string& call_id) { system_call_screen_.OnCallOver(call_id); };
   presenter_.BindCallbacks(std::move(callbacks));
   // Mobile: in the background the OS stops the camera; the call turns it off and says so (video_paused).
   background_listener_ = AppLifecycle::AddBackgroundListener([this]() { OnAppBackground(); });

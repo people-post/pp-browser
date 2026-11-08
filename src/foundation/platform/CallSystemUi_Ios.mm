@@ -4,14 +4,17 @@
 // A VoIP push (`type: call_wake`, sent by the relay for an urgent send, `wake_hint`: the call id)
 // puts "Incoming call" on the CallKit screen at once — iOS requires it for every VoIP push — and
 // wakes the app to sync; the app then fills that call in with the ring of that call id it finds
-// (CallSystemUiBridge → ReportIncoming). Built with MRC: objects kept for the process are never
-// released.
+// (CallSystemUiBridge → ReportIncoming), or lets it go once it learns that call is over. A push too
+// old to ring (its `sent_at`, P017) is reported and ended at once. Built with MRC: objects kept for
+// the process are never released.
 
 #include "foundation/platform/IosCallSystemUi.h"
 
+#include "foundation/platform/CallPushAge.h"
 #include "foundation/platform/CallSystemUi.h"
 #include "common/Diag.h"
 #include "common/IPushDeviceRegistrar.h"
+#include "common/Utilities.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 
 #import <AVFoundation/AVFoundation.h>
@@ -23,6 +26,7 @@
 #include <algorithm>
 #include <chrono>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -76,8 +80,49 @@ void Note(const ShareWord what, const double wait_sec = -1) {
   line.Emit();
 }
 
+/** A push event; `age_ms` when the relay said when it sent the push (P017). */
+void NotePush(const ShareWord what, const CallPushAge& age) {
+  DiagLine line("call.system");
+  line.Add("what", what);
+  if (age.known) {
+    line.Add("age_ms", age.age_ms);
+  }
+  line.Emit();
+}
+
 double UptimeSec() {
   return [NSProcessInfo processInfo].systemUptime;
+}
+
+/** The push's `sent_at` (the relay's send time, Unix ms) when it is a JSON number; else none (an older relay). */
+std::optional<double> SentAtOf(NSDictionary* payload) {
+  id raw = payload[@"sent_at"];
+  if (raw == nil || ![raw isKindOfClass:[NSNumber class]]) {
+    return std::nullopt;
+  }
+  // A JSON true / false arrives as an NSNumber too: not a time.
+  if (CFGetTypeID((__bridge CFTypeRef)raw) == CFBooleanGetTypeID()) {
+    return std::nullopt;
+  }
+  return [(NSNumber*)raw doubleValue]; // JudgeCallPushAge checks it is finite and plausible
+}
+
+/** The call screen's template icon (the app's mark, monochrome with alpha) from the bundle; nil when missing. */
+NSData* CallKitIconData() {
+  NSString* path = [[NSBundle mainBundle] pathForResource:@"CallKitIcon" ofType:@"png"];
+  return path != nil ? [NSData dataWithContentsOfFile:path] : nil;
+}
+
+CXCallEndedReason EndedReasonOf(const ICallSystemUi::EndReason reason) {
+  switch (reason) {
+    case ICallSystemUi::EndReason::AnsweredElsewhere:
+      return CXCallEndedReasonAnsweredElsewhere;
+    case ICallSystemUi::EndReason::Failed:
+      return CXCallEndedReasonFailed;
+    case ICallSystemUi::EndReason::Ended:
+      break;
+  }
+  return CXCallEndedReasonRemoteEnded;
 }
 
 /** The push's `wake_hint` (the call id) when it is one the relay may send: 1..64 of [A-Za-z0-9-]; else empty. */
@@ -114,6 +159,9 @@ public:
     config.supportedHandleTypes = [NSSet setWithObject:@(CXHandleTypeGeneric)];
     // Calls stay out of the phone's recents (and its iCloud call history).
     config.includesCallsInRecents = NO;
+    if (NSData* icon = CallKitIconData(); icon != nil) {
+      config.iconTemplateImageData = icon; // the app's mark on the call screen's button to open the app
+    }
     provider_ = [[CXProvider alloc] initWithConfiguration:config];
     [provider_ setDelegate:delegate queue:nil];
   }
@@ -121,13 +169,14 @@ public:
   bool Available() const override { return provider_ != nil; }
   void SetCallbacks(Callbacks callbacks) override { callbacks_ = std::move(callbacks); }
   bool HasPendingPushCall() const override { return pending_ != nil; }
+  std::string PendingPushCallId() const override { return pending_ != nil ? pending_call_id_ : std::string(); }
   void SetPendingChangedHandler(std::function<void()> fn) override { pending_changed_ = std::move(fn); }
 
-  void EndPendingPushCall() override {
+  void EndPendingPushCall(const EndReason reason) override {
     if (pending_ == nil) {
       return;
     }
-    [provider_ reportCallWithUUID:pending_ endedAtDate:nil reason:CXCallEndedReasonAnsweredElsewhere];
+    [provider_ reportCallWithUUID:pending_ endedAtDate:nil reason:EndedReasonOf(reason)];
     ClearPending();
   }
 
@@ -176,13 +225,7 @@ public:
     if (it == calls_.end()) {
       return;
     }
-    CXCallEndedReason ended = CXCallEndedReasonRemoteEnded;
-    if (reason == EndReason::AnsweredElsewhere) {
-      ended = CXCallEndedReasonAnsweredElsewhere;
-    } else if (reason == EndReason::Failed) {
-      ended = CXCallEndedReasonFailed;
-    }
-    [provider_ reportCallWithUUID:it->second endedAtDate:nil reason:ended];
+    [provider_ reportCallWithUUID:it->second endedAtDate:nil reason:EndedReasonOf(reason)];
     Forget(call_id);
   }
 
@@ -198,17 +241,22 @@ public:
    * app. `call_id`: the push's `wake_hint` (empty: none) — only that call's ring fills the push's call in.
    * With the app open and unlocked it rings the call itself (the invite also comes over the live link): the push's
    * call is reported, as iOS requires, and ended at once, so the system screen does not cover the app's own ring.
+   * A push too old to ring (`age`, P017: iOS held it on the phone while the caller gave up) is reported and ended at
+   * once as unanswered: no pending call, no ring; the app still syncs (the caller's history of the call).
    */
-  void OnCallPush(const std::string& call_id, void (^completion)(void)) {
+  void OnCallPush(const std::string& call_id, const CallPushAge& age, void (^completion)(void)) {
     NSUUID* uuid = [[NSUUID alloc] init];
-    const bool app_rings = AppRingsItself();
+    const bool stale = age.stale;
+    const bool app_rings = !stale && AppRingsItself();
     const bool busy = app_rings || pending_ != nil || !calls_.empty();
-    if (app_rings) {
-      Note("push_in_app");
+    if (stale) {
+      NotePush("push_stale", age);
+    } else if (app_rings) {
+      NotePush("push_in_app", age);
     } else if (app_ready_) {
-      Note("push");
+      NotePush("push", age);
     } else {
-      Note("push_locked");
+      NotePush("push_locked", age);
     }
     [provider_ reportNewIncomingCallWithUUID:uuid
                                       update:Update({}, false)
@@ -219,21 +267,24 @@ public:
                                         ClearPending();
                                       }
                                     }
-                                    if (busy && error == nil) {
-                                      // The app rings the call itself, or a call is already on the
-                                      // screen (an earlier push, the ring itself): this push's call
-                                      // goes at once.
-                                      [provider_ reportCallWithUUID:uuid
-                                                        endedAtDate:nil
-                                                             reason:app_rings ? CXCallEndedReasonAnsweredElsewhere
-                                                                              : CXCallEndedReasonFailed];
+                                    if ((stale || busy) && error == nil) {
+                                      // Too old to ring, the app rings the call itself, or a call is
+                                      // already on the screen (an earlier push, the ring itself): this
+                                      // push's call goes at once.
+                                      CXCallEndedReason reason = CXCallEndedReasonFailed;
+                                      if (stale) {
+                                        reason = CXCallEndedReasonUnanswered;
+                                      } else if (app_rings) {
+                                        reason = CXCallEndedReasonAnsweredElsewhere;
+                                      }
+                                      [provider_ reportCallWithUUID:uuid endedAtDate:nil reason:reason];
                                     }
                                     [uuid release];
                                     if (completion) {
                                       completion();
                                     }
                                   }];
-    if (!busy) {
+    if (!stale && !busy) {
       pending_ = [uuid retain];
       pending_call_id_ = call_id;
       pending_since_ = UptimeSec();
@@ -489,7 +540,9 @@ IosCallSystemUi& Ui() {
     completion();
     return;
   }
-  pbr::Ui().OnCallPush(pbr::WakeHintOf(payload.dictionaryPayload), completion);
+  NSDictionary* dict = payload.dictionaryPayload;
+  pbr::Ui().OnCallPush(pbr::WakeHintOf(dict), pbr::JudgeCallPushAge(pbr::SentAtOf(dict), pbr::util::NowUnixMs()),
+                       completion);
 }
 
 @end

@@ -30,6 +30,9 @@ namespace pbr {
  *   that call, which the system screen's Answer would not say. The app's ring says it (End & accept), and so
  *   does its alert in the background. The push's call is let go, and an answer given on it is not applied
  *   (a decline still is).
+ * - The push's call waiting for its ring goes as soon as the app learns the call it names is over (OnCallOver: its
+ *   invite read too late to ring, or for a call already ended; the call ended here): the caller gave up, nothing
+ *   will ring (P017).
  *
  * UI thread. Holds no GUI: CallController wires it to the presenter.
  */
@@ -78,6 +81,11 @@ public:
 
   /** Messaging is up (after the PIN): the pending choices' window counts from now. */
   void OnMessagingReady();
+  /**
+   * The calls layer learned `call_id` is over (its invite too late to ring or for a call already ended, or the call
+   * ended): the push's call waiting for that call's ring goes now, not at its timeout (P017).
+   */
+  void OnCallOver(const std::string& call_id);
 
   // ICallSystemUi::Callbacks (public for tests).
   void OnAnswer(const std::string& call_id);

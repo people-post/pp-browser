@@ -9,6 +9,7 @@
 #include "common/thread/IThreadCatalog.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "lib/calls/ICallSessionStore.h"
+#include "lib/calls/RecentCallsOver.h"
 #include "feature/calls/CallInitiationBilling.h"
 #include "lib/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallSessionEvents.h"
@@ -214,6 +215,8 @@ public:
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
   /** V053: when this device leaves the group call it waits alone in (0: not waiting). */
   int64_t AloneUntilMs(const std::string& call_id) const;
+  /** P017: the calls this device learned are over (the stack publishes them for the phone's call screen). */
+  const RecentCallsOver& CallsOver() const { return calls_over_; }
   /** This device is Joined in the call (not left it). */
   bool StillInCall(const std::string& call_id) const;
 
@@ -411,6 +414,8 @@ private:
   std::unordered_set<std::string> join_any_retry_sent_;
   /** V053: group calls this device is alone in → since when. */
   std::unordered_map<std::string, int64_t> alone_since_ms_;
+  /** P017: ended here, or their invite read too late to ring / for a call already ended. */
+  RecentCallsOver calls_over_;
   /** The last sweep: a long gap means the app slept, and the alone waits start over. */
   int64_t last_alone_sweep_ms_ = 0;
   /** #381: an epoch this device rotated to, resent to the members a few times (no ack on the wire). */

@@ -25,6 +25,7 @@ set(_pp_platform_gui_sources
   AndroidAssetLocator.cpp
   AndroidPathProvider.cpp
   AppEventHooks.cpp
+  CallPushAge.cpp
   CallSystemUi.cpp
   DesktopLocalNotifier.cpp
   desktop/LocalNotifierActivation.cpp
