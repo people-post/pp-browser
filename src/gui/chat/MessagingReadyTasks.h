@@ -92,7 +92,7 @@ public:
     /** `started` is still the current session and messaging is ready (ChatController::MessagingReady). */
     std::function<bool(uint64_t started)> still_ready;
 
-    /** Worker: binds this device's push tokens (PushDeviceCoordinator::Register, APNs + VoIP). */
+    /** Worker: binds this device's push tokens (PushDeviceCoordinator::Register). */
     std::function<void()> register_push;
 
     /** UI, read before the renewal is sent off: the "renew automatically" preference. */

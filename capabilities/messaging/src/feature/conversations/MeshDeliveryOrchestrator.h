@@ -26,6 +26,7 @@
 #include "domain/peers/DirectoryShadowCache.h"
 #include "lib/messaging/EpochBumpCoordinator.h"
 #include "feature/conversations/InboxController.h"
+#include "feature/conversations/InboundThreadIndex.h"
 #include "common/chat/IDirectMessageClient.h"
 #include "lib/delivery/PskSessionCoordinator.h"
 #include "lib/delivery/PublicPskLockCoordinator.h"
@@ -237,6 +238,8 @@ public:
       std::function<void(std::string title, std::string body, std::string thread_id, bool mentions_us)> callback);
   /** Fired on UI thread per inbound message stored in a thread (message id, thread id), as it is synced. */
   void SetOnInboundMessage(std::function<void(std::string message_id, std::string thread_id)> callback);
+  /** Where a recent inbound message (by message id) or call (by call id, once its summary arrived) went. */
+  std::optional<std::string> ThreadOfInbound(const std::string& id) const { return inbound_threads_.Find(id); }
   /**
    * The keys a directory entry carries for its account: the signing key (kept when it hashes to the
    * Account ID) and the KEM key (kept when the account bound it to itself). Either store refuses the rest.
@@ -398,6 +401,12 @@ private:
   std::function<void(const DeliveryNotice&)> on_delivery_notice_;
   std::function<void(std::string, std::string, std::string, bool)> on_background_unread_;
   std::function<void(std::string, std::string)> on_inbound_message_;
+  InboundThreadIndex inbound_threads_;
+  /**
+   * Remembers where a stored inbound message went (and the call, when it is a call summary); returns the ids
+   * to announce through `on_inbound_message_`. Independent of whether that callback is set yet.
+   */
+  std::vector<std::string> NoteInbound(const std::string& message_id, const RelayReceiveOutcome& outcome);
   /** Whether a stored inbound message in `thread_id` mentions us (G015). */
   /** A persisted message's notice for a user who is away (not attentive — the open chat too); none otherwise. */
   struct BackgroundNotice {

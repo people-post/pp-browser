@@ -11,9 +11,8 @@
 namespace pbr {
 
 /**
- * Keeps the phone's own call screen (ICallSystemUi: CallKit on iPhone builds with it, Android's incoming-call
- * notification) in step with CallPresenter's screen, and turns what the user does there into the presenter's
- * buttons (P014, P016).
+ * Keeps the phone's own call screen (ICallSystemUi: Android's incoming-call notification) in step with CallPresenter's screen, and turns what the user does there into the presenter's
+ * buttons (P014).
  *
  * - A ring goes to the system screen when the app is not in the foreground, or when a call push
  *   already put "Incoming call" there (the push's call is filled in with the ring's caller).
@@ -24,8 +23,6 @@ namespace pbr {
  *   (its `wake_hint`), or, for a push that named none, the first ring. The window is kPendingChoiceMs
  *   counted from the later of the choice and OnMessagingReady (a PIN may come first), and never
  *   longer than kPendingMaxMs after the choice.
- * - Answered there, the system owns the call's audio session (CallKit activates it): audio_managed
- *   tells AudioSession so until the call leaves the system screen.
  * - A ring over a call this device is in (the screen's `conflict`) never goes there (V064): answering it ends
  *   that call, which the system screen's Answer would not say. The app's ring says it (End & accept), and so
  *   does its alert in the background. The push's call is let go, and an answer given on it is not applied
@@ -47,13 +44,6 @@ public:
     std::function<std::string(const std::string& identity)> display_name;
     /** Unix ms (tests set it). */
     std::function<int64_t()> now_ms;
-    /**
-     * The system screen owns the audio session of the call answered there (true), or no longer does (false):
-     * AudioSession::SetSystemManaged.
-     */
-    std::function<void(bool managed)> audio_managed;
-    /** The system activated / deactivated that session: AudioSession::NotifySystemActivation. */
-    std::function<void(bool active)> audio_activated;
   };
   static constexpr int64_t kPendingChoiceMs = 60'000;
   static constexpr int64_t kPendingMaxMs = 180'000;
@@ -91,7 +81,6 @@ public:
   void OnAnswer(const std::string& call_id);
   void OnEnd(const std::string& call_id);
   void OnSetMuted(const std::string& call_id, bool muted);
-  void OnAudioSession(bool active);
   void OnPendingGone();
 
 private:
@@ -108,7 +97,6 @@ private:
   void ApplyDecline();
   /** A ring over a call: the app rings it (V064); the push's call goes, a choice made on it is spent. */
   void LeaveRingToApp(const std::string& ring_call_id);
-  void SetAudioManaged(bool managed);
   /** The call on the system screen was answered there; tell the presenter to accept it. */
   void AcceptShown(bool voice_only);
   /** A frame without the shown call: it is over, unless the app is still taking a call answered there. */

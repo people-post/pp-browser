@@ -978,13 +978,13 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
       }
     } else {
       inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
-      if (on_inbound_message_) {
-        AppRuntime::PostUI([this, message_id = envelope.message_id, thread_id = outcome.thread_id]() {
-          if (on_inbound_message_) {
-            on_inbound_message_(message_id, thread_id);
+      AppRuntime::PostUI([this, ids = NoteInbound(envelope.message_id, outcome), thread_id = outcome.thread_id]() {
+        if (on_inbound_message_) {
+          for (const auto& id : ids) {
+            on_inbound_message_(id, thread_id);
           }
-        });
-      }
+        }
+      });
       MaybeEnqueueAttachmentDownload(outcome);
       NoteMention(outcome, identity->account_id);
       // Over a link, as from the relay: the user away gets a notice (a mention alerts in a muted group, G015).
@@ -2256,7 +2256,9 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
             preview = outcome.persisted_message->text;
           }
           inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
-          inbound_messages.emplace_back(envelope.message_id, resolved_thread_id);
+          for (auto& id : NoteInbound(envelope.message_id, outcome)) {
+            inbound_messages.emplace_back(std::move(id), resolved_thread_id);
+          }
           MaybeEnqueueAttachmentDownload(outcome);
           NoteMention(outcome, local_account_id);
           if (auto notice = BackgroundNoticeFor(outcome, local_account_id)) {
@@ -2284,12 +2286,14 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
         if (changed && on_messages_changed_) {
           AppRuntime::PostUI([this]() { on_messages_changed_(); });
         }
-        if (!inbound_messages.empty() && on_inbound_message_) {
+        if (!inbound_messages.empty()) {
+          // The handler is checked on the UI thread: it may be wired (after unlock) between here and there.
           AppRuntime::PostUI([this, inbound = std::move(inbound_messages)]() {
+            if (!on_inbound_message_) {
+              return;
+            }
             for (const auto& [message_id, thread_id] : inbound) {
-              if (on_inbound_message_) {
-                on_inbound_message_(message_id, thread_id);
-              }
+              on_inbound_message_(message_id, thread_id);
             }
           });
         }
@@ -2372,6 +2376,24 @@ void MeshDeliveryOrchestrator::SetOnMessagesChanged(std::function<void()> callba
 
 void MeshDeliveryOrchestrator::SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback) {
   on_delivery_notice_ = std::move(callback);
+}
+
+std::vector<std::string> MeshDeliveryOrchestrator::NoteInbound(const std::string& message_id,
+                                                               const RelayReceiveOutcome& outcome) {
+  std::vector<std::string> ids{message_id};
+  inbound_threads_.Remember(message_id, outcome.thread_id);
+  if (outcome.persisted_message) {
+    // A missed 1:1 call reaches the callee as the caller's summary; the call alert's tap names the call id.
+    const auto payload = TryParseObject(outcome.persisted_message->payload_json);
+    if (payload && payload->getString("control_type") == std::optional<std::string>("call_summary")) {
+      const auto detail = TryParseObject(payload->getString("detail").value_or(""));
+      if (auto call_id = detail ? detail->getString("call_id") : std::nullopt; call_id && !call_id->empty()) {
+        inbound_threads_.Remember(*call_id, outcome.thread_id);
+        ids.push_back(std::move(*call_id));
+      }
+    }
+  }
+  return ids;
 }
 
 void MeshDeliveryOrchestrator::SetOnInboundMessage(std::function<void(std::string, std::string)> callback) {

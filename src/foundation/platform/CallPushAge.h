@@ -25,7 +25,7 @@ struct CallPushAge {
   bool known = false;
   /** Now minus `sent_at`, at least 0 (a clock behind the relay's reads as fresh); 0 when not known. */
   int64_t age_ms = 0;
-  /** Too old to ring: report it to the phone's call screen as required and end it at once. */
+  /** Too old to ring: its invite is already dropped by the app. */
   bool stale = false;
 };
 

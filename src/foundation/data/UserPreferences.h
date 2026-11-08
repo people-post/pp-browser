@@ -37,7 +37,7 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 14;
+  static constexpr int kSchemaVersion = 15;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
@@ -79,8 +79,8 @@ struct ProfilePreferences {
   bool crash_reports_enabled = false;
   /** G007 — inbound group invite policy: everyone | contacts_only | nobody */
   std::string group_invite_policy = "contacts_only";
-  /** projects/privacy T3 — who may call this profile: everyone | contacts_only | nobody */
-  std::string call_invite_policy = "everyone";
+  /** projects/privacy T3 — who may call this profile: everyone | contacts_only | nobody. Files older than schema 15 without the key read back as everyone. */
+  std::string call_invite_policy = "contacts_only";
   /** R021 — attachment download: smart | always_auto | on_demand */
   std::string attachment_download_policy = "smart";
   /** With always_auto: download everything on Wi-Fi / on the mobile network. Neither ticked reads back as smart. */

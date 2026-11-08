@@ -7,8 +7,8 @@
 namespace pbr {
 namespace {
 
-// P017 (#555 B187): a VoIP push iOS held on the phone for minutes rang as a ghost call. The relay's `sent_at` says how
-// old it is; a push too old to ring is reported to CallKit (iOS requires it) and ended at once.
+// iOS can hold a push on the phone for minutes. The relay's `sent_at` says how old it is; a push older than the
+// invite's lifetime has no ring to find.
 
 constexpr int64_t kNow = 1'762'600'000'000; // 2025-11, Unix ms
 

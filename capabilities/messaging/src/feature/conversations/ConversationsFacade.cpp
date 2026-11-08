@@ -499,6 +499,10 @@ void ConversationsFacade::SetOnInboundMessage(std::function<void(std::string, st
   hub_.MeshMessaging().SetOnInboundMessage(std::move(callback));
 }
 
+std::optional<std::string> ConversationsFacade::ThreadOfInbound(const std::string& id) const {
+  return hub_.MeshMessaging().ThreadOfInbound(id);
+}
+
 void ConversationsFacade::SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string, bool)> callback) {
   hub_.MeshMessaging().SetOnBackgroundUnread(std::move(callback));
 }

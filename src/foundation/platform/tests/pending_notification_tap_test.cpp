@@ -33,8 +33,8 @@ TEST(PendingNotificationTapTest, OnlyTheNewestTapIsKept) {
 
   tap.Record("", false, "m1", t0);
   tap.Record("", false, "m2", t0);
-  EXPECT_FALSE(tap.TakeMessageRoute("m1", t0));
-  EXPECT_TRUE(tap.TakeMessageRoute("m2", t0));
+  EXPECT_FALSE(tap.TakeHintedRoute("m1", t0));
+  EXPECT_TRUE(tap.TakeHintedRoute("m2", t0));
 }
 
 TEST(PendingNotificationTapTest, ACallRouteWithoutAHintTakesTheFirstRingOnce) {
@@ -81,22 +81,57 @@ TEST(PendingNotificationTapTest, PeekDoesNotConsume) {
 
 TEST(PendingNotificationTapTest, AMessageRouteMatchesItsMessageOnceAndExpires) {
   PendingNotificationTap tap;
-  EXPECT_FALSE(tap.TakeMessageRoute("m1", t0)) << "no tap, no route";
+  EXPECT_FALSE(tap.TakeHintedRoute("m1", t0)) << "no tap, no route";
   tap.Record("", false, "m1", t0);
-  EXPECT_FALSE(tap.TakeMessageRoute("m0", t0)) << "another message leaves the tap waiting";
-  EXPECT_TRUE(tap.TakeMessageRoute("m1", t0 + PendingNotificationTap::kMessageRouteTtl));
-  EXPECT_FALSE(tap.TakeMessageRoute("m1", t0)) << "once per tap";
+  EXPECT_FALSE(tap.TakeHintedRoute("m0", t0)) << "another message leaves the tap waiting";
+  EXPECT_TRUE(tap.TakeHintedRoute("m1", t0 + PendingNotificationTap::kMessageRouteTtl));
+  EXPECT_FALSE(tap.TakeHintedRoute("m1", t0)) << "once per tap";
 
   tap.Record("", false, "m1", t0);
-  EXPECT_FALSE(tap.TakeMessageRoute("m1", t0 + PendingNotificationTap::kMessageRouteTtl + std::chrono::seconds(1)));
-  EXPECT_FALSE(tap.TakeMessageRoute("m1", t0)) << "an expired tap is dropped";
+  EXPECT_FALSE(tap.TakeHintedRoute("m1", t0 + PendingNotificationTap::kMessageRouteTtl + std::chrono::seconds(1)));
+  EXPECT_FALSE(tap.TakeHintedRoute("m1", t0)) << "an expired tap is dropped";
 }
 
-TEST(PendingNotificationTapTest, ACallTapIsNotAMessageRoute) {
+TEST(PendingNotificationTapTest, AHintedRouteAlsoServesACallTapByItsCallId) {
   PendingNotificationTap tap;
   tap.Record("", true, "c1", t0);
-  EXPECT_FALSE(tap.TakeMessageRoute("c1", t0));
+  EXPECT_FALSE(tap.TakeHintedRoute("c0", t0));
+  EXPECT_TRUE(tap.TakeHintedRoute("c1", t0));
+  EXPECT_FALSE(tap.TakeCallRoute("c1", t0)) << "one tap, one route";
+}
+
+TEST(PendingNotificationTapTest, AHintedRouteNeedsAHint) {
+  PendingNotificationTap tap;
+  tap.Record("", true, "", t0);
+  EXPECT_FALSE(tap.TakeHintedRoute("", t0));
+  EXPECT_FALSE(tap.TakeHintedRoute("m1", t0)) << "a hintless call tap is not any message's";
   EXPECT_TRUE(tap.TakeCallRoute("c1", t0));
+}
+
+TEST(PendingNotificationTapTest, FreshHintDoesNotConsumeAndDropsAnExpiredTap) {
+  PendingNotificationTap tap;
+  EXPECT_EQ(tap.FreshHint(t0), "");
+  tap.Record("", false, "m1", t0);
+  EXPECT_EQ(tap.FreshHint(t0), "m1");
+  EXPECT_EQ(tap.FreshHint(t0), "m1");
+  EXPECT_TRUE(tap.TakeHintedRoute("m1", t0));
+  EXPECT_EQ(tap.FreshHint(t0), "");
+
+  tap.Record("", false, "m1", t0);
+  EXPECT_EQ(tap.FreshHint(t0 + PendingNotificationTap::kMessageRouteTtl + std::chrono::seconds(1)), "");
+  EXPECT_EQ(tap.FreshHint(t0), "") << "an expired tap is dropped";
+
+  tap.Record("thread-a", false, "", t0);
+  EXPECT_EQ(tap.FreshHint(t0), "") << "a banner tap has no hint";
+}
+
+TEST(PendingNotificationTapTest, ALookupThenTakeRoutesOnceWhenTheMessageSyncedBeforeTheTap) {
+  PendingNotificationTap tap;
+  tap.Record("", false, "m1", t0);
+  const std::string hint = tap.FreshHint(t0);
+  ASSERT_FALSE(hint.empty());
+  EXPECT_TRUE(tap.TakeHintedRoute(hint, t0));
+  EXPECT_EQ(tap.FreshHint(t0), "");
 }
 
 // Tap before the handler is wired, then wiring consumes it; the reverse order finds nothing left.

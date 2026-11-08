@@ -210,6 +210,8 @@ public:
   void SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string, bool)> callback);
   /** (message id, thread id) of each inbound message stored, on the UI thread. */
   void SetOnInboundMessage(std::function<void(std::string, std::string)> callback);
+  /** The chat a recent inbound message (or, by call id, a call summary) was stored in. */
+  std::optional<std::string> ThreadOfInbound(const std::string& id) const;
   void SyncInboxFromWake(bool force);
   void TailSyncActiveE2eThread();
   void WarmPeerForThread(const std::string& thread_id);
