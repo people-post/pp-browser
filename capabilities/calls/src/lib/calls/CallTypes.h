@@ -241,6 +241,9 @@ struct CallInviteDetail {
   /** Optional epoch-1 media key (same fields as CallMediaKey) so Accept need not wait on a second inbox row. */
   uint32_t media_epoch = 1;
   std::string media_key_id;
+  /** The key itself (base64; M024): the lane copy it rides is sealed for one device of the invitee's. */
+  std::string media_key_b64;
+  /** The old form: the key wrapped under the account pair's session (V015) — until kMediaKeyAccountWrapBridge goes. */
   std::string wrapped_key_b64;
   /**
    * Inviter LAN listen multiaddrs (`/ip4/…/tcp/…/p2p/…`) for answerer reverse-dial when mDNS
@@ -339,7 +342,12 @@ struct CallMediaKeyDetail {
   std::string call_id;
   uint32_t media_epoch = 1;
   std::string media_key_id;
-  /** Opaque wrapped key material (base64); empty until crypto wiring. */
+  /**
+   * The key itself (base64; M024). A control-lane message is sealed per device of the peer's, each copy in that
+   * device pair's session (or the account copy in the account pair's): the copy is the wrap.
+   */
+  std::string media_key_b64;
+  /** The old form: the key wrapped under the account pair's session (V015) — until kMediaKeyAccountWrapBridge goes. */
   std::string wrapped_key_b64;
 };
 

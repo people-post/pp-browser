@@ -23,9 +23,10 @@ namespace pbr {
  */
 struct CallDeliveryPorts {
   /**
-   * Call signaling to a peer on the control lane (no thread, never a transcript row). `key_init_b64`:
-   * the AutoKey init of a session a media-key wrap just opened, for the peer to derive it. `urgent`:
-   * a call invite — the relay wakes the peer as for an incoming call (P012).
+   * Call signaling to a peer on the control lane (no thread, never a transcript row; a copy per device of the
+   * peer's, M024). `key_init_b64`: the AutoKey init of the account pair's session an old-form media-key wrap just
+   * opened — it rides an account copy only. `urgent`: a call invite — the relay wakes the peer as for an incoming
+   * call (P012).
    */
   std::function<pp::Roe<void>(const std::string& peer_identity, const ThreadMessage& control,
                               const std::optional<std::string>& key_init_b64, bool urgent)>
@@ -54,8 +55,9 @@ struct CallDeliveryPorts {
   CallGroupStandingFn group_standing;
   std::function<void(bool force)> sync_inbox_from_wake;
   /**
-   * Ensure e2e_public session key for media-key wrap (AutoKey if missing).
-   * When `first_message_key_init_b64` is set, it rides the next control-lane send to that peer.
+   * The account pair's e2e_public session key, for the media key's old form (AutoKey if missing; M024 bridge — gone
+   * with kMediaKeyAccountWrapBridge). When `first_message_key_init_b64` is set, it rides the next control-lane send
+   * to that peer that goes as the account copy.
    */
   std::function<pp::Roe<EnsuredE2ePublicSessionKey>(const std::string& peer_identity)> ensure_peer_session_key;
   /**

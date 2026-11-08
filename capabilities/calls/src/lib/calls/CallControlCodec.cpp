@@ -178,10 +178,15 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
     }
     json.set("participants", ArrayValue(std::move(participants)));
   }
-  if (!detail.wrapped_key_b64.empty()) {
+  if (!detail.media_key_b64.empty() || !detail.wrapped_key_b64.empty()) {
     json.setJsonUInt("media_epoch", detail.media_epoch);
     json.set("media_key_id", detail.media_key_id);
-    json.set("wrapped_key_b64", detail.wrapped_key_b64);
+    if (!detail.media_key_b64.empty()) {
+      json.set("media_key_b64", detail.media_key_b64);
+    }
+    if (!detail.wrapped_key_b64.empty()) {
+      json.set("wrapped_key_b64", detail.wrapped_key_b64);
+    }
   }
   WriteStringArray(json, "listen_multiaddrs", detail.listen_multiaddrs);
   if (!detail.libp2p_peer_id.empty()) {
@@ -219,6 +224,7 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
   ReadParticipants(*json, detail.participants);
   detail.media_epoch = static_cast<uint32_t>(json->getNonNegInt("media_epoch").value_or(1));
   detail.media_key_id = json->getString("media_key_id").value_or("");
+  detail.media_key_b64 = json->getString("media_key_b64").value_or("");
   detail.wrapped_key_b64 = json->getString("wrapped_key_b64").value_or("");
   detail.listen_multiaddrs = ReadStringArray(*json, "listen_multiaddrs");
   detail.libp2p_peer_id = json->getString("libp2p_peer_id").value_or("");
@@ -396,6 +402,10 @@ Roe<std::string> CallControlCodec::EncodeMediaKey(const CallMediaKeyDetail& deta
   json.set("call_id", detail.call_id);
   json.setJsonUInt("media_epoch", detail.media_epoch);
   json.set("media_key_id", detail.media_key_id);
+  if (!detail.media_key_b64.empty()) {
+    json.set("media_key_b64", detail.media_key_b64);
+  }
+  // An app before M024 reads this field only (and takes it even when empty: it then waits for a resend).
   json.set("wrapped_key_b64", detail.wrapped_key_b64);
   return DumpJson(json);
 }
@@ -410,6 +420,7 @@ Roe<CallMediaKeyDetail> CallControlCodec::DecodeMediaKey(const std::string& deta
   detail.call_id = *call_id;
   detail.media_epoch = static_cast<uint32_t>(json->getNonNegInt("media_epoch").value_or(1));
   detail.media_key_id = json->getString("media_key_id").value_or("");
+  detail.media_key_b64 = json->getString("media_key_b64").value_or("");
   detail.wrapped_key_b64 = json->getString("wrapped_key_b64").value_or("");
   return detail;
 }

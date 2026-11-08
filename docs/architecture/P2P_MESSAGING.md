@@ -295,9 +295,16 @@ Signaling between a pair (call invite, accept, media keys, hop moves, roster …
 ordered chat stream:
 
 - **Wire:** route kind `control` (`kRelayRouteControl`, signed like any route kind), unsequenced
-  (`sender_seq` 0, bound into the AEAD's AAD), E2E under the pair's **e2e_public session** — the
-  account pair's AutoKey session, the one media keys are wrapped under; no thread. Its own relay
-  stream (`v1:control:…`), so it never shows up as a gap in the chat stream or in history sync.
+  (`sender_seq` 0, bound into the AEAD's AAD), no thread. **One record with a copy per device** on the
+  peer's newest card we hold, each E2E under **that device pair's e2e_public session** — the chat stream's own
+  (`PeerSessionKey.peer_device`), its `key_init` riding the copy while that pair is unconfirmed
+  ([M024](../../projects/multi-device-account/DECISIONS.md#m024--the-control-lane-goes-per-device-a-calls-media-key-rides-the-copy)).
+  The **account copy** (no device, the account pair's session, opened to the account KEM) only when we hold no
+  card for the peer — and, for one release, between two accounts that each have one device
+  (`kControlLaneAccountCopyBetweenSingleDevices`: an app before M024 refuses a lane record with device copies).
+  The plaintext is the same in every copy. Its own relay stream (`v1:control:…`), so it never shows up as a gap
+  in the chat stream or in history sync. Our account's own siblings get lane notices differently: one account
+  copy to our own mailbox, sealed to the account KEM (`ControlLane::NotifySiblings`, M022).
   Built by `BuildControlLaneEnvelope`; sent by `MeshDeliveryOrchestrator::SendControl` on the
   critical worker lane — relay when a route is known, plus a copy over a live link at once
   (`ControlAlsoGoesDirect`), else Amp. Signaling is live: a failed relay send goes again on a short
@@ -307,21 +314,46 @@ ordered chat stream:
 - **What it costs the relay:** a lane record asks the relay to keep it an hour (`ttl_s` 3660,
   `kControlLaneRelayTtlMs`; no family takes one older, and `SystemControlRegistry::Bind` clamps a family's
   `lane_max_age_ms` to it), not the 90 days chat keeps. Our account card (~13 KB + 4 KB per device) rides a lane
-  message only when the peer may not hold it (`ControlLaneCarriesCard`: the first to that account after the card
-  changed, an opener, a device list, an ask, a member check, a ringing invite); the rest are checked with the card
-  the peer keeps, and a peer that keeps none asks for it ([ACCOUNT_CARD § Where cards travel](../contracts/ACCOUNT_CARD.md#where-cards-travel)).
+  message only when a device it addresses may not hold it (`ControlLaneCarriesCard`, told **per device** of the
+  peer's — `ControlLane::cards_sent_`, in memory, so a restart tells each device once more: a device copy's
+  device, or every device on the peer's card for an account copy; the first record to a device after our card
+  changed, or since this device started — a device just linked to the peer's account too —, an opener, a device
+  list, an ask, a member check, a ringing invite). One record carries it once, whichever copy needed it. The rest
+  are checked with the card the peer keeps, and a peer that keeps none asks for it ([ACCOUNT_CARD § Where cards travel](../contracts/ACCOUNT_CARD.md#where-cards-travel)).
   Before both, every lane message carried the card for 90 days: ~30 KB a record filled the relay's store.
 - **To many** (`ControlLane::SendToMany`): each recipient resolved (route, maybe a directory lookup;
   the pair's session, maybe opened) and sealed for its pair on the workers, in parallel, never on the
   caller's thread; one result per recipient. Live signaling (a call's) resolves on the critical lane;
   what can wait (a group's roster check, the device list to every contact) on a lower one. There is no group copy: a group's signaling is
   pairwise like its chat (no group key; the relay does not know groups).
-- **Receive** (`RelayReceivePipeline::ProcessControlEnvelope`): signature, decrypt, a bound family
-  that sends this message on the lane, **fresh** (sender's signed time within an hour of ours;
-  through the relay, waited no longer than the family's `lane_max_age_ms` on the relay's clock — no
-  skew between devices), **first seen** (`SqliteControlLaneSeenStore`, `control_lane_seen` in profile.db,
-  per sender and id, kept three hours), then the family's `apply`. Never stored, never a transcript
+- **Receive** (`RelayReceivePipeline::ProcessControlEnvelope`): the copy for this device (`SelectRelayCopy`: its
+  own, else the account copy), signature, decrypt — a device's copy in our pair with the sending device, the
+  account copy in the account pair's — a bound family that sends this message on the lane, **fresh** (sender's
+  signed time within an hour of ours; through the relay, waited no longer than the family's `lane_max_age_ms` on
+  the relay's clock — no skew between devices), **first seen** (`SqliteControlLaneSeenStore`, `control_lane_seen`
+  in profile.db, per sender and id, kept three hours), then the pair's session is reconciled
+  (`ReconcileE2ePublicSession`, as for a chat message) and the family's `apply`. Never stored, never a transcript
   row, no inbox chrome.
+- **When the sender cannot be checked yet** — no card kept for it, or the sending device not on the card kept (a
+  device just linked or restored here keeps no cards; a device the sender linked since; a later record over a live
+  link that overtook the relay copy of the one carrying the card — a first call's answer, in the lab): the record is **held**
+  in memory for the sender's card (`ControlLaneHold`, owned by the pipeline: at most 16 per sender and 128 in all,
+  each at most two minutes, the oldest dropped first), and the sending device is asked for the card (`card_ask`,
+  as above). Once a card of the sender's is kept — any envelope of its that verifies (its answer to the ask, one
+  carrying its card), a group roster's card — its held records are checked again in order
+  (`ReplayHeldControl`): every step above, the wait counted in their age (`AgedByHold`), so a call invite too old
+  by then is dropped as stale. The relay has the record acked already (the cursor moved on); a restart loses what
+  is held, and the family recovers as for a lost message. A signature that does not verify with the device's key
+  is never held: it will not verify later. Either is a developer-log warning saying why (the reason, the card
+  checked with and its `issued_at`, carried or kept, the sending device's prefix, the route) and a
+  `control.unverified` diag line ([DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md)).
+- **When a copy cannot be read:** a verified record with copies for our other devices only (the sender's list of
+  ours is older than this device), or an account copy that does not open: this device shows the sender its card
+  (a `device_list` notice, at most once per account per 10 minutes — `MeshDeliveryOrchestrator::ShowCardTo`), so
+  its next message has a copy for this device. A copy that does not open is a `control.unreadable` diag line
+  ([DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md)) and a developer-log warning with both sessions' ids. The
+  message is not asked for again and the relay cursor moves on: a copy that did not open will not open later,
+  and signaling is stale by the time an ask could be answered; the next message must not wait behind it.
 
 There is no control thread: no hidden e2e_public twin beside a private DM, no pruning, no
 out-of-order carve-outs in the chat stream.

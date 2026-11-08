@@ -32,9 +32,16 @@ std::string CallIdOf(const ThreadMessage& control) {
 
 } // namespace
 
-ControlLane::ControlLane(IdentityStore& identity, OwnCards& own_keys, ContactsStore& contacts, PeerRouteBook& routes,
-                         E2ePublicSessionKeys& keys, std::function<IDirectMessageClient*()> direct_chat, DeliveryOutbox& outbox)
-    : identity_(identity), own_keys_(own_keys), contacts_(contacts), routes_(routes), keys_(keys), direct_chat_(std::move(direct_chat)),
+ControlLane::ControlLane(IdentityStore& identity, OwnCards& own_keys, AccountKeyResolver& peer_cards,
+                         ContactsStore& contacts, PeerRouteBook& routes, E2ePublicSessionKeys& keys,
+                         std::function<IDirectMessageClient*()> direct_chat, DeliveryOutbox& outbox)
+    : identity_(identity),
+      own_keys_(own_keys),
+      peer_cards_(peer_cards),
+      contacts_(contacts),
+      routes_(routes),
+      keys_(keys),
+      direct_chat_(std::move(direct_chat)),
       outbox_(outbox) {
   redirectLogger("ControlLane");
 }
@@ -43,15 +50,32 @@ ControlLane::~ControlLane() {
   lifetime_.InvalidateAndWait();
 }
 
-bool ControlLane::CarryCard(const std::string& account, const bool opens_session, const bool asked,
-                            const int64_t card_at) {
+std::vector<std::string> ControlLane::CardDevicesOf(const std::string& peer_identity) {
+  std::vector<std::string> ids;
+  if (auto kept = peer_cards_.Kept(peer_identity); kept && kept->has_value() && (*kept)->newest_card) {
+    for (const AccountCardDevice& device : (*kept)->newest_card->devices) {
+      ids.push_back(device.peer_id);
+    }
+  }
+  return ids;
+}
+
+bool ControlLane::CarryCard(const std::string& account, const std::vector<std::string>& devices,
+                            const bool opens_session, const bool asked, const int64_t card_at) {
   std::lock_guard lock(cards_sent_mutex_);
-  auto it = cards_sent_.find(account);
-  const std::optional<int64_t> told = it != cards_sent_.end() ? std::optional<int64_t>(it->second) : std::nullopt;
-  if (!ControlLaneCarriesCard(opens_session, asked, told, card_at)) {
+  std::unordered_map<std::string, int64_t>& told = cards_sent_[account];
+  std::vector<std::optional<int64_t>> told_at;
+  told_at.reserve(devices.size());
+  for (const std::string& device : devices) {
+    auto it = told.find(device);
+    told_at.push_back(it != told.end() ? std::optional<int64_t>(it->second) : std::nullopt);
+  }
+  if (!ControlLaneCarriesCard(opens_session, asked, told_at, card_at)) {
     return false;
   }
-  cards_sent_[account] = card_at;
+  for (const std::string& device : devices) {
+    told[device] = card_at;
+  }
   return true;
 }
 
@@ -66,20 +90,77 @@ uint64_t ControlLane::NextOrderKey() {
   return next;
 }
 
+Roe<ControlLaneCopy> ControlLane::AccountCopyFor(const std::string& peer_identity,
+                                                 const std::optional<std::string>& account_key_init) {
+  auto session = keys_.Resolve(peer_identity);
+  if (!session) {
+    return session.error();
+  }
+  ControlLaneCopy copy{.session_epoch = session->epoch, .master_psk = std::move(session->master_psk)};
+  // The session's own opener while unconfirmed; else one the caller holds (its media-key wrap opened the session).
+  copy.key_init_b64 = std::move(session->key_init_b64);
+  if (!copy.key_init_b64 && account_key_init && !account_key_init->empty()) {
+    copy.key_init_b64 = account_key_init;
+  }
+  return copy;
+}
+
+Roe<std::vector<ControlLaneCopy>> ControlLane::CopiesFor(const std::string& peer_identity,
+                                                         const std::optional<std::string>& account_key_init) {
+  std::vector<AccountCardDevice> devices;
+  if (auto kept = peer_cards_.Kept(peer_identity); kept && kept->has_value() && (*kept)->newest_card) {
+    devices = (*kept)->newest_card->devices;
+  }
+  size_t own_devices = 0;
+  if (auto own = own_keys_.Devices(); own) {
+    own_devices = own->devices.size();
+  }
+  if (ControlLaneUsesAccountCopy(devices.size(), own_devices)) {
+    auto copy = AccountCopyFor(peer_identity, account_key_init);
+    if (!copy) {
+      return copy.error();
+    }
+    return std::vector<ControlLaneCopy>{std::move(*copy)};
+  }
+  // A copy per device, each in its pair's session (the chat stream's): one device's session is not another's, so
+  // whichever of them opened theirs, each reads its own (B186). The caller's account-pair opener is not theirs.
+  std::vector<ControlLaneCopy> copies;
+  std::optional<Error> failure;
+  const auto self = own_keys_.DevicePeerId();
+  for (const AccountCardDevice& device : devices) {
+    if (self && device.peer_id == *self) {
+      continue; // a send to our own account (a card ask to a sibling): no copy for this device
+    }
+    auto session = keys_.ResolveDevice(peer_identity, device);
+    if (!session) {
+      log().warning << "control lane: no session with device " << device.peer_id << " of " << peer_identity << ": "
+                    << session.error().message;
+      failure = session.error();
+      continue;
+    }
+    copies.push_back(ControlLaneCopy{.recipient_device = device.peer_id,
+                                     .session_epoch = session->epoch,
+                                     .master_psk = std::move(session->master_psk),
+                                     .key_init_b64 = std::move(session->key_init_b64)});
+    if (copies.size() == kMaxRelayCopies) {
+      break;
+    }
+  }
+  if (copies.empty()) {
+    return failure.value_or(Error("No device of the peer's to send to"));
+  }
+  return copies;
+}
+
 Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessage& control,
                             const std::optional<std::string>& key_init_b64, const bool urgent, const bool with_card) {
   auto identity = identity_.Get();
   if (!identity || identity->account_id.empty()) {
     return Error("Local account identity unavailable");
   }
-  auto session = keys_.Resolve(peer_identity);
-  if (!session) {
-    return session.error();
-  }
-  // A key_init the caller holds (its media-key wrap opened the session) rides this first send.
-  std::optional<std::string> key_init = session->key_init_b64;
-  if (!key_init && key_init_b64 && !key_init_b64->empty()) {
-    key_init = key_init_b64;
+  auto copies = CopiesFor(peer_identity, key_init_b64);
+  if (!copies) {
+    return copies.error();
   }
 
   // Route as for a DM with the peer (contacts, learned routes, directory) — no thread needed.
@@ -102,22 +183,24 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
   params.sender_relay_id = identity->relay_user_id;
   params.peer_account_id = peer_identity;
   params.route_party = peer_relay_id ? *peer_relay_id : peer_identity;
-  params.session_epoch = session->epoch;
-  params.master_psk = std::move(session->master_psk);
+  const bool opens_session = std::any_of(copies->begin(), copies->end(), [](const ControlLaneCopy& copy) {
+    return copy.key_init_b64 && !copy.key_init_b64->empty();
+  });
+  const std::vector<std::string> addressed = ControlLaneAddressedDevices(*copies, CardDevicesOf(peer_identity));
+  params.copies = std::move(*copies);
   auto device = own_keys_.DevicePeerId();
   if (!device) {
     return device.error();
   }
   params.sender_device = *device;
-  // The card (~13 KB + 4 KB a device) only when the peer may not hold it; the version always (M021 d6).
+  // The card (~13 KB + 4 KB a device) only when a device addressed may not hold it — once per record, whichever
+  // copy needed it; the version always (M021 d6).
   if (auto own = own_keys_.Card(util::NowUnixMs())) {
     params.sender_card_at = own->issued_at;
-    const bool opens_session = key_init.has_value() && !key_init->empty();
-    if (CarryCard(peer_identity, opens_session, with_card || urgent, own->issued_at)) {
+    if (CarryCard(peer_identity, addressed, opens_session, with_card || urgent, own->issued_at)) {
       params.sender_card = AccountCardToJson(*own);
     }
   }
-  params.key_init_b64 = std::move(key_init);
   params.order_key = NextOrderKey();
   auto built = BuildControlLaneEnvelope(
       params, control, [this](const std::vector<uint8_t>& bytes) { return identity_.SignDeviceBytes(bytes); });
@@ -209,14 +292,21 @@ Roe<void> ControlLane::NotifySiblings(const ThreadMessage& notice, const Sibling
   params.sender_relay_id = identity->relay_user_id;
   params.sender_device = *device;
   params.sender_card_at = card->issued_at;
-  if (CarryCard(identity->account_id, false, kind == SiblingNotice::DeviceList, card->issued_at)) {
+  std::vector<std::string> siblings;
+  for (const AccountCardDevice& sibling : card->devices) {
+    if (sibling.peer_id != *device) {
+      siblings.push_back(sibling.peer_id);
+    }
+  }
+  const std::vector<std::string> addressed = ControlLaneAddressedDevices({ControlLaneCopy{}}, siblings);
+  if (CarryCard(identity->account_id, addressed, false, kind == SiblingNotice::DeviceList, card->issued_at)) {
     params.sender_card = AccountCardToJson(*card);
   }
   params.peer_account_id = identity->account_id;
   params.route_party = identity->relay_user_id;
-  params.session_epoch = 1;
-  params.master_psk = std::move(opened->master_psk);
-  params.key_init_b64 = std::move(opened->key_init_b64);
+  params.copies = {ControlLaneCopy{.session_epoch = 1,
+                                   .master_psk = std::move(opened->master_psk),
+                                   .key_init_b64 = std::move(opened->key_init_b64)}};
   params.order_key = NextOrderKey();
   auto built = BuildControlLaneEnvelope(
       params, notice, [this](const std::vector<uint8_t>& bytes) { return identity_.SignDeviceBytes(bytes); });

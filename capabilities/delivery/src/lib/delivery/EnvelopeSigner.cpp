@@ -88,10 +88,8 @@ Roe<void> EnvelopeSigner::CheckBodyShape(const RelayEnvelope& envelope) {
   if (envelope.route.kind == kRelayRouteGroup) {
     return {};
   }
+  // A control-lane record carries a copy per device of the peer's, or the account copy, as a direct one (M024).
   if (envelope.route.kind == kRelayRouteDirect || envelope.route.kind == kRelayRouteControl) {
-    if (envelope.route.kind == kRelayRouteControl && (copies.size() != 1 || !copies.front().recipient_device.empty())) {
-      return Error("Control envelope must carry one account copy");
-    }
     return {};
   }
   return Error("Unknown route kind");

@@ -217,13 +217,9 @@ Roe<PairCopy> SealPairCopy(const ThreadMessage& message, const std::string& send
   if (pair.peer_device.empty() || pair.channel != CryptoChannel::E2ePublic) {
     return Error("A pair copy is for one device, on a public chat");
   }
-  auto record = psk_store.Load(pair);
-  if (!record) {
-    return record.error();
-  }
-  const uint32_t epoch = record->has_value() ? (*record)->session_epoch : 1;
   // The session first (a new one is made here), then our number in it.
-  auto session = EnsureE2ePublicMasterPsk(psk_store, pair, epoch, peer_device_kem);
+  auto session =
+      ResolveE2ePublicSendSession(psk_store, pair, [&peer_device_kem]() -> Roe<ByteVector> { return peer_device_kem; });
   if (!session) {
     return session.error();
   }
@@ -232,7 +228,7 @@ Roe<PairCopy> SealPairCopy(const ThreadMessage& message, const std::string& send
     return seq.error();
   }
   PairCopy copy{.numbered = message};
-  copy.numbered.session_epoch = epoch;
+  copy.numbered.session_epoch = session->epoch;
   copy.numbered.sender_seq = *seq;
   auto sealed = EncryptNumbered(copy.numbered, pair.channel, sender_account_id, pair.peer_identity_value, options,
                                 session->master_psk, session->key_init_b64);

@@ -11,6 +11,7 @@
 
 #include "lib/media/MediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallMediaKeyExchange.h"
 #include "lib/calls/CallGuests.h"
 #include "lib/calls/ICallMediaKeyStore.h"
 #include "lib/calls/ICallSessionStore.h"
@@ -238,6 +239,7 @@ protected:
           ++sent_rosters_;
         } else if (type == "call_invite") {
           invite_urgent_.push_back(urgent);
+          last_sent_invite_payload_ = msg.payload_json;
         }
       }
       return {};
@@ -448,6 +450,7 @@ protected:
   int sent_rosters_ = 0;
   /** `urgent` of every CallInvite put on the wire, in order. */
   std::vector<bool> invite_urgent_;
+  std::string last_sent_invite_payload_;
   std::vector<ThreadMessage> summaries_;
   /** V062: bind the group standing port (set before SetUp); the roster it reads; whether one is held here. */
   bool with_group_standing_ = false;
@@ -1689,6 +1692,69 @@ TEST_F(CallSessionInboundComposeTest, StartCallOutboundCreatesSessionAndInvite) 
   EXPECT_EQ(invite_urgent_, std::vector<bool>{true}) << "an ordinary invite wakes the peer";
   auto key = keys_->LoadEpochKey(started->call_id, 1);
   ASSERT_TRUE(key && key->has_value());
+}
+
+/** The `detail` of a sent call-control message's payload. */
+std::string DetailOf(const std::string& payload_json) {
+  auto payload = TryParseObject(payload_json);
+  return payload ? payload->getString("detail").value_or("") : std::string();
+}
+
+// M024: an invite carries the media key itself — its lane copy is sealed for one device of the callee's — and, for
+// one release, its old form wrapped under the account pair's session, which is all an app before M024 reads.
+TEST_F(CallSessionInboundComposeTest, AnInviteCarriesTheKeyAndItsOldForm) {
+  ByteVector master(32);
+  for (size_t i = 0; i < master.size(); ++i) {
+    master[i] = static_cast<uint8_t>(0x50 + i);
+  }
+  psk_->SeedMasterPsk(master);
+  Thread thread;
+  thread.id = "thread-dm-key-forms";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Peer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(store_->UpsertThread(thread));
+  auto started = OnCallsOwner([&] { return csm_->StartCall(thread.id, false, {"account:peer"}); });
+  ASSERT_TRUE(started) << started.error().message;
+  auto key = keys_->LoadEpochKey(started->call_id, 1);
+  ASSERT_TRUE(key && key->has_value());
+
+  auto invite = CallControlCodec::DecodeInvite(DetailOf(last_sent_invite_payload_));
+  ASSERT_TRUE(invite) << invite.error().message;
+  EXPECT_EQ(Base64Decode(invite->media_key_b64).value(), **key) << "the key itself, for a device that reads M024";
+  ASSERT_EQ(invite->wrapped_key_b64.empty(), !kMediaKeyAccountWrapBridge);
+  if (kMediaKeyAccountWrapBridge) {
+    // An app before M024: the old field, under the account pair's session.
+    auto session_key = SessionKeyDeriver::Derive(master, CryptoChannel::E2ePublic, 1);
+    ASSERT_TRUE(session_key);
+    auto unwrapped = ICallMediaKeyStore::UnwrapKeyB64(*session_key, invite->wrapped_key_b64, started->call_id, 1,
+                                                      invite->media_key_id);
+    ASSERT_TRUE(unwrapped) << unwrapped.error().message;
+    EXPECT_EQ(*unwrapped, **key);
+  }
+}
+
+// M024: a device that reads its own lane copy takes the key it carries — no account pair's session needed, so a
+// callee whose account session went another device's way (B186) still has the key.
+TEST_F(CallSessionInboundComposeTest, AnInviteWithTheKeyItselfNeedsNoAccountSession) {
+  const std::string call_id = "call:key-in-copy";
+  auto msg = MakeInviteMessage(call_id);
+  ASSERT_TRUE(msg);
+  auto payload = TryParseObject(msg->payload_json);
+  ASSERT_TRUE(payload);
+  auto invite = CallControlCodec::DecodeInvite(payload->getString("detail").value_or(""));
+  ASSERT_TRUE(invite);
+  invite->media_key_b64 = Base64Encode(TestMediaKey());
+  invite->wrapped_key_b64 = "b2xkLWZvcm0tdGhhdC1kb2VzLW5vdC1vcGVu"; // an old form this device cannot open
+  auto detail = CallControlCodec::EncodeInvite(*invite);
+  ASSERT_TRUE(detail);
+  auto with_key = CallControlCodec::BuildSystemMessage("", CallControlType::CallInvite, "Incoming voice call", *detail,
+                                                       "account:peer");
+  ASSERT_TRUE(with_key);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*with_key, "account:peer"); }));
+  auto stored = keys_->LoadEpochKey(call_id, 1);
+  ASSERT_TRUE(stored && stored->has_value()) << "taken from the invite with no session seeded";
+  EXPECT_EQ(**stored, TestMediaKey());
 }
 
 // The joiner answers this invite on its own, so it must not ring (or push) the joiner's device.

@@ -2794,6 +2794,64 @@ def scenario_a_call_rings_every_device_and_stops_once_answered(lab):
     assert_idle(a, b, laptop, timeout=40)
 
 
+def scenario_a_call_rings_on_every_device_after_each_called_out(lab):
+    """#555 B186 (M024): Alice's phone calls Bob, then her laptop does. On the account pair's one session the
+    laptop's opener replaced the phone's on Bob's side, so Bob's call back opened on the laptop only and the phone
+    never rang. The control lane goes per device now: Bob calls Alice, both her devices ring, and the phone — the
+    one B186 left silent — answers with media both ways (its copy brought the media key too)."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in a.cmd("devices")["devices"] or None, 40, "phone: the laptop on the list")
+    l_thread = laptop.cmd("open_chat", account=b.account)["thread"]
+    for caller, thread in ((a, a_thread), (laptop, l_thread)):
+        connect(caller, thread, b)
+        b.cmd("leave")
+        assert_idle(a, laptop, b, timeout=40)
+    call_id = b.cmd("call", thread=b_thread)["call_id"]
+    a.wait_surface("ringing", 40, call_id=call_id)
+    laptop.wait_surface("ringing", 40, call_id=call_id)
+    a.cmd("accept_voice")
+    laptop.wait_surface("none", 15)
+    b.wait_surface("in_call", 40, call_id=call_id)
+    a.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(b, a, timeout=40)
+    for u in (a, laptop):
+        if "control lane: couldn't decrypt" in u.log_text():
+            raise ProbeError("%s: a lane copy did not open" % u.name)
+    b.cmd("leave")
+    assert_idle(a, b, laptop, timeout=40)
+
+
+def scenario_a_restored_device_hears_the_answer_to_its_call(lab):
+    """#555 (iPhone call 1): Alice calls Bob, who answers — his card reaches her account. Her phone is gone; she
+    restores on a new one (a fresh list holding only it, no cards kept) and calls Bob. Bob answers with the account
+    copy (one device each, the M024 bridge) under the session her invite opened; the restored phone had dropped
+    such an answer when it held no card of Bob's, and stayed waiting. Now Bob's card rides it (told per device), and
+    a lane record of his that comes before any card waits for one: the call connects, and no record of Bob's is
+    dropped for want of his card. (Here the shared mailbox's backlog may bring his card first: its records verify
+    before their old account copies fail to open.)"""
+    a, a_thread, b, b_thread = open_pair(lab)
+    connect(a, a_thread, b)
+    a.cmd("leave")
+    assert_idle(a, b, timeout=40)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    a.cmd("locker_publish", timeout=60)
+    logged_before = len(a.log_text())
+    a.restore_from_phrase(phrase)
+    a.wait_mesh()
+    a_thread = a.cmd("chat_with", account=b.account)["thread"]
+    connect(a, a_thread, b)
+    dropped = [line for line in a.log_text()[logged_before:].splitlines()
+               if "signature check failed" in line and "sender=%s " % b.account in line
+               and "held_for_card=1" not in line]
+    if dropped:
+        raise ProbeError("restored phone: dropped bob's lane record(s) it could not check: %s" % dropped[0])
+    a.cmd("leave")
+    assert_idle(a, b, timeout=40)
+
+
 def scenario_a_newer_device_list_follows_the_messages(lab):
     """Every envelope says how new its sender's device list is (M021 d6): Carol shares a group with Bob but is
     not his contact, so what his main device announces never reaches her. Bob links a laptop: his next group
@@ -3789,6 +3847,8 @@ SCENARIOS = [
     ("linked_devices_see_what_each_sent", scenario_linked_devices_see_what_each_sent),
     ("a_device_asks_for_a_copy_it_missed", scenario_a_device_asks_for_a_copy_it_missed),
     ("a_call_rings_every_device_and_stops_once_answered", scenario_a_call_rings_every_device_and_stops_once_answered),
+    ("a_call_rings_on_every_device_after_each_called_out", scenario_a_call_rings_on_every_device_after_each_called_out),
+    ("a_restored_device_hears_the_answer_to_its_call", scenario_a_restored_device_hears_the_answer_to_its_call),
     ("a_newer_device_list_follows_the_messages", scenario_a_newer_device_list_follows_the_messages),
     ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention),
     ("group_owner_appoints_an_admin", scenario_group_owner_appoints_an_admin),

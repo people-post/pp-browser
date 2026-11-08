@@ -13,6 +13,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     PeerThreadLogic.cpp
     GroupInviteGate.cpp
     RelayReceivePipeline.cpp
+    ControlLaneHold.cpp
     ChatSyncLogic.cpp
     ConversationSummaryCodec.cpp
     EpochBumpCoordinator.cpp

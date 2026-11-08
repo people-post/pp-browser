@@ -294,16 +294,17 @@ public:
   /** Warm Amp association by PeerId / dial key (call prefetch shares this with chat). */
   void WarmPeerByKey(const std::string& peer_key);
   /**
-   * Ensure e2e_public AutoKey PSK exists for peer (call invite media-key wrap).
-   * Caller attaches `first_message_key_init_b64` on the outbound CallInvite send.
+   * The account pair's e2e_public session key with the peer (AutoKey if missing): a call media key's old form is
+   * wrapped under it (M024 bridge). `first_message_key_init_b64` rides the next lane send that is an account copy.
    */
   Roe<EnsuredE2ePublicSessionKey> EnsureE2ePublicSessionKey(const std::string& peer_identity);
   /**
    * Send `control` (an identified system message) to `peer_identity` on the control lane
-   * (kRelayRouteControl): E2E under the pair's e2e_public session (opened on first use; a
-   * `key_init_b64` the caller holds rides along), not sequenced, never stored. Queued on the
-   * critical lane — relay when a route is known (retried while fresh), else Amp. Our card rides it when the peer
-   * may not hold it; `with_card` when the caller knows it may hold none of ours (ControlLane::Send).
+   * (kRelayRouteControl): a copy per device on the peer's card, each E2E under that device pair's e2e_public
+   * session (the account copy for a peer with no card; an account-pair `key_init_b64` the caller holds rides only
+   * that, M024), not sequenced, never stored. Queued on the critical lane — relay when a route is known (retried
+   * while fresh), else Amp. Our card rides it when the peer may not hold it; `with_card` when the caller knows it
+   * may hold none of ours (ControlLane::Send).
    */
   Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control,
                         const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false,
@@ -439,6 +440,20 @@ private:
   /** An unverified envelope's ask (SetOnUnknownSenderDevice): anyone can forge one, so once per account per gap. */
   static constexpr int64_t kUnknownDeviceAskGapMs = 10 * 60 * 1000;
   std::map<std::string, int64_t> unknown_device_asks_; // account → when last asked (under card_asks_mutex_)
+  /**
+   * M024: a verified lane message from `account` this device could not read (no copy for it, or an account copy
+   * that did not open) — tell it our card (`device_list`), so its next message has a copy for this device. At most
+   * once per account per kShowCardGapMs. The message itself is not asked for: signaling is stale by then.
+   */
+  void ShowCardTo(const std::string& account);
+  /**
+   * #555: a card of `account`'s may be kept now (a verified envelope of its, a roster's card): the lane messages of
+   * its held for one (RelayReceivePipeline::ReplayHeldControl) are checked again on a worker, and followed up as
+   * on arrival.
+   */
+  void ReplayHeldControl(const std::string& account);
+  static constexpr int64_t kShowCardGapMs = 10 * 60 * 1000;
+  std::map<std::string, int64_t> cards_shown_; // account → when last told (under card_asks_mutex_)
   Roe<void> ResendDirectCopy(const Thread& thread, const ThreadMessage& message, const std::string& asker,
                              const AccountCardDevice& device);
   Roe<void> ResendGroupCopy(const Thread& thread, const ThreadMessage& message, const std::string& asker,
