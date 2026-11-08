@@ -4,6 +4,7 @@
 #include "gui/chat/AgentTurnController.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "gui/UserFeedback.h"
 
 #include <gtest/gtest.h>
 
@@ -1000,6 +1001,28 @@ TEST_F(AgentTurnBusyTest, ALateEventOfADeletedConversationIsIgnored) {
   ready.text = "answer";
   controller_.HandleAgentEvent(ready); // would store a message into (and so re-create) the thread
   EXPECT_FALSE(controller_.Busy().Any());
+}
+
+// A Brief guest key on its way (the mint runs off the UI thread now): the setup banner keeps what it showed, rather than
+// flashing "Brief unavailable" until the key lands. With no mint in flight, a missing key still shows it.
+TEST_F(AgentTurnBusyTest, NoBriefUnavailableBannerWhileTheKeyMintIsInFlight) {
+  host_.store.Mutable().config.llm.base_url = "https://llm.example/api/llm/v1";
+  host_.store.Mutable().config.llm.preset = "brief";
+  std::vector<std::string> banners;
+  ShellFeedbackPorts ports;
+  ports.show_banner = [&](const std::string& message, bool) { banners.push_back(message); };
+  UserFeedback::BindPorts(ports);
+
+  auto ticket = controller_.BriefKeyRun()->TryStart();
+  ASSERT_TRUE(ticket);
+  controller_.RefreshLlmSetupBanner();
+  EXPECT_TRUE(banners.empty()) << "a mint in flight: no unavailable banner";
+
+  EXPECT_FALSE(controller_.BriefKeyRun()->Finish(*ticket));
+  controller_.RefreshLlmSetupBanner();
+  EXPECT_EQ(banners.size(), 1u) << "no key and no mint: the banner says so";
+
+  UserFeedback::BindPorts({});
 }
 
 // The Home plus menu always lists Camera first, then Photos (the camera's own notice tells when it is unavailable).

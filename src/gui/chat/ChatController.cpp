@@ -498,8 +498,111 @@ ChatController::ChatController()
       });
 }
 
+void ChatController::MakeReadyTasks() {
+  ready_tasks_.reset();
+  if (!facade_) {
+    return;
+  }
+  // The three network ports run on a worker: they touch only the facade (its identity store and clients lock
+  // themselves) and never this controller, the Store, preferences or UserFeedback. Everything else runs on the UI.
+  ConversationsFacade* const facade = facade_;
+  MessagingReadyTasks::Ports ports;
+  ports.run_worker_then_ui = [](std::function<void()> work, std::function<void()> on_ui) {
+    AppRuntime::PostWorkerAndReplyOnUI<int>(
+        WorkerLane::Normal,
+        [work = std::move(work)]() {
+          work();
+          return 0;
+        },
+        [on_ui = std::move(on_ui)](int) { on_ui(); });
+  };
+  ports.session = [this]() { return messaging_session_; };
+  ports.still_ready = [this](const uint64_t started) { return started == messaging_session_ && MessagingReady(); };
+  ports.register_push = [facade]() { (void)facade->SyncPushDevices(); };
+  ports.auto_renew = [this]() { return Store().Snapshot().profile_prefs.auto_renew_registration; };
+  ports.renew_network = [facade](const bool auto_renew) {
+    RenewResult out;
+    auto renewed = facade->MaybeAutoRenewRegistrationNetworkOnly(auto_renew);
+    if (!renewed) {
+      out.error = renewed.error();
+    } else {
+      out.registration = std::move(*renewed);
+    }
+    return out;
+  };
+  ports.renew_persist = [this](const RegistrationResult& registration) -> Roe<void> {
+    if (!facade_) {
+      return Error("Messaging is not ready");
+    }
+    if (auto saved = facade_->PersistRegistrationRenewal(registration); !saved) {
+      return saved.error();
+    }
+    return {};
+  };
+  ports.renew_hint = [this](const RenewResult& result, const bool auto_renew) {
+    if (result.error) {
+      log().warning << "Auto-renew registration failed: " << result.error->message;
+    } else if (result.registration) {
+      log().info << "Network registration auto-renewed";
+    } else {
+      const std::optional<LocalIdentity> identity = facade_ ? facade_->GetIdentity() : std::nullopt;
+      if (identity && ShouldRenewRegistration(*identity) && !auto_renew) {
+        UserFeedback::NeedsSetup(Tr("chat.hint.registration_expires"));
+      }
+    }
+  };
+  ports.brief_key_needed = [this]() {
+    if (!facade_ || !MessagingReady()) {
+      return false;
+    }
+    const std::optional<LocalIdentity> identity = facade_->GetIdentity();
+    return identity && identity->brief_llm_api_key.empty() && identity->brief_llm_guest_api_key.empty();
+  };
+  ports.mint_brief_key_network = [](const std::string& llm_base_url) -> Roe<SecretText> {
+    auto minted = MintBriefGuestLlmKey(llm_base_url);
+    if (!minted) {
+      return minted.error();
+    }
+    return std::move(minted->llm_api_key);
+  };
+  ports.brief_key_persist = [this](const SecretText& key) -> Roe<void> {
+    std::optional<LocalIdentity> identity = facade_ ? facade_->GetIdentity() : std::nullopt;
+    if (!identity) {
+      return Error("Messaging is not ready");
+    }
+    // A key that came meanwhile (a renewal brought a registered one, a 401 renewal stored a guest one) is kept.
+    if (!identity->brief_llm_api_key.empty() || !identity->brief_llm_guest_api_key.empty()) {
+      return {};
+    }
+    identity->brief_llm_guest_api_key = key;
+    if (auto saved = facade_->UpdateLocalIdentity(*identity); !saved) {
+      return saved.error();
+    }
+    return {};
+  };
+  ports.brief_key_done = [this](const BriefKeyMintEnd& end) { agent_.OnBriefKeyMintEnded(end); };
+  ports.after_identity_changed = [this]() {
+    agent_.ReloadAgentConfig(); // runtime.llm.api_key takes the key now in the identity
+    agent_.RefreshLlmSetupBanner();
+  };
+  ready_tasks_ = std::make_unique<MessagingReadyTasks>(std::move(ports), agent_.BriefKeyRun());
+}
+
+void ChatController::SyncPushDevices() {
+  if (ready_tasks_) {
+    ready_tasks_->SyncPushDevices();
+  }
+}
+
+void ChatController::RetryBriefKeyMint() {
+  if (ready_tasks_) {
+    ready_tasks_->RetryBriefKeyMint();
+  }
+}
+
 void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
   facade_ = facade;
+  MakeReadyTasks();
   if (facade_) {
     // The server space is filling up: a plain line, said once per level (the hub counts).
     facade_->SetOnBlobSpaceWarning([this](const int percent) {
@@ -1136,6 +1239,7 @@ void ChatController::OnPeerIconsChanged() {
 void ChatController::OnProfileDataReset() {
   CloseSearch(); // nothing decrypted from the old profile stays in memory
   messaging_ready_ = false;
+  ++messaging_session_; // a task result of the old profile never reaches the new one
   mesh_ready_ = false;
   // profile.db is recreated: nothing read from the old one may be written back into the new one.
   presenter_.ResetForNewProfile();
@@ -3985,6 +4089,11 @@ void ChatController::WireMessagingBindings() {
     return;
   }
   messaging_ready_ = true;
+  // A new session: results of tasks the last one sent off are dropped when they come back.
+  ++messaging_session_;
+  if (ready_tasks_) {
+    ready_tasks_->OnNewSession();
+  }
   // Pre-send image previews are session files; a crash or a kill leaves them behind, so start clean.
   if (const std::string profile_dir = facade_ ? facade_->ProfileDataDir() : std::string(); !profile_dir.empty()) {
     std::error_code ec;
@@ -4078,19 +4187,18 @@ void ChatController::WireMessagingBindings() {
   }
   // Relay poll is armed by ConversationsHub::StartCoordinatorTimers (not here). Call-wake UI
   // refresh is wired via ConversationsHub::SetOnCallWake from Application.
+  // Push binding is HTTP: off the UI thread, one run at a time (a token change while one runs: once more after it).
   IPushDeviceRegistrar::SetTokenChangedHandler([this](const std::string& /*token*/) {
     AppRuntime::PostUI([this]() {
       if (!MessagingReady()) {
         return;
       }
-      if (facade_) {
-        (void)facade_->SyncPushDevices();
-      }
+      SyncPushDevices();
     });
   });
-  if (facade_) {
+  {
     StartupPhase phase("ChatController::WireMessagingBindings/SyncPushDevices");
-    (void)facade_->SyncPushDevices();
+    SyncPushDevices();
   }
   facade_->SetOnThreadChanged([this]() {
     RefreshFromMessaging();
@@ -4119,19 +4227,11 @@ void ChatController::WireMessagingBindings() {
     facade_->TailSyncActiveE2eThread();
   }
 
-  const bool auto_renew = Store().Snapshot().profile_prefs.auto_renew_registration;
-  auto renew = [&]() -> Roe<bool> {
+  {
+    // Off the UI thread; the result is stored back on it (MessagingReadyTasks), with the expiry hint.
     StartupPhase phase("ChatController::WireMessagingBindings/MaybeAutoRenewRegistration");
-    return facade_ ? facade_->MaybeAutoRenewRegistration(auto_renew) : Roe<bool>(false);
-  }();
-  if (!renew) {
-    log().warning << "Auto-renew registration failed: " << renew.error().message;
-  } else if (*renew) {
-    log().info << "Network registration auto-renewed";
-  } else {
-    auto identity = facade_->GetIdentity();
-    if (identity && ShouldRenewRegistration(*identity) && !auto_renew) {
-      UserFeedback::NeedsSetup(Tr("chat.hint.registration_expires"));
+    if (ready_tasks_) {
+      ready_tasks_->RenewRegistration();
     }
   }
   // Always reload so Brief key from identity is applied after unlock (not only on renew).
@@ -4704,6 +4804,7 @@ void ChatController::Shutdown() {
   }
   // Hub + ProfileSecrets lifetime is owned by Application::ShutdownMessaging.
   messaging_ready_ = false;
+  ++messaging_session_; // a task result still on its way is dropped
   mesh_ready_ = false;
   pending_reply_.reset();
   agent_.Reset();

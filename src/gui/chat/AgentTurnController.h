@@ -8,6 +8,7 @@
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/HeldAgentSend.h"
+#include "gui/chat/MessagingReadyTasks.h"
 #include "gui/chat/WorkingSetController.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -23,6 +24,7 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <set>
 #include <optional>
 #include <string>
@@ -81,6 +83,11 @@ public:
   }
   /** The finished answer of the panel's one-off question (kAskAiOnceThread): never stored in a thread. */
   virtual void OnAskAiOnceReply(const AgentEvent& event) { (void)event; }
+  /**
+   * Mint a Brief guest key at `llm_base_url` off the UI thread (MessagingReadyTasks, under BriefKeyRun()); its end
+   * comes back to OnBriefKeyMintEnded. The default does nothing (no mint).
+   */
+  virtual void MintBriefGuestKey(const std::string& llm_base_url) { (void)llm_base_url; }
 };
 
 /**
@@ -132,6 +139,13 @@ public:
   AgentUiPorts& Ports() { return agent_ports_; }
   void ApplyConfig(const AgentConfig& config);
   void ReloadAgentConfig();
+  /**
+   * The Brief key's mint run: the unlock's guest-key mint and the 401 renewal (B183) share it, so a mint in flight is
+   * never doubled; while it is in flight RefreshLlmSetupBanner keeps the banner as it is.
+   */
+  const std::shared_ptr<CoalescedRun>& BriefKeyRun() const { return brief_key_run_; }
+  /** UI: how the mint EnsureBriefGuestLlmKey sent off ended (MessagingReadyTasks' brief_key_done). */
+  void OnBriefKeyMintEnded(const BriefKeyMintEnd& end);
   /** The Brief key changed off the UI thread (a 401 renewed it, B183): ReloadAgentConfig once no turn runs. */
   void ReloadAgentConfigWhenIdle() { reload_when_idle_ = true; }
   /** An LLM is configured (else replies are the mock assistant's). */
@@ -305,6 +319,7 @@ private:
   AgentConfig last_agent_runtime_;
   bool use_llm_ = false;
   bool brief_guest_mint_attempted_ = false;
+  std::shared_ptr<CoalescedRun> brief_key_run_ = std::make_shared<CoalescedRun>();
   bool reload_when_idle_ = false; // ReloadAgentConfigWhenIdle; done in Tick
   std::string brief_guest_mint_user_hint_;
   std::string last_brief_banner_; // text RefreshLlmSetupBanner last showed for the brief preset

@@ -77,41 +77,65 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
                                          loaded->peer_id, multiaddrs, loaded->initiation_floor, publish);
 }
 
-Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,
-                                                const std::string& nickname,
-                                                const std::vector<std::string>& multiaddrs,
-                                                const RegistrationPublishOpts& publish) {
+Roe<RegistrationResult> RenewNetworkOnly(IRegistrationClient& registration, IdentityStore& identity,
+                                         const std::string& nickname, const std::vector<std::string>& multiaddrs,
+                                         const RegistrationPublishOpts& publish) {
+  return FinishRegistrationWithIdentity(registration, identity, nickname, multiaddrs, publish);
+}
+
+Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationResult& result) {
+  // Read again: the network half took a while, and only the registration fields are this call's to change.
   auto loaded = identity.Get();
   if (!loaded) {
     return loaded.error();
   }
-
-  auto result = FinishRegistrationWithIdentity(registration, identity, nickname, multiaddrs, publish);
-  if (!result) {
-    return result.error();
-  }
-
   LocalIdentity updated = *loaded;
-  ApplyRegistrationResult(updated, *result);
+  ApplyRegistrationResult(updated, result);
   if (auto saved = identity.Update(updated); !saved) {
     return saved.error();
   }
   return updated;
 }
 
-Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, IdentityStore& identity,
-                                     bool auto_renew_enabled) {
+Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,
+                                                const std::string& nickname,
+                                                const std::vector<std::string>& multiaddrs,
+                                                const RegistrationPublishOpts& publish) {
+  auto result = RenewNetworkOnly(registration, identity, nickname, multiaddrs, publish);
+  if (!result) {
+    return result.error();
+  }
+  return PersistRenewal(identity, *result);
+}
+
+Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationClient& registration,
+                                                                 IdentityStore& identity,
+                                                                 const bool auto_renew_enabled) {
   auto loaded = identity.Get();
   if (!loaded) {
     return loaded.error();
   }
   // A registration from before KEM key bindings publishes one now: peers take the KEM key only with it.
   if (!ShouldPublishKemBinding(*loaded) && (!ShouldRenewRegistration(*loaded) || !auto_renew_enabled)) {
+    return std::optional<RegistrationResult>{};
+  }
+  auto result = RenewNetworkOnly(registration, identity, loaded->nickname);
+  if (!result) {
+    return result.error();
+  }
+  return std::optional<RegistrationResult>(std::move(*result));
+}
+
+Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, IdentityStore& identity,
+                                     bool auto_renew_enabled) {
+  auto result = MaybeAutoRenewNetworkOnly(registration, identity, auto_renew_enabled);
+  if (!result) {
+    return result.error();
+  }
+  if (!*result) {
     return false;
   }
-
-  auto applied = FinishAndPersistRegistration(registration, identity, loaded->nickname);
-  if (!applied) {
+  if (auto applied = PersistRenewal(identity, **result); !applied) {
     return applied.error();
   }
   return true;

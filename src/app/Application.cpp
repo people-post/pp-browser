@@ -16,6 +16,7 @@
 #include "foundation/platform/PlatformUserHints.h"
 #include "common/Localized.h"
 #include "lib/net/BriefGuestLlmClient.h"
+#include "lib/net/HttpClient.h"
 #include "domain/registration/BriefLlmKeyRenewal.h"
 
 #include "foundation/data/ConfigSecretsStore.h"
@@ -648,6 +649,8 @@ std::string Application::AssetsPath(const std::string& relative) {
 bool Application::InitializeUiHost(const char* window_title, int window_width, int window_height,
                                    const BootstrapResult& bootstrap, ui::Context*& context) {
   AppRuntime::InitializeUI();
+  // A blocking HTTP request on the UI thread holds every frame until it is answered: leave a net.ui_block line.
+  HttpClient::SetUiThreadProbe([] { return AppRuntime::CurrentlyOnUI(); });
 
   if (![&] {
         StartupPhase phase("Backend::Initialize");
@@ -1542,15 +1545,14 @@ void Application::WireUnlockPinAndFlow() {
     }
     return restored;
   };
-  unlock_ports.ui.on_link_imported = [this, &facade]() {
+  unlock_ports.ui.on_link_imported = [this]() {
     if (onboarding_) {
       onboarding_->MarkCompleted(); // an account brought over needs no wizard
     }
-    // Import runs before EnsureMessagingReady; push attach after the vault is open.
-    AppRuntime::PostWorkerNormal([&facade]() {
-      (void)facade.SyncPushDevices();
-    });
+    // Import runs before EnsureMessagingReady; push attach after the vault is open. Off the UI thread, in the same
+    // one-at-a-time run as the messaging-ready binding (ChatController / MessagingReadyTasks).
     if (chat_) {
+      chat_->SyncPushDevices();
       chat_->ReloadAgentConfig();
     }
     UserFeedback::Ok(Tr("pin.link_imported"));
@@ -1769,9 +1771,16 @@ void Application::WireAgentAndConfig() {
         },
         .mint = [](const std::string& llm_base_url) { return MintBriefGuestLlmKey(llm_base_url); },
     };
+    // The renewal shares the Brief key run with the unlock's guest-key mint (ChatController::BriefKeyRun): while that
+    // mint is in flight the turn waits for its key (stored, then reused) rather than minting a second one.
     agent_sessions_->SetBriefKeyPorts(BriefKeyPorts{
-        .renew = [key_store](const std::string& rejected, const std::string& llm_base_url) -> Roe<BriefKeyRenewal> {
-          auto renewed = RenewBriefLlmKey(key_store, rejected, llm_base_url);
+        .renew = [this, key_store, run = chat_->BriefKeyRun()](const std::string& rejected,
+                                                               const std::string& llm_base_url) -> Roe<BriefKeyRenewal> {
+          constexpr std::chrono::milliseconds kWaitForMint{45000}; // the mint's own HTTP limit is 30 s
+          const std::chrono::milliseconds wait = AppRuntime::CurrentlyOnUI() ? std::chrono::milliseconds(0) : kWaitForMint;
+          auto renewed = RunSharedBriefKeyRenewal(
+              *run, wait, [&]() { return RenewBriefLlmKey(key_store, rejected, llm_base_url); },
+              [this]() { AppRuntime::PostUI([this] { chat_->RetryBriefKeyMint(); }); });
           if (!renewed) {
             return renewed.error();
           }

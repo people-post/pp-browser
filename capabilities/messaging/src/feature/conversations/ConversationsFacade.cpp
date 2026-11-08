@@ -53,6 +53,15 @@ Roe<bool> ConversationsFacade::MaybeAutoRenewRegistration(const bool auto_renew_
   return pbr::MaybeAutoRenewRegistration(hub_.Registration(), hub_.Identity(), auto_renew_registration);
 }
 
+Roe<std::optional<RegistrationResult>> ConversationsFacade::MaybeAutoRenewRegistrationNetworkOnly(
+    const bool auto_renew_registration) {
+  return pbr::MaybeAutoRenewNetworkOnly(hub_.Registration(), hub_.Identity(), auto_renew_registration);
+}
+
+Roe<LocalIdentity> ConversationsFacade::PersistRegistrationRenewal(const RegistrationResult& result) {
+  return pbr::PersistRenewal(hub_.Identity(), result);
+}
+
 Roe<void> ConversationsFacade::SyncPushDevices() {
   return PushDeviceCoordinator::Register(hub_);
 }
