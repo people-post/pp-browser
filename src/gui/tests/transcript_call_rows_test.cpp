@@ -134,5 +134,50 @@ TEST_F(TranscriptCallRowsTest, AMissedCallIsMutedAndHasNoDuration) {
   EXPECT_EQ(rml.find(':'), std::string::npos) << rml;
 }
 
+TEST_F(TranscriptCallRowsTest, ADirectVoiceRecordCallsBackWithVoice) {
+  const std::string rml = std::string(Row("account:peer", CallMediaMode::Voice, CallOutcome::Missed, std::nullopt).content_rml.c_str());
+  EXPECT_NE(rml.find("call_back('0')"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("chat-call-row--tappable"), std::string::npos) << rml;
+}
+
+TEST_F(TranscriptCallRowsTest, ADirectVideoRecordCallsBackWithVideo) {
+  const std::string rml = std::string(Row(kLocalSelfContactId, CallMediaMode::Video, CallOutcome::Completed, 9'000).content_rml.c_str());
+  EXPECT_NE(rml.find("call_back('1')"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("chat-call-row--tappable"), std::string::npos) << rml;
+}
+
+TEST_F(TranscriptCallRowsTest, AGroupRecordIsInert) {
+  const std::string rml =
+      std::string(Row(kLocalSelfContactId, CallMediaMode::Voice, CallOutcome::Missed, std::nullopt, /*group=*/true).content_rml.c_str());
+  EXPECT_NE(rml.find("chat-call-row"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("call_back"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("--tappable"), std::string::npos) << rml;
+}
+
+TEST_F(TranscriptCallRowsTest, ARecordInAGroupThreadIsInertEvenIfTheRowIsNotMarkedGroup) {
+  CallSummaryDetail detail;
+  detail.call_id = "call:x";
+  detail.media_mode = CallMediaMode::Voice;
+  detail.outcome = CallOutcome::Missed;
+  auto encoded = CallControlCodec::EncodeSummary(detail);
+  ASSERT_TRUE(encoded);
+  auto built = CallControlCodec::BuildSystemMessage("thread-calls", CallControlType::CallSummary, "call", *encoded, "account:peer");
+  ASSERT_TRUE(built);
+  ThreadMessage message = *built;
+  message.id = "row-in-group";
+  message.timestamp = util::NowUnixMs();
+  ASSERT_TRUE(store_->AppendMessage(message));
+  TranscriptFacts facts = inbox_->Facts();
+  facts.thread_is_group = true;
+  bool found = false;
+  for (const MessageDisplayRow& row : RenderTranscript(inbox_->BuildTranscript("thread-calls"), facts)) {
+    if (std::string(row.message_id.c_str()) == message.id) {
+      found = true;
+      EXPECT_EQ(std::string(row.content_rml.c_str()).find("call_back"), std::string::npos);
+    }
+  }
+  EXPECT_TRUE(found);
+}
+
 } // namespace
 } // namespace pbr

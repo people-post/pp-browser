@@ -7252,6 +7252,15 @@ input.checkbox {
   font-size: 13dp;
 }
 
+/* A call record in a 1:1 chat: tap = call back. Group records do not get this class. */
+.chat-call-row--tappable {
+  cursor: pointer;
+}
+
+.chat-call-row--tappable:active {
+  opacity: 0.6;
+}
+
 .chat-call-row-icon {
   display: inline-block;
   width: 16dp;
