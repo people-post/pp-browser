@@ -735,5 +735,51 @@ TEST_F(ShellCallChipMountedTest, ReflowsFirstCorrectionAfterARebuildIsNotAnimate
   EXPECT_EQ(released_, 0);
 }
 
+// iPhone trace 2026-11-08 (call.chip): the frame after a rebuild laid the layer out at a transient height, the band
+// collapsed to its top, the docked chip went to 12dp, and 250ms later came back. A docked chip is left alone while the
+// layer's height is not the same on two frames in a row, and never moved into a band with no room.
+TEST_F(ShellCallChipMountedTest, ReflowIgnoresATransientLayerHeightAfterARebuild) {
+  state_.call_in_progress.minimized_side = CallChipDock::kSideRight;
+  state_.call_in_progress.minimized_y_permille = 792;
+  call_ = state_.call_in_progress;
+  const float target = CallChipDock::Place({CallChipDock::kSideRight, 792}, {400.f, 800.f}, 180.f, 56.f).top_dp;
+  state_.call_chip_layout = CallChipLayout{{CallChipDock::kSideRight, 792}, target, 800.f, 56.f};
+  document_->GetElementById("shell-call-in-progress-mount")->SetInnerRML(CallInProgressRml(state_));
+  chip_ = document_->GetElementById("shell-call-minimized-chip");
+  layer_ = document_->GetElementById("shell-call-chrome-root");
+  ASSERT_NE(chip_, nullptr);
+  ASSERT_NE(layer_, nullptr);
+  // The layer's first layout: 100dp tall (the band has no room), the chip rendered at its remembered top.
+  layer_->SetProperty("bottom", "auto");
+  layer_->SetProperty("height", "100px");
+  context_->Update();
+  EXPECT_NEAR(At().y, target, 0.1f);
+  Attach();
+  gesture_.Reflow(call_);
+  Frame(0.0);
+  EXPECT_NEAR(At().y, target, 0.1f) << "moved into a collapsed band";
+  // The layer at its size: not yet trusted (one frame), then trusted and nothing to correct.
+  layer_->RemoveProperty("height");
+  layer_->SetProperty("bottom", "0px");
+  context_->Update();
+  gesture_.Reflow(call_);
+  Frame(0.0);
+  EXPECT_NEAR(At().y, target, 0.1f);
+  gesture_.Reflow(call_);
+  Frame(0.0);
+  EXPECT_NEAR(At().y, target, 0.1f);
+  // A real change (a shorter window) still moves it, once the height has been seen twice (after the 250ms re-read).
+  layer_->SetProperty("bottom", "auto");
+  layer_->SetProperty("height", "600px");
+  context_->Update();
+  Frame(0.3);
+  gesture_.Reflow(call_); // first sight of 600: not yet trusted
+  Frame(0.0);
+  gesture_.Reflow(call_); // seen twice: moved
+  Frame(0.3);
+  const float shorter = CallChipDock::Place({CallChipDock::kSideRight, 792}, {400.f, 600.f}, 180.f, 56.f).top_dp;
+  EXPECT_NEAR(At().y, shorter, 0.1f);
+}
+
 } // namespace
 } // namespace pbr
