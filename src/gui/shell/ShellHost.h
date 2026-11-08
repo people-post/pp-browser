@@ -351,6 +351,8 @@ private:
   void FlushRemountCallChrome();
   /** #166: the call layer's and the minimised chip's heights as laid out, for the chip's markup (ShellState). */
   void MeasureCallChip(ui::ElementDocument* doc);
+  /** #166 diagnostics (call.chip): one line per call chrome remount while the chip is up (and the one leaving it). */
+  void DiagCallChipRemount(ui::ElementDocument* doc, bool held);
   void RemountDialogChromeNow();
   void FlushRemountDialogChrome();
   void RemountPinGateChromeNow();
@@ -437,6 +439,10 @@ private:
   bool remount_call_chrome_pending_ = false;
   /** #166: a call chrome remount kept the minimised chip as it was (a drag still owned it): rebuild once it settles. */
   bool call_chip_rebuild_held_ = false;
+  /** The chip's mode and place at the last call.chip remount line (its `reason`). */
+  bool diag_chip_minimized_ = false;
+  int diag_chip_side_ = 0;
+  int diag_chip_y_ = 0;
   bool remount_dialog_chrome_pending_ = false;
   bool remount_pin_gate_chrome_pending_ = false;
   bool remount_ai_drawer_pending_ = false;
