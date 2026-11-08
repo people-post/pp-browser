@@ -186,6 +186,24 @@ TEST(ConfigJsonTest, ProfilePrefsSidebarFieldsDefaultWhenAbsentAndRoundTrip) {
   EXPECT_TRUE(parsed.show_advanced_settings);
 }
 
+TEST(ConfigJsonTest, ProfilePrefsCallInvitePolicyDefaultDependsOnSchema) {
+  pbr::ProfilePreferences fresh;
+  EXPECT_EQ(fresh.call_invite_policy, "contacts_only");
+
+  auto parse = [](const char* json) {
+    auto object = pbr::TryParseObject(json);
+    EXPECT_TRUE(object.has_value());
+    pbr::ProfilePreferences prefs;
+    pbr::ProfilePrefsFromObject(*object, prefs);
+    return prefs.call_invite_policy;
+  };
+  EXPECT_EQ(parse(R"({ "schema_version": 14 })"), "everyone") << "older files keep the former default";
+  EXPECT_EQ(parse(R"({ "schema_version": 14, "call_invite_policy": "everyone" })"), "everyone");
+  EXPECT_EQ(parse(R"({ "schema_version": 14, "call_invite_policy": "nobody" })"), "nobody");
+  EXPECT_EQ(parse(R"({ "schema_version": 15 })"), "contacts_only");
+  EXPECT_EQ(parse(R"({ "schema_version": 15, "call_invite_policy": "everyone" })"), "everyone");
+}
+
 TEST(ConfigJsonTest, ProfilePrefsHomeWidgetsHiddenDefaultsEmptyAndRoundTrips) {
   // Edit Home (DESIGN-pp-ui 8.16): the widgets switched off, device-only; absent = every widget shown.
   auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");

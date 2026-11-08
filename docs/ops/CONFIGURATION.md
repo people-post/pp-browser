@@ -239,7 +239,7 @@ Default empty (no floor). A relay whose directory row says it runs an older pp-n
 
 Default `false`. When `true`, only the configured org seeds (`bootstrap_peers` after normalization, not directory nodes merged into them) and Friendly contacts' nodes relay, park, introduce punches or carry call media for this device. Me → Network → **Trusted relays only**; `set_mesh_capabilities` takes it too. Changing it rewires the mesh. Behaviour: [NETWORKING § Address disclosure](../architecture/NETWORKING.md#address-disclosure-privacy).
 
-Profile preference **`call_invite_policy`** (`preferences.json`: `everyone` default | `contacts_only` | `nobody`) — who may call; others' invites are dropped silently. Me → Security → **Who can call me**.
+Profile preference **`call_invite_policy`** (`preferences.json`: `contacts_only` default | `everyone` | `nobody`) — who may call; others' invites are dropped silently. Profiles saved before schema 15 without the key read as `everyone`. Me → Security → **Who can call me**.
 
 ### Media relay video levels (`mesh.media_relay_video`)
 

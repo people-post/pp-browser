@@ -848,6 +848,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
 }
 
 void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
+  const int64_t file_schema_version = ReadI64(object, "schema_version").value_or(0);
   if (auto schema_version = ReadI64(object, "schema_version")) {
     prefs.schema_version = static_cast<int>(*schema_version);
   }
@@ -906,7 +907,8 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   if (auto call_invite_policy = object.getString("call_invite_policy")) {
     prefs.call_invite_policy = *call_invite_policy;
   } else {
-    prefs.call_invite_policy = "everyone";
+    // The default was everyone before schema 15; keep it for those files.
+    prefs.call_invite_policy = file_schema_version < 15 ? "everyone" : "contacts_only";
   }
   if (auto attachment_download_policy = object.getString("attachment_download_policy")) {
     prefs.attachment_download_policy = *attachment_download_policy;
