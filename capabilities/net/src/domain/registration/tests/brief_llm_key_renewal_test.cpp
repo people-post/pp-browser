@@ -14,6 +14,8 @@ namespace {
 
 class BriefLlmKeyRenewalTest : public ::testing::Test {
 protected:
+  BriefLlmKeyRenewalTest() { identity_.account_id = "account:a"; }
+
   BriefLlmKeyStore Store() {
     BriefLlmKeyStore store;
     store.get = [this]() -> std::optional<LocalIdentity> {
@@ -165,7 +167,6 @@ TEST_F(BriefLlmKeyRenewalTest, AnotherAccountStoredDuringTheMintIsRefused) {
 }
 
 TEST_F(BriefLlmKeyRenewalTest, StoreGuestKeyIfNoneStoresKeepsOrRefuses) {
-  identity_.account_id = "account:a";
   auto stored = StoreBriefGuestKeyIfNone(Store(), SecretText("brf_guest_new"), "account:a");
   ASSERT_TRUE(stored) << stored.error().message;
   EXPECT_EQ(*stored, "brf_guest_new");
@@ -183,6 +184,19 @@ TEST_F(BriefLlmKeyRenewalTest, StoreGuestKeyIfNoneStoresKeepsOrRefuses) {
       << "minted for another account";
   EXPECT_TRUE(identity_.brief_llm_guest_api_key.empty());
   EXPECT_EQ(saves_, 1);
+}
+
+// An empty account id is a refusal, never a pass: nothing minted, nothing written.
+TEST_F(BriefLlmKeyRenewalTest, AnEmptyAccountIdIsRefused) {
+  EXPECT_FALSE(StoreBriefGuestKeyIfNone(Store(), SecretText("brf_guest_x"), ""));
+  EXPECT_TRUE(identity_.brief_llm_guest_api_key.empty());
+
+  identity_.account_id.clear(); // an identity without one (not yet made)
+  identity_.brief_llm_guest_api_key = "brf_guest_old";
+  EXPECT_FALSE(RenewBriefLlmKey(Store(), "brf_guest_old", "u"));
+  EXPECT_TRUE(mint_urls_.empty());
+  EXPECT_EQ(saves_, 0);
+  EXPECT_EQ(identity_.brief_llm_guest_api_key, "brf_guest_old");
 }
 
 } // namespace

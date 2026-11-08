@@ -1802,7 +1802,10 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
         state->Log().warning << "brief key refused (HTTP 401); renewing it and asking once more";
         Roe<BriefKeyRenewal> renewed = keys.renew(rejected, base_url, cancelled);
         if (cancelled.load()) {
-          return BriefAiOutcome::Cancelled; // stopped while the key was renewed (or while it waited for a mint)
+          // Stopped while the key was renewed (or while it waited for a mint): this turn's renewal did not finish, so
+          // the next 401 may renew again (else the user stays on the refused key until an answer that cannot come).
+          state->shared->brief_key_renewed.store(false);
+          return BriefAiOutcome::Cancelled;
         }
         if (!renewed) {
           DiagLine("ai.llm_key").Add("reason", "401").Add("outcome", "mint_failed").Fail("error", renewed.error()).Emit();

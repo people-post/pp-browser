@@ -1182,6 +1182,9 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       if (!key.empty()) {
         return key;
       }
+      if (identity->account_id.empty()) {
+        return Error("Messaging is not ready"); // no account to mint for: nothing minted, nothing written
+      }
       auto minted = MintBriefGuestLlmKey(BriefLlmBaseUrl());
       if (!minted) {
         return minted.error();
@@ -1785,8 +1788,9 @@ void Application::WireAgentAndConfig() {
         .renew = [this, key_store, run = chat_->BriefKeyRun()](
                      const std::string& rejected, const std::string& llm_base_url,
                      const std::atomic<bool>& cancelled) -> Roe<BriefKeyRenewal> {
-          // A stopped turn (Stop, profile reset, quit: StopTurnsAndWait / ~AgentSessions cancel it) gives up the wait
-          // within a slice, so the UI never waits on it for the mint.
+          // A stopped turn (Stop, profile reset, quit: StopTurnsAndWait / ~AgentSessions cancel it) gives up waiting
+          // for another run's mint within a slice. A mint of its own (RenewBriefLlmKey) is not interrupted: it runs to
+          // its HTTP limit (30 s), as before the run was shared.
           const std::chrono::milliseconds wait =
               AppRuntime::CurrentlyOnUI() ? std::chrono::milliseconds(0) : kBriefKeyMintWait;
           auto waited = RunSharedBriefKeyRenewal(

@@ -36,8 +36,8 @@ std::string StoredBriefLlmKey(const BriefLlmKeyStore& store);
 
 /**
  * Stores `key` as the guest key unless a key is stored already (registered or guest: kept, and returned), in one
- * modify. `expected_account_id` (non-empty): the account `key` was minted for; another account stored now (the
- * profile changed meanwhile) is refused and nothing is written. Returns the Bearer stored after it.
+ * modify. `expected_account_id`: the account `key` was minted for; another account stored now (the profile changed
+ * meanwhile), or an empty `expected_account_id`, is refused and nothing is written. Returns the Bearer stored after it.
  */
 Roe<std::string> StoreBriefGuestKeyIfNone(const BriefLlmKeyStore& store, const SecretText& key,
                                           const std::string& expected_account_id);

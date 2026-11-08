@@ -157,10 +157,14 @@ inline constexpr std::chrono::milliseconds kBriefKeyWaitSlice{250};
  * The 401 renewal's turn on the shared Brief key run (B183). While the run is in flight (the unlock's mint, or another
  * turn's renewal) it waits, at most `wait`, in kBriefKeyWaitSlice slices: that one stores its key and `renew` then
  * finds it and reuses it, so no second key is minted. Then `renew` runs holding the run. Still in flight when the
- * wait is over: `renew` runs anyway, as before the run was shared. `cancelled` (the turn was stopped: Stop, a profile
- * reset, quit) is asked every slice: true gives up, nothing renewed (nullopt), so a stopped turn never holds its
- * thread for the mint. `on_again`: a mint was asked for while this one held the run; called on this thread.
- * Blocks: never on the UI thread (pass a zero `wait` there).
+ * wait is over: `renew` runs anyway, as before the run was shared.
+ *
+ * `cancelled` (the turn was stopped: Stop, a profile reset, quit) is asked every slice of the wait and once more
+ * before `renew`: true gives up, nothing renewed (nullopt), so a stopped turn never waits on another run's mint. Only
+ * the wait is cut short: once `renew` runs, a mint it makes itself (its HTTP, up to 30 s) is not interrupted.
+ *
+ * `on_again`: a mint was asked for while this one held the run; called on this thread. Blocks: never on the UI thread
+ * (pass a zero `wait` there).
  */
 template <typename Renew>
 auto RunSharedBriefKeyRenewal(CoalescedRun& run, const std::chrono::milliseconds wait,

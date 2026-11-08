@@ -23,10 +23,13 @@ Roe<std::string> StoreBriefGuestKeyIfNone(const BriefLlmKeyStore& store, const S
   if (!store.modify) {
     return Error("Brief LLM key store is not wired");
   }
+  if (expected_account_id.empty()) {
+    return Error("Brief key not stored: no account to store it for");
+  }
   bool other_account = false;
   std::string stored;
   auto changed = store.modify([&](LocalIdentity& identity) {
-    if (!expected_account_id.empty() && identity.account_id != expected_account_id) {
+    if (identity.account_id != expected_account_id) {
       other_account = true;
       return false;
     }
@@ -53,8 +56,8 @@ Roe<BriefLlmKeyRenewal> RenewBriefLlmKey(const BriefLlmKeyStore& store, const st
     return Error("Brief LLM key store is not wired");
   }
   const std::optional<LocalIdentity> before = store.get();
-  if (!before) {
-    return Error("Messaging is not ready");
+  if (!before || before->account_id.empty()) {
+    return Error("Messaging is not ready"); // no account to mint for (nor to check the write against)
   }
   if (std::string current = Resolved(*before); !current.empty() && !(SecretText(current) == SecretText(rejected))) {
     return BriefLlmKeyRenewal{.key = std::move(current), .reused = true}; // another turn already replaced it

@@ -86,9 +86,12 @@ Roe<RegistrationResult> RenewNetworkOnly(IRegistrationClient& registration, Iden
 Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationResult& result,
                                   const std::string& expected_account_id) {
   // Read again, under the lock: the network half took a while, and only the registration fields are ours to change.
+  if (expected_account_id.empty()) {
+    return Error("Registration renewal not stored: no account to store it for");
+  }
   bool other_account = false;
   auto applied = identity.Modify([&](LocalIdentity& stored) {
-    if (!expected_account_id.empty() && stored.account_id != expected_account_id) {
+    if (stored.account_id != expected_account_id) {
       other_account = true;
       return false;
     }
@@ -108,11 +111,15 @@ Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registratio
                                                 const std::string& nickname,
                                                 const std::vector<std::string>& multiaddrs,
                                                 const RegistrationPublishOpts& publish) {
+  auto loaded = identity.Get(); // the account the registration runs for
+  if (!loaded) {
+    return loaded.error();
+  }
   auto result = RenewNetworkOnly(registration, identity, nickname, multiaddrs, publish);
   if (!result) {
     return result.error();
   }
-  return PersistRenewal(identity, *result);
+  return PersistRenewal(identity, *result, loaded->account_id);
 }
 
 Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationClient& registration,
@@ -135,6 +142,10 @@ Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationCl
 
 Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, IdentityStore& identity,
                                      bool auto_renew_enabled) {
+  auto loaded = identity.Get(); // the account the renewal runs for
+  if (!loaded) {
+    return loaded.error();
+  }
   auto result = MaybeAutoRenewNetworkOnly(registration, identity, auto_renew_enabled);
   if (!result) {
     return result.error();
@@ -142,7 +153,7 @@ Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, Identity
   if (!*result) {
     return false;
   }
-  if (auto applied = PersistRenewal(identity, **result); !applied) {
+  if (auto applied = PersistRenewal(identity, **result, loaded->account_id); !applied) {
     return applied.error();
   }
   return true;

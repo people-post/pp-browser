@@ -32,12 +32,12 @@ Roe<RegistrationResult> RenewNetworkOnly(IRegistrationClient& registration, Iden
 
 /**
  * The storing half: in one read-modify-write under the store's lock (IdentityStore::Modify), applies only the
- * registration fields of `result` (ApplyRegistrationResult) to the identity as stored now. `expected_account_id`
- * (non-empty): the account the network half ran for; another account stored now (the profile changed meanwhile)
- * is refused and nothing is written. Returns the applied identity.
+ * registration fields of `result` (ApplyRegistrationResult) to the identity as stored now. `expected_account_id`:
+ * the account the network half ran for; another account stored now (the profile changed meanwhile), or an empty
+ * `expected_account_id`, is refused and nothing is written. Returns the applied identity.
  */
 Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationResult& result,
-                                  const std::string& expected_account_id = {});
+                                  const std::string& expected_account_id);
 
 /** Finish registration + Identity.Update with ApplyRegistrationResult: RenewNetworkOnly, then PersistRenewal. */
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,

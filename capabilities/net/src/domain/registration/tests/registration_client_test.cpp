@@ -252,7 +252,7 @@ TEST_F(KemBindingPublishTest, TheSplitHalvesStoreWhatFinishAndPersistStored) {
   ASSERT_TRUE(static_cast<bool>(identity_->Update(initial)));
   auto result = RenewNetworkOnly(client_, *identity_, initial.nickname);
   ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
-  auto new_applied = PersistRenewal(*identity_, *result);
+  auto new_applied = PersistRenewal(*identity_, *result, initial.account_id);
   ASSERT_TRUE(static_cast<bool>(new_applied)) << new_applied.error().message;
   const LocalIdentity after_new = identity_->Get().value();
 
@@ -277,7 +277,7 @@ TEST_F(KemBindingPublishTest, PersistRenewalReadsTheIdentityAgain) {
   LocalIdentity meanwhile = identity_->Get().value();
   meanwhile.nickname = "renamed-meanwhile"; // written while the network half was out
   ASSERT_TRUE(static_cast<bool>(identity_->Update(meanwhile)));
-  ASSERT_TRUE(static_cast<bool>(PersistRenewal(*identity_, *result)));
+  ASSERT_TRUE(static_cast<bool>(PersistRenewal(*identity_, *result, meanwhile.account_id)));
   const LocalIdentity after = identity_->Get().value();
   EXPECT_EQ(after.nickname, "renamed-meanwhile") << "only the registration fields are the renewal's";
   EXPECT_TRUE(after.kem_binding_published);
@@ -288,7 +288,7 @@ TEST_F(KemBindingPublishTest, MaybeAutoRenewNetworkOnlyFollowsTheSameRule) {
   ASSERT_TRUE(static_cast<bool>(due)) << due.error().message;
   ASSERT_TRUE(due->has_value()) << "an unpublished KEM binding is due even without auto-renew";
   EXPECT_FALSE(identity_->Get().value().kem_binding_published) << "nothing stored by the network half";
-  ASSERT_TRUE(static_cast<bool>(PersistRenewal(*identity_, **due)));
+  ASSERT_TRUE(static_cast<bool>(PersistRenewal(*identity_, **due, identity_->Get().value().account_id)));
 
   auto not_due = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
   ASSERT_TRUE(static_cast<bool>(not_due));
@@ -347,6 +347,8 @@ TEST_F(KemBindingPublishTest, PersistRenewalRefusesAnotherAccount) {
   ASSERT_TRUE(static_cast<bool>(result));
   const LocalIdentity before = identity_->Get().value();
   EXPECT_FALSE(static_cast<bool>(PersistRenewal(*identity_, *result, "account:someone-else")));
+  ExpectSameRegistrationFields(before, identity_->Get().value());
+  EXPECT_FALSE(static_cast<bool>(PersistRenewal(*identity_, *result, ""))) << "no account: refused, not a pass";
   ExpectSameRegistrationFields(before, identity_->Get().value());
   EXPECT_TRUE(static_cast<bool>(PersistRenewal(*identity_, *result, before.account_id)));
   EXPECT_TRUE(identity_->Get().value().kem_binding_published);
