@@ -74,8 +74,6 @@ CallController::CallController()
               .toggle_mute = [this]() { ToggleMute(); },
               .display_name = [this](const std::string& identity) { return DisplayNameForIdentity(identity); },
               .now_ms = {},
-              .audio_managed = [](const bool managed) { AudioSession::SetSystemManaged(managed); },
-              .audio_activated = [](const bool active) { AudioSession::NotifySystemActivation(active); },
           }) {
   redirectLogger("CallController");
   CallRingtone::SetRingSoundPath(IAssetLocator::Instance().Resolve("sounds/call_ring.wav"));
@@ -940,7 +938,7 @@ void CallController::ShowNotice(const CallNotice& notice) {
   }
   case CallNotice::Kind::IncomingCall: {
     if (system_call_screen_.TakesRing(AppLifecycle::IsVisible(), notice.conflict)) {
-      return; // the phone's own call screen rings it (CallKit, Android's call notification)
+      return; // the phone's own call screen rings it (Android's call notification)
     }
     const std::string caller = DisplayNameForIdentity(notice.identity);
     if (notice.conflict) {
@@ -997,8 +995,7 @@ void CallController::Render() {
     return;
   case CallScreen::Kind::Ringing:
     if (system_call_screen_.SystemRings(screen.ring_call_id)) {
-      // The phone's own call screen rings it (CallKit, P016; Android's call notification, P014): one ring, not the
-      // app's dialog too.
+      // The phone's own call screen rings it (Android's call notification, P014): one ring, not the app's dialog too.
       ClearRing();
       SyncShellState();
       SyncRingtone();

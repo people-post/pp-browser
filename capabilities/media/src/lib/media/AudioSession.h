@@ -24,15 +24,6 @@ void ActivateForVoip();
  */
 void Deactivate();
 /**
- * A call answered on the phone's call screen (CallKit): the system activates the session itself and tells
- * us (NotifySystemActivation). While managed, ActivateForVoip configures the session but waits for that
- * activation (bounded) instead of activating, and Deactivate leaves the release to the system. No-ops
- * where there is no such call screen.
- */
-void SetSystemManaged(bool managed);
-void NotifySystemActivation(bool active);
-
-/**
  * The OS took the live session away and gave it back (a call screen, Siri, an alarm; or the media services were
  * reset): every handler added here runs once ActivateForVoip has taken the session again, so each audio user can
  * reopen its devices. There are several (each MediaEngine: a call's, a broadcast's two; one not capturing ignores

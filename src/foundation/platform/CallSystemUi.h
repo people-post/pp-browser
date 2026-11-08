@@ -7,10 +7,9 @@
 namespace pbr {
 
 /**
- * The phone's own call screen: CallKit on iPhone builds that may use it (P016, PP_BROWSER_IOS_CALLKIT), the
- * incoming-call notification on Android (P014, AndroidCallSystemUi). It rings full screen, on the lock screen
- * too, and answers / ends calls there. Null elsewhere (Available() is false): the app's own ring and
- * notifications do it all.
+ * The phone's own call screen: the incoming-call notification on Android (P014, AndroidCallSystemUi). It rings
+ * full screen, on the lock screen too, and answers / ends calls there. Null elsewhere, iPhone included
+ * (Available() is false): the app's own ring and notifications do it all.
  *
  * Driven by CallSystemUiBridge on the UI thread; the callbacks arrive there too.
  */
@@ -19,14 +18,12 @@ public:
   struct Callbacks {
     /**
      * The user answered on the system screen. On the push's call, its ring not known yet: `call_id` is the call
-     * the push named (its `wake_hint`, CallKit), or empty when it named none.
+     * the push named, or empty when it named none.
      */
     std::function<void(const std::string& call_id)> answer;
     /** The user ended (declined, hung up) on the system screen; the push's call: as for `answer`. */
     std::function<void(const std::string& call_id)> end;
     std::function<void(const std::string& call_id, bool muted)> set_muted;
-    /** The system activated (true) or deactivated (false) the audio session of a call it owns. */
-    std::function<void(bool active)> audio_session;
     /** The push's call left the system screen without a ring found (timeout, reset, ended by us). */
     std::function<void()> pending_gone;
   };
@@ -41,7 +38,7 @@ public:
    * for the app to find the ring it announced.
    */
   virtual bool HasPendingPushCall() const { return false; }
-  /** The call the push's pending call names (CallKit: its `wake_hint`); empty: none pending, or it named none. */
+  /** The call the push's pending call names; empty: none pending, or it named none. */
   virtual std::string PendingPushCallId() const { return {}; }
   /**
    * The app can find rings now (vault unlocked, messaging up). The push's call waits for its ring

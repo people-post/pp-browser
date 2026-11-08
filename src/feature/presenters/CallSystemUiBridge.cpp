@@ -21,7 +21,6 @@ CallSystemUiBridge::CallSystemUiBridge(ICallSystemUi& ui, Actions actions) : ui_
   callbacks.answer = [this](const std::string& call_id) { OnAnswer(call_id); };
   callbacks.end = [this](const std::string& call_id) { OnEnd(call_id); };
   callbacks.set_muted = [this](const std::string& call_id, const bool muted) { OnSetMuted(call_id, muted); };
-  callbacks.audio_session = [this](const bool active) { OnAudioSession(active); };
   callbacks.pending_gone = [this]() { OnPendingGone(); };
   ui_.SetCallbacks(std::move(callbacks));
 }
@@ -70,12 +69,6 @@ void CallSystemUiBridge::ApplyDecline() {
   }
 }
 
-void CallSystemUiBridge::SetAudioManaged(const bool managed) {
-  if (actions_.audio_managed) {
-    actions_.audio_managed(managed);
-  }
-}
-
 bool CallSystemUiBridge::Ringing(const std::string& call_id) const {
   return screen_.kind == CallScreen::Kind::Ringing && screen_.ring_call_id == call_id;
 }
@@ -102,7 +95,6 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
       }
       ui_.ReportEnded(shown_, ICallSystemUi::EndReason::Ended);
       shown_.clear();
-      SetAudioManaged(false);
     } else if (!ringing && !shown_answered_) {
       // Answered in the app: its own call screen shows the call.
       ui_.ReportEnded(shown_, ICallSystemUi::EndReason::AnsweredElsewhere);
@@ -183,7 +175,6 @@ void CallSystemUiBridge::AcceptShown(const bool voice_only) {
   shown_answered_ = true;
   shown_taken_ = false;
   answered_at_ms_ = Now();
-  SetAudioManaged(true); // before the accept: its audio waits for the system's activation
   if (actions_.accept) {
     actions_.accept(shown_, voice_only); // redraws at once: Sync re-enters (StillTaking keeps the call)
   }
@@ -215,28 +206,14 @@ void CallSystemUiBridge::OnCallOver(const std::string& call_id) {
   ui_.EndPendingPushCall(ICallSystemUi::EndReason::Ended); // pending_gone drops a choice made on it
 }
 
-void CallSystemUiBridge::OnAudioSession(const bool active) {
-  if (actions_.audio_activated) {
-    actions_.audio_activated(active);
-  }
-  if (active) {
-    Note("audio_on");
-  } else {
-    Note("audio_off");
-    SetAudioManaged(false);
-  }
-}
-
 void CallSystemUiBridge::OnPendingGone() {
   Note("pending_gone");
   ClearChoice();
-  SetAudioManaged(false);
 }
 
 void CallSystemUiBridge::OnAnswer(const std::string& call_id) {
   if (call_id.empty() || (call_id != shown_ && call_id != active_call_id_)) {
-    // The push's call (named by its hint, or not): answered once its ring shows. Managed only once the ring
-    // matches (Sync): a placeholder that never does must leave no managed state.
+    // The push's call (named by its hint, or not): answered once its ring shows.
     RecordChoice(/*answer=*/true, call_id);
     return;
   }

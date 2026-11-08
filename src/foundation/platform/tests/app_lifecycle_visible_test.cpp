@@ -5,7 +5,7 @@
 namespace pbr {
 namespace {
 
-// Where a call rings follows IsVisible (P016): an overlay — CallKit's own screen, Control Center — resigns the app
+// Where a call rings follows IsVisible: an overlay (Control Center, a system call screen) resigns the app
 // active (SDL's WILL_ENTER_BACKGROUND) but leaves its screen up; only the background proper hides it.
 class AppLifecycleVisibleTest : public ::testing::Test {
 protected:
