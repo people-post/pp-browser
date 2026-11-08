@@ -424,6 +424,38 @@ TEST_F(ContextMenuPopoverTest, ALeftAlignedPopoverIsAFloatMenuThatClosesOnDismis
   ContextMenuHost::Instance().SetCompactLayout(false);
 }
 
+// A left-aligned show issued from a menu item's click runs while the first menu's teardown is pending; the re-issued
+// show must keep its left alignment (the card would otherwise open as a right-edge pull-down, partly off-screen).
+TEST_F(ContextMenuPopoverTest, ALeftAlignedShowDuringAPendingTeardownStaysLeftAligned) {
+  ContextMenuHost::Instance().SetCompactLayout(true);
+  // The first menu is a pull-down too (a phone's plain menu is the sheet, whose rows run on their own timing).
+  ui::Element* field = document_->GetElementById("field");
+  std::vector<ContextMenuAction> first = OneAction();
+  bool ran = false;
+  first.front().run = [field, &ran] {
+    ran = true;
+    ContextMenuHost::Instance().ShowActionsPopoverLeftAligned(field, OneAction());
+  };
+  ContextMenuHost::Instance().ShowActionsPopover(field, std::move(first));
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  ui::ElementList items;
+  document_->GetElementById("context-menu-layer")->GetElementsByClassName(items, "context-menu-item");
+  ASSERT_FALSE(items.empty());
+  items[0]->DispatchEvent(ui::EventId::Mousedown, Pointer(10, 10));
+  context_->Update();
+  ASSERT_TRUE(ran) << "the row's click ran its action";
+  ContextMenuHost::Instance().Update();
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  ui::Element* layer = document_->GetElementById("context-menu-layer");
+  ASSERT_NE(layer, nullptr);
+  EXPECT_TRUE(layer->IsClassSet("context-menu-layer--popover"));
+  EXPECT_TRUE(layer->IsClassSet("context-menu-layer--popover-left"));
+  ContextMenuHost::Instance().Dismiss();
+  ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
 TEST_F(ContextMenuPopoverTest, APopoverOnTheDesktopIsAPlainFloatMenu) {
   ContextMenuHost::Instance().ShowActionsPopover(document_->GetElementById("field"), OneAction());
   context_->Update();

@@ -167,6 +167,7 @@ private:
     std::vector<ContextMenuAction> actions;
     bool above = false;
     bool popover = false;
+    bool left = false;
     std::function<void()> on_dismissed;
     std::string title;
   };

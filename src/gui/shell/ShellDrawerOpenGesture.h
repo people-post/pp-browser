@@ -65,9 +65,11 @@ private:
   ShellGestureAxisLock axis_lock_;
   bool tracking_ = false;
   bool capture_ = false;
-  /** The drag opened the drawer: the click its release may produce is dropped. */
+  /** The drag opened the drawer: the click its release produces is dropped (capture stays until that release). */
   bool swallow_click_ = false;
-  std::chrono::steady_clock::time_point swallow_click_since_{};
+  bool released_ = false;
+  /** When that release came; a Click later than a moment after it is not part of the sequence. */
+  std::chrono::steady_clock::time_point swallow_click_release_{};
   int start_x_px_ = 0;
   int start_y_px_ = 0;
 };

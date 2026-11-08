@@ -177,6 +177,7 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_STREQ(phone_toasts.banner_message.c_str(), "Still wrong");
   EXPECT_STREQ(phone_toasts.toasts.back().message.c_str(), "Invalid API key");
   ShellFeedback::DismissBanner(phone_toasts);
+  EXPECT_TRUE(phone_toasts.banner_message.empty()) << "dismiss_banner clears a sticky banner on the phone too";
 
   ShellFeedback::ShowBanner(toast_state, "Offline");
   EXPECT_FALSE(toast_state.banner_message.empty());

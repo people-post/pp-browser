@@ -106,17 +106,18 @@ void ShellDrawerOpenGesture::ProcessEvent(ui::Event& event) {
   }
   switch (event.GetId()) {
   case ui::EventId::Click:
-    if (swallow_click_) {
-      const bool same_sequence =
-          std::chrono::steady_clock::now() - swallow_click_since_ < std::chrono::milliseconds(300);
-      swallow_click_ = false;
-      if (same_sequence) {
-        event.StopPropagation();
-      }
+    // The Click that belongs to the press that opened the drawer, however long the drag took; it comes right after
+    // the Mouseup. Whatever the outcome the flag is spent here.
+    if (swallow_click_ && released_ &&
+        std::chrono::steady_clock::now() - swallow_click_release_ < std::chrono::milliseconds(300)) {
+      event.StopPropagation();
     }
+    swallow_click_ = false;
+    released_ = false;
     break;
   case ui::EventId::Mousedown:
     swallow_click_ = false;
+    released_ = false;
     Stop();
     if (Excluded(event.GetTargetElement()) || !can_open_ || !can_open_()) {
       return;
@@ -143,9 +144,11 @@ void ShellDrawerOpenGesture::ProcessEvent(ui::Event& event) {
     if (!Opens(PxToDp(dx_px), PxToDp(dy_px))) {
       return;
     }
-    Stop();
+    // Keep the capture until the release: that Mouseup is what dates the Click to swallow.
+    tracking_ = false;
+    axis_lock_.Unlock();
     swallow_click_ = true;
-    swallow_click_since_ = std::chrono::steady_clock::now();
+    released_ = false;
     if (can_open_ && can_open_() && on_open_) {
       on_open_();
     }
@@ -153,6 +156,11 @@ void ShellDrawerOpenGesture::ProcessEvent(ui::Event& event) {
   }
   case ui::EventId::Mouseup:
     Stop();
+    if (swallow_click_) {
+      released_ = true;
+      // No Click follows when the release lands elsewhere than the press target; do not stay armed.
+      swallow_click_release_ = std::chrono::steady_clock::now();
+    }
     break;
   default:
     break;

@@ -18,12 +18,15 @@
 #include <ui/dom/Context.h>
 #include <ui/dom/Element.h>
 #include <ui/dom/ElementDocument.h>
+#include <ui/dom/Event.h>
 #include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -328,6 +331,37 @@ TEST_F(DrawerOpenGestureTest, NotFromTheComposerOrTheChips) {
   EXPECT_EQ(opened_, 0) << "the chips";
   Drag(20, kPlainY, 200, kPlainY);
   EXPECT_EQ(opened_, 1) << "the page itself";
+}
+
+namespace {
+class CountClicks : public ui::EventListener {
+public:
+  void ProcessEvent(ui::Event&) override { ++count; }
+  int count = 0;
+};
+}  // namespace
+
+// The click that ends the drag which opened the drawer is swallowed however long the drag took, and only that one.
+TEST_F(DrawerOpenGestureTest, ASlowDragStillSwallowsItsOwnClickAndOnlyThat) {
+  ui::Element* plain = document_->GetElementById("plain");
+  ASSERT_NE(plain, nullptr);
+  CountClicks clicks;
+  plain->AddEventListener(ui::EventId::Click, &clicks);
+
+  Press(50, kPlainY);
+  for (int i = 1; i <= 10; ++i) {
+    context_->ProcessMouseMove(50 + 8 * i, kPlainY, 0);
+    context_->Update();
+  }
+  ASSERT_EQ(opened_, 1);
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));  // the finger stays down well past the old window
+  context_->ProcessMouseButtonUp(0, 0);
+  context_->Update();
+  EXPECT_EQ(clicks.count, 0) << "the drag's own click is swallowed";
+
+  Tap(plain);
+  EXPECT_EQ(clicks.count, 1) << "a later, unrelated click is not";
+  plain->RemoveEventListener(ui::EventId::Click, &clicks);
 }
 
 TEST(AiDrawerTest, TheDragIsOfferedOnlyOnTheBareAiPage) {

@@ -819,7 +819,7 @@ void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenu
     // Opened from a menu item's click (Mute…, React): the first menu's DOM is still dispatching that
     // event, which is why its teardown was deferred. Tearing it down here instead would leave the
     // dangling Context::active pointers RequestDismiss() exists to avoid. Open this one from Update().
-    pending_show_ = PendingShow{position, std::move(actions), above, popover, std::move(on_dismissed), std::move(title)};
+    pending_show_ = PendingShow{position, std::move(actions), above, popover, left, std::move(on_dismissed), std::move(title)};
     return;
   }
   Dismiss();  // a menu still open went away without a choice: its notice runs in there
@@ -933,6 +933,7 @@ void ContextMenuHost::Update() {
     pending_show_.reset();
     next_show_above_ = show.above;
     next_show_popover_ = show.popover;
+    next_show_left_ = show.left;
     ShowActions(show.position, std::move(show.actions), std::move(show.on_dismissed), std::move(show.title));
   }
   // Not from inside the menu's own click: the old layer had to be gone first.
