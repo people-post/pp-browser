@@ -679,6 +679,23 @@ std::string CallRingRml(const ShellState& state) {
   return out.str();
 }
 
+float MinimizedChipTopDp(const ShellState& state) {
+  const CallInProgressState& call = state.call_in_progress;
+  const CallChipLayout& layout = state.call_chip_layout;
+  const CallChipPlace place{call.minimized_side, call.minimized_y_permille};
+  const CallChipArea area{state.shell_width_dp, layout.area_height_dp};
+  const bool heights_known = layout.area_height_dp > 0.f && layout.chip_height_dp > 0.f;
+  if (layout.top_dp > 0.f && layout.place == place) {
+    return heights_known
+               ? std::clamp(layout.top_dp, CallChipDock::MinTop(), CallChipDock::MaxTop(area, layout.chip_height_dp))
+               : layout.top_dp;
+  }
+  if (heights_known) {
+    return CallChipDock::Place(place, area, 0.f, layout.chip_height_dp).top_dp;
+  }
+  return -1.f;
+}
+
 std::string CallInProgressRml(const ShellState& state) {
   // V031 modes: Expanded (top bar), Immersive (people grid), Minimized (corner chip).
   // Mounted into #shell-call-in-progress-mount when active; video tiles still DirtyCallChrome-only.
@@ -769,18 +786,7 @@ std::string CallInProgressRml(const ShellState& state) {
       // grows away from the edge, never past it. Its top: where ShellCallChromeGesture last put it for this place
       // (kept in the band), else its height's share of the band (CallChipDock::Place) with the heights last measured;
       // with no height known at all, no top (never the band's top: the chip would show there first, B-#166 device).
-      const CallChipLayout& layout = state.call_chip_layout;
-      const CallChipPlace place{call.minimized_side, call.minimized_y_permille};
-      const CallChipArea area{state.shell_width_dp, layout.area_height_dp};
-      const bool heights_known = layout.area_height_dp > 0.f && layout.chip_height_dp > 0.f;
-      float top_dp = -1.f;
-      if (layout.top_dp > 0.f && layout.place == place) {
-        top_dp = heights_known ? std::clamp(layout.top_dp, CallChipDock::MinTop(),
-                                            CallChipDock::MaxTop(area, layout.chip_height_dp))
-                               : layout.top_dp;
-      } else if (heights_known) {
-        top_dp = CallChipDock::Place(place, area, 0.f, layout.chip_height_dp).top_dp;
-      }
+      const float top_dp = MinimizedChipTopDp(state);
       char top[32] = "";
       if (top_dp >= 0.f) {
         std::snprintf(top, sizeof(top), "top:%.1fdp;", top_dp);

@@ -6,6 +6,7 @@
 #include "lib/ui/DataEvent.h"
 #include "foundation/runtime/FramePacing.h"
 
+#include "common/Diag.h"
 #include "common/Metrics.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "common/runtime/AppRuntime.h"
@@ -2574,8 +2575,10 @@ void ShellHost::RemountCallChromeNow() {
   // dirtied (it is all bound); the rebuild runs when the gesture lets go (on_chip_released: the slide ended, a press
   // ended with no drop, or it was detached) or the place comes back (that state change is a Remount of its own). A
   // new mode, call or layout is never held: the chip is not kept then.
-  if (KeepMinimizedChipOnRemount(state_.call_in_progress, doc->GetElementById("shell-call-minimized-chip"),
-                                 call_chrome_gesture_)) {
+  const bool hold_chip = KeepMinimizedChipOnRemount(
+      state_.call_in_progress, doc->GetElementById("shell-call-minimized-chip"), call_chrome_gesture_);
+  DiagCallChipRemount(doc, hold_chip);
+  if (hold_chip) {
     call_chip_rebuild_held_ = true;
     if (ui::Element* ring_mount = doc->GetElementById("shell-call-ring-mount")) {
       RmlMount::MountInner(ring_mount, CallRingRml(state_));
@@ -2598,6 +2601,40 @@ void ShellHost::RemountCallChromeNow() {
   DirtyCallChrome();
   AttachCallChromeGesture();
   ApplySafeAreaLayout();  // the phone call page reaches under the status bar and clears the home indicator
+}
+
+void ShellHost::DiagCallChipRemount(ui::ElementDocument* doc, const bool held) {
+  const CallInProgressState& call = state_.call_in_progress;
+  const bool minimized = call.active && call.mode == CallChromeMode::Minimized;
+  if (!minimized && !diag_chip_minimized_) {
+    return; // only the minimised chip's remounts, and the one that leaves it
+  }
+  DiagLine line("call.chip");
+  line.Add("what", "remount").Add("held", held);
+  if (minimized != diag_chip_minimized_) {
+    line.Add("reason", "mode");
+  } else if (call.minimized_side != diag_chip_side_ || call.minimized_y_permille != diag_chip_y_) {
+    line.Add("reason", "place");
+  } else {
+    line.Add("reason", "other");
+  }
+  line.Add("minimized", minimized).Add("side", call.minimized_side).Add("y", call.minimized_y_permille);
+  line.Add("area_h", static_cast<int>(std::lround(state_.call_chip_layout.area_height_dp)))
+      .Add("chip_h", static_cast<int>(std::lround(state_.call_chip_layout.chip_height_dp)));
+  const float top = call.minimized_side == 0 ? -1.f : MinimizedChipTopDp(state_);
+  if (call.minimized_side == 0) {
+    line.Add("rendered_top", "corner");
+  } else if (top < 0.f) {
+    line.Add("rendered_top", "none");
+  } else {
+    line.Add("rendered_top", static_cast<int>(std::lround(top)));
+  }
+  line.Add("chip_on_screen", doc && doc->GetElementById("shell-call-minimized-chip") != nullptr)
+      .Add("settling", call_chrome_gesture_.IsSettling())
+      .Emit();
+  diag_chip_minimized_ = minimized;
+  diag_chip_side_ = call.minimized_side;
+  diag_chip_y_ = call.minimized_y_permille;
 }
 
 void ShellHost::MeasureCallChip(ui::ElementDocument* doc) {

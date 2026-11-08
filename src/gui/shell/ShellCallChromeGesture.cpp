@@ -1,5 +1,7 @@
 #include "gui/shell/ShellCallChromeGesture.h"
 
+#include "common/Diag.h"
+
 #include <ui/base/SystemInterface.h>
 #include <ui/base/Tween.h>
 #include <ui/dom/Context.h>
@@ -45,6 +47,11 @@ double NowSeconds() {
   return system ? system->GetElapsedTime() : 0.0;
 }
 
+/** Diagnostics (call.chip): dp rounded to whole numbers. */
+int Dp(const float dp) {
+  return static_cast<int>(std::lround(dp));
+}
+
 void SetDp(ui::Element* element, const char* property, const float dp) {
   char buffer[32];
   std::snprintf(buffer, sizeof(buffer), "%.1fdp", dp);
@@ -70,6 +77,7 @@ void ShellCallChromeGesture::Attach(ui::Element* root, ui::Context* context, Cal
   attached_ = true;
   if (mode_ == CallChromeMode::Minimized) {
     SetChipOffset(0.f, 0.f, false);
+    DiagLine("call.chip").Add("what", "attach").Add("root_chip", root_->GetId() == "shell-call-minimized-chip").Emit();
   } else if (mode_ == CallChromeMode::Expanded) {
     SetOutsideTapCapture(true);
   } else {
@@ -352,6 +360,8 @@ void ShellCallChromeGesture::DropChip() {
     return;
   }
   // ① Where it shows as the finger leaves it: its laid-out box moved by the drag's translate.
+  const float drag_dx = chip_dx_dp_;
+  const float drag_dy = chip_dy_dp_;
   chip.left_dp += chip_dx_dp_;
   chip.top_dp += chip_dy_dp_;
   // ② Pinned there by left / top (the whole slide runs on these two: nothing interpolates between left and right),
@@ -378,6 +388,29 @@ void ShellCallChromeGesture::DropChip() {
   target_ = place;
   // The slide's end with the heights measured now: a rebuild from here on (ShellHost) puts the chip exactly there.
   layout_ = CallChipLayout{place, end.top_dp, area.height_dp, chip.height_dp};
+  {
+    const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
+    const float viewport_h = context_ && ratio > 0.f ? static_cast<float>(context_->GetDimensions().y) / ratio : 0.f;
+    ui::Element* rebuilt = document_ ? document_->GetElementById("shell-call-minimized-chip") : nullptr;
+    DiagLine("call.chip")
+        .Add("what", "drop")
+        .Add("left", Dp(chip.left_dp))
+        .Add("top", Dp(chip.top_dp))
+        .Add("w", Dp(chip.width_dp))
+        .Add("h", Dp(chip.height_dp))
+        .Add("drag_dx", Dp(drag_dx))
+        .Add("drag_dy", Dp(drag_dy))
+        .Add("layer_w", Dp(area.width_dp))
+        .Add("layer_h", Dp(area.height_dp))
+        .Add("viewport_h", Dp(viewport_h))
+        .Add("side", place.side)
+        .Add("y", place.y_permille)
+        .Add("target_left", Dp(end.left_dp))
+        .Add("target_top", Dp(end.top_dp))
+        .Add("root_chip", root_->GetId() == "shell-call-minimized-chip")
+        .Add("root_is_rebuilt", rebuilt == root_)
+        .Emit();
+  }
   // ⑤ comes when the slide ends (FinishSlide). ⑥ The place goes to the call state now, so a restore mid-slide
   // still finds it there; until the state has it, and while the slide runs, ShellHost does not rebuild the chip.
   if (callbacks_.on_chip_place) {
@@ -392,6 +425,7 @@ void ShellCallChromeGesture::FreezeChip() {
   if (!root_ || !MeasureChip(&chip, &area)) {
     return;
   }
+  DiagLine("call.chip").Add("what", "freeze").Add("left", Dp(chip.left_dp)).Add("top", Dp(chip.top_dp)).Emit();
   // The slide's left / top as last laid out: a new "slide" from there to there replaces it (an element keeps one
   // animation per property), so the old one moves it no more; the drag's translate follows the finger from here.
   const ui::Tween tween(ui::Tween::Cubic, ui::Tween::Out);
@@ -409,6 +443,7 @@ void ShellCallChromeGesture::FinishSlide() {
   if (!root_ || !target_) {
     return;
   }
+  DiagLine("call.chip").Add("what", "settle").Emit();
   // ⑤ There: anchored on its own side, so a chip that grows later grows away from the edge, never past it.
   DockChip(*target_);
   NotifyChipReleased();
@@ -440,6 +475,14 @@ void ShellCallChromeGesture::DockChip(const CallChipPlace& place) {
   root_->SetProperty("bottom", "auto");
   docked_ = true;
   layout_ = CallChipLayout{place, at.top_dp, area.height_dp, chip.height_dp};
+  DiagLine line("call.chip");
+  line.Add("what", "dock").Add("top", Dp(at.top_dp)).Add("laid_top", Dp(chip.top_dp));
+  if (place.side == CallChipDock::kSideLeft) {
+    line.Add("anchor", "left");
+  } else {
+    line.Add("anchor", "right");
+  }
+  line.Add("settling", settling_).Emit();
 }
 
 bool ShellCallChromeGesture::HoldsChip(const CallInProgressState& call) const {
@@ -503,6 +546,13 @@ void ShellCallChromeGesture::Reflow(const CallInProgressState& call) {
   reflowed_place_ = place;
   const float top = CallChipDock::Place(place, area, chip.width_dp, chip.height_dp).top_dp;
   if (!docked_ || std::fabs(top - chip.top_dp) >= 0.5f) {
+    DiagLine("call.chip")
+        .Add("what", "reflow")
+        .Add("top_before", Dp(chip.top_dp))
+        .Add("top_after", Dp(top))
+        .Add("docked", docked_)
+        .Add("animated", false)
+        .Emit();
     DockChip(place);
   }
 }
@@ -515,6 +565,19 @@ void ShellCallChromeGesture::BeginArm(int x_px, int y_px, ui::Element* target) {
   drag_start_y_px_ = y_px;
   drag_last_x_px_ = x_px;
   drag_last_y_px_ = y_px;
+  if (mode_ == CallChromeMode::Minimized) {
+    CallChipRect chip;
+    CallChipArea area;
+    const bool laid_out = MeasureChip(&chip, &area);
+    DiagLine("call.chip")
+        .Add("what", "press")
+        .Add("settling", settling_)
+        .Add("docked", docked_)
+        .Add("laid_out", laid_out)
+        .Add("left", Dp(chip.left_dp))
+        .Add("top", Dp(chip.top_dp))
+        .Emit();
+  }
   if (mode_ == CallChromeMode::Immersive && !members_drag_) {
     SetDismissOwnsTopOverscroll(true);
   }
