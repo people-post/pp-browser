@@ -78,6 +78,8 @@ x-call-tile	#ffffff17	#ffffff17	extra: phone call page group tile (white 9%)
 x-call-bar	#3a3a3cd1	#3a3a3cd1	extra: phone call page button bar (82%)
 x-call-notice	#3a3a3ceb	#3a3a3ceb	extra: phone call page top pill (92%)
 x-call-notice-warn	#784800eb	#784800eb	extra: phone call page top pill, the line got worse
+x-call-reconnect-ok	#1f6f4aeb	#1f6f4aeb	extra: phone call page reconnect capsule, restored (92%)
+x-call-timer-dim	#ffffff80	#ffffff80	extra: phone call page timer while reconnecting (white 50%)
 x-call-label-bg	#00000073	#00000073	extra: phone call page name tag on a tile (black 45%)
 x-call-video-top	#0000004d	#0000004d	extra: phone call page shade behind the top row over video (black 30%)
 x-call-dim	#0000008c	#0000008c	extra: phone call page own camera dimmed under the step card (black 55%)
