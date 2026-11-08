@@ -66,6 +66,12 @@ public:
   void DetachLeg(CallMediaLegId id);
   /** Detach primary/active bundle (empty id → PrimaryBundle). */
   void Detach() { DetachLeg({}); }
+  /**
+   * K014: this end ended the call — a live leg says `bye` on its active path (best-effort, no ack;
+   * the same mux carries it ahead of the channels' close), then is detached. Empty id → primary.
+   */
+  void HangUpLeg(CallMediaLegId id);
+  void HangUp() { HangUpLeg({}); }
 
   bool IsLegActive(CallMediaLegId id) const;
   bool IsActive() const;

@@ -62,6 +62,8 @@ flowchart TB
 
 ## Roles and permissions
 
+> **Accepted 2026-11-05, not built:** open groups replace this section — roles and two presets in [G017](DECISIONS.md#g017--open-groups-roles-and-two-presets), wire in [§ Open groups](#open-groups-g017g023) below. Until they ship, the tables here describe the code.
+
 ### MemberRole
 
 | Value | First slice | Notes |
@@ -126,7 +128,9 @@ Delivered as **`ChatPayload` system messages** (`content_type=system`) with `con
   "invite_nonce": "uuid",
   "roster_epoch": 1,
   "expires_at": 1735689600000,
-  "actor_role": "owner"
+  "actor_role": "owner",
+  "context": "call",
+  "call_id": "call:…"
 }
 ```
 
@@ -180,10 +184,17 @@ Separate from 1:1 DM blocking: a contact may DM but not spam group invites.
 ### Route
 
 ```json
-{ "kind": "group", "group_id": "group:550e8400-…" }
+{ "kind": "group" }
 ```
 
-No `channel` field on group routes (sign bytes use `channel=0xFF` per E014).
+No `channel` field on group routes (sign bytes use `channel=0xFF` per E014), and no `group_id` (G018 item 7): the
+relay can read the envelope, so the group id rides inside each copy's ciphertext.
+
+**Group copy plaintext:** `group_copy_version` u8 `1`, `group_id` LenUtf8, the message's ChatPayload LenBytes
+(`GroupE2ePayloadCodec::EncodeCopyPlaintext`). Inside the AEAD rather than in its associated data: the receiver
+must read the group id without knowing it, and AAD it cannot rebuild would mean trying each group shared with the
+sender. The AEAD authenticates it and the signed copy hash covers the ciphertext, so the copy stays bound to its
+group. o2 adds `statement_epoch` and `changes_hash` here (G018 item 5).
 
 ### Body — N ciphertexts
 
@@ -208,9 +219,15 @@ Direct tiers continue using `payload_b64` only.
 
 ### Stream id
 
-Opaque: `v1:group:{group_id}:{session_epoch}:{member account}` — one per member: the relay stores one
-row per (sender, stream, seq), so copies of one message to different members must not share a stream
-(until 2026-10-23 they did, and only the first member's copy was kept).
+Opaque: `v1:g:` + hex(BLAKE2b-128(LenUtf8 of `pp-browser:group-stream-v1`, group id, lower account, higher
+account)) + `:from:{sender_device}` (G018 item 7; [WIRE_SCHEMAS § Group stream id](../../docs/contracts/WIRE_SCHEMAS.md)).
+One per member and sending device: the relay stores one row per (sender, stream, index), so copies of one message
+to different members must not share a stream (until 2026-10-23 they did, and only the first member's copy was
+kept), nor two devices of one sender. Both accounts' devices compute it; the relay cannot, and with the pair in the
+hash Alice→Bob and Alice→Carol in one group look unrelated. No epoch, unlike the first sketch of G018 item 7: since
+M022 a record carries copies for several device pairs, each at its own epoch, and the stream was already
+epoch-free (`v2:group:{group_id}:{member}:from:{device}`, retired). Still visible: that a record is a group copy
+(`v1:g:`, and `route.kind`).
 
 ---
 
@@ -276,11 +293,13 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 
 ## Inbound ingest
 
-1. Verify signature (sender identity)
-2. If `route.kind=group`: lookup roster — hard-reject if recipient not a member (except invite path on direct thread)
-3. Decrypt local slice from `member_payloads[local_relay_id]`
-4. Classify seq (relaxed ingest default — D046)
-5. Append to group thread; update sync_state
+1. If `route.kind=group`: hard-reject a blocked sender, or one in no group with us (the roster, before reading)
+2. Verify signature (sender identity)
+3. Decrypt this device's copy; read the group id it names (G018 item 7)
+4. Hard-reject unless both the local account and the sender are on that group's roster (same outcomes as when the
+   route named the group)
+5. Classify seq (relaxed ingest default — D046)
+6. Append to group thread; update sync_state
 
 **Invite handshake :** Invite records **pending only** — the invitee is not an encrypt target until commit. Invitee Accept/Decline send `group_invite_accept` / `group_invite_decline` DMs back to the inviter. Owner ingest of accept requires an invite this device issued (pending rows carry their direction), for the group the accept names, which this device owns, not expired; it upserts the member, bumps its own `roster_epoch` by one, then publishes owner-signed `member_joined` to all active members (G006 commit). An accept for an invite already accepted adds no one (a member removed since, or one who left, needs a new invite). An inbound `group_invite` is recorded only when its signed sender is the `inviter_identity` and the local account the `invitee_identity`, and — for a group already known locally — only from that group's owner while we are not a member; a stored invite is never rewritten by another with the same nonce. Group messages are dropped unless both the local account and the (non-blocked) sender are on the local roster. Peers apply `member_joined` (owner + epoch gates) as the roster source of truth. Decline clears pending only. Pending invites store `group_title` / `roster_epoch` so Accept can seed local `group_metadata`. On Accept, the invitee also upserts the inviter as `Owner` and self as `Member` locally so member→owner fan-out works before `member_joined` arrives. Closing a group session dismisses local membership (and clears `group_targets`) so inbound group traffic hard-rejects instead of recreating the thread with an unread. After Accept/Decline/Block, the DM invite card is resolved in-place (actions cleared; status line text).
 
@@ -394,3 +413,146 @@ The owner checks too (G013 amendment): a member may hold a newer statement the o
 - G014: 51st invite refused; accept at full yields `group_invite_refused`; pending invites not counted.
 
 Not proposed: dissolve-for-everyone. Kenneth 2026-10-25: owner transfer (G009) stays; a hijacked owner account must not be able to erase a group.
+
+---
+
+## Open groups (G017–G023)
+
+Accepted 2026-11-05, not built. Sketches to settle in each phase ([PHASES § O](PHASES.md#o--open-groups-g017g023)); the shipped wire goes to [WIRE_SCHEMAS](../../docs/contracts/WIRE_SCHEMAS.md). The product is unreleased: each step is a clean cutover.
+
+### The owner's statement (G012, extended by G018)
+
+The statement as built, with these fields added inside what the owner signs. **Built and wired** (o2: `lib/messaging/GroupRosterStatement.*`; the owner's device signs them through `group_roster_sync::OwnerDraft`). Normative wire: [WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md).
+
+| Field | Meaning |
+|---|---|
+| `members[].role` | `owner` / `admin` / `member` |
+| `members[].added_by` | who brought them (G019): the signer of the `add` the owner folded; empty for the group's first members |
+| `preset` | `open` / `managed` (G017) |
+| `title`, `title_version` | the group's name and its version (R4); as `group_renamed` today |
+| `removed[]` | `{identity, removal, by}`: accounts removed and not re-admitted (G018 R2, G020); `removal` is the id of the `remove` change a re-admit names |
+| `links[]` | live links: `{link_id, secret_hash, maker, expires_at, max_uses?, uses?}` (G021); `max_uses` omitted (0) means no limit; `uses` the joins by it the owner folded (o5) |
+| `folded[]` | `{id, base_epoch}` of **every** change the owner has folded, in this statement and earlier ones (carried forward, so a device that missed a statement still drops what it folded) — but none whose `base_epoch` is below the floor; `base_epoch` as the change states it, at most the epoch of the statement that folded it |
+| `change_floor_epoch` | a change made against an older statement (`base_epoch` below it) is dropped as too old, so `folded` need not name it. Folding at epoch e raises it to e − `kChangeFloorLag` (32), never lower |
+
+JSON omits `added_by`, `title`/`title_version`, `removed`, `links`, `folded` and `change_floor_epoch` when empty or 0.
+
+**Sign bytes v3** — the account key (ML-DSA-65) signs, every string a u32 BE length then its bytes, every integer u64 BE, every list sorted (members and removed by identity, links by `link_id`, folded by id):
+
+```
+"pp-browser:group-roster-statement-v3"   ("pp-browser:group-dissolved-v3" for a dissolve, G016)
+group_id, roster_epoch, owner,
+member count, then per member: identity, role, joined_at, added_by
+preset
+title, title_version
+removed count, then per entry: identity, removal, by
+link count, then per link: link_id, secret_hash, maker, expires_at, max_uses (0: none), uses
+folded count, then per entry: id, base_epoch
+change_floor_epoch
+```
+
+Verify also refuses a removed account that is also a member, a repeated removed account, link id or folded id, a folded entry below the floor, and a floor above the epoch. v2 statements no longer verify (clean cutover).
+
+**Why 32 (`kChangeFloorLag`).** Every statement is one act of the owner (an add, a removal, a role, a fold), so 32 statements is weeks of a busy group's life — far longer than a change spends in flight from a device that was offline — while `folded`, which rides every statement (every roster event and `member_joined`), names only the changes of the last 32 statements: about 80 bytes each, so a few kilobytes even for a group folding several changes a statement. A larger lag makes `folded` grow with it for no gain a user would notice; a smaller one turns a device offline over a few owner acts into lost changes.
+
+### Change (G018)
+
+`GroupChange` (`lib/messaging/GroupChange.*`; named apart from the store's `GroupRosterChange` notification):
+
+```json
+{
+  "group_id": "group:…",
+  "base_epoch": 7,
+  "signer": "account:…",
+  "signer_device": "<Peer ID of the signing device>",
+  "signer_card": { "…": "the signer's account card, when the receiver may lack it" },
+  "at": 1767225600000,
+  "change": "add",
+  "body": { "member": "account:…", "invite_nonce": "uuid" },
+  "signature": "<base64 ML-DSA-65 by the device key over the sign bytes below>"
+}
+```
+
+- **Keys (G018 item 9):** a change is signed by the signing device's key, which must be on the signer's card (signed by the account key). The owner's statement stays signed by the account key. **Verify:** the card proves itself (`VerifyAccountCard`; its account id derives from its account key) and is the signer's, lists `signer_device`, and that device's signing key verifies the signature. `signer_card` is not signed: it proves itself.
+- **Sign bytes:** strings u32 BE length then bytes, integers u64 BE, id lists a u64 BE count then each id sorted:
+
+```
+"pp-browser:group-roster-change-v1", group_id, base_epoch, signer, signer_device, at, change,
+then the body by change:
+  add          member, invite_nonce, link_id, readmits          (absent fields as empty strings)
+  leave        adds (list), keeps (list)
+  remove       member, adds (list), keeps (list)
+  rename       title, title_version
+  link_add     link_id, secret_hash, expires_at, max_uses (0: none)
+  link_revoke  link_id
+```
+
+- **Change id:** lowercase hex of BLAKE2b-256(sign bytes). Two copies of one change (re-signed, or carrying a card) share it; a forged copy shares it too, so a copy whose signature fails is dropped, never held or folded, and a proved copy wins. `base_epoch` (the statement the signer held) and `at` are for display and diagnosis; validity is R1–R6 against the latest statement and the signers' newest cards.
+- **`change` / `body`** (a field its kind does not carry must be absent):
+
+| change | body |
+|---|---|
+| `add` | `member` (not the signer), exactly one of `invite_nonce` / `link_id`; a re-admit also `readmits` (the id of the removal it lifts) |
+| `leave` | `adds` (the signer's adds it saw, R1), `keeps` (the signer's own unfolded changes, R3) |
+| `remove` | `member` (not the signer), `adds` (the adds of that member it saw), `keeps` (the removed member's unfolded changes the remover holds) |
+| `rename` | `title` (1–256 bytes), `title_version` (> 0) |
+| `link_add` | `link_id`, `secret_hash`, `expires_at`, `max_uses`? |
+| `link_revoke` | `link_id` |
+
+`adds` and `keeps` hold at most 256 distinct ids.
+
+- **Roster** (`ComputeRoster`, `lib/messaging/GroupRosterRules.*`): the latest statement, then every unfolded change by R1–R6. A function of the set: every step walks changes in change-id order, so no order between changes is needed. Changes for another group, already in `folded`, malformed or with a failing signature are dropped; a dissolved statement has no roster. How each rule reads:
+  - **R6 / cards:** a change is checked against every card that proves itself for its signer — the one the device holds and any `signer_card` the changes carry; the newest (`issued_at`) is the signer's card. A device on none of them: void, held until a card arrives. A device on an older card but not the newest counts only if folded or kept; a device that keeps only an account's newest card proves such a change only when it carries the older card (`signer_card`), so a relayed change carries the card that lists its device.
+  - **R3:** the signer's role is the latest statement's (`member` for anyone an add brought in); the signer must be in the group (left or removed: out) — unless a valid `remove` of the signer lists the change in `keeps` (counts outright), or the signer's own valid `leave` lists it (counts as if the signer were still in, at the role it had; not for a signer someone removed — the remover decides).
+  - **R1 / R2:** a remove of X takes X off the statement and undoes the adds of X it names; it voids every add of X signed by a *member* (named or not), while an owner's or admin's add it did not name stands. An add of an account on the statement's `removed` list counts only as an owner's or admin's re-admit whose `readmits` is that entry's `removal`; a `readmits` must otherwise name a valid remove of X. A leave takes its signer off the statement and undoes the adds of itself it names (an add it did not see stands). The owner cannot leave or be removed; an admin removes members only.
+  - **R5:** the statement's members that stand, then the adds in change-id order, repeated until nothing more comes in: an add counts once its signer is in and takes a place while fewer than 50 are in.
+  - **R4:** among valid renames above the statement's `title_version`: the highest version, then the higher role, then the lower change id.
+  - **Links:** a `link_add` (per preset) whose id is not taken; a `link_revoke` by the link's maker, an admin or the owner. A link is live while not revoked, not expired, and its maker is in the group.
+- **Floor:** a change whose `base_epoch` is below the latest statement's `change_floor_epoch` is dropped (`TooOld`) before any rule runs.
+- **Fold** (`FoldChanges`, owner side): the next statement (epoch + 1) holds the computed members (with `added_by`), removed, live links and title, and `folded` = the earlier `folded` plus every change the owner held except those that may still come to count (no card, a signer whose add has not arrived, a revoke of an unknown link). Void changes are folded too, so they stay void: a demoted admin's backdated removal must not count again if the owner later reappoints them.
+
+### Wiring (o2, built)
+
+- **Storage:** `group_changes` in profile.db (group_id, change_id, change_json, received_at, line_shown) and `group_rosters.added_by` ([DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md)). Changes are not in the account locker.
+- **One apply path** (`group_roster_sync::ApplyView`): whenever the statement or the held changes change, the roster store becomes the held statement plus the held changes (`CheckChanges` against the kept cards and the carried ones, `ComputeRosterChecked`): members with role, joined_at and added_by (the contact ids kept), owner, epoch, preset, a newer title. Dropped changes go. It leaves the roster alone with no statement held or with one older than the roster's epoch (an owner event applied whose statement was not kept). Every path ends here: roster events (`KeepCarriedStatement`), `group_roster_statement`, settings, member check replies, a received change, a card that arrived.
+- **Receive** (`group_change`, `RelayReceivePipeline::ApplyGroupChange`): from the signer or a member handing it on, to a member; kept when it proves itself or when no card lists its device (`NoCard`: the device is asked for its card; when a newer card is kept the groups holding that signer's changes are recomputed); forged: refused. A change that counts gets its line once (`line_shown`): a leave as `member_left`, a removal as `member_removed` with `by`, an add as `member_joined`. A recompute that takes us out marks the group `removed` (read-only, G020 3) and notices it like the owner's removal.
+- **Producers:** `LeaveGroup` signs the leave (`DraftLeave`: `adds` the held adds of us, `keeps` our own held changes), holds it, fans it out, recomputes; the owner cannot. `RemoveMemberByIdentity`: the owner's removal stays `member_removed` + the re-signed statement, its own `remove` held first so the statement folds it (the `removed` entry names its id); an admin's is `RemoveAsAdmin` — `DraftRemove` (refused unless `GroupAllows(Remove, our role, preset, target role)`), held, sent to the remaining members first and then the removed account.
+- **Owner fold:** every statement the owner signs is `OwnerDraft`: its roster rows (its own edits in), the removed the changes leave, the live links of makers still in, `FoldInto` (folded + floor), at one past the held epoch when it says something new. Triggered a few seconds (3 s) after a change reaches the owner's device (`ScheduleFold`), at messaging start (`FoldHeldChanges`), and before answering a member check; sent as `group_roster_statement`.
+
+### Carrying the state and syncing
+
+- **Each group copy's plaintext** (inside the AEAD, `group_copy_version` 2) carries `group_id`, the sender's `statement_epoch` and `changes_hash`: lowercase hex of BLAKE2b-256 over `"pp-browser:group-changes-v1"` (u32 BE length then bytes), the count (u64 BE), then each distinct id (u32 BE length then bytes) in sorted order — of the changes the device holds unfolded (`GroupRosterView::HeldIds`, `group_change::ChangesHash`; the store holds exactly those).
+- **The relay sees no group (G018 item 7, built):** the envelope's `route` carries no `group_id` (sign v4), and the copy's relay stream id is `v1:g:` + hex(BLAKE2b-128(`pp-browser:group-stream-v1` ‖ group id ‖ lower account ‖ higher account)) + `:from:{sender_device}` — [§ Stream id](#stream-id).
+- **A receiver behind the sender** — a lower statement epoch, or the same with another hash; not a sender behind us, which asks when our copy reaches it — sends `group_roster_request {group_id, request_id, roster_epoch, statement_epoch, changes_hash, after?}` (G013's control-lane request) to that sender, at most once per group every 30 s (`CatchUpLimiter`), with the group staying active (a catch-up does not stop sends; a G013 check in progress is not overridden). The reply carries the latest statement and, when the hashes differ, the changes the replier holds after `after` in id order — at most 64 and about 96 KB, each signer's card once (the asker stores it with each of that signer's changes), `more` when cut; the asker applies them through `ApplyView` and asks again after the last id. Without the asker's ids the replier cannot tell which ones it lacks: it sends what it holds, paged. G013's own check carries the same state, so a restored device gets the changes too.
+
+### Invites (G019, built o4)
+
+- **`group_invite`** as before, sent by whoever the preset lets invite, with `owner_identity` and `member_count` (additive): the group's name and member count, never the members.
+- **`group_invite_accept`** goes to the inviter. The owner adds them itself (`member_joined` + its re-signed statement, `added_by` the owner). A member or admin checks its pending invite and that it may still invite (`ApplyInviteAcceptToRoster` → `SignAdd`), signs the `add` (`DraftAdd`: `readmits` for someone removed, owner / admin only), holds it, and only if it counts (R5) sends `group_change` with `newcomer` (card, route) to the members and the join bundle to the newcomer; else `group_invite_refused` (`group_full` / `not_allowed`).
+- **The join bundle** is `member_joined` to the newcomer, from the owner or a member: `invite_nonce`, `added_by`, the members with routes and cards, `roster_statement`, `changes` (the add first, bounded, `more`). The newcomer checks the statement against the owner the invite named and that the roster it proves lists it (`CheckJoin`) before keeping anything (`ApplyJoinBundle`). Normative: [WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md).
+
+### Invite link (G021, built o5)
+
+```
+pp://join/<base64url(link_id[16] || secret[16] || expires_at u64 BE ms || maker account id)>
+```
+
+- **Making** (`GroupInviteLinkWorkflow::MakeLink`): random id and secret (`group_invite_link::Mint`), a signed `link_add` (`DraftLinkAdd`: `GroupAllows(MakeInviteLink…)`, `secret_hash` = BLAKE2b-256 over `pp-browser:group-link-secret-v1`, the id, the secret) through `GroupMembershipWorkflow::CommitOwnChange`; the secret kept encrypted (`group_invite_links`). **Revoking:** `DraftLinkRevoke` (its maker, an admin, the owner).
+- **The roster** (`ComputeRoster`): live links with their `uses` (the statement's plus the held adds carrying the id that took someone in); `ended_links` with why (revoked, maker out — also a `link_add` void only because its signer left —, expired). The fold signs `uses` into the statement's links.
+- **Joining** (control lane, family `group join`, `lib/messaging/GroupLinkJoin*`): `group_join_request {request_id, link_id, secret}` → the maker's account; `JudgeJoin` (the secret first — no link here or no match: dropped, no reply —, then rate, revoked / maker out, expired, our standing, used up, removed, full) → `group_join_preview {request_id, group_id, owner, group_title, member_count, device}` or `group_join_refused {request_id, reason}`; the joiner's `group_join_confirm {request_id, device}` → `AdmitByLink` (the `add` with `link_id`, the members' `group_change`, the join bundle under the request id). The joiner's record (`JoinRecord`) is an accepted invite from the answerer, so `ApplyJoinBundle` takes the bundle as for an invite. Normative: [WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md).
+- **UI:** group info's "Invite link…" (`GroupLinkSheet`: text, QR, expiry, Revoke link…) and, for the owner and admins, the live links with Revoke; a link scanned, pasted or opened goes to `GroupJoinPrompt` (the preview sheet, or the refusal in plain words) — [SCANNING](../../docs/ui/SCANNING.md).
+
+### Removal (G020)
+
+- **The `remove`** goes to the remaining members first. Built (o2) for admins; the owner's removal is `member_removed` with the statement re-signed (its `remove` folded at once).
+- **The removed account** gets the change itself and shows "You were removed by {signer}", the G013 removed state.
+- **Bulk actions** are one `remove` per account (or one re-invite each), sent together (built o4: `RemovableAddedBy` — the members the person added whom our role may remove; `RemovedBy` — the accounts they removed still out).
+
+### Make a group during a call (G022)
+
+- **No new message.** The create-group path and `group_invite`, with `context: "call"` and the `call_id` (optional fields, written only on such an invite), so the invitee's device shows the invite as a banner in that call; invitees are named by account (people met in the call need not be contacts). Normative: [WIRE_SCHEMAS § Group made during a call](../../docs/contracts/WIRE_SCHEMAS.md).
+- **Consent (amendment, 2026-11-05).** Such an invite passes the invitee's `contacts_only` policy when the invitee is in that live call right now with the inviter (G022 Amended). Messaging asks through a port (`GroupInviteGate::InLiveCallFn`) the product layer fills from the calls (`CallsParticipant::InLiveCallWith`); messaging never names calls.
+
+### Guests in a group's call
+
+- See [calls V062](../p2p-av-calls/DECISIONS.md#v062--guests-in-a-groups-call-labelled-brought-by-members-removed-by-owner-and-admins).

@@ -4,6 +4,7 @@
 #include "foundation/platform/ICredentialStore.h"
 #include "common/ValueJson.h"
 
+#include <algorithm>
 #include <limits>
 #include <string_view>
 #include "common/PbrCompat.h"
@@ -113,6 +114,38 @@ void MediaRelayVideoFromObject(const Object& object, mesh::MediaRelayVideoConfig
   if (auto strict = object.getIf<bool>("strict")) {
     video.strict = *strict;
   }
+}
+
+Object MeshCapacityToObject(const mesh::MeshCapacityConfig& capacity) {
+  auto set_count = [](Object& object, const char* key, size_t value) {
+    if (value == 0) {
+      object.set(key, Null{});
+    } else {
+      object.set(key, static_cast<int64_t>(value));
+    }
+  };
+  Object object;
+  set_count(object, "links", capacity.links);
+  set_count(object, "reservations", capacity.reservations);
+  set_count(object, "bridges", capacity.bridges);
+  set_count(object, "group_calls", capacity.group_calls);
+  return object;
+}
+
+/** Null, absent, zero or negative keeps the default (0). */
+void MeshCapacityFromObject(const Object& object, mesh::MeshCapacityConfig& capacity) {
+  auto read_count = [&](const char* key, size_t& out) {
+    if (!object.contains(key) || object.isNull(key)) {
+      return;
+    }
+    if (auto value = ReadI64(object, key); value && *value > 0) {
+      out = static_cast<size_t>(*value);
+    }
+  };
+  read_count("links", capacity.links);
+  read_count("reservations", capacity.reservations);
+  read_count("bridges", capacity.bridges);
+  read_count("group_calls", capacity.group_calls);
 }
 
 void MediaRelayBudgetFromObject(const Object& object, mesh::MediaRelayBudgetConfig& budget) {
@@ -498,6 +531,7 @@ Object MeshConfigToObject(const MeshConfig& config) {
   object.set("dht", MeshDhtConfigToObject(config.dht));
   object.set("pricing", MeshPricingToObject(config.pricing));
   object.set("media_relay_budget", MediaRelayBudgetToObject(config.media_relay_budget));
+  object.set("capacity", MeshCapacityToObject(config.capacity));
   object.set("media_relay_video", MediaRelayVideoToObject(config.media_relay_video));
   return object;
 }
@@ -565,6 +599,9 @@ void MeshConfigFromObject(const Object& object, MeshConfig& config) {
   }
   if (const Object* media_relay_budget = object.getObject("media_relay_budget")) {
     MediaRelayBudgetFromObject(*media_relay_budget, config.media_relay_budget);
+  }
+  if (const Object* capacity = object.getObject("capacity")) {
+    MeshCapacityFromObject(*capacity, config.capacity);
   }
   if (const Object* media_relay_video = object.getObject("media_relay_video")) {
     MediaRelayVideoFromObject(*media_relay_video, config.media_relay_video);
@@ -758,6 +795,11 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("appearance", prefs.appearance);
   object.set("language", prefs.language);
   object.set("pin_is_default", prefs.pin_is_default);
+  if (prefs.pin_digits) {
+    object.set("pin_digits", static_cast<int64_t>(*prefs.pin_digits));
+  }
+  object.set("recovery_phrase_seen", prefs.recovery_phrase_seen);
+  object.set("unlock_grace_minutes", static_cast<int64_t>(prefs.unlock_grace_minutes));
   object.set("auto_renew_registration", prefs.auto_renew_registration);
   object.set("show_notifications", prefs.show_notifications);
   object.set("show_notification_preview", prefs.show_notification_preview);
@@ -771,6 +813,13 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("attachment_auto_on_cellular", prefs.attachment_auto_on_cellular);
   object.set("show_advanced_settings", prefs.show_advanced_settings);
   object.set("onboarding_completed", prefs.onboarding_completed);
+  object.set("ai_panel_intro_seen", prefs.ai_panel_intro_seen);
+  object.set("ai_dot_shown", prefs.ai_dot_shown);
+  object.set("ai_dot_look", prefs.ai_dot_look);
+  object.set("ai_dot_size", prefs.ai_dot_size);
+  object.set("ai_dot_left", prefs.ai_dot_left);
+  object.set("ai_dot_y_permille", static_cast<int64_t>(prefs.ai_dot_y_permille));
+  object.set("ai_dot_tucked", prefs.ai_dot_tucked);
   object.set("reduce_transparency", prefs.reduce_transparency);
   object.set("compact_chrome_frost", prefs.compact_chrome_frost);
   object.set("sidebar_width_dp", static_cast<int64_t>(prefs.sidebar_width_dp));
@@ -779,6 +828,22 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("reachability_nudge_acked_status", prefs.reachability_nudge_acked_status);
   object.set("tool_permissions", ToolPermissionsToObject(prefs.tool_permissions));
   object.set("recent_emojis", makeArray(std::move(recent)));
+  std::vector<Value> hidden_widgets;
+  for (const std::string& id : prefs.home_widgets_hidden) {
+    hidden_widgets.emplace_back(id);
+  }
+  object.set("home_widgets_hidden", makeArray(std::move(hidden_widgets)));
+  std::vector<Value> widget_order;
+  for (const std::string& id : prefs.home_widgets_order) {
+    widget_order.emplace_back(id);
+  }
+  object.set("home_widgets_order", makeArray(std::move(widget_order)));
+  object.set("home_show_dynamic", prefs.home_show_dynamic);
+  std::vector<Value> starred;
+  for (const std::string& id : prefs.starred_contacts) {
+    starred.emplace_back(id);
+  }
+  object.set("starred_contacts", makeArray(std::move(starred)));
   return object;
 }
 
@@ -800,6 +865,17 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   if (auto pin_is_default = object.getIf<bool>("pin_is_default")) {
     prefs.pin_is_default = *pin_is_default;
   }
+  // Absent or not 0 / 4..8: unknown (the next PIN unlock writes it).
+  const std::optional<int64_t> pin_digits = ReadI64(object, "pin_digits");
+  prefs.pin_digits = (pin_digits && (*pin_digits == 0 || (*pin_digits >= 4 && *pin_digits <= 8)))
+                         ? std::optional<int>(static_cast<int>(*pin_digits))
+                         : std::nullopt;
+  prefs.recovery_phrase_seen = object.getIf<bool>("recovery_phrase_seen").value_or(false);
+  const int64_t grace_minutes = ReadI64(object, "unlock_grace_minutes").value_or(15);
+  prefs.unlock_grace_minutes =
+      (grace_minutes == 0 || grace_minutes == 5 || grace_minutes == 15 || grace_minutes == 60)
+          ? static_cast<int>(grace_minutes)
+          : 15;
   if (auto auto_renew = object.getIf<bool>("auto_renew_registration")) {
     prefs.auto_renew_registration = *auto_renew;
   } else {
@@ -845,6 +921,23 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   }
   prefs.show_advanced_settings = object.getIf<bool>("show_advanced_settings").value_or(false);
   prefs.onboarding_completed = object.getIf<bool>("onboarding_completed").value_or(false);
+  prefs.ai_panel_intro_seen = object.getIf<bool>("ai_panel_intro_seen").value_or(false);
+  prefs.ai_dot_shown = object.getIf<bool>("ai_dot_shown").value_or(true);
+  if (auto look = object.getString("ai_dot_look")) {
+    prefs.ai_dot_look = *look;
+  }
+  if (prefs.ai_dot_look != "a" && prefs.ai_dot_look != "b" && prefs.ai_dot_look != "c" && prefs.ai_dot_look != "d") {
+    prefs.ai_dot_look = "b";
+  }
+  if (auto size = object.getString("ai_dot_size")) {
+    prefs.ai_dot_size = *size;
+  }
+  if (prefs.ai_dot_size != "s" && prefs.ai_dot_size != "m" && prefs.ai_dot_size != "l") {
+    prefs.ai_dot_size = "m";
+  }
+  prefs.ai_dot_left = object.getIf<bool>("ai_dot_left").value_or(false);
+  prefs.ai_dot_y_permille = static_cast<int>(std::clamp<int64_t>(ReadI64(object, "ai_dot_y_permille").value_or(600), 0, 1000));
+  prefs.ai_dot_tucked = object.getIf<bool>("ai_dot_tucked").value_or(false);
   if (auto reduce_transparency = object.getIf<bool>("reduce_transparency")) {
     prefs.reduce_transparency = *reduce_transparency;
   } else {
@@ -885,6 +978,32 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     for (const Value& item : recent->elements) {
       if (auto emoji = asString(item)) {
         prefs.recent_emojis.push_back(*emoji);
+      }
+    }
+  }
+  prefs.home_widgets_hidden.clear();
+  if (const Array* hidden = object.getArray("home_widgets_hidden")) {
+    for (const Value& item : hidden->elements) {
+      if (auto id = asString(item)) {
+        prefs.home_widgets_hidden.push_back(*id);
+      }
+    }
+  }
+  prefs.home_widgets_order.clear();
+  if (const Array* order = object.getArray("home_widgets_order")) {
+    for (const Value& item : order->elements) {
+      if (auto id = asString(item)) {
+        prefs.home_widgets_order.push_back(*id);
+      }
+    }
+  }
+  prefs.home_show_dynamic = object.getIf<bool>("home_show_dynamic").value_or(false);
+  prefs.starred_contacts.clear();
+  if (const Array* starred = object.getArray("starred_contacts")) {
+    for (const Value& item : starred->elements) {
+      if (auto id = asString(item); id && !id->empty() &&
+          std::find(prefs.starred_contacts.begin(), prefs.starred_contacts.end(), *id) == prefs.starred_contacts.end()) {
+        prefs.starred_contacts.push_back(*id);
       }
     }
   }

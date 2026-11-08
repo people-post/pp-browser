@@ -15,6 +15,21 @@ const char* EnvOrNull(const char* name) {
   return v;
 }
 
+/** A positive count from `name` into `out` (mesh.capacity); anything else leaves it. */
+void ApplyCapacityEnv(const char* name, size_t& out) {
+  const char* value = EnvOrNull(name);
+  if (value == nullptr) {
+    return;
+  }
+  try {
+    const long long parsed = std::stoll(value);
+    if (parsed > 0) {
+      out = static_cast<size_t>(parsed);
+    }
+  } catch (...) {
+  }
+}
+
 std::string Trim(std::string_view in) {
   size_t begin = 0;
   while (begin < in.size() && std::isspace(static_cast<unsigned char>(in[begin]))) {
@@ -111,6 +126,10 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
     } catch (...) {
     }
   }
+  ApplyCapacityEnv("PP_NODE_CAPACITY_LINKS", config.mesh.capacity.links);
+  ApplyCapacityEnv("PP_NODE_CAPACITY_RESERVATIONS", config.mesh.capacity.reservations);
+  ApplyCapacityEnv("PP_NODE_CAPACITY_BRIDGES", config.mesh.capacity.bridges);
+  ApplyCapacityEnv("PP_NODE_CAPACITY_GROUP_CALLS", config.mesh.capacity.group_calls);
   if (const char* ledger = EnvOrNull("PP_NODE_CAP_LEDGER_GATEWAY")) {
     if (auto parsed = ParsePpNodeBoolEnv(ledger)) {
       config.mesh.capabilities.ledger_gateway = *parsed;

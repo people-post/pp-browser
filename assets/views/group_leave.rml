@@ -1,0 +1,38 @@
+<!-- The owner leaving a group on a phone (DEV/PLAN-ui-batch8-group-pages.md 3, mockup 06-GroupLeave): a page sheet
+     laid out like the contact page. Each person who can take over is a row; a pick asks once, naming them. -->
+<div class="ac-page" data-model="group_leave">
+  <div class="sheet-header">
+    <p class="sheet-title" data-if="!empty">{{i18n:group_leave.title}}</p>
+    <p class="sheet-title" data-if="empty">{{i18n:group_leave.empty_title}}</p>
+  </div>
+  <div class="ac-scroll contact-detail-panel">
+    <div class="cd-phone">
+      <p class="cd-footnote cd-footnote--center" data-if="!empty">{{i18n:chat.group.leave_owner_confirm}}</p>
+      <p class="cd-footnote cd-footnote--center" data-if="empty">{{i18n:group_leave.empty_note}}</p>
+      <div class="cd-card" data-if="!empty">
+        <button class="cd-row cd-row--member" type="button" data-for="row : rows"
+                data-event-click="group_leave_pick(row.identity)">
+          <span class="cd-row-avatar"
+                data-class-avatar-tone-0="row.tone == 0" data-class-avatar-tone-1="row.tone == 1"
+                data-class-avatar-tone-2="row.tone == 2" data-class-avatar-tone-3="row.tone == 3"
+                data-class-avatar-tone-4="row.tone == 4" data-class-avatar-tone-5="row.tone == 5"
+                data-class-avatar-tone-6="row.tone == 6" data-class-avatar-tone-7="row.tone == 7">
+            <span class="avatar-letter">{{row.letter}}</span>
+          </span>
+          <span class="cd-row-body">
+            <span class="cd-row-text">{{row.name}}</span>
+            <svg class="cd-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+          </span>
+        </button>
+      </div>
+      <div class="cd-card">
+        <button class="cd-row cd-row--danger" type="button" data-event-click="group_leave_dissolve()">
+          <span class="cd-row-body">
+            <span class="cd-row-text" data-if="!empty">{{i18n:group_leave.dissolve}}</span>
+            <span class="cd-row-text" data-if="empty">{{i18n:chat.group.dissolve}}</span>
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

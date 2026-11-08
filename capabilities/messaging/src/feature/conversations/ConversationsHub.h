@@ -24,6 +24,7 @@
 #include "lib/messaging/IGroupRosterStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/GroupInviteGate.h"
+#include "feature/conversations/GroupInviteLinkWorkflow.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/HubParticipant.h"
 #include "feature/conversations/HubPolicyPrefs.h"
@@ -39,6 +40,7 @@
 #include "mesh/types/AddressDisclosure.h"
 #include "domain/attachments/LargeTransferLane.h"
 #include "domain/attachments/OutgoingAttachmentStore.h"
+#include "domain/attachments/StoredAttachments.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/AttachmentSuppressionStore.h"
 #include "lib/messaging/OutgoingAttachment.h"
@@ -70,6 +72,8 @@
 #include "lib/pricing/PaymentPromiseWireCodec.h"
 
 #include <atomic>
+#include <unordered_map>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -210,6 +214,8 @@ public:
   /** A linked device's first look at its account's device list (the bundle's card): kept, and this device signed in. */
   Roe<void> LearnLinkedAccountCard(const std::string& card_json);
   GroupMembershipWorkflow& Groups();
+  /** G021: invite links (making, answering joins, joining); null until messaging is up. */
+  GroupInviteLinkWorkflow* GroupLinksOrNull() { return group_links_.get(); }
   /**
    * k5: the device's network changed (any thread; the OS monitor calls it, tests may too). The mesh
    * re-validates its links and addresses; calls re-anchor / retry their upgrade.
@@ -304,8 +310,23 @@ public:
   /** One file of a confirmed quota recovery (`/files/delete`). */
   Roe<void> DeleteRelayFileById(const std::string& blob_id);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
-  void DrainPendingAttachmentMedia();
-  Roe<void> ClearDownloadedAttachments();
+  /** Me → Storage → Manage storage (AttachmentFetchWorkflow): blocking, call on a worker. */
+  std::vector<StoredAttachmentItem> ListStoredAttachments();
+  uint64_t ReleasableAttachmentBytes(const std::vector<StoredAttachmentRef>& items);
+  /** Runs the whole delete on the calling worker; `done` is called there. */
+  void DeleteLocalAttachments(std::vector<StoredAttachmentRef> items,
+                              std::function<void(StoredAttachmentDeleteResult)> done);
+  /** Bytes the message databases take on disk (0: not known). Blocking: call on a worker. */
+  uint64_t MessageStoreBytes() const;
+  void RequestGridThumbnail(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                            const std::string& mime, uint64_t page_generation);
+  void CancelGridThumbnails(uint64_t page_generation);
+  std::string GridThumbnailPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash);
+  /** Me → Storage: an attachment arrived or went (or a chat made a thumbnail). Called on the UI thread. */
+  void SetOnStoredAttachmentsChanged(std::function<void()> callback);
+  /** Me → Storage: the thumbnail of a grid cell (RequestGridThumbnail) was made. Called on the UI thread. */
+  void SetOnGridThumbnailReady(
+      std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback);
   /**
    * "Delete for everyone": only our own message in a chat or group. Sends the retract, then deletes the
    * message here like "delete for me", then (best effort) the uploaded copy on the relay. Blocking: call
@@ -318,14 +339,16 @@ public:
    */
   void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                            std::function<void(Roe<ThreadMessage>)> on_done,
-                           std::function<bool(uint64_t done, uint64_t total)> progress = {});
+                           std::function<bool(uint64_t done, uint64_t total)> progress = {},
+                           std::shared_ptr<const std::atomic<bool>> cancelled = {});
   /**
    * Send again an attachment whose send failed (also after the app was killed): the same staged ciphertext and
    * key, from the stage it stopped at. When nothing is left to send from, the error says to pick the file again.
    */
   void ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
                              std::function<void(Roe<ThreadMessage>)> on_done,
-                             std::function<bool(uint64_t done, uint64_t total)> progress = {});
+                             std::function<bool(uint64_t done, uint64_t total)> progress = {},
+                             std::shared_ptr<const std::atomic<bool>> cancelled = {});
   /** Attachments of this thread whose send did not finish and whose staged ciphertext is still there. */
   std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
   /** Drop a staged attachment (the person gave up on it). */
@@ -422,8 +445,23 @@ public:
   /** Opens the content index the profile's content store is built on (the app's storage, or a test's). */
   using OpenContentIndex = std::function<std::unique_ptr<IObjectIndex>(const std::string& profile_data_dir)>;
   void SetContentStorage(OpenContentIndex open) { open_content_index_ = std::move(open); }
+  /**
+   * G022: whether this device is in the live call `call_id` right now with `inviter` in it (the app's to say: calls
+   * ride the hub, messaging never names them). A stranger's group invite made there may reach us. Set before
+   * Initialize; any thread.
+   */
+  void SetInLiveCallQuery(GroupInviteGate::InLiveCallFn query) { in_live_call_ = std::move(query); }
+  /** G022: the group invites made during the call `call_id` still waiting here, oldest first (none before unlock). */
+  std::vector<GroupInviteGate::InviteInCall> GroupInvitesInCall(const std::string& call_id) const;
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
+  /**
+   * The device's own link came or went (OS network monitor, any thread, fired on a change and once for the first
+   * report). known=false never fires today; the current value is NetworkOnline(). Set before StartNetworkWatch.
+   */
+  void SetOnNetworkOnlineChanged(std::function<void(bool known, bool online)> callback);
+  /** -1 = no report yet, 0 = offline, 1 = online. */
+  int NetworkOnline() const { return network_online_.load(); }
 
   void BindAgentInbound(AgentInboundPorts ports);
   PeerSigningKeyStore& SigningKeys();
@@ -458,6 +496,8 @@ private:
   void BindCopyAskFamily();
   /** M021 d6: answers another account's ask for our newer card. */
   void BindCardAskFamily();
+  /** G021: join requests, previews, refusals and confirms by invite link, on the control lane. */
+  void BindGroupLinkJoinFamily();
   /** Account signing keys through the directory resolver (promise signatures). */
   AccountSigningKeyLookup AccountSigningKeys() const;
   void InstallOrgBackendClients(const HubSettings& settings);
@@ -557,14 +597,19 @@ private:
   /** The stores encrypted at rest (the profile's data key goes to them). */
   std::vector<IDekConsumer*> at_rest_;
   std::string profile_db_path_;
+  std::function<uint64_t()> message_store_bytes_;
   std::unique_ptr<IGroupRosterStore> group_roster_;
   std::unique_ptr<IThreadLocalPrefsStore> thread_prefs_;
   /** Unread mentions of this account (G015 marker). */
   std::unique_ptr<IThreadMentionsStore> thread_mentions_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
+  GroupInviteGate::InLiveCallFn in_live_call_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipWorkflow> group_membership_;
+  /** The invite links this device made (G021); may be null (a test's stores). */
+  std::unique_ptr<IGroupInviteLinkStore> invite_links_;
+  std::unique_ptr<GroupInviteLinkWorkflow> group_links_;
   /** Account cards this device has checked and kept (profile.db). */
   std::unique_ptr<IPeerCardStore> peer_card_rows_;
   std::unique_ptr<PeerCards> peer_cards_;
@@ -589,6 +634,14 @@ private:
   /** Server-space warnings: once per level and run, and at most one list call a day. */
   BlobSpaceMonitor blob_space_monitor_;
   std::mutex blob_space_mutex_;
+  /**
+   * Contact photo fetches (ScheduleContactIconFetch): one at a time per cache key, and a failed key waits
+   * kIconFetchRetryAfter before the next try. The chats list asks on every refresh; without this every refresh
+   * started a GET per row and duplicates wrote the same cache files at once (2026-11-05 review; Android crash).
+   */
+  std::mutex icon_fetch_mu_;
+  std::unordered_set<std::string> icon_fetch_inflight_;
+  std::unordered_map<std::string, std::chrono::steady_clock::time_point> icon_fetch_failed_at_;
   std::function<void(int percent)> on_blob_space_warning_;
   void CheckBlobSpace(bool after_quota_error);
   struct AttachmentSendJob {
@@ -604,7 +657,8 @@ private:
   Roe<Thread> AttachmentTargetThread(const std::string& thread_id);
   void ResumeAttachmentNow(const std::string& thread_id, const std::string& record_id,
                            std::function<void(Roe<ThreadMessage>)> on_done,
-                           std::function<bool(uint64_t done, uint64_t total)> progress);
+                           std::function<bool(uint64_t done, uint64_t total)> progress,
+                           std::shared_ptr<const std::atomic<bool>> cancelled);
   std::function<bool(uint64_t done, uint64_t total)> LaneAwareProgress(
       std::function<bool(uint64_t done, uint64_t total)> progress);
   void FinishAttachmentSend(const std::shared_ptr<AttachmentSendJob>& job, Roe<ChatAttachmentFields> fields,
@@ -641,7 +695,16 @@ private:
   bool reachability_banner_shown_ = false;
   uint64_t reachability_outbound_since_ms_ = 0;
   std::function<void()> on_reachability_updated_;
+  std::mutex network_online_cb_mu_;
+  std::function<void(bool known, bool online)> on_network_online_changed_;
+  std::atomic<int> network_online_{-1};
   std::function<void()> on_peer_icons_changed_;
+  /** Me → Storage's callbacks: set on the UI thread, read (copied under the lock) where a change is reported. */
+  std::mutex storage_callbacks_mu_;
+  std::function<void()> on_stored_attachments_changed_;
+  std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> on_grid_thumbnail_ready_;
+  /** Guards the workflow's change reports and their UI posts: invalidated at Shutdown and when the hub goes. */
+  pp::Lifetime storage_callbacks_lifetime_;
   std::function<void()> on_messaging_ready_;
   std::function<void()> on_mesh_ready_;
   std::function<void()> on_call_wake_;

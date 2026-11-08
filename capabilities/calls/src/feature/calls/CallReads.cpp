@@ -9,12 +9,14 @@
 namespace pbr {
 
 CallReads::CallReads(const ICallSessionReader& sessions, const ILocalAccount& account, const IThreadCatalog& threads,
-                     GroupMembersFn group_members, const IInitiationBillingBook* billing)
+                     GroupMembersFn group_members, const IInitiationBillingBook* billing,
+                     CallGroupStandingFn group_standing)
     : sessions_(sessions),
       account_(account),
       threads_(threads),
       group_members_(std::move(group_members)),
-      billing_(billing) {}
+      billing_(billing),
+      group_standing_(std::move(group_standing)) {}
 
 Roe<std::string> CallReads::LocalIdentity() const {
   auto account = account_.GetAccountId();
@@ -83,6 +85,17 @@ bool CallReads::InGroup(const std::string& group_id, const std::string& identity
   return members && members->count(identity) > 0;
 }
 
+Roe<std::vector<CallParticipant>> CallReads::Participants(const std::string& call_id) const {
+  return sessions_.ListParticipants(call_id);
+}
+
+std::optional<CallGroupStanding> CallReads::StandingIn(const std::string& group_id, const std::string& account) const {
+  if (!group_standing_ || group_id.empty()) {
+    return std::nullopt;
+  }
+  return group_standing_(group_id, account);
+}
+
 Roe<std::optional<std::string>> CallReads::PeerIdentityForCall(const std::string& call_id) const {
   auto local = LocalIdentity();
   if (!local) {
@@ -95,7 +108,7 @@ Roe<std::optional<std::string>> CallReads::PeerIdentityForCall(const std::string
   return *peer ? std::optional<std::string>{(*peer)->identity} : std::optional<std::string>{};
 }
 
-Roe<std::optional<bool>> CallReads::PeerVideoEnabledForCall(const std::string& call_id) const {
+Roe<std::optional<CallParticipantMedia>> CallReads::PeerMediaForCall(const std::string& call_id) const {
   auto local = LocalIdentity();
   if (!local) {
     return local.error();
@@ -104,7 +117,7 @@ Roe<std::optional<bool>> CallReads::PeerVideoEnabledForCall(const std::string& c
   if (!peer) {
     return peer.error();
   }
-  return *peer ? std::optional<bool>{(*peer)->media.video_enabled} : std::optional<bool>{};
+  return *peer ? std::optional<CallParticipantMedia>{(*peer)->media} : std::optional<CallParticipantMedia>{};
 }
 
 Roe<std::optional<bool>> CallReads::VideoAllowedForCall(const std::string& call_id) const {

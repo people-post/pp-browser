@@ -22,7 +22,7 @@ TEST_F(GroupActionFailureTest, EngineErrorsMapToLocalizedLines) {
             "Only the group owner can do this.");
   EXPECT_EQ(GroupActionFailureText(Error("Only the group owner may remove members")),
             "Only the group owner can do this.");
-  EXPECT_EQ(GroupActionFailureText(Error("Group title required")), "Title required");
+  EXPECT_EQ(GroupActionFailureText(Error("Group title required")), "Enter a name");
   EXPECT_EQ(GroupActionFailureText(Error(group_roster_sync::kGroupDissolvedError)), "This group was dissolved.");
 }
 

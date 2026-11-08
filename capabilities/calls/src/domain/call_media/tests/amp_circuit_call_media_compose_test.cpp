@@ -638,7 +638,11 @@ protected:
       };
       cbs.on_path_changed = [&](CallMediaLinkKind kind) { b_path_ = kind; };
       cbs.on_path_lost = [&] { ++b_lost_; };
-      cbs.on_failed = [&](const CallMediaFailure&) { b_failed_ = true; };
+      cbs.on_failed = [&](const CallMediaFailure& failure) {
+        b_fail_code_ = failure.GetCode();
+        b_failed_ = true;
+      };
+      cbs.on_remote_ended = [&] { ++b_ended_; };
     }));
     CallMediaDirectConnectParams params;
     params.peer_key = harness_->peer_id_b;
@@ -650,7 +654,11 @@ protected:
     cbs.on_connected = [&] { a_connected_ = true; };
     cbs.on_path_changed = [&](CallMediaLinkKind kind) { a_path_ = kind; };
     cbs.on_path_lost = [&] { ++a_lost_; };
-    cbs.on_failed = [&](const CallMediaFailure&) { a_failed_ = true; };
+    cbs.on_failed = [&](const CallMediaFailure& failure) {
+      a_fail_code_ = failure.GetCode();
+      a_failed_ = true;
+    };
+    cbs.on_remote_ended = [&] { ++a_ended_; };
     LegCompletion leg_done;
     leg_ = a_call_->StartLeg(params, std::move(cbs), leg_done.Fn(), 8000);
     ASSERT_TRUE(leg_);
@@ -686,11 +694,23 @@ protected:
   }
 
   /** Pump (with real time passing — retire timers run on the steady clock) until `done`. */
+  /**
+   * Pumps in real time, and the harness's virtual clock with it: Amp's housekeeping (io ticks, link sweeps) runs
+   * on its 50 ms cadence of that clock, and PumpAll alone adds 1 ms a round — on a slow runner (macos-15) the
+   * migration's tick-driven steps did not fit the budget.
+   */
   bool PumpRealUntil(const std::function<bool()>& done, std::chrono::milliseconds budget) {
-    const auto until = std::chrono::steady_clock::now() + budget;
+    auto last = std::chrono::steady_clock::now();
+    const auto until = last + budget;
     while (!done() && std::chrono::steady_clock::now() < until) {
       harness_->PumpAll();
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      const auto now = std::chrono::steady_clock::now();
+      const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last).count();
+      if (elapsed > 1) {
+        harness_->clock->Advance(elapsed - 1); // PumpAll advanced 1
+      }
+      last = now;
     }
     return done();
   }
@@ -710,6 +730,10 @@ protected:
   std::atomic<CallMediaLinkKind> b_path_{CallMediaLinkKind::Unknown};
   std::atomic<int> a_lost_{0};
   std::atomic<int> b_lost_{0};
+  std::atomic<int> a_ended_{0};
+  std::atomic<int> b_ended_{0};
+  std::atomic<CallMediaErr> a_fail_code_{CallMediaErr::Ok};
+  std::atomic<CallMediaErr> b_fail_code_{CallMediaErr::Ok};
 };
 
 TEST_F(CallPathMigrationTest, RelayedCallMovesToDirectWithoutLosingAFrame) {
@@ -963,6 +987,89 @@ TEST_F(CallPathMigrationTest, NoNewPathWithinTheWindowFailsTheCall) {
   ASSERT_TRUE(a_call_->PathState(leg_).reconnecting);
   EXPECT_TRUE(PumpRealUntil([&] { return a_failed_.load() && b_failed_.load(); }, std::chrono::seconds(3)));
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
+  // K014: the call was connected — it dropped (never "connect timed out", never a clean end).
+  EXPECT_EQ(a_fail_code_.load(), CallMediaErr::Dropped);
+  EXPECT_EQ(b_fail_code_.load(), CallMediaErr::Dropped);
+  EXPECT_EQ(a_ended_.load() + b_ended_.load(), 0);
+}
+
+// K014: hanging up says `bye` on the active path ahead of its close: the peer's leg ends as the
+// call's end — no failure, no lost path, no reconnect window.
+TEST_F(CallPathMigrationTest, AHangUpSaysByeAndThePeersLegEndsCleanly) {
+  LiveRelayedCallWithDirectLink(/*with_direct=*/false);
+  for (int i = 0; i < 5; ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  a_call_->HangUpLeg(leg_);
+  harness_->PumpUntil([&] { return b_call_->Phase() == CallMediaSessionPhase::Idle; }, 2000);
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::Idle) << "the peer's leg is gone at once";
+  EXPECT_EQ(b_ended_.load(), 1) << "reported as the peer ending the call";
+  EXPECT_FALSE(b_failed_.load());
+  EXPECT_EQ(b_lost_.load(), 0);
+  EXPECT_FALSE(a_failed_.load()) << "our own hang-up reports nothing";
+}
+
+// K014 (diag 2026-11-06 finding 2): one end lost the path (its peer went quiet) and closed it. That
+// close, with no `bye`, is a lost path at the other end too — not a hang-up: both keep the call, and
+// the offerer's re-anchor (a migrate onto a new link) brings it back.
+TEST_F(CallPathMigrationTest, APathClosedWithoutByeIsLostAtBothEndsAndTheCallComesBack) {
+  LiveRelayedCallWithDirectLink(/*with_direct=*/false);
+  // Heartbeats first: B learns A heartbeats, so A's silence means a dead path to B.
+  (void)PumpRealUntil(
+      [&] {
+        SendNext();
+        return false;
+      },
+      std::chrono::milliseconds(700));
+  a_call_->SetSilencedPathKindForTest(CallMediaLinkKind::Relayed);
+  EXPECT_TRUE(PumpRealUntil(
+      [&] {
+        SendNext();
+        return a_call_->PathState(leg_).reconnecting && b_call_->PathState(b_call_->PrimaryLegId()).reconnecting;
+      },
+      std::chrono::seconds(8)))
+      << "B lost the path to the silence and closed it; A took that close as a lost path";
+  harness_->PumpUntil([&] { return a_lost_.load() > 0 && b_lost_.load() > 0; }, 1000);
+  EXPECT_EQ(a_lost_.load(), 1);
+  EXPECT_EQ(b_lost_.load(), 1);
+  EXPECT_FALSE(a_failed_.load()) << "a bare peer_close is no hang-up";
+  EXPECT_EQ(a_ended_.load(), 0);
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady) << "kept for the reconnect window";
+
+  a_call_->SetSilencedPathKindForTest(CallMediaLinkKind::Unknown);
+  ConnectDirectLink();
+  std::atomic<bool> done{false};
+  Roe<void> result = Error("pending");
+  a_call_->MigrateLegToKind(leg_, CallMediaLinkKind::Direct, [&](Roe<void> r) {
+    result = std::move(r);
+    done = true;
+  });
+  for (int i = 0; i < 400 && !(done.load() && !b_call_->PathState(b_call_->PrimaryLegId()).reconnecting); ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  ASSERT_TRUE(done.load());
+  ASSERT_TRUE(result) << result.error().message;
+  EXPECT_FALSE(a_call_->PathState(leg_).reconnecting);
+  EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).reconnecting);
+  const size_t before = [&] {
+    std::lock_guard lock(mu_);
+    return b_seqs_.size();
+  }();
+  SendNext();
+  harness_->PumpUntil(
+      [&] {
+        std::lock_guard lock(mu_);
+        return b_seqs_.size() > before;
+      },
+      2000);
+  {
+    std::lock_guard lock(mu_);
+    EXPECT_GT(b_seqs_.size(), before) << "media flows again";
+  }
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
 }
 
 // k7: the call's link dies while the peer is still connected on another one — the shape of a

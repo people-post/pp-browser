@@ -2,10 +2,13 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/AiImagePrep.h"
+#include "foundation/platform/ImageThumbnail.h"
+#include "foundation/platform/VideoPosterExtractor.h"
 #include "common/ImageMetadata.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "lib/messaging/AttachmentCache.h"
 
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -164,6 +167,32 @@ Roe<OutgoingAttachment> PrepareOutgoingAttachment(const std::string& path, const
   auto result = PrepareFromLocalFile(picked->path, picked->name, limits, source);
   RemoveImportedPick(*picked); // the private copy of a content:// pick
   return result;
+}
+
+std::string WriteUploadThumbnail(const std::string& picked_path, const OutgoingAttachment& prepared,
+                                 const std::string& scratch_dir) {
+  constexpr int kThumbPx = 144; // 48dp at 3x
+  Roe<std::vector<uint8_t>> jpeg = Error("No thumbnail for this kind of file");
+  if (IsAttachmentImageMime(prepared.mime)) {
+    jpeg = MakeImageThumbnailJpeg(prepared.bytes, kThumbPx);
+  } else if (IsAttachmentVideoMime(prepared.mime)) {
+    jpeg = ExtractVideoPosterJpeg(picked_path, kThumbPx);
+  }
+  if (!jpeg || jpeg->empty() || scratch_dir.empty()) {
+    return {};
+  }
+  std::error_code ec;
+  std::filesystem::create_directories(scratch_dir, ec);
+  static std::atomic<uint64_t> serial{0};
+  const auto path = std::filesystem::path(scratch_dir) / ("upload-thumb-" + std::to_string(++serial) + ".jpg");
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(jpeg->data()), static_cast<std::streamsize>(jpeg->size()));
+  if (!out) {
+    out.close();
+    std::filesystem::remove(path, ec);
+    return {};
+  }
+  return path.string();
 }
 
 } // namespace pbr

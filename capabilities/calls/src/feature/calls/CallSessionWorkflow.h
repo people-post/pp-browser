@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallGuests.h"
 #include "lib/calls/CallSummaryLogic.h"
 #include "lib/calls/CallTypes.h"
 #include "common/Error.h"
@@ -8,6 +9,7 @@
 #include "common/thread/IThreadCatalog.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "lib/calls/ICallSessionStore.h"
+#include "lib/calls/RecentCallsOver.h"
 #include "feature/calls/CallInitiationBilling.h"
 #include "lib/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallSessionEvents.h"
@@ -17,6 +19,7 @@
 #include "feature/calls/CallHopService.h"
 #include "feature/calls/ICallSessionNotes.h"
 
+#include <chrono>
 #include <functional>
 #include <optional>
 #include <set>
@@ -27,6 +30,12 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+/**
+ * K014: after a peer's call-media `bye`, how long its call_leave (control lane: the mesh, else the
+ * relay inbox) may take before the bye stands in for it.
+ */
+inline constexpr std::chrono::milliseconds kPeerByeLeaveGrace{5000};
 
 /**
  * Durable session / roster / invite-leave workflow (V044).
@@ -40,7 +49,7 @@ public:
   struct WirePorts {
     std::function<Roe<std::string>()> local_relay_identity;
     std::function<Roe<void>(const std::string& peer, CallControlType type, const std::string& detail,
-                            const std::string& display)>
+                            const std::string& display, bool urgent)>
         send_direct;
     /** The same signaling to each of `peers`, best-effort, off this loop (V058 2). */
     std::function<void(const std::vector<std::string>& peers, CallControlType type, const std::string& detail,
@@ -68,7 +77,11 @@ public:
     std::function<Roe<CallRosterDetail>(const std::string& call_id)> build_roster_detail;
     /** Who is in a group now; none when unknown. Unset: group membership is not checked. */
     std::function<std::optional<std::set<std::string>>(const std::string& group_id)> group_members;
-    /** What the call chrome shows the user went wrong (e.g. "That call has ended"). */
+    /**
+     * V062: where an account stands in a group (member, may bring / remove guests); none when this device holds no
+     * roster for it (a guest's). Unset: guests are not checked (tools, tests).
+     */
+    CallGroupStandingFn group_standing;
 
     bool IsBound() const { return static_cast<bool>(local_relay_identity); }
   };
@@ -134,10 +147,23 @@ public:
    * run against a store / delivery being torn down.
    */
   void DropFollowUps();
+  /**
+   * K014: `peer` ended the call on its device (its call-media `bye`). Its call_leave on the control
+   * lane ends the call here as usual; if none came within the grace, the bye stands in for it
+   * (ParticipantGone — a remote end, never a failure).
+   */
+  void NotePeerEndedCall(const std::string& call_id, const std::string& peer);
+  /** Test seam: the wait for call_leave after a peer's bye (production kPeerByeLeaveGrace). */
+  void SetPeerByeLeaveGraceForTest(std::chrono::milliseconds grace) { peer_bye_leave_grace_ = grace; }
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
+  /**
+   * V062 3: take the guest `identity` out of the group's call `call_id` (this device's account is the group's owner or
+   * an admin): `call_remove` to everyone else in it, then their leave here (the key rotates without them).
+   */
+  Roe<void> RemoveFromCall(const std::string& call_id, const std::string& identity);
   /**
    * V053: join group call `call_id` this device dropped out of (declined, missed, left): ask everyone
    * it was offered to; one in the call answers with an invite, accepted without ringing. Unanswered
@@ -164,6 +190,8 @@ public:
   struct LocalMedia {
     std::optional<bool> audio_muted;
     std::optional<bool> video_enabled;
+    std::optional<bool> on_hold;
+    std::optional<bool> video_paused;
   };
   Roe<void> PublishLocalMedia(const std::string& call_id, const std::string& local_identity, LocalMedia media);
 
@@ -187,6 +215,8 @@ public:
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
   /** V053: when this device leaves the group call it waits alone in (0: not waiting). */
   int64_t AloneUntilMs(const std::string& call_id) const;
+  /** P017: the calls this device learned are over (the stack publishes them for the phone's call screen). */
+  const RecentCallsOver& CallsOver() const { return calls_over_; }
   /** This device is Joined in the call (not left it). */
   bool StillInCall(const std::string& call_id) const;
 
@@ -222,6 +252,9 @@ public:
   /** V053: someone the call was offered to asks to join — invite them if this device is in it. */
   Roe<void> HandleInboundJoinRequest(const std::string& detail_json, const std::string& sender_identity,
                                      const std::string& local_identity);
+  /** V062 3: someone in the call takes a guest out of it — checked against the group's roster (CallGuests.h). */
+  Roe<void> HandleInboundRemove(const std::string& detail_json, const std::string& sender_identity,
+                                const std::string& local_identity);
   /**
    * V053 / V058 3: `identity` is no longer in the group (`nullopt`: the group ended — nobody is), so no longer in
    * its call: taken as gone (the key rotates without them); this device, if it is the one, leaves.
@@ -237,6 +270,16 @@ private:
   void MarkEveryoneLeft(const std::string& call_id, const std::string& local_identity);
   /** Join requests nobody answered (the call ended); a group call left alone for 5 min. */
   void SweepJoinsAndAloneCalls(const std::string& local_identity, int64_t now);
+  /** V062: this device checks guests in `session`: a group's call, with a standing port bound. */
+  bool ChecksGuests(const CallSession& session) const;
+  /** V062: `account`'s standing in the call's group; none: no roster here (or guests not checked). */
+  std::optional<CallGroupStanding> StandingIn(const CallSession& session, const std::string& account) const;
+  /** V062 2: whether this device may add `invitee` to `session`, and as a guest or not. */
+  CallAddVerdict DecideAdd(const CallSession& session, const std::string& local_identity,
+                           const std::string& invitee) const;
+  /** V062 2: drop the entries of a received roster for `session` that this device does not take (refused guests). */
+  void DropRefusedGuests(const CallSession& session, std::vector<CallRosterEntry>& entries,
+                         const std::string& local_identity) const;
   /** G016: a roster this device holds that lacks `identity`; a roster it does not hold (nullopt) is not "out". */
   bool KnownOutOfGroup(const std::string& group_id, const std::string& identity) const;
   /** `identity` is no longer in the call (left, or out of its group). */
@@ -252,7 +295,7 @@ private:
    * invitee sees the whole invite list (V050), not the part sent before it.
    */
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
-                              const std::vector<std::string>& co_invitees);
+                              const std::vector<std::string>& co_invitees, bool reply_to_join = false);
   /** Remote accepted (CallAccept, or implicitly by its media hello): join, key, media kickoff. */
   Roe<void> ApplyRemoteAccept(const CallAcceptDetail& accept, const std::string& identity,
                               const std::string& local_identity, bool implicit);
@@ -357,6 +400,9 @@ private:
   OwnerOutbox<WorkflowReport> reports_;
   /** Names the follow-ups reported so far; `DropFollowUps` bumps it and the older ones are dropped. */
   uint64_t followup_epoch_ = 0;
+  /** K014: how long a peer's call-media bye waits for its call_leave before standing in for it. */
+  std::chrono::milliseconds peer_bye_leave_grace_ = kPeerByeLeaveGrace;
+  void EndForPeerBye(const workflow_event::PeerByeGraceOver& over);
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;
   bool pending_accept_voice_only_ = false;
@@ -368,6 +414,8 @@ private:
   std::unordered_set<std::string> join_any_retry_sent_;
   /** V053: group calls this device is alone in → since when. */
   std::unordered_map<std::string, int64_t> alone_since_ms_;
+  /** P017: ended here, or their invite read too late to ring / for a call already ended. */
+  RecentCallsOver calls_over_;
   /** The last sweep: a long gap means the app slept, and the alone waits start over. */
   int64_t last_alone_sweep_ms_ = 0;
   /** #381: an epoch this device rotated to, resent to the members a few times (no ack on the wire). */

@@ -155,7 +155,9 @@ CallSessionWorkflow::WirePorts CallDevice::MakeWorkflowWirePorts() {
   CallSessionWorkflow::WirePorts ports;
   ports.local_relay_identity = [this]() { return control_.LocalRelayIdentity(); };
   ports.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
-                             const std::string& display) { return control_.SendDirect(peer, type, detail, display); };
+                             const std::string& display, bool urgent) {
+    return control_.SendDirect(peer, type, detail, display, urgent);
+  };
   ports.send_to_each = [this](const std::vector<std::string>& peers, CallControlType type, const std::string& detail,
                               const std::string& display) { control_.SendToEach(peers, type, detail, display); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
@@ -187,6 +189,7 @@ CallSessionWorkflow::WirePorts CallDevice::MakeWorkflowWirePorts() {
   };
   ports.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
   ports.group_members = delivery_.group_members;
+  ports.group_standing = delivery_.group_standing;
   return ports;
 }
 
@@ -439,6 +442,8 @@ void CallDevice::OnDirectReport(const DirectReport& report) {
           live_calls_.NoteDirectHandedToHop(r.call_id);
         } else if constexpr (std::is_same_v<R, direct_report::ConnectFailed>) {
           live_calls_.NoteMediaFailed(r.call_id);
+        } else if constexpr (std::is_same_v<R, direct_report::PeerEnded>) {
+          workflow_.NotePeerEndedCall(r.call_id, r.peer_identity);
         } else if constexpr (std::is_same_v<R, direct_report::GaveUpReaching>) {
           SendConnectGiveUp(r.call_id, r.peer_identity);
         } else if constexpr (std::is_same_v<R, direct_report::PeerReconnected>) {

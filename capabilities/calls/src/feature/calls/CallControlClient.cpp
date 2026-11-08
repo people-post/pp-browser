@@ -4,6 +4,7 @@
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
+#include "lib/calls/CallMediaKeyExchange.h"
 #include "lib/calls/ICallMediaKeyStore.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -29,7 +30,8 @@ Roe<std::string> CallControlClient::LocalRelayIdentity() const {
 }
 
 Roe<void> CallControlClient::SendDirect(const std::string& peer_identity, const CallControlType type,
-                                        const std::string& detail_json, const std::string& display) {
+                                        const std::string& detail_json, const std::string& display,
+                                        const bool urgent_allowed) {
   if (!delivery_.send_control) {
     return Error("Call delivery not bound");
   }
@@ -49,7 +51,7 @@ Roe<void> CallControlClient::SendDirect(const std::string& peer_identity, const 
     }
   }
   // A call invite rings: the relay wakes the peer as for an incoming call (P012).
-  const bool urgent = type == CallControlType::CallInvite;
+  const bool urgent = urgent_allowed && type == CallControlType::CallInvite;
   if (auto sent = delivery_.send_control(peer_identity, *control, key_init, urgent); !sent) {
     return sent.error();
   }
@@ -216,21 +218,28 @@ Roe<ByteVector> CallControlClient::SessionKeyWith(const std::string& peer_identi
 }
 
 Roe<void> CallControlClient::SendMediaKey(const std::string& call_id, const std::string& peer_identity,
-                                                 const uint32_t media_epoch, const std::string& media_key_id,
-                                                 const ByteVector& key_bytes) {
-  auto session_key = SessionKeyWith(peer_identity);
-  if (!session_key) {
-    return session_key.error();
-  }
-  auto wrapped = ICallMediaKeyStore::WrapKeyB64(*session_key, key_bytes, call_id, media_epoch, media_key_id);
-  if (!wrapped) {
-    return wrapped.error();
-  }
+                                          const uint32_t media_epoch, const std::string& media_key_id,
+                                          const ByteVector& key_bytes) {
   CallMediaKeyDetail key_detail;
   key_detail.call_id = call_id;
   key_detail.media_epoch = media_epoch;
   key_detail.media_key_id = media_key_id;
-  key_detail.wrapped_key_b64 = *wrapped;
+  // The key itself: the lane copy each of the peer's devices reads is sealed in that device's session (M024).
+  key_detail.media_key_b64 = Base64Encode(key_bytes);
+  if (kMediaKeyAccountWrapBridge) {
+    // The old form beside it, for an app before M024: wrapped under the account pair's session. Best effort — a
+    // device after M024 needs only the key itself.
+    auto session_key = SessionKeyWith(peer_identity);
+    auto wrapped = session_key
+                       ? ICallMediaKeyStore::WrapKeyB64(*session_key, key_bytes, call_id, media_epoch, media_key_id)
+                       : Roe<std::string>(session_key.error());
+    if (wrapped) {
+      key_detail.wrapped_key_b64 = *wrapped;
+    } else {
+      log().info << "media key's old form not wrapped call_id=" << call_id << " peer=" << peer_identity << ": "
+                 << wrapped.error().message;
+    }
+  }
   auto key_json = CallControlCodec::EncodeMediaKey(key_detail);
   if (!key_json) {
     return key_json.error();

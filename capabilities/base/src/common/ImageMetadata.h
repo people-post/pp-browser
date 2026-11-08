@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -14,6 +15,13 @@ struct ImageHeaderInfo {
   /** EXIF orientation 1..8 (JPEG only; 1: upright, also when absent). */
   int exif_orientation = 1;
 };
+
+/**
+ * How much of the head of an image file is read for its size and EXIF orientation: JPEG metadata segments can be
+ * large. Everyone who reads the head (ReadImageHeader, the decoder that turns a photo upright) uses this one window,
+ * so the size a bubble is laid out with and the way the picture is drawn never disagree.
+ */
+inline constexpr size_t kImageHeaderReadBytes = 512 * 1024;
 
 /**
  * Size (and, for JPEG, EXIF orientation) of a PNG, JPEG, GIF or WebP file from its first bytes; nullopt for

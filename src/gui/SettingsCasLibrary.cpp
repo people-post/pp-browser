@@ -116,10 +116,10 @@ void SettingsCasLibrary::ShareCasPublicly(const int index) {
 
 void SettingsCasLibrary::Unpublish(const int index) {
   const CasLibraryItemView* item = ItemAt(index);
-  if (!item || !feedback_.show_confirm) {
+  if (!item || !feedback_.show_confirm_destructive) {
     return;
   }
-  feedback_.show_confirm(Tr("settings.storage.library.unpublish_confirm_title"),
+  feedback_.show_confirm_destructive(Tr("settings.storage.library.unpublish_confirm_title"),
                          Tr("settings.storage.library.unpublish_confirm_message"),
                          [this, content_id_hex = item->content_id_hex](const bool ok) {
                            if (ok) {

@@ -1,6 +1,7 @@
 #include "lib/messaging/MentionAlert.h"
 
 #include "lib/delivery/TextSpans.h"
+#include "lib/messaging/GroupPermissions.h"
 
 #include <algorithm>
 #include "common/PbrCompat.h"
@@ -34,8 +35,14 @@ MentionVerdict MentionVerdictFor(const ThreadMessage& message, const std::string
   if (!sender_in || !*sender_in || !we_are_in || !*we_are_in) {
     return MentionVerdict::No;
   }
-  if (text_spans::MentionsEveryone(spans) && message.sender_contact_id == (*metadata)->owner_identity) {
-    return MentionVerdict::Us;
+  if (text_spans::MentionsEveryone(spans)) {
+    // `@everyone` is the owner's and the admins' (G017), by the roles of the signed roster this device holds.
+    auto sender = roster.FindMember(group_id, message.sender_contact_id);
+    const MemberRole role = sender && *sender ? (*sender)->role : MemberRole::Member;
+    const bool owner = message.sender_contact_id == (*metadata)->owner_identity;
+    if (owner || GroupAllows(GroupAction::MentionEveryone, role, (*metadata)->policy.preset)) {
+      return MentionVerdict::Us;
+    }
   }
   return names_us ? MentionVerdict::Us : MentionVerdict::No;
 }

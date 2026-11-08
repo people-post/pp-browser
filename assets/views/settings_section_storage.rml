@@ -1,87 +1,296 @@
-      <div class="settings-section stack">
-        <p class="text muted" data-if="advanced">{{i18n:settings.storage.profile_label}} <span>{{profile_label}}</span></p>
-        <p class="text">{{profile_size_label}}</p>
-        <p class="text muted">{{attachment_cache_size_label}}</p>
-        <button class="settings-toggle-row settings-choice-row row" type="button"
-                data-event-click="on_choose_attachment_download_policy()">
-          <span class="settings-label settings-toggle-label">{{i18n:settings.storage.attachment_policy.label}}</span>
-          <span class="settings-choice-value row">
-            <span class="settings-choice-value-text settings-choice-value-text--wide">{{attachment_download_policy_label}}</span>
-            <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
-          </span>
-        </button>
-        <div class="settings-toggle-row row" data-if="attachment_auto_toggles_visible">
-          <span class="settings-label settings-toggle-label">{{i18n:settings.storage.attachment_policy.on_wifi}}</span>
-          <button class="settings-switch" type="button"
-                  data-class-settings-switch--on="attachment_auto_on_wifi == 'on'"
-                  data-event-click="toggle_attachment_auto_wifi()">
-            <div class="settings-switch-knob"></div>
-          </button>
-        </div>
-        <div class="settings-toggle-row row" data-if="attachment_auto_toggles_visible">
-          <span class="settings-label settings-toggle-label">{{i18n:settings.storage.attachment_policy.on_cellular}}</span>
-          <button class="settings-switch" type="button"
-                  data-class-settings-switch--on="attachment_auto_on_cellular == 'on'"
-                  data-event-click="toggle_attachment_auto_cellular()">
-            <div class="settings-switch-knob"></div>
-          </button>
-        </div>
-        <p class="text muted">{{i18n:settings.storage.attachment_policy.help}}</p>
-        <div class="settings-actions stack">
-          <button class="btn btn-secondary settings-action-bar" type="button"
-                  data-event-click="drain_pending_attachment_media()">{{i18n:settings.storage.pending_media}}</button>
-          <button class="btn btn-secondary settings-action-bar" type="button"
-                  data-event-click="clear_downloaded_attachments()">{{i18n:settings.storage.clear_attachments}}</button>
-        </div>
-        <div class="stack" data-if="advanced">
-        <p class="text">{{i18n:settings.storage.library.title}}</p>
-        <p class="text muted">{{i18n:settings.storage.library.help}}</p>
-        <div class="settings-actions row">
-          <button class="btn btn-secondary" type="button"
-                  data-event-click="set_cas_library_filter('all')">{{i18n:settings.storage.library.filter_all}}</button>
-          <button class="btn btn-secondary" type="button"
-                  data-event-click="set_cas_library_filter('private')">{{i18n:settings.storage.library.filter_private}}</button>
-          <button class="btn btn-secondary" type="button"
-                  data-event-click="set_cas_library_filter('public')">{{i18n:settings.storage.library.filter_public}}</button>
-          <button class="btn btn-secondary" type="button"
-                  data-event-click="set_cas_library_filter('cache')">{{i18n:settings.storage.library.filter_cache}}</button>
-        </div>
-        <p class="text muted" data-if="cas_library_rows.size == 0">{{cas_library_empty_label}}</p>
-        <div data-for="item, item_index : cas_library_rows" class="settings-subsection stack">
-          <div class="row">
-            <p class="text">{{item.title}}</p>
-            <p class="text muted"> · </p>
-            <p class="text muted">{{item.realm_label}}</p>
-            <p class="text muted"> · </p>
-            <p class="text muted">{{item.pin_label}}</p>
+      <div class="settings-section stack storage-section">
+        <!-- Me → Storage: usage, "Manage storage", auto-download (DEV/PLAN-storage-manager.md ①) -->
+        <div class="stack" data-if="storage_page == 'main'">
+          <div class="settings-row storage-card stack">
+            <p class="storage-usage-line" data-if="storage_ready"><span class="storage-usage-big">{{storage_total_label}}</span> {{i18n:settings.storage.manage.used}}</p>
+            <p class="settings-choice-value-text" data-if="!storage_ready">{{i18n:settings.storage.manage.counting}}</p>
+            <div class="storage-bar row" data-if="storage_ready">
+              <div data-for="seg : storage_segments" class="storage-bar-seg" data-style-width="seg.width"
+                   data-class-storage-c-picture="seg.kind == 'picture'"
+                   data-class-storage-c-video="seg.kind == 'video'"
+                   data-class-storage-c-file="seg.kind == 'file'"
+                   data-class-storage-c-chats="seg.kind == 'chats'"
+                   data-class-storage-c-other="seg.kind == 'other'"></div>
+            </div>
+            <div class="storage-legend row" data-if="storage_ready">
+              <div data-for="seg : storage_segments" class="storage-legend-item row">
+                <div class="storage-dot"
+                     data-class-storage-c-picture="seg.kind == 'picture'"
+                     data-class-storage-c-video="seg.kind == 'video'"
+                     data-class-storage-c-file="seg.kind == 'file'"
+                     data-class-storage-c-chats="seg.kind == 'chats'"
+                     data-class-storage-c-other="seg.kind == 'other'"></div>
+                <span class="settings-choice-value-text storage-legend-text">{{seg.label}}</span>
+              </div>
+            </div>
           </div>
-          <p class="text muted">{{item.detail}}</p>
-          <div class="settings-actions row">
-            <button class="btn btn-secondary" type="button" data-if="item.can_share_publicly"
-                    data-event-click="share_cas_publicly(item_index)">{{i18n:settings.storage.library.share_publicly}}</button>
-            <button class="btn btn-secondary" type="button" data-if="item.can_unpublish"
-                    data-event-click="unpublish_cas(item_index)">{{i18n:settings.storage.library.unpublish}}</button>
-            <button class="btn btn-secondary" type="button" data-if="item.can_copy_tip"
-                    data-event-click="copy_cas_tip(item_index)">{{i18n:settings.storage.library.copy_tip}}</button>
+
+          <p class="storage-group-head settings-choice-value-text">{{i18n:settings.storage.manage.group}}</p>
+          <div class="settings-row storage-group stack">
+            <button class="settings-choice-row storage-row row" type="button" data-event-click="storage_open_manage()">
+              <span class="settings-toggle-label storage-row-label">{{i18n:settings.storage.manage.row}}</span>
+              <span class="settings-choice-value-text" data-if="storage_ready">{{storage_manage_label}}</span>
+              <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+            </button>
+          </div>
+          <p class="storage-group-foot settings-choice-value-text">{{i18n:settings.storage.manage.foot}}</p>
+
+          <p class="storage-group-head settings-choice-value-text">{{i18n:settings.storage.attachment_policy.label}}</p>
+          <div class="settings-row storage-group stack">
+            <button class="settings-choice-row settings-radio-row storage-row row" type="button"
+                    data-event-click="choose_attachment_download_policy('smart')">
+              <span class="settings-toggle-label storage-row-label">{{i18n:settings.storage.attachment_policy.smart}}</span>
+              <svg class="settings-radio-check" src="../icons/check.svg" width="16" height="16"
+                   data-if="attachment_download_policy == 'smart'"></svg>
+            </button>
+            <button class="settings-choice-row settings-radio-row storage-row row" type="button"
+                    data-event-click="choose_attachment_download_policy('always_auto')">
+              <span class="settings-toggle-label storage-row-label">{{i18n:settings.storage.attachment_policy.always_auto}}</span>
+              <svg class="settings-radio-check" src="../icons/check.svg" width="16" height="16"
+                   data-if="attachment_download_policy == 'always_auto'"></svg>
+            </button>
+            <div class="settings-toggle-row storage-row storage-row--indent row" data-if="attachment_auto_toggles_visible">
+              <span class="settings-label settings-toggle-label">{{i18n:settings.storage.attachment_policy.on_wifi}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="attachment_auto_on_wifi == 'on'"
+                      data-event-click="toggle_attachment_auto_wifi()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </div>
+            <div class="settings-toggle-row storage-row storage-row--indent row" data-if="attachment_auto_toggles_visible">
+              <span class="settings-label settings-toggle-label">{{i18n:settings.storage.attachment_policy.on_cellular}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="attachment_auto_on_cellular == 'on'"
+                      data-event-click="toggle_attachment_auto_cellular()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </div>
+            <button class="settings-choice-row settings-radio-row storage-row row" type="button"
+                    data-event-click="choose_attachment_download_policy('on_demand')">
+              <span class="settings-toggle-label storage-row-label">{{i18n:settings.storage.attachment_policy.on_demand}}</span>
+              <svg class="settings-radio-check" src="../icons/check.svg" width="16" height="16"
+                   data-if="attachment_download_policy == 'on_demand'"></svg>
+            </button>
+          </div>
+          <p class="storage-group-foot settings-choice-value-text" data-if="attachment_download_policy == 'smart'">{{i18n:settings.storage.manage.policy_foot.smart}}</p>
+          <p class="storage-group-foot settings-choice-value-text" data-if="attachment_download_policy == 'always_auto' && attachment_auto_toggles_visible">{{i18n:settings.storage.manage.policy_foot.always_auto}}</p>
+          <p class="storage-group-foot settings-choice-value-text" data-if="attachment_download_policy == 'always_auto' && !attachment_auto_toggles_visible">{{i18n:settings.storage.manage.policy_foot.always_auto_desktop}}</p>
+          <p class="storage-group-foot settings-choice-value-text" data-if="attachment_download_policy == 'on_demand'">{{i18n:settings.storage.manage.policy_foot.on_demand}}</p>
+
+          <div class="stack" data-if="advanced">
+            <p class="text muted">{{i18n:settings.storage.profile_label}} <span>{{profile_label}}</span></p>
+            <p class="text">{{i18n:settings.storage.library.title}}</p>
+            <p class="text muted">{{i18n:settings.storage.library.help}}</p>
+            <div class="settings-actions row">
+              <button class="btn btn-secondary" type="button"
+                      data-event-click="set_cas_library_filter('all')">{{i18n:settings.storage.library.filter_all}}</button>
+              <button class="btn btn-secondary" type="button"
+                      data-event-click="set_cas_library_filter('private')">{{i18n:settings.storage.library.filter_private}}</button>
+              <button class="btn btn-secondary" type="button"
+                      data-event-click="set_cas_library_filter('public')">{{i18n:settings.storage.library.filter_public}}</button>
+              <button class="btn btn-secondary" type="button"
+                      data-event-click="set_cas_library_filter('cache')">{{i18n:settings.storage.library.filter_cache}}</button>
+            </div>
+            <p class="text muted" data-if="cas_library_rows.size == 0">{{cas_library_empty_label}}</p>
+            <div data-for="item, item_index : cas_library_rows" class="settings-subsection stack">
+              <div class="row">
+                <p class="text">{{item.title}}</p>
+                <p class="text muted"> · </p>
+                <p class="text muted">{{item.realm_label}}</p>
+                <p class="text muted"> · </p>
+                <p class="text muted">{{item.pin_label}}</p>
+              </div>
+              <p class="text muted">{{item.detail}}</p>
+              <div class="settings-actions row">
+                <button class="btn btn-secondary" type="button" data-if="item.can_share_publicly"
+                        data-event-click="share_cas_publicly(item_index)">{{i18n:settings.storage.library.share_publicly}}</button>
+                <button class="btn btn-secondary" type="button" data-if="item.can_unpublish"
+                        data-event-click="unpublish_cas(item_index)">{{i18n:settings.storage.library.unpublish}}</button>
+                <button class="btn btn-secondary" type="button" data-if="item.can_copy_tip"
+                        data-event-click="copy_cas_tip(item_index)">{{i18n:settings.storage.library.copy_tip}}</button>
+              </div>
+            </div>
+            <div class="settings-actions row">
+              <button class="btn btn-secondary" type="button"
+                      data-event-click="fetch_cas_tip()">{{i18n:settings.storage.library.fetch_tip}}</button>
+            </div>
+            <p class="text muted settings-path">{{i18n:settings.storage.config_label}} <span>{{config_dir}}</span></p>
+            <p class="text muted settings-path">{{i18n:settings.storage.data_label}} <span>{{data_dir}}</span></p>
+            <p class="text muted settings-path">{{i18n:settings.storage.profile_data_label}} <span>{{profile_dir}}</span></p>
+          </div>
+          <div class="settings-danger-zone stack">
+            <p class="text muted">
+              {{i18n:settings.storage.reset_warning}}
+            </p>
+            <div class="settings-actions stack">
+              <button class="btn btn-danger-soft settings-action-bar" type="button"
+                      data-event-click="reset_chats()">{{i18n:settings.storage.reset_chats}}</button>
+              <button class="btn btn-danger-soft settings-action-bar" type="button"
+                      data-event-click="reset_profile()">{{i18n:settings.storage.reset_profile}}</button>
+            </div>
           </div>
         </div>
-        <div class="settings-actions row">
-          <button class="btn btn-secondary" type="button"
-                  data-event-click="fetch_cas_tip()">{{i18n:settings.storage.library.fetch_tip}}</button>
+
+        <!-- Manage storage: files over 5 MB, chats by size (②) -->
+        <div class="stack" data-if="storage_page == 'manage'">
+          <div class="storage-nav row">
+            <button class="storage-nav-back row" type="button" data-if="!show_detail" data-event-click="storage_back()">
+              <svg class="storage-nav-back-icon" src="../icons/back.svg" width="14" height="14"></svg>
+              <span class="storage-nav-back-text">{{i18n:settings.storage.title}}</span>
+            </button>
+            <p class="storage-nav-title settings-toggle-label">{{i18n:settings.storage.manage.row}}</p>
+          </div>
+          <div class="settings-row storage-card stack">
+            <p class="storage-usage-line" data-if="storage_ready"><span class="storage-usage-big">{{storage_manage_label}}</span> {{i18n:settings.storage.manage.media_total}}</p>
+            <p class="settings-choice-value-text" data-if="!storage_ready">{{i18n:settings.storage.manage.counting}}</p>
+            <div class="storage-bar row" data-if="storage_ready && !storage_media_empty">
+              <div data-for="seg : storage_manage_segments" class="storage-bar-seg" data-style-width="seg.width"
+                   data-class-storage-c-picture="seg.kind == 'picture'"
+                   data-class-storage-c-video="seg.kind == 'video'"
+                   data-class-storage-c-file="seg.kind == 'file'"></div>
+            </div>
+          </div>
+          <p class="storage-group-foot settings-choice-value-text" data-if="storage_ready && storage_media_empty">{{i18n:settings.storage.manage.empty}}</p>
+          <div class="settings-row storage-group stack" data-if="storage_large_visible">
+            <button class="settings-choice-row storage-row row" type="button" data-event-click="storage_open_large()">
+              <div class="storage-row-label stack">
+                <p class="settings-toggle-label storage-row-title">{{i18n:settings.storage.manage.large}}</p>
+                <p class="settings-choice-value-text storage-row-sub">{{storage_large_count_label}}</p>
+              </div>
+              <span class="settings-choice-value-text">{{storage_large_size_label}}</span>
+              <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+            </button>
+          </div>
+          <p class="storage-group-head settings-choice-value-text" data-if="storage_chats.size > 0">{{i18n:settings.storage.manage.chats_head}}</p>
+          <div class="settings-row storage-group stack" data-if="storage_chats.size > 0">
+            <button data-for="chat, chat_index : storage_chats" class="settings-choice-row storage-row row" type="button"
+                    data-event-click="storage_open_chat(chat_index)">
+              <div class="storage-avatar"
+                   data-class-avatar-tone-0="chat.tone == 0"
+                   data-class-avatar-tone-1="chat.tone == 1"
+                   data-class-avatar-tone-2="chat.tone == 2"
+                   data-class-avatar-tone-3="chat.tone == 3"
+                   data-class-avatar-tone-4="chat.tone == 4"
+                   data-class-avatar-tone-5="chat.tone == 5"
+                   data-class-avatar-tone-6="chat.tone == 6"
+                   data-class-avatar-tone-7="chat.tone == 7">
+                <p class="avatar-letter storage-avatar-letter">{{chat.letter}}</p>
+              </div>
+              <div class="storage-row-label stack">
+                <p class="settings-toggle-label storage-row-title">{{chat.name}}</p>
+                <p class="settings-choice-value-text storage-row-sub">{{chat.summary}}</p>
+              </div>
+              <span class="settings-choice-value-text">{{chat.size}}</span>
+              <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+            </button>
+          </div>
         </div>
-        <p class="text muted settings-path">{{i18n:settings.storage.config_label}} <span>{{config_dir}}</span></p>
-        <p class="text muted settings-path">{{i18n:settings.storage.data_label}} <span>{{data_dir}}</span></p>
-        <p class="text muted settings-path">{{i18n:settings.storage.profile_data_label}} <span>{{profile_dir}}</span></p>
-        </div>
-        <div class="settings-danger-zone stack">
-          <p class="text muted">
-            {{i18n:settings.storage.reset_warning}}
-          </p>
-          <div class="settings-actions stack">
-            <button class="btn btn-danger-soft settings-action-bar" type="button"
-                    data-event-click="reset_chats()">{{i18n:settings.storage.reset_chats}}</button>
-            <button class="btn btn-danger-soft settings-action-bar" type="button"
-                    data-event-click="reset_profile()">{{i18n:settings.storage.reset_profile}}</button>
+
+        <!-- One chat's (or the large files') photos / videos / files (③) -->
+        <div class="stack" data-if="storage_page == 'items'">
+          <div class="storage-nav row">
+            <button class="storage-nav-back row" type="button" data-if="!show_detail" data-event-click="storage_back()">
+              <svg class="storage-nav-back-icon" src="../icons/back.svg" width="14" height="14"></svg>
+              <span class="storage-nav-back-text">{{i18n:settings.storage.manage.back}}</span>
+            </button>
+            <p class="storage-nav-title settings-toggle-label">{{storage_items_title}}</p>
+            <button class="storage-nav-action" type="button" data-if="!storage_selecting && !storage_list_empty"
+                    data-event-click="storage_toggle_select()">{{i18n:settings.storage.manage.select}}</button>
+            <button class="storage-nav-action" type="button" data-if="storage_selecting"
+                    data-event-click="storage_toggle_select()">{{i18n:common.cancel}}</button>
+          </div>
+          <div class="storage-seg row">
+            <button class="storage-seg-tab" type="button"
+                    data-class-storage-seg-tab--on="storage_tab == 'all'"
+                    data-event-click="storage_set_tab('all')">{{storage_tab_all_label}}</button>
+            <button class="storage-seg-tab" type="button"
+                    data-class-storage-seg-tab--on="storage_tab == 'picture'"
+                    data-event-click="storage_set_tab('picture')">{{storage_tab_picture_label}}</button>
+            <button class="storage-seg-tab" type="button"
+                    data-class-storage-seg-tab--on="storage_tab == 'video'"
+                    data-event-click="storage_set_tab('video')">{{storage_tab_video_label}}</button>
+            <button class="storage-seg-tab" type="button"
+                    data-class-storage-seg-tab--on="storage_tab == 'file'"
+                    data-event-click="storage_set_tab('file')">{{storage_tab_file_label}}</button>
+          </div>
+          <!-- Desktop: the selection bar sits above the list (a phone has it pinned at the bottom). -->
+          <div class="settings-row storage-select-bar row" data-if="storage_selecting && !show_detail">
+            <span class="settings-toggle-label storage-row-label">{{storage_selection_label}}</span>
+            <button class="btn btn-danger-soft storage-select-delete" type="button"
+                    data-class-storage-disabled="!storage_has_selection || storage_busy"
+                    data-event-click="storage_delete()">{{i18n:settings.storage.manage.delete}}</button>
+          </div>
+          <p class="storage-group-foot settings-choice-value-text" data-if="storage_list_empty">{{i18n:settings.storage.manage.nothing}}</p>
+          <div class="storage-grid" data-if="storage_cells.size > 0 || (storage_tab == 'all' && storage_files.size > 0)"
+               data-class-storage-busy="storage_busy">
+            <button data-for="cell, cell_index : storage_cells" class="storage-tile" type="button"
+                    data-attr-storage-cell="cell_index"
+                    data-class-storage-tile--video="cell.video"
+                    data-class-storage-tile--picked="cell.picked"
+                    data-event-click="storage_tap_cell(cell_index)">
+              <div class="storage-tile-frame">
+                <img class="storage-tile-image" data-if="cell.thumb != ''" data-attr-src="cell.thumb"/>
+              </div>
+              <svg class="storage-tile-play" data-if="cell.video" src="../icons/play.svg" width="14" height="14"></svg>
+              <span class="storage-tile-size">{{cell.size}}</span>
+              <div class="storage-check storage-tile-check" data-if="storage_selecting"
+                   data-class-storage-check--on="cell.picked">
+                <svg class="storage-check-icon" data-if="cell.picked" src="../icons/check.svg" width="12" height="12"></svg>
+              </div>
+            </button>
+            <button data-for="file, file_index : storage_files" class="storage-tile storage-tile--file" type="button"
+                    data-if="storage_tab == 'all'"
+                    data-attr-storage-file="file_index"
+                    data-class-storage-tile--picked="file.picked"
+                    data-event-click="storage_tap_file(file_index)">
+              <div class="storage-tile-frame storage-file-frame">
+                <img class="storage-file-cover" data-if="file.cover != ''" data-attr-src="file.cover"/>
+                <svg class="storage-file-icon" data-if="file.kind == 'audio' && file.cover == ''" src="../icons/v2/music.svg" width="30" height="30"></svg>
+                <svg class="storage-file-icon" data-if="file.kind != 'audio'" src="../icons/v2/file.svg" width="30" height="30"></svg>
+                <span class="storage-file-ext" data-if="file.kind == 'pdf'">PDF</span>
+                <span class="storage-file-name">{{file.tile_name}}</span>
+              </div>
+              <span class="storage-tile-size">{{file.size}}</span>
+              <div class="storage-check storage-tile-check" data-if="storage_selecting"
+                   data-class-storage-check--on="file.picked">
+                <svg class="storage-check-icon" data-if="file.picked" src="../icons/check.svg" width="12" height="12"></svg>
+              </div>
+            </button>
+          </div>
+          <div class="settings-row storage-group stack" data-if="storage_files.size > 0 && storage_tab != 'all'"
+               data-class-storage-busy="storage_busy">
+            <button data-for="file, file_index : storage_files" class="settings-choice-row storage-row row" type="button"
+                    data-attr-storage-file="file_index"
+                    data-event-click="storage_tap_file(file_index)">
+              <div class="storage-file-type" data-class-storage-file-type--cover="file.cover != ''">
+                <!-- A sound file plays here: play / pause in the badge (over its cover when it has one), the time
+                     under the name, a bar. -->
+                <img class="storage-audio-cover" data-if="file.cover != ''" data-attr-src="file.cover"/>
+                <span class="storage-file-type-text" data-if="!file.audio">{{file.ext}}</span>
+                <svg class="storage-audio-icon" data-if="file.audio && !file.playing" src="../icons/play.svg" width="14" height="14"></svg>
+                <svg class="storage-audio-icon" data-if="file.audio && file.playing" src="../icons/pause.svg" width="14" height="14"></svg>
+              </div>
+              <div class="storage-row-label stack">
+                <p class="settings-toggle-label storage-row-title">{{file.name}}</p>
+                <p class="settings-choice-value-text storage-row-sub">{{file.detail}}</p>
+                <div class="storage-audio-bar" data-if="file.progress != ''">
+                  <div class="storage-audio-fill" data-style-width="file.progress"></div>
+                </div>
+              </div>
+              <span class="settings-choice-value-text">{{file.size}}</span>
+              <div class="storage-check" data-if="storage_selecting" data-class-storage-check--on="file.picked">
+                <svg class="storage-check-icon" data-if="file.picked" src="../icons/check.svg" width="12" height="12"></svg>
+              </div>
+            </button>
+          </div>
+          <button class="btn btn-secondary storage-more" type="button" data-if="storage_has_more"
+                  data-event-click="storage_load_more()">{{i18n:settings.storage.manage.show_more}}</button>
+          <div class="storage-select-spacer" data-if="storage_selecting && show_detail"></div>
+          <div class="settings-row storage-select-bar storage-select-bar--pinned row" data-if="storage_selecting && show_detail">
+            <span class="settings-toggle-label storage-row-label">{{storage_selection_label}}</span>
+            <button class="btn btn-danger-soft storage-select-delete" type="button"
+                    data-class-storage-disabled="!storage_has_selection || storage_busy"
+                    data-event-click="storage_delete()">{{i18n:settings.storage.manage.delete}}</button>
           </div>
         </div>
       </div>

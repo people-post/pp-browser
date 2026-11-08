@@ -243,6 +243,7 @@ Circuit may keep simpler N014-style preference in **nf**. Peer `message_relay` r
 ## N021 — Generic `media_relay` framing; QoS channel types
 
 **Date:** 2026-07-30  
+**Status:** Accepted; the `reliable_ordered` behaviour is **superseded by** [V063](../p2p-av-calls/DECISIONS.md#v063--call-audio-is-best-effort-the-codec-recovers-losses) — the hop implements only `latest_lossy`'s stale drop, and audio rides a best-effort lane. Now: [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos)  
 **Decision:** The `media_relay` hop is a **content-agnostic multiplexed datagram forwarder**. It must not assume audio/video or decode payloads. Clear **framing metadata** enables subscribe, byte accounting, and QoS. Call A/V **policy** (1:1 P2P and SFU) and role→type mapping: [V024](../p2p-av-calls/DECISIONS.md#v024--adaptive-call-media-11-p2p-and-sfu-generic-relay-channels). Future non-call apps may reuse the same hop.
 
 ### Packet / frame header (illustrative)
@@ -582,3 +583,21 @@ Versions and features are a node's own claims, and a dishonest node gains by loo
 - Limiting what a chosen bad node learns: random per-call stream ids (a privacy decision; A029 put it on hold).
 - Per-hop timeouts and leaving an underperforming path, already in call-path-resilience for calls, extended to the other relay uses.
 - An org-signed "verified" mark: the directory or the seeds dial a node before listing it, and attest its reachability and wire version. Clients would weigh it above the node's own claim; nothing above depends on it.
+
+## N033 — Nodes say how busy they are per service; clients act on the level
+
+**Date:** 2026-11-06
+**Status:** Accepted (Hongwei, 2026-11-06: "straightforward indicators … the logic to derive indicators stay in node"). Implemented: pp-cpp-mesh v6.1.0 (`ServiceLoad.h`, `ServiceLoadMonitor`, `PeerLoadBook`; contract docs/PEER_REACH.md § 5a), pp-browser hop ranking and pp-node drain.
+
+**Context:** Stress-test planning found that a client could not tell a full node from a free one: every hop's residual capacity read 1.0 (never set), nothing advertised load, a park refused by a full relay only logged a miss and kept counting it as parked, and "draining" changed only what the directory was told. A full node was not routed around.
+
+**Decision:**
+1. **A node says a level per service, never raw numbers:** `park` (a reservation and its link), `relay` (a 1:1 bridge), `media_relay` (a group call). Levels are actions for the client: `open` (prefer), `busy` (use if nothing better), `full` (send nothing new — refused, `code: "busy"`; what it serves goes on: renewals, members of a call it hosts), `draining` (move off when you can; nothing new).
+2. **The rule lives in the node** (`ServiceLoadMonitor`): the worst of its pressures (0..1) — reservations, bridges, hosted calls, the link table, the pump's busy share and kernel receive drops (pp-cpp-mesh v6.2.0, found by the [stress lab](../../docs/ops/STRESS_LAB.md)), and what pp-node feeds in later (uplink against a budget, queue delay) — with a gap between on and off (busy 0.70 / 0.60, full 0.95 / 0.90). Each count's 1.0 is the operator's capacity (`mesh.capacity`: links, reservations, bridges, group calls — [CONFIGURATION.md](../../docs/ops/CONFIGURATION.md#node-capacity-meshcapacity); pp-cpp-mesh v6.3.0). The same level is what it says and what it admits by: full is exactly when it refuses. The rule can change without an app release; Phase 1 lab measurements set the thresholds per machine.
+3. **In-band, not public:** `"load"` in circuit reserve / bridge and media_relay quote / accept replies, refusals included, and beside it `"loads"`: every service the node serves (2026-11-07, pp-cpp-mesh v6.4.0), so a phone parked on a hop knows its group-call level before planning a call there. Clients mostly choose among nodes they already talk to, so the level is fresh and nothing about a node's load is published (privacy P011). A directory field for org seeds may follow.
+4. **Clients:** keep what nodes said for 2 min (`PeerLoadBook`, apart from the reach record of what the mesh observed). The park does not count a draining relay, nor a full one it holds no reservation on, orders open before busy, and parks elsewhere at once on a full refusal or a draining ack. The bridge walk tries busy relays after open ones, full / draining last. Group-call hop ranking reads the level as residual capacity (open 1, unsaid 0.9, busy 0.4, full / draining 0 — dropped).
+5. **Operators:** pp-node's `POST /control/state` `draining` drains the node itself, heartbeat or not; `pp_service_load` / `pp_service_pressure` on `/metrics`.
+
+**Later:** uplink / queue-delay pressures from pp-node, calibrated in the Phase 1 lab; a directory field for org seeds' levels; spreading load across equal candidates (pick two at random, keep the better) where a client has many.
+**Alternatives rejected:** raw counts or percentages for clients to interpret (each client would read them differently, and the node's bottleneck differs by machine); a public load record in the directory for every node (P011).
+

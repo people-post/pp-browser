@@ -208,15 +208,36 @@ jobs:
           }
           if (-not (Test-Path "$nasmDir\nasm.exe")) { throw "nasm is not installed (Chocolatey and nasm.us both failed)" }
           echo $nasmDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          choco install ccache --no-progress -y
-          if (-not (Get-Command ccache -ErrorAction SilentlyContinue)) {
-            # Same outage, same fallback: without ccache the Windows build takes ~25 min instead of ~3.
-            Write-Host "Chocolatey did not install ccache; downloading from GitHub releases"
-            $cver = "4.10.2"
-            $czip = "$env:RUNNER_TEMP\ccache.zip"
-            Invoke-WebRequest -Uri "https://github.com/ccache/ccache/releases/download/v$cver/ccache-$cver-windows-x86_64.zip" -OutFile $czip
-            Expand-Archive -Path $czip -DestinationPath "$env:RUNNER_TEMP\ccache" -Force
-            echo "$env:RUNNER_TEMP\ccache\ccache-$cver-windows-x86_64" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      # ccache on Windows: a pinned release kept in the Actions cache, so GitHub's release downloads (504 for an
+      # afternoon on 2026-11-08, Chocolatey's package fetching from the same place) are needed once per version,
+      # not per job. It only speeds the build up (~3 min instead of ~25): without it the job builds anyway.
+      - name: Restore ccache tool (Windows)
+        id: ccache-tool
+        if: env.PP_RUN_PLATFORM == 'true' && (runner.os == 'Windows')
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/.tools/ccache
+          key: windows-ccache-tool-4.14.2
+
+      - name: Install ccache (Windows)
+        if: env.PP_RUN_PLATFORM == 'true' && (runner.os == 'Windows')
+        run: |
+          $cver = "4.14.2"
+          $dir = "${{ github.workspace }}\.tools\ccache"
+          if (-not (Test-Path "$dir\ccache.exe")) {
+            try {
+              $czip = "$env:RUNNER_TEMP\ccache.zip"
+              Invoke-WebRequest -Uri "https://github.com/ccache/ccache/releases/download/v$cver/ccache-$cver-windows-x86_64.zip" -OutFile $czip
+              Expand-Archive -Path $czip -DestinationPath "$env:RUNNER_TEMP\ccache" -Force
+              New-Item -ItemType Directory -Force -Path $dir | Out-Null
+              Copy-Item "$env:RUNNER_TEMP\ccache\ccache-$cver-windows-x86_64\*" $dir -Recurse -Force
+            } catch {
+              Write-Warning "ccache $cver could not be downloaded ($_): building without a compiler cache"
+            }
+          }
+          if (Test-Path "$dir\ccache.exe") {
+            echo $dir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
 
       - name: Install macOS deps
@@ -310,13 +331,84 @@ jobs:
         shell: bash
         run: ccache --show-stats || true
 
+  # Downloadable Linux build of every develop / main push (no tests: the build job runs them). Packaged
+  # layout (bin/ + share/pp-browser/assets); no backend URL is compiled in, set PP_BROWSER_ORIGIN at run time.
+  linux-package:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+    env:
+      CCACHE_COMPRESSLEVEL: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache libx11-dev libxext-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev libxfixes-dev libxrender-dev libxss-dev libgl-dev libdbus-1-dev libssl-dev libpulse-dev libasound2-dev
+
+      - name: Ensure ccache directory exists
+        run: |
+          mkdir -p .cache/ccache
+          echo "CCACHE_DIR=${{ github.workspace }}/.cache/ccache" >> "$GITHUB_ENV"
+
+      - name: Restore ccache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-ccache-v2-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-v2-
+
+      - name: Configure
+        run: |
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release \
+            -DPP_BROWSER_COMPILER_CACHE=ON \
+            -DPP_BROWSER_PACKAGED_BUILD=ON
+
+      - name: Build
+        run: cmake --build build --target pp-browser -j 4
+
+      - name: Install and pack
+        run: |
+          # `cmake --install` also runs the dependencies' install rules, whose libraries this job does not build.
+          dest=stage/pp-browser-linux-x86_64
+          install -D -s build/src/app/pp-browser "$dest/bin/pp-browser"
+          mkdir -p "$dest/share/pp-browser"
+          cp -r assets "$dest/share/pp-browser/assets"
+          tar -C stage -czf "pp-browser-linux-x86_64-${GITHUB_SHA::8}.tar.gz" pp-browser-linux-x86_64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: pp-browser-linux-${{ github.ref_name }}
+          path: pp-browser-linux-x86_64-*.tar.gz
+          if-no-files-found: error
+          retention-days: ${{ github.ref_name == 'main' && 90 || 14 }}
+
+      # Retention alone does not cap the count: keep the newest 10 (main) / 5 (develop).
+      - name: Prune old artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ github.ref_name == 'main' && 10 || 5 }}
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=pp-browser-linux-${GITHUB_REF_NAME}&per_page=100" \
+            --jq '.artifacts | sort_by(.created_at) | reverse | .[] | .id' \
+            | tail -n +$((KEEP + 1)) \
+            | while read -r id; do gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"; done
+
   # iOS compile check (no signing, no device): the Apple-only sources (*_Ios.*, Objective-C++ without
   # ARC, the iOS CMake branches) were invisible to CI; two iOS-only compile errors reached develop in
   # October 2026. Mirrors `scripts/platform/ios_build.sh configure-device` + `build`, Ninja tree.
+  # Defaults to hosted macos-15; the repo variable CI_MAC_BUILD_LABELS points it at the self-hosted Mac
+  # (Xcode 27 / iOS 26+ SDK), which the hosted image cannot match for ASC SDK rules.
   ios:
     needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.apple == 'true'
-    runs-on: macos-15
+    # Fork PRs never reach the self-hosted Mac: their code would run on it.
+    if: github.event_name != 'pull_request' || (needs.changes.outputs.apple == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ${{ fromJSON(vars.CI_MAC_BUILD_LABELS || '"macos-15"') }}
     timeout-minutes: 90
     env:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
@@ -375,6 +467,9 @@ jobs:
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
     env:
       # Set before setup-java / Gradle daemon so native builds inherit ccache config.
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
@@ -472,6 +567,19 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          name: android-debug-apk
+          # PR builds keep the shared name and expire fast; develop / main get a per-branch name to prune.
+          name: ${{ github.event_name == 'push' && format('android-debug-apk-{0}', github.ref_name) || 'android-debug-apk' }}
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || github.ref_name == 'main' && 90 || 14 }}
+
+      - name: Prune old APKs
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ github.ref_name == 'main' && 10 || 5 }}
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=android-debug-apk-${GITHUB_REF_NAME}&per_page=100" \
+            --jq '.artifacts | sort_by(.created_at) | reverse | .[] | .id' \
+            | tail -n +$((KEEP + 1)) \
+            | while read -r id; do gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"; done

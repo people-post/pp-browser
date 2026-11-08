@@ -10,6 +10,8 @@
 
 #include <gtest/gtest.h>
 
+#include <map>
+
 #include <filesystem>
 #include <memory>
 
@@ -197,6 +199,34 @@ TEST_P(MessagingStoreContractTest, EndingAGroupIsOneStepAndOnlyOnce) {
   EXPECT_TRUE(rosters().ListPendingSends("group:g").value().empty());
 }
 
+// G018: the changes a group holds unfolded, and who brought each member in (G019).
+TEST_P(MessagingStoreContractTest, AGroupKeepsItsChangesAndWhoBroughtWhom) {
+  GroupMetadata metadata;
+  metadata.group_id = "group:g";
+  metadata.owner_identity = "account:me";
+  ASSERT_TRUE(rosters().UpsertMetadata(metadata));
+  ASSERT_TRUE(rosters().UpsertMember("group:g", {"account:erin", "", MemberRole::Member, 7, "account:bob"}));
+  EXPECT_EQ(rosters().FindMember("group:g", "account:erin").value()->added_by, "account:bob");
+
+  ASSERT_TRUE(rosters().UpsertGroupChange({"group:g", "c2", "{\"b\":1}", 20, false}));
+  ASSERT_TRUE(rosters().UpsertGroupChange({"group:g", "c1", "{\"a\":1}", 10, true}));
+  ASSERT_TRUE(rosters().UpsertGroupChange({"group:h", "c9", "{}", 30, false}));
+  ASSERT_TRUE(rosters().UpsertGroupChange({"group:g", "c2", "{\"b\":2}", 21, true})); // the copy that proves more
+  const std::vector<StoredGroupChange> held = rosters().ListGroupChanges("group:g").value();
+  ASSERT_EQ(held.size(), 2u);
+  EXPECT_EQ(held[0].change_id, "c1") << "by change id";
+  EXPECT_TRUE(held[0].line_shown);
+  EXPECT_EQ(held[1].change_json, "{\"b\":2}");
+  EXPECT_EQ(held[1].received_at, 21);
+  EXPECT_EQ(rosters().ListGroupsWithChanges().value(), (std::vector<std::string>{"group:g", "group:h"}));
+
+  ASSERT_TRUE(rosters().DeleteGroupChanges("group:g", {"c1", "unknown"}));
+  EXPECT_EQ(rosters().ListGroupChanges("group:g").value().size(), 1u);
+  ASSERT_TRUE(rosters().EndGroup("group:g", GroupEnding{.owner_identity = "account:me", .roster_epoch = 2}));
+  EXPECT_TRUE(rosters().ListGroupChanges("group:g").value().empty()) << "an ended group holds none (G016)";
+  EXPECT_EQ(rosters().ListGroupsWithChanges().value(), std::vector<std::string>{"group:h"});
+}
+
 TEST_P(MessagingStoreContractTest, AGroupNumbersOnItsTargetAndAMemberPerPairEpoch) {
   EXPECT_FALSE(rosters().AllocateGroupSenderSeq("group:g")) << "no target yet";
   EXPECT_FALSE(rosters().GetGroupSessionEpoch("group:g"));
@@ -239,11 +269,49 @@ TEST_P(MessagingStoreContractTest, MentionsAreOnePerMessageOldestFirst) {
   ASSERT_TRUE(mentions.Add("t2", "m3", 5));
   EXPECT_EQ(mentions.Oldest("t1").value(), std::optional<std::string>("m1"));
   EXPECT_EQ(mentions.Threads().value(), (std::set<std::string>{"t1", "t2"}));
+  EXPECT_EQ(mentions.Counts().value(), (std::map<std::string, int>{{"t1", 2}, {"t2", 1}})) << "one per message";
   ASSERT_TRUE(mentions.DropMessage("t1", "m1"));
   EXPECT_EQ(mentions.Oldest("t1").value(), std::optional<std::string>("m2"));
   ASSERT_TRUE(mentions.DropThread("t1"));
   EXPECT_EQ(mentions.Threads().value(), std::set<std::string>{"t2"});
+  EXPECT_EQ(mentions.Counts().value(), (std::map<std::string, int>{{"t2", 1}}));
   EXPECT_FALSE(mentions.Oldest("t1").value().has_value());
+}
+
+// Opening a chat reads its mentions; Home's widget still sees the newest one (Latest) until the chat or the message
+// goes.
+TEST_P(MessagingStoreContractTest, ReadMentionsLeaveTheUnreadSetButStayLatest) {
+  IThreadMentionsStore& mentions = stores_->Mentions();
+  EXPECT_FALSE(mentions.Latest().value().has_value());
+  ASSERT_TRUE(mentions.Add("t1", "m1", 10));
+  ASSERT_TRUE(mentions.Add("t1", "m2", 30));
+  ASSERT_TRUE(mentions.Add("t2", "m3", 20));
+  using Mention = IThreadMentionsStore::Mention;
+  EXPECT_EQ(mentions.Latest().value(), (Mention{.thread_id = "t1", .message_id = "m2", .created_at = 30}));
+
+  ASSERT_TRUE(mentions.MarkThreadRead("t1"));
+  EXPECT_EQ(mentions.Threads().value(), std::set<std::string>{"t2"});
+  EXPECT_EQ(mentions.Counts().value(), (std::map<std::string, int>{{"t2", 1}}));
+  EXPECT_FALSE(mentions.Oldest("t1").value().has_value());
+  EXPECT_EQ(mentions.Latest().value(), (Mention{.thread_id = "t1", .message_id = "m2", .created_at = 30}))
+      << "read, still the newest";
+  ASSERT_TRUE(mentions.MarkThreadRead("t1")) << "nothing unread: a no-op";
+  EXPECT_EQ(mentions.Latest().value()->message_id, "m2");
+
+  // A newer mention anywhere takes over; reading it replaces the thread's read one.
+  ASSERT_TRUE(mentions.Add("t1", "m4", 40));
+  ASSERT_TRUE(mentions.MarkThreadRead("t1"));
+  EXPECT_EQ(mentions.Latest().value(), (Mention{.thread_id = "t1", .message_id = "m4", .created_at = 40}));
+
+  // The message deleted: the read row goes and the next newest shows.
+  ASSERT_TRUE(mentions.DropMessage("t1", "m4"));
+  EXPECT_EQ(mentions.Latest().value(), (Mention{.thread_id = "t2", .message_id = "m3", .created_at = 20}));
+  // The chat deleted or cleared: read and unread go.
+  ASSERT_TRUE(mentions.Add("t1", "m5", 50));
+  ASSERT_TRUE(mentions.MarkThreadRead("t1"));
+  ASSERT_TRUE(mentions.DropThread("t1"));
+  ASSERT_TRUE(mentions.DropThread("t2"));
+  EXPECT_FALSE(mentions.Latest().value().has_value());
 }
 
 INSTANTIATE_TEST_SUITE_P(Impls, MessagingStoreContractTest, ::testing::Values(Impl::Sqlite, Impl::Memory),

@@ -77,6 +77,11 @@ TEST_P(CallStoreContractTest, ActiveSessionsAreTheUnendedNewestFirstAndAGroupsAr
   auto group = sessions_->ListSessionsForGroup("group:g", 2).value();
   ASSERT_EQ(group.size(), 2u) << "at most `limit`, any state";
   EXPECT_EQ(group[0].call_id, "call:ended");
+  auto recent = sessions_->ListRecentSessions(3).value();
+  ASSERT_EQ(recent.size(), 3u) << "every call, any state, at most `limit`";
+  EXPECT_EQ(recent[0].call_id, "call:other");
+  EXPECT_EQ(recent[1].call_id, "call:ended");
+  EXPECT_EQ(recent[2].call_id, "call:new");
   EXPECT_EQ(sessions_->LoadSession("call:new").value()->state, CallSessionState::Ringing);
   EXPECT_FALSE(sessions_->LoadSession("call:none").value().has_value());
 }
@@ -95,6 +100,36 @@ TEST_P(CallStoreContractTest, AStayKeepsItsEarliestJoinAndARejoinStartsANewOne) 
   EXPECT_EQ(sessions_->FindParticipant("call:a", "account:bob").value()->joined_at, std::optional<int64_t>(300))
       << "coming back is a new stay (B102)";
   EXPECT_EQ(sessions_->ListParticipants("call:a").value().size(), 1u);
+}
+
+// A member's hold and paused camera are kept like mute and camera, and an update clears them again.
+TEST_P(CallStoreContractTest, AMembersHoldAndPausedCameraAreKeptAndCleared) {
+  CallParticipant bob = Participant(CallParticipantState::Joined, 100);
+  bob.media.on_hold = true;
+  bob.media.video_paused = true;
+  ASSERT_TRUE(sessions_->UpsertParticipant(bob));
+  CallParticipantMedia kept = sessions_->FindParticipant("call:a", "account:bob").value()->media;
+  EXPECT_TRUE(kept.on_hold);
+  EXPECT_TRUE(kept.video_paused);
+  bob.media.on_hold = false;
+  bob.media.video_paused = false;
+  ASSERT_TRUE(sessions_->UpsertParticipant(bob));
+  kept = sessions_->FindParticipant("call:a", "account:bob").value()->media;
+  EXPECT_FALSE(kept.on_hold);
+  EXPECT_FALSE(kept.video_paused);
+}
+
+// V062: who brought a guest is kept once known — a later write of the row without it (an accept, a leave) leaves it.
+TEST_P(CallStoreContractTest, WhoBroughtAGuestIsKeptOnceKnown) {
+  CallParticipant erin = Participant(CallParticipantState::Ringing, std::nullopt);
+  erin.brought_by = "account:alice";
+  ASSERT_TRUE(sessions_->UpsertParticipant(erin));
+  ASSERT_TRUE(sessions_->UpsertParticipant(Participant(CallParticipantState::Joined, 100)));
+  EXPECT_EQ(sessions_->FindParticipant("call:a", "account:bob").value()->brought_by, "account:alice");
+  erin.brought_by = "account:carol";
+  ASSERT_TRUE(sessions_->UpsertParticipant(erin));
+  EXPECT_EQ(sessions_->FindParticipant("call:a", "account:bob").value()->brought_by, "account:carol")
+      << "brought back by someone else";
 }
 
 TEST_P(CallStoreContractTest, TheInvitesToAnswerAreThePendingOnesNewestFirst) {

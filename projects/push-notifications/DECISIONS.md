@@ -16,7 +16,8 @@
 
 **Date:** 2026-07-13  
 **Decision:** Background sync must not unlock the vault. Alerts on + locked → generic “New message”. Alerts off + locked → silent.  
-**Rationale:** Avoids decrypt-without-consent and PIN bypass via wake path.
+**Rationale:** Avoids decrypt-without-consent and PIN bypass via wake path.  
+*Amended 2026-11-06 ([at-rest A013](../at-rest-crypto/DECISIONS.md#a013--pin-grace-window-a-pin-typed-a-short-while-ago-is-not-asked-again)):* a push wake inside the PIN grace window unlocks the vault through the grace entry; it never extends the window. Outside a window (or with it off) the rule above stands.
 
 ## P004 — Desktop local-only v1
 
@@ -88,7 +89,7 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
 ## P013 — CallKit + VoIP push on iPhone (where allowed)
 
 **Date:** 2026-10-23  
-**Status:** Accepted (product owner: alert push first, CallKit later — this is the later)  
+**Status:** Superseded by P015 (CallKit and PushKit were removed; the alert push of P012 is the only iOS call path). Its design returns, amended, in P016 (CallKit again outside China); its waits and bridge rules hold there.  
 **Decision:** iPhone builds with `PP_BROWSER_IOS_CALLKIT` (on by default; off for builds sold in China, where App Store review rejects CallKit) ring incoming calls on CallKit's screen — full screen, on the lock screen too, answered or declined there.
 - **Token:** PushKit gives a VoIP token, registered as a second device (`platform: ios_voip`, `device_id: <ios device id>.voip`). The relay sends that phone's urgent wakes (P012) to it as a VoIP push instead of the alert, and sends it nothing else.
 - **Push:** a VoIP push puts "Incoming call" on the CallKit screen at once, since iOS requires a call for every VoIP push, and wakes the app to sync. The app fills that call in with the ring it finds: caller name, video.
@@ -96,7 +97,8 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
   - A ring goes there when the app is not in the foreground, or when a push's call is waiting.
   - Answered there, it stays there; answered in the app, CallKit lets it go.
   - Declined or hung up there, the presenter declines or leaves.
-  - Answered or declined before its ring was known (the app still waking, or PIN-locked, P003), the choice applies to the ring once it shows, within 60 s.
+  - Answered or declined before its ring was known (the app still waking, or PIN-locked, P003), the choice applies to the ring once it shows, within 60 s counted from the unlock (messaging up) when that came later, and never later than 3 min after the choice. Until then the push's call stays on CallKit's screen (an unanswered one for 75 s, an answered one up to 3 min) and the PIN screen reads "Enter your PIN to connect your call."; after the unlock it waits 20 s (45 s once answered) for its ring, which is then accepted at once.
+  - Audio of a call answered there starts when CallKit activates the audio session (`didActivateAudioSession`), not before: `AudioSession::SetSystemManaged` makes `ActivateForVoip` wait for it (3 s at most) and leaves the release to CallKit.
   - The app's own ringtone stays quiet while CallKit rings.
 - **Privacy:** a generic handle, and no calls in the phone's recents or iCloud call history.
 
@@ -104,3 +106,51 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
 **Depends on:** a call holds the app's work running in the background (P010 amendment, 2026-10-23) — a call answered on the lock screen goes on with the app never opened.  
 **Cross-link:** `CallSystemUi.h`, `CallSystemUi_Ios.mm`, `call_system_ui_bridge_test.cpp`; relay `planPushWakes` (www).
 
+## P014 — Android rings by its own incoming-call notification; a push reaches a stopped app
+
+**Date:** 2026-11-05  
+**Status:** Accepted (product owner: notification permission, push for a killed app, full-screen call notification). **Amended 2026-11-06:** a call answered on the notification stays there while the app takes it — Accept's redraw re-entered the bridge and it forgot the call the instant it was answered; the app's own ring dialog hides while the notification rings; a push's call coming or going refreshes the call screen. Current rule: [CALLS.md § The phone's own call screen](../../docs/architecture/CALLS.md#the-phones-own-call-screen-callkit-androids-call-notification).  
+**Decision:** Android gets the phone's own call screen that P013 gave iPhones, built from what Android has: an incoming-call notification (`PpCallNotifications.java`, native `AndroidCallSystemUi`, the same `ICallSystemUi` and `CallSystemUiBridge`).
+- **Ring:** a ring the app does not show itself (in the background, or a push's call waiting) goes to the notification: the calls channel's ringtone until it is answered or gone (the app's own ringtone stays quiet), full screen on a locked phone, Answer / Decline on it (the system's call style from Android 12; plain buttons before, or where the system refuses it). Decline works on the lock screen; Answer opens the app (Android asks for the phone's unlock first). The app is not shown over the lock screen: the call, and the chats behind it, wait for the phone's unlock.
+- **Push with the app stopped:** the push starts the process, not the app. A `call_wake` rings "Incoming call" (no caller: the push carries none, P001) and its full-screen notification starts the app, which syncs and fills the call in with the ring it finds. This is the push's call of P013, with its timeouts: 75 s unanswered while the app cannot find rings (not running, or PIN-locked, P003), 20 s (45 s answered) once it can, never more than 3 min. Answered or declined before the ring is known, the choice applies to the ring, as on CallKit. With the app running in the background the same "Incoming call" rings at once, and the app is woken to sync; in front, the app rings itself. An `inbox_wake` with the app stopped shows a generic "New message" (P003's wording), unless Me → Show notifications is off; the setting is kept for this beside the app (`ILocalNotifier::SetMessageBannersOn`). The app running, it syncs and shows what came, as before.
+- **Token:** the app asks Firebase for its current token at each start. `onNewToken` alone came once, mostly before the native side was loaded, and was lost.
+- **Permission:** Android 13+ asks for notifications at the app's start, as iOS does.
+
+**Rationale:** on Android a call to a phone whose app was swiped away, or killed by the system, rang nowhere (the wake reached no native code), and a ring in the background was an ordinary banner. A call should ring like a call, and a stopped app is the common case on phones.  
+**Follow-ups:** an in-call foreground service (microphone in the background — done: p2p-av-calls V061); Android's Telecom (`ConnectionService`) for the system's call routing and Bluetooth answer.  
+**Cross-link:** `PpCallNotifications.java`, `AndroidCallSystemUi.cpp`, `CallSystemUiBridge` (`call_system_ui_bridge_test.cpp`), P013.
+
+## P015 — iOS calls ring by the alert only; a tap is matched by `wake_hint`
+
+**Status:** Accepted (supersedes P013). **Superseded by P016 for builds with CallKit** (`PP_BROWSER_IOS_CALLKIT`, the default): this alert path stays for builds without it (China) and for message taps on every build.  
+**Decision:** iOS has no CallKit, PushKit or `ios_voip` binding; the app's own ring takes every call (`ICallSystemUi::Available()` is false there). The sender adds an unsigned `wake_hint` to the send record (an invite's `call_id`, a message's `message_id`), the relay copies it into the push, and a tap records it in `PendingNotificationTap` (newest tap only; 90 s for a call, 180 s for a message). After the PIN unlock and sync, the ring with that `call_id` (a push without a hint: the first ring) or the synced message with that `message_id` opens its chat, once; an expired tap is dropped. While a fresh call tap waits, the PIN screen reads the call text.  
+**Rationale:** CallKit is rejected by some storefronts and would need a second build variant; one alert path for every iOS build is simpler, and an id the relay copies keeps the push free of chat or caller data.  
+**Cross-link:** `docs/contracts/SERVICE_ENDPOINTS.md` (push wake types); `pending_notification_tap_test.cpp`, `P2pRelayWireTest.WakeHintIsARelayHintOutsideTheEnvelope`.
+
+## P016 — CallKit again on iPhone outside China; the VoIP push names its call
+
+**Date:** 2026-11-06
+**Status:** Accepted (Hongwei, 2026-11-06: CallKit again outside China, for the user's experience). Supersedes P015 for builds with CallKit; P015's alert path stays for builds without it and for message taps. Amended by [P017](#p017--a-call-push-too-old-to-ring-and-a-call-already-over-end-on-callkit-at-once) (a push too old to ring, a push's call whose call is over). Current rule: [CALLS.md § The phone's own call screen](../../docs/architecture/CALLS.md#the-phones-own-call-screen-callkit-androids-call-notification).
+**Decision:** iPhone builds with `PP_BROWSER_IOS_CALLKIT` (on by default; `-DPP_BROWSER_IOS_CALLKIT=OFF`, or `PP_BROWSER_IOS_CALLKIT=OFF ./scripts/platform/ios_build.sh …`, for builds sold in China, where App Store review rejects CallKit) ring incoming calls on CallKit's screen again, as P013 had it: full screen on the lock screen, answered or declined there, AirPods / CarPlay answer.
+- **Token:** PushKit's VoIP token is registered as a second device (`platform: ios_voip`, `device_id: <ios device id>.voip`; the `voip` background mode in Info.plist). The relay (app-static-api #237) sends that phone's urgent wakes to it as a VoIP push `{ type: call_wake, wake_hint?: <call id> }` on topic `<bundle id>.voip`, and no call alert; a phone without that binding (a China build) keeps the call alert. Messages still come as alerts.
+- **Linked by call id:** the push's call ("Incoming call", reported at once since iOS requires a call for every VoIP push) remembers the push's `wake_hint` (only `[A-Za-z0-9-]{1,64}` is taken). Only the ring of that call fills it in; another ring gets a CallKit call of its own; a push without a hint (an older relay) takes the first ring, as before. An Answer or Decline on the push's call names that call to `CallSystemUiBridge`, which applies it to that call's ring only (a Decline also when the app is on screen by then). P013's waits stay: 75 s unanswered while locked, 20 s (45 s answered) after the unlock, never more than 3 min; the choice is good 60 s from the later of it and the unlock. A push while another call is on CallKit's screen is ended at once, as before.
+- **Foreground:** a VoIP push with the app open, unlocked and active rings in the app: the push's call is reported and ended at once (`AnsweredElsewhere`, diag `push_in_app`), the app rings the call itself (the invite also comes over the live link). Where a ring goes reads `AppLifecycle::IsVisible()`, cleared only by the background proper: an overlay, CallKit's own screen included, resigns the app active. The app's ring dialog hides while CallKit rings (P014 amendment).
+- **Audio:** answered on CallKit, the call's audio starts at `didActivateAudioSession` (`AudioSession::SetSystemManaged` / `NotifySystemActivation`, via the bridge), until the call leaves CallKit's screen.
+- **Privacy:** a generic handle, no calls in the phone's recents or iCloud call history (P013). Apple's push service sees the push's call id (`wake_hint`), as P015 already accepted for the alert: an id the sender chose, no names or chat.
+
+**Rationale:** the alert (P015) is easy to miss, needs a tap and an unlock before a call can be answered, and cannot be answered from AirPods or a car. A call should ring like a call wherever the storefront allows it; one build switch keeps the China build on P015's path.
+**Cross-link:** `CallSystemUi_Ios.mm`, `CallSystemUiBridge` (`call_system_ui_bridge_test.cpp`), `PushDeviceCoordinator` (`push_device_coordinator_test.cpp`), `AppLifecycle::IsVisible` (`app_lifecycle_visible_test.cpp`); `docs/contracts/SERVICE_ENDPOINTS.md` (`ios_voip`).
+
+## P017 — A call push too old to ring, and a call already over, end on CallKit at once
+
+**Date:** 2026-11-08
+**Status:** Accepted (Hongwei, 2026-11-08, #555 B187). Amends P016's push's call. Current rule: [CALLS.md § The phone's own call screen](../../docs/architecture/CALLS.md#the-phones-own-call-screen-callkit-androids-call-notification); the push field: [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md) (`sent_at`).
+**Decision:** a VoIP push held on the phone for minutes (iOS kept one ~4 min on a flapping VPN) rang CallKit as a live call long after the caller hung up: the push said only `call_wake` and the call id, and iOS requires a CallKit call for every VoIP push at once.
+- **`sent_at`:** the relay stamps a call push (the VoIP push and the call alert) with its send time, Unix ms, a JSON number; unsigned and optional. A VoIP push more than 65 s old by the phone's clock (`kCallPushStaleAfterMs`, `JudgeCallPushAge`) is reported to CallKit and ended at once as `Unanswered`: it does not become the push's call, nothing rings, the app still syncs (diag `push_stale`; every push event carries `age_ms` when known). Missing or garbage `sent_at`, a phone clock behind the relay's, or an age over an hour (a clock error, not a late push) ring as before: a missed call is worse than a ghost one, which the next point ends. 65 s, not the 45 s first proposed: it is the age past which the app drops the invite itself (a ring's 60 s + 5 s slack, `ShouldDropStaleInvite`; the invite's relay age is at least the push's). A push of 45–65 s still has a ring the catch-up will find; ending its call first made that ring show as a second CallKit call.
+- **A push's call goes when its call is over:** the calls layer reports each call it learns is over — ended here, or an invite read too late to ring (`ShouldDropStaleInvite`) or for a call already ended — through the published call state (`RecentCallsOver`); the bridge ends the waiting push's call at once when it names that call (`pending_call_over`), not at its 20 s / 75 s timeout. The control lane's own freshness drop (over 5 min in the relay) is not reported: such an invite's push is older still, and `sent_at` covers it.
+- **Missed calls** need nothing new: the 1:1 caller's `call_summary` (a chat message) already shows "Missed voice call" whether or not the invite rang here, and a group's late invite is recorded as missed (V053).
+- **Diagnostics:** `call.system` is a `DiagLine`, so `diag.log` and Send diagnostics already carry it; the new words and `age_ms` are added to DIAGNOSTICS.md.
+- **CallKit icon:** `iconTemplateImageData` is the app's mark (`packaging/ios/CallKitIcon.png`, a template made from the app icon).
+
+**Rationale:** the push is all CallKit sees before the app can read anything; its age is the one fact that tells a live call from a dead one there. Ending a waiting push's call from what the catch-up learns keeps a late push that still slips through (an older relay, a clock off) to seconds, not a full ring.
+**Cross-link:** `CallSystemUi_Ios.mm`, `CallPushAge` (`call_push_age_test.cpp`), `CallSystemUiBridge::OnCallOver` (`call_system_ui_bridge_test.cpp`), `RecentCallsOver` (`recent_calls_over_test.cpp`), `CallSessionWorkflow` (`call_session_inbound_compose_test.cpp`); relay: `sent_at` (app-static-api).

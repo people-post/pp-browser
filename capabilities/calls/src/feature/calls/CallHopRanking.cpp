@@ -52,6 +52,11 @@ std::vector<mesh::MeshHopCandidate> CallHopRanking::Ranked() const {
       hop.recently_failed = deps_->reach_held_down(hop.peer_id);  // ranking drops it
     }
   }
+  if (deps_->hop_load) {
+    for (mesh::MeshHopCandidate& hop : merged) {
+      hop.residual_capacity = ResidualCapacityForLoad(deps_->hop_load(hop.peer_id)); // full / draining: dropped
+    }
+  }
   auto ranked = RankMediaHopsEscalating(std::move(merged), deps_->prefer_contacts, deps_->local_listen_multiaddr);
   if (const std::string self = LocalPeerId(); !self.empty()) {
     ranked = ExcludeSelfHop(std::move(ranked), self);
@@ -69,6 +74,12 @@ std::vector<mesh::MeshHopCandidate> CallHopRanking::Ranked() const {
                                              return ma ? *ma : std::string{};
                                            });
     FillDialInfo(ranked, true);
+  }
+  if (deps_->hop_load) {
+    // The merge above adds every hop that advertises media_relay: one that said full or draining takes no new call.
+    std::erase_if(ranked, [this](const mesh::MeshHopCandidate& hop) {
+      return mesh::ServiceLoadRefusesNew(deps_->hop_load(hop.peer_id));
+    });
   }
   if (deps_->trusted_relays_only) {  // privacy T4: a relay sees both ends' addresses
     ranked = KeepTrustedRelays(std::move(ranked), TrustedRelayPeerIds(contacts, deps_->bootstrap_peers));

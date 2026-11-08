@@ -4,10 +4,26 @@
 #include "lib/calls/CallMediaSeat.h"
 
 #include <cstdint>
+#include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
 namespace pbr {
+
+/**
+ * G022: an invite to a group someone in this call made "with everyone here", still waiting on this device. The call
+ * shows it as a banner (Join / Not now); messaging holds the invite itself (the product layer hands it over).
+ */
+struct CallGroupInvite {
+  /** The invite's id (its nonce): what Join accepts. */
+  std::string invite_id;
+  std::string group_title;
+  /** Who made the group (an account id). */
+  std::string maker_identity;
+
+  bool operator==(const CallGroupInvite&) const = default;
+};
 
 /**
  * The call surface as the user sees it, decided without a GUI (CallPresenter). The desktop and
@@ -41,6 +57,16 @@ struct CallScreen {
     bool is_local = false;
     bool audio_muted = false;
     bool video_enabled = false;
+    /** V060: the roster row's (the OS has their audio / their camera paused in the background). */
+    bool on_hold = false;
+    bool video_paused = false;
+    /** V062: a guest in the group's call (the tile reads "Guest"), and the member who brought them. */
+    bool guest = false;
+    std::string brought_by;
+    /** V062: this device may take them out of the call ("Remove from call…": the owner and admins, a guest). */
+    bool can_remove = false;
+    /** V062 4: this device may invite them to the group ("Add {name} to the group"). */
+    bool can_add_to_group = false;
   };
 
   Kind kind = Kind::None;
@@ -49,15 +75,36 @@ struct CallScreen {
   std::string ring_call_id;
   std::string caller_identity;
   bool ring_video = false;
-  /** Ringing over a call this device is in: answering ends that one. */
+  /** Ringing over a call this device is in: answering ends that one (`ending`). */
   bool conflict = false;
-  bool conflict_same_peer = false;
-  std::string conflict_peer_identity;
+  /** The call a conflict ring's answer ends (V064): its ring says who with, and "Call back" offers it again. */
+  struct EndingCall {
+    std::string call_id;
+    /** A 1:1 call's peer (a group's: one of its people); empty when not known. */
+    std::string peer_identity;
+    /** The ringing call's caller is that peer (they are calling back). */
+    bool same_peer = false;
+    /** A group's call: the ring names the group (`thread_id`'s title). */
+    bool group = false;
+    std::string thread_id;
+    bool video = false;
+
+    bool operator==(const EndingCall&) const = default;
+  };
+  EndingCall ending;
   /** P001: the caller's initiation offer (0: none) and whether the take-all answer can be offered. */
   int64_t offer_minor = 0;
   bool charge_enabled = false;
   /** Answering: answered with video (the camera comes on once connected). */
   bool answered_video = false;
+  /** Ringing / Answering: a group's call (the phone ring shows the group, and who started it). */
+  bool ring_group = false;
+  /**
+   * V062 5: the ring brings this device in as a guest of a group's call: "Joining shows you to the N people in this
+   * call" (`ring_people`: the others joined in it).
+   */
+  bool ring_guest = false;
+  int ring_people = 0;
 
   // InCall
   std::string call_id;
@@ -67,11 +114,19 @@ struct CallScreen {
   std::vector<Member> members;
   /** The 1:1 peer. */
   std::string peer_identity;
+  /** This device started the call (the session's initiator is the local account); else it answered or joined. */
+  bool placed_here = false;
+  /** This device's chat the call belongs to (the group's, or the DM): local only; the phone page names the group. */
+  std::string thread_id;
   bool muted = false;
   bool show_speaker = false;
   bool speaker_on = false;
   bool show_retry = false;
   bool show_invite = false;
+  /** G022: "Make a group…" (OffersMakeGroup). */
+  bool show_make_group = false;
+  /** G022: the banner of a group made in this call that this device may join (none: no banner). */
+  std::optional<CallGroupInvite> group_invite;
   bool media_connected = false;
   /** Media was live at some point in this call. */
   bool was_connected = false;
@@ -101,6 +156,12 @@ const char* CallScreenStatusName(CallScreen::Status status);
 bool ShowsParticipantCount(const CallScreen& screen);
 
 /**
+ * The labelled Cancel button: an outgoing call still ringing the others (on screen, never live, still "Calling").
+ * Its tap is the End button's (CallPresenter::Leave): with nobody in yet the call ends for everyone it rang.
+ */
+bool ShowsCancelCall(const CallScreen& screen);
+
+/**
  * The camera button: needs a video encoder and a path that allows video — but never hides while the
  * camera is on. The path verdict follows live jitter pressure and flaps (B130: on a relayed cellular
  * call it crossed the limit 5 s in and took the off switch and the flip button away from a camera
@@ -121,6 +182,22 @@ bool EndedWithoutConnecting(const CallScreen& before, const CallScreen& after, b
 
 /** The group call this device waited alone in went away at the end of the wait: it left by itself. */
 bool EndedAlone(const CallScreen& before, const CallScreen& after, int64_t now_ms);
+
+/** G022: "Make a group…" shows once this many are in a call (the local device included). */
+inline constexpr size_t kMakeGroupMinPeople = 3;
+
+/**
+ * G022: the call screen offers "Make a group…": a call not tied to a group (`origin_group_id` empty — it started 1:1
+ * and grew) with kMakeGroupMinPeople or more joined. Any participant may; they become the group's owner.
+ */
+bool OffersMakeGroup(bool tied_to_group, size_t joined);
+
+/**
+ * G022: the banner the call shows: the first of `waiting` (the invites made in this call, oldest first) that the user
+ * has not put off with "Not now" (`not_now`: invite ids). None: no banner.
+ */
+std::optional<CallGroupInvite> PickGroupInviteBanner(const std::vector<CallGroupInvite>& waiting,
+                                                     const std::set<std::string>& not_now);
 
 /** A live group call in which nothing arrives from anyone for this long ends (B97). */
 inline constexpr int64_t kGroupNoMediaEndMs = 30'000;

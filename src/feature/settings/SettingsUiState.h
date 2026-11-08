@@ -97,6 +97,8 @@ struct SettingsUiState {
   std::string reduce_transparency = "off";
   /** UI select value: `on` or `off` — call media diagnostics (V032). */
   std::string call_diagnostics = "off";
+  /** UI select value: `on` or `off` — phone Home shows the 动态 widgets section (default off = minimal AI-first). */
+  std::string home_show_dynamic = "off";
   /** UI select value: `on` or `off` — opt-in crash dump upload. */
   std::string crash_reports_enabled = "off";
   /** Display label for the language row / picker value. */
@@ -105,8 +107,6 @@ struct SettingsUiState {
   std::string config_dir;
   std::string data_dir;
   std::string profile_dir;
-  std::string profile_size_label;
-  std::string attachment_cache_size_label;
   /** all | private | public | cache */
   /** R021 — smart | always_auto | on_demand */
   std::string attachment_download_policy = "smart";
@@ -123,6 +123,18 @@ struct SettingsUiState {
   bool security_can_export_link = false;
   /** The account has a recovery phrase to show (M023; accounts minted before have none). */
   bool security_has_recovery_phrase = false;
+  /** PIN grace window (#21): 0 / 5 / 15 / 60 minutes, and its display label. */
+  int unlock_grace_minutes = 15;
+  std::string unlock_grace_label;
+  /** The "Ask for PIN again after" row shows: an own PIN (not the app default) on a platform with a secure store. */
+  bool security_grace_shown = false;
+  /**
+   * Face / fingerprint unlock (at-rest A014): the switch shows (the device has the sensor, an own PIN is set), its
+   * state, and its title ("Unlock with Face ID / Touch ID / fingerprint").
+   */
+  bool security_biometric_shown = false;
+  bool security_biometric_on = false;
+  std::string security_biometric_label;
   /** G007 — everyone | contacts_only | nobody */
   std::string group_invite_policy = "contacts_only";
   /** Display label for the group-invite picker value. */

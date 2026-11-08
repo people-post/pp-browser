@@ -87,7 +87,13 @@ void WorkingSetController::ShowUnavailable(const std::string& entry_id) {
 }
 
 void WorkingSetController::Open(const std::string& entry_id, const int block_index) {
-  const auto entry_it = by_entry_.find(entry_id);
+  auto entry_it = by_entry_.find(entry_id);
+  if (entry_it == by_entry_.end() && entry_loader_) {
+    if (std::optional<StoredEntry> stored = entry_loader_(entry_id); stored && !stored->candidates.empty()) {
+      (void)RestoreEntry(entry_id, stored->candidates, std::move(stored->chat_actions));
+      entry_it = by_entry_.find(entry_id);
+    }
+  }
   if (entry_it == by_entry_.end()) {
     ShowUnavailable(entry_id);
     return;

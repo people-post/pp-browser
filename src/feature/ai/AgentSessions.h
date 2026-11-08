@@ -93,6 +93,8 @@ public:
   void SetLocalContactsSource(LocalContactsFn source);
   /** Tests / a fake server: the brief_AI stream of every session. */
   void SetBriefAiStream(BriefAiStreamFn fn);
+  /** Every session: how a brief turn renews its key after HTTP 401 (AgentSession::SetBriefKeyPorts). */
+  void SetBriefKeyPorts(BriefKeyPorts ports);
 
   // --- turns -----------------------------------------------------------------------------------
   /** An empty `thread_id` is the Home composer: always Yes unless its own turn runs. */
@@ -138,6 +140,15 @@ public:
   bool StopTurnsAndWait(std::chrono::milliseconds budget);
   /** The thread was cleared or deleted: forget its last brief_AI role, its card and its question asked back. */
   void ForgetThread(const std::string& thread_id);
+  /**
+   * The Home session's conversation starts empty (AgentSession::StartNewConversation): the ask-AI panel's one-off
+   * question (settings "?") goes without earlier context. False while a Home turn runs.
+   */
+  bool StartNewHomeConversation() { return home_->StartNewConversation(); }
+  /** The ask-AI panel's one-off in the Home session: words only (AgentSession::SubmitExplanation). */
+  SubmitOutcome SubmitHomeExplanation(const std::string& text) { return home_->SubmitExplanation(text); }
+  /** The Home session's newest turn (AgentEvent::turn of its events). */
+  uint64_t HomeTurnGeneration() const { return home_->TurnGeneration(); }
 
   /** The Home composer's session; its conversation is the Home transcript. */
   AgentSession& Home() { return *home_; }
@@ -183,6 +194,7 @@ private:
   IThreadStore* thread_store_ = nullptr;
   LocalContactsFn local_contacts_;
   BriefAiStreamFn brief_stream_;
+  BriefKeyPorts brief_key_ports_;
 
   std::unique_ptr<AgentSession> home_;
   std::unique_ptr<AgentSession> spare_;

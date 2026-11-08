@@ -1,4 +1,5 @@
 #include "lib/media/MediaEngine.h"
+#include "lib/media/MediaThreadName.h"
 
 #include "mesh/types/MediaChannel.h"
 #include "lib/media/VideoLevelProfile.h"
@@ -85,10 +86,12 @@ constexpr int kPlayoutMaxSlotsPerTick = 3;
 // fits a phone's thin uplink, about 600 kbit/s, with room to spare (lab video_*_narrow, 2026-11-03).
 constexpr int kVideoFps = 15;
 /**
- * The camera runs at twice that: every frame goes to the self-view, and a frame is encoded when a send interval has
- * passed (every second one at 30 fps). Sending is unchanged; the self-view is not held to the send rate.
+ * The camera runs at the send rate: every frame it gives is sent and shown in the self-view. A faster camera (30 fps
+ * was tried) costs the sensor's power and converts frames only the self-view shows; at 15 fps, drawn as each frame
+ * comes (IMediaView::SetOnVideoFrame), the self-view is smooth enough. A frame is still encoded only once a send
+ * interval has passed, so a camera that gives more than it was asked for is sent at the send rate.
  */
-constexpr int kCameraFps = 30;
+constexpr int kCameraFps = kVideoFps;
 /** A frame is encoded once this long has passed since the last encode (a send period, less camera jitter). */
 constexpr auto kEncodeInterval = std::chrono::milliseconds(1000 / kVideoFps - 8);
 /** How often a session waiting for a busy or stuck device asks the arbiter again (L016). */
@@ -233,6 +236,9 @@ void JoinThreadWatched(std::thread& thread, const char* context, const char* nam
  */
 struct MediaEngine::Shared {
   std::mutex mu;
+  /** SetOnVideoFrame's callback (every session's frames); called after a frame is published, outside its lock. */
+  std::mutex on_video_frame_mu;
+  std::function<void()> on_video_frame;
   /** Under `mu`; a session takes a copy when it starts. */
   std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   /** Where devices come from: `own_devices` (constructor) or `test_devices` (skip-open); under `mu`. */
@@ -241,6 +247,8 @@ struct MediaEngine::Shared {
   std::unique_ptr<MediaDeviceArbiter> test_devices;
   /** Test fixtures: skip SDL mic/camera open (silence TX only). */
   std::atomic<bool> skip_device_open_for_test{false};
+  /** Under `mu`; a session takes a copy when it starts. Test-only: sees each outgoing audio frame before encode. */
+  std::function<void(const int16_t*, size_t)> encode_input_for_test;
   /** Under `mu`; a session takes a copy when it starts. */
   HardwareLimits limits;
   std::atomic<int64_t> last_uplink_bps{0};
@@ -285,6 +293,7 @@ struct MediaEngine::Impl {
     devices = shared->devices;
     // Every hardware codec runs behind a guard: a call into it waits at most its budget (L016).
     limits = shared->limits;
+    encode_input_for_test = shared->encode_input_for_test;
     make_video_codec = [make = shared->make_video_codec, budgets = limits.codecs](VideoCodecRole role) {
       return MakeGuardedVideoCodec(make, role, budgets);
     };
@@ -313,6 +322,7 @@ struct MediaEngine::Impl {
 
   bool packet_mode = false;
   std::atomic<bool>& skip_device_open_for_test;
+  std::function<void(const int16_t*, size_t)> encode_input_for_test;
   /** Shared so SoftMigrate can replace the callback while capture/video still invoke the old one. */
   std::shared_ptr<PacketSendFn> packet_send;
   /**
@@ -438,6 +448,16 @@ struct MediaEngine::Impl {
    * UpdateCameraDisplayRotation (per-frame rotation).
    */
   std::atomic<int> camera_display_rotation{0};
+  void NotifyVideoFrame() {
+    std::function<void()> cb;
+    {
+      std::lock_guard lock(shared->on_video_frame_mu);
+      cb = shared->on_video_frame;
+    }
+    if (cb) {
+      cb();
+    }
+  }
   /** Facing the next camera open asks for: front at each session's start, turned over by FlipCamera. */
   std::atomic<bool> camera_prefer_front{true};
   /** FlipCamera asked the video thread to release the open camera and take the other facing. */
@@ -466,6 +486,14 @@ struct MediaEngine::Impl {
   MediaThreadStageTracker video_stage;
   /** Capture worker closes+reopens SDL devices (speaker route / SoftMigrate). */
   std::atomic<bool> audio_reopen_requested{false};
+  /**
+   * Set with audio_reopen_requested when the OS gave the session back (interruption end): that reopen tries the
+   * voice-processing pair again even when separate leases are held — a reopen that ran during the interruption fell
+   * back to them, and nothing else ever went back (B174).
+   */
+  std::atomic<bool> audio_reopen_retry_voice{false};
+  /** This session had a voice-processing pair (capture thread only): only then is it worth trying again. */
+  bool voice_duplex_opened = false;
   /**
    * A device the spec wants was refused (held by another holder, or the audio devices are not
    * responding): the capture thread takes the leases again when the arbiter can grant them (L016).
@@ -519,11 +547,14 @@ struct MediaEngine::Impl {
       MirrorRgbaInPlace(copy);
     }
     PremultiplyRgbaInPlace(copy.rgba);
-    std::lock_guard lock(video_frame_mutex);
-    local_video_frame.width = copy.width;
-    local_video_frame.height = copy.height;
-    local_video_frame.rgba = std::move(copy.rgba);
-    local_video_frame.seq = ++local_video_seq;
+    {
+      std::lock_guard lock(video_frame_mutex);
+      local_video_frame.width = copy.width;
+      local_video_frame.height = copy.height;
+      local_video_frame.rgba = std::move(copy.rgba);
+      local_video_frame.seq = ++local_video_seq;
+    }
+    NotifyVideoFrame();
   }
 
   /**
@@ -571,6 +602,11 @@ struct MediaEngine::Impl {
   }
 
   void PublishRemoteFrame(uint32_t stream_id, VideoFrameRgba&& frame) {
+    StoreRemoteFrame(stream_id, std::move(frame));
+    NotifyVideoFrame();
+  }
+
+  void StoreRemoteFrame(uint32_t stream_id, VideoFrameRgba&& frame) {
     PremultiplyRgbaInPlace(frame.rgba);
     const int64_t now = util::NowUnixMs();
     std::lock_guard lock(video_frame_mutex);
@@ -833,6 +869,7 @@ struct MediaEngine::Impl {
     playout_running = true;
     playout_stage.Set(MediaThreadStage::Idle);
     playout_thread = std::thread([this]() {
+      SetMediaThreadName("pp.playout");
       std::vector<int16_t> mix(static_cast<size_t>(kFrameSamples), 0);
       // Diagnostics: longest gap between playout wake-ups, logged with voice-processing stats.
       auto last_tick = std::chrono::steady_clock::now();
@@ -989,7 +1026,7 @@ struct MediaEngine::Impl {
    * Device open / close itself runs on the arbiter's device thread and may block on the OS mic
    * permission prompt — never on UI, relay IO or the mesh host thread.
    */
-  Roe<void> EnsureAudioLeases(bool reopen) {
+  Roe<void> EnsureAudioLeases(bool reopen, bool retry_voice = false) {
     SessionSpec want_spec;
     std::string holder;
     std::unique_ptr<AudioDeviceLease> mic;
@@ -1000,6 +1037,11 @@ struct MediaEngine::Impl {
       holder = session_id;
       // A voice-processing pair is one unit: re-acquired whole on reopen (never Reopen'd per half).
       if (reopen && ((mic_lease && mic_lease->IsVoiceDuplex()) || (speaker_lease && speaker_lease->IsVoiceDuplex()))) {
+        CloseAudioDevicesLocked();
+      } else if (reopen && retry_voice && voice_duplex_opened && (mic_lease || speaker_lease) &&
+                 !vpio_disabled_for_session.load(std::memory_order_acquire)) {
+        // Fell back to separate devices while voice processing was meant to run: let them go so the pair is tried.
+        EngineLog().info << "audio reopen: trying voice processing again";
         CloseAudioDevicesLocked();
       }
       mic = std::move(mic_lease);
@@ -1115,6 +1157,7 @@ struct MediaEngine::Impl {
       return;
     }
     EngineLog().info << "audio_io=vpio (voice processing: echo cancellation on)";
+    voice_duplex_opened = true;
     mic = std::move(pair->mic);
     speaker = std::move(pair->speaker);
   }
@@ -1123,9 +1166,12 @@ struct MediaEngine::Impl {
     // Precondition: capture_thread not joinable (JoinCaptureThread outside media mutex).
     capture_running = true;
     audio_reopen_requested.store(false, std::memory_order_relaxed);
+    audio_reopen_retry_voice.store(false, std::memory_order_relaxed);
+    voice_duplex_opened = false;
     vpio_disabled_for_session.store(false, std::memory_order_relaxed);
     capture_stage.Set(MediaThreadStage::Idle);
     capture_thread = std::thread([this]() {
+      SetMediaThreadName("pp.capture");
       // Device open (and OS mic prompts) stay on this worker so the session's user (a call's accept)
       // can finish its signaling without freezing UI or the mesh.
       capture_stage.Set(MediaThreadStage::OpenDevices);
@@ -1155,8 +1201,19 @@ struct MediaEngine::Impl {
       // back to SDL for the rest of this call. Capture-thread-local.
       int vpio_starve_reopens = 0;
       int64_t last_audio_retry_ms = 0;
+      bool reopen_deferred_logged = false;  // once per interruption
+      bool interruption_silence_logged = false;  // once per interruption: a stuck flag shows in the log
       while (capture_running.load()) {
-        if (audio_waiting.load(std::memory_order_acquire)) {
+        // While the OS has the session (a phone call, or a route change that interrupted it) every open fails and
+        // drops what is held: nothing opens until the interruption's end, whose handler asks for the reopen (B174).
+        const bool os_has_session = AudioSession::IsInterrupted();
+        if (!os_has_session) {
+          reopen_deferred_logged = false;
+        } else if (!reopen_deferred_logged && audio_reopen_requested.load(std::memory_order_acquire)) {
+          reopen_deferred_logged = true;
+          EngineLog().info << "audio reopen deferred: the OS has the audio session";
+        }
+        if (!os_has_session && audio_waiting.load(std::memory_order_acquire)) {
           const int64_t now = util::NowUnixMs();
           if (now - last_audio_retry_ms >= kDeviceRetryPoll.count() && WaitedAudioGrantable()) {
             last_audio_retry_ms = now;
@@ -1177,16 +1234,22 @@ struct MediaEngine::Impl {
             last_audio_retry_ms = now;
           }
         }
-        if (audio_reopen_requested.exchange(false, std::memory_order_acq_rel)) {
+        if (!os_has_session && audio_reopen_requested.exchange(false, std::memory_order_acq_rel)) {
           // Android speakerphone / SoftMigrate can leave AudioRecord feeding zeros until reopen.
           // Android settle (Moto safety ramp) is the backend's ReopenSettle, on the device thread.
           pending.clear();
           SDL_Log("MediaEngine: reopening audio devices (speaker route / SoftMigrate)");
           capture_stage.Set(MediaThreadStage::OpenDevices);
-          if (auto audio = EnsureAudioLeases(/*reopen=*/true); !audio) {
+          const bool retry_voice = audio_reopen_retry_voice.exchange(false, std::memory_order_acq_rel);
+          if (auto audio = EnsureAudioLeases(/*reopen=*/true, retry_voice); !audio) {
             SDL_Log("MediaEngine: audio reopen failed: %s", audio.error().message.c_str());
           } else if (!capture_available) {
             SDL_Log("MediaEngine: audio reopen — no capture device; sending silence");
+          }
+          // A reopen meant to bring voice processing back that did not get the pair (it failed, or the pair would
+          // not open just then) keeps that intent for the next reopen; asking for one is left to the starvation path.
+          if (retry_voice && !(mic_lease && mic_lease->IsVoiceDuplex())) {
+            audio_reopen_retry_voice.store(true, std::memory_order_release);
           }
           last_capture_pcm_ms = util::NowUnixMs();
           capture_opened_ms = last_capture_pcm_ms;
@@ -1247,16 +1310,19 @@ struct MediaEngine::Impl {
                 SmoothLevel(local_input_level, 0.f);
               }
               const int64_t reopen_after_ms = CaptureStarvePolicy::ReopenAfterMs(vpio_on, now - capture_opened_ms);
-              if (now - last_capture_pcm_ms >= reopen_after_ms && now - last_capture_starve_reopen_ms > 2000) {
+              // Interrupted (a phone call holds the mic): the starve is the OS's, not the device's — no reopen, and
+              // none counted toward giving up voice processing; the interruption's end reopens.
+              if (AudioSession::IsInterrupted()) {
                 last_capture_starve_reopen_ms = now;
-                SDL_Log("MediaEngine: capture starved %lldms — requesting reopen",
-                        static_cast<long long>(now - last_capture_pcm_ms));
+              } else if (now - last_capture_pcm_ms >= reopen_after_ms && now - last_capture_starve_reopen_ms > 2000) {
+                last_capture_starve_reopen_ms = now;
+                EngineLog().info << "capture starved " << (now - last_capture_pcm_ms) << "ms — requesting reopen";
                 audio_reopen_requested.store(true, std::memory_order_release);
                 // I3: persistent voice-processing capture starvation (not just a starved SDL
                 // device) falls back to SDL for the rest of this call after 3 reopens in a row.
                 if (vpio_on && ++vpio_starve_reopens >= CaptureStarvePolicy::kVoiceMaxReopens) {
                   vpio_disabled_for_session.store(true, std::memory_order_release);
-                  SDL_Log("MediaEngine: vpio capture starved 3x — using SDL for this call");
+                  EngineLog().info << "vpio capture starved 3x — using SDL for this call";
                 }
               }
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
@@ -1277,10 +1343,21 @@ struct MediaEngine::Impl {
           } else {
             std::copy_n(pending.begin(), kPacketSamples, pcm.begin());
             pending.erase(pending.begin(), pending.begin() + kPacketSamples);
-            if (muted.load(std::memory_order_relaxed)) {
+            // While the OS has the session (another phone call), the mic may still hear that call: send silence
+            // whatever the mute flag says — the UI's mute follows later and may be late (V060).
+            if (muted.load(std::memory_order_relaxed) || AudioSession::IsInterrupted()) {
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
               SmoothLevel(local_input_level, 0.f);
+              if (AudioSession::IsInterrupted()) {
+                if (!interruption_silence_logged) {
+                  EngineLog().info << "outgoing audio is silence: the OS has the audio session";
+                  interruption_silence_logged = true;
+                }
+              } else {
+                interruption_silence_logged = false;
+              }
             } else {
+              interruption_silence_logged = false;
 #ifdef PP_BROWSER_CALL_DENOISE
               if (!vpio_on) {  // voice processing suppresses noise itself
                 denoise.Process(pcm.data(), pcm.size());
@@ -1323,6 +1400,9 @@ struct MediaEngine::Impl {
           applied_audio_bps = want_bps;
         }
         capture_stage.Set(MediaThreadStage::Encode);
+        if (encode_input_for_test) {
+          encode_input_for_test(pcm.data(), static_cast<size_t>(kPacketSamples));
+        }
         const int encoded =
             opus_encode(enc, pcm.data(), kPacketSamples, opus_buf.data(), static_cast<int>(opus_buf.size()));
         if (encoded <= 0) {
@@ -1358,7 +1438,10 @@ struct MediaEngine::Impl {
   void StartVideoLoop() {
     video_running = true;
     video_stage.Set(MediaThreadStage::Idle);
-    video_thread = std::thread([this]() { RunVideoLoop(); });
+    video_thread = std::thread([this]() {
+      SetMediaThreadName("pp.video");
+      RunVideoLoop();
+    });
   }
 
   void JoinVideoThread(const char* context) {
@@ -1990,9 +2073,19 @@ MediaEngine::MediaEngine(MediaDeviceArbiter& devices)
   shared_->own_devices = &devices;
   shared_->devices = &devices;
   impl_ = std::make_shared<Impl>(shared_);
+  // An OS audio interruption (iOS) stops the audio units; reopen once the session is back (a no-op unless capturing).
+  // That reopen also tries voice processing again: a reopen racing the interruption may have fallen back to SDL.
+  interruption_handler_ = AudioSession::AddInterruptionEndedHandler([this]() {
+    const std::shared_ptr<Impl> impl = Session();
+    if (impl->capture_running.load(std::memory_order_relaxed)) {
+      impl->audio_reopen_retry_voice.store(true, std::memory_order_release);
+      impl->audio_reopen_requested.store(true, std::memory_order_release);
+    }
+  });
 }
 
 MediaEngine::~MediaEngine() {
+  AudioSession::RemoveInterruptionEndedHandler(interruption_handler_);
   Stop();
   // Product quit / owner teardown: give retired sessions a moment; one stuck on a device is left to
   // the process exit (it keeps what it uses alive).
@@ -2050,6 +2143,14 @@ void MediaEngine::SetVideoCodecFactoryForTest(std::function<std::unique_ptr<IVid
   {
     std::lock_guard lock(shared_->mu);
     shared_->make_video_codec = std::move(make);
+  }
+  RefreshIdleSession();
+}
+
+void MediaEngine::SetEncodeInputObserverForTest(std::function<void(const int16_t* pcm, size_t samples)> observe) {
+  {
+    std::lock_guard lock(shared_->mu);
+    shared_->encode_input_for_test = std::move(observe);
   }
   RefreshIdleSession();
 }
@@ -2571,6 +2672,11 @@ float MediaEngine::LocalInputLevel() const {
 float MediaEngine::RemoteOutputLevel() const {
   const std::shared_ptr<Impl> impl = Session();
   return impl->remote_output_level.load(std::memory_order_relaxed);
+}
+
+void MediaEngine::SetOnVideoFrame(std::function<void()> on_frame) {
+  std::lock_guard lock(shared_->on_video_frame_mu);
+  shared_->on_video_frame = std::move(on_frame);
 }
 
 bool MediaEngine::CopyLocalVideoFrame(VideoTileFrame& out) const {

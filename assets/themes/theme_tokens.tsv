@@ -1,0 +1,115 @@
+token	light	dark	note
+bg	#ffffff	#000000	§2.1
+bg-grouped	#f2f2f7	#000000	§2.1
+bg-card	#ffffff	#1c1c1e	§2.1
+bg-card-2	#f2f2f7	#2c2c2e	§2.1
+bg-chrome	#f9f9f9f0	#1c1c1ef0	§2.1 94%
+bg-chrome-blur	#f9f9f9b2	#1c1c1eb2	§2.1/§6 70% + blur 20dp
+scrim	#00000066	#00000099	§2.1
+label	#000000	#ffffff	§2.2
+label-2	#3c3c4399	#ebebf599	§2.2
+label-3	#3c3c434c	#ebebf54c	§2.2
+label-on-accent	#ffffff	#ffffff	§2.2
+link	#007aff	#0a84ff	§2.2 = accent
+accent	#007aff	#0a84ff	§2.3
+accent-tint	#007aff1f	#0a84ff2e	§2.3
+secure	#30b0c7	#40c8e0	§2.3
+secure-tint	#30b0c71f	#40c8e02e	§2.3
+success	#34c759	#30d158	§2.3
+danger	#ff3b30	#ff453a	§2.3
+warn	#ff9500	#ff9f0a	§2.3
+mention	#5856d6	#5e5ce6	§2.3
+mention-row	#fff4e0	#3a2e14	§2.3 (left bar = warn)
+separator	#3c3c434a	#54545899	§2.4
+bg-field	#f4f4f8	#242426	extra: the phone Chats search box, lighter than bg-card-2
+fill	#78788033	#7878805c	§2.4
+fill-2	#7878801f	#7878803d	§2.4
+gray	#8e8e93	#8e8e93	§2.4
+chat-bg	#ededed	#111111	§2.5
+bubble-out	#2e8dff	#2f92ff	§2.5
+bubble-in	#ffffff	#2c2c2e	§2.5
+quote-bar	#007aff	#0a84ff	§2.5 = accent
+quote-bg-out	#ffffff33	#ffffff33	§2.5 (also in-bubble chip / selection)
+quote-bg-in	#0000000f	#0000000f	§2.5 quote block in a received bubble (black 6%)
+bubble-out-meta	#ffffffd9	#ffffffd9	§2.5 in-bubble time in a sent bubble (white 85%)
+tab-badge	#ff3b30	#ff453a	§2.5 = danger
+avatar-0	#007aff	#007aff	§2.6
+avatar-1	#34c759	#34c759	§2.6
+avatar-2	#ff9500	#ff9500	§2.6
+avatar-3	#ff2d55	#ff2d55	§2.6
+avatar-4	#af52de	#af52de	§2.6
+avatar-5	#30b0c7	#30b0c7	§2.6
+avatar-6	#5856d6	#5856d6	§2.6
+avatar-7	#a2845e	#a2845e	§2.6
+shadow	#00000026	#00000026	§6 (only allowed shadows: jump-to-latest, call pip)
+x-scrollbar	#00000040	#ffffff50	extra: scrollbar slider
+x-bubble-out-muted	#a3b3f9	#4b4fa6	extra: muted call row inside own bubble
+x-toast-bg	#1f2937	#374151	extra: toast (spec §4.7 drops toast)
+x-hit-scrim	#00000001	#00000001	extra: near-invisible click-catcher
+x-photo-scrim	#000000e6	#000000e6	extra: picture preview scrim (black 90%)
+x-photo-spinner	#ffffff	#ffffff	extra: picture preview spinner arc
+x-photo-spinner-track	#ffffff55	#ffffff55	extra: picture preview spinner ring
+x-traffic-glyph	#4d0000	#4d0000	extra: macOS traffic-light glyph
+x-video-stage	#111827	#111827	extra: call video stage
+x-video-remote	#1f2937	#1f2937	extra: call remote video backdrop
+x-accept-pulse-ring	#16a34a33	#22c55e33	extra: accept-button pulse ring
+x-jump-tint	#ffc40038	#ffc40038	extra: row a jump landed on (develop #482), see-through amber
+x-dock-fade	#ffffff00	#25252700	extra: Home dock fade start (the dock colour at 0%)
+x-dock	#ffffff	#252527	extra: Home ask-AI dock fill
+x-bar	#f2f2f7	#1a1a1c	extra: phone bars (top bars, tab bar, composer), solid: Transparency off or under a dialog; Home's tab bar
+x-bar-blur	#f2f2f7c7	#1a1a1cc7	extra: phone bars frosted (78%, with blur 20): Transparency on
+x-bar-fade	#f2f2f700	#1a1a1c00	extra: the bar colour at 0%, where a bar's fade ends
+x-scan-dim	#00000080	#00000080	extra: phone scanner, the camera dimmed round the frame (black 50%)
+x-scan-ink	#ffffff	#ffffff	extra: phone scanner, corner marks, hint, back and button labels over the camera
+x-scan-tool	#ffffff33	#ffffff33	extra: phone scanner, round button and Try again fill (white 20%)
+x-mascot-ink	#ffffff	#ffffff	extra: AI dot and assistant-look previews, full-colour mascot SVGs drawn untinted (image-color white)
+x-call-bg	#101214	#101214	extra: phone call page, always dark (mockups 06-Call*)
+x-call-ink	#ffffff	#ffffff	extra: phone call page text and icons
+x-call-ink-2	#ffffffb3	#ffffffb3	extra: phone call page secondary text (white 70%)
+x-call-ink-3	#ffffff73	#ffffff73	extra: phone call page steps not reached yet (white 45%)
+x-call-ink-dim	#ffffff40	#ffffff40	extra: phone call page signal bars off, step rings (white 25%)
+x-call-path-dot	#ffffff59	#ffffff59	extra: phone call page connecting line dots (white 35%)
+x-call-btn	#ffffff33	#ffffff33	extra: phone call page round buttons (white 20%)
+x-call-btn-on	#ffffff	#ffffff	extra: phone call page round button switched on
+x-call-btn-on-ink	#000000	#000000	extra: phone call page icon on a switched-on button
+x-call-btn-2	#ffffff29	#ffffff29	extra: phone call page secondary pill button (white 16%)
+x-call-chip	#ffffff24	#ffffff24	extra: phone call page signal bar and pill icon fill (white 14%)
+x-call-tile	#ffffff17	#ffffff17	extra: phone call page group tile (white 9%)
+x-call-bar	#3a3a3cd1	#3a3a3cd1	extra: phone call page button bar (82%)
+x-call-notice	#3a3a3ceb	#3a3a3ceb	extra: phone call page top pill (92%)
+x-call-notice-warn	#784800eb	#784800eb	extra: phone call page top pill, the line got worse
+x-call-reconnect-ok	#1f6f4aeb	#1f6f4aeb	extra: phone call page reconnect capsule, restored (92%)
+x-call-timer-dim	#ffffff80	#ffffff80	extra: phone call page timer while reconnecting (white 50%)
+x-call-label-bg	#00000073	#00000073	extra: phone call page name tag on a tile (black 45%)
+x-call-video-top	#0000004d	#0000004d	extra: phone call page shade behind the top row over video (black 30%)
+x-call-dim	#0000008c	#0000008c	extra: phone call page own camera dimmed under the step card (black 55%)
+x-call-card	#161819f7	#161819f7	extra: phone call page step card
+x-call-result	#30d1582e	#30d1582e	extra: phone call page just-connected line fill (success 18%)
+x-call-secure	#40c8e0	#40c8e0	extra: phone call page secure (dark value: the page is always dark)
+x-call-ok	#30d158	#30d158	extra: phone call page success (dark value)
+x-call-warn	#ff9f0a	#ff9f0a	extra: phone call page warn (dark value)
+x-call-danger	#ff453a	#ff453a	extra: phone call page danger (dark value)
+x-call-end	#ff3b30	#ff3b30	extra: phone call page hang-up and decline buttons
+x-call-accept	#34c759	#34c759	extra: phone call page answer buttons
+x-call-speaking	#34c759	#34c759	extra: phone call page ring around whoever is speaking
+x-call-accent	#0a84ff	#0a84ff	extra: phone call page primary pill (Try again)
+x-card-3	-	#3a3a3c	extra: dark only, a field inside a card inside a raised (dark) sheet
+x-name-indigo	-	#7d7aff	extra: dark only, indigo group sender name (avatar-6 is 2.5:1 on a dark bubble)
+x-name-0	#0071ed	#007aff	extra: group sender name 0; light is darker than avatar-0 (>= 4.5:1 on the incoming bubble), dark is avatar-0
+x-name-1	#24883d	#34c759	extra: group sender name 1; light is darker than avatar-1 (>= 4.5:1 on the incoming bubble), dark is avatar-1
+x-name-2	#ad6500	#ff9500	extra: group sender name 2; light is darker than avatar-2 (>= 4.5:1 on the incoming bubble), dark is avatar-2
+x-name-3	#ec002d	#ff2d55	extra: group sender name 3; light is darker than avatar-3 (>= 4.5:1 on the incoming bubble), dark is avatar-3
+x-name-4	#aa47dc	#af52de	extra: group sender name 4; light is darker than avatar-4 (>= 4.5:1 on the incoming bubble), dark is avatar-4
+x-name-5	#238192	#30b0c7	extra: group sender name 5; light is darker than avatar-5 (>= 4.5:1 on the incoming bubble), dark is avatar-5
+x-name-7	#8c7251	#a2845e	extra: group sender name 7; light is darker than avatar-7 (>= 4.5:1 on the incoming bubble), dark is avatar-7
+x-home-empty-mentions	#ff95001f	#ff9f0a2e	extra: Home Mentions widget with nothing to show, tint behind the big faint @ (Kenneth 2026-11-05 原话 88, option C)
+x-home-empty-new-people	#af52de1f	#af52de2e	extra: Home New people widget with nothing to show, tint behind the big faint person-plus
+x-storage-other	#c7c7cc	#48484a	extra: Me -> Storage usage bar, the "other" segment
+x-storage-video-tint	#af52de40	#af52de4d	extra: Me -> Storage manager, a video tile before its frame loads
+x-on-media	#ffffff	#ffffff	extra: text and ticks drawn over a picture (storage manager tiles), white in both themes
+x-on-media-shadow	#00000099	#00000099	extra: shadow under text over a picture
+x-home-empty-calls	#34c7591f	#30d1582e	extra: Home Calls widget with nothing to show, tint behind the faint phone
+x-drawer-edge	#0000001f	#00000066	extra: the AI drawer's right edge, where its 12dp shadow starts
+x-drawer-edge-fade	#00000000	#00000000	extra: where the AI drawer's edge shadow ends (clear)
+x-circle-top	#ffffff	#3c3c40	extra: phone top-bar circle, top of its gradient
+x-circle-bottom	#e2e2e9	#2a2a2d	extra: phone top-bar circle, bottom of its gradient

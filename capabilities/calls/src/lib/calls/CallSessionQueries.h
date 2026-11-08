@@ -51,6 +51,13 @@ bool IsStickyInitiator(const ICallSessionReader& sessions, const std::string& ca
 bool SenderIsInCall(const ICallSessionReader& sessions, const std::string& call_id, const std::string& sender_identity);
 
 /**
+ * G022: this device (`local_identity`) is in the live call `call_id` right now and so is `identity`: the call has not
+ * ended and both are Joined. What lets someone met in the call invite us to the group they made there.
+ */
+bool InLiveCallWith(const ICallSessionReader& sessions, const std::string& local_identity, const std::string& call_id,
+                    const std::string& identity);
+
+/**
  * V053: `sender_identity` may ask to join group call `call_id`: the call was offered to them (they
  * hold a participant row, in any state — declined, missed, left too) or they started it.
  */
@@ -87,6 +94,31 @@ std::optional<CallSession> OurUnansweredGroupCall(const ICallSessionReader& sess
  */
 bool PeerStillToAnswerOurCall(const ICallSessionReader& sessions, const std::string& call_id, const std::string& peer,
                               const std::string& local_identity);
+
+/** One call of this device's history as the phone Home's Calls widget shows it. */
+struct RecentCall {
+  std::string call_id;
+  /** This device's chat for the call (the DM or the group's); empty when the call has none. */
+  std::string thread_id;
+  bool video = false;
+  bool group = false;
+  /** Someone else started it. */
+  bool incoming = false;
+  /** Incoming, over, and never answered here (not joined, not declined). */
+  bool missed = false;
+  /** When it started, unix ms. */
+  int64_t at_ms = 0;
+
+  bool operator==(const RecentCall&) const = default;
+};
+
+/**
+ * The newest calls (live broadcasts left out), newest first, at most `limit`. A call is missed when someone else
+ * started it, it has ended, and `local_identity`'s own row never joined and did not decline (still invited or
+ * ringing when it ended, or marked missed). Empty on a store error.
+ */
+std::vector<RecentCall> RecentCalls(const ICallSessionReader& sessions, const std::string& local_identity,
+                                    size_t limit);
 
 } // namespace call_queries
 

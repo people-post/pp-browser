@@ -1,6 +1,7 @@
 #include "foundation/platform/PlatformHooks.h"
 
 #include "foundation/platform/AndroidAssetLocator.h"
+#include "foundation/platform/AndroidCallSystemUi.h"
 #include "foundation/platform/AndroidLocalNotifier.h"
 #include "foundation/platform/AndroidPathProvider.h"
 #include "foundation/platform/AndroidPushDeviceRegistrar.h"
@@ -72,6 +73,7 @@ void PlatformHooks::Register() {
     g_packaged_file_interface = &file_interface;
     ILocalNotifier::SetInstance(&AndroidNotifier());
     IPushDeviceRegistrar::SetInstance(&AndroidPushRegistrar());
+    InstallAndroidCallSystemUi();
 #endif
   } else if (kind == PlatformKind::IOS) {
     static IosPathProvider paths;
@@ -83,6 +85,7 @@ void PlatformHooks::Register() {
     g_packaged_file_interface = &file_interface;
     IPushDeviceRegistrar::SetInstance(&IosPushRegistrar());
     ILocalNotifier::SetInstance(&IosNotifier());
+    LinkIosApnsAppDelegate();
 #endif
   } else {
     ILocalNotifier::SetInstance(&DesktopNotifier());

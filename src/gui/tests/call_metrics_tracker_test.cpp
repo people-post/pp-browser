@@ -115,6 +115,32 @@ TEST(CallMetricsTrackerTest, CalleeConnectedCallReportsSetupAndSummary) {
   EXPECT_FALSE(t.Tracking());
 }
 
+// The summary says what the screen drew: new self-view and peer frames per second while each tile showed
+// (a camera at 30 fps drawn at a few fps looked choppy while rx_fps read fine).
+TEST(CallMetricsTrackerTest, SummaryCountsTheVideoFramesTheScreenShowed) {
+  Tracker t;
+  int64_t now = 1000;
+  t.NoteOutbound(kCall, true, now, Vitals());
+  t.NoteMedia(kCall, Media(true), now += 100, Vitals());
+  // 2 s of frames every 1/30 s: a new self-view frame each one, a new peer frame every other one.
+  for (int i = 0; i < 60; ++i) {
+    now += 33;
+    t.NoteVideoFrame(/*self_on=*/true, /*self_new=*/true, /*peer_on=*/true, /*peer_new=*/i % 2 == 0, now);
+  }
+  // The self-view off for a while: that time is not its.
+  for (int i = 0; i < 30; ++i) {
+    now += 33;
+    t.NoteVideoFrame(false, false, true, false, now);
+  }
+  const std::string summary = EndCall(t, now);
+  std::smatch self_fps;
+  ASSERT_TRUE(std::regex_search(summary, self_fps, std::regex(R"(shown_self_fps=([0-9.]+))"))) << summary;
+  EXPECT_NEAR(std::stod(self_fps[1]), 30.0, 1.0) << summary;
+  std::smatch peer_fps;
+  ASSERT_TRUE(std::regex_search(summary, peer_fps, std::regex(R"(shown_peer_fps=([0-9.]+))"))) << summary;
+  EXPECT_NEAR(std::stod(peer_fps[1]), 10.0, 1.0) << summary; // 30 new in ~3 s of the peer tile
+}
+
 TEST(CallMetricsTrackerTest, UnansweredRingIsMissedAndDeclineIsDeclined) {
   Tracker t;
   int64_t now = 1000;

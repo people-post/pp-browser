@@ -10,6 +10,9 @@ import android.net.Uri;
 public final class PpLinkBridge {
     /** The scheme of a contact invite (lib/messaging/ContactLocator.h kContactLocatorPrefix). */
     static final String CONTACT_INVITE_SCHEME = "pp-browser-contact-v1";
+    /** A group's invite link, pp://join/… (lib/messaging/GroupInviteLink.h kGroupJoinLinkPrefix). */
+    static final String GROUP_JOIN_SCHEME = "pp";
+    static final String GROUP_JOIN_HOST = "join";
 
     private PpLinkBridge() {}
 
@@ -21,7 +24,12 @@ public final class PpLinkBridge {
             return;
         }
         final Uri data = intent.getData();
-        if (data == null || !CONTACT_INVITE_SCHEME.equals(data.getScheme())) {
+        if (data == null) {
+            return;
+        }
+        final boolean contact = CONTACT_INVITE_SCHEME.equals(data.getScheme());
+        final boolean group = GROUP_JOIN_SCHEME.equals(data.getScheme()) && GROUP_JOIN_HOST.equals(data.getHost());
+        if (!contact && !group) {
             return;
         }
         try {

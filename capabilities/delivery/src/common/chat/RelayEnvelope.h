@@ -12,7 +12,7 @@
 
 namespace pbr {
 
-/** 2: the sender and recipient devices, signed by the sending device (M021; sign v3). */
+/** 2: the sender and recipient devices, signed by the sending device (M021; sign v4: no group id, G018). */
 inline constexpr int kRelayEnvelopeVersion = 2;
 
 /** Route kinds: a 1:1 chat stream, a group stream, the control lane (signaling off the stream). */
@@ -24,10 +24,13 @@ inline constexpr const char* kRelayRouteGroup = "group";
  */
 inline constexpr const char* kRelayRouteControl = "control";
 
+/**
+ * Where the message goes: its kind, and a direct chat's channel. A group copy names no group (group-chat G018
+ * item 7): its group id is inside the copy's ciphertext, so the relay cannot tell which group it is for.
+ */
 struct RelayRoute {
   std::string kind = "direct";
   ThreadChannel channel = ThreadChannel::E2e;
-  std::optional<std::string> group_id;
 };
 
 /**
@@ -106,6 +109,16 @@ struct RelayEnvelope {
    * signature): wake the recipient at once, the platform's most urgent push (an incoming call's).
    */
   bool relay_wake_urgent = false;
+  /**
+   * A hint to the relay, like `relay_wake_urgent`: keep the record only this many seconds (`ttl_s`); 0 keeps it
+   * the relay's full retention window. The control lane sets it — its messages are useless after an hour.
+   */
+  int64_t relay_ttl_s = 0;
+  /**
+   * A hint to the relay, like `relay_wake_urgent`: an opaque id (<= 64 chars of [A-Za-z0-9-]) the relay copies
+   * into the push so a tap can be matched to this message or call after sync. Empty: none.
+   */
+  std::string relay_wake_hint;
 };
 
 /**
@@ -174,7 +187,25 @@ struct RelayWireSendRecord {
   std::string signature;
   /** P012 — wake the recipient at once, the most urgent push (unsigned hint; older relays ignore it). */
   bool urgent = false;
+  /** Keep the record only this many seconds (`ttl_s`; unsigned hint; 0: the relay's retention window). */
+  int64_t ttl_s = 0;
+  /** Opaque id the relay copies into the push (`wake_hint`; unsigned hint; empty: none). */
+  std::string wake_hint;
 };
+
+/** `id` if it is a valid wake hint (1..64 chars of [A-Za-z0-9-]), else empty; the relay drops anything else. */
+inline std::string SanitizeWakeHint(const std::string& id) {
+  if (id.empty() || id.size() > 64) {
+    return {};
+  }
+  for (const char c : id) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-';
+    if (!ok) {
+      return {};
+    }
+  }
+  return id;
+}
 
 /** Opaque relay HTTP wire record returned on poll/history. */
 struct RelayInboundRecord {

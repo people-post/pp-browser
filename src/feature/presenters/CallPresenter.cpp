@@ -1,5 +1,6 @@
 #include "feature/presenters/CallPresenter.h"
 
+#include "lib/calls/CallGuests.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/media/AudioSession.h"
@@ -11,6 +12,7 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <map>
 #include <utility>
 #include "common/PbrCompat.h"
 
@@ -152,6 +154,11 @@ void CallPresenter::Refresh() {
     return;
   }
   const bool remote_ended = TakeStackNotices(*backend);
+  for (const std::string& call_id : backend->TakeCallsOver()) {
+    if (callbacks_.on_call_over) {
+      callbacks_.on_call_over(call_id);
+    }
+  }
 
   // Attach-wait / connect health are SM-owned timers (V039 pm3); the state steps a refresh owes
   // the owner (invite seen / cleared, orphan leave) happen in Settle.
@@ -183,6 +190,8 @@ void CallPresenter::Refresh() {
     next.caller_identity = top.inviter_identity;
     next.ring_video = top.video_allowed;
     next.answered_video = auto_camera_pending_ && auto_camera_call_id_ == top.call_id;
+    next.ring_group = top.origin_group_id.has_value();
+    next.thread_id = top.origin_thread_id.value_or(std::string{});
     // The Connecting bar has the speaker button too: the choice may be made before media opens.
     next.show_speaker = AudioSession::SupportsSpeakerToggle();
     next.speaker_on = AudioSession::IsSpeakerphoneOn();
@@ -193,18 +202,18 @@ void CallPresenter::Refresh() {
     next.ring_call_id = top.call_id;
     next.caller_identity = top.inviter_identity;
     next.ring_video = top.video_allowed;
+    next.ring_group = top.origin_group_id.has_value();
+    next.thread_id = top.origin_thread_id.value_or(std::string{});
     if (surface.active) {
       // Ringing over the call we are in: answering ends that one. Keep it as the active call.
-      next.conflict = true;
       active_call_id_ = surface.active->call_id;
-      if (auto peer = backend->PeerIdentityForCall(surface.active->call_id); peer && peer->has_value()) {
-        next.conflict_peer_identity = **peer;
-        next.conflict_same_peer = **peer == top.inviter_identity;
-      }
+      FillEndingCall(next, *backend, *surface.active);
     }
     // P001: waive / take-all when the inviter offered a positive initiation amount.
     next.offer_minor = backend->InitiationOfferMinorForPeer(top.inviter_identity);
     next.charge_enabled = next.offer_minor > 0 && PaymentRailsAvailable();
+    FillGuestRing(next, *backend, top,
+                  ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{}) : std::string{});
     if (!ring_shown_) {
       ring_shown_ = true;
       log().warning << "ring shown call_id=" << top.call_id;
@@ -217,6 +226,8 @@ void CallPresenter::Refresh() {
       CallNotice notice;
       notice.kind = CallNotice::Kind::IncomingCall;
       notice.identity = top.inviter_identity;
+      notice.conflict = next.conflict; // V064: its alert says answering ends the call we are in
+      notice.ending = next.ending;
       Notify(notice);
     }
   } else if (surface.kind == SurfaceKind::InCall) {
@@ -225,9 +236,18 @@ void CallPresenter::Refresh() {
     ring_shown_ = false;
     FillInCall(next, *backend, surface.active->call_id, surface.active->video_allowed,
                surface.active->origin_group_id.has_value());
+    next.thread_id = surface.active->origin_thread_id.value_or(std::string{});
+    const std::string local = ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{})
+                                                          : std::string{};
+    next.placed_here = !local.empty() && surface.active->initiator_identity == local;
+    active_group_id_ = surface.active->origin_group_id.value_or(std::string{});
+    FillGuests(next, *backend, active_group_id_, local);
+    AnnounceGuests(next);
+    FillGroupInvite(next, util::NowUnixMs());
     MaybeAutoCamera(*backend, next);
   } else {
     active_call_id_.clear();
+    active_group_id_.clear();
     ringing_call_id_.clear();
     ring_shown_ = false;
   }
@@ -248,12 +268,37 @@ void CallPresenter::Refresh() {
     Notify(notice);
   }
   WatchForNoMedia(*backend, next, now);
+  OfferCallBack(next, surface);
   if (next.kind == CallScreen::Kind::None && !surface.active && AudioSession::IsSpeakerphoneOn()) {
     // No call left: the speaker choice was that call's (AudioSession keeps it across a media rebuild).
     AudioSession::SetSpeakerphoneOn(false);
   }
   screen_ = std::move(next);
   Changed();
+}
+
+void CallPresenter::FillEndingCall(CallScreen& s, CallUiBackend& backend, const CallSession& active) {
+  s.conflict = true;
+  CallScreen::EndingCall& ending = s.ending;
+  ending.call_id = active.call_id;
+  ending.group = active.origin_group_id.has_value();
+  ending.thread_id = active.origin_thread_id.value_or(std::string{});
+  ending.video = active.video_allowed;
+  if (auto peer = backend.PeerIdentityForCall(active.call_id); peer && peer->has_value()) {
+    ending.peer_identity = **peer;
+    ending.same_peer = **peer == s.caller_identity;
+  }
+}
+
+void CallPresenter::OfferCallBack(const CallScreen& next, const CallUiBackend::Surface& surface) {
+  const std::string live = surface.active ? surface.active->call_id : std::string();
+  if (auto offer = call_back_.OnFrame(next, live)) {
+    CallNotice notice;
+    notice.kind = CallNotice::Kind::CallBack;
+    notice.identity = offer->peer_identity;
+    notice.ending = std::move(*offer);
+    Notify(notice);
+  }
 }
 
 void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std::string& call_id, const bool video,
@@ -280,6 +325,8 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
       member.is_local = !local_identity.empty() && row.identity == local_identity;
       member.audio_muted = row.media.audio_muted;
       member.video_enabled = row.media.video_enabled;
+      member.on_hold = row.media.on_hold;
+      member.video_paused = row.media.video_paused;
       s.members.push_back(std::move(member));
     }
   }
@@ -311,6 +358,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   s.was_connected = signals.was_connected;
   s.show_retry = decided.show_retry;
   s.show_invite = decided.show_invite;
+  s.show_make_group = OffersMakeGroup(group_call, static_cast<size_t>(joined));
   s.hint = decided.hint;
   s.hint_missing_mic = signals.direct_missing_mic;
   s.hint_seed_unreachable = signals.direct_seed_unreachable;
@@ -325,6 +373,27 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   if (decided.show_elapsed || ShowsParticipantCount(s)) {
     s.connected_at_ms = live_since_ms;  // the call's, not the current path's
   }
+}
+
+void CallPresenter::FillGroupInvite(CallScreen& s, const int64_t now) {
+  if (group_invites_call_id_ != s.call_id) {
+    // Another call: what was read and put off belonged to the last one.
+    group_invites_call_id_ = s.call_id;
+    group_invites_.clear();
+    group_invites_put_off_.clear();
+    group_invite_joining_.clear();
+    group_invites_read_ms_ = 0;
+  }
+  // Refresh runs every frame in a call; the invites change only when one arrives or is answered.
+  if (ports_.group_invites_in_call && (group_invites_read_ms_ == 0 || now - group_invites_read_ms_ >= 1'000)) {
+    group_invites_read_ms_ = now;
+    group_invites_ = ports_.group_invites_in_call(s.call_id);
+  }
+  std::set<std::string> hidden = group_invites_put_off_;
+  if (!group_invite_joining_.empty()) {
+    hidden.insert(group_invite_joining_);
+  }
+  s.group_invite = PickGroupInviteBanner(group_invites_, hidden);
 }
 
 void CallPresenter::WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, const int64_t now) {
@@ -496,6 +565,26 @@ void CallPresenter::RequestStart(const std::string& thread_id, const bool video,
   }));
 }
 
+CallJoinBar MakeCallJoinBar(const std::optional<CallUiBackend::JoinableCallInfo>& call) {
+  CallJoinBar bar;
+  if (!call) {
+    return bar;
+  }
+  bar.shown = true;
+  bar.video = call->media_mode == CallMediaMode::Video;
+  bar.joined = call->joined_count && *call->joined_count > 0 ? *call->joined_count : 0;
+  bar.text_key = bar.video ? "chat.call_bar.video" : "chat.call_bar.voice";
+  return bar;
+}
+
+CallJoinBar CallPresenter::JoinBarInThread(const std::string& thread_id) const {
+  auto* backend = Backend();
+  if (!backend || !backend->Available()) {
+    return {};
+  }
+  return MakeCallJoinBar(backend->JoinableCallInfoInThread(thread_id));
+}
+
 bool CallPresenter::CallJoinableInThread(const std::string& thread_id) const {
   auto* backend = Backend();
   return backend && backend->Available() && backend->JoinableCallInThread(thread_id).has_value();
@@ -516,6 +605,161 @@ void CallPresenter::OpenAddPeople() {
   if (callbacks_.open_add_people) {
     callbacks_.open_add_people(active_call_id_);
   }
+}
+
+void CallPresenter::OpenMakeGroup() {
+  if (screen_.kind != CallScreen::Kind::InCall || !screen_.show_make_group || screen_.call_id.empty()) {
+    return; // a stale tap: the call ended, or is not one a group may be made from
+  }
+  if (callbacks_.open_make_group) {
+    callbacks_.open_make_group(screen_.call_id);
+  }
+}
+
+void CallPresenter::JoinGroupInvite(std::function<void(Roe<void>)> done) {
+  if (!screen_.group_invite || !ports_.join_group_invite) {
+    if (done) {
+      done(Error("No group invite in this call"));
+    }
+    return;
+  }
+  const std::string invite_id = screen_.group_invite->invite_id;
+  group_invite_joining_ = invite_id;
+  Refresh();
+  ports_.join_group_invite(invite_id, WhileAlive([this, invite_id, done](Roe<void> joined) {
+                             if (group_invite_joining_ == invite_id) {
+                               group_invite_joining_.clear();
+                             }
+                             if (!joined) {
+                               FailText(joined.error().message);
+                             }
+                             group_invites_read_ms_ =
+                                 0; // read again: an accepted invite is gone, a failed one back on the banner
+                             Refresh();
+                             if (done) {
+                               done(joined);
+                             }
+                           }));
+}
+
+void CallPresenter::PutOffGroupInvite() {
+  if (!screen_.group_invite) {
+    return;
+  }
+  group_invites_put_off_.insert(screen_.group_invite->invite_id);
+  Refresh();
+}
+
+void CallPresenter::FillGuests(CallScreen& s, CallUiBackend& backend, const std::string& group_id,
+                               const std::string& local) {
+  if (group_id.empty() || !backend.ChecksGuests()) {
+    return; // V062 6: a call with no group has no guests
+  }
+  const std::optional<CallGroupStanding> self = backend.GroupStanding(group_id, local);
+  // V062 2: a guest's device (no roster) adds nobody; members add people (guests only if the preset lets them).
+  s.show_invite = s.show_invite && self && self->member;
+  std::map<std::string, std::string> brought_by_of;
+  for (const CallParticipant& row : backend.ListParticipants(s.call_id).valueOr(std::vector<CallParticipant>{})) {
+    brought_by_of[row.identity] = row.brought_by;
+  }
+  for (CallScreen::Member& member : s.members) {
+    const std::string& brought_by = brought_by_of[member.identity];
+    const std::optional<CallGroupStanding> standing = backend.GroupStanding(group_id, member.identity);
+    member.guest = ShowsAsGuest(true, brought_by, standing);
+    if (!member.guest) {
+      continue;
+    }
+    member.brought_by = brought_by;
+    member.can_remove = !member.is_local && MayRemoveFromCall(true, self, standing);
+    member.can_add_to_group = !member.is_local && OffersGroupInvite(true, self, standing);
+  }
+}
+
+void CallPresenter::FillGuestRing(CallScreen& s, CallUiBackend& backend, const PendingCallInvite& invite,
+                                  const std::string& local) {
+  if (!invite.origin_group_id || local.empty()) {
+    return;
+  }
+  auto rows = backend.ListParticipants(invite.call_id);
+  if (!rows) {
+    return;
+  }
+  for (const CallParticipant& row : *rows) {
+    if (row.identity == local) {
+      s.ring_guest = !row.brought_by.empty();
+    } else if (row.state == CallParticipantState::Joined) {
+      ++s.ring_people;
+    }
+  }
+  if (!s.ring_guest) {
+    s.ring_people = 0;
+  }
+}
+
+void CallPresenter::AnnounceGuests(const CallScreen& s) {
+  if (announced_call_id_ != s.call_id) {
+    announced_call_id_ = s.call_id;
+    announced_guests_.clear();
+  }
+  for (const CallScreen::Member& member : s.members) {
+    if (!member.guest || member.is_local || !announced_guests_.insert(member.identity).second) {
+      continue;
+    }
+    CallNotice notice;
+    notice.kind = CallNotice::Kind::GuestJoined;
+    notice.identity = member.identity;
+    notice.brought_by = member.brought_by;
+    Notify(notice);
+  }
+}
+
+bool CallPresenter::MayAddToActiveCall(const std::string& identity) const {
+  auto* backend = Backend();
+  if (!backend || !backend->Available() || active_group_id_.empty() || !backend->ChecksGuests()) {
+    return true;
+  }
+  const std::string local =
+      ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{}) : std::string{};
+  return DecideCallAdd(true, backend->GroupStanding(active_group_id_, local),
+                       backend->GroupStanding(active_group_id_, identity)) != CallAddVerdict::Refused;
+}
+
+void CallPresenter::RemoveFromCall(const std::string& identity, std::function<void(Roe<void>)> done) {
+  auto* backend = Backend();
+  if (!backend || !backend->Available() || active_call_id_.empty() || identity.empty()) {
+    Fail("call.error.no_active");
+    if (done) {
+      done(Error("no call in progress"));
+    }
+    return;
+  }
+  backend->RemoveFromCall(active_call_id_, identity, WhileAlive([this, done](Roe<void> removed) {
+                            if (!removed) {
+                              FailText(removed.error().message);
+                            }
+                            Refresh();
+                            if (done) {
+                              done(removed);
+                            }
+                          }));
+}
+
+void CallPresenter::AddGuestToGroup(const std::string& identity, std::function<void(Roe<void>)> done) {
+  if (active_call_id_.empty() || active_group_id_.empty() || identity.empty() || !ports_.invite_guest_to_group) {
+    Fail("call.error.no_active");
+    if (done) {
+      done(Error("no group call in progress"));
+    }
+    return;
+  }
+  ports_.invite_guest_to_group(active_group_id_, identity, active_call_id_, WhileAlive([this, done](Roe<void> invited) {
+                                 if (!invited) {
+                                   FailText(invited.error().message);
+                                 }
+                                 if (done) {
+                                   done(invited);
+                                 }
+                               }));
 }
 
 void CallPresenter::InviteToActiveCall(const std::vector<std::string>& identities,
@@ -557,6 +801,29 @@ bool CallPresenter::VideoCallAvailable() {
   return backend && backend->Available() && backend->Media().VideoEncoderAvailable();
 }
 
+namespace {
+
+/**
+ * The click frame of Accept: `call_id` answering, with what the ring showed of it (the next Refresh fills in the rest).
+ * Not an empty screen: the phone's call screen reads that as the ring gone and would end the call just answered there.
+ */
+CallScreen AnsweringFrom(const CallScreen& ring, const std::string& call_id) {
+  CallScreen next;
+  next.kind = CallScreen::Kind::Answering;
+  next.ring_call_id = call_id;
+  if (ring.ring_call_id == call_id) {
+    next.caller_identity = ring.caller_identity;
+    next.ring_video = ring.ring_video;
+    next.ring_group = ring.ring_group;
+    next.thread_id = ring.thread_id;
+  }
+  next.show_speaker = AudioSession::SupportsSpeakerToggle();
+  next.speaker_on = AudioSession::IsSpeakerphoneOn();
+  return next;
+}
+
+} // namespace
+
 std::string CallPresenter::RingCallId(CallUiBackend& backend) const {
   if (!ringing_call_id_.empty()) {
     return ringing_call_id_;
@@ -567,13 +834,13 @@ std::string CallPresenter::RingCallId(CallUiBackend& backend) const {
   return backend.LastRingCallId();
 }
 
-std::string CallPresenter::Accept(const bool voice_only) {
+std::string CallPresenter::Accept(const bool voice_only, const std::string& answered) {
   BindToMessaging();
   auto* backend = Backend();
   if (!backend || !backend->Available()) {
     return {};
   }
-  const std::string call_id = RingCallId(*backend);
+  const std::string call_id = answered.empty() ? RingCallId(*backend) : answered;
   if (call_id.empty()) {
     log().warning << "Accept ignored (no call_id)";
     return {};
@@ -595,7 +862,8 @@ std::string CallPresenter::Accept(const bool voice_only) {
   ringing_call_id_.clear();
   ring_shown_ = false;
   answered_call_id_ = call_id;
-  screen_ = {};
+  call_back_.OnAccept(screen_, call_id); // End & accept over a 1:1 call: offer it again afterwards (V064)
+  screen_ = AnsweringFrom(screen_, call_id);
   Changed();
   log().warning << "Accept → lifecycle AcceptClicked call_id=" << call_id << " charge=waive"
                 << (voice_only ? " voice_only=1" : "");
@@ -631,7 +899,8 @@ std::string CallPresenter::AcceptWithCharge() {
   ringing_call_id_.clear();
   ring_shown_ = false;
   answered_call_id_ = call_id;
-  screen_ = {};
+  call_back_.OnAccept(screen_, call_id); // End & accept over a 1:1 call: offer it again afterwards (V064)
+  screen_ = AnsweringFrom(screen_, call_id);
   Changed();
   log().warning << "AcceptWithCharge → lifecycle AcceptClicked call_id=" << call_id << " charge=take_all";
   backend->Apply(CallLifecycleEvent::AcceptClicked, call_id);

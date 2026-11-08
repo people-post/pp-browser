@@ -28,13 +28,20 @@ struct TranscriptAttachmentView {
   AttachmentFetchWorkflow::DownloadState state = AttachmentFetchWorkflow::DownloadState::Pending;
   /** The viewable file (empty: none on disk, or a large private video kept off disk until opened). */
   std::string local_path;
-  /** A video's poster frame (empty: none). */
+  /** A video's poster frame, or a sound file's cover from its own tags (empty: none). */
   std::string poster_path;
+  /** A sound file's own title and artist and its length, read on this device from its tags (empty / 0: none). */
+  std::string audio_title;
+  std::string audio_artist;
+  int64_t audio_duration_ms = 0;
   /**
    * False for a picture that must not be decoded for display: its header is unreadable or declares more pixels
    * than AttachmentLimits::max_image_pixels. Such a card is a file row with "Open".
    */
   bool inline_image_ok = true;
+  /** A picture's size in pixels the right way up (its EXIF orientation applied); 0 when unknown. */
+  int image_width = 0;
+  int image_height = 0;
   /**
    * A file above the direct size: stored encrypted, shown as a file row (a video: a placeholder with its size)
    * with Open until an Open has made its view for this session. `local_path` is that view, empty before.
@@ -55,6 +62,10 @@ struct VoiceBubbleState {
 /** What drawing a transcript needs besides its entries: names, control lines, attachment state. */
 struct TranscriptFacts {
   std::function<std::string(const std::string& contact_id)> sender_label;
+  /** Local file of a sender's cached profile photo; empty: none cached, the letter avatar shows. */
+  std::function<std::string(const std::string& contact_id)> sender_icon;
+  /** The id a sender's letter-avatar colour is seeded with (the person's account id when known). */
+  std::function<std::string(const std::string& contact_id)> sender_stable_id;
   /** A feature's control message line, names included; none: the message's own text. */
   std::function<std::optional<std::string>(const ThreadMessage&)> control_line;
   std::function<TranscriptAttachmentView(const ThreadMessage&)> attachment;
@@ -69,6 +80,10 @@ struct TranscriptFacts {
   bool voice_supported = false;
   int voice_max_seconds = 120;
   std::function<VoiceBubbleState(const std::string& message_id)> voice_state;
+  /** Sound files (an MP3 sent as a file) play in place with the voice controls, not in the system's viewer. */
+  bool audio_files_play = false;
+  /** The open chat is a group (or a broadcast / AI thread, not a 1:1): its call records are not tappable. The GUI sets this. */
+  bool thread_is_group = false;
 };
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */
@@ -93,16 +108,20 @@ public:
   Roe<Thread> OpenThread(const std::string& thread_id);
   void ClearActiveThread();
   Roe<Thread> CreateNewAiThread();
+  /** A new AI thread, stored but not opened (the open chat stays as it is). */
+  Roe<Thread> CreateAiThread();
   Roe<Thread> CreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   Roe<Thread> CreateGroup(const std::string& title, const std::vector<std::string>& member_contact_ids);
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
   /**
-   * Names an AI thread after its first question. Applies only while the thread still has
-   * kDefaultAiThreadTitle; does not notify (the caller refreshes the list as part of the send).
+   * Names an AI thread after its first question (`first_message` is the raw text; the title is cut to
+   * kAiThreadTitleMaxChars display characters, and a sensitive message keeps the default title). Applies only
+   * while the thread still has kDefaultAiThreadTitle; does not notify (the caller refreshes the list as part of
+   * the send).
    */
-  Roe<void> NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title);
+  Roe<void> NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& first_message);
 
   Roe<void> CloseThread(const std::string& thread_id);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
@@ -126,7 +145,8 @@ public:
                                  const std::optional<std::string>& preview = std::nullopt);
   int SumUnread() const;
   int SumUnreadForContact(const std::string& contact_id) const;
-  Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
+  /** `assistant_text`: an AI answer, shown as is (only the user's own text is checked for codes and pasted blobs). */
+  Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview, bool assistant_text = false);
 
   /**
    * The thread's transcript entries (D031), drawn by the GUI with Facts().
@@ -168,8 +188,13 @@ private:
   GroupMembershipWorkflow* groups_ = nullptr;
   std::string profile_data_dir_;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
-  /** Pixel-cap verdict per view file, so a render does not re-read the head of every picture. */
-  mutable std::unordered_map<std::string, bool> inline_image_ok_;
+  /** Pixel-cap verdict and upright size per view file, so a render does not re-read the head of every picture. */
+  struct InlineImageFacts {
+    bool ok = false;
+    int width = 0;
+    int height = 0;
+  };
+  mutable std::unordered_map<std::string, InlineImageFacts> inline_image_ok_;
   std::string active_thread_id_;
   IThreadMentionsStore* mentions_ = nullptr;
   ThreadChangedCallback on_thread_changed_;

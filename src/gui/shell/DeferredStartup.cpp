@@ -12,6 +12,7 @@
 #include <ui/base/FileInterface.h>
 
 #include <cstddef>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,6 +35,14 @@ constexpr int kCjkFaceKr = 1;
 constexpr int kCjkFaceSc = 2;
 constexpr int kCjkFaceTc = 3;
 constexpr int kCjkFaceHk = 4;
+
+/**
+ * Simplified Chinese in several weights, one fallback family so the engine picks the weight nearest
+ * to the text's: face kCjkFaceSc of the collection (400) plus these (notofonts/noto-cjk Sans/SubsetOTF/SC).
+ */
+constexpr const char* kChineseFamily = "Noto Sans CJK SC";
+constexpr const char* kChineseMediumAsset = "fonts/NotoSansSC-Medium.otf";
+constexpr const char* kChineseBoldAsset = "fonts/NotoSansSC-Bold.otf";
 
 std::string PrimaryLang(const std::string& tag) {
   const auto dash = tag.find('-');
@@ -66,39 +75,36 @@ int PrimaryCjkFaceIndex() {
 }
 
 /**
- * Process-lifetime buffer for the shared CJK collection. RmlUi's memory
- * LoadFontFace does not copy these bytes — they must outlive font faces
- * (valid until after ui::Shutdown).
+ * Process-lifetime buffer for a packaged font file (the shared CJK collection, the Chinese weights).
+ * RmlUi's memory LoadFontFace does not copy these bytes — they must outlive font faces
+ * (valid until after ui::Shutdown). Empty when the file could not be read.
  */
-std::vector<ui::byte>& CjkCollectionBytes() {
-  static std::vector<ui::byte> bytes;
-  return bytes;
-}
-
-bool EnsureCjkCollectionLoaded() {
-  auto& bytes = CjkCollectionBytes();
-  if (!bytes.empty()) {
-    return true;
+const std::vector<ui::byte>& FontAssetBytes(const char* relative) {
+  static std::map<std::string, std::vector<ui::byte>> buffers;
+  auto [it, added] = buffers.try_emplace(relative);
+  auto& bytes = it->second;
+  if (!added) {
+    return bytes;
   }
 
-  const std::string path = IAssetLocator::Instance().Resolve(kCjkCollectionAsset);
+  const std::string path = IAssetLocator::Instance().Resolve(relative);
   ui::FileInterface* files = ui::GetFileInterface();
   if (files == nullptr) {
-    log().warning << "Deferred CJK load failed: no FileInterface (" << kCjkCollectionAsset << ")";
-    return false;
+    log().warning << "Deferred font load failed: no FileInterface (" << relative << ")";
+    return bytes;
   }
 
   const ui::FileHandle handle = files->Open(path);
   if (!handle) {
-    log().warning << "Deferred CJK load failed: open " << path;
-    return false;
+    log().warning << "Deferred font load failed: open " << path;
+    return bytes;
   }
 
   const size_t length = files->Length(handle);
   if (length == 0) {
     files->Close(handle);
-    log().warning << "Deferred CJK load failed: empty " << path;
-    return false;
+    log().warning << "Deferred font load failed: empty " << path;
+    return bytes;
   }
 
   bytes.resize(length);
@@ -106,21 +112,27 @@ bool EnsureCjkCollectionLoaded() {
   files->Close(handle);
   if (read != length) {
     bytes.clear();
-    log().warning << "Deferred CJK load failed: short read " << path;
-    return false;
+    log().warning << "Deferred font load failed: short read " << path;
+    return bytes;
   }
 
-  log().info << "Loaded CJK font collection once (" << (length / (1024 * 1024)) << " MiB): "
-             << kCjkCollectionAsset;
-  return true;
+  log().info << "Loaded font file once (" << (length / (1024 * 1024)) << " MiB): " << relative;
+  return bytes;
+}
+
+bool LoadFallbackFaceFromMemory(const std::vector<ui::byte>& bytes, const std::string& family, int weight,
+                                int face_index) {
+  return !bytes.empty() &&
+         ui::LoadFontFace(ui::Span<const ui::byte>(bytes.data(), bytes.size()), family, ui::Style::FontStyle::Normal,
+                          static_cast<ui::Style::FontWeight>(weight), true /*fallback_face*/, face_index);
 }
 
 void LoadCjkFaceFromCollection(int face_index, const char* phase_name) {
   StartupPhase phase(phase_name);
-  if (!EnsureCjkCollectionLoaded()) {
+  const auto& bytes = FontAssetBytes(kCjkCollectionAsset);
+  if (bytes.empty()) {
     return;
   }
-  auto& bytes = CjkCollectionBytes();
   // Empty family: FreeType fills family/style from the selected collection face.
   const bool ok =
       ui::LoadFontFace(ui::Span<const ui::byte>(bytes.data(), bytes.size()), "", ui::Style::FontStyle::Normal,
@@ -129,6 +141,23 @@ void LoadCjkFaceFromCollection(int face_index, const char* phase_name) {
     log().warning << "Deferred CJK face load failed: index=" << face_index;
   }
 }
+
+} // namespace
+
+bool LoadChineseFonts() {
+  const bool regular = LoadFallbackFaceFromMemory(FontAssetBytes(kCjkCollectionAsset), kChineseFamily, 400, kCjkFaceSc);
+  const bool medium = LoadFallbackFaceFromMemory(FontAssetBytes(kChineseMediumAsset), kChineseFamily, 500, 0);
+  const bool bold = LoadFallbackFaceFromMemory(FontAssetBytes(kChineseBoldAsset), kChineseFamily, 700, 0);
+  if (!medium || !bold) {
+    log().warning << "Chinese medium / bold faces failed to load; Chinese in heavier text stays regular";
+  }
+  if (!regular) {
+    log().warning << "Deferred CJK face load failed: index=" << kCjkFaceSc;
+  }
+  return regular;
+}
+
+namespace {
 
 void LoadFallbackFace(const std::string& relative, const char* phase_name) {
   StartupPhase phase(phase_name);
@@ -172,7 +201,12 @@ void LoadDeferredFonts(const ShellNavigationPorts& shell) {
   }
 
   for (size_t i = 0; i < cjk_faces.size(); ++i) {
-    LoadCjkFaceFromCollection(cjk_faces[i].first, cjk_faces[i].second);
+    if (cjk_faces[i].first == kCjkFaceSc) {
+      StartupPhase sc_phase(cjk_faces[i].second);
+      LoadChineseFonts();
+    } else {
+      LoadCjkFaceFromCollection(cjk_faces[i].first, cjk_faces[i].second);
+    }
     if (need_cjk_for_ui && i == 0) {
       MarkFontsReadyAndRefresh(shell);
     }

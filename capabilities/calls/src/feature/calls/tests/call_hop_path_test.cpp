@@ -889,6 +889,30 @@ TEST_F(CallHopPathTest, TheOwnerPicksWhenADurableRelayIsListed) {
   EXPECT_EQ(relay_->local_hop_calls, 0) << "a phone never hosts";
 }
 
+// A hop that advertises media_relay but said full (p2p-mesh N033: a park reply's "loads") is not ranked, even when
+// it is the only one around: it would refuse the call, so nobody asks it.
+TEST_F(CallHopPathTest, AnAdvertisedHopThatSaidFullIsNotAsked) {
+  const std::string call_id = "call:skip-full";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:A";
+  relay_->started = false;
+
+  CallHopPath::MediaRelayDeps deps;
+  deps.relay = relay_.get();
+  deps.dial = dial_.get();
+  deps.prefer_contacts = false;
+  deps.prefer_local_as_hop = false;
+  deps.list_media_relay_peers = []() { return std::vector<std::string>{"12D3KooWFullNode"}; };
+  deps.hop_load = [](const std::string& peer_id) {
+    return peer_id == "12D3KooWFullNode" ? mesh::ServiceLoad::Full : mesh::ServiceLoad::Open;
+  };
+  SetRelayDeps(std::move(deps));
+  dial_->endpoints["12D3KooWFullNode"] = "/ip4/5.6.7.8/udp/18517/adp/2/p2p/12D3KooWFullNode";
+
+  (void)SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
+  EXPECT_NE(relay_->last_quote_hop, "12D3KooWFullNode") << "the full hop is asked";
+}
+
 TEST_F(CallHopPathTest, SoftMigrateRepickKeepsPreferLocalWhenPreferSelf) {
   const std::string call_id = "call:repick-keep-self";
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);

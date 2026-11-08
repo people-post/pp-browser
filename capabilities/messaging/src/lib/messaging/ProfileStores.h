@@ -4,6 +4,7 @@
 #include "foundation/crypto/IDekConsumer.h"
 #include "lib/delivery/IControlLaneSeenStore.h"
 #include "lib/delivery/IPeerSessionStore.h"
+#include "lib/messaging/IGroupInviteLinkStore.h"
 #include "lib/messaging/IGroupRosterStore.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
 #include "lib/messaging/IThreadMentionsStore.h"
@@ -11,6 +12,7 @@
 
 #include "common/Error.h"
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -28,6 +30,8 @@ struct ProfileStores {
   std::unique_ptr<IPeerSessionStore> peer_sessions;
   std::unique_ptr<IControlLaneSeenStore> control_lane_seen;
   std::unique_ptr<IGroupRosterStore> rosters;
+  /** The invite links this device made, their secrets encrypted (G021); none: links are made but not shown again. */
+  std::unique_ptr<IGroupInviteLinkStore> invite_links;
   std::unique_ptr<IThreadLocalPrefsStore> thread_prefs;
   std::unique_ptr<IThreadMentionsStore> thread_mentions;
   /** Peers' cards (people's rows; PeerCards is the logic over them). */
@@ -36,6 +40,8 @@ struct ProfileStores {
   std::vector<IDekConsumer*> at_rest;
   /** The profile database, for the calls stack's stores (`OpenSqliteCallStores`). */
   std::string profile_db_path;
+  /** Bytes the message databases take on disk now (Me → Storage's "chats" share); none: not known. Blocking. */
+  std::function<uint64_t()> message_store_bytes;
 };
 
 /** Opens a profile's stores (`profile_data_dir`, `profile_id`): the app's storage, or a test's in-memory ones. */

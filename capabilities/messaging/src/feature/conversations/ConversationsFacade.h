@@ -6,12 +6,15 @@
 #include "lib/delivery/TextSpans.h"
 #include "lib/messaging/AtAiParser.h"
 #include "domain/attachments/OutgoingAttachmentStore.h"
+#include "domain/attachments/StoredAttachments.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/OutgoingAttachment.h"
 #include "lib/messaging/GroupTypes.h"
+#include "feature/conversations/GroupInviteLinkWorkflow.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
+#include "lib/messaging/IThreadMentionsStore.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/net/OrgBackendClients.h"
@@ -38,6 +41,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -68,6 +72,16 @@ public:
   IThreadStore* ThreadStore();
   void BindAgentInbound(AgentInboundPorts ports);
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);
+  /**
+   * MaybeAutoRenewRegistration in two halves, so the network half can run off the UI thread: nullopt when nothing is
+   * due, else the finished registration; nothing stored. PersistRegistrationRenewal then reads the identity again and
+   * saves only the registration fields.
+   */
+  Roe<std::optional<RegistrationResult>> MaybeAutoRenewRegistrationNetworkOnly(bool auto_renew_registration);
+  /** `expected_account_id`: the account the network half ran for; another one stored now is refused. */
+  Roe<LocalIdentity> PersistRegistrationRenewal(const RegistrationResult& result,
+                                                const std::string& expected_account_id);
+  /** Blocking (HTTP): binds this device's push tokens. Called off the UI thread (gui MessagingReadyTasks). */
   Roe<void> SyncPushDevices();
   /** Whether the saved backend differs from the running one: push is unbound from the running backend meanwhile. */
   void SetBackendSwitchPending(bool pending);
@@ -111,7 +125,9 @@ public:
   Roe<void> CloseThread(const std::string& thread_id);
   void ClearActiveThread();
   Roe<Thread> CreateNewAiThread();
-  Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
+  /** A new AI thread, stored but not opened (the ask-AI panel's conversation when there is none yet). */
+  Roe<Thread> CreateAiThread();
+  Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview, bool assistant_text = false);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id);
@@ -125,11 +141,16 @@ public:
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
   /** Names an AI thread after its first question; a no-op once it has any other title. No thread-changed notify. */
-  Roe<void> NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title);
+  Roe<void> NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& first_message);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   void NotifyThreadChanged();
   void SetOnThreadChanged(std::function<void()> callback);
   PeerDisplayLabel ResolveThreadLabel(const Thread& thread);
+  /**
+   * Local file of a saved contact's cached profile photo, empty when none is cached yet (the letter avatar shows).
+   * Starts the photo fetch when the contact has one that is not cached, like the Contacts list does.
+   */
+  std::string ContactIconPath(const std::string& contact_id);
   /** The thread's transcript (D031 window); the GUI draws it with TranscriptFactsFor(). */
   std::vector<TranscriptRow> BuildTranscript(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
                                              std::optional<int64_t> newest_inclusive = std::nullopt);
@@ -161,8 +182,12 @@ public:
   Roe<ThreadMessage> SendGroupText(const std::string& thread_id, const std::string& text, std::vector<TextSpan> spans);
   /** The chats with an unread message that mentions us (G015 marker); empty when unknown. */
   std::set<std::string> ThreadsWithMentions();
+  /** Those chats with how many unread mentions each has; empty when unknown. */
+  std::map<std::string, int> MentionCounts();
   /** The oldest unread mention in a chat — where opening it can jump to; none when it has none. */
   std::optional<std::string> OldestMention(const std::string& thread_id);
+  /** The newest mention over every chat, read or not (Home's Mentions widget); none when none or unknown. */
+  std::optional<IThreadMentionsStore::Mention> LatestMention();
   /** Share contact `contact_id` into a chat as a contact card (ACCOUNT_CARD.md): its account's card, its name. */
   Roe<ThreadMessage> ShareContact(const std::string& thread_id, const std::string& contact_id);
   /** This account's locator, for a QR code or an invite line. */
@@ -183,6 +208,8 @@ public:
   void SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback);
   /** title, body, thread id, and whether the message mentions us (G015: alerts even in a muted group). */
   void SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string, bool)> callback);
+  /** (message id, thread id) of each inbound message stored, on the UI thread. */
+  void SetOnInboundMessage(std::function<void(std::string, std::string)> callback);
   void SyncInboxFromWake(bool force);
   void TailSyncActiveE2eThread();
   void WarmPeerForThread(const std::string& thread_id);
@@ -228,9 +255,41 @@ public:
   bool IsOwnerUnreachable(const std::string& group_id);
   Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
   Roe<void> RemoveMemberByIdentity(const std::string& group_id, const std::string& member_identity);
+  /** G017, owner-only: make a member an admin, or a member again (GroupMembershipWorkflow::SetMemberRole). */
+  Roe<void> SetMemberRole(const std::string& group_id, const std::string& member_identity, MemberRole role);
+  /** G017, owner-only: set the group Open or Managed. */
+  Roe<void> SetGroupPreset(const std::string& group_id, GroupPreset preset);
+  Roe<GroupPreset> GroupPresetOf(const std::string& group_id);
+  /** Our role in the group (Owner by its recorded owner); none when we are not in it. */
+  std::optional<MemberRole> LocalGroupRole(const std::string& group_id);
+  /** G019 5: the members `account` brought in, as the roster holds it now. */
+  std::vector<std::string> GroupMembersAddedBy(const std::string& group_id, const std::string& account);
+  /** G020 6: the accounts `account` removed who are still out. */
+  std::vector<std::string> GroupAccountsRemovedBy(const std::string& group_id, const std::string& account);
+  /** G020 6, owner and admins: remove everyone `account` added who is ours to remove; how many removals went out. */
+  Roe<size_t> RemoveEveryoneAddedBy(const std::string& group_id, const std::string& account);
+  /** G020 6, the owner: invite again everyone `account` removed; how many invites went out. */
+  Roe<size_t> ReinviteEveryoneRemovedBy(const std::string& group_id, const std::string& account);
+  /** G019: invite by account (someone not a contact, e.g. met in the group), per the preset. */
+  Roe<void> InviteIdentity(const std::string& group_id, const std::string& account);
+  // G021, invite links (GroupInviteLinkWorkflow).
+  /** A new link to the group (per the preset); `lifetime_ms` 0: 7 days; `max_uses` 0: no limit. Blocking. */
+  Roe<GroupInviteLinkWorkflow::MadeLink> MakeInviteLink(const std::string& group_id, uint64_t max_uses = 0,
+                                                        int64_t lifetime_ms = 0);
+  Roe<void> RevokeInviteLink(const std::string& group_id, const std::string& link_id);
+  /** The group's live links (ours with their text). */
+  std::vector<GroupLinkRow> GroupInviteLinks(const std::string& group_id);
+  /** Our newest live link to the group whose text we keep. */
+  std::optional<GroupLinkRow> OwnInviteLink(const std::string& group_id);
+  /** Ask to join by a pasted, scanned or opened `pp://join/…`: the request id (JoinByLinkState follows it). */
+  Roe<std::string> AskToJoinByLink(const std::string& link_text);
+  /** The preview's Join: the group's chat. */
+  Roe<Thread> ConfirmJoinByLink(const std::string& request_id);
+  void CancelJoinByLink(const std::string& request_id);
+  std::optional<GroupJoinState> JoinByLinkState(const std::string& request_id);
   std::vector<std::string> ListUnreachableMembers(const std::string& group_id);
   /**
-   * Owner: send `contact_id` a normal group invite. Refuses when the roster already holds kGroupMemberLimit
+   * Whoever the preset lets invite (G019): send `contact_id` a normal group invite. Refuses when the roster already holds kGroupMemberLimit
    * members. Resolves the invitee, seals and writes on the calling thread: the UI thread uses InviteMembersAsync.
    */
   Roe<void> InviteMember(const std::string& group_id, const std::string& contact_id);
@@ -305,15 +364,37 @@ public:
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
   Roe<void> DeleteRelayFileById(const std::string& blob_id);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
-  void DrainPendingAttachmentMedia();
-  Roe<void> ClearDownloadedAttachments();
+  /**
+   * Me → Storage → Manage storage. Each runs on a worker and calls `done` on the UI thread: the attachments this
+   * device holds, one per (chat, hash); the bytes deleting `items` would free; the delete itself (see
+   * AttachmentFetchWorkflow::DeleteLocalAttachments); the bytes the message databases take.
+   */
+  void ListStoredAttachmentsAsync(std::function<void(std::vector<StoredAttachmentItem>)> done);
+  void ReleasableAttachmentBytesAsync(std::vector<StoredAttachmentRef> items, std::function<void(uint64_t)> done);
+  void DeleteLocalAttachmentsAsync(std::vector<StoredAttachmentRef> items,
+                                   std::function<void(StoredAttachmentDeleteResult)> done);
+  void MessageStoreBytesAsync(std::function<void(uint64_t)> done);
+  /** A storage-grid cell's thumbnail, made on a background worker (returns at once; SetOnGridThumbnailReady). */
+  void RequestGridThumbnail(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                            const std::string& mime, uint64_t page_generation);
+  /** The page `page_generation` is left: its thumbnails not started yet are dropped. */
+  void CancelGridThumbnails(uint64_t page_generation);
+  /** The cell's thumbnail or video poster, when one exists (empty: none). A stat only. */
+  std::string GridThumbnailPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash);
+  /** Called on the UI thread when an attachment arrives or goes. */
+  void SetOnStoredAttachmentsChanged(std::function<void()> callback);
+  /** Called on the UI thread when a storage-grid cell's thumbnail (RequestGridThumbnail) is made. */
+  void SetOnGridThumbnailReady(
+      std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback);
   /** Send bytes the picker already prepared (a shrunk picture, an original with its location removed). */
   void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                            std::function<void(Roe<ThreadMessage>)> on_done,
-                           std::function<bool(uint64_t done, uint64_t total)> progress = {});
+                           std::function<bool(uint64_t done, uint64_t total)> progress = {},
+                           std::shared_ptr<const std::atomic<bool>> cancelled = {});
   void ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
                              std::function<void(Roe<ThreadMessage>)> on_done,
-                             std::function<bool(uint64_t done, uint64_t total)> progress = {});
+                             std::function<bool(uint64_t done, uint64_t total)> progress = {},
+                             std::shared_ptr<const std::atomic<bool>> cancelled = {});
   std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
   void DiscardOutgoingAttachment(const std::string& record_id);
   void CleanStaleAttachmentFiles();
@@ -329,8 +410,12 @@ public:
   };
   /** Declared type and size of an attachment message (none: not an attachment). */
   std::optional<AttachmentInfo> AttachmentInfoForMessage(const std::string& thread_id, const std::string& message_id);
-  std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id,
-                                                           const std::string& message_id);
+  /** `made_view` (optional) is set when this call had to create the view file (it did not exist yet). */
+  std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id, const std::string& message_id,
+                                                           bool* made_view = nullptr);
+  /** The same file under the sender's name (AttachmentNamedOpenPath): what the system viewer is handed. */
+  std::optional<std::string> AttachmentOpenPathForMessage(const std::string& thread_id, const std::string& message_id,
+                                                          bool* made_view = nullptr);
   bool AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id, const std::string& message_id);
   struct StoredAiImage {
     std::vector<uint8_t> content_hash;
@@ -355,6 +440,8 @@ public:
   Roe<std::vector<Contact>> SearchLocalContacts(const std::string& query);
   Roe<LocalIdentity> GetLocalIdentity();
   Roe<LocalIdentity> UpdateLocalIdentity(const LocalIdentity& identity);
+  /** One read-modify-write under the identity store's lock (IdentityStore::Modify); for writers off the UI thread. */
+  Roe<LocalIdentity> ModifyLocalIdentity(const std::function<bool(LocalIdentity& identity)>& change);
   Roe<LocalIdentity> FinishAndPersistRegistration(const std::string& nickname);
   Roe<RegistrationResult> UpdateRegisteredNickname(const std::string& nickname);
   /** #328: take this account off the directory (profile reset / delete account). */

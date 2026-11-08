@@ -43,7 +43,8 @@ TEST(DeliveryNoticeTest, ReceiveReasonsRoundTripTheirStoredNames) {
         ReceiveFailure::StoreError, ReceiveFailure::SignatureCheckFailed, ReceiveFailure::BadSignature,
         ReceiveFailure::MissingLocalIdentity, ReceiveFailure::MissingKey, ReceiveFailure::DecryptFailed,
         ReceiveFailure::DecodeFailed, ReceiveFailure::Unsupported, ReceiveFailure::OpenChatFailed,
-        ReceiveFailure::KeyUpdateFailed, ReceiveFailure::MembershipUpdateFailed, ReceiveFailure::ReactionRejected}) {
+        ReceiveFailure::KeyUpdateFailed, ReceiveFailure::MembershipUpdateFailed, ReceiveFailure::ReactionRejected,
+        ReceiveFailure::GroupInviteNeedsContact}) {
     EXPECT_EQ(ReceiveFailureFromWire(ReceiveFailureWire(reason)), reason) << ReceiveFailureWire(reason);
   }
   EXPECT_FALSE(ReceiveFailureFromWire("from the future"));

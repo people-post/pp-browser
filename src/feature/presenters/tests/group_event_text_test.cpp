@@ -76,5 +76,79 @@ TEST_F(GroupEventTextTest, ForkedLinesTellTheTwoSidesApart) {
   EXPECT_NE(*source, *fresh);
 }
 
+// G022: a group made during a call starts with one line saying so, on the maker's side and on the joiner's.
+TEST_F(GroupEventTextTest, AGroupMadeInACallSaysSoOnItsFirstLine) {
+  GroupMembershipCodec::MemberJoinedPayload made;
+  made.group_id = "g";
+  made.member_identity = "acct-me";
+  made.role = MemberRole::Owner;
+  made.roster_epoch = 1;
+  made.context = kGroupInviteContextCall;
+  const auto maker =
+      GroupEventText(Event(GroupMembershipControlType::MemberJoined, GroupMembershipCodec::EncodeMemberJoined(made),
+                           kGroupMadeInCallLine, "acct-me"),
+                     kNames, "acct-me");
+  ASSERT_TRUE(maker);
+  EXPECT_EQ(*maker, Tr("chat.group_event.made_in_call"));
+  EXPECT_NE(*maker, kGroupMadeInCallLine) << "in the reader's language";
+
+  GroupMembershipCodec::MemberJoinedPayload joined = made;
+  joined.member_identity = "acct-bo";
+  joined.role = MemberRole::Member;
+  const auto joiner =
+      GroupEventText(Event(GroupMembershipControlType::MemberJoined, GroupMembershipCodec::EncodeMemberJoined(joined),
+                           kGroupMadeInCallLine, "acct-bo"),
+                     kNames, "acct-bo");
+  ASSERT_TRUE(joiner);
+  EXPECT_EQ(*joiner, Tr("chat.group_event.made_in_call"));
+  EXPECT_TRUE(IsStoredGroupEventText(kGroupMadeInCallLine)) << "the chat list words the preview too";
+}
+
+// G020: a removal says who removed whom — "Bob removed Ann", "Bob removed you", "You removed Ann".
+TEST_F(GroupEventTextTest, ARemovalNamesWhoRemovedWhom) {
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  const auto names = [](const std::string& account) {
+    return account == "acct-ann" ? std::string("Ann") : account == "acct-bob" ? std::string("Bob") : account;
+  };
+  const auto removal = [](const std::string& member, const std::string& by) {
+    return Event(GroupMembershipControlType::MemberRemoved,
+                 GroupMembershipCodec::EncodeMemberRemoved("g", member, 4, by), "Member removed", by);
+  };
+  EXPECT_EQ(GroupEventText(removal("acct-ann", "acct-bob"), names, "acct-me").value_or(""),
+            "Bob removed Ann from the group");
+  EXPECT_EQ(GroupEventText(removal("acct-me", "acct-bob"), names, "acct-me").value_or(""),
+            "Bob removed you from the group");
+  EXPECT_EQ(GroupEventText(removal("acct-ann", "acct-me"), names, "acct-me").value_or(""),
+            "You removed Ann from the group");
+  EXPECT_EQ(GroupEventText(removal("acct-ann", ""), names, "acct-me").value_or(""), "Ann was removed from the group")
+      << "an event that does not say who";
+}
+
+// G021: a join by link says whose link let them in — "Erin joined by Bob's link", for Erin and for Bob too.
+TEST_F(GroupEventTextTest, AJoinByLinkNamesWhoseLinkItWas) {
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  const auto names = [](const std::string& account) {
+    return account == "acct-erin" ? std::string("Erin") : account == "acct-bob" ? std::string("Bob") : account;
+  };
+  const auto joined = [](const std::string& member, const std::string& by, const bool by_link) {
+    GroupMembershipCodec::MemberJoinedPayload payload;
+    payload.group_id = "g";
+    payload.member_identity = member;
+    payload.roster_epoch = 4;
+    payload.added_by = by;
+    payload.by_link = by_link;
+    return Event(GroupMembershipControlType::MemberJoined, GroupMembershipCodec::EncodeMemberJoined(payload),
+                 "Member joined the group", by);
+  };
+  EXPECT_EQ(GroupEventText(joined("acct-erin", "acct-bob", true), names, "acct-me").value_or(""),
+            "Erin joined by Bob's link");
+  EXPECT_EQ(GroupEventText(joined("acct-me", "acct-bob", true), names, "acct-me").value_or(""),
+            "You joined by Bob's link");
+  EXPECT_EQ(GroupEventText(joined("acct-erin", "acct-me", true), names, "acct-me").value_or(""),
+            "Erin joined by your link");
+  EXPECT_EQ(GroupEventText(joined("acct-erin", "acct-bob", false), names, "acct-me").value_or(""), "Bob added Erin")
+      << "an invite's add reads as before";
+}
+
 } // namespace
 } // namespace pbr

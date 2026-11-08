@@ -88,9 +88,16 @@ TEST_F(MentionAlertTest, AMentionOfUsReachesUs) {
       << "a direct chat: mentions show plain";
 }
 
-TEST_F(MentionAlertTest, EveryoneIsTheOwnersOnly) {
+TEST_F(MentionAlertTest, EveryoneIsTheOwnersAndTheAdmins) {
   EXPECT_TRUE(Reaches(From(kOwner, "@everyone dinner", {Everyone()})));
   EXPECT_FALSE(Reaches(From(kBob, "@everyone spam", {Everyone()}))) << "a member cannot reach the whole group";
+
+  // G017: the owner makes Bob an admin (the roles of the signed roster this device holds).
+  GroupRosterMember bob;
+  bob.member_identity = kBob;
+  bob.role = MemberRole::Admin;
+  ASSERT_TRUE(roster_->UpsertMember(kGroup, bob));
+  EXPECT_TRUE(Reaches(From(kBob, "@everyone meeting", {Everyone()}))) << "an admin keeps order too";
 }
 
 TEST_F(MentionAlertTest, NotWhileTheGroupIsCheckingOrAfterWeWereRemoved) {

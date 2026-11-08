@@ -238,7 +238,7 @@ Homegrown **content-agnostic** forwarder — no media keys, no codec decode.
 |--------|--------|
 | Protocol | `/pp-mesh/datagram-relay/1.0.0` |
 | Framing | `stream_id \| channel_id \| channel_type \| seq \| mark` + opaque payload |
-| QoS types | `reliable_ordered`, `latest_lossy`, optional `best_effort`; subscribe by `(stream_id, channel_id)` |
+| QoS types | `reliable_ordered`, `latest_lossy`, optional `best_effort` (only `latest_lossy` changes the hop's behaviour; audio rides best effort — [V063](../p2p-av-calls/DECISIONS.md#v063--call-audio-is-best-effort-the-codec-recovers-losses)); subscribe by `(stream_id, channel_id)` |
 | Session | Quote → accept → attach; ↑/↓ budgets (C/B/A per direction); volunteer rate 0 |
 | Auth | Before attach; roster proof tied to call context |
 | Pick | Contacts ∪ org seed; filter → score → quote → re-pick on failure |

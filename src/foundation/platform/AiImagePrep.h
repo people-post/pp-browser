@@ -24,13 +24,14 @@ enum class AiImagePrepError : int32_t {
   Failed = 3,     // internal failure (allocation, scaling, encoding)
 };
 
-/** Extra rules for a picture that goes to a chat. The AI path uses none of them (the defaults). */
+/** Extra rules for a picture. The AI path uses the defaults (upright, no pixel cap); a chat adds the pixel cap. */
 struct ImagePrepOptions {
   /** > 0: a picture with more pixels than this is refused (TooLarge) before it is decoded. Its size must be readable
    *  from the file head (PNG, JPEG, GIF, WebP); any other format is refused as NotAnImage. */
   uint64_t max_pixels = 0;
-  /** Turn the picture upright by its EXIF orientation (the re-encode drops the tag). */
-  bool apply_exif_orientation = false;
+  /** Turn the picture upright by its EXIF orientation (the re-encode drops the tag, so without this a phone's portrait
+   *  photo stays sideways: the AI composer's chip and what the AI saw, 2026-11-07). */
+  bool apply_exif_orientation = true;
 };
 
 /**

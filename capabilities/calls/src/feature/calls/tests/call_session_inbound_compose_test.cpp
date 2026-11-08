@@ -11,6 +11,8 @@
 
 #include "lib/media/MediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallMediaKeyExchange.h"
+#include "lib/calls/CallGuests.h"
 #include "lib/calls/ICallMediaKeyStore.h"
 #include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/CallTypes.h"
@@ -31,6 +33,7 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <atomic>
 #include <optional>
 #include "feature/calls/tests/call_media_inbound_fake.h"
@@ -221,7 +224,7 @@ protected:
 
     CallDeliveryPorts delivery;
     delivery.send_control = [this](const std::string& peer, const ThreadMessage& control,
-                                   const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
+                                   const std::optional<std::string>& /*key_init*/, bool urgent) -> Roe<void> {
       if (fail_sends_ || peer == unreachable_peer_) {
         return Error("offline (test)");
       }
@@ -234,6 +237,9 @@ protected:
           last_sent_accept_payload_ = msg.payload_json;
         } else if (type == "call_roster") {
           ++sent_rosters_;
+        } else if (type == "call_invite") {
+          invite_urgent_.push_back(urgent);
+          last_sent_invite_payload_ = msg.payload_json;
         }
       }
       return {};
@@ -254,8 +260,20 @@ protected:
     delivery.resolve_peer_thread = [](const std::string& peer) -> Roe<std::string> { return "dm:" + peer; };
     delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
     delivery.ensure_peer_session_key = [this](const std::string& peer) { return test::SeededSessionKey(*psk_, peer); };
+    if (with_group_standing_) {
+      // V062: the group's roster as this device holds it (`holds_roster_` false: a guest's device, none held).
+      delivery.group_standing = [this](const std::string&,
+                                       const std::string& account) -> std::optional<CallGroupStanding> {
+        if (!holds_roster_) {
+          return std::nullopt;
+        }
+        auto it = standings_.find(account);
+        return it == standings_.end() ? CallGroupStanding{} : it->second;
+      };
+    }
 
-    reads_ = std::make_unique<CallReads>(*sessions_, *identity_, *store_, delivery.group_members, nullptr);
+    reads_ = std::make_unique<CallReads>(*sessions_, *identity_, *store_, delivery.group_members, nullptr,
+                                         delivery.group_standing);
     device_ = std::make_unique<CallDevice>(*store_, *store_, *contacts_, *identity_, *sessions_, *reads_, *keys_,
                                            std::move(delivery), *media_);
     csm_ = std::make_unique<CallSessionManager>(*device_);
@@ -430,7 +448,14 @@ protected:
   /** The last CallAccept on the wire (the answerer start may send more after it). */
   std::string last_sent_accept_payload_;
   int sent_rosters_ = 0;
+  /** `urgent` of every CallInvite put on the wire, in order. */
+  std::vector<bool> invite_urgent_;
+  std::string last_sent_invite_payload_;
   std::vector<ThreadMessage> summaries_;
+  /** V062: bind the group standing port (set before SetUp); the roster it reads; whether one is held here. */
+  bool with_group_standing_ = false;
+  bool holds_roster_ = true;
+  std::map<std::string, CallGroupStanding> standings_;
 };
 
 TEST_F(CallSessionInboundComposeTest, InboundInviteCreatesPendingAndRingingSession) {
@@ -482,6 +507,26 @@ TEST_F(CallSessionInboundComposeTest, StaleInviteDroppedByRelayAge) {
   auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
+  // P017: the phone's call screen hears of it, so a push's call waiting for this ring goes at once.
+  EXPECT_EQ(device_->CallsOver().NewSince(0), (std::vector<std::string>{call_id}));
+}
+
+// P017 (#555 B187): an invite read after the call ended here (its leave came first, or a replay) rings nothing, and
+// says so: a push's call waiting for it goes.
+TEST_F(CallSessionInboundComposeTest, AnInviteForACallAlreadyEndedIsOver) {
+  const std::string call_id = "call:over";
+  auto msg = MakeInviteMessage(call_id);
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->DeclineInvite(call_id); }));
+  const uint64_t seen = device_->CallsOver().seq;
+  EXPECT_GT(seen, 0u) << "the declined call is over";
+
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); })); // the replay
+  auto pending = reads_->TopPendingInvite();
+  ASSERT_TRUE(pending);
+  EXPECT_FALSE(pending->has_value());
+  EXPECT_EQ(device_->CallsOver().NewSince(seen), (std::vector<std::string>{call_id}));
 }
 
 TEST_F(CallSessionInboundComposeTest, DeclineClearsPendingInvite) {
@@ -700,6 +745,7 @@ TEST_F(CallSessionInboundComposeTest, InboundCallEndedEndsActiveSession) {
   EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle)
       << "CallEnded → EndCallLocal must Apply RemoteEnded (no local LeaveClicked)";
   EXPECT_TRUE(ShownCallId().empty());
+  EXPECT_EQ(device_->CallsOver().NewSince(0), (std::vector<std::string>{call_id})) << "P017";
 }
 
 TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia) {
@@ -1643,8 +1689,98 @@ TEST_F(CallSessionInboundComposeTest, StartCallOutboundCreatesSessionAndInvite) 
   ASSERT_TRUE(self && self->has_value());
   EXPECT_EQ((*self)->state, CallParticipantState::Joined);
   EXPECT_GE(sent_control_messages_, 1);
+  EXPECT_EQ(invite_urgent_, std::vector<bool>{true}) << "an ordinary invite wakes the peer";
   auto key = keys_->LoadEpochKey(started->call_id, 1);
   ASSERT_TRUE(key && key->has_value());
+}
+
+/** The `detail` of a sent call-control message's payload. */
+std::string DetailOf(const std::string& payload_json) {
+  auto payload = TryParseObject(payload_json);
+  return payload ? payload->getString("detail").value_or("") : std::string();
+}
+
+// M024: an invite carries the media key itself — its lane copy is sealed for one device of the callee's — and, for
+// one release, its old form wrapped under the account pair's session, which is all an app before M024 reads.
+TEST_F(CallSessionInboundComposeTest, AnInviteCarriesTheKeyAndItsOldForm) {
+  ByteVector master(32);
+  for (size_t i = 0; i < master.size(); ++i) {
+    master[i] = static_cast<uint8_t>(0x50 + i);
+  }
+  psk_->SeedMasterPsk(master);
+  Thread thread;
+  thread.id = "thread-dm-key-forms";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Peer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(store_->UpsertThread(thread));
+  auto started = OnCallsOwner([&] { return csm_->StartCall(thread.id, false, {"account:peer"}); });
+  ASSERT_TRUE(started) << started.error().message;
+  auto key = keys_->LoadEpochKey(started->call_id, 1);
+  ASSERT_TRUE(key && key->has_value());
+
+  auto invite = CallControlCodec::DecodeInvite(DetailOf(last_sent_invite_payload_));
+  ASSERT_TRUE(invite) << invite.error().message;
+  EXPECT_EQ(Base64Decode(invite->media_key_b64).value(), **key) << "the key itself, for a device that reads M024";
+  ASSERT_EQ(invite->wrapped_key_b64.empty(), !kMediaKeyAccountWrapBridge);
+  if (kMediaKeyAccountWrapBridge) {
+    // An app before M024: the old field, under the account pair's session.
+    auto session_key = SessionKeyDeriver::Derive(master, CryptoChannel::E2ePublic, 1);
+    ASSERT_TRUE(session_key);
+    auto unwrapped = ICallMediaKeyStore::UnwrapKeyB64(*session_key, invite->wrapped_key_b64, started->call_id, 1,
+                                                      invite->media_key_id);
+    ASSERT_TRUE(unwrapped) << unwrapped.error().message;
+    EXPECT_EQ(*unwrapped, **key);
+  }
+}
+
+// M024: a device that reads its own lane copy takes the key it carries — no account pair's session needed, so a
+// callee whose account session went another device's way (B186) still has the key.
+TEST_F(CallSessionInboundComposeTest, AnInviteWithTheKeyItselfNeedsNoAccountSession) {
+  const std::string call_id = "call:key-in-copy";
+  auto msg = MakeInviteMessage(call_id);
+  ASSERT_TRUE(msg);
+  auto payload = TryParseObject(msg->payload_json);
+  ASSERT_TRUE(payload);
+  auto invite = CallControlCodec::DecodeInvite(payload->getString("detail").value_or(""));
+  ASSERT_TRUE(invite);
+  invite->media_key_b64 = Base64Encode(TestMediaKey());
+  invite->wrapped_key_b64 = "b2xkLWZvcm0tdGhhdC1kb2VzLW5vdC1vcGVu"; // an old form this device cannot open
+  auto detail = CallControlCodec::EncodeInvite(*invite);
+  ASSERT_TRUE(detail);
+  auto with_key = CallControlCodec::BuildSystemMessage("", CallControlType::CallInvite, "Incoming voice call", *detail,
+                                                       "account:peer");
+  ASSERT_TRUE(with_key);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*with_key, "account:peer"); }));
+  auto stored = keys_->LoadEpochKey(call_id, 1);
+  ASSERT_TRUE(stored && stored->has_value()) << "taken from the invite with no session seeded";
+  EXPECT_EQ(**stored, TestMediaKey());
+}
+
+// The joiner answers this invite on its own, so it must not ring (or push) the joiner's device.
+TEST_F(CallSessionInboundComposeTest, InviteAnsweringAJoinRequestIsNotUrgent) {
+  Thread thread;
+  thread.id = "thread-dm-join";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Peer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(store_->UpsertThread(thread));
+  auto started = OnCallsOwner([&] { return csm_->StartCall(thread.id, false, {"account:peer"}); });
+  ASSERT_TRUE(started) << started.error().message;
+  ASSERT_EQ(invite_urgent_.size(), 1u);
+
+  CallJoinRequestDetail request;
+  request.call_id = started->call_id;
+  request.identity = "account:peer";
+  auto detail = CallControlCodec::EncodeJoinRequest(request);
+  ASSERT_TRUE(detail) << detail.error().message;
+  auto msg = CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallJoinRequest, "Joining the call",
+                                                  *detail, "account:peer");
+  ASSERT_TRUE(msg) << msg.error().message;
+  auto applied = OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); });
+  ASSERT_TRUE(applied) << applied.error().message;
+  ASSERT_EQ(invite_urgent_.size(), 2u) << "the join request was not answered with an invite";
+  EXPECT_FALSE(invite_urgent_[1]);
 }
 
 // PR #240 review: a new call whose invites cannot go out must leave the current call alone, and must
@@ -1800,6 +1936,20 @@ TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalAudioMuted(false); }));
   EXPECT_FALSE(media_->IsMuted());
 
+  // The OS took the call's audio (a phone call): the others are told it is on hold here, then that it is back.
+  const int before_hold = sent_control_messages_;
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalOnHold(true); }));
+  EXPECT_TRUE(sessions_->FindParticipant(call_id, local_identity_).value()->media.on_hold);
+  EXPECT_GT(sent_control_messages_, before_hold) << "hold should fan-out CallRoster";
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalOnHold(false); }));
+  EXPECT_FALSE(sessions_->FindParticipant(call_id, local_identity_).value()->media.on_hold);
+  // No camera on: the background pauses nothing (and says nothing).
+  const int before_pause = sent_control_messages_;
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalVideoPaused(true, 0); }));
+  EXPECT_FALSE(sessions_->FindParticipant(call_id, local_identity_).value()->media.video_paused);
+  EXPECT_EQ(sent_control_messages_, before_pause);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalVideoPaused(false, 0); }));
+
   // Camera may fail headless — gate must still accept video_allowed before device open.
   auto enable = OnCallsOwner([&] { return csm_->SetLocalVideoEnabled(true, 0); });
   if (enable) {
@@ -1832,6 +1982,168 @@ TEST_F(CallSessionInboundComposeTest, MuteWithoutActiveMediaFails) {
   auto muted = OnCallsOwner([&] { return csm_->SetLocalAudioMuted(true); });
   EXPECT_FALSE(muted);
   EXPECT_NE(muted.error().message.find("No active call media"), std::string::npos);
+}
+
+/** V062: a group's call on a device that checks guests against the group's roster. */
+class CallGuestComposeTest : public CallSessionInboundComposeTest {
+protected:
+  void SetUp() override {
+    with_group_standing_ = true;
+    CallSessionInboundComposeTest::SetUp();
+  }
+
+  static CallGroupStanding OwnerStanding() {
+    return {.member = true, .may_bring_guest = true, .may_remove_guest = true, .may_invite_to_group = true};
+  }
+  static CallGroupStanding MemberStanding(const bool may_bring_guest) {
+    return {.member = true, .may_bring_guest = may_bring_guest};
+  }
+
+  /** Group call `call_id` of group:g, on the hop: us, the owner (account:peer), Bob and his guest Erin, all joined. */
+  void SeedGroupCallWithGuest(const std::string& call_id) {
+    CallSession session;
+    session.call_id = call_id;
+    session.origin_thread_id = "thread:g";
+    session.origin_group_id = "group:g";
+    session.state = CallSessionState::Active;
+    session.created_at = util::NowUnixMs();
+    session.media_epoch = 1;
+    session.media_key_id = "mk:1";
+    session.sfu_hint = "12D3KooWHop";
+    ASSERT_TRUE(sessions_->UpsertSession(session));
+    int64_t joined_at = session.created_at;
+    for (const std::string& identity :
+         {local_identity_, std::string("account:peer"), std::string("account:bob"), std::string("account:erin")}) {
+      CallParticipant row;
+      row.call_id = call_id;
+      row.identity = identity;
+      row.state = CallParticipantState::Joined;
+      row.joined_at = joined_at++;
+      row.brought_by = identity == "account:erin" ? "account:bob" : "";
+      ASSERT_TRUE(sessions_->UpsertParticipant(row));
+    }
+    ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+    standings_["account:peer"] = OwnerStanding();
+    standings_["account:bob"] = MemberStanding(true);
+    standings_[local_identity_] = MemberStanding(true);
+  }
+
+  Roe<void> ReceiveRemove(const std::string& call_id, const std::string& who, const std::string& from) {
+    auto detail = CallControlCodec::EncodeRemove({call_id, who});
+    if (!detail) {
+      return detail.error();
+    }
+    auto msg = CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallRemove, "", *detail, from);
+    if (!msg) {
+      return msg.error();
+    }
+    return OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, from); });
+  }
+
+  CallParticipantState StateOf(const std::string& call_id, const std::string& identity) {
+    auto row = sessions_->FindParticipant(call_id, identity);
+    return row && row->has_value() ? (*row)->state : CallParticipantState::Invited;
+  }
+};
+
+// V062 3: a plain member's call_remove is refused; the owner's takes the guest out (her leave: the key rotates).
+TEST_F(CallGuestComposeTest, TheOwnerRemovesAGuestAPlainMemberCannot) {
+  const std::string call_id = "call:guest-remove";
+  SeedGroupCallWithGuest(call_id);
+
+  ASSERT_TRUE(ReceiveRemove(call_id, "account:erin", "account:bob"));
+  EXPECT_EQ(StateOf(call_id, "account:erin"), CallParticipantState::Joined) << "a plain member removes nobody";
+
+  ASSERT_TRUE(ReceiveRemove(call_id, "account:erin", "account:peer"));
+  EXPECT_EQ(StateOf(call_id, "account:erin"), CallParticipantState::Left);
+}
+
+// V062 3: members are not removed from a call this way, not even by the owner.
+TEST_F(CallGuestComposeTest, CallRemoveNamingAMemberIsRefused) {
+  const std::string call_id = "call:guest-remove-member";
+  SeedGroupCallWithGuest(call_id);
+
+  ASSERT_TRUE(ReceiveRemove(call_id, "account:bob", "account:peer"));
+  EXPECT_EQ(StateOf(call_id, "account:bob"), CallParticipantState::Joined);
+  ASSERT_TRUE(ReceiveRemove(call_id, local_identity_, "account:peer"));
+  EXPECT_EQ(StateOf(call_id, local_identity_), CallParticipantState::Joined) << "we are a member: we stay";
+}
+
+// V062 3: the guest's own device holds no roster: removed, it leaves the call.
+TEST_F(CallGuestComposeTest, ARemovedGuestsDeviceLeaves) {
+  const std::string call_id = "call:guest-leaves";
+  SeedGroupCallWithGuest(call_id);
+  holds_roster_ = false;
+
+  ASSERT_TRUE(ReceiveRemove(call_id, local_identity_, "account:peer"));
+  EXPECT_EQ(StateOf(call_id, local_identity_), CallParticipantState::Left);
+}
+
+// V062 2: a roster naming a guest is taken only from a bringer the group's preset lets bring one.
+TEST_F(CallGuestComposeTest, ARosterGuestFromABringerNotAllowedIsDropped) {
+  const std::string call_id = "call:guest-roster";
+  SeedGroupCallWithGuest(call_id);
+  standings_["account:bob"] = MemberStanding(false); // a Managed group: Bob may not bring guests
+
+  CallRosterDetail roster;
+  roster.call_id = call_id;
+  CallRosterEntry frank;
+  frank.identity = "account:frank";
+  frank.brought_by = "account:bob";
+  CallRosterEntry gina;
+  gina.identity = "account:gina";
+  gina.brought_by = "account:peer";
+  roster.participants = {frank, gina};
+  auto detail = CallControlCodec::EncodeRoster(roster);
+  ASSERT_TRUE(detail);
+  auto msg =
+      CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallRoster, "", *detail, "account:peer");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+
+  auto dropped = sessions_->FindParticipant(call_id, "account:frank");
+  ASSERT_TRUE(dropped);
+  EXPECT_FALSE(dropped->has_value()) << "brought by a member who may not";
+  auto kept = sessions_->FindParticipant(call_id, "account:gina");
+  ASSERT_TRUE(kept && kept->has_value());
+  EXPECT_EQ((*kept)->brought_by, "account:peer");
+}
+
+// V062 2: inviting someone outside the group: a guest invite from a member allowed to; refused from one who is not.
+TEST_F(CallGuestComposeTest, AMidCallInviteOfAStrangerIsAGuestInvite) {
+  const std::string call_id = "call:guest-invite";
+  SeedGroupCallWithGuest(call_id);
+
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->InviteParticipant(call_id, "account:hal"); }));
+  auto payload = TryParseObject(last_sent_payload_);
+  ASSERT_TRUE(payload);
+  auto invite = CallControlCodec::DecodeInvite(payload->getString("detail").value_or(""));
+  ASSERT_TRUE(invite) << last_sent_payload_;
+  EXPECT_TRUE(invite->guest);
+  EXPECT_EQ(invite->brought_by, local_identity_);
+  auto row = sessions_->FindParticipant(call_id, "account:hal");
+  ASSERT_TRUE(row && row->has_value());
+  EXPECT_EQ((*row)->brought_by, local_identity_);
+
+  standings_[local_identity_] = MemberStanding(false); // a Managed group's plain member
+  EXPECT_FALSE(OnCallsOwner([&] { return csm_->InviteParticipant(call_id, "account:ivy"); }));
+  standings_["account:jo"] = MemberStanding(false);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->InviteParticipant(call_id, "account:jo"); })) << "a member: plain";
+  auto plain = CallControlCodec::DecodeInvite(TryParseObject(last_sent_payload_)->getString("detail").value_or(""));
+  ASSERT_TRUE(plain);
+  EXPECT_FALSE(plain->guest);
+}
+
+// V062 3: removing from this device: only the owner and admins, only a guest.
+TEST_F(CallGuestComposeTest, RemovingFromHereNeedsOwnerOrAdminAndAGuest) {
+  const std::string call_id = "call:guest-remove-local";
+  SeedGroupCallWithGuest(call_id);
+
+  EXPECT_FALSE(OnCallsOwner([&] { return csm_->RemoveFromCall(call_id, "account:erin"); })) << "a plain member";
+  standings_[local_identity_] = OwnerStanding();
+  EXPECT_FALSE(OnCallsOwner([&] { return csm_->RemoveFromCall(call_id, "account:bob"); })) << "a member";
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->RemoveFromCall(call_id, "account:erin"); }));
+  EXPECT_EQ(StateOf(call_id, "account:erin"), CallParticipantState::Left);
 }
 
 } // namespace

@@ -28,6 +28,12 @@ struct SystemControlLabels {
 };
 
 /**
+ * How long the relay keeps a control-lane record (`ttl_s`): the longest any family waits for one (an hour — card
+ * and copy asks; a call's signaling five minutes) and a minute more. Without it lane records sat 90 days.
+ */
+inline constexpr int64_t kControlLaneRelayTtlMs = 61 * 60 * 1000;
+
+/**
  * A family of system-control messages a feature owns (call control, billing, …): system messages
  * whose payload names a `control_type`. Messaging routes them here by what the family claims,
  * without knowing what they mean. They travel one of two ways:
@@ -52,7 +58,8 @@ struct SystemControlFamily {
   std::function<bool(const ThreadMessage&)> on_lane;
   /**
    * Lane: how long a message may have waited in the relay (relay clock) and still apply. The lane
-   * also bounds the sender's signed time and drops a repeated id.
+   * also bounds the sender's signed time and drops a repeated id. At most kControlLaneRelayTtlMs: the relay
+   * drops lane records after that (a longer one is clamped on Bind).
    */
   int64_t lane_max_age_ms = 5 * 60 * 1000;
   /** A stream message shown, but with no unread count, preview or notice: it is not news. */

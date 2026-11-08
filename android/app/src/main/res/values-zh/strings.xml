@@ -1,0 +1,10 @@
+<resources>
+    <string name="channel_calls">来电</string>
+    <string name="channel_calls_description">有人呼叫你时响铃</string>
+    <string name="message_incoming_title">新消息</string>
+    <string name="message_incoming_body">你有一条新消息</string>
+    <string name="call_answer">接听</string>
+    <string name="call_decline">拒绝</string>
+    <string name="channel_calls_ongoing">通话中</string>
+    <string name="channel_calls_ongoing_description">通话进行时显示</string>
+</resources>

@@ -1,0 +1,74 @@
+<!-- The ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a): a page sheet over whatever page is open. The rows
+     are the shared AI conversation's last bubbles (or the settings "?" one-off question); the input row sends to it.
+     The sheet's own grab handle and X sit around this view; "Open in AI chat" is an icon left of the X. -->
+<div class="ask-ai" data-model="ask_ai">
+  <div class="sheet-header sheet-header--two-buttons">
+    <p class="sheet-title">{{i18n:ask_ai.title}}</p>
+    <button class="ask-ai-open-chat" type="button" data-if="!once" title="{{i18n:ask_ai.open_in_chat}}"
+            data-event-click="ask_ai_open_in_chat()">
+      <span class="sheet-icon-disc"><svg src="../icons/v2/arrow-up-right.svg" width="14" height="14"></svg></span>
+    </button>
+  </div>
+  <p class="ask-ai-privacy">{{i18n:ask_ai.privacy}}</p>
+  <div class="ask-ai-scroll" id="ask-ai-scroll">
+    <div class="ask-ai-intro" data-if="show_intro">
+      <p class="ask-ai-intro-body">{{i18n:ask_ai.intro.body}}</p>
+      <button class="ask-ai-intro-ok" type="button" data-event-click="ask_ai_intro_seen()">{{i18n:ask_ai.intro.ok}}</button>
+    </div>
+    <p class="ask-ai-section" data-if="once">{{i18n:ask_ai.once_title}}</p>
+    <p class="ask-ai-empty" data-if="!once && !show_intro && rows.size == 0 && queued_text == '' && !thinking && !error">{{i18n:ask_ai.empty}}</p>
+    <div data-for="row : rows" class="message-row ask-ai-row"
+         data-class-message-row-user="row.user" data-class-message-row-ai="!row.user">
+      <div selectable="text" data-rml="row.content_rml"></div>
+    </div>
+    <!-- A question waiting for a free turn: shown, not stored, until it goes out. -->
+    <div class="message-row message-row-user message-row-queued" data-if="queued_text != ''">
+      <div class="bubble bubble-user bubble-queued">{{queued_text}}</div>
+      <p class="queued-note muted">{{i18n:ask_ai.queued}}</p>
+    </div>
+    <p class="text muted thinking" data-if="thinking">{{i18n:chat.thinking}}</p>
+    <p class="ask-ai-error" data-if="error">{{i18n:ask_ai.error}}</p>
+    <button class="ask-ai-support" type="button" data-if="show_support"
+            data-event-click="ask_ai_support()">{{i18n:ask_ai.ask_support}}</button>
+    <div class="ask-ai-scroll-end" id="ask-ai-scroll-end"></div>
+  </div>
+  <!-- The input bar floats, frosted, over the bubbles (Kenneth 2026-11-07, like a chat's): the scroll above runs under
+       it and its end spacer (#ask-ai-scroll-end, AskAiPanel::SyncComposerClear) keeps the last bubble clear of it. -->
+  <div class="ask-ai-composer" id="ask-ai-composer">
+    <!-- The picture waiting for its question: a small thumbnail and an X (a 44dp target). -->
+    <div class="ask-ai-picture" data-if="has_picture">
+      <div class="ask-ai-picture-box">
+        <img class="ask-ai-picture-img" data-if="!picture_preparing && picture_src != ''" data-attr-src="picture_src"/>
+      </div>
+      <p class="ask-ai-picture-note" data-if="picture_preparing">{{i18n:chat.image.preparing}}</p>
+      <button class="ask-ai-picture-remove" type="button" data-event-click="ask_ai_remove_picture()"
+              title="{{i18n:chat.image.remove}}">
+        <svg src="../icons/close.svg" width="14" height="14" crop-to-content="true"></svg>
+      </button>
+    </div>
+    <!-- The chat composer's row (Kenneth 2026-11-07: one composer everywhere), its classes and icons: inside the pill
+         the bold plus (its Camera / Photos / File card) and the emoji key at the bottom left, Send at the bottom right
+         once there is text or a picture. No microphone. A setting's "?" is explanation only: no plus. -->
+    <div class="prompt-composer-row ask-ai-input-row" data-class-ask-ai-input-row--text-only="!show_media">
+      <button class="prompt-emoji-btn" type="button" data-event-click="ask_ai_emoji()" title="{{i18n:chat.insert_emoji}}">
+        <svg class="prompt-icon-v2" src="../icons/v2/emoji.svg" width="20" height="20"></svg>
+      </button>
+      <div class="prompt-composer-pill">
+        <textarea id="ask-ai-input" class="prompt-composer-input" rows="1" max-rows="4" maxlength="4000"
+                  data-value="draft"></textarea>
+        <!-- The engine draws no placeholder on phones: a label over the empty input. -->
+        <p class="prompt-composer-label" data-if="draft == ''">{{i18n:chat.ai_thread.placeholder}}</p>
+        <button class="prompt-attach-btn" type="button" data-if="show_media" data-event-click="ask_ai_attach()"
+                title="{{i18n:chat.attach_file}}">
+          <svg class="prompt-icon-plus" src="../icons/v2/plus-bold.svg" width="24" height="24"></svg>
+        </button>
+      </div>
+      <button class="prompt-send-btn" type="button" data-if="draft != '' || has_picture"
+              data-attrif-disabled="thinking || picture_preparing"
+              data-event-click="ask_ai_send()" title="{{i18n:ask_ai.send}}">
+        <span class="prompt-send-disc"><svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg></span>
+      </button>
+    </div>
+    <p class="ask-ai-reminder">{{i18n:ask_ai.reminder}}</p>
+  </div>
+</div>

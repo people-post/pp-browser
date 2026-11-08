@@ -189,6 +189,53 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
   return {};
 }
 
+Roe<void> CallSessionManager::SetLocalOnHold(const bool on_hold) {
+  auto local = control_.LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  const std::string call_id = call_media_.MediaRunningCallId();
+  if (call_id.empty()) {
+    return Error("No active call media");
+  }
+  CallSessionWorkflow::LocalMedia media;
+  media.on_hold = on_hold;
+  return workflow_.PublishLocalMedia(call_id, *local, media);
+}
+
+Roe<void> CallSessionManager::SetLocalVideoPaused(const bool paused, const int display_rotation_degrees) {
+  auto local = control_.LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  const std::string call_id = call_media_.MediaRunningCallId();
+  CallMedia* call_media = call_id.empty() ? nullptr : call_media_.Media(call_id);
+  if (!call_media) {
+    video_paused_call_id_.clear();
+    return Error("No active call media");
+  }
+  CallSessionWorkflow::LocalMedia media;
+  if (paused) {
+    if (!call_media->CameraOn()) {
+      return {}; // nothing to pause
+    }
+    (void)call_media->SetCamera(false, 0);
+    video_paused_call_id_ = call_id;
+    media.video_enabled = false; // an older peer shows "camera off"
+    media.video_paused = true;
+  } else {
+    if (video_paused_call_id_ != call_id) {
+      video_paused_call_id_.clear();
+      return {}; // not paused here (or another call's)
+    }
+    video_paused_call_id_.clear();
+    auto cam = call_media->SetCamera(true, display_rotation_degrees);
+    media.video_enabled = cam && call_media->CameraOn();
+    media.video_paused = false;
+  }
+  return workflow_.PublishLocalMedia(call_id, *local, media);
+}
+
 Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
                                                  const std::string& publisher_identity) {
   auto local = control_.LocalRelayIdentity();
@@ -247,6 +294,10 @@ Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_
 
 Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, const std::string& invitee_identity) {
   return workflow_.InviteParticipant(call_id, invitee_identity);
+}
+
+Roe<void> CallSessionManager::RemoveFromCall(const std::string& call_id, const std::string& identity) {
+  return workflow_.RemoveFromCall(call_id, identity);
 }
 
 void CallSessionManager::SetPendingAcceptChargeDecision(const InitiationChargeDecision decision) {
@@ -523,6 +574,8 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       return {}; // the gate dropped them (not signaling here)
     case CallControlType::CallConnectGiveUp:
       return HandleInboundConnectGiveUp(detail_json, sender_identity);
+    case CallControlType::CallRemove:
+      return workflow_.HandleInboundRemove(detail_json, sender_identity, *local);
   }
   return {};
 }

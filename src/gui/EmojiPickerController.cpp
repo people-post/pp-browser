@@ -10,9 +10,12 @@
 #include <ui/dom/Context.h>
 #include <ui/dom/Element.h>
 #include <ui/dom/ElementDocument.h>
+#include <ui/widgets/ElementFormControlTextArea.h>
+#include <ui/base/StringUtilities.h>
 
 #include <algorithm>
 #include <stdexcept>
+#include <utility>
 
 namespace pbr {
 namespace {
@@ -91,14 +94,15 @@ bool EmojiPickerController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("select_category", &EmojiPickerController::SelectCategoryCallback);
     ctor.BindEventCallback("on_scroll", &EmojiPickerController::OnScrollCallback);
     ctor.BindEventCallback("cancel_picker", &EmojiPickerController::CancelCallback);
+    ctor.BindEventCallback("close_to_keyboard", &EmojiPickerController::CloseToKeyboardCallback);
   });
 }
 
 void EmojiPickerController::OpenInsert(
     std::function<void(std::string emoji, bool restore_composer_focus)> on_pick) {
-  // Toggle: ☺ again while bottom chrome emoji is open closes it (no OSK bounce).
+  // ☺ again while the composer's emoji sheet is open: back to the keyboard.
   if (IsBottomChromeEmojiOpen()) {
-    Close();
+    CloseToKeyboard();
     return;
   }
   if (layer_id_ >= 0) {
@@ -108,7 +112,7 @@ void EmojiPickerController::OpenInsert(
   react_message_id_.clear();
   on_insert_pick_ = std::move(on_pick);
   on_react_pick_ = nullptr;
-  title_ = Tr("chat.insert_emoji").c_str();
+  title_ = Tr("chat.emoji_sheet").c_str();
   active_category_.clear();
   RebuildModel();
   DirtyAll();
@@ -155,15 +159,24 @@ void EmojiPickerController::OpenBottomChromePresentation() {
     bottom_chrome_mode_ = false;
     return;
   }
+  // A sheet of about a third of the screen (Kenneth 2026-11-05 原话 82) with the message field right above it.
   BottomChromeSpec spec;
   spec.key = "emoji_picker";
+  spec.height_share = 1.f / 3.f;
   bottom_chrome_mode_ = shell_navigation_.set_bottom_chrome(spec);
+  if (bottom_chrome_mode_ && context_ && context_->GetNumDocuments() > 0) {
+    sheet_taps_.Attach(context_->GetDocument(0));
+  }
 }
 
 void EmojiPickerController::OpenOverlayPresentation() {
   bottom_chrome_mode_ = false;
   PaneSpec spec;
   spec.key = "emoji_picker";
+  // Phones: a page sheet opening at about a third of the screen (Kenneth 2026-11-05 原话 81); the desktop keeps its
+  // centred panel.
+  spec.page_sheet = true;
+  spec.sheet_detent = SheetDetent::Small;
   if (mode_ == Mode::Insert) {
     spec.return_focus_id = "draft-input";
   }
@@ -190,11 +203,13 @@ void EmojiPickerController::Close() {
   const bool was_bottom = bottom_chrome_mode_;
   const int closing_id = layer_id_;
   layer_id_ = -1;
+  sheet_taps_.Detach();
   ResetState();
   if (was_bottom && shell_navigation_.clear_bottom_chrome) {
     shell_navigation_.clear_bottom_chrome();
   }
-  if (flow_coordinator_.end_modal) {
+  // The composer's sheet began no modal flow (it is no layer).
+  if (!was_bottom && flow_coordinator_.end_modal) {
     flow_coordinator_.end_modal();
   }
   if (closing_id >= 0 && shell_navigation_.close_layer) {
@@ -517,6 +532,75 @@ void EmojiPickerController::OnScrollCallback(ui::DataModelHandle, ui::Event&, co
 
 void EmojiPickerController::CancelCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
   Instance().Close();
+}
+
+void EmojiPickerController::CloseToKeyboardCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
+  Instance().CloseToKeyboard();
+}
+
+void EmojiPickerController::CloseToKeyboard() {
+  Close();
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  // The field takes the focus with the caret after the last emoji; the keyboard comes up with it.
+  auto* draft = ui_dynamic_cast<ui::ElementFormControlTextArea*>(context_->GetDocument(0)->GetElementById("draft-input"));
+  if (!draft) {
+    return;
+  }
+  const ui::String value = draft->GetValue();
+  const int end = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(value, static_cast<int>(value.size()));
+  draft->Focus();
+  draft->SetSelectionRange(end, end);
+}
+
+void EmojiPickerController::SheetTaps::Attach(ui::Element* document) {
+  Detach();
+  if (!document) {
+    return;
+  }
+  document_ = document->GetObserverPtr();
+  document->AddEventListener(ui::EventId::Mousedown, this);
+  document->AddEventListener(ui::EventId::Mouseup, this);
+}
+
+void EmojiPickerController::SheetTaps::Detach() {
+  if (ui::Element* document = document_.get()) {
+    document->RemoveEventListener(ui::EventId::Mousedown, this);
+    document->RemoveEventListener(ui::EventId::Mouseup, this);
+  }
+  document_ = nullptr;
+  drag_start_y_ = -1.f;
+}
+
+void EmojiPickerController::SheetTaps::ProcessEvent(ui::Event& event) {
+  const float y = event.GetParameter<float>("mouse_y", 0.f);
+  if (event.GetId() == ui::EventId::Mouseup) {
+    // A drag down on the sheet's top of at least 40dp closes it like its X.
+    const float start = std::exchange(drag_start_y_, -1.f);
+    ui::Context* context = event.GetTargetElement() ? event.GetTargetElement()->GetContext() : nullptr;
+    const float dp = context ? context->GetDensityIndependentPixelRatio() : 1.f;
+    if (start >= 0.f && y - start >= 40.f * dp) {
+      AppRuntime::PostUI([&owner = owner_]() { owner.CloseToKeyboard(); });
+    }
+    return;
+  }
+  for (ui::Element* e = event.GetTargetElement(); e; e = e->GetParentNode()) {
+    if (e->IsClassSet("emoji-sheet-top")) {
+      drag_start_y_ = y;
+      return;
+    }
+    // The message field: the keyboard instead (the press is not let through to focus a field that moves down).
+    if (e->GetId() == "draft-input") {
+      event.StopPropagation();
+      AppRuntime::PostUI([&owner = owner_]() { owner.CloseToKeyboard(); });
+      return;
+    }
+    if (e->GetId() == "chat-messages") {
+      AppRuntime::PostUI([&owner = owner_]() { owner.Close(); });
+      return;
+    }
+  }
 }
 
 } // namespace pbr

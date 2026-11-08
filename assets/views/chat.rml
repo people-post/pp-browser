@@ -3,7 +3,8 @@
      data-class-chat-shell--private="thread_is_private"
      data-class-chat-shell--public="thread_is_public"
      data-class-chat-shell--group="thread_is_group"
-     data-class-chat-shell--e2e="thread_is_private">
+     data-class-chat-shell--e2e="thread_is_private"
+     data-class-chat-panel--searching="search_open">
   <div class="chat-header">
     <!-- Search inside the chat, one row in the title row's place: box, "3 of 12", older (up) / newer (down), Cancel.
          Enter in the box steps to the next older hit. -->
@@ -22,6 +23,23 @@
       <button class="chat-search-cancel" type="button" data-event-click="close_search()">{{i18n:chat.search.cancel}}</button>
     </div>
     <div class="chat-header-main" data-if="!search_open">
+      <!-- Phones only (hidden on desktop): the avatar of the chat list row, in the nav bar. -->
+      <!-- An AI conversation shows its list row's letter and colour, not a fixed star (Kenneth 2026-11-07). -->
+      <div class="chat-header-avatar"
+           data-class-chat-row-avatar--group="thread_is_group"
+           data-class-avatar-tone-0="!thread_is_group && thread_avatar_tone == 0"
+           data-class-avatar-tone-1="!thread_is_group && thread_avatar_tone == 1"
+           data-class-avatar-tone-2="!thread_is_group && thread_avatar_tone == 2"
+           data-class-avatar-tone-3="!thread_is_group && thread_avatar_tone == 3"
+           data-class-avatar-tone-4="!thread_is_group && thread_avatar_tone == 4"
+           data-class-avatar-tone-5="!thread_is_group && thread_avatar_tone == 5"
+           data-class-avatar-tone-6="!thread_is_group && thread_avatar_tone == 6"
+           data-class-avatar-tone-7="!thread_is_group && thread_avatar_tone == 7">
+        <img class="avatar-photo" data-if="!thread_is_ai && !thread_is_group && thread_has_icon" data-attr-src="thread_icon_src"/>
+        <p class="chat-row-avatar-letter" data-if="!thread_is_group && !thread_has_icon">{{thread_avatar_letter}}</p>
+        <svg class="chat-row-avatar-icon" src="../icons/v2/group.svg" width="20" height="20" data-if="thread_is_group"></svg>
+      </div>
+      <div class="chat-header-text">
       <div class="chat-header-title-row">
         <div class="chat-header-type-icon" data-if="thread_is_ai">
           <svg src="../icons/sparkle.svg" width="16" height="16" crop-to-content="true"></svg>
@@ -40,6 +58,7 @@
                 data-event-click="open_peer_sheet()">{{thread_title}}</button>
         <h1 class="chat-header-title" data-if="!show_peer_sheet">{{thread_title}}</h1>
       </div>
+      <p class="chat-header-phone-subtitle" data-if="thread_phone_subtitle != ''">{{thread_phone_subtitle}}</p>
       <div class="chat-header-meta-row">
         <div class="chat-peer-path" data-if="show_peer_link"
              data-class-chat-peer-path--direct="peer_link_direct"
@@ -62,19 +81,28 @@
         </div>
         <p class="text-xs muted chat-header-subtitle" data-event-click="open_group_members()">{{thread_subtitle}}</p>
       </div>
+      </div>
     </div>
     <div class="chat-header-actions row" data-if="!search_open">
       <button class="chat-header-call-btn" type="button" data-if="show_call_actions"
-              data-class-chat-header-call-btn--join="call_joinable"
+              data-class-chat-header-call-btn--join="call_joinable && call_bar_text == ''"
               data-event-click="start_call()">
         <svg src="../icons/phone.svg"></svg>
-        <span data-if="call_joinable">{{i18n:call.join}}</span>
+        <span data-if="call_joinable && call_bar_text == ''">{{i18n:call.join}}</span>
       </button>
       <button class="chat-header-more-btn" type="button" data-if="show_thread_menu"
               data-event-click="open_thread_actions_menu()">
         <svg src="../icons/more.svg"></svg>
       </button>
     </div>
+  </div>
+  <!-- Phones: a group call goes on here (DEV/PLAN-ui-batch8-group-pages.md 4, mockup 06-GroupLive). -->
+  <div class="chat-call-bar" data-if="call_bar_text != '' && !search_open">
+    <span class="chat-call-bar-dot"></span>
+    <p class="chat-call-bar-text">{{call_bar_text}}</p>
+    <button class="chat-call-bar-join" type="button" data-event-click="join_group_call()">
+      <span class="chat-header-call-btn chat-header-call-btn--join"><span>{{i18n:call.join}}</span></span>
+    </button>
   </div>
   <div class="chat-gap-banner stack" data-if="show_peer_link_banner && !sync_in_progress">
     <p class="text muted">{{peer_link_banner}}</p>
@@ -112,19 +140,10 @@
   <div class="chat-messages-wrap">
   <div id="chat-messages" class="messages" data-mount-id="messages"
        data-event-scroll="messages_scroll()">
-    <div class="chat-empty stack" data-if="thread_is_ai || (!has_turns && !loading)">
-      <p class="text muted" data-if="!has_turns && !loading">{{i18n:chat.empty_body}}</p>
-      <!-- The example chips stay at the top of an AI thread so they can be scrolled back to and tapped again. -->
-      <div class="suggestion-row" data-if="thread_is_ai">
-        <button class="chat-suggestion" data-event-click="send_example('{{i18n:home.suggestion.capabilities_prompt}}')"
-                data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.capabilities}}</button>
-        <button class="chat-suggestion" data-event-click="send_example('{{i18n:home.suggestion.headlines_prompt}}')"
-                data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.headlines}}</button>
-        <button class="chat-suggestion" data-event-click="send_example('{{i18n:chat.example.3_prompt}}')"
-                data-attrif-disabled="compose_disabled">{{i18n:chat.example.3}}</button>
-        <button class="chat-suggestion" data-event-click="send_example('{{i18n:chat.example.4_prompt}}')"
-                data-attrif-disabled="compose_disabled">{{i18n:chat.example.4}}</button>
-      </div>
+    <!-- No example-chips card inside an AI thread anymore (Kenneth 2026-11-05): the PP 助手 page already shows the
+         quick actions at the bottom, so the in-chat card was redundant. Only the empty-body line remains. -->
+    <div class="chat-empty stack" data-if="!has_turns && !loading">
+      <p class="text muted">{{i18n:chat.empty_body}}</p>
     </div>
     <div data-if="use_messages_layout">
       <div data-for="row : messages" class="message-row"
@@ -133,13 +152,47 @@
            data-class-message-row-peer="row.row_class == 'message-row-peer'"
            data-class-message-row-annotation-orphan="row.row_class == 'message-row-annotation-orphan'"
            data-class-message-row-mentions-me="row.mentions_me"
+           data-class-message-row-has-reactions="row.has_reactions"
+           data-class-message-row-run-start="row.run_start"
            data-class-message-row-search-hit="row.search_hit"
            data-class-message-row-search-current="row.search_current"
            data-attr-message-id="row.message_id">
+        <div class="chat-date-strip" data-if="row.date_label != ''"><span class="chat-date-pill">{{row.date_label}}</span></div>
+        <div class="chat-row-body" data-class-chat-row-body--group="row.group_column">
+        <div class="chat-row-avatar-col" data-if="row.group_column">
+          <!-- A tap on the avatar opens the member's page; the hit box is 44dp, the avatar 32dp. -->
+          <div class="chat-row-avatar-hit" data-if="row.group_avatar" data-event-click="open_sender(row.message_id)">
+          <div class="chat-row-avatar-col-avatar"
+               data-class-avatar-tone-0="row.group_name_tone == 0"
+               data-class-avatar-tone-1="row.group_name_tone == 1"
+               data-class-avatar-tone-2="row.group_name_tone == 2"
+               data-class-avatar-tone-3="row.group_name_tone == 3"
+               data-class-avatar-tone-4="row.group_name_tone == 4"
+               data-class-avatar-tone-5="row.group_name_tone == 5"
+               data-class-avatar-tone-6="row.group_name_tone == 6"
+               data-class-avatar-tone-7="row.group_name_tone == 7">
+            <img class="avatar-photo" data-if="row.group_has_icon" data-attr-src="row.group_avatar_src"/>
+            <p class="chat-row-avatar-letter" data-if="!row.group_has_icon">{{row.group_avatar_letter}}</p>
+          </div>
+          </div>
+        </div>
+        <div class="chat-row-content">
+        <p class="chat-group-name" data-if="row.group_name != '' && !row.group_name_in_bubble"
+           data-event-click="open_sender(row.message_id)"
+           data-class-chat-group-name--0="row.group_name_tone == 0"
+           data-class-chat-group-name--1="row.group_name_tone == 1"
+           data-class-chat-group-name--2="row.group_name_tone == 2"
+           data-class-chat-group-name--3="row.group_name_tone == 3"
+           data-class-chat-group-name--4="row.group_name_tone == 4"
+           data-class-chat-group-name--5="row.group_name_tone == 5"
+           data-class-chat-group-name--6="row.group_name_tone == 6"
+           data-class-chat-group-name--7="row.group_name_tone == 7">{{row.group_name}}</p>
         <p class="sender-label muted" data-if="row.sender_label != ''">
           <span>{{row.sender_label}}</span><span class="chat-time-inline muted" data-if="row.time_label != ''"> · <span>{{row.time_label}}</span></span>
         </p>
         <div selectable="text" data-model="chat" data-rml="row.content_rml"></div>
+        </div>
+        </div>
       </div>
     </div>
     <div data-if="!use_messages_layout">
@@ -162,8 +215,12 @@
     <p class="text muted thinking" data-if="loading && status == ''">{{i18n:chat.thinking}}</p>
     <p class="text muted thinking" data-if="busy_elsewhere && thread_is_ai && !has_queued">{{i18n:chat.ai_busy_elsewhere}}</p>
     <p class="text muted thinking" data-if="loading && status != ''">{{status}}</p>
+    <!-- Phones: the last message clears the composer's fade (the engine leaves the scroller's bottom padding out). -->
+    <div class="composer-clear"></div>
   </div>
   <button class="chat-jump-latest" type="button" data-if="show_jump_to_latest"
           data-event-click="jump_to_latest()">{{jump_to_latest_label}}</button>
+  <!-- Phones: the transcript fades into the composer (no hairline). -->
+  <div class="bar-fade bar-fade--up chat-composer-fade"></div>
   </div>
 </div>

@@ -1,5 +1,7 @@
 #include "lib/ui/ShellInterruption.h"
 
+#include "lib/ui/ShellLayout.h"
+
 namespace pbr {
 
 InterruptionKind ShellInterruption::Top(const ShellState& state) {
@@ -21,13 +23,11 @@ InterruptionKind ShellInterruption::Top(const ShellState& state) {
   if (!state.transient_stack.empty()) {
     return InterruptionKind::Transient;
   }
-  if (state.account_sheet_open) {
-    return InterruptionKind::AccountSheet;
-  }
   if (state.layout_mode == LayoutMode::Compact && state.auxiliary_open) {
     return InterruptionKind::AuxiliarySheet;
   }
-  if (state.layout_mode == LayoutMode::Compact && state.compact_chat_open) {
+  // Under a hidden tab's page (phone Me / Contacts) the chat overlay waits: that page is on top, not the overlay.
+  if (state.layout_mode == LayoutMode::Compact && state.compact_chat_open && !ShellLayout::HiddenTabShown(state)) {
     return InterruptionKind::CompactChatOverlay;
   }
   return InterruptionKind::None;
@@ -48,8 +48,6 @@ CompactChromeFrostSurface ShellInterruption::ResolveFrostSurface(const ShellStat
     return CompactChromeFrostSurface::None;
   case InterruptionKind::Transient:
     return CompactChromeFrostSurface::TransientHeader;
-  case InterruptionKind::AccountSheet:
-    return CompactChromeFrostSurface::AccountSheetHeader;
   case InterruptionKind::AuxiliarySheet:
     return CompactChromeFrostSurface::AuxiliarySheetChrome;
   case InterruptionKind::CompactChatOverlay:
@@ -80,9 +78,6 @@ bool ShellInterruption::DismissTop(ShellState& state) {
   case InterruptionKind::Transient:
     state.transient_stack.pop_back();
     state.transient_active = !state.transient_stack.empty();
-    return true;
-  case InterruptionKind::AccountSheet:
-    state.account_sheet_open = false;
     return true;
   case InterruptionKind::AuxiliarySheet:
     state.auxiliary_open = false;

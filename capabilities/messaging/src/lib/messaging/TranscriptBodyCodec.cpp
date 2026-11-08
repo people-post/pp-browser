@@ -140,6 +140,18 @@ Roe<void> TranscriptBodyCodec::ApplyToMessage(const TranscriptBodyPlaintext& bod
   if (auto applied = ChatPayloadCodec::ApplyRowToMessage(body.chat_payload, message); !applied) {
     return applied.error();
   }
+  // The row rebuilds a system message's payload from its control type and detail only. The local answer to it (an
+  // invitation accepted or declined, an owner-unreachable notice dismissed) is the stored payload's "resolution":
+  // without it a stored answered invitation came back as a card again, a whole-width one with no buttons.
+  if (message.content_type == ChatContentType::System) {
+    const auto stored = TryParseObject(body.payload_json);
+    const auto resolution = stored ? stored->getString("resolution") : std::nullopt;
+    auto rebuilt = TryParseObject(message.payload_json);
+    if (resolution && rebuilt) {
+      rebuilt->set("resolution", *resolution);
+      message.payload_json = DumpJson(*rebuilt);
+    }
+  }
   return {};
 }
 

@@ -3,10 +3,18 @@
 # Capabilities expose facades; another app brings its own presenters.
 pp_browser_add_feature_library(pp_feature_presenters
   SOURCES
+    CallBackOffer.cpp
+    CallConnectStory.cpp
+    CallMediaHintClock.cpp
+    CallReconnectCapsule.cpp
     CallPresenter.cpp
     CallSystemUiBridge.cpp
     ChatPresenter.cpp
     GroupEventText.cpp
+    GroupLinkText.cpp
+    HomeBrief.cpp
+    HomeToday.cpp
+    QuickReactions.cpp
     ThreadSearch.cpp
     ThreadSearchSession.cpp
   PUBLIC_LIBS

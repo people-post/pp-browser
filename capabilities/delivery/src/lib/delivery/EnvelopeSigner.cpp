@@ -18,11 +18,12 @@ namespace pbr {
 
 namespace {
 
-constexpr std::array<char, 34> kSignDomain = {
-    'p', 'p', '-', 'b', 'r', 'o', 'w', 's', 'e', 'r', ':', 'r', 'e', 'l', 'a', 'y', '-',
-    'e', 'n', 'v', 'e', 'l', 'o', 'p', 'e', '-', 's', 'i', 'g', 'n', '-', 'v', '3', '\0'};
+constexpr std::array<char, 34> kSignDomain = {'p', 'p', '-', 'b', 'r', 'o', 'w', 's', 'e', 'r', ':', 'r',
+                                              'e', 'l', 'a', 'y', '-', 'e', 'n', 'v', 'e', 'l', 'o', 'p',
+                                              'e', '-', 's', 'i', 'g', 'n', '-', 'v', '4', '\0'};
 
-constexpr uint8_t kSignVersion = 3;
+// 4: no group id (group-chat G018 item 7 — a group copy carries it inside its ciphertext).
+constexpr uint8_t kSignVersion = 4;
 constexpr uint8_t kBodyKindE2e = 0x02;
 
 void AppendBigEndianInt64(std::ostringstream& oss, const int64_t value) {
@@ -85,18 +86,10 @@ Roe<void> EnvelopeSigner::CheckBodyShape(const RelayEnvelope& envelope) {
     }
   }
   if (envelope.route.kind == kRelayRouteGroup) {
-    if (!envelope.route.group_id || envelope.route.group_id->empty()) {
-      return Error("Group envelope without group_id");
-    }
     return {};
   }
+  // A control-lane record carries a copy per device of the peer's, or the account copy, as a direct one (M024).
   if (envelope.route.kind == kRelayRouteDirect || envelope.route.kind == kRelayRouteControl) {
-    if (envelope.route.group_id) {
-      return Error("Direct / control envelope with a group_id");
-    }
-    if (envelope.route.kind == kRelayRouteControl && (copies.size() != 1 || !copies.front().recipient_device.empty())) {
-      return Error("Control envelope must carry one account copy");
-    }
     return {};
   }
   return Error("Unknown route kind");
@@ -161,8 +154,6 @@ Roe<std::vector<uint8_t>> EnvelopeSigner::BuildSignBytes(const RelayEnvelope& en
     ar & sender_contact_id;
     WireLenUtf8 sender_relay_id{envelope.sender_relay_id};
     ar & sender_relay_id;
-    WireLenUtf8 group_id{envelope.route.group_id.value_or(std::string{})};
-    ar & group_id;
     WireLenUtf8 sender_device{envelope.sender_device};
     ar & sender_device;
   }

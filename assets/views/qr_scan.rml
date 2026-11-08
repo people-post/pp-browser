@@ -1,9 +1,42 @@
 <div class="qr-scan stack" data-model="qr_scan">
-  <h2 class="heading-2">{{i18n:scan.title}}</h2>
+  <h2 class="heading-2 qr-scan-title">{{i18n:scan.title}}</h2>
   <div class="qr-scan-camera">
     <scan-preview id="qr-scan-preview" class="qr-scan-preview"></scan-preview>
   </div>
-  <p class="text muted" role="status">{{status}}</p>
+  <!-- Phones (Kenneth 2026-11-04, WeChat style): the camera fills the screen; a square frame with corner marks and a
+       moving line in the middle, the rest dimmed, the hint under the frame, a white back at the top left and
+       "My QR code" at the bottom. The desktop panel keeps the title, status line and buttons below. -->
+  <div class="qr-scan-finder">
+    <div class="qr-scan-dim"></div>
+    <div class="qr-scan-finder-row">
+      <div class="qr-scan-dim"></div>
+      <div class="qr-scan-frame">
+        <div class="qr-scan-corner qr-scan-corner--tl"></div>
+        <div class="qr-scan-corner qr-scan-corner--tr"></div>
+        <div class="qr-scan-corner qr-scan-corner--bl"></div>
+        <div class="qr-scan-corner qr-scan-corner--br"></div>
+        <div class="qr-scan-line" data-if="!failed"></div>
+      </div>
+      <div class="qr-scan-dim"></div>
+    </div>
+    <div class="qr-scan-dim qr-scan-below">
+      <div class="qr-scan-below-text">
+        <p class="qr-scan-hint" data-if="!failed">{{i18n:scan.frame_hint}}</p>
+        <p class="qr-scan-hint" role="status" data-if="failed">{{status}}</p>
+        <button class="qr-scan-retry" type="button" data-if="failed" data-event-click="retry_scan()">{{i18n:scan.retry}}</button>
+      </div>
+    </div>
+  </div>
+  <button class="qr-scan-back shell-circle-btn" type="button" data-event-click="cancel_scan()">
+    <span class="shell-circle-btn-face"><svg src="../icons/v2/back.svg" width="24" height="24"></svg></span>
+  </button>
+  <div class="qr-scan-tools">
+    <button class="qr-scan-tool" type="button" data-if="can_show_my_qr" data-event-click="scan_show_my_qr()">
+      <span class="qr-scan-tool-disc"><svg src="../icons/v2/qr-code.svg" width="26" height="26"></svg></span>
+      <span class="qr-scan-tool-label">{{i18n:contacts.my_qr}}</span>
+    </button>
+  </div>
+  <p class="text muted qr-scan-status" role="status">{{status}}</p>
   <div class="row qr-scan-actions">
     <button class="btn btn-secondary" type="button" data-event-click="cancel_scan()">{{i18n:common.cancel}}</button>
     <button class="btn btn-primary" type="button" data-if="failed" data-event-click="retry_scan()">{{i18n:scan.retry}}</button>

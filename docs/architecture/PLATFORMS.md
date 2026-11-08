@@ -26,7 +26,7 @@ Voice/video capture and playback go through **SDL3 audio/camera** in [`MediaEngi
 | Windows | WASAPI | No | OS microphone privacy (also voice messages) |
 | macOS | CoreAudio | No | Mic (calls and voice messages) / camera + **macOS 15+ Local Network** (`NSLocalNetworkUsageDescription` in [`packaging/macos/Info.plist`](../../packaging/macos/Info.plist)) |
 | Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` (calls and voice messages) + `CAMERA` + runtime; link `mediandk` + `camera2ndk` |
-| iOS | CoreAudio | No | `NSMicrophoneUsageDescription` (calls **and voice messages**) + `NSCameraUsageDescription`; `AVAudioSession` VoIP/play-and-record; `UIBackgroundModes` `audio` (+ `voip` on CallKit builds) |
+| iOS | CoreAudio | No | `NSMicrophoneUsageDescription` (calls **and voice messages**) + `NSCameraUsageDescription`; `AVAudioSession` VoIP/play-and-record; `UIBackgroundModes` `audio` (+ `voip` on CallKit builds, `PP_BROWSER_IOS_CALLKIT`) |
 
 **Voice messages** (`lib/media`: `VoiceRecorder`, `VoicePlayer`, `OggOpus`): Mac, Windows, iOS and Android record (Opus 24 kbps, Ogg) and play; **Linux has no microphone button and no player** (`VoiceMessagesSupported()` is false, a received voice message is a file row). Both go through `MediaDeviceArbiter` (the microphone is exclusive with calls; playback is refused while a call or ringtone holds the speaker, and a ringing call stops a recording, keeping what was said, and a clip). The first press only asks for the microphone (`MicPermission`: AVCaptureDevice on Apple, `checkSelfPermission` / `SDL_RequestAndroidPermission` on Android; Windows and Linux have no per-app prompt) and then says to press again; a refusal is told as such. iOS uses its own `playback` audio session (`VoiceAudioSession_Ios.mm`, loudspeaker, audible with the silent switch on), separate from `AudioSession`; Android plays at media volume on the speaker (SDL's media role, nothing to switch).
 
@@ -57,6 +57,8 @@ Android builds use Gradle + NDK (`android/`) and produce a debug APK with `libma
 | `ICredentialStore` | `EnvCredentialStore` | `EnvCredentialStore` (inline API key in Settings; Keystore deferred) |
 | libp2p | Built and linked (`p2p::p2p`) | Built and linked (same vendor tree) |
 | `ConversationsHub` | Foreground poll loop | `BackgroundSyncScheduler`: 2s foreground; background push only (20 s wake window); FCM wake + WorkManager when enabled |
+| Push / call screen | N/A (desktop local notify) | FCM token asked for at each start (`PpFirebaseMessagingService.requestToken`); notification permission asked at start (13+). A ring the app does not show itself rings the incoming-call notification (`PpCallNotifications`, `AndroidCallSystemUi` behind `CallSystemUiBridge`; [P014](../../projects/push-notifications/DECISIONS.md)): channel ringtone, full screen when locked, Answer / Decline. A push with the app stopped starts only the process: `call_wake` rings "Incoming call" and its full-screen notification starts the app, `inbox_wake` shows a generic "New message" unless Show notifications is off |
+| Call in progress | — | `PpCallService` (native `OngoingCallService`, [V061](../../projects/p2p-av-calls/DECISIONS.md#v061--android-keeps-a-calls-microphone-in-the-background)): a `microphone` foreground service with an ongoing-call notification (who with, Hang up) for as long as the device is in a call, so the mic is not silenced in the background (9+). Started only with the app in front and the mic allowed (else at the next resume) |
 | Navigation | Escape → dismiss then exit | Back → dismiss then minimize; Escape same as desktop |
 | MCP stdio | Supported | Skipped; use `mcp.url` |
 | HTTPS (curl + BoringSSL) | Host CA bundle / Secure Transport / Schannel | `os::ApplyPlatformCurlSsl` → system CAPATH (`TlsCaPath`); same entry as iOS via `ApplyCurlSslDefaults` |
@@ -81,7 +83,8 @@ Android still keeps the activity alive across other config changes (`configChang
 | `SDL_EVENT_RENDER_DEVICE_RESET` | Rebuild GL3 shaders/FBOs, release TextLoupe GPU state, `Rml::ReleaseTextures` / `ReleaseCompiledGeometry` / `ReleaseFontResources`, then `SyncContext` |
 | `SDL_EVENT_DID_ENTER_FOREGROUND` | `SyncContext` + theme sync (size may have changed while backgrounded) |
 | Invalid surface / zero pixel size | Skip `BeginFrame` / `PresentFrame` (avoids clearing into a dead surface) |
-| `onPause` / focus loss (before surface destroy) | `MainActivity` best-effort `PixelCopy` of `SDLSurface` into `TaskDescription` so Recents is less likely to show a black tile |
+| `onPause` / focus loss (before surface destroy) | `MainActivity` best-effort `PixelCopy` of `SDLSurface` into `TaskDescription` so Recents is less likely to show a black tile — never while a secret is on screen (below) |
+| A secret on screen (`SecureScreen`: the PIN gate; Me → Account & security, where the recovery phrase shows) | `FLAG_SECURE` on the window (no screenshot, screen recording, cast or Recents preview of it) and the task's icon back to the app's; iOS: a plain cover while the app is not active, so the app switcher's picture shows none of it, and, while the recovery phrase shows and the screen is recorded or mirrored, a cover that says why (`SetSecretLegible`). Windows / macOS desktop: the window is left out of screen sharing and screenshots (`WDA_EXCLUDEFROMCAPTURE` / `NSWindowSharingNone`). The recovery phrase hides when the app goes to the background |
 
 Do not issue OpenGL calls after `SDL_EVENT_WILL_ENTER_BACKGROUND`; SDL may have already backed up the EGL context.
 
@@ -102,7 +105,7 @@ iOS builds use CMake + Xcode toolchains from the repo root (no separate Gradle-s
 | Renderer | OpenGL 3.3 | OpenGL ES 3 (SDL) |
 | libp2p | Built and linked | Built and linked |
 | MCP | stdio + HTTP | HTTP URL only |
-| Push | N/A (desktop local notify) | APNs token via `IosPushDeviceRegistrar` + silent wake → `BackgroundSyncScheduler`; call invites arrive as a visible alert (P012), or on CallKit builds as a VoIP push that rings CallKit's screen (P013, `CallSystemUi_Ios.mm`); `IosLocalNotifier` banners |
+| Push | N/A (desktop local notify) | APNs token via `IosPushDeviceRegistrar` + silent wake → `BackgroundSyncScheduler`; call invites arrive on CallKit builds (`PP_BROWSER_IOS_CALLKIT`, default on) as a VoIP push that rings CallKit's screen, linked to its ring by call id (P016, `CallSystemUi_Ios.mm`); on builds without CallKit (China) as a visible alert (P012) whose tap, after the PIN unlock, routes to the ringing call (P015); `IosLocalNotifier` banners |
 | HTTPS (curl + BoringSSL) | Secure Transport (macOS) | `os::ApplyPlatformCurlSsl` → Security.framework `SecTrust` verify callback (system roots / MDM); no bundled CA file |
 
 ### Mobile HTTPS trust (curl + BoringSSL)
@@ -116,7 +119,7 @@ Mobile builds link curl against vendored BoringSSL (no Secure Transport on iOS).
 
 Entry point: `ApplyCurlSslDefaults` → `os::ApplyPlatformCurlSsl` (`capabilities/base/src/foundation/tls/OsTlsPlatformCurl_*`; a base mechanism, not the product's platform layer — capability-repos CR015).
 
-**A/V ([V016](../../projects/p2p-av-calls/DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wiring-included)):** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` in [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); `AVAudioSession` play-and-record / VoIP via `AudioSession` before capture; `UIBackgroundModes` → `audio` for in-call background. **Portrait-only** (`UISupportedInterfaceOrientations` + `SDL_HINT_ORIENTATIONS`) — same rotation lock as Android. Physical device dogfood optional.
+**A/V ([V016](../../projects/p2p-av-calls/DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wiring-included)):** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` in [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); `AVAudioSession` play-and-record / VoIP via `AudioSession` before capture; when an interruption ends (a phone call, Siri, an alarm) or the media services reset, `AudioSession` takes the session back and every capturing `MediaEngine` reopens its audio devices (each engine adds its own handler, `AddInterruptionEndedHandler`); `UIBackgroundModes` → `audio` for in-call background. **Portrait-only** (`UISupportedInterfaceOrientations` + `SDL_HINT_ORIENTATIONS`) — same rotation lock as Android. Physical device dogfood optional.
 
 Build and signing placeholders: [IOS_BUILD.md](../ops/IOS_BUILD.md). Scripts: [`scripts/platform/ios_build.sh`](../../scripts/platform/ios_build.sh), [`scripts/platform/ios_sign.sh`](../../scripts/platform/ios_sign.sh).
 

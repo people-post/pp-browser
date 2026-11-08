@@ -18,11 +18,15 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- An incoming call's notification goes full screen on a locked phone (PpCallNotifications). -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- P011: "Stay connected in the background" (opt-in) runs PpConnectionService. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- The call this device is in keeps its microphone in the background (PpCallService). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -65,9 +69,18 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="pp-browser-contact-v1" />
             </intent-filter>
+            <!-- Group invite links, pp://join/… (group-chat G021; docs/ui/SCANNING.md) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="pp" android:host="join" />
+            </intent-filter>
         </activity>
 
-        <!-- Camera output files (cache/capture/) handed to the system camera app. -->
+        <!-- Camera output files (cache/capture/) handed to the system camera app, and links to downloaded
+             attachments (cache/open/) handed to the app that opens them (MainActivity.openFile); one file at a
+             time, read only. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.capture"
@@ -86,6 +99,16 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Opt-in: keeps the connection to the user's message relay and peers open so incoming calls and messages arrive on phones without a push service." />
         </service>
+
+        <service
+            android:name="dev.pp_browser.app.PpCallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- Decline on an incoming-call notification, Hang up on the ongoing one. -->
+        <receiver
+            android:name="dev.pp_browser.app.PpCallActionReceiver"
+            android:exported="false" />
 
         <service
             android:name="dev.pp_browser.app.PpFirebaseMessagingService"

@@ -59,6 +59,38 @@ bool AttachmentContentMatchesMime(const std::string& path, const std::string& mi
 bool AttachmentSafeToAutoOpen(const std::string& path, const std::string& mime);
 
 /**
+ * The name a file is handed to the system viewer under: the sender's name without any folder part, control or
+ * reserved characters, leading dots or more than 100 bytes, ending in the safe extension AttachmentExtensionFromMime
+ * gives (appended when the name lacks it); `fallback_stem` when nothing of the name is left. Empty when the type
+ * has no safe extension: the stored file is opened as it is (an executable is never given its name back).
+ * `content_ext` (a sound file's sniffed container: "mp3", "m4a" ...; empty when unknown): when the name's extension
+ * does not say it, it is appended too (song.mp3 that is really MPEG-4 opens as song.mp3.m4a): the system viewers
+ * type by extension. The caller sniffs (lib/voice is a peer, not a dependency).
+ */
+std::string AttachmentOpenFilename(const std::string& filename, const std::string& mime,
+                                   const std::string& fallback_stem, const std::string& content_ext = {});
+/**
+ * The name's own extension `own` already says what `ext` (the type's safe extension) says: the same, another
+ * spelling (jpeg / jpg, mpga / mp3, mp4 / m4a for a sound), or a known format of the same kind (audio, image or
+ * video: song.mp3 sent as audio/mp4). Then AttachmentOpenFilename keeps the name as it is.
+ */
+bool AttachmentExtensionMatchesType(const std::string& own, const std::string& ext, const std::string& mime);
+
+/**
+ * The view file `view_path` under its AttachmentOpenFilename, as a hard link (else a copy) in
+ * `{blobs_view}/{hash}.open/`, so the viewer shows the real name and knows the type (iOS QuickLook decides by the
+ * extension). It goes with the view cache and with the attachment's local delete. `view_path` itself when there is
+ * no safe name or the link cannot be made.
+ */
+std::string AttachmentNamedOpenPath(const std::string& profile_dir, const std::string& thread_id,
+                                    const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                    const std::string& filename, const std::string& view_path,
+                                    const std::string& content_ext = {});
+/** `{blobs_view}/{hash}.open` (see AttachmentNamedOpenPath). */
+std::string AttachmentOpenLinkDir(const std::string& profile_dir, const std::string& thread_id,
+                                  const std::vector<uint8_t>& content_hash);
+
+/**
  * True when private attachment plaintext may be materialized for inline UI
  * (`blobs_view` / image src). A video above `max_receive_bytes` (AttachmentLimits) returns false: it is
  * never downloaded, so nothing is materialized. Unknown size (`byte_length == 0`) stays permissive.
@@ -119,6 +151,14 @@ Roe<std::string> EnsureAttachmentImageThumbnail(const std::string& profile_dir, 
                                                 const std::vector<uint8_t>& content_hash, const std::string& mime,
                                                 const ByteVector& image_bytes);
 
+/**
+ * A sound file's cover for its card: a small JPEG made by the platform's `image_thumbnail_jpeg` from `picture` (the
+ * file's embedded picture, in memory), stored at the poster path, so it goes with the view cache and the
+ * attachment's local delete like a picture's thumbnail. Local only: never sent.
+ */
+Roe<std::string> EnsureAttachmentAudioCover(const std::string& profile_dir, const std::string& thread_id,
+                                            const std::vector<uint8_t>& content_hash, const ByteVector& picture);
+
 /** Remove view / pending-cipher caches for a thread (and any leftover pre-cutover `blobs/` dir). */
 Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::string& thread_id);
 
@@ -147,9 +187,6 @@ Roe<ByteVector> LoadPendingAttachmentCiphertext(const std::string& profile_dir, 
                                                 const std::vector<uint8_t>& content_hash);
 void RemovePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
                                        const std::vector<uint8_t>& content_hash);
-
-/** Total bytes under CAS private + thread `blobs_view/` / `blob_cipher/`. */
-uint64_t AttachmentCacheByteSize(const std::string& profile_dir);
 
 /** Wipe downloaded attachment bytes for every thread and clear private CAS. */
 Roe<void> WipeAllAttachmentCaches(const std::string& profile_dir);

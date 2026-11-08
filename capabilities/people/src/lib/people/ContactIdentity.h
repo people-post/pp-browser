@@ -14,6 +14,9 @@ bool IsAccountIdentityValue(const std::string& value);
 /** First matching id of kind (primary preferred). */
 std::string PrimaryIdOfKind(const Contact& contact, mesh::ContactIdKind kind);
 
+/** The id every screen seeds a contact's letter-avatar colour with: account, else relay, else peer, else the contact id. */
+std::string ContactAvatarStableId(const Contact& contact);
+
 std::optional<std::string> ContactAccountId(const Contact& contact);
 std::optional<std::string> ContactRelayUserId(const Contact& contact);
 

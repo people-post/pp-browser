@@ -34,12 +34,16 @@ public:
   bool push_ok = true;
   int push_calls = 0;
   size_t pushed_bytes = 0;
+  std::function<void()> on_push;
 
   bool IsPeerReachable(const std::string&) const override { return reachable; }
   Roe<std::vector<uint8_t>> FetchChatBlob(const ChatBlobRequest&) override { return Error("not used"); }
   Roe<void> PushChatBlob(const ChatBlobRequest&, const std::vector<uint8_t>& ciphertext) override {
     ++push_calls;
     pushed_bytes = ciphertext.size();
+    if (on_push) {
+      on_push();
+    }
     if (!push_ok) {
       return Error("peer did not answer");
     }
@@ -227,6 +231,29 @@ TEST_F(AttachmentClientTest, OtherServerErrorsAfterAFailedDirectPushKeepTheirTyp
   EXPECT_EQ(fields.error().code, static_cast<int32_t>(Err::Blob::Unavailable));
 }
 
+// Review (a): a send that is not staged (no profile key) honours the cancel too: nothing goes after it.
+TEST_F(AttachmentClientTest, AnUnstagedSendCancelledBeforeItStartsTouchesNoNetwork) {
+  auto options = Options(direct_);
+  options.cancelled = std::make_shared<std::atomic<bool>>(true);
+  auto result = Upload(1000, std::move(options));
+  ASSERT_FALSE(result);
+  EXPECT_EQ(result.error().message, "Attachment send cancelled");
+  EXPECT_EQ(peer_.push_calls, 0);
+  EXPECT_EQ(blob_.FileStartCallCount(), 0u);
+}
+
+TEST_F(AttachmentClientTest, AnUnstagedSendCancelledDuringItsPushSendsNothing) {
+  auto cancelled = std::make_shared<std::atomic<bool>>(false);
+  peer_.push_ok = false; // the push fails: the server would be next
+  peer_.on_push = [cancelled] { cancelled->store(true); };
+  auto options = Options(direct_);
+  options.cancelled = cancelled;
+  auto result = Upload(1000, std::move(options));
+  ASSERT_FALSE(result);
+  EXPECT_EQ(result.error().message, "Attachment send cancelled");
+  EXPECT_EQ(blob_.DeletedFileIds().size(), blob_.UploadedBodies().size()) << "whatever went up is deleted";
+}
+
 // The staged (product) path: the ciphertext is a file, the key is in the sealed record, and a failed send is
 // resumed with that same ciphertext and key.
 class StagedUploadTest : public AttachmentClientTest {
@@ -347,6 +374,23 @@ TEST_F(StagedUploadTest, ADeliveredRecordResumesWithoutAnyNetwork) {
   EXPECT_EQ(blob_.FileStartCallCount(), starts);
 }
 
+// A Retry of a record the contact already has (the process died before the message was made): a cancel is too late,
+// the record stays and the fields come back so the message is created.
+TEST_F(StagedUploadTest, ACancelledResumeOfADeliveredRecordStillGivesTheFields) {
+  auto fields = UploadStaged(5000, Staged(direct_));
+  ASSERT_TRUE(fields);
+  auto record = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(record);
+  ASSERT_TRUE(record->delivered);
+  auto options = Staged(direct_);
+  options.cancelled = std::make_shared<std::atomic<bool>>(true);
+  Roe<ChatAttachmentFields> resumed = Error("not called");
+  ResumeChatAttachmentAsync(blob_, *identity_, *record, std::move(options),
+                            [&](Roe<ChatAttachmentFields> value) { resumed = std::move(value); });
+  ASSERT_TRUE(resumed) << resumed.error().message;
+  EXPECT_TRUE(store_->Load(staged_.id, TestDek()));
+}
+
 TEST_F(StagedUploadTest, ADirectPushIsRecordedAsDeliveredWithNoUrl) {
   auto fields = UploadStaged(5000, Staged(direct_));
   ASSERT_TRUE(fields) << fields.error().message;
@@ -379,6 +423,111 @@ TEST_F(StagedUploadTest, ResumeWithoutTheCiphertextTellsTheCallerToPickAgain) {
   ResumeChatAttachmentAsync(blob_, *identity_, *record, Staged(direct_),
                             [&](Roe<ChatAttachmentFields> value) { resumed = std::move(value); });
   EXPECT_FALSE(resumed);
+}
+
+// Cancel on the chip while the file is going up: the upload is told to stop (a real PUT aborts mid-way; the mock's
+// single PUT has already taken the bytes), any copy the server holds is deleted, the result is "cancelled" so the
+// caller sends no message, and the staged copy is gone (no Retry chip comes back).
+TEST_F(StagedUploadTest, ACancelDuringTheUploadSendsNothingAndLeavesNothingBehind) {
+  peer_.reachable = false;
+  auto cancelled = std::make_shared<std::atomic<bool>>(false);
+  auto options = Staged(direct_);
+  options.cancelled = cancelled;
+  bool stop_asked = false;
+  options.progress = [cancelled, &stop_asked](uint64_t, uint64_t) {
+    stop_asked = cancelled->load();
+    cancelled->store(true); // the person taps Cancel once the upload has started
+    return true;
+  };
+  auto result = UploadStaged(5000, std::move(options));
+  ASSERT_FALSE(result);
+  EXPECT_EQ(result.error().message, "Attachment send cancelled");
+  EXPECT_FALSE(stop_asked) << "the caller's progress is not asked again once cancelled";
+  EXPECT_EQ(blob_.DeletedFileIds().size(), blob_.UploadedBodies().size()) << "whatever went up is deleted";
+  ASSERT_FALSE(staged_.id.empty());
+  EXPECT_FALSE(store_->HasCipher(staged_.id));
+  EXPECT_TRUE(store_->ListForThread(direct_.id, TestDek()).empty());
+}
+
+// A cancel while a small file is pushed straight to the contact, and the push fails: no message, nothing left.
+TEST_F(StagedUploadTest, ACancelDuringAFailingDirectPushSendsNothing) {
+  auto cancelled = std::make_shared<std::atomic<bool>>(false);
+  peer_.push_ok = false;
+  peer_.on_push = [cancelled] { cancelled->store(true); };
+  auto options = Staged(direct_);
+  options.cancelled = cancelled;
+  auto result = UploadStaged(5000, std::move(options));
+  ASSERT_FALSE(result);
+  EXPECT_EQ(peer_.push_calls, 1);
+  EXPECT_TRUE(blob_.UploadedBodies().empty());
+  EXPECT_TRUE(store_->ListForThread(direct_.id, TestDek()).empty());
+}
+
+// A cancel that lands after the push reached the contact is too late: the send stands (fields come back, nothing is
+// deleted, the record stays delivered); the caller tells the person it was already sent.
+TEST_F(StagedUploadTest, ACancelAfterASuccessfulDirectPushIsTooLate) {
+  auto cancelled = std::make_shared<std::atomic<bool>>(false);
+  peer_.on_push = [cancelled] { cancelled->store(true); };
+  auto options = Staged(direct_);
+  options.cancelled = cancelled;
+  auto result = UploadStaged(5000, std::move(options));
+  ASSERT_TRUE(result) << result.error().message;
+  EXPECT_TRUE(result->url.empty());
+  EXPECT_EQ(peer_.push_calls, 1);
+  EXPECT_TRUE(blob_.DeletedFileIds().empty());
+  auto record = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(record);
+  EXPECT_TRUE(record->delivered);
+}
+
+// A cancel during a staged Retry only stops that attempt: the record stays, so Retry still works.
+TEST_F(StagedUploadTest, ACancelledResumeKeepsTheRecordForRetry) {
+  peer_.reachable = false;
+  blob_.SetFileStartError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  ASSERT_FALSE(UploadStaged(5000, Staged(direct_)));
+  blob_.ClearFileStartError();
+  auto record = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(record);
+  auto cancelled = std::make_shared<std::atomic<bool>>(false);
+  auto options = Staged(direct_);
+  options.cancelled = cancelled;
+  options.progress = [cancelled](uint64_t, uint64_t) {
+    cancelled->store(true);
+    return true;
+  };
+  Roe<ChatAttachmentFields> resumed = Error("not called");
+  ResumeChatAttachmentAsync(blob_, *identity_, *record, std::move(options),
+                            [&](Roe<ChatAttachmentFields> value) { resumed = std::move(value); });
+  ASSERT_FALSE(resumed);
+  EXPECT_EQ(resumed.error().message, "Attachment send cancelled");
+  EXPECT_TRUE(store_->HasCipher(staged_.id));
+  EXPECT_FALSE(store_->ListForThread(direct_.id, TestDek()).empty());
+  // Retry again, uncancelled: it sends.
+  auto again_record = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(again_record);
+  Roe<ChatAttachmentFields> again = Error("not called");
+  ResumeChatAttachmentAsync(blob_, *identity_, *again_record, Staged(direct_),
+                            [&](Roe<ChatAttachmentFields> value) { again = std::move(value); });
+  EXPECT_TRUE(again);
+}
+
+// A Retry cancelled before it starts touches no network and keeps the staged copy.
+TEST_F(StagedUploadTest, ACancelledResumeTouchesNoNetwork) {
+  peer_.reachable = false;
+  blob_.SetFileStartError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  ASSERT_FALSE(UploadStaged(5000, Staged(direct_)));
+  blob_.ClearFileStartError();
+  auto record = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(record);
+  const auto starts = blob_.FileStartCallCount();
+  auto options = Staged(direct_);
+  options.cancelled = std::make_shared<std::atomic<bool>>(true);
+  Roe<ChatAttachmentFields> resumed = Error("not called");
+  ResumeChatAttachmentAsync(blob_, *identity_, *record, std::move(options),
+                            [&](Roe<ChatAttachmentFields> value) { resumed = std::move(value); });
+  EXPECT_FALSE(resumed);
+  EXPECT_EQ(blob_.FileStartCallCount(), starts);
+  EXPECT_TRUE(store_->HasCipher(staged_.id));
 }
 
 TEST(AttachmentRoutingTest, OnlyAnE2eDirectThreadUpToTheLimitTriesDirect) {

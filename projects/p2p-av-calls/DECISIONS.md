@@ -161,6 +161,7 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 ## V015 — Pairwise wrap AAD for `call_media_key`
 
 **Date:** 2026-07-28  
+**Status:** Superseded for calls by [multi-device M024](../multi-device-account/DECISIONS.md#m024--the-control-lane-goes-per-device-a-calls-media-key-rides-the-copy) (2026-11-08): the key rides the control-lane message itself (`media_key_b64`), each copy sealed for one device; this wrap, under the account pair's session, is sent beside it for one release only (`kMediaKeyAccountWrapBridge`) and still read from an older sender. Shipped form: [WIRE_SCHEMAS § Call media keys](../../docs/contracts/WIRE_SCHEMAS.md).  
 **Decision:** Inner wrap of epoch key bytes uses `MessageCipher` under the peer's active pairwise session key (`SessionKeyDeriver` + `IPskSessionStore`), channel matching call DMs (`e2e_public` today). AAD string:
 
 `call_media_key|<call_id>|<media_epoch>|<media_key_id>`
@@ -462,6 +463,7 @@ Open public directory; paid settle UI; pure `min(price)` sort; hardcoded N014 st
 
 **Date:** 2026-07-30  
 **Updated:** 2026-07-30 — policy applies to **1:1 P2P** as well as group/SFU  
+**Status:** Accepted; audio's "FIFO; even if late" / `reliable_ordered` is **superseded by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses) (best effort, the codec recovers)  
 **Decision:** One **adaptation policy** for all calls: priority **audio ≫ video_lo ≫ video_hi**, producer rate control first, prefer fluent low video over stalled high. **Transport backends differ**; do not force 1:1 through `media_relay` when P2P ICE works. Mesh hop framing: [N021](../p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types). **No new codec matrix** in a4 — reuse Opus + H264 HW (V017–V019).
 
 ### Same policy brain, two backends
@@ -697,7 +699,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 ## V032 — Media QoS enforcement, playout, SFU E2E
 
 **Date:** 2026-08-06  
-**Status:** Accepted (implementing)  
+**Status:** Accepted (implementing); **amended by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses) — audio is best effort (no class priority in the hop's queue), and the receiver's jitter target is 60–400 ms adaptive with an 800 ms cap, not 60 / 200 ms  
 **Decision:** Close the structural gaps between N019/N021/V024 **docs** and host/receiver **code** before further quality tuning. Policy matrix: [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md).
 
 | Area | Rule |
@@ -744,7 +746,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 ## V034 — Video on libp2p (video_lo; E2E; same streams)
 
 **Date:** 2026-08-18  
-**Status:** Accepted (**implementing**)  
+**Status:** Accepted (**implementing**); the hop-queue rule ("never shed `ReliableOrdered`") is **superseded by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses)  
 **Decision:** Product **video** rides the existing libp2p voice path — not WebRTC. Capture/encode/decode/tiles stay the a3 SDL + platform HW H264 stack ([V017](#v017--video-codec-h264-via-platform-hw) / [V018](#v018--video-capture--render-path-in-sdl--rmlui-shell)). Transport is **encrypted H264 video_lo** on the same 1:1 duplex and the same blind `media_relay` hop as Opus.
 
 | Topic | Rule |
@@ -1299,7 +1301,7 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 ## V053 — Group calls behave like Teams / Signal: join while it lasts, stay when alone, removal ends your part
 
 **Date:** 2026-10-22  
-**Status:** Accepted (product owner: "same as Teams or Signal") — supersedes DESIGN.md rows 4 (late join: invite only) and the "no ambient Join" line for **group** calls; 1:1 calls are unchanged  
+**Status:** Accepted (product owner: "same as Teams or Signal") — supersedes DESIGN.md rows 4 (late join: invite only) and the "no ambient Join" line for **group** calls; 1:1 calls are unchanged — **amended by [V062](#v062--guests-in-a-groups-call-labelled-brought-by-members-removed-by-owner-and-admins)** (accepted and implemented 2026-11-05): guests in a group's call are labelled, brought by members allowed to invite, and removable by the owner and admins  
 **Decision:**
 
 | Rule | Detail |
@@ -1405,3 +1407,121 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 **Rationale:** Control already reuses messaging. What it lacked was the "live" part (1) and a group-shaped edge onto it (2, 3), and none of that needs a wire change. Acks and a group key would cost a protocol for problems the call family already covers or that the size limit keeps small.
 
 **Consequence:** Phased (PHASES § cl), one commit per step.
+
+---
+
+## V059 — Spotlight one person in Immersive
+
+**Date:** 2026-11-04
+**Status:** Accepted (Hongwei, 2026-11-04). Implemented: `gui/CallSpotlight.h`, `gui/CallActiveSpeaker.h`, `ShellCallChromeRml`, `CallVideoTileRenderer` (fill).
+
+**Context:** Immersive (V031) shows every participant as an equal card. People want one person bigger — the peer in a 1:1 call, the one speaking or the one they care about in a group.
+
+**Decision:**
+1. **A tap on a card spotlights that person.** Their card fills the call area; everyone else lines up in a strip of small cards below, and a tap on one of those spotlights them instead. A grid button in the header goes back to the grid. A tap on the spotlight itself does nothing (a double tap toggles fill / fit, and with a remount between taps a tap-to-leave would toggle twice).
+2. **Defaults.** A 1:1 call's Immersive spotlights the peer (the self-view is a strip card; a tap swaps them). A group call spotlights its **active speaker** (`CallActiveSpeaker`: a peer whose level, `MediaStreamHealth::peak_level`, stays at or above 0.08 for 0.6 s; the spotlit one keeps it at least 3 s and gives it up only once quiet while someone else speaks; when everyone is quiet the last speaker stays) and shows the grid until someone speaks. The user's choice holds while that person is in the call and wins over the speaker; "back to grid" holds until the next tap; all reset with the call.
+3. **Fill or fit.** The spotlit tile covers its area, cropped evenly (`fit="fill"`); a double tap shows the whole frame, letterboxed (`fit`) — for a sender holding the phone the other way. Strip cards fill; grid cards fit, as before.
+4. **The chrome remounts on a spotlight change** (who, fill / fit), like a mode change; the spotlit row and the strip's rows are bound arrays of their own (`call_in_progress_spotlight_rows`, `_strip_rows`), not filters over the roster.
+5. **No cost on the wire or the battery:** the spotlit tile draws the same decoded stream, larger.
+
+**Later:** pinch to zoom in the spotlight; for a sharper group spotlight, a higher layer from that sender (simulcast). The speaking level (0.08) is a first guess: tune it from phone calls (the lab's probes send silence).
+
+**Alternatives rejected:** A draggable floating self-view in 1:1 (a strip card does the job with one layout); tap-the-spotlight-to-leave (see 1).
+
+## V060 — A call says when it is on hold or its camera is paused
+
+**Date:** 2026-11-05
+**Status:** Accepted (Hongwei, 2026-11-05: an interrupted / on-hold state, and telling the other side when the camera stops because the app went to the background). Implemented: `AudioSession::NotifyInterruptionBegan` / `IsInterrupted`, `CallSessionManager::SetLocalOnHold` / `SetLocalVideoPaused`, `CallController::SyncLocalHold` / `OnAppBackground`.
+
+**Context:** A phone call, Siri or another app's call takes a call's audio (iOS interrupts the session, Android takes the audio focus). The microphone gives silence; the other side saw "Reconnecting…" or "no audio from them" for a call that was fine, and the capture loop counted the silence toward giving up voice processing (three reopens turn echo cancellation off for the rest of the call). In the background the OS stops the camera; the other side saw the picture freeze, then "Reconnecting…".
+
+**Decision:**
+1. **On hold.** `AudioSession` keeps whether the OS has the live session: from an interruption's start (iOS `AVAudioSessionInterruptionTypeBegan`; Android a loss of the call's audio focus, not a duck) to its end (iOS: the end, a media services reset, or the app active again with the session free — iOS does not always send the end; Android: the focus back), or the session's end. Meanwhile a starved capture is not a broken device: no reopen, none counted. The screen's tick reads it and the call tells the others (`SetLocalOnHold`).
+2. **Camera paused.** On mobile, a call whose camera is on turns it off when the app goes to the background and on again when it comes back (`SetLocalVideoPaused`): the device is closed properly instead of starved, and reopens cleanly.
+3. **The roster carries both**, beside mute and camera: `on_hold` and `video_paused` in a roster row (`CallRosterEntry`, `CallParticipantMedia`, the store's `call_participants`), sent only when set. A paused camera also sends `video_enabled: false`, so an older app shows "Camera off"; an older app ignores `on_hold`. One mechanism for 1:1 and group calls (V058: group calls ride the roster).
+4. **The other side shows it.** 1:1: "On hold on {name}'s side" in place of the timer, "On hold" or "Camera paused" on the video stage; while either side is on hold, only a lost path reads "Reconnecting…", and no "no audio" hint shows. The side on hold reads "On hold: another call has your microphone".
+5. **On the person.** An "On hold" pill (a pause icon, the warning tint) sits under the name on the 1:1 voice and video pages while either side is on hold; in a group, and on desktop cards, a member on hold has the pill on their tile with their picture or avatar dimmed, and the roster chips a pause icon. A paused camera's tile reads "Camera paused". All bound per row (`CallRosterParticipantState::on_hold` / `video_paused`, `call_in_progress_on_hold`), so a change dirties, it does not remount.
+
+**Later:** Android Telecom (`ConnectionService`) for the system's hold; a camera in the background (Android's camera foreground service, iOS multitasking camera access) where a platform allows it.
+
+**Alternatives rejected:** the call-media heartbeat (500 ms, already on every 1:1 path): it has no group path, and the state would need plumbing through every layer between the coordinator and the screen; the roster already goes there. Muting instead of holding: the user's own mute is theirs to undo, and the other side could not tell the two apart.
+
+## V061 — Android keeps a call's microphone in the background
+
+**Date:** 2026-11-05
+**Status:** Accepted (Hongwei, 2026-11-05: the follow-ups of the interruption audit). Implemented: `OngoingCallService` (foundation/platform), `PpCallService.java`, `CallController::SyncOngoingCall`.
+
+**Context:** Android gives an app in the background silence from the microphone (9+) unless it runs a foreground service, and from Android 14 that service must be of the microphone type. Only the opt-in "Stay connected" service (P011, `specialUse`) ran one, so a call with the app in the background (another app opened, the screen locked) sent silence.
+
+**Decision:**
+1. **While this device is in a call** (the presenter's active call), `PpCallService` runs: a foreground service of type `microphone`, with an ongoing-call notification — who the call is with, Hang up (the system's call style; a tap opens the app). It stops when the call ends, or with the app's activity.
+2. **Started only when Android allows it:** the app in front and the microphone granted. A start the system refuses after the launch would crash the app (`startForegroundService` without `startForeground`), so the app checks first; a call that started in the background gets the service at the next resume.
+3. **The camera is not kept:** a call pauses it in the background (V060), so the service needs no camera type.
+
+**Later:** Android Telecom (`ConnectionService`, the `phoneCall` type) — the system's own call routing, Bluetooth answer and hold.
+
+
+## V062 — Guests in a group's call: labelled, brought by members, removed by owner and admins
+
+**Date:** 2026-11-05
+**Status:** Accepted (Hongwei, 2026-11-05) — **implemented 2026-11-05** (`lib/calls/CallGuests`, `call_remove`, the `guest` / `brought_by` fields; the current rule is [CALLS.md § Guests in a group's call](../../docs/architecture/CALLS.md)); with the open-groups work ([group-chat G017–G022](../group-chat/DECISIONS.md#g017--open-groups-roles-and-two-presets), PHASES § O there). Amends V053 (who is in a group's call). "Add {name} to the group" is offered to the owner until members invite (group-chat o4).
+
+**Context:** Guests already exist: any participant can add anyone to any call from the in-call "Add people" picker (`CallPresenter::InviteToActiveCall`, the mid-call invite), and a guest joins without joining the group (DESIGN row 4). What a group's call lacks is a way to see who is a guest, a say for the group in who may bring one, and a way to remove one — today nobody can remove anyone from a call.
+
+**Decision:**
+
+1. **Brought by.** In a group's call (`origin_group_id`), the mid-call invite to someone outside the group's roster carries `guest: true` and `brought_by` (the member who sent it). Every participant shows "{name} joined as {brought_by}'s guest", and the guest's tile is labelled "Guest".
+2. **Who may bring a guest:** a group member allowed to invite under the group's preset (G017: any member in an Open group, admins and the owner in a Managed one). Guests do not bring guests: a guest's device has no roster to check against, and chains of strangers would follow. Each participant's device checks the bringer against the group's roster and refuses an invite that breaks the rule.
+3. **Who may remove a guest:** the group's owner and admins (G017). `call_remove {call_id, identity}` from one of them, checked against the group roster, is taken by every participant as that guest's leave: the media key rotates without them (V003), and their device leaves. A device that ignores it is cut off by the rotation. **Members are not removed from a call:** a member could tap Join again at once (V053); to keep a member out, remove them from the group, which drops them from its call (V053, unchanged).
+4. **A guest stays a guest.** No chat history, no member list, no group membership. A guest who leaves cannot ask to rejoin (V053: only members may ask); a member in the call brings them back. A member allowed to invite can turn them into a group invite ("Add {name} to the group"), which the guest still accepts (G019).
+5. **What the guest is told:** "Joining shows you to the N people in this call." Signalling needs their card on every participant's device.
+6. **Calls with no group are unchanged:** anyone may add people, and nobody removes anyone (anyone can leave). Groups bring roles; a call that needs them can become a group ([G022](../group-chat/DECISIONS.md#g022--make-a-group-during-a-call)).
+
+**Rationale:** An open group lets its members bring friends into its call; order is kept the way the group keeps it, by its owner and admins, under the same preset as invites. Labelling guests and who brought them keeps an open call accountable without a gate.
+**Alternatives:** A separate guest setting (a second knob next to the preset); guests bring guests (unchecked chains); removal of members from a call (undone by Join); the bringer may remove its guest (a second rule next to the group's); a host for ad-hoc calls (calls are hostless, DESIGN row 5).
+
+
+## V063 — Call audio is best effort; the codec recovers losses
+
+**Date:** 2026-11-06
+**Status:** Accepted (Hongwei, 2026-11-06) — records what the code has done since 2026-08 (1:1) and 2026-11-03 (groups: pp-cpp-mesh v3.1.0, the hop's data lane). **Supersedes** audio's `reliable_ordered` / "FIFO; even if late" in V024 and N021 and the hop-queue rule in V032 / V034. The current rule: [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos).
+
+**Context:** V024 and N021 put call audio on `reliable_ordered` (deliver in order, even if late), and V032 / V034 told the hop never to shed it for video. An audit while stress-testing pp-node (2026-11-06, [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)) found the code had moved on: audio is not resent on any normal path, and the stamp changes nothing.
+
+**Decision:**
+
+1. **Every normal path is best effort.** A 1:1 call's media rides the BestEffort `Realtime` channel, direct or through a circuit (the inner media channel is BestEffort; the outer splice too, [CALL_MEDIA_CIRCUIT](../adp/CALL_MEDIA_CIRCUIT.md)). A group call's media rides the participant's data lane on the hop (`/pp-mesh/media-relay-data/1.0.0`, BestEffort, the oldest dropped). A lost frame costs that frame, never a stall.
+2. **The fallback stays reliable.** Without a data lane (a hop reached through a circuit, or one older than pp-cpp-mesh v3.1.0) group media rides the participant's control channel, which is Reliable. That is a compatibility path, not a policy.
+3. **`ReliableOrdered` is a label.** Senders still stamp audio `0` (the wire keeps its values); a hop treats it like any other frame. Only `LatestLossy` changes a hop's behaviour (the stale non-keyframe drop). The hop's queues have no class priority.
+4. **The codec covers losses:** Opus in-band FEC (tuned for 10 % loss), loss concealment on a gap, and the receiver's jitter buffer (target 60–400 ms, adapting to arrival jitter; at most 800 ms).
+5. **Resending audio is rejected for real-time calls:** a resent 20 ms frame arrives after its playout slot, and under load resends add to the very queue that is late. Audio before video stays a sender rule (V024's priority and rate ladder), not a transport class.
+
+**Rationale:** Late audio is worse than lost audio in a conversation; FEC and concealment hide single losses well. One best-effort lane per peer keeps the hop simple and blind.
+**Open:** a deadline on real-time media in a link's send queue — under overload media waits there instead of being dropped (STRESS_LAB § What limits a node, with the data plane's threading).
+
+
+## V064 — Call waiting (Hold & Accept): not now
+
+**Date:** 2026-11-07
+**Status:** Accepted (Hongwei, 2026-11-07) — **implemented 2026-11-07** (the clearer conflict ring, "Call back", the system screen rule below; the current rule is [CALLS.md](../../docs/architecture/CALLS.md), the Conflict rows and § The phone's own call screen). Answers Kenneth's [PROPOSAL-call-waiting.md](PROPOSAL-call-waiting.md) with its alternative. V055 3 (several may ring, one call has media) unchanged.
+
+**Context:** A second PP call ringing during a call offers End & accept / Ignore. Kenneth proposed Hold & Accept with a Switch row (two open 1:1 calls, one with media, the held side shown "On hold" via V060). The client side is days; the calls side is not: two open calls with one running media means about four weeks, because today:
+
+- `CallMediaSeat::Acquire` force-tears-down the call bound to the seat — a second call takes the seat by ending the first one's media, not by parking it.
+- `CallMediaLegCoordinator` allows one live bundle per device: an outbound `StartLeg` tears the others down, and an inbound hello for another call gets `RejectBusy` (`OtherBundleBusy`).
+- `LiveCalls::Active()` assumes one active call; call state, chrome and the presenter read "the" call.
+- A held call's path cannot re-anchor: `CallDirectPath` gates on the engine running, so a held call loses its path and resume is a reconnect.
+- The peer keeps sending media to the held side: `on_hold` (V060) is a label, nothing pauses the peer's TX.
+- The phones are set up for one call: CallKit `maximumCallGroups = 1`, `supportsHolding = NO` (`CallSystemUi_Ios.mm`); Android has one call notification.
+
+**Decision:**
+
+1. **No Hold & Accept for now.** A ring over a call keeps End & accept / Ignore; one open call.
+2. **The ring says what accepting does:** "{caller} is calling" and "Accepting ends your call with {name}." (a group's call: "…your call in {group}."; the caller being that call's peer: "…your other call with {caller}."). The app's background alert for it says the same.
+3. **A ring over a call never goes to the phone's call screen** (CallKit, Android's call notification). Their Answer would end the call in the app without saying so — it did, silently, with the app in the background. The app rings it; the push's call waiting for it is ended, an Answer given on that push's call is not applied (a Decline is). A call answered on CallKit stays there while the second rings in the app.
+4. **"Call {name} back?"** once the call taken in its place is over and no other call is up: Call back calls the ended 1:1 call's chat, voice or video as it was. Not for a group's call (it goes on; its chat's call bar offers Join), nor when the caller was that call's peer.
+
+**Revisit when** call waiting is designed as a decision of its own, covering: a seat that can park a call (hand the media epoch to another call and back without tearing the first down); two bundles per device (a held leg kept, the busy rule per call); the peer pausing its TX on a remote `on_hold` (and resuming); a held call's path policy (kept warm or re-anchored on resume, with a timeout); CallKit holding (`supportsHolding`, two call groups) and Android's two calls.
+
+**Rationale:** The proposal's own alternative gets most of the value — no surprise that a call ends, and an easy way back — at no protocol or media cost; the system screen rule closes the one path where a call ended with no word at all.
+**Alternatives:** Hold & Accept now (four weeks, mostly the media stack); words on the system screen's ring (CallKit and Android's call style take a caller name, not a sentence, and Answer stays one tap).

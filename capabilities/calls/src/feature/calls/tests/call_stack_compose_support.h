@@ -93,10 +93,16 @@ public:
     active = false;
     ++detach_calls;
   }
+  /** K014: a hang-up says bye (counted), then detaches. */
+  void HangUp() override {
+    ++hangup_calls;
+    Detach();
+  }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
     ++connect_async_calls;
     last_params = params;
+    last_callbacks = callbacks;
     if (fail_connects) {
       if (on_done) {
         on_done(CallMediaFailure::Of(CallMediaErr::Generic, "fake call-media connect failed"));
@@ -136,6 +142,9 @@ public:
   bool fail_connects = false;
   int connect_async_calls = 0;
   int detach_calls = 0;
+  int hangup_calls = 0;
+  /** The last connect's callbacks: a test plays the transport's events through them. */
+  CallMediaDirectCallbacks last_callbacks;
   CallMediaDirectConnectParams last_params;
   CallMediaDirectConnectParams active_params;
   InboundHelloFake inbound;

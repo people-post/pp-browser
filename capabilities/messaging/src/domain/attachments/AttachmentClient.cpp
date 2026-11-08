@@ -89,22 +89,65 @@ Roe<ChatAttachmentFields> UploadPreparedToRelay(IBlobClient& blob, const std::st
   return fields;
 }
 
+/**
+ * The person's cancel (`options.cancelled`): the upload's progress answers "stop" from then on, and whatever result
+ * comes after it becomes "cancelled": the staged copy (if any) is removed and a server copy deleted, so the caller
+ * sends no message. True when it was cancelled already (`finish` has been called).
+ * Too late: a direct push that already reached the contact (no url) is not undone; its result passes through
+ * unchanged (the caller tells the person it was already sent). `resuming`: the staged record is the Retry chip's, so
+ * a cancel only stops this attempt; the record (and a server copy it may now point at) stays.
+ */
+bool HonourCancel(IBlobClient& blob, const std::string& relay_id, ChatAttachmentUploadOptions& options,
+                  OutgoingAttachmentStore* store, const std::string& record_id,
+                  std::function<void(Roe<ChatAttachmentFields>)>& finish, const bool resuming = false) {
+  const auto cancelled = options.cancelled;
+  if (!cancelled) {
+    return false;
+  }
+  options.progress = [cancelled, progress = std::move(options.progress)](const uint64_t done, const uint64_t total) {
+    return !cancelled->load() && (!progress || progress(done, total));
+  };
+  finish = [&blob, relay_id, store, record_id, cancelled, resuming,
+            finish = std::move(finish)](Roe<ChatAttachmentFields> result) {
+    if (!cancelled->load() || (result && result->url.empty())) {
+      finish(std::move(result)); // not cancelled, or the contact already has it (too late to cancel)
+      return;
+    }
+    if (!resuming && store != nullptr && !record_id.empty()) {
+      store->Remove(record_id);
+    }
+    if (result && !resuming) {
+      (void)DeleteUploadedAttachmentCopy(blob, relay_id, result->url); // uploaded before the cancel landed
+    }
+    finish(Error("Attachment send cancelled"));
+  };
+  if (cancelled->load()) {
+    finish(Error("Attachment send cancelled"));
+    return true;
+  }
+  return false;
+}
+
 /** Direct push of a staged attachment when allowed, else (or on failure) the server, streamed from the file. */
 void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmentRecord record,
                    std::shared_ptr<PreparedChatAttachment> in_memory, ChatAttachmentUploadOptions options,
-                   std::function<void(Roe<ChatAttachmentFields>)> finish) {
+                   std::function<void(Roe<ChatAttachmentFields>)> finish, const bool resuming = false) {
   auto relay_user_id = RequireRegisteredRelayUserId(identity);
   if (!relay_user_id) {
     finish(relay_user_id.error());
     return;
   }
-  if (record.delivered) {
-    finish(record.fields);
-    return;
-  }
   const std::string relay_id = *relay_user_id;
   OutgoingAttachmentStore* store = options.outgoing;
   const ByteVector dek = options.dek;
+  if (record.delivered) {
+    // Already with the contact (or on the server, its link kept): a cancel is too late, the message is made.
+    finish(record.fields);
+    return;
+  }
+  if (HonourCancel(blob, relay_id, options, store, record.id, finish, resuming)) {
+    return;
+  }
   auto to_server = [&blob, relay_id, record, store, dek, progress = options.progress,
                     finish](const bool direct_failed) mutable {
     // start → PUT → complete → stored link: all of it, also if the app goes to the background meanwhile.
@@ -200,7 +243,8 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
                                const std::string& filename, const std::string& mime,
                                ChatAttachmentUploadOptions options,
                                std::function<void(Roe<ChatAttachmentFields>)> on_done) {
-  auto finish = [on_done = std::move(on_done)](Roe<ChatAttachmentFields> value) {
+  std::function<void(Roe<ChatAttachmentFields>)> finish = [on_done = std::move(on_done)](
+                                                               Roe<ChatAttachmentFields> value) {
     if (on_done) {
       on_done(std::move(value));
     }
@@ -245,6 +289,10 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     return;
   }
 
+  // Not staged (no profile key yet): the cancel is honoured here too, between the steps (nothing is sent after it).
+  if (HonourCancel(blob, *relay_user_id, options, nullptr, std::string(), finish)) {
+    return;
+  }
   if (AttachmentTriesPeerDirect(options.thread, plaintext_size)) {
     // Shared, not moved into the callback: the push reads the prepared bytes in the same call that builds
     // the callback (a moved-from copy there once made every direct push fail on "invalid content hash").
@@ -295,7 +343,7 @@ void ResumeChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     finish(Error("The encrypted copy of the attachment is gone"));
     return;
   }
-  DeliverStaged(blob, identity, record, nullptr, std::move(options), finish);
+  DeliverStaged(blob, identity, record, nullptr, std::move(options), finish, /*resuming=*/true);
 }
 
 } // namespace pbr

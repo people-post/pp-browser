@@ -66,7 +66,7 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 
 `blob_b64` is **not** included in transport auth (E014 envelope signature covers message integrity inside the blob).
 
-Inbox is a **delivery queue**: poll advances a **per-device** local cursor; `ack` is **soft** (M013 — validate only; no shared delete). `clear` deletes recipient rows older than a timestamp (recovery; account-wide). Messenger also applies a **90-day TTL** on `created_at` (startup rewrites the TTL index only if needed) and a **soft per-recipient FIFO cap** (trim toward **1000** when a mailbox exceeds **~1200**). Chat history remains local + stream/P2P sync — not the inbox.
+Inbox is a **delivery queue**: poll advances a **per-device** local cursor; `ack` is **soft** (M013 — validate only; no shared delete). `clear` deletes recipient rows older than a timestamp (recovery; account-wide). Messenger also applies a **90-day TTL** on `created_at` (startup rewrites the TTL index only if needed) and a **soft per-recipient FIFO cap** (trim toward **2000** when a mailbox exceeds **~2400**, M022). A record sent with `ttl_s` ([WIRE_SCHEMAS § RelayWireRecord](WIRE_SCHEMAS.md#relaywirerecord-http-relay--opaque-store-and-forward)) gets its own expiry instead, and the cap neither counts nor trims it: the control lane's records leave after an hour rather than 90 days, and a burst of them cannot push chat out. Messenger stores the blob as bytes (a third smaller than its base64). Chat history remains local + stream/P2P sync — not the inbox.
 
 Poll response extras (unix ms, relay clock):
 
@@ -259,7 +259,7 @@ Signed with `pp-browser:relay-api-v1` ops `DeviceRegister=3` / `DeviceUnregister
 
 | HTTP | Purpose |
 |------|---------|
-| `POST /v1/devices/register` | Bind push token `{ platform, device_id, push_token, relay_user_id, timestamp, signature }` (`platform` is `android` or `ios`) |
+| `POST /v1/devices/register` | Bind push token `{ platform, device_id, push_token, relay_user_id, timestamp, signature }` (`platform` is `android`, `ios`, or `ios_voip`: a CallKit iPhone build's PushKit token beside its `ios` one, P016) |
 | `POST /v1/devices/unregister` | Remove device binding (the client keeps its binding with alerts off — P005 amended; account revoke removes all of them) |
 
 On `POST /v1/messages` accept, a conforming relay **best-effort** wakes registered devices for the recipient:
@@ -274,10 +274,14 @@ The relay cannot tell a call invite from a message (the control type is inside t
 | `platform` | Provider shape |
 |------------|----------------|
 | `android` | FCM **data** message `{ "type": "…" }` |
-| `ios` | `inbox_wake`: APNs silent push (`content-available: 1`, `apns-push-type: background`, priority 5) with custom `type`. `call_wake`: a visible alert (`apns-push-type: alert`, priority 10, `apns-collapse-id: pp-call`, `aps.interruption-level: time-sensitive`, `aps.sound: default`, `aps.alert: { title-loc-key: CALL_INCOMING_TITLE, loc-key: CALL_INCOMING_BODY }` — worded on the device from `packaging/ios/*.lproj`, nothing about the call in the push) with `type: call_wake`, because iOS throttles silent pushes and does not wake an app the user swiped away. The collapse id is the app's own incoming-call banner id, so the two replace each other |
-| `ios_voip` | PushKit token of a CallKit build (P013), `device_id` = its `ios` device id + `.voip`. Calls only: `call_wake` as a VoIP push (`apns-push-type: voip`, priority 10, topic `<bundle id>.voip`, `{ "type": "call_wake" }`), which then replaces that phone's `ios` call alert. Never anything else — iOS requires the app to report a CallKit call for every VoIP push |
+| `ios` | `inbox_wake`: a visible alert (`apns-push-type: alert`, priority 10, `aps.sound: default`, `aps.alert: { title-loc-key: MESSAGE_INCOMING_TITLE, loc-key: MESSAGE_INCOMING_BODY }`, no sender, chat or content) with custom `type`. `call_wake`: a visible alert (`apns-push-type: alert`, priority 10, `apns-collapse-id: pp-call`, `aps.interruption-level: time-sensitive`, `aps.sound: default`, `aps.alert: { title-loc-key: CALL_INCOMING_TITLE, loc-key: CALL_INCOMING_BODY }` — worded on the device from `packaging/ios/*.lproj`, nothing about the call in the push) with `type: call_wake`, because iOS throttles silent pushes and does not wake an app the user swiped away. The collapse id is the app's own incoming-call banner id, so the two replace each other. Not sent to a phone that also has an `ios_voip` binding: its calls come by VoIP push |
+| `ios_voip` | PushKit token of a CallKit build (P016), `device_id` = its `ios` device id + `.voip`. Calls only: `call_wake` as a VoIP push (`apns-push-type: voip`, priority 10, topic `<bundle id>.voip`, `{ "type": "call_wake", "wake_hint": "<call_id>", "sent_at": <unix ms> }`, `wake_hint` only when the send record had one), which then replaces that phone's `ios` call alert. Never anything else — iOS requires the app to report a CallKit call for every VoIP push; the app links that call to the ring of the call id the push names |
 
-Payloads remain **opaque** — no `call_id`, names, thread ids, or media. Failures must not fail message store. How the provider authenticates to FCM/APNs is outside this contract. See [projects/push-notifications](../../projects/push-notifications/) and [p2p-av-calls V006](../../projects/p2p-av-calls/DECISIONS.md).
+A relay may add `sent_at` beside `type` in a call push — the VoIP push and the `ios` call alert: its own time when it sent the push, Unix **milliseconds**, a JSON number. Unsigned and optional (an older relay omits it). A CallKit build ends a VoIP push's call at once, as unanswered, when `sent_at` is more than 65 s before the phone's clock (`kCallPushStaleAfterMs`: a ring's 60 s and 5 s of slack, the age at which the app drops the call's invite too): iOS can hold a push on the phone for minutes, and the caller gave up meanwhile. A missing or non-number `sent_at`, one not plausibly in ms, a phone clock behind the relay's, or an age over an hour (the clocks disagree) rings as before ([P017](../../projects/push-notifications/DECISIONS.md#p017--a-call-push-too-old-to-ring-and-a-call-already-over-end-on-callkit-at-once)). The alert's `sent_at` is not read yet.
+
+A send record may also carry `"wake_hint": "<id>"` (<= 64 chars of `[A-Za-z0-9-]`; unsigned like `urgent`): a call invite sends its `call_id`, an ordinary message its envelope `message_id`. A relay that knows it copies it into the APNs payload (alert or VoIP) as a top-level custom key `wake_hint`, beside `type`; one that does not ignores it. The app matches a tapped alert to its ring or message by it after the PIN unlock and sync, and a VoIP push's CallKit call to its ring; a push without it opens (or links the first ring) as before.
+
+Payloads remain **opaque** — no names, thread ids, or media (an id the sender chose is all `wake_hint` carries). Failures must not fail message store. How the provider authenticates to FCM/APNs is outside this contract. See [projects/push-notifications](../../projects/push-notifications/) and [p2p-av-calls V006](../../projects/p2p-av-calls/DECISIONS.md).
 
 ## Native agent tools
 
@@ -311,6 +315,8 @@ Upstream is AI harness `POST /v1/chat/completions` (stateless; www→harness use
 - Guest key as `brief_llm_guest_api_key` (auto-minted when preset is Brief and registered key is empty)
 
 Overlay prefers registered over guest. Soft banner for free tier; register for higher limits.
+
+A streamed answer refused with `401` (the gateway does not know the Bearer) mints a guest key at the session's own LLM base URL, stores it in `identity.enc` beside the registered key and asks the same question once more with it. Only when that retry is answered is a refused registered key dropped (one read-modify-write); a second `401` leaves the registered key as it was. At most one mint until a turn is answered again; meanwhile a `401` is asked again only when the stored key changed (another turn renewed it), else it is the turn's error, as is a failed mint (B183, `AgentSession`, `BriefLlmKeyRenewal`).
 
 Wire format is OpenAI chat completions, including client tool loops (`assistant.tool_calls` + `role: tool`). www does not adapt messages; the harness maps them to the configured provider.
 

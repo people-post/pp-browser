@@ -1,7 +1,10 @@
 #include "feature/product/CallsParticipant.h"
 
+#include "feature/product/CallGroupStandings.h"
+
 #include "lib/storage/ProfileStorage.h"
 #include "lib/calls/CallSessionLogic.h"
+#include "lib/calls/CallSessionQueries.h"
 #include "lib/messaging/PeerThreadLogic.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/LocalNetworkReaction.h"
@@ -117,6 +120,12 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
       }
       return members;
     };
+    // V062: who may bring and remove guests in a group's call — messaging's roster and preset, in the calls' words.
+    deps.delivery.group_standing = [&hub](const std::string& group_id,
+                                          const std::string& account) -> std::optional<CallGroupStanding> {
+      IGroupRosterStore* rosters = hub.GroupRosterOrNull();
+      return rosters ? CallStandingFromRoster(*rosters, group_id, account) : std::nullopt;
+    };
     deps.delivery.sync_inbox_from_wake = [&hub](bool force) {
       if (auto* messaging = hub.MeshMessagingOrNull()) {
         messaging->SyncInboxFromWake(force);
@@ -195,6 +204,16 @@ Roe<std::vector<CallParticipant>> CallsParticipant::JoinedParticipants(const std
     return *participants;
   }
   return Error("call participants unavailable");
+}
+
+bool CallsParticipant::InLiveCallWith(const std::string& call_id, const std::string& identity) {
+  const CallReads* calls = stack_.Reads();
+  const ICallSessionStore* sessions = stack_.Sessions();
+  if (!calls || !sessions) {
+    return false;
+  }
+  auto local = calls->LocalIdentity();
+  return local && call_queries::InLiveCallWith(*sessions, *local, call_id, identity);
 }
 
 Roe<void> CallsParticipant::OnStoresOpened(ConversationsHub& hub) {

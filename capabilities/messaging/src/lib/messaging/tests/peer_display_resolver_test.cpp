@@ -41,6 +41,28 @@ protected:
   std::unique_ptr<PeerDisplayResolver> resolver_;
 };
 
+// One person's letter-avatar colour is seeded with the same id whether they are named as a sender, a direct chat
+// peer or a raw account id, and a remark does not change it.
+TEST_F(PeerDisplayResolverTest, AvatarSeedIsTheAccountIdOnEverySurface) {
+  const std::string account = "account:lHaEnkO4vSbVnl6A";
+  Contact contact;
+  contact.id = "c1";
+  contact.display_name = "Alice Example";
+  contact.ids = {{mesh::ContactIdKind::RelayUser, "relay:lHaEnkO4vSbVnl6A", false},
+                 {mesh::ContactIdKind::Account, account, true}};
+  ASSERT_TRUE(contacts_->Upsert(contact));
+  Thread thread;
+  thread.kind = ThreadKind::Direct;
+  thread.peer_identity_kind = "account";
+  thread.peer_identity_value = account;
+  EXPECT_EQ(resolver_->ResolveSender("c1").stable_id, account);
+  EXPECT_EQ(resolver_->ResolveSender(account).stable_id, account);
+  EXPECT_EQ(resolver_->ResolveThread(thread).stable_id, account);
+  contact.display_name = "Remarked";
+  ASSERT_TRUE(contacts_->Upsert(contact));
+  EXPECT_EQ(resolver_->ResolveSender("c1").stable_id, account);
+}
+
 TEST_F(PeerDisplayResolverTest, PrefersContactThenDirectoryThenShortId) {
   Thread thread;
   thread.kind = ThreadKind::Direct;

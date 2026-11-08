@@ -103,11 +103,15 @@ void ActivateForVoip() {
 
 void Deactivate() {
   g_session_active.store(false);
+  ClearInterruption();
   ApplySpeakerphoneLocked(false);
   ApplyVoipModeLocked(false);
 }
 
 void CancelPendingDeactivate() {}
+
+void SetSystemManaged(bool /*managed*/) {}
+void NotifySystemActivation(bool /*active*/) {}
 
 // Voice messages: SDL opens playback with the media role (speaker, media volume) and capture needs no switch.
 void ActivateForVoicePlayback() {}
@@ -173,5 +177,22 @@ void ClearCaptureAudioHints() {
 
 } // namespace AudioSession
 } // namespace pbr
+
+/**
+ * MainActivity's call audio-focus listener (main thread): `lost` on a loss (a phone call, another app's call), not
+ * on a regain. A loss outside a live session, or a regain without a loss, changes nothing.
+ */
+extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_MainActivity_nativeOnCallAudioFocus(JNIEnv*, jclass,
+                                                                                               jboolean lost) {
+  if (lost == JNI_TRUE) {
+    if (pbr::AudioSession::g_session_active.load()) {
+      SDL_Log("AudioSession: call audio focus lost — interrupted");
+      pbr::AudioSession::NotifyInterruptionBegan();
+    }
+  } else if (pbr::AudioSession::IsInterrupted()) {
+    SDL_Log("AudioSession: call audio focus back — resuming");
+    pbr::AudioSession::NotifyInterruptionEnded();
+  }
+}
 
 #endif // defined(__ANDROID__)

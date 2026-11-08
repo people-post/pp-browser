@@ -45,7 +45,7 @@ TEST_F(DeliveryNoticeTextTest, AReceiveFailureNamesThePeerAndTheReason) {
   EXPECT_EQ(DeliveryNoticeText(notice), "Couldn't read a message from account:lHaE… (couldn't apply call update).");
   notice.receive = ReceiveFailure::DecryptFailed;
   notice.peer.clear();
-  EXPECT_EQ(DeliveryNoticeText(notice), "Couldn't read a message from a peer (couldn't decrypt).");
+  EXPECT_EQ(DeliveryNoticeText(notice), "Couldn't read a message from a contact (couldn't decrypt).");
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
   EXPECT_EQ(DeliveryNoticeText(notice).find("Couldn't"), std::string::npos) << "in the reader's language";
 }

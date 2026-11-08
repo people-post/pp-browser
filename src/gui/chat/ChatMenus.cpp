@@ -2,6 +2,7 @@
 
 #include "common/Utilities.h"
 #include "common/thread/ThreadTypes.h"
+#include "feature/presenters/QuickReactions.h"
 #include "feature/presenters/SessionMenu.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "common/runtime/AppRuntime.h"
@@ -22,8 +23,6 @@ namespace pbr {
 
 namespace {
 
-const char* kReactionPresets[] = {"👍", "❤️", "😂", "😮", "😢", "🙏"};
-
 /** The element's nearest ancestor carrying `attribute` (sidebar.rml sets `session-id`, rows `message-id`), or empty. */
 std::string FindAttributeUp(ui::Element* element, const char* attribute) {
   for (ui::Element* cur = element; cur; cur = cur->GetParentNode()) {
@@ -42,6 +41,44 @@ void CopyToClipboard(const std::string& text) {
 }
 
 } // namespace
+
+void RunBlockFlow(ChatMenusHost& host, ChatPresenter& presenter, const ContactsNotifyPorts& contacts_notify,
+                  const std::optional<std::string>& contact_id, const std::string& peer_id, const std::string& name,
+                  const bool block) {
+  const auto apply = [&host, &presenter, &contacts_notify, contact_id, peer_id, name, block]() {
+    ConversationsFacade* facade = host.Facade();
+    if (!facade) {
+      return;
+    }
+    if (!contact_id) {  // a stranger: saved as a blocked contact
+      if (auto blocked = presenter.BlockStranger(peer_id); !blocked) {
+        UserFeedback::Fail(Tr(blocked.error().message));
+        host.NotifySurfaceChanged();
+        return;
+      }
+    } else if (auto set = facade->SetContactTrust(*contact_id, block ? TrustLevel::Blocked : TrustLevel::Unknown);
+               !set) {
+      UserFeedback::Fail(Tr("contacts.err.trust"));
+      host.NotifySurfaceChanged();
+      return;
+    }
+    if (contacts_notify.refresh) {
+      contacts_notify.refresh();
+    }
+    host.ShowToast(Tr(block ? "contacts.toast.blocked" : "contacts.toast.unblocked", {{"name", name}}));
+    host.AfterThreadPrefsChanged();  // the row shows (or drops) its "Blocked" mark at once
+  };
+  if (!block) {
+    apply();
+    return;
+  }
+  host.ShowConfirm(Tr("chat.menu.block_confirm_title"), Tr("chat.menu.block_confirm_body"),
+                   [apply](const bool ok) {
+                     if (ok) {
+                       apply();
+                     }
+                   }, true);
+}
 
 ChatMenus::ChatMenus(ChatMenusHost& host, ChatPresenter& presenter, const ChatScreenState& chat,
                      WorkingSetController& working_set, const ContactsNotifyPorts& contacts_notify,
@@ -84,13 +121,14 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
                            working_set_.Clear();
                            host_.StartQuoteReply(shared, prefix);
                          });
-                       }});
-    actions.push_back({"copy_item", Tr("common.copy"), nullptr, [shared]() { CopyToClipboard(shared); }});
+                       }, "../icons/v2/sparkle.svg"});
+    actions.push_back({"copy_item", Tr("common.copy"), nullptr, [shared]() { CopyToClipboard(shared); },
+                       "../icons/v2/copy.svg"});
     const ui::Vector2i position = request.position;
     // Opened after this menu is gone: a menu cannot replace itself from inside its own click.
     actions.push_back({"share_item", Tr("chat.menu.share"), nullptr, [this, shared, position]() {
                          AppRuntime::PostUI([this, shared, position]() { OpenShareTargets(shared, position); });
-                       }});
+                       }, "../icons/v2/share.svg"});
     return actions;
   }
 
@@ -98,21 +136,25 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   if (message_id.empty() || host_.IsDeletedMessage(message_id)) {
     return actions; // a deleted message takes no reaction, reply, copy or second delete
   }
-  // Reactions sit in the row above the message, the rest in the list below it.
-  for (const char* emoji : kReactionPresets) {
-    ContextMenuAction react{std::string("react_") + emoji, emoji, nullptr,
-                            [this, message_id, emoji]() { host_.ToggleReaction(message_id, emoji); }};
+  // Reactions sit in the row above the message, the rest in the list below it: the user's last-used first.
+  for (const std::string& emoji : QuickReactions(host_.RecentEmojis())) {
+    ContextMenuAction react{"react_" + emoji, emoji, nullptr, [this, message_id, emoji]() {
+                              host_.ToggleReaction(message_id, emoji);
+                              host_.RememberEmoji(emoji);
+                            }};
     react.quick = true;
     actions.push_back(std::move(react));
   }
   ContextMenuAction more{"react_more", "+", nullptr, [this, message_id]() { OpenReactionMore(message_id); }};
   more.quick = true;
+  more.pinned = true; // stays put while the recent emoji scroll (Kenneth 2026-11-05 原话 93)
+  // Every emoji in a sheet of its own, about a third of the screen (Kenneth 2026-11-05 原话 81; EmojiPickerController).
   actions.push_back(std::move(more));
 
   // A contact card: its person can be added (the card is checked first).
   if (host_.IsContactCard(message_id)) {
     actions.push_back({"add_contact_from_card", Tr("chat.menu.add_to_contacts"), nullptr,
-                       [this, message_id]() { host_.AddContactFromCard(message_id); }, "../icons/contacts.svg"});
+                       [this, message_id]() { host_.AddContactFromCard(message_id); }, "../icons/v2/user-plus.svg"});
   }
 
   // Copy takes the pointer selection when there is one (desktop), otherwise the whole message.
@@ -128,12 +170,14 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   if (!text.empty()) {
     // Reply: the message shows as a quote bar above the composer and is attached to the next send.
     actions.push_back(
-        {"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { host_.StartQuoteReply(text); }});
-    actions.push_back({"copy_message", Tr("common.copy"), nullptr, [text]() { CopyToClipboard(text); }});
+        {"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { host_.StartQuoteReply(text); },
+         "../icons/v2/reply.svg"});
+    actions.push_back({"copy_message", Tr("common.copy"), nullptr, [text]() { CopyToClipboard(text); },
+                       "../icons/v2/copy.svg"});
     // Ask AI: the message goes into the quote bar and "@ai " into the input; the user adds the question.
     if (auto active = facade->GetActiveThread(); active && active->kind == ThreadKind::Direct) {
       actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr,
-                         [this, text]() { host_.StartQuoteReply(text, "@ai "); }});
+                         [this, text]() { host_.StartQuoteReply(text, "@ai "); }, "../icons/v2/sparkle.svg"});
     }
   }
   ContextMenuAction remove{"delete_message", Tr("common.delete"), nullptr,
@@ -141,8 +185,97 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
                              OpenDeleteChoice(message_id, position);
                            }};
   remove.danger = true;
+  remove.icon = "../icons/v2/trash.svg";
   actions.push_back(std::move(remove));
   return actions;
+}
+
+std::string ChatMenus::SessionTitle(const std::string& thread_id) {
+  ConversationsFacade* facade = host_.Facade();
+  if (!facade) {
+    return {};
+  }
+  auto found = facade->GetThread(thread_id);
+  if (!found || !*found) {
+    return {};
+  }
+  const std::string title = facade->ResolveThreadLabel(**found).title;
+  // The stored default AI title is English; the row shows it in the UI language.
+  return (*found)->kind == ThreadKind::Ai && title == "New chat" ? Tr("chat.new_chat") : title;
+}
+
+std::string ChatMenus::MenuTitleFor(const ContextMenuRequest& request) {
+  if (const std::string session_id = FindAttributeUp(request.target, "session-id"); !session_id.empty()) {
+    return SessionTitle(session_id);
+  }
+  if (!FindAttributeUp(request.target, "message-id").empty()) {
+    return Tr("chat.menu.message_title");
+  }
+  return {};
+}
+
+void ChatMenus::RunSessionSwipeAction(const std::string& thread_id, const SessionSwipeAction action) {
+  // The menu offers one of each pair (pin / unpin, ...) depending on the row's state; Delete is "leave" for a group.
+  const char* ids[2] = {nullptr, nullptr};
+  switch (action) {
+  case SessionSwipeAction::More:
+    // The long-press menu itself (a bottom action sheet on phones).
+    ContextMenuHost::Instance().ShowActions(ui::Vector2i(0, 0), SessionActions(thread_id, ui::Vector2i(0, 0)), {},
+                                            SessionTitle(thread_id));
+    return;
+  case SessionSwipeAction::Archive:
+    ids[0] = "session_archive";
+    ids[1] = "session_unarchive";
+    break;
+  case SessionSwipeAction::Delete:
+    ids[0] = "session_delete";
+    ids[1] = "session_leave_group";
+    break;
+  case SessionSwipeAction::Pin:
+    ids[0] = "session_pin";
+    ids[1] = "session_unpin";
+    break;
+  case SessionSwipeAction::Read:
+    ids[0] = "session_mark_read";
+    ids[1] = "session_mark_unread";
+    break;
+  case SessionSwipeAction::Rename:
+    ids[0] = "session_rename"; // offered for AI conversations only
+    break;
+  }
+  for (ContextMenuAction& item : SessionActions(thread_id, ui::Vector2i(0, 0))) {
+    // An action with no second id (e.g. Rename) leaves ids[1] null; comparing a std::string to a null char* would
+    // strlen(nullptr) and crash, so guard each id before the compare.
+    const bool match = (ids[0] && item.id == ids[0]) || (ids[1] && item.id == ids[1]);
+    if (match && item.run) {
+      item.run();
+      return;
+    }
+  }
+}
+
+void ChatMenus::RenameAiThread(const std::string& thread_id) {
+  ConversationsFacade* facade = host_.Facade();
+  if (!facade) {
+    return;
+  }
+  auto thread = facade->GetThread(thread_id);
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Ai) {
+    return;
+  }
+  host_.ShowPrompt(Tr("chat.ai_rename.title"), Tr("chat.ai_rename.prompt"), SessionTitle(thread_id),
+                   [this, thread_id](const bool ok, std::string value) {
+                     if (!ok) {
+                       return;
+                     }
+                     // An empty name goes back to the automatic title.
+                     if (auto saved = presenter_.SetThreadLocalTitle(thread_id, value); !saved) {
+                       UserFeedback::Fail(saved.error().message);
+                     } else {
+                       host_.AfterThreadPrefsChanged();
+                     }
+                     host_.NotifySurfaceChanged();
+                   });
 }
 
 std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thread_id, const ui::Vector2i position) {
@@ -174,6 +307,7 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
                : thread.kind == ThreadKind::Direct ? SessionKind::Direct
                                                    : SessionKind::Ai;
   state.has_contact = contact_id.has_value();
+  state.has_peer_identity = !thread.peer_identity_value.empty();
   if (contact_id) {
     if (auto contact = facade->GetContact(*contact_id); contact && *contact) {
       state.blocked = (*contact)->local.trust == TrustLevel::Blocked;
@@ -190,6 +324,7 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
   for (const SessionMenuItem item : SessionMenuItems(state)) {
     ContextMenuAction action;
     action.danger = SessionMenuItemIsDestructive(item);
+    action.icon = SessionMenuIcon(item);
     switch (item) {
     case SessionMenuItem::MarkUnread:
       action.id = "session_mark_unread";
@@ -212,22 +347,24 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
     case SessionMenuItem::Unpin:
       action.id = item == SessionMenuItem::Pin ? "session_pin" : "session_unpin";
       action.label = Tr(item == SessionMenuItem::Pin ? "sidebar.menu.pin" : "sidebar.menu.unpin");
-      action.icon = "../icons/pin.svg";
       action.run = [this, thread_id, pin = item == SessionMenuItem::Pin]() {
         presenter_.SetPinned(thread_id, pin);
         host_.AfterThreadPrefsChanged();
       };
       break;
+    case SessionMenuItem::Rename:
+      action.id = "session_rename";
+      action.label = Tr("sidebar.menu.rename");
+      action.run = [this, thread_id]() { RenameAiThread(thread_id); };
+      break;
     case SessionMenuItem::Mute:
       action.id = "session_mute";
       action.label = Tr("sidebar.menu.mute");
-      action.icon = "../icons/bell-off.svg";
       action.run = [this, thread_id, position]() { OpenMute(thread_id, position); };
       break;
     case SessionMenuItem::Unmute:
       action.id = "session_unmute";
       action.label = Tr("sidebar.menu.unmute");
-      action.icon = "../icons/bell-off.svg";
       action.run = [this, thread_id]() {
         presenter_.Unmute(thread_id);
         host_.AfterThreadPrefsChanged();
@@ -238,7 +375,6 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
       action.id = item == SessionMenuItem::MuteMentions ? "session_mute_mentions" : "session_allow_mentions";
       action.label = Tr(item == SessionMenuItem::MuteMentions ? "sidebar.menu.mute_mentions"
                                                               : "sidebar.menu.allow_mentions");
-      action.icon = "../icons/bell-off.svg";
       action.run = [this, thread_id, mute = item == SessionMenuItem::MuteMentions]() {
         presenter_.SetMuteMentions(thread_id, mute);
         host_.AfterThreadPrefsChanged();
@@ -256,7 +392,6 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
     case SessionMenuItem::Unarchive:
       action.id = item == SessionMenuItem::Archive ? "session_archive" : "session_unarchive";
       action.label = Tr(item == SessionMenuItem::Archive ? "sidebar.menu.archive" : "sidebar.menu.unarchive");
-      action.icon = "../icons/archive.svg";
       action.run = [this, thread_id, archive = item == SessionMenuItem::Archive]() {
         presenter_.SetArchived(thread_id, archive);
         host_.AfterThreadPrefsChanged();
@@ -265,7 +400,6 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
     case SessionMenuItem::ViewContact:
       action.id = "session_view_contact";
       action.label = Tr("chat.menu.view_contact");
-      action.icon = "../icons/contacts.svg";
       action.run = [this, id = *contact_id]() {
         if (contacts_notify_.select_contact) {
           contacts_notify_.select_contact(id);
@@ -277,32 +411,9 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
       const bool block = item == SessionMenuItem::Block;
       action.id = block ? "session_block" : "session_unblock";
       action.label = Tr(block ? "chat.menu.block" : "chat.menu.unblock");
-      action.run = [this, id = *contact_id, block]() {
-        const auto apply = [this, id, block]() {
-          ConversationsFacade* facade = host_.Facade();
-          if (!facade) {
-            return;
-          }
-          if (auto set = facade->SetContactTrust(id, block ? TrustLevel::Blocked : TrustLevel::Unknown); !set) {
-            UserFeedback::Fail(Tr("contacts.err.trust"));
-            return;
-          }
-          if (contacts_notify_.refresh) {
-            contacts_notify_.refresh();
-          }
-          host_.ShowToast(Tr(block ? "chat.menu.blocked_toast" : "chat.menu.unblocked_toast"));
-          host_.NotifySurfaceChanged();
-        };
-        if (!block) {
-          apply();
-          return;
-        }
-        host_.ShowConfirm(Tr("chat.menu.block_confirm_title"), Tr("chat.menu.block_confirm_body"),
-                          [apply](const bool ok) {
-                            if (ok) {
-                              apply();
-                            }
-                          });
+      action.run = [this, id = contact_id, peer_id = thread.peer_identity_value,
+                    name = facade->ResolveThreadLabel(thread).title, block]() {
+        RunBlockFlow(host_, presenter_, contacts_notify_, id, peer_id, name, block);
       };
       break;
     }
@@ -314,7 +425,6 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
     case SessionMenuItem::Delete:
       action.id = "session_delete";
       action.label = Tr("sidebar.menu.delete");
-      action.icon = "../icons/trash.svg";
       // The close flow asks before it deletes.
       action.run = [this, thread_id]() { host_.OnCloseThread(thread_id); };
       break;
@@ -330,7 +440,7 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
   return actions;
 }
 
-void ChatMenus::OpenMute(const std::string& thread_id, const ui::Vector2i position) {
+void ChatMenus::OpenMute(const std::string& thread_id, const ui::Vector2i position, const bool offer_unmute) {
   static constexpr std::pair<SessionMuteChoice, const char*> kChoices[] = {
       {SessionMuteChoice::EightHours, "sidebar.menu.mute_8h"},
       {SessionMuteChoice::OneWeek, "sidebar.menu.mute_1w"},
@@ -346,9 +456,22 @@ void ChatMenus::OpenMute(const std::string& thread_id, const ui::Vector2i positi
           presenter_.Mute(thread_id, choice);
           host_.AfterThreadPrefsChanged();
         },
+        "../icons/v2/bell-off.svg",
     });
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  if (offer_unmute) {
+    actions.push_back({
+        "session_unmute",
+        Tr("group_info.unmute"),
+        nullptr,
+        [this, thread_id]() {
+          presenter_.Unmute(thread_id);
+          host_.AfterThreadPrefsChanged();
+        },
+        "../icons/v2/bell.svg",
+    });
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, Tr("group_info.mute"));
 }
 
 void ChatMenus::OpenNewSession(ui::Event& ev) {
@@ -360,23 +483,23 @@ void ChatMenus::OpenNewSession(ui::Event& ev) {
       Tr("chat.menu.chat_with_ai"),
       nullptr,
       [this]() { host_.OnNewChat(); },
-      "../icons/sparkle.svg",
+      "../icons/v2/sparkle.svg",
   });
   actions.push_back({
       "message_contact",
       Tr("chat.menu.message_a_contact"),
       nullptr,
       [this]() { host_.OnNewMessage(); },
-      "../icons/contacts.svg",
+      "../icons/v2/compose.svg",
   });
   actions.push_back({
       "find_someone",
       Tr("chat.menu.find_someone"),
       nullptr,
       [this]() { host_.OnFindSomeone(); },
-      "../icons/message.svg",
+      "../icons/v2/search.svg",
   });
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, Tr("chat.new_chat"));
 }
 
 void ChatMenus::OpenThreadActions(ui::Event& ev) {
@@ -416,6 +539,16 @@ void ChatMenus::OpenThreadActions(ui::Event& ev) {
         "../icons/sync.svg",
     });
   }
+  // Phones, chats with people (design §8.15): the ask-AI panel over this chat. An AI chat is the AI already.
+  if (host_.AskAiPanelAvailable() && !chat_.thread_is_ai) {
+    actions.push_back({
+        "ask_ai",
+        Tr("ask_ai.title"),
+        nullptr,
+        [this]() { host_.OpenAskAiPanel(); },
+        "../icons/v2/sparkle-fill.svg",
+    });
+  }
   if (chat_.show_thread_actions) {
     actions.push_back({
         "clear_history",
@@ -439,7 +572,25 @@ void ChatMenus::OpenThreadActions(ui::Event& ev) {
   if (actions.empty()) {
     return;
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, chat_.thread_title.c_str());
+}
+
+bool StartCallWith(const CallActionsPorts& call_actions, const std::string& thread_id, bool call_joinable,
+                   bool want_video) {
+  if (thread_id.empty() || !call_actions.start_call) {
+    return false;
+  }
+  if (call_joinable) {
+    (void)call_actions.start_call(thread_id, false);  // Join: into the call that goes on, no voice / video choice
+    return true;
+  }
+  const bool video_available = !call_actions.video_call_available || call_actions.video_call_available();
+  (void)call_actions.start_call(thread_id, want_video && video_available);
+  return true;
+}
+
+void ChatMenus::CallBack(const std::string& video_arg) {
+  (void)StartCallWith(call_actions_, host_.ActiveThreadId(), chat_.call_joinable, video_arg == "1");
 }
 
 void ChatMenus::StartCall(ui::Event& ev) {
@@ -448,13 +599,9 @@ void ChatMenus::StartCall(ui::Event& ev) {
     return;
   }
   auto start_call = call_actions_.start_call;
-  if (chat_.call_joinable) {
-    (void)start_call(thread_id, false);  // Join: into the call that goes on, no voice / video choice
-    return;
-  }
   const bool video_available = !call_actions_.video_call_available || call_actions_.video_call_available();
-  if (!video_available) {
-    (void)start_call(thread_id, false);
+  if (chat_.call_joinable || !video_available) {
+    (void)StartCallWith(call_actions_, thread_id, chat_.call_joinable, false);
     return;
   }
 
@@ -474,7 +621,7 @@ void ChatMenus::StartCall(ui::Event& ev) {
       [thread_id, start_call]() { (void)start_call(thread_id, true); },
       "../icons/video.svg",
   });
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, chat_.thread_title.c_str());
 }
 
 void ChatMenus::OpenEmojiInsert(ui::Event* ev) {
@@ -488,9 +635,9 @@ void ChatMenus::OpenEmojiInsert(ui::Event* ev) {
   // Fallback when picker is not wired (tests / headless): keep preset strip.
   const ui::Vector2i position = ev ? MenuPositionBelowEvent(*ev) : ui::Vector2i(120, 120);
   std::vector<ContextMenuAction> actions;
-  for (const char* emoji : kReactionPresets) {
+  for (const std::string& emoji : DefaultQuickReactions()) {
     actions.push_back({
-        std::string("insert_") + emoji,
+        "insert_" + emoji,
         emoji,
         nullptr,
         [this, emoji]() { host_.InsertEmojiIntoDraft(emoji); },
@@ -556,7 +703,7 @@ void ChatMenus::OpenShareTargets(const std::string& text, const ui::Vector2i pos
                          host_.ShowToast(Tr("chat.share.sent", {{"name", name}}));
                        }});
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, Tr("chat.menu.share"));
 }
 
 void ChatMenus::OpenDeleteChoice(const std::string& message_id, const ui::Vector2i position) {
@@ -568,22 +715,25 @@ void ChatMenus::OpenDeleteChoice(const std::string& message_id, const ui::Vector
       if (ok) {
         host_.DeleteMessageForMe(message_id);
       }
-    });
+    }, true);
     return;
   }
   std::vector<ContextMenuAction> actions;
   ContextMenuAction everyone{"delete_for_everyone", Tr("chat.menu.delete_for_everyone"), nullptr,
                              [this, message_id]() { host_.DeleteMessageForEveryone(message_id); }};
   everyone.danger = true;
+  everyone.icon = "../icons/v2/trash.svg";
   actions.push_back(std::move(everyone));
   ContextMenuAction mine{"delete_for_me", Tr("chat.menu.delete_for_me"), nullptr,
                          [this, message_id]() { host_.DeleteMessageForMe(message_id); }};
   mine.danger = true;
+  mine.icon = "../icons/v2/trash.svg";
   actions.push_back(std::move(mine));
-  actions.push_back({"delete_cancel", Tr("common.cancel"), nullptr, []() {}});
+  actions.push_back({"delete_cancel", Tr("common.cancel"), nullptr, []() {}, "../icons/v2/close.svg"});
+  actions.back().cancel = true; // the phone sheet's close disc stands for it
   // Opened after this menu is gone: a menu cannot replace itself from inside its own click.
   AppRuntime::PostUI([position, actions = std::move(actions)]() mutable {
-    ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+    ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, Tr("chat.menu.delete_title"));
   });
 }
 

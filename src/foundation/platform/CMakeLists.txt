@@ -15,6 +15,7 @@ set(_pp_platform_core_sources
   os/OsProcess_Posix.cpp
   os/OsThreadName_Posix.cpp
   os/OsLocaleTags.cpp
+  os/KeychainStatus.cpp
   AssetIO.cpp
   IAssetLocator.cpp
   DesktopAssetLocator.cpp
@@ -24,6 +25,7 @@ set(_pp_platform_gui_sources
   AndroidAssetLocator.cpp
   AndroidPathProvider.cpp
   AppEventHooks.cpp
+  CallPushAge.cpp
   CallSystemUi.cpp
   DesktopLocalNotifier.cpp
   desktop/LocalNotifierActivation.cpp
@@ -57,12 +59,42 @@ if(PP_BROWSER_IS_IOS)
   list(APPEND _pp_platform_core_sources IosBackupExclusion_Ios.mm)
 endif()
 
-# Uninstall-surviving blob store (OsSecureBlobStore, behind common/SecureBlobStore.h): iOS Keychain; else a stub.
+# Uninstall-surviving blob store (OsSecureBlobStore, behind common/SecureBlobStore.h): iOS Keychain; Android a
+# Keystore-sealed no-backup file (PpSecureBlob.java, API 28+); else a stub.
 list(APPEND _pp_platform_core_sources OsSecureBlobStore.cpp)
 if(PP_BROWSER_IS_IOS)
   list(APPEND _pp_platform_core_sources os/OsSecureBlob_Ios.mm)
+elseif(PP_BROWSER_IS_ANDROID)
+  list(APPEND _pp_platform_core_sources os/OsSecureBlob_Android.cpp)
 else()
   list(APPEND _pp_platform_core_sources os/OsSecureBlob_Default.cpp)
+endif()
+
+# Protected-data state + the PIN grace clock (#21): iOS UIKit / sysctl / mach; Android KeyguardManager /
+# ACTION_USER_PRESENT / BOOT_COUNT / CLOCK_BOOTTIME; a stub elsewhere (macOS, Windows, Linux).
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources os/OsProtectedData_Ios.mm)
+elseif(PP_BROWSER_IS_ANDROID)
+  list(APPEND _pp_platform_core_sources os/OsProtectedData_Android.cpp)
+else()
+  list(APPEND _pp_platform_core_sources os/OsProtectedData_Default.cpp)
+endif()
+
+# Whether the app is on screen now (PIN grace window: only the foreground extends it): iOS asks UIKit; Android
+# MainActivity (onStart..onStop); else true.
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources os/OsAppState_Ios.mm)
+elseif(PP_BROWSER_IS_ANDROID)
+  list(APPEND _pp_platform_core_sources os/OsAppState_Android.cpp)
+else()
+  list(APPEND _pp_platform_core_sources os/OsAppState_Default.cpp)
+endif()
+
+# Which face / finger sensor the biometric unlock switch names (at-rest A014): iOS LocalAuthentication; else None.
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources os/OsBiometry_Ios.mm)
+else()
+  list(APPEND _pp_platform_core_sources os/OsBiometry_Default.cpp)
 endif()
 
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
@@ -127,7 +159,6 @@ else()
     VideoPosterExtractor_Default.cpp
     PlatformShare_Default.cpp
     NativeFileDialog_Default.cpp
-    PlatformOpenFile.cpp
   )
   if(PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp)
@@ -135,9 +166,10 @@ else()
     list(APPEND _pp_platform_core_sources os/OsLocale_Posix.cpp)
   endif()
   if(NOT PP_BROWSER_IS_ANDROID)
-    list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp CameraCapture_Default.cpp)
+    list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp)
   else()
-    list(APPEND _pp_platform_gui_sources CameraCapture_Android.cpp)
+    # A file:// address is refused by Android 7+ (FileUriExposedException): a FileProvider address instead.
+    list(APPEND _pp_platform_gui_sources CameraCapture_Android.cpp PlatformOpenFile_Android.cpp)
   endif()
 endif()
 
@@ -258,7 +290,9 @@ if(PP_BROWSER_IS_IOS)
     OpenSSL::Crypto
     "-framework Security"
     "-framework CoreFoundation"
-    "-framework Foundation")
+    "-framework Foundation"
+    "-framework UIKit"
+    "-framework LocalAuthentication")
   target_link_libraries(pp_foundation_platform PUBLIC
     CURL::libcurl
     OpenSSL::SSL
@@ -275,10 +309,19 @@ endif()
 # Android: ApplyPlatformCurlSsl sets CURLOPT_CAPATH via curl.
 if(PP_BROWSER_IS_ANDROID)
   target_sources(pp_foundation_platform PRIVATE NetworkConnectivity_Android.cpp NetworkMonitor_Android.cpp
-                 StayConnectedService_Android.cpp)
+                 StayConnectedService_Android.cpp
+                 AndroidCallSystemUi.cpp SecureScreen_Android.cpp
+                 OngoingCallService_Android.cpp)
   target_link_libraries(pp_foundation_platform PUBLIC CURL::libcurl)
 else()
-  target_sources(pp_foundation_platform PRIVATE StayConnectedService_Default.cpp)
+  target_sources(pp_foundation_platform PRIVATE StayConnectedService_Default.cpp OngoingCallService_Default.cpp)
+  if(WIN32)
+    target_sources(pp_foundation_platform PRIVATE SecureScreen_Win32.cpp)
+  elseif(APPLE AND NOT PP_BROWSER_IS_IOS)
+    target_sources(pp_foundation_platform PRIVATE SecureScreen_Darwin.mm)
+  elseif(NOT PP_BROWSER_IS_IOS)
+    target_sources(pp_foundation_platform PRIVATE SecureScreen_Default.cpp)
+  endif()
 endif()
 
 if(PP_BROWSER_IS_IOS)
@@ -286,7 +329,8 @@ if(PP_BROWSER_IS_IOS)
     NetworkConnectivity_Ios.mm
     IosPushDeviceRegistrar.mm
     IosLocalNotifier.mm
-    IosApnsAppDelegate.mm)
+    IosApnsAppDelegate.mm
+    SecureScreen_Ios.mm)
   if(PP_BROWSER_IOS_CALLKIT)
     target_sources(pp_foundation_platform PRIVATE CallSystemUi_Ios.mm)
     target_compile_definitions(pp_foundation_platform PRIVATE PP_IOS_CALLKIT=1)

@@ -6,6 +6,7 @@
 #include "feature/product/MessagingPeoplePickerPorts.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSessionPorts.h"
+#include "gui/contacts/ContactsNotifyPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "lib/ui/PeoplePickerLogic.h"
 #include "gui/contacts/PeoplePickerSurfaceNotifyPorts.h"
@@ -53,6 +54,8 @@ public:
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Push surface snapshot to app PeoplePickerShellBridge. */
   void BindSurfaceNotify(PeoplePickerSurfaceNotifyPorts ports);
+  /** A member's profile (a page sheet on phones). Clear via BindContactsNotify({}). */
+  void BindContactsNotify(ContactsNotifyPorts ports);
 
   struct PickerRow {
     ui::String id;
@@ -82,8 +85,25 @@ public:
   /** Active call: invite additional contacts as guests. */
   void OpenForCallAddGuest(const std::string& call_id);
 
+  /**
+   * G022: "Make a group…" in the call `call_id`: everyone in it picked (each can be unticked), Next names the group
+   * (a default from their names), Create makes it with us as owner and invites them.
+   */
+  void OpenForCallMakeGroup(const std::string& call_id);
+
   /** The member list of the group chat `thread_id`; the owner adds, removes and re-invites from it. */
   void OpenForGroupMembers(const std::string& thread_id);
+
+  /** Add members to the group chat `thread_id` straight away (the group info sheet's "Add members"); closes when done. */
+  void OpenForGroupAddMembers(const std::string& thread_id);
+
+  /** Someone tapped on the group info sheet's member card: the same as a tap in the member list. */
+  void TapGroupMember(const std::string& thread_id, const std::string& identity);
+  /**
+   * A member's profile was just opened from the group chat `thread_id` (their avatar or name; `sender` a contact id or
+   * an account id): if we own the group, the profile gets the "Group admin" card.
+   */
+  void OfferGroupAdmin(const std::string& thread_id, const std::string& sender);
 
   void Close();
 
@@ -100,14 +120,54 @@ private:
   void SyncRows();
   void SyncGroupCallRows();
   void SyncCallAddGuestRows();
+  /** G022: the call's people but us, as account rows (they need not be contacts). */
+  void SyncCallMakeGroupRows();
+  /** Someone in a call by their account: their contact's name, the nickname on their card, else unnamed. */
+  std::string CallMemberName(const std::string& identity) const;
+  /** The name step's default for `ids` (accounts in CallMakeGroup; else the usual default). */
+  std::string DefaultGroupTitleFor(const std::vector<std::string>& ids) const;
+  /** The select step's title for the mode open. */
+  std::string SelectStepTitle() const;
   void SyncGroupMemberRows();
   void SyncGroupAddRows();
   void OpenForGroupAddMember();
   void RefreshGroupAddLimit();
   std::optional<Contact> ContactForMember(const GroupRosterMember& member) const;
   void OnMemberTapped(const std::string& identity, ui::Vector2i menu_position);
-  void ReinviteMember(const GroupMemberRow& row);
-  void RemoveMember(const GroupMemberRow& row);
+  /** Phones: everyone goes to the profile; the owner's has the "Group admin" card (DecideGroupMemberTap). */
+  void ShowMemberTap(const GroupMemberRow& row, const std::string& group_id, MemberRole viewer_role, bool is_self);
+  /** The owner's card on the profile just opened for `row` (nothing when `tap` offers no admin action). */
+  void OfferAdminCard(const GroupMemberTap& tap, const std::string& group_id, const GroupMemberRow& row);
+  /** Someone on the roster of the group chat `thread_id`, found by `matches`, with what we know about them and us. */
+  struct MemberInGroup {
+    std::string group_id;
+    GroupMemberRow row;
+    /** Ours in the group: Owner when its recorded owner is us, else the roster's (an admin removes members). */
+    MemberRole viewer_role = MemberRole::Member;
+    GroupPreset preset = GroupPreset::Open;
+    bool is_self = false;
+  };
+  std::optional<MemberInGroup> FindMemberInGroup(const std::string& thread_id,
+                                                 const std::function<bool(const GroupRosterMember&)>& matches) const;
+  /** The member's profile as a page sheet (their contact page, or its member state). */
+  void OpenMemberProfile(const GroupMemberRow& row);
+  bool CompactLayout() const;
+  void ReinviteMember(const std::string& group_id, const GroupMemberRow& row);
+  /** Asks first; `removed` runs once the person is out (the owner's profile sheet then closes). */
+  void RemoveMember(const std::string& group_id, const GroupMemberRow& row, std::function<void()> removed = {});
+  /** Owner (G017): make `row` an admin, or a member again; a toast says which, the rows refresh. */
+  void SetMemberAdmin(const std::string& group_id, const GroupMemberRow& row, bool admin);
+  /** G020 6: asks, then removes everyone `row` added who is ours to remove (owner, admins). */
+  void RemoveEveryoneAddedBy(const std::string& group_id, const GroupMemberRow& row);
+  /** G020 6: asks, then invites again everyone `row` removed (the owner). */
+  void ReinviteEveryoneRemovedBy(const std::string& group_id, const GroupMemberRow& row);
+  /** Our role and the preset in `group_id`, from the ports (Owner when we are its recorded owner). */
+  MemberRole ViewerRoleIn(const std::string& group_id) const;
+  GroupPreset PresetOf(const std::string& group_id) const;
+  /** How many `account` removed who are still out (G020 6). */
+  size_t RemovedByCount(const std::string& group_id, const std::string& account) const;
+  /** After a change to `group_id`'s roster here: the chat list, and the member list when it shows that group. */
+  void AfterGroupChange(const std::string& group_id);
   void AddMemberAsContact(const GroupMemberRow& row);
   void OnInviteMembers();
   void OnInviteFinished(uint64_t batch, const std::string& group_id, const std::unordered_map<std::string, std::string>& names,
@@ -172,6 +232,7 @@ private:
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   PeoplePickerSurfaceNotifyPorts surface_notify_;
+  ContactsNotifyPorts contacts_notify_;
   std::string call_thread_id_;
   std::string call_id_;
   bool call_video_allowed_ = false;
@@ -181,12 +242,18 @@ private:
   std::string group_id_;
   std::string group_thread_id_;
   bool group_is_owner_ = false;
+  /** Our role in the group listed (Owner when we are its recorded owner). */
+  MemberRole group_viewer_role_ = MemberRole::Member;
+  /** The listed group's preset (G017): who may invite. */
+  GroupPreset group_preset_ = GroupPreset::Open;
   /** This account, on the member list (its own row is not tappable). */
   std::string local_identity_;
   bool group_sending_ = false;
   /** The latest invite batch; an older one finishing does not end the current send. */
   uint64_t invite_batch_ = 0;
   int group_roster_count_ = 0;
+  /** Add members was opened from the member list (its Cancel / Invite go back there), not over the group info. */
+  bool add_returns_to_list_ = true;
   std::unordered_map<std::string, GroupMemberRow> member_rows_;
 
   static PeoplePickerController* installed_instance_;

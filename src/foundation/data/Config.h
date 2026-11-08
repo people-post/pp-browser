@@ -6,6 +6,7 @@
 #include "common/Module.h"
 #include "mesh/types/AddressDisclosure.h"
 #include "common/MeshConfig.h"
+#include "foundation/product/DevTools.h"
 #include "common/ServiceEndpoints.h"
 
 #include <cstdint>
@@ -86,8 +87,9 @@ public:
   };
 
   static Roe<AppConfig> Load(int argc, char** argv, Fallback fallback = Fallback::AppConfigFile);
-  static Roe<AppConfig> LoadFromFile(const std::string& path);
-  static AppConfig DefaultAppConfig();
+  /** `ui_demo`: the UI demo app has no backend or mesh (UiDemoConfig.h); every Config comes out with those applied. */
+  static Roe<AppConfig> LoadFromFile(const std::string& path, bool ui_demo = kUiDemoBuild);
+  static AppConfig DefaultAppConfig(bool ui_demo = kUiDemoBuild);
   static Roe<void> SaveToFile(const std::string& path, const AppConfig& config);
   /** `--config`, else PP_BROWSER_CONFIG, else `fallback`; empty: no file. */
   static std::string DiscoverConfigPath(int argc, char** argv, Fallback fallback = Fallback::AppConfigFile);

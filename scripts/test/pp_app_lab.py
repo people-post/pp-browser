@@ -17,6 +17,8 @@ between them goes through the hop. `pp_local_test.sh run --suite app-nat` brings
 """
 
 import argparse
+import base64
+import contextlib
 import json
 import os
 import queue
@@ -51,7 +53,7 @@ NO_DIRECTORY = "http://127.0.0.1:9/api/relay"
 class User:
     """One person with the app: a pp-app-probe process over a profile dir that outlives it."""
 
-    def __init__(self, lab, name, container=None, directory=True, reachable=False):
+    def __init__(self, lab, name, container=None, directory=True, reachable=False, seeds=None):
         self.lab = lab
         self.name = name
         self.container = container  # --nat: the user's own NAT'd container (None: a host process)
@@ -59,7 +61,7 @@ class User:
         os.makedirs(self.dir, exist_ok=True)
         self.config = os.path.join(self.dir, "config.json")
         with open(self.config, "w") as f:
-            json.dump(lab.config_for(self.dir, directory, reachable), f, indent=2)
+            json.dump(lab.config_for(self.dir, directory, reachable, seeds), f, indent=2)
         self.proc = None
         self.next_id = 1
         self.replies = {}
@@ -302,6 +304,8 @@ class Lab:
         self.probe = os.path.abspath(args.probe)
         self.relay = args.relay.rstrip("/")
         self.hop = args.hop
+        self.hop2 = args.hop2  # the second seed (call_path_*_two_hops)
+        self.hop2_status = args.hop2_status
         # --nat: users run in these containers, one each in turn; they reach the relay at user_relay.
         self.containers = args.nat_containers.split(",") if args.nat else []
         self.user_relay = args.nat_relay.rstrip("/") if args.nat else self.relay
@@ -324,7 +328,7 @@ class Lab:
         self.synthetic_video = False
         self.users = []
 
-    def config_for(self, data_dir, directory=True, reachable=False):
+    def config_for(self, data_dir, directory=True, reachable=False, seeds=None):
         return {
             "config_version": 1,
             "data_dir": data_dir,
@@ -336,7 +340,8 @@ class Lab:
                 "node_enabled": False,
                 "mesh_enabled": True,
                 "amp_udp_port": 0,
-                "bootstrap_peers": [self.hop],
+                # seeds: the ones the user bootstraps from (default the lab hop alone; the two-hop rows add hop2).
+                "bootstrap_peers": seeds or [self.hop],
                 "capabilities": {"dht": False},
                 # Me → Network → Reachable without the relay: keep a reservation on the seed (the lab hop).
                 "reachable_without_relay": reachable,
@@ -374,16 +379,17 @@ class Lab:
             time.sleep(0.5)
         raise ProbeError("relay did not come back after restart")
 
-    def user(self, name, directory=True, reachable=False, beside=None):
+    def user(self, name, directory=True, reachable=False, beside=None, seeds=None):
         """A registered user; directory=False: one whose directory never answers; reachable=True: one that
         stays reachable without the relay (parked on the lab's seed); beside=<user>: --nat, on that user's
-        network (the same Wi-Fi), not behind a NAT of its own."""
+        network (the same Wi-Fi), not behind a NAT of its own; seeds=[...]: the seeds it bootstraps from
+        (default the lab hop alone)."""
         self.fresh_registration()
         if beside is not None:
             container = beside.container
         else:
             container = self.containers[len(self.users) % len(self.containers)] if self.containers else None
-        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), container, directory, reachable)
+        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), container, directory, reachable, seeds)
         self.users.append(u)
         u.start()
         u.wait_ready()
@@ -1110,6 +1116,8 @@ PHONE_NARROW = {"delay": 60, "loss": 0, "up": 600, "down": 2000}
 PHONE_WIDE = {"delay": 20, "loss": 0, "up": 8000, "down": 8000}
 # A long path and nothing else (a US <-> China call through a relay): 250 ms more round trip on each user's link.
 PHONE_FAR = {"delay": 125, "loss": 0, "up": 4000, "down": 8000}
+# The same long path, lossy as a long mobile one is.
+PHONE_FAR_LOSSY = {"delay": 125, "loss": 3, "up": 4000, "down": 8000}
 
 
 def gw_net(u, script):
@@ -1149,10 +1157,10 @@ def handover(u, outage=1.5):
 
 
 class Road:
-    """Phones on the road (--nat), as a context: `users`' links behave like `profile`, and with
-    `handover_s=(lo, hi)` each one hands over every lo..hi s on its own random schedule. `park()`
-    stops the handovers (the links stay as they are); leaving clears the links. The schedule's seed
-    is printed — PP_APP_LAB_ROAD_SEED replays it."""
+    """Phones on the road (--nat), as a context: `users`' links behave like `profile` (one PHONE_* for all, or
+    {user: PHONE_* or None} — None leaves that one's link clean), and with `handover_s=(lo, hi)` each one hands
+    over every lo..hi s on its own random schedule. `park()` stops the handovers (the links stay as they are);
+    leaving clears the links. The schedule's seed is printed — PP_APP_LAB_ROAD_SEED replays it."""
 
     def __init__(self, users, profile, handover_s=None):
         self.users, self.profile, self.handover_s = list(users), profile, handover_s
@@ -1166,7 +1174,9 @@ class Road:
         print("road seed=%d (%s)" % (self.seed, ", ".join(u.name for u in self.users)), flush=True)
         for u in self.users:
             clear_link(u)
-            phone_link(u, self.profile)
+            profile = self.profile.get(u) if isinstance(self.profile, dict) else self.profile
+            if profile:
+                phone_link(u, profile)
         if self.handover_s:
             for i, u in enumerate(self.users):
                 t = threading.Thread(target=self._drive, args=(u, random.Random(self.seed + i)), daemon=True)
@@ -1300,6 +1310,146 @@ def scenario_seed_dies_in_use(lab):
     return {"inside_link_window": inside, "after_link_gone": after}
 
 
+# --- a full seed (p2p-mesh N033) ------------------------------------------------------------------
+# The lab's first hop is sized small (docker-compose.app-lab.yml: PP_APP_LAB_HOP_RESERVATIONS,
+# PP_APP_LAB_HOP_GROUP_CALLS), so pp-node-load fills it with strangers' parks or calls. The users know
+# both seeds, as every phone knows every org seed; the nodes' own metrics say where each one went.
+
+METRIC_LINE = re.compile(r'^([a-z_]+)(\{[^}]*\})?\s+([-0-9.eE+]+)$')
+LEVELS = {1: "open", 2: "busy", 3: "full", 4: "draining"}
+
+
+def node_metric(status_url, name):
+    """One series from a node's /metrics (`name` with its labels, e.g. pp_service_load{service="park"})."""
+    import urllib.request
+    with urllib.request.urlopen(status_url + "/metrics", timeout=5) as r:
+        for line in r.read().decode().splitlines():
+            m = METRIC_LINE.match(line)
+            if m and m.group(1) + (m.group(2) or "") == name:
+                return float(m.group(3))
+    return 0.0
+
+
+def node_level(status_url, service):
+    return LEVELS.get(int(node_metric(status_url, 'pp_service_load{service="%s"}' % service)), "unknown")
+
+
+class Filler:
+    """pp-node-load fills the lab's first hop (park: reservations; calls: hosted group calls) until the node
+    itself says `service` is full; stopping it frees what it took."""
+
+    def __init__(self, lab, mode, service, count):
+        self.lab, self.mode, self.service, self.count = lab, mode, service, count
+        self.proc = None
+
+    def __enter__(self):
+        if not self.lab.hop2:
+            raise ProbeError("this lab has no second seed (hop2)")
+        tool = os.path.join(os.path.dirname(self.lab.probe), "pp-node-load")
+        cmd = [tool, "--hop", self.lab.hop, "--mode", self.mode, "--duration", "3600", "--ramp", "20", "--tag",
+               "fill-" + uuid.uuid4().hex[:6]]
+        if self.mode == "park":
+            cmd += ["--clients", str(self.count), "--renew", "10"]
+        else:  # two-member audio-only calls: they hold a session each and carry little
+            cmd += ["--calls", str(self.count), "--members", "2", "--video-kbps", "0", "--audio-kbps", "8"]
+        self.log = open(os.path.join(self.lab.root, "filler-%s.log" % self.mode), "w")
+        self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT)
+        wait_for(lambda: node_level(self.lab.hop_status, self.service) == "full", 60,
+                 "the first hop's %s to fill (%s)" % (self.service, self.log.name))
+        time.sleep(2)  # /metrics gauges follow once a second: read what it holds once they caught up
+        return self
+
+    def __exit__(self, *exc):
+        if self.proc:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+        self.log.close()
+        # Leave the hop as found: the filler's parks and calls end only when their links time out, and the next
+        # scenario must not meet a full hop (group_call_three did, after these ran).
+        wait_for(lambda: node_level(self.lab.hop_status, self.service) == "open", 180,
+                 "the first hop's %s to be open again after the filler" % self.service)
+        return False
+
+
+def scenario_full_seed_parks_elsewhere(lab):
+    """The first seed is full of other people's parked phones: Alice and Bob, who stay reachable and know both
+    seeds, park on the second at once, and Bob's call to Alice rings and connects. When the first seed has room again they park
+    there too (two relays each), without anyone restarting."""
+    baseline = node_metric(lab.hop2_status, "pp_circuit_relay_reservations")
+    with Filler(lab, "park", "park", int(os.environ.get("PP_APP_LAB_HOP_RESERVATIONS", "24"))):
+        refused = 'pp_circuit_relay_requests_total{op="reserve",result="refused"}'
+        refused_before = node_metric(lab.hop_status, refused)
+        started = time.time()
+        # Both stay reachable (Me → Network), so both park: what a phone does.
+        a = lab.user("alice", reachable=True, seeds=[lab.hop, lab.hop2])
+        b = lab.user("bob", reachable=True, seeds=[lab.hop, lab.hop2])
+        a.wait_mesh()
+        b.wait_mesh()
+        wait_for(lambda: node_metric(lab.hop2_status, "pp_circuit_relay_reservations") >= baseline + 2, 60,
+                 "both parked on the second seed")
+        parked_s = round(time.time() - started, 2)
+        # The filler's own renewals may dip under full and let one of its clients back in: the first seed's
+        # refusals say it turned these two away.
+        if node_metric(lab.hop_status, refused) < refused_before + 2:
+            raise ProbeError("the full seed did not refuse them")
+        a.cmd("open_chat", account=b.account)
+        b_thread = b.cmd("open_chat", account=a.account)["thread"]
+        _, call = connect(b, b_thread, a, timeout=60)
+        b.cmd("leave")
+        assert_idle(a, b)
+    # The filler's parks end with their links; then the first seed holds exactly these two.
+    freed = time.time()
+    wait_for(lambda: node_metric(lab.hop_status, "pp_circuit_relay_reservations") == 2 or None, 300,
+             "both parked on the first seed again once it had room (and the filler's parks gone)")
+    return {"parked_elsewhere_s": parked_s, "call": call, "back_on_first_s": round(time.time() - freed, 2)}
+
+
+def scenario_full_hop_known_before_the_call(lab):
+    """Phones stay reachable, so they are parked on both seeds before anyone calls: the park replies say the
+    first seed's group calls are full (p2p-mesh N033 "loads"), and Alice's group call is planned on the second
+    from the start — nobody even asks the full one."""
+    with Filler(lab, "calls", "media_relay", int(os.environ.get("PP_APP_LAB_HOP_GROUP_CALLS", "8"))):
+        (a, b, c), threads = open_group(lab, seeds=[lab.hop, lab.hop2], reachable=True)
+        # Parked on the second seed too: the users have heard both seeds' levels.
+        wait_for(lambda: node_metric(lab.hop2_status, "pp_circuit_relay_reservations") >= 3, 60, "all parked")
+        asked = 'pp_media_relay_quotes_total{result="refused_busy"}'
+        asked_before = node_metric(lab.hop_status, asked)
+        started = time.time()
+        group_call(a, threads[a.name], [b, c])
+        for u in (a, b, c):
+            assert_hears(u, 2, timeout=60)
+        took = round(time.time() - started, 2)
+        if node_metric(lab.hop2_status, "pp_media_relay_participants") < 3:
+            raise ProbeError("the call is not on the second seed")
+        refused = node_metric(lab.hop_status, asked) - asked_before
+        leave_all([a, b, c])
+    if refused:
+        raise ProbeError("the full seed was asked for the call %d times: the plan did not know it was full" % refused)
+    return {"all_hear_all_s": took}
+
+
+def scenario_full_hop_hosts_the_call_elsewhere(lab):
+    """The first seed hosts as many group calls as it takes: Alice's group call, whose members know both seeds,
+    is hosted on the second, and everyone hears everyone."""
+    with Filler(lab, "calls", "media_relay", int(os.environ.get("PP_APP_LAB_HOP_GROUP_CALLS", "8"))):
+        filled = node_metric(lab.hop_status, "pp_media_relay_participants")
+        (a, b, c), threads = open_group(lab, seeds=[lab.hop, lab.hop2])
+        started = time.time()
+        group_call(a, threads[a.name], [b, c])
+        for u in (a, b, c):
+            assert_hears(u, 2, timeout=60)
+        took = round(time.time() - started, 2)
+        if node_metric(lab.hop2_status, "pp_media_relay_participants") < 3:
+            raise ProbeError("the call is not on the second seed")
+        if node_metric(lab.hop_status, "pp_media_relay_participants") > filled:
+            raise ProbeError("someone of the call joined the full hop")
+        leave_all([a, b, c])
+    return {"all_hear_all_s": took}
+
+
 # --- group calls ----------------------------------------------------------------------------------
 # docs/architecture/CALLS.md (V050): the first answer is a 1:1 call; the third person moves the call
 # onto the planned hop (media_relay). Hostless: whoever placed it may leave and the rest go on.
@@ -1318,12 +1468,12 @@ def add_contacts(users, links):
             by_name[x].cmd("open_chat", account=by_name[y].account)
 
 
-def open_group(lab, n=3, title="lab group", contacts=()):
+def open_group(lab, n=3, title="lab group", contacts=(), seeds=None, reachable=False):
     """n people; the first creates a group with the others, who accept its invites. The owner and
     each member have added each other (an invite comes from a contact); members have added nobody
     else unless `contacts` says so (see `add_contacts`) — linked before the group, as friends are."""
     names = ["alice", "bob", "carol", "dave", "erin"][:n]
-    users = [lab.user(name) for name in names]
+    users = [lab.user(name, seeds=seeds, reachable=reachable) for name in names]
     for u in users:
         u.wait_mesh()
     owner, members = users[0], users[1:]
@@ -2045,6 +2195,560 @@ def scenario_muted_group_alerts_on_a_mention(lab):
         raise ProbeError("carol: a mention with mentions muted gave %s" % notice)
 
 
+def scenario_group_owner_appoints_an_admin(lab):
+    """Roles and presets (group-chat G017, o1): Alice, the owner, makes Bob an admin. Every member's roster says so,
+    from the roster Alice signed, and the group's chat says who made whom an admin. As an admin Bob's `@everyone`
+    reaches Carol, muted and away, as the owner's does. Alice sets the group managed: everyone holds the preset.
+    Alice takes Bob's role back: his `@everyone` no longer reaches anyone."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    group_id = plan_group(a, threads[a.name])
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    a.cmd("set_group_role", thread=threads[a.name], account=b.account, role="admin")
+    for u in users:
+        wait_for(lambda: roster(u)["roles"].get(b.account) == "admin" or None, 40, "%s: bob is an admin" % u.name)
+    wait_for(lambda: any(r["text"] == "Member made admin" and r["from"] == a.account
+                         for r in c.cmd("transcript", thread=threads[c.name])["rows"]) or None, 20,
+             "carol: the line saying alice made bob an admin")
+
+    c_thread = threads[c.name]
+    c.cmd("mute", thread=c_thread)
+    c.cmd("show_chat", thread=c.cmd("open_chat", account=a.account)["thread"])  # the group is not the open chat
+    c.cmd("minimize")
+    b.cmd("send_mentions", thread=threads[b.name], text="@everyone meeting at five", mentions=[], everyone=True)
+    notice = next_message_notice(c, c_thread, 0)
+    if not notice.get("mentions_us") or not notice.get("alerts"):
+        raise ProbeError("carol: an admin's @everyone gave %s" % notice)
+
+    a.cmd("set_group_preset", thread=threads[a.name], preset="managed")
+    for u in users:
+        wait_for(lambda: roster(u).get("preset") == "managed" or None, 40, "%s: the group is managed" % u.name)
+
+    a.cmd("set_group_role", thread=threads[a.name], account=b.account, role="member")
+    wait_for(lambda: roster(c)["roles"].get(b.account) == "member" or None, 40, "carol: bob is a member again")
+    b.cmd("send_mentions", thread=threads[b.name], text="@everyone once more", mentions=[], everyone=True)
+    notice = next_message_notice(c, c_thread, 1)
+    if notice.get("mentions_us") or notice.get("alerts"):
+        raise ProbeError("carol: a former admin's @everyone gave %s" % notice)
+
+
+def scenario_admin_removes_while_owner_is_away(lab):
+    """Changes on top of the owner's statement (group-chat G018, o2): Alice, the owner, makes Bob an admin and goes
+    offline. Bob removes Dave — his own signed change, to Carol (and Alice's inbox) first, then to Dave: Carol's
+    roster loses Dave, and Dave's chat goes read-only, saying Bob removed him. Carol leaves (her signed leave, no
+    member_left). Alice comes back, finds both changes in her inbox and folds them into her next statement: Alice
+    and Bob hold the same roster and statement, and no change is left unfolded."""
+    users, threads = open_group(lab, 4)
+    a, b, c, d = users
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    a.cmd("set_group_role", thread=threads[a.name], account=b.account, role="admin")
+    for u in users:
+        wait_for(lambda u=u: roster(u)["roles"].get(b.account) == "admin" or None, 40, "%s: bob is an admin" % u.name)
+    a.quit()  # the owner is away from here on
+
+    b.cmd("remove_member", thread=threads[b.name], account=d.account)
+    wait_for(lambda: d.account not in roster(c)["members"] or None, 60, "carol: dave removed by bob")
+    if roster(c)["held_changes"] < 1:
+        raise ProbeError("carol: bob's removal is not held as a change (%s)" % roster(c))
+    wait_for(lambda: roster(d).get("sync_state") == "removed" or None, 60, "dave: his group read-only")
+    wait_for(lambda: any(r.get("text") == "Member removed" and r.get("from") == b.account
+                         for r in d.cmd("transcript", thread=threads[d.name])["rows"]) or None, 30,
+             "dave: the line saying bob removed him")
+    sent = d.cmd("send_mentions", thread=threads[d.name], text="still here?", mentions=[], check=False)
+    if sent.get("ok") or "chat.group.removed" not in str(sent.get("error")):
+        raise ProbeError("dave: a send to a group he was removed from gave %s" % sent)
+
+    c.cmd("leave_group", thread=threads[c.name])
+    wait_for(lambda: c.account not in roster(b)["members"] or None, 60, "bob: carol left")
+    if roster(b)["held_changes"] < 2:
+        raise ProbeError("bob: the removal and the leave are not both held (%s)" % roster(b))
+
+    a.start()
+    a.wait_ready()
+    a.wait_mesh()
+    both = sorted([a.account, b.account])
+
+    def settled(u):
+        r = roster(u)
+        return r if sorted(r["members"]) == both and r["held_changes"] == 0 else None
+
+    ra = wait_for(lambda: settled(a), 120, "alice: the changes folded into her statement")
+    rb = wait_for(lambda: settled(b), 60, "bob: the folded statement, nothing left unfolded")
+    if (ra["statement_epoch"], ra["changes_hash"]) != (rb["statement_epoch"], rb["changes_hash"]):
+        raise ProbeError("alice and bob hold different rosters: %s / %s" % (ra, rb))
+    if ra["roles"].get(b.account) != "admin":
+        raise ProbeError("alice: bob is no longer an admin after the fold (%s)" % ra["roles"])
+
+
+def invite_and_join(inviter, inviter_thread, group_id, newcomer, timeout=60):
+    """`inviter` invites `newcomer` to the group by account (invite_to_group, G019) and `newcomer` taps Accept on
+    that invite — a new one, not one the group sent before: the invite card, and `newcomer`'s group thread."""
+    seen = {i["nonce"] for i in newcomer.cmd("group_invites")["invites"]}
+    inviter.cmd("invite_to_group", thread=inviter_thread, account=newcomer.account, timeout=60)
+    invite = wait_for(lambda: next((i for i in newcomer.cmd("group_invites")["invites"]
+                                    if i["group_id"] == group_id and i["nonce"] not in seen), None), timeout,
+                      "%s: %s's group invite" % (newcomer.name, inviter.name))
+    if invite["from"] != inviter.account:
+        raise ProbeError("%s: the invite is from %s, not %s" % (newcomer.name, invite["from"], inviter.name))
+    accepted = newcomer.cmd("accept_group_invite", nonce=invite["nonce"], group_id=group_id, timeout=60)
+    thread = accepted.get("thread") or wait_for(lambda: group_thread_of(newcomer, group_id), timeout,
+                                                "%s: the group's chat after accepting" % newcomer.name)
+    return invite, thread
+
+
+def wait_added(users, group_id, newcomer, adder, timeout=90):
+    """Each of `users` lists `newcomer` in the group, brought in by `adder` (the roster's added_by, G019)."""
+    def listed(u):
+        r = u.cmd("group_roster", group_id=group_id)
+        return r if newcomer.account in r["members"] and r["added_by"].get(newcomer.account) == adder.account else None
+    for u in users:
+        wait_for(lambda u=u: listed(u), timeout, "%s: %s on the roster, added by %s" % (u.name, newcomer.name,
+                                                                                         adder.name))
+
+
+def refused_invite(u, thread, newcomer, why):
+    """`u`'s invite_to_group for `newcomer` is refused, and says `why` (its message key)."""
+    got = u.cmd("invite_to_group", thread=thread, account=newcomer.account, check=False, timeout=60)
+    if got.get("ok") or why not in str(got.get("error")):
+        raise ProbeError("%s: inviting %s gave %s (wanted %s)" % (u.name, newcomer.name, got, why))
+
+
+def scenario_member_invites_while_owner_is_away(lab):
+    """Members invite (group-chat G019, o4): the group is open, so any member may invite. Alice, the owner, goes
+    offline; Bob invites Dave, his friend and nobody else's. The invite shows how many are in the group, not who.
+    Dave accepts: his accept goes back to Bob, whose device signs the add, sends it to the members and hands Dave the
+    group — so Dave joins with the owner away, and everyone lists him as added by Bob. Bob, Carol and Dave talk in
+    the group. Alice comes back, finds the add in her inbox and folds it into her next statement: Dave stays, added
+    by Bob, and no change is left unfolded."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    d = lab.user("dave")
+    d.wait_mesh()
+    add_contacts([b, d], ["bob=dave"])
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    before = roster(a)["statement_epoch"]
+    a.quit()  # the owner is away from here on
+
+    invite, threads[d.name] = invite_and_join(b, threads[b.name], group_id, d)
+    if invite.get("member_count") != 3:
+        raise ProbeError("dave: the invite says %s are in the group (wanted 3)" % invite.get("member_count"))
+    wait_added([d, b, c], group_id, d, b)
+    everyone = sorted([a.account, b.account, c.account, d.account])
+    for u in (b, c, d):
+        wait_for(lambda u=u: sorted(roster(u)["members"]) == everyone or None, 60, "%s: all four" % u.name)
+
+    for sender, readers in ((d, (b, c)), (b, (c, d)), (c, (b, d))):
+        text = "%s in the group with dave" % sender.name.rsplit("-", 1)[0]
+        sender.cmd("send_mentions", thread=threads[sender.name], text=text, mentions=[])
+        for r in readers:
+            wait_for(lambda r=r, text=text: said_in(r, threads[r.name], text), 60, "%s: %r" % (r.name, text))
+
+    a.start()
+    a.wait_ready()
+    a.wait_mesh()
+
+    def folded(u):
+        r = roster(u)
+        return r if (sorted(r["members"]) == everyone and r["added_by"].get(d.account) == b.account and
+                     r["held_changes"] == 0 and r["statement_epoch"] > before) else None
+
+    ra = wait_for(lambda: folded(a), 120, "alice: bob's add folded into her statement")
+    rb = wait_for(lambda: folded(b), 60, "bob: the folded statement, nothing left unfolded")
+    if (ra["statement_epoch"], ra["changes_hash"]) != (rb["statement_epoch"], rb["changes_hash"]):
+        raise ProbeError("alice and bob hold different rosters: %s / %s" % (ra, rb))
+
+
+def scenario_managed_group_only_admins_invite(lab):
+    """Who invites in a managed group (group-chat G019, o4): Alice sets the group managed and makes Bob an admin.
+    Carol, a plain member, is refused when she invites Dave (her friend, as he is Bob's); Bob, an admin, invites him:
+    Dave accepts, and everyone lists him as added by Bob."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    d = lab.user("dave")
+    d.wait_mesh()
+    add_contacts([b, c, d], ["bob=dave", "carol=dave"])
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    a.cmd("set_group_preset", thread=threads[a.name], preset="managed")
+    a.cmd("set_group_role", thread=threads[a.name], account=b.account, role="admin")
+    for u in users:
+        wait_for(lambda u=u: (lambda r: r.get("preset") == "managed" and r["roles"].get(b.account) == "admin")(
+            roster(u)) or None, 40, "%s: managed, bob an admin" % u.name)
+
+    refused_invite(c, threads[c.name], d, "chat.group.err.invite_not_allowed")
+    invite_and_join(b, threads[b.name], group_id, d)
+    wait_added([a, b, c, d], group_id, d, b)
+    if any(i["from"] == c.account for i in d.cmd("group_invites")["invites"]):
+        raise ProbeError("dave: holds an invite from carol, whose invite was refused")
+
+
+def scenario_admin_readmits_a_removed_member(lab):
+    """Bringing back someone removed (group-chat G020 5, o4): Alice makes Bob an admin; Bob removes Dave. Carol, a
+    plain member, may not invite Dave back (he is on the group's removed list); Bob, an admin, may: Dave accepts, the
+    add re-admits him, and he is back on everyone's roster and heard in the group."""
+    users, threads = open_group(lab, 4, contacts=("bob=dave", "carol=dave"))
+    a, b, c, d = users
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    a.cmd("set_group_role", thread=threads[a.name], account=b.account, role="admin")
+    for u in users:
+        wait_for(lambda u=u: roster(u)["roles"].get(b.account) == "admin" or None, 40, "%s: bob is an admin" % u.name)
+    b.cmd("remove_member", thread=threads[b.name], account=d.account)
+    for u in (a, c):
+        wait_for(lambda u=u: d.account not in roster(u)["members"] or None, 60, "%s: dave removed by bob" % u.name)
+    wait_for(lambda: roster(d).get("sync_state") == "removed" or None, 60, "dave: his group read-only")
+
+    refused_invite(c, threads[c.name], d, "chat.group.err.invite_removed")
+    _, threads[d.name] = invite_and_join(b, threads[b.name], group_id, d)
+    wait_added([a, b, c, d], group_id, d, b)
+    wait_for(lambda: roster(d).get("sync_state") == "active" or None, 60, "dave: his group active again")
+    d.cmd("send_mentions", thread=threads[d.name], text="back again", mentions=[])
+    for u in (a, b, c):
+        wait_for(lambda u=u: said_in(u, threads[u.name], "back again"), 60, "%s: dave heard again" % u.name)
+
+
+def scenario_remove_everyone_they_added(lab):
+    """Undoing someone's invites (group-chat G020 6, o4): in an open group Bob invites two friends of his, who join
+    as added by Bob. Alice makes Carol an admin; Carol removes everyone Bob added in one go: both are gone from every
+    roster, and Bob, a first member, stays."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    extras = [lab.user(name) for name in ("erin", "frank")]
+    for x in extras:
+        x.wait_mesh()
+    add_contacts([b] + extras, ["bob=erin", "bob=frank"])
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    for x in extras:
+        invite_and_join(b, threads[b.name], group_id, x)
+        wait_added([a, b, c], group_id, x, b)
+
+    a.cmd("set_group_role", thread=threads[a.name], account=c.account, role="admin")
+    for u in users:
+        wait_for(lambda u=u: roster(u)["roles"].get(c.account) == "admin" or None, 40,
+                 "%s: carol is an admin" % u.name)
+    removed = c.cmd("remove_everyone_added_by", thread=threads[c.name], account=b.account, timeout=60)
+    if removed.get("removed") != 2:
+        raise ProbeError("carol: removed %s of the two bob added" % removed.get("removed"))
+    left = sorted([a.account, b.account, c.account])
+    for u in users:
+        wait_for(lambda u=u: sorted(roster(u)["members"]) == left or None, 60,
+                 "%s: bob's two gone, bob still in" % u.name)
+    for x in extras:
+        wait_for(lambda x=x: roster(x).get("sync_state") == "removed" or None, 60,
+                 "%s: the group read-only" % x.name)
+
+
+def joined_by_link_line(u, thread, newcomer, maker):
+    """`u`'s group chat has the line saying `newcomer` joined by `maker`'s link (G021: member_joined.by_link)."""
+    for m in u.cmd("messages", thread=thread)["messages"]:
+        try:
+            detail = json.loads(json.loads(m.get("payload") or "{}").get("detail") or "{}")
+        except ValueError:
+            continue
+        if (detail.get("member_identity") == newcomer.account and detail.get("added_by") == maker.account and
+                detail.get("by_link")):
+            return m
+    return None
+
+
+def join_by_link(u, link, timeout=60):
+    """`u` opens `link`: the answer its maker's device gave (preview / refused / no_answer)."""
+    return u.cmd("join_by_link", link=link, timeout=timeout)
+
+
+def scenario_join_by_link(lab):
+    """Invite links (group-chat G021, o5): in an open group Carol, a plain member, makes a link. Erin, who has no
+    contacts at all, opens it: Carol's device answers with the group's name and how many are in it (never who).
+    Erin joins: Carol's device signs the add with the link's id and hands Erin the group — the full roster, every
+    member checked by Erin herself. Everyone lists Erin as added by Carol, and the others' chats say she joined by
+    Carol's link. The roster counts the link's use; Erin talks in the group."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    e = lab.user("erin")
+    e.wait_mesh()
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    made = c.cmd("make_invite_link", thread=threads[c.name], timeout=60)
+    link, link_id = made["link"], made["link_id"]
+    if not link.startswith("pp://join/") or group_id in link:
+        raise ProbeError("carol: the link %r is not a pp://join/ link that names nothing of the group" % link)
+    for u in users:
+        wait_for(lambda u=u: any(l["link_id"] == link_id and l["maker"] == c.account for l in roster(u)["links"])
+                 or None, 60, "%s: carol's link in the roster" % u.name)
+
+    answer = join_by_link(e, link)
+    preview = answer.get("preview")
+    if not preview:
+        raise ProbeError("erin: no preview for carol's link (%s)" % answer)
+    if preview.get("member_count") != 3 or preview.get("title") != "lab group":
+        raise ProbeError("erin: the preview says %s" % preview)
+    joined = e.cmd("confirm_join", request_id=answer["request_id"], timeout=60)
+    if joined.get("group_id") != group_id:
+        raise ProbeError("erin: joined %s, not the group" % joined)
+    threads[e.name] = joined["thread"]
+
+    everyone = sorted([a.account, b.account, c.account, e.account])
+    wait_for(lambda: sorted(roster(e)["members"]) == everyone or None, 90, "erin: the full roster")
+    wait_added([a, b, c, e], group_id, e, c)
+    for u in (a, b):
+        wait_for(lambda u=u: joined_by_link_line(u, threads[u.name], e, c), 60,
+                 "%s: \"erin joined by carol's link\"" % u.name)
+    wait_for(lambda: next((l for l in roster(c)["links"] if l["link_id"] == link_id and l["uses"] == 1), None), 60,
+             "carol: her link used once")
+
+    text = "erin here, by carol's link"
+    e.cmd("send_mentions", thread=threads[e.name], text=text, mentions=[])
+    for r in (a, b, c):
+        wait_for(lambda r=r: said_in(r, threads[r.name], text), 60, "%s: %r" % (r.name, text))
+
+
+def refused_link(u, link, why, timeout=60):
+    answer = join_by_link(u, link, timeout)
+    if answer.get("refused") != why:
+        raise ProbeError("%s: opening the link gave %s (wanted refused %s)" % (u.name, answer, why))
+
+
+def with_wrong_secret(link):
+    """`link` (pp://join/…) with one byte of its secret changed: the same link id and maker, a secret nobody made."""
+    prefix = "pp://join/"
+    raw = bytearray(base64.urlsafe_b64decode(link[len(prefix):] + "=" * (-len(link[len(prefix):]) % 4)))
+    raw[16] ^= 0xFF  # the secret follows the 16-byte link id
+    return prefix + base64.urlsafe_b64encode(bytes(raw)).decode().rstrip("=")
+
+
+def scenario_refused_links(lab):
+    """Links that no longer let anyone in (group-chat G021, o5), each refused with its reason by the maker's device:
+    Bob makes a link and Alice, the owner, revokes it (revoked); Carol makes one that lasts a few seconds (expired —
+    the joiner's device refuses it as soon as it is past its expiry, as the maker's would); Dave makes one and
+    leaves the group (revoked: a link dies with its maker). Erin, a stranger, tries each; she joins nothing. A link
+    with a wrong secret gets no reply at all (no answer): a stranger cannot learn from Bob's device whether a link
+    exists."""
+    users, threads = open_group(lab, 4)
+    a, b, c, d = users
+    e = lab.user("erin")
+    e.wait_mesh()
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    def live(u, link_id):
+        return any(l["link_id"] == link_id for l in roster(u)["links"])
+
+    revoked = b.cmd("make_invite_link", thread=threads[b.name], timeout=60)
+    wait_for(lambda: live(a, revoked["link_id"]) or None, 60, "alice: bob's link in the roster")
+    a.cmd("revoke_invite_link", thread=threads[a.name], link_id=revoked["link_id"], timeout=60)
+    wait_for(lambda: not live(b, revoked["link_id"]) or None, 60, "bob: his link revoked by alice")
+    refused_link(e, revoked["link"], "revoked")
+
+    short = c.cmd("make_invite_link", thread=threads[c.name], expires_in_s=5, timeout=60)
+    wait_for(lambda: live(c, short["link_id"]) or None, 30, "carol: her short link in the roster")
+    time.sleep(6)
+    refused_link(e, short["link"], "expired")
+
+    gone = d.cmd("make_invite_link", thread=threads[d.name], timeout=60)
+    wait_for(lambda: live(a, gone["link_id"]) or None, 60, "alice: dave's link in the roster")
+    d.cmd("leave_group", thread=threads[d.name])
+    wait_for(lambda: d.account not in roster(a)["members"] or None, 60, "alice: dave left")
+    if live(a, gone["link_id"]):
+        raise ProbeError("alice: dave's link is still live after he left")
+    refused_link(e, gone["link"], "revoked")
+
+    guessed = b.cmd("make_invite_link", thread=threads[b.name], timeout=60)
+    wait_for(lambda: live(b, guessed["link_id"]) or None, 30, "bob: his second link in the roster")
+    answer = join_by_link(e, with_wrong_secret(guessed["link"]))
+    if not answer.get("no_answer"):
+        raise ProbeError("erin: a link with a wrong secret was answered (%s): it must get no reply" % answer)
+
+    if group_thread_of(e, group_id):
+        raise ProbeError("erin: holds the group's chat after three refusals")
+
+
+def scenario_call_grows_into_a_group(lab):
+    """Make a group during a call (group-chat G022, o3): Alice calls Bob, then adds Carol, whom Bob does not know.
+    With three in a call that started 1:1, everyone's call screen offers "Make a group…". Bob makes one: the
+    group starts with him alone and one line ("Group made during a call"), and Alice and Carol each get the
+    ordinary invite, shown as a banner in the call — Carol's too, though Bob is no contact of hers (the invite
+    names the call both are in). Alice joins from the banner; Carol says Not now: she stays in the call and
+    out of the group, and the invite card stays in her chat with Bob. The call is the same call throughout:
+    it does not become the group's (a group's call would drop Carol)."""
+    a, a_thread, b, _ = open_pair(lab)
+    c = lab.user("carol")
+    c.wait_mesh()
+    a.cmd("open_chat", account=c.account)  # Alice and Carol are contacts; Bob and Carol are not
+    c.cmd("open_chat", account=a.account)
+    call_id, _ = connect(a, a_thread, b)
+    if a.state().get("show_make_group"):
+        raise ProbeError("alice: Make a group offered with two in the call")
+    a.cmd("invite_to_call", account=c.account)
+    c.wait_surface("ringing", 40, call_id=call_id)
+    c.cmd("accept_voice")
+    c.wait_surface("in_call", 40, call_id=call_id)
+    assert_everyone_in_call([a, b, c], call_id)
+    for u in (a, b, c):
+        wait_state(u, lambda s: s.get("show_make_group"), 20, "%s: Make a group… on the call screen" % u.name)
+
+    made = b.cmd("make_group_from_call")
+    group_id = made["group_id"]
+    if sorted(made["invited"]) != sorted([a.account, c.account]):
+        raise ProbeError("bob: invited %s (wanted everyone else in the call)" % made["invited"])
+    if not made["title"]:
+        raise ProbeError("bob: the group has no default name")
+    rows = b.cmd("transcript", thread=made["thread"])["rows"]
+    if [r["text"] for r in rows if r["type"] == "system"] != ["Group made during a call"]:
+        raise ProbeError("bob: the new group's chat is %s (wanted its one line)" % rows)
+    if sorted(b.cmd("group_roster", group_id=group_id)["members"]) != [b.account]:
+        raise ProbeError("bob: someone was added without Join")
+
+    banners = {}
+    for u in (a, c):
+        banners[u.name] = wait_for(lambda: (lambda g: g if g["shown"] else None)(u.cmd("call_group_invite")), 40,
+                                   "%s: the group banner in the call" % u.name)
+        if banners[u.name]["from"] != b.account or banners[u.name]["title"] != made["title"]:
+            raise ProbeError("%s: the banner says %s" % (u.name, banners[u.name]))
+
+    joined = a.cmd("call_group_invite_join")
+    if not joined.get("thread"):
+        raise ProbeError("alice: no group chat after Join")
+    wait_for(lambda: sorted(b.cmd("group_roster", group_id=group_id)["members"]) == sorted([a.account, b.account])
+             or None, 40, "bob: alice in the group")
+    if not any(r["text"] == "Group made during a call" for r in a.cmd("transcript", thread=joined["thread"])["rows"]):
+        raise ProbeError("alice: her group chat does not say it was made during a call")
+    if a.cmd("call_group_invite")["shown"]:
+        raise ProbeError("alice: the banner stays after Join")
+
+    c.cmd("call_group_invite_not_now")
+    if c.cmd("call_group_invite")["shown"]:
+        raise ProbeError("carol: the banner stays after Not now")
+    if not any(i["group_id"] == group_id for i in c.cmd("group_invites")["invites"]):
+        raise ProbeError("carol: the invite card left her chat with bob")
+    if any(t.get("group_id") == group_id for t in c.cmd("threads")["threads"]):
+        raise ProbeError("carol: in the group after Not now")
+
+    # The live call is left alone: the same call, everyone still in it, and not the group's.
+    time.sleep(3)
+    assert_everyone_in_call([a, b, c], call_id)
+    for u in (a, b):
+        group_thread = next(t["id"] for t in u.cmd("threads")["threads"] if t.get("group_id") == group_id)
+        if u.cmd("joinable", thread=group_thread)["call_id"]:
+            raise ProbeError("%s: the new group has a call (the live one became the group's)" % u.name)
+        if u.state().get("call_id") != call_id:
+            raise ProbeError("%s: no longer in the call it was in" % u.name)
+    leave_all([a, b, c])
+
+
+def saw_notice(u, kind, **fields):
+    """`u` was told once (a `notice` event of `kind` with these fields), at any time so far."""
+    with u.lock:
+        return any(m.get("event") == "notice" and m.get("kind") == kind and
+                   all(m.get(k) == v for k, v in fields.items()) for _, m in u.history)
+
+
+def member_row(u, account):
+    """`account`'s row on `u`'s call screen (`members`), or None."""
+    return next((m for m in u.state().get("members", []) if m["identity"] == account), None)
+
+
+def scenario_group_call_guest(lab):
+    """Guests in a group's call (calls V062): Alice owns a group with Bob and Carol; the three are in its call. Bob
+    brings Erin, his friend and no member: her ring says joining shows her to the three people in the call, and once
+    in, everyone sees her as Bob's guest ("Erin joined as Bob's guest", "Guest" on her tile). Carol, a plain member,
+    cannot remove her; Alice, the owner, can: Erin's device leaves, the others take it as her leave and the call key
+    moves on without her. Erin cannot come back by herself (she is in no group chat, so has no Join); Bob, a member
+    in the call, brings her back."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    e = lab.user("erin")
+    e.wait_mesh()
+    b.cmd("open_chat", account=e.account)  # Bob and Erin are friends; nobody else knows her
+    e.cmd("open_chat", account=b.account)
+    group_id = plan_group(a, threads[a.name])
+    call_id = group_call(a, threads[a.name], [b, c])
+    assert_everyone_in_call([a, b, c], call_id)
+
+    b.cmd("invite_to_call", account=e.account)
+    e.wait_surface("ringing", 40, call_id=call_id)
+    ring = e.state()
+    if not ring.get("ring_guest") or ring.get("ring_people") != 3:
+        raise ProbeError("erin: the ring says %s (wanted a guest's ring showing her to 3 people)" %
+                         {k: ring.get(k) for k in ("ring_guest", "ring_people")})
+    e.cmd("accept_voice")
+    e.wait_surface("in_call", 40, call_id=call_id)
+    assert_everyone_in_call([a, b, c, e], call_id)
+
+    for u in (a, b, c, e):
+        wait_state(u, lambda s: any(m["identity"] == e.account and m["guest"] and m["brought_by"] == b.account
+                                    for m in s.get("members", [])), 20, "%s: erin shown as bob's guest" % u.name)
+        if any(m["guest"] for m in u.state().get("members", []) if m["identity"] != e.account):
+            raise ProbeError("%s: a member shown as a guest" % u.name)
+    for u in (a, c):
+        wait_for(lambda: saw_notice(u, "guest_joined", identity=e.account, brought_by=b.account), 10,
+                 "%s: told erin joined as bob's guest" % u.name)
+    if not member_row(a, e.account)["can_remove"] or not member_row(a, e.account)["can_add_to_group"]:
+        raise ProbeError("alice (owner): no Remove from call… / Add to the group on erin: %s" % member_row(a, e.account))
+    if member_row(c, e.account)["can_remove"]:
+        raise ProbeError("carol (a member): offered Remove from call… on erin")
+    if e.state().get("show_invite"):
+        raise ProbeError("erin: a guest offered Add people")
+
+    refused = c.cmd("call_remove", account=e.account, check=False)
+    if refused.get("ok"):
+        raise ProbeError("carol: a plain member removed a guest")
+    time.sleep(2)
+    if e.state().get("call_id") != call_id:
+        raise ProbeError("erin: out of the call after a member's refused remove")
+
+    epochs = {u.name: u.state().get("media_epoch", 0) for u in (a, b, c)}
+    a.cmd("call_remove", account=e.account)
+    e.wait_surface("none", 30)
+    for u in (a, b, c):
+        wait_state(u, lambda s: e.account not in s.get("participants", []), 20, "%s: erin out of the call" % u.name)
+        wait_state(u, lambda s: s.get("media_epoch", 0) > epochs[u.name], 20,
+                   "%s: the call key moved on without erin" % u.name)
+    if len({u.state().get("media_epoch") for u in (a, b, c)}) != 1:
+        raise ProbeError("the members hold different key epochs: %s" % {u.name: u.state().get("media_epoch")
+                                                                         for u in (a, b, c)})
+    assert_everyone_in_call([a, b, c], call_id)
+
+    # A guest stays a guest: no group chat, so no Join; she does not ring back in by herself.
+    if any(t.get("group_id") == group_id for t in e.cmd("threads")["threads"]):
+        raise ProbeError("erin: holds the group's chat")
+    time.sleep(3)
+    if e.state().get("kind") != "none":
+        raise ProbeError("erin: back in the call by herself (%s)" % e.state().get("kind"))
+
+    b.cmd("invite_to_call", account=e.account)  # a member in the call brings her back
+    e.wait_surface("ringing", 40, call_id=call_id)
+    e.cmd("accept_voice")
+    e.wait_surface("in_call", 40, call_id=call_id)
+    assert_everyone_in_call([a, b, c, e], call_id)
+    leave_all([a, b, c, e])
+
+
 def scenario_a_device_asks_for_a_copy_it_missed(lab):
     """A copy missing for a device is asked for (M021 §9): Alice exports a transfer code and her phone goes off
     before her new laptop starts, so nobody tells Bob of the laptop. Bob writes to Alice — a copy for the phone
@@ -2088,6 +2792,64 @@ def scenario_a_call_rings_every_device_and_stops_once_answered(lab):
         raise ProbeError("laptop: stopped ringing, but not because the phone answered")
     b.cmd("leave")
     assert_idle(a, b, laptop, timeout=40)
+
+
+def scenario_a_call_rings_on_every_device_after_each_called_out(lab):
+    """#555 B186 (M024): Alice's phone calls Bob, then her laptop does. On the account pair's one session the
+    laptop's opener replaced the phone's on Bob's side, so Bob's call back opened on the laptop only and the phone
+    never rang. The control lane goes per device now: Bob calls Alice, both her devices ring, and the phone — the
+    one B186 left silent — answers with media both ways (its copy brought the media key too)."""
+    a, a_thread, b, b_thread = open_pair(lab)
+    laptop = lab.linked_device(a, "alice-laptop")
+    laptop.wait_mesh()
+    laptop_id = laptop.cmd("whoami")["peer_id"]
+    wait_for(lambda: laptop_id in a.cmd("devices")["devices"] or None, 40, "phone: the laptop on the list")
+    l_thread = laptop.cmd("open_chat", account=b.account)["thread"]
+    for caller, thread in ((a, a_thread), (laptop, l_thread)):
+        connect(caller, thread, b)
+        b.cmd("leave")
+        assert_idle(a, laptop, b, timeout=40)
+    call_id = b.cmd("call", thread=b_thread)["call_id"]
+    a.wait_surface("ringing", 40, call_id=call_id)
+    laptop.wait_surface("ringing", 40, call_id=call_id)
+    a.cmd("accept_voice")
+    laptop.wait_surface("none", 15)
+    b.wait_surface("in_call", 40, call_id=call_id)
+    a.wait_surface("in_call", 40, call_id=call_id)
+    assert_media_flows(b, a, timeout=40)
+    for u in (a, laptop):
+        if "control lane: couldn't decrypt" in u.log_text():
+            raise ProbeError("%s: a lane copy did not open" % u.name)
+    b.cmd("leave")
+    assert_idle(a, b, laptop, timeout=40)
+
+
+def scenario_a_restored_device_hears_the_answer_to_its_call(lab):
+    """#555 (iPhone call 1): Alice calls Bob, who answers — his card reaches her account. Her phone is gone; she
+    restores on a new one (a fresh list holding only it, no cards kept) and calls Bob. Bob answers with the account
+    copy (one device each, the M024 bridge) under the session her invite opened; the restored phone had dropped
+    such an answer when it held no card of Bob's, and stayed waiting. Now Bob's card rides it (told per device), and
+    a lane record of his that comes before any card waits for one: the call connects, and no record of Bob's is
+    dropped for want of his card. (Here the shared mailbox's backlog may bring his card first: its records verify
+    before their old account copies fail to open.)"""
+    a, a_thread, b, b_thread = open_pair(lab)
+    connect(a, a_thread, b)
+    a.cmd("leave")
+    assert_idle(a, b, timeout=40)
+    phrase = a.cmd("recovery_phrase", pin=PIN)["phrase"]
+    a.cmd("locker_publish", timeout=60)
+    logged_before = len(a.log_text())
+    a.restore_from_phrase(phrase)
+    a.wait_mesh()
+    a_thread = a.cmd("chat_with", account=b.account)["thread"]
+    connect(a, a_thread, b)
+    dropped = [line for line in a.log_text()[logged_before:].splitlines()
+               if "signature check failed" in line and "sender=%s " % b.account in line
+               and "held_for_card=1" not in line]
+    if dropped:
+        raise ProbeError("restored phone: dropped bob's lane record(s) it could not check: %s" % dropped[0])
+    a.cmd("leave")
+    assert_idle(a, b, timeout=40)
 
 
 def scenario_a_newer_device_list_follows_the_messages(lab):
@@ -2909,64 +3671,114 @@ def call_link(u):
     return u.state().get("link")
 
 
-def scenario_call_on_a_far_path(lab):
-    """A 1:1 call set up on clean links; then both links get 250 ms longer (PHONE_FAR). The call's link learns
-    the new round trip and resends little: before amp v5.0.1 a new packet's first resend came after the old
-    (or the 50 ms initial) timeout, every packet was resent before its ack, Karn's rule never took a sample, and
-    the link resent everything with its round trip unknown (#502: link_rtt_ms=-1, link_resend_pct=100)."""
-    a, a_thread, b, _ = open_pair(lab)
-    users = [a, b]
+# The call-path matrix (--nat; run with --only call_path_<path>_<timing>[_two_hops]). A 1:1 voice call between
+# Alice and Bob on a long path; each row is one path x one timing, on the lab hop or on two seeds. Every row checks
+# the same things: the call connects, both hear each other, and each call link learns its round trip and resends a
+# bounded share of its Reliable packets.
+CALL_PATHS = {
+    "far": (PHONE_FAR, PHONE_FAR),  # both far, nothing else: the round trip alone
+    "far_lossy": (PHONE_FAR_LOSSY, PHONE_FAR_LOSSY),  # both far and lossy, as long mobile paths are
+    "one_far": (None, PHONE_FAR_LOSSY),  # Alice near the relay, Bob far on a lossy path (#502's call)
+}
+# mid: set up on clean links, then the path turns long (a live call adapting). start: long from the start, the call
+# 20 s later (setting one up). idle: long from the start, the call after 3 min idle. A phone holds no reservation
+# while idle (it parks for a call), so this is a call set up on links and NAT mappings that have aged.
+CALL_TIMINGS = {"mid": 0, "start": 20, "idle": 180}
+LAB_HOP_IP = "198.51.100.10"
+
+
+def place_voice_call(a, a_thread, b):
+    """Alice calls Bob (voice); he answers; both are in the call and hear each other."""
     call_id = a.cmd("call", thread=a_thread, video=False)["call_id"]
     b.wait_surface("ringing", 60, call_id=call_id)
     b.cmd("accept_voice")
-    for u in users:
+    for u in (a, b):
         u.wait_surface("in_call", 90, call_id=call_id)
-    for u in users:
+    for u in (a, b):
         assert_hears(u, 1, timeout=60)
-    report = {}
-    with Road(users, PHONE_FAR):
-        time.sleep(20)  # the link meets the long path
-        before = {u.name: call_link(u) for u in users}
-        time.sleep(30)
-        after = {u.name: call_link(u) for u in users}
-        for u in users:
-            assert_hears(u, 1, timeout=30)
-    leave_all(users)
+    return call_id
+
+
+def check_call_links(profiles, settle=20, window=30):
+    """After `settle` s on the path, over `window` s: everyone still hears the other, each call link has learned
+    its round trip (at least 80 % of what its profile adds) and resent at most a quarter of its Reliable packets
+    (two fifths on a lossy profile). Returns a line per user."""
+    users = list(profiles)
+    time.sleep(settle)
+    before = {u: call_link(u) for u in users}
+    time.sleep(window)
+    after = {u: call_link(u) for u in users}
     for u in users:
-        was, now = before[u.name], after[u.name]
+        assert_hears(u, 1, timeout=30)
+    report = {}
+    for u in users:
+        profile, was, now = profiles[u], before[u], after[u]
         if not now:
             raise ProbeError("%s: no call link counters" % u.name)
         sent = now["reliable_sent"] - was["reliable_sent"] if was and was["link_id"] == now["link_id"] else 0
         resent = now["retransmits"] - was["retransmits"] if sent else 0
         report[u.name.split("-")[0]] = "rtt=%d ms sent=%d resent=%d" % (now["srtt_ms"], sent, resent)
-        if now["srtt_ms"] < 200:
-            raise ProbeError("%s: the call link's round trip is %d ms on a 250 ms longer path (not learned)"
-                             % (u.name, now["srtt_ms"]))
-        if sent and resent > sent // 4:
-            raise ProbeError("%s: %d of %d Reliable packets resent on a lossless path" % (u.name, resent, sent))
+        want_rtt = int(0.8 * 2 * profile["delay"]) if profile else 0
+        if now["srtt_ms"] < want_rtt:
+            raise ProbeError("%s: the call link's round trip is %d ms on a path %d ms longer (not learned)"
+                             % (u.name, now["srtt_ms"], 2 * profile["delay"]))
+        bound = 0.4 if profile and profile.get("loss") else 0.25
+        if sent and resent > sent * bound:
+            raise ProbeError("%s: %d of %d Reliable packets resent (at most %d %%)" % (u.name, resent, sent, bound * 100))
     return report
 
 
-def scenario_call_starts_on_a_far_path(lab):
-    """Both users' links are 250 ms longer (PHONE_FAR) from the start; they idle 150 s, then a 1:1 voice call.
-    The call connects through the hop's circuit (a nested handshake over two long legs) and both hear each other.
-    Before amp v5.0.2 the nested handshake got the 800 ms per-address budget (the peer's id had direct addresses
-    on record), which ran out before its first answer: "nested ... dial timeout" ~1.6 s into every relayed call
-    (#502)."""
-    a, a_thread, b, _ = open_pair(lab)
-    users = [a, b]
-    with Road(users, PHONE_FAR):
-        time.sleep(150)
-        call_id = a.cmd("call", thread=a_thread, video=False)["call_id"]
-        b.wait_surface("ringing", 60, call_id=call_id)
-        b.cmd("accept_voice")
-        for u in users:
-            u.wait_surface("in_call", 90, call_id=call_id)
-        for u in users:
-            assert_hears(u, 1, timeout=60)
-        report = {u.name.split("-")[0]: call_link(u) for u in users}
-    leave_all(users)
-    return report
+class OnlyOwnRelay:
+    """Two seeds (the _two_hops rows), as a context: the user in `container` cannot reach the lab hop (its
+    gateway drops what goes there), only hop2 — a phone near its own relay that cannot get through to the other
+    one, so it parks only on its own and the caller has to find it there. Entered before the user starts."""
+
+    def __init__(self, container):
+        self.u = argparse.Namespace(name=container, container=container)
+
+    def __enter__(self):
+        gw_net(self.u, "iptables -I FORWARD -d %s -j DROP" % LAB_HOP_IP)
+        return self
+
+    def __exit__(self, *exc):
+        gw_net(self.u, "iptables -D FORWARD -d %s -j DROP; true" % LAB_HOP_IP)
+        return False
+
+
+def call_path_measurement(path, timing, two_hops):
+    def run(lab):
+        if two_hops and not lab.hop2:
+            raise ProbeError("this lab has no second seed (hop2)")
+        with contextlib.ExitStack() as stack:
+            if two_hops:
+                stack.enter_context(OnlyOwnRelay(lab.containers[1]))  # Bob's: users take the containers in turn
+            # Two seeds: both know both (as every phone knows every prod relay); Bob's own comes first and is the
+            # only one he can reach.
+            a = lab.user("alice", seeds=[lab.hop, lab.hop2] if two_hops else None)
+            b = lab.user("bob", seeds=[lab.hop2, lab.hop] if two_hops else None)
+            a.wait_mesh()
+            b.wait_mesh()
+            a_thread = a.cmd("open_chat", account=b.account)["thread"]
+            b.cmd("open_chat", account=a.account)
+            a_profile, b_profile = CALL_PATHS[path]
+            profiles = {a: a_profile, b: b_profile}
+            if timing == "mid":
+                place_voice_call(a, a_thread, b)
+                stack.enter_context(Road([a, b], profiles))
+            else:
+                stack.enter_context(Road([a, b], profiles))
+                time.sleep(CALL_TIMINGS[timing])
+                place_voice_call(a, a_thread, b)
+            report = check_call_links(profiles)
+        leave_all([a, b])
+        return report
+    return run
+
+
+CALL_PATH_MATRIX = [("call_path_%s_%s%s" % (path, timing, "_two_hops" if two_hops else ""),
+                     call_path_measurement(path, timing, two_hops))
+                    for two_hops in (False, True) for path in CALL_PATHS for timing in CALL_TIMINGS
+                    if not two_hops or path == "one_far"]
 
 
 def scenario_group_call_on_the_road(lab):
@@ -3035,8 +3847,20 @@ SCENARIOS = [
     ("linked_devices_see_what_each_sent", scenario_linked_devices_see_what_each_sent),
     ("a_device_asks_for_a_copy_it_missed", scenario_a_device_asks_for_a_copy_it_missed),
     ("a_call_rings_every_device_and_stops_once_answered", scenario_a_call_rings_every_device_and_stops_once_answered),
+    ("a_call_rings_on_every_device_after_each_called_out", scenario_a_call_rings_on_every_device_after_each_called_out),
+    ("a_restored_device_hears_the_answer_to_its_call", scenario_a_restored_device_hears_the_answer_to_its_call),
     ("a_newer_device_list_follows_the_messages", scenario_a_newer_device_list_follows_the_messages),
     ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention),
+    ("group_owner_appoints_an_admin", scenario_group_owner_appoints_an_admin),
+    ("call_grows_into_a_group", scenario_call_grows_into_a_group),
+    ("group_call_guest", scenario_group_call_guest),
+    ("admin_removes_while_owner_is_away", scenario_admin_removes_while_owner_is_away),
+    ("member_invites_while_owner_is_away", scenario_member_invites_while_owner_is_away),
+    ("managed_group_only_admins_invite", scenario_managed_group_only_admins_invite),
+    ("admin_readmits_a_removed_member", scenario_admin_readmits_a_removed_member),
+    ("remove_everyone_they_added", scenario_remove_everyone_they_added),
+    ("join_by_link", scenario_join_by_link),
+    ("refused_links", scenario_refused_links),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),
@@ -3062,6 +3886,9 @@ SCENARIOS = [
     ("group_member_network_drops", scenario_group_member_network_drops),
     ("seed_down", scenario_seed_down),
     ("seed_dies_in_use", scenario_seed_dies_in_use),
+    ("full_seed_parks_elsewhere", scenario_full_seed_parks_elsewhere),
+    ("full_hop_hosts_the_call_elsewhere", scenario_full_hop_hosts_the_call_elsewhere),
+    ("full_hop_known_before_the_call", scenario_full_hop_known_before_the_call),
     ("group_call_three", scenario_group_call_three),
     ("group_one_declines", scenario_group_one_declines),
     ("group_leave_one_by_one", scenario_group_leave_one_by_one),
@@ -3085,18 +3912,19 @@ SCENARIOS = [
     ("group_one_way_joins_late", scenario_group_one_way_joins_late),
     ("group_one_way_network_drops", scenario_group_one_way_network_drops),
     ("group_two_join_through_drops", scenario_group_two_join_through_drops),
-    ("call_on_a_far_path", scenario_call_on_a_far_path),
-    ("call_starts_on_a_far_path", scenario_call_starts_on_a_far_path),
     ("group_call_on_the_road", scenario_group_call_on_the_road),
     ("group_call_weak_upload", scenario_group_call_weak_upload),
     ("group_video_three", scenario_group_video_three),
     ("group_video_on_the_road", scenario_group_video_on_the_road),
     ("video_on_the_road", scenario_video_on_the_road),
     *VIDEO_MEASUREMENTS,
+    *CALL_PATH_MATRIX,
 ]
 
 # Scenarios run only when named (--only).
-OPT_IN = {name for name, _ in VIDEO_MEASUREMENTS}
+# The call-path matrix runs only when named, but for its two rows that guard #502's fixes on every --nat run.
+CALL_PATH_GUARDS = {"call_path_far_mid", "call_path_far_start"}
+OPT_IN = {name for name, _ in VIDEO_MEASUREMENTS + CALL_PATH_MATRIX} - CALL_PATH_GUARDS
 
 # Scenarios that take the hop away: behind NATs there is then no path between users at all, so with
 # --nat they run only when named.
@@ -3105,7 +3933,8 @@ NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
              "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
              "group_call_weak_upload", "group_video_on_the_road", "video_on_the_road",
-             "bystander_is_no_relay", "call_on_a_far_path", "call_starts_on_a_far_path"} | {name for name, _ in VIDEO_MEASUREMENTS}
+             "bystander_is_no_relay"} | {
+    name for name, _ in VIDEO_MEASUREMENTS + CALL_PATH_MATRIX}
 
 
 def main():
@@ -3114,6 +3943,9 @@ def main():
     ap.add_argument("--relay", default="http://127.0.0.1:18719/api/relay", help="lab relay base url")
     ap.add_argument("--hop", help="mesh seed multiaddr (default: the lab hop, from its /status)")
     ap.add_argument("--hop-status", default="http://127.0.0.1:18718")
+    ap.add_argument("--hop2", help="the second seed's multiaddr (default: the lab's hop2, from its /status)")
+    ap.add_argument("--hop2-status", default="http://127.0.0.1:18728")
+    ap.add_argument("--hop2-ip", default="198.51.100.30", help="the second seed's address on the lab network")
     ap.add_argument("--hop-ip", default="198.51.100.10", help="the lab hop's address on the lab network")
     ap.add_argument("--relay-container", default="pp-app-lab-www-1",
                     help="lab relay gateway container, restarted when registrations run out")
@@ -3134,10 +3966,12 @@ def main():
     ap.add_argument("--summary", help="write every scenario's outcome here (JSON), for the nightly lab")
     args = ap.parse_args()
     if not args.hop:
-        import urllib.request
-        with urllib.request.urlopen(args.hop_status + "/status", timeout=5) as r:
-            peer = json.load(r)["peer_id"]
-        args.hop = "/ip4/%s/udp/18517/adp/1.0.0/p2p/%s" % (args.hop_ip, peer)
+        args.hop = seed_multiaddr(args.hop_status, args.hop_ip)
+    if not args.hop2:
+        try:
+            args.hop2 = seed_multiaddr(args.hop2_status, args.hop2_ip)
+        except OSError:
+            args.hop2 = None  # a lab without the second seed: the two-hop rows fail, the rest run
 
     skipped = OPT_IN | (NEEDS_DIRECT_PATH if args.nat else NEEDS_NAT)
     selected = [(n, f) for n, f in SCENARIOS if n in args.only or (not args.only and n not in skipped)]
@@ -3159,6 +3993,13 @@ def main():
         with open(args.summary, "w") as f:
             json.dump({"nat": bool(args.nat), "results": results}, f, indent=2)
     sys.exit(1 if any(r["result"] == "fail" for r in results) else 0)
+
+
+def seed_multiaddr(status_url, ip):
+    import urllib.request
+    with urllib.request.urlopen(status_url + "/status", timeout=5) as r:
+        peer = json.load(r)["peer_id"]
+    return "/ip4/%s/udp/18517/adp/1.0.0/p2p/%s" % (ip, peer)
 
 
 def run_scenario(args, name, fn):

@@ -82,6 +82,11 @@ CallHopPath::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() const {
   deps.reach_held_down = [connectivity = connectivity_](const std::string& peer_id) {
     return mesh::ReachHeldDown(connectivity->ReachFacts(peer_id), mesh::PeerReachRecord::NowMs());
   };
+  deps.hop_load = [mesh = deps_.mesh](const std::string& peer_id) {
+    mesh::MeshHost* host = mesh ? mesh() : nullptr;
+    return host ? host->PeerLoads().Load(peer_id, mesh::MeshService::MediaRelay, mesh::PeerLoadBook::NowMs())
+                : mesh::ServiceLoad::Unknown;
+  };
   deps.prefer_local_as_hop =
       MeshRoleOf(*snapshot) == MeshRole::Node && mesh_cfg.capabilities.media_relay && use_amp_relay;
   const std::vector<std::string> advertised =

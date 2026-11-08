@@ -135,6 +135,17 @@ std::optional<CallUiBackend::RemoteEnd> CallUiBackend::TakeRemoteEnd() {
   return RemoteEnd{state->remote_ended_call_id, state->remote_ended_declined};
 }
 
+std::vector<std::string> CallUiBackend::TakeCallsOver() {
+  const auto state = State();
+  if (state->sessions_identity != calls_over_sessions_) {
+    calls_over_sessions_ = state->sessions_identity; // a new workflow counts from 0
+    taken_calls_over_ = 0;
+  }
+  std::vector<std::string> fresh = state->calls_over.NewSince(taken_calls_over_);
+  taken_calls_over_ = state->calls_over.seq;
+  return fresh;
+}
+
 void CallUiBackend::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                               const std::vector<std::string>& invitee_identities,
                               std::function<void(Roe<CallSession>)> on_done) {
@@ -157,6 +168,14 @@ void CallUiBackend::InviteParticipant(const std::string& call_id, const std::str
   });
 }
 
+void CallUiBackend::RemoveFromCall(const std::string& call_id, const std::string& identity,
+                                   std::function<void(Roe<void>)> on_done) {
+  auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
+  stack_.PostToSessions([call_id, identity, reply](CallSessionManager* calls) {
+    reply(calls ? calls->RemoveFromCall(call_id, identity) : Roe<void>(UnavailableError()));
+  });
+}
+
 void CallUiBackend::SetLocalAudioMuted(bool muted, std::function<void(Roe<void>)> on_done) {
   auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
   stack_.PostToSessions([muted, reply](CallSessionManager* calls) {
@@ -170,6 +189,21 @@ void CallUiBackend::SetLocalVideoEnabled(bool enabled, std::function<void(Roe<vo
   auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
   stack_.PostToSessions([enabled, rotation, reply](CallSessionManager* calls) {
     reply(calls ? calls->SetLocalVideoEnabled(enabled, rotation) : Roe<void>(UnavailableError()));
+  });
+}
+
+void CallUiBackend::SetLocalOnHold(bool on_hold, std::function<void(Roe<void>)> on_done) {
+  auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
+  stack_.PostToSessions([on_hold, reply](CallSessionManager* calls) {
+    reply(calls ? calls->SetLocalOnHold(on_hold) : Roe<void>(UnavailableError()));
+  });
+}
+
+void CallUiBackend::SetLocalVideoPaused(bool paused, std::function<void(Roe<void>)> on_done) {
+  const int rotation = paused ? 0 : CameraDisplayRotationDegrees();
+  auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
+  stack_.PostToSessions([paused, rotation, reply](CallSessionManager* calls) {
+    reply(calls ? calls->SetLocalVideoPaused(paused, rotation) : Roe<void>(UnavailableError()));
   });
 }
 
@@ -236,6 +270,22 @@ std::optional<std::string> CallUiBackend::JoinableCallInThread(const std::string
   return call ? std::optional<std::string>(call->call_id) : std::nullopt;
 }
 
+std::optional<CallUiBackend::JoinableCallInfo> CallUiBackend::JoinableCallInfoInThread(
+    const std::string& thread_id) const {
+  const CallReads* reads = stack_.Reads();
+  auto call = reads ? reads->JoinableCallInThread(thread_id) : std::nullopt;
+  if (!call) {
+    return std::nullopt;
+  }
+  JoinableCallInfo info;
+  info.call_id = call->call_id;
+  info.media_mode = call->media_mode;
+  if (auto joined = reads->JoinedParticipants(call->call_id)) {
+    info.joined_count = static_cast<int>(joined->size());
+  }
+  return info;
+}
+
 Roe<std::optional<CallSession>> CallUiBackend::ActiveLocalCall() {
   if (const CallReads* reads = stack_.Reads()) {
     return reads->ActiveLocalCall();
@@ -250,9 +300,9 @@ Roe<std::optional<std::string>> CallUiBackend::PeerIdentityForCall(const std::st
   return UnavailableError();
 }
 
-Roe<std::optional<bool>> CallUiBackend::PeerVideoEnabledForCall(const std::string& call_id) const {
+Roe<std::optional<CallParticipantMedia>> CallUiBackend::PeerMediaForCall(const std::string& call_id) const {
   if (const CallReads* reads = stack_.Reads()) {
-    return reads->PeerVideoEnabledForCall(call_id);
+    return reads->PeerMediaForCall(call_id);
   }
   return UnavailableError();
 }
@@ -276,6 +326,24 @@ Roe<std::vector<CallParticipant>> CallUiBackend::ListJoinedParticipants(const st
     return reads->JoinedParticipants(call_id);
   }
   return UnavailableError();
+}
+
+Roe<std::vector<CallParticipant>> CallUiBackend::ListParticipants(const std::string& call_id) const {
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->Participants(call_id);
+  }
+  return UnavailableError();
+}
+
+std::optional<CallGroupStanding> CallUiBackend::GroupStanding(const std::string& group_id,
+                                                              const std::string& account) const {
+  const CallReads* reads = stack_.Reads();
+  return reads ? reads->StandingIn(group_id, account) : std::nullopt;
+}
+
+bool CallUiBackend::ChecksGuests() const {
+  const CallReads* reads = stack_.Reads();
+  return reads && reads->ChecksGuests();
 }
 
 int64_t CallUiBackend::InitiationOfferMinorForPeer(const std::string& peer_identity) const {

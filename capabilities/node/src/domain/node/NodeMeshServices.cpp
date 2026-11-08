@@ -38,6 +38,7 @@ void ApplyNodeHosting(mesh::MeshHostConfig& cfg, const MeshConfig& mesh, bool no
   cfg.host_dht = node_role && mesh.capabilities.dht;
   cfg.host_directory = node_role;
   cfg.media_relay_budget = mesh.media_relay_budget;
+  cfg.capacity = mesh.capacity;
   cfg.media_relay_pricing = mesh.pricing.media_relay;
   cfg.media_relay_video.serve_levels.clear();
   for (const int level : mesh.media_relay_video.serve_levels) {

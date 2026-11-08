@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/messaging/IGroupRosterStore.h"
+#include "lib/messaging/GroupRosterRules.h"
 #include "lib/messaging/GroupRosterSyncCodec.h"
 
 #include "common/chat/SystemControl.h"
@@ -26,6 +27,16 @@ struct GroupDissolvedEnd {
   std::vector<PendingGroupInvite> voided_invites;
 };
 
+/** What a member check reply needs beyond the roster (G018 item 5: the changes it carries). */
+struct GroupRosterSyncHooks {
+  /** The newest card this device holds per account (a reply's changes are checked against them). */
+  GroupCardLookup cards;
+  /** A reply's changes that count now (each wants its line in the group's chat). */
+  std::function<void(std::string group_id, std::vector<GroupChange> applied)> on_applied;
+  /** A reply carried only part of the changes (`more`): ask `replier` again for those after `after`. */
+  std::function<void(std::string group_id, std::string replier, std::string after)> ask_more;
+};
+
 /**
  * A restored group's member check (G013) as a control-lane family: `group_roster_request` and
  * `group_roster_reply` are bookkeeping between two devices — never stored, applied once while fresh, and
@@ -39,6 +50,6 @@ struct GroupDissolvedEnd {
 SystemControlFamily MakeGroupRosterSyncFamily(
     IGroupRosterStore& roster, std::function<std::optional<std::string>()> local_account,
     std::function<void(group_roster_sync_codec::RosterRequest request, std::string asker)> answer,
-    std::function<void(GroupDissolvedEnd end)> on_dissolved = {});
+    std::function<void(GroupDissolvedEnd end)> on_dissolved = {}, GroupRosterSyncHooks hooks = {});
 
 } // namespace pbr

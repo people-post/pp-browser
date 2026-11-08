@@ -1,4 +1,5 @@
 #include "feature/conversations/InboxController.h"
+#include "lib/people/ProfileIconCache.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "common/runtime/AppRuntime.h"
 
@@ -6,10 +7,13 @@
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "common/Localized.h"
 #include "common/ImageMetadata.h"
+#include "lib/messaging/AiThreadTitle.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"
 #include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/voice/AudioFilePlayer.h"
+#include "lib/voice/VoiceFile.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
 
@@ -83,7 +87,7 @@ Roe<Thread> InboxController::OpenThread(const std::string& thread_id) {
   KeepListed(thread_id);  // a chat the user opened is theirs, even before anything is said in it
   MarkThreadRead(thread_id);
   if (mentions_) {
-    (void)mentions_->DropThread(thread_id);  // read: "You were mentioned" goes with the unread count
+    (void)mentions_->MarkThreadRead(thread_id);  // read: "You were mentioned" goes with the unread count
   }
   if (on_thread_changed_) {
     on_thread_changed_();
@@ -101,15 +105,18 @@ void InboxController::ClearActiveThread() {
   }
 }
 
-Roe<Thread> InboxController::CreateNewAiThread() {
+Roe<Thread> InboxController::CreateAiThread() {
   Thread thread;
   thread.id = util::GenerateUuid();
   thread.kind = ThreadKind::Ai;
   thread.title = kDefaultAiThreadTitle;
   thread.preview = "";
   thread.updated_at = util::NowUnixMs();
+  return store_.UpsertThread(thread);
+}
 
-  auto saved = store_.UpsertThread(thread);
+Roe<Thread> InboxController::CreateNewAiThread() {
+  auto saved = CreateAiThread();
   if (!saved) {
     return saved.error();
   }
@@ -447,6 +454,10 @@ int InboxController::SumUnread() const {
   }
   int total = 0;
   for (const Thread& thread : *threads) {
+    // AI conversations never count as unread (the assistant's answer to your own question is not a waiting message).
+    if (thread.kind == ThreadKind::Ai) {
+      continue;
+    }
     total += thread.unread_count;
   }
   return total;
@@ -471,7 +482,8 @@ int InboxController::SumUnreadForContact(const std::string& contact_id) const {
   return total;
 }
 
-Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std::string& preview) {
+Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std::string& preview,
+                                           const bool assistant_text) {
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -480,7 +492,11 @@ Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std
     return Error("Thread not found");
   }
   Thread updated = **thread;
-  updated.preview = preview;
+  // The user's own text in an AI thread never shows a code or pasted blob in the row; an answer is shown as is
+  // (a long URL or hash in it is not a secret).
+  updated.preview = updated.kind == ThreadKind::Ai && !assistant_text && LooksSensitiveForAiTitle(preview)
+                        ? Localized("chat.new_chat")
+                        : preview;
   updated.updated_at = util::NowUnixMs();
   if (store_.UpsertThread(updated)) {
     return {};
@@ -521,8 +537,8 @@ Roe<void> InboxController::SetThreadLocalTitle(const std::string& thread_id, con
   if (!*thread) {
     return Error("Thread not found");
   }
-  if ((*thread)->kind != ThreadKind::Group) {
-    return Error("Local titles are only supported for groups");
+  if ((*thread)->kind != ThreadKind::Group && (*thread)->kind != ThreadKind::Ai) {
+    return Error("Local titles are only supported for groups and AI conversations");
   }
   Thread updated = **thread;
   updated.local_title = local_title;
@@ -534,7 +550,8 @@ Roe<void> InboxController::SetThreadLocalTitle(const std::string& thread_id, con
   return {};
 }
 
-Roe<void> InboxController::NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title) {
+Roe<void> InboxController::NameAiThreadFromFirstMessage(const std::string& thread_id,
+                                                         const std::string& first_message) {
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -542,7 +559,13 @@ Roe<void> InboxController::NameAiThreadFromFirstMessage(const std::string& threa
   if (!*thread) {
     return Error("Thread not found");
   }
-  if ((*thread)->kind != ThreadKind::Ai || (*thread)->title != kDefaultAiThreadTitle || title.empty()) {
+  if ((*thread)->kind != ThreadKind::Ai || (*thread)->title != kDefaultAiThreadTitle) {
+    return {};
+  }
+  // A sensitive first message (device-link code, PIN, pasted blob) leaves the neutral default title: the title
+  // is shown in lists and notifications. A renamed thread's own name lives in local_title and is not touched.
+  const std::string title = LooksSensitiveForAiTitle(first_message) ? std::string() : AiThreadTitleFromMessage(first_message);
+  if (title.empty()) {
     return {};
   }
   Thread updated = **thread;
@@ -638,6 +661,15 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
 TranscriptFacts InboxController::Facts() const {
   TranscriptFacts facts;
   facts.sender_label = [this](const std::string& contact_id) { return ResolveSenderLabel(contact_id); };
+  facts.sender_stable_id = [this](const std::string& contact_id) { return labels_.ResolveSender(contact_id).stable_id; };
+  facts.sender_icon = [this](const std::string& contact_id) -> std::string {
+    // A contact id, or the account / relay id of a group member who is not a contact.
+    if (auto contact = contacts_.Get(contact_id); contact && *contact) {
+      const std::string key = ProfileIconCacheKeyForContact(**contact);
+      return key.empty() ? std::string() : ProfileIconLocalPath(profile_data_dir_, key);
+    }
+    return ProfileIconLocalPathForIdentity(profile_data_dir_, contacts_, contact_id);
+  };
   facts.control_line = [this](const ThreadMessage& message) { return ControlLine(message); };
   facts.attachment = [this](const ThreadMessage& message) { return AttachmentView(message); };
   return facts;
@@ -685,15 +717,23 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
   }
   if (IsAttachmentImageMime(fields->mime) && !view.local_path.empty()) {
     // The bytes are a contact's: look at the declared size before the picture is decoded into an <img>.
-    const auto cached = inline_image_ok_.find(view.local_path);
-    if (cached != inline_image_ok_.end()) {
-      view.inline_image_ok = cached->second;
-    } else {
+    auto cached = inline_image_ok_.find(view.local_path);
+    if (cached == inline_image_ok_.end()) {
       const uint64_t max_pixels = attachment_downloads_ ? attachment_downloads_->Limits().max_image_pixels
                                                         : DefaultAttachmentLimits().max_image_pixels;
-      view.inline_image_ok = ImageWithinPixelCap(view.local_path, max_pixels);
-      inline_image_ok_[view.local_path] = view.inline_image_ok;
+      InlineImageFacts facts;
+      if (const auto header = ReadImageHeader(view.local_path)) {
+        facts.ok = static_cast<uint64_t>(header->width) * static_cast<uint64_t>(header->height) <= max_pixels;
+        // Orientations 5..8 turn the picture a quarter: it shows with its sides swapped.
+        const bool turned = header->exif_orientation >= 5 && header->exif_orientation <= 8;
+        facts.width = turned ? header->height : header->width;
+        facts.height = turned ? header->width : header->height;
+      }
+      cached = inline_image_ok_.emplace(view.local_path, facts).first;
     }
+    view.inline_image_ok = cached->second.ok;
+    view.image_width = cached->second.width;
+    view.image_height = cached->second.height;
   }
   if (attachment_downloads_) {
     view.state = attachment_downloads_->StateFor(message.thread_id, *fields);
@@ -711,6 +751,34 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
   if (IsAttachmentVideoMime(fields->mime) && !profile_data_dir_.empty() &&
       AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
     view.poster_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
+    // The poster's own size (the frame is laid out for it); read once per poster file.
+    auto cached = inline_image_ok_.find(view.poster_path);
+    if (cached == inline_image_ok_.end()) {
+      InlineImageFacts facts;
+      if (const auto header = ReadImageHeader(view.poster_path)) {
+        facts.ok = true;
+        facts.width = header->width;
+        facts.height = header->height;
+      }
+      cached = inline_image_ok_.emplace(view.poster_path, facts).first;
+    }
+    view.image_width = cached->second.width;
+    view.image_height = cached->second.height;
+  }
+  if (attachment_downloads_ && !view.local_path.empty() && IsAudioFileAttachment(fields->mime, fields->filename) &&
+      !ParseVoiceFileName(fields->filename)) {
+    // A sound file's card: its title, artist and cover from its own tags, read on a worker once its plaintext view
+    // exists (a large one after its first play); the change notification draws them.
+    if (const auto tags = attachment_downloads_->AudioTags(message.thread_id, fields->content_hash)) {
+      view.audio_title = tags->title;
+      view.audio_artist = tags->artist;
+      view.audio_duration_ms = tags->duration_ms;
+      if (AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
+        view.poster_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
+      }
+    } else {
+      attachment_downloads_->RequestAudioTags(message.thread_id, fields->content_hash, view.local_path);
+    }
   }
   return view;
 }

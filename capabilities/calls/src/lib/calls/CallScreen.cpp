@@ -64,6 +64,11 @@ bool ShowsCameraButton(const bool encoder_available, const bool path_allows_vide
   return encoder_available && (path_allows_video || camera_on);
 }
 
+bool ShowsCancelCall(const CallScreen& screen) {
+  return screen.kind == CallScreen::Kind::InCall && screen.status == CallScreen::Status::Calling &&
+         !screen.was_connected;
+}
+
 bool ShowsCameraFlip(const bool mobile, const bool show_camera, const bool camera_on) {
   return mobile && show_camera && camera_on;
 }
@@ -181,6 +186,20 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
     out.status = Status::Connecting; // media runs, the call is not live yet
   }
   return out;
+}
+
+bool OffersMakeGroup(const bool tied_to_group, const size_t joined) {
+  return !tied_to_group && joined >= kMakeGroupMinPeople;
+}
+
+std::optional<CallGroupInvite> PickGroupInviteBanner(const std::vector<CallGroupInvite>& waiting,
+                                                     const std::set<std::string>& not_now) {
+  for (const CallGroupInvite& invite : waiting) {
+    if (!invite.invite_id.empty() && not_now.count(invite.invite_id) == 0) {
+      return invite;
+    }
+  }
+  return std::nullopt;
 }
 
 } // namespace pbr

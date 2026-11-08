@@ -229,14 +229,14 @@ TEST(OutboundSendRulesTest, AGroupMembersEnvelopeCarriesACopyPerDevice) {
                          .payload_b64 = "cGF5bG9hZDI="};
   RelayEnvelope e = BuildGroupMemberEnvelope(message, sender, "group-1", "account:b", "relay:b", {phone, laptop}, 11);
   EXPECT_EQ(e.route.kind, "group");
-  EXPECT_EQ(e.route.group_id, "group-1");
   EXPECT_EQ(e.body.e2e.copies, (std::vector<RelayCopy>{phone, laptop})) << "one record, each device's copy (M022)";
   EXPECT_EQ(e.order_key, 11u) << "the record's own relay index";
-  EXPECT_EQ(e.stream_key, BuildGroupDeviceRelayStreamKey("group-1", "account:b", "QmA"));
+  EXPECT_EQ(e.stream_key, BuildGroupRelayStreamKey("group-1", "account:a", "account:b", "QmA"));
   EXPECT_NE(BuildGroupMemberEnvelope(message, sender, "group-1", "account:c", "relay:c", {phone}, 12).stream_key,
             e.stream_key)
       << "the relay keeps one row per sender, stream and index: each member's records have their own stream";
   EXPECT_EQ(e.recipient_contact_id, "relay:b") << "the relay delivers to relay ids";
+  EXPECT_EQ(e.relay_wake_hint, "m") << "a tap on the push is matched to this message by its id";
   // Each device reads its own copy, numbered in its own pair.
   auto on_laptop = SelectRelayCopy(e, "QmBLaptop");
   ASSERT_TRUE(on_laptop);

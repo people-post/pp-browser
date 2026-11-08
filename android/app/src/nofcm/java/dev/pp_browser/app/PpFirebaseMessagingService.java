@@ -13,4 +13,7 @@ public class PpFirebaseMessagingService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
+
+    /** No FCM in this build: no token. */
+    static void requestToken() {}
 }

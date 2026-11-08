@@ -39,7 +39,7 @@ TranscriptRow Row(const std::string& id, const std::string& sender, const std::s
 MentionRoster Roster() {
   MentionRoster roster;
   roster.members = {kOwner, kMe, kAlice, kBob};
-  roster.owner = kOwner;
+  roster.everyone_senders = {kOwner};
   roster.local_account = kMe;
   return roster;
 }
@@ -75,7 +75,7 @@ TEST(TranscriptMentionsTest, OnlyEligibleSpansAreHighlighted) {
   EXPECT_NE(owner_rml.find("<span class=\"chat-mention chat-mention--everyone\">@everyone</span> go"), std::string::npos)
       << owner_rml;
   MentionRoster me_owner = Roster();
-  me_owner.owner = kMe;
+  me_owner.everyone_senders = {kMe};
   const auto ours = Row("m3", kLocalSelfContactId, "@everyone go", {Span(TextSpanKind::Everyone, 0, 9)});
   EXPECT_NE(Rml(ours, me_owner).find("chat-mention--everyone"), std::string::npos);
   EXPECT_EQ(Rml(ours, Roster()).find("chat-mention"), std::string::npos);
@@ -104,7 +104,7 @@ TEST(TranscriptMentionsTest, AnEligibleEveryoneTintsTheRowAnIneligibleOneDoesNot
   EXPECT_FALSE(MentionsMe(Row("m2", kBob, "@everyone go", {Span(TextSpanKind::Everyone, 0, 9)}), Roster()));
   // Our own @everyone (we are the owner) does not tint our row.
   MentionRoster me_owner = Roster();
-  me_owner.owner = kMe;
+  me_owner.everyone_senders = {kMe};
   EXPECT_FALSE(MentionsMe(Row("m3", kLocalSelfContactId, "@everyone go", {Span(TextSpanKind::Everyone, 0, 9)}), me_owner));
 }
 

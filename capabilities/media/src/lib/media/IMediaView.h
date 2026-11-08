@@ -4,6 +4,7 @@
 #include "common/Error.h"
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -71,6 +72,8 @@ public:
   virtual std::optional<CameraFailure> TakeCameraFailure() = 0;
   /** Phones: switch front / rear while the camera is on (error when it is off). */
   virtual Roe<void> FlipCamera() = 0;
+  /** Facing of the camera last opened (false before any open): what the flip button shows. */
+  virtual bool CameraFrontFacing() const = 0;
   /** The display turned while the camera is on: later frames rotate to match. */
   virtual void UpdateCameraDisplayRotation(int display_rotation_deg) = 0;
 
@@ -88,6 +91,11 @@ public:
   virtual bool EverHadRemoteVideo() const = 0;
   /** Drop the last remote frame (camera off, leave, hard stall, connection dead). */
   virtual void ClearRemoteVideo() = 0;
+  /**
+   * Called (any thread: the camera's, a decoder's) each time a new self-view or remote frame is ready to copy:
+   * the UI's cue to draw. Nothing else wakes the UI for a frame. Empty: none.
+   */
+  virtual void SetOnVideoFrame(std::function<void()> on_frame) = 0;
   /** Copy the latest local preview / remote decoded frames (false if none). */
   virtual bool CopyLocalVideoFrame(VideoTileFrame& out) const = 0;
   virtual bool CopyRemoteVideoFrame(VideoTileFrame& out) const = 0;

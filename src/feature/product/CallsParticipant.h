@@ -26,6 +26,8 @@ public:
   /** Any call at all: one ringing here (an invite waiting) or one this device is in. Read only. UI thread. */
   bool AnyCallLive();
   Roe<std::vector<CallParticipant>> JoinedParticipants(const std::string& call_id);
+  /** G022: this device is in the live call `call_id` right now, with `identity` in it too. Any thread. */
+  bool InLiveCallWith(const std::string& call_id, const std::string& identity);
 
   Roe<void> OnStoresOpened(ConversationsHub& hub) override;
   std::vector<IDekConsumer*> DekConsumers() override;

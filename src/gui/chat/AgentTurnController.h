@@ -8,6 +8,7 @@
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/HeldAgentSend.h"
+#include "gui/chat/MessagingReadyTasks.h"
 #include "gui/chat/WorkingSetController.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -19,8 +20,12 @@
 
 #include <chrono>
 #include <cstdint>
+#include "lib/ui/ContextMenuHost.h"
+
 #include <functional>
 #include <map>
+#include <memory>
+#include <set>
 #include <optional>
 #include <string>
 #include <vector>
@@ -33,6 +38,11 @@ class ToolRegistry;
 
 /** Pseudo thread whose blobs_view holds AI image thumbnails; wiped with the other session plaintext views. */
 inline constexpr const char* kAiImageViewThread = "ai-images";
+/**
+ * The ask-AI panel's one-off question (settings "?", DEV/PLAN-ui-batch5-ask-ai.md 5a): it runs in the Home session
+ * and shows only in the panel, under this pseudo thread ("busy", the streamed text). Never a stored thread.
+ */
+inline constexpr const char* kAskAiOnceThread = "ask-ai-once";
 
 /** What AgentTurnController needs from the chat screen it is part of (ChatController). UI thread. */
 class AgentTurnHost {
@@ -66,6 +76,18 @@ public:
   virtual void PutBackDraft(const std::string& thread_id, const std::string& text) = 0;
   /** A turn of `thread_id` ended: what it stored (the answer) is in the thread now. */
   virtual void OnAgentTurnEnded(const std::string& thread_id) { (void)thread_id; }
+  /** The ask-AI panel shows this thread now: an answer there is read, not unread. */
+  virtual bool AskAiPanelShows(const std::string& thread_id) const {
+    (void)thread_id;
+    return false;
+  }
+  /** The finished answer of the panel's one-off question (kAskAiOnceThread): never stored in a thread. */
+  virtual void OnAskAiOnceReply(const AgentEvent& event) { (void)event; }
+  /**
+   * Mint a Brief guest key at `llm_base_url` off the UI thread (MessagingReadyTasks, under BriefKeyRun()); its end
+   * comes back to OnBriefKeyMintEnded. The default does nothing (no mint).
+   */
+  virtual void MintBriefGuestKey(const std::string& llm_base_url) { (void)llm_base_url; }
 };
 
 /**
@@ -117,6 +139,15 @@ public:
   AgentUiPorts& Ports() { return agent_ports_; }
   void ApplyConfig(const AgentConfig& config);
   void ReloadAgentConfig();
+  /**
+   * The Brief key's mint run: the unlock's guest-key mint and the 401 renewal (B183) share it, so a mint in flight is
+   * never doubled; while it is in flight RefreshLlmSetupBanner keeps the banner as it is.
+   */
+  const std::shared_ptr<CoalescedRun>& BriefKeyRun() const { return brief_key_run_; }
+  /** UI: how the mint EnsureBriefGuestLlmKey sent off ended (MessagingReadyTasks' brief_key_done). */
+  void OnBriefKeyMintEnded(const BriefKeyMintEnd& end);
+  /** The Brief key changed off the UI thread (a 401 renewed it, B183): ReloadAgentConfig once no turn runs. */
+  void ReloadAgentConfigWhenIdle() { reload_when_idle_ = true; }
   /** An LLM is configured (else replies are the mock assistant's). */
   bool UseLlm() const { return use_llm_; }
   void SetUseLlm(bool use) { use_llm_ = use; }
@@ -135,6 +166,7 @@ public:
   /** Per frame: the streamed row, a held send, the agent's events. */
   void Tick();
   void HandleAgentEvent(const AgentEvent& event);
+  /** Stores an answer in `thread_id`, the chat its turn belongs to; with none it is dropped (never the open chat). */
   void FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
                             const std::string& finish_reason = {}, const std::string& thread_id = {},
                             ResponseGoal response_goal = ResponseGoal::General,
@@ -147,6 +179,16 @@ public:
    * not (its turn still runs), the text goes back to that composer.
    */
   void SubmitHomeQuestion(const std::string& thread_id, const std::string& text, std::optional<std::string> payload);
+  /**
+   * The ask-AI panel's one-off question in the Home session (its conversation started empty first), answered in
+   * words only (no app action, no permission card): busy in kAskAiOnceThread once taken. Its events reach only the
+   * panel (OnAskAiOnceReply), never a chat.
+   */
+  SubmitOutcome SubmitAskAiOnce(const std::string& text);
+  /** The answer streaming in `thread_id` so far ("" when none). */
+  std::string StreamingText(const std::string& thread_id) const;
+  /** The question waiting in the queue for `thread_id` ("" when none). */
+  std::string QueuedText(const std::string& thread_id) const;
 
   // --- several turns at once, "busy" per thread, a queue once the sessions are full (B112) -------
   const AgentBusyState& Busy() const { return busy_; }
@@ -170,6 +212,13 @@ public:
   /** Stop every turn in flight (the app pauses). */
   void Cancel();
   /**
+   * A conversation is being deleted: stop its turn, drop its queued send and streamed row, and ignore any event of it
+   * that still arrives, so a late answer never stores a message into (and so brings back) the deleted thread.
+   */
+  void ForgetThread(const std::string& thread_id);
+  /** The deleted-conversation list is per profile: emptied on a profile reset / switch (and in `Reset`). */
+  void ClearForgottenThreads();
+  /**
    * A permission card ended (answered, given up, or found stale on a tap): rewrite that one stored message by its
    * id so its buttons are gone. `thread_id` empty = the open thread.
    */
@@ -192,6 +241,14 @@ public:
     int height = 0;
   };
   void OnAttachAiImage();
+  /** The Home composer's plus (and a phone AI conversation's): a floating menu with Camera, Photos and File; each hands
+   *  its image to StartAiImagePrepare like a picked photo. `above`: the card opens above `anchor` (a composer at the
+   *  bottom of the screen). */
+  void ShowHomeAttachMenu(ui::Element* anchor, bool above = false);
+  /** The Home plus menu's rows, in order: Camera, Photos, File (image files from the Files app). All are always offered (a
+   *  missing camera is told by the capture itself). Pure, so a test can count them. */
+  static std::vector<ContextMenuAction> HomeAttachActions(std::function<void()> camera, std::function<void()> photos,
+                                                          std::function<void()> file);
   void StartAiImagePrepare(std::string path);
   /** Drops the pending (or still preparing) image and its session thumbnail file. */
   void DiscardPendingAiImage();
@@ -211,7 +268,24 @@ public:
    */
   void SubmitStoredImageQuestion(const std::string& thread_id, const std::string& text, const std::string& question,
                                  const std::string& message_id, PendingAiImage image, std::string ai_image_json);
-  void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const;
+  /** `thread_id` empty: the open thread (the chat page); the ask-AI panel names its own. */
+  void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows, const std::string& thread_id = {}) const;
+
+  // --- the ask-AI panel's picture (DEV/PLAN-ui-batch5-ask-ai.md 5b): the same path, its own state ---------
+  /** The phone library (`files_app` false) or the Files app's image files; `picked` runs on the UI thread with the
+   *  chosen file (not at all when nothing was chosen). */
+  void PickAiImageFrom(bool files_app, std::function<void(std::string path)> picked);
+  /** The photo library / file picker (images only); `picked` runs on the UI thread with one file, or not at all. */
+  void PickAiImage(std::function<void(std::string path)> picked);
+  /** The system camera, photo only; `picked` as above. Tells the person when the camera is unavailable. */
+  void CaptureAiPhoto(std::function<void(std::string path)> picked);
+  /** PrepareAiImageFromFile (<= 1.5 MB, metadata stripped) + a session thumbnail, off the UI thread; `done` on it. */
+  void PrepareAiImage(std::string path, std::function<void(Roe<PendingAiImage>)> done);
+  /** Removes the picture's session thumbnail file. */
+  void DropAiImage(const PendingAiImage& image);
+  enum class ImageSend { Started, Full, BusyHere, Unavailable };
+  /** Stores the picture in `thread_id` and starts its question there (not queued: the picture lives in the panel). */
+  ImageSend SendAiImageTo(const std::string& thread_id, const std::string& text, PendingAiImage image);
 
   // --- the agent's forms and calendars ---------------------------------------------------------
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
@@ -220,6 +294,8 @@ public:
   void SelectCalendarDay(const std::string& entry_id, const std::string& iso_date);
 
 private:
+  /** The tail of SendImageQuestion: names the thread, marks it busy, stores the picture, hands the question over. */
+  void StartPreparedImageSend(const std::string& thread_id, const std::string& text, PendingAiImage image);
   /** A people list's "show more": `step` more rows of `blocks[block_index]` of that stored reply, in place. */
   void ShowMoreRows(const std::string& entry_id, size_t block_index, size_t step);
   void OnAssistantDelta(const AgentEvent& event);
@@ -243,6 +319,8 @@ private:
   AgentConfig last_agent_runtime_;
   bool use_llm_ = false;
   bool brief_guest_mint_attempted_ = false;
+  std::shared_ptr<CoalescedRun> brief_key_run_ = std::make_shared<CoalescedRun>();
+  bool reload_when_idle_ = false; // ReloadAgentConfigWhenIdle; done in Tick
   std::string brief_guest_mint_user_hint_;
   std::string last_brief_banner_; // text RefreshLlmSetupBanner last showed for the brief preset
   HeldAgentSend held_agent_send_; // sends made while the agent was still (re)configuring, one per thread
@@ -267,6 +345,12 @@ private:
    * events (which carry no thread) belong there.
    */
   std::optional<std::string> home_turn_thread_;
+  /**
+   * The Home session's newest turn the UI knows (AgentEvent::turn): a Home event of an older turn is a stopped turn's
+   * late one and is dropped (it must not end, or answer for, the turn that runs now).
+   */
+  uint64_t home_turn_ = 0;
+  void NoteHomeTurnStarted();
 
   std::optional<PendingAiImage> pending_image_;
   std::map<std::string, PendingAiImage> stashed_images_; // per conversation, while another one is shown
@@ -282,6 +366,7 @@ private:
     std::optional<std::chrono::steady_clock::time_point> last_render;
   };
   std::map<std::string, StreamingRow> streaming_; // by thread
+  std::set<std::string> forgotten_threads_;        // deleted conversations: their late events are dropped
 };
 
 } // namespace pbr

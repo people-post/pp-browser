@@ -147,7 +147,9 @@ void WriteSignalDump(int signo) {
   CrashDump::WriteNativeBacktrace(fd);
 
   WriteCString(fd, "--- breadcrumbs ---\n");
-  char crumbs[kBreadcrumbDumpBytes];
+  // Static, not on the stack: the handler runs on the small alternate signal stack, where 24 KB plus the unwinder
+  // overflowed it and the dump never got its backtrace (B126, 2026-11-04). The handler runs once (g_writing).
+  static char crumbs[kBreadcrumbDumpBytes];
   CrashBreadcrumbs::CopySignalSafe(crumbs, sizeof(crumbs));
   WriteCString(fd, crumbs);
 

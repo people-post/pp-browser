@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,18 @@ bool Has(const std::vector<Item>& items, const Item item) {
 }
 
 } // namespace
+
+TEST(SessionMenuTest, DirectChatWithAStrangerOffersBlockButNoViewContact) {
+  const auto items = Items(SessionKind::Direct);
+  EXPECT_TRUE(Has(items, Item::Block));
+  EXPECT_FALSE(Has(items, Item::Unblock));
+  EXPECT_FALSE(Has(items, Item::ViewContact));
+}
+
+TEST(SessionMenuTest, NoBlockForAStrangerWithoutAnIdentity) {
+  const auto items = SessionMenuItems(SessionMenuState{.kind = SessionKind::Direct, .has_peer_identity = false});
+  EXPECT_FALSE(Has(items, Item::Block));
+}
 
 TEST(SessionMenuTest, DirectChatWithAContact) {
   EXPECT_EQ(Items(SessionKind::Direct, false, true),
@@ -47,7 +60,24 @@ TEST(SessionMenuTest, GroupLeavesInsteadOfDeleting) {
 TEST(SessionMenuTest, AiThreadHasNothingToMute) {
   // An AI thread never notifies, and has no contact or group.
   EXPECT_EQ(Items(SessionKind::Ai, false, true),
-            (std::vector<Item>{Item::MarkUnread, Item::Pin, Item::Archive, Item::ClearChat, Item::Delete}));
+            (std::vector<Item>{Item::MarkUnread, Item::Pin, Item::Rename, Item::Archive, Item::ClearChat,
+                               Item::Delete}));
+}
+
+TEST(SessionMenuTest, PinnedAiThreadSortsBeforeNewerUnpinnedOnes) {
+  EXPECT_TRUE(SessionSortsBefore(/*a_pinned_at=*/100, /*a_updated_at=*/1, /*b_pinned_at=*/0, /*b_updated_at=*/5));
+  EXPECT_FALSE(SessionSortsBefore(0, 5, 100, 1));
+  EXPECT_TRUE(SessionSortsBefore(0, 5, 0, 1)) << "unpinned: newest first";
+  EXPECT_EQ(Items(SessionKind::Ai, false, true).at(1), Item::Pin);
+  SessionMenuState pinned{.kind = SessionKind::Ai};
+  pinned.pinned = true;
+  EXPECT_TRUE(Has(SessionMenuItems(pinned), Item::Unpin));
+}
+
+TEST(SessionMenuTest, RenameIsOnlyForAiThreads) {
+  EXPECT_TRUE(Has(SessionMenuItems(SessionMenuState{.kind = SessionKind::Ai}), Item::Rename));
+  EXPECT_FALSE(Has(SessionMenuItems(SessionMenuState{.kind = SessionKind::Direct}), Item::Rename));
+  EXPECT_FALSE(Has(SessionMenuItems(SessionMenuState{.kind = SessionKind::Group}), Item::Rename));
 }
 
 TEST(SessionMenuTest, SetStatesOfferTheirOpposite) {
@@ -156,8 +186,24 @@ TEST(SessionMenuTest, DirectChatWithAContactOffersBlockOrUnblock) {
       SessionMenuItems(SessionMenuState{.kind = SessionKind::Direct, .has_contact = true, .blocked = true});
   EXPECT_TRUE(Has(blocked, Item::Unblock));
   EXPECT_FALSE(Has(blocked, Item::Block));
-  EXPECT_FALSE(Has(Items(SessionKind::Direct), Item::Block)) << "a stranger has no contact to block";
+  EXPECT_TRUE(Has(Items(SessionKind::Direct), Item::Block)) << "a stranger can be blocked too";
   EXPECT_FALSE(Has(Items(SessionKind::Group), Item::Block));
   EXPECT_TRUE(SessionMenuItemIsDestructive(Item::Block));
   EXPECT_FALSE(SessionMenuItemIsDestructive(Item::Unblock));
+}
+
+TEST(SessionMenuTest, EveryItemHasAnIconThatExists) {
+  const SessionKind kinds[] = {SessionKind::Ai, SessionKind::Direct, SessionKind::Group};
+  for (const SessionKind kind : kinds) {
+    for (const bool flip : {false, true}) {
+      SessionMenuState state{.kind = kind, .unread = flip, .has_contact = true, .blocked = flip, .pinned = flip,
+                             .muted = flip, .mute_mentions = flip, .share_ai_confirmed = true, .archived = flip};
+      for (const Item item : SessionMenuItems(state)) {
+        const std::string icon = SessionMenuIcon(item);
+        ASSERT_FALSE(icon.empty());
+        // "../icons/v2/x.svg" is relative to assets/views/.
+        EXPECT_TRUE(std::filesystem::exists(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / icon)) << icon;
+      }
+    }
+  }
 }

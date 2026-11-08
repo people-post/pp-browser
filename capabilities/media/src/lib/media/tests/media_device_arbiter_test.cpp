@@ -745,6 +745,48 @@ TEST_F(EngineDeviceLeaseTest, FlipCameraReopensWithTheOtherFacing) {
   engine.Stop();
 }
 
+// #83 (Kenneth 2026-11-05, iPhone): "after the camera was turned off once, flip no longer works". The engine side:
+// off and on again (also quickly, while the slow close of the last one is still on its way), the flip still takes the
+// other facing, and the facing chosen before the camera went off is the one it comes back with.
+TEST_F(EngineDeviceLeaseTest, FlipCameraStillWorksAfterTheCameraWasTurnedOffAndOn) {
+  const auto camera_opens = [this]() {
+    const auto events = log_.Events();
+    return std::count(events.begin(), events.end(), "open camera");
+  };
+  auto engine_owned = MakeEngine();
+  MediaEngine& engine = *engine_owned;
+  // A tap is refused only while the camera is still opening: tap until it is taken (once).
+  const auto flip_once_open = [&engine]() {
+    for (int i = 0; i < 400; ++i) {
+      if (engine.FlipCamera()) {
+        return true;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return false;
+  };
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 1 && engine.CameraFrontFacing(); }));
+  ASSERT_TRUE(engine.SetCameraEnabled(false));
+  ASSERT_TRUE(WaitHolders(MediaDeviceKind::Camera, 0));
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 2 && engine.CameraFrontFacing(); }));
+  ASSERT_TRUE(WaitHolders(MediaDeviceKind::Camera, 1));
+  ASSERT_TRUE(flip_once_open());
+  ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 3 && !engine.CameraFrontFacing(); }));
+
+  // Rear, then off and straight on again: the rear comes back, and a flip goes to the front.
+  backend_->camera_open_delay = std::chrono::milliseconds(200);
+  ASSERT_TRUE(engine.SetCameraEnabled(false));
+  std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  ASSERT_TRUE(flip_once_open());
+  EXPECT_TRUE(WaitUntil([&] { return engine.CameraFrontFacing(); }));
+  EXPECT_TRUE(engine.IsCameraEnabled());
+  engine.Stop();
+}
+
 // A flip whose rear camera does not open leaves the camera off, and the next open asks for the front again.
 TEST_F(EngineDeviceLeaseTest, AFailedReopenAfterAFlipGoesBackToTheFrontCamera) {
   const auto camera_opens = [this]() {

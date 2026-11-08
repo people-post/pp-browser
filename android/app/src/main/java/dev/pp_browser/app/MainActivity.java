@@ -1,10 +1,14 @@
 package dev.pp_browser.app;
 
+import android.Manifest;
 import android.app.ActivityManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
@@ -19,6 +23,7 @@ import android.media.AudioManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -30,10 +35,12 @@ import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowManager;
+import android.webkit.MimeTypeMap;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
@@ -41,9 +48,11 @@ import androidx.core.view.WindowInsetsAnimationCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import org.libsdl.app.SDL;
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -55,7 +64,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * SDL3 and other native deps are statically linked into libmain.so (see root CMakeLists.txt).
  *
  * Captures a last-good SurfaceView frame into the task description before the EGL surface is
- * torn down, so Recents / app-switcher is less likely to show a black tile.
+ * torn down, so Recents / app-switcher is less likely to show a black tile. Never while a secret is
+ * on screen ({@link #setSecureScreen}): then the window is secure and the task's icon is the app's.
  *
  * On API 24+, SDL pauses from {@code onStop} after {@code surfaceDestroyed}; capture must happen
  * earlier from {@code onPause} / focus loss while {@code mIsSurfaceReady} is still true.
@@ -81,12 +91,61 @@ public class MainActivity extends SDLActivity {
     private static final long PIXEL_COPY_TIMEOUT_MS = 80;
     private static final String CHANNEL_MESSAGES = "messages";
     private static final String PREFS = "pp_browser_device";
+    /** Me → Show notifications, kept here for a push that comes while the app is not running. */
+    private static final String PREF_MESSAGE_BANNERS = "message_banners_on";
+    /** The "New message" a push posts while the app is not running (it cannot say who or what). */
+    private static final int PUSH_MESSAGE_NOTIFICATION_ID = 0x5052;
+    /** Our own permission request (SDL's and the camera flow's codes go to them). */
+    private static final int REQ_NOTIFICATIONS = 0x5053;
+    /** Between onResume and onPause: a call push is rung by the app itself. */
+    private static volatile boolean sInFront;
+    /** Between onStart and onStop: the app is on screen (native OsAppState: only then the PIN grace window extends). */
+    private static volatile boolean sShown;
+    /** Main thread: the call this device is in (native OngoingCallService), and whether PpCallService runs for it. */
+    private static boolean sOngoingCall;
+    private static String sOngoingCallTitle;
+    private static boolean sOngoingCallServiceStarted;
 
     private HandlerThread mPixelCopyThread;
     private Handler mPixelCopyHandler;
     private final AtomicBoolean mThumbnailCapturedForPause = new AtomicBoolean(false);
+    /** A secret is on screen (native SecureScreen): no screenshot of it anywhere, ours included. */
+    private volatile boolean mSecureScreen;
     private AudioFocusRequest mCallAudioFocusRequest;
-    private final AudioManager.OnAudioFocusChangeListener mCallAudioFocusListener = focusChange -> { };
+    /**
+     * A phone call (or another app's call) takes the call's audio focus: the call is interrupted until focus is back
+     * (native AudioSession: its peer is told it is on hold, and its devices reopen at the end). A duck is not a loss.
+     */
+    private final AudioManager.OnAudioFocusChangeListener mCallAudioFocusListener = focusChange -> {
+        if (focusChange == AudioManager.AUDIOFOCUS_LOSS || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+            onCallAudioFocus(true);
+        } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+            onCallAudioFocus(false);
+        }
+    };
+
+    private static native void nativeOnCallAudioFocus(boolean lost);
+
+    /** The lock screen went away: native OsProtectedData runs whoever waits for it (the PIN grace window). */
+    private static native void nativeOnUserPresent();
+
+    private final BroadcastReceiver mUserPresentReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            try {
+                nativeOnUserPresent();
+            } catch (UnsatisfiedLinkError ignored) {
+            }
+        }
+    };
+
+    private static void onCallAudioFocus(boolean lost) {
+        Log.i(TAG, lost ? "call audio focus lost" : "call audio focus back");
+        try {
+            nativeOnCallAudioFocus(lost);
+        } catch (UnsatisfiedLinkError ignored) {
+        }
+    }
 
     /** App appearance preference from native Theme ("system" / "light" / "dark"). */
     private volatile String mAppAppearance = "system";
@@ -171,6 +230,61 @@ public class MainActivity extends SDLActivity {
         InboxSyncWorker.schedule(this, true);
         PpLinkBridge.deliver(getIntent());
         PpCameraCapture.clearScratch(this);
+        clearOpenDir(this);
+        PpCallNotifications.init(this);
+        if (savedInstanceState == null) {
+            PpCallNotifications.onActivityIntent(getIntent());  // Answer on a call notification started the app
+        }
+        PpFirebaseMessagingService.requestToken();
+        requestNotificationPermission();
+        // USER_PRESENT is a protected broadcast (no app can send it), so exported is safe. Not NOT_EXPORTED: its
+        // sender is SystemUI's keyguard, not the system uid, and a not-exported receiver may not hear it.
+        ContextCompat.registerReceiver(this, mUserPresentReceiver, new IntentFilter(Intent.ACTION_USER_PRESENT),
+                ContextCompat.RECEIVER_EXPORTED);
+    }
+
+    /** Like iOS at launch: calls ring by notification, and messages show by it. Android 13+ asks. */
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+    }
+
+    /** The app's native side is running (its SDL main thread). */
+    static boolean isAppRunning() {
+        final Thread thread = mSDLThread;
+        return thread != null && thread.isAlive() && !mSDLMainFinished;
+    }
+
+    static boolean isAppInFront() {
+        return sInFront && isAppRunning();
+    }
+
+    /** A message push while the app is not running: "New message", unless Me → Show notifications is off. */
+    static void showPushMessageNotification(Context context) {
+        final Context c = context.getApplicationContext();
+        if (!c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PREF_MESSAGE_BANNERS, true)) {
+            return;
+        }
+        ensureMessagesChannel(c);
+        Intent open = new Intent(c, MainActivity.class);
+        open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pi = PendingIntent.getActivity(
+                c, PUSH_MESSAGE_NOTIFICATION_ID, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(c, CHANNEL_MESSAGES)
+                .setSmallIcon(android.R.drawable.stat_notify_chat)
+                .setContentTitle(c.getString(R.string.message_incoming_title))
+                .setContentText(c.getString(R.string.message_incoming_body))
+                .setContentIntent(pi)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH);
+        try {
+            NotificationManagerCompat.from(c).notify(PUSH_MESSAGE_NOTIFICATION_ID, builder.build());
+        } catch (SecurityException e) {
+            Log.w(TAG, "message notification refused: " + e);  // notifications not allowed
+        }
     }
 
     /** Called from native (CameraCapture_Android.cpp) from any thread: opens the system camera. */
@@ -189,6 +303,202 @@ public class MainActivity extends SDLActivity {
         return activity == null ? null : PpCameraCapture.captureDir(activity).getAbsolutePath();
     }
 
+    /** The only folder shared with other apps (pp_file_paths.xml "open"): links to attachments being opened. */
+    private static final String OPEN_DIR = "open";
+    /** A link folder older than this is gone at the next open (the viewer it was for has read it by then). */
+    private static final long OPEN_KEEP_MS = 10 * 60 * 1000;
+
+    /**
+     * Called from native (PlatformOpenFile_Android.cpp): shows a downloaded attachment in an app that can open it.
+     * Only an attachment view under {@code <filesDir>/pp-browser/.../blobs_view/} is accepted (the profile's
+     * databases and keys never are). It is linked (else copied) into {@code <cacheDir>/open/<hash prefix>/} under
+     * its own name (a folder per content, so two files with one name never meet) and that one file goes as a
+     * FileProvider address with read permission. A file:// address is refused by Android 7+. The links go with every
+     * view-cache wipe (clearOpenLinks: lock, start, a chat's delete) and after OPEN_KEEP_MS.
+     */
+    public static boolean openFile(final String path) {
+        final SDLActivity activity = mSingleton;
+        if (activity == null || path == null) {
+            return false;
+        }
+        try {
+            final File source = new File(path).getCanonicalFile();
+            final String root = new File(activity.getFilesDir(), "pp-browser").getCanonicalPath() + File.separator;
+            final String views = File.separator + "blobs_view" + File.separator;
+            if (!source.getPath().startsWith(root) || !source.getPath().contains(views) || !source.isFile()) {
+                Log.w(TAG, "openFile: refused, not an attachment view");
+                return false;
+            }
+            final File dir = new File(activity.getCacheDir(), OPEN_DIR);
+            if (!dir.isDirectory() && !dir.mkdirs()) {
+                Log.w(TAG, "openFile: no share folder");
+                return false;
+            }
+            // Old folders go by their own age (set when their link was made; a link's mtime is the source's inode).
+            final long now = System.currentTimeMillis();
+            final File[] old = dir.listFiles();
+            if (old != null) {
+                for (File f : old) {
+                    if (now - f.lastModified() > OPEN_KEEP_MS) {
+                        deleteTree(f);
+                    }
+                }
+            }
+            final File folder = new File(dir, contentFolderName(source));
+            if (!folder.isDirectory() && !folder.mkdirs()) {
+                Log.w(TAG, "openFile: no share folder");
+                return false;
+            }
+            final File shared = new File(folder, source.getName());
+            if (!shared.isFile()) {  // the same content opened again keeps its link (a viewer may still read it)
+                try {
+                    android.system.Os.link(source.getPath(), shared.getPath());
+                } catch (Exception linkFailed) {
+                    java.nio.file.Files.copy(source.toPath(), shared.toPath());
+                }
+            }
+            folder.setLastModified(now);  // the folder's own age (never the link's: that is the source's inode)
+            final Uri uri;
+            try {
+                uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".capture", shared);
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "openFile: the share folder is not in the provider's paths");
+                return false;
+            }
+            final String name = shared.getName();
+            final int dot = name.lastIndexOf('.');
+            final String ext = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
+            final String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
+            final Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, mime != null ? mime : "*/*");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            activity.startActivity(intent);
+            return true;
+        } catch (Exception e) {  // no app for it (ActivityNotFoundException), an unreadable file
+            Log.w(TAG, "openFile: " + e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    /**
+     * The open folder for a view: its content hash's first 16 hex digits (from {@code <hash>.open/<name>} or
+     * {@code <hash>.<ext>}), so one content has one folder and two files with the same name never share one.
+     */
+    private static String contentFolderName(File source) {
+        final File parent = source.getParentFile();
+        String stem = parent != null && parent.getName().endsWith(".open")
+                ? parent.getName().substring(0, parent.getName().length() - ".open".length())
+                : source.getName();
+        final int dot = stem.indexOf('.');
+        if (dot >= 0) {
+            stem = stem.substring(0, dot);
+        }
+        final StringBuilder hex = new StringBuilder();
+        for (int i = 0; i < stem.length() && hex.length() < 16; ++i) {
+            final char c = Character.toLowerCase(stem.charAt(i));
+            if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+                hex.append(c);
+            }
+        }
+        return hex.length() > 0 ? hex.toString() : "x" + Long.toHexString(System.nanoTime());
+    }
+
+    private static void deleteTree(File file) {
+        final File[] children = file.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                deleteTree(child);
+            }
+        }
+        file.delete();
+    }
+
+    /** At start: the links of the last session go (the views they point at were wiped too). */
+    private static void clearOpenDir(Context context) {
+        final File[] files = new File(context.getCacheDir(), OPEN_DIR).listFiles();
+        if (files != null) {
+            for (File f : files) {
+                deleteTree(f);
+            }
+        }
+    }
+
+    /**
+     * Called from native (PlatformOpenFile_Android.cpp) with every attachment view-cache wipe (a lock, a start, a
+     * chat's local delete): the links handed to other apps go with the views, so no plaintext outlives them here.
+     */
+    public static void clearOpenLinks() {
+        final SDLActivity activity = mSingleton;
+        if (activity != null) {
+            clearOpenDir(activity);
+        }
+    }
+
+    /** Called from native (AudioFilePlayer_Android.cpp): plays a sound file attachment in the app. */
+    public static boolean playAudioFile(final String path, final long token) {
+        return PpAudioFilePlayer.play(path, token);
+    }
+
+    public static void pauseAudioFile() {
+        PpAudioFilePlayer.pause();
+    }
+
+    public static void resumeAudioFile() {
+        PpAudioFilePlayer.resume();
+    }
+
+    public static void seekAudioFile(final int positionMs) {
+        PpAudioFilePlayer.seek(positionMs);
+    }
+
+    public static void stopAudioFile() {
+        PpAudioFilePlayer.stop();
+    }
+
+    /** Called from native (OsSecureBlob_Android.cpp, any thread): see PpSecureBlob. Null on success. */
+    public static String secureBlobWrite(final byte[] name, final byte[] bytes, final boolean whenUnlocked) {
+        return PpSecureBlob.write(blobContext(), name, bytes, whenUnlocked);
+    }
+
+    /** PpSecureBlob needs a Context, not the Activity: the application context stays after onDestroy. */
+    private static Context blobContext() {
+        final Context context = SDL.getContext();
+        return context != null ? context.getApplicationContext() : null;
+    }
+
+    /** Called from native (OsSecureBlob_Android.cpp, any thread): status byte, then the blob / code / message. */
+    public static byte[] secureBlobLookup(final byte[] name) {
+        return PpSecureBlob.lookup(blobContext(), name);
+    }
+
+    /** Called from native (OsSecureBlob_Android.cpp, any thread). Null on success. */
+    public static String secureBlobDelete(final byte[] name) {
+        return PpSecureBlob.delete(blobContext(), name);
+    }
+
+    /** Called from native (OsProtectedData_Android.cpp, any thread): the lock screen is up. */
+    public static boolean isDeviceLocked() {
+        return PpSecureBlob.deviceLocked(blobContext());
+    }
+
+    /** Called from native (OsProtectedData_Android.cpp): Settings.Global.BOOT_COUNT, -1 when it cannot be read. */
+    public static int bootCount() {
+        final Context context = blobContext();
+        if (context == null) {
+            return -1;
+        }
+        try {
+            return Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT);
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /** Called from native (OsAppState_Android.cpp, the UI thread). */
+    public static boolean isAppShown() {
+        return sShown;
+    }
+
     /** Only the camera flow's fixed request codes are handled here; SDL's pickers depend on super for the rest. */
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -201,6 +511,9 @@ public class MainActivity extends SDLActivity {
     /** Same rule: SDL's call permission requests depend on super for every code that is not ours. */
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == REQ_NOTIFICATIONS) {
+            return;  // nothing waits on it: notifications are posted or refused as they come
+        }
         if (PpCameraCapture.onPermissionsResult(this, requestCode, grantResults)) {
             return;
         }
@@ -212,10 +525,22 @@ public class MainActivity extends SDLActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         PpLinkBridge.deliver(intent);
+        PpCallNotifications.onActivityIntent(intent);
     }
 
     @Override
     protected void onDestroy() {
+        try {
+            unregisterReceiver(mUserPresentReceiver);
+        } catch (IllegalArgumentException ignored) {
+            // not registered
+        }
+        PpCallNotifications.appGone();
+        if (sOngoingCallServiceStarted) {
+            PpCallService.stop(getApplicationContext());  // the call goes with the app's native side
+        }
+        sOngoingCall = false;
+        sOngoingCallServiceStarted = false;
         uninstallKeyboardSafeAreaPublisher();
         if (mPixelCopyThread != null) {
             mPixelCopyThread.quitSafely();
@@ -462,15 +787,34 @@ public class MainActivity extends SDLActivity {
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        sShown = true;
+    }
+
+    @Override
+    protected void onStop() {
+        sShown = false;
+        super.onStop();
+    }
+
+    @Override
     protected void onResume() {
         mThumbnailCapturedForPause.set(false);
         super.onResume();
+        sInFront = true;
+        if (sOngoingCall && !sOngoingCallServiceStarted) {
+            startOngoingCallServiceIfAllowed();  // the call started while the app was in the background
+        }
+        // The app is open: what the push's "New message" stood for shows in the app.
+        NotificationManagerCompat.from(this).cancel(PUSH_MESSAGE_NOTIFICATION_ID);
         mKeyboardProbeHandler.removeCallbacks(mKeyboardProbeRunnable);
         mKeyboardProbeHandler.post(mKeyboardProbeRunnable);
     }
 
     @Override
     protected void onPause() {
+        sInFront = false;
         mKeyboardProbeHandler.removeCallbacks(mKeyboardProbeRunnable);
         captureRecentsThumbnailOnce();
         super.onPause();
@@ -858,6 +1202,87 @@ public class MainActivity extends SDLActivity {
         NotificationManagerCompat.from(this).notify(req == 0 ? 1 : req, builder.build());
     }
 
+    /**
+     * Called from native SecureScreen when a secret comes on screen or goes (the PIN gate; Me → Account &
+     * security, where the recovery phrase shows). Secure: no screenshot, screen recording, cast or Recents
+     * preview of the window, and the task's icon goes back to the app's (it may hold an earlier screenshot).
+     */
+    public void setSecureScreen(boolean on) {
+        mSecureScreen = on;
+        runOnUiThread(() -> {
+            final Window window = getWindow();
+            if (on) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+                setPlainTaskDescription();
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+            }
+        });
+    }
+
+    @SuppressWarnings("deprecation")
+    private void setPlainTaskDescription() {
+        setTaskDescription(new ActivityManager.TaskDescription(getString(R.string.app_name)));
+    }
+
+    /**
+     * Called from native OngoingCallService (the app's UI thread): the call this device is in, or none. The service
+     * starts only with the app in front and the microphone allowed — a refused start after the launch would crash the
+     * app (startForegroundService without startForeground) — so a call that started in the background gets it at the
+     * next resume.
+     */
+    public void setOngoingCall(boolean on, String title) {
+        runOnUiThread(() -> {
+            sOngoingCall = on;
+            sOngoingCallTitle = title;
+            if (on) {
+                startOngoingCallServiceIfAllowed();
+            } else if (sOngoingCallServiceStarted) {
+                sOngoingCallServiceStarted = false;
+                PpCallService.stop(getApplicationContext());
+            }
+        });
+    }
+
+    private void startOngoingCallServiceIfAllowed() {
+        if (!sOngoingCall || !sInFront
+                || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        sOngoingCallServiceStarted = true;
+        PpCallService.start(getApplicationContext(), sOngoingCallTitle);  // a running one takes the new title
+    }
+
+    /** Called from native AndroidLocalNotifier when Me → Show notifications changes (any thread). */
+    public void setMessageBannersOn(boolean on) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_MESSAGE_BANNERS, on).apply();
+    }
+
+    // Called from native AndroidCallSystemUi (the app's UI thread): the incoming-call notification.
+    public boolean callNotificationsAvailable() {
+        return PpCallNotifications.available();
+    }
+
+    public boolean hasPendingPushCall() {
+        return PpCallNotifications.hasPendingPushCall();
+    }
+
+    public void callMessagingReady() {
+        PpCallNotifications.messagingReady();
+    }
+
+    public void endPendingPushCall() {
+        PpCallNotifications.endPendingPushCall();
+    }
+
+    public void showIncomingCall(String callId, String callerName, boolean video) {
+        PpCallNotifications.showIncoming(callId, callerName, video);
+    }
+
+    public void endIncomingCall(String callId) {
+        PpCallNotifications.endIncoming(callId);
+    }
+
     public void clearLocalNotification(String threadId) {
         int req = threadId == null || threadId.isEmpty() ? 1 : threadId.hashCode();
         NotificationManagerCompat.from(this).cancel(req);
@@ -866,6 +1291,35 @@ public class MainActivity extends SDLActivity {
     /** Ordered BCP-47 tags from Settings → System → Languages, comma-separated (B80: PP follows the first one it ships). */
     public String getPreferredLanguageTags() {
         return android.os.LocaleList.getDefault().toLanguageTags();
+    }
+
+    /**
+     * For DeviceVitals_Android.cpp, read every couple of seconds in a call: {power saver on (1/0), thermal state
+     * 0 nominal .. 3 critical (Apple's four; -1 before API 29), battery percent (-1 unknown), charging (1/0)}.
+     */
+    public int[] getDeviceVitals() {
+        int powerSave = 0;
+        int thermal = -1;
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        if (pm != null) {
+            powerSave = pm.isPowerSaveMode() ? 1 : 0;
+            if (Build.VERSION.SDK_INT >= 29) {
+                // NONE, LIGHT, MODERATE / SEVERE, CRITICAL and above.
+                final int status = pm.getCurrentThermalStatus();
+                thermal = status <= 0 ? 0 : status == 1 ? 1 : status <= 3 ? 2 : 3;
+            }
+        }
+        int battery = -1;
+        int charging = 0;
+        android.os.BatteryManager bm = (android.os.BatteryManager) getSystemService(BATTERY_SERVICE);
+        if (bm != null) {
+            battery = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY);
+            if (battery < 0 || battery > 100) {
+                battery = -1;
+            }
+            charging = bm.isCharging() ? 1 : 0;
+        }
+        return new int[] {powerSave, thermal, battery, charging};
     }
 
     public String getStableDeviceId() {
@@ -882,13 +1336,17 @@ public class MainActivity extends SDLActivity {
     }
 
     private void ensureNotificationChannel() {
+        ensureMessagesChannel(this);
+    }
+
+    private static void ensureMessagesChannel(Context c) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return;
         }
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_MESSAGES, "Messages", NotificationManager.IMPORTANCE_HIGH);
         channel.setDescription("Incoming chat messages");
-        NotificationManager nm = getSystemService(NotificationManager.class);
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
         if (nm != null) {
             nm.createNotificationChannel(channel);
         }
@@ -904,7 +1362,7 @@ public class MainActivity extends SDLActivity {
     }
 
     private void captureRecentsThumbnailOnce() {
-        if (!mThumbnailCapturedForPause.compareAndSet(false, true)) {
+        if (mSecureScreen || !mThumbnailCapturedForPause.compareAndSet(false, true)) {
             return;
         }
         captureRecentsThumbnail();

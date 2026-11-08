@@ -15,6 +15,12 @@ public:
   virtual void ClearForThread(const std::string& thread_id) = 0;
 
   /**
+   * Me → Show notifications (any thread). Where the OS can wake the app's process without the app (an Android
+   * push), the platform keeps it so a banner posted then follows the setting too. Default: nothing to keep.
+   */
+  virtual void SetMessageBannersOn(bool on) { (void)on; }
+
+  /**
    * Optional: invoked on the UI thread when the user taps an OS notification.
    * Default is a no-op (platforms without tap routing).
    */

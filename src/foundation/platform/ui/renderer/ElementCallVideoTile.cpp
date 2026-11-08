@@ -13,17 +13,18 @@ ElementCallVideoTile::ElementCallVideoTile(const ui::String& tag) : ui::Element(
 
 void ElementCallVideoTile::OnRender() {
   const ui::String tile = GetAttribute<ui::String>("tile", "remote");
+  const bool fill = GetAttribute<ui::String>("fit", "fit") == "fill";
   if (tile == "local") {
-    CallVideoTileRenderer::Instance().RenderTile(CallVideoTileKind::Local, this);
+    CallVideoTileRenderer::Instance().RenderTile(CallVideoTileKind::Local, this, 0, fill);
     return;
   }
   if (tile == "peer") {
     const ui::String stream_attr = GetAttribute<ui::String>("stream", "0");
     const uint32_t stream_id = static_cast<uint32_t>(std::strtoul(stream_attr.c_str(), nullptr, 10));
-    CallVideoTileRenderer::Instance().RenderTile(CallVideoTileKind::Peer, this, stream_id);
+    CallVideoTileRenderer::Instance().RenderTile(CallVideoTileKind::Peer, this, stream_id, fill);
     return;
   }
-  CallVideoTileRenderer::Instance().RenderTile(CallVideoTileKind::Remote, this);
+  CallVideoTileRenderer::Instance().RenderTile(CallVideoTileKind::Remote, this, 0, fill);
 }
 
 void RegisterCallVideoTileElement() {

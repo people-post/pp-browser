@@ -16,6 +16,7 @@
 #include "lib/ai/ParkedApproval.h"
 #include "feature/ai/TurnExecutor.h"
 
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -36,6 +37,25 @@ using ToolRegistrationHook = std::function<void(ToolRegistry&)>;
 using ToolPermissionsSaveFn = std::function<Roe<void>(const ToolPermissionsPrefs&)>;
 /** The local contacts, flattened for the on-device app-action planner (called on a worker thread). */
 using LocalContactsFn = std::function<std::vector<LocalPlanContact>()>;
+/** A Bearer to ask again with after HTTP 401; `reused`: the stored key had already changed, nothing was minted. */
+struct BriefKeyRenewal {
+  std::string key;
+  bool reused = false;
+};
+/**
+ * How a brief turn recovers from HTTP 401 (B183). Every call runs on the turn's thread and may block.
+ * `renew`: the gateway refused `rejected`; a key to ask again with (a guest key minted at `llm_base_url`, stored
+ * beside the registered key, or the stored key when it already changed). `commit`: the retry was answered; drop
+ * `rejected` for good and let the sessions take the new key. `stored_key`: the Bearer stored now ("" when none).
+ */
+struct BriefKeyPorts {
+  /** `cancelled`: the turn's stop flag; a renewal that waits (for a mint in flight) gives up when it is set. */
+  std::function<Roe<BriefKeyRenewal>(const std::string& rejected, const std::string& llm_base_url,
+                                     const std::atomic<bool>& cancelled)>
+      renew;
+  std::function<void(const std::string& rejected)> commit;
+  std::function<std::string()> stored_key;
+};
 
 enum class AgentEventType {
   LoadingChanged,
@@ -70,6 +90,12 @@ struct AgentEvent {
   std::string error_kind;
   std::string approval_id;                                   // ApprovalClosed
   ApprovalOutcome approval_outcome = ApprovalOutcome::Stale; // ApprovalClosed
+  /**
+   * The session's turn this event belongs to (AgentSession::TurnGeneration when the step that pushed it was posted;
+   * 0: not known). Home events carry no thread, so the UI tells a stopped turn's late events from the next turn's
+   * by it.
+   */
+  uint64_t turn = 0;
 };
 
 /** Prefix of a stored user message that carried an image; later history sends it as plain text. */
@@ -109,6 +135,8 @@ struct AgentSessionShared {
   std::vector<AgentEvent> pending_events;
   std::mutex last_role_mutex;
   std::unordered_map<std::string, std::string> last_role_by_thread;
+  /** A 401 renewed the brief key (BriefKeyPorts) and no turn has been answered since: no second mint (B183). */
+  std::atomic<bool> brief_key_renewed{false};
 };
 
 class AgentSession {
@@ -128,6 +156,12 @@ public:
   void SetThreadStore(IThreadStore* store);
   /** Replace the brief_AI stream (tests / fake server); otherwise built from the LLM config in Configure. */
   void SetBriefAiStream(BriefAiStreamFn fn);
+  /**
+   * A brief stream turn that gets HTTP 401 renews the key through `ports` and asks once more (B183). At most one
+   * renewal until a turn is answered again (AgentSessionShared::brief_key_renewed); meanwhile a 401 asks again only
+   * when the stored key is another one. Unset: a 401 is the turn's error.
+   */
+  void SetBriefKeyPorts(BriefKeyPorts ports);
   /**
    * How long a turn whose planned tool is missing waits for the promoted MCP server to list it, re-listing every
    * `poll` (default 10 s / 500 ms; tests shorten it).
@@ -157,6 +191,11 @@ public:
   bool IsAppActionRequest(const std::string& text) const;
   SubmitOutcome Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);
   /**
+   * A Home question answered in words only (the ask-AI panel's one-off, settings "?"): no app action is judged on the
+   * device or offered to brief_AI, no tool that changes anything runs, and no permission card is parked.
+   */
+  SubmitOutcome SubmitExplanation(const std::string& user_text);
+  /**
    * `image`: one prepared image sent with this question (brief preset only; any other preset fails the turn).
    * The thread stores the question as kAiImageTurnMarker + text, never the bytes.
    */
@@ -183,6 +222,8 @@ public:
   void Cancel();
   /** A turn runs in this session. */
   bool IsBusy() const;
+  /** The generation of the session's newest turn (raised by every Submit*); events carry it (AgentEvent::turn). */
+  uint64_t TurnGeneration() const;
   /** Block until in-flight ConfigureOnIO finishes (not callable from the IO thread). */
   void WaitForConfigureIdle();
   /**
@@ -190,6 +231,12 @@ public:
    * this session's permission card and question asked back in that thread. UI thread.
    */
   void ForgetThread(const std::string& thread_id);
+  /**
+   * The Home conversation (no thread) starts empty: no earlier turn, summary, card or question asked back goes
+   * with the next question. False (nothing changed) while a turn runs, also one stopped by Cancel() whose steps
+   * have not ended yet (it may still use the conversation). UI thread.
+   */
+  bool StartNewConversation();
 
   bool IsConfigured() const;
   const Conversation& conversation() const;
@@ -205,6 +252,7 @@ private:
   struct Impl;
 
   void BeginStreamTurn();
+  SubmitOutcome SubmitHomeTurn(const std::string& user_text, std::optional<std::string> user_payload, bool explain_only);
   /** Runs a step of a turn where turns run (AgentSessionShared::turn_pool). */
   static void PostTurnTask(const std::shared_ptr<Impl>& state, std::function<void()> task);
   static void ConfigureOnIO(const std::shared_ptr<Impl>& state);

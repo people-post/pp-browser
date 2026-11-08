@@ -241,6 +241,21 @@ std::vector<mesh::MeshHopCandidate> KeepCircuitRelays(std::vector<mesh::MeshHopC
   return hops;
 }
 
+double ResidualCapacityForLoad(const mesh::ServiceLoad load) {
+  switch (load) {
+    case mesh::ServiceLoad::Open:
+      return 1.0;
+    case mesh::ServiceLoad::Busy:
+      return 0.4;
+    case mesh::ServiceLoad::Full:
+    case mesh::ServiceLoad::Draining:
+      return 0.0;
+    case mesh::ServiceLoad::Unknown:
+      break;
+  }
+  return 0.9;
+}
+
 std::vector<mesh::MeshHopCandidate> RankMediaHops(std::vector<mesh::MeshHopCandidate> candidates,
                                             bool prefer_contacts) {
   std::vector<mesh::MeshHopCandidate> filtered;

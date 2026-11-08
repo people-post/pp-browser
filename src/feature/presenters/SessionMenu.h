@@ -15,6 +15,8 @@ enum class SessionMenuItem {
   MarkRead,
   Pin,
   Unpin,
+  /** An AI conversation: give it a name of the user's own. */
+  Rename,
   Mute,
   Unmute,
   /** A muted group: its mentions silent too (G015) — or alerting again. */
@@ -38,6 +40,8 @@ struct SessionMenuState {
   bool unread = false;
   /** Direct chat whose peer is a saved contact. */
   bool has_contact = false;
+  /** The peer's identity is known (a stranger can only be blocked by it). */
+  bool has_peer_identity = true;
   /** That contact is blocked (messages and calls from them are dropped). */
   bool blocked = false;
   bool pinned = false;
@@ -56,6 +60,44 @@ inline bool SessionMenuItemIsDestructive(const SessionMenuItem item) {
          item == SessionMenuItem::LeaveGroup;
 }
 
+/** Leading icon of an item (asset-relative SVG under assets/icons/v2/); every item has one. */
+inline const char* SessionMenuIcon(const SessionMenuItem item) {
+  switch (item) {
+  case SessionMenuItem::MarkUnread:
+    return "../icons/v2/circle-dot.svg";
+  case SessionMenuItem::MarkRead:
+    return "../icons/v2/check-circle.svg";
+  case SessionMenuItem::Pin:
+  case SessionMenuItem::Unpin:
+    return "../icons/v2/pin.svg";
+  case SessionMenuItem::Rename:
+    return "../icons/v2/compose.svg";
+  case SessionMenuItem::Mute:
+  case SessionMenuItem::MuteMentions:
+    return "../icons/v2/bell-off.svg";
+  case SessionMenuItem::Unmute:
+  case SessionMenuItem::AllowMentions:
+    return "../icons/v2/bell.svg";
+  case SessionMenuItem::AskBeforeSharingAi:
+    return "../icons/v2/shield.svg";
+  case SessionMenuItem::Archive:
+  case SessionMenuItem::Unarchive:
+    return "../icons/v2/archive.svg";
+  case SessionMenuItem::ViewContact:
+    return "../icons/v2/user.svg";
+  case SessionMenuItem::Block:
+  case SessionMenuItem::Unblock:
+    return "../icons/v2/block.svg";
+  case SessionMenuItem::ClearChat:
+    return "../icons/v2/eraser.svg";
+  case SessionMenuItem::Delete:
+    return "../icons/v2/trash.svg";
+  case SessionMenuItem::LeaveGroup:
+    return "../icons/v2/log-out.svg";
+  }
+  return "";
+}
+
 /**
  * The items for one row, in display order. Items that make no sense for the row are left out rather
  * than disabled; destructive ones come last.
@@ -64,6 +106,9 @@ inline std::vector<SessionMenuItem> SessionMenuItems(const SessionMenuState& sta
   std::vector<SessionMenuItem> items;
   items.push_back(state.unread ? SessionMenuItem::MarkRead : SessionMenuItem::MarkUnread);
   items.push_back(state.pinned ? SessionMenuItem::Unpin : SessionMenuItem::Pin);
+  if (state.kind == SessionKind::Ai) {
+    items.push_back(SessionMenuItem::Rename);
+  }
   if (state.kind != SessionKind::Ai) { // an AI thread never notifies
     items.push_back(state.muted ? SessionMenuItem::Unmute : SessionMenuItem::Mute);
   }
@@ -77,6 +122,8 @@ inline std::vector<SessionMenuItem> SessionMenuItems(const SessionMenuState& sta
   if (state.kind == SessionKind::Direct && state.has_contact) {
     items.push_back(SessionMenuItem::ViewContact);
     items.push_back(state.blocked ? SessionMenuItem::Unblock : SessionMenuItem::Block);
+  } else if (state.kind == SessionKind::Direct && state.has_peer_identity) {
+    items.push_back(SessionMenuItem::Block); // a stranger: blocking saves them as a blocked contact
   }
   items.push_back(SessionMenuItem::ClearChat);
   // Closing a group thread is leaving the group; the close flow asks and hands ownership over when needed.

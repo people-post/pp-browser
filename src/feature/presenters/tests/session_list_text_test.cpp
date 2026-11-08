@@ -1,5 +1,7 @@
 #include "feature/presenters/SessionListText.h"
 
+#include "foundation/i18n/LocalizationService.h"
+
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -38,11 +40,32 @@ TEST(SessionListTextTest, LongMessageIsCutOnACharacterBoundary) {
   EXPECT_EQ(AiThreadTitleFromMessage("abcdefghijklmnopqrstuvwx"), "abcdefghijklmnopqrstuvwx");
 }
 
-TEST(SessionListTextTest, DateLabelShowsDateAndTimeThisYearAndFullDateBefore) {
+namespace {
+struct LabelsEnglish : ::testing::Test {
+  void SetUp() override {
+    ASSERT_TRUE(pbr::LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+    pbr::LocalizationService::Instance().SetPreferredLanguage("en");
+  }
+  void TearDown() override { pbr::LocalizationService::Instance().SetPreferredLanguage("en"); }
+};
+} // namespace
+
+TEST_F(LabelsEnglish, WhatsAppStyleDays) {
+  const std::tm now = Day(2026, 10, 29, 301, 18, 30); // a Thursday
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 28, 300, 23, 59), now), "Yesterday");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 27, 299, 8, 0), now), "Tuesday");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 23, 295, 8, 0), now), "Friday");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 22, 294, 8, 0), now), "10/22"); // 7 days ago: the date
+  pbr::LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 28, 300, 23, 59), now), "昨天");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 27, 299, 8, 0), now), "星期二");
+}
+
+TEST(SessionListTextTest, DateLabelShowsTimeTodayDateThisYearAndFullDateBefore) {
   const std::tm now = Day(2026, 10, 3, 275, 18, 30);
-  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 3, 275, 9, 5), now), "10/3 09:05");
-  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 2, 274, 23, 59), now), "10/2 23:59");
-  EXPECT_EQ(SessionDateLabel(Day(2026, 1, 15, 14), now), "1/15 00:00");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 3, 275, 9, 5), now), "09:05");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 9, 2, 244, 23, 59), now), "9/2");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 1, 15, 14), now), "1/15");
   EXPECT_EQ(SessionDateLabel(Day(2025, 12, 31, 364), now), "2025/12/31");
 }
 
@@ -107,4 +130,23 @@ TEST(SessionListTextTest, PreviewKeepsAngleBracketsThatAreNotTags) {
   EXPECT_EQ(SessionPreviewLine("1 < 2 而且 3 > 2"), "1 < 2 而且 3 > 2");
   EXPECT_EQ(SessionPreviewLine("爱你 <3"), "爱你 <3");
   EXPECT_EQ(SessionPreviewLine("a<b 没有右括号"), "a<b 没有右括号");
+}
+
+// Chats list rows keep their height: a thread without text shows the localised placeholder, marked so the row can draw it quieter.
+TEST(SessionPreviewTest, AnEmptyPreviewGetsThePlaceholderAndIsMarked) {
+  const SessionPreviewShown empty = ResolveSessionPreview(SessionPreviewLine(""), "No messages yet");
+  EXPECT_EQ(empty.text, "No messages yet");
+  EXPECT_TRUE(empty.placeholder);
+  const SessionPreviewShown real = ResolveSessionPreview(SessionPreviewLine("see you"), "No messages yet");
+  EXPECT_EQ(real.text, "see you");
+  EXPECT_FALSE(real.placeholder);
+}
+
+TEST(SessionPreviewTest, ThePlaceholderIsWordedInBothLanguages) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  EXPECT_EQ(Tr("sidebar.preview_empty"), "No messages yet");
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("sidebar.preview_empty"), "暂无消息");
+  LocalizationService::Instance().SetPreferredLanguage("en");
 }

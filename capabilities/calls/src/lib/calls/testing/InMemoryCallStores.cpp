@@ -55,6 +55,19 @@ Roe<std::vector<CallSession>> InMemoryCallSessionStore::ListSessionsForGroup(con
   return group;
 }
 
+Roe<std::vector<CallSession>> InMemoryCallSessionStore::ListRecentSessions(const size_t limit) const {
+  std::lock_guard lock(mutex_);
+  std::vector<CallSession> all;
+  for (const auto& [id, session] : sessions_) {
+    all.push_back(session);
+  }
+  NewestFirst(all);
+  if (all.size() > limit) {
+    all.resize(limit);
+  }
+  return all;
+}
+
 Roe<void> InMemoryCallSessionStore::UpsertParticipant(const CallParticipant& participant) const {
   std::lock_guard lock(mutex_);
   auto [row, inserted] = participants_.try_emplace({participant.call_id, participant.identity}, participant);
@@ -74,8 +87,10 @@ Roe<void> InMemoryCallSessionStore::UpsertParticipant(const CallParticipant& par
   } else {
     joined_at = std::min(*kept.joined_at, *participant.joined_at);
   }
+  const std::string brought_by = participant.brought_by.empty() ? kept.brought_by : participant.brought_by;
   kept = participant;
   kept.joined_at = joined_at;
+  kept.brought_by = brought_by; // V062: kept once known
   return {};
 }
 

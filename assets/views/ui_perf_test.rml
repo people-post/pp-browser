@@ -1,0 +1,57 @@
+<div class="uiperf-page" data-model="ui_perf">
+  <div class="uiperf-list">
+    <div class="uiperf-row row" data-for="r : rows"
+         data-class-uiperf-row--mine="r.mine">
+      <div class="uiperf-bubble prompt-composer-pill">
+        <div class="uiperf-bubble-inner"
+             data-class-bubble-user="r.mine"
+             data-class-bubble-assistant="!r.mine">
+          <p class="uiperf-line">{{r.line1}}</p>
+          <p class="uiperf-line">{{r.line2}}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="uiperf-bar uiperf-bar--top stack"
+       data-class-surface-chrome--frost="bars_translucent"
+       data-class-uiperf-bar--glass="bars_translucent"
+       data-class-surface-chrome--solid="!bars_translucent">
+    <p class="settings-header-title">{{i18n:dev.perf.title}}</p>
+    <div class="settings-toggle-row row">
+      <span class="settings-label settings-toggle-label">{{i18n:dev.perf.bars}}</span>
+      <button class="settings-switch" type="button"
+              data-class-settings-switch--on="bars_translucent"
+              data-event-click="toggle_bars()">
+        <div class="settings-switch-knob"></div>
+      </button>
+    </div>
+    <div class="settings-toggle-row row">
+      <span class="settings-label settings-toggle-label">{{i18n:dev.perf.anim}}</span>
+      <button class="settings-switch" type="button"
+              data-class-settings-switch--on="anim_on"
+              data-event-click="toggle_anim()">
+        <div class="settings-switch-knob"></div>
+      </button>
+    </div>
+    <div class="settings-toggle-row row">
+      <span class="settings-label settings-toggle-label">{{i18n:dev.perf.stress}}</span>
+      <button class="settings-switch" type="button"
+              data-class-settings-switch--on="stress"
+              data-event-click="toggle_stress()">
+        <div class="settings-switch-knob"></div>
+      </button>
+    </div>
+  </div>
+
+  <div class="uiperf-bar uiperf-bar--bottom row"
+       data-class-surface-chrome--frost="bars_translucent"
+       data-class-uiperf-bar--glass="bars_translucent"
+       data-class-surface-chrome--solid="!bars_translucent">
+    <div class="uiperf-stats stack">
+      <p class="text uiperf-stat">{{stats_live}}</p>
+      <p class="text muted uiperf-stat">{{stats_last}}</p>
+    </div>
+    <div class="uiperf-spinner bubble-user" data-class-uiperf-spinner--on="anim_on"></div>
+  </div>
+</div>

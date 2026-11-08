@@ -88,6 +88,21 @@ TEST(SessionListWindowTest, SidebarLoadingLineFollowsTheMoreFlag) {
   EXPECT_NE(ReadAsset("locales/zh-Hans.json").find("\"sidebar.loading_more\": \"加载中…\""), std::string::npos);
 }
 
+// The phone chat row (DESIGN-pp-ui 8.3) carries an avatar, a time, a type icon and the unread pill, plus the
+// always-visible search box with its overlay label (inputs render no placeholder).
+TEST(SessionListWindowTest, SidebarRowHasAvatarTimeTypeIconUnreadAndSearch) {
+  const std::string rml = ReadAsset("views/sidebar.rml");
+  for (const char* piece :
+       {"class=\"chat-row-avatar\"", "{{session.avatar_letter}}", "data-class-avatar-tone-7=", "chat-row-type--private",
+        "class=\"sidebar-session-date\"", "{{session.date_label}}", "{{session.unread_display}}", "class=\"chat-row-mute\"",
+        "data-value=\"sessions_query\"", "data-event-change=\"sessions_search_changed()\"",
+        "{{i18n:sidebar.search_placeholder}}"}) {
+    EXPECT_NE(rml.find(piece), std::string::npos) << piece;
+  }
+  EXPECT_NE(ReadAsset("locales/en.json").find("\"sidebar.search_placeholder\": \"Search\""), std::string::npos);
+  EXPECT_NE(ReadAsset("locales/zh-Hans.json").find("\"sidebar.search_placeholder\": \"搜索\""), std::string::npos);
+}
+
 } // namespace
 
 TEST(SessionListWindowTest, IncludeReachesTheOpenChatInWholeSteps) {

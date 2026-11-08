@@ -1,0 +1,3616 @@
+/* Template for colors-light.rcss and colors-dark.rcss (see scripts/ui/gen_theme_colors.py).
+   Each token placeholder in double braces is replaced by that token's value for the theme
+   being generated. A line holding only an only-light or only-dark marker comment opens a
+   section kept for that theme alone; a line holding only the end marker closes it. */
+@media (theme: {{theme}}) {
+body {
+  color: {{label}};
+  background-color: {{bg}};
+}
+
+/* The same as the body it covers: nothing changes until a bar slides under it. */
+.shell-statusbar-strip {
+  background-color: {{bg}};
+}
+
+/* Phones: the strip takes the colour of the page under it (ShellHost::ApplySafeAreaLayout picks the surface). */
+.shell-statusbar-strip.shell-statusbar-strip--home {
+  background-color: {{x-dock}};
+}
+
+.shell-statusbar-strip.shell-statusbar-strip--me,
+.shell-statusbar-strip.shell-statusbar-strip--new_chat {
+  background-color: {{bg-grouped}};
+}
+
+/* The home-indicator band under the grouped pages (Me and its detail pages, New chat); clear elsewhere. */
+.shell-home-indicator-strip.shell-home-indicator-strip--me,
+.shell-home-indicator-strip.shell-home-indicator-strip--new_chat {
+  background-color: {{bg-grouped}};
+}
+
+.shell-statusbar-strip.shell-statusbar-strip--add_contact {
+  background-color: {{x-bar}};
+}
+
+/* Monochrome icons are white sources; tint with image-color (does not inherit). */
+svg {
+  image-color: {{label}};
+}
+
+selection {
+  background-color: {{accent-tint}};
+}
+
+.bubble-user selection {
+  background-color: {{quote-bg-out}};
+}
+
+.bubble-assistant selection {
+  background-color: {{accent-tint}};
+}
+
+.prompt-composer-input selection {
+  background-color: {{accent-tint}};
+}
+
+.shell-dialog-prompt {
+  background-color: {{bg-card-2}};
+  border-color: {{separator}};
+}
+
+.shell-dialog-prompt:focus {
+  border-color: {{accent}};
+}
+
+.prompt-composer-input scrollbarvertical sliderbar {
+  background-color: {{x-scrollbar}};
+}
+
+.chat-form-field selection {
+  background-color: {{accent-tint}};
+}
+
+.text {
+  color: {{label}};
+}
+
+.heading-1 {
+  color: {{label}};
+}
+
+.heading-2 {
+  color: {{label}};
+}
+
+.heading-3 {
+  color: {{label}};
+}
+
+.btn-primary, .prompt-send-btn, .prompt-stop-btn, .sidebar-new-chat, .contacts-find-btn, .chat-suggestion-primary {
+  background-color: {{accent}};
+  color: {{label-on-accent}};
+}
+
+.btn-primary:hover, .btn-primary:focus, .prompt-send-btn:hover, .prompt-stop-btn:hover, .sidebar-new-chat:hover, .contacts-find-btn:hover, .chat-suggestion-primary:hover {
+  background-color: {{accent}};
+}
+
+.btn-primary svg, .prompt-send-btn svg, .prompt-stop-btn svg, .sidebar-new-chat svg, .contacts-find-btn svg, .contacts-action-secure svg {
+  image-color: {{label-on-accent}};
+}
+
+.prompt-voice-toggle-btn svg {
+  image-color: {{gray}};
+}
+
+.prompt-voice-toggle-btn:hover svg {
+  image-color: {{label}};
+}
+
+.prompt-voice-bar {
+  background-color: {{fill-2}};
+  color: {{label}};
+}
+
+.prompt-voice-bar:hover {
+  background-color: {{fill-2}};
+}
+
+.prompt-voice-bar--active, .prompt-voice-bar--active:hover {
+  background-color: {{danger}};
+  color: {{label-on-accent}};
+}
+
+.prompt-emoji-btn svg {
+  image-color: {{gray}};
+}
+
+.prompt-emoji-btn:hover svg {
+  image-color: {{label}};
+}
+
+.prompt-attach-btn svg {
+  image-color: {{gray}};
+}
+
+.prompt-attach-btn:hover svg {
+  image-color: {{label}};
+}
+
+.prompt-capture-btn svg {
+  image-color: {{gray}};
+}
+
+.prompt-capture-btn:hover svg {
+  image-color: {{label}};
+}
+
+.prompt-attachment-chip-remove svg {
+  image-color: {{gray}};
+}
+
+.prompt-attachment-chip-remove:hover svg {
+  image-color: {{label}};
+}
+
+.btn-secondary, .chat-suggestion {
+  background-color: {{accent-tint}};
+  color: {{accent}};
+}
+
+.btn-secondary:hover, .btn-secondary:focus, .chat-suggestion:hover {
+  background-color: {{accent-tint}};
+}
+
+.btn-danger {
+  background-color: {{danger}};
+  color: {{label-on-accent}};
+}
+
+.btn-danger:hover, .btn-danger:focus {
+  background-color: {{danger}};
+}
+
+.btn-danger-soft {
+  background-color: {{fill-2}};
+  color: {{danger}};
+  border: 1dp {{separator}};
+}
+
+.btn-danger-soft:hover, .btn-danger-soft:focus {
+  background-color: {{fill}};
+  color: {{danger}};
+  border: 1dp {{danger}};
+}
+
+.btn-danger svg {
+  image-color: {{label-on-accent}};
+}
+
+.btn-danger-soft svg {
+  image-color: {{danger}};
+}
+
+.btn-danger-soft:hover svg, .btn-danger-soft:focus svg {
+  image-color: {{danger}};
+}
+
+.btn-ghost {
+  background-color: transparent;
+  color: {{label}};
+}
+
+.btn-ghost:hover, .btn-ghost:focus {
+  background-color: {{fill-2}};
+  color: {{label}};
+}
+
+.field {
+  background-color: {{bg-card-2}};
+  color: {{label}};
+  border: 1dp {{separator}};
+}
+
+select selectbox {
+  background-color: {{bg-card-2}};
+  border: 1dp {{separator}};
+}
+
+select selectbox option:hover {
+  background-color: {{fill-2}};
+}
+
+.card {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+}
+
+.error {
+  color: {{danger}};
+}
+
+/* "This message was deleted": a shade lighter than .muted (two classes, so it wins over .muted). */
+.bubble-deleted .bubble-deleted-text {
+  color: {{label-3}};
+}
+
+.muted {
+  color: {{label-2}};
+}
+
+.bubble-user {
+  background-color: {{bubble-out}};
+  color: {{label-on-accent}};
+}
+
+/* Call rows: ours like our bubbles, theirs like theirs. Icons are white sources tinted with image-color. */
+.message-row-user .chat-call-row {
+  background-color: {{bubble-out}};
+  color: {{label-on-accent}};
+}
+
+.message-row-user .chat-call-row svg {
+  image-color: {{label-on-accent}};
+}
+
+.message-row-user .chat-call-row.muted {
+  background-color: {{x-bubble-out-muted}};
+}
+
+.message-row-peer .chat-call-row {
+  background-color: {{bubble-in}};
+}
+
+.message-row-peer .chat-call-row svg {
+  image-color: {{label}};
+}
+
+.bubble-text {
+  color: {{label-on-accent}};
+}
+
+.bubble-assistant {
+  background-color: {{bubble-in}};
+  border: 1dp {{separator}};
+}
+
+.bubble-assistant h1, .bubble-assistant h2, .bubble-assistant h3 {
+  color: {{label}};
+}
+
+.bubble-assistant p, .bubble-assistant li {
+  color: {{label}};
+}
+
+.prompt-composer-pill {
+  background-color: {{bg-card-2}};
+  border: 1dp {{separator}};
+  box-shadow: 0 2dp 8dp {{shadow}};
+}
+
+.chat-link {
+  color: {{link}};
+}
+
+.chat-mention {
+  color: {{mention}};
+  background-color: {{accent-tint}};
+}
+
+/* In our own (blue) bubble the text stays white; only the chip shows. */
+.bubble-user .chat-mention {
+  color: {{label-on-accent}};
+  background-color: {{quote-bg-out}};
+}
+
+/* A peer's message that mentions this account: the whole row is tinted, with a bar on its left. */
+.message-row-mentions-me {
+  background-color: {{mention-row}};
+  border-left: 3dp {{warn}};
+}
+
+/* The row a jump landed on (tapped quote, search hit, mention): see-through amber, wins over the mention tint. */
+.message-row.message-row-jump-target {
+  background-color: {{x-jump-tint}};
+}
+
+/* Search inside the chat: the matching text is marked, pale yellow; the hit the search is on, deeper. */
+.search-mark {
+  background-color: {{mention-row}};
+}
+
+.search-mark-current {
+  background-color: {{warn}};
+}
+
+/* @only light */
+/* In our own (blue) bubble the text is white: dark on the mark, so it stays readable. */
+.bubble-user .search-mark {
+  color: {{label}};
+}
+/* @end */
+
+.chat-search-cancel {
+  color: {{label}};
+}
+
+.chat-search-count {
+  color: {{label-2}};
+}
+
+.chat-search-step svg {
+  image-color: {{gray}};
+}
+
+/* On the tinted row the text sits on the tint: no bubble of its own. */
+.message-row-mentions-me .bubble-assistant {
+  background-color: transparent;
+  border-width: 0;
+}
+
+.chat-inline-link {
+  color: {{link}};
+}
+
+.inline-code {
+  background-color: {{fill-2}};
+}
+
+.code-block {
+  background-color: {{bg-card-2}};
+  color: {{label}};
+}
+
+.chat-jump-latest {
+  background-color: {{bg-card}};
+  color: {{accent}};
+}
+
+.chat-jump-latest:hover {
+  background-color: {{bg-card-2}};
+}
+
+.chat-form {
+  border: 1dp {{separator}};
+  background-color: {{bg-card}};
+}
+
+.chat-form-label {
+  color: {{label}};
+}
+
+.chat-form-field {
+  background-color: {{bg-card-2}};
+  color: {{label}};
+  border: 1dp {{separator}};
+}
+
+.chat-form-submit {
+  background-color: {{accent}};
+  color: {{label-on-accent}};
+}
+
+.chat-form-submit:hover {
+  background-color: {{accent}};
+}
+
+.chat-card {
+  border: 1dp {{separator}};
+  background-color: {{bg-card}};
+}
+
+.chat-card-highlight {
+  border-color: {{accent}};
+  background-color: {{accent-tint}};
+}
+
+.chat-table th, .chat-table td {
+  border: 1dp {{separator}};
+}
+
+.chat-key-value-label {
+  color: {{label-2}};
+}
+
+.chat-callout {
+  background-color: {{accent-tint}};
+}
+
+.chat-callout-warning {
+  background-color: {{mention-row}};
+}
+
+.chat-quote {
+  border-left: 3dp {{quote-bar}};
+}
+
+.chat-long-list-scroll {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+}
+
+.chat-long-list-item {
+  border-bottom: 1dp {{separator}};
+}
+
+.chat-calendar {
+  border: 1dp {{separator}};
+  background-color: {{bg-card}};
+}
+
+.calendar-nav {
+  background-color: {{accent}};
+  color: {{label-on-accent}};
+}
+
+.calendar-nav:hover {
+  background-color: {{accent}};
+}
+
+.calendar-weekdays {
+  color: {{label-2}};
+}
+
+.calendar-day {
+  background-color: {{accent}};
+  color: {{label-on-accent}};
+}
+
+.calendar-day:hover {
+  background-color: {{accent}};
+}
+
+.calendar-day-muted {
+  color: {{label-3}};
+}
+
+.shell-body--framed {
+  border-color: {{separator}};
+}
+
+.shell-titlebar {
+  background-color: {{bg-chrome}};
+  border-bottom-color: {{separator}};
+}
+
+.shell-titlebar-title {
+  color: {{label}};
+}
+
+.shell-titlebar-btn {
+  background-color: transparent;
+}
+
+.shell-titlebar-btn:hover {
+  background-color: {{fill-2}};
+}
+
+.shell-titlebar-btn svg {
+  image-color: {{label}};
+}
+
+.shell-titlebar-btn--close:hover {
+  background-color: {{danger}};
+}
+
+.shell-titlebar-btn--close:hover svg {
+  image-color: {{label-on-accent}};
+}
+
+.shell-titlebar-btn--traffic, .shell-titlebar-btn--traffic:hover {
+  background-color: transparent;
+}
+
+.shell-titlebar-btn--traffic-close .shell-titlebar-traffic-dot {
+  background-color: {{danger}};
+}
+
+.shell-titlebar-btn--traffic-close:hover .shell-titlebar-traffic-dot {
+  background-color: {{danger}};
+}
+
+.shell-titlebar-btn--traffic-minimize .shell-titlebar-traffic-dot {
+  background-color: {{warn}};
+}
+
+.shell-titlebar-btn--traffic-minimize:hover .shell-titlebar-traffic-dot {
+  background-color: {{warn}};
+}
+
+.shell-titlebar-btn--traffic-zoom .shell-titlebar-traffic-dot {
+  background-color: {{success}};
+}
+
+.shell-titlebar-btn--traffic-zoom:hover .shell-titlebar-traffic-dot {
+  background-color: {{success}};
+}
+
+.shell-titlebar-btn--traffic svg {
+  image-color: {{x-traffic-glyph}};
+}
+
+/* White on the green zoom dot (the close and minimize dots keep the dark macOS glyphs). */
+.shell-titlebar-btn--traffic-zoom svg {
+  image-color: {{label-on-accent}};
+}
+
+.shell-banner {
+  background-color: {{mention-row}};
+  border-bottom: 1dp {{separator}};
+  color: {{label}};
+}
+
+.shell-banner-text {
+  color: {{label}};
+}
+
+.shell-banner-dismiss {
+  background-color: {{fill-2}};
+  color: {{label}};
+}
+
+.shell-toast {
+  background-color: {{x-toast-bg}};
+  color: {{label-on-accent}};
+  box-shadow: 0 2dp 8dp {{shadow}};
+}
+
+.shell-toast-text {
+  color: {{label-on-accent}};
+}
+
+/* No shadow (DESIGN-pp-ui §6; a shadow here also drew a grey block on the simulator): a hairline keeps the white
+   pill apart from a white page. */
+.shell-body--compact .shell-toast {
+  background-color: {{bg-card}};
+  border-color: {{separator}};
+  box-shadow: none;
+}
+
+.shell-body--compact .shell-toast-text {
+  color: {{label}};
+}
+
+/* @only dark */
+.shell-body--compact .shell-toast {
+  background-color: {{bg-card-2}};
+}
+/* @end */
+
+.shell-activity-strip {
+  background-color: {{accent}};
+}
+
+.shell-statusbar {
+  background-color: {{bg-chrome}};
+  border-top-color: {{separator}};
+}
+
+.shell-statusbar-cluster:hover {
+  background-color: {{fill-2}};
+}
+
+.shell-statusbar-divider {
+  background-color: {{separator}};
+}
+
+.shell-statusbar-brief--ok svg {
+  image-color: {{success}};
+}
+
+.shell-statusbar-brief--failed svg {
+  image-color: {{danger}};
+}
+
+.shell-statusbar-brief--unknown svg {
+  image-color: {{gray}};
+}
+
+.shell-statusbar-direct--ok svg {
+  image-color: {{success}};
+}
+
+.shell-statusbar-direct--off svg {
+  image-color: {{warn}};
+}
+
+.shell-statusbar-direct--error svg {
+  image-color: {{danger}};
+}
+
+.shell-statusbar-direct--checking svg {
+  image-color: {{gray}};
+}
+
+.shell-statusbar-inbound--ok svg {
+  image-color: {{success}};
+}
+
+.shell-statusbar-inbound--off svg {
+  image-color: {{warn}};
+}
+
+.shell-call-quality-bar {
+  background-color: {{fill}};
+}
+
+.shell-call-quality-bar--on {
+  background-color: {{gray}};
+}
+
+.shell-call-quality--ok .shell-call-quality-bar--on {
+  background-color: {{gray}};
+}
+
+.shell-call-quality--warn .shell-call-quality-bar--on {
+  background-color: {{warn}};
+}
+
+.shell-call-quality--error .shell-call-quality-bar {
+  background-color: {{fill}};
+}
+
+.shell-call-quality--error .shell-call-quality-bar--on {
+  background-color: {{danger}};
+}
+
+.shell-call-quality--warn .shell-call-quality-label, .shell-call-quality-hint {
+  color: {{warn}};
+}
+
+.shell-call-quality--error .shell-call-quality-label {
+  color: {{danger}};
+}
+
+.shell-call-debug-subtitle {
+  color: {{label-2}};
+}
+
+.shell-statusbar-help svg {
+  image-color: {{secure}};
+}
+
+.shell-statusbar-label--warn {
+  color: {{warn}};
+}
+
+.shell-statusbar-label--error {
+  color: {{danger}};
+}
+
+.shell-statusbar-popover {
+  background-color: {{bg-card}};
+  border-color: {{separator}};
+  box-shadow: 0 8dp 24dp {{shadow}};
+}
+
+.shell-statusbar-popover-scrim {
+  background-color: {{x-hit-scrim}};
+}
+
+.shell-pane {
+  background-color: {{bg}};
+}
+
+.shell-pane-secondary {
+  border-right: 1dp {{separator}};
+}
+
+.shell-splitter:hover, .shell-splitter--active {
+  background-color: {{separator}};
+}
+
+.shell-splitter--active {
+  background-color: {{label-3}};
+}
+
+.shell-nav-rail {
+  background-color: {{bg-chrome}};
+  border-right: 1dp {{separator}};
+}
+
+.shell-nav-rail--compact {
+  border-right: 0;
+  border-top: 0;
+  background-color: transparent;
+}
+
+
+.shell-nav-tab {
+  background-color: transparent;
+  color: {{gray}};
+}
+
+.shell-nav-tab svg {
+  image-color: {{gray}};
+}
+
+.shell-nav-tab:hover {
+  background-color: {{fill-2}};
+}
+
+.shell-nav-tab--active {
+  background-color: {{accent-tint}};
+  color: {{accent}};
+}
+
+.shell-nav-tab--active svg {
+  image-color: {{accent}};
+}
+
+/* Phone tab bar: selection is a colour change only, no tint. */
+.shell-nav-rail--compact .shell-nav-tab:hover,
+.shell-nav-rail--compact .shell-nav-tab--active {
+  background-color: transparent;
+}
+
+/* Phone two-word tab bar (DEV/PLAN-minimal-nav.md A): grey words, the chosen one in the label colour. The bar itself is
+   the bottom chrome's material: 78% bar colour over a blur with Transparency on, solid with it off. */
+.shell-nav-rail--text .shell-nav-tab {
+  color: {{gray}};
+}
+
+.shell-nav-rail--text .shell-nav-tab--active {
+  color: {{label}};
+}
+
+.shell-nav-rail--text .shell-nav-tab--active .shell-nav-tab-text-wrap {
+  background-color: {{fill-2}};
+}
+
+.shell-chat-overlay {
+  background-color: {{chat-bg}};
+}
+
+.shell-chat-overlay-chrome {
+  background-color: {{x-bar}};
+}
+
+.shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome {
+  background-color: {{x-bar}};
+  border-width: 0;
+}
+
+.shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome--frost {
+  background-color: {{x-bar-blur}};
+}
+
+/* Phone bars: no hairlines; a fade from the bar colour to clear under a top bar, and over the tab bar and the
+   composer. Solid bars fade from x-bar, frosted ones from x-bar-blur. */
+.bar-fade {
+  decorator: linear-gradient(to bottom, {{x-bar}}, {{x-bar-fade}});
+}
+
+.bar-fade--up {
+  decorator: linear-gradient(to bottom, {{x-bar-fade}}, {{x-bar}});
+}
+
+.shell-nav-page--frost .pane-nav .bar-fade,
+.shell-nav-page--frost .settings-detail-header .bar-fade,
+.surface-chrome--frost .bar-fade {
+  decorator: linear-gradient(to bottom, {{x-bar-blur}}, {{x-bar-fade}});
+}
+
+.shell-bottom-chrome--frost .bar-fade--up {
+  decorator: linear-gradient(to bottom, {{x-bar-fade}}, {{x-bar-blur}});
+}
+
+.shell-layer-compact .settings-detail-header {
+  background-color: {{x-bar}};
+}
+
+.shell-nav-page--frost .settings-detail-header {
+  background-color: {{x-bar-blur}};
+}
+
+/* A pushed page's bar: itself clear; its material child (.nav-bar-bg, shown once content is under the bar) is the bar
+   colour, frosted with Transparency on, solid with it off. */
+.shell-layer-compact .nav-bar-host .settings-detail-header,
+.shell-layer-transient.shell-layer-compact.nav-bar-host .shell-transient-chrome {
+  background-color: transparent;
+}
+
+.nav-bar-bg {
+  background-color: {{x-bar}};
+}
+
+.shell-nav-page--frost .nav-bar-host .nav-bar-bg,
+.shell-layer-transient.nav-bar-host .surface-chrome--frost .nav-bar-bg {
+  background-color: {{x-bar-blur}};
+}
+
+.page-large-title {
+  color: {{label}};
+}
+
+/* What runs under the chat header stays under a banner. */
+.shell-chat-overlay .chat-gap-banner {
+  background-color: {{chat-bg}};
+}
+
+.shell-pane-auxiliary {
+  border-left: 1dp {{separator}};
+}
+
+.pane-nav-bg {
+  background-color: {{x-bar}};
+}
+
+.shell-nav-page--frost .pane-nav-bg {
+  background-color: {{x-bar-blur}};
+}
+
+.pane-nav-btn svg {
+  image-color: {{accent}};
+}
+
+.pane-nav-btn--text {
+  color: {{accent}};
+}
+
+.large-title, .pane-nav-title, .pane-nav-avatar-name {
+  color: {{label}};
+}
+
+.shell-bottom-chrome {
+  background-color: {{x-bar}};
+}
+
+.shell-bottom-chrome--frost {
+  background-color: {{x-bar-blur}};
+}
+
+.shell-drawer-scrim, .shell-sheet-scrim {
+  background-color: {{scrim}};
+}
+
+.shell-drawer {
+  background-color: {{bg-card}};
+  box-shadow: 2dp 0 12dp {{shadow}};
+}
+
+.shell-sheet {
+  background-color: {{bg-card}};
+  box-shadow: -2dp 0 12dp {{shadow}};
+}
+
+.shell-sheet-compact {
+  background-color: {{bg-card}};
+  border-left: 1dp {{separator}};
+  box-shadow: -2dp 0 8dp {{shadow}};
+}
+
+.shell-sheet-compact-chrome {
+  background-color: {{bg-chrome}};
+  border-bottom: 1dp {{separator}};
+}
+
+.shell-sheet-compact-chrome.surface-chrome--frost {
+  background-color: {{bg-chrome-blur}};
+  border-bottom: 1dp {{separator}};
+  border-top: 1dp {{separator}};
+}
+
+.shell-toolbar {
+  background-color: {{bg-chrome}};
+  border-top: 1dp {{separator}};
+}
+
+.shell-toolbar-title {
+  color: {{label}};
+}
+
+.shell-transient-chrome {
+  background-color: {{bg-chrome}};
+  border-bottom: 1dp {{separator}};
+  border-top: 1dp {{separator}};
+  box-shadow: 0 2dp 12dp {{shadow}};
+}
+
+.shell-transient-chrome.surface-chrome--frost {
+  background-color: {{bg-chrome-blur}};
+}
+
+.shell-layer-compact .shell-transient-chrome {
+  background-color: {{x-bar}};
+  border-width: 0;
+  box-shadow: none;
+}
+
+.shell-layer-compact .shell-transient-chrome.surface-chrome--frost {
+  background-color: {{x-bar-blur}};
+}
+
+.shell-composer-mount.surface-chrome {
+  background-color: {{x-bar}};
+  border-width: 0;
+}
+
+.shell-composer-mount.surface-chrome--frost {
+  background-color: {{x-bar-blur}};
+}
+
+.shell-composer-mount.surface-chrome .prompt-composer-pill {
+  background-color: {{bg-card-2}};
+  border: 1dp {{separator}};
+  box-shadow: none;
+}
+
+/* Floating Chrome utilities (compact shell; theme-only). */
+.surface-chrome {
+  background-color: {{bg-chrome}};
+  border-top: 1dp {{separator}};
+}
+
+.surface-chrome--frost {
+  background-color: {{bg-chrome-blur}};
+}
+
+.surface-chrome--solid {
+  background-color: {{bg-chrome}};
+}
+
+.shell-back-btn {
+  background-color: {{fill}};
+  color: {{label}};
+}
+
+.shell-layer-transient {
+  background-color: {{bg}};
+}
+
+.shell-scrim {
+  background-color: {{scrim}};
+}
+
+.photo-preview {
+  background-color: {{x-photo-scrim}};
+}
+
+.photo-preview-spinner {
+  border-color: {{x-photo-spinner-track}};
+  border-top-color: {{x-photo-spinner}};
+}
+
+.shell-startup-cover {
+  background-color: {{bg}};
+}
+
+.shell-startup-cover-name {
+  color: {{label}};
+}
+
+.shell-frame {
+  background-color: {{bg-card}};
+}
+
+.shell-close-btn {
+  background-color: {{fill}};
+  color: {{label-2}};
+}
+
+.shell-close-btn:hover, .shell-close-btn:focus {
+  background-color: {{fill-2}};
+}
+
+.shell-close-btn svg {
+  image-color: {{label-2}};
+}
+
+.shell-page-sheet {
+  background-color: {{bg-card}};
+}
+
+.shell-page-sheet-grabber,
+.emoji-sheet-grabber {
+  background-color: {{label-3}};
+}
+
+/* The composer's emoji sheet: the panel is the composer's colour behind the sheet's rounded top. */
+.shell-emoji-keyboard-panel.surface-chrome {
+  background-color: {{x-bar}};
+  border-width: 0;
+}
+
+.shell-emoji-keyboard-sheet {
+  background-color: {{bg-card}};
+}
+
+.emoji-sheet-header .sheet-title {
+  color: {{label}};
+}
+
+.emoji-sheet-close .sheet-icon-disc {
+  background-color: {{fill-2}};
+}
+
+.emoji-sheet-close svg {
+  image-color: {{label-2}};
+}
+
+.shell-page-sheet .shell-page-sheet-close,
+.shell-page-sheet .shell-page-sheet-close:hover,
+.shell-page-sheet .shell-page-sheet-close:focus {
+  background-color: transparent;
+}
+
+/* The sheets' title row: the title, and its buttons as a quiet grey disc with a secondary-colour icon. */
+.shell-page-sheet .sheet-header .sheet-title {
+  color: {{label}};
+}
+
+.shell-page-sheet .sheet-icon-disc {
+  background-color: {{fill-2}};
+}
+
+.ask-ai-open-chat svg {
+  image-color: {{label-2}};
+}
+
+/* The ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
+.ask-ai-intro-body {
+  color: {{label}};
+}
+
+.ask-ai-privacy,
+.ask-ai-picture-note,
+.ask-ai-reminder,
+.ask-ai-section,
+.ask-ai-empty,
+.ask-ai-error {
+  color: {{label-2}};
+}
+
+.ask-ai-open-chat,
+.ask-ai-open-chat:hover,
+.ask-ai-open-chat:focus,
+.ask-ai-open-chat:active {
+  background-color: transparent;
+}
+
+.ask-ai-intro-ok,
+.ask-ai-intro-ok:hover,
+.ask-ai-intro-ok:focus,
+.ask-ai-intro-ok:active {
+  color: {{accent}};
+  background-color: transparent;
+}
+
+.ask-ai-intro,
+.ask-ai .bubble-assistant {
+  background-color: {{bg-card-2}};
+}
+
+.ask-ai-support,
+.ask-ai-support:hover,
+.ask-ai-support:focus,
+.ask-ai-support:active {
+  color: {{accent}};
+  background-color: {{accent-tint}};
+}
+
+/* Phone AI dot and the Me → AI assistant look previews: full-colour art, drawn as it is (the dot's soft shadow, the
+   third one DESIGN-pp-ui §6 allows, is drawn into its body SVG). */
+.ai-dot svg,
+.ai-look-art svg {
+  image-color: {{x-mascot-ink}};
+}
+
+.ai-look-art {
+  background-color: {{bg-card-2}};
+  border-color: {{bg-card-2}};
+}
+
+.ai-look--on .ai-look-art {
+  border-color: {{accent}};
+}
+
+.ai-look-name {
+  color: {{label-2}};
+}
+
+.ai-look--on .ai-look-name {
+  color: {{accent}};
+}
+
+.ask-ai-picture-remove,
+.ask-ai-picture-remove:hover,
+.ask-ai-picture-remove:focus,
+.ask-ai-picture-remove:active {
+  background-color: transparent;
+}
+
+.ask-ai-picture-box {
+  background-color: {{fill-2}};
+}
+
+.ask-ai-picture-remove svg {
+  image-color: {{label-2}};
+}
+
+.shell-page-sheet .people-picker-search-field {
+  background-color: {{bg-card-2}};
+}
+
+.shell-page-sheet .people-picker-search-hint {
+  color: {{label-3}};
+}
+
+.shell-page-sheet .people-picker-row:hover,
+.shell-page-sheet .people-picker-row--selected {
+  background-color: transparent;
+}
+
+.shell-dialog {
+  background-color: {{bg-card}};
+}
+
+/* Checkboxes (B38): the colours were lost when this file became a template (they sat outside the theme block). */
+input.checkbox {
+  border-color: {{gray}};
+  background-color: transparent;
+}
+
+input.checkbox:hover,
+input.checkbox:focus {
+  border-color: {{accent}};
+}
+
+input.checkbox:checked {
+  border-color: {{accent}};
+  background-color: {{accent}};
+}
+
+.shell-dialog-message {
+  color: {{label}};
+}
+
+/* Phone alert buttons (DESIGN-pp-ui §9): no pills, accent text, hairlines; a destructive confirm in the danger colour. */
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions .btn {
+  background-color: transparent;
+  color: {{accent}};
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions .btn:hover,
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions .btn:focus {
+  background-color: {{fill-2}};
+}
+
+.shell-body--compact .shell-dialog--destructive .shell-dialog-actions .shell-dialog-ok {
+  color: {{danger}};
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions,
+.shell-body--compact .shell-dialog--alert .shell-dialog-ok,
+.shell-body--compact .shell-dialog--alert .shell-dialog-cancel {
+  border-color: {{separator}};
+}
+
+.shell-call-meter-label {
+  color: {{label-2}};
+}
+
+.shell-call-meter-hint {
+  color: {{label-2}};
+}
+
+.shell-call-meter-seg {
+  background-color: {{fill}};
+}
+
+.shell-call-meter-seg--on {
+  background-color: {{accent}};
+}
+
+.shell-call-bar {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+}
+
+.shell-call-bar-title {
+  color: {{label}};
+}
+
+.shell-call-bar-subtitle {
+  color: {{label-2}};
+}
+
+.shell-call-bar-hint {
+  color: {{warn}};
+}
+
+.shell-call-mute {
+  background-color: {{fill}};
+  color: {{label}};
+}
+
+.shell-call-mute svg {
+  image-color: {{label}};
+}
+
+.shell-call-mute--on {
+  background-color: {{fill}};
+  color: {{label}};
+}
+
+.shell-call-mute--on svg {
+  image-color: {{label}};
+}
+
+.shell-call-camera {
+  background-color: {{fill}};
+  color: {{label}};
+}
+
+.shell-call-camera svg {
+  image-color: {{label}};
+}
+
+.shell-call-camera--on {
+  background-color: {{fill}};
+  color: {{label}};
+}
+
+.shell-call-camera--on svg {
+  image-color: {{label}};
+}
+
+.shell-call-flip {
+  background-color: {{fill}};
+  color: {{label}};
+}
+
+.shell-call-flip svg {
+  image-color: {{label}};
+}
+
+.shell-call-speaker {
+  background-color: {{fill}};
+  color: {{label}};
+}
+
+.shell-call-speaker svg {
+  image-color: {{gray}};
+}
+
+.shell-call-speaker--on {
+  background-color: {{fill}};
+  color: {{label}};
+}
+
+.shell-call-speaker--on svg {
+  image-color: {{label}};
+}
+
+.shell-call-leave {
+  background-color: {{danger}};
+  color: {{label-on-accent}};
+}
+
+.shell-call-leave svg {
+  image-color: {{label-on-accent}};
+}
+
+.shell-call-cancel {
+  background-color: {{danger}};
+  color: {{label-on-accent}};
+}
+
+.shell-call-cancel svg {
+  image-color: {{label-on-accent}};
+}
+
+.shell-call-expand,
+.shell-call-grid {
+  background-color: {{fill}};
+  color: {{label}};
+}
+
+.shell-call-expand svg,
+.shell-call-grid svg {
+  image-color: {{label}};
+}
+
+.shell-call-minimized-chip {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+}
+
+.shell-call-minimized-title {
+  color: {{label}};
+}
+
+.shell-call-minimized-subtitle {
+  color: {{label-2}};
+}
+
+.shell-call-immersive {
+  background-color: {{bg-grouped}};
+}
+
+.shell-call-immersive-grabber {
+  background-color: {{label-3}};
+}
+
+.shell-call-peer-card {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+}
+
+.shell-call-peer-avatar {
+  background-color: {{fill}};
+}
+
+.avatar-tone-0 {
+  background-color: {{avatar-0}};
+}
+
+.avatar-tone-1 {
+  background-color: {{avatar-1}};
+}
+
+.avatar-tone-2 {
+  background-color: {{avatar-2}};
+}
+
+.avatar-tone-3 {
+  background-color: {{avatar-3}};
+}
+
+.avatar-tone-4 {
+  background-color: {{avatar-4}};
+}
+
+.avatar-tone-5 {
+  background-color: {{avatar-5}};
+}
+
+.avatar-tone-6 {
+  background-color: {{avatar-6}};
+}
+
+.avatar-tone-7 {
+  background-color: {{avatar-7}};
+}
+
+.shell-call-peer-name {
+  color: {{label}};
+}
+
+.shell-call-retry {
+  background-color: {{accent-tint}};
+  color: {{accent}};
+}
+
+/* G022: "Make a group…" and the group banner in the desktop call bar. */
+.call-make-group {
+  background-color: {{accent-tint}};
+  color: {{accent}};
+}
+
+.call-make-group svg {
+  image-color: {{accent}};
+}
+
+.call-group-offer {
+  background-color: {{fill}};
+  color: {{label}};
+}
+
+.call-group-offer-btn {
+  background-color: {{bg-card}};
+  color: {{label}};
+}
+
+.call-group-offer-btn--primary {
+  background-color: {{accent}};
+  color: {{label-on-accent}};
+}
+
+.shell-call-retry svg {
+  image-color: {{accent}};
+}
+
+.shell-call-stage {
+  background-color: {{x-video-stage}};
+}
+
+.shell-call-remote {
+  background-color: {{x-video-remote}};
+}
+
+.shell-call-remote-placeholder {
+  color: {{label-2}};
+}
+
+.shell-call-pip {
+  background-color: {{fill}};
+  border: 1dp {{separator}};
+}
+
+.shell-call-ring-eyebrow {
+  color: {{label-2}};
+}
+
+.shell-call-ring {
+  border-color: {{accent-tint}};
+}
+
+.shell-call-ring--pulse {
+  border-color: {{accent}};
+}
+
+.shell-call-ring-action-label {
+  color: {{label-2}};
+}
+
+.shell-call-ring-decline {
+  background-color: {{danger}};
+}
+
+.shell-call-ring-decline svg {
+  image-color: {{label-on-accent}};
+}
+
+.shell-call-ring-voice {
+  background-color: {{fill}};
+}
+
+.shell-call-ring-voice svg {
+  image-color: {{label}};
+}
+
+.shell-call-accept {
+  background-color: {{success}};
+}
+
+.shell-call-accept svg {
+  image-color: {{label-on-accent}};
+}
+
+.shell-call-accept--pulse {
+  background-color: {{success}};
+  box-shadow: 0 0 0 4dp {{x-accept-pulse-ring}}, 0 4dp 14dp {{shadow}};
+}
+
+.chat-empty {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+}
+
+.sidebar-header-title {
+  color: {{label}};
+}
+
+.sidebar-session {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+}
+
+/* Before the active rules so the open thread keeps its highlight. */
+.sidebar-session--pinned {
+  background-color: {{bg-card-2}};
+}
+
+.session-swipe-btn--more {
+  background-color: {{gray}};
+}
+
+.session-swipe-btn--archive {
+  background-color: {{accent}};
+}
+
+.session-swipe-btn--delete {
+  background-color: {{danger}};
+}
+
+.session-swipe-btn--pin {
+  background-color: {{warn}};
+}
+/* The AI chat's rename swipe (home-minimal increment): it had no colour and showed as a white box. */
+.session-swipe-btn--rename {
+  background-color: {{accent}};
+}
+
+.session-swipe-btn--read {
+  background-color: {{accent}};
+}
+
+.session-swipe-btn svg {
+  image-color: {{label-on-accent}};
+}
+
+.session-swipe-label {
+  color: {{label-on-accent}};
+}
+
+.sidebar-session-active {
+  background-color: {{accent-tint}};
+  border-color: {{accent-tint}};
+  box-shadow: inset 3dp 0 0 {{accent}};
+}
+
+.sidebar-session--ai.sidebar-session-active {
+  box-shadow: inset 3dp 0 0 {{mention}};
+}
+
+.sidebar-session--private.sidebar-session-active {
+  background-color: {{secure-tint}};
+  border-color: {{secure-tint}};
+  box-shadow: inset 3dp 0 0 {{secure}};
+}
+
+.sidebar-session--public.sidebar-session-active {
+  background-color: {{fill-2}};
+  border-color: {{separator}};
+  box-shadow: inset 3dp 0 0 {{gray}};
+}
+
+.sidebar-session--group.sidebar-session-active {
+  background-color: {{accent-tint}};
+  border-color: {{separator}};
+  box-shadow: inset 3dp 0 0 {{warn}};
+}
+
+.sidebar-session-date {
+  color: {{label-2}};
+}
+
+.sidebar-session-title {
+  color: {{label}};
+}
+
+.sidebar-session-preview {
+  color: {{label-2}};
+}
+
+/* A thread with no message yet: the placeholder is quieter than a real preview (the presenter's preview_empty). */
+.sidebar-session--empty .sidebar-session-preview {
+  color: {{label-3}};
+}
+
+.sidebar-session-icon {
+  background-color: {{bg-card-2}};
+}
+
+.sidebar-session-flag, .sidebar-archived-entry svg {
+  image-color: {{gray}};
+}
+
+.sidebar-archived-label {
+  color: {{label-2}};
+}
+
+.sidebar-archived-entry:hover {
+  background-color: {{fill-2}};
+}
+
+.sidebar-session-mention {
+  color: {{mention}};
+}
+
+.sidebar-unread-dot {
+  background-color: {{secure}};
+}
+
+.badge-count.sidebar-unread {
+  background-color: {{secure}};
+  color: {{label-on-accent}};
+}
+
+.badge-count {
+  background-color: {{tab-badge}};
+  color: {{label-on-accent}};
+}
+
+.badge-dot {
+  background-color: {{tab-badge}};
+}
+
+.shell-layer-compact .sidebar-session {
+  background-color: {{bg}};
+}
+
+.shell-layer-compact .sidebar-session--pinned {
+  background-color: {{bg-card-2}};
+}
+
+.shell-layer-compact .sidebar-session.sidebar-session-active {
+  background-color: {{bg}};
+  box-shadow: none;
+}
+
+.shell-layer-compact .sidebar-session--pinned.sidebar-session-active {
+  background-color: {{bg-card-2}};
+}
+
+.shell-layer-compact .sidebar-session:active {
+  background-color: {{fill-2}};
+}
+
+.shell-layer-compact .sidebar-session-body {
+  border-bottom: 1dp {{separator}};
+}
+
+.shell-layer-compact .sidebar-session:last-of-type .sidebar-session-body {
+  border-bottom-color: transparent;
+}
+
+.chat-row-avatar--group {
+  background-color: {{warn}};
+}
+
+.chat-row-avatar--ai {
+  background-color: {{mention}};
+}
+
+.chat-row-avatar-letter {
+  color: {{label-on-accent}};
+}
+
+.chat-row-avatar-icon {
+  image-color: {{label-on-accent}};
+}
+
+.chat-row-type--ai {
+  image-color: {{mention}};
+}
+
+.chat-row-type--private {
+  image-color: {{secure}};
+}
+
+.chat-row-type--group {
+  image-color: {{warn}};
+}
+
+.chat-row-type--public {
+  image-color: {{gray}};
+}
+
+.chat-row-mute {
+  image-color: {{label-3}};
+}
+
+.chat-row-blocked {
+  image-color: {{label-2}};
+}
+
+.chat-search {
+  background-color: {{bg-field}};
+}
+
+.chat-search-icon {
+  image-color: {{label-3}};
+}
+
+.chat-search-input {
+  color: {{label}};
+}
+
+.chat-search-label {
+  color: {{label-2}};
+}
+
+.shell-layer-compact .contacts-row {
+  background-color: {{bg}};
+}
+
+.shell-layer-compact .contacts-row.contacts-row--active {
+  background-color: {{bg}};
+  box-shadow: none;
+}
+
+.shell-layer-compact .contacts-row:active {
+  background-color: {{fill-2}};
+}
+
+.shell-layer-compact .contacts-row-body {
+  border-bottom: 1dp {{separator}};
+}
+
+/* data-for leaves its hidden template element after the rows, so the last real row is the second-last div. */
+.shell-layer-compact .contacts-row:nth-last-of-type(2) .contacts-row-body {
+  border-bottom-color: transparent;
+}
+
+.shell-layer-compact .contacts-row-title {
+  color: {{label}};
+}
+
+.shell-layer-compact .contact-detail-panel,
+.blocked-page {
+  background-color: {{bg-grouped}};
+}
+
+/* Same white sheet as New chat; the cards are a light fill so nothing frames the sheet's inner padding. */
+.ac-card {
+  background-color: {{bg-card-2}};
+}
+
+.ac-account-name,
+.ac-tile-label,
+.ac-top-card-label,
+.qr-name {
+  color: {{label}};
+}
+
+.ac-account-id,
+.ac-note,
+.qr-hint {
+  color: {{label-2}};
+}
+
+.ac-icon-btn {
+  background-color: transparent;
+}
+
+.ac-icon-btn svg {
+  image-color: {{label-2}};
+}
+
+.ac-icon-btn:active {
+  background-color: {{fill-2}};
+}
+
+.ac-tile,
+.ac-top-card {
+  background-color: {{bg-card-2}};
+}
+
+.ac-top-card-icon {
+  background-color: {{accent}};
+}
+
+.ac-top-card-icon svg {
+  image-color: {{label-on-accent}};
+}
+
+.ac-tile-disc {
+  background-color: {{accent-tint}};
+}
+
+.ac-tile-icon {
+  image-color: {{accent}};
+}
+
+.qr-card {
+  background-color: {{bg-card}};
+}
+
+/* Phone scanner over the camera: the same in both themes. */
+.qr-scan-dim {
+  background-color: {{x-scan-dim}};
+}
+
+.qr-scan-corner {
+  border-color: {{x-scan-ink}};
+}
+
+.qr-scan-line {
+  background-color: {{accent}};
+}
+
+.qr-scan-hint,
+.qr-scan-tool-label {
+  color: {{x-scan-ink}};
+}
+
+.qr-scan-back,
+.qr-scan-tool {
+  background-color: transparent;
+}
+
+.qr-scan-back svg,
+.qr-scan-tool-disc svg {
+  image-color: {{x-scan-ink}};
+}
+
+.qr-scan-tool-disc,
+.qr-scan-retry {
+  background-color: {{x-scan-tool}};
+}
+
+.qr-scan-retry {
+  color: {{x-scan-ink}};
+}
+
+.nc-page {
+  background-color: {{bg}};
+}
+
+.nc-action {
+  background-color: {{bg}};
+}
+
+.nc-action:active {
+  background-color: {{fill-2}};
+}
+
+.nc-action-icon--ai {
+  background-color: {{mention}};
+}
+
+.nc-action-icon--group {
+  background-color: {{warn}};
+}
+
+.nc-action-icon--add {
+  background-color: {{accent}};
+}
+
+.nc-action-icon svg {
+  image-color: {{label-on-accent}};
+}
+
+.nc-action-label {
+  color: {{label}};
+}
+
+.nc-section-header {
+  color: {{label-2}};
+  background-color: {{bg-grouped}};
+}
+
+.shell-layer-compact .nc-page {
+  background-color: {{bg-grouped}};
+}
+
+/* The search field on the grouped page: a fill, so it reads as a field (the card colour vanished on the grey). */
+.shell-layer-compact .nc-page .nc-search {
+  background-color: {{fill-2}};
+}
+
+.shell-layer-compact .nc-page .nc-action,
+.shell-layer-compact .nc-page .nc-group,
+.shell-layer-compact .nc-page .nc-group .contacts-row {
+  background-color: {{bg-card}};
+}
+
+.shell-layer-compact .nc-page .nc-section-header {
+  background-color: transparent;
+}
+
+/* @only dark */
+/* New chat is a sheet: in dark its page and rows were black under the sheet's raised header. The sheet's colours, as
+   in light (the card colour, the band one step up). */
+.shell-page-sheet--new_chat .nc-page,
+.shell-page-sheet--new_chat .nc-action,
+.shell-page-sheet--new_chat .contacts-row,
+.shell-page-sheet--new_chat .contacts-row.contacts-row--active {
+  background-color: {{bg-card}};
+}
+
+.shell-page-sheet--new_chat .nc-section-header {
+  background-color: {{bg-card-2}};
+}
+
+.shell-page-sheet--new_chat .nc-action:active {
+  background-color: {{fill-2}};
+}
+/* @end */
+
+.contacts-index-letter {
+  color: {{label-3}};
+}
+
+.contacts-index-letter--present {
+  color: {{accent}};
+}
+
+.contacts-index-bubble {
+  background-color: {{bg-card-2}};
+}
+
+.contacts-index-bubble-letter {
+  color: {{label}};
+}
+
+.cd-account,
+.contacts-row-subtitle--phone,
+.cd-footnote,
+.cd-row-value {
+  color: {{label-2}};
+}
+
+.cd-act {
+  background-color: {{accent-tint}};
+}
+
+.cd-act:active {
+  opacity: 0.6;
+}
+
+/* A round button that is on (the group info's mute): filled, its icon and word white. */
+.cd-act.cd-act--on {
+  background-color: {{accent}};
+}
+
+.cd-act--on .cd-act-icon {
+  image-color: {{label-on-accent}};
+}
+
+.cd-act--on .cd-act-label {
+  color: {{label-on-accent}};
+}
+
+.cd-header {
+  color: {{label-2}};
+}
+
+.cd-tag {
+  background-color: {{accent-tint}};
+  color: {{accent}};
+}
+
+.cd-tag.cd-tag--muted {
+  background-color: {{fill-2}};
+  color: {{label-2}};
+}
+
+.cd-row-plus {
+  background-color: {{accent-tint}};
+}
+
+.cd-row-plus svg {
+  image-color: {{accent}};
+}
+
+/* Sheets laid out like the contact page (grouped cards on the grouped background). */
+.shell-page-sheet.shell-page-sheet--group_info,
+.shell-page-sheet.shell-page-sheet--group_leave,
+.shell-page-sheet.shell-page-sheet--home_edit,
+.shell-page-sheet.shell-page-sheet--contact_detail {
+  background-color: {{bg-grouped}};
+}
+
+/* @only dark */
+/* In dark the grouped background is black, so these sheets melted into the dimmed page behind them. Raised a step, as
+   iOS does for sheets: the sheet takes the card colour, its cards the next one up, the fields in them one more. */
+.shell-page-sheet.shell-page-sheet--group_info,
+.shell-page-sheet.shell-page-sheet--group_leave,
+.shell-page-sheet.shell-page-sheet--home_edit,
+.shell-page-sheet.shell-page-sheet--contact_detail,
+.shell-page-sheet.shell-page-sheet--group_info .contact-detail-panel,
+.shell-page-sheet.shell-page-sheet--group_leave .contact-detail-panel,
+.shell-page-sheet.shell-page-sheet--contact_detail .contact-detail-panel {
+  background-color: {{bg-card}};
+}
+
+.shell-page-sheet.shell-page-sheet--group_info .cd-card,
+.shell-page-sheet.shell-page-sheet--group_leave .cd-card,
+.shell-page-sheet.shell-page-sheet--contact_detail .cd-card,
+.shell-page-sheet.shell-page-sheet--group_info .group-card,
+.shell-page-sheet.shell-page-sheet--group_leave .group-card,
+.shell-page-sheet.shell-page-sheet--home_edit .group-card,
+.shell-page-sheet.shell-page-sheet--contact_detail .group-card,
+.shell-page-sheet.shell-page-sheet--home_edit .home-edit-row--lifted,
+.shell-page-sheet.shell-page-sheet--home_edit .home-edit-card--dragging .home-edit-row--lifted:active {
+  background-color: {{bg-card-2}};
+}
+
+.shell-page-sheet.shell-page-sheet--group_info .cd-field,
+.shell-page-sheet.shell-page-sheet--group_leave .cd-field,
+.shell-page-sheet.shell-page-sheet--contact_detail .cd-field,
+.shell-page-sheet.shell-page-sheet--group_info .group-card .field,
+.shell-page-sheet.shell-page-sheet--group_leave .group-card .field,
+.shell-page-sheet.shell-page-sheet--contact_detail .group-card .field {
+  background-color: {{x-card-3}};
+}
+/* @end */
+
+.cd-act-icon,
+.cd-icon {
+  image-color: {{accent}};
+}
+
+.contacts-row-star {
+  image-color: {{warn}};
+}
+
+.cd-act-label {
+  color: {{accent}};
+}
+
+.cd-card {
+  background-color: {{bg-card}};
+}
+
+/* A hairline above every row but the first, inset to the name. */
+.blocked-row + .blocked-row .blocked-row-right {
+  border-top: 1dp {{separator}};
+}
+
+.blocked-row-name {
+  color: {{label}};
+}
+
+.blocked-unblock,
+.blocked-unblock:hover,
+.blocked-unblock:focus {
+  background-color: transparent;
+  color: {{accent}};
+}
+
+.blocked-row-name:active,
+.blocked-unblock:active {
+  background-color: {{fill-2}};
+}
+
+.cd-row {
+  background-color: transparent;
+  color: {{label}};
+}
+
+.cd-row:active {
+  background-color: {{fill-2}};
+}
+
+.cd-row--static:active {
+  background-color: transparent;
+}
+
+/* Separator above each row but the first: a row hidden by data-if at the end of a card leaves no stray line. */
+.cd-row-body {
+  border-top: 1dp {{separator}};
+}
+
+.cd-row-text,
+.cd-field {
+  color: {{label}};
+}
+
+.cd-row--danger .cd-row-text {
+  color: {{danger}};
+}
+
+.cd-row-text--accent {
+  color: {{accent}};
+}
+
+.cd-admin-icon {
+  image-color: {{accent}};
+}
+
+.cd-row--danger .cd-admin-icon {
+  image-color: {{danger}};
+}
+
+.cd-chevron {
+  image-color: {{label-3}};
+}
+
+.sidebar-session-close:hover {
+  background-color: {{fill-2}};
+}
+
+.bubble-peer {
+  background-color: {{bubble-in}};
+  border: 1dp {{separator}};
+}
+
+.working-set-long-list .chat-long-list-item {
+  border-bottom: 1dp {{separator}};
+}
+
+.chat-working-set-chip {
+  border: 1dp {{separator}};
+  background-color: {{bg-card-2}};
+  color: {{label}};
+}
+
+.chat-working-set-chip:hover {
+  background-color: {{fill-2}};
+}
+
+.chat-working-set-chip-disabled, .chat-working-set-chip-disabled:hover {
+  background-color: {{bg-card-2}};
+  color: {{label-3}};
+  border: 1dp {{separator}};
+  cursor: default;
+  opacity: 0.85;
+}
+
+.settings-section-title {
+  color: {{label-2}};
+}
+
+.settings-label {
+  color: {{label-2}};
+}
+
+.settings-toggle-label {
+  color: {{label}};
+}
+
+.settings-switch {
+  background-color: {{gray}};
+}
+
+.settings-switch--on {
+  background-color: {{success}};
+}
+
+.settings-switch-knob {
+  background-color: {{label-on-accent}};
+  box-shadow: 0 1dp 3dp {{shadow}};
+}
+
+.settings-choice-value-text {
+  color: {{label-2}};
+}
+
+.settings-danger-zone {
+  border-top: 1dp {{separator}};
+}
+
+.settings-device-badge {
+  background-color: {{accent-tint}};
+  color: {{accent}};
+}
+
+.me-profile-card {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+}
+
+.me-identity-name {
+  color: {{label}};
+}
+
+.me-identity-action {
+  color: {{accent}};
+}
+
+.settings-row {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+  color: {{label}};
+}
+
+.settings-row:hover, .settings-row:focus {
+  background-color: {{fill-2}};
+}
+
+/* Me -> Storage lists: the group card is itself a .settings-row, so a child row's :hover / :focus would
+   grey the whole group (every option at once). Keep the card steady; only the tapped row greys, via the
+   .settings-choice-row rule below (Kenneth 2026-11-05, phone). */
+.settings-row.storage-group:hover, .settings-row.storage-group:focus {
+  background-color: {{bg-card}};
+}
+
+.settings-back-btn:hover, .settings-back-btn:focus {
+  background-color: {{fill-2}};
+}
+
+.settings-choice-row:hover, .settings-choice-row:focus {
+  background-color: {{fill-2}};
+}
+
+.settings-row--active {
+  background-color: {{accent-tint}};
+  border-color: {{accent-tint}};
+}
+
+.settings-row-title {
+  color: {{label}};
+}
+
+.settings-row-chevron {
+  image-color: {{label-3}};
+}
+
+.contacts-row, .contacts-thread-row {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+}
+
+.contacts-row--active {
+  background-color: {{accent-tint}};
+  border-color: {{accent-tint}};
+  box-shadow: inset 3dp 0 0 {{accent}};
+}
+
+.contacts-row-title {
+  color: {{label}};
+}
+
+.contact-profile-card {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+}
+
+.contacts-trust-badge--friendly {
+  background-color: {{secure-tint}};
+  color: {{secure}};
+}
+
+.contacts-trust-badge--blocked {
+  background-color: {{fill-2}};
+  color: {{danger}};
+}
+
+.contacts-back-btn:hover {
+  background-color: {{fill-2}};
+}
+
+.contacts-action-secure {
+  background-color: {{secure}};
+  color: {{label-on-accent}};
+}
+
+.contacts-action-secure:hover {
+  background-color: {{secure}};
+}
+
+.people-picker-row:hover {
+  background-color: {{fill-2}};
+}
+
+.people-picker-row--selected {
+  background-color: {{accent-tint}};
+}
+
+.people-picker-check {
+  border-color: {{separator}};
+  background-color: {{bg-card}};
+}
+
+.people-picker-row--selected .people-picker-check {
+  border-color: {{accent}};
+  background-color: {{accent}};
+  color: {{label-on-accent}};
+}
+
+.people-picker-check-mark {
+  color: {{label-on-accent}};
+}
+
+.people-picker-member-chip {
+  background-color: {{accent-tint}};
+  color: {{accent}};
+}
+
+.emoji-picker-section-label {
+  background-color: {{bg-card}};
+}
+
+.emoji-picker-section-label-text {
+  color: {{label-2}};
+}
+
+.emoji-picker-rail-tab--active {
+  background-color: {{fill-2}};
+}
+
+.contacts-trust-btn--active {
+  background-color: {{accent-tint}};
+  color: {{accent}};
+  border: 1dp {{accent-tint}};
+}
+
+.contacts-trust-btn--active.contacts-trust-btn {
+  box-shadow: inset 0 0 0 1dp {{accent}};
+}
+
+.sidebar-footer {
+  border-top: 1dp {{separator}};
+}
+
+.chat-shell--e2e .chat-header {
+  background-color: {{secure-tint}};
+  border-left: 3dp {{secure}};
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
+}
+
+.chat-shell--ai .chat-header {
+  border-left: 3dp {{mention}};
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
+}
+
+.chat-shell--public .chat-header {
+  border-left: 3dp {{gray}};
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
+}
+
+.chat-shell--group .chat-header {
+  border-left: 3dp {{warn}};
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
+}
+
+.prompt-composer--e2e .prompt-composer-pill {
+  border-color: {{secure-tint}};
+}
+
+.prompt-composer--disabled {
+  opacity: 0.55;
+}
+
+.chat-secure-badge {
+  color: {{secure}};
+}
+
+.chat-shell--ai .chat-header-type-icon svg {
+  image-color: {{mention}};
+}
+
+.chat-shell--private .chat-header-type-icon svg, .chat-shell--e2e .chat-header-type-icon svg {
+  image-color: {{secure}};
+}
+
+.chat-shell--public .chat-header-type-icon svg {
+  image-color: {{gray}};
+}
+
+.chat-shell--group .chat-header-type-icon svg {
+  image-color: {{warn}};
+}
+
+.chat-peer-path--direct svg {
+  image-color: {{success}};
+}
+
+.chat-peer-path--hop svg {
+  image-color: {{warn}};
+}
+
+.chat-peer-path--relay svg {
+  image-color: {{gray}};
+}
+
+.chat-peer-path--connecting svg {
+  image-color: {{gray}};
+}
+
+.chat-peer-path--degraded svg {
+  image-color: {{warn}};
+}
+
+.chat-peer-path--failed svg {
+  image-color: {{danger}};
+}
+
+.chat-peer-path--ready svg {
+  image-color: {{gray}};
+}
+
+.chat-header-call-btn, .chat-header-more-btn {
+  background-color: {{fill}};
+  color: {{label}};
+}
+
+.chat-header-call-btn:hover, .chat-header-more-btn:hover {
+  background-color: {{fill-2}};
+}
+
+.chat-header-call-btn--join {
+  background-color: {{success}};
+  color: {{label-on-accent}};
+}
+
+.chat-header-call-btn--join:hover {
+  background-color: {{success}};
+}
+
+.chat-header-call-btn svg, .chat-header-more-btn svg {
+  image-color: {{label}};
+}
+
+/* After the plain call button's rule (same specificity): white on the green join button. */
+.chat-header-call-btn--join svg {
+  image-color: {{label-on-accent}};
+}
+
+/* Phone chat nav bar: the header row sits on the bar's material; no type bar, tint or round buttons. */
+.shell-chat-overlay .chat-panel .chat-header {
+  background-color: transparent;
+  border-left-width: 0;
+}
+
+.shell-chat-overlay .chat-header-call-btn,
+.shell-chat-overlay .chat-header-more-btn {
+  background-color: transparent;
+}
+
+.shell-chat-overlay .chat-header-call-btn svg,
+.shell-chat-overlay .chat-header-more-btn svg {
+  image-color: {{accent}};
+}
+
+.shell-chat-overlay .chat-header-call-btn--join {
+  background-color: {{success}};
+}
+
+.shell-chat-overlay .chat-header-call-btn--join svg {
+  image-color: {{label-on-accent}};
+}
+
+/* A group call goes on here: the bar under the header. */
+.chat-call-bar {
+  background-color: {{bg-card-2}};
+}
+
+.chat-call-bar-dot {
+  background-color: {{success}};
+}
+
+.chat-call-bar-text {
+  color: {{label}};
+}
+
+.chat-call-bar-join,
+.chat-call-bar-join:hover,
+.chat-call-bar-join:focus {
+  background-color: transparent;
+}
+
+.shell-chat-overlay .chat-header-title {
+  color: {{label}};
+}
+
+.shell-chat-overlay .chat-header-subtitle,
+.shell-chat-overlay .chat-header-phone-subtitle {
+  color: {{label-2}};
+}
+
+.shell-chat-overlay-chrome .shell-back-btn,
+.shell-layer-compact .shell-transient-chrome .shell-back-btn {
+  background-color: transparent;
+}
+
+.shell-chat-overlay-chrome .shell-back-btn svg,
+.shell-layer-compact .shell-transient-chrome .shell-back-btn svg {
+  image-color: {{accent}};
+}
+
+.settings-choice-check {
+  image-color: {{accent}};
+}
+
+.context-menu-panel {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+}
+
+/* Float menus (right-click / long-press): invisible hit target only — no dim.
+   Compact action sheets keep a light scrim below. */
+.context-menu-scrim {
+  background-color: transparent;
+}
+
+.context-menu-layer--sheet .context-menu-scrim {
+  background-color: {{scrim}};
+}
+
+/* The phone's small sheet: the page sheets' grouped background, handle, title and grey disc; a white card of rows
+   with very faint hairlines, small icons in the secondary label colour, red for a destructive row. */
+.context-menu-sheet {
+  background-color: {{bg-grouped}};
+}
+
+.context-menu-sheet-grabber {
+  background-color: {{label-3}};
+}
+
+.context-menu-sheet-title {
+  color: {{label}};
+}
+
+.context-menu-sheet-disc {
+  background-color: {{fill-2}};
+}
+
+.context-menu-sheet-disc svg {
+  image-color: {{label-2}};
+}
+
+.context-menu-sheet-list,
+.context-menu-sheet-quick,
+.context-menu-sheet-expand {
+  background-color: {{bg-card}};
+}
+
+/* @only dark */
+/* Raised a step in dark, like the grouped page sheets: black melted into the dimmed page behind it. */
+.context-menu-sheet {
+  background-color: {{bg-card}};
+}
+
+.context-menu-sheet-list,
+.context-menu-sheet-quick,
+.context-menu-sheet-expand {
+  background-color: {{bg-card-2}};
+}
+/* @end */
+
+.context-menu-sheet-list .context-menu-item-body {
+  border-top: 1dp {{fill-2}};
+}
+
+.context-menu-sheet-list .context-menu-item-icon svg {
+  image-color: {{label-2}};
+}
+
+.context-menu-sheet-list .context-menu-item-check {
+  color: {{accent}};
+}
+
+.context-menu-sheet-list .context-menu-item:active,
+.context-menu-sheet-quick .context-menu-item:active {
+  background-color: {{fill-2}};
+}
+
+.context-menu-item {
+  color: {{label}};
+}
+
+/* Phone pull-down (DESIGN-pp-ui 8.15 card + shadow); a hairline between rows, none above the first. */
+.context-menu-layer--popover .context-menu-panel {
+  background-color: {{bg-card}};
+  box-shadow: 0 4dp 16dp {{shadow}};
+}
+
+.context-menu-layer--popover .context-menu-item {
+  border-top: 1dp {{separator}};
+}
+
+.context-menu-layer--popover .context-menu-item:first-child {
+  border-top-width: 0;
+}
+
+.context-menu-layer--popover .context-menu-item:active {
+  background-color: {{fill-2}};
+}
+
+.context-menu-layer--popover .context-menu-item-icon svg {
+  image-color: {{label}};
+}
+
+.context-menu-layer--popover .context-menu-item--danger .context-menu-item-icon svg {
+  image-color: {{danger}};
+}
+
+.context-menu-item:hover {
+  background-color: {{fill-2}};
+}
+
+.context-menu-item--danger {
+  color: {{danger}};
+}
+
+.context-menu-item--danger:hover {
+  background-color: {{fill-2}};
+}
+
+.context-menu-item--danger svg,
+.context-menu-sheet-list .context-menu-item--danger .context-menu-item-icon svg {
+  image-color: {{danger}};
+}
+/* ---- Phone chat window (UI refresh batch 3): date strips, in-bubble time, quotes, group names, composer. ---- */
+.shell-chat-overlay .chat-date-pill,
+.shell-chat-overlay .chat-system-line p {
+  background-color: {{fill-2}};
+  color: {{label-2}};
+}
+
+.bubble-time {
+  color: {{label-2}};
+}
+
+.bubble-assistant .bubble-time {
+  color: {{label-2}};
+}
+
+.bubble-user .bubble-time {
+  color: {{bubble-out-meta}};
+}
+
+.shell-chat-overlay .bubble-assistant .chat-quote {
+  border-left: 3dp {{quote-bar}};
+  background-color: {{quote-bg-in}};
+}
+
+.shell-chat-overlay .bubble-user .chat-quote {
+  border-left: 3dp {{label-on-accent}};
+  background-color: {{quote-bg-out}};
+}
+
+.shell-chat-overlay .chat-attachment-card {
+  background-color: {{bubble-in}};
+}
+
+.shell-chat-overlay .message-row-user .chat-attachment-card,
+.shell-chat-overlay .message-row-user .chat-voice-card {
+  background-color: {{bubble-out}};
+  color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .message-row-user .chat-attachment-card .muted,
+.shell-chat-overlay .message-row-user .chat-attachment-card .heading-3,
+.shell-chat-overlay .message-row-user .chat-voice-time {
+  color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-play {
+  background-color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-play svg {
+  image-color: {{bubble-out}};
+}
+
+.chat-reaction-row--overlay .chat-reaction-pill {
+  border-color: {{bg}};
+  background-color: {{bg-card}};
+  color: {{label}};
+}
+
+.shell-chat-overlay .chat-reaction-row--overlay .chat-reaction-pill {
+  border-color: {{chat-bg}};
+}
+
+.chat-reaction-row--overlay .chat-reaction-chip--mine .chat-reaction-pill {
+  background-color: {{bg-card-2}};
+}
+
+.shell-chat-overlay .chat-attachment-card .chat-suggestion {
+  background-color: transparent;
+  color: {{accent}};
+}
+
+.shell-chat-overlay .chat-group-invite {
+  background-color: {{bubble-in}};
+  color: {{label}};
+}
+
+.shell-chat-overlay .chat-group-invite .chat-suggestion {
+  border-top: 1dp {{fill-2}};
+  background-color: transparent;
+  color: {{accent}};
+}
+
+.shell-chat-overlay .message-row-user .chat-attachment-card .chat-suggestion {
+  color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .bubble-tail-in {
+  image-color: {{bubble-in}};
+}
+
+.shell-chat-overlay .bubble-tail-out {
+  image-color: {{bubble-out}};
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-fill {
+  background-color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .message-row-user .chat-audio-knob {
+  background-color: {{label-on-accent}};
+  border: 1dp rgba(0, 0, 0, 0.2);
+}
+
+/* A sound file's music card: the cover's placeholder square and note; on an own (blue) card, white 20%. The
+   storage page's play / pause mark over a cover sits on a scrim. */
+.chat-audio-cover {
+  background-color: {{fill-2}};
+}
+
+.chat-audio-cover-note {
+  image-color: {{label-2}};
+}
+
+.message-row-user .chat-audio-cover {
+  background-color: {{quote-bg-out}};
+}
+
+.message-row-user .chat-audio-cover-note {
+  image-color: {{label-on-accent}};
+}
+
+.storage-file-type--cover .storage-audio-icon {
+  background-color: {{scrim}};
+}
+
+.chat-group-name--0 { color: {{x-name-0}}; }
+.chat-group-name--1 { color: {{x-name-1}}; }
+.chat-group-name--2 { color: {{x-name-2}}; }
+.chat-group-name--3 { color: {{x-name-3}}; }
+.chat-group-name--4 { color: {{x-name-4}}; }
+.chat-group-name--5 { color: {{x-name-5}}; }
+.chat-group-name--6 { color: {{avatar-6}}; }
+.chat-group-name--7 { color: {{x-name-7}}; }
+
+/* @only dark */
+/* The indigo name was 2.5:1 on a dark bubble; iOS's lighter indigo for dark text. */
+.chat-group-name--6 { color: {{x-name-indigo}}; }
+/* @end */
+
+.prompt-composer-label {
+  color: {{label-3}};
+}
+
+.shell-chat-overlay .shell-composer-mount .prompt-composer-pill,
+.ask-ai .prompt-composer-pill {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+  box-shadow: none;
+}
+
+/* Phones: Send is a clear 44dp target round its 32dp accent disc (components.rcss). */
+.shell-chat-overlay .prompt-composer-row .prompt-send-btn,
+.ask-ai .prompt-composer-row .prompt-send-btn {
+  background-color: transparent;
+}
+
+.shell-chat-overlay .prompt-send-disc,
+.ask-ai .prompt-send-disc {
+  background-color: {{accent}};
+}
+
+.shell-chat-overlay .prompt-icon-v2,
+.shell-chat-overlay .prompt-icon-plus,
+.ask-ai .prompt-icon-v2,
+.ask-ai .prompt-icon-plus {
+  image-color: {{label-2}};
+}
+
+.shell-chat-overlay .prompt-voice-toggle-btn .prompt-icon-v2 {
+  image-color: {{accent}};
+}
+
+/* The phone Home's box is the whole composer (the picture chip sits inside it); the pill in it is clear. */
+.shell-layer-compact .home-composer-mount .prompt-composer {
+  background-color: {{bg-card-2}};
+  border: 1dp {{separator}};
+  box-shadow: 0 2dp 8dp {{shadow}};
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-pill {
+  background-color: transparent;
+  border-width: 0;
+  box-shadow: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-icon-home {
+  image-color: {{label-2}};
+}
+
+.shell-layer-compact .home-composer-mount .prompt-emoji-btn svg {
+  image-color: {{label-2}};
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {
+  background-color: transparent;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-send-disc {
+  background-color: {{accent}};
+}
+
+/* Grouped lists on phones: Me tab and settings pages (DESIGN-pp-ui 8.7 / 8.10); geometry in components.rcss. */
+.shell-layer-compact .settings-panel,
+.shell-layer-compact .settings-detail-view {
+  background-color: {{bg-grouped}};
+}
+
+.shell-layer-compact .settings-back-btn,
+.shell-layer-compact .settings-back-btn:hover,
+.shell-layer-compact .settings-back-btn:focus {
+  background-color: transparent;
+}
+
+.shell-layer-compact .settings-back-v2 {
+  image-color: {{accent}};
+}
+
+.shell-layer-compact .group-id-btn {
+  background-color: transparent;
+}
+
+.settings-q-btn,
+.settings-q-btn:hover,
+.settings-q-btn:focus {
+  background-color: transparent;
+}
+
+.settings-q-btn:active {
+  background-color: {{fill-2}};
+}
+
+.settings-q-icon {
+  image-color: {{accent}};
+}
+
+.shell-layer-compact .group-id-label {
+  color: {{label-2}};
+}
+
+.shell-layer-compact .settings-header-title,
+.shell-layer-compact .me-card-name,
+.shell-layer-compact .group-card-title,
+.shell-layer-compact .group-title {
+  color: {{label}};
+}
+
+.shell-layer-compact .group-card {
+  background-color: {{bg-card}};
+}
+
+.shell-layer-compact .group-row,
+.shell-layer-compact .me-card-main {
+  background-color: transparent;
+  color: {{label}};
+}
+
+.shell-layer-compact .group-row:active {
+  background-color: {{fill-2}};
+}
+
+/* Separator above each row but the first (see the 1dp overlap in components.rcss). */
+.shell-layer-compact .group-row-body {
+  border-top: 1dp {{separator}};
+}
+
+.shell-layer-compact .group-row-text,
+.shell-layer-compact .group-card .field,
+.shell-layer-compact .group-note {
+  color: {{label}};
+}
+
+.shell-layer-compact .group-card .field,
+.shell-layer-compact .cd-field {
+  background-color: {{bg-card-2}};
+}
+
+.shell-layer-compact .group-field-hint {
+  color: {{label-2}};
+}
+
+.shell-layer-compact .group-row--static:active {
+  background-color: transparent;
+}
+
+.shell-layer-compact .settings-label.group-row-text {
+  color: {{label}};
+}
+
+/* A row that does something rather than opens a page (About > Send problem logs): accent text, like iOS. */
+.shell-layer-compact .settings-improve-send .group-row-text {
+  color: {{accent}};
+}
+
+.shell-layer-compact .group-row-sub,
+.shell-layer-compact .group-row-value,
+.shell-layer-compact .group-row .settings-choice-value-text,
+.shell-layer-compact .group-head,
+.shell-layer-compact .group-foot,
+.shell-layer-compact .me-card-meta,
+.shell-layer-compact .group-card .muted {
+  color: {{label-2}};
+}
+
+.shell-layer-compact .group-chevron {
+  image-color: {{label-3}};
+}
+
+.shell-layer-compact .group-icon svg {
+  image-color: {{label-on-accent}};
+}
+
+.shell-layer-compact .group-icon--accent { background-color: {{avatar-0}}; }
+.shell-layer-compact .group-icon--success { background-color: {{avatar-1}}; }
+.shell-layer-compact .group-icon--orange { background-color: {{avatar-2}}; }
+.shell-layer-compact .group-icon--purple { background-color: {{avatar-4}}; }
+.shell-layer-compact .group-icon--teal { background-color: {{avatar-5}}; }
+.shell-layer-compact .group-icon--indigo { background-color: {{avatar-6}}; }
+.shell-layer-compact .group-icon--gray { background-color: {{gray}}; }
+
+.shell-layer-compact .me-card-avatar .avatar-letter {
+  color: {{label-on-accent}};
+}
+
+/* Buttons: primary = accent pill, everything else = accent-tint pill (DESIGN 8.10). */
+.shell-layer-compact .settings-section--grouped .btn,
+.shell-layer-compact .settings-section--grouped .btn-secondary {
+  background-color: {{accent-tint}};
+  color: {{accent}};
+}
+
+.shell-layer-compact .settings-section--grouped .btn-primary {
+  background-color: {{accent}};
+  color: {{label-on-accent}};
+}
+
+.shell-layer-compact .settings-section--grouped .btn:active {
+  opacity: 0.6;
+}
+
+/* Phone Today page (DESIGN-pp-ui 8.16); geometry in components.rcss. */
+.shell-layer-compact .home-panel {
+  background-color: {{bg-grouped}};
+}
+
+.shell-layer-compact .home-date {
+  color: {{label-2}};
+}
+
+.shell-layer-compact .home-w {
+  background-color: {{bg-card}};
+}
+
+.shell-layer-compact .home-w--tap:active,
+.shell-layer-compact .home-av:active .home-av-frame,
+.shell-layer-compact .home-chat:active,
+.shell-layer-compact .home-brief:active,
+.shell-layer-compact .home-edit-toggle:active {
+  opacity: 0.6;
+}
+
+.shell-layer-compact .home-wh-title,
+.shell-layer-compact .home-av-name,
+.shell-layer-compact .home-chat-preview,
+.shell-layer-compact .home-small,
+.shell-layer-compact .home-brief-meta,
+.shell-layer-compact .home-w-hint,
+.shell-layer-compact .home-edit-size {
+  color: {{label-2}};
+}
+
+.shell-layer-compact .home-wh-more {
+  color: {{accent}};
+}
+
+.shell-layer-compact .home-chat-title,
+.shell-layer-compact .home-num,
+.shell-layer-compact .home-brief-title {
+  color: {{label}};
+}
+
+.shell-layer-compact .home-av-letter,
+.shell-layer-compact .home-chat-letter {
+  color: {{label-on-accent}};
+}
+
+.shell-layer-compact .home-wh-icon svg,
+.shell-layer-compact .home-chat-icon,
+.shell-layer-compact .home-edit-sign svg {
+  image-color: {{label-on-accent}};
+}
+
+/* The widgets' coloured squares (mockup 10-home-widgets). */
+.shell-layer-compact .home-wh-icon--favorites {
+  background-color: {{accent}};
+}
+
+.shell-layer-compact .home-wh-icon--calls {
+  background-color: {{success}};
+}
+
+.shell-layer-compact .home-wh-icon--mentions {
+  background-color: {{warn}};
+}
+
+.shell-layer-compact .home-wh-icon--recent {
+  background-color: {{mention}};
+}
+
+.shell-layer-compact .home-wh-icon--new-people {
+  background-color: {{avatar-4}};
+}
+
+/* Security: green when the recovery phrase has been opened, orange while it still should be written down. */
+.shell-layer-compact .home-wh-icon--security {
+  background-color: {{success}};
+}
+
+.shell-layer-compact .home-num--ok {
+  color: {{success}};
+}
+
+.shell-layer-compact .home-num--todo {
+  color: {{warn}};
+}
+
+/* Calls with nothing to show: a faint green phone, like the other empty widgets (Kenneth 2026-11-05). */
+.shell-layer-compact .home-empty-icon--calls {
+  background-color: {{x-home-empty-calls}};
+}
+
+.shell-layer-compact .home-empty-icon--calls svg {
+  image-color: {{success}};
+}
+
+/* Mentions / New people with nothing to show: a faint tinted icon over one grey line (mockup 12, option C). */
+.shell-layer-compact .home-empty-icon--mentions {
+  background-color: {{x-home-empty-mentions}};
+}
+
+.shell-layer-compact .home-empty-icon--mentions svg {
+  image-color: {{warn}};
+}
+
+.shell-layer-compact .home-empty-icon--new-people {
+  background-color: {{x-home-empty-new-people}};
+}
+
+.shell-layer-compact .home-empty-icon--new-people svg {
+  image-color: {{avatar-4}};
+}
+
+/* A suggested person in Favorites (not starred): a lighter name after a small blue sparkle. */
+.shell-layer-compact .home-av-name--suggested {
+  color: {{label-3}};
+}
+
+.shell-layer-compact .home-av-suggest {
+  image-color: {{accent}};
+}
+
+.shell-layer-compact .home-wh-icon--brief {
+  background-color: {{danger}};
+}
+
+/* The smaller headlines sit under a hairline. */
+.shell-layer-compact .home-brief {
+  border-top: 1dp {{separator}};
+}
+
+.shell-layer-compact .home-brief--head {
+  border-top-width: 0;
+}
+
+.shell-layer-compact .home-edit-sign--remove {
+  background-color: {{danger}};
+}
+
+.shell-layer-compact .home-edit-sign--add {
+  background-color: {{success}};
+}
+
+.shell-layer-compact .home-edit-handle svg {
+  image-color: {{gray}};
+}
+
+/* The row being dragged is lifted off its card: its own card colour and a soft shadow. While a row is held the press
+   tint would stay on the row the finger went down on, whichever widget it shows after a move: none while dragging. */
+.shell-layer-compact .home-edit-card--dragging .home-edit-row:active {
+  background-color: transparent;
+}
+
+.shell-layer-compact .home-edit-row--lifted,
+.shell-layer-compact .home-edit-card--dragging .home-edit-row--lifted:active {
+  background-color: {{bg-card}};
+  box-shadow: 0 6dp 18dp {{shadow}};
+}
+
+/* Home: the ask-AI dock and the tab bar share one opaque colour, no line between them or above the dock; the widgets
+   fade into it instead (Apple's widget pages). Other tabs keep the bar as it is. */
+.shell-layer-compact .home-landing {
+  background-color: {{x-dock}};
+}
+
+.shell-layer-compact .home-dock-fade {
+  decorator: linear-gradient(to bottom, {{x-dock-fade}}, {{x-dock}});
+}
+
+/* The dock's last 10dp melt into the tab bar's shade; the bar itself is a plain fill, no line. */
+.shell-layer-compact .home-dock-seam {
+  decorator: linear-gradient(to bottom, {{x-dock-fade}}, {{x-bar}});
+}
+
+.shell-bottom-chrome--home,
+.shell-bottom-chrome--home.shell-bottom-chrome--frost {
+  background-color: {{x-bar}};
+  border-top-width: 0;
+}
+
+/* Phone call pages (ShellCallChromeRml): always dark, whatever the theme; the sheet over them follows the theme. */
+.call-phone {
+  background-color: {{x-call-bg}};
+  color: {{x-call-ink}};
+}
+
+.call-phone svg {
+  image-color: {{x-call-ink}};
+}
+
+.call-phone-sealed-text,
+.call-phone-status,
+.call-phone-sub,
+.call-phone-who-status,
+.call-phone-pair-name,
+.call-phone-tile-note,
+.call-phone-hint,
+.call-phone-debug,
+.call-phone-tip,
+.call-phone-remote-note,
+.call-phone-step--done .call-phone-step-text {
+  color: {{x-call-ink-2}};
+}
+
+.call-phone-sealed svg {
+  image-color: {{x-call-ink-2}};
+}
+
+.call-phone-remote {
+  background-color: {{x-call-bg}};
+}
+
+.call-phone-video-dim {
+  background-color: {{x-call-dim}};
+}
+
+.call-phone-video-top {
+  background-color: {{x-call-video-top}};
+}
+
+.call-phone-notice {
+  background-color: {{x-call-notice}};
+}
+
+.call-phone-notice--warn {
+  background-color: {{x-call-notice-warn}};
+}
+
+.call-hold-pill {
+  background-color: {{x-call-notice-warn}};
+  color: {{x-call-ink}};
+}
+
+.call-hold-pill svg {
+  image-color: {{x-call-ink}};
+}
+
+.call-phone-notice-icon {
+  background-color: {{x-call-chip}};
+}
+
+/* #171: the reconnect capsule above the button bar — amber while the path is found again, green once restored;
+   the timer greys meanwhile. */
+.call-phone-reconnect {
+  background-color: {{x-call-notice-warn}};
+}
+
+.call-phone-reconnect--ok {
+  background-color: {{x-call-reconnect-ok}};
+}
+
+.call-phone-reconnect-icon {
+  background-color: {{x-call-chip}};
+}
+
+.call-phone-timer--dim {
+  color: {{x-call-timer-dim}};
+}
+
+.call-phone-signal {
+  background-color: {{x-call-chip}};
+}
+
+.call-phone-signal-bar {
+  background-color: {{x-call-ink-dim}};
+}
+
+.call-phone-signal-dot,
+.call-phone-signal-line,
+.call-phone-signal-bar--on {
+  background-color: {{x-call-secure}};
+}
+
+.call-phone-signal--sheet {
+  background-color: {{fill-2}};
+}
+
+.call-phone-signal--sheet .call-phone-signal-bar {
+  background-color: {{fill}};
+}
+
+.call-phone-signal--sheet .call-phone-signal-dot,
+.call-phone-signal--sheet .call-phone-signal-line,
+.call-phone-signal--sheet .call-phone-signal-bar--on {
+  background-color: {{secure}};
+}
+
+.call-phone-signal--fair .call-phone-signal-dot,
+.call-phone-signal--fair .call-phone-signal-line,
+.call-phone-signal--fair .call-phone-signal-bar--on {
+  background-color: {{x-call-warn}};
+}
+
+.call-phone-signal--fair .call-phone-signal-word {
+  color: {{x-call-warn}};
+}
+
+.call-phone-signal--poor .call-phone-signal-dot,
+.call-phone-signal--poor .call-phone-signal-line,
+.call-phone-signal--poor .call-phone-signal-bar--on {
+  background-color: {{x-call-danger}};
+}
+
+.call-phone-signal--poor .call-phone-signal-word {
+  color: {{x-call-danger}};
+}
+
+.call-phone-result {
+  background-color: {{x-call-result}};
+}
+
+.call-phone-result-check {
+  background-color: {{x-call-ok}};
+}
+
+.call-phone-pair-dot {
+  background-color: {{x-call-path-dot}};
+}
+
+.call-phone-pair-spark {
+  background-color: {{x-call-secure}};
+}
+
+.call-phone-step-text {
+  color: {{x-call-ink-3}};
+}
+
+.call-phone-step--current .call-phone-step-text {
+  color: {{x-call-ink}};
+}
+
+.call-phone-step-dot {
+  border-color: {{x-call-ink-dim}};
+}
+
+.call-phone-step--done .call-phone-step-dot {
+  background-color: {{x-call-ok}};
+}
+
+.call-phone-step--current .call-phone-step-dot {
+  border-color: transparent {{x-call-secure}} {{x-call-secure}} {{x-call-secure}};
+}
+
+.call-phone-tip-text {
+  color: {{x-call-secure}};
+}
+
+.call-phone-card {
+  background-color: {{x-call-card}};
+}
+
+.call-phone-tile {
+  background-color: {{x-call-tile}};
+}
+
+.call-phone-tile.call-phone-tile--speaking {
+  border-color: {{x-call-speaking}};
+}
+
+.call-phone-tile-label {
+  background-color: {{x-call-label-bg}};
+}
+
+.call-phone-controls {
+  background-color: {{x-call-bar}};
+}
+
+.call-phone-control-circle {
+  background-color: {{x-call-btn}};
+}
+
+.call-phone-control--on .call-phone-control-circle {
+  background-color: {{x-call-btn-on}};
+}
+
+.call-phone-control--on .call-phone-control-circle svg {
+  image-color: {{x-call-btn-on-ink}};
+}
+
+.call-phone-control--end .call-phone-control-circle,
+.call-phone-round--decline {
+  background-color: {{x-call-end}};
+}
+
+.call-phone-round--accept {
+  background-color: {{x-call-accept}};
+}
+
+.call-phone-pill-btn {
+  background-color: {{x-call-btn-2}};
+  color: {{x-call-ink}};
+}
+
+.call-phone-pill-btn--primary {
+  background-color: {{x-call-accent}};
+}
+
+/* G022: "Make a group…" and the group banner on the phone call page. */
+.call-make-group--phone,
+.call-group-offer--phone .call-group-offer-btn {
+  background-color: {{x-call-btn-2}};
+  color: {{x-call-ink}};
+}
+
+.call-make-group--phone svg {
+  image-color: {{x-call-ink}};
+}
+
+.call-group-offer--phone {
+  background-color: {{x-call-btn-2}};
+  color: {{x-call-ink}};
+}
+
+.call-group-offer--phone .call-group-offer-btn--primary {
+  background-color: {{x-call-accent}};
+}
+
+.call-phone-avatar--group {
+  background-color: {{avatar-2}};
+}
+
+.call-phone-sheet-lead,
+.call-phone-event-time,
+.call-phone-kv-value {
+  color: {{label-2}};
+}
+
+.call-phone-event-text,
+.call-phone-kv-key {
+  color: {{label}};
+}
+
+.call-phone-event-dot {
+  background-color: {{success}};
+}
+
+.call-phone-event--secure .call-phone-event-dot {
+  background-color: {{secure}};
+}
+
+.call-phone-sheet-group {
+  background-color: {{bg-card-2}};
+}
+
+.call-phone-kv {
+  border-color: {{separator}};
+}
+
+/* Me -> Storage and its storage manager (merged 2026-11-05 from kenneth/storage-manager; colours moved onto tokens). */
+.storage-bar {
+  background-color: {{fill}};
+}
+
+.storage-c-picture {
+  background-color: {{accent}};
+}
+
+.storage-c-video {
+  background-color: {{avatar-4}};
+}
+
+.storage-c-file {
+  background-color: {{warn}};
+}
+
+.storage-c-chats {
+  background-color: {{gray}};
+}
+
+.storage-c-other {
+  background-color: {{x-storage-other}};
+}
+
+.storage-row + .storage-row {
+  border-top-color: {{separator}};
+}
+
+.settings-radio-check {
+  image-color: {{accent}};
+}
+
+.storage-nav-back,
+.storage-nav-action {
+  color: {{accent}};
+}
+
+.storage-nav-back-icon {
+  image-color: {{accent}};
+}
+
+.storage-seg {
+  background-color: {{fill-2}};
+}
+
+.storage-seg .storage-seg-tab {
+  color: {{label}};
+}
+
+.storage-seg .storage-seg-tab--on {
+  background-color: {{bg-card}};
+}
+
+.storage-tile-frame {
+  background-color: {{accent-tint}};
+}
+
+.storage-tile--video .storage-tile-frame {
+  background-color: {{x-storage-video-tint}};
+}
+
+.storage-tile-size {
+  color: {{x-on-media}};
+  font-effect: shadow(1dp 1dp {{x-on-media-shadow}});
+}
+
+.storage-tile-play {
+  image-color: {{x-on-media}};
+}
+
+.storage-check {
+  border-color: {{gray}};
+}
+
+.storage-tile-check {
+  border-color: {{x-on-media}};
+  background-color: {{shadow}};
+}
+
+.storage-check--on,
+.storage-tile-check.storage-check--on {
+  border-color: {{accent}};
+  background-color: {{accent}};
+}
+
+.storage-check-icon {
+  image-color: {{label-on-accent}};
+}
+
+.storage-file-type {
+  background-color: {{warn}};
+}
+
+.storage-file-type-text {
+  color: {{label-on-accent}};
+}
+
+/* Phone round button (DEV/PLAN-minimal-nav.md G): a clear 44dp target, the 34dp disc a quiet grey that darkens while
+   pressed, the icon in the label colour. */
+.shell-layer-compact .shell-circle-btn,
+.shell-layer-compact .shell-circle-btn:hover,
+.shell-layer-compact .shell-circle-btn:focus {
+  background-color: transparent;
+}
+
+.shell-layer-compact .shell-circle-btn-face {
+  background-color: {{x-circle-bottom}};
+  decorator: linear-gradient(to bottom, {{x-circle-top}}, {{x-circle-bottom}});
+  box-shadow: 0 1dp 3dp {{shadow}};
+}
+
+.shell-layer-compact .shell-circle-btn:active .shell-circle-btn-face {
+  background-color: {{fill}};
+  decorator: linear-gradient(to bottom, {{fill}}, {{fill}});
+}
+
+/* Chats header plus (B3): a flat teal-tint disc with a teal plus; no 3-D gradient, no shadow. */
+.shell-layer-compact .pane-nav-plus .shell-circle-btn-face,
+.shell-layer-compact .pane-nav-plus:active .shell-circle-btn-face {
+  background-color: {{secure-tint}};
+  decorator: none;
+  box-shadow: none;
+}
+
+.shell-layer-compact .pane-nav-actions .pane-nav-plus .shell-circle-btn-face svg {
+  image-color: {{secure}};
+}
+
+.pane-nav-link-icon--ok {
+  image-color: {{secure}};
+}
+
+.pane-nav-link-icon--offline {
+  image-color: {{danger}};
+}
+
+.pane-nav-link-text {
+  color: {{label-2}};
+}
+
+.shell-layer-compact .shell-circle-btn .shell-circle-btn-face svg {
+  image-color: {{label}};
+}
+
+/* Phone AI drawer (DEV/PLAN-minimal-nav.md C): the page colour, a soft shadow fading out from its right edge, and the
+   bottom "you" row pressed like a list row. */
+.shell-drawer-body {
+  background-color: {{bg}};
+}
+
+.shell-drawer-edge {
+  decorator: linear-gradient(to right, {{x-drawer-edge}}, {{x-drawer-edge-fade}});
+}
+
+.ai-drawer-title,
+.ai-drawer-me-name {
+  color: {{label}};
+}
+
+/* The ask-AI panel's input bar: the bar colour, frosted with Transparency on (like a chat's composer). */
+.ask-ai-composer {
+  background-color: {{x-bar}};
+}
+
+.shell-page-sheet--frost .ask-ai-composer {
+  background-color: {{x-bar-blur}};
+  backdrop-filter: blur(20px);
+}
+
+/* The drawer's top bar and "you" row: the bar colour, frosted with Transparency on (like .pane-nav-bg). */
+.ai-drawer-top,
+.ai-drawer-me,
+.ai-drawer-me:hover,
+.ai-drawer-me:focus {
+  background-color: {{x-bar}};
+}
+
+/* The search pill on the bar: a fill, so it shows on the bar colour. */
+.ai-drawer-search {
+  background-color: {{fill-2}};
+}
+
+.shell-drawer--frost .ai-drawer-top,
+.shell-drawer--frost .ai-drawer-me,
+.shell-drawer--frost .ai-drawer-me:hover,
+.shell-drawer--frost .ai-drawer-me:focus {
+  background-color: {{x-bar-blur}};
+  backdrop-filter: blur(20px);
+}
+
+.ai-drawer-me:active {
+  background-color: {{fill-2}};
+}
+
+.ai-drawer-me-avatar .avatar-letter {
+  color: {{label-on-accent}};
+}
+
+.ai-drawer-me-chevron {
+  image-color: {{label-3}};
+}
+
+/* On the camera the disc is a dark glass with a white chevron, in both themes. */
+.shell-layer-compact .qr-scan-back .shell-circle-btn-face,
+.shell-layer-compact .qr-scan-back:active .shell-circle-btn-face {
+  background-color: #00000066;
+  decorator: none;
+  box-shadow: none;
+}
+
+.shell-layer-compact .qr-scan-back .shell-circle-btn-face svg {
+  image-color: #ffffff;
+}
+
+.context-menu-layer--popover-left .context-menu-panel {
+  background-color: {{x-circle-bottom}};
+  decorator: linear-gradient(to bottom, {{x-circle-top}}, {{x-circle-bottom}});
+  box-shadow: 0 2dp 8dp {{shadow}};
+}
+
+.context-menu-layer--popover-left .context-menu-item,
+.context-menu-layer--popover-left .context-menu-item:hover,
+.context-menu-layer--popover-left .context-menu-item:focus {
+  background-color: transparent;
+  border: 0;
+}
+
+.context-menu-layer--popover-left .context-menu-item:active {
+  background-color: {{fill}};
+}
+
+.context-menu-layer--popover-left .context-menu-item-icon {
+  background-color: {{fill-2}};
+}
+}

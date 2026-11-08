@@ -29,7 +29,40 @@ PushDeviceRegistration MakeRegistration(ConversationsHub& hub, const std::string
   return reg;
 }
 
+/** The VoIP binding beside `reg` (P016): its own platform, device id and token. */
+PushDeviceRegistration VoipBinding(const PushDeviceRegistration& reg, const std::string& voip_token) {
+  PushDeviceRegistration call_reg = reg;
+  call_reg.platform = IPushDeviceRegistrar::kVoipPushPlatform;
+  call_reg.device_id = reg.device_id + IPushDeviceRegistrar::kVoipPushDeviceSuffix;
+  call_reg.push_token = voip_token;
+  return call_reg;
+}
+
 } // namespace
+
+Roe<void> PushDeviceCoordinator::RegisterWith(IPushDeviceClient& client, const PushDeviceRegistration& reg,
+                                              const std::string& voip_token) {
+  auto registered = client.RegisterDevice(reg);
+  // A CallKit iPhone's calls come by VoIP push, to their own token (P016).
+  if (!voip_token.empty()) {
+    if (auto call_registered = client.RegisterDevice(VoipBinding(reg, voip_token)); !call_registered && registered) {
+      return call_registered;
+    }
+  }
+  return registered;
+}
+
+Roe<void> PushDeviceCoordinator::UnregisterWith(IPushDeviceClient& client, const PushDeviceRegistration& reg,
+                                                const std::string& voip_token) {
+  auto unregistered = client.UnregisterDevice(reg);
+  if (!voip_token.empty()) {
+    if (auto call_unregistered = client.UnregisterDevice(VoipBinding(reg, voip_token));
+        !call_unregistered && unregistered) {
+      return call_unregistered;
+    }
+  }
+  return unregistered;
+}
 
 Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
   // Registered whatever "Show notifications" says (P005 / P010): in the background a phone is
@@ -49,18 +82,7 @@ Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
   if (reg.relay_user_id.empty()) {
     return Error("Relay user not registered");
   }
-  auto registered = client->RegisterDevice(reg);
-  // A CallKit iPhone's calls come by VoIP push, to their own token (P013).
-  if (const std::string call_token = IPushDeviceRegistrar::Instance().VoipPushToken(); !call_token.empty()) {
-    PushDeviceRegistration call_reg = reg;
-    call_reg.platform = IPushDeviceRegistrar::kVoipPushPlatform;
-    call_reg.device_id = reg.device_id + IPushDeviceRegistrar::kVoipPushDeviceSuffix;
-    call_reg.push_token = call_token;
-    if (auto call_registered = client->RegisterDevice(call_reg); !call_registered && registered) {
-      return call_registered;
-    }
-  }
-  return registered;
+  return RegisterWith(*client, reg, IPushDeviceRegistrar::Instance().VoipPushToken());
 }
 
 Roe<void> PushDeviceCoordinator::Unregister(ConversationsHub& hub) {
@@ -79,17 +101,7 @@ Roe<void> PushDeviceCoordinator::Unregister(ConversationsHub& hub) {
   if (reg.relay_user_id.empty()) {
     return {};
   }
-  auto unregistered = client->UnregisterDevice(reg);
-  if (const std::string call_token = IPushDeviceRegistrar::Instance().VoipPushToken(); !call_token.empty()) {
-    PushDeviceRegistration call_reg = reg;
-    call_reg.platform = IPushDeviceRegistrar::kVoipPushPlatform;
-    call_reg.device_id = reg.device_id + IPushDeviceRegistrar::kVoipPushDeviceSuffix;
-    call_reg.push_token = call_token;
-    if (auto call_unregistered = client->UnregisterDevice(call_reg); !call_unregistered && unregistered) {
-      return call_unregistered;
-    }
-  }
-  return unregistered;
+  return UnregisterWith(*client, reg, IPushDeviceRegistrar::Instance().VoipPushToken());
 }
 
 void PushDeviceCoordinator::OnBackendSwitchPending(ConversationsHub& hub, const bool pending) {

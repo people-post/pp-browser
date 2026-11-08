@@ -14,6 +14,8 @@ namespace {
 
 // Written on the UI thread; read from any (alert gating, the work reconcile).
 std::atomic<AppLifecycleState> g_state{AppLifecycleState::Foreground};
+/** IsVisible(): cleared by a real background (DID_ENTER_BACKGROUND), set again on DID_ENTER_FOREGROUND. */
+std::atomic<bool> g_visible{true};
 struct Listener {
   AppLifecycle::ListenerId id = 0;
   std::function<void()> fn;
@@ -134,6 +136,10 @@ bool AppLifecycle::IsForeground() {
   return g_state == AppLifecycleState::Foreground;
 }
 
+bool AppLifecycle::IsVisible() {
+  return g_visible;
+}
+
 bool AppLifecycle::IsUserAttentive() {
   if (!IsForeground()) {
     return false;
@@ -244,7 +250,12 @@ void AppLifecycle::OnWillEnterBackground() {
   logger().info << "Entering background";
 }
 
+void AppLifecycle::OnDidEnterBackground() {
+  g_visible = false;
+}
+
 void AppLifecycle::OnDidEnterForeground() {
+  g_visible = true;
   // Always ResumeBackgroundWork: Android can deliver WILL_ENTER_BACKGROUND without a matching
   // DID_ENTER_FOREGROUND after a surface blip, or the reverse order at cold start.
   // Resume is idempotent; skipping it when g_state was already Foreground left workers paused.

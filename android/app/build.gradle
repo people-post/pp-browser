@@ -16,13 +16,27 @@ def ppBrowserCmakeArgs = [
     "-DPP_BROWSER_RELEASE_VERSION=${ppBrowserReleaseVersion}",
     "-DPP_BROWSER_COMPILER_CACHE=${ppBrowserCompilerCache}",
 ]
+// UI demo app (plan DEV/PLAN-ui-demo-data.md): ./gradlew assembleRelease -PppBrowserUiDemo=true with
+// PP_BROWSER_DEV_TOOLS=1. A separate app (applicationIdSuffix) with fake data and no backend address.
+def ppBrowserUiDemo = (project.findProperty('ppBrowserUiDemo') ?: 'false').toString() == 'true'
 def ppApiUrlProd = System.getenv('PP_API_URL_PROD') ?: ''
-if (ppApiUrlProd) {
+if (ppApiUrlProd && !ppBrowserUiDemo) {
     ppBrowserCmakeArgs += ["-DPP_API_URL_PROD=${ppApiUrlProd}"]
 }
 def ppApiUrlQa = System.getenv('PP_API_URL_QA') ?: ''
-if (ppApiUrlQa) {
+if (ppApiUrlQa && !ppBrowserUiDemo) {
     ppBrowserCmakeArgs += ["-DPP_API_URL_QA=${ppApiUrlQa}"]
+}
+if (ppBrowserUiDemo) {
+    ppBrowserCmakeArgs += ["-DPP_BROWSER_UI_DEMO=ON"]
+}
+if (System.getenv('PP_BROWSER_DEV_TOOLS')) {
+    ppBrowserCmakeArgs += ["-DPP_BROWSER_DEV_TOOLS=ON"] // developer builds only: Settings -> About -> Engine test
+}
+if (System.getenv('PP_BROWSER_DEV_PIN') && !ppBrowserUiDemo && !System.getenv('CI')) {
+    // Developer builds only, as the Mac / iPhone install scripts do: the PIN is compiled in and the app unlocks
+    // itself on a cold start. Never set in CI or for a release.
+    ppBrowserCmakeArgs += ["-DPP_BROWSER_DEV_PIN=${System.getenv('PP_BROWSER_DEV_PIN')}"]
 }
 if (ppBrowserCompilerCache == 'ON') {
     ppBrowserCmakeArgs += [
@@ -39,6 +53,9 @@ android {
 
     defaultConfig {
         applicationId "dev.pp_browser.app"
+        if (ppBrowserUiDemo) {
+            applicationIdSuffix ".uidemo"
+        }
         minSdkVersion 24
         targetSdkVersion 35
         versionCode 1
@@ -62,6 +79,14 @@ android {
 
     buildFeatures {
         buildConfig true
+    }
+
+    if (!ppBrowserUiDemo) {
+        // assets/demo (fake chat pictures) ships only in the UI demo app.
+        androidResources {
+            // AGP's default list (adds <dir>_*) plus the demo directory.
+            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:demo'
+        }
     }
 
     sourceSets {

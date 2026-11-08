@@ -31,6 +31,16 @@ struct DirectHealthInput {
   bool media_connected = false;
   /** The direct stream is up (MediaReady). */
   bool direct_ready = false;
+  /** The direct stream committed connected in this session (K014: a connected call can drop, not time out). */
+  bool direct_was_connected = false;
+  /** The group path carries the call's media. */
+  bool hop_attached = false;
+  /** The call is moving onto the hop (the 1:1 stream was released for it). */
+  bool hop_expected = false;
+  /** The peer ended the call (call-media `bye`): its call_leave closes the call; nothing to judge. */
+  bool peer_ended = false;
+  /** How long the direct stream has been gone after it had connected (0: not gone). */
+  int64_t stream_gone_ms = 0;
   bool has_call = false;
   size_t n_joined = 0;
   /** When the engine started (Unix ms; 0: unknown). */
@@ -48,7 +58,18 @@ enum class DirectHealthAction {
   HealConnected,
   /** No stream within the connect budget: the call fails (stays open). */
   TimedOut,
+  /**
+   * K014: the stream that was connected is gone and no leg report explained it within
+   * kDirectStreamGoneGraceMs: the call dropped (never a connect timeout).
+   */
+  Dropped,
 };
+
+/**
+ * K014: a connected stream's end is reported by its leg (`on_failed` / `on_remote_ended`); the
+ * health tick only backs that up, after this grace (one report in flight must win the race).
+ */
+inline constexpr int64_t kDirectStreamGoneGraceMs = 2000;
 
 DirectHealthAction DecideDirectHealth(const DirectHealthInput& in);
 

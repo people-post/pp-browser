@@ -34,6 +34,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_CAP_MEDIA_RELAY` | `capabilities.media_relay` | Same bool forms |
 | `PP_NODE_CAP_DHT` | `capabilities.dht` | Same bool forms (Node DHT participation; default off) |
 | `PP_NODE_DHT_K` | `dht.k_bucket_size` | 1–20 (default 20). Labs only: a small k makes lookups walk |
+| `PP_NODE_CAPACITY_LINKS` / `_RESERVATIONS` / `_BRIDGES` / `_GROUP_CALLS` | `mesh.capacity.*` | A positive count ([Node capacity](#node-capacity-meshcapacity)); anything else keeps the config's |
 | `PP_NODE_LAB_DHT_FIND` | — | `1`: status HTTP serves `GET /dht/find?peer_id=…` (starts a lookup). Labs only — leave unset on a reachable status port |
 | `PP_NODE_CAP_LEDGER_GATEWAY` | `capabilities.ledger_gateway` | Same bool forms (N029 Phase C prep; default off; no chain runtime yet) |
 | `PP_NODE_ADVERTISE_MULTIADDRS` | `libp2p.advertise_multiaddrs` | Comma-separated **public** multiaddrs for directory publish (never `0.0.0.0`) |
@@ -55,6 +56,8 @@ curl -sS -X POST -H 'Content-Type: application/json' -d '{"state":"draining"}' h
 ```
 
 States only advance `active` → `draining` → `retiring`; `draining` → `active` is allowed, `retiring` is final (409). Contract: [MESH_DIRECTORY.md](../../projects/p2p-mesh/MESH_DIRECTORY.md#heartbeat).
+
+**Draining the node itself** ([N033](../../projects/p2p-mesh/DECISIONS.md#n033--nodes-say-how-busy-they-are-per-service-clients-act-on-the-level)): on a loopback status bind the same `POST /control/state` works with or without the heartbeat. `draining` (or `retiring`) makes every service take nothing new and say `draining` in its replies: phones park elsewhere, new calls go to other nodes, and what the node already serves goes on until it stops. `active` lifts it (unless the heartbeat has reached `retiring`). Use it before a planned restart.
 
 JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
 
@@ -124,7 +127,7 @@ When adding a new Me-tab section, add its normalizer next to the domain types un
 
 **Auxiliary pane (expanded layout):** `preferences.json` → `auxiliary_width_dp` (default 320, clamped 280–640). Written by `ShellHost` after a splitter drag on the pane's left edge ends; see [ui/WINDOW_SHELL.md](../ui/WINDOW_SHELL.md).
 
-**Compact chrome materials:** `preferences.json` → `reduce_transparency` (Me → Appearance; opaque shell, no backdrop frost) and `compact_chrome_frost` (default true; disable frost tier via JSON for dogfood). Schema v8.
+**Compact chrome materials:** `preferences.json` → `reduce_transparency` (opaque bars, no backdrop frost; Me → Appearance → **Transparency** shows it inverted, on by default; the AI assistant's `set_reduce_transparency` sets it too) and `compact_chrome_frost` (default true; disable frost tier via JSON for dogfood). Schema v8.
 
 **Reachability nudge ack:** `preferences.json` → `reachability_nudge_acked_status` (`outbound_only` / `blocked`, or empty). Schema v9. Cleared when inbound becomes reachable so a later regression can show the Me / Network attention dots again.
 
@@ -190,6 +193,19 @@ On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloa
 - **`backend.env`** — `prod` (default) | `qa` | `custom`; set in Me → Network → Service. `prod` / `qa` derive every backend URL from the compiled origin and ignore the `relay` / `directory` / `registration` values (kept in the file, untouched by saves); `custom` uses them, and only then does Network show the URL fields. `qa` is offered only when the build has a QA origin (otherwise it loads as `prod`). The backend is fixed for a run: a change is saved at once and applies after a restart, and the settings row says so. Saving the switch also unbinds this device's push token from the running backend (best effort); switching back before the restart registers it again. A file with no `backend` key whose saved URLs differ from the defaults loads as `custom`. `PP_BROWSER_ORIGIN` overrides all of it.
 - **`relay` / `directory` / `registration`** — HTTP endpoints (the `custom` backend's); platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). `directory` may also list ordered `providers[]` for failover (N029 nd3); see [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 - **`libp2p`** — mesh role and Amp underlay policy. `node_enabled` (desktop; ignored on mobile) selects Node vs Client hosting posture ([p2p-mesh N001](../../projects/p2p-mesh/DECISIONS.md)). **`mesh_enabled`** (default **true**) is required for the peer mesh: Amp UDP + MSH + channels ([adp D10](../../projects/adp/PHASES.md)). Amp bind/start failure **fails mesh start** (no TCP underlay fallback). Set `mesh_enabled=false` to leave peer mesh off. Optional **`amp_udp_port`** (0 = ephemeral; org seed should pin **443**). Empty `bootstrap_peers` fills the Brief ADP L0 seeds (`/udp/443/adp/2/…`, [N002](../../projects/p2p-mesh/DECISIONS.md#n002--seed-multiaddr-ip--443--peerid-no-dns)); a non-empty list overrides hardcoded. SoftMigrate / dial-back / circuit warm prefer HTTP `GET /v1/mesh/nodes` and last-good `{data_dir}/mesh_directory_nodes.json` ahead of config/hardcoded ([N027](../../projects/p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory)). LAN mDNS TXT includes `amp_udp=` so peers can build ADP multiaddrs. Org **`pp-node`** hosts Amp circuit/media-relay when capabilities are on. Me → Network shows Help-the-network, Amp listen, and Inbound via Amp dial-back (D8). Contacts may store dialable ADP `multiaddrs` (`/ip4/…/udp/…/adp/2/p2p/<PeerId>`). Optional **`mobility`** (`auto` default | `stationary` | `mobile`) pins this device's call-path mobility class (dogfood / hard lab; [CALLS.md § Call media paths](../architecture/CALLS.md#call-media-paths-11--call-path-resilience)); `--mobility=` overrides it. Prefer the modern **`mesh`** key (same schema); **`libp2p`** is a legacy alias at load time.
+
+### Node capacity (`mesh.capacity`)
+
+How much a node serving others takes on. Each is a hard limit and the 1.0 of its pressure behind the service levels ([N033](../../projects/p2p-mesh/DECISIONS.md#n033--nodes-say-how-busy-they-are-per-service-clients-act-on-the-level)): busy from 70 %, full from 95 %. Unset or `null` keeps the default; a device ignores it. Read at mesh start.
+
+| Key | Default | What it counts |
+|-----|---------|----------------|
+| `links` | `16384` | Amp links — one per client, whatever it uses |
+| `reservations` | `8192` | Parked answerers (phones that stay reachable through this node) |
+| `bridges` | `4096` | Live 1:1 relayed calls and other circuits |
+| `group_calls` | `512` | Group calls hosted (`media_relay` sessions) |
+
+The link default is measured ([STRESS_LAB.md](STRESS_LAB.md)): on two cores a parked client renewing every 10 s costs ~20 KB of memory, 12k links take 17 % of a core and 20k 46 %, and the node's one pump thread saturates past ~23k links, so 16384 keeps an idle table near a third of a core. `reservations` (8192) caps the parked phones below that. Size it to the machine: a smaller node lower, a bigger one only once the stress lab says its pump keeps up.
 
 ### Mesh DHT (n2)
 
@@ -267,6 +283,7 @@ Desktop and mobile builds write the root log (same lines and level as the consol
 | `--log-file PATH` | Write the log to `PATH` (rotation uses the same name pattern next to it) |
 | `--no-log-file` | Disable the file log (console only) |
 | `--debug` | DEBUG level for console and file (desktop default is WARNING) |
+| `--ui-perf-test` | Developer builds only (`-DPP_BROWSER_DEV_TOOLS=ON` or a baked-in `PP_BROWSER_DEV_PIN`): open the engine test page at startup (frame-time stats; log lines `ui.perftest …`). On phones: Settings → About → Engine test |
 | `--mobility=auto\|stationary\|mobile` | Pin the call-path mobility class (wins over config `mesh.mobility`; also on `pp-call-probe`) |
 
 Two channels write shareable lines (`common/ShareableLine.h`: `event=… k=v`, no free text or raw ids) to files of their own next to it, rotated the same way and written at any log level (with `--debug` they also appear in the main log):

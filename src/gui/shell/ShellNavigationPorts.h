@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/ui/ShellLayout.h"
 #include "lib/ui/ShellTypes.h"
 
 #include <functional>
@@ -11,7 +12,6 @@ namespace pbr {
 struct ShellChromeSnapshot {
   LayoutMode layout_mode = LayoutMode::Expanded;
   NavTab nav_tab = NavTab::Home;
-  bool account_sheet_open = false;
   /** Top transient pane is `settings_detail`. */
   bool settings_detail_transient = false;
   /** Expanded Me primary pane shows settings detail. */
@@ -28,11 +28,18 @@ struct ShellChromeSnapshot {
   bool compact_chat_open = false;
 };
 
+/**
+ * A send from the AI page's own composer (the PP 助手 list, no conversation open over it) starts a new AI
+ * conversation; once one is open over that page, the same tab sends into it (text and pictures alike).
+ */
+inline bool SendStartsHomeConversation(const ShellChromeSnapshot& chrome) {
+  return chrome.nav_tab == NavTab::Home && !chrome.compact_chat_open;
+}
+
 inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   ShellChromeSnapshot snap;
   snap.layout_mode = state.layout_mode;
   snap.nav_tab = state.nav_tab;
-  snap.account_sheet_open = state.account_sheet_open;
   snap.settings_detail_transient =
       !state.transient_stack.empty() && state.transient_stack.back().spec.key == "settings_detail";
   snap.settings_detail_primary = state.primary_pane_key == "settings_detail";
@@ -43,7 +50,8 @@ inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   snap.nav_badges = state.nav_badges;
   snap.banner_message = state.banner_message.c_str();
   snap.auxiliary_open = state.auxiliary_open;
-  snap.compact_chat_open = state.compact_chat_open;
+  // Under a hidden tab's page (phone Me / Contacts) the chat overlay is open but not on screen.
+  snap.compact_chat_open = state.compact_chat_open && !ShellLayout::HiddenTabShown(state);
   return snap;
 }
 
@@ -59,8 +67,6 @@ struct ShellNavigationPorts {
   std::function<bool(const std::string& id)> has_local_back;
 
   std::function<void(NavTab tab)> select_nav_tab;
-  std::function<void()> open_account_sheet;
-  std::function<void()> close_account_sheet;
   std::function<void()> clear_primary_pane;
   std::function<void(const std::string& key)> set_primary_pane;
   std::function<void(const PaneSpec& spec)> push_transient;
@@ -84,6 +90,10 @@ struct ShellNavigationPorts {
   std::function<void()> close_auxiliary;
   std::function<int(const PaneSpec& spec)> push_layer;
   std::function<void(int layer_id)> close_layer;
+  /** The layer push_layer returned is still open (a sheet stacked over others learns it was closed). */
+  std::function<bool(int layer_id)> has_layer;
+  /** Closes every page sheet at once (a button in a sheet stacked over others leaves for another page). */
+  std::function<void()> close_page_sheets;
   /**
    * Mobile / compact IME-replacement bottom panel (latch height, no scrim, remount-only).
    * set_bottom_chrome returns false when that presentation is unavailable (expanded desktop).

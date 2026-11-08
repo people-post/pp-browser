@@ -79,6 +79,8 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   config.mesh.media_relay_video.serve_levels = {2};
   config.mesh.media_relay_video.carry_levels = 1;
   config.mesh.media_relay_video.strict = true;
+  config.mesh.capacity.links = 20000;
+  config.mesh.capacity.group_calls = 64;
 
   const pbr::Object out = pbr::AppConfigToObject(config);
   ASSERT_TRUE(out.contains("mesh"));
@@ -125,6 +127,9 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   EXPECT_EQ(parsed.mesh.media_relay_video.serve_levels, std::vector<int>{2});
   EXPECT_EQ(parsed.mesh.media_relay_video.carry_levels, 1);
   EXPECT_TRUE(parsed.mesh.media_relay_video.strict);
+  EXPECT_EQ(parsed.mesh.capacity.links, 20000u);
+  EXPECT_EQ(parsed.mesh.capacity.group_calls, 64u);
+  EXPECT_EQ(parsed.mesh.capacity.reservations, 0u) << "unset keeps the default";
 }
 
 TEST(ConfigJsonTest, RoundTripsDirectoryProviders) {
@@ -179,6 +184,176 @@ TEST(ConfigJsonTest, ProfilePrefsSidebarFieldsDefaultWhenAbsentAndRoundTrip) {
   EXPECT_TRUE(parsed.sidebar_collapsed);
   EXPECT_EQ(parsed.auxiliary_width_dp, 400);
   EXPECT_TRUE(parsed.show_advanced_settings);
+}
+
+TEST(ConfigJsonTest, ProfilePrefsHomeWidgetsHiddenDefaultsEmptyAndRoundTrips) {
+  // Edit Home (DESIGN-pp-ui 8.16): the widgets switched off, device-only; absent = every widget shown.
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.home_widgets_hidden = {"stale"};
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_TRUE(loaded.home_widgets_hidden.empty());
+
+  pbr::ProfilePreferences edited;
+  edited.home_widgets_hidden = {"brief", "new_people"};
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_EQ(parsed.home_widgets_hidden, (std::vector<std::string>{"brief", "new_people"}));
+
+  // Edit Home's order: absent reads back as none (the default order), a written one comes back as it was.
+  EXPECT_TRUE(loaded.home_widgets_order.empty());
+  edited.home_widgets_order = {"brief", "favorites", "calls"};
+  pbr::ProfilePreferences ordered;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), ordered);
+  EXPECT_EQ(ordered.home_widgets_order, (std::vector<std::string>{"brief", "favorites", "calls"}));
+}
+
+TEST(ConfigJsonTest, ProfilePrefsStarredContactsRoundTripInStarOrder) {
+  // Starred contacts (常用联系人) are kept in the order they were starred; absent reads back as none, a repeat once.
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.starred_contacts = {"stale"};
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_TRUE(loaded.starred_contacts.empty());
+
+  pbr::ProfilePreferences edited;
+  edited.starred_contacts = {"c-2", "c-1"};
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_EQ(parsed.starred_contacts, (std::vector<std::string>{"c-2", "c-1"}));
+
+  auto repeated = pbr::TryParseObject(R"({ "starred_contacts": ["a", "", "b", "a", 3] })");
+  ASSERT_TRUE(repeated.has_value());
+  pbr::ProfilePreferences cleaned;
+  pbr::ProfilePrefsFromObject(*repeated, cleaned);
+  EXPECT_EQ(cleaned.starred_contacts, (std::vector<std::string>{"a", "b"}));
+}
+
+TEST(ConfigJsonTest, ProfilePrefsRecoveryPhraseSeenRoundTripsAndDefaultsOff) {
+  // Home's Security widget: absent (a fresh profile) reads as not yet seen; once set it stays set.
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.recovery_phrase_seen = true;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_FALSE(loaded.recovery_phrase_seen);
+
+  pbr::ProfilePreferences edited;
+  edited.recovery_phrase_seen = true;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_TRUE(parsed.recovery_phrase_seen);
+}
+
+TEST(ConfigJsonTest, ProfilePrefsUnlockGraceMinutesRoundTripsAndRejectsOddValues) {
+  // PIN grace window (#21): absent reads 15; 0/5/15/60 round-trip; anything else reads back as 15.
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.unlock_grace_minutes = 60;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_EQ(loaded.unlock_grace_minutes, 15);
+
+  for (int minutes : {0, 5, 15, 60}) {
+    pbr::ProfilePreferences edited;
+    edited.unlock_grace_minutes = minutes;
+    pbr::ProfilePreferences parsed;
+    pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+    EXPECT_EQ(parsed.unlock_grace_minutes, minutes);
+  }
+
+  for (const char* odd_json : {R"({ "unlock_grace_minutes": 7 })", R"({ "unlock_grace_minutes": -1 })",
+                               R"({ "unlock_grace_minutes": 100000 })", R"({ "unlock_grace_minutes": "15" })"}) {
+    auto odd = pbr::TryParseObject(odd_json);
+    ASSERT_TRUE(odd.has_value());
+    pbr::ProfilePreferences parsed;
+    parsed.unlock_grace_minutes = 0;
+    pbr::ProfilePrefsFromObject(*odd, parsed);
+    EXPECT_EQ(parsed.unlock_grace_minutes, 15) << odd_json;
+  }
+}
+
+TEST(ConfigJsonTest, ProfilePrefsPinDigitsUnknownWhenAbsentAndRejectsOddValues) {
+  // DEV/PLAN-pin-gate-redesign.md B: absent = unknown (no schema bump); 0 (a text PIN) and 4..8 round-trip; anything
+  // else reads back as unknown.
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.pin_digits = 6;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_EQ(loaded.pin_digits, std::nullopt);
+  EXPECT_FALSE(pbr::ProfilePrefsToObject(loaded).getIf<int64_t>("pin_digits").has_value()) << "unknown is not written";
+
+  for (int digits : {0, 6}) {
+    pbr::ProfilePreferences edited;
+    edited.pin_digits = digits;
+    pbr::ProfilePreferences parsed;
+    pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+    EXPECT_EQ(parsed.pin_digits, digits);
+  }
+
+  for (const char* odd_json : {R"({ "pin_digits": 3 })", R"({ "pin_digits": 9 })", R"({ "pin_digits": -1 })",
+                               R"({ "pin_digits": true })"}) {
+    auto odd = pbr::TryParseObject(odd_json);
+    ASSERT_TRUE(odd.has_value());
+    pbr::ProfilePreferences parsed;
+    parsed.pin_digits = 6;
+    pbr::ProfilePrefsFromObject(*odd, parsed);
+    EXPECT_EQ(parsed.pin_digits, std::nullopt) << odd_json;
+  }
+}
+
+TEST(ConfigJsonTest, ProfilePrefsHomeShowDynamicRoundTripsAndDefaultsOff) {
+  // Minimal AI-first Home: absent (a fresh or pre-existing profile) reads off; once set it stays set.
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.home_show_dynamic = true;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_FALSE(loaded.home_show_dynamic);
+
+  pbr::ProfilePreferences edited;
+  edited.home_show_dynamic = true;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_TRUE(parsed.home_show_dynamic);
+}
+
+TEST(ConfigJsonTest, ProfilePrefsAiDotDefaultsRoundTripAndUnknownLook) {
+  // Phone AI dot (DESIGN-pp-ui §8.14): on, two eyes, medium, right edge, 600 down its band unless written otherwise.
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_TRUE(loaded.ai_dot_shown);
+  EXPECT_EQ(loaded.ai_dot_look, "b");
+  EXPECT_EQ(loaded.ai_dot_size, "m");
+  EXPECT_FALSE(loaded.ai_dot_left);
+  EXPECT_EQ(loaded.ai_dot_y_permille, 600);
+
+  pbr::ProfilePreferences edited;
+  edited.ai_dot_shown = false;
+  edited.ai_dot_look = "c";
+  edited.ai_dot_size = "l";
+  edited.ai_dot_left = true;
+  edited.ai_dot_y_permille = 125;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_FALSE(parsed.ai_dot_shown);
+  EXPECT_EQ(parsed.ai_dot_look, "c");
+  EXPECT_EQ(parsed.ai_dot_size, "l");
+  EXPECT_TRUE(parsed.ai_dot_left);
+  EXPECT_EQ(parsed.ai_dot_y_permille, 125);
+
+  auto odd = pbr::TryParseObject(R"({ "ai_dot_look": "z", "ai_dot_size": "xl", "ai_dot_y_permille": 5000 })");
+  ASSERT_TRUE(odd.has_value());
+  pbr::ProfilePreferences clamped;
+  pbr::ProfilePrefsFromObject(*odd, clamped);
+  EXPECT_EQ(clamped.ai_dot_look, "b");
+  EXPECT_EQ(clamped.ai_dot_size, "m");
+  EXPECT_EQ(clamped.ai_dot_y_permille, 1000);
 }
 
 TEST(ConfigJsonTest, AttachmentAutoNetworkFlagsDefaultRoundTripAndNormalize) {

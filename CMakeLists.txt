@@ -128,12 +128,21 @@ if(PP_BROWSER_BUILD_TESTS)
   pp_browser_enable_googletest()
 endif()
 
-# iPhone: ring incoming calls on CallKit's screen, reached by VoIP push (P013). Off for builds
-# sold in China, where App Store review rejects CallKit: those ring by the alert push (P012).
+# iPhone: ring incoming calls on CallKit's screen, reached by VoIP push (P016). Off for builds
+# sold in China, where App Store review rejects CallKit: those ring by the alert push (P012, P015).
 option(PP_BROWSER_IOS_CALLKIT "iOS: CallKit + PushKit for incoming calls" ON)
 
 # Runtime asset paths: read by foundation/platform/DesktopPathProvider.cpp and the app
 # target, so it must be declared before add_subdirectory(src).
 option(PP_BROWSER_PACKAGED_BUILD "Build for installable/packaged release (runtime asset paths)" OFF)
+
+# Developer builds: shows Settings -> About -> Engine test (src/foundation/product/DevTools.h).
+# Never set for packaged / release-channel builds.
+option(PP_BROWSER_DEV_TOOLS "Developer-only pages (engine test); off for release builds" OFF)
+if(PP_BROWSER_DEV_TOOLS OR NOT "${PP_BROWSER_DEV_PIN}" STREQUAL "")
+  add_compile_definitions(PP_BROWSER_DEV_TOOLS=1)
+endif()
+
+include(UiDemo) # after PP_BROWSER_DEV_TOOLS and the PP_API_URL_* settings it checks
 
 add_subdirectory(src)

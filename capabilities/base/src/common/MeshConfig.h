@@ -84,6 +84,8 @@ struct MeshConfig {
   mesh::MeshDhtConfig dht;
   mesh::MeshPricingConfig pricing;
   mesh::MediaRelayBudgetConfig media_relay_budget;
+  /** What this node takes on when it serves others (`mesh.capacity`; 0 = the default). */
+  mesh::MeshCapacityConfig capacity;
   mesh::MediaRelayVideoConfig media_relay_video;
 };
 

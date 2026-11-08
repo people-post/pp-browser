@@ -489,10 +489,9 @@ TEST_F(AttachmentDownloadSuppressionTest, AFailedDownloadIsNotFetchedAgainUntilT
   EXPECT_EQ(Gets(), 1u);
   EXPECT_TRUE(suppression_->IsSuppressed("t1", fields.content_hash));
 
-  // What opening the chat and a restart's backlog do: nothing goes out.
+  // What opening the chat does: nothing goes out.
   workflow_.EnqueueFromMessage("t1", message);
   workflow_.EnsureThreadQueued("t1", threads_);
-  workflow_.DrainPendingMediaBacklog(threads_);
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
   EXPECT_EQ(Gets(), 1u) << "no automatic GET after a failure";
 

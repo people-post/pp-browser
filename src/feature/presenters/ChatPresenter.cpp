@@ -1,9 +1,12 @@
 #include "feature/presenters/ChatPresenter.h"
 
+#include "lib/messaging/GroupPermissions.h"
+
 #include "feature/conversations/ConversationsFacade.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "feature/presenters/GroupEventText.h"
+#include "feature/presenters/HomeToday.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/ChatPayloadValidator.h"
@@ -17,9 +20,12 @@
 #include "common/Utilities.h"
 #include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/GroupTypes.h"
+#include "lib/people/AvatarGlyph.h"
+#include "lib/people/ContactIdentity.h"
 #include "lib/people/PeerDisplayLabel.h"
 
 #include <algorithm>
+#include <map>
 #include <set>
 #include <utility>
 
@@ -41,7 +47,9 @@ GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::o
                                    const bool unreachable, const std::string& card_nickname) {
   GroupMemberRow row;
   row.identity = member.member_identity;
+  row.stable_id = contact ? ContactAvatarStableId(*contact) : member.member_identity;
   row.is_owner = member.role == MemberRole::Owner;
+  row.is_admin = member.role == MemberRole::Admin;
   row.unreachable = unreachable;
   if (contact) {
     row.contact_id = contact->id;
@@ -79,8 +87,139 @@ void SortGroupMemberRows(std::vector<GroupMemberRow>& rows) {
     if (a.is_owner != b.is_owner) {
       return a.is_owner;
     }
+    if (a.is_admin != b.is_admin) {
+      return a.is_admin; // those who keep order next (G017)
+    }
     return a.title < b.title;
   });
+}
+
+void FillGroupAccountability(std::vector<GroupMemberRow>& rows, const std::vector<GroupRosterMember>& roster,
+                             const std::function<size_t(const std::string& account)>& removed_by) {
+  std::unordered_map<std::string, size_t> added;
+  std::unordered_map<std::string, std::string> adder_of;
+  for (const GroupRosterMember& m : roster) {
+    if (!m.added_by.empty() && m.added_by != m.member_identity) {
+      ++added[m.added_by];
+      adder_of[m.member_identity] = m.added_by;
+    }
+  }
+  std::unordered_map<std::string, std::string> titles;
+  for (const GroupMemberRow& row : rows) {
+    titles[row.identity] = row.title;
+  }
+  for (GroupMemberRow& row : rows) {
+    if (auto adder = adder_of.find(row.identity); adder != adder_of.end()) {
+      row.added_by = adder->second;
+      auto title = titles.find(adder->second);
+      row.added_by_title = title != titles.end() ? title->second : ShortRelayId(adder->second);
+    }
+    if (auto count = added.find(row.identity); count != added.end()) {
+      row.added_count = count->second;
+    }
+    row.removed_count = removed_by && !row.invited ? removed_by(row.identity) : 0;
+  }
+}
+
+bool MayRemoveGroupMember(const GroupMemberRow& row, const MemberRole viewer_role, const GroupPreset preset) {
+  const MemberRole target = row.is_owner ? MemberRole::Owner : row.is_admin ? MemberRole::Admin : MemberRole::Member;
+  return !row.invited && GroupAllows(GroupAction::Remove, viewer_role, preset, target);
+}
+
+namespace {
+
+/** G020 6: the bulk remedies for the person `row` is — remove whom they added, re-invite whom they removed. */
+void AddBulkActions(GroupMemberTap& tap, const GroupMemberRow& row, const MemberRole viewer_role,
+                    const GroupPreset preset) {
+  if (row.invited) {
+    return;
+  }
+  if (row.added_count > 0 && GroupAllows(GroupAction::Remove, viewer_role, preset, MemberRole::Member)) {
+    tap.admin_actions.push_back(GroupMemberAction::RemoveEveryoneAdded);
+  }
+  if (row.removed_count > 0 && viewer_role == MemberRole::Owner) {
+    tap.admin_actions.push_back(GroupMemberAction::ReinviteEveryoneRemoved);
+  }
+}
+
+} // namespace
+
+GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, const bool is_self, const MemberRole viewer_role,
+                                    const GroupPreset preset) {
+  GroupMemberTap tap;
+  if (is_self) {
+    return tap;
+  }
+  tap.kind = GroupMemberTap::Kind::OpenProfile;
+  if (viewer_role != MemberRole::Owner) {
+    if (MayRemoveGroupMember(row, viewer_role, preset)) {
+      tap.admin_actions.push_back(GroupMemberAction::Remove); // an admin removes members (G020)
+    }
+    AddBulkActions(tap, row, viewer_role, preset);
+    return tap;
+  }
+  // A member already in the group needs no invite; resend only to someone still waiting or out of reach.
+  if (row.IsContact() && (row.invited || row.unreachable)) {
+    tap.admin_actions.push_back(GroupMemberAction::Reinvite);
+    tap.reinvite_note = row.invited ? GroupReinviteNote::NotJoined : GroupReinviteNote::Unreachable;
+  }
+  if (!row.invited) {
+    tap.admin_actions.push_back(row.is_admin ? GroupMemberAction::RemoveAdmin : GroupMemberAction::MakeAdmin);
+    tap.admin_actions.push_back(GroupMemberAction::Remove);
+  }
+  AddBulkActions(tap, row, viewer_role, preset);
+  return tap;
+}
+
+GroupInfoScreen BuildGroupInfoScreen(const GroupInfoFacts& facts) {
+  GroupInfoScreen screen;
+  screen.thread_id = facts.thread_id;
+  screen.group_id = facts.group_id;
+  screen.title = facts.title;
+  screen.dissolved = facts.dissolved;
+  screen.muted = facts.muted;
+  screen.self_identity = facts.self_identity;
+  if (facts.dissolved) {
+    return screen; // G016: the name, "Group dissolved" and mute; nobody left to list, call or leave
+  }
+  screen.is_owner = facts.is_owner;
+  screen.member_count = static_cast<int>(facts.members.size());
+  std::vector<GroupMemberRow> rows = facts.members;
+  SortGroupMemberRows(rows);
+  // The owner heads the card (the full list keeps the unreachable first, for the owner to re-invite).
+  std::stable_partition(rows.begin(), rows.end(), [](const GroupMemberRow& row) { return row.is_owner; });
+  if (rows.size() > kGroupInfoPreviewMembers) {
+    rows.resize(kGroupInfoPreviewMembers);
+  }
+  screen.preview = std::move(rows);
+  screen.show_members = true;
+  screen.show_calls = true;
+  screen.show_rename = true;
+  const MemberRole role = facts.is_owner ? MemberRole::Owner : facts.viewer_role;
+  screen.rename_for_everyone = GroupAllows(GroupAction::Rename, role, facts.preset);
+  screen.show_restore_name = facts.has_local_title;
+  screen.show_add_member = GroupAllows(GroupAction::Invite, role, facts.preset);
+  screen.show_preset = true;
+  screen.preset_editable = GroupAllows(GroupAction::SetPreset, role, facts.preset);
+  screen.preset = facts.preset;
+  screen.show_leave = true;
+  screen.show_dissolve = facts.is_owner;
+  screen.show_invite_link = ShowsInviteLink(role, facts.preset);
+  if (ListsGroupLinks(role, facts.preset) && !facts.links.empty()) {
+    std::map<std::string, std::string> names;
+    for (const GroupMemberRow& member : facts.members) {
+      names[member.identity] = member.title;
+    }
+    screen.links = BuildGroupLinkRows(
+        facts.links,
+        [&names](const std::string& account) {
+          auto found = names.find(account);
+          return found != names.end() ? found->second : ShortRelayId(account);
+        },
+        facts.self_identity, facts.now_ms);
+    screen.show_links = true;
+  }
+  return screen;
 }
 
 bool MyReactionActive(const std::vector<ThreadMessage>& messages, const std::string& message_id,
@@ -143,6 +282,7 @@ void ChatPresenter::BindCallbacks(Callbacks callbacks) {
 void ChatPresenter::ResetForNewProfile() {
   prefs_.reset();
   showing_archived_ = false;
+  showing_archived_ai_ = false;
 }
 
 const std::unordered_map<std::string, ThreadLocalPrefs>& ChatPresenter::AllPrefs() {
@@ -208,9 +348,37 @@ void ChatPresenter::UpdatePrefs(const std::string& thread_id, const std::functio
   Refresh();
 }
 
+ChatListBucket ClassifyForList(const bool is_ai, const bool listed, const bool archived, const bool showing_archived,
+                               const bool showing_archived_ai) {
+  if (is_ai) {
+    // An AI thread with no readable content yet (not `listed`) shows nowhere until its first message.
+    return listed && archived == showing_archived_ai ? ChatListBucket::Ai : ChatListBucket::Hidden;
+  }
+  return archived == showing_archived ? ChatListBucket::Human : ChatListBucket::Hidden;
+}
+
+ArchiveViews ResolveArchiveViews(const std::vector<ArchiveItem>& items, const bool showing_archived,
+                                 const bool showing_archived_ai) {
+  ArchiveViews views;
+  for (const ArchiveItem& item : items) {
+    if (!item.archived) {
+      continue;
+    }
+    if (!item.is_ai) {
+      ++views.archived_count;
+    } else if (item.listed) {  // an unlisted AI thread is not shown, so not counted
+      ++views.archived_count_ai;
+    }
+  }
+  views.showing_archived = showing_archived && views.archived_count > 0;
+  views.showing_archived_ai = showing_archived_ai && views.archived_count_ai > 0;
+  return views;
+}
+
 void ChatPresenter::Refresh() {
   ChatListScreen next;
   next.showing_archived = showing_archived_;
+  next.showing_archived_ai = showing_archived_ai_;
   auto threads = facade_ ? facade_->ListThreads() : Roe<std::vector<Thread>>(Error("Messaging not ready"));
   if (!threads) {
     list_ = std::move(next);
@@ -226,43 +394,80 @@ void ChatPresenter::Refresh() {
   std::stable_sort(sorted.begin(), sorted.end(), [&prefs_of](const Thread& a, const Thread& b) {
     return SessionSortsBefore(prefs_of(a).pinned_at, a.updated_at, prefs_of(b).pinned_at, b.updated_at);
   });
+  std::vector<ArchiveItem> items;
+  items.reserve(sorted.size());
   for (const Thread& thread : sorted) {
-    if (prefs_of(thread).archived) {
-      ++next.archived_count;
-    }
+    items.push_back({thread.kind == ThreadKind::Ai, thread.listed, prefs_of(thread).archived});
   }
-  if (next.archived_count == 0) {
-    showing_archived_ = false;  // the last archived chat left: back to the list
-    next.showing_archived = false;
-  }
+  const ArchiveViews views = ResolveArchiveViews(items, showing_archived_, showing_archived_ai_);
+  next.archived_count = views.archived_count;
+  next.archived_count_ai = views.archived_count_ai;
+  next.showing_archived = showing_archived_ = views.showing_archived;  // the last archived one left: back to the list
+  next.showing_archived_ai = showing_archived_ai_ = views.showing_archived_ai;
   const std::string active_id = facade_->ActiveThreadId();
   const int64_t now_ms = util::NowUnixMs();
-  const std::set<std::string> mentioned = facade_->ThreadsWithMentions();
+  const std::map<std::string, int> mentions = facade_->MentionCounts();
   std::string local_account;
   if (auto identity = facade_->GetIdentity()) {
     local_account = identity->account_id;
   }
   for (const Thread& thread : sorted) {
     const ThreadLocalPrefs thread_prefs = prefs_of(thread);
-    if (thread_prefs.archived != next.showing_archived) {
+    // Each list has its own archive view: an archived AI thread never reaches `rows`, a human one never `ai_rows`.
+    const ChatListBucket bucket = ClassifyForList(thread.kind == ThreadKind::Ai, thread.listed, thread_prefs.archived,
+                                                  next.showing_archived, next.showing_archived_ai);
+    if (bucket == ChatListBucket::Hidden) {
       continue;
     }
     ChatSessionRow row;
     row.id = thread.id;
-    row.title = facade_->ResolveThreadLabel(thread).title;
+    const PeerDisplayLabel label = facade_->ResolveThreadLabel(thread);
+    row.title = label.title;
+    row.from_stranger = IsStrangerChat(thread.kind, label);
     // The stored default AI title is English; the renderer shows it in the UI language.
     row.title_is_default_ai = thread.kind == ThreadKind::Ai && row.title == "New chat";
     const std::string text = GroupEventPreviewOr(thread, local_account);
-    row.preview = SessionPreviewLine(callbacks_.prose ? callbacks_.prose(text) : text);
+    // A new thread has no preview yet; an empty second line would collapse the row, so say so in words.
+    SessionPreviewShown preview = ResolveSessionPreview(
+        SessionPreviewLine(callbacks_.prose ? callbacks_.prose(text) : text), Tr("sidebar.preview_empty"));
+    row.preview = std::move(preview.text);
+    row.preview_empty = preview.placeholder;
     row.kind = ChatSessionKindName(thread);
     row.unread_count = thread.unread_count;
     row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);
-    row.mentioned = mentioned.count(thread.id) > 0;
+    if (const auto it = mentions.find(thread.id); it != mentions.end() && it->second > 0) {
+      row.mentioned = true;
+      row.mention_count = it->second;
+    }
     row.pinned = thread_prefs.pinned_at != 0;
     row.muted = ThreadIsMuted(thread_prefs.muted_until, now_ms);
     row.date_label = SessionDateLabel(thread.updated_at, now_ms);
+    row.updated_at = thread.updated_at;
     row.active = thread.id == active_id;
-    next.rows.push_back(std::move(row));
+    {
+      const AvatarGlyph glyph = MakeAvatarGlyph(row.title, label.stable_id);
+      row.avatar_letter = glyph.letter;
+      row.avatar_tone = glyph.tone;
+    }
+    if (thread.kind == ThreadKind::Direct && label.contact_id) {
+      row.contact_id = *label.contact_id;
+      row.icon_path = facade_->ContactIconPath(*label.contact_id);
+      // Kenneth 2026-11-04: a blocked person's chat must be findable again to unblock them.
+      if (auto contact = facade_->GetContact(*label.contact_id); contact && *contact) {
+        row.blocked = (*contact)->trust == TrustLevel::Blocked;
+      }
+    }
+    // AI conversations live on the AI 助手 page, not the 聊天 list; an AI thread with no readable content yet
+    // (not `listed`) shows nowhere until its first message. Human chats stay in `rows`.
+    if (thread.kind == ThreadKind::Ai) {
+      // An AI conversation never carries an "unread" badge: its answer is to your own question, read as it arrives,
+      // not a message from someone else waiting to be seen (Kenneth 2026-11-05).
+      row.unread_count = 0;
+      row.unread_dot = false;
+      next.ai_rows.push_back(std::move(row));
+    } else {
+      next.rows.push_back(std::move(row));
+    }
   }
   list_ = std::move(next);
   Changed();
@@ -299,6 +504,11 @@ void ChatPresenter::ShowHome() {
   if (facade_) {
     facade_->ClearActiveThread();
   }
+  Refresh();
+}
+
+void ChatPresenter::ToggleArchivedAi() {
+  showing_archived_ai_ = !showing_archived_ai_;
   Refresh();
 }
 
@@ -415,6 +625,23 @@ Roe<std::string> ChatPresenter::AddPeerToContacts(const std::string& peer_id) {
   return created->id;
 }
 
+Roe<std::string> ChatPresenter::BlockStranger(const std::string& peer_id) {
+  auto added = AddPeerToContacts(peer_id);
+  if (!added) {
+    return added;
+  }
+  // The add and the block are two writes to the same store: a failed block is retried once, and if it still fails the
+  // user is told the person was added but not blocked (there is no contact removal on this facade to roll back with).
+  auto set = facade_->SetContactTrust(*added, TrustLevel::Blocked);
+  if (!set) {
+    set = facade_->SetContactTrust(*added, TrustLevel::Blocked);
+  }
+  if (!set) {
+    return Error("block stranger: added but not blocked").WithUser(Tr("chat.block.added_not_blocked"));
+  }
+  return added;
+}
+
 ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {
   ChatGroupSheet sheet;
   if (!facade_ || facade_->IsGroupDissolved(group_id)) {
@@ -429,6 +656,12 @@ ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {
     sheet.is_owner = *owner;
   }
   sheet.owner_unreachable = facade_->IsOwnerUnreachable(group_id);
+  if (auto preset = facade_->GroupPresetOf(group_id)) {
+    sheet.preset = *preset;
+  }
+  const MemberRole role =
+      sheet.is_owner ? MemberRole::Owner : facade_->LocalGroupRole(group_id).value_or(MemberRole::Member);
+  sheet.may_rename_for_everyone = GroupAllows(GroupAction::Rename, role, sheet.preset);
   if (!sheet.is_owner) {
     return sheet;
   }
@@ -445,6 +678,105 @@ ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {
   return sheet;
 }
 
+GroupInfoScreen ChatPresenter::GroupInfoOf(const std::string& thread_id) {
+  if (!facade_) {
+    return {};
+  }
+  auto thread = facade_->GetThread(thread_id);
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
+    return {};
+  }
+  GroupInfoFacts facts;
+  facts.thread_id = thread_id;
+  facts.group_id = *(*thread)->group_id;
+  facts.title = facade_->ResolveThreadLabel(**thread).title;
+  facts.has_local_title = !(*thread)->local_title.empty();
+  facts.dissolved = facade_->IsGroupDissolved(facts.group_id);
+  if (std::optional<ThreadLocalPrefs> prefs = PrefsOf(thread_id)) {
+    facts.muted = ThreadIsMuted(prefs->muted_until, util::NowUnixMs());
+  }
+  if (facts.dissolved) {
+    return BuildGroupInfoScreen(facts);
+  }
+  if (auto owner = facade_->IsLocalOwner(facts.group_id)) {
+    facts.is_owner = *owner; // the engine decides by the group's recorded owner, as everywhere else
+  }
+  facts.viewer_role = facade_->LocalGroupRole(facts.group_id).value_or(MemberRole::Member);
+  if (auto preset = facade_->GroupPresetOf(facts.group_id)) {
+    facts.preset = *preset;
+  }
+  if (auto identity = facade_->GetIdentity()) {
+    facts.self_identity = identity->account_id;
+  }
+  const std::vector<std::string> unreachable_list = facade_->ListUnreachableMembers(facts.group_id);
+  const std::unordered_set<std::string> unreachable(unreachable_list.begin(), unreachable_list.end());
+  if (auto roster = facade_->ListGroupRoster(facts.group_id)) {
+    for (const GroupRosterMember& member : *roster) {
+      if (member.member_identity.empty()) {
+        continue;
+      }
+      // This device's row: its account id (the demo app's groups store the local self id instead).
+      if (member.member_identity == facts.self_identity || member.member_identity == kLocalSelfContactId) {
+        facts.self_identity = member.member_identity;
+        GroupMemberRow self = BuildGroupMemberRow(member, std::nullopt, false);
+        self.title = Tr("people_picker.you");
+        facts.members.push_back(std::move(self));
+        continue;
+      }
+      std::optional<Contact> contact;
+      if (!member.contact_id.empty()) {
+        if (auto loaded = facade_->GetContact(member.contact_id); loaded && *loaded) {
+          contact = **loaded;
+        }
+      }
+      if (!contact) {
+        if (auto found = facade_->FindContactByIdentity(member.member_identity, mesh::ContactIdKind::Account);
+            found && *found) {
+          contact = **found;
+        }
+      }
+      const std::string nickname = contact ? std::string() : facade_->KeptCardNickname(member.member_identity);
+      facts.members.push_back(
+          BuildGroupMemberRow(member, contact, unreachable.count(member.member_identity) > 0, nickname));
+    }
+  }
+  facts.links = facade_->GroupInviteLinks(facts.group_id);
+  facts.now_ms = util::NowUnixMs();
+  return BuildGroupInfoScreen(facts);
+}
+
+Roe<GroupLinkRow> ChatPresenter::InviteLinkFor(const std::string& group_id) {
+  if (!facade_) {
+    return Error(Tr("chat.group.err.generic"));
+  }
+  if (std::optional<GroupLinkRow> ours = facade_->OwnInviteLink(group_id)) {
+    return *ours;
+  }
+  auto made = facade_->MakeInviteLink(group_id);
+  if (!made) {
+    log().warning << "MakeInviteLink failed: " << made.error().message;
+    return Error(GroupActionFailureText(made.error()));
+  }
+  auto local = facade_->GetIdentity();
+  return GroupLinkRow{.link_id = made->link_id,
+                      .maker = local ? local->account_id : std::string(),
+                      .expires_at = made->expires_at,
+                      .max_uses = made->max_uses,
+                      .text = made->text,
+                      .can_revoke = true};
+}
+
+Roe<void> ChatPresenter::RevokeInviteLink(const std::string& group_id, const std::string& link_id) {
+  if (!facade_) {
+    return Error(Tr("chat.group.err.generic"));
+  }
+  if (auto revoked = facade_->RevokeInviteLink(group_id, link_id); !revoked) {
+    log().warning << "RevokeInviteLink failed: " << revoked.error().message;
+    return Error(GroupActionFailureText(revoked.error()));
+  }
+  return {};
+}
+
 std::string GroupActionFailureText(const Error& error) {
   if (error.message == group_roster_sync::kGroupDissolvedError) {
     return Tr(group_roster_sync::kGroupDissolvedError);
@@ -454,6 +786,13 @@ std::string GroupActionFailureText(const Error& error) {
   }
   if (error.message.rfind("Only the group owner", 0) == 0) {
     return Tr("chat.group.err.owner_only");
+  }
+  for (const char* key :
+       {kGroupInviteNotAllowedError, kGroupInviteRemovedError, kGroupAlreadyMemberError, kGroupRenameNotAllowedError,
+        kGroupLinkNotAllowedError, kGroupLinkRevokeNotAllowedError, kGroupLinkGoneError}) {
+    if (error.message == key) {
+      return Tr(key);
+    }
   }
   return Tr("chat.group.err.generic");
 }
@@ -476,6 +815,18 @@ Roe<void> ChatPresenter::RenameGroupShared(const std::string& group_id, const st
   if (auto renamed = facade_->RenameGroupShared(group_id, title); !renamed) {
     log().warning << "RenameGroupShared failed: " << renamed.error().message;
     return Error(GroupActionFailureText(renamed.error()));
+  }
+  facade_->NotifyThreadChanged();
+  return {};
+}
+
+Roe<void> ChatPresenter::SetGroupPreset(const std::string& group_id, const GroupPreset preset) {
+  if (!facade_) {
+    return Error(Tr("chat.group.err.generic"));
+  }
+  if (auto set = facade_->SetGroupPreset(group_id, preset); !set) {
+    log().warning << "SetGroupPreset failed: " << set.error().message;
+    return Error(GroupActionFailureText(set.error()));
   }
   facade_->NotifyThreadChanged();
   return {};
@@ -628,13 +979,18 @@ std::optional<MentionRoster> RosterOfGroupThread(ConversationsFacade* facade, co
     return std::nullopt;
   }
   MentionRoster roster;
+  const GroupPreset preset = facade->GroupPresetOf(*group_id).valueOr(GroupPreset::Open);
   if (auto members = facade->ListGroupRoster(*group_id)) {
     for (const GroupRosterMember& member : *members) {
       roster.members.insert(member.member_identity);
+      if (GroupAllows(GroupAction::MentionEveryone, member.role, preset)) {
+        roster.everyone_senders.insert(member.member_identity);
+      }
     }
   }
-  if (auto owner = facade->OwnerIdentity(*group_id)) {
-    roster.owner = *owner;
+  // The owner the signed roster names (G012), whatever role a stale row says.
+  if (auto owner = facade->OwnerIdentity(*group_id); owner && !owner->empty()) {
+    roster.everyone_senders.insert(*owner);
   }
   if (auto identity = facade->GetIdentity()) {
     roster.local_account = identity->account_id;
@@ -689,10 +1045,9 @@ std::vector<MentionCandidate> ChatPresenter::ReadMentionCandidates(Conversations
     return {};
   }
   const auto public_name = [facade](const std::string& account_id) { return facade->MemberPublicNameOf(account_id); };
-  // `@everyone` is the owner's: the one the roster names (G012), whatever role a stale row says.
-  const bool local_is_owner = roster->owner == roster->local_account;
-  return AllMentionCandidates(*members, roster->local_account, local_is_owner, public_name,
-                              Tr("chat.mention.everyone_word"));
+  // `@everyone` is the owner's and the admins' (G017).
+  return AllMentionCandidates(*members, roster->local_account, roster->MayMentionEveryone(roster->local_account),
+                              public_name, Tr("chat.mention.everyone_word"));
 }
 
 std::optional<std::string> ChatPresenter::MentionedContact(const std::string& message_id, const size_t run_index) {
@@ -779,6 +1134,87 @@ CloseChatPlan ChatPresenter::PlanClose(const std::string& thread_id) {
     plan.successors.clear();
   }
   return plan;
+}
+
+OwnerLeaveSheet BuildOwnerLeaveSheet(const std::string& thread_id, const CloseChatPlan& plan,
+                                     const std::function<std::string(const std::string&)>& name_of) {
+  OwnerLeaveSheet sheet;
+  if (plan.kind != CloseChatPlan::Kind::LeaveAsOwner && plan.kind != CloseChatPlan::Kind::Dissolve) {
+    return sheet;
+  }
+  sheet.thread_id = thread_id;
+  sheet.group_id = plan.group_id;
+  for (const std::string& identity : plan.successors) {
+    std::string name = name_of ? name_of(identity) : std::string();
+    sheet.candidates.push_back({identity, name.empty() ? ShortRelayId(identity) : name});
+  }
+  std::stable_sort(sheet.candidates.begin(), sheet.candidates.end(),
+                   [](const OwnerLeaveCandidate& a, const OwnerLeaveCandidate& b) { return a.name < b.name; });
+  return sheet;
+}
+
+std::string HandOverConfirmText(const std::string& name) {
+  return Tr("group_leave.confirm", {{"name", name}});
+}
+
+std::string HandOverGoneText(const std::string& name) {
+  return Tr("group_leave.gone", {{"name", name}});
+}
+
+bool HandOverStillPossible(const CloseChatPlan& plan, const std::string& successor) {
+  return plan.kind == CloseChatPlan::Kind::LeaveAsOwner &&
+         std::find(plan.successors.begin(), plan.successors.end(), successor) != plan.successors.end();
+}
+
+OwnerLeaveSheet ChatPresenter::OwnerLeaveSheetOf(const std::string& thread_id) {
+  if (!facade_) {
+    return {};
+  }
+  CloseChatPlan plan = PlanClose(thread_id);
+  // Never this device's own row (the demo app's groups store the local self id rather than the account id).
+  std::erase(plan.successors, std::string(kLocalSelfContactId));
+  std::unordered_map<std::string, std::string> contact_of;
+  if (!plan.group_id.empty()) {
+    if (auto roster = facade_->ListGroupRoster(plan.group_id)) {
+      for (const GroupRosterMember& member : *roster) {
+        contact_of[member.member_identity] = member.contact_id;
+      }
+    }
+  }
+  const auto contact_for = [this, &contact_of](const std::string& identity) {
+    std::optional<Contact> contact;
+    if (auto it = contact_of.find(identity); it != contact_of.end() && !it->second.empty()) {
+      if (auto loaded = facade_->GetContact(it->second); loaded && *loaded) {
+        contact = **loaded;
+      }
+    }
+    if (!contact) {
+      if (auto found = facade_->FindContactByIdentity(identity, mesh::ContactIdKind::Account); found && *found) {
+        contact = **found;
+      }
+    }
+    return contact;
+  };
+  OwnerLeaveSheet sheet = BuildOwnerLeaveSheet(thread_id, plan, [this, &contact_for](const std::string& identity) {
+    // The name the member list shows: the contact's, else the nickname on their card.
+    const std::optional<Contact> contact = contact_for(identity);
+    if (contact) {
+      if (std::string title = FormatContactTitle(*contact); !title.empty()) {
+        return title;
+      }
+    }
+    return facade_->KeptCardNickname(identity);
+  });
+  // The same colour seed as the member list shows for the same person.
+  for (OwnerLeaveCandidate& candidate : sheet.candidates) {
+    const std::optional<Contact> contact = contact_for(candidate.identity);
+    candidate.stable_id = contact ? ContactAvatarStableId(*contact) : candidate.identity;
+  }
+  return sheet;
+}
+
+bool ChatPresenter::CanHandOverTo(const std::string& thread_id, const std::string& successor) {
+  return facade_ && HandOverStillPossible(PlanClose(thread_id), successor);
 }
 
 Roe<void> ChatPresenter::CloseThread(const std::string& thread_id) {

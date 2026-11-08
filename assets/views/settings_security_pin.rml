@@ -1,0 +1,11 @@
+<!-- Me > Security > Change PIN (desktop, inline): the PIN gate's three steps (current, new, again; B2), no fields
+     on this page. Phones reach the same from the Change PIN row. -->
+<div data-if="show_change_pin && security_can_change_pin" class="stack">
+  <p class="text muted settings-help group-foot">{{i18n:pin.forget_warning}}</p>
+  <div class="settings-actions row">
+    <button class="btn btn-primary" type="button" data-event-click="change_pin()">{{i18n:settings.security.change_pin}}</button>
+  </div>
+</div>
+<p class="text muted group-foot" data-if="show_change_pin && !security_can_change_pin && !pin_protection_not_setup">
+  {{i18n:settings.security.unlock_to_change}}
+</p>

@@ -355,5 +355,51 @@ TEST(CameraFlipTest, CameraAndFlipStayWhileTheCameraIsOnWhenThePathStopsAllowing
   EXPECT_FALSE(ShowsCameraButton(/*encoder_available=*/false, true, true)) << "no encoder, no camera button";
 }
 
+// Kenneth 2026-11-04: a group call he started rang everyone with no clear way to cancel it.
+TEST(CancelCallTest, ShownWhileAnOutgoingCallStillRings) {
+  CallScreen screen;
+  screen.kind = CallScreen::Kind::InCall;
+  screen.status = Status::Calling;
+  EXPECT_TRUE(ShowsCancelCall(screen));
+  screen.group = true;
+  EXPECT_TRUE(ShowsCancelCall(screen)) << "a group call ringing its members too";
+}
+
+TEST(CancelCallTest, GoneOnceTheCallMovesOnOrForOtherScreens) {
+  CallScreen screen;
+  screen.kind = CallScreen::Kind::InCall;
+  screen.status = Status::Connecting;
+  EXPECT_FALSE(ShowsCancelCall(screen)) << "someone answered: the End button ends it";
+  screen.status = Status::Connected;
+  EXPECT_FALSE(ShowsCancelCall(screen));
+  screen.status = Status::Calling;
+  screen.was_connected = true;
+  EXPECT_FALSE(ShowsCancelCall(screen)) << "a call that was live is not cancelled";
+  CallScreen ringing;
+  ringing.kind = CallScreen::Kind::Ringing;
+  EXPECT_FALSE(ShowsCancelCall(ringing)) << "an incoming ring has Decline";
+  EXPECT_FALSE(ShowsCancelCall(CallScreen{})) << "no call";
+}
+
+// G022: "Make a group…" — a call with no group behind it (it started 1:1 and grew), three or more in it.
+TEST(CallScreenTest, MakeAGroupIsOfferedOnAGrownCallOfThreeOrMore) {
+  EXPECT_FALSE(OffersMakeGroup(/*tied_to_group=*/false, 2)) << "a 1:1 call: the direct chat is the place";
+  EXPECT_TRUE(OffersMakeGroup(false, 3));
+  EXPECT_TRUE(OffersMakeGroup(false, 7));
+  EXPECT_FALSE(OffersMakeGroup(/*tied_to_group=*/true, 3)) << "a group's call already has its group";
+  EXPECT_FALSE(OffersMakeGroup(false, 0));
+}
+
+// G022: the banner shows the oldest invite made in this call that was not put off; Not now hides only that one.
+TEST(CallScreenTest, TheGroupBannerShowsTheFirstInviteNotPutOff) {
+  const CallGroupInvite first{.invite_id = "n1", .group_title = "Ann, Bo, Cy", .maker_identity = "account:ann"};
+  const CallGroupInvite second{.invite_id = "n2", .group_title = "Weekend", .maker_identity = "account:bo"};
+  EXPECT_FALSE(PickGroupInviteBanner({}, {})) << "no invite: no banner";
+  EXPECT_EQ(PickGroupInviteBanner({first, second}, {}), first);
+  EXPECT_EQ(PickGroupInviteBanner({first, second}, {"n1"}), second) << "Not now on the first";
+  EXPECT_FALSE(PickGroupInviteBanner({first, second}, {"n1", "n2"}));
+  EXPECT_FALSE(PickGroupInviteBanner({CallGroupInvite{}}, {})) << "an invite with no id is nothing to answer";
+}
+
 } // namespace
 } // namespace pbr

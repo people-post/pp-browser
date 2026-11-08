@@ -4,6 +4,7 @@
 #include "lib/messaging/GroupRosterSync.h"
 
 #include "common/Logger.h"
+#include "common/Utilities.h"
 
 #include <utility>
 #include "common/PbrCompat.h"
@@ -48,24 +49,36 @@ Roe<void> ApplyRequest(IGroupRosterStore& roster, const std::string& local_accou
 using DissolvedFn = std::function<void(GroupDissolvedEnd)>;
 
 Roe<void> ApplyReply(IGroupRosterStore& roster, const std::string& local_account, const std::string& detail,
-                     const std::string& replier, const DissolvedFn& on_dissolved) {
+                     const std::string& replier, const DissolvedFn& on_dissolved, const GroupRosterSyncHooks& hooks) {
   // A reply may reach a member the replier says was removed: no membership check here.
   auto reply = group_roster_sync_codec::DecodeReply(detail);
   if (!reply) {
     return reply.error();
   }
   GroupDissolvedApplied dissolved;
-  auto applied = group_roster_sync::ApplyReply(roster, *reply, local_account, replier, &dissolved);
+  group_roster_sync::GroupViewApplied view;
+  auto applied = group_roster_sync::ApplyReply(roster, *reply, local_account, replier, hooks.cards, util::NowUnixMs(),
+                                               &dissolved, &view);
   if (!applied) {
     return applied.error();
   }
   if (*applied == group_roster_sync::ReplyOutcome::Dissolved && on_dissolved && reply->statement) {
     on_dissolved({reply->group_id, reply->statement->owner_identity, std::move(dissolved.voided_invites)});
   }
+  if (*applied != group_roster_sync::ReplyOutcome::Ignored) {
+    if (!view.newly_applied.empty() && hooks.on_applied) {
+      hooks.on_applied(reply->group_id, std::move(view.newly_applied));
+    }
+    if (reply->more && !reply->changes.empty() && hooks.ask_more) {
+      hooks.ask_more(reply->group_id, replier, group_change::Id(reply->changes.back()));
+    }
+  }
   static constexpr const char* kOutcome[] = {"ignored", "active", "removed", "dissolved"};
-  logging::getLogger(kGroupRosterSyncLogger).info << "Roster reply group_id=" << reply->group_id << " from=" << replier
-             << " statement=" << (reply->statement ? reply->statement->roster_epoch : 0)
-             << " removed=" << reply->removed << " -> " << kOutcome[static_cast<int>(*applied)];
+  logging::getLogger(kGroupRosterSyncLogger).info
+      << "Roster reply group_id=" << reply->group_id << " from=" << replier
+      << " statement=" << (reply->statement ? reply->statement->roster_epoch : 0) << " removed=" << reply->removed
+      << " changes=" << reply->changes.size() << (reply->more ? "+" : "") << " -> "
+      << kOutcome[static_cast<int>(*applied)];
   return {};
 }
 
@@ -94,14 +107,14 @@ Roe<void> ApplySiblingDissolved(IGroupRosterStore& roster, const std::string& lo
 SystemControlFamily MakeGroupRosterSyncFamily(
     IGroupRosterStore& roster, std::function<std::optional<std::string>()> local_account,
     std::function<void(group_roster_sync_codec::RosterRequest request, std::string asker)> answer,
-    std::function<void(GroupDissolvedEnd end)> on_dissolved) {
+    std::function<void(GroupDissolvedEnd end)> on_dissolved, GroupRosterSyncHooks hooks) {
   SystemControlFamily family;
   family.name = kGroupRosterSyncFamily;
   family.owns = [](const ThreadMessage& message) { return LaneTypeOf(message).has_value(); };
   family.on_lane = [](const ThreadMessage& message) { return LaneTypeOf(message).has_value(); };
   family.apply = [&roster, local_account = std::move(local_account), answer = std::move(answer),
-                  on_dissolved = std::move(on_dissolved)](
-                     ThreadMessage& message, const SystemControlContext& context) -> Roe<void> {
+                  on_dissolved = std::move(on_dissolved),
+                  hooks = std::move(hooks)](ThreadMessage& message, const SystemControlContext& context) -> Roe<void> {
     const auto kind = LaneTypeOf(message);
     const std::optional<std::string> local = local_account ? local_account() : std::nullopt;
     if (!kind || !local || context.sender_identity.empty()) {
@@ -117,7 +130,7 @@ SystemControlFamily MakeGroupRosterSyncFamily(
     if (*kind == GroupMembershipControlType::GroupDissolvedSibling) {
       return ApplySiblingDissolved(roster, *local, *detail, context.sender_identity, on_dissolved);
     }
-    return ApplyReply(roster, *local, *detail, context.sender_identity, on_dissolved);
+    return ApplyReply(roster, *local, *detail, context.sender_identity, on_dissolved, hooks);
   };
   return family;
 }

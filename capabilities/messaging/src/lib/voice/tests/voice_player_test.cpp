@@ -1,3 +1,4 @@
+#include "lib/voice/AudioFilePlayer.h"
 #include "lib/voice/OggOpus.h"
 #include "lib/voice/VoicePlayer.h"
 #include "lib/voice/VoiceRecorder.h"
@@ -388,6 +389,78 @@ TEST(VoicePlayerArbiter, ARecordingInProgressRefusesPlayback) {
   player.Play("m", path, 120);
   ASSERT_TRUE(WaitFor([&] { return probe.Count() == 1; }));
   EXPECT_EQ(probe.At(0).second, VoicePlayEnd::Busy);
+}
+
+/** A system player that only records what it is asked. */
+class RecordingFilePlayer final : public IAudioFilePlayer {
+public:
+  explicit RecordingFilePlayer(std::vector<std::string>* log, std::string name) : log_(log), name_(std::move(name)) {}
+  bool Play(const std::string& path, AudioFilePlayerCallbacks) override {
+    log_->push_back(name_ + " play " + path);
+    return path != "bad";
+  }
+  void Pause() override { log_->push_back(name_ + " pause"); }
+  void Resume() override { log_->push_back(name_ + " resume"); }
+  Roe<void> Seek(double seconds) override {
+    log_->push_back(name_ + " seek " + std::to_string(static_cast<int>(seconds)));
+    return {};
+  }
+  void Stop() override { log_->push_back(name_ + " stop"); }
+
+private:
+  std::vector<std::string>* log_;
+  std::string name_;
+};
+
+// One sound file in the whole app: the storage page's player starting stops the chat's, which hears Interrupted.
+TEST(AudioFilePlayer, OnePlaysAtATimeAcrossPlayers) {
+  std::vector<std::string> log;
+  auto chat = MakeExclusiveAudioFilePlayer(std::make_unique<RecordingFilePlayer>(&log, "chat"));
+  auto page = MakeExclusiveAudioFilePlayer(std::make_unique<RecordingFilePlayer>(&log, "page"));
+  std::vector<VoicePlayEnd> chat_ends;
+  AudioFilePlayerCallbacks chat_callbacks;
+  chat_callbacks.on_ended = [&chat_ends](const VoicePlayEnd end) { chat_ends.push_back(end); };
+  ASSERT_TRUE(chat->Play("a.mp3", chat_callbacks));
+  ASSERT_TRUE(page->Play("b.mp3", {}));
+  EXPECT_EQ(log, (std::vector<std::string>{"chat play a.mp3", "chat stop", "page play b.mp3"}));
+  EXPECT_EQ(chat_ends, std::vector<VoicePlayEnd>{VoicePlayEnd::Interrupted});
+  page->Stop();
+  ASSERT_TRUE(chat->Play("c.mp3", chat_callbacks));
+  EXPECT_EQ(log.back(), "chat play c.mp3") << "nothing to take over after a Stop";
+  EXPECT_FALSE(page->Play("bad", {}));
+  EXPECT_EQ(chat_ends.size(), 2u) << "even a refused Play stops the one playing";
+  EXPECT_EQ(MakeExclusiveAudioFilePlayer(nullptr), nullptr);
+}
+
+// Review 2026-11-06: on Android the system's player is one for the whole app, so a player that is not playing must
+// never stop, pause or resume it: the storage page closing (or the chat shutting down) left another one's file cut
+// off with no end reported.
+TEST(AudioFilePlayer, AnIdlePlayerNeverTouchesTheOnePlaying) {
+  std::vector<std::string> log;
+  auto chat = MakeExclusiveAudioFilePlayer(std::make_unique<RecordingFilePlayer>(&log, "chat"));
+  auto page = MakeExclusiveAudioFilePlayer(std::make_unique<RecordingFilePlayer>(&log, "page"));
+  std::vector<VoicePlayEnd> chat_ends;
+  AudioFilePlayerCallbacks chat_callbacks;
+  chat_callbacks.on_ended = [&chat_ends](const VoicePlayEnd end) { chat_ends.push_back(end); };
+  ASSERT_TRUE(chat->Play("a.mp3", chat_callbacks));
+  page->Pause();
+  page->Resume();
+  page->Stop();
+  page.reset(); // its destructor stops too
+  EXPECT_EQ(log, std::vector<std::string>{"chat play a.mp3"});
+  EXPECT_TRUE(chat_ends.empty());
+  chat->Stop();
+  EXPECT_EQ(log.back(), "chat stop");
+  chat->Stop();
+  EXPECT_EQ(log.size(), 2u) << "stopped once: the second Stop has nothing to stop";
+}
+
+TEST(AudioFilePlayer, SoundFilesAreKnownByTypeOrName) {
+  EXPECT_TRUE(IsAudioFileAttachment("audio/mpeg", "x"));
+  EXPECT_TRUE(IsAudioFileAttachment("application/octet-stream", "Song.MP3"));
+  EXPECT_TRUE(IsAudioFileAttachment("", "a.aac"));
+  EXPECT_FALSE(IsAudioFileAttachment("application/pdf", "a.pdf"));
+  EXPECT_FALSE(IsAudioFileAttachment("video/mp4", "a.mp4"));
 }
 
 } // namespace

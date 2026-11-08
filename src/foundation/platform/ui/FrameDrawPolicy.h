@@ -3,12 +3,14 @@
 namespace pbr {
 
 /**
- * Whether the main loop may draw this frame (B127). On Android the loop keeps running in the
- * background, but SDL has let go of the GL surface there (it backs the context up on pause and
- * restores it on resume): no GL call until the foreground. Other platforms keep their own paths.
+ * Whether the main loop may draw this frame (B127). On phones the loop keeps running in the
+ * background, but the GL surface is not usable there (Android: SDL backs the context up on pause;
+ * iOS: GL is not allowed once the app resigns active): no GL call until the foreground. SDL maps
+ * iOS willResignActive to WILL_ENTER_BACKGROUND, so a pulled-down notification center counts too.
+ * Desktops keep their own paths.
  */
-inline bool ShouldDrawFrame(bool is_android, bool is_foreground) {
-  return !is_android || is_foreground;
+inline bool ShouldDrawFrame(bool is_mobile, bool is_foreground) {
+  return !is_mobile || is_foreground;
 }
 
 } // namespace pbr

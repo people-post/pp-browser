@@ -5,6 +5,7 @@
 #include "gui/chat/MessageTimeLabel.h"
 #include "feature/presenters/GroupEventText.h"
 #include "gui/chat/VoiceBubble.h"
+#include "lib/voice/AudioFilePlayer.h"
 #include "lib/voice/VoiceFile.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
@@ -18,6 +19,7 @@
 #include "lib/delivery/PskRotateCodec.h"
 #include "lib/messaging/QuoteReply.h"
 #include "lib/delivery/TextSpans.h"
+#include "lib/people/AvatarGlyph.h"
 #include "lib/ui/ChatFormHelper.h"
 #include "common/chat/MessagingJson.h"
 #include "common/ui/WorkingSetCodec.h"
@@ -26,6 +28,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <memory>
 #include <sstream>
 #include <unordered_map>
@@ -162,10 +165,16 @@ std::string CallSummaryRowText(const CallSummaryRow& row) {
 }
 
 /** A call summary: icon + duration / outcome in a small pill on the starter's side (Kenneth 2026-10-23). */
-std::string CallRowRml(const CallSummaryRow& row) {
+std::string CallRowRml(const CallSummaryRow& row, bool tappable) {
   std::string html = "<div class=\"chat-call-row";
   if (!row.connected) {
     html += " muted";
+  }
+  if (tappable) {
+    // Tap = call back, same type as the record, the way the header's call button starts one.
+    html += " chat-call-row--tappable\" data-event-click=\"call_back('";
+    html += row.video ? "1" : "0";
+    html += "')";
   }
   html += "\"><svg class=\"chat-call-row-icon\" src=\"";
   html += row.video ? "../icons/video.svg" : "../icons/phone.svg";
@@ -178,7 +187,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   const ThreadMessage& message = entry.message;
   if (entry.control) {
     if (call_row) {
-      return CallRowRml(*call_row);
+      return CallRowRml(*call_row, !facts.thread_is_group && !call_row->group);
     }
     // A feature's message: its own line, names included, else the message's text.
     const auto line = facts.control_line ? facts.control_line(message) : std::nullopt;
@@ -187,10 +196,19 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
 
   const auto control_type = GroupMembershipCodec::ControlTypeFromMessage(message);
   if (control_type && *control_type == GroupMembershipControlType::GroupInvite) {
-    if (GroupMembershipCodec::InviteResolutionFromMessage(message)) {
+    auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
+    if (const auto resolution = GroupMembershipCodec::InviteResolutionFromMessage(message)) {
+      // Answered: the card gives way to a small centred line (Kenneth 2026-11-04: the card spread over the whole
+      // width after Accept / Decline), in the user's language; the stored text is the workflow's English.
+      const std::string group = invite ? invite->group_title : std::string();
+      if (!group.empty() && *resolution == InviteStatus::Accepted) {
+        return SystemLineRml(Tr("chat.group_invite.joined", {{"group", group}}));
+      }
+      if (!group.empty() && *resolution == InviteStatus::Declined) {
+        return SystemLineRml(Tr("chat.group_invite.declined", {{"group", group}}));
+      }
       return SystemLineRml(message.text);
     }
-    auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
     const std::string title =
         invite && !invite->group_title.empty()
             ? invite->group_title
@@ -198,8 +216,19 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     std::string html = "<div class=\"chat-card chat-group-invite\"><h3 class=\"heading-3\">" +
                        StructuredTextParser::EscapeText(title) + "</h3>";
     // The stored text is English ("Group invitation: <title>") and the title is already the heading.
-    html += "<p class=\"text muted\">" +
-            StructuredTextParser::EscapeText(invite ? Tr("chat.group_invite.body") : message.text) + "</p>";
+    // G022: a group made during a call says so (the people in it may not know the maker otherwise).
+    const std::string body = !invite                ? message.text
+                             : invite->MadeInCall() ? Tr("chat.group_invite.body_call")
+                                                    : Tr("chat.group_invite.body");
+    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(body) + "</p>";
+    if (invite && invite->member_count > 0) {
+      // G019 3 / 4: how many are in it (never who), and what joining shares.
+      const std::string count = std::to_string(invite->member_count);
+      html += "<p class=\"text muted\">" +
+              StructuredTextParser::EscapeText(Tr("chat.group_invite.member_count", {{"count", count}}) + " " +
+                                               Tr("chat.group_invite.shares_profile", {{"count", count}})) +
+              "</p>";
+    }
     html += HydrateChatActions("", message.chat_actions);
     html += "</div>";
     if (!message.chat_actions.empty() && html.find("__ENTRY__") != std::string::npos) {
@@ -300,8 +329,11 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
   const AttachmentFetchWorkflow::DownloadState state = view.state;
   const std::string& local_path = view.local_path;
 
-  std::string html = "<div class=\"chat-card chat-attachment-card\">";
   const bool ready = fields && state == AttachmentFetchWorkflow::DownloadState::Ready;
+  const bool inline_image = ready && IsAttachmentImageMime(fields->mime) && !local_path.empty() && view.inline_image_ok;
+  // A picture card is a thin frame around the picture on phones (its own modifier); files and videos are compact cards.
+  std::string html = inline_image ? "<div class=\"chat-card chat-attachment-card chat-attachment-card--image\">"
+                                  : "<div class=\"chat-card chat-attachment-card\">";
   // A voice message (audio/ogg named voice-<ms>.ogg, at most 1 MB declared) is a bubble; any other audio is a file row.
   // Only the declared values decide here: the file itself is not looked at until the person taps play.
   const VoiceBubbleView voice =
@@ -312,27 +344,65 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     return VoiceBubbleRml(message.id, JsArgInAttribute(message.id), voice.duration_ms,
                           facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
   }
-  if (ready && IsAttachmentImageMime(fields->mime) && !local_path.empty() && view.inline_image_ok) {
-    // A tap opens the full picture in the system viewer (zoomable): the bubble shows it at most 240 dp high.
-    html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) +
-            "\" data-event-click=\"open_attachment('" + JsArgInAttribute(message.id) + "')\"/>";
+  if (ready && facts.audio_files_play && IsAudioFileAttachment(fields->mime, fields->filename) &&
+      (!local_path.empty() || view.on_demand)) {
+    // A music card: the file's own title and artist when its tags name them (read on this device), else its name.
+    AudioCardFace face;
+    face.title = view.audio_title.empty() ? label : view.audio_title;
+    const std::string size = fields->byte_length > 0 ? FormatAttachmentByteSize(fields->byte_length) : std::string();
+    face.subtitle = view.audio_artist.empty() ? size : (size.empty() ? view.audio_artist : view.audio_artist + " · " + size);
+    face.cover_path = view.poster_path;
+    face.duration_ms = view.audio_duration_ms;
+    return AudioFileBubbleRml(message.id, JsArgInAttribute(message.id), face,
+                              facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
+  }
+  if (inline_image) {
+    // A tap opens the full picture in the system viewer (zoomable). The bubble shows it fitted inside 200 x 240dp:
+    // its size is given, so the frame round it is laid out for that size and never for the file's own.
+    // The engine does not round an <img>, so a clip box with the same size and rounded corners holds it.
+    const PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height);
+    html += "<div class=\"chat-attachment-clip\"";
+    if (fit.width_dp > 0) {
+      html += " style=\"width:" + std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp\"";
+    }
+    html += "><img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"";
+    if (fit.width_dp > 0) {
+      html += " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.height_dp) + "\"";
+    }
+    html += " data-event-click=\"open_picture('" + JsArgInAttribute(message.id) + "','" + JsArgInAttribute(local_path) +
+            "')\"/></div>";
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {
+    // The whole frame is the tap target (the system player opens directly); the play disc is drawn over the poster
+    // and takes no taps. The frame is clipped to the same size picture bubbles use, so nothing can exceed the bubble.
     html += "<div class=\"chat-attachment-video\">";
     const std::string& poster_path = view.poster_path;
+    const std::string open_click = "data-event-click=\"open_attachment('" + JsArgInAttribute(message.id) + "')\"";
+    const char* play_disc =
+        "<div class=\"chat-attachment-video-play\"><svg class=\"chat-attachment-video-play-icon\" "
+        "src=\"../icons/play.svg\" width=\"22\" height=\"22\"></svg></div>";
     if (!poster_path.empty()) {
-      html += "<img class=\"chat-attachment-video-poster\" src=\"" +
-              StructuredTextParser::EscapeText(poster_path) + "\"/>";
+      PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height);
+      if (fit.width_dp <= 0) {
+        fit = {216, 122};
+      }
+      html += "<div class=\"chat-attachment-clip chat-attachment-video-frame\" style=\"width:" +
+              std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp\" " + open_click + ">";
+      html += "<img class=\"chat-attachment-video-poster\" src=\"" + StructuredTextParser::EscapeText(poster_path) +
+              "\" width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.height_dp) + "\"/>";
+      html += play_disc;
+      html += "</div>";
     } else {
+      html += "<div class=\"chat-attachment-video-frame chat-attachment-video-frame--bare\" " + open_click + ">";
       html += "<div class=\"chat-attachment-video-badge\">" +
               StructuredTextParser::EscapeText(Tr("chat.card.video_badge")) + "</div>";
       html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
+      html += play_disc;
+      html += "</div>";
     }
     if (fields->byte_length > 0) {
       html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
               "</p>";
     }
-    html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
-            JsArgInAttribute(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
     html += "</div>";
   } else if (ready && (!local_path.empty() || view.on_demand)) {
     html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
@@ -525,6 +595,11 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   } else {
     text_rml = paragraph + LinkedTextRml(message.text, id_arg, mention_runs) + "</p>";
   }
+  // The time sits at the bottom right inside the bubble (phones; hidden on the desktop, which has the meta line).
+  const std::string clock = MessageClockLabel(message.timestamp);
+  if (!clock.empty()) {
+    text_rml += "<div class=\"bubble-time\">" + clock + "</div>";
+  }
   std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + text_rml + "</div>";
   body = HydrateChatActions(body, message.chat_actions);
   // __ENTRY__ is only ever introduced by HydrateChatActions' own template above; never treat a
@@ -536,24 +611,50 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
 }
 
 
-std::string ReactionsRml(const std::string& target_id, const std::vector<TranscriptReaction>& reactions) {
+// Reaction chips. `overlay`: the row sits inside the bubble / card, drawn as small pills over its bottom edge
+// (position: absolute, so the row's height is the bubble's and avatar, tail and bubble bottom line up). Otherwise
+// (no bubble or card to hang it on) it follows the content as a line of its own, which marks where the body ends.
+// Each chip is a 32dp-tall button whose pill is drawn smaller inside it.
+std::string ReactionsRml(const std::string& target_id, const std::vector<TranscriptReaction>& reactions, const bool overlay) {
   std::ostringstream rml;
   // menu-anchor-end: the message menu opens right under the bubble, over this row (ContextMenuHost).
-  rml << "<div class=\"chat-reaction-row\" menu-anchor-end=\"\">";
+  rml << (overlay ? "<div class=\"chat-reaction-row chat-reaction-row--overlay\">"
+                  : "<div class=\"chat-reaction-row\" menu-anchor-end=\"\">");
   for (const TranscriptReaction& chip : reactions) {
     rml << "<button class=\"chat-reaction-chip";
     if (chip.mine) {
       rml << " chat-reaction-chip--mine";
     }
     rml << "\" type=\"button\" data-event-click=\"toggle_reaction('" << JsArgInAttribute(target_id) << "', '"
-        << JsArgInAttribute(chip.emoji) << "')\">" << StructuredTextParser::EscapeText(chip.emoji);
+        << JsArgInAttribute(chip.emoji) << "')\"><span class=\"chat-reaction-pill\">"
+        << StructuredTextParser::EscapeText(chip.emoji);
     if (chip.count > 1) {
-      rml << " " << chip.count;
+      rml << "<span class=\"chat-reaction-count\">" << chip.count << "</span>";
     }
-    rml << "</button>";
+    rml << "</span></button>";
   }
   rml << "</div>";
   return rml.str();
+}
+
+// Puts the reaction row inside the first bubble or card of `content` (marked chat-reaction-host, the row's
+// positioning box); false when there is none, and `content` is unchanged.
+bool AddReactionsToHost(std::string& content, const std::string& target_id,
+                        const std::vector<TranscriptReaction>& reactions) {
+  size_t at = std::string::npos;
+  for (const char* opener : {"<div class=\"bubble ", "<div class=\"chat-card"}) {
+    const size_t found = content.find(opener);
+    if (found != std::string::npos && found < at) {
+      at = found;
+    }
+  }
+  const size_t tag_end = at == std::string::npos ? at : content.find('>', at);
+  if (tag_end == std::string::npos) {
+    return false;
+  }
+  content.insert(tag_end + 1, ReactionsRml(target_id, reactions, true));
+  content.insert(content.find('"', at + std::string("<div class=\"").size()), " chat-reaction-host");
+  return true;
 }
 
 MessageDisplayRow OrphanAnnotationRow(const TranscriptRow& entry, const TranscriptFacts& facts) {
@@ -572,7 +673,39 @@ MessageDisplayRow OrphanAnnotationRow(const TranscriptRow& entry, const Transcri
   return row;
 }
 
+// The last bubble of a run gets a speech-bubble tail: a small element at the bubble's bottom corner (received: left,
+// sent: right) plus classes that square that corner. Bubbles without a background (deleted) get none.
+bool AddBubbleTail(std::string& content, bool ours) {
+  size_t at = std::string::npos;
+  for (const char* opener : {"<div class=\"bubble ", "<div class=\"chat-card chat-attachment-card", "<div class=\"chat-card chat-voice-card"}) {
+    const size_t found = content.find(opener);
+    if (found != std::string::npos && found < at) {
+      at = found;
+    }
+  }
+  const size_t tag_end = at == std::string::npos ? at : content.find('>', at);
+  if (tag_end == std::string::npos || content.substr(at, tag_end - at).find("bubble-deleted") != std::string::npos) {
+    return false;
+  }
+  const char* host = ours ? " bubble-tail-host bubble-tail-host--out" : " bubble-tail-host bubble-tail-host--in";
+  const char* tail = ours ? "<svg class=\"bubble-tail bubble-tail-out\" src=\"../icons/v2/bubble-tail-right.svg\" width=\"16\" height=\"20\"></svg>"
+                          : "<svg class=\"bubble-tail bubble-tail-in\" src=\"../icons/v2/bubble-tail-left.svg\" width=\"16\" height=\"20\"></svg>";
+  content.insert(tag_end + 1, tail);
+  content.insert(content.find('"', at + std::string("<div class=\"").size()), host);
+  return true;
+}
+
 } // namespace
+
+PictureBubbleSize FitPictureInBubble(const int width_px, const int height_px) {
+  if (width_px <= 0 || height_px <= 0) {
+    return {};
+  }
+  const double scale = std::min({1.0, static_cast<double>(kPictureBubbleMaxWidthDp) / width_px,
+                                 static_cast<double>(kPictureBubbleMaxHeightDp) / height_px});
+  return {std::max(1, static_cast<int>(std::lround(width_px * scale))),
+          std::max(1, static_cast<int>(std::lround(height_px * scale)))};
+}
 
 std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,
                                                 const TranscriptFacts& facts_in,
@@ -591,9 +724,19 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
   }
   std::vector<MessageDisplayRow> rows;
   rows.reserve(entries.size());
+  // Phone layout: date strips and runs. A run is consecutive plain messages from one sender, each within
+  // kRunGapMs of the one before and on the same day; a system / call row or a day change ends it.
+  constexpr int64_t kRunGapMs = 5 * 60 * 1000;
+  const bool group_thread = mentions.has_value();
+  const int64_t now_ms = util::NowUnixMs();
+  int64_t prev_ms = 0;
+  std::string run_sender; // empty: no run open
+  std::vector<bool> plain_rows; // parallel to `rows`: a plain message (the only kind that has runs)
+  int64_t run_start_ms = 0; // time of the previous message of the open run
   for (const TranscriptRow& entry : entries) {
     if (entry.orphan_annotation) {
       rows.push_back(OrphanAnnotationRow(entry, facts));
+      plain_rows.push_back(false);
       continue;
     }
     const ThreadMessage& message = entry.message;
@@ -608,8 +751,8 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
       content = "<div class=\"chat-quote chat-quote--asked\"><p class=\"chat-quote-text\">" +
                 StructuredTextParser::EscapeText(OneLine(*entry.asked_question)) + "</p></div>" + content;
     }
-    if (!entry.reactions.empty()) {
-      content += ReactionsRml(message.id, entry.reactions);
+    if (!entry.reactions.empty() && !AddReactionsToHost(content, message.id, entry.reactions)) {
+      content += ReactionsRml(message.id, entry.reactions, false);
     }
     for (const std::string& badge : entry.annotation_badges) {
       content += "<span class=\"chat-annotation-badge\" title=\"" + StructuredTextParser::EscapeText(badge) + "\">" +
@@ -626,11 +769,71 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     row.row_class = call_row ? (call_row->ours ? "message-row-user" : "message-row-peer")
                              : RowClass(message.sender_contact_id).c_str();
     row.mentions_me = mentions_me;
+    row.has_reactions = !entry.reactions.empty();
     if (!entry.control) {
-      row.time_label = MessageTimeLabel(message.timestamp, util::NowUnixMs()).c_str();
+      row.time_label = MessageTimeLabel(message.timestamp, now_ms).c_str();
+    }
+    const bool new_day = message.timestamp > 0 && !SameLocalDay(prev_ms, message.timestamp);
+    if (new_day) {
+      row.date_label = MessageDateLabel(message.timestamp, now_ms).c_str();
+    }
+    if (message.timestamp > 0) {
+      prev_ms = message.timestamp;
+    }
+    const bool plain = !entry.control && message.content_type != ChatContentType::System;
+    const bool continues_run = plain && !new_day && run_sender == message.sender_contact_id &&
+                               message.timestamp - run_start_ms <= kRunGapMs && message.timestamp >= run_start_ms;
+    row.run_start = !continues_run;
+    run_sender = plain ? message.sender_contact_id : std::string();
+    run_start_ms = message.timestamp;
+    if (group_thread && plain && message.sender_contact_id != kLocalSelfContactId &&
+        message.sender_contact_id != kAiAssistantContactId && facts.sender_label) {
+      // Every received row keeps the avatar column; the avatar sits beside the last bubble of a run (set below),
+      // the name inside the first.
+      row.group_column = true;
+      const std::string name = facts.sender_label(message.sender_contact_id);
+      // Same seed as the Contacts list, the chat list and the call page (the person's id), so one person has one colour.
+      const AvatarGlyph glyph = MakeAvatarGlyph(
+          name, facts.sender_stable_id ? facts.sender_stable_id(message.sender_contact_id) : std::string());
+      row.group_name_tone = glyph.tone;
+      row.group_avatar_letter = glyph.letter.c_str();
+      if (facts.sender_icon) {
+        const std::string icon_path = facts.sender_icon(message.sender_contact_id);
+        row.group_has_icon = !icon_path.empty();
+        row.group_avatar_src = icon_path.c_str();
+      }
+      if (row.run_start) {
+        row.group_name = name.c_str();
+        // The name goes at the top of the bubble; rows without a bubble (cards, calls) keep it as a line above.
+        static const std::string kBubbleOpen = "<div class=\"bubble bubble-assistant";
+        const size_t bubble_at = content.find(kBubbleOpen);
+        const size_t bubble_end = bubble_at == std::string::npos ? bubble_at : content.find('>', bubble_at);
+        if (bubble_end != std::string::npos) {
+          // A tap on the name opens the member's page (ChatController::OpenGroupSender).
+          content.insert(bubble_end + 1, "<div class=\"chat-group-name chat-group-name--" + std::to_string(glyph.tone) +
+                                             "\" data-event-click=\"open_sender('" + JsArgInAttribute(message.id) +
+                                             "')\">" + StructuredTextParser::EscapeText(name) + "</div>");
+          row.content_rml = content.c_str();
+          row.group_name_in_bubble = true;
+        }
+      }
     }
     row.has_content = true;
     rows.push_back(std::move(row));
+    plain_rows.push_back(plain);
+  }
+  // The last bubble of a run carries the tail (and, in groups, the avatar).
+  for (size_t i = 0; i < rows.size(); ++i) {
+    if (!plain_rows[i] || (i + 1 < rows.size() && !rows[i + 1].run_start)) {
+      continue;
+    }
+    MessageDisplayRow& row = rows[i];
+    row.run_end = true;
+    row.group_avatar = row.group_column;
+    std::string content = row.content_rml.c_str();
+    if (AddBubbleTail(content, std::string(row.row_class.c_str()) == "message-row-user")) {
+      row.content_rml = content.c_str();
+    }
   }
   return rows;
 }

@@ -2,6 +2,7 @@
 
 #include "lib/pricing/PricingTypes.h"
 #include "common/media/CallMediaHealth.h"
+#include "lib/calls/CallGuests.h"
 #include "lib/calls/CallTypes.h"
 #include "common/Error.h"
 #include "lib/calls/CallLifecycleTypes.h"
@@ -68,6 +69,8 @@ public:
     bool declined = false;
   };
   std::optional<RemoteEnd> TakeRemoteEnd();
+  /** P017: the calls the stack learned are over since the last take (ended, or an invite too late to ring), in order. */
+  std::vector<std::string> TakeCallsOver();
 
   /** What the call surface shows. */
   struct Surface {
@@ -94,20 +97,41 @@ public:
                  const std::vector<std::string>& invitee_identities, std::function<void(Roe<CallSession>)> on_done);
   void InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
                          std::function<void(Roe<void>)> on_done);
+  /** V062 3: take the guest `identity` out of the group's call `call_id` (the owner and admins; the stack checks). */
+  void RemoveFromCall(const std::string& call_id, const std::string& identity, std::function<void(Roe<void>)> on_done);
   void SetLocalAudioMuted(bool muted, std::function<void(Roe<void>)> on_done = {});
   /** Reads the display rotation here, on UI (L012), and hands it to the owner. */
   void SetLocalVideoEnabled(bool enabled, std::function<void(Roe<void>)> on_done = {});
+  /** CallSessionManager::SetLocalOnHold / SetLocalVideoPaused (the rotation read here, as for the camera). */
+  void SetLocalOnHold(bool on_hold, std::function<void(Roe<void>)> on_done = {});
+  void SetLocalVideoPaused(bool paused, std::function<void(Roe<void>)> on_done = {});
 
   // --- Durable state (stores, read-only) ---------------------------------------------------------
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
   Roe<std::optional<CallSession>> ActiveLocalCall();
   /** V053: a group call this device may join from `thread_id`: StartCall on it joins (the button reads Join). */
   std::optional<std::string> JoinableCallInThread(const std::string& thread_id) const;
+  /** The joinable group call of `thread_id` as a chat's call bar shows it (DEV/PLAN-ui-batch8-group-pages.md 4). */
+  struct JoinableCallInfo {
+    std::string call_id;
+    CallMediaMode media_mode = CallMediaMode::Voice;
+    /** Joined right now, from the call's participant table; none when it cannot be read. */
+    std::optional<int> joined_count;
+  };
+  /** JoinableCallInThread with its voice / video mode and how many have joined (none: nothing to join). */
+  std::optional<JoinableCallInfo> JoinableCallInfoInThread(const std::string& thread_id) const;
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
-  Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
+  /** The 1:1 peer's media row from the roster (camera, hold, paused); none before the peer is known. */
+  Roe<std::optional<CallParticipantMedia>> PeerMediaForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
   Roe<bool> AwaitingExplicitAnswerForCall(const std::string& call_id) const;
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
+  /** Every participant row of `call_id` (any state, this device's own too). */
+  Roe<std::vector<CallParticipant>> ListParticipants(const std::string& call_id) const;
+  /** V062: `account`'s standing in `group_id` (none: no roster for it on this device — a guest's). */
+  std::optional<CallGroupStanding> GroupStanding(const std::string& group_id, const std::string& account) const;
+  /** V062: this device checks guests in a group's call (else every group call shows as before: no guests). */
+  bool ChecksGuests() const;
   /** P001 initiation offer stored for inbound inviter (0 if none). */
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
 
@@ -155,6 +179,9 @@ private:
   /** Last media error handed to the GUI (shown once until the owner clears it). */
   std::optional<std::string> taken_media_error_;
   std::string taken_remote_ended_;
+  /** The calls-over count taken so far, and the session manager it counted for (a rebuilt one counts from 0). */
+  uint64_t taken_calls_over_ = 0;
+  const void* calls_over_sessions_ = nullptr;
 };
 
 } // namespace pbr

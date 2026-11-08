@@ -35,6 +35,20 @@ TEST(SystemControlRegistryTest, FindsTheFamilyThatOwnsASystemMessage) {
   EXPECT_FALSE(registry.Find(text)) << "only system messages are control";
 }
 
+TEST(SystemControlRegistryTest, AFamilyWaitsNoLongerThanTheRelayKeepsLaneRecords) {
+  SystemControlRegistry registry;
+  SystemControlFamily patient = Family("patient", "test_patient");
+  patient.lane_max_age_ms = 24 * 60 * 60 * 1000;
+  registry.Bind(patient);
+  ASSERT_TRUE(registry.Find(Control("test_patient")));
+  EXPECT_EQ(registry.Find(Control("test_patient"))->lane_max_age_ms, kControlLaneRelayTtlMs);
+
+  SystemControlFamily brief = Family("brief", "test_brief");
+  brief.lane_max_age_ms = 5 * 60 * 1000;
+  registry.Bind(brief);
+  EXPECT_EQ(registry.Find(Control("test_brief"))->lane_max_age_ms, 5 * 60 * 1000);
+}
+
 TEST(SystemControlRegistryTest, BindReplacesAndUnbindRemoves) {
   SystemControlRegistry registry;
   registry.Bind(Family("call", "call_invite"));

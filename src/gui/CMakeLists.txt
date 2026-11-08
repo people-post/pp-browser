@@ -7,7 +7,9 @@ pp_browser_add_feature_library(pp_gui
     BadgeAggregator.cpp
     CallChromeSync.cpp
     CallController.cpp
+    CallDemoScenes.cpp
     chat/AgentTurnController.cpp
+    chat/AskAiPanel.cpp
     chat/ChatMenus.cpp
     chat/ChatMentionPicker.cpp
     chat/ChatPeerSheet.cpp
@@ -18,6 +20,7 @@ pp_browser_add_feature_library(pp_gui
     chat/ChatActionLabel.cpp
     chat/DeliveryNoticeText.cpp
     chat/MessageTimeLabel.cpp
+    chat/MessagingReadyTasks.cpp
     chat/OutgoingAttachmentPrep.cpp
     chat/TranscriptRml.cpp
     chat/VoiceBubble.cpp
@@ -25,6 +28,10 @@ pp_browser_add_feature_library(pp_gui
     chat/VoicePlayback.cpp
     chat/ChatWidgetHost.cpp
     chat/ChatWidgetStateBuilder.cpp
+    chat/GroupInfoSheet.cpp
+    chat/GroupLeaveSheet.cpp
+    chat/GroupJoinPrompt.cpp
+    chat/GroupLinkSheet.cpp
     chat/WorkingSetController.cpp
     ClientCompatController.cpp
     contacts/ContactsChromeSync.cpp
@@ -45,12 +52,14 @@ pp_browser_add_feature_library(pp_gui
     SettingsController.cpp
     SettingsProfileActions.cpp
     SettingsSecurityActions.cpp
+    StorageManagerController.cpp
+    UiPerfTestController.cpp
     DiagnosticsFeedback.cpp
     shell/DataModelHost.cpp
     shell/DeferredStartup.cpp
     shell/DocumentLoader.cpp
     shell/RmlMount.cpp
-    shell/ShellBottomSheetGesture.cpp
+    shell/ShellAiDot.cpp
     shell/ShellCallChromeGesture.cpp
     shell/ShellCallChromeRml.cpp
     shell/ShellLayoutRml.cpp
@@ -65,7 +74,13 @@ pp_browser_add_feature_library(pp_gui
     shell/ShellPinGatePorts.cpp
     shell/ShellSetupPorts.cpp
     shell/ShellSplitterDrag.cpp
+    shell/ShellLargeTitleScroll.cpp
+    shell/ShellNavBarScroll.cpp
+    shell/ShellFavoritesSnap.cpp
+    shell/ShellPageSheetGesture.cpp
     shell/ShellSwipeBackGesture.cpp
+    shell/ShellDrawerOpenGesture.cpp
+    shell/SessionSwipeGesture.cpp
     BlobQuotaRecoveryFlow.cpp
     UserFeedback.cpp
   PUBLIC_LIBS

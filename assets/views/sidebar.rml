@@ -1,4 +1,41 @@
 <div class="sidebar-panel" data-model="shell">
+  <div class="pane-nav">
+    <div class="pane-nav-bg"></div>
+    <div class="bar-fade"></div>
+    <!-- Phone bar (DEV/PLAN-minimal-nav.md D, Kenneth 2026-11-07): no title; the round avatar on the left opens Settings,
+         the round plus on the right opens New chat. The avatar reads the settings model like Me's card. -->
+    <!-- open_settings_from_avatar is the window model's (ShellHost), not this page's shell model: declared here. -->
+    <button class="pane-nav-avatar" type="button" data-model="window" data-event-click="open_settings_from_avatar()">
+      <!-- Same structure as the AI drawer's "you" row (ai_drawer.rml), which renders: the settings model is declared on
+           the avatar element itself, whose children carry the bindings. -->
+      <div class="shell-circle-avatar" data-model="settings"
+           data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
+           data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
+           data-class-avatar-tone-2="!profile_has_icon && profile_avatar_tone == 2"
+           data-class-avatar-tone-3="!profile_has_icon && profile_avatar_tone == 3"
+           data-class-avatar-tone-4="!profile_has_icon && profile_avatar_tone == 4"
+           data-class-avatar-tone-5="!profile_has_icon && profile_avatar_tone == 5"
+           data-class-avatar-tone-6="!profile_has_icon && profile_avatar_tone == 6"
+           data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
+        <img class="shell-circle-avatar-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
+        <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
+      </div>
+      <div class="pane-nav-avatar-text">
+        <p class="pane-nav-avatar-name" data-model="settings">{{profile_nickname}}</p>
+        <!-- The device's link to our service (ShellHost::SetChatsLink, event-driven): empty while unknown. -->
+        <p class="pane-nav-avatar-sub" data-if="chats_link_state != ''">
+          <svg class="pane-nav-link-icon pane-nav-link-icon--ok" data-if="chats_link_state == 'ok'" src="../icons/v2/cloud-ok.svg" width="14" height="14"></svg>
+          <svg class="pane-nav-link-icon pane-nav-link-icon--offline" data-if="chats_link_state == 'offline'" src="../icons/v2/cloud-off.svg" width="14" height="14"></svg>
+          <span class="pane-nav-link-text">{{chats_link_text}}</span>
+        </p>
+      </div>
+    </button>
+    <div class="pane-nav-actions row">
+      <button class="pane-nav-plus shell-circle-btn" type="button" data-event-click="open_new_session_menu()">
+        <span class="shell-circle-btn-face"><svg src="../icons/v2/plus.svg" width="24" height="24"></svg></span>
+      </button>
+    </div>
+  </div>
   <div class="sidebar-header row">
     <p class="sidebar-header-title">{{i18n:nav.sessions}}</p>
     <div class="sidebar-header-actions row">
@@ -7,7 +44,13 @@
       </button>
     </div>
   </div>
-  <div id="sidebar-sessions" class="sidebar-sessions" data-event-scroll="sessions_scroll()">
+  <div id="sidebar-sessions" class="sidebar-sessions root-scroll" collapse-at="20" data-event-scroll="sessions_scroll()">
+    <div class="chat-search">
+      <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
+      <input class="chat-search-input" type="text" data-value="sessions_query"
+             data-event-change="sessions_search_changed()"/>
+      <p class="chat-search-label" data-if="sessions_query == ''">{{i18n:sidebar.search_placeholder}}</p>
+    </div>
     <div class="sidebar-archived-entry row" data-if="archived_count > 0" data-event-click="toggle_archived()">
       <svg src="../icons/back.svg" width="14" height="14" crop-to-content="true" data-if="showing_archived"></svg>
       <svg src="../icons/archive.svg" width="14" height="14" crop-to-content="true" data-if="!showing_archived"></svg>
@@ -18,11 +61,28 @@
          data-class-sidebar-session-active="session.active"
          data-class-sidebar-session--unread="session.unread_count > 0 || session.unread_dot"
          data-class-sidebar-session--pinned="session.pinned"
+         data-class-sidebar-session--empty="session.preview_empty"
          data-class-sidebar-session--ai="session.kind == 'ai'"
          data-class-sidebar-session--private="session.kind == 'private'"
          data-class-sidebar-session--public="session.kind == 'public'"
          data-class-sidebar-session--group="session.kind == 'group'"
          data-event-click="select_thread(session.id)">
+      <div class="chat-row-avatar"
+           data-class-chat-row-avatar--ai="session.kind == 'ai'"
+           data-class-chat-row-avatar--group="session.kind == 'group'"
+           data-class-avatar-tone-0="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 0"
+           data-class-avatar-tone-1="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 1"
+           data-class-avatar-tone-2="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 2"
+           data-class-avatar-tone-3="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 3"
+           data-class-avatar-tone-4="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 4"
+           data-class-avatar-tone-5="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 5"
+           data-class-avatar-tone-6="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 6"
+           data-class-avatar-tone-7="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 7">
+        <img class="avatar-photo" data-if="session.kind != 'ai' && session.kind != 'group' && session.has_icon" data-attr-src="session.icon_src"/>
+        <p class="chat-row-avatar-letter" data-if="session.kind != 'ai' && session.kind != 'group' && !session.has_icon">{{session.avatar_letter}}</p>
+        <svg class="chat-row-avatar-icon" src="../icons/v2/sparkle-fill.svg" width="28" height="28" data-if="session.kind == 'ai'"></svg>
+        <svg class="chat-row-avatar-icon" src="../icons/v2/group.svg" width="28" height="28" data-if="session.kind == 'group'"></svg>
+      </div>
       <div class="sidebar-session-icon" data-if="session.kind == 'ai'">
         <svg src="../icons/sparkle.svg" width="16" height="16" crop-to-content="true"></svg>
       </div>
@@ -37,20 +97,55 @@
       </div>
       <div class="sidebar-session-body">
         <div class="sidebar-session-line">
+          <svg class="chat-row-type chat-row-type--ai" src="../icons/v2/sparkle-fill.svg" width="14" height="14" data-if="session.kind == 'ai'"></svg>
+          <svg class="chat-row-type chat-row-type--private" src="../icons/v2/lock.svg" width="14" height="14" data-if="session.kind == 'private'"></svg>
+          <svg class="chat-row-type chat-row-type--public" src="../icons/message.svg" width="14" height="14" data-if="session.kind == 'public'"></svg>
+          <svg class="chat-row-type chat-row-type--group" src="../icons/v2/group.svg" width="14" height="14" data-if="session.kind == 'group'"></svg>
           <p class="sidebar-session-title">{{session.title}}</p>
-          <svg class="sidebar-session-flag" src="../icons/pin.svg" width="12" height="12" crop-to-content="true" data-if="session.pinned"></svg>
-          <svg class="sidebar-session-flag" src="../icons/bell-off.svg" width="12" height="12" crop-to-content="true" data-if="session.muted"></svg>
+          <svg class="sidebar-session-flag sidebar-session-flag--pin" src="../icons/pin.svg" width="12" height="12" crop-to-content="true" data-if="session.pinned"></svg>
+          <svg class="sidebar-session-flag sidebar-session-flag--muted" src="../icons/bell-off.svg" width="12" height="12" crop-to-content="true" data-if="session.muted"></svg>
           <span class="sidebar-session-date" data-if="session.date_label != ''">{{session.date_label}}</span>
         </div>
         <div class="sidebar-session-line">
           <span class="sidebar-session-mention" data-if="session.mentioned">{{i18n:sidebar.mentioned}}</span>
+          <svg class="chat-row-blocked" src="../icons/v2/block.svg" width="14" height="14" data-if="session.blocked"></svg>
           <p class="sidebar-session-preview">{{session.preview}}</p>
           <span class="badge-count sidebar-unread" data-if="session.unread_count > 0">{{session.unread_display}}</span>
           <span class="sidebar-unread-dot" data-if="session.unread_dot"></span>
+          <svg class="chat-row-mute" src="../icons/v2/bell-off.svg" width="16" height="16" data-if="session.muted && session.unread_count == 0 && !session.unread_dot"></svg>
+        </div>
+      </div>
+      <div class="session-swipe session-swipe--end">
+        <div class="session-swipe-btn session-swipe-btn--more" swipe-action="more">
+          <svg src="../icons/v2/more.svg" width="24" height="24"></svg>
+          <p class="session-swipe-label">{{i18n:sidebar.swipe.more}}</p>
+        </div>
+        <div class="session-swipe-btn session-swipe-btn--archive" swipe-action="archive">
+          <svg src="../icons/v2/archive.svg" width="24" height="24"></svg>
+          <p class="session-swipe-label" data-if="!showing_archived">{{i18n:sidebar.swipe.archive}}</p>
+          <p class="session-swipe-label" data-if="showing_archived">{{i18n:sidebar.swipe.unarchive}}</p>
+        </div>
+        <div class="session-swipe-btn session-swipe-btn--delete" swipe-action="delete">
+          <svg src="../icons/v2/trash.svg" width="24" height="24"></svg>
+          <p class="session-swipe-label">{{i18n:sidebar.swipe.delete}}</p>
+        </div>
+      </div>
+      <div class="session-swipe session-swipe--start">
+        <div class="session-swipe-btn session-swipe-btn--pin" swipe-action="pin">
+          <svg src="../icons/v2/pin.svg" width="24" height="24"></svg>
+          <p class="session-swipe-label" data-if="!session.pinned">{{i18n:sidebar.swipe.pin}}</p>
+          <p class="session-swipe-label" data-if="session.pinned">{{i18n:sidebar.swipe.unpin}}</p>
+        </div>
+        <div class="session-swipe-btn session-swipe-btn--read" swipe-action="read">
+          <svg src="../icons/v2/check-circle.svg" width="24" height="24" data-if="session.unread_count > 0 || session.unread_dot"></svg>
+          <svg src="../icons/v2/circle-dot.svg" width="24" height="24" data-if="session.unread_count == 0 && !session.unread_dot"></svg>
+          <p class="session-swipe-label" data-if="session.unread_count > 0 || session.unread_dot">{{i18n:sidebar.swipe.read}}</p>
+          <p class="session-swipe-label" data-if="session.unread_count == 0 && !session.unread_dot">{{i18n:sidebar.swipe.unread}}</p>
         </div>
       </div>
     </div>
     <p class="text muted" data-if="sessions.size == 0">{{i18n:sidebar.empty}}</p>
     <p class="text muted sidebar-sessions-more" data-if="sessions_more" data-event-click="sessions_load_more()">{{i18n:sidebar.loading_more}}</p>
+    <div class="tab-bar-clear"></div>
   </div>
 </div>

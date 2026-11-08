@@ -1,4 +1,5 @@
 #include "lib/content/CasStore.h"
+#include "common/AtomicFileWrite.h"
 #include "common/PlatformLimits.h"
 #include "common/BoundedRead.h"
 
@@ -11,6 +12,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <string>
 
 namespace pbr {
 namespace {
@@ -67,31 +69,11 @@ bool CasStore::Exists(const CasRealm realm, const ByteVector& content_id) const 
 
 Roe<void> CasStore::WriteBlockFile(const std::string& path, const ByteVector& bytes,
                                    const std::string_view prefix) const {
-  std::error_code ec;
-  std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
-  if (ec) {
-    return Error("Failed to create CAS block directory");
-  }
-  const std::string tmp = path + ".tmp";
-  {
-    std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-    if (!out) {
-      return Error("Failed to write CAS block");
-    }
-    if (!prefix.empty()) {
-      out.write(prefix.data(), static_cast<std::streamsize>(prefix.size()));
-    }
-    if (!bytes.empty()) {
-      out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    }
-    if (!out) {
-      return Error("Failed to write CAS block");
-    }
-  }
-  std::filesystem::rename(tmp, path, ec);
-  if (ec) {
-    std::filesystem::remove(tmp);
-    return Error("Failed to finalize CAS block");
+  // AtomicFileWrite: a temp file of its own (the same bytes can be stored by two at once: a download and a forward
+  // of one file), and on Windows a short wait for a handle someone has open on the block. Not synced: a block is
+  // fetched again, and an fsync per attachment costs a phone more than it keeps.
+  if (auto written = AtomicFileWrite::Write(path, prefix, bytes, AtomicFileWrite::Sync::None); !written) {
+    return Error("Failed to write CAS block: " + written.error().message);
   }
   return {};
 }
@@ -234,7 +216,6 @@ Roe<void> CasStore::Delete(const CasRealm realm, const ByteVector& content_id) {
   }
   return {};
 }
-
 
 Roe<ByteVector> CasStore::PublishFromPrivate(const ByteVector& private_content_id, const ByteVector& dek) {
   auto plaintext = GetPrivate(private_content_id, dek);

@@ -171,5 +171,29 @@ TEST(GroupRosterStatementTest, ADissolveIsSignedUnderItsOwnTagAndRoundTrips) {
   EXPECT_FALSE(group_roster_statement::ToJson(roster).getIf<bool>("dissolved").has_value()) << "a roster statement is as it was";
 }
 
+TEST(GroupRosterStatementTest, ThePresetAndTheAdminsAreWhatTheOwnerSigned) {
+  TestSigner alice;
+  std::vector<GroupRosterStatementMember> rows{{alice.Id(), MemberRole::Owner, 1000},
+                                               {"account:bob", MemberRole::Admin, 2000},
+                                               {"account:carol", MemberRole::Member, 2000}};
+  const GroupRosterStatement managed =
+      group_roster_statement::Sign(alice, alice.Key(), "group:g1", 4, rows, {}, false, GroupPreset::Managed).value();
+  EXPECT_TRUE(group_roster_statement::Verify(managed, alice.Id())) << "an admin beside the owner is a valid roster";
+
+  // The preset is part of what the owner signs (G017): a member cannot open a managed group.
+  GroupRosterStatement opened = managed;
+  opened.preset = GroupPreset::Open;
+  EXPECT_FALSE(group_roster_statement::Verify(opened, alice.Id()));
+  // Nor promote itself.
+  GroupRosterStatement promoted = managed;
+  promoted.members[2].role = MemberRole::Admin;
+  EXPECT_FALSE(group_roster_statement::Verify(promoted, alice.Id()));
+
+  auto parsed = group_roster_statement::FromJson(group_roster_statement::ToJson(managed));
+  ASSERT_TRUE(parsed);
+  EXPECT_EQ(parsed->preset, GroupPreset::Managed);
+  EXPECT_TRUE(group_roster_statement::Verify(*parsed, alice.Id()));
+}
+
 } // namespace
 } // namespace pbr

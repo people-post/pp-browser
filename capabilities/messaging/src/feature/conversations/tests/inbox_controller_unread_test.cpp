@@ -7,6 +7,7 @@
 #include "feature/conversations/InboxController.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "common/Utilities.h"
+#include "lib/people/ProfileIconCache.h"
 #include "feature/conversations/PeerDisplaySources.h"
 
 #include <filesystem>
@@ -123,6 +124,27 @@ TEST(InboxControllerUnreadTest, AnAnswerToTheActiveThreadCountsWhenItsPageIsNotS
   EXPECT_EQ((*env.store->GetThread(ai.id))->unread_count, 0);
 }
 
+TEST(InboxControllerUnreadTest, AiThreadsDoNotCountTowardSumUnread) {
+  // Kenneth 2026-11-05: an AI conversation never shows as unread (the assistant's answer to your own question is not
+  // a waiting message), so it must not add to the unread total that drives the nav badge.
+  InboxTestEnv env("unread_ai_excluded_test");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  Thread direct;
+  direct.id = "thread-direct-x";
+  direct.kind = ThreadKind::Direct;
+  direct.updated_at = 1;
+  ASSERT_TRUE(env.store->UpsertThread(direct));
+  env.inbox->IncrementUnread(direct.id);
+  Thread ai;
+  ai.id = "thread-ai-x";
+  ai.kind = ThreadKind::Ai;
+  ai.updated_at = 2;
+  ASSERT_TRUE(env.store->UpsertThread(ai));
+  env.inbox->IncrementUnread(ai.id, 3, /*even_if_active=*/true);
+  EXPECT_EQ((*env.store->GetThread(ai.id))->unread_count, 3);
+  EXPECT_EQ(env.inbox->SumUnread(), 1) << "only the human chat counts; the AI thread's unread is excluded";
+}
+
 TEST(InboxControllerUnreadTest, InactiveThreadIncrementsOnInbound) {
   InboxTestEnv env("unread_inbound_test");
   ASSERT_TRUE(env.inbox->ListThreads());
@@ -158,13 +180,66 @@ TEST(InboxControllerUnreadTest, ClearingAChatsHistoryDropsItsMentionMarker) {
   Thread other = group;
   other.id = "thread-group-2";
   ASSERT_TRUE(env.store->UpsertThread(other));
-  ASSERT_TRUE(mentions.Add(group.id, "m-1", 1000));
+  ASSERT_TRUE(mentions.Add(group.id, "m-1", 2000));
+  ASSERT_TRUE(env.inbox->OpenThread(group.id)); // read: m-1 becomes the chat's read-mention row
+  env.inbox->ClearActiveThread();
+  ASSERT_TRUE(mentions.Add(group.id, "m-3", 3000));
   ASSERT_TRUE(mentions.Add(other.id, "m-2", 1000));
   ASSERT_EQ(*mentions.Threads(), (std::set<std::string>{group.id, other.id}));
+  ASSERT_EQ(mentions.Latest().value()->message_id, "m-3");
 
   ASSERT_TRUE(env.inbox->ClearThreadHistory(group.id, /*forget_memory=*/false));
   EXPECT_EQ(*mentions.Threads(), (std::set<std::string>{other.id})) << "only the cleared chat loses its marker";
   EXPECT_FALSE(mentions.Oldest(group.id).value());
+  // The cleared chat's read row (m-1, newer than m-2) went too: only the other chat's older mention is left.
+  const auto latest = mentions.Latest().value();
+  ASSERT_TRUE(latest);
+  EXPECT_EQ(latest->thread_id, other.id);
+  EXPECT_EQ(latest->message_id, "m-2");
+}
+
+TEST(InboxControllerUnreadTest, DeletingAChatDropsItsReadMention) {
+  InboxTestEnv env("close_drops_read_mention");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  InMemoryThreadMentionsStore mentions;
+  env.inbox->SetThreadMentions(&mentions);
+  Thread group;
+  group.id = "thread-group-close";
+  group.kind = ThreadKind::Group;
+  group.title = "Hike";
+  group.updated_at = 1;
+  ASSERT_TRUE(env.store->UpsertThread(group));
+  ASSERT_TRUE(mentions.Add(group.id, "m-1", 1000));
+  ASSERT_TRUE(env.inbox->OpenThread(group.id)); // read: m-1 becomes the chat's read-mention row
+  ASSERT_TRUE(mentions.Threads()->empty());
+  ASSERT_TRUE(mentions.Latest().value());
+
+  ASSERT_TRUE(env.inbox->CloseThread(group.id));
+  EXPECT_FALSE(mentions.Latest().value()) << "a deleted chat leaves no recent mention";
+}
+
+TEST(InboxControllerUnreadTest, DeletingTheNewestReadMentionDropsItsRow) {
+  InboxTestEnv env("delete_drops_read_mention");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  InMemoryThreadMentionsStore mentions;
+  env.inbox->SetThreadMentions(&mentions);
+  Thread group;
+  group.id = "thread-group-delete";
+  group.kind = ThreadKind::Group;
+  group.title = "Hike";
+  group.updated_at = 1;
+  ASSERT_TRUE(env.store->UpsertThread(group));
+  ASSERT_TRUE(mentions.Add(group.id, "m-1", 1000));
+  ASSERT_TRUE(mentions.Add(group.id, "m-2", 2000));
+  ASSERT_TRUE(env.inbox->OpenThread(group.id)); // read: the newest, m-2, is kept as the read-mention row
+  ASSERT_EQ(mentions.Latest().value()->message_id, "m-2");
+
+  ThreadMessage deleted;
+  deleted.id = "m-2";
+  deleted.thread_id = group.id;
+  deleted.content_type = ChatContentType::Text;
+  env.inbox->AfterMessageDeleted(group.id, deleted);
+  EXPECT_FALSE(mentions.Latest().value()) << "the deleted mention was the chat's only remembered one";
 }
 
 // A direct chat the group traffic made (store creation: not listed until it is the user's).
@@ -288,6 +363,21 @@ TEST(InboxControllerTest, CreateClearCloseLeavesNoForcedAiHome) {
   EXPECT_TRUE(env.inbox->ActiveThreadId().empty());
 }
 
+// The ask-AI panel's first question makes its AI chat without opening it: the chat on screen stays the open one.
+TEST(InboxControllerTest, AnAiChatCanBeMadeWithoutOpeningIt) {
+  InboxTestEnv env("ai_thread_not_opened");
+  auto open = env.inbox->CreateNewAiThread();
+  ASSERT_TRUE(open);
+  auto made = env.inbox->CreateAiThread();
+  ASSERT_TRUE(made);
+  EXPECT_EQ(made->kind, ThreadKind::Ai);
+  EXPECT_NE(made->id, open->id);
+  EXPECT_EQ(env.inbox->ActiveThreadId(), open->id) << "the open chat did not change";
+  auto listed = env.inbox->ListThreads();
+  ASSERT_TRUE(listed);
+  EXPECT_EQ(listed->size(), 2u);
+}
+
 // G016: a dissolved group's chat is deleted like any chat (nobody is left to tell); the line shows in the group only.
 TEST(InboxControllerTest, ADissolvedGroupChatReadsWithItsLineAndDeletes) {
   InboxTestEnv env("dissolved_group_chat");
@@ -327,6 +417,22 @@ TEST(InboxControllerTest, ADissolvedGroupChatReadsWithItsLineAndDeletes) {
   ASSERT_TRUE(env.inbox->CloseThread(group->id));
   EXPECT_FALSE(env.store->FindGroupThread("group:hike")->has_value());
 }
+
+// A group row's sender can be an account id of someone who is not a contact (Kenneth 2026-11-04: no avatar column).
+TEST(InboxControllerUnreadTest, SenderIconResolvesANonContactAccountThroughTheIdentityCache) {
+  InboxTestEnv env("sender_icon_test");
+  const std::string profile = env.data_dir.string();
+  env.inbox->SetProfileDataDir(profile);
+  ProfileIconCacheMeta meta;
+  ASSERT_TRUE(SaveProfileIconCache(profile, {1, 2, 3}, "jpg", meta, SanitizeProfileIconCacheKey("account:stranger")));
+  const std::string expected = ProfileIconLocalPath(profile, SanitizeProfileIconCacheKey("account:stranger"));
+  ASSERT_FALSE(expected.empty());
+
+  const TranscriptFacts facts = env.inbox->Facts();
+  EXPECT_EQ(facts.sender_icon("account:stranger"), expected);
+  EXPECT_TRUE(facts.sender_icon("account:nobody").empty());
+}
+
 
 } // namespace
 } // namespace pbr

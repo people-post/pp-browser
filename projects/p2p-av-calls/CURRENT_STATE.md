@@ -1,6 +1,6 @@
 # P2P A/V calls — current state
 
-**Last updated:** 2026-09-28
+**Last updated:** 2026-11-07
 
 **North star:** [NETWORKING.md](../../docs/architecture/NETWORKING.md) + **[V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)** — HTTP + libp2p only; call media on libp2p (voice-first). **m2 done:** libdatachannel removed from build; wire-compat `call_sdp`/`call_ice` ignored.
 
@@ -39,6 +39,9 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **V034 libp2p video_lo** | H264 on same 1:1 duplex + SFU ch1; v2 frames; shared call media key (one encrypt / hop fan-out); hop never sheds audio for video; Immersive per-peer tiles |
 | Video on libp2p | **In progress (lv)** — LAN 1:1 Camera on is the first dogfood bar |
 | **V050 group topology** | **Landed (gt0–gt6)** — full invite roster + joined-count arming; initiator leave keeps the rest on the hop with one agreed next owner; `planned_hop` from the invite list; Accept hop report (reached / unreachable) with the one adjustment or joiner refusal at the third join; later joiners move the whole group once, only to a hop every member can use, guests following the owner. Hard lab Phases 13–15 across three NATs and two hops. Paid-hop ownership handover deferred (pricing P004) — [PHASES gt](PHASES.md#gt--group-call-topology-v050) |
+| **V062 guests in a group's call** | **Built 2026-11-05** (`feat/call-guests`): `guest` / `brought_by` on the mid-call invite and roster, the Guest label and "joined as …'s guest", bring per preset (each device checks the roster), `call_remove` from the owner / admins (key rotates, the guest's device leaves), "Add {name} to the group", the guest's ring notice. Lab `group_call_guest` registered, not yet run — [CALLS.md § Guests](../../docs/architecture/CALLS.md) |
+| **V063 audio best effort** | **Recorded 2026-11-06** — the code already did it (1:1 since 2026-08, groups since the data lane 2026-11-03); docs and V024 / V032 / V034 / N021 corrected — [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos) |
+| **V064 call waiting: not now** | **Built 2026-11-07** (`feat/call-conflict-copy`): no Hold & Accept ([PROPOSAL-call-waiting.md](PROPOSAL-call-waiting.md) answered, PR #539 folded in). The ring over a call says who is calling and which call accepting ends (en + zh-Hans; its background alert too); such a ring never goes to CallKit / Android's call notification (their Answer ended the first call silently); "Call {name} back?" once the call taken is over — [CALLS.md Conflict rows](../../docs/architecture/CALLS.md). Not yet checked on devices |
 
 ## a4 thin in code (still relevant under V026)
 

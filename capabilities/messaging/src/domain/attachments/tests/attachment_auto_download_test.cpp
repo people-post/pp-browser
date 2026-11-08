@@ -16,6 +16,7 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <future>
 #include <gtest/gtest.h>
 #include <map>
@@ -478,6 +479,32 @@ TEST_F(AutoDownloadByNetworkTest, AThumbnailThatCannotBeMadeIsNotTriedAgainThisS
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   EXPECT_EQ(calls.load(), 1);
   EXPECT_FALSE(AttachmentPosterExists(dir_.string(), "t1", fields.content_hash));
+}
+
+// Kenneth 2026-11-06: a sound file's music card reads the file's own tags once, on a worker, and draws them after the
+// change notification; a lock forgets them with the view cache (they were read from plaintext).
+TEST_F(AutoDownloadByNetworkTest, ASoundFilesTagsAreReadOnceOnAWorkerAndForgottenAtALock) {
+  const std::vector<uint8_t> hash(32, 7);
+  const std::filesystem::path view = dir_ / "song.mp3";
+  {
+    std::ofstream out(view, std::ios::binary);
+    out << "not really a sound file";
+  }
+  std::atomic<int> changed{0};
+  workflow_.SetOnChanged([&changed]() { ++changed; });
+  EXPECT_FALSE(workflow_.AudioTags("t1", hash).has_value()) << "nothing read yet";
+  workflow_.RequestAudioTags("t1", hash, view.string());
+  workflow_.RequestAudioTags("t1", hash, view.string()); // a re-render while it is being read
+  ASSERT_TRUE(WaitFor([&] {
+    AppRuntime::RunUITasks();
+    return changed.load() > 0 && workflow_.AudioTags("t1", hash).has_value();
+  }));
+  const auto tags = workflow_.AudioTags("t1", hash);
+  EXPECT_TRUE(tags->title.empty()) << "the file names no title: the card keeps the file name";
+  EXPECT_FALSE(AttachmentPosterExists(dir_.string(), "t1", hash)) << "no picture in it: no cover";
+  EXPECT_FALSE(workflow_.AudioTags("t2", hash).has_value()) << "per chat";
+  workflow_.ClearDek();
+  EXPECT_FALSE(workflow_.AudioTags("t1", hash).has_value());
 }
 
 } // namespace

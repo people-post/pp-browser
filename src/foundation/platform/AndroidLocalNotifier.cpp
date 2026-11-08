@@ -69,4 +69,25 @@ void AndroidLocalNotifier::ClearForThread(const std::string& thread_id) {
 #endif
 }
 
+void AndroidLocalNotifier::SetMessageBannersOn(const bool on) {
+#if defined(__ANDROID__)
+  JNIEnv* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+  jobject activity = static_cast<jobject>(SDL_GetAndroidActivity());
+  if (env == nullptr || activity == nullptr) {
+    return;
+  }
+  if (jclass cls = env->GetObjectClass(activity); cls != nullptr) {
+    if (jmethodID mid = env->GetMethodID(cls, "setMessageBannersOn", "(Z)V"); mid != nullptr) {
+      env->CallVoidMethod(activity, mid, static_cast<jboolean>(on ? JNI_TRUE : JNI_FALSE));
+    } else {
+      env->ExceptionClear();
+    }
+    env->DeleteLocalRef(cls);
+  }
+  env->DeleteLocalRef(activity);
+#else
+  (void)on;
+#endif
+}
+
 } // namespace pbr

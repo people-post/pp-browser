@@ -131,9 +131,6 @@ Object BuildRouteObject(const RelayEnvelope& envelope) {
   if (envelope.route.kind == "direct") {
     route.set("channel", ThreadChannelToString(envelope.route.channel));
   }
-  if (envelope.route.group_id) {
-    route.set("group_id", *envelope.route.group_id);
-  }
   return route;
 }
 
@@ -492,7 +489,10 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
     envelope.body.e2e.sender_card_at = *card_at;
   }
   if (const Object* sender_card = e2e->getObject("sender_card")) {
-    if (!introduces) {
+    // On the control lane the sender decides when its card rides (ControlLaneCarriesCard): a ringing invite or an
+    // ask carries it under a confirmed device session too (M024).
+    const bool control = route->getString("kind").value_or("") == kRelayRouteControl;
+    if (!introduces && !control) {
       return Error("body.e2e.sender_card without a key_init or an account copy");
     }
     if (sender_card->getString("account_id").value_or("") != envelope.sender_contact_id) {
@@ -523,23 +523,12 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   } else if (auto channel_value = route->getString("channel")) {
     envelope.route.channel = ThreadChannelFromString(*channel_value);
   }
-  if (auto group_id = route->getString("group_id")) {
-    envelope.route.group_id = *group_id;
+  // No route names a group (G018 item 7: a group copy carries its group id inside its ciphertext); one that
+  // does is from before that cutover. The control lane carries a copy per device or the account copy (M024).
+  if (route->contains("group_id")) {
+    return Error("Envelope route with a group_id");
   }
-  if (envelope.route.kind == "group" && !envelope.route.group_id) {
-    return Error("Missing route.group_id for group envelope");
-  }
-  // One shape per route (signed as such): a group envelope names its group; a direct / control one does not;
-  // the control lane is one account copy.
-  if (envelope.route.kind == "direct" || envelope.route.kind == kRelayRouteControl) {
-    if (envelope.route.group_id) {
-      return Error("Direct / control envelope with a group_id");
-    }
-    if (envelope.route.kind == kRelayRouteControl &&
-        (envelope.body.e2e.copies.size() != 1 || !envelope.body.e2e.copies.front().recipient_device.empty())) {
-      return Error("Control envelope must carry one account copy");
-    }
-  } else if (envelope.route.kind != "group") {
+  if (envelope.route.kind != "direct" && envelope.route.kind != kRelayRouteControl && envelope.route.kind != "group") {
     return Error("Unknown route.kind");
   }
   if (auto timestamp = json.getIf<int64_t>("timestamp")) {
@@ -553,9 +542,6 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (!IsPlainIdentifier(envelope.sender_contact_id) ||
       (!envelope.sender_relay_id.empty() && !IsPlainIdentifier(envelope.sender_relay_id))) {
     return Error("Invalid identity in envelope");
-  }
-  if (envelope.route.group_id && !IsPlainIdentifier(*envelope.route.group_id)) {
-    return Error("Invalid group_id in envelope");
   }
   if (auto stream_key = json.getString("stream_key")) {
     envelope.stream_key = *stream_key;
@@ -584,6 +570,12 @@ Object RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
   if (record.urgent) {
     json.set("urgent", true);
   }
+  if (record.ttl_s > 0) {
+    json.set("ttl_s", record.ttl_s);
+  }
+  if (!record.wake_hint.empty()) {
+    json.set("wake_hint", record.wake_hint);
+  }
   return json;
 }
 
@@ -609,6 +601,8 @@ Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& en
   record.index_key = index_key;
   record.blob_b64 = ::pp::Base64Encode(bytes);
   record.urgent = envelope.relay_wake_urgent;
+  record.ttl_s = envelope.relay_ttl_s;
+  record.wake_hint = SanitizeWakeHint(envelope.relay_wake_hint);
   return record;
 }
 

@@ -1,5 +1,6 @@
 #include "lib/messaging/PeerDisplayResolver.h"
 
+#include "lib/people/ContactIdentity.h"
 #include "lib/people/ContactJson.h"
 #include "common/Localized.h"
 #include "common/Localized.h"
@@ -15,6 +16,7 @@ PeerDisplayResolver::PeerDisplayResolver(ContactsStore& contacts, PeerDisplaySou
 PeerDisplayLabel PeerDisplayResolver::ResolveDirectPeer(const std::string& peer_identity_kind,
                                                         const std::string& peer_identity_value) const {
   PeerDisplayLabel label;
+  label.stable_id = peer_identity_value;
   if (peer_identity_value.empty()) {
     label.title = "Chat";
     return label;
@@ -26,6 +28,7 @@ PeerDisplayLabel PeerDisplayResolver::ResolveDirectPeer(const std::string& peer_
   }
   if (auto contact = contacts_.FindByIdentity(peer_identity_value, kind)) {
     if (*contact) {
+      label.stable_id = ContactAvatarStableId(**contact);
       const std::string title = FormatContactTitle(**contact);
       if (!title.empty()) {
         label.title = title;
@@ -55,6 +58,7 @@ PeerDisplayLabel PeerDisplayResolver::ResolveThread(const Thread& thread) const 
   if (thread.kind == ThreadKind::Group) {
     PeerDisplayLabel label;
     label.trust = PeerLabelTrust::Group;
+    label.stable_id = thread.id;
 
     std::string shared;
     if (sources_.group_title && thread.group_id) {
@@ -81,7 +85,11 @@ PeerDisplayLabel PeerDisplayResolver::ResolveThread(const Thread& thread) const 
   if (thread.kind == ThreadKind::Ai) {
     PeerDisplayLabel label;
     label.title = thread.title.empty() ? Localized(kProductNameKey) : thread.title;
+    if (!thread.local_title.empty()) {
+      label.title = thread.local_title; // the user's own name for the conversation wins over the automatic one
+    }
     label.trust = PeerLabelTrust::Contact;
+    label.stable_id = thread.id;
     return label;
   }
 
@@ -113,6 +121,7 @@ PeerDisplayLabel PeerDisplayResolver::ResolveSender(const std::string& sender_co
         label.title = title;
         label.trust = PeerLabelTrust::Contact;
         label.contact_id = sender_contact_id;
+        label.stable_id = ContactAvatarStableId(**contact);
         return label;
       }
     }

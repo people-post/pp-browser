@@ -101,6 +101,8 @@ do_package() {
     "${stage}/pp-node-${RELEASE_VERSION}/config.json.example"
   cp "${ROOT}/packaging/pp-node/pp-node.service" \
     "${stage}/pp-node-${RELEASE_VERSION}/pp-node.service"
+  cp "${ROOT}/packaging/pp-node/99-pp-node-udp.conf" \
+    "${stage}/pp-node-${RELEASE_VERSION}/99-pp-node-udp.conf"
 
   local tarball="${OUT_DIR}/pp-node-${RELEASE_VERSION}-linux-${arch}.tar.gz"
   tar -C "${stage}" -czf "${tarball}" "pp-node-${RELEASE_VERSION}"

@@ -1,5 +1,6 @@
 #include "foundation/platform/OsSecureBlobStore.h"
 
+#include "foundation/platform/os/OsBiometry.h"
 #include "foundation/platform/os/OsSecureBlob.h"
 
 namespace pbr {
@@ -14,6 +15,17 @@ public:
   }
   Roe<std::optional<std::vector<uint8_t>>> Read(const std::string& name) override { return os::SecureBlobRead(name); }
   Roe<void> Delete(const std::string& name) override { return os::SecureBlobDelete(name); }
+  Roe<void> Write(const std::string& name, const std::vector<uint8_t>& bytes, SecureBlobAccess access) override {
+    return os::SecureBlobWriteWithAccess(name, bytes, access);
+  }
+  Roe<SecureBlobLookup> Lookup(const std::string& name) override { return os::SecureBlobLookup(name); }
+  // A biometry-bound entry needs enrolled faces / fingers to be any use; where the OS has none, BiometryKind is None.
+  bool Supports(SecureBlobAccess access) const override {
+    return Supported() && (access != SecureBlobAccess::kBiometryCurrentSet || os::BiometryKind() != os::Biometry::None);
+  }
+  Roe<SecureBlobLookup> LookupWithPrompt(const std::string& name, const std::string& prompt) override {
+    return os::SecureBlobLookupWithPrompt(name, prompt);
+  }
 };
 
 } // namespace

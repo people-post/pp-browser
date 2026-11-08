@@ -150,6 +150,11 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
      * raised here unless a migration brings the call back first.
      */
     Clock::time_point path_lost_notify_at{};
+    /**
+     * K014: the peer closed the active path's media channel while its control channel is up — wait
+     * until then for that channel's `bye` (the call ended) or close (a lost path).
+     */
+    Clock::time_point bye_await_deadline{};
 
     struct Migration {
       /** This side drives it (glare winner): opens the channels, sends migrate / path_release. */
@@ -524,6 +529,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
                            << " phase=" << BundlePhaseName(bundle.phase)
                            << " abort=" << (finish_with_abort ? 1 : 0) << " notify=" << (notify_failed ? 1 : 0)
                            << " reason=" << fail_message;
+    const bool was_ready = bundle.phase == CallMediaBundlePhase::MediaReady;
     bundle.local_cancel = bundle.local_cancel || finish_with_abort;
     bundle.phase = CallMediaBundlePhase::Closing;
     if (!bundle.finished) {
@@ -535,6 +541,12 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         }
         FinishBundle(bundle, failure);
       }
+    } else if (was_ready && notify_failed && !finish_with_abort && bundle.callbacks.on_failed) {
+      // K014: a leg that connected finished at MediaReady, but its end still goes up — as a dropped
+      // call, never left for the product's connect-health timer to call a connect timeout.
+      const CallMediaFailure dropped =
+          Fail(CallMediaErr::Dropped, detail::AppendFrom("amp call-media: call dropped", "leg", fail_message));
+      pending_user_cbs.push_back([on_failed = bundle.callbacks.on_failed, dropped]() { on_failed(dropped); });
     }
     EraseBundle(call_id);
   }
@@ -643,13 +655,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     for (const auto& call_id : reconnect_expired) {
       CallbackLock lock(*this);
       if (auto* bundle = FindByCallId(call_id); bundle && bundle->Reconnecting()) {
-        const CallMediaFailure lost = Fail(CallMediaErr::Closed, "amp call-media: no path within the reconnect window");
         CallMediaLegLog().warning << "CallMediaLeg reconnect window expired call_id=" << call_id;
-        // A MediaReady leg has finished, so TearDownBundle reports nothing: report the loss here.
-        if (bundle->callbacks.on_failed) {
-          pending_user_cbs.push_back([on_failed = bundle->callbacks.on_failed, lost]() { on_failed(lost); });
-        }
-        TearDownBundle(*bundle, /*finish_with_abort=*/false, /*notify_failed=*/true, lost);
+        // Reported up as a dropped call (TearDownBundle: the leg had connected).
+        TearDownBundle(*bundle, /*finish_with_abort=*/false, /*notify_failed=*/true,
+                       Fail(CallMediaErr::Closed, "amp call-media: no path within the reconnect window"));
       }
     }
     for (const auto& call_id : link_lost) {
@@ -729,21 +738,11 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       bundle->standby.reset();
       return;
     }
-    // The path the call just moved onto died while the one it left is still draining: go back to it.
-    if (path == &bundle->active && bundle->phase == CallMediaBundlePhase::MediaReady && !bundle->local_cancel &&
-        !IsRemoteTerminalReason(reason) && bundle->retiring && !PathLinkMissing(*bundle, *bundle->retiring)) {
-      FallBackToRetiring(*bundle, std::string("active path closed (") + (reason ? reason : "") + ")");
-      return;
-    }
-    // k4: the active path's link went away under the call (not the peer hanging up): take the standby.
-    if (path == &bundle->active && bundle->phase == CallMediaBundlePhase::MediaReady && !bundle->local_cancel &&
-        !IsRemoteTerminalReason(reason) && bundle->standby && !PathLinkMissing(*bundle, *bundle->standby)) {
-      FailOverToStandby(*bundle, std::string("active path closed (") + (reason ? reason : "") + ")");
-      return;
-    }
-    if (path == &bundle->active && bundle->phase == CallMediaBundlePhase::MediaReady && !bundle->local_cancel &&
-        !IsRemoteTerminalReason(reason)) {
-      EnterPathLost(*bundle, std::string("active path closed (") + (reason ? reason : "") + ")");
+    // K014: a live call's active path closing under it is a lost path, whoever closed it — the
+    // peer's hang-up comes as `bye` first (HandleBye: the bundle is gone by its close), or, from an
+    // older peer, as call_leave on the control lane.
+    if (path == &bundle->active && bundle->phase == CallMediaBundlePhase::MediaReady && !bundle->local_cancel) {
+      OnActivePathClosed(*bundle, role, reason);
       return;
     }
     CallMediaChannelCloseContext ctx;
@@ -767,6 +766,93 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     // The peer closing or resetting the stream is a clean end (the bridge keeps a call the hop carries).
     TearDownBundle(*bundle, /*finish_with_abort=*/false, notify,
                    Fail(ctx.remote_terminal ? CallMediaErr::StreamClosed : CallMediaErr::Closed, message));
+  }
+
+  /** K014: one of a live call's active-path channels closed, not by this end (DecideCallMediaActiveClose). */
+  void OnActivePathClosed(Bundle& bundle, const CallMediaChannelRole role, const char* reason) {
+    CallMediaActiveCloseInput in;
+    in.role = role;
+    in.remote_close = IsRemoteTerminalReason(reason);
+    in.control_open = bundle.active.outbound_control || bundle.active.inbound_control;
+    in.retiring_alive = bundle.retiring && !PathLinkMissing(bundle, *bundle.retiring);
+    in.standby_alive = bundle.standby && !PathLinkMissing(bundle, *bundle.standby);
+    const std::string why = std::string("active path closed (") + (reason ? reason : "") + ")";
+    const CallMediaActiveCloseAction action = DecideCallMediaActiveClose(in);
+    if (action == CallMediaActiveCloseAction::AwaitControl) {
+      DropPathRole(bundle, bundle.active, CallMediaChannelRole::Media);
+      bundle.bye_await_deadline = Clock::now() + std::chrono::milliseconds(kCallMediaByeAwaitMs);
+      CallMediaLegLog().info << "CallMediaLeg media channel closed by the peer call_id=" << bundle.call_id
+                             << " — waiting " << kCallMediaByeAwaitMs << "ms for its control channel";
+      return;
+    }
+    LoseActivePath(bundle, action, why);
+  }
+
+  /** The active path is gone: fall back, fail over, or wait for a new path (never the call's end). */
+  void LoseActivePath(Bundle& bundle, const CallMediaActiveCloseAction action, const std::string& why) {
+    bundle.bye_await_deadline = {};
+    switch (action) {
+      case CallMediaActiveCloseAction::FallBackToRetiring:
+        FallBackToRetiring(bundle, why);
+        return;
+      case CallMediaActiveCloseAction::FailOverToStandby:
+        FailOverToStandby(bundle, why);
+        // A path whose channel closed is no standby (FailOverToStandby keeps a merely silent one).
+        if (bundle.standby) {
+          DropPath(bundle, *bundle.standby);
+          bundle.standby.reset();
+        }
+        return;
+      case CallMediaActiveCloseAction::AwaitControl:
+      case CallMediaActiveCloseAction::PathLost:
+        EnterPathLost(bundle, why);
+        return;
+    }
+  }
+
+  /** IO tick: the peer closed the active media channel and its control channel said nothing since. */
+  void MaybeEndByeAwait(Bundle& bundle, const Clock::time_point now) {
+    if (bundle.bye_await_deadline.time_since_epoch().count() == 0 || now < bundle.bye_await_deadline) {
+      return;
+    }
+    bundle.bye_await_deadline = {};
+    if (bundle.active.media || bundle.Reconnecting()) {
+      return; // a migration replaced the path meanwhile
+    }
+    CallMediaActiveCloseInput in;
+    in.role = CallMediaChannelRole::Media;
+    in.retiring_alive = bundle.retiring && !PathLinkMissing(bundle, *bundle.retiring);
+    in.standby_alive = bundle.standby && !PathLinkMissing(bundle, *bundle.standby);
+    LoseActivePath(bundle, DecideCallMediaActiveClose(in), "active media channel closed, no bye");
+  }
+
+  /** K014: this end ended the call — `bye` on the active path's control channel, ahead of its close. */
+  void SayBye(Bundle& bundle) {
+    if (bundle.phase != CallMediaBundlePhase::MediaReady || bundle.Reconnecting() || !MuxAliveForBundle(bundle)) {
+      return; // nothing live to say it on: the peer hears it from call_leave
+    }
+    auto& control = bundle.active.outbound_control ? bundle.active.outbound_control : bundle.active.inbound_control;
+    if (!control) {
+      return;
+    }
+    const bool sent = control->EnqueueOutbound(Utf8Body(EncodeCallMediaBye()));
+    CallMediaLegLog().info << "CallMediaLeg bye call_id=" << bundle.call_id << " sent=" << (sent ? 1 : 0);
+  }
+
+  /** K014: the peer ended the call. The leg goes now; its call's end comes on the control lane. */
+  void HandleBye(const pp::amp::ChannelSession* session) {
+    CallbackLock lock(*this);
+    auto [bundle, path] = FindControlOwner(session);
+    if (!bundle || IsPendingCallId(bundle->call_id) || bundle->phase != CallMediaBundlePhase::MediaReady ||
+        bundle->local_cancel) {
+      return;
+    }
+    CallMediaLegLog().info << "CallMediaLeg peer ended the call (bye) call_id=" << bundle->call_id;
+    if (bundle->callbacks.on_remote_ended) {
+      pending_user_cbs.push_back(bundle->callbacks.on_remote_ended);
+    }
+    TearDownBundle(*bundle, /*finish_with_abort=*/false, /*notify_failed=*/false,
+                   Fail(CallMediaErr::StreamClosed, "amp call-media: the peer ended the call (bye)"));
   }
 
   void OpenMediaOutbound(Bundle& bundle) {
@@ -989,6 +1075,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       HandlePathRelease(channel_session, *parsed);
     } else if (type == CallMediaControlType::PathReleaseAck) {
       HandlePathReleaseAck(channel_session.get(), *parsed);
+    } else if (type == CallMediaControlType::Bye) {
+      HandleBye(channel_session.get());
     }
   }
 
@@ -1344,6 +1432,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (bundle.Reconnecting()) {
       return;
     }
+    bundle.bye_await_deadline = {};
     const CallMediaLinkKind lost_kind = bundle.active.kind;
     const pp::amp::LinkHandle lost_link = bundle.active.link;
     Path lost;
@@ -1469,6 +1558,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
 
   /** IO tick: candidate channel opens, migrate timeout, old-path release. Under `mu`. */
   void TickPaths(Bundle& bundle, const Clock::time_point now) {
+    MaybeEndByeAwait(bundle, now);
     if (bundle.standby && PathLinkMissing(bundle, *bundle.standby)) {
       CallMediaLegLog().info << "CallMediaLeg standby link gone call_id=" << bundle.call_id;
       DropPath(bundle, *bundle.standby);
@@ -2266,6 +2356,17 @@ void CallMediaLegCoordinator::CancelLeg(const CallMediaLegId id) {
       impl->TearDownBundle(*b, true, false, Aborted());
     }
   });
+}
+
+void CallMediaLegCoordinator::HangUpLeg(const CallMediaLegId id) {
+  impl_->PostIo([impl = impl_, id]() {
+    Impl::CallbackLock lock(*impl);
+    if (auto* b = id ? impl->FindByLegId(id) : impl->PrimaryBundle()) {
+      impl->SayBye(*b);
+      impl->TearDownBundle(*b, true, false, Aborted());
+    }
+  });
+  runtime_.Pump();
 }
 
 void CallMediaLegCoordinator::DetachLeg(const CallMediaLegId id) {

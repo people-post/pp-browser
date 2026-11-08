@@ -10,6 +10,7 @@
 #include "lib/net/ClientCompat.h"
 #include "common/Error.h"
 #include "feature/settings/SettingsPortsViews.h"
+#include "feature/settings/StorageManagerPorts.h"
 
 #include <functional>
 #include <optional>
@@ -37,8 +38,6 @@ struct SettingsCommands {
   std::function<Roe<void>()> clear_profile_icon;
   std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_relay_quota_recovery;
   BlobQuotaFreeSlot delete_relay_file;
-  std::function<void()> drain_pending_attachment_media;
-  std::function<Roe<void>()> clear_downloaded_attachments;
   /** CAS library (P3): filter all|private|public|cache. */
   std::function<Roe<std::vector<CasLibraryItemView>>(std::string filter)> list_cas_library;
   std::function<Roe<void>(const std::string& private_content_id_hex)> share_cas_publicly;
@@ -83,10 +82,31 @@ struct SettingsCommands {
   std::function<PinProtectionView()> load_pin_protection;
   /** Change the profile PIN via the app-owned vault (caller ensures unlocked first). */
   std::function<Roe<void>(const SecretText& current_pin, const SecretText& new_pin)> change_pin;
+  /** The platform keeps the PIN grace window (#21: a secure store); false hides Security's "Ask for PIN again" row. */
+  std::function<bool()> grace_supported;
+  /**
+   * The grace window's length was changed and saved (0 / 5 / 15 / 60 minutes): 0 forgets the window now, any other
+   * value restarts it at that length (only where one is open; it never opens a new one).
+   */
+  std::function<void(int minutes)> set_grace_minutes;
+  // --- Face / fingerprint unlock (at-rest A014, DEV/PLAN-pin-gate-redesign.md C) ---
+  /**
+   * The device's sensor with something enrolled, where the secure store can hold the entry: "face", "touch" or
+   * "fingerprint"; "" (or unset) when there is none — Security's switch does not show.
+   */
+  std::function<std::string()> biometric_kind;
+  /** The switch's state (ProfileSecretsEngine::BiometricEnabled). */
+  std::function<bool()> biometric_enabled;
+  /** Opens the vault with `pin` on the side and seals its DEK for face / fingerprint unlock. Argon2: off the UI thread. */
+  std::function<Roe<void>(const SecretText& pin)> enable_biometric;
+  /** Deletes both pieces; no PIN (off only makes the profile safer). */
+  std::function<void()> disable_biometric;
   /** Copy a time-limited link-device payload (account keys, shared DEK, account card; no sessions — M021). */
   std::function<Roe<std::string>()> export_link_device;
   /** The recovery phrase once `pin` opens the vault (M023); nullopt for an account without one. */
   std::function<Roe<std::optional<SecretText>>(const SecretText& pin)> recovery_phrase;
+  /** Whether `pin` opens the vault again (the transfer code's own PIN); works on accounts without a phrase. */
+  std::function<Roe<void>(const SecretText& pin)> verify_pin;
   /** Whether the account has a recovery phrase (vault unlocked). */
   std::function<bool()> has_recovery_phrase;
   /** The account's state as a saved copy's text (an exported locker file, M023 §6 amendment). */
@@ -102,10 +122,23 @@ struct SettingsCommands {
   std::function<std::optional<ClientCompatSupport>()> load_support_discovery;
   /** Ensure PP Support contact + open Direct e2e_public chat; `prefilled_text` (may be empty) goes in the composer, unsent. */
   std::function<Roe<void>(const std::string& prefilled_text)> open_support_chat;
+  /** Opens the PP 客服 chat and sends `question` in it, as if typed (a settings "?"; the answer comes in that chat). */
+  std::function<Roe<void>(const std::string& question)> ask_support;
+  /**
+   * Phones: the ask-AI panel opens over the setting with `question` asked as a one-off (DEV/PLAN-ui-batch5-ask-ai.md
+   * 5a). False when there is no panel (the desktop): the settings "?" then asks PP 客服 (ask_support) as before.
+   */
+  std::function<bool(const std::string& question)> ask_ai_once;
+  /** How many saved contacts this device blocked (Security's "Blocked" row). */
+  std::function<int()> blocked_count;
+  /** Phones: the list of blocked people, pushed over Settings (each with Unblock). */
+  std::function<void()> open_blocked_people;
   /** Send diagnostics (Security): bundles and uploads on a worker; `on_done` runs on UI. One at a time. */
   std::function<void(std::function<void(DiagnosticsUploadResult)> on_done)> send_diagnostics;
   /** Reference of the last successful send (`diagnostics/last_upload.json`); "" when none. */
   std::function<std::string()> last_diagnostics_id;
+  /** Me → Storage → Manage storage. */
+  StorageManagerPorts storage;
 };
 
 } // namespace pbr

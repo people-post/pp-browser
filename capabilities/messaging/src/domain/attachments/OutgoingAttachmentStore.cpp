@@ -1,5 +1,6 @@
 #include "domain/attachments/OutgoingAttachmentStore.h"
 
+#include "common/AtomicFileWrite.h"
 #include "foundation/crypto/FileCipher.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "common/Utilities.h"
@@ -39,19 +40,11 @@ Roe<void> WriteBytes(const std::string& path, const uint8_t* data, const size_t 
   return {};
 }
 
-// Written beside the target and renamed over it: a crash leaves the old record, never a torn one.
+// Replaced whole and synced (AtomicFileWrite): a crash leaves the old record or the new, never a torn one.
 Roe<void> WriteBytesAtomic(const std::string& path, const uint8_t* data, const size_t size) {
-  const std::string tmp = path + ".tmp";
-  if (auto written = WriteBytes(tmp, data, size); !written) {
-    std::error_code ignore;
-    std::filesystem::remove(tmp, ignore);
-    return written;
-  }
-  std::error_code ec;
-  std::filesystem::rename(tmp, path, ec);
-  if (ec) {
-    std::filesystem::remove(tmp, ec);
-    return Error("Could not write the outgoing attachment");
+  if (auto written = AtomicFileWrite::Write(path, std::string_view(reinterpret_cast<const char*>(data), size));
+      !written) {
+    return Error("Could not write the outgoing attachment: " + written.error().message);
   }
   return {};
 }

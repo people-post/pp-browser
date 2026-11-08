@@ -21,6 +21,8 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <string>
+#include <tuple>
+#include <vector>
 
 namespace {
 
@@ -212,9 +214,8 @@ public:
     params.sender_relay_id = "relay:peer";
     params.peer_account_id = local_account_id;
     params.route_party = "relay:local";
-    params.session_epoch = 1;
-    params.master_psk = lane_session->master_psk;
-    params.key_init_b64 = lane_session->key_init_b64;
+    params.copies = {ControlLaneCopy{
+        .session_epoch = 1, .master_psk = lane_session->master_psk, .key_init_b64 = lane_session->key_init_b64}};
     params.order_key = 1;
     params.sender_device = peer.device.peer_id;
     ThreadMessage control = body;
@@ -876,6 +877,41 @@ TEST(MessagingCrossCuttingTest, LaneRejectsABadSignature) {
   envelope.timestamp += 1;  // signed field changed after signing
   EXPECT_EQ(lane.Ingest(envelope).decision, IngestDecision::HardReject);
   EXPECT_EQ(family.applied, 0);
+}
+
+// Lane messages carry the sender's card only when the peer may lack it: one from a device the kept card does not
+// list cannot be checked, so the receiver asks that device for the card (and the message itself is refused).
+TEST(MessagingCrossCuttingTest, LaneFromADeviceNotOnTheKeptCardAsksForTheCard) {
+  LaneHarness lane("lane_unknown_device");
+  TestFamily family;
+  lane.controls.Bind(family.Make("call", "test_signal", true, false));
+  std::vector<std::tuple<std::string, std::string, int64_t>> asked;
+  lane.harness.pipeline.SetOnUnknownSenderDevice(
+      [&](const std::string& account, const std::string& device, const int64_t issued_at) {
+        asked.emplace_back(account, device, issued_at);
+      });
+
+  const test::TestDevice other = test::NamedDevice("lane-other-device");
+  auto envelope = lane.harness.MakeControlEnvelope("lane-unknown", TestControl("test_signal"), util::NowUnixMs());
+  envelope.sender_device = other.peer_id;
+  envelope.body.e2e.sender_card_at = 5; // newer than the kept card (issued_at 1)
+  auto bytes = EnvelopeSigner::BuildSignBytes(envelope);
+  ASSERT_TRUE(bytes);
+  auto signature = other.Sign(*bytes);
+  ASSERT_TRUE(signature);
+  envelope.signature = *signature;
+
+  EXPECT_NE(lane.Ingest(envelope).decision, IngestDecision::AcceptControl);
+  EXPECT_EQ(family.applied, 0);
+  ASSERT_EQ(asked.size(), 1u);
+  EXPECT_EQ(std::get<0>(asked[0]), "account:peer");
+  EXPECT_EQ(std::get<1>(asked[0]), other.peer_id);
+  EXPECT_EQ(std::get<2>(asked[0]), 5);
+
+  // No newer card claimed: nothing to ask for (a device the sender's own newest list leaves out).
+  envelope.body.e2e.sender_card_at = 1;
+  (void)lane.Ingest(envelope);
+  EXPECT_EQ(asked.size(), 1u);
 }
 
 TEST(MessagingCrossCuttingTest, ControlFamilyFailureRefusesTheMessage) {

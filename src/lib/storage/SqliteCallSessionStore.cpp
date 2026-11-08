@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS call_participants (
   video_enabled INTEGER NOT NULL DEFAULT 0,
   joined_at INTEGER,
   left_at INTEGER,
+  on_hold INTEGER NOT NULL DEFAULT 0,
+  video_paused INTEGER NOT NULL DEFAULT 0,
+  brought_by TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (call_id, identity)
 );
 CREATE INDEX IF NOT EXISTS idx_call_participants_state ON call_participants(call_id, state);
@@ -170,6 +173,12 @@ Roe<void> SqliteCallSessionStore::EnsureSchema(sqlite3* profile_db) {
   (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN planned_hop_ma TEXT;", nullptr, nullptr, nullptr);
   (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN initiator_identity TEXT NOT NULL DEFAULT '';",
                      nullptr, nullptr, nullptr);
+  (void)sqlite3_exec(profile_db, "ALTER TABLE call_participants ADD COLUMN on_hold INTEGER NOT NULL DEFAULT 0;",
+                     nullptr, nullptr, nullptr);
+  (void)sqlite3_exec(profile_db, "ALTER TABLE call_participants ADD COLUMN video_paused INTEGER NOT NULL DEFAULT 0;",
+                     nullptr, nullptr, nullptr);
+  (void)sqlite3_exec(profile_db, "ALTER TABLE call_participants ADD COLUMN brought_by TEXT NOT NULL DEFAULT '';",
+                     nullptr, nullptr, nullptr);
   return {};
 }
 
@@ -298,6 +307,30 @@ Roe<std::vector<CallSession>> SqliteCallSessionStore::ListSessionsForGroup(const
   return rows;
 }
 
+Roe<std::vector<CallSession>> SqliteCallSessionStore::ListRecentSessions(const size_t limit) const {
+  auto db = OpenDb();
+  if (!db) {
+    return db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*db,
+                         "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
+                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind, planned_hop, "
+                         "planned_hop_ma, initiator_identity FROM call_sessions ORDER BY created_at DESC LIMIT ?;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(*db);
+    return Error("Failed to prepare recent call list");
+  }
+  sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(limit));
+  std::vector<CallSession> rows;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    rows.push_back(SessionFromStmt(stmt));
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(*db);
+  return rows;
+}
+
 Roe<void> SqliteCallSessionStore::UpsertParticipant(const CallParticipant& participant) const {
   auto db = OpenDb();
   if (!db) {
@@ -305,10 +338,13 @@ Roe<void> SqliteCallSessionStore::UpsertParticipant(const CallParticipant& parti
   }
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "INSERT INTO call_participants (call_id, identity, state, audio_muted, video_enabled, joined_at, left_at) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?) "
+      "INSERT INTO call_participants (call_id, identity, state, audio_muted, video_enabled, joined_at, left_at, "
+      "on_hold, video_paused, brought_by) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(call_id, identity) DO UPDATE SET state=excluded.state, audio_muted=excluded.audio_muted, "
-      "video_enabled=excluded.video_enabled, "
+      "video_enabled=excluded.video_enabled, on_hold=excluded.on_hold, video_paused=excluded.video_paused, "
+      // V062: who brought a guest is kept once known (a later write of the row without it leaves it).
+      "brought_by=CASE WHEN excluded.brought_by = '' THEN call_participants.brought_by ELSE excluded.brought_by END, "
       // Sticky SoftMigrate initiator: keep the earliest non-null joined_at — within a stay. Coming back
       // after leaving starts a new stay with the new stamp (B102, #410: the first stay's stamp won, so the
       // roster of whoever let them back in carried it, and those who stayed took the rejoin for a stale
@@ -333,6 +369,9 @@ Roe<void> SqliteCallSessionStore::UpsertParticipant(const CallParticipant& parti
   sqlite3_bind_int(stmt, 5, participant.media.video_enabled ? 1 : 0);
   BindOptInt64(stmt, 6, participant.joined_at);
   BindOptInt64(stmt, 7, participant.left_at);
+  sqlite3_bind_int(stmt, 8, participant.media.on_hold ? 1 : 0);
+  sqlite3_bind_int(stmt, 9, participant.media.video_paused ? 1 : 0);
+  sqlite3_bind_text(stmt, 10, participant.brought_by.c_str(), -1, SQLITE_TRANSIENT);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     sqlite3_close(*db);
@@ -349,10 +388,11 @@ Roe<std::vector<CallParticipant>> SqliteCallSessionStore::ListParticipants(const
     return db.error();
   }
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(*db,
-                         "SELECT identity, state, audio_muted, video_enabled, joined_at, left_at FROM "
-                         "call_participants WHERE call_id = ? ORDER BY identity ASC;",
-                         -1, &stmt, nullptr) != SQLITE_OK) {
+  if (sqlite3_prepare_v2(
+          *db,
+          "SELECT identity, state, audio_muted, video_enabled, joined_at, left_at, on_hold, video_paused, brought_by "
+          "FROM call_participants WHERE call_id = ? ORDER BY identity ASC;",
+          -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
     return Error("Failed to prepare call participant list");
   }
@@ -367,6 +407,9 @@ Roe<std::vector<CallParticipant>> SqliteCallSessionStore::ListParticipants(const
     row.media.video_enabled = sqlite3_column_int(stmt, 3) != 0;
     row.joined_at = ColumnOptInt64(stmt, 4);
     row.left_at = ColumnOptInt64(stmt, 5);
+    row.media.on_hold = sqlite3_column_int(stmt, 6) != 0;
+    row.media.video_paused = sqlite3_column_int(stmt, 7) != 0;
+    row.brought_by = ColumnText(stmt, 8);
     rows.push_back(std::move(row));
   }
   sqlite3_finalize(stmt);

@@ -1,5 +1,6 @@
 #include "foundation/platform/IosLocalNotifier.h"
 
+#include "foundation/platform/PendingNotificationTap.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
@@ -78,7 +79,13 @@ void IosLocalNotifier::SetActivationHandler(std::function<void(std::string threa
   g_activation = std::move(handler);
 }
 
-void DispatchIosNotificationActivation(const std::string& thread_id) {
+void DispatchIosNotificationActivation(const std::string& thread_id, const bool call_wake,
+                                       const std::string& wake_hint) {
+  // Recorded first: with no handler yet (locked / cold start) WireMessagingBindings picks it up.
+  PendingNotificationTap::Instance().Record(thread_id, call_wake, wake_hint, PendingNotificationTap::Clock::now());
+  if (thread_id.empty()) {
+    return;
+  }
   std::function<void(std::string)> handler;
   {
     std::lock_guard<std::mutex> lock(g_mu);
@@ -87,7 +94,11 @@ void DispatchIosNotificationActivation(const std::string& thread_id) {
   if (!handler) {
     return;
   }
-  AppRuntime::PostUI([handler = std::move(handler), thread_id]() mutable { handler(thread_id); });
+  AppRuntime::PostUI([handler = std::move(handler)]() mutable {
+    if (auto pending = PendingNotificationTap::Instance().TakeThread()) {
+      handler(std::move(*pending));
+    }
+  });
 }
 
 } // namespace pbr

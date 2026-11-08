@@ -9,6 +9,9 @@
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/data/ProfileManifest.h"
 #include "feature/product/HubSettingsProjection.h"
+#include "feature/product/UiDemoConfig.h"
+#include "foundation/data/UiDemoConfig.h"
+#include "foundation/product/DevTools.h"
 #include "common/StartupTiming.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "foundation/platform/PlatformLogSink.h"
@@ -52,7 +55,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
     return ensured.error();
   }
 
-  const std::string backend_key = BackendProfileKey(*config);
+  const std::string backend_key = kUiDemoBuild ? std::string("prod") : BackendProfileKey(*config);
   if (auto selected = registry->SelectProfileForBackend(backend_key); !selected) {
     return selected.error();
   }
@@ -77,6 +80,9 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   if (!profile_prefs) {
     return profile_prefs.error();
   }
+  if constexpr (kUiDemoBuild) {
+    ApplyUiDemoProfilePrefs(*profile_prefs);
+  }
   StartupMark("bootstrap_after_prefs");
 
   if (auto initialized = secrets.Initialize(profile_data_dir); !initialized) {
@@ -93,7 +99,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
 
   // Optional CLI/env unlock for tests/automation only. Interactive / silent default unlock
   // is deferred until after first present (see DeferredStartup / ProfileUnlockGate).
-  if (auto pin = PinResolver::Resolve(options.pin.Reveal()); pin) {
+  if (auto pin = PinResolver::Resolve(ResolveBootstrapPin(kUiDemoBuild, options.pin.Reveal())); pin) {
     if (!options.restore_recovery_phrase.empty()) {
       if (auto restored = messaging.RestoreFromRecoveryPhrase(options.restore_recovery_phrase, *pin,
                                                                   options.restore_saved_copies);

@@ -9,6 +9,8 @@
 #include "lib/pricing/PricingTypes.h"
 #include "common/runtime/AppRuntime.h"
 #include "lib/messaging/AttachmentCache.h"
+#include "lib/voice/AudioContainerSniff.h"
+#include "common/PathUtf8.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/pricing/InitiationPricing.h"
 #include "domain/registration/RegistrationClient.h"
@@ -49,6 +51,16 @@ void ConversationsFacade::BindAgentInbound(AgentInboundPorts ports) {
 
 Roe<bool> ConversationsFacade::MaybeAutoRenewRegistration(const bool auto_renew_registration) {
   return pbr::MaybeAutoRenewRegistration(hub_.Registration(), hub_.Identity(), auto_renew_registration);
+}
+
+Roe<std::optional<RegistrationResult>> ConversationsFacade::MaybeAutoRenewRegistrationNetworkOnly(
+    const bool auto_renew_registration) {
+  return pbr::MaybeAutoRenewNetworkOnly(hub_.Registration(), hub_.Identity(), auto_renew_registration);
+}
+
+Roe<LocalIdentity> ConversationsFacade::PersistRegistrationRenewal(const RegistrationResult& result,
+                                                                   const std::string& expected_account_id) {
+  return pbr::PersistRenewal(hub_.Identity(), result, expected_account_id);
 }
 
 Roe<void> ConversationsFacade::SyncPushDevices() {
@@ -218,9 +230,11 @@ Roe<void> ConversationsFacade::CloseThread(const std::string& thread_id) {
 void ConversationsFacade::ClearActiveThread() { hub_.Inbox().ClearActiveThread(); }
 
 Roe<Thread> ConversationsFacade::CreateNewAiThread() { return hub_.Inbox().CreateNewAiThread(); }
+Roe<Thread> ConversationsFacade::CreateAiThread() { return hub_.Inbox().CreateAiThread(); }
 
-Roe<void> ConversationsFacade::UpdatePreview(const std::string& thread_id, const std::string& preview) {
-  return hub_.Inbox().UpdatePreview(thread_id, preview);
+Roe<void> ConversationsFacade::UpdatePreview(const std::string& thread_id, const std::string& preview,
+                                              const bool assistant_text) {
+  return hub_.Inbox().UpdatePreview(thread_id, preview, assistant_text);
 }
 
 Roe<void> ConversationsFacade::DeleteMessageForMe(const std::string& thread_id, const std::string& message_id) {
@@ -254,8 +268,8 @@ Roe<void> ConversationsFacade::SetThreadLocalTitle(const std::string& thread_id,
   return hub_.Inbox().SetThreadLocalTitle(thread_id, local_title);
 }
 
-Roe<void> ConversationsFacade::NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title) {
-  return hub_.Inbox().NameAiThreadFromFirstMessage(thread_id, title);
+Roe<void> ConversationsFacade::NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& first_message) {
+  return hub_.Inbox().NameAiThreadFromFirstMessage(thread_id, first_message);
 }
 
 Roe<Thread> ConversationsFacade::FindOrCreateDirectThread(const std::string& contact_id, const ThreadChannel channel) {
@@ -282,6 +296,20 @@ void ConversationsFacade::SetOnThreadChanged(std::function<void()> callback) {
 
 PeerDisplayLabel ConversationsFacade::ResolveThreadLabel(const Thread& thread) {
   return hub_.Inbox().ResolveThreadLabel(thread);
+}
+
+std::string ConversationsFacade::ContactIconPath(const std::string& contact_id) {
+  if (contact_id.empty()) {
+    return {};
+  }
+  auto contact = hub_.Contacts().Get(contact_id);
+  if (!contact || !*contact) {
+    return {};
+  }
+  if ((*contact)->remote.icon && !(*contact)->remote.icon->url.empty()) {
+    hub_.EnsureContactIconCached(**contact);
+  }
+  return hub_.ContactIconLocalPath(**contact);
 }
 
 std::vector<TranscriptRow> ConversationsFacade::BuildTranscript(const std::string& thread_id,
@@ -385,6 +413,15 @@ std::set<std::string> ConversationsFacade::ThreadsWithMentions() {
   return threads ? std::move(*threads) : std::set<std::string>{};
 }
 
+std::map<std::string, int> ConversationsFacade::MentionCounts() {
+  IThreadMentionsStore* mentions = hub_.ThreadMentions();
+  if (!mentions) {
+    return {};
+  }
+  auto counts = mentions->Counts();
+  return counts ? std::move(*counts) : std::map<std::string, int>{};
+}
+
 std::optional<std::string> ConversationsFacade::OldestMention(const std::string& thread_id) {
   IThreadMentionsStore* mentions = hub_.ThreadMentions();
   if (!mentions) {
@@ -392,6 +429,15 @@ std::optional<std::string> ConversationsFacade::OldestMention(const std::string&
   }
   auto oldest = mentions->Oldest(thread_id);
   return oldest ? *oldest : std::nullopt;
+}
+
+std::optional<IThreadMentionsStore::Mention> ConversationsFacade::LatestMention() {
+  IThreadMentionsStore* mentions = hub_.ThreadMentions();
+  if (!mentions) {
+    return std::nullopt;
+  }
+  auto latest = mentions->Latest();
+  return latest ? *latest : std::nullopt;
 }
 
 Roe<ThreadMessage> ConversationsFacade::ShareContact(const std::string& thread_id, const std::string& contact_id) {
@@ -447,6 +493,10 @@ void ConversationsFacade::SetOnMessagesChanged(std::function<void()> callback) {
 
 void ConversationsFacade::SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback) {
   hub_.MeshMessaging().SetOnDeliveryNotice(std::move(callback));
+}
+
+void ConversationsFacade::SetOnInboundMessage(std::function<void(std::string, std::string)> callback) {
+  hub_.MeshMessaging().SetOnInboundMessage(std::move(callback));
 }
 
 void ConversationsFacade::SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string, bool)> callback) {
@@ -608,6 +658,111 @@ Roe<void> ConversationsFacade::RenameGroupShared(const std::string& group_id, co
 
 Roe<void> ConversationsFacade::RemoveMemberByIdentity(const std::string& group_id, const std::string& member_identity) {
   return hub_.Groups().RemoveMemberByIdentity(group_id, member_identity);
+}
+
+Roe<void> ConversationsFacade::SetMemberRole(const std::string& group_id, const std::string& member_identity,
+                                             const MemberRole role) {
+  return hub_.Groups().SetMemberRole(group_id, member_identity, role);
+}
+
+Roe<void> ConversationsFacade::SetGroupPreset(const std::string& group_id, const GroupPreset preset) {
+  return hub_.Groups().SetGroupPreset(group_id, preset);
+}
+
+Roe<GroupPreset> ConversationsFacade::GroupPresetOf(const std::string& group_id) {
+  return hub_.Groups().GroupPresetOf(group_id);
+}
+
+std::optional<MemberRole> ConversationsFacade::LocalGroupRole(const std::string& group_id) {
+  return hub_.Groups().LocalRole(group_id);
+}
+
+std::vector<std::string> ConversationsFacade::GroupMembersAddedBy(const std::string& group_id,
+                                                                  const std::string& account) {
+  return hub_.Groups().MembersAddedBy(group_id, account);
+}
+
+std::vector<std::string> ConversationsFacade::GroupAccountsRemovedBy(const std::string& group_id,
+                                                                     const std::string& account) {
+  return hub_.Groups().AccountsRemovedBy(group_id, account);
+}
+
+Roe<size_t> ConversationsFacade::RemoveEveryoneAddedBy(const std::string& group_id, const std::string& account) {
+  auto removed = hub_.Groups().RemoveEveryoneAddedBy(group_id, account);
+  NotifyThreadChanged();
+  return removed;
+}
+
+Roe<size_t> ConversationsFacade::ReinviteEveryoneRemovedBy(const std::string& group_id, const std::string& account) {
+  return hub_.Groups().ReinviteEveryoneRemovedBy(group_id, account);
+}
+
+Roe<void> ConversationsFacade::InviteIdentity(const std::string& group_id, const std::string& account) {
+  if (auto contact = FindContactByIdentity(account, mesh::ContactIdKind::Account); contact && *contact) {
+    return InviteMember(group_id, (*contact)->id);
+  }
+  return hub_.Groups().InviteByIdentity(group_id, account);
+}
+
+namespace {
+
+constexpr const char kLinksNotReady[] = "Messaging is not ready";
+
+} // namespace
+
+Roe<GroupInviteLinkWorkflow::MadeLink> ConversationsFacade::MakeInviteLink(const std::string& group_id,
+                                                                           const uint64_t max_uses,
+                                                                           const int64_t lifetime_ms) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  if (!links) {
+    return Error(kLinksNotReady);
+  }
+  return links->MakeLink(group_id, max_uses, lifetime_ms);
+}
+
+Roe<void> ConversationsFacade::RevokeInviteLink(const std::string& group_id, const std::string& link_id) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  if (!links) {
+    return Error(kLinksNotReady);
+  }
+  return links->RevokeLink(group_id, link_id);
+}
+
+std::vector<GroupLinkRow> ConversationsFacade::GroupInviteLinks(const std::string& group_id) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  return links ? links->LiveLinks(group_id) : std::vector<GroupLinkRow>{};
+}
+
+std::optional<GroupLinkRow> ConversationsFacade::OwnInviteLink(const std::string& group_id) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  return links ? links->OwnLiveLink(group_id) : std::nullopt;
+}
+
+Roe<std::string> ConversationsFacade::AskToJoinByLink(const std::string& link_text) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  if (!links) {
+    return Error(kLinksNotReady);
+  }
+  return links->AskToJoin(link_text);
+}
+
+Roe<Thread> ConversationsFacade::ConfirmJoinByLink(const std::string& request_id) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  if (!links) {
+    return Error(kLinksNotReady);
+  }
+  return links->ConfirmJoin(request_id);
+}
+
+void ConversationsFacade::CancelJoinByLink(const std::string& request_id) {
+  if (GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull()) {
+    links->CancelJoin(request_id);
+  }
+}
+
+std::optional<GroupJoinState> ConversationsFacade::JoinByLinkState(const std::string& request_id) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  return links ? links->JoinState(request_id) : std::nullopt;
 }
 
 std::vector<std::string> ConversationsFacade::ListUnreachableMembers(const std::string& group_id) {
@@ -861,24 +1016,116 @@ Roe<void> ConversationsFacade::DeleteRelayFileById(const std::string& blob_id) {
   return hub_.DeleteRelayFileById(blob_id);
 }
 
-void ConversationsFacade::DrainPendingAttachmentMedia() { hub_.DrainPendingAttachmentMedia(); }
-
-Roe<void> ConversationsFacade::ClearDownloadedAttachments() { return hub_.ClearDownloadedAttachments(); }
-
 void ConversationsFacade::RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id) {
   hub_.RequestAttachmentDownload(thread_id, message_id);
 }
 
+void ConversationsFacade::ListStoredAttachmentsAsync(std::function<void(std::vector<StoredAttachmentItem>)> done) {
+  AppRuntime::PostWorkerAndReplyOnUI<std::vector<StoredAttachmentItem>>(
+      WorkerLane::Normal,
+      [this]() -> std::vector<StoredAttachmentItem> {
+        if (AppRuntime::IsShuttingDown() || !hub_.IsInitialized()) {
+          return {};
+        }
+        return hub_.ListStoredAttachments();
+      },
+      [done = std::move(done)](std::vector<StoredAttachmentItem> items) {
+        if (done) {
+          done(std::move(items));
+        }
+      });
+}
+
+void ConversationsFacade::ReleasableAttachmentBytesAsync(std::vector<StoredAttachmentRef> items,
+                                                         std::function<void(uint64_t)> done) {
+  AppRuntime::PostWorkerAndReplyOnUI<uint64_t>(
+      WorkerLane::Normal,
+      [this, items = std::move(items)]() -> uint64_t {
+        if (AppRuntime::IsShuttingDown() || !hub_.IsInitialized()) {
+          return 0;
+        }
+        return hub_.ReleasableAttachmentBytes(items);
+      },
+      [done = std::move(done)](const uint64_t bytes) {
+        if (done) {
+          done(bytes);
+        }
+      });
+}
+
+void ConversationsFacade::DeleteLocalAttachmentsAsync(std::vector<StoredAttachmentRef> items,
+                                                      std::function<void(StoredAttachmentDeleteResult)> done) {
+  AppRuntime::PostWorkerAndReplyOnUI<StoredAttachmentDeleteResult>(
+      WorkerLane::Normal,
+      [this, items = std::move(items)]() mutable -> StoredAttachmentDeleteResult {
+        StoredAttachmentDeleteResult result;
+        if (AppRuntime::IsShuttingDown() || !hub_.IsInitialized()) {
+          return result;
+        }
+        hub_.DeleteLocalAttachments(std::move(items), [&result](StoredAttachmentDeleteResult done_result) {
+          result = done_result; // called on this worker before DeleteLocalAttachments returns
+        });
+        return result;
+      },
+      [done = std::move(done)](StoredAttachmentDeleteResult result) {
+        if (done) {
+          done(result);
+        }
+      });
+}
+
+void ConversationsFacade::MessageStoreBytesAsync(std::function<void(uint64_t)> done) {
+  AppRuntime::PostWorkerAndReplyOnUI<uint64_t>(
+      WorkerLane::Normal,
+      [this]() -> uint64_t {
+        if (AppRuntime::IsShuttingDown() || !hub_.IsInitialized()) {
+          return 0;
+        }
+        return hub_.MessageStoreBytes();
+      },
+      [done = std::move(done)](const uint64_t bytes) {
+        if (done) {
+          done(bytes);
+        }
+      });
+}
+
+void ConversationsFacade::SetOnStoredAttachmentsChanged(std::function<void()> callback) {
+  hub_.SetOnStoredAttachmentsChanged(std::move(callback));
+}
+
+void ConversationsFacade::SetOnGridThumbnailReady(
+    std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback) {
+  hub_.SetOnGridThumbnailReady(std::move(callback));
+}
+
+void ConversationsFacade::RequestGridThumbnail(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                                               const std::string& mime, const uint64_t page_generation) {
+  hub_.RequestGridThumbnail(thread_id, content_hash, mime, page_generation);
+}
+
+void ConversationsFacade::CancelGridThumbnails(const uint64_t page_generation) {
+  hub_.CancelGridThumbnails(page_generation);
+}
+
+std::string ConversationsFacade::GridThumbnailPath(const std::string& thread_id,
+                                                   const std::vector<uint8_t>& content_hash) {
+  return hub_.GridThumbnailPath(thread_id, content_hash);
+}
+
 void ConversationsFacade::SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                                               std::function<void(Roe<ThreadMessage>)> on_done,
-                                              std::function<bool(uint64_t done, uint64_t total)> progress) {
-  hub_.SendAttachmentAsync(thread_id, std::move(attachment), std::move(on_done), std::move(progress));
+                                              std::function<bool(uint64_t done, uint64_t total)> progress,
+                                              std::shared_ptr<const std::atomic<bool>> cancelled) {
+  hub_.SendAttachmentAsync(thread_id, std::move(attachment), std::move(on_done), std::move(progress),
+                           std::move(cancelled));
 }
 
 void ConversationsFacade::ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
                                                 std::function<void(Roe<ThreadMessage>)> on_done,
-                                                std::function<bool(uint64_t done, uint64_t total)> progress) {
-  hub_.ResumeAttachmentAsync(thread_id, record_id, std::move(on_done), std::move(progress));
+                                                std::function<bool(uint64_t done, uint64_t total)> progress,
+                                                std::shared_ptr<const std::atomic<bool>> cancelled) {
+  hub_.ResumeAttachmentAsync(thread_id, record_id, std::move(on_done), std::move(progress), std::move(cancelled));
 }
 
 std::vector<OutgoingAttachmentRecord> ConversationsFacade::PendingOutgoingAttachments(const std::string& thread_id) {
@@ -908,17 +1155,12 @@ void ConversationsFacade::RetryAttachmentDownload(const std::string& thread_id, 
 namespace {
 std::optional<ChatAttachmentFields> AttachmentFieldsOfMessage(ConversationsHub& hub, const std::string& thread_id,
                                                               const std::string& message_id) {
-  auto page = hub.Store().GetMessagesPage(thread_id, std::nullopt, 10000);
-  if (!page) {
+  auto found = hub.Store().GetMessage(thread_id, message_id); // by id: one row, not a 10000-row scan
+  if (!found || !found->has_value() || (*found)->content_type != ChatContentType::Attachment) {
     return std::nullopt;
   }
-  for (const ThreadMessage& message : *page) {
-    if (message.id == message_id && message.content_type == ChatContentType::Attachment) {
-      if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json)) {
-        return std::move(*fields);
-      }
-      return std::nullopt;
-    }
+  if (auto fields = ChatPayloadCodec::DecodeAttachmentJson((*found)->payload_json)) {
+    return std::move(*fields);
   }
   return std::nullopt;
 }
@@ -933,7 +1175,11 @@ std::optional<ConversationsFacade::AttachmentInfo> ConversationsFacade::Attachme
 }
 
 std::optional<std::string> ConversationsFacade::AttachmentLocalPathForMessage(const std::string& thread_id,
-                                                                          const std::string& message_id) {
+                                                                          const std::string& message_id,
+                                                                          bool* made_view) {
+  if (made_view) {
+    *made_view = false;
+  }
   auto fields = AttachmentFieldsOfMessage(hub_, thread_id, message_id);
   if (!fields) {
     return std::nullopt;
@@ -952,10 +1198,32 @@ std::optional<std::string> ConversationsFacade::AttachmentLocalPathForMessage(co
   if (!ok) {
     return std::nullopt;
   }
+  if (made_view) {
+    *made_view = true;
+  }
   if (fields->byte_length > kMaxDirectAttachmentBytes) {
     hub_.Attachments().MaybeBuildPoster(thread_id, *fields, /*after_open=*/true); // a large video's first poster
   }
   return *view;
+}
+
+std::optional<std::string> ConversationsFacade::AttachmentOpenPathForMessage(const std::string& thread_id,
+                                                                         const std::string& message_id,
+                                                                         bool* made_view) {
+  auto view = AttachmentLocalPathForMessage(thread_id, message_id, made_view);
+  auto fields = view ? AttachmentFieldsOfMessage(hub_, thread_id, message_id) : std::nullopt;
+  if (!fields) {
+    return view;
+  }
+  // A sound file's name may not say what it is (an MPEG-4 file named .mp3): the link gets the real extension.
+  std::string content_ext;
+  if (fields->mime.rfind("audio/", 0) == 0) {
+    if (const char* ext = AudioContainerExtension(SniffAudioFile(PathFromUtf8(*view)))) {
+      content_ext = ext;
+    }
+  }
+  return AttachmentNamedOpenPath(hub_.ProfileDataDir(), thread_id, fields->content_hash, fields->mime,
+                                 fields->filename, *view, content_ext);
 }
 
 Roe<ConversationsFacade::StoredAiImage> ConversationsFacade::StoreAiImage(const std::string& thread_id,
@@ -980,20 +1248,14 @@ std::optional<std::string> ConversationsFacade::AiImageViewPath(const std::strin
 
 bool ConversationsFacade::AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id,
                                                            const std::string& message_id) {
-  auto page = hub_.Store().GetMessagesPage(thread_id, std::nullopt, 10000);
-  if (!page) {
+  auto found = hub_.Store().GetMessage(thread_id, message_id);
+  if (!found || !found->has_value() || (*found)->content_type != ChatContentType::Attachment) {
     return true;
   }
-  for (const ThreadMessage& message : *page) {
-    if (message.id != message_id || message.content_type != ChatContentType::Attachment) {
-      continue;
-    }
-    if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json)) {
-      const std::string path = AttachmentLocalPath(hub_.ProfileDataDir(), thread_id, fields->content_hash,
-                                                    fields->mime, fields->filename);
-      return !AttachmentSafeToAutoOpen(path, fields->mime);
-    }
-    return true;
+  if (auto fields = ChatPayloadCodec::DecodeAttachmentJson((*found)->payload_json)) {
+    const std::string path =
+        AttachmentLocalPath(hub_.ProfileDataDir(), thread_id, fields->content_hash, fields->mime, fields->filename);
+    return !AttachmentSafeToAutoOpen(path, fields->mime);
   }
   return true;
 }
@@ -1026,6 +1288,10 @@ Roe<LocalIdentity> ConversationsFacade::GetLocalIdentity() { return hub_.Identit
 
 Roe<LocalIdentity> ConversationsFacade::UpdateLocalIdentity(const LocalIdentity& identity) {
   return hub_.Identity().Update(identity);
+}
+
+Roe<LocalIdentity> ConversationsFacade::ModifyLocalIdentity(const std::function<bool(LocalIdentity& identity)>& change) {
+  return hub_.Identity().Modify(change);
 }
 
 Roe<LocalIdentity> ConversationsFacade::FinishAndPersistRegistration(const std::string& nickname) {

@@ -5,14 +5,18 @@
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/EmojiPickerNotifyPorts.h"
 #include "feature/presenters/ChatPresenter.h"
+#include "feature/presenters/HomeBrief.h"
+#include "feature/presenters/HomeToday.h"
 #include "feature/presenters/ThreadSearchSession.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/AskAiPanel.h"
 #include "foundation/runtime/BackgroundActivity.h"
 #include "gui/chat/AttachmentPreparing.h"
 #include "gui/chat/CameraCaptureFlow.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
+#include "gui/chat/PhotoPreview.h"
 #include "gui/chat/VoiceComposer.h"
 #include "gui/chat/VoicePlayback.h"
 #include "gui/chat/ChatMentionPicker.h"
@@ -20,14 +24,20 @@
 #include "gui/chat/ChatPeerSheet.h"
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatThreadChrome.h"
+#include "gui/chat/GroupInfoSheet.h"
+#include "gui/chat/GroupJoinPrompt.h"
+#include "gui/chat/GroupLinkSheet.h"
+#include "gui/chat/GroupLeaveSheet.h"
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/HeldAgentSend.h"
+#include "gui/chat/MessagingReadyTasks.h"
 #include "gui/chat/SessionListWindow.h"
 #include "gui/chat/ThreadDrafts.h"
 #include "gui/chat/WorkingSetController.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "gui/BadgeNotifyPorts.h"
+#include "gui/FlowCoordinatorPorts.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSurfaceNotifyPorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"
@@ -44,13 +54,16 @@
 #include "lib/ui/ContextMenuHost.h"
 
 #include <source_location>
+#include <ui/base/ObserverPtr.h>
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Event.h>
 #include <ui/base/Input.h>
 #include <ui/base/Types.h>
 
+#include <atomic>
 #include <chrono>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -69,14 +82,43 @@ namespace pbr {
 
 class InputCoordinator;
 
-class ChatController : public Module, private AgentTurnHost, private ChatMenusHost {
+/** One chats-list row as the RML binds it (letter avatar, or the person's photo when `icon_path` is set). */
+SessionDisplayRow ToSessionDisplayRow(const ChatSessionRow& from);
+
+class ChatController : public Module,
+                       private AgentTurnHost,
+                       private ChatMenusHost,
+                       private AskAiPanelHost,
+                       private GroupInfoSheetHost,
+                       private GroupLeaveSheetHost {
 public:
   using AgentConfig = AgentTurnController::AgentConfig;
 
   static AgentConfig ProjectAgent(const AppConfig& config) { return AgentTurnController::ProjectAgent(config); }
+  /** Phones: keeps `overlay`'s (#shell-chat-overlay) transcript end spacer, fade and "new messages" pill clear of its
+   *  floating composer bar, whatever the bar's height. Per frame; changes nothing when they already are. */
+  static void KeepClearOfComposer(ui::Element* overlay);
+  /** Between the newest message and the composer bar; between the "new messages" pill and the bar. */
+  static constexpr float kComposerClearGapDp = 12.f;
+  static constexpr float kJumpLatestGapDp = 16.f;
+  /** A conversation row is kept by a list's search when its title or preview contains the (lower-cased) query. */
+  static bool SessionRowMatches(const std::string& title, const std::string& preview, const std::string& lowered_query);
   void Apply(const AgentConfig& config) { agent_.ApplyConfig(config); }
   void BindAgentPorts(AgentUiPorts ports) { agent_.BindPorts(std::move(ports)); }
   void ReloadAgentConfig() { agent_.ReloadAgentConfig(); }
+  void ReloadAgentConfigWhenIdle() { agent_.ReloadAgentConfigWhenIdle(); }
+  /** Binds this device's push tokens off the UI thread (one run at a time; MessagingReadyTasks). */
+  void SyncPushDevices();
+  /** The Brief key's mint run, shared with the 401 renewal (B183, Application). */
+  const std::shared_ptr<CoalescedRun>& BriefKeyRun() const { return agent_.BriefKeyRun(); }
+  /** A 401 renewal held the Brief key run while a mint was asked for: ask again (does nothing once a key is stored). */
+  void RetryBriefKeyMint();
+
+  /**
+   * A peer's photo was fetched (new path: files are named after their bytes). Rebuilds what shows photos: the open
+   * transcript's sender avatars, the chat header, the chats list, Home's widgets and an open group info sheet.
+   */
+  void OnPeerIconsChanged();
 
   ChatController();
   ~ChatController() override = default;
@@ -86,6 +128,11 @@ public:
   bool Setup(ui::Context* context);
   /** Non-owning; pass nullptr to clear. Rebinds sub-presenters (scroller/chrome). */
   void BindConversationsFacade(ConversationsFacade* facade);
+  /**
+   * G021: `text` holds an invite link (`pp://join/…`, opened, pasted or scanned): asks to join by it — the preview,
+   * then the group's chat — and returns true. False: not one (the caller tries a contact locator).
+   */
+  bool OfferGroupJoin(const std::string& text);
   /** App-wired hook so messaging tool registration stays in Application (no ui→hub registration edge). */
   void BindRegisterMessagingTools(std::function<void(ToolRegistry&)> hook);
   void BindContactsNotify(ContactsNotifyPorts ports);
@@ -120,12 +167,44 @@ public:
   /** The vault locked, or another tab was opened: a recording is thrown away and a clip stops. */
   void CancelVoice();
   void FinalizeThreadDisplay();
+  /** Sends `text` in the open chat as if the user typed it (a settings "?" asking PP 客服). */
+  void SendTypedText(const std::string& text) { SendUserText(text); }
   /** Put `text` in the open chat's composer and focus it; the user sends it (Settings "?" → PP Support). */
   void PrefillDraft(const std::string& text);
   void OnHomeTabActivated();
+  /** Edit Home (DESIGN-pp-ui 8.16): the Home widgets on and off Home; Home's "Edit" and Me → Appearance. */
+  void OpenHomeEdit();
+  /** The profile preferences changed (a contact starred, Edit Home): Home's widgets are drawn again. */
+  void OnHomePrefsChanged();
   void OnSessionsTabActivated();
+  /**
+   * Phone: back from Settings / Contacts to the chat overlay left open under them (ShellHost
+   * SetOnCompactChatShownAgain). What arrived meanwhile was not on screen; the chat is read now, refreshed and at
+   * its newest message, as when it is opened.
+   */
+  void OnCompactChatShownAgain();
   void OnFindSomeone() override;
-  void OnSelectThread(const std::string& thread_id);
+  /**
+   * The phone "New chat" page's "AI chat": a new AI chat, opened. Being the newest, it is the one the ask-AI panel
+   * continues from then on (DEV/PLAN-ui-batch5-ask-ai.md 5a).
+   */
+  void StartNewAiChat() { OnNewChat(); }
+  /** A setting's "?" on a phone: the ask-AI panel opens with `question` asked as a one-off. False elsewhere. */
+  bool AskAiOnce(const std::string& question) { return ask_ai_.OpenOnce(question); }
+  /** The question to PP 客服 (SettingsCommands::ask_support), for the panel's "Ask PP Support". */
+  void BindAskSupport(std::function<Roe<void>(const std::string& question)> ask_support) {
+    ask_support_ = std::move(ask_support);
+  }
+  /** Home's Security widget opens Me → that page (SettingsController::OpenSection). */
+  void BindOpenSettingsSection(std::function<void(const std::string& section_id)> open) {
+    open_settings_section_ = std::move(open);
+  }
+  /** The panel's sheet is a modal layer: the coordinator says when the shell closed it. */
+  void BindFlowCoordinator(FlowCoordinatorPorts ports) { flow_coordinator_ = std::move(ports); }
+  // By value, not by reference: Home callers pass a reference into home_favorites_ / home_summary_, and selecting
+  // from Home first switches to the Chats tab, which rebuilds those containers -- the reference would dangle before
+  // SelectThread hashes it (B161: SIGSEGV in PrefsOf's hash lookup, phones only).
+  void OnSelectThread(std::string thread_id);
   /** Rebind messaging ports after a full profile data wipe/reinit. */
   void OnProfileDataReset();
   /** Called when messaging becomes ready (app-wired). */
@@ -133,6 +212,10 @@ public:
   void OnMeshReady();
   /** App-wired from ShellHost layout sync (see Application::WireShellPresentationEvents). */
   void OnShellLayoutSynced();
+  /** Phone Chats list swipe: runs the same item the long-press menu offers. */
+  void OnSessionSwipeAction(const std::string& thread_id, SessionSwipeAction action);
+  /** A tap on the phone AI dot: the ask-AI panel over the current page (DESIGN-pp-ui §8.14). */
+  void OpenAskAiFromDot() { (void)ask_ai_.Open(AskAiEntry::Dot); }
   /** Escape after the shell closed nothing (desktop). Not in the composer: NotInComposer. */
   enum class ComposerEscape { NotInComposer, Handled, Idle };
   ComposerEscape OnComposerEscape();
@@ -175,7 +258,51 @@ private:
                      bool show_error_text = false);
   /** Copy the presenter's chats list into the shell's data model. */
   void ApplySessionList();
+  /** The phone Home widgets' data from the chats list (Recent chats, Mentions, New people, Favorites). */
+  void ApplyHomeToday(const ChatListScreen& list);
+  /** Which Home widgets show and in which order, the calls' and briefs' lines, and Edit Home's rows. */
+  void ApplyHomeWidgets();
+  /** Favorites: starred contacts (the star order) then recent chats with contacts; a starred one is looked up here. */
+  void ApplyHomeFavorites(const std::vector<ChatSessionRow>& rows);
+  /** Sizes the 关注联系人 avatars from the window width (four across the card); dirties them when they change. */
+  void SyncHomeFavoriteSize();
+  /** Phones, Home shown, Calls kept: reads the newest calls on a worker and draws the Calls widget. */
+  void RefreshHomeCalls();
+  /**
+   * Phones, Home shown: reads the profile's briefs cache once and, when it is over a day old (or for another
+   * language), fetches the article feed again on a worker (DESIGN-pp-ui 8.16).
+   */
+  void RefreshHomeBrief();
+  /** The article feed of the UI language ("cn" / "en"). */
+  static std::string HomeBriefFeed();
+  /** A tap on a headline: its article through the usual open-link confirm; with no link, the feed in the AI chat. */
+  void OpenHomeBrief(int index);
+  /** A tap on the "New people" line: the first chat with unread messages from someone who is not a contact. */
+  void OpenHomeNewPeople();
+  /** A favourite's avatar: their newest chat, or (none yet) a new one as the contact page's Message starts. */
+  void OpenHomeFavorite(int index);
+  /** The Calls widget: the chat of the newest call. */
+  void OpenHomeCalls();
+  /** The Mentions widget: the chat, at its oldest unread mention. */
+  void OpenHomeMentions();
+  /** The widgets the user keeps on Home and their order (profile preferences; device-only). */
+  HomeWidgetLayout HomeLayout() const;
+  /** Saves an Edit Home change, redraws Home, and reads / fetches what a widget put back needs. */
+  void SaveHomeLayout(const HomeWidgetLayout& layout);
+  /**
+   * Edit Home's drag handles: a press on `id`'s handle lifts its row; while the finger moves the row takes the place
+   * of the row nearest the finger (the list redraws in that order); let go, the order is saved.
+   */
+  void OnHomeEditDragStart(const std::string& id);
+  void OnHomeEditDrag(ui::Event& event);
+  void OnHomeEditDragEnd();
+  /** Edit Home's rows from `layout` (the drag's working order while a handle is held). */
+  void ApplyHomeEditRows(const HomeWidgetLayout& layout);
   void OnToggleArchived();
+  void OnToggleArchivedAi();
+  void OnSessionsSearchChanged();
+  /** The AI drawer's search: typing filters live; Return or the magnifier also puts the keyboard away. */
+  void OnAiSessionsSearch(ui::Event& ev, bool submit);
   void OnForgetMemory() override;
   void OnSyncWithPeer() override;
   void OnRetryGapSync();
@@ -193,6 +320,8 @@ private:
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt,
                     bool from_home_chip = false) override;
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
+  std::vector<std::string> RecentEmojis() const override;
+  void RememberEmoji(const std::string& emoji) override;
   void OnAttachFile(ui::Event* ev = nullptr);
   /** The camera icon: iOS opens the system camera at once; Android first asks "Take a photo / Record a video". */
   void OnAttachCapture(ui::Event* ev = nullptr);
@@ -223,6 +352,10 @@ private:
   /** Retry / discard the failed send the chip shows; the staged ciphertext is what a retry sends again. */
   void OnRetryAttachmentSend();
   void OnDiscardAttachmentSend();
+  /** Cancel the send in flight: its upload stops, its staged copy goes, and nothing is sent. */
+  void OnCancelAttachmentSend();
+  /** The upload card for a send starting (`name`: the file's name) or ended (empty): bar, badge, picture, ✕. */
+  void ResetUploadCard(const std::string& name);
   /** Show the chip for a staged send of the open thread that did not finish (also after the app was killed). */
   void RefreshPendingAttachmentChip(bool force);
   void ShowFailedAttachment(const std::string& record_id, const std::string& name);
@@ -236,6 +369,10 @@ private:
   std::vector<MessageDisplayRow> BuildMessageRows(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
                                                   std::optional<int64_t> newest_inclusive) const;
   void OpenAttachment(const std::string& message_id);
+  /** A tap on a picture: full-screen preview with a spinner now, the viewer when the file is ready. */
+  void OpenPicture(const std::string& message_id, const std::string& local_path);
+  /** Group chats: a tap on a member's avatar or name opens their page over the chat (contact or not). */
+  void OpenGroupSender(const std::string& message_id);
   void DownloadAttachment(const std::string& message_id);
   void RetryAttachmentDownload(const std::string& message_id);
   void SyncComposerInputState() override;
@@ -262,14 +399,27 @@ private:
   std::chrono::steady_clock::time_point last_call_joinable_poll_{};
   /** Each second: whether the open group chat has a call this device may join (calls change it). */
   void RefreshCallJoinable(std::chrono::steady_clock::time_point now);
-  void OpenChatLink(const std::string& entry_id, int link_index);
-  /** Opens an https URL after the user confirms its host; the dialog offers to stop asking until the app restarts. */
+  void SetCallBarText(const std::string& text);
+  /** The call bar's "Join": joins the group's call, or says it has ended when it is gone. */
+  void OnJoinGroupCall();
+  void OpenChatLink(const std::string& entry_id, int link_index) { OpenChatLinkIn(ActiveThreadId(), entry_id, link_index); }
+  /** Link `link_index` of answer `entry_id` in `thread_id` (after a restart rebuilt from its stored text). */
+  void OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, int link_index);
+  /** A link someone sent in a chat: opens an https URL after the user confirms its host; the dialog offers to stop
+   *  asking until the app restarts. */
   void ConfirmAndOpenUrl(const std::string& url);
+  /** A link from our own feed (Home's briefs, an AI answer's article or source): opens an https URL with no prompt
+   *  (Kenneth 2026-11-04). The caller says where it came from; nothing is matched on the URL itself. */
+  void OpenTrustedUrl(const std::string& url);
+  /** Whether message `entry_id` of `thread_id` was written by the AI assistant (false when it cannot be read). */
+  bool MessageFromAssistant(const std::string& thread_id, const std::string& entry_id);
   void RestoreWorkingSetsFromActiveThread();
   void SyncShellSessions() override;
   void UpdateThreadChrome();
   void ResetChatPanelState();
   std::string failed_record_id_;
+  /** Set by Cancel on the chip while a send is in flight; a new one for each send. */
+  std::shared_ptr<std::atomic<bool>> send_cancel_;
   /** A voice recording waiting for Retry / Discard (nothing was staged), and the chat it is for. */
   std::string failed_voice_path_;
   std::string failed_voice_thread_;
@@ -284,12 +434,18 @@ private:
   int attach_menu_y_ = 120;
   /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */
   std::unordered_set<std::string> opening_message_ids_;
+  PhotoPreviewTracker photo_preview_;
   std::string pending_chip_thread_;
   /** The chat the attachment in flight (preparing, uploading, or the failed one) belongs to. */
   std::string attachment_thread_;
   void UpdateSidebarPreview(const std::string& preview_text) override;
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
-                         const std::string& entry_id) override;
+                         const std::string& entry_id) override {
+    HandleLocalActionIn(ActiveThreadId(), message, payload, entry_id);
+  }
+  /** A button of a stored answer of `thread_id` (the open chat, or the ask-AI panel's AI chat under it). */
+  void HandleLocalActionIn(const std::string& thread_id, const std::string& message,
+                           const std::optional<std::string>& payload, const std::string& entry_id);
   QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) override;
   void PutBackDraft(const std::string& thread_id, const std::string& text) override;
   /** Text that did not go out goes back to `key`'s composer (a thread id, or ThreadDrafts::kHome). */
@@ -322,7 +478,11 @@ private:
   void OnSessionsScroll();
   void OnSessionsLoadMore();
   void FillSessionListAfterLayout();
+  void SyncComposerOverlay();
   ui::Element* SessionListElement() const;
+  /** The AI conversation list on screen: the phone's drawer, else the desktop's AI page list; null when neither shows. */
+  ui::Element* AiSessionListElement() const;
+  void OnAiSessionsScroll();
   void OnJumpToLatest();
   // Search inside the open chat (DEV/PLAN-chat-search.md). The decisions are ThreadSearchSession's; these bind
   // them to the screen, build the index on a worker and scroll to the hits.
@@ -344,6 +504,74 @@ private:
   /** Messages of the searched chat were added or removed: rebuild the index (at most every 2 s, one at a time). */
   void OnSearchMessagesChanged();
   void OnAgentTurnEnded(const std::string& thread_id) override;
+  bool AskAiPanelShows(const std::string& thread_id) const override { return ask_ai_.Shows(thread_id); }
+  void OnAskAiOnceReply(const AgentEvent& event) override { ask_ai_.OnOnceReply(event); }
+  // The ask-AI panel's side of the screen (AskAiPanelHost).
+  bool AskAiCompact() const override;
+  void AskAiOpenEmoji(std::function<void(const std::string& emoji)> insert) override;
+  std::string AskAiSharedThread(bool create) override;
+  std::string AskAiNewThread() override;
+  std::vector<AskAiRow> AskAiRecentRows(const std::string& thread_id, size_t limit) override;
+  bool AskAiLastIsQuestion(const std::string& thread_id) override;
+  QueuedSendOutcome AskAiSendNow(const QueuedAgentSend& item) override { return RunQueuedAgentSend(item); }
+  std::string AskAiStoreQuestion(const std::string& thread_id, const std::string& text) override;
+  int AskAiPushSheet(const PaneSpec& spec, std::function<void()> on_closed) override;
+  void AskAiCloseSheet(int layer_id) override;
+  void AskAiOpenInChat(const std::string& thread_id) override;
+  void AskAiSupport(const std::string& question) override;
+  void AskAiRunAction(const std::string& thread_id, const std::string& entry_id, int action_index) override;
+  void AskAiOpenLink(const std::string& thread_id, const std::string& entry_id, int link_index) override {
+    OpenChatLinkIn(thread_id, entry_id, link_index);
+  }
+  void AskAiOpenUrl(const std::string& url) override { OpenTrustedUrl(url); } // a one-off AI answer's link
+  bool AskAiIntroSeen() const override;
+  void AskAiMarkIntroSeen() override;
+  void AskAiToast(const std::string& text) override { ShowToast(text); }
+  /** ChatMenusHost: "⋯ → Ask AI" (phones, chats with people). */
+  bool AskAiPanelAvailable() const override { return AskAiCompact(); }
+  void OpenAskAiPanel() override { (void)ask_ai_.Open(AskAiEntry::ChatMenu); }
+  /** Opens the thread in the full chat page (Sessions tab, chat pane, the phone's chat page). */
+  void ShowThreadInChat(const std::string& thread_id);
+  /** The chat title: the group info sheet (a group chat on a phone), else the small peer menu. */
+  void OpenPeerSheet(ui::Event& ev);
+  // The group info sheet's side of the screen (GroupInfoSheetHost).
+  bool GroupInfoCompact() const override { return AskAiCompact(); }
+  GroupInfoScreen GroupInfoRead(const std::string& thread_id) override;
+  int GroupInfoPushSheet(const PaneSpec& spec) override;
+  void GroupInfoCloseSheet(int layer_id) override;
+  bool GroupInfoSheetOpen(int layer_id) const override;
+  void GroupInfoCall(const std::string& thread_id, bool video) override;
+  void GroupInfoMute(const std::string& thread_id, bool muted) override;
+  void GroupInfoRename(const std::string& thread_id, bool for_everyone) override;
+  void GroupInfoRestoreName(const std::string& thread_id) override;
+  void GroupInfoViewAll(const std::string& thread_id) override;
+  void GroupInfoAddMember(const std::string& thread_id) override;
+  void GroupInfoChoosePreset(const std::string& group_id, GroupPreset current) override;
+  /** G017, the owner: Everyone (Open) / Admins only (Managed), as a menu at `position` (an action sheet on phones). */
+  void ChooseGroupPreset(const std::string& group_id, GroupPreset current, ui::Vector2i position) override;
+  void GroupInfoTapMember(const std::string& thread_id, const std::string& identity) override;
+  void GroupInfoLeave(const std::string& thread_id) override;
+  void GroupInfoDissolve(const std::string& group_id) override;
+  void GroupInfoInviteLink(const std::string& group_id) override;
+  void GroupInfoRevokeLink(const std::string& group_id, const std::string& link_id) override;
+  /** G021: the invite link sheet's and the join prompt's ports. */
+  GroupLinkSheetPorts MakeGroupLinkPorts();
+  GroupJoinPromptPorts MakeJoinPromptPorts();
+  /** Ask, then revoke the link (off the UI thread); `done(true)` once revoked. */
+  void RevokeLinkAfterConfirm(const std::string& group_id, const std::string& link_id, std::function<void(bool)> done);
+  // The owner's "choose a new owner" sheet (GroupLeaveSheetHost).
+  OwnerLeaveSheet GroupLeaveRead(const std::string& thread_id) override { return presenter_.OwnerLeaveSheetOf(thread_id); }
+  int GroupLeavePushSheet(const PaneSpec& spec) override { return GroupInfoPushSheet(spec); }
+  void GroupLeaveCloseSheet(int layer_id) override { GroupInfoCloseSheet(layer_id); }
+  bool GroupLeaveSheetOpen(int layer_id) const override { return GroupInfoSheetOpen(layer_id); }
+  void GroupLeaveConfirm(const std::string& message, std::function<void(bool ok)> done) override;
+  bool GroupLeaveStillPossible(const std::string& thread_id, const std::string& identity) override {
+    return presenter_.CanHandOverTo(thread_id, identity);
+  }
+  void GroupLeaveHandOver(const std::string& thread_id, const std::string& group_id,
+                          const std::string& identity) override;
+  void GroupLeaveDissolve(const std::string& group_id) override { DissolveGroupAfterConfirm(group_id); }
+  void GroupLeaveToast(const std::string& text) override { ShowToast(text); }
   void WireMessagingBindings();
   void WithSecrets(std::function<void()> action);
 
@@ -363,9 +591,11 @@ private:
   void ShellSetActivity(bool visible, const ui::String& message = {}) override;
   void ShellRemountNavRail();
   void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short) override;
-  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result) override;
+  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result,
+                   bool destructive = false) override;
   void ShowConfirmWithCheckbox(const std::string& title, const std::string& message, const std::string& checkbox_label,
-                               bool checkbox_default, std::function<void(bool, bool)> on_result);
+                               bool checkbox_default, std::function<void(bool, bool)> on_result,
+                               const std::string& ok_label = {});
   void ShowPrompt(const std::string& title, const std::string& message, const std::string& default_value,
                   std::function<void(bool, std::string)> on_result) override;
 
@@ -394,6 +624,14 @@ private:
   ChatState chat_;
   ShellState shell_;
   bool messaging_ready_ = false;
+  /**
+   * One up per WireMessagingBindings (and when messaging goes away): a messaging-ready task's result is stored only
+   * when the session it started in is still this one (MessagingReadyTasks).
+   */
+  uint64_t messaging_session_ = 0;
+  /** Push binding, registration renewal and the Brief key mint off the UI thread. Made in BindConversationsFacade. */
+  std::unique_ptr<MessagingReadyTasks> ready_tasks_;
+  void MakeReadyTasks();
   /** Its AppLifecycle background listener (removed at Shutdown). */
   uint64_t lifecycle_background_id_ = 0;
   bool mesh_ready_ = false;
@@ -408,10 +646,22 @@ private:
   std::map<std::string, std::vector<std::string>> chat_links_;
   /** The agent's side of the screen (turns, streaming, held sends, AI images, its widgets). */
   AgentTurnController agent_{*this, chat_, chat_links_, widgets_, working_set_, shell_feedback_};
+  /** The ask-AI half sheet over any page (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
+  AskAiPanel ask_ai_{*this, agent_};
+  std::function<Roe<void>(const std::string& question)> ask_support_;
+  std::function<void(const std::string& section_id)> open_settings_section_;
+  FlowCoordinatorPorts flow_coordinator_;
   /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */
   ChatMenus menus_{*this, presenter_, chat_, working_set_, contacts_notify_, emoji_picker_notify_, shell_feedback_,
                    call_actions_};
   ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
+  /** The phone's group info sheet over a group chat (DEV/PLAN-ui-batch8-group-pages.md 1). */
+  GroupInfoSheet group_info_{*this};
+  /** The owner leaving a group on a phone: choose a new owner (DEV/PLAN-ui-batch8-group-pages.md 3). */
+  GroupLeaveSheet group_leave_{*this};
+  /** G021: the "Invite link…" sheet over group info, and joining by a link that arrives. Made in the constructor. */
+  std::unique_ptr<GroupLinkSheet> group_link_;
+  std::unique_ptr<GroupJoinPrompt> join_prompt_;
   /** The composer's `@` picker in a group chat, and the mentions it recorded per chat (G015). */
   ChatMentionPicker mentions_{*this, presenter_, chat_, context_};
   /** The composer's microphone, and the voice bubbles' player. Made in the constructor (they need `this`). */
@@ -422,12 +672,37 @@ private:
   // AgentTurnHost, ChatMenusHost
   ConversationsFacade* Facade() const override { return facade_; }
   bool MessagingIsReady() const override { return messaging_ready_; }
+  void MintBriefGuestKey(const std::string& llm_base_url) override {
+    if (ready_tasks_) {
+      ready_tasks_->MintBriefKey(llm_base_url);
+    }
+  }
   void RegisterMessagingTools(ToolRegistry& tools) override {
     if (register_messaging_tools_) {
       register_messaging_tools_(tools);
     }
   }
   bool skip_link_confirm_this_run_ = false; // set from the confirm dialog's checkbox; never persisted
+  // Phone Today page (DESIGN-pp-ui 8.16): the last unread summary and the Today's briefs cache.
+  HomeTodaySummary home_summary_;
+  std::vector<HomeFavorite> home_favorites_;
+  /** The newest calls as last read (RefreshHomeCalls), and whether a read is running. */
+  std::vector<call_queries::RecentCall> home_calls_;
+  bool home_calls_reading_ = false;
+  bool home_calls_again_ = false;  // asked again while a read ran: read once more when it ends
+  /** The order being dragged in Edit Home (saved when the handle is let go); none while no handle is held. */
+  std::optional<HomeWidgetLayout> home_edit_drag_;
+  std::string home_edit_drag_id_;
+  /** The card the held row is in (for the settle on release), and where on the row the finger took it (px from its
+   *  centre; set on the first move, home_edit_grabbed_). */
+  ui::ObserverPtr<ui::Element> home_edit_card_;
+  float home_edit_grab_px_ = 0.f;
+  bool home_edit_grabbed_ = false;
+  HomeBriefCache home_brief_;
+  std::string home_brief_dir_;          // the profile directory the cache was read from
+  bool home_brief_fetching_ = false;
+  int64_t home_brief_failed_ms_ = 0;    // the last fetch that failed; 0 none
+  int home_edit_layer_ = -1;            // the Edit Home sheet while it is open
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
   std::optional<int64_t> last_escape_ms_; // a second Escape within kDoubleEscapeWindowMs stops the turn
@@ -442,6 +717,7 @@ private:
   enum class SearchFocus { None, Input, Composer };
   SearchFocus search_focus_ = SearchFocus::None; // moved after the next layout (data-if shows the element first)
   SessionListWindow session_window_;      // how many rows of the chats list the sidebar draws
+  SessionListWindow ai_session_window_;   // how many AI conversations the drawer (or the desktop's AI list) draws
   ThreadDrafts drafts_;                   // unsent text per conversation; the composer widget is shared
   std::map<std::string, std::string> quotes_; // a quote being replied to, per conversation, while another is shown
   void StashComposerExtras(const std::string& key);

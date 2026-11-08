@@ -13,6 +13,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace pbr {
 namespace {
@@ -53,7 +54,7 @@ protected:
       for (const char* name : {"send_message", "stop_turn", "voice_press", "voice_click", "voice_send",
                                "voice_cancel", "voice_mode_toggle", "attach_file", "open_emoji_insert", "draft_changed",
                                "cancel_quote_reply", "retry_attachment_send", "discard_attachment_send",
-                               "remove_image", "attach_capture"}) {
+                               "cancel_attachment_send", "remove_image", "attach_capture"}) {
         ctor.BindEventCallback(name, [](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {});
       }
     }));
@@ -63,7 +64,8 @@ protected:
     body << file.rdbuf();
     const auto localized = LocalizationService::Instance().LocalizeText(body.str());
     document = context->LoadDocumentFromMemory("<rml><head><style>" + ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss") +
-                                              "</style></head><body>" + localized + "</body></rml>");
+                                              "</style></head><body>" + wrap_open_ + localized + wrap_close_ +
+                                              "</body></rml>");
     ASSERT_NE(document, nullptr);
     document->Show();
   }
@@ -87,6 +89,10 @@ protected:
                             "attachment_here",
                             "attachment_draft_name",
                             "attachment_status",
+                            "attachment_progress_width",
+                            "attachment_thumb",
+                            "attachment_type_label",
+                            "attachment_cancelling",
                             "image_chip",
                             "image_thumb_ready",
                             "image_preparing",
@@ -130,6 +136,36 @@ protected:
     ui::Element* input = document->GetElementById("draft-input");
     return input && input->IsVisible(true);
   }
+  /** The classes of the composer row's shown buttons and fields, left to right. */
+  std::vector<std::string> RowOrder() {
+    std::vector<std::string> order;
+    ui::ElementList rows;
+    document->GetElementsByClassName(rows, "prompt-composer-row");
+    if (rows.empty()) {
+      return order;
+    }
+    for (int i = 0; i < rows.front()->GetNumChildren(); ++i) {
+      ui::Element* child = rows.front()->GetChild(i);
+      if (child->IsVisible(true)) {
+        order.emplace_back(child->GetClassNames().c_str());
+      }
+    }
+    return order;
+  }
+  /** The border-box size of the shown element with `cls`. */
+  ui::Vector2f SizeOf(const char* cls) {
+    ui::ElementList found;
+    document->GetElementsByClassName(found, cls);
+    for (ui::Element* element : found) {
+      if (element->IsVisible(true)) {
+        return element->GetBox().GetSize(ui::BoxArea::Border);
+      }
+    }
+    return {};
+  }
+  /** Wraps the composer, e.g. in the phone chat window's class (the phone rules of components.rcss). */
+  std::string wrap_open_;
+  std::string wrap_close_;
   NullRender renderer;
   bool initialized = false;
   ui::Context* context = nullptr;
@@ -137,8 +173,8 @@ protected:
   ChatScreenState state;
 };
 
-// Layout (Kenneth 2026-10-31): [toggle] [emoji] [pill: input | clip | camera] [send, only with text]; voice mode
-// [toggle] [bar]; a status row above the pill only when something needs saying.
+// Desktop layout (Kenneth 2026-10-31): [toggle] [emoji] [pill: input | clip | camera] [send, only with text]; voice
+// mode [toggle] [bar]; a status row above the pill only when something needs saying. Phones: see ComposerPhoneRowTest.
 TEST_F(ComposerVoiceMarkupTest, TextModeWithoutADraftShowsTheToggleThePillAndNoSend) {
   state.show_voice = true;
   state.show_attach_button = true;
@@ -255,14 +291,53 @@ TEST_F(ComposerVoiceMarkupTest, AFailedAttachmentShowsRetryAndCancelInTheStatusR
   EXPECT_TRUE(InsideClass("prompt-attachment-chip-action", "prompt-composer-status"));
 }
 
-TEST_F(ComposerVoiceMarkupTest, AnUploadInProgressShowsTheChipWithoutRetry) {
+// Going up: the card (type badge, name, bar, red ✕), not the chip; no Retry and no "Cancel" text button.
+TEST_F(ComposerVoiceMarkupTest, AnUploadInProgressShowsTheCardWithBadgeNameBarAndCancel) {
   state.attachment_uploading = true;
   state.attachment_here = true;
-  state.attachment_draft_name = "clip.mp4";
+  state.attachment_draft_name = "song.mp3";
+  state.attachment_type_label = "MP3";
+  state.attachment_progress_width = "40%";
   Apply();
   EXPECT_EQ(Shown("prompt-composer-status"), 1);
-  EXPECT_EQ(Shown("prompt-attachment-chip"), 1);
+  EXPECT_EQ(Shown("prompt-attachment-chip"), 0);
   EXPECT_EQ(Shown("prompt-attachment-chip-action"), 0);
+  EXPECT_EQ(Shown("prompt-upload-card"), 1);
+  EXPECT_TRUE(InsideClass("prompt-upload-card", "prompt-composer-status"));
+  EXPECT_EQ(Shown("prompt-upload-type"), 1) << "no picture: the storage page's type badge";
+  EXPECT_EQ(Shown("prompt-upload-thumb"), 0);
+  EXPECT_EQ(Shown("prompt-upload-name"), 1);
+  EXPECT_EQ(Shown("prompt-upload-bar"), 1);
+  EXPECT_EQ(Shown("prompt-upload-cancel"), 1);
+  EXPECT_EQ(Shown("prompt-upload-cancel-icon"), 1);
+  EXPECT_EQ(Shown("prompt-upload-cancel-spin"), 0);
+  ui::ElementList fills;
+  document->GetElementsByClassName(fills, "prompt-upload-fill");
+  ASSERT_EQ(fills.size(), 1u);
+  EXPECT_TRUE(fills[0]->IsClassSet("prompt-upload-fill--moving")) << "it moves while bytes go";
+  ui::ElementList cancels;
+  document->GetElementsByClassName(cancels, "prompt-upload-cancel");
+  ASSERT_EQ(cancels.size(), 1u);
+  EXPECT_FALSE(cancels[0]->GetAttribute<ui::String>("title", "").empty()) << "the ✕ says what it does";
+}
+
+// A picture shows itself instead of the badge; Cancel pressed: the bar stops and the ✕ turns into a spinner.
+TEST_F(ComposerVoiceMarkupTest, APictureShowsItsThumbAndCancellingStopsTheBar) {
+  state.attachment_uploading = true;
+  state.attachment_here = true;
+  state.attachment_draft_name = "photo.jpg";
+  state.attachment_thumb = "thumb.jpg";
+  state.attachment_progress_width = "40%";
+  state.attachment_cancelling = true;
+  Apply();
+  EXPECT_EQ(Shown("prompt-upload-thumb"), 1);
+  EXPECT_EQ(Shown("prompt-upload-type"), 0);
+  EXPECT_EQ(Shown("prompt-upload-cancel-icon"), 0);
+  EXPECT_EQ(Shown("prompt-upload-cancel-spin"), 1);
+  ui::ElementList fills;
+  document->GetElementsByClassName(fills, "prompt-upload-fill");
+  ASSERT_EQ(fills.size(), 1u);
+  EXPECT_FALSE(fills[0]->IsClassSet("prompt-upload-fill--moving"));
 }
 
 TEST_F(ComposerVoiceMarkupTest, TheStatusRowTextIsRenderedNotJustBound) {
@@ -295,7 +370,7 @@ TEST_F(ComposerVoiceMarkupTest, TheStatusRowTextIsRenderedNotJustBound) {
   EXPECT_EQ(timer[0]->GetInnerRML(), "0:07");
 }
 
-// An upload in chat A: its chip shows there only; switching to chat B hides it, back to A shows it again.
+// An upload in chat A: its card shows there only; switching to chat B hides it, back to A shows it again.
 TEST_F(ComposerVoiceMarkupTest, TheUploadChipFollowsTheChatItBelongsTo) {
   state.attachment_uploading = true;
   state.attachment_draft_name = "clip.mp4";
@@ -306,7 +381,7 @@ TEST_F(ComposerVoiceMarkupTest, TheUploadChipFollowsTheChatItBelongsTo) {
     Apply();
     DataModelHost::Instance().Dirty("chat", "composer_input_disabled");
     context->Update();
-    EXPECT_EQ(Shown("prompt-attachment-chip"), chip_expected) << "open chat " << open_chat;
+    EXPECT_EQ(Shown("prompt-upload-card"), chip_expected) << "open chat " << open_chat;
     EXPECT_EQ(state.composer_input_disabled, chip_expected == 1) << "input follows the chip in " << open_chat;
   }
 }
@@ -403,6 +478,119 @@ TEST_F(ComposerVoiceMarkupTest, TheToggleKeepsItsSizeWhileTypingALongDraftAndAft
   Apply();
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
   EXPECT_FLOAT_EQ(toggle_width(), before);
+}
+
+// Phones (Kenneth 2026-11-04, WhatsApp style, the same row as the ask-AI panel's; 2026-11-07 every key inside the
+// pill): DOM order [emoji] [pill: input | plus] [microphone], the microphone giving its place to Send once there is
+// text; voice mode [bar] [keyboard].
+class ComposerPhoneRowTest : public ComposerVoiceMarkupTest {
+protected:
+  ComposerPhoneRowTest() {
+    wrap_open_ = "<div class=\"shell-chat-overlay\" style=\"width: 390dp; height: 200dp;\">";
+    wrap_close_ = "</div>";
+  }
+};
+
+bool Has(const std::string& classes, const char* cls) {
+  return (" " + classes + " ").find(std::string(" ") + cls + " ") != std::string::npos;
+}
+
+TEST_F(ComposerPhoneRowTest, WithoutTextTheMicrophoneEndsTheRow) {
+  state.show_voice = true;
+  state.show_attach_button = true;
+  state.show_capture = true;
+  Apply();
+  const std::vector<std::string> order = RowOrder();
+  ASSERT_EQ(order.size(), 3u);
+  EXPECT_TRUE(Has(order[0], "prompt-emoji-btn"));
+  EXPECT_TRUE(Has(order[1], "prompt-composer-pill"));
+  EXPECT_TRUE(Has(order[2], "prompt-voice-toggle-btn--end")) << "the microphone is on the right";
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn--start"), 0) << "no microphone on the left";
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
+  EXPECT_EQ(Shown("prompt-send-btn"), 0);
+}
+
+TEST_F(ComposerPhoneRowTest, TextTurnsTheMicrophoneIntoSendInTheSameSpot) {
+  state.show_voice = true;
+  state.show_attach_button = true;
+  state.draft = "hello";
+  Apply();
+  const std::vector<std::string> order = RowOrder();
+  ASSERT_EQ(order.size(), 3u);
+  EXPECT_TRUE(Has(order[2], "prompt-send-btn"));
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 0);
+  state.draft = "";
+  Apply();
+  EXPECT_TRUE(Has(RowOrder().back(), "prompt-voice-toggle-btn--end")) << "cleared: the microphone is back";
+}
+
+TEST_F(ComposerPhoneRowTest, VoiceModeShowsTheBarAndTheKeyboardKeyAtTheEnd) {
+  state.show_voice = true;
+  state.voice_mode = true;
+  Apply();
+  const std::vector<std::string> order = RowOrder();
+  ASSERT_EQ(order.size(), 2u);
+  EXPECT_TRUE(Has(order[0], "prompt-voice-bar")) << "the hold-to-talk bar keeps the pill's place";
+  EXPECT_TRUE(Has(order[1], "prompt-voice-toggle-btn--end"));
+  state.voice_recording = true;
+  Apply();
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 0) << "while recording the bar has the row";
+}
+
+// Kenneth 2026-11-07: one composer on phones, every key inside the pill: the bold plus and the emoji key at its bottom
+// left, the microphone (Send once there is text) at its bottom right; no camera (the plus card has it). The keys are
+// 44dp tall targets on the pill's 36dp line, and the text starts after them.
+TEST_F(ComposerPhoneRowTest, EveryKeySitsInsideThePillOnItsLastLine) {
+  state.show_voice = true;
+  state.show_attach_button = true;
+  state.show_capture = true;
+  Apply();
+  EXPECT_EQ(Shown("prompt-capture-btn"), 0) << "no camera beside the plus";
+  const auto box = [this](const char* cls) {
+    ui::ElementList found;
+    document->GetElementsByClassName(found, cls);
+    for (ui::Element* element : found) {
+      if (element->IsVisible(true)) {
+        const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Border);
+        return std::pair<ui::Vector2f, ui::Vector2f>{at, at + element->GetBox().GetSize(ui::BoxArea::Border)};
+      }
+    }
+    return std::pair<ui::Vector2f, ui::Vector2f>{};
+  };
+  const auto [pill_min, pill_max] = box("prompt-composer-pill");
+  const float line = pill_max.y - pill_min.y;
+  EXPECT_LT(line, 44.f);
+  EXPECT_FLOAT_EQ(SizeOf("prompt-composer-row").y, line) << "the keys do not grow the row";
+  const auto [plus_min, plus_max] = box("prompt-attach-btn");
+  const auto [emoji_min, emoji_max] = box("prompt-emoji-btn");
+  const auto [mic_min, mic_max] = box("prompt-voice-toggle-btn--end");
+  for (const auto& [lo, hi] : {std::pair{plus_min, plus_max}, std::pair{emoji_min, emoji_max}, std::pair{mic_min, mic_max}}) {
+    EXPECT_FLOAT_EQ(hi.y - lo.y, 44.f);
+    EXPECT_NEAR((lo.y + hi.y) / 2, (pill_min.y + pill_max.y) / 2, 1.5f) << "centred on the one-line pill";
+    EXPECT_GE(lo.x, pill_min.x - 0.5f);
+    EXPECT_LE(hi.x, pill_max.x + 0.5f);
+  }
+  EXPECT_LT(plus_max.x, emoji_max.x) << "the plus, then the emoji key";
+  EXPECT_LE(plus_max.x, emoji_min.x + 0.5f);
+  EXPECT_FLOAT_EQ(mic_max.x, pill_max.x) << "the microphone ends the pill";
+  ui::Element* input = document->GetElementById("draft-input");
+  ASSERT_NE(input, nullptr);
+  EXPECT_GE(input->GetAbsoluteOffset(ui::BoxArea::Border).x, emoji_max.x) << "the text starts after the keys";
+  state.draft = "hello";
+  Apply();
+  const auto [send_min, send_max] = box("prompt-send-btn");
+  EXPECT_FLOAT_EQ(send_max.x, pill_max.x) << "Send takes the microphone's place";
+  EXPECT_FLOAT_EQ(send_max.y - send_min.y, 44.f);
+  EXPECT_FLOAT_EQ(SizeOf("prompt-send-disc").x, 32.f) << "the accent disc inside the target";
+  EXPECT_FLOAT_EQ(SizeOf("prompt-composer-row").y, line) << "Send does not grow the row";
+}
+
+TEST_F(ComposerVoiceMarkupTest, TheDesktopKeepsTheMicrophoneOnTheLeft) {
+  state.show_voice = true;
+  state.show_attach_button = true;
+  Apply();
+  EXPECT_TRUE(Has(RowOrder().front(), "prompt-voice-toggle-btn--start"));
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn--end"), 0);
 }
 
 // The cause of the missing microphone on devices: the markup above is fine, but `show_voice` is only set by

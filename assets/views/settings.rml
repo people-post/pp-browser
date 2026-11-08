@@ -1,10 +1,114 @@
-<div class="settings-panel stack" data-model="settings">
-  <div class="settings-list-view" data-if="!show_detail">
-    <div class="settings-header row" data-if="!in_account_sheet">
+<div class="settings-panel stack" data-model="settings" data-class-settings-panel--subpage="show_detail && security_page != ''">
+  <!-- Phones: Settings is a hidden tab (DEV/PLAN-minimal-nav.md A): the round back returns to the tab it came from. -->
+  <div class="pane-nav" data-if="!show_detail">
+    <div class="pane-nav-bg"></div>
+    <div class="bar-fade"></div>
+    <button class="pane-nav-back shell-circle-btn" type="button" data-model="window" data-event-click="hidden_tab_back()">
+      <span class="shell-circle-btn-face"><svg src="../icons/v2/back.svg" width="24" height="24"></svg></span>
+    </button>
+    <p class="pane-nav-title">{{i18n:settings.title}}</p>
+  </div>
+  <div class="settings-list-view root-scroll" data-if="!show_detail">
+    <p class="large-title">{{i18n:nav.me}}</p>
+    <div class="settings-header row">
       <h2 class="heading-2">{{i18n:nav.me}}</h2>
     </div>
 
-    <div class="me-profile-card me-identity-header row">
+    <div class="settings-phone-only">
+      <div class="group-card group-card--top me-card">
+        <div class="me-card-row">
+          <button class="me-card-main" type="button" data-event-click="select_section('profile')">
+            <div class="me-card-avatar"
+                 data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
+                 data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
+                 data-class-avatar-tone-2="!profile_has_icon && profile_avatar_tone == 2"
+                 data-class-avatar-tone-3="!profile_has_icon && profile_avatar_tone == 3"
+                 data-class-avatar-tone-4="!profile_has_icon && profile_avatar_tone == 4"
+                 data-class-avatar-tone-5="!profile_has_icon && profile_avatar_tone == 5"
+                 data-class-avatar-tone-6="!profile_has_icon && profile_avatar_tone == 6"
+                 data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
+              <img class="me-card-avatar-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
+              <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
+            </div>
+            <div class="me-card-text">
+              <p class="me-card-name">{{profile_nickname}}</p>
+              <p class="me-card-meta">{{i18n:settings.registration.label}} <span>{{profile_registration_status}}</span></p>
+            </div>
+          </button>
+          <button class="cd-icon-btn" type="button" data-event-click="copy_profile_id()">
+            <svg class="cd-icon" src="../icons/v2/copy.svg" width="20" height="20"></svg>
+          </button>
+          <button class="cd-icon-btn" type="button" data-event-click="share_profile()">
+            <svg class="cd-icon" src="../icons/share.svg" width="20" height="20"></svg>
+          </button>
+        </div>
+      </div>
+      <p class="group-foot" data-if="status != ''">{{status}}</p>
+
+      <div class="group-card">
+          <button data-for="section : sections" data-if="section.id == 'security'"
+                  class="group-row" type="button"
+                  data-event-click="select_section(section.id)">
+            <span class="group-icon group-icon--accent" data-if="section.id == 'security'"><svg src="../icons/v2/shield.svg" width="18" height="18"></svg></span>
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">{{section.title}}</span>
+                <span class="group-row-sub" data-if="section.subtitle != ''">{{section.subtitle}}</span>
+              </span>
+              <span class="badge-dot badge-dot--settings" data-if="section.attention"></span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+      </div>
+
+      <div class="group-card">
+          <button data-for="section : sections" data-if="section.id == 'network' || section.id == 'appearance' || section.id == 'storage'"
+                  class="group-row" type="button"
+                  data-event-click="select_section(section.id)">
+            <span class="group-icon group-icon--success" data-if="section.id == 'network'"><svg src="../icons/v2/globe.svg" width="18" height="18"></svg></span>
+            <span class="group-icon group-icon--gray" data-if="section.id == 'appearance'"><svg src="../icons/v2/sun.svg" width="18" height="18"></svg></span>
+            <span class="group-icon group-icon--orange" data-if="section.id == 'storage'"><svg src="../icons/v2/database.svg" width="18" height="18"></svg></span>
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">{{section.title}}</span>
+                <span class="group-row-sub" data-if="section.subtitle != ''">{{section.subtitle}}</span>
+              </span>
+              <span class="badge-dot badge-dot--settings" data-if="section.attention"></span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+      </div>
+
+      <div class="group-card">
+        <button class="group-row" type="button" data-if="support_visible" data-event-click="open_support_chat()">
+          <span class="group-icon group-icon--teal"><svg src="../icons/v2/help-circle.svg" width="18" height="18"></svg></span>
+          <span class="group-row-body">
+            <span class="group-row-label">
+              <span class="group-row-text">{{support_display_name}}</span>
+              <span class="group-row-sub">{{support_subtitle}}</span>
+            </span>
+            <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+          </span>
+        </button>
+          <button data-for="section : sections" data-if="section.id == 'llm' || section.id == 'integrations' || section.id == 'about'"
+                  class="group-row" type="button"
+                  data-event-click="select_section(section.id)">
+            <span class="group-icon group-icon--indigo" data-if="section.id == 'llm'"><svg src="../icons/v2/sparkle-fill.svg" width="18" height="18"></svg></span>
+            <span class="group-icon group-icon--purple" data-if="section.id == 'integrations'"><svg src="../icons/v2/at-sign.svg" width="18" height="18"></svg></span>
+            <span class="group-icon group-icon--gray" data-if="section.id == 'about'"><svg src="../icons/v2/info.svg" width="18" height="18"></svg></span>
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">{{section.title}}</span>
+                <span class="group-row-sub" data-if="section.subtitle != ''">{{section.subtitle}}</span>
+              </span>
+              <span class="badge-dot badge-dot--settings" data-if="section.attention"></span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+      </div>
+    </div>
+
+    <div class="me-profile-card me-identity-header row settings-desktop-only">
       <div class="me-profile-avatar-frame me-profile-avatar-frame--compact"
            data-event-click="select_section('profile')"
            data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
@@ -37,9 +141,9 @@
         </button>
       </div>
     </div>
-    <p class="text muted me-identity-status" data-if="status != ''">{{status}}</p>
+    <p class="text muted me-identity-status settings-desktop-only" data-if="status != ''">{{status}}</p>
 
-    <div class="settings-list settings-list--pinned" data-if="support_visible">
+    <div class="settings-list settings-list--pinned settings-desktop-only" data-if="support_visible">
       <button class="settings-row" type="button" data-event-click="open_support_chat()">
         <div class="settings-row-text stack">
           <p class="settings-row-title">{{support_display_name}}</p>
@@ -49,8 +153,8 @@
       </button>
     </div>
 
-    <p class="settings-section-title me-preferences-label">{{i18n:settings.preferences}}</p>
-    <div class="settings-list">
+    <p class="settings-section-title me-preferences-label settings-desktop-only">{{i18n:settings.preferences}}</p>
+    <div class="settings-list settings-desktop-only">
       <button data-for="section : sections"
               class="settings-row" type="button"
               data-class-settings-row--active="section.id == selected_id && selected_id != ''"
@@ -63,19 +167,64 @@
         <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="14" height="14"></svg>
       </button>
     </div>
+    <div class="tab-bar-clear"></div>
   </div>
 
-  <div data-if="show_detail" class="settings-detail-view stack" id="settings-detail-view">
+  <!-- Phones: the page opens with a large title in its body; its bar hides while the page is scrolled away from the
+       top (nav-bar-*, ShellNavBarScroll). -->
+  <div data-if="show_detail" class="settings-detail-view nav-bar-host stack" id="settings-detail-view">
     <div class="settings-detail-header row">
-      <button class="settings-back-btn" type="button" data-event-click="back_to_list()">
-        <svg src="../icons/back.svg" width="18" height="18"></svg>
+      <div class="nav-bar-bg"></div>
+      <button class="settings-back-btn shell-circle-btn" type="button" data-event-click="back_to_list()">
+        <svg class="settings-back-old" src="../icons/back.svg" width="18" height="18"></svg>
+        <span class="shell-circle-btn-face"><svg class="settings-back-v2" src="../icons/v2/back.svg" width="24" height="24"></svg></span>
       </button>
       <p class="settings-header-title">{{selected_title}}</p>
+      <div class="bar-fade"></div>
     </div>
 
-    <div class="settings-detail-body stack">
+    <div class="settings-detail-body nav-bar-scroll stack">
+      <p class="page-large-title">{{selected_title}}</p>
       <div id="settings-section-mount-sheet"></div>
-      <p class="text muted" data-if="status != ''">{{status}}</p>
+      <p class="text muted group-foot" data-if="status != ''">{{status}}</p>
+    </div>
+  </div>
+
+  <!-- Phones: a page pushed over a section (Security's Move to a new device; a pick-one-value page of any section);
+       same bar, back and swipe-back. -->
+  <div data-if="show_detail && security_page != ''" class="settings-detail-view settings-subpage-view nav-bar-host stack"
+       id="settings-subpage-view">
+    <div class="settings-detail-header row">
+      <div class="nav-bar-bg"></div>
+      <button class="settings-back-btn shell-circle-btn" type="button" data-event-click="close_security_page()">
+        <span class="shell-circle-btn-face"><svg class="settings-back-v2" src="../icons/v2/back.svg" width="24" height="24"></svg></span>
+      </button>
+      <p class="settings-header-title">{{security_page_title}}</p>
+      <button class="settings-q-btn settings-subpage-help" type="button" data-if="security_page == 'choice' && choice_help_topic != ''"
+              data-event-click="ask_setting_help(choice_help_topic)"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+      <div class="bar-fade"></div>
+    </div>
+
+    <div class="settings-detail-body nav-bar-scroll stack">
+      <p class="page-large-title">{{security_page_title}}</p>
+      <div class="settings-section settings-section--grouped stack" data-if="security_page == 'transfer'">
+{{include:settings_security_transfer}}
+      </div>
+      <!-- Pick one value (theme, language, who can call...): one row each, the current one checked; a tap applies it
+           and the page goes back (SettingsChoicePage). -->
+      <div class="settings-section settings-section--grouped stack settings-choice-page" data-if="security_page == 'choice'">
+        <div class="group-card">
+          <button data-for="option : choice_options" class="group-row settings-choice-option" type="button"
+                  data-event-click="pick_choice(option.id)">
+            <span class="group-row-body">
+              <span class="group-row-text">{{option.label}}</span>
+              <svg class="settings-choice-check" data-if="option.selected" src="../icons/v2/check.svg" width="20" height="20"></svg>
+            </span>
+          </button>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="choice_foot != ''">{{choice_foot}}</p>
+      </div>
+      <p class="text muted group-foot" data-if="status != ''">{{status}}</p>
     </div>
   </div>
 </div>

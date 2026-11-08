@@ -72,10 +72,10 @@ std::string MemberPublicName(const std::string& account_id, const std::string& c
   return ShortRelayId(account_id);
 }
 
-std::vector<MentionCandidate> AllMentionCandidates(const std::vector<GroupRosterMember>& roster,
-                                                   const std::string& local_account, const bool local_is_owner,
-                                                   const std::function<std::string(const std::string& account_id)>& public_name,
-                                                   const std::string& everyone_word) {
+std::vector<MentionCandidate> AllMentionCandidates(
+    const std::vector<GroupRosterMember>& roster, const std::string& local_account,
+    const bool local_may_mention_everyone, const std::function<std::string(const std::string& account_id)>& public_name,
+    const std::string& everyone_word) {
   std::vector<MentionCandidate> members;
   std::map<std::string, int> name_counts;
   for (const GroupRosterMember& member : roster) {
@@ -102,7 +102,7 @@ std::vector<MentionCandidate> AllMentionCandidates(const std::vector<GroupRoster
     return la != lb ? la < lb : a.account_id < b.account_id;
   });
   std::vector<MentionCandidate> lines;
-  if (local_is_owner) {
+  if (local_may_mention_everyone) {
     lines.push_back({TextSpanKind::Everyone, {}, everyone_word, {}});
   }
   lines.insert(lines.end(), members.begin(), members.end());
@@ -122,12 +122,12 @@ std::vector<MentionCandidate> FilterMentionCandidates(const std::vector<MentionC
   return lines;
 }
 
-std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMember>& roster,
-                                                const std::string& local_account, const bool local_is_owner,
-                                                const std::function<std::string(const std::string& account_id)>& public_name,
-                                                const std::string& query, const std::string& everyone_word) {
+std::vector<MentionCandidate> MentionCandidates(
+    const std::vector<GroupRosterMember>& roster, const std::string& local_account,
+    const bool local_may_mention_everyone, const std::function<std::string(const std::string& account_id)>& public_name,
+    const std::string& query, const std::string& everyone_word) {
   return FilterMentionCandidates(
-      AllMentionCandidates(roster, local_account, local_is_owner, public_name, everyone_word), query);
+      AllMentionCandidates(roster, local_account, local_may_mention_everyone, public_name, everyone_word), query);
 }
 
 void MentionCandidatePreload::Open(const std::string& thread_id) {
@@ -345,7 +345,7 @@ std::vector<TextSpan> KeepMentionsOnRoster(std::vector<TextSpan> spans, const Me
                                  return roster.members.count(span.account_id) == 0;
                                }
                                if (span.Is(TextSpanKind::Everyone)) {
-                                 return roster.owner.empty() || roster.owner != roster.local_account;
+                                 return !roster.MayMentionEveryone(roster.local_account);
                                }
                                return false;
                              }),
@@ -368,7 +368,7 @@ std::vector<MentionRun> EligibleMentionRuns(const std::string& text, const size_
     }
     if (span.Is(TextSpanKind::Mention) && roster.members.count(span.account_id) > 0) {
       runs.push_back({span.start, span.end, TextSpanKind::Mention, span.account_id});
-    } else if (span.Is(TextSpanKind::Everyone) && !roster.owner.empty() && sender_account == roster.owner) {
+    } else if (span.Is(TextSpanKind::Everyone) && roster.MayMentionEveryone(sender_account)) {
       runs.push_back({span.start, span.end, TextSpanKind::Everyone, {}});
     }
   }

@@ -17,6 +17,8 @@ struct ChatScreenState {
   ui::String status;
   ui::String thread_title;
   ui::String thread_subtitle;
+  /** Phone header: groups only, the member count ("12 members"); empty for direct and AI chats. */
+  ui::String thread_phone_subtitle;
   ui::String peer_link_status;
   ui::String peer_link_banner;
   bool show_peer_link = false;
@@ -34,6 +36,12 @@ struct ChatScreenState {
   bool thread_is_private = false;
   bool thread_is_public = false;
   bool thread_is_group = false;
+  /** Phone chat title bar: the avatar of the chat list row (first letter of the title, colour index 0..7). */
+  ui::String thread_avatar_letter;
+  int thread_avatar_tone = 0;
+  /** The person's own cached profile photo (local file), when there is one; else the letter avatar shows. */
+  ui::String thread_icon_src;
+  bool thread_has_icon = false;
   bool compose_disabled = false;
   bool composer_input_disabled = false;
   bool show_attach_button = false;
@@ -43,6 +51,12 @@ struct ChatScreenState {
   ui::String attachment_status;
   /** A send did not finish: the chip offers Retry / Discard (the staged ciphertext is kept). */
   bool attachment_failed = false;
+  /** The upload card: the bar's fill ("37%"), a small picture of what is sent (picture / video; empty: the type
+   *  badge instead), the badge's text ("MP3", as on the storage page), and Cancel pressed (bar stops, the ✕ dims). */
+  ui::String attachment_progress_width = "0%";
+  ui::String attachment_thumb;
+  ui::String attachment_type_label;
+  bool attachment_cancelling = false;
   /** The camera icon in the composer pill (phones; see ShowCaptureEntry). */
   bool show_capture = false;
   /** The microphone button: this chat can take a voice message (peer or group chat, voice supported here). */
@@ -81,6 +95,8 @@ struct ChatScreenState {
   bool show_call_actions = false;
   /** A group call goes on here that this device may join: the call button reads "Join" (V053). */
   bool call_joinable = false;
+  /** Phones: the bar under the header while that call may be joined ("" = no bar). */
+  ui::String call_bar_text;
   bool show_forget_memory = false;
   bool show_sync_with_peer = false;
   bool show_thread_menu = false;
@@ -121,15 +137,85 @@ struct ChatScreenState {
   ui::String queued_note;   // the line under it: why it waits ("Up to 3 chats answer at once — queued")
 };
 
+/** One headline of the phone Today page's "Today's briefs" widget. */
+struct HomeBriefRow {
+  ui::String title;
+  /** "site · 08:00". */
+  ui::String meta;
+};
+
+/** One widget drawn on the phone Home, in the user's order: wide (a row) or small (half a row). */
+struct HomeWidgetSlot {
+  ui::String id;
+  bool wide = false;
+};
+
+/** One person in Home's Favorites widget (avatar and name; a tap opens the chat). */
+struct HomeFavoriteRow {
+  ui::String contact_id;
+  ui::String title;
+  ui::String avatar_letter;
+  int avatar_tone = 0;
+  bool has_icon = false;
+  ui::String icon_src;
+  /** Not starred: a suggestion filling the first row (marked). */
+  bool suggested = false;
+};
+
+/** One row of the Edit Home sheet: a widget's name and its size note ("Wide" / "Small"). */
+struct HomeEditRow {
+  ui::String id;
+  ui::String name;
+  ui::String size;
+};
+
 /** The shell's chat side of its data model ("shell"): the chats list and the working set panel. */
 struct ChatShellState {
   std::vector<SessionDisplayRow> sessions;
+  /** AI conversations for the AI 助手 page (ThreadKind::Ai). Same row shape as `sessions`. */
+  std::vector<SessionDisplayRow> ai_sessions;
   /** Archived threads are kept out of the list; the entry row above it opens them. */
   int archived_count = 0;
   bool showing_archived = false;
+  /** The PP助手 page's own archived AI conversations (apart from the Chats ones above). */
+  int archived_count_ai = 0;
+  bool showing_archived_ai = false;
+  ui::String archived_entry_label_ai;
   ui::String archived_entry_label;
   /** Rows remain beyond the window the sidebar draws (the "Loading…" line). */
   bool sessions_more = false;
+  /** The search box above the list: rows are kept when their title or preview contains it. */
+  ui::String sessions_query;
+  /** The phone AI drawer's search box: the same match on the AI conversations (ai_sessions). */
+  ui::String ai_sessions_query;
+  /**
+   * Phone Today page (DESIGN-pp-ui 8.16, mockup 10-home-widgets): the date line and the widgets drawn, in the user's
+   * order (home_widgets), each with its own data below. A widget shows only when it has something (Favorites always).
+   */
+  ui::String home_date_label;
+  std::vector<HomeWidgetSlot> home_widgets;
+  std::vector<HomeFavoriteRow> home_favorites;
+  /** The 关注联系人 avatar's diameter and corner, e.g. "64dp" / "32dp" (FavoritesRowModel::AvatarDp of the window). */
+  ui::String home_fav_avatar = "64dp";
+  ui::String home_fav_avatar_radius = "32dp";
+  std::vector<SessionDisplayRow> home_recent;
+  int home_missed_calls = 0;
+  /** "Latest: Hongwei · Video · 16:20". */
+  ui::String home_calls_latest;
+  int home_mentions = 0;
+  /** "Hiking group · Fang: @you what time on Saturday?". */
+  ui::String home_mentions_where;
+  int home_new_people = 0;
+  /** Home's Security widget: the recovery phrase has been opened once (else it asks to write it down). */
+  bool home_security_ok = false;
+  /** Phone Home shows the 动态 widgets section (date, title, grid); off = minimal AI-first Home. */
+  bool home_show_dynamic = false;
+  std::vector<HomeBriefRow> home_brief;
+  /** Edit Home: the widgets on Home (in order) and the ones that can be added. */
+  std::vector<HomeEditRow> home_edit_on;
+  std::vector<HomeEditRow> home_edit_off;
+  /** The widget whose handle is being dragged in Edit Home ("" = none): its row is lifted. */
+  ui::String home_edit_dragging;
   bool working_set_active = false;
   ui::String working_set_title;
   ui::String working_set_subtitle;

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "common/CivilTime.h"
+#include "foundation/i18n/LocalizationService.h"
+#include "lib/messaging/AiThreadTitle.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -13,41 +15,6 @@
 namespace pbr {
 
 /** Pure text rules for a row in the sessions list (no RmlUi). */
-
-constexpr size_t kAiThreadTitleMaxChars = 24;
-
-/**
- * Title for an AI thread from the user's first message: whitespace collapsed, cut to
- * `kAiThreadTitleMaxChars` characters (UTF-8 aware) with an ellipsis. Empty when the message has no text.
- */
-inline std::string AiThreadTitleFromMessage(std::string_view message) {
-  std::string collapsed;
-  bool pending_space = false;
-  for (const char c : message) {
-    if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
-      pending_space = !collapsed.empty();
-      continue;
-    }
-    if (pending_space) {
-      collapsed += ' ';
-      pending_space = false;
-    }
-    collapsed += c;
-  }
-  size_t chars = 0;
-  size_t i = 0;
-  while (i < collapsed.size() && chars < kAiThreadTitleMaxChars) {
-    ++i;
-    while (i < collapsed.size() && (static_cast<unsigned char>(collapsed[i]) & 0xC0) == 0x80) {
-      ++i; // continuation bytes belong to the character just counted
-    }
-    ++chars;
-  }
-  if (i >= collapsed.size()) {
-    return collapsed;
-  }
-  return collapsed.substr(0, i) + "…";
-}
 
 constexpr size_t kSessionPreviewMaxChars = 120;
 
@@ -139,6 +106,20 @@ inline std::string SessionPreviewLine(std::string_view raw, const size_t max_cha
   return line;
 }
 
+/** A row's second line: the preview, or the placeholder when the thread has no text yet (so the row keeps its height). */
+struct SessionPreviewShown {
+  std::string text;
+  /** `text` is the placeholder: the row draws it quieter and a search ignores it. */
+  bool placeholder = false;
+};
+
+inline SessionPreviewShown ResolveSessionPreview(std::string line, std::string placeholder) {
+  if (line.empty()) {
+    return {std::move(placeholder), true};
+  }
+  return {std::move(line), false};
+}
+
 /**
  * The AI thread a Home chip should continue instead of starting another one: the most recently updated
  * AI thread whose title is the chip's own (titles come from the first message, and a chip always sends
@@ -164,13 +145,33 @@ std::string FindChipThreadId(const Threads& threads, std::string_view chip_messa
 }
 
 /**
- * When a session was last active, for the list row: date and time within this year ("10/3 14:05"),
- * the full date for earlier years ("2025/12/31"). Empty for an unset timestamp.
+ * When a session was last active, for the list row: the time today ("14:05"), "Yesterday", the weekday name for
+ * 2-6 days ago ("Wednesday"), the date earlier this year ("10/3"), the full date for earlier years ("2025/12/31").
+ * Empty for an unset timestamp.
  */
 inline std::string SessionDateLabel(const std::tm& when, const std::tm& now) {
   char buf[64];
-  if (when.tm_year == now.tm_year) {
-    std::snprintf(buf, sizeof(buf), "%d/%d %02d:%02d", when.tm_mon + 1, when.tm_mday, when.tm_hour, when.tm_min);
+  // Whole days between the two dates, and the weekday, from noon copies (tm_wday / tm_yday of the inputs may be unset).
+  auto noon = [](std::tm t) {
+    t.tm_hour = 12;
+    t.tm_min = 0;
+    t.tm_sec = 0;
+    t.tm_isdst = -1;
+    const std::time_t secs = std::mktime(&t);
+    return std::pair<std::time_t, int>(secs, t.tm_wday);
+  };
+  const auto [when_noon, when_wday] = noon(when);
+  const auto [now_noon, now_wday] = noon(now);
+  (void)now_wday;
+  const long days = static_cast<long>((now_noon - when_noon + 43200) / 86400);
+  if (when.tm_year == now.tm_year && when.tm_yday == now.tm_yday) {
+    std::snprintf(buf, sizeof(buf), "%02d:%02d", when.tm_hour, when.tm_min);
+  } else if (days == 1) {
+    return Tr("chat.date.yesterday");
+  } else if (days >= 2 && days <= 6) {
+    return Tr("home.weekday." + std::to_string(when_wday));
+  } else if (when.tm_year == now.tm_year) {
+    std::snprintf(buf, sizeof(buf), "%d/%d", when.tm_mon + 1, when.tm_mday);
   } else {
     std::snprintf(buf, sizeof(buf), "%d/%d/%d", when.tm_year + 1900, when.tm_mon + 1, when.tm_mday);
   }
