@@ -109,7 +109,11 @@ Roe<std::vector<ControlLaneCopy>> ControlLane::CopiesFor(const std::string& peer
   // whichever of them opened theirs, each reads its own (B186). The caller's account-pair opener is not theirs.
   std::vector<ControlLaneCopy> copies;
   std::optional<Error> failure;
+  const auto self = own_keys_.DevicePeerId();
   for (const AccountCardDevice& device : devices) {
+    if (self && device.peer_id == *self) {
+      continue; // a send to our own account (a card ask to a sibling): no copy for this device
+    }
     auto session = keys_.ResolveDevice(peer_identity, device);
     if (!session) {
       log().warning << "control lane: no session with device " << device.peer_id << " of " << peer_identity << ": "
