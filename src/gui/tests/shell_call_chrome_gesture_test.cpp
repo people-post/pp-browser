@@ -3,6 +3,7 @@
 // (ShellHost maps on_expand to minimize there). A real context with the gesture attached, the page's shape as in
 // ShellCallChromeRml / components.rcss: a drag over the members must never shrink the call, a tap still reaches them.
 #include "gui/shell/ShellCallChromeGesture.h"
+#include "gui/shell/ShellCallChromeRml.h"
 
 #include <ui/base/SystemInterface.h>
 #include <ui/core/Core.h>
@@ -463,6 +464,142 @@ TEST_F(ShellCallChipDragTest, ReflowKeepsADroppedChipInItsBandAsItGrows) {
   Frame(0.0);
   EXPECT_FLOAT_EQ(At().y, 800.f - 72.f - 80.f);
   EXPECT_EQ(Local("right"), "12dp");
+
+  // It reads the chip's box again only every 250ms (not each frame): a change shows within that.
+  chip_->SetProperty("height", "100px");
+  Frame(0.0);
+  gesture_.Reflow(call_);
+  Frame(0.0);
+  EXPECT_FLOAT_EQ(At().y, 800.f - 72.f - 80.f) << "within 250ms of the last look";
+  Frame(0.3);
+  gesture_.Reflow(call_);
+  Frame(0.0);
+  EXPECT_FLOAT_EQ(At().y, 800.f - 72.f - 100.f);
+}
+
+// A slide whose end never comes (no Animationend: the animation did not run, or the chip was hidden) is ended by the
+// frame's Reflow 0.4s after the drop: anchored on its side, and its rebuild no longer held.
+TEST_F(ShellCallChipDragTest, ASlideWhoseEndNeverComesIsEndedByReflow) {
+  Drag(300, 40, 350, 400);
+  ASSERT_TRUE(placed_.has_value());
+  ASSERT_TRUE(gesture_.IsSettling());
+  call_.minimized_side = placed_->side;
+  call_.minimized_y_permille = placed_->y_permille;
+  // No context update from here: the animation never advances, so its Animationend never comes.
+  clock_.now += 0.2;
+  gesture_.Reflow(call_);
+  EXPECT_TRUE(gesture_.IsSettling()) << "not before its deadline";
+  EXPECT_TRUE(KeepMinimizedChipOnRemount(call_, chip_, gesture_));
+  clock_.now += 0.25;
+  gesture_.Reflow(call_);
+  EXPECT_FALSE(gesture_.IsSettling());
+  EXPECT_EQ(settled_, 1);
+  EXPECT_EQ(Local("right"), "12dp");
+  EXPECT_EQ(Local("left"), "auto");
+  EXPECT_FALSE(KeepMinimizedChipOnRemount(call_, chip_, gesture_));
+}
+
+// The chip as ShellCallChromeRml mounts it (inside its full-screen layer, #shell-call-chrome-root), the gesture attached
+// the way ShellHost does (CallChromeGestureElement): the drop, the slide, the hold and the rendered place are all the
+// chip's; the layer is never moved.
+constexpr const char* kMountHead = R"(<rml><head><style>
+body { display: block; width: 400px; height: 800px; margin: 0; }
+div, p { display: block; }
+#shell-call-in-progress-mount { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+.shell-layer-call-minimized { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+.shell-call-minimized-chip { position: absolute; width: 180px; height: 56px; overflow: hidden; }
+.shell-call-minimized-chip--tr { top: 12dp; right: 12dp; }
+</style></head><body><div id="shell-call-in-progress-mount">)";
+
+class ShellCallChipMountedTest : public ShellCallChipDragTest {
+protected:
+  void SetUp() override {
+    ui::SetRenderInterface(&renderer_);
+    ui::SetSystemInterface(&clock_);
+    initialized_ = ui::Initialise();
+    ASSERT_TRUE(initialized_);
+    context_ = ui::CreateContext("call-chip-drag-test", {400, 800});
+    ASSERT_NE(context_, nullptr);
+    state_.call_in_progress.active = true;
+    state_.call_in_progress.mode = CallChromeMode::Minimized;
+    call_ = state_.call_in_progress;
+    document_ =
+        context_->LoadDocumentFromMemory(std::string(kMountHead) + CallInProgressRml(state_) + "</div></body></rml>");
+    ASSERT_NE(document_, nullptr);
+    document_->Show();
+    context_->Update();
+    layer_ = document_->GetElementById("shell-call-chrome-root");
+    chip_ = document_->GetElementById("shell-call-minimized-chip");
+    ASSERT_NE(layer_, nullptr);
+    ASSERT_NE(chip_, nullptr);
+    ASSERT_EQ(chip_->GetParentNode(), layer_);
+  }
+
+  void Attach() {
+    ShellCallChromeGesture::Callbacks callbacks;
+    callbacks.on_chip_place = [this](int side, int y_permille) { placed_ = CallChipPlace{side, y_permille}; };
+    callbacks.on_chip_settled = [this]() { ++settled_; };
+    callbacks.on_restore = [this]() { ++restores_; };
+    gesture_.Attach(CallChromeGestureElement(document_, CallChromeMode::Minimized), context_, CallChromeMode::Minimized,
+                    std::move(callbacks));
+  }
+
+  ShellState state_;
+  ui::Element* layer_ = nullptr;
+};
+
+TEST_F(ShellCallChipMountedTest, TheGestureMovesTheChipNotItsLayer) {
+  EXPECT_EQ(CallChromeGestureElement(document_, CallChromeMode::Minimized), chip_);
+  EXPECT_EQ(CallChromeGestureElement(document_, CallChromeMode::Expanded), layer_);
+  Attach();
+  EXPECT_TRUE(gesture_.AttachedTo(chip_));
+  EXPECT_FALSE(gesture_.AttachedTo(layer_));
+  EXPECT_FLOAT_EQ(At().x, 208.f);
+  EXPECT_FLOAT_EQ(At().y, 12.f);
+
+  Drag(300, 40, 350, 400);
+  ASSERT_TRUE(placed_.has_value());
+  EXPECT_EQ(placed_->side, CallChipDock::kSideRight);
+  EXPECT_EQ(placed_->y_permille, 545) << "measured on the 180x56 chip in the 400x800 layer";
+  EXPECT_EQ(Local("left"), "258dp");
+  EXPECT_EQ(Local("width"), "180dp");
+  EXPECT_FALSE(chip_->IsClassSet("shell-call-minimized-chip--tr"));
+  EXPECT_TRUE(layer_->GetLocalStyleProperties().empty()) << "no inline left / top / width / transform on the layer";
+
+  // The hold, as ShellHost asks it (the chip looked up by id), while it slides and the state lags.
+  EXPECT_TRUE(KeepMinimizedChipOnRemount(call_, document_->GetElementById("shell-call-minimized-chip"), gesture_));
+  Frame(0.0);
+  EXPECT_FLOAT_EQ(At().x, 258.f);
+  Frame(0.3);
+  EXPECT_EQ(settled_, 1) << "the chip's own Animationend";
+  EXPECT_EQ(Local("right"), "12dp");
+  Frame(0.0);
+  EXPECT_TRUE(layer_->GetLocalStyleProperties().empty());
+  EXPECT_FLOAT_EQ(layer_->GetAbsoluteOffset(ui::BoxArea::Border).x, 0.f);
+  EXPECT_FLOAT_EQ(layer_->GetBox().GetSize(ui::BoxArea::Border).x, 400.f);
+  EXPECT_FLOAT_EQ(At().x, 208.f);
+  const float docked_top = At().y;
+
+  // The place comes back and the chip is rebuilt from it (RemountCallChromeNow: measure, detach, mount): the rendered
+  // inline place is on the chip, where it already was; the layer has none.
+  state_.call_in_progress.minimized_side = placed_->side;
+  state_.call_in_progress.minimized_y_permille = placed_->y_permille;
+  call_ = state_.call_in_progress;
+  EXPECT_FALSE(KeepMinimizedChipOnRemount(call_, chip_, gesture_));
+  state_.call_chip_area_height_dp = 800.f;
+  state_.call_chip_height_dp = chip_->GetBox().GetSize(ui::BoxArea::Border).y;
+  gesture_.Detach();
+  document_->GetElementById("shell-call-in-progress-mount")->SetInnerRML(CallInProgressRml(state_));
+  context_->Update();
+  layer_ = document_->GetElementById("shell-call-chrome-root");
+  chip_ = document_->GetElementById("shell-call-minimized-chip");
+  ASSERT_NE(chip_, nullptr);
+  EXPECT_EQ(Local("right"), "12dp");
+  EXPECT_EQ(Local("left"), "auto");
+  EXPECT_EQ(Local("bottom"), "auto");
+  EXPECT_TRUE(layer_->GetLocalStyleProperties().empty()) << "the rendered place is the chip's, not the layer's";
+  EXPECT_FLOAT_EQ(At().x, 208.f);
+  EXPECT_NEAR(At().y, docked_top, 0.1f);
 }
 
 } // namespace

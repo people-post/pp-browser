@@ -2472,18 +2472,10 @@ void ShellHost::AttachCallChromeGesture() {
   if (!doc) {
     return;
   }
-  ui::Element* root = doc->GetElementById("shell-call-chrome-root");
-  if (!root && state_.call_in_progress.mode == CallChromeMode::Minimized) {
-    root = doc->GetElementById("shell-call-minimized-chip");
-  }
+  // Minimized: the chip itself, so drag / tap don't need the full-screen layer and the chip is what is placed.
+  ui::Element* root = CallChromeGestureElement(doc, state_.call_in_progress.mode);
   if (!root) {
     return;
-  }
-  // Minimized: attach to the chip so drag/tap don't require the full-screen layer.
-  if (state_.call_in_progress.mode == CallChromeMode::Minimized) {
-    if (ui::Element* chip = doc->GetElementById("shell-call-minimized-chip")) {
-      root = chip;
-    }
   }
   ShellCallChromeGesture::Callbacks callbacks;
   callbacks.on_minimize = [this]() {
