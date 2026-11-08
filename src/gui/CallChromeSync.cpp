@@ -60,7 +60,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
   // Button *presence* via data-if still remounts (same class of issue as ring layer appear).
   // Icon toggles (muted / speaker_on / camera_on) use DirtyOnly — DataViewIf + MountInner
   // model flush keep those in sync.
-  // Mode / minimized corner change the markup tree → Remount (V031).
+  // Mode / the minimized chip's place change the markup tree → Remount (V031, #166).
   if (synced.in_call_show_speaker != next.in_call_show_speaker ||
       synced.in_call_show_camera != next.in_call_show_camera || synced.in_call_show_flip != next.in_call_show_flip ||
       synced.in_call_show_invite != next.in_call_show_invite ||
@@ -71,7 +71,8 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
       synced.in_call_stage_visible != next.in_call_stage_visible || synced.in_call_mode != next.in_call_mode ||
       synced.in_call_spotlight != next.in_call_spotlight ||
       synced.in_call_spotlight_fill != next.in_call_spotlight_fill ||
-      synced.in_call_minimized_corner != next.in_call_minimized_corner ||
+      synced.in_call_minimized_side != next.in_call_minimized_side ||
+      synced.in_call_minimized_y_permille != next.in_call_minimized_y_permille ||
       synced.ring_show_pricing != next.ring_show_pricing ||
       synced.ring_accept_charge_enabled != next.ring_accept_charge_enabled) {
     return CallChromeUpdate::Remount;
@@ -148,6 +149,10 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                              synced.in_call_notice_text != next.in_call_notice_text ||
                              synced.in_call_notice_warn != next.in_call_notice_warn ||
                              synced.in_call_notice_fading != next.in_call_notice_fading ||
+                             synced.in_call_reconnect_text != next.in_call_reconnect_text ||
+                             synced.in_call_reconnect_ok != next.in_call_reconnect_ok ||
+                             synced.in_call_reconnect_fading != next.in_call_reconnect_fading ||
+                             synced.in_call_reconnect_dim != next.in_call_reconnect_dim ||
                              synced.in_call_show_debug_subtitle != next.in_call_show_debug_subtitle ||
                              synced.in_call_debug_subtitle != next.in_call_debug_subtitle ||
                              synced.in_call_speaking != next.in_call_speaking;
@@ -198,6 +203,10 @@ std::vector<const char*> CallChromeChangedVariables(const CallInProgressState& b
   add(before.notice_text != after.notice_text, "call_in_progress_notice_text");
   add(before.notice_warn != after.notice_warn, "call_in_progress_notice_warn");
   add(before.notice_fading != after.notice_fading, "call_in_progress_notice_fading");
+  add(before.reconnect_text != after.reconnect_text, "call_in_progress_reconnect_text");
+  add(before.reconnect_ok != after.reconnect_ok, "call_in_progress_reconnect_ok");
+  add(before.reconnect_fading != after.reconnect_fading, "call_in_progress_reconnect_fading");
+  add(before.reconnect_dim != after.reconnect_dim, "call_in_progress_reconnect_dim");
   add(before.show_debug_subtitle != after.show_debug_subtitle, "call_in_progress_show_debug_subtitle");
   add(before.debug_subtitle != after.debug_subtitle, "call_in_progress_debug_subtitle");
   // The phone page's speaking rings: only the arrays whose rows' ring changed.

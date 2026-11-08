@@ -1,7 +1,10 @@
 #include "gui/shell/ShellCallChromeRml.h"
 
 #include "foundation/i18n/LocalizationService.h"
+#include "lib/ui/CallChipDock.h"
 
+#include <algorithm>
+#include <cstdio>
 #include <sstream>
 
 namespace pbr {
@@ -193,18 +196,19 @@ void AppendResult(std::ostringstream& out) {
 }
 
 /**
- * The steps before connect, one at a time (#11): the ones passed as short ✓ lines, then the current one with its
- * moving dot; a step that has not happened yet is not shown.
+ * The connection steps before connect (3 for a group, up to 5 for a 1:1 call), all always shown: the ones passed as ✓ (done), the one in progress with
+ * its moving dot (current), and the ones not reached yet as plain dots.
  */
-void AppendSteps(std::ostringstream& out, const int stage) {
+void AppendSteps(std::ostringstream& out, const int stage, const int count) {
   out << "<div class=\"call-phone-steps\">";
   const char* vars[] = {"call_in_progress_story_step1", "call_in_progress_story_step2",
-                        "call_in_progress_story_step3"};
-  for (int i = 0; i <= stage && i < 3; ++i) {
-    // Step 1 is current while the other side is being called, done once answered; step 2 is current after.
+                        "call_in_progress_story_step3", "call_in_progress_story_step4",
+                        "call_in_progress_story_step5"};
+  for (int i = 0; i < count && i < 5; ++i) {
     const bool done = i < stage;
-    out << "<div class=\"call-phone-step" << (done ? " call-phone-step--done" : " call-phone-step--current")
-        << "\"><div class=\"call-phone-step-dot\">";
+    const bool current = i == stage;
+    out << "<div class=\"call-phone-step"
+        << (done ? " call-phone-step--done" : (current ? " call-phone-step--current" : "")) << "\"><div class=\"call-phone-step-dot\">";
     if (done) {
       out << "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg>";
     }
@@ -528,7 +532,7 @@ std::string CallPhoneRml(const ShellState& state) {
   if (group) {
     out << "<div class=\"call-phone-head\">";
     out << "<p class=\"call-phone-group-name\">{{call_in_progress_phone_title}}</p>";
-    out << "<div class=\"call-phone-sub-row\"><p class=\"call-phone-sub\">{{call_in_progress_subtitle}}</p>";
+    out << "<div class=\"call-phone-sub-row\"><p class=\"call-phone-sub\" data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">{{call_in_progress_subtitle}}</p>";
     AppendSignalSlot(out, "call-phone-signal--compact");
     out << "</div>";
     AppendHints(out);
@@ -551,7 +555,7 @@ std::string CallPhoneRml(const ShellState& state) {
     }
     if (call.story_active) {
       out << "<div class=\"call-phone-story call-phone-story--card call-phone-story--group\"><div class=\"call-phone-card\">";
-      AppendSteps(out, call.story_stage);
+      AppendSteps(out, call.story_stage, call.story_step_count);
       out << "</div></div>";
     }
     out << "</div>";
@@ -566,7 +570,7 @@ std::string CallPhoneRml(const ShellState& state) {
     out << "<div class=\"call-phone-video-body\"><div class=\"call-phone-who\">";
     out << "<p class=\"call-phone-who-name\">{{call_in_progress_phone_title}}</p>";
     AppendHoldPill(out, "call_in_progress_on_hold", " call-hold-pill--who");
-    out << "<p class=\"call-phone-who-status\">{{call_in_progress_subtitle}}</p>";
+    out << "<p class=\"call-phone-who-status\" data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">{{call_in_progress_subtitle}}</p>";
     AppendResult(out);
     AppendSignalSlot(out, "call-phone-signal--compact");
     AppendHints(out);
@@ -582,7 +586,7 @@ std::string CallPhoneRml(const ShellState& state) {
     out << "<div class=\"call-phone-story" << (video_layout ? " call-phone-story--card" : "") << "\">";
     out << (video_layout ? "<div class=\"call-phone-card\">" : "");
     AppendPair(out, call);
-    AppendSteps(out, call.story_stage);
+    AppendSteps(out, call.story_stage, call.story_step_count);
     AppendHints(out);
     out << (video_layout ? "</div>" : "");
     out << "</div>";
@@ -592,7 +596,8 @@ std::string CallPhoneRml(const ShellState& state) {
                  call.peer_avatar_letter.c_str(), call.peer_avatar_tone);
     out << "<p class=\"call-phone-name\">{{call_in_progress_phone_title}}</p>";
     AppendHoldPill(out, "call_in_progress_on_hold", " call-hold-pill--hero");
-    out << "<p class=\"call-phone-status\">{{call_in_progress_subtitle}}</p>";
+    out << "<p class=\"call-phone-status\" data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">"
+           "{{call_in_progress_subtitle}}</p>";
     AppendResult(out);
     AppendSignalSlot(out, "");
     AppendHints(out);
@@ -603,6 +608,14 @@ std::string CallPhoneRml(const ShellState& state) {
     AppendTips(out);
   }
 
+  // The reconnect capsule (#171) sits at a fixed place just above the button bar; the call page stays as it is.
+  out << "<div class=\"call-phone-reconnect-slot\"><div class=\"call-phone-reconnect\" "
+         "data-if=\"call_in_progress_reconnect_text != ''\" "
+         "data-class-call-phone-reconnect--ok=\"call_in_progress_reconnect_ok\" "
+         "data-class-call-phone-reconnect--fading=\"call_in_progress_reconnect_fading\">"
+         "<span class=\"call-phone-reconnect-icon\"><svg data-attr-src=\"call_in_progress_reconnect_ok ? "
+         "'../icons/v2/check.svg' : '../icons/v2/info.svg'\" width=\"14\" height=\"14\"></svg></span>"
+         "<p class=\"call-phone-reconnect-text\">{{call_in_progress_reconnect_text}}</p></div></div>";
   AppendGroupOffer(out, call, true);
   AppendGuestActions(out, call, true);
   AppendControls(out, call, video_layout);
@@ -674,6 +687,23 @@ std::string CallRingRml(const ShellState& state) {
          ">{{call_ring_accept_charge_hint}}</p>";
   out << "</div></div></div>";
   return out.str();
+}
+
+float MinimizedChipTopDp(const ShellState& state) {
+  const CallInProgressState& call = state.call_in_progress;
+  const CallChipLayout& layout = state.call_chip_layout;
+  const CallChipPlace place{call.minimized_side, call.minimized_y_permille};
+  const CallChipArea area{state.shell_width_dp, layout.area_height_dp};
+  const bool heights_known = layout.area_height_dp > 0.f && layout.chip_height_dp > 0.f;
+  if (layout.top_dp > 0.f && layout.place == place) {
+    return heights_known
+               ? std::clamp(layout.top_dp, CallChipDock::MinTop(), CallChipDock::MaxTop(area, layout.chip_height_dp))
+               : layout.top_dp;
+  }
+  if (heights_known) {
+    return CallChipDock::Place(place, area, 0.f, layout.chip_height_dp).top_dp;
+  }
+  return -1.f;
 }
 
 std::string CallInProgressRml(const ShellState& state) {
@@ -755,24 +785,30 @@ std::string CallInProgressRml(const ShellState& state) {
   std::ostringstream out;
 
   if (call.mode == CallChromeMode::Minimized) {
-    const char* corner_class = "shell-call-minimized-chip--tr";
-    switch (call.minimized_corner) {
-    case 1:
-      corner_class = "shell-call-minimized-chip--tl";
-      break;
-    case 2:
-      corner_class = "shell-call-minimized-chip--br";
-      break;
-    case 3:
-      corner_class = "shell-call-minimized-chip--bl";
-      break;
-    default:
-      break;
-    }
     out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-minimized\" "
            "data-model=\"window\">";
-    out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row " << corner_class
-        << "\">";
+    if (call.minimized_side == CallChipDock::kSideDefault) {
+      // Never dragged this call: the default top-right corner, exactly as before #166.
+      out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row "
+             "shell-call-minimized-chip--tr\">";
+    } else {
+      // #166: dropped on a side. Anchored on its own side, so a chip that grows (the quality words, the mute icon)
+      // grows away from the edge, never past it. Its top: where ShellCallChromeGesture last put it for this place
+      // (kept in the band), else its height's share of the band (CallChipDock::Place) with the heights last measured;
+      // with no height known at all, no top (never the band's top: the chip would show there first, B-#166 device).
+      const float top_dp = MinimizedChipTopDp(state);
+      char top[32] = "";
+      if (top_dp >= 0.f) {
+        std::snprintf(top, sizeof(top), "top:%.1fdp;", top_dp);
+      }
+      char style[112];
+      if (call.minimized_side == CallChipDock::kSideLeft) {
+        std::snprintf(style, sizeof(style), "left:%.0fdp;right:auto;%sbottom:auto;", CallChipDock::kEdgeDp, top);
+      } else {
+        std::snprintf(style, sizeof(style), "right:%.0fdp;left:auto;%sbottom:auto;", CallChipDock::kEdgeDp, top);
+      }
+      out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row\" style=\"" << style << "\">";
+    }
     out << "<div class=\"shell-call-minimized-main\">";
     out << "<p class=\"text-sm shell-call-minimized-title\">{{call_in_progress_title}}</p>";
     out << "<p class=\"text-xs shell-call-minimized-subtitle\">{{call_in_progress_subtitle}}</p>";

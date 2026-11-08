@@ -20,6 +20,7 @@ pp_browser_add_feature_library(pp_gui
     chat/ChatActionLabel.cpp
     chat/DeliveryNoticeText.cpp
     chat/MessageTimeLabel.cpp
+    chat/MessagingReadyTasks.cpp
     chat/OutgoingAttachmentPrep.cpp
     chat/TranscriptRml.cpp
     chat/VoiceBubble.cpp
@@ -78,6 +79,7 @@ pp_browser_add_feature_library(pp_gui
     shell/ShellFavoritesSnap.cpp
     shell/ShellPageSheetGesture.cpp
     shell/ShellSwipeBackGesture.cpp
+    shell/ShellDrawerOpenGesture.cpp
     shell/SessionSwipeGesture.cpp
     BlobQuotaRecoveryFlow.cpp
     UserFeedback.cpp

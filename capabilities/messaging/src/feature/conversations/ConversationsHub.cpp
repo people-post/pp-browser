@@ -392,6 +392,21 @@ void ConversationsHub::OnLocalNetworkChanged(const NetworkChange& change) {
   for (HubParticipant* participant : Participants()) {
     participant->OnLocalNetworkChanged(change, local ? &*local : nullptr);
   }
+  {
+    // A tunnel with nothing under it (airplane mode, VPN still on) counts as offline for the status line.
+    const bool linked = change.current.online && !change.current.tunnel_only;
+    const int online = linked ? 1 : 0;
+    if (network_online_.exchange(online) != online) {
+      std::function<void(bool, bool)> callback;
+      {
+        std::lock_guard lock(network_online_cb_mu_); // the monitor thread vs. Shutdown's reset
+        callback = on_network_online_changed_;
+      }
+      if (callback) {
+        callback(true, linked);
+      }
+    }
+  }
   // Offline or an unknown link keeps the last known kind of network.
   if (const AutoDownloadNetwork network = AutoDownloadNetworkOf(change.current, host_.mobile);
       network != AutoDownloadNetwork::Unknown) {
@@ -1500,6 +1515,11 @@ bool ConversationsHub::IsHelpNetworkEnabled() const {
 
 void ConversationsHub::SetOnReachabilityUpdated(std::function<void()> callback) {
   on_reachability_updated_ = std::move(callback);
+}
+
+void ConversationsHub::SetOnNetworkOnlineChanged(std::function<void(bool known, bool online)> callback) {
+  std::lock_guard lock(network_online_cb_mu_);
+  on_network_online_changed_ = std::move(callback);
 }
 
 void ConversationsHub::SetOnStoredAttachmentsChanged(std::function<void()> callback) {

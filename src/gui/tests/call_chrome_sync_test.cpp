@@ -238,15 +238,28 @@ TEST(CallChromeSyncTest, ModeChangeRemounts) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
-TEST(CallChromeSyncTest, MinimizedCornerRemounts) {
+// #166: the chip's place is written into its markup (ShellCallChromeRml): a new side or a new height remounts.
+TEST(CallChromeSyncTest, MinimizedPlaceRemounts) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
   synced.in_call_id = "c1";
   synced.in_call_mode = pbr::CallChromeMode::Minimized;
-  synced.in_call_minimized_corner = 0;
+  synced.in_call_minimized_side = 0;
+  synced.in_call_minimized_y_permille = 0;
   pbr::CallChromeLayer next = synced;
-  next.in_call_minimized_corner = 2;
-  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  next.in_call_minimized_side = 1;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount) << "first drop";
+
+  synced = next;
+  next.in_call_minimized_side = 2;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount) << "the other side";
+
+  synced = next;
+  next.in_call_minimized_y_permille = 640;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount) << "same side, new height";
+
+  synced = next;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::None) << "unchanged";
 }
 
 TEST(CallChromeSyncTest, MuteUnderSameModeDirties) {

@@ -575,19 +575,33 @@ void ChatMenus::OpenThreadActions(ui::Event& ev) {
   ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, chat_.thread_title.c_str());
 }
 
+bool StartCallWith(const CallActionsPorts& call_actions, const std::string& thread_id, bool call_joinable,
+                   bool want_video) {
+  if (thread_id.empty() || !call_actions.start_call) {
+    return false;
+  }
+  if (call_joinable) {
+    (void)call_actions.start_call(thread_id, false);  // Join: into the call that goes on, no voice / video choice
+    return true;
+  }
+  const bool video_available = !call_actions.video_call_available || call_actions.video_call_available();
+  (void)call_actions.start_call(thread_id, want_video && video_available);
+  return true;
+}
+
+void ChatMenus::CallBack(const std::string& video_arg) {
+  (void)StartCallWith(call_actions_, host_.ActiveThreadId(), chat_.call_joinable, video_arg == "1");
+}
+
 void ChatMenus::StartCall(ui::Event& ev) {
   const std::string thread_id = host_.ActiveThreadId();
   if (thread_id.empty() || !call_actions_.start_call) {
     return;
   }
   auto start_call = call_actions_.start_call;
-  if (chat_.call_joinable) {
-    (void)start_call(thread_id, false);  // Join: into the call that goes on, no voice / video choice
-    return;
-  }
   const bool video_available = !call_actions_.video_call_available || call_actions_.video_call_available();
-  if (!video_available) {
-    (void)start_call(thread_id, false);
+  if (chat_.call_joinable || !video_available) {
+    (void)StartCallWith(call_actions_, thread_id, chat_.call_joinable, false);
     return;
   }
 

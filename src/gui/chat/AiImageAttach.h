@@ -3,9 +3,9 @@
 #include "feature/ai/AgentSession.h"
 #include "lib/messaging/AiImageRef.h"
 #include "foundation/platform/AiImagePrep.h"
+#include "gui/chat/TranscriptRml.h"
 
 #include <string>
-#include <utility>
 
 namespace pbr {
 
@@ -46,29 +46,16 @@ inline const char* AiImageErrorKindKey(const std::string& error_kind) {
   return nullptr;
 }
 
-/** Longest edge of an image shown in a bubble, in dp. */
-constexpr int kAiImageBubbleMaxDp = 240;
-/** Left + right padding of `.bubble` (14dp each, border-box), added to the image width for the bubble's min-width. */
-constexpr int kBubbleHorizontalPaddingDp = 28;
-
-/** `width` x `height` scaled down (never up) to fit a kAiImageBubbleMaxDp square, keeping the aspect ratio. */
-inline std::pair<int, int> AiImageBubbleSize(const int width, const int height) {
-  const int longest = width > height ? width : height;
-  if (width <= 0 || height <= 0 || longest <= kAiImageBubbleMaxDp) {
-    return {width, height};
-  }
-  const auto scale = [longest](const int side) {
-    const int scaled = side * kAiImageBubbleMaxDp / longest;
-    return scaled > 0 ? scaled : 1;
-  };
-  return {scale(width), scale(height)};
-}
+/** The picture bubble's frame round the picture (`.bubble-user--picture` padding, components.rcss). */
+inline constexpr int kAiPictureFrameDp = 3;
 
 /**
  * Rewrites the bubble of a stored image question ("[Image] <question>", see kAiImageTurnMarker).
- * `image_src` non-empty: the marker becomes a thumbnail (`width` x `height` are the image's pixels) above the
- * question. Empty (no stored image, or the profile is locked): the marker is shown as `marker_label`.
- * Anything else is returned as is.
+ * `image_src` non-empty: the bubble becomes a picture bubble like a chat's (B181, FitPictureInBubble): the picture
+ * fitted inside 200 x 240dp (`width` x `height` are its pixels), in a clip box with rounded corners (the engine does
+ * not round an <img>), the question under it; the bubble is exactly as wide as the picture plus its 3dp frame, so the
+ * question wraps inside it and nothing sticks out. Empty (no stored image, or the profile is locked): the marker is
+ * shown as `marker_label`. Anything else is returned as is.
  */
 inline std::string DecorateAiImageBubble(std::string rml, const std::string& image_src, const int width,
                                          const int height, const std::string& marker_label) {
@@ -78,24 +65,35 @@ inline std::string DecorateAiImageBubble(std::string rml, const std::string& ima
     return rml;
   }
   const std::string head = "<p class=\"bubble-text\">";
-  // Explicit size: with only max-width/max-height the image box kept its full width and ran out of the bubble.
-  const auto [shown_w, shown_h] = AiImageBubbleSize(width, height);
-  const std::string size = shown_w > 0 && shown_h > 0 ? " style=\"width: " + std::to_string(shown_w) +
-                                                            "dp; height: " + std::to_string(shown_h) + "dp;\""
-                                                      : std::string();
-  const std::string replacement = image_src.empty()
-                                      ? head + marker_label + " "
-                                      : "<img class=\"chat-ai-image\" src=\"" + image_src + "\"" + size + "/>" + head;
-  rml.replace(at, anchor.size(), replacement);
-  // The user bubble shrinks to its text; a block image wider than the question would stick out of it
-  // (and out of the window, the bubble being right-aligned). Make the bubble at least as wide as the image.
-  if (!image_src.empty() && shown_w > 0) {
-    const std::string bubble = "<div class=\"bubble bubble-user\"";
-    if (const size_t open = rml.rfind(bubble, at); open != std::string::npos) {
-      rml.insert(open + bubble.size(),
-                 " style=\"min-width: " + std::to_string(shown_w + kBubbleHorizontalPaddingDp) + "dp;\"");
-    }
+  if (image_src.empty()) {
+    rml.replace(at, anchor.size(), head + marker_label + " ");
+    return rml;
   }
+  const PictureBubbleSize fit = FitPictureInBubble(width, height);
+  const std::string size = fit.width_dp > 0 ? " style=\"width: " + std::to_string(fit.width_dp) + "dp; height: " +
+                                                  std::to_string(fit.height_dp) + "dp;\""
+                                            : std::string();
+  const std::string img_size = fit.width_dp > 0 ? " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" +
+                                                      std::to_string(fit.height_dp) + "\""
+                                                : std::string();
+  rml.replace(at, anchor.size(),
+              "<div class=\"chat-ai-image-clip\"" + size + "><img class=\"chat-ai-image\" src=\"" + image_src + "\"" +
+                  img_size + "/></div>" + head);
+  // The user bubble (its class may carry more names, e.g. the tail's host): a picture bubble, as wide as the picture.
+  const std::string bubble = "<div class=\"bubble bubble-user";
+  const size_t open = rml.rfind(bubble, at);
+  if (open == std::string::npos) {
+    return rml;
+  }
+  const size_t class_end = rml.find('"', open + std::string("<div class=\"").size());
+  if (class_end == std::string::npos || class_end > at) {
+    return rml;
+  }
+  std::string extra = " bubble-user--picture\"";
+  if (fit.width_dp > 0) {
+    extra += " style=\"width: " + std::to_string(fit.width_dp + 2 * kAiPictureFrameDp) + "dp;\"";
+  }
+  rml.replace(class_end, 1, extra);
   return rml;
 }
 

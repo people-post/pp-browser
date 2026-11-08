@@ -55,4 +55,8 @@
         <p class="text muted settings-help group-foot">{{i18n:settings.about.advanced.help}}</p>
         <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
                 data-event-click="open_ui_perf_test()">{{i18n:dev.perf.row}}</button>
+        <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
+                data-event-click="simulate_chats_link_offline()">{{i18n:dev.link.sim_offline}}</button>
+        <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
+                data-event-click="simulate_chats_link_online()">{{i18n:dev.link.sim_online}}</button>
       </div>

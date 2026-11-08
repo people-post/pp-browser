@@ -16,6 +16,8 @@
 #include "foundation/platform/PlatformUserHints.h"
 #include "common/Localized.h"
 #include "lib/net/BriefGuestLlmClient.h"
+#include "lib/net/HttpClient.h"
+#include "domain/registration/BriefLlmKeyRenewal.h"
 
 #include "foundation/data/ConfigSecretsStore.h"
 #include "gui/onboarding/OnboardingController.h"
@@ -163,6 +165,24 @@ namespace pbr {
 
 namespace {
 
+/** The Brief key store over the facade: every write is one modify under the identity store's lock. */
+BriefLlmKeyStore MakeBriefLlmKeyStore(ConversationsFacade& facade) {
+  return BriefLlmKeyStore{
+      .get = [&facade]() { return facade.GetIdentity(); },
+      .modify = [&facade](const std::function<bool(LocalIdentity&)>& change) -> Roe<void> {
+        if (auto changed = facade.ModifyLocalIdentity(change); !changed) {
+          return changed.error();
+        }
+        return {};
+      },
+      .mint = [](const std::string& llm_base_url) { return MintBriefGuestLlmKey(llm_base_url); },
+  };
+}
+
+} // namespace
+
+namespace {
+
 /** A saved copy of the account: a sealed snapshot (at most 1 MiB + 256 bytes) as base64 inside JSON. */
 constexpr size_t kMaxSavedAccountCopyBytes = 2 * 1024 * 1024;
 
@@ -182,10 +202,13 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     if (previous == NavTab::Me && tab != NavTab::Me) {
       settings.OnMeSurfaceClosed();
     }
-    if (tab == NavTab::Home) {
+    // Back from a phone hidden tab (Me, Contacts) to a chat overlay left open under it: the chat is still the one
+    // shown, so Home / Chats are not reset to their lists (DEV/PLAN-minimal-nav.md A).
+    const bool back_to_open_chat = shell.State().compact_chat_open;
+    if (tab == NavTab::Home && !back_to_open_chat) {
       chat.OnHomeTabActivated();
     }
-    if (tab == NavTab::Sessions) {
+    if (tab == NavTab::Sessions && !back_to_open_chat) {
       chat.OnSessionsTabActivated();
     }
     chat.SyncDraftOwner(); // every tab change: the composer shows that place's own unsent text
@@ -201,6 +224,8 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     }
     shell.DirtyNavChrome();
   });
+
+  shell.SetOnCompactChatShownAgain([&chat]() { chat.OnCompactChatShownAgain(); });
 
   shell.SetOnLayoutModeChanged([&shell, &settings, &contacts, &chat](LayoutMode mode) {
     const ShellChromeSnapshot chrome = ProjectShellChromeSnapshot(shell.State());
@@ -233,6 +258,12 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     }
     if (key == "contact_detail") {
       contacts.OnDetailDismissed();
+    }
+    if (key == "new_chat") {
+      contacts.OnNewChatDismissed();
+    }
+    if (key == "add_contact") {
+      contacts.OnAddContactDismissed();
     }
     if (key == "blocked_people") {
       contacts.OnBlockedPeopleDismissed();
@@ -636,6 +667,8 @@ std::string Application::AssetsPath(const std::string& relative) {
 bool Application::InitializeUiHost(const char* window_title, int window_width, int window_height,
                                    const BootstrapResult& bootstrap, ui::Context*& context) {
   AppRuntime::InitializeUI();
+  // A blocking HTTP request on the UI thread holds every frame until it is answered: leave a net.ui_block line.
+  HttpClient::SetUiThreadProbe([] { return AppRuntime::CurrentlyOnUI(); });
 
   if (![&] {
         StartupPhase phase("Backend::Initialize");
@@ -1149,14 +1182,16 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       if (!key.empty()) {
         return key;
       }
+      if (identity->account_id.empty()) {
+        return Error("Messaging is not ready"); // no account to mint for: nothing minted, nothing written
+      }
       auto minted = MintBriefGuestLlmKey(BriefLlmBaseUrl());
       if (!minted) {
         return minted.error();
       }
-      LocalIdentity updated = *identity;
-      updated.brief_llm_guest_api_key = minted->llm_api_key;
-      (void)facade.UpdateLocalIdentity(updated);
-      return minted->llm_api_key.Reveal();
+      // Off the UI thread: one modify of the guest key field only, into the account it was minted for, keeping a key
+      // stored meanwhile (that one is the Bearer then).
+      return StoreBriefGuestKeyIfNone(MakeBriefLlmKeyStore(facade), minted->llm_api_key, identity->account_id);
     };
     SendDiagnostics(std::move(deps), std::move(on_done));
   };
@@ -1285,6 +1320,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   if (ui_perf_) {
     ui_perf_->BindShellNavigation(shell_navigation);
     settings_->BindOpenUiPerfTest([this]() { ui_perf_->Open(); });
+    settings_->BindSimulateChatsLink([this](const bool online) { shell_->SetChatsLink(true, online); });
   }
   emoji_picker_->BindShellNavigation(shell_navigation);
   emoji_picker_->BindShellFeedback(shared_feedback);
@@ -1402,7 +1438,7 @@ void Application::WireCalls() {
     call_actions.spotlight_grid = [this]() { call_->SpotlightGrid(); };
     call_actions.spotlight_toggle_fill = [this]() { call_->ToggleSpotlightFill(); };
     call_actions.restore_chrome_from_minimized = [this]() { call_->RestoreChromeFromMinimized(); };
-    call_actions.set_minimized_corner = [this](int corner) { call_->SetMinimizedCorner(corner); };
+    call_actions.set_minimized_place = [this](int side, int y_permille) { call_->SetMinimizedPlace(side, y_permille); };
     call_actions.show_call_details = [this]() { call_->ShowCallDetails(); };
     chat_->BindCallActions(call_actions);
     shell_->BindCallActions(call_actions);
@@ -1493,6 +1529,10 @@ void Application::WireUnlockPinAndFlow() {
     if (secrets_ && secrets_->IsUnlocked() && !default_pin && secrets_->GraceSupported() && os::AppShownNow()) {
       StartGraceTimer();
     }
+    // The settings model was filled at start with the vault locked ("?" and no name on the Chats bar until Me opened).
+    if (secrets_ && secrets_->IsUnlocked() && settings_) {
+      settings_->OnProfileUnlocked();
+    }
     // The PIN gate is gone and the vault is open: a fresh account continues into the first-run wizard.
     if (secrets_ && secrets_->IsUnlocked() && onboarding_) {
       onboarding_->MaybeStart();
@@ -1526,15 +1566,14 @@ void Application::WireUnlockPinAndFlow() {
     }
     return restored;
   };
-  unlock_ports.ui.on_link_imported = [this, &facade]() {
+  unlock_ports.ui.on_link_imported = [this]() {
     if (onboarding_) {
       onboarding_->MarkCompleted(); // an account brought over needs no wizard
     }
-    // Import runs before EnsureMessagingReady; push attach after the vault is open.
-    AppRuntime::PostWorkerNormal([&facade]() {
-      (void)facade.SyncPushDevices();
-    });
+    // Import runs before EnsureMessagingReady; push attach after the vault is open. Off the UI thread, in the same
+    // one-at-a-time run as the messaging-ready binding (ChatController / MessagingReadyTasks).
     if (chat_) {
+      chat_->SyncPushDevices();
       chat_->ReloadAgentConfig();
     }
     UserFeedback::Ok(Tr("pin.link_imported"));
@@ -1738,6 +1777,47 @@ void Application::WireAgentAndConfig() {
   agent_sessions_.emplace();
   chat_->BindAgentPorts(MakeAgentUiPorts(*agent_sessions_));
   if (messaging_facade_) {
+    // B183: the gateway refused the AI Bearer (HTTP 401). A guest key is minted and stored beside the registered key
+    // (never re-registers); the refused key goes only once a retry with the new one was answered. Runs on the turn's
+    // thread: the identity store locks itself (the diagnostics Bearer does the same off the UI); the sessions take the
+    // new key once no turn runs.
+    ConversationsFacade& facade = *messaging_facade_;
+    const BriefLlmKeyStore key_store = MakeBriefLlmKeyStore(facade);
+    // The renewal shares the Brief key run with the unlock's guest-key mint (ChatController::BriefKeyRun): while that
+    // mint is in flight the turn waits for its key (stored, then reused) rather than minting a second one.
+    agent_sessions_->SetBriefKeyPorts(BriefKeyPorts{
+        .renew = [this, key_store, run = chat_->BriefKeyRun()](
+                     const std::string& rejected, const std::string& llm_base_url,
+                     const std::atomic<bool>& cancelled) -> Roe<BriefKeyRenewal> {
+          // A stopped turn (Stop, profile reset, quit: StopTurnsAndWait / ~AgentSessions cancel it) gives up waiting
+          // for another run's mint within a slice. A mint of its own (RenewBriefLlmKey) is not interrupted: it runs to
+          // its HTTP limit (30 s), as before the run was shared.
+          const std::chrono::milliseconds wait =
+              AppRuntime::CurrentlyOnUI() ? std::chrono::milliseconds(0) : kBriefKeyMintWait;
+          auto waited = RunSharedBriefKeyRenewal(
+              *run, wait, [&cancelled]() { return cancelled.load(); },
+              [&]() { return RenewBriefLlmKey(key_store, rejected, llm_base_url); },
+              [this]() { AppRuntime::PostUI([this] { chat_->RetryBriefKeyMint(); }); });
+          if (!waited) {
+            return Error("Brief key renewal stopped: the turn was cancelled");
+          }
+          auto& renewed = *waited;
+          if (!renewed) {
+            return renewed.error();
+          }
+          return BriefKeyRenewal{.key = std::move(renewed->key), .reused = renewed->reused};
+        },
+        .commit =
+            [this, key_store](const std::string& rejected) {
+              if (auto committed = CommitBriefLlmKey(key_store, rejected); !committed) {
+                log().warning << "Brief LLM key: the refused key was not dropped: " << committed.error().message;
+              }
+              AppRuntime::PostUI([this] { chat_->ReloadAgentConfigWhenIdle(); });
+            },
+        .stored_key = [key_store]() { return StoredBriefLlmKey(key_store); },
+    });
+  }
+  if (messaging_facade_) {
     // MessageRouter checks is_busy before it routes, so these start; anything else would be a send that slipped past.
     const auto log_not_started = [this](const SubmitOutcome outcome) {
       if (outcome != SubmitOutcome::Started) {
@@ -1921,6 +2001,9 @@ bool Application::MountPresenters(ui::Context* context) {
       chat_->InsertEmojiIntoDraft(emoji, restore_focus);
     });
   };
+  emoji_notify.open_insert_into = [this](std::function<void(const std::string& emoji)> insert) {
+    emoji_picker_->OpenInsert([insert = std::move(insert)](std::string emoji, bool) { insert(emoji); });
+  };
   emoji_notify.open_react = [this](const std::string& message_id) {
     emoji_picker_->OpenReact(message_id, [this, message_id](std::string emoji) {
       chat_->ReactWithEmoji(message_id, emoji);
@@ -1998,6 +2081,7 @@ bool Application::MountPresenters(ui::Context* context) {
     }
     if (ui_perf_) {
       settings_->BindOpenUiPerfTest({});
+      settings_->BindSimulateChatsLink({});
       ui_perf_->BindShellNavigation({});
     }
     if (client_compat_) {
@@ -2126,8 +2210,14 @@ void Application::WireHubCallbacks() {
         log().warning << "Retired Keychain backup not removed: " << removed.error().message;
       }
     });
-    chat_->OnMessagingReady();
-    call_->OnMessagingReady();
+    {
+      StartupPhase phase("ChatController::OnMessagingReady");
+      chat_->OnMessagingReady();
+    }
+    {
+      StartupPhase phase("CallController::OnMessagingReady");
+      call_->OnMessagingReady();
+    }
     contacts_->Refresh();
     if (messaging_facade_ && support_discovery_ && support_discovery_->enabled) {
       messaging_facade_->SetSupportAccountId(support_discovery_->account_id);
@@ -2171,6 +2261,14 @@ void Application::WireHubCallbacks() {
       settings_->SyncReachability();
       if (badges_) {
         badges_->Refresh();
+      }
+    });
+  });
+  // The Chats header's status line: the OS monitor reports on its own thread, the shell updates on the UI thread.
+  messaging.SetOnNetworkOnlineChanged([this](const bool known, const bool online) {
+    AppRuntime::PostUI([this, known, online]() {
+      if (shell_) {
+        shell_->SetChatsLink(known, online);
       }
     });
   });
@@ -2615,6 +2713,7 @@ void Application::Shutdown() {
     messaging_->SetOnMessagingReady(nullptr);
     messaging_->SetOnMeshReady(nullptr);
     messaging_->SetOnReachabilityUpdated(nullptr);
+    messaging_->SetOnNetworkOnlineChanged(nullptr);
     messaging_->SetOnPeerIconsChanged(nullptr);
     messaging_->SetOnCallWake(nullptr);
   }

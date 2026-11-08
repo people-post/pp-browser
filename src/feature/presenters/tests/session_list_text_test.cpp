@@ -1,5 +1,7 @@
 #include "feature/presenters/SessionListText.h"
 
+#include "foundation/i18n/LocalizationService.h"
+
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -128,4 +130,23 @@ TEST(SessionListTextTest, PreviewKeepsAngleBracketsThatAreNotTags) {
   EXPECT_EQ(SessionPreviewLine("1 < 2 而且 3 > 2"), "1 < 2 而且 3 > 2");
   EXPECT_EQ(SessionPreviewLine("爱你 <3"), "爱你 <3");
   EXPECT_EQ(SessionPreviewLine("a<b 没有右括号"), "a<b 没有右括号");
+}
+
+// Chats list rows keep their height: a thread without text shows the localised placeholder, marked so the row can draw it quieter.
+TEST(SessionPreviewTest, AnEmptyPreviewGetsThePlaceholderAndIsMarked) {
+  const SessionPreviewShown empty = ResolveSessionPreview(SessionPreviewLine(""), "No messages yet");
+  EXPECT_EQ(empty.text, "No messages yet");
+  EXPECT_TRUE(empty.placeholder);
+  const SessionPreviewShown real = ResolveSessionPreview(SessionPreviewLine("see you"), "No messages yet");
+  EXPECT_EQ(real.text, "see you");
+  EXPECT_FALSE(real.placeholder);
+}
+
+TEST(SessionPreviewTest, ThePlaceholderIsWordedInBothLanguages) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  EXPECT_EQ(Tr("sidebar.preview_empty"), "No messages yet");
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("sidebar.preview_empty"), "暂无消息");
+  LocalizationService::Instance().SetPreferredLanguage("en");
 }

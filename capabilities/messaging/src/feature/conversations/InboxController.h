@@ -82,6 +82,8 @@ struct TranscriptFacts {
   std::function<VoiceBubbleState(const std::string& message_id)> voice_state;
   /** Sound files (an MP3 sent as a file) play in place with the voice controls, not in the system's viewer. */
   bool audio_files_play = false;
+  /** The open chat is a group (or a broadcast / AI thread, not a 1:1): its call records are not tappable. The GUI sets this. */
+  bool thread_is_group = false;
 };
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */

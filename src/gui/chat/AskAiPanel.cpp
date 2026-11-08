@@ -8,14 +8,20 @@
 #include "gui/shell/DataModelHost.h"
 #include "lib/ai/StructuredTextParser.h"
 #include "lib/ui/ChatFormHelper.h"
+#include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/DataEvent.h"
 #include "common/Logger.h"
 #include "common/Utilities.h"
+
+#include <algorithm>
+#include <cmath>
 
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Context.h>
 #include <ui/dom/Element.h>
 #include <ui/dom/ElementDocument.h>
+#include <ui/base/StringUtilities.h>
+#include <ui/widgets/ElementFormControlTextArea.h>
 
 namespace pbr {
 
@@ -68,6 +74,9 @@ AgentEvent Event(const AgentEventType type, const std::string& thread_id) {
 AskAiPanel::AskAiPanel(AskAiPanelHost& host, AgentTurnController& agent) : host_(host), agent_(agent) {
   image_ports_.pick = [this](std::function<void(std::string)> picked) { agent_.PickAiImage(std::move(picked)); };
   image_ports_.capture = [this](std::function<void(std::string)> picked) { agent_.CaptureAiPhoto(std::move(picked)); };
+  image_ports_.pick_from = [this](const bool files_app, std::function<void(std::string)> picked) {
+    agent_.PickAiImageFrom(files_app, std::move(picked));
+  };
   image_ports_.prepare = [this](std::string path, std::function<void(Roe<AgentTurnController::PendingAiImage>)> done) {
     agent_.PrepareAiImage(std::move(path), std::move(done));
   };
@@ -99,8 +108,10 @@ bool AskAiPanel::Register(ui::Context* context) {
     ctor.Bind("has_picture", &view_.has_picture);
     ctor.Bind("picture_preparing", &view_.picture_preparing);
     ctor.Bind("picture_src", &view_.picture_src);
-    ctor.BindEventCallback("ask_ai_camera", DataEvent([this] { PickPicture(/*camera=*/true); }));
-    ctor.BindEventCallback("ask_ai_attach", DataEvent([this] { PickPicture(/*camera=*/false); }));
+    ctor.BindEventCallback("ask_ai_attach", DataEventAt([this](ui::Event& ev) { ShowAttachMenu(ev.GetCurrentElement()); }));
+    ctor.BindEventCallback("ask_ai_emoji", DataEvent([this] {
+      host_.AskAiOpenEmoji([this](const std::string& emoji) { InsertEmoji(emoji); });
+    }));
     ctor.BindEventCallback("ask_ai_remove_picture", DataEvent([this] { RemovePicture(); }));
     ctor.BindEventCallback("ask_ai_send", DataEvent([this] { Send(); }));
     ctor.BindEventCallback("ask_ai_intro_seen", DataEvent([this] { DismissIntro(); }));
@@ -282,6 +293,43 @@ void AskAiPanel::PickPicture(const bool camera) {
   auto& pick = camera ? image_ports_.capture : image_ports_.pick;
   if (pick) {
     pick([this](std::string path) { PreparePicture(std::move(path)); });
+  }
+}
+
+void AskAiPanel::ShowAttachMenu(ui::Element* anchor) {
+  if (view_.once || !anchor) {
+    return;
+  }
+  const auto pick_from = [this](const bool files_app) {
+    return [this, files_app]() {
+      if (image_ports_.pick_from) {
+        image_ports_.pick_from(files_app, [this](std::string path) { PreparePicture(std::move(path)); });
+      }
+    };
+  };
+  ContextMenuHost::Instance().ShowActionsPopoverLeftAligned(
+      anchor, AgentTurnController::HomeAttachActions([this]() { PickPicture(/*camera=*/true); }, pick_from(false),
+                                                     pick_from(true)),
+      {}, /*above=*/true);
+}
+
+void AskAiPanel::InsertEmoji(const std::string& emoji) {
+  if (emoji.empty()) {
+    return;
+  }
+  const std::string next = std::string(view_.draft.c_str()) + emoji;
+  view_.draft = next.c_str();
+  Dirty("draft");
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  // The field shows it now (the model copies on the next update); the caret goes to its end.
+  if (auto* input = ui_dynamic_cast<ui::ElementFormControlTextArea*>(
+          context_->GetDocument(0)->GetElementById("ask-ai-input"))) {
+    input->SetValue(next.c_str());
+    const ui::String value = input->GetValue();
+    const int end = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(value, static_cast<int>(value.size()));
+    input->SetSelectionRange(end, end);
   }
 }
 
@@ -762,11 +810,33 @@ void AskAiPanel::Tick() {
     return;
   }
   ui::ElementDocument* doc = context_->GetDocument(0);
+  SyncComposerClear();
   if (scroll_frames_ > 0) {
     --scroll_frames_;
     if (ui::Element* scroll = doc->GetElementById(kScrollId)) {
       scroll->SetScrollTop(scroll->GetScrollHeight());
     }
+  }
+}
+
+void AskAiPanel::SyncComposerClear() {
+  ui::ElementDocument* doc = context_->GetDocument(0);
+  ui::Element* bar = doc->GetElementById("ask-ai-composer");
+  ui::Element* clear = doc->GetElementById("ask-ai-scroll-end");
+  ui::Element* scroll = doc->GetElementById(kScrollId);
+  if (!bar || !clear || !scroll) {
+    return;
+  }
+  const float bar_px = bar->GetOffsetHeight();
+  if (bar_px <= 0.f || std::abs(clear->GetOffsetHeight() - bar_px) < 0.5f) {
+    return;
+  }
+  const float ratio = context_->GetDensityIndependentPixelRatio() > 0.f ? context_->GetDensityIndependentPixelRatio() : 1.f;
+  // At the newest bubble (or not yet laid out) it stays there as the bar grows; read further up, it stays put.
+  const float from_end = scroll->GetScrollHeight() - scroll->GetClientHeight() - scroll->GetScrollTop();
+  clear->SetProperty("height", std::to_string(bar_px / ratio) + "dp");
+  if (from_end <= 64.f * ratio) {
+    scroll_frames_ = std::max(scroll_frames_, 2);
   }
 }
 

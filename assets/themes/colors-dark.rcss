@@ -10,6 +10,26 @@ body {
   background-color: #000000;
 }
 
+/* Phones: the strip takes the colour of the page under it (ShellHost::ApplySafeAreaLayout picks the surface). */
+.shell-statusbar-strip.shell-statusbar-strip--home {
+  background-color: #252527;
+}
+
+.shell-statusbar-strip.shell-statusbar-strip--me,
+.shell-statusbar-strip.shell-statusbar-strip--new_chat {
+  background-color: #000000;
+}
+
+/* The home-indicator band under the grouped pages (Me and its detail pages, New chat); clear elsewhere. */
+.shell-home-indicator-strip.shell-home-indicator-strip--me,
+.shell-home-indicator-strip.shell-home-indicator-strip--new_chat {
+  background-color: #000000;
+}
+
+.shell-statusbar-strip.shell-statusbar-strip--add_contact {
+  background-color: #1a1a1c;
+}
+
 /* Monochrome icons are white sources; tint with image-color (does not inherit). */
 svg {
   image-color: #ffffff;
@@ -714,6 +734,20 @@ select selectbox option:hover {
   background-color: transparent;
 }
 
+/* Phone two-word tab bar (DEV/PLAN-minimal-nav.md A): grey words, the chosen one in the label colour. The bar itself is
+   the bottom chrome's material: 78% bar colour over a blur with Transparency on, solid with it off. */
+.shell-nav-rail--text .shell-nav-tab {
+  color: #8e8e93;
+}
+
+.shell-nav-rail--text .shell-nav-tab--active {
+  color: #ffffff;
+}
+
+.shell-nav-rail--text .shell-nav-tab--active .shell-nav-tab-text-wrap {
+  background-color: #7878803d;
+}
+
 .shell-chat-overlay {
   background-color: #111111;
 }
@@ -728,7 +762,7 @@ select selectbox option:hover {
 }
 
 .shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome--frost {
-  background-color: #1a1a1cb8;
+  background-color: #1a1a1cc7;
 }
 
 /* Phone bars: no hairlines; a fade from the bar colour to clear under a top bar, and over the tab bar and the
@@ -744,11 +778,11 @@ select selectbox option:hover {
 .shell-nav-page--frost .pane-nav .bar-fade,
 .shell-nav-page--frost .settings-detail-header .bar-fade,
 .surface-chrome--frost .bar-fade {
-  decorator: linear-gradient(to bottom, #1a1a1cb8, #1a1a1c00);
+  decorator: linear-gradient(to bottom, #1a1a1cc7, #1a1a1c00);
 }
 
 .shell-bottom-chrome--frost .bar-fade--up {
-  decorator: linear-gradient(to bottom, #1a1a1c00, #1a1a1cb8);
+  decorator: linear-gradient(to bottom, #1a1a1c00, #1a1a1cc7);
 }
 
 .shell-layer-compact .settings-detail-header {
@@ -756,7 +790,7 @@ select selectbox option:hover {
 }
 
 .shell-nav-page--frost .settings-detail-header {
-  background-color: #1a1a1cb8;
+  background-color: #1a1a1cc7;
 }
 
 /* A pushed page's bar: itself clear; its material child (.nav-bar-bg, shown once content is under the bar) is the bar
@@ -772,7 +806,7 @@ select selectbox option:hover {
 
 .shell-nav-page--frost .nav-bar-host .nav-bar-bg,
 .shell-layer-transient.nav-bar-host .surface-chrome--frost .nav-bar-bg {
-  background-color: #1a1a1cb8;
+  background-color: #1a1a1cc7;
 }
 
 .page-large-title {
@@ -793,7 +827,7 @@ select selectbox option:hover {
 }
 
 .shell-nav-page--frost .pane-nav-bg {
-  background-color: #1a1a1cb8;
+  background-color: #1a1a1cc7;
 }
 
 .pane-nav-btn svg {
@@ -804,7 +838,7 @@ select selectbox option:hover {
   color: #0a84ff;
 }
 
-.large-title, .pane-nav-title {
+.large-title, .pane-nav-title, .pane-nav-avatar-name {
   color: #ffffff;
 }
 
@@ -813,7 +847,7 @@ select selectbox option:hover {
 }
 
 .shell-bottom-chrome--frost {
-  background-color: #1a1a1cb8;
+  background-color: #1a1a1cc7;
 }
 
 .shell-drawer-scrim, .shell-sheet-scrim {
@@ -874,12 +908,16 @@ select selectbox option:hover {
 }
 
 .shell-layer-compact .shell-transient-chrome.surface-chrome--frost {
-  background-color: #1a1a1cb8;
+  background-color: #1a1a1cc7;
 }
 
 .shell-composer-mount.surface-chrome {
   background-color: #1a1a1c;
   border-width: 0;
+}
+
+.shell-composer-mount.surface-chrome--frost {
+  background-color: #1a1a1cc7;
 }
 
 .shell-composer-mount.surface-chrome .prompt-composer-pill {
@@ -1516,6 +1554,11 @@ input.checkbox:checked {
   color: #ebebf599;
 }
 
+/* A thread with no message yet: the placeholder is quieter than a real preview (the presenter's preview_empty). */
+.sidebar-session--empty .sidebar-session-preview {
+  color: #ebebf54c;
+}
+
 .sidebar-session-icon {
   background-color: #2c2c2e;
 }
@@ -1537,11 +1580,11 @@ input.checkbox:checked {
 }
 
 .sidebar-unread-dot {
-  background-color: #0a84ff;
+  background-color: #40c8e0;
 }
 
-.sidebar-unread {
-  background-color: #0a84ff;
+.badge-count.sidebar-unread {
+  background-color: #40c8e0;
   color: #ffffff;
 }
 
@@ -1624,7 +1667,7 @@ input.checkbox:checked {
 }
 
 .chat-search {
-  background-color: #2c2c2e;
+  background-color: #242426;
 }
 
 .chat-search-icon {
@@ -1677,6 +1720,7 @@ input.checkbox:checked {
 
 .ac-account-name,
 .ac-tile-label,
+.ac-top-card-label,
 .qr-name {
   color: #ffffff;
 }
@@ -1699,8 +1743,17 @@ input.checkbox:checked {
   background-color: #7878803d;
 }
 
-.ac-tile {
+.ac-tile,
+.ac-top-card {
   background-color: #2c2c2e;
+}
+
+.ac-top-card-icon {
+  background-color: #0a84ff;
+}
+
+.ac-top-card-icon svg {
+  image-color: #ffffff;
 }
 
 .ac-tile-disc {
@@ -1787,6 +1840,25 @@ input.checkbox:checked {
 .nc-section-header {
   color: #ebebf599;
   background-color: #000000;
+}
+
+.shell-layer-compact .nc-page {
+  background-color: #000000;
+}
+
+/* The search field on the grouped page: a fill, so it reads as a field (the card colour vanished on the grey). */
+.shell-layer-compact .nc-page .nc-search {
+  background-color: #7878803d;
+}
+
+.shell-layer-compact .nc-page .nc-action,
+.shell-layer-compact .nc-page .nc-group,
+.shell-layer-compact .nc-page .nc-group .contacts-row {
+  background-color: #1c1c1e;
+}
+
+.shell-layer-compact .nc-page .nc-section-header {
+  background-color: transparent;
 }
 
 /* New chat is a sheet: in dark its page and rows were black under the sheet's raised header. The sheet's colours, as
@@ -2663,12 +2735,43 @@ input.checkbox:checked {
 }
 
 .shell-chat-overlay .prompt-icon-v2,
-.ask-ai .prompt-icon-v2 {
+.shell-chat-overlay .prompt-icon-plus,
+.ask-ai .prompt-icon-v2,
+.ask-ai .prompt-icon-plus {
   image-color: #ebebf599;
 }
 
 .shell-chat-overlay .prompt-voice-toggle-btn .prompt-icon-v2 {
   image-color: #0a84ff;
+}
+
+/* The phone Home's box is the whole composer (the picture chip sits inside it); the pill in it is clear. */
+.shell-layer-compact .home-composer-mount .prompt-composer {
+  background-color: #2c2c2e;
+  border: 1dp #54545899;
+  box-shadow: 0 2dp 8dp #00000026;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-pill {
+  background-color: transparent;
+  border-width: 0;
+  box-shadow: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-icon-home {
+  image-color: #ebebf599;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-emoji-btn svg {
+  image-color: #ebebf599;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {
+  background-color: transparent;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-send-disc {
+  background-color: #0a84ff;
 }
 
 /* Grouped lists on phones: Me tab and settings pages (DESIGN-pp-ui 8.7 / 8.10); geometry in components.rcss. */
@@ -3049,6 +3152,24 @@ input.checkbox:checked {
   background-color: #ffffff24;
 }
 
+/* #171: the reconnect capsule above the button bar — amber while the path is found again, green once restored;
+   the timer greys meanwhile. */
+.call-phone-reconnect {
+  background-color: #784800eb;
+}
+
+.call-phone-reconnect--ok {
+  background-color: #1f6f4aeb;
+}
+
+.call-phone-reconnect-icon {
+  background-color: #ffffff24;
+}
+
+.call-phone-timer--dim {
+  color: #ffffff80;
+}
+
 .call-phone-signal {
   background-color: #ffffff24;
 }
@@ -3334,5 +3455,143 @@ input.checkbox:checked {
 
 .storage-file-type-text {
   color: #ffffff;
+}
+
+/* Phone round button (DEV/PLAN-minimal-nav.md G): a clear 44dp target, the 34dp disc a quiet grey that darkens while
+   pressed, the icon in the label colour. */
+.shell-layer-compact .shell-circle-btn,
+.shell-layer-compact .shell-circle-btn:hover,
+.shell-layer-compact .shell-circle-btn:focus {
+  background-color: transparent;
+}
+
+.shell-layer-compact .shell-circle-btn-face {
+  background-color: #2a2a2d;
+  decorator: linear-gradient(to bottom, #3c3c40, #2a2a2d);
+  box-shadow: 0 1dp 3dp #00000026;
+}
+
+.shell-layer-compact .shell-circle-btn:active .shell-circle-btn-face {
+  background-color: #7878805c;
+  decorator: linear-gradient(to bottom, #7878805c, #7878805c);
+}
+
+/* Chats header plus (B3): a flat teal-tint disc with a teal plus; no 3-D gradient, no shadow. */
+.shell-layer-compact .pane-nav-plus .shell-circle-btn-face,
+.shell-layer-compact .pane-nav-plus:active .shell-circle-btn-face {
+  background-color: #40c8e02e;
+  decorator: none;
+  box-shadow: none;
+}
+
+.shell-layer-compact .pane-nav-actions .pane-nav-plus .shell-circle-btn-face svg {
+  image-color: #40c8e0;
+}
+
+.pane-nav-link-icon--ok {
+  image-color: #40c8e0;
+}
+
+.pane-nav-link-icon--offline {
+  image-color: #ff453a;
+}
+
+.pane-nav-link-text {
+  color: #ebebf599;
+}
+
+.shell-layer-compact .shell-circle-btn .shell-circle-btn-face svg {
+  image-color: #ffffff;
+}
+
+/* Phone AI drawer (DEV/PLAN-minimal-nav.md C): the page colour, a soft shadow fading out from its right edge, and the
+   bottom "you" row pressed like a list row. */
+.shell-drawer-body {
+  background-color: #000000;
+}
+
+.shell-drawer-edge {
+  decorator: linear-gradient(to right, #00000066, #00000000);
+}
+
+.ai-drawer-title,
+.ai-drawer-me-name {
+  color: #ffffff;
+}
+
+/* The ask-AI panel's input bar: the bar colour, frosted with Transparency on (like a chat's composer). */
+.ask-ai-composer {
+  background-color: #1a1a1c;
+}
+
+.shell-page-sheet--frost .ask-ai-composer {
+  background-color: #1a1a1cc7;
+  backdrop-filter: blur(20px);
+}
+
+/* The drawer's top bar and "you" row: the bar colour, frosted with Transparency on (like .pane-nav-bg). */
+.ai-drawer-top,
+.ai-drawer-me,
+.ai-drawer-me:hover,
+.ai-drawer-me:focus {
+  background-color: #1a1a1c;
+}
+
+/* The search pill on the bar: a fill, so it shows on the bar colour. */
+.ai-drawer-search {
+  background-color: #7878803d;
+}
+
+.shell-drawer--frost .ai-drawer-top,
+.shell-drawer--frost .ai-drawer-me,
+.shell-drawer--frost .ai-drawer-me:hover,
+.shell-drawer--frost .ai-drawer-me:focus {
+  background-color: #1a1a1cc7;
+  backdrop-filter: blur(20px);
+}
+
+.ai-drawer-me:active {
+  background-color: #7878803d;
+}
+
+.ai-drawer-me-avatar .avatar-letter {
+  color: #ffffff;
+}
+
+.ai-drawer-me-chevron {
+  image-color: #ebebf54c;
+}
+
+/* On the camera the disc is a dark glass with a white chevron, in both themes. */
+.shell-layer-compact .qr-scan-back .shell-circle-btn-face,
+.shell-layer-compact .qr-scan-back:active .shell-circle-btn-face {
+  background-color: #00000066;
+  decorator: none;
+  box-shadow: none;
+}
+
+.shell-layer-compact .qr-scan-back .shell-circle-btn-face svg {
+  image-color: #ffffff;
+}
+
+.context-menu-layer--popover-left .context-menu-panel {
+  background-color: #2a2a2d;
+  decorator: linear-gradient(to bottom, #3c3c40, #2a2a2d);
+  box-shadow: 0 2dp 8dp #00000026;
+}
+
+.context-menu-layer--popover-left .context-menu-item,
+.context-menu-layer--popover-left .context-menu-item:hover,
+.context-menu-layer--popover-left .context-menu-item:focus {
+  background-color: transparent;
+  border: 0;
+}
+
+.context-menu-layer--popover-left .context-menu-item:active {
+  background-color: #7878805c;
+}
+
+.context-menu-layer--popover-left .context-menu-item-icon {
+  background-color: #7878803d;
 }
 }

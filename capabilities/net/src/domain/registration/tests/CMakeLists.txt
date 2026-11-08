@@ -1,6 +1,6 @@
 include(PpBrowserTesting)
 
-add_executable(pp_browser_domain_registration_test registration_client_test.cpp)
+add_executable(pp_browser_domain_registration_test registration_client_test.cpp brief_llm_key_renewal_test.cpp)
 target_link_libraries(pp_browser_domain_registration_test PRIVATE
   pp_domain_registration
   pp_lib_net_testing

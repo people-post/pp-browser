@@ -16,6 +16,7 @@
 #include "lib/ai/ParkedApproval.h"
 #include "feature/ai/TurnExecutor.h"
 
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -36,6 +37,25 @@ using ToolRegistrationHook = std::function<void(ToolRegistry&)>;
 using ToolPermissionsSaveFn = std::function<Roe<void>(const ToolPermissionsPrefs&)>;
 /** The local contacts, flattened for the on-device app-action planner (called on a worker thread). */
 using LocalContactsFn = std::function<std::vector<LocalPlanContact>()>;
+/** A Bearer to ask again with after HTTP 401; `reused`: the stored key had already changed, nothing was minted. */
+struct BriefKeyRenewal {
+  std::string key;
+  bool reused = false;
+};
+/**
+ * How a brief turn recovers from HTTP 401 (B183). Every call runs on the turn's thread and may block.
+ * `renew`: the gateway refused `rejected`; a key to ask again with (a guest key minted at `llm_base_url`, stored
+ * beside the registered key, or the stored key when it already changed). `commit`: the retry was answered; drop
+ * `rejected` for good and let the sessions take the new key. `stored_key`: the Bearer stored now ("" when none).
+ */
+struct BriefKeyPorts {
+  /** `cancelled`: the turn's stop flag; a renewal that waits (for a mint in flight) gives up when it is set. */
+  std::function<Roe<BriefKeyRenewal>(const std::string& rejected, const std::string& llm_base_url,
+                                     const std::atomic<bool>& cancelled)>
+      renew;
+  std::function<void(const std::string& rejected)> commit;
+  std::function<std::string()> stored_key;
+};
 
 enum class AgentEventType {
   LoadingChanged,
@@ -115,6 +135,8 @@ struct AgentSessionShared {
   std::vector<AgentEvent> pending_events;
   std::mutex last_role_mutex;
   std::unordered_map<std::string, std::string> last_role_by_thread;
+  /** A 401 renewed the brief key (BriefKeyPorts) and no turn has been answered since: no second mint (B183). */
+  std::atomic<bool> brief_key_renewed{false};
 };
 
 class AgentSession {
@@ -134,6 +156,12 @@ public:
   void SetThreadStore(IThreadStore* store);
   /** Replace the brief_AI stream (tests / fake server); otherwise built from the LLM config in Configure. */
   void SetBriefAiStream(BriefAiStreamFn fn);
+  /**
+   * A brief stream turn that gets HTTP 401 renews the key through `ports` and asks once more (B183). At most one
+   * renewal until a turn is answered again (AgentSessionShared::brief_key_renewed); meanwhile a 401 asks again only
+   * when the stored key is another one. Unset: a 401 is the turn's error.
+   */
+  void SetBriefKeyPorts(BriefKeyPorts ports);
   /**
    * How long a turn whose planned tool is missing waits for the promoted MCP server to list it, re-listing every
    * `poll` (default 10 s / 500 ms; tests shorten it).

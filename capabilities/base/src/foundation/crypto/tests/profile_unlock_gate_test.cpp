@@ -3,6 +3,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
+#include "common/Diag.h"
 #include "foundation/error/AppError.h"
 
 #include <chrono>
@@ -10,8 +11,10 @@
 #include <filesystem>
 #include <functional>
 #include <gtest/gtest.h>
+#include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -92,6 +95,12 @@ TEST_F(ProfileUnlockGateTest, CancelWithoutVaultReturnsToIdentityFork) {
 // then unlocked; no first-run wizard (as after a link). A phrase that finds no account leaves the vault absent.
 TEST_F(ProfileUnlockGateTest, APhraseRestoreUnlocksUnderThePinChosenHere) {
   ASSERT_FALSE(engine_.HasVault());
+  struct DiagCapture : logging::Handler {
+    void emit(logging::Level, const std::string&, const std::string& message) override { lines.push_back(message); }
+    std::vector<std::string> lines;
+  };
+  auto diag = std::make_shared<DiagCapture>();
+  DiagLog().addHandler(diag);
   std::vector<std::pair<std::string, std::string>> restores;  // pin, phrase
   int imported_notices = 0;
   int errors = 0;
@@ -127,6 +136,13 @@ TEST_F(ProfileUnlockGateTest, APhraseRestoreUnlocksUnderThePinChosenHere) {
   EXPECT_EQ(imported_notices, 1) << "no first-run wizard for an account that came back";
   ASSERT_TRUE(pin_is_default.has_value());
   EXPECT_FALSE(*pin_is_default);
+  bool saw_done_with_ms = false;
+  for (const auto& line : diag->lines) {
+    if (line.find("event=unlock.done") != std::string::npos && line.find(" ms=") != std::string::npos) {
+      saw_done_with_ms = true;
+    }
+  }
+  EXPECT_TRUE(saw_done_with_ms) << "unlock.done carries the time since unlock.start";
 }
 
 
@@ -320,6 +336,68 @@ TEST_F(ProfileUnlockGateGraceTest, PinUnlockReportsVerifiedPinOnce) {
   EXPECT_TRUE(engine_.IsUnlocked());
   EXPECT_EQ(verified.size(), 1U) << "the default PIN is not a PIN the user chose";
   silent.BindPorts({});
+}
+
+struct UnlockDoneCapture : logging::Handler {
+  void emit(logging::Level, const std::string&, const std::string& message) override {
+    if (message.find("event=unlock.done") != std::string::npos) {
+      lines.push_back(message);
+    }
+  }
+  /** ms= of the last unlock.done line; -1 when there is none. */
+  long long LastMs() const {
+    if (lines.empty()) {
+      return -1;
+    }
+    const size_t at = lines.back().find(" ms=");
+    return at == std::string::npos ? -1 : std::stoll(lines.back().substr(at + 4));
+  }
+  std::vector<std::string> lines;
+};
+
+// unlock.done ms= is the door's time since its FIRST unlock.start: a wrong PIN and the retry do not restart it.
+TEST_F(ProfileUnlockGateGraceTest, UnlockDoneMsCountsFromTheDoorsFirstStart) {
+  auto capture = std::make_shared<UnlockDoneCapture>();
+  DiagLog().addHandler(capture);
+  gate_.BindPorts(Ports());
+  gate_.BeginDeferredUnlockAfterFirstPresent(); // no window: the door
+  const auto first = std::chrono::steady_clock::now();
+  gate_.CompleteWithPin("0000", /*create_mode=*/false); // wrong
+  std::this_thread::sleep_for(std::chrono::milliseconds(600));
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  ASSERT_TRUE(engine_.IsUnlocked());
+  const auto total = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - first);
+  const long long ms = capture->LastMs();
+  EXPECT_GE(ms, 600) << "the wrong PIN's attempt and the wait before the retry count";
+  EXPECT_LE(ms, total.count() + 5);
+  capture->lines.clear();
+}
+
+// A grace unlock is timed from its attempt; a grace attempt that did not unlock is not counted in the PIN after it.
+TEST_F(ProfileUnlockGateGraceTest, UnlockDoneMsTimesGraceOnItsOwn) {
+  auto capture = std::make_shared<UnlockDoneCapture>();
+  DiagLog().addHandler(capture);
+  Answers({GraceUnlock::Status::Found});
+  gate_.BindPorts(Ports());
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  ASSERT_EQ(capture->lines.size(), 1u);
+  EXPECT_GE(capture->LastMs(), 0) << "a grace unlock carries its own time";
+
+  ProfileUnlockGate expired;
+  expired.BindSecrets(engine_);
+  Answers({GraceUnlock::Status::Expired});
+  expired.BindPorts(Ports());
+  expired.BeginDeferredUnlockAfterFirstPresent(); // the attempt fails: the door
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
+  engine_.Vault()->Lock();
+  const auto pin_started = std::chrono::steady_clock::now();
+  expired.CompleteWithPin("4321", /*create_mode=*/false);
+  const auto pin_took =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - pin_started);
+  ASSERT_EQ(capture->lines.size(), 2u);
+  EXPECT_LE(capture->LastMs(), pin_took.count() + 5) << "the failed grace attempt and the wait are not counted";
+  expired.BindPorts({});
+  capture->lines.clear();
 }
 
 TEST_F(ProfileUnlockGateGraceTest, AWrongPinKeepsNoWindow) {

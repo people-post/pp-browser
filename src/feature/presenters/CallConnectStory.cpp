@@ -67,6 +67,9 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
     // The direction is the call's own (who started it), not a guess from the first frame: a joiner from the group's
     // join bar also first reads "Calling" while its media starts.
     view_.outgoing = in.placed_here && in.kind == CallScreen::Kind::InCall;
+    // A 1:1 list starts at "calling", or at "you answered" when this device answered.
+    view_.stage = in.group ? 0 : (view_.outgoing ? CallConnectStory::kStageCalling : CallConnectStory::kStageAnswered);
+    stage_began_ms_ = now;
     if (!view_.outgoing) {
       answered_ = true;
       answered_ms_ = now;
@@ -80,6 +83,9 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
       connected_ms_ = now;
       answered_ = true;
       answered_ms_ = now;
+      // No list to show for a call found live: it is already finished and its hold is spent.
+      view_.stage = CallConnectStory::kStageDone;
+      done_ms_ = now - kListHoldMs;
       view_.route = CallRouteFromPathKind(in.path_kind);
       view_.events.push_back({.kind = CallStoryEvent::Kind::Connected, .route = view_.route, .wall_ms = now});
       view_.events.push_back({.kind = CallStoryEvent::Kind::Encrypted, .wall_ms = now});
@@ -114,18 +120,35 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
     }
   }
 
-  view_.connecting = !connected_ && StillConnecting(in.status);
-  // The page shows one stage at a time, moved on by the real change only (#11). "Calling" answered within
-  // kStageQuickMs is still held to kStageMinShowMs so it is seen to pass; connecting or failing ends the hold.
-  const int stage = view_.outgoing && !answered_ ? 0 : 1;
-  const bool hold = view_.outgoing && view_.connecting && stage > view_.stage &&
-                    answered_ms_ - began_ms_ < kStageQuickMs && now - began_ms_ < kStageMinShowMs;
-  if (!hold) {
-    view_.stage = stage;
+  if (in.group) {
+    view_.connecting = !connected_ && StillConnecting(in.status);
+    view_.stage = view_.outgoing && !answered_ ? 0 : 1;
+  } else {
+    // A 1:1 call's five steps (#172). The real stage runs ahead of the screen: the answer, the line being matched
+    // (answer to live media) and the finished call are each real moments, but every step stays on screen at least
+    // kStepMinShowMs, and the finished list kListHoldMs. Only the words wait; the call itself never does.
+    const int target = connected_ ? CallConnectStory::kStageDone
+                                  : (view_.outgoing && !answered_ ? CallConnectStory::kStageCalling
+                                                                  : CallConnectStory::kStageMatching);
+    if (view_.stage < target && now - stage_began_ms_ >= kStepMinShowMs) {
+      view_.stage = view_.stage == CallConnectStory::kStageSecuring ? CallConnectStory::kStageDone : view_.stage + 1;
+      stage_began_ms_ = now;
+      if (view_.stage == CallConnectStory::kStageDone) {
+        done_ms_ = now;
+      }
+    }
+    if (connected_) {
+      const bool ended = in.status == Status::CouldntConnect || in.status == Status::Disconnected;
+      view_.connecting = !ended && (view_.stage < CallConnectStory::kStageDone || now - done_ms_ < kListHoldMs);
+    } else {
+      view_.connecting = StillConnecting(in.status);
+    }
   }
 
   if (view_.result_shown) {
-    const int64_t shown_for = now - connected_ms_;
+    // The result line starts when the list is gone (a group has no list).
+    const bool list_over = in.group || view_.stage == CallConnectStory::kStageDone;
+    const int64_t shown_for = list_over ? now - (in.group ? connected_ms_ : done_ms_ + kListHoldMs) : 0;
     view_.result_fading = shown_for >= kResultShowMs;
     if (shown_for >= kResultShowMs + kResultFadeMs) {
       view_.result_shown = false;
@@ -135,9 +158,6 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
 
   if (connected_) {
     const bool reconnecting = in.status == Status::Reconnecting;
-    if (reconnecting && last_status_ != Status::Reconnecting) {
-      Raise(CallStoryNotice::Reconnecting, now);
-    }
     if (in.media_connected && !reconnecting) {
       const CallRoute route = CallRouteFromPathKind(in.path_kind);
       if (view_.route == CallRoute::Relayed && (route == CallRoute::Direct || route == CallRoute::AroundLimits)) {
@@ -246,8 +266,6 @@ const char* CallStoryNoticeKey(const CallStoryNotice notice) {
   switch (notice) {
   case CallStoryNotice::Slow:
     return "call.story.notice.slow";
-  case CallStoryNotice::Reconnecting:
-    return "call.story.notice.reconnecting";
   case CallStoryNotice::Closer:
     return "call.story.notice.closer";
   case CallStoryNotice::None:

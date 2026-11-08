@@ -37,6 +37,7 @@
 #include "foundation/platform/DeploymentProfile.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/product/AppVersion.h"
+#include "common/Diag.h"
 #include "common/Metrics.h"
 
 #include <algorithm>
@@ -132,6 +133,14 @@ void AppendSynthesisReminder(std::vector<ChatMessage>& messages, const TurnPlan&
   messages.back().content += "\n\n" + PromptBuilder::BuildSynthesisRefinementReminder(plan);
 }
 
+/** The gateway does not know the Bearer: HTTP 401 as LlmClient::MapHttpError words it (B183). */
+bool IsBriefKeyRejected(const Error& error) {
+  constexpr std::string_view kPrefix = "LLM HTTP 401";
+  const std::string& message = error.message;
+  return message.compare(0, kPrefix.size(), kPrefix) == 0 &&
+         (message.size() == kPrefix.size() || message[kPrefix.size()] == ':');
+}
+
 } // namespace
 
 struct AgentSession::Impl : public Module {
@@ -171,6 +180,7 @@ struct AgentSession::Impl : public Module {
   std::unique_ptr<LlmClient> llm;
   BriefAiStreamFn brief_stream;          // built in ConfigureOnIO
   BriefAiStreamFn brief_stream_override; // SetBriefAiStream; wins over brief_stream
+  BriefKeyPorts brief_key;               // SetBriefKeyPorts; a 401 of the brief stream (B183)
   McpRuntime mcp;
   ToolRegistry tools;
   Conversation conversation;
@@ -1702,6 +1712,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
                                                               const std::vector<BriefAiSource>& sources,
                                                               const std::string& role) {
     emit_turn(finish == "length" ? ShareWord("done_truncated") : ShareWord("done"));
+    state->shared->brief_key_renewed.store(false); // the key works: a later 401 may renew it again
     if (!current()) {
       state->Log().info << "brief_AI stream finished after the turn was replaced; dropped";
       return;
@@ -1719,6 +1730,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   };
   sinks.on_handoff = [state, current, emit_turn, has_image](const std::string& capability, const std::string& reason) {
     emit_turn("handoff");
+    state->shared->brief_key_renewed.store(false);
     if (!current()) {
       return;
     }
@@ -1760,6 +1772,74 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   };
 
   BriefAiStreamFn stream = state->brief_stream_override ? state->brief_stream_override : state->brief_stream;
+  if (state->brief_key.renew) {
+    // B183: a 401 means the gateway no longer knows this Bearer (it refuses before any answer streams). Renew it and
+    // ask once more; at most one mint until a turn is answered again, so a key the gateway keeps refusing, or a mint
+    // that fails, ends in the turn's error and never loops. The mint goes where this session's gateway is.
+    std::string base_url = state->config.llm.base_url;
+    if (ResolvePreset(state->config) != "brief" || base_url.empty()) {
+      base_url = BriefLlmBaseUrl();
+    }
+    stream = [inner = std::move(stream), state, keys = state->brief_key, base_url = std::move(base_url),
+              rejected = state->config.llm.api_key.Reveal()](
+                 const BriefAiRequest& req, const std::function<void(const BriefAiEvent&)>& on_event,
+                 const std::atomic<bool>& cancelled) -> Roe<BriefAiOutcome> {
+      Roe<BriefAiOutcome> outcome = inner(req, on_event, cancelled);
+      if (outcome || cancelled.load() || !IsBriefKeyRejected(outcome.error())) {
+        return outcome;
+      }
+      std::string key;
+      if (state->shared->brief_key_renewed.exchange(true)) {
+        // Renewed since the last answer: only a key stored meanwhile (by another turn) is worth one more ask.
+        key = keys.stored_key ? keys.stored_key() : std::string();
+        if (key.empty() || key == rejected) {
+          state->Log().warning << "brief key refused (HTTP 401); already renewed since the last answer, not again";
+          return outcome;
+        }
+        state->Log().warning << "brief key refused (HTTP 401); asking once more with the key stored meanwhile";
+        DiagLine("ai.llm_key").Add("reason", "401").Add("outcome", "reused").Emit();
+      } else {
+        state->Log().warning << "brief key refused (HTTP 401); renewing it and asking once more";
+        Roe<BriefKeyRenewal> renewed = keys.renew(rejected, base_url, cancelled);
+        if (cancelled.load()) {
+          // Stopped while the key was renewed (or while it waited for a mint): this turn's renewal did not finish, so
+          // the next 401 may renew again (else the user stays on the refused key until an answer that cannot come).
+          state->shared->brief_key_renewed.store(false);
+          return BriefAiOutcome::Cancelled;
+        }
+        if (!renewed) {
+          DiagLine("ai.llm_key").Add("reason", "401").Add("outcome", "mint_failed").Fail("error", renewed.error()).Emit();
+          return renewed.error();
+        }
+        DiagLine("ai.llm_key")
+            .Add("reason", "401")
+            .Add("outcome", renewed->reused ? ShareWord("reused") : ShareWord("minted"))
+            .Emit();
+        key = std::move(renewed->key);
+      }
+      if (cancelled.load()) {
+        return BriefAiOutcome::Cancelled; // stopped while the key was renewed
+      }
+      BriefAiStreamFn retry = state->brief_stream_override;
+      if (!retry) {
+        LlmConfig renewed_llm = state->config.llm;
+        renewed_llm.require_api_key = true;
+        renewed_llm.api_key = key;
+        const auto client = std::make_shared<BriefAiClient>(renewed_llm, BriefStreamUrlOverride());
+        retry = [client](const BriefAiRequest& request, const std::function<void(const BriefAiEvent&)>& events,
+                         const std::atomic<bool>& cancel) { return client->Stream(request, events, cancel); };
+      }
+      outcome = retry(req, on_event, cancelled);
+      if (outcome && (*outcome == BriefAiOutcome::Done || *outcome == BriefAiOutcome::Handoff)) {
+        if (keys.commit) {
+          keys.commit(rejected); // the new key works: the refused one goes for good
+        }
+      } else if (!outcome && IsBriefKeyRejected(outcome.error())) {
+        DiagLine("ai.llm_key").Add("reason", "401").Add("outcome", "retry_401").Emit();
+      }
+      return outcome;
+    };
+  }
   if (has_image) {
     // The failed status is only in the technical detail ("LLM HTTP 413: ..."); note it for the error sink.
     stream = [inner = std::move(stream), image_error_kind](const BriefAiRequest& req,
@@ -2169,6 +2249,10 @@ void AgentSession::SetToolRegistrationHook(ToolRegistrationHook hook) {
 
 void AgentSession::SetBriefAiStream(BriefAiStreamFn fn) {
   impl_->brief_stream_override = std::move(fn);
+}
+
+void AgentSession::SetBriefKeyPorts(BriefKeyPorts ports) {
+  impl_->brief_key = std::move(ports);
 }
 
 void AgentSession::SetMissingToolWait(const std::chrono::milliseconds total, const std::chrono::milliseconds poll) {

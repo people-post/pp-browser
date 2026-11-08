@@ -77,41 +77,83 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
                                          loaded->peer_id, multiaddrs, loaded->initiation_floor, publish);
 }
 
+Roe<RegistrationResult> RenewNetworkOnly(IRegistrationClient& registration, IdentityStore& identity,
+                                         const std::string& nickname, const std::vector<std::string>& multiaddrs,
+                                         const RegistrationPublishOpts& publish) {
+  return FinishRegistrationWithIdentity(registration, identity, nickname, multiaddrs, publish);
+}
+
+Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationResult& result,
+                                  const std::string& expected_account_id) {
+  // Read again, under the lock: the network half took a while, and only the registration fields are ours to change.
+  if (expected_account_id.empty()) {
+    return Error("Registration renewal not stored: no account to store it for");
+  }
+  bool other_account = false;
+  auto applied = identity.Modify([&](LocalIdentity& stored) {
+    if (stored.account_id != expected_account_id) {
+      other_account = true;
+      return false;
+    }
+    ApplyRegistrationResult(stored, result);
+    return true;
+  });
+  if (!applied) {
+    return applied.error();
+  }
+  if (other_account) {
+    return Error("Registration renewal not stored: the identity is another account now");
+  }
+  return applied;
+}
+
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,
                                                 const std::string& nickname,
                                                 const std::vector<std::string>& multiaddrs,
                                                 const RegistrationPublishOpts& publish) {
-  auto loaded = identity.Get();
+  auto loaded = identity.Get(); // the account the registration runs for
   if (!loaded) {
     return loaded.error();
   }
-
-  auto result = FinishRegistrationWithIdentity(registration, identity, nickname, multiaddrs, publish);
+  auto result = RenewNetworkOnly(registration, identity, nickname, multiaddrs, publish);
   if (!result) {
     return result.error();
   }
-
-  LocalIdentity updated = *loaded;
-  ApplyRegistrationResult(updated, *result);
-  if (auto saved = identity.Update(updated); !saved) {
-    return saved.error();
-  }
-  return updated;
+  return PersistRenewal(identity, *result, loaded->account_id);
 }
 
-Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, IdentityStore& identity,
-                                     bool auto_renew_enabled) {
+Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationClient& registration,
+                                                                 IdentityStore& identity,
+                                                                 const bool auto_renew_enabled) {
   auto loaded = identity.Get();
   if (!loaded) {
     return loaded.error();
   }
   // A registration from before KEM key bindings publishes one now: peers take the KEM key only with it.
   if (!ShouldPublishKemBinding(*loaded) && (!ShouldRenewRegistration(*loaded) || !auto_renew_enabled)) {
+    return std::optional<RegistrationResult>{};
+  }
+  auto result = RenewNetworkOnly(registration, identity, loaded->nickname);
+  if (!result) {
+    return result.error();
+  }
+  return std::optional<RegistrationResult>(std::move(*result));
+}
+
+Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, IdentityStore& identity,
+                                     bool auto_renew_enabled) {
+  auto loaded = identity.Get(); // the account the renewal runs for
+  if (!loaded) {
+    return loaded.error();
+  }
+  auto result = MaybeAutoRenewNetworkOnly(registration, identity, auto_renew_enabled);
+  if (!result) {
+    return result.error();
+  }
+  if (!*result) {
     return false;
   }
-
-  auto applied = FinishAndPersistRegistration(registration, identity, loaded->nickname);
-  if (!applied) {
+  if (auto applied = PersistRenewal(identity, **result, loaded->account_id); !applied) {
     return applied.error();
   }
   return true;

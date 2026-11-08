@@ -13,6 +13,14 @@ struct ShellLayout {
   static PaneVisibility WhichPanesVisible(const ShellState& state);
   static const char* NavContentKey(NavTab tab);
   static bool TabHasSecondary(NavTab tab);
+  /** Phones: Me and Contacts are tabs with no button in the tab bar (DEV/PLAN-minimal-nav.md A). They are entered
+   *  from an avatar or an invite, show no tab bar, and their root page's back returns to the tab they came from. */
+  static bool IsHiddenTabOnCompact(NavTab tab);
+  /** Phone layout on a hidden tab (IsHiddenTabOnCompact): its page covers a chat overlay left open under it. */
+  static bool HiddenTabShown(const ShellState& state);
+  /** Height of the phone tab bar now: 0 where it is not drawn (a hidden tab, the chat overlay), else `bar_height_dp`
+   *  (also under a pushed page, which covers it, and under the AI drawer's scrim). 0 on desktop. */
+  static float CompactTabBarDp(const ShellState& state, float bar_height_dp = ShellConfig{}.compact_nav_height_dp);
 
   static constexpr int kSidebarMinWidthDp = 200;
   static constexpr int kSidebarMaxWidthDp = 480;
