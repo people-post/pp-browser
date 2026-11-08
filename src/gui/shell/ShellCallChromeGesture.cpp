@@ -78,6 +78,10 @@ void ShellCallChromeGesture::Attach(ui::Element* root, ui::Context* context, Cal
 }
 
 void ShellCallChromeGesture::Detach() {
+  // Let go of the chip once, after the gesture is torn down (the Abort below does not tell it again).
+  std::function<void()> released =
+      attached_ && mode_ == CallChromeMode::Minimized ? std::move(callbacks_.on_chip_released) : nullptr;
+  callbacks_.on_chip_released = nullptr;
   Abort();
   SetClickSuppress(false);
   SetOutsideTapCapture(false);
@@ -99,6 +103,9 @@ void ShellCallChromeGesture::Detach() {
   docked_ = true;
   next_reflow_s_ = 0.0;
   layout_.reset();
+  if (released) {
+    released();
+  }
 }
 
 void ShellCallChromeGesture::Abort() {
@@ -404,8 +411,12 @@ void ShellCallChromeGesture::FinishSlide() {
   }
   // ⑤ There: anchored on its own side, so a chip that grows later grows away from the edge, never past it.
   DockChip(*target_);
-  if (callbacks_.on_chip_settled) {
-    callbacks_.on_chip_settled();
+  NotifyChipReleased();
+}
+
+void ShellCallChromeGesture::NotifyChipReleased() {
+  if (callbacks_.on_chip_released) {
+    callbacks_.on_chip_released();
   }
 }
 
@@ -535,6 +546,9 @@ void ShellCallChromeGesture::AbortArm(bool unlock_axis) {
       (axis_lock_->Get() == ShellGestureAxis::Vertical || axis_lock_->Get() == ShellGestureAxis::Horizontal)) {
     axis_lock_->Unlock();
   }
+  if (mode_ == CallChromeMode::Minimized) {
+    NotifyChipReleased(); // the press is over with no drop: a rebuild held for it runs
+  }
 }
 
 void ShellCallChromeGesture::UpdateDrag(int x_px, int y_px, ui::Event& /*event*/) {
@@ -635,6 +649,8 @@ void ShellCallChromeGesture::EndDrag() {
     if (!was_dragging) {
       SetChipOffset(0.f, 0.f, false);
       unlock();
+      // The press is over with no drop: a rebuild held for it runs (it merges with the restore's own remount).
+      NotifyChipReleased();
       if (callbacks_.on_restore) {
         callbacks_.on_restore();
       }

@@ -2507,8 +2507,9 @@ void ShellHost::AttachCallChromeGesture() {
       call_actions_.set_minimized_place(side, y_permille);
     }
   };
-  callbacks.on_chip_settled = [this]() {
-    // A remount held back while the chip slid (RemountCallChromeNow) runs now; held again until the place is back.
+  callbacks.on_chip_released = [this]() {
+    // A remount held back while the gesture owned the chip (RemountCallChromeNow) runs now: after its slide, or a
+    // press that ended with no drop. Held again until the dropped place is back.
     if (call_chip_rebuild_held_) {
       RemountCallChrome();
     }
@@ -2570,8 +2571,9 @@ void ShellHost::RemountCallChromeNow() {
   MeasureCallChip(doc);
   // #166: the minimised chip a drag still owns — pressed, sliding to its side, or dropped at a place the call state
   // has not taken yet — stays as it is: rebuilt from the state now it would jump back where it was. Only its text is
-  // dirtied (it is all bound); the rebuild runs when the slide ends (on_chip_settled) or the place comes back (that
-  // state change is a Remount of its own). A new mode, call or layout is never held: the chip is not kept then.
+  // dirtied (it is all bound); the rebuild runs when the gesture lets go (on_chip_released: the slide ended, a press
+  // ended with no drop, or it was detached) or the place comes back (that state change is a Remount of its own). A
+  // new mode, call or layout is never held: the chip is not kept then.
   if (KeepMinimizedChipOnRemount(state_.call_in_progress, doc->GetElementById("shell-call-minimized-chip"),
                                  call_chrome_gesture_)) {
     call_chip_rebuild_held_ = true;

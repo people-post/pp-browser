@@ -222,7 +222,7 @@ protected:
     call_.mode = CallChromeMode::Minimized;
     ShellCallChromeGesture::Callbacks callbacks;
     callbacks.on_chip_place = [this](int side, int y_permille) { placed_ = CallChipPlace{side, y_permille}; };
-    callbacks.on_chip_settled = [this]() { ++settled_; };
+    callbacks.on_chip_released = [this]() { ++released_; };
     callbacks.on_restore = [this]() { ++restores_; };
     gesture_.Attach(chip_, context_, CallChromeMode::Minimized, std::move(callbacks));
   }
@@ -280,7 +280,7 @@ protected:
   CallInProgressState call_;
   ShellCallChromeGesture gesture_;
   std::optional<CallChipPlace> placed_;
-  int settled_ = 0;
+  int released_ = 0;
   int restores_ = 0;
 };
 
@@ -308,13 +308,13 @@ TEST_F(ShellCallChipDragTest, LetGoItStaysWhereItShowsThenSlidesToTheNearerSide)
   Frame(0.1);
   EXPECT_LT(At().x, 258.f);
   EXPECT_GT(At().x, 208.f);
-  EXPECT_EQ(settled_, 0);
+  EXPECT_EQ(released_, 0);
 
   // There: anchored by `right` (a chip that grows grows away from the edge), at the same place.
   const float top = CallChipDock::Place(*placed_, {400.f, 800.f}, 180.f, 56.f).top_dp;
   Frame(0.2);
   EXPECT_FALSE(gesture_.IsSettling());
-  EXPECT_EQ(settled_, 1);
+  EXPECT_EQ(released_, 1);
   EXPECT_EQ(Local("right"), "12dp");
   EXPECT_EQ(Local("left"), "auto");
   EXPECT_EQ(Local("bottom"), "auto");
@@ -366,7 +366,7 @@ TEST_F(ShellCallChipDragTest, APressMidSlideStopsItWhereItShows) {
   EXPECT_NEAR(At().y, caught.y, 0.1f);
   Frame(0.5);
   EXPECT_NEAR(At().x, caught.x, 0.1f) << "the old slide moves it no more";
-  EXPECT_EQ(settled_, 0);
+  EXPECT_EQ(released_, 0);
   // It follows the finger from there (the translate on top of where it stopped) and is let go again.
   for (int i = 1; i <= 5; ++i) {
     context_->ProcessMouseMove(static_cast<int>(caught.x) + 20 - 30 * i, static_cast<int>(caught.y) + 20, 0);
@@ -379,7 +379,7 @@ TEST_F(ShellCallChipDragTest, APressMidSlideStopsItWhereItShows) {
   Frame(0.3);
   Frame(0.0);
   EXPECT_FLOAT_EQ(At().x, 12.f);
-  EXPECT_EQ(settled_, 1);
+  EXPECT_EQ(released_, 1);
 }
 
 TEST_F(ShellCallChipDragTest, ATapStillRestoresTheCall) {
@@ -478,6 +478,71 @@ TEST_F(ShellCallChipDragTest, ReflowKeepsADroppedChipInItsBandAsItGrows) {
   EXPECT_FLOAT_EQ(At().y, 800.f - 72.f - 100.f);
 }
 
+// A remount asked for while the chip is pressed is held (a rebuild would drop the press); when the press ends with no
+// drop — a tap, an aborted drag — or the gesture is detached, it runs, once (as ShellHost: a held flag, a remount).
+TEST_F(ShellCallChipDragTest, ARemountHeldForAPressRunsOnceWhenThePressEndsWithoutADrop) {
+  int remounts = 0;
+  bool held = false;
+  const auto remount = [&]() {
+    if (KeepMinimizedChipOnRemount(call_, chip_, gesture_)) {
+      held = true;
+      return;
+    }
+    held = false;
+    ++remounts;
+  };
+  const auto attach = [&]() {
+    ShellCallChromeGesture::Callbacks callbacks;
+    callbacks.on_chip_released = [&]() {
+      if (held) {
+        remount();
+      }
+    };
+    callbacks.on_restore = [this]() { ++restores_; };
+    gesture_.Attach(chip_, context_, CallChromeMode::Minimized, std::move(callbacks));
+  };
+  attach();
+
+  // Pressed, a remount comes in (a new quality chip, a control shown): held. Let go without moving: it runs, once.
+  context_->ProcessMouseMove(300, 40, 0);
+  context_->ProcessMouseButtonDown(0, 0);
+  remount();
+  EXPECT_TRUE(held);
+  EXPECT_EQ(remounts, 0);
+  context_->ProcessMouseButtonUp(0, 0);
+  EXPECT_EQ(restores_, 1);
+  EXPECT_EQ(remounts, 1);
+  EXPECT_FALSE(held);
+  context_->Update();
+
+  // Pressed and dragged, then the drag is aborted: the held remount runs.
+  Drag(300, 40, 300, 200, /*hold=*/true);
+  remount();
+  EXPECT_TRUE(held);
+  gesture_.Abort();
+  EXPECT_EQ(remounts, 2);
+  EXPECT_FALSE(placed_.has_value()) << "an aborted drag drops nothing";
+  context_->ProcessMouseButtonUp(0, 0);
+  EXPECT_EQ(remounts, 2);
+
+  // Pressed, held, then the gesture is detached: it runs.
+  context_->ProcessMouseMove(300, 40, 0);
+  context_->ProcessMouseButtonDown(0, 0);
+  remount();
+  EXPECT_TRUE(held);
+  gesture_.Detach();
+  EXPECT_EQ(remounts, 3);
+  EXPECT_FALSE(held);
+
+  // Nothing held: letting go remounts nothing.
+  attach();
+  context_->ProcessMouseMove(300, 40, 0);
+  context_->ProcessMouseButtonDown(0, 0);
+  context_->ProcessMouseButtonUp(0, 0);
+  EXPECT_EQ(remounts, 3);
+  gesture_.Detach();
+}
+
 // A slide whose end never comes (no Animationend: the animation did not run, or the chip was hidden) is ended by the
 // frame's Reflow 0.4s after the drop: anchored on its side, and its rebuild no longer held.
 TEST_F(ShellCallChipDragTest, ASlideWhoseEndNeverComesIsEndedByReflow) {
@@ -494,7 +559,7 @@ TEST_F(ShellCallChipDragTest, ASlideWhoseEndNeverComesIsEndedByReflow) {
   clock_.now += 0.25;
   gesture_.Reflow(call_);
   EXPECT_FALSE(gesture_.IsSettling());
-  EXPECT_EQ(settled_, 1);
+  EXPECT_EQ(released_, 1);
   EXPECT_EQ(Local("right"), "12dp");
   EXPECT_EQ(Local("left"), "auto");
   EXPECT_FALSE(KeepMinimizedChipOnRemount(call_, chip_, gesture_));
@@ -539,7 +604,7 @@ protected:
   void Attach() {
     ShellCallChromeGesture::Callbacks callbacks;
     callbacks.on_chip_place = [this](int side, int y_permille) { placed_ = CallChipPlace{side, y_permille}; };
-    callbacks.on_chip_settled = [this]() { ++settled_; };
+    callbacks.on_chip_released = [this]() { ++released_; };
     callbacks.on_restore = [this]() { ++restores_; };
     gesture_.Attach(CallChromeGestureElement(document_, CallChromeMode::Minimized), context_, CallChromeMode::Minimized,
                     std::move(callbacks));
@@ -572,7 +637,7 @@ TEST_F(ShellCallChipMountedTest, TheGestureMovesTheChipNotItsLayer) {
   Frame(0.0);
   EXPECT_FLOAT_EQ(At().x, 258.f);
   Frame(0.3);
-  EXPECT_EQ(settled_, 1) << "the chip's own Animationend";
+  EXPECT_EQ(released_, 1) << "the chip's own Animationend";
   EXPECT_EQ(Local("right"), "12dp");
   Frame(0.0);
   EXPECT_TRUE(layer_->GetLocalStyleProperties().empty());
@@ -667,7 +732,7 @@ TEST_F(ShellCallChipMountedTest, ReflowsFirstCorrectionAfterARebuildIsNotAnimate
   Frame(0.0);
   EXPECT_NEAR(At().y, target, 0.1f);
   EXPECT_FALSE(gesture_.IsSettling());
-  EXPECT_EQ(settled_, 0);
+  EXPECT_EQ(released_, 0);
 }
 
 } // namespace
