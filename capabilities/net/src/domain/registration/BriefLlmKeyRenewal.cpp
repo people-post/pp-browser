@@ -62,6 +62,11 @@ Roe<BriefLlmKeyRenewal> RenewBriefLlmKey(const BriefLlmKeyStore& store, const st
   if (std::string current = Resolved(*before); !current.empty() && !(SecretText(current) == SecretText(rejected))) {
     return BriefLlmKeyRenewal{.key = std::move(current), .reused = true}; // another turn already replaced it
   }
+  // The registered key was refused and a guest key is stored beside it: ask with that one first; mint only when there
+  // is no other key to try.
+  if (!before->brief_llm_guest_api_key.empty() && !(before->brief_llm_guest_api_key == SecretText(rejected))) {
+    return BriefLlmKeyRenewal{.key = before->brief_llm_guest_api_key.Reveal(), .reused = true};
+  }
   auto minted = store.mint(llm_base_url);
   if (!minted) {
     return minted.error();

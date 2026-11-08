@@ -222,8 +222,14 @@ private:
   std::vector<std::function<void(bool)>> pending_;
   bool showing_ = false;
   bool unlock_in_progress_ = false;
-  /** Set at unlock.start; unlock.done reports the time since (ms=0 when no start was recorded, e.g. grace). */
+  /**
+   * The door's timer for unlock.done ms=: set at its FIRST unlock.start (a wrong PIN and the retry keep it), or at a
+   * grace attempt's start (cleared again when that attempt does not unlock, so the PIN after it times itself);
+   * cleared when the door closes (Finish). ms=0 only when neither was seen.
+   */
   std::optional<std::chrono::steady_clock::time_point> unlock_started_;
+  /** unlock_started_ came from a grace attempt (not a PIN / silent unlock). */
+  bool unlock_started_by_grace_ = false;
   bool deferred_unlock_started_ = false;
   /** The grace entry was Unavailable: retried when protected data comes back or the app comes forward. */
   bool grace_pending_ = false;

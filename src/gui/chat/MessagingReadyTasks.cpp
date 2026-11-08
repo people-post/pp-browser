@@ -290,7 +290,7 @@ void MessagingReadyTasks::RetryBriefKeyMint() {
   }
 }
 
-void MessagingReadyTasks::OnNewSession() {
+void MessagingReadyTasks::OnMessagingTornDown() {
   state_->push_run->Reset();
   state_->renew_run->Reset();
   state_->brief_key_run->Reset();

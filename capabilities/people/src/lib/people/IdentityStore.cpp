@@ -481,11 +481,13 @@ Roe<void> IdentityStore::EnsureLoaded() const {
   return {};
 }
 
-Roe<void> IdentityStore::Save() const {
+Roe<void> IdentityStore::Save() const { return SaveIdentity(identity_); }
+
+Roe<void> IdentityStore::SaveIdentity(const LocalIdentity& identity) const {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();
   }
-  const std::string json = DumpJson(IdentityToJson(identity_), 2);
+  const std::string json = DumpJson(IdentityToJson(identity), 2);
   const ByteVector plaintext(json.begin(), json.end());
   const std::string aad = FileCipher::BuildAad("identity", ProfileId());
   auto ciphertext = FileCipher::Encrypt(dek_, plaintext, aad);
@@ -548,16 +550,18 @@ Roe<LocalIdentity> IdentityStore::Update(const LocalIdentity& identity) {
   if (!load) {
     return load.error();
   }
-  identity_ = identity;
-  if (auto peer = DerivePeerId(identity_); !peer) {
+  LocalIdentity candidate = identity;
+  if (auto peer = DerivePeerId(candidate); !peer) {
     return peer.error();
   }
-  dirty_ = true;
-  if (Save()) {
-    dirty_ = false;
-    return identity_;
+  // Written first, kept in memory only then: a failed write must not leave an unsaved identity that Get() shows and a
+  // later, unrelated save writes.
+  if (!SaveIdentity(candidate)) {
+    return Error("Failed to save identity");
   }
-  return Error("Failed to save identity");
+  identity_ = std::move(candidate);
+  dirty_ = false;
+  return identity_;
 }
 
 Roe<LocalIdentity> IdentityStore::Modify(const std::function<bool(LocalIdentity& identity)>& change) {
@@ -573,13 +577,12 @@ Roe<LocalIdentity> IdentityStore::Modify(const std::function<bool(LocalIdentity&
   if (auto peer = DerivePeerId(changed); !peer) {
     return peer.error();
   }
-  identity_ = std::move(changed);
-  dirty_ = true;
-  if (Save()) {
-    dirty_ = false;
-    return identity_;
+  if (!SaveIdentity(changed)) {
+    return Error("Failed to save identity"); // identity_ unchanged
   }
-  return Error("Failed to save identity");
+  identity_ = std::move(changed);
+  dirty_ = false;
+  return identity_;
 }
 
 Roe<std::string> IdentityStore::SignPayload(const std::string& canonical_json) const {
