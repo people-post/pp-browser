@@ -44,6 +44,6 @@ The node says `busy` / `full` before its members feel it, and new work goes else
 ## Open
 
 - A deadline on real-time media in the send queue (3), and the data plane on more than one thread (2): a design of their own.
-- The link-table walks in Amp (2): per-tick work that grows with the table; indexed, a node's idle cost would grow with its clients, not their square.
+- The link-table walks in Amp (2): on pp-cpp-amp develop (2026-11-08, not yet released) resends and queued sends are event-driven and the walks run every 50 ms. Measured there (perf: ~85 % of a parked node's CPU was walks): 6000 parked at 5 % of a core (was ~40 %), 12000 at 17 %, 20000 at 46 %; the pump saturates past ~23k (was ~11k). Once released and pinned, the link default (8192) can follow.
 - Thresholds per machine type (the 0.70 / 0.95 lines are first guesses); a run on the org seeds' size with the host's buffers raised.
 - Restart storms and an overloaded node's lost parks (4–5), as one piece of work: every parked client redialing at once is the same spiral. Then a soak, and abuse (one client's uncapped bandwidth through a bridge).
