@@ -193,18 +193,18 @@ void AppendResult(std::ostringstream& out) {
 }
 
 /**
- * The steps before connect, one at a time (#11): the ones passed as short ✓ lines, then the current one with its
- * moving dot; a step that has not happened yet is not shown.
+ * The three connection steps before connect, all always shown: the ones passed as ✓ (done), the one in progress with
+ * its moving dot (current), and the ones not reached yet as plain dots.
  */
 void AppendSteps(std::ostringstream& out, const int stage) {
   out << "<div class=\"call-phone-steps\">";
   const char* vars[] = {"call_in_progress_story_step1", "call_in_progress_story_step2",
                         "call_in_progress_story_step3"};
-  for (int i = 0; i <= stage && i < 3; ++i) {
-    // Step 1 is current while the other side is being called, done once answered; step 2 is current after.
+  for (int i = 0; i < 3; ++i) {
     const bool done = i < stage;
-    out << "<div class=\"call-phone-step" << (done ? " call-phone-step--done" : " call-phone-step--current")
-        << "\"><div class=\"call-phone-step-dot\">";
+    const bool current = i == stage;
+    out << "<div class=\"call-phone-step"
+        << (done ? " call-phone-step--done" : (current ? " call-phone-step--current" : "")) << "\"><div class=\"call-phone-step-dot\">";
     if (done) {
       out << "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg>";
     }
