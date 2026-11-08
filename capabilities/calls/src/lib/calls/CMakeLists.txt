@@ -30,6 +30,7 @@ pp_browser_add_lib_library(pp_lib_calls
     CallTypes.cpp
     LiveCall.cpp
     PeerCapsLogic.cpp
+    RecentCallsOver.cpp
     SoftMigrateLogic.cpp
   PUBLIC_LIBS
     pp_calls_common

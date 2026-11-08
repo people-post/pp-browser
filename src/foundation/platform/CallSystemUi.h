@@ -41,13 +41,18 @@ public:
    * for the app to find the ring it announced.
    */
   virtual bool HasPendingPushCall() const { return false; }
+  /** The call the push's pending call names (CallKit: its `wake_hint`); empty: none pending, or it named none. */
+  virtual std::string PendingPushCallId() const { return {}; }
   /**
    * The app can find rings now (vault unlocked, messaging up). The push's call waits for its ring
    * unboundedly (up to an absolute cap) until this, then the usual short timeouts count from here.
    */
   virtual void NotifyMessagingReady() {}
-  /** Take the push's call off the system screen: no ring will match it (the app joined a call on its own). */
-  virtual void EndPendingPushCall() {}
+  /**
+   * Take the push's call off the system screen: no ring will match it. `reason`: AnsweredElsewhere when the app
+   * took over (it joined a call on its own, its own ring rings), Ended when the call it names is over (P017).
+   */
+  virtual void EndPendingPushCall(EndReason reason) { (void)reason; }
   /** `fn` runs (UI thread) whenever HasPendingPushCall() changes; the PIN screen words itself by it. */
   virtual void SetPendingChangedHandler(std::function<void()> fn) { (void)fn; }
   /**

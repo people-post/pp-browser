@@ -111,6 +111,17 @@ function(pp_browser_configure_ios_app target)
     )
   endforeach()
 
+  if(PP_BROWSER_IOS_CALLKIT)
+    # CallKit's call screen shows the app's mark from this template (monochrome with alpha, 40 pt @3x; P017), at the
+    # bundle's root where NSBundle's pathForResource looks, as the .lproj above.
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy
+        "${CMAKE_SOURCE_DIR}/packaging/ios/CallKitIcon.png"
+        "$<TARGET_BUNDLE_DIR:${target}>/CallKitIcon.png"
+      VERBATIM
+    )
+  endif()
+
   install(TARGETS ${target} BUNDLE DESTINATION .)
   if(PP_BROWSER_UI_DEMO)
     set(_ios_install_exclude)

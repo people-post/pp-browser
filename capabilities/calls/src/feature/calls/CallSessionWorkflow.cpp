@@ -911,6 +911,7 @@ void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCall
 Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms,
                                           const LiveCallEndReason reason) {
   live_calls_.Close(session.call_id, reason);
+  calls_over_.Note(session.call_id);
   // The decision is recorded before the media stops (#452): nothing about a slow stop may leave the
   // call looking live. The stop itself never waits on the devices (L016).
   session.state = CallSessionState::Ended;
@@ -1023,6 +1024,7 @@ bool CallSessionWorkflow::StillInCall(const std::string& call_id) const {
 Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveCallEndReason reason) {
   // This device leaves the call whether or not it ends for the others (group).
   live_calls_.Close(call_id, reason);
+  calls_over_.Note(call_id);
   if (pending_answerer_kick_call_id_ == call_id) {
     ClearPendingAnswererKick();
   }
@@ -1356,6 +1358,8 @@ bool CallSessionWorkflow::ShouldIgnoreInvite(const CallInviteDetail& invite, con
       ended && ended->has_value() && (*ended)->state == CallSessionState::Ended &&
       !join_requested_until_ms_.contains(invite.call_id)) {
     log().info << "CallInvite ignored (ended session) call_id=" << invite.call_id;
+    calls_over_.Note(invite.call_id); // P017: a push's call waiting for it goes
+    reports_.Emit(workflow_report::Changed{});
     return true;
   }
   // P001: when we charge (local floor > 0), auto-reject offers below floor.
@@ -1371,6 +1375,8 @@ bool CallSessionWorkflow::ShouldIgnoreInvite(const CallInviteDetail& invite, con
   }
   const int64_t now = util::NowUnixMs();
   if (CallSessionLogic::ShouldDropStaleInvite(invite, now, relay_created_at_ms, relay_server_time_ms)) {
+    calls_over_.Note(invite.call_id); // P017: too late to ring; a push's call waiting for it goes
+    reports_.Emit(workflow_report::Changed{});
     if (invite.origin_group_id && !invite.origin_group_id->empty()) {
       // V053: too late to ring, not too late to join — the group's call may still be going on.
       RecordMissedGroupCall(invite, sender_identity, local_identity, relay_created_at_ms.value_or(now));

@@ -114,7 +114,7 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
   if (shown_.empty() && ui_.HasPendingPushCall() &&
       (screen.kind == CallScreen::Kind::Answering || screen.kind == CallScreen::Kind::InCall)) {
     Note("pending_orphan");
-    ui_.EndPendingPushCall();
+    ui_.EndPendingPushCall(ICallSystemUi::EndReason::AnsweredElsewhere);
   }
 
   const bool ring = screen.kind == CallScreen::Kind::Ringing && !screen.ring_call_id.empty();
@@ -172,7 +172,7 @@ void CallSystemUiBridge::LeaveRingToApp(const std::string& ring_call_id) {
   }
   if (ui_.HasPendingPushCall()) {
     Note("pending_over_call");
-    ui_.EndPendingPushCall(); // the app's own ring takes it
+    ui_.EndPendingPushCall(ICallSystemUi::EndReason::AnsweredElsewhere); // the app's own ring takes it
   }
   if (declined) {
     ApplyDecline(); // declining it ends nothing
@@ -205,6 +205,14 @@ void CallSystemUiBridge::OnMessagingReady() {
   ready_at_ms_ = Now();
   Note("messaging_ready");
   ui_.NotifyMessagingReady();
+}
+
+void CallSystemUiBridge::OnCallOver(const std::string& call_id) {
+  if (call_id.empty() || !ui_.Available() || !ui_.HasPendingPushCall() || ui_.PendingPushCallId() != call_id) {
+    return; // a push that named no call waits for the first ring: an over call says nothing about it
+  }
+  Note("pending_call_over");
+  ui_.EndPendingPushCall(ICallSystemUi::EndReason::Ended); // pending_gone drops a choice made on it
 }
 
 void CallSystemUiBridge::OnAudioSession(const bool active) {

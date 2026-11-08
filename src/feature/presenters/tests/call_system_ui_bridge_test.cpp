@@ -1,9 +1,15 @@
 #include "feature/presenters/CallSystemUiBridge.h"
 
+#include "common/Diag.h"
+#include "foundation/platform/CallPushAge.h"
+#include "lib/calls/CallTypes.h"
+
 #include <gtest/gtest.h>
 
 #include <functional>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace pbr {
@@ -15,6 +21,7 @@ public:
   bool Available() const override { return true; }
   void SetCallbacks(Callbacks callbacks) override { callbacks_ = std::move(callbacks); }
   bool HasPendingPushCall() const override { return pending_push; }
+  std::string PendingPushCallId() const override { return pending_push ? pending_call_id : std::string(); }
   void ReportIncoming(const std::string& call_id, const std::string& caller_name, bool video) override {
     log.push_back("incoming " + call_id + " " + caller_name + (video ? " video" : ""));
     pending_push = false;
@@ -24,8 +31,8 @@ public:
   }
 
   void NotifyMessagingReady() override { log.push_back("ready"); }
-  void EndPendingPushCall() override {
-    log.push_back("ended pending");
+  void EndPendingPushCall(EndReason reason) override {
+    log.push_back(reason == EndReason::Ended ? "ended pending: over" : "ended pending");
     pending_push = false;
     if (callbacks_.pending_gone) {
       callbacks_.pending_gone();
@@ -33,6 +40,8 @@ public:
   }
 
   bool pending_push = false;
+  /** The call the push named (its `wake_hint`); empty: none. */
+  std::string pending_call_id;
   std::vector<std::string> log;
   Callbacks callbacks_;
 };
@@ -438,6 +447,72 @@ TEST_F(CallSystemUiBridgeTest, ADeclineOnThePushsCallStillDeclinesARingOverACall
   bridge_.Sync(RingOver("c3", "c1"), "c1", false);
   EXPECT_EQ(did, (std::vector<std::string>{"decline", "decline"}));
   EXPECT_EQ(ui_.log, (std::vector<std::string>{"ended pending"}));
+}
+
+// P017 (#555 B187): the push's call waits for its ring; once the app knows the call it names is over (its invite read
+// too late, its caller gone), it goes at once instead of ringing on for its timeout.
+TEST_F(CallSystemUiBridgeTest, ThePushsCallGoesAsSoonAsItsCallIsOver) {
+  ui_.pending_push = true;
+  ui_.pending_call_id = "c1";
+  ui_.callbacks_.answer("c1"); // answered before the app could tell
+  bridge_.OnCallOver("c1");
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"ended pending: over"}));
+  EXPECT_FALSE(ui_.pending_push);
+  // The answer went with it: a later ring of that id is not answered for the user.
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_TRUE(did.empty());
+  EXPECT_EQ(ui_.log.back(), "incoming c1 name-of-alice");
+}
+
+// P017: a push the phone ends as too old carries an invite the app drops too (its relay age is at least the push's);
+// a younger one still rings, and its push's call must be there for it, or that ring would show as a second call.
+TEST(CallPushStaleRuleTest, APushTooOldToRingCarriesAnInviteTooOldToRing) {
+  EXPECT_EQ(kCallPushStaleAfterMs, kDefaultCallInviteTtlMs + kCallInviteRelayAgeSlackMs);
+}
+
+TEST_F(CallSystemUiBridgeTest, AnotherCallBeingOverLeavesThePushsCallWaiting) {
+  ui_.pending_push = true;
+  ui_.pending_call_id = "c1";
+  bridge_.OnCallOver("c0"); // an earlier call of the same caller, also in the catch-up
+  EXPECT_TRUE(ui_.log.empty());
+  EXPECT_TRUE(ui_.pending_push);
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"}));
+}
+
+TEST_F(CallSystemUiBridgeTest, APushThatNamedNoCallWaitsForTheFirstRingWhateverEnds) {
+  ui_.pending_push = true; // an older relay: no wake_hint
+  bridge_.OnCallOver("c1");
+  EXPECT_TRUE(ui_.log.empty());
+  EXPECT_TRUE(ui_.pending_push);
+}
+
+TEST_F(CallSystemUiBridgeTest, ACallOverWithNoPushCallWaitingDoesNothing) {
+  bridge_.OnCallOver("c1");
+  bridge_.OnCallOver("");
+  EXPECT_TRUE(ui_.log.empty());
+}
+
+/** The Diag channel's lines: what Send diagnostics carries (DIAGNOSTICS.md). */
+class DiagCapture : public logging::Handler {
+public:
+  void emit(logging::Level, const std::string&, const std::string& message) override { lines.push_back(message); }
+  std::vector<std::string> lines;
+};
+
+// #555: the phone's call screen's events are shareable lines — a word and safe numbers, never the call's id.
+TEST_F(CallSystemUiBridgeTest, ItsEventsAreShareableDiagLines) {
+  auto diag = std::make_shared<DiagCapture>();
+  DiagLog().addHandler(diag);
+  ui_.pending_push = true;
+  ui_.pending_call_id = "c1";
+  bridge_.OnCallOver("c1");
+  ASSERT_FALSE(diag->lines.empty());
+  EXPECT_NE(diag->lines.front().find("event=call.system what=pending_call_over"), std::string::npos)
+      << diag->lines.front();
+  for (const std::string& line : diag->lines) {
+    EXPECT_EQ(line.find("c1"), std::string::npos) << line;
+  }
 }
 
 TEST_F(CallSystemUiBridgeTest, ACallOnTheSystemScreenStaysThereWhileASecondRingsInTheApp) {

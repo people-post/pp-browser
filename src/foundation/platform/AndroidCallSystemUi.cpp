@@ -126,7 +126,10 @@ public:
 
   bool HasPendingPushCall() const override { return Activity().CallBool("hasPendingPushCall"); }
   void NotifyMessagingReady() override { Activity().CallVoid("callMessagingReady"); }
-  void EndPendingPushCall() override { Activity().CallVoid("endPendingPushCall"); }
+  void EndPendingPushCall(const EndReason reason) override {
+    (void)reason; // the notification just goes
+    Activity().CallVoid("endPendingPushCall");
+  }
   void SetPendingChangedHandler(std::function<void()> fn) override { pending_changed_ = std::move(fn); }
 
   void ReportIncoming(const std::string& call_id, const std::string& caller_name, const bool video) override {
