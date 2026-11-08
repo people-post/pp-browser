@@ -32,7 +32,6 @@ quote-bar	#007aff	#0a84ff	§2.5 = accent
 quote-bg-out	#ffffff33	#ffffff33	§2.5 (also in-bubble chip / selection)
 quote-bg-in	#0000000f	#0000000f	§2.5 quote block in a received bubble (black 6%)
 bubble-out-meta	#ffffffd9	#ffffffd9	§2.5 in-bubble time in a sent bubble (white 85%)
-unread	#007aff	#0a84ff	§2.5 = accent
 tab-badge	#ff3b30	#ff453a	§2.5 = danger
 avatar-0	#007aff	#007aff	§2.6
 avatar-1	#34c759	#34c759	§2.6

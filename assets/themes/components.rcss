@@ -7534,7 +7534,7 @@ input.checkbox {
   flex-shrink: 0;
 }
 
-/* Phone chat list (DESIGN-pp-ui 8.3 / 8.8): full-width 76dp rows, a 52dp round avatar, a hairline inset from 80dp.
+/* Phone chat list (DESIGN-pp-ui 8.3 / 8.8): full-width 64dp rows, a 52dp round avatar, a hairline inset from 80dp.
    The avatar, type icon, muted bell and search box only exist on the phone; desktop keeps the card rows. */
 .chat-search,
 .chat-row-avatar,
@@ -7613,8 +7613,8 @@ input.checkbox {
 
 .shell-layer-compact .sidebar-session {
   gap: 12dp;
-  height: 76dp;
-  min-height: 76dp;
+  height: 64dp;
+  min-height: 64dp;
   margin: 0;
   padding: 0 0 0 16dp;
   border: 0;
@@ -7715,11 +7715,11 @@ input.checkbox {
 }
 
 .shell-layer-compact .sidebar-session-body {
-  height: 76dp;
+  height: 64dp;
   padding-right: 16dp;
   box-sizing: border-box;
   justify-content: center;
-  gap: 5dp;
+  gap: 2dp;
 }
 
 .shell-layer-compact .sidebar-session-line {
@@ -7731,21 +7731,22 @@ input.checkbox {
 }
 
 .shell-layer-compact .sidebar-session-title {
-  font-size: 16dp;
-  line-height: 21dp;
+  font-size: 17dp;
+  line-height: 22dp;
   font-weight: bold;
 }
 
 /* Kenneth 2026-11-03: one size smaller than the spec's subhead, more air ("不要塞的太满"). */
 .shell-layer-compact .sidebar-session-preview,
 .shell-layer-compact .sidebar-session-mention {
-  font-size: 14dp;
-  line-height: 19dp;
+  font-size: 15dp;
+  line-height: 20dp;
 }
 
+/* The time shares the title's line and its baseline (22dp line, 13dp text). */
 .shell-layer-compact .sidebar-session-date {
-  font-size: 12dp;
-  line-height: 16dp;
+  font-size: 13dp;
+  line-height: 22dp;
 }
 
 .shell-layer-compact .chat-row-type,

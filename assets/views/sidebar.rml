@@ -61,6 +61,7 @@
          data-class-sidebar-session-active="session.active"
          data-class-sidebar-session--unread="session.unread_count > 0 || session.unread_dot"
          data-class-sidebar-session--pinned="session.pinned"
+         data-class-sidebar-session--empty="session.preview_empty"
          data-class-sidebar-session--ai="session.kind == 'ai'"
          data-class-sidebar-session--private="session.kind == 'private'"
          data-class-sidebar-session--public="session.kind == 'public'"

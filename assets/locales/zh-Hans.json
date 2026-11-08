@@ -1646,6 +1646,7 @@
     "sidebar.menu.ask_before_sharing_ai": "共享给 AI 前再次询问",
     "sidebar.mentioned": "有人@了你",
     "sidebar.blocked_preview": "已屏蔽",
+    "sidebar.preview_empty": "暂无消息",
     "sidebar.search_placeholder": "搜索",
     "sidebar.menu.mute_8h": "8 小时",
     "sidebar.menu.mute_1w": "1 周",

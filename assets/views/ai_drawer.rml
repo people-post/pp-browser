@@ -34,6 +34,7 @@
          data-attr-session-id="session.id"
          data-class-sidebar-session--unread="session.unread_count &gt; 0 || session.unread_dot"
          data-class-sidebar-session--pinned="session.pinned"
+         data-class-sidebar-session--empty="session.preview_empty"
          data-event-click="select_thread(session.id)">
       <!-- Each AI conversation shows its title's first character in a per-conversation colour (like chats),
            so they are distinguishable rather than all the same icon (Kenneth 2026-11-05). -->

@@ -121,6 +121,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
     session_handle.RegisterMember("id", &SessionDisplayRow::id);
     session_handle.RegisterMember("title", &SessionDisplayRow::title);
     session_handle.RegisterMember("preview", &SessionDisplayRow::preview);
+    session_handle.RegisterMember("preview_empty", &SessionDisplayRow::preview_empty);
     session_handle.RegisterMember("kind", &SessionDisplayRow::kind);
     session_handle.RegisterMember("unread_count", &SessionDisplayRow::unread_count);
     session_handle.RegisterMember("unread_display", &SessionDisplayRow::unread_display);

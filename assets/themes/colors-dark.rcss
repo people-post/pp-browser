@@ -1554,6 +1554,11 @@ input.checkbox:checked {
   color: #ebebf599;
 }
 
+/* A thread with no message yet: the placeholder is quieter than a real preview (the presenter's preview_empty). */
+.sidebar-session--empty .sidebar-session-preview {
+  color: #ebebf54c;
+}
+
 .sidebar-session-icon {
   background-color: #2c2c2e;
 }
@@ -1575,11 +1580,11 @@ input.checkbox:checked {
 }
 
 .sidebar-unread-dot {
-  background-color: #0a84ff;
+  background-color: #40c8e0;
 }
 
-.sidebar-unread {
-  background-color: #0a84ff;
+.badge-count.sidebar-unread {
+  background-color: #40c8e0;
   color: #ffffff;
 }
 

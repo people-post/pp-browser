@@ -32,6 +32,8 @@ struct ChatSessionRow {
   /** The title is the stored default of a new AI chat: the renderer shows it in the UI language. */
   bool title_is_default_ai = false;
   std::string preview;
+  /** The thread has no message text yet: `preview` holds the localised placeholder instead of an empty second line. */
+  bool preview_empty = false;
   /** Visual chat type: ai | private | public | group. */
   std::string kind;
   int unread_count = 0;
