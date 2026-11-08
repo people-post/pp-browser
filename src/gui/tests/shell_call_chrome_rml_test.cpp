@@ -234,6 +234,29 @@ TEST(ShellCallChromeRmlTest, PhoneStoryShowsAllStepsAndHighlightsTheReachedOnes)
     }
   }
 
+  // #172: a 1:1 call's five steps: calling, answered, matching, encrypted channel, connected (5 = all done).
+  const char* five[] = {"cpppp", "dcppp", "ddcpp", "dddcp", "ddddd"};
+  const int stages[] = {0, 1, 2, 3, 5};
+  for (int k = 0; k < 5; ++k) {
+    ShellState state = PhoneGroupCall();
+    state.call_in_progress.show_roster = false;
+    state.call_in_progress.story_active = true;
+    state.call_in_progress.story_step_count = 5;
+    state.call_in_progress.story_stage = stages[k];
+    const std::string rml = CallInProgressRml(state);
+    EXPECT_EQ(Count(rml, "<div class=\"call-phone-step-dot\">"), 5u) << "stage=" << stages[k];
+    size_t last = 0;
+    for (int i = 0; i < 5; ++i) {
+      const char kind = five[k][i];
+      const std::string want = StepMarkup(kind == 'd' ? done.c_str() : kind == 'c' ? current.c_str() : "",
+                                          kind == 'd', i + 1);
+      const size_t at = rml.find(want);
+      EXPECT_NE(at, std::string::npos) << "five steps stage=" << stages[k] << " step=" << i + 1;
+      EXPECT_GE(at, last);
+      last = at;
+    }
+  }
+
   // "How this call got through" still lists every line so far.
   ShellState state = PhoneGroupCall();
   state.call_in_progress.show_roster = false;

@@ -196,14 +196,15 @@ void AppendResult(std::ostringstream& out) {
 }
 
 /**
- * The three connection steps before connect, all always shown: the ones passed as ✓ (done), the one in progress with
+ * The connection steps before connect (3 for a group, up to 5 for a 1:1 call), all always shown: the ones passed as ✓ (done), the one in progress with
  * its moving dot (current), and the ones not reached yet as plain dots.
  */
-void AppendSteps(std::ostringstream& out, const int stage) {
+void AppendSteps(std::ostringstream& out, const int stage, const int count) {
   out << "<div class=\"call-phone-steps\">";
   const char* vars[] = {"call_in_progress_story_step1", "call_in_progress_story_step2",
-                        "call_in_progress_story_step3"};
-  for (int i = 0; i < 3; ++i) {
+                        "call_in_progress_story_step3", "call_in_progress_story_step4",
+                        "call_in_progress_story_step5"};
+  for (int i = 0; i < count && i < 5; ++i) {
     const bool done = i < stage;
     const bool current = i == stage;
     out << "<div class=\"call-phone-step"
@@ -554,7 +555,7 @@ std::string CallPhoneRml(const ShellState& state) {
     }
     if (call.story_active) {
       out << "<div class=\"call-phone-story call-phone-story--card call-phone-story--group\"><div class=\"call-phone-card\">";
-      AppendSteps(out, call.story_stage);
+      AppendSteps(out, call.story_stage, call.story_step_count);
       out << "</div></div>";
     }
     out << "</div>";
@@ -585,7 +586,7 @@ std::string CallPhoneRml(const ShellState& state) {
     out << "<div class=\"call-phone-story" << (video_layout ? " call-phone-story--card" : "") << "\">";
     out << (video_layout ? "<div class=\"call-phone-card\">" : "");
     AppendPair(out, call);
-    AppendSteps(out, call.story_stage);
+    AppendSteps(out, call.story_stage, call.story_step_count);
     AppendHints(out);
     out << (video_layout ? "</div>" : "");
     out << "</div>";

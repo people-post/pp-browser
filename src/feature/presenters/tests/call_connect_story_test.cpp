@@ -34,18 +34,19 @@ TEST(CallConnectStoryTest, AnOutgoingCallShowsCallingThenAnsweredThenTheResultWi
   CallStoryView v = story.Step(At(1'000, Status::Calling));
   EXPECT_TRUE(v.connecting);
   EXPECT_TRUE(v.outgoing);
-  EXPECT_EQ(v.stage, 0);
+  EXPECT_EQ(v.stage, CallConnectStory::kStageCalling);
   EXPECT_FALSE(v.signal_shown);
 
   v = story.Step(At(4'000, Status::Connecting, false, ""));
   EXPECT_TRUE(v.connecting);
-  EXPECT_EQ(v.stage, 1) << "leaving Calling means the other side answered";
+  EXPECT_EQ(v.stage, CallConnectStory::kStageAnswered) << "leaving Calling means the other side answered";
+  v = story.Step(At(4'500, Status::Connecting, false, ""));
+  EXPECT_EQ(v.stage, CallConnectStory::kStageMatching) << "the answer to live media is the line being matched";
 
   // Connected 1.8 s after the answer, around the network limits.
   v = story.Step(At(5'800, Status::Connected, true, "punched"));
-  EXPECT_FALSE(v.connecting);
-  EXPECT_TRUE(v.result_shown);
-  EXPECT_FALSE(v.result_fading);
+  EXPECT_TRUE(v.connecting) << "the list still plays out";
+  EXPECT_EQ(v.stage, CallConnectStory::kStageSecuring);
   EXPECT_EQ(v.result_route, CallRoute::AroundLimits);
   EXPECT_EQ(v.connect_tenths, 18) << "from the answer, not from placing the call (ringing is not connecting)";
   EXPECT_FALSE(v.signal_shown) << "the result line comes first";
@@ -59,43 +60,73 @@ TEST(CallConnectStoryTest, AnOutgoingCallShowsCallingThenAnsweredThenTheResultWi
   EXPECT_EQ(v.events[3].kind, CallStoryEvent::Kind::Encrypted);
 }
 
-// #11: a "calling" answered within 300 ms is still shown 600 ms so it is seen to pass; a slower answer moves on at
-// once (no made-up delays); connecting ends the hold.
-TEST(CallConnectStoryTest, AQuickAnswerKeepsCallingOnScreenForAMoment) {
+// #172: every step stays on screen at least 450 ms, however fast the real stages go; only the words wait.
+TEST(CallConnectStoryTest, EachStepStaysAtLeastFourHundredFiftyMillisecondsInOrder) {
   CallConnectStory story;
-  EXPECT_EQ(story.Step(At(1'000, Status::Calling)).stage, 0);
-  CallStoryView v = story.Step(At(1'200, Status::Connecting, false, ""));
-  EXPECT_EQ(v.stage, 0) << "answered after 200 ms: calling stays";
+  story.Step(At(1'000, Status::Calling));
+  CallStoryView v = story.Step(At(1'100, Status::Connecting, false, ""));
+  EXPECT_EQ(v.stage, CallConnectStory::kStageCalling) << "answered after 100 ms: calling stays";
   ASSERT_EQ(v.events.size(), 2u) << "the history has the answer at once";
   EXPECT_EQ(v.events[1].kind, CallStoryEvent::Kind::PeerAnswered);
-  EXPECT_EQ(story.Step(At(1'599, Status::Connecting, false, "")).stage, 0);
-  EXPECT_EQ(story.Step(At(1'600, Status::Connecting, false, "")).stage, 1);
+  EXPECT_EQ(story.Step(At(1'449, Status::Connecting, false, "")).stage, CallConnectStory::kStageCalling);
+  EXPECT_EQ(story.Step(At(1'450, Status::Connecting, false, "")).stage, CallConnectStory::kStageAnswered);
+  EXPECT_EQ(story.Step(At(1'899, Status::Connecting, false, "")).stage, CallConnectStory::kStageAnswered);
+  EXPECT_EQ(story.Step(At(1'900, Status::Connecting, false, "")).stage, CallConnectStory::kStageMatching);
 
-  CallConnectStory slow;
-  slow.Step(At(1'000, Status::Calling));
-  EXPECT_EQ(slow.Step(At(1'300, Status::Connecting, false, "")).stage, 1) << "300 ms is not quick: no hold";
+  // Media is live at once: securing is shown its 450 ms, then the finished list.
+  v = story.Step(At(1'950, Status::Connected, true, "direct"));
+  EXPECT_EQ(v.stage, CallConnectStory::kStageMatching) << "matching has not had its 450 ms yet";
+  EXPECT_EQ(story.Step(At(2'350, Status::Connected, true, "direct")).stage, CallConnectStory::kStageSecuring);
+  EXPECT_EQ(story.Step(At(2'799, Status::Connected, true, "direct")).stage, CallConnectStory::kStageSecuring);
+  v = story.Step(At(2'800, Status::Connected, true, "direct"));
+  EXPECT_EQ(v.stage, CallConnectStory::kStageDone);
+  EXPECT_TRUE(v.connecting);
+}
 
-  CallConnectStory live;
-  live.Step(At(1'000, Status::Calling));
-  live.Step(At(1'100, Status::Connecting, false, ""));
-  v = live.Step(At(1'200, Status::Connected, true, "direct"));
+// #172: after "connected" the whole list stays 1.5 s, then the call page takes over; the result line starts then.
+TEST(CallConnectStoryTest, TheFinishedListHoldsOneAndAHalfSecondsBeforeTheCallPage) {
+  CallConnectStory story;
+  story.Step(At(0, Status::Calling));
+  story.Step(At(500, Status::Connecting, false, ""));
+  story.Step(At(1'000, Status::Connecting, false, ""));
+  story.Step(At(1'500, Status::Connecting, false, ""));
+  story.Step(At(2'000, Status::Connected, true, "direct"));
+  CallStoryView v = story.Step(At(2'500, Status::Connected, true, "direct"));
+  ASSERT_EQ(v.stage, CallConnectStory::kStageDone);
+  EXPECT_TRUE(v.connecting);
+  EXPECT_TRUE(v.result_shown);
+  EXPECT_EQ(story.Step(At(3'999, Status::Connected, true, "direct")).connecting, true);
+  v = story.Step(At(4'000, Status::Connected, true, "direct"));
   EXPECT_FALSE(v.connecting);
-  EXPECT_EQ(v.stage, 1) << "connected: the hold is over";
+  EXPECT_TRUE(v.result_shown);
+  EXPECT_FALSE(v.result_fading);
+}
+
+TEST(CallConnectStoryTest, AFailureDuringTheHoldEndsTheListAtOnce) {
+  CallConnectStory story;
+  story.Step(At(0, Status::Calling));
+  story.Step(At(100, Status::Connecting, false, ""));
+  story.Step(At(200, Status::Connected, true, "direct"));
+  EXPECT_FALSE(story.Step(At(300, Status::Disconnected)).connecting);
 }
 
 TEST(CallConnectStoryTest, TheResultLineFadesAfterFourSecondsThenTheSignalBarShows) {
   CallConnectStory story;
   story.Step(At(0, Status::Calling));
+  story.Step(At(500, Status::Connecting, false, ""));
   story.Step(At(1'000, Status::Connecting, false, ""));
+  story.Step(At(1'500, Status::Connecting, false, ""));
   story.Step(At(2'000, Status::Connected, true, "direct"));
-  CallStoryView v = story.Step(At(2'000 + 3'999, Status::Connected, true, "direct"));
+  story.Step(At(2'500, Status::Connected, true, "direct"));  // securing -> done: the list holds 1.5 s
+  const int64_t gone = 2'500 + CallConnectStory::kListHoldMs;
+  CallStoryView v = story.Step(At(gone + 3'999, Status::Connected, true, "direct"));
   EXPECT_TRUE(v.result_shown);
   EXPECT_FALSE(v.result_fading);
-  v = story.Step(At(2'000 + 4'000, Status::Connected, true, "direct"));
+  v = story.Step(At(gone + 4'000, Status::Connected, true, "direct"));
   EXPECT_TRUE(v.result_shown);
   EXPECT_TRUE(v.result_fading);
   EXPECT_FALSE(v.signal_shown);
-  v = story.Step(At(2'000 + 4'400, Status::Connected, true, "direct"));
+  v = story.Step(At(gone + 4'400, Status::Connected, true, "direct"));
   EXPECT_FALSE(v.result_shown);
   EXPECT_TRUE(v.signal_shown);
   EXPECT_EQ(v.signal_tone, CallSignalTone::Good);
@@ -236,7 +267,8 @@ TEST(CallConnectStoryTest, EveryWordExistsInEnglishAndChineseAndNoneIsATechWord)
                           "call.quality.hint.connecting_voice", "call.quality.hint.connecting_video",
                           "call.quality.hint.retrying_voice", "call.quality.hint.retrying_video",
                           "call.story.result", "call.story.step.calling", "call.story.step.peer_answered",
-                          "call.story.step.you_answered", "call.story.step.securing", "call.story.step.connected",
+                          "call.story.step.you_answered", "call.story.step.matching", "call.story.step.matched",
+                          "call.story.step.matched_direct", "call.story.step.matched_relayed", "call.story.step.securing", "call.story.step.connected",
                           "call.story.step.group_joined", "call.story.step.group_calling", "call.story.step.group_line",
                           "call.story.step.group_heard", "call.story.sheet.title", "call.story.sheet.lead",
                           "call.story.sheet.now", "call.story.sheet.how", "call.story.sheet.encryption",

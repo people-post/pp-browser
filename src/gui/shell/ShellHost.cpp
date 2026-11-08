@@ -233,6 +233,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_story_step1", &host.state_.call_in_progress.story_step1);
     ctor.Bind("call_in_progress_story_step2", &host.state_.call_in_progress.story_step2);
     ctor.Bind("call_in_progress_story_step3", &host.state_.call_in_progress.story_step3);
+    ctor.Bind("call_in_progress_story_step4", &host.state_.call_in_progress.story_step4);
+    ctor.Bind("call_in_progress_story_step5", &host.state_.call_in_progress.story_step5);
     ctor.Bind("call_in_progress_result_text", &host.state_.call_in_progress.result_text);
     ctor.Bind("call_in_progress_result_fading", &host.state_.call_in_progress.result_fading);
     ctor.Bind("call_in_progress_signal_shown", &host.state_.call_in_progress.signal_shown);
@@ -1405,7 +1407,8 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_y_permille");
   for (const char* name : {"call_ring_phone_title", "call_ring_phone_subtitle", "call_in_progress_phone_title",
                            "call_in_progress_failed_text", "call_in_progress_story_step1",
-                           "call_in_progress_story_step2", "call_in_progress_story_step3",
+                           "call_in_progress_story_step2", "call_in_progress_story_step3", "call_in_progress_story_step4",
+                           "call_in_progress_story_step5",
                            "call_in_progress_result_text", "call_in_progress_result_fading",
                            "call_in_progress_signal_shown", "call_in_progress_signal_bars",
                            "call_in_progress_signal_tone", "call_in_progress_signal_word",

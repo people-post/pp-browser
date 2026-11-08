@@ -331,7 +331,8 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_story_active = in_call.story_active,
       .in_call_story_stage = in_call.story_stage,
       .in_call_story_steps = std::string(in_call.story_step1.c_str()) + "|" + in_call.story_step2.c_str() + "|" +
-                             in_call.story_step3.c_str(),
+                             in_call.story_step3.c_str() + std::string("|") + in_call.story_step4.c_str() + "|" +
+                             in_call.story_step5.c_str() + "|" + std::to_string(in_call.story_step_count),
       .in_call_story_sheet_open = in_call.story_sheet_open,
       .in_call_story_lines = in_call.story_lines,
       .in_call_story_how = in_call.story_how.c_str(),
@@ -2267,19 +2268,46 @@ void CallController::ApplyConnectStory(const CallScreen& screen, const std::stri
   const std::string name = in_call.phone_title.c_str();
   in_call.story_active = v.connecting && !in_call.phone_failed;
   in_call.story_stage = v.stage;
+  in_call.story_step_count = 3;
+  in_call.story_step4 = "";
+  in_call.story_step5 = "";
   if (in.group) {
     in_call.story_step1 = Tr(v.stage == 0 ? "call.story.step.group_calling" : "call.story.step.group_joined").c_str();
     in_call.story_step2 = Tr("call.story.step.group_line").c_str();
     in_call.story_step3 = Tr("call.story.step.group_heard").c_str();
   } else {
-    if (!v.outgoing) {
-      in_call.story_step1 = Tr("call.story.step.you_answered").c_str();
-    } else {
-      in_call.story_step1 =
-          Tr(v.stage == 0 ? "call.story.step.calling" : "call.story.step.peer_answered", {{"name", name}}).c_str();
+    // The five steps (#172): calling, answered, matching the fastest line, setting up the encrypted channel,
+    // connected. A device that answered starts at "Answered": four lines. The presenter's stage numbers the five.
+    const bool matched = v.stage > CallConnectStory::kStageMatching;
+    const char* matching_key = "call.story.step.matching";
+    if (matched) {
+      matching_key = v.route == CallRoute::Relayed ? "call.story.step.matched_relayed"
+                     : (v.route == CallRoute::Unknown ? "call.story.step.matched" : "call.story.step.matched_direct");
     }
-    in_call.story_step2 = Tr("call.story.step.securing").c_str();
-    in_call.story_step3 = Tr("call.story.step.connected").c_str();
+    std::vector<std::string> lines;
+    if (v.outgoing) {
+      lines.push_back(Tr("call.story.step.calling", {{"name", name}}));
+      lines.push_back(Tr("call.story.step.peer_answered", {{"name", name}}));
+    } else {
+      lines.push_back(Tr("call.story.step.you_answered"));
+    }
+    lines.push_back(Tr(matching_key));
+    lines.push_back(Tr("call.story.step.securing"));
+    lines.push_back(Tr("call.story.step.connected"));
+    in_call.story_step_count = static_cast<int>(lines.size());
+    // The presenter numbers the five steps; a device that answered has no "calling" line, so it counts one less.
+    const int first = v.outgoing ? 0 : 1;
+    in_call.story_stage =
+        v.stage == CallConnectStory::kStageDone ? in_call.story_step_count : v.stage - first;
+    in_call.story_step1 = lines[0].c_str();
+    in_call.story_step2 = lines[1].c_str();
+    in_call.story_step3 = lines[2].c_str();
+    if (lines.size() > 3) {
+      in_call.story_step4 = lines[3].c_str();
+    }
+    if (lines.size() > 4) {
+      in_call.story_step5 = lines[4].c_str();
+    }
   }
   in_call.result_text =
       v.result_shown ? Tr("call.story.result", {{"how", Tr(CallRouteResultKey(v.result_route))},
