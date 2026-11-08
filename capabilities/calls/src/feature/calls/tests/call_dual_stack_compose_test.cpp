@@ -598,6 +598,93 @@ TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {
   EXPECT_FALSE(offer_.ui->TakeRemoteEnd().has_value()) << "the leaver ended it itself";
 }
 
+// K014: hanging up says bye on the call's stream ahead of its close, so the peer never takes that
+// close for a lost path; the leave on the control lane ends the peer's call as theirs.
+TEST_F(CallDualStackComposeTest, HangingUpSaysByeOnTheCallsStream) {
+  Thread thread;
+  thread.id = "thread-dual-bye";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+  const std::string call_id = RunOfferAnswerToInCall(thread.id);
+  ASSERT_FALSE(call_id.empty());
+  EXPECT_EQ(offer_.transport->hangup_calls, 0);
+
+  FinishOfferLeaveExpectBothIdle(call_id);
+  EXPECT_GE(offer_.transport->hangup_calls, 1) << "the side that left said bye";
+  ExpectLive(answer_, call_id, LiveCallState::Ended, LiveCallEndReason::RemoteEnded, "answer");
+}
+
+// K014: the peer's bye with no call_leave behind it (lost on its way) still ends the call as the
+// peer's end after a short grace — never as a failed connection, never Reconnecting.
+TEST_F(CallDualStackComposeTest, APeersByeWithoutItsLeaveEndsTheCallAsTheirs) {
+  Thread thread;
+  thread.id = "thread-dual-bye-no-leave";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+  const std::string call_id = RunOfferAnswerToInCall(thread.id);
+  ASSERT_FALSE(call_id.empty());
+  answer_.stack->Device()->Workflow().SetPeerByeLeaveGraceForTest(std::chrono::milliseconds(300));
+
+  // The offerer's device ended the call: its bye reached the answerer's leg (gone with it); its
+  // call_leave never arrives.
+  ASSERT_TRUE(answer_.transport->last_callbacks.on_remote_ended);
+  answer_.transport->active = false;
+  answer_.transport->last_callbacks.on_remote_ended();
+  bool looked_failed = false;
+  DrainUntil(
+      [&]() {
+        AppRuntime::RunUIAndOwnerTasks();
+        looked_failed |= answer_.ui->Phase() == CallPhase::ConnectFailed ||
+                         answer_.stack->Device()->Live().Status(call_id) == CallMediaStatus::Reconnecting ||
+                         answer_.stack->Device()->Live().Status(call_id) == CallMediaStatus::Failed;
+        const LiveCall* call = Live(answer_, call_id);
+        return call && call->State() == LiveCallState::Ended;
+      },
+      5000);
+  ExpectLive(answer_, call_id, LiveCallState::Ended, LiveCallEndReason::RemoteEnded, "answer");
+  EXPECT_FALSE(looked_failed) << "the peer hung up: no failure, no reconnecting";
+  const auto end = answer_.ui->TakeRemoteEnd();
+  ASSERT_TRUE(end.has_value()) << "told who ended it";
+  EXPECT_EQ(end->call_id, call_id);
+}
+
+// K014: a call reconnecting after a lost path (an older peer's hang-up closes the stream bare) ends
+// as the peer's end when its leave arrives — not as a failed connection.
+TEST_F(CallDualStackComposeTest, ALeaveWhileReconnectingEndsTheCallAsTheirs) {
+  Thread thread;
+  thread.id = "thread-dual-leave-reconnecting";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+  const std::string call_id = RunOfferAnswerToInCall(thread.id);
+  ASSERT_FALSE(call_id.empty());
+
+  ASSERT_TRUE(answer_.transport->last_callbacks.on_path_lost);
+  answer_.transport->last_callbacks.on_path_lost();
+  DrainUntil([&]() { return answer_.stack->Device()->Live().Status(call_id) == CallMediaStatus::Reconnecting; }, 3000);
+  ASSERT_EQ(answer_.stack->Device()->Live().Status(call_id), CallMediaStatus::Reconnecting);
+
+  offer_.ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  bool looked_failed = false;
+  DrainUntil([&]() {
+    PumpWire();
+    looked_failed |= answer_.ui->Phase() == CallPhase::ConnectFailed ||
+                     answer_.stack->Device()->Live().Status(call_id) == CallMediaStatus::Failed;
+    const LiveCall* call = Live(answer_, call_id);
+    return call && call->State() == LiveCallState::Ended;
+  });
+  ExpectLive(answer_, call_id, LiveCallState::Ended, LiveCallEndReason::RemoteEnded, "answer");
+  EXPECT_FALSE(looked_failed) << "the peer left: not a failed connection";
+  EXPECT_TRUE(answer_.ui->TakeRemoteEnd().has_value());
+  offer_inbox_.clear();
+  answer_inbox_.clear();
+}
+
 TEST_F(CallDualStackComposeTest, OfferAnswerKCycleTeardown) {
   // B-TEARDOWN: Leave→Idle→second Invite→InCall on dual CallStack (no stuck listen/media).
   Thread thread;

@@ -99,6 +99,7 @@ public:
   int ring_notifies = 0;
   int media_key_resends = 0;
   int inbox_syncs = 0;
+  int peer_ended_reports = 0;
   std::string last_error;
 };
 
@@ -226,6 +227,33 @@ public:
   }
   bool call_media_result = true;
   std::string call_media_error = "circuit hop reach failed";
+
+  /** H013: what a reach told the circuit about the peer's relays (K014: the re-anchor too). */
+  void TryEnsurePeerReachableViaAsync(const std::string& peer_key, mesh::CircuitReachDone on_done, bool allow_circuit,
+                                      std::vector<std::string> advertised_relays) override {
+    {
+      std::lock_guard lock(mu);
+      via_advertised.push_back(std::move(advertised_relays));
+    }
+    TryEnsurePeerReachableAsync(peer_key, std::move(on_done), allow_circuit);
+  }
+  /** exclude_direct reaches (a relay-only pair, TX-only escalation, a standby). */
+  void TryEnsureRelayedAsync(const std::string& peer_key, mesh::CircuitReachDone on_done,
+                             mesh::CircuitStandbyPriority /*priority*/) override {
+    ++relayed_calls;
+    TryEnsurePeerReachableAsync(peer_key, std::move(on_done), /*allow_circuit=*/true);
+  }
+  std::vector<std::vector<std::string>> ViaAdvertised() {
+    std::lock_guard lock(mu);
+    return via_advertised;
+  }
+  void ClearReachLog() {
+    std::lock_guard lock(mu);
+    via_advertised.clear();
+    relayed_calls = 0;
+  }
+  std::vector<std::vector<std::string>> via_advertised;
+  std::atomic<int> relayed_calls{0};
 
   void TryUpgradeToDirectAsync(const std::string& peer_key, mesh::CircuitReachDone on_done) override {
     {
@@ -452,6 +480,18 @@ protected:
     host_->live.AdmitPlaced(call_id, {"account:peer"});
     host_->live.NoteOutboundStarted(call_id);
   }
+  /** We placed `call_id` and its 1:1 path connected over the fake transport (DirectLive). */
+  void ConnectOfferer(const std::string& call_id) {
+    Placed(call_id);
+    host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+    OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+    for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
+      AppRuntime::RunUIAndOwnerTasks();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    AppRuntime::RunUIAndOwnerTasks();
+    ASSERT_EQ(host_->live.Status(), CallMediaStatus::DirectLive);
+  }
 
   /** The call's 1:1 path (V056: one per call), as its `CallMedia` builds it; the fixture plays the owner. */
   void BuildBridge(const std::string& call_id) {
@@ -526,6 +566,8 @@ protected:
             live.NoteDirectHandedToHop(r.call_id);
           } else if constexpr (std::is_same_v<R, direct_report::ConnectFailed>) {
             live.NoteMediaFailed(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::PeerEnded>) {
+            ++host_->peer_ended_reports;
           } else if constexpr (std::is_same_v<R, direct_report::MediaAttempted>) {
             live.NoteMediaAttempted(r.call_id);
           } else if constexpr (std::is_same_v<R, direct_report::MediaDeferred>) {
@@ -1143,6 +1185,107 @@ TEST_F(CallDirectPathTest, LostPathReconnectsOntoTheReachedLink) {
   EXPECT_EQ(host_->live.Phase(), CallPhase::InCall);
   EXPECT_EQ(transport_->detach_calls, detaches) << "the call was never torn down";
   EXPECT_TRUE(media_->IsActive());
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// K014: a connected call's stream that goes with no word from its leg is a dropped call — within
+// seconds, not left InCall with no media until the 75 s connect budget, and never "connect timeout".
+TEST_F(CallDirectPathTest, AConnectedStreamThatGoesIsADroppedCallNeverAConnectTimeout) {
+  const std::string call_id = "call:dropped";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  ASSERT_NO_FATAL_FAILURE(ConnectOfferer(call_id));
+
+  transport_->active = false; // the leg went; no report reached the path
+  for (int i = 0; i < 600 && host_->live.Status() != CallMediaStatus::Failed; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(host_->live.Status(), CallMediaStatus::Failed) << "surfaced within seconds";
+  EXPECT_NE(host_->last_error.find("call dropped"), std::string::npos) << host_->last_error;
+  EXPECT_EQ(host_->last_error.find("connect timeout"), std::string::npos) << host_->last_error;
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// K014: the peer's bye is no failure: the stream it closed is not judged — no "dropped", no
+// Reconnecting — and the path reports the peer's end up (its call_leave closes the call).
+TEST_F(CallDirectPathTest, ThePeersByeIsNotAFailure) {
+  const std::string call_id = "call:bye";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  ASSERT_NO_FATAL_FAILURE(ConnectOfferer(call_id));
+
+  ASSERT_TRUE(transport_->last_callbacks.on_remote_ended);
+  transport_->active = false; // the leg is gone with the bye
+  transport_->last_callbacks.on_remote_ended();
+  bool looked_failed = false;
+  // Past the health grace (kDirectStreamGoneGraceMs) and a few ticks.
+  for (int i = 0; i < 350; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    looked_failed |=
+        host_->live.Status() == CallMediaStatus::Failed || host_->live.Status() == CallMediaStatus::Reconnecting;
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(host_->peer_ended_reports, 1);
+  EXPECT_FALSE(looked_failed);
+  EXPECT_TRUE(host_->last_error.empty()) << host_->last_error;
+  EXPECT_EQ(transport_->migrate_calls.load(), 0) << "nothing to reconnect";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// K014: the re-anchor of a call that lost its path reaches the peer the way its first connect did:
+// the answerer's advertised relays first (H013), and a relay-only pair only over a relay.
+TEST_F(CallDirectPathTest, AReanchorReachesThePeerTheWayTheFirstConnectDid) {
+  const std::string call_id = "call:reanchor-policy";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWReanchorPolicy";
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  transport_->fail_first_n_migrates = 1; // two re-anchors: both carry the policy
+  bridge_->SetReanchorRetryMsForTest(20);
+  bridge_->SetAdvertisedRelaysProvider([](const std::string&) { return std::vector<std::string>{"12D3KooWRelayA"}; });
+  ASSERT_NO_FATAL_FAILURE(ConnectOfferer(call_id));
+
+  circuit_->ClearReachLog();
+  dial_->connected["12D3KooWReanchorPolicy"] = false; // the lost path's link went with it
+  dial_->circuit_hops["12D3KooWReanchorPolicy"] = false;
+  ASSERT_TRUE(transport_->last_callbacks.on_path_lost);
+  transport_->last_callbacks.on_path_lost();
+  for (int i = 0; i < 400 && transport_->migrate_calls.load() < 2; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_GE(transport_->migrate_calls.load(), 2);
+  const auto via = circuit_->ViaAdvertised();
+  ASSERT_FALSE(via.empty()) << "the re-anchor reached over the circuit";
+  for (const auto& relays : via) {
+    EXPECT_EQ(relays, std::vector<std::string>{"12D3KooWRelayA"}) << "the answerer's relays first";
+  }
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+TEST_F(CallDirectPathTest, ARelayOnlyCallReanchorsOnlyOverARelay) {
+  const std::string call_id = "call:reanchor-relay-only";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWReanchorRelayOnly";
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  bridge_->SetReanchorRetryMsForTest(20);
+  bridge_->SetPathPolicyProvider([](const std::string&) { return RelayOnlyPolicy(CallPathPolicy{}); });
+  ASSERT_NO_FATAL_FAILURE(ConnectOfferer(call_id));
+
+  circuit_->ClearReachLog();
+  dial_->connected["12D3KooWReanchorRelayOnly"] = false;
+  dial_->circuit_hops["12D3KooWReanchorRelayOnly"] = false;
+  ASSERT_TRUE(transport_->last_callbacks.on_path_lost);
+  transport_->last_callbacks.on_path_lost();
+  for (int i = 0; i < 400 && transport_->migrate_calls.load() < 1; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_GE(transport_->migrate_calls.load(), 1);
+  EXPECT_GE(circuit_->relayed_calls.load(), 1) << "exclude_direct: the peer may not learn our address";
+  EXPECT_TRUE(circuit_->ViaAdvertised().empty()) << "no direct / punch reach for a relay-only pair";
   OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 

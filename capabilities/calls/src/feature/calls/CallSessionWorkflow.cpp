@@ -745,6 +745,10 @@ void CallSessionWorkflow::Handle(WorkflowEvent& event) {
           if (e.epoch == followup_epoch_) {
             SendRosterAfterRemoteAccept(e);
           }
+        } else if constexpr (std::is_same_v<E, workflow_event::PeerByeGraceOver>) {
+          if (e.epoch == followup_epoch_) {
+            EndForPeerBye(e);
+          }
         } else {
           static_assert(!sizeof(E), "handle every WorkflowEvent");
         }
@@ -1755,6 +1759,34 @@ Roe<void> CallSessionWorkflow::ParticipantGone(const std::string& call_id, const
   }
   reports_.Emit(workflow_report::Changed{});
   return {};
+}
+
+void CallSessionWorkflow::NotePeerEndedCall(const std::string& call_id, const std::string& peer) {
+  std::string who = peer;
+  if (who.rfind("account:", 0) != 0) {
+    // The 1:1 path may only know the peer's mesh PeerId: the call's sole peer is who said bye.
+    if (const LiveCall* call = live_calls_.Find(call_id); call && call->SolePeer()) {
+      who = *call->SolePeer();
+    }
+  }
+  if (who.empty()) {
+    return;
+  }
+  log().info << "the peer ended the call on its device; waiting for its leave call_id=" << call_id << " peer=" << who;
+  (void)outbox_.After(peer_bye_leave_grace_, workflow_event::PeerByeGraceOver{call_id, who, followup_epoch_});
+}
+
+void CallSessionWorkflow::EndForPeerBye(const workflow_event::PeerByeGraceOver& over) {
+  auto session = sessions_.LoadSession(over.call_id);
+  auto peer = sessions_.FindParticipant(over.call_id, over.peer);
+  auto local = host_.wire.local_relay_identity ? host_.wire.local_relay_identity() : Roe<std::string>(std::string());
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended || !peer ||
+      !peer->has_value() || (*peer)->state != CallParticipantState::Joined || !local) {
+    return; // its call_leave came (or the call ended some other way)
+  }
+  log().info << "no leave followed the peer's bye: taking it as the leave call_id=" << over.call_id
+             << " peer=" << over.peer;
+  (void)ParticipantGone(over.call_id, over.peer, *local);
 }
 
 Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_json) {

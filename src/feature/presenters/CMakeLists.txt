@@ -3,6 +3,7 @@
 # Capabilities expose facades; another app brings its own presenters.
 pp_browser_add_feature_library(pp_feature_presenters
   SOURCES
+    CallBackOffer.cpp
     CallConnectStory.cpp
     CallPresenter.cpp
     CallSystemUiBridge.cpp

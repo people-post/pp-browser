@@ -8,8 +8,8 @@ namespace pbr {
 
 /**
  * The 1:1 call-media control channel's wire messages (JSON, v1), both directions: the hello that
- * opens a call's bundle, k3 path migration (migrate / path_add and their ack, path release) and
- * the k4 heartbeat. CallMediaLegCoordinator sends and routes them.
+ * opens a call's bundle, k3 path migration (migrate / path_add and their ack, path release), the
+ * k4 heartbeat and the bye of a call this end ended. CallMediaLegCoordinator sends and routes them.
  */
 enum class CallMediaControlType {
   Unknown,
@@ -23,6 +23,8 @@ enum class CallMediaControlType {
   MigrateAck,
   PathRelease,
   PathReleaseAck,
+  /** The sender ended the call on purpose (K014): the stream's close that follows is no lost path. */
+  Bye,
 };
 
 struct CallMediaControl {
@@ -52,5 +54,6 @@ std::string EncodeCallMediaMigrate(const std::string& call_id, uint32_t media_ep
 std::string EncodeCallMediaMigrateAck(bool ok, uint32_t path_gen, const std::string& error = {});
 /** `ack`: path_release_ack instead of path_release. */
 std::string EncodeCallMediaPathRelease(bool ack, uint32_t path_gen);
+const std::string& EncodeCallMediaBye();
 
 } // namespace pbr

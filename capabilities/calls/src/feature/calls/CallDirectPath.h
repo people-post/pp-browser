@@ -247,6 +247,8 @@ private:
   Roe<void> StartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
   /** Link to reach for this session's Connect (call roster → mesh keys, offerer → Reach). */
   mesh::PeerReachRequest BuildReachRequest(const CallMediaDirectConnectParams& params);
+  /** The pair's path policy and H013 advertised relays on a reach for the call (first connect and re-anchor). */
+  void ApplyReachPolicy(mesh::PeerReachRequest& request, const std::string& call_id, bool offerer) const;
   /** Call-side reactions to the connect sequence (media key resend, path label, commit / fail). */
   CallMediaConnectHooks MakeConnectHooks(const std::string& call_id);
   /** Chrome ConnectFailed + Direct Idle; optionally StopMeshMedia (zombie TX / teardown). */
@@ -271,6 +273,17 @@ private:
   CallMediaDirectCallbacks MakeBundleCallbacks(const std::string& call_id, uint32_t fixed_stream, const char* label);
   /** UI: a bundle closed / failed — ignore during SoftMigrate / SFU attach, else ConnectFailed. */
   void OnBundleFailed(const std::string& call_id, const std::string& reason, CallMediaErr code);
+  /** k4: the transport lost the call's last path — Reconnecting, unless the call is moving onto the hop. */
+  void OnPathLost(const std::string& call_id);
+  /** K014: the peer said `bye` — report it up; the call's end comes from its call_leave. */
+  void OnPeerEnded(const std::string& call_id);
+  /**
+   * The 1:1 stream ended (failed / lost): true when that is the call moving onto (or carried by) the
+   * hop, or not this engine's call — handled here; false when the call has no other path.
+   */
+  bool YieldsToHop(const std::string& call_id, const std::string& reason, bool soft_close, bool direct_ready);
+  /** The call this path serves is closed (or gone) on this device: its media stops for good. */
+  bool CallOverHere() const;
   struct ReceiveGate;
   /** Transport I/O: hand a 1:1 frame to the engine (thread-safe), gated by `gate`. */
   static void ReceiveDirectMedia(ReceiveGate& gate, CallEngine& engine, const OwnerOutbox<DirectPathEvent>& outbox,
@@ -359,6 +372,10 @@ private:
   bool force_circuit_ensure_ = false;
   bool session_offerer_ = false;
   int64_t direct_connected_at_ms_ = 0;
+  /** K014: when the health tick first saw the connected stream gone (Unix ms; 0: not gone). */
+  int64_t stream_gone_since_ms_ = 0;
+  /** K014: the peer said `bye` this session. */
+  bool peer_ended_ = false;
   bool tx_only_escalation_done_ = false;
 
   std::string media_peer_identity_;

@@ -75,6 +75,12 @@ std::vector<mesh::MeshHopCandidate> CallHopRanking::Ranked() const {
                                            });
     FillDialInfo(ranked, true);
   }
+  if (deps_->hop_load) {
+    // The merge above adds every hop that advertises media_relay: one that said full or draining takes no new call.
+    std::erase_if(ranked, [this](const mesh::MeshHopCandidate& hop) {
+      return mesh::ServiceLoadRefusesNew(deps_->hop_load(hop.peer_id));
+    });
+  }
   if (deps_->trusted_relays_only) {  // privacy T4: a relay sees both ends' addresses
     ranked = KeepTrustedRelays(std::move(ranked), TrustedRelayPeerIds(contacts, deps_->bootstrap_peers));
   }

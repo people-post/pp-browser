@@ -50,10 +50,17 @@ struct RosterAfterRemoteAccept {
   std::string local_identity;
   uint64_t epoch = 0;
 };
+/** K014: the grace after `peer`'s call-media bye ended — its call_leave should have come by now. */
+struct PeerByeGraceOver {
+  std::string call_id;
+  std::string peer;
+  uint64_t epoch = 0;
+};
 
 } // namespace workflow_event
 
-using WorkflowEvent = std::variant<workflow_event::RosterAfterAccept, workflow_event::RosterAfterRemoteAccept>;
+using WorkflowEvent = std::variant<workflow_event::RosterAfterAccept, workflow_event::RosterAfterRemoteAccept,
+                                   workflow_event::PeerByeGraceOver>;
 
 /** What the session workflow tells the device (V057 2): events on the calls owner's queue. */
 namespace workflow_report {
@@ -257,6 +264,10 @@ struct BundleFailed {
 struct PathLost {
   std::string call_id;
 };
+/** K014: the peer ended the call — call-media `bye` (transport I/O). */
+struct PeerEnded {
+  std::string call_id;
+};
 /** k3: the transport moved the call to another path (transport I/O). */
 struct PathChanged {
   std::string call_id;
@@ -300,8 +311,8 @@ struct StepReady {
 using DirectPathEvent =
     std::variant<direct_event::HealthTick, direct_event::ReserveRenewTick, direct_event::UpgradeDue,
                  direct_event::StandbyDue, direct_event::ReanchorDue, direct_event::RecoveryGraceOver,
-                 direct_event::BundleConnected, direct_event::BundleFailed,
-                 direct_event::PathLost, direct_event::PathChanged, direct_event::EscalateRestart,
+                 direct_event::BundleConnected, direct_event::BundleFailed, direct_event::PathLost,
+                 direct_event::PeerEnded, direct_event::PathChanged, direct_event::EscalateRestart,
                  direct_event::StartOfferer, direct_event::MediaKeyReady, direct_event::KeyPollDue,
                  direct_event::RebindInboundStream, direct_event::ForConnect, direct_event::StepReady>;
 
@@ -327,6 +338,14 @@ struct HandedToHop {
 /** No 1:1 path could be kept: the call stays open, failed. */
 struct ConnectFailed {
   std::string call_id;
+};
+/**
+ * K014: the peer `peer_identity` ended the call (its call-media `bye`). Not a failure: its call_leave
+ * ends the call; if none comes, the bye stands in for it after a grace.
+ */
+struct PeerEnded {
+  std::string call_id;
+  std::string peer_identity;
 };
 /** H013: we placed this 1:1 call and stopped trying to reach `peer_identity` — tell it. */
 struct GaveUpReaching {
@@ -383,10 +402,10 @@ struct InboundHello {
 
 using DirectReport =
     std::variant<direct_report::Progress, direct_report::Connected, direct_report::HandedToHop,
-                 direct_report::ConnectFailed, direct_report::GaveUpReaching, direct_report::PeerReconnected,
-                 direct_report::MediaAttempted, direct_report::MediaDeferred, direct_report::MediaKeyReady,
-                 direct_report::Changed, direct_report::MediaError, direct_report::MediaKeyResendWanted,
-                 direct_report::InboxSyncWanted, direct_report::InboundHello>;
+                 direct_report::ConnectFailed, direct_report::PeerEnded, direct_report::GaveUpReaching,
+                 direct_report::PeerReconnected, direct_report::MediaAttempted, direct_report::MediaDeferred,
+                 direct_report::MediaKeyReady, direct_report::Changed, direct_report::MediaError,
+                 direct_report::MediaKeyResendWanted, direct_report::InboxSyncWanted, direct_report::InboundHello>;
 
 /** What a call's group (hop) path tells the device (V057 2): events on the calls owner's queue. */
 namespace hop_report {

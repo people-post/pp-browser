@@ -6,6 +6,7 @@
 #include "lib/media/IMediaView.h"
 #include "feature/calls/CallFunctionalPorts.h"
 #include "feature/calls/CallUiBackend.h"
+#include "feature/presenters/CallBackOffer.h"
 
 #include <functional>
 #include <memory>
@@ -33,12 +34,17 @@ struct CallNotice {
     IncomingCall,
     /** V062 1: `identity` joined the group's call as `brought_by`'s guest (once per guest and call). */
     GuestJoined,
+    /** V064: the 1:1 call End & accept ended (`ending`) can be called back now that the call taken is over. */
+    CallBack,
   };
   Kind kind = Kind::Error;
   std::string key;
   std::string text;
   std::string identity;
   std::string brought_by;
+  /** IncomingCall: it rings over a call this device is in, and answering ends `ending` (V064). CallBack: the call. */
+  bool conflict = false;
+  CallScreen::EndingCall ending;
 };
 
 /** What pressing a call button led to. */
@@ -186,6 +192,10 @@ private:
   void FillGuests(CallScreen& s, CallUiBackend& backend, const std::string& group_id, const std::string& local);
   /** V062 5: the ring on `s` brings this device in as a guest: how many it shows them to. */
   void FillGuestRing(CallScreen& s, CallUiBackend& backend, const PendingCallInvite& invite, const std::string& local);
+  /** A ring over `active`: answering ends it (who with, for the ring's words and the call-back offer). */
+  static void FillEndingCall(CallScreen& s, CallUiBackend& backend, const CallSession& active);
+  /** V064: the call End & accept ended, offered again once the call taken is over. */
+  void OfferCallBack(const CallScreen& next, const CallUiBackend::Surface& surface);
   /** V062 1: "{name} joined as {bringer}'s guest", once per guest of the call on `s`. */
   void AnnounceGuests(const CallScreen& s);
   bool MessagingInitialized() const;
@@ -210,6 +220,7 @@ private:
    * owner has taken the click, and showing it again then flashed the ring after Accept.
    */
   std::string answered_call_id_;
+  CallBackOffer call_back_;
   std::string declined_call_id_;
   /**
    * 2026-09-28: video calls start with the local camera on — set by the caller (video StartCall)

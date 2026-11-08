@@ -46,6 +46,36 @@ TEST(CallDirectPathLogicTest, ConnectHealth) {
   EXPECT_EQ(DecideDirectHealth(in), DirectHealthAction::None) << "nothing to commit without a call";
 }
 
+// K014: a call whose stream was connected and is gone is never a connect timeout — however long
+// since the engine started. Its leg reports the end; past a short grace with no report, it dropped.
+TEST(CallDirectPathLogicTest, AConnectedCallDropsItNeverTimesOut) {
+  DirectHealthInput in = Connecting();
+  in.now_ms = in.started_at_ms + in.timeout_ms * 4; // well past the connect budget
+  in.direct_was_connected = true;
+  in.media_connected = true;
+  EXPECT_EQ(DecideDirectHealth(in), DirectHealthAction::None) << "just gone: the leg's report decides";
+  in.stream_gone_ms = kDirectStreamGoneGraceMs - 1;
+  EXPECT_EQ(DecideDirectHealth(in), DirectHealthAction::None);
+  in.stream_gone_ms = kDirectStreamGoneGraceMs;
+  EXPECT_EQ(DecideDirectHealth(in), DirectHealthAction::Dropped) << "no report came: dropped, not timed out";
+
+  DirectHealthInput ended = in;
+  ended.peer_ended = true;
+  EXPECT_EQ(DecideDirectHealth(ended), DirectHealthAction::None) << "the peer said bye: its call_leave ends it";
+  DirectHealthInput hop = in;
+  hop.hop_attached = true;
+  EXPECT_EQ(DecideDirectHealth(hop), DirectHealthAction::None) << "the hop carries it";
+  DirectHealthInput moving = in;
+  moving.hop_expected = true;
+  EXPECT_EQ(DecideDirectHealth(moving), DirectHealthAction::None) << "released for the hop: the hop's to judge";
+  DirectHealthInput group = in;
+  group.n_joined = 3;
+  EXPECT_EQ(DecideDirectHealth(group), DirectHealthAction::None) << "a group's media is the hop's";
+  DirectHealthInput reconnecting = in;
+  reconnecting.direct_ready = true; // a reconnecting leg stays MediaReady for its window
+  EXPECT_EQ(DecideDirectHealth(reconnecting), DirectHealthAction::Healthy);
+}
+
 TEST(CallDirectPathLogicTest, AFailedCarrier) {
   BundleFailureInput in;
   in.engine_call = true;

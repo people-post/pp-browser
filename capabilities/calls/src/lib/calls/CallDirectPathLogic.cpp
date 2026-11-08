@@ -7,11 +7,19 @@
 namespace pbr {
 
 DirectHealthAction DecideDirectHealth(const DirectHealthInput& in) {
-  if (in.already_failed || !in.engine_running || in.hop_in_flight || in.connect_in_flight) {
+  if (in.already_failed || !in.engine_running || in.hop_in_flight || in.connect_in_flight || in.peer_ended) {
     return DirectHealthAction::None;
   }
   if (in.direct_ready && in.media_connected) {
     return DirectHealthAction::Healthy;
+  }
+  if (in.direct_was_connected && !in.direct_ready) {
+    // A call that was connected is never "connect timed out": its leg reports how it ended, and a
+    // call carried by (or moving onto) the hop, or a group's, is the hop's to judge.
+    if (in.hop_attached || in.hop_expected || ShouldArmHopPlanner(in.n_joined)) {
+      return DirectHealthAction::None;
+    }
+    return in.stream_gone_ms >= kDirectStreamGoneGraceMs ? DirectHealthAction::Dropped : DirectHealthAction::None;
   }
   if (!in.has_call) {
     return DirectHealthAction::None;

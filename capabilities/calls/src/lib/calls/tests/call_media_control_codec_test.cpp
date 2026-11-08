@@ -36,6 +36,7 @@ TEST(CallMediaControlCodecTest, EachMessageRoundTrips) {
   EXPECT_EQ(ack->error, "no link");
   EXPECT_EQ(DecodeCallMediaControl(EncodeCallMediaPathRelease(false, 4))->type, CallMediaControlType::PathRelease);
   EXPECT_EQ(DecodeCallMediaControl(EncodeCallMediaPathRelease(true, 4))->type, CallMediaControlType::PathReleaseAck);
+  EXPECT_EQ(DecodeCallMediaControl(EncodeCallMediaBye())->type, CallMediaControlType::Bye);
 }
 
 TEST(CallMediaControlCodecTest, DefaultsAndJunk) {

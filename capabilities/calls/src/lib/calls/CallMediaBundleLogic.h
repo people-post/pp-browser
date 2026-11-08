@@ -127,6 +127,44 @@ inline constexpr int64_t kCallMediaStandbyStaleMs = 25000;
 inline constexpr int64_t kCallMediaQuietRebindGraceMs = 1000;
 /** After a failover, silence alone does not switch again for this long (the peer is still moving). */
 inline constexpr int64_t kCallMediaFailoverHoldDownMs = 3000;
+/**
+ * K014: the peer closed the active path's media channel while the path's control channel is still
+ * up. The media channel's CLOSE is best-effort and can overtake the reliable `bye` sent before it,
+ * so the path waits this long for that channel's `bye` (the call ended) or its own close (a lost
+ * path) before it counts as lost.
+ */
+inline constexpr int64_t kCallMediaByeAwaitMs = 1500;
+
+/** K014: one of the active path's channels of a live (MediaReady) call closed — not by this end. */
+struct CallMediaActiveCloseInput {
+  CallMediaChannelRole role = CallMediaChannelRole::Media;
+  /** The peer closed or reset the channel (vs. the link going or a write failing). */
+  bool remote_close = false;
+  /** The active path still has a bound control channel. */
+  bool control_open = false;
+  /** The path the call just left is still draining on a live link. */
+  bool retiring_alive = false;
+  /** A warm standby on a live link. */
+  bool standby_alive = false;
+};
+
+enum class CallMediaActiveCloseAction {
+  /** Drop the media channel and wait (kCallMediaByeAwaitMs) for the control channel's word. */
+  AwaitControl,
+  /** Back onto the path the call just left. */
+  FallBackToRetiring,
+  /** TX onto the standby. */
+  FailOverToStandby,
+  /** No path left: the reconnect window (the offerer re-anchors). */
+  PathLost,
+};
+
+/**
+ * K014: a close the peer did not announce with `bye` is a lost path — never the call's end (that
+ * comes with `bye`, or with call_leave from an older peer): the path falls back, fails over, or
+ * waits for a new one exactly as for a dead link.
+ */
+CallMediaActiveCloseAction DecideCallMediaActiveClose(const CallMediaActiveCloseInput& in);
 
 struct CallMediaFailoverInput {
   bool active_link_lost = false;

@@ -930,16 +930,42 @@ void CallController::ShowNotice(const CallNotice& notice) {
     return;
   }
   case CallNotice::Kind::IncomingCall: {
-    if (system_call_screen_.TakesRing(AppLifecycle::IsVisible())) {
+    if (system_call_screen_.TakesRing(AppLifecycle::IsVisible(), notice.conflict)) {
       return; // the phone's own call screen rings it (CallKit, Android's call notification)
     }
     const std::string caller = DisplayNameForIdentity(notice.identity);
+    if (notice.conflict) {
+      // V064: over a call, the alert says who is calling and which call answering ends, as the ring does.
+      const CallConflictCopy copy = MakeCallConflictCopy(true, ConflictNames(caller, true, notice.ending));
+      ILocalNotifier::Instance().NotifyIncoming(copy.title, copy.hint, "");
+      return;
+    }
     const std::string body =
         caller.empty() ? Tr("call.notify.body_unknown") : Tr("call.notify.body_named", {{"name", caller}});
     ILocalNotifier::Instance().NotifyIncoming(Tr("call.notify.title"), body, "");
     return;
   }
+  case CallNotice::Kind::CallBack:
+    OfferCallBack(notice.ending);
+    return;
   }
+}
+
+void CallController::OfferCallBack(const CallScreen::EndingCall& ended) {
+  std::string name = DisplayNameForIdentity(ended.peer_identity);
+  if (name.empty()) {
+    name = Tr("call.label.them");
+  }
+  const std::string thread_id = ended.thread_id;
+  const bool video = ended.video;
+  UserFeedback::Confirm(
+      Tr("call.call_back.title", {{"name", name}}), Tr("call.call_back.body", {{"name", name}}),
+      [this, thread_id, video](const bool call) {
+        if (call) {
+          (void)StartCall(thread_id, video);
+        }
+      },
+      Tr("call.call_back.action"));
 }
 
 void CallController::Render() {
@@ -1038,15 +1064,8 @@ void CallController::RenderRing(const CallScreen& screen) {
   if (caller_label.empty()) {
     caller_label = screen.caller_identity;
   }
-  std::string active_peer_label;
-  if (screen.conflict) {
-    active_peer_label = DisplayNameForIdentity(screen.conflict_peer_identity);
-    if (active_peer_label.empty()) {
-      active_peer_label = screen.conflict_peer_identity;
-    }
-  }
   const CallConflictCopy copy =
-      MakeCallConflictCopy(screen.conflict, screen.conflict_same_peer, caller_label, active_peer_label);
+      MakeCallConflictCopy(screen.conflict, ConflictNames(caller_label, screen.conflict, screen.ending));
 
   // Hide the in-call bar while ringing a *different* call (the call itself stays active).
   HideInCallChrome();
@@ -1056,9 +1075,14 @@ void CallController::RenderRing(const CallScreen& screen) {
   ring_.call_id = screen.ring_call_id;
   ring_.caller_label = caller_label;
   ring_.video_allowed = screen.ring_video;
-  // M6: headline just says what kind of call this is; the voice-answer button covers the choice.
-  ring_.media_label = screen.ring_video ? Tr("call.ring.incoming_video").c_str()
-                                        : Tr("call.ring.incoming_voice").c_str();
+  // M6: headline just says what kind of call this is; the voice-answer button covers the choice. Over a call it
+  // says who is calling (V064: the hint under it, which call answering ends).
+  if (!copy.title.empty()) {
+    ring_.media_label = copy.title;
+  } else {
+    ring_.media_label =
+        screen.ring_video ? Tr("call.ring.incoming_video").c_str() : Tr("call.ring.incoming_voice").c_str();
+  }
   ring_.eyebrow = copy.eyebrow;
   ring_.conflict_hint = copy.hint;
   // V062 5: brought in as a guest — joining shows them to everyone in the call.
@@ -2079,6 +2103,33 @@ void CallController::EndDemoScene() {
       SyncShellState();
     }
   }
+}
+
+CallConflictNames CallController::ConflictNames(const std::string& caller_label, const bool conflict,
+                                                const CallScreen::EndingCall& ending) {
+  CallConflictNames names;
+  names.caller = caller_label;
+  if (!conflict) {
+    return names;
+  }
+  names.same_peer = ending.same_peer;
+  names.ending_group = ending.group;
+  if (!ending.group) {
+    names.ending = DisplayNameForIdentity(ending.peer_identity);
+    return names;
+  }
+  // A group's call: the group's name, read once per ring (the ring's own group title is GroupTitle's).
+  if (ending_title_call_ != ending.call_id) {
+    ending_title_call_ = ending.call_id;
+    ending_title_.clear();
+    if (!ending.thread_id.empty() && call_ports_.get_thread) {
+      if (auto thread = call_ports_.get_thread(ending.thread_id); thread && *thread) {
+        ending_title_ = (*thread)->local_title.empty() ? (*thread)->title : (*thread)->local_title;
+      }
+    }
+  }
+  names.ending = ending_title_;
+  return names;
 }
 
 std::string CallController::GroupTitle(const std::string& thread_id) {

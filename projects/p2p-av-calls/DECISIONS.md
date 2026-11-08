@@ -462,6 +462,7 @@ Open public directory; paid settle UI; pure `min(price)` sort; hardcoded N014 st
 
 **Date:** 2026-07-30  
 **Updated:** 2026-07-30 — policy applies to **1:1 P2P** as well as group/SFU  
+**Status:** Accepted; audio's "FIFO; even if late" / `reliable_ordered` is **superseded by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses) (best effort, the codec recovers)  
 **Decision:** One **adaptation policy** for all calls: priority **audio ≫ video_lo ≫ video_hi**, producer rate control first, prefer fluent low video over stalled high. **Transport backends differ**; do not force 1:1 through `media_relay` when P2P ICE works. Mesh hop framing: [N021](../p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types). **No new codec matrix** in a4 — reuse Opus + H264 HW (V017–V019).
 
 ### Same policy brain, two backends
@@ -697,7 +698,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 ## V032 — Media QoS enforcement, playout, SFU E2E
 
 **Date:** 2026-08-06  
-**Status:** Accepted (implementing)  
+**Status:** Accepted (implementing); **amended by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses) — audio is best effort (no class priority in the hop's queue), and the receiver's jitter target is 60–400 ms adaptive with an 800 ms cap, not 60 / 200 ms  
 **Decision:** Close the structural gaps between N019/N021/V024 **docs** and host/receiver **code** before further quality tuning. Policy matrix: [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md).
 
 | Area | Rule |
@@ -744,7 +745,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 ## V034 — Video on libp2p (video_lo; E2E; same streams)
 
 **Date:** 2026-08-18  
-**Status:** Accepted (**implementing**)  
+**Status:** Accepted (**implementing**); the hop-queue rule ("never shed `ReliableOrdered`") is **superseded by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses)  
 **Decision:** Product **video** rides the existing libp2p voice path — not WebRTC. Capture/encode/decode/tiles stay the a3 SDL + platform HW H264 stack ([V017](#v017--video-codec-h264-via-platform-hw) / [V018](#v018--video-capture--render-path-in-sdl--rmlui-shell)). Transport is **encrypted H264 video_lo** on the same 1:1 duplex and the same blind `media_relay` hop as Opus.
 
 | Topic | Rule |
@@ -1477,3 +1478,49 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 **Rationale:** An open group lets its members bring friends into its call; order is kept the way the group keeps it, by its owner and admins, under the same preset as invites. Labelling guests and who brought them keeps an open call accountable without a gate.
 **Alternatives:** A separate guest setting (a second knob next to the preset); guests bring guests (unchecked chains); removal of members from a call (undone by Join); the bringer may remove its guest (a second rule next to the group's); a host for ad-hoc calls (calls are hostless, DESIGN row 5).
+
+
+## V063 — Call audio is best effort; the codec recovers losses
+
+**Date:** 2026-11-06
+**Status:** Accepted (Hongwei, 2026-11-06) — records what the code has done since 2026-08 (1:1) and 2026-11-03 (groups: pp-cpp-mesh v3.1.0, the hop's data lane). **Supersedes** audio's `reliable_ordered` / "FIFO; even if late" in V024 and N021 and the hop-queue rule in V032 / V034. The current rule: [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos).
+
+**Context:** V024 and N021 put call audio on `reliable_ordered` (deliver in order, even if late), and V032 / V034 told the hop never to shed it for video. An audit while stress-testing pp-node (2026-11-06, [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)) found the code had moved on: audio is not resent on any normal path, and the stamp changes nothing.
+
+**Decision:**
+
+1. **Every normal path is best effort.** A 1:1 call's media rides the BestEffort `Realtime` channel, direct or through a circuit (the inner media channel is BestEffort; the outer splice too, [CALL_MEDIA_CIRCUIT](../adp/CALL_MEDIA_CIRCUIT.md)). A group call's media rides the participant's data lane on the hop (`/pp-mesh/media-relay-data/1.0.0`, BestEffort, the oldest dropped). A lost frame costs that frame, never a stall.
+2. **The fallback stays reliable.** Without a data lane (a hop reached through a circuit, or one older than pp-cpp-mesh v3.1.0) group media rides the participant's control channel, which is Reliable. That is a compatibility path, not a policy.
+3. **`ReliableOrdered` is a label.** Senders still stamp audio `0` (the wire keeps its values); a hop treats it like any other frame. Only `LatestLossy` changes a hop's behaviour (the stale non-keyframe drop). The hop's queues have no class priority.
+4. **The codec covers losses:** Opus in-band FEC (tuned for 10 % loss), loss concealment on a gap, and the receiver's jitter buffer (target 60–400 ms, adapting to arrival jitter; at most 800 ms).
+5. **Resending audio is rejected for real-time calls:** a resent 20 ms frame arrives after its playout slot, and under load resends add to the very queue that is late. Audio before video stays a sender rule (V024's priority and rate ladder), not a transport class.
+
+**Rationale:** Late audio is worse than lost audio in a conversation; FEC and concealment hide single losses well. One best-effort lane per peer keeps the hop simple and blind.
+**Open:** a deadline on real-time media in a link's send queue — under overload media waits there instead of being dropped (STRESS_LAB § What limits a node, with the data plane's threading).
+
+
+## V064 — Call waiting (Hold & Accept): not now
+
+**Date:** 2026-11-07
+**Status:** Accepted (Hongwei, 2026-11-07) — **implemented 2026-11-07** (the clearer conflict ring, "Call back", the system screen rule below; the current rule is [CALLS.md](../../docs/architecture/CALLS.md), the Conflict rows and § The phone's own call screen). Answers Kenneth's [PROPOSAL-call-waiting.md](PROPOSAL-call-waiting.md) with its alternative. V055 3 (several may ring, one call has media) unchanged.
+
+**Context:** A second PP call ringing during a call offers End & accept / Ignore. Kenneth proposed Hold & Accept with a Switch row (two open 1:1 calls, one with media, the held side shown "On hold" via V060). The client side is days; the calls side is not: two open calls with one running media means about four weeks, because today:
+
+- `CallMediaSeat::Acquire` force-tears-down the call bound to the seat — a second call takes the seat by ending the first one's media, not by parking it.
+- `CallMediaLegCoordinator` allows one live bundle per device: an outbound `StartLeg` tears the others down, and an inbound hello for another call gets `RejectBusy` (`OtherBundleBusy`).
+- `LiveCalls::Active()` assumes one active call; call state, chrome and the presenter read "the" call.
+- A held call's path cannot re-anchor: `CallDirectPath` gates on the engine running, so a held call loses its path and resume is a reconnect.
+- The peer keeps sending media to the held side: `on_hold` (V060) is a label, nothing pauses the peer's TX.
+- The phones are set up for one call: CallKit `maximumCallGroups = 1`, `supportsHolding = NO` (`CallSystemUi_Ios.mm`); Android has one call notification.
+
+**Decision:**
+
+1. **No Hold & Accept for now.** A ring over a call keeps End & accept / Ignore; one open call.
+2. **The ring says what accepting does:** "{caller} is calling" and "Accepting ends your call with {name}." (a group's call: "…your call in {group}."; the caller being that call's peer: "…your other call with {caller}."). The app's background alert for it says the same.
+3. **A ring over a call never goes to the phone's call screen** (CallKit, Android's call notification). Their Answer would end the call in the app without saying so — it did, silently, with the app in the background. The app rings it; the push's call waiting for it is ended, an Answer given on that push's call is not applied (a Decline is). A call answered on CallKit stays there while the second rings in the app.
+4. **"Call {name} back?"** once the call taken in its place is over and no other call is up: Call back calls the ended 1:1 call's chat, voice or video as it was. Not for a group's call (it goes on; its chat's call bar offers Join), nor when the caller was that call's peer.
+
+**Revisit when** call waiting is designed as a decision of its own, covering: a seat that can park a call (hand the media epoch to another call and back without tearing the first down); two bundles per device (a held leg kept, the busy rule per call); the peer pausing its TX on a remote `on_hold` (and resuming); a held call's path policy (kept warm or re-anchored on resume, with a timeout); CallKit holding (`supportsHolding`, two call groups) and Android's two calls.
+
+**Rationale:** The proposal's own alternative gets most of the value — no surprise that a call ends, and an easy way back — at no protocol or media cost; the system screen rule closes the one path where a call ended with no word at all.
+**Alternatives:** Hold & Accept now (four weeks, mostly the media stack); words on the system screen's ring (CallKit and Android's call style take a caller name, not a sentence, and Answer stays one tap).

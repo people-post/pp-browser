@@ -136,6 +136,12 @@ void CallMediaAmpTransport::Detach() {
   active_leg_ = {};
 }
 
+void CallMediaAmpTransport::HangUp() {
+  coordinator_.HangUp();
+  std::lock_guard lock(mu_);
+  active_leg_ = {};
+}
+
 void CallMediaAmpTransport::ConnectAsync(const CallMediaDirectConnectParams& params,
                                          CallMediaDirectCallbacks callbacks,
                                          std::function<void(CallMediaRoe)> on_done, int timeout_ms) {
