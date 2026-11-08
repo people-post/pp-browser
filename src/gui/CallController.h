@@ -116,7 +116,8 @@ public:
   void SpotlightGrid();
   void ToggleSpotlightFill();
   void RestoreChromeFromMinimized();
-  void SetMinimizedCorner(int corner);
+  /** #166: the minimised chip was dropped: its side (1 left, 2 right) and height in the band (0..1000). */
+  void SetMinimizedPlace(int side, int y_permille);
   CallChromeMode ChromeMode() const { return chrome_mode_; }
   /** Thin Call details sheet (debug numbers when diagnostics enabled). */
   void ShowCallDetails();
@@ -273,7 +274,9 @@ private:
   void NoteActiveSpeaker(const MediaEngineHealth& engine, float self_level, int64_t now_ms);
   /** Mode to restore when leaving Minimized (Expanded or Immersive). */
   CallChromeMode restore_mode_ = CallChromeMode::Expanded;
-  int minimized_corner_ = 0;
+  /** #166: the minimised chip's place this call (ShellTypes.h CallInProgressState::minimized_side). */
+  int minimized_side_ = 0;
+  int minimized_y_permille_ = 0;
   /** Call id the current chrome_mode_ was chosen for (reset defaults on switch). */
   std::string chrome_mode_call_id_;
   CallRingtone ringtone_;

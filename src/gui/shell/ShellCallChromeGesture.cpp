@@ -1,9 +1,11 @@
 #include "gui/shell/ShellCallChromeGesture.h"
 
+#include <ui/base/Tween.h>
 #include <ui/dom/Context.h>
 #include <ui/dom/Element.h>
 #include <ui/dom/ElementDocument.h>
 #include <ui/dom/Event.h>
+#include <ui/style/Property.h>
 
 #include <algorithm>
 #include <cmath>
@@ -17,6 +19,11 @@ constexpr float kModeThresholdDp = 56.f;
 constexpr int kDragDeadzonePx = 8;
 constexpr float kScrollTopEpsilonPx = 1.f;
 constexpr float kTapSlopDp = 10.f;
+/** #166: the dropped chip's slide to its side (as the AI dot's, ShellAiDot kSnapSeconds), and the slide that replaces
+ * one a press caught (it ends where it starts, on the next frame). */
+constexpr float kSlideSeconds = 0.25f;
+constexpr float kCutSeconds = 0.01f;
+constexpr const char* kDefaultCornerClass = "shell-call-minimized-chip--tr";
 
 int EventMouseX(const ui::Event& event) {
   return event.GetParameter<int>("mouse_x", 0);
@@ -26,18 +33,10 @@ int EventMouseY(const ui::Event& event) {
   return event.GetParameter<int>("mouse_y", 0);
 }
 
-const char* CornerClass(int corner) {
-  switch (corner) {
-  case 1:
-    return "shell-call-minimized-chip--tl";
-  case 2:
-    return "shell-call-minimized-chip--br";
-  case 3:
-    return "shell-call-minimized-chip--bl";
-  case 0:
-  default:
-    return "shell-call-minimized-chip--tr";
-  }
+void SetDp(ui::Element* element, const char* property, const float dp) {
+  char buffer[32];
+  std::snprintf(buffer, sizeof(buffer), "%.1fdp", dp);
+  element->SetProperty(property, buffer);
 }
 
 } // namespace
@@ -55,6 +54,7 @@ void ShellCallChromeGesture::Attach(ui::Element* root, ui::Context* context, Cal
   callbacks_ = std::move(callbacks);
   axis_lock_ = axis_lock;
   root_->AddEventListener(ui::EventId::Mousedown, this);
+  root_->AddEventListener(ui::EventId::Animationend, this);
   attached_ = true;
   if (mode_ == CallChromeMode::Minimized) {
     SetChipOffset(0.f, 0.f, false);
@@ -72,6 +72,7 @@ void ShellCallChromeGesture::Detach() {
   SetDismissOwnsTopOverscroll(false);
   if (attached_ && root_) {
     root_->RemoveEventListener(ui::EventId::Mousedown, this);
+    root_->RemoveEventListener(ui::EventId::Animationend, this);
   }
   root_ = nullptr;
   document_ = nullptr;
@@ -81,6 +82,9 @@ void ShellCallChromeGesture::Detach() {
   axis_lock_ = nullptr;
   attached_ = false;
   suppress_click_ = false;
+  settling_ = false;
+  target_.reset();
+  docked_ = true;
 }
 
 void ShellCallChromeGesture::Abort() {
@@ -292,41 +296,155 @@ void ShellCallChromeGesture::SetChipOffset(float dx_dp, float dy_dp, bool animat
   char buffer[80];
   std::snprintf(buffer, sizeof(buffer), "translate(%.1fdp, %.1fdp)", dx_dp, dy_dp);
   root_->SetProperty("transform", buffer);
+  chip_dx_dp_ = dx_dp;
+  chip_dy_dp_ = dy_dp;
 }
 
-void ShellCallChromeGesture::ApplyCornerClass(int corner) {
-  if (!root_) {
+float ShellCallChromeGesture::PxToDp(const float px) const {
+  const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
+  return ratio > 0.f ? px / ratio : px;
+}
+
+bool ShellCallChromeGesture::MeasureChip(CallChipRect* chip, CallChipArea* area) const {
+  ui::Element* layer = root_ ? root_->GetParentNode() : nullptr;
+  if (!layer) {
+    return false;
+  }
+  // `left` / `top` place the chip from its layer's padding edge (the layer fills the call mount).
+  const ui::Vector2f origin = layer->GetAbsoluteOffset(ui::BoxArea::Padding);
+  const ui::Vector2f layer_size = layer->GetBox().GetSize(ui::BoxArea::Padding);
+  const ui::Vector2f at = root_->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f size = root_->GetBox().GetSize(ui::BoxArea::Border);
+  if (layer_size.x <= 0.f || layer_size.y <= 0.f || size.y <= 0.f) {
+    return false;
+  }
+  *chip = {PxToDp(at.x - origin.x), PxToDp(at.y - origin.y), PxToDp(size.x), PxToDp(size.y)};
+  *area = {PxToDp(layer_size.x), PxToDp(layer_size.y)};
+  return true;
+}
+
+void ShellCallChromeGesture::DropChip() {
+  CallChipRect chip;
+  CallChipArea area;
+  if (!MeasureChip(&chip, &area)) {
+    SetChipOffset(0.f, 0.f, true);
     return;
   }
-  root_->SetClass("shell-call-minimized-chip--tr", corner == 0);
-  root_->SetClass("shell-call-minimized-chip--tl", corner == 1);
-  root_->SetClass("shell-call-minimized-chip--br", corner == 2);
-  root_->SetClass("shell-call-minimized-chip--bl", corner == 3);
-  (void)CornerClass(corner);
+  // ① Where it shows as the finger leaves it: its laid-out box moved by the drag's translate.
+  chip.left_dp += chip_dx_dp_;
+  chip.top_dp += chip_dy_dp_;
+  // ② Pinned there by left / top (the whole slide runs on these two: nothing interpolates between left and right),
+  // at its width (near an edge a shrink-to-fit box would narrow), without its corner class.
+  root_->SetClass(kDefaultCornerClass, false);
+  SetDp(root_, "left", chip.left_dp);
+  SetDp(root_, "top", chip.top_dp);
+  SetDp(root_, "width", chip.width_dp);
+  root_->SetProperty("right", "auto");
+  root_->SetProperty("bottom", "auto");
+  // ③ Then the translate goes: in the same frame, so it does not move.
+  SetChipOffset(0.f, 0.f, true);
+  // ④ To the nearer side at the height it was let go, clamped into the band.
+  const CallChipPlace place = CallChipDock::Release(chip, area);
+  const CallChipPoint end = CallChipDock::Place(place, area, chip.width_dp, chip.height_dp);
+  const ui::Tween tween(ui::Tween::Cubic, ui::Tween::Out);
+  const ui::Property from_x(chip.left_dp, ui::Unit::DP);
+  const ui::Property from_y(chip.top_dp, ui::Unit::DP);
+  root_->Animate("left", ui::Property(end.left_dp, ui::Unit::DP), kSlideSeconds, tween, 1, false, 0.f, &from_x);
+  root_->Animate("top", ui::Property(end.top_dp, ui::Unit::DP), kSlideSeconds, tween, 1, false, 0.f, &from_y);
+  settling_ = true;
+  docked_ = false;
+  target_ = place;
+  // ⑤ comes when the slide ends (FinishSlide). ⑥ The place goes to the call state now, so a restore mid-slide
+  // still finds it there; until the state has it, and while the slide runs, ShellHost does not rebuild the chip.
+  if (callbacks_.on_chip_place) {
+    callbacks_.on_chip_place(place.side, place.y_permille);
+  }
 }
 
-int ShellCallChromeGesture::SnapCornerFromChipCenter() const {
-  if (!root_ || !context_) {
-    return 0;
+void ShellCallChromeGesture::FreezeChip() {
+  settling_ = false;
+  CallChipRect chip;
+  CallChipArea area;
+  if (!root_ || !MeasureChip(&chip, &area)) {
+    return;
   }
-  const auto box = root_->GetBox().GetSize(ui::BoxArea::Border);
-  const ui::Vector2f abs = root_->GetAbsoluteOffset(ui::BoxArea::Border);
-  const float cx = abs.x + box.x * 0.5f;
-  const float cy = abs.y + box.y * 0.5f;
-  const float vw = static_cast<float>(context_->GetDimensions().x);
-  const float vh = static_cast<float>(context_->GetDimensions().y);
-  const bool left = cx < vw * 0.5f;
-  const bool top = cy < vh * 0.5f;
-  if (top && !left) {
-    return 0;
+  // The slide's left / top as last laid out: a new "slide" from there to there replaces it (an element keeps one
+  // animation per property), so the old one moves it no more; the drag's translate follows the finger from here.
+  const ui::Tween tween(ui::Tween::Cubic, ui::Tween::Out);
+  const ui::Property x(chip.left_dp, ui::Unit::DP);
+  const ui::Property y(chip.top_dp, ui::Unit::DP);
+  root_->Animate("left", x, kCutSeconds, tween, 1, false, 0.f, &x);
+  root_->Animate("top", y, kCutSeconds, tween, 1, false, 0.f, &y);
+  SetDp(root_, "left", chip.left_dp);
+  SetDp(root_, "top", chip.top_dp);
+  docked_ = false;
+}
+
+void ShellCallChromeGesture::FinishSlide() {
+  settling_ = false;
+  if (!root_ || !target_) {
+    return;
   }
-  if (top && left) {
-    return 1;
+  // ⑤ There: anchored on its own side, so a chip that grows later grows away from the edge, never past it.
+  DockChip(*target_);
+  if (callbacks_.on_chip_settled) {
+    callbacks_.on_chip_settled();
   }
-  if (!top && !left) {
-    return 2;
+}
+
+void ShellCallChromeGesture::DockChip(const CallChipPlace& place) {
+  CallChipRect chip;
+  CallChipArea area;
+  if (!root_ || !MeasureChip(&chip, &area)) {
+    return;
   }
-  return 3;
+  const CallChipPoint at = CallChipDock::Place(place, area, chip.width_dp, chip.height_dp);
+  root_->SetClass(kDefaultCornerClass, false);
+  root_->RemoveProperty("width");
+  if (place.side == CallChipDock::kSideLeft) {
+    SetDp(root_, "left", CallChipDock::kEdgeDp);
+    root_->SetProperty("right", "auto");
+  } else {
+    SetDp(root_, "right", CallChipDock::kEdgeDp);
+    root_->SetProperty("left", "auto");
+  }
+  SetDp(root_, "top", at.top_dp);
+  root_->SetProperty("bottom", "auto");
+  docked_ = true;
+}
+
+bool ShellCallChromeGesture::HoldsChip(const CallInProgressState& call) const {
+  if (!attached_ || !root_ || mode_ != CallChromeMode::Minimized) {
+    return false;
+  }
+  if (tracking_ || settling_) {
+    return true;
+  }
+  return target_ && (call.minimized_side != target_->side || call.minimized_y_permille != target_->y_permille);
+}
+
+bool KeepMinimizedChipOnRemount(const CallInProgressState& call, const ui::Element* chip,
+                                const ShellCallChromeGesture& gesture) {
+  return call.active && call.mode == CallChromeMode::Minimized && gesture.AttachedTo(chip) && gesture.HoldsChip(call);
+}
+
+void ShellCallChromeGesture::Reflow(const CallInProgressState& call) {
+  if (!attached_ || !root_ || mode_ != CallChromeMode::Minimized || tracking_ || settling_) {
+    return;
+  }
+  const CallChipPlace place = target_ ? *target_ : CallChipPlace{call.minimized_side, call.minimized_y_permille};
+  if (place.side == CallChipDock::kSideDefault) {
+    return;
+  }
+  CallChipRect chip;
+  CallChipArea area;
+  if (!MeasureChip(&chip, &area)) {
+    return;
+  }
+  const float top = CallChipDock::Place(place, area, chip.width_dp, chip.height_dp).top_dp;
+  if (!docked_ || std::fabs(top - chip.top_dp) >= 0.5f) {
+    DockChip(place);
+  }
 }
 
 void ShellCallChromeGesture::BeginArm(int x_px, int y_px, ui::Element* target) {
@@ -473,13 +591,8 @@ void ShellCallChromeGesture::EndDrag() {
       }
       return;
     }
-    const int corner = SnapCornerFromChipCenter();
-    ApplyCornerClass(corner);
-    SetChipOffset(0.f, 0.f, true);
     unlock();
-    if (callbacks_.on_chip_corner) {
-      callbacks_.on_chip_corner(corner);
-    }
+    DropChip();
     return;
   }
 
@@ -515,6 +628,9 @@ void ShellCallChromeGesture::ProcessEvent(ui::Event& event) {
       if (!IsUnderRoot(target) || ShouldIgnoreTarget(target)) {
         return;
       }
+      if (settling_) {
+        FreezeChip(); // caught mid-slide: it stops under the finger, then follows it
+      }
       BeginArm(EventMouseX(event), EventMouseY(event), target);
       return;
     }
@@ -543,6 +659,15 @@ void ShellCallChromeGesture::ProcessEvent(ui::Event& event) {
   case ui::EventId::Mouseup:
     if (tracking_) {
       EndDrag();
+    }
+    break;
+  case ui::EventId::Animationend:
+    // The slide's left and top end in the same frame: the first one anchors the chip on its side.
+    if (settling_ && event.GetTargetElement() == root_) {
+      const ui::String property = event.GetParameter<ui::String>("property", "");
+      if (property == "left" || property == "top") {
+        FinishSlide();
+      }
     }
     break;
   case ui::EventId::Click:

@@ -5288,7 +5288,10 @@ call-video-tile {
 }
 
 /* Minimized chip: mount layer must not steal hits; only the chip is interactive.
-   More specific than `.shell-call-chrome-mount .shell-layer { pointer-events: auto }`. */
+   More specific than `.shell-call-chrome-mount .shell-layer { pointer-events: auto }`.
+   #166: the chip can be dropped anywhere, also over the phone AI dot (shown while the call is minimised): its mount
+   (.shell-call-chrome-mount--bar, 45) is over the dot's (.shell-ai-dot-mount, 40), so the chip and its buttons win.
+   Never dragged, it keeps the --tr corner below; dropped, ShellCallChromeGesture / ShellCallChromeRml place it inline. */
 .shell-call-chrome-mount .shell-layer-call-minimized {
   position: absolute;
   top: 0;

@@ -213,7 +213,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_show_flip", &host.state_.call_in_progress.show_flip);
     ctor.Bind("call_in_progress_participant_count", &host.state_.call_in_progress.participant_count);
     ctor.Bind("call_in_progress_mode", &host.state_.call_in_progress.mode_str);
-    ctor.Bind("call_in_progress_minimized_corner", &host.state_.call_in_progress.minimized_corner);
+    ctor.Bind("call_in_progress_minimized_side", &host.state_.call_in_progress.minimized_side);
+    ctor.Bind("call_in_progress_minimized_y_permille", &host.state_.call_in_progress.minimized_y_permille);
     ctor.Bind("call_in_progress_quality_bars", &host.state_.call_in_progress.quality_bars);
     ctor.Bind("call_in_progress_quality_ok", &host.state_.call_in_progress.quality_ok);
     ctor.Bind("call_in_progress_quality_warn", &host.state_.call_in_progress.quality_warn);
@@ -1395,6 +1396,8 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_quality_hint");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_debug_subtitle");
   DataModelHost::Instance().Dirty("window", "call_in_progress_debug_subtitle");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_side");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_y_permille");
   for (const char* name : {"call_ring_phone_title", "call_ring_phone_subtitle", "call_in_progress_phone_title",
                            "call_in_progress_failed_text", "call_in_progress_story_step1",
                            "call_in_progress_story_step2", "call_in_progress_story_step3",
@@ -2507,9 +2510,15 @@ void ShellHost::AttachCallChromeGesture() {
       call_actions_.restore_chrome_from_minimized();
     }
   };
-  callbacks.on_chip_corner = [this](int corner) {
-    if (call_actions_.set_minimized_corner) {
-      call_actions_.set_minimized_corner(corner);
+  callbacks.on_chip_place = [this](int side, int y_permille) {
+    if (call_actions_.set_minimized_place) {
+      call_actions_.set_minimized_place(side, y_permille);
+    }
+  };
+  callbacks.on_chip_settled = [this]() {
+    // A remount held back while the chip slid (RemountCallChromeNow) runs now; held again until the place is back.
+    if (call_chip_rebuild_held_) {
+      RemountCallChrome();
     }
   };
   // The phone page is full screen in both open modes: it takes the full page's pull-down, never "tap outside".
@@ -2566,6 +2575,21 @@ void ShellHost::RemountCallChromeNow() {
   if (!doc) {
     return;
   }
+  MeasureCallChip(doc);
+  // #166: the minimised chip a drag still owns — pressed, sliding to its side, or dropped at a place the call state
+  // has not taken yet — stays as it is: rebuilt from the state now it would jump back where it was. Only its text is
+  // dirtied (it is all bound); the rebuild runs when the slide ends (on_chip_settled) or the place comes back (that
+  // state change is a Remount of its own). A new mode, call or layout is never held: the chip is not kept then.
+  if (KeepMinimizedChipOnRemount(state_.call_in_progress, doc->GetElementById("shell-call-minimized-chip"),
+                                 call_chrome_gesture_)) {
+    call_chip_rebuild_held_ = true;
+    if (ui::Element* ring_mount = doc->GetElementById("shell-call-ring-mount")) {
+      RmlMount::MountInner(ring_mount, CallRingRml(state_));
+    }
+    DirtyCallChrome();
+    return;
+  }
+  call_chip_rebuild_held_ = false;
   DetachCallChromeGesture();
   // The sheet opens at Large each time it opens (DESIGN-pp-ui 8.14); a remount while it stays open keeps its stop.
   if (!state_.call_in_progress.story_sheet_open) {
@@ -2580,6 +2604,26 @@ void ShellHost::RemountCallChromeNow() {
   DirtyCallChrome();
   AttachCallChromeGesture();
   ApplySafeAreaLayout();  // the phone call page reaches under the status bar and clears the home indicator
+}
+
+void ShellHost::MeasureCallChip(ui::ElementDocument* doc) {
+  const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
+  if (!doc || ratio <= 0.f) {
+    return;
+  }
+  // The chip's layer fills the call mount (components.rcss .shell-layer-call-minimized), which is always there.
+  if (ui::Element* mount = doc->GetElementById("shell-call-in-progress-mount")) {
+    const float height = mount->GetBox().GetSize(ui::BoxArea::Padding).y;
+    if (height > 0.f) {
+      state_.call_chip_area_height_dp = height / ratio;
+    }
+  }
+  if (ui::Element* chip = doc->GetElementById("shell-call-minimized-chip")) {
+    const float height = chip->GetBox().GetSize(ui::BoxArea::Border).y;
+    if (height > 0.f) {
+      state_.call_chip_height_dp = height / ratio;
+    }
+  }
 }
 
 void ShellHost::RemountDialogChrome() {
@@ -2743,6 +2787,7 @@ void ShellHost::Update(ui::Context* context) {
     }
   }
   ai_dot_.Update(context, AiDotSceneNow());
+  call_chrome_gesture_.Reflow(state_.call_in_progress);
   favorites_snap_.Update(ShellFavoritesSnap::NowSeconds());
   SyncSecureScreen();
 }

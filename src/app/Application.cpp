@@ -1437,7 +1437,7 @@ void Application::WireCalls() {
     call_actions.spotlight_grid = [this]() { call_->SpotlightGrid(); };
     call_actions.spotlight_toggle_fill = [this]() { call_->ToggleSpotlightFill(); };
     call_actions.restore_chrome_from_minimized = [this]() { call_->RestoreChromeFromMinimized(); };
-    call_actions.set_minimized_corner = [this](int corner) { call_->SetMinimizedCorner(corner); };
+    call_actions.set_minimized_place = [this](int side, int y_permille) { call_->SetMinimizedPlace(side, y_permille); };
     call_actions.show_call_details = [this]() { call_->ShowCallDetails(); };
     chat_->BindCallActions(call_actions);
     shell_->BindCallActions(call_actions);

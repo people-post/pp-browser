@@ -1,5 +1,6 @@
 #include "gui/shell/ShellCallChromeRml.h"
 #include "gui/CallChromeSync.h"
+#include "lib/ui/CallChipDock.h"
 
 #include <gtest/gtest.h>
 
@@ -198,43 +199,45 @@ TEST(ShellCallChromeRmlTest, PhoneGroupBeforeConnectKeepsTheDimmedGrid) {
   EXPECT_FALSE(Has(rml, "p.speaking"));
 }
 
-// #11: the connection story shows one step at a time: calling alone, then a short ✓ "answered" line above the
-// current "setting up the encrypted line"; a step that has not happened is not drawn. The sheet keeps the history.
-TEST(ShellCallChromeRmlTest, PhoneStoryShowsOnlyTheStepsThatHappened) {
+// #165: the connection story always shows all three steps; the reached ones are highlighted (done = ✓, current =
+// moving dot), the ones not reached yet are plain dots. Same for the 1:1 page and the group card.
+std::string StepMarkup(const char* modifier, const bool check, const int n) {
+  return std::string("<div class=\"call-phone-step") + modifier + "\"><div class=\"call-phone-step-dot\">" +
+         (check ? "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg>" : "") +
+         "</div><p class=\"call-phone-step-text\">{{call_in_progress_story_step" + std::to_string(n) + "}}</p></div>";
+}
+
+TEST(ShellCallChromeRmlTest, PhoneStoryShowsAllStepsAndHighlightsTheReachedOnes) {
+  const std::string done = " call-phone-step--done";
+  const std::string current = " call-phone-step--current";
+  // expected[stage][step]: 'd' done, 'c' current, 'p' plain.
+  const char* expected[] = {"cpp", "dcp", "ddc", "ddd"};
+  for (const bool roster : {false, true}) {  // false = 1:1 page, true = group card
+    for (int stage = 0; stage < 4; ++stage) {
+      ShellState state = PhoneGroupCall();
+      state.call_in_progress.show_roster = roster;
+      state.call_in_progress.story_active = true;
+      state.call_in_progress.story_stage = stage;
+      const std::string rml = CallInProgressRml(state);
+      EXPECT_EQ(Count(rml, "<div class=\"call-phone-step-dot\">"), 3u) << "roster=" << roster << " stage=" << stage;
+      size_t last = 0;
+      for (int i = 0; i < 3; ++i) {
+        const char kind = expected[stage][i];
+        const std::string want = StepMarkup(kind == 'd' ? done.c_str() : kind == 'c' ? current.c_str() : "",
+                                            kind == 'd', i + 1);
+        const size_t at = rml.find(want);
+        EXPECT_NE(at, std::string::npos) << "roster=" << roster << " stage=" << stage << " step=" << i + 1;
+        EXPECT_GE(at, last);  // in order
+        last = at;
+      }
+      EXPECT_EQ(Count(rml, "call-phone-step--current"), stage < 3 ? 1u : 0u);
+    }
+  }
+
+  // "How this call got through" still lists every line so far.
   ShellState state = PhoneGroupCall();
   state.call_in_progress.show_roster = false;
   state.call_in_progress.story_active = true;
-  state.call_in_progress.story_stage = 0;
-  const std::string calling = CallInProgressRml(state);
-  EXPECT_EQ(Count(calling, "<div class=\"call-phone-step call-phone-step--"), 1u);
-  EXPECT_TRUE(Has(calling,
-                  "<div class=\"call-phone-step call-phone-step--current\"><div class=\"call-phone-step-dot\">"
-                  "</div><p class=\"call-phone-step-text\">{{call_in_progress_story_step1}}</p></div>"));
-  EXPECT_FALSE(Has(calling, "call_in_progress_story_step2"));
-  EXPECT_FALSE(Has(calling, "call_in_progress_story_step3"));
-
-  state.call_in_progress.story_stage = 1;
-  const std::string answered = CallInProgressRml(state);
-  EXPECT_EQ(Count(answered, "<div class=\"call-phone-step call-phone-step--"), 2u);
-  EXPECT_TRUE(Has(answered,
-                  "<div class=\"call-phone-step call-phone-step--done\"><div class=\"call-phone-step-dot\">"
-                  "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg></div>"
-                  "<p class=\"call-phone-step-text\">{{call_in_progress_story_step1}}</p></div>"));
-  EXPECT_TRUE(Has(answered,
-                  "<div class=\"call-phone-step call-phone-step--current\"><div class=\"call-phone-step-dot\">"
-                  "</div><p class=\"call-phone-step-text\">{{call_in_progress_story_step2}}</p></div>"));
-  EXPECT_LT(answered.find("call_in_progress_story_step1"), answered.find("call_in_progress_story_step2"));
-  EXPECT_FALSE(Has(answered, "call_in_progress_story_step3"));
-
-  // The group card follows the same rule.
-  state.call_in_progress.show_roster = true;
-  state.call_in_progress.story_stage = 0;
-  const std::string group = CallInProgressRml(state);
-  EXPECT_TRUE(Has(group, "{{call_in_progress_story_step1}}"));
-  EXPECT_FALSE(Has(group, "call_in_progress_story_step2"));
-
-  // "How this call got through" still lists every line so far.
-  state.call_in_progress.show_roster = false;
   state.call_in_progress.story_sheet_open = true;
   state.call_in_progress.story_lines = {{.time = "10:02", .text = "You called"},
                                         {.time = "3.0 s", .text = "They answered"},
@@ -305,6 +308,39 @@ TEST(ShellCallChromeRmlTest, PhoneVideoFlipButtonIsLitOnTheFrontCamera) {
   const std::string rml = CallInProgressRml(state);
   EXPECT_TRUE(Has(rml, "data-event-click=\"call_flip_camera()\" "
                        "data-class-call-phone-control--on=\"call_in_progress_camera_front\""));
+}
+
+// #166: the minimised chip. Never dragged this call: the default top-right corner class, no inline place — as before.
+// Dropped on a side: anchored on that side by an inline style, its top from CallChipDock::Place, no corner class.
+TEST(ShellCallChromeRmlTest, TheMinimisedChipKeepsItsCornerUntilDraggedThenSitsWhereItWasDropped) {
+  for (const LayoutMode layout : {LayoutMode::Compact, LayoutMode::Expanded}) {
+    ShellState state;
+    state.layout_mode = layout;
+    state.call_in_progress.active = true;
+    state.call_in_progress.mode = CallChromeMode::Minimized;
+    const std::string corner = CallInProgressRml(state);
+    EXPECT_TRUE(Has(corner, "class=\"shell-call-minimized-chip row shell-call-minimized-chip--tr\">"));
+    EXPECT_FALSE(Has(corner, "style=")) << "no inline place before a drag";
+
+    // The layer and the chip as last laid out (ShellHost::MeasureCallChip): the band is [12, 780 - 72 - 56 = 652].
+    state.call_chip_area_height_dp = 780.f;
+    state.call_chip_height_dp = 56.f;
+    state.call_in_progress.minimized_side = CallChipDock::kSideRight;
+    state.call_in_progress.minimized_y_permille = 500;
+    const std::string right = CallInProgressRml(state);
+    EXPECT_TRUE(Has(right, "style=\"right:12dp;left:auto;top:332.0dp;bottom:auto;\"")) << right;
+    EXPECT_FALSE(Has(right, "shell-call-minimized-chip--"));
+
+    state.call_in_progress.minimized_side = CallChipDock::kSideLeft;
+    state.call_in_progress.minimized_y_permille = 1000;
+    const std::string left = CallInProgressRml(state);
+    EXPECT_TRUE(Has(left, "style=\"left:12dp;right:auto;top:652.0dp;bottom:auto;\"")) << left;
+    EXPECT_FALSE(Has(left, "shell-call-minimized-chip--"));
+
+    // The chip grew since (the quality words): re-clamped, its bottom still 72dp above the layer's.
+    state.call_chip_height_dp = 80.f;
+    EXPECT_TRUE(Has(CallInProgressRml(state), "top:628.0dp;"));
+  }
 }
 
 // The group video page has the flip button too, lit the same way, next to the camera; none while the camera is off.

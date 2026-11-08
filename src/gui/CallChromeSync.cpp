@@ -60,7 +60,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
   // Button *presence* via data-if still remounts (same class of issue as ring layer appear).
   // Icon toggles (muted / speaker_on / camera_on) use DirtyOnly — DataViewIf + MountInner
   // model flush keep those in sync.
-  // Mode / minimized corner change the markup tree → Remount (V031).
+  // Mode / the minimized chip's place change the markup tree → Remount (V031, #166).
   if (synced.in_call_show_speaker != next.in_call_show_speaker ||
       synced.in_call_show_camera != next.in_call_show_camera || synced.in_call_show_flip != next.in_call_show_flip ||
       synced.in_call_show_invite != next.in_call_show_invite ||
@@ -71,7 +71,8 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
       synced.in_call_stage_visible != next.in_call_stage_visible || synced.in_call_mode != next.in_call_mode ||
       synced.in_call_spotlight != next.in_call_spotlight ||
       synced.in_call_spotlight_fill != next.in_call_spotlight_fill ||
-      synced.in_call_minimized_corner != next.in_call_minimized_corner ||
+      synced.in_call_minimized_side != next.in_call_minimized_side ||
+      synced.in_call_minimized_y_permille != next.in_call_minimized_y_permille ||
       synced.ring_show_pricing != next.ring_show_pricing ||
       synced.ring_accept_charge_enabled != next.ring_accept_charge_enabled) {
     return CallChromeUpdate::Remount;
