@@ -4,6 +4,7 @@
 #include "common/Secret.h"
 #include "lib/net/OrgBackendClients.h"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -49,6 +50,8 @@ private:
 
 /** What the registration renewal's network half brought back. */
 struct RenewResult {
+  /** The account the network half ran for (read on the worker before it): renew_persist refuses another one. */
+  std::string account_id;
   /** The finished registration to store; nullopt when nothing was due (or it failed). */
   std::optional<RegistrationResult> registration;
   /** The network half failed, threw, or storing its result failed. */
@@ -96,17 +99,25 @@ public:
     std::function<bool()> auto_renew;
     /** Worker: the renewal's network half only (nothing stored). */
     std::function<RenewResult(bool auto_renew)> renew_network;
-    /** UI: reads the identity again, applies only the registration fields, saves. */
-    std::function<Roe<void>(const RegistrationResult& registration)> renew_persist;
+    /**
+     * UI: one read-modify-write applying only the registration fields; refused when the identity is no longer
+     * `account_id`'s (RenewResult::account_id).
+     */
+    std::function<Roe<void>(const RegistrationResult& registration, const std::string& account_id)> renew_persist;
     /** UI: the "registration expires soon" hint and the log line (`auto_renew` as read before the dispatch). */
     std::function<void(const RenewResult& result, bool auto_renew)> renew_hint;
 
     /** UI: no Brief key is stored (registered or guest): a mint is worth it. */
     std::function<bool()> brief_key_needed;
+    /** UI, read when the mint is sent off: the identity's account id ("" unreadable: no mint). */
+    std::function<std::string()> account_id;
     /** Worker: mints a guest key at `llm_base_url` (HTTP only). */
     std::function<Roe<SecretText>(const std::string& llm_base_url)> mint_brief_key_network;
-    /** UI: reads the identity again and writes only the guest key field (keeps a key that came meanwhile). */
-    std::function<Roe<void>(const SecretText& key)> brief_key_persist;
+    /**
+     * UI: one read-modify-write of only the guest key field (keeps a key that came meanwhile); refused when the
+     * identity is no longer `account_id`'s (the one read when the mint was sent off).
+     */
+    std::function<Roe<void>(const SecretText& key, const std::string& account_id)> brief_key_persist;
     /** UI: how the mint ended (the hint, the banner), after its run is finished. */
     std::function<void(const BriefKeyMintEnd& end)> brief_key_done;
 
@@ -137,24 +148,36 @@ private:
   std::shared_ptr<State> state_;
 };
 
+/** How long a 401 renewal waits for a mint in flight: the mint's own HTTP limit. */
+inline constexpr std::chrono::milliseconds kBriefKeyMintWait{30000};
+/** The wait is cut in slices this long, so a stopped turn gives up within one. */
+inline constexpr std::chrono::milliseconds kBriefKeyWaitSlice{250};
+
 /**
  * The 401 renewal's turn on the shared Brief key run (B183). While the run is in flight (the unlock's mint, or another
- * turn's renewal) it waits, at most `wait`: that one stores its key and `renew` then finds it and reuses it, so no
- * second key is minted. Then `renew` runs holding the run. Still in flight when the wait is over: `renew` runs anyway,
- * as before the run was shared. `on_again`: a mint was asked for while this one held the run; called on this thread.
+ * turn's renewal) it waits, at most `wait`, in kBriefKeyWaitSlice slices: that one stores its key and `renew` then
+ * finds it and reuses it, so no second key is minted. Then `renew` runs holding the run. Still in flight when the
+ * wait is over: `renew` runs anyway, as before the run was shared. `cancelled` (the turn was stopped: Stop, a profile
+ * reset, quit) is asked every slice: true gives up, nothing renewed (nullopt), so a stopped turn never holds its
+ * thread for the mint. `on_again`: a mint was asked for while this one held the run; called on this thread.
  * Blocks: never on the UI thread (pass a zero `wait` there).
  */
 template <typename Renew>
-auto RunSharedBriefKeyRenewal(CoalescedRun& run, const std::chrono::milliseconds wait, Renew&& renew,
-                              const std::function<void()>& on_again = {}) -> decltype(renew()) {
+auto RunSharedBriefKeyRenewal(CoalescedRun& run, const std::chrono::milliseconds wait,
+                              const std::function<bool()>& cancelled, Renew&& renew,
+                              const std::function<void()>& on_again = {}) -> std::optional<decltype(renew())> {
+  const auto stopped = [&cancelled]() { return cancelled && cancelled(); };
   std::optional<CoalescedRun::Ticket> ticket = run.TryStart(/*queue_again=*/false);
   const auto deadline = std::chrono::steady_clock::now() + wait;
   while (!ticket) {
+    if (stopped()) {
+      return std::nullopt;
+    }
     const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
     if (left.count() <= 0) {
       break;
     }
-    (void)run.WaitIdle(left);
+    (void)run.WaitIdle((std::min)(left, kBriefKeyWaitSlice));
     ticket = run.TryStart(/*queue_again=*/false);
   }
   struct End {
@@ -170,7 +193,10 @@ auto RunSharedBriefKeyRenewal(CoalescedRun& run, const std::chrono::milliseconds
       }
     }
   } end{run, ticket, on_again};
-  return renew();
+  if (stopped()) {
+    return std::nullopt; // stopped while it waited: the run (if it took it) is handed back by End
+  }
+  return std::optional<decltype(renew())>(renew());
 }
 
 } // namespace pbr

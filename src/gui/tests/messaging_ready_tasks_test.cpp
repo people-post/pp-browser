@@ -12,6 +12,7 @@
 #include <deque>
 #include <functional>
 #include <future>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -56,6 +57,7 @@ protected:
         throw std::runtime_error("renew threw");
       }
       RenewResult result;
+      result.account_id = account_; // read on the worker before the network
       if (renew_fails_) {
         result.error = Error("renew failed");
       } else if (renew_due_) {
@@ -63,8 +65,11 @@ protected:
       }
       return result;
     };
-    ports.renew_persist = [this](const RegistrationResult& registration) -> Roe<void> {
+    ports.renew_persist = [this](const RegistrationResult& registration, const std::string& account) -> Roe<void> {
       EXPECT_FALSE(in_worker_) << "identity written on the UI thread only";
+      if (account != stored_account_) {
+        return Error("another account"); // what PersistRenewal does (registration_client_test)
+      }
       persisted_.push_back("renew:" + registration.relay_user_id);
       return {};
     };
@@ -73,6 +78,10 @@ protected:
       hints_.push_back({result.registration.has_value(), result.error.has_value(), auto_renew});
     };
     ports.brief_key_needed = [this] { return stored_key_.empty(); };
+    ports.account_id = [this] {
+      EXPECT_FALSE(in_worker_);
+      return account_;
+    };
     ports.mint_brief_key_network = [this](const std::string& base_url) -> Roe<SecretText> {
       EXPECT_TRUE(in_worker_);
       ++mint_calls_;
@@ -82,8 +91,11 @@ protected:
       }
       return SecretText("brf_guest_new");
     };
-    ports.brief_key_persist = [this](const SecretText& key) -> Roe<void> {
+    ports.brief_key_persist = [this](const SecretText& key, const std::string& account) -> Roe<void> {
       EXPECT_FALSE(in_worker_);
+      if (account != stored_account_) {
+        return Error("another account"); // what StoreBriefGuestKeyIfNone does (brief_llm_key_renewal_test)
+      }
       persisted_.push_back("brief:" + key.Reveal());
       stored_key_ = key.Reveal();
       return {};
@@ -127,6 +139,8 @@ protected:
 
   std::deque<Job> jobs_;
   bool in_worker_ = false;
+  std::string account_ = "account:a";        // what the identity says when a task reads it
+  std::string stored_account_ = "account:a"; // what it says when the result is stored
   uint64_t session_ = 1;
   bool ready_ = true;
   int push_calls_ = 0;
@@ -310,7 +324,7 @@ TEST_F(MessagingReadyTasksTest, The401RenewalWaitsForTheMintInFlightAndMintsNoth
   std::atomic<bool> renewal_started{false};
   auto renewal = std::async(std::launch::async, [&]() {
     renewal_started = true;
-    return RunSharedBriefKeyRenewal(*brief_run_, 10s, [&]() -> std::string {
+    return RunSharedBriefKeyRenewal(*brief_run_, 10s, {}, [&]() -> std::string {
       // RenewBriefLlmKey: the stored key changed (the mint's) -> reused; else it would mint.
       if (!stored_key_.empty()) {
         return "reused:" + stored_key_;
@@ -326,7 +340,9 @@ TEST_F(MessagingReadyTasksTest, The401RenewalWaitsForTheMintInFlightAndMintsNoth
   EXPECT_EQ(renewal.wait_for(0ms), std::future_status::timeout) << "it waits while the mint is out";
 
   RunAll(); // the mint ends: key stored on the "UI thread", the run freed
-  EXPECT_EQ(renewal.get(), "reused:brf_guest_new");
+  const std::optional<std::string> got = renewal.get();
+  ASSERT_TRUE(got.has_value());
+  EXPECT_EQ(*got, "reused:brf_guest_new");
   EXPECT_EQ(renew_mints.load(), 0);
   EXPECT_EQ(mint_calls_, 1) << "one mint in all";
   EXPECT_EQ(identity_changed_, 1);
@@ -344,6 +360,49 @@ TEST_F(MessagingReadyTasksTest, AMintAskedForWhileTheRenewalHeldTheRunIsToldOnce
   ASSERT_EQ(jobs_.size(), 1u) << "no key yet: the mint runs now";
   RunAll();
   EXPECT_EQ(mint_calls_, 1);
+}
+
+// A turn stopped (Stop, profile reset, quit) while it waits for the mint gives up within one slice: the UI joining
+// turns never waits for the mint.
+TEST_F(MessagingReadyTasksTest, AStoppedRenewalGivesUpTheWaitWithinASlice) {
+  tasks_->MintBriefKey("u");
+  ASSERT_TRUE(brief_run_->InFlight());
+  std::atomic<bool> cancelled{false};
+  std::atomic<int> renews{0};
+  auto renewal = std::async(std::launch::async, [&]() {
+    return RunSharedBriefKeyRenewal(*brief_run_, kBriefKeyMintWait, [&]() { return cancelled.load(); }, [&]() {
+      ++renews;
+      return 1;
+    });
+  });
+  std::this_thread::sleep_for(50ms);
+  const auto stopped_at = std::chrono::steady_clock::now();
+  cancelled = true;
+  ASSERT_EQ(renewal.wait_for(kBriefKeyWaitSlice + 500ms), std::future_status::ready) << "gave up within a slice";
+  EXPECT_LT(std::chrono::steady_clock::now() - stopped_at, kBriefKeyWaitSlice + 500ms);
+  EXPECT_FALSE(renewal.get().has_value()) << "nothing renewed";
+  EXPECT_EQ(renews.load(), 0);
+  EXPECT_TRUE(brief_run_->InFlight()) << "the mint's run is left as it was";
+  RunAll();
+  EXPECT_FALSE(brief_run_->InFlight());
+}
+
+// Hardening: a result is stored only into the account the task ran for (the profile changed meanwhile: refused).
+TEST_F(MessagingReadyTasksTest, ResultsCarryTheAccountTheyRanFor) {
+  tasks_->RenewRegistration();
+  tasks_->MintBriefKey("u");
+  stored_account_ = "account:b"; // same session and still ready, but the identity is another account now
+  RunAll();
+  EXPECT_TRUE(persisted_.empty()) << "nothing written into account b";
+  ASSERT_EQ(hints_.size(), 1u);
+  EXPECT_TRUE(hints_[0].failed);
+  EXPECT_EQ(brief_ends_, (std::vector<BriefKeyMintOutcome>{BriefKeyMintOutcome::SaveFailed}));
+  EXPECT_EQ(identity_changed_, 0);
+
+  stored_account_ = "account:a";
+  tasks_->RenewRegistration();
+  RunAll();
+  EXPECT_EQ(persisted_, (std::vector<std::string>{"renew:relay:u1"}));
 }
 
 TEST(CoalescedRunTest, AStaleTicketChangesNothing) {

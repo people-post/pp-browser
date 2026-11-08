@@ -58,8 +58,9 @@ Roe<std::optional<RegistrationResult>> ConversationsFacade::MaybeAutoRenewRegist
   return pbr::MaybeAutoRenewNetworkOnly(hub_.Registration(), hub_.Identity(), auto_renew_registration);
 }
 
-Roe<LocalIdentity> ConversationsFacade::PersistRegistrationRenewal(const RegistrationResult& result) {
-  return pbr::PersistRenewal(hub_.Identity(), result);
+Roe<LocalIdentity> ConversationsFacade::PersistRegistrationRenewal(const RegistrationResult& result,
+                                                                   const std::string& expected_account_id) {
+  return pbr::PersistRenewal(hub_.Identity(), result, expected_account_id);
 }
 
 Roe<void> ConversationsFacade::SyncPushDevices() {
@@ -1287,6 +1288,10 @@ Roe<LocalIdentity> ConversationsFacade::GetLocalIdentity() { return hub_.Identit
 
 Roe<LocalIdentity> ConversationsFacade::UpdateLocalIdentity(const LocalIdentity& identity) {
   return hub_.Identity().Update(identity);
+}
+
+Roe<LocalIdentity> ConversationsFacade::ModifyLocalIdentity(const std::function<bool(LocalIdentity& identity)>& change) {
+  return hub_.Identity().Modify(change);
 }
 
 Roe<LocalIdentity> ConversationsFacade::FinishAndPersistRegistration(const std::string& nickname) {

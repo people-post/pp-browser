@@ -84,6 +84,7 @@
 #include "lib/people/PeerDisplayLabel.h"
 #include "lib/people/PeopleLookupFailure.h"
 #include "lib/people/ContactJson.h"
+#include "domain/registration/BriefLlmKeyRenewal.h"
 #include "domain/registration/RegistrationClient.h"
 #include "lib/messaging/AtAiParser.h"
 #include "lib/delivery/ChatPayloadCodec.h"
@@ -522,6 +523,13 @@ void ChatController::MakeReadyTasks() {
   ports.auto_renew = [this]() { return Store().Snapshot().profile_prefs.auto_renew_registration; };
   ports.renew_network = [facade](const bool auto_renew) {
     RenewResult out;
+    // The account this renewal runs for, read before the network: its result is stored only into that one.
+    const std::optional<LocalIdentity> identity = facade->GetIdentity();
+    if (!identity || identity->account_id.empty()) {
+      out.error = Error("Messaging is not ready");
+      return out;
+    }
+    out.account_id = identity->account_id;
     auto renewed = facade->MaybeAutoRenewRegistrationNetworkOnly(auto_renew);
     if (!renewed) {
       out.error = renewed.error();
@@ -530,11 +538,11 @@ void ChatController::MakeReadyTasks() {
     }
     return out;
   };
-  ports.renew_persist = [this](const RegistrationResult& registration) -> Roe<void> {
+  ports.renew_persist = [this](const RegistrationResult& registration, const std::string& account_id) -> Roe<void> {
     if (!facade_) {
       return Error("Messaging is not ready");
     }
-    if (auto saved = facade_->PersistRegistrationRenewal(registration); !saved) {
+    if (auto saved = facade_->PersistRegistrationRenewal(registration, account_id); !saved) {
       return saved.error();
     }
     return {};
@@ -565,18 +573,28 @@ void ChatController::MakeReadyTasks() {
     }
     return std::move(minted->llm_api_key);
   };
-  ports.brief_key_persist = [this](const SecretText& key) -> Roe<void> {
-    std::optional<LocalIdentity> identity = facade_ ? facade_->GetIdentity() : std::nullopt;
-    if (!identity) {
+  ports.account_id = [this]() {
+    const std::optional<LocalIdentity> identity = facade_ ? facade_->GetIdentity() : std::nullopt;
+    return identity ? identity->account_id : std::string();
+  };
+  ports.brief_key_persist = [this](const SecretText& key, const std::string& account_id) -> Roe<void> {
+    if (!facade_) {
       return Error("Messaging is not ready");
     }
-    // A key that came meanwhile (a renewal brought a registered one, a 401 renewal stored a guest one) is kept.
-    if (!identity->brief_llm_api_key.empty() || !identity->brief_llm_guest_api_key.empty()) {
-      return {};
-    }
-    identity->brief_llm_guest_api_key = key;
-    if (auto saved = facade_->UpdateLocalIdentity(*identity); !saved) {
-      return saved.error();
+    // One modify of the guest key field only, into the account it was minted for; a key that came meanwhile (a
+    // renewal brought a registered one, a 401 renewal stored a guest one) is kept.
+    ConversationsFacade& facade = *facade_;
+    const BriefLlmKeyStore store{
+        .get = [&facade]() { return facade.GetIdentity(); },
+        .modify = [&facade](const std::function<bool(LocalIdentity&)>& change) -> Roe<void> {
+          if (auto changed = facade.ModifyLocalIdentity(change); !changed) {
+            return changed.error();
+          }
+          return {};
+        },
+    };
+    if (auto stored = StoreBriefGuestKeyIfNone(store, key, account_id); !stored) {
+      return stored.error();
     }
     return {};
   };

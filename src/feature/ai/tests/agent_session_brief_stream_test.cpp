@@ -1235,7 +1235,8 @@ protected:
   // is counted, and the refused key and base URL kept.
   void Renewer(const std::string& key) {
     BriefKeyPorts ports;
-    ports.renew = [this, key](const std::string& rejected, const std::string& base_url) -> Roe<BriefKeyRenewal> {
+    ports.renew = [this, key](const std::string& rejected, const std::string& base_url,
+                              const std::atomic<bool>&) -> Roe<BriefKeyRenewal> {
       ++renew_calls_;
       {
         std::lock_guard lock(mu_);

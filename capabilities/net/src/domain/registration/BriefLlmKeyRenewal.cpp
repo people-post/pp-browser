@@ -18,45 +18,101 @@ std::string StoredBriefLlmKey(const BriefLlmKeyStore& store) {
   return identity ? Resolved(*identity) : std::string();
 }
 
-Roe<BriefLlmKeyRenewal> RenewBriefLlmKey(const BriefLlmKeyStore& store, const std::string& rejected,
-                                         const std::string& llm_base_url) {
-  if (!store.get || !store.save || !store.mint) {
+Roe<std::string> StoreBriefGuestKeyIfNone(const BriefLlmKeyStore& store, const SecretText& key,
+                                          const std::string& expected_account_id) {
+  if (!store.modify) {
     return Error("Brief LLM key store is not wired");
   }
-  if (!store.get()) {
+  bool other_account = false;
+  std::string stored;
+  auto changed = store.modify([&](LocalIdentity& identity) {
+    if (!expected_account_id.empty() && identity.account_id != expected_account_id) {
+      other_account = true;
+      return false;
+    }
+    if (std::string current = Resolved(identity); !current.empty()) {
+      stored = std::move(current); // a key came meanwhile (a renewal, a 401 heal): it stays
+      return false;
+    }
+    identity.brief_llm_guest_api_key = key;
+    stored = key.Reveal();
+    return true;
+  });
+  if (!changed) {
+    return changed.error();
+  }
+  if (other_account) {
+    return Error("Brief key not stored: the identity is another account now");
+  }
+  return stored;
+}
+
+Roe<BriefLlmKeyRenewal> RenewBriefLlmKey(const BriefLlmKeyStore& store, const std::string& rejected,
+                                         const std::string& llm_base_url) {
+  if (!store.get || !store.modify || !store.mint) {
+    return Error("Brief LLM key store is not wired");
+  }
+  const std::optional<LocalIdentity> before = store.get();
+  if (!before) {
     return Error("Messaging is not ready");
   }
-  if (std::string current = StoredBriefLlmKey(store); !current.empty() && !(SecretText(current) == SecretText(rejected))) {
+  if (std::string current = Resolved(*before); !current.empty() && !(SecretText(current) == SecretText(rejected))) {
     return BriefLlmKeyRenewal{.key = std::move(current), .reused = true}; // another turn already replaced it
   }
   auto minted = store.mint(llm_base_url);
   if (!minted) {
     return minted.error();
   }
-  std::optional<LocalIdentity> identity = store.get(); // read again: the mint took a while
-  if (!identity) {
-    return Error("Messaging is not ready");
+  // One modify, on the identity as stored now (the mint took a while): only the guest key field is written.
+  bool other_account = false;
+  std::optional<std::string> kept;
+  auto changed = store.modify([&](LocalIdentity& identity) {
+    if (identity.account_id != before->account_id) {
+      other_account = true;
+      return false;
+    }
+    // A key stored during the mint (another turn, the unlock's mint) stays and is reused: not overwritten.
+    const SecretText refused(rejected);
+    const auto fresh = [&](const SecretText& now, const SecretText& was) {
+      return !now.empty() && !(now == was) && !(now == refused);
+    };
+    if (fresh(identity.brief_llm_api_key, before->brief_llm_api_key)) {
+      kept = identity.brief_llm_api_key.Reveal();
+      return false;
+    }
+    if (fresh(identity.brief_llm_guest_api_key, before->brief_llm_guest_api_key)) {
+      kept = identity.brief_llm_guest_api_key.Reveal();
+      return false;
+    }
+    identity.brief_llm_guest_api_key = minted->llm_api_key; // replaces a refused guest key; a registered one stays
+    return true;
+  });
+  if (!changed) {
+    return changed.error();
   }
-  identity->brief_llm_guest_api_key = minted->llm_api_key; // replaces a refused guest key; a registered one stays
-  if (auto saved = store.save(*identity); !saved) {
-    return saved.error();
+  if (other_account) {
+    return Error("Brief key not stored: the identity is another account now");
+  }
+  if (kept) {
+    return BriefLlmKeyRenewal{.key = std::move(*kept), .reused = true};
   }
   return BriefLlmKeyRenewal{.key = minted->llm_api_key.Reveal(), .reused = false};
 }
 
 Roe<void> CommitBriefLlmKey(const BriefLlmKeyStore& store, const std::string& rejected) {
-  if (!store.get || !store.save) {
+  if (!store.modify) {
     return Error("Brief LLM key store is not wired");
   }
-  std::optional<LocalIdentity> identity = store.get();
-  if (!identity) {
-    return Error("Messaging is not ready");
-  }
-  if (rejected.empty() || identity->brief_llm_api_key.empty() || !(identity->brief_llm_api_key == SecretText(rejected))) {
+  if (rejected.empty()) {
     return {};
   }
-  identity->brief_llm_api_key.clear();
-  return store.save(*identity);
+  return store.modify([&](LocalIdentity& identity) {
+    if (identity.brief_llm_api_key.empty() || !(identity.brief_llm_api_key == SecretText(rejected))) {
+      return false;
+    }
+    identity.brief_llm_api_key.clear();
+    return true;
+  });
 }
 
 } // namespace pbr

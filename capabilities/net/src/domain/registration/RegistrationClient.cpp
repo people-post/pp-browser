@@ -83,18 +83,25 @@ Roe<RegistrationResult> RenewNetworkOnly(IRegistrationClient& registration, Iden
   return FinishRegistrationWithIdentity(registration, identity, nickname, multiaddrs, publish);
 }
 
-Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationResult& result) {
-  // Read again: the network half took a while, and only the registration fields are this call's to change.
-  auto loaded = identity.Get();
-  if (!loaded) {
-    return loaded.error();
+Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationResult& result,
+                                  const std::string& expected_account_id) {
+  // Read again, under the lock: the network half took a while, and only the registration fields are ours to change.
+  bool other_account = false;
+  auto applied = identity.Modify([&](LocalIdentity& stored) {
+    if (!expected_account_id.empty() && stored.account_id != expected_account_id) {
+      other_account = true;
+      return false;
+    }
+    ApplyRegistrationResult(stored, result);
+    return true;
+  });
+  if (!applied) {
+    return applied.error();
   }
-  LocalIdentity updated = *loaded;
-  ApplyRegistrationResult(updated, result);
-  if (auto saved = identity.Update(updated); !saved) {
-    return saved.error();
+  if (other_account) {
+    return Error("Registration renewal not stored: the identity is another account now");
   }
-  return updated;
+  return applied;
 }
 
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,

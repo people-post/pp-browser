@@ -165,6 +165,24 @@ namespace pbr {
 
 namespace {
 
+/** The Brief key store over the facade: every write is one modify under the identity store's lock. */
+BriefLlmKeyStore MakeBriefLlmKeyStore(ConversationsFacade& facade) {
+  return BriefLlmKeyStore{
+      .get = [&facade]() { return facade.GetIdentity(); },
+      .modify = [&facade](const std::function<bool(LocalIdentity&)>& change) -> Roe<void> {
+        if (auto changed = facade.ModifyLocalIdentity(change); !changed) {
+          return changed.error();
+        }
+        return {};
+      },
+      .mint = [](const std::string& llm_base_url) { return MintBriefGuestLlmKey(llm_base_url); },
+  };
+}
+
+} // namespace
+
+namespace {
+
 /** A saved copy of the account: a sealed snapshot (at most 1 MiB + 256 bytes) as base64 inside JSON. */
 constexpr size_t kMaxSavedAccountCopyBytes = 2 * 1024 * 1024;
 
@@ -1168,10 +1186,9 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       if (!minted) {
         return minted.error();
       }
-      LocalIdentity updated = *identity;
-      updated.brief_llm_guest_api_key = minted->llm_api_key;
-      (void)facade.UpdateLocalIdentity(updated);
-      return minted->llm_api_key.Reveal();
+      // Off the UI thread: one modify of the guest key field only, into the account it was minted for, keeping a key
+      // stored meanwhile (that one is the Bearer then).
+      return StoreBriefGuestKeyIfNone(MakeBriefLlmKeyStore(facade), minted->llm_api_key, identity->account_id);
     };
     SendDiagnostics(std::move(deps), std::move(on_done));
   };
@@ -1761,26 +1778,25 @@ void Application::WireAgentAndConfig() {
     // thread: the identity store locks itself (the diagnostics Bearer does the same off the UI); the sessions take the
     // new key once no turn runs.
     ConversationsFacade& facade = *messaging_facade_;
-    BriefLlmKeyStore key_store{
-        .get = [&facade]() { return facade.GetIdentity(); },
-        .save = [&facade](const LocalIdentity& identity) -> Roe<void> {
-          if (auto saved = facade.UpdateLocalIdentity(identity); !saved) {
-            return saved.error();
-          }
-          return {};
-        },
-        .mint = [](const std::string& llm_base_url) { return MintBriefGuestLlmKey(llm_base_url); },
-    };
+    const BriefLlmKeyStore key_store = MakeBriefLlmKeyStore(facade);
     // The renewal shares the Brief key run with the unlock's guest-key mint (ChatController::BriefKeyRun): while that
     // mint is in flight the turn waits for its key (stored, then reused) rather than minting a second one.
     agent_sessions_->SetBriefKeyPorts(BriefKeyPorts{
-        .renew = [this, key_store, run = chat_->BriefKeyRun()](const std::string& rejected,
-                                                               const std::string& llm_base_url) -> Roe<BriefKeyRenewal> {
-          constexpr std::chrono::milliseconds kWaitForMint{45000}; // the mint's own HTTP limit is 30 s
-          const std::chrono::milliseconds wait = AppRuntime::CurrentlyOnUI() ? std::chrono::milliseconds(0) : kWaitForMint;
-          auto renewed = RunSharedBriefKeyRenewal(
-              *run, wait, [&]() { return RenewBriefLlmKey(key_store, rejected, llm_base_url); },
+        .renew = [this, key_store, run = chat_->BriefKeyRun()](
+                     const std::string& rejected, const std::string& llm_base_url,
+                     const std::atomic<bool>& cancelled) -> Roe<BriefKeyRenewal> {
+          // A stopped turn (Stop, profile reset, quit: StopTurnsAndWait / ~AgentSessions cancel it) gives up the wait
+          // within a slice, so the UI never waits on it for the mint.
+          const std::chrono::milliseconds wait =
+              AppRuntime::CurrentlyOnUI() ? std::chrono::milliseconds(0) : kBriefKeyMintWait;
+          auto waited = RunSharedBriefKeyRenewal(
+              *run, wait, [&cancelled]() { return cancelled.load(); },
+              [&]() { return RenewBriefLlmKey(key_store, rejected, llm_base_url); },
               [this]() { AppRuntime::PostUI([this] { chat_->RetryBriefKeyMint(); }); });
+          if (!waited) {
+            return Error("Brief key renewal stopped: the turn was cancelled");
+          }
+          auto& renewed = *waited;
           if (!renewed) {
             return renewed.error();
           }

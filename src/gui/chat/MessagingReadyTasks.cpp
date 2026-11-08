@@ -191,8 +191,9 @@ void RenewRegistrationOn(const std::shared_ptr<State>& state) {
         RenewResult result = box.value ? std::move(*box.value) : RenewResult{.error = Error("renewal threw")};
         bool stored = false;
         if (result.registration && !result.error) {
-          Roe<void> saved = state->ports.renew_persist ? state->ports.renew_persist(*result.registration)
-                                                       : Roe<void>(Error("renewal store not wired"));
+          Roe<void> saved = state->ports.renew_persist
+                                ? state->ports.renew_persist(*result.registration, result.account_id)
+                                : Roe<void>(Error("renewal store not wired"));
           if (saved) {
             stored = true;
           } else {
@@ -219,6 +220,11 @@ void MintBriefKeyOn(const std::shared_ptr<State>& state) {
   if (state->ports.brief_key_needed && !state->ports.brief_key_needed()) {
     return;
   }
+  // The account the key is minted for, read now: the key is stored only into that one.
+  std::string account_id = state->ports.account_id ? state->ports.account_id() : std::string();
+  if (account_id.empty()) {
+    return;
+  }
   const std::optional<CoalescedRun::Ticket> ticket = state->brief_key_run->TryStart();
   if (!ticket) {
     return;
@@ -226,7 +232,8 @@ void MintBriefKeyOn(const std::shared_ptr<State>& state) {
   RunOffUi<Roe<SecretText>>(
       state, state->brief_key_run, *ticket,
       [mint = state->ports.mint_brief_key_network, base_url = state->brief_key_base_url]() { return mint(base_url); },
-      [state](Box<Roe<SecretText>>& box, const bool live) -> std::function<void()> {
+      [state, account_id = std::move(account_id)](Box<Roe<SecretText>>& box,
+                                                   const bool live) -> std::function<void()> {
         BriefKeyMintEnd end;
         if (!live) {
           log().info << "Brief guest key dropped: the messaging session changed";
@@ -236,7 +243,7 @@ void MintBriefKeyOn(const std::shared_ptr<State>& state) {
         } else if (!*box.value) {
           end = {.outcome = BriefKeyMintOutcome::MintFailed, .error = box.value->error()};
         } else {
-          Roe<void> saved = state->ports.brief_key_persist ? state->ports.brief_key_persist(**box.value)
+          Roe<void> saved = state->ports.brief_key_persist ? state->ports.brief_key_persist(**box.value, account_id)
                                                            : Roe<void>(Error("Brief key store not wired"));
           end = saved ? BriefKeyMintEnd{.outcome = BriefKeyMintOutcome::Stored}
                       : BriefKeyMintEnd{.outcome = BriefKeyMintOutcome::SaveFailed, .error = saved.error()};
