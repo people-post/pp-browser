@@ -17,20 +17,37 @@ Roe<E2ePublicSessionKeys::Session> E2ePublicSessionKeys::Resolve(const std::stri
   session.target_key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   session.target_key.peer_identity_value = peer_identity;
   session.target_key.channel = CryptoChannel::E2ePublic;
-  // The pair's session is the account pair's, not a thread's: its active epoch is the stored one.
-  auto record = psk_store_.Load(session.target_key);
-  if (!record) {
-    return record.error();
+  // The account pair's session, at its stored epoch; the peer's KEM key (maybe a directory lookup) only to open it.
+  auto resolved = ResolveE2ePublicSendSession(psk_store_, session.target_key,
+                                              [this, &session]() { return PeerKemPublicKey(session.target_key); });
+  if (!resolved) {
+    return resolved.error();
   }
-  session.epoch = record->has_value() && (*record)->session_epoch > 0 ? (*record)->session_epoch : 1;
-  // The peer's KEM key (maybe a directory lookup) only when the session has to be opened.
-  auto ensured = EnsureE2ePublicMasterPsk(psk_store_, session.target_key, session.epoch,
-                                          [this, &session]() { return PeerKemPublicKey(session.target_key); });
-  if (!ensured) {
-    return ensured.error();
+  session.epoch = resolved->epoch;
+  session.master_psk = std::move(resolved->master_psk);
+  session.key_init_b64 = std::move(resolved->key_init_b64);
+  return session;
+}
+
+Roe<E2ePublicSessionKeys::Session> E2ePublicSessionKeys::ResolveDevice(const std::string& peer_identity,
+                                                                       const AccountCardDevice& device) {
+  if (peer_identity.empty() || device.peer_id.empty()) {
+    return Error("Peer device required");
   }
-  session.master_psk = std::move(ensured->master_psk);
-  session.key_init_b64 = std::move(ensured->key_init_b64);
+  Session session;
+  session.target_key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  session.target_key.peer_identity_value = peer_identity;
+  session.target_key.channel = CryptoChannel::E2ePublic;
+  session.target_key.peer_device = device.peer_id;
+  // The device pair's session (M021), shared with the chat stream; opened to the device's own KEM key.
+  auto resolved = ResolveE2ePublicSendSession(psk_store_, session.target_key,
+                                              [&device]() { return Base64Decode(device.kem_public_key_b64); });
+  if (!resolved) {
+    return resolved.error();
+  }
+  session.epoch = resolved->epoch;
+  session.master_psk = std::move(resolved->master_psk);
+  session.key_init_b64 = std::move(resolved->key_init_b64);
   return session;
 }
 

@@ -175,9 +175,12 @@ TEST(EnvelopeSignerTest, MalformedEnvelopesAreRefused) {
 
   RelayEnvelope control = base;
   control.route.kind = kRelayRouteControl;
-  EXPECT_TRUE(EnvelopeSigner::BuildSignBytes(control)) << "the control lane: one account copy";
+  EXPECT_TRUE(EnvelopeSigner::BuildSignBytes(control)) << "the control lane: the account copy";
   control.body.e2e.copies.front().recipient_device = "QmDevice";
-  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(control)) << "a control envelope for one device";
+  EXPECT_TRUE(EnvelopeSigner::BuildSignBytes(control)) << "or a copy per device of the peer's (M024)";
+  RelayEnvelope control_twice = control;
+  control_twice.body.e2e.copies.push_back(control.body.e2e.copies.front());
+  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(control_twice)) << "never two copies for one device";
 
   RelayEnvelope group = base;
   group.route.kind = kRelayRouteGroup;

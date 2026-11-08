@@ -79,6 +79,23 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_st
   return out;
 }
 
+Roe<E2ePublicSendSession> ResolveE2ePublicSendSession(IPeerSessionStore& psk_store, const PeerSessionKey& target_key,
+                                                      const std::function<Roe<ByteVector>()>& peer_kem_public) {
+  auto record = psk_store.Load(target_key);
+  if (!record) {
+    return record.error();
+  }
+  E2ePublicSendSession session;
+  session.epoch = record->has_value() && (*record)->session_epoch > 0 ? (*record)->session_epoch : 1;
+  auto ensured = EnsureE2ePublicMasterPsk(psk_store, target_key, session.epoch, peer_kem_public);
+  if (!ensured) {
+    return ensured.error();
+  }
+  session.master_psk = std::move(ensured->master_psk);
+  session.key_init_b64 = std::move(ensured->key_init_b64);
+  return session;
+}
+
 std::string AutoKeySessionId(const std::string& key_init_b64) {
   std::array<unsigned char, crypto_generichash_BYTES> hash{};
   crypto_generichash(hash.data(), hash.size(), reinterpret_cast<const unsigned char*>(key_init_b64.data()),

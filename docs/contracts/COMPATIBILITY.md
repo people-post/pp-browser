@@ -92,6 +92,16 @@ Taken whole, with no old/new bridge: every app updates.
 | Addresses say their wire version, `/adp/2/` ([ADP.md § Addresses](ADP.md#addresses), [N032](../../projects/p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes) item 3; pp-cpp-amp v5.0.0) | An app or node on pp-cpp-amp before v5.0.0 cannot parse an address written after it, so it cannot dial it. After it, a legacy `/adp/1.0.0/` address (a contact's, a config's seeds) still dials, and an address of another wire version is skipped before dialing. Ships with amp wire v2. |
 | Call audio in 40 ms Opus packets ([CALLS.md § Audio packets](../architecture/CALLS.md), [A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) step 1) | An app before it hears nothing from an app after it: it decodes every packet into a 20 ms buffer, which a 40 ms packet does not fit. An app after it plays both, so it hears an older peer. Calls, group calls and broadcasts alike. |
 
+### Bridges (one release)
+
+Kept for one release so an app before the change still works with one after it, then dropped (each is a named
+constant in the code, set to `false` and then removed, in the release after).
+
+| Change | Old ↔ new while the bridge stands | After |
+|--------|-----------------------------------|-------|
+| The control lane per device ([M024](../../projects/multi-device-account/DECISIONS.md#m024--the-control-lane-goes-per-device-a-calls-media-key-rides-the-copy)): a copy per device of the peer's, each in its device pair's session | An app before M024 refuses a lane record that is not one account copy ("Control envelope must carry one account copy"). Between two accounts that each have one device (as the sender knows them) the lane still goes as the account copy (`kControlLaneAccountCopyBetweenSingleDevices`), so 1:1 calls and card / copy asks keep working both ways. Where either account has two or more devices, an app after M024 sends per device and an app before it cannot read that — calls from it to the older app do not ring there; the older app's own account copies are read as before. | Every lane message to a peer whose card we hold goes per device; an app before M024 hears no call signaling from one after it |
+| A call's media key rides the lane message (`media_key_b64`, M024) | The old form goes beside it (`wrapped_key_b64`, under the account pair's session, `kMediaKeyAccountWrapBridge`): an app before M024 reads it; an app after reads `media_key_b64`, else the old form (an older sender) | `wrapped_key_b64` is no longer sent; `ensure_peer_session_key` goes. A receiver keeps reading the old field for that release too |
+
 ### HTTP / libp2p
 
 - Prefer **additive** JSON on existing `/v1/…` responses; old clients ignore unknown fields.

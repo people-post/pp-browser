@@ -52,13 +52,17 @@ public:
   Roe<void> FanOutToJoinedAndRinging(const std::string& call_id, CallControlType type,
                                      const std::string& detail_json, const std::string& display,
                                      const std::string& skip_identity);
-  /** The call's media key, wrapped under the peer's E2E session key. */
+  /**
+   * The call's media key to `peer_identity` (CallMediaKey): the key itself, its lane copies sealed per device of the
+   * peer's (M024); its old form beside it, wrapped under the account pair's session, while kMediaKeyAccountWrapBridge.
+   */
   Roe<void> SendMediaKey(const std::string& call_id, const std::string& peer_identity, uint32_t media_epoch,
                          const std::string& media_key_id, const ByteVector& key_bytes);
 
   /**
-   * The e2e_public session key with `peer_identity` (delivery's: opened when missing) — media keys are
-   * wrapped under it. A key_init the session still carries rides the next SendDirect to that peer.
+   * The account pair's e2e_public session key with `peer_identity` (delivery's: opened when missing) — the media
+   * key's old form is wrapped under it (M024 bridge). A key_init the session still carries rides the next SendDirect
+   * to that peer when that goes as the account copy; a send per device has no use for it.
    */
   Roe<ByteVector> SessionKeyWith(const std::string& peer_identity) const;
 

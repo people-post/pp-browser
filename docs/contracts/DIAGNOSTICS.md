@@ -52,6 +52,7 @@ There is no method that takes free text, so a name, a message, a search query, a
 | `relay.poll_too_large` | `n` | `MeshDeliveryOrchestrator` |
 | `chat.send_failed` | `failure` (`SendFailureWord`), `thread` (ref) | `MeshDeliveryOrchestrator` |
 | `chat.receive_failed` | `reason` (`ReceiveFailureWord`), `sender` (ref) | `MeshDeliveryOrchestrator` |
+| `control.unreadable` | `copy` (`account` — the account pair's session / `device` — our pair with the sending device), `epoch` (the copy's), `held_epoch` (the session we hold, 0: none), `held` / `offered` (the first 8 hex of the session id, `AutoKeySessionId`, we hold / the copy's `key_init` opens; `-`: none — the same value on both devices of the pair, so a sender's and a receiver's lines join), `sender` (ref), `error` — a verified control-lane copy (call signaling, card and copy asks) did not open ([M024](../../projects/multi-device-account/DECISIONS.md#m024--the-control-lane-goes-per-device-a-calls-media-key-rides-the-copy)). The lane moves on (the relay cursor is not held: the copy will not open later); an account copy also shows the sender our card | `RelayReceivePipeline::ReportUnreadableControl` |
 | `unlock.start` | — (a PIN or silent unlock began) | `ProfileUnlockGate` |
 | `unlock.done` | `unlocked` | `ProfileUnlockGate` |
 | `unlock.failed` | `wrong_pin`, `silent` (no PIN was typed) | `ProfileUnlockGate` |
@@ -107,4 +108,4 @@ Metrics events are listed where they are emitted (`MetricsLine("…")`); they fo
 
 The gateway (www, `app/src/r_support_client.ts`) checks the Bearer like the LLM routes, validates the body (the fields above, strict; 1–4 `files`; 30 000 lines, 2048 chars a line, 2.5 MB of line bytes) and forwards it to app-support `POST /v1/diagnostics` with two hashes for the quota: `X-Diag-Key-Hash` (SHA-256 of the Bearer) and `X-Diag-Ip-Hash` (HMAC with a gateway-only secret; IPv6 by /64). Its access log for this path carries no IP, user agent or request id. app-support validates the same body, reserves the daily quotas (3 a key, 10 an IP, a global cap), writes each line to CloudWatch as a `client_diag` record (`upload`, `file`, `version`, `os`, `line`) and keeps only the upload record in Mongo. A change to the body or the file limits is a change on all three.
 
-Changelog: 2026-10-30 — first version (P009). 2026-10-31 — call connection events (`call.*`). 2026-11-07 — `MediaErrWord` gains `dropped` (a connected call's media ended under it, K014).
+Changelog: 2026-10-30 — first version (P009). 2026-10-31 — call connection events (`call.*`). 2026-11-07 — `MediaErrWord` gains `dropped` (a connected call's media ended under it, K014). 2026-11-08 — `control.unreadable` (M024, #555 B186).

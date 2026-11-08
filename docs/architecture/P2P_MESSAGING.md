@@ -295,9 +295,16 @@ Signaling between a pair (call invite, accept, media keys, hop moves, roster …
 ordered chat stream:
 
 - **Wire:** route kind `control` (`kRelayRouteControl`, signed like any route kind), unsequenced
-  (`sender_seq` 0, bound into the AEAD's AAD), E2E under the pair's **e2e_public session** — the
-  account pair's AutoKey session, the one media keys are wrapped under; no thread. Its own relay
-  stream (`v1:control:…`), so it never shows up as a gap in the chat stream or in history sync.
+  (`sender_seq` 0, bound into the AEAD's AAD), no thread. **One record with a copy per device** on the
+  peer's newest card we hold, each E2E under **that device pair's e2e_public session** — the chat stream's own
+  (`PeerSessionKey.peer_device`), its `key_init` riding the copy while that pair is unconfirmed
+  ([M024](../../projects/multi-device-account/DECISIONS.md#m024--the-control-lane-goes-per-device-a-calls-media-key-rides-the-copy)).
+  The **account copy** (no device, the account pair's session, opened to the account KEM) only when we hold no
+  card for the peer — and, for one release, between two accounts that each have one device
+  (`kControlLaneAccountCopyBetweenSingleDevices`: an app before M024 refuses a lane record with device copies).
+  The plaintext is the same in every copy. Its own relay stream (`v1:control:…`), so it never shows up as a gap
+  in the chat stream or in history sync. Our account's own siblings get lane notices differently: one account
+  copy to our own mailbox, sealed to the account KEM (`ControlLane::NotifySiblings`, M022).
   Built by `BuildControlLaneEnvelope`; sent by `MeshDeliveryOrchestrator::SendControl` on the
   critical worker lane — relay when a route is known, plus a copy over a live link at once
   (`ControlAlsoGoesDirect`), else Amp. Signaling is live: a failed relay send goes again on a short
@@ -316,12 +323,21 @@ ordered chat stream:
   caller's thread; one result per recipient. Live signaling (a call's) resolves on the critical lane;
   what can wait (a group's roster check, the device list to every contact) on a lower one. There is no group copy: a group's signaling is
   pairwise like its chat (no group key; the relay does not know groups).
-- **Receive** (`RelayReceivePipeline::ProcessControlEnvelope`): signature, decrypt, a bound family
-  that sends this message on the lane, **fresh** (sender's signed time within an hour of ours;
-  through the relay, waited no longer than the family's `lane_max_age_ms` on the relay's clock — no
-  skew between devices), **first seen** (`SqliteControlLaneSeenStore`, `control_lane_seen` in profile.db,
-  per sender and id, kept three hours), then the family's `apply`. Never stored, never a transcript
+- **Receive** (`RelayReceivePipeline::ProcessControlEnvelope`): the copy for this device (`SelectRelayCopy`: its
+  own, else the account copy), signature, decrypt — a device's copy in our pair with the sending device, the
+  account copy in the account pair's — a bound family that sends this message on the lane, **fresh** (sender's
+  signed time within an hour of ours; through the relay, waited no longer than the family's `lane_max_age_ms` on
+  the relay's clock — no skew between devices), **first seen** (`SqliteControlLaneSeenStore`, `control_lane_seen`
+  in profile.db, per sender and id, kept three hours), then the pair's session is reconciled
+  (`ReconcileE2ePublicSession`, as for a chat message) and the family's `apply`. Never stored, never a transcript
   row, no inbox chrome.
+- **When a copy cannot be read:** a verified record with copies for our other devices only (the sender's list of
+  ours is older than this device), or an account copy that does not open: this device shows the sender its card
+  (a `device_list` notice, at most once per account per 10 minutes — `MeshDeliveryOrchestrator::ShowCardTo`), so
+  its next message has a copy for this device. A copy that does not open is a `control.unreadable` diag line
+  ([DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md)) and a developer-log warning with both sessions' ids. The
+  message is not asked for again and the relay cursor moves on: a copy that did not open will not open later,
+  and signaling is stale by the time an ask could be answered; the next message must not wait behind it.
 
 There is no control thread: no hidden e2e_public twin beside a private DM, no pruning, no
 out-of-order carve-outs in the chat stream.

@@ -72,6 +72,13 @@ struct RelayReceiveOutcome {
   };
   std::optional<MissingCopy> missing_copy;
   /**
+   * A verified control-lane message from this account that this device could not read (M024): a record with
+   * copies for our other devices only, or an account copy that did not open. Its sender may hold an older list of
+   * our devices: the caller tells it our card (rate-limited), so its next one has a copy for this device. The
+   * message itself is not asked for again — signaling is stale by then.
+   */
+  std::optional<std::string> show_card_to;
+  /**
    * When set, the local user (owner) should publish owner-signed member_joined after ingest.
    * Filled on successful group_invite_accept apply.
    */
@@ -230,6 +237,20 @@ private:
    * that sends it on the lane while fresh and not seen before. Never stored.
    */
   RelayReceiveOutcome ProcessControlEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id);
+  /**
+   * A control record from another account with copies for our other devices only (M024): once it verifies, its
+   * sender is told our card (`show_card_to`) — it may not know this device yet.
+   */
+  void NoteMissingControlCopy(const RelayEnvelope& received, const std::string& local_account,
+                              RelayReceiveOutcome& outcome);
+  /**
+   * A verified lane copy that did not open under `target_key`: a shareable `control.unreadable` diag line and a
+   * developer-log warning, both with the session we hold and the one the copy offers (AutoKeySessionId, epoch). An
+   * account copy also tells the sender our card (`show_card_to`). The lane moves on: an unreadable copy will not
+   * become readable, and the next message must not wait for it.
+   */
+  void ReportUnreadableControl(const RelayEnvelope& envelope, const PeerSessionKey& target_key, const Error& error,
+                               RelayReceiveOutcome& outcome) const;
   /**
    * A sibling's control notice (M022: our own account writes to itself), signature already checked: a sent-message
    * copy (M021 d3) is opened and filed as a message we sent; anything else is only its card (the device list).

@@ -55,6 +55,22 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_st
                                                        uint32_t session_epoch,
                                                        const std::function<Roe<ByteVector>()>& peer_kem_public);
 
+/** A pair's session as a send uses it: its current epoch, its master, and the key_init the send attaches. */
+struct E2ePublicSendSession {
+  uint32_t epoch = 1;
+  ByteVector master_psk;
+  /** Set while the session is one we opened and the peer has not been heard under it (EnsureE2ePublicMasterPsk). */
+  std::optional<std::string> key_init_b64;
+};
+
+/**
+ * The session a send to `target_key` goes under: the stored session at its current epoch (1 when there is none),
+ * opened to `peer_kem_public` (asked for only then) if missing. An account pair (no `peer_device`: an account copy)
+ * or a device pair (M021) alike; the chat stream numbers in it, the control lane does not.
+ */
+Roe<E2ePublicSendSession> ResolveE2ePublicSendSession(IPeerSessionStore& psk_store, const PeerSessionKey& target_key,
+                                                      const std::function<Roe<ByteVector>()>& peer_kem_public);
+
 /**
  * What reading an authenticated envelope (signature verified) proves about the pair's session, and
  * the session we keep:

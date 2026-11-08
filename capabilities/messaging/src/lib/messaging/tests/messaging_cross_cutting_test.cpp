@@ -214,9 +214,8 @@ public:
     params.sender_relay_id = "relay:peer";
     params.peer_account_id = local_account_id;
     params.route_party = "relay:local";
-    params.session_epoch = 1;
-    params.master_psk = lane_session->master_psk;
-    params.key_init_b64 = lane_session->key_init_b64;
+    params.copies = {ControlLaneCopy{
+        .session_epoch = 1, .master_psk = lane_session->master_psk, .key_init_b64 = lane_session->key_init_b64}};
     params.order_key = 1;
     params.sender_device = peer.device.peer_id;
     ThreadMessage control = body;

@@ -20,6 +20,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/directory/DirectoryJson.h"
+#include "common/Diag.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -28,6 +29,7 @@
 #include <map>
 #include <gtest/gtest.h>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
@@ -166,9 +168,8 @@ struct Side {
     params.sender_relay_id = "relay:" + tag;
     params.peer_account_id = peer.account;
     params.route_party = "relay:" + peer.tag;
-    params.session_epoch = epoch;
-    params.master_psk = session->master_psk;
-    params.key_init_b64 = session->key_init_b64;
+    params.copies = {ControlLaneCopy{
+        .session_epoch = epoch, .master_psk = session->master_psk, .key_init_b64 = session->key_init_b64}};
     params.sender_device = keys.device.peer_id;
     params.sender_card = Sender().card;
     params.order_key = 1;
@@ -177,6 +178,64 @@ struct Side {
     });
     EXPECT_TRUE(envelope) << envelope.error().message;
     return *envelope;
+  }
+
+  /**
+   * A lane signal to `peer_account` as ControlLane::Send builds it (M024): one record with a copy per device on the
+   * peer's card this side keeps, each in its device pair's session (opened when missing) — or, with no card for the
+   * peer (or both accounts on one device: the bridge), the account copy in the account pair's.
+   */
+  RelayEnvelope Lane(const std::string& peer_account, const std::string& signal = "test_signal") {
+    auto card = cards.find(peer_account);
+    const size_t peer_devices = card == cards.end() ? 0 : card->second.devices.size();
+    std::vector<ControlLaneCopy> copies;
+    if (ControlLaneUsesAccountCopy(peer_devices, own_devices)) {
+      PeerSessionKey target = GroupE2ePayloadCodec::PairTargetKey(peer_account);
+      auto session = ResolveE2ePublicSendSession(
+          *psk, target, [this, &peer_account]() { return Base64Decode(peer_kem.at(peer_account)); });
+      EXPECT_TRUE(session) << session.error().message;
+      copies.push_back(ControlLaneCopy{
+          .session_epoch = session->epoch, .master_psk = session->master_psk, .key_init_b64 = session->key_init_b64});
+    } else {
+      for (const AccountCardDevice& device : card->second.devices) {
+        auto session =
+            ResolveE2ePublicSendSession(*psk, GroupE2ePayloadCodec::PairTargetKey(peer_account, device.peer_id),
+                                        [&device]() { return Base64Decode(device.kem_public_key_b64); });
+        EXPECT_TRUE(session) << session.error().message;
+        copies.push_back(ControlLaneCopy{.recipient_device = device.peer_id,
+                                         .session_epoch = session->epoch,
+                                         .master_psk = session->master_psk,
+                                         .key_init_b64 = session->key_init_b64});
+      }
+    }
+    ThreadMessage control;
+    control.id = util::GenerateUuid();
+    control.content_type = ChatContentType::System;
+    control.text = "signal";
+    control.payload_json = R"({"control_type":")" + signal + R"(","detail":"{}"})";
+    control.timestamp = util::NowUnixMs();
+    ControlLaneSendParams params;
+    params.sender_account_id = account;
+    params.sender_relay_id = "relay:" + tag;
+    params.peer_account_id = peer_account;
+    params.route_party = "relay:" + peer_account;
+    params.copies = std::move(copies);
+    params.sender_device = keys.device.peer_id;
+    params.sender_card = Sender().card;
+    params.order_key = NextRelayOrderKey();
+    auto envelope = BuildControlLaneEnvelope(
+        params, control, [this](const std::vector<uint8_t>& bytes) { return keys.device.Sign(bytes); });
+    EXPECT_TRUE(envelope) << envelope.error().message;
+    // As the relay hands it over: the record's JSON, every copy in it.
+    auto parsed = ParseRelayEnvelope(RelayEnvelopeToJson(*envelope));
+    EXPECT_TRUE(parsed) << parsed.error().message;
+    return *parsed;
+  }
+
+  /** This side's stored session with `peer_account`'s `device` (empty: the account pair's); none when there is none. */
+  std::optional<PeerSessionRecord> SessionWith(const std::string& peer_account, const std::string& device = {}) {
+    auto record = psk->Load(GroupE2ePayloadCodec::PairTargetKey(peer_account, device));
+    return record && record->has_value() ? std::optional<PeerSessionRecord>(**record) : std::nullopt;
   }
 
   /** A chat message to `peer` on the public channel, as a send builds it (opening the session when there is none). */
@@ -421,6 +480,8 @@ struct Side {
   GroupCopyState copy_state;
   /** Carry our account card with a key_init (as the app does): `own_card` when set, else one listing this device. */
   bool carry_keys = false;
+  /** How many devices our own card lists (ControlLaneUsesAccountCopy). */
+  size_t own_devices = 1;
   std::optional<AccountCard> own_card;
 };
 
@@ -891,6 +952,7 @@ protected:
     phone_->Know(*bob_);
     laptop_->Know(*bob_);
     bob_->KnowAccount({phone_.get(), laptop_.get()});
+    phone_->own_devices = laptop_->own_devices = 2;
   }
 
   /** The thread's rows on `side` (its one thread). */
@@ -1032,6 +1094,192 @@ TEST_F(LinkedDevicesTest, GroupCopiesGoToEachMemberDevice) {
   EXPECT_TRUE(bob_->Keep(from_laptop.at(bob_->Device())));
 }
 
+// ---- The control lane per device (M024; issue #555 B186) ----
+
+/** What the Diag channel writes while a test runs (the lines a user may send). */
+struct DiagCapture : logging::Handler {
+  void emit(logging::Level, const std::string&, const std::string& message) override {
+    std::lock_guard lock(mutex);
+    lines.push_back(message);
+  }
+  std::vector<std::string> Lines() {
+    std::lock_guard lock(mutex);
+    return lines;
+  }
+  std::mutex mutex;
+  std::vector<std::string> lines;
+};
+
+/**
+ * Until the clock passes this millisecond: a peer reads an opener signed no later than the last message it heard
+ * under its session as a late one (#463); on a device two openers are seconds apart, in a test the same ms.
+ */
+void AfterThisMillisecond() {
+  const int64_t now = util::NowUnixMs();
+  while (util::NowUnixMs() <= now) {
+    std::this_thread::sleep_for(std::chrono::microseconds(200));
+  }
+}
+
+// Why M024: on the account pair's one session, each device of an account opens its own, and the peer keeps only
+// the last opener it read. Its next account copy reads on that device alone — the other never rings.
+TEST_F(LinkedDevicesTest, AnAccountCopyReadsOnlyOnTheDeviceWhoseSessionThePeerKept) {
+  ASSERT_TRUE(bob_->Receive(phone_->Signal(*bob_))) << "the phone opens the account pair's session";
+  AfterThisMillisecond();
+  ASSERT_TRUE(bob_->Receive(laptop_->Signal(*bob_))) << "then the laptop opens its own: Bob moves to it";
+  const RelayEnvelope invite = bob_->Signal(*phone_);
+  EXPECT_FALSE(invite.body.e2e.key_init_b64) << "Bob's session is the laptop's, heard: nothing to announce";
+  EXPECT_TRUE(laptop_->Receive(invite));
+  EXPECT_FALSE(phone_->Receive(invite)) << "B186: the phone holds another session";
+}
+
+// B186 as a user meets it: each of Alice's devices called Bob, then Bob calls Alice — it rings on both. Each lane
+// copy is in its own device pair's session, so neither device's opener is the other's.
+TEST_F(LinkedDevicesTest, ACallRingsOnEveryDeviceAfterEachCalledOut) {
+  const RelayEnvelope from_phone = phone_->Lane(bob_->account);
+  ASSERT_EQ(from_phone.body.e2e.copies.size(), 1u);
+  EXPECT_EQ(from_phone.recipient_device, bob_->Device()) << "a copy for Bob's device, not an account copy";
+  EXPECT_TRUE(bob_->Receive(from_phone));
+  EXPECT_TRUE(bob_->Receive(laptop_->Lane(bob_->account)));
+
+  const RelayEnvelope invite = bob_->Lane(phone_->account);
+  ASSERT_EQ(invite.body.e2e.copies.size(), 2u) << "one record, a copy for each of Alice's devices";
+  EXPECT_TRUE(invite.recipient_device.empty()) << "no copy is the record's own view";
+  EXPECT_TRUE(phone_->Receive(invite)) << "the phone reads its copy";
+  EXPECT_TRUE(laptop_->Receive(invite)) << "and the laptop its own, from the same record";
+  const auto bobs_phone_pair = bob_->SessionWith(phone_->account, phone_->Device());
+  const auto bobs_laptop_pair = bob_->SessionWith(phone_->account, laptop_->Device());
+  ASSERT_TRUE(bobs_phone_pair && bobs_laptop_pair);
+  EXPECT_NE(bobs_phone_pair->auto_key_session_id, bobs_laptop_pair->auto_key_session_id);
+  EXPECT_FALSE(bob_->SessionWith(phone_->account)) << "no account pair's session was needed";
+}
+
+// Two devices writing to one peer: each its own pair on Bob's side, so one's opener never undoes the other's.
+TEST_F(LinkedDevicesTest, TwoDevicesWritingToOnePeerDoNotFlipEachOther) {
+  ASSERT_TRUE(bob_->Receive(phone_->Lane(bob_->account)));
+  ASSERT_TRUE(bob_->Receive(laptop_->Lane(bob_->account)));
+  // Bob answers both: each device hears him under its session, so it stops announcing it.
+  const RelayEnvelope answer = bob_->Lane(phone_->account);
+  ASSERT_TRUE(phone_->Receive(answer));
+  ASSERT_TRUE(laptop_->Receive(answer));
+  for (int round = 0; round < 2; ++round) {
+    const RelayEnvelope again_phone = phone_->Lane(bob_->account);
+    const RelayEnvelope again_laptop = laptop_->Lane(bob_->account);
+    EXPECT_FALSE(again_phone.body.e2e.key_init_b64) << "confirmed: no opener rides";
+    EXPECT_FALSE(again_laptop.body.e2e.key_init_b64);
+    EXPECT_TRUE(bob_->Receive(again_phone)) << "round " << round;
+    EXPECT_TRUE(bob_->Receive(again_laptop)) << "round " << round;
+  }
+  EXPECT_TRUE(phone_->Receive(bob_->Lane(phone_->account)));
+  EXPECT_TRUE(laptop_->Receive(bob_->Lane(phone_->account)));
+}
+
+// A peer we hold no card for (a first contact): the account copy, which every device of the account reads.
+TEST_F(LinkedDevicesTest, AFirstContactStillGoesAsTheAccountCopy) {
+  Side carol("carol", 0x60);
+  carol.peer_kem[phone_->account] = phone_->keys.KemPublicB64(); // the directory's keys, no card
+  phone_->Know(carol);
+  laptop_->Know(carol);
+  const RelayEnvelope first = carol.Lane(phone_->account);
+  ASSERT_EQ(first.body.e2e.copies.size(), 1u);
+  EXPECT_TRUE(first.recipient_device.empty()) << "the account copy";
+  EXPECT_TRUE(first.body.e2e.key_init_b64) << "opened to the account KEM";
+  EXPECT_TRUE(phone_->Receive(first));
+  EXPECT_TRUE(laptop_->Receive(first));
+}
+
+// The bridge (one release, M024): between two single-device accounts the lane keeps the account copy an app before
+// M024 reads; as soon as either account has two devices, a copy per device.
+TEST(ControlLaneCopiesTest, TheAccountCopyOnlyForAFirstContactAndBetweenTwoSingleDevices) {
+  EXPECT_TRUE(ControlLaneUsesAccountCopy(0, 1)) << "no card for the peer";
+  EXPECT_TRUE(ControlLaneUsesAccountCopy(0, 3));
+  EXPECT_EQ(ControlLaneUsesAccountCopy(1, 1), kControlLaneAccountCopyBetweenSingleDevices);
+  EXPECT_FALSE(ControlLaneUsesAccountCopy(2, 1)) << "the peer has two devices";
+  EXPECT_FALSE(ControlLaneUsesAccountCopy(1, 2)) << "we have two: the peer must tell our devices apart";
+}
+
+TEST_F(E2ePublicSessionTest, BetweenTwoSingleDeviceAccountsTheLaneIsTheAccountCopyAnOlderAppReads) {
+  if (!kControlLaneAccountCopyBetweenSingleDevices) {
+    GTEST_SKIP() << "the M024 bridge is gone";
+  }
+  const RelayEnvelope invite = alice_->Lane(bob_->account);
+  ASSERT_EQ(invite.body.e2e.copies.size(), 1u);
+  EXPECT_TRUE(invite.recipient_device.empty()) << "one account copy: the only shape an app before M024 parses";
+  EXPECT_TRUE(bob_->Receive(invite));
+  EXPECT_TRUE(alice_->Receive(bob_->Lane(alice_->account)));
+}
+
+// A device the sender did not know yet (the record has copies for its siblings only): it is told our card, so the
+// next message has a copy for it. The message itself is not asked for — signaling is stale by then.
+TEST_F(LinkedDevicesTest, ADeviceWithNoCopyShowsTheSenderItsCard) {
+  Side tablet("alice-tablet", 0x30, phone_.get());
+  tablet.Know(*bob_);
+  const RelayEnvelope invite = bob_->Lane(phone_->account);
+  const RelayReceiveOutcome outcome = tablet.pipeline->ProcessEnvelope(invite, tablet.account);
+  EXPECT_EQ(tablet.landed, 0);
+  EXPECT_EQ(outcome.show_card_to, std::optional<std::string>(bob_->account));
+  EXPECT_TRUE(outcome.sender_verified);
+  EXPECT_FALSE(outcome.missing_copy) << "no copy ask: a call invite asked for later is stale";
+
+  // A record that does not verify tells nobody anything about us.
+  RelayEnvelope forged = invite;
+  forged.timestamp += 1;
+  EXPECT_FALSE(tablet.pipeline->ProcessEnvelope(forged, tablet.account).show_card_to);
+}
+
+// An unreadable lane copy is a line the user can send: which kind of copy, the epochs, the session held and the
+// one offered (as joinable short ids) — no text. The lane moves on.
+TEST_F(LinkedDevicesTest, AnUnreadableLaneCopyIsADiagLineAndShowsTheSenderOurCard) {
+  auto diag = std::make_shared<DiagCapture>();
+  DiagLog().addHandler(diag);
+  ASSERT_TRUE(bob_->Receive(phone_->Signal(*bob_)));
+  AfterThisMillisecond();
+  ASSERT_TRUE(bob_->Receive(laptop_->Signal(*bob_)));
+  const RelayEnvelope invite = bob_->Signal(*phone_); // the B186 account copy
+  const RelayReceiveOutcome outcome = phone_->pipeline->ProcessEnvelope(invite, phone_->account);
+  EXPECT_EQ(phone_->landed, 0);
+  EXPECT_EQ(outcome.show_card_to, std::optional<std::string>(bob_->account)) << "an account copy: our devices";
+  const auto held = phone_->SessionWith(bob_->account);
+  ASSERT_TRUE(held && held->auto_key_session_id);
+  const std::vector<std::string> lines = diag->Lines();
+  ASSERT_FALSE(lines.empty());
+  const std::string& line = lines.back();
+  EXPECT_NE(line.find("event=control.unreadable copy=account epoch=1 held_epoch=1 held=" +
+                      held->auto_key_session_id->substr(0, 8) + " offered=-"),
+            std::string::npos)
+      << line;
+  EXPECT_NE(line.find(" sender="), std::string::npos);
+  EXPECT_EQ(line.find(bob_->account), std::string::npos) << "no raw id";
+
+  // A device copy that does not open: the line says so, and our card is no help there (the sender knows us).
+  ASSERT_TRUE(bob_->Receive(phone_->Lane(bob_->account)));
+  ASSERT_TRUE(phone_->Receive(bob_->Lane(phone_->account))); // confirmed both ways: no opener rides now
+  phone_->OpenProfile("profile-wiped");                      // the phone lost its sessions
+  const RelayReceiveOutcome lost = phone_->pipeline->ProcessEnvelope(bob_->Lane(phone_->account), phone_->account);
+  EXPECT_FALSE(lost.show_card_to);
+  EXPECT_NE(diag->Lines().back().find("event=control.unreadable copy=device epoch=1 held_epoch=0 held=- offered=-"),
+            std::string::npos)
+      << diag->Lines().back();
+}
+
+// The old media-key wrap keeps the account pair's session in use for an app before M024 (its opener rides an
+// account copy): reading that changes the account pair's session only, never a device pair's.
+TEST_F(LinkedDevicesTest, AnAccountPairOpenerLeavesTheDevicePairsAlone) {
+  ASSERT_TRUE(bob_->Receive(phone_->Lane(bob_->account)));
+  ASSERT_TRUE(phone_->Receive(bob_->Lane(phone_->account)));
+  const auto before = bob_->SessionWith(phone_->account, phone_->Device());
+  ASSERT_TRUE(before);
+  const RelayEnvelope old_form = phone_->Signal(*bob_);
+  ASSERT_TRUE(old_form.body.e2e.key_init_b64) << "the account pair's opener";
+  ASSERT_TRUE(bob_->Receive(old_form));
+  const auto after = bob_->SessionWith(phone_->account, phone_->Device());
+  ASSERT_TRUE(after);
+  EXPECT_EQ(after->master_psk_b64, before->master_psk_b64);
+  EXPECT_EQ(after->auto_key_session_id, before->auto_key_session_id);
+  EXPECT_TRUE(bob_->SessionWith(phone_->account)) << "the account pair's session, beside it";
+  EXPECT_TRUE(bob_->Receive(phone_->Lane(bob_->account)));
+  EXPECT_TRUE(phone_->Receive(bob_->Lane(phone_->account)));
+}
+
 } // namespace
 } // namespace pbr
-

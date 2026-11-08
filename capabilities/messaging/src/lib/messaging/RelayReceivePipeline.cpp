@@ -19,6 +19,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "lib/delivery/ChatPayloadValidator.h"
+#include "lib/delivery/E2ePublicSessionLogic.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/delivery/EnvelopeSigner.h"
 #include "lib/messaging/GroupMembershipApply.h"
@@ -37,6 +38,7 @@
 #include "lib/messaging/GroupInviteGate.h"
 #include "lib/delivery/PublicPskLockCoordinator.h"
 
+#include "common/Diag.h"
 #include "common/Logger.h"
 #include "common/Utilities.h"
 #include "lib/delivery/IControlLaneSeenStore.h"
@@ -1135,6 +1137,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& r
                                                                 .group_id = group_id};
       }
     }
+    if (received.route.kind == kRelayRouteControl && self) {
+      NoteMissingControlCopy(received, local_relay_user_id, outcome);
+    }
     return outcome;
   }
   const RelayEnvelope& envelope = *selected;
@@ -1208,13 +1213,14 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
   if (!kem_private) {
     return outcome;
   }
+  // A device's copy is read in our pair with the sending device (the chat stream's session); the account copy in
+  // the account pair's (M024).
   const PeerSessionKey target_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
   AutoKeyRead read;
   auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key, psk_store_,
                                                          *kem_private, &read);
   if (!decrypted) {
-    log().warning << "control lane: couldn't decrypt message_id=" << envelope.message_id
-                  << " err=" << decrypted.error().message;
+    ReportUnreadableControl(envelope, target_key, decrypted.error(), outcome);
     return outcome;
   }
   ThreadMessage message = std::move(*decrypted);
@@ -1261,6 +1267,71 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
   }
   outcome.decision = IngestDecision::AcceptControl;
   return outcome;
+}
+
+void RelayReceivePipeline::NoteMissingControlCopy(const RelayEnvelope& received, const std::string& local_account,
+                                                  RelayReceiveOutcome& outcome) {
+  if (received.sender_contact_id.empty() || received.sender_contact_id == local_account ||
+      SenderBlocked(received.sender_contact_id)) {
+    return; // our own account's notices are account copies; a blocked sender learns nothing of us
+  }
+  // Only a sender that proves itself is told our card: it lists our devices.
+  auto verified = VerifySignature(received, InboundTargetFromEnvelope(received));
+  if (!verified || !*verified) {
+    return;
+  }
+  outcome.sender_verified = true;
+  log().info << "control lane: no copy for this device message_id=" << received.message_id
+             << " sender=" << received.sender_contact_id << " device=" << received.sender_device
+             << " copies=" << received.body.e2e.copies.size();
+  outcome.show_card_to = received.sender_contact_id;
+}
+
+namespace {
+
+/** A lane copy's kind, for the diag line. */
+constexpr ShareWord kCopyAccount = "account";
+constexpr ShareWord kCopyDevice = "device";
+
+} // namespace
+
+void RelayReceivePipeline::ReportUnreadableControl(const RelayEnvelope& envelope, const PeerSessionKey& target_key,
+                                                   const Error& error, RelayReceiveOutcome& outcome) const {
+  const bool account_copy = envelope.recipient_device.empty();
+  std::string held_session;
+  uint32_t held_epoch = 0;
+  if (auto record = psk_store_.Load(target_key); record && record->has_value()) {
+    held_session = (*record)->auto_key_session_id.value_or("");
+    held_epoch = (*record)->session_epoch;
+  }
+  const std::string offered_session = envelope.body.e2e.key_init_b64 && !envelope.body.e2e.key_init_b64->empty()
+                                          ? AutoKeySessionId(*envelope.body.e2e.key_init_b64)
+                                          : std::string();
+  log().warning << "control lane: couldn't decrypt message_id=" << envelope.message_id
+                << " sender=" << envelope.sender_contact_id << " sender_device=" << envelope.sender_device
+                << " copy=" << (account_copy ? "account" : "device") << " epoch=" << envelope.session_epoch
+                << " held_epoch=" << held_epoch << " held_session=" << (held_session.empty() ? "-" : held_session)
+                << " offered_session=" << (offered_session.empty() ? "-" : offered_session) << " err=" << error.message;
+  DiagLine line("control.unreadable");
+  line.Add("copy", account_copy ? kCopyAccount : kCopyDevice)
+      .Add("epoch", envelope.session_epoch)
+      .Add("held_epoch", held_epoch);
+  if (held_session.empty()) {
+    line.Add("held", "-");
+  } else {
+    line.RandomId("held", held_session);
+  }
+  if (offered_session.empty()) {
+    line.Add("offered", "-");
+  } else {
+    line.RandomId("offered", offered_session);
+  }
+  line.Ref("sender", envelope.sender_contact_id).Fail("error", error).Emit();
+  if (account_copy) {
+    // An account copy goes to a peer whose devices the sender does not know (or, for a while, one with a single
+    // device): our card shows it this device, so its next message has a copy under our device pair (M024).
+    outcome.show_card_to = envelope.sender_contact_id;
+  }
 }
 
 void RelayReceivePipeline::ApplySiblingNotice(const RelayEnvelope& envelope, const std::string& local_account_id,

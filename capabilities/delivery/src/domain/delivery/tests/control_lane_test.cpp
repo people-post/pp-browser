@@ -10,6 +10,7 @@
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/testing/InMemoryPeerCards.h"
+#include "lib/people/tests/TestAccount.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -66,7 +67,12 @@ public:
     std::lock_guard lock(mu_);
     to_.push_back(envelope.recipient_contact_id.value_or(""));
     hints_.push_back(envelope.relay_wake_hint);
+    sent_.push_back(envelope);
     return {};
+  }
+  std::vector<RelayEnvelope> Sent() {
+    std::lock_guard lock(mu_);
+    return sent_;
   }
   Roe<RelayPollResult> PollInbox(const std::string&, const std::string&) override { return Error("unused"); }
   Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override { return Error("unused"); }
@@ -85,6 +91,7 @@ private:
   std::mutex mu_;
   std::vector<std::string> to_;
   std::vector<std::string> hints_;
+  std::vector<RelayEnvelope> sent_;
 };
 
 class ControlLaneTest : public ::testing::Test {
@@ -111,7 +118,8 @@ protected:
     outbox_ = std::make_unique<DeliveryOutbox>([]() -> IDirectMessageClient* { return nullptr; });
     outbox_->SetRelayClient(&relay_);
     lane_ = std::make_unique<ControlLane>(
-        *identity_, *own_, *contacts_, *routes_, *keys_, []() -> IDirectMessageClient* { return nullptr; }, *outbox_);
+        *identity_, *own_, *account_keys_, *contacts_, *routes_, *keys_,
+        []() -> IDirectMessageClient* { return nullptr; }, *outbox_);
   }
 
   void TearDown() override {
@@ -215,6 +223,67 @@ TEST_F(ControlLaneTest, AnUrgentInviteCarriesItsCallIdAsTheWakeHint) {
   auto hints = relay_.Hints();
   std::sort(hints.begin(), hints.end());
   EXPECT_EQ(hints, (std::vector<std::string>{"", "call-123-abc"}));
+}
+
+// M024 (#555 B186): a peer whose card we hold gets one record with a copy per device on it, each under that device
+// pair's session — never the account copy whichever device opened that, and never the account pair's opener.
+TEST_F(ControlLaneTest, APeerWithACardGetsACopyPerDevice) {
+  const test::TestAccount bob = test::TestAccount::Make();
+  const test::TestDevice tablet = test::TestDevice::Make();
+  AccountCard card{
+      .keys = bob.Card(), .nickname = "bob", .devices = {bob.device.Entry(), tablet.Entry()}, .issued_at = 1};
+  card = SignAccountCard(card, [&bob](const ByteVector& bytes) { return bob.Sign(bytes); }).value();
+  ASSERT_TRUE(account_keys_->AddAccountCard(card, util::NowUnixMs(), "test"));
+  routes_->NoteAccountRoute(bob.account_id, "relay:bob");
+
+  ControlSend invite = To(bob.account_id);
+  ASSERT_TRUE(lane_->Send(invite.peer_identity, invite.control, std::string("account-pair-opener"), true));
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (relay_.Sent().empty() && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  const std::vector<RelayEnvelope> sent = relay_.Sent();
+  ASSERT_EQ(sent.size(), 1u) << "one record for the account";
+  const std::vector<RelayCopy> copies = RelayCopiesOf(sent.front());
+  ASSERT_EQ(copies.size(), 2u);
+  std::vector<std::string> devices;
+  for (const RelayCopy& copy : copies) {
+    devices.push_back(copy.recipient_device);
+    EXPECT_EQ(copy.sender_seq, 0u) << "the lane is unsequenced";
+    ASSERT_TRUE(copy.key_init_b64) << "each device pair's own opener, until heard";
+    EXPECT_NE(*copy.key_init_b64, "account-pair-opener") << "the account pair's opener is no device's";
+  }
+  std::sort(devices.begin(), devices.end());
+  std::vector<std::string> expected{bob.device.peer_id, tablet.peer_id};
+  std::sort(expected.begin(), expected.end());
+  EXPECT_EQ(devices, expected);
+  EXPECT_NE(copies[0].key_init_b64, copies[1].key_init_b64) << "a session per device pair";
+  EXPECT_TRUE(sent.front().body.e2e.sender_card) << "a ringing invite carries our card";
+  for (const AccountCardDevice& device : card.devices) {
+    PeerSessionKey pair{.peer_identity_kind = "account",
+                        .peer_identity_value = bob.account_id,
+                        .channel = CryptoChannel::E2ePublic,
+                        .peer_device = device.peer_id};
+    auto stored = psk_->Load(pair);
+    ASSERT_TRUE(stored && stored->has_value()) << "the chat stream's device pair session, opened";
+  }
+}
+
+// No card for the peer (a first contact): the account copy, carrying an account-pair opener the caller holds.
+TEST_F(ControlLaneTest, APeerWithNoCardGetsTheAccountCopy) {
+  routes_->NoteAccountRoute("account:stranger", "relay:stranger");
+  ControlSend first = To("account:stranger");
+  ASSERT_TRUE(lane_->Send(first.peer_identity, first.control));
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (relay_.Sent().empty() && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  const std::vector<RelayEnvelope> sent = relay_.Sent();
+  ASSERT_EQ(sent.size(), 1u);
+  const std::vector<RelayCopy> copies = RelayCopiesOf(sent.front());
+  ASSERT_EQ(copies.size(), 1u);
+  EXPECT_TRUE(copies.front().recipient_device.empty());
+  EXPECT_TRUE(copies.front().key_init_b64) << "opened to the account KEM";
 }
 
 TEST_F(ControlLaneTest, ASendToNobodyIsDoneAtOnce) {

@@ -132,7 +132,7 @@ Branch `kenneth/per-device-sessions` (on top of the group protocol work, PR #383
 - [x] Session store keyed by (peer account, peer device, channel); numbering per device pair (1:1 and group copies)
 - [x] Send: one copy per device on the peer's card; account copy when there is no card yet; groups one copy per member device
 - [x] Receive: skip siblings' copies; verify against the card (a carried card only when newer); replay / seq / sync state per sender device (account copies on public chats per sending device too)
-- [x] Calls: unchanged on the account-level session (one account copy; single-device accounts work; several devices — d5)
+- [x] Calls: unchanged on the account-level session (one account copy; single-device accounts work; several devices — d5; per device since M024)
 - [x] Link bundle carries the card and no sessions; backups keep account-level sessions only
 - [x] Unit tests: two linked devices both send and both read (1:1, group, account copies), new device's card, old card refused
 - [x] Lab `linked_devices_both_send` (against the M022 relay branch)
@@ -163,6 +163,9 @@ Built as a **policy** (Hongwei, 2026-10-30): the rules below are followed by the
 ### d5 — Calls on every device
 
 - [x] Ring every device (the invite is an account copy); the first answer wins; the others stop — `call_answered_elsewhere` to our own devices on accept / decline, a sibling still ringing ends it locally with no history (`CallSessionWorkflow::StopRingingAnsweredElsewhere`); gtests (codec, no summary); lab `a_call_rings_every_device_and_stops_once_answered` ([CALLS.md](../../docs/architecture/CALLS.md))
+
+- [x] **M024** (#555 B186): the control lane per device — a copy per device on the peer's card in its device pair's session, the account copy for a first contact (and, one release, between two single-device accounts); the media key rides the copy (`media_key_b64`), its account-wrapped old form beside it one release; a copy this device cannot read shows the sender our card and is a `control.unreadable` diag line. gtests (`LinkedDevicesTest` lane cases, `ControlLaneTest` per-device copies, media-key forms); lab `a_call_rings_on_every_device_after_each_called_out`
+- [ ] Drop the M024 bridges (`kControlLaneAccountCopyBetweenSingleDevices`, `kMediaKeyAccountWrapBridge`, then `ensure_peer_session_key`) in the release after
 
 ### d6 — Later
 

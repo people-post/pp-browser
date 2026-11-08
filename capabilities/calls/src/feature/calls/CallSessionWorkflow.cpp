@@ -7,6 +7,7 @@
 #include "lib/calls/CallMediaPlannerSelectLogic.h"
 #include "lib/calls/CallSessionLogic.h"
 #include "lib/calls/PeerCapsLogic.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
@@ -312,7 +313,7 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
     return recorded.error();
   }
   log().info << "CallInvite sent call_id=" << call_id << " peer=" << invitee_identity
-             << " media_key_embedded=" << (invite->wrapped_key_b64.empty() ? 0 : 1)
+             << " media_key_embedded=" << (invite->media_key_b64.empty() ? 0 : 1)
              << " listen_addrs=" << invite->listen_multiaddrs.size();
   return {};
 }
@@ -367,6 +368,9 @@ Roe<CallInviteDetail> CallSessionWorkflow::BuildInvite(const CallSession& sessio
   invite.media_epoch = session.media_epoch;
   invite.media_key_id = session.media_key_id;
   if (auto key = key_exchange_.Current(call_id); key) {
+    // The key itself: the invite's lane copy is sealed for one device of the invitee's (M024). Its old form too,
+    // for an app before M024, while kMediaKeyAccountWrapBridge.
+    invite.media_key_b64 = Base64Encode(key->key);
     invite.wrapped_key_b64 = key_exchange_.WrapForPeer(call_id, *key, invitee_identity);
   }
   if (host_.reach.local_listen_multiaddrs && MayLearnOurAddress(invitee_identity)) {
@@ -1257,8 +1261,8 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(const s
     return session.error();
   }
   // Media key embedded in invite (preferred); CallMediaKey message remains a backup.
-  (void)key_exchange_.TakeWrapped(invite->call_id, session->media_epoch, invite->media_key_id, invite->wrapped_key_b64,
-                                  sender_identity, "CallInvite");
+  (void)key_exchange_.TakeKey(invite->call_id, session->media_epoch, invite->media_key_id, invite->media_key_b64,
+                              invite->wrapped_key_b64, sender_identity, "CallInvite");
   SeedInviteRoster(*invite, inviter, *session, local_identity);
   NoteInviterReach(*invite, inviter);
   if (CallDiagBudget::Shared().Allow(invite->call_id, CallDiagEvent::Signal)) {
