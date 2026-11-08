@@ -96,6 +96,14 @@ def render(template, tokens, theme, used):
         out.append(PLACEHOLDER_RE.sub(sub, line))
     if only:
         sys.exit("template: unterminated @only section")
+    # Every rule must sit inside the @media (theme: ...) block: a rule after its closing brace applies in both themes,
+    # and the dark file (loaded last) wins in light mode (2026-11-07: the phone's plus menu came out dark).
+    depth = 0
+    for n, line in enumerate(out, 1):
+        depth += line.count("{") - line.count("}")
+        if depth == 0 and any(rest.strip() for rest in out[n:]):
+            sys.exit(f"template: text after the @media (theme) block closes (rendered line {n}); "
+                     "put the rules before its last brace")
     return HEADER + "\n".join(out) + "\n"
 
 

@@ -124,7 +124,7 @@ const char* CallAudioAsymmetryHintKey(CallAudioAsymmetry a) {
   case CallAudioAsymmetry::None:
     return "";
   case CallAudioAsymmetry::SendingOnly:
-    return "call.quality.hint.sending_only";
+    return "call.quality.hint.connecting_voice"; // voice wording; callers pick the video one
   case CallAudioAsymmetry::ReceivingOnly:
     return "call.quality.hint.receiving_only";
   }

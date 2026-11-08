@@ -2,6 +2,12 @@
   <div class="pane-nav">
     <div class="pane-nav-bg"></div>
     <div class="bar-fade"></div>
+    <!-- Phones: the AI conversation list (the drawer from the left; DEV/PLAN-minimal-nav.md B / C). One bar in both the
+         minimal and the 动态 page; the right keeps its 44dp (the 动态 Edit button). -->
+    <button class="pane-nav-back shell-circle-btn home-drawer-btn" type="button" data-model="window"
+            data-event-click="open_ai_drawer()">
+      <span class="shell-circle-btn-face"><svg src="../icons/v2/menu.svg"></svg></span>
+    </button>
     <!-- The sticky bar title: PP 助手 on the minimal page, 今天 when the 动态 widgets are shown. -->
     <p class="pane-nav-title" data-model="shell" data-if="!home_show_dynamic">{{i18n:nav.home}}</p>
     <p class="pane-nav-title" data-model="shell" data-if="home_show_dynamic">{{i18n:home.title}}</p>
@@ -166,14 +172,19 @@
     </div>
   </div>
   <!-- data-model=shell drives the minimal/centered switch; the chips keep the chat model (home-landing-inner below). -->
-  <div class="home-landing" data-model="shell" data-class-home-landing--minimal="!home_show_dynamic">
+  <!-- #home-landing: on phones a rightward drag across the minimal page opens the AI drawer (ShellDrawerOpenGesture;
+       not from the composer or the chips). -->
+  <div class="home-landing" id="home-landing" data-model="shell" data-class-home-landing--minimal="!home_show_dynamic">
     <!-- Phone: a soft fade from the widgets into the dock, in place of a divider line. -->
     <div class="home-dock-fade"></div>
     <!-- The AI conversation list scrolls; its "PP 助手" large title scrolls up and collapses into the sticky bar,
          like the Chats page (Kenneth 2026-11-05). No search box (the assistant keeps context). Empty = just the title.
          滑动菜单（右滑：置顶、重命名；左滑：更多、归档、删除）复用聊天行的 sidebar-session 样式和 SessionSwipeGesture。 -->
-    <div class="home-ai-list root-scroll" id="home-ai-sessions" data-model="shell" data-if="!home_show_dynamic">
-      <p class="home-ai-header">{{i18n:nav.home}}</p>
+    <!-- Phones list these in the AI drawer (ai_drawer.rml, its own id: data-if only hides, so these rows stay in the
+         DOM); this inline list is the desktop's. -->
+    <div class="home-ai-list-desktop" data-model="window" data-if="layout_mode == 'expanded'">
+    <div class="home-ai-list root-scroll" id="home-ai-sessions" data-model="shell" data-if="!home_show_dynamic"
+         data-event-scroll="ai_sessions_scroll()">
       <div class="sidebar-archived-entry row" data-if="archived_count_ai &gt; 0" data-event-click="toggle_archived_ai()">
         <svg src="../icons/back.svg" width="14" height="14" crop-to-content="true" data-if="showing_archived_ai"></svg>
         <svg src="../icons/archive.svg" width="14" height="14" crop-to-content="true" data-if="!showing_archived_ai"></svg>
@@ -237,6 +248,7 @@
         </div>
       </div>
     </div>
+    </div>
     <!-- Minimal AI-first Home (Kenneth 2026-11-05, 太乱): a prominent heading + one line above the chips when the
          动态 widgets are hidden (the default). Shown only in minimal mode. -->
     <!-- Empty AI Home: nothing in the centre (Kenneth 2026-11-05, 极简); the AI tab icon carries the brand and the
@@ -246,6 +258,9 @@
            (Kenneth 2026-11-05 "加一点点毛玻璃"). -->
       <div class="bar-fade bar-fade--up home-composer-fade"></div>
       <!-- The ask-AI field, above the chips on both desktop and phone (Kenneth 2026-11-05). -->
+      <!-- Phone minimal Home (Kenneth 2026-11-07): the app logo, then the two-line field, then the chips that wrap. The
+           logo hides on the desktop. -->
+      <div class="home-logo"><img src="../branding/app-icon.png" alt=""/></div>
       <div class="home-composer-mount" id="home-composer-mount"></div>
       <div class="home-suggestions">
         <button class="chat-suggestion" data-event-click="send_suggestion_action('find_someone')"

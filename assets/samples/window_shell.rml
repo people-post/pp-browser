@@ -58,6 +58,9 @@
   <!-- Phones: the band under the status bar, over the pages, so a top bar that hides on scroll slides under it, not
        over the clock (ShellHost sizes it to the top inset). -->
   <div id="shell-statusbar-strip" class="shell-statusbar-strip"></div>
+  <!-- Phones: the band over the home indicator under a page with no bar there (a hidden tab, a pushed page): that page
+       ends above it (ShellHost sizes it to the bottom inset), so it takes the page's colour like the top band. -->
+  <div id="shell-home-indicator-strip" class="shell-home-indicator-strip"></div>
   <!-- Bottom chrome / IME-replacement mount: sibling of shell-root so content can be
        lifted (shell-root bottom) while the panel paints in the freed bottom band. -->
   <div id="shell-emoji-keyboard-mount" class="shell-emoji-keyboard-mount"></div>

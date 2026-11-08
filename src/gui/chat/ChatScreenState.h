@@ -186,6 +186,8 @@ struct ChatShellState {
   bool sessions_more = false;
   /** The search box above the list: rows are kept when their title or preview contains it. */
   ui::String sessions_query;
+  /** The phone AI drawer's search box: the same match on the AI conversations (ai_sessions). */
+  ui::String ai_sessions_query;
   /**
    * Phone Today page (DESIGN-pp-ui 8.16, mockup 10-home-widgets): the date line and the widgets drawn, in the user's
    * order (home_widgets), each with its own data below. A widget shows only when it has something (Favorites always).

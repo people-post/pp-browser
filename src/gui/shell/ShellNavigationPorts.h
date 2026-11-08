@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/ui/ShellLayout.h"
 #include "lib/ui/ShellTypes.h"
 
 #include <functional>
@@ -27,6 +28,14 @@ struct ShellChromeSnapshot {
   bool compact_chat_open = false;
 };
 
+/**
+ * A send from the AI page's own composer (the PP 助手 list, no conversation open over it) starts a new AI
+ * conversation; once one is open over that page, the same tab sends into it (text and pictures alike).
+ */
+inline bool SendStartsHomeConversation(const ShellChromeSnapshot& chrome) {
+  return chrome.nav_tab == NavTab::Home && !chrome.compact_chat_open;
+}
+
 inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   ShellChromeSnapshot snap;
   snap.layout_mode = state.layout_mode;
@@ -41,7 +50,8 @@ inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   snap.nav_badges = state.nav_badges;
   snap.banner_message = state.banner_message.c_str();
   snap.auxiliary_open = state.auxiliary_open;
-  snap.compact_chat_open = state.compact_chat_open;
+  // Under a hidden tab's page (phone Me / Contacts) the chat overlay is open but not on screen.
+  snap.compact_chat_open = state.compact_chat_open && !ShellLayout::HiddenTabShown(state);
   return snap;
 }
 

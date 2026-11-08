@@ -110,11 +110,19 @@ std::string ShellLayoutRml::CompactBase() const {
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-base shell-layer-compact\" data-model=\"window\">";
 
-  if (!state_.compact_chat_open) {
+  // A hidden tab's page (Me, Contacts: DEV/PLAN-minimal-nav.md A) is drawn instead of a chat overlay left open under
+  // it; the overlay is drawn again on the way back.
+  const bool hidden_tab = ShellLayout::HiddenTabShown(state_);
+  const bool chat_shown = state_.compact_chat_open && !hidden_tab;
+  if (!chat_shown) {
     const bool home_inline = state_.nav_tab == NavTab::Home;
     out << "<div class=\"shell-nav-page";
     if (home_inline) {
       out << " shell-nav-page--home";
+    }
+    if (hidden_tab) {
+      // Its bar: back, the title always shown, no large title, and no tab bar under it.
+      out << " shell-nav-page--hidden-tab";
     }
     // The tab page's bars (nav bar, a settings page's bar) are the frosted ones while nothing covers them.
     if (frost == CompactChromeFrostSurface::BottomNav && frost_enabled) {
@@ -134,17 +142,28 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "</div>";
   }
 
-  if (state_.compact_chat_open) {
+  if (chat_shown) {
     out << "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">";
     out << "<div class=\"shell-chat-overlay-chrome row "
         << SurfaceChromeClass(CompactChromeFrostSurface::ChatOverlayHeader, frost, frost_enabled, solid) << "\">";
-    out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
-    out << "<svg src=\"../icons/v2/back.svg\"></svg>";
+    out << "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
+    out << "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/back.svg\"></svg></span>";
     out << "</button>";
+    // An AI conversation's bar: a new conversation on the right (DEV/PLAN-minimal-nav.md B). thread_is_ai is the chat
+    // model's, new_chat the shell model's (ChatController).
+    out << "<div class=\"shell-chat-new-slot\" data-model=\"chat\" data-if=\"thread_is_ai\">";
+    out << "<button class=\"shell-circle-btn shell-chat-new-btn\" type=\"button\" data-model=\"shell\" "
+           "data-event-click=\"new_chat()\">";
+    out << "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/compose.svg\"></svg></span>";
+    out << "</button></div>";
     out << "<div class=\"bar-fade\"></div>";
     out << "</div>";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
     out << "<div class=\"shell-composer-mount surface-chrome";
+    if (frost_enabled && !solid) {
+      // Frosted like the bars (Kenneth 2026-11-07): a translucent bar colour over a blur.
+      out << " surface-chrome--frost";
+    }
     if (solid) {
       out << " surface-chrome--solid";
     }
@@ -170,7 +189,8 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "</div>";
   }
 
-  if (!state_.compact_chat_open) {
+  // The tab bar only where it is drawn (ShellLayout::CompactTabBarDp): not on a hidden tab or under the chat.
+  if (ShellLayout::CompactTabBarDp(state_) > 0.f) {
     out << "<div class=\"shell-bottom-chrome";
     if (frost == CompactChromeFrostSurface::BottomNav && frost_enabled) {
       out << " shell-bottom-chrome--frost";
@@ -184,7 +204,7 @@ std::string ShellLayoutRml::CompactBase() const {
     }
     out << "\" id=\"shell-bottom-chrome\">";
     out << "<div class=\"bar-fade bar-fade--up\"></div>";
-    out << "<div class=\"shell-nav-rail shell-nav-rail--compact\" id=\"shell-nav-rail-mount\"></div>";
+    out << "<div class=\"shell-nav-rail shell-nav-rail--compact shell-nav-rail--text\" id=\"shell-nav-rail-mount\"></div>";
     out << "</div>";
   }
 
@@ -214,9 +234,16 @@ std::string ShellLayoutRml::TransientLayer() const {
   if (titled) {
     out << "<div class=\"nav-bar-bg\"></div>";
   }
-  out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
-         "<svg src=\"../icons/v2/back.svg\"></svg>"
-         "</button>";
+  if (compact[0] != '\0') {
+    // Phones: the round back (DEV/PLAN-minimal-nav.md G); shell-back-btn keeps it chrome for the swipe-back.
+    out << "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" data-event-click=\"transient_back()\">"
+           "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/back.svg\"></svg></span>"
+           "</button>";
+  } else {
+    out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
+           "<svg src=\"../icons/v2/back.svg\"></svg>"
+           "</button>";
+  }
   out << "<div class=\"bar-fade\"></div>";
   out << "</div>";
   out << PaneSlot(top.spec.key, "shell-pane-transient");
@@ -253,8 +280,10 @@ std::string ShellLayoutRml::Overlays() const {
       out << "<div class=\"shell-layer shell-layer-overlay shell-layer-sheet" << layer_stop << "\" data-model=\"window\">";
       out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
       // The view's key as a modifier class: a page with its own edge-to-edge rows (New chat) drops the side padding.
-      out << "<div class=\"shell-page-sheet shell-page-sheet--" << overlay.key << stop << "\" id=\"shell-page-sheet-"
-          << overlay.id << "\">";
+      // Frosted bars inside it (the ask-AI panel's input bar) follow the Transparency setting like the top bars.
+      out << "<div class=\"shell-page-sheet shell-page-sheet--" << overlay.key << stop
+          << (ChromeFrostEnabled() ? " shell-page-sheet--frost" : "") << "\" id=\"shell-page-sheet-" << overlay.id
+          << "\">";
       out << "<div class=\"shell-page-sheet-grabber\"></div>";
       out << "<button class=\"shell-close-btn shell-page-sheet-close\" type=\"button\" data-event-click=\"close_layer("
           << overlay.id << ")\">";
@@ -534,6 +563,23 @@ void ShellLayoutRml::PinGateKeypad(std::ostringstream& out) const {
   out << "</div>";
 }
 
+std::string ShellLayoutRml::AiDrawer() const {
+  if (state_.layout_mode != LayoutMode::Compact || !state_.ai_drawer_open) {
+    return {};
+  }
+  std::ostringstream out;
+  // The compact class: the phone styles of the rows and the round buttons in the view apply.
+  out << "<div class=\"shell-layer shell-layer-compact shell-drawer-layer\" data-model=\"window\">";
+  out << "<div class=\"shell-scrim shell-drawer-scrim\" data-event-click=\"close_ai_drawer()\"></div>";
+  // The edge shadow rides with the drawer; the view goes into the body (ShellHost::MountAiDrawer).
+  // Its top bar and "you" row are frosted like the top bars when Transparency is on (colors.rcss.tmpl).
+  out << "<div class=\"shell-drawer" << (ChromeFrostEnabled() ? " shell-drawer--frost" : "")
+      << "\"><div class=\"shell-drawer-edge\"></div>";
+  out << "<div class=\"shell-drawer-body\" id=\"shell-ai-drawer-mount\"></div></div>";
+  out << "</div>";
+  return out.str();
+}
+
 std::string ShellLayoutRml::ShellRoot() const {
   std::ostringstream out;
   if (state_.layout_mode == LayoutMode::Expanded) {
@@ -541,6 +587,8 @@ std::string ShellLayoutRml::ShellRoot() const {
   } else {
     out << CompactBase();
   }
+  // Filled by ShellHost::RemountAiDrawerNow (AiDrawer), so opening / closing the drawer never rebuilds this root.
+  out << "<div id=\"shell-ai-drawer-host\" class=\"shell-drawer-host\"></div>";
   out << TransientLayer();
   out << Overlays();
   // The dialog lives only in its mount below: SyncLayout fills the mount right after this root is

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lib/ui/CallChipDock.h"
+
 #include <ui/base/Types.h>
 
 #include <functional>
@@ -62,8 +64,8 @@ struct ShellConfig {
    */
   float titlebar_controls_width_dp = 120.f;
   float frame_padding_dp = 24.f;
-  /** Compact bottom nav bar height (excludes safe-area inset). */
-  float compact_nav_height_dp = 49.f;
+  /** Compact bottom nav bar height (excludes safe-area inset): the two-word tab bar (DEV/PLAN-minimal-nav.md A). */
+  float compact_nav_height_dp = 48.f;
   /** Horizontal inset for the compact tab bar (full-width, so 0). */
   float compact_nav_horizontal_inset_dp = 0.f;
   size_t max_toasts = 3;
@@ -417,10 +419,12 @@ struct CallInProgressState {
   /** Expanded (top bar), Immersive (people grid), or Minimized (corner chip). */
   CallChromeMode mode = CallChromeMode::Expanded;
   /**
-   * Minimized chip corner: 0 top-right, 1 top-left, 2 bottom-right, 3 bottom-left.
-   * Applied when mode == Minimized.
+   * #166: where the minimised chip rests after a drag (CallChipDock): 0 never dragged this call (the default top-right
+   * corner class), 1 left side, 2 right side; and its height in the band, 0 (top) .. 1000 (bottom), ignored for 0.
+   * Applied when mode == Minimized; reset with each call (CallController).
    */
-  int minimized_corner = 0;
+  int minimized_side = 0;
+  int minimized_y_permille = 0;
   int participant_count = 0;
   std::vector<CallRosterParticipantState> roster;
   /** Immersive's spotlit roster row (its stream_id; empty: the grid) — V059, CallSpotlight.h. */
@@ -482,6 +486,10 @@ struct CallInProgressState {
   ui::String story_step1;
   ui::String story_step2;
   ui::String story_step3;
+  ui::String story_step4;
+  ui::String story_step5;
+  /** How many of the step lines show: 3 (group), 4 (this device answered), 5 (this device called; #172). */
+  int story_step_count = 3;
   /** Just connected (1:1): "Connected directly, 0.9 s" for 4 s, then it fades (bound). */
   ui::String result_text;
   bool result_fading = false;
@@ -495,6 +503,12 @@ struct CallInProgressState {
   ui::String notice_text;
   bool notice_warn = false;
   bool notice_fading = false;
+  /** The reconnect capsule above the button bar (#171; empty text: hidden). Bound. */
+  ui::String reconnect_text;
+  bool reconnect_ok = false;
+  bool reconnect_fading = false;
+  /** The call timer greys while the line is down. */
+  bool reconnect_dim = false;
   /** The "how this call got through" sheet (a tap on the signal bar). */
   bool story_sheet_open = false;
   std::vector<CallStoryLine> story_lines;
@@ -529,6 +543,8 @@ struct ShellState {
   std::vector<OverlayEntry> overlay_stack;
 
   bool compact_chat_open = false;
+  /** Phone Home: the AI conversation list slides in from the left (open_ai_drawer / close_ai_drawer). */
+  bool ai_drawer_open = false;
   bool auxiliary_open = false;
   bool auxiliary_available = false;
   bool transient_active = false;
@@ -538,6 +554,10 @@ struct ShellState {
   bool sidebar_collapsed = false;
   /** Phone layout: the active root page (Chats / Contacts / Me) has scrolled its 52dp large title away. */
   bool large_title_collapsed = false;
+  /** Phone Chats header status line (this device's link to our service): "ok", "offline", or empty = unknown, nothing shown.
+   * Set by event only (ShellHost::SetChatsLink); chats_link_text is the translated label. */
+  ui::String chats_link_state;
+  ui::String chats_link_text;
   /** Expanded layout only: auxiliary pane width (dp, clamped by ShellLayout). */
   int auxiliary_width_dp = 320;
 
@@ -617,6 +637,12 @@ struct ShellState {
   NavBadgeState nav_badges;
 
   float shell_width_dp = 1280.f;
+  /**
+   * #166: the dropped call chip's last top, the place it was for, and the layer / chip heights in dp (ShellHost, from
+   * ShellCallChromeGesture and the laid-out elements; each kept until a newer one is known). The chip's markup puts a
+   * rebuilt chip there (ShellCallChromeRml); 0: not known yet.
+   */
+  CallChipLayout call_chip_layout;
   /** Top safe-area inset in dp (SDL and/or machine prefs); clears status bar / notch. */
   int safe_area_top_dp = 0;
   /** Bottom safe-area inset in dp (SDL and/or machine prefs). */

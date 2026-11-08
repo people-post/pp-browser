@@ -427,7 +427,11 @@ void ChatPresenter::Refresh() {
     // The stored default AI title is English; the renderer shows it in the UI language.
     row.title_is_default_ai = thread.kind == ThreadKind::Ai && row.title == "New chat";
     const std::string text = GroupEventPreviewOr(thread, local_account);
-    row.preview = SessionPreviewLine(callbacks_.prose ? callbacks_.prose(text) : text);
+    // A new thread has no preview yet; an empty second line would collapse the row, so say so in words.
+    SessionPreviewShown preview = ResolveSessionPreview(
+        SessionPreviewLine(callbacks_.prose ? callbacks_.prose(text) : text), Tr("sidebar.preview_empty"));
+    row.preview = std::move(preview.text);
+    row.preview_empty = preview.placeholder;
     row.kind = ChatSessionKindName(thread);
     row.unread_count = thread.unread_count;
     row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);

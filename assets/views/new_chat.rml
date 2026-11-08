@@ -1,7 +1,8 @@
 <div class="nc-page" data-model="contacts">
-  <!-- The sheet's title row (.sheet-header) stays put above the list, so a drag up from it moves the sheet. -->
-  <div class="sheet-header">
-    <p class="large-title nc-title sheet-title">{{i18n:new_chat.title}}</p>
+  <!-- Full-screen page (DEV/PLAN-minimal-nav.md E): the shell's round back sits at the left of this bar (transient chrome);
+       the title is centred. The bar does not scroll; the list under it does. -->
+  <div class="pane-nav nc-bar">
+    <p class="pane-nav-title nc-bar-title">{{i18n:new_chat.title}}</p>
   </div>
   <div class="nc-scroll">
     <div class="chat-search nc-search">
@@ -12,12 +13,6 @@
     </div>
 
     <div class="nc-actions" data-if="nc_query == ''">
-      <div class="nc-action" data-event-click="new_chat_action('ai')">
-        <div class="nc-action-icon nc-action-icon--ai">
-          <svg src="../icons/v2/sparkle-fill.svg" width="20" height="20"></svg>
-        </div>
-        <p class="nc-action-label">{{i18n:new_chat.ai}}</p>
-      </div>
       <div class="nc-action" data-event-click="new_chat_action('group')">
         <div class="nc-action-icon nc-action-icon--group">
           <svg src="../icons/v2/group.svg" width="20" height="20"></svg>
@@ -29,30 +24,6 @@
           <svg src="../icons/v2/user-plus.svg" width="20" height="20"></svg>
         </div>
         <p class="nc-action-label">{{i18n:new_chat.add}}</p>
-      </div>
-    </div>
-
-    <div data-if="nc_frequent.size > 0">
-      <p class="nc-section-header">{{i18n:new_chat.frequent}}</p>
-      <div class="nc-group">
-        <div data-for="contact : nc_frequent" class="contacts-row"
-             data-event-click="new_chat_pick(contact.id)">
-          <div class="contacts-row-avatar-frame"
-               data-class-avatar-tone-0="!contact.has_icon && contact.avatar_tone == 0"
-               data-class-avatar-tone-1="!contact.has_icon && contact.avatar_tone == 1"
-               data-class-avatar-tone-2="!contact.has_icon && contact.avatar_tone == 2"
-               data-class-avatar-tone-3="!contact.has_icon && contact.avatar_tone == 3"
-               data-class-avatar-tone-4="!contact.has_icon && contact.avatar_tone == 4"
-               data-class-avatar-tone-5="!contact.has_icon && contact.avatar_tone == 5"
-               data-class-avatar-tone-6="!contact.has_icon && contact.avatar_tone == 6"
-               data-class-avatar-tone-7="!contact.has_icon && contact.avatar_tone == 7">
-            <img class="contacts-row-avatar-image" data-if="contact.has_icon" data-attr-src="contact.icon_src"/>
-            <p class="avatar-letter" data-if="!contact.has_icon">{{contact.avatar_letter}}</p>
-          </div>
-          <div class="contacts-row-body">
-            <p class="contacts-row-title">{{contact.title}}</p>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -79,5 +50,17 @@
         </div>
       </div>
     </div>
+    <p class="nc-empty-hint text muted" data-if="!nc_has_contacts && nc_query == ''">{{i18n:new_chat.empty_hint}}</p>
+    <p class="nc-empty-hint text muted" data-if="nc_has_contacts && nc_query != '' && nc_sections.size == 0">{{i18n:people_picker.no_matches}}</p>
+  </div>
+  <!-- The same A-Z strip as the Contacts tab (contacts.rml); it names its list, and hides without contacts. -->
+  <div class="contacts-index" data-if="nc_has_contacts && nc_query == ''"
+       data-event-mousedown="contacts_index_at('new_chat')" data-event-drag="contacts_index_at('new_chat')"
+       data-event-mouseup="contacts_index_end('new_chat')" data-event-dragend="contacts_index_end('new_chat')">
+    <p data-for="item : nc_index" class="contacts-index-letter"
+       data-class-contacts-index-letter--present="item.present">{{item.letter}}</p>
+  </div>
+  <div class="contacts-index-bubble" data-if="contact_index_bubble != ''">
+    <p class="contacts-index-bubble-letter">{{contact_index_bubble}}</p>
   </div>
 </div>

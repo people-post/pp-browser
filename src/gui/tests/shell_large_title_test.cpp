@@ -9,6 +9,10 @@
 #include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include <vector>
 
 namespace pbr {
@@ -55,6 +59,19 @@ TEST(LargeTitleRules, CollapsesOnceTheWholeTitleIsScrolledAway) {
   EXPECT_FALSE(ShellState{}.large_title_collapsed);
 }
 
+// The Chats page has a 104dp header with its search box right under it: its scroller says `collapse-at="20"` (dp), the
+// point where the box starts to slide under the avatar row, instead of the 52dp default.
+TEST(LargeTitleRules, ChatsPageCollapsesAtTwentyDpNotFiftyTwo) {
+  EXPECT_FALSE(ShellLargeTitleScroll::CollapsedAt(19.f, 1.f, 20.f));
+  EXPECT_TRUE(ShellLargeTitleScroll::CollapsedAt(20.f, 1.f, 20.f));
+  EXPECT_TRUE(ShellLargeTitleScroll::CollapsedAt(40.f, 2.f, 20.f)) << "px are converted with the dp ratio";
+  const std::string rml = [] {
+    std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "sidebar.rml");
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  }();
+  EXPECT_NE(rml.find("root-scroll\" collapse-at=\"20\""), std::string::npos);
+}
+
 TEST_F(LargeTitleTest, ValueChangesAndTheNavPageFollows) {
   ShellHost host;
   ASSERT_TRUE(host.RegisterWindowModel(context));
@@ -76,6 +93,53 @@ TEST_F(LargeTitleTest, ValueChangesAndTheNavPageFollows) {
   host.SetLargeTitleCollapsed(false);
   context->Update();
   EXPECT_FALSE(page->IsClassSet("large-title-collapsed"));
+}
+
+// The Chats header's status line (SetChatsLink): unknown shows nothing, then online / offline come through the window
+// model as state + text; the same value again changes nothing; going back to unknown clears the line.
+TEST_F(LargeTitleTest, ChatsLinkStatusFollowsSetChatsLink) {
+  ShellHost host;
+  ASSERT_TRUE(host.RegisterWindowModel(context));
+  auto* document = context->LoadDocumentFromMemory(
+      "<rml><body><div id=\"page\" data-model=\"window\">"
+      "<p id=\"line\" data-if=\"chats_link_state != ''\">{{chats_link_text}}</p>"
+      "<span id=\"ok\" style=\"width: 5px; height: 5px;\" data-if=\"chats_link_state == 'ok'\"></span>"
+      "<span id=\"off\" style=\"width: 5px; height: 5px;\" data-if=\"chats_link_state == 'offline'\"></span></div></body></rml>");
+  ASSERT_NE(document, nullptr);
+  document->Show();
+  context->Update();
+  EXPECT_FALSE(document->GetElementById("line")->IsVisible()) << "unknown state: nothing is drawn";
+  EXPECT_TRUE(host.State().chats_link_state.empty());
+
+  host.SetChatsLink(false, true);
+  context->Update();
+  EXPECT_TRUE(host.State().chats_link_state.empty()) << "known=false ignores the flag";
+
+  host.SetChatsLink(true, false);
+  context->Update();
+  EXPECT_EQ(host.State().chats_link_state, "offline");
+  EXPECT_FALSE(host.State().chats_link_text.empty());
+  EXPECT_TRUE(document->GetElementById("line")->IsVisible());
+  EXPECT_TRUE(document->GetElementById("off")->IsVisible());
+  EXPECT_FALSE(document->GetElementById("ok")->IsVisible());
+  const auto offline_text = host.State().chats_link_text;
+
+  host.SetChatsLink(true, false);
+  context->Update();
+  EXPECT_EQ(host.State().chats_link_text, offline_text) << "the same value changes nothing";
+
+  host.SetChatsLink(true, true);
+  context->Update();
+  EXPECT_EQ(host.State().chats_link_state, "ok");
+  EXPECT_NE(host.State().chats_link_text, offline_text);
+  EXPECT_TRUE(document->GetElementById("ok")->IsVisible());
+  EXPECT_FALSE(document->GetElementById("off")->IsVisible());
+
+  host.SetChatsLink(false, false);
+  context->Update();
+  EXPECT_TRUE(host.State().chats_link_state.empty());
+  EXPECT_TRUE(host.State().chats_link_text.empty());
+  EXPECT_FALSE(document->GetElementById("line")->IsVisible());
 }
 
 TEST_F(LargeTitleTest, ScrollingTheRootScrollerReportsOnlyWhenTheStateFlips) {

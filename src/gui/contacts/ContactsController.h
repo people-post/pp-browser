@@ -223,7 +223,7 @@ public:
   /** The contact shown is starred (tests). */
   bool SelectedStarred() const { return selected_.starred; }
 
-  /** Phone Chats "compose": pushes the full-screen New chat page (AI chat / group / add contact / contacts). */
+  /** Phone Chats "plus": pushes the full-screen New chat page (new group / add contact / contacts by letter). */
   void OpenNewChatPage();
   /** Opens (or starts) the chat with a contact, as a pick on the New chat page does (Home's Favorites). */
   void MessageContact(const std::string& contact_id);
@@ -240,6 +240,11 @@ public:
   int BlockedCount() const;
   /** The New chat page left the screen (back, swipe, or a row was chosen). */
   void OnNewChatDismissed();
+  /** The Add contact page was closed (the shell popped its transient, or the sheet layer went). */
+  void OnAddContactDismissed();
+  /** "Add contact" (New chat's row, the desktop "+" menu): the Add contact page on a phone, the paste-an-ID prompt on
+   *  the desktop. Public for tests. */
+  void OnAddContact();
 
   /** Contacts → find people; also the first-run wizard's "Find friends". */
   /**
@@ -262,12 +267,22 @@ public:
                                std::function<void(bool shared)> done);
   /** The desktop "+" menu: add contact, then find someone (the phone opens the Add contact sheet). Exposed for tests. */
   static std::vector<ContextMenuAction> AddContactMenuActions();
+  /** "Add contact" (New chat's card, the Contacts "+") opens the Add contact page on a phone; the old paste-an-ID prompt
+   *  is the desktop's. */
+  static constexpr bool AddContactUsesPage(const bool compact) { return compact; }
   /** The Contacts tab's rows in index order (A-Z by name, Chinese by pinyin initial, then #), one section per letter. */
   static std::vector<NewChatSectionRow> ContactSections(std::vector<ContactListRow> rows);
   /** The index strip: every letter A-Z then #, marked present where `sections` has it. */
   static std::vector<IndexLetterRow> ContactIndexLetters(const std::vector<NewChatSectionRow>& sections);
   /** The section an index letter jumps to: that letter's, else the next one after it, else the last; -1 if none. */
   static int ContactSectionForLetter(const std::vector<NewChatSectionRow>& sections, char letter);
+  /**
+   * Scrolls the list an index strip belongs to so the section for `letter` sits at its top. `strip` is the strip
+   * element; its parent holds the list: `.contacts-list-view` with `.contacts-section-header`s (`target` "contacts"), or
+   * `.nc-scroll` with `.nc-section-header`s (`target` "new_chat"). The other list is not touched. Exposed for tests.
+   */
+  static void ScrollIndexListTo(ui::Element* strip, const std::string& target,
+                                const std::vector<NewChatSectionRow>& sections, char letter);
 
 private:
   void OnNewGroup();
@@ -283,7 +298,6 @@ private:
   void LoadMyAccount();
   void DirtyAddContact();
   void CloseAddContactPage();
-  void OnAddContactDismissed();
   void OpenMyQrPage();
   void OnMyQrDismissed();
   /** A directory hit chosen (or the only hit of a typed query): already a contact, ask first, or add. */
@@ -336,11 +350,11 @@ private:
   void OnStartChat();
   void OnSecureMessage();
   void OnAddContactMenu(ui::Event& ev);
-  /** A press or drag on the phone index strip: jump the list to the letter under the finger, show it in the bubble. */
-  void OnContactsIndexAt(ui::Event& ev);
+  /** A press or drag on a phone index strip (`target`: "contacts" or "new_chat"): jump that list to the letter under
+   *  the finger, show it in the bubble. */
+  void OnContactsIndexAt(ui::Event& ev, const std::string& target);
   /** The finger left the index strip: hide the bubble. */
   void OnContactsIndexEnd();
-  void OnAddContact();
   void AddContactByQuery(const std::string& query);
   void OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits);
   void AddContactFromHit(const mesh::DirectoryHit& hit);
@@ -385,15 +399,17 @@ private:
   std::vector<IndexLetterRow> contact_index_;
   /** The letter in the centred bubble while a finger is on the index strip; empty otherwise. */
   ui::String contact_index_bubble_;
-  std::vector<ContactListRow> new_chat_frequent_;
   std::vector<NewChatSectionRow> new_chat_sections_;
+  /** The New chat page's own A-Z strip (from new_chat_sections_) and whether there are any contacts at all. */
+  std::vector<IndexLetterRow> new_chat_index_;
+  bool new_chat_has_contacts_ = false;
   ui::String new_chat_query_;
   bool new_chat_open_ = false;
+  /** The Add contact page is a full-screen transient (phones), not a page sheet layer. */
+  bool add_is_transient_ = false;
   /** Blocked people, by name (OpenBlockedPeople). */
   std::vector<ContactListRow> blocked_rows_;
   bool blocked_open_ = false;
-  /** The New chat sheet's overlay layer (-1: not open). */
-  int new_chat_layer_id_ = -1;
   /** The contact page shown as a page sheet (OnSelectContactSheet); -1: none. */
   int detail_sheet_layer_id_ = -1;
   RemarkSaveNotice remark_notice_;

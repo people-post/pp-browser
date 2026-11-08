@@ -402,6 +402,60 @@ TEST_F(ContextMenuSheetTest, ThePlusGrowsTheSheetAndHandsItsBodyOver) {
   ContextMenuHost::Instance().SetCompactLayout(false);
 }
 
+// The Home composer's plus: a floating pull-down opened above the button (two rows), closed by a dismiss.
+TEST_F(ContextMenuPopoverTest, ALeftAlignedPopoverIsAFloatMenuThatClosesOnDismiss) {
+  ContextMenuHost::Instance().SetCompactLayout(true);
+  std::vector<ContextMenuAction> actions = OneAction();
+  actions.push_back(actions.front());
+  actions[1].id = "second";
+  ContextMenuHost::Instance().ShowActionsPopoverLeftAligned(document_->GetElementById("field"), std::move(actions));
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  ui::Element* layer = document_->GetElementById("context-menu-layer");
+  ASSERT_NE(layer, nullptr);
+  EXPECT_TRUE(layer->IsClassSet("context-menu-layer--popover"));
+  EXPECT_FALSE(layer->IsClassSet("context-menu-layer--sheet"));
+  EXPECT_TRUE(layer->IsClassSet("context-menu-layer--popover-left"));
+  ui::ElementList items;
+  layer->GetElementsByClassName(items, "context-menu-item");
+  EXPECT_EQ(items.size(), 2u) << "both rows are in the menu";
+  EXPECT_TRUE(ContextMenuHost::Instance().HandleDismiss());
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+  ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
+// A left-aligned show issued from a menu item's click runs while the first menu's teardown is pending; the re-issued
+// show must keep its left alignment (the card would otherwise open as a right-edge pull-down, partly off-screen).
+TEST_F(ContextMenuPopoverTest, ALeftAlignedShowDuringAPendingTeardownStaysLeftAligned) {
+  ContextMenuHost::Instance().SetCompactLayout(true);
+  // The first menu is a pull-down too (a phone's plain menu is the sheet, whose rows run on their own timing).
+  ui::Element* field = document_->GetElementById("field");
+  std::vector<ContextMenuAction> first = OneAction();
+  bool ran = false;
+  first.front().run = [field, &ran] {
+    ran = true;
+    ContextMenuHost::Instance().ShowActionsPopoverLeftAligned(field, OneAction());
+  };
+  ContextMenuHost::Instance().ShowActionsPopover(field, std::move(first));
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  ui::ElementList items;
+  document_->GetElementById("context-menu-layer")->GetElementsByClassName(items, "context-menu-item");
+  ASSERT_FALSE(items.empty());
+  items[0]->DispatchEvent(ui::EventId::Mousedown, Pointer(10, 10));
+  context_->Update();
+  ASSERT_TRUE(ran) << "the row's click ran its action";
+  ContextMenuHost::Instance().Update();
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  ui::Element* layer = document_->GetElementById("context-menu-layer");
+  ASSERT_NE(layer, nullptr);
+  EXPECT_TRUE(layer->IsClassSet("context-menu-layer--popover"));
+  EXPECT_TRUE(layer->IsClassSet("context-menu-layer--popover-left"));
+  ContextMenuHost::Instance().Dismiss();
+  ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
 TEST_F(ContextMenuPopoverTest, APopoverOnTheDesktopIsAPlainFloatMenu) {
   ContextMenuHost::Instance().ShowActionsPopover(document_->GetElementById("field"), OneAction());
   context_->Update();

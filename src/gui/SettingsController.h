@@ -74,6 +74,8 @@ public:
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Developer builds only: Settings -> About -> Engine test. Clear via BindOpenUiPerfTest({}). */
   void BindOpenUiPerfTest(std::function<void()> open);
+  /** Developer builds only: Settings -> About -> "Simulate: offline / online" drives the Chats header's status line. */
+  void BindSimulateChatsLink(std::function<void(bool online)> simulate);
   /** Phones: Me -> Appearance -> Home widgets opens the Edit Home sheet (ChatController). */
   void BindOpenHomeEdit(std::function<void()> open);
   void BindUnlockEnsure(UnlockEnsurePorts ports);
@@ -101,6 +103,9 @@ public:
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */
   void RefreshLocalizedChrome();
+  /** The vault has opened: the profile (name, picture) is readable now. The Chats bar and the AI drawer read it from
+   *  this model, which was filled while it was still locked. */
+  void OnProfileUnlocked();
   /** The unlock gate found face / fingerprint unlock gone (its pieces deleted): Security's switch reads off. */
   void OnBiometricLost();
   /** Refresh PP Support Me-row from client-compat discovery (via SettingsCommands). */
@@ -381,6 +386,7 @@ private:
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   std::function<void()> open_ui_perf_test_;
+  std::function<void(bool online)> simulate_chats_link_;
   std::function<void()> open_home_edit_;
   UnlockEnsurePorts unlock_ensure_;
   PinPromptPorts pin_prompt_;

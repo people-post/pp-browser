@@ -14,5 +14,10 @@ namespace pbr {
 std::string CallRingRml(const ShellState& state);
 /** The in-call chrome in its mode: Expanded (top bar), Immersive (people grid), Minimized (corner chip). */
 std::string CallInProgressRml(const ShellState& state);
+/**
+ * #166: the top (dp) the minimised chip's markup gives a dropped chip: where the gesture last put it for this place
+ * (kept in the band), else its share of the band with the heights last measured; < 0: no height known, no top.
+ */
+float MinimizedChipTopDp(const ShellState& state);
 
 } // namespace pbr

@@ -1,9 +1,20 @@
 <div class="ac-page" data-model="contacts">
-  <!-- The sheet's title row (.sheet-header) stays put above the content. -->
-  <div class="sheet-header">
-    <p class="sheet-title">{{i18n:contacts.add}}</p>
+  <!-- Full-screen page on phones (Kenneth 2026-11-07), like New chat: the shell's round back at the left of this bar. -->
+  <div class="pane-nav nc-bar ac-bar">
+    <p class="pane-nav-title nc-bar-title">{{i18n:contacts.add}}</p>
   </div>
   <div class="ac-scroll">
+    <!-- Two big cards side by side (Kenneth 2026-11-07): scan, and my own QR code. Same handlers the tiles used. -->
+    <div class="ac-top-cards" data-if="add_query == ''">
+      <div class="ac-top-card" data-if="can_scan" data-event-click="add_action('scan')">
+        <div class="ac-top-card-icon"><svg src="../icons/v2/camera.svg" width="22" height="22"></svg></div>
+        <p class="ac-top-card-label">{{i18n:contacts.add_sheet.scan}}</p>
+      </div>
+      <div class="ac-top-card" data-event-click="add_action('qr')">
+        <div class="ac-top-card-icon"><svg src="../icons/v2/qr-code.svg" width="22" height="22"></svg></div>
+        <p class="ac-top-card-label">{{i18n:contacts.add_sheet.my_qr}}</p>
+      </div>
+    </div>
     <div class="chat-search ac-search">
       <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
       <input class="chat-search-input" type="text" data-value="add_query"
@@ -40,14 +51,6 @@
 
       <!-- Four big tiles, two to a row (Kenneth 2026-11-04: the thin rows looked "小气"). -->
       <div class="ac-tiles">
-        <div class="ac-tile" data-if="can_scan" data-event-click="add_action('scan')">
-          <div class="ac-tile-disc"><svg class="ac-tile-icon" src="../icons/v2/camera.svg" width="28" height="28"></svg></div>
-          <p class="ac-tile-label">{{i18n:scan.title}}</p>
-        </div>
-        <div class="ac-tile" data-event-click="add_action('qr')">
-          <div class="ac-tile-disc"><svg class="ac-tile-icon" src="../icons/v2/qr-code.svg" width="28" height="28"></svg></div>
-          <p class="ac-tile-label">{{i18n:contacts.my_qr}}</p>
-        </div>
         <div class="ac-tile" data-event-click="add_action('invite')">
           <div class="ac-tile-disc"><svg class="ac-tile-icon" src="../icons/v2/user-plus.svg" width="28" height="28"></svg></div>
           <p class="ac-tile-label">{{i18n:contacts.invite_friends}}</p>

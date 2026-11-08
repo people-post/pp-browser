@@ -1,5 +1,7 @@
 #include "lib/ui/ShellInterruption.h"
 
+#include "lib/ui/ShellLayout.h"
+
 namespace pbr {
 
 InterruptionKind ShellInterruption::Top(const ShellState& state) {
@@ -24,7 +26,8 @@ InterruptionKind ShellInterruption::Top(const ShellState& state) {
   if (state.layout_mode == LayoutMode::Compact && state.auxiliary_open) {
     return InterruptionKind::AuxiliarySheet;
   }
-  if (state.layout_mode == LayoutMode::Compact && state.compact_chat_open) {
+  // Under a hidden tab's page (phone Me / Contacts) the chat overlay waits: that page is on top, not the overlay.
+  if (state.layout_mode == LayoutMode::Compact && state.compact_chat_open && !ShellLayout::HiddenTabShown(state)) {
     return InterruptionKind::CompactChatOverlay;
   }
   return InterruptionKind::None;

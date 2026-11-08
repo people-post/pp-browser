@@ -121,6 +121,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
     session_handle.RegisterMember("id", &SessionDisplayRow::id);
     session_handle.RegisterMember("title", &SessionDisplayRow::title);
     session_handle.RegisterMember("preview", &SessionDisplayRow::preview);
+    session_handle.RegisterMember("preview_empty", &SessionDisplayRow::preview_empty);
     session_handle.RegisterMember("kind", &SessionDisplayRow::kind);
     session_handle.RegisterMember("unread_count", &SessionDisplayRow::unread_count);
     session_handle.RegisterMember("unread_display", &SessionDisplayRow::unread_display);
@@ -190,6 +191,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   ctor.Bind("archived_entry_label", &state.archived_entry_label);
   ctor.Bind("sessions_more", &state.sessions_more);
   ctor.Bind("sessions_query", &state.sessions_query);
+  ctor.Bind("ai_sessions_query", &state.ai_sessions_query);
   ctor.Bind("working_set_active", &state.working_set_active);
   ctor.Bind("working_set_title", &state.working_set_title);
   ctor.Bind("working_set_subtitle", &state.working_set_subtitle);

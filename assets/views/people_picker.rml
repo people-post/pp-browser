@@ -75,7 +75,11 @@
     </div>
 
     <div class="people-picker-footer row">
-      <button class="btn btn-secondary" type="button" data-event-click="back_picker()">{{i18n:common.back}}</button>
+      <button class="btn btn-secondary people-picker-back-text" type="button" data-event-click="back_picker()">{{i18n:common.back}}</button>
+      <!-- Phones: the round back (DEV/PLAN-minimal-nav.md G); the desktop keeps the word. -->
+      <button class="shell-circle-btn people-picker-back-circle" type="button" data-event-click="back_picker()">
+        <span class="shell-circle-btn-face"><svg src="../icons/v2/back.svg" width="24" height="24"></svg></span>
+      </button>
       <button class="btn btn-primary" type="button" data-event-click="create_group()">
         {{i18n:people_picker.cta_create_group}}
       </button>
