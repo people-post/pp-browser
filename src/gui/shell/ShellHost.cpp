@@ -81,7 +81,7 @@ constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
 /** Fallback emoji panel height when the OSK has never been shown this session. */
 constexpr int kDefaultEmojiKeyboardPanelDp = 280;
 /** The AI drawer's "you" row above the home indicator (.ai-drawer-me: min-height, bottom padding). */
-constexpr float kAiDrawerMeHeightDp = 56.f;
+constexpr float kAiDrawerMeHeightDp = 64.f;
 constexpr float kAiDrawerMePaddingDp = 8.f;
 
 } // namespace
@@ -124,6 +124,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("auxiliary_open", &host.state_.auxiliary_open);
     ctor.Bind("sidebar_collapsed", &host.state_.sidebar_collapsed);
     ctor.Bind("large_title_collapsed", &host.state_.large_title_collapsed);
+    ctor.Bind("chats_link_state", &host.state_.chats_link_state);
+    ctor.Bind("chats_link_text", &host.state_.chats_link_text);
     ctor.Bind("auxiliary_available", &host.state_.auxiliary_available);
     ctor.Bind("transient_active", &host.state_.transient_active);
     ctor.Bind("banner_message", &host.state_.banner_message);
@@ -765,6 +767,18 @@ void ShellHost::SetLargeTitleCollapsed(const bool collapsed) {
   }
   state_.large_title_collapsed = collapsed;
   DataModelHost::Instance().Dirty("window", "large_title_collapsed");
+}
+
+void ShellHost::SetChatsLink(const bool known, const bool online) {
+  const ui::String state = !known ? "" : (online ? "ok" : "offline");
+  const ui::String text = !known ? ui::String() : ui::String(Tr(online ? "shell.chats.link_online" : "shell.chats.link_offline").c_str());
+  if (state_.chats_link_state == state && state_.chats_link_text == text) {
+    return;
+  }
+  state_.chats_link_state = state;
+  state_.chats_link_text = text;
+  DataModelHost::Instance().Dirty("window", "chats_link_state");
+  DataModelHost::Instance().Dirty("window", "chats_link_text");
 }
 
 void ShellHost::OpenCompactChat() {

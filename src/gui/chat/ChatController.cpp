@@ -1313,6 +1313,7 @@ SessionDisplayRow ToSessionDisplayRow(const ChatSessionRow& from) {
   row.id = from.id.c_str();
   row.title = from.title_is_default_ai ? Tr("chat.new_chat").c_str() : from.title.c_str();
   row.preview = from.preview.c_str();
+  row.preview_empty = from.preview_empty;
   row.avatar_letter = from.avatar_letter.c_str();
   row.avatar_tone = from.avatar_tone;
   row.has_icon = !from.icon_path.empty();
@@ -1363,7 +1364,7 @@ void ChatController::ApplySessionList() {
   for (size_t i = 0; i < visible; ++i) {
     const ChatSessionRow& from = list.rows[i];
     SessionRow row = ToSessionDisplayRow(from);
-    if (searching && !SessionRowMatches(row.title.c_str(), from.preview, query)) {
+    if (searching && !SessionRowMatches(row.title.c_str(), from.preview_empty ? std::string() : from.preview, query)) {
       continue;
     }
     shell_.sessions.push_back(std::move(row));
@@ -1384,7 +1385,7 @@ void ChatController::ApplySessionList() {
   for (size_t i = 0; i < ai_visible; ++i) {
     const ChatSessionRow& from = list.ai_rows[i];
     SessionRow row = ToSessionDisplayRow(from);
-    if (SessionRowMatches(row.title.c_str(), from.preview, ai_query)) {
+    if (SessionRowMatches(row.title.c_str(), from.preview_empty ? std::string() : from.preview, ai_query)) {
       shell_.ai_sessions.push_back(std::move(row));
     }
   }

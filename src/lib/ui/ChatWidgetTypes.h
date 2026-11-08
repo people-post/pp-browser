@@ -115,6 +115,8 @@ struct SessionDisplayRow {
   ui::String id;
   ui::String title;
   ui::String preview;
+  /** `preview` is the "no messages yet" placeholder (ChatSessionRow::preview_empty): the row draws it quieter. */
+  bool preview_empty = false;
   /** Visual chat type: ai | private | public | group */
   ui::String kind;
   int unread_count = 0;

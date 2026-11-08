@@ -48,6 +48,35 @@ TEST(HubParticipantTest, NetworkChangesReachParticipantsInOrderWithTheMeshsView)
   hub.ClearParticipants();
 }
 
+// The Chats header's status line: the OS monitor's online flag reaches the UI callback on the first report (the baseline)
+// and on each flip, never twice for the same value; NetworkOnline() holds the latest (-1 until the first report).
+TEST(HubParticipantTest, TheDevicesOnlineFlagIsReportedOnFirstReportAndEachFlipOnly) {
+  ConversationsHub hub;
+  std::vector<std::string> seen;
+  hub.SetOnNetworkOnlineChanged([&](bool known, bool online) { seen.push_back(std::string(known ? "k" : "u") + (online ? "1" : "0")); });
+  EXPECT_EQ(hub.NetworkOnline(), -1);
+
+  NetworkChange baseline;
+  baseline.current.online = false;
+  hub.OnLocalNetworkChanged(baseline);
+  EXPECT_EQ(seen, (std::vector<std::string>{"k0"}));
+  EXPECT_EQ(hub.NetworkOnline(), 0);
+
+  NetworkChange again = baseline;
+  again.generation = 1;
+  hub.OnLocalNetworkChanged(again);
+  EXPECT_EQ(seen.size(), 1u) << "same value, no event";
+
+  NetworkChange back = baseline;
+  back.generation = 2;
+  back.previous.online = false;
+  back.current.online = true;
+  hub.OnLocalNetworkChanged(back);
+  EXPECT_EQ(seen, (std::vector<std::string>{"k0", "k1"}));
+  EXPECT_EQ(hub.NetworkOnline(), 1);
+  hub.SetOnNetworkOnlineChanged(nullptr);
+}
+
 TEST(HubParticipantTest, TheWayDownRunsInReverseAndClearedParticipantsHearNothing) {
   std::vector<std::string> log;
   RecordingParticipant calls("calls", log);

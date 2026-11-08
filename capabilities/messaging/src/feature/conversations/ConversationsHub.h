@@ -455,6 +455,13 @@ public:
   std::vector<GroupInviteGate::InviteInCall> GroupInvitesInCall(const std::string& call_id) const;
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
+  /**
+   * The device's own link came or went (OS network monitor, any thread, fired on a change and once for the first
+   * report). known=false never fires today; the current value is NetworkOnline(). Set before StartNetworkWatch.
+   */
+  void SetOnNetworkOnlineChanged(std::function<void(bool known, bool online)> callback);
+  /** -1 = no report yet, 0 = offline, 1 = online. */
+  int NetworkOnline() const { return network_online_.load(); }
 
   void BindAgentInbound(AgentInboundPorts ports);
   PeerSigningKeyStore& SigningKeys();
@@ -688,6 +695,8 @@ private:
   bool reachability_banner_shown_ = false;
   uint64_t reachability_outbound_since_ms_ = 0;
   std::function<void()> on_reachability_updated_;
+  std::function<void(bool known, bool online)> on_network_online_changed_;
+  std::atomic<int> network_online_{-1};
   std::function<void()> on_peer_icons_changed_;
   /** Me → Storage's callbacks: set on the UI thread, read (copied under the lock) where a change is reported. */
   std::mutex storage_callbacks_mu_;

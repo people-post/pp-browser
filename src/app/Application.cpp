@@ -1320,6 +1320,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   if (ui_perf_) {
     ui_perf_->BindShellNavigation(shell_navigation);
     settings_->BindOpenUiPerfTest([this]() { ui_perf_->Open(); });
+    settings_->BindSimulateChatsLink([this](const bool online) { shell_->SetChatsLink(true, online); });
   }
   emoji_picker_->BindShellNavigation(shell_navigation);
   emoji_picker_->BindShellFeedback(shared_feedback);
@@ -2080,6 +2081,7 @@ bool Application::MountPresenters(ui::Context* context) {
     }
     if (ui_perf_) {
       settings_->BindOpenUiPerfTest({});
+      settings_->BindSimulateChatsLink({});
       ui_perf_->BindShellNavigation({});
     }
     if (client_compat_) {
@@ -2259,6 +2261,14 @@ void Application::WireHubCallbacks() {
       settings_->SyncReachability();
       if (badges_) {
         badges_->Refresh();
+      }
+    });
+  });
+  // The Chats header's status line: the OS monitor reports on its own thread, the shell updates on the UI thread.
+  messaging.SetOnNetworkOnlineChanged([this](const bool known, const bool online) {
+    AppRuntime::PostUI([this, known, online]() {
+      if (shell_) {
+        shell_->SetChatsLink(known, online);
       }
     });
   });
@@ -2703,6 +2713,7 @@ void Application::Shutdown() {
     messaging_->SetOnMessagingReady(nullptr);
     messaging_->SetOnMeshReady(nullptr);
     messaging_->SetOnReachabilityUpdated(nullptr);
+    messaging_->SetOnNetworkOnlineChanged(nullptr);
     messaging_->SetOnPeerIconsChanged(nullptr);
     messaging_->SetOnCallWake(nullptr);
   }

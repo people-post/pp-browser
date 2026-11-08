@@ -21,6 +21,7 @@ warn	#ff9500	#ff9f0a	§2.3
 mention	#5856d6	#5e5ce6	§2.3
 mention-row	#fff4e0	#3a2e14	§2.3 (left bar = warn)
 separator	#3c3c434a	#54545899	§2.4
+bg-field	#f4f4f8	#242426	extra: the phone Chats search box, lighter than bg-card-2
 fill	#78788033	#7878805c	§2.4
 fill-2	#7878801f	#7878803d	§2.4
 gray	#8e8e93	#8e8e93	§2.4
@@ -31,7 +32,6 @@ quote-bar	#007aff	#0a84ff	§2.5 = accent
 quote-bg-out	#ffffff33	#ffffff33	§2.5 (also in-bubble chip / selection)
 quote-bg-in	#0000000f	#0000000f	§2.5 quote block in a received bubble (black 6%)
 bubble-out-meta	#ffffffd9	#ffffffd9	§2.5 in-bubble time in a sent bubble (white 85%)
-unread	#007aff	#0a84ff	§2.5 = accent
 tab-badge	#ff3b30	#ff453a	§2.5 = danger
 avatar-0	#007aff	#007aff	§2.6
 avatar-1	#34c759	#34c759	§2.6

@@ -1554,6 +1554,11 @@ input.checkbox:checked {
   color: #ebebf599;
 }
 
+/* A thread with no message yet: the placeholder is quieter than a real preview (the presenter's preview_empty). */
+.sidebar-session--empty .sidebar-session-preview {
+  color: #ebebf54c;
+}
+
 .sidebar-session-icon {
   background-color: #2c2c2e;
 }
@@ -1575,11 +1580,11 @@ input.checkbox:checked {
 }
 
 .sidebar-unread-dot {
-  background-color: #0a84ff;
+  background-color: #40c8e0;
 }
 
-.sidebar-unread {
-  background-color: #0a84ff;
+.badge-count.sidebar-unread {
+  background-color: #40c8e0;
   color: #ffffff;
 }
 
@@ -1662,7 +1667,7 @@ input.checkbox:checked {
 }
 
 .chat-search {
-  background-color: #2c2c2e;
+  background-color: #242426;
 }
 
 .chat-search-icon {
@@ -3451,6 +3456,30 @@ input.checkbox:checked {
 .shell-layer-compact .shell-circle-btn:active .shell-circle-btn-face {
   background-color: #7878805c;
   decorator: linear-gradient(to bottom, #7878805c, #7878805c);
+}
+
+/* Chats header plus (B3): a flat teal-tint disc with a teal plus; no 3-D gradient, no shadow. */
+.shell-layer-compact .pane-nav-plus .shell-circle-btn-face,
+.shell-layer-compact .pane-nav-plus:active .shell-circle-btn-face {
+  background-color: #40c8e02e;
+  decorator: none;
+  box-shadow: none;
+}
+
+.shell-layer-compact .pane-nav-actions .pane-nav-plus .shell-circle-btn-face svg {
+  image-color: #40c8e0;
+}
+
+.pane-nav-link-icon--ok {
+  image-color: #40c8e0;
+}
+
+.pane-nav-link-icon--offline {
+  image-color: #ff453a;
+}
+
+.pane-nav-link-text {
+  color: #ebebf599;
 }
 
 .shell-layer-compact .shell-circle-btn .shell-circle-btn-face svg {

@@ -106,6 +106,20 @@ inline std::string SessionPreviewLine(std::string_view raw, const size_t max_cha
   return line;
 }
 
+/** A row's second line: the preview, or the placeholder when the thread has no text yet (so the row keeps its height). */
+struct SessionPreviewShown {
+  std::string text;
+  /** `text` is the placeholder: the row draws it quieter and a search ignores it. */
+  bool placeholder = false;
+};
+
+inline SessionPreviewShown ResolveSessionPreview(std::string line, std::string placeholder) {
+  if (line.empty()) {
+    return {std::move(placeholder), true};
+  }
+  return {std::move(line), false};
+}
+
 /**
  * The AI thread a Home chip should continue instead of starting another one: the most recently updated
  * AI thread whose title is the chip's own (titles come from the first message, and a chip always sends

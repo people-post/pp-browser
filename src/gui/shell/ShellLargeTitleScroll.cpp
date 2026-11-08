@@ -12,8 +12,8 @@ constexpr const char* kScrollerClass = "root-scroll";
 
 } // namespace
 
-bool ShellLargeTitleScroll::CollapsedAt(const float scroll_top_px, const float dp_ratio) {
-  return scroll_top_px >= kLargeTitleDp * (dp_ratio > 0.f ? dp_ratio : 1.f);
+bool ShellLargeTitleScroll::CollapsedAt(const float scroll_top_px, const float dp_ratio, const float threshold_dp) {
+  return scroll_top_px >= threshold_dp * (dp_ratio > 0.f ? dp_ratio : 1.f);
 }
 
 void ShellLargeTitleScroll::Attach(ui::Element* page, Changed on_change) {
@@ -55,13 +55,15 @@ void ShellLargeTitleScroll::ProcessEvent(ui::Event& event) {
 void ShellLargeTitleScroll::Report(ui::Element* scroller) {
   float ratio = 1.f;
   float top = 0.f;
+  float threshold_dp = kLargeTitleDp;
   if (scroller) {
+    threshold_dp = scroller->GetAttribute<float>("collapse-at", kLargeTitleDp);
     if (ui::Context* context = scroller->GetContext()) {
       ratio = context->GetDensityIndependentPixelRatio();
     }
     top = scroller->GetScrollTop();
   }
-  const bool collapsed = CollapsedAt(top, ratio);
+  const bool collapsed = CollapsedAt(top, ratio, threshold_dp);
   if (collapsed == collapsed_) {
     return;
   }
