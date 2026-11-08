@@ -694,11 +694,23 @@ protected:
   }
 
   /** Pump (with real time passing — retire timers run on the steady clock) until `done`. */
+  /**
+   * Pumps in real time, and the harness's virtual clock with it: Amp's housekeeping (io ticks, link sweeps) runs
+   * on its 50 ms cadence of that clock, and PumpAll alone adds 1 ms a round — on a slow runner (macos-15) the
+   * migration's tick-driven steps did not fit the budget.
+   */
   bool PumpRealUntil(const std::function<bool()>& done, std::chrono::milliseconds budget) {
-    const auto until = std::chrono::steady_clock::now() + budget;
+    auto last = std::chrono::steady_clock::now();
+    const auto until = last + budget;
     while (!done() && std::chrono::steady_clock::now() < until) {
       harness_->PumpAll();
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      const auto now = std::chrono::steady_clock::now();
+      const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last).count();
+      if (elapsed > 1) {
+        harness_->clock->Advance(elapsed - 1); // PumpAll advanced 1
+      }
+      last = now;
     }
     return done();
   }

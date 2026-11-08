@@ -200,12 +200,12 @@ How much a node serving others takes on. Each is a hard limit and the 1.0 of its
 
 | Key | Default | What it counts |
 |-----|---------|----------------|
-| `links` | `8192` | Amp links — one per client, whatever it uses |
+| `links` | `16384` | Amp links — one per client, whatever it uses |
 | `reservations` | `8192` | Parked answerers (phones that stay reachable through this node) |
 | `bridges` | `4096` | Live 1:1 relayed calls and other circuits |
 | `group_calls` | `512` | Group calls hosted (`media_relay` sessions) |
 
-The link default is measured ([STRESS_LAB.md](STRESS_LAB.md)): on two cores a parked client renewing every 10 s costs ~20 KB, and the node's one pump thread saturates past ~11k links, so 8192 keeps an idle table near half a core. Size it to the machine: a smaller node lower, a bigger one only once the stress lab says its pump keeps up.
+The link default is measured ([STRESS_LAB.md](STRESS_LAB.md)): on two cores a parked client renewing every 10 s costs ~20 KB of memory, 12k links take 17 % of a core and 20k 46 %, and the node's one pump thread saturates past ~23k links, so 16384 keeps an idle table near a third of a core. `reservations` (8192) caps the parked phones below that. Size it to the machine: a smaller node lower, a bigger one only once the stress lab says its pump keeps up.
 
 ### Mesh DHT (n2)
 

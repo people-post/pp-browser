@@ -21,11 +21,11 @@ scripts/test/pp_node_stress.py bridges --build build-pp-node --pairs 100 --durat
 - **Out:** a line a second (node CPU, RSS, links, its three levels; the clients' parked / attached / bridged, frames, refusals by level, latency p95), a summary, and `--out` JSON with the node's watched metrics each second.
 - **Buffers:** the lab host's `net.core.rmem_max` caps what the node's socket gets ([BUILD.md § pp-node](BUILD.md#headless-mesh-node-pp-node)); `pp_udp_receive_buffer_bytes` shows it.
 
-## Measured (2026-11-07, Release, two cores, 208 KiB socket buffers)
+## Measured (Release, two cores, 208 KiB socket buffers; parked 2026-11-08 with pp-cpp-amp v5.1.0, the rest 2026-11-07)
 
 | Load | Holds up to | Then |
 |------|-------------|------|
-| Parked clients, renewing every 10 s | 8000: 56 % of a core, 162 MB (2000: 4 %, 4000: 13 %; ~20 KB a link) | Past ~11k the pump saturates (level full) and the node sheds to ~7-8k parked. The CPU grows faster than the count: Amp walks the link table each tick. Default capacity 8192 links ([CONFIGURATION.md](CONFIGURATION.md#node-capacity-meshcapacity)) |
+| Parked clients, renewing every 10 s | 20000: 46 % of a core (6000: 5 %, 12000: 17 %; ~20 KB a link) | Past ~23k the pump saturates (level full) and the node sheds load — badly (5). Default capacity 16384 links ([CONFIGURATION.md](CONFIGURATION.md#node-capacity-meshcapacity)). Under Amp v5.0.3, whose walks over every link ran every pump round, 6000 cost ~40 % of a core and the ceiling was ~11k |
 | Group calls, 4 members, 500 kbps video + 32 kbps audio | 50 calls (200 members): ~100 % delivered, 23 % CPU, pump 34 % busy, level open | 100 calls: kernel drops begin (the socket buffer, not the CPU: pump 40 % busy), 98 % delivered, level busy → full. 150: 88 %, new attaches refused `full` |
 | Relayed pairs (reliable channel) | 100 pairs (105 Mbps): 100 %, 25 % CPU, level open | 200 pairs: kernel drops, 92 %, level full. 300: 28 % (the probe's channel resends into the drops) |
 
@@ -36,14 +36,14 @@ The node says `busy` / `full` before its members feel it, and new work goes else
 ## What limits a node
 
 1. **Socket buffers** — on Release the first limit for media: the OS default (208 KiB) overflows in bursts while the pump has room. Kernel drops are `pp_udp_receive_drops` and a pressure. Hosts should raise the cap (`packaging/pp-node/99-pp-node-udp.conf`).
-2. **One pump thread does the data plane**, sealing every fan-out copy per recipient (XChaCha20-Poly1305), and walking the link table each tick: past ~11k links it saturates one core while the worker pool idles. Its busy share is `pp_io_busy_fraction` and a pressure on every level.
+2. **One pump thread does the data plane**, sealing every fan-out copy per recipient (XChaCha20-Poly1305), and walking the link table on its 50 ms cadence: past ~23k parked links it saturates one core while the worker pool idles. Its busy share is `pp_io_busy_fraction` and a pressure on every level.
 3. **Media waits without an age limit.** Call media is best effort on every normal path ([V063](../../projects/p2p-av-calls/DECISIONS.md#v063--call-audio-is-best-effort-the-codec-recovers-losses)), but a frame can wait in a link's send queue (the mux holds up to 32 MiB) for seconds; under overload media arrives late instead of being dropped.
 4. **New links cost a handshake** (ML-DSA): ~300 new clients a second fill two cores, and the node says full meanwhile.
-5. **An overloaded node loses parked clients**: once the pump saturates, renewals and keepalives run late, links time out, and their clients redial into the same overload (8k → ~25 parked on a Debug build; on Release the node settles near 7-8k).
+5. **An overloaded node loses parked clients**: once the pump saturates, renewals and keepalives run late, links time out, and their clients redial into the same overload (32k offered on Amp v5.1.0: ~23k parked, then ~2k).
 
 ## Open
 
 - A deadline on real-time media in the send queue (3), and the data plane on more than one thread (2): a design of their own.
-- The link-table walks in Amp (2): on pp-cpp-amp develop (2026-11-08, not yet released) resends and queued sends are event-driven and the walks run every 50 ms. Measured there (perf: ~85 % of a parked node's CPU was walks): 6000 parked at 5 % of a core (was ~40 %), 12000 at 17 %, 20000 at 46 %; the pump saturates past ~23k (was ~11k). Once released and pinned, the link default (8192) can follow.
+- What is left of the walks (2): perf at 15k parked puts ~45 % of the node's CPU in the 50 ms walk (each mux's tick and its keepalive tier) and ~11 % in per-event scans (a link's drop, an inbound's adoption). A cached keepalive tier and indexed scans would cut most of it.
 - Thresholds per machine type (the 0.70 / 0.95 lines are first guesses); a run on the org seeds' size with the host's buffers raised.
 - Restart storms and an overloaded node's lost parks (4–5), as one piece of work: every parked client redialing at once is the same spiral. Then a soak, and abuse (one client's uncapped bandwidth through a bridge).
