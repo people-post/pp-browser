@@ -396,8 +396,15 @@ void ConversationsHub::OnLocalNetworkChanged(const NetworkChange& change) {
     // A tunnel with nothing under it (airplane mode, VPN still on) counts as offline for the status line.
     const bool linked = change.current.online && !change.current.tunnel_only;
     const int online = linked ? 1 : 0;
-    if (network_online_.exchange(online) != online && on_network_online_changed_) {
-      on_network_online_changed_(true, linked);
+    if (network_online_.exchange(online) != online) {
+      std::function<void(bool, bool)> callback;
+      {
+        std::lock_guard lock(network_online_cb_mu_); // the monitor thread vs. Shutdown's reset
+        callback = on_network_online_changed_;
+      }
+      if (callback) {
+        callback(true, linked);
+      }
     }
   }
   // Offline or an unknown link keeps the last known kind of network.
@@ -1511,6 +1518,7 @@ void ConversationsHub::SetOnReachabilityUpdated(std::function<void()> callback) 
 }
 
 void ConversationsHub::SetOnNetworkOnlineChanged(std::function<void(bool known, bool online)> callback) {
+  std::lock_guard lock(network_online_cb_mu_);
   on_network_online_changed_ = std::move(callback);
 }
 

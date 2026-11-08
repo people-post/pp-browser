@@ -695,6 +695,7 @@ private:
   bool reachability_banner_shown_ = false;
   uint64_t reachability_outbound_since_ms_ = 0;
   std::function<void()> on_reachability_updated_;
+  std::mutex network_online_cb_mu_;
   std::function<void(bool known, bool online)> on_network_online_changed_;
   std::atomic<int> network_online_{-1};
   std::function<void()> on_peer_icons_changed_;

@@ -5810,6 +5810,7 @@ call-video-tile {
   display: flex;
   flex-direction: row;
   justify-content: center;
+  pointer-events: none;
 }
 
 .call-phone-reconnect {

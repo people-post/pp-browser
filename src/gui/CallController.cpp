@@ -1764,6 +1764,8 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
     in_call.elapsed = FormatElapsed(call_live_since_ms);
     in_call.subtitle = in_call.elapsed;  // greyed; the capsule says "Reconnecting…"
   } else if (stalling) {
+    // Remote video stalled: the timer keeps running (greyed); the capsule says "Reconnecting…".
+    in_call.elapsed = FormatElapsed(call_live_since_ms);
     in_call.subtitle = in_call.elapsed;
   } else if (backend && backend->Available() && backend->MediaChromeLive()) {
     // Provisional Connected — ApplyMediaHealth may override for NoAudio / TX-only / Degraded.
