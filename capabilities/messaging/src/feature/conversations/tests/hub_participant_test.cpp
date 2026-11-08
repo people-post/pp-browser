@@ -74,6 +74,16 @@ TEST(HubParticipantTest, TheDevicesOnlineFlagIsReportedOnFirstReportAndEachFlipO
   hub.OnLocalNetworkChanged(back);
   EXPECT_EQ(seen, (std::vector<std::string>{"k0", "k1"}));
   EXPECT_EQ(hub.NetworkOnline(), 1);
+
+  // Airplane mode with a VPN left on (iPhone 2026-11-08): the path stays satisfied over the tunnel alone → offline.
+  NetworkChange tunnel = back;
+  tunnel.generation = 3;
+  tunnel.previous.online = true;
+  tunnel.current.online = true;
+  tunnel.current.tunnel_only = true;
+  hub.OnLocalNetworkChanged(tunnel);
+  EXPECT_EQ(seen, (std::vector<std::string>{"k0", "k1", "k0"}));
+  EXPECT_EQ(hub.NetworkOnline(), 0);
   hub.SetOnNetworkOnlineChanged(nullptr);
 }
 

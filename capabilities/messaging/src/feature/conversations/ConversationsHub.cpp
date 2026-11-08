@@ -393,9 +393,11 @@ void ConversationsHub::OnLocalNetworkChanged(const NetworkChange& change) {
     participant->OnLocalNetworkChanged(change, local ? &*local : nullptr);
   }
   {
-    const int online = change.current.online ? 1 : 0;
+    // A tunnel with nothing under it (airplane mode, VPN still on) counts as offline for the status line.
+    const bool linked = change.current.online && !change.current.tunnel_only;
+    const int online = linked ? 1 : 0;
     if (network_online_.exchange(online) != online && on_network_online_changed_) {
-      on_network_online_changed_(true, change.current.online);
+      on_network_online_changed_(true, linked);
     }
   }
   // Offline or an unknown link keeps the last known kind of network.
