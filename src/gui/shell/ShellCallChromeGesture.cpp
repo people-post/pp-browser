@@ -110,6 +110,7 @@ void ShellCallChromeGesture::Detach() {
   target_.reset();
   docked_ = true;
   next_reflow_s_ = 0.0;
+  reflow_area_height_dp_ = 0.f;
   layout_.reset();
   if (released) {
     released();
@@ -359,6 +360,7 @@ void ShellCallChromeGesture::DropChip() {
     SetChipOffset(0.f, 0.f, true);
     return;
   }
+  reflow_area_height_dp_ = area.height_dp;
   // ① Where it shows as the finger leaves it: its laid-out box moved by the drag's translate.
   const float drag_dx = chip_dx_dp_;
   const float drag_dy = chip_dy_dp_;
@@ -461,6 +463,7 @@ void ShellCallChromeGesture::DockChip(const CallChipPlace& place) {
   if (!root_ || !MeasureChip(&chip, &area)) {
     return;
   }
+  reflow_area_height_dp_ = area.height_dp;
   const CallChipPoint at = CallChipDock::Place(place, area, chip.width_dp, chip.height_dp);
   root_->SetClass(kDefaultCornerClass, false);
   root_->RemoveProperty("width");
@@ -542,6 +545,17 @@ void ShellCallChromeGesture::Reflow(const CallInProgressState& call) {
   if (!MeasureChip(&chip, &area)) {
     return; // not laid out yet (a chip just mounted): the next frame looks again
   }
+  // The frame after a rebuild lays the layer out at a transient height (iPhone trace 2026-11-08: the band collapsed,
+  // the chip went to 12dp and 250ms later back to its place). A chip resting in the band is only moved for a layer
+  // height seen on two frames in a row, and no chip is moved into a band with no room in it. One not yet in the band
+  // (rebuilt with no top) is placed at once: a frame at the wrong spot would show.
+  const bool band_collapsed = CallChipDock::MaxTop(area, chip.height_dp) <= CallChipDock::MinTop();
+  const bool area_settled = std::fabs(area.height_dp - reflow_area_height_dp_) < 0.5f;
+  reflow_area_height_dp_ = area.height_dp;
+  const bool resting = docked_ && chip.top_dp >= CallChipDock::MinTop() - 0.5f;
+  if (band_collapsed || (resting && !area_settled)) {
+    return; // the next frame measures again
+  }
   next_reflow_s_ = now + kReflowIntervalSeconds;
   reflowed_place_ = place;
   const float top = CallChipDock::Place(place, area, chip.width_dp, chip.height_dp).top_dp;
@@ -550,6 +564,8 @@ void ShellCallChromeGesture::Reflow(const CallInProgressState& call) {
         .Add("what", "reflow")
         .Add("top_before", Dp(chip.top_dp))
         .Add("top_after", Dp(top))
+        .Add("layer_h", Dp(area.height_dp))
+        .Add("chip_h", Dp(chip.height_dp))
         .Add("docked", docked_)
         .Add("animated", false)
         .Emit();

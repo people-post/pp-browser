@@ -135,6 +135,8 @@ private:
   double slide_deadline_s_ = 0.0;
   double next_reflow_s_ = 0.0;
   CallChipPlace reflowed_place_;
+  /** The layer height Reflow measured last frame: a docked chip moves only for a height seen twice in a row. */
+  float reflow_area_height_dp_ = 0.f;
   std::optional<CallChipLayout> layout_;
 };
 
