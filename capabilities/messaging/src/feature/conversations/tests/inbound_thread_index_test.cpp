@@ -22,11 +22,11 @@ TEST(InboundThreadIndexTest, EmptyIdsAreIgnored) {
   EXPECT_EQ(index.Find("m1"), std::nullopt);
 }
 
-TEST(InboundThreadIndexTest, ARememberedIdMovesToItsLatestThread) {
+TEST(InboundThreadIndexTest, ARememberedIdKeepsItsFirstThread) {
   InboundThreadIndex index;
   index.Remember("m1", "t1");
   index.Remember("m1", "t2");
-  EXPECT_EQ(index.Find("m1"), std::optional<std::string>("t2"));
+  EXPECT_EQ(index.Find("m1"), std::optional<std::string>("t1"));
 }
 
 TEST(InboundThreadIndexTest, TheOldestEntryGoesFirstAtCapacity) {
@@ -34,7 +34,7 @@ TEST(InboundThreadIndexTest, TheOldestEntryGoesFirstAtCapacity) {
   for (size_t i = 0; i < InboundThreadIndex::kCapacity; ++i) {
     index.Remember("m" + std::to_string(i), "t");
   }
-  index.Remember("m0", "t-again");  // an update does not refresh its age or grow the index
+  index.Remember("m0", "t-again");  // a repeat does not refresh its age or grow the index
   index.Remember("new", "t");
   EXPECT_EQ(index.Find("m0"), std::nullopt);
   EXPECT_EQ(index.Find("m1"), std::optional<std::string>("t"));
