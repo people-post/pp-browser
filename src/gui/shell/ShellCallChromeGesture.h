@@ -37,8 +37,9 @@ public:
     std::function<void()> on_restore;
     /** #166: the chip was dropped; where it now rests (CallChipDock: side 1 left / 2 right, height 0..1000). */
     std::function<void(int side, int y_permille)> on_chip_place;
-    /** #166: the chip's slide to its side has ended and it is anchored there. */
-    std::function<void()> on_chip_settled;
+    /** #166: the gesture let go of the chip's position: its slide ended (it is anchored on its side), a press ended
+     * without a drop (a tap, an aborted drag), or the gesture was detached. A rebuild held meanwhile may run now. */
+    std::function<void()> on_chip_released;
   };
 
   void Attach(ui::Element* root, ui::Context* context, CallChromeMode mode, Callbacks callbacks,
@@ -97,6 +98,7 @@ private:
   /** The slide reached the side: anchor the chip there (right: `right`, left: `left`), at its band height. */
   void FinishSlide();
   void DockChip(const CallChipPlace& place);
+  void NotifyChipReleased();
 
   ui::Element* root_ = nullptr;
   ui::ElementDocument* document_ = nullptr;
