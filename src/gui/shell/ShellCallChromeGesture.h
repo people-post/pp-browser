@@ -60,7 +60,10 @@ public:
    * dirties its text until this is false.
    */
   bool HoldsChip(const CallInProgressState& call) const;
-  /** #166: once a frame (before the layout): keeps a dropped chip on its side and in its band as sizes change. */
+  /** #166: where this gesture last put a dropped chip (the drop's slide end, the dock, a correction); nullopt: none. */
+  const std::optional<CallChipLayout>& Layout() const { return layout_; }
+  /** #166: once a frame (before the layout): keeps a dropped chip on its side and in its band as sizes change. Its
+   * corrections are put in place at once (never slid). */
   void Reflow(const CallInProgressState& call);
 
 private:
@@ -130,6 +133,7 @@ private:
   double slide_deadline_s_ = 0.0;
   double next_reflow_s_ = 0.0;
   CallChipPlace reflowed_place_;
+  std::optional<CallChipLayout> layout_;
 };
 
 /**
@@ -143,6 +147,9 @@ private:
  * its drop, its slide and the remount hold all act on this element); otherwise the call chrome root.
  */
 ui::Element* CallChromeGestureElement(ui::ElementDocument* doc, CallChromeMode mode);
+
+/** #166: copies `gesture`'s last chip layout (if any) over `into` (ShellHost, before it renders the chip). */
+void RememberCallChipLayout(const ShellCallChromeGesture& gesture, CallChipLayout& into);
 
 bool KeepMinimizedChipOnRemount(const CallInProgressState& call, const ui::Element* chip,
                                 const ShellCallChromeGesture& gesture);

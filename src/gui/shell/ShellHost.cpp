@@ -2607,15 +2607,18 @@ void ShellHost::MeasureCallChip(ui::ElementDocument* doc) {
   if (ui::Element* mount = doc->GetElementById("shell-call-in-progress-mount")) {
     const float height = mount->GetBox().GetSize(ui::BoxArea::Padding).y;
     if (height > 0.f) {
-      state_.call_chip_area_height_dp = height / ratio;
+      state_.call_chip_layout.area_height_dp = height / ratio;
     }
   }
   if (ui::Element* chip = doc->GetElementById("shell-call-minimized-chip")) {
     const float height = chip->GetBox().GetSize(ui::BoxArea::Border).y;
     if (height > 0.f) {
-      state_.call_chip_height_dp = height / ratio;
+      state_.call_chip_layout.chip_height_dp = height / ratio;
     }
   }
+  // Where the gesture last put a dropped chip (at the drop: the slide's end), with the heights it measured then: a
+  // rebuild lands exactly there, mid-slide or after, whatever the elements above measured (0 before a layout).
+  RememberCallChipLayout(call_chrome_gesture_, state_.call_chip_layout);
 }
 
 void ShellHost::RemountDialogChrome() {

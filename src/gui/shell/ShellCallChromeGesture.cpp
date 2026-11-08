@@ -98,6 +98,7 @@ void ShellCallChromeGesture::Detach() {
   target_.reset();
   docked_ = true;
   next_reflow_s_ = 0.0;
+  layout_.reset();
 }
 
 void ShellCallChromeGesture::Abort() {
@@ -368,6 +369,8 @@ void ShellCallChromeGesture::DropChip() {
   slide_deadline_s_ = NowSeconds() + kSlideDeadlineSeconds;
   docked_ = false;
   target_ = place;
+  // The slide's end with the heights measured now: a rebuild from here on (ShellHost) puts the chip exactly there.
+  layout_ = CallChipLayout{place, end.top_dp, area.height_dp, chip.height_dp};
   // ⑤ comes when the slide ends (FinishSlide). ⑥ The place goes to the call state now, so a restore mid-slide
   // still finds it there; until the state has it, and while the slide runs, ShellHost does not rebuild the chip.
   if (callbacks_.on_chip_place) {
@@ -425,6 +428,7 @@ void ShellCallChromeGesture::DockChip(const CallChipPlace& place) {
   SetDp(root_, "top", at.top_dp);
   root_->SetProperty("bottom", "auto");
   docked_ = true;
+  layout_ = CallChipLayout{place, at.top_dp, area.height_dp, chip.height_dp};
 }
 
 bool ShellCallChromeGesture::HoldsChip(const CallInProgressState& call) const {
@@ -447,6 +451,12 @@ ui::Element* CallChromeGestureElement(ui::ElementDocument* doc, const CallChrome
     }
   }
   return doc->GetElementById("shell-call-chrome-root");
+}
+
+void RememberCallChipLayout(const ShellCallChromeGesture& gesture, CallChipLayout& into) {
+  if (const std::optional<CallChipLayout>& layout = gesture.Layout()) {
+    into = *layout;
+  }
 }
 
 bool KeepMinimizedChipOnRemount(const CallInProgressState& call, const ui::Element* chip,
@@ -473,13 +483,13 @@ void ShellCallChromeGesture::Reflow(const CallInProgressState& call) {
   if (docked_ && place == reflowed_place_ && now < next_reflow_s_) {
     return;
   }
-  next_reflow_s_ = now + kReflowIntervalSeconds;
-  reflowed_place_ = place;
   CallChipRect chip;
   CallChipArea area;
   if (!MeasureChip(&chip, &area)) {
-    return;
+    return; // not laid out yet (a chip just mounted): the next frame looks again
   }
+  next_reflow_s_ = now + kReflowIntervalSeconds;
+  reflowed_place_ = place;
   const float top = CallChipDock::Place(place, area, chip.width_dp, chip.height_dp).top_dp;
   if (!docked_ || std::fabs(top - chip.top_dp) >= 0.5f) {
     DockChip(place);
