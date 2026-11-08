@@ -2,10 +2,37 @@
   <div class="pane-nav">
     <div class="pane-nav-bg"></div>
     <div class="bar-fade"></div>
-    <p class="pane-nav-title">{{i18n:nav.sessions}}</p>
+    <!-- Phone bar (DEV/PLAN-minimal-nav.md D, Kenneth 2026-11-07): no title; the round avatar on the left opens Settings,
+         the round plus on the right opens New chat. The avatar reads the settings model like Me's card. -->
+    <!-- open_settings_from_avatar is the window model's (ShellHost), not this page's shell model: declared here. -->
+    <button class="pane-nav-avatar" type="button" data-model="window" data-event-click="open_settings_from_avatar()">
+      <!-- Same structure as the AI drawer's "you" row (ai_drawer.rml), which renders: the settings model is declared on
+           the avatar element itself, whose children carry the bindings. -->
+      <div class="shell-circle-avatar" data-model="settings"
+           data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
+           data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
+           data-class-avatar-tone-2="!profile_has_icon && profile_avatar_tone == 2"
+           data-class-avatar-tone-3="!profile_has_icon && profile_avatar_tone == 3"
+           data-class-avatar-tone-4="!profile_has_icon && profile_avatar_tone == 4"
+           data-class-avatar-tone-5="!profile_has_icon && profile_avatar_tone == 5"
+           data-class-avatar-tone-6="!profile_has_icon && profile_avatar_tone == 6"
+           data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
+        <img class="shell-circle-avatar-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
+        <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
+      </div>
+      <div class="pane-nav-avatar-text">
+        <p class="pane-nav-avatar-name" data-model="settings">{{profile_nickname}}</p>
+        <!-- The device's link to our service (ShellHost::SetChatsLink, event-driven): empty while unknown. -->
+        <p class="pane-nav-avatar-sub" data-if="chats_link_state != ''">
+          <svg class="pane-nav-link-icon pane-nav-link-icon--ok" data-if="chats_link_state == 'ok'" src="../icons/v2/cloud-ok.svg" width="14" height="14"></svg>
+          <svg class="pane-nav-link-icon pane-nav-link-icon--offline" data-if="chats_link_state == 'offline'" src="../icons/v2/cloud-off.svg" width="14" height="14"></svg>
+          <span class="pane-nav-link-text">{{chats_link_text}}</span>
+        </p>
+      </div>
+    </button>
     <div class="pane-nav-actions row">
-      <button class="pane-nav-btn" type="button" data-event-click="open_new_session_menu()">
-        <svg src="../icons/v2/compose.svg" width="24" height="24"></svg>
+      <button class="pane-nav-plus shell-circle-btn" type="button" data-event-click="open_new_session_menu()">
+        <span class="shell-circle-btn-face"><svg src="../icons/v2/plus.svg" width="24" height="24"></svg></span>
       </button>
     </div>
   </div>
@@ -17,8 +44,7 @@
       </button>
     </div>
   </div>
-  <div id="sidebar-sessions" class="sidebar-sessions root-scroll" data-event-scroll="sessions_scroll()">
-    <p class="large-title">{{i18n:nav.sessions}}</p>
+  <div id="sidebar-sessions" class="sidebar-sessions root-scroll" collapse-at="20" data-event-scroll="sessions_scroll()">
     <div class="chat-search">
       <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
       <input class="chat-search-input" type="text" data-value="sessions_query"
@@ -35,6 +61,7 @@
          data-class-sidebar-session-active="session.active"
          data-class-sidebar-session--unread="session.unread_count > 0 || session.unread_dot"
          data-class-sidebar-session--pinned="session.pinned"
+         data-class-sidebar-session--empty="session.preview_empty"
          data-class-sidebar-session--ai="session.kind == 'ai'"
          data-class-sidebar-session--private="session.kind == 'private'"
          data-class-sidebar-session--public="session.kind == 'public'"
@@ -90,28 +117,28 @@
       </div>
       <div class="session-swipe session-swipe--end">
         <div class="session-swipe-btn session-swipe-btn--more" swipe-action="more">
-          <svg src="../icons/v2/more.svg" width="22" height="22"></svg>
+          <svg src="../icons/v2/more.svg" width="24" height="24"></svg>
           <p class="session-swipe-label">{{i18n:sidebar.swipe.more}}</p>
         </div>
         <div class="session-swipe-btn session-swipe-btn--archive" swipe-action="archive">
-          <svg src="../icons/v2/archive.svg" width="22" height="22"></svg>
+          <svg src="../icons/v2/archive.svg" width="24" height="24"></svg>
           <p class="session-swipe-label" data-if="!showing_archived">{{i18n:sidebar.swipe.archive}}</p>
           <p class="session-swipe-label" data-if="showing_archived">{{i18n:sidebar.swipe.unarchive}}</p>
         </div>
         <div class="session-swipe-btn session-swipe-btn--delete" swipe-action="delete">
-          <svg src="../icons/v2/trash.svg" width="22" height="22"></svg>
+          <svg src="../icons/v2/trash.svg" width="24" height="24"></svg>
           <p class="session-swipe-label">{{i18n:sidebar.swipe.delete}}</p>
         </div>
       </div>
       <div class="session-swipe session-swipe--start">
         <div class="session-swipe-btn session-swipe-btn--pin" swipe-action="pin">
-          <svg src="../icons/v2/pin.svg" width="22" height="22"></svg>
+          <svg src="../icons/v2/pin.svg" width="24" height="24"></svg>
           <p class="session-swipe-label" data-if="!session.pinned">{{i18n:sidebar.swipe.pin}}</p>
           <p class="session-swipe-label" data-if="session.pinned">{{i18n:sidebar.swipe.unpin}}</p>
         </div>
         <div class="session-swipe-btn session-swipe-btn--read" swipe-action="read">
-          <svg src="../icons/v2/check-circle.svg" width="22" height="22" data-if="session.unread_count > 0 || session.unread_dot"></svg>
-          <svg src="../icons/v2/circle-dot.svg" width="22" height="22" data-if="session.unread_count == 0 && !session.unread_dot"></svg>
+          <svg src="../icons/v2/check-circle.svg" width="24" height="24" data-if="session.unread_count > 0 || session.unread_dot"></svg>
+          <svg src="../icons/v2/circle-dot.svg" width="24" height="24" data-if="session.unread_count == 0 && !session.unread_dot"></svg>
           <p class="session-swipe-label" data-if="session.unread_count > 0 || session.unread_dot">{{i18n:sidebar.swipe.read}}</p>
           <p class="session-swipe-label" data-if="session.unread_count == 0 && !session.unread_dot">{{i18n:sidebar.swipe.unread}}</p>
         </div>

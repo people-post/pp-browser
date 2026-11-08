@@ -305,7 +305,8 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_mode = in_call.mode,
       .in_call_spotlight = in_call.spotlight_stream.c_str(),
       .in_call_spotlight_fill = in_call.spotlight_fill,
-      .in_call_minimized_corner = in_call.minimized_corner,
+      .in_call_minimized_side = in_call.minimized_side,
+      .in_call_minimized_y_permille = in_call.minimized_y_permille,
       .in_call_quality_bars = in_call.quality_bars,
       .in_call_quality_ok = in_call.quality_ok,
       .in_call_quality_warn = in_call.quality_warn,
@@ -331,7 +332,8 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_story_active = in_call.story_active,
       .in_call_story_stage = in_call.story_stage,
       .in_call_story_steps = std::string(in_call.story_step1.c_str()) + "|" + in_call.story_step2.c_str() + "|" +
-                             in_call.story_step3.c_str(),
+                             in_call.story_step3.c_str() + std::string("|") + in_call.story_step4.c_str() + "|" +
+                             in_call.story_step5.c_str() + "|" + std::to_string(in_call.story_step_count),
       .in_call_story_sheet_open = in_call.story_sheet_open,
       .in_call_story_lines = in_call.story_lines,
       .in_call_story_how = in_call.story_how.c_str(),
@@ -344,6 +346,10 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_notice_text = in_call.notice_text.c_str(),
       .in_call_notice_warn = in_call.notice_warn,
       .in_call_notice_fading = in_call.notice_fading,
+      .in_call_reconnect_text = in_call.reconnect_text.c_str(),
+      .in_call_reconnect_ok = in_call.reconnect_ok,
+      .in_call_reconnect_fading = in_call.reconnect_fading,
+      .in_call_reconnect_dim = in_call.reconnect_dim,
   };
 }
 
@@ -404,11 +410,6 @@ CallVideoTileRenderer::Frame DemoCameraFrame(const uint64_t seq, const uint8_t t
   return frame;
 }
 
-/** "0:43 · 重新连接中…" — the call timer keeps running while the path is being found again. */
-std::string ReconnectingSubtitle(const std::string& elapsed) {
-  const std::string reconnecting = Tr("call.status.reconnecting");
-  return elapsed.empty() ? reconnecting : elapsed + " · " + reconnecting;
-}
 
 std::string ComposeP2pStatusHint(bool missing_mic, bool seed_unreachable) {
   std::string hint;
@@ -606,7 +607,8 @@ void CallController::PrepareForShutdown() {
 void CallController::ClearInCall() {
   chrome_mode_ = CallChromeMode::Expanded;
   restore_mode_ = CallChromeMode::Expanded;
-  minimized_corner_ = 0;
+  minimized_side_ = 0;
+  minimized_y_permille_ = 0;
   chrome_mode_call_id_.clear();
   last_media_health_log_ms_ = 0;
   last_debug_subtitle_ = {};
@@ -615,6 +617,8 @@ void CallController::ClearInCall() {
   video_start_since_ms_ = 0;
   camera_sync_off_done_ = false;
   story_.Reset();
+  reconnect_ = CallReconnectCapsule{};
+  reconnecting_now_ = false;
   story_sheet_open_ = false;
   in_call_ = {};
   CallVideoTileRenderer::Instance().Clear();
@@ -628,7 +632,8 @@ void CallController::HideInCallChrome() {
 void CallController::ApplyChromeModeToState(CallInProgressState& in_call) {
   in_call.mode = chrome_mode_;
   in_call.mode_str = CallChromeModeName(chrome_mode_);
-  in_call.minimized_corner = minimized_corner_;
+  in_call.minimized_side = minimized_side_;
+  in_call.minimized_y_permille = minimized_y_permille_;
 }
 
 void CallController::SetChromeMode(CallChromeMode mode) {
@@ -769,18 +774,21 @@ void CallController::RestoreChromeFromMinimized() {
                                                           : CallChromeMode::Expanded);
 }
 
-void CallController::SetMinimizedCorner(int corner) {
+void CallController::SetMinimizedPlace(int side, int y_permille) {
   if (!AppRuntime::CurrentlyOnUI()) {
-    AppRuntime::PostUI([this, corner]() { SetMinimizedCorner(corner); });
+    AppRuntime::PostUI([this, side, y_permille]() { SetMinimizedPlace(side, y_permille); });
     return;
   }
-  const int clamped = std::clamp(corner, 0, 3);
-  if (minimized_corner_ == clamped) {
+  const int clamped_side = std::clamp(side, 0, 2);
+  const int clamped_y = clamped_side == 0 ? 0 : std::clamp(y_permille, 0, 1000);
+  if (minimized_side_ == clamped_side && minimized_y_permille_ == clamped_y) {
     return;
   }
-  minimized_corner_ = clamped;
+  minimized_side_ = clamped_side;
+  minimized_y_permille_ = clamped_y;
   if (in_call_.active) {
-    in_call_.minimized_corner = minimized_corner_;
+    in_call_.minimized_side = minimized_side_;
+    in_call_.minimized_y_permille = minimized_y_permille_;
     SyncShellState();
   }
 }
@@ -1265,7 +1273,7 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
     break;
   case Status::Reconnecting:
     // k4: the call lost its path and waits for a new one; the call timer keeps running.
-    in_call.subtitle = ReconnectingSubtitle(in_call.elapsed.c_str()).c_str();
+    in_call.subtitle = in_call.elapsed;  // greyed; the capsule says "Reconnecting…"
     break;
   case Status::WaitingForOthers: {
     // V053: everyone else left; counts down to leaving by itself.
@@ -1277,7 +1285,7 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
     in_call.subtitle = Tr("call.status.disconnected").c_str();
     break;
   case Status::SendingOnly:
-    in_call.subtitle = Tr("call.quality.hint.sending_only").c_str();
+    in_call.subtitle = Tr(media_hint_.SendingOnlyKey(in_call.video)).c_str();
     break;
   case Status::Connected:
     in_call.subtitle = in_call.elapsed.empty() ? Tr("call.status.connected").c_str() : in_call.elapsed;
@@ -1623,6 +1631,7 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
       (path_lost || (!on_hold && (stalling || missing_after_video ||
                                   (backend && backend->Available() &&
                                    CallMediaDropped(*backend, media, presenter_.ActiveCallId())))));
+  reconnecting_now_ = media_reconnect;
 
   // Live or soft-stall: keep painting the last frame. Hard stall / camera-off clears HasRemoteVideo.
   in_call.remote_video = media.HasRemoteVideo() && expect_remote_video;
@@ -1734,8 +1743,6 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
         Tr(peer_video_paused_ ? "call.placeholder.camera_paused" : "call.placeholder.camera_off").c_str();
   } else if (mesh_messaging_failed) {
     in_call.remote_placeholder = Tr("call.status.couldnt_connect").c_str();
-  } else if (media_reconnect) {
-    in_call.remote_placeholder = Tr("call.status.reconnecting").c_str();
   } else {
     in_call.remote_placeholder = "";
   }
@@ -1756,9 +1763,11 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
              (media_reconnect && backend && CallMediaDropped(*backend, media, presenter_.ActiveCallId()))) {
     // The call lost its path, or its media stopped being live while it runs.
     in_call.elapsed = FormatElapsed(call_live_since_ms);
-    in_call.subtitle = ReconnectingSubtitle(in_call.elapsed.c_str()).c_str();
+    in_call.subtitle = in_call.elapsed;  // greyed; the capsule says "Reconnecting…"
   } else if (stalling) {
-    in_call.subtitle = Tr("call.status.reconnecting").c_str();
+    // Remote video stalled: the timer keeps running (greyed); the capsule says "Reconnecting…".
+    in_call.elapsed = FormatElapsed(call_live_since_ms);
+    in_call.subtitle = in_call.elapsed;
   } else if (backend && backend->Available() && backend->MediaChromeLive()) {
     // Provisional Connected — ApplyMediaHealth may override for NoAudio / TX-only / Degraded.
     in_call.elapsed = FormatElapsed(call_live_since_ms);
@@ -1830,6 +1839,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
   const CallMediaHealthView view = BuildMediaHealthView(media, backend, media_reconnect);
   const int64_t now_ms = util::NowUnixMs();
   NoteActiveSpeaker(view.engine, in_call.muted ? 0.f : media.LocalInputLevel(), now_ms);
+  media_hint_.Update(presenter_.ActiveCallId(), view.asymmetry == CallAudioAsymmetry::SendingOnly, now_ms);
 
   if (metrics_.Tracking() && now_ms - last_metrics_media_ms_ >= 500) {
     last_metrics_media_ms_ = now_ms;
@@ -1853,7 +1863,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
   } else {
     in_call.quality_label = "";
   }
-  if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+  if (const char* hint_key = media_hint_.KeyFor(view.asymmetry, in_call.video); hint_key && hint_key[0]) {
     in_call.quality_hint = Tr(hint_key).c_str();
   } else {
     in_call.quality_hint = "";
@@ -1868,7 +1878,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
        backend->MediaStatus() == CallMediaStatus::DegradedTxOnly);
   // Reconnecting says it all: no path means no audio either way.
   if (media_broken && !(backend && backend->Available() && backend->MediaStatus() == CallMediaStatus::Reconnecting)) {
-    if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+    if (const char* hint_key = media_hint_.KeyFor(view.asymmetry, in_call.video); hint_key && hint_key[0]) {
       in_call.subtitle = Tr(hint_key).c_str();
     } else if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key &&
                                                                               label_key[0]) {
@@ -1927,7 +1937,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
   const bool audio_fault =
       view.quality == CallPathQuality::NoAudio || view.asymmetry != CallAudioAsymmetry::None;
   if (audio_fault_gate_.Update(presenter_.ActiveCallId(), audio_fault, now_ms)) {
-    if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+    if (const char* hint_key = media_hint_.KeyFor(view.asymmetry, in_call.video); hint_key && hint_key[0]) {
       UserFeedback::Fail(Tr(hint_key));
     } else if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key && label_key[0]) {
       UserFeedback::Fail(Tr(label_key));
@@ -1978,7 +1988,7 @@ void CallController::ShowCallDetails() {
   copy.quality_label = Tr(CallPathQualityDetailsLabelKey(view.quality));
   copy.mic_label = LevelHint(in_call.mic_level, false, in_call.muted);
   copy.incoming_label = LevelHint(in_call.peer_level, true, false);
-  if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+  if (const char* hint_key = media_hint_.KeyFor(view.asymmetry, in_call.video); hint_key && hint_key[0]) {
     copy.asymmetry_hint = Tr(hint_key);
   }
   if (view.link.available && view.link.rtt_ms >= 0) {
@@ -2261,19 +2271,46 @@ void CallController::ApplyConnectStory(const CallScreen& screen, const std::stri
   const std::string name = in_call.phone_title.c_str();
   in_call.story_active = v.connecting && !in_call.phone_failed;
   in_call.story_stage = v.stage;
+  in_call.story_step_count = 3;
+  in_call.story_step4 = "";
+  in_call.story_step5 = "";
   if (in.group) {
     in_call.story_step1 = Tr(v.stage == 0 ? "call.story.step.group_calling" : "call.story.step.group_joined").c_str();
     in_call.story_step2 = Tr("call.story.step.group_line").c_str();
     in_call.story_step3 = Tr("call.story.step.group_heard").c_str();
   } else {
-    if (!v.outgoing) {
-      in_call.story_step1 = Tr("call.story.step.you_answered").c_str();
-    } else {
-      in_call.story_step1 =
-          Tr(v.stage == 0 ? "call.story.step.calling" : "call.story.step.peer_answered", {{"name", name}}).c_str();
+    // The five steps (#172): calling, answered, matching the fastest line, setting up the encrypted channel,
+    // connected. A device that answered starts at "Answered": four lines. The presenter's stage numbers the five.
+    const bool matched = v.stage > CallConnectStory::kStageMatching;
+    const char* matching_key = "call.story.step.matching";
+    if (matched) {
+      matching_key = v.route == CallRoute::Relayed ? "call.story.step.matched_relayed"
+                     : (v.route == CallRoute::Unknown ? "call.story.step.matched" : "call.story.step.matched_direct");
     }
-    in_call.story_step2 = Tr("call.story.step.securing").c_str();
-    in_call.story_step3 = Tr("call.story.step.connected").c_str();
+    std::vector<std::string> lines;
+    if (v.outgoing) {
+      lines.push_back(Tr("call.story.step.calling", {{"name", name}}));
+      lines.push_back(Tr("call.story.step.peer_answered", {{"name", name}}));
+    } else {
+      lines.push_back(Tr("call.story.step.you_answered"));
+    }
+    lines.push_back(Tr(matching_key));
+    lines.push_back(Tr("call.story.step.securing"));
+    lines.push_back(Tr("call.story.step.connected"));
+    in_call.story_step_count = static_cast<int>(lines.size());
+    // The presenter numbers the five steps; a device that answered has no "calling" line, so it counts one less.
+    const int first = v.outgoing ? 0 : 1;
+    in_call.story_stage =
+        v.stage == CallConnectStory::kStageDone ? in_call.story_step_count : v.stage - first;
+    in_call.story_step1 = lines[0].c_str();
+    in_call.story_step2 = lines[1].c_str();
+    in_call.story_step3 = lines[2].c_str();
+    if (lines.size() > 3) {
+      in_call.story_step4 = lines[3].c_str();
+    }
+    if (lines.size() > 4) {
+      in_call.story_step5 = lines[4].c_str();
+    }
   }
   in_call.result_text =
       v.result_shown ? Tr("call.story.result", {{"how", Tr(CallRouteResultKey(v.result_route))},
@@ -2288,7 +2325,14 @@ void CallController::ApplyConnectStory(const CallScreen& screen, const std::stri
   in_call.signal_word = word[0] ? Tr(word).c_str() : "";
   const char* notice = CallStoryNoticeKey(v.notice);
   in_call.notice_text = notice[0] ? Tr(notice).c_str() : "";
-  in_call.notice_warn = v.notice == CallStoryNotice::Slow || v.notice == CallStoryNotice::Reconnecting;
+  in_call.notice_warn = v.notice == CallStoryNotice::Slow;
+  const CallReconnectView& rc =
+      reconnect_.Step(in.call_id, in.status == CallScreen::Status::Reconnecting || reconnecting_now_, now_ms);
+  const char* rc_key = CallReconnectKey(rc.kind);
+  in_call.reconnect_text = rc_key[0] ? Tr(rc_key).c_str() : "";
+  in_call.reconnect_ok = rc.kind == CallReconnectKind::Restored;
+  in_call.reconnect_fading = rc.fading;
+  in_call.reconnect_dim = rc.timer_dim;
   in_call.notice_fading = v.notice_fading;
   if (story_sheet_open_) {
     FillStoryLines();

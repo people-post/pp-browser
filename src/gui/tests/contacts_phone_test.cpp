@@ -249,32 +249,37 @@ std::string ReadAsset(const std::string& relative) {
   return buffer.str();
 }
 
-TEST_F(ContactsPhoneTest, AddContactSheetHasSearchAccountCardAndFourTiles) {
+TEST_F(ContactsPhoneTest, AddContactSheetHasTopCardsSearchAccountCardAndTwoTiles) {
   EXPECT_EQ(ViewCatalog::ResolvePath("add_contact"), "views/add_contact.rml");
+  EXPECT_TRUE(ContactsController::AddContactUsesPage(true)) << "phone: the page, not the paste-an-ID dialog";
+  EXPECT_FALSE(ContactsController::AddContactUsesPage(false));
   EXPECT_EQ(ViewCatalog::ResolvePath("my_qr"), "views/my_qr.rml");
   const std::string rml = ReadAsset("views/add_contact.rml");
   ASSERT_FALSE(rml.empty());
   for (const char* piece :
-       {"class=\"sheet-header\"", "class=\"sheet-title\"", "data-value=\"add_query\"",
+       {"class=\"pane-nav nc-bar ac-bar\"", "class=\"pane-nav-title nc-bar-title\"", "data-value=\"add_query\"",
         "data-event-change=\"add_search_changed()\"", "add_copy_id()", "add_share()", "add_action('scan')",
         "add_action('qr')", "add_action('invite')", "add_action('group')", "add_pick(hit.index)",
         "{{i18n:contacts.add_sheet.search_placeholder}}", "{{i18n:settings.profile.relay_id_none}}",
         "data-if=\"add_no_results\""}) {
     EXPECT_NE(rml.find(piece), std::string::npos) << piece;
   }
-  // The account card and the rows are what an empty query shows; the buttons only exist with an account.
-  EXPECT_LT(rml.find("add_copy_id()"), rml.find("add_action('scan')"));
+  // Two big cards (scan, my QR code) open the sheet, above the search field (Kenneth 2026-11-07); then the account
+  // card and the two tiles; the buttons only exist with an account.
   EXPECT_LT(rml.find("add_action('scan')"), rml.find("add_action('qr')"));
-  EXPECT_LT(rml.find("add_action('qr')"), rml.find("add_action('invite')"));
+  EXPECT_LT(rml.find("add_action('qr')"), rml.find("data-value=\"add_query\""));
+  EXPECT_NE(rml.find("class=\"ac-top-card\" data-if=\"can_scan\" data-event-click=\"add_action('scan')\""), std::string::npos);
+  EXPECT_NE(rml.find("class=\"ac-top-card\" data-event-click=\"add_action('qr')\""), std::string::npos);
+  EXPECT_LT(rml.find("add_copy_id()"), rml.find("add_action('invite')"));
   EXPECT_LT(rml.find("add_action('invite')"), rml.find("add_action('group')"));
   EXPECT_NE(rml.find("data-if=\"my_has_account\" data-event-click=\"add_copy_id()\""), std::string::npos);
-  // The four actions are big tiles (a disc with the icon, a label under it), each tile the button itself.
+  // The other two actions are big tiles (a disc with the icon, a label under it), each tile the button itself.
   size_t tiles = 0;
   for (size_t at = rml.find("class=\"ac-tile\""); at != std::string::npos; at = rml.find("class=\"ac-tile\"", at + 1)) {
     ++tiles;
     EXPECT_LT(rml.find("add_action('", at), rml.find('>', at)) << "tile " << tiles << " is not tappable";
   }
-  EXPECT_EQ(tiles, 4u);
+  EXPECT_EQ(tiles, 2u);
   EXPECT_EQ(rml.find("ac-row"), std::string::npos);
 }
 

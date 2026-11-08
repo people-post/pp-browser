@@ -8,6 +8,7 @@
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/HeldAgentSend.h"
+#include "gui/chat/MessagingReadyTasks.h"
 #include "gui/chat/WorkingSetController.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -19,8 +20,11 @@
 
 #include <chrono>
 #include <cstdint>
+#include "lib/ui/ContextMenuHost.h"
+
 #include <functional>
 #include <map>
+#include <memory>
 #include <set>
 #include <optional>
 #include <string>
@@ -79,6 +83,11 @@ public:
   }
   /** The finished answer of the panel's one-off question (kAskAiOnceThread): never stored in a thread. */
   virtual void OnAskAiOnceReply(const AgentEvent& event) { (void)event; }
+  /**
+   * Mint a Brief guest key at `llm_base_url` off the UI thread (MessagingReadyTasks, under BriefKeyRun()); its end
+   * comes back to OnBriefKeyMintEnded. The default does nothing (no mint).
+   */
+  virtual void MintBriefGuestKey(const std::string& llm_base_url) { (void)llm_base_url; }
 };
 
 /**
@@ -130,6 +139,15 @@ public:
   AgentUiPorts& Ports() { return agent_ports_; }
   void ApplyConfig(const AgentConfig& config);
   void ReloadAgentConfig();
+  /**
+   * The Brief key's mint run: the unlock's guest-key mint and the 401 renewal (B183) share it, so a mint in flight is
+   * never doubled; while it is in flight RefreshLlmSetupBanner keeps the banner as it is.
+   */
+  const std::shared_ptr<CoalescedRun>& BriefKeyRun() const { return brief_key_run_; }
+  /** UI: how the mint EnsureBriefGuestLlmKey sent off ended (MessagingReadyTasks' brief_key_done). */
+  void OnBriefKeyMintEnded(const BriefKeyMintEnd& end);
+  /** The Brief key changed off the UI thread (a 401 renewed it, B183): ReloadAgentConfig once no turn runs. */
+  void ReloadAgentConfigWhenIdle() { reload_when_idle_ = true; }
   /** An LLM is configured (else replies are the mock assistant's). */
   bool UseLlm() const { return use_llm_; }
   void SetUseLlm(bool use) { use_llm_ = use; }
@@ -223,6 +241,14 @@ public:
     int height = 0;
   };
   void OnAttachAiImage();
+  /** The Home composer's plus (and a phone AI conversation's): a floating menu with Camera, Photos and File; each hands
+   *  its image to StartAiImagePrepare like a picked photo. `above`: the card opens above `anchor` (a composer at the
+   *  bottom of the screen). */
+  void ShowHomeAttachMenu(ui::Element* anchor, bool above = false);
+  /** The Home plus menu's rows, in order: Camera, Photos, File (image files from the Files app). All are always offered (a
+   *  missing camera is told by the capture itself). Pure, so a test can count them. */
+  static std::vector<ContextMenuAction> HomeAttachActions(std::function<void()> camera, std::function<void()> photos,
+                                                          std::function<void()> file);
   void StartAiImagePrepare(std::string path);
   /** Drops the pending (or still preparing) image and its session thumbnail file. */
   void DiscardPendingAiImage();
@@ -246,6 +272,9 @@ public:
   void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows, const std::string& thread_id = {}) const;
 
   // --- the ask-AI panel's picture (DEV/PLAN-ui-batch5-ask-ai.md 5b): the same path, its own state ---------
+  /** The phone library (`files_app` false) or the Files app's image files; `picked` runs on the UI thread with the
+   *  chosen file (not at all when nothing was chosen). */
+  void PickAiImageFrom(bool files_app, std::function<void(std::string path)> picked);
   /** The photo library / file picker (images only); `picked` runs on the UI thread with one file, or not at all. */
   void PickAiImage(std::function<void(std::string path)> picked);
   /** The system camera, photo only; `picked` as above. Tells the person when the camera is unavailable. */
@@ -290,6 +319,8 @@ private:
   AgentConfig last_agent_runtime_;
   bool use_llm_ = false;
   bool brief_guest_mint_attempted_ = false;
+  std::shared_ptr<CoalescedRun> brief_key_run_ = std::make_shared<CoalescedRun>();
+  bool reload_when_idle_ = false; // ReloadAgentConfigWhenIdle; done in Tick
   std::string brief_guest_mint_user_hint_;
   std::string last_brief_banner_; // text RefreshLlmSetupBanner last showed for the brief preset
   HeldAgentSend held_agent_send_; // sends made while the agent was still (re)configuring, one per thread

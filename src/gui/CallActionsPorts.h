@@ -64,7 +64,8 @@ struct CallActionsPorts {
   std::function<void()> spotlight_grid;
   std::function<void()> spotlight_toggle_fill;
   std::function<void()> restore_chrome_from_minimized;
-  std::function<void(int corner)> set_minimized_corner;
+  /** #166: the minimised chip was dropped (side 1 left / 2 right, height 0..1000 in its band; CallChipDock). */
+  std::function<void(int side, int y_permille)> set_minimized_place;
   std::function<void()> show_call_details;
 };
 

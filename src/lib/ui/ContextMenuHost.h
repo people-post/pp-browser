@@ -103,6 +103,11 @@ public:
   /// right edge. Compact layout too (no action sheet); there the panel gets the phone pull-down look.
   void ShowActionsPopover(ui::Element* anchor, std::vector<ContextMenuAction> actions,
                           std::function<void()> on_dismissed = {});
+  /// ShowActionsPopover that opens below `anchor` (8dp under it) with its left edge on the button's left edge, a
+  /// narrow 150dp card; it flips above only where there is no room below. The Home composer's plus. `above`: the card
+  /// opens 8dp over the button instead (a chat's composer sits at the screen bottom).
+  void ShowActionsPopoverLeftAligned(ui::Element* anchor, std::vector<ContextMenuAction> actions,
+                               std::function<void()> on_dismissed = {}, bool above = false);
   void Dismiss();
   bool IsOpen() const { return layer_ != nullptr; }
   bool HandleDismiss();
@@ -162,6 +167,7 @@ private:
     std::vector<ContextMenuAction> actions;
     bool above = false;
     bool popover = false;
+    bool left = false;
     std::function<void()> on_dismissed;
     std::string title;
   };
@@ -173,6 +179,9 @@ private:
   /// The open float menu is a pull-down: its position is the top-right corner (ShowActionsPopover).
   bool float_popover_ = false;
   bool next_show_popover_ = false;
+  /// The open pull-down is the left-aligned card (ShowActionsPopoverLeftAligned).
+  bool float_left_ = false;
+  bool next_show_left_ = false;
   std::optional<PendingShow> pending_show_;
   bool restore_focus_on_dismiss_ = false;
   bool compact_layout_ = false;

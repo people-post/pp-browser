@@ -629,8 +629,9 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.Bind("my_qr_svg_rml", &controller.my_qr_svg_rml_);
     ctor.Bind("can_scan", &controller.can_scan_);
     ctor.Bind("can_new_group", &controller.can_new_group_);
-    ctor.Bind("nc_frequent", &controller.new_chat_frequent_);
     ctor.Bind("nc_sections", &controller.new_chat_sections_);
+    ctor.Bind("nc_index", &controller.new_chat_index_);
+    ctor.Bind("nc_has_contacts", &controller.new_chat_has_contacts_);
     ctor.Bind("nc_query", &controller.new_chat_query_);
     ctor.Bind("blocked_rows", &controller.blocked_rows_);
     ctor.Bind("compact_layout", &controller.compact_layout_);
@@ -693,7 +694,11 @@ bool ContactsController::RegisterModel(ui::Context* context) {
                            DataEvent<std::string>([this](const std::string& id) { OnUnblockListed(id); }));
     ctor.BindEventCallback("blocked_open_contact",
                            DataEvent<std::string>([this](const std::string& id) { OnOpenBlockedContact(id); }));
-    ctor.BindEventCallback("contacts_index_at", DataEventAt([this](ui::Event& ev) { OnContactsIndexAt(ev); }));
+    // The strip says which list it drives: contacts_index_at('new_chat'); no argument is the Contacts tab.
+    ctor.BindEventCallback("contacts_index_at",
+                           [this](ui::DataModelHandle, ui::Event& ev, const ui::VariantList& args) {
+                             OnContactsIndexAt(ev, EventArgAsString(args, 0).value_or("contacts"));
+                           });
     ctor.BindEventCallback("contacts_index_end", DataEventAt([this](ui::Event&) { OnContactsIndexEnd(); }));
   });
 
@@ -840,7 +845,7 @@ int ContactsController::ContactSectionForLetter(const std::vector<NewChatSection
   return static_cast<int>(sections.size()) - 1;
 }
 
-void ContactsController::OnContactsIndexAt(ui::Event& ev) {
+void ContactsController::OnContactsIndexAt(ui::Event& ev, const std::string& target) {
   ui::Element* strip = ev.GetCurrentElement();
   if (!strip) {
     return;
@@ -868,16 +873,21 @@ void ContactsController::OnContactsIndexAt(ui::Event& ev) {
     contact_index_bubble_ = ui::String(1, letter);
     DataModelHost::Instance().Dirty("contacts", "contact_index_bubble");
   }
+  ScrollIndexListTo(strip, target, target == "new_chat" ? new_chat_sections_ : contact_sections_, letter);
+}
 
+void ContactsController::ScrollIndexListTo(ui::Element* strip, const std::string& target,
+                                           const std::vector<NewChatSectionRow>& sections, const char letter) {
   // Scroll so the section's header sits just under the bar (the list view's top padding).
-  const int section = ContactSectionForLetter(contact_sections_, letter);
-  ui::Element* panel = strip->GetParentNode();
-  ui::Element* view = panel ? panel->QuerySelector(".contacts-list-view") : nullptr;
+  const bool new_chat = target == "new_chat";
+  const int section = ContactSectionForLetter(sections, letter);
+  ui::Element* panel = strip ? strip->GetParentNode() : nullptr;
+  ui::Element* view = panel ? panel->QuerySelector(new_chat ? ".nc-scroll" : ".contacts-list-view") : nullptr;
   if (section < 0 || !view) {
     return;
   }
   ui::ElementList headers;
-  view->QuerySelectorAll(headers, ".contacts-section-header");
+  view->QuerySelectorAll(headers, new_chat ? ".nc-section-header" : ".contacts-section-header");
   if (static_cast<size_t>(section) >= headers.size()) {
     return;
   }
@@ -1420,7 +1430,7 @@ void ContactsController::NewChatSearchCallback(ui::DataModelHandle /*model*/, ui
 }
 
 void ContactsController::OpenNewChatPage() {
-  if (new_chat_open_ || !shell_navigation_.push_layer) {
+  if (new_chat_open_ || !shell_navigation_.push_transient) {
     return;
   }
   new_chat_query_ = "";
@@ -1428,44 +1438,38 @@ void ContactsController::OpenNewChatPage() {
   new_chat_open_ = true;
   DataModelHost::Instance().Dirty("contacts", "nc_query");
   DirtyNewChat();
-  // An iOS page sheet over the Chats list, like New group (Kenneth 2026-11-04): no back bar; X, scrim or swipe closes.
+  // A full-screen page over the Chats list (DEV/PLAN-minimal-nav.md E, Kenneth 2026-11-07): the shell's round back,
+  // the edge swipe and the system back close it; the shell tells us when it is gone (OnNewChatDismissed).
   PaneSpec spec;
   spec.key = "new_chat";
-  spec.page_sheet = true;
-  new_chat_layer_id_ = shell_navigation_.push_layer(spec);
-  if (flow_coordinator_.begin_modal) {
-    flow_coordinator_.begin_modal(new_chat_layer_id_, {}, [this]() { OnNewChatDismissed(); });
-  }
+  shell_navigation_.push_transient(spec);
 }
 
 void ContactsController::OnNewChatDismissed() {
   new_chat_open_ = false;
-  new_chat_layer_id_ = -1;
 }
 
 void ContactsController::CloseNewChatPage() {
   if (!new_chat_open_) {
     return;
   }
-  const int layer_id = new_chat_layer_id_;
-  if (flow_coordinator_.end_modal) {
-    flow_coordinator_.end_modal();
+  if (shell_navigation_.pop_transient) {
+    shell_navigation_.pop_transient(); // the shell reports it back through OnNewChatDismissed
   }
   OnNewChatDismissed();
-  if (layer_id >= 0 && shell_navigation_.close_layer) {
-    shell_navigation_.close_layer(layer_id);
-  }
 }
 
 void ContactsController::DirtyNewChat() {
   auto& host = DataModelHost::Instance();
-  host.Dirty("contacts", "nc_frequent");
   host.Dirty("contacts", "nc_sections");
+  host.Dirty("contacts", "nc_index");
+  host.Dirty("contacts", "nc_has_contacts");
 }
 
 void ContactsController::SyncNewChat() {
-  new_chat_frequent_.clear();
   new_chat_sections_.clear();
+  new_chat_index_.clear();
+  new_chat_has_contacts_ = false;
   if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || !contacts_ports_.list_contacts) {
     return;
   }
@@ -1496,9 +1500,6 @@ void ContactsController::SyncNewChat() {
     }
   }
   const NewChatList list = BuildNewChatList(input, chats, util::Trim(new_chat_query_.c_str()));
-  for (const size_t i : list.frequent) {
-    new_chat_frequent_.push_back(rows[i]);
-  }
   for (const NewChatSection& section : list.sections) {
     NewChatSectionRow out;
     out.letter = section.letter.c_str();
@@ -1507,6 +1508,8 @@ void ContactsController::SyncNewChat() {
     }
     new_chat_sections_.push_back(std::move(out));
   }
+  new_chat_index_ = ContactIndexLetters(new_chat_sections_);
+  new_chat_has_contacts_ = !rows.empty();
 }
 
 void ContactsController::MessageContact(const std::string& contact_id) {
@@ -1759,6 +1762,12 @@ void ContactsController::OnScanQr() {
 // "Add contact" asks the directory first: an account id or nickname is looked up and the person is
 // added from the hit; no empty contacts (Kenneth 2026-10-23, TODO #33).
 void ContactsController::OnAddContact() {
+  // Read the layout now: compact_layout_ only follows the Contacts tab, and New chat (on Chats) gets here without it.
+  compact_layout_ = ChromeSnapshot().layout_mode == LayoutMode::Compact;
+  if (AddContactUsesPage(compact_layout_)) {
+    OpenAddContactPage(); // the phone: the Add contact page (scan, my QR, search), same as the Contacts "+"
+    return;
+  }
   if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || !contacts_ports_.search_people ||
       !contacts_ports_.add_contact_from_directory_hit || !shell_feedback_.show_prompt) {
     return;
@@ -2423,6 +2432,15 @@ void ContactsController::OpenAddContactPage() {
   can_new_group_ = static_cast<bool>(chat_ports_.open_new_group);
   add_open_ = true;
   DirtyAddContact();
+  if (compact_layout_ && shell_navigation_.push_transient) {
+    // A full-screen page like New chat: the shell's round back, the edge swipe and the system back close it and
+    // report it through OnAddContactDismissed (Application's transient-popped hook).
+    add_is_transient_ = true;
+    PaneSpec page;
+    page.key = "add_contact";
+    shell_navigation_.push_transient(page);
+    return;
+  }
   PaneSpec spec;
   spec.key = "add_contact";
   spec.page_sheet = true;
@@ -2434,6 +2452,7 @@ void ContactsController::OpenAddContactPage() {
 
 void ContactsController::OnAddContactDismissed() {
   add_open_ = false;
+  add_is_transient_ = false;
   add_layer_id_ = -1;
   add_search_deadline_ms_ = 0;
   ++add_search_generation_; // a search still in flight answers into nothing
@@ -2441,6 +2460,13 @@ void ContactsController::OnAddContactDismissed() {
 
 void ContactsController::CloseAddContactPage() {
   if (!add_open_) {
+    return;
+  }
+  if (add_is_transient_) {
+    if (shell_navigation_.pop_transient) {
+      shell_navigation_.pop_transient();
+    }
+    OnAddContactDismissed();
     return;
   }
   const int layer_id = add_layer_id_;

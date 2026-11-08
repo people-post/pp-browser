@@ -1,5 +1,6 @@
 // The phone chat's bottom: the real chat.rml and composer.rml mounted the way ShellLayoutRml lays out the compact chat
 // overlay (pane body, then the composer mount), on the real stylesheets.
+#include "gui/chat/ChatController.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -140,27 +141,33 @@ TEST_F(ChatBottomChromeTest, SendKeepsTheDraftFocusedAndATapOnTheMessagesTakesIt
   EXPECT_NE(context->GetFocusElement(), draft) << "a tap on the messages closes the keyboard";
 }
 
-// #89 (Kenneth 2026-11-05): the fade over the composer stopped a bubble tail short of both screen edges (it sat inside
-// the chat panel's 12dp side padding, which the transcript cancels); the composer itself runs edge to edge and down.
-TEST_F(ChatBottomChromeTest, TheComposerAndItsFadeRunEdgeToEdge) {
+// #89 (Kenneth 2026-11-05): the composer runs edge to edge and down. 2026-11-07: it is a frosted bar over the
+// transcript, which runs down under it to the screen bottom; the fade sits right on the bar (KeepClearOfComposer).
+TEST_F(ChatBottomChromeTest, TheComposerFloatsOverTheTranscriptEdgeToEdge) {
+  ChatController::KeepClearOfComposer(document->GetElementById("shell-chat-overlay"));
+  context->Update();
   const Edges overlay = BorderEdges(ByClass("shell-chat-overlay"));
   ui::Element* fade = ByClass("chat-composer-fade");
   ui::Element* mount = document->GetElementById("shell-composer-mount");
+  ui::Element* messages = document->GetElementById("chat-messages");
   ASSERT_NE(fade, nullptr);
   ASSERT_NE(mount, nullptr);
+  ASSERT_NE(messages, nullptr);
   const Edges f = BorderEdges(fade);
   const Edges m = BorderEdges(mount);
   EXPECT_FLOAT_EQ(f.left, overlay.left);
   EXPECT_FLOAT_EQ(f.right, overlay.right);
-  EXPECT_FLOAT_EQ(f.bottom, m.top) << "the fade sits right on the composer";
+  EXPECT_NEAR(f.bottom, m.top, 1.f) << "the fade sits right on the composer";
   EXPECT_FLOAT_EQ(m.left, overlay.left);
   EXPECT_FLOAT_EQ(m.right, overlay.right);
   EXPECT_FLOAT_EQ(m.bottom, overlay.bottom);
+  EXPECT_FLOAT_EQ(BorderEdges(messages).bottom, overlay.bottom) << "the transcript runs under the composer";
 }
 
-// #89: scrolled to the latest, the last message stood under the composer's fade (the transcript's bottom padding is
-// left out of its scroll height by the engine); the spacer at the end keeps it clear.
-TEST_F(ChatBottomChromeTest, TheLatestMessageEndsAboveTheComposerFade) {
+// #89: scrolled to the latest, the last message stood under the composer (the transcript's bottom padding is left out
+// of its scroll height by the engine); the spacer at the end, as tall as the bar, keeps it clear, also once the bar
+// grows (a long draft).
+TEST_F(ChatBottomChromeTest, TheLatestMessageEndsAboveTheComposer) {
   ui::Element* messages = document->GetElementById("chat-messages");
   ui::Element* clear = ByClass("composer-clear");
   ASSERT_NE(messages, nullptr);
@@ -171,12 +178,40 @@ TEST_F(ChatBottomChromeTest, TheLatestMessageEndsAboveTheComposerFade) {
     row->SetProperty("height", "60dp");
     last = messages->InsertBefore(std::move(row), clear);
   }
+  const auto check = [&](const char* when) {
+    for (int frame = 0; frame < 2; ++frame) {  // what ChatController::AfterLayout does each frame
+      context->Update();
+      ChatController::KeepClearOfComposer(document->GetElementById("shell-chat-overlay"));
+    }
+    context->Update();
+    // What ChatTranscriptScroller does for "scroll to the latest".
+    messages->SetScrollTop(std::max(0.f, messages->GetScrollHeight() - messages->GetClientHeight()));
+    context->Update();
+    const Edges bar = BorderEdges(document->GetElementById("shell-composer-mount"));
+    EXPECT_LE(BorderEdges(last).bottom, bar.top - 8.f) << when;
+  };
+  check("one line");
+  std::string long_draft;
+  for (int line = 0; line < 4; ++line) {
+    long_draft += "a line of the draft\n";
+  }
+  state.draft = long_draft.c_str();
+  DataModelHost::Instance().Dirty("chat", "draft");
+  check("a five-line draft");
+}
+
+// The "new messages" pill sits above the floating composer, not under it.
+TEST_F(ChatBottomChromeTest, TheNewMessagesPillSitsAboveTheComposer) {
+  state.show_jump_to_latest = true;
+  state.jump_to_latest_label = "New messages";
+  DataModelHost::Instance().Dirty("chat", "show_jump_to_latest");
+  DataModelHost::Instance().Dirty("chat", "jump_to_latest_label");
   context->Update();
-  // What ChatTranscriptScroller does for "scroll to the latest".
-  messages->SetScrollTop(std::max(0.f, messages->GetScrollHeight() - messages->GetClientHeight()));
+  ChatController::KeepClearOfComposer(document->GetElementById("shell-chat-overlay"));
   context->Update();
-  const Edges fade = BorderEdges(ByClass("chat-composer-fade"));
-  EXPECT_LE(BorderEdges(last).bottom, fade.top - 8.f) << "the last message ends clear above the fade";
+  ui::Element* pill = ByClass("chat-jump-latest");
+  ASSERT_NE(pill, nullptr);
+  EXPECT_LE(BorderEdges(pill).bottom, BorderEdges(document->GetElementById("shell-composer-mount")).top - 8.f);
 }
 
 } // namespace

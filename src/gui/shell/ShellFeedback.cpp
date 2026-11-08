@@ -89,6 +89,11 @@ float ShellFeedback::NowMs() {
 }
 
 void ShellFeedback::ShowBanner(ShellState& state, const std::string& message, const float now_ms) {
+  if (state.layout_mode == LayoutMode::Compact) {
+    // Phones: every result and error is the bottom pill, never a top banner (Kenneth 2026-11-07).
+    ShowToast(state, message, ToastDuration::Long, now_ms);
+    return;
+  }
   state.banner_message = ui::String(message.c_str());
   state.banner_expires_at_ms = ResolveNowMs(now_ms) + kBannerTtlMs;
 }

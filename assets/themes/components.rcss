@@ -395,7 +395,6 @@ select selectbox option {
 }
 
 .bubble {
-  /* Horizontal padding is mirrored by kBubbleHorizontalPaddingDp (src/gui/chat/AiImageAttach.h); change both. */
   padding: 10dp 14dp;
   border-radius: 12dp;
   text-align: left;
@@ -1554,6 +1553,23 @@ select selectbox option {
   display: block;
   position: absolute;
   top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: 35;
+  pointer-events: none;
+}
+
+/* Phones: the band over the home indicator (ShellHost sets its height to the bottom inset under a hidden tab or a pushed
+   page, 0 elsewhere); clear unless the page above it is grouped (colors.rcss.tmpl). */
+.shell-home-indicator-strip {
+  display: none;
+}
+
+.shell-body--compact .shell-home-indicator-strip {
+  display: block;
+  position: absolute;
+  bottom: 0;
   left: 0;
   right: 0;
   height: 0;
@@ -3204,13 +3220,6 @@ select selectbox option {
   flex-shrink: 0;
 }
 
-/* 28dp tab icons, one step up from §8.2's 24dp (Kenneth 2026-11-04: "图标好像小了一点，感觉很小气"); the 11dp label
-   stays. Size in dp so the layout box matches the drawn icon on every density. */
-.shell-nav-rail--compact .shell-nav-tab svg {
-  width: 28dp;
-  height: 28dp;
-}
-
 /* Collapse / expand the list pane; sits at the bottom of the expanded rail. */
 .shell-nav-collapse {
   height: 28dp;
@@ -3232,10 +3241,33 @@ select selectbox option {
   line-height: 1.1;
 }
 
-/* caption-2 */
-.shell-nav-rail--compact .shell-nav-tab-label {
-  font-size: 11dp;
-  line-height: 13dp;
+/* Phone tab bar (DEV/PLAN-minimal-nav.md A, Kenneth 2026-11-07): two words, no icons, 48dp; the chosen one bold. The
+   Chats unread count sits at the word's top right. */
+.shell-nav-rail--text,
+.shell-nav-rail--text .shell-nav-rail-inner,
+.shell-nav-rail--text .shell-nav-tab {
+  height: 48dp;
+}
+
+.shell-nav-tab-text-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell-nav-rail--text .shell-nav-tab-label {
+  font-size: 16dp;
+  line-height: 20dp;
+}
+
+.shell-nav-rail--text .shell-nav-tab--active .shell-nav-tab-label {
+  font-weight: bold;
+}
+
+.shell-nav-rail--text .badge-count--text {
+  top: -8dp;
+  right: -20dp;
 }
 
 .shell-nav-page {
@@ -3326,6 +3358,28 @@ select selectbox option {
   opacity: 1;
 }
 
+/* Phone hidden tab's root page (Settings, Contacts; DEV/PLAN-minimal-nav.md A): its bar holds the round back on the
+   left and the title in the middle at all times, so the page has no large title; no tab bar under it, so the spacer
+   at the end of its list only keeps the last row off the screen edge. */
+.shell-nav-page--hidden-tab .pane-nav-title {
+  opacity: 1;
+}
+
+.shell-nav-page--hidden-tab .large-title {
+  display: none;
+}
+
+.shell-nav-page--hidden-tab .tab-bar-clear {
+  height: 16dp;
+}
+
+.shell-layer-compact .pane-nav-back {
+  position: absolute;
+  top: 2dp;
+  left: 12dp;
+  z-index: 1;
+}
+
 /* Phone bars (Kenneth 2026-11-04, PLAN-ui-refresh-impl 65-67): no hairline under a top bar or over the tab bar; a
    16dp fade from the bar colour to clear takes its place (colors-*.rcss), on every top bar, the tab bar and the
    composer alike. With Transparency on, the bar that is on top is frosted (a see-through bar colour plus blur, only
@@ -3372,9 +3426,9 @@ select selectbox option {
 
 .pane-nav-actions {
   position: absolute;
-  top: 0;
-  right: 0;
-  height: 44dp;
+  top: 2dp;
+  right: 12dp;
+  height: 52dp;
   align-items: center;
 }
 
@@ -3514,11 +3568,15 @@ select selectbox option {
   box-sizing: border-box;
 }
 
+.shell-layer-compact .shell-chat-overlay-chrome {
+  padding-left: 12dp;
+}
+
 .shell-chat-overlay-chrome .shell-back-btn,
 .shell-layer-compact .shell-transient-chrome .shell-back-btn {
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
+  width: 52dp;
+  height: 52dp;
+  min-width: 52dp;
   border-radius: 0;
 }
 
@@ -3538,7 +3596,7 @@ select selectbox option {
   position: relative;
   z-index: 3;
   height: 55dp;
-  margin: -56dp -12dp 8dp 32dp;
+  margin: -56dp -12dp 8dp 52dp;
   padding: 0 8dp 0 0;
   border-radius: 0;
   border-left-width: 0;
@@ -3712,8 +3770,14 @@ select selectbox option {
   cursor: pointer;
 }
 
+/* The composer is a frosted bar over the transcript, like the top bar (Kenneth 2026-11-07): the transcript runs down
+   under it; ChatController::SyncComposerOverlay keeps its end spacer, fade and "new messages" pill above the bar. */
 .shell-chat-overlay .shell-composer-mount {
-  flex-shrink: 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
 }
 
 .shell-pane {
@@ -3882,6 +3946,10 @@ select selectbox option {
   text-align: center;
 }
 
+.shell-layer-compact .shell-transient-chrome {
+  padding: 0 0 0 12dp;
+}
+
 .shell-transient-chrome {
   position: absolute;
   top: 0;
@@ -3914,11 +3982,332 @@ select selectbox option {
   height: 18dp;
 }
 
+/* Phone round button (DEV/PLAN-minimal-nav.md G, Kenneth 2026-11-07 "像苹果一样"): a 52dp target around a 44dp raised disc
+   (a soft top-to-bottom gradient and a faint shadow) holding a 24dp icon, the disc 16dp from the screen edge; darker while pressed (colors-*.rcss). Back, menu, avatar, plus, new, close alike. The desktop
+   keeps its own buttons. */
+.shell-circle-btn-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell-layer-compact .shell-circle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 52dp;
+  min-width: 52dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.shell-layer-compact .shell-circle-btn-face {
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
+}
+
+.shell-layer-compact .shell-circle-btn-face svg {
+  flex-shrink: 0;
+  width: 24dp;
+  height: 24dp;
+}
+
+/* Phone AI drawer (DEV/PLAN-minimal-nav.md C): the AI conversation list slides in from the left over the AI page,
+   86% wide and full height, the rest of the page (and the tab bar under it) dimmed by the scrim; a soft shadow on its
+   right edge (colors-*.rcss). Above the tab bar (15) and the chat overlay (25), under pushed pages (30), the call bar
+   (45) and dialogs (50). The empty host takes no taps. */
+.shell-drawer-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 28;
+  pointer-events: none;
+}
+
+.shell-drawer-host .shell-layer {
+  pointer-events: auto;
+}
+
+@keyframes shell-drawer-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0%); }
+}
+
+@keyframes shell-drawer-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.shell-drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 86%;
+  transform: translateX(0%);
+  transition: transform 0.25s cubic-out;
+}
+
+.shell-drawer-layer--enter .shell-drawer {
+  animation: 0.25s cubic-out shell-drawer-in;
+}
+
+.shell-drawer-layer--enter .shell-scrim {
+  animation: 0.25s cubic-out shell-drawer-scrim-in;
+}
+
+.shell-drawer-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  width: 12dp;
+  pointer-events: none;
+}
+
+.shell-drawer-body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+}
+
+.ai-drawer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* The frosted top bar (title 44dp + search 44dp) and "you" row (56dp) float over the list (colors.rcss.tmpl). */
+.ai-drawer-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+}
+
+.ai-drawer-search {
+  margin: 0 16dp 8dp 16dp;
+  padding: 0 0 0 8dp;
+}
+
+.ai-drawer-search .chat-search-label {
+  left: 14dp;
+}
+
+.ai-drawer-search-go {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 36dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+}
+
+.ai-drawer-head {
+  flex: none;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 44dp;
+  padding: 0 4dp;
+}
+
+.ai-drawer-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.ai-drawer-head-gap {
+  display: block;
+  flex: 0 0 44dp;
+}
+
+/* The swipe buttons sit outside the row (SessionSwipeGesture), so the list clips sideways. It runs the drawer's full
+   height under the two bars; its top padding keeps the first row clear of the top bar at rest, its end spacer
+   (.ai-drawer-list-end) the last row clear of the "you" bar. */
+.ai-drawer-list {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-top: 88dp;
+  padding-bottom: 0;
+  box-sizing: border-box;
+}
+
+/* Height set by ShellHost::ApplySafeAreaLayout (the "you" row + the home indicator). */
+.ai-drawer-list-end {
+  display: block;
+  height: 64dp;
+}
+
+.ai-drawer-me {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  box-sizing: border-box;
+  flex: none;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  min-height: 64dp;
+  margin: 0;
+  padding: 10dp 16dp;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-drawer-me-avatar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
+  overflow: hidden;
+}
+
+.ai-drawer-me-image {
+  width: 44dp;
+  height: 44dp;
+}
+
+.ai-drawer-me-avatar .avatar-letter {
+  font-size: 18dp;
+}
+
+.ai-drawer-me-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-drawer-me-chevron {
+  flex: none;
+  width: 16dp;
+  height: 16dp;
+}
+
+/* An AI conversation's bar: the new-conversation button on the right; the chat's own header row, lifted onto the bar,
+   leaves it room. */
+.shell-chat-new-slot {
+  display: none;
+}
+
+.shell-layer-compact .shell-chat-new-slot {
+  display: flex;
+  position: absolute;
+  top: 2dp;
+  right: 12dp;
+  z-index: 4;
+}
+
+.shell-chat-overlay .chat-shell--ai .chat-header {
+  margin-right: 36dp;
+}
+
+/* Chats bar (DEV/PLAN-minimal-nav.md D): the round avatar sits where the other pages' round back does; the plus is a
+   plain round button in the actions slot. The photo or letter fills the 44dp disc. */
+.shell-layer-compact .pane-nav-avatar {
+  position: absolute;
+  top: 1dp;
+  left: 8dp;
+  z-index: 1;
+}
+
+.shell-circle-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 52dp;
+  border-radius: 26dp;
+  overflow: hidden;
+}
+
+.shell-circle-avatar .avatar-letter {
+  font-size: 22dp;
+}
+
+.shell-circle-avatar-image {
+  width: 52dp;
+  height: 52dp;
+}
+
+/* The Chats avatar and the user's name beside it are one tap target (open_settings_from_avatar): a 52dp avatar, then
+   the name in 17dp bold on one line, cut at about 45% of the bar. Centred in the 56dp bar (compact bar block at the end
+   of the file). */
+.shell-layer-compact .pane-nav-avatar {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 45%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.shell-layer-compact .pane-nav-avatar .shell-circle-avatar {
+  flex: none;
+}
+
+.pane-nav-avatar-name {
+  display: block;
+  flex: 1 1 0;
+  min-width: 0;
+  margin-left: 10dp;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Phone contact page and blocked list: a 48dp bar over the page (which scrolls under it) with the back arrow. */
 .shell-layer-compact .shell-transient-chrome--titled {
   min-height: 48dp;
   height: 48dp;
-  padding: 2dp 0;
+  padding: 0 0 0 12dp;
 }
 
 .shell-layer-transient {
@@ -4367,10 +4756,27 @@ select selectbox option {
 }
 
 .ask-ai {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* The input bar (picture, input row, reminder) floats over the bubbles, frosted (colors.rcss.tmpl); the scroll runs
+   down under it and its end spacer (AskAiPanel::SyncComposerClear) keeps the last bubble above it. ShellHost pads its
+   bottom by the home indicator, so the bar reaches the sheet's bottom edge. */
+.ask-ai-composer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+}
+
+.ask-ai-scroll-end {
+  display: block;
+  height: 96dp;
 }
 
 /* Left of the sheet's X (right 4dp, 44dp wide): the same 44dp target and grey disc. */
@@ -4473,12 +4879,13 @@ select selectbox option {
   line-height: 44dp;
 }
 
+/* Margin, not padding: the row is the keys' positioning box, so it must be exactly the pill. */
 .ask-ai-input-row {
   display: flex;
   flex-direction: row;
   align-items: flex-end;
   flex-shrink: 0;
-  padding: 8dp 16dp 0 16dp;
+  margin: 8dp 16dp 0 16dp;
 }
 
 /* The picture waiting to be sent: a thumbnail and an X. */
@@ -4881,7 +5288,10 @@ call-video-tile {
 }
 
 /* Minimized chip: mount layer must not steal hits; only the chip is interactive.
-   More specific than `.shell-call-chrome-mount .shell-layer { pointer-events: auto }`. */
+   More specific than `.shell-call-chrome-mount .shell-layer { pointer-events: auto }`.
+   #166: the chip can be dropped anywhere, also over the phone AI dot (shown while the call is minimised): its mount
+   (.shell-call-chrome-mount--bar, 45) is over the dot's (.shell-ai-dot-mount, 40), so the chip and its buttons win.
+   Never dragged, it keeps the --tr corner below; dropped, ShellCallChromeGesture / ShellCallChromeRml place it inline. */
 .shell-call-chrome-mount .shell-layer-call-minimized {
   position: absolute;
   top: 0;
@@ -5388,6 +5798,50 @@ call-video-tile {
   border-radius: 16dp;
   opacity: 1;
   transition: opacity 0.3s cubic-out;
+}
+
+/* The reconnect capsule (#171): fixed just above the button bar, centred; the slot lets taps through. */
+.call-phone-reconnect-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 140dp;
+  z-index: 6;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.call-phone-reconnect {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  padding: 8dp 16dp 8dp 10dp;
+  border-radius: 20dp;
+  opacity: 1;
+  transition: opacity 0.3s cubic-out;
+}
+
+.call-phone-reconnect--fading {
+  opacity: 0;
+}
+
+.call-phone-reconnect-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22dp;
+  height: 22dp;
+  border-radius: 11dp;
+}
+
+.call-phone-reconnect-text {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
 }
 
 .call-phone-notice--fading {
@@ -6845,6 +7299,15 @@ input.checkbox {
   font-size: 13dp;
 }
 
+/* A call record in a 1:1 chat: tap = call back. Group records do not get this class. */
+.chat-call-row--tappable {
+  cursor: pointer;
+}
+
+.chat-call-row--tappable:active {
+  opacity: 0.6;
+}
+
 .chat-call-row-icon {
   display: inline-block;
   width: 16dp;
@@ -7115,7 +7578,7 @@ input.checkbox {
   flex-shrink: 0;
 }
 
-/* Phone chat list (DESIGN-pp-ui 8.3 / 8.8): full-width 76dp rows, a 52dp round avatar, a hairline inset from 80dp.
+/* Phone chat list (DESIGN-pp-ui 8.3 / 8.8): full-width 64dp rows, a 52dp round avatar, a hairline inset from 80dp.
    The avatar, type icon, muted bell and search box only exist on the phone; desktop keeps the card rows. */
 .chat-search,
 .chat-row-avatar,
@@ -7140,7 +7603,7 @@ input.checkbox {
   align-items: center;
   flex-shrink: 0;
   height: 36dp;
-  margin: 0 16dp 8dp 16dp;
+  margin: 0 20dp 12dp 20dp;
   padding: 0 8dp;
   box-sizing: border-box;
   border-radius: 10dp;
@@ -7194,8 +7657,8 @@ input.checkbox {
 
 .shell-layer-compact .sidebar-session {
   gap: 12dp;
-  height: 76dp;
-  min-height: 76dp;
+  height: 64dp;
+  min-height: 64dp;
   margin: 0;
   padding: 0 0 0 16dp;
   border: 0;
@@ -7296,11 +7759,11 @@ input.checkbox {
 }
 
 .shell-layer-compact .sidebar-session-body {
-  height: 76dp;
+  height: 64dp;
   padding-right: 16dp;
   box-sizing: border-box;
   justify-content: center;
-  gap: 5dp;
+  gap: 2dp;
 }
 
 .shell-layer-compact .sidebar-session-line {
@@ -7312,21 +7775,22 @@ input.checkbox {
 }
 
 .shell-layer-compact .sidebar-session-title {
-  font-size: 16dp;
-  line-height: 21dp;
+  font-size: 17dp;
+  line-height: 22dp;
   font-weight: bold;
 }
 
 /* Kenneth 2026-11-03: one size smaller than the spec's subhead, more air ("不要塞的太满"). */
 .shell-layer-compact .sidebar-session-preview,
 .shell-layer-compact .sidebar-session-mention {
-  font-size: 14dp;
-  line-height: 19dp;
+  font-size: 15dp;
+  line-height: 20dp;
 }
 
+/* The time shares the title's line and its baseline (22dp line, 13dp text). */
 .shell-layer-compact .sidebar-session-date {
-  font-size: 12dp;
-  line-height: 16dp;
+  font-size: 13dp;
+  line-height: 22dp;
 }
 
 .shell-layer-compact .chat-row-type,
@@ -7914,10 +8378,37 @@ input.checkbox {
   margin-bottom: 8dp;
 }
 
+/* An AI question with a picture (DecorateAiImageBubble): the chat's picture bubble (B181), a 3dp frame round the
+   picture (kAiPictureFrameDp) and the question under it. The bubble's width is set inline (picture + frame), so the
+   question wraps inside it; the picture sits in a clip box with rounded corners (the engine does not round an <img>). */
+.bubble.bubble-user--picture,
+.shell-chat-overlay .bubble.bubble-user--picture {
+  max-width: none;
+  padding: 3dp;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.chat-ai-image-clip {
+  display: block;
+  overflow: hidden;
+  border-radius: 15dp;
+}
+
 .chat-ai-image {
   display: block;
-  border-radius: 8dp;
-  margin-bottom: 8dp;
+  max-width: 200dp;
+  max-height: 240dp;
+  margin: 0;
+}
+
+.bubble-user--picture .bubble-text {
+  margin: 0;
+  padding: 5dp 9dp 0 9dp;
+}
+
+.bubble-user--picture .bubble-time {
+  padding: 0 9dp 3dp 9dp;
 }
 
 .chat-attachment-video-poster {
@@ -8601,6 +9092,18 @@ input.checkbox {
   justify-content: flex-end;
   gap: 8dp;
   padding-top: 8dp;
+}
+
+/* The back: a word on the desktop, the round back on phones. */
+.people-picker-back-circle,
+.shell-layer-compact .people-picker-back-text {
+  display: none;
+}
+
+.shell-layer-compact .people-picker-back-circle {
+  display: flex;
+  flex: 0 0 52dp;
+  align-self: center;
 }
 
 .people-picker-name,
@@ -9489,9 +9992,9 @@ input.checkbox {
   align-items: center;
   justify-content: center;
   align-self: flex-start;
-  width: 44dp;
-  height: 44dp;
-  margin: 0 0 0 8dp;
+  width: 52dp;
+  height: 52dp;
+  margin: 0 0 0 12dp;
   padding: 0;
   border: 0;
   cursor: pointer;
@@ -9715,8 +10218,32 @@ input.checkbox {
   box-sizing: border-box;
 }
 
-.shell-layer-compact .nc-title {
-  padding: 12dp 16dp 0 16dp;
+/* The full-screen page's bar (DEV/PLAN-minimal-nav.md E): 48dp, the shell's round back at its left (transient chrome),
+   the title centred on the back's centre line; the A-Z strip sits right of the list under it. */
+.nc-page {
+  position: relative;
+}
+
+.shell-layer-compact .nc-page .nc-bar {
+  position: relative;
+  flex: none;
+  top: auto;
+  height: 48dp;
+}
+
+.shell-layer-compact .nc-page .nc-bar-title {
+  top: 2dp;
+  opacity: 1;
+}
+
+.shell-layer-compact .nc-page .contacts-index {
+  top: 48dp;
+  bottom: 16dp;
+}
+
+.nc-empty-hint {
+  margin: 48dp 24dp 0 24dp;
+  text-align: center;
 }
 
 /* A name-only row: centre the name in the 60dp row. */
@@ -9863,6 +10390,56 @@ input.checkbox {
   flex-wrap: wrap;
   gap: 12dp;
   margin: 12dp 16dp 0 16dp;
+}
+
+/* The two cards at the top of the sheet, scan and my QR code, side by side like the New chat page's action rows:
+   a round icon and a label, 60dp tall. */
+.shell-layer-compact .ac-top-cards {
+  display: flex;
+  flex-direction: row;
+  gap: 12dp;
+  margin: 4dp 16dp 12dp 16dp;
+}
+
+.shell-layer-compact .ac-top-card {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 10dp;
+  height: 60dp;
+  padding: 0 8dp;
+  border-radius: 14dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.shell-layer-compact .ac-top-card:active {
+  opacity: 0.6;
+}
+
+.shell-layer-compact .ac-top-card-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
+}
+
+.shell-layer-compact .ac-top-card-icon svg {
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+}
+
+.shell-layer-compact .ac-top-card-label {
+  margin: 0;
+  font-size: 16dp;
+  line-height: 22dp;
+  font-weight: bold;
 }
 
 .shell-layer-compact .ac-tile {
@@ -10876,6 +11453,110 @@ input.checkbox {
   height: 20dp;
 }
 
+/* Phones: the bold plus in the clip's place (ChatController::OnAttachFile opens the chat's or the AI's floating card). */
+.prompt-icon-plus {
+  display: none;
+}
+
+.shell-chat-overlay .prompt-attach-btn .prompt-icon-v2 {
+  display: none;
+}
+
+.shell-chat-overlay .prompt-attach-btn .prompt-icon-plus {
+  display: block;
+  flex-shrink: 0;
+  width: 24dp;
+  height: 24dp;
+}
+
+/* One composer on phones (Kenneth 2026-11-07), in a chat, an AI conversation and the ask-AI panel: every key sits
+   inside the pill, the bold plus and the emoji key at its bottom left, the microphone (Send once there is text) at its
+   bottom right; no camera (the plus card has it). The row is the keys' positioning box and the pill fills it, so the
+   keys stay on the last line while the text grows; the pill's side padding keeps the text clear of them. Each key is a
+   40 x 44dp target, 3dp past the 38dp one-line pill above and below. */
+.shell-chat-overlay .prompt-composer-row,
+.ask-ai .prompt-composer-row {
+  position: relative;
+}
+
+.shell-chat-overlay .prompt-composer-pill,
+.ask-ai .prompt-composer-pill {
+  padding: 0 44dp 0 84dp;
+}
+
+.shell-chat-overlay .prompt-composer-label,
+.ask-ai .prompt-composer-label {
+  left: 84dp;
+}
+
+.shell-chat-overlay .prompt-composer-pill .prompt-attach-btn,
+.ask-ai .prompt-composer-pill .prompt-attach-btn {
+  position: absolute;
+  left: 0;
+  bottom: -3dp;
+  width: 40dp;
+  min-width: 40dp;
+  height: 44dp;
+  margin: 0;
+  border-radius: 0;
+}
+
+.shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
+.ask-ai .prompt-composer-row .prompt-emoji-btn {
+  position: absolute;
+  left: 41dp;
+  bottom: -3dp;
+  z-index: 1;
+  width: 40dp;
+  min-width: 40dp;
+  height: 44dp;
+  margin: 0;
+  border-radius: 0;
+}
+
+.shell-chat-overlay .prompt-composer-pill .prompt-capture-btn,
+.ask-ai .prompt-composer-pill .prompt-capture-btn {
+  display: none;
+}
+
+.shell-chat-overlay .prompt-composer-row .prompt-send-btn,
+.shell-chat-overlay .prompt-composer-row .prompt-voice-toggle-btn--end,
+.ask-ai .prompt-composer-row .prompt-send-btn {
+  position: absolute;
+  right: 0;
+  bottom: -3dp;
+  z-index: 1;
+  width: 44dp;
+  min-width: 44dp;
+  height: 44dp;
+  margin: 0;
+}
+
+/* Voice mode (a people chat): the hold-to-talk bar takes the pill's place; the keyboard key sits inside its right end. */
+.shell-chat-overlay .prompt-voice-bar {
+  padding-right: 44dp;
+}
+
+.ask-ai .prompt-attach-btn .prompt-icon-plus {
+  display: block;
+  flex-shrink: 0;
+  width: 24dp;
+  height: 24dp;
+}
+
+/* The ask-AI panel's settings "?" (text only): no plus, the emoji key leads. */
+.ask-ai .ask-ai-input-row--text-only .prompt-composer-pill {
+  padding-left: 44dp;
+}
+
+.ask-ai .ask-ai-input-row--text-only .prompt-composer-label {
+  left: 44dp;
+}
+
+.ask-ai .ask-ai-input-row--text-only .prompt-emoji-btn {
+  left: 1dp;
+}
+
 /* Grouped lists on phones: the Me tab and the settings pages (DESIGN-pp-ui 8.7, 8.10). Same geometry as the .cd-*
    contact-detail cards above. The plain group-* classes are inert on desktop; everything visual is scoped to
    .shell-layer-compact. */
@@ -11027,11 +11708,11 @@ input.checkbox {
 
 .shell-layer-compact .settings-back-btn {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
+  top: 2dp;
+  left: 12dp;
+  width: 52dp;
+  height: 52dp;
+  min-width: 52dp;
   margin: 0;
   border-radius: 0;
   z-index: 1;
@@ -12137,13 +12818,10 @@ textarea:composing ~ .prompt-composer-label,
   display: none;
 }
 
-/* The minimal AI home scrolls a conversation list into the dock, so the composer gets the same soft frosted fade at
-   its top edge as the chat composer (Kenneth 2026-11-05). Only on the minimal home; the dock must anchor it. */
+/* Off on phones: the AI conversation list moved to the drawer (2026-11-07), so nothing scrolls into the composer and
+   this fade, drawn above the centred block, sat at the top of the page as a grey line under the status bar. */
 .shell-layer-compact .home-composer-fade {
   display: none;
-}
-.shell-layer-compact .home-landing--minimal .home-composer-fade {
-  display: block;
 }
 
 /* The AI conversation list fills the page and scrolls (its "PP 助手" title scrolls with it); the ask-AI field + chips
@@ -12240,24 +12918,215 @@ textarea:composing ~ .prompt-composer-label,
   padding: 0 16dp;
 }
 
+/* The chips wrap onto a second row when they do not fit, centred (Kenneth 2026-11-07). When the keyboard leaves too
+   little height they shrink away before the field does (min-height 0 + clip). */
 .shell-layer-compact .home-suggestions {
   display: flex;
   flex-direction: row;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 0 16dp;
-  text-align: left;
-  white-space: nowrap;
+  flex-wrap: wrap;
+  justify-content: center;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 12dp;
+  text-align: center;
 }
 
 .shell-layer-compact .home-suggestions .chat-suggestion {
   flex: none;
   height: 32dp;
   min-height: 32dp;
-  margin: 0 8dp 0 0;
+  margin: 0 4dp 8dp 4dp;
   padding: 0 12dp;
   font-size: 15dp;
   line-height: 32dp;
+}
+
+/* Phone minimal AI Home (Kenneth 2026-11-07): one centred block, logo, two-line field, wrapping chips, with open
+   space under it. The sessions list moved to the drawer (home.rml keeps the inline one in an expanded-only data-if);
+   there is no page heading. The block sits in the middle of the page; both spacers give way first, then the chips and
+   the logo shrink and clip, so with the keyboard up the field stays on its top edge (the tab bar hides then,
+   ShellHost). */
+.home-logo {
+  display: none;
+}
+
+.shell-layer-compact .home-landing--minimal .home-landing-inner {
+  flex: 1 1 0;
+  min-height: 0;
+  margin-top: 0;
+  justify-content: center;
+  padding-bottom: 72dp;
+}
+
+.shell-layer-compact .home-landing--minimal .home-logo {
+  display: block;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  height: 100dp;
+  margin: 0 0 16dp 0;
+  text-align: center;
+}
+
+.shell-layer-compact .home-landing--minimal .home-logo img {
+  width: 100dp;
+  height: 100dp;
+  border-radius: 22dp;
+}
+
+/* iPhone SE class screens (under 600dp tall): a smaller logo so logo, field and two chip rows fit. */
+@media (max-height: 599dp) {
+  .shell-layer-compact .home-landing--minimal .home-logo {
+    height: 72dp;
+    margin-bottom: 10dp;
+  }
+  .shell-layer-compact .home-landing--minimal .home-logo img {
+    width: 72dp;
+    height: 72dp;
+    border-radius: 16dp;
+  }
+  .shell-layer-compact .home-landing--minimal .home-landing-inner {
+    padding-bottom: 24dp;
+  }
+}
+
+/* The field on the Home root is two lines tall; its placeholder label is the "what can I do for you" line (the draft
+   label for a conversation stays with the conversation's own composer). */
+.shell-layer-compact .home-composer-mount .prompt-composer {
+  flex: none;
+  margin: 0 0 12dp 0;
+  border-radius: 24dp;
+}
+
+/* The box is the composer, not the pill (Kenneth 2026-11-07): a picture chip (status row) sits inside it, above the
+   text; the pill inside is clear (colors.rcss.tmpl). */
+.shell-layer-compact .home-composer-mount .prompt-composer-status {
+  margin: 12dp 16dp 0 16dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-pill {
+  min-height: 76dp;
+  padding: 0 16dp 40dp 16dp;
+  border-radius: 24dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-input {
+  align-self: stretch;
+  min-height: 36dp;
+  padding: 12dp 0 0 0;
+}
+
+/* The tools sit inside the box (Kenneth 2026-11-07): a plus circle (the attach flow: Photo / File) and the emoji key at
+   the bottom left, Send at the bottom right once there is text; no microphone or camera here. The row and the pill
+   are the positioning boxes, so the buttons leave the flow. */
+.prompt-icon-home {
+  display: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-row {
+  position: relative;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-icon-classic,
+.shell-layer-compact .home-composer-mount .prompt-icon-v2,
+.shell-layer-compact .home-composer-mount .prompt-capture-btn,
+.shell-layer-compact .home-composer-mount .prompt-voice-toggle-btn {
+  display: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-icon-home {
+  display: block;
+  flex-shrink: 0;
+  width: 26dp;
+  height: 26dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-attach-btn {
+  display: none;
+}
+
+.prompt-home-plus {
+  display: none;
+}
+
+/* Both tools are 44dp targets inside the box (the row and the pill are the same rectangle): the plus 8dp from the left
+   edge, the emoji key 8dp after it. */
+.shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-home-plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  left: 8dp;
+  bottom: 4dp;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {
+  position: absolute;
+  left: 60dp;
+  bottom: 4dp;
+  z-index: 1;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0;
+  border-radius: 22dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-emoji-btn .prompt-icon-v2 {
+  display: block;
+  width: 24dp;
+  height: 24dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {
+  position: absolute;
+  right: 8dp;
+  bottom: 8dp;
+  z-index: 1;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  margin: 0;
+  border-radius: 18dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-send-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
+}
+
+.prompt-composer-label--home,
+.shell-chat-overlay .prompt-composer-label--home,
+.ask-ai .prompt-composer-label--home {
+  display: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-label--thread {
+  display: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-label--home {
+  display: block;
+  position: absolute;
+  top: 12dp;
+  left: 16dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 24dp;
+  pointer-events: none;
 }
 
 /* Me → Storage and its "Manage storage" pages (DEV/PLAN-storage-manager.md): iOS-style grouped lists, in-place
@@ -12695,4 +13564,330 @@ textarea:composing ~ .prompt-composer-label,
 
 .storage-select-delete {
   flex-shrink: 0;
+}
+
+/* Phone top bars are 56dp (Kenneth 2026-11-07, round 3): the 40dp circles sit centred with 8dp clear above and below
+   (the status-bar inset is already outside #shell-root), and the pages' scrollers start under the bar, not behind it.
+   Compact only; the desktop's 44dp panes and constants are untouched. */
+.shell-layer-compact .pane-nav,
+.shell-layer-compact .pane-nav-bg,
+.shell-layer-compact .pane-nav-title {
+  height: 56dp;
+}
+
+.shell-layer-compact .pane-nav-title {
+  line-height: 56dp;
+}
+
+.shell-layer-compact .pane-nav-actions {
+  top: 2dp;
+  right: 12dp;
+  height: 52dp;
+}
+
+.shell-layer-compact .pane-nav-back,
+.shell-layer-compact .settings-back-btn {
+  top: 2dp;
+}
+
+.shell-layer-compact .pane-nav-avatar {
+  top: 2dp;
+  left: 16dp;
+  height: 52dp;
+}
+
+.shell-layer-compact .sidebar-sessions,
+.shell-layer-compact .contacts-list-view,
+.shell-layer-compact .settings-list-view {
+  padding-top: 56dp;
+}
+
+/* Chats header B3 (DEV/PLAN-chats-header-b3.md, Kenneth 2026-11-08). THE header height is 104dp: a 20dp top margin, the
+   64dp avatar, and 20dp clear above the search box. It is written in exactly these three rules (the bar, its frosted
+   layer, the list's top padding) and checked by home_minimal_layout_test; the other root pages keep their 56dp bar. */
+.shell-layer-compact .sidebar-panel .pane-nav,
+.shell-layer-compact .sidebar-panel .pane-nav-bg {
+  height: 104dp;
+}
+
+.shell-layer-compact .sidebar-panel .sidebar-sessions {
+  padding-top: 104dp;
+}
+
+.shell-layer-compact .sidebar-panel .pane-nav-avatar {
+  top: 20dp;
+  left: 20dp;
+  right: 84dp;
+  width: auto;
+  height: 64dp;
+}
+
+.shell-layer-compact .sidebar-panel .pane-nav-avatar .shell-circle-avatar {
+  width: 64dp;
+  height: 64dp;
+  border-radius: 32dp;
+}
+
+.shell-layer-compact .sidebar-panel .pane-nav-avatar .shell-circle-avatar-image {
+  width: 64dp;
+  height: 64dp;
+}
+
+.shell-layer-compact .sidebar-panel .pane-nav-avatar .shell-circle-avatar .avatar-letter {
+  font-size: 26dp;
+}
+
+.pane-nav-avatar-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 64dp;
+  margin-left: 14dp;
+  text-align: left;
+}
+
+.shell-layer-compact .sidebar-panel .pane-nav-avatar-name {
+  flex: none;
+  margin: 0;
+  font-size: 22dp;
+  line-height: 26dp;
+  font-weight: bold;
+}
+
+/* The device's link to our service: a 14dp cloud (tick when online, slash when offline) and the word. */
+.pane-nav-avatar-sub {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin: 2dp 0 0 0;
+  height: 16dp;
+  font-size: 13dp;
+  line-height: 16dp;
+  text-align: left;
+}
+
+.pane-nav-link-icon {
+  flex: none;
+  width: 14dp;
+  height: 14dp;
+  margin-right: 5dp;
+}
+
+.pane-nav-link-text {
+  display: block;
+  white-space: nowrap;
+}
+
+/* The plus: a plain 44dp teal-tint disc (52dp hit area), centred on the avatar, 20dp from the screen edge. */
+.shell-layer-compact .sidebar-panel .pane-nav-actions {
+  top: 20dp;
+  right: 16dp;
+  height: 64dp;
+}
+
+.shell-layer-compact .home-scroll {
+  padding-top: 56dp;
+}
+
+.shell-layer-compact .settings-detail-header {
+  height: 56dp;
+}
+
+.shell-layer-compact .settings-detail-body {
+  padding-top: 56dp;
+}
+
+.shell-layer-compact .contacts-index {
+  top: 56dp;
+}
+
+.shell-layer-compact .nav-bar-host.nav-bar-hidden .settings-detail-header,
+.shell-layer-transient.nav-bar-host.nav-bar-hidden .shell-transient-chrome {
+  transform: translateY(-72dp);
+}
+
+.shell-layer-compact .shell-transient-chrome,
+.shell-layer-compact .shell-transient-chrome--titled {
+  min-height: 56dp;
+  padding: 2dp 0 0 12dp;
+}
+
+.shell-layer-compact .shell-transient-chrome--titled {
+  height: 56dp;
+}
+
+.shell-layer-transient.shell-layer-compact .contact-detail-panel,
+.shell-layer-transient.shell-layer-compact .blocked-page {
+  padding-top: 56dp;
+}
+
+.shell-layer-compact .nc-page .nc-bar {
+  height: 56dp;
+}
+
+.shell-layer-compact .nc-page .nc-bar-title {
+  top: 0;
+}
+
+.shell-layer-compact .nc-page .contacts-index {
+  top: 56dp;
+}
+
+/* New chat page (mockup 24-minimal-final.html screen 4, Kenneth 2026-11-07): the settings' grouped look. Two cards side
+   by side (new group, add contact), then the contacts as white rounded cards under small grey letter headers; 16dp
+   side margins; the A-Z strip stays on the right edge. Colours: colors.rcss.tmpl. */
+.shell-layer-compact .nc-page .nc-search {
+  margin: 0 16dp 12dp 16dp;
+}
+
+/* New chat's and Add contact's bar only shows the title: it sits over the shell's round back (the transient chrome,
+   z-index 2, under this pane-nav's 3), so it lets taps through to it (2026-11-07: the back did nothing). */
+.shell-layer-compact .nc-bar {
+  pointer-events: none;
+}
+
+.shell-layer-compact .nc-page .nc-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 12dp;
+  padding: 0 16dp 8dp 16dp;
+}
+
+.shell-layer-compact .nc-page .nc-action {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 56dp;
+  min-height: 56dp;
+  padding: 0 12dp;
+  gap: 10dp;
+  border-radius: 14dp;
+}
+
+.shell-layer-compact .nc-page .nc-action-icon {
+  width: 36dp;
+  height: 36dp;
+  border-radius: 10dp;
+}
+
+.shell-layer-compact .nc-page .nc-action-label {
+  font-size: 16dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .nc-page .nc-section-header {
+  height: 24dp;
+  padding: 0 32dp;
+  margin-top: 8dp;
+  font-size: 13dp;
+  line-height: 24dp;
+}
+
+.shell-layer-compact .nc-page .nc-group {
+  margin: 0 16dp;
+  border-radius: 14dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .nc-page .contacts-row {
+  height: 56dp;
+  min-height: 56dp;
+  padding: 0 0 0 12dp;
+}
+
+.shell-layer-compact .nc-page .contacts-row-avatar-frame {
+  width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+}
+
+.shell-layer-compact .nc-page .contacts-row-avatar-image {
+  width: 40dp;
+  height: 40dp;
+}
+
+.shell-layer-compact .nc-page .contacts-row-title {
+  font-size: 17dp;
+  line-height: 55dp;
+}
+
+/* The Home root's bar is clear at rest: nothing of the fade or the frost shows as a line round the menu circle. */
+.shell-layer-compact .shell-nav-page--home .pane-nav .bar-fade {
+  display: none;
+}
+
+.shell-layer-compact .shell-nav-page--home .pane-nav-bg {
+  border: 0;
+  box-shadow: none;
+}
+
+/* Phone tab bar (round 7): the chosen word sits on a 72 x 32dp rounded light pill; the other word is plain grey. */
+.shell-nav-rail--text .shell-nav-tab-text-wrap {
+  width: 72dp;
+  height: 32dp;
+  border-radius: 16dp;
+}
+
+/* Floating plus menu (ContextMenuHost::ShowActionsPopoverLeftAligned): a 150dp card under the button, left edges
+   aligned; 48dp rows of a 28dp round icon tile and a 16dp label, no separators. Its look (grey card, gradient, shadow)
+   is in colors.rcss.tmpl. */
+.context-menu-layer--popover-left .context-menu-panel {
+  width: 150dp;
+  min-width: 150dp;
+  max-width: 150dp;
+  padding: 0;
+  border: 0;
+  border-radius: 16dp;
+  overflow: hidden;
+}
+
+.context-menu-layer--popover-left .context-menu-item {
+  flex-direction: row;
+  align-items: center;
+  gap: 10dp;
+  height: 48dp;
+  min-height: 48dp;
+  padding: 0 12dp;
+  border: 0;
+  border-radius: 0;
+}
+
+.context-menu-layer--popover-left .context-menu-item-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28dp;
+  height: 28dp;
+  border-radius: 14dp;
+}
+
+.context-menu-layer--popover-left .context-menu-item-icon svg {
+  width: 16dp;
+  height: 16dp;
+}
+
+.context-menu-layer--popover-left .context-menu-item-label {
+  font-size: 16dp;
+  white-space: nowrap;
+}
+
+/* Add contact is a full-screen page on phones, the same bar as New chat. */
+.shell-layer-compact .ac-page {
+  position: relative;
+}
+
+.shell-layer-compact .ac-page .nc-bar {
+  position: relative;
+  flex: none;
+  top: auto;
+  height: 56dp;
+}
+
+.shell-layer-compact .ac-page .nc-bar-title {
+  top: 0;
+  opacity: 1;
 }

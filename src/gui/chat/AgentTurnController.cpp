@@ -38,6 +38,7 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/Platform.h"
 #include "common/IPushDeviceRegistrar.h"
+#include "lib/ui/ContextMenuHost.h"
 #include "foundation/platform/CameraCapture.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "lib/messaging/DeleteForEveryone.h"
@@ -171,6 +172,10 @@ void AgentTurnController::Tick() {
     for (const AgentEvent& event : events) {
       HandleAgentEvent(event);
     }
+  }
+  if (reload_when_idle_ && !(agent_ports_.any_busy && agent_ports_.any_busy())) {
+    reload_when_idle_ = false; // reconfiguring under a running turn would rebuild its client and tools
+    ReloadAgentConfig();
   }
   RecoverMissedTurnEnd();
   RetryQueueDrain();
@@ -344,6 +349,45 @@ void AgentTurnController::SendSharedAssistantRelay(const std::string& thread_id,
 
 void AgentTurnController::OnAttachAiImage() {
   PickAiImage([this](std::string path) { StartAiImagePrepare(std::move(path)); });
+}
+
+std::vector<ContextMenuAction> AgentTurnController::HomeAttachActions(std::function<void()> camera,
+                                                                       std::function<void()> photos,
+                                                                       std::function<void()> file) {
+  std::vector<ContextMenuAction> actions;
+  actions.push_back({"home_attach_camera", Tr("home.attach.camera"), nullptr, std::move(camera),
+                     "../icons/v2/camera.svg"});
+  actions.push_back({"home_attach_photo", Tr("home.attach.photo"), nullptr, std::move(photos),
+                     "../icons/v2/photo.svg"});
+  actions.push_back({"home_attach_file", Tr("chat.attach.file"), nullptr, std::move(file), "../icons/v2/file.svg"});
+  return actions;
+}
+
+void AgentTurnController::ShowHomeAttachMenu(ui::Element* anchor, const bool above) {
+  auto camera = [this]() { CaptureAiPhoto([this](std::string path) { StartAiImagePrepare(std::move(path)); }); };
+  const auto picker = [this](const bool files_app) {
+    return [this, files_app]() {
+      PickAiImageFrom(files_app, [this](std::string path) { StartAiImagePrepare(std::move(path)); });
+    };
+  };
+  ContextMenuHost::Instance().ShowActionsPopoverLeftAligned(
+      anchor, HomeAttachActions(std::move(camera), picker(false), picker(true)), {}, above);
+}
+
+void AgentTurnController::PickAiImageFrom(const bool files_app, std::function<void(std::string path)> picked) {
+  NativeFileDialogCallback on_picked = [picked = std::move(picked)](std::vector<std::string> paths) {
+    AppRuntime::PostUI([picked, paths = std::move(paths)]() mutable {
+      if (!paths.empty()) {
+        picked(std::move(paths.front()));
+      }
+    });
+  };
+  // The assistant reads images only: "Photos" is the library, "File" the Files app's image files.
+  if (files_app) {
+    ShowOpenImageDocumentDialog(Backend::GetWindow(), std::move(on_picked), /*include_heic=*/true);
+  } else {
+    ShowOpenImageFileDialog(Backend::GetWindow(), std::move(on_picked), /*include_heic=*/true);
+  }
 }
 
 void AgentTurnController::PickAiImage(std::function<void(std::string path)> picked) {
@@ -559,7 +603,8 @@ bool AgentTurnController::SendImageQuestion(const std::string& text) {
   // Taken out first: opening the AI thread from Home switches threads, which discards a pending image.
   PendingAiImage image = std::move(*pending_image_);
   pending_image_.reset();
-  if (host_.ChromeSnapshot().nav_tab == NavTab::Home && !host_.EnsureHomeOutboundSession()) {
+  // Only from the AI page's own composer: in a conversation open over it the picture goes to that conversation.
+  if (SendStartsHomeConversation(host_.ChromeSnapshot()) && !host_.EnsureHomeOutboundSession()) {
     pending_image_ = std::move(image);
     return false;
   }
@@ -1401,6 +1446,9 @@ void AgentTurnController::RefreshLlmSetupBanner() {
       }
     }
     const std::string brief_key = ResolveBriefLlmApiKey(registered, guest);
+    if (brief_key.empty() && brief_key_run_->InFlight()) {
+      return; // a key is on its way: keep the banner as it is until the mint ends (OnBriefKeyMintEnded)
+    }
     if (brief_key.empty()) {
       // The mint hint can be the server's own wording, so remember what was shown to dismiss it later.
       last_brief_banner_ = !brief_guest_mint_user_hint_.empty() ? brief_guest_mint_user_hint_ : kBriefUnavailable;
@@ -1443,20 +1491,29 @@ void AgentTurnController::EnsureBriefGuestLlmKey() {
   if (ResolvePreset(host_.Store().Snapshot().config) != "brief" || base_url.empty()) {
     base_url = BriefLlmBaseUrl();
   }
-  auto minted = MintBriefGuestLlmKey(base_url);
-  if (!minted) {
-    brief_guest_mint_user_hint_ = AppError::Display(minted.error());
+  // The HTTP goes off the UI thread; the key is stored back on it, and OnBriefKeyMintEnded says how it went.
+  host_.MintBriefGuestKey(base_url);
+}
+
+void AgentTurnController::OnBriefKeyMintEnded(const BriefKeyMintEnd& end) {
+  switch (end.outcome) {
+  case BriefKeyMintOutcome::Stored:
+    brief_guest_mint_user_hint_.clear();
+    return; // after_identity_changed reloads the agent and refreshes the banner
+  case BriefKeyMintOutcome::MintFailed:
+    brief_guest_mint_user_hint_ = end.error ? AppError::Display(*end.error) : std::string();
     if (brief_guest_mint_user_hint_.empty()) {
       brief_guest_mint_user_hint_ = Tr("chat.hint.brief_unavailable_temp");
     }
+    break;
+  case BriefKeyMintOutcome::SaveFailed:
+    brief_guest_mint_user_hint_ = Tr("chat.hint.brief_key_save_failed");
+    break;
+  case BriefKeyMintOutcome::Discarded:
+    brief_guest_mint_attempted_ = false; // nothing was written: the next session mints again
     return;
   }
-  brief_guest_mint_user_hint_.clear();
-  LocalIdentity updated = *identity;
-  updated.brief_llm_guest_api_key = minted->llm_api_key;
-  if (!host_.Facade()->UpdateLocalIdentity(updated)) {
-    brief_guest_mint_user_hint_ = Tr("chat.hint.brief_key_save_failed");
-  }
+  RefreshLlmSetupBanner(); // it kept the banner while the mint was in flight
 }
 
 AgentTurnController::AgentConfig AgentTurnController::ProjectAgent(const AppConfig& config) {

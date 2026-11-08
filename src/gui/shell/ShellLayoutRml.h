@@ -22,6 +22,12 @@ public:
   std::string BottomChrome() const;
   std::string Dialog() const;
   std::string PinGate() const;
+  /**
+   * Phone AI conversation list (DEV/PLAN-minimal-nav.md C): the drawer layer while `ai_drawer_open`, else empty. It
+   * goes into #shell-ai-drawer-host (ShellRoot), above the tab bar, which stays under its scrim; ShellHost mounts the
+   * `ai_drawer` view into #shell-ai-drawer-mount. Never on the desktop.
+   */
+  std::string AiDrawer() const;
   /** True when a Cancel + OK pair would not fit side by side in the phone alert card: the buttons stack instead. */
   static bool DialogButtonsStacked(const std::string& cancel_label, const std::string& ok_label);
   /** The PIN gate's field (field mode), focused when the gate is mounted. */

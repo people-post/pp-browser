@@ -1,11 +1,17 @@
 #include "gui/shell/ShellFeedback.h"
+#include "gui/shell/ShellHost.h"
 #include "lib/ui/ShellInterruption.h"
 #include "lib/ui/ShellLayout.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "lib/ui/ShellTypes.h"
 
 #include <gtest/gtest.h>
+#include <fstream>
+#include <memory>
+#include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   using namespace pbr;
@@ -94,6 +100,15 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_EQ(ShellInterruption::Top(compact_me_tab), InterruptionKind::None);
   EXPECT_FALSE(ShellInterruption::DismissTop(compact_me_tab));
 
+  // A chat overlay left open under a phone hidden tab (Me, Contacts) is not the top: the tab's page is.
+  ShellState chat_under_me = chat_overlay_state;
+  chat_under_me.nav_tab = NavTab::Me;
+  EXPECT_EQ(ShellInterruption::Top(chat_under_me), InterruptionKind::None);
+  const PaneVisibility under_me_vis = ShellLayout::WhichPanesVisible(chat_under_me);
+  EXPECT_TRUE(under_me_vis.compact_nav_page);
+  EXPECT_FALSE(under_me_vis.compact_chat_overlay);
+  EXPECT_FALSE(ProjectShellChromeSnapshot(chat_under_me).compact_chat_open) << "not on screen";
+
   ShellState dismiss_transient = transient_state;
   EXPECT_TRUE(ShellInterruption::DismissTop(dismiss_transient));
   EXPECT_TRUE(dismiss_transient.transient_stack.empty());
@@ -153,6 +168,17 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   ASSERT_EQ(phone_toasts.toasts.size(), 1U);
   EXPECT_FLOAT_EQ(phone_toasts.toasts.back().expires_at_ms, 4500.f);
 
+  // Phones: an app-level error is the bottom pill, never a top banner.
+  ShellFeedback::ShowBanner(phone_toasts, "Invalid API key", 1000.f);
+  EXPECT_TRUE(phone_toasts.banner_message.empty());
+  EXPECT_STREQ(phone_toasts.toasts.back().message.c_str(), "Invalid API key");
+  ShellFeedback::ShowStickyBanner(phone_toasts, "Still wrong");
+  // A sticky notice (connecting, client compat, call) stays a persistent banner on phones.
+  EXPECT_STREQ(phone_toasts.banner_message.c_str(), "Still wrong");
+  EXPECT_STREQ(phone_toasts.toasts.back().message.c_str(), "Invalid API key");
+  ShellFeedback::DismissBanner(phone_toasts);
+  EXPECT_TRUE(phone_toasts.banner_message.empty()) << "dismiss_banner clears a sticky banner on the phone too";
+
   ShellFeedback::ShowBanner(toast_state, "Offline");
   EXPECT_FALSE(toast_state.banner_message.empty());
   ShellFeedback::DismissBanner(toast_state);
@@ -174,9 +200,9 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_FLOAT_EQ(no_inset.shell_top_dp, 0.f);
   EXPECT_FLOAT_EQ(no_inset.content_top_dp, 0.f);
   EXPECT_FLOAT_EQ(no_inset.shell_bottom_dp, 0.f);
-  EXPECT_FLOAT_EQ(no_inset.content_padding_bottom_dp, 49.f);
+  EXPECT_FLOAT_EQ(no_inset.content_padding_bottom_dp, 48.f);
   EXPECT_FLOAT_EQ(no_inset.chrome_bottom_dp, 0.f);
-  EXPECT_FLOAT_EQ(no_inset.sheet_bottom_dp, 49.f);
+  EXPECT_FLOAT_EQ(no_inset.sheet_bottom_dp, 48.f);
   EXPECT_FLOAT_EQ(no_inset.chrome_horizontal_inset_dp, 0.f);
 
   const CompactChromeLayout with_inset = ShellLayout::ComputeCompactChromeLayout(config, 47, 34);
@@ -184,9 +210,9 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_FLOAT_EQ(with_inset.shell_top_dp, 0.f);
   EXPECT_FLOAT_EQ(with_inset.content_top_dp, 47.f);
   EXPECT_FLOAT_EQ(with_inset.shell_bottom_dp, 34.f);
-  EXPECT_FLOAT_EQ(with_inset.content_padding_bottom_dp, 49.f);
+  EXPECT_FLOAT_EQ(with_inset.content_padding_bottom_dp, 48.f);
   EXPECT_FLOAT_EQ(with_inset.chrome_bottom_dp, 0.f);
-  EXPECT_FLOAT_EQ(with_inset.sheet_bottom_dp, 49.f);
+  EXPECT_FLOAT_EQ(with_inset.sheet_bottom_dp, 48.f);
 
   // Keyboard up with no bottom surface: the body stays full-bleed (0) so its background paints behind the keyboard,
   // and the keyboard inset lifts the content via #shell-root instead of shrinking the body.
@@ -195,22 +221,22 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_FLOAT_EQ(with_keyboard.content_top_dp, 47.f);
   EXPECT_FLOAT_EQ(with_keyboard.shell_bottom_dp, 0.f);
   EXPECT_FLOAT_EQ(with_keyboard.content_bottom_inset_dp, 336.f);
-  EXPECT_FLOAT_EQ(with_keyboard.content_padding_bottom_dp, 49.f);
+  EXPECT_FLOAT_EQ(with_keyboard.content_padding_bottom_dp, 48.f);
 
   // Phone: the tab bar paints down through the home-indicator strip (document full-bleed, bar pads by the inset).
   const CompactChromeLayout tab_bar =
       ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 0.f, CompactBottomSurface::TabBar);
   EXPECT_FLOAT_EQ(tab_bar.shell_bottom_dp, 0.f);
   EXPECT_FLOAT_EQ(tab_bar.bottom_surface_padding_dp, 34.f);
-  EXPECT_FLOAT_EQ(tab_bar.content_padding_bottom_dp, 49.f + 34.f);
-  EXPECT_FLOAT_EQ(tab_bar.sheet_bottom_dp, 49.f + 34.f);
+  EXPECT_FLOAT_EQ(tab_bar.content_padding_bottom_dp, 48.f + 34.f);
+  EXPECT_FLOAT_EQ(tab_bar.sheet_bottom_dp, 48.f + 34.f);
   EXPECT_FLOAT_EQ(tab_bar.chrome_bottom_dp, 0.f);
 
   const CompactChromeLayout tab_bar_no_inset =
       ShellLayout::ComputeCompactChromeLayout(config, 0, 0, 0.f, CompactBottomSurface::TabBar);
   EXPECT_FLOAT_EQ(tab_bar_no_inset.shell_bottom_dp, 0.f);
   EXPECT_FLOAT_EQ(tab_bar_no_inset.bottom_surface_padding_dp, 0.f);
-  EXPECT_FLOAT_EQ(tab_bar_no_inset.content_padding_bottom_dp, 49.f);
+  EXPECT_FLOAT_EQ(tab_bar_no_inset.content_padding_bottom_dp, 48.f);
   EXPECT_FALSE(tab_bar_no_inset.tab_bar_hidden);
 
   // Keyboard up over a tab-bar page: the tab bar is hidden (the keyboard covers it) and its height is no longer
@@ -236,7 +262,7 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
       ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 0.f, CompactBottomSurface::Composer);
   EXPECT_FLOAT_EQ(composer.shell_bottom_dp, 0.f);
   EXPECT_FLOAT_EQ(composer.bottom_surface_padding_dp, 34.f);
-  EXPECT_FLOAT_EQ(composer.content_padding_bottom_dp, 49.f);
+  EXPECT_FLOAT_EQ(composer.content_padding_bottom_dp, 48.f);
   const CompactChromeLayout composer_keyboard =
       ShellLayout::ComputeCompactChromeLayout(config, 47, 336, 0.f, CompactBottomSurface::Composer);
   EXPECT_FLOAT_EQ(composer_keyboard.shell_bottom_dp, 0.f);
@@ -246,7 +272,7 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   // Phone toast pill: just above the tab bar / composer / keyboard; none on desktop. With a keyboard up the body no
   // longer shrinks, so the toast adds the keyboard inset to clear it (and a hidden tab bar is not there to clear).
   EXPECT_FLOAT_EQ(with_inset.toast_bottom_dp, 0.f);
-  EXPECT_FLOAT_EQ(tab_bar.toast_bottom_dp, 34.f + 49.f + 12.f);
+  EXPECT_FLOAT_EQ(tab_bar.toast_bottom_dp, 34.f + 48.f + 12.f);
   EXPECT_FLOAT_EQ(tab_bar_keyboard.toast_bottom_dp, 336.f + 12.f);  // tab bar hidden; inset clears the keyboard
   EXPECT_FLOAT_EQ(composer_keyboard.toast_bottom_dp, 336.f + 52.f + 12.f);  // above the composer, above the keyboard
   EXPECT_FLOAT_EQ(composer.toast_bottom_dp, 34.f + 52.f + 12.f);
@@ -361,3 +387,218 @@ TEST(ShellHostTest, AnOverLongPasteInThePinBoxIsHiddenNotRendered) {
   EXPECT_FALSE(ShellLayout::PinGatePayloadTooBigToRender(/*phrase_flow=*/true, 512));
   EXPECT_TRUE(ShellLayout::PinGatePayloadTooBigToRender(/*phrase_flow=*/true, 4096));
 }
+
+namespace {
+
+using namespace pbr;
+
+// RequestSyncLayout queues a UI task that holds the host; the UI queue is not run here, so the hosts made here live
+// until the process ends (a freed one would leave that task dangling), kept reachable so leak checkers stay quiet.
+ShellHost& KeptHost() {
+  static std::vector<std::unique_ptr<ShellHost>> hosts;
+  return *hosts.emplace_back(std::make_unique<ShellHost>());
+}
+
+ShellHost& PhoneHost(const NavTab tab) {
+  ShellHost& host = KeptHost();
+  host.State().layout_mode = LayoutMode::Compact;
+  ShellLayout::SyncLayoutModeString(host.State());
+  host.SelectNavTab(tab);
+  return host;
+}
+
+// Opens a chat overlay as ChatController does for a chat picked on that tab.
+void OpenChat(ShellHost& host) {
+  host.RegisterPane({.key = "chat", .rml_path = "views/chat.rml", .provides_composer = true});
+  host.SetPrimaryPane("chat");
+  host.OpenCompactChat();
+}
+
+} // namespace
+
+// DEV/PLAN-minimal-nav.md A: on phones Me and Contacts are hidden tabs; their back returns to the tab they came from.
+TEST(ShellHostHiddenTabTest, BackFromSettingsReturnsToTheTabItWasOpenedFrom) {
+  ShellHost& from_chats = PhoneHost(NavTab::Sessions);
+  from_chats.OpenSettingsFromAvatar();
+  EXPECT_EQ(from_chats.State().nav_tab, NavTab::Me);
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(from_chats.State()), 0.f) << "no tab bar under Settings";
+  from_chats.HiddenTabBack();
+  EXPECT_EQ(from_chats.State().nav_tab, NavTab::Sessions);
+
+  ShellHost& from_ai = PhoneHost(NavTab::Home);
+  from_ai.SelectNavTab(NavTab::Me);
+  from_ai.HiddenTabBack();
+  EXPECT_EQ(from_ai.State().nav_tab, NavTab::Home);
+}
+
+TEST(ShellHostHiddenTabTest, HiddenToHiddenKeepsTheTabBeforeTheFirst) {
+  ShellHost& host = PhoneHost(NavTab::Home);
+  host.OpenSettingsFromAvatar();
+  host.SelectNavTab(NavTab::Contacts);  // an invite opened from Settings
+  host.HiddenTabBack();
+  EXPECT_EQ(host.State().nav_tab, NavTab::Home) << "the tab before Me, not Me";
+  host.HiddenTabBack();
+  EXPECT_EQ(host.State().nav_tab, NavTab::Home) << "nothing to go back to on a tab in the bar";
+}
+
+TEST(ShellHostHiddenTabTest, AnInviteOverAnOpenChatKeepsTheChatForTheWayBack) {
+  ShellHost& host = PhoneHost(NavTab::Home);
+  OpenChat(host);
+  std::vector<std::pair<NavTab, bool>> changes;  // the tab, and whether the chat overlay is still open then
+  host.SetOnNavTabChanged([&](const NavTab tab) { changes.emplace_back(tab, host.State().compact_chat_open); });
+
+  // ContactsController::OfferInvite picks Contacts through the navigation port.
+  const ShellNavigationPorts ports = MakeShellNavigationPorts(host);
+  ports.select_nav_tab(NavTab::Contacts);
+  EXPECT_EQ(host.State().nav_tab, NavTab::Contacts);
+  EXPECT_TRUE(host.State().compact_chat_open) << "the chat stays open under the page";
+  EXPECT_EQ(host.State().primary_pane_key, "chat") << "and still holds its chat";
+  EXPECT_FALSE(ports.snapshot().compact_chat_open) << "the Contacts page is what shows";
+  const std::string rml = ShellLayoutRml(host.State(), false, "").ShellRoot();
+  EXPECT_NE(rml.find("id=\"pane-body-contacts\""), std::string::npos);
+  EXPECT_EQ(rml.find("id=\"shell-chat-overlay\""), std::string::npos) << "the page is drawn over the chat";
+  EXPECT_EQ(rml.find("id=\"shell-bottom-chrome\""), std::string::npos);
+
+  host.HiddenTabBack();
+  EXPECT_EQ(host.State().nav_tab, NavTab::Home);
+  EXPECT_TRUE(host.State().compact_chat_open);
+  EXPECT_EQ(host.State().primary_pane_key, "chat") << "the same chat";
+  EXPECT_TRUE(ports.snapshot().compact_chat_open);
+  ASSERT_EQ(changes.size(), 2u);
+  EXPECT_TRUE(changes.back().second) << "Home hears the chat is still open (Application keeps it, not the list)";
+
+  // Another tab in the bar closes it as before.
+  host.SelectNavTab(NavTab::Sessions);
+  EXPECT_FALSE(host.State().compact_chat_open);
+}
+
+TEST(ShellHostHiddenTabTest, SettingsOpenedOverAnOpenChatReturnsToIt) {
+  // The avatar, and the AI's "open settings" (SettingsController::OpenSection selects Me through the port).
+  ShellHost& host = PhoneHost(NavTab::Sessions);
+  OpenChat(host);
+  MakeShellNavigationPorts(host).select_nav_tab(NavTab::Me);
+  EXPECT_TRUE(host.State().compact_chat_open);
+  EXPECT_FALSE(ShellLayout::WhichPanesVisible(host.State()).compact_chat_overlay);
+  host.HiddenTabBack();
+  EXPECT_EQ(host.State().nav_tab, NavTab::Sessions);
+  EXPECT_TRUE(host.State().compact_chat_open);
+  EXPECT_TRUE(ShellLayout::WhichPanesVisible(host.State()).compact_chat_overlay);
+
+  ShellHost& avatar = PhoneHost(NavTab::Home);
+  OpenChat(avatar);
+  avatar.OpenSettingsFromAvatar();
+  EXPECT_TRUE(avatar.State().compact_chat_open);
+  avatar.HiddenTabBack();
+  EXPECT_EQ(avatar.State().nav_tab, NavTab::Home);
+  EXPECT_TRUE(avatar.State().compact_chat_open);
+  EXPECT_EQ(avatar.State().primary_pane_key, "chat");
+}
+
+TEST(ShellHostHiddenTabTest, SystemBackOnAHiddenTabRootReturnsToThePreviousTab) {
+  ShellHost& host = PhoneHost(NavTab::Sessions);
+  host.OpenSettingsFromAvatar();
+  // A settings page open: back closes it first, and Settings stays.
+  bool page_closed = false;
+  host.PushLocalBack("settings_detail", [&page_closed]() { page_closed = true; });
+  EXPECT_TRUE(host.HandleDismiss());
+  EXPECT_TRUE(page_closed);
+  EXPECT_EQ(host.State().nav_tab, NavTab::Me);
+  // Its root: back to Chats.
+  EXPECT_TRUE(host.HandleDismiss());
+  EXPECT_EQ(host.State().nav_tab, NavTab::Sessions);
+  // A tab in the bar with nothing open: back is the platform's (minimise), not the shell's.
+  EXPECT_FALSE(host.HandleDismiss());
+
+  // On the desktop Me is a plain tab: Escape there does not switch tabs.
+  ShellHost& desktop = KeptHost();
+  desktop.SelectNavTab(NavTab::Me);
+  EXPECT_FALSE(desktop.HandleDismiss());
+  EXPECT_EQ(desktop.State().nav_tab, NavTab::Me);
+}
+
+TEST(ShellHostHiddenTabTest, SettingsEnteredOnTheDesktopStillGoesBackAfterTheWindowNarrows) {
+  ShellHost& host = KeptHost();
+  host.SelectNavTab(NavTab::Home);
+  host.SelectNavTab(NavTab::Me);  // the desktop rail's Me
+  host.State().layout_mode = LayoutMode::Compact;
+  ShellLayout::SyncLayoutModeString(host.State());
+  host.HiddenTabBack();
+  EXPECT_EQ(host.State().nav_tab, NavTab::Home) << "the tab Settings was entered from, not a stale one";
+}
+
+TEST(ShellHostHiddenTabTest, BackToAChatLeftOpenUnderAHiddenTabSaysItIsShownAgain) {
+  ShellHost& host = PhoneHost(NavTab::Home);
+  OpenChat(host);
+  int shown_again = 0;
+  bool open_when_told = false;
+  host.SetOnCompactChatShownAgain([&]() {
+    ++shown_again;
+    open_when_told = ShellLayout::WhichPanesVisible(host.State()).compact_chat_overlay;
+  });
+  host.OpenSettingsFromAvatar();
+  host.SelectNavTab(NavTab::Contacts);
+  EXPECT_EQ(shown_again, 0) << "still covered";
+  host.HiddenTabBack();
+  EXPECT_EQ(shown_again, 1) << "the chat's messages are read now (ChatController::OnCompactChatShownAgain)";
+  EXPECT_TRUE(open_when_told);
+
+  ShellHost& no_chat = PhoneHost(NavTab::Sessions);
+  int told = 0;
+  no_chat.SetOnCompactChatShownAgain([&told]() { ++told; });
+  no_chat.OpenSettingsFromAvatar();
+  no_chat.HiddenTabBack();
+  EXPECT_EQ(told, 0) << "no chat was left open";
+}
+
+// The wiring the shell callback needs (ChatController needs the whole app to run): Application passes it on, and the
+// chat reads the thread, refreshes it and lands on its newest message, as opening it does.
+TEST(ShellHostHiddenTabTest, TheChatShownAgainIsMarkedRead) {
+  const auto read = [](const char* relative) {
+    std::ifstream in(std::string(PP_SOURCE_DIR) + "/" + relative, std::ios::binary);
+    std::stringstream buffer;
+    buffer << in.rdbuf();
+    std::string text = buffer.str();
+    std::erase(text, '\r');  // a Windows checkout has CRLF line ends
+    return text;
+  };
+  EXPECT_NE(read("src/app/Application.cpp")
+                .find("shell.SetOnCompactChatShownAgain([&chat]() { chat.OnCompactChatShownAgain(); });"),
+            std::string::npos);
+  const std::string chat = read("src/gui/chat/ChatController.cpp");
+  const size_t at = chat.find("void ChatController::OnCompactChatShownAgain() {");
+  ASSERT_NE(at, std::string::npos);
+  const std::string body = chat.substr(at, chat.find("\n}\n", at) - at);
+  EXPECT_NE(body.find("presenter_.MarkRead(thread_id);"), std::string::npos);
+  EXPECT_NE(body.find("RefreshFromMessaging();"), std::string::npos);
+  EXPECT_NE(body.find("scroller_.RequestScrollToLatest();"), std::string::npos);
+}
+
+TEST(ShellHostHiddenTabTest, ASecondTapOnTheAiTabOpensTheAiList) {
+  ShellHost& host = PhoneHost(NavTab::Sessions);
+  host.OnNavTabClicked("home");
+  EXPECT_EQ(host.State().nav_tab, NavTab::Home);
+  EXPECT_FALSE(host.State().ai_drawer_open) << "the first tap only goes to the AI page";
+  host.OnNavTabClicked("home");
+  EXPECT_TRUE(host.State().ai_drawer_open);
+  host.CloseAiDrawer();
+  EXPECT_FALSE(host.State().ai_drawer_open);
+
+  OpenChat(host);
+  host.OnNavTabClicked("home");
+  EXPECT_FALSE(host.State().ai_drawer_open) << "not over an open AI chat";
+}
+
+TEST(ShellHostHiddenTabTest, TheAiDrawerFlagNeverSurvivesATabSwitch) {
+  for (const NavTab to : {NavTab::Home, NavTab::Sessions, NavTab::Contacts, NavTab::Me}) {
+    ShellHost& host = PhoneHost(NavTab::Home);
+    host.OpenAiDrawer();
+    ASSERT_TRUE(host.State().ai_drawer_open);
+    host.SelectNavTab(to);
+    EXPECT_FALSE(host.State().ai_drawer_open) << ShellLayout::NavTabString(to);
+  }
+  ShellHost& cleared = PhoneHost(NavTab::Home);
+  cleared.OpenAiDrawer();
+  cleared.ClearTabContext();
+  EXPECT_FALSE(cleared.State().ai_drawer_open) << "the tab's context goes with it";
+}
+

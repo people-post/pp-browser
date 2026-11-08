@@ -1,5 +1,7 @@
 #include "lib/net/HttpClient.h"
 
+#include "common/Diag.h"
+#include "common/Metrics.h"
 #include "foundation/error/AppError.h"
 #include "foundation/error/CurlNetworkError.h"
 #include "foundation/tls/CurlSsl.h"
@@ -12,10 +14,13 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <memory>
+#include <mutex>
 #include <optional>
 
 namespace pbr {
@@ -53,6 +58,61 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, ResponseBuffer* 
   out->body.append(static_cast<const char*>(contents), total);
   return total;
 }
+
+std::mutex g_ui_probe_mutex;
+std::shared_ptr<const std::function<bool()>> g_ui_probe; // guarded by g_ui_probe_mutex
+
+std::function<bool()> CurrentUiProbe() {
+  std::lock_guard lock(g_ui_probe_mutex);
+  return g_ui_probe ? *g_ui_probe : std::function<bool()>{};
+}
+
+/**
+ * The routes a `net.ui_block` line may name (UiBlockRoute with `/` as `.`): the mounts of our own backend and the
+ * first segments of its APIs. Any other route is written `other`, so a path from elsewhere (a peer's URL) never
+ * reaches the line.
+ */
+constexpr ShareWord kUiBlockRoutes[] = {
+    "api.relay",  "api.llm",   "api.support", "mcp",      "v1.users", "v1.devices",       "v1.register",
+    "v1.profile", "v1.search", "v1.mesh",     "v1.blobs", "v1.files", "v1.lockers",       "v1.inbox",
+    "v1.client-compat",        "v1.crash-reports",        "v1.diagnostics",               "guest.start",
+};
+
+/** Every public entry point holds one for the whole call: the single place a UI-thread request is recorded. */
+class UiBlockWatch {
+public:
+  explicit UiBlockWatch(const std::string& url) : url_(url) {
+    const std::function<bool()> probe = CurrentUiProbe();
+    on_ui_ = probe && probe();
+    if (on_ui_) {
+      start_ = std::chrono::steady_clock::now();
+    }
+  }
+  ~UiBlockWatch() {
+    if (!on_ui_) {
+      return;
+    }
+    try {
+      const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_);
+      std::string word = HttpClient::UiBlockRoute(url_);
+      if (!word.empty() && word.front() == '/') {
+        word.erase(0, 1);
+      }
+      std::replace(word.begin(), word.end(), '/', '.');
+      DiagLine("net.ui_block").Pick("route", word, kUiBlockRoutes).Add("ms", ms).Emit();
+      MetricsLine("net.ui_block").Add("ms", ms).Emit();
+    } catch (...) {
+      // A diagnostic line never fails the request it describes.
+    }
+  }
+  UiBlockWatch(const UiBlockWatch&) = delete;
+  UiBlockWatch& operator=(const UiBlockWatch&) = delete;
+
+private:
+  const std::string& url_;
+  bool on_ui_ = false;
+  std::chrono::steady_clock::time_point start_;
+};
 
 std::atomic<bool> g_first_hop_local_for_test{false};
 std::atomic<bool> g_plain_http_redirects_for_test{false};
@@ -303,6 +363,48 @@ Roe<HttpResponse> PutFromFile(const std::string& url, FileSource& source,
 
 } // namespace
 
+void HttpClient::SetUiThreadProbe(std::function<bool()> probe) {
+  std::lock_guard lock(g_ui_probe_mutex);
+  g_ui_probe = probe ? std::make_shared<const std::function<bool()>>(std::move(probe)) : nullptr;
+}
+
+HttpClient::ScopedUiThreadProbeForTest::ScopedUiThreadProbeForTest(std::function<bool()> probe)
+    : previous_(CurrentUiProbe()) {
+  SetUiThreadProbe(std::move(probe));
+}
+
+HttpClient::ScopedUiThreadProbeForTest::~ScopedUiThreadProbeForTest() { SetUiThreadProbe(std::move(previous_)); }
+
+std::string HttpClient::UiBlockRoute(const std::string& url) {
+  std::string_view rest(url);
+  if (const size_t scheme = rest.find("://"); scheme != std::string_view::npos) {
+    rest.remove_prefix(scheme + 3);
+    const size_t path = rest.find_first_of("/?#");
+    if (path == std::string_view::npos || rest[path] != '/') {
+      return {};
+    }
+    rest.remove_prefix(path);
+  }
+  rest = rest.substr(0, rest.find_first_of("?#"));
+  std::string route;
+  int segments = 0;
+  while (segments < 2 && !rest.empty()) {
+    while (!rest.empty() && rest.front() == '/') {
+      rest.remove_prefix(1);
+    }
+    const size_t end = rest.find('/');
+    const std::string_view segment = rest.substr(0, end);
+    if (segment.empty()) {
+      break;
+    }
+    route += '/';
+    route += segment;
+    ++segments;
+    rest.remove_prefix(end == std::string_view::npos ? rest.size() : end);
+  }
+  return route;
+}
+
 void HttpClient::SetStreamingStallLimitForTest(const long min_bytes_per_s, const long window_s) {
   g_min_bytes_per_s.store(min_bytes_per_s > 0 ? min_bytes_per_s : 2048);
   g_speed_window_s.store(window_s > 0 ? window_s : 30);
@@ -319,6 +421,7 @@ void HttpClient::SetFirstHopLocalForTest(const bool allow) {
 Roe<HttpResponse> HttpClient::PutFile(const std::string& url, const std::string& path,
                                       const std::map<std::string, std::string>& headers,
                                       const HttpProgress& progress) {
+  const UiBlockWatch watch(url);
   std::error_code size_ec;
   const auto file_size = std::filesystem::file_size(path, size_ec);
   if (size_ec) {
@@ -334,6 +437,7 @@ Roe<HttpResponse> HttpClient::PutFile(const std::string& url, const std::string&
 Roe<HttpResponse> HttpClient::PutFileRange(const std::string& url, const std::string& path, const uint64_t offset,
                                            const uint64_t length, const std::string& content_type,
                                            const HttpProgress& progress) {
+  const UiBlockWatch watch(url);
   std::error_code size_ec;
   const auto file_size = std::filesystem::file_size(path, size_ec);
   if (size_ec || offset > static_cast<uint64_t>(file_size) || length > static_cast<uint64_t>(file_size) - offset) {
@@ -351,6 +455,7 @@ Roe<HttpFileDownload> HttpClient::GetToFile(const std::string& url, const std::s
                                             const bool restrict_to_public_https,
                                             const std::map<std::string, std::string>& headers,
                                             const bool follow_redirects) {
+  const UiBlockWatch watch(url);
   std::error_code ec;
   std::filesystem::remove(dest_path, ec);
   FileSink sink;
@@ -433,6 +538,7 @@ Roe<HttpFileDownload> HttpClient::GetToFile(const std::string& url, const std::s
 Roe<HttpResponse> HttpClient::Get(const std::string& url, const std::map<std::string, std::string>& headers,
                                   std::optional<size_t> max_response_bytes, HttpTimeout timeout,
                                   bool restrict_to_public_https, const bool follow_redirects) {
+  const UiBlockWatch watch(url);
   return Perform(url, "GET", {}, headers, max_response_bytes, timeout, restrict_to_public_https, follow_redirects);
 }
 
@@ -440,6 +546,7 @@ Roe<HttpResponse> HttpClient::Post(const std::string& url, const std::string& bo
                                    const std::map<std::string, std::string>& headers,
                                    std::optional<size_t> max_response_bytes, HttpTimeout timeout,
                                    bool restrict_to_public_https) {
+  const UiBlockWatch watch(url);
   return Perform(url, "POST", body, headers, max_response_bytes, timeout, restrict_to_public_https);
 }
 
@@ -447,6 +554,7 @@ Roe<HttpResponse> HttpClient::Put(const std::string& url, const std::string& bod
                                   const std::map<std::string, std::string>& headers,
                                   std::optional<size_t> max_response_bytes, HttpTimeout timeout,
                                   bool restrict_to_public_https) {
+  const UiBlockWatch watch(url);
   return Perform(url, "PUT", body, headers, max_response_bytes, timeout, restrict_to_public_https);
 }
 

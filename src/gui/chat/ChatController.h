@@ -31,6 +31,7 @@
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/HeldAgentSend.h"
+#include "gui/chat/MessagingReadyTasks.h"
 #include "gui/chat/SessionListWindow.h"
 #include "gui/chat/ThreadDrafts.h"
 #include "gui/chat/WorkingSetController.h"
@@ -94,9 +95,24 @@ public:
   using AgentConfig = AgentTurnController::AgentConfig;
 
   static AgentConfig ProjectAgent(const AppConfig& config) { return AgentTurnController::ProjectAgent(config); }
+  /** Phones: keeps `overlay`'s (#shell-chat-overlay) transcript end spacer, fade and "new messages" pill clear of its
+   *  floating composer bar, whatever the bar's height. Per frame; changes nothing when they already are. */
+  static void KeepClearOfComposer(ui::Element* overlay);
+  /** Between the newest message and the composer bar; between the "new messages" pill and the bar. */
+  static constexpr float kComposerClearGapDp = 12.f;
+  static constexpr float kJumpLatestGapDp = 16.f;
+  /** A conversation row is kept by a list's search when its title or preview contains the (lower-cased) query. */
+  static bool SessionRowMatches(const std::string& title, const std::string& preview, const std::string& lowered_query);
   void Apply(const AgentConfig& config) { agent_.ApplyConfig(config); }
   void BindAgentPorts(AgentUiPorts ports) { agent_.BindPorts(std::move(ports)); }
   void ReloadAgentConfig() { agent_.ReloadAgentConfig(); }
+  void ReloadAgentConfigWhenIdle() { agent_.ReloadAgentConfigWhenIdle(); }
+  /** Binds this device's push tokens off the UI thread (one run at a time; MessagingReadyTasks). */
+  void SyncPushDevices();
+  /** The Brief key's mint run, shared with the 401 renewal (B183, Application). */
+  const std::shared_ptr<CoalescedRun>& BriefKeyRun() const { return agent_.BriefKeyRun(); }
+  /** A 401 renewal held the Brief key run while a mint was asked for: ask again (does nothing once a key is stored). */
+  void RetryBriefKeyMint();
 
   /**
    * A peer's photo was fetched (new path: files are named after their bytes). Rebuilds what shows photos: the open
@@ -161,6 +177,12 @@ public:
   /** The profile preferences changed (a contact starred, Edit Home): Home's widgets are drawn again. */
   void OnHomePrefsChanged();
   void OnSessionsTabActivated();
+  /**
+   * Phone: back from Settings / Contacts to the chat overlay left open under them (ShellHost
+   * SetOnCompactChatShownAgain). What arrived meanwhile was not on screen; the chat is read now, refreshed and at
+   * its newest message, as when it is opened.
+   */
+  void OnCompactChatShownAgain();
   void OnFindSomeone() override;
   /**
    * The phone "New chat" page's "AI chat": a new AI chat, opened. Being the newest, it is the one the ask-AI panel
@@ -279,6 +301,8 @@ private:
   void OnToggleArchived();
   void OnToggleArchivedAi();
   void OnSessionsSearchChanged();
+  /** The AI drawer's search: typing filters live; Return or the magnifier also puts the keyboard away. */
+  void OnAiSessionsSearch(ui::Event& ev, bool submit);
   void OnForgetMemory() override;
   void OnSyncWithPeer() override;
   void OnRetryGapSync();
@@ -454,7 +478,11 @@ private:
   void OnSessionsScroll();
   void OnSessionsLoadMore();
   void FillSessionListAfterLayout();
+  void SyncComposerOverlay();
   ui::Element* SessionListElement() const;
+  /** The AI conversation list on screen: the phone's drawer, else the desktop's AI page list; null when neither shows. */
+  ui::Element* AiSessionListElement() const;
+  void OnAiSessionsScroll();
   void OnJumpToLatest();
   // Search inside the open chat (DEV/PLAN-chat-search.md). The decisions are ThreadSearchSession's; these bind
   // them to the screen, build the index on a worker and scroll to the hits.
@@ -480,6 +508,7 @@ private:
   void OnAskAiOnceReply(const AgentEvent& event) override { ask_ai_.OnOnceReply(event); }
   // The ask-AI panel's side of the screen (AskAiPanelHost).
   bool AskAiCompact() const override;
+  void AskAiOpenEmoji(std::function<void(const std::string& emoji)> insert) override;
   std::string AskAiSharedThread(bool create) override;
   std::string AskAiNewThread() override;
   std::vector<AskAiRow> AskAiRecentRows(const std::string& thread_id, size_t limit) override;
@@ -595,6 +624,14 @@ private:
   ChatState chat_;
   ShellState shell_;
   bool messaging_ready_ = false;
+  /**
+   * One up per WireMessagingBindings (and when messaging goes away): a messaging-ready task's result is stored only
+   * when the session it started in is still this one (MessagingReadyTasks).
+   */
+  uint64_t messaging_session_ = 0;
+  /** Push binding, registration renewal and the Brief key mint off the UI thread. Made in BindConversationsFacade. */
+  std::unique_ptr<MessagingReadyTasks> ready_tasks_;
+  void MakeReadyTasks();
   /** Its AppLifecycle background listener (removed at Shutdown). */
   uint64_t lifecycle_background_id_ = 0;
   bool mesh_ready_ = false;
@@ -635,6 +672,11 @@ private:
   // AgentTurnHost, ChatMenusHost
   ConversationsFacade* Facade() const override { return facade_; }
   bool MessagingIsReady() const override { return messaging_ready_; }
+  void MintBriefGuestKey(const std::string& llm_base_url) override {
+    if (ready_tasks_) {
+      ready_tasks_->MintBriefKey(llm_base_url);
+    }
+  }
   void RegisterMessagingTools(ToolRegistry& tools) override {
     if (register_messaging_tools_) {
       register_messaging_tools_(tools);
@@ -675,6 +717,7 @@ private:
   enum class SearchFocus { None, Input, Composer };
   SearchFocus search_focus_ = SearchFocus::None; // moved after the next layout (data-if shows the element first)
   SessionListWindow session_window_;      // how many rows of the chats list the sidebar draws
+  SessionListWindow ai_session_window_;   // how many AI conversations the drawer (or the desktop's AI list) draws
   ThreadDrafts drafts_;                   // unsent text per conversation; the composer widget is shared
   std::map<std::string, std::string> quotes_; // a quote being replied to, per conversation, while another is shown
   void StashComposerExtras(const std::string& key);

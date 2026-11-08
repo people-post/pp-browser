@@ -1,8 +1,12 @@
 <div class="settings-panel stack" data-model="settings" data-class-settings-panel--subpage="show_detail && security_page != ''">
+  <!-- Phones: Settings is a hidden tab (DEV/PLAN-minimal-nav.md A): the round back returns to the tab it came from. -->
   <div class="pane-nav" data-if="!show_detail">
     <div class="pane-nav-bg"></div>
     <div class="bar-fade"></div>
-    <p class="pane-nav-title">{{i18n:nav.me}}</p>
+    <button class="pane-nav-back shell-circle-btn" type="button" data-model="window" data-event-click="hidden_tab_back()">
+      <span class="shell-circle-btn-face"><svg src="../icons/v2/back.svg" width="24" height="24"></svg></span>
+    </button>
+    <p class="pane-nav-title">{{i18n:settings.title}}</p>
   </div>
   <div class="settings-list-view root-scroll" data-if="!show_detail">
     <p class="large-title">{{i18n:nav.me}}</p>
@@ -171,9 +175,9 @@
   <div data-if="show_detail" class="settings-detail-view nav-bar-host stack" id="settings-detail-view">
     <div class="settings-detail-header row">
       <div class="nav-bar-bg"></div>
-      <button class="settings-back-btn" type="button" data-event-click="back_to_list()">
+      <button class="settings-back-btn shell-circle-btn" type="button" data-event-click="back_to_list()">
         <svg class="settings-back-old" src="../icons/back.svg" width="18" height="18"></svg>
-        <svg class="settings-back-v2" src="../icons/v2/back.svg" width="18" height="18"></svg>
+        <span class="shell-circle-btn-face"><svg class="settings-back-v2" src="../icons/v2/back.svg" width="24" height="24"></svg></span>
       </button>
       <p class="settings-header-title">{{selected_title}}</p>
       <div class="bar-fade"></div>
@@ -192,8 +196,8 @@
        id="settings-subpage-view">
     <div class="settings-detail-header row">
       <div class="nav-bar-bg"></div>
-      <button class="settings-back-btn" type="button" data-event-click="close_security_page()">
-        <svg class="settings-back-v2" src="../icons/v2/back.svg" width="18" height="18"></svg>
+      <button class="settings-back-btn shell-circle-btn" type="button" data-event-click="close_security_page()">
+        <span class="shell-circle-btn-face"><svg class="settings-back-v2" src="../icons/v2/back.svg" width="24" height="24"></svg></span>
       </button>
       <p class="settings-header-title">{{security_page_title}}</p>
       <button class="settings-q-btn settings-subpage-help" type="button" data-if="security_page == 'choice' && choice_help_topic != ''"

@@ -24,20 +24,19 @@
     </div>
     <div class="chat-header-main" data-if="!search_open">
       <!-- Phones only (hidden on desktop): the avatar of the chat list row, in the nav bar. -->
+      <!-- An AI conversation shows its list row's letter and colour, not a fixed star (Kenneth 2026-11-07). -->
       <div class="chat-header-avatar"
-           data-class-chat-row-avatar--ai="thread_is_ai"
            data-class-chat-row-avatar--group="thread_is_group"
-           data-class-avatar-tone-0="!thread_is_ai && !thread_is_group && thread_avatar_tone == 0"
-           data-class-avatar-tone-1="!thread_is_ai && !thread_is_group && thread_avatar_tone == 1"
-           data-class-avatar-tone-2="!thread_is_ai && !thread_is_group && thread_avatar_tone == 2"
-           data-class-avatar-tone-3="!thread_is_ai && !thread_is_group && thread_avatar_tone == 3"
-           data-class-avatar-tone-4="!thread_is_ai && !thread_is_group && thread_avatar_tone == 4"
-           data-class-avatar-tone-5="!thread_is_ai && !thread_is_group && thread_avatar_tone == 5"
-           data-class-avatar-tone-6="!thread_is_ai && !thread_is_group && thread_avatar_tone == 6"
-           data-class-avatar-tone-7="!thread_is_ai && !thread_is_group && thread_avatar_tone == 7">
+           data-class-avatar-tone-0="!thread_is_group && thread_avatar_tone == 0"
+           data-class-avatar-tone-1="!thread_is_group && thread_avatar_tone == 1"
+           data-class-avatar-tone-2="!thread_is_group && thread_avatar_tone == 2"
+           data-class-avatar-tone-3="!thread_is_group && thread_avatar_tone == 3"
+           data-class-avatar-tone-4="!thread_is_group && thread_avatar_tone == 4"
+           data-class-avatar-tone-5="!thread_is_group && thread_avatar_tone == 5"
+           data-class-avatar-tone-6="!thread_is_group && thread_avatar_tone == 6"
+           data-class-avatar-tone-7="!thread_is_group && thread_avatar_tone == 7">
         <img class="avatar-photo" data-if="!thread_is_ai && !thread_is_group && thread_has_icon" data-attr-src="thread_icon_src"/>
-        <p class="chat-row-avatar-letter" data-if="!thread_is_ai && !thread_is_group && !thread_has_icon">{{thread_avatar_letter}}</p>
-        <svg class="chat-row-avatar-icon" src="../icons/v2/sparkle-fill.svg" width="20" height="20" data-if="thread_is_ai"></svg>
+        <p class="chat-row-avatar-letter" data-if="!thread_is_group && !thread_has_icon">{{thread_avatar_letter}}</p>
         <svg class="chat-row-avatar-icon" src="../icons/v2/group.svg" width="20" height="20" data-if="thread_is_group"></svg>
       </div>
       <div class="chat-header-text">

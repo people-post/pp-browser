@@ -21,6 +21,7 @@ warn	#ff9500	#ff9f0a	§2.3
 mention	#5856d6	#5e5ce6	§2.3
 mention-row	#fff4e0	#3a2e14	§2.3 (left bar = warn)
 separator	#3c3c434a	#54545899	§2.4
+bg-field	#f4f4f8	#242426	extra: the phone Chats search box, lighter than bg-card-2
 fill	#78788033	#7878805c	§2.4
 fill-2	#7878801f	#7878803d	§2.4
 gray	#8e8e93	#8e8e93	§2.4
@@ -31,7 +32,6 @@ quote-bar	#007aff	#0a84ff	§2.5 = accent
 quote-bg-out	#ffffff33	#ffffff33	§2.5 (also in-bubble chip / selection)
 quote-bg-in	#0000000f	#0000000f	§2.5 quote block in a received bubble (black 6%)
 bubble-out-meta	#ffffffd9	#ffffffd9	§2.5 in-bubble time in a sent bubble (white 85%)
-unread	#007aff	#0a84ff	§2.5 = accent
 tab-badge	#ff3b30	#ff453a	§2.5 = danger
 avatar-0	#007aff	#007aff	§2.6
 avatar-1	#34c759	#34c759	§2.6
@@ -57,7 +57,7 @@ x-jump-tint	#ffc40038	#ffc40038	extra: row a jump landed on (develop #482), see-
 x-dock-fade	#ffffff00	#25252700	extra: Home dock fade start (the dock colour at 0%)
 x-dock	#ffffff	#252527	extra: Home ask-AI dock fill
 x-bar	#f2f2f7	#1a1a1c	extra: phone bars (top bars, tab bar, composer), solid: Transparency off or under a dialog; Home's tab bar
-x-bar-blur	#f2f2f7b8	#1a1a1cb8	extra: phone bars frosted (72%, with blur 20): Transparency on
+x-bar-blur	#f2f2f7c7	#1a1a1cc7	extra: phone bars frosted (78%, with blur 20): Transparency on
 x-bar-fade	#f2f2f700	#1a1a1c00	extra: the bar colour at 0%, where a bar's fade ends
 x-scan-dim	#00000080	#00000080	extra: phone scanner, the camera dimmed round the frame (black 50%)
 x-scan-ink	#ffffff	#ffffff	extra: phone scanner, corner marks, hint, back and button labels over the camera
@@ -78,6 +78,8 @@ x-call-tile	#ffffff17	#ffffff17	extra: phone call page group tile (white 9%)
 x-call-bar	#3a3a3cd1	#3a3a3cd1	extra: phone call page button bar (82%)
 x-call-notice	#3a3a3ceb	#3a3a3ceb	extra: phone call page top pill (92%)
 x-call-notice-warn	#784800eb	#784800eb	extra: phone call page top pill, the line got worse
+x-call-reconnect-ok	#1f6f4aeb	#1f6f4aeb	extra: phone call page reconnect capsule, restored (92%)
+x-call-timer-dim	#ffffff80	#ffffff80	extra: phone call page timer while reconnecting (white 50%)
 x-call-label-bg	#00000073	#00000073	extra: phone call page name tag on a tile (black 45%)
 x-call-video-top	#0000004d	#0000004d	extra: phone call page shade behind the top row over video (black 30%)
 x-call-dim	#0000008c	#0000008c	extra: phone call page own camera dimmed under the step card (black 55%)
@@ -107,3 +109,7 @@ x-storage-video-tint	#af52de40	#af52de4d	extra: Me -> Storage manager, a video t
 x-on-media	#ffffff	#ffffff	extra: text and ticks drawn over a picture (storage manager tiles), white in both themes
 x-on-media-shadow	#00000099	#00000099	extra: shadow under text over a picture
 x-home-empty-calls	#34c7591f	#30d1582e	extra: Home Calls widget with nothing to show, tint behind the faint phone
+x-drawer-edge	#0000001f	#00000066	extra: the AI drawer's right edge, where its 12dp shadow starts
+x-drawer-edge-fade	#00000000	#00000000	extra: where the AI drawer's edge shadow ends (clear)
+x-circle-top	#ffffff	#3c3c40	extra: phone top-bar circle, top of its gradient
+x-circle-bottom	#e2e2e9	#2a2a2d	extra: phone top-bar circle, bottom of its gradient

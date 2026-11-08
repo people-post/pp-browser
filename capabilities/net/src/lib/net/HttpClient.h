@@ -32,6 +32,30 @@ struct HttpFileDownload {
 
 class HttpClient {
 public:
+  /**
+   * The app's "this is the UI thread" test (AppRuntime::CurrentlyOnUI), set once at startup. Empty (the default:
+   * node tools, tests) records nothing. A request made where it answers true held the UI thread for the whole round
+   * trip: when it ends (answered or failed) a Diag `net.ui_block` line (`route`: UiBlockRoute as a listed word,
+   * `ms`) and a `net.ui_block` metric (`ms`) are written. The request itself is not changed.
+   */
+  static void SetUiThreadProbe(std::function<bool()> probe);
+  /** Tests: the probe for this scope; the previous one (normally none) comes back after it. */
+  class ScopedUiThreadProbeForTest {
+  public:
+    explicit ScopedUiThreadProbeForTest(std::function<bool()> probe);
+    ~ScopedUiThreadProbeForTest();
+    ScopedUiThreadProbeForTest(const ScopedUiThreadProbeForTest&) = delete;
+    ScopedUiThreadProbeForTest& operator=(const ScopedUiThreadProbeForTest&) = delete;
+
+  private:
+    std::function<bool()> previous_;
+  };
+  /**
+   * The first two segments of the URL's path, nothing else: no scheme, host, port, query, fragment or later segment
+   * ("https://h/v1/users/by-account/x?q=1" -> "/v1/users"; "" when the URL has no path).
+   */
+  static std::string UiBlockRoute(const std::string& url);
+
   /** Tests only: the speed floor of PutFile / GetToFile (default 2048 B/s over 30 s); 0, 0 restores it. */
   static void SetStreamingStallLimitForTest(long min_bytes_per_s, long window_s);
   /**

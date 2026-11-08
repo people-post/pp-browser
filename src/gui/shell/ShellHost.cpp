@@ -6,6 +6,7 @@
 #include "lib/ui/DataEvent.h"
 #include "foundation/runtime/FramePacing.h"
 
+#include "common/Diag.h"
 #include "common/Metrics.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "common/runtime/AppRuntime.h"
@@ -79,6 +80,9 @@ constexpr int kPageSlideMs = 300;
 constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
 /** Fallback emoji panel height when the OSK has never been shown this session. */
 constexpr int kDefaultEmojiKeyboardPanelDp = 280;
+/** The AI drawer's "you" row above the home indicator (.ai-drawer-me: min-height, bottom padding). */
+constexpr float kAiDrawerMeHeightDp = 64.f;
+constexpr float kAiDrawerMePaddingDp = 8.f;
 
 } // namespace
 
@@ -116,9 +120,12 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("layout_mode", &host.state_.layout_mode_str);
     ctor.Bind("nav_tab", &host.state_.nav_tab_str);
     ctor.Bind("compact_chat_open", &host.state_.compact_chat_open);
+    ctor.Bind("ai_drawer_open", &host.state_.ai_drawer_open);
     ctor.Bind("auxiliary_open", &host.state_.auxiliary_open);
     ctor.Bind("sidebar_collapsed", &host.state_.sidebar_collapsed);
     ctor.Bind("large_title_collapsed", &host.state_.large_title_collapsed);
+    ctor.Bind("chats_link_state", &host.state_.chats_link_state);
+    ctor.Bind("chats_link_text", &host.state_.chats_link_text);
     ctor.Bind("auxiliary_available", &host.state_.auxiliary_available);
     ctor.Bind("transient_active", &host.state_.transient_active);
     ctor.Bind("banner_message", &host.state_.banner_message);
@@ -209,7 +216,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_show_flip", &host.state_.call_in_progress.show_flip);
     ctor.Bind("call_in_progress_participant_count", &host.state_.call_in_progress.participant_count);
     ctor.Bind("call_in_progress_mode", &host.state_.call_in_progress.mode_str);
-    ctor.Bind("call_in_progress_minimized_corner", &host.state_.call_in_progress.minimized_corner);
+    ctor.Bind("call_in_progress_minimized_side", &host.state_.call_in_progress.minimized_side);
+    ctor.Bind("call_in_progress_minimized_y_permille", &host.state_.call_in_progress.minimized_y_permille);
     ctor.Bind("call_in_progress_quality_bars", &host.state_.call_in_progress.quality_bars);
     ctor.Bind("call_in_progress_quality_ok", &host.state_.call_in_progress.quality_ok);
     ctor.Bind("call_in_progress_quality_warn", &host.state_.call_in_progress.quality_warn);
@@ -227,6 +235,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_story_step1", &host.state_.call_in_progress.story_step1);
     ctor.Bind("call_in_progress_story_step2", &host.state_.call_in_progress.story_step2);
     ctor.Bind("call_in_progress_story_step3", &host.state_.call_in_progress.story_step3);
+    ctor.Bind("call_in_progress_story_step4", &host.state_.call_in_progress.story_step4);
+    ctor.Bind("call_in_progress_story_step5", &host.state_.call_in_progress.story_step5);
     ctor.Bind("call_in_progress_result_text", &host.state_.call_in_progress.result_text);
     ctor.Bind("call_in_progress_result_fading", &host.state_.call_in_progress.result_fading);
     ctor.Bind("call_in_progress_signal_shown", &host.state_.call_in_progress.signal_shown);
@@ -236,6 +246,10 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_notice_text", &host.state_.call_in_progress.notice_text);
     ctor.Bind("call_in_progress_notice_warn", &host.state_.call_in_progress.notice_warn);
     ctor.Bind("call_in_progress_notice_fading", &host.state_.call_in_progress.notice_fading);
+    ctor.Bind("call_in_progress_reconnect_text", &host.state_.call_in_progress.reconnect_text);
+    ctor.Bind("call_in_progress_reconnect_ok", &host.state_.call_in_progress.reconnect_ok);
+    ctor.Bind("call_in_progress_reconnect_fading", &host.state_.call_in_progress.reconnect_fading);
+    ctor.Bind("call_in_progress_reconnect_dim", &host.state_.call_in_progress.reconnect_dim);
     if (auto roster_handle = ctor.RegisterStruct<CallRosterParticipantState>()) {
       roster_handle.RegisterMember("name", &CallRosterParticipantState::name);
       roster_handle.RegisterMember("stream_id", &CallRosterParticipantState::stream_id);
@@ -291,6 +305,10 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("open_auxiliary", DataEvent<>([this]() { OpenAuxiliary(); }));
     ctor.BindEventCallback("select_nav_tab", DataEvent<std::string>([this](const std::string& tab) { OnNavTabClicked(tab); }));
     ctor.BindEventCallback("compact_chat_back", DataEvent<>([this]() { RequestDismiss(DismissStyle::Instant, DismissTarget::CompactChatOverlay); }));
+    ctor.BindEventCallback("hidden_tab_back", DataEvent<>([this]() { HiddenTabBack(); }));
+    ctor.BindEventCallback("open_settings_from_avatar", DataEvent<>([this]() { OpenSettingsFromAvatar(); }));
+    ctor.BindEventCallback("open_ai_drawer", DataEvent<>([this]() { OpenAiDrawer(); }));
+    ctor.BindEventCallback("close_ai_drawer", DataEvent<>([this]() { CloseAiDrawer(); }));
     ctor.BindEventCallback("open_scan_qr", DataEvent<>([this]() {
       if (scan_action_) {
         scan_action_();
@@ -437,6 +455,7 @@ void ShellHost::Initialize(ui::Context* context) {
   elapsed_ms_ = 0.f;
   pending_dismiss_.reset();
   local_back_stack_.clear();
+  tab_before_hidden_ = NavTab::Sessions;
   DetachDismissGestures();
   saved_focus_id_.clear();
   sync_pending_ = false;
@@ -529,15 +548,18 @@ void ShellHost::CloseAuxiliary() {
   RequestSyncLayout();
 }
 
-void ShellHost::ClearTabContext() {
-  state_.primary_pane_key.clear();
+void ShellHost::ClearTabContext(const bool keep_compact_chat) {
+  if (!keep_compact_chat) {
+    state_.primary_pane_key.clear();
+    state_.compact_chat_open = false;
+  }
   state_.auxiliary_open = false;
   state_.transient_stack.clear();
   state_.transient_active = false;
-  state_.compact_chat_open = false;
   pending_dismiss_.reset();
   local_back_stack_.clear();
   DetachDismissGestures();
+  CloseAiDrawer();
 }
 
 void ShellHost::SetPrimaryPane(const std::string& key) {
@@ -555,9 +577,25 @@ void ShellHost::SelectNavTab(NavTab tab) {
     DirtyFeedback();
     return;
   }
+  // The AI drawer never outlives a tab pick, whichever tab (DEV/PLAN-minimal-nav.md C).
+  CloseAiDrawer();
   const bool tab_changed = state_.nav_tab != tab;
+  bool chat_shown_again = false;
   if (tab_changed) {
-    ClearTabContext();
+    // Phones (DEV/PLAN-minimal-nav.md A): entering a hidden tab (Me, Contacts) from a tab in the bar remembers that
+    // tab, whichever way it was entered (avatar, invite link, the AI opening Settings); hidden to hidden keeps it.
+    // Remembered in every layout: a window narrowed to the phone layout on Settings still goes back to that tab.
+    // A chat overlay open on that tab stays open under the hidden tab's page, and is there again on the way back.
+    const bool compact = state_.layout_mode == LayoutMode::Compact;
+    const bool from_hidden = ShellLayout::IsHiddenTabOnCompact(state_.nav_tab);
+    const bool to_hidden = ShellLayout::IsHiddenTabOnCompact(tab);
+    if (to_hidden && !from_hidden) {
+      tab_before_hidden_ = state_.nav_tab;
+    }
+    const bool keep_compact_chat =
+        compact && state_.compact_chat_open && (to_hidden || (from_hidden && tab == tab_before_hidden_));
+    chat_shown_again = keep_compact_chat && from_hidden && !to_hidden;
+    ClearTabContext(keep_compact_chat);
     // The new root page opens at its top, large title showing.
     SetLargeTitleCollapsed(false);
   }
@@ -566,7 +604,167 @@ void ShellHost::SelectNavTab(NavTab tab) {
   if (tab_changed && on_nav_tab_changed_) {
     on_nav_tab_changed_(tab);
   }
+  if (chat_shown_again && on_compact_chat_shown_again_) {
+    // Messages that came while the hidden tab covered the chat were not on screen; they are now.
+    on_compact_chat_shown_again_();
+  }
   RequestSyncLayout();
+}
+
+void ShellHost::HiddenTabBack() {
+  if (!ShellLayout::HiddenTabShown(state_)) {
+    return;
+  }
+  SelectNavTab(tab_before_hidden_);
+}
+
+void ShellHost::OpenSettingsFromAvatar() {
+  SelectNavTab(NavTab::Me);
+}
+
+void ShellHost::OpenAiDrawer() {
+  if (state_.layout_mode != LayoutMode::Compact || state_.ai_drawer_open) {
+    return;
+  }
+  // The keyboard would stay up over the list (and the composer under the scrim would keep typing).
+  ReleaseKeyboard();
+  state_.ai_drawer_open = true;
+  drawer_enter_pending_ = true;
+  DataModelHost::Instance().Dirty("window", "ai_drawer_open");
+  RemountAiDrawer();
+}
+
+void ShellHost::CloseAiDrawer() {
+  if (!state_.ai_drawer_open) {
+    return;
+  }
+  state_.ai_drawer_open = false;
+  drawer_enter_pending_ = false;
+  // Released now: a picked row's click is still being dispatched, and its DOM goes on the next UI turn.
+  drawer_session_swipe_.Detach();
+  DataModelHost::Instance().Dirty("window", "ai_drawer_open");
+  RemountAiDrawer();
+}
+
+void ShellHost::ReleaseKeyboard() {
+  if (context_) {
+    if (ui::Element* focused = context_->GetFocusElement()) {
+      focused->Blur();
+    }
+  }
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+    system->DeactivateKeyboard();
+  }
+  if (bottom_chrome_open_) {
+    ClearBottomChrome();
+  }
+  // The platform reports the keyboard gone a moment later; the page lays out without it now.
+  if (state_.safe_area_bottom_dp >= kImeLatchMinDp) {
+    state_.safe_area_bottom_dp = safe_area_bottom_from_prefs_dp_;
+    ApplySafeAreaLayout();
+  }
+}
+
+void ShellHost::RemountAiDrawer() {
+  if (!context_) {
+    return;
+  }
+  if (remount_ai_drawer_pending_) {
+    Backend::RequestForceFrame();
+    return;
+  }
+  // Never MountInner from inside a click (the ✕, the scrim, a row): that destroys the event target mid-dispatch.
+  remount_ai_drawer_pending_ = true;
+  AppRuntime::PostUI([this]() { FlushRemountAiDrawer(); });
+  Backend::RequestForceFrame();
+}
+
+void ShellHost::FlushRemountAiDrawer() {
+  if (!remount_ai_drawer_pending_) {
+    return;
+  }
+  remount_ai_drawer_pending_ = false;
+  RemountAiDrawerNow();
+}
+
+void ShellHost::RemountAiDrawerNow() {
+  drawer_session_swipe_.Detach();
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  ui::ElementDocument* doc = context_->GetDocument(0);
+  ui::Element* host = doc->GetElementById("shell-ai-drawer-host");
+  if (!host) {
+    return;
+  }
+  const std::string html = Rml().AiDrawer();
+  RmlMount::MountInner(host, html);
+  if (html.empty()) {
+    drawer_enter_pending_ = false;
+    AttachDrawerOpenGesture();
+    return;
+  }
+  drawer_open_gesture_.Detach();
+  MountAiDrawer();
+  if (ui::Element* layer = host->GetFirstChild(); layer && std::exchange(drawer_enter_pending_, false)) {
+    layer->SetClass("shell-drawer-layer--enter", true);  // slides in (and the scrim fades in) once, when opened
+  }
+  ApplySafeAreaLayout();  // its bottom row clears the home indicator
+}
+
+void ShellHost::MountAiDrawer() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  ui::ElementDocument* doc = context_->GetDocument(0);
+  ui::Element* target = doc->GetElementById("shell-ai-drawer-mount");
+  if (!target) {
+    return;
+  }
+  const std::string body = ViewCatalog::LoadBody("ai_drawer");
+  if (body.empty()) {
+    return;
+  }
+  RmlMount::MountInner(target, body);
+  // The drawer's list has its own id (the AI page's inline list stays in the DOM, hidden): its rows swipe the same.
+  if (ui::Element* list = doc->GetElementById("ai-drawer-sessions")) {
+    drawer_session_swipe_.Attach(list, context_, [this](const std::string& thread_id, SessionSwipeAction action) {
+      if (on_session_swipe_action_) {
+        on_session_swipe_action_(thread_id, action);
+      }
+    });
+  }
+}
+
+void ShellHost::AttachDrawerOpenGesture() {
+  drawer_open_gesture_.Detach();
+  if (!context_ || context_->GetNumDocuments() == 0 || state_.layout_mode != LayoutMode::Compact ||
+      state_.nav_tab != NavTab::Home || state_.compact_chat_open) {
+    return;
+  }
+  // The AI page's minimal block (home.rml #home-landing); with the 动态 widgets shown it is only the dock, so the
+  // drag is not offered there (the bar's ☰ and a second tap on AI still are).
+  ui::Element* landing = context_->GetDocument(0)->GetElementById("home-landing");
+  if (!landing) {
+    return;
+  }
+  ui::ObserverPtr<ui::Element> landing_ptr = landing->GetObserverPtr();
+  drawer_open_gesture_.Attach(
+      landing, context_, {},
+      [this, landing_ptr]() {
+        return HomeRootShown() && landing_ptr && landing_ptr->IsClassSet("home-landing--minimal");
+      },
+      [this]() { OpenAiDrawer(); });
+}
+
+bool ShellHost::HomeRootShown() const {
+  return state_.layout_mode == LayoutMode::Compact && state_.nav_tab == NavTab::Home && !state_.compact_chat_open &&
+         state_.transient_stack.empty() && state_.overlay_stack.empty() && !state_.ai_drawer_open;
+}
+
+bool ShellHost::HiddenTabRootShown() const {
+  return ShellLayout::HiddenTabShown(state_) && local_back_stack_.empty() &&
+         ShellInterruption::Top(state_) == InterruptionKind::None;
 }
 
 void ShellHost::SetLargeTitleCollapsed(const bool collapsed) {
@@ -577,10 +775,24 @@ void ShellHost::SetLargeTitleCollapsed(const bool collapsed) {
   DataModelHost::Instance().Dirty("window", "large_title_collapsed");
 }
 
+void ShellHost::SetChatsLink(const bool known, const bool online) {
+  const ui::String state = !known ? "" : (online ? "ok" : "offline");
+  const ui::String text = !known ? ui::String() : ui::String(Tr(online ? "shell.chats.link_online" : "shell.chats.link_offline").c_str());
+  if (state_.chats_link_state == state && state_.chats_link_text == text) {
+    return;
+  }
+  state_.chats_link_state = state;
+  state_.chats_link_text = text;
+  DataModelHost::Instance().Dirty("window", "chats_link_state");
+  DataModelHost::Instance().Dirty("window", "chats_link_text");
+}
+
 void ShellHost::OpenCompactChat() {
   if (state_.layout_mode != LayoutMode::Compact) {
     return;
   }
+  // A conversation picked in the AI drawer (or opened any other way) closes it.
+  CloseAiDrawer();
   if (!state_.compact_chat_open) {
     page_enter_pending_id_ = "shell-chat-overlay";
   }
@@ -659,6 +871,7 @@ void ShellHost::ToggleAuxiliary() {
 }
 
 void ShellHost::PushTransient(const PaneSpec& spec) {
+  CloseAiDrawer();
   PaneState pane;
   pane.spec = spec;
   pane.spec.role = PaneRole::Transient;
@@ -683,6 +896,7 @@ void ShellHost::PopTransient() {
 }
 
 int ShellHost::PushLayer(const PaneSpec& spec) {
+  CloseAiDrawer();
   OverlayEntry entry;
   entry.id = AllocateOverlayId();
   entry.kind = OverlayKind::Generic;
@@ -774,11 +988,13 @@ DismissTarget ShellHost::ResolveDismissTarget() const {
     return DismissTarget::AuxiliarySheet;
   case InterruptionKind::CompactChatOverlay:
     return DismissTarget::CompactChatOverlay;
+  case InterruptionKind::None:
+    // A hidden tab's root page (phone Me / Contacts) goes back to the tab it came from.
+    return HiddenTabRootShown() ? DismissTarget::HiddenTab : DismissTarget::None;
   case InterruptionKind::Dialog:
   case InterruptionKind::PinGate:
   case InterruptionKind::CallRing:
   case InterruptionKind::LiveSessionOn:
-  case InterruptionKind::None:
     return DismissTarget::None;
   }
   return DismissTarget::None;
@@ -802,6 +1018,9 @@ ui::Element* ShellHost::PageElementFor(DismissTarget target) const {
     break;
   case DismissTarget::CompactChatOverlay:
     id = "shell-chat-overlay";
+    break;
+  case DismissTarget::HiddenTab:
+    id = "shell-nav-page";
     break;
   case DismissTarget::OverlayLayer:
     if (TopPageSheet()) {
@@ -891,6 +1110,9 @@ void ShellHost::CommitDismiss(DismissTarget target) {
   case DismissTarget::OverlayLayer:
     CloseLayer();
     return;
+  case DismissTarget::HiddenTab:
+    HiddenTabBack();
+    return;
   }
 }
 
@@ -936,6 +1158,12 @@ bool ShellHost::HandleDismiss() {
     // Unlock: consume Escape without dismissing or quitting.
     return true;
   }
+  // Phone back order (Android system back, Escape; DEV/PLAN-minimal-nav.md A / C): what is drawn over the drawer
+  // (a menu, a dialog, the PIN gate) closes first; then (1) the AI drawer, and nothing else with it.
+  if (state_.ai_drawer_open) {
+    CloseAiDrawer();
+    return true;
+  }
   if (bottom_chrome_open_) {
     if (on_bottom_chrome_dismissed_) {
       on_bottom_chrome_dismissed_();
@@ -948,6 +1176,9 @@ bool ShellHost::HandleDismiss() {
     RequestSyncLayout();
     return true;
   }
+  // Then RequestDismiss: (2) a settings page (local back), a layer, a pushed page, the auxiliary sheet or the chat
+  // overlay; (3) a hidden tab's root page back to its tab (HiddenTab); (4) nothing left: the caller's own
+  // (PlatformNavigation minimises on phones).
   return RequestDismiss(DismissStyle::Instant);
 }
 
@@ -1186,14 +1417,19 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_quality_hint");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_debug_subtitle");
   DataModelHost::Instance().Dirty("window", "call_in_progress_debug_subtitle");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_side");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_y_permille");
   for (const char* name : {"call_ring_phone_title", "call_ring_phone_subtitle", "call_in_progress_phone_title",
                            "call_in_progress_failed_text", "call_in_progress_story_step1",
-                           "call_in_progress_story_step2", "call_in_progress_story_step3",
+                           "call_in_progress_story_step2", "call_in_progress_story_step3", "call_in_progress_story_step4",
+                           "call_in_progress_story_step5",
                            "call_in_progress_result_text", "call_in_progress_result_fading",
                            "call_in_progress_signal_shown", "call_in_progress_signal_bars",
                            "call_in_progress_signal_tone", "call_in_progress_signal_word",
                            "call_in_progress_notice_text", "call_in_progress_notice_warn",
-                           "call_in_progress_notice_fading"}) {
+                           "call_in_progress_notice_fading", "call_in_progress_reconnect_text",
+                           "call_in_progress_reconnect_ok", "call_in_progress_reconnect_fading",
+                           "call_in_progress_reconnect_dim"}) {
     DataModelHost::Instance().Dirty("window", name);
   }
 }
@@ -1206,6 +1442,11 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
           : std::vector<const char*>{};
   state_.call_ring = snapshot.ring;
   state_.call_in_progress = snapshot.in_progress;
+  // A ring or the call screen covers the page: the drawer does not wait under it (the minimised call chip leaves it).
+  if (snapshot.ring.active ||
+      (snapshot.in_progress.active && snapshot.in_progress.mode != CallChromeMode::Minimized)) {
+    CloseAiDrawer();
+  }
   // Layer appear/disappear: mount into #shell-call-*-mount only (never full SyncLayout —
   // that remounts chat panes and broke Samsung Accept hit-testing).
   if (update == CallChromeUpdate::Remount) {
@@ -1282,6 +1523,10 @@ void ShellHost::SetOnTransientMounted(std::function<void(const std::string& key)
 
 void ShellHost::SetOnTransientPopped(std::function<void(const std::string& key)> callback) {
   on_transient_popped_ = std::move(callback);
+}
+
+void ShellHost::SetOnCompactChatShownAgain(std::function<void()> callback) {
+  on_compact_chat_shown_again_ = std::move(callback);
 }
 
 void ShellHost::SetOnNavTabChanged(std::function<void(NavTab tab)> callback) {
@@ -1514,9 +1759,10 @@ void ShellHost::ApplySafeAreaLayout() {
   ContextMenuHost::Instance().SetHomeIndicatorDp(state_.safe_area_bottom_dp >= kImeLatchMinDp ? 0 : state_.safe_area_bottom_dp);
   CompactBottomSurface bottom_surface = CompactBottomSurface::None;
   if (state_.layout_mode == LayoutMode::Compact) {
-    bottom_surface = !state_.transient_stack.empty() ? CompactBottomSurface::Page
-                     : state_.compact_chat_open      ? CompactBottomSurface::Composer
-                                                     : CompactBottomSurface::TabBar;
+    // A hidden tab's page (Me, Contacts) has no tab bar: like a pushed page it reaches the screen bottom itself.
+    bottom_surface = !state_.transient_stack.empty() || ShellLayout::HiddenTabShown(state_) ? CompactBottomSurface::Page
+                     : state_.compact_chat_open                                         ? CompactBottomSurface::Composer
+                                                                                         : CompactBottomSurface::TabBar;
   }
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface, bottom_chrome_open_);
@@ -1544,6 +1790,30 @@ void ShellHost::ApplySafeAreaLayout() {
          statusbar_dp + bottom_chrome_dp + layout.content_bottom_inset_dp);
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
   set_dp(doc->GetElementById("shell-statusbar-strip"), "height", layout.content_top_dp);
+  if (ui::Element* strip = doc->GetElementById("shell-statusbar-strip")) {
+    // The strip takes the colour of the page under it, so the inset does not end in a line: the Home root's dock, the
+    // grouped Me page, New chat's grouped page, Add contact's bar (one rule each, colors.rcss.tmpl). Anything else (the
+    // Chats bar with its own material, a chat) keeps the body colour.
+    std::string surface;
+    if (state_.layout_mode == LayoutMode::Compact && state_.overlay_stack.empty()) {
+      if (!state_.transient_stack.empty()) {
+        surface = state_.transient_stack.back().spec.key;
+      } else if (!state_.compact_chat_open && state_.nav_tab == NavTab::Home) {
+        surface = "home";
+      } else if (!state_.compact_chat_open && state_.nav_tab == NavTab::Me) {
+        surface = "me";
+      }
+    }
+    ui::Element* bottom = doc->GetElementById("shell-home-indicator-strip");
+    for (const char* known : {"home", "me", "new_chat", "add_contact"}) {
+      strip->SetClass(std::string("shell-statusbar-strip--") + known, surface == known);
+      if (bottom) {
+        bottom->SetClass(std::string("shell-home-indicator-strip--") + known, surface == known);
+      }
+    }
+    // Under a page with no bottom bar the page ends above the home indicator (padding below): the band covers it.
+    set_dp(bottom, "height", bottom_surface == CompactBottomSurface::Page ? layout.bottom_surface_padding_dp : 0.f);
+  }
   if (ui::Element* toasts = doc->GetElementById("shell-toast-stack")) {
     if (bottom_surface != CompactBottomSurface::None) {
       // Phone: a centred pill above the tab bar / composer (the chrome fills the body, see components.rcss).
@@ -1569,15 +1839,16 @@ void ShellHost::ApplySafeAreaLayout() {
   if (state_.layout_mode != LayoutMode::Compact) {
     return;
   }
-  // Nav page only needs nav-height padding; shell-root bottom already clears the bottom chrome. Chats, Contacts and Me
-  // scroll under the 49dp tab bar (their scrollers pad themselves past it), so their page clears the home-indicator
-  // strip only; Home's dock sits above the bar.
-  const float tab_bar_dp = state_.nav_tab == NavTab::Home ? 0.f : config_.compact_nav_height_dp;
-  set_dp(doc->GetElementById("shell-nav-page"), "padding-bottom",
-         std::max(0.f, layout.content_padding_bottom_dp - tab_bar_dp));
-  set_dp(doc->GetElementById("shell-bottom-chrome"), "bottom", layout.chrome_bottom_dp);
   // The bottom surface owns the home-indicator strip (padding keeps its controls above the inset).
   const float strip_dp = layout.bottom_surface_padding_dp;
+  // Nav page only needs nav-height padding; shell-root bottom already clears the bottom chrome. Chats scrolls under
+  // the tab bar (its scroller pads itself past it), so its page clears the home-indicator strip only; Home's dock sits
+  // above the bar. A hidden tab's page (no tab bar) pads by the strip alone, like a pushed page.
+  const float scrolls_under_bar_dp = state_.nav_tab == NavTab::Home ? 0.f : config_.compact_nav_height_dp;
+  set_dp(doc->GetElementById("shell-nav-page"), "padding-bottom",
+         ShellLayout::HiddenTabShown(state_) ? strip_dp
+                                             : std::max(0.f, layout.content_padding_bottom_dp - scrolls_under_bar_dp));
+  set_dp(doc->GetElementById("shell-bottom-chrome"), "bottom", layout.chrome_bottom_dp);
   set_dp(doc->GetElementById("shell-bottom-chrome"), "padding-bottom",
          bottom_surface == CompactBottomSurface::TabBar ? strip_dp : 0.f);
   // Keyboard up, or an emoji/attachment panel open, over a tab-bar page: hide the nav tab bar so the keyboard / panel
@@ -1594,6 +1865,12 @@ void ShellHost::ApplySafeAreaLayout() {
          bottom_surface == CompactBottomSurface::Composer ? strip_dp : 0.f);
   set_dp(doc->GetElementById("shell-transient-layer"), "padding-bottom",
          bottom_surface == CompactBottomSurface::Page ? strip_dp : 0.f);
+  // The AI drawer reaches the screen bottom over the tab bar. Its frosted "you" row runs down to the screen bottom too
+  // (one bar, Kenneth 2026-11-07), its content above the home indicator; the list's end spacer keeps the last row
+  // clear of the whole bar (the engine leaves a scroller's bottom padding out of its scroll height).
+  set_dp(doc->GetElementById("shell-ai-drawer-mount"), "padding-bottom", 0.f);
+  set_dp(doc->GetElementById("ai-drawer-me"), "padding-bottom", kAiDrawerMePaddingDp + strip_dp);
+  set_dp(doc->GetElementById("ai-drawer-list-end"), "height", kAiDrawerMeHeightDp + strip_dp);
   // Page sheets reach the screen bottom: their content clears the home indicator (not the keyboard: the body
   // already shrinks above it).
   // A sheet shows full height while the keyboard is up, and its own stop again once it is down.
@@ -1615,7 +1892,14 @@ void ShellHost::ApplySafeAreaLayout() {
     if (overlay.page_sheet) {
       const std::string sheet_id = "shell-page-sheet-" + std::to_string(overlay.id);
       ui::Element* sheet = doc->GetElementById(sheet_id.c_str());
-      set_dp(sheet, "padding-bottom", strip_dp);
+      if (overlay.key == "ask_ai") {
+        // The ask-AI panel's frosted input bar runs down to the sheet's bottom edge; its content clears the home
+        // indicator (Kenneth 2026-11-07: one bar, no band under it).
+        set_dp(sheet, "padding-bottom", 0.f);
+        set_dp(doc->GetElementById("ask-ai-composer"), "padding-bottom", strip_dp);
+      } else {
+        set_dp(sheet, "padding-bottom", strip_dp);
+      }
       if (sheet) {
         const SheetDetent shown = PageSheetModel::Shown(overlay.sheet_detent, keyboard_up);
         const bool half = shown == SheetDetent::Half;
@@ -1687,6 +1971,7 @@ void ShellHost::OnLayoutModeChanged() {
       pending_dismiss_.reset();
     }
     DetachDismissGestures();
+    CloseAiDrawer();  // the desktop has no drawer: its list is in the panes
   }
   if (on_layout_mode_changed_) {
     on_layout_mode_changed_(state_.layout_mode);
@@ -1869,6 +2154,16 @@ void ShellHost::AttachSwipeBackGesture() {
     }
   }
 
+  if (HiddenTabRootShown()) {
+    // Phone Me / Contacts root page: an edge swipe goes back to the tab it came from (rows keep their own swipes).
+    if (ui::Element* page = doc->GetElementById("shell-nav-page")) {
+      options.chrome_classes = {"shell-circle-btn"};
+      swipe_back_gesture_.Attach(page, context_, std::move(options),
+                                 [slide_out]() { slide_out(DismissTarget::HiddenTab); });
+    }
+    return;
+  }
+
   if (state_.layout_mode == LayoutMode::Compact && state_.compact_chat_open) {
     if (ui::Element* overlay = doc->GetElementById("shell-chat-overlay")) {
       options.chrome_classes = {"shell-chat-overlay-chrome", "shell-back-btn"};
@@ -1917,7 +2212,7 @@ void ShellHost::MountPaneBodies() {
         }
       }
     }
-  } else if (state_.compact_chat_open) {
+  } else if (state_.compact_chat_open && !ShellLayout::HiddenTabShown(state_)) {
     if (state_.nav_tab == NavTab::Sessions) {
       mount_key("sidebar");
     }
@@ -2045,6 +2340,8 @@ void ShellHost::SyncLayout() {
   nav_bar_scroll_.Detach();
   favorites_snap_.Detach();
   session_swipe_.Detach();
+  drawer_session_swipe_.Detach();
+  drawer_open_gesture_.Detach();
   RmlMount::MountInner(root, Rml().ShellRoot());
   last_synced_mode_ = mode;
   MountPaneBodies();
@@ -2057,6 +2354,10 @@ void ShellHost::SyncLayout() {
   remount_call_chrome_pending_ = false;
   remount_dialog_chrome_pending_ = false;
   remount_pin_gate_chrome_pending_ = false;
+  remount_ai_drawer_pending_ = false;
+  // The rebuilt root has an empty drawer host: the drawer (and its row swipes) again while open, else the AI page's
+  // drag that opens it.
+  RemountAiDrawerNow();
   RemountDialogChromeNow();
   RemountCallChromeNow();
   RemountPinGateChromeNow();
@@ -2195,18 +2496,10 @@ void ShellHost::AttachCallChromeGesture() {
   if (!doc) {
     return;
   }
-  ui::Element* root = doc->GetElementById("shell-call-chrome-root");
-  if (!root && state_.call_in_progress.mode == CallChromeMode::Minimized) {
-    root = doc->GetElementById("shell-call-minimized-chip");
-  }
+  // Minimized: the chip itself, so drag / tap don't need the full-screen layer and the chip is what is placed.
+  ui::Element* root = CallChromeGestureElement(doc, state_.call_in_progress.mode);
   if (!root) {
     return;
-  }
-  // Minimized: attach to the chip so drag/tap don't require the full-screen layer.
-  if (state_.call_in_progress.mode == CallChromeMode::Minimized) {
-    if (ui::Element* chip = doc->GetElementById("shell-call-minimized-chip")) {
-      root = chip;
-    }
   }
   ShellCallChromeGesture::Callbacks callbacks;
   callbacks.on_minimize = [this]() {
@@ -2233,9 +2526,16 @@ void ShellHost::AttachCallChromeGesture() {
       call_actions_.restore_chrome_from_minimized();
     }
   };
-  callbacks.on_chip_corner = [this](int corner) {
-    if (call_actions_.set_minimized_corner) {
-      call_actions_.set_minimized_corner(corner);
+  callbacks.on_chip_place = [this](int side, int y_permille) {
+    if (call_actions_.set_minimized_place) {
+      call_actions_.set_minimized_place(side, y_permille);
+    }
+  };
+  callbacks.on_chip_released = [this]() {
+    // A remount held back while the gesture owned the chip (RemountCallChromeNow) runs now: after its slide, or a
+    // press that ended with no drop. Held again until the dropped place is back.
+    if (call_chip_rebuild_held_) {
+      RemountCallChrome();
     }
   };
   // The phone page is full screen in both open modes: it takes the full page's pull-down, never "tap outside".
@@ -2292,6 +2592,24 @@ void ShellHost::RemountCallChromeNow() {
   if (!doc) {
     return;
   }
+  MeasureCallChip(doc);
+  // #166: the minimised chip a drag still owns — pressed, sliding to its side, or dropped at a place the call state
+  // has not taken yet — stays as it is: rebuilt from the state now it would jump back where it was. Only its text is
+  // dirtied (it is all bound); the rebuild runs when the gesture lets go (on_chip_released: the slide ended, a press
+  // ended with no drop, or it was detached) or the place comes back (that state change is a Remount of its own). A
+  // new mode, call or layout is never held: the chip is not kept then.
+  const bool hold_chip = KeepMinimizedChipOnRemount(
+      state_.call_in_progress, doc->GetElementById("shell-call-minimized-chip"), call_chrome_gesture_);
+  DiagCallChipRemount(doc, hold_chip);
+  if (hold_chip) {
+    call_chip_rebuild_held_ = true;
+    if (ui::Element* ring_mount = doc->GetElementById("shell-call-ring-mount")) {
+      RmlMount::MountInner(ring_mount, CallRingRml(state_));
+    }
+    DirtyCallChrome();
+    return;
+  }
+  call_chip_rebuild_held_ = false;
   DetachCallChromeGesture();
   // The sheet opens at Large each time it opens (DESIGN-pp-ui 8.14); a remount while it stays open keeps its stop.
   if (!state_.call_in_progress.story_sheet_open) {
@@ -2306,6 +2624,63 @@ void ShellHost::RemountCallChromeNow() {
   DirtyCallChrome();
   AttachCallChromeGesture();
   ApplySafeAreaLayout();  // the phone call page reaches under the status bar and clears the home indicator
+}
+
+void ShellHost::DiagCallChipRemount(ui::ElementDocument* doc, const bool held) {
+  const CallInProgressState& call = state_.call_in_progress;
+  const bool minimized = call.active && call.mode == CallChromeMode::Minimized;
+  if (!minimized && !diag_chip_minimized_) {
+    return; // only the minimised chip's remounts, and the one that leaves it
+  }
+  DiagLine line("call.chip");
+  line.Add("what", "remount").Add("held", held);
+  if (minimized != diag_chip_minimized_) {
+    line.Add("reason", "mode");
+  } else if (call.minimized_side != diag_chip_side_ || call.minimized_y_permille != diag_chip_y_) {
+    line.Add("reason", "place");
+  } else {
+    line.Add("reason", "other");
+  }
+  line.Add("minimized", minimized).Add("side", call.minimized_side).Add("y", call.minimized_y_permille);
+  line.Add("area_h", static_cast<int>(std::lround(state_.call_chip_layout.area_height_dp)))
+      .Add("chip_h", static_cast<int>(std::lround(state_.call_chip_layout.chip_height_dp)));
+  const float top = call.minimized_side == 0 ? -1.f : MinimizedChipTopDp(state_);
+  if (call.minimized_side == 0) {
+    line.Add("rendered_top", "corner");
+  } else if (top < 0.f) {
+    line.Add("rendered_top", "none");
+  } else {
+    line.Add("rendered_top", static_cast<int>(std::lround(top)));
+  }
+  line.Add("chip_on_screen", doc && doc->GetElementById("shell-call-minimized-chip") != nullptr)
+      .Add("settling", call_chrome_gesture_.IsSettling())
+      .Emit();
+  diag_chip_minimized_ = minimized;
+  diag_chip_side_ = call.minimized_side;
+  diag_chip_y_ = call.minimized_y_permille;
+}
+
+void ShellHost::MeasureCallChip(ui::ElementDocument* doc) {
+  const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
+  if (!doc || ratio <= 0.f) {
+    return;
+  }
+  // The chip's layer fills the call mount (components.rcss .shell-layer-call-minimized), which is always there.
+  if (ui::Element* mount = doc->GetElementById("shell-call-in-progress-mount")) {
+    const float height = mount->GetBox().GetSize(ui::BoxArea::Padding).y;
+    if (height > 0.f) {
+      state_.call_chip_layout.area_height_dp = height / ratio;
+    }
+  }
+  if (ui::Element* chip = doc->GetElementById("shell-call-minimized-chip")) {
+    const float height = chip->GetBox().GetSize(ui::BoxArea::Border).y;
+    if (height > 0.f) {
+      state_.call_chip_layout.chip_height_dp = height / ratio;
+    }
+  }
+  // Where the gesture last put a dropped chip (at the drop: the slide's end), with the heights it measured then: a
+  // rebuild lands exactly there, mid-slide or after, whatever the elements above measured (0 before a layout).
+  RememberCallChipLayout(call_chrome_gesture_, state_.call_chip_layout);
 }
 
 void ShellHost::RemountDialogChrome() {
@@ -2469,6 +2844,7 @@ void ShellHost::Update(ui::Context* context) {
     }
   }
   ai_dot_.Update(context, AiDotSceneNow());
+  call_chrome_gesture_.Reflow(state_.call_in_progress);
   favorites_snap_.Update(ShellFavoritesSnap::NowSeconds());
   SyncSecureScreen();
 }
@@ -2528,6 +2904,11 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
 
 void ShellHost::OnNavTabClicked(const std::string& tab_name) {
   const NavTab tab = NavTabFromString(tab_name.c_str());
+  // Phones: AI tapped again on the AI page itself opens its conversation list.
+  if (tab == NavTab::Home && HomeRootShown()) {
+    OpenAiDrawer();
+    return;
+  }
   // A nav-rail click on a tab with a secondary pane (including the active tab) brings a collapsed list back.
   if (state_.layout_mode == LayoutMode::Expanded &&
       ShellLayout::SidebarCollapsedAfterNavSelect(state_.sidebar_collapsed, tab) != state_.sidebar_collapsed) {

@@ -4,11 +4,14 @@
 #include "gui/chat/AgentTurnController.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "gui/UserFeedback.h"
 
 #include <gtest/gtest.h>
 
 #include <chrono>
 #include <deque>
+#include <fstream>
+#include <sstream>
 #include <thread>
 #include <map>
 #include <set>
@@ -386,6 +389,30 @@ TEST_F(AgentTurnBusyTest, AnImageQuestionTheSessionDidNotTakeComesBack) {
   EXPECT_EQ(host_.put_back.size(), 1u);
 }
 
+// Kenneth 2026-11-07 (round 11): a picture asked in an AI conversation opened from the drawer went to a brand-new
+// "新对话". SendImageQuestion started a Home conversation whenever the AI page (Home) was the tab, while the text path
+// already left an open conversation alone. Both now share SendStartsHomeConversation.
+TEST(AgentTurnHomeSendTest, OnlyTheAiPagesOwnComposerStartsANewConversation) {
+  ShellChromeSnapshot chrome;
+  chrome.nav_tab = NavTab::Home;
+  EXPECT_TRUE(SendStartsHomeConversation(chrome)) << "the PP 助手 page's composer";
+  chrome.compact_chat_open = true;
+  EXPECT_FALSE(SendStartsHomeConversation(chrome)) << "a conversation open over the AI page";
+  chrome.compact_chat_open = false;
+  chrome.nav_tab = NavTab::Sessions;
+  EXPECT_FALSE(SendStartsHomeConversation(chrome));
+  // The image path cannot run without a messaging facade here: it is read from the source.
+  std::ifstream in(std::string(PP_SOURCE_DIR) + "/src/gui/chat/AgentTurnController.cpp");
+  std::stringstream source;
+  source << in.rdbuf();
+  const std::string text = source.str();
+  const size_t start = text.find("bool AgentTurnController::SendImageQuestion(");
+  ASSERT_NE(start, std::string::npos);
+  const std::string body = text.substr(start, text.find("\n}\n", start) - start);
+  EXPECT_NE(body.find("SendStartsHomeConversation(host_.ChromeSnapshot())"), std::string::npos);
+  EXPECT_EQ(body.find("nav_tab == NavTab::Home"), std::string::npos);
+}
+
 TEST_F(AgentTurnBusyTest, AQueueTheSessionsRefusedIsAskedAgainEverySecond) {
   // Nothing marked busy and no turn end coming: the queue is offered again from Tick, at most once a second.
   TurnStart answer = TurnStart::Full;
@@ -590,6 +617,27 @@ TEST_F(AgentTurnBusyTest, HeldSendOfAnotherThreadThanTheOpenOneGoesBackToItsOwnD
   ASSERT_EQ(host_.put_back.size(), 1u);
   EXPECT_EQ(host_.put_back[0].first, "B");
   EXPECT_STREQ(chat_.draft.c_str(), "");
+}
+
+// B183: a Brief key renewed on a turn's thread reaches the sessions only once no turn runs (a configure under a
+// running turn would rebuild its client and tools).
+TEST_F(AgentTurnBusyTest, ARenewedKeyReconfiguresTheSessionsOnceNoTurnRuns) {
+  bool busy = true;
+  int configures = 0;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.any_busy = [&busy] { return busy; };
+  ports.configure = [&configures](const AppConfig&) { ++configures; };
+  controller_.BindPorts(std::move(ports));
+
+  controller_.ReloadAgentConfigWhenIdle();
+  controller_.Tick();
+  EXPECT_EQ(configures, 0);
+  busy = false;
+  controller_.Tick();
+  EXPECT_EQ(configures, 1);
+  controller_.Tick();
+  EXPECT_EQ(configures, 1); // once
 }
 
 TEST_F(AgentTurnBusyTest, AnotherChatsTurnIsSaidAboveTheComposer) {
@@ -953,6 +1001,49 @@ TEST_F(AgentTurnBusyTest, ALateEventOfADeletedConversationIsIgnored) {
   ready.text = "answer";
   controller_.HandleAgentEvent(ready); // would store a message into (and so re-create) the thread
   EXPECT_FALSE(controller_.Busy().Any());
+}
+
+// A Brief guest key on its way (the mint runs off the UI thread now): the setup banner keeps what it showed, rather than
+// flashing "Brief unavailable" until the key lands. With no mint in flight, a missing key still shows it.
+TEST_F(AgentTurnBusyTest, NoBriefUnavailableBannerWhileTheKeyMintIsInFlight) {
+  host_.store.Mutable().config.llm.base_url = "https://llm.example/api/llm/v1";
+  host_.store.Mutable().config.llm.preset = "brief";
+  std::vector<std::string> banners;
+  ShellFeedbackPorts ports;
+  ports.show_banner = [&](const std::string& message, bool) { banners.push_back(message); };
+  UserFeedback::BindPorts(ports);
+
+  auto ticket = controller_.BriefKeyRun()->TryStart();
+  ASSERT_TRUE(ticket);
+  controller_.RefreshLlmSetupBanner();
+  EXPECT_TRUE(banners.empty()) << "a mint in flight: no unavailable banner";
+
+  EXPECT_FALSE(controller_.BriefKeyRun()->Finish(*ticket));
+  controller_.RefreshLlmSetupBanner();
+  EXPECT_EQ(banners.size(), 1u) << "no key and no mint: the banner says so";
+
+  UserFeedback::BindPorts({});
+}
+
+// The Home plus menu always lists Camera first, then Photos (the camera's own notice tells when it is unavailable).
+TEST(HomeAttachMenuTest, ListsCameraPhotosThenFileUnconditionally) {
+  int camera = 0, photos = 0, file = 0;
+  const std::vector<ContextMenuAction> actions =
+      AgentTurnController::HomeAttachActions([&] { ++camera; }, [&] { ++photos; }, [&] { ++file; });
+  ASSERT_EQ(actions.size(), 3u);
+  EXPECT_EQ(actions[0].id, "home_attach_camera");
+  EXPECT_EQ(actions[1].id, "home_attach_photo");
+  EXPECT_EQ(actions[2].id, "home_attach_file");
+  EXPECT_FALSE(actions[2].enabled);
+  EXPECT_FALSE(actions[0].enabled) << "no availability gate";
+  EXPECT_FALSE(actions[1].enabled);
+  EXPECT_FALSE(actions[0].icon.empty());
+  actions[0].run();
+  actions[1].run();
+  actions[2].run();
+  EXPECT_EQ(camera, 1);
+  EXPECT_EQ(photos, 1);
+  EXPECT_EQ(file, 1);
 }
 
 } // namespace

@@ -6,6 +6,7 @@
 #include "common/directory/IdentityTypes.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -20,7 +21,25 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
                                                        const std::vector<std::string>& multiaddrs = {},
                                                        const RegistrationPublishOpts& publish = {});
 
-/** Finish registration + Identity.Update with ApplyRegistrationResult. Returns applied identity. */
+/**
+ * The network half of FinishAndPersistRegistration: start, sign, finish. Nothing is stored; the result goes to
+ * PersistRenewal. Reads the identity (and signs with its key) under the store's own lock, so it may run off the UI
+ * thread.
+ */
+Roe<RegistrationResult> RenewNetworkOnly(IRegistrationClient& registration, IdentityStore& identity,
+                                         const std::string& nickname, const std::vector<std::string>& multiaddrs = {},
+                                         const RegistrationPublishOpts& publish = {});
+
+/**
+ * The storing half: in one read-modify-write under the store's lock (IdentityStore::Modify), applies only the
+ * registration fields of `result` (ApplyRegistrationResult) to the identity as stored now. `expected_account_id`:
+ * the account the network half ran for; another account stored now (the profile changed meanwhile), or an empty
+ * `expected_account_id`, is refused and nothing is written. Returns the applied identity.
+ */
+Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationResult& result,
+                                  const std::string& expected_account_id);
+
+/** Finish registration + Identity.Update with ApplyRegistrationResult: RenewNetworkOnly, then PersistRenewal. */
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,
                                                 const std::string& nickname,
                                                 const std::vector<std::string>& multiaddrs = {},
@@ -32,6 +51,13 @@ Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registratio
  */
 Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, IdentityStore& identity,
                                      bool auto_renew_enabled);
+
+/**
+ * The network half of MaybeAutoRenewRegistration: nullopt when nothing is due (same rule), else the finished
+ * registration for PersistRenewal. Nothing is stored.
+ */
+Roe<std::optional<RegistrationResult>> MaybeAutoRenewNetworkOnly(IRegistrationClient& registration,
+                                                                 IdentityStore& identity, bool auto_renew_enabled);
 
 Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registration, IdentityStore& identity,
                                                  const std::string& nickname);

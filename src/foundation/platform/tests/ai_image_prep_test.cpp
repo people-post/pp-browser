@@ -192,17 +192,19 @@ void ExpectRedAndBlueAt(SDL_Surface* surface, const int rx, const int ry, const 
   EXPECT_LT(r, 60);
 }
 
-TEST_F(AiImagePrepTest, ExifOrientationIsAppliedOnlyWhenAsked) {
+// The AI path calls with the defaults (AgentTurnController's PrepareAiImageDraft): an iPhone portrait photo (tag 6)
+// comes out standing up, in the composer chip and in what the AI is sent. Turning it off leaves the stored pixels.
+TEST_F(AiImagePrepTest, ExifOrientationIsAppliedByDefault) {
   const std::string path = SaveTwoToneJpegWithOrientation(dir_, 6); // needs a quarter turn clockwise
 
-  auto untouched = PrepareAiImageFromFile(path);
+  ImagePrepOptions off;
+  off.apply_exif_orientation = false;
+  auto untouched = PrepareAiImageFromFile(path, 1536u * 1024u, 2048, off);
   ASSERT_TRUE(untouched) << untouched.error().message;
-  EXPECT_EQ(untouched->width, 200) << "the AI path is unchanged";
+  EXPECT_EQ(untouched->width, 200);
   EXPECT_EQ(untouched->height, 100);
 
-  ImagePrepOptions options;
-  options.apply_exif_orientation = true;
-  auto upright = PrepareAiImageFromFile(path, 1536u * 1024u, 2048, options);
+  auto upright = PrepareAiImageFromFile(path);
   ASSERT_TRUE(upright) << upright.error().message;
   EXPECT_EQ(upright->width, 100);
   EXPECT_EQ(upright->height, 200);

@@ -480,13 +480,13 @@ TEST_F(ComposerVoiceMarkupTest, TheToggleKeepsItsSizeWhileTypingALongDraftAndAft
   EXPECT_FLOAT_EQ(toggle_width(), before);
 }
 
-// Phones (Kenneth 2026-11-04, WhatsApp style, the same row as the ask-AI panel's): [emoji] [pill: input | clip |
-// camera] [microphone], the microphone giving its place to Send once there is text; voice mode [bar] [keyboard]. Every
-// button a 44dp target on the pill's 36dp line.
+// Phones (Kenneth 2026-11-04, WhatsApp style, the same row as the ask-AI panel's; 2026-11-07 every key inside the
+// pill): DOM order [emoji] [pill: input | plus] [microphone], the microphone giving its place to Send once there is
+// text; voice mode [bar] [keyboard].
 class ComposerPhoneRowTest : public ComposerVoiceMarkupTest {
 protected:
   ComposerPhoneRowTest() {
-    wrap_open_ = "<div class=\"shell-chat-overlay\">";
+    wrap_open_ = "<div class=\"shell-chat-overlay\" style=\"width: 390dp; height: 200dp;\">";
     wrap_close_ = "</div>";
   }
 };
@@ -537,23 +537,50 @@ TEST_F(ComposerPhoneRowTest, VoiceModeShowsTheBarAndTheKeyboardKeyAtTheEnd) {
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 0) << "while recording the bar has the row";
 }
 
-TEST_F(ComposerPhoneRowTest, EveryButtonIsA44dpTargetOnThePills36dpLine) {
+// Kenneth 2026-11-07: one composer on phones, every key inside the pill: the bold plus and the emoji key at its bottom
+// left, the microphone (Send once there is text) at its bottom right; no camera (the plus card has it). The keys are
+// 44dp tall targets on the pill's 36dp line, and the text starts after them.
+TEST_F(ComposerPhoneRowTest, EveryKeySitsInsideThePillOnItsLastLine) {
   state.show_voice = true;
   state.show_attach_button = true;
   state.show_capture = true;
   Apply();
-  for (const char* cls : {"prompt-emoji-btn", "prompt-attach-btn", "prompt-capture-btn", "prompt-voice-toggle-btn"}) {
-    EXPECT_FLOAT_EQ(SizeOf(cls).x, 44.f) << cls;
-    EXPECT_FLOAT_EQ(SizeOf(cls).y, 44.f) << cls;
-  }
-  // The buttons' -4dp above and below: the row is as tall as the pill's one line, not the 44dp targets.
-  const float line = SizeOf("prompt-composer-pill").y;
+  EXPECT_EQ(Shown("prompt-capture-btn"), 0) << "no camera beside the plus";
+  const auto box = [this](const char* cls) {
+    ui::ElementList found;
+    document->GetElementsByClassName(found, cls);
+    for (ui::Element* element : found) {
+      if (element->IsVisible(true)) {
+        const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Border);
+        return std::pair<ui::Vector2f, ui::Vector2f>{at, at + element->GetBox().GetSize(ui::BoxArea::Border)};
+      }
+    }
+    return std::pair<ui::Vector2f, ui::Vector2f>{};
+  };
+  const auto [pill_min, pill_max] = box("prompt-composer-pill");
+  const float line = pill_max.y - pill_min.y;
   EXPECT_LT(line, 44.f);
-  EXPECT_FLOAT_EQ(SizeOf("prompt-composer-row").y, line);
+  EXPECT_FLOAT_EQ(SizeOf("prompt-composer-row").y, line) << "the keys do not grow the row";
+  const auto [plus_min, plus_max] = box("prompt-attach-btn");
+  const auto [emoji_min, emoji_max] = box("prompt-emoji-btn");
+  const auto [mic_min, mic_max] = box("prompt-voice-toggle-btn--end");
+  for (const auto& [lo, hi] : {std::pair{plus_min, plus_max}, std::pair{emoji_min, emoji_max}, std::pair{mic_min, mic_max}}) {
+    EXPECT_FLOAT_EQ(hi.y - lo.y, 44.f);
+    EXPECT_NEAR((lo.y + hi.y) / 2, (pill_min.y + pill_max.y) / 2, 1.5f) << "centred on the one-line pill";
+    EXPECT_GE(lo.x, pill_min.x - 0.5f);
+    EXPECT_LE(hi.x, pill_max.x + 0.5f);
+  }
+  EXPECT_LT(plus_max.x, emoji_max.x) << "the plus, then the emoji key";
+  EXPECT_LE(plus_max.x, emoji_min.x + 0.5f);
+  EXPECT_FLOAT_EQ(mic_max.x, pill_max.x) << "the microphone ends the pill";
+  ui::Element* input = document->GetElementById("draft-input");
+  ASSERT_NE(input, nullptr);
+  EXPECT_GE(input->GetAbsoluteOffset(ui::BoxArea::Border).x, emoji_max.x) << "the text starts after the keys";
   state.draft = "hello";
   Apply();
-  EXPECT_FLOAT_EQ(SizeOf("prompt-send-btn").x, 44.f);
-  EXPECT_FLOAT_EQ(SizeOf("prompt-send-btn").y, 44.f);
+  const auto [send_min, send_max] = box("prompt-send-btn");
+  EXPECT_FLOAT_EQ(send_max.x, pill_max.x) << "Send takes the microphone's place";
+  EXPECT_FLOAT_EQ(send_max.y - send_min.y, 44.f);
   EXPECT_FLOAT_EQ(SizeOf("prompt-send-disc").x, 32.f) << "the accent disc inside the target";
   EXPECT_FLOAT_EQ(SizeOf("prompt-composer-row").y, line) << "Send does not grow the row";
 }

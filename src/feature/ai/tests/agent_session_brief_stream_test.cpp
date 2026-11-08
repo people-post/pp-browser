@@ -1,5 +1,7 @@
 #include "feature/ai/tests/agent_session_test_support.h"
 
+#include <algorithm>
+
 namespace {
 
 using namespace pbr;
@@ -1206,6 +1208,252 @@ TEST_F(AgentSessionLocalAppActionTest, HitInTheHomeComposerAlsoSkipsTheStream) {
   EXPECT_TRUE(LlmRequests().empty());
   EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
   EXPECT_EQ(Of(events, AgentEventType::AssistantReady).size(), 1u);
+}
+
+// --- HTTP 401: the gateway no longer knows the Bearer (B183) ---
+
+class AgentSessionBriefKeyRenewTest : public AgentSessionBriefStreamTest {
+protected:
+  // The fake stream answers with `outcomes` in order (the last one repeats) and counts its calls.
+  void ScriptOutcomes(std::vector<Roe<BriefAiOutcome>> outcomes) {
+    session_->SetBriefAiStream([this, outcomes = std::move(outcomes)](
+                                   const BriefAiRequest& request,
+                                   const std::function<void(const BriefAiEvent&)>& on_event,
+                                   const std::atomic<bool>&) -> Roe<BriefAiOutcome> {
+      Record(request);
+      const size_t call = stream_calls_.fetch_add(1);
+      const Roe<BriefAiOutcome>& outcome = outcomes[std::min(call, outcomes.size() - 1)];
+      if (outcome && *outcome == BriefAiOutcome::Done) {
+        on_event(Token("ok"));
+        on_event(Done("ok"));
+      }
+      return outcome;
+    });
+  }
+
+  // The key ports: `renew` answers `key` (or an error when empty), `stored_key` answers stored_ (under mu_); each call
+  // is counted, and the refused key and base URL kept.
+  void Renewer(const std::string& key) {
+    BriefKeyPorts ports;
+    ports.renew = [this, key](const std::string& rejected, const std::string& base_url,
+                              const std::atomic<bool>&) -> Roe<BriefKeyRenewal> {
+      ++renew_calls_;
+      {
+        std::lock_guard lock(mu_);
+        rejected_ = rejected;
+        base_url_ = base_url;
+      }
+      if (key.empty()) {
+        return AppError::Network(Err::Network::HttpError, "Guest LLM mint failed (HTTP 503)");
+      }
+      return BriefKeyRenewal{.key = key};
+    };
+    ports.commit = [this](const std::string& rejected) {
+      ++commit_calls_;
+      std::lock_guard lock(mu_);
+      committed_ = rejected;
+    };
+    ports.stored_key = [this]() {
+      std::lock_guard lock(mu_);
+      return stored_;
+    };
+    session_->SetBriefKeyPorts(std::move(ports));
+  }
+
+  void SetStored(const std::string& key) {
+    std::lock_guard lock(mu_);
+    stored_ = key;
+  }
+
+  static Roe<BriefAiOutcome> Http(const long status) {
+    return Roe<BriefAiOutcome>(LlmClient::MapHttpError(status, R"({"error":{"message":"Invalid Brief LLM API key"}})"));
+  }
+
+  std::atomic<size_t> stream_calls_{0};
+  std::atomic<int> renew_calls_{0};
+  std::atomic<int> commit_calls_{0};
+  std::string rejected_;
+  std::string base_url_;
+  std::string committed_;
+  std::string stored_ = "dummy-key"; // what the identity holds: the key the session sends
+};
+
+TEST_F(AgentSessionBriefKeyRenewTest, A401RenewsTheKeyOnceAndAsksTheSameQuestionAgain) {
+  Start();
+  ScriptOutcomes({Http(401), BriefAiOutcome::Done});
+  Renewer("brf_guest_new");
+  session_->Submit("hi there");
+  const auto events = WaitForTurn();
+
+  EXPECT_EQ(renew_calls_.load(), 1);
+  EXPECT_EQ(commit_calls_.load(), 1); // the retry was answered: the refused key goes now
+  {
+    std::lock_guard lock(mu_);
+    EXPECT_EQ(rejected_, "dummy-key"); // the Bearer the session was configured with
+    EXPECT_EQ(committed_, "dummy-key");
+    EXPECT_EQ(base_url_, "http://127.0.0.1:1"); // the session's own gateway, not the compiled default
+  }
+  ASSERT_EQ(stream_calls_.load(), 2u);
+  const auto requests = Requests();
+  EXPECT_EQ(requests[0].message, "hi there");
+  EXPECT_EQ(requests[1].message, "hi there");
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  const auto ready = Of(events, AgentEventType::AssistantReady);
+  ASSERT_EQ(ready.size(), 1u);
+  EXPECT_EQ(ready[0].text, "ok");
+}
+
+TEST_F(AgentSessionBriefKeyRenewTest, A401AfterTheRenewalEndsInTheErrorWithoutAnotherRenewal) {
+  Start();
+  ScriptOutcomes({Http(401)});
+  Renewer("brf_guest_new");
+  session_->Submit("q");
+  auto events = WaitForTurn();
+  EXPECT_EQ(renew_calls_.load(), 1);
+  EXPECT_EQ(stream_calls_.load(), 2u); // the question, asked once more with the new key
+  auto errors = Of(events, AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_FALSE(errors[0].retryable);
+  EXPECT_TRUE(Of(events, AgentEventType::AssistantReady).empty());
+  EXPECT_EQ(commit_calls_.load(), 0); // the refused key (a registered one) is kept
+
+  // No turn answered since and the stored key is still the refused one: the next 401 is the error at once.
+  session_->Submit("q2");
+  events = WaitForTurn();
+  EXPECT_EQ(renew_calls_.load(), 1);
+  EXPECT_EQ(stream_calls_.load(), 3u);
+  EXPECT_EQ(Of(events, AgentEventType::Error).size(), 1u);
+}
+
+// Stop during a 401 renewal (the turn waited for the unlock's mint, or minted): the renewal did not finish, so the
+// next turn's 401 renews again instead of "already renewed since the last answer".
+TEST_F(AgentSessionBriefKeyRenewTest, AStopDuringTheRenewalLeavesTheNextTurnFreeToRenew) {
+  Start();
+  ScriptOutcomes({Http(401), Http(401), BriefAiOutcome::Done});
+  std::atomic<bool> in_renew{false};
+  std::atomic<bool> first_returned{false};
+  BriefKeyPorts ports;
+  ports.renew = [&](const std::string&, const std::string&, const std::atomic<bool>& cancelled) -> Roe<BriefKeyRenewal> {
+    if (++renew_calls_ == 1) {
+      in_renew = true;
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+      while (!cancelled.load() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+      }
+      first_returned = true;
+      return AppError::Network(Err::Network::HttpError, "Brief key renewal stopped"); // as the app's wait gives up
+    }
+    return BriefKeyRenewal{.key = "brf_guest_new"};
+  };
+  ports.commit = [this](const std::string&) { ++commit_calls_; };
+  ports.stored_key = [this]() {
+    std::lock_guard lock(mu_);
+    return stored_;
+  };
+  session_->SetBriefKeyPorts(std::move(ports));
+
+  session_->Submit("q");
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (!in_renew && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  ASSERT_TRUE(in_renew.load());
+  session_->Cancel(); // Stop while the renewal waits
+  while (!first_returned && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  ASSERT_TRUE(first_returned.load());
+  std::this_thread::sleep_for(std::chrono::milliseconds(100)); // the stopped turn runs to its end
+  (void)WaitForTurn(std::chrono::milliseconds(1000));
+
+  session_->Submit("q2");
+  const auto events = WaitForTurn();
+  EXPECT_EQ(renew_calls_.load(), 2) << "the stopped renewal did not count as one";
+  EXPECT_EQ(stream_calls_.load(), 3u); // q (401), q2 (401), q2 again with the renewed key
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  EXPECT_EQ(Of(events, AgentEventType::AssistantReady).size(), 1u);
+  EXPECT_EQ(commit_calls_.load(), 1);
+}
+
+TEST_F(AgentSessionBriefKeyRenewTest, OtherStatusesNeverRenew) {
+  Start();
+  ScriptOutcomes({Http(500)});
+  Renewer("brf_guest_new");
+  session_->Submit("q");
+  auto events = WaitForTurn();
+  EXPECT_EQ(Of(events, AgentEventType::Error).size(), 1u);
+
+  ScriptOutcomes({Http(403)});
+  session_->Submit("q2");
+  events = WaitForTurn();
+  EXPECT_EQ(Of(events, AgentEventType::Error).size(), 1u);
+  EXPECT_EQ(renew_calls_.load(), 0);
+  EXPECT_EQ(stream_calls_.load(), 2u);
+}
+
+TEST_F(AgentSessionBriefKeyRenewTest, AFailedMintEndsInTheErrorAndIsNotTriedAgain) {
+  Start();
+  ScriptOutcomes({Http(401)});
+  Renewer(""); // the mint fails
+  session_->Submit("q");
+  auto events = WaitForTurn();
+  EXPECT_EQ(renew_calls_.load(), 1);
+  EXPECT_EQ(stream_calls_.load(), 1u); // not asked again without a new key
+  auto errors = Of(events, AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_TRUE(errors[0].retryable); // a network failure of the mint
+  EXPECT_EQ(commit_calls_.load(), 0);
+
+  session_->Submit("q2");
+  events = WaitForTurn();
+  EXPECT_EQ(renew_calls_.load(), 1);
+  EXPECT_EQ(stream_calls_.load(), 2u);
+  EXPECT_EQ(Of(events, AgentEventType::Error).size(), 1u);
+}
+
+TEST_F(AgentSessionBriefKeyRenewTest, AnAnsweredTurnAllowsTheNextRenewal) {
+  Start();
+  ScriptOutcomes({Http(401), BriefAiOutcome::Done, Http(401), BriefAiOutcome::Done});
+  Renewer("brf_guest_new");
+  session_->Submit("q");
+  auto events = WaitForTurn();
+  EXPECT_EQ(Of(events, AgentEventType::AssistantReady).size(), 1u);
+
+  session_->Submit("q2");
+  events = WaitForTurn();
+  EXPECT_EQ(renew_calls_.load(), 2);
+  EXPECT_EQ(commit_calls_.load(), 2);
+  EXPECT_EQ(stream_calls_.load(), 4u);
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  EXPECT_EQ(Of(events, AgentEventType::AssistantReady).size(), 1u);
+}
+
+TEST_F(AgentSessionBriefKeyRenewTest, AfterARenewalAKeyStoredMeanwhileIsTriedWithoutAMint) {
+  Start();
+  ScriptOutcomes({Http(401), Http(401), Http(401), BriefAiOutcome::Done});
+  Renewer("brf_guest_new");
+  session_->Submit("q");
+  (void)WaitForTurn(); // 401, renewed, 401 again: the guard is set
+  ASSERT_EQ(renew_calls_.load(), 1);
+
+  // Another turn stored a key this session was not configured with yet: asked once with it, no mint.
+  SetStored("brf_guest_other");
+  session_->Submit("q2");
+  const auto events = WaitForTurn();
+  EXPECT_EQ(renew_calls_.load(), 1);
+  EXPECT_EQ(stream_calls_.load(), 4u);
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  EXPECT_EQ(Of(events, AgentEventType::AssistantReady).size(), 1u);
+  EXPECT_EQ(commit_calls_.load(), 1);
+}
+
+TEST_F(AgentSessionBriefKeyRenewTest, WithoutARenewerA401IsTheTurnsError) {
+  Start();
+  ScriptOutcomes({Http(401), BriefAiOutcome::Done});
+  session_->Submit("q");
+  const auto events = WaitForTurn();
+  EXPECT_EQ(stream_calls_.load(), 1u);
+  EXPECT_EQ(Of(events, AgentEventType::Error).size(), 1u);
 }
 
 } // namespace

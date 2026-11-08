@@ -78,6 +78,19 @@ TEST(ProfileSheetTest, AMemberOpensAsALargePageSheetAndNothingUnderItMoves) {
   EXPECT_EQ(shell.layers.size(), 1u);
 }
 
+// New chat's "Add contact" on a phone opens the full-screen page even when the Contacts tab was never shown (the
+// device opened the old paste-an-ID prompt: the controller's layout flag only followed the Contacts tab).
+TEST(ProfileSheetTest, AddContactFromChatsOnAPhoneOpensTheAddContactPage) {
+  FakeShell shell;
+  ContactsController controller;
+  controller.BindShellNavigation(shell.Ports());
+  controller.OnAddContact();
+  ASSERT_EQ(shell.transients.size(), 1u);
+  EXPECT_EQ(shell.transients[0], "add_contact");
+  EXPECT_TRUE(shell.layers.empty()) << "a page, not a sheet or the prompt";
+  controller.OnAddContactDismissed();
+}
+
 TEST(ProfileSheetTest, SwipedDownTheSheetIsForgotten) {
   FakeShell shell;
   ContactsController controller;
