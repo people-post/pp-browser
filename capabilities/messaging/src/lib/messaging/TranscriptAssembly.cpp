@@ -2,6 +2,7 @@
 
 #include "lib/messaging/AtAiParser.h"
 #include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/delivery/DeliveryNotice.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/QuoteReply.h"
 #include "lib/delivery/ReactionTypes.h"
@@ -68,6 +69,17 @@ std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& 
     }
   }
 
+  // A "did not go out" line (send-failure-<id>) is stale once a retry delivered that message; a later failure
+  // flips the message back to Failed and the line shows again. The "some members missed it" line stays: the
+  // message itself is delivered then.
+  std::unordered_set<std::string> delivered_ids;
+  for (const ThreadMessage& message : messages) {
+    if (message.delivery == MessageDelivery::Relayed) {
+      delivered_ids.insert(message.id);
+    }
+  }
+  const std::string failure_prefix = SendFailureRowId("", "");
+
   std::vector<TranscriptRow> entries;
   std::unordered_map<std::string, size_t> entry_by_id;
   std::vector<const ThreadMessage*> annotations;
@@ -78,6 +90,11 @@ std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& 
     }
     if (message.content_type == ChatContentType::Annotation) {
       annotations.push_back(&message);
+      continue;
+    }
+    if (const auto reason = SendFailureRowReason(message);
+        reason && *reason != kGroupMembersMissedWire && message.id.rfind(failure_prefix, 0) == 0 &&
+        delivered_ids.count(message.id.substr(failure_prefix.size())) != 0) {
       continue;
     }
     if (!ShownContentType(message.content_type)) {
