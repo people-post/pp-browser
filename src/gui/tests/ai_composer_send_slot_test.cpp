@@ -56,7 +56,8 @@ TEST(AiComposerSendSlotMarkup, ChatComposerHasADisabledSendForAiThreadsOnly) {
   ASSERT_FALSE(button.empty());
   EXPECT_NE(button.find("disabled"), std::string::npos);
   EXPECT_EQ(button.find("send_message()"), std::string::npos) << "not tappable";
-  EXPECT_NE(button.find("thread_is_ai"), std::string::npos) << "human chats keep the mic <-> Send switch";
+  EXPECT_NE(button.find("!thread_is_private"), std::string::npos) << "human chats keep the mic <-> Send switch";
+  EXPECT_NE(button.find("!thread_is_group"), std::string::npos);
   EXPECT_NE(button.find("draft == ''"), std::string::npos);
 }
 

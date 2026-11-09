@@ -149,21 +149,25 @@ TEST(NewChatPageTest, HomePlaceholderIsNewAndTheConversationOneIsUnchanged) {
             std::string::npos);
   EXPECT_NE(css.find(".shell-layer-compact .home-composer-mount .prompt-composer-label--home {\n  display: block;"),
             std::string::npos);
-  // Card B3: the plus (a 44dp target) at the bottom left; the emoji key at the bottom right is a 44dp target whose
-  // icon carries the 32dp tinted circle.
+  // Card B3: the plus (a 44dp target) at the bottom left; the emoji key right next to it (8dp gap) is a 44dp target
+  // whose icon carries the 32dp tinted circle; Send is always at the right end (disabled grey while empty).
   const size_t plus_rule = css.find(".shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-home-plus {");
   ASSERT_NE(plus_rule, std::string::npos);
   EXPECT_NE(css.find("left: 4dp;", plus_rule), std::string::npos);
   EXPECT_NE(css.find("width: 44dp;\n  height: 44dp;", plus_rule), std::string::npos);
   const size_t emoji_rule = css.find(".shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {");
   ASSERT_NE(emoji_rule, std::string::npos);
-  EXPECT_NE(css.find("right: 10dp;", emoji_rule), std::string::npos);
+  EXPECT_NE(css.find("left: 56dp;", emoji_rule), std::string::npos);
   EXPECT_NE(css.find("width: 44dp;\n  height: 44dp;", emoji_rule), std::string::npos);
   const size_t emoji_icon = css.find(".shell-layer-compact .home-composer-mount .prompt-emoji-btn .prompt-icon-home-emoji {");
   ASSERT_NE(emoji_icon, std::string::npos);
   EXPECT_NE(css.find("width: 32dp;\n  height: 32dp;", emoji_icon), std::string::npos);
   EXPECT_NE(css.find("border-radius: 16dp;", emoji_icon), std::string::npos);
   EXPECT_NE(composer.find("src=\"../icons/v2/emoji-round.svg\""), std::string::npos);
+  const size_t send_rule = css.find(".shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {");
+  ASSERT_NE(send_rule, std::string::npos);
+  EXPECT_NE(css.find("right: 10dp;", send_rule), std::string::npos);
+  EXPECT_NE(composer.find("prompt-send-btn prompt-send-btn--idle"), std::string::npos) << "the idle Send is on the Home card too";
   EXPECT_NE(css.find(".shell-layer-compact .home-composer-mount .prompt-voice-toggle-btn {\n  display: none;"),
             std::string::npos) << "no microphone on the Home card";
 }

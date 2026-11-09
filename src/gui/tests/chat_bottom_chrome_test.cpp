@@ -195,6 +195,8 @@ TEST_F(ChatBottomChromeTest, OnlyTheHeaderIsFrostedAndTheComposerBarIsClear) {
 // edges), which becomes Send with text.
 TEST_F(ChatBottomChromeTest, TheComposerIsAFloatingPillBetweenTwoRoundButtons) {
   state.show_voice = true;
+  state.thread_is_private = true; // a human chat: the microphone, no idle Send
+  DataModelHost::Instance().Dirty("chat", "thread_is_private");
   state.show_attach_button = true;
   DataModelHost::Instance().Dirty("chat", "show_voice");
   DataModelHost::Instance().Dirty("chat", "show_attach_button");

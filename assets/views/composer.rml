@@ -146,10 +146,10 @@
             data-event-click="send_message()" data-attrif-disabled="composer_input_disabled">
       <span class="prompt-send-disc"><svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg></span>
     </button>
-    <!-- An AI conversation has no microphone yet (no speech-to-text): the round slot is always Send, drawn disabled
+    <!-- An AI conversation and the Home card (no human chat) have no microphone yet (no speech-to-text): the round slot is always Send, drawn disabled
          while the field is empty (TODO #205). Human chats keep the microphone <-> Send switch. -->
     <button class="prompt-send-btn prompt-send-btn--idle" type="button" disabled="disabled"
-            data-if="thread_is_ai &amp;&amp; !voice_mode &amp;&amp; draft == '' &amp;&amp; !loading">
+            data-if="!thread_is_private &amp;&amp; !thread_is_public &amp;&amp; !thread_is_group &amp;&amp; !voice_mode &amp;&amp; draft == '' &amp;&amp; !loading">
       <span class="prompt-send-disc"><svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg></span>
     </button>
     <!-- Phones (WhatsApp, Kenneth 2026-11-04): the microphone ends the row and gives its place to Send once there is
