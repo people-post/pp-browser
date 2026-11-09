@@ -338,28 +338,29 @@ TEST(ShellLayoutRmlTest, ACompactChatOverlayHasOneHeaderRowHoldingTheBackButton)
   EXPECT_FALSE(Has(rml, "chat-header"));
 }
 
-// #188: the chat view frosts its header and its composer (one blur per bar position, two in all); a pushed page over the
-// chat leaves only the pushed page's bar frosted, and Transparency off leaves none.
-TEST(ShellLayoutRmlTest, TheChatViewFrostsItsHeaderAndItsComposer) {
+// #188 / #202: the chat view frosts its header only; its composer bar is clear (a floating pill and two round buttons,
+// no material child). A pushed page over the chat leaves no frost of the chat's, and Transparency off leaves none.
+TEST(ShellLayoutRmlTest, TheChatViewFrostsItsHeaderAndItsComposerBarIsClear) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = true;
   const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
-  EXPECT_EQ(Count(rml, "bar-material--frost"), 2U);
+  EXPECT_EQ(Count(rml, "bar-material--frost"), 1U) << "the header only";
+  EXPECT_EQ(Count(rml, "class=\"bar-material"), 1U) << "the composer bar has no material child";
   const size_t chrome = rml.find("shell-chat-overlay-chrome");
   const size_t bar = rml.find("shell-composer-bar");
   const size_t mount = rml.find("id=\"shell-composer-mount\"");
   ASSERT_NE(chrome, std::string::npos);
   ASSERT_NE(bar, std::string::npos);
   EXPECT_LT(rml.find("bar-material--frost", chrome), rml.find("back.svg", chrome)) << "the header's material is first";
-  EXPECT_LT(bar, rml.find("bar-material--frost", bar));
-  EXPECT_LT(rml.find("bar-material--frost", bar), mount) << "the composer's material is under the mount";
+  ASSERT_NE(mount, std::string::npos);
+  EXPECT_EQ(rml.find("bar-material", bar), std::string::npos) << "nothing under the composer mount";
   EXPECT_FALSE(Has(rml, "shell-composer-mount surface-chrome surface-chrome--frost"));
 
   ShellState solid = state;
   solid.reduce_transparency = true;
   const std::string opaque = ShellLayoutRml(solid, false, "").ShellRoot();
   EXPECT_EQ(Count(opaque, "bar-material--frost"), 0U);
-  EXPECT_EQ(Count(opaque, "bar-material"), 2U) << "still a material child each, solid";
+  EXPECT_EQ(Count(opaque, "class=\"bar-material"), 1U) << "the header's material, solid";
 
   ShellState pushed_over = state;
   PaneState pushed;

@@ -45,8 +45,6 @@ enum class CompactChromeFrostSurface {
   None,
   BottomNav,
   ChatOverlayHeader,
-  /** The phone chat's composer bar: the bottom frost of the chat view (its top frost is ChatOverlayHeader). */
-  ChatComposer,
   AuxiliarySheetChrome,
   TransientHeader,
 };

@@ -56,8 +56,9 @@ CompactChromeFrost ShellInterruption::ResolveFrost(const ShellState& state) {
   case InterruptionKind::AuxiliarySheet:
     return {.top = Surface::AuxiliarySheetChrome};
   case InterruptionKind::CompactChatOverlay:
-    // The chat view floats a header and a composer over the transcript: one blur each, nothing else.
-    return {.top = Surface::ChatOverlayHeader, .bottom = Surface::ChatComposer};
+    // The chat view floats a header over the transcript: one blur. Its composer is a floating pill and two round buttons
+    // on a clear bar (TODO #202): no bottom frost.
+    return {.top = Surface::ChatOverlayHeader};
   case InterruptionKind::None:
     return {.top = Surface::BottomNav, .bottom = Surface::BottomNav};
   }

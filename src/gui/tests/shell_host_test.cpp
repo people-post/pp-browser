@@ -141,7 +141,8 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
 
   // Two bar positions, one frosted surface each: the chat view blurs its header and its composer, nothing else does.
   EXPECT_EQ(ShellInterruption::ResolveFrost(compact_chat_frost).top, CompactChromeFrostSurface::ChatOverlayHeader);
-  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_chat_frost).bottom, CompactChromeFrostSurface::ChatComposer);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_chat_frost).bottom, CompactChromeFrostSurface::None)
+      << "the composer floats on a clear bar: no bottom frost in the chat view";
   EXPECT_EQ(ShellInterruption::ResolveFrost(compact_base).bottom, CompactChromeFrostSurface::BottomNav);
   EXPECT_EQ(ShellInterruption::ResolveFrost(compact_aux_frost).bottom, CompactChromeFrostSurface::None);
   EXPECT_EQ(ShellInterruption::ResolveFrost(compact_transient_frost).bottom, CompactChromeFrostSurface::None)

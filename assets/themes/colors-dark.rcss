@@ -2789,22 +2789,25 @@ input.checkbox:checked {
   color: #ebebf54c;
 }
 
+/* Phone composer (TODO #202): the pill is a floating card with a soft shadow, the microphone / Send button beside it an
+   accent disc with the same shadow, white glyph. The plus is a flat glyph. */
 .shell-chat-overlay .shell-composer-mount .prompt-composer-pill,
 .ask-ai .prompt-composer-pill {
   background-color: #1c1c1e;
   border: 1dp #54545899;
-  box-shadow: none;
+  box-shadow: 0 2dp 10dp #00000099;
 }
 
-/* Phones: Send is a clear 44dp target round its 32dp accent disc (components.rcss). */
 .shell-chat-overlay .prompt-composer-row .prompt-send-btn,
+.shell-chat-overlay .prompt-composer-row .prompt-mic-btn,
 .ask-ai .prompt-composer-row .prompt-send-btn {
-  background-color: transparent;
+  background-color: #0a84ff;
+  box-shadow: 0 2dp 10dp #00000099;
 }
 
 .shell-chat-overlay .prompt-send-disc,
 .ask-ai .prompt-send-disc {
-  background-color: #0a84ff;
+  background-color: transparent;
 }
 
 .shell-chat-overlay .prompt-icon-v2,
@@ -2814,8 +2817,8 @@ input.checkbox:checked {
   image-color: #ebebf599;
 }
 
-.shell-chat-overlay .prompt-voice-toggle-btn .prompt-icon-v2 {
-  image-color: #0a84ff;
+.shell-chat-overlay .prompt-mic-btn .prompt-icon-v2 {
+  image-color: #ffffff;
 }
 
 /* The phone Home's box is the whole composer (the picture chip sits inside it); the pill in it is clear. */
@@ -3588,14 +3591,9 @@ input.checkbox:checked {
   color: #ebebf599;
 }
 
-/* The ask-AI panel's input bar: the bar colour, frosted with Transparency on (like a chat's composer). */
+/* The ask-AI panel's input bar is clear (TODO #202): a floating pill and two round buttons over the bubbles. */
 .ask-ai-composer {
-  background-color: #1a1a1c;
-}
-
-.shell-page-sheet--frost .ask-ai-composer {
-  background-color: #1a1a1cc7;
-  backdrop-filter: blur(20px);
+  background-color: transparent;
 }
 
 /* The drawer's top bar and "you" row: the bar colour, frosted with Transparency on (like .pane-nav-bg). */
