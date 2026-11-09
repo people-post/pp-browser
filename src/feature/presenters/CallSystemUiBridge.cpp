@@ -76,6 +76,7 @@ bool CallSystemUiBridge::Ringing(const std::string& call_id) const {
 void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& active_call_id, const bool app_foreground) {
   screen_ = screen;
   active_call_id_ = active_call_id;
+  RecheckOnNewRing(screen);
   if (!ui_.Available()) {
     return;
   }
@@ -150,6 +151,15 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
       AcceptShown(!screen.ring_video);
     }
   }
+}
+
+void CallSystemUiBridge::RecheckOnNewRing(const CallScreen& screen) {
+  if (screen.kind != CallScreen::Kind::Ringing || screen.ring_call_id.empty() ||
+      screen.ring_call_id == rechecked_ring_call_id_) {
+    return;
+  }
+  rechecked_ring_call_id_ = screen.ring_call_id;
+  ui_.RecheckAvailable();
 }
 
 void CallSystemUiBridge::LeaveRingToApp(const std::string& ring_call_id) {

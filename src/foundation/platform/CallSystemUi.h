@@ -31,7 +31,16 @@ public:
 
   virtual ~ICallSystemUi() = default;
 
+  /**
+   * Rings can go here (Android: notifications allowed, the calls channel on). Cheap: the platform may keep the
+   * answer (asking costs calls into the OS, and the bridge asks every frame of a call) until RecheckAvailable.
+   */
   virtual bool Available() const { return false; }
+  /**
+   * Ask the OS again at the next Available(): the user may have changed the settings meanwhile. The bridge calls it
+   * for each new ring; the platform also does when the app comes back to the foreground.
+   */
+  virtual void RecheckAvailable() {}
   virtual void SetCallbacks(Callbacks callbacks) { (void)callbacks; }
   /**
    * A call push reached the phone and its call is on the system screen ("Incoming call"), waiting
@@ -50,7 +59,10 @@ public:
    * took over (it joined a call on its own, its own ring rings), Ended when the call it names is over (P017).
    */
   virtual void EndPendingPushCall(EndReason reason) { (void)reason; }
-  /** `fn` runs (UI thread) whenever HasPendingPushCall() changes; the PIN screen words itself by it. */
+  /**
+   * `fn` runs (UI thread) whenever HasPendingPushCall() changes; the PIN screen words itself by it. The platform
+   * keeps HasPendingPushCall() current by the same news, so reading it costs nothing.
+   */
   virtual void SetPendingChangedHandler(std::function<void()> fn) { (void)fn; }
   /**
    * Ring `call_id` on the system screen. It fills in the push's pending call when there is one and the push named

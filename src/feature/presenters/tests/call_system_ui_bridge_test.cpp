@@ -18,7 +18,11 @@ namespace {
 /** The system call screen, recording what it was told. */
 class FakeCallSystemUi final : public ICallSystemUi {
 public:
-  bool Available() const override { return true; }
+  bool Available() const override { return available; }
+  void RecheckAvailable() override {
+    ++rechecks;
+    available = available_when_asked_again;
+  }
   void SetCallbacks(Callbacks callbacks) override { callbacks_ = std::move(callbacks); }
   bool HasPendingPushCall() const override { return pending_push; }
   std::string PendingPushCallId() const override { return pending_push ? pending_call_id : std::string(); }
@@ -39,6 +43,10 @@ public:
     }
   }
 
+  /** What Available() says; RecheckAvailable turns it into what the OS would say now. */
+  bool available = true;
+  bool available_when_asked_again = true;
+  int rechecks = 0;
   bool pending_push = false;
   /** The call the push named (its `wake_hint`); empty: none. */
   std::string pending_call_id;
@@ -119,6 +127,28 @@ TEST_F(CallSystemUiBridgeTest, ARingInTheBackgroundRingsOnTheSystemScreenAndEnds
   bridge_.Sync(CallScreen{}, "", false);
   EXPECT_EQ(ui_.log.back(), "ended c1");
   EXPECT_FALSE(bridge_.SystemRings("c1"));
+}
+
+// Whether the system screen can ring is asked again for each new ring (the user may have turned call notifications
+// off since), not on every frame of a call: on Android asking is a call into the OS, and a call redraws every tick.
+TEST_F(CallSystemUiBridgeTest, EachNewRingAsksAgainWhetherTheSystemScreenCanRing) {
+  bridge_.Sync(InCall("c0"), "c0", false);
+  bridge_.Sync(InCall("c0"), "c0", false);
+  bridge_.Sync(CallScreen{}, "", false);
+  EXPECT_EQ(ui_.rechecks, 0) << "the frames of a call ask nothing again";
+
+  ui_.available_when_asked_again = false; // call notifications turned off meanwhile
+  bridge_.Sync(Ring("c1"), "", false);
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_EQ(ui_.rechecks, 1) << "once per ring";
+  EXPECT_TRUE(ui_.log.empty()) << "the ring stays in the app";
+  EXPECT_FALSE(bridge_.TakesRing(false, false));
+  bridge_.Sync(CallScreen{}, "", false);
+
+  ui_.available_when_asked_again = true; // and on again
+  bridge_.Sync(Ring("c2"), "", false);
+  EXPECT_EQ(ui_.rechecks, 2);
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c2 name-of-alice"}));
 }
 
 TEST_F(CallSystemUiBridgeTest, ThePushsCallIsFilledInEvenWithTheAppOpen) {

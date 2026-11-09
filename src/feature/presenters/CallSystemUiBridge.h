@@ -95,6 +95,11 @@ private:
   void ClearChoice();
   /** Declines the ring: the user declined its call on the system screen before it showed. */
   void ApplyDecline();
+  /**
+   * A ring not seen before: the system screen's availability is asked again (the user may have turned call
+   * notifications off since); the frames in between read what the platform keeps.
+   */
+  void RecheckOnNewRing(const CallScreen& screen);
   /** A ring over a call: the app rings it (V064); the push's call goes, a choice made on it is spent. */
   void LeaveRingToApp(const std::string& ring_call_id);
   /** The call on the system screen was answered there; tell the presenter to accept it. */
@@ -118,6 +123,8 @@ private:
   int64_t decline_pending_at_ms_ = 0;
   /** The call that choice was made on (the push's `wake_hint`); empty: the push named none, the first ring. */
   std::string choice_call_id_;
+  /** The last ring RecheckOnNewRing asked about. */
+  std::string rechecked_ring_call_id_;
   /** Messaging came up at this time (0: not seen). */
   int64_t ready_at_ms_ = 0;
 };
