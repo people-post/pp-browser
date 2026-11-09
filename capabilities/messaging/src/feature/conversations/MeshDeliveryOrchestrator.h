@@ -135,6 +135,11 @@ public:
   BriefRelayHealthState BriefRelayHealth() const {
     return static_cast<BriefRelayHealthState>(brief_relay_health_.load(std::memory_order_relaxed));
   }
+  /**
+   * The relay health changed (Unknown/Ok/Failed): fired only on a change, on the poll worker thread, so keep the
+   * callback short and thread-safe. Set before messaging runs; pass nullptr to clear (any thread).
+   */
+  void SetOnBriefRelayHealthChanged(std::function<void(BriefRelayHealthState)> callback);
   /** Me recovery: delete undelivered relay rows older than `older_than_days` (does not clear local chat). */
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
   void RetryFailedOutbound();
@@ -501,6 +506,9 @@ private:
   uint64_t last_relay_poll_ms_ = 0;
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
   std::atomic<int> brief_relay_health_{0};
+  void StoreBriefRelayHealth(BriefRelayHealthState state);
+  std::mutex brief_relay_health_cb_mu_;
+  std::function<void(BriefRelayHealthState)> on_brief_relay_health_changed_;
   std::atomic<bool> poll_pending_{false};
   /** Set when SyncInbox is requested while a poll is already in flight — worker re-polls. */
   std::atomic<bool> poll_again_{false};

@@ -1322,7 +1322,11 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   if (ui_perf_) {
     ui_perf_->BindShellNavigation(shell_navigation);
     settings_->BindOpenUiPerfTest([this]() { ui_perf_->Open(); });
-    settings_->BindSimulateChatsLink([this](const bool online) { shell_->SetChatsLink(true, online); });
+    settings_->BindSimulateChatsLink([this](const std::string& state) {
+      shell_->SetChatsLink(state == "online"       ? ChatsLink::Online
+                           : state == "connecting" ? ChatsLink::Connecting
+                                                   : ChatsLink::Offline);
+    });
   }
   emoji_picker_->BindShellNavigation(shell_navigation);
   emoji_picker_->BindShellFeedback(shared_feedback);
@@ -2269,10 +2273,25 @@ void Application::WireHubCallbacks() {
     });
   });
   // The Chats header's status line: the OS monitor reports on its own thread, the shell updates on the UI thread.
-  messaging.SetOnNetworkOnlineChanged([this](const bool known, const bool online) {
-    AppRuntime::PostUI([this, known, online]() {
-      if (shell_) {
-        shell_->SetChatsLink(known, online);
+  // Network + relay poll are combined in the hub (#175); this fires on a change from the monitor / poll / timer threads.
+  messaging.SetOnLinkStateChanged([this](const ConversationsHub::LinkState state) {
+    AppRuntime::PostUI([this, state]() {
+      if (!shell_) {
+        return;
+      }
+      switch (state) {
+      case ConversationsHub::LinkState::Online:
+        shell_->SetChatsLink(ChatsLink::Online);
+        break;
+      case ConversationsHub::LinkState::Connecting:
+        shell_->SetChatsLink(ChatsLink::Connecting);
+        break;
+      case ConversationsHub::LinkState::Offline:
+        shell_->SetChatsLink(ChatsLink::Offline);
+        break;
+      case ConversationsHub::LinkState::Unknown:
+        shell_->SetChatsLink(ChatsLink::Unknown);
+        break;
       }
     });
   });
@@ -2717,7 +2736,7 @@ void Application::Shutdown() {
     messaging_->SetOnMessagingReady(nullptr);
     messaging_->SetOnMeshReady(nullptr);
     messaging_->SetOnReachabilityUpdated(nullptr);
-    messaging_->SetOnNetworkOnlineChanged(nullptr);
+    messaging_->SetOnLinkStateChanged(nullptr);
     messaging_->SetOnPeerIconsChanged(nullptr);
     messaging_->SetOnCallWake(nullptr);
   }

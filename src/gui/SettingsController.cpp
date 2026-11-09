@@ -176,7 +176,7 @@ void SettingsController::BindOpenUiPerfTest(std::function<void()> open) {
   open_ui_perf_test_ = std::move(open);
 }
 
-void SettingsController::BindSimulateChatsLink(std::function<void(bool online)> simulate) {
+void SettingsController::BindSimulateChatsLink(std::function<void(const std::string& state)> simulate) {
   simulate_chats_link_ = std::move(simulate);
 }
 
@@ -705,12 +705,12 @@ bool SettingsController::RegisterModel(ui::Context* context) {
         }
       }
     }));
-    for (const bool online : {false, true}) {
-      ctor.BindEventCallback(online ? "simulate_chats_link_online" : "simulate_chats_link_offline", DataEvent<>([this, online]() {
-        (void)online;
+    for (const char* state : {"offline", "connecting", "online"}) {
+      ctor.BindEventCallback(std::string("simulate_chats_link_") + state, DataEvent<>([this, state]() {
+        (void)state;
         if constexpr (kDevToolsBuild) {
           if (simulate_chats_link_) {
-            simulate_chats_link_(online);
+            simulate_chats_link_(state);
           }
         }
       }));

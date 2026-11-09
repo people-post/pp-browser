@@ -557,6 +557,15 @@ TEST_F(ShellDrawerTest, TheMeRowShowsTheLinkStatusUnderTheName) {
   EXPECT_EQ(count_visible("ai-drawer-me-link-icon--offline"), 1);
   EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos);
 
+  host_.SetChatsLink(ChatsLink::Connecting);
+  Settle();
+  EXPECT_TRUE(line->IsVisible());
+  EXPECT_EQ(host_.State().chats_link_state, "connecting");
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--ok"), 0);
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--offline"), 0);
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--connecting"), 1);
+  EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos);
+
   host_.SetChatsLink(false, false);
   Settle();
   EXPECT_FALSE(line->IsVisible());

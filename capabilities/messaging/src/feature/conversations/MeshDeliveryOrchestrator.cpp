@@ -2103,6 +2103,25 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
   outbox_.Retry();
 }
 
+void MeshDeliveryOrchestrator::SetOnBriefRelayHealthChanged(std::function<void(BriefRelayHealthState)> callback) {
+  std::lock_guard lock(brief_relay_health_cb_mu_);
+  on_brief_relay_health_changed_ = std::move(callback);
+}
+
+void MeshDeliveryOrchestrator::StoreBriefRelayHealth(const BriefRelayHealthState state) {
+  if (brief_relay_health_.exchange(static_cast<int>(state), std::memory_order_relaxed) == static_cast<int>(state)) {
+    return;
+  }
+  std::function<void(BriefRelayHealthState)> callback;
+  {
+    std::lock_guard lock(brief_relay_health_cb_mu_); // the poll worker vs. the owner's reset
+    callback = on_brief_relay_health_changed_;
+  }
+  if (callback) {
+    callback(state);
+  }
+}
+
 void MeshDeliveryOrchestrator::PollAndMerge() {
   SyncInboxFromWake(false);
 }
@@ -2175,11 +2194,10 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
       if (!poll) {
         log().warning << "PollInbox failed: " << poll.error().message;
         DiagLine("relay.poll_failed").Fail("error", poll.error()).Emit();
-        brief_relay_health_.store(static_cast<int>(BriefRelayHealthState::Failed),
-                                  std::memory_order_relaxed);
+        StoreBriefRelayHealth(BriefRelayHealthState::Failed);
         continue;
       }
-      brief_relay_health_.store(static_cast<int>(BriefRelayHealthState::Ok), std::memory_order_relaxed);
+      StoreBriefRelayHealth(BriefRelayHealthState::Ok);
       std::string next_cursor = poll->next_cursor;
       if (poll->messages.size() > kMaxPollBatchMessages) {
         log().warning << "PollInbox batch too large n=" << poll->messages.size() << " — skip advance";

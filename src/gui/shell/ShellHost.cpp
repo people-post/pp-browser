@@ -779,9 +779,26 @@ void ShellHost::SetLargeTitleCollapsed(const bool collapsed) {
   DataModelHost::Instance().Dirty("window", "large_title_collapsed");
 }
 
-void ShellHost::SetChatsLink(const bool known, const bool online) {
-  const ui::String state = !known ? "" : (online ? "ok" : "offline");
-  const ui::String text = !known ? ui::String() : ui::String(Tr(online ? "shell.chats.link_online" : "shell.chats.link_offline").c_str());
+void ShellHost::SetChatsLink(const ChatsLink link) {
+  ui::String state;
+  const char* text_key = nullptr;
+  switch (link) {
+  case ChatsLink::Online:
+    state = "ok";
+    text_key = "shell.chats.link_online";
+    break;
+  case ChatsLink::Connecting:
+    state = "connecting";
+    text_key = "shell.chats.link_connecting";
+    break;
+  case ChatsLink::Offline:
+    state = "offline";
+    text_key = "shell.chats.link_offline";
+    break;
+  case ChatsLink::Unknown:
+    break;
+  }
+  const ui::String text = text_key ? ui::String(Tr(text_key).c_str()) : ui::String();
   if (state_.chats_link_state == state && state_.chats_link_text == text) {
     return;
   }

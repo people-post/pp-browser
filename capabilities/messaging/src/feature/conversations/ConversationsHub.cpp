@@ -397,14 +397,7 @@ void ConversationsHub::OnLocalNetworkChanged(const NetworkChange& change) {
     const bool linked = change.current.online && !change.current.tunnel_only;
     const int online = linked ? 1 : 0;
     if (network_online_.exchange(online) != online) {
-      std::function<void(bool, bool)> callback;
-      {
-        std::lock_guard lock(network_online_cb_mu_); // the monitor thread vs. Shutdown's reset
-        callback = on_network_online_changed_;
-      }
-      if (callback) {
-        callback(true, linked);
-      }
+      OnLinkNetwork(linked);
     }
   }
   // Offline or an unknown link keeps the last known kind of network.
@@ -714,6 +707,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
     actions_.reset();
   }
   if (mesh_messaging_) {
+    mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
     mesh_messaging_->SetOnMessagesChanged(nullptr);
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
@@ -1133,6 +1127,14 @@ void ConversationsHub::BuildMessagingObjects() {
                                                 *account_keys_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetSystemControls(&system_controls_);
+  // The relay's poll results feed the status line (#175); a fresh orchestrator starts with no result.
+  mesh_messaging_->SetOnBriefRelayHealthChanged(
+      [this](const MeshDeliveryOrchestrator::BriefRelayHealthState health) { OnBriefRelayHealthChanged(health); });
+  {
+    std::unique_lock lock(link_mu_);
+    link_health_ = MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown;
+    ArmLinkGraceLocked(); // messaging is up: the 5 s clock for the first poll result starts now
+  }
   mesh_messaging_->SetThreadMentions(thread_mentions_.get());
   // Our device list changed: our address goes to our other devices too (M021).
   mesh_messaging_->SetOnOwnDevicesChanged([this]() { PublishAddressDisclosure(); });
@@ -1517,9 +1519,90 @@ void ConversationsHub::SetOnReachabilityUpdated(std::function<void()> callback) 
   on_reachability_updated_ = std::move(callback);
 }
 
-void ConversationsHub::SetOnNetworkOnlineChanged(std::function<void(bool known, bool online)> callback) {
-  std::lock_guard lock(network_online_cb_mu_);
-  on_network_online_changed_ = std::move(callback);
+void ConversationsHub::SetOnLinkStateChanged(std::function<void(LinkState)> callback) {
+  std::lock_guard lock(link_mu_);
+  on_link_state_changed_ = std::move(callback);
+}
+
+ConversationsHub::LinkState ConversationsHub::CurrentLinkState() const {
+  std::lock_guard lock(link_mu_);
+  return link_state_;
+}
+
+void ConversationsHub::SetLinkGraceScheduler(
+    std::function<void(std::chrono::milliseconds, std::function<void()>)> scheduler) {
+  std::lock_guard lock(link_mu_);
+  link_grace_scheduler_ = std::move(scheduler);
+}
+
+void ConversationsHub::OnLinkNetwork(const bool linked) {
+  std::unique_lock lock(link_mu_);
+  link_net_ = linked ? 1 : 0;
+  ++link_grace_gen_; // cancels a pending timer either way
+  link_grace_over_ = false;
+  if (linked && link_state_ == LinkState::Offline) {
+    // Red says "no network", which is false now: replace it at once, no grace (the line has nothing to keep).
+    link_grace_over_ = true;
+  } else if (linked) {
+    ArmLinkGraceLocked();
+  }
+  ReevaluateLink(std::move(lock));
+}
+
+void ConversationsHub::OnBriefRelayHealthChanged(const MeshDeliveryOrchestrator::BriefRelayHealthState health) {
+  std::unique_lock lock(link_mu_);
+  link_health_ = health;
+  if (health != MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown) {
+    ++link_grace_gen_; // a result is in: the Unknown timer is moot
+    link_grace_over_ = false;
+  }
+  ReevaluateLink(std::move(lock));
+}
+
+void ConversationsHub::ArmLinkGraceLocked() {
+  if (link_net_ != 1 || link_health_ != MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown) {
+    return;
+  }
+  const uint64_t gen = ++link_grace_gen_;
+  link_grace_over_ = false;
+  auto fire = link_grace_lifetime_.Bind([this, gen]() { OnLinkGraceElapsed(gen); });
+  if (link_grace_scheduler_) {
+    link_grace_scheduler_(kLinkUnknownGrace, std::move(fire));
+  } else {
+    AppRuntime::ScheduleCoordinatorOneShot(kLinkUnknownGrace, std::move(fire));
+  }
+}
+
+void ConversationsHub::OnLinkGraceElapsed(const uint64_t gen) {
+  std::unique_lock lock(link_mu_);
+  if (gen != link_grace_gen_) {
+    return;
+  }
+  link_grace_over_ = true;
+  ReevaluateLink(std::move(lock));
+}
+
+void ConversationsHub::ReevaluateLink(std::unique_lock<std::mutex> lock) {
+  using Health = MeshDeliveryOrchestrator::BriefRelayHealthState;
+  LinkState next = link_state_;
+  if (link_net_ == 0) {
+    next = LinkState::Offline;
+  } else if (link_net_ == 1) {
+    if (link_health_ == Health::Ok) {
+      next = LinkState::Online;
+    } else if (link_health_ == Health::Failed || link_grace_over_) {
+      next = LinkState::Connecting;
+    } // else: no result yet, inside the grace period — keep what the line shows
+  }
+  if (next == link_state_) {
+    return;
+  }
+  link_state_ = next;
+  const auto callback = on_link_state_changed_;
+  lock.unlock();
+  if (callback) {
+    callback(next);
+  }
 }
 
 void ConversationsHub::SetOnStoredAttachmentsChanged(std::function<void()> callback) {
@@ -3153,6 +3236,12 @@ void ConversationsHub::Shutdown() {
   // The unknown-network timer (and its UI post) of this run never reach the hub again; a later run arms its own.
   attachment_network_lifetime_.InvalidateAndWait();
   attachment_network_timer_armed_.store(false);
+  {
+    std::lock_guard lock(link_mu_);
+    ++link_grace_gen_;
+    link_grace_over_ = false;
+  }
+  link_grace_lifetime_.InvalidateAndWait(); // the status line's Unknown timer of this run
   storage_callbacks_lifetime_.InvalidateAndWait(); // the attachment change reports of this run (rewired at Initialize)
   transfer_lane_.Shutdown(); // aborts a transfer at its next progress tick and joins both lane threads
   AppLifecycle::RemoveListener(lifecycle_background_id_);
@@ -3175,6 +3264,7 @@ void ConversationsHub::Shutdown() {
     inbox_->SetOnThreadChanged(nullptr);
   }
   if (mesh_messaging_) {
+    mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
     mesh_messaging_->SetOnMessagesChanged(nullptr);
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
