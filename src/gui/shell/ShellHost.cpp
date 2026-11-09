@@ -49,6 +49,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <string_view>
 #include <exception>
 #include <limits>
 #include <optional>
@@ -1999,22 +2001,85 @@ void ShellHost::ApplySafeAreaLayout() {
   set_dp(doc->GetElementById("shell-chat-overlay"), "bottom", 0.f);
   set_dp(doc->GetElementById("shell-chat-overlay"), "padding-bottom", 0.f);
   SyncHomeDock(doc, home_keeps_place);
+  DiagHomeDock(statusbar_dp + (home_keeps_place ? 0.f : bottom_chrome_dp + layout.content_bottom_inset_dp));
 }
 
 // True when the keyboard / emoji sheet is up over the AI Home page and the unlifted Home layout was measured for this
 // window height (SyncHomeDock, while nothing was up). Without a measurement the page is lifted as before.
-bool ShellHost::HomeDockApplies() const {
+namespace {
+constexpr ShareWord kDockWhy[] = {"ok", "no_latch", "not_home", "chat_open", "drawer", "transient", "overlay", "no_cache", "window_changed"};
+constexpr ShareWord kDockWhat[] = {"cache", "skip"};
+constexpr ShareWord kDockSkipWhy[] = {"ok", "covered", "not_home", "chat_open", "drawer", "transient", "overlay", "not_minimal",
+                                      "landing_height_0", "no_card"};
+} // namespace
+
+const char* ShellHost::HomeDockWhy() const {
   const bool covered = bottom_chrome_open_ || state_.safe_area_bottom_dp >= kImeLatchMinDp;
-  if (!covered || !context_ || home_cache_landing_h_dp_ <= 0.f) {
-    return false;
+  if (!covered || !context_) {
+    return "no_latch";
   }
-  if (state_.nav_tab != NavTab::Home || state_.compact_chat_open || state_.ai_drawer_open ||
-      !state_.transient_stack.empty() || !state_.overlay_stack.empty()) {
-    return false;
+  if (state_.nav_tab != NavTab::Home) {
+    return "not_home";
+  }
+  if (state_.compact_chat_open) {
+    return "chat_open";
+  }
+  if (state_.ai_drawer_open) {
+    return "drawer";
+  }
+  if (!state_.transient_stack.empty()) {
+    return "transient";
+  }
+  if (!state_.overlay_stack.empty()) {
+    return "overlay";
+  }
+  if (home_cache_landing_h_dp_ <= 0.f) {
+    return "no_cache";
   }
   const float ratio = context_->GetDensityIndependentPixelRatio();
   const float window_dp = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
-  return std::fabs(window_dp - home_cache_window_dp_) < 0.5f;
+  return std::fabs(window_dp - home_cache_window_dp_) < 0.5f ? "ok" : "window_changed";
+}
+
+bool ShellHost::HomeDockApplies() const {
+  return std::string_view(HomeDockWhy()) == "ok";
+}
+
+// Diagnostics for TODO #204 (home.dock): one line whenever the lift decision on the AI Home changes.
+void ShellHost::DiagHomeDock(const float applied_lift_dp) {
+  if (state_.layout_mode != LayoutMode::Compact || state_.nav_tab != NavTab::Home || !context_) {
+    return;
+  }
+  const float ratio = context_->GetDensityIndependentPixelRatio();
+  const float win_h = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
+  const bool cached = home_cache_landing_h_dp_ > 0.f;
+  const bool latch = state_.safe_area_bottom_dp >= kImeLatchMinDp;
+  const char* why = HomeDockWhy();
+  char key[256];
+  std::snprintf(key, sizeof(key), "%d|%d|%s|%d|%d|%d|%d|%d|%d|%d", latch, bottom_chrome_open_, why, state_.safe_area_bottom_dp,
+                bottom_chrome_height_dp_, static_cast<int>(std::lround(win_h)),
+                cached ? static_cast<int>(std::lround(home_cache_landing_h_dp_)) : -1,
+                cached ? static_cast<int>(std::lround(home_cache_card_bottom_dp_)) : -1,
+                cached ? static_cast<int>(std::lround(home_cache_window_dp_)) : -1,
+                static_cast<int>(std::lround(applied_lift_dp)));
+  if (home_dock_last_diag_ == key) {
+    return;
+  }
+  home_dock_last_diag_ = key;
+  DiagLine("home.dock")
+      .Add("what", "lift")
+      .Add("latch", latch)
+      .Add("sheet", bottom_chrome_open_)
+      .Add("applies", std::string_view(why) == "ok")
+      .Pick("why", why, kDockWhy)
+      .Add("safe_bottom", state_.safe_area_bottom_dp)
+      .Add("sheet_dp", bottom_chrome_height_dp_)
+      .Add("win_h", static_cast<int>(std::lround(win_h)))
+      .Add("cached_h", cached ? static_cast<int>(std::lround(home_cache_landing_h_dp_)) : -1)
+      .Add("cached_card_bottom", cached ? static_cast<int>(std::lround(home_cache_card_bottom_dp_)) : -1)
+      .Add("cached_win_h", cached ? static_cast<int>(std::lround(home_cache_window_dp_)) : -1)
+      .Add("lift", static_cast<int>(std::lround(applied_lift_dp)))
+      .Emit();
 }
 
 // Home block under the keyboard / sheet (TODO #204). The measurements come from the layout with nothing up (cached while
@@ -2064,6 +2129,9 @@ void ShellHost::SyncHomeDock(ui::ElementDocument* doc, const bool dock) {
   const bool covered = bottom_chrome_open_ || state_.safe_area_bottom_dp >= kImeLatchMinDp;
   if (covered || state_.nav_tab != NavTab::Home || state_.compact_chat_open || state_.ai_drawer_open ||
       !state_.transient_stack.empty() || !state_.overlay_stack.empty() || !landing->IsClassSet("home-landing--minimal")) {
+    DiagHomeCache("skip", covered ? "covered" : state_.nav_tab != NavTab::Home ? "not_home" : state_.compact_chat_open ? "chat_open"
+                  : state_.ai_drawer_open ? "drawer" : !state_.transient_stack.empty() ? "transient"
+                  : !state_.overlay_stack.empty() ? "overlay" : "not_minimal", 0.f, 0.f);
     return; // measure only the plain layout, with the Home page showing
   }
   const float height = landing->GetBox().GetSize(ui::BoxArea::Border).y;
@@ -2074,12 +2142,31 @@ void ShellHost::SyncHomeDock(ui::ElementDocument* doc, const bool dock) {
     card = cards.front();
   }
   if (height <= 0.f || !card) {
+    DiagHomeCache("skip", height <= 0.f ? "landing_height_0" : "no_card", height, 0.f);
     return;
   }
   const float ratio = context_->GetDensityIndependentPixelRatio();
   home_cache_window_dp_ = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
   home_cache_landing_h_dp_ = height;
   home_cache_card_bottom_dp_ = card->GetAbsoluteOffset(ui::BoxArea::Border).y + card->GetBox().GetSize(ui::BoxArea::Border).y;
+  DiagHomeCache("cache", "ok", height, home_cache_card_bottom_dp_);
+}
+
+// home.dock what=cache|skip: a measurement taken (or refused, and why); only when it differs from the last one.
+void ShellHost::DiagHomeCache(const char* what, const char* why, const float landing_h, const float card_bottom) {
+  char key[128];
+  std::snprintf(key, sizeof(key), "%s|%s|%d|%d", what, why, static_cast<int>(std::lround(landing_h)),
+                static_cast<int>(std::lround(card_bottom)));
+  if (home_dock_last_cache_diag_ == key) {
+    return;
+  }
+  home_dock_last_cache_diag_ = key;
+  DiagLine("home.dock")
+      .Pick("what", what, kDockWhat)
+      .Pick("why", why, kDockSkipWhy)
+      .Add("landing_h", static_cast<int>(std::lround(landing_h)))
+      .Add("card_bottom", static_cast<int>(std::lround(card_bottom)))
+      .Emit();
 }
 
 bool ShellHost::ChromeFrostEnabled() const {

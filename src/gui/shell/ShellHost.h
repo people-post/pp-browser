@@ -404,6 +404,9 @@ private:
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
   bool HomeDockApplies() const;
+  const char* HomeDockWhy() const;
+  void DiagHomeDock(float applied_lift_dp);
+  void DiagHomeCache(const char* what, const char* why, float landing_h, float card_bottom);
   void SyncHomeDock(ui::ElementDocument* doc, bool dock);
   bool ChromeFrostEnabled() const;
   /** What is on screen now, for the AI dot (AiDotModel::Shown). */
@@ -434,6 +437,8 @@ private:
   float home_cache_window_dp_ = 0.f;
   float home_cache_landing_h_dp_ = 0.f;
   float home_cache_card_bottom_dp_ = 0.f;
+  std::string home_dock_last_diag_;
+  std::string home_dock_last_cache_diag_;
   /** Last IME-sized bottom inset from SDL (latched while keyboard visible). */
   int last_ime_bottom_dp_ = 0;
   /** Synthetic bottom inset while bottom chrome (IME replacement) is open. */
