@@ -10,6 +10,7 @@
 #include "gui/chat/ApprovalCard.h"
 #include "gui/chat/AttachMenuRules.h"
 
+#include "gui/chat/ActionNoticeText.h"
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
@@ -3202,7 +3203,7 @@ void ChatController::SendWithMentions(const std::string& thread_id, const std::s
   CancelQuoteReply();
   UpdateSidebarPreview(out);
   if (auto sent = presenter_.SendWithMentions(thread_id, out, std::move(spans)); !sent) {
-    UserFeedback::Fail(PaymentErrorUserMessage(sent.error().message));
+    UserFeedback::Fail(PaymentErrorUserMessage(sent.error()));
     RestoreDraftIfEmpty(thread_id, reply);  // its mentions stay recorded, so sending again marks them
   } else {
     mentions_.ForgetThread(thread_id);
@@ -3804,7 +3805,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
           if (routed.error().message == MessageRouter::kAgentBusyError) {
             QueueAgentSend(target_thread, trimmed, std::nullopt, false, /*already_confirmed=*/true);
           } else {
-            UserFeedback::Fail(PaymentErrorUserMessage(routed.error().message));
+            UserFeedback::Fail(PaymentErrorUserMessage(routed.error()));
           }
           return;
         }
@@ -3823,7 +3824,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
         QueueAgentSend(target_thread, trimmed, std::move(payload_copy), home_thread_was_empty);
         return;
       }
-      UserFeedback::Fail(PaymentErrorUserMessage(routed.error().message));
+      UserFeedback::Fail(PaymentErrorUserMessage(routed.error()));
       DirtyChatChrome();
       SyncDisplayFromThread();
       return;
@@ -3988,7 +3989,7 @@ QueuedSendOutcome ChatController::RunQueuedAgentSend(const QueuedAgentSend& item
     }
     log().warning << "Queued AI send failed: " << routed.error().message;
     if (item.thread_id == ActiveThreadId()) {
-      UserFeedback::Fail(PaymentErrorUserMessage(routed.error().message));
+      UserFeedback::Fail(PaymentErrorUserMessage(routed.error()));
     }
     return QueuedSendOutcome::NotStarted;
   }
@@ -4261,8 +4262,8 @@ void ChatController::WireMessagingBindings() {
           ShowShareWithAiDialog(thread_id, mode, std::move(done));
         });
   }
-  facade_->SetOnActionMessage([this](const std::string& message) {
-    ShowToast(message);
+  facade_->SetOnActionMessage([this](const ActionNotice& notice) {
+    ShowToast(ActionNoticeText(notice));
     NotifySurfaceChanged();
   });
   RefreshFromMessaging();

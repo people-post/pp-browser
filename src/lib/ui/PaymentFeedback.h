@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Error.h"
+#include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
 
 #include <string>
@@ -12,6 +14,7 @@ namespace pbr {
  * group-chat G013 / G016).
  */
 inline std::string PaymentErrorUserMessage(const std::string& technical) {
+  // Stable codes only. Any other text is a developer's English, never shown: a generic line in the user's language.
   if (technical == "chat.group.checking_members" || technical == "chat.group.removed" ||
       technical == "chat.group.dissolved") {
     return Tr(technical);
@@ -22,7 +25,13 @@ inline std::string PaymentErrorUserMessage(const std::string& technical) {
   if (technical.find("payment_unavailable") != std::string::npos) {
     return Tr("call.error.payment_unavailable");
   }
-  return technical;
+  return Tr("error.generic");
+}
+
+/** The same for an error: the stable codes in its message, else the words it carries (AppError::Display). */
+inline std::string PaymentErrorUserMessage(const Error& error) {
+  const std::string mapped = PaymentErrorUserMessage(error.message);
+  return mapped == Tr("error.generic") ? AppError::Display(error) : mapped;
 }
 
 } // namespace pbr

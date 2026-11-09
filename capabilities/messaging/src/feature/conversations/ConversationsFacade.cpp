@@ -854,7 +854,7 @@ void ConversationsFacade::DispatchActionAsync(const std::string& payload_json,
   hub_.Actions().DispatchAsync(payload_json, std::move(done));
 }
 
-void ConversationsFacade::SetOnActionMessage(std::function<void(const std::string& message)> callback) {
+void ConversationsFacade::SetOnActionMessage(std::function<void(const ActionNotice& notice)> callback) {
   hub_.Actions().SetOnActionMessage(std::move(callback));
 }
 

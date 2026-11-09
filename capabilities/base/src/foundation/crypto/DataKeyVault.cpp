@@ -1,4 +1,5 @@
 #include "foundation/crypto/DataKeyVault.h"
+#include "common/Localized.h"
 #include "common/PlatformLimits.h"
 #include "common/BoundedRead.h"
 
@@ -235,7 +236,7 @@ Roe<ByteVector> DataKeyVault::UnwrapDekFromVaultBytes(const ByteVector& vault_by
   sodium_memzero(kek->data(), kek->size());
   if (!dek) {
     return AppError::Pin(Err::Pin::Generic, "Incorrect PIN or corrupt vault")
-        .WithUser("Incorrect PIN or corrupt vault");
+        .WithUser(Localized("pin.error.wrong"));
   }
   return dek;
 }

@@ -1,5 +1,6 @@
 #include "foundation/platform/IosLocalNotifier.h"
 
+#include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/PendingNotificationTap.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
@@ -36,8 +37,8 @@ void IosLocalNotifier::NotifyIncoming(const std::string& title, const std::strin
   }
   @autoreleasepool {
     UNMutableNotificationContent* content = [[UNMutableNotificationContent new] autorelease]; // MRC
-    content.title = ToNs(title.empty() ? "New message" : title);
-    content.body = ToNs(body.empty() ? "You have a new message" : body);
+    content.title = ToNs(title.empty() ? Tr("notification.new_message") : title);
+    content.body = ToNs(body.empty() ? Tr("notification.new_message_body") : body);
     content.sound = [UNNotificationSound defaultSound];
     if (!thread_id.empty()) {
       content.threadIdentifier = ToNs(thread_id);

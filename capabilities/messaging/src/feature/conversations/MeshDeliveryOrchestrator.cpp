@@ -2422,7 +2422,7 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
     return std::nullopt;
   }
   BackgroundNotice notice;
-  notice.title = "New message";
+  notice.title = Localized("notification.new_message");
   if (auto thread = store_.GetThread(outcome.about_us_group_thread_id); thread && *thread) {
     if (std::string label = inbox_.ResolveThreadLabel(**thread).title; !label.empty()) {
       notice.title = std::move(label);
@@ -2441,14 +2441,14 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
     return std::nullopt;
   }
   BackgroundNotice notice;
-  notice.title = "New message";
+  notice.title = Localized("notification.new_message");
   if (auto thread = store_.GetThread(outcome.thread_id); thread && *thread) {
     if (std::string label = inbox_.ResolveThreadLabel(**thread).title; !label.empty()) {
       notice.title = std::move(label);
     }
   }
   const std::string preview = outcome.persisted_message ? outcome.persisted_message->text : std::string();
-  notice.body = preview.empty() ? "You have a new message" : preview;
+  notice.body = preview.empty() ? Localized("notification.new_message_body") : preview;
   notice.thread_id = outcome.thread_id;
   notice.mentions_us = outcome.persisted_message &&
                        InboundMentionsUs(outcome.thread_id, *outcome.persisted_message, local_account);
@@ -2472,7 +2472,7 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
     return std::nullopt;
   }
   BackgroundNotice notice;
-  notice.title = "New message";
+  notice.title = Localized("notification.new_message");
   if (auto thread = store_.GetThread(thread_id); thread && *thread) {
     if (std::string label = inbox_.ResolveThreadLabel(**thread).title; !label.empty()) {
       notice.title = std::move(label);

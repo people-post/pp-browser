@@ -1,4 +1,5 @@
 #include "lib/ai/LlmClient.h"
+#include "common/Localized.h"
 
 #include "lib/ai/BearerUrlPolicy.h"
 #include "common/PlatformLimits.h"
@@ -210,7 +211,7 @@ Error LlmClient::MapHttpError(long http_code, const std::string& response_body) 
     return err;
   }
   if (!api_message.empty()) {
-    return AppError::Network(Err::Network::HttpError, detail).WithUser("LLM API error: " + api_message);
+    return AppError::Network(Err::Network::HttpError, detail).WithUser(Localized("errors.ai.api_error", {{"detail", api_message}}));
   }
   return AppError::Network(Err::Network::HttpError, detail);
 }
@@ -385,7 +386,7 @@ Roe<ChatCompletionResponse> LlmClient::ParseChatCompletionResponse(const std::st
       message = DumpJson(err);
     }
     return AppError::Network(Err::Network::HttpError, "LLM API error: " + message)
-        .WithUser("LLM API error: " + message);
+        .WithUser(Localized("errors.ai.api_error", {{"detail", message}}));
   }
 
   const Array* choices = json->getArray("choices");

@@ -3003,7 +3003,7 @@ Roe<void> ConversationsHub::RotateBriefLlmKey(const std::string& llm_base_url) {
   }
   if (identity->brief_llm_api_key.empty()) {
     return AppError::Auth(Err::Auth::NotRegistered, "No Brief API key yet")
-        .WithUser("No Brief API key yet — register on the network in Me first.");
+        .WithUser(Localized("chat.hint.brief_register"));
   }
 
   if (llm_base_url.empty()) {
@@ -3046,12 +3046,12 @@ Roe<void> ConversationsHub::RotateBriefLlmKey(const std::string& llm_base_url) {
   auto new_key_opt = root ? root->getString("llm_api_key") : std::nullopt;
   if (!new_key_opt) {
     return AppError::Auth(Err::Auth::Generic, "Brief API key rotate response missing llm_api_key")
-        .WithUser("Couldn't update Brief API key — try Renew registration in Me → Profile.");
+        .WithUser(Localized("chat.hint.brief_key_save_failed"));
   }
   const std::string new_key = *new_key_opt;
   if (new_key.empty()) {
     return AppError::Auth(Err::Auth::Generic, "Brief API key rotate returned empty key")
-        .WithUser("Couldn't update Brief API key — try Renew registration in Me → Profile.");
+        .WithUser(Localized("chat.hint.brief_key_save_failed"));
   }
 
   LocalIdentity updated = *identity;

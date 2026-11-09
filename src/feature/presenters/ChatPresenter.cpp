@@ -813,6 +813,9 @@ std::string GroupActionFailureText(const Error& error) {
   if (error.message == group_roster_sync::kGroupDissolvedError) {
     return Tr(group_roster_sync::kGroupDissolvedError);
   }
+  if (error.message == kGroupFullError) {
+    return Tr("chat.group.err.full");
+  }
   if (error.message == "Group title required") {
     return Tr("chat.group.title_required");
   }
