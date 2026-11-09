@@ -14,6 +14,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     GroupLinkText.cpp
     HomeBrief.cpp
     HomeToday.cpp
+    NewCallGuard.cpp
     QuickReactions.cpp
     ThreadSearch.cpp
     ThreadSearchSession.cpp

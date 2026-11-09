@@ -1,5 +1,6 @@
 #include "feature/presenters/CallPresenter.h"
 
+#include "feature/presenters/NewCallGuard.h"
 #include "lib/calls/CallGuests.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallTypes.h"
@@ -474,7 +475,40 @@ void CallPresenter::MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s)
 
 // --- buttons ------------------------------------------------------------------------------------
 
+bool CallPresenter::GuardNewCall(const std::string& thread_id, const std::function<void()>& place,
+                                 const StartDone& done) {
+  const NewCallVerdict verdict = DecideNewCall(screen_, thread_id);
+  if (verdict == NewCallVerdict::Place) {
+    return false;
+  }
+  const auto finish = [done](const CallStartResult::Kind kind) {
+    if (done) {
+      CallStartResult result;
+      result.kind = kind;
+      done(result);
+    }
+  };
+  NewCallSteps steps;
+  if (callbacks_.confirm_end_current_call) {
+    steps.ask = [this](std::function<void(bool)> answer) { callbacks_.confirm_end_current_call(std::move(answer)); };
+  }
+  steps.show_current = [this, finish]() {
+    if (callbacks_.show_current_call) {
+      callbacks_.show_current_call();
+    }
+    finish(CallStartResult::Kind::Cancelled);
+  };
+  steps.leave_current = [this]() { (void)Leave(); };
+  steps.place = place;
+  steps.cancelled = [finish]() { finish(CallStartResult::Kind::Cancelled); };
+  RunNewCall(verdict, steps);
+  return true;
+}
+
 bool CallPresenter::StartCall(const std::string& thread_id, const bool video, StartDone done) {
+  if (GuardNewCall(thread_id, [this, thread_id, video, done]() { (void)StartCall(thread_id, video, done); }, done)) {
+    return true;
+  }
   BindToMessaging();
   auto* backend = Backend();
   if (!backend || !backend->Available()) {
@@ -515,6 +549,11 @@ bool CallPresenter::StartCall(const std::string& thread_id, const bool video, St
 
 bool CallPresenter::StartCallWithInvitees(const std::string& thread_id, const bool video,
                                           const std::vector<std::string>& invitees, StartDone done) {
+  if (GuardNewCall(thread_id,
+                   [this, thread_id, video, invitees, done]() { (void)StartCallWithInvitees(thread_id, video, invitees, done); },
+                   done)) {
+    return true;
+  }
   BindToMessaging();
   auto* backend = Backend();
   if (!backend || !backend->Available()) {
