@@ -489,6 +489,21 @@ TEST_F(ProfileSecretsEngineGraceTest, RememberNeedsAnUnlockedVault) {
   EXPECT_TRUE(store_.items.empty());
 }
 
+TEST_F(ProfileSecretsEngineGraceTest, ApplyingAWindowWithoutAnEntryWritesOne) {
+  Attach();
+  ASSERT_TRUE(static_cast<bool>(engine_.TouchGrace(15)));
+  EXPECT_TRUE(store_.items.empty()) << "a touch never creates an entry";
+  ASSERT_TRUE(static_cast<bool>(engine_.ApplyGraceWindow(kUnlockGraceAlways)));
+  EXPECT_FALSE(store_.items.empty());
+  engine_.Lock();
+  auto got = engine_.TryGraceUnlock();
+  ASSERT_TRUE(static_cast<bool>(got));
+  EXPECT_EQ(got->status, GraceUnlock::Status::Found);
+
+  ASSERT_TRUE(static_cast<bool>(engine_.ApplyGraceWindow(0)));
+  EXPECT_TRUE(store_.items.empty()) << "off forgets";
+}
+
 // The transfer code's PIN check (#113): the vault is opened on the side, the unlocked state is left as it was.
 TEST_F(ProfileSecretsEngineGraceTest, VerifyPinAcceptsTheRightPinAndRejectsAWrongOne) {
   int unlocked_calls = 0;

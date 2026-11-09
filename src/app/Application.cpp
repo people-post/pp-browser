@@ -1017,9 +1017,10 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       ForgetGrace();  // both pieces and the foreground timer
       return;
     }
-    // The new length at once (a 15-minute window becomes 5); never creates an entry.
+    // The new length at once (a 15-minute window becomes 5), and an entry when none existed yet ("Until restart"
+    // chosen after "Immediately"), written from the unlocked vault.
     if (secrets_->IsUnlocked()) {
-      if (auto touched = secrets_->TouchGrace(minutes); !touched) {
+      if (auto touched = secrets_->ApplyGraceWindow(minutes); !touched) {
         log().warning << "Grace window not changed: " << touched.error().message;
         DiagLine("unlock.grace").Add("result", "write_failed").Fail("error", touched.error()).Emit();
       }
