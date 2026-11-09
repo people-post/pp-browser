@@ -667,6 +667,29 @@ TEST_F(ShellDrawerTest, TheHomeIndicatorStripCoversTheInsetUnderGroupedPages) {
   EXPECT_TRUE(bottom->IsClassSet("shell-home-indicator-strip--new_chat"));
 }
 
+// The keyboard / emoji sheet lifts #shell-root and, once gone, the lift is gone with it (the Home block re-centres in
+// the page again): nothing on the way up is left behind on the way down.
+TEST_F(ShellDrawerTest, TheShellRootLiftIsGoneWhenTheKeyboardOrEmojiSheetGoes) {
+  ui::Element* root = ById("shell-root");
+  ASSERT_NE(root, nullptr);
+  const auto bottom = [root]() { return root->GetProperty<float>("bottom"); };
+  const float rest = bottom();
+  host_.State().safe_area_bottom_dp = 300;  // the keyboard is up
+  host_.RefreshSafeAreaInsets(context_);    // the platform reports it gone
+  Settle();
+  EXPECT_EQ(host_.State().safe_area_bottom_dp, 0);
+  EXPECT_EQ(bottom(), rest) << "keyboard: the lift is dropped";
+  BottomChromeSpec spec;
+  spec.key = "emoji_panel";
+  host_.SetBottomChrome(spec);
+  Settle();
+  EXPECT_GT(bottom(), rest) << "emoji sheet: lifted";
+  host_.ClearBottomChrome();
+  Settle();
+  EXPECT_EQ(host_.State().safe_area_bottom_dp, 0);
+  EXPECT_EQ(bottom(), rest) << "emoji sheet gone: the lift is dropped";
+}
+
 TEST_F(ShellDrawerTest, TheLayoutBecomingTheDesktopsClosesIt) {
   host_.OpenAiDrawer();
   Settle();

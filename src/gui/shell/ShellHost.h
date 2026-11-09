@@ -403,7 +403,6 @@ private:
   void PlayPageEnter(const char* element_id);
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
-  void SyncHomeDock(ui::ElementDocument* doc);
   bool ChromeFrostEnabled() const;
   /** What is on screen now, for the AI dot (AiDotModel::Shown). */
   AiDotScene AiDotSceneNow() const;
