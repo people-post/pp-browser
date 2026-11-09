@@ -157,7 +157,7 @@ TEST(NewChatPageTest, HomePlaceholderIsNewAndTheConversationOneIsUnchanged) {
   EXPECT_NE(css.find("width: 44dp;\n  height: 44dp;", plus_rule), std::string::npos);
   const size_t emoji_rule = css.find(".shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {");
   ASSERT_NE(emoji_rule, std::string::npos);
-  EXPECT_NE(css.find("left: 56dp;", emoji_rule), std::string::npos);
+  EXPECT_NE(css.find("left: 42dp;", emoji_rule), std::string::npos);
   EXPECT_NE(css.find("width: 44dp;\n  height: 44dp;", emoji_rule), std::string::npos);
   const size_t emoji_icon = css.find(".shell-layer-compact .home-composer-mount .prompt-emoji-btn .prompt-icon-home-emoji {");
   ASSERT_NE(emoji_icon, std::string::npos);

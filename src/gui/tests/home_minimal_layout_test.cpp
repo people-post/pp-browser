@@ -174,8 +174,8 @@ TEST_F(HomeMinimalLayoutTest, CardIsTheNarrow108dpB3WithACircleEmojiAndNoMic) {
   EXPECT_FLOAT_EQ(size.x, 44.f);
   EXPECT_FLOAT_EQ(size.y, 44.f);
   const float card_right = card->GetAbsoluteOffset(ui::BoxArea::Border).x + 310.f;
-  EXPECT_FLOAT_EQ(emoji->GetAbsoluteOffset(ui::BoxArea::Border).x - card->GetAbsoluteOffset(ui::BoxArea::Border).x, 57.f)
-      << "left, 8dp right of the plus target (56dp + border)";
+  EXPECT_FLOAT_EQ(emoji->GetAbsoluteOffset(ui::BoxArea::Border).x - card->GetAbsoluteOffset(ui::BoxArea::Border).x, 43.f)
+      << "left, right after the plus (42dp + border): the tinted circle 12dp from the plus glyph";
   // Send is always at the right end: a 36dp disc (idle while empty), nothing swaps places.
   ui::Element* send = document->GetElementById("stub-send");
   ASSERT_NE(send, nullptr);

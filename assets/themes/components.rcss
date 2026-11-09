@@ -13659,7 +13659,7 @@ textarea:composing ~ .prompt-composer-label,
    target (the circle's centre stays 32dp from the right edge and 28dp from the bottom). */
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {
   position: absolute;
-  left: 56dp;
+  left: 42dp; /* the tinted circle 12dp after the plus glyph (Kenneth 2026-11-09: closer) */
   bottom: 6dp;
   z-index: 1;
   width: 44dp;
