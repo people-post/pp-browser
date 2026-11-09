@@ -57,10 +57,11 @@ TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAHiddenTab) {
                          "id=\"shell-nav-rail-mount\">")) << "the two-word tab bar mounts here";
   EXPECT_FALSE(Has(chats, "shell-nav-page--hidden-tab"));
 
-  // DEV/PLAN-minimal-nav.md A: Settings (Me) fills the screen with its own back, no tab bar.
+  // DEV/PLAN-minimal-nav.md A: Settings (Me) fills the screen with its own back; TODO #200: the tab bar stays.
   state.nav_tab = NavTab::Me;
   const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
-  EXPECT_FALSE(Has(rml, "id=\"shell-bottom-chrome\""));
+  EXPECT_TRUE(Has(rml, "id=\"shell-bottom-chrome\""));
+  EXPECT_TRUE(Has(rml, "shell-nav-page--tab-bar")) << "its list clears the bar";
   EXPECT_TRUE(Has(rml, "shell-nav-page--hidden-tab"));
   EXPECT_TRUE(Has(rml, "id=\"pane-body-settings\""));
   EXPECT_FALSE(Has(rml, "account-sheet"));
@@ -100,11 +101,12 @@ TEST(ShellLayoutRmlTest, TheTabBarIsOnlyOnTheAiAndChatsPages) {
     EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 48.f);
     EXPECT_TRUE(bar_drawn());
   }
-  for (const NavTab tab : {NavTab::Me, NavTab::Contacts}) {
-    state.nav_tab = tab;
-    EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f);
-    EXPECT_FALSE(bar_drawn());
-  }
+  state.nav_tab = NavTab::Contacts;
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f);
+  EXPECT_FALSE(bar_drawn());
+  state.nav_tab = NavTab::Me;  // Settings keeps the bar (TODO #200)
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 48.f);
+  EXPECT_TRUE(bar_drawn());
   state.nav_tab = NavTab::Home;
   state.compact_chat_open = true;
   EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f) << "a chat open";
@@ -121,6 +123,56 @@ TEST(ShellLayoutRmlTest, TheTabBarIsOnlyOnTheAiAndChatsPages) {
   state.layout_mode = LayoutMode::Expanded;
   EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f) << "the desktop has its rail";
   EXPECT_EQ(ShellConfig{}.compact_nav_height_dp, 48.f);
+}
+
+// TODO #200: the bar stays on Settings and the pages pushed from it, and only those.
+TEST(ShellLayoutRmlTest, SettingsAndItsPushedPagesKeepTheTabBar) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = false;
+  state.nav_tab = NavTab::Me;
+  const auto root = [&state]() { return ShellLayoutRml(state, false, "").ShellRoot(); };
+  const auto push = [&state](const char* key) {
+    PaneState pane;
+    pane.spec.key = key;
+    pane.id = 7;
+    state.transient_stack.push_back(pane);
+  };
+
+  EXPECT_TRUE(Has(root(), "id=\"shell-bottom-chrome\""));
+  EXPECT_FALSE(Has(root(), "shell-bottom-chrome--over-page")) << "nothing pushed";
+  for (const char* key : {"settings_detail", "contact_detail", "blocked_people"}) {
+    state.transient_stack.clear();
+    push(key);
+    EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 48.f) << key;
+    EXPECT_TRUE(Has(root(), "id=\"shell-bottom-chrome\"")) << key;
+    EXPECT_TRUE(Has(root(), "shell-bottom-chrome--over-page")) << key << ": drawn above the pushed page";
+  }
+  // A page that is not Settings' (a chat's group sheet, the people picker...) keeps no bar.
+  state.transient_stack.clear();
+  push("contact_detail");
+  push("people_picker");
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f);
+  EXPECT_FALSE(Has(root(), "id=\"shell-bottom-chrome\""));
+  state.transient_stack.clear();
+
+  // A secret page (the transfer code) is bare.
+  state.secret_page_open = true;
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f);
+  EXPECT_FALSE(Has(root(), "id=\"shell-bottom-chrome\""));
+  state.secret_page_open = false;
+
+  // A chat left open under Settings is not on screen: Settings keeps its bar, and the chat view has none.
+  state.compact_chat_open = true;
+  EXPECT_TRUE(Has(root(), "id=\"shell-bottom-chrome\""));
+  state.nav_tab = NavTab::Sessions;
+  EXPECT_TRUE(Has(root(), "shell-chat-overlay"));
+  EXPECT_FALSE(Has(root(), "id=\"shell-bottom-chrome\""));
+
+  state.nav_tab = NavTab::Me;
+  state.compact_chat_open = false;
+  state.layout_mode = LayoutMode::Expanded;
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f) << "the desktop has its rail";
+  EXPECT_FALSE(Has(root(), "shell-nav-page--tab-bar"));
 }
 
 // A hidden tab entered over an open chat (an invite, Settings from the AI) is drawn instead of the chat overlay.
@@ -284,6 +336,58 @@ TEST(ShellLayoutRmlTest, ACompactChatOverlayHasOneHeaderRowHoldingTheBackButton)
   // The title, avatar and menu are the chat pane's header row, lifted onto this bar by the theme; the shell
   // root must not draw a second one.
   EXPECT_FALSE(Has(rml, "chat-header"));
+}
+
+// #188 / #202: the chat view frosts its header only; its composer bar is clear (a floating pill and two round buttons,
+// no material child). A pushed page over the chat leaves no frost of the chat's, and Transparency off leaves none.
+TEST(ShellLayoutRmlTest, TheChatViewFrostsItsHeaderAndItsComposerBarIsClear) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = true;
+  const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_EQ(Count(rml, "bar-material--frost"), 1U) << "the header only";
+  EXPECT_EQ(Count(rml, "class=\"bar-material"), 1U) << "the composer bar has no material child";
+  const size_t chrome = rml.find("shell-chat-overlay-chrome");
+  const size_t bar = rml.find("shell-composer-bar");
+  const size_t mount = rml.find("id=\"shell-composer-mount\"");
+  ASSERT_NE(chrome, std::string::npos);
+  ASSERT_NE(bar, std::string::npos);
+  EXPECT_LT(rml.find("bar-material--frost", chrome), rml.find("back.svg", chrome)) << "the header's material is first";
+  ASSERT_NE(mount, std::string::npos);
+  EXPECT_EQ(rml.find("bar-material", bar), std::string::npos) << "nothing under the composer mount";
+  EXPECT_FALSE(Has(rml, "shell-composer-mount surface-chrome surface-chrome--frost"));
+
+  ShellState solid = state;
+  solid.reduce_transparency = true;
+  const std::string opaque = ShellLayoutRml(solid, false, "").ShellRoot();
+  EXPECT_EQ(Count(opaque, "bar-material--frost"), 0U);
+  EXPECT_EQ(Count(opaque, "class=\"bar-material"), 1U) << "the header's material, solid";
+
+  ShellState pushed_over = state;
+  PaneState pushed;
+  pushed.spec.key = "contact_detail";
+  pushed.id = 4;
+  pushed_over.transient_stack.push_back(pushed);
+  pushed_over.transient_active = true;
+  const std::string over = ShellLayoutRml(pushed_over, false, "").ShellRoot();
+  EXPECT_EQ(Count(over, "bar-material--frost"), 0U) << "the chat under a pushed page is not frosted";
+}
+
+// #176 / #177: New chat and Add contact are titled pushed pages on phones (hide on scroll, frosted once the list is
+// under the bar), like the contact page; a desktop window has no such bar.
+TEST(ShellLayoutRmlTest, NewChatAndAddContactAreTitledPushedPages) {
+  for (const char* key : {"new_chat", "add_contact", "contact_detail"}) {
+    ShellState state = WithChatPane(LayoutMode::Compact);
+    PaneState pushed;
+    pushed.spec.key = key;
+    pushed.id = 4;
+    state.transient_stack.push_back(pushed);
+    state.transient_active = true;
+    const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+    EXPECT_TRUE(Has(rml, "shell-layer-transient shell-layer-compact nav-bar-host")) << key;
+    EXPECT_TRUE(Has(rml, "shell-transient-chrome--titled")) << key;
+    EXPECT_TRUE(Has(rml, "<div class=\"nav-bar-bg\"></div>")) << key;
+    EXPECT_TRUE(Has(rml, "surface-chrome--frost")) << key << ": the pushed page's bar is the frosted one";
+  }
 }
 
 TEST(ShellLayoutRmlTest, TheCompactNavPageFollowsTheLargeTitleState) {

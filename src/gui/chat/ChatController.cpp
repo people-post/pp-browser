@@ -10,6 +10,7 @@
 #include "gui/chat/ApprovalCard.h"
 #include "gui/chat/AttachMenuRules.h"
 
+#include "gui/chat/ActionNoticeText.h"
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
@@ -3202,7 +3203,7 @@ void ChatController::SendWithMentions(const std::string& thread_id, const std::s
   CancelQuoteReply();
   UpdateSidebarPreview(out);
   if (auto sent = presenter_.SendWithMentions(thread_id, out, std::move(spans)); !sent) {
-    UserFeedback::Fail(PaymentErrorUserMessage(sent.error().message));
+    UserFeedback::Fail(PaymentErrorUserMessage(sent.error()));
     RestoreDraftIfEmpty(thread_id, reply);  // its mentions stay recorded, so sending again marks them
   } else {
     mentions_.ForgetThread(thread_id);
@@ -3804,7 +3805,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
           if (routed.error().message == MessageRouter::kAgentBusyError) {
             QueueAgentSend(target_thread, trimmed, std::nullopt, false, /*already_confirmed=*/true);
           } else {
-            UserFeedback::Fail(PaymentErrorUserMessage(routed.error().message));
+            UserFeedback::Fail(PaymentErrorUserMessage(routed.error()));
           }
           return;
         }
@@ -3823,7 +3824,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
         QueueAgentSend(target_thread, trimmed, std::move(payload_copy), home_thread_was_empty);
         return;
       }
-      UserFeedback::Fail(PaymentErrorUserMessage(routed.error().message));
+      UserFeedback::Fail(PaymentErrorUserMessage(routed.error()));
       DirtyChatChrome();
       SyncDisplayFromThread();
       return;
@@ -3988,7 +3989,7 @@ QueuedSendOutcome ChatController::RunQueuedAgentSend(const QueuedAgentSend& item
     }
     log().warning << "Queued AI send failed: " << routed.error().message;
     if (item.thread_id == ActiveThreadId()) {
-      UserFeedback::Fail(PaymentErrorUserMessage(routed.error().message));
+      UserFeedback::Fail(PaymentErrorUserMessage(routed.error()));
     }
     return QueuedSendOutcome::NotStarted;
   }
@@ -4143,7 +4144,12 @@ void ChatController::WireMessagingBindings() {
     }
   });
   facade_->SetOnDeliveryNotice([this](const DeliveryNotice& notice) {
-    ShowToast(DeliveryNoticeText(notice));
+    // A send that did not go out is told in its chat, as a line under the message; a toast only when that has no
+    // place (no chat, or the cause is unknown). An unreadable inbound message has its line already.
+    if (presenter_.ApplyDeliveryNotice(notice)) {
+      ShowToast(DeliveryNoticeText(notice));
+    }
+    RefreshFromMessaging();
     NotifySurfaceChanged();
   });
   facade_->SetOnBackgroundUnread(
@@ -4256,8 +4262,8 @@ void ChatController::WireMessagingBindings() {
           ShowShareWithAiDialog(thread_id, mode, std::move(done));
         });
   }
-  facade_->SetOnActionMessage([this](const std::string& message) {
-    ShowToast(message);
+  facade_->SetOnActionMessage([this](const ActionNotice& notice) {
+    ShowToast(ActionNoticeText(notice));
     NotifySurfaceChanged();
   });
   RefreshFromMessaging();
@@ -4419,6 +4425,10 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("home_attach_menu", DataEventAt([this](ui::Event& ev) {
           if (!messaging_ready_ || !facade_ || chat_.composer_input_disabled || chat_.attachment_uploading ||
               chat_.attachment_preparing || !chat_.show_attach_button) {
+            return;
+          }
+          if (!agent_.AgentCloudReady()) {
+            UserFeedback::Note(Tr("ai.image.not_ready"));  // the key stays put; the AI is just not connected yet
             return;
           }
           agent_.ShowHomeAttachMenu(ev.GetCurrentElement());
@@ -4793,7 +4803,7 @@ void ChatController::SyncComposerOverlay() {
 }
 
 void ChatController::KeepClearOfComposer(ui::Element* overlay) {
-  // A phone chat's composer is a frosted bar over the transcript (Kenneth 2026-11-07), which runs down under it: the
+  // A phone chat's composer is a clear bar with a floating pill over the transcript (TODO #202), which runs down under it: the
   // transcript's end spacer, its fade and the "new messages" pill follow the bar's height (one line or five, a
   // picture chip, a quote, the home indicator or the keyboard), so the newest message and the pill stay above it.
   ui::Element* mount = overlay ? overlay->GetElementById("shell-composer-mount") : nullptr;

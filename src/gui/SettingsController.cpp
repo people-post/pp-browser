@@ -2,6 +2,7 @@
 #include "gui/SettingsController.h"
 
 #include "lib/ui/DataEvent.h"
+#include "foundation/crypto/CryptoConstants.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/product/DevTools.h"
 #include "foundation/platform/NativeFileDialog.h"
@@ -21,6 +22,7 @@
 #include "feature/settings/StorageSettingsSection.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "gui/shell/DataModelHost.h"
+#include "gui/shell/MascotLook.h"
 #include "gui/ProfileSettingsSection.h"
 #include "gui/shell/RmlMount.h"
 #include "gui/UnlockEnsurePorts.h"
@@ -175,7 +177,7 @@ void SettingsController::BindOpenUiPerfTest(std::function<void()> open) {
   open_ui_perf_test_ = std::move(open);
 }
 
-void SettingsController::BindSimulateChatsLink(std::function<void(bool online)> simulate) {
+void SettingsController::BindSimulateChatsLink(std::function<void(const std::string& state)> simulate) {
   simulate_chats_link_ = std::move(simulate);
 }
 
@@ -298,6 +300,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.reduce_transparency = bindings_.reduce_transparency.c_str();
   ui_state_.call_diagnostics = bindings_.call_diagnostics.c_str();
   ui_state_.home_show_dynamic = bindings_.home_show_dynamic.c_str();
+  ui_state_.home_animated_logo = bindings_.home_animated_logo.c_str();
   ui_state_.crash_reports_enabled = bindings_.crash_reports_enabled.c_str();
   ui_state_.show_advanced_settings = bindings_.show_advanced_settings.c_str();
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
@@ -399,6 +402,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.reduce_transparency = ui_state_.reduce_transparency.c_str();
   bindings_.call_diagnostics = ui_state_.call_diagnostics.c_str();
   bindings_.home_show_dynamic = ui_state_.home_show_dynamic.c_str();
+  bindings_.home_animated_logo = ui_state_.home_animated_logo.c_str();
   bindings_.crash_reports_enabled = ui_state_.crash_reports_enabled.c_str();
   bindings_.show_advanced_settings = ui_state_.show_advanced_settings.c_str();
   bindings_.advanced = ui_state_.show_advanced_settings == "on";
@@ -615,6 +619,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("reduce_transparency", &controller.bindings_.reduce_transparency);
     ctor.Bind("call_diagnostics", &controller.bindings_.call_diagnostics);
     ctor.Bind("home_show_dynamic", &controller.bindings_.home_show_dynamic);
+    ctor.Bind("home_animated_logo", &controller.bindings_.home_animated_logo);
     ctor.Bind("crash_reports_enabled", &controller.bindings_.crash_reports_enabled);
     ctor.Bind("show_advanced_settings", &controller.bindings_.show_advanced_settings);
     ctor.Bind("advanced", &controller.bindings_.advanced);
@@ -693,6 +698,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_transparency", DataEvent<>([this]() { ToggleTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
     ctor.BindEventCallback("toggle_home_show_dynamic", DataEvent<>([this]() { ToggleHomeShowDynamic(); }));
+    ctor.BindEventCallback("toggle_home_animated_logo", DataEvent<>([this]() { ToggleHomeAnimatedLogo(); }));
     ctor.BindEventCallback("open_ui_perf_test", DataEvent<>([this]() {
       if constexpr (kDevToolsBuild) {
         if (open_ui_perf_test_) {
@@ -700,12 +706,12 @@ bool SettingsController::RegisterModel(ui::Context* context) {
         }
       }
     }));
-    for (const bool online : {false, true}) {
-      ctor.BindEventCallback(online ? "simulate_chats_link_online" : "simulate_chats_link_offline", DataEvent<>([this, online]() {
-        (void)online;
+    for (const char* state : {"offline", "connecting", "online"}) {
+      ctor.BindEventCallback(std::string("simulate_chats_link_") + state, DataEvent<>([this, state]() {
+        (void)state;
         if constexpr (kDevToolsBuild) {
           if (simulate_chats_link_) {
-            simulate_chats_link_(online);
+            simulate_chats_link_(state);
           }
         }
       }));
@@ -819,6 +825,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "reduce_transparency");
   host.Dirty("settings", "call_diagnostics");
   host.Dirty("settings", "home_show_dynamic");
+  host.Dirty("settings", "home_animated_logo");
   host.Dirty("settings", "crash_reports_enabled");
   host.Dirty("settings", "show_advanced_settings");
   host.Dirty("settings", "ai_dot_shown");
@@ -1396,6 +1403,9 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
   if (shell_navigation_.push_local_back) {
     shell_navigation_.push_local_back("settings_subpage", [this] { ApplyCloseSecurityPage(); });
   }
+  if (shell_navigation_.set_secret_page_open) {
+    shell_navigation_.set_secret_page_open(true);  // the transfer code is on it: no tab bar under it
+  }
 }
 
 void SettingsController::OnCloseSecurityPage() {
@@ -1409,6 +1419,9 @@ void SettingsController::OnCloseSecurityPage() {
 }
 
 void SettingsController::ApplyCloseSecurityPage() {
+  if (shell_navigation_.set_secret_page_open) {
+    shell_navigation_.set_secret_page_open(false);
+  }
   security_page_ = "";
   security_page_title_ = "";
   choice_page_.Close();
@@ -1429,6 +1442,9 @@ void SettingsController::ApplyCloseSecurityPage() {
 void SettingsController::ResetSecurityPage() {
   if (shell_navigation_.clear_local_back) {
     shell_navigation_.clear_local_back("settings_subpage");
+  }
+  if (shell_navigation_.set_secret_page_open) {
+    shell_navigation_.set_secret_page_open(false);
   }
   security_actions_.HideRecoveryPhrase();  // the phrase does not follow the user off the page
   if (security_page_.empty()) {
@@ -1676,7 +1692,7 @@ void SettingsController::ApplyCallInvitePolicyChoice(const std::string& policy) 
 void SettingsController::OnChooseUnlockGrace(ui::Event& ev) {
   const int current = bindings_.unlock_grace_minutes;
   std::vector<SettingsChoicePage::Option> options;
-  for (const int minutes : {0, 5, 15, 60}) {
+  for (const int minutes : {0, 5, 15, 60, kUnlockGraceAlways}) {
     options.push_back({std::to_string(minutes).c_str(), UnlockGraceDisplayLabel(minutes).c_str(), current == minutes});
   }
   ShowChoice(ev, "unlock_grace", Tr("settings.security.grace.title"), Tr("settings.security.grace.help"), {},
@@ -1687,7 +1703,8 @@ void SettingsController::ApplyUnlockGraceChoice(const std::string& minutes_id) {
   if (suppress_auto_save_) {
     return;
   }
-  const int minutes = minutes_id == "0" ? 0 : minutes_id == "5" ? 5 : minutes_id == "60" ? 60 : 15;
+  const int minutes = minutes_id == "0" ? 0 : minutes_id == "5" ? 5 : minutes_id == "60" ? 60
+                      : minutes_id == std::to_string(kUnlockGraceAlways) ? kUnlockGraceAlways : 15;
   bindings_.unlock_grace_minutes = minutes;
   bindings_.unlock_grace_label = UnlockGraceDisplayLabel(minutes).c_str();
   PullBindingsToUiState();
@@ -1776,8 +1793,9 @@ void SettingsController::ApplySupportDiscovery() {
     return;
   }
   bindings_.support_visible = true;
-  bindings_.support_display_name =
-      discovery->display_name.empty() ? Tr("support.entry.title").c_str() : discovery->display_name.c_str();
+  // Localised title first ("PP 客服" / "PP Support"); the server's display name only when the locale has none.
+  const std::string title = Tr("support.entry.title");
+  bindings_.support_display_name = title.empty() ? discovery->display_name.c_str() : title.c_str();
 }
 
 void SettingsController::OnOpenSupportChat() {
@@ -2072,6 +2090,26 @@ void SettingsController::ToggleCallDiagnostics() {
   DirtyAll();
 }
 
+void SettingsController::ToggleHomeAnimatedLogo() {
+  // Phones only (Me → AI assistant): on draws the AI Home's logo as the animated mascot (the look picked below it), off
+  // keeps the static app icon. Saved at once, like the AI dot's switches: ConfigApplyBridge hands the pref to the shell,
+  // which swaps the logo on the next frame.
+  if (!commands_.session_store) {
+    return;
+  }
+  const bool animated = bindings_.home_animated_logo != "on";
+  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
+  prefs.home_animated_logo = animated;
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
+    ReportFailure(saved.error());
+    return;
+  }
+  bindings_.home_animated_logo = animated ? "on" : "off";
+  PullBindingsToUiState();
+  DataModelHost::Instance().Dirty("settings", "home_animated_logo");
+}
+
 void SettingsController::ToggleHomeShowDynamic() {
   // Phones only: on shows the 动态 widgets section on Home, off is the minimal AI-first Home. Saved through the
   // appearance section (SaveProfilePrefs), which the Home's prefs listener picks up to redraw.
@@ -2087,7 +2125,7 @@ void SettingsController::ToggleAiDot() {
 }
 
 void SettingsController::SetAiDotLook(const std::string& look) {
-  if (look != "a" && look != "b" && look != "c" && look != "d") {
+  if (!IsLookPref(look)) {
     return;
   }
   SaveAiDot(ai_dot_shown_, look, ai_dot_size_.c_str());

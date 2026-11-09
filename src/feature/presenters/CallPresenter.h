@@ -25,8 +25,6 @@ struct CallNotice {
   enum class Kind {
     /** A call action failed: `key` (an i18n key) or the stack's `text`. */
     Error,
-    /** A media path failure the user should be able to read: stays up (`text`). */
-    StickyError,
     /** The peer ended (or declined) a call this device placed or was in: `identity`. */
     PeerEnded,
     PeerDeclined,
@@ -49,7 +47,7 @@ struct CallNotice {
 
 /** What pressing a call button led to. */
 struct CallStartResult {
-  enum class Kind { Started, Joined, PickPeople, Failed };
+  enum class Kind { Started, Joined, PickPeople, Cancelled, Failed };
   Kind kind = Kind::Failed;
   std::string call_id;
   /** Failed: an i18n key (`call.error.*`), or the stack's message in `error_text`. */
@@ -100,6 +98,10 @@ public:
     std::function<void(const std::string& call_id)> on_decline;
     /** P017: the calls layer learned `call_id` is over (each once): the phone's call screen lets a push's call go. */
     std::function<void(const std::string& call_id)> on_call_over;
+    /** A call button was pressed in a call to another chat: asks "end your current call?"; `answer(true)` = go on. */
+    std::function<void(std::function<void(bool)> answer)> confirm_end_current_call;
+    /** A call button was pressed in the chat of the call already up: bring its screen back (from the minimised chip). */
+    std::function<void()> show_current_call;
   };
   using StartDone = std::function<void(const CallStartResult&)>;
 
@@ -175,6 +177,11 @@ public:
   void ReportCameraFailure(const CameraFailure& failure);
 
 private:
+  /**
+   * A call button while a call is up: another chat's call asks first (then leaves it and runs `place` again), the
+   * same chat's call is shown, no question. True when handled here (`place` is for the Place case only).
+   */
+  bool GuardNewCall(const std::string& thread_id, const std::function<void()>& place, const StartDone& done);
   void RequestStart(const std::string& thread_id, bool video, const std::vector<std::string>& invitees,
                     StartDone done);
   std::string RingCallId(CallUiBackend& backend) const;

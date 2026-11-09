@@ -1,6 +1,7 @@
 #include "foundation/error/AppError.h"
 
 #include "common/Localized.h"
+#include "common/Logger.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -167,10 +168,12 @@ std::string AppError::Display(const Error& err) {
   if (!catalogued.empty()) {
     return catalogued;
   }
+  // No words for the user and none in the catalog: the message is a developer's English, not for the screen.
+  // The log keeps it; the user gets a generic line in their language.
   if (!err.message.empty()) {
-    return err.message;
+    logging::getLogger("AppError").warning << "No user text for error, showing the generic line: " << Log(err);
   }
-  return Localized("errors.internal");
+  return Localized("error.generic");
 }
 
 std::string AppError::Log(const Error& err) {

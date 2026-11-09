@@ -194,8 +194,6 @@ const char* NoticeKindName(CallNotice::Kind kind) {
   switch (kind) {
   case CallNotice::Kind::Error:
     return "error";
-  case CallNotice::Kind::StickyError:
-    return "sticky_error";
   case CallNotice::Kind::PeerEnded:
     return "peer_ended";
   case CallNotice::Kind::PeerDeclined:
@@ -223,7 +221,7 @@ public:
     CallPresenter::Callbacks callbacks;
     callbacks.on_changed = [this]() { EmitSurface(); };
     callbacks.notify = [this](const CallNotice& notice) {
-      if (notice.kind == CallNotice::Kind::Error || notice.kind == CallNotice::Kind::StickyError) {
+      if (notice.kind == CallNotice::Kind::Error) {
         last_error_ = notice.key.empty() ? notice.text : notice.key;
       }
       Object event;

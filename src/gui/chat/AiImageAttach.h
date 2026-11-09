@@ -17,9 +17,11 @@ struct AttachButtonInput {
   bool ai_usable = false;          // messaging ready and a brief key available
 };
 
-/** Peer threads keep their own rule; an AI composer offers the icon only when it can send an image. */
+/** Peer threads keep their own rule. An AI composer shows the key whenever the preset can take an image at all
+ *  (brief), whether or not the AI is reachable right now: a key that appears late or vanishes read as a bug (Kenneth
+ *  2026-11-09); when the AI is not ready, the tap says so instead. */
 inline bool ShowAttachButton(const AttachButtonInput& in) {
-  return in.ai_composer ? (in.brief_preset && in.ai_usable) : in.peer_thread_attach;
+  return in.ai_composer ? in.brief_preset : in.peer_thread_attach;
 }
 
 /** Locale key for a failed PrepareAiImageFromFile; the cause decides the wording, never a generic hint. */
@@ -73,9 +75,10 @@ inline std::string DecorateAiImageBubble(std::string rml, const std::string& ima
   const std::string size = fit.width_dp > 0 ? " style=\"width: " + std::to_string(fit.width_dp) + "dp; height: " +
                                                   std::to_string(fit.height_dp) + "dp;\""
                                             : std::string();
-  const std::string img_size = fit.width_dp > 0 ? " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" +
-                                                      std::to_string(fit.height_dp) + "\""
-                                                : std::string();
+  const std::string img_size =
+      fit.width_dp > 0 ? " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.image_height_dp) +
+                             "\"" + (fit.image_offset_dp > 0 ? " style=\"margin-top: -" + std::to_string(fit.image_offset_dp) + "dp;\"" : "")
+                       : std::string();
   rml.replace(at, anchor.size(),
               "<div class=\"chat-ai-image-clip\"" + size + "><img class=\"chat-ai-image\" src=\"" + image_src + "\"" +
                   img_size + "/></div>" + head);

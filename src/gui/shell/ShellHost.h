@@ -4,6 +4,7 @@
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
 #include "gui/shell/ShellAiDot.h"
+#include "gui/shell/ShellHomeMascot.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/StatusbarText.h"
@@ -69,19 +70,30 @@ public:
     std::string appearance = "system";
     bool reduce_transparency = false;
     bool compact_chrome_frost = true;
-    /** Phone AI dot: shown or not, its look (`a`–`d`) and size (`s` / `m` / `l`). */
+    /** Phone AI dot: shown or not, its look (`a`–`g`) and size (`s` / `m` / `l`). */
     bool ai_dot = true;
-    std::string ai_dot_look = "b";
+    std::string ai_dot_look = "auto";
     std::string ai_dot_size = "m";
+    /** Me -> AI assistant -> Animated home logo. */
+    bool home_animated_logo = true;
 
     bool operator==(const ChromePrefs& other) const {
       return theme == other.theme && appearance == other.appearance &&
              reduce_transparency == other.reduce_transparency &&
              compact_chrome_frost == other.compact_chrome_frost && ai_dot == other.ai_dot &&
-             ai_dot_look == other.ai_dot_look && ai_dot_size == other.ai_dot_size;
+             ai_dot_look == other.ai_dot_look && ai_dot_size == other.ai_dot_size &&
+             home_animated_logo == other.home_animated_logo;
     }
     bool operator!=(const ChromePrefs& other) const { return !(*this == other); }
   };
+
+  /** Whether going from `previous` to `next` needs ShellHost::Apply (the material, the dot, the home logo). */
+  static bool NeedsApply(const ChromePrefs& next, const ChromePrefs* previous) {
+    return !previous || next.reduce_transparency != previous->reduce_transparency ||
+           next.compact_chrome_frost != previous->compact_chrome_frost || next.ai_dot != previous->ai_dot ||
+           next.ai_dot_look != previous->ai_dot_look || next.ai_dot_size != previous->ai_dot_size ||
+           next.home_animated_logo != previous->home_animated_logo;
+  }
 
   static ChromePrefs ProjectChrome(const ProfilePreferences& prefs);
   /** Apply material fields only (theme/appearance are Theme-owned). */
@@ -130,10 +142,12 @@ public:
    * path remembers the tab left, for HiddenTabBack; a chat overlay open there stays open under the hidden tab's page.
    */
   void SelectNavTab(NavTab tab);
-  /** A tab-bar click (the select_nav_tab event): a second tap on the phone's AI page opens the AI list. */
+  /** A tab-bar click (the select_nav_tab event); a second tap on the AI tab stays put. */
   void OnNavTabClicked(const std::string& tab_name);
   /** Phone hidden tab's root page (its back, edge swipe, system back): the tab it was entered from (else Chats). */
   void HiddenTabBack();
+  /** Phone Settings: a secret page (Move to a new device) is shown over a section; the tab bar is off while it is. */
+  void SetSecretPageOpen(bool open);
   /** An avatar opens Settings (the Me tab) from anywhere. */
   void OpenSettingsFromAvatar();
   /**
@@ -155,7 +169,10 @@ public:
   /** Phone root pages: flips the large-title state; dirties the model only when it changes. */
   void SetLargeTitleCollapsed(bool collapsed);
   /** Chats header status line, event-driven (never polled): known=false shows nothing; else online/offline. Dirties only on change. */
-  void SetChatsLink(bool known, bool online);
+  void SetChatsLink(ChatsLink link);
+  void SetChatsLink(const bool known, const bool online) {
+    SetChatsLink(!known ? ChatsLink::Unknown : (online ? ChatsLink::Online : ChatsLink::Offline));
+  }
   /** `keep_compact_chat`: a chat overlay stays open (under a hidden tab, or again on the way back to it). */
   void ClearTabContext(bool keep_compact_chat = false);
   void SetPrimaryPane(const std::string& key);
@@ -264,7 +281,10 @@ public:
    * Phone AI dot (DESIGN-pp-ui §8.14): the Me → AI assistant switch, look (`a`–`d`) and size (`s` / `m` / `l`); takes
    * effect at once.
    */
+  /** `look` is the pref: `auto` (the day's look, LookForDate) or `a`-`d`. */
   void SetAiDot(bool enabled, const std::string& look, const std::string& size);
+  /** Settings -> Appearance -> Animated home logo (the AI Home's logo is the mascot, or the static icon). */
+  void SetHomeAnimatedLogo(bool animated);
   /** Where the AI dot rests, from disk (side, height in its band 0–1000). */
   void SetAiDotPlace(bool left, int y_permille, bool tucked);
   /** A tap on the AI dot (open the ask-AI panel). */
@@ -383,6 +403,11 @@ private:
   void PlayPageEnter(const char* element_id);
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
+  bool HomeDockApplies() const;
+  const char* HomeDockWhy() const;
+  void DiagHomeDock(float applied_lift_dp);
+  void DiagHomeCache(const char* what, const char* why, float landing_h, float card_bottom);
+  void SyncHomeDock(ui::ElementDocument* doc, bool dock);
   bool ChromeFrostEnabled() const;
   /** What is on screen now, for the AI dot (AiDotModel::Shown). */
   AiDotScene AiDotSceneNow() const;
@@ -390,6 +415,8 @@ private:
   void SyncSecureScreen();
   /** The AI dot's bound keys (ai_dot_*). */
   void DirtyAiDot();
+  /** state_.ai_dot_look from the pref and today; true when it changed. */
+  bool ResolveAiDotLook();
   struct SafeAreaFromSdl {
     int top_dp = 0;
     int bottom_dp = 0;
@@ -406,6 +433,12 @@ private:
   ShellConfig config_;
   int safe_area_top_from_prefs_dp_ = 0;
   int safe_area_bottom_from_prefs_dp_ = 0;
+  /** The AI Home measured with nothing up (SyncHomeDock): window height, landing height, card bottom (dp); 0 = unseen. */
+  float home_cache_window_dp_ = 0.f;
+  float home_cache_landing_h_dp_ = 0.f;
+  float home_cache_card_bottom_dp_ = 0.f;
+  std::string home_dock_last_diag_;
+  std::string home_dock_last_cache_diag_;
   /** Last IME-sized bottom inset from SDL (latched while keyboard visible). */
   int last_ime_bottom_dp_ = 0;
   /** Synthetic bottom inset while bottom chrome (IME replacement) is open. */
@@ -443,6 +476,7 @@ private:
   bool call_chip_rebuild_held_ = false;
   /** The chip's mode and place at the last call.chip remount line (its `reason`). */
   bool diag_chip_minimized_ = false;
+  bool diag_chip_tucked_ = false;
   int diag_chip_side_ = 0;
   int diag_chip_y_ = 0;
   bool remount_dialog_chrome_pending_ = false;
@@ -492,6 +526,10 @@ private:
   CallActionsPorts call_actions_;
   std::function<void()> scan_action_;
   ShellAiDot ai_dot_{state_};
+  ShellHomeMascot home_mascot_;
+  /** The look pref (`auto`, `a`-`d`) and when `auto` was last resolved to state_.ai_dot_look (a day can turn over). */
+  std::string ai_dot_look_pref_ = "auto";
+  int64_t ai_dot_look_checked_ms_ = 0;
   std::function<void()> on_ai_dot_tap_;
   std::function<void(bool, int, bool)> on_ai_dot_moved_;
   std::function<bool()> secret_page_;

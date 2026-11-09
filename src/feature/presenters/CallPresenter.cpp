@@ -1,7 +1,9 @@
 #include "feature/presenters/CallPresenter.h"
 
+#include "feature/presenters/NewCallGuard.h"
 #include "lib/calls/CallGuests.h"
 #include "lib/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallMediaErrorText.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/media/AudioSession.h"
 #include "lib/calls/CallMediaAdaptation.h"
@@ -123,11 +125,16 @@ bool CallPresenter::TakeStackNotices(CallUiBackend& backend) {
     backend.ClearLastError();
   }
   if (auto media_err = backend.TakeLastMediaError(); media_err && !media_err->empty()) {
-    // SoftMigrate / hop failures: a toast vanishes before multi-hop diagnostics can be read.
-    CallNotice notice;
-    notice.kind = CallNotice::Kind::StickyError;
-    notice.text = *media_err;
-    Notify(notice);
+    // A dropped call or a connect timeout is told by the call screen's own failed page (#181: one prompt, one
+    // place); the raw reason goes to the log. Other path failures are a plain toast, never a banner that stays.
+    if (CallMediaErrorShownOnCallScreen(*media_err)) {
+      log().info << "call media error shown on the call screen only raw=" << *media_err;
+    } else {
+      CallNotice notice;
+      notice.kind = CallNotice::Kind::Error;
+      notice.text = *media_err;
+      Notify(notice);
+    }
   }
   // The peer ended a call we were in (also a failed one — failed is not closed): the panel is
   // about to go, so say why instead of letting the call silently vanish.
@@ -474,7 +481,43 @@ void CallPresenter::MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s)
 
 // --- buttons ------------------------------------------------------------------------------------
 
+bool CallPresenter::GuardNewCall(const std::string& thread_id, const std::function<void()>& place,
+                                 const StartDone& done) {
+  const NewCallVerdict verdict = DecideNewCall(screen_, thread_id);
+  if (verdict == NewCallVerdict::Place) {
+    if (CallScreenIsFailedPage(screen_)) {
+      (void)Leave();  // clear the failed page (shown or minimized) and its dead call before the new one
+    }
+    return false;
+  }
+  const auto finish = [done](const CallStartResult::Kind kind) {
+    if (done) {
+      CallStartResult result;
+      result.kind = kind;
+      done(result);
+    }
+  };
+  NewCallSteps steps;
+  if (callbacks_.confirm_end_current_call) {
+    steps.ask = [this](std::function<void(bool)> answer) { callbacks_.confirm_end_current_call(std::move(answer)); };
+  }
+  steps.show_current = [this, finish]() {
+    if (callbacks_.show_current_call) {
+      callbacks_.show_current_call();
+    }
+    finish(CallStartResult::Kind::Cancelled);
+  };
+  steps.leave_current = [this]() { (void)Leave(); };
+  steps.place = place;
+  steps.cancelled = [finish]() { finish(CallStartResult::Kind::Cancelled); };
+  RunNewCall(verdict, steps);
+  return true;
+}
+
 bool CallPresenter::StartCall(const std::string& thread_id, const bool video, StartDone done) {
+  if (GuardNewCall(thread_id, [this, thread_id, video, done]() { (void)StartCall(thread_id, video, done); }, done)) {
+    return true;
+  }
   BindToMessaging();
   auto* backend = Backend();
   if (!backend || !backend->Available()) {
@@ -515,6 +558,11 @@ bool CallPresenter::StartCall(const std::string& thread_id, const bool video, St
 
 bool CallPresenter::StartCallWithInvitees(const std::string& thread_id, const bool video,
                                           const std::vector<std::string>& invitees, StartDone done) {
+  if (GuardNewCall(thread_id,
+                   [this, thread_id, video, invitees, done]() { (void)StartCallWithInvitees(thread_id, video, invitees, done); },
+                   done)) {
+    return true;
+  }
   BindToMessaging();
   auto* backend = Backend();
   if (!backend || !backend->Available()) {
@@ -1006,7 +1054,9 @@ void CallPresenter::ToggleCamera() {
   }
   backend->SetLocalVideoEnabled(next, WhileAlive([this](Roe<void> cam) {
     if (!cam) {
-      FailText(cam.error().message);
+      // The backend's reason is English technical text: the log keeps it, the user sees a plain sentence.
+      log().info << "camera toggle failed: " << cam.error().message;
+      Fail("call.error.camera_failed");
     }
     Refresh();
   }));

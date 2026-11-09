@@ -32,7 +32,7 @@
             data-event-click="ask_ai_support()">{{i18n:ask_ai.ask_support}}</button>
     <div class="ask-ai-scroll-end" id="ask-ai-scroll-end"></div>
   </div>
-  <!-- The input bar floats, frosted, over the bubbles (Kenneth 2026-11-07, like a chat's): the scroll above runs under
+  <!-- The input bar is clear (TODO #202, like a chat's): a floating pill and round buttons over the bubbles; the scroll above runs under
        it and its end spacer (#ask-ai-scroll-end, AskAiPanel::SyncComposerClear) keeps the last bubble clear of it. -->
   <div class="ask-ai-composer" id="ask-ai-composer">
     <!-- The picture waiting for its question: a small thumbnail and an X (a 44dp target). -->
@@ -52,6 +52,7 @@
     <div class="prompt-composer-row ask-ai-input-row" data-class-ask-ai-input-row--text-only="!show_media">
       <button class="prompt-emoji-btn" type="button" data-event-click="ask_ai_emoji()" title="{{i18n:chat.insert_emoji}}">
         <svg class="prompt-icon-v2" src="../icons/v2/emoji.svg" width="20" height="20"></svg>
+        <svg class="prompt-icon-home-emoji" src="../icons/v2/emoji-round.svg" width="24" height="24"></svg>
       </button>
       <div class="prompt-composer-pill">
         <textarea id="ask-ai-input" class="prompt-composer-input" rows="1" max-rows="4" maxlength="4000"
@@ -66,6 +67,11 @@
       <button class="prompt-send-btn" type="button" data-if="draft != '' || has_picture"
               data-attrif-disabled="thinking || picture_preparing"
               data-event-click="ask_ai_send()" title="{{i18n:ask_ai.send}}">
+        <span class="prompt-send-disc"><svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg></span>
+      </button>
+      <!-- No microphone yet (TODO #205): while the field is empty the slot is Send, drawn disabled. -->
+      <button class="prompt-send-btn prompt-send-btn--idle" type="button" disabled="disabled"
+              data-if="draft == '' &amp;&amp; !has_picture">
         <span class="prompt-send-disc"><svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg></span>
       </button>
     </div>

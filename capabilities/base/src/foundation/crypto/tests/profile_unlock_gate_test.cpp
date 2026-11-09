@@ -297,6 +297,34 @@ TEST_F(ProfileUnlockGateGraceTest, WindowOffSkipsTheRead) {
   EXPECT_EQ(doors_, 1);
 }
 
+// A015: "Always" (kUnlockGraceAlways = -1) is a window like any other: the gate reads it, and a PIN unlock keeps it.
+TEST_F(ProfileUnlockGateGraceTest, AlwaysUnlocksWithoutThePin) {
+  Answers({GraceUnlock::Status::Found});
+  ProfileUnlockPorts ports = Ports();
+  ports.grace_minutes = []() { return kUnlockGraceAlways; };
+  gate_.BindPorts(std::move(ports));
+
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+
+  EXPECT_EQ(tries_, 1);
+  EXPECT_EQ(doors_, 0);
+  EXPECT_EQ(dismissed_, 1);
+  EXPECT_TRUE(remembered_.empty());
+}
+
+TEST_F(ProfileUnlockGateGraceTest, AlwaysIsKeptAfterAPinUnlock) {
+  ProfileUnlockPorts ports = Ports();
+  ports.grace_minutes = []() { return kUnlockGraceAlways; };
+  gate_.BindPorts(std::move(ports));
+  gate_.BeginDeferredUnlockAfterFirstPresent();  // Missing: the door
+  ASSERT_EQ(doors_, 1);
+
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+
+  EXPECT_TRUE(engine_.IsUnlocked());
+  EXPECT_EQ(remembered_, std::vector<int>{kUnlockGraceAlways});
+}
+
 TEST_F(ProfileUnlockGateGraceTest, APinUnlockKeepsTheWindow) {
   gate_.BindPorts(Ports());
   gate_.BeginDeferredUnlockAfterFirstPresent();

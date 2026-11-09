@@ -48,8 +48,6 @@ struct DeliveryOutcome {
   std::string message_id;
   bool ok = false;
   MessageTransport transport = MessageTransport::Relay;
-  /** Sent by the relay after the direct send was tried and failed. */
-  bool relay_after_direct = false;
   SendFailure failure = SendFailure::NoAddress;
   std::string detail;
   /** As the request's. */

@@ -1,6 +1,8 @@
 #include "feature/conversations/ConversationsHub.h"
 
 #include <gtest/gtest.h>
+#include <chrono>
+#include <functional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -48,43 +50,131 @@ TEST(HubParticipantTest, NetworkChangesReachParticipantsInOrderWithTheMeshsView)
   hub.ClearParticipants();
 }
 
-// The Chats header's status line: the OS monitor's online flag reaches the UI callback on the first report (the baseline)
-// and on each flip, never twice for the same value; NetworkOnline() holds the latest (-1 until the first report).
-TEST(HubParticipantTest, TheDevicesOnlineFlagIsReportedOnFirstReportAndEachFlipOnly) {
+// The Chats header's status line (#175): the OS network and the relay's last poll become one state. The 5 s
+// "no poll result yet" timer is faked: the test holds the scheduled task and fires it by hand.
+class LinkFixture {
+public:
+  using Health = MeshDeliveryOrchestrator::BriefRelayHealthState;
+  using Link = ConversationsHub::LinkState;
+  LinkFixture() {
+    hub.SetOnLinkStateChanged([this](Link state) { seen.push_back(state); });
+    hub.SetLinkGraceScheduler([this](std::chrono::milliseconds delay, std::function<void()> fn) {
+      delays.push_back(delay);
+      pending = std::move(fn);
+    });
+  }
+  ~LinkFixture() { hub.SetOnLinkStateChanged(nullptr); }
+  void Network(bool online, bool tunnel_only = false) {
+    NetworkChange change;
+    change.generation = ++generation;
+    change.current.online = online;
+    change.current.tunnel_only = tunnel_only;
+    hub.OnLocalNetworkChanged(change);
+  }
+  void FireTimer() {
+    auto fn = std::move(pending);
+    pending = nullptr;
+    ASSERT_TRUE(fn);
+    fn();
+  }
   ConversationsHub hub;
-  std::vector<std::string> seen;
-  hub.SetOnNetworkOnlineChanged([&](bool known, bool online) { seen.push_back(std::string(known ? "k" : "u") + (online ? "1" : "0")); });
-  EXPECT_EQ(hub.NetworkOnline(), -1);
+  std::vector<Link> seen;
+  std::vector<std::chrono::milliseconds> delays;
+  std::function<void()> pending;
+  uint64_t generation = 0;
+};
 
-  NetworkChange baseline;
-  baseline.current.online = false;
-  hub.OnLocalNetworkChanged(baseline);
-  EXPECT_EQ(seen, (std::vector<std::string>{"k0"}));
-  EXPECT_EQ(hub.NetworkOnline(), 0);
+TEST(HubParticipantTest, LinkIsOnlineWhenTheNetworkIsUpAndTheRelayAnswered) {
+  LinkFixture f;
+  EXPECT_EQ(f.hub.CurrentLinkState(), LinkFixture::Link::Unknown);
+  f.Network(true);
+  EXPECT_TRUE(f.seen.empty()) << "network up, no poll result yet: nothing for the first 5 s";
+  ASSERT_EQ(f.delays.size(), 1u);
+  EXPECT_EQ(f.delays[0], std::chrono::milliseconds(5000));
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Online}));
+  f.FireTimer(); // the stale timer does nothing
+  EXPECT_EQ(f.seen.size(), 1u);
+}
 
-  NetworkChange again = baseline;
-  again.generation = 1;
-  hub.OnLocalNetworkChanged(again);
-  EXPECT_EQ(seen.size(), 1u) << "same value, no event";
+TEST(HubParticipantTest, LinkIsConnectingAtOnceWhenTheRelayPollFails) {
+  LinkFixture f;
+  f.Network(true);
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Failed);
+  EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Connecting}));
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Connecting, LinkFixture::Link::Online}));
+}
 
-  NetworkChange back = baseline;
-  back.generation = 2;
-  back.previous.online = false;
-  back.current.online = true;
-  hub.OnLocalNetworkChanged(back);
-  EXPECT_EQ(seen, (std::vector<std::string>{"k0", "k1"}));
-  EXPECT_EQ(hub.NetworkOnline(), 1);
+TEST(HubParticipantTest, LinkWithNoPollResultBecomesConnectingOnlyWhenTheGraceElapses) {
+  LinkFixture f;
+  f.Network(true);
+  EXPECT_TRUE(f.seen.empty());
+  f.FireTimer();
+  EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Connecting}));
+}
 
-  // Airplane mode with a VPN left on (iPhone 2026-11-08): the path stays satisfied over the tunnel alone → offline.
-  NetworkChange tunnel = back;
-  tunnel.generation = 3;
-  tunnel.previous.online = true;
-  tunnel.current.online = true;
-  tunnel.current.tunnel_only = true;
-  hub.OnLocalNetworkChanged(tunnel);
-  EXPECT_EQ(seen, (std::vector<std::string>{"k0", "k1", "k0"}));
-  EXPECT_EQ(hub.NetworkOnline(), 0);
-  hub.SetOnNetworkOnlineChanged(nullptr);
+TEST(HubParticipantTest, LinkIsOfflineWhenTheNetworkIsDownWhateverTheRelaySaid) {
+  LinkFixture f;
+  f.Network(true);
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.Network(false);
+  EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Online, LinkFixture::Link::Offline}));
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Failed);
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  EXPECT_EQ(f.seen.size(), 2u) << "relay news changes nothing while the network is down";
+  // Airplane mode with a VPN left on: only the tunnel is up, which counts as offline.
+  f.Network(true);
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
+  f.Network(true, true);
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Offline);
+  EXPECT_EQ(f.hub.NetworkOnline(), 0);
+}
+
+TEST(HubParticipantTest, LinkLeavesOfflineForConnectingAtOnceWhenTheNetworkReturns) {
+  LinkFixture f;
+  f.Network(false);
+  EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Offline}));
+  f.Network(true); // health still Unknown: red would be false now, no 5 s wait
+  EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Offline, LinkFixture::Link::Connecting}));
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
+  EXPECT_EQ(f.seen.size(), 3u);
+}
+
+TEST(HubParticipantTest, AnOutageForgetsTheOldRelayResult) {
+  LinkFixture f;
+  f.Network(true);
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.Network(false);
+  f.Network(true); // the Ok from before the outage is stale
+  EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Online, LinkFixture::Link::Offline,
+                                                    LinkFixture::Link::Connecting}));
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
+}
+
+// iPhone 2026-11-09: Ok, a network blip, then Ok again must end Online (the hub forgets the old Ok and so does the
+// orchestrator, so the next Ok poll is reported as a change).
+TEST(HubParticipantTest, LinkIsOnlineAgainAfterANetworkBlipOnceThePollIsOkAgain) {
+  LinkFixture f;
+  f.Network(true);
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.Network(false);
+  f.Network(true);
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Connecting) << "the old Ok is stale after an outage";
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
+  EXPECT_EQ(f.hub.CurrentLinkState(), LinkFixture::Link::Online);
+}
+
+TEST(HubParticipantTest, LinkIsOnlineAfterTheFirstOkPollWhenTheGraceAlreadyRanOut) {
+  LinkFixture f;
+  f.Network(true);
+  f.FireTimer();
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Connecting);
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
 }
 
 TEST(HubParticipantTest, TheWayDownRunsInReverseAndClearedParticipantsHearNothing) {

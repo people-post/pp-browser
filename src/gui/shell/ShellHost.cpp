@@ -1,3 +1,4 @@
+#include <chrono>
 #include <stdexcept>
 #include <utility>
 #include "gui/shell/ShellHost.h"
@@ -24,6 +25,8 @@
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/PinGateActionPorts.h"
 #include "gui/shell/RmlMount.h"
+#include "gui/shell/MascotFigure.h"
+#include "gui/shell/MascotLook.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/ShellCallChromeRml.h"
@@ -46,6 +49,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <string_view>
 #include <exception>
 #include <limits>
 #include <optional>
@@ -81,7 +86,7 @@ constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
 /** Fallback emoji panel height when the OSK has never been shown this session. */
 constexpr int kDefaultEmojiKeyboardPanelDp = 280;
 /** The AI drawer's "you" row above the home indicator (.ai-drawer-me: min-height, bottom padding). */
-constexpr float kAiDrawerMeHeightDp = 64.f;
+constexpr float kAiDrawerMeHeightDp = 76.f;
 constexpr float kAiDrawerMePaddingDp = 8.f;
 
 } // namespace
@@ -119,6 +124,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
 
     ctor.Bind("layout_mode", &host.state_.layout_mode_str);
     ctor.Bind("nav_tab", &host.state_.nav_tab_str);
+    ctor.Bind("nav_bar_tab", &host.state_.nav_bar_tab_str);
     ctor.Bind("compact_chat_open", &host.state_.compact_chat_open);
     ctor.Bind("ai_drawer_open", &host.state_.ai_drawer_open);
     ctor.Bind("auxiliary_open", &host.state_.auxiliary_open);
@@ -218,6 +224,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_mode", &host.state_.call_in_progress.mode_str);
     ctor.Bind("call_in_progress_minimized_side", &host.state_.call_in_progress.minimized_side);
     ctor.Bind("call_in_progress_minimized_y_permille", &host.state_.call_in_progress.minimized_y_permille);
+    ctor.Bind("call_in_progress_minimized_tucked", &host.state_.call_in_progress.minimized_tucked);
     ctor.Bind("call_in_progress_quality_bars", &host.state_.call_in_progress.quality_bars);
     ctor.Bind("call_in_progress_quality_ok", &host.state_.call_in_progress.quality_ok);
     ctor.Bind("call_in_progress_quality_warn", &host.state_.call_in_progress.quality_warn);
@@ -556,6 +563,7 @@ void ShellHost::ClearTabContext(const bool keep_compact_chat) {
   state_.auxiliary_open = false;
   state_.transient_stack.clear();
   state_.transient_active = false;
+  state_.secret_page_open = false;
   pending_dismiss_.reset();
   local_back_stack_.clear();
   DetachDismissGestures();
@@ -601,6 +609,9 @@ void ShellHost::SelectNavTab(NavTab tab) {
   }
   state_.nav_tab = tab;
   ShellLayout::SyncNavTabString(state_);
+  // The tab bar highlights the tab a hidden tab's page (Settings) was entered from.
+  state_.nav_bar_tab_str = ShellLayout::NavTabString(ShellLayout::IsHiddenTabOnCompact(tab) ? tab_before_hidden_ : tab);
+  DataModelHost::Instance().Dirty("window", "nav_bar_tab");
   if (tab_changed && on_nav_tab_changed_) {
     on_nav_tab_changed_(tab);
   }
@@ -608,6 +619,15 @@ void ShellHost::SelectNavTab(NavTab tab) {
     // Messages that came while the hidden tab covered the chat were not on screen; they are now.
     on_compact_chat_shown_again_();
   }
+  RequestSyncLayout();
+}
+
+void ShellHost::SetSecretPageOpen(const bool open) {
+  if (state_.secret_page_open == open) {
+    return;
+  }
+  state_.secret_page_open = open;
+  // The tab bar goes (or comes back) with the page: layout and bar are rebuilt.
   RequestSyncLayout();
 }
 
@@ -743,7 +763,7 @@ void ShellHost::AttachDrawerOpenGesture() {
     return;
   }
   // The AI page's minimal block (home.rml #home-landing); with the 动态 widgets shown it is only the dock, so the
-  // drag is not offered there (the bar's ☰ and a second tap on AI still are).
+  // drag is not offered there (the bar's ☰ still is).
   ui::Element* landing = context_->GetDocument(0)->GetElementById("home-landing");
   if (!landing) {
     return;
@@ -775,9 +795,26 @@ void ShellHost::SetLargeTitleCollapsed(const bool collapsed) {
   DataModelHost::Instance().Dirty("window", "large_title_collapsed");
 }
 
-void ShellHost::SetChatsLink(const bool known, const bool online) {
-  const ui::String state = !known ? "" : (online ? "ok" : "offline");
-  const ui::String text = !known ? ui::String() : ui::String(Tr(online ? "shell.chats.link_online" : "shell.chats.link_offline").c_str());
+void ShellHost::SetChatsLink(const ChatsLink link) {
+  ui::String state;
+  const char* text_key = nullptr;
+  switch (link) {
+  case ChatsLink::Online:
+    state = "ok";
+    text_key = "shell.chats.link_online";
+    break;
+  case ChatsLink::Connecting:
+    state = "connecting";
+    text_key = "shell.chats.link_connecting";
+    break;
+  case ChatsLink::Offline:
+    state = "offline";
+    text_key = "shell.chats.link_offline";
+    break;
+  case ChatsLink::Unknown:
+    break;
+  }
+  const ui::String text = text_key ? ui::String(Tr(text_key).c_str()) : ui::String();
   if (state_.chats_link_state == state && state_.chats_link_text == text) {
     return;
   }
@@ -1325,17 +1362,39 @@ AiDotScene ShellHost::AiDotSceneNow() const {
   return scene;
 }
 
+bool ShellHost::ResolveAiDotLook() {
+  // The dot is drawn with the artwork of the pref's look; "auto" is the day's (LookForDate), asked again on every
+  // call so a day that turned over while the app was open changes it.
+  const char parts = PartsFor(ResolveLookToday(ai_dot_look_pref_));
+  const ui::String next(1, parts);
+  if (state_.ai_dot_look == next) {
+    return false;
+  }
+  state_.ai_dot_look = next;
+  return true;
+}
+
 void ShellHost::SetAiDot(const bool enabled, const std::string& look, const std::string& size) {
-  const bool known = look == "a" || look == "b" || look == "c" || look == "d";
-  const ui::String next_look = known ? look.c_str() : "b";
+  const std::string next_pref = IsLookPref(look) ? look : "auto";
   const ui::String next_size = size == "s" || size == "l" ? size.c_str() : "m";
-  if (state_.ai_dot_enabled == enabled && state_.ai_dot_look == next_look && state_.ai_dot_size == next_size) {
+  home_mascot_.SetLookPref(next_pref);
+  const bool pref_changed = next_pref != ai_dot_look_pref_;
+  ai_dot_look_pref_ = next_pref;
+  const bool look_changed = ResolveAiDotLook();
+  if (state_.ai_dot_enabled == enabled && !pref_changed && !look_changed && state_.ai_dot_size == next_size) {
     return;
   }
   state_.ai_dot_enabled = enabled;
-  state_.ai_dot_look = next_look;
   state_.ai_dot_size = next_size;
   DirtyAiDot();
+  Backend::RequestForceFrame();
+}
+
+void ShellHost::SetHomeAnimatedLogo(const bool animated) {
+  if (home_mascot_.Animated() == animated) {
+    return;
+  }
+  home_mascot_.SetAnimated(animated);
   Backend::RequestForceFrame();
 }
 
@@ -1419,6 +1478,7 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_debug_subtitle");
   DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_side");
   DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_y_permille");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_tucked");
   for (const char* name : {"call_ring_phone_title", "call_ring_phone_subtitle", "call_in_progress_phone_title",
                            "call_in_progress_failed_text", "call_in_progress_story_step1",
                            "call_in_progress_story_step2", "call_in_progress_story_step3", "call_in_progress_story_step4",
@@ -1760,9 +1820,11 @@ void ShellHost::ApplySafeAreaLayout() {
   CompactBottomSurface bottom_surface = CompactBottomSurface::None;
   if (state_.layout_mode == LayoutMode::Compact) {
     // A hidden tab's page (Me, Contacts) has no tab bar: like a pushed page it reaches the screen bottom itself.
-    bottom_surface = !state_.transient_stack.empty() || ShellLayout::HiddenTabShown(state_) ? CompactBottomSurface::Page
-                     : state_.compact_chat_open                                         ? CompactBottomSurface::Composer
-                                                                                         : CompactBottomSurface::TabBar;
+    // Settings (and the pages pushed from it) keep the tab bar (TODO #200).
+    bottom_surface = ShellLayout::SettingsTabBarShown(state_)                                    ? CompactBottomSurface::TabBar
+                     : !state_.transient_stack.empty() || ShellLayout::HiddenTabShown(state_) ? CompactBottomSurface::Page
+                     : state_.compact_chat_open                                               ? CompactBottomSurface::Composer
+                                                                                               : CompactBottomSurface::TabBar;
   }
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface, bottom_chrome_open_);
@@ -1786,8 +1848,11 @@ void ShellHost::ApplySafeAreaLayout() {
       bottom_chrome_open_ ? static_cast<float>(bottom_chrome_height_dp_) : 0.f;
   // Lift shell-root above the bottom chrome (nav chrome lives inside shell-root) and, with a keyboard up, above the
   // keyboard — the body itself stays full-bleed so its background paints behind the keyboard's rounded corners.
+  // The AI Home does not follow the keyboard / emoji sheet (TODO #204): it stays where it is and they just cover its
+  // lower part (the chips); see HomeDockLift. Every other page keeps the full lift.
+  const bool home_keeps_place = state_.layout_mode == LayoutMode::Compact && HomeDockApplies();
   set_dp(doc->GetElementById("shell-root"), "bottom",
-         statusbar_dp + bottom_chrome_dp + layout.content_bottom_inset_dp);
+         statusbar_dp + (home_keeps_place ? 0.f : bottom_chrome_dp + layout.content_bottom_inset_dp));
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
   set_dp(doc->GetElementById("shell-statusbar-strip"), "height", layout.content_top_dp);
   if (ui::Element* strip = doc->GetElementById("shell-statusbar-strip")) {
@@ -1863,8 +1928,11 @@ void ShellHost::ApplySafeAreaLayout() {
   }
   set_dp(doc->GetElementById("shell-composer-mount"), "padding-bottom",
          bottom_surface == CompactBottomSurface::Composer ? strip_dp : 0.f);
+  // A page pushed from Settings ends above the tab bar that stays over it.
   set_dp(doc->GetElementById("shell-transient-layer"), "padding-bottom",
-         bottom_surface == CompactBottomSurface::Page ? strip_dp : 0.f);
+         bottom_surface == CompactBottomSurface::Page ? strip_dp
+         : ShellLayout::SettingsTabBarShown(state_)   ? layout.content_padding_bottom_dp
+                                                       : 0.f);
   // The AI drawer reaches the screen bottom over the tab bar. Its frosted "you" row runs down to the screen bottom too
   // (one bar, Kenneth 2026-11-07), its content above the home indicator; the list's end spacer keeps the last row
   // clear of the whole bar (the engine leaves a scroller's bottom padding out of its scroll height).
@@ -1932,6 +2000,186 @@ void ShellHost::ApplySafeAreaLayout() {
   // Chat overlay fills shell-root (already lifted); no extra bottom inset.
   set_dp(doc->GetElementById("shell-chat-overlay"), "bottom", 0.f);
   set_dp(doc->GetElementById("shell-chat-overlay"), "padding-bottom", 0.f);
+  SyncHomeDock(doc, home_keeps_place);
+  DiagHomeDock(statusbar_dp + (home_keeps_place ? 0.f : bottom_chrome_dp + layout.content_bottom_inset_dp));
+}
+
+// True when the keyboard / emoji sheet is up over the AI Home page and the unlifted Home layout was measured for this
+// window height (SyncHomeDock, while nothing was up). Without a measurement the page is lifted as before.
+namespace {
+constexpr ShareWord kDockWhy[] = {"ok", "no_latch", "not_home", "chat_open", "drawer", "transient", "overlay", "no_cache", "window_changed"};
+constexpr ShareWord kDockWhat[] = {"cache", "skip"};
+constexpr ShareWord kDockSkipWhy[] = {"ok", "covered", "not_home", "chat_open", "drawer", "transient", "overlay", "not_minimal",
+                                      "landing_height_0", "no_card"};
+} // namespace
+
+const char* ShellHost::HomeDockWhy() const {
+  const bool covered = bottom_chrome_open_ || state_.safe_area_bottom_dp >= kImeLatchMinDp;
+  if (!covered || !context_) {
+    return "no_latch";
+  }
+  if (state_.nav_tab != NavTab::Home) {
+    return "not_home";
+  }
+  if (state_.compact_chat_open) {
+    return "chat_open";
+  }
+  if (state_.ai_drawer_open) {
+    return "drawer";
+  }
+  if (!state_.transient_stack.empty()) {
+    return "transient";
+  }
+  if (!state_.overlay_stack.empty()) {
+    return "overlay";
+  }
+  if (home_cache_landing_h_dp_ <= 0.f) {
+    return "no_cache";
+  }
+  const float ratio = context_->GetDensityIndependentPixelRatio();
+  const float window_dp = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
+  return std::fabs(window_dp - home_cache_window_dp_) < 0.5f ? "ok" : "window_changed";
+}
+
+bool ShellHost::HomeDockApplies() const {
+  return std::string_view(HomeDockWhy()) == "ok";
+}
+
+// Diagnostics for TODO #204 (home.dock): one line whenever the lift decision on the AI Home changes.
+void ShellHost::DiagHomeDock(const float applied_lift_dp) {
+  if (state_.layout_mode != LayoutMode::Compact || state_.nav_tab != NavTab::Home || !context_) {
+    return;
+  }
+  const float ratio = context_->GetDensityIndependentPixelRatio();
+  const float win_h = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
+  const bool cached = home_cache_landing_h_dp_ > 0.f;
+  const bool latch = state_.safe_area_bottom_dp >= kImeLatchMinDp;
+  const char* why = HomeDockWhy();
+  char key[256];
+  std::snprintf(key, sizeof(key), "%d|%d|%s|%d|%d|%d|%d|%d|%d|%d", latch, bottom_chrome_open_, why, state_.safe_area_bottom_dp,
+                bottom_chrome_height_dp_, static_cast<int>(std::lround(win_h)),
+                cached ? static_cast<int>(std::lround(home_cache_landing_h_dp_)) : -1,
+                cached ? static_cast<int>(std::lround(home_cache_card_bottom_dp_)) : -1,
+                cached ? static_cast<int>(std::lround(home_cache_window_dp_)) : -1,
+                static_cast<int>(std::lround(applied_lift_dp)));
+  if (home_dock_last_diag_ == key) {
+    return;
+  }
+  home_dock_last_diag_ = key;
+  DiagLine("home.dock")
+      .Add("what", "lift")
+      .Add("latch", latch)
+      .Add("sheet", bottom_chrome_open_)
+      .Add("applies", std::string_view(why) == "ok")
+      .Pick("why", why, kDockWhy)
+      .Add("safe_bottom", state_.safe_area_bottom_dp)
+      .Add("sheet_dp", bottom_chrome_height_dp_)
+      .Add("win_h", static_cast<int>(std::lround(win_h)))
+      .Add("cached_h", cached ? static_cast<int>(std::lround(home_cache_landing_h_dp_)) : -1)
+      .Add("cached_card_bottom", cached ? static_cast<int>(std::lround(home_cache_card_bottom_dp_)) : -1)
+      .Add("cached_win_h", cached ? static_cast<int>(std::lround(home_cache_window_dp_)) : -1)
+      .Add("lift", static_cast<int>(std::lround(applied_lift_dp)))
+      .Emit();
+}
+
+// Home block under the keyboard / sheet (TODO #204). The measurements come from the layout with nothing up (cached while
+// it is the page's layout, never taken while a lift is in effect). Keyboard up: #shell-root is not lifted
+// (HomeDockApplies), the landing keeps its cached height (the hidden tab bar's room is not handed to it, so nothing
+// re-centres) and the keyboard simply covers the chips. If that would cover the card (card bottom + 8dp > keyboard
+// top, short screens) the inner block is moved up by exactly the overlap.
+void ShellHost::SyncHomeDock(ui::ElementDocument* doc, const bool dock) {
+  if (!doc || !context_ || state_.layout_mode != LayoutMode::Compact) {
+    return;
+  }
+  ui::Element* landing = doc->GetElementById("home-landing");
+  if (!landing) {
+    return;
+  }
+  ui::ElementList inners;
+  landing->GetElementsByClassName(inners, "home-landing-inner");
+  ui::Element* inner = inners.empty() ? nullptr : inners.front();
+  const auto clear = [&]() {
+    landing->RemoveProperty("height");
+    landing->RemoveProperty("flex");
+    if (inner) {
+      inner->RemoveProperty("top");
+      inner->RemoveProperty("position");
+    }
+  };
+  if (dock && inner) {
+    const float ratio = context_->GetDensityIndependentPixelRatio();
+    const float window_dp = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
+    const float lift = bottom_chrome_open_ ? static_cast<float>(bottom_chrome_height_dp_)
+                                           : static_cast<float>(state_.safe_area_bottom_dp);
+    const float keyboard_top = window_dp - lift;
+    landing->SetProperty("flex", "none");
+    landing->SetProperty("height", (std::to_string(static_cast<int>(std::lround(home_cache_landing_h_dp_))) + "dp").c_str());
+    constexpr float kGapAboveKeyboardDp = 8.f;
+    const float overlap = home_cache_card_bottom_dp_ + kGapAboveKeyboardDp - keyboard_top;
+    if (overlap > 0.5f) {
+      inner->SetProperty("position", "relative");
+      inner->SetProperty("top", (std::to_string(-static_cast<int>(std::lround(overlap))) + "dp").c_str());
+    } else {
+      inner->RemoveProperty("top");
+      inner->RemoveProperty("position");
+    }
+    return;
+  }
+  clear();
+  const bool covered = bottom_chrome_open_ || state_.safe_area_bottom_dp >= kImeLatchMinDp;
+  if (covered || state_.nav_tab != NavTab::Home || state_.compact_chat_open || state_.ai_drawer_open ||
+      !state_.transient_stack.empty() || !state_.overlay_stack.empty() || !landing->IsClassSet("home-landing--minimal")) {
+    DiagHomeCache("skip", covered ? "covered" : state_.nav_tab != NavTab::Home ? "not_home" : state_.compact_chat_open ? "chat_open"
+                  : state_.ai_drawer_open ? "drawer" : !state_.transient_stack.empty() ? "transient"
+                  : !state_.overlay_stack.empty() ? "overlay" : "not_minimal", 0.f, 0.f);
+    return; // measure only the plain layout, with the Home page showing
+  }
+  ui::Element* card = nullptr;
+  ui::ElementList cards;
+  landing->GetElementsByClassName(cards, "prompt-composer");
+  if (!cards.empty()) {
+    card = cards.front();
+  }
+  // Layout sizes and offsets are in pixels; the cache and everything applied from it are dp. The pin and the block's
+  // offset were removed above, and GetAbsoluteOffset runs a layout pass first, so the sizes read below are the natural
+  // ones — never the pinned height of the previous covered state.
+  const float ratio_raw = context_->GetDensityIndependentPixelRatio();
+  const float ratio = ratio_raw > 0.f ? ratio_raw : 1.f;
+  const float landing_top_px = landing->GetAbsoluteOffset(ui::BoxArea::Border).y;
+  (void)landing_top_px;
+  const float height = landing->GetBox().GetSize(ui::BoxArea::Border).y / ratio;
+  const float window_dp = static_cast<float>(context_->GetDimensions().y) / ratio;
+  if (height <= 0.f || !card) {
+    DiagHomeCache("skip", height <= 0.f ? "landing_height_0" : "no_card", height, 0.f);
+    return;
+  }
+  if (height > window_dp + 0.5f) {
+    home_cache_landing_h_dp_ = 0.f;  // can only be a stale or pinned size: no cache is better than a wrong one
+    DiagHomeCache("skip", "landing_height_0", height, 0.f);
+    return;
+  }
+  home_cache_window_dp_ = window_dp;
+  home_cache_landing_h_dp_ = height;
+  home_cache_card_bottom_dp_ =
+      (card->GetAbsoluteOffset(ui::BoxArea::Border).y + card->GetBox().GetSize(ui::BoxArea::Border).y) / ratio;
+  DiagHomeCache("cache", "ok", height, home_cache_card_bottom_dp_);
+}
+
+// home.dock what=cache|skip: a measurement taken (or refused, and why); only when it differs from the last one.
+void ShellHost::DiagHomeCache(const char* what, const char* why, const float landing_h, const float card_bottom) {
+  char key[128];
+  std::snprintf(key, sizeof(key), "%s|%s|%d|%d", what, why, static_cast<int>(std::lround(landing_h)),
+                static_cast<int>(std::lround(card_bottom)));
+  if (home_dock_last_cache_diag_ == key) {
+    return;
+  }
+  home_dock_last_cache_diag_ = key;
+  DiagLine("home.dock")
+      .Pick("what", what, kDockWhat)
+      .Pick("why", why, kDockSkipWhy)
+      .Add("landing_h", static_cast<int>(std::lround(landing_h)))
+      .Add("card_bottom", static_cast<int>(std::lround(card_bottom)))
+      .Emit();
 }
 
 bool ShellHost::ChromeFrostEnabled() const {
@@ -1955,12 +2203,14 @@ ShellHost::ChromePrefs ShellHost::ProjectChrome(const ProfilePreferences& prefs)
           .compact_chrome_frost = prefs.compact_chrome_frost,
           .ai_dot = prefs.ai_dot_shown,
           .ai_dot_look = prefs.ai_dot_look,
-          .ai_dot_size = prefs.ai_dot_size};
+          .ai_dot_size = prefs.ai_dot_size,
+          .home_animated_logo = prefs.home_animated_logo};
 }
 
 void ShellHost::Apply(const ChromePrefs& prefs) {
   SyncChromeMaterialPrefs(prefs.reduce_transparency, prefs.compact_chrome_frost);
   SetAiDot(prefs.ai_dot, prefs.ai_dot_look, prefs.ai_dot_size);
+  SetHomeAnimatedLogo(prefs.home_animated_logo);
 }
 
 void ShellHost::OnLayoutModeChanged() {
@@ -2526,9 +2776,9 @@ void ShellHost::AttachCallChromeGesture() {
       call_actions_.restore_chrome_from_minimized();
     }
   };
-  callbacks.on_chip_place = [this](int side, int y_permille) {
+  callbacks.on_chip_place = [this](int side, int y_permille, bool tucked) {
     if (call_actions_.set_minimized_place) {
-      call_actions_.set_minimized_place(side, y_permille);
+      call_actions_.set_minimized_place(side, y_permille, tucked);
     }
   };
   callbacks.on_chip_released = [this]() {
@@ -2636,12 +2886,18 @@ void ShellHost::DiagCallChipRemount(ui::ElementDocument* doc, const bool held) {
   line.Add("what", "remount").Add("held", held);
   if (minimized != diag_chip_minimized_) {
     line.Add("reason", "mode");
-  } else if (call.minimized_side != diag_chip_side_ || call.minimized_y_permille != diag_chip_y_) {
+  } else if (call.minimized_side != diag_chip_side_ || call.minimized_y_permille != diag_chip_y_ ||
+             call.minimized_tucked != diag_chip_tucked_) {
     line.Add("reason", "place");
   } else {
     line.Add("reason", "other");
   }
   line.Add("minimized", minimized).Add("side", call.minimized_side).Add("y", call.minimized_y_permille);
+  if (call.minimized_tucked && call.minimized_side != 0) {
+    line.Add("form", "handle");
+  } else {
+    line.Add("form", "bar");
+  }
   line.Add("area_h", static_cast<int>(std::lround(state_.call_chip_layout.area_height_dp)))
       .Add("chip_h", static_cast<int>(std::lround(state_.call_chip_layout.chip_height_dp)));
   const float top = call.minimized_side == 0 ? -1.f : MinimizedChipTopDp(state_);
@@ -2658,6 +2914,7 @@ void ShellHost::DiagCallChipRemount(ui::ElementDocument* doc, const bool held) {
   diag_chip_minimized_ = minimized;
   diag_chip_side_ = call.minimized_side;
   diag_chip_y_ = call.minimized_y_permille;
+  diag_chip_tucked_ = call.minimized_tucked;
 }
 
 void ShellHost::MeasureCallChip(ui::ElementDocument* doc) {
@@ -2843,7 +3100,24 @@ void ShellHost::Update(ui::Context* context) {
       statusbar_.Dirty();
     }
   }
+  if (const int64_t look_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now().time_since_epoch())
+                                      .count();
+      look_now_ms - ai_dot_look_checked_ms_ >= 60000) {
+    ai_dot_look_checked_ms_ = look_now_ms;
+    if (ResolveAiDotLook()) {
+      DirtyAiDot();
+    }
+  }
   ai_dot_.Update(context, AiDotSceneNow());
+  {
+    // The Home's mascot moves by itself only while the Home is on screen with nothing over it (the dot's own scene,
+    // minus its settings), and the app in front: a suspended app is caught by the model's missed-action rule.
+    AiDotScene scene = AiDotSceneNow();
+    scene.enabled = true;
+    home_mascot_.SetActive(state_.nav_tab == NavTab::Home && AiDotModel::Shown(scene));
+  }
+  home_mascot_.Update(context);
   call_chrome_gesture_.Reflow(state_.call_in_progress);
   favorites_snap_.Update(ShellFavoritesSnap::NowSeconds());
   SyncSecureScreen();
@@ -2886,6 +3160,10 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
     delay_sec = std::min(delay_sec, static_cast<double>(*ai_dot_ms) / 1000.0);
   }
 
+  if (const std::optional<int64_t> mascot_ms = home_mascot_.MsUntilNext()) {
+    delay_sec = std::min(delay_sec, static_cast<double>(*mascot_ms) / 1000.0);
+  }
+
   // Call ring pulse / in-call meters need sub-second frames while overlays are active.
   if (state_.call_ring.active || state_.call_in_progress.active) {
     delay_sec = std::min(delay_sec, kLiveChromeFrameIntervalSec);
@@ -2904,11 +3182,6 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
 
 void ShellHost::OnNavTabClicked(const std::string& tab_name) {
   const NavTab tab = NavTabFromString(tab_name.c_str());
-  // Phones: AI tapped again on the AI page itself opens its conversation list.
-  if (tab == NavTab::Home && HomeRootShown()) {
-    OpenAiDrawer();
-    return;
-  }
   // A nav-rail click on a tab with a secondary pane (including the active tab) brings a collapsed list back.
   if (state_.layout_mode == LayoutMode::Expanded &&
       ShellLayout::SidebarCollapsedAfterNavSelect(state_.sidebar_collapsed, tab) != state_.sidebar_collapsed) {
@@ -2916,6 +3189,11 @@ void ShellHost::OnNavTabClicked(const std::string& tab_name) {
     NotifySidebarChanged();
     DirtyNavChrome();
     RequestSyncLayout();
+  }
+  // On Settings (and the pages pushed from it) a tab in the bar leaves the whole stack at once, as if Settings had never
+  // been opened (TODO #200); SelectNavTab then drops the rest of the tab's context.
+  while (ShellLayout::SettingsTabBarShown(state_) && !state_.transient_stack.empty()) {
+    PopTransient();
   }
   SelectNavTab(tab);
 }

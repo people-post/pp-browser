@@ -135,6 +135,16 @@ public:
   BriefRelayHealthState BriefRelayHealth() const {
     return static_cast<BriefRelayHealthState>(brief_relay_health_.load(std::memory_order_relaxed));
   }
+  /**
+   * The relay health changed (Unknown/Ok/Failed): fired only on a change, on the poll worker thread, so keep the
+   * callback short and thread-safe. Set before messaging runs; pass nullptr to clear (any thread).
+   */
+  /**
+   * Forget the last poll result (back to Unknown) WITHOUT firing the callback: the owner just reset its own copy,
+   * and the next result, Ok included, must count as a change or the owner never hears it.
+   */
+  void ResetBriefRelayHealth() { brief_relay_health_.store(static_cast<int>(BriefRelayHealthState::Unknown), std::memory_order_relaxed); }
+  void SetOnBriefRelayHealthChanged(std::function<void(BriefRelayHealthState)> callback);
   /** Me recovery: delete undelivered relay rows older than `older_than_days` (does not clear local chat). */
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
   void RetryFailedOutbound();
@@ -332,12 +342,11 @@ private:
   bool AmpReaches(const std::string& peer_key) const;
   /** The peer's account KEM public key (directory, M015). */
   Roe<ByteVector> PeerKemPublicKey(const PeerSessionKey& key) const;
-  void NotifyDeliveryIssue(const Thread& thread, SendFailure failure, const std::string& detail);
-  void NotifyRelayFallback(const std::string& thread_id);
+  void NotifyDeliveryIssue(const Thread& thread, const std::string& message_id, SendFailure failure,
+                           const std::string& detail);
   void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
   void MaybeEnqueueAttachmentDownload(const RelayReceiveOutcome& outcome);
-  void ApplySendSucceeded(const std::string& thread_id, const std::string& message_id, MessageTransport transport,
-                          bool relay_after_direct_attempt = false);
+  void ApplySendSucceeded(const std::string& thread_id, const std::string& message_id, MessageTransport transport);
   /** `detail`: the transport's own text, for the log. */
   void ApplySendFailed(const std::string& thread_id, const std::string& message_id, SendFailure failure,
                        const std::string& detail);
@@ -348,7 +357,7 @@ private:
   /** One member's copy of a group message: that member's reachability, and the row once any copy is out. */
   void ApplyGroupMemberOutcome(const DeliveryOutcome& outcome);
   void MarkGroupMemberMissed(const std::string& group_id, const std::string& member);
-  void NotifyGroupMembersMissed();
+  void NotifyGroupMembersMissed(const std::string& thread_id, const std::string& message_id);
   /** The message row's delivery state; false when there is no row (a control-lane send). */
   bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success, MessageTransport transport,
                     bool unless_delivered = false);
@@ -501,6 +510,9 @@ private:
   uint64_t last_relay_poll_ms_ = 0;
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
   std::atomic<int> brief_relay_health_{0};
+  void StoreBriefRelayHealth(BriefRelayHealthState state);
+  std::mutex brief_relay_health_cb_mu_;
+  std::function<void(BriefRelayHealthState)> on_brief_relay_health_changed_;
   std::atomic<bool> poll_pending_{false};
   /** Set when SyncInbox is requested while a poll is already in flight — worker re-polls. */
   std::atomic<bool> poll_again_{false};

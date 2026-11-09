@@ -27,6 +27,7 @@
 #include "lib/pricing/PaymentPromiseWireCodec.h"
 #include "lib/pricing/PaymentPromiseTypes.h"
 #include "common/Error.h"
+#include "feature/conversations/ActionNotice.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "feature/conversations/GroupInviteBatch.h"
 #include "feature/conversations/AgentInboundPorts.h"
@@ -314,7 +315,7 @@ public:
   /** UI thread: Add / Message on a directory row look the person up first (HTTP), so `done` may run later. */
   void DispatchActionAsync(const std::string& payload_json,
                            std::function<void(Roe<std::optional<std::string>>)> done);
-  void SetOnActionMessage(std::function<void(const std::string& message)> callback);
+  void SetOnActionMessage(std::function<void(const ActionNotice& notice)> callback);
 
   // --- Router ---------------------------------------------------------------
   Roe<void> RouteMessage(const std::string& thread_id, const std::string& text,

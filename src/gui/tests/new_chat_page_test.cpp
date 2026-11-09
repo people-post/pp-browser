@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <utility>
 
 namespace pbr {
 namespace {
@@ -42,6 +43,24 @@ TEST(NewChatPageTest, BarSearchTwoActionsAndLettersComeInThatOrder) {
   EXPECT_TRUE(Before(rml, "new_chat_action('add')", "data-for=\"section : nc_sections\""));
   EXPECT_NE(rml.find("data-for=\"contact : section.rows\""), std::string::npos);
   EXPECT_NE(rml.find("new_chat_pick(contact.id)"), std::string::npos);
+}
+
+// #176 / #177: the list scrolls under the pushed page's frosted bar: the scroller is marked for ShellNavBarScroll
+// (which sets nav-bar-scrolled / nav-bar-hidden on the layer) and the stylesheet lays it over the whole page.
+TEST(NewChatPageTest, TheListScrollsUnderTheStickyBar) {
+  for (const auto& [view, scroller] : {std::pair<const char*, const char*>{"views/new_chat.rml", "nc-scroll"},
+                                       {"views/add_contact.rml", "ac-scroll"}}) {
+    const std::string rml = ReadAsset(view);
+    EXPECT_NE(rml.find(std::string("class=\"") + scroller + " nav-bar-scroll\""), std::string::npos) << view;
+  }
+  const std::string css = ReadAsset("themes/components.rcss");
+  const size_t rule = css.find(".shell-layer-compact .nc-page .nc-scroll,\n.shell-layer-compact .ac-page .ac-scroll {");
+  ASSERT_NE(rule, std::string::npos);
+  const std::string body = css.substr(rule, css.find('}', rule) - rule);
+  EXPECT_NE(body.find("position: absolute"), std::string::npos);
+  EXPECT_NE(body.find("padding-top: 56dp"), std::string::npos) << "starts below the 56dp bar";
+  EXPECT_NE(css.find(".shell-layer-transient.nav-bar-host.nav-bar-hidden .nc-bar {"), std::string::npos)
+      << "the title row slides away with the bar";
 }
 
 TEST(NewChatPageTest, NoAiRowNoFrequentBlock) {
@@ -130,28 +149,27 @@ TEST(NewChatPageTest, HomePlaceholderIsNewAndTheConversationOneIsUnchanged) {
             std::string::npos);
   EXPECT_NE(css.find(".shell-layer-compact .home-composer-mount .prompt-composer-label--home {\n  display: block;"),
             std::string::npos);
-  // Both tools are 44dp targets inside the box, the emoji 8dp after the plus (8 + 44 + 8 = 60).
+  // Card B3: the plus (a 44dp target) at the bottom left; the emoji key right next to it (8dp gap) is a 44dp target
+  // whose icon carries the 32dp tinted circle; Send is always at the right end (disabled grey while empty).
   const size_t plus_rule = css.find(".shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-home-plus {");
   ASSERT_NE(plus_rule, std::string::npos);
-  EXPECT_NE(css.find("left: 8dp;", plus_rule), std::string::npos);
+  EXPECT_NE(css.find("left: 4dp;", plus_rule), std::string::npos);
   EXPECT_NE(css.find("width: 44dp;\n  height: 44dp;", plus_rule), std::string::npos);
   const size_t emoji_rule = css.find(".shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {");
   ASSERT_NE(emoji_rule, std::string::npos);
-  EXPECT_NE(css.find("left: 60dp;", emoji_rule), std::string::npos);
-}
-
-// The Chats bar: round avatar at the left (Settings), round plus at the right, no title, no large title.
-TEST(NewChatPageTest, ChatsBarHasAvatarAndPlusAndNoTitle) {
-  const std::string rml = ReadAsset("views/sidebar.rml");
-  const size_t bar_end = rml.find("<div class=\"sidebar-header row\">");
-  ASSERT_NE(bar_end, std::string::npos);
-  const std::string bar = rml.substr(0, bar_end);
-  EXPECT_NE(bar.find("open_settings_from_avatar()"), std::string::npos);
-  EXPECT_NE(bar.find("open_new_session_menu()"), std::string::npos);
-  EXPECT_NE(bar.find("profile_has_icon"), std::string::npos);
-  EXPECT_NE(bar.find("{{profile_avatar_letter}}"), std::string::npos);
-  EXPECT_EQ(bar.find("pane-nav-title"), std::string::npos);
-  EXPECT_EQ(rml.find("large-title"), std::string::npos);
+  EXPECT_NE(css.find("left: 42dp;", emoji_rule), std::string::npos);
+  EXPECT_NE(css.find("width: 44dp;\n  height: 44dp;", emoji_rule), std::string::npos);
+  const size_t emoji_icon = css.find(".shell-layer-compact .home-composer-mount .prompt-emoji-btn .prompt-icon-home-emoji {");
+  ASSERT_NE(emoji_icon, std::string::npos);
+  EXPECT_NE(css.find("width: 32dp;\n  height: 32dp;", emoji_icon), std::string::npos);
+  EXPECT_NE(css.find("border-radius: 16dp;", emoji_icon), std::string::npos);
+  EXPECT_NE(composer.find("src=\"../icons/v2/emoji-round.svg\""), std::string::npos);
+  const size_t send_rule = css.find(".shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {");
+  ASSERT_NE(send_rule, std::string::npos);
+  EXPECT_NE(css.find("right: 10dp;", send_rule), std::string::npos);
+  EXPECT_NE(composer.find("prompt-send-btn prompt-send-btn--idle"), std::string::npos) << "the idle Send is on the Home card too";
+  EXPECT_NE(css.find(".shell-layer-compact .home-composer-mount .prompt-voice-toggle-btn {\n  display: none;"),
+            std::string::npos) << "no microphone on the Home card";
 }
 
 TEST(NewChatPageTest, ActionRowsAreBigAndTheRowsAreTheContactsTabRows) {
@@ -189,13 +207,17 @@ TEST(NewChatPageTest, PageIsTheGroupedLookWithTwoCardsAndRoundedGroups) {
   EXPECT_NE(rml.find("class=\"nc-group\""), std::string::npos);
 }
 
-// The Chats bar keeps its avatar and the name beside it (the name span had collapsed to zero width once).
-TEST(NewChatPageTest, ChatsBarHasTheNicknameBesideTheAvatar) {
+// The Chats bar is the plain large-title layout: small title (shown once collapsed), compose button, and a large title
+// at the top of the list; no avatar or nickname.
+TEST(NewChatPageTest, ChatsBarIsTheLargeTitleLayout) {
   const std::string rml = ReadAsset("views/sidebar.rml");
   const size_t bar_end = rml.find("<div class=\"sidebar-header row\">");
   const std::string bar = rml.substr(0, bar_end);
-  EXPECT_NE(bar.find("class=\"pane-nav-avatar\""), std::string::npos);
-  EXPECT_NE(bar.find("{{profile_nickname}}"), std::string::npos);
+  EXPECT_NE(bar.find("class=\"pane-nav-title\""), std::string::npos);
+  EXPECT_NE(bar.find("open_new_session_menu()"), std::string::npos);
+  EXPECT_EQ(bar.find("pane-nav-avatar"), std::string::npos);
+  EXPECT_EQ(bar.find("{{profile_nickname}}"), std::string::npos);
+  EXPECT_NE(rml.find("<p class=\"large-title\">{{i18n:nav.sessions}}</p>"), std::string::npos);
 }
 
 TEST(NewChatPageTest, ColoursComeFromTokensOnly) {

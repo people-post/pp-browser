@@ -7,7 +7,7 @@
 using pbr::P2pStatusHintKeys;
 
 TEST(CallStatusHintTest, NamesACauseOnlyWithEvidence) {
-  EXPECT_EQ(P2pStatusHintKeys(false, false), (std::vector<const char*>{"call.hint.peer_unreachable"}));
+  EXPECT_TRUE(P2pStatusHintKeys(false, false).empty());
   EXPECT_EQ(P2pStatusHintKeys(false, true), (std::vector<const char*>{"call.hint.seed_unreachable"}));
   EXPECT_EQ(P2pStatusHintKeys(true, false), (std::vector<const char*>{"hints.mic_blocked"}));
   EXPECT_EQ(P2pStatusHintKeys(true, true),

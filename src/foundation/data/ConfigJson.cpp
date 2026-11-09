@@ -1,5 +1,6 @@
 #include "foundation/data/ConfigJson.h"
 
+#include "foundation/crypto/CryptoConstants.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/ICredentialStore.h"
 #include "common/ValueJson.h"
@@ -839,6 +840,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   }
   object.set("home_widgets_order", makeArray(std::move(widget_order)));
   object.set("home_show_dynamic", prefs.home_show_dynamic);
+  object.set("home_animated_logo", prefs.home_animated_logo);
   std::vector<Value> starred;
   for (const std::string& id : prefs.starred_contacts) {
     starred.emplace_back(id);
@@ -874,7 +876,8 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   prefs.recovery_phrase_seen = object.getIf<bool>("recovery_phrase_seen").value_or(false);
   const int64_t grace_minutes = ReadI64(object, "unlock_grace_minutes").value_or(15);
   prefs.unlock_grace_minutes =
-      (grace_minutes == 0 || grace_minutes == 5 || grace_minutes == 15 || grace_minutes == 60)
+      (grace_minutes == 0 || grace_minutes == 5 || grace_minutes == 15 || grace_minutes == 60 ||
+       grace_minutes == kUnlockGraceAlways)
           ? static_cast<int>(grace_minutes)
           : 15;
   if (auto auto_renew = object.getIf<bool>("auto_renew_registration")) {
@@ -928,8 +931,9 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   if (auto look = object.getString("ai_dot_look")) {
     prefs.ai_dot_look = *look;
   }
-  if (prefs.ai_dot_look != "a" && prefs.ai_dot_look != "b" && prefs.ai_dot_look != "c" && prefs.ai_dot_look != "d") {
-    prefs.ai_dot_look = "b";
+  if (prefs.ai_dot_look != "auto" && !(prefs.ai_dot_look.size() == 1 && prefs.ai_dot_look[0] >= 'a' &&
+                                       prefs.ai_dot_look[0] <= 'g')) {
+    prefs.ai_dot_look = "auto";
   }
   if (auto size = object.getString("ai_dot_size")) {
     prefs.ai_dot_size = *size;
@@ -1000,6 +1004,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     }
   }
   prefs.home_show_dynamic = object.getIf<bool>("home_show_dynamic").value_or(false);
+  prefs.home_animated_logo = object.getIf<bool>("home_animated_logo").value_or(true);
   prefs.starred_contacts.clear();
   if (const Array* starred = object.getArray("starred_contacts")) {
     for (const Value& item : starred->elements) {

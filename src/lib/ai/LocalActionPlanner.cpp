@@ -902,7 +902,13 @@ std::string BeforeText(const std::string& text, const Parts& parts) {
   for (Stop s = FindStop(prefix); s.pos != kNpos; s = FindStop(prefix.substr(seg_begin))) {
     seg_begin += s.pos + s.len;
   }
-  return StripTail(StripLead(prefix.substr(seg_begin)), kActionTailFillerWords);
+  std::string before = StripTail(StripLead(prefix.substr(seg_begin)), kActionTailFillerWords);
+  // "帮我搜索用户": the text before the hit is only the request opener ("帮我", "please"), which StripLead keeps
+  // when nothing follows it. That is not a name.
+  if (HeadFiller(before, kLeadWords).size() == before.size()) {
+    before.clear();
+  }
+  return before;
 }
 
 std::string CleanQuery(const std::string& s) { return StripTail(StripHead(s, kQueryFillerWords), kActionTailFillerWords); }
@@ -997,12 +1003,17 @@ LocalPlan Dispatch(const std::string& tool, const std::string& text, const AppAc
       q = BeforeText(text, parts);
     }
     const std::string lowered = LowerAscii(q);
-    if (std::find(kPronounWords.begin(), kPronounWords.end(), lowered) != kPronounWords.end() ||
-        std::find(kGenericQueryWords.begin(), kGenericQueryWords.end(), lowered) != kGenericQueryWords.end()) {
+    if (std::find(kPronounWords.begin(), kPronounWords.end(), lowered) != kPronounWords.end()) {
+      // "把他加到联系人": a pronoun names someone we cannot resolve here — ask who.
+      return LocalPlan(Ask(tool, "query", "contacts.ask.who"));
+    }
+    if (std::find(kGenericQueryWords.begin(), kGenericQueryWords.end(), lowered) != kGenericQueryWords.end()) {
       q.clear();
     }
     if (q.empty()) {
-      return list ? MakePlan(tool, Object{}, text, only_first) : LocalPlan(Ask(tool, "query", "contacts.ask.who"));
+      // Naming no one ("帮我搜索用户", "find someone") lists the public directory — the same call as the home
+      // page's "find someone" chip (SuggestionPayload), instead of asking who (Kenneth 2026-11-09).
+      return MakePlan(tool, Object{}, text, only_first);
     }
     return MakeTextPlan(tool, "query", q, text, only_first);
   }

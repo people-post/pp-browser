@@ -1,5 +1,6 @@
 #include "foundation/platform/DesktopLocalNotifier.h"
 
+#include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/desktop/LocalNotifierImpl.h"
@@ -17,8 +18,8 @@ void DesktopLocalNotifier::NotifyIncoming(const std::string& title, const std::s
   if (AppLifecycle::IsUserAttentive()) {
     return;
   }
-  desktop::PostDesktopNotification(title.empty() ? "New message" : title,
-                                   body.empty() ? "You have a new message" : body, thread_id);
+  desktop::PostDesktopNotification(title.empty() ? Tr("notification.new_message") : title,
+                                   body.empty() ? Tr("notification.new_message_body") : body, thread_id);
 }
 
 void DesktopLocalNotifier::ClearForThread(const std::string& thread_id) {

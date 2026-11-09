@@ -75,7 +75,7 @@ public:
   /** Developer builds only: Settings -> About -> Engine test. Clear via BindOpenUiPerfTest({}). */
   void BindOpenUiPerfTest(std::function<void()> open);
   /** Developer builds only: Settings -> About -> "Simulate: offline / online" drives the Chats header's status line. */
-  void BindSimulateChatsLink(std::function<void(bool online)> simulate);
+  void BindSimulateChatsLink(std::function<void(const std::string& state)> simulate);
   /** Phones: Me -> Appearance -> Home widgets opens the Edit Home sheet (ChatController). */
   void BindOpenHomeEdit(std::function<void()> open);
   void BindUnlockEnsure(UnlockEnsurePorts ports);
@@ -190,6 +190,7 @@ private:
     ui::String reduce_transparency = "off";
     ui::String call_diagnostics = "off";
     ui::String home_show_dynamic = "off";
+    ui::String home_animated_logo = "on";
     ui::String crash_reports_enabled = "off";
     ui::String show_advanced_settings = "off";
     /** show_advanced_settings == "on"; templates gate technical rows on it. */
@@ -253,6 +254,7 @@ private:
   void ToggleHomeShowDynamic();
   void ToggleShowAdvancedSettings();
   /** Me → AI assistant: the AI dot's switch, look (`a`–`d`) and size (`s` / `m` / `l`), saved to the profile prefs at once. */
+  void ToggleHomeAnimatedLogo();
   void ToggleAiDot();
   void SetAiDotLook(const std::string& look);
   /** "Assistant size": the pushed choice page (phones) with small / medium / large. */
@@ -366,7 +368,7 @@ private:
   int blocked_count_ = 0;
   /** Me → AI assistant (phones): the AI dot's switch, its look and size (with the size's name for its row). */
   bool ai_dot_shown_ = true;
-  ui::String ai_dot_look_ = "b";
+  ui::String ai_dot_look_ = "auto";
   ui::String ai_dot_size_ = "m";
   ui::String ai_dot_size_label_;
   bool compact_layout_ = false;
@@ -386,7 +388,7 @@ private:
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   std::function<void()> open_ui_perf_test_;
-  std::function<void(bool online)> simulate_chats_link_;
+  std::function<void(const std::string& state)> simulate_chats_link_; // "online" / "connecting" / "offline"
   std::function<void()> open_home_edit_;
   UnlockEnsurePorts unlock_ensure_;
   PinPromptPorts pin_prompt_;

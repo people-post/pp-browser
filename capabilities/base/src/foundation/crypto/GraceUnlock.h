@@ -8,6 +8,7 @@
 
 #include "common/Error.h"
 #include "common/SecureBlobStore.h"
+#include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoTypes.h"
 
 namespace pbr {
@@ -56,7 +57,9 @@ public:
   /** See Status. Only Missing and Expired delete; any other failure keeps both pieces and is reported. */
   Roe<Result> TryUnlock(const GraceClock& now);
 
-  /** A fresh K_grace, both pieces written; `minutes` 0 forgets instead. Only this creates an entry. */
+  /**
+   * A fresh K_grace, both pieces written; `minutes` 0 forgets instead. `kUnlockGraceAlways` writes an expiry of
+   * INT64_MAX (open for the rest of this boot; the entry format is unchanged). Only this creates an entry. */
   Roe<void> Remember(const ByteVector& dek, int minutes, const GraceClock& now);
 
   /**

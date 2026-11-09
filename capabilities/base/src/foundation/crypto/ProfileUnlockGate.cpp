@@ -371,7 +371,7 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
   }
   // PIN grace window (#21 phase 1): a PIN typed a short while ago opens the vault again without asking; before the
   // dev PIN, so a dev build exercises it too.
-  if (ports_.try_grace_unlock && ports_.grace_minutes && ports_.grace_minutes() > 0) {
+  if (ports_.try_grace_unlock && ports_.grace_minutes && GraceIsOn(ports_.grace_minutes())) {
     StartupMark("deferred_grace_unlock_begin");
     RunGraceAttempt(GraceStep::First);
     return;

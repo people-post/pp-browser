@@ -139,6 +139,32 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_transient_frost),
             CompactChromeFrostSurface::TransientHeader);
 
+  // Two bar positions, one frosted surface each: the chat view blurs its header and its composer, nothing else does.
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_chat_frost).top, CompactChromeFrostSurface::ChatOverlayHeader);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_chat_frost).bottom, CompactChromeFrostSurface::None)
+      << "the composer floats on a clear bar: no bottom frost in the chat view";
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_base).bottom, CompactChromeFrostSurface::BottomNav);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_aux_frost).bottom, CompactChromeFrostSurface::None);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_transient_frost).bottom, CompactChromeFrostSurface::None)
+      << "a pushed page over the chat takes the frost; the composer under it does not blur";
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_transient_frost).top, CompactChromeFrostSurface::TransientHeader);
+
+  // TODO #200: Settings keeps the tab bar, also under its pushed pages: top = the page's header, bottom = the bar.
+  PaneState settings_page;
+  settings_page.spec.key = "contact_detail";
+  ShellState compact_settings_frost = compact_me_frost;
+  compact_settings_frost.transient_stack.push_back(settings_page);
+  compact_settings_frost.transient_active = true;
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_settings_frost).top, CompactChromeFrostSurface::TransientHeader);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_settings_frost).bottom, CompactChromeFrostSurface::BottomNav);
+  compact_settings_frost.secret_page_open = true;
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_settings_frost).bottom, CompactChromeFrostSurface::None)
+      << "a secret page has no bar";
+  ShellState compact_scan_frost = compact_me_frost;
+  settings_page.spec.key = "qr_scan";
+  compact_scan_frost.transient_stack.push_back(settings_page);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_scan_frost).bottom, CompactChromeFrostSurface::None);
+
   ShellState compact_dialog_frost = compact_base;
   compact_dialog_frost.dialog.active = true;
   EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_dialog_frost),
@@ -147,6 +173,11 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   ShellState expanded_base{};
   expanded_base.layout_mode = LayoutMode::Expanded;
   EXPECT_EQ(ShellInterruption::ResolveFrostSurface(expanded_base), CompactChromeFrostSurface::None);
+  ShellState compact_dialog_over_chat = compact_chat_frost;
+  compact_dialog_over_chat.dialog.active = true;
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_dialog_over_chat).top, CompactChromeFrostSurface::None);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_dialog_over_chat).bottom, CompactChromeFrostSurface::None);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(expanded_base).bottom, CompactChromeFrostSurface::None);
 
   ShellState toast_state{};
   ShellFeedback::ShowToast(toast_state, "Hello", ToastDuration::Short, 1000.f);
@@ -421,7 +452,7 @@ TEST(ShellHostHiddenTabTest, BackFromSettingsReturnsToTheTabItWasOpenedFrom) {
   ShellHost& from_chats = PhoneHost(NavTab::Sessions);
   from_chats.OpenSettingsFromAvatar();
   EXPECT_EQ(from_chats.State().nav_tab, NavTab::Me);
-  EXPECT_EQ(ShellLayout::CompactTabBarDp(from_chats.State()), 0.f) << "no tab bar under Settings";
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(from_chats.State()), 48.f) << "Settings keeps the tab bar (TODO #200)";
   from_chats.HiddenTabBack();
   EXPECT_EQ(from_chats.State().nav_tab, NavTab::Sessions);
 
@@ -429,6 +460,37 @@ TEST(ShellHostHiddenTabTest, BackFromSettingsReturnsToTheTabItWasOpenedFrom) {
   from_ai.SelectNavTab(NavTab::Me);
   from_ai.HiddenTabBack();
   EXPECT_EQ(from_ai.State().nav_tab, NavTab::Home);
+}
+
+// TODO #200: a tab in the bar on Settings (or a page pushed from it) leaves the whole stack and shows that tab.
+TEST(ShellHostHiddenTabTest, ATabTapOnSettingsLeavesTheWholeSettingsStack) {
+  ShellHost& host = PhoneHost(NavTab::Sessions);
+  host.OpenSettingsFromAvatar();
+  EXPECT_EQ(host.State().nav_bar_tab_str, "sessions") << "the bar highlights the tab Settings was entered from";
+  host.PushTransient({.key = "contact_detail"});
+  host.PushTransient({.key = "blocked_people"});
+  ASSERT_EQ(host.State().transient_stack.size(), 2u);
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(host.State()), 48.f);
+
+  host.OnNavTabClicked("home");
+  EXPECT_EQ(host.State().nav_tab, NavTab::Home);
+  EXPECT_TRUE(host.State().transient_stack.empty());
+  EXPECT_EQ(host.State().nav_bar_tab_str, "home");
+
+  // From the AI page: back to the AI page, by the same tap.
+  ShellHost& from_ai = PhoneHost(NavTab::Home);
+  from_ai.OpenSettingsFromAvatar();
+  EXPECT_EQ(from_ai.State().nav_bar_tab_str, "home");
+  from_ai.OnNavTabClicked("home");
+  EXPECT_EQ(from_ai.State().nav_tab, NavTab::Home);
+
+  // A secret page hides the bar until it closes; leaving Settings drops the flag too.
+  ShellHost& secret = PhoneHost(NavTab::Home);
+  secret.OpenSettingsFromAvatar();
+  secret.SetSecretPageOpen(true);
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(secret.State()), 0.f);
+  secret.HiddenTabBack();
+  EXPECT_FALSE(secret.State().secret_page_open);
 }
 
 TEST(ShellHostHiddenTabTest, HiddenToHiddenKeepsTheTabBeforeTheFirst) {
@@ -573,13 +635,15 @@ TEST(ShellHostHiddenTabTest, TheChatShownAgainIsMarkedRead) {
   EXPECT_NE(body.find("scroller_.RequestScrollToLatest();"), std::string::npos);
 }
 
-TEST(ShellHostHiddenTabTest, ASecondTapOnTheAiTabOpensTheAiList) {
+TEST(ShellHostHiddenTabTest, ASecondTapOnTheAiTabDoesNotOpenTheAiList) {
   ShellHost& host = PhoneHost(NavTab::Sessions);
   host.OnNavTabClicked("home");
   EXPECT_EQ(host.State().nav_tab, NavTab::Home);
   EXPECT_FALSE(host.State().ai_drawer_open) << "the first tap only goes to the AI page";
   host.OnNavTabClicked("home");
-  EXPECT_TRUE(host.State().ai_drawer_open);
+  EXPECT_FALSE(host.State().ai_drawer_open) << "a second tap stays on the AI page";
+  host.OpenAiDrawer();
+  EXPECT_TRUE(host.State().ai_drawer_open) << "the drawer still opens from its own entry";
   host.CloseAiDrawer();
   EXPECT_FALSE(host.State().ai_drawer_open);
 

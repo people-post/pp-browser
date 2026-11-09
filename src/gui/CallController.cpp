@@ -106,6 +106,16 @@ CallController::CallController()
   };
   callbacks.on_decline = [this](const std::string& call_id) { metrics_.NoteDecline(call_id); };
   callbacks.on_call_over = [this](const std::string& call_id) { system_call_screen_.OnCallOver(call_id); };
+  callbacks.confirm_end_current_call = [](std::function<void(bool)> answer) {
+    // "End and call" in the danger colour: it ends the live call (Kenneth 2026-11-09).
+    UserFeedback::ConfirmDestructive(Tr("call.replace.title"), Tr("call.replace.body"), std::move(answer),
+                                     Tr("call.replace.action"));
+  };
+  callbacks.show_current_call = [this]() {
+    if (chrome_mode_ == CallChromeMode::Minimized) {
+      RestoreChromeFromMinimized();
+    }
+  };
   presenter_.BindCallbacks(std::move(callbacks));
   // Mobile: in the background the OS stops the camera; the call turns it off and says so (video_paused).
   background_listener_ = AppLifecycle::AddBackgroundListener([this]() { OnAppBackground(); });
@@ -305,6 +315,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_spotlight_fill = in_call.spotlight_fill,
       .in_call_minimized_side = in_call.minimized_side,
       .in_call_minimized_y_permille = in_call.minimized_y_permille,
+      .in_call_minimized_tucked = in_call.minimized_tucked,
       .in_call_quality_bars = in_call.quality_bars,
       .in_call_quality_ok = in_call.quality_ok,
       .in_call_quality_warn = in_call.quality_warn,
@@ -607,6 +618,7 @@ void CallController::ClearInCall() {
   restore_mode_ = CallChromeMode::Expanded;
   minimized_side_ = 0;
   minimized_y_permille_ = 0;
+  minimized_tucked_ = false;
   chrome_mode_call_id_.clear();
   last_media_health_log_ms_ = 0;
   last_debug_subtitle_ = {};
@@ -632,6 +644,7 @@ void CallController::ApplyChromeModeToState(CallInProgressState& in_call) {
   in_call.mode_str = CallChromeModeName(chrome_mode_);
   in_call.minimized_side = minimized_side_;
   in_call.minimized_y_permille = minimized_y_permille_;
+  in_call.minimized_tucked = minimized_tucked_;
 }
 
 void CallController::SetChromeMode(CallChromeMode mode) {
@@ -772,21 +785,24 @@ void CallController::RestoreChromeFromMinimized() {
                                                           : CallChromeMode::Expanded);
 }
 
-void CallController::SetMinimizedPlace(int side, int y_permille) {
+void CallController::SetMinimizedPlace(int side, int y_permille, bool tucked) {
   if (!AppRuntime::CurrentlyOnUI()) {
-    AppRuntime::PostUI([this, side, y_permille]() { SetMinimizedPlace(side, y_permille); });
+    AppRuntime::PostUI([this, side, y_permille, tucked]() { SetMinimizedPlace(side, y_permille, tucked); });
     return;
   }
   const int clamped_side = std::clamp(side, 0, 2);
   const int clamped_y = clamped_side == 0 ? 0 : std::clamp(y_permille, 0, 1000);
-  if (minimized_side_ == clamped_side && minimized_y_permille_ == clamped_y) {
+  const bool clamped_tucked = tucked && clamped_side != 0;
+  if (minimized_side_ == clamped_side && minimized_y_permille_ == clamped_y && minimized_tucked_ == clamped_tucked) {
     return;
   }
   minimized_side_ = clamped_side;
   minimized_y_permille_ = clamped_y;
+  minimized_tucked_ = clamped_tucked;
   if (in_call_.active) {
     in_call_.minimized_side = minimized_side_;
     in_call_.minimized_y_permille = minimized_y_permille_;
+    in_call_.minimized_tucked = minimized_tucked_;
     SyncShellState();
   }
 }
@@ -897,6 +913,9 @@ std::string CallController::NoticeUserText(const CallNotice& notice) const {
     log().info << "call media error shown as " << key << " raw=" << notice.text;
     return Tr(key);
   }
+  if (CallNoticeIsLocalizedCopy(notice.text)) {
+    return notice.text;
+  }
   return PaymentErrorUserMessage(notice.text);
 }
 
@@ -904,11 +923,6 @@ void CallController::ShowNotice(const CallNotice& notice) {
   switch (notice.kind) {
   case CallNotice::Kind::Error:
     UserFeedback::Fail(NoticeUserText(notice));
-    return;
-  case CallNotice::Kind::StickyError:
-    // SoftMigrate / hop failures need a sticky banner — toast (even Long=6s) vanishes before
-    // users can read multi-hop diagnostics.
-    UserFeedback::NeedsSetup(NoticeUserText(notice), /*sticky=*/true);
     return;
   case CallNotice::Kind::PeerEnded:
   case CallNotice::Kind::PeerDeclined: {
@@ -1261,12 +1275,7 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
     }
     break;
   case Status::Activity:
-    in_call.subtitle = screen.activity.c_str();
-    if (screen.activity == Tr("call.status.switching_media_path")) {
-      in_call.status_hint = Tr("call.hint.switching_media_path").c_str();
-    } else if (screen.activity == Tr("call.status.looking_for_another_path")) {
-      in_call.status_hint = Tr("call.hint.looking_for_another_path").c_str();
-    }
+    in_call.subtitle = screen.activity.c_str();  // setting up / finding a path; a live call's switch is Reconnecting
     break;
   case Status::Reconnecting:
     // k4: the call lost its path and waits for a new one; the call timer keeps running.
@@ -1282,7 +1291,8 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
     in_call.subtitle = Tr("call.status.disconnected").c_str();
     break;
   case Status::SendingOnly:
-    in_call.subtitle = Tr(media_hint_.SendingOnlyKey(in_call.video)).c_str();
+    // The quality hint line says "Connecting voice…" / "Your mic isn't sending"; the status line keeps the timer.
+    in_call.subtitle = in_call.elapsed.empty() ? Tr("call.status.connected").c_str() : in_call.elapsed;
     break;
   case Status::Connected:
     in_call.subtitle = in_call.elapsed.empty() ? Tr("call.status.connected").c_str() : in_call.elapsed;
@@ -1734,12 +1744,11 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
   } else if (starting_video) {
     in_call.remote_placeholder = Tr("call.placeholder.starting_video").c_str();
   } else if (peer_on_hold_) {
-    in_call.remote_placeholder = Tr("call.placeholder.on_hold").c_str();
+    // The "stepped away" pill and the status line say it; a third copy in the stage centre is dropped (#181).
+    in_call.remote_placeholder = "";
   } else if (have_peer_video_flag && !peer_camera_on) {
     in_call.remote_placeholder =
         Tr(peer_video_paused_ ? "call.placeholder.camera_paused" : "call.placeholder.camera_off").c_str();
-  } else if (mesh_messaging_failed) {
-    in_call.remote_placeholder = Tr("call.status.couldnt_connect").c_str();
   } else {
     in_call.remote_placeholder = "";
   }
@@ -1875,10 +1884,10 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
        backend->MediaStatus() == CallMediaStatus::DegradedTxOnly);
   // Reconnecting says it all: no path means no audio either way.
   if (media_broken && !(backend && backend->Available() && backend->MediaStatus() == CallMediaStatus::Reconnecting)) {
-    if (const char* hint_key = media_hint_.KeyFor(view.asymmetry, in_call.video); hint_key && hint_key[0]) {
-      in_call.subtitle = Tr(hint_key).c_str();
-    } else if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key &&
-                                                                              label_key[0]) {
+    // The quality hint line carries the sentence when there is one (#181, not the same text twice); else the label.
+    const char* hint_key = media_hint_.KeyFor(view.asymmetry, in_call.video);
+    if (const char* label_key = CallPathQualityLabelKey(view.quality);
+        (!hint_key || !hint_key[0]) && label_key && label_key[0]) {
       in_call.subtitle = Tr(label_key).c_str();
     }
   }
@@ -2069,7 +2078,6 @@ bool CallController::RenderDemoScene() {
   if (peer_on_hold) {
     in_call_.subtitle =
         Tr("call.status.on_hold_peer_named", {{"name", DisplayNameForIdentity(f.screen.peer_identity)}}).c_str();
-    in_call_.remote_placeholder = Tr("call.placeholder.on_hold").c_str();
   }
   MediaEngineHealth engine;  // the scene's made-up levels, for the speaking rings and the spotlight
   for (const auto& [identity, level] : f.levels) {

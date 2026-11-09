@@ -18,6 +18,7 @@ pp_browser_add_feature_library(pp_gui
     chat/ChatThreadChrome.cpp
     chat/ChatTranscriptScroller.cpp
     chat/ChatActionLabel.cpp
+    chat/ActionNoticeText.cpp
     chat/DeliveryNoticeText.cpp
     chat/MessageTimeLabel.cpp
     chat/MessagingReadyTasks.cpp
@@ -59,7 +60,9 @@ pp_browser_add_feature_library(pp_gui
     shell/DeferredStartup.cpp
     shell/DocumentLoader.cpp
     shell/RmlMount.cpp
+    shell/MascotFigure.cpp
     shell/ShellAiDot.cpp
+    shell/ShellHomeMascot.cpp
     shell/ShellCallChromeGesture.cpp
     shell/ShellCallChromeRml.cpp
     shell/ShellLayoutRml.cpp

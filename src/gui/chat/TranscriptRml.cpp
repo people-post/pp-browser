@@ -1,4 +1,5 @@
 #include "gui/chat/TranscriptRml.h"
+#include "gui/chat/EmojiOnlyScale.h"
 
 #include "gui/chat/ChatActionLabel.h"
 #include "gui/chat/DeliveryNoticeText.h"
@@ -134,6 +135,23 @@ std::optional<std::string> ReceiveFailureLine(const ThreadMessage& message) {
   return ReceiveFailureText(*reason, detail->getString("sender").value_or(""), detail->getString("family").value_or(""));
 }
 
+/** A local "this message did not go out" line under a message: worded from its payload, in the reader's language. */
+std::optional<std::string> SendFailureLine(const ThreadMessage& message) {
+  const auto reason = SendFailureRowReason(message);
+  if (!reason) {
+    return std::nullopt;
+  }
+  if (*reason == kGroupMembersMissedWire) {
+    return GroupMembersMissedText();
+  }
+  return SendFailureText(SendFailureFromWire(*reason).value_or(SendFailure::Unknown));
+}
+
+/** A system row's stored text; a line stored in English before shows in the UI language. */
+std::string StoredSystemText(const ThreadMessage& message) {
+  return LegacySystemLineText(message.text).value_or(message.text);
+}
+
 /** The words of a call summary row: the duration, or the outcome's word; a group call says so first. */
 std::string CallSummaryRowText(const CallSummaryRow& row) {
   using Outcome = CallSummaryRow::Outcome;
@@ -191,7 +209,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     }
     // A feature's message: its own line, names included, else the message's text.
     const auto line = facts.control_line ? facts.control_line(message) : std::nullopt;
-    return SystemLineRml(line.value_or(message.text));
+    return SystemLineRml(line.value_or(StoredSystemText(message)));
   }
 
   const auto control_type = GroupMembershipCodec::ControlTypeFromMessage(message);
@@ -207,7 +225,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
       if (!group.empty() && *resolution == InviteStatus::Declined) {
         return SystemLineRml(Tr("chat.group_invite.declined", {{"group", group}}));
       }
-      return SystemLineRml(message.text);
+      return SystemLineRml(StoredSystemText(message));
     }
     const std::string title =
         invite && !invite->group_title.empty()
@@ -238,7 +256,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   }
   if (control_type && *control_type == GroupMembershipControlType::GroupOwnerUnreachable) {
     if (GroupMembershipCodec::IsOwnerUnreachableResolved(message)) {
-      return SystemLineRml(message.text);
+      return SystemLineRml(StoredSystemText(message));
     }
     const std::string body = Tr("chat.group_owner_unreachable.body");
     std::string html = "<div class=\"chat-card chat-group-invite\"><h3 class=\"heading-3\">" +
@@ -271,7 +289,10 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   if (PskRotateCodec::IsPskRotateMessage(message) && message.sender_contact_id != kLocalSelfContactId) {
     return SystemLineRml(Tr("chat.psk_rotate_notice"));
   }
-  return SystemLineRml(message.text);
+  if (auto failure = SendFailureLine(message)) {
+    return SystemLineRml(*failure);
+  }
+  return SystemLineRml(StoredSystemText(message));
 }
 
 std::string ContactCardRml(const ThreadMessage& message) {
@@ -341,8 +362,19 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
           ? DecideVoiceBubble(fields->mime, fields->filename, fields->byte_length, facts.voice_max_seconds)
           : VoiceBubbleView{};
   if (voice.bubble) {
+    VoiceBubbleFace face;
+    face.ours = message.sender_contact_id == kLocalSelfContactId;
+    const std::string name = facts.sender_label ? facts.sender_label(message.sender_contact_id) : std::string();
+    const AvatarGlyph glyph = MakeAvatarGlyph(
+        name, facts.sender_stable_id ? facts.sender_stable_id(message.sender_contact_id) : std::string());
+    face.letter = glyph.letter;
+    face.tone = glyph.tone;
+    if (facts.sender_icon) {
+      face.icon_path = facts.sender_icon(message.sender_contact_id);
+    }
+    face.clock = MessageClockLabel(message.timestamp);
     return VoiceBubbleRml(message.id, JsArgInAttribute(message.id), voice.duration_ms,
-                          facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
+                          facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{}, face);
   }
   if (ready && facts.audio_files_play && IsAudioFileAttachment(fields->mime, fields->filename) &&
       (!local_path.empty() || view.on_demand)) {
@@ -357,17 +389,22 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
                               facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
   }
   if (inline_image) {
-    // A tap opens the full picture in the system viewer (zoomable). The bubble shows it fitted inside 200 x 240dp:
+    // A tap opens the full picture in the system viewer (zoomable). The bubble shows it fitted inside 280 x 320dp:
     // its size is given, so the frame round it is laid out for that size and never for the file's own.
     // The engine does not round an <img>, so a clip box with the same size and rounded corners holds it.
     const PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height);
-    html += "<div class=\"chat-attachment-clip\"";
     if (fit.width_dp > 0) {
-      html += " style=\"width:" + std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp\"";
+      html += "<div class=\"chat-attachment-clip\" style=\"width:" + std::to_string(fit.width_dp) +
+              "dp;height:" + std::to_string(fit.height_dp) + "dp\"";
+    } else {
+      html += "<div class=\"chat-attachment-clip chat-attachment-clip--auto\"";  // unknown size: the stylesheet fills the box
     }
     html += "><img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"";
     if (fit.width_dp > 0) {
-      html += " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.height_dp) + "\"";
+      html += " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.image_height_dp) + "\"";
+      if (fit.image_offset_dp > 0) {
+        html += " style=\"margin-top:-" + std::to_string(fit.image_offset_dp) + "dp\"";  // a tall picture shows its middle
+      }
     }
     html += " data-event-click=\"open_picture('" + JsArgInAttribute(message.id) + "','" + JsArgInAttribute(local_path) +
             "')\"/></div>";
@@ -383,12 +420,15 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     if (!poster_path.empty()) {
       PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height);
       if (fit.width_dp <= 0) {
-        fit = {216, 122};
+        fit = {216, 122, 122, 0};
       }
       html += "<div class=\"chat-attachment-clip chat-attachment-video-frame\" style=\"width:" +
               std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp\" " + open_click + ">";
       html += "<img class=\"chat-attachment-video-poster\" src=\"" + StructuredTextParser::EscapeText(poster_path) +
-              "\" width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.height_dp) + "\"/>";
+              "\" width=\"" + std::to_string(fit.width_dp) + "\" height=\"" +
+              std::to_string(fit.image_height_dp > 0 ? fit.image_height_dp : fit.height_dp) + "\"" +
+              (fit.image_offset_dp > 0 ? " style=\"margin-top:-" + std::to_string(fit.image_offset_dp) + "dp\"" : "") +
+              "/>";
       html += play_disc;
       html += "</div>";
     } else {
@@ -600,7 +640,15 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   if (!clock.empty()) {
     text_rml += "<div class=\"bubble-time\">" + clock + "</div>";
   }
-  std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + text_rml + "</div>";
+  // Only emoji (no quote, 1-6 of them): drawn large without a bubble (EmojiOnlyScale).
+  std::string emoji_class;
+  if (!SplitQuoteReply(message.text)) {
+    const EmojiScale scale = EmojiOnlyScale(message.text);
+    if (scale != EmojiScale::None) {
+      emoji_class = scale == EmojiScale::ExtraLarge ? " bubble-emoji bubble-emoji--xl" : " bubble-emoji";
+    }
+  }
+  std::string body = badges + "<div class=\"bubble " + bubble_class + emoji_class + "\" selectable=\"text\">" + text_rml + "</div>";
   body = HydrateChatActions(body, message.chat_actions);
   // __ENTRY__ is only ever introduced by HydrateChatActions' own template above; never treat a
   // literal "__ENTRY__" typed into message.text (peer-controlled) as a placeholder to fill in.
@@ -701,10 +749,19 @@ PictureBubbleSize FitPictureInBubble(const int width_px, const int height_px) {
   if (width_px <= 0 || height_px <= 0) {
     return {};
   }
-  const double scale = std::min({1.0, static_cast<double>(kPictureBubbleMaxWidthDp) / width_px,
-                                 static_cast<double>(kPictureBubbleMaxHeightDp) / height_px});
-  return {std::max(1, static_cast<int>(std::lround(width_px * scale))),
-          std::max(1, static_cast<int>(std::lround(height_px * scale)))};
+  const double width_scale = static_cast<double>(kPictureBubbleMaxWidthDp) / width_px;
+  double scale = std::min(1.0, width_scale);
+  const int short_side = std::min(width_px, height_px);
+  if (short_side * scale < kPictureBubbleMinShortSideDp) {
+    // A small picture grows to a sane short side, but never past the box width.
+    scale = std::min(width_scale, static_cast<double>(kPictureBubbleMinShortSideDp) / short_side);
+  }
+  PictureBubbleSize out;
+  out.width_dp = std::max(1, static_cast<int>(std::lround(width_px * scale)));
+  out.image_height_dp = std::max(1, static_cast<int>(std::lround(height_px * scale)));
+  out.height_dp = std::min(out.image_height_dp, kPictureBubbleMaxHeightDp);
+  out.image_offset_dp = (out.image_height_dp - out.height_dp) / 2;
+  return out;
 }
 
 std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,

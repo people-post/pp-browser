@@ -4,6 +4,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/error/AppError.h"
 #include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/delivery/DeliveryNotice.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "lib/messaging/ConversationSummaryCodec.h"
 #include "lib/messaging/GroupMembershipCodec.h"
@@ -317,6 +318,11 @@ Roe<int64_t> SqliteThreadStore::NextDisplayOrder(sqlite3* thread_db) const {
 
 Roe<void> SqliteThreadStore::UpdateThreadCatalogFromMessage(const ThreadMessage& message,
                                                             const bool increment_unread) const {
+  // A local "this message did not go out" line is a note under the message, not a new message: the chat's
+  // preview and place in the list stay as the failed message left them.
+  if (SendFailureRowReason(message)) {
+    return {};
+  }
   std::lock_guard lock(db_.profile_mutex());
   // A membership event in a direct chat is not something to read there: it neither moves the chat up the list
   // nor becomes its preview (the last message the user can see stays).

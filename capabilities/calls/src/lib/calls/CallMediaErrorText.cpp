@@ -1,5 +1,7 @@
 #include "lib/calls/CallMediaErrorText.h"
 
+#include "common/Localized.h"
+
 namespace pbr {
 
 namespace {
@@ -27,7 +29,36 @@ bool LooksTechnical(const std::string& text) {
                             Has(text, "signaling") || Has(text, "relay") || Has(text, "circuit"));
 }
 
+/** The locale keys of the notices the calls feature words itself (the one place to extend). */
+constexpr const char* kLocalizedNoticeKeys[] = {
+    "call.notice.removed",
+    "call.notice.left_group",
+    "call.notice.call_ended",
+    "call.error.media_unavailable",
+};
+
 } // namespace
+
+bool CallNoticeIsLocalizedCopy(const std::string& text) {
+  if (text.empty()) {
+    return false;
+  }
+  for (const char* key : kLocalizedNoticeKeys) {
+    if (text == Localized(key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool CallMediaErrorShownOnCallScreen(const std::string& technical) {
+  // K014: a call that was connected and lost its media for good (no path within the reconnect window, the link
+  // gone) shows "Call dropped" on the failed page; giving up before the call ever connected
+  // (CallDirectPath SurfaceConnectFailed, e.g. "mesh connect timeout") shows "Couldn't reach them" there.
+  // Saying either again as a toast or banner is a duplicate (#181); the raw reason stays in the log.
+  return Has(technical, "call dropped") || Has(technical, "no path within the reconnect window") ||
+         Has(technical, "mesh connect");
+}
 
 const char* CallMediaErrorUserKey(const std::string& technical) {
   // A sentence with non-ASCII characters is already user copy (a feature's Localized() line).
@@ -36,16 +67,6 @@ const char* CallMediaErrorUserKey(const std::string& technical) {
   }
   if (Has(technical, "payment_unavailable")) {
     return nullptr;  // PaymentErrorUserMessage owns these
-  }
-  // K014: a call that was connected and lost its media for good (no path within the reconnect
-  // window, the link gone): it dropped — never "couldn't reach them".
-  if (Has(technical, "call dropped") || Has(technical, "no path within the reconnect window")) {
-    return "call.error.call_dropped";
-  }
-  // Giving up before the call ever connected (CallDirectPath SurfaceConnectFailed, e.g. "mesh connect timeout"):
-  // the user sees plain words, the raw reason stays in the log (B-2026-11-05, Kenneth phone test).
-  if (Has(technical, "mesh connect")) {
-    return "call.error.connect_failed";
   }
   if (!LooksTechnical(technical)) {
     return nullptr;

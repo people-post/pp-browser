@@ -260,6 +260,44 @@ TEST_F(GraceUnlockTest, RememberWithoutAClockWritesNothing) {
   EXPECT_TRUE(NothingLeft());
 }
 
+// A015: "Always" never runs out within a boot (same entry format), but another boot still reads as expired.
+TEST_F(GraceUnlockTest, AlwaysIsOpenHoursLaterOnTheSameBoot) {
+  ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), kUnlockGraceAlways, Clock(1000, 7))));
+  EXPECT_EQ(store_.items.at(grace_->EntryName()).size(), 57u) << "the entry format does not change";
+  for (const int64_t later : {int64_t{1000 + 3600}, int64_t{1000 + 30 * 3600}, int64_t{1} << 40}) {
+    auto found = grace_->TryUnlock(Clock(later, 7));
+    ASSERT_TRUE(static_cast<bool>(found));
+    EXPECT_EQ(found->status, GraceUnlock::Status::Found) << later;
+    EXPECT_EQ(found->dek, TestDek());
+  }
+}
+
+TEST_F(GraceUnlockTest, AlwaysIsExpiredOnAnotherBoot) {
+  ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), kUnlockGraceAlways, Clock(1000, 7))));
+  auto found = grace_->TryUnlock(Clock(1001, 8));
+  ASSERT_TRUE(static_cast<bool>(found));
+  EXPECT_EQ(found->status, GraceUnlock::Status::Expired);
+  EXPECT_FALSE(BothPresent()) << "both pieces are deleted, as for any expiry";
+}
+
+TEST_F(GraceUnlockTest, TouchCanSwitchAWindowToAlwaysAndBack) {
+  ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), 15, Clock(1000, 7))));
+  ASSERT_TRUE(static_cast<bool>(grace_->Touch(kUnlockGraceAlways, Clock(1100, 7))));
+  auto found = grace_->TryUnlock(Clock(1000000, 7));
+  ASSERT_TRUE(static_cast<bool>(found));
+  EXPECT_EQ(found->status, GraceUnlock::Status::Found);
+  ASSERT_TRUE(static_cast<bool>(grace_->Touch(5, Clock(1000000, 7))));
+  found = grace_->TryUnlock(Clock(1000000 + 301, 7));
+  ASSERT_TRUE(static_cast<bool>(found));
+  EXPECT_EQ(found->status, GraceUnlock::Status::Expired);
+}
+
+TEST_F(GraceUnlockTest, OtherNegativeValuesForgetLikeZero) {
+  ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), 15, Clock(1000))));
+  ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), -2, Clock(1100))));
+  EXPECT_FALSE(BothPresent());
+}
+
 TEST_F(GraceUnlockTest, TouchMovesTheEnd) {
   ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), 15, Clock(1000))));
   ASSERT_TRUE(static_cast<bool>(grace_->Touch(15, Clock(1600)))); // new end 2500
@@ -449,6 +487,21 @@ TEST_F(ProfileSecretsEngineGraceTest, RememberNeedsAnUnlockedVault) {
   engine_.Lock();
   EXPECT_FALSE(static_cast<bool>(engine_.RememberGrace(15)));
   EXPECT_TRUE(store_.items.empty());
+}
+
+TEST_F(ProfileSecretsEngineGraceTest, ApplyingAWindowWithoutAnEntryWritesOne) {
+  Attach();
+  ASSERT_TRUE(static_cast<bool>(engine_.TouchGrace(15)));
+  EXPECT_TRUE(store_.items.empty()) << "a touch never creates an entry";
+  ASSERT_TRUE(static_cast<bool>(engine_.ApplyGraceWindow(kUnlockGraceAlways)));
+  EXPECT_FALSE(store_.items.empty());
+  engine_.Lock();
+  auto got = engine_.TryGraceUnlock();
+  ASSERT_TRUE(static_cast<bool>(got));
+  EXPECT_EQ(got->status, GraceUnlock::Status::Found);
+
+  ASSERT_TRUE(static_cast<bool>(engine_.ApplyGraceWindow(0)));
+  EXPECT_TRUE(store_.items.empty()) << "off forgets";
 }
 
 // The transfer code's PIN check (#113): the vault is opened on the side, the unlocked state is left as it was.

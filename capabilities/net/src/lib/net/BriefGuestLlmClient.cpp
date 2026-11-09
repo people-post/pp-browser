@@ -1,4 +1,5 @@
 #include "lib/net/BriefGuestLlmClient.h"
+#include "common/Localized.h"
 
 #include "foundation/error/AppError.h"
 #include "lib/net/HttpClient.h"
@@ -45,7 +46,7 @@ Roe<BriefGuestLlmMintResult> MintBriefGuestLlmKey(const std::string& llm_base_ur
   }
   if (response->status_code == 429) {
     return AppError::Network(Err::Network::HttpError, "Guest LLM mint rate limited")
-        .WithUser("Brief free tier is temporarily rate-limited — try again later.");
+        .WithUser(Localized("chat.hint.brief_unavailable_temp"));
   }
   if (response->status_code < 200 || response->status_code >= 300) {
     std::string detail = "Guest LLM mint failed (HTTP " + std::to_string(response->status_code) + ")";

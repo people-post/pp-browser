@@ -66,8 +66,9 @@ select selectbox option {
 }
 
 /* Floating Chrome — compact shell materials; theme colors in colors-*.rcss.
-   Default: opaque elevated surfaces. At most one bar uses backdrop frost per frame
-   (see ShellInterruption::ResolveFrostSurface). */
+   Default: opaque elevated surfaces. At most one bar per position (top, bottom) uses backdrop frost per frame, so
+   two blurs at most: the chat view's header + composer, a tab page's nav bar + tab bar
+   (see ShellInterruption::ResolveFrost). */
 .surface-chrome {
   backdrop-filter: none;
 }
@@ -91,6 +92,27 @@ select selectbox option {
 .shell-transient-chrome.surface-chrome--solid,
 .shell-sheet-compact-chrome.surface-chrome--solid,
 .shell-composer-mount.surface-chrome--solid {
+  backdrop-filter: none;
+}
+
+/* A bar's material (ShellLayoutRml BarMaterial): the first child of a floating bar that carries the bar colour and,
+   on the frosted surface of its position (top / bottom, ShellInterruption::ResolveFrost), the blur. The engine draws no
+   backdrop blur on a bar that has a z-index and children itself, so the blur lives here. The bar's other children are
+   positioned (relative) so they paint above it. */
+.bar-material {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.bar-material--frost {
+  backdrop-filter: blur(20px);
+}
+
+/* The chat header's and the composer's own surface is clear; the material child carries colour and blur. */
+.shell-chat-overlay-chrome.surface-chrome--frost {
   backdrop-filter: none;
 }
 
@@ -1801,11 +1823,11 @@ select selectbox option {
 }
 
 .ai-dot--sway .ai-dot-figure {
-  animation: 1.2s sine-in-out ai-dot-sway;
+  animation: 1.56s sine-in-out ai-dot-sway;
 }
 
 .ai-dot--calm.ai-dot--sway .ai-dot-figure {
-  animation: 1.2s sine-in-out ai-dot-sway-calm;
+  animation: 1.56s sine-in-out ai-dot-sway-calm;
 }
 
 /* Float: the mockup's float (translateY 0, -10, 0 units; calm floatC -5), once for 2.5 s instead of a loop, and back
@@ -1828,11 +1850,11 @@ select selectbox option {
 }
 
 .ai-dot--float .ai-dot-figure {
-  animation: 2.5s sine-in-out ai-dot-float;
+  animation: 3.25s sine-in-out ai-dot-float;
 }
 
 .ai-dot--calm.ai-dot--float .ai-dot-figure {
-  animation: 2.5s sine-in-out ai-dot-float-calm;
+  animation: 3.25s sine-in-out ai-dot-float-calm;
 }
 
 /* Blink. */
@@ -1845,7 +1867,7 @@ select selectbox option {
 
 .ai-dot--blink .ai-dot-eyes-front,
 .ai-dot--blink .ai-dot-eyes-back {
-  animation: 0.5s quadratic-in-out ai-dot-blink;
+  animation: 0.65s quadratic-in-out ai-dot-blink;
 }
 
 /* Look: the mockup's idle glance, the two look at each other (front eyes 18, -12; back eyes -10, 8) for a moment. */
@@ -1864,11 +1886,11 @@ select selectbox option {
 }
 
 .ai-dot--look .ai-dot-eyes-front {
-  animation: 2s sine-in-out ai-dot-look-front;
+  animation: 2.6s sine-in-out ai-dot-look-front;
 }
 
 .ai-dot--look .ai-dot-eyes-back {
-  animation: 2s sine-in-out ai-dot-look-back;
+  animation: 2.6s sine-in-out ai-dot-look-back;
 }
 
 /* Nod: the partner's (talk, listen) and both bubbles' while listening; 3deg and 4 units up. */
@@ -2183,15 +2205,15 @@ select selectbox option {
 .ai-dot--talk .ai-dot-mouth {
   display: block;
   opacity: 0;
-  animation: 1.68s sine-in-out ai-dot-talk-mouth;
+  animation: 2.184s sine-in-out ai-dot-talk-mouth;
 }
 
 .ai-dot--talk .ai-dot-eyes-front {
-  animation: 1.68s sine-in-out ai-dot-talk-eyes;
+  animation: 2.184s sine-in-out ai-dot-talk-eyes;
 }
 
 .ai-dot--talk .ai-dot-back {
-  animation: 0.84s sine-in-out 2 ai-dot-nod;
+  animation: 1.092s sine-in-out 2 ai-dot-nod;
 }
 
 .ai-dot--talk .ai-dot-eq,
@@ -2201,27 +2223,27 @@ select selectbox option {
 }
 
 .ai-dot--talk .ai-dot-eq-1 {
-  animation: 1.68s linear-in-out ai-dot-eq-1;
+  animation: 2.184s linear-in-out ai-dot-eq-1;
 }
 
 .ai-dot--talk .ai-dot-eq-2 {
-  animation: 1.68s linear-in-out ai-dot-eq-2;
+  animation: 2.184s linear-in-out ai-dot-eq-2;
 }
 
 .ai-dot--talk .ai-dot-eq-3 {
-  animation: 1.68s linear-in-out ai-dot-eq-3;
+  animation: 2.184s linear-in-out ai-dot-eq-3;
 }
 
 .ai-dot--talk .ai-dot-line-1 {
-  animation: 1s cubic-out ai-dot-line;
+  animation: 1.3s cubic-out ai-dot-line;
 }
 
 .ai-dot--talk .ai-dot-line-2 {
-  animation: 1s 0.34s cubic-out ai-dot-line;
+  animation: 1.3s 0.442s cubic-out ai-dot-line;
 }
 
 .ai-dot--talk .ai-dot-line-3 {
-  animation: 1s 0.68s cubic-out ai-dot-line;
+  animation: 1.3s 0.884s cubic-out ai-dot-line;
 }
 
 /* Shy: the front bubble leans away and peeks aside with its eyes half shut and pink cheeks, the partner ducks down
@@ -2269,29 +2291,29 @@ select selectbox option {
 }
 
 .ai-dot--shy .ai-dot-front {
-  animation: 1.6s sine-in-out ai-dot-shy-front;
+  animation: 2.08s sine-in-out ai-dot-shy-front;
 }
 
 .ai-dot--calm.ai-dot--shy .ai-dot-front {
-  animation: 1.6s sine-in-out ai-dot-shy-front-calm;
+  animation: 2.08s sine-in-out ai-dot-shy-front-calm;
 }
 
 .ai-dot--shy .ai-dot-back {
-  animation: 1.6s sine-in-out ai-dot-shy-back;
+  animation: 2.08s sine-in-out ai-dot-shy-back;
 }
 
 .ai-dot--shy .ai-dot-eyes-front {
-  animation: 1.6s sine-in-out ai-dot-shy-eyes-front;
+  animation: 2.08s sine-in-out ai-dot-shy-eyes-front;
 }
 
 .ai-dot--shy .ai-dot-eyes-back {
-  animation: 1.6s sine-in-out ai-dot-shy-eyes-back;
+  animation: 2.08s sine-in-out ai-dot-shy-eyes-back;
 }
 
 .ai-dot--shy .ai-dot-blush {
   display: block;
   opacity: 0;
-  animation: 1.6s sine-in-out ai-dot-shy-blush;
+  animation: 2.08s sine-in-out ai-dot-shy-blush;
 }
 
 /* Wave: the front bubble waves its whole body with happy eyes and cheeks, the partner hops twice (34 and 22 units).
@@ -2338,25 +2360,25 @@ select selectbox option {
 }
 
 .ai-dot--wave .ai-dot-front {
-  animation: 1.6s sine-in-out ai-dot-wave;
+  animation: 2.08s sine-in-out ai-dot-wave;
 }
 
 .ai-dot--wave .ai-dot-back {
-  animation: 1.6s sine-in-out ai-dot-hop;
+  animation: 2.08s sine-in-out ai-dot-hop;
 }
 
 .ai-dot--wave .ai-dot-blush {
   display: block;
   opacity: 0;
-  animation: 1.6s linear-in-out ai-dot-glow-in;
+  animation: 2.08s linear-in-out ai-dot-glow-in;
 }
 
 .ai-dot--calm.ai-dot--wave .ai-dot-front {
-  animation: 2.2s sine-in-out ai-dot-tilt-calm;
+  animation: 2.86s sine-in-out ai-dot-tilt-calm;
 }
 
 .ai-dot--calm.ai-dot--wave .ai-dot-back {
-  animation: 2.2s sine-in-out ai-dot-hop-calm;
+  animation: 2.86s sine-in-out ai-dot-hop-calm;
 }
 
 /* Listen: it leans in a little bigger with big eyes, both bubbles nod out of step, and three signal arcs pulse one
@@ -2392,25 +2414,25 @@ select selectbox option {
 }
 
 .ai-dot--listen .ai-dot-figure {
-  animation: 2.4s sine-in-out ai-dot-lean;
+  animation: 3.12s sine-in-out ai-dot-lean;
 }
 
 .ai-dot--listen .ai-dot-front {
-  animation: 1.1s sine-in-out 2 ai-dot-nod;
+  animation: 1.43s sine-in-out 2 ai-dot-nod;
 }
 
 .ai-dot--listen .ai-dot-back {
-  animation: 1.1s 0.2s sine-in-out 2 ai-dot-nod;
+  animation: 1.43s 0.26s sine-in-out 2 ai-dot-nod;
 }
 
 .ai-dot--listen .ai-dot-eyes-front,
 .ai-dot--listen .ai-dot-eyes-back {
-  animation: 2.4s sine-in-out ai-dot-big-eyes;
+  animation: 3.12s sine-in-out ai-dot-big-eyes;
 }
 
 .ai-dot--calm.ai-dot--listen .ai-dot-eyes-front,
 .ai-dot--calm.ai-dot--listen .ai-dot-eyes-back {
-  animation: 2.4s sine-in-out ai-dot-big-eyes-calm;
+  animation: 3.12s sine-in-out ai-dot-big-eyes-calm;
 }
 
 .ai-dot--listen .ai-dot-arc,
@@ -2420,35 +2442,35 @@ select selectbox option {
 }
 
 .ai-dot--listen .ai-dot-arc-1 {
-  animation: 1s cubic-out 2 ai-dot-arc;
+  animation: 1.3s cubic-out 2 ai-dot-arc;
 }
 
 .ai-dot--listen .ai-dot-arc-2 {
-  animation: 1s 0.18s cubic-out 2 ai-dot-arc;
+  animation: 1.3s 0.234s cubic-out 2 ai-dot-arc;
 }
 
 .ai-dot--listen .ai-dot-arc-3 {
-  animation: 1s 0.36s cubic-out 2 ai-dot-arc;
+  animation: 1.3s 0.468s cubic-out 2 ai-dot-arc;
 }
 
 .ai-dot--listen .ai-dot-bar-1 {
-  animation: 2.4s linear-in-out ai-dot-bar-1;
+  animation: 3.12s linear-in-out ai-dot-bar-1;
 }
 
 .ai-dot--listen .ai-dot-bar-2 {
-  animation: 2.4s linear-in-out ai-dot-bar-2;
+  animation: 3.12s linear-in-out ai-dot-bar-2;
 }
 
 .ai-dot--listen .ai-dot-bar-3 {
-  animation: 2.4s linear-in-out ai-dot-bar-3;
+  animation: 3.12s linear-in-out ai-dot-bar-3;
 }
 
 .ai-dot--listen .ai-dot-bar-4 {
-  animation: 2.4s linear-in-out ai-dot-bar-4;
+  animation: 3.12s linear-in-out ai-dot-bar-4;
 }
 
 .ai-dot--listen .ai-dot-bar-5 {
-  animation: 2.4s linear-in-out ai-dot-bar-5;
+  animation: 3.12s linear-in-out ai-dot-bar-5;
 }
 
 /* Think: the eyes go up and right (front 22, -24; back 8, -12), the front bubble tips back a little, and a "typing"
@@ -2482,15 +2504,15 @@ select selectbox option {
 }
 
 .ai-dot--think .ai-dot-front {
-  animation: 2.4s sine-in-out ai-dot-think-front;
+  animation: 3.12s sine-in-out ai-dot-think-front;
 }
 
 .ai-dot--think .ai-dot-eyes-front {
-  animation: 2.4s sine-in-out ai-dot-think-eyes-front;
+  animation: 3.12s sine-in-out ai-dot-think-eyes-front;
 }
 
 .ai-dot--think .ai-dot-eyes-back {
-  animation: 2.4s sine-in-out ai-dot-think-eyes-back;
+  animation: 3.12s sine-in-out ai-dot-think-eyes-back;
 }
 
 .ai-dot--think .ai-dot-bubble,
@@ -2501,22 +2523,22 @@ select selectbox option {
 }
 
 .ai-dot--think .ai-dot-bubble {
-  animation: 2.4s linear-in-out ai-dot-bubble;
+  animation: 3.12s linear-in-out ai-dot-bubble;
 }
 
 .ai-dot--think .ai-dot-tdot-1,
 .ai-dot--think .ai-dot-ddot-1 {
-  animation: 2.4s linear-in-out ai-dot-tdot-1;
+  animation: 3.12s linear-in-out ai-dot-tdot-1;
 }
 
 .ai-dot--think .ai-dot-tdot-2,
 .ai-dot--think .ai-dot-ddot-2 {
-  animation: 2.4s linear-in-out ai-dot-tdot-2;
+  animation: 3.12s linear-in-out ai-dot-tdot-2;
 }
 
 .ai-dot--think .ai-dot-tdot-3,
 .ai-dot--think .ai-dot-ddot-3 {
-  animation: 2.4s linear-in-out ai-dot-tdot-3;
+  animation: 3.12s linear-in-out ai-dot-tdot-3;
 }
 
 /* Five (high five): the two pull apart and bump together, with happy eyes, and a star bursts where they meet. C keeps
@@ -2554,11 +2576,11 @@ select selectbox option {
 }
 
 .ai-dot--five .ai-dot-front {
-  animation: 1.5s cubic-in-out ai-dot-five-front;
+  animation: 1.95s cubic-in-out ai-dot-five-front;
 }
 
 .ai-dot--five .ai-dot-back {
-  animation: 1.5s cubic-in-out ai-dot-five-back;
+  animation: 1.95s cubic-in-out ai-dot-five-back;
 }
 
 .ai-dot--five .ai-dot-star,
@@ -2568,11 +2590,11 @@ select selectbox option {
 }
 
 .ai-dot--five .ai-dot-star {
-  animation: 1.5s cubic-out ai-dot-star;
+  animation: 1.95s cubic-out ai-dot-star;
 }
 
 .ai-dot--five .ai-dot-spark {
-  animation: 1.5s cubic-out ai-dot-spark;
+  animation: 1.95s cubic-out ai-dot-spark;
 }
 
 /* Happy: the two jump one after the other (110 units, squash and stretch) with happy eyes and pink cheeks, and two
@@ -2609,19 +2631,19 @@ select selectbox option {
 }
 
 .ai-dot--happy .ai-dot-front {
-  animation: 1.3s quadratic-in-out ai-dot-jump;
+  animation: 1.69s quadratic-in-out ai-dot-jump;
 }
 
 .ai-dot--happy .ai-dot-back {
-  animation: 1.3s 0.16s quadratic-in-out ai-dot-jump;
+  animation: 1.69s 0.208s quadratic-in-out ai-dot-jump;
 }
 
 .ai-dot--calm.ai-dot--happy .ai-dot-front {
-  animation: 1.6s sine-in-out ai-dot-nod-calm;
+  animation: 2.08s sine-in-out ai-dot-nod-calm;
 }
 
 .ai-dot--calm.ai-dot--happy .ai-dot-back {
-  animation: 1.6s 0.2s sine-in-out ai-dot-nod-calm;
+  animation: 2.08s 0.26s sine-in-out ai-dot-nod-calm;
 }
 
 .ai-dot--happy .ai-dot-blush,
@@ -2632,19 +2654,19 @@ select selectbox option {
 }
 
 .ai-dot--happy .ai-dot-blush {
-  animation: 1.8s linear-in-out ai-dot-glow-in;
+  animation: 2.34s linear-in-out ai-dot-glow-in;
 }
 
 .ai-dot--happy .ai-dot-heart-1 {
-  animation: 1.3s cubic-out ai-dot-heart;
+  animation: 1.69s cubic-out ai-dot-heart;
 }
 
 .ai-dot--happy .ai-dot-heart-2 {
-  animation: 1.3s 0.5s cubic-out ai-dot-heart;
+  animation: 1.69s 0.65s cubic-out ai-dot-heart;
 }
 
 .ai-dot--happy .ai-dot-check {
-  animation: 1.6s cubic-out ai-dot-check;
+  animation: 2.08s cubic-out ai-dot-check;
 }
 
 /* Private ("I don't read your chats"): it shuts its eyes, the front bubble turns away, the partner steps aside, and a
@@ -2679,22 +2701,22 @@ select selectbox option {
 }
 
 .ai-dot--private .ai-dot-front {
-  animation: 2s sine-in-out ai-dot-private-front;
+  animation: 2.6s sine-in-out ai-dot-private-front;
 }
 
 .ai-dot--private .ai-dot-back {
-  animation: 2s sine-in-out ai-dot-private-back;
+  animation: 2.6s sine-in-out ai-dot-private-back;
 }
 
 .ai-dot--private .ai-dot-eyes-front {
-  animation: 2s sine-in-out ai-dot-private-eyes;
+  animation: 2.6s sine-in-out ai-dot-private-eyes;
 }
 
 .ai-dot--private .ai-dot-lock,
 .ai-dot--private .ai-dot-dlock {
   display: block;
   opacity: 0;
-  animation: 2s cubic-out ai-dot-lock-in;
+  animation: 2.6s cubic-out ai-dot-lock-in;
 }
 
 /* Sleep (AiDotModel: only after two minutes without a touch, then it stays asleep): eyes shut, the front bubble nods
@@ -2762,23 +2784,23 @@ select selectbox option {
 }
 
 .ai-dot--sleep .ai-dot-front {
-  animation: 4s sine-in-out ai-dot-doze;
+  animation: 5.2s sine-in-out ai-dot-doze;
 }
 
 .ai-dot--sleep .ai-dot-figure {
-  animation: 4s sine-in-out ai-dot-breathe;
+  animation: 5.2s sine-in-out ai-dot-breathe;
 }
 
 .ai-dot--calm.ai-dot--sleep .ai-dot-figure {
-  animation: 4s sine-in-out ai-dot-breathe-calm;
+  animation: 5.2s sine-in-out ai-dot-breathe-calm;
 }
 
 .ai-dot--plain.ai-dot--sleep .ai-dot-figure {
-  animation: 4s sine-in-out ai-dot-fade-plain;
+  animation: 5.2s sine-in-out ai-dot-fade-plain;
 }
 
 .ai-dot--calm.ai-dot--sleep .ai-dot-shut {
-  animation: 4s sine-in-out ai-dot-dim-calm;
+  animation: 5.2s sine-in-out ai-dot-dim-calm;
 }
 
 .ai-dot--sleep .ai-dot-z {
@@ -2787,15 +2809,15 @@ select selectbox option {
 }
 
 .ai-dot--sleep .ai-dot-z-1 {
-  animation: 2.4s cubic-out ai-dot-z;
+  animation: 3.12s cubic-out ai-dot-z;
 }
 
 .ai-dot--sleep .ai-dot-z-2 {
-  animation: 2.4s 0.8s cubic-out ai-dot-z;
+  animation: 3.12s 1.04s cubic-out ai-dot-z;
 }
 
 .ai-dot--sleep .ai-dot-z-3 {
-  animation: 2.4s 1.6s cubic-out ai-dot-z;
+  animation: 3.12s 2.08s cubic-out ai-dot-z;
 }
 
 /* Poke (a tap, before the panel opens): the front bubble squashes and wobbles, the eyes go wide. Calm: a small
@@ -2830,21 +2852,21 @@ select selectbox option {
 }
 
 .ai-dot--poke .ai-dot-front {
-  animation: 0.6s cubic-out ai-dot-poke;
+  animation: 0.78s cubic-out ai-dot-poke;
 }
 
 .ai-dot--poke .ai-dot-eyes-front,
 .ai-dot--poke .ai-dot-eyes-back {
-  animation: 0.6s cubic-out ai-dot-wide-eyes;
+  animation: 0.78s cubic-out ai-dot-wide-eyes;
 }
 
 .ai-dot--calm.ai-dot--poke .ai-dot-front {
-  animation: 0.45s cubic-out ai-dot-poke-calm;
+  animation: 0.585s cubic-out ai-dot-poke-calm;
 }
 
 .ai-dot--calm.ai-dot--poke .ai-dot-eyes-front,
 .ai-dot--calm.ai-dot--poke .ai-dot-eyes-back {
-  animation: 0.45s cubic-out ai-dot-wide-eyes-calm;
+  animation: 0.585s cubic-out ai-dot-wide-eyes-calm;
 }
 
 /* Pop (a tap on it tucked): while it slides out of the tuck it jumps once, the mockups' squash-and-stretch jump
@@ -2866,11 +2888,11 @@ select selectbox option {
 }
 
 .ai-dot--pop .ai-dot-figure {
-  animation: 0.7s quadratic-in-out ai-dot-pop;
+  animation: 0.91s quadratic-in-out ai-dot-pop;
 }
 
 .ai-dot--calm.ai-dot--pop .ai-dot-figure {
-  animation: 0.7s sine-in-out ai-dot-pop-calm;
+  animation: 0.91s sine-in-out ai-dot-pop-calm;
 }
 
 /* Happy eyes: the front ones while waving, all while giving five or happy; the calm looks keep theirs open for wave and
@@ -2896,6 +2918,347 @@ select selectbox option {
 .ai-dot--calm.ai-dot--five .ai-dot-hap,
 .ai-dot--calm.ai-dot--wave .ai-dot-blush {
   display: none;
+}
+
+/* The weekend looks (DEV/ui-mockups/mascot-weekend.html; classes `ai-dot--look-e/f/g` from the shell dot's binding and
+   ShellHomeMascot). They are the face looks (not calm) with their own motions where the mockup has them, and the same
+   lengths as AiDotModel, except G (Sunday), whose slower actions are AiDotModel::kTalkSlowMs, kWaveSlowMs, kFiveSlowMs,
+   kHappySlowMs, kPokeSlowMs and kFloatSlowMs. The mockup's endless loops (E's sway, G's breathing, the pompom, the steam)
+   are one timed action here: E's sway is its Float, G's breathing its Float and Sleep, the pompom swings and the steam
+   rises during G's Float and Sleep. Accessories are layers: E's glasses are in the eye groups (they follow the eyes'
+   keyframes, not the blink), F's cap and G's nightcap and pompom ride the front bubble, G's mug is part of the figure.
+   Mockup units: in a part or layer 1 unit is 0.0973%, in the figure 0.1111%. */
+.ai-dot-steam {
+  display: none;
+}
+
+.ai-dot-pom {
+  transform-origin: 18.3% 41%;
+}
+
+.ai-dot-steam-1 {
+  transform-origin: 68.7% 73.5%;
+}
+
+.ai-dot-steam-2 {
+  transform-origin: 71.8% 73.5%;
+}
+
+.ai-dot--blink .ai-dot-glasses {
+  animation: none;
+}
+
+/* E (Friday): a lazy sway, a gentle wave, a nod instead of the jump. */
+@keyframes ai-dot-lazy-e {
+  0% { transform: translate(0%, 0%) rotate(0deg); }
+  30% { transform: translate(-0.56%, 0%) rotate(-4deg); }
+  70% { transform: translate(0.67%, -0.33%) rotate(2deg); }
+  100% { transform: translate(0%, 0%) rotate(0deg); }
+}
+
+@keyframes ai-dot-wave-e {
+  0% { transform: rotate(0deg); }
+  22% { transform: rotate(-5deg); }
+  48% { transform: rotate(4deg); }
+  74% { transform: rotate(-4deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-hop-e {
+  0% { transform: translateY(0%); }
+  25% { transform: translateY(-1.36%); }
+  50% { transform: translateY(0%); }
+  100% { transform: translateY(0%); }
+}
+
+@keyframes ai-dot-nod-e {
+  0% { transform: translateY(0%) rotate(0deg); }
+  35% { transform: translateY(1.17%) rotate(5deg); }
+  65% { transform: translateY(0.19%) rotate(-1deg); }
+  100% { transform: translateY(0%) rotate(0deg); }
+}
+
+.ai-dot--look-e.ai-dot--float .ai-dot-figure {
+  animation: 3.25s sine-in-out ai-dot-lazy-e;
+}
+
+.ai-dot--look-e.ai-dot--wave .ai-dot-front {
+  animation: 2.08s sine-in-out ai-dot-wave-e;
+}
+
+.ai-dot--look-e.ai-dot--wave .ai-dot-back {
+  animation: 2.08s sine-in-out ai-dot-hop-e;
+}
+
+.ai-dot--look-e.ai-dot--happy .ai-dot-front {
+  animation: 2.08s sine-in-out ai-dot-nod-e;
+}
+
+.ai-dot--look-e.ai-dot--happy .ai-dot-back {
+  animation: 2.08s 0.26s sine-in-out ai-dot-nod-e;
+}
+
+/* F (Saturday): the liveliest: a big wave and higher hops, a bigger high five, a jump of 190 units, a flatter poke. */
+@keyframes ai-dot-wave-f {
+  0% { transform: rotate(0deg); }
+  15% { transform: rotate(-15deg); }
+  35% { transform: rotate(12deg); }
+  55% { transform: rotate(-15deg); }
+  75% { transform: rotate(9deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-hop-f {
+  0% { transform: translateY(0%); }
+  20% { transform: translateY(-6.03%); }
+  40% { transform: translateY(0%); }
+  60% { transform: translateY(0%); }
+  70% { transform: translateY(-3.7%); }
+  80% { transform: translateY(0%); }
+  100% { transform: translateY(0%); }
+}
+
+@keyframes ai-dot-five-front-f {
+  0% { transform: translate(0%, 0%) rotate(0deg); }
+  30% { transform: translate(-3.5%, 3.31%) rotate(-10deg); }
+  48% { transform: translate(1.36%, -1.75%) rotate(4deg); }
+  62% { transform: translate(0%, 0%) rotate(0deg); }
+  100% { transform: translate(0%, 0%) rotate(0deg); }
+}
+
+@keyframes ai-dot-five-back-f {
+  0% { transform: translate(0%, 0%) rotate(0deg); }
+  30% { transform: translate(6.03%, -6.03%) rotate(12deg); }
+  48% { transform: translate(-1.75%, 1.75%) rotate(-5deg); }
+  62% { transform: translate(0%, 0%) rotate(0deg); }
+  100% { transform: translate(0%, 0%) rotate(0deg); }
+}
+
+@keyframes ai-dot-jump-f {
+  0% { transform: translateY(0%) scale(1, 1); }
+  14% { transform: translateY(0%) scale(1.14, 0.8); }
+  38% { transform: translateY(-18.49%) scale(0.92, 1.1); }
+  60% { transform: translateY(0%) scale(1.16, 0.8); }
+  74% { transform: translateY(0%) scale(0.97, 1.05); }
+  86% { transform: translateY(0%) scale(1, 1); }
+  100% { transform: translateY(0%) scale(1, 1); }
+}
+
+@keyframes ai-dot-poke-f {
+  0% { transform: scale(1, 1) rotate(0deg); }
+  18% { transform: scale(1.24, 0.68) rotate(0deg); }
+  38% { transform: scale(0.88, 1.16) rotate(-6deg); }
+  58% { transform: scale(1, 1) rotate(6deg); }
+  80% { transform: scale(1, 1) rotate(-3deg); }
+  100% { transform: scale(1, 1) rotate(0deg); }
+}
+
+@keyframes ai-dot-wide-eyes-f {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.4); }
+  75% { transform: scale(1.4); }
+  100% { transform: scale(1); }
+}
+
+.ai-dot--look-f.ai-dot--wave .ai-dot-front {
+  animation: 2.08s sine-in-out ai-dot-wave-f;
+}
+
+.ai-dot--look-f.ai-dot--wave .ai-dot-back {
+  animation: 2.08s sine-in-out ai-dot-hop-f;
+}
+
+.ai-dot--look-f.ai-dot--five .ai-dot-front {
+  animation: 1.95s cubic-in-out ai-dot-five-front-f;
+}
+
+.ai-dot--look-f.ai-dot--five .ai-dot-back {
+  animation: 1.95s cubic-in-out ai-dot-five-back-f;
+}
+
+.ai-dot--look-f.ai-dot--happy .ai-dot-front {
+  animation: 1.56s quadratic-in-out ai-dot-jump-f;
+}
+
+.ai-dot--look-f.ai-dot--happy .ai-dot-back {
+  animation: 1.56s 0.18s quadratic-in-out ai-dot-jump-f;
+}
+
+.ai-dot--look-f.ai-dot--poke .ai-dot-front {
+  animation: 0.78s cubic-out ai-dot-poke-f;
+}
+
+.ai-dot--look-f.ai-dot--poke .ai-dot-eyes-front,
+.ai-dot--look-f.ai-dot--poke .ai-dot-eyes-back {
+  animation: 0.78s cubic-out ai-dot-wide-eyes-f;
+}
+
+/* G (Sunday): slow. One slow breath is its Float and its Sleep; the talk is a yawn with shut eyes; waving and giving five
+   keep the eyes (half) open; the pompom swings and the mug steams during the breath. */
+@keyframes ai-dot-breathe-g {
+  0% { transform: scale(1, 1); }
+  50% { transform: scale(1.035, 0.965); }
+  100% { transform: scale(1, 1); }
+}
+
+@keyframes ai-dot-wave-g {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(-4deg); }
+  55% { transform: rotate(3deg); }
+  80% { transform: rotate(-2deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-hop-g {
+  0% { transform: translateY(0%); }
+  25% { transform: translateY(-0.97%); }
+  50% { transform: translateY(0%); }
+  100% { transform: translateY(0%); }
+}
+
+@keyframes ai-dot-yawn-g {
+  0% { opacity: 0; transform: scale(0.5, 0.2); }
+  10% { opacity: 1; transform: scale(0.6, 0.5); }
+  35% { opacity: 1; transform: scale(1.5, 2.7); }
+  62% { opacity: 1; transform: scale(1.5, 2.7); }
+  90% { opacity: 1; transform: scale(0.5, 0.2); }
+  100% { opacity: 0; transform: scale(0.5, 0.2); }
+}
+
+@keyframes ai-dot-rise-g {
+  0% { transform: translateY(0%) scale(1, 1); }
+  45% { transform: translateY(-3.5%) scale(0.98, 1.03); }
+  100% { transform: translateY(0%) scale(1, 1); }
+}
+
+@keyframes ai-dot-pom-g {
+  0% { transform: translate(0%, 0%); }
+  50% { transform: translate(-0.58%, 0.49%); }
+  100% { transform: translate(0%, 0%); }
+}
+
+@keyframes ai-dot-steam-g {
+  0% { opacity: 0; transform: translateY(0.78%); }
+  35% { opacity: 0.9; transform: translateY(-0.5%); }
+  100% { opacity: 0; transform: translateY(-2.14%); }
+}
+
+.ai-dot--look-g.ai-dot--float .ai-dot-figure,
+.ai-dot--look-g.ai-dot--sleep .ai-dot-figure {
+  animation: 5.2s sine-in-out ai-dot-breathe-g;
+}
+
+.ai-dot--look-g.ai-dot--float .ai-dot-pom,
+.ai-dot--look-g.ai-dot--sleep .ai-dot-pom {
+  animation: 1.3s sine-in-out 4 ai-dot-pom-g;
+}
+
+.ai-dot--look-g.ai-dot--float .ai-dot-steam,
+.ai-dot--look-g.ai-dot--sleep .ai-dot-steam {
+  display: block;
+  opacity: 0;
+}
+
+.ai-dot--look-g.ai-dot--float .ai-dot-steam-1,
+.ai-dot--look-g.ai-dot--sleep .ai-dot-steam-1 {
+  animation: 2.6s cubic-out 2 ai-dot-steam-g;
+}
+
+.ai-dot--look-g.ai-dot--float .ai-dot-steam-2,
+.ai-dot--look-g.ai-dot--sleep .ai-dot-steam-2 {
+  animation: 2.6s 1.3s cubic-out ai-dot-steam-g;
+}
+
+.ai-dot--look-g.ai-dot--wave .ai-dot-front {
+  animation: 2.6s sine-in-out ai-dot-wave-g;
+}
+
+.ai-dot--look-g.ai-dot--wave .ai-dot-back {
+  animation: 2.6s sine-in-out ai-dot-hop-g;
+}
+
+.ai-dot--look-g.ai-dot--wave .ai-dot-pom {
+  animation: 1.3s sine-in-out 2 ai-dot-pom-g;
+}
+
+.ai-dot--look-g.ai-dot--five .ai-dot-front {
+  animation: 2.86s cubic-in-out ai-dot-five-front;
+}
+
+.ai-dot--look-g.ai-dot--five .ai-dot-back {
+  animation: 2.86s cubic-in-out ai-dot-five-back;
+}
+
+.ai-dot--look-g.ai-dot--five .ai-dot-star {
+  animation: 2.86s cubic-out ai-dot-star;
+}
+
+.ai-dot--look-g.ai-dot--talk .ai-dot-mouth {
+  animation: 3.12s sine-in-out ai-dot-yawn-g;
+}
+
+.ai-dot--look-g.ai-dot--talk .ai-dot-eyes-front {
+  animation: 3.12s sine-in-out ai-dot-talk-eyes;
+}
+
+.ai-dot--look-g.ai-dot--talk .ai-dot-back {
+  animation: 1.56s sine-in-out 2 ai-dot-nod;
+}
+
+.ai-dot--look-g.ai-dot--talk .ai-dot-pom {
+  animation: 1.04s sine-in-out 3 ai-dot-pom-g;
+}
+
+.ai-dot--look-g.ai-dot--happy .ai-dot-front {
+  animation: 2.86s sine-in-out ai-dot-rise-g;
+}
+
+.ai-dot--look-g.ai-dot--happy .ai-dot-back {
+  animation: 2.86s 0.26s sine-in-out ai-dot-rise-g;
+}
+
+.ai-dot--look-g.ai-dot--happy .ai-dot-blush {
+  animation: 3.12s linear-in-out ai-dot-glow-in;
+}
+
+.ai-dot--look-g.ai-dot--happy .ai-dot-heart-1 {
+  animation: 2.08s cubic-out ai-dot-heart;
+}
+
+.ai-dot--look-g.ai-dot--happy .ai-dot-heart-2 {
+  animation: 2.08s 1.04s cubic-out ai-dot-heart;
+}
+
+.ai-dot--look-g.ai-dot--happy .ai-dot-pom {
+  animation: 1.04s sine-in-out 3 ai-dot-pom-g;
+}
+
+.ai-dot--look-g.ai-dot--poke .ai-dot-front {
+  animation: 1.04s cubic-out ai-dot-poke;
+}
+
+.ai-dot--look-g.ai-dot--poke .ai-dot-eyes-front,
+.ai-dot--look-g.ai-dot--poke .ai-dot-eyes-back {
+  animation: 1.04s cubic-out ai-dot-wide-eyes;
+}
+
+/* G waves and gives five with its (half) open eyes, and yawns with them shut. */
+.ai-dot--look-g.ai-dot--wave .ai-dot-front .ai-dot-open,
+.ai-dot--look-g.ai-dot--five .ai-dot-open {
+  display: block;
+}
+
+.ai-dot--look-g.ai-dot--wave .ai-dot-front .ai-dot-hap,
+.ai-dot--look-g.ai-dot--five .ai-dot-hap {
+  display: none;
+}
+
+.ai-dot--look-g.ai-dot--talk .ai-dot-open {
+  display: none;
+}
+
+.ai-dot--look-g.ai-dot--talk .ai-dot-shut {
+  display: block;
 }
 
 .shell-banner {
@@ -3345,7 +3708,7 @@ select selectbox option {
   height: 44dp;
   margin: 0;
   font-size: 17dp;
-  line-height: 44dp;
+  line-height: 52dp;
   font-weight: bold;
   text-align: center;
   white-space: nowrap;
@@ -3371,6 +3734,16 @@ select selectbox option {
 
 .shell-nav-page--hidden-tab .tab-bar-clear {
   height: 16dp;
+}
+
+/* Settings keeps the tab bar (TODO #200): its list clears the bar again like a tab's page. */
+.shell-nav-page--hidden-tab.shell-nav-page--tab-bar .tab-bar-clear {
+  height: 65dp;
+}
+
+/* Over a page pushed from Settings (above the transient layer, z-index 30) so the bar stays put while the page slides. */
+.shell-bottom-chrome--over-page {
+  z-index: 35;
 }
 
 .shell-layer-compact .pane-nav-back {
@@ -3572,6 +3945,10 @@ select selectbox option {
   padding-left: 12dp;
 }
 
+.shell-chat-overlay-chrome .shell-back-btn {
+  position: relative;
+}
+
 .shell-chat-overlay-chrome .shell-back-btn,
 .shell-layer-compact .shell-transient-chrome .shell-back-btn {
   width: 52dp;
@@ -3646,8 +4023,8 @@ select selectbox option {
 }
 
 .shell-chat-overlay .chat-header-title {
-  font-size: 17dp;
-  line-height: 22dp;
+  font-size: 18dp;
+  line-height: 23dp;
   font-weight: bold;
   white-space: nowrap;
   overflow: hidden;
@@ -3687,6 +4064,12 @@ select selectbox option {
   height: 44dp;
   min-width: 44dp;
   border-radius: 0;
+}
+
+.shell-chat-overlay .chat-header-call-btn svg,
+.shell-chat-overlay .chat-header-more-btn svg {
+  width: 26dp;
+  height: 26dp;
 }
 
 .shell-chat-overlay .chat-header-call-btn--join {
@@ -3770,14 +4153,20 @@ select selectbox option {
   cursor: pointer;
 }
 
-/* The composer is a frosted bar over the transcript, like the top bar (Kenneth 2026-11-07): the transcript runs down
-   under it; ChatController::SyncComposerOverlay keeps its end spacer, fade and "new messages" pill above the bar. */
-.shell-chat-overlay .shell-composer-mount {
+/* The composer bar is clear (TODO #202, Kenneth 2026-11-09): only the floating pill and the two round buttons are
+   drawn, the transcript runs down under it; ChatController::SyncComposerOverlay keeps its end spacer and the "new
+   messages" pill above the bar. */
+.shell-chat-overlay .shell-composer-bar {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 2;
+}
+
+/* Above the bar's material child (a static box would paint under it). */
+.shell-chat-overlay .shell-composer-mount {
+  position: relative;
 }
 
 .shell-pane {
@@ -3862,6 +4251,12 @@ select selectbox option {
 
 .shell-composer-mount.surface-chrome .prompt-composer {
   margin-bottom: 8dp;
+}
+
+/* The phone chat's bar: 8dp above the pill, the home-indicator inset below
+   (ShellHost pads the mount), 6dp past the pill. */
+.shell-chat-overlay .shell-composer-mount.surface-chrome .prompt-composer {
+  margin-bottom: 6dp;
 }
 
 .shell-drawer .shell-pane,
@@ -4099,7 +4494,7 @@ select selectbox option {
 }
 
 .ai-drawer-search {
-  margin: 0 16dp 8dp 16dp;
+  margin: 6dp 16dp 12dp 16dp; /* Kenneth 2026-11-09: air between the title row and the search box */
   padding: 0 0 0 8dp;
 }
 
@@ -4125,8 +4520,8 @@ select selectbox option {
   display: flex;
   flex-direction: row;
   align-items: center;
-  height: 44dp;
-  padding: 0 4dp;
+  height: 52dp;
+  padding: 0 8dp; /* the close button off the edge (Kenneth 2026-11-09) */
 }
 
 .ai-drawer-title {
@@ -4134,7 +4529,7 @@ select selectbox option {
   min-width: 0;
   margin: 0;
   font-size: 17dp;
-  line-height: 44dp;
+  line-height: 52dp;
   font-weight: bold;
   text-align: center;
   white-space: nowrap;
@@ -4155,7 +4550,7 @@ select selectbox option {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-top: 88dp;
+  padding-top: 106dp; /* head 52 + search 6/36/12 */
   padding-bottom: 0;
   box-sizing: border-box;
 }
@@ -4163,7 +4558,7 @@ select selectbox option {
 /* Height set by ShellHost::ApplySafeAreaLayout (the "you" row + the home indicator). */
 .ai-drawer-list-end {
   display: block;
-  height: 64dp;
+  height: 76dp;
 }
 
 .ai-drawer-me {
@@ -4178,7 +4573,7 @@ select selectbox option {
   flex-direction: row;
   align-items: center;
   gap: 12dp;
-  min-height: 64dp;
+  min-height: 76dp;
   margin: 0;
   padding: 10dp 16dp;
   border: 0;
@@ -4192,29 +4587,61 @@ select selectbox option {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44dp;
-  height: 44dp;
-  border-radius: 22dp;
+  width: 56dp;
+  height: 56dp;
+  border-radius: 28dp;
   overflow: hidden;
 }
 
 .ai-drawer-me-image {
-  width: 44dp;
-  height: 44dp;
+  width: 56dp;
+  height: 56dp;
 }
 
 .ai-drawer-me-avatar .avatar-letter {
-  font-size: 18dp;
+  font-size: 22dp;
+}
+
+/* The name and, under it, the device's link to our service (ShellHost::SetChatsLink). */
+.ai-drawer-me-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .ai-drawer-me-name {
-  flex: 1;
-  min-width: 0;
   margin: 0;
-  font-size: 16dp;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* A 14dp cloud (tick when online, slash when offline) and the word. */
+.ai-drawer-me-link {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin: 2dp 0 0 0;
+  height: 16dp;
+  font-size: 13dp;
+  line-height: 16dp;
+}
+
+.ai-drawer-me-link-icon {
+  flex: none;
+  width: 14dp;
+  height: 14dp;
+  margin-right: 5dp;
+}
+
+.ai-drawer-me-link-text {
+  display: block;
+  white-space: nowrap;
 }
 
 .ai-drawer-me-chevron {
@@ -4239,68 +4666,6 @@ select selectbox option {
 
 .shell-chat-overlay .chat-shell--ai .chat-header {
   margin-right: 36dp;
-}
-
-/* Chats bar (DEV/PLAN-minimal-nav.md D): the round avatar sits where the other pages' round back does; the plus is a
-   plain round button in the actions slot. The photo or letter fills the 44dp disc. */
-.shell-layer-compact .pane-nav-avatar {
-  position: absolute;
-  top: 1dp;
-  left: 8dp;
-  z-index: 1;
-}
-
-.shell-circle-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 52dp;
-  height: 52dp;
-  border-radius: 26dp;
-  overflow: hidden;
-}
-
-.shell-circle-avatar .avatar-letter {
-  font-size: 22dp;
-}
-
-.shell-circle-avatar-image {
-  width: 52dp;
-  height: 52dp;
-}
-
-/* The Chats avatar and the user's name beside it are one tap target (open_settings_from_avatar): a 52dp avatar, then
-   the name in 17dp bold on one line, cut at about 45% of the bar. Centred in the 56dp bar (compact bar block at the end
-   of the file). */
-.shell-layer-compact .pane-nav-avatar {
-  position: absolute;
-  z-index: 1;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  width: 45%;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background-color: transparent;
-  cursor: pointer;
-}
-
-.shell-layer-compact .pane-nav-avatar .shell-circle-avatar {
-  flex: none;
-}
-
-.pane-nav-avatar-name {
-  display: block;
-  flex: 1 1 0;
-  min-width: 0;
-  margin-left: 10dp;
-  font-size: 17dp;
-  line-height: 22dp;
-  font-weight: bold;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Phone contact page and blocked list: a 48dp bar over the page (which scrolls under it) with the back arrow. */
@@ -4641,7 +5006,7 @@ select selectbox option {
   margin: 0;
   padding: 0;
   font-size: 17dp;
-  line-height: 44dp;
+  line-height: 52dp;
   font-weight: bold;
   text-align: center;
   white-space: nowrap;
@@ -4885,7 +5250,7 @@ select selectbox option {
   flex-direction: row;
   align-items: flex-end;
   flex-shrink: 0;
-  margin: 8dp 16dp 0 16dp;
+  margin: 8dp 14dp 0 14dp;
 }
 
 /* The picture waiting to be sent: a thumbnail and an X. */
@@ -5313,6 +5678,32 @@ call-video-tile {
   border-radius: 14dp;
   box-sizing: border-box;
   cursor: pointer;
+}
+
+/* #189: the handle: the full bar thrown to a side edge shrinks to this circle, 12dp of it beyond the edge (placed by
+   ShellCallChromeRml / ShellCallChromeGesture with a negative left / right). The padding on the hidden side keeps the
+   phone in the 32dp that shows. */
+.shell-call-minimized-chip--handle {
+  justify-content: center;
+  width: 44dp;
+  min-width: 0;
+  max-width: 44dp;
+  height: 44dp;
+  padding: 0;
+  border-radius: 22dp;
+}
+
+.shell-call-minimized-chip--handle-l {
+  padding-left: 12dp;
+}
+
+.shell-call-minimized-chip--handle-r {
+  padding-right: 12dp;
+}
+
+.shell-call-minimized-icon {
+  width: 22dp;
+  height: 22dp;
 }
 
 .shell-call-minimized-chip--tr {
@@ -6231,51 +6622,6 @@ call-video-tile {
 }
 
 /* The tips: one every 3 s, a 12 s cycle with the four staggered (RCSS only). */
-.call-phone-tips {
-  position: relative;
-  flex-shrink: 0;
-  height: 44dp;
-  margin: 0 28dp 16dp 28dp;
-}
-
-@keyframes call-phone-tip {
-  from { opacity: 0; }
-  4% { opacity: 1; }
-  23% { opacity: 1; }
-  25% { opacity: 0; }
-  to { opacity: 0; }
-}
-
-.call-phone-tip {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  margin: 0;
-  font-size: 14dp;
-  line-height: 20dp;
-  text-align: center;
-  opacity: 0;
-  animation: 12s linear-in-out infinite call-phone-tip;
-}
-
-.call-phone-tip--2 {
-  animation: 12s 3s linear-in-out infinite call-phone-tip;
-}
-
-.call-phone-tip--3 {
-  animation: 12s 6s linear-in-out infinite call-phone-tip;
-}
-
-.call-phone-tip--4 {
-  animation: 12s 9s linear-in-out infinite call-phone-tip;
-}
-
-.call-phone-tip-text {
-  font-weight: bold;
-}
-
-/* 1:1 video: the other person's camera fills the page; name, time and the signal top left; our camera top right. */
 .call-phone-video-body {
   position: relative;
   z-index: 3;
@@ -7239,7 +7585,7 @@ input.checkbox {
 
 /* Reactions hung on a bubble or card (WhatsApp style): small pills over its bottom edge, inset from its start side.
    Absolute, so the row's height stays the bubble's (avatar, tail and bubble bottom line up); the row keeps the room
-   below (message-row-has-reactions). Each chip is a 32dp hit box; the 24dp pill is drawn inside it. Tint: colors-*. */
+   below (message-row-has-reactions). Each chip is a 40dp hit box; the 30dp pill is drawn inside it. Tint: colors-*. */
 .chat-reaction-host {
   position: relative;
 }
@@ -7247,7 +7593,7 @@ input.checkbox {
 .chat-reaction-row--overlay {
   position: absolute;
   left: 10dp;
-  bottom: -16dp;
+  bottom: -20dp;
   z-index: 1;
   margin: 0;
   white-space: nowrap;
@@ -7255,35 +7601,35 @@ input.checkbox {
 }
 
 .chat-reaction-row--overlay .chat-reaction-chip {
-  height: 32dp;
-  min-height: 32dp;
+  height: 40dp;
+  min-height: 40dp;
   margin: 0 2dp 0 0;
-  padding: 4dp 0;
+  padding: 5dp 0;
   border-radius: 0;
   box-sizing: border-box;
   background-color: transparent;
-  font-size: 14dp;
-  line-height: 18dp;
+  font-size: 18dp;
+  line-height: 22dp;
 }
 
 .chat-reaction-row--overlay .chat-reaction-pill {
   display: inline-block;
-  height: 24dp;
-  padding: 1dp 7dp;
+  height: 30dp;
+  padding: 2dp 9dp;
   border-width: 2dp;
-  border-radius: 12dp;
+  border-radius: 15dp;
   box-sizing: border-box;
-  font-size: 14dp;
-  line-height: 18dp;
+  font-size: 18dp;
+  line-height: 22dp;
 }
 
 .chat-reaction-count {
   margin-left: 3dp;
-  font-size: 12dp;
+  font-size: 14dp;
 }
 
 .message-row-has-reactions {
-  padding-bottom: 14dp;
+  padding-bottom: 18dp;
 }
 
 .chat-system-line {
@@ -7297,6 +7643,18 @@ input.checkbox {
   padding: 7dp 12dp;
   border-radius: 12dp;
   font-size: 13dp;
+}
+
+.shell-chat-overlay .chat-call-row {
+  padding: 9dp 14dp;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-chat-overlay .chat-call-row-icon {
+  width: 20dp;
+  height: 20dp;
+  margin-right: 8dp;
 }
 
 /* A call record in a 1:1 chat: tap = call back. Group records do not get this class. */
@@ -8309,13 +8667,144 @@ input.checkbox {
   overflow: hidden;
 }
 
-/* A voice message: play / pause, a progress line, the length. */
+/* A voice message, WhatsApp-like (Kenneth 2026-11-09, #201: the old bar ran the width of the row): one row of
+   avatar 44dp (mic badge 16dp at its bottom right) + play 28dp + waveform 147dp x 28dp, under it the length at the
+   waveform's left and the clock at the right. The card is an inline-block of fixed width (263dp = 14 + 44 + 8 + 28 +
+   8 + 147 + 14), so it is only as wide as its content and never fills the row. Colours: colors-*.rcss. */
 .chat-voice-card {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 263dp;
+  margin: 4dp 0;
+  padding: 10dp 14dp 6dp 14dp;
+  border-radius: 18dp;
+  text-align: left;
+}
+
+.chat-voice-main {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 44dp;
+}
+
+.chat-voice-avatar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 10dp;
-  min-width: 200dp;
-  max-width: 280dp;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
+  overflow: hidden;
+}
+
+.chat-voice-avatar-photo {
+  width: 44dp;
+  height: 44dp;
+}
+
+.chat-voice-avatar-letter {
+  margin: 0;
+  font-size: 19dp;
+  line-height: 24dp;
+  font-weight: bold;
+  color: #ffffff;
+}
+
+/* The mic badge sits on the avatar's bottom right corner; the ring is the bubble colour (colors-*.rcss). */
+.chat-voice-badge {
+  position: absolute;
+  left: 30dp;
+  top: 28dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16dp;
+  height: 16dp;
+  border-radius: 8dp;
+}
+
+.chat-voice-badge-mic {
+  width: 10dp;
+  height: 10dp;
+}
+
+.chat-voice-card .chat-voice-play {
+  width: 28dp;
+  height: 28dp;
+  margin-left: 8dp;
+  border-radius: 14dp;
+  background-color: transparent;
+}
+
+.chat-voice-card .chat-voice-play svg {
+  width: 22dp;
+  height: 22dp;
+}
+
+.chat-voice-wave {
+  position: relative;
+  flex-shrink: 0;
+  width: 147dp;
+  height: 28dp;
+  margin-left: 8dp;
+}
+
+.chat-voice-bars {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 147dp;
+  height: 28dp;
+}
+
+.chat-voice-bar {
+  flex-shrink: 0;
+  width: 2dp;
+  margin-right: 1.5dp;
+  border-radius: 1dp;
+}
+
+/* The played part: a clip as wide as the progress holding the same bars, so the bars left of the knob change colour. */
+.chat-voice-played {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 28dp;
+  overflow: hidden;
+}
+
+.chat-voice-knob {
+  position: absolute;
+  top: 9dp;
+  width: 10dp;
+  height: 10dp;
+  margin-left: -5dp;
+  border-radius: 5dp;
+  pointer-events: none;
+}
+
+.chat-voice-foot {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2dp;
+  padding-left: 88dp;
+}
+
+.chat-voice-card .chat-voice-time {
+  font-size: 13dp;
+  line-height: 16dp;
+}
+
+.chat-voice-clock {
+  flex-shrink: 0;
+  font-size: 12dp;
+  line-height: 16dp;
+  opacity: 0.8;
 }
 
 .chat-voice-play {
@@ -8397,8 +8886,8 @@ input.checkbox {
 
 .chat-ai-image {
   display: block;
-  max-width: 200dp;
-  max-height: 240dp;
+  max-width: 292dp;
+  max-height: 360dp;
   margin: 0;
 }
 
@@ -9303,7 +9792,7 @@ input.checkbox {
   margin: 0;
   font-family: LatoLatin;
   font-size: 17dp;
-  line-height: 44dp;
+  line-height: 52dp;
   font-weight: bold;
   text-align: center;
   white-space: nowrap;
@@ -9641,7 +10130,7 @@ input.checkbox {
   min-width: 0;
   margin: 0;
   font-size: 17dp;
-  line-height: 44dp;
+  line-height: 52dp;
   font-weight: bold;
   text-align: center;
   white-space: nowrap;
@@ -10225,9 +10714,10 @@ input.checkbox {
 }
 
 .shell-layer-compact .nc-page .nc-bar {
-  position: relative;
-  flex: none;
-  top: auto;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 48dp;
 }
 
@@ -11034,6 +11524,7 @@ input.checkbox {
 
 /* Edge to edge like the transcript and the composer under it (the panel's 12dp side padding cancelled, #89). */
 .shell-chat-overlay .chat-composer-fade {
+  display: none;
   top: auto;
   bottom: 0;
   left: -12dp;
@@ -11152,8 +11643,8 @@ input.checkbox {
 /* Group chats: the sender's name sits at the top of the bubble (first bubble of a run). A tap opens their page: the
    name's hit box is 44dp tall and spans the bubble (padding out into the bubble's own, cancelled by margins). */
 .shell-chat-overlay .bubble .chat-group-name {
-  margin: -14dp -12dp -11dp -12dp;
-  padding: 14dp 12dp 13dp 12dp;
+  margin: -16dp -14dp -13dp -14dp;
+  padding: 16dp 14dp 15dp 14dp;
   max-width: none;
 }
 
@@ -11206,8 +11697,39 @@ input.checkbox {
 
 
 .shell-chat-overlay .bubble {
-  padding: 8dp 12dp;
+  padding: 10dp 14dp;
   border-radius: 18dp;
+}
+
+/* Message text 17 / 22dp (Kenneth 2026-11-09: everything in the chat was too small). */
+.shell-chat-overlay .bubble-text,
+.shell-chat-overlay .bubble-text-peer {
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+/* Emoji-only messages (EmojiOnlyScale): no bubble, the emoji large, like iMessage. 1-3 emoji 36dp (44dp line), 4-6 28dp (36dp line). */
+.shell-chat-overlay .bubble.bubble-emoji {
+  padding: 0 2dp;
+  border-width: 0;
+  background-color: transparent;
+}
+
+.shell-chat-overlay .bubble-emoji .bubble-text,
+.shell-chat-overlay .bubble-emoji .bubble-text-peer {
+  font-size: 28dp;
+  line-height: 36dp;
+}
+
+.shell-chat-overlay .bubble-emoji--xl .bubble-text,
+.shell-chat-overlay .bubble-emoji--xl .bubble-text-peer {
+  font-size: 36dp;
+  line-height: 44dp;
+}
+
+.shell-chat-overlay .bubble-emoji .bubble-time,
+.shell-chat-overlay .bubble-emoji .bubble-tail {
+  display: none;
 }
 
 .shell-chat-overlay .bubble-user,
@@ -11222,8 +11744,8 @@ input.checkbox {
 .shell-chat-overlay .bubble-time {
   display: block;
   margin-top: 2dp;
-  font-size: 11dp;
-  line-height: 13dp;
+  font-size: 12dp;
+  line-height: 14dp;
   text-align: right;
 }
 
@@ -11273,11 +11795,11 @@ input.checkbox {
 }
 
 .shell-chat-overlay .chat-attachment-card.chat-reaction-host .muted:last-child {
-  margin-bottom: 20dp;
+  margin-bottom: 24dp;
 }
 
 .shell-chat-overlay .chat-attachment-video-frame {
-  max-width: 200dp;
+  max-width: 292dp;
   margin-bottom: 6dp;
 }
 
@@ -11296,7 +11818,7 @@ input.checkbox {
 }
 
 .shell-chat-overlay .chat-audio-card.chat-reaction-host {
-  padding-bottom: 20dp;
+  padding-bottom: 24dp;
 }
 
 .shell-chat-overlay .chat-attachment-card .chat-suggestion {
@@ -11326,18 +11848,30 @@ input.checkbox {
 .shell-chat-overlay .chat-attachment-card--image .chat-attachment-clip {
   display: inline-block;
   vertical-align: top;
-  max-width: 200dp;
-  max-height: 240dp;
+  max-width: 292dp;
+  max-height: 360dp;
   overflow: hidden;
   border-radius: 9dp;
 }
 
+/* No max-height on the picture: when it is taller than the clip (cropped) a height cap would shrink the whole picture
+   by its ratio and leave it narrower than the clip. The clip crops. */
 .shell-chat-overlay .chat-attachment-card--image .chat-attachment-image {
   display: block;
-  max-width: 200dp;
-  max-height: 240dp;
+  max-width: 292dp;
+  max-height: none;  /* the base .chat-attachment-image caps at 240dp */
   margin: 0;
   border-radius: 9dp;
+}
+
+/* The file's size could not be read (no inline size): the picture is the box wide, its height follows its ratio, and
+   the clip (box wide too) shows at most 360dp of it from the top. */
+.shell-chat-overlay .chat-attachment-card--image .chat-attachment-clip--auto {
+  width: 292dp;
+}
+
+.shell-chat-overlay .chat-attachment-card--image .chat-attachment-clip--auto .chat-attachment-image {
+  width: 292dp;
 }
 
 /* On a picture card the tail goes behind the card, so its inner half does not cover the picture's corner; the hook
@@ -11376,68 +11910,50 @@ input.checkbox {
   right: -8dp;
 }
 
-/* Composer: a 36dp pill on a 52dp bar; the engine draws no placeholder, so the label sits over the empty input. The
-   ask-AI panel's input row is the same row (Kenneth 2026-11-04: "风格不统一…能不能统一一下"). */
-.shell-chat-overlay .prompt-composer-pill,
-.ask-ai .prompt-composer-pill {
-  min-height: 36dp;
-  padding: 0 4dp 0 12dp;
-  border-radius: 18dp;
+/* Phone composer (TODO #202, Kenneth 2026-11-09; chat, AI thread and the ask-AI panel, one component): a floating pill for
+   the text (46dp high, the accent emoji circle at its left end, no camera: the plus card has it), a round 44dp plus outside it on
+   the left and a round 44dp accent button outside it on the right (the microphone, Send once there is text). 14dp
+   from the screen edge to each button, 10dp between a button and the pill; the bar behind is clear, so the transcript scrolls under the floating parts. The
+   row is the positioning box and is exactly the pill (which grows upward, up to five lines): the keys sit on its
+   last line. The engine draws no placeholder, so the label sits over the empty input. */
+.shell-chat-overlay .prompt-composer-row,
+.ask-ai .prompt-composer-row {
+  position: relative;
 }
 
+.shell-chat-overlay .prompt-composer-pill,
+.ask-ai .prompt-composer-pill {
+  min-height: 46dp;
+  margin: 0 54dp;
+  padding: 0 16dp 0 46dp;
+  border-radius: 23dp;
+}
+
+/* The composer's side margin: 14dp from the screen edge to each round button. */
+.shell-chat-overlay .prompt-composer {
+  margin-left: 14dp;
+  margin-right: 14dp;
+}
+
+/* 1dp border + 22dp line + 11dp above and below + 1dp border = 46dp. */
 .shell-chat-overlay .prompt-composer-input,
 .ask-ai .prompt-composer-input {
-  padding: 7dp 0;
+  padding: 11dp 0;
+  font-size: 17dp;
+  line-height: 22dp;
 }
 
 .shell-chat-overlay .prompt-composer-label,
 .ask-ai .prompt-composer-label {
   display: block;
   position: absolute;
-  top: 2dp;
-  left: 12dp;
-  height: 34dp;
+  top: 0;
+  left: 47dp;
+  height: 44dp;
   margin: 0;
   font-size: 17dp;
-  line-height: 34dp;
+  line-height: 44dp;
   pointer-events: none;
-}
-
-/* Every button is a 44dp target round its 20dp icon; -4dp above and below keeps the one-line row at the pill's 36dp
-   (the buttons stay on the last line while the text grows). */
-.shell-chat-overlay .prompt-composer-row .prompt-voice-toggle-btn,
-.shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
-.shell-chat-overlay .prompt-composer-row .prompt-send-btn,
-.shell-chat-overlay .prompt-composer-pill .prompt-attach-btn,
-.shell-chat-overlay .prompt-composer-pill .prompt-capture-btn,
-.ask-ai .prompt-composer-row .prompt-send-btn,
-.ask-ai .prompt-composer-pill .prompt-attach-btn,
-.ask-ai .prompt-composer-pill .prompt-capture-btn {
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
-  margin: -4dp 0;
-  border-radius: 22dp;
-}
-
-/* Send: a clear 44dp target round a 32dp accent disc (colors-*.rcss); the desktop's button is the disc itself. */
-.shell-chat-overlay .prompt-send-disc,
-.ask-ai .prompt-send-disc {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32dp;
-  height: 32dp;
-  border-radius: 16dp;
-}
-
-/* WhatsApp's row on phones: emoji, the pill, then the microphone where Send shows once there is text. */
-.shell-chat-overlay .prompt-voice-toggle-btn--start {
-  display: none;
-}
-
-.shell-chat-overlay .prompt-voice-toggle-btn--end {
-  display: flex;
 }
 
 .shell-chat-overlay .prompt-icon-classic,
@@ -11449,11 +11965,11 @@ input.checkbox {
 .ask-ai .prompt-icon-v2 {
   display: block;
   flex-shrink: 0;
-  width: 20dp;
-  height: 20dp;
+  width: 24dp;
+  height: 24dp;
 }
 
-/* Phones: the bold plus in the clip's place (ChatController::OnAttachFile opens the chat's or the AI's floating card). */
+/* Phones: the bold plus (ChatController::OnAttachFile opens the chat's or the AI's floating card). */
 .prompt-icon-plus {
   display: none;
 }
@@ -11462,81 +11978,7 @@ input.checkbox {
   display: none;
 }
 
-.shell-chat-overlay .prompt-attach-btn .prompt-icon-plus {
-  display: block;
-  flex-shrink: 0;
-  width: 24dp;
-  height: 24dp;
-}
-
-/* One composer on phones (Kenneth 2026-11-07), in a chat, an AI conversation and the ask-AI panel: every key sits
-   inside the pill, the bold plus and the emoji key at its bottom left, the microphone (Send once there is text) at its
-   bottom right; no camera (the plus card has it). The row is the keys' positioning box and the pill fills it, so the
-   keys stay on the last line while the text grows; the pill's side padding keeps the text clear of them. Each key is a
-   40 x 44dp target, 3dp past the 38dp one-line pill above and below. */
-.shell-chat-overlay .prompt-composer-row,
-.ask-ai .prompt-composer-row {
-  position: relative;
-}
-
-.shell-chat-overlay .prompt-composer-pill,
-.ask-ai .prompt-composer-pill {
-  padding: 0 44dp 0 84dp;
-}
-
-.shell-chat-overlay .prompt-composer-label,
-.ask-ai .prompt-composer-label {
-  left: 84dp;
-}
-
-.shell-chat-overlay .prompt-composer-pill .prompt-attach-btn,
-.ask-ai .prompt-composer-pill .prompt-attach-btn {
-  position: absolute;
-  left: 0;
-  bottom: -3dp;
-  width: 40dp;
-  min-width: 40dp;
-  height: 44dp;
-  margin: 0;
-  border-radius: 0;
-}
-
-.shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
-.ask-ai .prompt-composer-row .prompt-emoji-btn {
-  position: absolute;
-  left: 41dp;
-  bottom: -3dp;
-  z-index: 1;
-  width: 40dp;
-  min-width: 40dp;
-  height: 44dp;
-  margin: 0;
-  border-radius: 0;
-}
-
-.shell-chat-overlay .prompt-composer-pill .prompt-capture-btn,
-.ask-ai .prompt-composer-pill .prompt-capture-btn {
-  display: none;
-}
-
-.shell-chat-overlay .prompt-composer-row .prompt-send-btn,
-.shell-chat-overlay .prompt-composer-row .prompt-voice-toggle-btn--end,
-.ask-ai .prompt-composer-row .prompt-send-btn {
-  position: absolute;
-  right: 0;
-  bottom: -3dp;
-  z-index: 1;
-  width: 44dp;
-  min-width: 44dp;
-  height: 44dp;
-  margin: 0;
-}
-
-/* Voice mode (a people chat): the hold-to-talk bar takes the pill's place; the keyboard key sits inside its right end. */
-.shell-chat-overlay .prompt-voice-bar {
-  padding-right: 44dp;
-}
-
+.shell-chat-overlay .prompt-attach-btn .prompt-icon-plus,
 .ask-ai .prompt-attach-btn .prompt-icon-plus {
   display: block;
   flex-shrink: 0;
@@ -11544,17 +11986,113 @@ input.checkbox {
   height: 24dp;
 }
 
-/* The ask-AI panel's settings "?" (text only): no plus, the emoji key leads. */
-.ask-ai .ask-ai-input-row--text-only .prompt-composer-pill {
-  padding-left: 44dp;
+/* The plus: a 44dp filled circle left of the pill (the button sits in the pill's markup; -54dp = the 10dp gap and its
+   44dp, from the pill's border box). Its bottom is 1dp above the pill's, which centres it on the one-line pill. */
+.shell-chat-overlay .prompt-composer-pill .prompt-attach-btn,
+.ask-ai .prompt-composer-pill .prompt-attach-btn {
+  position: absolute;
+  left: -54dp;
+  bottom: 1dp;
+  box-sizing: border-box;
+  width: 44dp;
+  min-width: 44dp;
+  height: 44dp;
+  margin: 0;
+  border-radius: 22dp;
 }
 
-.ask-ai .ask-ai-input-row--text-only .prompt-composer-label {
-  left: 44dp;
+/* The emoji key: the home card's accent-tinted 32dp circle, 7dp inside the pill's left end, centred on the one-line pill. */
+.shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
+.ask-ai .prompt-composer-row .prompt-emoji-btn {
+  position: absolute;
+  left: 61dp;
+  bottom: 7dp;
+  z-index: 1;
+  width: 32dp;
+  min-width: 32dp;
+  height: 32dp;
+  margin: 0;
+  border-radius: 16dp;
+}
+
+.shell-chat-overlay .prompt-emoji-btn .prompt-icon-v2,
+.ask-ai .prompt-emoji-btn .prompt-icon-v2 {
+  display: none;
+}
+
+.shell-chat-overlay .prompt-emoji-btn .prompt-icon-home-emoji,
+.ask-ai .prompt-emoji-btn .prompt-icon-home-emoji {
+  display: block;
+  width: 32dp;
+  height: 32dp;
+  padding: 4dp;
+  box-sizing: border-box;
+  border-radius: 16dp;
+}
+
+.shell-chat-overlay .prompt-composer-pill .prompt-capture-btn,
+.ask-ai .prompt-composer-pill .prompt-capture-btn {
+  display: none;
+}
+
+/* The disabled Send of an empty AI field (TODO #205) exists only in the phone chat and the ask-AI panel. */
+.prompt-send-btn--idle {
+  display: none;
+  pointer-events: none;
+}
+
+/* The microphone and Send share one place: a round 44dp button right of the pill, filled with the accent
+   (colors-*.rcss). Only one of them is in the markup at a time. */
+.shell-chat-overlay .prompt-composer-row .prompt-send-btn,
+.shell-chat-overlay .prompt-composer-row .prompt-voice-toggle-btn--end,
+.ask-ai .prompt-composer-row .prompt-send-btn {
+  display: flex;
+  position: absolute;
+  right: 0;
+  bottom: 1dp;
+  z-index: 1;
+  width: 44dp;
+  min-width: 44dp;
+  height: 44dp;
+  margin: 0;
+  border-radius: 22dp;
+}
+
+.shell-chat-overlay .prompt-send-disc,
+.ask-ai .prompt-send-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+}
+
+.shell-chat-overlay .prompt-send-btn svg,
+.ask-ai .prompt-send-btn svg {
+  width: 22dp;
+  height: 22dp;
+}
+
+/* Voice mode (a people chat): the hold-to-talk bar takes the pill's place; the keyboard key sits inside its right end. */
+.shell-chat-overlay .prompt-voice-bar {
+  padding-right: 44dp;
+}
+
+.shell-chat-overlay .prompt-voice-toggle-btn--start {
+  display: none;
+}
+
+.shell-chat-overlay .prompt-voice-toggle-btn--end {
+  display: flex;
+}
+
+/* The ask-AI panel's settings "?" (text only): no plus, so the pill starts at the left margin. */
+.ask-ai .ask-ai-input-row--text-only .prompt-composer-pill {
+  margin-left: 0;
 }
 
 .ask-ai .ask-ai-input-row--text-only .prompt-emoji-btn {
-  left: 1dp;
+  left: 7dp;
 }
 
 /* Grouped lists on phones: the Me tab and the settings pages (DESIGN-pp-ui 8.7, 8.10). Same geometry as the .cd-*
@@ -11623,11 +12161,12 @@ input.checkbox {
   display: block;
 }
 
-/* Me → AI assistant → Assistant look: the four looks side by side in one card, the chosen one ringed. */
+/* Me → AI assistant → Assistant look: "Daily" and the seven looks, four to a row (two rows), the chosen one ringed. */
 .shell-layer-compact .ai-look-picker.settings-phone-only {
   display: flex;
   flex-direction: row;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  justify-content: flex-start;
   padding: 12dp 4dp;
   box-sizing: border-box;
 }
@@ -11636,9 +12175,10 @@ input.checkbox {
   display: flex;
   flex-direction: column;
   align-items: center;
-  flex: 1;
+  flex: 0 0 25%;
+  width: 25%;
   min-width: 0;
-  margin: 0;
+  margin: 0 0 8dp 0;
   padding: 0;
   border: 0;
   gap: 6dp;
@@ -11647,8 +12187,8 @@ input.checkbox {
 
 .ai-look-art {
   display: block;
-  width: 68dp;
-  height: 68dp;
+  width: 60dp;
+  height: 60dp;
   padding: 4dp;
   border-width: 2dp;
   border-radius: 13dp;
@@ -11657,8 +12197,8 @@ input.checkbox {
 
 .ai-look-art svg {
   display: block;
-  width: 56dp;
-  height: 56dp;
+  width: 48dp;
+  height: 48dp;
 }
 
 .ai-look-name {
@@ -12915,7 +13455,7 @@ textarea:composing ~ .prompt-composer-label,
 /* Phones show the ask-AI field above the chips on the minimal Home (Kenneth 2026-11-05). */
 .shell-layer-compact .home-composer-mount {
   display: block;
-  padding: 0 16dp;
+  padding: 0 40dp;
 }
 
 /* The chips wrap onto a second row when they do not fit, centred (Kenneth 2026-11-07). When the keyboard leaves too
@@ -12928,7 +13468,7 @@ textarea:composing ~ .prompt-composer-label,
   flex: 0 1 auto;
   min-height: 0;
   overflow: hidden;
-  padding: 0 12dp;
+  padding: 0 36dp;
   text-align: center;
 }
 
@@ -12965,7 +13505,7 @@ textarea:composing ~ .prompt-composer-label,
   min-height: 0;
   overflow: hidden;
   height: 100dp;
-  margin: 0 0 16dp 0;
+  margin: 0 0 4dp 0;
   text-align: center;
 }
 
@@ -12975,11 +13515,33 @@ textarea:composing ~ .prompt-composer-label,
   border-radius: 22dp;
 }
 
+/* Animated home logo (Kenneth 2026-11-09; ShellHomeMascot): the AI dot's figure drawn at 120dp inside the logo box, which
+   keeps room for the shadow the figure's SVGs draw round it. It sits still until tapped (the dot's keyframes). */
+.shell-layer-compact .home-landing--minimal .home-logo--mascot {
+  height: 140dp;
+}
+
+.shell-layer-compact .home-landing--minimal .home-logo--mascot .home-mascot.ai-dot {
+  position: relative;
+  display: block;
+  width: 120dp;
+  height: 120dp;
+  margin: 10dp auto 0 auto;
+}
+
 /* iPhone SE class screens (under 600dp tall): a smaller logo so logo, field and two chip rows fit. */
 @media (max-height: 599dp) {
   .shell-layer-compact .home-landing--minimal .home-logo {
     height: 72dp;
     margin-bottom: 10dp;
+  }
+  .shell-layer-compact .home-landing--minimal .home-logo--mascot {
+    height: 96dp;
+  }
+  .shell-layer-compact .home-landing--minimal .home-logo--mascot .home-mascot.ai-dot {
+    width: 80dp;
+    height: 80dp;
+    margin-top: 8dp;
   }
   .shell-layer-compact .home-landing--minimal .home-logo img {
     width: 72dp;
@@ -12995,8 +13557,8 @@ textarea:composing ~ .prompt-composer-label,
    label for a conversation stays with the conversation's own composer). */
 .shell-layer-compact .home-composer-mount .prompt-composer {
   flex: none;
-  margin: 0 0 12dp 0;
-  border-radius: 24dp;
+  margin: 0 0 8dp 0;
+  border-radius: 20dp;
 }
 
 /* The box is the composer, not the pill (Kenneth 2026-11-07): a picture chip (status row) sits inside it, above the
@@ -13006,9 +13568,9 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-pill {
-  min-height: 76dp;
-  padding: 0 16dp 40dp 16dp;
-  border-radius: 24dp;
+  min-height: 106dp; /* + the box's 1dp border each side = the 108dp card */
+  padding: 0 16dp 48dp 16dp;
+  border-radius: 20dp;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-input {
@@ -13038,8 +13600,8 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .home-composer-mount .prompt-icon-home {
   display: block;
   flex-shrink: 0;
-  width: 26dp;
-  height: 26dp;
+  width: 24dp;
+  height: 24dp;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-attach-btn {
@@ -13050,15 +13612,16 @@ textarea:composing ~ .prompt-composer-label,
   display: none;
 }
 
-/* Both tools are 44dp targets inside the box (the row and the pill are the same rectangle): the plus 8dp from the left
-   edge, the emoji key 8dp after it. */
+/* Home card B3 (Kenneth 2026-11-09): the plus (a 44dp target) at the bottom left, the emoji key (a 32dp tinted circle
+   in a 44dp target) right next to it (8dp gap), and Send (a 36dp disc) always at the right end: grey and not tappable
+   while the field is empty (.prompt-send-btn--idle), accent with text. Nothing swaps places. */
 .shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-home-plus {
   display: flex;
   align-items: center;
   justify-content: center;
   position: absolute;
-  left: 8dp;
-  bottom: 4dp;
+  left: 4dp;
+  bottom: 6dp;
   width: 44dp;
   height: 44dp;
   min-width: 44dp;
@@ -13069,28 +13632,41 @@ textarea:composing ~ .prompt-composer-label,
   cursor: pointer;
 }
 
+/* B3 (Kenneth 2026-11-09): the 32dp tinted circle is drawn on the icon; the button around it keeps the 44dp touch
+   target (the circle's centre stays 32dp from the right edge and 28dp from the bottom). */
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {
   position: absolute;
-  left: 60dp;
-  bottom: 4dp;
+  left: 42dp; /* the tinted circle 12dp after the plus glyph (Kenneth 2026-11-09: closer) */
+  bottom: 6dp;
   z-index: 1;
   width: 44dp;
   height: 44dp;
   min-width: 44dp;
   margin: 0;
+  padding: 6dp;
+  box-sizing: border-box;
   border-radius: 22dp;
+  background-color: transparent;
 }
 
-.shell-layer-compact .home-composer-mount .prompt-emoji-btn .prompt-icon-v2 {
+.prompt-icon-home-emoji {
+  display: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-emoji-btn .prompt-icon-home-emoji {
   display: block;
-  width: 24dp;
-  height: 24dp;
+  width: 32dp;
+  height: 32dp;
+  padding: 4dp;
+  box-sizing: border-box;
+  border-radius: 16dp;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {
+  display: flex;
   position: absolute;
-  right: 8dp;
-  bottom: 8dp;
+  right: 10dp;
+  bottom: 10dp;
   z-index: 1;
   width: 36dp;
   height: 36dp;
@@ -13103,9 +13679,9 @@ textarea:composing ~ .prompt-composer-label,
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32dp;
-  height: 32dp;
-  border-radius: 16dp;
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
 }
 
 .prompt-composer-label--home,
@@ -13590,101 +14166,10 @@ textarea:composing ~ .prompt-composer-label,
   top: 2dp;
 }
 
-.shell-layer-compact .pane-nav-avatar {
-  top: 2dp;
-  left: 16dp;
-  height: 52dp;
-}
-
 .shell-layer-compact .sidebar-sessions,
 .shell-layer-compact .contacts-list-view,
 .shell-layer-compact .settings-list-view {
   padding-top: 56dp;
-}
-
-/* Chats header B3 (DEV/PLAN-chats-header-b3.md, Kenneth 2026-11-08). THE header height is 104dp: a 20dp top margin, the
-   64dp avatar, and 20dp clear above the search box. It is written in exactly these three rules (the bar, its frosted
-   layer, the list's top padding) and checked by home_minimal_layout_test; the other root pages keep their 56dp bar. */
-.shell-layer-compact .sidebar-panel .pane-nav,
-.shell-layer-compact .sidebar-panel .pane-nav-bg {
-  height: 104dp;
-}
-
-.shell-layer-compact .sidebar-panel .sidebar-sessions {
-  padding-top: 104dp;
-}
-
-.shell-layer-compact .sidebar-panel .pane-nav-avatar {
-  top: 20dp;
-  left: 20dp;
-  right: 84dp;
-  width: auto;
-  height: 64dp;
-}
-
-.shell-layer-compact .sidebar-panel .pane-nav-avatar .shell-circle-avatar {
-  width: 64dp;
-  height: 64dp;
-  border-radius: 32dp;
-}
-
-.shell-layer-compact .sidebar-panel .pane-nav-avatar .shell-circle-avatar-image {
-  width: 64dp;
-  height: 64dp;
-}
-
-.shell-layer-compact .sidebar-panel .pane-nav-avatar .shell-circle-avatar .avatar-letter {
-  font-size: 26dp;
-}
-
-.pane-nav-avatar-text {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  flex: 1 1 0;
-  min-width: 0;
-  height: 64dp;
-  margin-left: 14dp;
-  text-align: left;
-}
-
-.shell-layer-compact .sidebar-panel .pane-nav-avatar-name {
-  flex: none;
-  margin: 0;
-  font-size: 22dp;
-  line-height: 26dp;
-  font-weight: bold;
-}
-
-/* The device's link to our service: a 14dp cloud (tick when online, slash when offline) and the word. */
-.pane-nav-avatar-sub {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  margin: 2dp 0 0 0;
-  height: 16dp;
-  font-size: 13dp;
-  line-height: 16dp;
-  text-align: left;
-}
-
-.pane-nav-link-icon {
-  flex: none;
-  width: 14dp;
-  height: 14dp;
-  margin-right: 5dp;
-}
-
-.pane-nav-link-text {
-  display: block;
-  white-space: nowrap;
-}
-
-/* The plus: a plain 44dp teal-tint disc (52dp hit area), centred on the avatar, 20dp from the screen edge. */
-.shell-layer-compact .sidebar-panel .pane-nav-actions {
-  top: 20dp;
-  right: 16dp;
-  height: 64dp;
 }
 
 .shell-layer-compact .home-scroll {
@@ -13729,6 +14214,29 @@ textarea:composing ~ .prompt-composer-label,
 
 .shell-layer-compact .nc-page .nc-bar-title {
   top: 0;
+}
+
+/* New chat and Add contact scroll under their bar like the other pushed pages (DEV TODO #176 / #177): the list fills the
+   page and starts 56dp down; the shell's transient chrome is the bar (titled: its material child is frosted once
+   content is under it, ShellNavBarScroll sets .nav-bar-scrolled / .nav-bar-hidden), and the title row slides away with
+   it when the list is scrolled up. */
+.shell-layer-compact .nc-page .nc-scroll,
+.shell-layer-compact .ac-page .ac-scroll {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding-top: 56dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .nav-bar-host .nc-bar {
+  transition: transform 0.25s cubic-out;
+}
+
+.shell-layer-transient.nav-bar-host.nav-bar-hidden .nc-bar {
+  transform: translateY(-64dp);
 }
 
 .shell-layer-compact .nc-page .contacts-index {
@@ -13881,9 +14389,10 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 .shell-layer-compact .ac-page .nc-bar {
-  position: relative;
-  flex: none;
-  top: auto;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 56dp;
 }
 

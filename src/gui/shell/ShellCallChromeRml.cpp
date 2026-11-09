@@ -234,18 +234,6 @@ void AppendPair(std::ostringstream& out, const CallInProgressState& call) {
       << "</p><p class=\"call-phone-pair-name\">{{call_in_progress_phone_title}}</p></div>";
 }
 
-/** The four true tips, one every 3 s (RCSS keyframes with staggered delays: no C++ tick). */
-void AppendTips(std::ostringstream& out) {
-  out << "<div class=\"call-phone-tips\">";
-  int i = 1;
-  for (const char* key : {"call.story.tip.encrypted", "call.story.tip.no_vpn", "call.story.tip.reroute",
-                          "call.story.tip.closer"}) {
-    out << "<p class=\"call-phone-tip call-phone-tip--" << i++ << "\"><span class=\"call-phone-tip-prefix\">"
-        << Tr("call.story.prefix") << "</span><span class=\"call-phone-tip-text\">" << Tr(key) << "</span></p>";
-  }
-  out << "</div>";
-}
-
 void AppendControl(std::ostringstream& out, const char* event, const char* on_var, const std::string& icon_attr,
                    const std::string& label, const char* extra_class = "") {
   out << "<button class=\"call-phone-control " << extra_class << "\" type=\"button\" data-event-click=\"" << event
@@ -604,10 +592,6 @@ std::string CallPhoneRml(const ShellState& state) {
     out << "</div>";
   }
 
-  if (call.story_active && !group) {
-    AppendTips(out);
-  }
-
   // The reconnect capsule (#171) sits at a fixed place just above the button bar; the call page stays as it is.
   out << "<div class=\"call-phone-reconnect-slot\"><div class=\"call-phone-reconnect\" "
          "data-if=\"call_in_progress_reconnect_text != ''\" "
@@ -692,7 +676,7 @@ std::string CallRingRml(const ShellState& state) {
 float MinimizedChipTopDp(const ShellState& state) {
   const CallInProgressState& call = state.call_in_progress;
   const CallChipLayout& layout = state.call_chip_layout;
-  const CallChipPlace place{call.minimized_side, call.minimized_y_permille};
+  const CallChipPlace place{call.minimized_side, call.minimized_y_permille, call.minimized_tucked};
   const CallChipArea area{state.shell_width_dp, layout.area_height_dp};
   const bool heights_known = layout.area_height_dp > 0.f && layout.chip_height_dp > 0.f;
   if (layout.top_dp > 0.f && layout.place == place) {
@@ -785,6 +769,12 @@ std::string CallInProgressRml(const ShellState& state) {
   std::ostringstream out;
 
   if (call.mode == CallChromeMode::Minimized) {
+    // #189: two forms. The full bar (title, timer, quality, mute, hang-up) and, once thrown to a side edge, the handle.
+    const bool tucked = call.minimized_tucked && call.minimized_side != CallChipDock::kSideDefault;
+    const char* form_class = !tucked ? ""
+                             : call.minimized_side == CallChipDock::kSideLeft
+                                 ? " shell-call-minimized-chip--handle shell-call-minimized-chip--handle-l"
+                                 : " shell-call-minimized-chip--handle shell-call-minimized-chip--handle-r";
     out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-minimized\" "
            "data-model=\"window\">";
     if (call.minimized_side == CallChipDock::kSideDefault) {
@@ -801,13 +791,22 @@ std::string CallInProgressRml(const ShellState& state) {
       if (top_dp >= 0.f) {
         std::snprintf(top, sizeof(top), "top:%.1fdp;", top_dp);
       }
+      const float edge_dp = tucked ? -CallChipDock::kTuckDp : CallChipDock::kEdgeDp;
       char style[112];
       if (call.minimized_side == CallChipDock::kSideLeft) {
-        std::snprintf(style, sizeof(style), "left:%.0fdp;right:auto;%sbottom:auto;", CallChipDock::kEdgeDp, top);
+        std::snprintf(style, sizeof(style), "left:%.0fdp;right:auto;%sbottom:auto;", edge_dp, top);
       } else {
-        std::snprintf(style, sizeof(style), "right:%.0fdp;left:auto;%sbottom:auto;", CallChipDock::kEdgeDp, top);
+        std::snprintf(style, sizeof(style), "right:%.0fdp;left:auto;%sbottom:auto;", edge_dp, top);
       }
-      out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row\" style=\"" << style << "\">";
+      out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row" << form_class << "\" style=\"" << style << "\">";
+    }
+    if (tucked) {
+      // #189: the handle: a small coloured phone hanging on the edge, no text. A tap (or a pull away from the edge)
+      // brings the full bar back (ShellCallChromeGesture).
+      out << "<svg class=\"shell-call-minimized-icon\" src=\"../icons/v2/phone.svg\" width=\"22\" height=\"22\" "
+             "crop-to-content=\"true\"></svg>";
+      out << "</div></div>";  // the handle, then shell-call-chrome-root
+      return out.str();
     }
     out << "<div class=\"shell-call-minimized-main\">";
     out << "<p class=\"text-sm shell-call-minimized-title\">{{call_in_progress_title}}</p>";

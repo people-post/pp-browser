@@ -49,6 +49,7 @@ void AppearanceSettingsSection::SyncFromSession(const BootstrapResult& bootstrap
   state.reduce_transparency = bootstrap.profile_prefs.reduce_transparency ? "on" : "off";
   state.call_diagnostics = bootstrap.profile_prefs.call_diagnostics ? "on" : "off";
   state.home_show_dynamic = bootstrap.profile_prefs.home_show_dynamic ? "on" : "off";
+  state.home_animated_logo = bootstrap.profile_prefs.home_animated_logo ? "on" : "off";
 }
 
 bool AppearanceSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {

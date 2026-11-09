@@ -167,9 +167,8 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
       Connected(f.screen, start + 5'000);
       f.path_kind = "media_relay";
       if (!video && t >= 30'000 && t < 40'000) {
-        // The stack moving the group onto another path: its line and the hint under it ("everyone reconnects").
-        f.screen.status = Status::Activity;
-        f.screen.activity = Tr("call.status.switching_media_path");
+        // The stack moving the group onto another path: a reconnect (the capsule says so; the line keeps the timer).
+        f.screen.status = Status::Reconnecting;
       }
       if (video && t >= 15'000) {
         f.quality = CallPathQuality::Poor;

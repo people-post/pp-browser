@@ -37,7 +37,7 @@ struct AiDotScene {
  * - Happy: both jump one after the other with happy eyes, cheeks and two floating hearts (C, D: a nod; D draws a
  *   check).
  * - Private: closes its eyes, turns away and shows a lock ("I don't read your chats").
- * - Float: the mockups' float, drifting gently up and down once for 2.5 s and back at rest (C: floatC, half as far);
+ * - Float: the mockups' float, drifting gently up and down once for 3.25 s and back at rest (C: floatC, half as far);
  *   it was a continuous loop there, here it is one timed action (Kenneth 2026-11-04) so nothing runs between them.
  * Not in the random rotation: Sleep (closed eyes, a breath, three rising z's; once after kSleepAfterMs without a touch,
  * then it stays still, asleep, until the next touch), Poke (a tap: it squashes and wobbles, then the panel opens) and
@@ -47,8 +47,10 @@ enum class AiDotIdle {
   None, Sway, Blink, Look, Talk, Shy, Wave, Listen, Think, Five, Happy, Private, Sleep, Poke, Pop, Float
 };
 
-/** The assistant look (Me → AI assistant): `a` one eye, `b` two eyes (default), `c` cool, `d` plain (no face). */
-enum class AiDotLook { OneEye, TwoEyes, Cool, Plain };
+/** The assistant look (Me → AI assistant): `a` one eye, `b` two eyes (default), `c` cool, `d` plain (no face), and the
+ * weekend looks `e` Friday (sunglasses, a lazy sway), `f` Saturday (cap, the liveliest), `g` Sunday (nightcap, half-open
+ * eyes, a mug; slow). */
+enum class AiDotLook { OneEye, TwoEyes, Cool, Plain, Evening, Outing, Lazy };
 
 /** Where the dot rests: the side it sticks to and how far down the band it stands (0 top, 1000 bottom). */
 struct AiDotPlace {
@@ -121,32 +123,48 @@ public:
   static constexpr int64_t kSleepAfterMs = 120000;
   /** The keyframes' lengths in components.rcss (ai-dot-sway, ai-dot-blink, …); the class goes a little after. The calm
    * looks (C, D) wave and poke more slowly (the mockup's tiltC / hopC 2.2 s, pokeC 0.45 s). */
-  static constexpr int64_t kSwayMs = 1200;
-  static constexpr int64_t kBlinkMs = 500;
-  static constexpr int64_t kLookMs = 2000;
-  static constexpr int64_t kTalkMs = 1680;
-  static constexpr int64_t kShyMs = 1600;
-  static constexpr int64_t kWaveMs = 1600;
-  static constexpr int64_t kWaveCalmMs = 2200;
-  static constexpr int64_t kListenMs = 2400;
-  static constexpr int64_t kThinkMs = 2400;
-  static constexpr int64_t kFiveMs = 1500;
-  static constexpr int64_t kHappyMs = 1800;
-  static constexpr int64_t kPrivateMs = 2000;
-  static constexpr int64_t kSleepMs = 4000;
-  static constexpr int64_t kPokeMs = 600;
-  static constexpr int64_t kPokeCalmMs = 450;
-  static constexpr int64_t kPopMs = 700;
-  static constexpr int64_t kFloatMs = 2500;
+  static constexpr int64_t kSwayMs = 1560;
+  static constexpr int64_t kBlinkMs = 650;
+  static constexpr int64_t kLookMs = 2600;
+  static constexpr int64_t kTalkMs = 2184;
+  static constexpr int64_t kShyMs = 2080;
+  static constexpr int64_t kWaveMs = 2080;
+  static constexpr int64_t kWaveCalmMs = 2860;
+  static constexpr int64_t kListenMs = 3120;
+  static constexpr int64_t kThinkMs = 3120;
+  static constexpr int64_t kFiveMs = 1950;
+  static constexpr int64_t kHappyMs = 2340;
+  static constexpr int64_t kPrivateMs = 2600;
+  static constexpr int64_t kSleepMs = 5200;
+  static constexpr int64_t kPokeMs = 780;
+  static constexpr int64_t kPokeCalmMs = 585;
+  static constexpr int64_t kPopMs = 910;
+  static constexpr int64_t kFloatMs = 3250;
+  /** The lazy look (G, Sunday) is slower by design (the weekend mockup's 1.3 x longer timings): these actions last
+   * longer than the shared ones above; the others are shared. */
+  static constexpr int64_t kTalkSlowMs = 3120; ///< The yawn.
+  static constexpr int64_t kWaveSlowMs = 2600;
+  static constexpr int64_t kFiveSlowMs = 2860;
+  static constexpr int64_t kHappySlowMs = 3120;
+  static constexpr int64_t kPokeSlowMs = 1040;
+  static constexpr int64_t kFloatSlowMs = 5200; ///< One slow breath.
   static constexpr int64_t kIdleTailMs = 100;
 
   static AiDotLook LookFrom(const std::string_view look) {
-    return look == "a" ? AiDotLook::OneEye : look == "c" ? AiDotLook::Cool : look == "d" ? AiDotLook::Plain
-                                                                                      : AiDotLook::TwoEyes;
+    return look == "a"   ? AiDotLook::OneEye
+           : look == "c" ? AiDotLook::Cool
+           : look == "d" ? AiDotLook::Plain
+           : look == "e" ? AiDotLook::Evening
+           : look == "f" ? AiDotLook::Outing
+           : look == "g" ? AiDotLook::Lazy
+                         : AiDotLook::TwoEyes;
   }
 
   /** C and D move less and more slowly (DESIGN-pp-ui §8.14). */
   static bool Calm(const AiDotLook look) { return look == AiDotLook::Cool || look == AiDotLook::Plain; }
+
+  /** G moves more slowly: longer talk (a yawn), wave, five, happy, poke and float. */
+  static bool Slow(const AiDotLook look) { return look == AiDotLook::Lazy; }
 
   /** The random rotation of a look: every mockup action but Sleep and Poke; the plain look has no eyes, so no blink and
    * no glance (its talk, listen, think, happy and private show symbols in its bubble instead). */
@@ -261,29 +279,29 @@ public:
     case AiDotIdle::Look:
       return kLookMs;
     case AiDotIdle::Talk:
-      return kTalkMs;
+      return Slow(look) ? kTalkSlowMs : kTalkMs;
     case AiDotIdle::Shy:
       return kShyMs;
     case AiDotIdle::Wave:
-      return Calm(look) ? kWaveCalmMs : kWaveMs;
+      return Calm(look) ? kWaveCalmMs : Slow(look) ? kWaveSlowMs : kWaveMs;
     case AiDotIdle::Listen:
       return kListenMs;
     case AiDotIdle::Think:
       return kThinkMs;
     case AiDotIdle::Five:
-      return kFiveMs;
+      return Slow(look) ? kFiveSlowMs : kFiveMs;
     case AiDotIdle::Happy:
-      return kHappyMs;
+      return Slow(look) ? kHappySlowMs : kHappyMs;
     case AiDotIdle::Private:
       return kPrivateMs;
     case AiDotIdle::Sleep:
       return kSleepMs;
     case AiDotIdle::Poke:
-      return Calm(look) ? kPokeCalmMs : kPokeMs;
+      return Calm(look) ? kPokeCalmMs : Slow(look) ? kPokeSlowMs : kPokeMs;
     case AiDotIdle::Pop:
       return kPopMs;
     case AiDotIdle::Float:
-      return kFloatMs;
+      return Slow(look) ? kFloatSlowMs : kFloatMs;
     case AiDotIdle::None:
       break;
     }

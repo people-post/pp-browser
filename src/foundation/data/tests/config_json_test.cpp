@@ -1,3 +1,4 @@
+#include "foundation/crypto/CryptoConstants.h"
 #include "foundation/data/ConfigJson.h"
 #include "common/ValueJson.h"
 #include "foundation/platform/ICredentialStore.h"
@@ -266,7 +267,7 @@ TEST(ConfigJsonTest, ProfilePrefsRecoveryPhraseSeenRoundTripsAndDefaultsOff) {
 }
 
 TEST(ConfigJsonTest, ProfilePrefsUnlockGraceMinutesRoundTripsAndRejectsOddValues) {
-  // PIN grace window (#21): absent reads 15; 0/5/15/60 round-trip; anything else reads back as 15.
+  // PIN grace window (#21): absent reads 15; 0/5/15/60/-1 (always) round-trip; anything else reads back as 15.
   auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
   ASSERT_TRUE(absent.has_value());
   pbr::ProfilePreferences loaded;
@@ -274,7 +275,7 @@ TEST(ConfigJsonTest, ProfilePrefsUnlockGraceMinutesRoundTripsAndRejectsOddValues
   pbr::ProfilePrefsFromObject(*absent, loaded);
   EXPECT_EQ(loaded.unlock_grace_minutes, 15);
 
-  for (int minutes : {0, 5, 15, 60}) {
+  for (int minutes : {0, 5, 15, 60, pbr::kUnlockGraceAlways}) {
     pbr::ProfilePreferences edited;
     edited.unlock_grace_minutes = minutes;
     pbr::ProfilePreferences parsed;
@@ -282,7 +283,7 @@ TEST(ConfigJsonTest, ProfilePrefsUnlockGraceMinutesRoundTripsAndRejectsOddValues
     EXPECT_EQ(parsed.unlock_grace_minutes, minutes);
   }
 
-  for (const char* odd_json : {R"({ "unlock_grace_minutes": 7 })", R"({ "unlock_grace_minutes": -1 })",
+  for (const char* odd_json : {R"({ "unlock_grace_minutes": 7 })", R"({ "unlock_grace_minutes": -2 })", R"({ "unlock_grace_minutes": -60 })",
                                R"({ "unlock_grace_minutes": 100000 })", R"({ "unlock_grace_minutes": "15" })"}) {
     auto odd = pbr::TryParseObject(odd_json);
     ASSERT_TRUE(odd.has_value());
@@ -339,6 +340,21 @@ TEST(ConfigJsonTest, ProfilePrefsHomeShowDynamicRoundTripsAndDefaultsOff) {
   EXPECT_TRUE(parsed.home_show_dynamic);
 }
 
+TEST(ConfigJsonTest, ProfilePrefsHomeAnimatedLogoRoundTripsAndDefaultsOn) {
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.home_animated_logo = false;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_TRUE(loaded.home_animated_logo);
+
+  pbr::ProfilePreferences edited;
+  edited.home_animated_logo = false;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_FALSE(parsed.home_animated_logo);
+}
+
 TEST(ConfigJsonTest, ProfilePrefsAiDotDefaultsRoundTripAndUnknownLook) {
   // Phone AI dot (DESIGN-pp-ui §8.14): on, two eyes, medium, right edge, 600 down its band unless written otherwise.
   auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
@@ -346,7 +362,7 @@ TEST(ConfigJsonTest, ProfilePrefsAiDotDefaultsRoundTripAndUnknownLook) {
   pbr::ProfilePreferences loaded;
   pbr::ProfilePrefsFromObject(*absent, loaded);
   EXPECT_TRUE(loaded.ai_dot_shown);
-  EXPECT_EQ(loaded.ai_dot_look, "b");
+  EXPECT_EQ(loaded.ai_dot_look, "auto") << "a different look each day unless one is picked";
   EXPECT_EQ(loaded.ai_dot_size, "m");
   EXPECT_FALSE(loaded.ai_dot_left);
   EXPECT_EQ(loaded.ai_dot_y_permille, 600);
@@ -365,11 +381,18 @@ TEST(ConfigJsonTest, ProfilePrefsAiDotDefaultsRoundTripAndUnknownLook) {
   EXPECT_TRUE(parsed.ai_dot_left);
   EXPECT_EQ(parsed.ai_dot_y_permille, 125);
 
+  pbr::ProfilePreferences automatic;
+  automatic.ai_dot_look = "auto";
+  pbr::ProfilePreferences automatic_parsed;
+  automatic_parsed.ai_dot_look = "d";
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(automatic), automatic_parsed);
+  EXPECT_EQ(automatic_parsed.ai_dot_look, "auto") << "auto survives a round trip";
+
   auto odd = pbr::TryParseObject(R"({ "ai_dot_look": "z", "ai_dot_size": "xl", "ai_dot_y_permille": 5000 })");
   ASSERT_TRUE(odd.has_value());
   pbr::ProfilePreferences clamped;
   pbr::ProfilePrefsFromObject(*odd, clamped);
-  EXPECT_EQ(clamped.ai_dot_look, "b");
+  EXPECT_EQ(clamped.ai_dot_look, "auto");
   EXPECT_EQ(clamped.ai_dot_size, "m");
   EXPECT_EQ(clamped.ai_dot_y_permille, 1000);
 }

@@ -68,6 +68,7 @@ struct CallChromeLayer {
   bool in_call_spotlight_fill = true;
   int in_call_minimized_side = 0;
   int in_call_minimized_y_permille = 0;
+  bool in_call_minimized_tucked = false;
   int in_call_quality_bars = 4;
   bool in_call_quality_ok = true;
   bool in_call_quality_warn = false;

@@ -1,6 +1,7 @@
 // Which rows a transcript shows and what folds onto them (the GUI draws them).
 #include "lib/messaging/TranscriptAssembly.h"
 
+#include "lib/delivery/DeliveryNotice.h"
 #include "lib/delivery/ReactionTypes.h"
 
 #include <gtest/gtest.h>
@@ -34,6 +35,23 @@ std::vector<std::string> Ids(const std::vector<TranscriptRow>& rows) {
     out.push_back(r.message.id);
   }
   return out;
+}
+
+TEST(TranscriptAssemblyTest, ASendFailureLineGoesWhenARetryDeliveredTheMessage) {
+  ThreadMessage sent = Msg("m1", kLocalSelfContactId, "hi", 1);
+  sent.delivery = MessageDelivery::Failed;
+  ThreadMessage line = MakeSendFailureRow("t", "m1", "relay_unreachable", 2);
+  line.display_order = 2;
+  ThreadMessage group_line = MakeSendFailureRow("t", "m1", kGroupMembersMissedWire, 3);
+  group_line.display_order = 3;
+  EXPECT_EQ(Ids(AssembleTranscript({sent, line}, nullptr)), (std::vector<std::string>{"m1", "send-failure-m1"}));
+  sent.delivery = MessageDelivery::Relayed;
+  EXPECT_EQ(Ids(AssembleTranscript({sent, line}, nullptr)), (std::vector<std::string>{"m1"}));
+  EXPECT_EQ(Ids(AssembleTranscript({sent, group_line}, nullptr)),
+            (std::vector<std::string>{"m1", "send-failure-m1-group"}))
+      << "members missing it is still true after delivery";
+  sent.delivery = MessageDelivery::Failed;  // a second failure
+  EXPECT_EQ(Ids(AssembleTranscript({sent, line}, nullptr)), (std::vector<std::string>{"m1", "send-failure-m1"}));
 }
 
 TEST(TranscriptAssemblyTest, ReactionsFoldOntoTheirTarget) {

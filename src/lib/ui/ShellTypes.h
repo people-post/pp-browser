@@ -10,6 +10,9 @@
 
 namespace pbr {
 
+/** This device's link to our service, as the Chats status line shows it (#175). */
+enum class ChatsLink { Unknown, Offline, Connecting, Online };
+
 enum class PaneRole { Primary, Secondary, Auxiliary, Transient };
 
 enum class LayoutMode { Compact, Expanded };
@@ -37,13 +40,22 @@ enum class InterruptionKind {
   PinGate,
 };
 
-/** Which compact chrome is frosted: one surface at a time (BottomNav: the tab page's nav bar and its tab bar). */
+/** Which compact chrome is frosted (BottomNav: the tab page's nav bar and its tab bar). */
 enum class CompactChromeFrostSurface {
   None,
   BottomNav,
   ChatOverlayHeader,
   AuxiliarySheetChrome,
   TransientHeader,
+};
+
+/**
+ * The frosted surfaces of one frame: at most one per bar position, so two blurs at most (a top bar and a bottom
+ * bar). A page that frosts both its top and bottom bar declares both here; nothing else may blur.
+ */
+struct CompactChromeFrost {
+  CompactChromeFrostSurface top = CompactChromeFrostSurface::None;
+  CompactChromeFrostSurface bottom = CompactChromeFrostSurface::None;
 };
 
 enum class ToastDuration { Short, Long };
@@ -425,6 +437,8 @@ struct CallInProgressState {
    */
   int minimized_side = 0;
   int minimized_y_permille = 0;
+  /** #189: the minimised chip is the small handle hanging on its side's edge (kSide* 1/2 only), not the full bar. */
+  bool minimized_tucked = false;
   int participant_count = 0;
   std::vector<CallRosterParticipantState> roster;
   /** Immersive's spotlit roster row (its stream_id; empty: the grid) — V059, CallSpotlight.h. */
@@ -538,6 +552,12 @@ struct ShellState {
   ui::String layout_mode_str = "expanded";
   NavTab nav_tab = NavTab::Home;
   ui::String nav_tab_str = "home";
+  /** Phone tab bar: the tab it highlights. nav_tab, except under a hidden tab's page (Settings), where it is the tab
+   *  that page was entered from (ShellHost::SelectNavTab). */
+  ui::String nav_bar_tab_str = "home";
+  /** Phone Settings: a secret page is pushed over a section (Security > Move to a new device). It keeps the tab bar
+   *  off (SettingsController sets it through the navigation ports). */
+  bool secret_page_open = false;
   std::vector<PaneState> panes;
   std::vector<PaneState> transient_stack;
   std::vector<OverlayEntry> overlay_stack;
@@ -554,7 +574,7 @@ struct ShellState {
   bool sidebar_collapsed = false;
   /** Phone layout: the active root page (Chats / Contacts / Me) has scrolled its 52dp large title away. */
   bool large_title_collapsed = false;
-  /** Phone Chats header status line (this device's link to our service): "ok", "offline", or empty = unknown, nothing shown.
+  /** Phone Chats header status line (this device's link to our service): "ok", "connecting", "offline", or empty = unknown, nothing shown.
    * Set by event only (ShellHost::SetChatsLink); chats_link_text is the translated label. */
   ui::String chats_link_state;
   ui::String chats_link_text;

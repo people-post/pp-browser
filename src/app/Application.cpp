@@ -577,7 +577,7 @@ Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
 }
 
 int Application::GraceMinutes() const {
-  // merged from kenneth/pin-grace-settings: Me → Security's choice (0 / 5 / 15 / 60, default 15).
+  // merged from kenneth/pin-grace-settings: Me → Security's choice (0 / 5 / 15 / 60 / -1 = always, default 15).
   return store_.IsInitialized() ? store_.Snapshot().profile_prefs.unlock_grace_minutes : 0;
 }
 
@@ -620,8 +620,8 @@ void Application::TouchGrace() {
     return;  // a locked vault's entry is the gate's to read (an expired one must not be renewed)
   }
   const int minutes = GraceMinutes();
-  if (minutes <= 0) {
-    return;
+  if (!GraceIsOn(minutes) || GraceIsAlways(minutes)) {  // off, or "until restart": nothing to touch
+    return;  // off, or "Always" (kUnlockGraceAlways): that entry never runs out, nothing to extend
   }
   if (auto touched = secrets_->TouchGrace(minutes); !touched) {
     log().warning << "Grace window not extended: " << touched.error().message;
@@ -630,8 +630,8 @@ void Application::TouchGrace() {
 }
 
 void Application::StartGraceTimer() {
-  if (grace_timer_ != 0 || !secrets_ || !secrets_->GraceSupported()) {
-    return;  // the window's length is read at each tick (TouchGrace): 0 extends nothing
+  if (grace_timer_ != 0 || !secrets_ || !secrets_->GraceSupported() || !GraceIsOn(GraceMinutes()) || GraceIsAlways(GraceMinutes())) {
+    return;  // the window's length is read at each tick (TouchGrace): 0 extends nothing, "Always" needs no ticks
   }
   // A kill without a background event may cost up to one interval of the window, so the interval stays at most half
   // the window chosen (5 → 2 minutes) and at most 5 minutes (15 / 60): no keychain write every minute for nothing.
@@ -1017,16 +1017,17 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       ForgetGrace();  // both pieces and the foreground timer
       return;
     }
-    // The new length at once (a 15-minute window becomes 5); never creates an entry.
+    // The new length at once (a 15-minute window becomes 5), and an entry when none existed yet ("Until restart"
+    // chosen after "Immediately"), written from the unlocked vault.
     if (secrets_->IsUnlocked()) {
-      if (auto touched = secrets_->TouchGrace(minutes); !touched) {
+      if (auto touched = secrets_->ApplyGraceWindow(minutes); !touched) {
         log().warning << "Grace window not changed: " << touched.error().message;
         DiagLine("unlock.grace").Add("result", "write_failed").Fail("error", touched.error()).Emit();
       }
     }
     if (AppLifecycle::IsForeground()) {
       StopGraceTimer();   // its interval follows the window's length
-      StartGraceTimer();  // kept running, or back after "Immediately"
+      StartGraceTimer();  // kept running, or back after "Immediately"; not started for "Always"
     }
   };
   // Face / fingerprint unlock (at-rest A014): Me → Security's switch. Enabling runs Argon2 (the caller is a worker).
@@ -1081,9 +1082,11 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
 
     const std::string account_id = support_discovery_->account_id;
-    std::string display_name = support_discovery_->display_name;
+    // The contact is named in the user's language ("PP 客服" / "PP Support"), not by the server's English display
+    // name (Kenneth 2026-11-09); the discovery name is only the fallback when the locale has no title.
+    std::string display_name = Tr("support.entry.title");
     if (display_name.empty()) {
-      display_name = Tr("support.entry.title");
+      display_name = support_discovery_->display_name;
     }
 
     auto found = facade.FindContactByIdentity(account_id, mesh::ContactIdKind::Account);
@@ -1320,7 +1323,11 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   if (ui_perf_) {
     ui_perf_->BindShellNavigation(shell_navigation);
     settings_->BindOpenUiPerfTest([this]() { ui_perf_->Open(); });
-    settings_->BindSimulateChatsLink([this](const bool online) { shell_->SetChatsLink(true, online); });
+    settings_->BindSimulateChatsLink([this](const std::string& state) {
+      shell_->SetChatsLink(state == "online"       ? ChatsLink::Online
+                           : state == "connecting" ? ChatsLink::Connecting
+                                                   : ChatsLink::Offline);
+    });
   }
   emoji_picker_->BindShellNavigation(shell_navigation);
   emoji_picker_->BindShellFeedback(shared_feedback);
@@ -1438,7 +1445,9 @@ void Application::WireCalls() {
     call_actions.spotlight_grid = [this]() { call_->SpotlightGrid(); };
     call_actions.spotlight_toggle_fill = [this]() { call_->ToggleSpotlightFill(); };
     call_actions.restore_chrome_from_minimized = [this]() { call_->RestoreChromeFromMinimized(); };
-    call_actions.set_minimized_place = [this](int side, int y_permille) { call_->SetMinimizedPlace(side, y_permille); };
+    call_actions.set_minimized_place = [this](int side, int y_permille, bool tucked) {
+      call_->SetMinimizedPlace(side, y_permille, tucked);
+    };
     call_actions.show_call_details = [this]() { call_->ShowCallDetails(); };
     chat_->BindCallActions(call_actions);
     shell_->BindCallActions(call_actions);
@@ -1546,7 +1555,7 @@ void Application::WireUnlockPinAndFlow() {
     pin_gate_->SetWaitingDeviceUnlock(waiting);
   };
   unlock_ports.ui.on_default_provisioned = []() {
-    UserFeedback::Ok("Using the app default. Change anytime in Me → Security.");
+    UserFeedback::Ok(Tr("pin.default_provisioned_toast"));
   };
   // Both bring another DEK: once it is in, a face / fingerprint entry left from before could not open it (A014). A
   // failed import keeps it (the old DEK stays).
@@ -1592,8 +1601,8 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.remember_grace = [this](const int minutes) -> Roe<void> {
     // The timer starts with the gate's dismiss, when the app is on screen.
     auto kept = secrets_->RememberGrace(minutes);
-    if (minutes <= 0) {
-      StopGraceTimer();  // 0 forgets: nothing to extend
+    if (!GraceIsOn(minutes) || GraceIsAlways(minutes)) {
+      StopGraceTimer();  // 0 forgets, "Always" never runs out: nothing to extend
     }
     return kept;
   };
@@ -2265,10 +2274,25 @@ void Application::WireHubCallbacks() {
     });
   });
   // The Chats header's status line: the OS monitor reports on its own thread, the shell updates on the UI thread.
-  messaging.SetOnNetworkOnlineChanged([this](const bool known, const bool online) {
-    AppRuntime::PostUI([this, known, online]() {
-      if (shell_) {
-        shell_->SetChatsLink(known, online);
+  // Network + relay poll are combined in the hub (#175); this fires on a change from the monitor / poll / timer threads.
+  messaging.SetOnLinkStateChanged([this](const ConversationsHub::LinkState state) {
+    AppRuntime::PostUI([this, state]() {
+      if (!shell_) {
+        return;
+      }
+      switch (state) {
+      case ConversationsHub::LinkState::Online:
+        shell_->SetChatsLink(ChatsLink::Online);
+        break;
+      case ConversationsHub::LinkState::Connecting:
+        shell_->SetChatsLink(ChatsLink::Connecting);
+        break;
+      case ConversationsHub::LinkState::Offline:
+        shell_->SetChatsLink(ChatsLink::Offline);
+        break;
+      case ConversationsHub::LinkState::Unknown:
+        shell_->SetChatsLink(ChatsLink::Unknown);
+        break;
       }
     });
   });
@@ -2713,7 +2737,7 @@ void Application::Shutdown() {
     messaging_->SetOnMessagingReady(nullptr);
     messaging_->SetOnMeshReady(nullptr);
     messaging_->SetOnReachabilityUpdated(nullptr);
-    messaging_->SetOnNetworkOnlineChanged(nullptr);
+    messaging_->SetOnLinkStateChanged(nullptr);
     messaging_->SetOnPeerIconsChanged(nullptr);
     messaging_->SetOnCallWake(nullptr);
   }

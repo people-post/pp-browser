@@ -18,6 +18,11 @@ struct ShellLayout {
   static bool IsHiddenTabOnCompact(NavTab tab);
   /** Phone layout on a hidden tab (IsHiddenTabOnCompact): its page covers a chat overlay left open under it. */
   static bool HiddenTabShown(const ShellState& state);
+  /** Pages that may be pushed (transient) from Settings and keep the tab bar under them (TODO #200). */
+  static bool IsSettingsFamilyTransient(const std::string& key);
+  /** Phone layout on Settings (Me) with only settings-family pages pushed over it and no secret page: the tab bar is
+   *  drawn, over the pushed pages too. Any other pushed page (a chat, the scanner, the PIN gate...) keeps today's none. */
+  static bool SettingsTabBarShown(const ShellState& state);
   /** Height of the phone tab bar now: 0 where it is not drawn (a hidden tab, the chat overlay), else `bar_height_dp`
    *  (also under a pushed page, which covers it, and under the AI drawer's scrim). 0 on desktop. */
   static float CompactTabBarDp(const ShellState& state, float bar_height_dp = ShellConfig{}.compact_nav_height_dp);

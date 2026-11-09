@@ -1,5 +1,6 @@
 #include "foundation/platform/IosLocalNotifier.h"
 
+#include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/PendingNotificationTap.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
@@ -36,9 +37,11 @@ void IosLocalNotifier::NotifyIncoming(const std::string& title, const std::strin
   }
   @autoreleasepool {
     UNMutableNotificationContent* content = [[UNMutableNotificationContent new] autorelease]; // MRC
-    content.title = ToNs(title.empty() ? "New message" : title);
-    content.body = ToNs(body.empty() ? "You have a new message" : body);
-    content.sound = [UNNotificationSound defaultSound];
+    content.title = ToNs(title.empty() ? Tr("notification.new_message") : title);
+    content.body = ToNs(body.empty() ? Tr("notification.new_message_body") : body);
+    // Our own tones (bundle root); if a file is missing iOS falls back to the default sound.
+    // The call alert has an empty thread id.
+    content.sound = [UNNotificationSound soundNamed:(thread_id.empty() ? @"call.caf" : @"msg.caf")];
     if (!thread_id.empty()) {
       content.threadIdentifier = ToNs(thread_id);
       content.userInfo = @{ToNs(kIosNotificationThreadKey) : ToNs(thread_id)};
