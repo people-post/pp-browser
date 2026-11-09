@@ -6,6 +6,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     CallBackOffer.cpp
     CallConnectStory.cpp
     CallLocalHold.cpp
+    CallMediaFrame.cpp
     CallMediaHintClock.cpp
     CallReconnectCapsule.cpp
     CallPresenter.cpp

@@ -371,6 +371,18 @@ public:
     return members;
   }
 
+  /** What the call screen's media frame decided (CallMediaFrame): the status line, the reconnect and its capsule. */
+  static Object MediaFrameObject(const CallMediaScreen& frame) {
+    Object out;
+    out.set("line", frame.line.key);
+    out.set("reconnect", frame.media.reconnect);
+    out.set("capsule", std::string(CallReconnectKey(frame.reconnect.kind)));
+    out.set("on_hold", frame.media.on_hold);
+    out.set("starting_video", frame.media.starting_video);
+    out.set("hint", frame.hint_shown ? frame.hint_key : std::string());
+    return out;
+  }
+
   Object SurfaceObject() {
     Object out;
     out.set("kind", last_kind_);
@@ -389,6 +401,7 @@ public:
     out.set("members", ArrayValue(MembersOf(screen))); // V062: who is a guest, and what this user may do
     out.set("ring_guest", screen.ring_guest);
     out.set("ring_people", static_cast<int64_t>(screen.ring_people));
+    out.set("media_frame", ObjectValue(MediaFrameObject(presenter_.MediaScreen())));
     if (calls_->Available()) {
       IMediaView& media = calls_->Media();
       const auto health = media.HealthSnapshot();

@@ -12,6 +12,8 @@ namespace {
 constexpr const char* kPeer = "demo-acct-demo-contact-03";
 constexpr const char* kGroupThread = "demo-thread-group-1";
 constexpr const char* kSelf = "demo-acct-self";
+/** The call a V064 scene ends (ring_conflict, call_back): another DemoDataSeeder contact. */
+constexpr const char* kOther = "demo-acct-demo-contact-01";
 
 using Status = CallScreen::Status;
 
@@ -92,11 +94,14 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
     }
     return f;
   }
-  if (scene == "reconnect") {
-    f.screen = InCall("demo-reconnect", false, false);
+  if (scene == "reconnect" || scene == "reconnect_recovers") {
+    // Down from 6 s: the capsule says "Reconnecting…", then "They may be offline" 20 s on; the one that recovers is
+    // back at 12 s ("Restored", then the capsule goes).
+    const bool recovers = scene == "reconnect_recovers";
+    f.screen = InCall(recovers ? "demo-reconnect-recovers" : "demo-reconnect", false, false);
     Connected(f.screen, start - 60'000);
     f.path_kind = "direct";
-    if (t >= 6'000) {
+    if (t >= 6'000 && (!recovers || t < 12'000)) {
       f.screen.status = Status::Reconnecting;
       f.screen.media_connected = false;
       f.quality = CallPathQuality::Reconnecting;
@@ -124,6 +129,26 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
       }
       f.screen.members[0].on_hold = true;
     }
+    return f;
+  }
+  if (scene == "ring_conflict") {
+    // V064: a call rings over the 1:1 call this device is in: the ring names the caller and the call answering ends.
+    f.screen.kind = CallScreen::Kind::Ringing;
+    f.screen.ring_call_id = "demo-ring-conflict";
+    f.screen.caller_identity = kPeer;
+    f.screen.conflict = true;
+    f.screen.ending = {.call_id = "demo-voice", .peer_identity = kOther, .video = false};
+    return f;
+  }
+  if (scene == "call_back") {
+    // V064: End & accept ended the call with kOther; the call taken (with kPeer) is over at 8 s: "Call them back?".
+    if (t < 8'000) {
+      f.screen = InCall("demo-call-taken", false, false);
+      Connected(f.screen, start);
+      f.path_kind = "direct";
+      return f;
+    }
+    f.call_back = CallScreen::EndingCall{.call_id = "demo-ended", .peer_identity = kOther, .video = false};
     return f;
   }
   if (scene == "failed") {
@@ -182,6 +207,42 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
     return f;
   }
   return {};
+}
+
+CallMediaFacts DemoCallMediaFacts(const DemoCallFrame& frame, const int64_t now_ms) {
+  const CallScreen& s = frame.screen;
+  CallMediaFacts facts;
+  facts.call_id = s.call_id;
+  facts.now_ms = now_ms;
+  facts.video_allowed = s.video;
+  facts.media_active = s.media_connected;
+  facts.media_chrome_live = s.media_connected;
+  if (s.status == Status::Reconnecting) {
+    facts.media_status = CallMediaStatus::Reconnecting;
+  } else if (s.media_connected) {
+    facts.media_status = s.group ? CallMediaStatus::HopLive : CallMediaStatus::DirectLive;
+  }
+  facts.on_hop = s.group;
+  facts.live_since_ms = s.connected_at_ms;
+  facts.camera_on = frame.video_stage;
+  for (const CallScreen::Member& member : s.members) {
+    if (!s.group && !member.is_local) {
+      // The 1:1 peer's roster row: their camera and the hold (V060).
+      facts.have_peer_row = true;
+      facts.peer_camera_on = member.video_enabled;
+      facts.peer_on_hold = member.on_hold;
+      facts.peer_video_paused = member.video_paused;
+    }
+  }
+  return facts;
+}
+
+CallMediaHealthView DemoCallHealth(const DemoCallFrame& frame) {
+  CallMediaHealthView health;
+  health.path_kind = frame.path_kind;
+  health.quality = frame.quality;
+  health.quality_bars = frame.quality_bars;
+  return health;
 }
 
 } // namespace pbr
