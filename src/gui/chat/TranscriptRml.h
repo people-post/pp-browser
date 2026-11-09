@@ -27,12 +27,14 @@ struct PictureBubbleSize {
 };
 
 /** The phone's picture bubble box (Kenneth 2026-11-04: pictures spilled out of their frame). */
-inline constexpr int kPictureBubbleMaxWidthDp = 200;
-inline constexpr int kPictureBubbleMaxHeightDp = 240;
+inline constexpr int kPictureBubbleMaxWidthDp = 280;  // about 72% of a 390dp phone's transcript
+inline constexpr int kPictureBubbleMaxHeightDp = 320;
+/** A small picture is enlarged just enough for its short side to reach this, never past the box. */
+inline constexpr int kPictureBubbleMinShortSideDp = 120;
 
 /**
- * A `width_px` x `height_px` picture fitted inside the bubble box, its shape kept, never enlarged (at least 1dp a
- * side); {0, 0} when the size is unknown.
+ * A `width_px` x `height_px` picture fitted inside the bubble box, its shape kept, never enlarged past what its short side needs to reach
+ * kPictureBubbleMinShortSideDp (at least 1dp a side); {0, 0} when the size is unknown.
  */
 PictureBubbleSize FitPictureInBubble(int width_px, int height_px);
 
