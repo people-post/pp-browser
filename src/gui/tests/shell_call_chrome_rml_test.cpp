@@ -56,7 +56,7 @@ TEST(ShellCallChromeRmlTest, EachModeHasItsOwnChrome) {
   state.call_in_progress.mode = CallChromeMode::Immersive;
   const std::string immersive = CallInProgressRml(state);
   EXPECT_NE(minimized, immersive);
-  EXPECT_FALSE(Has(minimized, "call_leave()")) << "the compact chip is icon only (#189)";
+  EXPECT_TRUE(Has(minimized, "call_leave()"));
   EXPECT_TRUE(Has(immersive, "call_leave()"));
 }
 
@@ -333,17 +333,45 @@ TEST(ShellCallChromeRmlTest, PhoneVideoFlipButtonIsLitOnTheFrontCamera) {
                        "data-class-call-phone-control--on=\"call_in_progress_camera_front\""));
 }
 
-// #189: the minimised chip is a bare icon: no title, timer, quality words or buttons.
-TEST(ShellCallChromeRmlTest, TheMinimisedChipIsIconOnly) {
+// #189: the minimised chip is the full bar (title, timer, quality, mute, hang-up) ...
+TEST(ShellCallChromeRmlTest, TheMinimisedFullBarHasTitleTimerQualityAndButtons) {
   ShellState state;
   state.call_in_progress.active = true;
   state.call_in_progress.mode = CallChromeMode::Minimized;
   const std::string rml = CallInProgressRml(state);
-  EXPECT_TRUE(Has(rml, "shell-call-minimized-icon"));
-  EXPECT_TRUE(Has(rml, "../icons/phone.svg"));
-  EXPECT_FALSE(Has(rml, "call_in_progress_title"));
-  EXPECT_FALSE(Has(rml, "call_in_progress_subtitle"));
-  EXPECT_FALSE(Has(rml, "<button"));
+  EXPECT_TRUE(Has(rml, "call_in_progress_title"));
+  EXPECT_TRUE(Has(rml, "call_in_progress_subtitle"));
+  EXPECT_TRUE(Has(rml, "shell-call-quality"));
+  EXPECT_TRUE(Has(rml, "call_mute()"));
+  EXPECT_TRUE(Has(rml, "call_leave()"));
+  EXPECT_FALSE(Has(rml, "--handle"));
+  // ... also when it sits on a side, until it is tucked.
+  state.call_in_progress.minimized_side = CallChipDock::kSideRight;
+  state.call_in_progress.minimized_y_permille = 500;
+  EXPECT_TRUE(Has(CallInProgressRml(state), "call_leave()"));
+}
+
+// ... and, thrown to a side edge, the handle: only the phone, 12dp of it beyond that edge.
+TEST(ShellCallChromeRmlTest, TheMinimisedHandleIsOnlyTheIconHangingOnItsEdge) {
+  ShellState state;
+  state.call_in_progress.active = true;
+  state.call_in_progress.mode = CallChromeMode::Minimized;
+  state.call_in_progress.minimized_side = CallChipDock::kSideRight;
+  state.call_in_progress.minimized_y_permille = 500;
+  state.call_in_progress.minimized_tucked = true;
+  const std::string right = CallInProgressRml(state);
+  EXPECT_TRUE(Has(right, "shell-call-minimized-chip--handle"));
+  EXPECT_TRUE(Has(right, "shell-call-minimized-icon"));
+  EXPECT_TRUE(Has(right, "../icons/v2/phone.svg"));
+  EXPECT_TRUE(Has(right, "right:-12dp"));
+  EXPECT_FALSE(Has(right, "call_in_progress_title"));
+  EXPECT_FALSE(Has(right, "call_in_progress_subtitle"));
+  EXPECT_FALSE(Has(right, "<button"));
+  state.call_in_progress.minimized_side = CallChipDock::kSideLeft;
+  EXPECT_TRUE(Has(CallInProgressRml(state), "left:-12dp"));
+  // The default corner has no edge to hang on: always the bar.
+  state.call_in_progress.minimized_side = CallChipDock::kSideDefault;
+  EXPECT_FALSE(Has(CallInProgressRml(state), "--handle"));
 }
 
 // #166: the minimised chip. Never dragged this call: the default top-right corner class, no inline place — as before.

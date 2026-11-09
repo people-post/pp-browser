@@ -73,6 +73,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
       synced.in_call_spotlight_fill != next.in_call_spotlight_fill ||
       synced.in_call_minimized_side != next.in_call_minimized_side ||
       synced.in_call_minimized_y_permille != next.in_call_minimized_y_permille ||
+      synced.in_call_minimized_tucked != next.in_call_minimized_tucked ||
       synced.ring_show_pricing != next.ring_show_pricing ||
       synced.ring_accept_charge_enabled != next.ring_accept_charge_enabled) {
     return CallChromeUpdate::Remount;

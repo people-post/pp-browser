@@ -443,6 +443,7 @@ private:
   bool call_chip_rebuild_held_ = false;
   /** The chip's mode and place at the last call.chip remount line (its `reason`). */
   bool diag_chip_minimized_ = false;
+  bool diag_chip_tucked_ = false;
   int diag_chip_side_ = 0;
   int diag_chip_y_ = 0;
   bool remount_dialog_chrome_pending_ = false;

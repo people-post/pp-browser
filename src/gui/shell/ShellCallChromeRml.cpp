@@ -692,7 +692,7 @@ std::string CallRingRml(const ShellState& state) {
 float MinimizedChipTopDp(const ShellState& state) {
   const CallInProgressState& call = state.call_in_progress;
   const CallChipLayout& layout = state.call_chip_layout;
-  const CallChipPlace place{call.minimized_side, call.minimized_y_permille};
+  const CallChipPlace place{call.minimized_side, call.minimized_y_permille, call.minimized_tucked};
   const CallChipArea area{state.shell_width_dp, layout.area_height_dp};
   const bool heights_known = layout.area_height_dp > 0.f && layout.chip_height_dp > 0.f;
   if (layout.top_dp > 0.f && layout.place == place) {
@@ -785,6 +785,12 @@ std::string CallInProgressRml(const ShellState& state) {
   std::ostringstream out;
 
   if (call.mode == CallChromeMode::Minimized) {
+    // #189: two forms. The full bar (title, timer, quality, mute, hang-up) and, once thrown to a side edge, the handle.
+    const bool tucked = call.minimized_tucked && call.minimized_side != CallChipDock::kSideDefault;
+    const char* form_class = !tucked ? ""
+                             : call.minimized_side == CallChipDock::kSideLeft
+                                 ? " shell-call-minimized-chip--handle shell-call-minimized-chip--handle-l"
+                                 : " shell-call-minimized-chip--handle shell-call-minimized-chip--handle-r";
     out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-minimized\" "
            "data-model=\"window\">";
     if (call.minimized_side == CallChipDock::kSideDefault) {
@@ -801,19 +807,38 @@ std::string CallInProgressRml(const ShellState& state) {
       if (top_dp >= 0.f) {
         std::snprintf(top, sizeof(top), "top:%.1fdp;", top_dp);
       }
+      const float edge_dp = tucked ? -CallChipDock::kTuckDp : CallChipDock::kEdgeDp;
       char style[112];
       if (call.minimized_side == CallChipDock::kSideLeft) {
-        std::snprintf(style, sizeof(style), "left:%.0fdp;right:auto;%sbottom:auto;", CallChipDock::kEdgeDp, top);
+        std::snprintf(style, sizeof(style), "left:%.0fdp;right:auto;%sbottom:auto;", edge_dp, top);
       } else {
-        std::snprintf(style, sizeof(style), "right:%.0fdp;left:auto;%sbottom:auto;", CallChipDock::kEdgeDp, top);
+        std::snprintf(style, sizeof(style), "right:%.0fdp;left:auto;%sbottom:auto;", edge_dp, top);
       }
-      out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row\" style=\"" << style << "\">";
+      out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row" << form_class << "\" style=\"" << style << "\">";
     }
-    // #189: icon only — a 48dp circle with the call mark (no text, no timer, no buttons). A tap restores the call
-    // screen, where the title, timer, mute and hang-up are.
-    out << "<svg class=\"shell-call-minimized-icon\" src=\"../icons/phone.svg\" width=\"24\" height=\"24\" "
-           "crop-to-content=\"true\"></svg>";
-    out << "</div></div>";  // the chip, then shell-call-chrome-root
+    if (tucked) {
+      // #189: the handle: a small coloured phone hanging on the edge, no text. A tap (or a pull away from the edge)
+      // brings the full bar back (ShellCallChromeGesture).
+      out << "<svg class=\"shell-call-minimized-icon\" src=\"../icons/v2/phone.svg\" width=\"22\" height=\"22\" "
+             "crop-to-content=\"true\"></svg>";
+      out << "</div></div>";  // the handle, then shell-call-chrome-root
+      return out.str();
+    }
+    out << "<div class=\"shell-call-minimized-main\">";
+    out << "<p class=\"text-sm shell-call-minimized-title\">{{call_in_progress_title}}</p>";
+    out << "<p class=\"text-xs shell-call-minimized-subtitle\">{{call_in_progress_subtitle}}</p>";
+    out << "</div>";
+    append_quality_chip(out, "shell-call-quality--compact");
+    out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute shell-call-mute--compact\" type=\"button\" "
+           "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
+    out << "<svg id=\"shell-call-mute-icon\" width=\"16\" height=\"16\" crop-to-content=\"true\" "
+           "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
+    out << "</button>";
+    out << "<button class=\"shell-call-leave shell-call-leave--compact\" type=\"button\" "
+           "data-event-click=\"call_leave()\">";
+    out << "<svg src=\"../icons/phone-hangup.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
+    out << "</button>";
+    out << "</div></div>";
     return out.str();
   }
 
