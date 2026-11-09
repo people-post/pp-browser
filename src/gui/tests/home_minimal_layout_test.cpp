@@ -189,12 +189,6 @@ TEST_F(HomeMinimalLayoutTest, CardIsTheNarrow108dpB3WithACircleEmojiAndNoMic) {
   EXPECT_LT(emoji->GetAbsoluteOffset(ui::BoxArea::Border).x + size.x, send->GetAbsoluteOffset(ui::BoxArea::Border).x);
 }
 
-// Docked (TODO #204): the landing keeps its undocked height, so the mascot, card and chips stay exactly where they are
-// without a keyboard (the keyboard just covers the lower part). Only when it would cover the card is the block moved up,
-// by exactly the overlap plus the 8dp gap (ShellHost::SyncHomeDock does the same measurement on the inner block).
-// 844 / keyboard 336: everything stays (card 363..471, mascot 120); the chips keep their place, under the keyboard top.
-// #204 docking tests removed while docking is switched off (see ShellHost::SyncHomeDock).
-
 TEST_F(HomeMinimalLayoutTest, KeyboardGoneCentresTheBlockAgain) {
   Load(390, 844, 0, false);
   const Box card = ById("stub-composer");
@@ -222,6 +216,43 @@ TEST_F(HomeMinimalLayoutTest, KeyboardUpOnTallScreenKeepsFieldAboveTheKeyboard) 
   const Box pill = First("prompt-composer-pill");
   EXPECT_LE(pill.bottom(), visible_height);
   EXPECT_GE(pill.top, 90.f);
+}
+
+// One document, three states (the phone: tap the field, the keyboard / emoji sheet rises, then goes away): the layer
+// is shortened by the lift the way ShellHost lifts #shell-root, and the block must come back to where it was.
+TEST_F(HomeMinimalLayoutTest, BlockReturnsWhenTheKeyboardOrEmojiSheetGoesAway) {
+  for (const int lift : {336, 291}) {
+    SCOPED_TRACE(lift);
+    if (context) {
+      ui::RemoveContext("home-minimal-layout-test");
+      context = nullptr;
+      ui::Shutdown();
+      initialized = false;
+    }
+    Load(390, 844, 0, false, true);
+    ui::ElementList landings;
+    document->GetElementsByClassName(landings, "home-landing");
+    ASSERT_FALSE(landings.empty());
+    ui::Element* layer = landings.front()->GetParentNode();
+    const auto set_lift = [&](int dp) {
+      layer->SetProperty("height", (std::to_string(844 - dp) + "dp").c_str());
+      context->Update();
+      context->Update();
+    };
+    const Box card0 = ById("stub-composer");
+    const Box logo0 = First("home-logo");
+    set_lift(lift);
+    const Box card1 = ById("stub-composer");
+    std::printf("[lift %d] card %.1f -> %.1f -> ", lift, card0.top, card1.top);
+    EXPECT_NE(card1.top, card0.top) << "the block re-centres in the remaining space";
+    EXPECT_LE(card1.bottom(), 844.f - lift);
+    set_lift(0);
+    const Box card2 = ById("stub-composer");
+    const Box logo2 = First("home-logo");
+    std::printf("%.1f (logo %.1f -> %.1f)\n", card2.top, logo0.top, logo2.top);
+    EXPECT_FLOAT_EQ(card2.top, card0.top);
+    EXPECT_FLOAT_EQ(logo2.top, logo0.top);
+  }
 }
 
 // The Chats header (sidebar.rml's .pane-nav) on a phone: a 56dp bar holding the compose button at the right, and the

@@ -1995,29 +1995,6 @@ void ShellHost::ApplySafeAreaLayout() {
   // Chat overlay fills shell-root (already lifted); no extra bottom inset.
   set_dp(doc->GetElementById("shell-chat-overlay"), "bottom", 0.f);
   set_dp(doc->GetElementById("shell-chat-overlay"), "padding-bottom", 0.f);
-  SyncHomeDock(doc);
-}
-
-// The AI Home with a keyboard / emoji sheet up (TODO #204): the mascot and the card stay exactly where they are without
-// it — it must feel like the keyboard rises over the page, not like the block is pulled down. #shell-root is lifted by
-// the keyboard, which would re-centre the block in the shorter page, so the landing keeps its full (undocked) height
-// with a negative bottom margin and the keyboard covers its lower part (the chips). Only when that would cover the card
-// (small screens) the block moves up by exactly the overlap (+8dp gap), nothing more.
-void ShellHost::SyncHomeDock(ui::ElementDocument* doc) {
-  // #204 docking is switched off for now (Kenneth 2026-11-09 evening): on the phone the overlap was measured from the
-  // previous frame's layout, so the block was lifted off the screen when the field or the emoji sheet opened. The
-  // keyboard-up layout is the plain one again (the block re-centres in what is left); redo with device measurements.
-  if (!doc || state_.layout_mode != LayoutMode::Compact) {
-    return;
-  }
-  if (ui::Element* landing = doc->GetElementById("home-landing")) {
-    landing->RemoveProperty("margin-bottom");
-    ui::ElementList inners;
-    landing->GetElementsByClassName(inners, "home-landing-inner");
-    if (!inners.empty()) {
-      inners.front()->RemoveProperty("top");
-    }
-  }
 }
 
 bool ShellHost::ChromeFrostEnabled() const {
