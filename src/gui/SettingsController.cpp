@@ -1776,8 +1776,9 @@ void SettingsController::ApplySupportDiscovery() {
     return;
   }
   bindings_.support_visible = true;
-  bindings_.support_display_name =
-      discovery->display_name.empty() ? Tr("support.entry.title").c_str() : discovery->display_name.c_str();
+  // Localised title first ("PP 客服" / "PP Support"); the server's display name only when the locale has none.
+  const std::string title = Tr("support.entry.title");
+  bindings_.support_display_name = title.empty() ? discovery->display_name.c_str() : title.c_str();
 }
 
 void SettingsController::OnOpenSupportChat() {

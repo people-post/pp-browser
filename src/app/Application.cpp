@@ -1081,9 +1081,11 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
 
     const std::string account_id = support_discovery_->account_id;
-    std::string display_name = support_discovery_->display_name;
+    // The contact is named in the user's language ("PP 客服" / "PP Support"), not by the server's English display
+    // name (Kenneth 2026-11-09); the discovery name is only the fallback when the locale has no title.
+    std::string display_name = Tr("support.entry.title");
     if (display_name.empty()) {
-      display_name = Tr("support.entry.title");
+      display_name = support_discovery_->display_name;
     }
 
     auto found = facade.FindContactByIdentity(account_id, mesh::ContactIdKind::Account);
