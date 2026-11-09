@@ -83,8 +83,8 @@ protected:
     hops_ = std::make_unique<mesh::AmpCircuitHopRegistry>();
     circuit_r_ = std::make_unique<mesh::CircuitRelayServer>(*harness_->runtime_r);
     circuit_a_ = std::make_unique<mesh::CircuitClientCoordinator>(*harness_->runtime_a);
-    a_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_a);
-    b_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b);
+    a_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_a, *harness_->clock);
+    b_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b, *harness_->clock);
 
     circuit_r_->Start();
     circuit_r_->SetServeInbound(true);

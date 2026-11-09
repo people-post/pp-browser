@@ -12,6 +12,7 @@
 #include "mesh/l4/circuit/CircuitRelayTypes.h"
 #include "mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
 #include "domain/call_media/CallMediaLegCoordinator.h"
+#include "domain/call_media/MonotonicClock.h"
 #include "mesh/l4/circuit/client/CircuitClientCoordinator.h"
 #include "domain/call_media/ICallMediaTransport.h"
 #include "mesh/host/MeshPorts.h"
@@ -965,7 +966,7 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
     std::cout << "ok  warm-hop associated hop=" << warm_hop_ma << "\n";
   }
 
-  auto media = std::make_unique<pbr::CallMediaLegCoordinator>((*peer)->Runtime());
+  auto media = std::make_unique<pbr::CallMediaLegCoordinator>((*peer)->Runtime(), pbr::MonotonicClock::Process());
   media->Start();
 
   auto circuit = std::make_unique<pp::mesh::CircuitClientCoordinator>((*peer)->Runtime());
@@ -1100,7 +1101,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
   auto circuit = std::make_unique<pp::mesh::CircuitClientCoordinator>((*offerer)->Runtime());
   circuit->Start();
 
-  auto media = std::make_unique<pbr::CallMediaLegCoordinator>((*offerer)->Runtime());
+  auto media = std::make_unique<pbr::CallMediaLegCoordinator>((*offerer)->Runtime(), pbr::MonotonicClock::Process());
   media->Start();
 
   auto pump = [p = offerer->get()]() { p->Pump(); };

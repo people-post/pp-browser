@@ -153,7 +153,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | Amp `PeerLinkManager` / `IChatPeerLinks` **mutations** | Amp IO strand (`MeshRuntime::PostToIo`) |
 | Amp teardown (Abort / Close / DropLink / L4 `on_done`) | `MeshRuntime::PostDeferred` |
 | Amp deadlines / sync windows | `MeshRuntime::PostAfter` (Amp clock) |
-| Call-media leg deadlines / path timers | The runtime's io tick, on its Amp clock (`CallMediaLegCoordinator`; constants in `CallMediaBundleLogic.h`) |
+| Call-media leg deadlines / path timers | The runtime's io tick, on the timer clock the coordinator is given — monotonic in the product (`MonotonicClock`; amp's `WallClock` is system_clock, and a wall-clock step must not move a reconnect window), the harness's `VirtualClock` in tests; a deadline handed to amp is converted to its clock (`CallMediaLegCoordinator`; constants in `CallMediaBundleLogic.h`) |
 | Periodic sync / hub policy | Coordinator timers |
 | libcurl, UPnP, Argon2, long DB | Worker pool |
 | Waiting on the mesh | Nowhere — completions (`EnsureAssociation` callback, `PostAfter` deadline) |

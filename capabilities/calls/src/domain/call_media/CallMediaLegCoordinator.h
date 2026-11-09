@@ -1,5 +1,6 @@
 #pragma once
 
+#include "amp/L1/Clock.h"
 #include "amp/link/MeshRuntime.h"
 #include "lib/calls/CallMediaBundleLogic.h"
 #include "domain/call_media/ICallMediaTransport.h"
@@ -34,8 +35,10 @@ struct CallMediaPathState {
  * One call attempt = call_id-keyed control+media bundle ([A021]).
  * Product uses CallMediaAmpTransport as the single entry when MeshHost Amp is up ([A020]).
  * Every deadline and path timer (connect, migrate, heartbeats, silence, bye wait, reconnect window —
- * CallMediaBundleLogic.h) runs on the runtime's clock (`GetEndpoint().GetClock()`), checked on its io
- * tick: a harness on a VirtualClock moves them by advancing it.
+ * CallMediaBundleLogic.h) runs on `timer_clock`, checked on the runtime's io tick. The product passes a
+ * monotonic one (MonotonicClock::Process(): amp's WallClock is system_clock, and a wall-clock step must not
+ * stretch or cut a call's windows); a harness that runs the runtime on a VirtualClock passes that same clock,
+ * so advancing it moves both. A deadline handed to amp (a channel-open wait) is converted to amp's clock.
  */
 class CallMediaLegCoordinator {
 public:
@@ -48,7 +51,8 @@ public:
   static CallMediaFailure WrapLinkFailure(const pp::amp::PeerLinkManager::Failure& link);
   using InboundHandler = CallMediaInboundHandler;
 
-  explicit CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime);
+  /** `timer_clock` outlives the coordinator. */
+  CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime, const pp::adp::Clock& timer_clock);
   ~CallMediaLegCoordinator();
 
   CallMediaLegCoordinator(const CallMediaLegCoordinator&) = delete;
@@ -139,6 +143,7 @@ private:
   struct Impl;
   std::shared_ptr<Impl> impl_;
   pp::amp::MeshRuntime& runtime_;
+  const pp::adp::Clock& timer_clock_;
 };
 
 } // namespace pbr

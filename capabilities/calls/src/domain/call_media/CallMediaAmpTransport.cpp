@@ -12,8 +12,9 @@ using Clock = std::chrono::steady_clock;
 
 } // namespace
 
-CallMediaAmpTransport::CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, IoPump io_pump)
-    : coordinator_(runtime), io_pump_(std::move(io_pump)) {}
+CallMediaAmpTransport::CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, const pp::adp::Clock& timer_clock,
+                                             IoPump io_pump)
+    : coordinator_(runtime, timer_clock), io_pump_(std::move(io_pump)) {}
 
 CallMediaAmpTransport::~CallMediaAmpTransport() {
   alive_->store(false, std::memory_order_release);

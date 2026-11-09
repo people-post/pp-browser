@@ -20,7 +20,8 @@ class CallMediaAmpTransport : public ICallMediaTransport {
 public:
   using IoPump = std::function<void()>;
 
-  CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, IoPump io_pump);
+  /** `timer_clock`: the legs' timers (CallMediaLegCoordinator) — MonotonicClock::Process() in the product. */
+  CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, const pp::adp::Clock& timer_clock, IoPump io_pump);
   ~CallMediaAmpTransport() override;
 
   CallMediaAmpTransport(const CallMediaAmpTransport&) = delete;

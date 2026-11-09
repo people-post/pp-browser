@@ -1,7 +1,6 @@
 #include "domain/call_media/CallMediaLegCoordinator.h"
 #include "mesh/types/MediaChannel.h"
 
-#include "amp/L1/Clock.h"
 #include "mesh/l4/shared/ChannelSessionSlot.h"
 #include "mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"
@@ -16,6 +15,7 @@
 #include "common/ValueJson.h"
 #include "common/Lifetime.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <functional>
@@ -34,17 +34,18 @@ namespace pbr {
 namespace {
 
 /**
- * A time on the mesh runtime's clock (amp `Endpoint::GetClock().NowMs()`, ms); unset = never. The leg's
- * timers read that clock only — MeshRuntime: Amp-clock timers keep VirtualClock harnesses deterministic.
+ * A time on the leg's timer clock (ms); unset = never. That clock is injected: monotonic in the product
+ * (MonotonicClock — a wall-clock step must not move a reconnect window), the harness's VirtualClock in
+ * tests. It is not amp's clock (WallClock is system_clock): a deadline handed to amp is converted there.
  */
-using AmpTime = std::optional<int64_t>;
+using LegTime = std::optional<int64_t>;
 
-bool Reached(const AmpTime& at, const int64_t now) {
+bool Reached(const LegTime& at, const int64_t now) {
   return at && now >= *at;
 }
 
 /** Since `then` (0 when unset). */
-int64_t MsSince(const int64_t now, const AmpTime& then) {
+int64_t MsSince(const int64_t now, const LegTime& then) {
   return then ? now - *then : 0;
 }
 
@@ -111,8 +112,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     std::shared_ptr<pp::amp::ChannelSession> media;
     bool media_bound = false;
     /** k4: last heartbeat / control / media received on this path, and our last heartbeat on it. */
-    AmpTime last_rx;
-    AmpTime last_hb_tx;
+    LegTime last_rx;
+    LegTime last_hb_tx;
   };
 
   struct Bundle {
@@ -129,7 +130,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     CallMediaDirectConnectParams params;
     CallMediaDirectCallbacks callbacks;
     LegConnected on_finished;
-    AmpTime deadline;
+    LegTime deadline;
     /**
      * Authenticated remote PeerId and mux of the link our channels are bound on. The dial alias in
      * params.peer_key can move (EnsureAssociation rebinds a Connected link from `account:` to the
@@ -147,20 +148,20 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     std::optional<Path> standby;
     /** k4: the peer sends heartbeats (seen one this call) — only then does silence mean a dead path. */
     bool peer_heartbeats = false;
-    AmpTime failed_over_at;
+    LegTime failed_over_at;
     /** k4: set while the call has no path (lost the last one); a migration clears it. */
-    AmpTime reconnect_deadline;
+    LegTime reconnect_deadline;
     bool Reconnecting() const { return reconnect_deadline.has_value(); }
     /**
      * Held `on_path_lost` while a quiet rebind runs (the peer was still connected on another link):
      * raised here unless a migration brings the call back first.
      */
-    AmpTime path_lost_notify_at;
+    LegTime path_lost_notify_at;
     /**
      * K014: the peer closed the active path's media channel while its control channel is up — wait
      * until then for that channel's `bye` (the call ended) or close (a lost path).
      */
-    AmpTime bye_await_deadline;
+    LegTime bye_await_deadline;
 
     struct Migration {
       /** This side drives it (glare winner): opens the channels, sends migrate / path_release. */
@@ -176,13 +177,13 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     std::optional<Migration> migration;
     /** Set at a switch; the driver releases `retiring` from here. */
     bool drove_switch = false;
-    AmpTime switched_at;
+    LegTime switched_at;
     bool rx_since_switch = false;
     bool release_sent = false;
     /** The direct link this call left for the relay; never auto-migrated back onto. */
     pp::amp::LinkHandle left_direct{};
     /** Earliest next automatic relayed → direct attempt (backoff after one). */
-    AmpTime next_auto_migrate;
+    LegTime next_auto_migrate;
     /** Transport-side seq de-dupe per media channel: overlapping paths can deliver a frame twice. */
     std::unordered_map<uint8_t, CallMediaSeqWindow> rx_seq;
     /** For SendMedia callers that name no sender instance (tests, SendAudio): this leg's own. */
@@ -192,7 +193,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   };
 
   pp::amp::MeshRuntime* runtime = nullptr;
-  /** The runtime's clock (its endpoint's): set and cleared with `runtime`. */
+  /** The timer clock the coordinator was given: set and cleared with `runtime`. */
   const pp::adp::Clock* clock = nullptr;
   mutable std::mutex mu;
   /**
@@ -243,7 +244,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   /** channel_id → (call_id, role) for close/frame ownership checks */
   std::unordered_map<uint32_t, std::pair<std::string, CallMediaChannelRole>> channel_index;
 
-  /** Now on the mesh runtime's clock. */
+  /** Now on the leg's timer clock. */
   int64_t NowMs() const { return clock ? clock->NowMs() : 0; }
 
   void PostIo(std::function<void()> task) {
@@ -581,14 +582,19 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
 
   void TryEnterMediaReady(Bundle& bundle) { EnterMediaReady(bundle); }
 
-  /** Waits on the channel's own link (by handle): a direct and a relayed link to one peer coexist. */
+  /**
+   * Waits on the channel's own link (by handle): a direct and a relayed link to one peer coexist. `deadline_ms`
+   * is on the timer clock; amp takes one on its own, so the time left carries over, not the instant.
+   */
   void ScheduleWhenChannelOpen(const pp::amp::LinkHandle link, const uint32_t channel_id, const int64_t deadline_ms,
                                std::function<void(bool open)> done) {
     if (!runtime || !link.valid()) {
       done(false);
       return;
     }
-    runtime->Links().WhenChannelOpenOnLink(link, channel_id, deadline_ms, std::move(done));
+    const int64_t remaining_ms = std::max<int64_t>(0, deadline_ms - NowMs());
+    const int64_t amp_deadline_ms = runtime->GetEndpoint().GetClock().NowMs() + remaining_ms;
+    runtime->Links().WhenChannelOpenOnLink(link, channel_id, amp_deadline_ms, std::move(done));
   }
 
   pp::amp::PeerLink* LiveLink(const pp::amp::LinkHandle handle) const {
@@ -607,7 +613,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     std::vector<std::string> stale_placeholders;
   };
 
-  /** IO tick: every leg's deadlines and (live calls) paths, on the runtime's clock. */
+  /** IO tick: every leg's deadlines and (live calls) paths, on the timer clock. */
   void TickDeadlines() {
     const int64_t now = NowMs();
     DueLegs due;
@@ -2287,10 +2293,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   }
 };
 
-CallMediaLegCoordinator::CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime)
-    : impl_(std::make_shared<Impl>()), runtime_(runtime) {
+CallMediaLegCoordinator::CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime, const pp::adp::Clock& timer_clock)
+    : impl_(std::make_shared<Impl>()), runtime_(runtime), timer_clock_(timer_clock) {
   impl_->runtime = &runtime_;
-  impl_->clock = &runtime_.GetEndpoint().GetClock();
+  impl_->clock = &timer_clock_;
 }
 
 CallMediaLegCoordinator::~CallMediaLegCoordinator() {
@@ -2302,7 +2308,7 @@ void CallMediaLegCoordinator::Start() {
     return;
   }
   impl_->runtime = &runtime_;
-  impl_->clock = &runtime_.GetEndpoint().GetClock();
+  impl_->clock = &timer_clock_;
   impl_->stopped.store(false, std::memory_order_release);
   impl_->io_tick_id = runtime_.AddIoTick([weak = std::weak_ptr(impl_)] {
     if (auto impl = weak.lock()) {

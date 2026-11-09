@@ -29,8 +29,9 @@ protected:
     ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint("b", harness_->ma_b)));
     ASSERT_TRUE(static_cast<bool>(harness_->mgr_b().RegisterEndpoint("a", harness_->ma_a)));
 
-    a_ = std::make_unique<CallMediaAmpTransport>(*harness_->runtime_a, CallMediaAmpTransport::IoPump{});
-    b_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b);
+    a_ = std::make_unique<CallMediaAmpTransport>(*harness_->runtime_a, *harness_->clock,
+                                                 CallMediaAmpTransport::IoPump{});
+    b_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b, *harness_->clock);
     a_->Start();
     b_->Start();
     b_->SetInboundHandler(AnswerInline([this](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
