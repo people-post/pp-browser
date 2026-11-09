@@ -1794,6 +1794,12 @@ void CallSessionWorkflow::NotePeerEndedCall(const std::string& call_id, const st
   (void)outbox_.After(peer_bye_leave_grace_, workflow_event::PeerByeGraceOver{call_id, who, followup_epoch_, bye});
 }
 
+void CallSessionWorkflow::EndPeerByeGraceForTest(const std::string& call_id, const std::string& peer,
+                                                 const uint64_t bye) {
+  (void)outbox_.After(std::chrono::milliseconds(0),
+                      workflow_event::PeerByeGraceOver{call_id, peer, followup_epoch_, bye});
+}
+
 void CallSessionWorkflow::SettlePeerBye(const std::string& call_id, const std::string& peer) {
   pending_peer_byes_.erase(PeerByeKey(call_id, peer));
 }

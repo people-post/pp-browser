@@ -1263,11 +1263,11 @@ TEST_F(CallGroupStackComposeTest, AByeBeforeALeaveAndRejoinDoesNotEndTheNewJoin)
   const std::string call_id = RunGroupCallToHopLive();
   ASSERT_FALSE(call_id.empty());
   const std::string member = sides_[kC].local_identity;
-  constexpr auto kGrace = std::chrono::milliseconds(3000);
   auto& workflow = sides_[kA].stack->Device()->Workflow();
-  workflow.SetPeerByeLeaveGraceForTest(kGrace);
-  const auto bye_at = std::chrono::steady_clock::now();
+  // The grace is not waited out in real time: it is ended below, after the rejoin, through the workflow's queue.
+  workflow.SetPeerByeLeaveGraceForTest(std::chrono::hours(1));
   workflow.NotePeerEndedCall(call_id, member); // C's bye reached A ahead of its leave
+  const uint64_t bye = workflow.LastPeerByeForTest();
 
   sides_[kC].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
   DrainUntil([&]() {
@@ -1288,14 +1288,12 @@ TEST_F(CallGroupStackComposeTest, AByeBeforeALeaveAndRejoinDoesNotEndTheNewJoin)
       },
       8000);
   ASSERT_TRUE(c_on_a()) << "C did not come back:" << Describe(call_id);
-  ASSERT_LT(std::chrono::steady_clock::now() - bye_at, kGrace) << "the rejoin must land within the bye's grace";
 
-  DrainUntil(
-      [&]() {
-        PumpWire();
-        return std::chrono::steady_clock::now() - bye_at > kGrace + std::chrono::milliseconds(500);
-      },
-      6000);
+  // The old bye's grace ends while C is in on its new join.
+  workflow.EndPeerByeGraceForTest(call_id, member, bye);
+  for (int i = 0; i < 20; ++i) {
+    PumpWire();
+  }
   EXPECT_TRUE(c_on_a()) << "the old bye ended C's new join";
   EXPECT_TRUE(GroupLive(call_id)) << Describe(call_id);
 }
