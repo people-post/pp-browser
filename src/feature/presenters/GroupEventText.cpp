@@ -1,7 +1,6 @@
 #include "feature/presenters/GroupEventText.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "lib/delivery/PskRotateCodec.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 
 #include <string_view>
@@ -215,10 +214,10 @@ std::optional<std::string> LegacySystemLineText(const std::string& stored) {
   if (stored == "Noted — you can keep chatting with people who are online.") {
     return Tr("chat.group_owner_unreachable.resolved");
   }
-  if (stored == kPskRotateLockText || stored == "New messages stay on this device.") {
+  if (stored == "New messages stay on this device.") {
     return Tr("chat.psk_rotate_self.lock");
   }
-  if (stored == kPskRotateRekeyText || stored == "Chat key updated.") {
+  if (stored == "Chat key updated.") {
     return Tr("chat.psk_rotate_self.rekey");
   }
   if (stored.rfind("Owner hasn’t been reachable", 0) == 0) {

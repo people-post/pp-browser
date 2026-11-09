@@ -1,7 +1,6 @@
 #include "feature/presenters/GroupEventText.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "lib/delivery/PskRotateCodec.h"
 
 #include <gtest/gtest.h>
 
@@ -24,8 +23,7 @@ TEST_P(LegacySystemLineTest, EveryStoredEnglishLineReadsInTheLanguageOfTheUi) {
   for (const char* stored :
        {"Accepted group invitation", "Declined group invitation", "You joined Book club", "You declined Book club",
         "You blocked the inviter", "Noted — you can keep chatting with people who are online.",
-        "New messages stay on this device.", "Chat key updated.", "Owner hasn’t been reachable\nYou can keep chatting",
-        kPskRotateLockText, kPskRotateRekeyText}) {
+        "New messages stay on this device.", "Chat key updated.", "Owner hasn’t been reachable\nYou can keep chatting" }) {
     const auto text = LegacySystemLineText(stored);
     ASSERT_TRUE(text) << stored;
     EXPECT_FALSE(text->empty()) << stored;

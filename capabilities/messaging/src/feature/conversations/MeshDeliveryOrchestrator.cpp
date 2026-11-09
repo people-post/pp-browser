@@ -1200,7 +1200,10 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendPublicPskRotate(const std::stri
   opts.content_type = ChatContentType::System;
   opts.payload_json = *payload;
   opts.key_init_b64 = plan->key_init_b64;
-  const char* text = kind == PublicPskRotateKind::Lock ? kPskRotateLockText : kPskRotateRekeyText;
+  // Stored and sent as English, as before (an older peer shows it); the UI words it at display time
+  // (LegacySystemLineText).
+  const char* text =
+      kind == PublicPskRotateKind::Lock ? "New messages stay on this device." : "Chat key updated.";
   auto sent = SendUserMessage(thread_id, text, opts);
   if (!sent) {
     (void)public_lock_.AbortPrepare(*plan);

@@ -23,7 +23,7 @@ std::optional<std::string> GroupEventText(const ThreadMessage& message,
 
 /**
  * The words of a system line stored in English before (a joined / declined invitation, a blocked inviter, the
- * owner-unreachable note, the sender's own rotate notice), or as a marker (kPskRotateLockText), in the reader's
+ * owner-unreachable note, the sender's own rotate notice), in the reader's
  * language; the stored row is not rewritten. None: not such a line — show the stored text. Only for a System row:
  * the same words typed by a person are their message.
  */
