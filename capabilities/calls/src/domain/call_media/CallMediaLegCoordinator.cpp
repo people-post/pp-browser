@@ -483,19 +483,22 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     return session ? PathOwning(bundle, CallMediaChannelRole::Media, session) : nullptr;
   }
 
-  /** The bundle + path whose control channel (either direction) is `session`. */
-  std::pair<Bundle*, Path*> FindControlOwner(const pp::amp::ChannelSession* session) {
+  /** The bundle and path holding `session` in `role` (nulls: none). */
+  std::pair<Bundle*, Path*> FindPathOwner(const CallMediaChannelRole role, const pp::amp::ChannelSession* session) {
     for (auto& [_, bundle] : bundles) {
-      if (!bundle) {
-        continue;
-      }
-      for (const auto role : {CallMediaChannelRole::OutboundControl, CallMediaChannelRole::InboundControl}) {
+      if (bundle) {
         if (Path* path = PathOwning(*bundle, role, session)) {
           return {bundle.get(), path};
         }
       }
     }
     return {nullptr, nullptr};
+  }
+
+  /** The bundle + path whose control channel (either direction) is `session`. */
+  std::pair<Bundle*, Path*> FindControlOwner(const pp::amp::ChannelSession* session) {
+    const auto outbound = FindPathOwner(CallMediaChannelRole::OutboundControl, session);
+    return outbound.first ? outbound : FindPathOwner(CallMediaChannelRole::InboundControl, session);
   }
 
   void FinishBundle(Bundle& bundle, CallMediaRoe result) {
@@ -704,86 +707,86 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     });
   }
 
+  static CallMediaPathSlot SlotOf(const Bundle& bundle, const Path* path) {
+    if (bundle.candidate && path == &*bundle.candidate) {
+      return CallMediaPathSlot::Candidate;
+    }
+    if (bundle.retiring && path == &*bundle.retiring) {
+      return CallMediaPathSlot::Retiring;
+    }
+    if (bundle.standby && path == &*bundle.standby) {
+      return CallMediaPathSlot::Standby;
+    }
+    return CallMediaPathSlot::Active;
+  }
+
   void OnChannelClosed(const std::string& /*call_id*/, const CallMediaChannelRole role,
                        const std::shared_ptr<pp::amp::ChannelSession>& session, const char* reason) {
     CallbackLock lock(*this);
-    Bundle* bundle = nullptr;
-    Path* path = nullptr;
-    for (auto& [_, b] : bundles) {
-      if (b) {
-        if (Path* owning = PathOwning(*b, role, session.get())) {
-          bundle = b.get();
-          path = owning;
-          break;
-        }
-      }
-    }
+    auto [bundle, path] = FindPathOwner(role, session.get());
     if (!bundle) {
       return;
     }
-    if (IsPendingCallId(bundle->call_id)) {
-      // A placeholder's channel ended before hello / migrate: it carries no call, drop it (the
-      // close decision ignores Idle bundles, so placeholders used to stay forever).
-      EraseBundle(bundle->call_id);
-      return;
-    }
-    if (bundle->candidate && path == &*bundle->candidate) {
-      AbandonMigrationLinkLost(*bundle, std::string("candidate path channel closed (") + (reason ? reason : "") + ")");
-      return;
-    }
-    if (bundle->retiring && path == &*bundle->retiring) {
-      // An old path closing after (or while) it is released is expected, never a failure.
-      DropPath(*bundle, *bundle->retiring);
-      bundle->retiring.reset();
-      return;
-    }
-    if (bundle->standby && path == &*bundle->standby) {
-      CallMediaLegLog().info << "CallMediaLeg standby path closed call_id=" << bundle->call_id
-                             << " reason=" << (reason ? reason : "");
-      DropPath(*bundle, *bundle->standby);
-      bundle->standby.reset();
-      return;
-    }
-    // K014: a live call's active path closing under it is a lost path, whoever closed it — the
-    // peer's hang-up comes as `bye` first (HandleBye: the bundle is gone by its close), or, from an
-    // older peer, as call_leave on the control lane.
-    if (path == &bundle->active && bundle->phase == CallMediaBundlePhase::MediaReady && !bundle->local_cancel) {
-      OnActivePathClosed(*bundle, role, reason);
-      return;
-    }
-    CallMediaChannelCloseContext ctx;
-    ctx.phase = bundle->phase;
-    ctx.role = role;
-    ctx.local_cancel = bundle->local_cancel;
-    ctx.remote_terminal = IsRemoteTerminalReason(reason);
-    ctx.slot_still_owned = true;
-    const auto decision = DecideCallMediaChannelClose(ctx);
-    if (decision == CallMediaChannelCloseDecision::Ignore) {
-      // Clear a dead inbound slot without failing the outbound winner.
-      if (role == CallMediaChannelRole::InboundControl &&
-          bundle->phase == CallMediaBundlePhase::OutboundHello) {
+    CallMediaChannelCloseInput in;
+    in.placeholder = IsPendingCallId(bundle->call_id);
+    in.slot = SlotOf(*bundle, path);
+    in.phase = bundle->phase;
+    in.role = role;
+    in.local_cancel = bundle->local_cancel;
+    in.remote_terminal = IsRemoteTerminalReason(reason);
+    const std::string why = reason ? reason : "";
+    switch (const CallMediaChannelCloseAction action = RouteCallMediaChannelClose(in)) {
+      case CallMediaChannelCloseAction::DropPlaceholder:
+        EraseBundle(bundle->call_id);
+        return;
+      case CallMediaChannelCloseAction::AbandonCandidate:
+        AbandonMigrationLinkLost(*bundle, "candidate path channel closed (" + why + ")");
+        return;
+      case CallMediaChannelCloseAction::DropRetiring:
+        DropPath(*bundle, *bundle->retiring);
+        bundle->retiring.reset();
+        return;
+      case CallMediaChannelCloseAction::DropStandby:
+        CallMediaLegLog().info << "CallMediaLeg standby path closed call_id=" << bundle->call_id << " reason=" << why;
+        DropPath(*bundle, *bundle->standby);
+        bundle->standby.reset();
+        return;
+      case CallMediaChannelCloseAction::ActivePathClosed:
+        OnActivePathClosed(*bundle, role, reason);
+        return;
+      case CallMediaChannelCloseAction::DropInboundControl:
         DropRole(*bundle, CallMediaChannelRole::InboundControl);
+        return;
+      case CallMediaChannelCloseAction::Ignore:
+        return;
+      case CallMediaChannelCloseAction::TearDownQuietly:
+      case CallMediaChannelCloseAction::TearDownReported: {
+        const std::string message = "call-media stream closed (" + (why.empty() ? std::string("unknown") : why) + ")";
+        // The peer closing or resetting the stream is a clean end (the bridge keeps a call the hop carries).
+        TearDownBundle(*bundle, /*finish_with_abort=*/false, action == CallMediaChannelCloseAction::TearDownReported,
+                       Fail(in.remote_terminal ? CallMediaErr::StreamClosed : CallMediaErr::Closed, message));
+        return;
       }
-      return;
     }
-    const bool notify = decision == CallMediaChannelCloseDecision::FailLeg && ctx.remote_terminal;
-    const std::string message =
-        std::string("call-media stream closed (") + (reason && reason[0] ? reason : "unknown") + ")";
-    // The peer closing or resetting the stream is a clean end (the bridge keeps a call the hop carries).
-    TearDownBundle(*bundle, /*finish_with_abort=*/false, notify,
-                   Fail(ctx.remote_terminal ? CallMediaErr::StreamClosed : CallMediaErr::Closed, message));
+  }
+
+  /** K014 input for the active path of `bundle` losing a channel in `role`. */
+  CallMediaActiveCloseInput ActiveCloseInput(const Bundle& bundle, const CallMediaChannelRole role,
+                                             const bool remote_close) const {
+    CallMediaActiveCloseInput in;
+    in.role = role;
+    in.remote_close = remote_close;
+    in.control_open = bundle.active.outbound_control || bundle.active.inbound_control;
+    in.retiring_alive = bundle.retiring && !PathLinkMissing(bundle, *bundle.retiring);
+    in.standby_alive = bundle.standby && !PathLinkMissing(bundle, *bundle.standby);
+    return in;
   }
 
   /** K014: one of a live call's active-path channels closed, not by this end (DecideCallMediaActiveClose). */
   void OnActivePathClosed(Bundle& bundle, const CallMediaChannelRole role, const char* reason) {
-    CallMediaActiveCloseInput in;
-    in.role = role;
-    in.remote_close = IsRemoteTerminalReason(reason);
-    in.control_open = bundle.active.outbound_control || bundle.active.inbound_control;
-    in.retiring_alive = bundle.retiring && !PathLinkMissing(bundle, *bundle.retiring);
-    in.standby_alive = bundle.standby && !PathLinkMissing(bundle, *bundle.standby);
     const std::string why = std::string("active path closed (") + (reason ? reason : "") + ")";
-    const CallMediaActiveCloseAction action = DecideCallMediaActiveClose(in);
+    const CallMediaActiveCloseAction action =
+        DecideCallMediaActiveClose(ActiveCloseInput(bundle, role, IsRemoteTerminalReason(reason)));
     if (action == CallMediaActiveCloseAction::AwaitControl) {
       DropPathRole(bundle, bundle.active, CallMediaChannelRole::Media);
       bundle.bye_await_deadline = NowMs() + kCallMediaByeAwaitMs;
@@ -825,10 +828,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (bundle.active.media || bundle.Reconnecting()) {
       return; // a migration replaced the path meanwhile
     }
-    CallMediaActiveCloseInput in;
-    in.role = CallMediaChannelRole::Media;
-    in.retiring_alive = bundle.retiring && !PathLinkMissing(bundle, *bundle.retiring);
-    in.standby_alive = bundle.standby && !PathLinkMissing(bundle, *bundle.standby);
+    const auto in = ActiveCloseInput(bundle, CallMediaChannelRole::Media, /*remote_close=*/false);
     LoseActivePath(bundle, DecideCallMediaActiveClose(in), "active media channel closed, no bye");
   }
 
@@ -1578,6 +1578,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       if (bundle.failed_over_at) {
         in.since_failover_ms = MsSince(now, bundle.failed_over_at);
       }
+      in.awaiting_bye = bundle.bye_await_deadline.has_value();
       if (ShouldFailOverToStandby(in)) {
         FailOverToStandby(bundle, in.active_link_lost ? "active link lost" : "active path silent");
       } else if (!bundle.Reconnecting() && ShouldEnterPathLost(in)) {
@@ -2603,7 +2604,13 @@ Roe<void> CallMediaLegCoordinator::SendMedia(const CallMediaLegId id, const uint
   {
     Impl::CallbackLock lock(*impl_);
     auto* bundle = impl_->FindByLegId(id);
-    if (!bundle || bundle->phase != CallMediaBundlePhase::MediaReady || !bundle->active.media) {
+    if (!bundle || bundle->phase != CallMediaBundlePhase::MediaReady) {
+      return Error("amp call-media: not in media ready");
+    }
+    if (!bundle->active.media) {
+      if (bundle->bye_await_deadline) {
+        return Roe<void>(); // K014: the peer closed the media channel; its bye may follow — drop the frame quietly
+      }
       return Error("amp call-media: not in media ready");
     }
     session = bundle->active.media;

@@ -5,6 +5,7 @@
 #include "lib/calls/CallMediaSessionLogic.h"
 #include "mesh/l4/circuit/client/CircuitClientCoordinator.h"
 #include "mesh/l4/circuit/serve/CircuitRelayServer.h"
+#include "amp/L3/ChannelWire.h"
 #include "amp/link/Types.h"
 #include "mesh/testing/mesh_triple_harness.h"
 #include "common/MeshAlias.h"
@@ -707,6 +708,30 @@ protected:
     return done();
   }
 
+  /**
+   * B's mux sends A a CLOSE for its media channel on the direct link, behind B's leg's back: A sees the peer
+   * close that channel while its control channel stays up, and no `bye` follows.
+   */
+  bool InjectMediaCloseFromB() {
+    return harness_->runtime_b->WithIoLock([&] {
+      auto* link = harness_->mgr_b().FindConnectedLinkByPeerId(harness_->peer_id_a, pp::amp::TransportClass::Adp);
+      if (!link || !link->Mux()) {
+        return false;
+      }
+      auto* mux = link->Mux();
+      for (uint32_t id = 1; id < 256; ++id) {
+        if (mux->State(id) == pp::amp::ChannelState::Open && mux->Class(id) == pp::amp::ChannelClass::Realtime) {
+          pp::amp::ChannelFrame close;
+          close.header.frame_type = pp::amp::ChannelFrameType::Close;
+          close.header.channel_id = id;
+          auto wire = pp::amp::ChannelWire::Encode(close);
+          return wire && static_cast<bool>(mux->InjectFrameForTest(id, std::move(*wire)));
+        }
+      }
+      return false;
+    });
+  }
+
   const std::string call_id_ = "call-k3-migrate";
   ByteVector key_ = ByteVector(32, 0x33);
   CallMediaLegId leg_{};
@@ -867,6 +892,40 @@ TEST_F(CallPathMigrationTest, SilentDirectPathFailsOverToTheRelayStandby) {
   EXPECT_GT(b_seqs_.size(), before);
   EXPECT_FALSE(a_failed_.load());
   EXPECT_FALSE(b_failed_.load());
+}
+
+// K014: the peer's media channel CLOSE (best-effort) can overtake its `bye`. While the path waits for
+// the control channel's word, silence switches nothing and the call's frames drop quietly (no error per
+// frame); with no `bye` by the wait's end the path is lost — here onto the relay standby.
+TEST_F(CallPathMigrationTest, AMediaCloseAheadOfTheByeHoldsThePathForTheWait) {
+  ASSERT_ON_DIRECT_WITH_RELAY_STANDBY();
+  // B goes quiet on the direct path ...
+  b_call_->SetSilencedPathKindForTest(CallMediaLinkKind::Direct);
+  (void)PumpVirtualUntil(
+      [&] {
+        SendNext();
+        return false;
+      },
+      std::chrono::milliseconds(600));
+  ASSERT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct) << "not silent long enough to fail over yet";
+  // ... and its media channel's CLOSE reaches A; its bye does not.
+  ASSERT_TRUE(InjectMediaCloseFromB());
+  // A's silence passes the failover threshold inside the wait: the path holds (SendNext asserts each send).
+  EXPECT_FALSE(PumpVirtualUntil(
+      [&] {
+        SendNext();
+        return a_call_->ActiveLinkKind() != CallMediaLinkKind::Direct;
+      },
+      std::chrono::milliseconds(kCallMediaByeAwaitMs - 100)));
+  EXPECT_TRUE(PumpVirtualUntil(
+      [&] {
+        SendNext();
+        return a_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed;
+      },
+      std::chrono::milliseconds(1000)))
+      << "no bye: a lost path, onto the standby";
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_EQ(a_ended_.load(), 0);
 }
 
 // k4: a muted peer still heartbeats and sends silence frames — a quiet mic never trips failover.

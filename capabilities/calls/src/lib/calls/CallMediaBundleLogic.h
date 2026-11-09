@@ -84,22 +84,54 @@ struct CallMediaHelloAckContext {
 
 CallMediaHelloAckDecision DecideCallMediaHelloAck(const CallMediaHelloAckContext& ctx);
 
-enum class CallMediaChannelCloseDecision {
-  Ignore = 0,
-  FailLeg,
-  /** Tear down without on_failed (local cancel / SoftMigrate). */
-  SuppressNotify,
+/** Which of a call's paths holds a channel (call-path-resilience k3 / k4). */
+enum class CallMediaPathSlot {
+  /** The path media flows on. */
+  Active = 0,
+  /** A migration's / `path_add`'s path being brought up. */
+  Candidate,
+  /** The path the call just left, draining until its release. */
+  Retiring,
+  /** The warm fallback. */
+  Standby,
 };
 
-struct CallMediaChannelCloseContext {
+/** A channel of one of a leg's paths closed (either end, any reason). */
+struct CallMediaChannelCloseInput {
+  /** The leg is an inbound placeholder: its control channel never said hello / migrate. */
+  bool placeholder = false;
+  CallMediaPathSlot slot = CallMediaPathSlot::Active;
   CallMediaBundlePhase phase = CallMediaBundlePhase::Idle;
   CallMediaChannelRole role = CallMediaChannelRole::OutboundControl;
+  /** This end cancelled the leg. */
   bool local_cancel = false;
+  /** The peer closed or reset the channel (`peer_close` / `peer_reset`). */
   bool remote_terminal = false;
-  bool slot_still_owned = true;
 };
 
-CallMediaChannelCloseDecision DecideCallMediaChannelClose(const CallMediaChannelCloseContext& ctx);
+enum class CallMediaChannelCloseAction {
+  /** It carried no call: drop the placeholder. */
+  DropPlaceholder = 0,
+  /** The migration (or standby add) failed: the call stays where it is. */
+  AbandonCandidate,
+  /** Expected while (or after) the old path is released — never a failure. */
+  DropRetiring,
+  /** The call loses its standby only. */
+  DropStandby,
+  /** K014: a live call's active path closed under it — DecideCallMediaActiveClose says what next. */
+  ActivePathClosed,
+  /** Dual-dial: the peer's abandoned outbound (our inbound) closed while ours wins — drop that slot only. */
+  DropInboundControl,
+  /** A leg that is not connecting yet. */
+  Ignore,
+  /** The connecting leg fails, unreported (this end cancelled, or a local / link-side close). */
+  TearDownQuietly,
+  /** The connecting leg fails and says so (`on_failed`): the peer closed or reset the channel. */
+  TearDownReported,
+};
+
+/** Where a closed channel's leg goes: by the path that held it, then the leg's phase. */
+CallMediaChannelCloseAction RouteCallMediaChannelClose(const CallMediaChannelCloseInput& in);
 
 /** Map AMP bundle phase → libp2p session phase for transitional Phase() API. */
 CallMediaSessionPhase CallMediaBundlePhaseToSessionPhase(CallMediaBundlePhase phase);
@@ -198,12 +230,17 @@ struct CallMediaFailoverInput {
   int64_t standby_silence_ms = 0;
   /** Since this end last failed over (large when never). */
   int64_t since_failover_ms = INT64_MAX;
+  /**
+   * K014: the peer closed the active media channel and the path waits (kCallMediaByeAwaitMs) for its control
+   * channel's `bye` or close. Silence decides nothing meanwhile — the wait's end does; a lost link still does.
+   */
+  bool awaiting_bye = false;
 };
 
 /**
  * k4 failover: switch TX to the standby path when the active one is lost, or silent 1.5 s while the
  * peer is known to heartbeat (a muted mic still heartbeats and sends silence frames — only a dead
- * path goes quiet). Never onto a standby that is itself gone or stale.
+ * path goes quiet) and no `bye` is awaited. Never onto a standby that is itself gone or stale.
  */
 bool ShouldFailOverToStandby(const CallMediaFailoverInput& in);
 

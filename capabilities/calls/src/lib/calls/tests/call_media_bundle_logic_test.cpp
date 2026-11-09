@@ -112,20 +112,71 @@ TEST(CallMediaBundleLogicTest, HelloAckYieldsOutboundOnOffererNack) {
   EXPECT_EQ(DecideCallMediaHelloAck(ctx), CallMediaHelloAckDecision::YieldOutbound);
 }
 
-TEST(CallMediaBundleLogicTest, ChannelCloseIgnoresInboundDuringOutboundHello) {
-  CallMediaChannelCloseContext ctx;
-  ctx.phase = CallMediaBundlePhase::OutboundHello;
-  ctx.role = CallMediaChannelRole::InboundControl;
-  ctx.remote_terminal = true;
-  ctx.slot_still_owned = true;
-  EXPECT_EQ(DecideCallMediaChannelClose(ctx), CallMediaChannelCloseDecision::Ignore);
+// A closed channel is routed by the path that held it first: a placeholder's carries no call, a
+// candidate's abandons the migration, a retiring one's is expected, a standby's loses the standby only.
+TEST(CallMediaChannelCloseTest, TheClosedChannelsPathDecidesFirst) {
+  CallMediaChannelCloseInput in;
+  in.phase = CallMediaBundlePhase::MediaReady;
+  in.remote_terminal = true;
+  in.slot = CallMediaPathSlot::Candidate;
+  EXPECT_EQ(RouteCallMediaChannelClose(in), CallMediaChannelCloseAction::AbandonCandidate);
+  in.slot = CallMediaPathSlot::Retiring;
+  EXPECT_EQ(RouteCallMediaChannelClose(in), CallMediaChannelCloseAction::DropRetiring);
+  in.slot = CallMediaPathSlot::Standby;
+  EXPECT_EQ(RouteCallMediaChannelClose(in), CallMediaChannelCloseAction::DropStandby);
+  in.placeholder = true;
+  in.phase = CallMediaBundlePhase::Idle;
+  for (const auto slot : {CallMediaPathSlot::Active, CallMediaPathSlot::Candidate}) {
+    in.slot = slot;
+    EXPECT_EQ(RouteCallMediaChannelClose(in), CallMediaChannelCloseAction::DropPlaceholder)
+        << "a placeholder's channel ended before hello / migrate";
+  }
 }
 
-TEST(CallMediaBundleLogicTest, ChannelCloseIgnoresClearedSlot) {
-  CallMediaChannelCloseContext ctx;
-  ctx.phase = CallMediaBundlePhase::OutboundHello;
-  ctx.slot_still_owned = false;
-  EXPECT_EQ(DecideCallMediaChannelClose(ctx), CallMediaChannelCloseDecision::Ignore);
+// K014: a live call's active path closing under it goes to the active-close rules (a lost path),
+// whoever closed it and whichever channel — unless this end is ending the leg.
+TEST(CallMediaChannelCloseTest, ALiveCallsActivePathClosingIsItsOwnCase) {
+  CallMediaChannelCloseInput in;
+  in.phase = CallMediaBundlePhase::MediaReady;
+  for (const auto role :
+       {CallMediaChannelRole::OutboundControl, CallMediaChannelRole::InboundControl, CallMediaChannelRole::Media}) {
+    for (const bool remote : {true, false}) {
+      in.role = role;
+      in.remote_terminal = remote;
+      EXPECT_EQ(RouteCallMediaChannelClose(in), CallMediaChannelCloseAction::ActivePathClosed);
+    }
+  }
+  in.local_cancel = true;
+  EXPECT_EQ(RouteCallMediaChannelClose(in), CallMediaChannelCloseAction::TearDownQuietly);
+}
+
+// A connecting leg: any channel closing fails it — reported only when the peer closed it; a dual-dial
+// inbound that goes while our outbound wins glare drops that slot only.
+TEST(CallMediaChannelCloseTest, AConnectingLegFailsOnAnyCloseAndReportsThePeers) {
+  CallMediaChannelCloseInput in;
+  in.phase = CallMediaBundlePhase::OutboundHello;
+  in.role = CallMediaChannelRole::InboundControl;
+  in.remote_terminal = true;
+  EXPECT_EQ(RouteCallMediaChannelClose(in), CallMediaChannelCloseAction::DropInboundControl);
+  for (const auto phase :
+       {CallMediaBundlePhase::OutboundHello, CallMediaBundlePhase::InboundHello, CallMediaBundlePhase::AwaitingMedia}) {
+    for (const auto role : {CallMediaChannelRole::OutboundControl, CallMediaChannelRole::Media}) {
+      in.phase = phase;
+      in.role = role;
+      in.remote_terminal = true;
+      EXPECT_EQ(RouteCallMediaChannelClose(in), CallMediaChannelCloseAction::TearDownReported);
+      in.remote_terminal = false;
+      EXPECT_EQ(RouteCallMediaChannelClose(in), CallMediaChannelCloseAction::TearDownQuietly);
+    }
+  }
+  in.remote_terminal = true;
+  in.local_cancel = true;
+  EXPECT_EQ(RouteCallMediaChannelClose(in), CallMediaChannelCloseAction::TearDownQuietly) << "this end cancelled";
+  in.local_cancel = false;
+  in.phase = CallMediaBundlePhase::Closing;
+  EXPECT_EQ(RouteCallMediaChannelClose(in), CallMediaChannelCloseAction::TearDownQuietly);
+  in.phase = CallMediaBundlePhase::Idle;
+  EXPECT_EQ(RouteCallMediaChannelClose(in), CallMediaChannelCloseAction::Ignore);
 }
 
 TEST(CallMediaBundleLogicTest, PhaseMapsMatchSessionVocabulary) {
@@ -213,6 +264,24 @@ TEST(CallMediaFailoverTest, SwitchesOnlyToALiveStandbyForALostOrSilentActive) {
   EXPECT_FALSE(ShouldFailOverToStandby(older_peer)) << "no heartbeats: silence proves nothing";
   older_peer.active_link_lost = true;
   EXPECT_TRUE(ShouldFailOverToStandby(older_peer));
+}
+
+// K014: while the active path waits for a `bye` (the peer closed its media channel first), silence
+// switches nothing — the wait's end decides; a lost link still does at once.
+TEST(CallMediaFailoverTest, AnAwaitedByeHoldsOffTheSilenceRules) {
+  CallMediaFailoverInput in;
+  in.peer_heartbeats = true;
+  in.have_standby = true;
+  in.standby_link_alive = true;
+  in.active_silence_ms = kCallMediaActiveSilenceLostMs;
+  in.awaiting_bye = true;
+  EXPECT_FALSE(ShouldFailOverToStandby(in));
+  in.have_standby = false;
+  EXPECT_FALSE(ShouldEnterPathLost(in));
+  in.active_link_lost = true;
+  EXPECT_TRUE(ShouldEnterPathLost(in)) << "a lost link carries no bye";
+  in.have_standby = true;
+  EXPECT_TRUE(ShouldFailOverToStandby(in));
 }
 
 // K014: a close of a live call's active path that the peer did not announce with `bye` is a lost
