@@ -44,6 +44,8 @@ avatar-7	#a2845e	#a2845e	§2.6
 shadow	#00000026	#00000026	§6 (only allowed shadows: jump-to-latest, call pip)
 x-scrollbar	#00000040	#ffffff50	extra: scrollbar slider
 x-bubble-out-muted	#a3b3f9	#4b4fa6	extra: muted call row inside own bubble
+x-voice-bar	#c7ccd4	#5c5c61	extra: voice message waveform, the part not played yet (received bubble)
+x-voice-bar-out	#ffffff80	#ffffff80	extra: voice message waveform, the part not played yet (own bubble, white 50%)
 x-toast-bg	#1f2937	#374151	extra: toast (spec §4.7 drops toast)
 x-hit-scrim	#00000001	#00000001	extra: near-invisible click-catcher
 x-photo-scrim	#000000e6	#000000e6	extra: picture preview scrim (black 90%)

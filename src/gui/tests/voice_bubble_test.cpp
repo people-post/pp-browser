@@ -6,6 +6,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 namespace pbr {
 namespace {
 
@@ -56,6 +58,69 @@ TEST(VoiceBubbleRender, SmallMatchingFileIsABubbleWithItsLength) {
   EXPECT_NE(rml.find("0:05"), std::string::npos);                    // 4.2 s reads as 0:05
   EXPECT_NE(rml.find("id=\"vf-m1\""), std::string::npos);
   EXPECT_EQ(rml.find("chat-attachment-card"), std::string::npos);
+}
+
+// #201: a voice message looks like WhatsApp's: the sender's avatar with a mic badge, play, a waveform of thin bars
+// with a knob, the length under it and the clock; a bubble of its own width, not the row's.
+TEST(VoiceBubbleRender, TheBubbleHasAvatarBadgePlayWaveformLengthAndClock) {
+  TranscriptRow row = Attachment("m1", "voice-4200.ogg", "audio/ogg", 25000);
+  row.message.timestamp = 1700000000000;
+  TranscriptFacts facts = Facts(true);
+  facts.sender_label = [](const std::string&) { return std::string("Bob"); };
+  const std::string rml = Render(row, facts);
+  ASSERT_TRUE(IsBubble(rml)) << rml;
+  EXPECT_NE(rml.find("class=\"chat-voice-avatar avatar-tone-"), std::string::npos);
+  EXPECT_NE(rml.find("chat-voice-avatar-letter\">B<"), std::string::npos) << "the letter avatar of the sender";
+  EXPECT_NE(rml.find("class=\"chat-voice-badge\""), std::string::npos);
+  EXPECT_NE(rml.find("icons/v2/mic.svg"), std::string::npos);
+  EXPECT_NE(rml.find("id=\"vp-m1\" class=\"chat-voice-play"), std::string::npos);
+  EXPECT_LT(rml.find("chat-voice-avatar"), rml.find("id=\"vp-m1\""));
+  EXPECT_LT(rml.find("id=\"vp-m1\""), rml.find("chat-voice-wave"));
+  // The bars are drawn twice (quiet layer and played layer), kVoiceWaveBars each.
+  size_t bars = 0;
+  for (size_t at = rml.find("class=\"chat-voice-bar\""); at != std::string::npos;
+       at = rml.find("class=\"chat-voice-bar\"", at + 1)) {
+    ++bars;
+  }
+  EXPECT_EQ(bars, static_cast<size_t>(2 * kVoiceWaveBars));
+  EXPECT_NE(rml.find("id=\"vn-m1\" class=\"chat-voice-knob\" style=\"left: 0%;\""), std::string::npos);
+  EXPECT_LT(rml.find("chat-voice-wave"), rml.find("id=\"vt-m1\""));
+  EXPECT_NE(rml.find("class=\"chat-voice-clock\""), std::string::npos);
+  EXPECT_LT(rml.find("id=\"vt-m1\""), rml.find("class=\"chat-voice-clock\""));
+  EXPECT_EQ(rml.find("chat-audio-seek"), std::string::npos) << "a voice message has no seek bar";
+}
+
+TEST(VoiceBubbleRender, OwnVoiceBubbleIsMarkedAndAPhotoReplacesTheLetter) {
+  VoiceBubbleFace face;
+  face.ours = true;
+  face.icon_path = "/profiles/x/icons/a.jpg";
+  const std::string rml = VoiceBubbleRml("m2", "m2", 4200, VoiceBubbleState{}, face);
+  EXPECT_NE(rml.find("chat-voice-card chat-voice-card--out"), std::string::npos);
+  EXPECT_NE(rml.find("src=\"/profiles/x/icons/a.jpg\""), std::string::npos);
+  EXPECT_EQ(rml.find("chat-voice-avatar-letter"), std::string::npos);
+  EXPECT_EQ(rml.find("chat-voice-clock"), std::string::npos) << "no clock given: none drawn";
+}
+
+TEST(VoiceBubbleRender, TheWaveformIsTheSameForTheSameMessageAndVaries) {
+  const std::vector<int> a = VoiceWaveformHeights("msg-1");
+  EXPECT_EQ(a, VoiceWaveformHeights("msg-1"));
+  EXPECT_NE(a, VoiceWaveformHeights("msg-2"));
+  ASSERT_EQ(a.size(), static_cast<size_t>(kVoiceWaveBars));
+  for (const int h : a) {
+    EXPECT_GE(h, 4);
+    EXPECT_LE(h, 28);
+  }
+  EXPECT_GT(*std::max_element(a.begin(), a.end()) - *std::min_element(a.begin(), a.end()), 8) << "not a flat line";
+  EXPECT_TRUE(VoiceWaveformHeights("x", 0).empty());
+  // A redraw keeps the progress and the same bars.
+  VoiceBubbleState playing;
+  playing.playing = true;
+  playing.position_ms = 1000;
+  playing.duration_ms = 4000;
+  const std::string one = VoiceBubbleRml("m3", "m3", 4000, playing, VoiceBubbleFace{});
+  EXPECT_NE(one.find("id=\"vf-m3\" class=\"chat-voice-played\" style=\"width: 25%;\""), std::string::npos) << one;
+  EXPECT_NE(one.find("style=\"left: 25%;\""), std::string::npos);
+  EXPECT_EQ(one, VoiceBubbleRml("m3", "m3", 4000, playing, VoiceBubbleFace{}));
 }
 
 TEST(VoiceBubbleRender, AFileRowForLargeDeclaredSizeOtherNameOtherTypeOrNoPlayer) {
