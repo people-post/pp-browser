@@ -679,15 +679,135 @@ TEST_F(ShellDrawerTest, TheShellRootLiftIsGoneWhenTheKeyboardOrEmojiSheetGoes) {
   Settle();
   EXPECT_EQ(host_.State().safe_area_bottom_dp, 0);
   EXPECT_EQ(bottom(), rest) << "keyboard: the lift is dropped";
+  // (Not on the AI Home, which the sheet does not lift any more: TODO #204, HomeKeyboardDockTest.)
+  host_.SelectNavTab(NavTab::Sessions);
+  host_.SyncLayout();
+  Settle();
+  const float rest_chats = bottom();
   BottomChromeSpec spec;
   spec.key = "emoji_panel";
   host_.SetBottomChrome(spec);
   Settle();
-  EXPECT_GT(bottom(), rest) << "emoji sheet: lifted";
+  EXPECT_GT(bottom(), rest_chats) << "emoji sheet: lifted";
   host_.ClearBottomChrome();
   Settle();
   EXPECT_EQ(host_.State().safe_area_bottom_dp, 0);
-  EXPECT_EQ(bottom(), rest) << "emoji sheet gone: the lift is dropped";
+  EXPECT_EQ(bottom(), rest_chats) << "emoji sheet gone: the lift is dropped";
+}
+
+// TODO #204 (real ShellHost): the AI Home does not follow the keyboard / emoji sheet. Its mascot and card stay where they
+// are, the keyboard covers the chips; only when it would cover the card the block moves up by exactly the overlap
+// (card bottom = keyboard top - 8). Every other page keeps the full lift.
+class HomeKeyboardDockTest : public ShellDrawerTest {
+protected:
+  void SetUp() override {
+    ShellDrawerTest::SetUp();
+    ui::ElementList cards;
+    ById("home-landing")->GetElementsByClassName(cards, "prompt-composer");
+    ASSERT_FALSE(cards.empty()) << "the Home card is mounted";
+    card_ = cards.front();
+    mascot_ = ById("home-logo");
+    ASSERT_NE(mascot_, nullptr);
+    root_ = ById("shell-root");
+    ASSERT_NE(root_, nullptr);
+    rest_ = Snapshot();
+  }
+  struct Snap {
+    float lift, card_bottom, card_top, logo_top, chips_top;
+  };
+  Snap Snapshot() {
+    context_->Update();
+    ui::ElementList chips;
+    document_->GetElementsByClassName(chips, "chat-suggestion");
+    return {root_->GetProperty<float>("bottom"), card_->GetAbsoluteOffset(ui::BoxArea::Border).y +
+                card_->GetBox().GetSize(ui::BoxArea::Border).y,
+            card_->GetAbsoluteOffset(ui::BoxArea::Border).y, mascot_->GetAbsoluteOffset(ui::BoxArea::Border).y,
+            chips.empty() ? 0.f : chips.front()->GetAbsoluteOffset(ui::BoxArea::Border).y};
+  }
+  void KeyboardUp(int dp) {
+    host_.SetSafeAreaInsetsFromPrefs(0, dp);
+    Settle();
+  }
+  void KeyboardDown() {
+    host_.SetSafeAreaInsetsFromPrefs(0, 0);
+    host_.RefreshSafeAreaInsets(context_);
+    Settle();
+  }
+  ui::Element* card_ = nullptr;
+  ui::Element* mascot_ = nullptr;
+  ui::Element* root_ = nullptr;
+  Snap rest_{};
+};
+
+TEST_F(HomeKeyboardDockTest, ATallScreenKeepsTheBlockAndTheKeyboardCoversTheChips) {
+  const int keyboard = static_cast<int>(800.f - rest_.card_bottom - 8.f - 20.f);  // card clear of it by 28dp
+  ASSERT_GE(keyboard, 100);
+  KeyboardUp(keyboard);
+  const Snap up = Snapshot();
+  std::printf("[ShellHost tall] keyboard %d (top %d) lift %.1f card %.1f..%.1f (rest %.1f..%.1f) logo %.1f (rest %.1f) chips %.1f (rest %.1f)\n",
+              keyboard, 800 - keyboard, up.lift, up.card_top, up.card_bottom, rest_.card_top, rest_.card_bottom,
+              up.logo_top, rest_.logo_top, up.chips_top, rest_.chips_top);
+  EXPECT_EQ(up.lift, rest_.lift) << "the root is not lifted";
+  EXPECT_FLOAT_EQ(up.card_top, rest_.card_top);
+  EXPECT_FLOAT_EQ(up.logo_top, rest_.logo_top);
+  EXPECT_FLOAT_EQ(up.chips_top, rest_.chips_top);
+  EXPECT_GE(up.chips_top, up.card_bottom) << "the chips are under the card, where they were (the keyboard covers them)";
+  EXPECT_LT(up.card_bottom + 8.f, 800.f - keyboard) << "the card is clear of the keyboard";
+  KeyboardDown();
+  const Snap down = Snapshot();
+  EXPECT_EQ(down.lift, rest_.lift);
+  EXPECT_FLOAT_EQ(down.card_top, rest_.card_top);
+  EXPECT_FLOAT_EQ(down.logo_top, rest_.logo_top);
+  EXPECT_FLOAT_EQ(down.chips_top, rest_.chips_top);
+}
+
+TEST_F(HomeKeyboardDockTest, AShortScreenLiftsTheBlockByExactlyTheOverlap) {
+  const float overlap = 40.f;
+  const int keyboard = static_cast<int>(800.f - rest_.card_bottom - 8.f + overlap);
+  KeyboardUp(keyboard);
+  const Snap up = Snapshot();
+  std::printf("[ShellHost short] keyboard %d (top %d) lift %.1f card bottom %.1f (rest %.1f) logo %.1f (rest %.1f)\n",
+              keyboard, 800 - keyboard, up.lift, up.card_bottom, rest_.card_bottom, up.logo_top, rest_.logo_top);
+  EXPECT_EQ(up.lift, rest_.lift) << "the root is not lifted: the block is";
+  EXPECT_NEAR(up.card_bottom, 800.f - keyboard - 8.f, 1.f);
+  EXPECT_NEAR(rest_.logo_top - up.logo_top, overlap, 1.f) << "the mascot moved by the same overlap, not more";
+  KeyboardDown();
+  const Snap down = Snapshot();
+  EXPECT_FLOAT_EQ(down.card_top, rest_.card_top);
+  EXPECT_FLOAT_EQ(down.logo_top, rest_.logo_top);
+}
+
+// The sheet (280dp by default, taller than the room under this window's card) follows the keyboard's rule with its own
+// height: the root is not lifted, the block moves up just enough to keep the card 8dp above the sheet, and it returns.
+TEST_F(HomeKeyboardDockTest, TheEmojiSheetFollowsTheSameRule) {
+  BottomChromeSpec spec;
+  spec.key = "emoji_panel";
+  host_.SetBottomChrome(spec);
+  Settle();
+  const Snap up = Snapshot();
+  const float sheet = 280.f;  // ShellHost kDefaultEmojiKeyboardPanelDp (no keyboard was up before)
+  std::printf("[ShellHost sheet] sheet %.0f (top %.0f) lift %.1f card bottom %.1f (rest %.1f) logo %.1f (rest %.1f)\n", sheet,
+              800.f - sheet, up.lift, up.card_bottom, rest_.card_bottom, up.logo_top, rest_.logo_top);
+  EXPECT_EQ(up.lift, rest_.lift) << "the root is not lifted";
+  EXPECT_NEAR(up.card_bottom, std::min(rest_.card_bottom, 800.f - sheet - 8.f), 1.f);
+  EXPECT_NEAR(rest_.logo_top - up.logo_top, std::max(0.f, rest_.card_bottom + 8.f - (800.f - sheet)), 1.f);
+  host_.ClearBottomChrome();
+  Settle();
+  const Snap down = Snapshot();
+  EXPECT_FLOAT_EQ(down.card_top, rest_.card_top);
+  EXPECT_FLOAT_EQ(down.logo_top, rest_.logo_top);
+  EXPECT_EQ(down.lift, rest_.lift);
+}
+
+TEST_F(HomeKeyboardDockTest, AChatPageKeepsTheFullLift) {
+  host_.SetPrimaryPane("chat");
+  host_.OpenCompactChat();
+  Settle();
+  const float rest = root_->GetProperty<float>("bottom");
+  KeyboardUp(300);
+  EXPECT_GE(root_->GetProperty<float>("bottom"), rest + 300.f - 0.5f) << "full lift on any other page";
+  KeyboardDown();
+  EXPECT_EQ(root_->GetProperty<float>("bottom"), rest);
 }
 
 TEST_F(ShellDrawerTest, TheLayoutBecomingTheDesktopsClosesIt) {

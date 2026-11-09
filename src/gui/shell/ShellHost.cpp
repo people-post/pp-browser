@@ -1846,8 +1846,11 @@ void ShellHost::ApplySafeAreaLayout() {
       bottom_chrome_open_ ? static_cast<float>(bottom_chrome_height_dp_) : 0.f;
   // Lift shell-root above the bottom chrome (nav chrome lives inside shell-root) and, with a keyboard up, above the
   // keyboard — the body itself stays full-bleed so its background paints behind the keyboard's rounded corners.
+  // The AI Home does not follow the keyboard / emoji sheet (TODO #204): it stays where it is and they just cover its
+  // lower part (the chips); see HomeDockLift. Every other page keeps the full lift.
+  const bool home_keeps_place = state_.layout_mode == LayoutMode::Compact && HomeDockApplies();
   set_dp(doc->GetElementById("shell-root"), "bottom",
-         statusbar_dp + bottom_chrome_dp + layout.content_bottom_inset_dp);
+         statusbar_dp + (home_keeps_place ? 0.f : bottom_chrome_dp + layout.content_bottom_inset_dp));
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
   set_dp(doc->GetElementById("shell-statusbar-strip"), "height", layout.content_top_dp);
   if (ui::Element* strip = doc->GetElementById("shell-statusbar-strip")) {
@@ -1995,6 +1998,88 @@ void ShellHost::ApplySafeAreaLayout() {
   // Chat overlay fills shell-root (already lifted); no extra bottom inset.
   set_dp(doc->GetElementById("shell-chat-overlay"), "bottom", 0.f);
   set_dp(doc->GetElementById("shell-chat-overlay"), "padding-bottom", 0.f);
+  SyncHomeDock(doc, home_keeps_place);
+}
+
+// True when the keyboard / emoji sheet is up over the AI Home page and the unlifted Home layout was measured for this
+// window height (SyncHomeDock, while nothing was up). Without a measurement the page is lifted as before.
+bool ShellHost::HomeDockApplies() const {
+  const bool covered = bottom_chrome_open_ || state_.safe_area_bottom_dp >= kImeLatchMinDp;
+  if (!covered || !context_ || home_cache_landing_h_dp_ <= 0.f) {
+    return false;
+  }
+  if (state_.nav_tab != NavTab::Home || state_.compact_chat_open || state_.ai_drawer_open ||
+      !state_.transient_stack.empty() || !state_.overlay_stack.empty()) {
+    return false;
+  }
+  const float ratio = context_->GetDensityIndependentPixelRatio();
+  const float window_dp = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
+  return std::fabs(window_dp - home_cache_window_dp_) < 0.5f;
+}
+
+// Home block under the keyboard / sheet (TODO #204). The measurements come from the layout with nothing up (cached while
+// it is the page's layout, never taken while a lift is in effect). Keyboard up: #shell-root is not lifted
+// (HomeDockApplies), the landing keeps its cached height (the hidden tab bar's room is not handed to it, so nothing
+// re-centres) and the keyboard simply covers the chips. If that would cover the card (card bottom + 8dp > keyboard
+// top, short screens) the inner block is moved up by exactly the overlap.
+void ShellHost::SyncHomeDock(ui::ElementDocument* doc, const bool dock) {
+  if (!doc || !context_ || state_.layout_mode != LayoutMode::Compact) {
+    return;
+  }
+  ui::Element* landing = doc->GetElementById("home-landing");
+  if (!landing) {
+    return;
+  }
+  ui::ElementList inners;
+  landing->GetElementsByClassName(inners, "home-landing-inner");
+  ui::Element* inner = inners.empty() ? nullptr : inners.front();
+  const auto clear = [&]() {
+    landing->RemoveProperty("height");
+    landing->RemoveProperty("flex");
+    if (inner) {
+      inner->RemoveProperty("top");
+      inner->RemoveProperty("position");
+    }
+  };
+  if (dock && inner) {
+    const float ratio = context_->GetDensityIndependentPixelRatio();
+    const float window_dp = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
+    const float lift = bottom_chrome_open_ ? static_cast<float>(bottom_chrome_height_dp_)
+                                           : static_cast<float>(state_.safe_area_bottom_dp);
+    const float keyboard_top = window_dp - lift;
+    landing->SetProperty("flex", "none");
+    landing->SetProperty("height", (std::to_string(static_cast<int>(std::lround(home_cache_landing_h_dp_))) + "dp").c_str());
+    constexpr float kGapAboveKeyboardDp = 8.f;
+    const float overlap = home_cache_card_bottom_dp_ + kGapAboveKeyboardDp - keyboard_top;
+    if (overlap > 0.5f) {
+      inner->SetProperty("position", "relative");
+      inner->SetProperty("top", (std::to_string(-static_cast<int>(std::lround(overlap))) + "dp").c_str());
+    } else {
+      inner->RemoveProperty("top");
+      inner->RemoveProperty("position");
+    }
+    return;
+  }
+  clear();
+  const bool covered = bottom_chrome_open_ || state_.safe_area_bottom_dp >= kImeLatchMinDp;
+  if (covered || state_.nav_tab != NavTab::Home || state_.compact_chat_open || state_.ai_drawer_open ||
+      !state_.transient_stack.empty() || !state_.overlay_stack.empty() || !landing->IsClassSet("home-landing--minimal")) {
+    return; // measure only the plain layout, with the Home page showing
+  }
+  const float height = landing->GetBox().GetSize(ui::BoxArea::Border).y;
+  ui::Element* card = nullptr;
+  ui::ElementList cards;
+  landing->GetElementsByClassName(cards, "prompt-composer");
+  if (!cards.empty()) {
+    card = cards.front();
+  }
+  if (height <= 0.f || !card) {
+    return;
+  }
+  const float ratio = context_->GetDensityIndependentPixelRatio();
+  home_cache_window_dp_ = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
+  home_cache_landing_h_dp_ = height;
+  home_cache_card_bottom_dp_ = card->GetAbsoluteOffset(ui::BoxArea::Border).y + card->GetBox().GetSize(ui::BoxArea::Border).y;
 }
 
 bool ShellHost::ChromeFrostEnabled() const {
