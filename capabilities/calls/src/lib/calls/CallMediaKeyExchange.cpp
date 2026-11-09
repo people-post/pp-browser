@@ -110,7 +110,7 @@ std::optional<ByteVector> CallMediaKeyExchange::OpenKey(const std::string& call_
     log().warning << what << " media key malformed from=" << sender_identity;
     return std::nullopt;
   }
-  if (wrapped_key_b64.empty()) {
+  if (!kMediaKeyAccountWrapRead || wrapped_key_b64.empty()) {
     return std::nullopt;
   }
   // The old form (an app before M024): wrapped under the account pair's session — the one held (the account copy it

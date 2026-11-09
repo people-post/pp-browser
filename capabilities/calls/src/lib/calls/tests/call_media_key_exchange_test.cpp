@@ -91,6 +91,9 @@ protected:
 // for); the coordinator's resend is taken, and its key stored. Moving the call is the workflow's (the rows'
 // one writer): the exchange only says which key it took.
 TEST_F(CallMediaKeyExchangeTest, AKeyThatFailedToOpenIsTakenFromItsResend) {
+  if (!kMediaKeyAccountWrapRead) {
+    GTEST_SKIP() << "the old form is no longer read (M024 bridge, step 2)";
+  }
   const std::string epoch2 = MediaKeyDetail(2);
   auto first = exchange_->HandleInbound(epoch2, "account:coordinator");
   ASSERT_TRUE(first);

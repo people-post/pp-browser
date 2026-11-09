@@ -58,7 +58,7 @@ struct CallDeliveryPorts {
   std::function<pp::Roe<ByteVector>(const std::string& peer_identity)> ensure_peer_session_key;
   /**
    * The same key when a session with the peer is held — never opened: reading the media key's old form (a session
-   * opened then could not open what the peer wrapped). Gone once the old form is no longer read.
+   * opened then could not open what the peer wrapped). Gone with kMediaKeyAccountWrapRead.
    */
   std::function<pp::Roe<ByteVector>(const std::string& peer_identity)> held_peer_session_key;
   /**
