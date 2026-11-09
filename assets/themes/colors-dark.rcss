@@ -3516,6 +3516,10 @@ input.checkbox:checked {
   image-color: #40c8e0;
 }
 
+.ai-drawer-me-link-icon--connecting {
+  image-color: #ff9f0a;
+}
+
 .ai-drawer-me-link-icon--offline {
   image-color: #ff453a;
 }

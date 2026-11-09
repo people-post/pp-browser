@@ -167,7 +167,10 @@ public:
   /** Phone root pages: flips the large-title state; dirties the model only when it changes. */
   void SetLargeTitleCollapsed(bool collapsed);
   /** Chats header status line, event-driven (never polled): known=false shows nothing; else online/offline. Dirties only on change. */
-  void SetChatsLink(bool known, bool online);
+  void SetChatsLink(ChatsLink link);
+  void SetChatsLink(const bool known, const bool online) {
+    SetChatsLink(!known ? ChatsLink::Unknown : (online ? ChatsLink::Online : ChatsLink::Offline));
+  }
   /** `keep_compact_chat`: a chat overlay stays open (under a hidden tab, or again on the way back to it). */
   void ClearTabContext(bool keep_compact_chat = false);
   void SetPrimaryPane(const std::string& key);

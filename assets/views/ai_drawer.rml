@@ -110,6 +110,7 @@
       <!-- The device's link to our service (ShellHost::SetChatsLink, event-driven): empty while unknown. -->
       <p class="ai-drawer-me-link" data-if="chats_link_state != ''">
         <svg class="ai-drawer-me-link-icon ai-drawer-me-link-icon--ok" data-if="chats_link_state == 'ok'" src="../icons/v2/cloud-ok.svg" width="14" height="14"></svg>
+        <svg class="ai-drawer-me-link-icon ai-drawer-me-link-icon--connecting" data-if="chats_link_state == 'connecting'" src="../icons/v2/cloud-sync.svg" width="14" height="14"></svg>
         <svg class="ai-drawer-me-link-icon ai-drawer-me-link-icon--offline" data-if="chats_link_state == 'offline'" src="../icons/v2/cloud-off.svg" width="14" height="14"></svg>
         <span class="ai-drawer-me-link-text">{{chats_link_text}}</span>
       </p>

@@ -456,10 +456,23 @@ public:
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
   /**
-   * The device's own link came or went (OS network monitor, any thread, fired on a change and once for the first
-   * report). known=false never fires today; the current value is NetworkOnline(). Set before StartNetworkWatch.
+   * The status line's state (#175): the OS network and the relay's last poll, combined.
+   *   Offline    the OS network is down (or only a tunnel is up);
+   *   Online     the OS network is up and the last relay poll was Ok;
+   *   Connecting the OS network is up and the last poll Failed, or no poll result for kLinkUnknownGrace after the
+   *              network came up / messaging was built.
+   * Unknown is only the state before the first network report; inside the grace period the last state stays.
+   * The callback fires on a change only (any thread: the OS monitor, the poll worker, the coordinator timer).
+   * Set before StartNetworkWatch; nullptr clears it.
    */
-  void SetOnNetworkOnlineChanged(std::function<void(bool known, bool online)> callback);
+  enum class LinkState { Unknown, Offline, Connecting, Online };
+  static constexpr std::chrono::milliseconds kLinkUnknownGrace{5000};
+  void SetOnLinkStateChanged(std::function<void(LinkState)> callback);
+  LinkState CurrentLinkState() const;
+  /** The relay health reported by the orchestrator's poll worker (public so a test can feed it). */
+  void OnBriefRelayHealthChanged(MeshDeliveryOrchestrator::BriefRelayHealthState health);
+  /** Test seam: how the 5 s "no poll result yet" timer is scheduled (default: AppRuntime coordinator one-shot). */
+  void SetLinkGraceScheduler(std::function<void(std::chrono::milliseconds, std::function<void()>)> scheduler);
   /** -1 = no report yet, 0 = offline, 1 = online. */
   int NetworkOnline() const { return network_online_.load(); }
 
@@ -695,8 +708,22 @@ private:
   bool reachability_banner_shown_ = false;
   uint64_t reachability_outbound_since_ms_ = 0;
   std::function<void()> on_reachability_updated_;
-  std::mutex network_online_cb_mu_;
-  std::function<void(bool known, bool online)> on_network_online_changed_;
+  /** The status line state: network linked + relay health (see LinkState). All under link_mu_. */
+  mutable std::mutex link_mu_;
+  std::function<void(LinkState)> on_link_state_changed_;
+  std::function<void(std::chrono::milliseconds, std::function<void()>)> link_grace_scheduler_;
+  LinkState link_state_ = LinkState::Unknown;
+  int link_net_ = -1; // -1 no report yet, 0 offline, 1 linked
+  MeshDeliveryOrchestrator::BriefRelayHealthState link_health_ = MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown;
+  bool link_grace_over_ = false;
+  uint64_t link_grace_gen_ = 0; // a timer carries the generation it was armed with; a stale one does nothing
+  pp::Lifetime link_grace_lifetime_;
+  void OnLinkNetwork(bool linked);
+  /** (Re)start the Unknown→Connecting timer when the network is up and no poll result is known. link_mu_ held. */
+  void ArmLinkGraceLocked();
+  void OnLinkGraceElapsed(uint64_t gen);
+  /** Recompute the state; fires the callback after dropping link_mu_ when it changed. Takes link_mu_. */
+  void ReevaluateLink(std::unique_lock<std::mutex> lock);
   std::atomic<int> network_online_{-1};
   std::function<void()> on_peer_icons_changed_;
   /** Me → Storage's callbacks: set on the UI thread, read (copied under the lock) where a change is reported. */
