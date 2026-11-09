@@ -69,6 +69,14 @@ function(pp_browser_configure_ios_app target)
     MACOSX_PACKAGE_LOCATION Resources)
   target_sources(${target} PRIVATE "${CMAKE_SOURCE_DIR}/assets/branding/app-icon.png")
 
+  # Notification sounds: UNNotificationSound finds them by file name in the main bundle
+  # root (Resources), not under assets/ (the relay's alerts name them too).
+  foreach(_ios_snd call.caf msg.caf)
+    set_source_files_properties("${CMAKE_SOURCE_DIR}/assets/sounds/${_ios_snd}" PROPERTIES
+      MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(${target} PRIVATE "${CMAKE_SOURCE_DIR}/assets/sounds/${_ios_snd}")
+  endforeach()
+
   set(_ios_assets_dir "${CMAKE_BINARY_DIR}/ios-assets")
   add_custom_target(pp_browser_ios_assets ALL
     COMMAND "${CMAKE_COMMAND}" -E rm -rf "${_ios_assets_dir}"

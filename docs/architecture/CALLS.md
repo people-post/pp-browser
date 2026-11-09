@@ -120,7 +120,7 @@ An iPhone has no PushKit and no CallKit ([P019](../../projects/push-notification
 - **App in front and unlocked:** the alert is not presented; the call wake sync finds the invite and the app rings itself (`CallController`).
 - **Tap:** the app activates, asks for the PIN if locked (the PIN screen reads the call text while the tap is fresh, 90 s), syncs, and the ring of the tapped call id rings in the app and opens its chat (`PendingNotificationTap::TakeCallRoute`); answer with voice or video there. The call's audio starts in the app (`AudioSession::ActivateForVoip`).
 - **Invite already expired** (about 65 s, `ShouldDropStaleInvite`): nothing rings; the caller's `call_summary` ("Missed voice call") synced and the tap's `wake_hint` finds it and opens the caller's chat (`TakeHintedRoute`).
-- **No system call screen:** the ring is the notification's sound, a single tone the silent switch silences; no AirPods or CarPlay answer.
+- **No system call screen:** the ring is the notification's sound (`call.caf`, 29 s, bundled at the `Resources` root; the local call notification and the relay's `call_wake` `aps.sound` both name it, and a build without the file falls back to the default sound), which the silent switch silences; no AirPods or CarPlay answer.
 
 ### Thread policy
 
