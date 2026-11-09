@@ -55,6 +55,9 @@ std::string CentreBlock() {
                              "<button class=\"chat-suggestion\" style=\"width: 110dp;\"");
   const std::string stub =
       "<div class=\"prompt-composer\" id=\"stub-composer\"><div class=\"prompt-composer-row\">"
+      "<button class=\"prompt-voice-toggle-btn prompt-voice-toggle-btn--end\" id=\"stub-mic\"></button>"
+      "<button class=\"prompt-emoji-btn\" id=\"stub-emoji\"><svg class=\"prompt-icon-v2\"></svg>"
+      "<svg class=\"prompt-icon-home-emoji\"></svg></button>"
       "<div class=\"prompt-composer-pill\"><textarea class=\"prompt-composer-input\"></textarea></div></div></div>";
   const std::string mount = "id=\"home-composer-mount\">";
   const size_t at = block.find(mount);
@@ -128,9 +131,39 @@ TEST_F(HomeMinimalLayoutTest, TallScreenShowsLogoAndTwoLineField) {
   Load(390, 844, 0);
   EXPECT_FLOAT_EQ(First("home-logo").height, 100.f);
   const Box pill = First("prompt-composer-pill");
-  EXPECT_GE(pill.height, 76.f);
+  EXPECT_GE(pill.height, 106.f);
   EXPECT_LE(pill.bottom(), visible_height);
   EXPECT_GT(First("home-logo").top, 90.f - 1.f) << "the logo is below the bar";
+}
+
+// Card B3 (mockups/31-home-composer-b.html, Kenneth 2026-11-09): 40dp side margins (310dp on a 390dp screen), 108dp
+// tall, the chips under it on the same 310dp, 12dp between the logo box and the card, the emoji key a 32dp circle at the
+// right end, and no microphone on the card.
+TEST_F(HomeMinimalLayoutTest, CardIsTheNarrow108dpB3WithACircleEmojiAndNoMic) {
+  Load(390, 844, 0);
+  ui::Element* card = document->GetElementById("stub-composer");
+  ASSERT_NE(card, nullptr);
+  EXPECT_FLOAT_EQ(card->GetBox().GetSize(ui::BoxArea::Border).x, 310.f);
+  EXPECT_FLOAT_EQ(card->GetAbsoluteOffset(ui::BoxArea::Border).x, 40.f);
+  EXPECT_FLOAT_EQ(card->GetBox().GetSize(ui::BoxArea::Border).y, 108.f);
+  const Box logo = First("home-logo");
+  EXPECT_FLOAT_EQ(BoxOf(card).top - logo.bottom(), 12.f) << "logo box to card (was 24dp)";
+  ui::ElementList chips;
+  document->GetElementsByClassName(chips, "chat-suggestion");
+  ASSERT_EQ(chips.size(), 5u);
+  EXPECT_FLOAT_EQ(BoxOf(chips.front()).top - BoxOf(card).bottom(), 16.f) << "card to the first chip row";
+  EXPECT_GE(chips.front()->GetAbsoluteOffset(ui::BoxArea::Border).x, 40.f);
+  ui::Element* mic = document->GetElementById("stub-mic");
+  ASSERT_NE(mic, nullptr);
+  EXPECT_EQ(mic->GetComputedValues().display(), ui::Style::Display::None) << "no microphone on the Home card";
+  ui::Element* emoji = document->GetElementById("stub-emoji");
+  ASSERT_NE(emoji, nullptr);
+  const ui::Vector2f size = emoji->GetBox().GetSize(ui::BoxArea::Border);
+  EXPECT_FLOAT_EQ(size.x, 32.f);
+  EXPECT_FLOAT_EQ(size.y, 32.f);
+  EXPECT_FLOAT_EQ(emoji->GetComputedValues().border_top_left_radius(), 16.f) << "a circle";
+  const float card_right = card->GetAbsoluteOffset(ui::BoxArea::Border).x + 310.f;
+  EXPECT_FLOAT_EQ(card_right - (emoji->GetAbsoluteOffset(ui::BoxArea::Border).x + size.x), 17.f) << "right end (16dp + border)";
 }
 
 // With the keyboard up (about 260dp on a 568dp screen, 336dp on a 844dp one) the field stays inside what is left,

@@ -149,14 +149,19 @@ TEST(NewChatPageTest, HomePlaceholderIsNewAndTheConversationOneIsUnchanged) {
             std::string::npos);
   EXPECT_NE(css.find(".shell-layer-compact .home-composer-mount .prompt-composer-label--home {\n  display: block;"),
             std::string::npos);
-  // Both tools are 44dp targets inside the box, the emoji 8dp after the plus (8 + 44 + 8 = 60).
+  // Card B3: the plus (a 44dp target) at the bottom left, the emoji key a 32dp circle at the bottom right.
   const size_t plus_rule = css.find(".shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-home-plus {");
   ASSERT_NE(plus_rule, std::string::npos);
-  EXPECT_NE(css.find("left: 8dp;", plus_rule), std::string::npos);
+  EXPECT_NE(css.find("left: 4dp;", plus_rule), std::string::npos);
   EXPECT_NE(css.find("width: 44dp;\n  height: 44dp;", plus_rule), std::string::npos);
   const size_t emoji_rule = css.find(".shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {");
   ASSERT_NE(emoji_rule, std::string::npos);
-  EXPECT_NE(css.find("left: 60dp;", emoji_rule), std::string::npos);
+  EXPECT_NE(css.find("right: 16dp;", emoji_rule), std::string::npos);
+  EXPECT_NE(css.find("width: 32dp;\n  height: 32dp;", emoji_rule), std::string::npos);
+  EXPECT_NE(css.find("border-radius: 16dp;", emoji_rule), std::string::npos);
+  EXPECT_NE(composer.find("src=\"../icons/v2/emoji-round.svg\""), std::string::npos);
+  EXPECT_NE(css.find(".shell-layer-compact .home-composer-mount .prompt-voice-toggle-btn {\n  display: none;"),
+            std::string::npos) << "no microphone on the Home card";
 }
 
 TEST(NewChatPageTest, ActionRowsAreBigAndTheRowsAreTheContactsTabRows) {
