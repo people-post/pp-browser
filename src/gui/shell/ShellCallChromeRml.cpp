@@ -813,7 +813,7 @@ std::string CallInProgressRml(const ShellState& state) {
     // screen, where the title, timer, mute and hang-up are.
     out << "<svg class=\"shell-call-minimized-icon\" src=\"../icons/phone.svg\" width=\"24\" height=\"24\" "
            "crop-to-content=\"true\"></svg>";
-    out << "</div>";
+    out << "</div></div>";  // the chip, then shell-call-chrome-root
     return out.str();
   }
 
