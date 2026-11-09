@@ -52,6 +52,7 @@
     <div class="prompt-composer-row ask-ai-input-row" data-class-ask-ai-input-row--text-only="!show_media">
       <button class="prompt-emoji-btn" type="button" data-event-click="ask_ai_emoji()" title="{{i18n:chat.insert_emoji}}">
         <svg class="prompt-icon-v2" src="../icons/v2/emoji.svg" width="20" height="20"></svg>
+        <svg class="prompt-icon-home-emoji" src="../icons/v2/emoji-round.svg" width="24" height="24"></svg>
       </button>
       <div class="prompt-composer-pill">
         <textarea id="ask-ai-input" class="prompt-composer-input" rows="1" max-rows="4" maxlength="4000"
