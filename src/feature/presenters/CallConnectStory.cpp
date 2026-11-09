@@ -34,17 +34,51 @@ CallSignalTone ToneFor(const CallPathQuality quality) {
 
 } // namespace
 
-CallRoute CallRouteFromPathKind(const std::string& path_kind) {
+CallPathKind ParseCallPathKind(const std::string& path_kind) {
   if (path_kind == "direct") {
-    return CallRoute::Direct;
+    return CallPathKind::Direct;
   }
   if (path_kind == "punched") {
-    return CallRoute::AroundLimits;
+    return CallPathKind::Punched;
   }
-  if (path_kind == "circuit" || path_kind == "media_relay" || path_kind == "relay") {
-    return CallRoute::Relayed;
+  if (path_kind == "circuit") {
+    return CallPathKind::Circuit;
+  }
+  if (path_kind == "media_relay" || path_kind == "relay") {
+    return CallPathKind::MediaRelay;
+  }
+  return CallPathKind::Unknown;
+}
+
+CallRoute CallRouteFromPathKind(const std::string& path_kind) {
+  switch (ParseCallPathKind(path_kind)) {
+    case CallPathKind::Direct:
+      return CallRoute::Direct;
+    case CallPathKind::Punched:
+      return CallRoute::AroundLimits;
+    case CallPathKind::Circuit:
+    case CallPathKind::MediaRelay:
+      return CallRoute::Relayed;
+    case CallPathKind::Unknown:
+      break;
   }
   return CallRoute::Unknown;
+}
+
+const char* CallPathWordKey(const std::string& path_kind) {
+  switch (ParseCallPathKind(path_kind)) {
+    case CallPathKind::Direct:
+      return "call.details.path.direct";
+    case CallPathKind::Punched:
+      return "call.details.path.punched";
+    case CallPathKind::Circuit:
+      return "call.details.path.circuit";
+    case CallPathKind::MediaRelay:
+      return "call.details.path.media_relay";
+    case CallPathKind::Unknown:
+      break;
+  }
+  return "";
 }
 
 void CallConnectStory::Reset() {
@@ -218,6 +252,35 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
   }
   last_status_ = in.status;
   return view_;
+}
+
+CallStorySteps CallStoryLines(const CallStoryView& view, const bool group) {
+  CallStorySteps steps;
+  if (group) {
+    steps.keys = {view.stage == 0 ? "call.story.step.group_calling" : "call.story.step.group_joined",
+                  "call.story.step.group_line", "call.story.step.group_heard"};
+    steps.shown = view.stage;
+    return steps;
+  }
+  // The five steps (#172): calling, answered, matching the fastest line, setting up the encrypted channel, connected.
+  std::string matching = "call.story.step.matching";
+  if (view.stage > CallConnectStory::kStageMatching) {
+    matching = view.route == CallRoute::Relayed   ? "call.story.step.matched_relayed"
+               : view.route == CallRoute::Unknown ? "call.story.step.matched"
+                                                  : "call.story.step.matched_direct";
+  }
+  if (view.outgoing) {
+    steps.keys = {"call.story.step.calling", "call.story.step.peer_answered"};
+  } else {
+    steps.keys = {"call.story.step.you_answered"};
+  }
+  steps.keys.push_back(matching);
+  steps.keys.push_back("call.story.step.securing");
+  steps.keys.push_back("call.story.step.connected");
+  // The stage numbers the five steps; a device that answered has no "calling" line, so it counts one less.
+  const int first = view.outgoing ? 0 : 1;
+  steps.shown = view.stage == CallConnectStory::kStageDone ? static_cast<int>(steps.keys.size()) : view.stage - first;
+  return steps;
 }
 
 const char* CallRouteResultKey(const CallRoute route) {

@@ -1870,22 +1870,11 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
   }
 
   // Always-on short path word next to elapsed / connected / health subtitle.
-  const char* path_key = nullptr;
-  if (view.path_kind == "media_relay" || view.path_kind == "relay") {
-    path_key = "call.details.path.media_relay";
-  } else if (view.path_kind == "circuit") {
-    path_key = "call.details.path.circuit";
-  } else if (view.path_kind == "punched") {
-    path_key = "call.details.path.punched";
-  } else if (view.path_kind == "direct") {
-    path_key = "call.details.path.direct";
-  }
+  const char* path_key = CallPathWordKey(view.path_kind);
   // Phones say how the call goes in plain words (the connection story below); the path word stays on desktop.
-  const bool show_path =
-      !phone_layout_ && path_key && backend && backend->Available() &&
-      backend->MediaStatus() != CallMediaStatus::Reconnecting &&
-      (backend->MediaChromeLive() ||
-       backend->MediaStatus() == CallMediaStatus::DegradedTxOnly);
+  const bool show_path = !phone_layout_ && path_key[0] && backend && backend->Available() &&
+                         backend->MediaStatus() != CallMediaStatus::Reconnecting &&
+                         (backend->MediaChromeLive() || backend->MediaStatus() == CallMediaStatus::DegradedTxOnly);
   if (show_path) {
     const std::string path_label = Tr(path_key);
     if (!in_call.subtitle.empty() && in_call.subtitle != path_label) {
@@ -1962,12 +1951,8 @@ void CallController::ShowCallDetails() {
   CallDetailsCopy copy;
   copy.elapsed = in_call.elapsed.empty() ? std::string(in_call.subtitle.c_str())
                                          : std::string(in_call.elapsed.c_str());
-  copy.path_label = view.path_kind == "media_relay" || view.path_kind == "relay"
-                        ? Tr("call.details.path.media_relay")
-                        : (view.path_kind == "circuit"
-                               ? Tr("call.details.path.circuit")
-                               : (view.path_kind == "punched" ? Tr("call.details.path.punched")
-                                                             : Tr("call.details.path.direct")));
+  const char* path_key = CallPathWordKey(view.path_kind);
+  copy.path_label = Tr(path_key[0] ? path_key : "call.details.path.direct");
   copy.quality_label = Tr(CallPathQualityDetailsLabelKey(view.quality));
   copy.mic_label = LevelHint(in_call.mic_level, false, in_call.muted);
   copy.incoming_label = LevelHint(in_call.peer_level, true, false);
@@ -2252,47 +2237,13 @@ void CallController::ApplyConnectStory(const CallScreen& screen, const std::stri
   }
   const std::string name = in_call.phone_title.c_str();
   in_call.story_active = v.connecting && !in_call.phone_failed;
-  in_call.story_stage = v.stage;
-  in_call.story_step_count = 3;
-  in_call.story_step4 = "";
-  in_call.story_step5 = "";
-  if (in.group) {
-    in_call.story_step1 = Tr(v.stage == 0 ? "call.story.step.group_calling" : "call.story.step.group_joined").c_str();
-    in_call.story_step2 = Tr("call.story.step.group_line").c_str();
-    in_call.story_step3 = Tr("call.story.step.group_heard").c_str();
-  } else {
-    // The five steps (#172): calling, answered, matching the fastest line, setting up the encrypted channel,
-    // connected. A device that answered starts at "Answered": four lines. The presenter's stage numbers the five.
-    const bool matched = v.stage > CallConnectStory::kStageMatching;
-    const char* matching_key = "call.story.step.matching";
-    if (matched) {
-      matching_key = v.route == CallRoute::Relayed ? "call.story.step.matched_relayed"
-                     : (v.route == CallRoute::Unknown ? "call.story.step.matched" : "call.story.step.matched_direct");
-    }
-    std::vector<std::string> lines;
-    if (v.outgoing) {
-      lines.push_back(Tr("call.story.step.calling", {{"name", name}}));
-      lines.push_back(Tr("call.story.step.peer_answered", {{"name", name}}));
-    } else {
-      lines.push_back(Tr("call.story.step.you_answered"));
-    }
-    lines.push_back(Tr(matching_key));
-    lines.push_back(Tr("call.story.step.securing"));
-    lines.push_back(Tr("call.story.step.connected"));
-    in_call.story_step_count = static_cast<int>(lines.size());
-    // The presenter numbers the five steps; a device that answered has no "calling" line, so it counts one less.
-    const int first = v.outgoing ? 0 : 1;
-    in_call.story_stage =
-        v.stage == CallConnectStory::kStageDone ? in_call.story_step_count : v.stage - first;
-    in_call.story_step1 = lines[0].c_str();
-    in_call.story_step2 = lines[1].c_str();
-    in_call.story_step3 = lines[2].c_str();
-    if (lines.size() > 3) {
-      in_call.story_step4 = lines[3].c_str();
-    }
-    if (lines.size() > 4) {
-      in_call.story_step5 = lines[4].c_str();
-    }
+  const CallStorySteps steps = CallStoryLines(v, in.group);
+  in_call.story_step_count = static_cast<int>(steps.keys.size());
+  in_call.story_stage = steps.shown;
+  ui::String* const shown[] = {&in_call.story_step1, &in_call.story_step2, &in_call.story_step3, &in_call.story_step4,
+                               &in_call.story_step5};
+  for (size_t i = 0; i < std::size(shown); ++i) {
+    *shown[i] = i < steps.keys.size() ? Tr(steps.keys[i], {{"name", name}}).c_str() : "";
   }
   in_call.result_text =
       v.result_shown ? Tr("call.story.result", {{"how", Tr(CallRouteResultKey(v.result_route))},
