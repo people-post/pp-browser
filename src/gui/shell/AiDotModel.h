@@ -37,7 +37,7 @@ struct AiDotScene {
  * - Happy: both jump one after the other with happy eyes, cheeks and two floating hearts (C, D: a nod; D draws a
  *   check).
  * - Private: closes its eyes, turns away and shows a lock ("I don't read your chats").
- * - Float: the mockups' float, drifting gently up and down once for 2.5 s and back at rest (C: floatC, half as far);
+ * - Float: the mockups' float, drifting gently up and down once for 3.25 s and back at rest (C: floatC, half as far);
  *   it was a continuous loop there, here it is one timed action (Kenneth 2026-11-04) so nothing runs between them.
  * Not in the random rotation: Sleep (closed eyes, a breath, three rising z's; once after kSleepAfterMs without a touch,
  * then it stays still, asleep, until the next touch), Poke (a tap: it squashes and wobbles, then the panel opens) and
@@ -121,23 +121,23 @@ public:
   static constexpr int64_t kSleepAfterMs = 120000;
   /** The keyframes' lengths in components.rcss (ai-dot-sway, ai-dot-blink, …); the class goes a little after. The calm
    * looks (C, D) wave and poke more slowly (the mockup's tiltC / hopC 2.2 s, pokeC 0.45 s). */
-  static constexpr int64_t kSwayMs = 1200;
-  static constexpr int64_t kBlinkMs = 500;
-  static constexpr int64_t kLookMs = 2000;
-  static constexpr int64_t kTalkMs = 1680;
-  static constexpr int64_t kShyMs = 1600;
-  static constexpr int64_t kWaveMs = 1600;
-  static constexpr int64_t kWaveCalmMs = 2200;
-  static constexpr int64_t kListenMs = 2400;
-  static constexpr int64_t kThinkMs = 2400;
-  static constexpr int64_t kFiveMs = 1500;
-  static constexpr int64_t kHappyMs = 1800;
-  static constexpr int64_t kPrivateMs = 2000;
-  static constexpr int64_t kSleepMs = 4000;
-  static constexpr int64_t kPokeMs = 600;
-  static constexpr int64_t kPokeCalmMs = 450;
-  static constexpr int64_t kPopMs = 700;
-  static constexpr int64_t kFloatMs = 2500;
+  static constexpr int64_t kSwayMs = 1560;
+  static constexpr int64_t kBlinkMs = 650;
+  static constexpr int64_t kLookMs = 2600;
+  static constexpr int64_t kTalkMs = 2184;
+  static constexpr int64_t kShyMs = 2080;
+  static constexpr int64_t kWaveMs = 2080;
+  static constexpr int64_t kWaveCalmMs = 2860;
+  static constexpr int64_t kListenMs = 3120;
+  static constexpr int64_t kThinkMs = 3120;
+  static constexpr int64_t kFiveMs = 1950;
+  static constexpr int64_t kHappyMs = 2340;
+  static constexpr int64_t kPrivateMs = 2600;
+  static constexpr int64_t kSleepMs = 5200;
+  static constexpr int64_t kPokeMs = 780;
+  static constexpr int64_t kPokeCalmMs = 585;
+  static constexpr int64_t kPopMs = 910;
+  static constexpr int64_t kFloatMs = 3250;
   static constexpr int64_t kIdleTailMs = 100;
 
   static AiDotLook LookFrom(const std::string_view look) {

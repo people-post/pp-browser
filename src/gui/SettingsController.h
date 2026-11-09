@@ -190,6 +190,7 @@ private:
     ui::String reduce_transparency = "off";
     ui::String call_diagnostics = "off";
     ui::String home_show_dynamic = "off";
+    ui::String home_animated_logo = "on";
     ui::String crash_reports_enabled = "off";
     ui::String show_advanced_settings = "off";
     /** show_advanced_settings == "on"; templates gate technical rows on it. */
@@ -253,6 +254,7 @@ private:
   void ToggleHomeShowDynamic();
   void ToggleShowAdvancedSettings();
   /** Me → AI assistant: the AI dot's switch, look (`a`–`d`) and size (`s` / `m` / `l`), saved to the profile prefs at once. */
+  void ToggleHomeAnimatedLogo();
   void ToggleAiDot();
   void SetAiDotLook(const std::string& look);
   /** "Assistant size": the pushed choice page (phones) with small / medium / large. */
@@ -366,7 +368,7 @@ private:
   int blocked_count_ = 0;
   /** Me → AI assistant (phones): the AI dot's switch, its look and size (with the size's name for its row). */
   bool ai_dot_shown_ = true;
-  ui::String ai_dot_look_ = "b";
+  ui::String ai_dot_look_ = "auto";
   ui::String ai_dot_size_ = "m";
   ui::String ai_dot_size_label_;
   bool compact_layout_ = false;

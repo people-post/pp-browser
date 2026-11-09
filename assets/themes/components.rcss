@@ -1823,11 +1823,11 @@ select selectbox option {
 }
 
 .ai-dot--sway .ai-dot-figure {
-  animation: 1.2s sine-in-out ai-dot-sway;
+  animation: 1.56s sine-in-out ai-dot-sway;
 }
 
 .ai-dot--calm.ai-dot--sway .ai-dot-figure {
-  animation: 1.2s sine-in-out ai-dot-sway-calm;
+  animation: 1.56s sine-in-out ai-dot-sway-calm;
 }
 
 /* Float: the mockup's float (translateY 0, -10, 0 units; calm floatC -5), once for 2.5 s instead of a loop, and back
@@ -1850,11 +1850,11 @@ select selectbox option {
 }
 
 .ai-dot--float .ai-dot-figure {
-  animation: 2.5s sine-in-out ai-dot-float;
+  animation: 3.25s sine-in-out ai-dot-float;
 }
 
 .ai-dot--calm.ai-dot--float .ai-dot-figure {
-  animation: 2.5s sine-in-out ai-dot-float-calm;
+  animation: 3.25s sine-in-out ai-dot-float-calm;
 }
 
 /* Blink. */
@@ -1867,7 +1867,7 @@ select selectbox option {
 
 .ai-dot--blink .ai-dot-eyes-front,
 .ai-dot--blink .ai-dot-eyes-back {
-  animation: 0.5s quadratic-in-out ai-dot-blink;
+  animation: 0.65s quadratic-in-out ai-dot-blink;
 }
 
 /* Look: the mockup's idle glance, the two look at each other (front eyes 18, -12; back eyes -10, 8) for a moment. */
@@ -1886,11 +1886,11 @@ select selectbox option {
 }
 
 .ai-dot--look .ai-dot-eyes-front {
-  animation: 2s sine-in-out ai-dot-look-front;
+  animation: 2.6s sine-in-out ai-dot-look-front;
 }
 
 .ai-dot--look .ai-dot-eyes-back {
-  animation: 2s sine-in-out ai-dot-look-back;
+  animation: 2.6s sine-in-out ai-dot-look-back;
 }
 
 /* Nod: the partner's (talk, listen) and both bubbles' while listening; 3deg and 4 units up. */
@@ -2205,15 +2205,15 @@ select selectbox option {
 .ai-dot--talk .ai-dot-mouth {
   display: block;
   opacity: 0;
-  animation: 1.68s sine-in-out ai-dot-talk-mouth;
+  animation: 2.184s sine-in-out ai-dot-talk-mouth;
 }
 
 .ai-dot--talk .ai-dot-eyes-front {
-  animation: 1.68s sine-in-out ai-dot-talk-eyes;
+  animation: 2.184s sine-in-out ai-dot-talk-eyes;
 }
 
 .ai-dot--talk .ai-dot-back {
-  animation: 0.84s sine-in-out 2 ai-dot-nod;
+  animation: 1.092s sine-in-out 2 ai-dot-nod;
 }
 
 .ai-dot--talk .ai-dot-eq,
@@ -2223,27 +2223,27 @@ select selectbox option {
 }
 
 .ai-dot--talk .ai-dot-eq-1 {
-  animation: 1.68s linear-in-out ai-dot-eq-1;
+  animation: 2.184s linear-in-out ai-dot-eq-1;
 }
 
 .ai-dot--talk .ai-dot-eq-2 {
-  animation: 1.68s linear-in-out ai-dot-eq-2;
+  animation: 2.184s linear-in-out ai-dot-eq-2;
 }
 
 .ai-dot--talk .ai-dot-eq-3 {
-  animation: 1.68s linear-in-out ai-dot-eq-3;
+  animation: 2.184s linear-in-out ai-dot-eq-3;
 }
 
 .ai-dot--talk .ai-dot-line-1 {
-  animation: 1s cubic-out ai-dot-line;
+  animation: 1.3s cubic-out ai-dot-line;
 }
 
 .ai-dot--talk .ai-dot-line-2 {
-  animation: 1s 0.34s cubic-out ai-dot-line;
+  animation: 1.3s 0.442s cubic-out ai-dot-line;
 }
 
 .ai-dot--talk .ai-dot-line-3 {
-  animation: 1s 0.68s cubic-out ai-dot-line;
+  animation: 1.3s 0.884s cubic-out ai-dot-line;
 }
 
 /* Shy: the front bubble leans away and peeks aside with its eyes half shut and pink cheeks, the partner ducks down
@@ -2291,29 +2291,29 @@ select selectbox option {
 }
 
 .ai-dot--shy .ai-dot-front {
-  animation: 1.6s sine-in-out ai-dot-shy-front;
+  animation: 2.08s sine-in-out ai-dot-shy-front;
 }
 
 .ai-dot--calm.ai-dot--shy .ai-dot-front {
-  animation: 1.6s sine-in-out ai-dot-shy-front-calm;
+  animation: 2.08s sine-in-out ai-dot-shy-front-calm;
 }
 
 .ai-dot--shy .ai-dot-back {
-  animation: 1.6s sine-in-out ai-dot-shy-back;
+  animation: 2.08s sine-in-out ai-dot-shy-back;
 }
 
 .ai-dot--shy .ai-dot-eyes-front {
-  animation: 1.6s sine-in-out ai-dot-shy-eyes-front;
+  animation: 2.08s sine-in-out ai-dot-shy-eyes-front;
 }
 
 .ai-dot--shy .ai-dot-eyes-back {
-  animation: 1.6s sine-in-out ai-dot-shy-eyes-back;
+  animation: 2.08s sine-in-out ai-dot-shy-eyes-back;
 }
 
 .ai-dot--shy .ai-dot-blush {
   display: block;
   opacity: 0;
-  animation: 1.6s sine-in-out ai-dot-shy-blush;
+  animation: 2.08s sine-in-out ai-dot-shy-blush;
 }
 
 /* Wave: the front bubble waves its whole body with happy eyes and cheeks, the partner hops twice (34 and 22 units).
@@ -2360,25 +2360,25 @@ select selectbox option {
 }
 
 .ai-dot--wave .ai-dot-front {
-  animation: 1.6s sine-in-out ai-dot-wave;
+  animation: 2.08s sine-in-out ai-dot-wave;
 }
 
 .ai-dot--wave .ai-dot-back {
-  animation: 1.6s sine-in-out ai-dot-hop;
+  animation: 2.08s sine-in-out ai-dot-hop;
 }
 
 .ai-dot--wave .ai-dot-blush {
   display: block;
   opacity: 0;
-  animation: 1.6s linear-in-out ai-dot-glow-in;
+  animation: 2.08s linear-in-out ai-dot-glow-in;
 }
 
 .ai-dot--calm.ai-dot--wave .ai-dot-front {
-  animation: 2.2s sine-in-out ai-dot-tilt-calm;
+  animation: 2.86s sine-in-out ai-dot-tilt-calm;
 }
 
 .ai-dot--calm.ai-dot--wave .ai-dot-back {
-  animation: 2.2s sine-in-out ai-dot-hop-calm;
+  animation: 2.86s sine-in-out ai-dot-hop-calm;
 }
 
 /* Listen: it leans in a little bigger with big eyes, both bubbles nod out of step, and three signal arcs pulse one
@@ -2414,25 +2414,25 @@ select selectbox option {
 }
 
 .ai-dot--listen .ai-dot-figure {
-  animation: 2.4s sine-in-out ai-dot-lean;
+  animation: 3.12s sine-in-out ai-dot-lean;
 }
 
 .ai-dot--listen .ai-dot-front {
-  animation: 1.1s sine-in-out 2 ai-dot-nod;
+  animation: 1.43s sine-in-out 2 ai-dot-nod;
 }
 
 .ai-dot--listen .ai-dot-back {
-  animation: 1.1s 0.2s sine-in-out 2 ai-dot-nod;
+  animation: 1.43s 0.26s sine-in-out 2 ai-dot-nod;
 }
 
 .ai-dot--listen .ai-dot-eyes-front,
 .ai-dot--listen .ai-dot-eyes-back {
-  animation: 2.4s sine-in-out ai-dot-big-eyes;
+  animation: 3.12s sine-in-out ai-dot-big-eyes;
 }
 
 .ai-dot--calm.ai-dot--listen .ai-dot-eyes-front,
 .ai-dot--calm.ai-dot--listen .ai-dot-eyes-back {
-  animation: 2.4s sine-in-out ai-dot-big-eyes-calm;
+  animation: 3.12s sine-in-out ai-dot-big-eyes-calm;
 }
 
 .ai-dot--listen .ai-dot-arc,
@@ -2442,35 +2442,35 @@ select selectbox option {
 }
 
 .ai-dot--listen .ai-dot-arc-1 {
-  animation: 1s cubic-out 2 ai-dot-arc;
+  animation: 1.3s cubic-out 2 ai-dot-arc;
 }
 
 .ai-dot--listen .ai-dot-arc-2 {
-  animation: 1s 0.18s cubic-out 2 ai-dot-arc;
+  animation: 1.3s 0.234s cubic-out 2 ai-dot-arc;
 }
 
 .ai-dot--listen .ai-dot-arc-3 {
-  animation: 1s 0.36s cubic-out 2 ai-dot-arc;
+  animation: 1.3s 0.468s cubic-out 2 ai-dot-arc;
 }
 
 .ai-dot--listen .ai-dot-bar-1 {
-  animation: 2.4s linear-in-out ai-dot-bar-1;
+  animation: 3.12s linear-in-out ai-dot-bar-1;
 }
 
 .ai-dot--listen .ai-dot-bar-2 {
-  animation: 2.4s linear-in-out ai-dot-bar-2;
+  animation: 3.12s linear-in-out ai-dot-bar-2;
 }
 
 .ai-dot--listen .ai-dot-bar-3 {
-  animation: 2.4s linear-in-out ai-dot-bar-3;
+  animation: 3.12s linear-in-out ai-dot-bar-3;
 }
 
 .ai-dot--listen .ai-dot-bar-4 {
-  animation: 2.4s linear-in-out ai-dot-bar-4;
+  animation: 3.12s linear-in-out ai-dot-bar-4;
 }
 
 .ai-dot--listen .ai-dot-bar-5 {
-  animation: 2.4s linear-in-out ai-dot-bar-5;
+  animation: 3.12s linear-in-out ai-dot-bar-5;
 }
 
 /* Think: the eyes go up and right (front 22, -24; back 8, -12), the front bubble tips back a little, and a "typing"
@@ -2504,15 +2504,15 @@ select selectbox option {
 }
 
 .ai-dot--think .ai-dot-front {
-  animation: 2.4s sine-in-out ai-dot-think-front;
+  animation: 3.12s sine-in-out ai-dot-think-front;
 }
 
 .ai-dot--think .ai-dot-eyes-front {
-  animation: 2.4s sine-in-out ai-dot-think-eyes-front;
+  animation: 3.12s sine-in-out ai-dot-think-eyes-front;
 }
 
 .ai-dot--think .ai-dot-eyes-back {
-  animation: 2.4s sine-in-out ai-dot-think-eyes-back;
+  animation: 3.12s sine-in-out ai-dot-think-eyes-back;
 }
 
 .ai-dot--think .ai-dot-bubble,
@@ -2523,22 +2523,22 @@ select selectbox option {
 }
 
 .ai-dot--think .ai-dot-bubble {
-  animation: 2.4s linear-in-out ai-dot-bubble;
+  animation: 3.12s linear-in-out ai-dot-bubble;
 }
 
 .ai-dot--think .ai-dot-tdot-1,
 .ai-dot--think .ai-dot-ddot-1 {
-  animation: 2.4s linear-in-out ai-dot-tdot-1;
+  animation: 3.12s linear-in-out ai-dot-tdot-1;
 }
 
 .ai-dot--think .ai-dot-tdot-2,
 .ai-dot--think .ai-dot-ddot-2 {
-  animation: 2.4s linear-in-out ai-dot-tdot-2;
+  animation: 3.12s linear-in-out ai-dot-tdot-2;
 }
 
 .ai-dot--think .ai-dot-tdot-3,
 .ai-dot--think .ai-dot-ddot-3 {
-  animation: 2.4s linear-in-out ai-dot-tdot-3;
+  animation: 3.12s linear-in-out ai-dot-tdot-3;
 }
 
 /* Five (high five): the two pull apart and bump together, with happy eyes, and a star bursts where they meet. C keeps
@@ -2576,11 +2576,11 @@ select selectbox option {
 }
 
 .ai-dot--five .ai-dot-front {
-  animation: 1.5s cubic-in-out ai-dot-five-front;
+  animation: 1.95s cubic-in-out ai-dot-five-front;
 }
 
 .ai-dot--five .ai-dot-back {
-  animation: 1.5s cubic-in-out ai-dot-five-back;
+  animation: 1.95s cubic-in-out ai-dot-five-back;
 }
 
 .ai-dot--five .ai-dot-star,
@@ -2590,11 +2590,11 @@ select selectbox option {
 }
 
 .ai-dot--five .ai-dot-star {
-  animation: 1.5s cubic-out ai-dot-star;
+  animation: 1.95s cubic-out ai-dot-star;
 }
 
 .ai-dot--five .ai-dot-spark {
-  animation: 1.5s cubic-out ai-dot-spark;
+  animation: 1.95s cubic-out ai-dot-spark;
 }
 
 /* Happy: the two jump one after the other (110 units, squash and stretch) with happy eyes and pink cheeks, and two
@@ -2631,19 +2631,19 @@ select selectbox option {
 }
 
 .ai-dot--happy .ai-dot-front {
-  animation: 1.3s quadratic-in-out ai-dot-jump;
+  animation: 1.69s quadratic-in-out ai-dot-jump;
 }
 
 .ai-dot--happy .ai-dot-back {
-  animation: 1.3s 0.16s quadratic-in-out ai-dot-jump;
+  animation: 1.69s 0.208s quadratic-in-out ai-dot-jump;
 }
 
 .ai-dot--calm.ai-dot--happy .ai-dot-front {
-  animation: 1.6s sine-in-out ai-dot-nod-calm;
+  animation: 2.08s sine-in-out ai-dot-nod-calm;
 }
 
 .ai-dot--calm.ai-dot--happy .ai-dot-back {
-  animation: 1.6s 0.2s sine-in-out ai-dot-nod-calm;
+  animation: 2.08s 0.26s sine-in-out ai-dot-nod-calm;
 }
 
 .ai-dot--happy .ai-dot-blush,
@@ -2654,19 +2654,19 @@ select selectbox option {
 }
 
 .ai-dot--happy .ai-dot-blush {
-  animation: 1.8s linear-in-out ai-dot-glow-in;
+  animation: 2.34s linear-in-out ai-dot-glow-in;
 }
 
 .ai-dot--happy .ai-dot-heart-1 {
-  animation: 1.3s cubic-out ai-dot-heart;
+  animation: 1.69s cubic-out ai-dot-heart;
 }
 
 .ai-dot--happy .ai-dot-heart-2 {
-  animation: 1.3s 0.5s cubic-out ai-dot-heart;
+  animation: 1.69s 0.65s cubic-out ai-dot-heart;
 }
 
 .ai-dot--happy .ai-dot-check {
-  animation: 1.6s cubic-out ai-dot-check;
+  animation: 2.08s cubic-out ai-dot-check;
 }
 
 /* Private ("I don't read your chats"): it shuts its eyes, the front bubble turns away, the partner steps aside, and a
@@ -2701,22 +2701,22 @@ select selectbox option {
 }
 
 .ai-dot--private .ai-dot-front {
-  animation: 2s sine-in-out ai-dot-private-front;
+  animation: 2.6s sine-in-out ai-dot-private-front;
 }
 
 .ai-dot--private .ai-dot-back {
-  animation: 2s sine-in-out ai-dot-private-back;
+  animation: 2.6s sine-in-out ai-dot-private-back;
 }
 
 .ai-dot--private .ai-dot-eyes-front {
-  animation: 2s sine-in-out ai-dot-private-eyes;
+  animation: 2.6s sine-in-out ai-dot-private-eyes;
 }
 
 .ai-dot--private .ai-dot-lock,
 .ai-dot--private .ai-dot-dlock {
   display: block;
   opacity: 0;
-  animation: 2s cubic-out ai-dot-lock-in;
+  animation: 2.6s cubic-out ai-dot-lock-in;
 }
 
 /* Sleep (AiDotModel: only after two minutes without a touch, then it stays asleep): eyes shut, the front bubble nods
@@ -2784,23 +2784,23 @@ select selectbox option {
 }
 
 .ai-dot--sleep .ai-dot-front {
-  animation: 4s sine-in-out ai-dot-doze;
+  animation: 5.2s sine-in-out ai-dot-doze;
 }
 
 .ai-dot--sleep .ai-dot-figure {
-  animation: 4s sine-in-out ai-dot-breathe;
+  animation: 5.2s sine-in-out ai-dot-breathe;
 }
 
 .ai-dot--calm.ai-dot--sleep .ai-dot-figure {
-  animation: 4s sine-in-out ai-dot-breathe-calm;
+  animation: 5.2s sine-in-out ai-dot-breathe-calm;
 }
 
 .ai-dot--plain.ai-dot--sleep .ai-dot-figure {
-  animation: 4s sine-in-out ai-dot-fade-plain;
+  animation: 5.2s sine-in-out ai-dot-fade-plain;
 }
 
 .ai-dot--calm.ai-dot--sleep .ai-dot-shut {
-  animation: 4s sine-in-out ai-dot-dim-calm;
+  animation: 5.2s sine-in-out ai-dot-dim-calm;
 }
 
 .ai-dot--sleep .ai-dot-z {
@@ -2809,15 +2809,15 @@ select selectbox option {
 }
 
 .ai-dot--sleep .ai-dot-z-1 {
-  animation: 2.4s cubic-out ai-dot-z;
+  animation: 3.12s cubic-out ai-dot-z;
 }
 
 .ai-dot--sleep .ai-dot-z-2 {
-  animation: 2.4s 0.8s cubic-out ai-dot-z;
+  animation: 3.12s 1.04s cubic-out ai-dot-z;
 }
 
 .ai-dot--sleep .ai-dot-z-3 {
-  animation: 2.4s 1.6s cubic-out ai-dot-z;
+  animation: 3.12s 2.08s cubic-out ai-dot-z;
 }
 
 /* Poke (a tap, before the panel opens): the front bubble squashes and wobbles, the eyes go wide. Calm: a small
@@ -2852,21 +2852,21 @@ select selectbox option {
 }
 
 .ai-dot--poke .ai-dot-front {
-  animation: 0.6s cubic-out ai-dot-poke;
+  animation: 0.78s cubic-out ai-dot-poke;
 }
 
 .ai-dot--poke .ai-dot-eyes-front,
 .ai-dot--poke .ai-dot-eyes-back {
-  animation: 0.6s cubic-out ai-dot-wide-eyes;
+  animation: 0.78s cubic-out ai-dot-wide-eyes;
 }
 
 .ai-dot--calm.ai-dot--poke .ai-dot-front {
-  animation: 0.45s cubic-out ai-dot-poke-calm;
+  animation: 0.585s cubic-out ai-dot-poke-calm;
 }
 
 .ai-dot--calm.ai-dot--poke .ai-dot-eyes-front,
 .ai-dot--calm.ai-dot--poke .ai-dot-eyes-back {
-  animation: 0.45s cubic-out ai-dot-wide-eyes-calm;
+  animation: 0.585s cubic-out ai-dot-wide-eyes-calm;
 }
 
 /* Pop (a tap on it tucked): while it slides out of the tuck it jumps once, the mockups' squash-and-stretch jump
@@ -2888,11 +2888,11 @@ select selectbox option {
 }
 
 .ai-dot--pop .ai-dot-figure {
-  animation: 0.7s quadratic-in-out ai-dot-pop;
+  animation: 0.91s quadratic-in-out ai-dot-pop;
 }
 
 .ai-dot--calm.ai-dot--pop .ai-dot-figure {
-  animation: 0.7s sine-in-out ai-dot-pop-calm;
+  animation: 0.91s sine-in-out ai-dot-pop-calm;
 }
 
 /* Happy eyes: the front ones while waving, all while giving five or happy; the calm looks keep theirs open for wave and
@@ -11675,8 +11675,8 @@ input.checkbox {
 
 .ai-look-art {
   display: block;
-  width: 68dp;
-  height: 68dp;
+  width: 60dp;
+  height: 60dp;
   padding: 4dp;
   border-width: 2dp;
   border-radius: 13dp;
@@ -11685,8 +11685,8 @@ input.checkbox {
 
 .ai-look-art svg {
   display: block;
-  width: 56dp;
-  height: 56dp;
+  width: 48dp;
+  height: 48dp;
 }
 
 .ai-look-name {
@@ -13003,11 +13003,33 @@ textarea:composing ~ .prompt-composer-label,
   border-radius: 22dp;
 }
 
+/* Animated home logo (Kenneth 2026-11-09; ShellHomeMascot): the AI dot's figure drawn at 120dp inside the logo box, which
+   keeps room for the shadow the figure's SVGs draw round it. It sits still until tapped (the dot's keyframes). */
+.shell-layer-compact .home-landing--minimal .home-logo--mascot {
+  height: 140dp;
+}
+
+.shell-layer-compact .home-landing--minimal .home-logo--mascot .home-mascot.ai-dot {
+  position: relative;
+  display: block;
+  width: 120dp;
+  height: 120dp;
+  margin: 10dp auto 0 auto;
+}
+
 /* iPhone SE class screens (under 600dp tall): a smaller logo so logo, field and two chip rows fit. */
 @media (max-height: 599dp) {
   .shell-layer-compact .home-landing--minimal .home-logo {
     height: 72dp;
     margin-bottom: 10dp;
+  }
+  .shell-layer-compact .home-landing--minimal .home-logo--mascot {
+    height: 96dp;
+  }
+  .shell-layer-compact .home-landing--minimal .home-logo--mascot .home-mascot.ai-dot {
+    width: 80dp;
+    height: 80dp;
+    margin-top: 8dp;
   }
   .shell-layer-compact .home-landing--minimal .home-logo img {
     width: 72dp;

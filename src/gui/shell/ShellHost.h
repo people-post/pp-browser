@@ -4,6 +4,7 @@
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
 #include "gui/shell/ShellAiDot.h"
+#include "gui/shell/ShellHomeMascot.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/StatusbarText.h"
@@ -71,14 +72,17 @@ public:
     bool compact_chrome_frost = true;
     /** Phone AI dot: shown or not, its look (`a`–`d`) and size (`s` / `m` / `l`). */
     bool ai_dot = true;
-    std::string ai_dot_look = "b";
+    std::string ai_dot_look = "auto";
     std::string ai_dot_size = "m";
+    /** Settings -> Appearance -> Animated home logo. */
+    bool home_animated_logo = true;
 
     bool operator==(const ChromePrefs& other) const {
       return theme == other.theme && appearance == other.appearance &&
              reduce_transparency == other.reduce_transparency &&
              compact_chrome_frost == other.compact_chrome_frost && ai_dot == other.ai_dot &&
-             ai_dot_look == other.ai_dot_look && ai_dot_size == other.ai_dot_size;
+             ai_dot_look == other.ai_dot_look && ai_dot_size == other.ai_dot_size &&
+             home_animated_logo == other.home_animated_logo;
     }
     bool operator!=(const ChromePrefs& other) const { return !(*this == other); }
   };
@@ -264,7 +268,10 @@ public:
    * Phone AI dot (DESIGN-pp-ui §8.14): the Me → AI assistant switch, look (`a`–`d`) and size (`s` / `m` / `l`); takes
    * effect at once.
    */
+  /** `look` is the pref: `auto` (the day's look, LookForDate) or `a`-`d`. */
   void SetAiDot(bool enabled, const std::string& look, const std::string& size);
+  /** Settings -> Appearance -> Animated home logo (the AI Home's logo is the mascot, or the static icon). */
+  void SetHomeAnimatedLogo(bool animated);
   /** Where the AI dot rests, from disk (side, height in its band 0–1000). */
   void SetAiDotPlace(bool left, int y_permille, bool tucked);
   /** A tap on the AI dot (open the ask-AI panel). */
@@ -390,6 +397,8 @@ private:
   void SyncSecureScreen();
   /** The AI dot's bound keys (ai_dot_*). */
   void DirtyAiDot();
+  /** state_.ai_dot_look from the pref and today; true when it changed. */
+  bool ResolveAiDotLook();
   struct SafeAreaFromSdl {
     int top_dp = 0;
     int bottom_dp = 0;
@@ -493,6 +502,10 @@ private:
   CallActionsPorts call_actions_;
   std::function<void()> scan_action_;
   ShellAiDot ai_dot_{state_};
+  ShellHomeMascot home_mascot_;
+  /** The look pref (`auto`, `a`-`d`) and when `auto` was last resolved to state_.ai_dot_look (a day can turn over). */
+  std::string ai_dot_look_pref_ = "auto";
+  int64_t ai_dot_look_checked_ms_ = 0;
   std::function<void()> on_ai_dot_tap_;
   std::function<void(bool, int, bool)> on_ai_dot_moved_;
   std::function<bool()> secret_page_;

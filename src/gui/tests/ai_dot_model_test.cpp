@@ -221,12 +221,12 @@ TEST(AiDotModelTest, EachLookPlaysEveryMockupActionThePlainOneWithoutEyes) {
   EXPECT_EQ(AiDotModel::LookFrom("?"), AiDotLook::TwoEyes);
 }
 
-TEST(AiDotModelTest, TheFloatIsOneTimedActionOfAboutTwoAndAHalfSecondsForEveryLook) {
+TEST(AiDotModelTest, TheFloatIsOneTimedActionOfAboutThreeAndAQuarterSecondsForEveryLook) {
   EXPECT_STREQ(AiDotModel::IdleName(AiDotIdle::Float), "float");
   for (const AiDotLook look : {AiDotLook::OneEye, AiDotLook::TwoEyes, AiDotLook::Cool, AiDotLook::Plain}) {
     const auto actions = AiDotModel::IdleActions(look);
     EXPECT_NE(std::find(actions.begin(), actions.end(), AiDotIdle::Float), actions.end());
-    EXPECT_EQ(AiDotModel::IdleLengthMs(AiDotIdle::Float, look), 2500);
+    EXPECT_EQ(AiDotModel::IdleLengthMs(AiDotIdle::Float, look), 3250);
     for (uint32_t roll = 0; roll < 64; ++roll) {
       EXPECT_NE(AiDotModel::PickIdle(look, AiDotIdle::Float, roll), AiDotIdle::Float) << "never twice in a row";
     }

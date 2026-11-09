@@ -1,3 +1,4 @@
+#include <chrono>
 #include <stdexcept>
 #include <utility>
 #include "gui/shell/ShellHost.h"
@@ -24,6 +25,8 @@
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/PinGateActionPorts.h"
 #include "gui/shell/RmlMount.h"
+#include "gui/shell/MascotFigure.h"
+#include "gui/shell/MascotLook.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/ShellCallChromeRml.h"
@@ -1326,17 +1329,39 @@ AiDotScene ShellHost::AiDotSceneNow() const {
   return scene;
 }
 
+bool ShellHost::ResolveAiDotLook() {
+  // The dot is drawn with the artwork of the pref's look; "auto" is the day's (LookForDate), asked again on every
+  // call so a day that turned over while the app was open changes it.
+  const char parts = PartsFor(ResolveLookToday(ai_dot_look_pref_));
+  const ui::String next(1, parts);
+  if (state_.ai_dot_look == next) {
+    return false;
+  }
+  state_.ai_dot_look = next;
+  return true;
+}
+
 void ShellHost::SetAiDot(const bool enabled, const std::string& look, const std::string& size) {
-  const bool known = look == "a" || look == "b" || look == "c" || look == "d";
-  const ui::String next_look = known ? look.c_str() : "b";
+  const std::string next_pref = IsLookPref(look) ? look : "auto";
   const ui::String next_size = size == "s" || size == "l" ? size.c_str() : "m";
-  if (state_.ai_dot_enabled == enabled && state_.ai_dot_look == next_look && state_.ai_dot_size == next_size) {
+  home_mascot_.SetLookPref(next_pref);
+  const bool pref_changed = next_pref != ai_dot_look_pref_;
+  ai_dot_look_pref_ = next_pref;
+  const bool look_changed = ResolveAiDotLook();
+  if (state_.ai_dot_enabled == enabled && !pref_changed && !look_changed && state_.ai_dot_size == next_size) {
     return;
   }
   state_.ai_dot_enabled = enabled;
-  state_.ai_dot_look = next_look;
   state_.ai_dot_size = next_size;
   DirtyAiDot();
+  Backend::RequestForceFrame();
+}
+
+void ShellHost::SetHomeAnimatedLogo(const bool animated) {
+  if (home_mascot_.Animated() == animated) {
+    return;
+  }
+  home_mascot_.SetAnimated(animated);
   Backend::RequestForceFrame();
 }
 
@@ -1957,12 +1982,14 @@ ShellHost::ChromePrefs ShellHost::ProjectChrome(const ProfilePreferences& prefs)
           .compact_chrome_frost = prefs.compact_chrome_frost,
           .ai_dot = prefs.ai_dot_shown,
           .ai_dot_look = prefs.ai_dot_look,
-          .ai_dot_size = prefs.ai_dot_size};
+          .ai_dot_size = prefs.ai_dot_size,
+          .home_animated_logo = prefs.home_animated_logo};
 }
 
 void ShellHost::Apply(const ChromePrefs& prefs) {
   SyncChromeMaterialPrefs(prefs.reduce_transparency, prefs.compact_chrome_frost);
   SetAiDot(prefs.ai_dot, prefs.ai_dot_look, prefs.ai_dot_size);
+  SetHomeAnimatedLogo(prefs.home_animated_logo);
 }
 
 void ShellHost::OnLayoutModeChanged() {
@@ -2852,7 +2879,17 @@ void ShellHost::Update(ui::Context* context) {
       statusbar_.Dirty();
     }
   }
+  if (const int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+      now - ai_dot_look_checked_ms_ >= 60000) {
+    ai_dot_look_checked_ms_ = now;
+    if (ResolveAiDotLook()) {
+      DirtyAiDot();
+    }
+  }
   ai_dot_.Update(context, AiDotSceneNow());
+  home_mascot_.Update(context);
   call_chrome_gesture_.Reflow(state_.call_in_progress);
   favorites_snap_.Update(ShellFavoritesSnap::NowSeconds());
   SyncSecureScreen();
@@ -2893,6 +2930,10 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   // The AI dot's next tuck or idle move: one frame then, nothing in between (its moves are RCSS keyframes).
   if (const std::optional<int64_t> ai_dot_ms = ai_dot_.MsUntilNext()) {
     delay_sec = std::min(delay_sec, static_cast<double>(*ai_dot_ms) / 1000.0);
+  }
+
+  if (const std::optional<int64_t> mascot_ms = home_mascot_.MsUntilNext()) {
+    delay_sec = std::min(delay_sec, static_cast<double>(*mascot_ms) / 1000.0);
   }
 
   // Call ring pulse / in-call meters need sub-second frames while overlays are active.

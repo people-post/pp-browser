@@ -99,6 +99,7 @@ struct SettingsUiState {
   std::string call_diagnostics = "off";
   /** UI select value: `on` or `off` — phone Home shows the 动态 widgets section (default off = minimal AI-first). */
   std::string home_show_dynamic = "off";
+  std::string home_animated_logo = "on";
   /** UI select value: `on` or `off` — opt-in crash dump upload. */
   std::string crash_reports_enabled = "off";
   /** Display label for the language row / picker value. */

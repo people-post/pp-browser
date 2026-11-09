@@ -339,6 +339,21 @@ TEST(ConfigJsonTest, ProfilePrefsHomeShowDynamicRoundTripsAndDefaultsOff) {
   EXPECT_TRUE(parsed.home_show_dynamic);
 }
 
+TEST(ConfigJsonTest, ProfilePrefsHomeAnimatedLogoRoundTripsAndDefaultsOn) {
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.home_animated_logo = false;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_TRUE(loaded.home_animated_logo);
+
+  pbr::ProfilePreferences edited;
+  edited.home_animated_logo = false;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_FALSE(parsed.home_animated_logo);
+}
+
 TEST(ConfigJsonTest, ProfilePrefsAiDotDefaultsRoundTripAndUnknownLook) {
   // Phone AI dot (DESIGN-pp-ui §8.14): on, two eyes, medium, right edge, 600 down its band unless written otherwise.
   auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
@@ -346,7 +361,7 @@ TEST(ConfigJsonTest, ProfilePrefsAiDotDefaultsRoundTripAndUnknownLook) {
   pbr::ProfilePreferences loaded;
   pbr::ProfilePrefsFromObject(*absent, loaded);
   EXPECT_TRUE(loaded.ai_dot_shown);
-  EXPECT_EQ(loaded.ai_dot_look, "b");
+  EXPECT_EQ(loaded.ai_dot_look, "auto") << "a different look each day unless one is picked";
   EXPECT_EQ(loaded.ai_dot_size, "m");
   EXPECT_FALSE(loaded.ai_dot_left);
   EXPECT_EQ(loaded.ai_dot_y_permille, 600);
@@ -365,11 +380,18 @@ TEST(ConfigJsonTest, ProfilePrefsAiDotDefaultsRoundTripAndUnknownLook) {
   EXPECT_TRUE(parsed.ai_dot_left);
   EXPECT_EQ(parsed.ai_dot_y_permille, 125);
 
+  pbr::ProfilePreferences automatic;
+  automatic.ai_dot_look = "auto";
+  pbr::ProfilePreferences automatic_parsed;
+  automatic_parsed.ai_dot_look = "d";
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(automatic), automatic_parsed);
+  EXPECT_EQ(automatic_parsed.ai_dot_look, "auto") << "auto survives a round trip";
+
   auto odd = pbr::TryParseObject(R"({ "ai_dot_look": "z", "ai_dot_size": "xl", "ai_dot_y_permille": 5000 })");
   ASSERT_TRUE(odd.has_value());
   pbr::ProfilePreferences clamped;
   pbr::ProfilePrefsFromObject(*odd, clamped);
-  EXPECT_EQ(clamped.ai_dot_look, "b");
+  EXPECT_EQ(clamped.ai_dot_look, "auto");
   EXPECT_EQ(clamped.ai_dot_size, "m");
   EXPECT_EQ(clamped.ai_dot_y_permille, 1000);
 }
