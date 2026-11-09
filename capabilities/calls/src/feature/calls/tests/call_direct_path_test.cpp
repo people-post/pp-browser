@@ -329,10 +329,11 @@ public:
   std::atomic<int> migrate_calls{0};
   bool migrate_ok = true;
   int fail_first_n_migrates = 0;
-  void Detach() override {
+  void Detach(const std::string& /*call_id*/) override {
     active = false;
     ++detach_calls;
   }
+  void DetachAll() override { Detach({}); }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
     ++connect_async_calls;

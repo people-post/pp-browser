@@ -207,7 +207,7 @@ bool CallDirectPath::YieldsToHop(const std::string& call_id, const std::string& 
       return true;
     case BundleFailureAction::CarriedByHop:
       log().info << "Ignoring call-media fail after SoftMigrate/SFU call_id=" << call_id << " reason=" << reason;
-      direct_.Detach();
+      direct_.Detach(call_id_);
       ClearMeshConnectFailed();
       reports_.Emit(direct_report::Connected{call_id});
       reports_.Emit(direct_report::Changed{call_id_});
@@ -217,7 +217,7 @@ bool CallDirectPath::YieldsToHop(const std::string& call_id, const std::string& 
       if (call_media) {
         call_media->ExpectHopAttach();
       }
-      direct_.Detach();
+      direct_.Detach(call_id_);
       ClearMeshConnectFailed();
       reports_.Emit(direct_report::InboxSyncWanted{call_id_});
       // Nothing is live until the hop attaches: the call waits for it (not "connected").
@@ -1102,7 +1102,7 @@ void CallDirectPath::EscalateBreakBeforeMake(const std::string& call_id, const s
   // Re-open transport under circuit without full engine Stop (keep capture).
   AbortConnectSequence();
   force_circuit_ensure_ = true; // consumed by the next reach (BuildReachRequest)
-  direct_.Detach();
+  direct_.Detach(call_id_);
   outbox_.Emit(direct_event::EscalateRestart{call_id, peer});
 }
 
@@ -1378,7 +1378,7 @@ bool CallDirectPath::StopPriorDirectAttempt(bool offerer) {
     StopOwnEngine("prior direct attempt");
   }
   if (!offerer && !keep_inbound) {
-    direct_.Detach();
+    direct_.Detach(call_id_);
   }
   // Abort in-flight Connect from a prior BeginSession (Kick thrash used to Stop without bumping).
   if (restarting && !keep_inbound) {
@@ -1669,9 +1669,9 @@ void CallDirectPath::StopMeshMedia(const std::string& call_id) {
   }
   reach_.ReleasePeer(peer);
   if (CallOverHere()) {
-    direct_.HangUp(); // K014: the peer hears `bye` — the close that follows is the call's end
+    direct_.HangUp(call_id_); // K014: the peer hears `bye` — the close that follows is the call's end
   } else {
-    direct_.Detach(); // the call stays open (a failed connect, a restart): a lost path to the peer
+    direct_.Detach(call_id_); // the call stays open (a failed connect, a restart): a lost path to the peer
   }
   media_peer_identity_.clear();
   media_session_ = false;
@@ -1749,7 +1749,7 @@ void CallDirectPath::ReleaseDirectTransportBody() {
   CancelDirectHealthTimer();
   const std::string peer = media_peer_identity_;
   reach_.ReleasePeer(peer);
-  direct_.Detach();
+  direct_.Detach(call_id_);
   media_peer_identity_.clear();
   reach_kind_ = mesh::PeerLinkKind::Unknown;
   inbound_deferred_peer_id_.clear();
@@ -1827,7 +1827,7 @@ void CallDirectPath::PrepareForTeardown(int /*timeout_ms*/) {
   ++key_wait_gen_;
   pending_answerer_peer_.clear();
   reach_.ReleasePeer(peer);
-  direct_.Detach();
+  direct_.Detach(call_id_);
   media_peer_identity_.clear();
   media_session_ = false;
   ClearMeshConnectFailed();
@@ -1869,7 +1869,7 @@ Roe<void> CallDirectPath::RetryMeshMedia(const std::string& call_id) {
   if (engine_->Runs()) {
     StopOwnEngine("retry");
   }
-  direct_.Detach();
+  direct_.Detach(call_id_);
   ArmPlannerForRestart(call_id, peer, true);
   return BeginSession(call_id, peer, true);
 }

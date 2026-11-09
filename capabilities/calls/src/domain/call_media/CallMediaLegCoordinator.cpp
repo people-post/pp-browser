@@ -2359,9 +2359,26 @@ void CallMediaLegCoordinator::CancelLeg(const CallMediaLegId id) {
 }
 
 void CallMediaLegCoordinator::HangUpLeg(const CallMediaLegId id) {
+  if (!id) {
+    return;
+  }
   impl_->PostIo([impl = impl_, id]() {
     Impl::CallbackLock lock(*impl);
-    if (auto* b = id ? impl->FindByLegId(id) : impl->PrimaryBundle()) {
+    if (auto* b = impl->FindByLegId(id)) {
+      impl->SayBye(*b);
+      impl->TearDownBundle(*b, true, false, Aborted());
+    }
+  });
+  runtime_.Pump();
+}
+
+void CallMediaLegCoordinator::HangUpCall(const std::string& call_id) {
+  if (call_id.empty() || IsPendingCallId(call_id)) {
+    return;
+  }
+  impl_->PostIo([impl = impl_, call_id]() {
+    Impl::CallbackLock lock(*impl);
+    if (auto* b = impl->FindByCallId(call_id)) {
       impl->SayBye(*b);
       impl->TearDownBundle(*b, true, false, Aborted());
     }
@@ -2370,10 +2387,44 @@ void CallMediaLegCoordinator::HangUpLeg(const CallMediaLegId id) {
 }
 
 void CallMediaLegCoordinator::DetachLeg(const CallMediaLegId id) {
+  if (!id) {
+    return;
+  }
   impl_->PostIo([impl = impl_, id]() {
     Impl::CallbackLock lock(*impl);
-    if (auto* b = id ? impl->FindByLegId(id) : impl->PrimaryBundle()) {
+    if (auto* b = impl->FindByLegId(id)) {
       impl->TearDownBundle(*b, true, false, Aborted());
+    }
+  });
+  runtime_.Pump();
+}
+
+void CallMediaLegCoordinator::DetachCall(const std::string& call_id) {
+  if (call_id.empty() || IsPendingCallId(call_id)) {
+    return;
+  }
+  impl_->PostIo([impl = impl_, call_id]() {
+    Impl::CallbackLock lock(*impl);
+    if (auto* b = impl->FindByCallId(call_id)) {
+      impl->TearDownBundle(*b, true, false, Aborted());
+    }
+  });
+  runtime_.Pump();
+}
+
+void CallMediaLegCoordinator::DetachAll() {
+  impl_->PostIo([impl = impl_]() {
+    Impl::CallbackLock lock(*impl);
+    std::vector<std::string> ids;
+    for (const auto& [id, bundle] : impl->bundles) {
+      if (bundle && !IsPendingCallId(id)) {
+        ids.push_back(id);
+      }
+    }
+    for (const auto& id : ids) {
+      if (auto* b = impl->FindByCallId(id)) {
+        impl->TearDownBundle(*b, true, false, Aborted());
+      }
     }
   });
   runtime_.Pump();

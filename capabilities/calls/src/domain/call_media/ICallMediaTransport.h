@@ -154,13 +154,20 @@ public:
       done(Error("call-media standby not supported"));
     }
   }
-  virtual void Detach() = 0;
   /**
-   * K014: this end ended the call — tell the peer (call-media `bye` on the active path, best-effort,
-   * no ack), then Detach. The peer takes the stream's close as the call ending, not as a lost path.
-   * Transports without it just detach.
+   * Drop `call_id`'s media on this device; another call's is untouched (one transport serves the
+   * device's calls in turn, so a late stop of an ended call must not reach the next). Empty: nothing.
+   * The peer takes a close without `bye` as a lost path (K014), not as the call ending.
    */
-  virtual void HangUp() { Detach(); }
+  virtual void Detach(const std::string& call_id) = 0;
+  /** Device level (shutdown): drop every call's media. */
+  virtual void DetachAll() = 0;
+  /**
+   * K014: this end ended `call_id` — tell the peer (call-media `bye` on the call's active path,
+   * best-effort, no ack), then Detach it. `bye` is what ends the call for the peer; the close that
+   * follows is not. Transports without it just detach.
+   */
+  virtual void HangUp(const std::string& call_id) { Detach(call_id); }
 
   /**
    * Non-blocking connect: arms the outbound leg and invokes `on_done` when MediaReady,

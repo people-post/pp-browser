@@ -926,7 +926,7 @@ TEST_F(CallMediaLegCoordinatorTest, ConnectDetachKCycleNoHang) {
     harness_->PumpUntil([&] { return got_audio; });
 
     a_call_->DetachLeg(leg_id);
-    b_call_->DetachLeg({});
+    b_call_->DetachAll();
     harness_->PumpBoth();
     EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle) << "cycle " << cycle;
     EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::Idle) << "cycle " << cycle;
@@ -1117,7 +1117,7 @@ TEST_F(CallMediaLegCoordinatorTest, YieldedOutboundFailureKeepsInboundMediaReady
   EXPECT_EQ(b_received, opus);
 
   a_call_->DetachLeg(late_leg);
-  b_call_->DetachLeg({});
+  b_call_->DetachAll();
   harness_->PumpBoth();
 }
 
@@ -1329,7 +1329,7 @@ TEST(CallMediaLegTripleTest, SecondInboundRejectedThenEndAndAccept) {
   harness->PumpUntil([&] { return b_audio >= 2; });
 
   c_call.DetachLeg(cb_leg2);
-  b_call.DetachLeg({});
+  b_call.DetachAll();
   harness->PumpAll();
   c_call.Stop();
   b_call.Stop();

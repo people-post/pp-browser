@@ -130,16 +130,30 @@ CallMediaLinkKind CallMediaAmpTransport::ActiveLinkKind() const {
   return coordinator_.ActiveLinkKind();
 }
 
-void CallMediaAmpTransport::Detach() {
-  coordinator_.Detach();
+void CallMediaAmpTransport::Detach(const std::string& call_id) {
+  coordinator_.DetachCall(call_id);
+  ForgetCall(call_id);
+}
+
+void CallMediaAmpTransport::DetachAll() {
+  coordinator_.DetachAll();
   std::lock_guard lock(mu_);
   active_leg_ = {};
 }
 
-void CallMediaAmpTransport::HangUp() {
-  coordinator_.HangUp();
+void CallMediaAmpTransport::HangUp(const std::string& call_id) {
+  coordinator_.HangUpCall(call_id);
+  ForgetCall(call_id);
+}
+
+void CallMediaAmpTransport::ForgetCall(const std::string& call_id) {
+  if (call_id.empty()) {
+    return;
+  }
   std::lock_guard lock(mu_);
-  active_leg_ = {};
+  if (active_params_.call_id == call_id) { // else the transport has moved on: that call's leg stays
+    active_leg_ = {};
+  }
 }
 
 void CallMediaAmpTransport::ConnectAsync(const CallMediaDirectConnectParams& params,
@@ -223,7 +237,7 @@ CallMediaRoe CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& 
 
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     if (!IsActive()) {
-      Detach();
+      Detach(params.call_id);
     }
     finish(CallMediaFailure::Of(CallMediaErr::Timeout, "amp call-media connect timed out"));
   }

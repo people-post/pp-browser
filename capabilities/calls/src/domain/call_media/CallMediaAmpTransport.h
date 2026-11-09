@@ -42,8 +42,9 @@ public:
   CallMediaLinkKind StandbyLinkKind() const override;
   void SetAutoMigrateToDirect(bool allow) override;
   void AddStandby(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override;
-  void Detach() override;
-  void HangUp() override;
+  void Detach(const std::string& call_id) override;
+  void DetachAll() override;
+  void HangUp(const std::string& call_id) override;
 
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     std::function<void(CallMediaRoe)> on_done, int timeout_ms = 15000) override;
@@ -59,6 +60,8 @@ public:
 
 private:
   CallMediaLegId ActiveLegId() const;
+  /** `call_id` is gone: drop the leg it left, unless the transport already serves another call. */
+  void ForgetCall(const std::string& call_id);
 
   CallMediaLegCoordinator coordinator_;
   IoPump io_pump_;

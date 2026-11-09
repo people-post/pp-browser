@@ -1027,7 +1027,7 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   while (std::chrono::steady_clock::now() < deadline) {
     (*peer)->Pump();
     if (!no_auto_detach && detach_after_audio.exchange(false, std::memory_order_acq_rel)) {
-      media->HangUp(); // the call ends: bye, so the offerer does not hold it as a lost path (K014)
+      media->HangUpCall(call_id); // the call ends: bye, so the offerer does not hold it as a lost path (K014)
     }
     if (min_rx_frames > 0) {
       std::lock_guard lock(mu);

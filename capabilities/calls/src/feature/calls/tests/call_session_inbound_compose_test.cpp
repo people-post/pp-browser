@@ -129,10 +129,11 @@ public:
   CallMediaSessionPhase Phase() const override {
     return active ? CallMediaSessionPhase::MediaReady : CallMediaSessionPhase::Idle;
   }
-  void Detach() override {
+  void Detach(const std::string& /*call_id*/) override {
     active = false;
     ++detach_calls;
   }
+  void DetachAll() override { Detach({}); }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
     ++connect_async_calls;

@@ -63,15 +63,19 @@ public:
                           LegConnected on_finished = {}, int timeout_ms = 15000);
 
   void CancelLeg(CallMediaLegId id);
+  /** Drop leg `id`'s bundle; an empty or gone id drops nothing (never another call's bundle). */
   void DetachLeg(CallMediaLegId id);
-  /** Detach primary/active bundle (empty id → PrimaryBundle). */
-  void Detach() { DetachLeg({}); }
+  /** Drop `call_id`'s bundle; another call's is untouched. Empty id: nothing. */
+  void DetachCall(const std::string& call_id);
+  /** Device level (shutdown): drop every call's bundle. */
+  void DetachAll();
   /**
    * K014: this end ended the call — a live leg says `bye` on its active path (best-effort, no ack;
-   * the same mux carries it ahead of the channels' close), then is detached. Empty id → primary.
+   * the same mux carries it ahead of the channels' close), then is detached. Empty or gone id: nothing.
    */
   void HangUpLeg(CallMediaLegId id);
-  void HangUp() { HangUpLeg({}); }
+  /** HangUpLeg for `call_id`'s bundle: a late hang-up of an ended call leaves the next call alone. */
+  void HangUpCall(const std::string& call_id);
 
   bool IsLegActive(CallMediaLegId id) const;
   bool IsActive() const;

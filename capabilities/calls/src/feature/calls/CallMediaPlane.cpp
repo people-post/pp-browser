@@ -177,7 +177,7 @@ void CallMediaPlane::DetachRelayClient() {
 
 void CallMediaPlane::DetachTransport() {
   if (ICallMediaTransport* transport = Transport()) {
-    transport->Detach();
+    transport->DetachAll();
   }
 }
 
