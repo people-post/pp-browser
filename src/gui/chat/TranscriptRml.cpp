@@ -358,7 +358,7 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
                               facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
   }
   if (inline_image) {
-    // A tap opens the full picture in the system viewer (zoomable). The bubble shows it fitted inside 200 x 240dp:
+    // A tap opens the full picture in the system viewer (zoomable). The bubble shows it fitted inside 280 x 320dp:
     // its size is given, so the frame round it is laid out for that size and never for the file's own.
     // The engine does not round an <img>, so a clip box with the same size and rounded corners holds it.
     const PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height);
@@ -710,8 +710,14 @@ PictureBubbleSize FitPictureInBubble(const int width_px, const int height_px) {
   if (width_px <= 0 || height_px <= 0) {
     return {};
   }
-  const double scale = std::min({1.0, static_cast<double>(kPictureBubbleMaxWidthDp) / width_px,
-                                 static_cast<double>(kPictureBubbleMaxHeightDp) / height_px});
+  const double box_scale = std::min(static_cast<double>(kPictureBubbleMaxWidthDp) / width_px,
+                                    static_cast<double>(kPictureBubbleMaxHeightDp) / height_px);
+  double scale = std::min(1.0, box_scale);
+  const int short_side = std::min(width_px, height_px);
+  if (short_side * scale < kPictureBubbleMinShortSideDp) {
+    // A small picture grows to a sane short side, but never past the box.
+    scale = std::min(box_scale, static_cast<double>(kPictureBubbleMinShortSideDp) / short_side);
+  }
   return {std::max(1, static_cast<int>(std::lround(width_px * scale))),
           std::max(1, static_cast<int>(std::lround(height_px * scale)))};
 }
