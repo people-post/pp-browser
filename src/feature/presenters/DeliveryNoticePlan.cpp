@@ -6,7 +6,11 @@ DeliveryNoticePlan PlanDeliveryNotice(const DeliveryNotice& notice, const int64_
   DeliveryNoticePlan plan;
   switch (notice.kind) {
   case DeliveryNotice::Kind::ReceiveFailed:
-    // Its line is already in the chat (MeshDeliveryOrchestrator writes it with the notice).
+    // With a thread id its line is already in the chat (MeshDeliveryOrchestrator writes it with the notice);
+    // without one nothing was written, so the user hears of it as a toast.
+    if (notice.thread_id.empty()) {
+      plan.action = DeliveryNoticePlan::Action::Toast;
+    }
     return plan;
   case DeliveryNotice::Kind::SendFailed:
     if (notice.send == SendFailure::Unknown || notice.thread_id.empty() || notice.message_id.empty()) {
