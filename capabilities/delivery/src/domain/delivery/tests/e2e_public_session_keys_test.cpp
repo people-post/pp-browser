@@ -69,15 +69,25 @@ TEST_F(E2ePublicSessionKeysTest, AnOpenSessionIsUsedWithoutAskingForThePeersKemK
   auto opened = keys_->Ensure("account:bob");
   ASSERT_TRUE(opened) << opened.error().message;
   EXPECT_EQ(kem_.asked, 1) << "opening the session needs the peer's KEM key";
-  ASSERT_TRUE(opened->first_message_key_init_b64.has_value()) << "the first send carries the opener";
 
   kem_.available = false;
   auto again = keys_->Ensure("account:bob");
   ASSERT_TRUE(again) << again.error().message;
   EXPECT_EQ(kem_.asked, 1) << "the open session was used as it is";
-  EXPECT_EQ(again->session_key, opened->session_key);
-  ASSERT_TRUE(again->first_message_key_init_b64.has_value()) << "an unconfirmed opener keeps riding";
-  EXPECT_EQ(*again->first_message_key_init_b64, *opened->first_message_key_init_b64);
+  EXPECT_EQ(*again, *opened);
+}
+
+// A call's media-key wrap opens the account pair's session (M024 bridge); its opener needs no caller to carry it:
+// every account copy the lane seals (Resolve) carries it until the peer confirms the session.
+TEST_F(E2ePublicSessionKeysTest, ASessionTheWrapOpenedCarriesItsOpenerOnTheNextAccountCopies) {
+  ASSERT_TRUE(keys_->Ensure("account:bob"));
+  auto first = keys_->Resolve("account:bob");
+  ASSERT_TRUE(first) << first.error().message;
+  ASSERT_TRUE(first->key_init_b64.has_value()) << "the next account copy carries the opener";
+  EXPECT_FALSE(first->key_init_b64->empty());
+  auto second = keys_->Resolve("account:bob");
+  ASSERT_TRUE(second) << second.error().message;
+  EXPECT_EQ(second->key_init_b64, first->key_init_b64) << "an unconfirmed opener keeps riding";
 }
 
 TEST_F(E2ePublicSessionKeysTest, OpeningASessionFailsWhenThePeersKemKeyCannotBeHad) {

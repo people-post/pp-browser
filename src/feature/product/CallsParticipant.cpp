@@ -29,12 +29,12 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
   deps.initiation_billing = hub.InitiationBilling();
   if (hub.MeshMessagingOrNull()) {
     deps.delivery.send_control = [&hub](const std::string& peer_identity, const ThreadMessage& control,
-                                        const std::optional<std::string>& key_init_b64, const bool urgent) -> Roe<void> {
+                                        const bool urgent) -> Roe<void> {
       auto* messaging = hub.MeshMessagingOrNull();
       if (!messaging) {
         return Error("Messaging not ready");
       }
-      return messaging->SendControl(peer_identity, control, key_init_b64, urgent);
+      return messaging->SendControl(peer_identity, control, urgent);
     };
     deps.delivery.send_control_to_many = [&hub](std::vector<ControlSend> sends, ControlSendsDone done) {
       auto* messaging = hub.MeshMessagingOrNull();
@@ -131,7 +131,7 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
         messaging->SyncInboxFromWake(force);
       }
     };
-    deps.delivery.ensure_peer_session_key = [&hub](const std::string& peer_identity) -> Roe<EnsuredE2ePublicSessionKey> {
+    deps.delivery.ensure_peer_session_key = [&hub](const std::string& peer_identity) -> Roe<ByteVector> {
       auto* messaging = hub.MeshMessagingOrNull();
       if (!messaging) {
         return Error("Messaging not ready");

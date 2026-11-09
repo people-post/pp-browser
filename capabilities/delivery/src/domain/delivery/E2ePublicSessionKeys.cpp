@@ -51,21 +51,12 @@ Roe<E2ePublicSessionKeys::Session> E2ePublicSessionKeys::ResolveDevice(const std
   return session;
 }
 
-Roe<EnsuredE2ePublicSessionKey> E2ePublicSessionKeys::Ensure(const std::string& peer_identity) {
+Roe<ByteVector> E2ePublicSessionKeys::Ensure(const std::string& peer_identity) {
   auto session = Resolve(peer_identity);
   if (!session) {
     return session.error();
   }
-  auto session_key = DeriveE2ePublicSessionKey(session->master_psk, session->epoch);
-  if (!session_key) {
-    return session_key.error();
-  }
-  EnsuredE2ePublicSessionKey out;
-  out.session_key = std::move(*session_key);
-  if (session->key_init_b64 && !session->key_init_b64->empty()) {
-    out.first_message_key_init_b64 = std::move(*session->key_init_b64);
-  }
-  return out;
+  return DeriveE2ePublicSessionKey(session->master_psk, session->epoch);
 }
 
 Roe<ByteVector> E2ePublicSessionKeys::PeerKemPublicKey(const PeerSessionKey& key) const {

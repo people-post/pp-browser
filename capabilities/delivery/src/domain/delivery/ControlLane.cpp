@@ -90,23 +90,18 @@ uint64_t ControlLane::NextOrderKey() {
   return next;
 }
 
-Roe<ControlLaneCopy> ControlLane::AccountCopyFor(const std::string& peer_identity,
-                                                 const std::optional<std::string>& account_key_init) {
+Roe<ControlLaneCopy> ControlLane::AccountCopyFor(const std::string& peer_identity) {
   auto session = keys_.Resolve(peer_identity);
   if (!session) {
     return session.error();
   }
-  ControlLaneCopy copy{.session_epoch = session->epoch, .master_psk = std::move(session->master_psk)};
-  // The session's own opener while unconfirmed; else one the caller holds (its media-key wrap opened the session).
-  copy.key_init_b64 = std::move(session->key_init_b64);
-  if (!copy.key_init_b64 && account_key_init && !account_key_init->empty()) {
-    copy.key_init_b64 = account_key_init;
-  }
-  return copy;
+  // The session's opener while unconfirmed — whoever opened it (a send, a call's old-form media-key wrap).
+  return ControlLaneCopy{.session_epoch = session->epoch,
+                         .master_psk = std::move(session->master_psk),
+                         .key_init_b64 = std::move(session->key_init_b64)};
 }
 
-Roe<std::vector<ControlLaneCopy>> ControlLane::CopiesFor(const std::string& peer_identity,
-                                                         const std::optional<std::string>& account_key_init) {
+Roe<std::vector<ControlLaneCopy>> ControlLane::CopiesFor(const std::string& peer_identity) {
   std::vector<AccountCardDevice> devices;
   if (auto kept = peer_cards_.Kept(peer_identity); kept && kept->has_value() && (*kept)->newest_card) {
     devices = (*kept)->newest_card->devices;
@@ -116,14 +111,14 @@ Roe<std::vector<ControlLaneCopy>> ControlLane::CopiesFor(const std::string& peer
     own_devices = own->devices.size();
   }
   if (ControlLaneUsesAccountCopy(devices.size(), own_devices)) {
-    auto copy = AccountCopyFor(peer_identity, account_key_init);
+    auto copy = AccountCopyFor(peer_identity);
     if (!copy) {
       return copy.error();
     }
     return std::vector<ControlLaneCopy>{std::move(*copy)};
   }
   // A copy per device, each in its pair's session (the chat stream's): one device's session is not another's, so
-  // whichever of them opened theirs, each reads its own (B186). The caller's account-pair opener is not theirs.
+  // whichever of them opened theirs, each reads its own (B186).
   std::vector<ControlLaneCopy> copies;
   std::optional<Error> failure;
   const auto self = own_keys_.DevicePeerId();
@@ -152,13 +147,13 @@ Roe<std::vector<ControlLaneCopy>> ControlLane::CopiesFor(const std::string& peer
   return copies;
 }
 
-Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessage& control,
-                            const std::optional<std::string>& key_init_b64, const bool urgent, const bool with_card) {
+Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessage& control, const bool urgent,
+                            const bool with_card) {
   auto identity = identity_.Get();
   if (!identity || identity->account_id.empty()) {
     return Error("Local account identity unavailable");
   }
-  auto copies = CopiesFor(peer_identity, key_init_b64);
+  auto copies = CopiesFor(peer_identity);
   if (!copies) {
     return copies.error();
   }
@@ -249,8 +244,7 @@ void ControlLane::SendToMany(std::vector<ControlSend> sends, ControlSendsDone do
     // One worker each: a cold route's directory lookup does not hold up the other peers' copies.
     lifetime_.Post([lane](std::function<void()> task) { AppRuntime::PostWorker(lane, std::move(task)); },
                    [this, gather, i, send = std::move(sends[i])]() {
-                     auto queued =
-                         Send(send.peer_identity, send.control, send.key_init_b64, send.urgent, send.with_card);
+                     auto queued = Send(send.peer_identity, send.control, send.urgent, send.with_card);
                      bool last = false;
                      {
                        std::lock_guard lock(gather->mutex);

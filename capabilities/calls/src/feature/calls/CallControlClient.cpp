@@ -43,23 +43,9 @@ Roe<void> CallControlClient::SendDirect(const std::string& peer_identity, const 
   if (!control) {
     return control.error();
   }
-  std::optional<std::string> key_init;
-  {
-    std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
-    if (auto it = pending_key_init_.find(peer_identity); it != pending_key_init_.end()) {
-      key_init = it->second;
-    }
-  }
   // A call invite rings: the relay wakes the peer as for an incoming call (P012).
   const bool urgent = urgent_allowed && type == CallControlType::CallInvite;
-  if (auto sent = delivery_.send_control(peer_identity, *control, key_init, urgent); !sent) {
-    return sent.error();
-  }
-  if (key_init) {
-    std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
-    pending_key_init_.erase(peer_identity);
-  }
-  return {};
+  return delivery_.send_control(peer_identity, *control, urgent);
 }
 
 Roe<void> CallControlClient::SendSummary(const std::string& thread_id, const CallSummaryDetail& summary_in,
@@ -153,16 +139,6 @@ void CallControlClient::SendToEach(const std::vector<std::string>& peers, const 
     sends.push_back(ControlSend{
         .peer_identity = peer, .control = std::move(*control), .urgent = type == CallControlType::CallInvite});
   }
-  {
-    // A key init rides this send and is spent: the session keeps sending its opener until the peer confirms it.
-    std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
-    for (ControlSend& send : sends) {
-      if (auto it = pending_key_init_.find(send.peer_identity); it != pending_key_init_.end()) {
-        send.key_init_b64 = std::move(it->second);
-        pending_key_init_.erase(it);
-      }
-    }
-  }
   // Reported on a worker, maybe after this client is gone: it logs and touches nothing of ours.
   delivery_.send_control_to_many(std::move(sends), [type](std::vector<ControlSendResult> results) {
     auto logger = logging::getLogger("CallControlClient");
@@ -206,15 +182,7 @@ Roe<ByteVector> CallControlClient::SessionKeyWith(const std::string& peer_identi
   if (!delivery_.ensure_peer_session_key) {
     return Error("Call delivery not bound");
   }
-  auto ensured = delivery_.ensure_peer_session_key(peer_identity);
-  if (!ensured) {
-    return ensured.error();
-  }
-  if (ensured->first_message_key_init_b64 && !ensured->first_message_key_init_b64->empty()) {
-    std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
-    pending_key_init_[peer_identity] = *ensured->first_message_key_init_b64;
-  }
-  return std::move(ensured->session_key);
+  return delivery_.ensure_peer_session_key(peer_identity);
 }
 
 Roe<void> CallControlClient::SendMediaKey(const std::string& call_id, const std::string& peer_identity,

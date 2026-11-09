@@ -354,7 +354,7 @@ void MeshDeliveryOrchestrator::AskForNewerCard(const std::string& account, const
     }
     // Through the relay: a direct link may be refused by the peer's privacy gate (not a contact of theirs). With
     // our card: the device answering may not know ours either.
-    if (auto asked = control_lane_.Send(account, *notice, std::nullopt, false, true); !asked) {
+    if (auto asked = control_lane_.Send(account, *notice, false, true); !asked) {
       log().info << "newer card not asked of " << account << ": " << asked.error().message;
       return;
     }
@@ -376,7 +376,7 @@ void MeshDeliveryOrchestrator::ShowCardTo(const std::string& account) {
     it->second = now;
   }
   AppRuntime::PostWorkerNormal([this, account]() {
-    if (auto sent = control_lane_.Send(account, DeviceListNotice(), std::nullopt, false, true); !sent) {
+    if (auto sent = control_lane_.Send(account, DeviceListNotice(), false, true); !sent) {
       log().info << "card not shown to " << account << ": " << sent.error().message;
       return;
     }
@@ -389,7 +389,7 @@ void MeshDeliveryOrchestrator::AnswerCardAsk(const std::string& to_device, const
   if (!self || *self != to_device) {
     return;  // the device named answers (its siblings hold the same list)
   }
-  if (auto sent = control_lane_.Send(asker_account, DeviceListNotice(), std::nullopt, false, true); !sent) {
+  if (auto sent = control_lane_.Send(asker_account, DeviceListNotice(), false, true); !sent) {
     log().info << "card not sent to " << asker_account << ": " << sent.error().message;
     return;
   }
@@ -434,7 +434,7 @@ void MeshDeliveryOrchestrator::NoteMissingCopy(const RelayReceiveOutcome::Missin
         return;
       }
       // With our card: the asker's device may be one the sender does not know yet (that is why it missed a copy).
-      if (auto asked = control_lane_.Send(missing.sender_account, *notice, std::nullopt, false, true); !asked) {
+      if (auto asked = control_lane_.Send(missing.sender_account, *notice, false, true); !asked) {
         log().info << "copy not asked for message_id=" << missing.message_id << ": " << asked.error().message;
         return;
       }
@@ -1023,8 +1023,7 @@ void MeshDeliveryOrchestrator::WarmPeerByKey(const std::string& peer_key) {
   transports_.WarmByKey(peer_key);
 }
 
-Roe<EnsuredE2ePublicSessionKey> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(
-    const std::string& peer_identity) {
+Roe<ByteVector> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(const std::string& peer_identity) {
   return session_keys_.Ensure(peer_identity);
 }
 
@@ -1045,9 +1044,8 @@ Roe<ByteVector> MeshDeliveryOrchestrator::PeerKemPublicKey(const PeerSessionKey&
 }
 
 Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity, const ThreadMessage& control,
-                                                const std::optional<std::string>& key_init_b64, const bool urgent,
-                                                const bool with_card) {
-  return control_lane_.Send(peer_identity, control, key_init_b64, urgent, with_card);
+                                                const bool urgent, const bool with_card) {
+  return control_lane_.Send(peer_identity, control, urgent, with_card);
 }
 
 void MeshDeliveryOrchestrator::SendControlToMany(std::vector<ControlSend> sends, ControlSendsDone done,

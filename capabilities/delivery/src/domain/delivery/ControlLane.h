@@ -57,15 +57,14 @@ public:
   ~ControlLane();
 
   /**
-   * Send `control` to `peer_identity`. `key_init_b64`: an account-pair session init the caller holds (its old-form
-   * media-key wrap opened it, M024) — it rides an account copy only, never a device's. `urgent`: wake the peer at
-   * once, the platform's most urgent push (an incoming call's). Our account card rides it only when a device it
+   * Send `control` to `peer_identity`. Each copy carries its session's opener while the peer has not confirmed it
+   * (an account copy the account pair's — one a call's old-form media-key wrap opened too, M024). `urgent`: wake the
+   * peer at once, the platform's most urgent push (an incoming call's). Our account card rides it only when a device it
    * addresses may not hold it (ControlLaneCarriesCard: one this device has not sent the card yet, a device just
    * linked to the peer's account too): `with_card` (or `urgent`) when the caller knows it may not. The relay keeps
    * it kControlLaneRelayTtlMs.
    */
-  Roe<void> Send(const std::string& peer_identity, const ThreadMessage& control,
-                 const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false,
+  Roe<void> Send(const std::string& peer_identity, const ThreadMessage& control, bool urgent = false,
                  bool with_card = false);
 
   /**
@@ -86,14 +85,12 @@ private:
   uint64_t NextOrderKey();
   /**
    * The copies a send to `peer_identity` goes as (M024): one per device on its newest card we hold, each under that
-   * device pair's session — or the account copy, under the account pair's, with `account_key_init` riding it when
-   * the session has none of its own to announce. A device whose session cannot be had is left out (logged).
+   * device pair's session — or the account copy, under the account pair's. A device whose session cannot be had is
+   * left out (logged).
    */
-  Roe<std::vector<ControlLaneCopy>> CopiesFor(const std::string& peer_identity,
-                                              const std::optional<std::string>& account_key_init);
+  Roe<std::vector<ControlLaneCopy>> CopiesFor(const std::string& peer_identity);
   /** The account copy to `peer_identity` (a first contact, the single-device bridge). */
-  Roe<ControlLaneCopy> AccountCopyFor(const std::string& peer_identity,
-                                      const std::optional<std::string>& account_key_init);
+  Roe<ControlLaneCopy> AccountCopyFor(const std::string& peer_identity);
   /** The ids of the devices on `peer_identity`'s newest card we hold (none: no card). */
   std::vector<std::string> CardDevicesOf(const std::string& peer_identity);
   /**

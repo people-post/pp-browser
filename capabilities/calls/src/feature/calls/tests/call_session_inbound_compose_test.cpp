@@ -223,8 +223,7 @@ protected:
     transport_ = std::make_unique<FakeCallMediaTransport>();
 
     CallDeliveryPorts delivery;
-    delivery.send_control = [this](const std::string& peer, const ThreadMessage& control,
-                                   const std::optional<std::string>& /*key_init*/, bool urgent) -> Roe<void> {
+    delivery.send_control = [this](const std::string& peer, const ThreadMessage& control, bool urgent) -> Roe<void> {
       if (fail_sends_ || peer == unreachable_peer_) {
         return Error("offline (test)");
       }

@@ -309,19 +309,17 @@ public:
   void WarmPeerByKey(const std::string& peer_key);
   /**
    * The account pair's e2e_public session key with the peer (AutoKey if missing): a call media key's old form is
-   * wrapped under it (M024 bridge). `first_message_key_init_b64` rides the next lane send that is an account copy.
+   * wrapped under it (M024 bridge). An opener it made rides the lane's account copies to the peer until confirmed.
    */
-  Roe<EnsuredE2ePublicSessionKey> EnsureE2ePublicSessionKey(const std::string& peer_identity);
+  Roe<ByteVector> EnsureE2ePublicSessionKey(const std::string& peer_identity);
   /**
    * Send `control` (an identified system message) to `peer_identity` on the control lane
    * (kRelayRouteControl): a copy per device on the peer's card, each E2E under that device pair's e2e_public
-   * session (the account copy for a peer with no card; an account-pair `key_init_b64` the caller holds rides only
-   * that, M024), not sequenced, never stored. Queued on the critical lane — relay when a route is known (retried
+   * session (the account copy for a peer with no card, M024), not sequenced, never stored. Queued on the critical lane — relay when a route is known (retried
    * while fresh), else Amp. Our card rides it when the peer may not hold it; `with_card` when the caller knows it
    * may hold none of ours (ControlLane::Send).
    */
-  Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control,
-                        const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false,
+  Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control, bool urgent = false,
                         bool with_card = false);
   /** Each of `sends` on the control lane, sealed per pair and in parallel off this thread (ControlLane::SendToMany). */
   void SendControlToMany(std::vector<ControlSend> sends, ControlSendsDone done = {},

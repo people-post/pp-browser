@@ -39,8 +39,9 @@ public:
   Roe<Session> ResolveDevice(const std::string& peer_identity, const AccountCardDevice& device);
   /**
    * The account pair's current key (a call's media-key wrap in its old form, M024), opening the session if needed.
+   * An opener it made rides each account copy Resolve seals until the peer confirms it: the caller holds none.
    */
-  Roe<EnsuredE2ePublicSessionKey> Ensure(const std::string& peer_identity);
+  Roe<ByteVector> Ensure(const std::string& peer_identity);
   /** The peer's account KEM public key (directory, M015). */
   Roe<ByteVector> PeerKemPublicKey(const PeerSessionKey& key) const;
 

@@ -214,10 +214,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   deps.prefetch_peer_reachability = [](const std::string&) {};
   deps.sync_mobile_ephemeral_listen = []() {};
   deps.delivery.sync_inbox_from_wake = [](bool) {};
-  deps.delivery.ensure_peer_session_key = [this](const std::string& /*peer*/) -> Roe<EnsuredE2ePublicSessionKey> {
-    EnsuredE2ePublicSessionKey out;
-    out.session_key = shared_session_key_;
-    return out;
+  deps.delivery.ensure_peer_session_key = [this](const std::string& /*peer*/) -> Roe<ByteVector> {
+    return shared_session_key_;
   };
   // Reach registers a peer's dialable listen address on the harness's Amp links.
   auto register_direct_endpoint = [this](const std::string& identity, const std::string& multiaddr) {
@@ -236,7 +234,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     }
   };
   deps.delivery.send_control = [this](const std::string& peer_account, const ThreadMessage& control,
-                                      const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
+                                      bool /*urgent*/) -> Roe<void> {
     ThreadMessage msg = control;
     msg.sender_contact_id = local_account_;
     if (peer_account.empty()) {

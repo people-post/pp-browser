@@ -15,7 +15,7 @@ namespace pbr::test {
  * What delivery's `ensure_peer_session_key` answers for a session the test seeded in `psk` (tests have
  * no KEM directory to open one): the e2e_public session key at the stored epoch.
  */
-inline Roe<EnsuredE2ePublicSessionKey> SeededSessionKey(const IPeerSessionStore& psk, const std::string& peer) {
+inline Roe<ByteVector> SeededSessionKey(const IPeerSessionStore& psk, const std::string& peer) {
   PeerSessionKey key;
   key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   key.peer_identity_value = peer;
@@ -39,13 +39,7 @@ inline Roe<EnsuredE2ePublicSessionKey> SeededSessionKey(const IPeerSessionStore&
   if (!master) {
     return master.error();
   }
-  auto session_key = DeriveE2ePublicSessionKey(*master, epoch);
-  if (!session_key) {
-    return session_key.error();
-  }
-  EnsuredE2ePublicSessionKey out;
-  out.session_key = std::move(*session_key);
-  return out;
+  return DeriveE2ePublicSessionKey(*master, epoch);
 }
 
 } // namespace pbr::test

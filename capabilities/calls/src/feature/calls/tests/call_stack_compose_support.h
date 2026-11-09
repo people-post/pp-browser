@@ -251,7 +251,7 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
     return SeededSessionKey(*side.psk, peer);
   };
   deps.delivery.send_control = [&side](const std::string& peer, const ThreadMessage& control,
-                                       const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
+                                       bool /*urgent*/) -> Roe<void> {
     if (side.on_send) {
       side.on_send(peer, control);
     }

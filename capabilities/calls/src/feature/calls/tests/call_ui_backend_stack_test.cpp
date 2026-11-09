@@ -196,7 +196,7 @@ protected:
     deps.contacts = contacts_.get();
     deps.account = identity_.get();
     deps.delivery.send_control = [this](const std::string& /*peer*/, const ThreadMessage& control,
-                                        const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
+                                        bool /*urgent*/) -> Roe<void> {
       ++sent_control_;
       {
         std::lock_guard lock(sent_mu_);
