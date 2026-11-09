@@ -641,7 +641,7 @@ TEST_F(ShellDrawerTest, TheHomeIndicatorStripCoversTheInsetUnderGroupedPages) {
   EXPECT_EQ(height(), 0.f) << "Home: the tab bar owns the inset";
   host_.SelectNavTab(NavTab::Me);
   host_.SyncLayout();
-  EXPECT_EQ(height(), 34.f);
+  EXPECT_EQ(height(), 0.f) << "Settings keeps the tab bar (TODO #200): it owns the inset";
   EXPECT_TRUE(bottom->IsClassSet("shell-home-indicator-strip--me"));
   // A settings detail page (安全, 网络…) is Me's inline detail with a local back, not a pushed page: still Me.
   host_.PushLocalBack("settings_detail", [] {});

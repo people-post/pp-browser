@@ -58,7 +58,22 @@ bool ShellLayout::HiddenTabShown(const ShellState& state) {
   return state.layout_mode == LayoutMode::Compact && IsHiddenTabOnCompact(state.nav_tab);
 }
 
+bool ShellLayout::IsSettingsFamilyTransient(const std::string& key) {
+  return key == "settings_detail" || key == "contact_detail" || key == "blocked_people";
+}
+
+bool ShellLayout::SettingsTabBarShown(const ShellState& state) {
+  if (state.layout_mode != LayoutMode::Compact || state.nav_tab != NavTab::Me || state.secret_page_open) {
+    return false;
+  }
+  return std::all_of(state.transient_stack.begin(), state.transient_stack.end(),
+                     [](const PaneState& pane) { return IsSettingsFamilyTransient(pane.spec.key); });
+}
+
 float ShellLayout::CompactTabBarDp(const ShellState& state, const float bar_height_dp) {
+  if (SettingsTabBarShown(state)) {
+    return bar_height_dp;
+  }
   // A pushed page covers the bar but does not remove it: during its swipe-back the page underneath shows its bar.
   if (state.layout_mode != LayoutMode::Compact || HiddenTabShown(state) || state.compact_chat_open) {
     return 0.f;

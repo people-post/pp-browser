@@ -65,6 +65,8 @@ struct ShellNavigationPorts {
   std::function<void(const std::string& id)> clear_local_back;
   std::function<void(const std::string& id, std::function<void()> commit)> push_local_back;
   std::function<bool(const std::string& id)> has_local_back;
+  /** Settings (phone): a secret page is open over a section, so the tab bar is off (ShellHost::SetSecretPageOpen). */
+  std::function<void(bool open)> set_secret_page_open;
 
   std::function<void(NavTab tab)> select_nav_tab;
   std::function<void()> clear_primary_pane;

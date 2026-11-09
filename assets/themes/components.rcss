@@ -3736,6 +3736,16 @@ select selectbox option {
   height: 16dp;
 }
 
+/* Settings keeps the tab bar (TODO #200): its list clears the bar again like a tab's page. */
+.shell-nav-page--hidden-tab.shell-nav-page--tab-bar .tab-bar-clear {
+  height: 65dp;
+}
+
+/* Over a page pushed from Settings (above the transient layer, z-index 30) so the bar stays put while the page slides. */
+.shell-bottom-chrome--over-page {
+  z-index: 35;
+}
+
 .shell-layer-compact .pane-nav-back {
   position: absolute;
   top: 2dp;

@@ -122,6 +122,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
 
     ctor.Bind("layout_mode", &host.state_.layout_mode_str);
     ctor.Bind("nav_tab", &host.state_.nav_tab_str);
+    ctor.Bind("nav_bar_tab", &host.state_.nav_bar_tab_str);
     ctor.Bind("compact_chat_open", &host.state_.compact_chat_open);
     ctor.Bind("ai_drawer_open", &host.state_.ai_drawer_open);
     ctor.Bind("auxiliary_open", &host.state_.auxiliary_open);
@@ -560,6 +561,7 @@ void ShellHost::ClearTabContext(const bool keep_compact_chat) {
   state_.auxiliary_open = false;
   state_.transient_stack.clear();
   state_.transient_active = false;
+  state_.secret_page_open = false;
   pending_dismiss_.reset();
   local_back_stack_.clear();
   DetachDismissGestures();
@@ -605,6 +607,9 @@ void ShellHost::SelectNavTab(NavTab tab) {
   }
   state_.nav_tab = tab;
   ShellLayout::SyncNavTabString(state_);
+  // The tab bar highlights the tab a hidden tab's page (Settings) was entered from.
+  state_.nav_bar_tab_str = ShellLayout::NavTabString(ShellLayout::IsHiddenTabOnCompact(tab) ? tab_before_hidden_ : tab);
+  DataModelHost::Instance().Dirty("window", "nav_bar_tab");
   if (tab_changed && on_nav_tab_changed_) {
     on_nav_tab_changed_(tab);
   }
@@ -612,6 +617,15 @@ void ShellHost::SelectNavTab(NavTab tab) {
     // Messages that came while the hidden tab covered the chat were not on screen; they are now.
     on_compact_chat_shown_again_();
   }
+  RequestSyncLayout();
+}
+
+void ShellHost::SetSecretPageOpen(const bool open) {
+  if (state_.secret_page_open == open) {
+    return;
+  }
+  state_.secret_page_open = open;
+  // The tab bar goes (or comes back) with the page: layout and bar are rebuilt.
   RequestSyncLayout();
 }
 
@@ -1787,9 +1801,11 @@ void ShellHost::ApplySafeAreaLayout() {
   CompactBottomSurface bottom_surface = CompactBottomSurface::None;
   if (state_.layout_mode == LayoutMode::Compact) {
     // A hidden tab's page (Me, Contacts) has no tab bar: like a pushed page it reaches the screen bottom itself.
-    bottom_surface = !state_.transient_stack.empty() || ShellLayout::HiddenTabShown(state_) ? CompactBottomSurface::Page
-                     : state_.compact_chat_open                                         ? CompactBottomSurface::Composer
-                                                                                         : CompactBottomSurface::TabBar;
+    // Settings (and the pages pushed from it) keep the tab bar (TODO #200).
+    bottom_surface = ShellLayout::SettingsTabBarShown(state_)                                    ? CompactBottomSurface::TabBar
+                     : !state_.transient_stack.empty() || ShellLayout::HiddenTabShown(state_) ? CompactBottomSurface::Page
+                     : state_.compact_chat_open                                               ? CompactBottomSurface::Composer
+                                                                                               : CompactBottomSurface::TabBar;
   }
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface, bottom_chrome_open_);
@@ -1890,8 +1906,11 @@ void ShellHost::ApplySafeAreaLayout() {
   }
   set_dp(doc->GetElementById("shell-composer-mount"), "padding-bottom",
          bottom_surface == CompactBottomSurface::Composer ? strip_dp : 0.f);
+  // A page pushed from Settings ends above the tab bar that stays over it.
   set_dp(doc->GetElementById("shell-transient-layer"), "padding-bottom",
-         bottom_surface == CompactBottomSurface::Page ? strip_dp : 0.f);
+         bottom_surface == CompactBottomSurface::Page ? strip_dp
+         : ShellLayout::SettingsTabBarShown(state_)   ? layout.content_padding_bottom_dp
+                                                       : 0.f);
   // The AI drawer reaches the screen bottom over the tab bar. Its frosted "you" row runs down to the screen bottom too
   // (one bar, Kenneth 2026-11-07), its content above the home indicator; the list's end spacer keeps the last row
   // clear of the whole bar (the engine leaves a scroller's bottom padding out of its scroll height).
@@ -2968,6 +2987,11 @@ void ShellHost::OnNavTabClicked(const std::string& tab_name) {
     NotifySidebarChanged();
     DirtyNavChrome();
     RequestSyncLayout();
+  }
+  // On Settings (and the pages pushed from it) a tab in the bar leaves the whole stack at once, as if Settings had never
+  // been opened (TODO #200); SelectNavTab then drops the rest of the tab's context.
+  while (ShellLayout::SettingsTabBarShown(state_) && !state_.transient_stack.empty()) {
+    PopTransient();
   }
   SelectNavTab(tab);
 }

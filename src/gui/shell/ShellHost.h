@@ -146,6 +146,8 @@ public:
   void OnNavTabClicked(const std::string& tab_name);
   /** Phone hidden tab's root page (its back, edge swipe, system back): the tab it was entered from (else Chats). */
   void HiddenTabBack();
+  /** Phone Settings: a secret page (Move to a new device) is shown over a section; the tab bar is off while it is. */
+  void SetSecretPageOpen(bool open);
   /** An avatar opens Settings (the Me tab) from anywhere. */
   void OpenSettingsFromAvatar();
   /**
