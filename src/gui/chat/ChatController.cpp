@@ -4799,7 +4799,7 @@ void ChatController::SyncComposerOverlay() {
 }
 
 void ChatController::KeepClearOfComposer(ui::Element* overlay) {
-  // A phone chat's composer is a frosted bar over the transcript (Kenneth 2026-11-07), which runs down under it: the
+  // A phone chat's composer is a clear bar with a floating pill over the transcript (TODO #202), which runs down under it: the
   // transcript's end spacer, its fade and the "new messages" pill follow the bar's height (one line or five, a
   // picture chip, a quote, the home indicator or the keyboard), so the newest message and the pill stay above it.
   ui::Element* mount = overlay ? overlay->GetElementById("shell-composer-mount") : nullptr;

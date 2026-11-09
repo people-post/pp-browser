@@ -4153,8 +4153,9 @@ select selectbox option {
   cursor: pointer;
 }
 
-/* The composer is a frosted bar over the transcript, like the top bar (Kenneth 2026-11-07): the transcript runs down
-   under it; ChatController::SyncComposerOverlay keeps its end spacer, fade and "new messages" pill above the bar. */
+/* The composer bar is clear (TODO #202, Kenneth 2026-11-09): only the floating pill and the two round buttons are
+   drawn, the transcript runs down under it; ChatController::SyncComposerOverlay keeps its end spacer and the "new
+   messages" pill above the bar. */
 .shell-chat-overlay .shell-composer-bar {
   position: absolute;
   left: 0;
@@ -4250,6 +4251,12 @@ select selectbox option {
 
 .shell-composer-mount.surface-chrome .prompt-composer {
   margin-bottom: 8dp;
+}
+
+/* The phone chat's bar: 8dp above the pill (the round buttons stand 2dp past it), the home-indicator inset below
+   (ShellHost pads the mount), 4dp past the buttons' bottom. */
+.shell-chat-overlay .shell-composer-mount.surface-chrome .prompt-composer {
+  margin-bottom: 4dp;
 }
 
 .shell-drawer .shell-pane,
@@ -5243,7 +5250,7 @@ select selectbox option {
   flex-direction: row;
   align-items: flex-end;
   flex-shrink: 0;
-  margin: 8dp 16dp 0 16dp;
+  margin: 8dp 8dp 0 8dp;
 }
 
 /* The picture waiting to be sent: a thumbnail and an X. */
@@ -11517,6 +11524,7 @@ input.checkbox {
 
 /* Edge to edge like the transcript and the composer under it (the panel's 12dp side padding cancelled, #89). */
 .shell-chat-overlay .chat-composer-fade {
+  display: none;
   top: auto;
   bottom: 0;
   left: -12dp;
@@ -11890,18 +11898,29 @@ input.checkbox {
   right: -8dp;
 }
 
-/* Composer: a 36dp pill on a 52dp bar; the engine draws no placeholder, so the label sits over the empty input. The
-   ask-AI panel's input row is the same row (Kenneth 2026-11-04: "风格不统一…能不能统一一下"). */
+/* Phone composer (TODO #202, Kenneth 2026-11-09; chat, AI thread and the ask-AI panel, one component): a floating pill for
+   the text (40dp high, the emoji key at its left end, no camera: the plus card has it), a round 44dp plus outside it on
+   the left and a round 44dp accent button outside it on the right (the microphone, Send once there is text). 8dp
+   between the buttons and the pill; the bar behind is clear, so the transcript scrolls under the floating parts. The
+   row is the positioning box and is exactly the pill (which grows upward, up to five lines): the keys sit on its
+   last line. The engine draws no placeholder, so the label sits over the empty input. */
+.shell-chat-overlay .prompt-composer-row,
+.ask-ai .prompt-composer-row {
+  position: relative;
+}
+
 .shell-chat-overlay .prompt-composer-pill,
 .ask-ai .prompt-composer-pill {
   min-height: 40dp;
-  padding: 0 4dp 0 12dp;
-  border-radius: 21dp;
+  margin: 0 52dp;
+  padding: 0 14dp 0 38dp;
+  border-radius: 20dp;
 }
 
+/* 1dp border + 22dp line + 8dp above and below = 40dp. */
 .shell-chat-overlay .prompt-composer-input,
 .ask-ai .prompt-composer-input {
-  padding: 9dp 0;
+  padding: 8dp 0;
   font-size: 17dp;
   line-height: 22dp;
 }
@@ -11910,50 +11929,13 @@ input.checkbox {
 .ask-ai .prompt-composer-label {
   display: block;
   position: absolute;
-  top: 2dp;
-  left: 12dp;
+  top: 0;
+  left: 38dp;
   height: 38dp;
   margin: 0;
   font-size: 17dp;
   line-height: 38dp;
   pointer-events: none;
-}
-
-/* Every button is a 44dp target round its 26dp icon; -2dp above and below keeps the one-line row at the pill's 40dp
-   (the buttons stay on the last line while the text grows). */
-.shell-chat-overlay .prompt-composer-row .prompt-voice-toggle-btn,
-.shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
-.shell-chat-overlay .prompt-composer-row .prompt-send-btn,
-.shell-chat-overlay .prompt-composer-pill .prompt-attach-btn,
-.shell-chat-overlay .prompt-composer-pill .prompt-capture-btn,
-.ask-ai .prompt-composer-row .prompt-send-btn,
-.ask-ai .prompt-composer-pill .prompt-attach-btn,
-.ask-ai .prompt-composer-pill .prompt-capture-btn {
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
-  margin: -2dp 0;
-  border-radius: 22dp;
-}
-
-/* Send: a clear 44dp target round a 32dp accent disc (colors-*.rcss); the desktop's button is the disc itself. */
-.shell-chat-overlay .prompt-send-disc,
-.ask-ai .prompt-send-disc {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36dp;
-  height: 36dp;
-  border-radius: 18dp;
-}
-
-/* WhatsApp's row on phones: emoji, the pill, then the microphone where Send shows once there is text. */
-.shell-chat-overlay .prompt-voice-toggle-btn--start {
-  display: none;
-}
-
-.shell-chat-overlay .prompt-voice-toggle-btn--end {
-  display: flex;
 }
 
 .shell-chat-overlay .prompt-icon-classic,
@@ -11965,11 +11947,11 @@ input.checkbox {
 .ask-ai .prompt-icon-v2 {
   display: block;
   flex-shrink: 0;
-  width: 26dp;
-  height: 26dp;
+  width: 24dp;
+  height: 24dp;
 }
 
-/* Phones: the bold plus in the clip's place (ChatController::OnAttachFile opens the chat's or the AI's floating card). */
+/* Phones: the bold plus (ChatController::OnAttachFile opens the chat's or the AI's floating card). */
 .prompt-icon-plus {
   display: none;
 }
@@ -11978,56 +11960,40 @@ input.checkbox {
   display: none;
 }
 
-.shell-chat-overlay .prompt-attach-btn .prompt-icon-plus {
+.shell-chat-overlay .prompt-attach-btn .prompt-icon-plus,
+.ask-ai .prompt-attach-btn .prompt-icon-plus {
   display: block;
   flex-shrink: 0;
-  width: 26dp;
-  height: 26dp;
+  width: 24dp;
+  height: 24dp;
 }
 
-/* One composer on phones (Kenneth 2026-11-07), in a chat, an AI conversation and the ask-AI panel: every key sits
-   inside the pill, the bold plus and the emoji key at its bottom left, the microphone (Send once there is text) at its
-   bottom right; no camera (the plus card has it). The row is the keys' positioning box and the pill fills it, so the
-   keys stay on the last line while the text grows; the pill's side padding keeps the text clear of them. Each key is a
-   40 x 44dp target, 1dp past the 42dp one-line pill above and below. */
-.shell-chat-overlay .prompt-composer-row,
-.ask-ai .prompt-composer-row {
-  position: relative;
-}
-
-.shell-chat-overlay .prompt-composer-pill,
-.ask-ai .prompt-composer-pill {
-  padding: 0 44dp 0 84dp;
-}
-
-.shell-chat-overlay .prompt-composer-label,
-.ask-ai .prompt-composer-label {
-  left: 84dp;
-}
-
+/* The plus: a flat 44dp target left of the pill (the button sits in the pill's markup; -52dp = the 8dp gap and its
+   44dp, from the pill's border box). Its bottom is 2dp below the pill's, which centres it on the one-line pill. */
 .shell-chat-overlay .prompt-composer-pill .prompt-attach-btn,
 .ask-ai .prompt-composer-pill .prompt-attach-btn {
   position: absolute;
-  left: 0;
-  bottom: -1dp;
-  width: 40dp;
-  min-width: 40dp;
+  left: -52dp;
+  bottom: -2dp;
+  width: 44dp;
+  min-width: 44dp;
   height: 44dp;
   margin: 0;
-  border-radius: 0;
+  border-radius: 22dp;
 }
 
+/* The emoji key: a 36dp slot at the pill's left end, its 24dp glyph (the pill's 1dp border keeps it 2dp off the bottom). */
 .shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
 .ask-ai .prompt-composer-row .prompt-emoji-btn {
   position: absolute;
-  left: 41dp;
-  bottom: -1dp;
+  left: 53dp;
+  bottom: 2dp;
   z-index: 1;
-  width: 40dp;
-  min-width: 40dp;
-  height: 44dp;
+  width: 36dp;
+  min-width: 36dp;
+  height: 36dp;
   margin: 0;
-  border-radius: 0;
+  border-radius: 18dp;
 }
 
 .shell-chat-overlay .prompt-composer-pill .prompt-capture-btn,
@@ -12035,17 +12001,36 @@ input.checkbox {
   display: none;
 }
 
+/* The microphone and Send share one place: a round 44dp button right of the pill, filled with the accent
+   (colors-*.rcss). Only one of them is in the markup at a time. */
 .shell-chat-overlay .prompt-composer-row .prompt-send-btn,
 .shell-chat-overlay .prompt-composer-row .prompt-voice-toggle-btn--end,
 .ask-ai .prompt-composer-row .prompt-send-btn {
+  display: flex;
   position: absolute;
   right: 0;
-  bottom: -1dp;
+  bottom: -2dp;
   z-index: 1;
   width: 44dp;
   min-width: 44dp;
   height: 44dp;
   margin: 0;
+  border-radius: 22dp;
+}
+
+.shell-chat-overlay .prompt-send-disc,
+.ask-ai .prompt-send-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+}
+
+.shell-chat-overlay .prompt-send-btn svg,
+.ask-ai .prompt-send-btn svg {
+  width: 22dp;
+  height: 22dp;
 }
 
 /* Voice mode (a people chat): the hold-to-talk bar takes the pill's place; the keyboard key sits inside its right end. */
@@ -12053,20 +12038,17 @@ input.checkbox {
   padding-right: 44dp;
 }
 
-.ask-ai .prompt-attach-btn .prompt-icon-plus {
-  display: block;
-  flex-shrink: 0;
-  width: 26dp;
-  height: 26dp;
+.shell-chat-overlay .prompt-voice-toggle-btn--start {
+  display: none;
 }
 
-/* The ask-AI panel's settings "?" (text only): no plus, the emoji key leads. */
+.shell-chat-overlay .prompt-voice-toggle-btn--end {
+  display: flex;
+}
+
+/* The ask-AI panel's settings "?" (text only): no plus, so the pill starts at the left margin. */
 .ask-ai .ask-ai-input-row--text-only .prompt-composer-pill {
-  padding-left: 44dp;
-}
-
-.ask-ai .ask-ai-input-row--text-only .prompt-composer-label {
-  left: 44dp;
+  margin-left: 0;
 }
 
 .ask-ai .ask-ai-input-row--text-only .prompt-emoji-btn {

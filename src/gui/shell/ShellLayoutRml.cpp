@@ -176,10 +176,9 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "<div class=\"bar-fade\"></div>";
     out << "</div>";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
-    // The composer bar: its material is a child of its own (BarMaterial), under the mount whose content is replaced
-    // on every mount; the bar's height is the mount's.
+    // The composer bar is clear (TODO #202: a floating pill and two round buttons, the transcript scrolls under them);
+    // its height is the mount's, whose content is replaced on every mount.
     out << "<div class=\"shell-composer-bar\">";
-    out << BarMaterial(frosts.bottom == CompactChromeFrostSurface::ChatComposer, frost_enabled, solid);
     out << "<div class=\"shell-composer-mount surface-chrome" << (solid ? " surface-chrome--solid" : "")
         << "\" id=\"shell-composer-mount\"></div>";
     out << "</div>";
