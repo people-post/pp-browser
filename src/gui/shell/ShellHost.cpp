@@ -743,7 +743,7 @@ void ShellHost::AttachDrawerOpenGesture() {
     return;
   }
   // The AI page's minimal block (home.rml #home-landing); with the 动态 widgets shown it is only the dock, so the
-  // drag is not offered there (the bar's ☰ and a second tap on AI still are).
+  // drag is not offered there (the bar's ☰ still is).
   ui::Element* landing = context_->GetDocument(0)->GetElementById("home-landing");
   if (!landing) {
     return;
@@ -2904,11 +2904,6 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
 
 void ShellHost::OnNavTabClicked(const std::string& tab_name) {
   const NavTab tab = NavTabFromString(tab_name.c_str());
-  // Phones: AI tapped again on the AI page itself opens its conversation list.
-  if (tab == NavTab::Home && HomeRootShown()) {
-    OpenAiDrawer();
-    return;
-  }
   // A nav-rail click on a tab with a secondary pane (including the active tab) brings a collapsed list back.
   if (state_.layout_mode == LayoutMode::Expanded &&
       ShellLayout::SidebarCollapsedAfterNavSelect(state_.sidebar_collapsed, tab) != state_.sidebar_collapsed) {

@@ -130,7 +130,7 @@ public:
    * path remembers the tab left, for HiddenTabBack; a chat overlay open there stays open under the hidden tab's page.
    */
   void SelectNavTab(NavTab tab);
-  /** A tab-bar click (the select_nav_tab event): a second tap on the phone's AI page opens the AI list. */
+  /** A tab-bar click (the select_nav_tab event); a second tap on the AI tab stays put. */
   void OnNavTabClicked(const std::string& tab_name);
   /** Phone hidden tab's root page (its back, edge swipe, system back): the tab it was entered from (else Chats). */
   void HiddenTabBack();

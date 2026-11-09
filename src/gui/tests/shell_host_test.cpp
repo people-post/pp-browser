@@ -573,13 +573,15 @@ TEST(ShellHostHiddenTabTest, TheChatShownAgainIsMarkedRead) {
   EXPECT_NE(body.find("scroller_.RequestScrollToLatest();"), std::string::npos);
 }
 
-TEST(ShellHostHiddenTabTest, ASecondTapOnTheAiTabOpensTheAiList) {
+TEST(ShellHostHiddenTabTest, ASecondTapOnTheAiTabDoesNotOpenTheAiList) {
   ShellHost& host = PhoneHost(NavTab::Sessions);
   host.OnNavTabClicked("home");
   EXPECT_EQ(host.State().nav_tab, NavTab::Home);
   EXPECT_FALSE(host.State().ai_drawer_open) << "the first tap only goes to the AI page";
   host.OnNavTabClicked("home");
-  EXPECT_TRUE(host.State().ai_drawer_open);
+  EXPECT_FALSE(host.State().ai_drawer_open) << "a second tap stays on the AI page";
+  host.OpenAiDrawer();
+  EXPECT_TRUE(host.State().ai_drawer_open) << "the drawer still opens from its own entry";
   host.CloseAiDrawer();
   EXPECT_FALSE(host.State().ai_drawer_open);
 
