@@ -96,7 +96,7 @@ struct ProfilePreferences {
   bool ai_dot_shown = true;
   /**
    * Its look, also the AI Home's mascot's: `auto` (default; a different look each weekday, gui/shell/MascotLook.h), or
-   * a fixed one: `a` one eye, `b` two eyes, `c` cool, `d` plain.
+   * a fixed one: `a` one eye, `b` two eyes, `c` cool, `d` plain, `e` Friday, `f` Saturday, `g` Sunday.
    */
   std::string ai_dot_look = "auto";
   /** Its size: `s` 52dp, `m` 64dp (default), `l` 76dp (Me → AI assistant → Assistant size). */

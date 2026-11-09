@@ -20,7 +20,7 @@ namespace pbr {
 
 /**
  * The AI Home's logo (#home-logo in home.rml, the phone's minimal Home; Kenneth 2026-11-09): by default the static app
- * icon in the markup; with Settings → Appearance → Animated home logo on, the AI dot's figure drawn large, in the look
+ * icon in the markup; with Me → AI assistant → Animated home logo on, the AI dot's figure drawn large, in the look
  * of the day (LookForDate). A tap plays the poke and then one random action (HomeMascotModel); between taps nothing
  * animates and nothing asks for a frame. It only animates: it never opens the drawer or the ask panel. DOM only; the
  * decisions are HomeMascotModel's and MascotLook.h's. UI thread.
@@ -32,9 +32,12 @@ public:
   ShellHomeMascot(const ShellHomeMascot&) = delete;
   ShellHomeMascot& operator=(const ShellHomeMascot&) = delete;
 
-  /** Settings → Appearance → Animated home logo. */
+  /** Me → AI assistant → Animated home logo. */
   void SetAnimated(bool animated) { animated_ = animated; }
   bool Animated() const { return animated_; }
+
+  /** Whether the Home is on screen with nothing over it and the app in front: only then does it move by itself. */
+  void SetActive(bool active) { active_ = active; }
 
   /** Me -> AI assistant -> Look: `auto` (the day's look) or `a`-`d`; the same pref the floating dot follows. */
   void SetLookPref(const std::string& pref);
@@ -62,6 +65,7 @@ private:
   char TodayLook();
 
   bool animated_ = true;
+  bool active_ = false;
   std::string look_pref_ = "auto";
   ui::Element* logo_ = nullptr;
   /** What the element holds now: the static icon, or the mascot of this look (0: static). */

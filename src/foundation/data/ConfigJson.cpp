@@ -929,8 +929,8 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   if (auto look = object.getString("ai_dot_look")) {
     prefs.ai_dot_look = *look;
   }
-  if (prefs.ai_dot_look != "auto" && prefs.ai_dot_look != "a" && prefs.ai_dot_look != "b" &&
-      prefs.ai_dot_look != "c" && prefs.ai_dot_look != "d") {
+  if (prefs.ai_dot_look != "auto" && !(prefs.ai_dot_look.size() == 1 && prefs.ai_dot_look[0] >= 'a' &&
+                                       prefs.ai_dot_look[0] <= 'g')) {
     prefs.ai_dot_look = "auto";
   }
   if (auto size = object.getString("ai_dot_size")) {

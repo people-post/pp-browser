@@ -4,6 +4,7 @@
 #include "gui/shell/MascotFigure.h"
 #include "gui/shell/MascotLook.h"
 #include "gui/shell/ShellHomeMascot.h"
+#include "gui/shell/ShellHost.h"
 
 #include <ui/base/SystemInterface.h>
 #include <ui/core/Core.h>
@@ -56,13 +57,17 @@ TEST(MascotLookTest, ADateOverrideBeatsTheWeekdayAndTheShippedTableIsEmpty) {
   EXPECT_EQ(LookForDate(2027, 1, 1, WeekdayOf(2027, 1, 1), overrides), 'e');
 }
 
-TEST(MascotLookTest, WeekendLooksBorrowPartsUntilTheirOwnLand) {
-  EXPECT_EQ(PartsFor('e'), 'b');
-  EXPECT_EQ(PartsFor('f'), 'a');
-  EXPECT_EQ(PartsFor('g'), 'c');
-  for (const char look : {'a', 'b', 'c', 'd'}) {
+TEST(MascotLookTest, EveryLookIsDrawnWithItsOwnParts) {
+  for (const char look : {'a', 'b', 'c', 'd', 'e', 'f', 'g'}) {
     EXPECT_EQ(PartsFor(look), look);
   }
+  EXPECT_EQ(PartsFor('z'), 'b') << "anything else is the default look";
+  EXPECT_EQ(DotLookOf('e'), AiDotLook::Evening);
+  EXPECT_EQ(DotLookOf('f'), AiDotLook::Outing);
+  EXPECT_EQ(DotLookOf('g'), AiDotLook::Lazy);
+  EXPECT_FALSE(AiDotModel::Calm(AiDotLook::Evening));
+  EXPECT_FALSE(AiDotModel::Calm(AiDotLook::Outing));
+  EXPECT_FALSE(AiDotModel::Calm(AiDotLook::Lazy));
 }
 
 TEST(MascotLookTest, AutoFollowsTheDateAndAFixedLookStays) {
@@ -79,7 +84,12 @@ TEST(MascotLookTest, AutoFollowsTheDateAndAFixedLookStays) {
   EXPECT_EQ(ResolveLook("auto", 2026, 11, 10, table), 'd') << "auto consults the date overrides";
   EXPECT_EQ(ResolveLook("a", 2026, 11, 10, table), 'a') << "a picked look ignores them";
   EXPECT_TRUE(IsLookPref("auto"));
-  EXPECT_FALSE(IsLookPref("e"));
+  for (const char* pref : {"a", "b", "c", "d", "e", "f", "g"}) {
+    EXPECT_TRUE(IsLookPref(pref)) << pref;
+  }
+  EXPECT_FALSE(IsLookPref("h"));
+  EXPECT_FALSE(IsLookPref("ab"));
+  EXPECT_FALSE(IsLookPref(""));
   const char today = ResolveLookToday("auto");
   EXPECT_TRUE(today >= 'a' && today <= 'g');
   EXPECT_EQ(ResolveLookToday("d"), 'd');
@@ -89,24 +99,69 @@ TEST(HomeMascotModelTest, ItIsStillUntilTappedThenPokesAndPlaysOneRandomActionAn
   HomeMascotModel model;
   EXPECT_EQ(model.Idle(), AiDotIdle::None);
   EXPECT_FALSE(model.MsUntilNext(0).has_value()) << "nothing runs between taps";
-  EXPECT_FALSE(model.Advance(100000));
+  EXPECT_FALSE(model.Advance(100000, AiDotLook::TwoEyes, 0));
 
   ASSERT_TRUE(model.Tap(1000, AiDotLook::TwoEyes, 7));
   EXPECT_EQ(model.Idle(), AiDotIdle::Poke);
   EXPECT_FALSE(model.Tap(1100, AiDotLook::TwoEyes, 9)) << "a tap while it moves is ignored";
   const int64_t poke_end = 1000 + AiDotModel::kPokeMs + AiDotModel::kIdleTailMs;
   EXPECT_EQ(model.MsUntilNext(1000), poke_end - 1000);
-  EXPECT_FALSE(model.Advance(poke_end - 1));
-  ASSERT_TRUE(model.Advance(poke_end));
+  EXPECT_FALSE(model.Advance(poke_end - 1, AiDotLook::TwoEyes, 0));
+  ASSERT_TRUE(model.Advance(poke_end, AiDotLook::TwoEyes, 0));
   const AiDotIdle action = model.Idle();
   EXPECT_NE(action, AiDotIdle::None);
   const auto rotation = AiDotModel::IdleActions(AiDotLook::TwoEyes);
   EXPECT_NE(std::find(rotation.begin(), rotation.end(), action), rotation.end()) << "one of the dot's face actions";
   const int64_t end = poke_end + AiDotModel::IdleLengthMs(action, AiDotLook::TwoEyes) + AiDotModel::kIdleTailMs;
-  ASSERT_TRUE(model.Advance(end));
+  ASSERT_TRUE(model.Advance(end, AiDotLook::TwoEyes, 0));
   EXPECT_EQ(model.Idle(), AiDotIdle::None);
   EXPECT_FALSE(model.MsUntilNext(end).has_value());
   EXPECT_TRUE(model.Tap(end + 10, AiDotLook::TwoEyes, 1)) << "tappable again";
+}
+
+TEST(HomeMascotModelTest, WhileActiveItMovesByItselfEveryTenToTwentySecondsAndOtherwiseNeverWakesTheApp) {
+  HomeMascotModel model;
+  EXPECT_FALSE(model.MsUntilNext(0).has_value()) << "not active: nothing planned";
+  model.SetActive(0, true, 5000);
+  const int64_t due = HomeMascotModel::IdleDelayMs(5000);
+  EXPECT_EQ(due, 15000);
+  EXPECT_EQ(model.MsUntilNext(0), due) << "the one wake is the next action";
+  EXPECT_EQ(HomeMascotModel::IdleDelayMs(0), HomeMascotModel::kIdleMinMs);
+  EXPECT_EQ(HomeMascotModel::IdleDelayMs(10000), HomeMascotModel::kIdleMaxMs);
+  EXPECT_LE(HomeMascotModel::IdleDelayMs(123456789u), HomeMascotModel::kIdleMaxMs);
+  EXPECT_FALSE(model.Advance(due - 1, AiDotLook::TwoEyes, 3));
+  ASSERT_TRUE(model.Advance(due, AiDotLook::TwoEyes, 3));
+  const AiDotIdle action = model.Idle();
+  EXPECT_NE(action, AiDotIdle::None);
+  EXPECT_NE(action, AiDotIdle::Poke) << "by itself: one action of the rotation, no poke";
+  const int64_t end = due + AiDotModel::IdleLengthMs(action, AiDotLook::TwoEyes) + AiDotModel::kIdleTailMs;
+  EXPECT_EQ(model.MsUntilNext(due), end - due);
+  ASSERT_TRUE(model.Advance(end, AiDotLook::TwoEyes, 0));
+  EXPECT_EQ(model.Idle(), AiDotIdle::None);
+  EXPECT_EQ(model.MsUntilNext(end), HomeMascotModel::IdleDelayMs(0)) << "then the wait starts again";
+
+  model.SetActive(end + 1, false, 0);
+  EXPECT_FALSE(model.MsUntilNext(end + 1).has_value()) << "a layer, the keyboard, another tab: nothing planned";
+  EXPECT_FALSE(model.Advance(end + 100000, AiDotLook::TwoEyes, 0));
+}
+
+TEST(HomeMascotModelTest, ATapResetsTheWaitAndAMissedActionIsNotPlayedLate) {
+  HomeMascotModel model;
+  model.SetActive(0, true, 0); // due at 10000
+  ASSERT_TRUE(model.Tap(9000, AiDotLook::TwoEyes, 7));
+  const int64_t poke_end = 9000 + AiDotModel::kPokeMs + AiDotModel::kIdleTailMs;
+  ASSERT_TRUE(model.Advance(poke_end, AiDotLook::TwoEyes, 0));
+  const AiDotIdle action = model.Idle();
+  const int64_t end = poke_end + AiDotModel::IdleLengthMs(action, AiDotLook::TwoEyes) + AiDotModel::kIdleTailMs;
+  ASSERT_TRUE(model.Advance(end, AiDotLook::TwoEyes, 0));
+  EXPECT_EQ(model.MsUntilNext(end), HomeMascotModel::kIdleMinMs) << "ten seconds after the tap's action, not at 10000";
+
+  // The app slept past the planned time (background): it waits again instead of moving the moment it wakes.
+  HomeMascotModel slept;
+  slept.SetActive(0, true, 0);
+  EXPECT_FALSE(slept.Advance(10000 + HomeMascotModel::kMissedMs + 1, AiDotLook::TwoEyes, 0));
+  EXPECT_EQ(slept.Idle(), AiDotIdle::None);
+  EXPECT_TRUE(slept.MsUntilNext(10000 + HomeMascotModel::kMissedMs + 1).has_value());
 }
 
 TEST(HomeMascotModelTest, DifferentRollsPlayDifferentActions) {
@@ -114,7 +169,7 @@ TEST(HomeMascotModelTest, DifferentRollsPlayDifferentActions) {
   for (uint32_t roll = 0; roll < 24; ++roll) {
     HomeMascotModel model;
     model.Tap(0, AiDotLook::Plain, roll);
-    model.Advance(AiDotModel::kPokeCalmMs + AiDotModel::kIdleTailMs);
+    model.Advance(AiDotModel::kPokeCalmMs + AiDotModel::kIdleTailMs, AiDotLook::Plain, 0);
     seen.insert(model.Idle());
   }
   EXPECT_GT(seen.size(), 3u);
@@ -172,7 +227,7 @@ TEST(MascotFigureTest, EveryLookHasTheLayersTheShellDotDraws) {
     }
     return cond.find(std::string("== '") + look + "'") != std::string::npos;
   };
-  for (const char look : {'a', 'b', 'c', 'd'}) {
+  for (const char look : {'a', 'b', 'c', 'd', 'e', 'f', 'g'}) {
     std::vector<std::string> from_shell;
     for (const Entry& entry : entries) {
       if (in_look(entry.cond, look)) {
@@ -211,7 +266,11 @@ TEST(HomeMarkupTest, TheLogoStartsAsTheStaticIconAndTheMascotIsTheDotsFigure) {
   EXPECT_NE(two_eyes.find("b-eyes-front.svg"), std::string::npos);
   EXPECT_EQ(two_eyes.find("ai-dot--calm"), std::string::npos);
   const std::string saturday = ShellHomeMascot::MascotRml('f');
-  EXPECT_NE(saturday.find("a-eyes-front.svg"), std::string::npos) << "f borrows one eye until its parts exist";
+  EXPECT_NE(saturday.find("f-eyes-front.svg"), std::string::npos);
+  EXPECT_NE(saturday.find("f-cap.svg"), std::string::npos);
+  EXPECT_NE(saturday.find("ai-dot--look-f"), std::string::npos);
+  EXPECT_NE(ShellHomeMascot::MascotRml('e').find("e-glasses-front.svg"), std::string::npos);
+  EXPECT_NE(ShellHomeMascot::MascotRml('g').find("g-mug.svg"), std::string::npos);
   const std::string plain = ShellHomeMascot::MascotRml('d');
   EXPECT_NE(plain.find("ai-dot--calm"), std::string::npos);
   EXPECT_NE(plain.find("ai-dot--plain"), std::string::npos);
@@ -250,8 +309,9 @@ protected:
     ASSERT_NE(context, nullptr);
     const std::string rml =
         "<rml><head><link type=\"text/rcss\" href=\"components.rcss\"/></head><body>"
-        "<div id=\"outer\"><div class=\"home-logo\" id=\"home-logo\">" +
-        std::string(ShellHomeMascot::StaticRml()) + "</div></div></body></rml>";
+        "<div id=\"outer\" class=\"shell-layer-compact\"><div class=\"home-landing--minimal\">"
+        "<div class=\"home-logo\" id=\"home-logo\">" +
+        std::string(ShellHomeMascot::StaticRml()) + "</div></div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml, std::string(PP_BROWSER_ASSETS_DIR) + "/themes/home_mascot_test.rml");
     ASSERT_NE(document, nullptr);
     document->Show();
@@ -294,6 +354,60 @@ TEST_F(ShellHomeMascotTest, OnItReplacesTheIconWithTodaysFigureAndOffBringsTheIc
   EXPECT_FALSE(logo->IsClassSet("home-logo--mascot"));
   EXPECT_NE(logo->GetInnerRML().find("app-icon.png"), std::string::npos) << "off: the static icon";
   EXPECT_FALSE(mascot.MsUntilNext().has_value());
+}
+
+TEST_F(ShellHomeMascotTest, TheSwitchTakesEffectAtOnceBothWays) {
+  ShellHomeMascot mascot;
+  mascot.SetDateForTest(2026, 11, 10);
+  mascot.Update(context);
+  ui::Element* logo = document->GetElementById("home-logo");
+  ASSERT_NE(document->GetElementById("home-mascot"), nullptr);
+  for (int round = 0; round < 2; ++round) {
+    mascot.SetAnimated(false);
+    mascot.Update(context);
+    EXPECT_EQ(document->GetElementById("home-mascot"), nullptr) << "off: the plain icon, no eyes";
+    EXPECT_NE(logo->GetInnerRML().find("../branding/app-icon.png"), std::string::npos);
+    mascot.SetAnimated(true);
+    mascot.Update(context);
+    EXPECT_NE(document->GetElementById("home-mascot"), nullptr) << "on: the mascot is back";
+    EXPECT_EQ(logo->GetInnerRML().find("app-icon.png"), std::string::npos);
+  }
+  EXPECT_TRUE(std::ifstream(std::string(PP_BROWSER_ASSETS_DIR) + "/branding/app-icon.png").good())
+      << "the static icon the markup points at ships in assets/";
+}
+
+TEST(ShellHostChromeTest, TheHomeLogoSwitchIsAChangeTheShellMustApply) {
+  ShellHost::ChromePrefs before;
+  ShellHost::ChromePrefs after = before;
+  EXPECT_FALSE(ShellHost::NeedsApply(after, &before));
+  after.home_animated_logo = !before.home_animated_logo;
+  EXPECT_TRUE(ShellHost::NeedsApply(after, &before)) << "this was the bug: the switch never reached the shell";
+  after = before;
+  after.ai_dot_look = "g";
+  EXPECT_TRUE(ShellHost::NeedsApply(after, &before));
+  EXPECT_TRUE(ShellHost::NeedsApply(before, nullptr));
+}
+
+TEST_F(ShellHomeMascotTest, ItMovesByItselfOnlyWhileActiveAndNeverWhenOff) {
+  // The phone's minimal Home shows the logo (the fixture); anywhere else .home-logo is display: none and it stays still.
+  ShellHomeMascot mascot;
+  mascot.SetDateForTest(2026, 11, 10);
+  mascot.Update(context);
+  EXPECT_FALSE(mascot.MsUntilNext().has_value()) << "not active: still";
+  mascot.SetActive(true);
+  context->Update();
+  mascot.Update(context);
+  const auto wait = mascot.MsUntilNext();
+  ASSERT_TRUE(wait.has_value());
+  EXPECT_GE(*wait, HomeMascotModel::kIdleMinMs - 100);
+  EXPECT_LE(*wait, HomeMascotModel::kIdleMaxMs);
+  mascot.SetActive(false);
+  mascot.Update(context);
+  EXPECT_FALSE(mascot.MsUntilNext().has_value()) << "a layer opened: nothing planned";
+  mascot.SetActive(true);
+  mascot.SetAnimated(false);
+  mascot.Update(context);
+  EXPECT_FALSE(mascot.MsUntilNext().has_value()) << "off: the static icon never moves";
 }
 
 TEST_F(ShellHomeMascotTest, TheLookFollowsThePrefAndTheDate) {
