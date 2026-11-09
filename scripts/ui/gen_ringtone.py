@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Generate assets/sounds/call.caf (incoming-call ring, 29 s) and assets/sounds/msg.caf
-(message tone, about 1.1 s), the iPhone notification sounds.
+"""Generate the iPhone notification sounds in assets/sounds/.
 
-Regenerate (macOS, from the repo root):
-    python3 scripts/ui/gen_ringtone.py
-It writes each as a 44.1 kHz 16-bit mono WAV with the standard library only, then runs
-    afconvert -f caff -d <ima4 for call, LEI16 for msg> <wav> assets/sounds/call.caf
-UNNotificationSound plays at most 30 s, so the file is 29 s. LEI16 is 2.6 MB, over the 1.5 MB budget, so ima4 is used (about 0.65 MB).
+    call.caf  incoming-call ring, 29 s: bright marimba motif C6-E6-G6-C7, played twice, 1.6 s pause
+    msg.caf   message tone, about 1.1 s: soft "ding-dong"
+
+Regenerate (macOS, from the repo root; needs afconvert):
+    python3 scripts/ui/gen_ringtone.py                        # call.caf + msg.caf into assets/sounds
+    python3 scripts/ui/gen_ringtone.py --candidate a <dir>    # call-a.caf: classic telephone double ring
+    python3 scripts/ui/gen_ringtone.py --candidate b <dir>    # call-b.caf: same as call.caf
+Standard library only (wave + math): each is a 44.1 kHz 16-bit mono WAV, converted with
+    afconvert -f caff -d <ima4 for the ring, LEI16 for msg> <wav> <out>
+UNNotificationSound plays at most 30 s. The ring is ima4 (about 0.65 MB; LEI16 is 2.6 MB, over
+the 1.5 MB budget).
 """
 import math, os, struct, subprocess, sys, tempfile, wave
 
@@ -117,12 +122,7 @@ def main():
         # --candidate a|b writes call-a.caf / call-b.caf (ring candidates) to out_dir.
         write_caf(call_a() if which == "a" else call_b(), os.path.join(out_dir, "call-%s.caf" % which), "ima4")
         return
-    call = []
-    k = 0
-    while k * PERIOD < DURATION:
-        call += [(k * PERIOD + off, f) for off, f in NOTES]
-        k += 1
-    write_caf(render(DURATION, call, 1.0), os.path.join(out_dir, "call.caf"), "ima4")  # LEI16 would be 2.6 MB
+    write_caf(call_b(), os.path.join(out_dir, "call.caf"), "ima4")  # LEI16 would be 2.6 MB
     # Message tone: a soft "ding-dong" (E6 then B5), about 1.1 s with a gentle decay.
     write_caf(render(1.1, [(0.0, 1318.5), (0.22, 987.8)], 0.9), os.path.join(out_dir, "msg.caf"), "LEI16")
 
