@@ -839,6 +839,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   }
   object.set("home_widgets_order", makeArray(std::move(widget_order)));
   object.set("home_show_dynamic", prefs.home_show_dynamic);
+  object.set("home_animated_logo", prefs.home_animated_logo);
   std::vector<Value> starred;
   for (const std::string& id : prefs.starred_contacts) {
     starred.emplace_back(id);
@@ -928,8 +929,9 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   if (auto look = object.getString("ai_dot_look")) {
     prefs.ai_dot_look = *look;
   }
-  if (prefs.ai_dot_look != "a" && prefs.ai_dot_look != "b" && prefs.ai_dot_look != "c" && prefs.ai_dot_look != "d") {
-    prefs.ai_dot_look = "b";
+  if (prefs.ai_dot_look != "auto" && prefs.ai_dot_look != "a" && prefs.ai_dot_look != "b" &&
+      prefs.ai_dot_look != "c" && prefs.ai_dot_look != "d") {
+    prefs.ai_dot_look = "auto";
   }
   if (auto size = object.getString("ai_dot_size")) {
     prefs.ai_dot_size = *size;
@@ -1000,6 +1002,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     }
   }
   prefs.home_show_dynamic = object.getIf<bool>("home_show_dynamic").value_or(false);
+  prefs.home_animated_logo = object.getIf<bool>("home_animated_logo").value_or(true);
   prefs.starred_contacts.clear();
   if (const Array* starred = object.getArray("starred_contacts")) {
     for (const Value& item : starred->elements) {

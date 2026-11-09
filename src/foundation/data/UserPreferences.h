@@ -94,8 +94,11 @@ struct ProfilePreferences {
   bool ai_panel_intro_seen = false;
   /** Phone AI dot (DESIGN-pp-ui §8.14): Me → AI assistant → Show AI dot. */
   bool ai_dot_shown = true;
-  /** Its look: `a` one eye, `b` two eyes (default), `c` cool, `d` plain. */
-  std::string ai_dot_look = "b";
+  /**
+   * Its look, also the AI Home's mascot's: `auto` (default; a different look each weekday, gui/shell/MascotLook.h), or
+   * a fixed one: `a` one eye, `b` two eyes, `c` cool, `d` plain.
+   */
+  std::string ai_dot_look = "auto";
   /** Its size: `s` 52dp, `m` 64dp (default), `l` 76dp (Me → AI assistant → Assistant size). */
   std::string ai_dot_size = "m";
   /** Where it rests: the left or right edge, and how far down its band (0 top – 1000 bottom). */
@@ -131,6 +134,8 @@ struct ProfilePreferences {
   std::vector<std::string> home_widgets_order;
   /** Phone Home shows the 动态 widgets section; default off = minimal AI-first Home. Device-only, never synced. */
   bool home_show_dynamic = false;
+  /** The AI Home's logo is the animated mascot (Settings → Appearance → Animated home logo); off: the static icon. */
+  bool home_animated_logo = true;
   /**
    * Contacts starred as favourites ("常用联系人"; contact ids, in the order they were starred): first in Home's
    * Favourites widget and the New chat page's frequent group. Device-only, like thread_local_prefs: never synced.

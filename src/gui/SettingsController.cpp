@@ -298,6 +298,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.reduce_transparency = bindings_.reduce_transparency.c_str();
   ui_state_.call_diagnostics = bindings_.call_diagnostics.c_str();
   ui_state_.home_show_dynamic = bindings_.home_show_dynamic.c_str();
+  ui_state_.home_animated_logo = bindings_.home_animated_logo.c_str();
   ui_state_.crash_reports_enabled = bindings_.crash_reports_enabled.c_str();
   ui_state_.show_advanced_settings = bindings_.show_advanced_settings.c_str();
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
@@ -399,6 +400,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.reduce_transparency = ui_state_.reduce_transparency.c_str();
   bindings_.call_diagnostics = ui_state_.call_diagnostics.c_str();
   bindings_.home_show_dynamic = ui_state_.home_show_dynamic.c_str();
+  bindings_.home_animated_logo = ui_state_.home_animated_logo.c_str();
   bindings_.crash_reports_enabled = ui_state_.crash_reports_enabled.c_str();
   bindings_.show_advanced_settings = ui_state_.show_advanced_settings.c_str();
   bindings_.advanced = ui_state_.show_advanced_settings == "on";
@@ -615,6 +617,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("reduce_transparency", &controller.bindings_.reduce_transparency);
     ctor.Bind("call_diagnostics", &controller.bindings_.call_diagnostics);
     ctor.Bind("home_show_dynamic", &controller.bindings_.home_show_dynamic);
+    ctor.Bind("home_animated_logo", &controller.bindings_.home_animated_logo);
     ctor.Bind("crash_reports_enabled", &controller.bindings_.crash_reports_enabled);
     ctor.Bind("show_advanced_settings", &controller.bindings_.show_advanced_settings);
     ctor.Bind("advanced", &controller.bindings_.advanced);
@@ -693,6 +696,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_transparency", DataEvent<>([this]() { ToggleTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
     ctor.BindEventCallback("toggle_home_show_dynamic", DataEvent<>([this]() { ToggleHomeShowDynamic(); }));
+    ctor.BindEventCallback("toggle_home_animated_logo", DataEvent<>([this]() { ToggleHomeAnimatedLogo(); }));
     ctor.BindEventCallback("open_ui_perf_test", DataEvent<>([this]() {
       if constexpr (kDevToolsBuild) {
         if (open_ui_perf_test_) {
@@ -819,6 +823,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "reduce_transparency");
   host.Dirty("settings", "call_diagnostics");
   host.Dirty("settings", "home_show_dynamic");
+  host.Dirty("settings", "home_animated_logo");
   host.Dirty("settings", "crash_reports_enabled");
   host.Dirty("settings", "show_advanced_settings");
   host.Dirty("settings", "ai_dot_shown");
@@ -2073,6 +2078,15 @@ void SettingsController::ToggleCallDiagnostics() {
   DirtyAll();
 }
 
+void SettingsController::ToggleHomeAnimatedLogo() {
+  // Phones only: on draws the AI Home's logo as the animated mascot (the look of Me → AI assistant), off keeps the
+  // static app icon. Saved through the appearance section like the Home switch above.
+  bindings_.home_animated_logo = bindings_.home_animated_logo == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("appearance", /*show_toast=*/false);
+  DirtyAll();
+}
+
 void SettingsController::ToggleHomeShowDynamic() {
   // Phones only: on shows the 动态 widgets section on Home, off is the minimal AI-first Home. Saved through the
   // appearance section (SaveProfilePrefs), which the Home's prefs listener picks up to redraw.
@@ -2088,7 +2102,7 @@ void SettingsController::ToggleAiDot() {
 }
 
 void SettingsController::SetAiDotLook(const std::string& look) {
-  if (look != "a" && look != "b" && look != "c" && look != "d") {
+  if (look != "auto" && look != "a" && look != "b" && look != "c" && look != "d") {
     return;
   }
   SaveAiDot(ai_dot_shown_, look, ai_dot_size_.c_str());
