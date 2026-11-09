@@ -6615,51 +6615,6 @@ call-video-tile {
 }
 
 /* The tips: one every 3 s, a 12 s cycle with the four staggered (RCSS only). */
-.call-phone-tips {
-  position: relative;
-  flex-shrink: 0;
-  height: 44dp;
-  margin: 0 28dp 16dp 28dp;
-}
-
-@keyframes call-phone-tip {
-  from { opacity: 0; }
-  4% { opacity: 1; }
-  23% { opacity: 1; }
-  25% { opacity: 0; }
-  to { opacity: 0; }
-}
-
-.call-phone-tip {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  margin: 0;
-  font-size: 14dp;
-  line-height: 20dp;
-  text-align: center;
-  opacity: 0;
-  animation: 12s linear-in-out infinite call-phone-tip;
-}
-
-.call-phone-tip--2 {
-  animation: 12s 3s linear-in-out infinite call-phone-tip;
-}
-
-.call-phone-tip--3 {
-  animation: 12s 6s linear-in-out infinite call-phone-tip;
-}
-
-.call-phone-tip--4 {
-  animation: 12s 9s linear-in-out infinite call-phone-tip;
-}
-
-.call-phone-tip-text {
-  font-weight: bold;
-}
-
-/* 1:1 video: the other person's camera fills the page; name, time and the signal top left; our camera top right. */
 .call-phone-video-body {
   position: relative;
   z-index: 3;

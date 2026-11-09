@@ -3127,7 +3127,6 @@ input.checkbox:checked {
 .call-phone-tile-note,
 .call-phone-hint,
 .call-phone-debug,
-.call-phone-tip,
 .call-phone-remote-note,
 .call-phone-step--done .call-phone-step-text {
   color: #ffffffb3;
@@ -3270,10 +3269,6 @@ input.checkbox:checked {
 
 .call-phone-step--current .call-phone-step-dot {
   border-color: transparent #40c8e0 #40c8e0 #40c8e0;
-}
-
-.call-phone-tip-text {
-  color: #40c8e0;
 }
 
 .call-phone-card {

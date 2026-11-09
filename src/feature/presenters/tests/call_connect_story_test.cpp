@@ -260,9 +260,6 @@ TEST(CallConnectStoryTest, EveryWordExistsInEnglishAndChineseAndNoneIsATechWord)
   for (const CallStoryNotice notice : {CallStoryNotice::Slow, CallStoryNotice::Closer}) {
     keys.emplace_back(CallStoryNoticeKey(notice));
   }
-  for (const char* tip : kCallStoryTipKeys) {
-    keys.emplace_back(tip);
-  }
   for (const char* key : {"call.reconnect.restored", "call.reconnect.offline", "call.status.reconnecting",
                           "call.quality.hint.connecting_voice", "call.quality.hint.connecting_video",
                           "call.quality.hint.retrying_voice", "call.quality.hint.retrying_video",
@@ -275,7 +272,7 @@ TEST(CallConnectStoryTest, EveryWordExistsInEnglishAndChineseAndNoneIsATechWord)
                           "call.story.sheet.e2e", "call.story.event.placed", "call.story.event.answered",
                           "call.story.event.joined", "call.story.event.peer_answered", "call.story.event.encrypted",
                           "call.story.event.group_encrypted", "call.story.event.group_connected",
-                          "call.story.event.closer", "call.story.seconds", "call.story.prefix"}) {
+                          "call.story.event.closer", "call.story.seconds"}) {
     keys.emplace_back(key);
   }
   for (const std::string& key : keys) {

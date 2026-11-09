@@ -173,12 +173,5 @@ const char* CallRouteHowKey(CallRoute route);
 const char* CallStoryNoticeKey(CallStoryNotice notice);
 /** The word next to the signal bars (empty when good). */
 const char* CallSignalWordKey(CallPathQuality quality);
-/** The four true loading tips, shown in turn every 3 s before connect. */
-inline constexpr const char* kCallStoryTipKeys[] = {
-    "call.story.tip.encrypted",
-    "call.story.tip.no_vpn",
-    "call.story.tip.reroute",
-    "call.story.tip.closer",
-};
 
 } // namespace pbr

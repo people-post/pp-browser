@@ -234,18 +234,6 @@ void AppendPair(std::ostringstream& out, const CallInProgressState& call) {
       << "</p><p class=\"call-phone-pair-name\">{{call_in_progress_phone_title}}</p></div>";
 }
 
-/** The four true tips, one every 3 s (RCSS keyframes with staggered delays: no C++ tick). */
-void AppendTips(std::ostringstream& out) {
-  out << "<div class=\"call-phone-tips\">";
-  int i = 1;
-  for (const char* key : {"call.story.tip.encrypted", "call.story.tip.no_vpn", "call.story.tip.reroute",
-                          "call.story.tip.closer"}) {
-    out << "<p class=\"call-phone-tip call-phone-tip--" << i++ << "\"><span class=\"call-phone-tip-prefix\">"
-        << Tr("call.story.prefix") << "</span><span class=\"call-phone-tip-text\">" << Tr(key) << "</span></p>";
-  }
-  out << "</div>";
-}
-
 void AppendControl(std::ostringstream& out, const char* event, const char* on_var, const std::string& icon_attr,
                    const std::string& label, const char* extra_class = "") {
   out << "<button class=\"call-phone-control " << extra_class << "\" type=\"button\" data-event-click=\"" << event
@@ -602,10 +590,6 @@ std::string CallPhoneRml(const ShellState& state) {
     AppendSignalSlot(out, "");
     AppendHints(out);
     out << "</div>";
-  }
-
-  if (call.story_active && !group) {
-    AppendTips(out);
   }
 
   // The reconnect capsule (#171) sits at a fixed place just above the button bar; the call page stays as it is.
