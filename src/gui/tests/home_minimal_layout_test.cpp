@@ -164,10 +164,9 @@ TEST_F(HomeMinimalLayoutTest, KeyboardUpOnTallScreenKeepsFieldAboveTheKeyboard) 
   EXPECT_GE(pill.top, 90.f);
 }
 
-// The Chats header (sidebar.rml's .pane-nav, B3) on a phone: a 64dp avatar 20dp from the left and 20dp below the top, the
-// name at 22dp with the status line under it, the teal plus centred on the avatar, the whole header 104dp, and the
-// scroller's first row (the search box) starting at or below its bottom edge, with and without a notch above the page.
-// Bindings stripped (the name is a stand-in word).
+// The Chats header (sidebar.rml's .pane-nav) on a phone: a 56dp bar holding the compose button at the right, and the
+// scroller's content under it starting with the large title ("Chats") and then the search box. Chrome rules: the avatar,
+// the name and the link status are not on this page (they live in the AI drawer's "you" row). Bindings stripped.
 class ChatsHeaderTest : public HomeMinimalLayoutTest {
 protected:
   void LoadChats(const int top_inset_dp) {
@@ -182,15 +181,14 @@ protected:
     std::string bar = sidebar.substr(bar_begin, sidebar.find("<div class=\"sidebar-header row\">") - bar_begin);
     bar = std::regex_replace(bar, std::regex("<!--[\\s\\S]*?-->"), "");
     bar = std::regex_replace(bar, std::regex("\\s+data-[a-z-]+=\"[^\"]*\""), "");
-    bar = std::regex_replace(bar, std::regex("\\{\\{profile_nickname\\}\\}"), "Kenneth");
-    bar = std::regex_replace(bar, std::regex("\\{\\{chats_link_text\\}\\}"), "Online");
-    bar = std::regex_replace(bar, std::regex("\\{\\{[^}]*\\}\\}"), "K");
+    bar = std::regex_replace(bar, std::regex("\\{\\{[^}]*\\}\\}"), "Chats");
     const std::string rml =
         "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
         Asset("themes/colors-light.rcss") + "</style></head><body style=\"padding: 0;\">"
         "<div class=\"shell-layer-compact\" style=\"position: absolute; left: 0dp; width: 390dp; height: 800dp; top: " +
         std::to_string(top_inset_dp) + "dp;\"><div class=\"sidebar-panel\">" + bar +
-        "<div class=\"sidebar-sessions root-scroll\"><div class=\"chat-search\"><input type=\"text\" class=\"chat-search-input\"/></div>"
+        "<div class=\"sidebar-sessions root-scroll\"><p class=\"large-title\">Chats</p>"
+        "<div class=\"chat-search\"><input type=\"text\" class=\"chat-search-input\"/></div>"
         "</div></div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
@@ -206,48 +204,27 @@ protected:
   static ui::Vector2f SizeOf(ui::Element* e) { return e->GetBox().GetSize(ui::BoxArea::Border); }
 };
 
-TEST_F(ChatsHeaderTest, ShowsTheBigAvatarTheNameAndTheStatusLine) {
-  LoadChats(0);
-  ui::Element* avatar = One("pane-nav-avatar");
-  ASSERT_NE(avatar, nullptr);
-  EXPECT_FLOAT_EQ(SizeOf(avatar).y, 64.f);
-  EXPECT_GE(SizeOf(avatar).x, 64.f) << "avatar plus the name column";
-  EXPECT_FLOAT_EQ(avatar->GetAbsoluteOffset(ui::BoxArea::Border).x, 20.f);
-  EXPECT_FLOAT_EQ(avatar->GetAbsoluteOffset(ui::BoxArea::Border).y, 20.f);
-  ui::Element* face = One("shell-circle-avatar");
-  ASSERT_NE(face, nullptr);
-  EXPECT_FLOAT_EQ(SizeOf(face).x, 64.f);
-  EXPECT_FLOAT_EQ(SizeOf(face).y, 64.f);
-  ui::Element* name = One("pane-nav-avatar-name");
-  ASSERT_NE(name, nullptr);
-  EXPECT_GT(SizeOf(name).x, 20.f) << "the name has a width";
-  EXPECT_FLOAT_EQ(name->GetComputedValues().font_size(), 22.f);
-  ui::Element* sub = One("pane-nav-avatar-sub");
-  ASSERT_NE(sub, nullptr) << "the status line exists";
-  EXPECT_GT(SizeOf(sub).x, 14.f);
-  EXPECT_FLOAT_EQ(sub->GetComputedValues().font_size(), 13.f);
-  EXPECT_GE(sub->GetAbsoluteOffset(ui::BoxArea::Border).y, name->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(name).y - 1.f)
-      << "the status line sits under the name";
-  const float avatar_bottom = avatar->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(avatar).y;
-  EXPECT_LE(sub->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(sub).y, avatar_bottom + 1.f) << "name + status stay in the avatar's height";
+TEST_F(ChatsHeaderTest, HasNoAvatarNameOrStatusLine) {
+  const std::string rml = Asset("views/sidebar.rml");
+  const std::string bar = rml.substr(0, rml.find("<div class=\"sidebar-header row\">"));
+  for (const char* gone : {"pane-nav-avatar", "shell-circle-avatar", "profile_nickname", "chats_link_state", "pane-nav-plus"}) {
+    EXPECT_EQ(bar.find(gone), std::string::npos) << gone;
+  }
+  EXPECT_NE(bar.find("open_new_session_menu()"), std::string::npos);
+  EXPECT_NE(bar.find("compose.svg"), std::string::npos);
 }
 
-TEST_F(ChatsHeaderTest, PlusIsCentredOnTheAvatarTwentyFromTheEdge) {
+TEST_F(ChatsHeaderTest, ComposeButtonSitsAtTheTopRight) {
   LoadChats(0);
-  ui::Element* face = One("pane-nav-plus");
-  ASSERT_NE(face, nullptr);
-  const ui::Vector2f at = face->GetAbsoluteOffset(ui::BoxArea::Border);
-  EXPECT_FLOAT_EQ(SizeOf(face).x, 52.f) << "hit area";
-  ui::Element* disc = One("shell-circle-btn-face");
-  ASSERT_NE(disc, nullptr);
-  EXPECT_FLOAT_EQ(SizeOf(disc).x, 44.f);
-  const ui::Vector2f disc_at = disc->GetAbsoluteOffset(ui::BoxArea::Border);
-  EXPECT_FLOAT_EQ(disc_at.x + SizeOf(disc).x, 390.f - 20.f) << "20dp from the right edge";
-  EXPECT_FLOAT_EQ(disc_at.y + SizeOf(disc).y / 2.f, 20.f + 32.f) << "centred on the 64dp avatar";
-  (void)at;
+  ui::Element* button = One("pane-nav-btn");
+  ASSERT_NE(button, nullptr);
+  EXPECT_FLOAT_EQ(SizeOf(button).x, 44.f);
+  const ui::Vector2f at = button->GetAbsoluteOffset(ui::BoxArea::Border);
+  EXPECT_FLOAT_EQ(at.x + SizeOf(button).x, 390.f - 12.f) << "12dp from the right edge";
+  EXPECT_LT(at.y, 56.f) << "inside the bar";
 }
 
-TEST_F(ChatsHeaderTest, HeaderIs104dpAndTheSearchBoxStartsBelowIt) {
+TEST_F(ChatsHeaderTest, BarIs56dpAndTheLargeTitleThenTheSearchBoxScrollUnderIt) {
   for (const int inset : {0, 47}) {
     SCOPED_TRACE(inset);
     if (context) {
@@ -258,18 +235,20 @@ TEST_F(ChatsHeaderTest, HeaderIs104dpAndTheSearchBoxStartsBelowIt) {
     }
     LoadChats(inset);
     ui::Element* bar = One("pane-nav");
-    ui::Element* frost = One("pane-nav-bg");
     ui::Element* scroller = One("sidebar-sessions");
+    ui::Element* title = One("large-title");
     ui::Element* search = One("chat-search");
     ASSERT_NE(bar, nullptr);
-    ASSERT_NE(frost, nullptr);
     ASSERT_NE(scroller, nullptr);
+    ASSERT_NE(title, nullptr);
     ASSERT_NE(search, nullptr);
-    EXPECT_FLOAT_EQ(SizeOf(bar).y, 104.f);
-    EXPECT_FLOAT_EQ(SizeOf(frost).y, 104.f) << "the frosted layer follows the same height";
-    EXPECT_FLOAT_EQ(scroller->GetComputedValues().padding_top().value, 104.f) << "the list clears the header by the same amount";
-    const float header_bottom = bar->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(bar).y;
-    EXPECT_LE(header_bottom, search->GetAbsoluteOffset(ui::BoxArea::Border).y) << "the search box is not under the header";
+    EXPECT_FLOAT_EQ(SizeOf(bar).y, 56.f);
+    EXPECT_FLOAT_EQ(scroller->GetComputedValues().padding_top().value, 56.f) << "the list clears the bar";
+    const float bar_bottom = bar->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(bar).y;
+    EXPECT_GE(title->GetAbsoluteOffset(ui::BoxArea::Border).y, bar_bottom - 0.5f) << "the title starts below the bar";
+    EXPECT_FLOAT_EQ(title->GetComputedValues().font_size(), 34.f);
+    EXPECT_GE(search->GetAbsoluteOffset(ui::BoxArea::Border).y,
+              title->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(title).y - 0.5f) << "the search box is under the title";
     EXPECT_FLOAT_EQ(SizeOf(search).y, 36.f);
     EXPECT_FLOAT_EQ(search->GetAbsoluteOffset(ui::BoxArea::Border).x, 20.f);
   }

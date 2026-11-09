@@ -521,6 +521,45 @@ TEST_F(ShellDrawerTest, TheRealViewMountsAndItsRowsSwipe) {
   EXPECT_EQ(actions_, std::vector<std::string>{"ai1:" + std::to_string(static_cast<int>(SessionSwipeAction::More))});
 }
 
+// The "you" row carries the device's link status under the nickname (ShellHost::SetChatsLink): nothing while unknown,
+// the teal cloud-tick icon and its word when online, the red cloud-slash icon and its word when offline.
+TEST_F(ShellDrawerTest, TheMeRowShowsTheLinkStatusUnderTheName) {
+  host_.OpenAiDrawer();
+  Settle();
+  ui::Element* line = ById("ai-drawer-me")->QuerySelector(".ai-drawer-me-link");
+  ASSERT_NE(line, nullptr);
+  EXPECT_FALSE(line->IsVisible()) << "unknown state shows nothing";
+
+  auto count_visible = [&](const char* cls) {
+    ui::ElementList found;
+    ById("ai-drawer-me")->GetElementsByClassName(found, cls);
+    int n = 0;
+    for (ui::Element* e : found) {
+      n += e->IsVisible() ? 1 : 0;
+    }
+    return n;
+  };
+
+  host_.SetChatsLink(true, true);
+  Settle();
+  EXPECT_TRUE(line->IsVisible());
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--ok"), 1);
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--offline"), 0);
+  EXPECT_FALSE(host_.State().chats_link_text.empty());
+  EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos) << "the word is rendered";
+
+  host_.SetChatsLink(true, false);
+  Settle();
+  EXPECT_TRUE(line->IsVisible());
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--ok"), 0);
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--offline"), 1);
+  EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos);
+
+  host_.SetChatsLink(false, false);
+  Settle();
+  EXPECT_FALSE(line->IsVisible());
+}
+
 TEST_F(ShellDrawerTest, APickedConversationClosesTheDrawerAndOpensOverTheAiPage) {
   host_.OpenAiDrawer();
   Settle();

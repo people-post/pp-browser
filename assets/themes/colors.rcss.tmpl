@@ -849,7 +849,7 @@ select selectbox option:hover {
   color: {{accent}};
 }
 
-.large-title, .pane-nav-title, .pane-nav-avatar-name {
+.large-title, .pane-nav-title {
   color: {{label}};
 }
 
@@ -3495,30 +3495,6 @@ input.checkbox:checked {
   decorator: linear-gradient(to bottom, {{fill}}, {{fill}});
 }
 
-/* Chats header plus (B3): a flat teal-tint disc with a teal plus; no 3-D gradient, no shadow. */
-.shell-layer-compact .pane-nav-plus .shell-circle-btn-face,
-.shell-layer-compact .pane-nav-plus:active .shell-circle-btn-face {
-  background-color: {{secure-tint}};
-  decorator: none;
-  box-shadow: none;
-}
-
-.shell-layer-compact .pane-nav-actions .pane-nav-plus .shell-circle-btn-face svg {
-  image-color: {{secure}};
-}
-
-.pane-nav-link-icon--ok {
-  image-color: {{secure}};
-}
-
-.pane-nav-link-icon--offline {
-  image-color: {{danger}};
-}
-
-.pane-nav-link-text {
-  color: {{label-2}};
-}
-
 .shell-layer-compact .shell-circle-btn .shell-circle-btn-face svg {
   image-color: {{label}};
 }
@@ -3536,6 +3512,18 @@ input.checkbox:checked {
 .ai-drawer-title,
 .ai-drawer-me-name {
   color: {{label}};
+}
+
+.ai-drawer-me-link-icon--ok {
+  image-color: {{secure}};
+}
+
+.ai-drawer-me-link-icon--offline {
+  image-color: {{danger}};
+}
+
+.ai-drawer-me-link-text {
+  color: {{label-2}};
 }
 
 /* The ask-AI panel's input bar: the bar colour, frosted with Transparency on (like a chat's composer). */
