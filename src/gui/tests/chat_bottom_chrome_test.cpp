@@ -190,8 +190,9 @@ TEST_F(ChatBottomChromeTest, OnlyTheHeaderIsFrostedAndTheComposerBarIsClear) {
   EXPECT_NEAR(b.bottom, m.bottom, 0.5f);
 }
 
-// #202 (Kenneth 2026-11-09): the phone composer is a floating 40dp pill with the emoji key at its left end (no camera),
-// a round 44dp plus 8dp left of it and a round 44dp microphone 8dp right of it, which becomes Send with text.
+// #202 (Kenneth 2026-11-09): the phone composer is a floating 46dp pill with the accent emoji circle (32dp, 7dp inside,
+// no camera), a round 44dp plus 10dp left of it and a round 44dp microphone 10dp right of it (14dp from the screen
+// edges), which becomes Send with text.
 TEST_F(ChatBottomChromeTest, TheComposerIsAFloatingPillBetweenTwoRoundButtons) {
   state.show_voice = true;
   state.show_attach_button = true;
@@ -212,19 +213,19 @@ TEST_F(ChatBottomChromeTest, TheComposerIsAFloatingPillBetweenTwoRoundButtons) {
   const Edges e = BorderEdges(emoji);
   const Edges mi = BorderEdges(mic);
   const Edges overlay = BorderEdges(ByClass("shell-chat-overlay"));
-  EXPECT_NEAR(p.bottom - p.top, 40.f, 0.5f) << "the pill is 40dp high";
+  EXPECT_NEAR(p.bottom - p.top, 46.f, 0.5f) << "the pill is 46dp high";
   EXPECT_NEAR(pl.right - pl.left, 44.f, 0.5f);
   EXPECT_NEAR(pl.bottom - pl.top, 44.f, 0.5f);
   EXPECT_NEAR(mi.right - mi.left, 44.f, 0.5f);
   EXPECT_NEAR(mi.bottom - mi.top, 44.f, 0.5f);
-  EXPECT_NEAR(p.left - pl.right, 8.f, 0.5f) << "8dp between the plus and the pill";
-  EXPECT_NEAR(mi.left - p.right, 8.f, 0.5f) << "8dp between the pill and the microphone";
-  EXPECT_NEAR(pl.left - overlay.left, 8.f, 0.5f) << "8dp from the screen edge";
-  EXPECT_NEAR(overlay.right - mi.right, 8.f, 0.5f);
-  EXPECT_NEAR(e.right - e.left, 36.f, 0.5f);
-  EXPECT_GE(e.left, p.left) << "the emoji key is inside the pill, at its left end";
-  EXPECT_LE(e.right, p.right);
-  EXPECT_NEAR(e.left - p.left, 1.f, 1.f);
+  EXPECT_NEAR(p.left - pl.right, 10.f, 0.5f) << "10dp between the plus and the pill";
+  EXPECT_NEAR(mi.left - p.right, 10.f, 0.5f) << "10dp between the pill and the microphone";
+  EXPECT_NEAR(pl.left - overlay.left, 14.f, 0.5f) << "14dp from the screen edge";
+  EXPECT_NEAR(overlay.right - mi.right, 14.f, 0.5f);
+  EXPECT_NEAR(e.right - e.left, 32.f, 0.5f);
+  EXPECT_NEAR(e.bottom - e.top, 32.f, 0.5f);
+  EXPECT_NEAR(e.left - p.left, 7.f, 0.5f) << "the emoji circle is 7dp inside the pill's left end";
+  EXPECT_NEAR((e.top + e.bottom) / 2, (p.top + p.bottom) / 2, 0.5f);
   EXPECT_EQ(ByClass("prompt-capture-btn"), nullptr) << "no camera in the pill";
   EXPECT_NEAR((pl.top + pl.bottom) / 2, (p.top + p.bottom) / 2, 0.5f) << "round buttons centre on a one-line pill";
 

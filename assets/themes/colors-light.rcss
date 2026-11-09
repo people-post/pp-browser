@@ -2739,6 +2739,19 @@ input.checkbox:checked {
   box-shadow: 0 2dp 10dp #00000029;
 }
 
+.shell-chat-overlay .prompt-composer-pill .prompt-attach-btn,
+.ask-ai .prompt-composer-pill .prompt-attach-btn {
+  background-color: #ffffff;
+  border: 1dp #3c3c434a;
+  box-shadow: 0 2dp 10dp #00000029;
+}
+
+.shell-chat-overlay .prompt-emoji-btn .prompt-icon-home-emoji,
+.ask-ai .prompt-emoji-btn .prompt-icon-home-emoji {
+  background-color: #007aff1f;
+  image-color: #007aff;
+}
+
 .shell-chat-overlay .prompt-composer-row .prompt-send-btn,
 .shell-chat-overlay .prompt-composer-row .prompt-mic-btn,
 .ask-ai .prompt-composer-row .prompt-send-btn {
