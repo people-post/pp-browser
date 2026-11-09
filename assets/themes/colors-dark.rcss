@@ -2775,7 +2775,7 @@ input.checkbox:checked {
   image-color: #ebebf599;
 }
 
-.shell-layer-compact .home-composer-mount .prompt-emoji-btn {
+.shell-layer-compact .home-composer-mount .prompt-emoji-btn .prompt-icon-home-emoji {
   background-color: #0a84ff33;
 }
 

@@ -13513,17 +13513,21 @@ textarea:composing ~ .prompt-composer-label,
   cursor: pointer;
 }
 
+/* B3 (Kenneth 2026-11-09): the 32dp tinted circle is drawn on the icon; the button around it keeps the 44dp touch
+   target (the circle's centre stays 32dp from the right edge and 28dp from the bottom). */
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {
   position: absolute;
-  right: 16dp;
-  bottom: 12dp;
+  right: 10dp;
+  bottom: 6dp;
   z-index: 1;
-  width: 32dp;
-  height: 32dp;
-  min-width: 32dp;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
   margin: 0;
-  padding: 0;
-  border-radius: 16dp;
+  padding: 6dp;
+  box-sizing: border-box;
+  border-radius: 22dp;
+  background-color: transparent;
 }
 
 .prompt-icon-home-emoji {
@@ -13532,8 +13536,11 @@ textarea:composing ~ .prompt-composer-label,
 
 .shell-layer-compact .home-composer-mount .prompt-emoji-btn .prompt-icon-home-emoji {
   display: block;
-  width: 24dp;
-  height: 24dp;
+  width: 32dp;
+  height: 32dp;
+  padding: 4dp;
+  box-sizing: border-box;
+  border-radius: 16dp;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {

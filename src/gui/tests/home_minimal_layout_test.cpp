@@ -158,12 +158,12 @@ TEST_F(HomeMinimalLayoutTest, CardIsTheNarrow108dpB3WithACircleEmojiAndNoMic) {
   EXPECT_EQ(mic->GetComputedValues().display(), ui::Style::Display::None) << "no microphone on the Home card";
   ui::Element* emoji = document->GetElementById("stub-emoji");
   ASSERT_NE(emoji, nullptr);
+  // A 44dp target; the 32dp tinted circle is drawn on the icon inside it (its centre 32dp from the card's right edge).
   const ui::Vector2f size = emoji->GetBox().GetSize(ui::BoxArea::Border);
-  EXPECT_FLOAT_EQ(size.x, 32.f);
-  EXPECT_FLOAT_EQ(size.y, 32.f);
-  EXPECT_FLOAT_EQ(emoji->GetComputedValues().border_top_left_radius(), 16.f) << "a circle";
+  EXPECT_FLOAT_EQ(size.x, 44.f);
+  EXPECT_FLOAT_EQ(size.y, 44.f);
   const float card_right = card->GetAbsoluteOffset(ui::BoxArea::Border).x + 310.f;
-  EXPECT_FLOAT_EQ(card_right - (emoji->GetAbsoluteOffset(ui::BoxArea::Border).x + size.x), 17.f) << "right end (16dp + border)";
+  EXPECT_FLOAT_EQ(card_right - (emoji->GetAbsoluteOffset(ui::BoxArea::Border).x + size.x), 11.f) << "right end (10dp + border)";
 }
 
 // With the keyboard up (about 260dp on a 568dp screen, 336dp on a 844dp one) the field stays inside what is left,
