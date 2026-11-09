@@ -3,6 +3,7 @@
 #include "lib/media/AudioSession.h"
 
 #include <atomic>
+#include <optional>
 
 #include <jni.h>
 #include <SDL3/SDL.h>
@@ -15,44 +16,86 @@ namespace {
 std::atomic<bool> g_speakerphone{false};
 std::atomic<bool> g_session_active{false};
 
+/**
+ * MainActivity, for one call into it. The activity's local reference and its class's go when it does: the media
+ * threads SDL attached to the VM never detach, so local references made there are never freed otherwise. An
+ * exception the call threw is cleared (a pending one would abort the next JNI call). `env`: the caller's (a native
+ * method's), else SDL's for this thread.
+ */
+class ActivityCall {
+public:
+  explicit ActivityCall(JNIEnv* env = nullptr)
+      : env_(env != nullptr ? env : static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv())) {
+    if (env_ == nullptr) {
+      return;
+    }
+    activity_ = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (activity_ != nullptr) {
+      cls_ = env_->GetObjectClass(activity_);
+    }
+  }
+  ~ActivityCall() {
+    if (cls_ != nullptr) {
+      env_->DeleteLocalRef(cls_);
+    }
+    if (activity_ != nullptr) {
+      env_->DeleteLocalRef(activity_);
+    }
+  }
+  ActivityCall(const ActivityCall&) = delete;
+  ActivityCall& operator=(const ActivityCall&) = delete;
+
+  void Void(const char* method, const bool arg) {
+    if (jmethodID mid = Method(method, "(Z)V"); mid != nullptr) {
+      env_->CallVoidMethod(activity_, mid, arg ? JNI_TRUE : JNI_FALSE);
+      ClearedException();
+    }
+  }
+
+  /** Nothing: Java could not be asked (no activity yet, no such method, it threw). */
+  std::optional<bool> Bool(const char* method) {
+    jmethodID mid = Method(method, "()Z");
+    if (mid == nullptr) {
+      return std::nullopt;
+    }
+    const jboolean out = env_->CallBooleanMethod(activity_, mid);
+    if (ClearedException()) {
+      return std::nullopt;
+    }
+    return out == JNI_TRUE;
+  }
+
+private:
+  jmethodID Method(const char* name, const char* signature) {
+    if (cls_ == nullptr) {
+      return nullptr;
+    }
+    jmethodID mid = env_->GetMethodID(cls_, name, signature);
+    if (mid == nullptr) {
+      env_->ExceptionClear();
+    }
+    return mid;
+  }
+
+  bool ClearedException() {
+    if (!env_->ExceptionCheck()) {
+      return false;
+    }
+    env_->ExceptionClear();
+    return true;
+  }
+
+  JNIEnv* env_ = nullptr;
+  jobject activity_ = nullptr;
+  jclass cls_ = nullptr;
+};
+
 void ApplySpeakerphoneLocked(bool on) {
-  JNIEnv* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
-  jobject activity = static_cast<jobject>(SDL_GetAndroidActivity());
-  if (env == nullptr || activity == nullptr) {
-    return;
-  }
-  jclass cls = env->GetObjectClass(activity);
-  if (cls == nullptr) {
-    return;
-  }
-  jmethodID mid = env->GetMethodID(cls, "setVoipSpeakerphoneOn", "(Z)V");
-  if (mid == nullptr) {
-    env->ExceptionClear();
-    env->DeleteLocalRef(cls);
-    return;
-  }
-  env->CallVoidMethod(activity, mid, on ? JNI_TRUE : JNI_FALSE);
-  env->DeleteLocalRef(cls);
+  ActivityCall().Void("setVoipSpeakerphoneOn", on);
 }
 
 void ApplyVoipModeLocked(bool active) {
-  JNIEnv* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
-  jobject activity = static_cast<jobject>(SDL_GetAndroidActivity());
-  if (env == nullptr || activity == nullptr) {
-    return;
-  }
-  jclass cls = env->GetObjectClass(activity);
-  if (cls == nullptr) {
-    return;
-  }
-  jmethodID mid = env->GetMethodID(cls, "setAudioSessionActive", "(Z)V");
-  if (mid == nullptr) {
-    env->ExceptionClear();
-    env->DeleteLocalRef(cls);
-    return;
-  }
-  env->CallVoidMethod(activity, mid, active ? JNI_TRUE : JNI_FALSE);
-  env->DeleteLocalRef(cls);
+  ActivityCall().Void("setAudioSessionActive", active);
 }
 
 /** Cached: distinct earpiece vs loudspeaker (false on most tablets). */
@@ -63,25 +106,12 @@ bool QueryHasEarpieceRoute() {
   if (cached >= 0) {
     return cached != 0;
   }
-  JNIEnv* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
-  jobject activity = static_cast<jobject>(SDL_GetAndroidActivity());
-  if (env == nullptr || activity == nullptr) {
+  const std::optional<bool> has = ActivityCall().Bool("hasEarpieceRoute");
+  if (!has) {
     return true; // fail open: keep toggle until Activity is ready
   }
-  jclass cls = env->GetObjectClass(activity);
-  if (cls == nullptr) {
-    return true;
-  }
-  jmethodID mid = env->GetMethodID(cls, "hasEarpieceRoute", "()Z");
-  if (mid == nullptr) {
-    env->ExceptionClear();
-    env->DeleteLocalRef(cls);
-    return true;
-  }
-  const bool has = env->CallBooleanMethod(activity, mid) == JNI_TRUE;
-  env->DeleteLocalRef(cls);
-  g_has_earpiece.store(has ? 1 : 0, std::memory_order_release);
-  return has;
+  g_has_earpiece.store(*has ? 1 : 0, std::memory_order_release);
+  return *has;
 }
 
 } // namespace
