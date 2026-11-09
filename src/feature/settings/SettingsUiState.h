@@ -124,7 +124,7 @@ struct SettingsUiState {
   bool security_can_export_link = false;
   /** The account has a recovery phrase to show (M023; accounts minted before have none). */
   bool security_has_recovery_phrase = false;
-  /** PIN grace window (#21): 0 / 5 / 15 / 60 minutes, and its display label. */
+  /** PIN grace window (#21): 0 / 5 / 15 / 60 minutes, or -1 (always), and its display label. */
   int unlock_grace_minutes = 15;
   std::string unlock_grace_label;
   /** The "Ask for PIN again after" row shows: an own PIN (not the app default) on a platform with a secure store. */

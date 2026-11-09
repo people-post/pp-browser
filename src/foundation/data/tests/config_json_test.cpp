@@ -1,3 +1,4 @@
+#include "foundation/crypto/CryptoConstants.h"
 #include "foundation/data/ConfigJson.h"
 #include "common/ValueJson.h"
 #include "foundation/platform/ICredentialStore.h"
@@ -266,7 +267,7 @@ TEST(ConfigJsonTest, ProfilePrefsRecoveryPhraseSeenRoundTripsAndDefaultsOff) {
 }
 
 TEST(ConfigJsonTest, ProfilePrefsUnlockGraceMinutesRoundTripsAndRejectsOddValues) {
-  // PIN grace window (#21): absent reads 15; 0/5/15/60 round-trip; anything else reads back as 15.
+  // PIN grace window (#21): absent reads 15; 0/5/15/60/-1 (always) round-trip; anything else reads back as 15.
   auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
   ASSERT_TRUE(absent.has_value());
   pbr::ProfilePreferences loaded;
@@ -274,7 +275,7 @@ TEST(ConfigJsonTest, ProfilePrefsUnlockGraceMinutesRoundTripsAndRejectsOddValues
   pbr::ProfilePrefsFromObject(*absent, loaded);
   EXPECT_EQ(loaded.unlock_grace_minutes, 15);
 
-  for (int minutes : {0, 5, 15, 60}) {
+  for (int minutes : {0, 5, 15, 60, pbr::kUnlockGraceAlways}) {
     pbr::ProfilePreferences edited;
     edited.unlock_grace_minutes = minutes;
     pbr::ProfilePreferences parsed;
@@ -282,7 +283,7 @@ TEST(ConfigJsonTest, ProfilePrefsUnlockGraceMinutesRoundTripsAndRejectsOddValues
     EXPECT_EQ(parsed.unlock_grace_minutes, minutes);
   }
 
-  for (const char* odd_json : {R"({ "unlock_grace_minutes": 7 })", R"({ "unlock_grace_minutes": -1 })",
+  for (const char* odd_json : {R"({ "unlock_grace_minutes": 7 })", R"({ "unlock_grace_minutes": -2 })", R"({ "unlock_grace_minutes": -60 })",
                                R"({ "unlock_grace_minutes": 100000 })", R"({ "unlock_grace_minutes": "15" })"}) {
     auto odd = pbr::TryParseObject(odd_json);
     ASSERT_TRUE(odd.has_value());

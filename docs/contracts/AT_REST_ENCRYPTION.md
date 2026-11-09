@@ -59,13 +59,14 @@ AAD for wrap: `vault-dek|{profile_id}|1`.
 
 ### PIN grace window (`grace.bin` + a keychain entry)
 
-After a PIN unlock the DEK is kept for the window the user chose (default 15 minutes; 0 = off), so a cold start or a call answered on the phone within it does not ask again ([A013](../../projects/at-rest-crypto/DECISIONS.md#a013--pin-grace-window-a-pin-typed-a-short-while-ago-is-not-asked-again)). Two pieces, written and deleted together (`GraceUnlock`):
+After a PIN unlock the DEK is kept for the window the user chose (default 15 minutes; 0 = off; "Always" = until the phone restarts), so a cold start or a call answered on the phone within it does not ask again ([A013](../../projects/at-rest-crypto/DECISIONS.md#a013--pin-grace-window-a-pin-typed-a-short-while-ago-is-not-asked-again)). Two pieces, written and deleted together (`GraceUnlock`):
 
 | Piece | Where | Holds |
 |-------|-------|-------|
 | `grace.bin` | the profile directory | `EncryptedPayload` (XChaCha20-Poly1305, as § Payload AEAD) of the DEK under `K_grace`; AAD `grace|{profile_id}` |
 | `{profile_id}/unlock_grace` | the OS secure store (iOS Keychain, `WhenUnlockedThisDeviceOnly`; Android 9+ / API 28+ an AES-256-GCM file sealed by an AndroidKeyStore key made with `setUnlockedDeviceRequired`, [DATA_LAYOUT](DATA_LAYOUT.md#pin-grace-window-ios-keychain--android-keystore-outside-the-data-dir)) | version `1` (1 byte), `K_grace` (32), `boot_id` (16), `expires_mono` (i64 LE, seconds) |
 
+- **"Always"** ([A015](../../projects/at-rest-crypto/DECISIONS.md#a015--pin-grace-window-an-always-option-the-phones-own-lock-is-the-lock)): `unlock_grace_minutes` is the sentinel `-1` (`kUnlockGraceAlways`; other negatives read back as 15), and the entry's `expires_mono` is written as `INT64_MAX`. The format and version stay as above; the boot id is still compared, so another boot reads as expired and the PIN is asked once. The protection class is unchanged. The foreground touch/timer skip it.
 - **Never stored:** the PIN, or the DEK in the clear. The keychain alone holds no DEK; `grace.bin` alone (a backup copy) cannot be opened.
 - **Device clocks, not the wall clock:** the window ends at `expires_mono` on the device's monotonic clock of the boot `boot_id` (iOS `kern.bootsessionuuid` + `mach_continuous_time`; Android `Settings.Global.BOOT_COUNT` + `CLOCK_BOOTTIME`). Another boot reads as expired (a restart asks for the PIN again); changing the system time changes nothing.
 - **Read** before the dev PIN and the unlock screen, never with `pin_is_default`. Expired, one piece missing, or not decryptable (another profile's): both pieces are deleted and the PIN is asked. The keychain not readable (the phone locked): nothing is deleted; the read is retried when the phone is unlocked or the app comes to the foreground, and a call answered on the locked phone waits up to 3 minutes for that unlock before the PIN screen.

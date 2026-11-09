@@ -577,7 +577,7 @@ Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
 }
 
 int Application::GraceMinutes() const {
-  // merged from kenneth/pin-grace-settings: Me → Security's choice (0 / 5 / 15 / 60, default 15).
+  // merged from kenneth/pin-grace-settings: Me → Security's choice (0 / 5 / 15 / 60 / -1 = always, default 15).
   return store_.IsInitialized() ? store_.Snapshot().profile_prefs.unlock_grace_minutes : 0;
 }
 
@@ -621,7 +621,7 @@ void Application::TouchGrace() {
   }
   const int minutes = GraceMinutes();
   if (minutes <= 0) {
-    return;
+    return;  // off, or "Always" (kUnlockGraceAlways): that entry never runs out, nothing to extend
   }
   if (auto touched = secrets_->TouchGrace(minutes); !touched) {
     log().warning << "Grace window not extended: " << touched.error().message;
@@ -630,8 +630,8 @@ void Application::TouchGrace() {
 }
 
 void Application::StartGraceTimer() {
-  if (grace_timer_ != 0 || !secrets_ || !secrets_->GraceSupported()) {
-    return;  // the window's length is read at each tick (TouchGrace): 0 extends nothing
+  if (grace_timer_ != 0 || !secrets_ || !secrets_->GraceSupported() || GraceMinutes() <= 0) {
+    return;  // the window's length is read at each tick (TouchGrace): 0 extends nothing, "Always" needs no ticks
   }
   // A kill without a background event may cost up to one interval of the window, so the interval stays at most half
   // the window chosen (5 → 2 minutes) and at most 5 minutes (15 / 60): no keychain write every minute for nothing.
@@ -1026,7 +1026,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
     if (AppLifecycle::IsForeground()) {
       StopGraceTimer();   // its interval follows the window's length
-      StartGraceTimer();  // kept running, or back after "Immediately"
+      StartGraceTimer();  // kept running, or back after "Immediately"; not started for "Always"
     }
   };
   // Face / fingerprint unlock (at-rest A014): Me → Security's switch. Enabling runs Argon2 (the caller is a worker).
@@ -1601,7 +1601,7 @@ void Application::WireUnlockPinAndFlow() {
     // The timer starts with the gate's dismiss, when the app is on screen.
     auto kept = secrets_->RememberGrace(minutes);
     if (minutes <= 0) {
-      StopGraceTimer();  // 0 forgets: nothing to extend
+      StopGraceTimer();  // 0 forgets, "Always" never runs out: nothing to extend
     }
     return kept;
   };

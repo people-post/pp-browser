@@ -56,7 +56,7 @@ struct ProfilePreferences {
   bool recovery_phrase_seen = false;
   /**
    * PIN grace window (#21): minutes after the last foreground use during which a cold start or call skips the PIN.
-   * One of 0 (every time), 5, 15, 60; anything else reads back as 15. Device-only, never synced.
+   * One of 0 (every time), 5, 15, 60, or -1 (kUnlockGraceAlways: until the phone restarts, A015); anything else reads back as 15. Device-only, never synced.
    */
   int unlock_grace_minutes = 15;
   /** When true, renew network registration near/past expiry after unlock. */

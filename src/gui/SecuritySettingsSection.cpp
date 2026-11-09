@@ -1,5 +1,7 @@
 #include "gui/SecuritySettingsSection.h"
 
+#include "foundation/crypto/CryptoConstants.h"
+
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/ToolPermissions.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -48,6 +50,9 @@ std::string UnlockGraceDisplayLabel(const int minutes) {
   }
   if (minutes == 60) {
     return Tr("settings.security.grace.60");
+  }
+  if (GraceIsAlways(minutes)) {
+    return Tr("settings.security.grace.always");
   }
   return Tr("settings.security.grace.15");
 }

@@ -16,6 +16,21 @@ inline constexpr size_t kPskFingerprintSize = 32;
 
 inline constexpr uint8_t kVaultFileVersion = 1;
 
+/**
+ * PIN grace window "Always" (at-rest A015): the `unlock_grace_minutes` sentinel for a window that never runs out within
+ * a boot (the phone's own lock is the lock). The store entry then carries `expires_mono = INT64_MAX`; its boot id is
+ * still checked, so a restart asks for the PIN once. Positive values are minutes, 0 is off.
+ */
+inline constexpr int kUnlockGraceAlways = -1;
+/** True for the "Always" sentinel. */
+inline constexpr bool GraceIsAlways(const int minutes) {
+  return minutes == kUnlockGraceAlways;
+}
+/** True when a window is wanted at all: positive minutes or "Always" (0 and any other value are off). */
+inline constexpr bool GraceIsOn(const int minutes) {
+  return minutes > 0 || GraceIsAlways(minutes);
+}
+
 inline constexpr const char* kHkdfSalt = "pp-browser-msg-v1";
 inline constexpr const char* kAutoKeyHkdfInfoPrefix = "auto-key-v1|channel:";
 
