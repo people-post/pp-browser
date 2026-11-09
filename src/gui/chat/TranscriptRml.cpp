@@ -342,8 +342,19 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
           ? DecideVoiceBubble(fields->mime, fields->filename, fields->byte_length, facts.voice_max_seconds)
           : VoiceBubbleView{};
   if (voice.bubble) {
+    VoiceBubbleFace face;
+    face.ours = message.sender_contact_id == kLocalSelfContactId;
+    const std::string name = facts.sender_label ? facts.sender_label(message.sender_contact_id) : std::string();
+    const AvatarGlyph glyph = MakeAvatarGlyph(
+        name, facts.sender_stable_id ? facts.sender_stable_id(message.sender_contact_id) : std::string());
+    face.letter = glyph.letter;
+    face.tone = glyph.tone;
+    if (facts.sender_icon) {
+      face.icon_path = facts.sender_icon(message.sender_contact_id);
+    }
+    face.clock = MessageClockLabel(message.timestamp);
     return VoiceBubbleRml(message.id, JsArgInAttribute(message.id), voice.duration_ms,
-                          facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
+                          facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{}, face);
   }
   if (ready && facts.audio_files_play && IsAudioFileAttachment(fields->mime, fields->filename) &&
       (!local_path.empty() || view.on_demand)) {

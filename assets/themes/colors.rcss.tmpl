@@ -2699,6 +2699,66 @@ input.checkbox:checked {
   image-color: {{bubble-out}};
 }
 
+/* The voice message bubble (components.rcss): received = the accent on the received bubble, own = white on the own one. */
+.chat-voice-card {
+  background-color: {{bubble-in}};
+  color: {{label}};
+}
+
+.chat-voice-bar {
+  background-color: {{x-voice-bar}};
+}
+
+.chat-voice-bars--played .chat-voice-bar {
+  background-color: {{accent}};
+}
+
+.chat-voice-knob {
+  background-color: {{accent}};
+}
+
+.chat-voice-card .chat-voice-play svg {
+  image-color: {{accent}};
+}
+
+.chat-voice-badge {
+  background-color: {{accent}};
+  border: 1.5dp {{bubble-in}};
+}
+
+.chat-voice-badge-mic {
+  image-color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-play {
+  background-color: transparent;
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-play svg {
+  image-color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-bar {
+  background-color: {{x-voice-bar-out}};
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-bars--played .chat-voice-bar {
+  background-color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-knob {
+  background-color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-badge {
+  background-color: {{label-on-accent}};
+  border: 1.5dp {{bubble-out}};
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-badge-mic {
+  image-color: {{bubble-out}};
+}
+
 .shell-chat-overlay .message-row-user .chat-voice-fill {
   background-color: {{label-on-accent}};
 }

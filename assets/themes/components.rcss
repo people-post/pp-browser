@@ -8705,13 +8705,144 @@ input.checkbox {
   overflow: hidden;
 }
 
-/* A voice message: play / pause, a progress line, the length. */
+/* A voice message, WhatsApp-like (Kenneth 2026-11-09, #201: the old bar ran the width of the row): one row of
+   avatar 44dp (mic badge 16dp at its bottom right) + play 28dp + waveform 147dp x 28dp, under it the length at the
+   waveform's left and the clock at the right. The card is an inline-block of fixed width (263dp = 14 + 44 + 8 + 28 +
+   8 + 147 + 14), so it is only as wide as its content and never fills the row. Colours: colors-*.rcss. */
 .chat-voice-card {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 263dp;
+  margin: 4dp 0;
+  padding: 10dp 14dp 6dp 14dp;
+  border-radius: 18dp;
+  text-align: left;
+}
+
+.chat-voice-main {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 44dp;
+}
+
+.chat-voice-avatar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 10dp;
-  min-width: 200dp;
-  max-width: 280dp;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
+  overflow: hidden;
+}
+
+.chat-voice-avatar-photo {
+  width: 44dp;
+  height: 44dp;
+}
+
+.chat-voice-avatar-letter {
+  margin: 0;
+  font-size: 19dp;
+  line-height: 24dp;
+  font-weight: bold;
+  color: #ffffff;
+}
+
+/* The mic badge sits on the avatar's bottom right corner; the ring is the bubble colour (colors-*.rcss). */
+.chat-voice-badge {
+  position: absolute;
+  left: 30dp;
+  top: 28dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16dp;
+  height: 16dp;
+  border-radius: 8dp;
+}
+
+.chat-voice-badge-mic {
+  width: 10dp;
+  height: 10dp;
+}
+
+.chat-voice-card .chat-voice-play {
+  width: 28dp;
+  height: 28dp;
+  margin-left: 8dp;
+  border-radius: 14dp;
+  background-color: transparent;
+}
+
+.chat-voice-card .chat-voice-play svg {
+  width: 22dp;
+  height: 22dp;
+}
+
+.chat-voice-wave {
+  position: relative;
+  flex-shrink: 0;
+  width: 147dp;
+  height: 28dp;
+  margin-left: 8dp;
+}
+
+.chat-voice-bars {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 147dp;
+  height: 28dp;
+}
+
+.chat-voice-bar {
+  flex-shrink: 0;
+  width: 2dp;
+  margin-right: 1.5dp;
+  border-radius: 1dp;
+}
+
+/* The played part: a clip as wide as the progress holding the same bars, so the bars left of the knob change colour. */
+.chat-voice-played {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 28dp;
+  overflow: hidden;
+}
+
+.chat-voice-knob {
+  position: absolute;
+  top: 9dp;
+  width: 10dp;
+  height: 10dp;
+  margin-left: -5dp;
+  border-radius: 5dp;
+  pointer-events: none;
+}
+
+.chat-voice-foot {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2dp;
+  padding-left: 88dp;
+}
+
+.chat-voice-card .chat-voice-time {
+  font-size: 13dp;
+  line-height: 16dp;
+}
+
+.chat-voice-clock {
+  flex-shrink: 0;
+  font-size: 12dp;
+  line-height: 16dp;
+  opacity: 0.8;
 }
 
 .chat-voice-play {
