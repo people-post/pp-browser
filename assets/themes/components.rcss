@@ -4013,8 +4013,8 @@ select selectbox option {
 }
 
 .shell-chat-overlay .chat-header-title {
-  font-size: 17dp;
-  line-height: 22dp;
+  font-size: 18dp;
+  line-height: 23dp;
   font-weight: bold;
   white-space: nowrap;
   overflow: hidden;
@@ -4054,6 +4054,12 @@ select selectbox option {
   height: 44dp;
   min-width: 44dp;
   border-radius: 0;
+}
+
+.shell-chat-overlay .chat-header-call-btn svg,
+.shell-chat-overlay .chat-header-more-btn svg {
+  width: 26dp;
+  height: 26dp;
 }
 
 .shell-chat-overlay .chat-header-call-btn--join {
@@ -7607,7 +7613,7 @@ input.checkbox {
 
 /* Reactions hung on a bubble or card (WhatsApp style): small pills over its bottom edge, inset from its start side.
    Absolute, so the row's height stays the bubble's (avatar, tail and bubble bottom line up); the row keeps the room
-   below (message-row-has-reactions). Each chip is a 32dp hit box; the 24dp pill is drawn inside it. Tint: colors-*. */
+   below (message-row-has-reactions). Each chip is a 40dp hit box; the 30dp pill is drawn inside it. Tint: colors-*. */
 .chat-reaction-host {
   position: relative;
 }
@@ -7615,7 +7621,7 @@ input.checkbox {
 .chat-reaction-row--overlay {
   position: absolute;
   left: 10dp;
-  bottom: -16dp;
+  bottom: -20dp;
   z-index: 1;
   margin: 0;
   white-space: nowrap;
@@ -7623,35 +7629,35 @@ input.checkbox {
 }
 
 .chat-reaction-row--overlay .chat-reaction-chip {
-  height: 32dp;
-  min-height: 32dp;
+  height: 40dp;
+  min-height: 40dp;
   margin: 0 2dp 0 0;
-  padding: 4dp 0;
+  padding: 5dp 0;
   border-radius: 0;
   box-sizing: border-box;
   background-color: transparent;
-  font-size: 14dp;
-  line-height: 18dp;
+  font-size: 18dp;
+  line-height: 22dp;
 }
 
 .chat-reaction-row--overlay .chat-reaction-pill {
   display: inline-block;
-  height: 24dp;
-  padding: 1dp 7dp;
+  height: 30dp;
+  padding: 2dp 9dp;
   border-width: 2dp;
-  border-radius: 12dp;
+  border-radius: 15dp;
   box-sizing: border-box;
-  font-size: 14dp;
-  line-height: 18dp;
+  font-size: 18dp;
+  line-height: 22dp;
 }
 
 .chat-reaction-count {
   margin-left: 3dp;
-  font-size: 12dp;
+  font-size: 14dp;
 }
 
 .message-row-has-reactions {
-  padding-bottom: 14dp;
+  padding-bottom: 18dp;
 }
 
 .chat-system-line {
@@ -7665,6 +7671,18 @@ input.checkbox {
   padding: 7dp 12dp;
   border-radius: 12dp;
   font-size: 13dp;
+}
+
+.shell-chat-overlay .chat-call-row {
+  padding: 9dp 14dp;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-chat-overlay .chat-call-row-icon {
+  width: 20dp;
+  height: 20dp;
+  margin-right: 8dp;
 }
 
 /* A call record in a 1:1 chat: tap = call back. Group records do not get this class. */
@@ -11521,8 +11539,8 @@ input.checkbox {
 /* Group chats: the sender's name sits at the top of the bubble (first bubble of a run). A tap opens their page: the
    name's hit box is 44dp tall and spans the bubble (padding out into the bubble's own, cancelled by margins). */
 .shell-chat-overlay .bubble .chat-group-name {
-  margin: -14dp -12dp -11dp -12dp;
-  padding: 14dp 12dp 13dp 12dp;
+  margin: -16dp -14dp -13dp -14dp;
+  padding: 16dp 14dp 15dp 14dp;
   max-width: none;
 }
 
@@ -11575,8 +11593,39 @@ input.checkbox {
 
 
 .shell-chat-overlay .bubble {
-  padding: 8dp 12dp;
+  padding: 10dp 14dp;
   border-radius: 18dp;
+}
+
+/* Message text 17 / 22dp (Kenneth 2026-11-09: everything in the chat was too small). */
+.shell-chat-overlay .bubble-text,
+.shell-chat-overlay .bubble-text-peer {
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+/* Emoji-only messages (EmojiOnlyScale): no bubble, the emoji large, like iMessage. 1-3 emoji 44dp, 4-6 about 34dp. */
+.shell-chat-overlay .bubble.bubble-emoji {
+  padding: 0 2dp;
+  border-width: 0;
+  background-color: transparent;
+}
+
+.shell-chat-overlay .bubble-emoji .bubble-text,
+.shell-chat-overlay .bubble-emoji .bubble-text-peer {
+  font-size: 34dp;
+  line-height: 42dp;
+}
+
+.shell-chat-overlay .bubble-emoji--xl .bubble-text,
+.shell-chat-overlay .bubble-emoji--xl .bubble-text-peer {
+  font-size: 44dp;
+  line-height: 54dp;
+}
+
+.shell-chat-overlay .bubble-emoji .bubble-time,
+.shell-chat-overlay .bubble-emoji .bubble-tail {
+  display: none;
 }
 
 .shell-chat-overlay .bubble-user,
@@ -11591,8 +11640,8 @@ input.checkbox {
 .shell-chat-overlay .bubble-time {
   display: block;
   margin-top: 2dp;
-  font-size: 11dp;
-  line-height: 13dp;
+  font-size: 12dp;
+  line-height: 14dp;
   text-align: right;
 }
 
@@ -11642,7 +11691,7 @@ input.checkbox {
 }
 
 .shell-chat-overlay .chat-attachment-card.chat-reaction-host .muted:last-child {
-  margin-bottom: 20dp;
+  margin-bottom: 24dp;
 }
 
 .shell-chat-overlay .chat-attachment-video-frame {
@@ -11665,7 +11714,7 @@ input.checkbox {
 }
 
 .shell-chat-overlay .chat-audio-card.chat-reaction-host {
-  padding-bottom: 20dp;
+  padding-bottom: 24dp;
 }
 
 .shell-chat-overlay .chat-attachment-card .chat-suggestion {
@@ -11749,14 +11798,16 @@ input.checkbox {
    ask-AI panel's input row is the same row (Kenneth 2026-11-04: "风格不统一…能不能统一一下"). */
 .shell-chat-overlay .prompt-composer-pill,
 .ask-ai .prompt-composer-pill {
-  min-height: 36dp;
+  min-height: 40dp;
   padding: 0 4dp 0 12dp;
-  border-radius: 18dp;
+  border-radius: 21dp;
 }
 
 .shell-chat-overlay .prompt-composer-input,
 .ask-ai .prompt-composer-input {
-  padding: 7dp 0;
+  padding: 9dp 0;
+  font-size: 17dp;
+  line-height: 22dp;
 }
 
 .shell-chat-overlay .prompt-composer-label,
@@ -11765,14 +11816,14 @@ input.checkbox {
   position: absolute;
   top: 2dp;
   left: 12dp;
-  height: 34dp;
+  height: 38dp;
   margin: 0;
   font-size: 17dp;
-  line-height: 34dp;
+  line-height: 38dp;
   pointer-events: none;
 }
 
-/* Every button is a 44dp target round its 20dp icon; -4dp above and below keeps the one-line row at the pill's 36dp
+/* Every button is a 44dp target round its 26dp icon; -2dp above and below keeps the one-line row at the pill's 40dp
    (the buttons stay on the last line while the text grows). */
 .shell-chat-overlay .prompt-composer-row .prompt-voice-toggle-btn,
 .shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
@@ -11785,7 +11836,7 @@ input.checkbox {
   width: 44dp;
   height: 44dp;
   min-width: 44dp;
-  margin: -4dp 0;
+  margin: -2dp 0;
   border-radius: 22dp;
 }
 
@@ -11795,9 +11846,9 @@ input.checkbox {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32dp;
-  height: 32dp;
-  border-radius: 16dp;
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
 }
 
 /* WhatsApp's row on phones: emoji, the pill, then the microphone where Send shows once there is text. */
@@ -11818,8 +11869,8 @@ input.checkbox {
 .ask-ai .prompt-icon-v2 {
   display: block;
   flex-shrink: 0;
-  width: 20dp;
-  height: 20dp;
+  width: 26dp;
+  height: 26dp;
 }
 
 /* Phones: the bold plus in the clip's place (ChatController::OnAttachFile opens the chat's or the AI's floating card). */
@@ -11834,15 +11885,15 @@ input.checkbox {
 .shell-chat-overlay .prompt-attach-btn .prompt-icon-plus {
   display: block;
   flex-shrink: 0;
-  width: 24dp;
-  height: 24dp;
+  width: 26dp;
+  height: 26dp;
 }
 
 /* One composer on phones (Kenneth 2026-11-07), in a chat, an AI conversation and the ask-AI panel: every key sits
    inside the pill, the bold plus and the emoji key at its bottom left, the microphone (Send once there is text) at its
    bottom right; no camera (the plus card has it). The row is the keys' positioning box and the pill fills it, so the
    keys stay on the last line while the text grows; the pill's side padding keeps the text clear of them. Each key is a
-   40 x 44dp target, 3dp past the 38dp one-line pill above and below. */
+   40 x 44dp target, 1dp past the 42dp one-line pill above and below. */
 .shell-chat-overlay .prompt-composer-row,
 .ask-ai .prompt-composer-row {
   position: relative;
@@ -11862,7 +11913,7 @@ input.checkbox {
 .ask-ai .prompt-composer-pill .prompt-attach-btn {
   position: absolute;
   left: 0;
-  bottom: -3dp;
+  bottom: -1dp;
   width: 40dp;
   min-width: 40dp;
   height: 44dp;
@@ -11874,7 +11925,7 @@ input.checkbox {
 .ask-ai .prompt-composer-row .prompt-emoji-btn {
   position: absolute;
   left: 41dp;
-  bottom: -3dp;
+  bottom: -1dp;
   z-index: 1;
   width: 40dp;
   min-width: 40dp;
@@ -11893,7 +11944,7 @@ input.checkbox {
 .ask-ai .prompt-composer-row .prompt-send-btn {
   position: absolute;
   right: 0;
-  bottom: -3dp;
+  bottom: -1dp;
   z-index: 1;
   width: 44dp;
   min-width: 44dp;
@@ -11909,8 +11960,8 @@ input.checkbox {
 .ask-ai .prompt-attach-btn .prompt-icon-plus {
   display: block;
   flex-shrink: 0;
-  width: 24dp;
-  height: 24dp;
+  width: 26dp;
+  height: 26dp;
 }
 
 /* The ask-AI panel's settings "?" (text only): no plus, the emoji key leads. */

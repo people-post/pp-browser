@@ -1,4 +1,5 @@
 #include "gui/chat/TranscriptRml.h"
+#include "gui/chat/EmojiOnlyScale.h"
 
 #include "gui/chat/ChatActionLabel.h"
 #include "gui/chat/DeliveryNoticeText.h"
@@ -600,7 +601,15 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   if (!clock.empty()) {
     text_rml += "<div class=\"bubble-time\">" + clock + "</div>";
   }
-  std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + text_rml + "</div>";
+  // Only emoji (no quote, 1-6 of them): drawn large without a bubble (EmojiOnlyScale).
+  std::string emoji_class;
+  if (!SplitQuoteReply(message.text)) {
+    const EmojiScale scale = EmojiOnlyScale(message.text);
+    if (scale != EmojiScale::None) {
+      emoji_class = scale == EmojiScale::ExtraLarge ? " bubble-emoji bubble-emoji--xl" : " bubble-emoji";
+    }
+  }
+  std::string body = badges + "<div class=\"bubble " + bubble_class + emoji_class + "\" selectable=\"text\">" + text_rml + "</div>";
   body = HydrateChatActions(body, message.chat_actions);
   // __ENTRY__ is only ever introduced by HydrateChatActions' own template above; never treat a
   // literal "__ENTRY__" typed into message.text (peer-controlled) as a placeholder to fill in.

@@ -539,7 +539,7 @@ TEST_F(ComposerPhoneRowTest, VoiceModeShowsTheBarAndTheKeyboardKeyAtTheEnd) {
 
 // Kenneth 2026-11-07: one composer on phones, every key inside the pill: the bold plus and the emoji key at its bottom
 // left, the microphone (Send once there is text) at its bottom right; no camera (the plus card has it). The keys are
-// 44dp tall targets on the pill's 36dp line, and the text starts after them.
+// 44dp tall targets on the pill's 40dp line, and the text starts after them.
 TEST_F(ComposerPhoneRowTest, EveryKeySitsInsideThePillOnItsLastLine) {
   state.show_voice = true;
   state.show_attach_button = true;
@@ -581,7 +581,7 @@ TEST_F(ComposerPhoneRowTest, EveryKeySitsInsideThePillOnItsLastLine) {
   const auto [send_min, send_max] = box("prompt-send-btn");
   EXPECT_FLOAT_EQ(send_max.x, pill_max.x) << "Send takes the microphone's place";
   EXPECT_FLOAT_EQ(send_max.y - send_min.y, 44.f);
-  EXPECT_FLOAT_EQ(SizeOf("prompt-send-disc").x, 32.f) << "the accent disc inside the target";
+  EXPECT_FLOAT_EQ(SizeOf("prompt-send-disc").x, 36.f) << "the accent disc inside the target";
   EXPECT_FLOAT_EQ(SizeOf("prompt-composer-row").y, line) << "Send does not grow the row";
 }
 
