@@ -79,6 +79,7 @@
             data-attrif-disabled="composer_input_disabled" title="{{i18n:chat.insert_emoji}}">
       <svg class="prompt-icon-classic" src="../icons/emoji.svg" width="18" height="18" crop-to-content="true"></svg>
         <svg class="prompt-icon-v2" src="../icons/v2/emoji.svg" width="20" height="20"></svg>
+        <svg class="prompt-icon-home-emoji" src="../icons/v2/emoji-round.svg" width="24" height="24"></svg>
     </button>
     <!-- The input is one pill: the text grows from one line to five (then scrolls). Desktop: the paperclip and the
          camera sit inside its right end. Phones (Kenneth 2026-11-07): the bold plus and the emoji key sit inside its

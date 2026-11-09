@@ -13337,7 +13337,7 @@ textarea:composing ~ .prompt-composer-label,
 /* Phones show the ask-AI field above the chips on the minimal Home (Kenneth 2026-11-05). */
 .shell-layer-compact .home-composer-mount {
   display: block;
-  padding: 0 16dp;
+  padding: 0 40dp;
 }
 
 /* The chips wrap onto a second row when they do not fit, centred (Kenneth 2026-11-07). When the keyboard leaves too
@@ -13350,7 +13350,7 @@ textarea:composing ~ .prompt-composer-label,
   flex: 0 1 auto;
   min-height: 0;
   overflow: hidden;
-  padding: 0 12dp;
+  padding: 0 36dp;
   text-align: center;
 }
 
@@ -13387,7 +13387,7 @@ textarea:composing ~ .prompt-composer-label,
   min-height: 0;
   overflow: hidden;
   height: 100dp;
-  margin: 0 0 16dp 0;
+  margin: 0 0 4dp 0;
   text-align: center;
 }
 
@@ -13439,8 +13439,8 @@ textarea:composing ~ .prompt-composer-label,
    label for a conversation stays with the conversation's own composer). */
 .shell-layer-compact .home-composer-mount .prompt-composer {
   flex: none;
-  margin: 0 0 12dp 0;
-  border-radius: 24dp;
+  margin: 0 0 8dp 0;
+  border-radius: 20dp;
 }
 
 /* The box is the composer, not the pill (Kenneth 2026-11-07): a picture chip (status row) sits inside it, above the
@@ -13450,9 +13450,9 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-pill {
-  min-height: 76dp;
-  padding: 0 16dp 40dp 16dp;
-  border-radius: 24dp;
+  min-height: 106dp; /* + the box's 1dp border each side = the 108dp card */
+  padding: 0 16dp 48dp 16dp;
+  border-radius: 20dp;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-input {
@@ -13482,8 +13482,8 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .home-composer-mount .prompt-icon-home {
   display: block;
   flex-shrink: 0;
-  width: 26dp;
-  height: 26dp;
+  width: 24dp;
+  height: 24dp;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-attach-btn {
@@ -13494,15 +13494,15 @@ textarea:composing ~ .prompt-composer-label,
   display: none;
 }
 
-/* Both tools are 44dp targets inside the box (the row and the pill are the same rectangle): the plus 8dp from the left
-   edge, the emoji key 8dp after it. */
+/* Home card B3 (Kenneth 2026-11-09): the plus (a 44dp target) at the bottom left, the emoji key a 32dp filled circle at
+   the bottom right. Send (36dp, shown once there is text) has the same centre and sits over the circle, so it replaces it. */
 .shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-home-plus {
   display: flex;
   align-items: center;
   justify-content: center;
   position: absolute;
-  left: 8dp;
-  bottom: 4dp;
+  left: 4dp;
+  bottom: 6dp;
   width: 44dp;
   height: 44dp;
   min-width: 44dp;
@@ -13513,28 +13513,40 @@ textarea:composing ~ .prompt-composer-label,
   cursor: pointer;
 }
 
+/* B3 (Kenneth 2026-11-09): the 32dp tinted circle is drawn on the icon; the button around it keeps the 44dp touch
+   target (the circle's centre stays 32dp from the right edge and 28dp from the bottom). */
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {
   position: absolute;
-  left: 60dp;
-  bottom: 4dp;
+  right: 10dp;
+  bottom: 6dp;
   z-index: 1;
   width: 44dp;
   height: 44dp;
   min-width: 44dp;
   margin: 0;
+  padding: 6dp;
+  box-sizing: border-box;
   border-radius: 22dp;
+  background-color: transparent;
 }
 
-.shell-layer-compact .home-composer-mount .prompt-emoji-btn .prompt-icon-v2 {
+.prompt-icon-home-emoji {
+  display: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-emoji-btn .prompt-icon-home-emoji {
   display: block;
-  width: 24dp;
-  height: 24dp;
+  width: 32dp;
+  height: 32dp;
+  padding: 4dp;
+  box-sizing: border-box;
+  border-radius: 16dp;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {
   position: absolute;
-  right: 8dp;
-  bottom: 8dp;
+  right: 14dp;
+  bottom: 10dp;
   z-index: 1;
   width: 36dp;
   height: 36dp;
