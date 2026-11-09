@@ -1307,6 +1307,10 @@ input.checkbox:checked {
   border: 1dp #3c3c434a;
 }
 
+.shell-call-minimized-icon {
+  image-color: #000000;
+}
+
 .shell-call-minimized-title {
   color: #000000;
 }

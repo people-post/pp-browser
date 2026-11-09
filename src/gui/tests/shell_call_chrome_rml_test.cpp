@@ -56,7 +56,7 @@ TEST(ShellCallChromeRmlTest, EachModeHasItsOwnChrome) {
   state.call_in_progress.mode = CallChromeMode::Immersive;
   const std::string immersive = CallInProgressRml(state);
   EXPECT_NE(minimized, immersive);
-  EXPECT_TRUE(Has(minimized, "call_leave()"));
+  EXPECT_FALSE(Has(minimized, "call_leave()")) << "the compact chip is icon only (#189)";
   EXPECT_TRUE(Has(immersive, "call_leave()"));
 }
 
@@ -331,6 +331,19 @@ TEST(ShellCallChromeRmlTest, PhoneVideoFlipButtonIsLitOnTheFrontCamera) {
   const std::string rml = CallInProgressRml(state);
   EXPECT_TRUE(Has(rml, "data-event-click=\"call_flip_camera()\" "
                        "data-class-call-phone-control--on=\"call_in_progress_camera_front\""));
+}
+
+// #189: the minimised chip is a bare icon: no title, timer, quality words or buttons.
+TEST(ShellCallChromeRmlTest, TheMinimisedChipIsIconOnly) {
+  ShellState state;
+  state.call_in_progress.active = true;
+  state.call_in_progress.mode = CallChromeMode::Minimized;
+  const std::string rml = CallInProgressRml(state);
+  EXPECT_TRUE(Has(rml, "shell-call-minimized-icon"));
+  EXPECT_TRUE(Has(rml, "../icons/phone.svg"));
+  EXPECT_FALSE(Has(rml, "call_in_progress_title"));
+  EXPECT_FALSE(Has(rml, "call_in_progress_subtitle"));
+  EXPECT_FALSE(Has(rml, "<button"));
 }
 
 // #166: the minimised chip. Never dragged this call: the default top-right corner class, no inline place — as before.

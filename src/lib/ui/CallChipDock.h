@@ -60,6 +60,8 @@ public:
   static constexpr float kEdgeDp = 12.f;
   static constexpr float kTopDp = 12.f;
   static constexpr float kBottomDp = 72.f;
+  /** #189: the docked chip is a bare circle this size (components.rcss .shell-call-minimized-chip). */
+  static constexpr float kCompactDp = 48.f;
 
   static float MinTop() { return kTopDp; }
   static float MaxTop(const CallChipArea& area, const float chip_height_dp) {

@@ -5306,13 +5306,18 @@ call-video-tile {
   position: absolute;
   pointer-events: auto;
   align-items: center;
-  gap: 8dp;
-  min-width: 160dp;
-  max-width: 240dp;
-  padding: 10dp 12dp;
-  border-radius: 14dp;
+  justify-content: center;
+  width: 48dp;
+  height: 48dp;
+  padding: 0;
+  border-radius: 24dp;
   box-sizing: border-box;
   cursor: pointer;
+}
+
+.shell-call-minimized-icon {
+  width: 24dp;
+  height: 24dp;
 }
 
 .shell-call-minimized-chip--tr {
@@ -5333,22 +5338,6 @@ call-video-tile {
 .shell-call-minimized-chip--bl {
   bottom: 72dp;
   left: 12dp;
-}
-
-.shell-call-minimized-main {
-  flex-grow: 1;
-  min-width: 0;
-}
-
-.shell-call-minimized-title {
-  margin: 0;
-  font-size: 13dp;
-  font-weight: bold;
-}
-
-.shell-call-minimized-subtitle {
-  margin: 2dp 0 0 0;
-  font-size: 11dp;
 }
 
 .shell-call-mute--compact,

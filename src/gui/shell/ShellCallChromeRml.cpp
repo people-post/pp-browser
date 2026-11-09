@@ -809,21 +809,11 @@ std::string CallInProgressRml(const ShellState& state) {
       }
       out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row\" style=\"" << style << "\">";
     }
-    out << "<div class=\"shell-call-minimized-main\">";
-    out << "<p class=\"text-sm shell-call-minimized-title\">{{call_in_progress_title}}</p>";
-    out << "<p class=\"text-xs shell-call-minimized-subtitle\">{{call_in_progress_subtitle}}</p>";
+    // #189: icon only — a 48dp circle with the call mark (no text, no timer, no buttons). A tap restores the call
+    // screen, where the title, timer, mute and hang-up are.
+    out << "<svg class=\"shell-call-minimized-icon\" src=\"../icons/phone.svg\" width=\"24\" height=\"24\" "
+           "crop-to-content=\"true\"></svg>";
     out << "</div>";
-    append_quality_chip(out, "shell-call-quality--compact");
-    out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute shell-call-mute--compact\" type=\"button\" "
-           "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
-    out << "<svg id=\"shell-call-mute-icon\" width=\"16\" height=\"16\" crop-to-content=\"true\" "
-           "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
-    out << "</button>";
-    out << "<button class=\"shell-call-leave shell-call-leave--compact\" type=\"button\" "
-           "data-event-click=\"call_leave()\">";
-    out << "<svg src=\"../icons/phone-hangup.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
-    out << "</button>";
-    out << "</div></div>";
     return out.str();
   }
 
