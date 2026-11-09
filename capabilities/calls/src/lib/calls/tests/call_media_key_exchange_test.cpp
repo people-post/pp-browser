@@ -162,12 +162,13 @@ TEST_F(CallMediaKeyExchangeTest, TheOldFormStillGoesForAnOlderApp) {
             key.key);
 }
 
-// A key of the wrong size is refused, not stored.
+// A key of the wrong size is refused, not stored, and the call stays on the epoch it has a key for (#381).
 TEST_F(CallMediaKeyExchangeTest, AMalformedKeyIsNotTaken) {
   auto taken = exchange_->HandleInbound(NewFormDetail(kCall, 2, Bytes(0x10, 16), ""), "account:caller");
   ASSERT_TRUE(taken);
   EXPECT_FALSE(*taken);
   EXPECT_FALSE(keys_->LoadEpochKey(kCall, 2).value());
+  EXPECT_EQ(sessions_->LoadSession(kCall).value()->media_epoch, 1u);
 }
 
 // Epochs only move forward: a newer key moves the call, the current one again installs again (a member
