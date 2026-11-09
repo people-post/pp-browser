@@ -131,14 +131,15 @@ TEST(HubParticipantTest, LinkIsOfflineWhenTheNetworkIsDownWhateverTheRelaySaid) 
   EXPECT_EQ(f.hub.NetworkOnline(), 0);
 }
 
-TEST(HubParticipantTest, LinkOfflineFirstReportThenUpWithoutResultKeepsRedForTheGrace) {
+TEST(HubParticipantTest, LinkLeavesOfflineForConnectingAtOnceWhenTheNetworkReturns) {
   LinkFixture f;
   f.Network(false);
   EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Offline}));
-  f.Network(true);
-  EXPECT_EQ(f.seen.size(), 1u);
-  f.FireTimer();
-  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Connecting);
+  f.Network(true); // health still Unknown: red would be false now, no 5 s wait
+  EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Offline, LinkFixture::Link::Connecting}));
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
+  EXPECT_EQ(f.seen.size(), 3u);
 }
 
 TEST(HubParticipantTest, TheWayDownRunsInReverseAndClearedParticipantsHearNothing) {

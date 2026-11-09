@@ -1540,7 +1540,10 @@ void ConversationsHub::OnLinkNetwork(const bool linked) {
   link_net_ = linked ? 1 : 0;
   ++link_grace_gen_; // cancels a pending timer either way
   link_grace_over_ = false;
-  if (linked) {
+  if (linked && link_state_ == LinkState::Offline) {
+    // Red says "no network", which is false now: replace it at once, no grace (the line has nothing to keep).
+    link_grace_over_ = true;
+  } else if (linked) {
     ArmLinkGraceLocked();
   }
   ReevaluateLink(std::move(lock));
