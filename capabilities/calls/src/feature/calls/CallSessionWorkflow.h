@@ -402,7 +402,15 @@ private:
   uint64_t followup_epoch_ = 0;
   /** K014: how long a peer's call-media bye waits for its call_leave before standing in for it. */
   std::chrono::milliseconds peer_bye_leave_grace_ = kPeerByeLeaveGrace;
+  /**
+   * K014: byes still waiting for their peer's call_leave, by call and peer → the bye's number. The
+   * peer's leave or rejoin settles one: the grace then never ends the peer's next join.
+   */
+  std::unordered_map<std::string, uint64_t> pending_peer_byes_;
+  uint64_t last_peer_bye_ = 0;
   void EndForPeerBye(const workflow_event::PeerByeGraceOver& over);
+  /** The peer's join that a pending bye was about is over (it left, or joined again). */
+  void SettlePeerBye(const std::string& call_id, const std::string& peer);
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;
   bool pending_accept_voice_only_ = false;

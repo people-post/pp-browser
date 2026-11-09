@@ -1256,6 +1256,50 @@ TEST_F(CallGroupStackComposeTest, AMemberWhoLeftRejoins) {
   }
 }
 
+// K014: a member's bye waits a grace for its leave, then stands in for it. A member who said bye,
+// left and joined again within that grace is in the call on its new join: the old bye ends nothing.
+TEST_F(CallGroupStackComposeTest, AByeBeforeALeaveAndRejoinDoesNotEndTheNewJoin) {
+  group_id_ = "group-1";
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  const std::string member = sides_[kC].local_identity;
+  constexpr auto kGrace = std::chrono::milliseconds(3000);
+  auto& workflow = sides_[kA].stack->Device()->Workflow();
+  workflow.SetPeerByeLeaveGraceForTest(kGrace);
+  const auto bye_at = std::chrono::steady_clock::now();
+  workflow.NotePeerEndedCall(call_id, member); // C's bye reached A ahead of its leave
+
+  sides_[kC].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kC].ui->Phase() == CallPhase::Idle && !relays_[kC]->IsAttached();
+  });
+  auto joined = StartCallNow(*sides_[kC].ui, "thread-group-call", false, {});
+  ASSERT_TRUE(joined) << joined.error().message;
+  const auto c_on_a = [&]() {
+    auto rows = sides_[kA].ui->ListJoinedParticipants(call_id);
+    return rows && std::any_of(rows->begin(), rows->end(),
+                               [&](const CallParticipant& row) { return row.identity == member; });
+  };
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return GroupLive(call_id) && c_on_a();
+      },
+      8000);
+  ASSERT_TRUE(c_on_a()) << "C did not come back:" << Describe(call_id);
+  ASSERT_LT(std::chrono::steady_clock::now() - bye_at, kGrace) << "the rejoin must land within the bye's grace";
+
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return std::chrono::steady_clock::now() - bye_at > kGrace + std::chrono::milliseconds(500);
+      },
+      6000);
+  EXPECT_TRUE(c_on_a()) << "the old bye ended C's new join";
+  EXPECT_TRUE(GroupLive(call_id)) << Describe(call_id);
+}
+
 // B103: a group chat gets the call's record when this device leaves — not only when the call ends.
 TEST_F(CallGroupStackComposeTest, LeavingAGroupCallWritesTheRecordAtOnceAndRejoiningRewritesIt) {
   group_id_ = "group-1";

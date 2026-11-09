@@ -19,6 +19,14 @@
 #include <variant>
 
 namespace pbr {
+namespace {
+
+/** A pending peer bye's key (K014): the call and the peer who said it. */
+std::string PeerByeKey(const std::string& call_id, const std::string& peer) {
+  return call_id + '\n' + peer;
+}
+
+} // namespace
 
 CallSessionWorkflow::CallSessionWorkflow(const IThreadCatalog& threads, ICallSessionStore& sessions,
                                          const CallReads& reads, CallHopService& hops,
@@ -39,6 +47,7 @@ CallSessionWorkflow::~CallSessionWorkflow() = default;
 
 void CallSessionWorkflow::DropFollowUps() {
   ++followup_epoch_;
+  pending_peer_byes_.clear();
 }
 
 void CallSessionWorkflow::SetHostPorts(HostPorts ports) {
@@ -1605,6 +1614,7 @@ void CallSessionWorkflow::NoteAccepterReach(const CallAcceptDetail& accept, cons
 Roe<std::optional<CallSession>> CallSessionWorkflow::CommitRemoteJoin(const CallAcceptDetail& accept,
                                                                       const std::string& identity,
                                                                       const bool implicit) {
+  SettlePeerBye(accept.call_id, identity); // a join of its own: an earlier bye does not end it
   CallParticipant participant;
   participant.call_id = accept.call_id;
   participant.identity = identity;
@@ -1717,6 +1727,7 @@ Roe<void> CallSessionWorkflow::HandleInboundLeave(const std::string& detail_json
 
 Roe<void> CallSessionWorkflow::ParticipantGone(const std::string& call_id, const std::string& identity,
                                                const std::string& local_identity) {
+  SettlePeerBye(call_id, identity);
   CallParticipant participant;
   participant.call_id = call_id;
   participant.identity = identity;
@@ -1784,10 +1795,21 @@ void CallSessionWorkflow::NotePeerEndedCall(const std::string& call_id, const st
     return;
   }
   log().info << "the peer ended the call on its device; waiting for its leave call_id=" << call_id << " peer=" << who;
-  (void)outbox_.After(peer_bye_leave_grace_, workflow_event::PeerByeGraceOver{call_id, who, followup_epoch_});
+  const uint64_t bye = ++last_peer_bye_;
+  pending_peer_byes_[PeerByeKey(call_id, who)] = bye;
+  (void)outbox_.After(peer_bye_leave_grace_, workflow_event::PeerByeGraceOver{call_id, who, followup_epoch_, bye});
+}
+
+void CallSessionWorkflow::SettlePeerBye(const std::string& call_id, const std::string& peer) {
+  pending_peer_byes_.erase(PeerByeKey(call_id, peer));
 }
 
 void CallSessionWorkflow::EndForPeerBye(const workflow_event::PeerByeGraceOver& over) {
+  const auto pending = pending_peer_byes_.find(PeerByeKey(over.call_id, over.peer));
+  if (pending == pending_peer_byes_.end() || pending->second != over.bye) {
+    return; // the peer left (or left and joined again) since its bye: that join is not this bye's
+  }
+  pending_peer_byes_.erase(pending);
   auto session = sessions_.LoadSession(over.call_id);
   auto peer = sessions_.FindParticipant(over.call_id, over.peer);
   auto local = host_.wire.local_relay_identity ? host_.wire.local_relay_identity() : Roe<std::string>(std::string());

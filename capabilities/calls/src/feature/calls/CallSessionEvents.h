@@ -55,6 +55,8 @@ struct PeerByeGraceOver {
   std::string call_id;
   std::string peer;
   uint64_t epoch = 0;
+  /** Names the bye: a leave or a rejoin of `peer` since then settles it, and this grace does nothing. */
+  uint64_t bye = 0;
 };
 
 } // namespace workflow_event
