@@ -11,6 +11,17 @@ namespace pbr {
 
 namespace {
 
+/** A bar's material: a child element carrying the bar colour and, when this bar is a frosted surface, the backdrop
+ *  blur. The engine draws no backdrop blur on a bar that has a z-index and children itself, so the blur goes on this
+ *  child (like .pane-nav-bg and .nav-bar-bg). Put it first in the bar; its content is positioned above it. */
+std::string BarMaterial(bool frosted, bool frost_enabled, bool solid) {
+  std::string out = "<div class=\"bar-material";
+  if (frosted && frost_enabled && !solid) {
+    out += " bar-material--frost";
+  }
+  return out + "\"></div>";
+}
+
 std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeFrostSurface active,
                                bool frost_enabled, bool solid) {
   std::string cls = "surface-chrome";
@@ -104,7 +115,8 @@ std::string ShellLayoutRml::ExpandedBase() const {
 }
 
 std::string ShellLayoutRml::CompactBase() const {
-  const CompactChromeFrostSurface frost = ShellInterruption::ResolveFrostSurface(state_);
+  const CompactChromeFrost frosts = ShellInterruption::ResolveFrost(state_);
+  const CompactChromeFrostSurface frost = frosts.top;
   const bool frost_enabled = ChromeFrostEnabled();
   const bool solid = state_.reduce_transparency;
   std::ostringstream out;
@@ -146,6 +158,7 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">";
     out << "<div class=\"shell-chat-overlay-chrome row "
         << SurfaceChromeClass(CompactChromeFrostSurface::ChatOverlayHeader, frost, frost_enabled, solid) << "\">";
+    out << BarMaterial(frost == CompactChromeFrostSurface::ChatOverlayHeader, frost_enabled, solid);
     out << "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
     out << "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/back.svg\"></svg></span>";
     out << "</button>";
@@ -159,15 +172,13 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "<div class=\"bar-fade\"></div>";
     out << "</div>";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
-    out << "<div class=\"shell-composer-mount surface-chrome";
-    if (frost_enabled && !solid) {
-      // Frosted like the bars (Kenneth 2026-11-07): a translucent bar colour over a blur.
-      out << " surface-chrome--frost";
-    }
-    if (solid) {
-      out << " surface-chrome--solid";
-    }
-    out << "\" id=\"shell-composer-mount\"></div>";
+    // The composer bar: its material is a child of its own (BarMaterial), under the mount whose content is replaced
+    // on every mount; the bar's height is the mount's.
+    out << "<div class=\"shell-composer-bar\">";
+    out << BarMaterial(frosts.bottom == CompactChromeFrostSurface::ChatComposer, frost_enabled, solid);
+    out << "<div class=\"shell-composer-mount surface-chrome" << (solid ? " surface-chrome--solid" : "")
+        << "\" id=\"shell-composer-mount\"></div>";
+    out << "</div>";
     out << "</div>";
   }
 
@@ -223,10 +234,12 @@ std::string ShellLayoutRml::TransientLayer() const {
   std::ostringstream out;
   // On phones the pushed page gets the compact class too, so the phone styles of the page it shows apply.
   const char* compact = state_.layout_mode == LayoutMode::Compact ? " shell-layer-compact" : "";
-  // The contact page and the blocked list have a 48dp bar on phones with only the back arrow, the colour of every phone
+  // New chat and Add contact (TODO #176 / #177) are titled the same way: their title row is the page's, the list scrolls
+  // under the frosted bar. The contact page and the blocked list have a 48dp bar on phones with only the back arrow, the colour of every phone
   // bar, no lines; it hides while the page is scrolled away from its top (ShellNavBarScroll).
   const bool titled =
-      compact[0] != '\0' && (top.spec.key == "contact_detail" || top.spec.key == "blocked_people");
+      compact[0] != '\0' && (top.spec.key == "contact_detail" || top.spec.key == "blocked_people" || top.spec.key == "new_chat" ||
+                         top.spec.key == "add_contact");
   out << "<div class=\"shell-layer shell-layer-transient" << compact << (titled ? " nav-bar-host" : "")
       << "\" id=\"shell-transient-layer\" data-model=\"window\">";
   out << "<div class=\"shell-transient-chrome " << (titled ? "shell-transient-chrome--titled " : "")

@@ -66,8 +66,9 @@ select selectbox option {
 }
 
 /* Floating Chrome — compact shell materials; theme colors in colors-*.rcss.
-   Default: opaque elevated surfaces. At most one bar uses backdrop frost per frame
-   (see ShellInterruption::ResolveFrostSurface). */
+   Default: opaque elevated surfaces. At most one bar per position (top, bottom) uses backdrop frost per frame, so
+   two blurs at most: the chat view's header + composer, a tab page's nav bar + tab bar
+   (see ShellInterruption::ResolveFrost). */
 .surface-chrome {
   backdrop-filter: none;
 }
@@ -91,6 +92,27 @@ select selectbox option {
 .shell-transient-chrome.surface-chrome--solid,
 .shell-sheet-compact-chrome.surface-chrome--solid,
 .shell-composer-mount.surface-chrome--solid {
+  backdrop-filter: none;
+}
+
+/* A bar's material (ShellLayoutRml BarMaterial): the first child of a floating bar that carries the bar colour and,
+   on the frosted surface of its position (top / bottom, ShellInterruption::ResolveFrost), the blur. The engine draws no
+   backdrop blur on a bar that has a z-index and children itself, so the blur lives here. The bar's other children are
+   positioned (relative) so they paint above it. */
+.bar-material {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.bar-material--frost {
+  backdrop-filter: blur(20px);
+}
+
+/* The chat header's and the composer's own surface is clear; the material child carries colour and blur. */
+.shell-chat-overlay-chrome.surface-chrome--frost {
   backdrop-filter: none;
 }
 
@@ -3572,6 +3594,10 @@ select selectbox option {
   padding-left: 12dp;
 }
 
+.shell-chat-overlay-chrome .shell-back-btn {
+  position: relative;
+}
+
 .shell-chat-overlay-chrome .shell-back-btn,
 .shell-layer-compact .shell-transient-chrome .shell-back-btn {
   width: 52dp;
@@ -3772,12 +3798,17 @@ select selectbox option {
 
 /* The composer is a frosted bar over the transcript, like the top bar (Kenneth 2026-11-07): the transcript runs down
    under it; ChatController::SyncComposerOverlay keeps its end spacer, fade and "new messages" pill above the bar. */
-.shell-chat-overlay .shell-composer-mount {
+.shell-chat-overlay .shell-composer-bar {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 2;
+}
+
+/* Above the bar's material child (a static box would paint under it). */
+.shell-chat-overlay .shell-composer-mount {
+  position: relative;
 }
 
 .shell-pane {
@@ -10225,9 +10256,10 @@ input.checkbox {
 }
 
 .shell-layer-compact .nc-page .nc-bar {
-  position: relative;
-  flex: none;
-  top: auto;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 48dp;
 }
 
@@ -13731,6 +13763,29 @@ textarea:composing ~ .prompt-composer-label,
   top: 0;
 }
 
+/* New chat and Add contact scroll under their bar like the other pushed pages (DEV TODO #176 / #177): the list fills the
+   page and starts 56dp down; the shell's transient chrome is the bar (titled: its material child is frosted once
+   content is under it, ShellNavBarScroll sets .nav-bar-scrolled / .nav-bar-hidden), and the title row slides away with
+   it when the list is scrolled up. */
+.shell-layer-compact .nc-page .nc-scroll,
+.shell-layer-compact .ac-page .ac-scroll {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding-top: 56dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .nav-bar-host .nc-bar {
+  transition: transform 0.25s cubic-out;
+}
+
+.shell-layer-transient.nav-bar-host.nav-bar-hidden .nc-bar {
+  transform: translateY(-64dp);
+}
+
 .shell-layer-compact .nc-page .contacts-index {
   top: 56dp;
 }
@@ -13881,9 +13936,10 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 .shell-layer-compact .ac-page .nc-bar {
-  position: relative;
-  flex: none;
-  top: auto;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 56dp;
 }
 

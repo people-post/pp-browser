@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <utility>
 
 namespace pbr {
 namespace {
@@ -42,6 +43,24 @@ TEST(NewChatPageTest, BarSearchTwoActionsAndLettersComeInThatOrder) {
   EXPECT_TRUE(Before(rml, "new_chat_action('add')", "data-for=\"section : nc_sections\""));
   EXPECT_NE(rml.find("data-for=\"contact : section.rows\""), std::string::npos);
   EXPECT_NE(rml.find("new_chat_pick(contact.id)"), std::string::npos);
+}
+
+// #176 / #177: the list scrolls under the pushed page's frosted bar: the scroller is marked for ShellNavBarScroll
+// (which sets nav-bar-scrolled / nav-bar-hidden on the layer) and the stylesheet lays it over the whole page.
+TEST(NewChatPageTest, TheListScrollsUnderTheStickyBar) {
+  for (const auto& [view, scroller] : {std::pair<const char*, const char*>{"views/new_chat.rml", "nc-scroll"},
+                                       {"views/add_contact.rml", "ac-scroll"}}) {
+    const std::string rml = ReadAsset(view);
+    EXPECT_NE(rml.find(std::string("class=\"") + scroller + " nav-bar-scroll\""), std::string::npos) << view;
+  }
+  const std::string css = ReadAsset("themes/components.rcss");
+  const size_t rule = css.find(".shell-layer-compact .nc-page .nc-scroll,\n.shell-layer-compact .ac-page .ac-scroll {");
+  ASSERT_NE(rule, std::string::npos);
+  const std::string body = css.substr(rule, css.find('}', rule) - rule);
+  EXPECT_NE(body.find("position: absolute"), std::string::npos);
+  EXPECT_NE(body.find("padding-top: 56dp"), std::string::npos) << "starts below the 56dp bar";
+  EXPECT_NE(css.find(".shell-layer-transient.nav-bar-host.nav-bar-hidden .nc-bar {"), std::string::npos)
+      << "the title row slides away with the bar";
 }
 
 TEST(NewChatPageTest, NoAiRowNoFrequentBlock) {

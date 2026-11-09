@@ -69,10 +69,12 @@ protected:
         std::to_string(kHeight) + "dp;\">"
         "<div class=\"shell-layer shell-layer-base shell-layer-compact\">"
         "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">"
-        "<div class=\"shell-chat-overlay-chrome row surface-chrome\"><div class=\"bar-fade\"></div></div>"
+        "<div class=\"shell-chat-overlay-chrome row surface-chrome surface-chrome--frost\">"
+        "<div class=\"bar-material bar-material--frost\"></div><div class=\"bar-fade\"></div></div>"
         "<div class=\"shell-pane-body\" id=\"pane-body-chat\">" + i18n.LocalizeText(Asset("views/chat.rml")) + "</div>"
+        "<div class=\"shell-composer-bar\"><div class=\"bar-material bar-material--frost\"></div>"
         "<div class=\"shell-composer-mount surface-chrome\" id=\"shell-composer-mount\">" +
-        i18n.LocalizeText(Asset("views/composer.rml")) + "</div>"
+        i18n.LocalizeText(Asset("views/composer.rml")) + "</div></div>"
         "</div></div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
@@ -162,6 +164,39 @@ TEST_F(ChatBottomChromeTest, TheComposerFloatsOverTheTranscriptEdgeToEdge) {
   EXPECT_FLOAT_EQ(m.right, overlay.right);
   EXPECT_FLOAT_EQ(m.bottom, overlay.bottom);
   EXPECT_FLOAT_EQ(BorderEdges(messages).bottom, overlay.bottom) << "the transcript runs under the composer";
+}
+
+// #188 (TODO): the header and the composer are frosted bars. The blur sits on a material child that fills its bar
+// (the engine draws none on a z-indexed bar with children), and the bar's own surface is clear, so the two blurs
+// (one per bar position) are the only ones in the chat view. The composer bar is as tall as its mount.
+TEST_F(ChatBottomChromeTest, BothBarsCarryTheirOwnFrostedMaterial) {
+  ChatController::KeepClearOfComposer(document->GetElementById("shell-chat-overlay"));
+  context->Update();
+  ui::ElementList materials;
+  document->GetElementsByClassName(materials, "bar-material--frost");
+  ASSERT_EQ(materials.size(), 2U) << "one blur per bar position: the header and the composer";
+  ui::Element* header = ByClass("shell-chat-overlay-chrome");
+  ui::Element* bar = ByClass("shell-composer-bar");
+  ui::Element* mount = document->GetElementById("shell-composer-mount");
+  ASSERT_NE(header, nullptr);
+  ASSERT_NE(bar, nullptr);
+  ASSERT_NE(mount, nullptr);
+  const auto fills = [&](ui::Element* material, ui::Element* owner) {
+    const Edges a = BorderEdges(material);
+    const Edges b = BorderEdges(owner);
+    EXPECT_NEAR(a.left, b.left, 0.5f);
+    EXPECT_NEAR(a.right, b.right, 0.5f);
+    EXPECT_NEAR(a.top, b.top, 0.5f);
+    EXPECT_NEAR(a.bottom, b.bottom, 0.5f);
+    EXPECT_GT(a.bottom - a.top, 40.f);
+  };
+  for (ui::Element* material : materials) {
+    fills(material, material->GetParentNode() == header ? header : bar);
+  }
+  const Edges b = BorderEdges(bar);
+  const Edges m = BorderEdges(mount);
+  EXPECT_NEAR(b.top, m.top, 0.5f) << "the bar is exactly as tall as the composer mount";
+  EXPECT_NEAR(b.bottom, m.bottom, 0.5f);
 }
 
 // #89: scrolled to the latest, the last message stood under the composer (the transcript's bottom padding is left out
