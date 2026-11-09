@@ -1319,9 +1319,15 @@ input.checkbox:checked {
   border: 1dp {{separator}};
 }
 
-/* #189: the handle's phone is the secure blue, so the live call stands out on any page. */
+/* #189: the edge handle is the call green with a white phone (iOS's "call in progress" colour): visible on any page and
+   read as "the live call", never as hang-up (Kenneth 2026-11-09: red would scare a tap). */
+.shell-call-minimized-chip--handle {
+  background-color: {{x-call-accept}};
+  border-color: {{x-call-accept}};
+}
+
 .shell-call-minimized-icon {
-  image-color: {{secure}};
+  image-color: {{label-on-accent}};
 }
 
 .shell-call-minimized-title {
