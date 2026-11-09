@@ -93,5 +93,18 @@ TEST(CallChipDockTest, OutOfRangeSharesAreClamped) {
   EXPECT_FLOAT_EQ(CallChipDock::Place({CallChipDock::kSideLeft, 4000}, kPhone, kChipW, kChipH).top_dp, 652.f);
 }
 
+// #189: the docked chip is a 48dp circle: it rests 12dp from its side and the band is 32dp taller than for a 180x56 chip's.
+TEST(CallChipDockTest, TheCompactCircleDocksOnItsSideAndUsesTheWholeBand) {
+  constexpr float kC = CallChipDock::kCompactDp;
+  EXPECT_FLOAT_EQ(kC, 48.f);
+  EXPECT_FLOAT_EQ(CallChipDock::Place({CallChipDock::kSideRight, 0}, kPhone, kC, kC).left_dp, 390.f - 12.f - kC);
+  EXPECT_FLOAT_EQ(CallChipDock::Place({CallChipDock::kSideLeft, 0}, kPhone, kC, kC).left_dp, 12.f);
+  EXPECT_FLOAT_EQ(CallChipDock::Place({CallChipDock::kSideLeft, 1000}, kPhone, kC, kC).top_dp, 780.f - 72.f - kC);
+  const CallChipRect dropped{300.f, 400.f, kC, kC};
+  const CallChipPlace place = CallChipDock::Release(dropped, kPhone);
+  EXPECT_EQ(place.side, CallChipDock::kSideRight);
+  EXPECT_NEAR(CallChipDock::Place(place, kPhone, kC, kC).top_dp, 400.f, 1.f);
+}
+
 } // namespace
 } // namespace pbr

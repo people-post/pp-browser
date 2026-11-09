@@ -74,11 +74,13 @@ TEST(AiDrawerTest, OpensAndCloses) {
   EXPECT_TRUE(host.HomeRootShown());
 }
 
-TEST(AiDrawerTest, ASecondTapOnAiOpensIt) {
+TEST(AiDrawerTest, ASecondTapOnAiDoesNotOpenIt) {
   ShellHost& host = PhoneHost(NavTab::Sessions);
   host.OnNavTabClicked("home");
   EXPECT_FALSE(host.State().ai_drawer_open) << "the first tap goes to the AI page";
   host.OnNavTabClicked("home");
+  EXPECT_FALSE(host.State().ai_drawer_open) << "a second tap stays on the AI page";
+  host.OpenAiDrawer();
   EXPECT_TRUE(host.State().ai_drawer_open);
 }
 
