@@ -13553,29 +13553,6 @@ textarea:composing ~ .prompt-composer-label,
   }
 }
 
-/* Docked (TODO #204, owner 2026-11-09): with the keyboard or the emoji sheet up (ShellHost sets .home-landing--docked
-   from the same latch that lifts the page above it) the block keeps its order and gaps (mascot, card 22dp below it,
-   chips 16dp below the card) and only moves down so the card's bottom edge is 8dp above the keyboard / sheet. The
-   chips leave the flow (absolute, at their place under the card) so they do not count in the block's height; the
-   keyboard covers them. When the height runs short the mascot shrinks first (flex-shrink, then clips its top). */
-.shell-layer-compact .home-landing--minimal.home-landing--docked {
-  padding-bottom: 0;
-}
-.shell-layer-compact .home-landing--minimal.home-landing--docked .home-landing-inner {
-  justify-content: flex-end;
-  padding-bottom: 8dp;
-}
-.shell-layer-compact .home-landing--minimal.home-landing--docked .home-composer-mount .prompt-composer {
-  margin-bottom: 0;
-}
-.shell-layer-compact .home-landing--minimal.home-landing--docked .home-suggestions {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  margin-top: 8dp;
-}
-
 /* The field on the Home root is two lines tall; its placeholder label is the "what can I do for you" line (the draft
    label for a conversation stays with the conversation's own composer). */
 .shell-layer-compact .home-composer-mount .prompt-composer {

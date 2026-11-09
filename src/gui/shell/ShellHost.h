@@ -403,6 +403,7 @@ private:
   void PlayPageEnter(const char* element_id);
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
+  void SyncHomeDock(ui::ElementDocument* doc);
   bool ChromeFrostEnabled() const;
   /** What is on screen now, for the AI dot (AiDotModel::Shown). */
   AiDotScene AiDotSceneNow() const;
@@ -428,6 +429,8 @@ private:
   ShellConfig config_;
   int safe_area_top_from_prefs_dp_ = 0;
   int safe_area_bottom_from_prefs_dp_ = 0;
+  /** The Home landing's bottom edge (dp) the last time no keyboard / sheet was up; <= 0 until seen. */
+  float home_undocked_landing_bottom_dp_ = 0.f;
   /** Last IME-sized bottom inset from SDL (latched while keyboard visible). */
   int last_ime_bottom_dp_ = 0;
   /** Synthetic bottom inset while bottom chrome (IME replacement) is open. */
