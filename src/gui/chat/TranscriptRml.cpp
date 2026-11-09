@@ -393,9 +393,11 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     // its size is given, so the frame round it is laid out for that size and never for the file's own.
     // The engine does not round an <img>, so a clip box with the same size and rounded corners holds it.
     const PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height);
-    html += "<div class=\"chat-attachment-clip\"";
     if (fit.width_dp > 0) {
-      html += " style=\"width:" + std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp\"";
+      html += "<div class=\"chat-attachment-clip\" style=\"width:" + std::to_string(fit.width_dp) +
+              "dp;height:" + std::to_string(fit.height_dp) + "dp\"";
+    } else {
+      html += "<div class=\"chat-attachment-clip chat-attachment-clip--auto\"";  // unknown size: the stylesheet fills the box
     }
     html += "><img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"";
     if (fit.width_dp > 0) {
