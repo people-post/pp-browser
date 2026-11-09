@@ -49,9 +49,74 @@ def write_caf(samples, out, fmt):
             w.writeframes(b"".join(struct.pack("<h", int(x * 32767)) for x in samples))
         subprocess.check_call(["afconvert", "-f", "caff", "-d", fmt, wav, out])
 
+def env(t, dur, attack, release):
+    if t < 0 or t >= dur:
+        return 0.0
+    return min(1.0, t / attack) * min(1.0, (dur - t) / release)
+
+def render_fn(duration, events, peak):
+    """events: (start_s, length_s, fn(t)->sample); mixed, faded at the tail, normalised to peak."""
+    n = int(RATE * duration)
+    buf = [0.0] * n
+    for start, length, fn in events:
+        base = int(start * RATE)
+        for i in range(int(length * RATE)):
+            if base + i >= n:
+                break
+            buf[base + i] += fn(i / RATE)
+    for i in range(int(RATE * 0.05)):
+        buf[n - 1 - i] *= i / (RATE * 0.05)
+    m = max(abs(x) for x in buf) or 1.0
+    return [x / m * peak for x in buf]
+
+def phone_bell(t):
+    """Bright telephone bell: 1000 + 1250 Hz with 20 Hz tremolo and weaker 2nd/3rd harmonics."""
+    trem = 0.6 + 0.4 * math.sin(2 * math.pi * 20 * t)
+    s = 0.0
+    for f, a in ((1000, 1.0), (1250, 1.0), (2000, 0.25), (2500, 0.25), (3000, 0.12), (3750, 0.12)):
+        s += a * math.sin(2 * math.pi * f * t)
+    return s * trem * env(t, 0.4, 0.005, 0.06)
+
+def call_a():
+    ev = []
+    k = 0
+    while k * 3.0 < DURATION:
+        for b in (0.0, 0.6):
+            ev.append((k * 3.0 + b, 0.4, phone_bell))
+        k += 1
+    return render_fn(DURATION, ev, 0.891)  # -1 dBFS
+
+def marimba(f):
+    def fn(t):
+        s = 0.0
+        for mult, amp, decay in ((1.0, 1.0, 14.0), (4.0, 0.5, 40.0), (9.2, 0.15, 90.0)):
+            s += amp * math.sin(2 * math.pi * f * mult * t) * math.exp(-decay * t)
+        return s * min(1.0, t / 0.002)
+    return fn
+
+def call_b():
+    motif = (1046.5, 1318.5, 1568.0, 2093.0)   # C6 E6 G6 C7, 120 ms apart
+    period = 2 * 4 * 0.12 + 0.12 + 1.6         # two motifs back to back, then a pause
+    ev = []
+    k = 0
+    while k * period < DURATION:
+        for rep in range(2):
+            for j, f in enumerate(motif):
+                ev.append((k * period + (rep * 4 + j) * 0.12, 0.35, marimba(f)))
+        k += 1
+    return render_fn(DURATION, ev, 0.891)
+
 def main():
-    out_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
+    args = sys.argv[1:]
+    which = "default"
+    if args[:1] == ["--candidate"]:
+        which, args = args[1], args[2:]
+    out_dir = args[0] if args else os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "..", "..", "assets", "sounds")
+    if which in ("a", "b"):
+        # --candidate a|b writes call-a.caf / call-b.caf (ring candidates) to out_dir.
+        write_caf(call_a() if which == "a" else call_b(), os.path.join(out_dir, "call-%s.caf" % which), "ima4")
+        return
     call = []
     k = 0
     while k * PERIOD < DURATION:
