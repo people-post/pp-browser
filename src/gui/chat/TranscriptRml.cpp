@@ -368,7 +368,10 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     }
     html += "><img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"";
     if (fit.width_dp > 0) {
-      html += " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.height_dp) + "\"";
+      html += " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.image_height_dp) + "\"";
+      if (fit.image_offset_dp > 0) {
+        html += " style=\"margin-top:-" + std::to_string(fit.image_offset_dp) + "dp\"";  // a tall picture shows its middle
+      }
     }
     html += " data-event-click=\"open_picture('" + JsArgInAttribute(message.id) + "','" + JsArgInAttribute(local_path) +
             "')\"/></div>";
@@ -384,12 +387,15 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     if (!poster_path.empty()) {
       PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height);
       if (fit.width_dp <= 0) {
-        fit = {216, 122};
+        fit = {216, 122, 122, 0};
       }
       html += "<div class=\"chat-attachment-clip chat-attachment-video-frame\" style=\"width:" +
               std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp\" " + open_click + ">";
       html += "<img class=\"chat-attachment-video-poster\" src=\"" + StructuredTextParser::EscapeText(poster_path) +
-              "\" width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.height_dp) + "\"/>";
+              "\" width=\"" + std::to_string(fit.width_dp) + "\" height=\"" +
+              std::to_string(fit.image_height_dp > 0 ? fit.image_height_dp : fit.height_dp) + "\"" +
+              (fit.image_offset_dp > 0 ? " style=\"margin-top:-" + std::to_string(fit.image_offset_dp) + "dp\"" : "") +
+              "/>";
       html += play_disc;
       html += "</div>";
     } else {
@@ -710,16 +716,19 @@ PictureBubbleSize FitPictureInBubble(const int width_px, const int height_px) {
   if (width_px <= 0 || height_px <= 0) {
     return {};
   }
-  const double box_scale = std::min(static_cast<double>(kPictureBubbleMaxWidthDp) / width_px,
-                                    static_cast<double>(kPictureBubbleMaxHeightDp) / height_px);
-  double scale = std::min(1.0, box_scale);
+  const double width_scale = static_cast<double>(kPictureBubbleMaxWidthDp) / width_px;
+  double scale = std::min(1.0, width_scale);
   const int short_side = std::min(width_px, height_px);
   if (short_side * scale < kPictureBubbleMinShortSideDp) {
-    // A small picture grows to a sane short side, but never past the box.
-    scale = std::min(box_scale, static_cast<double>(kPictureBubbleMinShortSideDp) / short_side);
+    // A small picture grows to a sane short side, but never past the box width.
+    scale = std::min(width_scale, static_cast<double>(kPictureBubbleMinShortSideDp) / short_side);
   }
-  return {std::max(1, static_cast<int>(std::lround(width_px * scale))),
-          std::max(1, static_cast<int>(std::lround(height_px * scale)))};
+  PictureBubbleSize out;
+  out.width_dp = std::max(1, static_cast<int>(std::lround(width_px * scale)));
+  out.image_height_dp = std::max(1, static_cast<int>(std::lround(height_px * scale)));
+  out.height_dp = std::min(out.image_height_dp, kPictureBubbleMaxHeightDp);
+  out.image_offset_dp = (out.image_height_dp - out.height_dp) / 2;
+  return out;
 }
 
 std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,

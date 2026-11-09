@@ -8793,8 +8793,8 @@ input.checkbox {
 
 .chat-ai-image {
   display: block;
-  max-width: 280dp;
-  max-height: 320dp;
+  max-width: 292dp;
+  max-height: 360dp;
   margin: 0;
 }
 
@@ -11705,7 +11705,7 @@ input.checkbox {
 }
 
 .shell-chat-overlay .chat-attachment-video-frame {
-  max-width: 280dp;
+  max-width: 292dp;
   margin-bottom: 6dp;
 }
 
@@ -11754,16 +11754,16 @@ input.checkbox {
 .shell-chat-overlay .chat-attachment-card--image .chat-attachment-clip {
   display: inline-block;
   vertical-align: top;
-  max-width: 280dp;
-  max-height: 320dp;
+  max-width: 292dp;
+  max-height: 360dp;
   overflow: hidden;
   border-radius: 9dp;
 }
 
 .shell-chat-overlay .chat-attachment-card--image .chat-attachment-image {
   display: block;
-  max-width: 280dp;
-  max-height: 320dp;
+  max-width: 292dp;
+  max-height: 360dp;
   margin: 0;
   border-radius: 9dp;
 }

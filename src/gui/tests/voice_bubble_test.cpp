@@ -235,22 +235,30 @@ TEST(VoiceBubbleRender, ALargePictureWithAThumbnailIsAnInlineImage) {
   EXPECT_NE(rml.find("/tmp/thumb.poster.jpg"), std::string::npos);
 }
 
-// Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.3): pictures spilled out of their bubble. Every shape fits a
-// 280 x 320dp box with its own ratio, and the picture carries that size so its 3dp frame is laid out round it.
+// Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.3): pictures spilled out of their bubble; 2026-11-09: like WhatsApp,
+// a picture takes the box width (292dp, about three quarters of the phone) and a tall one is cropped to the box
+// height (360dp) showing its middle, instead of shrinking to a sliver.
 TEST(PictureBubbleFit, EveryShapeFitsTheBoxWithItsOwnRatio) {
   const auto fit = [](const int w, const int h) {
     const PictureBubbleSize size = FitPictureInBubble(w, h);
     return std::make_pair(size.width_dp, size.height_dp);
   };
-  EXPECT_EQ(fit(4032, 3024), std::make_pair(280, 210)) << "a landscape photo";
-  EXPECT_EQ(fit(3024, 4032), std::make_pair(240, 320)) << "a portrait photo";
-  EXPECT_EQ(fit(600, 2400), std::make_pair(80, 320)) << "very tall";
-  EXPECT_EQ(fit(2400, 400), std::make_pair(280, 47)) << "very wide";
-  EXPECT_EQ(fit(20000, 10), std::make_pair(280, 1)) << "a sliver keeps 1dp";
-  EXPECT_EQ(fit(300, 200), std::make_pair(280, 187)) << "a mid picture shrinks to the width";
+  EXPECT_EQ(fit(4032, 3024), std::make_pair(292, 219)) << "a landscape photo";
+  EXPECT_EQ(fit(3024, 4032), std::make_pair(292, 360)) << "a portrait photo keeps the width, cropped to the box height";
+  EXPECT_EQ(fit(600, 2400), std::make_pair(292, 360)) << "very tall: full width, the middle shows";
+  EXPECT_EQ(fit(2400, 400), std::make_pair(292, 49)) << "very wide";
+  EXPECT_EQ(fit(20000, 10), std::make_pair(292, 1)) << "a sliver keeps 1dp";
+  EXPECT_EQ(fit(300, 200), std::make_pair(292, 195)) << "a mid picture shrinks to the width";
   EXPECT_EQ(fit(160, 130), std::make_pair(160, 130)) << "a picture with a short side over 120 is not enlarged";
   EXPECT_EQ(fit(120, 90), std::make_pair(160, 120)) << "a small picture grows to a 120dp short side";
   EXPECT_EQ(fit(0, 300), std::make_pair(0, 0)) << "unknown size";
+  // The cropped picture is drawn at its full fitted height, shifted up by half the excess.
+  const PictureBubbleSize tall = FitPictureInBubble(3024, 4032);
+  EXPECT_EQ(tall.image_height_dp, 389);
+  EXPECT_EQ(tall.image_offset_dp, 14);
+  const PictureBubbleSize wide = FitPictureInBubble(4032, 3024);
+  EXPECT_EQ(wide.image_height_dp, 219);
+  EXPECT_EQ(wide.image_offset_dp, 0);
 }
 
 TEST(PictureBubbleFit, ThePictureCarriesItsFittedSize) {
@@ -264,9 +272,9 @@ TEST(PictureBubbleFit, ThePictureCarriesItsFittedSize) {
     return view;
   };
   const std::string rml = Render(Attachment("p3", "tall.jpg", "image/jpeg", 50000), facts);
-  EXPECT_NE(rml.find("width=\"240\" height=\"320\""), std::string::npos) << rml;
+  EXPECT_NE(rml.find("width=\"292\" height=\"389\" style=\"margin-top:-14dp\""), std::string::npos) << rml;
   // The picture sits in a same-sized clip box that rounds its corners (the engine does not round an <img>).
-  EXPECT_NE(rml.find("<div class=\"chat-attachment-clip\" style=\"width:240dp;height:320dp\"><img "),
+  EXPECT_NE(rml.find("<div class=\"chat-attachment-clip\" style=\"width:292dp;height:360dp\"><img "),
             std::string::npos)
       << rml;
   EXPECT_NE(rml.find("')\"/></div>"), std::string::npos) << rml;
@@ -290,9 +298,9 @@ TEST(VideoBubbleRender, APosterFrameWithPlayDiscAndNoOpenButton) {
     return view;
   };
   const std::string rml = Render(Attachment("v1", "v.mp4", "video/mp4", 289000), facts);
-  EXPECT_NE(rml.find("chat-attachment-clip chat-attachment-video-frame\" style=\"width:280dp;height:158dp\""),
+  EXPECT_NE(rml.find("chat-attachment-clip chat-attachment-video-frame\" style=\"width:292dp;height:164dp\""),
             std::string::npos) << rml;
-  EXPECT_NE(rml.find("width=\"280\" height=\"158\""), std::string::npos) << rml;
+  EXPECT_NE(rml.find("width=\"292\" height=\"164\""), std::string::npos) << rml;
   EXPECT_NE(rml.find("chat-attachment-video-play"), std::string::npos);
   EXPECT_NE(rml.find("data-event-click=\"open_attachment('v1')\""), std::string::npos);
   EXPECT_EQ(rml.find("chat-suggestion"), std::string::npos) << "no Open button";

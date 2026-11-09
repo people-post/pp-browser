@@ -73,9 +73,10 @@ inline std::string DecorateAiImageBubble(std::string rml, const std::string& ima
   const std::string size = fit.width_dp > 0 ? " style=\"width: " + std::to_string(fit.width_dp) + "dp; height: " +
                                                   std::to_string(fit.height_dp) + "dp;\""
                                             : std::string();
-  const std::string img_size = fit.width_dp > 0 ? " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" +
-                                                      std::to_string(fit.height_dp) + "\""
-                                                : std::string();
+  const std::string img_size =
+      fit.width_dp > 0 ? " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.image_height_dp) +
+                             "\"" + (fit.image_offset_dp > 0 ? " style=\"margin-top: -" + std::to_string(fit.image_offset_dp) + "dp;\"" : "")
+                       : std::string();
   rml.replace(at, anchor.size(),
               "<div class=\"chat-ai-image-clip\"" + size + "><img class=\"chat-ai-image\" src=\"" + image_src + "\"" +
                   img_size + "/></div>" + head);
