@@ -575,22 +575,11 @@ void ChatMenus::OpenThreadActions(ui::Event& ev) {
   ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, chat_.thread_title.c_str());
 }
 
-bool StartCallWith(const CallActionsPorts& call_actions, const std::string& thread_id, bool call_joinable,
-                   bool want_video) {
-  if (thread_id.empty() || !call_actions.start_call) {
-    return false;
-  }
-  if (call_joinable) {
-    (void)call_actions.start_call(thread_id, false);  // Join: into the call that goes on, no voice / video choice
-    return true;
-  }
-  const bool video_available = !call_actions.video_call_available || call_actions.video_call_available();
-  (void)call_actions.start_call(thread_id, want_video && video_available);
-  return true;
-}
-
 void ChatMenus::CallBack(const std::string& video_arg) {
-  (void)StartCallWith(call_actions_, host_.ActiveThreadId(), chat_.call_joinable, video_arg == "1");
+  // A tapped call record (#164): as the call button, the presenter joins a call that goes on or drops to voice.
+  if (call_actions_.start_call) {
+    (void)call_actions_.start_call(host_.ActiveThreadId(), video_arg == "1");
+  }
 }
 
 void ChatMenus::StartCall(ui::Event& ev) {
@@ -601,7 +590,7 @@ void ChatMenus::StartCall(ui::Event& ev) {
   auto start_call = call_actions_.start_call;
   const bool video_available = !call_actions_.video_call_available || call_actions_.video_call_available();
   if (chat_.call_joinable || !video_available) {
-    (void)StartCallWith(call_actions_, thread_id, chat_.call_joinable, false);
+    (void)start_call(thread_id, false); // nothing to choose: a Join, or voice only
     return;
   }
 

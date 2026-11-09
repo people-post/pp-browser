@@ -1393,8 +1393,8 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
 void Application::WireCalls() {
   {
     CallActionsPorts call_actions;
-    call_actions.start_call = [this](const std::string& thread_id, const bool video_allowed) {
-      return call_->StartCall(thread_id, video_allowed);
+    call_actions.start_call = [this](const std::string& thread_id, const bool want_video) {
+      return call_->CallFromChat(thread_id, want_video);
     };
     call_actions.refresh_pending_ring = [this]() { call_->RefreshPendingRing(); };
     call_actions.video_call_available = [this]() { return call_->VideoCallAvailable(); };

@@ -15,7 +15,11 @@ namespace pbr {
  */
 struct CallActionsPorts {
   // Chat
-  std::function<bool(const std::string& thread_id, bool video_allowed)> start_call;
+  /**
+   * A chat calls — its call button, a tapped call record (#164), a group's Join: CallPresenter::CallFromChat (a call
+   * that goes on is joined, video this device cannot send goes voice). False when nothing was asked.
+   */
+  std::function<bool(const std::string& thread_id, bool want_video)> start_call;
   std::function<void()> refresh_pending_ring;
   /** Platform can encode/send video for a call (gates the "Video call" menu item). */
   std::function<bool()> video_call_available;

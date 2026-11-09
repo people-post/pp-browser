@@ -969,7 +969,7 @@ void CallController::OfferCallBack(const CallScreen::EndingCall& ended) {
       Tr("call.call_back.title", {{"name", name}}), Tr("call.call_back.body", {{"name", name}}),
       [this, thread_id, video](const bool call) {
         if (call) {
-          (void)StartCall(thread_id, video);
+          (void)presenter_.CallFromChat(thread_id, video); // as the chat's call button: joins, or voice without video
         }
       },
       Tr("call.call_back.action"));
@@ -1304,8 +1304,8 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
   FillPhoneCallFields(screen);
 }
 
-bool CallController::StartCall(const std::string& thread_id, const bool video_allowed) {
-  return presenter_.StartCall(thread_id, video_allowed);
+bool CallController::CallFromChat(const std::string& thread_id, const bool want_video) {
+  return presenter_.CallFromChat(thread_id, want_video);
 }
 
 bool CallController::StartCallWithInvitees(const std::string& thread_id, const bool video_allowed,

@@ -514,6 +514,18 @@ bool CallPresenter::GuardNewCall(const std::string& thread_id, const std::functi
   return true;
 }
 
+bool ChatCallAsksVideo(const bool call_joinable, const bool want_video, const bool video_available) {
+  return !call_joinable && want_video && video_available;
+}
+
+bool CallPresenter::CallFromChat(const std::string& thread_id, const bool want_video, StartDone done) {
+  if (thread_id.empty()) {
+    return false;
+  }
+  const bool video = ChatCallAsksVideo(CallJoinableInThread(thread_id), want_video, want_video && VideoCallAvailable());
+  return StartCall(thread_id, video, std::move(done));
+}
+
 bool CallPresenter::StartCall(const std::string& thread_id, const bool video, StartDone done) {
   if (GuardNewCall(thread_id, [this, thread_id, video, done]() { (void)StartCall(thread_id, video, done); }, done)) {
     return true;

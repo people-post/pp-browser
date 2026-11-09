@@ -71,6 +71,12 @@ struct CallJoinBar {
 CallJoinBar MakeCallJoinBar(const std::optional<CallUiBackend::JoinableCallInfo>& call);
 
 /**
+ * A call from a chat (CallPresenter::CallFromChat): whether it asks for video. A call that goes on in the chat is
+ * joined as it is (no voice / video choice); video this device cannot send goes voice; else as asked.
+ */
+bool ChatCallAsksVideo(bool call_joinable, bool want_video, bool video_available);
+
+/**
  * The call surface's decisions and the call buttons, without a GUI: which call shows (ring,
  * answering, in call, nothing), what its status line says, which buttons it offers, and what each
  * button does. CallController renders the screen (words, avatars, video, ringtone); pp-app-probe
@@ -128,7 +134,12 @@ public:
 
   // --- buttons ----------------------------------------------------------------------------------
 
-  /** A chat's call button: a 1:1 call, the group's call to join, or the member picker. */
+  /**
+   * The one way a chat calls (ChatCallAsksVideo, then StartCall): the chat's call button, a tapped call record (#164)
+   * and "Call {name} back?" (V064). False when nothing was asked (no chat).
+   */
+  bool CallFromChat(const std::string& thread_id, bool want_video, StartDone done = {});
+  /** A 1:1 call, the group's call to join, or the member picker — `video` as given (CallFromChat decides it). */
   bool StartCall(const std::string& thread_id, bool video, StartDone done = {});
   /** The member picker's Call (or a 1:1 with its peer). */
   bool StartCallWithInvitees(const std::string& thread_id, bool video, const std::vector<std::string>& invitees,

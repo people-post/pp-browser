@@ -70,7 +70,8 @@ public:
   /** Join ringtone before Backend::Shutdown / SDL_Quit (accept-dialog quit hang). */
   void PrepareForShutdown();
 
-  bool StartCall(const std::string& thread_id, bool video_allowed);
+  /** A chat calls (its call button, a tapped call record, a call-back): CallPresenter::CallFromChat. */
+  bool CallFromChat(const std::string& thread_id, bool want_video);
   /** A group call goes on in this chat that this device may join (V053): the call button joins it. */
   bool CallJoinableInThread(const std::string& thread_id);
   /** The group chat's call bar ("A voice call is on · 3 people"); "" when there is no call to join. */
