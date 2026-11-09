@@ -799,6 +799,38 @@ TEST_F(HomeKeyboardDockTest, TheEmojiSheetFollowsTheSameRule) {
   EXPECT_EQ(down.lift, rest_.lift);
 }
 
+// A 2x display (an iPhone): layout sizes are pixels, the cache and what is applied from it dp. Keyboard up / down / up must
+// leave the landing at its natural height in dp (it once doubled on every round trip) and the root unlifted.
+TEST_F(HomeKeyboardDockTest, AtDensityTwoTheLandingKeepsItsNaturalHeightAcrossKeyboardRoundTrips) {
+  context_->SetDimensions({800, 1600});
+  context_->SetDensityIndependentPixelRatio(2.f);
+  host_.SyncLayout();
+  Settle();
+  ui::Element* landing = ById("home-landing");
+  ASSERT_NE(landing, nullptr);
+  const auto landing_dp = [&]() {
+    context_->Update();
+    return landing->GetBox().GetSize(ui::BoxArea::Border).y / 2.f;
+  };
+  const float natural = landing_dp();
+  const float lift_rest = root_->GetProperty<float>("bottom");
+  std::printf("[ratio 2] natural landing %.1f dp (window 800 dp), root bottom %.1f\n", natural, lift_rest);
+  ASSERT_GT(natural, 100.f);
+  ASSERT_LT(natural, 800.f);
+  for (int round = 0; round < 3; ++round) {
+    KeyboardUp(300);
+    std::printf("[ratio 2] round %d up: landing %.1f dp, root bottom %.1f\n", round, landing_dp(),
+                root_->GetProperty<float>("bottom"));
+    EXPECT_NEAR(landing_dp(), natural, 1.f) << "pinned at the natural height in dp, not doubled";
+    EXPECT_EQ(root_->GetProperty<float>("bottom"), lift_rest) << "Home: not lifted";
+    KeyboardDown();
+    std::printf("[ratio 2] round %d down: landing %.1f dp, root bottom %.1f\n", round, landing_dp(),
+                root_->GetProperty<float>("bottom"));
+    EXPECT_NEAR(landing_dp(), natural, 1.f) << "back to the natural height";
+    EXPECT_EQ(root_->GetProperty<float>("bottom"), lift_rest);
+  }
+}
+
 TEST_F(HomeKeyboardDockTest, AChatPageKeepsTheFullLift) {
   host_.SetPrimaryPane("chat");
   host_.OpenCompactChat();
