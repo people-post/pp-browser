@@ -599,69 +599,79 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     return link;
   }
 
-  void TickDeadlines() {
-    const auto now = NowMs();
+  /** What one io tick found due; acted on bundle by bundle, each under its own lock (TickDeadlines). */
+  struct DueLegs {
     std::vector<std::string> timed_out;
     std::vector<std::string> link_lost;
     std::vector<std::string> reconnect_expired;
     std::vector<std::string> stale_placeholders;
+  };
+
+  /** IO tick: every leg's deadlines and (live calls) paths, on the runtime's clock. */
+  void TickDeadlines() {
+    const int64_t now = NowMs();
+    DueLegs due;
     {
       CallbackLock lock(*this);
       for (auto& [call_id, bundle] : bundles) {
-        if (!bundle) {
-          continue;
-        }
-        if (IsPendingCallId(call_id)) {
-          // An inbound control channel that never said hello / migrate within its deadline.
-          if (Reached(bundle->deadline, now)) {
-            stale_placeholders.push_back(call_id);
-          }
-          continue;
-        }
-        if (bundle->phase == CallMediaBundlePhase::Idle || bundle->phase == CallMediaBundlePhase::Closing) {
-          continue;
-        }
-        // k3/k4 paths first: a lost active link fails over to the standby, or waits for a new
-        // path (reconnect window), before it counts as lost.
-        if (bundle->phase == CallMediaBundlePhase::MediaReady) {
-          TickPaths(*bundle, now);
-          if (bundle->Reconnecting()) {
-            if (Reached(bundle->path_lost_notify_at, now)) {
-              CallMediaLegLog().info << "CallMediaLeg quiet rebind did not land call_id=" << call_id;
-              NotifyPathLost(*bundle);
-            }
-            if (Reached(bundle->reconnect_deadline, now)) {
-              reconnect_expired.push_back(call_id);
-            }
-            continue;
-          }
-        }
-        // PeerLink drop leaves ChannelSession mux_ dangling — tear down before L4 touches it.
-        // Do not treat Handshaking as lost (FindLink still present until DropLink).
-        // OutboundHello may not have FindLink yet while EnsureAssociation starts — prefer the
-        // connect deadline over peer-link-lost (avoids racing TearDown vs dial).
-        if (PeerLinkMissing(*bundle)) {
-          const bool outbound_dialing =
-              bundle->phase == CallMediaBundlePhase::OutboundHello &&
-              runtime->Links().GetLinkSnapshot(bundle->params.peer_key).has_endpoint;
-          if (!outbound_dialing) {
-            link_lost.push_back(call_id);
-            continue;
-          }
-        }
-        if (bundle->finished) {
-          continue;
-        }
-        if (Reached(bundle->deadline, now) && bundle->phase != CallMediaBundlePhase::MediaReady) {
-          timed_out.push_back(call_id);
+        if (bundle) {
+          SweepBundle(call_id, *bundle, now, due);
         }
       }
     }
-    for (const auto& call_id : stale_placeholders) {
+    ActOnDueLegs(due);
+  }
+
+  /** Under `mu`: tick a live call's paths, and note what is due for `call_id`. */
+  void SweepBundle(const std::string& call_id, Bundle& bundle, const int64_t now, DueLegs& due) {
+    if (IsPendingCallId(call_id)) {
+      // An inbound control channel that never said hello / migrate within its deadline.
+      if (Reached(bundle.deadline, now)) {
+        due.stale_placeholders.push_back(call_id);
+      }
+      return;
+    }
+    if (bundle.phase == CallMediaBundlePhase::Idle || bundle.phase == CallMediaBundlePhase::Closing) {
+      return;
+    }
+    // k3/k4 paths first: a lost active link fails over to the standby, or waits for a new
+    // path (reconnect window), before it counts as lost.
+    if (bundle.phase == CallMediaBundlePhase::MediaReady) {
+      TickPaths(bundle, now);
+      if (bundle.Reconnecting()) {
+        if (Reached(bundle.path_lost_notify_at, now)) {
+          CallMediaLegLog().info << "CallMediaLeg quiet rebind did not land call_id=" << call_id;
+          NotifyPathLost(bundle);
+        }
+        if (Reached(bundle.reconnect_deadline, now)) {
+          due.reconnect_expired.push_back(call_id);
+        }
+        return;
+      }
+    }
+    // PeerLink drop leaves ChannelSession mux_ dangling — tear down before L4 touches it.
+    // Do not treat Handshaking as lost (FindLink still present until DropLink).
+    // OutboundHello may not have FindLink yet while EnsureAssociation starts — prefer the
+    // connect deadline over peer-link-lost (avoids racing TearDown vs dial).
+    if (PeerLinkMissing(bundle)) {
+      const bool outbound_dialing = bundle.phase == CallMediaBundlePhase::OutboundHello &&
+                                    runtime->Links().GetLinkSnapshot(bundle.params.peer_key).has_endpoint;
+      if (!outbound_dialing) {
+        due.link_lost.push_back(call_id);
+        return;
+      }
+    }
+    if (!bundle.finished && Reached(bundle.deadline, now) && bundle.phase != CallMediaBundlePhase::MediaReady) {
+      due.timed_out.push_back(call_id);
+    }
+  }
+
+  void ActOnDueLegs(const DueLegs& due) {
+    for (const auto& call_id : due.stale_placeholders) {
       CallbackLock lock(*this);
       EraseBundle(call_id);
     }
-    for (const auto& call_id : reconnect_expired) {
+    for (const auto& call_id : due.reconnect_expired) {
       CallbackLock lock(*this);
       if (auto* bundle = FindByCallId(call_id); bundle && bundle->Reconnecting()) {
         CallMediaLegLog().warning << "CallMediaLeg reconnect window expired call_id=" << call_id;
@@ -670,24 +680,21 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
                        Fail(CallMediaErr::Closed, "amp call-media: no path within the reconnect window"));
       }
     }
-    for (const auto& call_id : link_lost) {
+    for (const auto& call_id : due.link_lost) {
       CallbackLock lock(*this);
       auto* bundle = FindByCallId(call_id);
-      if (!bundle || bundle->phase == CallMediaBundlePhase::Idle ||
-          bundle->phase == CallMediaBundlePhase::Closing) {
-        continue;
+      if (bundle && CallMediaBundlePhaseIsActive(bundle->phase)) {
+        TearDownBundle(*bundle, /*finish_with_abort=*/false, /*notify_failed=*/true,
+                       Fail(CallMediaErr::Closed, "amp call-media: peer link lost"));
       }
-      TearDownBundle(*bundle, /*finish_with_abort=*/false, /*notify_failed=*/true,
-                     Fail(CallMediaErr::Closed, "amp call-media: peer link lost"));
     }
-    for (const auto& call_id : timed_out) {
+    for (const auto& call_id : due.timed_out) {
       CallbackLock lock(*this);
       auto* bundle = FindByCallId(call_id);
       if (!bundle || bundle->finished) {
         continue;
       }
-      CallMediaLegLog().info << "CallMediaLeg timeout call_id=" << call_id
-                             << " peer=" << bundle->params.peer_key
+      CallMediaLegLog().info << "CallMediaLeg timeout call_id=" << call_id << " peer=" << bundle->params.peer_key
                              << " phase=" << BundlePhaseName(bundle->phase)
                              << " role=" << (bundle->offerer ? "offerer" : "answerer");
       TearDownBundle(*bundle, /*finish_with_abort=*/false, /*notify_failed=*/false,
@@ -1555,7 +1562,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     BeginMigrationLocked(bundle.leg_id, direct->Handle(), {});
   }
 
-  /** IO tick: candidate channel opens, migrate timeout, old-path release. Under `mu`. */
+  /** IO tick, under `mu`: one live call's paths — bye wait, link checks, failover, heartbeats, migration, release. */
   void TickPaths(Bundle& bundle, const int64_t now) {
     MaybeEndByeAwait(bundle, now);
     if (bundle.standby && PathLinkMissing(bundle, *bundle.standby)) {
@@ -1568,303 +1575,377 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       FallBackToRetiring(bundle, "active link lost");
     }
     if (!bundle.candidate && !bundle.retiring) {
-      CallMediaFailoverInput in;
-      in.active_link_lost = PathLinkMissing(bundle, bundle.active);
-      in.active_silence_ms = MsSince(now, bundle.active.last_rx);
-      in.peer_heartbeats = bundle.peer_heartbeats;
-      in.have_standby = bundle.standby.has_value();
-      in.standby_link_alive = bundle.standby && !PathLinkMissing(bundle, *bundle.standby);
-      in.standby_silence_ms = bundle.standby ? MsSince(now, bundle.standby->last_rx) : 0;
-      if (bundle.failed_over_at) {
-        in.since_failover_ms = MsSince(now, bundle.failed_over_at);
-      }
-      in.awaiting_bye = bundle.bye_await_deadline.has_value();
-      if (ShouldFailOverToStandby(in)) {
-        FailOverToStandby(bundle, in.active_link_lost ? "active link lost" : "active path silent");
-      } else if (!bundle.Reconnecting() && ShouldEnterPathLost(in)) {
-        EnterPathLost(bundle, in.active_link_lost ? "active link lost, no standby" : "active path silent, no standby");
-      }
+      CheckActivePath(bundle, now);
     }
     MaybeHeartbeat(bundle.active, now, kCallMediaActiveHeartbeatMs, true);
     if (bundle.standby) {
       MaybeHeartbeat(*bundle.standby, now, kCallMediaStandbyHeartbeatMs, false);
     }
     MaybeAutoMigrate(bundle, now);
-    if (bundle.migration) {
-      auto& m = *bundle.migration;
-      pp::amp::PeerLink* link = bundle.candidate ? ResolvePathLink(bundle, *bundle.candidate) : nullptr;
-      if (!link || !link->Mux()) {
-        return AbandonMigrationLinkLost(bundle, "candidate link lost");
-      }
-      if (now >= m.deadline) {
-        return AbandonMigration(bundle, "timed out");
-      }
-      if (m.initiator && m.pending_control != 0) {
-        const auto state = link->Mux()->State(m.pending_control);
-        if (state == pp::amp::ChannelState::Open) {
-          const uint32_t channel = m.pending_control;
-          m.pending_control = 0;
-          BindControlChannel(bundle, *bundle.candidate, *link, channel, CallMediaChannelRole::OutboundControl);
-          if (!bundle.candidate->outbound_control ||
-              !bundle.candidate->outbound_control->EnqueueOutbound(Utf8Body(
-                  EncodeCallMediaMigrate(bundle.call_id, bundle.params.media_epoch, bundle.candidate->gen,
-                                   m.standby_only)))) {
-            return AbandonMigration(bundle, "migrate send failed");
-          }
-        } else if (state == pp::amp::ChannelState::Closed) {
-          return AbandonMigration(bundle, "candidate control channel refused");
-        }
-      }
-      if (m.initiator && m.pending_media != 0) {
-        const auto state = link->Mux()->State(m.pending_media);
-        if (state == pp::amp::ChannelState::Open) {
-          const uint32_t channel = m.pending_media;
-          m.pending_media = 0;
-          BindMediaChannel(bundle, *bundle.candidate, *link, channel);
-          CompleteCandidate(bundle);
-        } else if (state == pp::amp::ChannelState::Closed) {
-          return AbandonMigration(bundle, "candidate media channel refused");
-        }
-      }
+    if (bundle.migration && !TickMigration(bundle, now)) {
+      return; // abandoned
     }
     if (bundle.retiring) {
-      CallMediaRetiringInput in;
-      in.link_lost = PathLinkMissing(bundle, *bundle.retiring);
-      in.since_switch_ms = MsSince(now, bundle.switched_at);
-      in.drove_switch = bundle.drove_switch;
-      in.release_sent = bundle.release_sent;
-      in.can_send = bundle.active.outbound_control != nullptr;
-      in.rx_since_switch = bundle.rx_since_switch;
-      switch (DecideCallMediaRetiring(in)) {
+      TickRetiring(bundle, now);
+    }
+  }
+
+  CallMediaFailoverInput FailoverInput(const Bundle& bundle, const int64_t now) const {
+    CallMediaFailoverInput in;
+    in.active_link_lost = PathLinkMissing(bundle, bundle.active);
+    in.active_silence_ms = MsSince(now, bundle.active.last_rx);
+    in.peer_heartbeats = bundle.peer_heartbeats;
+    in.have_standby = bundle.standby.has_value();
+    in.standby_link_alive = bundle.standby && !PathLinkMissing(bundle, *bundle.standby);
+    in.standby_silence_ms = bundle.standby ? MsSince(now, bundle.standby->last_rx) : 0;
+    if (bundle.failed_over_at) {
+      in.since_failover_ms = MsSince(now, bundle.failed_over_at);
+    }
+    in.awaiting_bye = bundle.bye_await_deadline.has_value();
+    return in;
+  }
+
+  /** k4: the active path lost or silent — onto the standby, or the call has no path left. */
+  void CheckActivePath(Bundle& bundle, const int64_t now) {
+    const CallMediaFailoverInput in = FailoverInput(bundle, now);
+    if (ShouldFailOverToStandby(in)) {
+      FailOverToStandby(bundle, in.active_link_lost ? "active link lost" : "active path silent");
+    } else if (!bundle.Reconnecting() && ShouldEnterPathLost(in)) {
+      EnterPathLost(bundle, in.active_link_lost ? "active link lost, no standby" : "active path silent, no standby");
+    }
+  }
+
+  /** k3: the candidate's link and deadline, and (initiator) its channels opening. False: abandoned. */
+  bool TickMigration(Bundle& bundle, const int64_t now) {
+    auto& m = *bundle.migration;
+    pp::amp::PeerLink* link = bundle.candidate ? ResolvePathLink(bundle, *bundle.candidate) : nullptr;
+    if (!link || !link->Mux()) {
+      AbandonMigrationLinkLost(bundle, "candidate link lost");
+      return false;
+    }
+    if (now >= m.deadline) {
+      AbandonMigration(bundle, "timed out");
+      return false;
+    }
+    if (!m.initiator) {
+      return true;
+    }
+    if (m.pending_control != 0 && !PollCandidateControl(bundle, *link)) {
+      return false;
+    }
+    return m.pending_media == 0 || PollCandidateMedia(bundle, *link);
+  }
+
+  /** Initiator: the candidate control channel opened — bind it and send `migrate` / `path_add`. */
+  bool PollCandidateControl(Bundle& bundle, pp::amp::PeerLink& link) {
+    auto& m = *bundle.migration;
+    const auto state = link.Mux()->State(m.pending_control);
+    if (state == pp::amp::ChannelState::Closed) {
+      AbandonMigration(bundle, "candidate control channel refused");
+      return false;
+    }
+    if (state != pp::amp::ChannelState::Open) {
+      return true;
+    }
+    const uint32_t channel = m.pending_control;
+    m.pending_control = 0;
+    BindControlChannel(bundle, *bundle.candidate, link, channel, CallMediaChannelRole::OutboundControl);
+    const auto& control = bundle.candidate->outbound_control;
+    if (!control || !control->EnqueueOutbound(Utf8Body(EncodeCallMediaMigrate(
+                        bundle.call_id, bundle.params.media_epoch, bundle.candidate->gen, m.standby_only)))) {
+      AbandonMigration(bundle, "migrate send failed");
+      return false;
+    }
+    return true;
+  }
+
+  /** Initiator: the candidate media channel opened — bind it; the candidate is complete. */
+  bool PollCandidateMedia(Bundle& bundle, pp::amp::PeerLink& link) {
+    auto& m = *bundle.migration;
+    const auto state = link.Mux()->State(m.pending_media);
+    if (state == pp::amp::ChannelState::Closed) {
+      AbandonMigration(bundle, "candidate media channel refused");
+      return false;
+    }
+    if (state == pp::amp::ChannelState::Open) {
+      const uint32_t channel = m.pending_media;
+      m.pending_media = 0;
+      BindMediaChannel(bundle, *bundle.candidate, link, channel);
+      CompleteCandidate(bundle);
+    }
+    return true;
+  }
+
+  /** k3 make-before-break: release (driver) or drop the path the call left. */
+  void TickRetiring(Bundle& bundle, const int64_t now) {
+    CallMediaRetiringInput in;
+    in.link_lost = PathLinkMissing(bundle, *bundle.retiring);
+    in.since_switch_ms = MsSince(now, bundle.switched_at);
+    in.drove_switch = bundle.drove_switch;
+    in.release_sent = bundle.release_sent;
+    in.can_send = bundle.active.outbound_control != nullptr;
+    in.rx_since_switch = bundle.rx_since_switch;
+    switch (DecideCallMediaRetiring(in)) {
       case CallMediaRetiringAction::Drop:
         DropPath(bundle, *bundle.retiring);
         bundle.retiring.reset();
         return;
       case CallMediaRetiringAction::Keep:
-        break;
+        return;
       case CallMediaRetiringAction::SendRelease:
         bundle.release_sent = bundle.active.outbound_control->EnqueueOutbound(
             Utf8Body(EncodeCallMediaPathRelease(/*ack=*/false, bundle.retiring->gen)));
-      }
+        return;
     }
   }
 
-  void HandleInboundHello(const std::shared_ptr<pp::amp::ChannelSession>& channel_session, const CallMediaControl& hello) {
-    if (!channel_session) {
+  /** A `hello` on an inbound control channel: admit it under the lock, then ask the inbound handler. */
+  void HandleInboundHello(const std::shared_ptr<pp::amp::ChannelSession>& channel_session,
+                          const CallMediaControl& hello) {
+    if (!channel_session || hello.call_id.empty()) {
       return;
     }
-    const std::string hello_call_id = hello.call_id;
-    if (hello_call_id.empty()) {
-      return;
-    }
-
-    pp::amp::PeerLink* link = nullptr;
+    std::string peer_key;
     {
       CallbackLock lock(*this);
-      Bundle* holder = FindByInboundSession(channel_session);
-      if (!holder) {
+      const auto admitted = AdmitInboundHello(channel_session, hello);
+      if (!admitted) {
         return;
       }
-      link = ResolveLink(*holder);
-      if (!link) {
-        return;
-      }
-
-      Bundle* target = FindByCallId(hello_call_id);
-      // PB-018: once a call's bundle is bound to a peer, a hello for it from another PeerId (anyone
-      // who learned the call id can dial) neither joins it nor replaces it while it reconnects.
-      // (params.peer_key is a dial alias that can move; remote_peer_id is the authenticated peer.)
-      const bool from_another_peer = target && target != holder && !target->remote_peer_id.empty() &&
-                                     !link->RemotePeerId().empty() && target->remote_peer_id != link->RemotePeerId();
-      if (IsPendingCallId(holder->call_id) && target && target != holder && target->Reconnecting() &&
-          !from_another_peer) {
-        // k4: a peer that lost the path the old way (tear down, redial) sends a fresh hello: take it
-        // instead of waiting out the window for a migration it will never send.
-        CallMediaLegLog().info << "CallMediaLeg fresh hello replaces reconnecting call_id=" << hello_call_id;
-        EraseBundle(hello_call_id);
-        target = nullptr;
-      }
-      if (IsPendingCallId(holder->call_id) && target && target != holder) {
-        // A hello on a new channel for a call that already has a bundle: decide against that
-        // bundle BEFORE touching it. A rejected hello (e.g. a second hello for a live call) must
-        // answer and close only its own channel — evicting the live inbound control first sent
-        // the peer a Close and failed the call.
-        const auto saved_remote_offerer = target->remote_offerer;
-        target->remote_offerer = hello.sender_offerer;
-        CallMediaInboundHelloContext pre;
-        pre.phase = target->phase;
-        pre.has_outbound_control = static_cast<bool>(target->active.outbound_control);
-        pre.offerer = target->offerer;
-        pre.local_wins_glare = LocalWinsForBundle(*target, *link);
-        pre.other_bundle_busy = OtherBundleBusy(hello_call_id);
-        pre.from_another_peer = from_another_peer;
-        const auto pre_decision = DecideCallMediaInboundHello(pre);
-        if (pre_decision == CallMediaInboundHelloDecision::RejectBusy ||
-            pre_decision == CallMediaInboundHelloDecision::RejectGlare ||
-            pre_decision == CallMediaInboundHelloDecision::RejectPeer) {
-          target->remote_offerer = saved_remote_offerer;
-          const char* reason = pre_decision == CallMediaInboundHelloDecision::RejectBusy   ? "busy"
-                               : pre_decision == CallMediaInboundHelloDecision::RejectGlare ? "glare"
-                                                                                           : "peer";
-          CallMediaLegLog().info << "CallMediaLeg inbound hello reject call_id=" << hello_call_id
-                                 << " peer=" << link->PeerKey() << " reason=" << reason
-                                 << " (existing bundle kept)";
-          (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, reason)));
-          EraseBundle(holder->call_id);  // the placeholder and its new channel only
-          return;
-        }
-      }
-      if (IsPendingCallId(holder->call_id)) {
-        if (target && target != holder) {
-          DropRole(*target, CallMediaChannelRole::InboundControl);
-          target->active.inbound_control = std::move(holder->active.inbound_control);
-          if (target->params.peer_key.empty()) {
-            target->params.peer_key = link->PeerKey();
-          }
-          if (target->active.inbound_control) {
-            IndexChannel(target->active.inbound_control->ChannelId(), hello_call_id, CallMediaChannelRole::InboundControl);
-          }
-          EraseBundle(holder->call_id);
-          holder = target;
-        } else {
-          RekeyPendingToCallId(*holder, hello_call_id);
-          target = FindByCallId(hello_call_id);
-          if (target) {
-            // A call born from the peer's hello: we hold the other role. (An answerer's hello can
-            // reach the offerer before its own media starts; the offerer then joins this bundle.)
-            target->offerer = !hello.sender_offerer;
-          }
-        }
-      } else {
-        target = holder;
-      }
-      if (!target) {
-        return;
-      }
-
-      // Record the dialer's role before deciding glare (antisymmetric winner needs both roles).
-      target->remote_offerer = hello.sender_offerer;
-      CallMediaInboundHelloContext ctx;
-      ctx.phase = target->phase;
-      ctx.has_outbound_control = static_cast<bool>(target->active.outbound_control);
-      ctx.offerer = target->offerer;
-      ctx.local_wins_glare = LocalWinsForBundle(*target, *link);
-      ctx.other_bundle_busy = OtherBundleBusy(hello_call_id);
-      const auto decision = DecideCallMediaInboundHello(ctx);
-
-      if (decision == CallMediaInboundHelloDecision::RejectBusy) {
-        CallMediaLegLog().info << "CallMediaLeg inbound hello reject call_id="
-                               << hello_call_id << " peer=" << link->PeerKey() << " reason=busy";
-        (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, "busy")));
-        DropRole(*target, CallMediaChannelRole::InboundControl);
-        if (!target->active.outbound_control && target->phase == CallMediaBundlePhase::Idle) {
-          EraseBundle(target->call_id);
-        }
-        return;
-      }
-      if (decision == CallMediaInboundHelloDecision::RejectGlare) {
-        CallMediaLegLog().info << "CallMediaLeg inbound hello reject call_id="
-                               << hello_call_id << " peer=" << link->PeerKey() << " reason=glare";
-        (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, "glare")));
-        DropRole(*target, CallMediaChannelRole::InboundControl);
-        return;
-      }
-      if (decision == CallMediaInboundHelloDecision::AcceptAndYield) {
-        DropRole(*target, CallMediaChannelRole::OutboundControl);
-        target->control_ready = false;
-      }
-      target->phase = CallMediaBundlePhase::InboundHello;
-      if (target->params.peer_key.empty()) {
-        target->params.peer_key = link->PeerKey();
-      }
-      target->finished = false;
-      if (!target->deadline) {
-        target->deadline = NowMs() + kCallMediaConnectTimeoutMs;
-      }
-      CallMediaLegLog().info << "CallMediaLeg inbound hello call_id=" << hello_call_id
-                             << " peer=" << link->PeerKey()
-                             << " decision="
-                             << (decision == CallMediaInboundHelloDecision::AcceptAndYield ? "yield"
-                                 : decision == CallMediaInboundHelloDecision::Accept        ? "accept"
-                                                                                            : "other")
-                             << " local_offerer=" << (target->offerer ? 1 : 0);
+      peer_key = *admitted;
     }
+    AskInboundHandler(channel_session, hello, peer_key);
+  }
 
+  /**
+   * Under `mu`: validate the hello's channel and link, settle it against the call's existing bundle (glare),
+   * adopt its channel into that bundle. The link's peer key when the leg goes on to the handler.
+   */
+  std::optional<std::string> AdmitInboundHello(const std::shared_ptr<pp::amp::ChannelSession>& channel_session,
+                                               const CallMediaControl& hello) {
+    Bundle* holder = FindByInboundSession(channel_session);
+    pp::amp::PeerLink* link = holder ? ResolveLink(*holder) : nullptr;
+    if (!link) {
+      return std::nullopt;
+    }
+    Bundle* target = FindByCallId(hello.call_id);
+    // PB-018: once a call's bundle is bound to a peer, a hello for it from another PeerId (anyone
+    // who learned the call id can dial) neither joins it nor replaces it while it reconnects.
+    // (params.peer_key is a dial alias that can move; remote_peer_id is the authenticated peer.)
+    const bool from_another_peer = target && target != holder && !target->remote_peer_id.empty() &&
+                                   !link->RemotePeerId().empty() && target->remote_peer_id != link->RemotePeerId();
+    const bool on_placeholder = IsPendingCallId(holder->call_id);
+    if (on_placeholder && target && target != holder && target->Reconnecting() && !from_another_peer) {
+      // k4: a peer that lost the path the old way (tear down, redial) sends a fresh hello: take it
+      // instead of waiting out the window for a migration it will never send.
+      CallMediaLegLog().info << "CallMediaLeg fresh hello replaces reconnecting call_id=" << hello.call_id;
+      EraseBundle(hello.call_id);
+      target = nullptr;
+    }
+    if (on_placeholder && target && target != holder &&
+        RejectHelloForExistingCall(*holder, *target, *link, channel_session, hello, from_another_peer)) {
+      return std::nullopt;
+    }
+    target = on_placeholder ? AdoptHelloChannel(*holder, target, *link, hello) : holder;
+    if (!target || !SettleHelloGlare(*target, *link, channel_session, hello)) {
+      return std::nullopt;
+    }
+    return link->PeerKey();
+  }
+
+  /**
+   * A hello on a new channel for a call that already has a bundle: decide against that bundle BEFORE
+   * touching it. A rejected hello (e.g. a second hello for a live call) must answer and close only its own
+   * channel — evicting the live inbound control first sent the peer a Close and failed the call. True: rejected.
+   */
+  bool RejectHelloForExistingCall(Bundle& holder, Bundle& target, const pp::amp::PeerLink& link,
+                                  const std::shared_ptr<pp::amp::ChannelSession>& channel_session,
+                                  const CallMediaControl& hello, const bool from_another_peer) {
+    const auto saved_remote_offerer = target.remote_offerer;
+    target.remote_offerer = hello.sender_offerer;
+    CallMediaInboundHelloContext pre = InboundHelloContext(target, link, hello.call_id);
+    pre.from_another_peer = from_another_peer;
+    const auto decision = DecideCallMediaInboundHello(pre);
+    if (decision != CallMediaInboundHelloDecision::RejectBusy &&
+        decision != CallMediaInboundHelloDecision::RejectGlare &&
+        decision != CallMediaInboundHelloDecision::RejectPeer) {
+      return false;
+    }
+    target.remote_offerer = saved_remote_offerer;
+    const char* reason = decision == CallMediaInboundHelloDecision::RejectBusy    ? "busy"
+                         : decision == CallMediaInboundHelloDecision::RejectGlare ? "glare"
+                                                                                  : "peer";
+    CallMediaLegLog().info << "CallMediaLeg inbound hello reject call_id=" << hello.call_id
+                           << " peer=" << link.PeerKey() << " reason=" << reason << " (existing bundle kept)";
+    (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, reason)));
+    EraseBundle(holder.call_id); // the placeholder and its new channel only
+    return true;
+  }
+
+  /** The placeholder's channel joins the call's bundle, or the placeholder becomes the call's bundle. */
+  Bundle* AdoptHelloChannel(Bundle& holder, Bundle* target, const pp::amp::PeerLink& link,
+                            const CallMediaControl& hello) {
+    if (target && target != &holder) {
+      DropRole(*target, CallMediaChannelRole::InboundControl);
+      target->active.inbound_control = std::move(holder.active.inbound_control);
+      if (target->params.peer_key.empty()) {
+        target->params.peer_key = link.PeerKey();
+      }
+      if (target->active.inbound_control) {
+        IndexChannel(target->active.inbound_control->ChannelId(), hello.call_id, CallMediaChannelRole::InboundControl);
+      }
+      EraseBundle(holder.call_id);
+      return target;
+    }
+    RekeyPendingToCallId(holder, hello.call_id);
+    target = FindByCallId(hello.call_id);
+    if (target) {
+      // A call born from the peer's hello: we hold the other role. (An answerer's hello can
+      // reach the offerer before its own media starts; the offerer then joins this bundle.)
+      target->offerer = !hello.sender_offerer;
+    }
+    return target;
+  }
+
+  CallMediaInboundHelloContext InboundHelloContext(const Bundle& target, const pp::amp::PeerLink& link,
+                                                   const std::string& call_id) const {
+    CallMediaInboundHelloContext ctx;
+    ctx.phase = target.phase;
+    ctx.has_outbound_control = static_cast<bool>(target.active.outbound_control);
+    ctx.offerer = target.offerer;
+    ctx.local_wins_glare = LocalWinsForBundle(target, link);
+    ctx.other_bundle_busy = OtherBundleBusy(call_id);
+    return ctx;
+  }
+
+  /** Glare against our own outbound hello: reject the inbound, or take it (yielding ours). True: taken. */
+  bool SettleHelloGlare(Bundle& target, const pp::amp::PeerLink& link,
+                        const std::shared_ptr<pp::amp::ChannelSession>& channel_session,
+                        const CallMediaControl& hello) {
+    // Record the dialer's role before deciding glare (antisymmetric winner needs both roles).
+    target.remote_offerer = hello.sender_offerer;
+    const auto decision = DecideCallMediaInboundHello(InboundHelloContext(target, link, hello.call_id));
+    if (decision == CallMediaInboundHelloDecision::RejectBusy ||
+        decision == CallMediaInboundHelloDecision::RejectGlare) {
+      const bool busy = decision == CallMediaInboundHelloDecision::RejectBusy;
+      CallMediaLegLog().info << "CallMediaLeg inbound hello reject call_id=" << hello.call_id
+                             << " peer=" << link.PeerKey() << " reason=" << (busy ? "busy" : "glare");
+      (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, busy ? "busy" : "glare")));
+      DropRole(target, CallMediaChannelRole::InboundControl);
+      if (busy && !target.active.outbound_control && target.phase == CallMediaBundlePhase::Idle) {
+        EraseBundle(target.call_id);
+      }
+      return false;
+    }
+    if (decision == CallMediaInboundHelloDecision::AcceptAndYield) {
+      DropRole(target, CallMediaChannelRole::OutboundControl);
+      target.control_ready = false;
+    }
+    target.phase = CallMediaBundlePhase::InboundHello;
+    if (target.params.peer_key.empty()) {
+      target.params.peer_key = link.PeerKey();
+    }
+    target.finished = false;
+    if (!target.deadline) {
+      target.deadline = NowMs() + kCallMediaConnectTimeoutMs;
+    }
+    CallMediaLegLog().info << "CallMediaLeg inbound hello call_id=" << hello.call_id << " peer=" << link.PeerKey()
+                           << " decision="
+                           << (decision == CallMediaInboundHelloDecision::AcceptAndYield ? "yield"
+                               : decision == CallMediaInboundHelloDecision::Accept       ? "accept"
+                                                                                         : "other")
+                           << " local_offerer=" << (target.offerer ? 1 : 0);
+    return true;
+  }
+
+  /**
+   * The handler answers asynchronously (the calls owner waits for the media key without a thread). Asked
+   * after the mux stack unwinds; the answer comes back onto IO (AckInboundHello).
+   */
+  void AskInboundHandler(const std::shared_ptr<pp::amp::ChannelSession>& channel_session, const CallMediaControl& hello,
+                         const std::string& peer_key) {
     CallMediaDirectConnectParams params;
-    params.call_id = hello_call_id;
+    params.call_id = hello.call_id;
     params.media_epoch = hello.media_epoch;
     params.offerer = hello.sender_offerer;
-    params.peer_key = link->PeerKey();
-
+    params.peer_key = peer_key;
     InboundHandler handler;
     {
       CallbackLock lock(*this);
       handler = inbound;
     }
     if (!handler) {
-      (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, "no handler")));
-      CallbackLock lock(*this);
-      auto* bundle = FindByCallId(hello_call_id);
-      if (bundle) {
-        DropRole(*bundle, CallMediaChannelRole::InboundControl);
-        if (!bundle->active.outbound_control) {
-          EraseBundle(hello_call_id);
-        } else {
-          bundle->phase = CallMediaBundlePhase::OutboundHello;
-        }
-      }
+      RejectHelloWithoutHandler(channel_session, hello.call_id);
       return;
     }
-
-    const std::string peer_key = link->PeerKey();
-    // The handler answers asynchronously (the calls owner waits for the media key without a
-    // thread). Asked after the mux stack unwinds; the answer comes back onto IO.
-    auto answer = [this, self = shared_from_this(), channel_session, peer_key,
-                   call_id = hello_call_id](CallMediaDirectConnectParams answer_params,
-                                            CallMediaDirectCallbacks answer_cbs) mutable {
-      PostIo([this, self, channel_session, answer_params = std::move(answer_params),
-              answer_cbs = std::move(answer_cbs), peer_key, call_id]() mutable {
-        CallbackLock lock(*this);
-        auto* bundle = FindByCallId(call_id);
-        if (!bundle || bundle->phase != CallMediaBundlePhase::InboundHello) {
-          return;
-        }
-        pp::amp::PeerLink* resolved = ResolveLink(*bundle);
-        if (!resolved) {
-          return;
-        }
-        if (LocalWinsForBundle(*bundle, *resolved) && bundle->active.outbound_control) {
-          DropRole(*bundle, CallMediaChannelRole::InboundControl);
-          bundle->phase = CallMediaBundlePhase::OutboundHello;
-          return;
-        }
-        if (answer_params.media_key.empty() || answer_params.call_id.empty()) {
-          (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, "rejected")));
-          TearDownBundle(*bundle, false, false, Fail(CallMediaErr::HelloRejected, "amp call-media: inbound rejected"));
-          return;
-        }
-        if (!bundle->leg_id) {
-          bundle->leg_id = CallMediaLegId{next_leg_id.fetch_add(1, std::memory_order_relaxed)};
-        }
-        bundle->params = answer_params;
-        bundle->callbacks = std::move(answer_cbs);
-        // Bridge inbound handler remaps peer_key to account: for mixer stream ids. Amp PeerLink
-        // stays under mesh PeerId — keep that for ResolveLink / PeerLinkMissing (HL004 dual-SNAT).
-        if (!peer_key.empty()) {
-          bundle->params.peer_key = peer_key;
-        }
-        bundle->phase = CallMediaBundlePhase::AwaitingMedia;
-        if (!channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(true)))) {
-          TearDownBundle(*bundle, false, false, Fail(CallMediaErr::HelloRejected, "amp call-media: hello ack failed"));
-          return;
-        }
-        bundle->control_ready = true;
-        TryEnterMediaReady(*bundle);
+    auto answer = [this, self = shared_from_this(), channel_session, peer_key, call_id = hello.call_id](
+                      CallMediaDirectConnectParams answer_params, CallMediaDirectCallbacks answer_cbs) mutable {
+      PostIo([this, self, channel_session, answer_params = std::move(answer_params), answer_cbs = std::move(answer_cbs),
+              peer_key, call_id]() mutable {
+        AckInboundHello(channel_session, peer_key, call_id, std::move(answer_params), std::move(answer_cbs));
       });
     };
     PostIo([self = shared_from_this(), params, handler = std::move(handler), answer = std::move(answer)]() mutable {
       handler(params, std::move(answer));
     });
+  }
+
+  void RejectHelloWithoutHandler(const std::shared_ptr<pp::amp::ChannelSession>& channel_session,
+                                 const std::string& call_id) {
+    (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, "no handler")));
+    CallbackLock lock(*this);
+    auto* bundle = FindByCallId(call_id);
+    if (!bundle) {
+      return;
+    }
+    DropRole(*bundle, CallMediaChannelRole::InboundControl);
+    if (!bundle->active.outbound_control) {
+      EraseBundle(call_id);
+    } else {
+      bundle->phase = CallMediaBundlePhase::OutboundHello;
+    }
+  }
+
+  /** On IO: the handler's answer — `hello_ack` and await the media channel, or reject. */
+  void AckInboundHello(const std::shared_ptr<pp::amp::ChannelSession>& channel_session, const std::string& peer_key,
+                       const std::string& call_id, CallMediaDirectConnectParams answer_params,
+                       CallMediaDirectCallbacks answer_cbs) {
+    CallbackLock lock(*this);
+    auto* bundle = FindByCallId(call_id);
+    if (!bundle || bundle->phase != CallMediaBundlePhase::InboundHello) {
+      return;
+    }
+    pp::amp::PeerLink* resolved = ResolveLink(*bundle);
+    if (!resolved) {
+      return;
+    }
+    if (LocalWinsForBundle(*bundle, *resolved) && bundle->active.outbound_control) {
+      DropRole(*bundle, CallMediaChannelRole::InboundControl);
+      bundle->phase = CallMediaBundlePhase::OutboundHello;
+      return;
+    }
+    if (answer_params.media_key.empty() || answer_params.call_id.empty()) {
+      (void)channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(false, "rejected")));
+      TearDownBundle(*bundle, false, false, Fail(CallMediaErr::HelloRejected, "amp call-media: inbound rejected"));
+      return;
+    }
+    if (!bundle->leg_id) {
+      bundle->leg_id = CallMediaLegId{next_leg_id.fetch_add(1, std::memory_order_relaxed)};
+    }
+    bundle->params = std::move(answer_params);
+    bundle->callbacks = std::move(answer_cbs);
+    // Bridge inbound handler remaps peer_key to account: for mixer stream ids. Amp PeerLink
+    // stays under mesh PeerId — keep that for ResolveLink / PeerLinkMissing (HL004 dual-SNAT).
+    if (!peer_key.empty()) {
+      bundle->params.peer_key = peer_key;
+    }
+    bundle->phase = CallMediaBundlePhase::AwaitingMedia;
+    if (!channel_session->EnqueueOutbound(Utf8Body(EncodeCallMediaHelloAck(true)))) {
+      TearDownBundle(*bundle, false, false, Fail(CallMediaErr::HelloRejected, "amp call-media: hello ack failed"));
+      return;
+    }
+    bundle->control_ready = true;
+    TryEnterMediaReady(*bundle);
   }
 
   void HandleHelloAck(const std::string& call_id, const CallMediaChannelRole role, const CallMediaControl& ack) {
