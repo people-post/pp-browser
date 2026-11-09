@@ -161,26 +161,17 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
         if (own && account == own->account_id) {
           return;  // our own list arrives by the device_list notice
         }
-        AskForNewerCard(account, device, issued_at);
+        AskForNewerCard(account, device, issued_at, CardAskGate::Source::Verified);
       });
   // An envelope we could not check (no card for its device; lane messages carry the card only when the peer may
-  // lack it): ask that device. Unverified, so at most once per account per kUnknownDeviceAskGapMs.
+  // lack it): ask that device. Unverified, so its hint counts for nothing and the asks are rate-limited (CardAskGate).
   receive_pipeline_->SetOnUnknownSenderDevice(
       [this](const std::string& account, const std::string& device, const int64_t issued_at) {
         auto own = identity_.Get();
         if (own && account == own->account_id) {
           return; // our own list arrives by the device_list notice
         }
-        {
-          const int64_t now_ms = util::NowUnixMs();
-          std::lock_guard lock(card_asks_mutex_);
-          int64_t& last = unknown_device_asks_[account];
-          if (last != 0 && now_ms - last < kUnknownDeviceAskGapMs) {
-            return;
-          }
-          last = now_ms;
-        }
-        AskForNewerCard(account, device, issued_at);
+        AskForNewerCard(account, device, issued_at, CardAskGate::Source::Unverified);
       });
   receive_pipeline_->SetAccountCardFloor(
       [this](const std::string& account_id) { return account_keys_.CardFloor(account_id); });
@@ -349,14 +340,12 @@ GroupCardLookup MeshDeliveryOrchestrator::GroupChangeCards() {
 }
 
 void MeshDeliveryOrchestrator::AskForNewerCard(const std::string& account, const std::string& device,
-                                               const int64_t issued_at) {
+                                               const int64_t issued_at, const CardAskGate::Source source) {
   {
     std::lock_guard lock(card_asks_mutex_);
-    int64_t& asked = card_asks_[account];
-    if (asked >= issued_at) {
-      return;  // asked for this list already (or a newer one)
+    if (!card_ask_gate_.Allow(account, issued_at, source, util::NowUnixMs())) {
+      return; // asked lately (or too many unverified asks just now)
     }
-    asked = issued_at;
   }
   AppRuntime::PostWorkerNormal([this, account, device]() {
     auto notice = card_ask::BuildNotice(device);

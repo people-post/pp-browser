@@ -9,6 +9,7 @@
 #include "lib/pricing/InitiationBillingStore.h"
 #include "lib/pricing/PaymentPromiseStore.h"
 #include "lib/messaging/CardAsk.h"
+#include "lib/messaging/CardAskGate.h"
 #include "lib/messaging/CopyAsk.h"
 #include "lib/messaging/IThreadMentionsStore.h"
 #include "lib/messaging/SentCopy.h"
@@ -451,13 +452,14 @@ private:
   static constexpr int64_t kMissingCopyWaitMs = 20 * 1000;
   std::mutex asked_copies_mutex_;
   std::set<std::string> asked_copies_;  // message ids asked for (bounded)
-  /** M021 d6: an envelope said its sender's list is newer than ours — ask that device for it, through the relay. */
-  void AskForNewerCard(const std::string& account, const std::string& device, int64_t issued_at);
+  /**
+   * M021 d6: an envelope said its sender's list is newer than ours, or could not be checked for want of a card — ask
+   * that device for it, through the relay, when card_ask_gate_ allows (an unverified envelope's word is rate-limited).
+   */
+  void AskForNewerCard(const std::string& account, const std::string& device, int64_t issued_at,
+                       CardAskGate::Source source);
   std::mutex card_asks_mutex_;
-  std::map<std::string, int64_t> card_asks_;  // account → the newest list asked for
-  /** An unverified envelope's ask (SetOnUnknownSenderDevice): anyone can forge one, so once per account per gap. */
-  static constexpr int64_t kUnknownDeviceAskGapMs = 10 * 60 * 1000;
-  std::map<std::string, int64_t> unknown_device_asks_; // account → when last asked (under card_asks_mutex_)
+  CardAskGate card_ask_gate_; // under card_asks_mutex_
   /**
    * M024: a verified lane message from `account` this device could not read (no copy for it, or an account copy
    * that did not open) — tell it our card (`device_list`), so its next message has a copy for this device. At most
