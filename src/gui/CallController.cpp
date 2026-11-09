@@ -1884,10 +1884,10 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
        backend->MediaStatus() == CallMediaStatus::DegradedTxOnly);
   // Reconnecting says it all: no path means no audio either way.
   if (media_broken && !(backend && backend->Available() && backend->MediaStatus() == CallMediaStatus::Reconnecting)) {
-    if (const char* hint_key = media_hint_.KeyFor(view.asymmetry, in_call.video); hint_key && hint_key[0]) {
-      // The quality hint line carries this sentence; the status line keeps the timer (#181, not the same text twice).
-    } else if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key &&
-                                                                              label_key[0]) {
+    // The quality hint line carries the sentence when there is one (#181, not the same text twice); else the label.
+    const char* hint_key = media_hint_.KeyFor(view.asymmetry, in_call.video);
+    if (const char* label_key = CallPathQualityLabelKey(view.quality);
+        (!hint_key || !hint_key[0]) && label_key && label_key[0]) {
       in_call.subtitle = Tr(label_key).c_str();
     }
   }
