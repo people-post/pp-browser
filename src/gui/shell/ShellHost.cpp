@@ -2134,21 +2134,34 @@ void ShellHost::SyncHomeDock(ui::ElementDocument* doc, const bool dock) {
                   : !state_.overlay_stack.empty() ? "overlay" : "not_minimal", 0.f, 0.f);
     return; // measure only the plain layout, with the Home page showing
   }
-  const float height = landing->GetBox().GetSize(ui::BoxArea::Border).y;
   ui::Element* card = nullptr;
   ui::ElementList cards;
   landing->GetElementsByClassName(cards, "prompt-composer");
   if (!cards.empty()) {
     card = cards.front();
   }
+  // Layout sizes and offsets are in pixels; the cache and everything applied from it are dp. The pin and the block's
+  // offset were removed above, and GetAbsoluteOffset runs a layout pass first, so the sizes read below are the natural
+  // ones — never the pinned height of the previous covered state.
+  const float ratio_raw = context_->GetDensityIndependentPixelRatio();
+  const float ratio = ratio_raw > 0.f ? ratio_raw : 1.f;
+  const float landing_top_px = landing->GetAbsoluteOffset(ui::BoxArea::Border).y;
+  (void)landing_top_px;
+  const float height = landing->GetBox().GetSize(ui::BoxArea::Border).y / ratio;
+  const float window_dp = static_cast<float>(context_->GetDimensions().y) / ratio;
   if (height <= 0.f || !card) {
     DiagHomeCache("skip", height <= 0.f ? "landing_height_0" : "no_card", height, 0.f);
     return;
   }
-  const float ratio = context_->GetDensityIndependentPixelRatio();
-  home_cache_window_dp_ = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
+  if (height > window_dp + 0.5f) {
+    home_cache_landing_h_dp_ = 0.f;  // can only be a stale or pinned size: no cache is better than a wrong one
+    DiagHomeCache("skip", "landing_height_0", height, 0.f);
+    return;
+  }
+  home_cache_window_dp_ = window_dp;
   home_cache_landing_h_dp_ = height;
-  home_cache_card_bottom_dp_ = card->GetAbsoluteOffset(ui::BoxArea::Border).y + card->GetBox().GetSize(ui::BoxArea::Border).y;
+  home_cache_card_bottom_dp_ =
+      (card->GetAbsoluteOffset(ui::BoxArea::Border).y + card->GetBox().GetSize(ui::BoxArea::Border).y) / ratio;
   DiagHomeCache("cache", "ok", height, home_cache_card_bottom_dp_);
 }
 
