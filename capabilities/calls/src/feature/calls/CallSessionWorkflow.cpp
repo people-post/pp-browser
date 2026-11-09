@@ -9,6 +9,7 @@
 #include "lib/calls/PeerCapsLogic.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/runtime/AppRuntime.h"
+#include "common/Localized.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 
@@ -2146,7 +2147,7 @@ Roe<void> CallSessionWorkflow::HandleInboundRemove(const std::string& detail_jso
       } else {
         (void)LeaveCall(remove->call_id, LiveCallEndReason::LocalLeave);
       }
-      reports_.Emit(workflow_report::Notice{"You were removed from the call"});
+      reports_.Emit(workflow_report::Notice{Localized("call.notice.removed")});
       return {};
     }
     case CallRemoveVerdict::Remove:
@@ -2194,7 +2195,7 @@ void CallSessionWorkflow::OnGroupMembersGone(const std::string& group_id, const 
       } else {
         (void)LeaveCall(call_id, LiveCallEndReason::LocalLeave);
       }
-      reports_.Emit(workflow_report::Notice{"You are no longer in this group"});
+      reports_.Emit(workflow_report::Notice{Localized("call.notice.left_group")});
       continue;
     }
     auto row = sessions_.FindParticipant(call_id, *identity);
@@ -2232,7 +2233,7 @@ void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_ident
     // Nobody in the call answered: it is over (or no one left in it can reach us).
     log().info << "Join request unanswered call_id=" << it->first << " — the call has ended";
     MarkEveryoneLeft(it->first, local_identity);
-    reports_.Emit(workflow_report::Notice{"That call has ended"});
+    reports_.Emit(workflow_report::Notice{Localized("call.notice.call_ended")});
     it = join_requested_until_ms_.erase(it);
     reports_.Emit(workflow_report::Changed{});
   }

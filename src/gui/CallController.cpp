@@ -921,11 +921,6 @@ void CallController::ShowNotice(const CallNotice& notice) {
   case CallNotice::Kind::Error:
     UserFeedback::Fail(NoticeUserText(notice));
     return;
-  case CallNotice::Kind::StickyError:
-    // SoftMigrate / hop failures need a sticky banner — toast (even Long=6s) vanishes before
-    // users can read multi-hop diagnostics.
-    UserFeedback::NeedsSetup(NoticeUserText(notice), /*sticky=*/true);
-    return;
   case CallNotice::Kind::PeerEnded:
   case CallNotice::Kind::PeerDeclined: {
     const bool declined = notice.kind == CallNotice::Kind::PeerDeclined;
@@ -1277,12 +1272,7 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
     }
     break;
   case Status::Activity:
-    in_call.subtitle = screen.activity.c_str();
-    if (screen.activity == Tr("call.status.switching_media_path")) {
-      in_call.status_hint = Tr("call.hint.switching_media_path").c_str();
-    } else if (screen.activity == Tr("call.status.looking_for_another_path")) {
-      in_call.status_hint = Tr("call.hint.looking_for_another_path").c_str();
-    }
+    in_call.subtitle = screen.activity.c_str();  // setting up / finding a path; a live call's switch is Reconnecting
     break;
   case Status::Reconnecting:
     // k4: the call lost its path and waits for a new one; the call timer keeps running.
@@ -1298,7 +1288,8 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
     in_call.subtitle = Tr("call.status.disconnected").c_str();
     break;
   case Status::SendingOnly:
-    in_call.subtitle = Tr(media_hint_.SendingOnlyKey(in_call.video)).c_str();
+    // The quality hint line says "Connecting voice…" / "Your mic isn't sending"; the status line keeps the timer.
+    in_call.subtitle = in_call.elapsed.empty() ? Tr("call.status.connected").c_str() : in_call.elapsed;
     break;
   case Status::Connected:
     in_call.subtitle = in_call.elapsed.empty() ? Tr("call.status.connected").c_str() : in_call.elapsed;
@@ -1750,12 +1741,11 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
   } else if (starting_video) {
     in_call.remote_placeholder = Tr("call.placeholder.starting_video").c_str();
   } else if (peer_on_hold_) {
-    in_call.remote_placeholder = Tr("call.placeholder.on_hold").c_str();
+    // The "stepped away" pill and the status line say it; a third copy in the stage centre is dropped (#181).
+    in_call.remote_placeholder = "";
   } else if (have_peer_video_flag && !peer_camera_on) {
     in_call.remote_placeholder =
         Tr(peer_video_paused_ ? "call.placeholder.camera_paused" : "call.placeholder.camera_off").c_str();
-  } else if (mesh_messaging_failed) {
-    in_call.remote_placeholder = Tr("call.status.couldnt_connect").c_str();
   } else {
     in_call.remote_placeholder = "";
   }
@@ -1892,7 +1882,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
   // Reconnecting says it all: no path means no audio either way.
   if (media_broken && !(backend && backend->Available() && backend->MediaStatus() == CallMediaStatus::Reconnecting)) {
     if (const char* hint_key = media_hint_.KeyFor(view.asymmetry, in_call.video); hint_key && hint_key[0]) {
-      in_call.subtitle = Tr(hint_key).c_str();
+      // The quality hint line carries this sentence; the status line keeps the timer (#181, not the same text twice).
     } else if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key &&
                                                                               label_key[0]) {
       in_call.subtitle = Tr(label_key).c_str();
@@ -2085,7 +2075,6 @@ bool CallController::RenderDemoScene() {
   if (peer_on_hold) {
     in_call_.subtitle =
         Tr("call.status.on_hold_peer_named", {{"name", DisplayNameForIdentity(f.screen.peer_identity)}}).c_str();
-    in_call_.remote_placeholder = Tr("call.placeholder.on_hold").c_str();
   }
   MediaEngineHealth engine;  // the scene's made-up levels, for the speaking rings and the spotlight
   for (const auto& [identity, level] : f.levels) {

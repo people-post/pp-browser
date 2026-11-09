@@ -1,5 +1,6 @@
 #include "feature/calls/CallDevice.h"
 
+#include "common/Localized.h"
 #include "lib/calls/CallSessionQueries.h"
 #include "feature/calls/CallControlClient.h"
 #include "lib/calls/CallListenAddrsLogic.h"
@@ -732,7 +733,7 @@ void CallDevice::ScheduleStartDirectMedia(const std::string& call_id, const std:
           call_media ? call_media->BeginDirect(peer_identity, offerer) : Roe<void>(Error("no live call for media"));
       !begun) {
     log().error << "ScheduleStartDirectMedia: " << begun.error().message << " call_id=" << call_id;
-    last_media_error_ = "Call media unavailable";
+    last_media_error_ = Localized("call.error.media_unavailable");
     NotifyRingChanged();
   }
 }

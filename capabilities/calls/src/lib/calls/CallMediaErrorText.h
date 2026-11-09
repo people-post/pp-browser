@@ -12,4 +12,10 @@ namespace pbr {
  */
 const char* CallMediaErrorUserKey(const std::string& technical);
 
+/**
+ * The failure is already told by the call screen itself (its "Call dropped" / "Couldn't reach them" page): the
+ * notice layer says nothing more (#181, one prompt in one place).
+ */
+bool CallMediaErrorShownOnCallScreen(const std::string& technical);
+
 } // namespace pbr

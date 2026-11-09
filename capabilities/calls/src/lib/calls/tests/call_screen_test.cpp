@@ -63,6 +63,28 @@ TEST(CallScreenTest, ActivityShowsUntilMediaIsLive) {
   EXPECT_EQ(out.status, Status::Activity);
 }
 
+TEST(CallScreenTest, AConnectedCallSwitchingPathReadsReconnectingNotTheStacksActivityWords) {
+  // #181: the reconnect capsule is the only prompt; "Switching to another line…" is not shown on top of it.
+  InCallSignals s;
+  s.was_connected = true;
+  s.activity = "Switching to another line…";
+  s.media_status = CallMediaStatus::HopWaiting;
+  s.recovery = CallRecovery::WaitingForHop;
+  const InCallStatus out = Decide(s);
+  EXPECT_EQ(out.status, Status::Reconnecting);
+  EXPECT_TRUE(out.show_elapsed);
+  EXPECT_EQ(out.hint, CallScreen::Hint::None);
+}
+
+TEST(CallScreenTest, ADroppedCallHasNoHintLineBeyondItsFailedPage) {
+  InCallSignals s;
+  s.was_connected = true;
+  s.media_status = CallMediaStatus::Failed;
+  const InCallStatus out = Decide(s);
+  EXPECT_EQ(out.status, Status::Disconnected);
+  EXPECT_EQ(out.hint, CallScreen::Hint::None);
+}
+
 TEST(CallScreenTest, AFailureAfterBeingConnectedReadsDisconnected) {
   InCallSignals s;
   s.media_status = CallMediaStatus::Failed;
