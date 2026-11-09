@@ -99,7 +99,8 @@ envelope as an unsupported version, not as a signature that does not verify. A s
 forgery: nothing says "update", and the receiver cannot tell the two apart. Sign v4 (2026-11-06, group-chat G018
 item 7) changed the domain and the version byte inside the signed bytes but not `envelope_version`, and a peer
 on a build before it showed only as failed signature checks (#555). No fallback to the older signed form: crypto
-stays strict.
+stays strict. The signed bytes are frozen in a test (`EnvelopeSignerTest.SignBytesMatchFrozenHash`, beside
+`kRelayEnvelopeVersion`): a change that moves its hash changes a version receivers check in the same change.
 
 ### Bridges (one release)
 
