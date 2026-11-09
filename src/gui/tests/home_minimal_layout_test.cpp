@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <regex>
@@ -79,7 +80,7 @@ protected:
   }
 
   /** `visible` is the screen's height less the keyboard: the page ends there, as shell-root does. */
-  void Load(int width, int screen_height, int keyboard) {
+  void Load(int width, int screen_height, int keyboard, bool docked = false) {
     ui::SetRenderInterface(&renderer);
     initialized = ui::Initialise();
     ASSERT_TRUE(initialized);
@@ -95,7 +96,7 @@ protected:
         "dp; display: flex; flex-direction: column;\">"
         // Under the 44dp bar and the status bar.
         "<div style=\"height: 90dp; flex: none;\"></div>"
-        "<div class=\"home-landing home-landing--minimal\">" + CentreBlock() + "</div></div></body></rml>";
+        "<div class=\"home-landing home-landing--minimal" + std::string(docked ? " home-landing--docked" : "") + "\">" + CentreBlock() + "</div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
     document->Show();
@@ -166,16 +167,53 @@ TEST_F(HomeMinimalLayoutTest, CardIsTheNarrow108dpB3WithACircleEmojiAndNoMic) {
   EXPECT_FLOAT_EQ(card_right - (emoji->GetAbsoluteOffset(ui::BoxArea::Border).x + size.x), 11.f) << "right end (10dp + border)";
 }
 
-// With the keyboard up (about 260dp on a 568dp screen, 336dp on a 844dp one) the field stays inside what is left,
-// on top of the keyboard; the logo and chips give way (they shrink and clip) rather than push it out.
+// Docked (TODO #204): with the keyboard up (about 260dp on a 568dp screen) the card sits right above the keyboard, the
+// chips over it, the mascot at the top; the logo and chips give way (shrink and clip) rather than push the card out.
 TEST_F(HomeMinimalLayoutTest, KeyboardUpOnSmallScreenKeepsFieldAboveTheKeyboard) {
-  Load(320, 568, 260);
-  EXPECT_FLOAT_EQ(First("home-logo").height <= 72.f ? 1.f : 0.f, 1.f) << "72dp logo (or less) under 600dp";
-  const Box pill = First("prompt-composer-pill");
-  EXPECT_GE(pill.top, 90.f) << "below the bar";
-  EXPECT_LE(pill.bottom(), visible_height) << "the field's bottom is inside the area above the keyboard";
-  const Box landing = First("home-landing");
-  EXPECT_LE(landing.bottom(), visible_height);
+  Load(320, 568, 260, true);
+  const Box logo = First("home-logo");
+  const Box card = ById("stub-composer");
+  ui::ElementList chips;
+  document->GetElementsByClassName(chips, "chat-suggestion");
+  std::printf("[568/260 docked] card bottom %.1f keyboard top %.1f logo h %.1f top %.1f chips first top %.1f\n",
+              card.bottom(), visible_height, logo.height, logo.top, BoxOf(chips.front()).top);
+  EXPECT_LE(logo.height, 72.f) << "72dp logo (or less) under 600dp";
+  EXPECT_GE(card.top, 90.f) << "below the bar";
+  EXPECT_LE(card.bottom(), visible_height) << "the card is inside the area above the keyboard";
+  EXPECT_NEAR(visible_height - card.bottom(), 8.f, 1.f) << "8dp above the keyboard";
+  EXPECT_LE(First("home-landing").bottom(), visible_height);
+}
+
+// A normal screen (844dp, keyboard 336): the card docks 8dp above the keyboard, the chips are kept (bottom row 8dp over
+// the card), the mascot stays 100dp at the top; with the keyboard gone it is centred again (as before).
+TEST_F(HomeMinimalLayoutTest, KeyboardUpOnTallScreenDocksTheCardOnTheKeyboardAndKeepsTheChips) {
+  Load(390, 844, 336, true);
+  const Box card = ById("stub-composer");
+  const Box logo = First("home-logo");
+  ui::ElementList chips;
+  document->GetElementsByClassName(chips, "chat-suggestion");
+  ASSERT_EQ(chips.size(), 5u);
+  const Box last_chip = BoxOf(chips.back());
+  const Box first_chip = BoxOf(chips.front());
+  std::printf("[844/336 docked] card bottom %.1f keyboard top %.1f logo h %.1f top %.1f chips first top %.1f last bottom %.1f\n",
+              card.bottom(), visible_height, logo.height, logo.top, first_chip.top, last_chip.bottom());
+  EXPECT_NEAR(visible_height - card.bottom(), 8.f, 1.f) << "card bottom 8dp above the keyboard top";
+  EXPECT_FLOAT_EQ(logo.height, 100.f);
+  EXPECT_LT(logo.top, 90.f + 24.f) << "the mascot is at the top of what is left";
+  EXPECT_GT(first_chip.height, 0.f) << "chips visible";
+  EXPECT_LE(last_chip.bottom(), card.top + 0.5f) << "the chips are over the card";
+  EXPECT_NEAR(card.top - last_chip.bottom(), 8.f, 1.f) << "bottom chip row 8dp over the card";
+  EXPECT_LE(logo.bottom(), first_chip.top) << "no overlap with the mascot";
+}
+
+TEST_F(HomeMinimalLayoutTest, KeyboardGoneCentresTheBlockAgain) {
+  Load(390, 844, 0, false);
+  const Box card = ById("stub-composer");
+  const Box logo = First("home-logo");
+  std::printf("[844/0 centred] card top %.1f bottom %.1f logo h %.1f top %.1f\n", card.top, card.bottom(), logo.height, logo.top);
+  EXPECT_FLOAT_EQ(logo.height, 100.f);
+  EXPECT_LT(card.bottom(), visible_height - 60.f) << "not at the bottom any more";
+  EXPECT_GT(logo.top, 90.f + 40.f) << "the block is centred, the logo not pinned to the top";
 }
 
 TEST_F(HomeMinimalLayoutTest, SmallScreenWithoutKeyboardUsesTheSmallLogoAndWrapsChips) {

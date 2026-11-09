@@ -12035,6 +12035,12 @@ input.checkbox {
   display: none;
 }
 
+/* The disabled Send of an empty AI field (TODO #205) exists only in the phone chat and the ask-AI panel. */
+.prompt-send-btn--idle {
+  display: none;
+  pointer-events: none;
+}
+
 /* The microphone and Send share one place: a round 44dp button right of the pill, filled with the accent
    (colors-*.rcss). Only one of them is in the markup at a time. */
 .shell-chat-overlay .prompt-composer-row .prompt-send-btn,
@@ -13547,6 +13553,37 @@ textarea:composing ~ .prompt-composer-label,
   }
 }
 
+/* Docked (TODO #204, owner 2026-11-09): with the keyboard or the emoji sheet up (ShellHost sets .home-landing--docked
+   from the same latch that lifts the page above it) the card sits 8dp above the keyboard, the chips right over it
+   (bottom row 8dp above the card) and the mascot at the top of what is left. column-reverse flips the card under the
+   chips; the mascot leaves the flow (absolute) and its room is the inner block's top padding. When the height runs
+   short the chips shrink away first (flex-shrink, clip), the mascot is the 80dp one under 600dp. */
+.shell-layer-compact .home-landing--minimal.home-landing--docked {
+  padding-bottom: 0;
+}
+.shell-layer-compact .home-landing--minimal.home-landing--docked .home-landing-inner {
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+  gap: 0;
+  padding-top: 140dp;
+  padding-bottom: 8dp;
+}
+.shell-layer-compact .home-landing--minimal.home-landing--docked .home-logo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  margin: 0;
+}
+.shell-layer-compact .home-landing--minimal.home-landing--docked .home-composer-mount .prompt-composer {
+  margin-bottom: 0;
+}
+@media (max-height: 599dp) {
+  .shell-layer-compact .home-landing--minimal.home-landing--docked .home-landing-inner {
+    padding-top: 96dp;
+  }
+}
+
 /* The field on the Home root is two lines tall; its placeholder label is the "what can I do for you" line (the draft
    label for a conversation stays with the conversation's own composer). */
 .shell-layer-compact .home-composer-mount .prompt-composer {
@@ -13653,6 +13690,10 @@ textarea:composing ~ .prompt-composer-label,
   padding: 4dp;
   box-sizing: border-box;
   border-radius: 16dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn--idle {
+  display: none;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {

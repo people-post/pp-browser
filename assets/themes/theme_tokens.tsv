@@ -117,3 +117,4 @@ x-drawer-edge-fade	#00000000	#00000000	extra: where the AI drawer's edge shadow 
 x-circle-top	#ffffff	#3c3c40	extra: phone top-bar circle, top of its gradient
 x-circle-bottom	#e2e2e9	#2a2a2d	extra: phone top-bar circle, bottom of its gradient
 x-home-emoji-fill	#007aff1f	#0a84ff33	extra: phone Home card emoji button circle (translucent accent)
+x-send-disabled	#c7c7cc	#48484a	extra: phone composer: the round Send button while an AI field is empty (disabled)
