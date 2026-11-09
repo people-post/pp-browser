@@ -22,8 +22,7 @@ std::optional<BackendEnv>& Latched() {
   return latched;
 }
 
-std::string Derive(const char* path) {
-  const std::string origin = BriefOrigin();
+std::string Derive(const std::string& origin, const char* path) {
   return origin.empty() ? std::string() : origin + path;
 }
 
@@ -35,6 +34,10 @@ const char* CompiledDefaultOrigin() {
 
 const char* CompiledQaOrigin() {
   return PP_API_URL_QA;
+}
+
+CompiledOrigins BuildCompiledOrigins() {
+  return {.prod = CompiledDefaultOrigin(), .qa = CompiledQaOrigin()};
 }
 
 BackendEnv ParseBackendEnv(const std::string_view name) {
@@ -67,10 +70,11 @@ void LatchActiveBackend(BackendEnv requested) {
   if (Latched()) {
     return;
   }
-  if (requested == BackendEnv::Qa && !QaBackendAvailable()) {
-    requested = BackendEnv::Prod;
-  }
-  Latched() = requested;
+  Latched() = ResolveLatchedBackend(requested, QaBackendAvailable());
+}
+
+BackendEnv ResolveLatchedBackend(const BackendEnv requested, const bool qa_available) {
+  return requested == BackendEnv::Qa && !qa_available ? BackendEnv::Prod : requested;
 }
 
 bool ActiveBackendLatched() {
@@ -87,7 +91,8 @@ bool OriginEnvOverrideActive() {
   return !kUiDemoBuild && env != nullptr && *env != '\0';
 }
 
-std::string ResolveBriefOrigin(const bool ui_demo, const char* env_origin, const BackendEnv backend) {
+std::string ResolveBriefOrigin(const bool ui_demo, const char* env_origin, const BackendEnv backend,
+                               const CompiledOrigins& compiled) {
   if (ui_demo) {
     return {};
   }
@@ -95,9 +100,9 @@ std::string ResolveBriefOrigin(const bool ui_demo, const char* env_origin, const
   if (env_origin && *env_origin) {
     origin = env_origin;
   } else if (backend == BackendEnv::Qa) {
-    origin = CompiledQaOrigin();
+    origin = compiled.qa;
   } else {
-    origin = CompiledDefaultOrigin();
+    origin = compiled.prod;
   }
   while (!origin.empty() && origin.back() == '/') {
     origin.pop_back();
@@ -106,11 +111,23 @@ std::string ResolveBriefOrigin(const bool ui_demo, const char* env_origin, const
 }
 
 std::string BriefOrigin() {
-  return ResolveBriefOrigin(kUiDemoBuild, std::getenv("PP_BROWSER_ORIGIN"), ActiveBackend());
+  return ResolveBriefOrigin(kUiDemoBuild, std::getenv("PP_BROWSER_ORIGIN"), ActiveBackend(), BuildCompiledOrigins());
+}
+
+std::string BriefLlmBaseUrlFor(const std::string& origin) {
+  return Derive(origin, "/api/llm/v1");
+}
+
+std::string BriefRelayBaseUrlFor(const std::string& origin) {
+  return Derive(origin, "/api/relay");
+}
+
+std::string BriefMcpUrlFor(const std::string& origin) {
+  return Derive(origin, "/mcp");
 }
 
 std::string BriefLlmBaseUrl() {
-  return Derive("/api/llm/v1");
+  return BriefLlmBaseUrlFor(BriefOrigin());
 }
 
 std::string ResolveBriefStreamUrlOverride(const bool ui_demo, const char* env_url) {
@@ -146,11 +163,11 @@ bool RunIfUploadAllowed(const bool ui_demo, const std::function<void()>& sender)
 }
 
 std::string BriefRelayBaseUrl() {
-  return Derive("/api/relay");
+  return BriefRelayBaseUrlFor(BriefOrigin());
 }
 
 std::string BriefMcpUrl() {
-  return Derive("/mcp");
+  return BriefMcpUrlFor(BriefOrigin());
 }
 
 const char* ProductDirBasename() {

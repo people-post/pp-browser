@@ -22,11 +22,19 @@ const char* BackendEnvName(BackendEnv env);
  * disables the backend features.
  */
 std::string BriefOrigin();
+/** The compile-time origins (CMake PP_API_URL_PROD / PP_API_URL_QA); "" where not configured. */
+struct CompiledOrigins {
+  const char* prod = "";
+  const char* qa = "";
+};
+/** This build's compile-time origins. */
+CompiledOrigins BuildCompiledOrigins();
 /**
  * The rule behind BriefOrigin(), with its inputs passed in. The UI demo app (`ui_demo`) has no backend: always "".
- * Otherwise `env_origin` (PP_BROWSER_ORIGIN, may be null) wins over the compiled origin of `backend`.
+ * Otherwise `env_origin` (PP_BROWSER_ORIGIN, may be null) wins over `compiled`'s origin for `backend`.
  */
-std::string ResolveBriefOrigin(bool ui_demo, const char* env_origin, BackendEnv backend);
+std::string ResolveBriefOrigin(bool ui_demo, const char* env_origin, BackendEnv backend,
+                               const CompiledOrigins& compiled);
 /**
  * The rule behind DiagnosticsUploadUrl(): "" in the UI demo app; else `env_url` (PP_BROWSER_DIAGNOSTICS_URL, may be
  * null) when set, else `origin` + /api/support/diagnostics ("" when origin is empty).
@@ -50,6 +58,8 @@ const char* CompiledDefaultOrigin();
 /** The compile-time QA origin ("" unless configured); empty hides the QA option. */
 const char* CompiledQaOrigin();
 inline bool QaBackendAvailable() { return *CompiledQaOrigin() != '\0'; }
+/** The rule behind LatchActiveBackend(): `Qa` without a QA origin (`qa_available` false) is `Prod`. */
+BackendEnv ResolveLatchedBackend(BackendEnv requested, bool qa_available);
 
 /**
  * The backend this process runs against. The first call to `LatchActiveBackend` wins, so a settings
@@ -64,6 +74,10 @@ void ResetActiveBackendForTest();
 bool OriginEnvOverrideActive();
 
 std::string BriefLlmBaseUrl();
+/** The backend URLs derived from an `origin` (as BriefOrigin() gives it); each "" when the origin is "". */
+std::string BriefLlmBaseUrlFor(const std::string& origin);
+std::string BriefRelayBaseUrlFor(const std::string& origin);
+std::string BriefMcpUrlFor(const std::string& origin);
 /** Dev override for the brief_AI stream endpoint (PP_BROWSER_BRIEF_STREAM_URL); empty = derive from the LLM base URL. */
 std::string BriefStreamUrlOverride();
 /** The rule behind BriefStreamUrlOverride(), inputs passed in: always "" in the UI demo app (no backend, no redirect). */

@@ -54,16 +54,30 @@ TEST(DeploymentProfileTest, EmptyEnvFallsBackToCompiledDefault) {
   EXPECT_EQ(pbr::BriefOrigin(), std::string(pbr::CompiledDefaultOrigin()));
 }
 
+// Compile-time origins as each build variant has them: the decisions take them as inputs, so every variant runs here.
+constexpr pbr::CompiledOrigins kNoOrigins{};
+constexpr pbr::CompiledOrigins kProdOnly{.prod = "https://prod.example.test/"};
+constexpr pbr::CompiledOrigins kProdAndQa{.prod = "https://prod.example.test", .qa = "https://qa.example.test"};
+
 TEST(DeploymentProfileTest, NoOriginYieldsEmptyUrls) {
-  ScopedOrigin origin(nullptr);
-  if (!std::string(pbr::CompiledDefaultOrigin()).empty()) {
-    GTEST_SKIP() << "a compile-time default origin is configured";
-  }
-  EXPECT_TRUE(pbr::BriefOrigin().empty());
-  EXPECT_TRUE(pbr::BriefLlmBaseUrl().empty());
-  EXPECT_TRUE(pbr::BriefRelayBaseUrl().empty());
-  EXPECT_TRUE(pbr::BriefMcpUrl().empty());
-  EXPECT_TRUE(pbr::DiagnosticsUploadUrl().empty());
+  const std::string origin = pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Prod, kNoOrigins);
+  EXPECT_TRUE(origin.empty());
+  EXPECT_TRUE(pbr::BriefLlmBaseUrlFor(origin).empty());
+  EXPECT_TRUE(pbr::BriefRelayBaseUrlFor(origin).empty());
+  EXPECT_TRUE(pbr::BriefMcpUrlFor(origin).empty());
+  EXPECT_TRUE(pbr::ResolveDiagnosticsUploadUrl(false, nullptr, origin).empty());
+}
+
+TEST(DeploymentProfileTest, ACompiledDefaultOriginIsUsedWithoutTheEnvironment) {
+  const std::string origin = pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Prod, kProdOnly);
+  EXPECT_EQ(origin, "https://prod.example.test");
+  EXPECT_EQ(pbr::BriefLlmBaseUrlFor(origin), "https://prod.example.test/api/llm/v1");
+  EXPECT_EQ(pbr::BriefRelayBaseUrlFor(origin), "https://prod.example.test/api/relay");
+  EXPECT_EQ(pbr::BriefMcpUrlFor(origin), "https://prod.example.test/mcp");
+  EXPECT_EQ(pbr::ResolveDiagnosticsUploadUrl(false, nullptr, origin),
+            "https://prod.example.test/api/support/diagnostics");
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, "", pbr::BackendEnv::Prod, kProdOnly), "https://prod.example.test")
+      << "an empty variable is unset";
 }
 
 TEST(DeploymentProfileTest, BackendEnvNamesRoundTripAndUnknownIsProd) {
@@ -84,28 +98,23 @@ TEST(DeploymentProfileTest, ActiveBackendLatchesOnFirstCall) {
 }
 
 TEST(DeploymentProfileTest, QaFallsBackToProdWithoutCompiledQaOrigin) {
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Qa, false), pbr::BackendEnv::Prod);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Qa, true), pbr::BackendEnv::Qa);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Custom, false), pbr::BackendEnv::Custom);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Prod, true), pbr::BackendEnv::Prod);
+}
+
+// This build's own: the latch applies the rule with its compiled QA origin.
+TEST(DeploymentProfileTest, TheLatchUsesThisBuildsQaOrigin) {
   pbr::ResetActiveBackendForTest();
-  if (pbr::QaBackendAvailable()) {
-    GTEST_SKIP() << "a compile-time QA origin is configured";
-  }
   pbr::LatchActiveBackend(pbr::BackendEnv::Qa);
-  EXPECT_EQ(pbr::ActiveBackend(), pbr::BackendEnv::Prod);
+  EXPECT_EQ(pbr::ActiveBackend(), pbr::ResolveLatchedBackend(pbr::BackendEnv::Qa, pbr::QaBackendAvailable()));
   pbr::ResetActiveBackendForTest();
 }
 
 TEST(DeploymentProfileTest, QaBackendUsesQaOriginAndEnvStillWins) {
-  pbr::ResetActiveBackendForTest();
-  if (!pbr::QaBackendAvailable()) {
-    GTEST_SKIP() << "no compile-time QA origin";
-  }
-  pbr::LatchActiveBackend(pbr::BackendEnv::Qa);
-  {
-    ScopedOrigin origin(nullptr);
-    EXPECT_EQ(pbr::BriefOrigin(), std::string(pbr::CompiledQaOrigin()));
-  }
-  {
-    ScopedOrigin origin("https://backend.example.test");
-    EXPECT_EQ(pbr::BriefOrigin(), "https://backend.example.test");
-  }
-  pbr::ResetActiveBackendForTest();
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Qa, kProdAndQa), "https://qa.example.test");
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Prod, kProdAndQa), "https://prod.example.test");
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, "https://backend.example.test", pbr::BackendEnv::Qa, kProdAndQa),
+            "https://backend.example.test");
 }
