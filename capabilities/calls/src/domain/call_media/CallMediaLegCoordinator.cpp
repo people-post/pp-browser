@@ -63,13 +63,6 @@ std::vector<uint8_t> Utf8Body(const std::string& utf8) {
   return std::vector<uint8_t>(utf8.begin(), utf8.end());
 }
 
-/** k3: a candidate path must be up and acknowledged within this, or the call stays where it is. */
-constexpr auto kMigrateTimeout = std::chrono::seconds(5);
-/** k3: between automatic attempts to move a relayed call onto a direct link. */
-constexpr auto kAutoMigrateBackoff = std::chrono::seconds(10);
-/** k4 (K008): a call without any path waits this long for a new one before it fails. */
-constexpr auto kReconnectWindow = std::chrono::seconds(30);
-
 bool IsRemoteTerminalReason(const char* reason) {
   return reason && (std::strcmp(reason, "peer_close") == 0 || std::strcmp(reason, "peer_reset") == 0);
 }
@@ -219,10 +212,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   std::atomic<bool> ignore_migrate_for_test{false};
   /** k4 test seam: this side sends nothing (media, heartbeats) on paths of this kind — a path gone quiet. */
   std::atomic<CallMediaLinkKind> silenced_kind_for_test{CallMediaLinkKind::Unknown};
-  std::chrono::milliseconds reconnect_window = std::chrono::duration_cast<std::chrono::milliseconds>(kReconnectWindow);
+  std::chrono::milliseconds reconnect_window{kCallMediaReconnectWindowMs};
   /** k3: the driver moves a relayed call onto a direct link to the same peer as soon as one is up. */
   std::atomic<bool> auto_migrate_to_direct{true};
-  std::chrono::milliseconds migrate_timeout = std::chrono::duration_cast<std::chrono::milliseconds>(kMigrateTimeout);
+  std::chrono::milliseconds migrate_timeout{kCallMediaMigrateTimeoutMs};
   std::atomic<bool> stopped{false};
   std::atomic<bool> started{false};
   std::atomic<uint64_t> next_leg_id{1};
@@ -1294,7 +1287,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     target->candidate = std::move(candidate);
     Bundle::Migration migration;
     migration.initiator = false;
-    migration.deadline = Clock::now() + kMigrateTimeout;
+    migration.deadline = Clock::now() + std::chrono::milliseconds(kCallMediaMigrateTimeoutMs);
     migration.standby_only = standby_only;
     target->migration = std::move(migration);
     (void)session->EnqueueOutbound(Utf8Body(EncodeCallMediaMigrateAck(true, gen)));
@@ -1550,7 +1543,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         !LocalWinsForBundle(bundle, *direct)) {
       return;
     }
-    bundle.next_auto_migrate = now + kAutoMigrateBackoff;
+    bundle.next_auto_migrate = now + std::chrono::milliseconds(kCallMediaAutoMigrateBackoffMs);
     CallMediaLegLog().info << "CallMediaLeg direct link up for relayed call_id=" << bundle.call_id
                            << " — migrating";
     BeginMigrationLocked(bundle.leg_id, direct->Handle(), {});
@@ -1780,7 +1773,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       }
       target->finished = false;
       if (target->deadline.time_since_epoch().count() == 0) {
-        target->deadline = Clock::now() + std::chrono::seconds(15);
+        target->deadline = Clock::now() + std::chrono::milliseconds(kCallMediaConnectTimeoutMs);
       }
       CallMediaLegLog().info << "CallMediaLeg inbound hello call_id=" << hello_call_id
                              << " peer=" << link->PeerKey()
@@ -1920,7 +1913,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       // kept the old entry and `raw` dangled (use-after-free).
       pending->call_id = std::string("__pending_") + std::to_string(pending->leg_id.value) + "_" + std::to_string(channel_id);
       pending->params.peer_key = link.PeerKey();
-      pending->deadline = Clock::now() + std::chrono::seconds(15);
+      pending->deadline = Clock::now() + std::chrono::milliseconds(kCallMediaPlaceholderTimeoutMs);
       pending->finished = true;
       pending->phase = CallMediaBundlePhase::Idle;
       const std::string pending_id = pending->call_id;
@@ -1977,7 +1970,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
     existing.leg_id = leg_id;
     existing.offerer = local_offerer;  // our own role: authoritative over what the inbound hello implied
-    existing.deadline = Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 15000);
+    existing.deadline = Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : kCallMediaConnectTimeoutMs);
     // Inbound worker may not have installed answer callbacks yet.
     if (!existing.callbacks.on_audio && !existing.callbacks.on_media && !existing.callbacks.on_connected) {
       existing.callbacks = std::move(callbacks);
@@ -2182,7 +2175,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       bundle->on_finished = std::move(on_finished);
       bundle->finished = false;
       bundle->offerer = params.offerer;
-      bundle->deadline = Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 15000);
+      bundle->deadline = Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : kCallMediaConnectTimeoutMs);
       bundle->phase = CallMediaBundlePhase::OutboundHello;
       deadline = bundle->deadline;
       bundles.emplace(params.call_id, std::move(bundle));

@@ -108,6 +108,19 @@ CallMediaLegPhase CallMediaBundlePhaseToLegPhase(CallMediaBundlePhase phase);
 
 bool CallMediaBundlePhaseIsActive(CallMediaBundlePhase phase);
 
+// --- The leg's timers -------------------------------------------------------------------------
+// Every one in milliseconds.
+
+/** A leg's connect (control hello → media ready) when its caller sets none; an inbound hello's leg too. */
+inline constexpr int64_t kCallMediaConnectTimeoutMs = 15000;
+/** An inbound control channel is held (a placeholder) this long for its `hello` / `migrate`. */
+inline constexpr int64_t kCallMediaPlaceholderTimeoutMs = 15000;
+/** k3: a candidate path must be up and acknowledged within this, or the call stays where it is. */
+inline constexpr int64_t kCallMediaMigrateTimeoutMs = 5000;
+/** k3: between automatic attempts to move a relayed call onto a direct link. */
+inline constexpr int64_t kCallMediaAutoMigrateBackoffMs = 10000;
+/** k4 (K008): a call without any path waits this long for a new one before it fails. */
+inline constexpr int64_t kCallMediaReconnectWindowMs = 30000;
 /** k4 (K008): heartbeat cadence per path role, and when a silent path counts as dead. */
 inline constexpr int64_t kCallMediaActiveHeartbeatMs = 500;
 inline constexpr int64_t kCallMediaStandbyHeartbeatMs = 10000;
@@ -134,6 +147,13 @@ inline constexpr int64_t kCallMediaFailoverHoldDownMs = 3000;
  * path) before it counts as lost.
  */
 inline constexpr int64_t kCallMediaByeAwaitMs = 1500;
+
+/** k3: after a switch, the old path is released once media arrived on the new one and this long passed ... */
+inline constexpr int64_t kCallMediaRetireAfterSwitchMs = 1000;
+/** ... or after this long regardless (a muted / silent peer). */
+inline constexpr int64_t kCallMediaRetireAtMostMs = 5000;
+/** A retiring path whose release was never acknowledged is dropped after this. */
+inline constexpr int64_t kCallMediaRetireAbandonMs = 10000;
 
 /** K014: one of the active path's channels of a live (MediaReady) call closed — not by this end. */
 struct CallMediaActiveCloseInput {
@@ -206,13 +226,6 @@ private:
   uint32_t highest_ = 0;
   std::bitset<kWindow> seen_;  // bit i = highest_ - i
 };
-
-/** k3: after a switch, the old path is released once media arrived on the new one and this long passed ... */
-inline constexpr int64_t kCallMediaRetireAfterSwitchMs = 1000;
-/** ... or after this long regardless (a muted / silent peer). */
-inline constexpr int64_t kCallMediaRetireAtMostMs = 5000;
-/** A retiring path whose release was never acknowledged is dropped after this. */
-inline constexpr int64_t kCallMediaRetireAbandonMs = 10000;
 
 struct CallMediaRetiringInput {
   bool link_lost = false;

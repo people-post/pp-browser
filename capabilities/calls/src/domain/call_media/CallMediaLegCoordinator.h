@@ -60,7 +60,8 @@ public:
 
   /** Returns leg id immediately; completion via `on_finished` when MediaReady or error. */
   CallMediaLegId StartLeg(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                          LegConnected on_finished = {}, int timeout_ms = 15000);
+                          LegConnected on_finished = {},
+                          int timeout_ms = static_cast<int>(kCallMediaConnectTimeoutMs));
 
   void CancelLeg(CallMediaLegId id);
   /** Drop leg `id`'s bundle; an empty or gone id drops nothing (never another call's bundle). */
@@ -110,7 +111,7 @@ public:
   /**
    * Default on: when a relayed call's peer becomes reachable over a Connected direct link (a punch
    * landed, or the peer dialed), the driver migrates the call there (`MigrateLeg`), retrying after
-   * a 10 s backoff. Off for tests that drive `MigrateLeg` themselves.
+   * a 10 s backoff (`kCallMediaAutoMigrateBackoffMs`). Off for tests that drive `MigrateLeg` themselves.
    */
   void SetAutoMigrateToDirect(bool enable);
   /** Test: behave like a peer from before k3 (never answers `migrate`). */
