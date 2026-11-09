@@ -2,9 +2,17 @@
 
 namespace pbr {
 
+bool CallScreenIsFailedPage(const CallScreen& screen) {
+  return screen.kind == CallScreen::Kind::InCall && (screen.status == CallScreen::Status::CouldntConnect ||
+                                                     screen.status == CallScreen::Status::Disconnected);
+}
+
 NewCallVerdict DecideNewCall(const CallScreen& screen, const std::string& thread_id) {
   if (screen.kind != CallScreen::Kind::InCall) {
     return NewCallVerdict::Place;
+  }
+  if (CallScreenIsFailedPage(screen)) {
+    return NewCallVerdict::Place;  // the dead call's page is no call to ask about
   }
   if (!thread_id.empty() && screen.thread_id == thread_id) {
     return NewCallVerdict::ShowCurrent;

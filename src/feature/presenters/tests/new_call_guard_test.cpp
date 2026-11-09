@@ -35,6 +35,18 @@ struct Rig {
   }
 };
 
+TEST(NewCallGuardTest, AFailedCallPageIsNotACallToAskAbout) {
+  for (const auto status : {CallScreen::Status::CouldntConnect, CallScreen::Status::Disconnected}) {
+    CallScreen s = InCallIn("dm-bob");
+    s.status = status;
+    EXPECT_EQ(DecideNewCall(s, "dm-bob"), NewCallVerdict::Place);
+    EXPECT_EQ(DecideNewCall(s, "dm-eve"), NewCallVerdict::Place);
+  }
+  CallScreen live = InCallIn("dm-bob");
+  live.status = CallScreen::Status::Connected;
+  EXPECT_EQ(DecideNewCall(live, "dm-eve"), NewCallVerdict::AskThenReplace);
+}
+
 TEST(NewCallGuardTest, NoCallPlacesWithoutAsking) {
   EXPECT_EQ(DecideNewCall(CallScreen{}, "dm-bob"), NewCallVerdict::Place);
   Rig rig;
