@@ -107,8 +107,9 @@ CallController::CallController()
   callbacks.on_decline = [this](const std::string& call_id) { metrics_.NoteDecline(call_id); };
   callbacks.on_call_over = [this](const std::string& call_id) { system_call_screen_.OnCallOver(call_id); };
   callbacks.confirm_end_current_call = [](std::function<void(bool)> answer) {
-    UserFeedback::Confirm(Tr("call.replace.title"), Tr("call.replace.body"), std::move(answer),
-                          Tr("call.replace.action"));
+    // "End and call" in the danger colour: it ends the live call (Kenneth 2026-11-09).
+    UserFeedback::ConfirmDestructive(Tr("call.replace.title"), Tr("call.replace.body"), std::move(answer),
+                                     Tr("call.replace.action"));
   };
   callbacks.show_current_call = [this]() {
     if (chrome_mode_ == CallChromeMode::Minimized) {
