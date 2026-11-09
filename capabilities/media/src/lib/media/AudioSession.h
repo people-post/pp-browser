@@ -30,6 +30,9 @@ void Deactivate();
  * it), so each adds its own. A single handler that each new engine replaced ended up on a broadcast engine, and the
  * call's audio never came back. Fires only while a live session is active, and only where the OS interrupts the
  * session (iOS's interruptions, Android's loss of audio focus); elsewhere the handlers are kept and never run.
+ * Android: on the focus back, or — after a loss for good, which Android never gives back — when asking for it again
+ * is granted (the app back in front, the speaker toggled; AudioFocusInterruption); the call's audio mode,
+ * communication device and speaker are put back first.
  *
  * Handlers run under the registry's lock: keep them short, and do not add or remove from inside one. Remove waits
  * for a running handler, so its owner may go once Remove returns.

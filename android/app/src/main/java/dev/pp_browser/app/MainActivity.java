@@ -120,19 +120,20 @@ public class MainActivity extends SDLActivity {
      */
     private final Object mCallAudioFocusLock = new Object();
     private AudioFocusRequest mCallAudioFocusRequest;
+    /** Before Android 8 (no AudioFocusRequest): the stream the call's focus was asked for with; -1: none asked. */
+    private int mLegacyCallAudioFocusStream = -1;
     /**
-     * A phone call (or another app's call) takes the call's audio focus: the call is interrupted until focus is back
-     * (native AudioSession: its peer is told it is on hold, and its devices reopen at the end). A duck is not a loss.
+     * A phone call (or another app's call, music, video) takes the call's audio focus: the call is interrupted until
+     * the focus is back (native AudioSession, AudioFocusInterruption: its peer is told it is on hold, and its route
+     * and devices come back at the end). Native decides what each change means; it is told outside the lock.
      */
-    private final AudioManager.OnAudioFocusChangeListener mCallAudioFocusListener = focusChange -> {
-        if (focusChange == AudioManager.AUDIOFOCUS_LOSS || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-            onCallAudioFocus(true);
-        } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-            onCallAudioFocus(false);
-        }
-    };
+    private final AudioManager.OnAudioFocusChangeListener mCallAudioFocusListener = MainActivity::onCallAudioFocus;
 
-    private static native void nativeOnCallAudioFocus(boolean lost);
+    /** `focusChange`: AudioManager's AUDIOFOCUS_* value. */
+    private static native void nativeOnCallAudioFocus(int focusChange);
+
+    /** The user is back (onResume): a call's focus lost for good is asked for again. */
+    private static native void nativeRetakeCallAudioFocus();
 
     /** The lock screen went away: native OsProtectedData runs whoever waits for it (the PIN grace window). */
     private static native void nativeOnUserPresent();
@@ -147,10 +148,10 @@ public class MainActivity extends SDLActivity {
         }
     };
 
-    private static void onCallAudioFocus(boolean lost) {
-        Log.i(TAG, lost ? "call audio focus lost" : "call audio focus back");
+    private static void onCallAudioFocus(int focusChange) {
+        Log.i(TAG, "call audio focus change " + focusChange);
         try {
-            nativeOnCallAudioFocus(lost);
+            nativeOnCallAudioFocus(focusChange);
         } catch (UnsatisfiedLinkError ignored) {
         }
     }
@@ -811,6 +812,10 @@ public class MainActivity extends SDLActivity {
         mThumbnailCapturedForPause.set(false);
         super.onResume();
         sInFront = true;
+        try {
+            nativeRetakeCallAudioFocus();  // a call's focus another app took for good (Android never gives it back)
+        } catch (UnsatisfiedLinkError ignored) {
+        }
         if (sOngoingCall && !PpCallService.isForeground()) {
             // The call started while the app was in the background, or the service was refused or stopped since.
             startOngoingCallServiceIfAllowed();
@@ -1032,6 +1037,7 @@ public class MainActivity extends SDLActivity {
             @SuppressWarnings("deprecation")
             int ignored = am.requestAudioFocus(mCallAudioFocusListener, stream,
                     AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+            mLegacyCallAudioFocusStream = stream;
             return;
         }
         if (mCallAudioFocusRequest != null) {
@@ -1060,12 +1066,42 @@ public class MainActivity extends SDLActivity {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
                 @SuppressWarnings("deprecation")
                 int ignored = am.abandonAudioFocus(mCallAudioFocusListener);
+                mLegacyCallAudioFocusStream = -1;
                 return;
             }
             if (mCallAudioFocusRequest != null) {
                 am.abandonAudioFocusRequest(mCallAudioFocusRequest);
                 mCallAudioFocusRequest = null;
             }
+        }
+    }
+
+    /**
+     * Called from native {@code AudioSession} (any thread) after the call's focus was lost for good: asks for it again
+     * with the call's request. True: granted now. Delayed (a phone call still has it): the listener hears the gain.
+     */
+    public boolean retakeCallAudioFocus() {
+        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (am == null) {
+            return false;
+        }
+        synchronized (mCallAudioFocusLock) {
+            final int result;
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                if (mLegacyCallAudioFocusStream < 0) {
+                    return false;
+                }
+                @SuppressWarnings("deprecation")
+                int legacy = am.requestAudioFocus(mCallAudioFocusListener, mLegacyCallAudioFocusStream,
+                        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+                result = legacy;
+            } else {
+                if (mCallAudioFocusRequest == null) {
+                    return false;
+                }
+                result = am.requestAudioFocus(mCallAudioFocusRequest);
+            }
+            return result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
         }
     }
 
