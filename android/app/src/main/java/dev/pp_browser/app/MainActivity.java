@@ -111,6 +111,11 @@ public class MainActivity extends SDLActivity {
     private final AtomicBoolean mThumbnailCapturedForPause = new AtomicBoolean(false);
     /** A secret is on screen (native SecureScreen): no screenshot of it anywhere, ours included. */
     private volatile boolean mSecureScreen;
+    /**
+     * The call's audio-focus request, held under this lock: setAudioSessionActive runs on native's threads (each
+     * call's media, the ringtone's), at the same time on several.
+     */
+    private final Object mCallAudioFocusLock = new Object();
     private AudioFocusRequest mCallAudioFocusRequest;
     /**
      * A phone call (or another app's call) takes the call's audio focus: the call is interrupted until focus is back
@@ -1012,6 +1017,12 @@ public class MainActivity extends SDLActivity {
     }
 
     private void requestCallAudioFocus(AudioManager am, boolean mediaPath) {
+        synchronized (mCallAudioFocusLock) {
+            requestCallAudioFocusLocked(am, mediaPath);
+        }
+    }
+
+    private void requestCallAudioFocusLocked(AudioManager am, boolean mediaPath) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             final int stream = mediaPath ? AudioManager.STREAM_MUSIC : AudioManager.STREAM_VOICE_CALL;
             @SuppressWarnings("deprecation")
@@ -1041,14 +1052,16 @@ public class MainActivity extends SDLActivity {
     }
 
     private void abandonCallAudioFocus(AudioManager am) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            @SuppressWarnings("deprecation")
-            int ignored = am.abandonAudioFocus(mCallAudioFocusListener);
-            return;
-        }
-        if (mCallAudioFocusRequest != null) {
-            am.abandonAudioFocusRequest(mCallAudioFocusRequest);
-            mCallAudioFocusRequest = null;
+        synchronized (mCallAudioFocusLock) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                @SuppressWarnings("deprecation")
+                int ignored = am.abandonAudioFocus(mCallAudioFocusListener);
+                return;
+            }
+            if (mCallAudioFocusRequest != null) {
+                am.abandonAudioFocusRequest(mCallAudioFocusRequest);
+                mCallAudioFocusRequest = null;
+            }
         }
     }
 
