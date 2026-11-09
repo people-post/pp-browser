@@ -1899,6 +1899,11 @@ void ShellHost::ApplySafeAreaLayout() {
   if (state_.layout_mode != LayoutMode::Compact) {
     return;
   }
+  // The AI Home's card docks onto the keyboard / emoji sheet while one is up (TODO #204): the same latch that lifts
+  // #shell-root above it (components.rcss: .home-landing--docked).
+  if (ui::Element* landing = doc->GetElementById("home-landing")) {
+    landing->SetClass("home-landing--docked", bottom_chrome_open_ || state_.safe_area_bottom_dp >= kImeLatchMinDp);
+  }
   // The bottom surface owns the home-indicator strip (padding keeps its controls above the inset).
   const float strip_dp = layout.bottom_surface_padding_dp;
   // Nav page only needs nav-height padding; shell-root bottom already clears the bottom chrome. Chats scrolls under
