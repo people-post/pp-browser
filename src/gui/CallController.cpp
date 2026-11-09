@@ -913,6 +913,9 @@ std::string CallController::NoticeUserText(const CallNotice& notice) const {
     log().info << "call media error shown as " << key << " raw=" << notice.text;
     return Tr(key);
   }
+  if (CallNoticeIsLocalizedCopy(notice.text)) {
+    return notice.text;
+  }
   return PaymentErrorUserMessage(notice.text);
 }
 

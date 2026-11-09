@@ -1,5 +1,7 @@
 #include "lib/calls/CallMediaErrorText.h"
 
+#include "common/Localized.h"
+
 namespace pbr {
 
 namespace {
@@ -27,7 +29,27 @@ bool LooksTechnical(const std::string& text) {
                             Has(text, "signaling") || Has(text, "relay") || Has(text, "circuit"));
 }
 
+/** The locale keys of the notices the calls feature words itself (the one place to extend). */
+constexpr const char* kLocalizedNoticeKeys[] = {
+    "call.notice.removed",
+    "call.notice.left_group",
+    "call.notice.call_ended",
+    "call.error.media_unavailable",
+};
+
 } // namespace
+
+bool CallNoticeIsLocalizedCopy(const std::string& text) {
+  if (text.empty()) {
+    return false;
+  }
+  for (const char* key : kLocalizedNoticeKeys) {
+    if (text == Localized(key)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 bool CallMediaErrorShownOnCallScreen(const std::string& technical) {
   // K014: a call that was connected and lost its media for good (no path within the reconnect window, the link
