@@ -33,6 +33,8 @@ enum class CallDirectPlannerEvent : uint8_t {
   PathMigrated,
   /** k4: the call lost its last path (no standby) — reconnect window. */
   PathLost,
+  /** K014: the call was connected and lost its media for good (CallMediaErr::Dropped): never ConnectFailed. */
+  Dropped,
 };
 
 enum class CallDirectPlannerDecision : uint8_t {
@@ -102,6 +104,8 @@ inline const char* CallDirectPlannerEventName(CallDirectPlannerEvent ev) {
     return "PathMigrated";
   case CallDirectPlannerEvent::PathLost:
     return "PathLost";
+  case CallDirectPlannerEvent::Dropped:
+    return "Dropped";
   }
   return "?";
 }
@@ -230,6 +234,7 @@ inline CallDirectPlannerPhaseOutcome DecideCallDirectPlannerPhase(CallDirectPlan
     return out;
 
   case CallDirectPlannerEvent::ConnectFailed:
+  case CallDirectPlannerEvent::Dropped:
     if (phase == CallDirectPlannerPhase::Idle || phase == CallDirectPlannerPhase::Stopping) {
       out.decision = CallDirectPlannerDecision::Ignore;
       return out;

@@ -52,27 +52,38 @@ CallMediaHelloAckDecision DecideCallMediaHelloAck(const CallMediaHelloAckContext
   return CallMediaHelloAckDecision::Fail;
 }
 
-CallMediaChannelCloseDecision DecideCallMediaChannelClose(const CallMediaChannelCloseContext& ctx) {
-  if (!ctx.slot_still_owned) {
-    return CallMediaChannelCloseDecision::Ignore;
+CallMediaChannelCloseAction RouteCallMediaChannelClose(const CallMediaChannelCloseInput& in) {
+  if (in.placeholder) {
+    return CallMediaChannelCloseAction::DropPlaceholder;
   }
-  if (ctx.phase == CallMediaBundlePhase::Idle) {
-    return CallMediaChannelCloseDecision::Ignore;
+  switch (in.slot) {
+    case CallMediaPathSlot::Candidate:
+      return CallMediaChannelCloseAction::AbandonCandidate;
+    case CallMediaPathSlot::Retiring:
+      return CallMediaChannelCloseAction::DropRetiring;
+    case CallMediaPathSlot::Standby:
+      return CallMediaChannelCloseAction::DropStandby;
+    case CallMediaPathSlot::Active:
+      break;
   }
-  if (ctx.local_cancel || ctx.phase == CallMediaBundlePhase::Closing) {
-    return CallMediaChannelCloseDecision::SuppressNotify;
+  // K014: whoever closed it — the peer's hang-up comes as `bye` first (the leg is gone by its close).
+  if (in.phase == CallMediaBundlePhase::MediaReady && !in.local_cancel) {
+    return CallMediaChannelCloseAction::ActivePathClosed;
   }
-  // Dual-dial: peer abandoned their outbound (our inbound) after we won glare, or we rejected
-  // inbound — must not tear down the winning outbound control.
-  if (ctx.role == CallMediaChannelRole::InboundControl && ctx.phase == CallMediaBundlePhase::OutboundHello) {
-    return CallMediaChannelCloseDecision::Ignore;
+  if (in.phase == CallMediaBundlePhase::Idle) {
+    return CallMediaChannelCloseAction::Ignore;
   }
-  if (ctx.remote_terminal || ctx.role == CallMediaChannelRole::Media ||
-      ctx.role == CallMediaChannelRole::InboundControl ||
-      ctx.role == CallMediaChannelRole::OutboundControl) {
-    return CallMediaChannelCloseDecision::FailLeg;
+  if (in.local_cancel || in.phase == CallMediaBundlePhase::Closing) {
+    return CallMediaChannelCloseAction::TearDownQuietly;
   }
-  return CallMediaChannelCloseDecision::Ignore;
+  // Dual-dial: the peer abandoned its outbound (our inbound) after we won glare, or we rejected it —
+  // the winning outbound control stays.
+  if (in.role == CallMediaChannelRole::InboundControl && in.phase == CallMediaBundlePhase::OutboundHello) {
+    return CallMediaChannelCloseAction::DropInboundControl;
+  }
+  // Any other channel of a connecting leg closing fails it; the peer closing it is reported.
+  return in.remote_terminal ? CallMediaChannelCloseAction::TearDownReported
+                            : CallMediaChannelCloseAction::TearDownQuietly;
 }
 
 CallMediaSessionPhase CallMediaBundlePhaseToSessionPhase(const CallMediaBundlePhase phase) {
@@ -123,7 +134,7 @@ bool ShouldFailOverToStandby(const CallMediaFailoverInput& in) {
   if (in.active_link_lost) {
     return true;
   }
-  return in.peer_heartbeats && in.active_silence_ms >= kCallMediaActiveSilenceFailoverMs &&
+  return !in.awaiting_bye && in.peer_heartbeats && in.active_silence_ms >= kCallMediaActiveSilenceFailoverMs &&
          in.since_failover_ms >= kCallMediaFailoverHoldDownMs;
 }
 
@@ -134,7 +145,7 @@ bool ShouldEnterPathLost(const CallMediaFailoverInput& in) {
   if (in.active_link_lost) {
     return true;
   }
-  return in.peer_heartbeats && in.active_silence_ms >= kCallMediaActiveSilenceLostMs &&
+  return !in.awaiting_bye && in.peer_heartbeats && in.active_silence_ms >= kCallMediaActiveSilenceLostMs &&
          in.since_failover_ms >= kCallMediaFailoverHoldDownMs;
 }
 

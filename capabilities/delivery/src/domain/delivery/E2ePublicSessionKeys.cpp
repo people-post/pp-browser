@@ -51,21 +51,42 @@ Roe<E2ePublicSessionKeys::Session> E2ePublicSessionKeys::ResolveDevice(const std
   return session;
 }
 
-Roe<EnsuredE2ePublicSessionKey> E2ePublicSessionKeys::Ensure(const std::string& peer_identity) {
+Roe<ByteVector> E2ePublicSessionKeys::Ensure(const std::string& peer_identity) {
   auto session = Resolve(peer_identity);
   if (!session) {
     return session.error();
   }
-  auto session_key = DeriveE2ePublicSessionKey(session->master_psk, session->epoch);
-  if (!session_key) {
-    return session_key.error();
+  return DeriveE2ePublicSessionKey(session->master_psk, session->epoch);
+}
+
+Roe<ByteVector> E2ePublicSessionKeys::Held(const std::string& peer_identity) const {
+  if (peer_identity.empty()) {
+    return Error("Peer identity required");
   }
-  EnsuredE2ePublicSessionKey out;
-  out.session_key = std::move(*session_key);
-  if (session->key_init_b64 && !session->key_init_b64->empty()) {
-    out.first_message_key_init_b64 = std::move(*session->key_init_b64);
+  PeerSessionKey key;
+  key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  key.peer_identity_value = peer_identity;
+  key.channel = CryptoChannel::E2ePublic;
+  auto record = psk_store_.Load(key);
+  if (!record) {
+    return record.error();
   }
-  return out;
+  if (!record->has_value()) {
+    return Error("No session held with the peer");
+  }
+  const uint32_t epoch = (*record)->session_epoch > 0 ? (*record)->session_epoch : 1;
+  auto master_b64 = psk_store_.ResolveMasterPskForEpoch(key, epoch);
+  if (!master_b64) {
+    return master_b64.error();
+  }
+  if (!master_b64->has_value()) {
+    return Error("No session held with the peer");
+  }
+  auto master = Base64Decode(**master_b64);
+  if (!master) {
+    return master.error();
+  }
+  return DeriveE2ePublicSessionKey(*master, epoch);
 }
 
 Roe<ByteVector> E2ePublicSessionKeys::PeerKemPublicKey(const PeerSessionKey& key) const {

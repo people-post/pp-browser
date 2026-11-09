@@ -81,7 +81,7 @@ public:
   void FinishMeshStop();
   /** Group SFU: close media_relay before LeaveCall joins capture. */
   void DetachRelayClient();
-  /** Transport Detach (after LeaveCall; the 1:1 path let go before). */
+  /** Drop every call's media on the transport (shutdown, after LeaveCall; the 1:1 path let go before). */
   void DetachTransport();
   /** Reset all plane-owned objects (CallStack::Shutdown). */
   void Clear();

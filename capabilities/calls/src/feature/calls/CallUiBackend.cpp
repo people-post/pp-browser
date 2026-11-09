@@ -112,7 +112,7 @@ void CallUiBackend::SetPendingAcceptVoiceOnly(const bool voice_only) {
   OnOwner([voice_only](CallSessionManager& calls) { calls.SetPendingAcceptVoiceOnly(voice_only); });
 }
 
-std::optional<std::string> CallUiBackend::TakeLastMediaError() {
+std::optional<CallMediaError> CallUiBackend::TakeLastMediaError() {
   const auto state = State();
   if (!state->last_media_error) {
     taken_media_error_.reset();
@@ -133,17 +133,6 @@ std::optional<CallUiBackend::RemoteEnd> CallUiBackend::TakeRemoteEnd() {
   }
   taken_remote_ended_ = state->remote_ended_call_id;
   return RemoteEnd{state->remote_ended_call_id, state->remote_ended_declined};
-}
-
-std::vector<std::string> CallUiBackend::TakeCallsOver() {
-  const auto state = State();
-  if (state->sessions_identity != calls_over_sessions_) {
-    calls_over_sessions_ = state->sessions_identity; // a new workflow counts from 0
-    taken_calls_over_ = 0;
-  }
-  std::vector<std::string> fresh = state->calls_over.NewSince(taken_calls_over_);
-  taken_calls_over_ = state->calls_over.seq;
-  return fresh;
 }
 
 void CallUiBackend::StartCall(const std::string& origin_thread_id, const bool video_allowed,

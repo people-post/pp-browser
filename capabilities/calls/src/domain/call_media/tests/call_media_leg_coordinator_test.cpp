@@ -46,17 +46,6 @@ struct LegCompletion {
   }
 };
 
-void WaitUntil(const std::function<bool()>& predicate, const std::chrono::milliseconds timeout) {
-  const auto deadline = std::chrono::steady_clock::now() + timeout;
-  while (std::chrono::steady_clock::now() < deadline) {
-    if (predicate()) {
-      return;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
-  FAIL() << "Timed out waiting for condition";
-}
-
 class CallMediaLegCoordinatorTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -69,8 +58,8 @@ protected:
     ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint("b", harness_->ma_b)));
     ASSERT_TRUE(static_cast<bool>(harness_->mgr_b().RegisterEndpoint("a", harness_->ma_a)));
 
-    a_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_a);
-    b_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b);
+    a_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_a, *harness_->clock);
+    b_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b, *harness_->clock);
     a_call_->Start();
     b_call_->Start();
   }
@@ -83,7 +72,22 @@ protected:
     harness_.reset();
   }
 
+  /**
+   * Pumps until `done` while `budget` of the harness's virtual clock passes, 5 ms a round: the legs are given that
+   * clock as their timer clock (and Amp's 50 ms housekeeping runs on it), so no real time needs to pass.
+   */
+  bool PumpVirtualUntil(const std::function<bool()>& done, const std::chrono::milliseconds budget) {
+    constexpr int64_t kRoundMs = 5;
+    for (int64_t passed = 0; !done() && passed < budget.count(); passed += kRoundMs) {
+      harness_->PumpBoth(); // advances the clock 1 ms
+      harness_->clock->Advance(kRoundMs - 1);
+    }
+    return done();
+  }
+
   std::unique_ptr<mesh::test::AmpMeshHarness> harness_;
+  /** A timer clock apart from the runtime's (the product's split: monotonic timers, wall-clock amp). */
+  pp::adp::VirtualClock timer_clock_{5'000'000};
   std::unique_ptr<CallMediaLegCoordinator> a_call_;
   std::unique_ptr<CallMediaLegCoordinator> b_call_;
 };
@@ -198,7 +202,7 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedAudioRoundTrip) {
 TEST_F(CallMediaLegCoordinatorTest, DestroyAfterStopKeepsReplacementHandler) {
   auto old_b = std::move(b_call_);
   old_b->Stop();
-  b_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b);
+  b_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b, *harness_->clock);
   b_call_->Start();
   old_b.reset();
 
@@ -337,12 +341,8 @@ TEST_F(CallMediaLegCoordinatorTest, AliasRebindKeepsLegAlive) {
   ASSERT_TRUE(assoc_done.load(std::memory_order_acquire));
   ASSERT_NE(harness_->mgr_b().FindLink("moved-alias"), nullptr);
 
-  // Let TickDeadlines run a few times (1 s cadence) — the leg must not be torn down as "peer link lost".
-  const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(2500);
-  while (std::chrono::steady_clock::now() < until) {
-    harness_->PumpBoth();
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
+  // Let the io tick (TickDeadlines) run for a while — the leg must not be torn down as "peer link lost".
+  (void)PumpVirtualUntil([] { return false; }, std::chrono::milliseconds(2500));
   EXPECT_FALSE(b_failed.load(std::memory_order_acquire));
   EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
 
@@ -691,11 +691,9 @@ TEST_F(CallMediaLegCoordinatorTest, DetachUnblocksConnectWait) {
   const CallMediaLegId leg_id = a_call_->StartLeg(params, {}, leg_done.Fn(), 15000);
   ASSERT_TRUE(leg_id);
 
-  WaitUntil(
+  (void)PumpVirtualUntil(
       [&] {
-        harness_->PumpBoth();
-        return b_stalled.load(std::memory_order_acquire) &&
-               a_call_->Phase() == CallMediaSessionPhase::HelloOutbound;
+        return b_stalled.load(std::memory_order_acquire) && a_call_->Phase() == CallMediaSessionPhase::HelloOutbound;
       },
       std::chrono::milliseconds(5000));
   ASSERT_TRUE(b_stalled.load(std::memory_order_acquire));
@@ -703,12 +701,7 @@ TEST_F(CallMediaLegCoordinatorTest, DetachUnblocksConnectWait) {
   ASSERT_FALSE(leg_done.finished.load(std::memory_order_acquire));
 
   a_call_->DetachLeg(leg_id);
-  const auto detach_until = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-  while (!leg_done.finished.load(std::memory_order_acquire) &&
-         std::chrono::steady_clock::now() < detach_until) {
-    harness_->PumpBoth();
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  (void)PumpVirtualUntil([&] { return leg_done.finished.load(std::memory_order_acquire); }, std::chrono::seconds(2));
 
   ASSERT_TRUE(leg_done.finished.load(std::memory_order_acquire));
   EXPECT_FALSE(leg_done.result);
@@ -829,17 +822,85 @@ TEST_F(CallMediaLegCoordinatorTest, ConnectTimeoutReturnsIdle) {
   LegCompletion leg_done;
   const CallMediaLegId leg_id = a_call_->StartLeg(params, {}, leg_done.Fn(), 400);
   ASSERT_TRUE(leg_id);
-  const auto wait_until = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
-  while (!leg_done.finished.load(std::memory_order_acquire) &&
-         std::chrono::steady_clock::now() < wait_until) {
-    harness_->PumpBoth();
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
-  ASSERT_TRUE(leg_done.finished.load(std::memory_order_acquire));
+  // The connect deadline is on the timer clock (here the runtime's virtual one): not before it ...
+  EXPECT_FALSE(PumpVirtualUntil([&] { return leg_done.finished.load(std::memory_order_acquire); },
+                                std::chrono::milliseconds(300)));
+  // ... and soon after it (the io tick that checks it runs every 50 ms).
+  ASSERT_TRUE(PumpVirtualUntil([&] { return leg_done.finished.load(std::memory_order_acquire); },
+                               std::chrono::milliseconds(200)));
 
   EXPECT_FALSE(leg_done.result);
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
   EXPECT_FALSE(a_call_->IsLegActive(leg_id));
+}
+
+// The leg's timers run on the clock it is given, not amp's: in the product that one is monotonic and amp's
+// follows the wall clock. A wall-clock step (NTP, a manual change) while a call is reconnecting neither ends
+// the reconnect window early nor holds it open: the window runs out by the timer clock alone.
+TEST_F(CallMediaLegCoordinatorTest, AWallClockStepLeavesTheReconnectWindowToTheTimerClock) {
+  a_call_->Stop();
+  b_call_->Stop();
+  a_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_a, timer_clock_);
+  b_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b, timer_clock_);
+  a_call_->Start();
+  b_call_->Start();
+  constexpr int64_t kWindowMs = 300;
+  a_call_->SetReconnectWindowForTest(std::chrono::milliseconds(kWindowMs));
+  b_call_->SetReconnectWindowForTest(std::chrono::milliseconds(kWindowMs));
+
+  ByteVector media_key(32, 0x6b);
+  std::atomic<bool> b_connected{false};
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
+  }));
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = "call-amp-wall-step";
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+  std::atomic<bool> a_failed{false};
+  std::atomic<CallMediaErr> a_fail_code{CallMediaErr::Ok};
+  CallMediaDirectCallbacks cbs;
+  cbs.on_failed = [&](const CallMediaFailure& failure) {
+    a_fail_code.store(failure.GetCode());
+    a_failed.store(true, std::memory_order_release);
+  };
+  LegCompletion done;
+  const CallMediaLegId leg = a_call_->StartLeg(params, std::move(cbs), done.Fn(), 5000);
+  ASSERT_TRUE(leg);
+  done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(done.result) << done.result.error().message;
+  harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire); });
+  ASSERT_TRUE(b_connected.load(std::memory_order_acquire));
+
+  // A's only link goes: the call has no path and waits out its window.
+  ASSERT_TRUE(harness_->runtime_a->WithIoLock([&] {
+    auto* link = harness_->mgr_a().FindLink("b");
+    if (!link || !link->ConnectionOrNull()) {
+      return false;
+    }
+    link->ConnectionOrNull()->Close();
+    return true;
+  })) << "no live link to b";
+  ASSERT_TRUE(PumpVirtualUntil([&] { return a_call_->PathState(leg).reconnecting; }, std::chrono::seconds(1)));
+
+  // The wall clock (amp's) jumps a minute ahead: past the window on amp's clock, not on the timer clock.
+  harness_->clock->Advance(60'000);
+  (void)PumpVirtualUntil([&] { return a_failed.load(std::memory_order_acquire); }, std::chrono::milliseconds(500));
+  EXPECT_FALSE(a_failed.load(std::memory_order_acquire)) << "a wall-clock step ended the reconnect window";
+  EXPECT_TRUE(a_call_->PathState(leg).reconnecting);
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  // The timer clock reaches the window's end: the next io tick ends the call — not held back by the step.
+  timer_clock_.Advance(kWindowMs + 1);
+  ASSERT_TRUE(
+      PumpVirtualUntil([&] { return a_failed.load(std::memory_order_acquire); }, std::chrono::milliseconds(200)));
+  EXPECT_EQ(a_fail_code.load(), CallMediaErr::Dropped);
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
 }
 
 TEST_F(CallMediaLegCoordinatorTest, ClearInboundHandlerRejectsLateInbound) {
@@ -858,12 +919,8 @@ TEST_F(CallMediaLegCoordinatorTest, ClearInboundHandlerRejectsLateInbound) {
   LegCompletion leg_done;
   const CallMediaLegId leg_id = b_call_->StartLeg(params, {}, leg_done.Fn(), 3000);
   ASSERT_TRUE(leg_id);
-  const auto wait_until = std::chrono::steady_clock::now() + std::chrono::milliseconds(6000);
-  while (!leg_done.finished.load(std::memory_order_acquire) &&
-         std::chrono::steady_clock::now() < wait_until) {
-    harness_->PumpBoth();
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  (void)PumpVirtualUntil([&] { return leg_done.finished.load(std::memory_order_acquire); },
+                         std::chrono::milliseconds(6000));
   ASSERT_TRUE(leg_done.finished.load(std::memory_order_acquire));
 
   EXPECT_FALSE(leg_done.result);
@@ -926,7 +983,7 @@ TEST_F(CallMediaLegCoordinatorTest, ConnectDetachKCycleNoHang) {
     harness_->PumpUntil([&] { return got_audio; });
 
     a_call_->DetachLeg(leg_id);
-    b_call_->DetachLeg({});
+    b_call_->DetachAll();
     harness_->PumpBoth();
     EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle) << "cycle " << cycle;
     EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::Idle) << "cycle " << cycle;
@@ -1117,7 +1174,7 @@ TEST_F(CallMediaLegCoordinatorTest, YieldedOutboundFailureKeepsInboundMediaReady
   EXPECT_EQ(b_received, opus);
 
   a_call_->DetachLeg(late_leg);
-  b_call_->DetachLeg({});
+  b_call_->DetachAll();
   harness_->PumpBoth();
 }
 
@@ -1240,9 +1297,9 @@ TEST(CallMediaLegTripleTest, SecondInboundRejectedThenEndAndAccept) {
   ASSERT_TRUE(static_cast<bool>(harness->mgr_b().RegisterEndpoint("c", harness->ma_c)));
   ASSERT_TRUE(static_cast<bool>(harness->mgr_c().RegisterEndpoint("b", harness->ma_b)));
 
-  CallMediaLegCoordinator a_call(*harness->runtime_a);
-  CallMediaLegCoordinator b_call(*harness->runtime_b);
-  CallMediaLegCoordinator c_call(*harness->runtime_c);
+  CallMediaLegCoordinator a_call(*harness->runtime_a, *harness->clock);
+  CallMediaLegCoordinator b_call(*harness->runtime_b, *harness->clock);
+  CallMediaLegCoordinator c_call(*harness->runtime_c, *harness->clock);
   a_call.Start();
   b_call.Start();
   c_call.Start();
@@ -1329,7 +1386,7 @@ TEST(CallMediaLegTripleTest, SecondInboundRejectedThenEndAndAccept) {
   harness->PumpUntil([&] { return b_audio >= 2; });
 
   c_call.DetachLeg(cb_leg2);
-  b_call.DetachLeg({});
+  b_call.DetachAll();
   harness->PumpAll();
   c_call.Stop();
   b_call.Stop();

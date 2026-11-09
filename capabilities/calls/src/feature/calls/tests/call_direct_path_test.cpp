@@ -100,7 +100,11 @@ public:
   int media_key_resends = 0;
   int inbox_syncs = 0;
   int peer_ended_reports = 0;
+  int connect_failed_reports = 0;
+  int dropped_reports = 0;
+  int gave_up_reports = 0;
   std::string last_error;
+  CallMediaErrorKind last_error_kind = CallMediaErrorKind::Other;
 };
 
 class FakeDialRegistry final : public mesh::IDialRegistry {
@@ -329,10 +333,11 @@ public:
   std::atomic<int> migrate_calls{0};
   bool migrate_ok = true;
   int fail_first_n_migrates = 0;
-  void Detach() override {
+  void Detach(const std::string& /*call_id*/) override {
     active = false;
     ++detach_calls;
   }
+  void DetachAll() override { Detach({}); }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
     ++connect_async_calls;
@@ -565,7 +570,13 @@ protected:
           } else if constexpr (std::is_same_v<R, direct_report::HandedToHop>) {
             live.NoteDirectHandedToHop(r.call_id);
           } else if constexpr (std::is_same_v<R, direct_report::ConnectFailed>) {
+            ++host_->connect_failed_reports;
             live.NoteMediaFailed(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::Dropped>) {
+            ++host_->dropped_reports;
+            live.NoteMediaDropped(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::GaveUpReaching>) {
+            ++host_->gave_up_reports;
           } else if constexpr (std::is_same_v<R, direct_report::PeerEnded>) {
             ++host_->peer_ended_reports;
           } else if constexpr (std::is_same_v<R, direct_report::MediaAttempted>) {
@@ -576,6 +587,7 @@ protected:
             ++host_->ring_notifies;
           } else if constexpr (std::is_same_v<R, direct_report::MediaError>) {
             host_->last_error = r.message;
+            host_->last_error_kind = r.kind;
           } else if constexpr (std::is_same_v<R, direct_report::MediaKeyResendWanted>) {
             ++host_->media_key_resends;
           } else if constexpr (std::is_same_v<R, direct_report::InboxSyncWanted>) {
@@ -1189,7 +1201,8 @@ TEST_F(CallDirectPathTest, LostPathReconnectsOntoTheReachedLink) {
 }
 
 // K014: a connected call's stream that goes with no word from its leg is a dropped call — within
-// seconds, not left InCall with no media until the 75 s connect budget, and never "connect timeout".
+// seconds, not left InCall with no media until the 75 s connect budget, and never a connect failure:
+// the screen reads the kind (no "couldn't connect"), and the peer is not told we gave up reaching it.
 TEST_F(CallDirectPathTest, AConnectedStreamThatGoesIsADroppedCallNeverAConnectTimeout) {
   const std::string call_id = "call:dropped";
   SeedActiveCall(call_id);
@@ -1202,8 +1215,36 @@ TEST_F(CallDirectPathTest, AConnectedStreamThatGoesIsADroppedCallNeverAConnectTi
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   EXPECT_EQ(host_->live.Status(), CallMediaStatus::Failed) << "surfaced within seconds";
-  EXPECT_NE(host_->last_error.find("call dropped"), std::string::npos) << host_->last_error;
-  EXPECT_EQ(host_->last_error.find("connect timeout"), std::string::npos) << host_->last_error;
+  EXPECT_EQ(host_->last_error_kind, CallMediaErrorKind::Dropped) << host_->last_error;
+  EXPECT_EQ(host_->dropped_reports, 1);
+  EXPECT_EQ(host_->connect_failed_reports, 0);
+  EXPECT_EQ(host_->gave_up_reports, 0) << "the offerer reached the peer; it did not give up reaching it";
+  EXPECT_FALSE(bridge_->IsMeshConnectFailed()) << "no \"couldn't connect\" on the screen";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// K014: the leg's own report of a connected call's end (CallMediaErr::Dropped) is read by its code: a
+// dropped call, never the connect-failed path — whatever its message says.
+TEST_F(CallDirectPathTest, TheLegsDroppedCodeIsADroppedCallNotAConnectFailure) {
+  const std::string call_id = "call:dropped-code";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  ASSERT_NO_FATAL_FAILURE(ConnectOfferer(call_id));
+
+  ASSERT_TRUE(transport_->last_callbacks.on_failed);
+  transport_->active = false;
+  transport_->last_callbacks.on_failed(CallMediaFailure::Of(CallMediaErr::Dropped, "anything at all"));
+  for (int i = 0; i < 100 && host_->live.Status() != CallMediaStatus::Failed; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(host_->live.Status(), CallMediaStatus::Failed);
+  EXPECT_EQ(host_->last_error_kind, CallMediaErrorKind::Dropped);
+  EXPECT_EQ(host_->dropped_reports, 1);
+  EXPECT_EQ(host_->connect_failed_reports, 0);
+  EXPECT_EQ(host_->gave_up_reports, 0);
+  EXPECT_FALSE(bridge_->IsMeshConnectFailed());
+  EXPECT_FALSE(media_->IsActive()) << "the dropped call's media stopped";
   OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 

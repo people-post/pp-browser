@@ -5,6 +5,7 @@
 #include "lib/calls/CallMediaSessionLogic.h"
 #include "mesh/l4/circuit/client/CircuitClientCoordinator.h"
 #include "mesh/l4/circuit/serve/CircuitRelayServer.h"
+#include "amp/L3/ChannelWire.h"
 #include "amp/link/Types.h"
 #include "mesh/testing/mesh_triple_harness.h"
 #include "common/MeshAlias.h"
@@ -82,8 +83,8 @@ protected:
     hops_ = std::make_unique<mesh::AmpCircuitHopRegistry>();
     circuit_r_ = std::make_unique<mesh::CircuitRelayServer>(*harness_->runtime_r);
     circuit_a_ = std::make_unique<mesh::CircuitClientCoordinator>(*harness_->runtime_a);
-    a_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_a);
-    b_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b);
+    a_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_a, *harness_->clock);
+    b_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b, *harness_->clock);
 
     circuit_r_->Start();
     circuit_r_->SetServeInbound(true);
@@ -455,7 +456,7 @@ TEST_F(RelayedCallDisturbanceTest, RenewalsOverTimeKeepAudioBothWays) {
   circuit_b.Stop();
 }
 
-// Same, with real-time lease expiry (coordinator deadlines use steady_clock): 300 ms leases renewed
+// Same, with real-time lease expiry (the circuit coordinator's leases use steady_clock): 300 ms leases renewed
 // every 200 ms, so superseded reservations expire and tear down on client and relay mid-call.
 TEST_F(RelayedCallDisturbanceTest, LeaseExpiryDuringCallKeepsAudio) {
   mesh::CircuitClientCoordinator circuit_b(*harness_->runtime_b);
@@ -693,26 +694,42 @@ protected:
     (void)b_call_->SendAudio(b_call_->PrimaryLegId(), {0x33}, seq_, 0);
   }
 
-  /** Pump (with real time passing — retire timers run on the steady clock) until `done`. */
   /**
-   * Pumps in real time, and the harness's virtual clock with it: Amp's housekeeping (io ticks, link sweeps) runs
-   * on its 50 ms cadence of that clock, and PumpAll alone adds 1 ms a round — on a slow runner (macos-15) the
-   * migration's tick-driven steps did not fit the budget.
+   * Pumps until `done` while `budget` of the harness's virtual clock passes, 5 ms a round: the leg's path timers
+   * (heartbeats, silence, release, migrate / reconnect deadlines) and Amp's 50 ms housekeeping all run on that
+   * clock, so the same rounds see the same timer firings on any machine.
    */
-  bool PumpRealUntil(const std::function<bool()>& done, std::chrono::milliseconds budget) {
-    auto last = std::chrono::steady_clock::now();
-    const auto until = last + budget;
-    while (!done() && std::chrono::steady_clock::now() < until) {
-      harness_->PumpAll();
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-      const auto now = std::chrono::steady_clock::now();
-      const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last).count();
-      if (elapsed > 1) {
-        harness_->clock->Advance(elapsed - 1); // PumpAll advanced 1
-      }
-      last = now;
+  bool PumpVirtualUntil(const std::function<bool()>& done, const std::chrono::milliseconds budget) {
+    constexpr int64_t kRoundMs = 5;
+    for (int64_t passed = 0; !done() && passed < budget.count(); passed += kRoundMs) {
+      harness_->PumpAll(); // advances the clock 1 ms
+      harness_->clock->Advance(kRoundMs - 1);
     }
     return done();
+  }
+
+  /**
+   * B's mux sends A a CLOSE for its media channel on the direct link, behind B's leg's back: A sees the peer
+   * close that channel while its control channel stays up, and no `bye` follows.
+   */
+  bool InjectMediaCloseFromB() {
+    return harness_->runtime_b->WithIoLock([&] {
+      auto* link = harness_->mgr_b().FindConnectedLinkByPeerId(harness_->peer_id_a, pp::amp::TransportClass::Adp);
+      if (!link || !link->Mux()) {
+        return false;
+      }
+      auto* mux = link->Mux();
+      for (uint32_t id = 1; id < 256; ++id) {
+        if (mux->State(id) == pp::amp::ChannelState::Open && mux->Class(id) == pp::amp::ChannelClass::Realtime) {
+          pp::amp::ChannelFrame close;
+          close.header.frame_type = pp::amp::ChannelFrameType::Close;
+          close.header.channel_id = id;
+          auto wire = pp::amp::ChannelWire::Encode(close);
+          return wire && static_cast<bool>(mux->InjectFrameForTest(id, std::move(*wire)));
+        }
+      }
+      return false;
+    });
   }
 
   const std::string call_id_ = "call-k3-migrate";
@@ -777,7 +794,7 @@ TEST_F(CallPathMigrationTest, RelayedCallMovesToDirectWithoutLosingAFrame) {
   }
 
   // The relay path is released on both ends (after media arrived on the new path).
-  EXPECT_TRUE(PumpRealUntil(
+  EXPECT_TRUE(PumpVirtualUntil(
       [&] {
         SendNext();
         return !a_call_->PathState(leg_).retiring && !b_call_->PathState(b_call_->PrimaryLegId()).retiring;
@@ -807,20 +824,20 @@ TEST_F(CallPathMigrationTest, RelayedCallMovesToDirectWithoutLosingAFrame) {
  * k4 fixture: a call moved relayed → direct, with the relay kept as both ends' standby.
  * Returns once the release has turned the relay path into standby on both sides.
  */
-#define ASSERT_ON_DIRECT_WITH_RELAY_STANDBY()                                                            \
-  do {                                                                                                   \
-    LiveRelayedCallWithDirectLink();                                                                     \
-    std::atomic<bool> moved{false};                                                                      \
-    a_call_->MigrateLeg(leg_, direct_link_, [&](Roe<void> r) { moved = static_cast<bool>(r); });         \
-    ASSERT_TRUE(PumpRealUntil(                                                                           \
-        [&] {                                                                                            \
-          SendNext();                                                                                    \
-          return moved.load() && a_call_->PathState(leg_).standby &&                                     \
-                 b_call_->PathState(b_call_->PrimaryLegId()).standby;                                    \
-        },                                                                                               \
-        std::chrono::seconds(4)));                                                                       \
-    ASSERT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);                                     \
-    ASSERT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);                                     \
+#define ASSERT_ON_DIRECT_WITH_RELAY_STANDBY()                                                    \
+  do {                                                                                           \
+    LiveRelayedCallWithDirectLink();                                                             \
+    std::atomic<bool> moved{false};                                                              \
+    a_call_->MigrateLeg(leg_, direct_link_, [&](Roe<void> r) { moved = static_cast<bool>(r); }); \
+    ASSERT_TRUE(PumpVirtualUntil(                                                                \
+        [&] {                                                                                    \
+          SendNext();                                                                            \
+          return moved.load() && a_call_->PathState(leg_).standby &&                             \
+                 b_call_->PathState(b_call_->PrimaryLegId()).standby;                            \
+        },                                                                                       \
+        std::chrono::seconds(4)));                                                               \
+    ASSERT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);                             \
+    ASSERT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);                             \
   } while (0)
 
 // k4: the direct link dies mid-call; both ends switch to the warm relay standby at once and the call
@@ -859,7 +876,7 @@ TEST_F(CallPathMigrationTest, LostDirectLinkFailsOverToTheRelayStandby) {
 TEST_F(CallPathMigrationTest, SilentDirectPathFailsOverToTheRelayStandby) {
   ASSERT_ON_DIRECT_WITH_RELAY_STANDBY();
   b_call_->SetSilencedPathKindForTest(CallMediaLinkKind::Direct);
-  EXPECT_TRUE(PumpRealUntil(
+  EXPECT_TRUE(PumpVirtualUntil(
       [&] {
         SendNext();
         return a_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed &&
@@ -877,10 +894,44 @@ TEST_F(CallPathMigrationTest, SilentDirectPathFailsOverToTheRelayStandby) {
   EXPECT_FALSE(b_failed_.load());
 }
 
+// K014: the peer's media channel CLOSE (best-effort) can overtake its `bye`. While the path waits for
+// the control channel's word, silence switches nothing and the call's frames drop quietly (no error per
+// frame); with no `bye` by the wait's end the path is lost — here onto the relay standby.
+TEST_F(CallPathMigrationTest, AMediaCloseAheadOfTheByeHoldsThePathForTheWait) {
+  ASSERT_ON_DIRECT_WITH_RELAY_STANDBY();
+  // B goes quiet on the direct path ...
+  b_call_->SetSilencedPathKindForTest(CallMediaLinkKind::Direct);
+  (void)PumpVirtualUntil(
+      [&] {
+        SendNext();
+        return false;
+      },
+      std::chrono::milliseconds(600));
+  ASSERT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct) << "not silent long enough to fail over yet";
+  // ... and its media channel's CLOSE reaches A; its bye does not.
+  ASSERT_TRUE(InjectMediaCloseFromB());
+  // A's silence passes the failover threshold inside the wait: the path holds (SendNext asserts each send).
+  EXPECT_FALSE(PumpVirtualUntil(
+      [&] {
+        SendNext();
+        return a_call_->ActiveLinkKind() != CallMediaLinkKind::Direct;
+      },
+      std::chrono::milliseconds(kCallMediaByeAwaitMs - 100)));
+  EXPECT_TRUE(PumpVirtualUntil(
+      [&] {
+        SendNext();
+        return a_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed;
+      },
+      std::chrono::milliseconds(1000)))
+      << "no bye: a lost path, onto the standby";
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_EQ(a_ended_.load(), 0);
+}
+
 // k4: a muted peer still heartbeats and sends silence frames — a quiet mic never trips failover.
 TEST_F(CallPathMigrationTest, QuietButAliveDirectPathStays) {
   ASSERT_ON_DIRECT_WITH_RELAY_STANDBY();
-  EXPECT_FALSE(PumpRealUntil(
+  EXPECT_FALSE(PumpVirtualUntil(
       [&] {
         SendNext();  // "muted": frames of silence still flow
         return a_call_->ActiveLinkKind() != CallMediaLinkKind::Direct ||
@@ -928,7 +979,12 @@ TEST_F(CallPathMigrationTest, CallWithNoPathLeftReconnectsOntoANewLink) {
   EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
   // The lost path left nothing behind: no retiring leftover, and no channel-less "standby" a later
   // failover could switch onto.
-  (void)PumpRealUntil([&] { SendNext(); return false; }, std::chrono::milliseconds(1500));  // past the release
+  (void)PumpVirtualUntil(
+      [&] {
+        SendNext();
+        return false;
+      },
+      std::chrono::milliseconds(1500)); // past the release
   EXPECT_FALSE(a_call_->PathState(leg_).standby);
   EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).standby);
   const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
@@ -985,7 +1041,7 @@ TEST_F(CallPathMigrationTest, NoNewPathWithinTheWindowFailsTheCall) {
     harness_->PumpAll();
   }
   ASSERT_TRUE(a_call_->PathState(leg_).reconnecting);
-  EXPECT_TRUE(PumpRealUntil([&] { return a_failed_.load() && b_failed_.load(); }, std::chrono::seconds(3)));
+  EXPECT_TRUE(PumpVirtualUntil([&] { return a_failed_.load() && b_failed_.load(); }, std::chrono::seconds(3)));
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
   // K014: the call was connected — it dropped (never "connect timed out", never a clean end).
   EXPECT_EQ(a_fail_code_.load(), CallMediaErr::Dropped);
@@ -1016,14 +1072,14 @@ TEST_F(CallPathMigrationTest, AHangUpSaysByeAndThePeersLegEndsCleanly) {
 TEST_F(CallPathMigrationTest, APathClosedWithoutByeIsLostAtBothEndsAndTheCallComesBack) {
   LiveRelayedCallWithDirectLink(/*with_direct=*/false);
   // Heartbeats first: B learns A heartbeats, so A's silence means a dead path to B.
-  (void)PumpRealUntil(
+  (void)PumpVirtualUntil(
       [&] {
         SendNext();
         return false;
       },
       std::chrono::milliseconds(700));
   a_call_->SetSilencedPathKindForTest(CallMediaLinkKind::Relayed);
-  EXPECT_TRUE(PumpRealUntil(
+  EXPECT_TRUE(PumpVirtualUntil(
       [&] {
         SendNext();
         return a_call_->PathState(leg_).reconnecting && b_call_->PathState(b_call_->PrimaryLegId()).reconnecting;
@@ -1078,14 +1134,16 @@ TEST_F(CallPathMigrationTest, APathClosedWithoutByeIsLostAtBothEndsAndTheCallCom
 TEST_F(CallPathMigrationTest, LostLinkWithAnotherLinkToThePeerRebindsQuietly) {
   LiveRelayedCallWithDirectLink();
   harness_->io_r->SetDropRate(1.0);
-  for (int i = 0; i < 60 && !(a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
-                              b_call_->ActiveLinkKind() == CallMediaLinkKind::Direct);
+  // Coarse steps until the relay link's liveness runs out and the call loses that path ...
+  for (int i = 0; i < 60 && a_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed &&
+                  b_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed;
        ++i) {
     harness_->clock->Advance(250);
     SendNext();
     harness_->PumpAll();
   }
-  EXPECT_TRUE(PumpRealUntil(
+  // ... then the rebind runs at network pace: it lands well inside the grace.
+  EXPECT_TRUE(PumpVirtualUntil(
       [&] {
         SendNext();
         return a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
@@ -1095,7 +1153,12 @@ TEST_F(CallPathMigrationTest, LostLinkWithAnotherLinkToThePeerRebindsQuietly) {
       std::chrono::seconds(3)))
       << "both ends on the surviving direct link";
   // Past the grace: a landed rebind never reports the loss.
-  PumpRealUntil([&] { SendNext(); return false; }, std::chrono::milliseconds(kCallMediaQuietRebindGraceMs + 300));
+  PumpVirtualUntil(
+      [&] {
+        SendNext();
+        return false;
+      },
+      std::chrono::milliseconds(kCallMediaQuietRebindGraceMs + 300));
   EXPECT_EQ(a_lost_.load(), 0);
   EXPECT_EQ(b_lost_.load(), 0);
   EXPECT_FALSE(a_call_->PathState(leg_).standby) << "the dead relay leaves no standby behind";
@@ -1212,7 +1275,12 @@ TEST_F(CallPathMigrationTest, OlderPeerLeavesTheCallWithoutAStandby) {
     result = std::move(r);
     done = true;
   });
-  EXPECT_TRUE(PumpRealUntil([&] { SendNext(); return done.load(); }, std::chrono::seconds(3)));
+  EXPECT_TRUE(PumpVirtualUntil(
+      [&] {
+        SendNext();
+        return done.load();
+      },
+      std::chrono::seconds(3)));
   EXPECT_FALSE(result);
   EXPECT_FALSE(a_call_->PathState(leg_).standby);
   EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
@@ -1254,7 +1322,12 @@ TEST_F(CallPathMigrationTest, NewPathDyingBeforeTheReleaseFallsBackToThePathItLe
     std::lock_guard lock(mu_);
     EXPECT_GT(b_seqs_.size(), before) << "media flows on the relay again";
   }
-  PumpRealUntil([&] { SendNext(); return false; }, std::chrono::milliseconds(kCallMediaQuietRebindGraceMs + 300));
+  PumpVirtualUntil(
+      [&] {
+        SendNext();
+        return false;
+      },
+      std::chrono::milliseconds(kCallMediaQuietRebindGraceMs + 300));
   EXPECT_EQ(a_lost_.load(), 0);
   EXPECT_EQ(b_lost_.load(), 0);
   EXPECT_FALSE(a_failed_.load());
@@ -1266,7 +1339,7 @@ TEST_F(CallPathMigrationTest, NewPathDyingBeforeTheReleaseFallsBackToThePathItLe
 TEST_F(CallPathMigrationTest, AfterFallingBackTheCallTakesTheSurvivingDirectLinkAtOnce) {
   LiveRelayedCallWithDirectLink();
   a_call_->SetAutoMigrateToDirect(true);  // the transport's own move arms its 10 s backoff
-  EXPECT_TRUE(PumpRealUntil(
+  EXPECT_TRUE(PumpVirtualUntil(
       [&] {
         SendNext();
         return a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
@@ -1276,7 +1349,7 @@ TEST_F(CallPathMigrationTest, AfterFallingBackTheCallTakesTheSurvivingDirectLink
   ASSERT_TRUE(a_call_->PathState(leg_).retiring) << "the relay path is still draining";
   // The link the call moved onto dies (it lost the dual-dial election): back onto the relay.
   ASSERT_GT(harness_->mgr_a().RequestDropLink("b-direct"), 0u);
-  EXPECT_TRUE(PumpRealUntil(
+  EXPECT_TRUE(PumpVirtualUntil(
       [&] {
         SendNext();
         return a_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed;
@@ -1288,7 +1361,7 @@ TEST_F(CallPathMigrationTest, AfterFallingBackTheCallTakesTheSurvivingDirectLink
   harness_->mgr_a().EnsureAssociation("b-direct-2", second.LinkFn());
   second.PumpUntilDone(*harness_);
   ASSERT_TRUE(second.result) << second.result.error().message;
-  EXPECT_TRUE(PumpRealUntil(
+  EXPECT_TRUE(PumpVirtualUntil(
       [&] {
         SendNext();
         return a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
@@ -1307,9 +1380,19 @@ TEST_F(CallPathMigrationTest, LostCandidateLinkDoesNotHoldBackTheNextDirectLink)
   LiveRelayedCallWithDirectLink();
   b_call_->SetIgnoreMigrateForTest(true);  // keep the first migration in flight
   a_call_->SetAutoMigrateToDirect(true);
-  EXPECT_TRUE(PumpRealUntil([&] { SendNext(); return a_call_->PathState(leg_).candidate; }, std::chrono::seconds(2)));
+  EXPECT_TRUE(PumpVirtualUntil(
+      [&] {
+        SendNext();
+        return a_call_->PathState(leg_).candidate;
+      },
+      std::chrono::seconds(2)));
   ASSERT_GT(harness_->mgr_a().RequestDropLink("b-direct"), 0u);
-  EXPECT_TRUE(PumpRealUntil([&] { SendNext(); return !a_call_->PathState(leg_).candidate; }, std::chrono::seconds(2)))
+  EXPECT_TRUE(PumpVirtualUntil(
+      [&] {
+        SendNext();
+        return !a_call_->PathState(leg_).candidate;
+      },
+      std::chrono::seconds(2)))
       << "abandoned: candidate link lost";
   b_call_->SetIgnoreMigrateForTest(false);
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint("b-direct-2", harness_->ma_b)));
@@ -1317,7 +1400,7 @@ TEST_F(CallPathMigrationTest, LostCandidateLinkDoesNotHoldBackTheNextDirectLink)
   harness_->mgr_a().EnsureAssociation("b-direct-2", second.LinkFn());
   second.PumpUntilDone(*harness_);
   ASSERT_TRUE(second.result) << second.result.error().message;
-  EXPECT_TRUE(PumpRealUntil(
+  EXPECT_TRUE(PumpVirtualUntil(
       [&] {
         SendNext();
         return a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
@@ -1370,7 +1453,7 @@ TEST_F(CallPathMigrationTest, OlderPeerLeavesTheCallOnItsPath) {
     result = std::move(r);
     done = true;
   });
-  EXPECT_TRUE(PumpRealUntil(
+  EXPECT_TRUE(PumpVirtualUntil(
       [&] {
         SendNext();
         return done.load();
@@ -1514,7 +1597,7 @@ TEST_F(CallPathMigrationTest, MovedToTheRelayItStaysOffTheLinkItLeft) {
     harness_->PumpAll();
   }
   ASSERT_TRUE(to_direct.load());
-  ASSERT_TRUE(PumpRealUntil(
+  ASSERT_TRUE(PumpVirtualUntil(
       [&] {
         SendNext();
         return !a_call_->PathState(leg_).retiring && !b_call_->PathState(b_call_->PrimaryLegId()).retiring;
@@ -1539,7 +1622,7 @@ TEST_F(CallPathMigrationTest, MovedToTheRelayItStaysOffTheLinkItLeft) {
   EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
   EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
   // The direct link is still Connected, but it is the one the call left: no bounce back.
-  EXPECT_FALSE(PumpRealUntil(
+  EXPECT_FALSE(PumpVirtualUntil(
       [&] {
         SendNext();
         return a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct ||

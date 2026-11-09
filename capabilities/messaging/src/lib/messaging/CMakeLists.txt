@@ -37,6 +37,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     SentCopy.cpp
     CopyAsk.cpp
     CardAsk.cpp
+    CardAskGate.cpp
     ContactLocator.cpp
     TranscriptBodyCodec.cpp
     TranscriptAssembly.cpp

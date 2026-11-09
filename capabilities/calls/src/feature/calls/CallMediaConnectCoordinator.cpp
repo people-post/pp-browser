@@ -219,7 +219,7 @@ void CallMediaConnectCoordinator::OpenBundle(const uint64_t seq, const int attem
     }
   }
   if (!transport_.IsActive()) {
-    transport_.Detach();
+    transport_.Detach(request_.params.call_id);
   }
   attempt_current_ = attempt;
   log().info << "ConnectAsync attempt=" << attempt << "/" << kConnectAttempts
@@ -253,7 +253,7 @@ void CallMediaConnectCoordinator::OnWatchdog(const uint64_t seq, const int attem
                 << " attempt=" << attempt;
   watchdog_timer_id_ = 0;
   // Detach may not deliver on_finished if Mesh IO is wedged — force attempt progress.
-  transport_.Detach();
+  transport_.Detach(request_.params.call_id);
   OnAttemptFinished(seq, attempt,
                     CallMediaFailure::Of(CallMediaErr::Timeout, "amp call-media connect timed out (watchdog)"));
 }
@@ -264,7 +264,7 @@ void CallMediaConnectCoordinator::OnAttemptFinished(const uint64_t seq, const in
     // Superseded sequence: drop its bundle (Abort / restart already settled InFlight) — unless
     // a newer sequence is connecting the same call and may adopt it.
     if (!InFlight() || transport_.ActiveParams().call_id != request_.params.call_id) {
-      transport_.Detach();
+      transport_.Detach(request_.params.call_id);
     }
     return;
   }

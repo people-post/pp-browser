@@ -339,7 +339,10 @@ ordered chat stream:
   link that overtook the relay copy of the one carrying the card — a first call's answer, in the lab): the record is **held**
   in memory for the sender's card (`ControlLaneHold`, owned by the pipeline: at most 16 per sender and 128 in all,
   each at most two minutes, the oldest dropped first), and the sending device is asked for the card (`card_ask`,
-  as above). Once a card of the sender's is kept — any envelope of its that verifies (its answer to the ask, one
+  as above; the unverified envelope's `sender_card_at` counts for nothing, and such asks are once per account per
+  10 min and 8 a minute in all — `CardAskGate`, [WIRE_SCHEMAS](../contracts/WIRE_SCHEMAS.md)). A forged envelope
+  naming an account can spend that account's ask for 10 min, so a genuine record held then may wait out its two
+  minutes unanswered; it can no longer stop the asks for good. Once a card of the sender's is kept — any envelope of its that verifies (its answer to the ask, one
   carrying its card), a group roster's card — its held records are checked again in order
   (`ReplayHeldControl`): every step above, the wait counted in their age (`AgedByHold`), so a call invite too old
   by then is dropped as stale. The relay has the record acked already (the cursor moved on); a restart loses what

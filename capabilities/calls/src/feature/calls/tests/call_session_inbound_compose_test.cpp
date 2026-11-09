@@ -129,10 +129,11 @@ public:
   CallMediaSessionPhase Phase() const override {
     return active ? CallMediaSessionPhase::MediaReady : CallMediaSessionPhase::Idle;
   }
-  void Detach() override {
+  void Detach(const std::string& /*call_id*/) override {
     active = false;
     ++detach_calls;
   }
+  void DetachAll() override { Detach({}); }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
     ++connect_async_calls;
@@ -223,8 +224,7 @@ protected:
     transport_ = std::make_unique<FakeCallMediaTransport>();
 
     CallDeliveryPorts delivery;
-    delivery.send_control = [this](const std::string& peer, const ThreadMessage& control,
-                                   const std::optional<std::string>& /*key_init*/, bool urgent) -> Roe<void> {
+    delivery.send_control = [this](const std::string& peer, const ThreadMessage& control, bool urgent) -> Roe<void> {
       if (fail_sends_ || peer == unreachable_peer_) {
         return Error("offline (test)");
       }
@@ -260,6 +260,7 @@ protected:
     delivery.resolve_peer_thread = [](const std::string& peer) -> Roe<std::string> { return "dm:" + peer; };
     delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
     delivery.ensure_peer_session_key = [this](const std::string& peer) { return test::SeededSessionKey(*psk_, peer); };
+    delivery.held_peer_session_key = delivery.ensure_peer_session_key;
     if (with_group_standing_) {
       // V062: the group's roster as this device holds it (`holds_roster_` false: a guest's device, none held).
       delivery.group_standing = [this](const std::string&,
@@ -507,26 +508,20 @@ TEST_F(CallSessionInboundComposeTest, StaleInviteDroppedByRelayAge) {
   auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
-  // P017: the phone's call screen hears of it, so a push's call waiting for this ring goes at once.
-  EXPECT_EQ(device_->CallsOver().NewSince(0), (std::vector<std::string>{call_id}));
 }
 
-// P017 (#555 B187): an invite read after the call ended here (its leave came first, or a replay) rings nothing, and
-// says so: a push's call waiting for it goes.
-TEST_F(CallSessionInboundComposeTest, AnInviteForACallAlreadyEndedIsOver) {
+// B24: an invite read after the call ended here (its leave came first, or a replay) rings nothing.
+TEST_F(CallSessionInboundComposeTest, AReplayedInviteForACallAlreadyEndedRingsNothing) {
   const std::string call_id = "call:over";
   auto msg = MakeInviteMessage(call_id);
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->DeclineInvite(call_id); }));
-  const uint64_t seen = device_->CallsOver().seq;
-  EXPECT_GT(seen, 0u) << "the declined call is over";
 
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); })); // the replay
   auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
-  EXPECT_EQ(device_->CallsOver().NewSince(seen), (std::vector<std::string>{call_id}));
 }
 
 TEST_F(CallSessionInboundComposeTest, DeclineClearsPendingInvite) {
@@ -745,7 +740,6 @@ TEST_F(CallSessionInboundComposeTest, InboundCallEndedEndsActiveSession) {
   EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle)
       << "CallEnded → EndCallLocal must Apply RemoteEnded (no local LeaveClicked)";
   EXPECT_TRUE(ShownCallId().empty());
-  EXPECT_EQ(device_->CallsOver().NewSince(0), (std::vector<std::string>{call_id})) << "P017";
 }
 
 TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia) {
@@ -1475,7 +1469,8 @@ TEST_F(CallSessionInboundComposeTest, InboundHopRefuseEndsBoundCall) {
   EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
   auto err = device_->TakeLastMediaError();
   ASSERT_TRUE(err.has_value());
-  EXPECT_EQ(*err, "No shared hop");
+  EXPECT_EQ(err->kind, CallMediaErrorKind::Other);
+  EXPECT_EQ(err->message, "No shared hop");
 }
 
 TEST_F(CallSessionInboundComposeTest, LegacySdpAndIceIgnored) {

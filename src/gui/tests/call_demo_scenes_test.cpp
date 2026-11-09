@@ -22,8 +22,8 @@ TEST(CallDemoScenesTest, TheVoiceSceneCallsThenConnectsRelayedThenFindsACloserWa
 
 TEST(CallDemoScenesTest, EverySceneIsKnownAndAnUnknownOneIsNot) {
   for (const char* scene :
-       {"ring", "ring_group", "voice", "reconnect", "video", "failed", "answer_group", "group_voice", "group_video",
-        "voice_hold", "video_hold", "group_hold"}) {
+       {"ring", "ring_group", "voice", "reconnect", "reconnect_recovers", "video", "failed", "answer_group",
+        "group_voice", "group_video", "voice_hold", "video_hold", "group_hold", "ring_conflict", "call_back"}) {
     EXPECT_TRUE(DemoCallSceneAt(scene, 0, 1'000'000).valid) << scene;
   }
   EXPECT_FALSE(DemoCallSceneAt("nope", 0, 1'000'000).valid);
@@ -54,6 +54,53 @@ TEST(CallDemoScenesTest, TheHoldScenesPutTheOtherSideOnHold) {
   EXPECT_TRUE(g.screen.members[0].on_hold);
   EXPECT_TRUE(g.screen.members[1].video_paused);
   EXPECT_FALSE(g.screen.members[1].on_hold);
+}
+
+// The scenes run through the presenter's own media decisions (CallMediaFrame), as a real call would.
+const CallMediaScreen& StepScene(CallMediaFrame& frame, const char* scene, const int64_t t, const int64_t now) {
+  const DemoCallFrame f = DemoCallSceneAt(scene, t, now);
+  return frame.Step(f.screen, DemoCallMediaFacts(f, now), DemoCallHealth(f));
+}
+
+TEST(CallDemoScenesTest, TheHoldScenesLineNamesThePeerThroughThePresentersDecision) {
+  CallMediaFrame frame;
+  const CallMediaScreen& v = StepScene(frame, "voice_hold", 0, 1'000'000);
+  EXPECT_TRUE(v.media.on_hold);
+  EXPECT_EQ(v.line.kind, CallStatusLine::Kind::PeerOnHold);
+  CallMediaFrame group;
+  EXPECT_FALSE(StepScene(group, "group_hold", 0, 1'000'000).media.on_hold)
+      << "a member on hold is their tile's, not the line";
+}
+
+TEST(CallDemoScenesTest, AReconnectThatRecoversSaysRestoredAndOneThatDoesNotSaysTheyMayBeOffline) {
+  const int64_t start = 1'000'000;
+  CallMediaFrame recovers;
+  EXPECT_EQ(StepScene(recovers, "reconnect_recovers", 1'000, start + 1'000).reconnect.kind, CallReconnectKind::None);
+  EXPECT_EQ(StepScene(recovers, "reconnect_recovers", 7'000, start + 7'000).reconnect.kind,
+            CallReconnectKind::Reconnecting);
+  EXPECT_EQ(StepScene(recovers, "reconnect_recovers", 12'500, start + 12'500).reconnect.kind,
+            CallReconnectKind::Restored);
+
+  CallMediaFrame stays_down;
+  StepScene(stays_down, "reconnect", 7'000, start + 7'000);
+  EXPECT_EQ(StepScene(stays_down, "reconnect", 27'000, start + 27'000).reconnect.kind, CallReconnectKind::Offline);
+}
+
+TEST(CallDemoScenesTest, TheConflictRingNamesTheCallAnsweringEnds) {
+  const DemoCallFrame f = DemoCallSceneAt("ring_conflict", 0, 1);
+  EXPECT_EQ(f.screen.kind, CallScreen::Kind::Ringing);
+  EXPECT_TRUE(f.screen.conflict);
+  EXPECT_FALSE(f.screen.ending.peer_identity.empty());
+  EXPECT_NE(f.screen.ending.peer_identity, f.screen.caller_identity);
+}
+
+TEST(CallDemoScenesTest, TheCallBackSceneOffersTheEndedCallOnceTheCallTakenIsOver) {
+  EXPECT_FALSE(DemoCallSceneAt("call_back", 2'000, 1'000'000).call_back);
+  EXPECT_EQ(DemoCallSceneAt("call_back", 2'000, 1'000'000).screen.status, CallScreen::Status::Connected);
+  const DemoCallFrame over = DemoCallSceneAt("call_back", 9'000, 1'000'000);
+  ASSERT_TRUE(over.call_back);
+  EXPECT_FALSE(over.call_back->peer_identity.empty());
+  EXPECT_EQ(over.screen.kind, CallScreen::Kind::None);
 }
 
 TEST(CallDemoScenesTest, ASceneMayStartPartWayIn) {

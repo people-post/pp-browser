@@ -166,7 +166,7 @@ Built as a **policy** (Hongwei, 2026-10-30): the rules below are followed by the
 
 - [x] **M024** (#555 B186): the control lane per device — a copy per device on the peer's card in its device pair's session, the account copy for a first contact (and, one release, between two single-device accounts); the media key rides the copy (`media_key_b64`), its account-wrapped old form beside it one release; a copy this device cannot read shows the sender our card and is a `control.unreadable` diag line. gtests (`LinkedDevicesTest` lane cases, `ControlLaneTest` per-device copies, media-key forms); lab `a_call_rings_on_every_device_after_each_called_out`
 - [x] **M025** (#555 follow-up): lane cards told per peer device (`ControlLaneAddressedDevices`); a lane record whose sender cannot be checked yet waits for its card (`ControlLaneHold`, replayed on a card kept); `control.unverified` with the reason. gtests (`ControlLaneHoldTest`, `LinkedDevicesTest` hold cases, `ControlLaneTest` told per device, `ControlLaneCardTest`); lab `a_restored_device_hears_the_answer_to_its_call`
-- [ ] Drop the M024 bridges (`kControlLaneAccountCopyBetweenSingleDevices`, `kMediaKeyAccountWrapBridge`, then `ensure_peer_session_key`) in the release after
+- [ ] Drop the M024 bridges in their two steps — [COMPATIBILITY § Bridges](../../docs/contracts/COMPATIBILITY.md#bridges-one-release)
 
 ### d6 — Later
 

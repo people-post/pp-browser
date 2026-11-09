@@ -7,6 +7,7 @@
 #include "feature/calls/CallFunctionalPorts.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/presenters/CallBackOffer.h"
+#include "feature/presenters/CallMediaFrame.h"
 
 #include <functional>
 #include <memory>
@@ -71,6 +72,12 @@ struct CallJoinBar {
 CallJoinBar MakeCallJoinBar(const std::optional<CallUiBackend::JoinableCallInfo>& call);
 
 /**
+ * A call from a chat (CallPresenter::CallFromChat): whether it asks for video. A call that goes on in the chat is
+ * joined as it is (no voice / video choice); video this device cannot send goes voice; else as asked.
+ */
+bool ChatCallAsksVideo(bool call_joinable, bool want_video, bool video_available);
+
+/**
  * The call surface's decisions and the call buttons, without a GUI: which call shows (ring,
  * answering, in call, nothing), what its status line says, which buttons it offers, and what each
  * button does. CallController renders the screen (words, avatars, video, ringtone); pp-app-probe
@@ -96,12 +103,12 @@ public:
     std::function<void(const std::string& call_id, bool video)> on_outbound_started;
     std::function<void(const std::string& call_id, bool voice_only)> on_accept;
     std::function<void(const std::string& call_id)> on_decline;
-    /** P017: the calls layer learned `call_id` is over (each once): the phone's call screen lets a push's call go. */
-    std::function<void(const std::string& call_id)> on_call_over;
     /** A call button was pressed in a call to another chat: asks "end your current call?"; `answer(true)` = go on. */
     std::function<void(std::function<void(bool)> answer)> confirm_end_current_call;
     /** A call button was pressed in the chat of the call already up: bring its screen back (from the minimised chip). */
     std::function<void()> show_current_call;
+    /** V060: the OS has this device's call audio (the GUI's CallLocalHold); none: never on hold here. */
+    std::function<bool()> on_hold_here;
   };
   using StartDone = std::function<void(const CallStartResult&)>;
 
@@ -120,6 +127,11 @@ public:
   void OnCallWake();
 
   const CallScreen& Screen() const { return screen_; }
+  /**
+   * The media decisions of the call on screen, stepped with each refresh (CallMediaFrame): the status line, whether
+   * it reconnects (the capsule), the video stage, the one-way-audio hint and the connection story.
+   */
+  const CallMediaScreen& MediaScreen() const { return media_frame_.View(); }
   /** The call this device is in (empty: none). */
   const std::string& ActiveCallId() const { return active_call_id_; }
   /** The call placed or answered with video (its camera comes on once connected; "Starting video…"). */
@@ -128,7 +140,12 @@ public:
 
   // --- buttons ----------------------------------------------------------------------------------
 
-  /** A chat's call button: a 1:1 call, the group's call to join, or the member picker. */
+  /**
+   * The one way a chat calls (ChatCallAsksVideo, then StartCall): the chat's call button, a tapped call record (#164)
+   * and "Call {name} back?" (V064). False when nothing was asked (no chat).
+   */
+  bool CallFromChat(const std::string& thread_id, bool want_video, StartDone done = {});
+  /** A 1:1 call, the group's call to join, or the member picker — `video` as given (CallFromChat decides it). */
   bool StartCall(const std::string& thread_id, bool video, StartDone done = {});
   /** The member picker's Call (or a 1:1 with its peer). */
   bool StartCallWithInvitees(const std::string& thread_id, bool video, const std::vector<std::string>& invitees,
@@ -207,6 +224,14 @@ private:
   void OfferCallBack(const CallScreen& next, const CallUiBackend::Surface& surface);
   /** V062 1: "{name} joined as {bringer}'s guest", once per guest of the call on `s`. */
   void AnnounceGuests(const CallScreen& s);
+  /** The media frame of the screen `next` (in a call: its facts read, then acted on; answering: the story only). */
+  void StepMedia(CallUiBackend& backend, const CallScreen& next, int64_t now);
+  /** One tick's media facts for the call on `s`, after the engine's video upkeep. */
+  CallMediaFacts ReadMediaFacts(CallUiBackend& backend, const CallScreen& s, int64_t now);
+  /** What the frame asks of the call: the camera's failure told, a narrowed call's camera off, a dropped picture. */
+  void ActOnMedia(CallUiBackend& backend, const CallMediaScreen& frame);
+  /** The peer's camera (roster / frames) and the story's new moments, each change logged once. */
+  void LogMedia(const CallMediaFacts& facts, const CallMediaScreen& frame);
   bool MessagingInitialized() const;
 
   CallFunctionalPorts ports_;
@@ -230,6 +255,11 @@ private:
    */
   std::string answered_call_id_;
   CallBackOffer call_back_;
+  CallMediaFrame media_frame_;
+  /** What LogMedia last logged: the peer's camera ("roster/frames"), and the story's moments of `story_logged_call_`. */
+  std::string peer_video_log_key_;
+  std::string story_logged_call_;
+  size_t story_events_logged_ = 0;
   std::string declined_call_id_;
   /**
    * 2026-09-28: video calls start with the local camera on — set by the caller (video StartCall)

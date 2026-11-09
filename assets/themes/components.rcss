@@ -5711,21 +5711,6 @@ call-video-tile {
   right: 12dp;
 }
 
-.shell-call-minimized-chip--tl {
-  top: 12dp;
-  left: 12dp;
-}
-
-.shell-call-minimized-chip--br {
-  bottom: 72dp;
-  right: 12dp;
-}
-
-.shell-call-minimized-chip--bl {
-  bottom: 72dp;
-  left: 12dp;
-}
-
 .shell-call-minimized-main {
   flex-grow: 1;
   min-width: 0;

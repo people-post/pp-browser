@@ -1,5 +1,6 @@
 #include "feature/calls/CallMediaPlane.h"
 
+#include "domain/call_media/MonotonicClock.h"
 #include "common/MeshConfig.h"
 #include "mesh/reach/PeerReachSelect.h"
 
@@ -38,7 +39,9 @@ void CallMediaPlane::OnMeshStarted() {
     return;
   }
   auto pump = [m]() { m->Tick(); };
-  call_media_amp_ = std::make_unique<CallMediaAmpTransport>(m->Amp()->Runtime(), std::move(pump));
+  // The legs' timers on a monotonic clock: the runtime's amp clock follows the wall clock.
+  call_media_amp_ =
+      std::make_unique<CallMediaAmpTransport>(m->Amp()->Runtime(), MonotonicClock::Process(), std::move(pump));
   call_media_amp_->Start();
   log().info << "call-media transport=amp";
 }
@@ -177,7 +180,7 @@ void CallMediaPlane::DetachRelayClient() {
 
 void CallMediaPlane::DetachTransport() {
   if (ICallMediaTransport* transport = Transport()) {
-    transport->Detach();
+    transport->DetachAll();
   }
 }
 

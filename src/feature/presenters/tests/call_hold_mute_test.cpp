@@ -1,4 +1,4 @@
-#include "gui/CallHoldMute.h"
+#include "feature/presenters/CallHoldMute.h"
 
 #include <gtest/gtest.h>
 
@@ -35,8 +35,7 @@ TEST(CallHoldMuteTest, EachHoldDecidesAfresh) {
 TEST(CallHoldMuteTest, AUserWhoTouchedMuteDuringTheHoldKeepsTheirChoice) {
   pbr::CallHoldMute mute;
   EXPECT_EQ(mute.Next(true, false), std::optional<bool>(true));
-  mute.UserToggled();  // they unmuted (or muted again) by hand
+  mute.UserToggled(); // they unmuted (or muted again) by hand
   EXPECT_EQ(mute.Next(false, true), std::nullopt) << "the end of the hold does not undo the user's choice";
   EXPECT_EQ(mute.Next(false, false), std::nullopt);
 }
-

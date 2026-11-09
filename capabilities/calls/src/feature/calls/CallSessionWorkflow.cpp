@@ -19,6 +19,14 @@
 #include <variant>
 
 namespace pbr {
+namespace {
+
+/** A pending peer bye's key (K014): the call and the peer who said it. */
+std::string PeerByeKey(const std::string& call_id, const std::string& peer) {
+  return call_id + '\n' + peer;
+}
+
+} // namespace
 
 CallSessionWorkflow::CallSessionWorkflow(const IThreadCatalog& threads, ICallSessionStore& sessions,
                                          const CallReads& reads, CallHopService& hops,
@@ -39,6 +47,7 @@ CallSessionWorkflow::~CallSessionWorkflow() = default;
 
 void CallSessionWorkflow::DropFollowUps() {
   ++followup_epoch_;
+  pending_peer_byes_.clear();
 }
 
 void CallSessionWorkflow::SetHostPorts(HostPorts ports) {
@@ -916,7 +925,6 @@ void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCall
 Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms,
                                           const LiveCallEndReason reason) {
   live_calls_.Close(session.call_id, reason);
-  calls_over_.Note(session.call_id);
   // The decision is recorded before the media stops (#452): nothing about a slow stop may leave the
   // call looking live. The stop itself never waits on the devices (L016).
   session.state = CallSessionState::Ended;
@@ -1029,7 +1037,6 @@ bool CallSessionWorkflow::StillInCall(const std::string& call_id) const {
 Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveCallEndReason reason) {
   // This device leaves the call whether or not it ends for the others (group).
   live_calls_.Close(call_id, reason);
-  calls_over_.Note(call_id);
   if (pending_answerer_kick_call_id_ == call_id) {
     ClearPendingAnswererKick();
   }
@@ -1363,8 +1370,6 @@ bool CallSessionWorkflow::ShouldIgnoreInvite(const CallInviteDetail& invite, con
       ended && ended->has_value() && (*ended)->state == CallSessionState::Ended &&
       !join_requested_until_ms_.contains(invite.call_id)) {
     log().info << "CallInvite ignored (ended session) call_id=" << invite.call_id;
-    calls_over_.Note(invite.call_id); // P017: a push's call waiting for it goes
-    reports_.Emit(workflow_report::Changed{});
     return true;
   }
   // P001: when we charge (local floor > 0), auto-reject offers below floor.
@@ -1380,8 +1385,6 @@ bool CallSessionWorkflow::ShouldIgnoreInvite(const CallInviteDetail& invite, con
   }
   const int64_t now = util::NowUnixMs();
   if (CallSessionLogic::ShouldDropStaleInvite(invite, now, relay_created_at_ms, relay_server_time_ms)) {
-    calls_over_.Note(invite.call_id); // P017: too late to ring; a push's call waiting for it goes
-    reports_.Emit(workflow_report::Changed{});
     if (invite.origin_group_id && !invite.origin_group_id->empty()) {
       // V053: too late to ring, not too late to join — the group's call may still be going on.
       RecordMissedGroupCall(invite, sender_identity, local_identity, relay_created_at_ms.value_or(now));
@@ -1605,6 +1608,7 @@ void CallSessionWorkflow::NoteAccepterReach(const CallAcceptDetail& accept, cons
 Roe<std::optional<CallSession>> CallSessionWorkflow::CommitRemoteJoin(const CallAcceptDetail& accept,
                                                                       const std::string& identity,
                                                                       const bool implicit) {
+  SettlePeerBye(accept.call_id, identity); // a join of its own: an earlier bye does not end it
   CallParticipant participant;
   participant.call_id = accept.call_id;
   participant.identity = identity;
@@ -1717,6 +1721,7 @@ Roe<void> CallSessionWorkflow::HandleInboundLeave(const std::string& detail_json
 
 Roe<void> CallSessionWorkflow::ParticipantGone(const std::string& call_id, const std::string& identity,
                                                const std::string& local_identity) {
+  SettlePeerBye(call_id, identity);
   CallParticipant participant;
   participant.call_id = call_id;
   participant.identity = identity;
@@ -1784,10 +1789,21 @@ void CallSessionWorkflow::NotePeerEndedCall(const std::string& call_id, const st
     return;
   }
   log().info << "the peer ended the call on its device; waiting for its leave call_id=" << call_id << " peer=" << who;
-  (void)outbox_.After(peer_bye_leave_grace_, workflow_event::PeerByeGraceOver{call_id, who, followup_epoch_});
+  const uint64_t bye = ++last_peer_bye_;
+  pending_peer_byes_[PeerByeKey(call_id, who)] = bye;
+  (void)outbox_.After(peer_bye_leave_grace_, workflow_event::PeerByeGraceOver{call_id, who, followup_epoch_, bye});
+}
+
+void CallSessionWorkflow::SettlePeerBye(const std::string& call_id, const std::string& peer) {
+  pending_peer_byes_.erase(PeerByeKey(call_id, peer));
 }
 
 void CallSessionWorkflow::EndForPeerBye(const workflow_event::PeerByeGraceOver& over) {
+  const auto pending = pending_peer_byes_.find(PeerByeKey(over.call_id, over.peer));
+  if (pending == pending_peer_byes_.end() || pending->second != over.bye) {
+    return; // the peer left (or left and joined again) since its bye: that join is not this bye's
+  }
+  pending_peer_byes_.erase(pending);
   auto session = sessions_.LoadSession(over.call_id);
   auto peer = sessions_.FindParticipant(over.call_id, over.peer);
   auto local = host_.wire.local_relay_identity ? host_.wire.local_relay_identity() : Roe<std::string>(std::string());

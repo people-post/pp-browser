@@ -13,12 +13,12 @@ namespace {
 
 TEST(CallMediaErrorTextTest, DroppedAndConnectTimeoutAreToldByTheCallScreen) {
   // #181: the failed page already says "Call dropped" / "Couldn't reach them"; no second prompt.
-  EXPECT_TRUE(CallMediaErrorShownOnCallScreen("amp call-media: no path within the reconnect window"));
-  EXPECT_TRUE(CallMediaErrorShownOnCallScreen("amp call-media: call dropped [leg: amp call-media: peer link lost]"));
-  EXPECT_TRUE(CallMediaErrorShownOnCallScreen("amp call-media: call dropped [health: the 1:1 stream is gone]"));
-  EXPECT_TRUE(CallMediaErrorShownOnCallScreen("mesh connect timeout"));
-  EXPECT_FALSE(CallMediaErrorShownOnCallScreen("call-media migrate: timed out"));
-  EXPECT_FALSE(CallMediaErrorShownOnCallScreen("amp circuit-relay: channel open failed"));
+  EXPECT_TRUE(CallMediaErrorShownOnCallScreen({CallMediaErrorKind::Dropped, "anything"}));
+  EXPECT_TRUE(CallMediaErrorShownOnCallScreen({CallMediaErrorKind::ConnectTimeout, "anything"}));
+  EXPECT_FALSE(CallMediaErrorShownOnCallScreen({CallMediaErrorKind::Other, "call-media migrate: timed out"}));
+  // K014: the kind decides, never the words — an Other naming a drop is still a notice.
+  EXPECT_FALSE(CallMediaErrorShownOnCallScreen({CallMediaErrorKind::Other, "amp call-media: call dropped"}));
+  EXPECT_FALSE(CallMediaErrorShownOnCallScreen({CallMediaErrorKind::Other, "mesh connect timeout"}));
 }
 
 TEST(CallMediaErrorTextTest, PeerNotReachedChains) {

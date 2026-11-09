@@ -161,26 +161,17 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
         if (own && account == own->account_id) {
           return;  // our own list arrives by the device_list notice
         }
-        AskForNewerCard(account, device, issued_at);
+        AskForNewerCard(account, device, issued_at, CardAskGate::Source::Verified);
       });
   // An envelope we could not check (no card for its device; lane messages carry the card only when the peer may
-  // lack it): ask that device. Unverified, so at most once per account per kUnknownDeviceAskGapMs.
+  // lack it): ask that device. Unverified, so its hint counts for nothing and the asks are rate-limited (CardAskGate).
   receive_pipeline_->SetOnUnknownSenderDevice(
       [this](const std::string& account, const std::string& device, const int64_t issued_at) {
         auto own = identity_.Get();
         if (own && account == own->account_id) {
           return; // our own list arrives by the device_list notice
         }
-        {
-          const int64_t now_ms = util::NowUnixMs();
-          std::lock_guard lock(card_asks_mutex_);
-          int64_t& last = unknown_device_asks_[account];
-          if (last != 0 && now_ms - last < kUnknownDeviceAskGapMs) {
-            return;
-          }
-          last = now_ms;
-        }
-        AskForNewerCard(account, device, issued_at);
+        AskForNewerCard(account, device, issued_at, CardAskGate::Source::Unverified);
       });
   receive_pipeline_->SetAccountCardFloor(
       [this](const std::string& account_id) { return account_keys_.CardFloor(account_id); });
@@ -349,14 +340,12 @@ GroupCardLookup MeshDeliveryOrchestrator::GroupChangeCards() {
 }
 
 void MeshDeliveryOrchestrator::AskForNewerCard(const std::string& account, const std::string& device,
-                                               const int64_t issued_at) {
+                                               const int64_t issued_at, const CardAskGate::Source source) {
   {
     std::lock_guard lock(card_asks_mutex_);
-    int64_t& asked = card_asks_[account];
-    if (asked >= issued_at) {
-      return;  // asked for this list already (or a newer one)
+    if (!card_ask_gate_.Allow(account, issued_at, source, util::NowUnixMs())) {
+      return; // asked lately (or too many unverified asks just now)
     }
-    asked = issued_at;
   }
   AppRuntime::PostWorkerNormal([this, account, device]() {
     auto notice = card_ask::BuildNotice(device);
@@ -365,7 +354,7 @@ void MeshDeliveryOrchestrator::AskForNewerCard(const std::string& account, const
     }
     // Through the relay: a direct link may be refused by the peer's privacy gate (not a contact of theirs). With
     // our card: the device answering may not know ours either.
-    if (auto asked = control_lane_.Send(account, *notice, std::nullopt, false, true); !asked) {
+    if (auto asked = control_lane_.Send(account, *notice, false, true); !asked) {
       log().info << "newer card not asked of " << account << ": " << asked.error().message;
       return;
     }
@@ -387,7 +376,7 @@ void MeshDeliveryOrchestrator::ShowCardTo(const std::string& account) {
     it->second = now;
   }
   AppRuntime::PostWorkerNormal([this, account]() {
-    if (auto sent = control_lane_.Send(account, DeviceListNotice(), std::nullopt, false, true); !sent) {
+    if (auto sent = control_lane_.Send(account, DeviceListNotice(), false, true); !sent) {
       log().info << "card not shown to " << account << ": " << sent.error().message;
       return;
     }
@@ -400,7 +389,7 @@ void MeshDeliveryOrchestrator::AnswerCardAsk(const std::string& to_device, const
   if (!self || *self != to_device) {
     return;  // the device named answers (its siblings hold the same list)
   }
-  if (auto sent = control_lane_.Send(asker_account, DeviceListNotice(), std::nullopt, false, true); !sent) {
+  if (auto sent = control_lane_.Send(asker_account, DeviceListNotice(), false, true); !sent) {
     log().info << "card not sent to " << asker_account << ": " << sent.error().message;
     return;
   }
@@ -445,7 +434,7 @@ void MeshDeliveryOrchestrator::NoteMissingCopy(const RelayReceiveOutcome::Missin
         return;
       }
       // With our card: the asker's device may be one the sender does not know yet (that is why it missed a copy).
-      if (auto asked = control_lane_.Send(missing.sender_account, *notice, std::nullopt, false, true); !asked) {
+      if (auto asked = control_lane_.Send(missing.sender_account, *notice, false, true); !asked) {
         log().info << "copy not asked for message_id=" << missing.message_id << ": " << asked.error().message;
         return;
       }
@@ -1034,9 +1023,12 @@ void MeshDeliveryOrchestrator::WarmPeerByKey(const std::string& peer_key) {
   transports_.WarmByKey(peer_key);
 }
 
-Roe<EnsuredE2ePublicSessionKey> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(
-    const std::string& peer_identity) {
+Roe<ByteVector> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(const std::string& peer_identity) {
   return session_keys_.Ensure(peer_identity);
+}
+
+Roe<ByteVector> MeshDeliveryOrchestrator::HeldE2ePublicSessionKey(const std::string& peer_identity) const {
+  return session_keys_.Held(peer_identity);
 }
 
 Roe<ByteVector> MeshDeliveryOrchestrator::PeerKemPublicKey(const PeerSessionKey& key) const {
@@ -1056,9 +1048,8 @@ Roe<ByteVector> MeshDeliveryOrchestrator::PeerKemPublicKey(const PeerSessionKey&
 }
 
 Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity, const ThreadMessage& control,
-                                                const std::optional<std::string>& key_init_b64, const bool urgent,
-                                                const bool with_card) {
-  return control_lane_.Send(peer_identity, control, key_init_b64, urgent, with_card);
+                                                const bool urgent, const bool with_card) {
+  return control_lane_.Send(peer_identity, control, urgent, with_card);
 }
 
 void MeshDeliveryOrchestrator::SendControlToMany(std::vector<ControlSend> sends, ControlSendsDone done,

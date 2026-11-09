@@ -77,13 +77,6 @@ public:
 };
 
 /**
- * What the call button does once the voice / video choice is made (or skipped): a joinable call is joined; video
- * without platform support goes voice; then `start_call`. Returns false when nothing was started.
- */
-bool StartCallWith(const CallActionsPorts& call_actions, const std::string& thread_id, bool call_joinable,
-                   bool want_video);
-
-/**
  * The chat screen's menus: the long-press / right-click menu (a chats-list row, a message, an item
  * the user can pass on), the header's "new", thread-actions and call menus, the emoji and reaction
  * pickers' fallbacks, mute durations, share targets and the delete choice. Each item calls back into

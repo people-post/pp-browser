@@ -31,17 +31,33 @@ public final class PpCallService extends Service {
     private static final String EXTRA_TITLE = "title";
     static final String ACTION_HANG_UP = "dev.pp_browser.app.action.HANG_UP";
 
+    /**
+     * Main thread: the service runs in the foreground (startForeground went through). False again when it was refused
+     * or the service went (stopped, or the system stopped it): MainActivity starts it again at the next resume.
+     */
+    private static boolean sForeground;
+
     static native void nativeOnHangUp();
 
-    /** Starts the service, or updates its notification (`title`: who with). */
-    static void start(Context context, String title) {
+    /**
+     * Starts the service, or updates its notification (`title`: who with). False: the start was refused; true: asked
+     * for — whether it runs in the foreground shows later (isForeground).
+     */
+    static boolean start(Context context, String title) {
         Intent intent = new Intent(context, PpCallService.class).putExtra(EXTRA_TITLE, title);
         try {
             ContextCompat.startForegroundService(context, intent);
+            return true;
         } catch (RuntimeException e) {
             // Android 12+: not while the app is in the background (a call that connected after the user left it).
             Log.w(TAG, "start refused: " + e);
+            return false;
         }
+    }
+
+    /** Main thread. */
+    static boolean isForeground() {
+        return sForeground;
     }
 
     static void stop(Context context) {
@@ -64,13 +80,22 @@ public final class PpCallService extends Service {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(title),
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                             ? ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE : 0);
+            sForeground = true;
         } catch (RuntimeException e) {
-            // No microphone permission, or not allowed now: the call goes on as before (foreground only).
+            // No microphone permission, or not allowed now: the call goes on as before (foreground only), and the
+            // next resume tries again.
             Log.w(TAG, "foreground refused: " + e);
+            sForeground = false;
             stopSelf();
         }
         // Not sticky: a restarted service without the app's call would hold nothing.
         return START_NOT_STICKY;
+    }
+
+    @Override
+    public void onDestroy() {
+        sForeground = false;
+        super.onDestroy();
     }
 
     @Override

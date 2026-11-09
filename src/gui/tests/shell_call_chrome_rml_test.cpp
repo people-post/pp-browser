@@ -1,5 +1,6 @@
 #include "gui/shell/ShellCallChromeRml.h"
 #include "gui/CallChromeSync.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "lib/ui/CallChipDock.h"
 
 #include <gtest/gtest.h>
@@ -44,6 +45,17 @@ TEST(ShellCallChromeRmlTest, MetersAreOnlyInTheExpandedBar) {
     EXPECT_FALSE(Has(immersive, name)) << name;
   }
   EXPECT_TRUE(Has(expanded, "data-if=\"!call_in_progress_show_roster\"")); // and hidden under a roster
+}
+
+TEST(ShellCallChromeRmlTest, TheBarsOwnMeterIsLabelledInTheUsersLanguage) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  ShellState state;
+  state.call_in_progress.active = true;
+  state.call_in_progress.mode = CallChromeMode::Expanded;
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_TRUE(Has(CallInProgressRml(state), "shell-call-meter-label\">" + Tr("call.label.you") + "<"));
+  EXPECT_FALSE(Has(CallInProgressRml(state), ">You<"));
+  LocalizationService::Instance().SetPreferredLanguage("en");
 }
 
 TEST(ShellCallChromeRmlTest, EachModeHasItsOwnChrome) {

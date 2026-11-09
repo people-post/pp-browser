@@ -15,12 +15,18 @@
 namespace pbr {
 
 /**
- * M024 bridge, for one release: a media key also goes in its old form, wrapped under the account pair's session
+ * M024 bridge, sending: a media key also goes in its old form, wrapped under the account pair's session
  * (`wrapped_key_b64`, V015), beside the key itself (`media_key_b64`), for an app before M024 that reads only that.
- * Drop it in the release after (false, then the wrap and `resolve_peer_session_key`): the lane copy each device
- * reads is sealed in that device's own session, which is the wrap.
+ * The lane copy each device reads is sealed in that device's own session, which is the wrap. When it goes and what
+ * goes with it: docs/contracts/COMPATIBILITY.md § Bridges (step 1).
  */
 inline constexpr bool kMediaKeyAccountWrapBridge = true;
+/**
+ * M024 bridge, reading: a message with no `media_key_b64` (a sender before M024) has its `wrapped_key_b64` unwrapped
+ * under the account pair's session held. Goes a release after kMediaKeyAccountWrapBridge (COMPATIBILITY § Bridges,
+ * step 2): a sender on the bridge release may still send only the old form.
+ */
+inline constexpr bool kMediaKeyAccountWrapRead = true;
 
 /** A call media key's size (ICallMediaKeyStore::GenerateEpochKey). */
 inline constexpr size_t kCallMediaKeyBytes = 32;
@@ -37,11 +43,12 @@ inline constexpr size_t kCallMediaKeyBytes = 32;
 class CallMediaKeyExchange : public Module {
 public:
   /**
-   * What it needs from the control lane: the account pair's E2E session key (the old form's wrap, M024), and a
-   * CallMediaKey send.
+   * What it needs from the control lane: the account pair's E2E session key (the old form's wrap, M024) — opened
+   * when missing to wrap, only the one held to unwrap — and a CallMediaKey send.
    */
   struct Transport {
     std::function<Roe<ByteVector>(const std::string& peer_identity)> resolve_peer_session_key;
+    std::function<Roe<ByteVector>(const std::string& peer_identity)> held_peer_session_key;
     std::function<Roe<void>(const std::string& call_id, const std::string& peer_identity, uint32_t media_epoch,
                             const std::string& media_key_id, const ByteVector& key)>
         send_media_key;

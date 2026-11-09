@@ -2391,7 +2391,7 @@ Roe<void> GroupMembershipWorkflow::SendRosterControl(const std::string& peer_ide
   if (!control) {
     return control.error();
   }
-  return mesh_messaging_.SendControl(peer_identity, *control, std::nullopt, false, true);
+  return mesh_messaging_.SendControl(peer_identity, *control, false, true);
 }
 
 Roe<std::vector<AccountStateGroup>> GroupMembershipWorkflow::StateGroups() const {

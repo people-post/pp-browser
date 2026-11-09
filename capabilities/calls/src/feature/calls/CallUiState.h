@@ -1,8 +1,8 @@
 #pragma once
 
 #include "lib/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallMediaError.h"
 #include "lib/calls/CallMediaSeat.h"
-#include "lib/calls/RecentCallsOver.h"
 #include "common/media/CallMediaHealth.h"
 
 #include <optional>
@@ -35,13 +35,11 @@ struct CallUiState {
   bool direct_connect_seed_unreachable = false;
   std::string media_activity;
   /** Pending media error for the GUI to show once (TakeLastMediaError). */
-  std::optional<std::string> last_media_error;
+  std::optional<CallMediaError> last_media_error;
   /** The last call the peer ended or declined while this side had it (TakeRemoteEnd); empty if none. */
   std::string remote_ended_call_id;
   /** That end was the peer declining our call (else it ended the call). */
   bool remote_ended_declined = false;
-  /** P017: the calls this device learned are over (TakeCallsOver): a push's call waiting for one goes. */
-  RecentCallsOver calls_over;
   CallHopHealth hop_health;
   std::string media_path_kind;
   CallLinkCounters media_link;

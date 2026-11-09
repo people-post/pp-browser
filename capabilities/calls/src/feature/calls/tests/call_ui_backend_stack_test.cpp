@@ -97,10 +97,11 @@ public:
   CallMediaSessionPhase Phase() const override {
     return active ? CallMediaSessionPhase::MediaReady : CallMediaSessionPhase::Idle;
   }
-  void Detach() override {
+  void Detach(const std::string& /*call_id*/) override {
     active = false;
     ++detach_calls;
   }
+  void DetachAll() override { Detach({}); }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
     ++connect_async_calls;
@@ -196,7 +197,7 @@ protected:
     deps.contacts = contacts_.get();
     deps.account = identity_.get();
     deps.delivery.send_control = [this](const std::string& /*peer*/, const ThreadMessage& control,
-                                        const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
+                                        bool /*urgent*/) -> Roe<void> {
       ++sent_control_;
       {
         std::lock_guard lock(sent_mu_);

@@ -28,6 +28,22 @@ TEST(CallDirectPlannerLogicTest, PathLostReconnectsAndANewPathRecovers) {
   EXPECT_EQ(failed.next, CallDirectPlannerPhase::Idle);
 }
 
+// K014: a connected call that lost its media for good is its own event (Dropped, not ConnectFailed): the 1:1
+// planner goes Idle from any phase a connected call is in; an idle planner has nothing to drop.
+TEST(CallDirectPlannerLogicTest, ADroppedCallGoesIdle) {
+  CallDirectPlannerApplyContext ctx;
+  ctx.allows_direct_path = true;
+  for (const auto phase :
+       {CallDirectPlannerPhase::Live, CallDirectPlannerPhase::DegradedTxOnly, CallDirectPlannerPhase::Reconnecting}) {
+    auto dropped = DecideCallDirectPlannerPhase(phase, CallDirectPlannerEvent::Dropped, ctx);
+    EXPECT_EQ(dropped.decision, CallDirectPlannerDecision::Transition);
+    EXPECT_EQ(dropped.next, CallDirectPlannerPhase::Idle);
+  }
+  EXPECT_EQ(DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Idle, CallDirectPlannerEvent::Dropped, ctx).decision,
+            CallDirectPlannerDecision::Ignore);
+  EXPECT_STREQ(CallDirectPlannerEventName(CallDirectPlannerEvent::Dropped), "Dropped");
+}
+
 // k3: a path migration keeps a live call live and brings a TX-only one back (k3-4); nothing else
 // has a path to move.
 TEST(CallDirectPlannerLogicTest, PathMigratedKeepsALiveCallAndIsIgnoredOtherwise) {

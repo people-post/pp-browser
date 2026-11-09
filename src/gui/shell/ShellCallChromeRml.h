@@ -12,7 +12,10 @@ namespace pbr {
  * #shell-call-ring-mount and #shell-call-in-progress-mount. Empty when that chrome is not up.
  */
 std::string CallRingRml(const ShellState& state);
-/** The in-call chrome in its mode: Expanded (top bar), Immersive (people grid), Minimized (corner chip). */
+/**
+ * The in-call chrome in its mode: Expanded (top bar), Immersive (people grid), Minimized (the chip: top right until it
+ * is dragged, then docked on a side at its height — #166 — or tucked on the edge as a small handle, #189).
+ */
 std::string CallInProgressRml(const ShellState& state);
 /**
  * #166: the top (dp) the minimised chip's markup gives a dropped chip: where the gesture last put it for this place

@@ -1,8 +1,6 @@
 #include "feature/presenters/CallSystemUiBridge.h"
 
 #include "common/Diag.h"
-#include "foundation/platform/CallPushAge.h"
-#include "lib/calls/CallTypes.h"
 
 #include <gtest/gtest.h>
 
@@ -18,30 +16,33 @@ namespace {
 /** The system call screen, recording what it was told. */
 class FakeCallSystemUi final : public ICallSystemUi {
 public:
-  bool Available() const override { return true; }
+  bool Available() const override { return available; }
+  void RecheckAvailable() override {
+    ++rechecks;
+    available = available_when_asked_again;
+  }
   void SetCallbacks(Callbacks callbacks) override { callbacks_ = std::move(callbacks); }
   bool HasPendingPushCall() const override { return pending_push; }
-  std::string PendingPushCallId() const override { return pending_push ? pending_call_id : std::string(); }
   void ReportIncoming(const std::string& call_id, const std::string& caller_name, bool video) override {
     log.push_back("incoming " + call_id + " " + caller_name + (video ? " video" : ""));
     pending_push = false;
   }
-  void ReportEnded(const std::string& call_id, EndReason reason) override {
-    log.push_back("ended " + call_id + (reason == EndReason::AnsweredElsewhere ? " answered-elsewhere" : ""));
-  }
+  void ReportEnded(const std::string& call_id) override { log.push_back("ended " + call_id); }
 
   void NotifyMessagingReady() override { log.push_back("ready"); }
-  void EndPendingPushCall(EndReason reason) override {
-    log.push_back(reason == EndReason::Ended ? "ended pending: over" : "ended pending");
+  void EndPendingPushCall() override {
+    log.push_back("ended pending");
     pending_push = false;
     if (callbacks_.pending_gone) {
       callbacks_.pending_gone();
     }
   }
 
+  /** What Available() says; RecheckAvailable turns it into what the OS would say now. */
+  bool available = true;
+  bool available_when_asked_again = true;
+  int rechecks = 0;
   bool pending_push = false;
-  /** The call the push named (its `wake_hint`); empty: none. */
-  std::string pending_call_id;
   std::vector<std::string> log;
   Callbacks callbacks_;
 };
@@ -61,7 +62,6 @@ protected:
                         },
                     .decline = [this]() { did.push_back("decline"); },
                     .leave = [this]() { did.push_back("leave"); },
-                    .toggle_mute = [this]() { did.push_back("toggle mute"); },
                     .display_name = [](const std::string& identity) { return "name-of-" + identity; },
                     .now_ms = [this]() { return now; },
                 }) {}
@@ -87,11 +87,10 @@ protected:
     s.kind = CallScreen::Kind::Answering;
     return s;
   }
-  static CallScreen InCall(const std::string& call_id, bool muted = false) {
+  static CallScreen InCall(const std::string& call_id) {
     CallScreen s;
     s.kind = CallScreen::Kind::InCall;
     s.call_id = call_id;
-    s.muted = muted;
     return s;
   }
 
@@ -121,57 +120,31 @@ TEST_F(CallSystemUiBridgeTest, ARingInTheBackgroundRingsOnTheSystemScreenAndEnds
   EXPECT_FALSE(bridge_.SystemRings("c1"));
 }
 
+// Whether the system screen can ring is asked again for each new ring (the user may have turned call notifications
+// off since), not on every frame of a call: on Android asking is a call into the OS, and a call redraws every tick.
+TEST_F(CallSystemUiBridgeTest, EachNewRingAsksAgainWhetherTheSystemScreenCanRing) {
+  bridge_.Sync(InCall("c0"), "c0", false);
+  bridge_.Sync(InCall("c0"), "c0", false);
+  bridge_.Sync(CallScreen{}, "", false);
+  EXPECT_EQ(ui_.rechecks, 0) << "the frames of a call ask nothing again";
+
+  ui_.available_when_asked_again = false; // call notifications turned off meanwhile
+  bridge_.Sync(Ring("c1"), "", false);
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_EQ(ui_.rechecks, 1) << "once per ring";
+  EXPECT_TRUE(ui_.log.empty()) << "the ring stays in the app";
+  EXPECT_FALSE(bridge_.TakesRing(false, false));
+  bridge_.Sync(CallScreen{}, "", false);
+
+  ui_.available_when_asked_again = true; // and on again
+  bridge_.Sync(Ring("c2"), "", false);
+  EXPECT_EQ(ui_.rechecks, 2);
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c2 name-of-alice"}));
+}
+
 TEST_F(CallSystemUiBridgeTest, ThePushsCallIsFilledInEvenWithTheAppOpen) {
   ui_.pending_push = true;
   bridge_.Sync(Ring("c1"), "", true);
-  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"}));
-}
-
-// The push names its call (`wake_hint`); a choice made on the push's call is that call's only.
-TEST_F(CallSystemUiBridgeTest, AnAnswerOnThePushsNamedCallAnswersOnlyThatRing) {
-  ui_.pending_push = true;
-  ui_.callbacks_.answer("c1");         // the push named c1; its ring is not known yet
-  bridge_.Sync(Ring("c2"), "", false); // another call rings first
-  EXPECT_TRUE(did.empty()) << "c2 is not the call the user answered";
-  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c2 name-of-alice"}));
-  bridge_.Sync(CallScreen{}, "", false); // c2's caller gives up
-  EXPECT_EQ(ui_.log.back(), "ended c2");
-  bridge_.Sync(Ring("c1"), "", false);
-  EXPECT_EQ(did, (std::vector<std::string>{"accept voice"}));
-  EXPECT_EQ(accepted_ids, (std::vector<std::string>{"c1"}));
-  EXPECT_EQ(ui_.log.back(), "incoming c1 name-of-alice");
-}
-
-TEST_F(CallSystemUiBridgeTest, ADeclineOnThePushsNamedCallDeclinesOnlyThatRing) {
-  ui_.pending_push = true;
-  ui_.callbacks_.end("c1");
-  ui_.pending_push = false; // the system screen ended the push's call
-  bridge_.Sync(Ring("c2"), "", false);
-  EXPECT_TRUE(did.empty());
-  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c2 name-of-alice"}));
-  ui_.callbacks_.end("c2"); // declined there too
-  EXPECT_EQ(did, (std::vector<std::string>{"decline"}));
-  bridge_.Sync(CallScreen{}, "", false);
-  // The user opened the app meanwhile: the call he declined there does not ring in it.
-  bridge_.Sync(Ring("c1"), "", true);
-  EXPECT_EQ(did, (std::vector<std::string>{"decline", "decline"}));
-  EXPECT_EQ(ui_.log.size(), 1u);
-}
-
-TEST_F(CallSystemUiBridgeTest, AChoiceOnThePushsNamedCallStillExpires) {
-  ui_.callbacks_.end("c1");
-  now += CallSystemUiBridge::kPendingChoiceMs + 1;
-  bridge_.Sync(Ring("c1"), "", true);
-  EXPECT_TRUE(did.empty());
-}
-
-TEST_F(CallSystemUiBridgeTest, ThePushsNamedCallGoingAwayForgetsItsAnswer) {
-  ui_.pending_push = true;
-  ui_.callbacks_.answer("c1");
-  ui_.pending_push = false;
-  ui_.callbacks_.pending_gone(); // its wait ran out
-  bridge_.Sync(Ring("c1"), "", false);
-  EXPECT_TRUE(did.empty());
   EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"}));
 }
 
@@ -183,12 +156,6 @@ TEST_F(CallSystemUiBridgeTest, AnsweredOnTheSystemScreenItKeepsTheCallUntilItEnd
   bridge_.Sync(Answering("c1"), "", false);
   bridge_.Sync(InCall("c1"), "c1", false);
   EXPECT_EQ(ui_.log.size(), 1u);
-  // Muted on the system screen.
-  ui_.callbacks_.set_muted("c1", true);
-  EXPECT_EQ(did.back(), "toggle mute");
-  bridge_.Sync(InCall("c1", true), "c1", false);
-  ui_.callbacks_.set_muted("c1", true);  // already muted
-  EXPECT_EQ(did.size(), 2u);
   // Hung up on the system screen.
   ui_.callbacks_.end("c1");
   EXPECT_EQ(did.back(), "leave");
@@ -255,7 +222,7 @@ TEST_F(CallSystemUiBridgeTest, DeclinedOnTheSystemScreen) {
 TEST_F(CallSystemUiBridgeTest, AnsweredInTheAppTheSystemScreenLetsItGo) {
   bridge_.Sync(Ring("c1"), "", false);
   bridge_.Sync(Answering("c1"), "", true);  // he opened the app and tapped Accept
-  EXPECT_EQ(ui_.log.back(), "ended c1 answered-elsewhere");
+  EXPECT_EQ(ui_.log.back(), "ended c1");
   bridge_.Sync(InCall("c1"), "c1", true);
   EXPECT_EQ(ui_.log.size(), 2u);
 }
@@ -267,6 +234,16 @@ TEST_F(CallSystemUiBridgeTest, ThePushsCallAnsweredBeforeItsRingShowedAnswersThe
   bridge_.Sync(Ring("c1"), "", false);
   EXPECT_EQ(did, (std::vector<std::string>{"accept voice"}));
   EXPECT_FALSE(bridge_.SystemRings("c1"));
+}
+
+// The push's call comes with no call id (the push names none); an id the system screen does not show is stale.
+TEST_F(CallSystemUiBridgeTest, AnAnswerForACallNotOnTheSystemScreenIsNoChoice) {
+  ui_.pending_push = true;
+  ui_.callbacks_.answer("c9");
+  ui_.callbacks_.end("c9");
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_TRUE(did.empty());
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"}));
 }
 
 TEST_F(CallSystemUiBridgeTest, ThePushsCallDeclinedBeforeItsRingShowedDeclinesTheRing) {
@@ -389,59 +366,15 @@ TEST_F(CallSystemUiBridgeTest, AnAnswerOnThePushsCallIsNotAppliedToARingOverACal
 TEST_F(CallSystemUiBridgeTest, ADeclineOnThePushsCallStillDeclinesARingOverACall) {
   bridge_.Sync(InCall("c1"), "c1", false);
   ui_.pending_push = true;
-  ui_.callbacks_.end("c2"); // the push named c2; declined there
+  ui_.callbacks_.end(""); // declined there
   ui_.pending_push = false;
   bridge_.Sync(RingOver("c2", "c1"), "c1", false);
   EXPECT_EQ(did, (std::vector<std::string>{"decline"})) << "declining ends nothing";
   ui_.pending_push = true;
-  ui_.callbacks_.end(""); // a push that named no call
+  ui_.callbacks_.end(""); // a second push, its call still on the system screen
   bridge_.Sync(RingOver("c3", "c1"), "c1", false);
   EXPECT_EQ(did, (std::vector<std::string>{"decline", "decline"}));
   EXPECT_EQ(ui_.log, (std::vector<std::string>{"ended pending"}));
-}
-
-// P017 (#555 B187): the push's call waits for its ring; once the app knows the call it names is over (its invite read
-// too late, its caller gone), it goes at once instead of ringing on for its timeout.
-TEST_F(CallSystemUiBridgeTest, ThePushsCallGoesAsSoonAsItsCallIsOver) {
-  ui_.pending_push = true;
-  ui_.pending_call_id = "c1";
-  ui_.callbacks_.answer("c1"); // answered before the app could tell
-  bridge_.OnCallOver("c1");
-  EXPECT_EQ(ui_.log, (std::vector<std::string>{"ended pending: over"}));
-  EXPECT_FALSE(ui_.pending_push);
-  // The answer went with it: a later ring of that id is not answered for the user.
-  bridge_.Sync(Ring("c1"), "", false);
-  EXPECT_TRUE(did.empty());
-  EXPECT_EQ(ui_.log.back(), "incoming c1 name-of-alice");
-}
-
-// P017: a push the phone ends as too old carries an invite the app drops too (its relay age is at least the push's);
-// a younger one still rings, and its push's call must be there for it, or that ring would show as a second call.
-TEST(CallPushStaleRuleTest, APushTooOldToRingCarriesAnInviteTooOldToRing) {
-  EXPECT_EQ(kCallPushStaleAfterMs, kDefaultCallInviteTtlMs + kCallInviteRelayAgeSlackMs);
-}
-
-TEST_F(CallSystemUiBridgeTest, AnotherCallBeingOverLeavesThePushsCallWaiting) {
-  ui_.pending_push = true;
-  ui_.pending_call_id = "c1";
-  bridge_.OnCallOver("c0"); // an earlier call of the same caller, also in the catch-up
-  EXPECT_TRUE(ui_.log.empty());
-  EXPECT_TRUE(ui_.pending_push);
-  bridge_.Sync(Ring("c1"), "", false);
-  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"}));
-}
-
-TEST_F(CallSystemUiBridgeTest, APushThatNamedNoCallWaitsForTheFirstRingWhateverEnds) {
-  ui_.pending_push = true; // an older relay: no wake_hint
-  bridge_.OnCallOver("c1");
-  EXPECT_TRUE(ui_.log.empty());
-  EXPECT_TRUE(ui_.pending_push);
-}
-
-TEST_F(CallSystemUiBridgeTest, ACallOverWithNoPushCallWaitingDoesNothing) {
-  bridge_.OnCallOver("c1");
-  bridge_.OnCallOver("");
-  EXPECT_TRUE(ui_.log.empty());
 }
 
 /** The Diag channel's lines: what Send diagnostics carries (DIAGNOSTICS.md). */
@@ -456,10 +389,11 @@ TEST_F(CallSystemUiBridgeTest, ItsEventsAreShareableDiagLines) {
   auto diag = std::make_shared<DiagCapture>();
   DiagLog().addHandler(diag);
   ui_.pending_push = true;
-  ui_.pending_call_id = "c1";
-  bridge_.OnCallOver("c1");
+  ui_.callbacks_.answer("");
+  bridge_.Sync(Ring("c1"), "", false);
+  ASSERT_EQ(did, (std::vector<std::string>{"accept voice"}));
   ASSERT_FALSE(diag->lines.empty());
-  EXPECT_NE(diag->lines.front().find("event=call.system what=pending_call_over"), std::string::npos)
+  EXPECT_NE(diag->lines.front().find("event=call.system what=answer_pending"), std::string::npos)
       << diag->lines.front();
   for (const std::string& line : diag->lines) {
     EXPECT_EQ(line.find("c1"), std::string::npos) << line;

@@ -72,7 +72,8 @@ final class PpCallNotifications {
 
     static native void nativeOnPendingGone();
 
-    static native void nativeOnPendingChanged();
+    /** `pending`: hasPendingPushCall() now (native keeps it, rather than asking every frame). */
+    static native void nativeOnPendingChanged(boolean pending);
 
     static synchronized void init(Context context) {
         if (sContext == null && context != null) {
@@ -257,8 +258,10 @@ final class PpCallNotifications {
         clearPending();
     }
 
+    /** Under the lock: native hears the changes in order. */
     private static void pendingChanged() {
-        toNative(PpCallNotifications::nativeOnPendingChanged);
+        final boolean pending = sPending;
+        toNative(() -> nativeOnPendingChanged(pending));
     }
 
     /** The app's native side is not loaded (the process started for a push): nothing there to tell. */

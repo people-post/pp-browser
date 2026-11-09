@@ -51,13 +51,11 @@ bool CallNoticeIsLocalizedCopy(const std::string& text) {
   return false;
 }
 
-bool CallMediaErrorShownOnCallScreen(const std::string& technical) {
-  // K014: a call that was connected and lost its media for good (no path within the reconnect window, the link
-  // gone) shows "Call dropped" on the failed page; giving up before the call ever connected
-  // (CallDirectPath SurfaceConnectFailed, e.g. "mesh connect timeout") shows "Couldn't reach them" there.
-  // Saying either again as a toast or banner is a duplicate (#181); the raw reason stays in the log.
-  return Has(technical, "call dropped") || Has(technical, "no path within the reconnect window") ||
-         Has(technical, "mesh connect");
+bool CallMediaErrorShownOnCallScreen(const CallMediaError& error) {
+  // K014: a call that was connected and lost its media for good shows "Call dropped" on the failed page; a 1:1
+  // call that never connected within its budget shows "Couldn't reach them" there. Saying either again as a
+  // toast or banner is a duplicate (#181); the raw reason stays in the log.
+  return error.kind == CallMediaErrorKind::Dropped || error.kind == CallMediaErrorKind::ConnectTimeout;
 }
 
 const char* CallMediaErrorUserKey(const std::string& technical) {

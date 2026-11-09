@@ -28,6 +28,8 @@
 //   minimize / restore                  a desktop window minimized / restored
 //   push_wake                           a call push arrives (what FCM's wake does)
 //   stay_connected {on}                 the "Stay connected in the background" setting (P011)
+//   add_to_contacts {thread}            "Add to contacts" in a direct chat with someone not in contacts
+//   call_invite_policy {policy}         "Who can call me": everyone | contacts_only (a new profile's) | nobody
 //   create_group {title, accounts}      a group with these contacts (each invited)
 //   group_invites                       group invites in this user's chats {nonce, group_id, title, from,
 //                                       member_count} (G019: the invite shows the count, never the members)
@@ -371,6 +373,18 @@ public:
     return members;
   }
 
+  /** What the call screen's media frame decided (CallMediaFrame): the status line, the reconnect and its capsule. */
+  static Object MediaFrameObject(const CallMediaScreen& frame) {
+    Object out;
+    out.set("line", frame.line.key);
+    out.set("reconnect", frame.media.reconnect);
+    out.set("capsule", std::string(CallReconnectKey(frame.reconnect.kind)));
+    out.set("on_hold", frame.media.on_hold);
+    out.set("starting_video", frame.media.starting_video);
+    out.set("hint", frame.hint_shown ? frame.hint_key : std::string());
+    return out;
+  }
+
   Object SurfaceObject() {
     Object out;
     out.set("kind", last_kind_);
@@ -389,6 +403,7 @@ public:
     out.set("members", ArrayValue(MembersOf(screen))); // V062: who is a guest, and what this user may do
     out.set("ring_guest", screen.ring_guest);
     out.set("ring_people", static_cast<int64_t>(screen.ring_people));
+    out.set("media_frame", ObjectValue(MediaFrameObject(presenter_.MediaScreen())));
     if (calls_->Available()) {
       IMediaView& media = calls_->Media();
       const auto health = media.HealthSnapshot();
@@ -945,6 +960,23 @@ public:
       }
       auto done = chats_.ShareContact(request->getString("thread").value_or(""), (*contact)->id);
       done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message);
+    } else if (cmd == "add_to_contacts") {
+      // *Add to contacts* in the sheet of a direct chat with someone not in contacts (ChatPeerSheet →
+      // ChatPresenter): the chat on screen, its peer added from what this device holds for them.
+      const std::string thread_id = request->getString("thread").value_or("");
+      auto thread = facade_->GetThread(thread_id);
+      if (!thread || !*thread || !chats_.SelectThread(thread_id)) {
+        ReplyError(id, "could not open the chat");
+        return;
+      }
+      auto added = chats_.AddPeerToContacts((*thread)->peer_identity_value);
+      if (!added) {
+        ReplyError(id, added.error().message);
+        return;
+      }
+      Object out = Reply(id, true);
+      out.set("contact", *added);
+      Emit(out);
     } else if (cmd == "add_from_card") {
       // *Add to contacts* on a contact card in the open chat (ChatPresenter): the card checked, keys kept.
       auto added = chats_.AddContactFromCard(request->getString("message").value_or(""));
@@ -1095,6 +1127,24 @@ public:
         Hub().Apply(ProjectNotifications(prefs));
         Object out = Reply(id, true);
         out.set("stay_connected", AppLifecycle::StaysConnected());
+        Emit(out);
+      }
+    } else if (cmd == "call_invite_policy") {
+      // Me → Security → Who can call me (privacy P007; `contacts_only` for a new profile): the profile pref,
+      // applied as ConfigApplyBridge applies a pref change.
+      const std::string policy = request->getString("policy").value_or("");
+      if (policy != "everyone" && policy != "contacts_only" && policy != "nobody") {
+        ReplyError(id, "policy: everyone | contacts_only | nobody");
+        return;
+      }
+      ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+      prefs.call_invite_policy = policy;
+      if (auto saved = store_.SaveProfilePrefs(prefs); !saved) {
+        ReplyError(id, saved.error().message);
+      } else {
+        Hub().Apply(ProjectPolicy(prefs));
+        Object out = Reply(id, true);
+        out.set("call_invite_policy", store_.Snapshot().profile_prefs.call_invite_policy);
         Emit(out);
       }
     } else if (cmd == "push_wake") {

@@ -55,6 +55,11 @@ struct CallMediaDirectCallbacks {
   /** V034: all channels (0=Opus, 1=H264). When set, preferred over on_audio. */
   /** seq/mark come from the wire frame; the playout jitter buffer orders and de-dupes on seq (B20). */
   std::function<void(uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload)> on_media;
+  /**
+   * The leg failed; callers read the code, never the message (CODED_FAILURE.md). Before MediaReady a connect
+   * failure (`Unreachable`, `Timeout`, `HelloRejected`, …); a leg that had connected and ends under the call
+   * reports `CallMediaErr::Dropped` (K014: the call dropped, never a connect failure).
+   */
   std::function<void(const CallMediaFailure& failure)> on_failed;
   /** k3: media moved to another path of the call (make-before-break migration); `kind` is the new path's. */
   std::function<void(CallMediaLinkKind kind)> on_path_changed;
@@ -154,13 +159,20 @@ public:
       done(Error("call-media standby not supported"));
     }
   }
-  virtual void Detach() = 0;
   /**
-   * K014: this end ended the call — tell the peer (call-media `bye` on the active path, best-effort,
-   * no ack), then Detach. The peer takes the stream's close as the call ending, not as a lost path.
-   * Transports without it just detach.
+   * Drop `call_id`'s media on this device; another call's is untouched (one transport serves the
+   * device's calls in turn, so a late stop of an ended call must not reach the next). Empty: nothing.
+   * The peer takes a close without `bye` as a lost path (K014), not as the call ending.
    */
-  virtual void HangUp() { Detach(); }
+  virtual void Detach(const std::string& call_id) = 0;
+  /** Device level (shutdown): drop every call's media. */
+  virtual void DetachAll() = 0;
+  /**
+   * K014: this end ended `call_id` — tell the peer (call-media `bye` on the call's active path,
+   * best-effort, no ack), then Detach it. `bye` is what ends the call for the peer; the close that
+   * follows is not. Transports without it just detach.
+   */
+  virtual void HangUp(const std::string& call_id) { Detach(call_id); }
 
   /**
    * Non-blocking connect: arms the outbound leg and invokes `on_done` when MediaReady,
