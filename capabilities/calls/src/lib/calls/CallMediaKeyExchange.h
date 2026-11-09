@@ -37,11 +37,12 @@ inline constexpr size_t kCallMediaKeyBytes = 32;
 class CallMediaKeyExchange : public Module {
 public:
   /**
-   * What it needs from the control lane: the account pair's E2E session key (the old form's wrap, M024), and a
-   * CallMediaKey send.
+   * What it needs from the control lane: the account pair's E2E session key (the old form's wrap, M024) — opened
+   * when missing to wrap, only the one held to unwrap — and a CallMediaKey send.
    */
   struct Transport {
     std::function<Roe<ByteVector>(const std::string& peer_identity)> resolve_peer_session_key;
+    std::function<Roe<ByteVector>(const std::string& peer_identity)> held_peer_session_key;
     std::function<Roe<void>(const std::string& call_id, const std::string& peer_identity, uint32_t media_epoch,
                             const std::string& media_key_id, const ByteVector& key)>
         send_media_key;

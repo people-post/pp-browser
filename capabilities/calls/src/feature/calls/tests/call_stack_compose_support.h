@@ -250,6 +250,7 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   deps.delivery.ensure_peer_session_key = [&side](const std::string& peer) {
     return SeededSessionKey(*side.psk, peer);
   };
+  deps.delivery.held_peer_session_key = deps.delivery.ensure_peer_session_key;
   deps.delivery.send_control = [&side](const std::string& peer, const ThreadMessage& control,
                                        bool /*urgent*/) -> Roe<void> {
     if (side.on_send) {

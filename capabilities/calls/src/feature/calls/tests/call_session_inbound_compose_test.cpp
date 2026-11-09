@@ -259,6 +259,7 @@ protected:
     delivery.resolve_peer_thread = [](const std::string& peer) -> Roe<std::string> { return "dm:" + peer; };
     delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
     delivery.ensure_peer_session_key = [this](const std::string& peer) { return test::SeededSessionKey(*psk_, peer); };
+    delivery.held_peer_session_key = delivery.ensure_peer_session_key;
     if (with_group_standing_) {
       // V062: the group's roster as this device holds it (`holds_roster_` false: a guest's device, none held).
       delivery.group_standing = [this](const std::string&,

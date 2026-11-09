@@ -185,6 +185,13 @@ Roe<ByteVector> CallControlClient::SessionKeyWith(const std::string& peer_identi
   return delivery_.ensure_peer_session_key(peer_identity);
 }
 
+Roe<ByteVector> CallControlClient::HeldSessionKeyWith(const std::string& peer_identity) const {
+  if (!delivery_.held_peer_session_key) {
+    return Error("Call delivery not bound");
+  }
+  return delivery_.held_peer_session_key(peer_identity);
+}
+
 Roe<void> CallControlClient::SendMediaKey(const std::string& call_id, const std::string& peer_identity,
                                           const uint32_t media_epoch, const std::string& media_key_id,
                                           const ByteVector& key_bytes) {

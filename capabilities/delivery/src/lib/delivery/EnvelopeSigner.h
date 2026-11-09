@@ -17,9 +17,9 @@ public:
   /** BLAKE2b-256 over exactly what a device decrypts in one copy: 0x02 ‖ LenBytes(payload). */
   static Roe<std::vector<uint8_t>> CopyHash(const RelayCopy& copy);
   /**
-   * 1 to kMaxRelayCopies copies, one per device (at most one account copy), and the control lane is one account
-   * copy. Anything else is malformed — signing and verifying both refuse it. (No route names a group: a group
-   * copy carries its group id inside its ciphertext, G018 item 7.)
+   * 1 to kMaxRelayCopies copies, one per device (at most one account copy) — on the control lane too: a copy per
+   * device of the peer's, or the account copy (M024). Anything else is malformed — signing and verifying both refuse
+   * it. (No route names a group: a group copy carries its group id inside its ciphertext, G018 item 7.)
    */
   static Roe<void> CheckBodyShape(const RelayEnvelope& envelope);
   static Roe<bool> Verify(const RelayEnvelope& envelope, const std::string& public_key_b64);

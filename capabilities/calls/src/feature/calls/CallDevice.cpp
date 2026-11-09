@@ -77,9 +77,11 @@ CallDevice::CallDevice(const IThreadCatalog& threads, IThreadTranscript& transcr
       key_exchange_(
           sessions, media_keys,
           CallMediaKeyExchange::Transport{
-              [this](const std::string& peer) { return control_.SessionKeyWith(peer); },
-              [this](const std::string& call_id, const std::string& peer, uint32_t epoch, const std::string& key_id,
-                     const ByteVector& key) { return control_.SendMediaKey(call_id, peer, epoch, key_id, key); }}),
+              .resolve_peer_session_key = [this](const std::string& peer) { return control_.SessionKeyWith(peer); },
+              .held_peer_session_key = [this](const std::string& peer) { return control_.HeldSessionKeyWith(peer); },
+              .send_media_key =
+                  [this](const std::string& call_id, const std::string& peer, uint32_t epoch, const std::string& key_id,
+                         const ByteVector& key) { return control_.SendMediaKey(call_id, peer, epoch, key_id, key); }}),
       billing_(account),
       reach_signals_(control_),
       workflow_(threads, sessions, reads, hop_service_, key_exchange_, billing_, live_calls_, call_media_),

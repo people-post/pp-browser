@@ -63,6 +63,8 @@ public:
    * copy the lane sends that peer (delivery's own: E2ePublicSessionKeys::Resolve); a send per device has no use for it.
    */
   Roe<ByteVector> SessionKeyWith(const std::string& peer_identity) const;
+  /** The same key when a session with `peer_identity` is held, never opening one: reading the old form. */
+  Roe<ByteVector> HeldSessionKeyWith(const std::string& peer_identity) const;
 
 private:
   IThreadTranscript& transcript_;

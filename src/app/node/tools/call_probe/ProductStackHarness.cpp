@@ -217,6 +217,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   deps.delivery.ensure_peer_session_key = [this](const std::string& /*peer*/) -> Roe<ByteVector> {
     return shared_session_key_;
   };
+  deps.delivery.held_peer_session_key = deps.delivery.ensure_peer_session_key;
   // Reach registers a peer's dialable listen address on the harness's Amp links.
   auto register_direct_endpoint = [this](const std::string& identity, const std::string& multiaddr) {
     if (!host_ || !host_->Amp()) {

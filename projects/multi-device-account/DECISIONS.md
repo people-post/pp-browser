@@ -456,7 +456,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 **Bridge (one release, then drop):** an app before M024 refuses any lane record that is not exactly one account copy, and reads only the wrapped key. So for one release:
 
 - `kControlLaneAccountCopyBetweenSingleDevices` (`lib/delivery/ControlLaneEnvelope.h`): between two accounts that each have one device (as the sender knows them) the lane keeps the account copy — a single-device peer on the old app still rings and answers. Where either side has two or more devices the lane goes per device, which the old app cannot read: it must update.
-- `kMediaKeyAccountWrapBridge` (`lib/calls/CallMediaKeyExchange.h`): the old form goes beside the key, wrapped under the account pair's session (`wrapped_key_b64`, best effort); its opener rides an account copy only, never a device's, and reading it touches only the account pair's row.
+- `kMediaKeyAccountWrapBridge` (`lib/calls/CallMediaKeyExchange.h`): the old form goes beside the key, wrapped under the account pair's session (`wrapped_key_b64`, best effort); its opener rides an account copy only, never a device's, and reading it uses only the account pair's session held, never opening one (amended 2026-11-09: the read went through the wrap's port and could open and write a session no old-form key could be unwrapped under).
 
 In the release after: set both to `false`, then remove them with the account-pair wrap, `CallDeliveryPorts::ensure_peer_session_key` and `CallControlClient::pending_key_init_`; keep reading `wrapped_key_b64` one release longer.
 

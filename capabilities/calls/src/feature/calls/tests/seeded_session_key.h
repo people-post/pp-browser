@@ -12,8 +12,8 @@
 namespace pbr::test {
 
 /**
- * What delivery's `ensure_peer_session_key` answers for a session the test seeded in `psk` (tests have
- * no KEM directory to open one): the e2e_public session key at the stored epoch.
+ * What delivery's `ensure_peer_session_key` / `held_peer_session_key` answer for a session the test seeded in `psk`
+ * (tests have no KEM directory to open one): the e2e_public session key at the stored epoch.
  */
 inline Roe<ByteVector> SeededSessionKey(const IPeerSessionStore& psk, const std::string& peer) {
   PeerSessionKey key;

@@ -90,6 +90,24 @@ TEST_F(E2ePublicSessionKeysTest, ASessionTheWrapOpenedCarriesItsOpenerOnTheNextA
   EXPECT_EQ(second->key_init_b64, first->key_init_b64) << "an unconfirmed opener keeps riding";
 }
 
+// Reading a call media key's old form (M024) uses the session held, never opens one: a session opened on the read
+// path could not open what the peer wrapped, and would write a row and an opener for nothing.
+TEST_F(E2ePublicSessionKeysTest, AHeldKeyIsReadWithoutOpeningASession) {
+  EXPECT_FALSE(keys_->Held("account:bob")) << "none held";
+  EXPECT_EQ(kem_.asked, 0) << "nothing opened";
+  PeerSessionKey pair{
+      .peer_identity_kind = "account", .peer_identity_value = "account:bob", .channel = CryptoChannel::E2ePublic};
+  auto row = psk_->Load(pair);
+  ASSERT_TRUE(row);
+  EXPECT_FALSE(row->has_value()) << "no row written";
+
+  auto opened = keys_->Ensure("account:bob");
+  ASSERT_TRUE(opened) << opened.error().message;
+  auto held = keys_->Held("account:bob");
+  ASSERT_TRUE(held) << held.error().message;
+  EXPECT_EQ(*held, *opened);
+}
+
 TEST_F(E2ePublicSessionKeysTest, OpeningASessionFailsWhenThePeersKemKeyCannotBeHad) {
   kem_.available = false;
   EXPECT_FALSE(keys_->Ensure("account:bob"));
