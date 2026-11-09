@@ -3000,11 +3000,11 @@ void ShellHost::Update(ui::Context* context) {
       statusbar_.Dirty();
     }
   }
-  if (const int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
-                              std::chrono::steady_clock::now().time_since_epoch())
-                              .count();
-      now - ai_dot_look_checked_ms_ >= 60000) {
-    ai_dot_look_checked_ms_ = now;
+  if (const int64_t look_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now().time_since_epoch())
+                                      .count();
+      look_now_ms - ai_dot_look_checked_ms_ >= 60000) {
+    ai_dot_look_checked_ms_ = look_now_ms;
     if (ResolveAiDotLook()) {
       DirtyAiDot();
     }
