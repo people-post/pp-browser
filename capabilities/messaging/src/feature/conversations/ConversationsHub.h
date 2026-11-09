@@ -719,6 +719,8 @@ private:
   uint64_t link_grace_gen_ = 0; // a timer carries the generation it was armed with; a stale one does nothing
   pp::Lifetime link_grace_lifetime_;
   void OnLinkNetwork(bool linked);
+  /** Our copy of the relay health and the orchestrator's go back to Unknown together (no callback). link_mu_ held. */
+  void ResetLinkHealthLocked();
   /** (Re)start the Unknown→Connecting timer when the network is up and no poll result is known. link_mu_ held. */
   void ArmLinkGraceLocked();
   void OnLinkGraceElapsed(uint64_t gen);

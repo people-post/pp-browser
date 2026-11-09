@@ -139,6 +139,11 @@ public:
    * The relay health changed (Unknown/Ok/Failed): fired only on a change, on the poll worker thread, so keep the
    * callback short and thread-safe. Set before messaging runs; pass nullptr to clear (any thread).
    */
+  /**
+   * Forget the last poll result (back to Unknown) WITHOUT firing the callback: the owner just reset its own copy,
+   * and the next result, Ok included, must count as a change or the owner never hears it.
+   */
+  void ResetBriefRelayHealth() { brief_relay_health_.store(static_cast<int>(BriefRelayHealthState::Unknown), std::memory_order_relaxed); }
   void SetOnBriefRelayHealthChanged(std::function<void(BriefRelayHealthState)> callback);
   /** Me recovery: delete undelivered relay rows older than `older_than_days` (does not clear local chat). */
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);

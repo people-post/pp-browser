@@ -1132,7 +1132,7 @@ void ConversationsHub::BuildMessagingObjects() {
       [this](const MeshDeliveryOrchestrator::BriefRelayHealthState health) { OnBriefRelayHealthChanged(health); });
   {
     std::unique_lock lock(link_mu_);
-    link_health_ = MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown;
+    ResetLinkHealthLocked();
     ArmLinkGraceLocked(); // messaging is up: the 5 s clock for the first poll result starts now
   }
   mesh_messaging_->SetThreadMentions(thread_mentions_.get());
@@ -1535,12 +1535,21 @@ void ConversationsHub::SetLinkGraceScheduler(
   link_grace_scheduler_ = std::move(scheduler);
 }
 
+void ConversationsHub::ResetLinkHealthLocked() {
+  link_health_ = MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown;
+  if (mesh_messaging_) {
+    // Its atomic still holds the old Ok: without this the next Ok poll is "no change", fires nothing, and the
+    // line sticks on Connecting (iPhone, 2026-11-09).
+    mesh_messaging_->ResetBriefRelayHealth();
+  }
+}
+
 void ConversationsHub::OnLinkNetwork(const bool linked) {
   std::unique_lock lock(link_mu_);
   link_net_ = linked ? 1 : 0;
   if (!linked) {
     // An outage makes the last relay result stale: when the network returns, Connecting shows until a new one.
-    link_health_ = MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown;
+    ResetLinkHealthLocked();
   }
   ++link_grace_gen_; // cancels a pending timer either way
   link_grace_over_ = false;

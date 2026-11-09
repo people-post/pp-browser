@@ -154,6 +154,29 @@ TEST(HubParticipantTest, AnOutageForgetsTheOldRelayResult) {
   EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
 }
 
+// iPhone 2026-11-09: Ok, a network blip, then Ok again must end Online (the hub forgets the old Ok and so does the
+// orchestrator, so the next Ok poll is reported as a change).
+TEST(HubParticipantTest, LinkIsOnlineAgainAfterANetworkBlipOnceThePollIsOkAgain) {
+  LinkFixture f;
+  f.Network(true);
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.Network(false);
+  f.Network(true);
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Connecting) << "the old Ok is stale after an outage";
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
+  EXPECT_EQ(f.hub.CurrentLinkState(), LinkFixture::Link::Online);
+}
+
+TEST(HubParticipantTest, LinkIsOnlineAfterTheFirstOkPollWhenTheGraceAlreadyRanOut) {
+  LinkFixture f;
+  f.Network(true);
+  f.FireTimer();
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Connecting);
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
+}
+
 TEST(HubParticipantTest, TheWayDownRunsInReverseAndClearedParticipantsHearNothing) {
   std::vector<std::string> log;
   RecordingParticipant calls("calls", log);
