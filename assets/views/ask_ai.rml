@@ -69,6 +69,11 @@
               data-event-click="ask_ai_send()" title="{{i18n:ask_ai.send}}">
         <span class="prompt-send-disc"><svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg></span>
       </button>
+      <!-- No microphone yet (TODO #205): while the field is empty the slot is Send, drawn disabled. -->
+      <button class="prompt-send-btn prompt-send-btn--idle" type="button" disabled="disabled"
+              data-if="draft == '' &amp;&amp; !has_picture">
+        <span class="prompt-send-disc"><svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg></span>
+      </button>
     </div>
     <p class="ask-ai-reminder">{{i18n:ask_ai.reminder}}</p>
   </div>

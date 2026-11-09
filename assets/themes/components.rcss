@@ -12035,6 +12035,12 @@ input.checkbox {
   display: none;
 }
 
+/* The disabled Send of an empty AI field (TODO #205) exists only in the phone chat and the ask-AI panel. */
+.prompt-send-btn--idle {
+  display: none;
+  pointer-events: none;
+}
+
 /* The microphone and Send share one place: a round 44dp button right of the pill, filled with the accent
    (colors-*.rcss). Only one of them is in the markup at a time. */
 .shell-chat-overlay .prompt-composer-row .prompt-send-btn,
@@ -13684,6 +13690,10 @@ textarea:composing ~ .prompt-composer-label,
   padding: 4dp;
   box-sizing: border-box;
   border-radius: 16dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn--idle {
+  display: none;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {

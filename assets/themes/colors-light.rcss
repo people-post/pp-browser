@@ -2759,6 +2759,13 @@ input.checkbox:checked {
   box-shadow: 0 2dp 10dp #00000029;
 }
 
+/* Empty AI field (TODO #205): the same round slot, muted and flat. */
+.shell-chat-overlay .prompt-composer-row .prompt-send-btn--idle,
+.ask-ai .prompt-composer-row .prompt-send-btn--idle {
+  background-color: #c7c7cc;
+  box-shadow: none;
+}
+
 .shell-chat-overlay .prompt-send-disc,
 .ask-ai .prompt-send-disc {
   background-color: transparent;
