@@ -14,7 +14,8 @@ TEST(AiImageAttachTest, PeerThreadsKeepTheirOwnRule) {
 TEST(AiImageAttachTest, AiComposerNeedsBriefAndAUsableAi) {
   EXPECT_TRUE(ShowAttachButton({.ai_composer = true, .brief_preset = true, .ai_usable = true}));
   EXPECT_FALSE(ShowAttachButton({.ai_composer = true, .brief_preset = false, .ai_usable = true}));
-  EXPECT_FALSE(ShowAttachButton({.ai_composer = true, .brief_preset = true, .ai_usable = false}));
+  EXPECT_TRUE(ShowAttachButton({.ai_composer = true, .brief_preset = true, .ai_usable = false}))
+      << "the key stays while the AI is not reachable; the tap explains (Kenneth 2026-11-09)";
   // The peer rule never turns the icon on in an AI composer.
   EXPECT_FALSE(ShowAttachButton({.peer_thread_attach = true, .ai_composer = true}));
 }

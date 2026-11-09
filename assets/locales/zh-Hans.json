@@ -1839,6 +1839,7 @@
     "ai.open_support.ask": "我帮你转到 PP 客服，可以吗？",
     "ai.open_support.cancelled": "好的，不转了。还有什么想问的，直接说就行。",
     "ai.open_support.unavailable": "PP 客服暂时不可用。",
+    "ai.image.not_ready": "AI 还没连上，稍等一下再试。",
     "ai.option.appearance.system": "跟随系统",
     "ai.option.appearance.light": "浅色",
     "ai.option.appearance.dark": "深色",

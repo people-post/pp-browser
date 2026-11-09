@@ -4427,6 +4427,10 @@ bool ChatController::Setup(ui::Context* context) {
               chat_.attachment_preparing || !chat_.show_attach_button) {
             return;
           }
+          if (!agent_.AgentCloudReady()) {
+            UserFeedback::Note(Tr("ai.image.not_ready"));  // the key stays put; the AI is just not connected yet
+            return;
+          }
           agent_.ShowHomeAttachMenu(ev.GetCurrentElement());
         }));
         ctor.BindEventCallback("attach_capture", DataEventAt([this](ui::Event& ev) { OnAttachCapture(&ev); }));

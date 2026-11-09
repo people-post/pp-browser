@@ -1887,6 +1887,7 @@
     "ai.open_support.ask": "Shall I take you to PP Support?",
     "ai.open_support.cancelled": "OK, staying here. Ask me anything else.",
     "ai.open_support.unavailable": "PP Support is not available right now.",
+    "ai.image.not_ready": "The AI is not connected yet. Try again in a moment.",
     "ai.option.appearance.system": "Follow system",
     "ai.option.appearance.light": "Light",
     "ai.option.appearance.dark": "Dark",
