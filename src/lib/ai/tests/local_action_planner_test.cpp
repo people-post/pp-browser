@@ -162,9 +162,13 @@ TEST(LocalActionPlannerTest, NicknameIsCutToTheLimit) {
   EXPECT_EQ(Arg(p, "nickname")->size(), kMaxNicknameChars);
 }
 
-TEST(LocalActionPlannerTest, SearchWithoutAnyoneNamedIsAsked) {
-  ExpectAsk(PlanAs("search_people", "帮我找人", "找"), "contacts.ask.who", "帮我找人");
-  ExpectAsk(PlanFor("find someone"), "contacts.ask.who", "find someone");
+TEST(LocalActionPlannerTest, SearchWithoutAnyoneNamedListsTheDirectory) {
+  // Naming no one lists the public directory, as the home page's "find someone" chip does (an empty query).
+  for (const char* text : {"帮我找人", "帮我搜索用户", "搜索用户", "find someone", "please search users"}) {
+    const LocalPlan p = text == std::string("帮我找人") ? PlanAs("search_people", text, "找") : PlanFor(text);
+    ExpectPlan(p, "search_people", text);
+    EXPECT_FALSE(Arg(p, "query").has_value()) << text << " must not carry a query, got " << Arg(p, "query").value_or("");
+  }
   ExpectAsk(PlanFor("把他加到联系人"), "contacts.ask.who", "pronoun");
   ExpectText(PlanFor("加张三为好友"), "search_people", "query", "张三", "add by name");
   ExpectText(PlanFor("Add Tom as a friend"), "search_people", "query", "Tom", "add by name (english)");
