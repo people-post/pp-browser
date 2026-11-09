@@ -337,12 +337,11 @@ private:
   bool AmpReaches(const std::string& peer_key) const;
   /** The peer's account KEM public key (directory, M015). */
   Roe<ByteVector> PeerKemPublicKey(const PeerSessionKey& key) const;
-  void NotifyDeliveryIssue(const Thread& thread, SendFailure failure, const std::string& detail);
-  void NotifyRelayFallback(const std::string& thread_id);
+  void NotifyDeliveryIssue(const Thread& thread, const std::string& message_id, SendFailure failure,
+                           const std::string& detail);
   void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
   void MaybeEnqueueAttachmentDownload(const RelayReceiveOutcome& outcome);
-  void ApplySendSucceeded(const std::string& thread_id, const std::string& message_id, MessageTransport transport,
-                          bool relay_after_direct_attempt = false);
+  void ApplySendSucceeded(const std::string& thread_id, const std::string& message_id, MessageTransport transport);
   /** `detail`: the transport's own text, for the log. */
   void ApplySendFailed(const std::string& thread_id, const std::string& message_id, SendFailure failure,
                        const std::string& detail);
@@ -353,7 +352,7 @@ private:
   /** One member's copy of a group message: that member's reachability, and the row once any copy is out. */
   void ApplyGroupMemberOutcome(const DeliveryOutcome& outcome);
   void MarkGroupMemberMissed(const std::string& group_id, const std::string& member);
-  void NotifyGroupMembersMissed();
+  void NotifyGroupMembersMissed(const std::string& thread_id, const std::string& message_id);
   /** The message row's delivery state; false when there is no row (a control-lane send). */
   bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success, MessageTransport transport,
                     bool unless_delivered = false);

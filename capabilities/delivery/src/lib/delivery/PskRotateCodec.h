@@ -19,6 +19,14 @@ struct PskRotateDetail {
   std::string key_init_hash;
 };
 
+/**
+ * The stored text of the rotate line the sender keeps in its own transcript: a marker, not words (the UI words
+ * it in the reader's language). Rows stored before held the English "New messages stay on this device." and
+ * "Chat key updated."; the UI reads those too (LegacySystemLineText).
+ */
+inline constexpr const char* kPskRotateLockText = "psk_rotate:lock";
+inline constexpr const char* kPskRotateRekeyText = "psk_rotate:rekey";
+
 class PskRotateCodec {
 public:
   static bool IsPskRotateMessage(const ThreadMessage& message);

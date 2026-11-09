@@ -52,14 +52,16 @@ std::string ReceiveFailureText(const ReceiveFailure reason, const std::string& p
   return Tr("chat.notice.receive_failed", {{"peer", who}, {"reason", why}});
 }
 
+std::string SendFailureText(const SendFailure failure) { return Tr(SendKey(failure)); }
+
+std::string GroupMembersMissedText() { return Tr("chat.notice.group_members_missed"); }
+
 std::string DeliveryNoticeText(const DeliveryNotice& notice) {
   switch (notice.kind) {
   case DeliveryNotice::Kind::SendFailed:
-    return Tr(SendKey(notice.send));
-  case DeliveryNotice::Kind::SentViaRelay:
-    return Tr("chat.notice.sent_via_relay");
+    return SendFailureText(notice.send);
   case DeliveryNotice::Kind::GroupMembersMissed:
-    return Tr("chat.notice.group_members_missed");
+    return GroupMembersMissedText();
   case DeliveryNotice::Kind::ReceiveFailed:
     return ReceiveFailureText(notice.receive, notice.peer, notice.family);
   }

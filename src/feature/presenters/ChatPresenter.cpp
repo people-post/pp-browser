@@ -5,6 +5,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
+#include "feature/presenters/DeliveryNoticePlan.h"
 #include "feature/presenters/GroupEventText.h"
 #include "feature/presenters/HomeToday.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -517,7 +518,38 @@ void ChatPresenter::ToggleArchived() {
   Refresh();
 }
 
+bool ChatPresenter::ApplyDeliveryNotice(const DeliveryNotice& notice) {
+  const DeliveryNoticePlan plan = PlanDeliveryNotice(notice, util::NowUnixMs());
+  switch (plan.action) {
+  case DeliveryNoticePlan::Action::Nothing:
+    return false;
+  case DeliveryNoticePlan::Action::Toast:
+    return true;
+  case DeliveryNoticePlan::Action::TranscriptRow:
+    break;
+  }
+  IThreadStore* store = facade_ ? facade_->ThreadStore() : nullptr;
+  if (!store || !plan.row) {
+    return true;
+  }
+  // The same failure reported twice (each group member that missed, a retry) is one line.
+  if (auto present = store->HasMessageId(plan.row->thread_id, plan.row->id); present && *present) {
+    return false;
+  }
+  return !store->AppendMessage(*plan.row);
+}
+
 std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::string& local_account) {
+  // The latest row is a system line stored in English (a joined invitation, a blocked inviter, a rotate notice):
+  // the same words as its transcript line, in the UI language. Only a System row: a person may type these words.
+  if (LegacySystemLineText(thread.preview)) {
+    auto page = facade_->GetMessagesPage(thread.id, std::nullopt, 1);
+    if (page && !page->empty() && page->back().content_type == ChatContentType::System) {
+      if (auto line = LegacySystemLineText(page->back().text)) {
+        return *line;
+      }
+    }
+  }
   // A group whose latest row is a membership line previews the same words as its transcript shows (the stored
   // preview is the English text). Only a preview that is such a text costs a read of the latest message.
   if (thread.kind != ThreadKind::Group || !IsStoredGroupEventText(thread.preview)) {

@@ -4143,7 +4143,12 @@ void ChatController::WireMessagingBindings() {
     }
   });
   facade_->SetOnDeliveryNotice([this](const DeliveryNotice& notice) {
-    ShowToast(DeliveryNoticeText(notice));
+    // A send that did not go out is told in its chat, as a line under the message; a toast only when that has no
+    // place (no chat, or the cause is unknown). An unreadable inbound message has its line already.
+    if (presenter_.ApplyDeliveryNotice(notice)) {
+      ShowToast(DeliveryNoticeText(notice));
+    }
+    RefreshFromMessaging();
     NotifySurfaceChanged();
   });
   facade_->SetOnBackgroundUnread(

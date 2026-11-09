@@ -10,6 +10,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     CallPresenter.cpp
     CallSystemUiBridge.cpp
     ChatPresenter.cpp
+    DeliveryNoticePlan.cpp
     GroupEventText.cpp
     GroupLinkText.cpp
     HomeBrief.cpp

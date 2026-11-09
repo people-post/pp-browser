@@ -135,6 +135,23 @@ std::optional<std::string> ReceiveFailureLine(const ThreadMessage& message) {
   return ReceiveFailureText(*reason, detail->getString("sender").value_or(""), detail->getString("family").value_or(""));
 }
 
+/** A local "this message did not go out" line under a message: worded from its payload, in the reader's language. */
+std::optional<std::string> SendFailureLine(const ThreadMessage& message) {
+  const auto reason = SendFailureRowReason(message);
+  if (!reason) {
+    return std::nullopt;
+  }
+  if (*reason == kGroupMembersMissedWire) {
+    return GroupMembersMissedText();
+  }
+  return SendFailureText(SendFailureFromWire(*reason).value_or(SendFailure::Unknown));
+}
+
+/** A system row's stored text; a line stored in English before shows in the UI language. */
+std::string StoredSystemText(const ThreadMessage& message) {
+  return LegacySystemLineText(message.text).value_or(message.text);
+}
+
 /** The words of a call summary row: the duration, or the outcome's word; a group call says so first. */
 std::string CallSummaryRowText(const CallSummaryRow& row) {
   using Outcome = CallSummaryRow::Outcome;
@@ -192,7 +209,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     }
     // A feature's message: its own line, names included, else the message's text.
     const auto line = facts.control_line ? facts.control_line(message) : std::nullopt;
-    return SystemLineRml(line.value_or(message.text));
+    return SystemLineRml(line.value_or(StoredSystemText(message)));
   }
 
   const auto control_type = GroupMembershipCodec::ControlTypeFromMessage(message);
@@ -208,7 +225,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
       if (!group.empty() && *resolution == InviteStatus::Declined) {
         return SystemLineRml(Tr("chat.group_invite.declined", {{"group", group}}));
       }
-      return SystemLineRml(message.text);
+      return SystemLineRml(StoredSystemText(message));
     }
     const std::string title =
         invite && !invite->group_title.empty()
@@ -239,7 +256,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   }
   if (control_type && *control_type == GroupMembershipControlType::GroupOwnerUnreachable) {
     if (GroupMembershipCodec::IsOwnerUnreachableResolved(message)) {
-      return SystemLineRml(message.text);
+      return SystemLineRml(StoredSystemText(message));
     }
     const std::string body = Tr("chat.group_owner_unreachable.body");
     std::string html = "<div class=\"chat-card chat-group-invite\"><h3 class=\"heading-3\">" +
@@ -272,7 +289,10 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   if (PskRotateCodec::IsPskRotateMessage(message) && message.sender_contact_id != kLocalSelfContactId) {
     return SystemLineRml(Tr("chat.psk_rotate_notice"));
   }
-  return SystemLineRml(message.text);
+  if (auto failure = SendFailureLine(message)) {
+    return SystemLineRml(*failure);
+  }
+  return SystemLineRml(StoredSystemText(message));
 }
 
 std::string ContactCardRml(const ThreadMessage& message) {

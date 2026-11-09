@@ -1414,9 +1414,8 @@ void PeoplePickerController::OnInviteFinished(const uint64_t batch, const std::s
   if (still_here) {
     group_sending_ = false;
   }
-  if (result.failed.empty()) {
-    ShowToast(Tr("people_picker.invite_sent", {{"count", std::to_string(result.sent.size())}}));
-  } else {
+  // All sent: nothing to add, the sheet closing says it. Some failed: the toast names who.
+  if (!result.failed.empty()) {
     std::string failed_names;
     for (const auto& [contact_id, reason] : result.failed) {
       if (!failed_names.empty()) {
@@ -1686,7 +1685,6 @@ void PeoplePickerController::ReinviteMember(const std::string& group_id, const G
                 ToastDuration::Long);
       return;
     }
-    ShowToast(Tr("people_picker.reinvite_sent"), ToastDuration::Long);
     if (mode_ == PeoplePickerMode::GroupMembers) {
       SyncGroupMemberRows();
       NotifySurfaceChanged();
@@ -1703,7 +1701,6 @@ void PeoplePickerController::SetMemberAdmin(const std::string& group_id, const G
     UserFeedback::Fail(set.error().message);
     return;
   }
-  ShowToast(Tr(admin ? "people_picker.made_admin" : "people_picker.admin_removed", {{"name", row.title}}));
   // The person's page keeps its card, now offering the other way round.
   GroupMemberRow updated = row;
   updated.is_admin = admin;
@@ -1744,7 +1741,6 @@ void PeoplePickerController::RemoveMember(const std::string& group_id, const Gro
         if (removed) {
           removed();
         }
-        ShowToast(Tr("people_picker.member_removed", {{"name", name}}));
       },
       {});
 }
@@ -1781,7 +1777,6 @@ void PeoplePickerController::RemoveEveryoneAddedBy(const std::string& group_id, 
           UserFeedback::Fail(removed.error().message);
           return;
         }
-        ShowToast(Tr("people_picker.removed_everyone_added", {{"count", std::to_string(*removed)}}));
         AfterGroupChange(group_id);
       },
       Tr("people_picker.remove_everyone_added_ok"));
@@ -1804,7 +1799,6 @@ void PeoplePickerController::ReinviteEveryoneRemovedBy(const std::string& group_
           UserFeedback::Fail(invited.error().message);
           return;
         }
-        ShowToast(Tr("people_picker.reinvited_everyone_removed", {{"count", std::to_string(*invited)}}));
         AfterGroupChange(group_id);
       },
       Tr("people_picker.reinvite_everyone_removed_ok"));
