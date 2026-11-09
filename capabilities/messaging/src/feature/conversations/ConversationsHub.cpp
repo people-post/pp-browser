@@ -1538,6 +1538,10 @@ void ConversationsHub::SetLinkGraceScheduler(
 void ConversationsHub::OnLinkNetwork(const bool linked) {
   std::unique_lock lock(link_mu_);
   link_net_ = linked ? 1 : 0;
+  if (!linked) {
+    // An outage makes the last relay result stale: when the network returns, Connecting shows until a new one.
+    link_health_ = MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown;
+  }
   ++link_grace_gen_; // cancels a pending timer either way
   link_grace_over_ = false;
   if (linked && link_state_ == LinkState::Offline) {
