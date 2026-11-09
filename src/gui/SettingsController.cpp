@@ -2,6 +2,7 @@
 #include "gui/SettingsController.h"
 
 #include "lib/ui/DataEvent.h"
+#include "foundation/crypto/CryptoConstants.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/product/DevTools.h"
 #include "foundation/platform/NativeFileDialog.h"
@@ -1691,7 +1692,7 @@ void SettingsController::ApplyCallInvitePolicyChoice(const std::string& policy) 
 void SettingsController::OnChooseUnlockGrace(ui::Event& ev) {
   const int current = bindings_.unlock_grace_minutes;
   std::vector<SettingsChoicePage::Option> options;
-  for (const int minutes : {0, 5, 15, 60}) {
+  for (const int minutes : {0, 5, 15, 60, kUnlockGraceAlways}) {
     options.push_back({std::to_string(minutes).c_str(), UnlockGraceDisplayLabel(minutes).c_str(), current == minutes});
   }
   ShowChoice(ev, "unlock_grace", Tr("settings.security.grace.title"), Tr("settings.security.grace.help"), {},
@@ -1702,7 +1703,8 @@ void SettingsController::ApplyUnlockGraceChoice(const std::string& minutes_id) {
   if (suppress_auto_save_) {
     return;
   }
-  const int minutes = minutes_id == "0" ? 0 : minutes_id == "5" ? 5 : minutes_id == "60" ? 60 : 15;
+  const int minutes = minutes_id == "0" ? 0 : minutes_id == "5" ? 5 : minutes_id == "60" ? 60
+                      : minutes_id == std::to_string(kUnlockGraceAlways) ? kUnlockGraceAlways : 15;
   bindings_.unlock_grace_minutes = minutes;
   bindings_.unlock_grace_label = UnlockGraceDisplayLabel(minutes).c_str();
   PullBindingsToUiState();

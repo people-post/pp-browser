@@ -1,5 +1,6 @@
 #include "foundation/data/ConfigJson.h"
 
+#include "foundation/crypto/CryptoConstants.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/ICredentialStore.h"
 #include "common/ValueJson.h"
@@ -875,7 +876,8 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   prefs.recovery_phrase_seen = object.getIf<bool>("recovery_phrase_seen").value_or(false);
   const int64_t grace_minutes = ReadI64(object, "unlock_grace_minutes").value_or(15);
   prefs.unlock_grace_minutes =
-      (grace_minutes == 0 || grace_minutes == 5 || grace_minutes == 15 || grace_minutes == 60)
+      (grace_minutes == 0 || grace_minutes == 5 || grace_minutes == 15 || grace_minutes == 60 ||
+       grace_minutes == kUnlockGraceAlways)
           ? static_cast<int>(grace_minutes)
           : 15;
   if (auto auto_renew = object.getIf<bool>("auto_renew_registration")) {
