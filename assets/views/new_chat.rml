@@ -4,7 +4,7 @@
   <div class="pane-nav nc-bar">
     <p class="pane-nav-title nc-bar-title">{{i18n:new_chat.title}}</p>
   </div>
-  <div class="nc-scroll">
+  <div class="nc-scroll nav-bar-scroll">
     <div class="chat-search nc-search">
       <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
       <input class="chat-search-input" type="text" data-value="nc_query"

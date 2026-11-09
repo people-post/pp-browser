@@ -286,6 +286,57 @@ TEST(ShellLayoutRmlTest, ACompactChatOverlayHasOneHeaderRowHoldingTheBackButton)
   EXPECT_FALSE(Has(rml, "chat-header"));
 }
 
+// #188: the chat view frosts its header and its composer (one blur per bar position, two in all); a pushed page over the
+// chat leaves only the pushed page's bar frosted, and Transparency off leaves none.
+TEST(ShellLayoutRmlTest, TheChatViewFrostsItsHeaderAndItsComposer) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = true;
+  const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_EQ(Count(rml, "bar-material--frost"), 2U);
+  const size_t chrome = rml.find("shell-chat-overlay-chrome");
+  const size_t bar = rml.find("shell-composer-bar");
+  const size_t mount = rml.find("id=\"shell-composer-mount\"");
+  ASSERT_NE(chrome, std::string::npos);
+  ASSERT_NE(bar, std::string::npos);
+  EXPECT_LT(rml.find("bar-material--frost", chrome), rml.find("back.svg", chrome)) << "the header's material is first";
+  EXPECT_LT(bar, rml.find("bar-material--frost", bar));
+  EXPECT_LT(rml.find("bar-material--frost", bar), mount) << "the composer's material is under the mount";
+  EXPECT_FALSE(Has(rml, "shell-composer-mount surface-chrome surface-chrome--frost"));
+
+  ShellState solid = state;
+  solid.reduce_transparency = true;
+  const std::string opaque = ShellLayoutRml(solid, false, "").ShellRoot();
+  EXPECT_EQ(Count(opaque, "bar-material--frost"), 0U);
+  EXPECT_EQ(Count(opaque, "bar-material"), 2U) << "still a material child each, solid";
+
+  ShellState pushed_over = state;
+  PaneState pushed;
+  pushed.spec.key = "contact_detail";
+  pushed.id = 4;
+  pushed_over.transient_stack.push_back(pushed);
+  pushed_over.transient_active = true;
+  const std::string over = ShellLayoutRml(pushed_over, false, "").ShellRoot();
+  EXPECT_EQ(Count(over, "bar-material--frost"), 0U) << "the chat under a pushed page is not frosted";
+}
+
+// #176 / #177: New chat and Add contact are titled pushed pages on phones (hide on scroll, frosted once the list is
+// under the bar), like the contact page; a desktop window has no such bar.
+TEST(ShellLayoutRmlTest, NewChatAndAddContactAreTitledPushedPages) {
+  for (const char* key : {"new_chat", "add_contact", "contact_detail"}) {
+    ShellState state = WithChatPane(LayoutMode::Compact);
+    PaneState pushed;
+    pushed.spec.key = key;
+    pushed.id = 4;
+    state.transient_stack.push_back(pushed);
+    state.transient_active = true;
+    const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+    EXPECT_TRUE(Has(rml, "shell-layer-transient shell-layer-compact nav-bar-host")) << key;
+    EXPECT_TRUE(Has(rml, "shell-transient-chrome--titled")) << key;
+    EXPECT_TRUE(Has(rml, "<div class=\"nav-bar-bg\"></div>")) << key;
+    EXPECT_TRUE(Has(rml, "surface-chrome--frost")) << key << ": the pushed page's bar is the frosted one";
+  }
+}
+
 TEST(ShellLayoutRmlTest, TheCompactNavPageFollowsTheLargeTitleState) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = false;

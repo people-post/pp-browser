@@ -100,13 +100,13 @@ TEST(NewChatIndexTest, TappingMScrollsTheNewChatListAndLeavesTheContactsListAlon
 
   EXPECT_GT(nc_scroll->Scroll().GetScrollTop(), 0.f) << "the New chat list moved";
   EXPECT_FLOAT_EQ(contacts_scroll->Scroll().GetScrollTop(), 0.f) << "the Contacts list did not";
-  // The M header (13th) is now at the top of the list view.
+  // The M header (13th) is now just under the bar: the list view starts 56dp up under it (padding-top, TODO #176).
   ui::ElementList headers;
   nc_scroll->QuerySelectorAll(headers, ".nc-section-header");
   ASSERT_EQ(headers.size(), 26u);
   const float m_top = headers[12]->GetAbsoluteOffset(ui::BoxArea::Border).y;
   const float list_top = nc_scroll->GetAbsoluteOffset(ui::BoxArea::Border).y;
-  EXPECT_NEAR(m_top, list_top, 1.f);
+  EXPECT_NEAR(m_top, list_top + 56.f, 1.f);
 
   // And the other way round: the default target drives only the Contacts list.
   const float nc_before = nc_scroll->Scroll().GetScrollTop();

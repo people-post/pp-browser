@@ -139,6 +139,15 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_transient_frost),
             CompactChromeFrostSurface::TransientHeader);
 
+  // Two bar positions, one frosted surface each: the chat view blurs its header and its composer, nothing else does.
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_chat_frost).top, CompactChromeFrostSurface::ChatOverlayHeader);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_chat_frost).bottom, CompactChromeFrostSurface::ChatComposer);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_base).bottom, CompactChromeFrostSurface::BottomNav);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_aux_frost).bottom, CompactChromeFrostSurface::None);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_transient_frost).bottom, CompactChromeFrostSurface::None)
+      << "a pushed page over the chat takes the frost; the composer under it does not blur";
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_transient_frost).top, CompactChromeFrostSurface::TransientHeader);
+
   ShellState compact_dialog_frost = compact_base;
   compact_dialog_frost.dialog.active = true;
   EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_dialog_frost),
@@ -147,6 +156,11 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   ShellState expanded_base{};
   expanded_base.layout_mode = LayoutMode::Expanded;
   EXPECT_EQ(ShellInterruption::ResolveFrostSurface(expanded_base), CompactChromeFrostSurface::None);
+  ShellState compact_dialog_over_chat = compact_chat_frost;
+  compact_dialog_over_chat.dialog.active = true;
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_dialog_over_chat).top, CompactChromeFrostSurface::None);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_dialog_over_chat).bottom, CompactChromeFrostSurface::None);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(expanded_base).bottom, CompactChromeFrostSurface::None);
 
   ShellState toast_state{};
   ShellFeedback::ShowToast(toast_state, "Hello", ToastDuration::Short, 1000.f);

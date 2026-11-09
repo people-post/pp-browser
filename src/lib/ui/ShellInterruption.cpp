@@ -33,29 +33,35 @@ InterruptionKind ShellInterruption::Top(const ShellState& state) {
   return InterruptionKind::None;
 }
 
-CompactChromeFrostSurface ShellInterruption::ResolveFrostSurface(const ShellState& state) {
+CompactChromeFrost ShellInterruption::ResolveFrost(const ShellState& state) {
+  using Surface = CompactChromeFrostSurface;
   if (state.layout_mode != LayoutMode::Compact) {
-    return CompactChromeFrostSurface::None;
+    return {};
   }
   switch (Top(state)) {
   case InterruptionKind::PinGate:
   case InterruptionKind::CallRing:
   case InterruptionKind::Dialog:
   case InterruptionKind::OverlayLayer:
-    return CompactChromeFrostSurface::None;
+    return {};
   case InterruptionKind::LiveSessionOn:
     // Compact call bar sits above chrome without a full-screen frost.
-    return CompactChromeFrostSurface::None;
+    return {};
   case InterruptionKind::Transient:
-    return CompactChromeFrostSurface::TransientHeader;
+    return {.top = Surface::TransientHeader};
   case InterruptionKind::AuxiliarySheet:
-    return CompactChromeFrostSurface::AuxiliarySheetChrome;
+    return {.top = Surface::AuxiliarySheetChrome};
   case InterruptionKind::CompactChatOverlay:
-    return CompactChromeFrostSurface::ChatOverlayHeader;
+    // The chat view floats a header and a composer over the transcript: one blur each, nothing else.
+    return {.top = Surface::ChatOverlayHeader, .bottom = Surface::ChatComposer};
   case InterruptionKind::None:
-    return CompactChromeFrostSurface::BottomNav;
+    return {.top = Surface::BottomNav, .bottom = Surface::BottomNav};
   }
-  return CompactChromeFrostSurface::None;
+  return {};
+}
+
+CompactChromeFrostSurface ShellInterruption::ResolveFrostSurface(const ShellState& state) {
+  return ResolveFrost(state).top;
 }
 
 bool ShellInterruption::DismissTop(ShellState& state) {

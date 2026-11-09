@@ -37,13 +37,24 @@ enum class InterruptionKind {
   PinGate,
 };
 
-/** Which compact chrome is frosted: one surface at a time (BottomNav: the tab page's nav bar and its tab bar). */
+/** Which compact chrome is frosted (BottomNav: the tab page's nav bar and its tab bar). */
 enum class CompactChromeFrostSurface {
   None,
   BottomNav,
   ChatOverlayHeader,
+  /** The phone chat's composer bar: the bottom frost of the chat view (its top frost is ChatOverlayHeader). */
+  ChatComposer,
   AuxiliarySheetChrome,
   TransientHeader,
+};
+
+/**
+ * The frosted surfaces of one frame: at most one per bar position, so two blurs at most (a top bar and a bottom
+ * bar). A page that frosts both its top and bottom bar declares both here; nothing else may blur.
+ */
+struct CompactChromeFrost {
+  CompactChromeFrostSurface top = CompactChromeFrostSurface::None;
+  CompactChromeFrostSurface bottom = CompactChromeFrostSurface::None;
 };
 
 enum class ToastDuration { Short, Long };

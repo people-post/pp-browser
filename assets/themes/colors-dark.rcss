@@ -756,12 +756,18 @@ select selectbox option:hover {
   background-color: #1a1a1c;
 }
 
-.shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome {
-  background-color: #1a1a1c;
+.shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome,
+.shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome--frost {
+  background-color: transparent;
   border-width: 0;
 }
 
-.shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome--frost {
+/* The chat header's and the composer's material: the bar colour, see-through and blurred on the frosted surface. */
+.bar-material {
+  background-color: #1a1a1c;
+}
+
+.bar-material--frost {
   background-color: #1a1a1cc7;
 }
 
@@ -912,12 +918,8 @@ select selectbox option:hover {
 }
 
 .shell-composer-mount.surface-chrome {
-  background-color: #1a1a1c;
+  background-color: transparent;
   border-width: 0;
-}
-
-.shell-composer-mount.surface-chrome--frost {
-  background-color: #1a1a1cc7;
 }
 
 .shell-composer-mount.surface-chrome .prompt-composer-pill {
