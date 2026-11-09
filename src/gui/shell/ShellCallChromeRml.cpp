@@ -926,7 +926,7 @@ std::string CallInProgressRml(const ShellState& state) {
   out << "</div></div>";
   out << "<div class=\"shell-call-bar-meters row\" data-if=\"!call_in_progress_show_roster\">";
   out << "<div class=\"shell-call-meter shell-call-meter--compact\">";
-  out << "<span class=\"text-xs shell-call-meter-label\">You</span>";
+  out << "<span class=\"text-xs shell-call-meter-label\">" << Tr("call.label.you") << "</span>";
   out << "<div class=\"shell-call-meter-track row\">";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 1\"></div>";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 2\"></div>";

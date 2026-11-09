@@ -9,9 +9,9 @@ namespace pbr {
  * #166 (Kenneth 2026-11-08): where the minimised call chip rests after a drag, as the phone AI dot does — the nearer
  * side, the height left where it was dropped. Pure geometry in dp, relative to the chip's layer (the call mount). The
  * height is kept as a share of the band the chip may rest in, so it stays in the band when the window or the chip
- * changes size. The band matches the corner classes the chip had before (components.rcss
- * .shell-call-minimized-chip--tr / --br: 12dp from the top, 72dp from the bottom, safe areas already outside the
- * layer): a light drag from the default top-right corner does not move it down. Session only (CallController).
+ * changes size. The band keeps the corners the chip had before #166 (12dp from the top, as components.rcss
+ * .shell-call-minimized-chip--tr still does; 72dp from the bottom; safe areas already outside the layer): a light drag
+ * from the default top-right corner does not move it down. Session only (CallController).
  */
 struct CallChipArea {
   float width_dp = 0.f;
@@ -58,7 +58,7 @@ public:
   static constexpr int kSideDefault = 0;
   static constexpr int kSideLeft = 1;
   static constexpr int kSideRight = 2;
-  /** The gap to the side it rests on, and the band's ends (the old corner classes' 12dp / 72dp). */
+  /** The gap to the side it rests on, and the band's ends (the corners the chip had before #166: 12dp / 72dp). */
   static constexpr float kEdgeDp = 12.f;
   static constexpr float kTopDp = 12.f;
   static constexpr float kBottomDp = 72.f;
