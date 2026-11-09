@@ -74,7 +74,8 @@ CallController::CallController()
               .toggle_mute = [this]() { ToggleMute(); },
               .display_name = [this](const std::string& identity) { return DisplayNameForIdentity(identity); },
               .now_ms = {},
-          }) {
+          }),
+      local_hold_(LocalHoldPorts()) {
   redirectLogger("CallController");
   CallRingtone::SetRingSoundPath(IAssetLocator::Instance().Resolve("sounds/call_ring.wav"));
   CallPresenter::Callbacks callbacks;
@@ -145,72 +146,57 @@ void CallController::SyncOngoingCall() {
   OngoingCallService::SetOngoingCall(on, title);
 }
 
+CallLocalHold::Ports CallController::LocalHoldPorts() {
+  CallLocalHold::Ports ports;
+  ports.mic_muted = [this]() {
+    auto* backend = Backend();
+    return backend && backend->Available() && backend->Media().IsMuted();
+  };
+  ports.camera_on = [this]() {
+    auto* backend = Backend();
+    return backend && backend->Available() && backend->Media().IsCameraEnabled();
+  };
+  ports.publish_hold = [this](const bool on_hold, std::function<void(Roe<void>)> done) {
+    auto* backend = Backend();
+    if (!backend || !backend->Available()) {
+      done(Error("calls unavailable"));
+      return;
+    }
+    backend->SetLocalOnHold(on_hold, std::move(done));
+  };
+  ports.set_mic_muted = [this](const bool muted) {
+    if (auto* backend = Backend(); backend && backend->Available()) {
+      backend->SetLocalAudioMuted(muted);
+    }
+  };
+  ports.set_camera_paused = [this](const bool paused) {
+    if (auto* backend = Backend(); backend && backend->Available()) {
+      backend->SetLocalVideoPaused(paused);
+    }
+  };
+  ports.note = [](const std::string& key) { UserFeedback::Note(Tr(key)); };
+  return ports;
+}
+
 void CallController::SyncLocalHold() {
   auto* backend = Backend();
   const bool in_call = backend && backend->Available() && !presenter_.ActiveCallId().empty();
-  const bool held = in_call && AudioSession::IsInterrupted();
-  if (held && local_on_hold_) {
-    // SetLocalAudioMuted posts to the sessions thread: only once the hold's mute has been seen applied does an open
-    // mic mean the user unmuted (by any path); before that it is just the post in flight (code review 2026-11-06).
-    if (backend->Media().IsMuted()) {
-      hold_mute_seen_applied_ = true;
-    } else if (hold_mute_seen_applied_) {
-      hold_mute_.UserToggled();
-    }
-  }
-  if (held == local_on_hold_) {
-    return;
-  }
-  local_on_hold_ = held;
-  hold_mute_seen_applied_ = false;
-  if (held) {
-    // The other call rings as a banner on iPhones, so the user still sees PP: the long pill says what PP did; the
-    // status line keeps saying it meanwhile (Kenneth 2026-11-06: the pill is the one style for every notice).
-    UserFeedback::Note(Tr("call.status.on_hold_local"));
-  }
-  log().info << "call on hold=" << (held ? 1 : 0) << " (the OS " << (held ? "took" : "gave back") << " the audio)";
-  if (in_call) {
-    backend->SetLocalOnHold(held);
-  }
-  // Privacy: nothing of the other call may reach this one through our mic; a mute the user made before stays.
-  if (const auto mute = hold_mute_.Next(held, in_call && backend->Media().IsMuted()); mute && in_call) {
-    backend->SetLocalAudioMuted(*mute);
-    if (!*mute) {
-      UserFeedback::Note(Tr("call.status.on_hold_ended"));  // the hold opened the mic again: say so
-    }
-  }
-  // The camera rests meanwhile, as in the background; still in the background at the end, OnAppForeground brings it.
-  if (held && !video_paused_ && backend->Media().IsCameraEnabled()) {
-    video_paused_ = true;
-    backend->SetLocalVideoPaused(true);
-  } else if (!held && video_paused_ && AppLifecycle::IsForeground()) {
-    video_paused_ = false;
-    if (backend && backend->Available()) {
-      backend->SetLocalVideoPaused(false);
-    }
-  }
+  local_hold_.Sync({.call_id = in_call ? presenter_.ActiveCallId() : std::string(),
+                    .audio_taken = in_call && AudioSession::IsInterrupted(),
+                    .foreground = AppLifecycle::IsForeground(),
+                    .now_ms = util::NowUnixMs()});
 }
 
 void CallController::OnAppBackground() {
   auto* backend = Backend();
-  if (!Platform::IsMobile() || !backend || !backend->Available() || presenter_.ActiveCallId().empty() ||
-      !backend->Media().IsCameraEnabled()) {
+  if (!Platform::IsMobile() || !backend || !backend->Available() || presenter_.ActiveCallId().empty()) {
     return;
   }
-  video_paused_ = true;
-  log().info << "camera paused: app in the background";
-  backend->SetLocalVideoPaused(true);
+  local_hold_.OnAppBackground();
 }
 
 void CallController::OnAppForeground() {
-  if (!video_paused_ || local_on_hold_) {  // on hold: the camera comes back when the hold ends (SyncLocalHold)
-    return;
-  }
-  video_paused_ = false;
-  if (auto* backend = Backend(); backend && backend->Available()) {
-    log().info << "camera back: app in front";
-    backend->SetLocalVideoPaused(false);
-  }
+  local_hold_.OnAppForeground();
 }
 
 namespace {
@@ -1480,19 +1466,12 @@ void CallController::RetryConnect() {
 // hands the choice to the user (the end of the hold then changes nothing) — never a locked button (Kenneth 2026-11-06:
 // if the OS never says the hold ended, the user must be able to unmute by hand).
 void CallController::ToggleMute() {
-  if (local_on_hold_) {
-    hold_mute_.UserToggled();
-  }
+  local_hold_.OnMuteTapped();
   presenter_.ToggleMute();
 }
 
 void CallController::ToggleCamera() {
-  if (local_on_hold_ && video_paused_) {
-    // The hold only paused the camera (it still counts as on): a tap brings it back now, and the user keeps it from here.
-    video_paused_ = false;
-    if (auto* backend = Backend(); backend && backend->Available()) {
-      backend->SetLocalVideoPaused(false);
-    }
+  if (local_hold_.TakeCameraTap()) {
     return;
   }
   presenter_.ToggleCamera();
@@ -1631,7 +1610,7 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
   const bool path_lost =
       backend && backend->Available() && backend->MediaStatus() == CallMediaStatus::Reconnecting;
   // On hold (here or there) the audio is silence by design: only a lost path is a reconnect.
-  const bool on_hold = local_on_hold_ || peer_on_hold_;
+  const bool on_hold = local_hold_.OnHold() || peer_on_hold_;
   in_call.on_hold = on_hold;
   const bool media_reconnect =
       !mesh_messaging_failed &&
@@ -1788,7 +1767,7 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
   if (on_hold && !mesh_messaging_failed && !path_lost) {
     // Silence by design, not a broken path: no "no audio" hint, and the line says why.
     in_call.quality_hint = "";
-    if (local_on_hold_) {
+    if (local_hold_.OnHold()) {
       in_call.subtitle = Tr("call.status.on_hold_local").c_str();
     } else if (const std::string name = DisplayNameForIdentity(presenter_.Screen().peer_identity); !name.empty()) {
       in_call.subtitle = Tr("call.status.on_hold_peer_named", {{"name", name}}).c_str();

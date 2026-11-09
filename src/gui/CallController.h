@@ -3,7 +3,7 @@
 #include "gui/CallActiveSpeaker.h"
 #include "gui/CallSpotlight.h"
 #include "gui/CallAudioFaultToastGate.h"
-#include "gui/CallHoldMute.h"
+#include "feature/presenters/CallLocalHold.h"
 #include "gui/CallMetricsTracker.h"
 #include "gui/UiLatencyProbe.h"
 #include "common/media/CallMediaHealth.h"
@@ -235,16 +235,11 @@ private:
   std::string peer_video_log_key_;
   /** When this video call started waiting for the peer's first frame (0: not yet). */
   int64_t video_start_since_ms_ = 0;
-  /** The OS has this device's call audio (AudioSession::IsInterrupted), as last told to the call (on hold). */
-  bool local_on_hold_ = false;
-  /** Tells the call when the OS takes this device's call audio or gives it back (each tick); mutes the mic and
-   *  pauses the camera meanwhile. */
+  /** V060: the call on hold while the OS has its audio, and the camera's rest (hold, background). */
+  CallLocalHold local_hold_;
+  CallLocalHold::Ports LocalHoldPorts();
+  /** Hands the hold the OS's facts (each tick). */
   void SyncLocalHold();
-  /** The hold's own mute has been seen applied (SetLocalAudioMuted is asynchronous): an open mic after that is the user's. */
-  bool hold_mute_seen_applied_ = false;
-  CallHoldMute hold_mute_;
-  /** The app went to the background in a call with the camera on: the camera is paused until it is back. */
-  bool video_paused_ = false;
   void OnAppBackground();
   void OnAppForeground();
   uint64_t background_listener_ = 0;
