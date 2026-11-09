@@ -43,7 +43,7 @@ std::string Asset(const char* relative) {
 }
 
 /** The real `.home-landing-inner` block of home.rml with its data bindings stripped and a stub field in the mount. */
-std::string CentreBlock() {
+std::string CentreBlock(bool mascot = false) {
   const std::string home = Asset("views/home.rml");
   const size_t begin = home.find("<div class=\"home-landing-inner");
   const size_t end = home.find("<div class=\"home-dock-seam\">");
@@ -59,7 +59,17 @@ std::string CentreBlock() {
       "<button class=\"prompt-voice-toggle-btn prompt-voice-toggle-btn--end\" id=\"stub-mic\"></button>"
       "<button class=\"prompt-emoji-btn\" id=\"stub-emoji\"><svg class=\"prompt-icon-v2\"></svg>"
       "<svg class=\"prompt-icon-home-emoji\"></svg></button>"
+      "<button class=\"prompt-send-btn prompt-send-btn--idle\" id=\"stub-send\" disabled=\"disabled\">"
+      "<span class=\"prompt-send-disc\"></span></button>"
       "<div class=\"prompt-composer-pill\"><textarea class=\"prompt-composer-input\"></textarea></div></div></div>";
+  if (mascot) {
+    const std::string logo = "<div class=\"home-logo\" id=\"home-logo\"><img src=\"../branding/app-icon.png\" alt=\"\"/></div>";
+    const size_t at_logo = block.find("<div class=\"home-logo\"");
+    const size_t end_logo = block.find("</div>", at_logo) + 6;
+    block.replace(at_logo, end_logo - at_logo,
+                  "<div class=\"home-logo home-logo--mascot\" id=\"home-logo\"><div class=\"home-mascot ai-dot\" id=\"stub-mascot\"></div></div>");
+    (void)logo;
+  }
   const std::string mount = "id=\"home-composer-mount\">";
   const size_t at = block.find(mount);
   block.insert(at + mount.size(), stub);
@@ -80,7 +90,7 @@ protected:
   }
 
   /** `visible` is the screen's height less the keyboard: the page ends there, as shell-root does. */
-  void Load(int width, int screen_height, int keyboard, bool docked = false) {
+  void Load(int width, int screen_height, int keyboard, bool docked = false, bool mascot = false) {
     ui::SetRenderInterface(&renderer);
     initialized = ui::Initialise();
     ASSERT_TRUE(initialized);
@@ -96,7 +106,7 @@ protected:
         "dp; display: flex; flex-direction: column;\">"
         // Under the 44dp bar and the status bar.
         "<div style=\"height: 90dp; flex: none;\"></div>"
-        "<div class=\"home-landing home-landing--minimal" + std::string(docked ? " home-landing--docked" : "") + "\">" + CentreBlock() + "</div></div></body></rml>";
+        "<div class=\"home-landing home-landing--minimal" + std::string(docked ? " home-landing--docked" : "") + "\">" + CentreBlock(mascot) + "</div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
     document->Show();
@@ -164,7 +174,17 @@ TEST_F(HomeMinimalLayoutTest, CardIsTheNarrow108dpB3WithACircleEmojiAndNoMic) {
   EXPECT_FLOAT_EQ(size.x, 44.f);
   EXPECT_FLOAT_EQ(size.y, 44.f);
   const float card_right = card->GetAbsoluteOffset(ui::BoxArea::Border).x + 310.f;
-  EXPECT_FLOAT_EQ(card_right - (emoji->GetAbsoluteOffset(ui::BoxArea::Border).x + size.x), 11.f) << "right end (10dp + border)";
+  EXPECT_FLOAT_EQ(emoji->GetAbsoluteOffset(ui::BoxArea::Border).x - card->GetAbsoluteOffset(ui::BoxArea::Border).x, 57.f)
+      << "left, 8dp right of the plus target (56dp + border)";
+  // Send is always at the right end: a 36dp disc (idle while empty), nothing swaps places.
+  ui::Element* send = document->GetElementById("stub-send");
+  ASSERT_NE(send, nullptr);
+  EXPECT_NE(send->GetComputedValues().display(), ui::Style::Display::None) << "Send is always present";
+  const ui::Vector2f send_size = send->GetBox().GetSize(ui::BoxArea::Border);
+  EXPECT_FLOAT_EQ(send_size.x, 36.f);
+  EXPECT_FLOAT_EQ(send_size.y, 36.f);
+  EXPECT_FLOAT_EQ(card_right - (send->GetAbsoluteOffset(ui::BoxArea::Border).x + send_size.x), 11.f) << "right end (10dp + border)";
+  EXPECT_LT(emoji->GetAbsoluteOffset(ui::BoxArea::Border).x + size.x, send->GetAbsoluteOffset(ui::BoxArea::Border).x);
 }
 
 // Docked (TODO #204): with the keyboard up (about 260dp on a 568dp screen) the card sits right above the keyboard, the
@@ -184,26 +204,24 @@ TEST_F(HomeMinimalLayoutTest, KeyboardUpOnSmallScreenKeepsFieldAboveTheKeyboard)
   EXPECT_LE(First("home-landing").bottom(), visible_height);
 }
 
-// A normal screen (844dp, keyboard 336): the card docks 8dp above the keyboard, the chips are kept (bottom row 8dp over
-// the card), the mascot stays 100dp at the top; with the keyboard gone it is centred again (as before).
-TEST_F(HomeMinimalLayoutTest, KeyboardUpOnTallScreenDocksTheCardOnTheKeyboardAndKeepsTheChips) {
-  Load(390, 844, 336, true);
+// A normal screen (844dp, keyboard 336): the block keeps its order and gaps (mascot 120, card 22dp under it, chips
+// 16dp under the card) and sits so the card's bottom is 8dp above the keyboard; the chips fall below, under the keyboard.
+TEST_F(HomeMinimalLayoutTest, KeyboardUpOnTallScreenDocksTheCardOnTheKeyboardKeepingOrderAndGaps) {
+  Load(390, 844, 336, true, true);
   const Box card = ById("stub-composer");
-  const Box logo = First("home-logo");
+  const Box mascot = ById("stub-mascot");
   ui::ElementList chips;
   document->GetElementsByClassName(chips, "chat-suggestion");
   ASSERT_EQ(chips.size(), 5u);
-  const Box last_chip = BoxOf(chips.back());
   const Box first_chip = BoxOf(chips.front());
-  std::printf("[844/336 docked] card bottom %.1f keyboard top %.1f logo h %.1f top %.1f chips first top %.1f last bottom %.1f\n",
-              card.bottom(), visible_height, logo.height, logo.top, first_chip.top, last_chip.bottom());
+  std::printf("[844/336 docked] card %.1f..%.1f keyboard top %.1f mascot h %.1f bottom %.1f gap %.1f chips top %.1f (gap %.1f)\n",
+              card.top, card.bottom(), visible_height, mascot.height, mascot.bottom(), card.top - mascot.bottom(),
+              first_chip.top, first_chip.top - card.bottom());
   EXPECT_NEAR(visible_height - card.bottom(), 8.f, 1.f) << "card bottom 8dp above the keyboard top";
-  EXPECT_FLOAT_EQ(logo.height, 100.f);
-  EXPECT_LT(logo.top, 90.f + 24.f) << "the mascot is at the top of what is left";
-  EXPECT_GT(first_chip.height, 0.f) << "chips visible";
-  EXPECT_LE(last_chip.bottom(), card.top + 0.5f) << "the chips are over the card";
-  EXPECT_NEAR(card.top - last_chip.bottom(), 8.f, 1.f) << "bottom chip row 8dp over the card";
-  EXPECT_LE(logo.bottom(), first_chip.top) << "no overlap with the mascot";
+  EXPECT_FLOAT_EQ(mascot.height, 120.f);
+  EXPECT_LE(mascot.bottom(), card.top) << "order: mascot, card, chips";
+  EXPECT_NEAR(card.top - mascot.bottom(), 22.f, 1.f) << "mascot to card, as centred";
+  EXPECT_NEAR(first_chip.top - card.bottom(), 16.f, 1.f) << "chips 16dp under the card (they may reach under the keyboard)";
 }
 
 TEST_F(HomeMinimalLayoutTest, KeyboardGoneCentresTheBlockAgain) {

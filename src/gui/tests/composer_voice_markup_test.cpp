@@ -497,6 +497,7 @@ bool Has(const std::string& classes, const char* cls) {
 
 TEST_F(ComposerPhoneRowTest, WithoutTextTheMicrophoneEndsTheRow) {
   state.show_voice = true;
+  state.thread_is_private = true; // a human chat: the microphone, no idle Send
   state.show_attach_button = true;
   state.show_capture = true;
   Apply();

@@ -13554,34 +13554,26 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 /* Docked (TODO #204, owner 2026-11-09): with the keyboard or the emoji sheet up (ShellHost sets .home-landing--docked
-   from the same latch that lifts the page above it) the card sits 8dp above the keyboard, the chips right over it
-   (bottom row 8dp above the card) and the mascot at the top of what is left. column-reverse flips the card under the
-   chips; the mascot leaves the flow (absolute) and its room is the inner block's top padding. When the height runs
-   short the chips shrink away first (flex-shrink, clip), the mascot is the 80dp one under 600dp. */
+   from the same latch that lifts the page above it) the block keeps its order and gaps (mascot, card 22dp below it,
+   chips 16dp below the card) and only moves down so the card's bottom edge is 8dp above the keyboard / sheet. The
+   chips leave the flow (absolute, at their place under the card) so they do not count in the block's height; the
+   keyboard covers them. When the height runs short the mascot shrinks first (flex-shrink, then clips its top). */
 .shell-layer-compact .home-landing--minimal.home-landing--docked {
   padding-bottom: 0;
 }
 .shell-layer-compact .home-landing--minimal.home-landing--docked .home-landing-inner {
-  flex-direction: column-reverse;
-  justify-content: flex-start;
-  gap: 0;
-  padding-top: 140dp;
+  justify-content: flex-end;
   padding-bottom: 8dp;
-}
-.shell-layer-compact .home-landing--minimal.home-landing--docked .home-logo {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  margin: 0;
 }
 .shell-layer-compact .home-landing--minimal.home-landing--docked .home-composer-mount .prompt-composer {
   margin-bottom: 0;
 }
-@media (max-height: 599dp) {
-  .shell-layer-compact .home-landing--minimal.home-landing--docked .home-landing-inner {
-    padding-top: 96dp;
-  }
+.shell-layer-compact .home-landing--minimal.home-landing--docked .home-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 8dp;
 }
 
 /* The field on the Home root is two lines tall; its placeholder label is the "what can I do for you" line (the draft
@@ -13643,8 +13635,9 @@ textarea:composing ~ .prompt-composer-label,
   display: none;
 }
 
-/* Home card B3 (Kenneth 2026-11-09): the plus (a 44dp target) at the bottom left, the emoji key a 32dp filled circle at
-   the bottom right. Send (36dp, shown once there is text) has the same centre and sits over the circle, so it replaces it. */
+/* Home card B3 (Kenneth 2026-11-09): the plus (a 44dp target) at the bottom left, the emoji key (a 32dp tinted circle
+   in a 44dp target) right next to it (8dp gap), and Send (a 36dp disc) always at the right end: grey and not tappable
+   while the field is empty (.prompt-send-btn--idle), accent with text. Nothing swaps places. */
 .shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-home-plus {
   display: flex;
   align-items: center;
@@ -13666,7 +13659,7 @@ textarea:composing ~ .prompt-composer-label,
    target (the circle's centre stays 32dp from the right edge and 28dp from the bottom). */
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {
   position: absolute;
-  right: 10dp;
+  left: 56dp;
   bottom: 6dp;
   z-index: 1;
   width: 44dp;
@@ -13692,13 +13685,10 @@ textarea:composing ~ .prompt-composer-label,
   border-radius: 16dp;
 }
 
-.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn--idle {
-  display: none;
-}
-
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {
+  display: flex;
   position: absolute;
-  right: 14dp;
+  right: 10dp;
   bottom: 10dp;
   z-index: 1;
   width: 36dp;
@@ -13712,9 +13702,9 @@ textarea:composing ~ .prompt-composer-label,
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32dp;
-  height: 32dp;
-  border-radius: 16dp;
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
 }
 
 .prompt-composer-label--home,

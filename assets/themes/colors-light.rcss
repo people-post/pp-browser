@@ -2815,6 +2815,10 @@ input.checkbox:checked {
   background-color: #007aff;
 }
 
+.shell-layer-compact .home-composer-mount .prompt-send-btn--idle .prompt-send-disc {
+  background-color: #c7c7cc;
+}
+
 /* Grouped lists on phones: Me tab and settings pages (DESIGN-pp-ui 8.7 / 8.10); geometry in components.rcss. */
 .shell-layer-compact .settings-panel,
 .shell-layer-compact .settings-detail-view {
