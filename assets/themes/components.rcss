@@ -11854,12 +11854,24 @@ input.checkbox {
   border-radius: 9dp;
 }
 
+/* No max-height on the picture: when it is taller than the clip (cropped) a height cap would shrink the whole picture
+   by its ratio and leave it narrower than the clip. The clip crops. */
 .shell-chat-overlay .chat-attachment-card--image .chat-attachment-image {
   display: block;
   max-width: 292dp;
-  max-height: 360dp;
+  max-height: none;  /* the base .chat-attachment-image caps at 240dp */
   margin: 0;
   border-radius: 9dp;
+}
+
+/* The file's size could not be read (no inline size): the picture is the box wide, its height follows its ratio, and
+   the clip (box wide too) shows at most 360dp of it from the top. */
+.shell-chat-overlay .chat-attachment-card--image .chat-attachment-clip--auto {
+  width: 292dp;
+}
+
+.shell-chat-overlay .chat-attachment-card--image .chat-attachment-clip--auto .chat-attachment-image {
+  width: 292dp;
 }
 
 /* On a picture card the tail goes behind the card, so its inner half does not cover the picture's corner; the hook
