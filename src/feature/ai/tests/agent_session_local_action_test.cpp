@@ -539,9 +539,10 @@ TEST_F(AgentSessionLocalActionTest, WhatCanYouDoIsAnsweredWithTheOverviewOnTheDe
 }
 
 // "What can you do?" typed while the device is asking who to search for drops the ask and shows the overview.
+// (A pronoun still asks who; a bare "搜索用户" now lists the directory instead — LocalActionPlanner, 2026-11-09.)
 TEST_F(AgentSessionLocalActionTest, TheOverviewQuestionDropsAPendingAsk) {
   StartLocal();
-  session_->SubmitToThread("t1", "搜索用户");
+  session_->SubmitToThread("t1", "把他加到联系人");
   EXPECT_EQ(Ready(WaitForTurn()).text, Tr("contacts.ask.who"));
   session_->SubmitToThread("t1", "你能做什么");
   EXPECT_EQ(Ready(WaitForTurn()).text, RenderLocalOverview());
