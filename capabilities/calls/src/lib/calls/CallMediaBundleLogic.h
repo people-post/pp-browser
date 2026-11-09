@@ -109,7 +109,8 @@ CallMediaLegPhase CallMediaBundlePhaseToLegPhase(CallMediaBundlePhase phase);
 bool CallMediaBundlePhaseIsActive(CallMediaBundlePhase phase);
 
 // --- The leg's timers -------------------------------------------------------------------------
-// Every one in milliseconds.
+// Every one is milliseconds on the mesh runtime's clock (amp `Endpoint::GetClock()`): the leg
+// coordinator reads no other clock, so a VirtualClock harness drives them all.
 
 /** A leg's connect (control hello → media ready) when its caller sets none; an inbound hello's leg too. */
 inline constexpr int64_t kCallMediaConnectTimeoutMs = 15000;
