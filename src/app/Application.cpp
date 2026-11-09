@@ -620,7 +620,7 @@ void Application::TouchGrace() {
     return;  // a locked vault's entry is the gate's to read (an expired one must not be renewed)
   }
   const int minutes = GraceMinutes();
-  if (minutes <= 0) {
+  if (!GraceIsOn(minutes) || GraceIsAlways(minutes)) {  // off, or "until restart": nothing to touch
     return;  // off, or "Always" (kUnlockGraceAlways): that entry never runs out, nothing to extend
   }
   if (auto touched = secrets_->TouchGrace(minutes); !touched) {
@@ -630,7 +630,7 @@ void Application::TouchGrace() {
 }
 
 void Application::StartGraceTimer() {
-  if (grace_timer_ != 0 || !secrets_ || !secrets_->GraceSupported() || GraceMinutes() <= 0) {
+  if (grace_timer_ != 0 || !secrets_ || !secrets_->GraceSupported() || !GraceIsOn(GraceMinutes()) || GraceIsAlways(GraceMinutes())) {
     return;  // the window's length is read at each tick (TouchGrace): 0 extends nothing, "Always" needs no ticks
   }
   // A kill without a background event may cost up to one interval of the window, so the interval stays at most half
@@ -1600,7 +1600,7 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.remember_grace = [this](const int minutes) -> Roe<void> {
     // The timer starts with the gate's dismiss, when the app is on screen.
     auto kept = secrets_->RememberGrace(minutes);
-    if (minutes <= 0) {
+    if (!GraceIsOn(minutes) || GraceIsAlways(minutes)) {
       StopGraceTimer();  // 0 forgets, "Always" never runs out: nothing to extend
     }
     return kept;
