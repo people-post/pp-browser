@@ -1899,11 +1899,6 @@ void ShellHost::ApplySafeAreaLayout() {
   if (state_.layout_mode != LayoutMode::Compact) {
     return;
   }
-  // The AI Home's card docks onto the keyboard / emoji sheet while one is up (TODO #204): the same latch that lifts
-  // #shell-root above it (components.rcss: .home-landing--docked).
-  if (ui::Element* landing = doc->GetElementById("home-landing")) {
-    landing->SetClass("home-landing--docked", bottom_chrome_open_ || state_.safe_area_bottom_dp >= kImeLatchMinDp);
-  }
   // The bottom surface owns the home-indicator strip (padding keeps its controls above the inset).
   const float strip_dp = layout.bottom_surface_padding_dp;
   // Nav page only needs nav-height padding; shell-root bottom already clears the bottom chrome. Chats scrolls under
@@ -2000,6 +1995,64 @@ void ShellHost::ApplySafeAreaLayout() {
   // Chat overlay fills shell-root (already lifted); no extra bottom inset.
   set_dp(doc->GetElementById("shell-chat-overlay"), "bottom", 0.f);
   set_dp(doc->GetElementById("shell-chat-overlay"), "padding-bottom", 0.f);
+  SyncHomeDock(doc);
+}
+
+// The AI Home with a keyboard / emoji sheet up (TODO #204): the mascot and the card stay exactly where they are without
+// it — it must feel like the keyboard rises over the page, not like the block is pulled down. #shell-root is lifted by
+// the keyboard, which would re-centre the block in the shorter page, so the landing keeps its full (undocked) height
+// with a negative bottom margin and the keyboard covers its lower part (the chips). Only when that would cover the card
+// (small screens) the block moves up by exactly the overlap (+8dp gap), nothing more.
+void ShellHost::SyncHomeDock(ui::ElementDocument* doc) {
+  if (!doc || state_.layout_mode != LayoutMode::Compact || !context_) {
+    return;
+  }
+  ui::Element* landing = doc->GetElementById("home-landing");
+  if (!landing) {
+    return;
+  }
+  ui::ElementList inners;
+  landing->GetElementsByClassName(inners, "home-landing-inner");
+  ui::Element* inner = inners.empty() ? nullptr : inners.front();
+  if (inner) {
+    inner->RemoveProperty("top");
+  }
+  landing->RemoveProperty("margin-bottom");
+  const bool docked = bottom_chrome_open_ || state_.safe_area_bottom_dp >= kImeLatchMinDp;
+  if (!docked) {
+    // Remember where the landing's bottom edge sits without a keyboard (needs a layout pass; skipped when hidden).
+    const float height = landing->GetBox().GetSize(ui::BoxArea::Border).y;
+    if (height > 0.f) {
+      home_undocked_landing_bottom_dp_ = landing->GetAbsoluteOffset(ui::BoxArea::Border).y + height;
+    }
+    return;
+  }
+  if (!inner || landing->GetComputedValues().display() == ui::Style::Display::None) {
+    return;
+  }
+  const float ratio = context_->GetDensityIndependentPixelRatio();
+  const float window_dp = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
+  const float lift = bottom_chrome_open_ ? static_cast<float>(bottom_chrome_height_dp_)
+                                         : static_cast<float>(state_.safe_area_bottom_dp);
+  const float keyboard_top = window_dp - lift;
+  const float undocked_bottom =
+      home_undocked_landing_bottom_dp_ > 0.f
+          ? home_undocked_landing_bottom_dp_
+          : window_dp - (config_.compact_nav_height_dp + static_cast<float>(safe_area_bottom_from_prefs_dp_));
+  const float extend = std::max(0.f, undocked_bottom - keyboard_top);
+  landing->SetProperty("margin-bottom", (std::to_string(-static_cast<int>(std::lround(extend))) + "dp").c_str());
+  ui::ElementList cards;
+  landing->GetElementsByClassName(cards, "prompt-composer");
+  if (cards.empty()) {
+    return;
+  }
+  const float card_bottom = cards.front()->GetAbsoluteOffset(ui::BoxArea::Border).y +
+                            cards.front()->GetBox().GetSize(ui::BoxArea::Border).y;
+  constexpr float kGapAboveKeyboardDp = 8.f;
+  const float overlap = card_bottom + kGapAboveKeyboardDp - keyboard_top;
+  if (overlap > 0.5f) {
+    inner->SetProperty("top", (std::to_string(-static_cast<int>(std::lround(overlap))) + "dp").c_str());
+  }
 }
 
 bool ShellHost::ChromeFrostEnabled() const {
