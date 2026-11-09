@@ -966,12 +966,12 @@ TEST(AiDotWindowMarkupTest, EveryActionHasItsClassAndEveryLookItsLayers) {
       files.push_back(name + std::to_string(i) + ".svg");
     }
   }
-  for (const char* file : {"body-back-e.svg", "body-front-e.svg", "body-back-f.svg", "body-front-f.svg",
+  for (const char* weekend_part : {"body-back-e.svg", "body-front-e.svg", "body-back-f.svg", "body-front-f.svg",
                            "body-back-g.svg", "body-front-g.svg", "e-mouth.svg", "f-mouth.svg", "g-mouth.svg",
                            "e-blush.svg", "f-blush.svg", "g-blush.svg", "e-glasses-front.svg", "e-glasses-back.svg",
                            "f-cap.svg", "g-nightcap.svg", "g-pom.svg", "g-mug.svg", "g-steam-1.svg",
                            "g-steam-2.svg"}) {
-    files.push_back(file);
+    files.push_back(weekend_part);
   }
   files.push_back("heart-1.svg");
   files.push_back("heart-2.svg");
