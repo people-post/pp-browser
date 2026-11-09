@@ -55,6 +55,11 @@ struct CallMediaDirectCallbacks {
   /** V034: all channels (0=Opus, 1=H264). When set, preferred over on_audio. */
   /** seq/mark come from the wire frame; the playout jitter buffer orders and de-dupes on seq (B20). */
   std::function<void(uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload)> on_media;
+  /**
+   * The leg failed; callers read the code, never the message (CODED_FAILURE.md). Before MediaReady a connect
+   * failure (`Unreachable`, `Timeout`, `HelloRejected`, …); a leg that had connected and ends under the call
+   * reports `CallMediaErr::Dropped` (K014: the call dropped, never a connect failure).
+   */
   std::function<void(const CallMediaFailure& failure)> on_failed;
   /** k3: media moved to another path of the call (make-before-break migration); `kind` is the new path's. */
   std::function<void(CallMediaLinkKind kind)> on_path_changed;

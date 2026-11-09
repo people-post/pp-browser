@@ -1469,7 +1469,8 @@ TEST_F(CallSessionInboundComposeTest, InboundHopRefuseEndsBoundCall) {
   EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
   auto err = device_->TakeLastMediaError();
   ASSERT_TRUE(err.has_value());
-  EXPECT_EQ(*err, "No shared hop");
+  EXPECT_EQ(err->kind, CallMediaErrorKind::Other);
+  EXPECT_EQ(err->message, "No shared hop");
 }
 
 TEST_F(CallSessionInboundComposeTest, LegacySdpAndIceIgnored) {

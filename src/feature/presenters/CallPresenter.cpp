@@ -124,15 +124,16 @@ bool CallPresenter::TakeStackNotices(CallUiBackend& backend) {
     FailText(backend.LastError());
     backend.ClearLastError();
   }
-  if (auto media_err = backend.TakeLastMediaError(); media_err && !media_err->empty()) {
-    // A dropped call or a connect timeout is told by the call screen's own failed page (#181: one prompt, one
-    // place); the raw reason goes to the log. Other path failures are a plain toast, never a banner that stays.
+  if (auto media_err = backend.TakeLastMediaError(); media_err && !media_err->message.empty()) {
+    // A dropped call or a connect timeout (its kind, K014) is told by the call screen's own failed page (#181:
+    // one prompt, one place); the raw reason goes to the log. Other path failures are a plain toast, never a
+    // banner that stays.
     if (CallMediaErrorShownOnCallScreen(*media_err)) {
-      log().info << "call media error shown on the call screen only raw=" << *media_err;
+      log().info << "call media error shown on the call screen only raw=" << media_err->message;
     } else {
       CallNotice notice;
       notice.kind = CallNotice::Kind::Error;
-      notice.text = *media_err;
+      notice.text = media_err->message;
       Notify(notice);
     }
   }

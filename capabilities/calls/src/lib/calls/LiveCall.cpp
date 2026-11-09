@@ -488,6 +488,12 @@ void LiveCalls::NoteMediaFailed(const std::string& call_id) {
   }
 }
 
+void LiveCalls::NoteMediaDropped(const std::string& call_id) {
+  if (LiveCall* call = Resolve(call_id)) {
+    SetStatus(*call, CallMediaStatus::Failed, "Dropped");
+  }
+}
+
 LiveCall& LiveCalls::AdmitPlaced(const std::string& call_id, const std::vector<std::string>& peers) {
   return Admit(call_id, LiveCallOrigin::Placed, LiveCallState::Calling, peers);
 }

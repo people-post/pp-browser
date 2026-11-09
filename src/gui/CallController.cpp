@@ -902,8 +902,8 @@ void CallController::RefreshPendingRing() {
 }
 
 // A notice's words for the user: its locale key when the feature gave one, else transport text
-// ("amp call-media: no path within the reconnect window") mapped to a plain sentence and logged
-// raw (B89); payment errors keep their own mapping.
+// ("call-media: peer not reached [...]") mapped to a plain sentence and logged raw (B89); payment
+// errors keep their own mapping. A dropped call never gets here: its call screen says it (K014).
 std::string CallController::NoticeUserText(const CallNotice& notice) const {
   if (!notice.key.empty()) {
     return Tr(notice.key);

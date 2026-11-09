@@ -5,6 +5,7 @@
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/CallDirectPlannerLogic.h"
 #include "lib/calls/CallHopPlannerLogic.h"
+#include "lib/calls/CallMediaError.h"
 #include "feature/calls/CallMediaInboundReply.h"
 #include "common/runtime/OwnerSteps.h"
 
@@ -337,8 +338,15 @@ struct Connected {
 struct HandedToHop {
   std::string call_id;
 };
-/** No 1:1 path could be kept: the call stays open, failed. */
+/** No 1:1 path could be set up: the call stays open, failed (Retry / the peer's reconnect resumes it). */
 struct ConnectFailed {
+  std::string call_id;
+};
+/**
+ * K014: the call was connected and lost its media for good (the reconnect window ran out, the link went):
+ * it stays open, failed, until it closes by itself — a dropped call, never a connect failure.
+ */
+struct Dropped {
   std::string call_id;
 };
 /**
@@ -376,10 +384,11 @@ struct MediaKeyReady {
 struct Changed {
   std::string call_id;
 };
-/** A media error for the screen to show once. */
+/** A media error for the screen to show once; its kind, not its text, says what happened (K014). */
 struct MediaError {
   std::string call_id;
   std::string message;
+  CallMediaErrorKind kind = CallMediaErrorKind::Other;
 };
 /** The offerer's connect retries: send the call's current media key to `peer_identity` again. */
 struct MediaKeyResendWanted {
@@ -404,10 +413,11 @@ struct InboundHello {
 
 using DirectReport =
     std::variant<direct_report::Progress, direct_report::Connected, direct_report::HandedToHop,
-                 direct_report::ConnectFailed, direct_report::PeerEnded, direct_report::GaveUpReaching,
-                 direct_report::PeerReconnected, direct_report::MediaAttempted, direct_report::MediaDeferred,
-                 direct_report::MediaKeyReady, direct_report::Changed, direct_report::MediaError,
-                 direct_report::MediaKeyResendWanted, direct_report::InboxSyncWanted, direct_report::InboundHello>;
+                 direct_report::ConnectFailed, direct_report::Dropped, direct_report::PeerEnded,
+                 direct_report::GaveUpReaching, direct_report::PeerReconnected, direct_report::MediaAttempted,
+                 direct_report::MediaDeferred, direct_report::MediaKeyReady, direct_report::Changed,
+                 direct_report::MediaError, direct_report::MediaKeyResendWanted, direct_report::InboxSyncWanted,
+                 direct_report::InboundHello>;
 
 /** What a call's group (hop) path tells the device (V057 2): events on the calls owner's queue. */
 namespace hop_report {

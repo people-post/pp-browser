@@ -212,6 +212,12 @@ public:
   void NoteDirectHandedToHop(const std::string& call_id);
   /** No media path: the call stays open, failed (Retry / the peer's reconnect resumes it). */
   void NoteMediaFailed(const std::string& call_id);
+  /**
+   * K014: the call was connected and lost its media for good — Failed as NoteMediaFailed (it stays open; the
+   * screen says "Call dropped" and closes it, a late reconnect of the peer's still resumes it), told apart in
+   * the status log as a drop, never a connect failure.
+   */
+  void NoteMediaDropped(const std::string& call_id);
   /** The call's media activity line (empty clears it). */
   void NoteActivity(const std::string& call_id, std::string text);
 

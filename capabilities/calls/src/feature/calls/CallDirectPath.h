@@ -7,6 +7,7 @@
 #include "feature/calls/CallEngine.h"
 #include "feature/calls/CallDirectPathQueries.h"
 #include "feature/calls/CallDirectDriver.h"
+#include "lib/calls/CallMediaError.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "common/runtime/OwnerOutbox.h"
@@ -76,11 +77,13 @@ public:
   }
   ~CallDirectPath();
 
+  /** The 1:1 connect gave up: the call never connected (a dropped call is no connect failure, K014). */
   bool IsMeshConnectFailed() const;
   bool MeshConnectMissingMic() const;
   /** The last bootstrap seed park for this connect timed out: no seed reachable (VPN / firewall). */
   bool MeshConnectSeedUnreachable() const;
-  void ClearMeshConnectFailed();
+  /** The call's media is no longer failed (connected again, restarted, stopped): connect failed or dropped. */
+  void ClearMediaFailure();
   void PollMeshConnectHealth();
 
   Roe<void> RetryMeshMedia(const std::string& call_id) override;
@@ -251,8 +254,20 @@ private:
   void ApplyReachPolicy(mesh::PeerReachRequest& request, const std::string& call_id, bool offerer) const;
   /** Call-side reactions to the connect sequence (media key resend, path label, commit / fail). */
   CallMediaConnectHooks MakeConnectHooks(const std::string& call_id);
-  /** Chrome ConnectFailed + Direct Idle; optionally StopMeshMedia (zombie TX / teardown). */
-  void SurfaceConnectFailed(const std::string& call_id, const std::string& err, bool stop_media);
+  /**
+   * The 1:1 connect gave up: chrome ConnectFailed + Direct Idle, the peer told (H013); optionally StopMeshMedia
+   * (zombie TX / teardown). `kind` says what the screen tells of it (ConnectTimeout: its own failed page).
+   */
+  void SurfaceConnectFailed(const std::string& call_id, const std::string& err, bool stop_media,
+                            CallMediaErrorKind kind = CallMediaErrorKind::Other);
+  /**
+   * K014: the connected call lost its media for good (CallMediaErr::Dropped, the health backstop). It stays
+   * open, failed — the screen says "Call dropped" and closes it — but none of a connect failure's bookkeeping
+   * runs: no ConnectFailed, no "couldn't connect", the peer is not told we gave up reaching it.
+   */
+  void SurfaceDropped(const std::string& call_id, const std::string& reason);
+  /** A failed call's media goes (reach aborted; the engine stopped when `stop_media`); the call stays open. */
+  void StopFailedMedia(const std::string& call_id, bool stop_media);
   /**
    * Bump the send generation (gates 1:1 TX) and abort the connect sequence (timers, pending
    * reach, InFlight cleared — THREADING.md Cancel / Abort contract).
@@ -386,7 +401,9 @@ private:
   std::string pending_answerer_peer_;
   /** Inbound hello PeerId while stream_id deferred (non-contact / pre-Accept). */
   std::string inbound_deferred_peer_id_;
-  bool mesh_connect_failed_ = false;
+  /** How the call's media failed while the call stays open (failed ≠ closed); None: it has not. */
+  enum class MediaFailure : uint8_t { None, ConnectFailed, Dropped };
+  MediaFailure media_failure_ = MediaFailure::None;
   bool mesh_connect_missing_mic_ = false;
   /**
    * Outcome of the seed parks for the current connect (SeedParkOutcome). Written on the park's
@@ -394,7 +411,7 @@ private:
    */
   struct SeedParkState {
     std::atomic<bool> unreachable{false};
-    std::atomic<uint64_t> epoch{0}; // bumped by ClearMeshConnectFailed
+    std::atomic<uint64_t> epoch{0}; // bumped by ClearMediaFailure
   };
   std::shared_ptr<SeedParkState> seed_park_state_ = std::make_shared<SeedParkState>();
   /** Bumped by AbortConnectSequence; the StartDuplex send fn drops TX from an older generation. */
@@ -444,7 +461,7 @@ private:
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
   /**
    * This path's connect gave up while the call stays open (failed ≠ closed; LiveCall's Failed). Its
-   * peer and role are the LiveCall's (P2pLiveCall). Set by SurfaceConnectFailed after the stop;
+   * peer and role are the LiveCall's (P2pLiveCall). Set by SurfaceConnectFailed / SurfaceDropped after the stop;
    * cleared by any other stop (Leave) or a new session.
    */
   struct FailedOpenCall {

@@ -72,7 +72,7 @@
 |------|-------|
 | **Hangup `bye`** ([K014](DECISIONS.md)) | Call-media `bye` before the channels close on a hangup; the receiver ends the leg as the peer's end (no ConnectFailed, no "Mesh connect timeout"), `call_leave` closes the call (`RemoteEnded`), or the bye stands in after 5 s. Folds in Kenneth's [diag 2026-11-06](DIAG-reconnect-and-peer-close-2026-11-06.md) finding 2 |
 | **Close without `bye` = lost path** | A pathless end's close (or an older peer's hangup) puts the other end into fallback / failover / the reconnect window; the offerer re-anchors and the call survives (`APathClosedWithoutByeIsLostAtBothEndsAndTheCallComesBack`) |
-| **Dropped, not timed out** | A connected leg's end is reported (`CallMediaErr::Dropped`); the health tick's backstop says dropped after 2 s, never connect timeout; no more 75 s `InCall` with no media. UI "Call dropped" / "通话掉线了" |
+| **Dropped, not timed out** | A connected leg's end is reported (`CallMediaErr::Dropped`); the health tick's backstop says dropped after 2 s, never connect timeout; no more 75 s `InCall` with no media. UI "Call dropped" / "通话掉线了"; past the transport decided by code, not text (`CallDirectPath::SurfaceDropped`, `CallMediaErrorKind::Dropped`, 2026-11-09) |
 | **Re-anchor reach** | Same pair policy and H013 advertised relays as the first connect (a relay-only pair re-anchors over relays only). Diag finding 1 (no redial in the window) is expected to be covered by this plus the 2 s re-anchor retry — **device / lab check pending** |
 | pp-call-probe | Its calls end with `HangUp` (bye), so its peer does not hold the last cycle as a lost path |
 

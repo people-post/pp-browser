@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallMediaError.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "common/media/CallMediaHealth.h"
 
@@ -34,7 +35,7 @@ struct CallUiState {
   bool direct_connect_seed_unreachable = false;
   std::string media_activity;
   /** Pending media error for the GUI to show once (TakeLastMediaError). */
-  std::optional<std::string> last_media_error;
+  std::optional<CallMediaError> last_media_error;
   /** The last call the peer ended or declined while this side had it (TakeRemoteEnd); empty if none. */
   std::string remote_ended_call_id;
   /** That end was the peer declining our call (else it ended the call). */

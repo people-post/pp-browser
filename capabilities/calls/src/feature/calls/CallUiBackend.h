@@ -62,7 +62,7 @@ public:
   /** Set before AcceptClicked — consumed (and reset to false) by AcceptInvite. */
   void SetPendingAcceptVoiceOnly(bool voice_only);
   /** The pending media error, once per error (the owner clears it). */
-  std::optional<std::string> TakeLastMediaError();
+  std::optional<CallMediaError> TakeLastMediaError();
   /** A call the peer ended or declined while this side had it — once per call. */
   struct RemoteEnd {
     std::string call_id;
@@ -175,7 +175,7 @@ private:
 
   CallStack& stack_;
   /** Last media error handed to the GUI (shown once until the owner clears it). */
-  std::optional<std::string> taken_media_error_;
+  std::optional<CallMediaError> taken_media_error_;
   std::string taken_remote_ended_;
 };
 

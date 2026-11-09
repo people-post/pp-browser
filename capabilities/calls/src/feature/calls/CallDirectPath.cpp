@@ -161,6 +161,10 @@ void CallDirectPath::OnBundleFailed(const std::string& call_id, const std::strin
   if (YieldsToHop(call_id, reason, code == CallMediaErr::StreamClosed, DirectMediaReady())) {
     return;
   }
+  if (code == CallMediaErr::Dropped) {
+    SurfaceDropped(call_id, reason); // K014: the leg had connected — never a connect failure
+    return;
+  }
   log().warning << "Call-media failed call_id=" << call_id << " reason=" << reason;
   SurfaceConnectFailed(call_id, reason, /*stop_media=*/true);
 }
@@ -208,7 +212,7 @@ bool CallDirectPath::YieldsToHop(const std::string& call_id, const std::string& 
     case BundleFailureAction::CarriedByHop:
       log().info << "Ignoring call-media fail after SoftMigrate/SFU call_id=" << call_id << " reason=" << reason;
       direct_.Detach(call_id_);
-      ClearMeshConnectFailed();
+      ClearMediaFailure();
       reports_.Emit(direct_report::Connected{call_id});
       reports_.Emit(direct_report::Changed{call_id_});
       return true;
@@ -218,7 +222,7 @@ bool CallDirectPath::YieldsToHop(const std::string& call_id, const std::string& 
         call_media->ExpectHopAttach();
       }
       direct_.Detach(call_id_);
-      ClearMeshConnectFailed();
+      ClearMediaFailure();
       reports_.Emit(direct_report::InboxSyncWanted{call_id_});
       // Nothing is live until the hop attaches: the call waits for it (not "connected").
       reports_.Emit(direct_report::HandedToHop{call_id});
@@ -400,6 +404,7 @@ void CallDirectPath::Apply(CallDirectPlannerEvent ev, const std::string& call_id
       break;
     case CallDirectPlannerEvent::KeyTimeout:
     case CallDirectPlannerEvent::ConnectFailed:
+    case CallDirectPlannerEvent::Dropped:
     case CallDirectPlannerEvent::ConnectSucceeded:
     case CallDirectPlannerEvent::ScheduleOfferer:
     case CallDirectPlannerEvent::ScheduleAnswerer:
@@ -858,15 +863,15 @@ void CallDirectPath::CommitDirectConnected(const std::string& call_id) {
       direct_planner_phase_ != CallDirectPlannerPhase::DegradedTxOnly) {
     // Connected after this side's connect failed: the call may still be open (failed ≠ closed) —
     // the lifecycle resumes media over this stream if so; after Leave it ignores it.
-    if (mesh_connect_failed_ && failed_open_ && call_id == call_id_ && !failed_open_->resume_requested &&
-        DirectMediaReady()) {
+    if (media_failure_ != MediaFailure::None && failed_open_ && call_id == call_id_ &&
+        !failed_open_->resume_requested && DirectMediaReady()) {
       log().info << "call-media connected after connect failed call_id=" << call_id << " — resume?";
       failed_open_->resume_requested = true;
       reports_.Emit(direct_report::PeerReconnected{call_id});
     }
     return;
   }
-  ClearMeshConnectFailed();
+  ClearMediaFailure();
   if (direct_connected_at_ms_ <= 0) {
     direct_connected_at_ms_ = util::NowUnixMs();
   }
@@ -938,7 +943,7 @@ void CallDirectPath::RebindInboundStream(const std::string& call_id) {
 }
 
 bool CallDirectPath::IsMeshConnectFailed() const {
-  return mesh_connect_failed_;
+  return media_failure_ == MediaFailure::ConnectFailed;
 }
 
 bool CallDirectPath::MeshConnectMissingMic() const {
@@ -949,8 +954,8 @@ bool CallDirectPath::MeshConnectSeedUnreachable() const {
   return seed_park_state_->unreachable.load(std::memory_order_acquire);
 }
 
-void CallDirectPath::ClearMeshConnectFailed() {
-  mesh_connect_failed_ = false;
+void CallDirectPath::ClearMediaFailure() {
+  media_failure_ = MediaFailure::None;
   mesh_connect_missing_mic_ = false;
   seed_park_state_->unreachable.store(false, std::memory_order_release);
   seed_park_state_->epoch.fetch_add(1, std::memory_order_acq_rel);
@@ -959,7 +964,7 @@ void CallDirectPath::ClearMeshConnectFailed() {
 void CallDirectPath::PollMeshConnectHealth() {
   const std::string& call_id = call_id_;
   DirectHealthInput in;
-  in.already_failed = mesh_connect_failed_;
+  in.already_failed = media_failure_ != MediaFailure::None;
   in.engine_running = engine_->Runs();
   if (in.engine_running && !in.already_failed) {
     CallMedia* call_media = CallMediaFor(call_id);
@@ -993,27 +998,25 @@ void CallDirectPath::PollMeshConnectHealth() {
     case DirectHealthAction::None:
       return;
     case DirectHealthAction::Healthy:
-      ClearMeshConnectFailed();
+      ClearMediaFailure();
       MaybeEscalateTxOnlyDirect();
       return;
     case DirectHealthAction::HealConnected:
-      ClearMeshConnectFailed();
+      ClearMediaFailure();
       log().info << "Heal call-media connected from direct stream call_id=" << call_id;
       CommitDirectConnected(call_id);
       MaybeEscalateTxOnlyDirect();
       return;
     case DirectHealthAction::Dropped:
       // K014: the leg's own report should have come; the call was connected, so it dropped.
-      log().warning << "call-media stream gone after connect, no report call_id=" << call_id;
-      SurfaceConnectFailed(call_id, "amp call-media: call dropped [health: the 1:1 stream is gone]",
-                           /*stop_media=*/true);
+      SurfaceDropped(call_id, "health: the 1:1 stream is gone after connect, no report");
       return;
     case DirectHealthAction::TimedOut:
       break;
   }
   log().warning << "Mesh connect timeout call_id=" << call_id;
   mesh_connect_missing_mic_ = !engine_->HasLocalCapture();
-  SurfaceConnectFailed(call_id, "mesh connect timeout", /*stop_media=*/true);
+  SurfaceConnectFailed(call_id, "mesh connect timeout", /*stop_media=*/true, CallMediaErrorKind::ConnectTimeout);
 }
 
 void CallDirectPath::MaybeEscalateTxOnlyDirect() {
@@ -1152,45 +1155,62 @@ void CallDirectPath::FailUnlessDirectRecovered(const std::string& call_id, const
   SurfaceConnectFailed(call_id, err, /*stop_media=*/true);
 }
 
-void CallDirectPath::SurfaceConnectFailed(const std::string& call_id, const std::string& err, const bool stop_media) {
+void CallDirectPath::SurfaceConnectFailed(const std::string& call_id, const std::string& err, const bool stop_media,
+                                          const CallMediaErrorKind kind) {
   if (!err.empty()) {
-    reports_.Emit(direct_report::MediaError{call_id_, err});
+    reports_.Emit(direct_report::MediaError{call_id_, err, kind});
   }
   // H013: the caller tells the answerer it stopped (read before StopMeshMedia clears the session).
   const bool tell_peer =
       session_offerer_ && !call_id.empty() && media_session_ && call_id == call_id_ && !media_peer_identity_.empty();
   const std::string gave_up_peer = media_peer_identity_;
-  // Stop late EnsureViaCircuit / StartBridge before chrome refresh (dogfood SIGSEGV after give-up).
-  reach_.AbortCircuitAttempts();
   // StopMeshMedia also resets the seed-park outcome; this failure is what it explains (dogfood 2026-10-01:
   // the "turn off your VPN" hint never showed because the stop ran first).
   const bool seed_unreachable = MeshConnectSeedUnreachable();
-  if (stop_media && engine_->Runs()) {
-    // StopMeshMedia clears mesh_connect_failed_ and the attempted mark for Leave hygiene — the call
-    // is still open, so both are re-asserted below.
-    StopMeshMedia(call_id);
-  } else if (!media_peer_identity_.empty()) {
-    reach_.AbandonDial(media_peer_identity_);
-  }
+  StopFailedMedia(call_id, stop_media);
   if (!call_id.empty()) {
     reports_.Emit(direct_report::MediaAttempted{call_id});
-    failed_open_ = FailedOpenCall{};
   }
   Apply(CallDirectPlannerEvent::ConnectFailed, call_id, media_peer_identity_);
   reports_.Emit(direct_report::ConnectFailed{call_id});
   if (tell_peer) {
     reports_.Emit(direct_report::GaveUpReaching{call_id, gave_up_peer});
   }
-  mesh_connect_failed_ = true;
+  media_failure_ = MediaFailure::ConnectFailed;
   if (seed_unreachable) {
     seed_park_state_->unreachable.store(true, std::memory_order_release);
   }
   reports_.Emit(direct_report::Changed{call_id_});
 }
 
+void CallDirectPath::SurfaceDropped(const std::string& call_id, const std::string& reason) {
+  log().warning << "call-media dropped after connect call_id=" << call_id << " reason=" << reason;
+  reports_.Emit(direct_report::MediaError{call_id_, reason, CallMediaErrorKind::Dropped});
+  StopFailedMedia(call_id, /*stop_media=*/true);
+  Apply(CallDirectPlannerEvent::Dropped, call_id, media_peer_identity_);
+  reports_.Emit(direct_report::Dropped{call_id});
+  media_failure_ = MediaFailure::Dropped;
+  reports_.Emit(direct_report::Changed{call_id_});
+}
+
+void CallDirectPath::StopFailedMedia(const std::string& call_id, const bool stop_media) {
+  // Stop late EnsureViaCircuit / StartBridge before chrome refresh (dogfood SIGSEGV after give-up).
+  reach_.AbortCircuitAttempts();
+  if (stop_media && engine_->Runs()) {
+    // StopMeshMedia clears the failure and the failed-open mark for Leave hygiene — the call is still
+    // open, so the caller re-asserts the failure and this the mark.
+    StopMeshMedia(call_id);
+  } else if (!media_peer_identity_.empty()) {
+    reach_.AbandonDial(media_peer_identity_);
+  }
+  if (!call_id.empty()) {
+    failed_open_ = FailedOpenCall{};
+  }
+}
+
 void CallDirectPath::OnPeerGaveUpReaching(const std::string& call_id) {
-  if (call_id.empty() || !(media_session_ && call_id == call_id_) || session_offerer_ || mesh_connect_failed_ ||
-      !connect_.InFlight()) {
+  if (call_id.empty() || !(media_session_ && call_id == call_id_) || session_offerer_ ||
+      media_failure_ != MediaFailure::None || !connect_.InFlight()) {
     log().info << "peer gave up reaching us; not waiting for it call_id=" << call_id;
     return;
   }
@@ -1360,7 +1380,7 @@ void CallDirectPath::ResetDirectSessionState(const std::string& call_id, const s
   }
   audio_seq_.store(0);
   audio_instance_.store(mesh::NewMediaSenderInstance()); // a restarted numbering is a new sender instance
-  ClearMeshConnectFailed();
+  ClearMediaFailure();
   if (!offerer) {
     pending_answerer_ = false;
     ++key_wait_gen_;
@@ -1425,7 +1445,7 @@ Roe<void> CallDirectPath::StartDirectEngine(const std::string& call_id) {
   }
   // A started engine is a fresh attempt: a failure surfaced before it no longer stands. Connected
   // waits for the direct stream (CommitDirectConnected).
-  ClearMeshConnectFailed();
+  ClearMediaFailure();
   reports_.Emit(direct_report::Changed{call_id_});
   return {};
 }
@@ -1605,7 +1625,7 @@ void CallDirectPath::OnDeferredMediaKeyTimeout(const std::string& call_id) {
   ++key_wait_gen_;
   pending_answerer_peer_.clear();
   log().warning << "Deferred MediaKey wait exhausted call_id=" << call_id << " — ConnectFailed";
-  mesh_connect_failed_ = true;
+  media_failure_ = MediaFailure::ConnectFailed;
   reports_.Emit(direct_report::MediaError{call_id_, Localized("call.error.media_key_timeout")});
   Apply(CallDirectPlannerEvent::KeyTimeout, call_id);
   reports_.Emit(direct_report::ConnectFailed{call_id});
@@ -1682,7 +1702,7 @@ void CallDirectPath::StopMeshMedia(const std::string& call_id) {
   stream_gone_since_ms_ = 0;
   peer_ended_ = false;
   tx_only_escalation_done_ = false;
-  ClearMeshConnectFailed();
+  ClearMediaFailure();
   failed_open_.reset();
 
   // This call's media only (V057): another call's leftover is the device's to stop (the seat and
@@ -1757,7 +1777,7 @@ void CallDirectPath::ReleaseDirectTransportBody() {
   // Do not clear the remote audio tracks here — SoftMigrate+2s would wipe live media_relay tracks
   // that already replaced 1:1 (dogfood: streams look healthy then Moto silent on PreferLocal).
   // 1:1 on_audio is already ignored once the hop is attached; stream_id==1 is dropped in engine.
-  ClearMeshConnectFailed();
+  ClearMediaFailure();
   // The hop's attach completion reports the call live (LiveCall Status) — not ReleaseDirect alone.
   if (engine_->Runs()) {
     reports_.Emit(direct_report::Connected{call_id_});
@@ -1830,7 +1850,7 @@ void CallDirectPath::PrepareForTeardown(int /*timeout_ms*/) {
   direct_.Detach(call_id_);
   media_peer_identity_.clear();
   media_session_ = false;
-  ClearMeshConnectFailed();
+  ClearMediaFailure();
 
   if (!call_id.empty() && engine_->Runs()) {
     StopOwnEngine("1:1 stop");
@@ -1864,7 +1884,7 @@ Roe<void> CallDirectPath::RetryMeshMedia(const std::string& call_id) {
   if (peer.empty()) {
     return Error("No peer for call retry");
   }
-  ClearMeshConnectFailed();
+  ClearMediaFailure();
   reach_.ForgetPath(peer);
   if (engine_->Runs()) {
     StopOwnEngine("retry");
@@ -1905,7 +1925,7 @@ Roe<void> CallDirectPath::ResumeMeshMediaFromInbound(const std::string& call_id)
   }
   log().info << "resume call media over the peer's stream call_id=" << call_id
              << " role=" << (call->offerer ? "offerer" : "answerer");
-  ClearMeshConnectFailed();
+  ClearMediaFailure();
   ArmPlannerForRestart(call_id, call->peer_identity, call->offerer);
   // BeginSession keeps the active inbound bundle (StopPriorDirectAttempt) and commits it.
   return BeginSession(call_id, call->peer_identity, call->offerer);
