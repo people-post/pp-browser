@@ -1,4 +1,5 @@
 #include "feature/broadcast/AmpPeerAnnounceTransport.h"
+#include "common/Localized.h"
 
 #include "mesh/l4/shared/InboundReply.h"
 
@@ -231,7 +232,7 @@ void AmpPeerAnnounceTransport::PushTipAsync(const std::string& peer_key, const P
   }
   if (!IsPeerReachable(peer_key)) {
     (*finish_once)(Error("Peer-direct endpoint not registered")
-                       .WithUser("No usable peer address — add a dialable multiaddr on the contact."));
+                       .WithUser(Localized("broadcast.err.no_peer_address")));
     return;
   }
 
@@ -273,7 +274,7 @@ void AmpPeerAnnounceTransport::PushTipAsync(const std::string& peer_key, const P
                              }
                              if (!open) {
                                finish(Error("amp peer-announce: channel open failed")
-                                          .WithUser("Direct tip push didn't confirm."));
+                                          .WithUser(Localized("broadcast.err.tip_unconfirmed")));
                                return;
                              }
 
@@ -282,7 +283,7 @@ void AmpPeerAnnounceTransport::PushTipAsync(const std::string& peer_key, const P
                                  [finish](Roe<std::vector<uint8_t>> ack_frame) {
                                              if (!ack_frame) {
                                                finish(Error("Failed to read peer-announce tip_ack")
-                                                          .WithUser("Direct tip push didn't confirm."));
+                                                          .WithUser(Localized("broadcast.err.tip_unconfirmed")));
                                                return false;
                                              }
                                              const std::string json(ack_frame->begin(), ack_frame->end());
@@ -301,13 +302,13 @@ void AmpPeerAnnounceTransport::PushTipAsync(const std::string& peer_key, const P
 
                              if (!(*session_holder)->EnqueueOutbound(JsonToBody(push_json))) {
                                finish(Error("Failed to send peer-announce tip_push")
-                                          .WithUser("Direct tip push didn't confirm."));
+                                          .WithUser(Localized("broadcast.err.tip_unconfirmed")));
                                return;
                              }
 
                              mesh::AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                finish(Error("amp peer-announce send timed out")
-                                          .WithUser("Direct tip push timed out."));
+                                          .WithUser(Localized("broadcast.err.tip_timeout")));
                              },
                                                     post_after_);
                            });
@@ -330,7 +331,7 @@ Roe<PeerAnnounceTipAck> AmpPeerAnnounceTransport::PushTip(const std::string& pee
   mesh::AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
                deadline, io_pump_);
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    return Error("amp peer-announce send timed out").WithUser("Direct tip push timed out.");
+    return Error("amp peer-announce send timed out").WithUser(Localized("broadcast.err.tip_timeout"));
   }
   return result_future.get();
 }

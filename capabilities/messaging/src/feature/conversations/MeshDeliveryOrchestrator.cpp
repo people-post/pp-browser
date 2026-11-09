@@ -224,7 +224,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
         AppRuntime::PostUI([this]() { on_messages_changed_(); });
       }
     } else if (outcome.ok) {
-      ApplySendSucceeded(outcome.thread_id, outcome.message_id, outcome.transport, outcome.relay_after_direct);
+      ApplySendSucceeded(outcome.thread_id, outcome.message_id, outcome.transport);
     } else {
       ApplySendFailed(outcome.thread_id, outcome.message_id, outcome.failure, outcome.detail);
     }
@@ -1200,6 +1200,8 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendPublicPskRotate(const std::stri
   opts.content_type = ChatContentType::System;
   opts.payload_json = *payload;
   opts.key_init_b64 = plan->key_init_b64;
+  // Stored and sent as English, as before (an older peer shows it); the UI words it at display time
+  // (LegacySystemLineText).
   const char* text =
       kind == PublicPskRotateKind::Lock ? "New messages stay on this device." : "Chat key updated.";
   auto sent = SendUserMessage(thread_id, text, opts);
@@ -1392,30 +1394,19 @@ TrustLevel MeshDeliveryOrchestrator::ResolveThreadTrust(const Thread& thread) co
   return (*contact)->trust;
 }
 
-void MeshDeliveryOrchestrator::NotifyDeliveryIssue(const Thread& thread, const SendFailure failure,
-                                                   const std::string& detail) {
+void MeshDeliveryOrchestrator::NotifyDeliveryIssue(const Thread& thread, const std::string& message_id,
+                                                   const SendFailure failure, const std::string& detail) {
   if (!on_delivery_notice_) {
     return;
   }
   log().info << "send failed thread=" << thread.id << " detail=" << detail;
   DeliveryNotice notice;
   notice.kind = DeliveryNotice::Kind::SendFailed;
+  notice.thread_id = thread.id;
+  notice.message_id = message_id;
   notice.send = SendFailureForThread(failure, ResolveThreadTrust(thread) == TrustLevel::Friendly);
   DiagLine("chat.send_failed").Add("failure", SendFailureWord(notice.send)).Ref("thread", thread.id).Emit();
   notice.detail = detail;
-  AppRuntime::PostUI([this, notice]() {
-    if (on_delivery_notice_) {
-      on_delivery_notice_(notice);
-    }
-  });
-}
-
-void MeshDeliveryOrchestrator::NotifyRelayFallback(const std::string& /*thread_id*/) {
-  if (!on_delivery_notice_) {
-    return;
-  }
-  DeliveryNotice notice;
-  notice.kind = DeliveryNotice::Kind::SentViaRelay;
   AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
       on_delivery_notice_(notice);
@@ -1495,13 +1486,9 @@ bool MeshDeliveryOrchestrator::MarkDelivery(const std::string& thread_id, const 
 }
 
 void MeshDeliveryOrchestrator::ApplySendSucceeded(const std::string& thread_id, const std::string& message_id,
-                                                  const MessageTransport transport,
-                                                  const bool relay_after_direct_attempt) {
+                                                  const MessageTransport transport) {
   if (!MarkDelivery(thread_id, message_id, true, transport)) {
     return;
-  }
-  if (transport == MessageTransport::Relay && relay_after_direct_attempt) {
-    NotifyRelayFallback(thread_id);
   }
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
@@ -1514,7 +1501,7 @@ void MeshDeliveryOrchestrator::ApplySendFailed(const std::string& thread_id, con
     return;
   }
   if (auto thread = store_.GetThread(thread_id); thread && *thread) {
-    NotifyDeliveryIssue(**thread, failure, detail);
+    NotifyDeliveryIssue(**thread, message_id, failure, detail);
   }
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
@@ -1991,7 +1978,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
                                  .group_member = recipient});
   }
   if (any_missed) {
-    NotifyGroupMembersMissed();
+    NotifyGroupMembersMissed(thread_id, message.id);
   }
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
@@ -2006,11 +1993,13 @@ void MeshDeliveryOrchestrator::MarkGroupMemberMissed(const std::string& group_id
   }
 }
 
-void MeshDeliveryOrchestrator::NotifyGroupMembersMissed() {
-  AppRuntime::PostUI([this]() {
+void MeshDeliveryOrchestrator::NotifyGroupMembersMissed(const std::string& thread_id, const std::string& message_id) {
+  DeliveryNotice notice;
+  notice.kind = DeliveryNotice::Kind::GroupMembersMissed;
+  notice.thread_id = thread_id;
+  notice.message_id = message_id;
+  AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
-      DeliveryNotice notice;
-      notice.kind = DeliveryNotice::Kind::GroupMembersMissed;
       on_delivery_notice_(notice);
     }
   });
@@ -2024,7 +2013,7 @@ void MeshDeliveryOrchestrator::ApplyGroupMemberOutcome(const DeliveryOutcome& ou
     if (group_id) {
       MarkGroupMemberMissed(*group_id, outcome.group_member);
     }
-    NotifyGroupMembersMissed();
+    NotifyGroupMembersMissed(outcome.thread_id, outcome.message_id);
     return;
   }
   if (groups_ && group_id) {
@@ -2436,7 +2425,7 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
     return std::nullopt;
   }
   BackgroundNotice notice;
-  notice.title = "New message";
+  notice.title = Localized("notification.new_message");
   if (auto thread = store_.GetThread(outcome.about_us_group_thread_id); thread && *thread) {
     if (std::string label = inbox_.ResolveThreadLabel(**thread).title; !label.empty()) {
       notice.title = std::move(label);
@@ -2455,14 +2444,14 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
     return std::nullopt;
   }
   BackgroundNotice notice;
-  notice.title = "New message";
+  notice.title = Localized("notification.new_message");
   if (auto thread = store_.GetThread(outcome.thread_id); thread && *thread) {
     if (std::string label = inbox_.ResolveThreadLabel(**thread).title; !label.empty()) {
       notice.title = std::move(label);
     }
   }
   const std::string preview = outcome.persisted_message ? outcome.persisted_message->text : std::string();
-  notice.body = preview.empty() ? "You have a new message" : preview;
+  notice.body = preview.empty() ? Localized("notification.new_message_body") : preview;
   notice.thread_id = outcome.thread_id;
   notice.mentions_us = outcome.persisted_message &&
                        InboundMentionsUs(outcome.thread_id, *outcome.persisted_message, local_account);
@@ -2486,7 +2475,7 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
     return std::nullopt;
   }
   BackgroundNotice notice;
-  notice.title = "New message";
+  notice.title = Localized("notification.new_message");
   if (auto thread = store_.GetThread(thread_id); thread && *thread) {
     if (std::string label = inbox_.ResolveThreadLabel(**thread).title; !label.empty()) {
       notice.title = std::move(label);

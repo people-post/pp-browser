@@ -1554,7 +1554,7 @@ void Application::WireUnlockPinAndFlow() {
     pin_gate_->SetWaitingDeviceUnlock(waiting);
   };
   unlock_ports.ui.on_default_provisioned = []() {
-    UserFeedback::Ok("Using the app default. Change anytime in Me → Security.");
+    UserFeedback::Ok(Tr("pin.default_provisioned_toast"));
   };
   // Both bring another DEK: once it is in, a face / fingerprint entry left from before could not open it (A014). A
   // failed import keeps it (the old DEK stays).

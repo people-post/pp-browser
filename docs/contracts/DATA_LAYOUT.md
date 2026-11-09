@@ -103,6 +103,11 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
                             # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)
+                            # Local-only System rows (sender local:self, delivery 'local', never sent or synced; text empty, the UI words
+                            # them from the payload): payload_json {control_type: "receive_failure"|"send_failure", detail: <JSON string>}.
+                            # `send_failure` (#182): a message of ours did not go out, one row per message, id "send-failure-<message_id>"
+                            # (+ "-group" for a partial group send); detail {reason, message_id}, reason = a SendFailureWord
+                            # (mesh_off, no_address, ..., relay_rejected) or "group_members_missed". It does not touch the thread's preview/order.
 ```
 
 ### Content CAS (planned)

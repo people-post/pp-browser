@@ -3,6 +3,8 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 
+#include <string_view>
+
 namespace pbr {
 namespace {
 
@@ -195,6 +197,40 @@ bool IsStoredGroupEventText(const std::string& preview) {
     }
   }
   return preview.rfind("Group renamed to ", 0) == 0;
+}
+
+std::optional<std::string> LegacySystemLineText(const std::string& stored) {
+  static constexpr std::string_view kJoined = "You joined ";
+  static constexpr std::string_view kDeclined = "You declined ";
+  if (stored == "Accepted group invitation") {
+    return Tr("chat.group_invite.accepted_unnamed");
+  }
+  if (stored == "Declined group invitation") {
+    return Tr("chat.group_invite.declined_unnamed");
+  }
+  if (stored == "You blocked the inviter") {
+    return Tr("chat.group_invite.blocked");
+  }
+  if (stored == "Noted — you can keep chatting with people who are online.") {
+    return Tr("chat.group_owner_unreachable.resolved");
+  }
+  if (stored == "New messages stay on this device.") {
+    return Tr("chat.psk_rotate_self.lock");
+  }
+  if (stored == "Chat key updated.") {
+    return Tr("chat.psk_rotate_self.rekey");
+  }
+  if (stored.rfind("Owner hasn’t been reachable", 0) == 0) {
+    return Tr("chat.group_owner_unreachable.title");
+  }
+  // "You joined {title}" / "You declined {title}"; the bare "You joined the group" is a group event (above).
+  if (stored.size() > kJoined.size() && stored.rfind(kJoined, 0) == 0 && stored != "You joined the group") {
+    return Tr("chat.group_invite.joined", {{"group", stored.substr(kJoined.size())}});
+  }
+  if (stored.size() > kDeclined.size() && stored.rfind(kDeclined, 0) == 0) {
+    return Tr("chat.group_invite.declined", {{"group", stored.substr(kDeclined.size())}});
+  }
+  return std::nullopt;
 }
 
 } // namespace pbr
