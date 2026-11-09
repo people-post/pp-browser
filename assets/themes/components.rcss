@@ -3708,7 +3708,7 @@ select selectbox option {
   height: 44dp;
   margin: 0;
   font-size: 17dp;
-  line-height: 44dp;
+  line-height: 52dp;
   font-weight: bold;
   text-align: center;
   white-space: nowrap;
@@ -4477,7 +4477,7 @@ select selectbox option {
 }
 
 .ai-drawer-search {
-  margin: 0 16dp 8dp 16dp;
+  margin: 6dp 16dp 12dp 16dp; /* Kenneth 2026-11-09: air between the title row and the search box */
   padding: 0 0 0 8dp;
 }
 
@@ -4503,8 +4503,8 @@ select selectbox option {
   display: flex;
   flex-direction: row;
   align-items: center;
-  height: 44dp;
-  padding: 0 4dp;
+  height: 52dp;
+  padding: 0 8dp; /* the close button off the edge (Kenneth 2026-11-09) */
 }
 
 .ai-drawer-title {
@@ -4512,7 +4512,7 @@ select selectbox option {
   min-width: 0;
   margin: 0;
   font-size: 17dp;
-  line-height: 44dp;
+  line-height: 52dp;
   font-weight: bold;
   text-align: center;
   white-space: nowrap;
@@ -4533,7 +4533,7 @@ select selectbox option {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-top: 88dp;
+  padding-top: 106dp; /* head 52 + search 6/36/12 */
   padding-bottom: 0;
   box-sizing: border-box;
 }
@@ -4989,7 +4989,7 @@ select selectbox option {
   margin: 0;
   padding: 0;
   font-size: 17dp;
-  line-height: 44dp;
+  line-height: 52dp;
   font-weight: bold;
   text-align: center;
   white-space: nowrap;
@@ -9689,7 +9689,7 @@ input.checkbox {
   margin: 0;
   font-family: LatoLatin;
   font-size: 17dp;
-  line-height: 44dp;
+  line-height: 52dp;
   font-weight: bold;
   text-align: center;
   white-space: nowrap;
@@ -10027,7 +10027,7 @@ input.checkbox {
   min-width: 0;
   margin: 0;
   font-size: 17dp;
-  line-height: 44dp;
+  line-height: 52dp;
   font-weight: bold;
   text-align: center;
   white-space: nowrap;
