@@ -42,13 +42,43 @@ inline bool DecodeUtf8(std::string_view s, size_t& i, uint32_t& cp) {
   return true;
 }
 
-inline bool IsPictographic(uint32_t cp) {
-  return (cp >= 0x1F300 && cp <= 0x1FAFF) || (cp >= 0x2600 && cp <= 0x27BF) || (cp >= 0x2300 && cp <= 0x23FF) ||
-         (cp >= 0x2B00 && cp <= 0x2BFF) || (cp >= 0x2190 && cp <= 0x21FF) || (cp >= 0x2900 && cp <= 0x297F) ||
-         cp == 0x00A9 || cp == 0x00AE || cp == 0x203C || cp == 0x2049 || cp == 0x2122 || cp == 0x2139 ||
-         cp == 0x3030 || cp == 0x303D || cp == 0x3297 || cp == 0x3299 || (cp >= 0x25AA && cp <= 0x25FE) ||
-         (cp >= 0x1F000 && cp <= 0x1F2FF);
+/** Symbols that draw as emoji even without U+FE0F. */
+inline bool IsAlwaysEmojiSymbol(uint32_t cp) {
+  switch (cp) {
+  case 0x2764: // heart
+  case 0x2728: // sparkles
+  case 0x2B50: // star
+  case 0x2600: // sun
+  case 0x2601: // cloud
+  case 0x260E: // telephone
+  case 0x26A1: // high voltage
+  case 0x26BD: // soccer ball
+  case 0x26C4: // snowman
+    return true;
+  default:
+    return false;
+  }
 }
+
+/** Symbols that are text by default and emoji only with U+FE0F after them. */
+inline bool IsTextDefaultSymbol(uint32_t cp) {
+  return (cp >= 0x2600 && cp <= 0x27BF) || (cp >= 0x2B00 && cp <= 0x2BFF) || (cp >= 0x25AA && cp <= 0x25FE) ||
+         (cp >= 0x2934 && cp <= 0x2935) || cp == 0x203C || cp == 0x2049 || cp == 0x2139 || cp == 0x3030 ||
+         cp == 0x303D || cp == 0x3297 || cp == 0x3299;
+}
+
+/** `vs16` is true when U+FE0F follows. Arrows, technical symbols, (c) (r) and (tm) are not emoji. */
+inline bool IsPictographic(uint32_t cp, bool vs16) {
+  if (cp >= 0x1F000 && cp <= 0x1FAFF) {
+    return true;
+  }
+  if (IsAlwaysEmojiSymbol(cp)) {
+    return true;
+  }
+  return vs16 && IsTextDefaultSymbol(cp);
+}
+
+inline bool IsKeycapBase(uint32_t cp) { return (cp >= '0' && cp <= '9') || cp == '#' || cp == '*'; }
 
 inline bool IsRegionalIndicator(uint32_t cp) { return cp >= 0x1F1E6 && cp <= 0x1F1FF; }
 inline bool IsSkinTone(uint32_t cp) { return cp >= 0x1F3FB && cp <= 0x1F3FF; }
@@ -104,7 +134,23 @@ inline EmojiScale EmojiOnlyScale(std::string_view text) {
       regional_pending = 1;
       continue;
     }
-    if (IsPictographic(cp)) {
+    size_t peek = i;
+    uint32_t next = 0;
+    const bool has_next = peek < text.size() && DecodeUtf8(text, peek, next);
+    if (IsKeycapBase(cp) && has_next && (next == 0xFE0F || next == 0x20E3)) {
+      // digit / # / * + FE0F + 20E3 is one keycap emoji; the FE0F and 20E3 that follow join it.
+      size_t after = peek;
+      uint32_t third = 0;
+      const bool keycap = next == 0x20E3 || (after < text.size() && DecodeUtf8(text, after, third) && third == 0x20E3);
+      if (keycap) {
+        regional_pending = 0;
+        ++count;
+        open = true;
+        after_zwj = false;
+        continue;
+      }
+    }
+    if (IsPictographic(cp, has_next && next == 0xFE0F)) {
       regional_pending = 0;
       if (!(after_zwj && open)) {
         ++count;
