@@ -508,26 +508,20 @@ TEST_F(CallSessionInboundComposeTest, StaleInviteDroppedByRelayAge) {
   auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
-  // P017: the phone's call screen hears of it, so a push's call waiting for this ring goes at once.
-  EXPECT_EQ(device_->CallsOver().NewSince(0), (std::vector<std::string>{call_id}));
 }
 
-// P017 (#555 B187): an invite read after the call ended here (its leave came first, or a replay) rings nothing, and
-// says so: a push's call waiting for it goes.
-TEST_F(CallSessionInboundComposeTest, AnInviteForACallAlreadyEndedIsOver) {
+// B24: an invite read after the call ended here (its leave came first, or a replay) rings nothing.
+TEST_F(CallSessionInboundComposeTest, AReplayedInviteForACallAlreadyEndedRingsNothing) {
   const std::string call_id = "call:over";
   auto msg = MakeInviteMessage(call_id);
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->DeclineInvite(call_id); }));
-  const uint64_t seen = device_->CallsOver().seq;
-  EXPECT_GT(seen, 0u) << "the declined call is over";
 
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); })); // the replay
   auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
-  EXPECT_EQ(device_->CallsOver().NewSince(seen), (std::vector<std::string>{call_id}));
 }
 
 TEST_F(CallSessionInboundComposeTest, DeclineClearsPendingInvite) {
@@ -746,7 +740,6 @@ TEST_F(CallSessionInboundComposeTest, InboundCallEndedEndsActiveSession) {
   EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle)
       << "CallEnded → EndCallLocal must Apply RemoteEnded (no local LeaveClicked)";
   EXPECT_TRUE(ShownCallId().empty());
-  EXPECT_EQ(device_->CallsOver().NewSince(0), (std::vector<std::string>{call_id})) << "P017";
 }
 
 TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia) {

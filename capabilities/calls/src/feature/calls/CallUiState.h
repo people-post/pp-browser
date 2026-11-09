@@ -2,7 +2,6 @@
 
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallMediaSeat.h"
-#include "lib/calls/RecentCallsOver.h"
 #include "common/media/CallMediaHealth.h"
 
 #include <optional>
@@ -40,8 +39,6 @@ struct CallUiState {
   std::string remote_ended_call_id;
   /** That end was the peer declining our call (else it ended the call). */
   bool remote_ended_declined = false;
-  /** P017: the calls this device learned are over (TakeCallsOver): a push's call waiting for one goes. */
-  RecentCallsOver calls_over;
   CallHopHealth hop_health;
   std::string media_path_kind;
   CallLinkCounters media_link;

@@ -262,6 +262,8 @@ Signed with `pp-browser:relay-api-v1` ops `DeviceRegister=3` / `DeviceUnregister
 | `POST /v1/devices/register` | Bind push token `{ platform, device_id, push_token, relay_user_id, timestamp, signature }` (`platform` is `android` or `ios`) |
 | `POST /v1/devices/unregister` | Remove device binding (the client keeps its binding with alerts off — P005 amended; account revoke removes all of them) |
 
+`ios_voip` bindings (`device_id` `<ios device id>.voip`) are legacy from P016's PushKit token: the app no longer registers them (P019), and the relay should drop them.
+
 On `POST /v1/messages` accept, a conforming relay **best-effort** wakes registered devices for the recipient:
 
 | Condition | Opaque type |
@@ -276,7 +278,7 @@ The relay cannot tell a call invite from a message (the control type is inside t
 | `android` | FCM **data** message `{ "type": "…" }` |
 | `ios` | `inbox_wake`: a visible alert (`apns-push-type: alert`, priority 10, `aps.sound: "msg.caf"`, `aps.alert: { title-loc-key: MESSAGE_INCOMING_TITLE, loc-key: MESSAGE_INCOMING_BODY }`, no sender, chat or content) with custom `type`. `call_wake`: a visible alert (`apns-push-type: alert`, priority 10, `apns-collapse-id: pp-call`, `aps.interruption-level: time-sensitive`, `aps.sound: "call.caf"` (the app bundles that 29 s tone; a build without the file plays the default sound; relay issue #563); `inbox_wake` alerts use `aps.sound: "msg.caf"` (bundled short tone, same fallback) instead of `default`, `aps.alert: { title-loc-key: CALL_INCOMING_TITLE, loc-key: CALL_INCOMING_BODY }` — worded on the device from `packaging/ios/*.lproj`, nothing about the call in the push) with `type: call_wake` (plus `wake_hint` and `sent_at`, below), because iOS throttles silent pushes and does not wake an app the user swiped away. The collapse id is the app's own incoming-call banner id, so the two replace each other. |
 
-A relay may add `sent_at` beside `type` in the `ios` call alert: its own time when it sent the push, Unix **milliseconds**, a JSON number. Unsigned and optional (an older relay omits it). The app does not read it.
+A relay may add `sent_at` beside `type` in the `ios` call alert: its own time when it sent the push, Unix **milliseconds**, a JSON number. Unsigned and optional (an older relay omits it). The relay keeps it on its call pushes; the app does not read it.
 
 A send record may also carry `"wake_hint": "<id>"` (<= 64 chars of `[A-Za-z0-9-]`; unsigned like `urgent`): a call invite sends its `call_id`, an ordinary message its envelope `message_id`. A relay that knows it copies it into the APNs payload (the alert) as a top-level custom key `wake_hint`, beside `type`; one that does not ignores it. The app matches a tapped alert to its ring, message or missed-call record by it after the PIN unlock and sync; a push without it opens the first ring as before.
 

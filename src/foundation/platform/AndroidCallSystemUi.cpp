@@ -180,20 +180,14 @@ public:
     return pending_.compare_exchange_strong(expected, *asked ? 1 : 0) ? *asked : expected != 0;
   }
   void NotifyMessagingReady() override { Activity().CallVoid("callMessagingReady"); }
-  void EndPendingPushCall(const EndReason reason) override {
-    (void)reason; // the notification just goes
-    Activity().CallVoid("endPendingPushCall");
-  }
+  void EndPendingPushCall() override { Activity().CallVoid("endPendingPushCall"); }
   void SetPendingChangedHandler(std::function<void()> fn) override { pending_changed_ = std::move(fn); }
 
   void ReportIncoming(const std::string& call_id, const std::string& caller_name, const bool video) override {
     Activity().CallVoid("showIncomingCall", call_id, caller_name, video);
   }
 
-  void ReportEnded(const std::string& call_id, const EndReason reason) override {
-    (void)reason;
-    Activity().CallVoid("endIncomingCall", call_id);
-  }
+  void ReportEnded(const std::string& call_id) override { Activity().CallVoid("endIncomingCall", call_id); }
 
   /** Java, any thread. */
   void Queue(CallEvent event) {

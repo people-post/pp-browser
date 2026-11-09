@@ -170,7 +170,6 @@ public:
   std::string& LastErrorMutable() { return last_error_; }
   void ClearLastError() { last_error_.clear(); }
   int64_t AloneUntilMs(const std::string& call_id) const { return workflow_.AloneUntilMs(call_id); }
-  const RecentCallsOver& CallsOver() const { return workflow_.CallsOver(); }
   bool IsAwaitingSfuRecovery() const;
   /** Why the hop path is being recovered (the screen's status line). */
   CallRecovery Recovery() const;

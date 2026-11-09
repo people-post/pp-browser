@@ -20,7 +20,6 @@ CallSystemUiBridge::CallSystemUiBridge(ICallSystemUi& ui, Actions actions) : ui_
   ICallSystemUi::Callbacks callbacks;
   callbacks.answer = [this](const std::string& call_id) { OnAnswer(call_id); };
   callbacks.end = [this](const std::string& call_id) { OnEnd(call_id); };
-  callbacks.set_muted = [this](const std::string& call_id, const bool muted) { OnSetMuted(call_id, muted); };
   callbacks.pending_gone = [this]() { OnPendingGone(); };
   ui_.SetCallbacks(std::move(callbacks));
 }
@@ -41,11 +40,7 @@ bool CallSystemUiBridge::ChoiceLive(const int64_t at_ms) const {
   return now - at_ms <= kPendingMaxMs && now - std::max(at_ms, ready_at_ms_) <= kPendingChoiceMs;
 }
 
-bool CallSystemUiBridge::ChoiceFits(const std::string& call_id) const {
-  return choice_call_id_.empty() || choice_call_id_ == call_id;
-}
-
-void CallSystemUiBridge::RecordChoice(const bool answer, const std::string& call_id) {
+void CallSystemUiBridge::RecordChoice(const bool answer) {
   if (answer) {
     Note("answer_pending");
   } else {
@@ -53,13 +48,11 @@ void CallSystemUiBridge::RecordChoice(const bool answer, const std::string& call
   }
   answer_pending_at_ms_ = answer ? Now() : 0;
   decline_pending_at_ms_ = answer ? 0 : Now();
-  choice_call_id_ = call_id;
 }
 
 void CallSystemUiBridge::ClearChoice() {
   answer_pending_at_ms_ = 0;
   decline_pending_at_ms_ = 0;
-  choice_call_id_.clear();
 }
 
 void CallSystemUiBridge::ApplyDecline() {
@@ -94,11 +87,11 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
         Note("answer_settling");
         return;
       }
-      ui_.ReportEnded(shown_, ICallSystemUi::EndReason::Ended);
+      ui_.ReportEnded(shown_);
       shown_.clear();
     } else if (!ringing && !shown_answered_) {
       // Answered in the app: its own call screen shows the call.
-      ui_.ReportEnded(shown_, ICallSystemUi::EndReason::AnsweredElsewhere);
+      ui_.ReportEnded(shown_);
       shown_.clear();
     }
   }
@@ -107,19 +100,10 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
   if (shown_.empty() && ui_.HasPendingPushCall() &&
       (screen.kind == CallScreen::Kind::Answering || screen.kind == CallScreen::Kind::InCall)) {
     Note("pending_orphan");
-    ui_.EndPendingPushCall(ICallSystemUi::EndReason::AnsweredElsewhere);
+    ui_.EndPendingPushCall();
   }
 
   const bool ring = screen.kind == CallScreen::Kind::Ringing && !screen.ring_call_id.empty();
-  // The push named this call and the user declined it there: it goes wherever it would ring (the app may be open
-  // by now, the push's call gone with the decline).
-  if (ring && !choice_call_id_.empty() && choice_call_id_ == screen.ring_call_id &&
-      ChoiceLive(decline_pending_at_ms_)) {
-    ClearChoice();
-    ApplyDecline();
-    return;
-  }
-
   if (ring && screen.conflict) {
     LeaveRingToApp(screen.ring_call_id);
     return;
@@ -127,15 +111,10 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
 
   // A ring for the system screen.
   if (ring && TakesRing(app_foreground, screen.conflict)) {
-    const bool fits = ChoiceFits(screen.ring_call_id);
-    const bool declined = fits && ChoiceLive(decline_pending_at_ms_);
-    const bool answered = fits && ChoiceLive(answer_pending_at_ms_);
+    const bool declined = ChoiceLive(decline_pending_at_ms_);
+    const bool answered = ChoiceLive(answer_pending_at_ms_);
     Note("ring_found");
-    if (fits) {
-      ClearChoice();
-    } else if (ChoiceLive(answer_pending_at_ms_) || ChoiceLive(decline_pending_at_ms_)) {
-      Note("choice_other_call"); // made on the call the push named: kept for its ring
-    }
+    ClearChoice();
     if (declined) {
       // The user declined the push's call: the ring it announced goes too.
       ApplyDecline();
@@ -163,9 +142,8 @@ void CallSystemUiBridge::RecheckOnNewRing(const CallScreen& screen) {
 }
 
 void CallSystemUiBridge::LeaveRingToApp(const std::string& ring_call_id) {
-  const bool fits = ChoiceFits(ring_call_id);
-  const bool declined = fits && ChoiceLive(decline_pending_at_ms_);
-  if (fits && ChoiceLive(answer_pending_at_ms_)) {
+  const bool declined = ChoiceLive(decline_pending_at_ms_);
+  if (ChoiceLive(answer_pending_at_ms_)) {
     // Answered on the push's call before the ring showed: the user did not know it ends the call they are in.
     Note("answer_over_call");
     ClearChoice();
@@ -174,7 +152,7 @@ void CallSystemUiBridge::LeaveRingToApp(const std::string& ring_call_id) {
   }
   if (ui_.HasPendingPushCall()) {
     Note("pending_over_call");
-    ui_.EndPendingPushCall(ICallSystemUi::EndReason::AnsweredElsewhere); // the app's own ring takes it
+    ui_.EndPendingPushCall(); // the app's own ring takes it
   }
   if (declined) {
     ApplyDecline(); // declining it ends nothing
@@ -208,23 +186,15 @@ void CallSystemUiBridge::OnMessagingReady() {
   ui_.NotifyMessagingReady();
 }
 
-void CallSystemUiBridge::OnCallOver(const std::string& call_id) {
-  if (call_id.empty() || !ui_.Available() || !ui_.HasPendingPushCall() || ui_.PendingPushCallId() != call_id) {
-    return; // a push that named no call waits for the first ring: an over call says nothing about it
-  }
-  Note("pending_call_over");
-  ui_.EndPendingPushCall(ICallSystemUi::EndReason::Ended); // pending_gone drops a choice made on it
-}
-
 void CallSystemUiBridge::OnPendingGone() {
   Note("pending_gone");
   ClearChoice();
 }
 
 void CallSystemUiBridge::OnAnswer(const std::string& call_id) {
-  if (call_id.empty() || (call_id != shown_ && call_id != active_call_id_)) {
-    // The push's call (named by its hint, or not): answered once its ring shows.
-    RecordChoice(/*answer=*/true, call_id);
+  if (call_id.empty()) {
+    // The push's call: answered once its ring shows.
+    RecordChoice(/*answer=*/true);
     return;
   }
   if (call_id != shown_ || !Ringing(call_id)) {
@@ -235,8 +205,8 @@ void CallSystemUiBridge::OnAnswer(const std::string& call_id) {
 }
 
 void CallSystemUiBridge::OnEnd(const std::string& call_id) {
-  if (call_id.empty() || (call_id != shown_ && call_id != active_call_id_)) {
-    RecordChoice(/*answer=*/false, call_id); // the push's call: its ring is declined once it shows
+  if (call_id.empty()) {
+    RecordChoice(/*answer=*/false); // the push's call: its ring is declined once it shows
     return;
   }
   if (call_id != shown_) {
@@ -251,15 +221,6 @@ void CallSystemUiBridge::OnEnd(const std::string& call_id) {
     if (actions_.leave) {
       actions_.leave();
     }
-  }
-}
-
-void CallSystemUiBridge::OnSetMuted(const std::string& call_id, const bool muted) {
-  if (call_id.empty() || call_id != active_call_id_ || screen_.kind != CallScreen::Kind::InCall) {
-    return;
-  }
-  if (screen_.muted != muted && actions_.toggle_mute) {
-    actions_.toggle_mute();
   }
 }
 

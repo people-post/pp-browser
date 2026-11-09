@@ -71,7 +71,6 @@ CallController::CallController()
                                const bool voice_only) { (void)presenter_.Accept(voice_only, call_id); },
               .decline = [this]() { (void)presenter_.Decline(); },
               .leave = [this]() { (void)presenter_.Leave(); },
-              .toggle_mute = [this]() { ToggleMute(); },
               .display_name = [this](const std::string& identity) { return DisplayNameForIdentity(identity); },
               .now_ms = {},
           }),
@@ -106,7 +105,6 @@ CallController::CallController()
     metrics_.NoteAccept(call_id, voice_only, util::NowUnixMs());
   };
   callbacks.on_decline = [this](const std::string& call_id) { metrics_.NoteDecline(call_id); };
-  callbacks.on_call_over = [this](const std::string& call_id) { system_call_screen_.OnCallOver(call_id); };
   callbacks.confirm_end_current_call = [](std::function<void(bool)> answer) {
     // "End and call" in the danger colour: it ends the live call (Kenneth 2026-11-09).
     UserFeedback::ConfirmDestructive(Tr("call.replace.title"), Tr("call.replace.body"), std::move(answer),

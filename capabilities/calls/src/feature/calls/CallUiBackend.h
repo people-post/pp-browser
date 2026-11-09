@@ -69,8 +69,6 @@ public:
     bool declined = false;
   };
   std::optional<RemoteEnd> TakeRemoteEnd();
-  /** P017: the calls the stack learned are over since the last take (ended, or an invite too late to ring), in order. */
-  std::vector<std::string> TakeCallsOver();
 
   /** What the call surface shows. */
   struct Surface {
@@ -179,9 +177,6 @@ private:
   /** Last media error handed to the GUI (shown once until the owner clears it). */
   std::optional<std::string> taken_media_error_;
   std::string taken_remote_ended_;
-  /** The calls-over count taken so far, and the session manager it counted for (a rebuilt one counts from 0). */
-  uint64_t taken_calls_over_ = 0;
-  const void* calls_over_sessions_ = nullptr;
 };
 
 } // namespace pbr

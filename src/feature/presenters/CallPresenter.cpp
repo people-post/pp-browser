@@ -161,11 +161,6 @@ void CallPresenter::Refresh() {
     return;
   }
   const bool remote_ended = TakeStackNotices(*backend);
-  for (const std::string& call_id : backend->TakeCallsOver()) {
-    if (callbacks_.on_call_over) {
-      callbacks_.on_call_over(call_id);
-    }
-  }
 
   // Attach-wait / connect health are SM-owned timers (V039 pm3); the state steps a refresh owes
   // the owner (invite seen / cleared, orphan leave) happen in Settle.
