@@ -52,6 +52,9 @@ public:
   Roe<void> RememberGrace(int minutes);
   /** Moves the window's end to now + minutes; nothing without an entry. */
   Roe<void> TouchGrace(int minutes);
+  /** A new window length from Settings: off forgets; on writes (or refreshes) the entry from the unlocked vault, so
+   *  the choice holds without another PIN entry. A locked vault leaves it to the next PIN unlock. */
+  Roe<void> ApplyGraceWindow(int minutes);
   void ForgetGrace();
   // --- Face / fingerprint unlock (at-rest A014). Without AttachBiometric every call here is a no-op / Missing. ---
   void AttachBiometric(std::unique_ptr<BiometricUnlock> biometric);

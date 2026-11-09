@@ -903,6 +903,7 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
     local.generation = "local";
     if (store_.AppendMessage(local)) {
       inbox_.OnInboundMessagePersisted(*outcome.receive_failure_thread_id);
+      notice.thread_id = *outcome.receive_failure_thread_id;  // the line is stored: the presenter adds no toast
     }
   }
 

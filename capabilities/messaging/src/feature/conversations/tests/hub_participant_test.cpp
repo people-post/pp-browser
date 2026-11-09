@@ -142,6 +142,18 @@ TEST(HubParticipantTest, LinkLeavesOfflineForConnectingAtOnceWhenTheNetworkRetur
   EXPECT_EQ(f.seen.size(), 3u);
 }
 
+TEST(HubParticipantTest, AnOutageForgetsTheOldRelayResult) {
+  LinkFixture f;
+  f.Network(true);
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.Network(false);
+  f.Network(true); // the Ok from before the outage is stale
+  EXPECT_EQ(f.seen, (std::vector<LinkFixture::Link>{LinkFixture::Link::Online, LinkFixture::Link::Offline,
+                                                    LinkFixture::Link::Connecting}));
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  EXPECT_EQ(f.seen.back(), LinkFixture::Link::Online);
+}
+
 TEST(HubParticipantTest, TheWayDownRunsInReverseAndClearedParticipantsHearNothing) {
   std::vector<std::string> log;
   RecordingParticipant calls("calls", log);

@@ -485,6 +485,9 @@ bool CallPresenter::GuardNewCall(const std::string& thread_id, const std::functi
                                  const StartDone& done) {
   const NewCallVerdict verdict = DecideNewCall(screen_, thread_id);
   if (verdict == NewCallVerdict::Place) {
+    if (CallScreenIsFailedPage(screen_)) {
+      (void)Leave();  // clear the failed page (shown or minimized) and its dead call before the new one
+    }
     return false;
   }
   const auto finish = [done](const CallStartResult::Kind kind) {

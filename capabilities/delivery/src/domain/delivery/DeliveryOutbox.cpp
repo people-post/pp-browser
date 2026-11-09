@@ -58,7 +58,6 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
     auto finish_relay = [this, request](std::optional<DirectSendFailure> direct) {
       DeliveryOutcome outcome{.thread_id = request.thread_id, .message_id = request.message_id,
                               .group_member = request.group_member, .copy_device = request.copy_device};
-      outcome.relay_after_direct = direct.has_value();
       if (!request.relay_route) {
         outcome.failure = direct ? SendFailureFromDirect(direct->GetCode()) : SendFailure::NoAddress;
         outcome.detail = direct ? direct->message : "Direct thread missing peer relay id";
@@ -267,12 +266,12 @@ void DeliveryOutbox::Retry() {
         (*process)(index + 1);
         return;
       }
-      auto try_relay = [this, still_pending, process, index](Pending item, bool tried_direct) mutable {
+      auto try_relay = [this, still_pending, process, index](Pending item) mutable {
         IRelayClient* relay = relay_;
         auto result = relay ? relay->Send(item.envelope) : Roe<void>(Error("Relay client not configured"));
         if (result) {
           Report(DeliveryOutcome{.thread_id = item.thread_id, .message_id = item.message_id, .ok = true,
-                                 .transport = MessageTransport::Relay, .relay_after_direct = tried_direct,
+                                 .transport = MessageTransport::Relay,
                                  .group_member = item.group_member, .copy_device = item.copy_device});
         } else if (OutboxRetryAgain(item.attempt_count, result.error())) {
           item.attempt_count += 1;
@@ -301,12 +300,12 @@ void DeliveryOutbox::Retry() {
                   (*process)(index + 1);
                   return;
                 }
-                try_relay(std::move(item), true);
+                try_relay(std::move(item));
               });
             });
         return;
       }
-      try_relay(std::move(item), false);
+      try_relay(std::move(item));
     };
     (*process)(0);
   });

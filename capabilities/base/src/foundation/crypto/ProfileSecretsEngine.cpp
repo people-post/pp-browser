@@ -1,5 +1,6 @@
 #include "foundation/crypto/ProfileSecretsEngine.h"
 
+#include "foundation/crypto/CryptoConstants.h"
 #include "foundation/error/AppError.h"
 
 #include <algorithm>
@@ -222,6 +223,17 @@ Roe<void> ProfileSecretsEngine::TouchGrace(const int minutes) {
     return {};
   }
   return grace_->Touch(minutes, grace_clock_());
+}
+
+Roe<void> ProfileSecretsEngine::ApplyGraceWindow(const int minutes) {
+  if (!GraceIsOn(minutes)) {
+    ForgetGrace();
+    return {};
+  }
+  if (!IsUnlocked()) {
+    return {};
+  }
+  return RememberGrace(minutes);
 }
 
 void ProfileSecretsEngine::ForgetGrace() {

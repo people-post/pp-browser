@@ -17,6 +17,9 @@ enum class NewCallVerdict {
   AskThenReplace,
 };
 
+/** The screen is a call that already failed ("Couldn't reach them" / "Call dropped"): nothing live to protect. */
+bool CallScreenIsFailedPage(const CallScreen& screen);
+
 /** Pure: `screen` is what the call screen shows now, `thread_id` the chat whose call button was pressed. */
 NewCallVerdict DecideNewCall(const CallScreen& screen, const std::string& thread_id);
 

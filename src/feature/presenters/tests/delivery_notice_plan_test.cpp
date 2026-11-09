@@ -77,6 +77,10 @@ TEST(DeliveryNoticePlanTest, AnUnreadableInboundMessageIsNeitherAToastNorASecond
   const DeliveryNoticePlan plan = PlanDeliveryNotice(notice, 1);
   EXPECT_EQ(plan.action, DeliveryNoticePlan::Action::Nothing) << "its line was stored with the notice";
   EXPECT_FALSE(plan.row);
+
+  notice.thread_id.clear();
+  EXPECT_EQ(PlanDeliveryNotice(notice, 1).action, DeliveryNoticePlan::Action::Toast)
+      << "no stored line, so the toast is the only word";
 }
 
 } // namespace
