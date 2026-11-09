@@ -12,6 +12,21 @@
             </span>
           </div>
         </div>
+        <!-- Animated home logo (Kenneth 2026-11-09; moved here 2026-11-09): phones only. On (default) the AI Home's logo is
+             the mascot in the look picked below, and a tap (or a while alone) makes it move; off keeps the static app icon. -->
+        <div class="group-card settings-phone-only">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.home_logo.label}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="home_animated_logo == 'on'"
+                      data-event-click="toggle_home_animated_logo()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.home_logo.help}}</p>
         <p class="text group-head settings-phone-only">{{i18n:settings.ai_dot.look}}</p>
         <div class="group-card ai-look-picker settings-phone-only">
           <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'auto'"
@@ -38,6 +53,21 @@
                   data-event-click="set_ai_dot_look('d')">
             <span class="ai-look-art"><svg src="../icons/mascot/d.svg"></svg></span>
             <span class="ai-look-name">{{i18n:settings.ai_dot.look_d}}</span>
+          </button>
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'e'"
+                  data-event-click="set_ai_dot_look('e')">
+            <span class="ai-look-art"><svg src="../icons/mascot/e.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_e}}</span>
+          </button>
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'f'"
+                  data-event-click="set_ai_dot_look('f')">
+            <span class="ai-look-art"><svg src="../icons/mascot/f.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_f}}</span>
+          </button>
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'g'"
+                  data-event-click="set_ai_dot_look('g')">
+            <span class="ai-look-art"><svg src="../icons/mascot/g.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_g}}</span>
           </button>
         </div>
         <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.ai_dot.look_auto_help}}</p>

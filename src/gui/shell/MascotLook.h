@@ -51,36 +51,36 @@ inline int WeekdayOf(const int year, const int month, const int day) {
 }
 
 /**
- * The artwork a look is drawn with: the four fixed looks have their own parts; the weekend looks borrow one until their
- * parts (`e-eyes-front.svg` ... and the accessories) are in assets/icons/mascot and MascotFigure.cpp lists them. This is
- * the one place to change then: point `e` at itself once its layers exist.
+ * The artwork a look is drawn with: every look has its own parts (`a`-`d` the four fixed looks, `e`-`g` the weekend
+ * looks with their accessories, see MascotFigure.cpp); anything else falls back to `b`. The one place to change if a
+ * look ever borrows another's artwork again.
  */
 inline char PartsFor(const char look) {
-  switch (look) {
-  case 'a':
-  case 'b':
-  case 'c':
-  case 'd':
-    return look;
-  case 'e':
-    return 'b';
-  case 'f':
-    return 'a';
-  case 'g':
-    return 'c';
-  default:
-    return 'b';
-  }
+  return look >= 'a' && look <= 'g' ? look : 'b';
 }
 
 inline AiDotLook DotLookOf(const char parts) {
-  return parts == 'a' ? AiDotLook::OneEye : parts == 'c' ? AiDotLook::Cool : parts == 'd' ? AiDotLook::Plain
-                                                                                         : AiDotLook::TwoEyes;
+  switch (parts) {
+  case 'a':
+    return AiDotLook::OneEye;
+  case 'c':
+    return AiDotLook::Cool;
+  case 'd':
+    return AiDotLook::Plain;
+  case 'e':
+    return AiDotLook::Evening;
+  case 'f':
+    return AiDotLook::Outing;
+  case 'g':
+    return AiDotLook::Lazy;
+  default:
+    return AiDotLook::TwoEyes;
+  }
 }
 
-/** Me -> AI assistant -> Look: `auto` (the default) is the day's look, `a`-`d` a fixed one (anything else is auto). */
+/** Me -> AI assistant -> Look: `auto` (the default) is the day's look, `a`-`g` a fixed one (anything else is auto). */
 inline bool IsLookPref(const std::string_view pref) {
-  return pref == "auto" || pref == "a" || pref == "b" || pref == "c" || pref == "d";
+  return pref == "auto" || (pref.size() == 1 && pref[0] >= 'a' && pref[0] <= 'g');
 }
 
 /** The look to draw for the pref on a date (the dot and the home mascot both use this). */

@@ -2889,6 +2889,13 @@ void ShellHost::Update(ui::Context* context) {
     }
   }
   ai_dot_.Update(context, AiDotSceneNow());
+  {
+    // The Home's mascot moves by itself only while the Home is on screen with nothing over it (the dot's own scene,
+    // minus its settings), and the app in front: a suspended app is caught by the model's missed-action rule.
+    AiDotScene scene = AiDotSceneNow();
+    scene.enabled = true;
+    home_mascot_.SetActive(state_.nav_tab == NavTab::Home && AiDotModel::Shown(scene));
+  }
   home_mascot_.Update(context);
   call_chrome_gesture_.Reflow(state_.call_in_progress);
   favorites_snap_.Update(ShellFavoritesSnap::NowSeconds());

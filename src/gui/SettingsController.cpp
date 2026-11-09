@@ -21,6 +21,7 @@
 #include "feature/settings/StorageSettingsSection.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "gui/shell/DataModelHost.h"
+#include "gui/shell/MascotLook.h"
 #include "gui/ProfileSettingsSection.h"
 #include "gui/shell/RmlMount.h"
 #include "gui/UnlockEnsurePorts.h"
@@ -2079,12 +2080,23 @@ void SettingsController::ToggleCallDiagnostics() {
 }
 
 void SettingsController::ToggleHomeAnimatedLogo() {
-  // Phones only: on draws the AI Home's logo as the animated mascot (the look of Me → AI assistant), off keeps the
-  // static app icon. Saved through the appearance section like the Home switch above.
-  bindings_.home_animated_logo = bindings_.home_animated_logo == "on" ? "off" : "on";
+  // Phones only (Me → AI assistant): on draws the AI Home's logo as the animated mascot (the look picked below it), off
+  // keeps the static app icon. Saved at once, like the AI dot's switches: ConfigApplyBridge hands the pref to the shell,
+  // which swaps the logo on the next frame.
+  if (!commands_.session_store) {
+    return;
+  }
+  const bool animated = bindings_.home_animated_logo != "on";
+  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
+  prefs.home_animated_logo = animated;
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
+    ReportFailure(saved.error());
+    return;
+  }
+  bindings_.home_animated_logo = animated ? "on" : "off";
   PullBindingsToUiState();
-  MarkSectionDirty("appearance", /*show_toast=*/false);
-  DirtyAll();
+  DataModelHost::Instance().Dirty("settings", "home_animated_logo");
 }
 
 void SettingsController::ToggleHomeShowDynamic() {
@@ -2102,7 +2114,7 @@ void SettingsController::ToggleAiDot() {
 }
 
 void SettingsController::SetAiDotLook(const std::string& look) {
-  if (look != "auto" && look != "a" && look != "b" && look != "c" && look != "d") {
+  if (!IsLookPref(look)) {
     return;
   }
   SaveAiDot(ai_dot_shown_, look, ai_dot_size_.c_str());

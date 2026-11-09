@@ -6,7 +6,7 @@
 
 namespace pbr {
 
-/** One SVG layer of the mascot's figure and the looks (letters `a`–`d`; the weekend looks add theirs) it is drawn in. */
+/** One SVG layer of the mascot's figure and the looks (letters `a`–`g`) it is drawn in. */
 struct MascotLayer {
   int part;           ///< 0 back bubble, 1 front bubble, 2 over both.
   const char* classes;///< After `ai-dot-layer`.

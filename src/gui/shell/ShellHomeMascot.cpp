@@ -40,6 +40,9 @@ std::string ShellHomeMascot::MascotRml(const char look) {
   if (parts == 'd') {
     classes += " ai-dot--plain";
   }
+  if (parts == 'e' || parts == 'f' || parts == 'g') {
+    classes += std::string(" ai-dot--look-") + parts; // the weekend looks' own motions (components.rcss)
+  }
   return "<div id=\"home-mascot\" class=\"" + classes + "\">" + MascotFigureRml(parts) + "</div>";
 }
 
@@ -141,7 +144,13 @@ void ShellHomeMascot::Update(ui::Context* context) {
   if (!logo_) {
     return;
   }
-  model_.Advance(SteadyMs());
+  Sync(false); // mounts the mascot (or the static icon) first
+  const int64_t now = SteadyMs();
+  seed_ = seed_ * 1664525u + 1013904223u;
+  const uint32_t roll = seed_ >> 8;
+  const bool movable = active_ && mounted_look_ != 0 && logo_->IsVisible();
+  model_.SetActive(now, movable, roll);
+  model_.Advance(now, DotLookOf(PartsFor(mounted_look_ != 0 ? mounted_look_ : 'b')), roll);
   Sync(false);
 }
 

@@ -2920,6 +2920,347 @@ select selectbox option {
   display: none;
 }
 
+/* The weekend looks (DEV/ui-mockups/mascot-weekend.html; classes `ai-dot--look-e/f/g` from the shell dot's binding and
+   ShellHomeMascot). They are the face looks (not calm) with their own motions where the mockup has them, and the same
+   lengths as AiDotModel, except G (Sunday), whose slower actions are AiDotModel::kTalkSlowMs, kWaveSlowMs, kFiveSlowMs,
+   kHappySlowMs, kPokeSlowMs and kFloatSlowMs. The mockup's endless loops (E's sway, G's breathing, the pompom, the steam)
+   are one timed action here: E's sway is its Float, G's breathing its Float and Sleep, the pompom swings and the steam
+   rises during G's Float and Sleep. Accessories are layers: E's glasses are in the eye groups (they follow the eyes'
+   keyframes, not the blink), F's cap and G's nightcap and pompom ride the front bubble, G's mug is part of the figure.
+   Mockup units: in a part or layer 1 unit is 0.0973%, in the figure 0.1111%. */
+.ai-dot-steam {
+  display: none;
+}
+
+.ai-dot-pom {
+  transform-origin: 18.3% 41%;
+}
+
+.ai-dot-steam-1 {
+  transform-origin: 68.7% 73.5%;
+}
+
+.ai-dot-steam-2 {
+  transform-origin: 71.8% 73.5%;
+}
+
+.ai-dot--blink .ai-dot-glasses {
+  animation: none;
+}
+
+/* E (Friday): a lazy sway, a gentle wave, a nod instead of the jump. */
+@keyframes ai-dot-lazy-e {
+  0% { transform: translate(0%, 0%) rotate(0deg); }
+  30% { transform: translate(-0.56%, 0%) rotate(-4deg); }
+  70% { transform: translate(0.67%, -0.33%) rotate(2deg); }
+  100% { transform: translate(0%, 0%) rotate(0deg); }
+}
+
+@keyframes ai-dot-wave-e {
+  0% { transform: rotate(0deg); }
+  22% { transform: rotate(-5deg); }
+  48% { transform: rotate(4deg); }
+  74% { transform: rotate(-4deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-hop-e {
+  0% { transform: translateY(0%); }
+  25% { transform: translateY(-1.36%); }
+  50% { transform: translateY(0%); }
+  100% { transform: translateY(0%); }
+}
+
+@keyframes ai-dot-nod-e {
+  0% { transform: translateY(0%) rotate(0deg); }
+  35% { transform: translateY(1.17%) rotate(5deg); }
+  65% { transform: translateY(0.19%) rotate(-1deg); }
+  100% { transform: translateY(0%) rotate(0deg); }
+}
+
+.ai-dot--look-e.ai-dot--float .ai-dot-figure {
+  animation: 3.25s sine-in-out ai-dot-lazy-e;
+}
+
+.ai-dot--look-e.ai-dot--wave .ai-dot-front {
+  animation: 2.08s sine-in-out ai-dot-wave-e;
+}
+
+.ai-dot--look-e.ai-dot--wave .ai-dot-back {
+  animation: 2.08s sine-in-out ai-dot-hop-e;
+}
+
+.ai-dot--look-e.ai-dot--happy .ai-dot-front {
+  animation: 2.08s sine-in-out ai-dot-nod-e;
+}
+
+.ai-dot--look-e.ai-dot--happy .ai-dot-back {
+  animation: 2.08s 0.26s sine-in-out ai-dot-nod-e;
+}
+
+/* F (Saturday): the liveliest: a big wave and higher hops, a bigger high five, a jump of 190 units, a flatter poke. */
+@keyframes ai-dot-wave-f {
+  0% { transform: rotate(0deg); }
+  15% { transform: rotate(-15deg); }
+  35% { transform: rotate(12deg); }
+  55% { transform: rotate(-15deg); }
+  75% { transform: rotate(9deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-hop-f {
+  0% { transform: translateY(0%); }
+  20% { transform: translateY(-6.03%); }
+  40% { transform: translateY(0%); }
+  60% { transform: translateY(0%); }
+  70% { transform: translateY(-3.7%); }
+  80% { transform: translateY(0%); }
+  100% { transform: translateY(0%); }
+}
+
+@keyframes ai-dot-five-front-f {
+  0% { transform: translate(0%, 0%) rotate(0deg); }
+  30% { transform: translate(-3.5%, 3.31%) rotate(-10deg); }
+  48% { transform: translate(1.36%, -1.75%) rotate(4deg); }
+  62% { transform: translate(0%, 0%) rotate(0deg); }
+  100% { transform: translate(0%, 0%) rotate(0deg); }
+}
+
+@keyframes ai-dot-five-back-f {
+  0% { transform: translate(0%, 0%) rotate(0deg); }
+  30% { transform: translate(6.03%, -6.03%) rotate(12deg); }
+  48% { transform: translate(-1.75%, 1.75%) rotate(-5deg); }
+  62% { transform: translate(0%, 0%) rotate(0deg); }
+  100% { transform: translate(0%, 0%) rotate(0deg); }
+}
+
+@keyframes ai-dot-jump-f {
+  0% { transform: translateY(0%) scale(1, 1); }
+  14% { transform: translateY(0%) scale(1.14, 0.8); }
+  38% { transform: translateY(-18.49%) scale(0.92, 1.1); }
+  60% { transform: translateY(0%) scale(1.16, 0.8); }
+  74% { transform: translateY(0%) scale(0.97, 1.05); }
+  86% { transform: translateY(0%) scale(1, 1); }
+  100% { transform: translateY(0%) scale(1, 1); }
+}
+
+@keyframes ai-dot-poke-f {
+  0% { transform: scale(1, 1) rotate(0deg); }
+  18% { transform: scale(1.24, 0.68) rotate(0deg); }
+  38% { transform: scale(0.88, 1.16) rotate(-6deg); }
+  58% { transform: scale(1, 1) rotate(6deg); }
+  80% { transform: scale(1, 1) rotate(-3deg); }
+  100% { transform: scale(1, 1) rotate(0deg); }
+}
+
+@keyframes ai-dot-wide-eyes-f {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.4); }
+  75% { transform: scale(1.4); }
+  100% { transform: scale(1); }
+}
+
+.ai-dot--look-f.ai-dot--wave .ai-dot-front {
+  animation: 2.08s sine-in-out ai-dot-wave-f;
+}
+
+.ai-dot--look-f.ai-dot--wave .ai-dot-back {
+  animation: 2.08s sine-in-out ai-dot-hop-f;
+}
+
+.ai-dot--look-f.ai-dot--five .ai-dot-front {
+  animation: 1.95s cubic-in-out ai-dot-five-front-f;
+}
+
+.ai-dot--look-f.ai-dot--five .ai-dot-back {
+  animation: 1.95s cubic-in-out ai-dot-five-back-f;
+}
+
+.ai-dot--look-f.ai-dot--happy .ai-dot-front {
+  animation: 1.56s quadratic-in-out ai-dot-jump-f;
+}
+
+.ai-dot--look-f.ai-dot--happy .ai-dot-back {
+  animation: 1.56s 0.18s quadratic-in-out ai-dot-jump-f;
+}
+
+.ai-dot--look-f.ai-dot--poke .ai-dot-front {
+  animation: 0.78s cubic-out ai-dot-poke-f;
+}
+
+.ai-dot--look-f.ai-dot--poke .ai-dot-eyes-front,
+.ai-dot--look-f.ai-dot--poke .ai-dot-eyes-back {
+  animation: 0.78s cubic-out ai-dot-wide-eyes-f;
+}
+
+/* G (Sunday): slow. One slow breath is its Float and its Sleep; the talk is a yawn with shut eyes; waving and giving five
+   keep the eyes (half) open; the pompom swings and the mug steams during the breath. */
+@keyframes ai-dot-breathe-g {
+  0% { transform: scale(1, 1); }
+  50% { transform: scale(1.035, 0.965); }
+  100% { transform: scale(1, 1); }
+}
+
+@keyframes ai-dot-wave-g {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(-4deg); }
+  55% { transform: rotate(3deg); }
+  80% { transform: rotate(-2deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-hop-g {
+  0% { transform: translateY(0%); }
+  25% { transform: translateY(-0.97%); }
+  50% { transform: translateY(0%); }
+  100% { transform: translateY(0%); }
+}
+
+@keyframes ai-dot-yawn-g {
+  0% { opacity: 0; transform: scale(0.5, 0.2); }
+  10% { opacity: 1; transform: scale(0.6, 0.5); }
+  35% { opacity: 1; transform: scale(1.5, 2.7); }
+  62% { opacity: 1; transform: scale(1.5, 2.7); }
+  90% { opacity: 1; transform: scale(0.5, 0.2); }
+  100% { opacity: 0; transform: scale(0.5, 0.2); }
+}
+
+@keyframes ai-dot-rise-g {
+  0% { transform: translateY(0%) scale(1, 1); }
+  45% { transform: translateY(-3.5%) scale(0.98, 1.03); }
+  100% { transform: translateY(0%) scale(1, 1); }
+}
+
+@keyframes ai-dot-pom-g {
+  0% { transform: translate(0%, 0%); }
+  50% { transform: translate(-0.58%, 0.49%); }
+  100% { transform: translate(0%, 0%); }
+}
+
+@keyframes ai-dot-steam-g {
+  0% { opacity: 0; transform: translateY(0.78%); }
+  35% { opacity: 0.9; transform: translateY(-0.5%); }
+  100% { opacity: 0; transform: translateY(-2.14%); }
+}
+
+.ai-dot--look-g.ai-dot--float .ai-dot-figure,
+.ai-dot--look-g.ai-dot--sleep .ai-dot-figure {
+  animation: 5.2s sine-in-out ai-dot-breathe-g;
+}
+
+.ai-dot--look-g.ai-dot--float .ai-dot-pom,
+.ai-dot--look-g.ai-dot--sleep .ai-dot-pom {
+  animation: 1.3s sine-in-out 4 ai-dot-pom-g;
+}
+
+.ai-dot--look-g.ai-dot--float .ai-dot-steam,
+.ai-dot--look-g.ai-dot--sleep .ai-dot-steam {
+  display: block;
+  opacity: 0;
+}
+
+.ai-dot--look-g.ai-dot--float .ai-dot-steam-1,
+.ai-dot--look-g.ai-dot--sleep .ai-dot-steam-1 {
+  animation: 2.6s cubic-out 2 ai-dot-steam-g;
+}
+
+.ai-dot--look-g.ai-dot--float .ai-dot-steam-2,
+.ai-dot--look-g.ai-dot--sleep .ai-dot-steam-2 {
+  animation: 2.6s 1.3s cubic-out ai-dot-steam-g;
+}
+
+.ai-dot--look-g.ai-dot--wave .ai-dot-front {
+  animation: 2.6s sine-in-out ai-dot-wave-g;
+}
+
+.ai-dot--look-g.ai-dot--wave .ai-dot-back {
+  animation: 2.6s sine-in-out ai-dot-hop-g;
+}
+
+.ai-dot--look-g.ai-dot--wave .ai-dot-pom {
+  animation: 1.3s sine-in-out 2 ai-dot-pom-g;
+}
+
+.ai-dot--look-g.ai-dot--five .ai-dot-front {
+  animation: 2.86s cubic-in-out ai-dot-five-front;
+}
+
+.ai-dot--look-g.ai-dot--five .ai-dot-back {
+  animation: 2.86s cubic-in-out ai-dot-five-back;
+}
+
+.ai-dot--look-g.ai-dot--five .ai-dot-star {
+  animation: 2.86s cubic-out ai-dot-star;
+}
+
+.ai-dot--look-g.ai-dot--talk .ai-dot-mouth {
+  animation: 3.12s sine-in-out ai-dot-yawn-g;
+}
+
+.ai-dot--look-g.ai-dot--talk .ai-dot-eyes-front {
+  animation: 3.12s sine-in-out ai-dot-talk-eyes;
+}
+
+.ai-dot--look-g.ai-dot--talk .ai-dot-back {
+  animation: 1.56s sine-in-out 2 ai-dot-nod;
+}
+
+.ai-dot--look-g.ai-dot--talk .ai-dot-pom {
+  animation: 1.04s sine-in-out 3 ai-dot-pom-g;
+}
+
+.ai-dot--look-g.ai-dot--happy .ai-dot-front {
+  animation: 2.86s sine-in-out ai-dot-rise-g;
+}
+
+.ai-dot--look-g.ai-dot--happy .ai-dot-back {
+  animation: 2.86s 0.26s sine-in-out ai-dot-rise-g;
+}
+
+.ai-dot--look-g.ai-dot--happy .ai-dot-blush {
+  animation: 3.12s linear-in-out ai-dot-glow-in;
+}
+
+.ai-dot--look-g.ai-dot--happy .ai-dot-heart-1 {
+  animation: 2.08s cubic-out ai-dot-heart;
+}
+
+.ai-dot--look-g.ai-dot--happy .ai-dot-heart-2 {
+  animation: 2.08s 1.04s cubic-out ai-dot-heart;
+}
+
+.ai-dot--look-g.ai-dot--happy .ai-dot-pom {
+  animation: 1.04s sine-in-out 3 ai-dot-pom-g;
+}
+
+.ai-dot--look-g.ai-dot--poke .ai-dot-front {
+  animation: 1.04s cubic-out ai-dot-poke;
+}
+
+.ai-dot--look-g.ai-dot--poke .ai-dot-eyes-front,
+.ai-dot--look-g.ai-dot--poke .ai-dot-eyes-back {
+  animation: 1.04s cubic-out ai-dot-wide-eyes;
+}
+
+/* G waves and gives five with its (half) open eyes, and yawns with them shut. */
+.ai-dot--look-g.ai-dot--wave .ai-dot-front .ai-dot-open,
+.ai-dot--look-g.ai-dot--five .ai-dot-open {
+  display: block;
+}
+
+.ai-dot--look-g.ai-dot--wave .ai-dot-front .ai-dot-hap,
+.ai-dot--look-g.ai-dot--five .ai-dot-hap {
+  display: none;
+}
+
+.ai-dot--look-g.ai-dot--talk .ai-dot-open {
+  display: none;
+}
+
+.ai-dot--look-g.ai-dot--talk .ai-dot-shut {
+  display: block;
+}
+
 .shell-banner {
   display: flex;
   flex-direction: row;
@@ -11651,11 +11992,12 @@ input.checkbox {
   display: block;
 }
 
-/* Me → AI assistant → Assistant look: the four looks side by side in one card, the chosen one ringed. */
+/* Me → AI assistant → Assistant look: "Daily" and the seven looks, four to a row (two rows), the chosen one ringed. */
 .shell-layer-compact .ai-look-picker.settings-phone-only {
   display: flex;
   flex-direction: row;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  justify-content: flex-start;
   padding: 12dp 4dp;
   box-sizing: border-box;
 }
@@ -11664,9 +12006,10 @@ input.checkbox {
   display: flex;
   flex-direction: column;
   align-items: center;
-  flex: 1;
+  flex: 0 0 25%;
+  width: 25%;
   min-width: 0;
-  margin: 0;
+  margin: 0 0 8dp 0;
   padding: 0;
   border: 0;
   gap: 6dp;

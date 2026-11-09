@@ -70,11 +70,11 @@ public:
     std::string appearance = "system";
     bool reduce_transparency = false;
     bool compact_chrome_frost = true;
-    /** Phone AI dot: shown or not, its look (`a`–`d`) and size (`s` / `m` / `l`). */
+    /** Phone AI dot: shown or not, its look (`a`–`g`) and size (`s` / `m` / `l`). */
     bool ai_dot = true;
     std::string ai_dot_look = "auto";
     std::string ai_dot_size = "m";
-    /** Settings -> Appearance -> Animated home logo. */
+    /** Me -> AI assistant -> Animated home logo. */
     bool home_animated_logo = true;
 
     bool operator==(const ChromePrefs& other) const {
@@ -86,6 +86,14 @@ public:
     }
     bool operator!=(const ChromePrefs& other) const { return !(*this == other); }
   };
+
+  /** Whether going from `previous` to `next` needs ShellHost::Apply (the material, the dot, the home logo). */
+  static bool NeedsApply(const ChromePrefs& next, const ChromePrefs* previous) {
+    return !previous || next.reduce_transparency != previous->reduce_transparency ||
+           next.compact_chrome_frost != previous->compact_chrome_frost || next.ai_dot != previous->ai_dot ||
+           next.ai_dot_look != previous->ai_dot_look || next.ai_dot_size != previous->ai_dot_size ||
+           next.home_animated_logo != previous->home_animated_logo;
+  }
 
   static ChromePrefs ProjectChrome(const ProfilePreferences& prefs);
   /** Apply material fields only (theme/appearance are Theme-owned). */
