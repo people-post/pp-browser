@@ -1206,6 +1206,7 @@ struct MediaEngine::Impl {
       while (capture_running.load()) {
         // While the OS has the session (a phone call, or a route change that interrupted it) every open fails and
         // drops what is held: nothing opens until the interruption's end, whose handler asks for the reopen (B174).
+        // Read once a frame: the starve and silence rules below see the same answer.
         const bool os_has_session = AudioSession::IsInterrupted();
         if (!os_has_session) {
           reopen_deferred_logged = false;
@@ -1312,9 +1313,10 @@ struct MediaEngine::Impl {
               const int64_t reopen_after_ms = CaptureStarvePolicy::ReopenAfterMs(vpio_on, now - capture_opened_ms);
               // Interrupted (a phone call holds the mic): the starve is the OS's, not the device's — no reopen, and
               // none counted toward giving up voice processing; the interruption's end reopens.
-              if (AudioSession::IsInterrupted()) {
+              if (os_has_session) {
                 last_capture_starve_reopen_ms = now;
-              } else if (now - last_capture_pcm_ms >= reopen_after_ms && now - last_capture_starve_reopen_ms > 2000) {
+              } else if (now - last_capture_pcm_ms >= reopen_after_ms &&
+                         now - last_capture_starve_reopen_ms > CaptureStarvePolicy::kReopenMinGapMs) {
                 last_capture_starve_reopen_ms = now;
                 EngineLog().info << "capture starved " << (now - last_capture_pcm_ms) << "ms — requesting reopen";
                 audio_reopen_requested.store(true, std::memory_order_release);
@@ -1345,10 +1347,10 @@ struct MediaEngine::Impl {
             pending.erase(pending.begin(), pending.begin() + kPacketSamples);
             // While the OS has the session (another phone call), the mic may still hear that call: send silence
             // whatever the mute flag says — the UI's mute follows later and may be late (V060).
-            if (muted.load(std::memory_order_relaxed) || AudioSession::IsInterrupted()) {
+            if (muted.load(std::memory_order_relaxed) || os_has_session) {
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
               SmoothLevel(local_input_level, 0.f);
-              if (AudioSession::IsInterrupted()) {
+              if (os_has_session) {
                 if (!interruption_silence_logged) {
                   EngineLog().info << "outgoing audio is silence: the OS has the audio session";
                   interruption_silence_logged = true;
