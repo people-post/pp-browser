@@ -101,7 +101,10 @@ public class MainActivity extends SDLActivity {
     private static volatile boolean sInFront;
     /** Between onStart and onStop: the app is on screen (native OsAppState: only then the PIN grace window extends). */
     private static volatile boolean sShown;
-    /** Main thread: the call this device is in (native OngoingCallService), and whether PpCallService runs for it. */
+    /**
+     * Main thread: the call this device is in (native OngoingCallService), and whether PpCallService was started for
+     * it (the start went through; whether it runs in the foreground is PpCallService.isForeground).
+     */
     private static boolean sOngoingCall;
     private static String sOngoingCallTitle;
     private static boolean sOngoingCallServiceStarted;
@@ -808,8 +811,9 @@ public class MainActivity extends SDLActivity {
         mThumbnailCapturedForPause.set(false);
         super.onResume();
         sInFront = true;
-        if (sOngoingCall && !sOngoingCallServiceStarted) {
-            startOngoingCallServiceIfAllowed();  // the call started while the app was in the background
+        if (sOngoingCall && !PpCallService.isForeground()) {
+            // The call started while the app was in the background, or the service was refused or stopped since.
+            startOngoingCallServiceIfAllowed();
         }
         // The app is open: what the push's "New message" stood for shows in the app.
         NotificationManagerCompat.from(this).cancel(PUSH_MESSAGE_NOTIFICATION_ID);
@@ -1262,8 +1266,10 @@ public class MainActivity extends SDLActivity {
                 || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             return;
         }
-        sOngoingCallServiceStarted = true;
-        PpCallService.start(getApplicationContext(), sOngoingCallTitle);  // a running one takes the new title
+        // A running one takes the new title (and a refused update leaves it running: still owed a stop).
+        if (PpCallService.start(getApplicationContext(), sOngoingCallTitle)) {
+            sOngoingCallServiceStarted = true;
+        }
     }
 
     /** Called from native AndroidLocalNotifier when Me → Show notifications changes (any thread). */
