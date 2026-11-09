@@ -193,57 +193,7 @@ TEST_F(HomeMinimalLayoutTest, CardIsTheNarrow108dpB3WithACircleEmojiAndNoMic) {
 // without a keyboard (the keyboard just covers the lower part). Only when it would cover the card is the block moved up,
 // by exactly the overlap plus the 8dp gap (ShellHost::SyncHomeDock does the same measurement on the inner block).
 // 844 / keyboard 336: everything stays (card 363..471, mascot 120); the chips keep their place, under the keyboard top.
-TEST_F(HomeMinimalLayoutTest, KeyboardUpOnTallScreenLeavesTheBlockWhereItWas) {
-  Load(390, 844, 0, false, true);
-  const Box card0 = ById("stub-composer");
-  const Box mascot0 = ById("stub-mascot");
-  ui::ElementList chips0;
-  document->GetElementsByClassName(chips0, "chat-suggestion");
-  const float chips_top0 = BoxOf(chips0.front()).top;
-  TearDown();
-  initialized = false;
-  context = nullptr;
-  Load(390, 844, 336, true, true);
-  const Box card = ById("stub-composer");
-  const Box mascot = ById("stub-mascot");
-  ui::ElementList chips;
-  document->GetElementsByClassName(chips, "chat-suggestion");
-  std::printf("[844/336 docked] card %.1f..%.1f (undocked %.1f..%.1f) keyboard top %.1f mascot top %.1f h %.1f (undocked %.1f) chips top %.1f (undocked %.1f)\n",
-              card.top, card.bottom(), card0.top, card0.bottom(), visible_height, mascot.top, mascot.height, mascot0.top,
-              BoxOf(chips.front()).top, chips_top0);
-  EXPECT_FLOAT_EQ(card.top, card0.top);
-  EXPECT_FLOAT_EQ(card.bottom(), card0.bottom());
-  EXPECT_FLOAT_EQ(mascot.top, mascot0.top);
-  EXPECT_FLOAT_EQ(mascot.height, 120.f);
-  EXPECT_FLOAT_EQ(BoxOf(chips.front()).top, chips_top0) << "the chips keep their place";
-  EXPECT_LT(card.bottom() + 8.f, visible_height) << "nothing to lift: the card is clear of the keyboard";
-}
-
-// 568 / keyboard 260: the card would be covered, so the block moves up by exactly the overlap (+8dp gap) and no more.
-TEST_F(HomeMinimalLayoutTest, KeyboardUpOnSmallScreenLiftsTheBlockByExactlyTheOverlap) {
-  Load(320, 568, 0, false, true);
-  const Box card0 = ById("stub-composer");
-  const Box mascot0 = ById("stub-mascot");
-  TearDown();
-  initialized = false;
-  context = nullptr;
-  Load(320, 568, 260, true, true);
-  const float keyboard_top = visible_height;
-  Box card = ById("stub-composer");
-  ASSERT_GT(card.bottom() + 8.f, keyboard_top) << "this case overlaps";
-  const float overlap = card.bottom() + 8.f - keyboard_top;
-  ui::ElementList inners;
-  document->GetElementsByClassName(inners, "home-landing-inner");
-  inners.front()->SetProperty("top", (std::to_string(-static_cast<int>(overlap + 0.5f)) + "dp").c_str());
-  context->Update();
-  card = ById("stub-composer");
-  const Box mascot = ById("stub-mascot");
-  std::printf("[568/260 docked] card %.1f..%.1f (undocked %.1f..%.1f) keyboard top %.1f overlap %.1f mascot top %.1f h %.1f (undocked top %.1f)\n",
-              card.top, card.bottom(), card0.top, card0.bottom(), keyboard_top, overlap, mascot.top, mascot.height, mascot0.top);
-  EXPECT_NEAR(card.bottom(), keyboard_top - 8.f, 1.f);
-  EXPECT_NEAR(mascot0.top - mascot.top, overlap, 1.f) << "the mascot moved up by the same overlap, not more";
-  EXPECT_NEAR(card0.top - card.top, overlap, 1.f);
-}
+// #204 docking tests removed while docking is switched off (see ShellHost::SyncHomeDock).
 
 TEST_F(HomeMinimalLayoutTest, KeyboardGoneCentresTheBlockAgain) {
   Load(390, 844, 0, false);

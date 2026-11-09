@@ -2004,54 +2004,19 @@ void ShellHost::ApplySafeAreaLayout() {
 // with a negative bottom margin and the keyboard covers its lower part (the chips). Only when that would cover the card
 // (small screens) the block moves up by exactly the overlap (+8dp gap), nothing more.
 void ShellHost::SyncHomeDock(ui::ElementDocument* doc) {
-  if (!doc || state_.layout_mode != LayoutMode::Compact || !context_) {
+  // #204 docking is switched off for now (Kenneth 2026-11-09 evening): on the phone the overlap was measured from the
+  // previous frame's layout, so the block was lifted off the screen when the field or the emoji sheet opened. The
+  // keyboard-up layout is the plain one again (the block re-centres in what is left); redo with device measurements.
+  if (!doc || state_.layout_mode != LayoutMode::Compact) {
     return;
   }
-  ui::Element* landing = doc->GetElementById("home-landing");
-  if (!landing) {
-    return;
-  }
-  ui::ElementList inners;
-  landing->GetElementsByClassName(inners, "home-landing-inner");
-  ui::Element* inner = inners.empty() ? nullptr : inners.front();
-  if (inner) {
-    inner->RemoveProperty("top");
-  }
-  landing->RemoveProperty("margin-bottom");
-  const bool docked = bottom_chrome_open_ || state_.safe_area_bottom_dp >= kImeLatchMinDp;
-  if (!docked) {
-    // Remember where the landing's bottom edge sits without a keyboard (needs a layout pass; skipped when hidden).
-    const float height = landing->GetBox().GetSize(ui::BoxArea::Border).y;
-    if (height > 0.f) {
-      home_undocked_landing_bottom_dp_ = landing->GetAbsoluteOffset(ui::BoxArea::Border).y + height;
+  if (ui::Element* landing = doc->GetElementById("home-landing")) {
+    landing->RemoveProperty("margin-bottom");
+    ui::ElementList inners;
+    landing->GetElementsByClassName(inners, "home-landing-inner");
+    if (!inners.empty()) {
+      inners.front()->RemoveProperty("top");
     }
-    return;
-  }
-  if (!inner || landing->GetComputedValues().display() == ui::Style::Display::None) {
-    return;
-  }
-  const float ratio = context_->GetDensityIndependentPixelRatio();
-  const float window_dp = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
-  const float lift = bottom_chrome_open_ ? static_cast<float>(bottom_chrome_height_dp_)
-                                         : static_cast<float>(state_.safe_area_bottom_dp);
-  const float keyboard_top = window_dp - lift;
-  const float undocked_bottom =
-      home_undocked_landing_bottom_dp_ > 0.f
-          ? home_undocked_landing_bottom_dp_
-          : window_dp - (config_.compact_nav_height_dp + static_cast<float>(safe_area_bottom_from_prefs_dp_));
-  const float extend = std::max(0.f, undocked_bottom - keyboard_top);
-  landing->SetProperty("margin-bottom", (std::to_string(-static_cast<int>(std::lround(extend))) + "dp").c_str());
-  ui::ElementList cards;
-  landing->GetElementsByClassName(cards, "prompt-composer");
-  if (cards.empty()) {
-    return;
-  }
-  const float card_bottom = cards.front()->GetAbsoluteOffset(ui::BoxArea::Border).y +
-                            cards.front()->GetBox().GetSize(ui::BoxArea::Border).y;
-  constexpr float kGapAboveKeyboardDp = 8.f;
-  const float overlap = card_bottom + kGapAboveKeyboardDp - keyboard_top;
-  if (overlap > 0.5f) {
-    inner->SetProperty("top", (std::to_string(-static_cast<int>(std::lround(overlap))) + "dp").c_str());
   }
 }
 
