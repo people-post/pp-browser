@@ -140,20 +140,6 @@ TEST(NewChatPageTest, HomePlaceholderIsNewAndTheConversationOneIsUnchanged) {
   EXPECT_NE(css.find("left: 60dp;", emoji_rule), std::string::npos);
 }
 
-// The Chats bar: round avatar at the left (Settings), round plus at the right, no title, no large title.
-TEST(NewChatPageTest, ChatsBarHasAvatarAndPlusAndNoTitle) {
-  const std::string rml = ReadAsset("views/sidebar.rml");
-  const size_t bar_end = rml.find("<div class=\"sidebar-header row\">");
-  ASSERT_NE(bar_end, std::string::npos);
-  const std::string bar = rml.substr(0, bar_end);
-  EXPECT_NE(bar.find("open_settings_from_avatar()"), std::string::npos);
-  EXPECT_NE(bar.find("open_new_session_menu()"), std::string::npos);
-  EXPECT_NE(bar.find("profile_has_icon"), std::string::npos);
-  EXPECT_NE(bar.find("{{profile_avatar_letter}}"), std::string::npos);
-  EXPECT_EQ(bar.find("pane-nav-title"), std::string::npos);
-  EXPECT_EQ(rml.find("large-title"), std::string::npos);
-}
-
 TEST(NewChatPageTest, ActionRowsAreBigAndTheRowsAreTheContactsTabRows) {
   const std::string css = ReadAsset("themes/components.rcss");
   const size_t action = css.find(".nc-action {");
@@ -189,13 +175,17 @@ TEST(NewChatPageTest, PageIsTheGroupedLookWithTwoCardsAndRoundedGroups) {
   EXPECT_NE(rml.find("class=\"nc-group\""), std::string::npos);
 }
 
-// The Chats bar keeps its avatar and the name beside it (the name span had collapsed to zero width once).
-TEST(NewChatPageTest, ChatsBarHasTheNicknameBesideTheAvatar) {
+// The Chats bar is the plain large-title layout: small title (shown once collapsed), compose button, and a large title
+// at the top of the list; no avatar or nickname.
+TEST(NewChatPageTest, ChatsBarIsTheLargeTitleLayout) {
   const std::string rml = ReadAsset("views/sidebar.rml");
   const size_t bar_end = rml.find("<div class=\"sidebar-header row\">");
   const std::string bar = rml.substr(0, bar_end);
-  EXPECT_NE(bar.find("class=\"pane-nav-avatar\""), std::string::npos);
-  EXPECT_NE(bar.find("{{profile_nickname}}"), std::string::npos);
+  EXPECT_NE(bar.find("class=\"pane-nav-title\""), std::string::npos);
+  EXPECT_NE(bar.find("open_new_session_menu()"), std::string::npos);
+  EXPECT_EQ(bar.find("pane-nav-avatar"), std::string::npos);
+  EXPECT_EQ(bar.find("{{profile_nickname}}"), std::string::npos);
+  EXPECT_NE(rml.find("<p class=\"large-title\">{{i18n:nav.sessions}}</p>"), std::string::npos);
 }
 
 TEST(NewChatPageTest, ColoursComeFromTokensOnly) {

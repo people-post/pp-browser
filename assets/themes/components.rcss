@@ -4163,7 +4163,7 @@ select selectbox option {
 /* Height set by ShellHost::ApplySafeAreaLayout (the "you" row + the home indicator). */
 .ai-drawer-list-end {
   display: block;
-  height: 64dp;
+  height: 76dp;
 }
 
 .ai-drawer-me {
@@ -4178,7 +4178,7 @@ select selectbox option {
   flex-direction: row;
   align-items: center;
   gap: 12dp;
-  min-height: 64dp;
+  min-height: 76dp;
   margin: 0;
   padding: 10dp 16dp;
   border: 0;
@@ -4192,29 +4192,61 @@ select selectbox option {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44dp;
-  height: 44dp;
-  border-radius: 22dp;
+  width: 56dp;
+  height: 56dp;
+  border-radius: 28dp;
   overflow: hidden;
 }
 
 .ai-drawer-me-image {
-  width: 44dp;
-  height: 44dp;
+  width: 56dp;
+  height: 56dp;
 }
 
 .ai-drawer-me-avatar .avatar-letter {
-  font-size: 18dp;
+  font-size: 22dp;
+}
+
+/* The name and, under it, the device's link to our service (ShellHost::SetChatsLink). */
+.ai-drawer-me-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .ai-drawer-me-name {
-  flex: 1;
-  min-width: 0;
   margin: 0;
-  font-size: 16dp;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* A 14dp cloud (tick when online, slash when offline) and the word. */
+.ai-drawer-me-link {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin: 2dp 0 0 0;
+  height: 16dp;
+  font-size: 13dp;
+  line-height: 16dp;
+}
+
+.ai-drawer-me-link-icon {
+  flex: none;
+  width: 14dp;
+  height: 14dp;
+  margin-right: 5dp;
+}
+
+.ai-drawer-me-link-text {
+  display: block;
+  white-space: nowrap;
 }
 
 .ai-drawer-me-chevron {
@@ -4239,68 +4271,6 @@ select selectbox option {
 
 .shell-chat-overlay .chat-shell--ai .chat-header {
   margin-right: 36dp;
-}
-
-/* Chats bar (DEV/PLAN-minimal-nav.md D): the round avatar sits where the other pages' round back does; the plus is a
-   plain round button in the actions slot. The photo or letter fills the 44dp disc. */
-.shell-layer-compact .pane-nav-avatar {
-  position: absolute;
-  top: 1dp;
-  left: 8dp;
-  z-index: 1;
-}
-
-.shell-circle-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 52dp;
-  height: 52dp;
-  border-radius: 26dp;
-  overflow: hidden;
-}
-
-.shell-circle-avatar .avatar-letter {
-  font-size: 22dp;
-}
-
-.shell-circle-avatar-image {
-  width: 52dp;
-  height: 52dp;
-}
-
-/* The Chats avatar and the user's name beside it are one tap target (open_settings_from_avatar): a 52dp avatar, then
-   the name in 17dp bold on one line, cut at about 45% of the bar. Centred in the 56dp bar (compact bar block at the end
-   of the file). */
-.shell-layer-compact .pane-nav-avatar {
-  position: absolute;
-  z-index: 1;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  width: 45%;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background-color: transparent;
-  cursor: pointer;
-}
-
-.shell-layer-compact .pane-nav-avatar .shell-circle-avatar {
-  flex: none;
-}
-
-.pane-nav-avatar-name {
-  display: block;
-  flex: 1 1 0;
-  min-width: 0;
-  margin-left: 10dp;
-  font-size: 17dp;
-  line-height: 22dp;
-  font-weight: bold;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Phone contact page and blocked list: a 48dp bar over the page (which scrolls under it) with the back arrow. */
@@ -13579,101 +13549,10 @@ textarea:composing ~ .prompt-composer-label,
   top: 2dp;
 }
 
-.shell-layer-compact .pane-nav-avatar {
-  top: 2dp;
-  left: 16dp;
-  height: 52dp;
-}
-
 .shell-layer-compact .sidebar-sessions,
 .shell-layer-compact .contacts-list-view,
 .shell-layer-compact .settings-list-view {
   padding-top: 56dp;
-}
-
-/* Chats header B3 (DEV/PLAN-chats-header-b3.md, Kenneth 2026-11-08). THE header height is 104dp: a 20dp top margin, the
-   64dp avatar, and 20dp clear above the search box. It is written in exactly these three rules (the bar, its frosted
-   layer, the list's top padding) and checked by home_minimal_layout_test; the other root pages keep their 56dp bar. */
-.shell-layer-compact .sidebar-panel .pane-nav,
-.shell-layer-compact .sidebar-panel .pane-nav-bg {
-  height: 104dp;
-}
-
-.shell-layer-compact .sidebar-panel .sidebar-sessions {
-  padding-top: 104dp;
-}
-
-.shell-layer-compact .sidebar-panel .pane-nav-avatar {
-  top: 20dp;
-  left: 20dp;
-  right: 84dp;
-  width: auto;
-  height: 64dp;
-}
-
-.shell-layer-compact .sidebar-panel .pane-nav-avatar .shell-circle-avatar {
-  width: 64dp;
-  height: 64dp;
-  border-radius: 32dp;
-}
-
-.shell-layer-compact .sidebar-panel .pane-nav-avatar .shell-circle-avatar-image {
-  width: 64dp;
-  height: 64dp;
-}
-
-.shell-layer-compact .sidebar-panel .pane-nav-avatar .shell-circle-avatar .avatar-letter {
-  font-size: 26dp;
-}
-
-.pane-nav-avatar-text {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  flex: 1 1 0;
-  min-width: 0;
-  height: 64dp;
-  margin-left: 14dp;
-  text-align: left;
-}
-
-.shell-layer-compact .sidebar-panel .pane-nav-avatar-name {
-  flex: none;
-  margin: 0;
-  font-size: 22dp;
-  line-height: 26dp;
-  font-weight: bold;
-}
-
-/* The device's link to our service: a 14dp cloud (tick when online, slash when offline) and the word. */
-.pane-nav-avatar-sub {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  margin: 2dp 0 0 0;
-  height: 16dp;
-  font-size: 13dp;
-  line-height: 16dp;
-  text-align: left;
-}
-
-.pane-nav-link-icon {
-  flex: none;
-  width: 14dp;
-  height: 14dp;
-  margin-right: 5dp;
-}
-
-.pane-nav-link-text {
-  display: block;
-  white-space: nowrap;
-}
-
-/* The plus: a plain 44dp teal-tint disc (52dp hit area), centred on the avatar, 20dp from the screen edge. */
-.shell-layer-compact .sidebar-panel .pane-nav-actions {
-  top: 20dp;
-  right: 16dp;
-  height: 64dp;
 }
 
 .shell-layer-compact .home-scroll {

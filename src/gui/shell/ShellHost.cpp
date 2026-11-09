@@ -81,7 +81,7 @@ constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
 /** Fallback emoji panel height when the OSK has never been shown this session. */
 constexpr int kDefaultEmojiKeyboardPanelDp = 280;
 /** The AI drawer's "you" row above the home indicator (.ai-drawer-me: min-height, bottom padding). */
-constexpr float kAiDrawerMeHeightDp = 64.f;
+constexpr float kAiDrawerMeHeightDp = 76.f;
 constexpr float kAiDrawerMePaddingDp = 8.f;
 
 } // namespace
