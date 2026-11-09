@@ -218,6 +218,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_mode", &host.state_.call_in_progress.mode_str);
     ctor.Bind("call_in_progress_minimized_side", &host.state_.call_in_progress.minimized_side);
     ctor.Bind("call_in_progress_minimized_y_permille", &host.state_.call_in_progress.minimized_y_permille);
+    ctor.Bind("call_in_progress_minimized_tucked", &host.state_.call_in_progress.minimized_tucked);
     ctor.Bind("call_in_progress_quality_bars", &host.state_.call_in_progress.quality_bars);
     ctor.Bind("call_in_progress_quality_ok", &host.state_.call_in_progress.quality_ok);
     ctor.Bind("call_in_progress_quality_warn", &host.state_.call_in_progress.quality_warn);
@@ -1419,6 +1420,7 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_debug_subtitle");
   DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_side");
   DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_y_permille");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_tucked");
   for (const char* name : {"call_ring_phone_title", "call_ring_phone_subtitle", "call_in_progress_phone_title",
                            "call_in_progress_failed_text", "call_in_progress_story_step1",
                            "call_in_progress_story_step2", "call_in_progress_story_step3", "call_in_progress_story_step4",
@@ -2526,9 +2528,9 @@ void ShellHost::AttachCallChromeGesture() {
       call_actions_.restore_chrome_from_minimized();
     }
   };
-  callbacks.on_chip_place = [this](int side, int y_permille) {
+  callbacks.on_chip_place = [this](int side, int y_permille, bool tucked) {
     if (call_actions_.set_minimized_place) {
-      call_actions_.set_minimized_place(side, y_permille);
+      call_actions_.set_minimized_place(side, y_permille, tucked);
     }
   };
   callbacks.on_chip_released = [this]() {
@@ -2636,12 +2638,18 @@ void ShellHost::DiagCallChipRemount(ui::ElementDocument* doc, const bool held) {
   line.Add("what", "remount").Add("held", held);
   if (minimized != diag_chip_minimized_) {
     line.Add("reason", "mode");
-  } else if (call.minimized_side != diag_chip_side_ || call.minimized_y_permille != diag_chip_y_) {
+  } else if (call.minimized_side != diag_chip_side_ || call.minimized_y_permille != diag_chip_y_ ||
+             call.minimized_tucked != diag_chip_tucked_) {
     line.Add("reason", "place");
   } else {
     line.Add("reason", "other");
   }
   line.Add("minimized", minimized).Add("side", call.minimized_side).Add("y", call.minimized_y_permille);
+  if (call.minimized_tucked && call.minimized_side != 0) {
+    line.Add("form", "handle");
+  } else {
+    line.Add("form", "bar");
+  }
   line.Add("area_h", static_cast<int>(std::lround(state_.call_chip_layout.area_height_dp)))
       .Add("chip_h", static_cast<int>(std::lround(state_.call_chip_layout.chip_height_dp)));
   const float top = call.minimized_side == 0 ? -1.f : MinimizedChipTopDp(state_);
@@ -2658,6 +2666,7 @@ void ShellHost::DiagCallChipRemount(ui::ElementDocument* doc, const bool held) {
   diag_chip_minimized_ = minimized;
   diag_chip_side_ = call.minimized_side;
   diag_chip_y_ = call.minimized_y_permille;
+  diag_chip_tucked_ = call.minimized_tucked;
 }
 
 void ShellHost::MeasureCallChip(ui::ElementDocument* doc) {

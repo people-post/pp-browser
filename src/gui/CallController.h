@@ -119,7 +119,7 @@ public:
   void ToggleSpotlightFill();
   void RestoreChromeFromMinimized();
   /** #166: the minimised chip was dropped: its side (1 left, 2 right) and height in the band (0..1000). */
-  void SetMinimizedPlace(int side, int y_permille);
+  void SetMinimizedPlace(int side, int y_permille, bool tucked = false);
   CallChromeMode ChromeMode() const { return chrome_mode_; }
   /** Thin Call details sheet (debug numbers when diagnostics enabled). */
   void ShowCallDetails();
@@ -283,6 +283,7 @@ private:
   /** #166: the minimised chip's place this call (ShellTypes.h CallInProgressState::minimized_side). */
   int minimized_side_ = 0;
   int minimized_y_permille_ = 0;
+  bool minimized_tucked_ = false;
   /** Call id the current chrome_mode_ was chosen for (reset defaults on switch). */
   std::string chrome_mode_call_id_;
   CallRingtone ringtone_;

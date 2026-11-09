@@ -259,6 +259,10 @@ TEST(CallChromeSyncTest, MinimizedPlaceRemounts) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount) << "same side, new height";
 
   synced = next;
+  next.in_call_minimized_tucked = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount) << "bar <-> handle (#189)";
+
+  synced = next;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::None) << "unchanged";
 }
 

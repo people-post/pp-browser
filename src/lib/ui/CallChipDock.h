@@ -31,6 +31,8 @@ struct CallChipPlace {
   int side = 0;
   /** 0 (top of the band) .. 1000 (bottom); ignored for kSideDefault. */
   int y_permille = 0;
+  /** #189: the small handle hanging on the side's edge instead of the full bar (ignored for kSideDefault). */
+  bool tucked = false;
   bool operator==(const CallChipPlace& other) const = default;
 };
 
@@ -60,8 +62,14 @@ public:
   static constexpr float kEdgeDp = 12.f;
   static constexpr float kTopDp = 12.f;
   static constexpr float kBottomDp = 72.f;
-  /** #189: the docked chip is a bare circle this size (components.rcss .shell-call-minimized-chip). */
-  static constexpr float kCompactDp = 48.f;
+  /** #189: the handle is a circle this size, `kTuckDp` of it beyond the side's edge (components.rcss
+   * .shell-call-minimized-chip--handle). A bar dropped with its outer edge within `kTuckSnapDp` of the edge, thrown at
+   * it by at least `kTuckThrowDp`, becomes the handle; a handle let go farther than `kTuckSnapDp` from the edge, or
+   * tapped, becomes the bar again. */
+  static constexpr float kHandleDp = 44.f;
+  static constexpr float kTuckDp = 12.f;
+  static constexpr float kTuckSnapDp = 24.f;
+  static constexpr float kTuckThrowDp = 6.f;
 
   static float MinTop() { return kTopDp; }
   static float MaxTop(const CallChipArea& area, const float chip_height_dp) {
@@ -89,6 +97,10 @@ public:
     const float permille = static_cast<float>(std::clamp(place.y_permille, 0, 1000));
     CallChipPoint point;
     point.top_dp = min_top + span * permille / 1000.f;
+    if (place.tucked) {
+      point.left_dp = place.side == kSideLeft ? -kTuckDp : area.width_dp + kTuckDp - chip_width_dp;
+      return point;
+    }
     point.left_dp = place.side == kSideLeft ? kEdgeDp : std::max(kEdgeDp, area.width_dp - kEdgeDp - chip_width_dp);
     return point;
   }

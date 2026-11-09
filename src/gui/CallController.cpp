@@ -305,6 +305,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_spotlight_fill = in_call.spotlight_fill,
       .in_call_minimized_side = in_call.minimized_side,
       .in_call_minimized_y_permille = in_call.minimized_y_permille,
+      .in_call_minimized_tucked = in_call.minimized_tucked,
       .in_call_quality_bars = in_call.quality_bars,
       .in_call_quality_ok = in_call.quality_ok,
       .in_call_quality_warn = in_call.quality_warn,
@@ -607,6 +608,7 @@ void CallController::ClearInCall() {
   restore_mode_ = CallChromeMode::Expanded;
   minimized_side_ = 0;
   minimized_y_permille_ = 0;
+  minimized_tucked_ = false;
   chrome_mode_call_id_.clear();
   last_media_health_log_ms_ = 0;
   last_debug_subtitle_ = {};
@@ -632,6 +634,7 @@ void CallController::ApplyChromeModeToState(CallInProgressState& in_call) {
   in_call.mode_str = CallChromeModeName(chrome_mode_);
   in_call.minimized_side = minimized_side_;
   in_call.minimized_y_permille = minimized_y_permille_;
+  in_call.minimized_tucked = minimized_tucked_;
 }
 
 void CallController::SetChromeMode(CallChromeMode mode) {
@@ -772,21 +775,24 @@ void CallController::RestoreChromeFromMinimized() {
                                                           : CallChromeMode::Expanded);
 }
 
-void CallController::SetMinimizedPlace(int side, int y_permille) {
+void CallController::SetMinimizedPlace(int side, int y_permille, bool tucked) {
   if (!AppRuntime::CurrentlyOnUI()) {
-    AppRuntime::PostUI([this, side, y_permille]() { SetMinimizedPlace(side, y_permille); });
+    AppRuntime::PostUI([this, side, y_permille, tucked]() { SetMinimizedPlace(side, y_permille, tucked); });
     return;
   }
   const int clamped_side = std::clamp(side, 0, 2);
   const int clamped_y = clamped_side == 0 ? 0 : std::clamp(y_permille, 0, 1000);
-  if (minimized_side_ == clamped_side && minimized_y_permille_ == clamped_y) {
+  const bool clamped_tucked = tucked && clamped_side != 0;
+  if (minimized_side_ == clamped_side && minimized_y_permille_ == clamped_y && minimized_tucked_ == clamped_tucked) {
     return;
   }
   minimized_side_ = clamped_side;
   minimized_y_permille_ = clamped_y;
+  minimized_tucked_ = clamped_tucked;
   if (in_call_.active) {
     in_call_.minimized_side = minimized_side_;
     in_call_.minimized_y_permille = minimized_y_permille_;
+    in_call_.minimized_tucked = minimized_tucked_;
     SyncShellState();
   }
 }

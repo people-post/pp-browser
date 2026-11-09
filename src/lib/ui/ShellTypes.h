@@ -436,6 +436,8 @@ struct CallInProgressState {
    */
   int minimized_side = 0;
   int minimized_y_permille = 0;
+  /** #189: the minimised chip is the small handle hanging on its side's edge (kSide* 1/2 only), not the full bar. */
+  bool minimized_tucked = false;
   int participant_count = 0;
   std::vector<CallRosterParticipantState> roster;
   /** Immersive's spotlit roster row (its stream_id; empty: the grid) — V059, CallSpotlight.h. */

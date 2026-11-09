@@ -1309,8 +1309,9 @@ input.checkbox:checked {
   border: 1dp #3c3c434a;
 }
 
+/* #189: the handle's phone is the secure blue, so the live call stands out on any page. */
 .shell-call-minimized-icon {
-  image-color: #000000;
+  image-color: #30b0c7;
 }
 
 .shell-call-minimized-title {
