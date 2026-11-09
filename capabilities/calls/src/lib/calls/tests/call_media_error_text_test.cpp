@@ -8,13 +8,14 @@
 namespace pbr {
 namespace {
 
-TEST(CallMediaErrorTextTest, ReconnectWindowExpiry) {
-  EXPECT_STREQ(CallMediaErrorUserKey("amp call-media: no path within the reconnect window"), "call.error.call_dropped");
-  // K014: a connected call that lost its media dropped — however its leg or the health tick said it.
-  EXPECT_STREQ(CallMediaErrorUserKey("amp call-media: call dropped [leg: amp call-media: peer link lost]"),
-               "call.error.call_dropped");
-  EXPECT_STREQ(CallMediaErrorUserKey("amp call-media: call dropped [health: the 1:1 stream is gone]"),
-               "call.error.call_dropped");
+TEST(CallMediaErrorTextTest, DroppedAndConnectTimeoutAreToldByTheCallScreen) {
+  // #181: the failed page already says "Call dropped" / "Couldn't reach them"; no second prompt.
+  EXPECT_TRUE(CallMediaErrorShownOnCallScreen("amp call-media: no path within the reconnect window"));
+  EXPECT_TRUE(CallMediaErrorShownOnCallScreen("amp call-media: call dropped [leg: amp call-media: peer link lost]"));
+  EXPECT_TRUE(CallMediaErrorShownOnCallScreen("amp call-media: call dropped [health: the 1:1 stream is gone]"));
+  EXPECT_TRUE(CallMediaErrorShownOnCallScreen("mesh connect timeout"));
+  EXPECT_FALSE(CallMediaErrorShownOnCallScreen("call-media migrate: timed out"));
+  EXPECT_FALSE(CallMediaErrorShownOnCallScreen("amp circuit-relay: channel open failed"));
 }
 
 TEST(CallMediaErrorTextTest, PeerNotReachedChains) {
@@ -31,11 +32,6 @@ TEST(CallMediaErrorTextTest, DialFailures) {
   EXPECT_STREQ(CallMediaErrorUserKey("call-media: punch failed [signaling: amp link: too many concurrent dials]"),
                "call.error.dial_failed");
   EXPECT_STREQ(CallMediaErrorUserKey("dial failed [link: amp link: dial aborted]"), "call.error.dial_failed");
-}
-
-TEST(CallMediaErrorTextTest, MeshConnectTimeoutBecomesPlainConnectFailed) {
-  // SurfaceConnectFailed before the call ever connected: a plain "try again" sentence, not the raw phrase.
-  EXPECT_STREQ(CallMediaErrorUserKey("mesh connect timeout"), "call.error.connect_failed");
 }
 
 TEST(CallMediaErrorTextTest, UnknownTransportTextGetsTheGenericSentence) {

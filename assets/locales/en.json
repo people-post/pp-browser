@@ -1324,7 +1324,7 @@
     "call.status.on_hold_local": "Your call is still on. We've muted you for now.",
     "call.status.on_hold_ended": "Your call is back on. Your mic is open again.",
     "call.status.on_hold_peer": "They stepped away. Please wait.",
-    "call.status.on_hold_peer_named": "They stepped away. Please wait.",
+    "call.status.on_hold_peer_named": "{name} stepped away. Please wait.",
     "call.status.connected": "Connected",
     "call.status.setting_up_group": "Setting up group call…",
     "call.status.finding_media_path": "Finding a way to connect…",
@@ -1335,19 +1335,18 @@
     "call.chat.in_call": "In call",
     "call.hint.group_media":
         "A group call needs a computer to help host it. Turn on Help host calls on a computer that helps the network, or use your organization's server, then try again.",
-    "call.hint.switching_media_path": "Everyone will reconnect automatically in a moment.",
-    "call.hint.looking_for_another_path": "Your device lost the current line.",
     "call.hint.seed_unreachable": "Network restricted — if a VPN is on, turn it off first.",
-    "call.hint.peer_unreachable": "Couldn't reach the other person. Try again in a moment.",
     "call.error.no_media_relay_hop":
         "No call host available — join from a computer with Help host calls on, or start the group call from that computer, then retry.",
     "call.error.local_media_relay_unavailable":
         "This device can't host a group call. Use a computer with Help host calls on, or your organization's server.",
     "call.error.media_key_timeout":
         "Couldn't finish connecting — call key never arrived. Retry the call, or check that both devices are online.",
-    "call.error.call_dropped": "The call dropped. The connection to them was lost.",
+    "call.notice.removed": "You were removed from the call",
+    "call.notice.left_group": "You are no longer in this group",
+    "call.notice.call_ended": "That call has ended",
+    "call.error.media_unavailable": "Call media isn't available.",
     "call.error.migrate_timeout": "Switching lines took too long; the call ended.",
-    "call.error.connect_failed": "Couldn't reach them. Try again in a moment.",
     "call.error.peer_unreachable": "Couldn't reach them; the call didn't connect.",
     "call.error.dial_failed": "Couldn't connect to them. Please try again in a moment.",
     "call.error.media_failed": "The call connection was lost.",

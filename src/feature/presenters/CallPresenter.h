@@ -25,8 +25,6 @@ struct CallNotice {
   enum class Kind {
     /** A call action failed: `key` (an i18n key) or the stack's `text`. */
     Error,
-    /** A media path failure the user should be able to read: stays up (`text`). */
-    StickyError,
     /** The peer ended (or declined) a call this device placed or was in: `identity`. */
     PeerEnded,
     PeerDeclined,

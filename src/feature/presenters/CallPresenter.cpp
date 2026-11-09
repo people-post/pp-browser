@@ -3,6 +3,7 @@
 #include "feature/presenters/NewCallGuard.h"
 #include "lib/calls/CallGuests.h"
 #include "lib/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallMediaErrorText.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/media/AudioSession.h"
 #include "lib/calls/CallMediaAdaptation.h"
@@ -124,11 +125,16 @@ bool CallPresenter::TakeStackNotices(CallUiBackend& backend) {
     backend.ClearLastError();
   }
   if (auto media_err = backend.TakeLastMediaError(); media_err && !media_err->empty()) {
-    // SoftMigrate / hop failures: a toast vanishes before multi-hop diagnostics can be read.
-    CallNotice notice;
-    notice.kind = CallNotice::Kind::StickyError;
-    notice.text = *media_err;
-    Notify(notice);
+    // A dropped call or a connect timeout is told by the call screen's own failed page (#181: one prompt, one
+    // place); the raw reason goes to the log. Other path failures are a plain toast, never a banner that stays.
+    if (CallMediaErrorShownOnCallScreen(*media_err)) {
+      log().info << "call media error shown on the call screen only raw=" << *media_err;
+    } else {
+      CallNotice notice;
+      notice.kind = CallNotice::Kind::Error;
+      notice.text = *media_err;
+      Notify(notice);
+    }
   }
   // The peer ended a call we were in (also a failed one — failed is not closed): the panel is
   // about to go, so say why instead of letting the call silently vanish.
@@ -1045,7 +1051,9 @@ void CallPresenter::ToggleCamera() {
   }
   backend->SetLocalVideoEnabled(next, WhileAlive([this](Roe<void> cam) {
     if (!cam) {
-      FailText(cam.error().message);
+      // The backend's reason is English technical text: the log keeps it, the user sees a plain sentence.
+      log().info << "camera toggle failed: " << cam.error().message;
+      Fail("call.error.camera_failed");
     }
     Refresh();
   }));

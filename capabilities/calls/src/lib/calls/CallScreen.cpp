@@ -151,6 +151,11 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
     out.status = Status::CouldntConnect;
     out.hint = s.group_context ? CallScreen::Hint::GroupMedia : CallScreen::Hint::DirectConnect;
     out.show_invite = false;
+  } else if (activity && s.was_connected && !out.media_connected) {
+    // A live call moving to another path ("switching line", "looking for another way"): that is a reconnect, and the
+    // reconnect capsule is its only prompt (#181) — the stack's activity words are not shown on top of it.
+    out.status = Status::Reconnecting;
+    out.show_elapsed = true;
   } else if (activity) {
     out.status = Status::Activity;
   } else if (s.media_status == CallMediaStatus::Reconnecting) {
