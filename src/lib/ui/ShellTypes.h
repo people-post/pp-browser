@@ -554,6 +554,12 @@ struct ShellState {
   ui::String layout_mode_str = "expanded";
   NavTab nav_tab = NavTab::Home;
   ui::String nav_tab_str = "home";
+  /** Phone tab bar: the tab it highlights. nav_tab, except under a hidden tab's page (Settings), where it is the tab
+   *  that page was entered from (ShellHost::SelectNavTab). */
+  ui::String nav_bar_tab_str = "home";
+  /** Phone Settings: a secret page is pushed over a section (Security > Move to a new device). It keeps the tab bar
+   *  off (SettingsController sets it through the navigation ports). */
+  bool secret_page_open = false;
   std::vector<PaneState> panes;
   std::vector<PaneState> transient_stack;
   std::vector<OverlayEntry> overlay_stack;

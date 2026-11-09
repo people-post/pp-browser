@@ -2,7 +2,7 @@
      invite opens them, and their own back returns. -->
 <div class="shell-nav-rail-inner" data-if="layout_mode == 'compact'">
     <button class="shell-nav-tab shell-nav-tab--text" type="button"
-            data-class-shell-nav-tab--active="nav_tab == 'home'"
+            data-class-shell-nav-tab--active="nav_bar_tab == 'home'"
             data-event-click="select_nav_tab('home')">
       <div class="shell-nav-tab-text-wrap">
         <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:nav.home}}</p>
@@ -10,7 +10,7 @@
       </div>
     </button>
     <button class="shell-nav-tab shell-nav-tab--text" type="button"
-            data-class-shell-nav-tab--active="nav_tab == 'sessions'"
+            data-class-shell-nav-tab--active="nav_bar_tab == 'sessions'"
             data-event-click="select_nav_tab('sessions')">
       <div class="shell-nav-tab-text-wrap">
         <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:nav.sessions}}</p>

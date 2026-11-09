@@ -133,8 +133,12 @@ std::string ShellLayoutRml::CompactBase() const {
       out << " shell-nav-page--home";
     }
     if (hidden_tab) {
-      // Its bar: back, the title always shown, no large title, and no tab bar under it.
+      // Its bar: back, the title always shown, no large title, and no tab bar under it (Settings keeps the tab bar:
+      // its content then clears it, TODO #200).
       out << " shell-nav-page--hidden-tab";
+      if (ShellLayout::SettingsTabBarShown(state_)) {
+        out << " shell-nav-page--tab-bar";
+      }
     }
     // The tab page's bars (nav bar, a settings page's bar) are the frosted ones while nothing covers them.
     if (frost == CompactChromeFrostSurface::BottomNav && frost_enabled) {
@@ -203,8 +207,12 @@ std::string ShellLayoutRml::CompactBase() const {
   // The tab bar only where it is drawn (ShellLayout::CompactTabBarDp): not on a hidden tab or under the chat.
   if (ShellLayout::CompactTabBarDp(state_) > 0.f) {
     out << "<div class=\"shell-bottom-chrome";
-    if (frost == CompactChromeFrostSurface::BottomNav && frost_enabled) {
+    if (frosts.bottom == CompactChromeFrostSurface::BottomNav && frost_enabled) {
       out << " shell-bottom-chrome--frost";
+    }
+    if (!state_.transient_stack.empty()) {
+      // Settings' pushed pages (contact, blocked list) are drawn under the bar, not over it.
+      out << " shell-bottom-chrome--over-page";
     }
     if (solid) {
       out << " shell-bottom-chrome--solid";

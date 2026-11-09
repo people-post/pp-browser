@@ -48,6 +48,10 @@ CompactChromeFrost ShellInterruption::ResolveFrost(const ShellState& state) {
     // Compact call bar sits above chrome without a full-screen frost.
     return {};
   case InterruptionKind::Transient:
+    // A page pushed from Settings keeps the tab bar under it: that bottom position is the bar's, the top the page's.
+    if (ShellLayout::SettingsTabBarShown(state)) {
+      return {.top = Surface::TransientHeader, .bottom = Surface::BottomNav};
+    }
     return {.top = Surface::TransientHeader};
   case InterruptionKind::AuxiliarySheet:
     return {.top = Surface::AuxiliarySheetChrome};

@@ -1402,6 +1402,9 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
   if (shell_navigation_.push_local_back) {
     shell_navigation_.push_local_back("settings_subpage", [this] { ApplyCloseSecurityPage(); });
   }
+  if (shell_navigation_.set_secret_page_open) {
+    shell_navigation_.set_secret_page_open(true);  // the transfer code is on it: no tab bar under it
+  }
 }
 
 void SettingsController::OnCloseSecurityPage() {
@@ -1415,6 +1418,9 @@ void SettingsController::OnCloseSecurityPage() {
 }
 
 void SettingsController::ApplyCloseSecurityPage() {
+  if (shell_navigation_.set_secret_page_open) {
+    shell_navigation_.set_secret_page_open(false);
+  }
   security_page_ = "";
   security_page_title_ = "";
   choice_page_.Close();
@@ -1435,6 +1441,9 @@ void SettingsController::ApplyCloseSecurityPage() {
 void SettingsController::ResetSecurityPage() {
   if (shell_navigation_.clear_local_back) {
     shell_navigation_.clear_local_back("settings_subpage");
+  }
+  if (shell_navigation_.set_secret_page_open) {
+    shell_navigation_.set_secret_page_open(false);
   }
   security_actions_.HideRecoveryPhrase();  // the phrase does not follow the user off the page
   if (security_page_.empty()) {
