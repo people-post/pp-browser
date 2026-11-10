@@ -1,5 +1,5 @@
-# pp-browser's C++ style, derived from the code (2026-11-02). Format new and touched code with it (clang-format 14+);
-# never sweep the tree — existing files keep their hand-wrapping until someone edits them.
+# pp-browser's C++ style (shared by pp-browser and the pp-cpp-* libraries). The whole tree is formatted with
+# clang-format 23.1.5 — use exactly that version (`pip install clang-format==23.1.5`); CI checks every file.
 BasedOnStyle: Google
 ColumnLimit: 120
 IndentWidth: 2
