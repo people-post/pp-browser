@@ -2016,6 +2016,8 @@ std::string CallController::GroupTitle(const std::string& thread_id, const int64
 void CallController::FillRingPhoneFields(const CallScreen& screen, const std::string& caller_label,
                                          const int64_t now_ms) {
   ring_.group = screen.ring_group;
+  rung_call_id_ = screen.ring_call_id; // every ring shown, group or 1:1: RenderStorySteps reads this call's kind
+  rung_video_ = screen.ring_video;
   if (screen.ring_group) {
     std::string title = GroupTitle(screen.thread_id, now_ms);
     ring_.phone_title = (title.empty() ? caller_label : title).c_str();
@@ -2041,8 +2043,6 @@ void CallController::FillRingPhoneFields(const CallScreen& screen, const std::st
   ring_.avatar_src = photo.c_str();
   ring_.caller_unknown = CallerNameFor(screen.caller_identity).unknown && photo.empty();
   FillRingSteps(false, caller_label, screen.ring_video ? CallRingMedia::Video : CallRingMedia::Voice);
-  rung_call_id_ = screen.ring_call_id;
-  rung_video_ = screen.ring_video;
   FillRingSelfAvatar();
 }
 
