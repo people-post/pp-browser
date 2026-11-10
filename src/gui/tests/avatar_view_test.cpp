@@ -43,7 +43,7 @@ TEST(AvatarViewMarkupTest, TheViewerShowsTheSquareAsStoredNotCircular) {
   EXPECT_EQ(rule.find("border-radius"), std::string::npos) << "no circular mask";
 }
 
-TEST(AvatarViewMarkupTest, TheProfilePhotoTapsTheViewerOrMenuAndTheCameraBadgeOpensTheSourceMenu) {
+TEST(AvatarViewMarkupTest, TheProfilePhotoTapsTheViewerOrMenuAndTheCameraBadgeIsTheOnlyChangeButton) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
   EXPECT_NE(rml.find("<div class=\"me-profile-avatar-frame\" data-event-click=\"tap_profile_avatar()\""),
             std::string::npos);
@@ -53,8 +53,9 @@ TEST(AvatarViewMarkupTest, TheProfilePhotoTapsTheViewerOrMenuAndTheCameraBadgeOp
   EXPECT_NE(tag.find("data-event-click=\"pick_profile_icon()\""), std::string::npos);
   EXPECT_NE(tag.find("data-attrif-disabled=\"profile_icon_uploading\""), std::string::npos);
   EXPECT_NE(rml.find("../icons/v2/camera.svg"), std::string::npos);
-  // The "Change photo" button is still there.
-  EXPECT_NE(rml.find("settings.profile.change_photo"), std::string::npos);
+  // The camera badge is the only visible way to change the photo: no "Change photo" button any more.
+  EXPECT_EQ(rml.find("settings.profile.change_photo"), std::string::npos);
+  EXPECT_EQ(rml.find("me-profile-avatar-btn"), std::string::npos);
 }
 
 TEST(AvatarViewMarkupTest, ThePhoneProfileRulesMakeThePhoto112AndCentredAndTheDesktopKeeps64) {
@@ -70,10 +71,13 @@ TEST(AvatarViewMarkupTest, ThePhoneProfileRulesMakeThePhoto112AndCentredAndTheDe
             std::string::npos);
   EXPECT_NE(rule(".shell-layer-compact .me-profile-avatar-uploading").find("width: 112dp"), std::string::npos);
   EXPECT_NE(rule(".shell-layer-compact .me-profile-avatar-row").find("align-items: center"), std::string::npos);
-  EXPECT_NE(rule(".me-profile-avatar-badge").find("display: none"), std::string::npos) << "desktop: no badge";
+  // The badge shows everywhere: 24dp with a 2dp ring on the desktop's 64dp photo, 36dp on the phone's 112dp one.
+  const std::string desktop_badge = rule(".me-profile-avatar-badge");
+  EXPECT_NE(desktop_badge.find("display: flex"), std::string::npos);
+  EXPECT_NE(desktop_badge.find("width: 24dp"), std::string::npos);
+  EXPECT_NE(desktop_badge.find("border-width: 2dp"), std::string::npos);
   const std::string badge = rule(".shell-layer-compact .me-profile-avatar-badge");
-  EXPECT_NE(badge.find("display: flex"), std::string::npos);
-  EXPECT_NE(badge.find("border-width: 2dp"), std::string::npos);
+  EXPECT_NE(badge.find("width: 36dp"), std::string::npos);
 }
 
 TEST(AvatarViewControllerTest, OpenPushesAFullScreenLayerOnceAndCloseClosesItOnce) {

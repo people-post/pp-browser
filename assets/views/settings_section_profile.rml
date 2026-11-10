@@ -18,17 +18,12 @@
           <div class="me-profile-avatar-uploading" data-if="profile_icon_uploading">
             <p class="me-profile-avatar-uploading-text">{{i18n:settings.profile.photo_uploading}}</p>
           </div>
-          <!-- Phone only: the camera badge opens the same source menu as the button below. -->
+          <!-- The camera badge opens the source menu (camera, library, remove); the only visible way to change the photo. -->
           <button class="me-profile-avatar-badge" type="button" data-event-click="pick_profile_icon()"
                   data-attrif-disabled="profile_icon_uploading">
             <svg src="../icons/v2/camera.svg" width="16" height="16"></svg>
           </button>
           </div>
-          <button class="btn btn-secondary me-profile-avatar-btn" type="button"
-                  data-event-click="pick_profile_icon()"
-                  data-attrif-disabled="profile_icon_uploading">
-            {{i18n:settings.profile.change_photo}}
-          </button>
         </div>
         </div>
         <div class="group-card">

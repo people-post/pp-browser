@@ -3657,6 +3657,11 @@ input.checkbox:checked {
   color: #007aff;
 }
 
+.avatar-crop-pill {
+  background-color: #00000080;
+  color: #ffffff;
+}
+
 /* Profile page camera badge and the photo viewer. */
 .me-profile-avatar-badge {
   background-color: #007aff;

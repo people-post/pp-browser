@@ -8588,20 +8588,34 @@ input.checkbox {
   font-size: 18dp;
 }
 
-.me-profile-avatar-btn {
-  flex-grow: 0;
-  flex-shrink: 0;
-  width: auto;
-  white-space: nowrap;
-}
-
-/* The camera badge: phones only (the desktop keeps the 64dp photo and its button). */
+/* The camera badge: the visible way to change the photo. 24dp on the desktop's 64dp photo, 36dp on the phone's 112dp one. */
 .me-profile-avatar-badge {
-  display: none;
+  display: flex;
+  position: absolute;
+  right: -2dp;
+  bottom: -2dp;
+  width: 24dp;
+  height: 24dp;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border-width: 2dp;
+  border-radius: 12dp;
+  cursor: pointer;
 }
 
-/* Phone profile page (Kenneth 2026-11-10): the photo is big enough to see, 112dp, centred at the top with the
-   "Change photo" button under it; a 32dp camera badge sits on its lower right with a 2dp ring in the card's colour.
+.me-profile-avatar-badge svg {
+  width: 12dp;
+  height: 12dp;
+}
+
+.me-profile-avatar-badge:disabled {
+  opacity: 0.4;
+}
+
+/* Phone profile page (Kenneth 2026-11-10): the photo is big enough to see, 112dp, centred at the top; a 32dp camera badge sits on its lower right with a 2dp ring in the card's colour.
    The uploading cover follows the circle. Colours: colors.rcss.tmpl. */
 .shell-layer-compact .me-profile-avatar-row {
   flex-direction: column;
@@ -8640,31 +8654,15 @@ input.checkbox {
 }
 
 .shell-layer-compact .me-profile-avatar-badge {
-  display: flex;
-  position: absolute;
-  right: -2dp;
-  bottom: -2dp;
   width: 36dp;
   height: 36dp;
-  box-sizing: border-box;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  padding: 0;
-  border-width: 2dp;
   border-radius: 18dp;
-  cursor: pointer;
 }
 
 .shell-layer-compact .me-profile-avatar-badge svg {
   width: 16dp;
   height: 16dp;
 }
-
-.shell-layer-compact .me-profile-avatar-badge:disabled {
-  opacity: 0.4;
-}
-
 .contacts-row-avatar-frame {
   width: 32dp;
   height: 32dp;
@@ -14718,8 +14716,45 @@ textarea:composing ~ .prompt-composer-label,
   margin: 0;
 }
 
-.avatar-crop-btn:disabled {
+.avatar-crop-btn:disabled,
+.avatar-crop-btn--disabled,
+.avatar-crop-close--disabled {
   opacity: 0.4;
+}
+
+/* Pressed: the same dimming the disabled look uses, a little stronger, while a finger is down (the button comes back
+   at full strength on release). A disabled button stays at the disabled look. */
+.avatar-crop-btn:active,
+.avatar-crop-close:active {
+  opacity: 0.55;
+}
+
+.avatar-crop-btn--disabled:active,
+.avatar-crop-close--disabled:active {
+  opacity: 0.4;
+}
+
+/* "Uploading…" over the picture: out of the flow and above the stage's picture and dim (positioned, z-index), taps pass
+   through to the buttons below. Colours: colors.rcss.tmpl. */
+.avatar-crop-pill-host {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.avatar-crop-pill {
+  margin: 0;
+  padding: 12dp 24dp;
+  border-radius: 24dp;
+  font-size: 16dp;
+  white-space: nowrap;
 }
 
 /* The profile photo viewer (a full-screen layer, like the scanner): the stored square centred, as wide as the screen up

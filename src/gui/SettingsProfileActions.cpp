@@ -31,18 +31,26 @@ namespace pbr {
 /** Answers the crop page once: `Answer(ok)`, or `false` when the last holder lets go unanswered (a PIN step that
  *  dropped its closure), so the page can never stay locked. */
 struct AvatarCropFinish {
-  explicit AvatarCropFinish(std::function<void(bool)> fn) : finished(std::move(fn)) {}
+  explicit AvatarCropFinish(AvatarCropReply r) : reply(std::move(r)) {}
   ~AvatarCropFinish() { Answer(false); }
+  void Uploading(const bool running) {
+    if (!answered && reply.uploading) {
+      reply.uploading(running);
+    }
+  }
   void Answer(const bool ok) {
     if (answered) {
       return;
     }
     answered = true;
-    if (finished) {
-      finished(ok);
+    if (reply.uploading) {
+      reply.uploading(false);
+    }
+    if (reply.finished) {
+      reply.finished(ok);
     }
   }
-  std::function<void(bool)> finished;
+  AvatarCropReply reply;
   bool answered = false;
 };
 
@@ -275,8 +283,8 @@ void SettingsProfileActions::IconChosen(std::string path) {
   }
   // The crop page comes first, and it holds the file until it closes. "Done" is what asks for the PIN; a refused PIN
   // or a failed upload leaves the page open (answered false), a finished upload closes it (answered true).
-  commands_.open_avatar_crop(file, [this, file](ProfileIconCrop crop, std::function<void(bool ok)> finished) {
-    auto answer = std::make_shared<AvatarCropFinish>(std::move(finished));
+  commands_.open_avatar_crop(file, [this, file](ProfileIconCrop crop, AvatarCropReply reply) {
+    auto answer = std::make_shared<AvatarCropFinish>(std::move(reply));
     Unlocked(
         "PIN required to change profile icon", [this, file, crop, answer]() { UploadIcon(file, crop, answer); },
         [answer]() { answer->Answer(false); });
@@ -303,6 +311,9 @@ void SettingsProfileActions::UploadIcon(std::shared_ptr<PickedFileLease> file, s
   }
   host_.UiState().profile_icon_uploading = true;
   host_.PushToView(/*include_profile_nickname=*/false);
+  if (crop_finished) {
+    crop_finished->Uploading(true); // the crop page shows "Uploading…" from here (the PIN is done)
+  }
   BlobQuotaRecoveryFlow::RunVoidUpload(
       [this, file, crop]() { return commands_.upload_profile_icon_file(file->path(), crop); },
       [this, file, crop_finished](Roe<void> result) {

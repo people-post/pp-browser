@@ -61,6 +61,7 @@ bool AvatarCropController::RegisterModel(ui::Context* context) {
   return DataModelHost::Instance().Register(context, "avatar_crop", [this](ui::DataModelConstructor& ctor) {
     ctor.Bind("crop_loading", &loading_);
     ctor.Bind("crop_locked", &locked_);
+    ctor.Bind("crop_uploading", &uploading_);
     ctor.BindEventCallback("crop_cancel", [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
       if (AvatarCropButtons::CanCancel(locked_)) {
         Close();
@@ -76,6 +77,7 @@ void AvatarCropController::Dirty() {
   if (context_) {
     DataModelHost::Instance().Dirty("avatar_crop", "crop_loading");
     DataModelHost::Instance().Dirty("avatar_crop", "crop_locked");
+    DataModelHost::Instance().Dirty("avatar_crop", "crop_uploading");
   }
 }
 
@@ -271,10 +273,19 @@ void AvatarCropController::Done() {
   crop.affine = frame_->OutputAffine(side);
   const unsigned generation = generation_;
   const std::weak_ptr<bool> alive = alive_;
-  commit_(crop, [this, alive, generation](const bool ok) {
+  AvatarCropReply reply;
+  reply.uploading = [this, alive, generation](const bool running) {
     if (alive.expired() || generation != generation_ || !IsOpen()) {
       return;
     }
+    uploading_ = running;
+    Dirty();
+  };
+  reply.finished = [this, alive, generation](const bool ok) {
+    if (alive.expired() || generation != generation_ || !IsOpen()) {
+      return;
+    }
+    uploading_ = false;
     if (ok) {
       Close();
       return;
@@ -283,7 +294,8 @@ void AvatarCropController::Done() {
     locked_ = false;
     SyncPaused();
     Dirty();
-  });
+  };
+  commit_(crop, std::move(reply));
 }
 
 void AvatarCropController::ProcessEvent(ui::Event& event) {
@@ -364,6 +376,7 @@ void AvatarCropController::ResetState() {
   commit_ = nullptr;
   loading_ = false;
   locked_ = false;
+  uploading_ = false;
   view_dirty_ = false;
   ++generation_; // a decode still running, or a "Done" still answering, is ignored from here on
   layer_id_ = -1;

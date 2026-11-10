@@ -37,8 +37,9 @@ struct AvatarCropButtons {
   static bool CanCancel(bool locked) { return !locked; }
 };
 
-/** "Done" hands this to the caller; the caller answers `finished(ok)` (true closes the page, false unlocks it). */
-using AvatarCropCommit = std::function<void(ProfileIconCrop crop, std::function<void(bool ok)> finished)>;
+/** "Done" hands this to the caller; the caller answers `reply.finished(ok)` (true closes the page, false unlocks it)
+ *  and tells `reply.uploading(running)` while the upload itself runs (the page shows its "Uploading…" pill then). */
+using AvatarCropCommit = std::function<void(ProfileIconCrop crop, AvatarCropReply reply)>;
 
 /**
  * The avatar crop page (PLAN-avatar-edit items 9 and 11): a full-screen page with the picture under a fixed round
@@ -103,6 +104,7 @@ private:
   bool view_dirty_ = false;
   bool loading_ = false;
   bool locked_ = false;
+  bool uploading_ = false;
 };
 
 } // namespace pbr

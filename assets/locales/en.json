@@ -131,7 +131,6 @@
     "settings.home_logo.label": "Animated home logo",
     "settings.home_logo.help": "Moves on its own now and then and when tapped; off shows the plain app icon",
     "settings.nickname": "Nickname",
-    "settings.profile.change_photo": "Change photo…",
     "settings.profile.remove_photo": "Remove photo",
     "settings.profile.invite_copied": "Invite copied",
     "settings.profile.invite_text":
