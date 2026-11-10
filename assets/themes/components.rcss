@@ -14609,22 +14609,51 @@ textarea:composing ~ .prompt-composer-label,
   bottom: 0;
 }
 
+.avatar-crop-bar,
+.avatar-crop-stage,
+.avatar-crop-actions {
+  /* Positioned and above the phone's absolute black layer behind them: an in-flow block paints under a positioned
+     sibling (and the sibling takes its taps), which hid the whole bottom row on the phone. */
+  position: relative;
+  z-index: 1;
+}
+
 .avatar-crop-bar {
   flex-shrink: 0;
-  height: 48dp;
+  height: 52dp;
+}
+
+/* Phones: a round close at the top left, the way out that does not depend on the bottom row. */
+.avatar-crop-close {
+  display: none;
+}
+
+.shell-layer-compact .avatar-crop-close {
+  display: flex;
+  position: absolute;
+  top: 0;
+  left: 12dp;
+  z-index: 2;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 52dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
 }
 
 .avatar-crop-title {
   margin: 0;
-  height: 48dp;
-  line-height: 48dp;
+  height: 52dp;
+  line-height: 52dp;
   text-align: center;
   font-size: 17dp;
   font-weight: bold;
 }
 
 .avatar-crop-stage {
-  position: relative;
   flex: 1;
   min-height: 360dp;
   overflow: hidden;
@@ -14673,6 +14702,22 @@ textarea:composing ~ .prompt-composer-label,
   font-weight: bold;
 }
 
+/* Phones: two fingers turn and zoom, so there is no Rotate button; Cancel sits left and Done right. */
+.shell-layer-compact .avatar-crop-btn--rotate {
+  display: none;
+}
+
+.shell-layer-compact .avatar-crop-actions {
+  justify-content: space-between;
+  padding: 8dp 16dp;
+}
+
+.shell-layer-compact .avatar-crop-btn {
+  flex: none;
+  min-width: 96dp;
+  margin: 0;
+}
+
 .avatar-crop-btn:disabled {
   opacity: 0.4;
 }
@@ -14709,6 +14754,8 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 .avatar-view-stage {
+  position: relative;
+  z-index: 1; /* above the absolute black behind it, which would otherwise cover the picture */
   flex: 1;
   min-height: 0;
   display: flex;
