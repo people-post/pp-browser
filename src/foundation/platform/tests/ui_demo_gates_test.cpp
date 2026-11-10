@@ -8,16 +8,19 @@ namespace pbr {
 namespace {
 
 TEST(UiDemoGatesTest, DemoOriginIsEmptyWhateverTheEnvironmentSays) {
-  EXPECT_EQ(ResolveBriefOrigin(true, "https://backend.example.test", BackendEnv::Prod), "");
-  EXPECT_EQ(ResolveBriefOrigin(true, "https://backend.example.test", BackendEnv::Qa), "");
-  EXPECT_EQ(ResolveBriefOrigin(true, nullptr, BackendEnv::Custom), "");
+  const CompiledOrigins compiled{.prod = "https://prod.example.test", .qa = "https://qa.example.test"};
+  EXPECT_EQ(ResolveBriefOrigin(true, "https://backend.example.test", BackendEnv::Prod, compiled), "");
+  EXPECT_EQ(ResolveBriefOrigin(true, "https://backend.example.test", BackendEnv::Qa, compiled), "");
+  EXPECT_EQ(ResolveBriefOrigin(true, nullptr, BackendEnv::Custom, compiled), "");
+  EXPECT_EQ(ResolveBriefOrigin(true, nullptr, BackendEnv::Prod, compiled), "");
 }
 
 TEST(UiDemoGatesTest, NormalOriginStillPrefersTheEnvironmentAndDropsTrailingSlashes) {
-  EXPECT_EQ(ResolveBriefOrigin(false, "https://backend.example.test//", BackendEnv::Prod),
+  const CompiledOrigins compiled{.prod = "https://prod.example.test", .qa = "https://qa.example.test"};
+  EXPECT_EQ(ResolveBriefOrigin(false, "https://backend.example.test//", BackendEnv::Prod, compiled),
             "https://backend.example.test");
-  EXPECT_EQ(ResolveBriefOrigin(false, "", BackendEnv::Prod), std::string(CompiledDefaultOrigin()));
-  EXPECT_EQ(ResolveBriefOrigin(false, nullptr, BackendEnv::Qa), std::string(CompiledQaOrigin()));
+  EXPECT_EQ(ResolveBriefOrigin(false, "", BackendEnv::Prod, compiled), "https://prod.example.test");
+  EXPECT_EQ(ResolveBriefOrigin(false, nullptr, BackendEnv::Qa, compiled), "https://qa.example.test");
 }
 
 TEST(UiDemoGatesTest, DemoDiagnosticsUrlIsEmptyEvenWithTheOverrideAndAnOrigin) {

@@ -53,11 +53,7 @@ TEST(PlatformDefaultsTest, DesktopDefaultsMatchExpectedValues) {
 }
 
 TEST(PlatformDefaultsTest, NoOriginLeavesBackendEndpointsEmpty) {
-  ScopedOrigin origin(nullptr);
-  if (!std::string(pbr::CompiledDefaultOrigin()).empty()) {
-    GTEST_SKIP() << "a compile-time default origin is configured";
-  }
-  const pbr::AppConfig config = pbr::PlatformDefaults::For(pbr::PlatformKind::Desktop);
+  const pbr::AppConfig config = pbr::PlatformDefaults::For(pbr::PlatformKind::Desktop, "");
   EXPECT_TRUE(config.llm.base_url.empty());
   EXPECT_FALSE(config.promoted_mcp.IsConfigured());
   EXPECT_TRUE(config.relay.base_url.empty());

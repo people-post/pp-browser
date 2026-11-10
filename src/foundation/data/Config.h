@@ -90,6 +90,8 @@ public:
   /** `ui_demo`: the UI demo app has no backend or mesh (UiDemoConfig.h); every Config comes out with those applied. */
   static Roe<AppConfig> LoadFromFile(const std::string& path, bool ui_demo = kUiDemoBuild);
   static AppConfig DefaultAppConfig(bool ui_demo = kUiDemoBuild);
+  /** DefaultAppConfig() against backend `origin` instead of this run's ("" leaves the backend URLs empty). */
+  static AppConfig DefaultAppConfigFor(const std::string& origin, bool ui_demo = kUiDemoBuild);
   static Roe<void> SaveToFile(const std::string& path, const AppConfig& config);
   /** `--config`, else PP_BROWSER_CONFIG, else `fallback`; empty: no file. */
   static std::string DiscoverConfigPath(int argc, char** argv, Fallback fallback = Fallback::AppConfigFile);

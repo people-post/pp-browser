@@ -68,7 +68,11 @@ Config& Config::Instance() {
 }
 
 AppConfig Config::DefaultAppConfig(const bool ui_demo) {
-  AppConfig config = PlatformDefaults::For(Platform::Detect());
+  return DefaultAppConfigFor(BriefOrigin(), ui_demo);
+}
+
+AppConfig Config::DefaultAppConfigFor(const std::string& origin, const bool ui_demo) {
+  AppConfig config = PlatformDefaults::For(Platform::Detect(), origin);
   NormalizeMeshConfig(config.mesh);
   if (ui_demo) {
     ApplyUiDemoConfig(config);

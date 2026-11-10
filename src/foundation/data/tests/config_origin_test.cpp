@@ -95,11 +95,7 @@ TEST(ConfigOriginTest, EnvLeavesCustomLlmEndpointAlone) {
 }
 
 TEST(ConfigOriginTest, NoOriginLeavesBackendUrlsEmpty) {
-  ScopedOrigin origin(nullptr);
-  if (!std::string(pbr::CompiledDefaultOrigin()).empty()) {
-    GTEST_SKIP() << "a compile-time default origin is configured";
-  }
-  const pbr::AppConfig defaults = pbr::Config::DefaultAppConfig();
+  const pbr::AppConfig defaults = pbr::Config::DefaultAppConfigFor("");
   EXPECT_TRUE(defaults.llm.base_url.empty());
   EXPECT_TRUE(defaults.relay.base_url.empty());
   EXPECT_TRUE(defaults.directory.base_url.empty());

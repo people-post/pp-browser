@@ -8,7 +8,7 @@ Repo tooling lives under topic subdirs (not a flat dump). Prefer these paths in 
 | [`platform/`](platform/) | Mobile / desktop build, sign, notarize; Linux `pp-node` package | `android_build.sh`, `ios_build.sh`, `macos_sign_and_notarize.sh`, `pp_node_package_linux.sh` |
 | [`vendor/`](vendor/) | Import / refresh third-party and fork trees | `vendor_import.sh`, `libp2p_vendor_import.sh`, `fonts_import_noto.sh`, `rmlui_tests_import.sh`, `quirc_import.sh` |
 | [`test/`](test/) | Local driver + image / hop / hard-lab / call smokes | `pp_local_test.sh`, `pp_*_smoke.sh`, `pp_hard_*`, `*_lib.sh` |
-| [`dev/`](dev/) | Local profile wipe after hard cuts; dogfood launcher (core dumps, console tee, crash symbolize); pp-node closure report (what a node release would ship) | `wipe_local_profile.sh`, `wipe_local_profile.ps1`, `pp_dogfood.sh`, `pp_node_closure.sh` |
+| [`dev/`](dev/) | Local profile wipe after hard cuts; dogfood launcher (core dumps, console tee, crash symbolize); pp-node closure report (what a node release would ship); fake relay files server for the manual large-attachment run (`LargeAttachmentE2e`, Python 3 stdlib) | `wipe_local_profile.sh`, `wipe_local_profile.ps1`, `pp_dogfood.sh`, `pp_node_closure.sh`, `fake_blob_server.py` |
 
 Examples:
 
@@ -22,6 +22,7 @@ Examples:
 ./scripts/dev/wipe_local_profile.sh --dry-run
 ./scripts/dev/pp_dogfood.sh -- --debug
 ./scripts/dev/pp_node_closure.sh --build build
+python3 scripts/dev/fake_blob_server.py --port 8767
 ```
 
 Doctrine / purpose IDs: [docs/architecture/TESTING.md](../docs/architecture/TESTING.md), [docs/ops/TEST_STRATEGY.md](../docs/ops/TEST_STRATEGY.md). Hard lab: [packaging/pp-node/HARD_LAB.md](../packaging/pp-node/HARD_LAB.md).
