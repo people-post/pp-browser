@@ -382,8 +382,23 @@ std::string CallRingPhoneRml(const ShellState& state) {
   std::ostringstream out;
   out << "<div id=\"call-phone-ring\" class=\"shell-layer call-phone call-phone--ring\" data-model=\"window\">";
   out << "<div class=\"call-phone-hero call-phone-hero--ring\">";
-  AppendAvatar(out, "call-phone-avatar--big", ring.group, ring.has_avatar, ring.avatar_src.c_str(),
-               ring.avatar_letter.c_str(), ring.avatar_tone);
+  // The avatar variants are all in the markup and switched by bound values, so the caller replacing "Incoming call,
+  // connecting…" is a dirty, not a remount: a silhouette while nobody is known, then group / photo / letter.
+  out << "<div class=\"call-phone-avatar call-phone-avatar--unknown call-phone-avatar--big\" "
+         "data-if=\"call_ring_awaiting_invite\"><svg src=\"../icons/v2/user.svg\" width=\"56\" "
+         "height=\"56\"></svg></div>";
+  out << "<div class=\"call-phone-avatar call-phone-avatar--group call-phone-avatar--big\" "
+         "data-if=\"!call_ring_awaiting_invite && call_ring_group\"><svg src=\"../icons/v2/group.svg\" width=\"48\" "
+         "height=\"48\"></svg></div>";
+  out << "<img class=\"call-phone-avatar call-phone-avatar--big\" "
+         "data-if=\"!call_ring_awaiting_invite && !call_ring_group && call_ring_has_avatar\" "
+         "data-attr-src=\"call_ring_avatar_src\"/>";
+  out << "<div class=\"call-phone-avatar call-phone-avatar--big\" "
+         "data-if=\"!call_ring_awaiting_invite && !call_ring_group && !call_ring_has_avatar\"";
+  for (int tone = 0; tone < 8; ++tone) {
+    out << " data-class-avatar-tone-" << tone << "=\"call_ring_avatar_tone == " << tone << "\"";
+  }
+  out << "><p class=\"avatar-letter\">{{call_ring_avatar_letter}}</p></div>";
   out << "<p class=\"call-phone-name\">{{call_ring_phone_title}}</p>";
   out << "<p class=\"call-phone-status\">{{call_ring_phone_subtitle}}</p>";
   out << "<p class=\"call-phone-hint\" data-if=\"call_ring_conflict\">{{call_ring_conflict_hint}}</p>";
@@ -392,29 +407,26 @@ std::string CallRingPhoneRml(const ShellState& state) {
   }
   out << "<p class=\"call-phone-hint\" data-if=\"call_ring_show_pricing\">{{call_ring_pricing_label}}</p>";
   out << "</div>";
-  // Awaiting the invite: the answers keep their place but are dimmed and carry no click event.
-  const bool waiting = ring.awaiting_invite;
-  const char* const action_class =
-      waiting ? "call-phone-answer-action call-phone-answer--waiting" : "call-phone-answer-action";
-  const auto click = [waiting](const char* handler) {
-    return waiting ? std::string() : std::string(" data-event-click=\"") + handler + "\"";
-  };
+  // Awaiting the invite the answers are dimmed (a bound class); their handlers are always there and ShellHost
+  // ignores them until the real ring.
+  const char* const action =
+      "call-phone-answer-action\" data-class-call-phone-answer--waiting=\"call_ring_awaiting_invite";
   out << "<div class=\"call-phone-answer\">";
-  out << "<div class=\"" << action_class
-      << "\"><button class=\"call-phone-round call-phone-round--decline\" type=\"button\"" << click("call_decline()")
-      << "><svg src=\"../icons/v2/phone-hangup-fill.svg\" width=\"34\" height=\"34\"></svg></button>"
-      << "<p class=\"call-phone-answer-label\">{{call_ring_decline_label}}</p></div>";
-  out << "<div class=\"" << action_class
+  out << "<div class=\"" << action
+      << "\"><button class=\"call-phone-round call-phone-round--decline\" type=\"button\" "
+         "data-event-click=\"call_decline()\"><svg src=\"../icons/v2/phone-hangup-fill.svg\" width=\"34\" "
+         "height=\"34\"></svg></button>"
+         "<p class=\"call-phone-answer-label\">{{call_ring_decline_label}}</p></div>";
+  out << "<div class=\"" << action
       << "\" data-if=\"call_ring_video_allowed\"><button class=\"call-phone-round call-phone-round--accept\" "
-         "type=\"button\""
-      << click("call_accept_voice()")
-      << "><svg src=\"../icons/v2/phone.svg\" width=\"30\" height=\"30\"></svg></button>"
-      << "<p class=\"call-phone-answer-label\">{{call_ring_voice_answer_label}}</p></div>";
-  out << "<div class=\"" << action_class
-      << "\"><button class=\"call-phone-round call-phone-round--accept\" type=\"button\"" << click("call_accept()")
-      << "><svg width=\"30\" height=\"30\" "
+         "type=\"button\" data-event-click=\"call_accept_voice()\"><svg src=\"../icons/v2/phone.svg\" width=\"30\" "
+         "height=\"30\"></svg></button>"
+         "<p class=\"call-phone-answer-label\">{{call_ring_voice_answer_label}}</p></div>";
+  out << "<div class=\"" << action
+      << "\"><button class=\"call-phone-round call-phone-round--accept\" type=\"button\" "
+         "data-event-click=\"call_accept()\"><svg width=\"30\" height=\"30\" "
          "data-attr-src=\"call_ring_video_allowed ? '../icons/v2/video.svg' : '../icons/v2/phone.svg'\"></svg></button>"
-      << "<p class=\"call-phone-answer-label\">{{call_ring_accept_label}}</p></div>";
+         "<p class=\"call-phone-answer-label\">{{call_ring_accept_label}}</p></div>";
   out << "</div>";
   out << "<div class=\"call-phone-charge\" data-if=\"call_ring_show_pricing\">";
   out << "<button class=\"call-phone-pill-btn\" type=\"button\" "

@@ -240,6 +240,12 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     // only themselves (CallChromeChangedVariables).
     ctor.Bind("call_ring_phone_title", &host.state_.call_ring.phone_title);
     ctor.Bind("call_ring_phone_subtitle", &host.state_.call_ring.phone_subtitle);
+    // The ring page's avatar is bound so a name / photo arriving while the page stays up is a dirty, not a remount.
+    ctor.Bind("call_ring_group", &host.state_.call_ring.group);
+    ctor.Bind("call_ring_has_avatar", &host.state_.call_ring.has_avatar);
+    ctor.Bind("call_ring_avatar_src", &host.state_.call_ring.avatar_src);
+    ctor.Bind("call_ring_avatar_letter", &host.state_.call_ring.avatar_letter);
+    ctor.Bind("call_ring_avatar_tone", &host.state_.call_ring.avatar_tone);
     ctor.Bind("call_in_progress_phone_title", &host.state_.call_in_progress.phone_title);
     ctor.Bind("call_in_progress_failed_text", &host.state_.call_in_progress.failed_text);
     ctor.Bind("call_in_progress_story_step1", &host.state_.call_in_progress.story_step1);
@@ -1486,15 +1492,33 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_side");
   DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_y_permille");
   DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_tucked");
-  for (const char* name :
-       {"call_ring_phone_title",           "call_ring_phone_subtitle",       "call_in_progress_phone_title",
-        "call_in_progress_failed_text",    "call_in_progress_story_step1",   "call_in_progress_story_step2",
-        "call_in_progress_story_step3",    "call_in_progress_story_step4",   "call_in_progress_story_step5",
-        "call_in_progress_result_text",    "call_in_progress_result_fading", "call_in_progress_signal_shown",
-        "call_in_progress_signal_bars",    "call_in_progress_signal_tone",   "call_in_progress_signal_word",
-        "call_in_progress_notice_text",    "call_in_progress_notice_warn",   "call_in_progress_notice_fading",
-        "call_in_progress_reconnect_text", "call_in_progress_reconnect_ok",  "call_in_progress_reconnect_fading",
-        "call_in_progress_reconnect_dim"}) {
+  for (const char* name : {"call_ring_phone_title",
+                           "call_ring_phone_subtitle",
+                           "call_ring_group",
+                           "call_ring_has_avatar",
+                           "call_ring_avatar_src",
+                           "call_ring_avatar_letter",
+                           "call_ring_avatar_tone",
+                           "call_in_progress_phone_title",
+                           "call_in_progress_failed_text",
+                           "call_in_progress_story_step1",
+                           "call_in_progress_story_step2",
+                           "call_in_progress_story_step3",
+                           "call_in_progress_story_step4",
+                           "call_in_progress_story_step5",
+                           "call_in_progress_result_text",
+                           "call_in_progress_result_fading",
+                           "call_in_progress_signal_shown",
+                           "call_in_progress_signal_bars",
+                           "call_in_progress_signal_tone",
+                           "call_in_progress_signal_word",
+                           "call_in_progress_notice_text",
+                           "call_in_progress_notice_warn",
+                           "call_in_progress_notice_fading",
+                           "call_in_progress_reconnect_text",
+                           "call_in_progress_reconnect_ok",
+                           "call_in_progress_reconnect_fading",
+                           "call_in_progress_reconnect_dim"}) {
     DataModelHost::Instance().Dirty("window", name);
   }
 }

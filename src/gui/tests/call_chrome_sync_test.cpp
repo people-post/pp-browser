@@ -28,20 +28,32 @@ TEST(CallChromeSyncTest, RingPricingPresenceRemounts) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
-// The awaiting page becomes the real ring in place: the ring layer is never inactive in between, and the page is
-// rewritten (the answers get their clicks back).
-TEST(CallChromeSyncTest, AwaitingRingBecomesTheRealRingInPlaceWithARemount) {
+// The awaiting page becomes the real ring in place: every difference between them is a bound value, so it is a dirty
+// and never a remount (a remount flashed the page); the ring appearing from nothing still mounts.
+TEST(CallChromeSyncTest, AwaitingRingBecomesTheRealRingByDirtyOnly) {
   pbr::CallChromeLayer awaiting;
   awaiting.ring_active = true;
   awaiting.ring_awaiting_invite = true;
+  awaiting.ring_phone_title = "Incoming call, connecting…";
   pbr::CallChromeLayer real = awaiting;
   real.ring_awaiting_invite = false;
   real.ring_call_id = "c1";
-  EXPECT_TRUE(real.ring_active) << "no frame with the ring off";
-  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, real), pbr::CallChromeUpdate::Remount);
+  real.ring_phone_title = "Bob";
+  real.ring_phone_subtitle = "PP voice call";
+  real.ring_avatar = "photo|bob.png";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, real), pbr::CallChromeUpdate::DirtyOnly);
   pbr::CallChromeLayer only_flag = awaiting;
   only_flag.ring_awaiting_invite = false;
-  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, only_flag), pbr::CallChromeUpdate::Remount);
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, only_flag), pbr::CallChromeUpdate::DirtyOnly);
+  pbr::CallChromeLayer nothing;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(nothing, awaiting), pbr::CallChromeUpdate::Remount) << "appears from nothing";
+  pbr::CallChromeLayer other = real;
+  other.ring_call_id = "c2";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(real, other), pbr::CallChromeUpdate::Remount)
+      << "another call: still a remount";
+  pbr::CallChromeLayer paid = awaiting;
+  paid.ring_show_pricing = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, paid), pbr::CallChromeUpdate::Remount) << "pricing is structure";
 }
 
 TEST(CallChromeSyncTest, RingDisappearRemounts) {

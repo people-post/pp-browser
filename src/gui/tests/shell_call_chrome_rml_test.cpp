@@ -29,9 +29,9 @@ TEST(ShellCallChromeRmlTest, ARingingCallOffersItsAnswers) {
   EXPECT_TRUE(Has(rml, "data-model=\"window\""));
 }
 
-// Incoming call, connecting…: the phone ring page with its answers in place but dimmed and dead (no click events),
-// then the real ring's page with them live again.
-TEST(ShellCallChromeRmlTest, TheAwaitingRingPageDimsItsAnswersAndDropsTheirClicks) {
+// Incoming call, connecting…: the same phone ring page before and after the invite arrives. Everything that differs
+// is bound (the dim class, the avatar variants), so the markup is identical in both states and no remount is needed.
+TEST(ShellCallChromeRmlTest, TheAwaitingAndTheRealRingShareOneMarkup) {
   ShellState state;
   state.layout_mode = LayoutMode::Compact;
   state.call_ring.active = true;
@@ -39,16 +39,39 @@ TEST(ShellCallChromeRmlTest, TheAwaitingRingPageDimsItsAnswersAndDropsTheirClick
   const std::string waiting = CallRingRml(state);
   EXPECT_TRUE(Has(waiting, "call-phone--ring"));
   EXPECT_TRUE(Has(waiting, "{{call_ring_phone_title}}"));
-  EXPECT_TRUE(Has(waiting, "call-phone-answer--waiting"));
-  EXPECT_FALSE(Has(waiting, "call_accept()"));
-  EXPECT_FALSE(Has(waiting, "call_accept_voice()"));
-  EXPECT_FALSE(Has(waiting, "call_decline()"));
-
   state.call_ring.awaiting_invite = false;
-  const std::string live = CallRingRml(state);
-  EXPECT_FALSE(Has(live, "call-phone-answer--waiting"));
-  EXPECT_TRUE(Has(live, "call_accept()"));
-  EXPECT_TRUE(Has(live, "call_decline()"));
+  state.call_ring.has_avatar = true;
+  state.call_ring.avatar_src = "icons/bob.png";
+  state.call_ring.avatar_letter = "B";
+  EXPECT_EQ(waiting, CallRingRml(state));
+}
+
+TEST(ShellCallChromeRmlTest, TheRingPageDimsItsAnswersByABoundClassAndKeepsTheirHandlers) {
+  ShellState state;
+  state.layout_mode = LayoutMode::Compact;
+  state.call_ring.active = true;
+  const std::string rml = CallRingRml(state);
+  EXPECT_TRUE(Has(rml, "data-class-call-phone-answer--waiting=\"call_ring_awaiting_invite\""));
+  EXPECT_EQ(rml.find("call-phone-answer-action\" data-class-call-phone-answer--waiting"),
+            rml.find("call-phone-answer-action"));
+  EXPECT_TRUE(Has(rml, "call_accept()"));
+  EXPECT_TRUE(Has(rml, "call_accept_voice()"));
+  EXPECT_TRUE(Has(rml, "call_decline()"));
+}
+
+TEST(ShellCallChromeRmlTest, TheRingAvatarIsASilhouetteWhileAwaitingThenGroupPhotoOrLetterByBoundSwitches) {
+  ShellState state;
+  state.layout_mode = LayoutMode::Compact;
+  state.call_ring.active = true;
+  const std::string rml = CallRingRml(state);
+  EXPECT_TRUE(Has(rml, "call-phone-avatar--unknown call-phone-avatar--big\" data-if=\"call_ring_awaiting_invite\""));
+  EXPECT_TRUE(Has(rml, "icons/v2/user.svg"));
+  EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_awaiting_invite && call_ring_group\""));
+  EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_awaiting_invite && !call_ring_group && call_ring_has_avatar\""));
+  EXPECT_TRUE(Has(rml, "data-attr-src=\"call_ring_avatar_src\""));
+  EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_awaiting_invite && !call_ring_group && !call_ring_has_avatar\""));
+  EXPECT_TRUE(Has(rml, "data-class-avatar-tone-7=\"call_ring_avatar_tone == 7\""));
+  EXPECT_TRUE(Has(rml, "{{call_ring_avatar_letter}}"));
 }
 
 TEST(ShellCallChromeRmlTest, MetersAreOnlyInTheExpandedBar) {

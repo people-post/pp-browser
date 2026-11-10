@@ -3435,6 +3435,10 @@ input.checkbox:checked {
   background-color: #ff9500;
 }
 
+.call-phone-avatar--unknown {
+  background-color: #ffffff33;
+}
+
 .call-phone-sheet-lead,
 .call-phone-event-time,
 .call-phone-kv-value {
