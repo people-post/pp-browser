@@ -94,6 +94,8 @@
 #include "app/ContactsShellBridge.h"
 #include "app/PeoplePickerShellBridge.h"
 #include "gui/contacts/ContactsController.h"
+#include "gui/avatar/AvatarCropController.h"
+#include "gui/avatar/ElementAvatarCrop.h"
 #include "gui/scan/QrScanController.h"
 #include "gui/scan/ElementScanPreview.h"
 #include "gui/contacts/ContactsNotifyPorts.h"
@@ -386,6 +388,7 @@ Application::Application() {
   settings_ = std::make_unique<SettingsController>();
   contacts_ = std::make_unique<ContactsController>();
   qr_scan_ = std::make_unique<QrScanController>(MediaDeviceArbiter::Default());
+  avatar_crop_ = std::make_unique<AvatarCropController>();
   ContactsController::InstallInstance(*contacts_);
   contacts_shell_bridge_ = std::make_unique<ContactsShellBridge>();
   chat_shell_bridge_ = std::make_unique<ChatShellBridge>();
@@ -577,6 +580,7 @@ Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
     return AppError::Storage(Err::Storage::Unavailable, "Background work is still running — try again");
   }
   qr_scan_->Close();
+  avatar_crop_->Close();
   if (messaging_) {
     messaging_->RequestShutdown();
   }
@@ -739,6 +743,7 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
   }
   RegisterCallVideoTileElement();
   RegisterScanPreviewElement();
+  RegisterAvatarCropElement();
 
 #ifdef PPBROWSER_ENABLE_DEBUGGER
   ui::Debugger::Initialise(ui::CreateContext("debugger", ui::Vector2i(0, 0)));
@@ -815,9 +820,13 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
           [on_picked = std::move(on_picked), paths = std::move(paths)]() mutable { on_picked(std::move(paths)); });
     });
   };
-  settings_commands.upload_profile_icon_file = [&facade](const std::string& path) -> Roe<void> {
+  settings_commands.open_avatar_crop = [this](std::shared_ptr<PickedFileLease> file, AvatarCropCommit commit) {
+    avatar_crop_->Open(std::move(file), std::move(commit));
+  };
+  settings_commands.upload_profile_icon_file = [&facade](const std::string& path,
+                                                         std::optional<ProfileIconCrop> crop) -> Roe<void> {
     // The image is the app's to decode and size; the hub uploads what comes out.
-    auto encoded = PrepareProfileIconFromFile(path);
+    auto encoded = PrepareProfileIconFromFile(path, 512u * 1024u, 256, std::nullopt, crop);
     if (!encoded) {
       return encoded.error();
     }
@@ -1252,6 +1261,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   contacts_->BindShellNavigation(shell_navigation);
   contacts_->BindShellFeedback(shared_feedback);
   qr_scan_->BindShellNavigation(shell_navigation);
+  avatar_crop_->BindShellNavigation(shell_navigation);
   qr_scan_->BindShowMyQr([this]() { contacts_->OpenMyQr(); });
   contacts_->BindScanPorts(ScanPorts{
       .scan_qr = [this](QrScanResultCallback done) { qr_scan_->Open(std::move(done)); },
@@ -1795,6 +1805,7 @@ void Application::WireUnlockPinAndFlow() {
     contacts_->BindFlowCoordinator(flow_ports);
     chat_->BindFlowCoordinator(flow_ports);
     qr_scan_->BindFlowCoordinator(flow_ports);
+    avatar_crop_->BindFlowCoordinator(flow_ports);
     emoji_picker_->BindFlowCoordinator(std::move(flow_ports));
   }
 }
@@ -1969,6 +1980,11 @@ bool Application::MountPresenters(ui::Context* context) {
 
   if (!qr_scan_->RegisterModel(context)) {
     log().error << "QrScanController RegisterModel failed";
+    return false;
+  }
+
+  if (!avatar_crop_->RegisterModel(context)) {
+    log().error << "AvatarCropController RegisterModel failed";
     return false;
   }
 
@@ -2543,6 +2559,7 @@ void Application::Run() {
     }
     call_->Tick();
     qr_scan_->Tick();
+    avatar_crop_->Tick();
     chat_->Update();
     ContextMenuHost::Instance().Update();
     shell_->Update(context);
@@ -2552,6 +2569,7 @@ void Application::Run() {
     // After Context::Update (which resets next_update_timeout): arm power-save for shell timers.
     shell_->NotifyFrameEnd(context);
     qr_scan_->NotifyFrameEnd();
+    avatar_crop_->NotifyFrameEnd();
     // A phone in the background: events and posted tasks run above, nothing draws (B127).
     const bool draw_frame = ShouldDrawFrame(Platform::IsMobile(), AppLifecycle::IsForeground());
     // Skip Clear/Present when the Android EGL surface is gone or size is not ready yet.
@@ -2641,6 +2659,11 @@ void Application::Shutdown() {
   Backend::HideWindow();
   StartupMark("shutdown_window_hidden");
   // Arm the product's exit deadline before joining an OS camera open (which may be in a driver).
+  if (avatar_crop_) {
+    avatar_crop_->Shutdown();
+    avatar_crop_->BindShellNavigation({});
+    avatar_crop_->BindFlowCoordinator({});
+  }
   if (qr_scan_) {
     qr_scan_->Shutdown();
     qr_scan_->BindShellNavigation({});

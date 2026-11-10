@@ -44,6 +44,7 @@ class ProfileUnlockGate;
 class SettingsController;
 class ContactsController;
 class QrScanController;
+class AvatarCropController;
 class ShellHost;
 struct SettingsToolPorts;
 class PeoplePickerController;
@@ -155,6 +156,7 @@ private:
   std::unique_ptr<SettingsController> settings_;
   std::unique_ptr<ContactsController> contacts_;
   std::unique_ptr<QrScanController> qr_scan_;
+  std::unique_ptr<AvatarCropController> avatar_crop_;
   std::unique_ptr<ContactsShellBridge> contacts_shell_bridge_;
   std::unique_ptr<ChatShellBridge> chat_shell_bridge_;
   std::unique_ptr<PeoplePickerShellBridge> people_picker_shell_bridge_;
