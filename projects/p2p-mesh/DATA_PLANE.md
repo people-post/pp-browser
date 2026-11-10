@@ -1,6 +1,6 @@
 # Data plane: crypto, I/O, real-time lanes, shards
 
-**Status:** Proposed (2026-11-10), for review. Nothing here is built yet. Accepted parts become N-decisions in [DECISIONS.md](DECISIONS.md); shipped behavior moves to `docs/` ([THREADING.md](../../docs/architecture/THREADING.md), [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)).
+**Status:** Proposed (2026-11-10), for review. P1 built (2026-11-10, #574; § P1 results); P2–P4 not started. Accepted parts become N-decisions in [DECISIONS.md](DECISIONS.md); shipped behavior moves to `docs/` ([THREADING.md](../../docs/architecture/THREADING.md), [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)).
 
 **Scope:** what a node and a client do with every datagram once a link exists: receive, open (the link's AEAD), demux, the L4 work (a hop's fan-out, a bridge's splice, media to the app), seal, send. It excludes dialing, handshakes, control protocols and E2E media keys, and keeps the wire unchanged until a phase says otherwise.
 
@@ -36,10 +36,43 @@ One pump thread per `MeshHost` drives Amp and does all of it, under the runtime'
 
 ### P1 — Crypto engine (pp-cpp-crypto)
 
-- **Backend:** the link AEAD (`SessionAead`, XChaCha20-Poly1305) goes behind a backend picked once at start: BoringSSL's `EVP_aead_xchacha20_poly1305` where its assembly covers the CPU (x86-64, AArch64), libsodium otherwise. Same bytes on the wire, same API; a test pins the two backends to identical output.
+- **Backend:** the link AEAD (`SessionAead`, XChaCha20-Poly1305) moves to BoringSSL's `EVP_aead_xchacha20_poly1305`. BoringSSL picks its own code per CPU at run time, and its portable C is the fallback. Same bytes on the wire, same API; a test pins its output to libsodium's.
 - **libsodium SIMD:** enable its SIMD builds (feature defines and per-file `-mavx2` / `-mssse3`, under its own runtime CPU check). Argon2 and BLAKE2b gain too.
 - **Fewer copies:** seal straight into the send buffer, and zero key material only where it is held, not every per-packet scratch buffer.
 - **Target:** crypto ≤ 15 % of the pump in the calls profile, the same group calls at about 2/3 of today's CPU. Phones: a measured drop in a call's CPU.
+
+#### P1 results (2026-11-10)
+
+**What shipped:**
+
+- **pp-cpp-crypto v1.2.0–v1.3.1:**
+  - Vendors upstream BoringSSL (0.20261105.0, a lean 20 MB tree). pp-browser's `third_party/boringssl` (qdrvm's fork) is gone; curl's TLS uses crypto's targets.
+  - Builds libsodium with its SIMD code and 64-bit field arithmetic.
+  - Adds `XChaCha20Poly1305::SealInto` / `OpenInto` over BoringSSL.
+  - Adds `HmacSha256`, which hashes the key's pads once.
+- **pp-cpp-amp v5.3.0 / v5.4.0:** `SessionAead` uses those, and so does `HmacBinder` (finding 3, the acks).
+- **No wire change:** the AEAD and HMAC bytes are pinned to libsodium's.
+
+**Measured (x86-64):**
+
+| Step | Before | After |
+|---|---|---|
+| 1100 B seal: libsodium SIMD fix, then BoringSSL | 1.51 µs | 1.29 µs, then 0.51 µs |
+| 40 B ack HMAC | 764 ns | 73 ns |
+
+**Stress lab:**
+
+| Profile | Node CPU before | Node CPU after | Crypto share before | Crypto share after |
+|---|---|---|---|---|
+| 120 calls | 47% | 34% | 39% | 18% |
+| 250 bridges | 28% | 15–20% (4 runs; the load clients bound this host) | 42% | 19% |
+
+**Against the target:**
+
+- **Crypto share of the calls profile:** 18% against ≤15%. What is left is the AEAD itself: the hop seals each frame once per member (finding 2), at 11% for seal, 4% for open and 1.7% for HChaCha20.
+- **Node CPU in the calls profile:** 72% of before, against about two thirds.
+- **The rest needs a wire change** (a later decision, like the acks): seal once for every member of a hop, or a 12-byte-nonce ChaCha20 without XChaCha's per-packet HChaCha20.
+- **Phones:** not yet measured.
 
 ### P2 — Real-time lanes (pp-cpp-amp mux, pp-cpp-mesh hop)
 
@@ -84,7 +117,7 @@ One pump thread per `MeshHost` drives Amp and does all of it, under the runtime'
 
 ## Open questions
 
-- **BoringSSL in pp-cpp-crypto:** it is vendored in pp-browser for curl's TLS. pp-cpp-crypto taking it as a dependency (a shared vendored copy, or pp-cpp-crypto vendoring its own) affects build size and the iOS / Android builds.
+- ~~**BoringSSL in pp-cpp-crypto**~~ — decided: pp-cpp-crypto vendors it, and pp-browser's copy is gone (P1 results).
 - **eBPF steering on the org seeds:** kernel version and container capabilities (the relays run pp-node in Docker); the receive-thread fallback must be measured on its own.
 - **Shard count and the media engine on desktops:** a desktop that hosts calls as a hop (`prefer_local_as_hop`) is a node by role. Does it get shards, and does its media engine's direct send path (THREADING rule 4) keep the IO lock or post to its link's shard?
 - **The deadline defaults per class**, and whether a call's adaptation (`path_pressure`) should read the deadline drops.
