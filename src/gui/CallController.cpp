@@ -71,7 +71,7 @@ CallController::CallController()
                                const bool voice_only) { (void)presenter_.Accept(voice_only, call_id); },
               .decline = [this]() { (void)presenter_.Decline(); },
               .leave = [this]() { (void)presenter_.Leave(); },
-              .display_name = [this](const std::string& identity) { return DisplayNameForIdentity(identity); },
+              .display_name = [this](const std::string& identity) { return CallerNameFor(identity).label; },
               .now_ms = {},
           }),
       local_hold_(LocalHoldPorts()) {
@@ -212,7 +212,7 @@ std::string RosterKey(const std::vector<CallRosterParticipantState>& roster) {
   for (const CallRosterParticipantState& p : roster) {
     key += std::string(p.name.c_str()) + "|" + p.stream_id.c_str() + "|" + (p.audio_muted ? "m" : "-") +
            (p.video_enabled ? "v" : "-") + (p.has_remote_video ? "r" : "-") + (p.on_hold ? "h" : "-") +
-           (p.video_paused ? "p" : "-") + (p.guest ? "g" : "-") +
+           (p.video_paused ? "p" : "-") + (p.guest ? "g" : "-") + (p.avatar_unknown ? "u" : "-") +
            AvatarKey(false, p.has_avatar, p.avatar_src, p.avatar_letter, p.avatar_tone) + ";";
   }
   return key;
@@ -311,10 +311,12 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_phone_subtitle = ring.phone_subtitle.c_str(),
       .ring_avatar = AvatarKey(ring.group, ring.has_avatar, ring.avatar_src, ring.avatar_letter, ring.avatar_tone),
       .ring_awaiting_invite = ring.awaiting_invite,
+      .ring_caller_unknown = ring.caller_unknown,
       .in_call_phone_title = in_call.phone_title.c_str(),
       .in_call_video = in_call.video,
       .in_call_avatars = AvatarKey(false, in_call.peer_has_avatar, in_call.peer_avatar_src, in_call.peer_avatar_letter,
                                    in_call.peer_avatar_tone) +
+                         (in_call.peer_unknown ? "u" : "-") +
                          AvatarKey(false, in_call.self_has_avatar, in_call.self_avatar_src, in_call.self_avatar_letter,
                                    in_call.self_avatar_tone),
       .in_call_phone_failed = in_call.phone_failed,
@@ -929,7 +931,11 @@ std::string CallController::DisplayNameForIdentity(const std::string& identity) 
       }
     }
   }
-  return identity;
+  return {}; // nothing known: the callers say "Stranger" (CallerNameFor), never the account id
+}
+
+CallerName CallController::CallerNameFor(const std::string& identity) const {
+  return MakeCallerName(DisplayNameForIdentity(identity));
 }
 
 std::string CallController::FormatTimer(const int64_t since_ms, const int64_t now_ms) {
@@ -982,20 +988,13 @@ void CallController::ShowNotice(const CallNotice& notice) {
       return;
     }
     case CallNotice::Kind::GuestJoined: {
-      std::string name = DisplayNameForIdentity(notice.identity);
-      if (name.empty()) {
-        name = notice.identity;
-      }
+      const std::string name = CallerNameFor(notice.identity).label;
       const std::string local = call_ports_.local_relay_identity ? call_ports_.local_relay_identity().value_or("") : "";
       if (!local.empty() && notice.brought_by == local) {
         UserFeedback::Ok(Tr("call.guest.joined_yours", {{"name", name}}));
         return;
       }
-      std::string bringer = DisplayNameForIdentity(notice.brought_by);
-      if (bringer.empty()) {
-        bringer = notice.brought_by;
-      }
-      UserFeedback::Ok(Tr("call.guest.joined", {{"name", name}, {"bringer", bringer}}));
+      UserFeedback::Ok(Tr("call.guest.joined", {{"name", name}, {"bringer", CallerNameFor(notice.brought_by).label}}));
       return;
     }
     case CallNotice::Kind::IncomingCall: {
@@ -1103,8 +1102,7 @@ void CallController::RenderAnswering(const CallScreen& screen, const CallMediaSc
   in_call_.call_id = screen.ring_call_id;
   in_call_.subtitle = Tr("call.status.connecting").c_str();
   in_call_.title = screen.ring_video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
-  const std::string caller = DisplayNameForIdentity(screen.caller_identity);
-  in_call_.peer_label = caller.empty() ? screen.caller_identity.c_str() : caller.c_str();
+  in_call_.peer_label = CallerNameFor(screen.caller_identity).label.c_str();
   // Answered with video: switch to the video stage right away (see CallMediaFrame::kVideoStartMs).
   in_call_.stage_visible = screen.answered_video;
   in_call_.remote_video = false;
@@ -1129,10 +1127,7 @@ void CallController::RenderAnswering(const CallScreen& screen, const CallMediaSc
 }
 
 void CallController::RenderRing(const CallScreen& screen, const int64_t now_ms) {
-  std::string caller_label = DisplayNameForIdentity(screen.caller_identity);
-  if (caller_label.empty()) {
-    caller_label = screen.caller_identity;
-  }
+  const std::string caller_label = CallerNameFor(screen.caller_identity).label;
   const CallConflictCopy copy =
       MakeCallConflictCopy(screen.conflict, ConflictNames(caller_label, screen.conflict, screen.ending, now_ms));
 
@@ -1260,7 +1255,7 @@ void CallController::FillInCallFromScreen(const CallScreen& screen, const int64_
   in_call.show_make_group = screen.show_make_group;
   in_call.group_invite_text =
       screen.group_invite
-          ? Tr("call.group_invite.banner", {{"name", DisplayNameForIdentity(screen.group_invite->maker_identity)},
+          ? Tr("call.group_invite.banner", {{"name", CallerNameFor(screen.group_invite->maker_identity).label},
                                             {"group", screen.group_invite->group_title}})
                 .c_str()
           : "";
@@ -1275,10 +1270,8 @@ void CallController::FillInCallFromScreen(const CallScreen& screen, const int64_
   } else {
     in_call.title = screen.video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
   }
-  std::string peer_label = Tr("call.label.them");
-  if (const std::string name = DisplayNameForIdentity(screen.peer_identity); !name.empty()) {
-    peer_label = name;
-  }
+  const std::string peer_label =
+      screen.peer_identity.empty() ? Tr("call.label.them") : CallerNameFor(screen.peer_identity).label;
   in_call.peer_label = in_call.show_roster ? Tr("call.label.others").c_str() : peer_label.c_str();
   in_call.show_retry = screen.show_retry;
   in_call.calling = ShowsCancelCall(screen);
@@ -1291,16 +1284,15 @@ void CallController::FillRoster(CallInProgressState& in_call, const CallScreen& 
   for (const CallScreen::Member& member : screen.members) {
     CallRosterParticipantState entry;
     entry.is_local = member.is_local;
-    std::string name = member.is_local ? Tr("call.label.you") : DisplayNameForIdentity(member.identity);
-    if (!member.is_local && name.empty()) {
-      name = member.identity;
-    }
+    const CallerName caller = member.is_local ? CallerName{} : CallerNameFor(member.identity);
+    const std::string name = member.is_local ? Tr("call.label.you") : caller.label;
     entry.name = name.c_str();
     entry.identity = member.identity.c_str();
     if (const std::string avatar_path = IconPath(member.identity); !avatar_path.empty()) {
       entry.has_avatar = true;
       entry.avatar_src = avatar_path.c_str();
     }
+    entry.avatar_unknown = caller.unknown && !entry.has_avatar;
     const AvatarGlyph glyph = MakeAvatarGlyph(name, member.identity);
     entry.avatar_letter = glyph.letter.c_str();
     entry.avatar_tone = glyph.tone;
@@ -1389,18 +1381,13 @@ void CallController::FillGuestActions(CallInProgressState& in_call, const CallSc
     if (!member.guest || (!member.can_remove && !member.can_add_to_group)) {
       continue;
     }
-    std::string name = DisplayNameForIdentity(member.identity);
-    if (name.empty()) {
-      name = member.identity;
-    }
+    const std::string name = CallerNameFor(member.identity).label;
     CallGuestActionState row;
     row.identity = member.identity.c_str();
     if (!local.empty() && member.brought_by == local) {
       row.line = Tr("call.guest.line_yours", {{"name", name}}).c_str();
     } else {
-      std::string bringer = DisplayNameForIdentity(member.brought_by);
-      row.line =
-          Tr("call.guest.line", {{"name", name}, {"bringer", bringer.empty() ? member.brought_by : bringer}}).c_str();
+      row.line = Tr("call.guest.line", {{"name", name}, {"bringer", CallerNameFor(member.brought_by).label}}).c_str();
     }
     if (member.can_add_to_group) {
       row.add_to_group_label = Tr("call.guest.add_to_group", {{"name", name}}).c_str();
@@ -1411,10 +1398,7 @@ void CallController::FillGuestActions(CallInProgressState& in_call, const CallSc
 }
 
 void CallController::RemoveGuestFromCall(const std::string& identity) {
-  std::string name = DisplayNameForIdentity(identity);
-  if (name.empty()) {
-    name = identity;
-  }
+  const std::string name = CallerNameFor(identity).label;
   UserFeedback::Confirm(
       Tr("call.guest.remove_title", {{"name", name}}), Tr("call.guest.remove_message"),
       [this, identity](const bool ok) {
@@ -1426,10 +1410,7 @@ void CallController::RemoveGuestFromCall(const std::string& identity) {
 }
 
 void CallController::AddGuestToGroup(const std::string& identity) {
-  std::string name = DisplayNameForIdentity(identity);
-  if (name.empty()) {
-    name = identity;
-  }
+  const std::string name = CallerNameFor(identity).label;
   presenter_.AddGuestToGroup(identity, [name](Roe<void> invited) {
     if (invited) {
       UserFeedback::Ok(Tr("call.guest.invited_to_group", {{"name", name}}));
@@ -1988,6 +1969,7 @@ void CallController::FillRingPhoneFields(const CallScreen& screen, const std::st
     ring_.avatar_src = "";
     ring_.avatar_letter = "";
     ring_.avatar_tone = 2;
+    ring_.caller_unknown = false;
     return;
   }
   ring_.phone_title = caller_label.c_str();
@@ -1998,6 +1980,7 @@ void CallController::FillRingPhoneFields(const CallScreen& screen, const std::st
   const std::string photo = IconPath(screen.caller_identity);
   ring_.has_avatar = !photo.empty();
   ring_.avatar_src = photo.c_str();
+  ring_.caller_unknown = CallerNameFor(screen.caller_identity).unknown && photo.empty();
 }
 
 void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t now_ms) {
@@ -2006,12 +1989,14 @@ void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t
   const bool group = answering ? screen.ring_group : screen.group;
   const std::string& peer = answering ? screen.caller_identity : screen.peer_identity;
   in_call.video = answering ? screen.answered_video : screen.video;
-  const std::string name = peer.empty() ? std::string() : DisplayNameForIdentity(peer);
+  const CallerName caller = peer.empty() ? CallerName{.label = {}, .unknown = false} : CallerNameFor(peer);
+  const std::string& name = caller.label;
   if (group) {
     const std::string title = GroupTitle(screen.thread_id, now_ms);
     in_call.phone_title = title.empty() ? in_call.title : title.c_str();
   } else {
-    in_call.phone_title = name.empty() ? Tr("call.label.them").c_str() : name.c_str();
+    in_call.phone_title =
+        name.empty() ? Tr("call.label.them").c_str() : name.c_str(); // a peer unknown by name reads "Stranger"
   }
   const AvatarGlyph peer_glyph = MakeAvatarGlyph(name, peer);
   in_call.peer_avatar_letter = peer_glyph.letter.c_str();
@@ -2019,6 +2004,7 @@ void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t
   const std::string peer_photo = IconPath(peer);
   in_call.peer_has_avatar = !peer_photo.empty();
   in_call.peer_avatar_src = peer_photo.c_str();
+  in_call.peer_unknown = !group && caller.unknown && peer_photo.empty();
   FillSelfAvatar(screen);
 
   // Couldn't connect / disconnected: the failure page says it plainly; why is in the log (#31 / #37).

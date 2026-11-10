@@ -69,3 +69,28 @@ TEST(CallConflictCopyTest, ChineseNamesTheCallerAndTheCallThatEnds) {
   EXPECT_EQ(copy.accept_label, "结束并接听");
   LoadLocales("en");
 }
+
+// Call pages never name someone by their account id: no known name reads "Stranger" / "陌生人" and flags the silhouette.
+TEST(CallerNameTest, ANameIsKeptAndNoNameIsAStrangerInBothLanguages) {
+  LoadLocales("en");
+  const pbr::CallerName known = pbr::MakeCallerName("Alice");
+  EXPECT_EQ(known.label, "Alice");
+  EXPECT_FALSE(known.unknown);
+  const pbr::CallerName stranger = pbr::MakeCallerName("");
+  EXPECT_EQ(stranger.label, "Stranger");
+  EXPECT_TRUE(stranger.unknown);
+  LoadLocales("zh-Hans");
+  EXPECT_EQ(pbr::MakeCallerName("").label, "陌生人");
+  EXPECT_EQ(pbr::MakeCallerName("爱丽丝").label, "爱丽丝");
+  LoadLocales("en");
+}
+
+// A stranger starting a group call: the ring's subtitle names the Stranger, not the id.
+TEST(CallerNameTest, TheGroupRingSubtitleNamesAStranger) {
+  LoadLocales("en");
+  EXPECT_EQ(pbr::Tr("call.ring.phone.group_voice", {{"name", pbr::MakeCallerName("").label}}),
+            "Stranger started a voice call");
+  LoadLocales("zh-Hans");
+  EXPECT_EQ(pbr::Tr("call.ring.phone.group_video", {{"name", pbr::MakeCallerName("").label}}), "陌生人 发起了视频通话");
+  LoadLocales("en");
+}

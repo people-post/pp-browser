@@ -92,6 +92,8 @@ struct CallChromeLayer {
   std::string ring_avatar; // group / photo / letter / tone in one key
   /** Written into the phone ring markup (dimmed, click-less answers): a change remounts. */
   bool ring_awaiting_invite = false;
+  /** Bound (the silhouette variant's data-if): a change dirties. */
+  bool ring_caller_unknown = false;
   std::string in_call_phone_title;
   bool in_call_video = false;
   std::string in_call_avatars; // the peer's and our own, as for ring_avatar

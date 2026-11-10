@@ -241,6 +241,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_ring_phone_title", &host.state_.call_ring.phone_title);
     ctor.Bind("call_ring_phone_subtitle", &host.state_.call_ring.phone_subtitle);
     // The ring page's avatar is bound so a name / photo arriving while the page stays up is a dirty, not a remount.
+    ctor.Bind("call_ring_caller_unknown", &host.state_.call_ring.caller_unknown);
     ctor.Bind("call_ring_group", &host.state_.call_ring.group);
     ctor.Bind("call_ring_has_avatar", &host.state_.call_ring.has_avatar);
     ctor.Bind("call_ring_avatar_src", &host.state_.call_ring.avatar_src);
@@ -277,6 +278,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
       roster_handle.RegisterMember("avatar_src", &CallRosterParticipantState::avatar_src);
       roster_handle.RegisterMember("avatar_letter", &CallRosterParticipantState::avatar_letter);
       roster_handle.RegisterMember("avatar_tone", &CallRosterParticipantState::avatar_tone);
+      roster_handle.RegisterMember("avatar_unknown", &CallRosterParticipantState::avatar_unknown);
       roster_handle.RegisterMember("speaking", &CallRosterParticipantState::speaking);
       roster_handle.RegisterMember("on_hold", &CallRosterParticipantState::on_hold);
       roster_handle.RegisterMember("video_paused", &CallRosterParticipantState::video_paused);
@@ -1494,6 +1496,7 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_minimized_tucked");
   for (const char* name : {"call_ring_phone_title",
                            "call_ring_phone_subtitle",
+                           "call_ring_caller_unknown",
                            "call_ring_group",
                            "call_ring_has_avatar",
                            "call_ring_avatar_src",

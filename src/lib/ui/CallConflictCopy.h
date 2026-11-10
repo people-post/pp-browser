@@ -27,6 +27,16 @@ struct CallConflictNames {
   bool same_peer = false;
 };
 
+/** What a call page calls someone: their name when one is known, else the word "Stranger" (never the account id). */
+struct CallerName {
+  std::string label;
+  /** No name is known: the page also shows the silhouette avatar (unless there is a photo). */
+  bool unknown = false;
+};
+
+/** @param known_name The contact's name or nickname; empty when nothing is known. */
+CallerName MakeCallerName(const std::string& known_name);
+
 /** @param has_conflict True when an ActiveLocalCall exists with a different call_id. */
 CallConflictCopy MakeCallConflictCopy(bool has_conflict, const CallConflictNames& names);
 

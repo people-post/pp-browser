@@ -42,4 +42,11 @@ CallConflictCopy MakeCallConflictCopy(const bool has_conflict, const CallConflic
   return copy;
 }
 
+CallerName MakeCallerName(const std::string& known_name) {
+  if (known_name.empty()) {
+    return {.label = Tr("call.label.stranger"), .unknown = true};
+  }
+  return {.label = known_name, .unknown = false};
+}
+
 } // namespace pbr

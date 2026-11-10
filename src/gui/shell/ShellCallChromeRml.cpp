@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <sstream>
 
 namespace pbr {
@@ -127,7 +128,13 @@ void AppendGuestActions(std::ostringstream& out, const CallInProgressState& call
 
 /** A round avatar on the phone call pages: the group icon on the group colour, a photo, or the initial. */
 void AppendAvatar(std::ostringstream& out, const char* size_class, const bool group, const bool has_photo,
-                  const std::string& photo, const std::string& letter, const int tone) {
+                  const std::string& photo, const std::string& letter, const int tone, const bool unknown = false) {
+  if (unknown && !group && !has_photo) { // nobody known: the silhouette (its own circle clip), at the size class
+    const char* px = std::strstr(size_class, "--big") ? "120" : std::strstr(size_class, "--pair") ? "76" : "72";
+    out << "<div class=\"call-phone-avatar call-phone-avatar--unknown avatar-tone-0 " << size_class << "\">"
+        << "<svg src=\"../icons/v2/unknown-caller.svg\" width=\"" << px << "\" height=\"" << px << "\"></svg></div>";
+    return;
+  }
   if (group) {
     out << "<div class=\"call-phone-avatar call-phone-avatar--group " << size_class << "\">"
         << "<svg src=\"../icons/v2/group.svg\" width=\"48\" height=\"48\"></svg></div>";
@@ -228,7 +235,7 @@ void AppendPair(std::ostringstream& out, const CallInProgressState& call) {
   }
   out << "</div><div class=\"call-phone-pair-spark\"></div></div>";
   AppendAvatar(out, "call-phone-avatar--pair", false, call.peer_has_avatar, call.peer_avatar_src.c_str(),
-               call.peer_avatar_letter.c_str(), call.peer_avatar_tone);
+               call.peer_avatar_letter.c_str(), call.peer_avatar_tone, call.peer_unknown);
   out << "</div>";
   out << "<div class=\"call-phone-pair-names\"><p class=\"call-phone-pair-name\">" << Tr("call.label.you")
       << "</p><p class=\"call-phone-pair-name\">{{call_in_progress_phone_title}}</p></div>";
@@ -358,7 +365,11 @@ void AppendPhoneTiles(std::ostringstream& out, const char* rows, const char* ext
   out << "<call-video-tile class=\"call-phone-tile-video\" tile=\"peer\" data-attr-stream=\"p.stream_id\"" << fit
       << " data-if=\"!p.is_local && p.has_remote_video\"></call-video-tile>";
   const char* no_video = "((p.is_local && !call_in_progress_local_preview) || (!p.is_local && !p.has_remote_video))";
-  out << "<div class=\"call-phone-avatar call-phone-avatar--tile\" data-if=\"!p.has_avatar && " << no_video << "\"";
+  out << "<div class=\"call-phone-avatar call-phone-avatar--unknown avatar-tone-0 call-phone-avatar--tile\" "
+         "data-if=\"p.avatar_unknown && "
+      << no_video << "\"><svg src=\"../icons/v2/unknown-caller.svg\" width=\"72\" height=\"72\"></svg></div>";
+  out << "<div class=\"call-phone-avatar call-phone-avatar--tile\" data-if=\"!p.has_avatar && !p.avatar_unknown && "
+      << no_video << "\"";
   for (int tone = 0; tone < 8; ++tone) {
     out << " data-class-avatar-tone-" << tone << "=\"p.avatar_tone == " << tone << "\"";
   }
@@ -385,16 +396,20 @@ std::string CallRingPhoneRml(const ShellState& state) {
   // The avatar variants are all in the markup and switched by bound values, so the caller replacing "Incoming call,
   // connecting…" is a dirty, not a remount: a silhouette while nobody is known, then group / photo / letter.
   out << "<div class=\"call-phone-avatar call-phone-avatar--unknown avatar-tone-0 call-phone-avatar--big\" "
-         "data-if=\"call_ring_awaiting_invite\"><svg src=\"../icons/v2/unknown-caller.svg\" width=\"120\" "
+         "data-if=\"call_ring_awaiting_invite || call_ring_caller_unknown\"><svg "
+         "src=\"../icons/v2/unknown-caller.svg\" width=\"120\" "
          "height=\"120\"></svg></div>";
   out << "<div class=\"call-phone-avatar call-phone-avatar--group call-phone-avatar--big\" "
-         "data-if=\"!call_ring_awaiting_invite && call_ring_group\"><svg src=\"../icons/v2/group.svg\" width=\"48\" "
+         "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && call_ring_group\"><svg "
+         "src=\"../icons/v2/group.svg\" width=\"48\" "
          "height=\"48\"></svg></div>";
   out << "<img class=\"call-phone-avatar call-phone-avatar--big\" "
-         "data-if=\"!call_ring_awaiting_invite && !call_ring_group && call_ring_has_avatar\" "
+         "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && !call_ring_group && "
+         "call_ring_has_avatar\" "
          "data-attr-src=\"call_ring_avatar_src\"/>";
   out << "<div class=\"call-phone-avatar call-phone-avatar--big\" "
-         "data-if=\"!call_ring_awaiting_invite && !call_ring_group && !call_ring_has_avatar\"";
+         "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && !call_ring_group && "
+         "!call_ring_has_avatar\"";
   for (int tone = 0; tone < 8; ++tone) {
     out << " data-class-avatar-tone-" << tone << "=\"call_ring_avatar_tone == " << tone << "\"";
   }
@@ -523,7 +538,7 @@ std::string CallPhoneRml(const ShellState& state) {
   if (call.phone_failed) {
     out << "<div class=\"call-phone-hero\">";
     AppendAvatar(out, "call-phone-avatar--big", group, !group && call.peer_has_avatar, call.peer_avatar_src.c_str(),
-                 call.peer_avatar_letter.c_str(), call.peer_avatar_tone);
+                 call.peer_avatar_letter.c_str(), call.peer_avatar_tone, !group && call.peer_unknown);
     out << "<p class=\"call-phone-name\">{{call_in_progress_phone_title}}</p>";
     out << "<p class=\"call-phone-status\">{{call_in_progress_failed_text}}</p>";
     out << "<p class=\"call-phone-hint\" data-if=\"call_in_progress_status_hint != ''\">"
@@ -608,7 +623,7 @@ std::string CallPhoneRml(const ShellState& state) {
   } else {
     out << "<div class=\"call-phone-hero\">";
     AppendAvatar(out, "call-phone-avatar--big", false, call.peer_has_avatar, call.peer_avatar_src.c_str(),
-                 call.peer_avatar_letter.c_str(), call.peer_avatar_tone);
+                 call.peer_avatar_letter.c_str(), call.peer_avatar_tone, call.peer_unknown);
     out << "<p class=\"call-phone-name\">{{call_in_progress_phone_title}}</p>";
     AppendHoldPill(out, "call_in_progress_on_hold", " call-hold-pill--hero");
     out << "<p class=\"call-phone-status\" data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">"

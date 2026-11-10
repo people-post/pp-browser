@@ -104,9 +104,10 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
       synced.in_call_status_hint != next.in_call_status_hint || synced.in_call_roster != next.in_call_roster ||
       synced.ring_phone_title != next.ring_phone_title || synced.ring_phone_subtitle != next.ring_phone_subtitle ||
       synced.ring_avatar != next.ring_avatar || synced.ring_awaiting_invite != next.ring_awaiting_invite ||
-      synced.ring_caller_label != next.ring_caller_label || synced.ring_media_label != next.ring_media_label ||
-      synced.in_call_title != next.in_call_title || synced.in_call_muted != next.in_call_muted ||
-      synced.in_call_camera_on != next.in_call_camera_on || synced.in_call_camera_front != next.in_call_camera_front ||
+      synced.ring_caller_unknown != next.ring_caller_unknown || synced.ring_caller_label != next.ring_caller_label ||
+      synced.ring_media_label != next.ring_media_label || synced.in_call_title != next.in_call_title ||
+      synced.in_call_muted != next.in_call_muted || synced.in_call_camera_on != next.in_call_camera_on ||
+      synced.in_call_camera_front != next.in_call_camera_front ||
       synced.in_call_speaker_on != next.in_call_speaker_on ||
       synced.in_call_remote_video != next.in_call_remote_video ||
       synced.in_call_local_preview != next.in_call_local_preview ||

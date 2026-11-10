@@ -1485,6 +1485,7 @@
     "call.placeholder.on_hold": "Stepped away",
     "call.label.you": "You",
     "call.label.them": "Them",
+    "call.label.stranger": "Stranger",
     "call.label.others": "Others",
     "call.label.someone": "Someone",
     "call.quality.excellent": "Excellent",

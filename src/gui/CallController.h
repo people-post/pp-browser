@@ -194,7 +194,10 @@ private:
   void HideInCallChrome();
 
   // --- Words: names, titles, notices. --------------------------------------------------------------------------------
+  /** The contact's name or nickname; EMPTY when none is known (never the account id). */
   std::string DisplayNameForIdentity(const std::string& identity) const;
+  /** What a call page calls `identity`: the name, or "Stranger" (+ `unknown`, for the silhouette avatar). */
+  CallerName CallerNameFor(const std::string& identity) const;
   std::string IconPath(const std::string& identity) const;
   /** A group's name for the phone page and a ring's words, re-read at most every kGroupTitleReadMs per thread. */
   std::string GroupTitle(const std::string& thread_id, int64_t now_ms);

@@ -64,15 +64,69 @@ TEST(ShellCallChromeRmlTest, TheRingAvatarIsASilhouetteWhileAwaitingThenGroupPho
   state.layout_mode = LayoutMode::Compact;
   state.call_ring.active = true;
   const std::string rml = CallRingRml(state);
-  EXPECT_TRUE(Has(
-      rml, "call-phone-avatar--unknown avatar-tone-0 call-phone-avatar--big\" data-if=\"call_ring_awaiting_invite\""));
+  EXPECT_TRUE(Has(rml,
+                  "call-phone-avatar--unknown avatar-tone-0 call-phone-avatar--big\" "
+                  "data-if=\"call_ring_awaiting_invite || call_ring_caller_unknown\""));
   EXPECT_TRUE(Has(rml, "icons/v2/unknown-caller.svg"));
-  EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_awaiting_invite && call_ring_group\""));
-  EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_awaiting_invite && !call_ring_group && call_ring_has_avatar\""));
+  EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && call_ring_group\""));
+  EXPECT_TRUE(Has(rml,
+                  "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && !call_ring_group && "
+                  "call_ring_has_avatar\""));
   EXPECT_TRUE(Has(rml, "data-attr-src=\"call_ring_avatar_src\""));
-  EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_awaiting_invite && !call_ring_group && !call_ring_has_avatar\""));
+  EXPECT_TRUE(Has(rml,
+                  "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && !call_ring_group && "
+                  "!call_ring_has_avatar\""));
   EXPECT_TRUE(Has(rml, "data-class-avatar-tone-7=\"call_ring_avatar_tone == 7\""));
   EXPECT_TRUE(Has(rml, "{{call_ring_avatar_letter}}"));
+}
+
+// A caller nobody knows by name (no contact, no photo) is "Stranger" with the silhouette on the ring page too, by the
+// same bound switch as the awaiting page; a photo or a name keeps the usual avatar.
+TEST(ShellCallChromeRmlTest, TheRingPageShowsTheSilhouetteForAnUnknownCallerByTheBoundFlag) {
+  ShellState state;
+  state.layout_mode = LayoutMode::Compact;
+  state.call_ring.active = true;
+  state.call_ring.caller_unknown = true;
+  const std::string rml = CallRingRml(state);
+  EXPECT_TRUE(Has(rml, "data-if=\"call_ring_awaiting_invite || call_ring_caller_unknown\""));
+  EXPECT_TRUE(Has(rml,
+                  "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && "
+                  "!call_ring_group && !call_ring_has_avatar\""))
+      << "the letter variant steps aside for it";
+  state.call_ring.caller_unknown = false;
+  EXPECT_EQ(rml, CallRingRml(state)) << "bound: the markup is the same, no remount";
+}
+
+TEST(ShellCallChromeRmlTest, ThePhoneCallPageShowsTheSilhouetteOnlyForAnUnknownOneToOnePeerWithNoPhoto) {
+  ShellState state;
+  state.layout_mode = LayoutMode::Compact;
+  state.call_in_progress.active = true;
+  state.call_in_progress.mode = CallChromeMode::Expanded;
+  state.call_in_progress.peer_avatar_letter = "B";
+  const std::string known = CallInProgressRml(state);
+  EXPECT_FALSE(Has(known, "unknown-caller.svg"));
+  EXPECT_TRUE(Has(known, "avatar-letter"));
+  state.call_in_progress.peer_unknown = true;
+  const std::string unknown = CallInProgressRml(state);
+  EXPECT_TRUE(Has(unknown, "call-phone-avatar--unknown avatar-tone-0 call-phone-avatar--big"));
+  EXPECT_TRUE(Has(unknown, "unknown-caller.svg"));
+  EXPECT_FALSE(Has(unknown, "avatar-letter\">B"));
+  state.call_in_progress.peer_has_avatar = true;
+  state.call_in_progress.peer_avatar_src = "icons/bob.png";
+  EXPECT_FALSE(Has(CallInProgressRml(state), "unknown-caller.svg")) << "a photo wins";
+  EXPECT_TRUE(Has(CallInProgressRml(state), "icons/bob.png"));
+}
+
+TEST(ShellCallChromeRmlTest, ARosterTileOfAnUnknownMemberShowsTheSilhouetteByABoundFlag) {
+  ShellState state;
+  state.layout_mode = LayoutMode::Compact;
+  state.call_in_progress.active = true;
+  state.call_in_progress.show_roster = true;
+  state.call_in_progress.mode = CallChromeMode::Immersive;
+  const std::string rml = CallInProgressRml(state);
+  EXPECT_TRUE(Has(rml, "data-if=\"p.avatar_unknown && "));
+  EXPECT_TRUE(Has(rml, "unknown-caller.svg"));
+  EXPECT_TRUE(Has(rml, "data-if=\"!p.has_avatar && !p.avatar_unknown && "));
 }
 
 TEST(ShellCallChromeRmlTest, MetersAreOnlyInTheExpandedBar) {

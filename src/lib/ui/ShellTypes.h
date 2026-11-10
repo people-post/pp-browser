@@ -290,6 +290,8 @@ struct CallRingState {
   /** Phone ring page for a tapped call alert whose invite has not arrived: "Incoming call, connecting…", the answer
    *  buttons dimmed and dead. The real ring overwrites it in place (`active` stays true). */
   bool awaiting_invite = false;
+  /** A 1:1 caller with no known name and no photo: the silhouette avatar, "Stranger" as the name. */
+  bool caller_unknown = false;
   /** True when Accept would end an existing local call. */
   bool conflict = false;
   /** P001: initiation offer > 0 — show waive / take-all actions. */
@@ -352,6 +354,8 @@ struct CallRosterParticipantState {
   ui::String avatar_src;
   ui::String avatar_letter = "?";
   int avatar_tone = 0;
+  /** No known name and no photo: the tile shows the silhouette (phone page). */
+  bool avatar_unknown = false;
   /** Speaking now (CallActiveSpeaker::Speaking; we by our microphone): the phone page rings the tile. Bound, and
    * part-dirtied on its own (CallChromeChangedVariables), at most every CallController::kSpeakingRingRefreshMs. */
   bool speaking = false;
@@ -490,6 +494,8 @@ struct CallInProgressState {
   ui::String peer_avatar_src;
   ui::String peer_avatar_letter = "?";
   int peer_avatar_tone = 0;
+  /** The 1:1 peer has no known name and no photo: the silhouette instead of a letter. */
+  bool peer_unknown = false;
   bool self_has_avatar = false;
   ui::String self_avatar_src;
   ui::String self_avatar_letter = "?";
