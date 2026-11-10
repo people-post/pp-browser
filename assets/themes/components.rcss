@@ -4613,8 +4613,8 @@ select selectbox option {
 
 .ai-drawer-me-name {
   margin: 0;
-  font-size: 17dp;
-  line-height: 22dp;
+  font-size: 20dp;
+  line-height: 26dp;
   font-weight: bold;
   white-space: nowrap;
   overflow: hidden;
@@ -4626,9 +4626,9 @@ select selectbox option {
   display: flex;
   flex-direction: row;
   align-items: center;
-  margin: 2dp 0 0 0;
+  margin: 6dp 0 0 0;
   height: 16dp;
-  font-size: 13dp;
+  font-size: 12dp;
   line-height: 16dp;
 }
 
