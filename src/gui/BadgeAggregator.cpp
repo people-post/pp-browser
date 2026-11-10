@@ -1,8 +1,23 @@
 #include "gui/BadgeAggregator.h"
 
+#include <algorithm>
 #include <string>
 
 namespace pbr {
+
+BadgeUnreadInputs ComputeBadgeInputs(const BadgeSourceFacts& facts) {
+  BadgeUnreadInputs inputs;
+  if (!facts.messaging_initialized) {
+    return inputs;
+  }
+  const int total = facts.unread_total.value_or(0);
+  const int deduction = facts.sessions_tab_active ? facts.open_chat_unread : 0;
+  inputs.sessions_unread = std::max(0, total - deduction);
+  inputs.contacts_unread = std::max(0, facts.contacts_unread);
+  inputs.me_attention = facts.me_attention;
+  inputs.app_icon_count = AppIconBadgeCount(true, facts.unread_total, facts.muted_unread, facts.count_muted_in_icon);
+  return inputs;
+}
 
 void BadgeAggregator::BindSource(std::function<BadgeUnreadInputs()> source) {
   source_ = std::move(source);

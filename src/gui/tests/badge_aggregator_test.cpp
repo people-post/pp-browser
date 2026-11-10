@@ -105,14 +105,72 @@ TEST(BadgeAggregatorIconTest, TheNavBadgeStillFollowsTheSessionsCount) {
 }
 
 TEST(AppIconBadgeCountTest, NotInitializedIsEmptyWhateverTheTotal) {
-  EXPECT_FALSE(AppIconBadgeCount(false, 0).has_value());
-  EXPECT_FALSE(AppIconBadgeCount(false, 7).has_value());
+  EXPECT_FALSE(AppIconBadgeCount(false, 0, 0, true).has_value());
+  EXPECT_FALSE(AppIconBadgeCount(false, 7, 0, true).has_value());
+}
+
+TEST(AppIconBadgeCountTest, AnUnreadableTotalLeavesTheIconAlone) {
+  EXPECT_FALSE(AppIconBadgeCount(true, std::nullopt, 0, true).has_value());
 }
 
 TEST(AppIconBadgeCountTest, InitializedIsTheRawTotalNeverNegative) {
-  EXPECT_EQ(AppIconBadgeCount(true, 7), 7);
-  EXPECT_EQ(AppIconBadgeCount(true, 0), 0);
-  EXPECT_EQ(AppIconBadgeCount(true, -2), 0);
+  EXPECT_EQ(AppIconBadgeCount(true, 7, 0, true), 7);
+  EXPECT_EQ(AppIconBadgeCount(true, 0, 0, true), 0);
+  EXPECT_EQ(AppIconBadgeCount(true, -2, 0, true), 0);
+}
+
+TEST(AppIconBadgeCountTest, MutedChatsAreInOrOutByTheFlag) {
+  EXPECT_EQ(AppIconBadgeCount(true, 7, 3, true), 7) << "today: muted chats count";
+  EXPECT_EQ(AppIconBadgeCount(true, 7, 3, false), 4);
+  EXPECT_EQ(AppIconBadgeCount(true, 2, 3, false), 0) << "never negative";
+}
+
+TEST(ComputeBadgeInputsTest, NotInitializedIsAllDefaultAndLeavesTheIcon) {
+  BadgeSourceFacts facts;
+  facts.unread_total = 5;
+  const BadgeUnreadInputs inputs = ComputeBadgeInputs(facts);
+  EXPECT_EQ(inputs.sessions_unread, 0);
+  EXPECT_FALSE(inputs.app_icon_count.has_value());
+}
+
+TEST(ComputeBadgeInputsTest, TheIconKeepsTheOpenChatsUnreadWhileTheNavBadgeDeductsIt) {
+  BadgeSourceFacts facts;
+  facts.messaging_initialized = true;
+  facts.unread_total = 5;
+  facts.sessions_tab_active = true;
+  facts.open_chat_unread = 2;
+  const BadgeUnreadInputs inputs = ComputeBadgeInputs(facts);
+  EXPECT_EQ(inputs.sessions_unread, 3);
+  EXPECT_EQ(inputs.app_icon_count, 5);
+}
+
+TEST(ComputeBadgeInputsTest, OffTheChatsTabNothingIsDeducted) {
+  BadgeSourceFacts facts;
+  facts.messaging_initialized = true;
+  facts.unread_total = 5;
+  facts.open_chat_unread = 2;
+  const BadgeUnreadInputs inputs = ComputeBadgeInputs(facts);
+  EXPECT_EQ(inputs.sessions_unread, 5);
+  EXPECT_EQ(inputs.app_icon_count, 5);
+}
+
+TEST(ComputeBadgeInputsTest, AnUnreadableTotalIsZeroForTheNavBadgeAndEmptyForTheIcon) {
+  BadgeSourceFacts facts;
+  facts.messaging_initialized = true;
+  const BadgeUnreadInputs inputs = ComputeBadgeInputs(facts);
+  EXPECT_EQ(inputs.sessions_unread, 0);
+  EXPECT_FALSE(inputs.app_icon_count.has_value());
+}
+
+TEST(ComputeBadgeInputsTest, ContactsAndMeAttentionPassThrough) {
+  BadgeSourceFacts facts;
+  facts.messaging_initialized = true;
+  facts.unread_total = 0;
+  facts.contacts_unread = 4;
+  facts.me_attention = true;
+  const BadgeUnreadInputs inputs = ComputeBadgeInputs(facts);
+  EXPECT_EQ(inputs.contacts_unread, 4);
+  EXPECT_TRUE(inputs.me_attention);
 }
 
 } // namespace

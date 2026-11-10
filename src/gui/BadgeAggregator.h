@@ -21,15 +21,38 @@ struct BadgeUnreadInputs {
 };
 
 /**
- * The icon number: the raw unread total of every chat (the open chat included, unlike the nav badge), or empty while
- * messaging is not initialized — a locked profile must not wipe the number the last run left.
+ * The icon number: the raw unread total of every chat (the open chat included, unlike the nav badge). Empty — the
+ * icon is left alone — while messaging is not initialized (a locked profile must not wipe the number the last run
+ * left) or when the total could not be read (`unread_total` empty: 0 would look like "all read").
+ * `count_muted`: whether the unread of muted chats (`muted_unread`, from ThreadIsMuted over each chat's local
+ * prefs) is in the number. The owner has not decided; true is today's behaviour.
  */
-inline std::optional<int> AppIconBadgeCount(bool messaging_initialized, int unread_total) {
-  if (!messaging_initialized) {
+inline std::optional<int> AppIconBadgeCount(bool messaging_initialized, std::optional<int> unread_total,
+                                            int muted_unread, bool count_muted) {
+  if (!messaging_initialized || !unread_total) {
     return std::nullopt;
   }
-  return unread_total > 0 ? unread_total : 0;
+  const int shown = count_muted ? *unread_total : *unread_total - muted_unread;
+  return shown > 0 ? shown : 0;
 }
+
+/** What BadgeAggregator's source reads from the app, gathered so that the arithmetic is testable. */
+struct BadgeSourceFacts {
+  bool messaging_initialized = false;
+  /** Empty: the chats could not be listed. */
+  std::optional<int> unread_total;
+  /** Unread inside muted chats (0 until the muted question is decided; see AppIconBadgeCount). */
+  int muted_unread = 0;
+  bool count_muted_in_icon = true;
+  /** The Chats tab is showing: the open chat's unread is read there, so the nav badge does not count it. */
+  bool sessions_tab_active = false;
+  int open_chat_unread = 0;
+  int contacts_unread = 0;
+  bool me_attention = false;
+};
+
+/** The nav badges deduct the open chat on the Chats tab; the icon number never does. */
+BadgeUnreadInputs ComputeBadgeInputs(const BadgeSourceFacts& facts);
 
 class BadgeAggregator {
 public:

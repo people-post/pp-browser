@@ -1392,33 +1392,34 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   badges_->BindShellNavigation(shell_navigation);
   badges_->BindAppBadge([](const int count) { SetAppBadgeCount(count); });
   badges_->BindSource([this, &facade, &shell]() {
-    BadgeUnreadInputs inputs;
-    if (!facade.IsInitialized()) {
-      return inputs;
+    BadgeSourceFacts facts;
+    facts.messaging_initialized = facade.IsInitialized();
+    if (!facts.messaging_initialized) {
+      return ComputeBadgeInputs(facts);
     }
-    const int total = facade.SumUnread();
-    inputs.app_icon_count = AppIconBadgeCount(true, total);
-    int deduction = 0;
-    if (shell.State().nav_tab == NavTab::Sessions) {
+    facts.unread_total = facade.SumUnreadIfKnown();
+    // Muted chats count in the icon for now; to leave them out, set count_muted_in_icon = false and fill
+    // muted_unread with the unread of the chats whose local prefs say ThreadIsMuted(muted_until, now).
+    facts.sessions_tab_active = shell.State().nav_tab == NavTab::Sessions;
+    if (facts.sessions_tab_active) {
       const std::string& active_id = facade.ActiveThreadId();
       if (!active_id.empty()) {
         auto thread = facade.GetThread(active_id);
         if (thread && *thread) {
-          deduction = (*thread)->unread_count;
+          facts.open_chat_unread = (*thread)->unread_count;
         }
       }
     }
-    inputs.sessions_unread = std::max(0, total - deduction);
     if (contacts_shell_bridge_) {
-      inputs.contacts_unread = std::max(0, contacts_shell_bridge_->LastSurface().contacts_unread);
+      facts.contacts_unread = contacts_shell_bridge_->LastSurface().contacts_unread;
     }
     if (Platform::IsDesktop() && store_.Snapshot().config.mesh.node_enabled) {
       const mesh::ReachabilitySnapshot snap = facade.Reachability();
       const std::string status_key = mesh::ReachabilityStatusKey(snap.status);
-      inputs.me_attention =
+      facts.me_attention =
           ReachabilityNudgeActive(true, status_key, store_.Snapshot().profile_prefs.reachability_nudge_acked_status);
     }
-    return inputs;
+    return ComputeBadgeInputs(facts);
   });
   {
     BadgeNotifyPorts badge_notify;
