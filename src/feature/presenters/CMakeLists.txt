@@ -25,6 +25,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     QuickReactions.cpp
     ThreadSearch.cpp
     ThreadSearchSession.cpp
+    TwoFingerGesture.cpp
   PUBLIC_LIBS
     pp_feature_conversations
     pp_feature_calls)
