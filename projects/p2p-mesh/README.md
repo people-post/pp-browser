@@ -13,7 +13,7 @@ GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`
 
 ## How the pieces fit
 
-Read [DESIGN.md](DESIGN.md) for the full spec. At a glance:
+Read [DESIGN.md](DESIGN.md) for the full spec. The data plane's next steps (crypto, real-time lanes, batched I/O, shards) are proposed in [DATA_PLANE.md](DATA_PLANE.md). At a glance:
 
 ```mermaid
 flowchart TB
