@@ -13,6 +13,7 @@
 #include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/ProfileIconImagePrep.h"
+#include "foundation/platform/PlatformAppBadge.h"
 #include "foundation/platform/PlatformUserHints.h"
 #include "common/Localized.h"
 #include "lib/net/BriefGuestLlmClient.h"
@@ -441,6 +442,9 @@ void Application::ShutdownMessaging() {
     StartupPhase phase("Shutdown::ConversationsHub");
     messaging_->Shutdown();
   }
+  if (badges_) {
+    badges_->ClearAppBadge(); // the inbox is closed: no number on the icon until the next Refresh() finds one
+  }
   if (secrets_ && secrets_->IsInitialized()) {
     StartupPhase phase("Shutdown::ProfileSecrets");
     secrets_->Shutdown();
@@ -600,6 +604,9 @@ Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
   } else if (messaging_ && messaging_->IsInitialized()) {
     StartupPhase phase("Shutdown::ConversationsHub");
     messaging_->Shutdown();
+  }
+  if (badges_) {
+    badges_->ClearAppBadge(); // reset: the new inbox starts empty; its first Refresh() sends what it finds
   }
   AppRuntime::ReopenAfterTeardown();
   return {};
@@ -1384,12 +1391,14 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
           },
   });
   badges_->BindShellNavigation(shell_navigation);
+  badges_->BindAppBadge([](const int count) { SetAppBadgeCount(count); });
   badges_->BindSource([this, &facade, &shell]() {
     BadgeUnreadInputs inputs;
     if (!facade.IsInitialized()) {
       return inputs;
     }
     const int total = facade.SumUnread();
+    inputs.app_icon_count = AppIconBadgeCount(true, total);
     int deduction = 0;
     if (shell.State().nav_tab == NavTab::Sessions) {
       const std::string& active_id = facade.ActiveThreadId();
@@ -1685,10 +1694,25 @@ void Application::WireUnlockPinAndFlow() {
   grace_background_listener_ = AppLifecycle::AddBackgroundListener([this]() {
     TouchGrace(); // best effort: a phone already locked keeps the entry unreadable and the touch is skipped
     StopGraceTimer();
+    if (badges_) {
+      badges_->Refresh();
+    }
   });
   attentive_listener_ = AppLifecycle::AddAttentiveListener([this]() {
+    if (badges_) {
+      badges_->InvalidateAppBadge(); // the badge permission may have been granted since: send the number again
+    }
     if (chat_) {
       chat_->OnAttentiveAgain();
+    }
+    if (badges_) {
+      badges_->Refresh(); // chat_ not ready (locked, no chat): the number is still sent
+    }
+  });
+  remote_notification_listener_ = AppLifecycle::AddRemoteNotificationListener([this]() {
+    if (badges_) {
+      badges_->InvalidateAppBadge(); // a push may have written its own number on the icon
+      badges_->Refresh();
     }
   });
 
@@ -2668,6 +2692,8 @@ void Application::Shutdown() {
   AppLifecycle::RemoveListener(grace_foreground_listener_);
   AppLifecycle::RemoveListener(grace_background_listener_);
   AppLifecycle::RemoveListener(attentive_listener_);
+  AppLifecycle::RemoveListener(remote_notification_listener_);
+  remote_notification_listener_ = 0;
   grace_foreground_listener_ = 0;
   grace_background_listener_ = 0;
   attentive_listener_ = 0;

@@ -131,6 +131,8 @@ private:
   AppLifecycle::ListenerId grace_background_listener_ = 0;
   /** Phone foreground / desktop restore or focus regained: the open chat is read, the icon number re-sent. */
   AppLifecycle::ListenerId attentive_listener_ = 0;
+  /** iOS: a push arrived and may have set the icon number itself. */
+  AppLifecycle::ListenerId remote_notification_listener_ = 0;
   SessionStore store_;
   std::unique_ptr<ProfileSecretsEngine> secrets_;
   /** Typed API keys under the profile DEK (PB-034); registered with secrets_, serves store_. */

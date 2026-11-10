@@ -25,6 +25,7 @@ std::mutex g_listeners_mu;
 std::vector<Listener> g_background_listeners;
 std::vector<Listener> g_foreground_listeners;
 std::vector<Listener> g_attentive_listeners;
+std::vector<Listener> g_remote_notification_listeners;
 struct StayConnectedListener {
   AppLifecycle::ListenerId id = 0;
   std::function<void(bool)> fn;
@@ -299,6 +300,18 @@ AppLifecycle::ListenerId AppLifecycle::AddForegroundListener(std::function<void(
   return Add(g_foreground_listeners, std::move(listener));
 }
 
+void AppLifecycle::OnRemoteNotification() {
+  AppRuntime::PostUI([]() {
+    for (const auto& listener : Snapshot(g_remote_notification_listeners)) {
+      listener();
+    }
+  });
+}
+
+AppLifecycle::ListenerId AppLifecycle::AddRemoteNotificationListener(std::function<void()> listener) {
+  return Add(g_remote_notification_listeners, std::move(listener));
+}
+
 AppLifecycle::ListenerId AppLifecycle::AddAttentiveListener(std::function<void()> listener) {
   return Add(g_attentive_listeners, std::move(listener));
 }
@@ -308,7 +321,8 @@ void AppLifecycle::RemoveListener(const ListenerId id) {
     return;
   }
   std::lock_guard lock(g_listeners_mu);
-  for (auto* listeners : {&g_background_listeners, &g_foreground_listeners, &g_attentive_listeners}) {
+  for (auto* listeners :
+       {&g_background_listeners, &g_foreground_listeners, &g_attentive_listeners, &g_remote_notification_listeners}) {
     std::erase_if(*listeners, [id](const Listener& listener) { return listener.id == id; });
   }
   std::erase_if(g_stay_connected_listeners, [id](const StayConnectedListener& listener) { return listener.id == id; });

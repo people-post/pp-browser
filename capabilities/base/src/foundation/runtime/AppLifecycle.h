@@ -86,6 +86,12 @@ public:
    * listener asks it. Called on the UI thread; removed with RemoveListener.
    */
   static ListenerId AddAttentiveListener(std::function<void()> listener);
+  /**
+   * A remote notification reached the app (iOS: the notification-center delegate and the remote-notification
+   * callback; the system may have written its own icon number). Any thread: the listeners run on the UI thread.
+   */
+  static void OnRemoteNotification();
+  static ListenerId AddRemoteNotificationListener(std::function<void()> listener);
   static void RemoveListener(ListenerId id);
 };
 

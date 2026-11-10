@@ -13,6 +13,7 @@
 
 #include "foundation/platform/IosLocalNotifier.h"
 #include "foundation/platform/IosPushDeviceRegistrar.h"
+#include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 
 #include <chrono>
@@ -42,6 +43,7 @@ bool IsCallWake(NSDictionary* userInfo) {
        willPresentNotification:(UNNotification*)notification
          withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completionHandler {
   (void)center;
+  pbr::AppLifecycle::OnRemoteNotification(); // a push may carry its own icon number: ours is sent again
   if (IsCallWake(notification.request.content.userInfo)) {
     pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
   }
@@ -109,6 +111,7 @@ void AddAppDelegateMethods(Class cls) {
   class_addMethod(cls, @selector(application:didReceiveRemoteNotification:fetchCompletionHandler:),
                   imp_implementationWithBlock(^(id /*self*/, UIApplication* /*app*/, NSDictionary* userInfo,
                                                 void (^completionHandler)(UIBackgroundFetchResult)) {
+                    pbr::AppLifecycle::OnRemoteNotification(); // as in willPresentNotification
                     if (IsCallWake(userInfo)) {
                       pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
                     } else {
