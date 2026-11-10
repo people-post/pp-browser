@@ -111,10 +111,10 @@ bool ExpectsGroupAttach(const InboundAttachInput& in) {
 
 HopFailureAction DecideHopFailure(const HopFailureInput& in) {
   if (!in.sticky_initiator) {
-    return HopFailureAction::Ignore;  // only the sticky initiator answers hop hints
+    return HopFailureAction::Ignore; // only the sticky initiator answers hop hints
   }
   if (!in.guest.empty() && in.already_moved_guest_to_failed_hop) {
-    return HopFailureAction::RefuseGuest;  // V050: one hop change per joiner
+    return HopFailureAction::RefuseGuest; // V050: one hop change per joiner
   }
   if (in.owner.action == HopHintOwnerAction::RefuseGuest || in.guest.empty()) {
     return in.guest.empty() ? HopFailureAction::Ignore : HopFailureAction::RefuseGuest;

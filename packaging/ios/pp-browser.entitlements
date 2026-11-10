@@ -10,5 +10,7 @@
 <dict>
   <key>get-task-allow</key>
   <true/>
+  <key>com.apple.developer.usernotifications.time-sensitive</key>
+  <true/>
 </dict>
 </plist>

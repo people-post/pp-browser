@@ -38,8 +38,9 @@ Roe<void> ApplyRequest(IGroupRosterStore& roster, const std::string& local_accou
     return member.error();
   }
   const bool answering = *member && asker != local_account && answer;
-  logging::getLogger(kGroupRosterSyncLogger).info << "Roster request group_id=" << request->group_id << " from=" << asker
-             << (answering ? " (answering)" : " (not a member here: no answer)");
+  logging::getLogger(kGroupRosterSyncLogger).info << "Roster request group_id=" << request->group_id
+                                                  << " from=" << asker
+                                                  << (answering ? " (answering)" : " (not a member here: no answer)");
   if (answering) {
     answer(std::move(*request), asker);
   }
@@ -86,7 +87,7 @@ Roe<void> ApplyReply(IGroupRosterStore& roster, const std::string& local_account
 Roe<void> ApplySiblingDissolved(IGroupRosterStore& roster, const std::string& local_account, const std::string& detail,
                                 const std::string& sender, const DissolvedFn& on_dissolved) {
   if (sender != local_account) {
-    return {};  // only our own devices speak for our account
+    return {}; // only our own devices speak for our account
   }
   auto statement = group_roster_sync_codec::DecodeStatement(detail);
   if (!statement) {

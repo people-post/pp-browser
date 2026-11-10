@@ -40,8 +40,15 @@ protected:
 
     CallMediaKeyExchange::Transport transport;
     transport.resolve_peer_session_key = [this](const std::string&) -> Roe<ByteVector> {
+      ++sessions_opened_or_used_;
       if (!peer_session_ready_) {
         return Error("no session with the peer yet");
+      }
+      return session_key_;
+    };
+    transport.held_peer_session_key = [this](const std::string&) -> Roe<ByteVector> {
+      if (!peer_session_ready_) {
+        return Error("no session held with the peer");
       }
       return session_key_;
     };
@@ -62,10 +69,9 @@ protected:
     detail.call_id = kCall;
     detail.media_epoch = epoch;
     detail.media_key_id = "mk:" + std::to_string(epoch);
-    detail.wrapped_key_b64 =
-        ICallMediaKeyStore::WrapKeyB64(session_key_, Bytes(static_cast<uint8_t>(0x40 + epoch)), kCall, epoch,
-                                     detail.media_key_id)
-            .value();
+    detail.wrapped_key_b64 = ICallMediaKeyStore::WrapKeyB64(session_key_, Bytes(static_cast<uint8_t>(0x40 + epoch)),
+                                                            kCall, epoch, detail.media_key_id)
+                                 .value();
     return CallControlCodec::EncodeMediaKey(detail).value();
   }
 
@@ -76,12 +82,17 @@ protected:
   std::unique_ptr<CallMediaKeyExchange> exchange_;
   ByteVector session_key_ = Bytes(0x10);
   bool peer_session_ready_ = false;
+  /** Calls of the port that opens a session when missing: the wrap's, never the read's. */
+  int sessions_opened_or_used_ = 0;
 };
 
 // #381: a rotation's key that cannot be opened yet is not taken (the call stays on the epoch it has a key
 // for); the coordinator's resend is taken, and its key stored. Moving the call is the workflow's (the rows'
 // one writer): the exchange only says which key it took.
 TEST_F(CallMediaKeyExchangeTest, AKeyThatFailedToOpenIsTakenFromItsResend) {
+  if (!kMediaKeyAccountWrapRead) {
+    GTEST_SKIP() << "the old form is no longer read (M024 bridge, step 2)";
+  }
   const std::string epoch2 = MediaKeyDetail(2);
   auto first = exchange_->HandleInbound(epoch2, "account:coordinator");
   ASSERT_TRUE(first);
@@ -99,6 +110,7 @@ TEST_F(CallMediaKeyExchangeTest, AKeyThatFailedToOpenIsTakenFromItsResend) {
   ASSERT_TRUE(stored && *stored);
   EXPECT_EQ(**stored, Bytes(0x42));
   EXPECT_EQ(sessions_->LoadSession(kCall).value()->media_epoch, 1u) << "the exchange never writes the row";
+  EXPECT_EQ(sessions_opened_or_used_, 0) << "reading the old form never opens a session (M024)";
 }
 
 /** A CallMediaKey for `epoch` as a sender after M024 sends it: the key itself, and (the bridge) its old form. */
@@ -149,12 +161,13 @@ TEST_F(CallMediaKeyExchangeTest, TheOldFormStillGoesForAnOlderApp) {
             key.key);
 }
 
-// A key of the wrong size is refused, not stored.
+// A key of the wrong size is refused, not stored, and the call stays on the epoch it has a key for (#381).
 TEST_F(CallMediaKeyExchangeTest, AMalformedKeyIsNotTaken) {
   auto taken = exchange_->HandleInbound(NewFormDetail(kCall, 2, Bytes(0x10, 16), ""), "account:caller");
   ASSERT_TRUE(taken);
   EXPECT_FALSE(*taken);
   EXPECT_FALSE(keys_->LoadEpochKey(kCall, 2).value());
+  EXPECT_EQ(sessions_->LoadSession(kCall).value()->media_epoch, 1u);
 }
 
 // Epochs only move forward: a newer key moves the call, the current one again installs again (a member

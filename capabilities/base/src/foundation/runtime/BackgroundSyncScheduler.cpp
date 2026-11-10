@@ -19,8 +19,7 @@ BackgroundSyncScheduler& BackgroundSyncScheduler::Instance() {
 void BackgroundSyncScheduler::SetSyncHandler(SyncFn handler) {
   handler_ = std::move(handler);
   EnsureRelayPollTimer();
-  log().warning << "SetSyncHandler armed=" << (handler_ ? 1 : 0)
-                << " timer_id=" << relay_poll_timer_id_;
+  log().warning << "SetSyncHandler armed=" << (handler_ ? 1 : 0) << " timer_id=" << relay_poll_timer_id_;
 }
 
 void BackgroundSyncScheduler::EnsureRelayPollTimer() {
@@ -32,9 +31,7 @@ void BackgroundSyncScheduler::EnsureRelayPollTimer() {
     return;
   }
   const auto cadence = std::chrono::milliseconds(kForegroundRelayPollIntervalMs);
-  relay_poll_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(cadence, [this]() {
-    RunScheduledSync(false);
-  });
+  relay_poll_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(cadence, [this]() { RunScheduledSync(false); });
   if (relay_poll_timer_id_ == 0) {
     log().error << "EnsureRelayPollTimer failed (ScheduleCoordinatorRepeating returned 0)";
   }

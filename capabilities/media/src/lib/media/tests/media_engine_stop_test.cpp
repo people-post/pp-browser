@@ -107,5 +107,5 @@ TEST(MediaEngineStopTest, SlowTeardownHoldsNeitherStopNorGetters) {
       << "ConnectionState waited for the codec teardown";
 }
 
-}  // namespace
-}  // namespace pbr
+} // namespace
+} // namespace pbr

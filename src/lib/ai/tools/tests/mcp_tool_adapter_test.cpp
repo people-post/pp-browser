@@ -37,13 +37,15 @@ TEST(McpToolAdapterTest, BoundsSerializedToolResultsAtConfiguredLimit) {
   ASSERT_EQ(result_json.size(), pbr::kMaxMcpToolResultBytes);
 
   pbr::McpClient::SetHttpPost([&result_json](const std::string&, const std::string& request,
-                                              const std::map<std::string, std::string>&, long) -> pbr::Roe<pbr::HttpResponse> {
+                                             const std::map<std::string, std::string>&,
+                                             long) -> pbr::Roe<pbr::HttpResponse> {
     if (request.find("tools/list") != std::string::npos) {
-      return pbr::HttpResponse{.status_code = 200,
-                               .body = R"({"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"large_result","description":"","inputSchema":{"type":"object"}}]}})"};
+      return pbr::HttpResponse{
+          .status_code = 200,
+          .body =
+              R"({"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"large_result","description":"","inputSchema":{"type":"object"}}]}})"};
     }
-    return pbr::HttpResponse{.status_code = 200,
-                             .body = R"({"jsonrpc":"2.0","id":2,"result":)" + result_json + "}"};
+    return pbr::HttpResponse{.status_code = 200, .body = R"({"jsonrpc":"2.0","id":2,"result":)" + result_json + "}"};
   });
 
   pbr::McpClient client;
@@ -67,14 +69,15 @@ TEST(McpToolAdapterTest, BoundsSerializedToolResultsAtConfiguredLimit) {
 // may choose Always allow. A destructive-sounding name stays destructive either way.
 TEST(McpToolAdapterTest, ReadOnlyHintIsTrustedOnlyFromThePromotedServer) {
   McpHttpPostReset reset;
-  pbr::McpClient::SetHttpPost([](const std::string&, const std::string&,
-                                 const std::map<std::string, std::string>&, long) -> pbr::Roe<pbr::HttpResponse> {
+  pbr::McpClient::SetHttpPost([](const std::string&, const std::string&, const std::map<std::string, std::string>&,
+                                 long) -> pbr::Roe<pbr::HttpResponse> {
     return pbr::HttpResponse{
         .status_code = 200,
-        .body = R"({"jsonrpc":"2.0","id":1,"result":{"tools":[)"
-                R"({"name":"lookup","description":"","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}},)"
-                R"({"name":"delete_all","description":"","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}})"
-                R"(]}})"};
+        .body =
+            R"({"jsonrpc":"2.0","id":1,"result":{"tools":[)"
+            R"({"name":"lookup","description":"","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}},)"
+            R"({"name":"delete_all","description":"","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}})"
+            R"(]}})"};
   });
   pbr::McpClient client;
   ASSERT_TRUE(client.StartHttp("http://mcp.test"));

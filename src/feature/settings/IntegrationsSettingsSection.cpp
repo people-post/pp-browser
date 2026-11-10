@@ -18,10 +18,10 @@ bool McpServersEqual(const std::vector<McpServerUiState>& left, const std::vecto
       continue;
     }
     normalized.push_back({.id = entry.id,
-                            .url = entry.url,
-                            .command = entry.command,
-                            .args_text = JoinArgsText(entry.args),
-                            .enabled = entry.enabled});
+                          .url = entry.url,
+                          .command = entry.command,
+                          .args_text = JoinArgsText(entry.args),
+                          .enabled = entry.enabled});
   }
   if (left.size() != normalized.size()) {
     return false;

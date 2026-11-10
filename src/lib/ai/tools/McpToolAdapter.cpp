@@ -53,8 +53,8 @@ Roe<std::string> CallMcpToolJson(McpClient& client, const std::string& name, con
 
 std::vector<ToolDescriptor> McpToolAdapter::ListTools(McpClient& client, const McpToolAdapterOptions& options,
                                                       const std::unordered_set<std::string>& occupied_names,
-                                                      const std::string& provider_id,
-                                                      const std::string& default_domain, bool* listed) {
+                                                      const std::string& provider_id, const std::string& default_domain,
+                                                      bool* listed) {
   std::vector<ToolDescriptor> out;
   auto tools = client.ListTools(options.list_timeout_s);
   if (listed) {
@@ -96,8 +96,7 @@ std::vector<ToolDescriptor> McpToolAdapter::ListTools(McpClient& client, const M
   return out;
 }
 
-void McpToolAdapter::RegisterTools(ToolRegistry& registry, McpClient& client,
-                                   const McpToolAdapterOptions& options) {
+void McpToolAdapter::RegisterTools(ToolRegistry& registry, McpClient& client, const McpToolAdapterOptions& options) {
   for (ToolDescriptor& descriptor : ListTools(client, options, RegistryToolNames(registry))) {
     registry.Register(std::move(descriptor));
   }

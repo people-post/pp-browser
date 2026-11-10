@@ -181,8 +181,7 @@ Roe<std::vector<uint8_t>> ExtractWithMediaFoundation(const std::string& video_pa
     return Error("IMFMediaBuffer Lock failed");
   }
 
-  SDL_Surface* surface =
-      SDL_CreateSurface(static_cast<int>(width), static_cast<int>(height), SDL_PIXELFORMAT_XRGB8888);
+  SDL_Surface* surface = SDL_CreateSurface(static_cast<int>(width), static_cast<int>(height), SDL_PIXELFORMAT_XRGB8888);
   if (!surface) {
     buffer->Unlock();
     if (started) {
@@ -198,7 +197,8 @@ Roe<std::vector<uint8_t>> ExtractWithMediaFoundation(const std::string& video_pa
     if (src_y * src_stride + src_stride > cur_len) {
       break;
     }
-    uint8_t* dst = static_cast<uint8_t*>(surface->pixels) + static_cast<size_t>(y) * static_cast<size_t>(surface->pitch);
+    uint8_t* dst =
+        static_cast<uint8_t*>(surface->pixels) + static_cast<size_t>(y) * static_cast<size_t>(surface->pitch);
     const BYTE* src = data + src_y * src_stride;
     std::memcpy(dst, src, src_stride);
   }

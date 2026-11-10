@@ -35,7 +35,7 @@ public:
   ~CountedSpeaker() override { counter_.live.fetch_sub(1); }
   int Read(void*, int) override { return 0; }
   bool Write(const void*, int) override { return true; }
-  int Queued() const override { return 1 << 20; }  // "full": the refill loop only idles
+  int Queued() const override { return 1 << 20; } // "full": the refill loop only idles
   void Clear() override {}
 
 private:
@@ -68,13 +68,13 @@ TEST(CallRingtoneGenerationTest, StoppedGenerationDoesNotReviveAfterFastRedial) 
   MediaDeviceArbiter devices(std::make_unique<ParkingBackend>(counter));
   {
     CallRingtone ringback(CallRingtone::Tone::OutgoingRingback, devices);
-    ringback.Start();  // A — parks inside the device open
+    ringback.Start(); // A — parks inside the device open
     ASSERT_TRUE(WaitFor([&] { return counter.opens.load() >= 1; }));
-    ringback.Stop();   // caller cancels while A is still opening
-    ringback.Start();  // redial: B
+    ringback.Stop();  // caller cancels while A is still opening
+    ringback.Start(); // redial: B
     EXPECT_TRUE(ringback.IsPlaying());
 
-    counter.release_first_open = true;  // A's open completes after B's Start()
+    counter.release_first_open = true; // A's open completes after B's Start()
     ASSERT_TRUE(WaitFor([&] { return counter.opens.load() >= 2; })) << "B never opened";
     EXPECT_TRUE(WaitFor([&] { return counter.live.load() == 1; })) << "stopped generation A revived alongside B";
     std::this_thread::sleep_for(100ms);

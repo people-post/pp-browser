@@ -161,7 +161,7 @@ void RestorePreviousHandlers() {
   for (std::size_t i = 0; i < kHookedSignalCount; ++i) {
     struct sigaction prev = g_prev_actions[i];
     if (!(prev.sa_flags & SA_SIGINFO) && prev.sa_handler == SIG_IGN) {
-      prev.sa_handler = SIG_DFL;  // an ignored fault would re-fault forever
+      prev.sa_handler = SIG_DFL; // an ignored fault would re-fault forever
     }
     ::sigaction(kHookedSignals[i], &prev, nullptr);
   }
@@ -340,7 +340,7 @@ void CrashDump::Install(const std::string& data_dir, const CrashIdentity& identi
   // sigaction, not signal(): the previous action is kept whole (debuggerd's is SA_SIGINFO) so the
   // handler can hand the signal back to it. SA_ONSTACK: Android threads have an alternate signal
   // stack, so a stack overflow can still be reported.
-  struct sigaction action {};
+  struct sigaction action{};
   action.sa_handler = OnFatalSignal;
   sigemptyset(&action.sa_mask);
   action.sa_flags = SA_ONSTACK;

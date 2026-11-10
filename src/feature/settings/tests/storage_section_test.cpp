@@ -84,7 +84,7 @@ TEST(StorageSectionTest, TheChosenRowIsStored) {
   pbr::ChooseAttachmentDownloadPolicy(state, "always_auto");
   EXPECT_TRUE(pbr::AttachmentAutoTogglesVisible(state, pbr::PlatformKind::IOS));
   EXPECT_FALSE(pbr::AttachmentAutoTogglesVisible(state, pbr::PlatformKind::Desktop));
-  pbr::ToggleAttachmentAutoNetwork(state, /*cellular=*/false);  // Wi-Fi off, mobile data was off
+  pbr::ToggleAttachmentAutoNetwork(state, /*cellular=*/false); // Wi-Fi off, mobile data was off
   EXPECT_EQ(state.attachment_download_policy, "smart");
   ASSERT_TRUE(section.Flush(state, store));
   EXPECT_EQ(store.Snapshot().profile_prefs.attachment_download_policy, "smart");

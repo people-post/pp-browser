@@ -91,12 +91,12 @@ private:
 
   IdentityStore& identity_;
   AccountKeyResolver& cards_;
-  std::mutex mutex_;  // issuing a card
+  std::mutex mutex_; // issuing a card
   std::mutex keys_mutex_;
   std::optional<KeyCard> keys_;
   std::function<void(const AccountCard&)> on_changed_;
   std::function<void(const AccountCard&)> on_joined_;
-  int64_t join_expected_until_ms_ = 0;  // under mutex_
+  int64_t join_expected_until_ms_ = 0; // under mutex_
 };
 
 } // namespace pbr

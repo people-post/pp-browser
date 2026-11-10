@@ -7,8 +7,8 @@ namespace {
 
 TEST(ThreadDraftsTest, EachConversationKeepsItsOwnUnsentText) {
   ThreadDrafts drafts;
-  EXPECT_EQ(drafts.SwitchTo("A", ""), "");             // first owner
-  EXPECT_EQ(drafts.SwitchTo("B", "for A only"), "");   // A's text stays with A; B starts empty
+  EXPECT_EQ(drafts.SwitchTo("A", ""), "");           // first owner
+  EXPECT_EQ(drafts.SwitchTo("B", "for A only"), ""); // A's text stays with A; B starts empty
   EXPECT_EQ(drafts.SwitchTo("A", "for B"), "for A only");
   EXPECT_EQ(drafts.SwitchTo("B", "for A only"), "for B");
 }

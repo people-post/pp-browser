@@ -9,9 +9,9 @@ namespace pbr {
  * #166 (Kenneth 2026-11-08): where the minimised call chip rests after a drag, as the phone AI dot does — the nearer
  * side, the height left where it was dropped. Pure geometry in dp, relative to the chip's layer (the call mount). The
  * height is kept as a share of the band the chip may rest in, so it stays in the band when the window or the chip
- * changes size. The band matches the corner classes the chip had before (components.rcss
- * .shell-call-minimized-chip--tr / --br: 12dp from the top, 72dp from the bottom, safe areas already outside the
- * layer): a light drag from the default top-right corner does not move it down. Session only (CallController).
+ * changes size. The band keeps the corners the chip had before #166 (12dp from the top, as components.rcss
+ * .shell-call-minimized-chip--tr still does; 72dp from the bottom; safe areas already outside the layer): a light drag
+ * from the default top-right corner does not move it down. Session only (CallController).
  */
 struct CallChipArea {
   float width_dp = 0.f;
@@ -31,6 +31,8 @@ struct CallChipPlace {
   int side = 0;
   /** 0 (top of the band) .. 1000 (bottom); ignored for kSideDefault. */
   int y_permille = 0;
+  /** #189: the small handle hanging on the side's edge instead of the full bar (ignored for kSideDefault). */
+  bool tucked = false;
   bool operator==(const CallChipPlace& other) const = default;
 };
 
@@ -56,10 +58,18 @@ public:
   static constexpr int kSideDefault = 0;
   static constexpr int kSideLeft = 1;
   static constexpr int kSideRight = 2;
-  /** The gap to the side it rests on, and the band's ends (the old corner classes' 12dp / 72dp). */
+  /** The gap to the side it rests on, and the band's ends (the corners the chip had before #166: 12dp / 72dp). */
   static constexpr float kEdgeDp = 12.f;
   static constexpr float kTopDp = 12.f;
   static constexpr float kBottomDp = 72.f;
+  /** #189: the handle is a circle this size, `kTuckDp` of it beyond the side's edge (components.rcss
+   * .shell-call-minimized-chip--handle). A bar dropped with its outer edge within `kTuckSnapDp` of the edge, thrown at
+   * it by at least `kTuckThrowDp`, becomes the handle; a handle let go farther than `kTuckSnapDp` from the edge, or
+   * tapped, becomes the bar again. */
+  static constexpr float kHandleDp = 44.f;
+  static constexpr float kTuckDp = 12.f;
+  static constexpr float kTuckSnapDp = 24.f;
+  static constexpr float kTuckThrowDp = 6.f;
 
   static float MinTop() { return kTopDp; }
   static float MaxTop(const CallChipArea& area, const float chip_height_dp) {
@@ -87,6 +97,10 @@ public:
     const float permille = static_cast<float>(std::clamp(place.y_permille, 0, 1000));
     CallChipPoint point;
     point.top_dp = min_top + span * permille / 1000.f;
+    if (place.tucked) {
+      point.left_dp = place.side == kSideLeft ? -kTuckDp : area.width_dp + kTuckDp - chip_width_dp;
+      return point;
+    }
     point.left_dp = place.side == kSideLeft ? kEdgeDp : std::max(kEdgeDp, area.width_dp - kEdgeDp - chip_width_dp);
     return point;
   }

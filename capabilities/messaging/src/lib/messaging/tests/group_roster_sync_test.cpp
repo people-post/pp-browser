@@ -103,7 +103,7 @@ protected:
 };
 
 TEST_F(GroupRosterSyncTest, RestoredMemberTakesTheNewerRosterAndStopsSendingToTheRemovedMember) {
-  Seed(Statement(3, {bob_, carol_, dave_}));  // Carol's locker snapshot
+  Seed(Statement(3, {bob_, carol_, dave_})); // Carol's locker snapshot
   auto check = group_roster_sync::BeginCheck(*roster_, kGroup, carol_, 1);
   ASSERT_TRUE(check);
   std::vector<std::string> ask = check->ask;
@@ -133,7 +133,7 @@ TEST_F(GroupRosterSyncTest, AnUnchangedRosterEndsTheCheck) {
 }
 
 TEST_F(GroupRosterSyncTest, AMemberRemovedSinceItsLockerSnapshotEndsRemoved) {
-  Seed(Statement(3, {bob_, carol_, dave_}));  // Dave's locker snapshot
+  Seed(Statement(3, {bob_, carol_, dave_})); // Dave's locker snapshot
   auto check = group_roster_sync::BeginCheck(*roster_, kGroup, dave_, 1).value();
   EXPECT_EQ(*Apply(ReplyWith(check.request.request_id, Statement(4, {bob_, carol_})), dave_, bob_),
             ReplyOutcome::Removed);
@@ -218,8 +218,7 @@ TEST_F(GroupRosterSyncTest, MembersAnswerWithTheirStatementAndWhetherTheAskerIsS
 
 TEST_F(GroupRosterSyncTest, CodecRoundTripsTheControlsAndTheEventFields) {
   const GroupRosterStatement s4 = Statement(4, {bob_, carol_});
-  auto request = group_roster_sync_codec::DecodeRequest(
-      group_roster_sync_codec::EncodeRequest({kGroup, "r1", 3}));
+  auto request = group_roster_sync_codec::DecodeRequest(group_roster_sync_codec::EncodeRequest({kGroup, "r1", 3}));
   ASSERT_TRUE(request);
   EXPECT_EQ(request->request_id, "r1");
   EXPECT_EQ(request->roster_epoch, 3u);
@@ -251,7 +250,7 @@ TEST_F(GroupRosterSyncTest, CodecRoundTripsTheControlsAndTheEventFields) {
 
 TEST_F(GroupRosterSyncTest, TheCheckRidesTheControlLane) {
   Seed(Statement(3, {bob_, carol_, dave_}));
-  std::vector<std::pair<std::string, std::string>> answered;  // request id, asker
+  std::vector<std::pair<std::string, std::string>> answered; // request id, asker
   SystemControlFamily family = MakeGroupRosterSyncFamily(
       *roster_, [this]() -> std::optional<std::string> { return carol_; },
       [&answered](group_roster_sync_codec::RosterRequest request, std::string asker) {
@@ -278,9 +277,9 @@ TEST_F(GroupRosterSyncTest, TheCheckRidesTheControlLane) {
 
   // A reply to our open check settles it.
   auto check = group_roster_sync::BeginCheck(*roster_, kGroup, carol_, 1).value();
-  ThreadMessage reply = control(GroupMembershipControlType::GroupRosterReply,
-                                group_roster_sync_codec::EncodeReply(
-                                    ReplyWith(check.request.request_id, Statement(4, {bob_, carol_}))));
+  ThreadMessage reply =
+      control(GroupMembershipControlType::GroupRosterReply,
+              group_roster_sync_codec::EncodeReply(ReplyWith(check.request.request_id, Statement(4, {bob_, carol_}))));
   EXPECT_TRUE(family.on_lane(reply));
   ASSERT_TRUE(family.apply(reply, SystemControlContext{.sender_identity = bob_}));
   EXPECT_EQ(Metadata().sync_state, GroupSyncState::Active);
@@ -338,7 +337,8 @@ TEST_F(GroupRosterSyncTest, ADissolvedGroupChecksNothingAnswersNothingAndKeepsNo
 
 TEST_F(GroupRosterSyncTest, ADissolveIsNeverKeptAsTheRoster) {
   Seed(Statement(3, {bob_, carol_}));
-  std::vector<GroupRosterStatementMember> rows{{alice_.Id(), MemberRole::Owner, 1000}, {bob_, MemberRole::Member, 2000}};
+  std::vector<GroupRosterStatementMember> rows{{alice_.Id(), MemberRole::Owner, 1000},
+                                               {bob_, MemberRole::Member, 2000}};
   const GroupRosterStatement dissolve =
       group_roster_statement::Sign(alice_, alice_.Key(), kGroup, 9, rows, {}, /*dissolved=*/true).value();
   ASSERT_TRUE(group_roster_statement::Verify(dissolve, alice_.Id())) << "it verifies as what it is";
@@ -467,8 +467,8 @@ TEST_F(GroupRosterSyncTest, AnOwnersOtherDeviceEndsTheGroupAndNoOneElseCan) {
       [&](GroupDissolvedEnd end) { heard.push_back(std::move(end)); });
   const auto notice = [&](const GroupRosterStatement& statement) {
     return GroupMembershipCodec::BuildSystemMessage(std::string(), GroupMembershipControlType::GroupDissolvedSibling,
-                                                    "Group dissolved", group_roster_sync_codec::EncodeStatement(statement),
-                                                    alice_.Id())
+                                                    "Group dissolved",
+                                                    group_roster_sync_codec::EncodeStatement(statement), alice_.Id())
         .value();
   };
   ThreadMessage message = notice(DissolveOf(alice_, kGroup, 4, {bob_, carol_}));

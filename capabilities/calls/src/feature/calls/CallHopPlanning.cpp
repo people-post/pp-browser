@@ -41,7 +41,7 @@ void CallHopPlanning::OnProbeAnswered(const planning_event::ProbeAnswered& answe
   const auto round = probe_round_.find(answer.call_id);
   auto probes = probes_.find(answer.call_id);
   if (round == probe_round_.end() || round->second != answer.round || probes == probes_.end()) {
-    return;  // a probe round since replaced (or dropped)
+    return; // a probe round since replaced (or dropped)
   }
   probes->second[answer.hop_peer_id] = answer.ok;
   log().info << "hop probe call_id=" << answer.call_id << " hop=" << answer.hop_peer_id << " ok=" << (answer.ok ? 1 : 0)
@@ -88,12 +88,11 @@ void CallHopPlanning::ProbeInvite(const std::string& call_id) {
     probe_round_.clear();
   }
   probes_[call_id].clear();
-  ++probe_round_[call_id];  // answers to an earlier round are stale
+  ++probe_round_[call_id]; // answers to an earlier round are stale
   probe_planned_hop_[call_id] = planned.peer_id;
-  const bool private_off_lan =
-      !planned.multiaddr.empty() && mesh::MultiaddrHasPrivateIpv4Host(planned.multiaddr) &&
-      !(GuestMayDialPrivateHopMa(planned.multiaddr, ranking_.LocalAdvertiseMas()) && deps_->peer_lan_confirmed &&
-        deps_->peer_lan_confirmed(planned.peer_id));
+  const bool private_off_lan = !planned.multiaddr.empty() && mesh::MultiaddrHasPrivateIpv4Host(planned.multiaddr) &&
+                               !(GuestMayDialPrivateHopMa(planned.multiaddr, ranking_.LocalAdvertiseMas()) &&
+                                 deps_->peer_lan_confirmed && deps_->peer_lan_confirmed(planned.peer_id));
   if (private_off_lan) {
     probes_[call_id][planned.peer_id] = false;
   } else {
@@ -121,9 +120,10 @@ void CallHopPlanning::QuoteProbe(const std::string& call_id, const std::string& 
   request.hop_multiaddr = hop_multiaddr;
   request.session_id = call_id;
   request.quote.session_id = call_id;
-  request.quote.participants = 3;  // a group is what this hop would serve
+  request.quote.participants = 3; // a group is what this hop would serve
   // Edge: the quote answers on a worker / I/O — it only reports.
-  auto done = [outbox = outbox_, call_id, round = probe_round_[call_id], hop_peer_id](mesh::MediaRelayRoe<mesh::MediaRelayQuote> quote) {
+  auto done = [outbox = outbox_, call_id, round = probe_round_[call_id],
+               hop_peer_id](mesh::MediaRelayRoe<mesh::MediaRelayQuote> quote) {
     const bool ok = quote && quote->ok;
     outbox.Emit(planning_event::ProbeAnswered{call_id, round, hop_peer_id, ok,
                                               ok ? std::string() : (quote ? quote->error : quote.error().message)});
@@ -183,19 +183,20 @@ CallHopPlanning::JoinOutcome CallHopPlanning::ResolveAtJoin(const std::string& c
     resolved_.insert(call_id);
   }
   switch (decision.action) {
-  case GroupHopAtJoin::UsePlanned:
-    return {};
-  case GroupHopAtJoin::UseAlternative: {
-    // The one adjustment replaces the plan (not a re-pick): SoftMigrate ranks the planned hop first.
-    log().info << "group hop adjustment call_id=" << call_id << " planned=" << in.planned_hop << " → " << decision.hop
-               << " (a participant cannot use the planned hop: unreachable or full)";
-    return JoinOutcome{JoinOutcome::Action::Proceed, CallPlannedHop{decision.hop, ranking_.HopMultiaddr(decision.hop)}};
-  }
-  case GroupHopAtJoin::RefuseJoiner:
-    log().warning << "group hop: no hop every participant reaches — refuse joiner=" << joiner_identity
-                  << " call_id=" << call_id << " planned=" << in.planned_hop << " ranked=" << in.ranked_hops.size()
-                  << " reports=" << in.reports.size();
-    return JoinOutcome{JoinOutcome::Action::RefuseJoiner, std::nullopt};
+    case GroupHopAtJoin::UsePlanned:
+      return {};
+    case GroupHopAtJoin::UseAlternative: {
+      // The one adjustment replaces the plan (not a re-pick): SoftMigrate ranks the planned hop first.
+      log().info << "group hop adjustment call_id=" << call_id << " planned=" << in.planned_hop << " → " << decision.hop
+                 << " (a participant cannot use the planned hop: unreachable or full)";
+      return JoinOutcome{JoinOutcome::Action::Proceed,
+                         CallPlannedHop{decision.hop, ranking_.HopMultiaddr(decision.hop)}};
+    }
+    case GroupHopAtJoin::RefuseJoiner:
+      log().warning << "group hop: no hop every participant reaches — refuse joiner=" << joiner_identity
+                    << " call_id=" << call_id << " planned=" << in.planned_hop << " ranked=" << in.ranked_hops.size()
+                    << " reports=" << in.reports.size();
+      return JoinOutcome{JoinOutcome::Action::RefuseJoiner, std::nullopt};
   }
   return {};
 }

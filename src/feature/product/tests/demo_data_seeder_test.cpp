@@ -35,7 +35,7 @@ ByteVector TestDek() {
   return dek;
 }
 
-constexpr int64_t kSomeDay = 1'760'000'000'000LL;  // any instant; the seeder is told "today 00:00" explicitly
+constexpr int64_t kSomeDay = 1'760'000'000'000LL; // any instant; the seeder is told "today 00:00" explicitly
 
 class DemoDataSeederTest : public ::testing::Test {
 protected:
@@ -56,8 +56,17 @@ protected:
   }
 
   DemoSeedDeps Deps(const int64_t midnight = kSomeDay) {
-    return DemoSeedDeps{*threads_, *contacts_, *groups_, *content_, dir_.string(), TestDek(), 64ULL * 1024 * 1024,
-                        /*own_relay_user_id=*/"", midnight, midnight + 11 * 3600 * 1000, ReadDemoAsset};
+    return DemoSeedDeps{*threads_,
+                        *contacts_,
+                        *groups_,
+                        *content_,
+                        dir_.string(),
+                        TestDek(),
+                        64ULL * 1024 * 1024,
+                        /*own_relay_user_id=*/"",
+                        midnight,
+                        midnight + 11 * 3600 * 1000,
+                        ReadDemoAsset};
   }
 
   /** Everything the seeder wrote, as text: equal text = equal data (ids, order, unread, times, payloads). */
@@ -128,7 +137,7 @@ TEST_F(DemoDataSeederTest, SeedsContactsThreadsUnreadCountsAndTwoDifferentPictur
   ASSERT_TRUE(contacts);
   EXPECT_EQ(contacts->size(), 18u);
   for (const Contact& c : *contacts) {
-    ASSERT_EQ(c.remote.ids.size(), 1u) << c.id;  // only the local-only demo account id
+    ASSERT_EQ(c.remote.ids.size(), 1u) << c.id; // only the local-only demo account id
     EXPECT_EQ(c.remote.ids[0].value, "demo-acct-" + c.id);
     EXPECT_FALSE(ContactRelayUserId(c).has_value()) << c.id;
     EXPECT_TRUE(c.remote.multiaddrs.empty());
@@ -144,16 +153,16 @@ TEST_F(DemoDataSeederTest, SeedsContactsThreadsUnreadCountsAndTwoDifferentPictur
     EXPECT_FALSE(messages->empty()) << t.id;
     unread.insert(t.unread_count);
     switch (t.kind) {
-    case ThreadKind::Direct:
-      ++direct;
-      EXPECT_EQ(t.peer_identity_value.rfind("demo-acct-", 0), 0u) << t.id;
-      break;
-    case ThreadKind::Group:
-      ++group;
-      break;
-    case ThreadKind::Ai:
-      ++ai;
-      break;
+      case ThreadKind::Direct:
+        ++direct;
+        EXPECT_EQ(t.peer_identity_value.rfind("demo-acct-", 0), 0u) << t.id;
+        break;
+      case ThreadKind::Group:
+        ++group;
+        break;
+      case ThreadKind::Ai:
+        ++ai;
+        break;
     }
     for (const ThreadMessage& m : *messages) {
       if (m.content_type == ChatContentType::Attachment && t.kind == ThreadKind::Direct) {
@@ -161,7 +170,7 @@ TEST_F(DemoDataSeederTest, SeedsContactsThreadsUnreadCountsAndTwoDifferentPictur
       }
     }
   }
-  EXPECT_EQ(direct, 11u);  // ten with contacts, one with someone who is not a contact (Home's New people)
+  EXPECT_EQ(direct, 11u); // ten with contacts, one with someone who is not a contact (Home's New people)
   EXPECT_EQ(group, 2u);
   EXPECT_EQ(ai, 1u);
   EXPECT_TRUE(unread.count(0) && unread.count(3) && unread.count(120));
@@ -169,7 +178,7 @@ TEST_F(DemoDataSeederTest, SeedsContactsThreadsUnreadCountsAndTwoDifferentPictur
   auto roster1 = groups_->ListMembers("demo-group-1");
   auto roster2 = groups_->ListMembers("demo-group-2");
   ASSERT_TRUE(roster1 && roster2);
-  EXPECT_EQ(roster1->size(), 5u);  // the user, three contacts and one member who is not a contact
+  EXPECT_EQ(roster1->size(), 5u); // the user, three contacts and one member who is not a contact
   EXPECT_EQ(roster2->size(), 12u);
   auto metadata = groups_->LoadMetadata("demo-group-1");
   ASSERT_TRUE(metadata && metadata->has_value());
@@ -352,7 +361,7 @@ TEST_F(DemoDataSeederTest, StartingAgainRestoresTheSameInventoryEvenAfterAChatWa
   ASSERT_FALSE(heavy_id.empty());
   EXPECT_NE(Inventory(), before);
 
-  DemoDataSeeder second_start;  // a new process: the once flag is new
+  DemoDataSeeder second_start; // a new process: the once flag is new
   auto seeded = second_start.SeedOnce(Deps());
   ASSERT_TRUE(seeded);
   EXPECT_TRUE(*seeded);
@@ -370,7 +379,7 @@ TEST_F(DemoDataSeederTest, TheReadyCallbackFiringTwiceWritesOnce) {
   auto second = seeder.SeedOnce(Deps());
   ASSERT_TRUE(second);
   EXPECT_FALSE(*second);
-  EXPECT_EQ(Inventory(), after_read);  // the count was not reset
+  EXPECT_EQ(Inventory(), after_read); // the count was not reset
 }
 
 TEST_F(DemoDataSeederTest, EveryTimeIsAFixedOffsetFromTodayMidnight) {
@@ -394,7 +403,7 @@ TEST_F(DemoDataSeederTest, EveryTimeIsAFixedOffsetFromTodayMidnight) {
   ASSERT_FALSE(at_first_day.empty());
   for (const auto& [id, offset] : at_first_day) {
     EXPECT_GE(offset, -31 * kDayMs) << id;
-    EXPECT_LT(offset, kDayMs) << id;  // never later than the end of today
+    EXPECT_LT(offset, kDayMs) << id; // never later than the end of today
   }
 
   // Another "today": the same rows move with it, so the screens show the same relative times.

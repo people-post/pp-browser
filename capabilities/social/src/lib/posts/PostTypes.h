@@ -23,7 +23,7 @@ using PostLane = std::array<uint8_t, kPostLaneBytes>;
 using PostHash = std::array<uint8_t, kPostHashBytes>;
 
 // Protocol limits (S014). Raised later, never lowered for this entry version (S016).
-inline constexpr size_t kMaxPostEntryBytes = 8 * 1024;  // canonical bytes, signature apart
+inline constexpr size_t kMaxPostEntryBytes = 8 * 1024; // canonical bytes, signature apart
 inline constexpr size_t kMaxPostTextBytes = 4 * 1024;
 inline constexpr size_t kMaxPostMedia = 4;
 inline constexpr uint64_t kMaxPostMediaObjectBytes = 16ull * 1024 * 1024;
@@ -98,7 +98,7 @@ struct PostEntry {
   int64_t claimed_at = 0;
   uint8_t kind = 0;
   ByteVector body;
-  std::vector<PostExtension> extensions;  // tags strictly increasing
+  std::vector<PostExtension> extensions; // tags strictly increasing
 
   bool operator==(const PostEntry&) const = default;
 };

@@ -21,17 +21,15 @@ pbr::Object EmptyObjectSchema() {
 
 TEST(TurnExecutorPermissionTest, StopsBeforeMutatingAskTool) {
   pbr::ToolRegistry registry;
-  registry.Register(pbr::MakeTool(
-      pbr::ToolDefinition{"list_contacts", "list", EmptyObjectSchema()},
-      pbr::ToolMeta{.domain = "people", .risk = "read", .mutating = false},
-      [](const pbr::Object&) -> pbr::Roe<std::string> { return std::string("[]"); }));
-  registry.Register(pbr::MakeTool(
-      pbr::ToolDefinition{"add_contact", "add", EmptyObjectSchema()},
-      pbr::ToolMeta{.domain = "people", .risk = "write", .mutating = true},
-      [](const pbr::Object&) -> pbr::Roe<std::string> {
-        ADD_FAILURE() << "mutating tool should not execute before permission";
-        return std::string("{}");
-      }));
+  registry.Register(pbr::MakeTool(pbr::ToolDefinition{"list_contacts", "list", EmptyObjectSchema()},
+                                  pbr::ToolMeta{.domain = "people", .risk = "read", .mutating = false},
+                                  [](const pbr::Object&) -> pbr::Roe<std::string> { return std::string("[]"); }));
+  registry.Register(pbr::MakeTool(pbr::ToolDefinition{"add_contact", "add", EmptyObjectSchema()},
+                                  pbr::ToolMeta{.domain = "people", .risk = "write", .mutating = true},
+                                  [](const pbr::Object&) -> pbr::Roe<std::string> {
+                                    ADD_FAILURE() << "mutating tool should not execute before permission";
+                                    return std::string("{}");
+                                  }));
 
   pbr::TurnPlan plan;
   plan.tools.push_back({.name = "list_contacts", .arguments = {}});

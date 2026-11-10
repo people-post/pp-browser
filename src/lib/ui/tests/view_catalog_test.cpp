@@ -17,9 +17,7 @@ class TempAssetLocator : public pbr::IAssetLocator {
 public:
   explicit TempAssetLocator(std::filesystem::path root) : root_(std::move(root)) {}
 
-  std::string Resolve(const std::string& relative) const override {
-    return (root_ / relative).string();
-  }
+  std::string Resolve(const std::string& relative) const override { return (root_ / relative).string(); }
 
 private:
   std::filesystem::path root_;
@@ -29,9 +27,8 @@ class ViewCatalogTest : public ::testing::Test {
 protected:
   void SetUp() override {
     // One directory per test: ctest -j runs these tests in parallel processes.
-    root_ = std::filesystem::temp_directory_path() /
-            (std::string("pp-browser-view-catalog-test-") +
-             ::testing::UnitTest::GetInstance()->current_test_info()->name());
+    root_ = std::filesystem::temp_directory_path() / (std::string("pp-browser-view-catalog-test-") +
+                                                      ::testing::UnitTest::GetInstance()->current_test_info()->name());
     std::error_code ec;
     std::filesystem::remove_all(root_, ec);
     std::filesystem::create_directories(root_ / "views", ec);

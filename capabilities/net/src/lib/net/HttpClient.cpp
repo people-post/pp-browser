@@ -50,8 +50,7 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, ResponseBuffer* 
       out->body_redirects = redirects;
     }
   }
-  if (out->max_bytes &&
-      (total > *out->max_bytes || out->body.size() > *out->max_bytes - total)) {
+  if (out->max_bytes && (total > *out->max_bytes || out->body.size() > *out->max_bytes - total)) {
     out->limit_exceeded = true;
     return 0;
   }
@@ -73,9 +72,9 @@ std::function<bool()> CurrentUiProbe() {
  * reaches the line.
  */
 constexpr ShareWord kUiBlockRoutes[] = {
-    "api.relay",  "api.llm",   "api.support", "mcp",      "v1.users", "v1.devices",       "v1.register",
-    "v1.profile", "v1.search", "v1.mesh",     "v1.blobs", "v1.files", "v1.lockers",       "v1.inbox",
-    "v1.client-compat",        "v1.crash-reports",        "v1.diagnostics",               "guest.start",
+    "api.relay",        "api.llm",          "api.support",    "mcp",         "v1.users", "v1.devices", "v1.register",
+    "v1.profile",       "v1.search",        "v1.mesh",        "v1.blobs",    "v1.files", "v1.lockers", "v1.inbox",
+    "v1.client-compat", "v1.crash-reports", "v1.diagnostics", "guest.start",
 };
 
 /** Every public entry point holds one for the whole call: the single place a UI-thread request is recorded. */
@@ -215,9 +214,8 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
     if (!max_response_bytes) {
       return AppError::Network(Err::Network::HttpError, "HTTP response body size overflow");
     }
-    return AppError::Network(Err::Network::HttpError,
-                             "HTTP response body exceeds configured limit of " +
-                                 std::to_string(*max_response_bytes) + " bytes");
+    return AppError::Network(Err::Network::HttpError, "HTTP response body exceeds configured limit of " +
+                                                          std::to_string(*max_response_bytes) + " bytes");
   }
 
   if (code != CURLE_OK) {
@@ -373,7 +371,9 @@ HttpClient::ScopedUiThreadProbeForTest::ScopedUiThreadProbeForTest(std::function
   SetUiThreadProbe(std::move(probe));
 }
 
-HttpClient::ScopedUiThreadProbeForTest::~ScopedUiThreadProbeForTest() { SetUiThreadProbe(std::move(previous_)); }
+HttpClient::ScopedUiThreadProbeForTest::~ScopedUiThreadProbeForTest() {
+  SetUiThreadProbe(std::move(previous_));
+}
 
 std::string HttpClient::UiBlockRoute(const std::string& url) {
   std::string_view rest(url);
@@ -419,8 +419,7 @@ void HttpClient::SetFirstHopLocalForTest(const bool allow) {
 }
 
 Roe<HttpResponse> HttpClient::PutFile(const std::string& url, const std::string& path,
-                                      const std::map<std::string, std::string>& headers,
-                                      const HttpProgress& progress) {
+                                      const std::map<std::string, std::string>& headers, const HttpProgress& progress) {
   const UiBlockWatch watch(url);
   std::error_code size_ec;
   const auto file_size = std::filesystem::file_size(path, size_ec);
@@ -516,8 +515,8 @@ Roe<HttpFileDownload> HttpClient::GetToFile(const std::string& url, const std::s
     return error;
   };
   if (sink.exceeded || code == CURLE_FILESIZE_EXCEEDED) {
-    return fail(AppError::Network(Err::Network::HttpError,
-                                  "HTTP download exceeds the declared size of " + std::to_string(max_bytes) + " bytes"));
+    return fail(AppError::Network(
+        Err::Network::HttpError, "HTTP download exceeds the declared size of " + std::to_string(max_bytes) + " bytes"));
   }
   if (state.aborted) {
     return fail(AppError::Network(Err::Network::HttpError, "HTTP download cancelled"));

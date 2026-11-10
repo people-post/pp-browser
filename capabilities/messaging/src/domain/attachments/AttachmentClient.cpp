@@ -31,8 +31,7 @@ Roe<std::string> RequireRegisteredRelayUserId(IdentityStore& identity) {
 }
 
 void TryPeerPushAsync(const PreparedChatAttachment& prepared, IdentityStore& identity,
-                      const ChatAttachmentUploadOptions& options,
-                      std::function<void(Roe<void>)> on_done) {
+                      const ChatAttachmentUploadOptions& options, std::function<void(Roe<void>)> on_done) {
   auto finish = [on_done = std::move(on_done)](Roe<void> value) {
     if (on_done) {
       on_done(std::move(value));
@@ -46,8 +45,8 @@ void TryPeerPushAsync(const PreparedChatAttachment& prepared, IdentityStore& ide
     finish(Error("Peer blob push requires E2E direct thread"));
     return;
   }
-  auto request = BuildChatBlobRequest(*options.thread, *options.contacts, identity, ChatBlobOp::Push,
-                                      options.thread_id, prepared.fields.content_hash);
+  auto request = BuildChatBlobRequest(*options.thread, *options.contacts, identity, ChatBlobOp::Push, options.thread_id,
+                                      prepared.fields.content_hash);
   if (!request) {
     finish(request.error());
     return;
@@ -181,25 +180,26 @@ void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmen
       }
     }
     if (in_memory) {
-      TryPeerPushAsync(*in_memory, identity, options,
-                       [record, store, dek, finish, to_server = std::move(to_server), in_memory](Roe<void> pushed) mutable {
-                         auto next = [record, store, dek, finish, to_server = std::move(to_server),
-                                      pushed = std::move(pushed)]() mutable {
-                           if (pushed) {
-                             record.delivered = true;
-                             (void)store->Update(record, dek);
-                             finish(record.fields);
-                             return;
-                           }
-                           LogDirectPushFailed(record.fields.byte_length, pushed.error());
-                           to_server(true);
-                         };
-                         if (AppRuntime::IsRunning()) {
-                           AppRuntime::PostWorkerNormal(std::move(next));
-                         } else {
-                           next();
-                         }
-                       });
+      TryPeerPushAsync(
+          *in_memory, identity, options,
+          [record, store, dek, finish, to_server = std::move(to_server), in_memory](Roe<void> pushed) mutable {
+            auto next = [record, store, dek, finish, to_server = std::move(to_server),
+                         pushed = std::move(pushed)]() mutable {
+              if (pushed) {
+                record.delivered = true;
+                (void)store->Update(record, dek);
+                finish(record.fields);
+                return;
+              }
+              LogDirectPushFailed(record.fields.byte_length, pushed.error());
+              to_server(true);
+            };
+            if (AppRuntime::IsRunning()) {
+              AppRuntime::PostWorkerNormal(std::move(next));
+            } else {
+              next();
+            }
+          });
       return;
     }
   }
@@ -243,8 +243,8 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
                                const std::string& filename, const std::string& mime,
                                ChatAttachmentUploadOptions options,
                                std::function<void(Roe<ChatAttachmentFields>)> on_done) {
-  std::function<void(Roe<ChatAttachmentFields>)> finish = [on_done = std::move(on_done)](
-                                                               Roe<ChatAttachmentFields> value) {
+  std::function<void(Roe<ChatAttachmentFields>)> finish = [on_done =
+                                                               std::move(on_done)](Roe<ChatAttachmentFields> value) {
     if (on_done) {
       on_done(std::move(value));
     }
@@ -298,29 +298,28 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     // the callback (a moved-from copy there once made every direct push fail on "invalid content hash").
     const std::string relay_id = *relay_user_id;
     const auto prepared_shared = std::make_shared<PreparedChatAttachment>(std::move(*prepared));
-    TryPeerPushAsync(
-        *prepared_shared, identity, options,
-        [&blob, relay_id, prepared_shared, finish](Roe<void> pushed) mutable {
-          auto continue_result = [&blob, relay_id, prepared_shared, finish = std::move(finish),
-                                  pushed = std::move(pushed)]() mutable {
-            if (pushed) {
-              finish(prepared_shared->fields);
-              return;
-            }
-            LogDirectPushFailed(prepared_shared->fields.byte_length, pushed.error());
-            auto uploaded = UploadPreparedToRelay(blob, relay_id, *prepared_shared);
-            if (!uploaded) {
-              finish(NoteDirectFailed(uploaded.error()));
-              return;
-            }
-            finish(std::move(uploaded));
-          };
-          if (AppRuntime::IsRunning()) {
-            AppRuntime::PostWorkerNormal(std::move(continue_result));
-          } else {
-            continue_result();
-          }
-        });
+    TryPeerPushAsync(*prepared_shared, identity, options,
+                     [&blob, relay_id, prepared_shared, finish](Roe<void> pushed) mutable {
+                       auto continue_result = [&blob, relay_id, prepared_shared, finish = std::move(finish),
+                                               pushed = std::move(pushed)]() mutable {
+                         if (pushed) {
+                           finish(prepared_shared->fields);
+                           return;
+                         }
+                         LogDirectPushFailed(prepared_shared->fields.byte_length, pushed.error());
+                         auto uploaded = UploadPreparedToRelay(blob, relay_id, *prepared_shared);
+                         if (!uploaded) {
+                           finish(NoteDirectFailed(uploaded.error()));
+                           return;
+                         }
+                         finish(std::move(uploaded));
+                       };
+                       if (AppRuntime::IsRunning()) {
+                         AppRuntime::PostWorkerNormal(std::move(continue_result));
+                       } else {
+                         continue_result();
+                       }
+                     });
     return;
   }
 

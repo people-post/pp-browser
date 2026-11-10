@@ -42,8 +42,7 @@ protected:
     // One directory per test: ctest runs each test as its own process, in parallel under -j, and a
     // shared directory lets one test's TearDown delete another's images.
     dir_ = std::filesystem::temp_directory_path() /
-           (std::string("pp_ai_image_prep_test-") +
-            ::testing::UnitTest::GetInstance()->current_test_info()->name());
+           (std::string("pp_ai_image_prep_test-") + ::testing::UnitTest::GetInstance()->current_test_info()->name());
     std::filesystem::create_directories(dir_);
   }
   void TearDown() override {
@@ -167,11 +166,10 @@ std::string SaveTwoToneJpegWithOrientation(const std::filesystem::path& dir, con
     std::ifstream in(path, std::ios::binary);
     jpeg.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
   }
-  const std::vector<uint8_t> segment = {0xFF, 0xE1, 0x00, 0x22, 'E', 'x', 'i', 'f', 0, 0,
-                                        'M',  'M',  0,    0x2A, 0,   0,   0,   8,
-                                        0,    1,    0x01, 0x12, 0,   3,   0,   0,   0, 1,
-                                        0,    static_cast<uint8_t>(orientation), 0, 0,
-                                        0,    0,    0,    0};
+  const std::vector<uint8_t> segment = {
+      0xFF, 0xE1, 0x00, 0x22, 'E', 'x',  'i',  'f', 0, 0, 'M', 'M', 0, 0x2A, 0,
+      0,    0,    8,    0,    1,   0x01, 0x12, 0,   3, 0, 0,   0,   1, 0,    static_cast<uint8_t>(orientation),
+      0,    0,    0,    0,    0,   0};
   jpeg.insert(jpeg.begin() + 2, segment.begin(), segment.end());
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   out.write(reinterpret_cast<const char*>(jpeg.data()), static_cast<std::streamsize>(jpeg.size()));
@@ -222,13 +220,13 @@ TEST_F(AiImagePrepTest, EveryOrientationPutsTheRedHalfWhereItBelongs) {
     int rx, ry, bx, by;
   };
   const Case cases[] = {
-      {2, 200, 100, 150, 50, 50, 50},   // mirrored: red on the right
-      {3, 200, 100, 150, 50, 50, 50},   // 180 degrees: red on the right
-      {4, 200, 100, 50, 50, 150, 50},   // vertical flip: red stays left
-      {5, 100, 200, 50, 50, 50, 150},   // transpose: red on top
-      {6, 100, 200, 50, 50, 50, 150},   // 90 clockwise: red on top
-      {7, 100, 200, 50, 150, 50, 50},   // transverse: red at the bottom
-      {8, 100, 200, 50, 150, 50, 50},   // 90 counter-clockwise: red at the bottom
+      {2, 200, 100, 150, 50, 50, 50}, // mirrored: red on the right
+      {3, 200, 100, 150, 50, 50, 50}, // 180 degrees: red on the right
+      {4, 200, 100, 50, 50, 150, 50}, // vertical flip: red stays left
+      {5, 100, 200, 50, 50, 50, 150}, // transpose: red on top
+      {6, 100, 200, 50, 50, 50, 150}, // 90 clockwise: red on top
+      {7, 100, 200, 50, 150, 50, 50}, // transverse: red at the bottom
+      {8, 100, 200, 50, 150, 50, 50}, // 90 counter-clockwise: red at the bottom
   };
   for (const Case& c : cases) {
     const std::string path = SaveTwoToneJpegWithOrientation(dir_, c.orientation);
@@ -260,8 +258,8 @@ TEST_F(AiImagePrepTest, PixelLimitRefusesBeforeDecoding) {
 
   // A small file whose header claims a gigantic picture: refused on the header alone (a decode would
   // try to allocate it).
-  std::vector<uint8_t> bomb = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 'I', 'H', 'D', 'R',
-                               0x00, 0x01, 0x86, 0xA0, 0x00, 0x01, 0x86, 0xA0, 8, 2, 0, 0, 0};
+  std::vector<uint8_t> bomb = {0x89, 'P',  'N',  'G',  0x0D, 0x0A, 0x1A, 0x0A, 0,    0, 0, 13, 'I', 'H', 'D',
+                               'R',  0x00, 0x01, 0x86, 0xA0, 0x00, 0x01, 0x86, 0xA0, 8, 2, 0,  0,   0};
   const std::string bomb_path = (dir_ / "bomb.png").string();
   {
     std::ofstream out(bomb_path, std::ios::binary);

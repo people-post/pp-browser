@@ -25,6 +25,7 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.provider.Settings;
@@ -56,6 +57,8 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -101,7 +104,10 @@ public class MainActivity extends SDLActivity {
     private static volatile boolean sInFront;
     /** Between onStart and onStop: the app is on screen (native OsAppState: only then the PIN grace window extends). */
     private static volatile boolean sShown;
-    /** Main thread: the call this device is in (native OngoingCallService), and whether PpCallService runs for it. */
+    /**
+     * Main thread: the call this device is in (native OngoingCallService), and whether PpCallService was started for
+     * it (the start went through; whether it runs in the foreground is PpCallService.isForeground).
+     */
     private static boolean sOngoingCall;
     private static String sOngoingCallTitle;
     private static boolean sOngoingCallServiceStarted;
@@ -111,20 +117,26 @@ public class MainActivity extends SDLActivity {
     private final AtomicBoolean mThumbnailCapturedForPause = new AtomicBoolean(false);
     /** A secret is on screen (native SecureScreen): no screenshot of it anywhere, ours included. */
     private volatile boolean mSecureScreen;
-    private AudioFocusRequest mCallAudioFocusRequest;
     /**
-     * A phone call (or another app's call) takes the call's audio focus: the call is interrupted until focus is back
-     * (native AudioSession: its peer is told it is on hold, and its devices reopen at the end). A duck is not a loss.
+     * The call's audio-focus request, held under this lock: setAudioSessionActive runs on native's threads (each
+     * call's media, the ringtone's), at the same time on several.
      */
-    private final AudioManager.OnAudioFocusChangeListener mCallAudioFocusListener = focusChange -> {
-        if (focusChange == AudioManager.AUDIOFOCUS_LOSS || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-            onCallAudioFocus(true);
-        } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-            onCallAudioFocus(false);
-        }
-    };
+    private final Object mCallAudioFocusLock = new Object();
+    private AudioFocusRequest mCallAudioFocusRequest;
+    /** Before Android 8 (no AudioFocusRequest): the stream the call's focus was asked for with; -1: none asked. */
+    private int mLegacyCallAudioFocusStream = -1;
+    /**
+     * A phone call (or another app's call, music, video) takes the call's audio focus: the call is interrupted until
+     * the focus is back (native AudioSession, AudioFocusInterruption: its peer is told it is on hold, and its route
+     * and devices come back at the end). Native decides what each change means; it is told outside the lock.
+     */
+    private final AudioManager.OnAudioFocusChangeListener mCallAudioFocusListener = MainActivity::onCallAudioFocus;
 
-    private static native void nativeOnCallAudioFocus(boolean lost);
+    /** `focusChange`: AudioManager's AUDIOFOCUS_* value. */
+    private static native void nativeOnCallAudioFocus(int focusChange);
+
+    /** The user is back (onResume): a call's focus lost for good is asked for again. */
+    private static native void nativeRetakeCallAudioFocus();
 
     /** The lock screen went away: native OsProtectedData runs whoever waits for it (the PIN grace window). */
     private static native void nativeOnUserPresent();
@@ -139,10 +151,10 @@ public class MainActivity extends SDLActivity {
         }
     };
 
-    private static void onCallAudioFocus(boolean lost) {
-        Log.i(TAG, lost ? "call audio focus lost" : "call audio focus back");
+    private static void onCallAudioFocus(int focusChange) {
+        Log.i(TAG, "call audio focus change " + focusChange);
         try {
-            nativeOnCallAudioFocus(lost);
+            nativeOnCallAudioFocus(focusChange);
         } catch (UnsatisfiedLinkError ignored) {
         }
     }
@@ -803,8 +815,13 @@ public class MainActivity extends SDLActivity {
         mThumbnailCapturedForPause.set(false);
         super.onResume();
         sInFront = true;
-        if (sOngoingCall && !sOngoingCallServiceStarted) {
-            startOngoingCallServiceIfAllowed();  // the call started while the app was in the background
+        try {
+            nativeRetakeCallAudioFocus();  // a call's focus another app took for good (Android never gives it back)
+        } catch (UnsatisfiedLinkError ignored) {
+        }
+        if (sOngoingCall && !PpCallService.isForeground()) {
+            // The call started while the app was in the background, or the service was refused or stopped since.
+            startOngoingCallServiceIfAllowed();
         }
         // The app is open: what the push's "New message" stood for shows in the app.
         NotificationManagerCompat.from(this).cancel(PUSH_MESSAGE_NOTIFICATION_ID);
@@ -1012,11 +1029,18 @@ public class MainActivity extends SDLActivity {
     }
 
     private void requestCallAudioFocus(AudioManager am, boolean mediaPath) {
+        synchronized (mCallAudioFocusLock) {
+            requestCallAudioFocusLocked(am, mediaPath);
+        }
+    }
+
+    private void requestCallAudioFocusLocked(AudioManager am, boolean mediaPath) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             final int stream = mediaPath ? AudioManager.STREAM_MUSIC : AudioManager.STREAM_VOICE_CALL;
             @SuppressWarnings("deprecation")
             int ignored = am.requestAudioFocus(mCallAudioFocusListener, stream,
                     AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+            mLegacyCallAudioFocusStream = stream;
             return;
         }
         if (mCallAudioFocusRequest != null) {
@@ -1041,14 +1065,46 @@ public class MainActivity extends SDLActivity {
     }
 
     private void abandonCallAudioFocus(AudioManager am) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            @SuppressWarnings("deprecation")
-            int ignored = am.abandonAudioFocus(mCallAudioFocusListener);
-            return;
+        synchronized (mCallAudioFocusLock) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                @SuppressWarnings("deprecation")
+                int ignored = am.abandonAudioFocus(mCallAudioFocusListener);
+                mLegacyCallAudioFocusStream = -1;
+                return;
+            }
+            if (mCallAudioFocusRequest != null) {
+                am.abandonAudioFocusRequest(mCallAudioFocusRequest);
+                mCallAudioFocusRequest = null;
+            }
         }
-        if (mCallAudioFocusRequest != null) {
-            am.abandonAudioFocusRequest(mCallAudioFocusRequest);
-            mCallAudioFocusRequest = null;
+    }
+
+    /**
+     * Called from native {@code AudioSession} (any thread) after the call's focus was lost for good: asks for it again
+     * with the call's request. True: granted now. Delayed (a phone call still has it): the listener hears the gain.
+     */
+    public boolean retakeCallAudioFocus() {
+        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (am == null) {
+            return false;
+        }
+        synchronized (mCallAudioFocusLock) {
+            final int result;
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                if (mLegacyCallAudioFocusStream < 0) {
+                    return false;
+                }
+                @SuppressWarnings("deprecation")
+                int legacy = am.requestAudioFocus(mCallAudioFocusListener, mLegacyCallAudioFocusStream,
+                        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+                result = legacy;
+            } else {
+                if (mCallAudioFocusRequest == null) {
+                    return false;
+                }
+                result = am.requestAudioFocus(mCallAudioFocusRequest);
+            }
+            return result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
         }
     }
 
@@ -1181,8 +1237,11 @@ public class MainActivity extends SDLActivity {
         }
     }
 
-    /** Called from native AndroidLocalNotifier. */
-    public void showLocalNotification(String title, String body, String threadId) {
+    /**
+     * Called from native AndroidLocalNotifier. {@code threadUnread}: the chat's unread count now; it is the
+     * notification's number (the launcher's icon number follows the notifications), at least 1.
+     */
+    public void showLocalNotification(String title, String body, String threadId, int threadUnread) {
         ensureNotificationChannel();
         Intent open = new Intent(this, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -1197,6 +1256,7 @@ public class MainActivity extends SDLActivity {
                 .setContentTitle(title != null ? title : "New message")
                 .setContentText(body != null ? body : "You have a new message")
                 .setContentIntent(pi)
+                .setNumber(Math.max(1, threadUnread))
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_HIGH);
         NotificationManagerCompat.from(this).notify(req == 0 ? 1 : req, builder.build());
@@ -1249,8 +1309,49 @@ public class MainActivity extends SDLActivity {
                 || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             return;
         }
-        sOngoingCallServiceStarted = true;
-        PpCallService.start(getApplicationContext(), sOngoingCallTitle);  // a running one takes the new title
+        // A running one takes the new title (and a refused update leaves it running: still owed a stop).
+        if (PpCallService.start(getApplicationContext(), sOngoingCallTitle)) {
+            sOngoingCallServiceStarted = true;
+        }
+    }
+
+    private static final String VIVO_BADGE_PROVIDER = "content://com.vivo.abe.provider.launcher.notification.num";
+    /** One thread, so the provider calls (a binder call into another app, which can block) stay ordered off the UI thread. */
+    private static final ExecutorService sBadgeExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "pp-browser-badge");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /**
+     * Called from native (PlatformAppBadge_Android, any thread): the total unread count for the launcher icon. Only
+     * the vivo launcher takes a number that does not come from a notification (its badge provider); on every other
+     * maker this does nothing, their icon numbers follow the notifications (setNumber). No fallback to the old
+     * broadcast. Whatever goes wrong is one log line and nothing else.
+     */
+    public void setUnreadBadgeCount(int total) {
+        if (!"vivo".equalsIgnoreCase(Build.MANUFACTURER)) {
+            return;
+        }
+        final int count = Math.max(0, total);
+        final String pkg = getPackageName();
+        final android.content.ContentResolver resolver = getContentResolver();
+        sBadgeExecutor.execute(() -> {
+            try {
+                Bundle extras = new Bundle();
+                extras.putString("package", pkg);
+                extras.putString("class", MainActivity.class.getName());
+                extras.putInt("badgenumber", count);
+                resolver.call(Uri.parse(VIVO_BADGE_PROVIDER), "change_badge", null, extras);
+                Log.i(TAG, "vivo badge: set " + count);
+            } catch (SecurityException e) {
+                Log.w(TAG, "vivo badge: refused " + e);
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "vivo badge: provider not visible or missing " + e);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "vivo badge: failed " + e);
+            }
+        });
     }
 
     /** Called from native AndroidLocalNotifier when Me → Show notifications changes (any thread). */
@@ -1346,6 +1447,7 @@ public class MainActivity extends SDLActivity {
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_MESSAGES, "Messages", NotificationManager.IMPORTANCE_HIGH);
         channel.setDescription("Incoming chat messages");
+        channel.setShowBadge(true);
         NotificationManager nm = c.getSystemService(NotificationManager.class);
         if (nm != null) {
             nm.createNotificationChannel(channel);

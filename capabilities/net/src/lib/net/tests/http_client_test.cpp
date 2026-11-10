@@ -85,9 +85,8 @@ TEST_F(HttpClientTest, AbortsReadWhenResponseExceedsLimit) {
 TEST_F(HttpClientTest, RestrictToPublicHttpsRejectsPlainHttpLoopback) {
   // Attachment/profile-icon URLs are peer-controlled; restrict_to_public_https must refuse
   // both the non-https scheme and the loopback destination the local test server binds to.
-  const auto response =
-      pbr::HttpClient::Get(WriteResponse(1), {}, pbr::kMaxHttpClientBodyBytes, pbr::HttpTimeout{},
-                           /*restrict_to_public_https=*/true);
+  const auto response = pbr::HttpClient::Get(WriteResponse(1), {}, pbr::kMaxHttpClientBodyBytes, pbr::HttpTimeout{},
+                                             /*restrict_to_public_https=*/true);
   ASSERT_FALSE(response);
 }
 

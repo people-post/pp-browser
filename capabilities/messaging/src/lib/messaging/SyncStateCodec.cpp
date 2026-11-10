@@ -7,16 +7,18 @@
 
 namespace pbr {
 
-PeerSyncState DefaultPeerSyncState() { return PeerSyncState{}; }
+PeerSyncState DefaultPeerSyncState() {
+  return PeerSyncState{};
+}
 
 std::string PeerSyncPhaseToString(const PeerSyncPhase phase) {
   switch (phase) {
-  case PeerSyncPhase::Gap:
-    return "gap";
-  case PeerSyncPhase::Compromised:
-    return "compromised";
-  case PeerSyncPhase::Ok:
-    return "ok";
+    case PeerSyncPhase::Gap:
+      return "gap";
+    case PeerSyncPhase::Compromised:
+      return "compromised";
+    case PeerSyncPhase::Ok:
+      return "ok";
   }
   return "ok";
 }

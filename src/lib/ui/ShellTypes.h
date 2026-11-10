@@ -10,6 +10,9 @@
 
 namespace pbr {
 
+/** This device's link to our service, as the Chats status line shows it (#175). */
+enum class ChatsLink { Unknown, Offline, Connecting, Online };
+
 enum class PaneRole { Primary, Secondary, Auxiliary, Transient };
 
 enum class LayoutMode { Compact, Expanded };
@@ -37,13 +40,22 @@ enum class InterruptionKind {
   PinGate,
 };
 
-/** Which compact chrome is frosted: one surface at a time (BottomNav: the tab page's nav bar and its tab bar). */
+/** Which compact chrome is frosted (BottomNav: the tab page's nav bar and its tab bar). */
 enum class CompactChromeFrostSurface {
   None,
   BottomNav,
   ChatOverlayHeader,
   AuxiliarySheetChrome,
   TransientHeader,
+};
+
+/**
+ * The frosted surfaces of one frame: at most one per bar position, so two blurs at most (a top bar and a bottom
+ * bar). A page that frosts both its top and bottom bar declares both here; nothing else may blur.
+ */
+struct CompactChromeFrost {
+  CompactChromeFrostSurface top = CompactChromeFrostSurface::None;
+  CompactChromeFrostSurface bottom = CompactChromeFrostSurface::None;
 };
 
 enum class ToastDuration { Short, Long };
@@ -275,6 +287,11 @@ struct PinGateState {
 struct CallRingState {
   bool active = false;
   bool pulse = false;
+  /** Phone ring page for a tapped call alert whose invite has not arrived: "Incoming call, connecting…", the answer
+   *  buttons dimmed and dead. The real ring overwrites it in place (`active` stays true). */
+  bool awaiting_invite = false;
+  /** A 1:1 caller with no known name and no photo: the silhouette avatar, "Stranger" as the name. */
+  bool caller_unknown = false;
   /** True when Accept would end an existing local call. */
   bool conflict = false;
   /** P001: initiation offer > 0 — show waive / take-all actions. */
@@ -310,6 +327,21 @@ struct CallRingState {
   ui::String avatar_src;
   ui::String avatar_letter = "?";
   int avatar_tone = 0;
+  // The three lines before the answer (CallRingSteps), all bound: the first is always done, the second is done unless
+  // `step2_current`, the third is plain until `step3_done`. Their words are decided by the presenter layer.
+  ui::String step1;
+  ui::String step2;
+  ui::String step3;
+  bool step2_current = false;
+  bool step3_done = false;
+  /** False on a short page that has to give the lines' room to the price / conflict / guest text (CallRingShowsSteps). */
+  bool show_steps = true;
+  // Our own avatar on the 1:1 page's left (the same source as CallInProgressState::self_*); bound, so an unlock that
+  // makes the photo readable is a dirty.
+  bool self_has_avatar = false;
+  ui::String self_avatar_src;
+  ui::String self_avatar_letter = "?";
+  int self_avatar_tone = 0;
 };
 
 /** One line of the phone call's "how this call got through" sheet (CallConnectStory events, in words). */
@@ -337,6 +369,8 @@ struct CallRosterParticipantState {
   ui::String avatar_src;
   ui::String avatar_letter = "?";
   int avatar_tone = 0;
+  /** No known name and no photo: the tile shows the silhouette (phone page). */
+  bool avatar_unknown = false;
   /** Speaking now (CallActiveSpeaker::Speaking; we by our microphone): the phone page rings the tile. Bound, and
    * part-dirtied on its own (CallChromeChangedVariables), at most every CallController::kSpeakingRingRefreshMs. */
   bool speaking = false;
@@ -372,13 +406,13 @@ enum class CallChromeMode {
 
 inline const char* CallChromeModeName(CallChromeMode mode) {
   switch (mode) {
-  case CallChromeMode::Minimized:
-    return "minimized";
-  case CallChromeMode::Immersive:
-    return "immersive";
-  case CallChromeMode::Expanded:
-  default:
-    return "expanded";
+    case CallChromeMode::Minimized:
+      return "minimized";
+    case CallChromeMode::Immersive:
+      return "immersive";
+    case CallChromeMode::Expanded:
+    default:
+      return "expanded";
   }
 }
 
@@ -425,6 +459,8 @@ struct CallInProgressState {
    */
   int minimized_side = 0;
   int minimized_y_permille = 0;
+  /** #189: the minimised chip is the small handle hanging on its side's edge (kSide* 1/2 only), not the full bar. */
+  bool minimized_tucked = false;
   int participant_count = 0;
   std::vector<CallRosterParticipantState> roster;
   /** Immersive's spotlit roster row (its stream_id; empty: the grid) — V059, CallSpotlight.h. */
@@ -473,6 +509,8 @@ struct CallInProgressState {
   ui::String peer_avatar_src;
   ui::String peer_avatar_letter = "?";
   int peer_avatar_tone = 0;
+  /** The 1:1 peer has no known name and no photo: the silhouette instead of a letter. */
+  bool peer_unknown = false;
   bool self_has_avatar = false;
   ui::String self_avatar_src;
   ui::String self_avatar_letter = "?";
@@ -490,6 +528,14 @@ struct CallInProgressState {
   ui::String story_step5;
   /** How many of the step lines show: 3 (group), 4 (this device answered), 5 (this device called; #172). */
   int story_step_count = 3;
+  /** This device is the callee (answered): the spark runs from them towards us. Written into the markup. */
+  bool story_inbound = false;
+  /** 1:1 answerer: the done lines the ring page showed (received, on the network, who), above the steps. Empty: none. */
+  std::vector<std::string> story_lead;
+  /** The answering list's scroll, bound as styles (a stage advance is a dirty, not a remount): the list's margin-top
+   *  ("-68dp" when moved up, else "0dp") and the clip's height (exactly the rows that fit when moved up, else "auto"). */
+  ui::String story_offset = "0dp";
+  ui::String story_clip = "auto";
   /** Just connected (1:1): "Connected directly, 0.9 s" for 4 s, then it fades (bound). */
   ui::String result_text;
   bool result_fading = false;
@@ -538,6 +584,12 @@ struct ShellState {
   ui::String layout_mode_str = "expanded";
   NavTab nav_tab = NavTab::Home;
   ui::String nav_tab_str = "home";
+  /** Phone tab bar: the tab it highlights. nav_tab, except under a hidden tab's page (Settings), where it is the tab
+   *  that page was entered from (ShellHost::SelectNavTab). */
+  ui::String nav_bar_tab_str = "home";
+  /** Phone Settings: a secret page is pushed over a section (Security > Move to a new device). It keeps the tab bar
+   *  off (SettingsController sets it through the navigation ports). */
+  bool secret_page_open = false;
   std::vector<PaneState> panes;
   std::vector<PaneState> transient_stack;
   std::vector<OverlayEntry> overlay_stack;
@@ -554,7 +606,7 @@ struct ShellState {
   bool sidebar_collapsed = false;
   /** Phone layout: the active root page (Chats / Contacts / Me) has scrolled its 52dp large title away. */
   bool large_title_collapsed = false;
-  /** Phone Chats header status line (this device's link to our service): "ok", "offline", or empty = unknown, nothing shown.
+  /** Phone Chats header status line (this device's link to our service): "ok", "connecting", "offline", or empty = unknown, nothing shown.
    * Set by event only (ShellHost::SetChatsLink); chats_link_text is the translated label. */
   ui::String chats_link_state;
   ui::String chats_link_text;

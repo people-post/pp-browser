@@ -135,6 +135,12 @@ child table.
 **Decisions read codes, never message text:** retry / backoff, "dial a fresh link next time"
 (`CallMediaErr::StaleLink`), a clean stream close (`CallMediaErr::StreamClosed`), a connected call that
 dropped (`CallMediaErr::Dropped`: never a connect failure), chat send notices.
+Past the transport the code becomes what the call screen tells: `CallDirectPath::OnBundleFailed` sends a
+`Dropped` to the dropped-call path (`SurfaceDropped`: `direct_report::Dropped`, no connect-failed
+bookkeeping), and the media error it reports carries a `CallMediaErrorKind` (`lib/calls/CallMediaError.h`:
+`Dropped`, `ConnectTimeout`, `Other`). The notice layer reads the kind (`CallMediaErrorShownOnCallScreen`);
+only an `Other`'s words — the hop path's and the 1:1 connect sequence's, which carry no kind — are mapped to
+copy by text (`CallMediaErrorUserKey`).
 Group-membership controls dispatch on their control type (`RelayReceivePipeline`), not text.
 
 **Not coded:** codecs, SQLite, HTTP clients beyond the relay send, and peer transports whose callers
@@ -149,7 +155,7 @@ back to the relay / CDN). Code one when a caller or the UI needs to tell its fai
 3. Wrap at every failure exit that came from association / channel open / a nested carrier; never
    `Error(child.message)`.
 4. Export `Is*` helpers only where several call sites branch the same way.
-5. Test **`GetCode()`** at the boundary; a message substring is optional.
+5. Test **`GetCode()`** at the boundary (or the kind / report it became); a message substring is optional.
 6. Terminal failures shown to the user map to `AppError`: codes drive logic, the catalog drives copy.
 
 ---

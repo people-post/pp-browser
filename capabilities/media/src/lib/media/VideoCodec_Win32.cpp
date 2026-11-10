@@ -51,30 +51,25 @@ constexpr auto kAsyncOverallTimeout = std::chrono::milliseconds(400);
 constexpr auto kAsyncPostInputTimeout = std::chrono::milliseconds(120);
 
 UINT32 EstimateBitrateBps(int width, int height, int fps) {
-  const double raw = static_cast<double>(width) * static_cast<double>(height) *
-                      static_cast<double>(std::max(fps, 1)) * 0.07;
-  return static_cast<UINT32>(
-      std::clamp(raw, static_cast<double>(kMinBitrateBps), static_cast<double>(kMaxBitrateBps)));
+  const double raw =
+      static_cast<double>(width) * static_cast<double>(height) * static_cast<double>(std::max(fps, 1)) * 0.07;
+  return static_cast<UINT32>(std::clamp(raw, static_cast<double>(kMinBitrateBps), static_cast<double>(kMaxBitrateBps)));
 }
 
 // Enumerates MFTs for a category/type pair. `prefer_hardware` puts HW MFTs
 // first (encoders); decoders often prefer sync software for reliable CPU
 // output formats without DXVA device binding.
-std::vector<ComPtr<IMFTransform>> EnumerateTransforms(GUID category,
-                                                       const MFT_REGISTER_TYPE_INFO* input_info,
-                                                       const MFT_REGISTER_TYPE_INFO* output_info,
-                                                       bool prefer_hardware = true) {
+std::vector<ComPtr<IMFTransform>> EnumerateTransforms(GUID category, const MFT_REGISTER_TYPE_INFO* input_info,
+                                                      const MFT_REGISTER_TYPE_INFO* output_info,
+                                                      bool prefer_hardware = true) {
   std::vector<ComPtr<IMFTransform>> transforms;
   const UINT32 hw_flags = MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER;
-  const UINT32 sw_flags =
-      MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_ASYNCMFT | MFT_ENUM_FLAG_SORTANDFILTER;
-  const UINT32 flag_passes[2] = {prefer_hardware ? hw_flags : sw_flags,
-                                 prefer_hardware ? sw_flags : hw_flags};
+  const UINT32 sw_flags = MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_ASYNCMFT | MFT_ENUM_FLAG_SORTANDFILTER;
+  const UINT32 flag_passes[2] = {prefer_hardware ? hw_flags : sw_flags, prefer_hardware ? sw_flags : hw_flags};
   for (UINT32 flags : flag_passes) {
     IMFActivate** activates = nullptr;
     UINT32 count = 0;
-    const HRESULT hr =
-        MFTEnumEx(category, flags, input_info, output_info, &activates, &count);
+    const HRESULT hr = MFTEnumEx(category, flags, input_info, output_info, &activates, &count);
     if (SUCCEEDED(hr)) {
       for (UINT32 i = 0; i < count; ++i) {
         if (!activates[i]) {
@@ -129,16 +124,15 @@ bool AnnexBContainsIdr(const uint8_t* data, size_t size) {
   return false;
 }
 
-HRESULT ProcessOneOutput(IMFTransform* transform, DWORD output_stream_id, DWORD buffer_size,
-                          bool provides_samples, ComPtr<IMFSample>& out_sample) {
+HRESULT ProcessOneOutput(IMFTransform* transform, DWORD output_stream_id, DWORD buffer_size, bool provides_samples,
+                         ComPtr<IMFSample>& out_sample) {
   MFT_OUTPUT_DATA_BUFFER data{};
   data.dwStreamID = output_stream_id;
   ComPtr<IMFSample> local_sample;
   if (!provides_samples) {
     ComPtr<IMFMediaBuffer> local_buffer;
     const DWORD alloc_size = buffer_size ? buffer_size : 1;
-    if (FAILED(MFCreateSample(&local_sample)) ||
-        FAILED(MFCreateMemoryBuffer(alloc_size, &local_buffer)) ||
+    if (FAILED(MFCreateSample(&local_sample)) || FAILED(MFCreateMemoryBuffer(alloc_size, &local_buffer)) ||
         FAILED(local_sample->AddBuffer(local_buffer.Get()))) {
       return E_OUTOFMEMORY;
     }
@@ -172,15 +166,14 @@ struct PumpOutcome {
 // this call. Handles both classic synchronous MFTs and hardware/async MFTs
 // driven via IMFMediaEventGenerator, bounding the wait on the latter.
 PumpOutcome PumpTransform(IMFTransform* transform, IMFMediaEventGenerator* events, bool is_async,
-                           DWORD output_stream_id, DWORD output_buffer_size, bool provides_samples,
-                           IMFSample* input_sample) {
+                          DWORD output_stream_id, DWORD output_buffer_size, bool provides_samples,
+                          IMFSample* input_sample) {
   PumpOutcome outcome;
   bool input_fed = (input_sample == nullptr);
 
   auto drain_once = [&]() -> bool {
     ComPtr<IMFSample> sample;
-    const HRESULT hr =
-        ProcessOneOutput(transform, output_stream_id, output_buffer_size, provides_samples, sample);
+    const HRESULT hr = ProcessOneOutput(transform, output_stream_id, output_buffer_size, provides_samples, sample);
     outcome.hr = hr;
     if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
       return false;
@@ -300,7 +293,7 @@ bool AppendSampleBytes(IMFSample* sample, std::vector<uint8_t>& out) {
 // Packs planar I420 into an NV12 IMFSample (Y plane + interleaved UV) since
 // NV12 is the widely-supported hardware encoder input format on Windows.
 HRESULT BuildNv12Sample(const VideoFrameI420& frame, LONGLONG timestamp, LONGLONG duration,
-                         ComPtr<IMFSample>& out_sample) {
+                        ComPtr<IMFSample>& out_sample) {
   const int width = frame.width;
   const int height = frame.height;
   const size_t luma_size = static_cast<size_t>(width) * static_cast<size_t>(height);
@@ -350,8 +343,8 @@ HRESULT BuildNv12Sample(const VideoFrameI420& frame, LONGLONG timestamp, LONGLON
 // whatever we negotiated to non-premultiplied RGBA for VideoFrameRgba.
 // `crop_*` select the clean aperture inside coded `width`×`height` (H264 is
 // often macroblock-padded — showing the pad looks like a green right edge).
-Roe<VideoFrameRgba> ConvertSampleToRgba(IMFSample* sample, int width, int height, const GUID& subtype,
-                                         int crop_x, int crop_y, int visible_w, int visible_h) {
+Roe<VideoFrameRgba> ConvertSampleToRgba(IMFSample* sample, int width, int height, const GUID& subtype, int crop_x,
+                                        int crop_y, int visible_w, int visible_h) {
   ComPtr<IMFMediaBuffer> buffer;
   if (FAILED(sample->ConvertToContiguousBuffer(&buffer))) {
     return Error("decoder output buffer unavailable");
@@ -364,8 +357,7 @@ Roe<VideoFrameRgba> ConvertSampleToRgba(IMFSample* sample, int width, int height
   if (SUCCEEDED(buffer.As(&buffer_2d))) {
     BYTE* base = nullptr;
     DWORD length = 0;
-    if (SUCCEEDED(buffer_2d->Lock2DSize(MF2DBuffer_LockFlags_Read, &scanline0, &pitch, &base,
-                                         &length))) {
+    if (SUCCEEDED(buffer_2d->Lock2DSize(MF2DBuffer_LockFlags_Read, &scanline0, &pitch, &base, &length))) {
       locked_2d = true;
     }
   }
@@ -424,10 +416,9 @@ Roe<VideoFrameRgba> ConvertSampleToRgba(IMFSample* sample, int width, int height
     out.height = visible_h;
     out.rgba.resize(static_cast<size_t>(visible_w) * static_cast<size_t>(visible_h) * 4);
     for (int y = 0; y < visible_h; ++y) {
-      const uint8_t* src = full.rgba.data() +
-                           (static_cast<size_t>(crop_y + y) * static_cast<size_t>(width) +
-                            static_cast<size_t>(crop_x)) *
-                               4;
+      const uint8_t* src =
+          full.rgba.data() +
+          (static_cast<size_t>(crop_y + y) * static_cast<size_t>(width) + static_cast<size_t>(crop_x)) * 4;
       uint8_t* dst = out.rgba.data() + static_cast<size_t>(y) * static_cast<size_t>(visible_w) * 4;
       std::memcpy(dst, src, static_cast<size_t>(visible_w) * 4);
     }
@@ -450,10 +441,9 @@ Roe<VideoFrameRgba> ConvertSampleToRgba(IMFSample* sample, int width, int height
     out.height = visible_h;
     out.rgba.resize(static_cast<size_t>(visible_w) * static_cast<size_t>(visible_h) * 4);
     for (int y = 0; y < visible_h; ++y) {
-      const uint8_t* src = full.rgba.data() +
-                           (static_cast<size_t>(crop_y + y) * static_cast<size_t>(width) +
-                            static_cast<size_t>(crop_x)) *
-                               4;
+      const uint8_t* src =
+          full.rgba.data() +
+          (static_cast<size_t>(crop_y + y) * static_cast<size_t>(width) + static_cast<size_t>(crop_x)) * 4;
       uint8_t* dst = out.rgba.data() + static_cast<size_t>(y) * static_cast<size_t>(visible_w) * 4;
       std::memcpy(dst, src, static_cast<size_t>(visible_w) * 4);
     }
@@ -466,8 +456,7 @@ Roe<VideoFrameRgba> ConvertSampleToRgba(IMFSample* sample, int width, int height
   out.height = visible_h;
   out.rgba.resize(static_cast<size_t>(visible_w) * static_cast<size_t>(visible_h) * 4);
   for (int y = 0; y < visible_h; ++y) {
-    const uint8_t* src =
-        scanline0 + static_cast<ptrdiff_t>(crop_y + y) * pitch + static_cast<ptrdiff_t>(crop_x) * 4;
+    const uint8_t* src = scanline0 + static_cast<ptrdiff_t>(crop_y + y) * pitch + static_cast<ptrdiff_t>(crop_x) * 4;
     uint8_t* dst = out.rgba.data() + static_cast<size_t>(y) * static_cast<size_t>(visible_w) * 4;
     for (int x = 0; x < visible_w; ++x) {
       dst[x * 4 + 0] = src[x * 4 + 2];
@@ -480,8 +469,8 @@ Roe<VideoFrameRgba> ConvertSampleToRgba(IMFSample* sample, int width, int height
   return out;
 }
 
-bool ReadDisplayAperture(IMFMediaType* type, int frame_w, int frame_h, int& crop_x, int& crop_y,
-                         int& visible_w, int& visible_h) {
+bool ReadDisplayAperture(IMFMediaType* type, int frame_w, int frame_h, int& crop_x, int& crop_y, int& visible_w,
+                         int& visible_h) {
   crop_x = 0;
   crop_y = 0;
   visible_w = frame_w;
@@ -624,8 +613,7 @@ Roe<void> MediaFoundationVideoCodec::ConfigureEncoder(int width, int height, int
     const bool is_async = UnlockAsyncIfNeeded(candidate.Get());
 
     ComPtr<IMFMediaType> output_type;
-    if (FAILED(MFCreateMediaType(&output_type)) ||
-        FAILED(output_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video)) ||
+    if (FAILED(MFCreateMediaType(&output_type)) || FAILED(output_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video)) ||
         FAILED(output_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264)) ||
         FAILED(output_type->SetUINT32(MF_MT_AVG_BITRATE, bitrate)) ||
         FAILED(output_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive)) ||
@@ -639,8 +627,7 @@ Roe<void> MediaFoundationVideoCodec::ConfigureEncoder(int width, int height, int
     }
 
     ComPtr<IMFMediaType> input_type;
-    if (FAILED(MFCreateMediaType(&input_type)) ||
-        FAILED(input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video)) ||
+    if (FAILED(MFCreateMediaType(&input_type)) || FAILED(input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video)) ||
         FAILED(input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12)) ||
         FAILED(input_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive)) ||
         FAILED(MFSetAttributeSize(input_type.Get(), MF_MT_FRAME_SIZE, width, height)) ||
@@ -689,8 +676,7 @@ Roe<void> MediaFoundationVideoCodec::ConfigureEncoder(int width, int height, int
     }
     encoder_provides_samples_ = (stream_info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES) != 0;
     encoder_output_buffer_size_ =
-        stream_info.cbSize ? stream_info.cbSize
-                            : static_cast<DWORD>(width) * static_cast<DWORD>(height);
+        stream_info.cbSize ? stream_info.cbSize : static_cast<DWORD>(width) * static_cast<DWORD>(height);
     enc_width_ = width;
     enc_height_ = height;
     enc_fps_ = fps;
@@ -702,11 +688,10 @@ Roe<void> MediaFoundationVideoCodec::ConfigureEncoder(int width, int height, int
       ComPtr<IMFMediaType> current_output;
       if (SUCCEEDED(encoder_->GetOutputCurrentType(0, &current_output)) && current_output) {
         UINT32 blob_size = 0;
-        if (SUCCEEDED(current_output->GetBlobSize(MF_MT_MPEG_SEQUENCE_HEADER, &blob_size)) &&
-            blob_size > 0) {
+        if (SUCCEEDED(current_output->GetBlobSize(MF_MT_MPEG_SEQUENCE_HEADER, &blob_size)) && blob_size > 0) {
           enc_param_sets_.resize(blob_size);
-          if (FAILED(current_output->GetBlob(MF_MT_MPEG_SEQUENCE_HEADER, enc_param_sets_.data(),
-                                              blob_size, &blob_size))) {
+          if (FAILED(
+                  current_output->GetBlob(MF_MT_MPEG_SEQUENCE_HEADER, enc_param_sets_.data(), blob_size, &blob_size))) {
             enc_param_sets_.clear();
           } else {
             enc_param_sets_.resize(blob_size);
@@ -727,7 +712,7 @@ Roe<void> MediaFoundationVideoCodec::ConfigureDecoder() {
   // Prefer sync software decoder for receive: HW/DXVA paths often need a D3D
   // device we do not bind, and fail NV12/RGB32 renegotiation silently.
   auto candidates = EnumerateTransforms(MFT_CATEGORY_VIDEO_DECODER, &input_info, nullptr,
-                                         /*prefer_hardware=*/false);
+                                        /*prefer_hardware=*/false);
   if (candidates.empty()) {
     return Error("no H264 decoder MFT available");
   }
@@ -736,12 +721,10 @@ Roe<void> MediaFoundationVideoCodec::ConfigureDecoder() {
     const bool is_async = UnlockAsyncIfNeeded(candidate.Get());
 
     ComPtr<IMFMediaType> input_type;
-    if (FAILED(MFCreateMediaType(&input_type)) ||
-        FAILED(input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video)) ||
+    if (FAILED(MFCreateMediaType(&input_type)) || FAILED(input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video)) ||
         FAILED(input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264)) ||
         FAILED(input_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive)) ||
-        FAILED(MFSetAttributeSize(input_type.Get(), MF_MT_FRAME_SIZE, kDefaultDecodeWidth,
-                                   kDefaultDecodeHeight)) ||
+        FAILED(MFSetAttributeSize(input_type.Get(), MF_MT_FRAME_SIZE, kDefaultDecodeWidth, kDefaultDecodeHeight)) ||
         FAILED(MFSetAttributeRatio(input_type.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1)) ||
         FAILED(candidate->SetInputType(0, input_type.Get(), 0))) {
       continue;
@@ -796,8 +779,7 @@ bool MediaFoundationVideoCodec::RenegotiateDecoderOutputType() {
       }
       UINT32 width = 0;
       UINT32 height = 0;
-      if (SUCCEEDED(MFGetAttributeSize(candidate.Get(), MF_MT_FRAME_SIZE, &width, &height)) &&
-          width && height) {
+      if (SUCCEEDED(MFGetAttributeSize(candidate.Get(), MF_MT_FRAME_SIZE, &width, &height)) && width && height) {
         decode_width_ = static_cast<int>(width);
         decode_height_ = static_cast<int>(height);
       }
@@ -805,18 +787,15 @@ bool MediaFoundationVideoCodec::RenegotiateDecoderOutputType() {
       decode_crop_y_ = 0;
       decode_visible_w_ = decode_width_;
       decode_visible_h_ = decode_height_;
-      (void)ReadDisplayAperture(candidate.Get(), decode_width_, decode_height_, decode_crop_x_,
-                                decode_crop_y_, decode_visible_w_, decode_visible_h_);
+      (void)ReadDisplayAperture(candidate.Get(), decode_width_, decode_height_, decode_crop_x_, decode_crop_y_,
+                                decode_visible_w_, decode_visible_h_);
       MFT_OUTPUT_STREAM_INFO stream_info{};
       decoder_->GetOutputStreamInfo(0, &stream_info);
       decoder_provides_samples_ = (stream_info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES) != 0;
-      const DWORD bytes_per_pixel = (wanted == MFVideoFormat_NV12) ? 2
-                                    : (wanted == MFVideoFormat_YUY2) ? 2 : 4;
+      const DWORD bytes_per_pixel = (wanted == MFVideoFormat_NV12) ? 2 : (wanted == MFVideoFormat_YUY2) ? 2 : 4;
       decoder_output_buffer_size_ =
-          stream_info.cbSize
-              ? stream_info.cbSize
-              : static_cast<DWORD>(decode_width_) * static_cast<DWORD>(decode_height_) *
-                    bytes_per_pixel;
+          stream_info.cbSize ? stream_info.cbSize
+                             : static_cast<DWORD>(decode_width_) * static_cast<DWORD>(decode_height_) * bytes_per_pixel;
       decode_subtype_ = wanted;
       return true;
     }
@@ -824,8 +803,7 @@ bool MediaFoundationVideoCodec::RenegotiateDecoderOutputType() {
   return false;
 }
 
-Roe<EncodedAccessUnit> MediaFoundationVideoCodec::Encode(const VideoFrameI420& frame,
-                                                          bool force_keyframe) {
+Roe<EncodedAccessUnit> MediaFoundationVideoCodec::Encode(const VideoFrameI420& frame, bool force_keyframe) {
   if (!encoder_) {
     return Error("H264 encoder not configured");
   }
@@ -849,8 +827,7 @@ Roe<EncodedAccessUnit> MediaFoundationVideoCodec::Encode(const VideoFrameI420& f
   }
 
   PumpOutcome outcome = PumpTransform(encoder_.Get(), encoder_events_.Get(), encoder_is_async_, 0,
-                                       encoder_output_buffer_size_, encoder_provides_samples_,
-                                       input_sample.Get());
+                                      encoder_output_buffer_size_, encoder_provides_samples_, input_sample.Get());
   if (outcome.error) {
     return Error("H264 encode failed");
   }
@@ -958,12 +935,10 @@ Roe<VideoFrameRgba> MediaFoundationVideoCodec::DecodeFrame(const uint8_t* annex_
   }
 
   PumpOutcome outcome = PumpTransform(decoder_.Get(), decoder_events_.Get(), decoder_is_async_, 0,
-                                       decoder_output_buffer_size_, decoder_provides_samples_,
-                                       input_sample.Get());
+                                      decoder_output_buffer_size_, decoder_provides_samples_, input_sample.Get());
   if (outcome.error) {
     char buf[96];
-    std::snprintf(buf, sizeof(buf), "H264 decode failed hr=0x%08lX",
-                  static_cast<unsigned long>(outcome.hr));
+    std::snprintf(buf, sizeof(buf), "H264 decode failed hr=0x%08lX", static_cast<unsigned long>(outcome.hr));
     return Error(buf);
   }
   if (outcome.stream_change) {
@@ -975,15 +950,14 @@ Roe<VideoFrameRgba> MediaFoundationVideoCodec::DecodeFrame(const uint8_t* annex_
         return Error("H264 decoder output type negotiation failed");
       }
       ComPtr<IMFSample> sample;
-      const HRESULT retry_hr = ProcessOneOutput(decoder_.Get(), 0, decoder_output_buffer_size_,
-                                                 decoder_provides_samples_, sample);
+      const HRESULT retry_hr =
+          ProcessOneOutput(decoder_.Get(), 0, decoder_output_buffer_size_, decoder_provides_samples_, sample);
       if (retry_hr == MF_E_TRANSFORM_STREAM_CHANGE || retry_hr == MF_E_TRANSFORM_TYPE_NOT_SET) {
         continue;
       }
       if (SUCCEEDED(retry_hr)) {
-        return ConvertSampleToRgba(sample.Get(), decode_width_, decode_height_, decode_subtype_,
-                                   decode_crop_x_, decode_crop_y_, decode_visible_w_,
-                                   decode_visible_h_);
+        return ConvertSampleToRgba(sample.Get(), decode_width_, decode_height_, decode_subtype_, decode_crop_x_,
+                                   decode_crop_y_, decode_visible_w_, decode_visible_h_);
       }
       if (retry_hr != MF_E_TRANSFORM_NEED_MORE_INPUT) {
         char buf[96];
@@ -1008,8 +982,7 @@ Roe<VideoFrameRgba> MediaFoundationVideoCodec::DecodeFrame(const uint8_t* annex_
     replay_buffer->SetCurrentLength(static_cast<DWORD>(size));
     replay_buffer->Unlock();
     ComPtr<IMFSample> replay_sample;
-    if (FAILED(MFCreateSample(&replay_sample)) ||
-        FAILED(replay_sample->AddBuffer(replay_buffer.Get()))) {
+    if (FAILED(MFCreateSample(&replay_sample)) || FAILED(replay_sample->AddBuffer(replay_buffer.Get()))) {
       return Error("failed to build decoder replay sample");
     }
     replay_sample->SetSampleTime(decode_timestamp_);
@@ -1017,13 +990,11 @@ Roe<VideoFrameRgba> MediaFoundationVideoCodec::DecodeFrame(const uint8_t* annex_
       replay_sample->SetUINT32(MFSampleExtension_CleanPoint, TRUE);
     }
 
-    PumpOutcome replay =
-        PumpTransform(decoder_.Get(), decoder_events_.Get(), decoder_is_async_, 0,
-                      decoder_output_buffer_size_, decoder_provides_samples_, replay_sample.Get());
+    PumpOutcome replay = PumpTransform(decoder_.Get(), decoder_events_.Get(), decoder_is_async_, 0,
+                                       decoder_output_buffer_size_, decoder_provides_samples_, replay_sample.Get());
     if (replay.error) {
       char buf[96];
-      std::snprintf(buf, sizeof(buf), "H264 decode replay failed hr=0x%08lX",
-                    static_cast<unsigned long>(replay.hr));
+      std::snprintf(buf, sizeof(buf), "H264 decode replay failed hr=0x%08lX", static_cast<unsigned long>(replay.hr));
       return Error(buf);
     }
     if (replay.stream_change) {
@@ -1031,12 +1002,11 @@ Roe<VideoFrameRgba> MediaFoundationVideoCodec::DecodeFrame(const uint8_t* annex_
         return Error("H264 decoder output type negotiation failed on replay");
       }
       ComPtr<IMFSample> sample;
-      const HRESULT retry_hr = ProcessOneOutput(decoder_.Get(), 0, decoder_output_buffer_size_,
-                                                 decoder_provides_samples_, sample);
+      const HRESULT retry_hr =
+          ProcessOneOutput(decoder_.Get(), 0, decoder_output_buffer_size_, decoder_provides_samples_, sample);
       if (SUCCEEDED(retry_hr)) {
-        return ConvertSampleToRgba(sample.Get(), decode_width_, decode_height_, decode_subtype_,
-                                   decode_crop_x_, decode_crop_y_, decode_visible_w_,
-                                   decode_visible_h_);
+        return ConvertSampleToRgba(sample.Get(), decode_width_, decode_height_, decode_subtype_, decode_crop_x_,
+                                   decode_crop_y_, decode_visible_w_, decode_visible_h_);
       }
       // Fall through — next remote AU should decode with the type locked in.
       return Error("decoder needs more input after format change");
@@ -1044,16 +1014,14 @@ Roe<VideoFrameRgba> MediaFoundationVideoCodec::DecodeFrame(const uint8_t* annex_
     if (replay.samples.empty()) {
       return Error("decoder needs more input after format change");
     }
-    return ConvertSampleToRgba(replay.samples.back().Get(), decode_width_, decode_height_,
-                               decode_subtype_, decode_crop_x_, decode_crop_y_, decode_visible_w_,
-                               decode_visible_h_);
+    return ConvertSampleToRgba(replay.samples.back().Get(), decode_width_, decode_height_, decode_subtype_,
+                               decode_crop_x_, decode_crop_y_, decode_visible_w_, decode_visible_h_);
   }
   if (outcome.samples.empty()) {
     return Error("decoder needs more input to produce a frame");
   }
-  return ConvertSampleToRgba(outcome.samples.back().Get(), decode_width_, decode_height_,
-                             decode_subtype_, decode_crop_x_, decode_crop_y_, decode_visible_w_,
-                             decode_visible_h_);
+  return ConvertSampleToRgba(outcome.samples.back().Get(), decode_width_, decode_height_, decode_subtype_,
+                             decode_crop_x_, decode_crop_y_, decode_visible_w_, decode_visible_h_);
 }
 
 void MediaFoundationVideoCodec::ResetEncoder() {

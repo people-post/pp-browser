@@ -12,17 +12,17 @@
 namespace pbr {
 namespace {
 
-constexpr size_t kZhMaxChars = 80;      // code points, after whitespace is stripped
-constexpr size_t kZhMaxDistance = 12;   // verb/object distance, in code points
-constexpr size_t kZhPrepMaxTail = 2;    // after a preposition-style starter (给/和/跟) at most "吧" / "一下" may follow
-constexpr size_t kZhBareMaxChars = 10;  // a bare settings-read phrase
-constexpr size_t kZhReaderMaxChars = 14; // "看一下设置" style: reading verb first, nothing else
-constexpr size_t kZhSearchMaxTail = 10;  // a name after 找一下
+constexpr size_t kZhMaxChars = 80;     // code points, after whitespace is stripped
+constexpr size_t kZhMaxDistance = 12;  // verb/object distance, in code points
+constexpr size_t kZhPrepMaxTail = 2;   // after a preposition-style starter (给/和/跟) at most "吧" / "一下" may follow
+constexpr size_t kZhBareMaxChars = 10; // a bare settings-read phrase
+constexpr size_t kZhReaderMaxChars = 14;     // "看一下设置" style: reading verb first, nothing else
+constexpr size_t kZhSearchMaxTail = 10;      // a name after 找一下
 constexpr size_t kEnBareCommandMaxWords = 3; // "dark mode"
 constexpr size_t kEnMaxChars = 160;
-constexpr size_t kEnMaxDistance = 5;    // words from the verb to the object
-constexpr size_t kEnBareMaxWords = 5;   // a bare settings-read phrase
-constexpr size_t kEnSearchMaxTail = 3;  // words after "people"/"user"/…: a name fits, a relative clause does not
+constexpr size_t kEnMaxDistance = 5;   // words from the verb to the object
+constexpr size_t kEnBareMaxWords = 5;  // a bare settings-read phrase
+constexpr size_t kEnSearchMaxTail = 3; // words after "people"/"user"/…: a name fits, a relative clause does not
 
 using Text = std::u32string;
 using View = std::u32string_view;
@@ -42,11 +42,17 @@ bool IsSpace(const char32_t c) {
          (c >= 0x2000 && c <= 0x200A) || c == 0x2028 || c == 0x2029 || c == 0x202F || c == 0x205F || c == 0x3000;
 }
 
-char32_t Lower(const char32_t c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
+char32_t Lower(const char32_t c) {
+  return c >= 'A' && c <= 'Z' ? c + 32 : c;
+}
 
-bool StartsWith(const View s, const View p) { return s.size() >= p.size() && s.compare(0, p.size(), p) == 0; }
+bool StartsWith(const View s, const View p) {
+  return s.size() >= p.size() && s.compare(0, p.size(), p) == 0;
+}
 
-bool Contains(const View s, const View p) { return s.find(p) != View::npos; }
+bool Contains(const View s, const View p) {
+  return s.find(p) != View::npos;
+}
 
 // ---------------------------------------------------------------------------------------------------------
 // Chinese: port of brief_AI backend/tools/app_actions.py. Offsets and lengths are in code points.
@@ -80,7 +86,8 @@ const std::vector<ZhEntry>& ZhTable() {
     };
     std::vector<ZhEntry> t;
     for (const AppActionWords& w : AppActionTable()) {
-      t.push_back(ZhEntry{w.tool, w.settings_read, w.bare_command, w.bare_object, all(w.zh_verbs), all(w.zh_objects), all(w.zh_phrases)});
+      t.push_back(ZhEntry{w.tool, w.settings_read, w.bare_command, w.bare_object, all(w.zh_verbs), all(w.zh_objects),
+                          all(w.zh_phrases)});
     }
     return t;
   }();
@@ -105,8 +112,8 @@ size_t MatchAny(const View s, const std::initializer_list<const char*> prefixes)
 }
 
 size_t MatchStarter(const View s) {
-  return MatchAny(s, {"请", "帮我", "帮忙", "给我", "给", "替我", "麻烦", "把", "让", "和", "跟", "能不能",
-                      "能否", "可不可以", "我要", "我想要", "我想"});
+  return MatchAny(s, {"请", "帮我", "帮忙", "给我", "给", "替我", "麻烦", "把", "让", "和", "跟", "能不能", "能否",
+                      "可不可以", "我要", "我想要", "我想"});
 }
 
 size_t MatchPronoun(const View s) {
@@ -150,7 +157,8 @@ bool SearchSelf(const View s) {
       }
     }
   }
-  return Contains(s, W("这台设备")) || Contains(s, W("本机")) || Contains(s, W("这部手机")) || Contains(s, W("这台电脑"));
+  return Contains(s, W("这台设备")) || Contains(s, W("本机")) || Contains(s, W("这部手机")) ||
+         Contains(s, W("这台电脑"));
 }
 
 // (了吗|的是谁|是谁|过吗|没有)$
@@ -182,7 +190,9 @@ struct HitResult {
   SpanList spans;
 };
 
-void SortSpans(SpanList& spans) { std::sort(spans.begin(), spans.end()); }
+void SortSpans(SpanList& spans) {
+  std::sort(spans.begin(), spans.end());
+}
 
 HitResult ZhHitKind(const ZhEntry& e, const View msg) {
   for (const Text& w : e.phrases) {
@@ -213,7 +223,9 @@ HitResult ZhHitKind(const ZhEntry& e, const View msg) {
   return {};
 }
 
-size_t RFindEnd(const View msg, const View w) { return msg.rfind(w) + w.size(); }
+size_t RFindEnd(const View msg, const View w) {
+  return msg.rfind(w) + w.size();
+}
 
 bool ZhFormOk(const View msg, const ZhEntry& e, const Hit hit) {
   std::vector<Text> starters;
@@ -369,7 +381,9 @@ Words SplitSpans(std::string_view s, SpanList* spans) {
   return out;
 }
 
-Words Split(std::string_view s) { return SplitSpans(s, nullptr); }
+Words Split(std::string_view s) {
+  return SplitSpans(s, nullptr);
+}
 
 struct EnEntry {
   std::string_view tool;
@@ -390,7 +404,8 @@ const std::vector<EnEntry>& EnTable() {
     };
     std::vector<EnEntry> t;
     for (const AppActionWords& w : AppActionTable()) {
-      t.push_back(EnEntry{w.tool, w.settings_read, w.bare_command, w.bare_object, all(w.en_verbs), all(w.en_objects), all(w.en_phrases)});
+      t.push_back(EnEntry{w.tool, w.settings_read, w.bare_command, w.bare_object, all(w.en_verbs), all(w.en_objects),
+                          all(w.en_phrases)});
     }
     return t;
   }();
@@ -398,7 +413,8 @@ const std::vector<EnEntry>& EnTable() {
 }
 
 bool WordsAt(const Words& msg, const size_t pos, const Words& p) {
-  return !p.empty() && pos + p.size() <= msg.size() && std::equal(p.begin(), p.end(), msg.begin() + static_cast<std::ptrdiff_t>(pos));
+  return !p.empty() && pos + p.size() <= msg.size() &&
+         std::equal(p.begin(), p.end(), msg.begin() + static_cast<std::ptrdiff_t>(pos));
 }
 
 // First position of `p` in `msg`, or npos.
@@ -446,9 +462,9 @@ HitResult EnHitKind(const EnEntry& e, const Words& msg) {
 
 // Strips leading starters ("please", "can you", ...) and returns the index of the first word after them.
 size_t SkipStarters(const Words& msg, bool& had_starter) {
-  static const std::vector<Words> starters = {Split("please"),    Split("can you"),      Split("could you"),
-                                              Split("would you"), Split("help me"),      Split("i want to"),
-                                              Split("i'd like to"), Split("let me"),     Split("let's")};
+  static const std::vector<Words> starters = {Split("please"),      Split("can you"), Split("could you"),
+                                              Split("would you"),   Split("help me"), Split("i want to"),
+                                              Split("i'd like to"), Split("let me"),  Split("let's")};
   size_t pos = 0;
   had_starter = false;
   for (bool again = true; again;) {
@@ -471,8 +487,9 @@ bool EnFormOk(const Words& msg, const EnEntry& e, const Hit hit) {
   static const Words kMy = {"my"};
 
   // (a) imperative
-  if (had_starter && (WordsPrefix(msg, rest, e.verbs) || WordsPrefix(msg, rest, e.objects) ||
-                      WordsPrefix(msg, rest, e.phrases) || WordsAt(msg, rest, kMy) || WordsAt(msg, rest, Words{"me"}))) {
+  if (had_starter &&
+      (WordsPrefix(msg, rest, e.verbs) || WordsPrefix(msg, rest, e.objects) || WordsPrefix(msg, rest, e.phrases) ||
+       WordsAt(msg, rest, kMy) || WordsAt(msg, rest, Words{"me"}))) {
     return true;
   }
   if (WordsPrefix(msg, 0, e.verbs)) {
@@ -493,8 +510,9 @@ bool EnFormOk(const Words& msg, const EnEntry& e, const Hit hit) {
     if (WordsPrefix(msg, i, device)) {
       return true;
     }
-    if (msg[i] == "my" && (WordsPrefix(msg, i, e.phrases) || WordsPrefix(msg, i, e.objects) || WordsPrefix(msg, i + 1, e.objects) ||
-                           WordsPrefix(msg, i + 1, e.phrases) || WordsPrefix(msg, i + 2, e.objects))) {
+    if (msg[i] == "my" &&
+        (WordsPrefix(msg, i, e.phrases) || WordsPrefix(msg, i, e.objects) || WordsPrefix(msg, i + 1, e.objects) ||
+         WordsPrefix(msg, i + 1, e.phrases) || WordsPrefix(msg, i + 2, e.objects))) {
       return true;
     }
   }
@@ -531,12 +549,13 @@ bool EnSearchTailOk(const Words& msg, const EnEntry& e) {
 
 // "find Ken" / "look for Ken": the verb with a name of one word, or two capitalised words, after it, none of them a filler or an
 // object word that makes it a different request. The span is the verb, so the planner reads the name after it.
-std::optional<AppActionSpan> EnBareFindName(const std::string_view message, const Words& msg, const SpanList& word_bytes) {
+std::optional<AppActionSpan> EnBareFindName(const std::string_view message, const Words& msg,
+                                            const SpanList& word_bytes) {
   static const std::vector<Words> verbs = {Split("find"), Split("look for")};
-  static const std::vector<std::string> stop = {"the",   "a",         "an",       "my",     "me",       "out",   "news",
-                                                "about", "it",        "this",     "that",   "some",     "what",  "who",
-                                                "where", "how",       "something", "anything", "someone", "people", "person",
-                                                "user",  "users",     "info",     "information", "chat", "chats", "conversation"};
+  static const std::vector<std::string> stop = {
+      "the",    "a",    "an",    "my",   "me",          "out",  "news",      "about",       "it",      "this",
+      "that",   "some", "what",  "who",  "where",       "how",  "something", "anything",    "someone", "people",
+      "person", "user", "users", "info", "information", "chat", "chats",     "conversation"};
   bool had_starter = false;
   const size_t pos = SkipStarters(msg, had_starter);
   for (const Words& v : verbs) {
@@ -614,15 +633,18 @@ std::optional<AppActionMatch> ClassifyEnglish(std::string_view message, const st
 bool IsAppOverviewQuestion(const std::string& text) {
   Text decoded = Decode(text);
   decoded.erase(std::remove_if(decoded.begin(), decoded.end(), IsSpace), decoded.end());
-  while (!decoded.empty() && (decoded.back() == U'?' || decoded.back() == U'!' || decoded.back() == U'.' ||
-                              decoded.back() == U'\uFF1F' || decoded.back() == U'\uFF01' || decoded.back() == U'\u3002')) {
+  while (!decoded.empty() &&
+         (decoded.back() == U'?' || decoded.back() == U'!' || decoded.back() == U'.' || decoded.back() == U'\uFF1F' ||
+          decoded.back() == U'\uFF01' || decoded.back() == U'\u3002')) {
     decoded.pop_back();
   }
   if (std::any_of(decoded.begin(), decoded.end(), IsCjk)) {
     const auto strip_tail = [&] {
       for (bool again = true; again;) {
         again = false;
-        while (!decoded.empty() && std::u32string_view(U"\u5440\u5462\u554A\u5417\u5427\u561B\u54E6").find(decoded.back()) != std::u32string_view::npos) {
+        while (!decoded.empty() &&
+               std::u32string_view(U"\u5440\u5462\u554A\u5417\u5427\u561B\u54E6").find(decoded.back()) !=
+                   std::u32string_view::npos) {
           decoded.pop_back();
           again = true;
         }
@@ -639,9 +661,9 @@ bool IsAppOverviewQuestion(const std::string& text) {
         break;
       }
     }
-    for (const char* q : {"你能做什么", "你都能做什么", "你会做什么", "你都会做什么", "你能干什么", "你会干什么", "你可以做什么",
-                          "你可以干什么", "你会什么", "你能帮我做什么", "你能帮我干什么", "你可以帮我做什么", "你有什么功能",
-                          "你有哪些功能", "能做什么", "会做什么"}) {
+    for (const char* q : {"你能做什么", "你都能做什么", "你会做什么", "你都会做什么", "你能干什么", "你会干什么",
+                          "你可以做什么", "你可以干什么", "你会什么", "你能帮我做什么", "你能帮我干什么",
+                          "你可以帮我做什么", "你有什么功能", "你有哪些功能", "能做什么", "会做什么"}) {
       if (decoded == W(q)) {
         return true;
       }
@@ -658,9 +680,9 @@ bool IsAppOverviewQuestion(const std::string& text) {
   if (!words.empty() && words.front() == "so") {
     words.erase(words.begin());
   }
-  for (const char* q : {"what can you do", "what can you do for me", "what else can you do", "what all can you do",
-                        "what do you do", "what can you help with", "what can you help me with", "what are you able to do",
-                        "what things can you do"}) {
+  for (const char* q :
+       {"what can you do", "what can you do for me", "what else can you do", "what all can you do", "what do you do",
+        "what can you help with", "what can you help me with", "what are you able to do", "what things can you do"}) {
     if (words == Split(q)) {
       return true;
     }
@@ -693,7 +715,8 @@ std::optional<AppActionMatch> ClassifyAppActionMatch(const std::string_view mess
   return match;
 }
 
-std::optional<std::string> ClassifyAppAction(const std::string_view message, const std::vector<std::string>& declared_tools) {
+std::optional<std::string> ClassifyAppAction(const std::string_view message,
+                                             const std::vector<std::string>& declared_tools) {
   if (auto match = ClassifyAppActionMatch(message, declared_tools)) {
     return std::move(match->tool);
   }

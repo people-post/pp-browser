@@ -8,13 +8,13 @@ namespace pbr {
 namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
-constexpr float kPsdSmooth = 0.8f;      // power smoothing for the SNR gate
-constexpr float kNoiseAdapt = 0.05f;    // floor adaption when frame classed as noise
-constexpr float kNoiseCreep = 1.0005f;  // slow upward creep during speech (never lock up)
-constexpr float kNoiseGateSnr = 3.0f;   // a-posteriori SNR below which a bin is "noise"
-constexpr float kAprioriBeta = 0.98f;   // decision-directed smoothing
-constexpr float kGainFloor = 0.125f;    // -18 dB
-constexpr uint32_t kInitFrames = 40;    // ~0.2 s at 256-sample hops: first frames initialise the floor
+constexpr float kPsdSmooth = 0.8f;     // power smoothing for the SNR gate
+constexpr float kNoiseAdapt = 0.05f;   // floor adaption when frame classed as noise
+constexpr float kNoiseCreep = 1.0005f; // slow upward creep during speech (never lock up)
+constexpr float kNoiseGateSnr = 3.0f;  // a-posteriori SNR below which a bin is "noise"
+constexpr float kAprioriBeta = 0.98f;  // decision-directed smoothing
+constexpr float kGainFloor = 0.125f;   // -18 dB
+constexpr uint32_t kInitFrames = 40;   // ~0.2 s at 256-sample hops: first frames initialise the floor
 constexpr float kEps = 1e-12f;
 
 } // namespace

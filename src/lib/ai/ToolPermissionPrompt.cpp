@@ -185,10 +185,10 @@ std::string DescribeToolCall(const PlannedToolCall& call) {
       return base;
     }
     const std::string group = tool.option_group;
-    const std::string shown = group.empty()                ? DescribeArgument(value)
-                              : group == "language"        ? LanguageLabel(value)
-                                                           : TrOrDefault("ai.option." + group + "." + OptionToken(value),
-                                                                         DescribeArgument(value));
+    const std::string shown =
+        group.empty()         ? DescribeArgument(value)
+        : group == "language" ? LanguageLabel(value)
+                              : TrOrDefault("ai.option." + group + "." + OptionToken(value), DescribeArgument(value));
     return Tr(key + ".value", {{"value", shown}});
   }
   for (const SwitchTool& tool : kSwitchTools) {
@@ -237,7 +237,6 @@ Object DecisionPayload(const std::string& approval_id, const std::string& decisi
   payload.set("decision", decision);
   return payload;
 }
-
 
 bool IsOpenSupportCard(const std::vector<PlannedToolCall>& offered_tools) {
   return offered_tools.size() == 1 && offered_tools.front().name == "open_support";
@@ -312,8 +311,8 @@ std::string BuildToolPermissionDeniedBlocks(const std::vector<PlannedToolCall>& 
 }
 
 std::string BuildToolPermissionStaleBlocks(const std::string& reason_code) {
-  const std::string text = reason_code.empty() ? Tr("chat.permission.stale")
-                                               : Tr("chat.permission.stale_reason", {{"reason", reason_code}});
+  const std::string text =
+      reason_code.empty() ? Tr("chat.permission.stale") : Tr("chat.permission.stale_reason", {{"reason", reason_code}});
   Object callout;
   callout.set("type", "callout");
   callout.set("variant", "info");

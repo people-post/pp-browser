@@ -57,8 +57,7 @@ inline bool ShouldEscalateTxOnlyDirect(const CallTxOnlyEscalateDecisionInput& in
   if (in.tx_audio_frames < kCallTxOnlyEscalateMinTxFrames) {
     return false;
   }
-  if (in.direct_connected_at_ms <= 0 ||
-      in.now_ms - in.direct_connected_at_ms < kCallTxOnlyEscalateGraceMs) {
+  if (in.direct_connected_at_ms <= 0 || in.now_ms - in.direct_connected_at_ms < kCallTxOnlyEscalateGraceMs) {
     return false;
   }
   return in.peer_nonempty;

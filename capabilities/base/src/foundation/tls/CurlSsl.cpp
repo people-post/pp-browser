@@ -11,4 +11,4 @@ void ApplyCurlSslDefaults(CURL* curl) {
   os::ApplyPlatformCurlSsl(curl);
 }
 
-}  // namespace pbr
+} // namespace pbr

@@ -12,7 +12,6 @@ namespace pbr {
  * Me → Storage → Manage storage: its ports, filled from the messaging facade. `profile_data_dir` is read when
  * the usage is counted (the active profile's folder).
  */
-StorageManagerPorts MakeStorageManagerPorts(ConversationsFacade& facade,
-                                            std::function<std::string()> profile_data_dir);
+StorageManagerPorts MakeStorageManagerPorts(ConversationsFacade& facade, std::function<std::string()> profile_data_dir);
 
 } // namespace pbr

@@ -9,7 +9,7 @@
 TEST(ModelFacingJsonTest, ContactKeepsNamesAndIdOnly) {
   pbr::Contact contact;
   contact.id = "contact:1";
-  contact.local.display_name = "Owes-me Ada";  // remark
+  contact.local.display_name = "Owes-me Ada"; // remark
   contact.local.trust = pbr::TrustLevel::Friendly;
   contact.remote.nickname = "ada";
   contact.remote.multiaddrs = {"/ip4/203.0.113.9/tcp/4001/p2p/QmPeer"};

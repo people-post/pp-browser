@@ -93,13 +93,14 @@ TEST(WorkingSetRestoreTest, OpenReadsAClearedEntryBackFromTheThread) {
   (void)f.controller.RestoreEntry("entry-1", OneCandidate());
   f.controller.ClearAll();
   int loads = 0;
-  f.controller.SetEntryLoader([&loads](const std::string& entry_id) -> std::optional<WorkingSetController::StoredEntry> {
-    ++loads;
-    if (entry_id != "entry-1") {
-      return std::nullopt;
-    }
-    return WorkingSetController::StoredEntry{OneCandidate(), {}};
-  });
+  f.controller.SetEntryLoader(
+      [&loads](const std::string& entry_id) -> std::optional<WorkingSetController::StoredEntry> {
+        ++loads;
+        if (entry_id != "entry-1") {
+          return std::nullopt;
+        }
+        return WorkingSetController::StoredEntry{OneCandidate(), {}};
+      });
   f.controller.Open("entry-1", 0);
   EXPECT_EQ(loads, 1);
   EXPECT_TRUE(f.active);
@@ -113,12 +114,10 @@ TEST(WorkingSetRestoreTest, OpenReadsAClearedEntryBackFromTheThread) {
 
 TEST(WorkingSetRestoreTest, OpenOfAnEntryNotInTheThreadStillSaysUnavailable) {
   Fixture f;
-  f.controller.SetEntryLoader([](const std::string&) -> std::optional<WorkingSetController::StoredEntry> {
-    return std::nullopt;
-  });
+  f.controller.SetEntryLoader(
+      [](const std::string&) -> std::optional<WorkingSetController::StoredEntry> { return std::nullopt; });
   f.controller.Open("gone", 0);
   EXPECT_TRUE(f.active);
   EXPECT_FALSE(f.controller.HasEntry("gone"));
-  EXPECT_EQ(std::string(f.rml.c_str()).rfind("<p class=\"muted\">", 0), 0u);  // the unavailable note
+  EXPECT_EQ(std::string(f.rml.c_str()).rfind("<p class=\"muted\">", 0), 0u); // the unavailable note
 }
-

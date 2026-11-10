@@ -24,15 +24,13 @@ pp::common::Object SearchConfigToObject(const SearchConfig& config);
 void SearchConfigFromObject(const pp::common::Object& object, SearchConfig& config);
 
 pp::common::Object ServiceEndpointToObject(const ServiceEndpointConfig& endpoint);
-void ServiceEndpointFromObject(const pp::common::Object& object,
-                               ServiceEndpointConfig& endpoint);
+void ServiceEndpointFromObject(const pp::common::Object& object, ServiceEndpointConfig& endpoint);
 
 pp::common::Object DirectoryConfigToObject(const DirectoryConfig& config);
 void DirectoryConfigFromObject(const pp::common::Object& object, DirectoryConfig& config);
 
 pp::common::Object MeshCapabilitiesToObject(const mesh::MeshCapabilities& caps);
-void MeshCapabilitiesFromObject(const pp::common::Object& object,
-                                  mesh::MeshCapabilities& caps);
+void MeshCapabilitiesFromObject(const pp::common::Object& object, mesh::MeshCapabilities& caps);
 
 pp::common::Object MeshDhtConfigToObject(const mesh::MeshDhtConfig& config);
 void MeshDhtConfigFromObject(const pp::common::Object& object, mesh::MeshDhtConfig& config);

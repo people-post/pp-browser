@@ -9,7 +9,6 @@
 #include "common/thread/IThreadCatalog.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "lib/calls/ICallSessionStore.h"
-#include "lib/calls/RecentCallsOver.h"
 #include "feature/calls/CallInitiationBilling.h"
 #include "lib/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallSessionEvents.h"
@@ -88,8 +87,7 @@ public:
 
   /** The 1:1 start the session workflow schedules. */
   struct DuplexPorts {
-    std::function<void(const std::string& call_id, const std::string& peer, bool offerer)>
-        schedule_start_direct;
+    std::function<void(const std::string& call_id, const std::string& peer, bool offerer)> schedule_start_direct;
   };
 
   /** Hop-path / SFU attach outcomes observed by durable session. */
@@ -97,15 +95,15 @@ public:
   /** Peer reach, caps, listen addrs. */
   struct ReachPorts {
     std::function<void(const std::string& identity, const std::vector<std::string>&)> register_peer_listen;
-    std::function<void(const std::string& identity, const CallPeerCaps& caps,
-                       const std::vector<std::string>& listen)>
+    std::function<void(const std::string& identity, const CallPeerCaps& caps, const std::vector<std::string>& listen)>
         note_caps_for_identity;
     /** The peer's caps for this call (invite / accept) — mobility feeds the call's path policy. */
     std::function<void(const std::string& call_id, const CallPeerCaps& caps)> note_call_peer_caps;
     /** H013: the relays we are parked on now — our CallAccept advertises them. */
     std::function<std::vector<std::string>()> parked_relays;
     /** H013: the relays the call's answerer advertised in its CallAccept (the caller tries them first). */
-    std::function<void(const std::string& call_id, const std::vector<std::string>& relays)> note_call_peer_parked_relays;
+    std::function<void(const std::string& call_id, const std::vector<std::string>& relays)>
+        note_call_peer_parked_relays;
     std::function<void(const std::string& identity)> prefetch_reach;
     /** Kick mesh circuit park (composition projects MeshConnectivity rendezvous ReserveOnBootstrapSeeds). */
     std::function<void()> ensure_circuit_ready;
@@ -155,6 +153,13 @@ public:
   void NotePeerEndedCall(const std::string& call_id, const std::string& peer);
   /** Test seam: the wait for call_leave after a peer's bye (production kPeerByeLeaveGrace). */
   void SetPeerByeLeaveGraceForTest(std::chrono::milliseconds grace) { peer_bye_leave_grace_ = grace; }
+  /** Test seam: the number of the last peer bye noted (NotePeerEndedCall). */
+  uint64_t LastPeerByeForTest() const { return last_peer_bye_; }
+  /**
+   * Test seam: `bye`'s grace for `peer` ends now, through the workflow's own event queue (epoch check included),
+   * so a test need not wait out a real-time grace.
+   */
+  void EndPeerByeGraceForTest(const std::string& call_id, const std::string& peer, uint64_t bye);
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
@@ -215,8 +220,6 @@ public:
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
   /** V053: when this device leaves the group call it waits alone in (0: not waiting). */
   int64_t AloneUntilMs(const std::string& call_id) const;
-  /** P017: the calls this device learned are over (the stack publishes them for the phone's call screen). */
-  const RecentCallsOver& CallsOver() const { return calls_over_; }
   /** This device is Joined in the call (not left it). */
   bool StillInCall(const std::string& call_id) const;
 
@@ -224,8 +227,8 @@ public:
    * A call invite. Returns the call to answer at once: the inviter and this device called each
    * other at the same moment and the inviter's call won (CrossedCall), so ours gave way.
    */
-  Roe<std::optional<std::string>> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
-                                                      const ThreadMessage& message,
+  Roe<std::optional<std::string>> HandleInboundInvite(const std::string& detail_json,
+                                                      const std::string& sender_identity, const ThreadMessage& message,
                                                       std::optional<int64_t> relay_created_at_ms,
                                                       std::optional<int64_t> relay_server_time_ms,
                                                       const std::string& local_identity);
@@ -283,8 +286,7 @@ private:
   /** G016: a roster this device holds that lacks `identity`; a roster it does not hold (nullopt) is not "out". */
   bool KnownOutOfGroup(const std::string& group_id, const std::string& identity) const;
   /** `identity` is no longer in the call (left, or out of its group). */
-  Roe<void> ParticipantGone(const std::string& call_id, const std::string& identity,
-                            const std::string& local_identity);
+  Roe<void> ParticipantGone(const std::string& call_id, const std::string& identity, const std::string& local_identity);
   /** V053: a group call's invite that arrived too late to ring: recorded as missed, still joinable. */
   void RecordMissedGroupCall(const CallInviteDetail& invite, const std::string& sender_identity,
                              const std::string& local_identity, int64_t created_at);
@@ -402,7 +404,15 @@ private:
   uint64_t followup_epoch_ = 0;
   /** K014: how long a peer's call-media bye waits for its call_leave before standing in for it. */
   std::chrono::milliseconds peer_bye_leave_grace_ = kPeerByeLeaveGrace;
+  /**
+   * K014: byes still waiting for their peer's call_leave, by call and peer → the bye's number. The
+   * peer's leave or rejoin settles one: the grace then never ends the peer's next join.
+   */
+  std::unordered_map<std::string, uint64_t> pending_peer_byes_;
+  uint64_t last_peer_bye_ = 0;
   void EndForPeerBye(const workflow_event::PeerByeGraceOver& over);
+  /** The peer's join that a pending bye was about is over (it left, or joined again). */
+  void SettlePeerBye(const std::string& call_id, const std::string& peer);
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;
   bool pending_accept_voice_only_ = false;
@@ -414,8 +424,6 @@ private:
   std::unordered_set<std::string> join_any_retry_sent_;
   /** V053: group calls this device is alone in → since when. */
   std::unordered_map<std::string, int64_t> alone_since_ms_;
-  /** P017: ended here, or their invite read too late to ring / for a call already ended. */
-  RecentCallsOver calls_over_;
   /** The last sweep: a long gap means the app slept, and the alone waits start over. */
   int64_t last_alone_sweep_ms_ = 0;
   /** #381: an epoch this device rotated to, resent to the members a few times (no ack on the wire). */

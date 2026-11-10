@@ -11,8 +11,8 @@ inline constexpr const char* kAnnotationTypeReactionClear = "reaction_clear";
 /** "Delete for everyone": the sender withdraws their own message (target); receivers tombstone it. */
 inline constexpr const char* kAnnotationTypeRetract = "retract";
 
-inline std::string BuildReactionPayloadJson(const std::string& annotation_type,
-                                            const std::string& target_message_id, const std::string& emoji) {
+inline std::string BuildReactionPayloadJson(const std::string& annotation_type, const std::string& target_message_id,
+                                            const std::string& emoji) {
   // Keep JSON minimal and stable for ChatPayloadCodec::DecodeAnnotationJson.
   std::string escaped;
   escaped.reserve(emoji.size());
@@ -22,8 +22,8 @@ inline std::string BuildReactionPayloadJson(const std::string& annotation_type,
     }
     escaped.push_back(ch);
   }
-  return std::string("{\"annotation_type\":\"") + annotation_type + "\",\"target_message_id\":\"" +
-         target_message_id + "\",\"value\":\"" + escaped + "\"}";
+  return std::string("{\"annotation_type\":\"") + annotation_type + "\",\"target_message_id\":\"" + target_message_id +
+         "\",\"value\":\"" + escaped + "\"}";
 }
 
 inline bool IsReactionAnnotationType(const std::string& annotation_type) {

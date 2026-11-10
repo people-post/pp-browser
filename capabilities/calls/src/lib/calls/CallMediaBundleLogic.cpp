@@ -10,22 +10,22 @@ CallMediaInboundHelloDecision DecideCallMediaInboundHello(const CallMediaInbound
     return CallMediaInboundHelloDecision::RejectBusy;
   }
   switch (ctx.phase) {
-  case CallMediaBundlePhase::MediaReady:
-  case CallMediaBundlePhase::AwaitingMedia:
-  case CallMediaBundlePhase::InboundHello:
-  case CallMediaBundlePhase::Closing:
-    return CallMediaInboundHelloDecision::RejectBusy;
-  case CallMediaBundlePhase::OutboundHello:
-    // Simultaneous open: exactly one side must win. local_wins_glare is role-aware and
-    // antisymmetric (LocalWinsCallMediaGlareForRoles). The old rule let an answerer always yield
-    // and an offerer with the lower PeerId yield too — both yielded, both bundles closed.
-    if (ctx.local_wins_glare) {
-      return CallMediaInboundHelloDecision::RejectGlare;
-    }
-    // Loser (or outbound not bound yet): accept inbound and drop any provisional outbound.
-    return CallMediaInboundHelloDecision::AcceptAndYield;
-  case CallMediaBundlePhase::Idle:
-    return CallMediaInboundHelloDecision::Accept;
+    case CallMediaBundlePhase::MediaReady:
+    case CallMediaBundlePhase::AwaitingMedia:
+    case CallMediaBundlePhase::InboundHello:
+    case CallMediaBundlePhase::Closing:
+      return CallMediaInboundHelloDecision::RejectBusy;
+    case CallMediaBundlePhase::OutboundHello:
+      // Simultaneous open: exactly one side must win. local_wins_glare is role-aware and
+      // antisymmetric (LocalWinsCallMediaGlareForRoles). The old rule let an answerer always yield
+      // and an offerer with the lower PeerId yield too — both yielded, both bundles closed.
+      if (ctx.local_wins_glare) {
+        return CallMediaInboundHelloDecision::RejectGlare;
+      }
+      // Loser (or outbound not bound yet): accept inbound and drop any provisional outbound.
+      return CallMediaInboundHelloDecision::AcceptAndYield;
+    case CallMediaBundlePhase::Idle:
+      return CallMediaInboundHelloDecision::Accept;
   }
   return CallMediaInboundHelloDecision::RejectBusy;
 }
@@ -52,59 +52,70 @@ CallMediaHelloAckDecision DecideCallMediaHelloAck(const CallMediaHelloAckContext
   return CallMediaHelloAckDecision::Fail;
 }
 
-CallMediaChannelCloseDecision DecideCallMediaChannelClose(const CallMediaChannelCloseContext& ctx) {
-  if (!ctx.slot_still_owned) {
-    return CallMediaChannelCloseDecision::Ignore;
+CallMediaChannelCloseAction RouteCallMediaChannelClose(const CallMediaChannelCloseInput& in) {
+  if (in.placeholder) {
+    return CallMediaChannelCloseAction::DropPlaceholder;
   }
-  if (ctx.phase == CallMediaBundlePhase::Idle) {
-    return CallMediaChannelCloseDecision::Ignore;
+  switch (in.slot) {
+    case CallMediaPathSlot::Candidate:
+      return CallMediaChannelCloseAction::AbandonCandidate;
+    case CallMediaPathSlot::Retiring:
+      return CallMediaChannelCloseAction::DropRetiring;
+    case CallMediaPathSlot::Standby:
+      return CallMediaChannelCloseAction::DropStandby;
+    case CallMediaPathSlot::Active:
+      break;
   }
-  if (ctx.local_cancel || ctx.phase == CallMediaBundlePhase::Closing) {
-    return CallMediaChannelCloseDecision::SuppressNotify;
+  // K014: whoever closed it — the peer's hang-up comes as `bye` first (the leg is gone by its close).
+  if (in.phase == CallMediaBundlePhase::MediaReady && !in.local_cancel) {
+    return CallMediaChannelCloseAction::ActivePathClosed;
   }
-  // Dual-dial: peer abandoned their outbound (our inbound) after we won glare, or we rejected
-  // inbound — must not tear down the winning outbound control.
-  if (ctx.role == CallMediaChannelRole::InboundControl && ctx.phase == CallMediaBundlePhase::OutboundHello) {
-    return CallMediaChannelCloseDecision::Ignore;
+  if (in.phase == CallMediaBundlePhase::Idle) {
+    return CallMediaChannelCloseAction::Ignore;
   }
-  if (ctx.remote_terminal || ctx.role == CallMediaChannelRole::Media ||
-      ctx.role == CallMediaChannelRole::InboundControl ||
-      ctx.role == CallMediaChannelRole::OutboundControl) {
-    return CallMediaChannelCloseDecision::FailLeg;
+  if (in.local_cancel || in.phase == CallMediaBundlePhase::Closing) {
+    return CallMediaChannelCloseAction::TearDownQuietly;
   }
-  return CallMediaChannelCloseDecision::Ignore;
+  // Dual-dial: the peer abandoned its outbound (our inbound) after we won glare, or we rejected it —
+  // the winning outbound control stays.
+  if (in.role == CallMediaChannelRole::InboundControl && in.phase == CallMediaBundlePhase::OutboundHello) {
+    return CallMediaChannelCloseAction::DropInboundControl;
+  }
+  // Any other channel of a connecting leg closing fails it; the peer closing it is reported.
+  return in.remote_terminal ? CallMediaChannelCloseAction::TearDownReported
+                            : CallMediaChannelCloseAction::TearDownQuietly;
 }
 
 CallMediaSessionPhase CallMediaBundlePhaseToSessionPhase(const CallMediaBundlePhase phase) {
   switch (phase) {
-  case CallMediaBundlePhase::Idle:
-    return CallMediaSessionPhase::Idle;
-  case CallMediaBundlePhase::OutboundHello:
-    return CallMediaSessionPhase::HelloOutbound;
-  case CallMediaBundlePhase::InboundHello:
-    return CallMediaSessionPhase::HelloInbound;
-  case CallMediaBundlePhase::AwaitingMedia:
-    return CallMediaSessionPhase::Adopting;
-  case CallMediaBundlePhase::MediaReady:
-    return CallMediaSessionPhase::MediaReady;
-  case CallMediaBundlePhase::Closing:
-    return CallMediaSessionPhase::Detaching;
+    case CallMediaBundlePhase::Idle:
+      return CallMediaSessionPhase::Idle;
+    case CallMediaBundlePhase::OutboundHello:
+      return CallMediaSessionPhase::HelloOutbound;
+    case CallMediaBundlePhase::InboundHello:
+      return CallMediaSessionPhase::HelloInbound;
+    case CallMediaBundlePhase::AwaitingMedia:
+      return CallMediaSessionPhase::Adopting;
+    case CallMediaBundlePhase::MediaReady:
+      return CallMediaSessionPhase::MediaReady;
+    case CallMediaBundlePhase::Closing:
+      return CallMediaSessionPhase::Detaching;
   }
   return CallMediaSessionPhase::Idle;
 }
 
 CallMediaLegPhase CallMediaBundlePhaseToLegPhase(const CallMediaBundlePhase phase) {
   switch (phase) {
-  case CallMediaBundlePhase::Idle:
-  case CallMediaBundlePhase::Closing:
-    return CallMediaLegPhase::Closed;
-  case CallMediaBundlePhase::OutboundHello:
-  case CallMediaBundlePhase::InboundHello:
-    return CallMediaLegPhase::ControlHello;
-  case CallMediaBundlePhase::AwaitingMedia:
-    return CallMediaLegPhase::AwaitingMedia;
-  case CallMediaBundlePhase::MediaReady:
-    return CallMediaLegPhase::MediaReady;
+    case CallMediaBundlePhase::Idle:
+    case CallMediaBundlePhase::Closing:
+      return CallMediaLegPhase::Closed;
+    case CallMediaBundlePhase::OutboundHello:
+    case CallMediaBundlePhase::InboundHello:
+      return CallMediaLegPhase::ControlHello;
+    case CallMediaBundlePhase::AwaitingMedia:
+      return CallMediaLegPhase::AwaitingMedia;
+    case CallMediaBundlePhase::MediaReady:
+      return CallMediaLegPhase::MediaReady;
   }
   return CallMediaLegPhase::Closed;
 }
@@ -123,7 +134,7 @@ bool ShouldFailOverToStandby(const CallMediaFailoverInput& in) {
   if (in.active_link_lost) {
     return true;
   }
-  return in.peer_heartbeats && in.active_silence_ms >= kCallMediaActiveSilenceFailoverMs &&
+  return !in.awaiting_bye && in.peer_heartbeats && in.active_silence_ms >= kCallMediaActiveSilenceFailoverMs &&
          in.since_failover_ms >= kCallMediaFailoverHoldDownMs;
 }
 
@@ -134,7 +145,7 @@ bool ShouldEnterPathLost(const CallMediaFailoverInput& in) {
   if (in.active_link_lost) {
     return true;
   }
-  return in.peer_heartbeats && in.active_silence_ms >= kCallMediaActiveSilenceLostMs &&
+  return !in.awaiting_bye && in.peer_heartbeats && in.active_silence_ms >= kCallMediaActiveSilenceLostMs &&
          in.since_failover_ms >= kCallMediaFailoverHoldDownMs;
 }
 
@@ -175,7 +186,7 @@ bool CallMediaSeqWindow::Accept(const uint32_t seq) {
   }
   const uint32_t behind = highest_ - seq;
   if (behind >= kWindow) {
-    return anchor();  // far behind: the sender restarted its seq
+    return anchor(); // far behind: the sender restarted its seq
   }
   if (seen_.test(behind)) {
     return false;

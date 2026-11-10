@@ -82,7 +82,7 @@ std::string AndroidPushDeviceRegistrar::DeviceId() const {
 
 #if defined(__ANDROID__)
 extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_PpPushBridge_nativeSetFcmToken(JNIEnv* env, jclass,
-                                                                                         jstring token) {
+                                                                                          jstring token) {
   if (env == nullptr || token == nullptr) {
     return;
   }

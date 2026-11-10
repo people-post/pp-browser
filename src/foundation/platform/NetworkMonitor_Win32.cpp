@@ -23,14 +23,14 @@
 namespace pbr::detail {
 namespace {
 
-constexpr ULONG kIfTypeWifi = 71;       // IF_TYPE_IEEE80211
-constexpr ULONG kIfTypeWwan = 243;      // IF_TYPE_WWANPP
-constexpr ULONG kIfTypeWwan2 = 244;     // IF_TYPE_WWANPP2
+constexpr ULONG kIfTypeWifi = 71;   // IF_TYPE_IEEE80211
+constexpr ULONG kIfTypeWwan = 243;  // IF_TYPE_WWANPP
+constexpr ULONG kIfTypeWwan2 = 244; // IF_TYPE_WWANPP2
 
 /** Mirror of NL_NETWORK_CONNECTIVITY_HINT (netioapi.h, SDK 10.0.19041+). */
 struct ConnectivityHint {
   int level;
-  int cost;  // 0 unknown, 1 unrestricted, 2 fixed, 3 variable
+  int cost; // 0 unknown, 1 unrestricted, 2 fixed, 3 variable
   BOOLEAN approaching_data_limit;
   BOOLEAN over_data_limit;
   BOOLEAN roaming;
@@ -55,7 +55,7 @@ std::string AddressText(const SOCKADDR* addr) {
   char buf[INET6_ADDRSTRLEN] = {};
   if (addr->sa_family == AF_INET) {
     const auto* v4 = reinterpret_cast<const sockaddr_in*>(addr);
-    if ((ntohl(v4->sin_addr.s_addr) >> 16) == 0xa9fe) {  // 169.254/16 link-local
+    if ((ntohl(v4->sin_addr.s_addr) >> 16) == 0xa9fe) { // 169.254/16 link-local
       return {};
     }
     InetNtopA(AF_INET, &v4->sin_addr, buf, sizeof(buf));
@@ -78,8 +78,8 @@ NetworkState Snapshot() {
   ULONG rc = ERROR_BUFFER_OVERFLOW;
   for (int attempt = 0; attempt < 3 && rc == ERROR_BUFFER_OVERFLOW; ++attempt) {
     buffer.resize(size);
-    rc = GetAdaptersAddresses(AF_UNSPEC, kFlags, nullptr, reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data()),
-                              &size);
+    rc =
+        GetAdaptersAddresses(AF_UNSPEC, kFlags, nullptr, reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data()), &size);
   }
   if (rc != NO_ERROR) {
     return state;
@@ -90,7 +90,7 @@ NetworkState Snapshot() {
        adapter = adapter->Next) {
     if (adapter->OperStatus != IfOperStatusUp || adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK ||
         adapter->FirstGatewayAddress == nullptr) {
-      continue;  // only adapters that carry a default route
+      continue; // only adapters that carry a default route
     }
     bool any = false;
     for (auto* uni = adapter->FirstUnicastAddress; uni != nullptr; uni = uni->Next) {
@@ -109,9 +109,9 @@ NetworkState Snapshot() {
     const ULONG metric = adapter->Ipv4Metric != 0 ? adapter->Ipv4Metric : adapter->Ipv6Metric;
     if (metric < best_metric) {
       best_metric = metric;
-      state.transport = adapter->IfType == kIfTypeWifi                                 ? NetworkTransport::Wifi
+      state.transport = adapter->IfType == kIfTypeWifi                                      ? NetworkTransport::Wifi
                         : adapter->IfType == kIfTypeWwan || adapter->IfType == kIfTypeWwan2 ? NetworkTransport::Cellular
-                                                                                        : NetworkTransport::Other;
+                                                                                            : NetworkTransport::Other;
     }
   }
   state.online = !parts.empty();

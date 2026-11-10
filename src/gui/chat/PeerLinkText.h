@@ -23,37 +23,37 @@ inline PeerLinkText PeerLinkTextFor(const ThreadPeerLinkView& link) {
   PeerLinkText text;
   text.display_kind = link.path_kind;
   switch (link.path_kind) {
-  case ThreadPeerPathKind::Direct:
-    text.status_key = "chat.link.direct";
-    break;
-  case ThreadPeerPathKind::ViaHop:
-    text.status_key = "chat.link.via_hop";
-    break;
-  case ThreadPeerPathKind::ViaRelay:
-    text.status_key = "chat.link.via_relay";
-    break;
-  case ThreadPeerPathKind::Connecting:
-    text.status_key = "chat.link.connecting";
-    break;
-  case ThreadPeerPathKind::Degraded:
-    if (link.relay_available) {
+    case ThreadPeerPathKind::Direct:
+      text.status_key = "chat.link.direct";
+      break;
+    case ThreadPeerPathKind::ViaHop:
+      text.status_key = "chat.link.via_hop";
+      break;
+    case ThreadPeerPathKind::ViaRelay:
       text.status_key = "chat.link.via_relay";
-      text.display_kind = ThreadPeerPathKind::ViaRelay;
-    } else {
-      text.status_key = "chat.link.retrying";
-      text.banner_key = "chat.link.banner.unreachable";
-      text.show_retry = link.show_retry;
-    }
-    break;
-  case ThreadPeerPathKind::Failed:
-    text.status_key = "chat.link.offline";
-    text.banner_key = "chat.link.banner.no_address";
-    break;
-  case ThreadPeerPathKind::Ready:
-    text.status_key = "chat.link.ready";
-    break;
-  case ThreadPeerPathKind::None:
-    break;
+      break;
+    case ThreadPeerPathKind::Connecting:
+      text.status_key = "chat.link.connecting";
+      break;
+    case ThreadPeerPathKind::Degraded:
+      if (link.relay_available) {
+        text.status_key = "chat.link.via_relay";
+        text.display_kind = ThreadPeerPathKind::ViaRelay;
+      } else {
+        text.status_key = "chat.link.retrying";
+        text.banner_key = "chat.link.banner.unreachable";
+        text.show_retry = link.show_retry;
+      }
+      break;
+    case ThreadPeerPathKind::Failed:
+      text.status_key = "chat.link.offline";
+      text.banner_key = "chat.link.banner.no_address";
+      break;
+    case ThreadPeerPathKind::Ready:
+      text.status_key = "chat.link.ready";
+      break;
+    case ThreadPeerPathKind::None:
+      break;
   }
   return text;
 }

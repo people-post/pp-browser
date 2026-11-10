@@ -42,7 +42,7 @@ struct MessagingContactsPorts {
   std::function<void()> notify_thread_changed;
 
   std::function<std::optional<PeerSigningKeyRecord>(const std::string& peer_identity_kind,
-                                                     const std::string& peer_identity_value)>
+                                                    const std::string& peer_identity_value)>
       get_signing_key;
 
   std::function<Roe<mesh::DirectoryHit>(const std::string& relay_user_id)> lookup_relay_user;

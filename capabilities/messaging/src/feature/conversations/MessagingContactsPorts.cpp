@@ -37,9 +37,11 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
   };
   ports.contact_icon_local_path = [&hub](const Contact& contact) { return hub.ContactIconLocalPath(contact); };
   ports.ensure_contact_icon_cached = [&hub](const Contact& contact) { hub.EnsureContactIconCached(contact); };
-  ports.ensure_directory_hit_icon_cached = [&hub](const mesh::DirectoryHit& hit) { hub.EnsureDirectoryHitIconCached(hit); };
+  ports.ensure_directory_hit_icon_cached = [&hub](const mesh::DirectoryHit& hit) {
+    hub.EnsureDirectoryHitIconCached(hit);
+  };
   ports.apply_remote_snapshot = [&hub](const std::string& contact_id, const mesh::DirectoryHit& hit,
-                                        const int64_t fetched_at_ms) {
+                                       const int64_t fetched_at_ms) {
     auto result = hub.Contacts().ApplyRemoteSnapshot(contact_id, hit, fetched_at_ms);
     if (result) {
       hub.EnsureContactIconCached(*result);
@@ -49,7 +51,9 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
   ports.register_contact_direct_endpoints = [&hub](const Contact& contact) {
     hub.MeshMessaging().RegisterContactDirectEndpoints(contact);
   };
-  ports.warm_peer_for_thread = [&hub](const std::string& thread_id) { hub.MeshMessaging().WarmPeerForThread(thread_id); };
+  ports.warm_peer_for_thread = [&hub](const std::string& thread_id) {
+    hub.MeshMessaging().WarmPeerForThread(thread_id);
+  };
   ports.ensure_psk_generated = [&hub](const std::string& thread_id) {
     auto result = hub.MeshMessaging().EnsurePskGenerated(thread_id);
     if (!result) {

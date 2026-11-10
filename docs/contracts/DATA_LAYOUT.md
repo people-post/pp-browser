@@ -103,6 +103,11 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
                             # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)
+                            # Local-only System rows (sender local:self, delivery 'local', never sent or synced; text empty, the UI words
+                            # them from the payload): payload_json {control_type: "receive_failure"|"send_failure", detail: <JSON string>}.
+                            # `send_failure` (#182): a message of ours did not go out, one row per message, id "send-failure-<message_id>"
+                            # (+ "-group" for a partial group send); detail {reason, message_id}, reason = a SendFailureWord
+                            # (mesh_off, no_address, ..., relay_rejected) or "group_members_missed". It does not touch the thread's preview/order.
 ```
 
 ### Content CAS (planned)
@@ -222,6 +227,7 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `attachment_auto_on_wifi` | `preferences.json` | boolean, optional; default true. With `always_auto`: download everything on Wi-Fi |
 | `attachment_auto_on_cellular` | `preferences.json` | boolean, optional; default false. With `always_auto`: download everything on the mobile network (phones only) |
 | `crash_reports_enabled` | `preferences.json` | boolean, schema v14 — opt-in upload of compact crash envelopes to `{relay}/v1/crash-reports` |
+| `call_invite_policy` | `preferences.json` | string, `contacts_only` \| `everyone` \| `nobody`; default `contacts_only` (schema v15). A file below schema v15 without the key reads as `everyone`, so existing profiles keep their behaviour. Who may call this profile |
 | `ai_dot_shown` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default true. Me → AI assistant → Show AI dot (phones) |
 | `ai_dot_look` | `preferences.json` | string `a` (one eye) \| `b` (two eyes, default) \| `c` (cool) \| `d` (plain); anything else reads back as `b` |
 | `ai_dot_size` | `preferences.json` | string `s` (52dp) \| `m` (64dp, default) \| `l` (76dp); anything else reads back as `m`. Me → AI assistant → Assistant size (phones) |
@@ -233,7 +239,7 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `home_widgets_order` | `preferences.json` | string array, optional (added after schema v14, no version bump); default empty (the default order: `favorites`, `calls`, `mentions`, `recent_chats`, `brief`, `new_people`). The phone Home widgets' order, set with Edit Home's drag handles; unknown and repeated ids are dropped, a widget it lacks goes at the end. Device-only, never synced (like `thread_local_prefs`) |
 | `starred_contacts` | `preferences.json` | string array, optional (added after schema v14, no version bump); default empty. Contact ids starred on the contact page ("Add to Favorites"), in the order they were starred; empty ids and repeats are dropped on read, an id with no contact is ignored. They come first in the phone Home Favorites widget and the New chat page's frequent group. Device-only, never synced or sent (like `thread_local_prefs`) |
 | `recovery_phrase_seen` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Set once the user has opened their recovery phrase on Me → Security; the phone Home Security widget shows "Protected" after that, "Save recovery phrase" before. Never cleared by the app. Device-only, never synced or sent (like `thread_local_prefs`) |
-| `unlock_grace_minutes` | `preferences.json` | integer, optional (added after schema v14, no version bump); one of 0 / 5 / 15 / 60, default 15; any other value reads back as 15. The PIN grace window (Me → Security → "Ask for PIN again after"): minutes after the last foreground use during which a cold start skips the PIN; 0 = every time. Only offered with an own PIN on a platform with a secure store. Device-only, never synced or sent |
+| `unlock_grace_minutes` | `preferences.json` | integer, optional (added after schema v14, no version bump); one of 0 / 5 / 15 / 60 or -1 (Always: until the phone restarts, [at-rest A015](../../projects/at-rest-crypto/DECISIONS.md#a015--pin-grace-window-an-always-option-the-phones-own-lock-is-the-lock)), default 15; any other value reads back as 15. The PIN grace window (Me → Security → "Ask for PIN again after"): minutes after the last foreground use during which a cold start skips the PIN; 0 = every time. Only offered with an own PIN on a platform with a secure store. Device-only, never synced or sent |
 | `home_show_dynamic` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Home shows the 动态 widgets section; default off = minimal AI-first Home (Me → Appearance → Show Activity on Home, phones). Device-only, never synced or sent (like `thread_local_prefs`) |
 
 `tool_permissions` shape:

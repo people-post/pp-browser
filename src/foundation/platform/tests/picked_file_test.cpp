@@ -15,7 +15,8 @@ namespace {
 
 TEST(PickedFileNameTest, ReadsTheNameOutOfAPathOrAContentUri) {
   EXPECT_EQ(DisplayNameFromPickedPath("/Users/me/clip.MOV"), "clip.MOV");
-  EXPECT_EQ(DisplayNameFromPickedPath("content://com.android.externalstorage.documents/document/primary%3ADCIM%2FCamera%2FVID_1.mp4"),
+  EXPECT_EQ(DisplayNameFromPickedPath(
+                "content://com.android.externalstorage.documents/document/primary%3ADCIM%2FCamera%2FVID_1.mp4"),
             "VID_1.mp4");
   EXPECT_EQ(DisplayNameFromPickedPath("content://media/external/video/media/1234?x=1"), "") << "a media id is no name";
   EXPECT_EQ(DisplayNameFromPickedPath("content://com.android.providers.media.documents/document/video%3A1234"), "");
@@ -30,7 +31,8 @@ TEST(PickedFileNameTest, ReadsTheNameOutOfAPathOrAContentUri) {
 class ImportPickedFileTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    dir_ = std::filesystem::temp_directory_path() / ("pp_import_pick_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    dir_ = std::filesystem::temp_directory_path() /
+           ("pp_import_pick_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
     std::filesystem::create_directories(dir_);
     source_ = (dir_ / "movie.mov").string();
     std::ofstream out(source_, std::ios::binary);
@@ -76,7 +78,7 @@ TEST_F(ImportPickedFileTest, AnUnreadableUriOrNoScratchFolderIsNothing) {
   EXPECT_FALSE(ImportPickedFile("content://nowhere/document/video%3A1", (dir_ / "scratch").string()));
   EXPECT_FALSE(ImportPickedFile("content://nowhere/document/video%3A1", ""));
   EXPECT_FALSE(ImportPickedFile((dir_ / "missing.mov").string(), (dir_ / "scratch").string(), /*force_copy=*/true));
-  RemoveImportedPick(ImportedPick{});  // nothing to remove: no effect
+  RemoveImportedPick(ImportedPick{}); // nothing to remove: no effect
   RemoveImportedPick(ImportedPick{.path = source_, .name = "movie.mov", .copied = false});
   EXPECT_TRUE(std::filesystem::exists(source_)) << "a plain pick is never deleted";
 }
@@ -86,7 +88,8 @@ TEST_F(ImportPickedFileTest, AnUnreadableUriOrNoScratchFolderIsNothing) {
 class ReleasePickedFileTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    root_ = std::filesystem::temp_directory_path() / ("pp_release_pick_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    root_ = std::filesystem::temp_directory_path() /
+            ("pp_release_pick_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
     std::filesystem::create_directories(root_ / "capture");
     std::filesystem::create_directories(root_ / "capture2");
     std::filesystem::create_directories(root_ / "Movies" / "capture");

@@ -89,7 +89,8 @@ TEST(CallHopJoinLogicTest, TheRosterMigratesOnlyAFirstGroup) {
   in.n_joined = 3;
   EXPECT_EQ(DecideJoinedCountHop(in), JoinedCountHopAction::Migrate);
   in.planned_hop = true;
-  EXPECT_EQ(DecideJoinedCountHop(in), JoinedCountHopAction::Migrate) << "another member's joiner: its roster is all we see";
+  EXPECT_EQ(DecideJoinedCountHop(in), JoinedCountHopAction::Migrate)
+      << "another member's joiner: its roster is all we see";
   in.initiator_awaits_own_invitee = true;
   EXPECT_EQ(DecideJoinedCountHop(in), JoinedCountHopAction::AwaitJoinerAccept) << "its accept carries the hop report";
   in.has_sfu_hint = true;
@@ -107,7 +108,7 @@ TEST(CallHopJoinLogicTest, TheRosterMigratesOnlyAFirstGroup) {
 TEST(CallHopJoinLogicTest, AGroupCallWhoseDirectAttemptFailedTakesTheHop) {
   InboundAttachInput in;
   in.active_call = true;
-  in.status_allows_hop = false;  // Status Failed
+  in.status_allows_hop = false; // Status Failed
   in.direct_failed = true;
   in.n_joined = 3;
   in.attach_wait_for_call = true;

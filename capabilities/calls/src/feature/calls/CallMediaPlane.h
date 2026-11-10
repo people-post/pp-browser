@@ -19,7 +19,6 @@
 #include "mesh/host/MeshHost.h"
 #include "mesh/types/MeshHopTypes.h"
 
-
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -53,8 +52,7 @@ struct CallMediaPlaneDeps {
   std::function<bool(const std::string& peer_id)> peer_has_media_relay;
   std::function<std::vector<std::string>()> list_media_relay_peers;
   /** Dial-book account: ↔ PeerId learning — any thread (the stack enqueues it for the calls owner). */
-  std::function<void(const std::string& account_identity, const std::string& peer_id)>
-      note_mesh_peer_id_for_relay;
+  std::function<void(const std::string& account_identity, const std::string& peer_id)> note_mesh_peer_id_for_relay;
 };
 
 class CallMediaPlane : public Module {
@@ -81,15 +79,13 @@ public:
   void FinishMeshStop();
   /** Group SFU: close media_relay before LeaveCall joins capture. */
   void DetachRelayClient();
-  /** Transport Detach (after LeaveCall; the 1:1 path let go before). */
+  /** Drop every call's media on the transport (shutdown, after LeaveCall; the 1:1 path let go before). */
   void DetachTransport();
   /** Reset all plane-owned objects (CallStack::Shutdown). */
   void Clear();
 
-
   /** Register a call peer's listen addrs in the mesh listen book; learns account ↔ PeerId. */
-  void RegisterCallPeerListenMultiaddrs(const std::string& identity,
-                                        const std::vector<std::string>& multiaddrs);
+  void RegisterCallPeerListenMultiaddrs(const std::string& identity, const std::vector<std::string>& multiaddrs);
 
 private:
   mesh::MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }

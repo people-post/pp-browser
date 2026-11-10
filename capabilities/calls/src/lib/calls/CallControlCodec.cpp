@@ -33,8 +33,7 @@ std::vector<std::string> ParkedRelaysForWire(const std::vector<std::string>& rel
     if (out.size() >= kCallMaxAdvertisedCircuitRelays) {
       break;
     }
-    if (!relay.empty() && relay.size() <= kMaxPeerIdBytes &&
-        std::find(out.begin(), out.end(), relay) == out.end()) {
+    if (!relay.empty() && relay.size() <= kMaxPeerIdBytes && std::find(out.begin(), out.end(), relay) == out.end()) {
       out.push_back(relay);
     }
   }
@@ -736,8 +735,7 @@ Roe<CallPunchDetail> CallControlCodec::DecodePunch(const std::string& detail_jso
 }
 
 Roe<ThreadMessage> CallControlCodec::BuildSystemMessage(const std::string& thread_id, const CallControlType type,
-                                                        const std::string& display_text,
-                                                        const std::string& detail_json,
+                                                        const std::string& display_text, const std::string& detail_json,
                                                         const std::string& sender_contact_id,
                                                         const std::string& message_id) {
   ThreadMessage message;

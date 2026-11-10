@@ -195,8 +195,8 @@ void OnboardingController::OnShare(const ShareAnchor anchor) {
   if (account_id_.empty()) {
     return;
   }
-  ShareInviteOrCopy(AccountInviteText(nickname_.c_str(), account_id_.c_str(), contact_locator_), ports_.share_text, anchor,
-                    ports_.copy_text);
+  ShareInviteOrCopy(AccountInviteText(nickname_.c_str(), account_id_.c_str(), contact_locator_), ports_.share_text,
+                    anchor, ports_.copy_text);
 }
 
 void OnboardingController::NextCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,

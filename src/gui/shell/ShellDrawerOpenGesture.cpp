@@ -105,65 +105,65 @@ void ShellDrawerOpenGesture::ProcessEvent(ui::Event& event) {
     return;
   }
   switch (event.GetId()) {
-  case ui::EventId::Click:
-    // The Click that belongs to the press that opened the drawer, however long the drag took; it comes right after
-    // the Mouseup. Whatever the outcome the flag is spent here.
-    if (swallow_click_ && released_ &&
-        std::chrono::steady_clock::now() - swallow_click_release_ < std::chrono::milliseconds(300)) {
-      event.StopPropagation();
+    case ui::EventId::Click:
+      // The Click that belongs to the press that opened the drawer, however long the drag took; it comes right after
+      // the Mouseup. Whatever the outcome the flag is spent here.
+      if (swallow_click_ && released_ &&
+          std::chrono::steady_clock::now() - swallow_click_release_ < std::chrono::milliseconds(300)) {
+        event.StopPropagation();
+      }
+      swallow_click_ = false;
+      released_ = false;
+      break;
+    case ui::EventId::Mousedown:
+      swallow_click_ = false;
+      released_ = false;
+      Stop();
+      if (Excluded(event.GetTargetElement()) || !can_open_ || !can_open_()) {
+        return;
+      }
+      tracking_ = true;
+      start_x_px_ = EventMouseX(event);
+      start_y_px_ = EventMouseY(event);
+      SetDocumentCapture(true);
+      break;
+    case ui::EventId::Mousemove: {
+      if (!tracking_) {
+        return;
+      }
+      const int dx_px = EventMouseX(event) - start_x_px_;
+      const int dy_px = EventMouseY(event) - start_y_px_;
+      const ShellGestureAxis axis = axis_lock_.Observe(dx_px, dy_px, kDeadzonePx);
+      if (axis == ShellGestureAxis::None) {
+        return;
+      }
+      if (axis == ShellGestureAxis::Vertical || dx_px < 0) {
+        Stop(); // a scroll, or a drag to the left: not ours
+        return;
+      }
+      if (!Opens(PxToDp(dx_px), PxToDp(dy_px))) {
+        return;
+      }
+      // Keep the capture until the release: that Mouseup is what dates the Click to swallow.
+      tracking_ = false;
+      axis_lock_.Unlock();
+      swallow_click_ = true;
+      released_ = false;
+      if (can_open_ && can_open_() && on_open_) {
+        on_open_();
+      }
+      break;
     }
-    swallow_click_ = false;
-    released_ = false;
-    break;
-  case ui::EventId::Mousedown:
-    swallow_click_ = false;
-    released_ = false;
-    Stop();
-    if (Excluded(event.GetTargetElement()) || !can_open_ || !can_open_()) {
-      return;
-    }
-    tracking_ = true;
-    start_x_px_ = EventMouseX(event);
-    start_y_px_ = EventMouseY(event);
-    SetDocumentCapture(true);
-    break;
-  case ui::EventId::Mousemove: {
-    if (!tracking_) {
-      return;
-    }
-    const int dx_px = EventMouseX(event) - start_x_px_;
-    const int dy_px = EventMouseY(event) - start_y_px_;
-    const ShellGestureAxis axis = axis_lock_.Observe(dx_px, dy_px, kDeadzonePx);
-    if (axis == ShellGestureAxis::None) {
-      return;
-    }
-    if (axis == ShellGestureAxis::Vertical || dx_px < 0) {
-      Stop();  // a scroll, or a drag to the left: not ours
-      return;
-    }
-    if (!Opens(PxToDp(dx_px), PxToDp(dy_px))) {
-      return;
-    }
-    // Keep the capture until the release: that Mouseup is what dates the Click to swallow.
-    tracking_ = false;
-    axis_lock_.Unlock();
-    swallow_click_ = true;
-    released_ = false;
-    if (can_open_ && can_open_() && on_open_) {
-      on_open_();
-    }
-    break;
-  }
-  case ui::EventId::Mouseup:
-    Stop();
-    if (swallow_click_) {
-      released_ = true;
-      // No Click follows when the release lands elsewhere than the press target; do not stay armed.
-      swallow_click_release_ = std::chrono::steady_clock::now();
-    }
-    break;
-  default:
-    break;
+    case ui::EventId::Mouseup:
+      Stop();
+      if (swallow_click_) {
+        released_ = true;
+        // No Click follows when the release lands elsewhere than the press target; do not stay armed.
+        swallow_click_release_ = std::chrono::steady_clock::now();
+      }
+      break;
+    default:
+      break;
   }
 }
 

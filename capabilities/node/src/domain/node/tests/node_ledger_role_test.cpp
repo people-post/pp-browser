@@ -62,12 +62,13 @@ class NodeLedgerRoleTest : public ::testing::Test {
 protected:
   void SetUp() override {
     ASSERT_GE(sodium_init(), 0);
-    dir_ = std::filesystem::temp_directory_path() /
-           ("pp-node-ledger-role-test-" + std::to_string(std::random_device{}()));
+    dir_ =
+        std::filesystem::temp_directory_path() / ("pp-node-ledger-role-test-" + std::to_string(std::random_device{}()));
     auto stack = MakeStack(hub_, pp::adp::IpEndpoint::V4(10, 6, 0, 1, 1000), &listen_);
     ASSERT_NE(stack, nullptr);
     // Its own MeshPump, as in pp-node: the ledger's thread posts onto a driven io lane.
-    ASSERT_TRUE(static_cast<bool>(mesh_.AttachAmpStack(std::move(stack), listen_, mesh::MeshHost::AttachDrive::MeshPump)));
+    ASSERT_TRUE(
+        static_cast<bool>(mesh_.AttachAmpStack(std::move(stack), listen_, mesh::MeshHost::AttachDrive::MeshPump)));
   }
   void TearDown() override {
     mesh_.Stop();

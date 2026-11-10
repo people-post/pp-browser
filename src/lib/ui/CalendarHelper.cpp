@@ -14,8 +14,8 @@ namespace pbr {
 namespace {
 
 constexpr std::array<const char*, 12> kMonthNames = {
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
+    "January", "February", "March",     "April",   "May",      "June",
+    "July",    "August",   "September", "October", "November", "December",
 };
 
 bool IsLeapYear(int year) {
@@ -167,7 +167,7 @@ CalendarWidgetState BuildCalendarState(const CalendarConfig& config) {
     bool available = IsDateInRange(config.year, config.month, day, config.min_date, config.max_date);
     if (!config.available_days.empty()) {
       available = available && std::find(config.available_days.begin(), config.available_days.end(), iso) !=
-                                    config.available_days.end();
+                                   config.available_days.end();
     }
     row.available = available;
     flat_days.push_back(std::move(row));
@@ -221,9 +221,12 @@ std::string MockCalendarReplyJson() {
     "blocks": [
       { "type": "paragraph", "text": "Pick an available date:" },
       { "type": "calendar",
-        "min_date": ")JSON" << month_start << R"JSON(",
-        "max_date": ")JSON" << month_end << R"JSON(",
-        "available_days": [)JSON" << available.str() << R"JSON(]
+        "min_date": ")JSON"
+      << month_start << R"JSON(",
+        "max_date": ")JSON"
+      << month_end << R"JSON(",
+        "available_days": [)JSON"
+      << available.str() << R"JSON(]
       }
     ]
   })JSON";

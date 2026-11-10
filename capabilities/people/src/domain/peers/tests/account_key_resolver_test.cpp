@@ -104,14 +104,14 @@ TEST_F(AccountKeyResolverTest, TakesTheDirectorysKeysOnceAndKeepsThemAsACard) {
 
 TEST_F(AccountKeyResolverTest, RefusesAnEntryWhoseKeysAreNotTheAccounts) {
   directory_.hit = EntryFor(alice_);
-  directory_.hit.kem_public_key_b64 = mallory_.KemPublicB64();  // a substituted KEM key
+  directory_.hit.kem_public_key_b64 = mallory_.KemPublicB64(); // a substituted KEM key
   EXPECT_FALSE(resolver_->Kem().Resolve(kind_, alice_.account_id));
 
   directory_.hit = EntryFor(alice_);
-  directory_.hit.kem_binding_signature_b64.reset();  // no binding at all
+  directory_.hit.kem_binding_signature_b64.reset(); // no binding at all
   EXPECT_FALSE(resolver_->Kem().Resolve(kind_, alice_.account_id));
 
-  directory_.hit = EntryFor(mallory_);  // someone else's entry under Alice's id
+  directory_.hit = EntryFor(mallory_); // someone else's entry under Alice's id
   directory_.hit.account_id = alice_.account_id;
   EXPECT_FALSE(resolver_->Signing().Resolve(kind_, alice_.account_id));
   EXPECT_FALSE(kem_.Get(kind_, alice_.account_id).has_value());

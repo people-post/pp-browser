@@ -14,9 +14,7 @@ namespace {
 
 class ContactRemarkTest : public ::testing::Test {
 protected:
-  static void SetUpTestSuite() {
-    ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
-  }
+  static void SetUpTestSuite() { ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR)); }
 
   void SetUp() override { LocalizationService::Instance().SetPreferredLanguage("en"); }
   void TearDown() override { LocalizationService::Instance().SetPreferredLanguage("en"); }
@@ -125,5 +123,5 @@ TEST_F(ContactRemarkTest, ChineseWording) {
   EXPECT_EQ(Tr("contacts.remark.save_failed"), "备注没保存上，请再试一次");
 }
 
-}  // namespace
-}  // namespace pbr
+} // namespace
+} // namespace pbr

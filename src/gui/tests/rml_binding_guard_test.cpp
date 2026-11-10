@@ -52,69 +52,63 @@ TEST(RmlBindingGuardTest, DataRmlIsOnlyUsedForMarkupFields) {
     }
   }
   ASSERT_GT(files, 0u) << "no .rml files under " << PP_BROWSER_ASSETS_DIR;
-  EXPECT_TRUE(offenders.empty()) << "plain text must be bound as {{expr}}, not data-rml:\n" << [&] {
-    std::string joined;
-    for (const std::string& line : offenders) {
-      joined += "  " + line + "\n";
-    }
-    return joined;
-  }();
+  EXPECT_TRUE(offenders.empty()) << "plain text must be bound as {{expr}}, not data-rml:\n"
+                                 << [&] {
+                                      std::string joined;
+                                      for (const std::string& line : offenders) {
+                                        joined += "  " + line + "\n";
+                                      }
+                                      return joined;
+                                    }();
 }
 
-// Every name the Chats bar binds must be registered in the model its element declares (the bar's avatar and name live
-// in the settings model; the rest of the bar in the shell/window ones). A name nobody binds renders as nothing.
-TEST(RmlBindingGuardTest, TheChatsBarAvatarAndNameResolveInTheSettingsModel) {
-  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "sidebar.rml");
-  const size_t begin = rml.find("<div class=\"pane-nav\">");
-  const size_t end = rml.find("<div class=\"sidebar-header row\">");
+// The AI drawer's "you" row binds the avatar and name from the settings model (each element declares it) and the status
+// line from two window-model fields (ShellHost::SetChatsLink), which show only while the state is non-empty.
+TEST(RmlBindingGuardTest, TheAiDrawerMeRowResolvesItsNamesAndTheLinkStatus) {
+  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "ai_drawer.rml");
+  const size_t begin = rml.find("<button class=\"ai-drawer-me\"");
   ASSERT_NE(begin, std::string::npos);
-  ASSERT_NE(end, std::string::npos);
-  const std::string bar = rml.substr(begin, end - begin);
-  // The avatar element carries data-model="settings" itself, like the AI drawer's row, and the name span too.
-  EXPECT_NE(bar.find("<div class=\"shell-circle-avatar\" data-model=\"settings\""), std::string::npos);
-  EXPECT_NE(bar.find("<p class=\"pane-nav-avatar-name\" data-model=\"settings\">{{profile_nickname}}</p>"), std::string::npos);
+  const std::string row = rml.substr(begin);
+  EXPECT_NE(row.find("<div class=\"ai-drawer-me-avatar\" data-model=\"settings\""), std::string::npos);
+  EXPECT_NE(row.find("<p class=\"ai-drawer-me-name\" data-model=\"settings\">{{profile_nickname}}</p>"),
+            std::string::npos);
   const std::string settings = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/SettingsController.cpp");
-  for (const char* name : {"profile_has_icon", "profile_avatar_tone", "profile_icon_src", "profile_avatar_letter",
-                           "profile_nickname"}) {
-    EXPECT_NE(bar.find(name), std::string::npos) << name << " used by the bar";
+  for (const char* name :
+       {"profile_has_icon", "profile_avatar_tone", "profile_icon_src", "profile_avatar_letter", "profile_nickname"}) {
+    EXPECT_NE(row.find(name), std::string::npos) << name << " used by the row";
     EXPECT_NE(settings.find(std::string("ctor.Bind(\"") + name + "\""), std::string::npos)
         << name << " is bound in the settings model";
   }
-}
-
-// The status line under the name binds two window-model fields (ShellHost::SetChatsLink); both are registered there, and
-// the line shows only while the state is non-empty (unknown = nothing).
-TEST(RmlBindingGuardTest, TheChatsStatusLineBindsTheWindowModelsLinkFields) {
-  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "sidebar.rml");
-  EXPECT_NE(rml.find("class=\"pane-nav-avatar-sub\" data-if=\"chats_link_state != ''\""), std::string::npos);
-  EXPECT_NE(rml.find("{{chats_link_text}}"), std::string::npos);
+  EXPECT_NE(row.find("class=\"ai-drawer-me-link\" data-if=\"chats_link_state != ''\""), std::string::npos);
+  EXPECT_NE(row.find("{{chats_link_text}}"), std::string::npos);
+  EXPECT_NE(row.find("cloud-ok.svg"), std::string::npos);
+  EXPECT_NE(row.find("cloud-off.svg"), std::string::npos);
   const std::string host = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellHost.cpp");
   EXPECT_NE(host.find("ctor.Bind(\"chats_link_state\""), std::string::npos);
   EXPECT_NE(host.find("ctor.Bind(\"chats_link_text\""), std::string::npos);
 }
 
-// The drawer's "you" row is 64dp: the stylesheet's row, the spacer under the list and ShellHost's constant agree.
+// The drawer's "you" row is 76dp: the stylesheet's row, the spacer under the list and ShellHost's constant agree.
 TEST(RmlBindingGuardTest, TheAiDrawerMeRowHeightIsOneNumber) {
   const std::string css = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "themes" / "components.rcss");
   const std::string host = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellHost.cpp");
-  EXPECT_NE(host.find("kAiDrawerMeHeightDp = 64.f"), std::string::npos);
+  EXPECT_NE(host.find("kAiDrawerMeHeightDp = 76.f"), std::string::npos);
   const size_t row = css.find(".ai-drawer-me {");
   const size_t spacer = css.find(".ai-drawer-list-end {");
   ASSERT_NE(row, std::string::npos);
   ASSERT_NE(spacer, std::string::npos);
-  EXPECT_NE(css.substr(row, 400).find("min-height: 64dp;"), std::string::npos);
-  EXPECT_NE(css.substr(spacer, 120).find("height: 64dp;"), std::string::npos);
+  EXPECT_NE(css.substr(row, 400).find("min-height: 76dp;"), std::string::npos);
+  EXPECT_NE(css.substr(spacer, 120).find("height: 76dp;"), std::string::npos);
   const size_t avatar = css.find(".ai-drawer-me-avatar {");
   ASSERT_NE(avatar, std::string::npos);
-  EXPECT_NE(css.substr(avatar, 260).find("width: 44dp;"), std::string::npos);
+  EXPECT_NE(css.substr(avatar, 260).find("width: 56dp;"), std::string::npos);
 }
 
-// The Chats avatar's tap is the window model's event (ShellHost registers open_settings_from_avatar there); inside the
-// page's shell model it found no handler and the tap did nothing on the phone. The button declares the window model.
-TEST(RmlBindingGuardTest, TheChatsAvatarTapIsHandledByTheWindowModel) {
-  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "sidebar.rml");
-  EXPECT_NE(rml.find("<button class=\"pane-nav-avatar\" type=\"button\" data-model=\"window\" "
-                     "data-event-click=\"open_settings_from_avatar()\">"),
+// The drawer's "you" row tap is the window model's event (ShellHost registers open_settings_from_avatar there; the
+// drawer is not inside the page's shell model).
+TEST(RmlBindingGuardTest, TheDrawerMeRowTapIsHandledByTheWindowModel) {
+  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "ai_drawer.rml");
+  EXPECT_NE(rml.find("id=\"ai-drawer-me\" type=\"button\" data-event-click=\"open_settings_from_avatar()\""),
             std::string::npos);
   const std::string host = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellHost.cpp");
   const size_t window_model = host.find("Register(context, \"window\"");
@@ -179,7 +173,8 @@ TEST(RmlBindingGuardTest, TheChatHeaderShowsTheRowsGlyphForAnAiConversation) {
   const std::string avatar = rml.substr(start, rml.find("<div class=\"chat-header-text\">", start) - start);
   EXPECT_EQ(avatar.find("sparkle"), std::string::npos);
   EXPECT_EQ(avatar.find("!thread_is_ai && !thread_is_group && thread_avatar_tone"), std::string::npos);
-  EXPECT_NE(avatar.find("data-if=\"!thread_is_group && !thread_has_icon\">{{thread_avatar_letter}}"), std::string::npos);
+  EXPECT_NE(avatar.find("data-if=\"!thread_is_group && !thread_has_icon\">{{thread_avatar_letter}}"),
+            std::string::npos);
   const std::string chrome = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/chat/ChatThreadChrome.cpp");
   EXPECT_NE(chrome.find("MakeAvatarGlyph(label.title, label.stable_id)"), std::string::npos)
       << "the row's own inputs (ChatPresenter)";

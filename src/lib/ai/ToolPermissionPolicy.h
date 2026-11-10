@@ -35,8 +35,7 @@ public:
    */
   static bool AllowAlwaysEligible(const ToolMeta& meta);
   /** Persist Always allow / Never for a tool name. */
-  static void SetToolDecision(ToolPermissionsPrefs& prefs, const std::string& tool_name,
-                              const std::string& decision);
+  static void SetToolDecision(ToolPermissionsPrefs& prefs, const std::string& tool_name, const std::string& decision);
 
   static void ClearAllDecisions(ToolPermissionsPrefs& prefs);
   static void ClearToolDecision(ToolPermissionsPrefs& prefs, const std::string& tool_name);

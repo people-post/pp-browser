@@ -19,8 +19,7 @@ std::vector<uint8_t> BuildBlobListSignBytes(const std::string& relay_user_id, co
                                             int64_t timestamp);
 
 std::vector<uint8_t> BuildProfileIconSignBytes(const std::string& relay_user_id, const std::string& url,
-                                               const std::string& blob_id, const std::string& kind,
-                                               int64_t timestamp);
+                                               const std::string& blob_id, const std::string& kind, int64_t timestamp);
 
 // Relay files (`/files/*`, encrypted attachments): `pp-browser:relay-file-<op>-v1`, fields in the order of
 // app-static-api docs/relay-files.md.

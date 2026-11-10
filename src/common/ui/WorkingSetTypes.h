@@ -26,4 +26,4 @@ struct WorkingSetCandidate {
   std::string teaser_rml;
 };
 
-}  // namespace pbr
+} // namespace pbr

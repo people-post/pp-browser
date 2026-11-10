@@ -68,7 +68,7 @@ TEST(LargeTransferLaneTest, UploadsAndDownloadsRunSideBySide) {
   std::atomic<bool> download_ran{false};
   lane.Post(Direction::Upload, [&upload_started, released]() {
     upload_started = true;
-    released.wait();  // a long upload
+    released.wait(); // a long upload
   });
   ASSERT_TRUE(WaitFor([&] { return upload_started.load(); }));
   lane.Post(Direction::Download, [&]() { download_ran = true; });
@@ -102,13 +102,13 @@ TEST(LargeTransferLaneTest, ShutdownTellsAJobToStopAndJoins) {
   std::atomic<bool> saw_stop{false};
   lane->Post(Direction::Upload, [&]() {
     started = true;
-    while (!lane->Stopping()) {  // what a transfer's progress callback does
+    while (!lane->Stopping()) { // what a transfer's progress callback does
       std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     saw_stop = true;
   });
   ASSERT_TRUE(WaitFor([&] { return started.load(); }));
-  lane->Shutdown();  // returns only after the job ended
+  lane->Shutdown(); // returns only after the job ended
   EXPECT_TRUE(saw_stop.load());
   std::atomic<bool> late{false};
   lane->Post(Direction::Upload, [&]() { late = true; });
@@ -169,10 +169,8 @@ TEST_F(LargeDownloadTest, ALargeFileIsDownloadedOnTheLaneStoredEncryptedAndNotMa
   const ThreadMessage message = Message(*prepared, server_.Url());
 
   workflow_.EnqueueFromMessage("t1", message, /*force=*/true);
-  ASSERT_TRUE(WaitFor([&] {
-    return workflow_.StateFor("t1", prepared->fields) ==
-           AttachmentFetchWorkflow::DownloadState::Ready;
-  }));
+  ASSERT_TRUE(WaitFor(
+      [&] { return workflow_.StateFor("t1", prepared->fields) == AttachmentFetchWorkflow::DownloadState::Ready; }));
   EXPECT_TRUE(AttachmentBlobExists(*content_, prepared->fields.content_hash)) << "stored (encrypted) in the CAS";
   EXPECT_TRUE(AttachmentLocalPath(dir_.string(), "t1", prepared->fields.content_hash, prepared->fields.mime,
                                   prepared->fields.filename)
@@ -192,8 +190,7 @@ TEST_F(LargeDownloadTest, ASmallFileIsStillMaterializedAtOnce) {
   server_.SetResponse(std::string(prepared->ciphertext.begin(), prepared->ciphertext.end()));
   workflow_.EnqueueFromMessage("t1", Message(*prepared, server_.Url()), /*force=*/true);
   ASSERT_TRUE(WaitFor([&] {
-    return workflow_.StateFor("t1", prepared->fields) ==
-           AttachmentFetchWorkflow::DownloadState::Ready;
+    return workflow_.StateFor("t1", prepared->fields) == AttachmentFetchWorkflow::DownloadState::Ready;
   })) << "state "
       << static_cast<int>(workflow_.StateFor("t1", prepared->fields));
   // Ready is read from the stored (encrypted) file; the plaintext view is written right after it, so wait for it.
@@ -215,7 +212,7 @@ TEST_F(LargeDownloadTest, ACancelledDownloadLeavesNoFailureAndNoPercent) {
   std::promise<void> release;
   auto released = release.get_future().share();
   std::atomic<bool> gate_started{false};
-  lane_.Post(Direction::Download, [&gate_started, released]() {  // keeps the job waiting in the lane
+  lane_.Post(Direction::Download, [&gate_started, released]() { // keeps the job waiting in the lane
     gate_started = true;
     released.wait();
   });
@@ -223,19 +220,17 @@ TEST_F(LargeDownloadTest, ACancelledDownloadLeavesNoFailureAndNoPercent) {
 
   workflow_.EnqueueFromMessage("t1", Message(*prepared, server_.Url()), /*force=*/true);
   ASSERT_TRUE(WaitFor([&] {
-    return workflow_.StateFor("t1", prepared->fields) ==
-           AttachmentFetchWorkflow::DownloadState::Downloading;
+    return workflow_.StateFor("t1", prepared->fields) == AttachmentFetchWorkflow::DownloadState::Downloading;
   }));
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));  // the drain has handed it to the lane
-  workflow_.ForgetThread("t1");                                   // the thread (message) is deleted
+  std::this_thread::sleep_for(std::chrono::milliseconds(100)); // the drain has handed it to the lane
+  workflow_.ForgetThread("t1");                                // the thread (message) is deleted
   release.set_value();
 
   std::atomic<bool> lane_idle{false};
   lane_.Post(Direction::Download, [&]() { lane_idle = true; });
   ASSERT_TRUE(WaitFor([&] { return lane_idle.load(); }));
-  std::this_thread::sleep_for(std::chrono::milliseconds(300));  // the result is handled on a worker
-  EXPECT_NE(workflow_.StateFor("t1", prepared->fields),
-            AttachmentFetchWorkflow::DownloadState::Failed);
+  std::this_thread::sleep_for(std::chrono::milliseconds(300)); // the result is handled on a worker
+  EXPECT_NE(workflow_.StateFor("t1", prepared->fields), AttachmentFetchWorkflow::DownloadState::Failed);
   EXPECT_EQ(workflow_.ProgressPercent("t1", prepared->fields.content_hash), -1);
   EXPECT_FALSE(AttachmentBlobExists(*content_, prepared->fields.content_hash));
 }

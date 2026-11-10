@@ -24,8 +24,7 @@ namespace pbr {
 
 namespace {
 
-Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag,
-                              const ByteVector* seeded_coins = nullptr) {
+Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag, const ByteVector* seeded_coins = nullptr) {
   const bool have_both = !identity.kem_public_key_b64.empty() && !identity.kem_private_key_b64.empty();
   if (have_both) {
     auto pk = Base64Decode(identity.kem_public_key_b64);
@@ -66,8 +65,7 @@ Roe<void> EnsureDeviceKemKeys(LocalIdentity& identity, bool& dirty_flag, const B
   return {};
 }
 
-Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag,
-                                 const ByteVector* seeded_seed = nullptr) {
+Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag, const ByteVector* seeded_seed = nullptr) {
   const bool have_both =
       !identity.account_signing_public_key_b64.empty() && !identity.account_signing_private_key_b64.empty();
   if (have_both) {
@@ -85,8 +83,7 @@ Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag,
       return {};
     }
   }
-  Roe<MlDsaKeyPair> generated =
-      seeded_seed ? MlDsa::GenerateKeyPairFromSeed(*seeded_seed) : MlDsa::GenerateKeyPair();
+  Roe<MlDsaKeyPair> generated = seeded_seed ? MlDsa::GenerateKeyPairFromSeed(*seeded_seed) : MlDsa::GenerateKeyPair();
   if (!generated) {
     return generated.error();
   }
@@ -364,10 +361,8 @@ Roe<void> IdentityStore::EnsureLoaded() const {
       recovery = std::move(*keys_from_seed);
       identity_.recovery_seed_b64 = Base64Encode(seed);
     }
-    const ByteVector* kem_coins =
-        derived ? &derived->account_ml_kem_coins : &recovery->account_ml_kem_coins;
-    const ByteVector* account_seed =
-        derived ? &derived->account_ml_dsa_seed : &recovery->account_ml_dsa_seed;
+    const ByteVector* kem_coins = derived ? &derived->account_ml_kem_coins : &recovery->account_ml_kem_coins;
+    const ByteVector* account_seed = derived ? &derived->account_ml_dsa_seed : &recovery->account_ml_dsa_seed;
     if (auto kem = EnsureHybridKemKeys(identity_, dirty_, kem_coins); !kem) {
       return kem.error();
     }
@@ -481,7 +476,9 @@ Roe<void> IdentityStore::EnsureLoaded() const {
   return {};
 }
 
-Roe<void> IdentityStore::Save() const { return SaveIdentity(identity_); }
+Roe<void> IdentityStore::Save() const {
+  return SaveIdentity(identity_);
+}
 
 Roe<void> IdentityStore::SaveIdentity(const LocalIdentity& identity) const {
   if (auto dek = RequireDek(); !dek) {

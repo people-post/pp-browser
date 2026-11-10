@@ -68,7 +68,7 @@ TEST(GroupMentionsTest, TokensMovedByEditsAroundThemAreFoundAgain) {
 }
 
 TEST(GroupMentionsTest, ATokenEditedAwayIsDroppedTheRestStay) {
-  const std::string text = "@Alce and @Bob";  // "@Alice" mistyped afterwards
+  const std::string text = "@Alce and @Bob"; // "@Alice" mistyped afterwards
   const auto spans = MentionSpansForDraft(text, {Mention(kAlice, "Alice"), Mention(kBob, "Bob")});
   ASSERT_EQ(spans.size(), 1u);
   EXPECT_EQ(spans[0].account_id, kBob);
@@ -102,8 +102,7 @@ TEST(GroupMentionsTest, EachTokenIsSearchedAfterThePreviousInInsertionOrder) {
 TEST(GroupMentionsTest, AnAccountOrEveryoneTwiceIsMarkedOnce) {
   // The receiver rejects a message naming an account twice or holding two everyone spans (G015).
   const std::string text = "@Bob @Bob @everyone @everyone";
-  const auto spans =
-      MentionSpansForDraft(text, {Mention(kBob, "Bob"), Mention(kBob, "Bob"), Everyone(), Everyone()});
+  const auto spans = MentionSpansForDraft(text, {Mention(kBob, "Bob"), Mention(kBob, "Bob"), Everyone(), Everyone()});
   ASSERT_EQ(spans.size(), 2u);
   EXPECT_EQ(spans[0].account_id, kBob);
   EXPECT_EQ(spans[0].start, 0u);
@@ -114,11 +113,11 @@ TEST(GroupMentionsTest, AnAccountOrEveryoneTwiceIsMarkedOnce) {
 }
 
 TEST(GroupMentionsTest, MultibyteNicknamesAreUtf8ByteRanges) {
-  const std::string name = "\xE5\xBC\xA0\xE4\xB8\x89";  // 张三
-  const std::string text = "\xE4\xBD\xA0\xE5\xA5\xBD @" + name + " \xE5\x90\x83\xE9\xA5\xAD";  // 你好 @张三 吃饭
+  const std::string name = "\xE5\xBC\xA0\xE4\xB8\x89";                                        // 张三
+  const std::string text = "\xE4\xBD\xA0\xE5\xA5\xBD @" + name + " \xE5\x90\x83\xE9\xA5\xAD"; // 你好 @张三 吃饭
   const auto spans = MentionSpansForDraft(text, {Mention(kZhang, name)});
   ASSERT_EQ(spans.size(), 1u);
-  EXPECT_EQ(spans[0].start, 7u);  // "你好 " is 7 bytes
+  EXPECT_EQ(spans[0].start, 7u); // "你好 " is 7 bytes
   EXPECT_EQ(spans[0].end, 7u + 1 + name.size());
   EXPECT_EQ(Covered(text, spans[0]), "@" + name);
   EXPECT_EQ(text_spans::KeepValidRanges(text, spans).size(), 1u);
@@ -182,13 +181,14 @@ TEST(GroupMentionsTest, TwoSameNameMembersInTextOrderKeepTheirPickOrder) {
   EXPECT_EQ(spans[1].account_id, "acct-bob-bbb");
   EXPECT_EQ(spans[1].start, 9u);
   // The twins can still swap when the user moves a token past the other one: the first pick takes the first token.
-  const auto moved = MentionSpansForDraft("@Bob and @Bob", {Mention("acct-bob-bbb", "Bob"), Mention("acct-bob-aaa", "Bob")});
+  const auto moved =
+      MentionSpansForDraft("@Bob and @Bob", {Mention("acct-bob-bbb", "Bob"), Mention("acct-bob-aaa", "Bob")});
   EXPECT_EQ(moved[0].account_id, "acct-bob-bbb");
 }
 
 TEST(GroupMentionsTest, AShorterNameThatStartsAnotherDoesNotTakeItsFront) {
-  const std::string zhang = "\xE5\xBC\xA0";            // 张
-  const std::string zhang_san = "\xE5\xBC\xA0\xE4\xB8\x89";  // 张三
+  const std::string zhang = "\xE5\xBC\xA0";                 // 张
+  const std::string zhang_san = "\xE5\xBC\xA0\xE4\xB8\x89"; // 张三
   const std::string text = "@" + zhang_san + " @" + zhang;
   const auto spans = MentionSpansForDraft(text, {Mention("acct-short", zhang), Mention(kZhang, zhang_san)});
   ASSERT_EQ(spans.size(), 2u);
@@ -221,7 +221,7 @@ TEST(GroupMentionsTest, PickerListsOtherMembersByNameAndEveryoneForTheOwnerOnly)
   const auto lines =
       MentionCandidates(Roster(), kMe, /*local_may_mention_everyone=*/false, NameOf, "", kEveryoneMentionWord);
   ASSERT_EQ(lines.size(), 4u);
-  EXPECT_EQ(lines[0].name, "alice");  // ASCII case does not split the order
+  EXPECT_EQ(lines[0].name, "alice"); // ASCII case does not split the order
   EXPECT_EQ(lines[1].name, "Bob");
   EXPECT_EQ(lines[2].name, "Olga");
   EXPECT_EQ(lines[3].account_id, kZhang);
@@ -236,7 +236,7 @@ TEST(GroupMentionsTest, PickerListsOtherMembersByNameAndEveryoneForTheOwnerOnly)
   ASSERT_FALSE(owner_lines.empty());
   EXPECT_TRUE(owner_lines[0].kind == TextSpanKind::Everyone);
   EXPECT_EQ(owner_lines[0].Token(), "@everyone");
-  EXPECT_EQ(owner_lines.size(), 5u);  // everyone + the four others
+  EXPECT_EQ(owner_lines.size(), 5u); // everyone + the four others
 }
 
 TEST(GroupMentionsTest, PickerFiltersByTheTypedQuery) {
@@ -246,7 +246,8 @@ TEST(GroupMentionsTest, PickerFiltersByTheTypedQuery) {
   const auto ev = MentionCandidates(Roster(), kOwner, true, NameOf, "ev", kEveryoneMentionWord);
   ASSERT_EQ(ev.size(), 1u);
   EXPECT_TRUE(ev[0].kind == TextSpanKind::Everyone);
-  EXPECT_TRUE(MentionCandidates(Roster(), kMe, false, NameOf, "ev", kEveryoneMentionWord).empty()) << "not the owner: no @everyone";
+  EXPECT_TRUE(MentionCandidates(Roster(), kMe, false, NameOf, "ev", kEveryoneMentionWord).empty())
+      << "not the owner: no @everyone";
   const auto zh = MentionCandidates(Roster(), kMe, false, NameOf, "\xE5\xBC\xA0", kEveryoneMentionWord);
   ASSERT_EQ(zh.size(), 1u);
   EXPECT_EQ(zh[0].account_id, kZhang);
@@ -282,7 +283,8 @@ TEST(GroupMentionsTest, TheQueryRunsFromTheAtToTheCaret) {
   EXPECT_EQ(MentionQueryAt("hi @", 3, 4), std::optional<std::string>(""));
   EXPECT_EQ(MentionQueryAt("hi @bo", 3, 6), std::optional<std::string>("bo"));
   EXPECT_EQ(MentionQueryAt("hi @ there", 3, 4), std::optional<std::string>(""));
-  EXPECT_EQ(MentionQueryAt("hi @bo there", 3, 6), std::optional<std::string>("bo")) << "words after the caret are not the query";
+  EXPECT_EQ(MentionQueryAt("hi @bo there", 3, 6), std::optional<std::string>("bo"))
+      << "words after the caret are not the query";
   EXPECT_FALSE(MentionQueryAt("hi @bo ", 3, 7)) << "a space after the word: the user typed on";
   EXPECT_FALSE(MentionQueryAt("hi bo", 3, 5)) << "the @ was deleted";
   EXPECT_FALSE(MentionQueryAt("hi", 3, 2));
@@ -298,8 +300,8 @@ TEST(GroupMentionsTest, AnAtTypedInFrontOfAWordLeavesTheWordAlone) {
   EXPECT_EQ(inserted.text, "@Bob hello");
   EXPECT_EQ(inserted.caret, 5u);
   // In Chinese text (3 bytes a character), with the caret counted in bytes: "你好@世界" -> "你好@Bob 世界".
-  const std::string hello = "\xE4\xBD\xA0\xE5\xA5\xBD";  // 你好
-  const std::string world = "\xE4\xB8\x96\xE7\x95\x8C";  // 世界
+  const std::string hello = "\xE4\xBD\xA0\xE5\xA5\xBD"; // 你好
+  const std::string world = "\xE4\xB8\x96\xE7\x95\x8C"; // 世界
   const std::string text = hello + "@" + world;
   EXPECT_EQ(MentionQueryAt(text, hello.size(), hello.size() + 1), std::optional<std::string>(""));
   inserted = InsertMention(text, hello.size(), hello.size() + 1, "@Bob");
@@ -326,7 +328,9 @@ TEST(GroupMentionsTest, ChoosingReplacesTheQueryWithTheTokenAndASpace) {
 // --- members that share a name -------------------------------------------------------------------
 
 TEST(GroupMentionsTest, MembersWithTheSameNameShowAShortIdTheOthersDoNot) {
-  const auto twin_name = [](const std::string& account) { return account == kBob2 ? std::string("Bob") : NameOf(account); };
+  const auto twin_name = [](const std::string& account) {
+    return account == kBob2 ? std::string("Bob") : NameOf(account);
+  };
   auto roster = Roster();
   GroupRosterMember twin;
   twin.member_identity = kBob2;
@@ -391,7 +395,7 @@ struct PreloadFixture {
   int loaded_notices = 0;
   uint64_t version = 1;
   int64_t now = 100000;
-  std::vector<std::function<void()>> pending;  // loads waiting for their turn on the "worker"
+  std::vector<std::function<void()>> pending; // loads waiting for their turn on the "worker"
   bool deferred = false;
   std::vector<GroupRosterMember> roster = Roster();
   MentionCandidatePreload preload{
@@ -407,7 +411,7 @@ struct PreloadFixture {
       },
       [this]() -> MentionCandidatePreload::Reader {
         return [this](const std::string&) {
-          ++reads;  // the roster, the cards, the contacts: all behind this call
+          ++reads; // the roster, the cards, the contacts: all behind this call
           return AllMentionCandidates(
               roster, kOwner, true,
               [](const std::string& account) { return account == "acct-dave" ? std::string("Dave") : NameOf(account); },
@@ -444,8 +448,8 @@ TEST(GroupMentionsTest, TheGroupsLinesAreReadWhenItsChatOpensAndTypingOnlyFilter
   EXPECT_EQ(f.preload.Filter("b").size(), 1u);
   EXPECT_EQ(f.preload.Filter("bo").size(), 1u);
   EXPECT_EQ(f.preload.Filter("ev").size(), 1u);
-  f.preload.Open("thread-hike");  // the chat refreshing itself is not a new open
-  f.preload.Changed();            // nor is a refresh with no membership change
+  f.preload.Open("thread-hike"); // the chat refreshing itself is not a new open
+  f.preload.Changed();           // nor is a refresh with no membership change
   EXPECT_EQ(f.reads, 1);
 }
 
@@ -454,13 +458,13 @@ TEST(GroupMentionsTest, AMembershipChangeReloadsOnceNotEveryRefresh) {
   f.preload.Open("thread-hike");
   for (int refresh = 0; refresh < 10; ++refresh) {
     f.now += 1000;
-    f.preload.Changed();  // ten refreshes, nothing changed in the group
+    f.preload.Changed(); // ten refreshes, nothing changed in the group
   }
   EXPECT_EQ(f.reads, 1);
   GroupRosterMember dave;
   dave.member_identity = "acct-dave";
   f.roster.push_back(dave);
-  ++f.version;  // a membership event was applied
+  ++f.version; // a membership event was applied
   f.preload.Changed();
   f.preload.Changed();
   EXPECT_EQ(f.reads, 2) << "one reload for the change";
@@ -472,8 +476,8 @@ TEST(GroupMentionsTest, AChangeDuringALoadIsReadAfterIt) {
   f.deferred = true;
   f.preload.Open("thread-hike");
   ++f.version;
-  f.preload.Changed();  // arrives while the first read is out
-  f.RunPending();       // first read lands; a second starts at once
+  f.preload.Changed(); // arrives while the first read is out
+  f.RunPending();      // first read lands; a second starts at once
   EXPECT_EQ(f.reads, 1);
   f.RunPending();
   EXPECT_EQ(f.reads, 2);
@@ -503,11 +507,11 @@ TEST(GroupMentionsTest, AnotherChatDropsTheLinesAndAReopenReadsAgainAndTellsTheP
   PreloadFixture f;
   f.deferred = true;
   f.preload.Open("thread-hike");
-  f.preload.Typed();  // `@` typed while the first read is out: nothing to show yet
+  f.preload.Typed(); // `@` typed while the first read is out: nothing to show yet
   EXPECT_FALSE(f.preload.Ready());
-  f.preload.Drop();   // the user went to another chat and came back
+  f.preload.Drop(); // the user went to another chat and came back
   f.preload.Open("thread-hike");
-  f.RunFirst();       // the first read lands after the drop: ignored; the second is the live one
+  f.RunFirst(); // the first read lands after the drop: ignored; the second is the live one
   EXPECT_FALSE(f.preload.Ready());
   EXPECT_EQ(f.loaded_notices, 0);
   f.RunPending();
@@ -523,7 +527,7 @@ TEST(GroupMentionsTest, AFirstAtBeforeTheLoadIsDoneWaitsForItWithoutBlocking) {
   f.deferred = true;
   f.preload.Open("thread-hike");
   EXPECT_FALSE(f.preload.Ready()) << "the read has not run: the UI thread is not waiting for it";
-  f.preload.Typed();  // does not start a second load
+  f.preload.Typed(); // does not start a second load
   EXPECT_EQ(f.pending.size(), 1u);
   f.RunPending();
   EXPECT_TRUE(f.preload.Ready());
@@ -536,8 +540,8 @@ TEST(GroupMentionsTest, APickOfSomeoneWhoLeftIsDroppedAtSend) {
   roster.members = {kMe, kAlice};
   roster.everyone_senders = {kOwner};
   roster.local_account = kMe;
-  const std::vector<TextSpan> spans = {Span(TextSpanKind::Mention, 0, 6, kAlice), Span(TextSpanKind::Mention, 7, 11, kBob),
-                                       Span(TextSpanKind::Everyone, 12, 21)};
+  const std::vector<TextSpan> spans = {Span(TextSpanKind::Mention, 0, 6, kAlice),
+                                       Span(TextSpanKind::Mention, 7, 11, kBob), Span(TextSpanKind::Everyone, 12, 21)};
   const auto kept = KeepMentionsOnRoster(spans, roster);
   ASSERT_EQ(kept.size(), 1u) << "Bob left; we are not the owner, so no everyone";
   EXPECT_EQ(kept[0].account_id, kAlice);
@@ -548,7 +552,7 @@ TEST(GroupMentionsTest, APickOfSomeoneWhoLeftIsDroppedAtSend) {
 // --- the everyone line in the user's language --------------------------------------------------
 
 TEST(GroupMentionsTest, EveryoneInChineseIsFoundByAPrefixOfItsWordOrByEveryone) {
-  const std::string word = "\xE6\x89\x80\xE6\x9C\x89\xE4\xBA\xBA";  // 所有人
+  const std::string word = "\xE6\x89\x80\xE6\x9C\x89\xE4\xBA\xBA"; // 所有人
   for (const char* query : {"", "\xE6\x89\x80", "\xE6\x89\x80\xE6\x9C\x89", "\xE6\x9C\x89\xE4\xBA\xBA", "every"}) {
     const auto lines = MentionCandidates(Roster(), kOwner, true, NameOf, query, word);
     ASSERT_FALSE(lines.empty()) << query;
@@ -568,16 +572,18 @@ TEST(GroupMentionsTest, EveryoneInEnglishStaysEveryone) {
     ASSERT_FALSE(lines.empty()) << query;
     EXPECT_EQ(lines[0].Token(), "@everyone");
   }
-  EXPECT_TRUE(MentionCandidates(Roster(), kOwner, true, NameOf, "\xE6\x89\x80", kEveryoneMentionWord).empty()) << "no Chinese word in English";
+  EXPECT_TRUE(MentionCandidates(Roster(), kOwner, true, NameOf, "\xE6\x89\x80", kEveryoneMentionWord).empty())
+      << "no Chinese word in English";
 }
 
 TEST(GroupMentionsTest, TheInsertedChineseEveryoneBecomesTheEveryoneSpan) {
-  const std::string word = "\xE6\x89\x80\xE6\x9C\x89\xE4\xBA\xBA";  // 所有人
+  const std::string word = "\xE6\x89\x80\xE6\x9C\x89\xE4\xBA\xBA"; // 所有人
   const auto lines = MentionCandidates(Roster(), kOwner, true, NameOf, "", word);
   ASSERT_FALSE(lines.empty());
   const ComposerMention recorded{lines[0].kind, lines[0].account_id, lines[0].Token()};
   // What the picker leaves in the draft: "@所有人 " then the typed words; also directly followed by Chinese text.
-  for (const std::string& text : {"@" + word + " \xE5\x90\x83\xE9\xA5\xAD", "\xE5\xA4\xA7\xE5\xAE\xB6 @" + word + "\xE5\x90\x83\xE9\xA5\xAD"}) {
+  for (const std::string& text :
+       {"@" + word + " \xE5\x90\x83\xE9\xA5\xAD", "\xE5\xA4\xA7\xE5\xAE\xB6 @" + word + "\xE5\x90\x83\xE9\xA5\xAD"}) {
     const auto spans = MentionSpansForDraft(text, {recorded});
     ASSERT_EQ(spans.size(), 1u) << text;
     EXPECT_TRUE(spans[0].Is(TextSpanKind::Everyone));
@@ -634,9 +640,12 @@ TEST(GroupMentionsTest, BadRangesAndTheQuotedPartAreNotHighlighted) {
   MentionRoster roster = RosterNow();
   roster.members.insert(kZhang);
   // Ends inside a character, or past the text, or not on an '@'.
-  EXPECT_TRUE(EligibleMentionRuns(text, text.size(), {Span(TextSpanKind::Mention, 0, 3, kZhang)}, roster, kBob).empty());
-  EXPECT_TRUE(EligibleMentionRuns(text, text.size(), {Span(TextSpanKind::Mention, 0, 99, kZhang)}, roster, kBob).empty());
-  EXPECT_TRUE(EligibleMentionRuns(text, text.size(), {Span(TextSpanKind::Mention, 1, 7, kZhang)}, roster, kBob).empty());
+  EXPECT_TRUE(
+      EligibleMentionRuns(text, text.size(), {Span(TextSpanKind::Mention, 0, 3, kZhang)}, roster, kBob).empty());
+  EXPECT_TRUE(
+      EligibleMentionRuns(text, text.size(), {Span(TextSpanKind::Mention, 0, 99, kZhang)}, roster, kBob).empty());
+  EXPECT_TRUE(
+      EligibleMentionRuns(text, text.size(), {Span(TextSpanKind::Mention, 1, 7, kZhang)}, roster, kBob).empty());
   const auto ok = EligibleMentionRuns(text, text.size(), {Span(TextSpanKind::Mention, 0, 7, kZhang)}, roster, kBob);
   ASSERT_EQ(ok.size(), 1u);
   EXPECT_EQ(text.substr(ok[0].begin, ok[0].end - ok[0].begin), "@" + name);

@@ -19,6 +19,11 @@ Roe<std::vector<uint8_t>> EncodePngBytes(SDL_Surface* surface);
 // Caller owns the result; nullptr on failure.
 SDL_Surface* ScaleToMaxDimension(SDL_Surface* source, int max_dimension);
 
+/** A copy of the `rect` part of `source` as a new surface. A rectangle reaching outside the picture is clamped to it;
+ *  nullptr when nothing of it is inside (an empty rectangle included) or the copy cannot be made. Pixels (alpha too)
+ *  are copied as they are; an indexed picture comes out as RGBA. `source` is not consumed; caller owns the result. */
+SDL_Surface* CropSurface(SDL_Surface* source, SDL_Rect rect);
+
 /** Rotates / mirrors `source` upright for an EXIF orientation 2..8 (any whole-byte pixel format). Consumes
  *  `source`; returns it unchanged for 1 or an unknown value, nullptr when the copy cannot be made. */
 SDL_Surface* ApplyExifOrientation(SDL_Surface* source, int orientation);

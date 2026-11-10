@@ -130,7 +130,7 @@ public:
   static Roe<GroupPresetChangedPayload> DecodeGroupPresetChangedFromMessage(const ThreadMessage& message);
 
   static Roe<std::string> EncodeGroupRenamed(const std::string& group_id, const std::string& title,
-                                            uint64_t roster_epoch, uint64_t title_version);
+                                             uint64_t roster_epoch, uint64_t title_version);
   struct GroupRenamedPayload {
     std::string group_id;
     std::string title;

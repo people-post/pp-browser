@@ -15,7 +15,8 @@
 
 namespace pbr {
 
-PeerSessionKey GroupE2ePayloadCodec::PairTargetKey(const std::string& member_identity, const std::string& member_device) {
+PeerSessionKey GroupE2ePayloadCodec::PairTargetKey(const std::string& member_identity,
+                                                   const std::string& member_device) {
   PeerSessionKey key;
   key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   key.peer_identity_value = member_identity;
@@ -72,9 +73,9 @@ Roe<std::vector<uint8_t>> GroupE2ePayloadCodec::EncodeCopyPlaintext(const std::s
     WireLenUtf8 id{group_id};
     ar & id;
     uint64_t epoch = state.statement_epoch;
-    ar& epoch;
+    ar & epoch;
     WireLenUtf8 hash{state.changes_hash};
-    ar& hash;
+    ar & hash;
     WireLenBytes payload{chat_payload};
     ar & payload;
   }
@@ -94,9 +95,9 @@ Roe<GroupCopyPlaintext> GroupE2ePayloadCodec::DecodeCopyPlaintext(const std::vec
   WireLenUtf8 group_id;
   ar & group_id;
   uint64_t statement_epoch = 0;
-  ar& statement_epoch;
+  ar & statement_epoch;
   WireLenUtf8 changes_hash;
-  ar& changes_hash;
+  ar & changes_hash;
   WireLenBytes chat_payload;
   ar & chat_payload;
   if (ar.failed() || !ar.exactEnd()) {
@@ -145,7 +146,7 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
   };
   for (const GroupMemberTarget& member : members) {
     if (member.member_identity == sender_contact_id && member.target_key.peer_device.empty()) {
-      result.copies.emplace_back();  // never an account copy to ourselves
+      result.copies.emplace_back(); // never an account copy to ourselves
       continue;
     }
     // Each member's copy is a pairwise e2e_public message at the pair's own epoch, opened (and announced
@@ -171,7 +172,7 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
       }
       master_psk = std::move(*decoded);
       if (loaded->has_value() && (*loaded)->session_epoch == key_epoch) {
-        key_init_b64 = (*loaded)->auto_key_init_pending;  // ours, not confirmed yet: keep announcing it
+        key_init_b64 = (*loaded)->auto_key_init_pending; // ours, not confirmed yet: keep announcing it
       }
     } else {
       auto peer_public = resolve_peer_kem_public(member.target_key);

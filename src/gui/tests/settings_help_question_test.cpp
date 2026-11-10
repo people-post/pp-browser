@@ -27,7 +27,7 @@ class SettingsHelpQuestionTest : public ::testing::Test {
 protected:
   static void SetUpTestSuite() {
     ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
-    LocalizationService::Instance().SetPreferredLanguage("en");  // not the machine's language
+    LocalizationService::Instance().SetPreferredLanguage("en"); // not the machine's language
   }
   void TearDown() override { LocalizationService::Instance().SetPreferredLanguage("en"); }
 };
@@ -36,7 +36,8 @@ TEST_F(SettingsHelpQuestionTest, TheQuestionNamesTheSettingInTheUiLanguage) {
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
   EXPECT_EQ(SettingHelpQuestion("settings.security.crash_reports.label"), "「闪退时自动发送报告」是什么意思？");
   LocalizationService::Instance().SetPreferredLanguage("en");
-  EXPECT_EQ(SettingHelpQuestion("settings.security.crash_reports.label"), "What does “Send a report if PP crashes” do?");
+  EXPECT_EQ(SettingHelpQuestion("settings.security.crash_reports.label"),
+            "What does “Send a report if PP crashes” do?");
 }
 
 TEST_F(SettingsHelpQuestionTest, OnlySettingsLabelsAsk) {
@@ -92,15 +93,16 @@ TEST_F(SettingsHelpQuestionTest, PhonesShowCrashReportsAndProblemLogsInAboutHelp
   EXPECT_NE(about.find("<p class=\"text group-head settings-phone-only\">{{i18n:settings.about.improve.title}}"),
             std::string::npos);
   EXPECT_NE(about.find("<div class=\"group-card settings-phone-only\">", card), std::string::npos);
-  for (const char* piece : {"ask_setting_help('settings.security.crash_reports.label')", "toggle_crash_reports()",
-                            "{{i18n:settings.security.crash_reports.help}}", "send_diagnostics()",
-                            "open_diagnostics_help()", "{{i18n:settings.security.diagnostics.help}}",
-                            "copy_diagnostics_id()"}) {
+  for (const char* piece :
+       {"ask_setting_help('settings.security.crash_reports.label')", "toggle_crash_reports()",
+        "{{i18n:settings.security.crash_reports.help}}", "send_diagnostics()", "open_diagnostics_help()",
+        "{{i18n:settings.security.diagnostics.help}}", "copy_diagnostics_id()"}) {
     EXPECT_NE(about.find(piece, card), std::string::npos) << piece;
   }
   const std::string security = ReadAsset("views/settings_section_security.rml");
   EXPECT_NE(security.find("<div class=\"group-card settings-desktop-only\">"), std::string::npos);
-  EXPECT_NE(security.find("group-actions settings-desktop-only\" data-if=\"show_diagnostics_send\""), std::string::npos);
+  EXPECT_NE(security.find("group-actions settings-desktop-only\" data-if=\"show_diagnostics_send\""),
+            std::string::npos);
   EXPECT_EQ(Tr("settings.about.improve.title"), "Help improve PP");
   EXPECT_EQ(Tr("settings.security.diagnostics.send"), "Send problem logs");
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");

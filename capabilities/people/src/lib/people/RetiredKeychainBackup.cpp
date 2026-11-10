@@ -1,6 +1,5 @@
 #include "lib/people/RetiredKeychainBackup.h"
 
-
 namespace pbr {
 
 namespace {

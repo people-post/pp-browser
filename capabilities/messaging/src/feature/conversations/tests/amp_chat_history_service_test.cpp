@@ -57,7 +57,7 @@ public:
 
     DirectChatTarget target;
     target.peer_identity_kind = "account";
-    target.peer_identity_value = identity->Get()->account_id;  // the requester signs as this account
+    target.peer_identity_value = identity->Get()->account_id; // the requester signs as this account
     target.channel = ThreadChannel::E2e;
     auto created = store->FindOrCreateDirectThread(target, "contact-requester", "Requester");
     if (!created) {

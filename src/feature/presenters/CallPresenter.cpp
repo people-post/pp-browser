@@ -1,7 +1,10 @@
 #include "feature/presenters/CallPresenter.h"
 
+#include "feature/presenters/NewCallGuard.h"
+#include "foundation/runtime/AppLifecycle.h"
 #include "lib/calls/CallGuests.h"
 #include "lib/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallMediaErrorText.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/media/AudioSession.h"
 #include "lib/calls/CallMediaAdaptation.h"
@@ -12,6 +15,7 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <chrono>
 #include <map>
 #include <utility>
 #include "common/PbrCompat.h"
@@ -69,6 +73,48 @@ void CallPresenter::BindToMessaging() {
   Refresh();
 }
 
+void CallPresenter::NoteMessagingReady() {
+  messaging_ready_ = true;
+}
+
+CallPresenter::WakeStep CallPresenter::StepWakePlaceholder(const bool phone_layout,
+                                                           const PendingNotificationTap::Clock::time_point now) {
+  WakeStep step;
+  if (!phone_layout) {
+    if (std::exchange(wake_ring_shown_, false)) {
+      step.ring = WakeRing::Clear;
+    }
+    return step;
+  }
+  auto& tap = PendingNotificationTap::Instance();
+  CallWakePlaceholder::Input in;
+  in.tap_seq = tap.CallTapSeq();
+  in.tap_fresh = tap.PeekCallRoute(now);
+  if (const auto age = tap.CallTapNotificationAge()) {
+    in.tap_notification_age_ms = age->count();
+  }
+  if (const auto elapsed = tap.CallTapElapsed(now)) {
+    in.tap_elapsed_ms = elapsed->count();
+  }
+  in.app_visible = AppLifecycle::IsVisible();
+  in.screen_kind = screen_.kind;
+  in.messaging_ready = messaging_ready_;
+  in.now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+  const CallWakePlaceholder::View view = wake_placeholder_.Step(in);
+  step.outcome = view.outcome;
+  step.shown_ms = view.shown_ms;
+  step.ready_ms = view.ready_ms;
+  if (view.active) {
+    wake_ring_shown_ = screen_.kind == CallScreen::Kind::None;
+    step.ring = wake_ring_shown_ ? WakeRing::Show : WakeRing::Keep;
+  } else if (view.outcome != CallWakePlaceholder::Outcome::Ring && std::exchange(wake_ring_shown_, false)) {
+    step.ring = WakeRing::Clear; // over with no call: the page goes quietly (a real ring overwrote it in place: Keep)
+  } else {
+    wake_ring_shown_ = false;
+  }
+  return step;
+}
+
 void CallPresenter::Tick() {
   BindToMessaging();
   auto* backend = Backend();
@@ -77,7 +123,7 @@ void CallPresenter::Tick() {
   }
   backend->SweepExpiredInvites();
   if (!active_call_id_.empty() && backend->Available()) {
-    Refresh();  // Calling… / the timer / levels stay fresh, before media starts too
+    Refresh(); // Calling… / the timer / levels stay fresh, before media starts too
   }
 }
 
@@ -122,12 +168,18 @@ bool CallPresenter::TakeStackNotices(CallUiBackend& backend) {
     FailText(backend.LastError());
     backend.ClearLastError();
   }
-  if (auto media_err = backend.TakeLastMediaError(); media_err && !media_err->empty()) {
-    // SoftMigrate / hop failures: a toast vanishes before multi-hop diagnostics can be read.
-    CallNotice notice;
-    notice.kind = CallNotice::Kind::StickyError;
-    notice.text = *media_err;
-    Notify(notice);
+  if (auto media_err = backend.TakeLastMediaError(); media_err && !media_err->message.empty()) {
+    // A dropped call or a connect timeout (its kind, K014) is told by the call screen's own failed page (#181:
+    // one prompt, one place); the raw reason goes to the log. Other path failures are a plain toast, never a
+    // banner that stays.
+    if (CallMediaErrorShownOnCallScreen(*media_err)) {
+      log().info << "call media error shown on the call screen only raw=" << media_err->message;
+    } else {
+      CallNotice notice;
+      notice.kind = CallNotice::Kind::Error;
+      notice.text = media_err->message;
+      Notify(notice);
+    }
   }
   // The peer ended a call we were in (also a failed one — failed is not closed): the panel is
   // about to go, so say why instead of letting the call silently vanish.
@@ -154,11 +206,6 @@ void CallPresenter::Refresh() {
     return;
   }
   const bool remote_ended = TakeStackNotices(*backend);
-  for (const std::string& call_id : backend->TakeCallsOver()) {
-    if (callbacks_.on_call_over) {
-      callbacks_.on_call_over(call_id);
-    }
-  }
 
   // Attach-wait / connect health are SM-owned timers (V039 pm3); the state steps a refresh owes
   // the owner (invite seen / cleared, orphan leave) happen in Settle.
@@ -237,8 +284,8 @@ void CallPresenter::Refresh() {
     FillInCall(next, *backend, surface.active->call_id, surface.active->video_allowed,
                surface.active->origin_group_id.has_value());
     next.thread_id = surface.active->origin_thread_id.value_or(std::string{});
-    const std::string local = ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{})
-                                                          : std::string{};
+    const std::string local =
+        ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{}) : std::string{};
     next.placed_here = !local.empty() && surface.active->initiator_identity == local;
     active_group_id_ = surface.active->origin_group_id.value_or(std::string{});
     FillGuests(next, *backend, active_group_id_, local);
@@ -254,8 +301,8 @@ void CallPresenter::Refresh() {
   const int64_t now = util::NowUnixMs();
   // The screen's call went away by itself only when nothing replaced it and the stack is not still in it
   // (a ring over it, a declined ring, a merged call keep or replace it).
-  const bool went_away = next.kind == CallScreen::Kind::None &&
-                         (!surface.active || surface.active->call_id != screen_.call_id);
+  const bool went_away =
+      next.kind == CallScreen::Kind::None && (!surface.active || surface.active->call_id != screen_.call_id);
   if (went_away && EndedWithoutConnecting(screen_, next, remote_ended)) {
     CallNotice notice;
     notice.kind = CallNotice::Kind::Error;
@@ -269,6 +316,7 @@ void CallPresenter::Refresh() {
   }
   WatchForNoMedia(*backend, next, now);
   OfferCallBack(next, surface);
+  StepMedia(*backend, next, now);
   if (next.kind == CallScreen::Kind::None && !surface.active && AudioSession::IsSpeakerphoneOn()) {
     // No call left: the speaker choice was that call's (AudioSession keeps it across a media rebuild).
     AudioSession::SetSpeakerphoneOn(false);
@@ -371,7 +419,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
     s.alone_until_ms = alone_until;
   }
   if (decided.show_elapsed || ShowsParticipantCount(s)) {
-    s.connected_at_ms = live_since_ms;  // the call's, not the current path's
+    s.connected_at_ms = live_since_ms; // the call's, not the current path's
   }
 }
 
@@ -408,8 +456,8 @@ void CallPresenter::WatchForNoMedia(CallUiBackend& backend, const CallScreen& s,
     sample.call_id = s.call_id;
     sample.group = s.group;
     // A hop reattach keeps the seat "live" while nothing flows: recovering pauses the count too.
-    sample.media_live = s.media_connected && backend.Recovery() == CallRecovery::None &&
-                        s.status != CallScreen::Status::Reconnecting;
+    sample.media_live =
+        s.media_connected && backend.Recovery() == CallRecovery::None && s.status != CallScreen::Status::Reconnecting;
     sample.others_joined = static_cast<size_t>(
         std::count_if(s.members.begin(), s.members.end(), [](const CallScreen::Member& m) { return !m.is_local; }));
     sample.last_rx_ms = std::max(health.last_rx_audio_ms, health.last_rx_video_ms);
@@ -459,11 +507,12 @@ void CallPresenter::MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s)
     if (!backend.Media().IsCameraEnabled()) {
       log().info << "auto camera on call_id=" << active_call_id_;
       backend.SetLocalVideoEnabled(true, WhileAlive([call_id = active_call_id_](Roe<void> cam) {
-        if (!cam) {
-          logging::getLogger("CallPresenter").warning << "auto camera on failed call_id=" << call_id << ": "
-                                                      << cam.error().message;
-        }
-      }));
+                                     if (!cam) {
+                                       logging::getLogger("CallPresenter").warning
+                                           << "auto camera on failed call_id=" << call_id << ": "
+                                           << cam.error().message;
+                                     }
+                                   }));
     }
   } else if (allowed && allowed->has_value() && !**allowed) {
     // Narrowed to voice-only before we got here: drop the intent (the renderer's camera-off sync
@@ -472,9 +521,162 @@ void CallPresenter::MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s)
   }
 }
 
+void CallPresenter::StepMedia(CallUiBackend& backend, const CallScreen& next, const int64_t now) {
+  switch (next.kind) {
+    case CallScreen::Kind::InCall: {
+      if (auto failure = backend.Media().TakeCameraFailure()) {
+        // Camera opens asynchronously (media device thread): report the miss. A camera that only waits for the device
+        // (busy, or not responding yet) stays on and comes on by itself (L016); any other miss withdraws the video flag
+        // the roster already advertised.
+        ReportCameraFailure(*failure);
+        if (!backend.Media().CameraWaitingForDevice()) {
+          backend.SetLocalVideoEnabled(false);
+        }
+      }
+      const CallMediaFacts facts = ReadMediaFacts(backend, next, now);
+      const CallMediaScreen& frame = media_frame_.Step(next, facts);
+      ActOnMedia(backend, frame);
+      LogMedia(facts, frame);
+      return;
+    }
+    case CallScreen::Kind::Answering:
+      media_frame_.StepAnswering(next, now);
+      return;
+    case CallScreen::Kind::Ringing:
+      return; // a ring over the call: its media frame waits (the in-call chrome is hidden meanwhile)
+    case CallScreen::Kind::None:
+      if (active_call_id_.empty()) {
+        media_frame_.Reset();
+      }
+      return;
+  }
+}
+
+CallMediaFacts CallPresenter::ReadMediaFacts(CallUiBackend& backend, const CallScreen& s, const int64_t now) {
+  IMediaView& media = backend.Media();
+  media.RefreshRemoteVideoHealth(); // the engine's video upkeep, before the reads below
+  CallMediaFacts f;
+  f.call_id = s.call_id;
+  f.now_ms = now;
+  if (auto allowed = backend.VideoAllowedForCall(s.call_id); allowed && allowed->has_value()) {
+    f.video_allowed = **allowed;
+  }
+  f.video_intent = !auto_camera_call_id_.empty() && auto_camera_call_id_ == s.call_id;
+  f.ringing_out = backend.Phase() == CallPhase::OutboundCalling;
+  f.media_chrome_live = backend.MediaChromeLive();
+  f.media_status = backend.MediaStatus();
+  f.direct_connect_failed = backend.IsDirectConnectFailed();
+  f.awaiting_sfu_recovery = backend.IsAwaitingSfuRecovery();
+  f.on_hop = backend.MediaPath() == CallMediaPath::Hop;
+  f.live_since_ms = backend.LiveSinceMs(s.call_id);
+  if (auto peer = backend.PeerMediaForCall(s.call_id); peer && peer->has_value()) {
+    f.have_peer_row = true;
+    f.peer_camera_on = (*peer)->video_enabled;
+    f.peer_on_hold = (*peer)->on_hold;
+    f.peer_video_paused = (*peer)->video_paused;
+  }
+  f.media_active = media.IsActive();
+  f.camera_on = media.IsCameraEnabled();
+  f.encoder_available = media.VideoEncoderAvailable();
+  f.path_allows_video = CallMediaAdaptation::CameraPathAllowsVideo(media.PathPressure(), media.UplinkBudget());
+  f.has_remote_video = media.HasRemoteVideo();
+  f.remote_video_stalling = media.IsRemoteVideoStalling();
+  f.peer_frames_live = media.IsRemoteVideoLive(kPeerVideoLiveMs);
+  f.ever_had_remote_video = media.EverHadRemoteVideo();
+  f.local_on_hold = callbacks_.on_hold_here && callbacks_.on_hold_here();
+  f.engine = media.HealthSnapshot();
+  f.hop = backend.HopHealth();
+  f.reach_path_kind = backend.MediaPathKind();
+  f.link_counters = backend.MediaLinkCounters();
+  return f;
+}
+
+void CallPresenter::ActOnMedia(CallUiBackend& backend, const CallMediaScreen& frame) {
+  if (frame.media.clear_remote_video) {
+    backend.Media().ClearRemoteVideo();
+  }
+  if (frame.media.narrow_camera) {
+    // V035: narrowed to voice with the camera on — off through the normal path, once.
+    log().info << "camera off (video_allowed=false) call_id=" << frame.call_id;
+    backend.SetLocalVideoEnabled(false, WhileAlive([this](Roe<void> cam) {
+                                   if (!cam) {
+                                     FailText(cam.error().message);
+                                   }
+                                 }));
+  }
+}
+
+void CallPresenter::LogMedia(const CallMediaFacts& facts, const CallMediaScreen& frame) {
+  const char* roster = !facts.have_peer_row ? "none" : facts.peer_camera_on ? "on" : "off";
+  const char* frames = facts.peer_frames_live ? "live" : "idle";
+  if (std::string key = std::string(roster) + "/" + frames; key != peer_video_log_key_) {
+    log().info << "peer video call_id=" << facts.call_id << " roster=" << roster << " frames=" << frames;
+    peer_video_log_key_ = std::move(key);
+  }
+  if (frame.call_id != story_logged_call_) {
+    story_logged_call_ = frame.call_id;
+    story_events_logged_ = 0;
+  }
+  // The story's moments with the technical words the screen never shows (TODO #76: the detail goes to the log).
+  const std::vector<CallStoryEvent>& events = frame.story.events;
+  for (size_t i = story_events_logged_; i < events.size(); ++i) {
+    log().info << "call story call_id=" << frame.call_id << " event=" << static_cast<int>(events[i].kind)
+               << " at_ms=" << events[i].at_ms << " path=" << frame.health.path_kind;
+  }
+  story_events_logged_ = events.size();
+}
+
 // --- buttons ------------------------------------------------------------------------------------
 
+bool CallPresenter::GuardNewCall(const std::string& thread_id, const std::function<void()>& place,
+                                 const StartDone& done) {
+  const NewCallVerdict verdict = DecideNewCall(screen_, thread_id);
+  if (verdict == NewCallVerdict::Place) {
+    if (CallScreenIsFailedPage(screen_)) {
+      (void)Leave(); // clear the failed page (shown or minimized) and its dead call before the new one
+    }
+    return false;
+  }
+  const auto finish = [done](const CallStartResult::Kind kind) {
+    if (done) {
+      CallStartResult result;
+      result.kind = kind;
+      done(result);
+    }
+  };
+  NewCallSteps steps;
+  if (callbacks_.confirm_end_current_call) {
+    steps.ask = [this](std::function<void(bool)> answer) { callbacks_.confirm_end_current_call(std::move(answer)); };
+  }
+  steps.show_current = [this, finish]() {
+    if (callbacks_.show_current_call) {
+      callbacks_.show_current_call();
+    }
+    finish(CallStartResult::Kind::Cancelled);
+  };
+  steps.leave_current = [this]() { (void)Leave(); };
+  steps.place = place;
+  steps.cancelled = [finish]() { finish(CallStartResult::Kind::Cancelled); };
+  RunNewCall(verdict, steps);
+  return true;
+}
+
+bool ChatCallAsksVideo(const bool call_joinable, const bool want_video, const bool video_available) {
+  return !call_joinable && want_video && video_available;
+}
+
+bool CallPresenter::CallFromChat(const std::string& thread_id, const bool want_video, StartDone done) {
+  if (thread_id.empty()) {
+    return false;
+  }
+  const bool video = ChatCallAsksVideo(CallJoinableInThread(thread_id), want_video, want_video && VideoCallAvailable());
+  return StartCall(thread_id, video, std::move(done));
+}
+
 bool CallPresenter::StartCall(const std::string& thread_id, const bool video, StartDone done) {
+  if (GuardNewCall(thread_id, [this, thread_id, video, done]() { (void)StartCall(thread_id, video, done); }, done)) {
+    return true;
+  }
   BindToMessaging();
   auto* backend = Backend();
   if (!backend || !backend->Available()) {
@@ -489,7 +691,7 @@ bool CallPresenter::StartCall(const std::string& thread_id, const bool video, St
   }
   if ((*thread)->kind == ThreadKind::Group) {
     if (backend->JoinableCallInThread(thread_id)) {
-      RequestStart(thread_id, false, {}, std::move(done));  // V053: the group's call goes on — join it
+      RequestStart(thread_id, false, {}, std::move(done)); // V053: the group's call goes on — join it
       return true;
     }
     if (callbacks_.open_group_picker) {
@@ -515,6 +717,12 @@ bool CallPresenter::StartCall(const std::string& thread_id, const bool video, St
 
 bool CallPresenter::StartCallWithInvitees(const std::string& thread_id, const bool video,
                                           const std::vector<std::string>& invitees, StartDone done) {
+  if (GuardNewCall(
+          thread_id,
+          [this, thread_id, video, invitees, done]() { (void)StartCallWithInvitees(thread_id, video, invitees, done); },
+          done)) {
+    return true;
+  }
   BindToMessaging();
   auto* backend = Backend();
   if (!backend || !backend->Available()) {
@@ -536,33 +744,33 @@ void CallPresenter::RequestStart(const std::string& thread_id, const bool video,
   // The calls owner starts it and reports back on UI.
   Backend()->StartCall(thread_id, video, invitees,
                        WhileAlive([this, video, joining, done = std::move(done)](Roe<CallSession> started) {
-    CallStartResult result;
-    if (!started) {
-      FailText(started.error().message);
-      result.error_text = started.error().message;
-      if (done) {
-        done(result);
-      }
-      return;
-    }
-    active_call_id_ = started->call_id;
-    result.kind = joining ? CallStartResult::Kind::Joined : CallStartResult::Kind::Started;
-    result.call_id = started->call_id;
-    if (!joining) {
-      if (callbacks_.on_outbound_started) {
-        callbacks_.on_outbound_started(started->call_id, video);
-      }
-      if (video) {
-        // The caller picked "Video call": the camera comes on once the call connects.
-        auto_camera_pending_ = true;
-        auto_camera_call_id_ = started->call_id;
-      }
-    }
-    if (done) {
-      done(result);
-    }
-    Refresh();
-  }));
+                         CallStartResult result;
+                         if (!started) {
+                           FailText(started.error().message);
+                           result.error_text = started.error().message;
+                           if (done) {
+                             done(result);
+                           }
+                           return;
+                         }
+                         active_call_id_ = started->call_id;
+                         result.kind = joining ? CallStartResult::Kind::Joined : CallStartResult::Kind::Started;
+                         result.call_id = started->call_id;
+                         if (!joining) {
+                           if (callbacks_.on_outbound_started) {
+                             callbacks_.on_outbound_started(started->call_id, video);
+                           }
+                           if (video) {
+                             // The caller picked "Video call": the camera comes on once the call connects.
+                             auto_camera_pending_ = true;
+                             auto_camera_call_id_ = started->call_id;
+                           }
+                         }
+                         if (done) {
+                           done(result);
+                         }
+                         Refresh();
+                       }));
 }
 
 CallJoinBar MakeCallJoinBar(const std::optional<CallUiBackend::JoinableCallInfo>& call) {
@@ -783,15 +991,15 @@ void CallPresenter::InviteToActiveCall(const std::vector<std::string>& identitie
       continue;
     }
     backend->InviteParticipant(active_call_id_, identity, WhileAlive([this, done](Roe<void> ok) {
-      if (!ok) {
-        FailText(ok.error().message);
-      } else {
-        Refresh();
-      }
-      if (done) {
-        done(ok);
-      }
-    }));
+                                 if (!ok) {
+                                   FailText(ok.error().message);
+                                 } else {
+                                   Refresh();
+                                 }
+                                 if (done) {
+                                   done(ok);
+                                 }
+                               }));
   }
 }
 
@@ -855,7 +1063,7 @@ std::string CallPresenter::Accept(const bool voice_only, const std::string& answ
     auto_camera_pending_ = true;
     auto_camera_call_id_ = call_id;
   } else if (auto_camera_call_id_ == call_id) {
-    auto_camera_pending_ = false;  // answered voice-only: never the camera for this call
+    auto_camera_pending_ = false; // answered voice-only: never the camera for this call
   }
   // The ring goes on the click frame (CALLS.md Accept → Accepting): leaving it up until
   // AcceptInvite finished made Accept look hung.
@@ -967,7 +1175,7 @@ void CallPresenter::Retry() {
     return;
   }
   backend->Apply(CallLifecycleEvent::RetryClicked, call_id);
-  Refresh();  // a refusal reads as the stack's last error, which Refresh reports
+  Refresh(); // a refusal reads as the stack's last error, which Refresh reports
 }
 
 void CallPresenter::ToggleMute() {
@@ -998,18 +1206,19 @@ void CallPresenter::ToggleCamera() {
   }
   const bool next = !backend->Media().IsCameraEnabled();
   if (next && !active_call_id_.empty()) {
-    if (auto allowed = backend->VideoAllowedForCall(active_call_id_);
-        !allowed || !allowed->has_value() || !**allowed) {
+    if (auto allowed = backend->VideoAllowedForCall(active_call_id_); !allowed || !allowed->has_value() || !**allowed) {
       Fail("call.error.video_not_allowed");
       return;
     }
   }
   backend->SetLocalVideoEnabled(next, WhileAlive([this](Roe<void> cam) {
-    if (!cam) {
-      FailText(cam.error().message);
-    }
-    Refresh();
-  }));
+                                  if (!cam) {
+                                    // The backend's reason is English technical text: the log keeps it, the user sees a plain sentence.
+                                    log().info << "camera toggle failed: " << cam.error().message;
+                                    Fail("call.error.camera_failed");
+                                  }
+                                  Refresh();
+                                }));
 }
 
 void CallPresenter::FlipCamera() {

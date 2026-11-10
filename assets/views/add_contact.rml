@@ -3,7 +3,7 @@
   <div class="pane-nav nc-bar ac-bar">
     <p class="pane-nav-title nc-bar-title">{{i18n:contacts.add}}</p>
   </div>
-  <div class="ac-scroll">
+  <div class="ac-scroll nav-bar-scroll">
     <!-- Two big cards side by side (Kenneth 2026-11-07): scan, and my own QR code. Same handlers the tiles used. -->
     <div class="ac-top-cards" data-if="add_query == ''">
       <div class="ac-top-card" data-if="can_scan" data-event-click="add_action('scan')">

@@ -201,7 +201,7 @@ void GroupInviteLinkWorkflow::Send(const std::string& peer, const GroupJoinMessa
     return;
   }
   // An account copy carrying our card: the two have never met (a stranger asks, a stranger is answered).
-  if (auto sent = mesh_.SendControl(peer, *built, std::nullopt, false, /*with_card=*/true); !sent) {
+  if (auto sent = mesh_.SendControl(peer, *built, false, /*with_card=*/true); !sent) {
     log().warning << "join by link: not sent to " << peer << ": " << sent.error().message;
   }
 }

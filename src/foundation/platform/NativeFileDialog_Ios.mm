@@ -43,9 +43,13 @@ namespace {
 id g_active = nil; // pickers hold their delegate weakly: kept alive by their owner until the pick ends
 } // namespace
 
-NSString* PickRoot() { return [NSTemporaryDirectory() stringByAppendingPathComponent:@"pp-picks"]; }
+NSString* PickRoot() {
+  return [NSTemporaryDirectory() stringByAppendingPathComponent:@"pp-picks"];
+}
 
-void ClearPickRoot() { [[NSFileManager defaultManager] removeItemAtPath:PickRoot() error:nil]; }
+void ClearPickRoot() {
+  [[NSFileManager defaultManager] removeItemAtPath:PickRoot() error:nil];
+}
 
 void ClearLeftoversOnce() {
   static bool cleared_leftovers = false; // only earlier runs: this run's copies may still be in use
@@ -55,9 +59,13 @@ void ClearLeftoversOnce() {
   }
 }
 
-id ActivePicker() { return g_active; }
+id ActivePicker() {
+  return g_active;
+}
 
-void SetActivePicker(id owner) { g_active = owner; }
+void SetActivePicker(id owner) {
+  g_active = owner;
+}
 
 /** The controller to present from, or nil when UIKit would refuse (none, or mid-transition). */
 UIViewController* PresentingController(SDL_Window* window) {
@@ -173,40 +181,40 @@ PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback call
   }
   const auto started = std::chrono::steady_clock::now();
   [self retain]; // until the file has been copied
-  [provider loadFileRepresentationForTypeIdentifier:type
-                                  completionHandler:^(NSURL* url, NSError* error) {
-                                    // `url` is removed when this handler returns: copy it now.
-                                    std::vector<std::string> paths;
-                                    if (url != nil) {
-                                      std::string copied = CopyIntoPickRoot(url, name);
-                                      if (!copied.empty()) {
-                                        copied = ConvertHeicToJpeg(copied);
-                                        paths.push_back(std::move(copied));
-                                      }
-                                    }
-                                    const long ms =
-                                        static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                              std::chrono::steady_clock::now() - started)
-                                                              .count());
-                                    if (paths.empty()) {
-                                      // An empty answer ends the caller's "Sending…" state.
-                                      pbr::logging::getLogger("photo-picker").warning
-                                          << "photo picker delivery failed kind=" << (is_video ? "video" : "image")
-                                          << " ms=" << ms << " error="
-                                          << (error != nil ? error.localizedDescription.UTF8String : "none");
-                                    } else {
-                                      NSNumber* size = [[[NSFileManager defaultManager]
-                                          attributesOfItemAtPath:[NSString stringWithUTF8String:paths.front().c_str()]
-                                                           error:nil] objectForKey:NSFileSize];
-                                      pbr::logging::getLogger("photo-picker").info
-                                          << "photo picker delivered kind=" << (is_video ? "video" : "image")
-                                          << " bytes=" << size.unsignedLongLongValue << " ms=" << ms;
-                                    }
-                                    dispatch_async(dispatch_get_main_queue(), ^{
-                                      Finish(self, paths);
-                                      [self release];
-                                    });
-                                  }];
+  [provider
+      loadFileRepresentationForTypeIdentifier:type
+                            completionHandler:^(NSURL* url, NSError* error) {
+                              // `url` is removed when this handler returns: copy it now.
+                              std::vector<std::string> paths;
+                              if (url != nil) {
+                                std::string copied = CopyIntoPickRoot(url, name);
+                                if (!copied.empty()) {
+                                  copied = ConvertHeicToJpeg(copied);
+                                  paths.push_back(std::move(copied));
+                                }
+                              }
+                              const long ms = static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                                    std::chrono::steady_clock::now() - started)
+                                                                    .count());
+                              if (paths.empty()) {
+                                // An empty answer ends the caller's "Sending…" state.
+                                pbr::logging::getLogger("photo-picker").warning
+                                    << "photo picker delivery failed kind=" << (is_video ? "video" : "image")
+                                    << " ms=" << ms
+                                    << " error=" << (error != nil ? error.localizedDescription.UTF8String : "none");
+                              } else {
+                                NSNumber* size = [[[NSFileManager defaultManager]
+                                    attributesOfItemAtPath:[NSString stringWithUTF8String:paths.front().c_str()]
+                                                     error:nil] objectForKey:NSFileSize];
+                                pbr::logging::getLogger("photo-picker").info
+                                    << "photo picker delivered kind=" << (is_video ? "video" : "image")
+                                    << " bytes=" << size.unsignedLongLongValue << " ms=" << ms;
+                              }
+                              dispatch_async(dispatch_get_main_queue(), ^{
+                                Finish(self, paths);
+                                [self release];
+                              });
+                            }];
 }
 
 - (void)documentPicker:(UIDocumentPickerViewController*)controller didPickDocumentsAtURLs:(NSArray<NSURL*>*)urls {
@@ -298,8 +306,8 @@ void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback cal
     }
     PHPickerConfiguration* config = [[[PHPickerConfiguration alloc] init] autorelease];
     delegate->preparing = std::move(on_preparing);
-    config.filter = [PHPickerFilter anyFilterMatchingSubfilters:@[ [PHPickerFilter imagesFilter],
-                                                                    [PHPickerFilter videosFilter] ]];
+    config.filter =
+        [PHPickerFilter anyFilterMatchingSubfilters:@[ [PHPickerFilter imagesFilter], [PHPickerFilter videosFilter] ]];
     config.selectionLimit = 1;
     // Current: a video arrives as the library has it (HEVC .mov is not transcoded to H.264, which on a long clip
     // takes minutes); a HEIC photo then arrives as HEIC and ConvertHeicToJpeg makes the JPEG.

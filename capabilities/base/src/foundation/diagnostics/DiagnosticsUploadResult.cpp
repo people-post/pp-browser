@@ -39,33 +39,33 @@ DiagnosticsUploadResult MapDiagnosticsResponse(const long status, const std::str
     return result;
   }
   switch (status) {
-  case 429: {
-    const std::string reason = json ? StringField(*json, "reason") : std::string();
-    if (reason == "quota_key") {
-      result.kind = DiagnosticsUploadKind::QuotaKey;
-    } else if (reason == "quota_ip") {
-      result.kind = DiagnosticsUploadKind::QuotaIp;
-    } else if (reason == "quota_global") {
-      result.kind = DiagnosticsUploadKind::QuotaGlobal;
-    } else {
-      result.detail = "HTTP 429";
+    case 429: {
+      const std::string reason = json ? StringField(*json, "reason") : std::string();
+      if (reason == "quota_key") {
+        result.kind = DiagnosticsUploadKind::QuotaKey;
+      } else if (reason == "quota_ip") {
+        result.kind = DiagnosticsUploadKind::QuotaIp;
+      } else if (reason == "quota_global") {
+        result.kind = DiagnosticsUploadKind::QuotaGlobal;
+      } else {
+        result.detail = "HTTP 429";
+      }
+      return result;
     }
-    return result;
-  }
-  case 409:
-    result.kind = DiagnosticsUploadKind::InProgress;
-    return result;
-  case 401:
-  case 404:
-  case 503:
-    result.kind = DiagnosticsUploadKind::Unavailable;
-    return result;
-  case 413:
-    result.kind = DiagnosticsUploadKind::TooLarge;
-    return result;
-  default:
-    result.detail = "HTTP " + std::to_string(status);
-    return result;
+    case 409:
+      result.kind = DiagnosticsUploadKind::InProgress;
+      return result;
+    case 401:
+    case 404:
+    case 503:
+      result.kind = DiagnosticsUploadKind::Unavailable;
+      return result;
+    case 413:
+      result.kind = DiagnosticsUploadKind::TooLarge;
+      return result;
+    default:
+      result.detail = "HTTP " + std::to_string(status);
+      return result;
   }
 }
 
@@ -96,7 +96,7 @@ bool WriteLastUpload(const std::string& data_dir, const LastUpload& last) {
   std::error_code ec;
   fs::create_directories(fs::path(path).parent_path(), ec);
   {
-    std::ofstream touch(path, std::ios::app);  // exists and is locked down before the id is written
+    std::ofstream touch(path, std::ios::app); // exists and is locked down before the id is written
   }
   fs::permissions(path, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
   Object object;

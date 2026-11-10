@@ -45,7 +45,6 @@ private:
   std::vector<ContextMenuAction> GroupActions(const Thread& thread);
   void AddToContacts(const std::string& peer_id);
 
-
   ChatMenusHost& host_;
   ChatPresenter& presenter_;
   const ChatScreenState& chat_;

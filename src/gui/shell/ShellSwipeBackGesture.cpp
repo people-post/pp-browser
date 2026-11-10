@@ -304,39 +304,40 @@ void ShellSwipeBackGesture::ProcessEvent(ui::Event& event) {
   }
 
   switch (event.GetId()) {
-  case ui::EventId::Click:
-    if (swallow_click_) {
-      // Only the click of the same pointer sequence; a later keyboard / programmatic click goes through.
-      const bool same_sequence = std::chrono::steady_clock::now() - swallow_click_since_ < std::chrono::milliseconds(300);
-      swallow_click_ = false;
-      if (same_sequence) {
-        event.StopPropagation();
+    case ui::EventId::Click:
+      if (swallow_click_) {
+        // Only the click of the same pointer sequence; a later keyboard / programmatic click goes through.
+        const bool same_sequence =
+            std::chrono::steady_clock::now() - swallow_click_since_ < std::chrono::milliseconds(300);
+        swallow_click_ = false;
+        if (same_sequence) {
+          event.StopPropagation();
+        }
       }
+      break;
+    case ui::EventId::Mousedown: {
+      swallow_click_ = false;
+      ui::Element* target = event.GetTargetElement();
+      if (ShouldIgnoreTarget(target)) {
+        return;
+      }
+      if (!ShouldStartSwipe(target, EventMouseX(event))) {
+        return;
+      }
+      const float edge_px = kEdgeSwipeWidthDp * context_->GetDensityIndependentPixelRatio();
+      const float surface_left = surface_->GetAbsoluteLeft();
+      const bool from_edge = static_cast<float>(EventMouseX(event)) <= surface_left + edge_px;
+      BeginDrag(EventMouseX(event), EventMouseY(event), from_edge);
+      break;
     }
-    break;
-  case ui::EventId::Mousedown: {
-    swallow_click_ = false;
-    ui::Element* target = event.GetTargetElement();
-    if (ShouldIgnoreTarget(target)) {
-      return;
-    }
-    if (!ShouldStartSwipe(target, EventMouseX(event))) {
-      return;
-    }
-    const float edge_px = kEdgeSwipeWidthDp * context_->GetDensityIndependentPixelRatio();
-    const float surface_left = surface_->GetAbsoluteLeft();
-    const bool from_edge = static_cast<float>(EventMouseX(event)) <= surface_left + edge_px;
-    BeginDrag(EventMouseX(event), EventMouseY(event), from_edge);
-    break;
-  }
-  case ui::EventId::Mousemove:
-    UpdateDrag(EventMouseX(event), EventMouseY(event), event);
-    break;
-  case ui::EventId::Mouseup:
-    EndDrag();
-    break;
-  default:
-    break;
+    case ui::EventId::Mousemove:
+      UpdateDrag(EventMouseX(event), EventMouseY(event), event);
+      break;
+    case ui::EventId::Mouseup:
+      EndDrag();
+      break;
+    default:
+      break;
   }
 }
 

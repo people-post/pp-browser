@@ -13,15 +13,15 @@ namespace pbr {
 
 /** What is on screen, for deciding whether the phone AI dot shows (DESIGN-pp-ui §8.14, PLAN-ui-batch5-ask-ai 5c). */
 struct AiDotScene {
-  bool enabled = true;     ///< Me → AI assistant → Show AI dot.
-  bool phone = true;       ///< Compact layout; desktop has no floating dot in this batch.
-  bool call = false;       ///< An incoming ring or the call screen; a call minimised to its bar is not one.
-  bool pin_gate = false;   ///< The PIN gate (unlock, create, the first-run identity fork).
-  bool cover = false;      ///< The startup cover or the onboarding wizard.
-  bool secret_page = false;///< Me → Account & security: change PIN, transfer, the recovery phrase.
-  bool scanning = false;   ///< The full-screen QR scanner.
-  bool layer_open = false; ///< Any layer over the page: a page sheet (the ask-AI panel too) or a panel.
-  bool keyboard_up = false;///< The on-screen keyboard or the emoji panel.
+  bool enabled = true;      ///< Me → AI assistant → Show AI dot.
+  bool phone = true;        ///< Compact layout; desktop has no floating dot in this batch.
+  bool call = false;        ///< An incoming ring or the call screen; a call minimised to its bar is not one.
+  bool pin_gate = false;    ///< The PIN gate (unlock, create, the first-run identity fork).
+  bool cover = false;       ///< The startup cover or the onboarding wizard.
+  bool secret_page = false; ///< Me → Account & security: change PIN, transfer, the recovery phrase.
+  bool scanning = false;    ///< The full-screen QR scanner.
+  bool layer_open = false;  ///< Any layer over the page: a page sheet (the ask-AI panel too) or a panel.
+  bool keyboard_up = false; ///< The on-screen keyboard or the emoji panel.
 };
 
 /**
@@ -37,18 +37,35 @@ struct AiDotScene {
  * - Happy: both jump one after the other with happy eyes, cheeks and two floating hearts (C, D: a nod; D draws a
  *   check).
  * - Private: closes its eyes, turns away and shows a lock ("I don't read your chats").
- * - Float: the mockups' float, drifting gently up and down once for 2.5 s and back at rest (C: floatC, half as far);
+ * - Float: the mockups' float, drifting gently up and down once for 3.25 s and back at rest (C: floatC, half as far);
  *   it was a continuous loop there, here it is one timed action (Kenneth 2026-11-04) so nothing runs between them.
  * Not in the random rotation: Sleep (closed eyes, a breath, three rising z's; once after kSleepAfterMs without a touch,
  * then it stays still, asleep, until the next touch), Poke (a tap: it squashes and wobbles, then the panel opens) and
  * Pop (a tap on it tucked: it jumps out, the mockups' squash-and-stretch jump, then the panel opens).
  */
 enum class AiDotIdle {
-  None, Sway, Blink, Look, Talk, Shy, Wave, Listen, Think, Five, Happy, Private, Sleep, Poke, Pop, Float
+  None,
+  Sway,
+  Blink,
+  Look,
+  Talk,
+  Shy,
+  Wave,
+  Listen,
+  Think,
+  Five,
+  Happy,
+  Private,
+  Sleep,
+  Poke,
+  Pop,
+  Float
 };
 
-/** The assistant look (Me → AI assistant): `a` one eye, `b` two eyes (default), `c` cool, `d` plain (no face). */
-enum class AiDotLook { OneEye, TwoEyes, Cool, Plain };
+/** The assistant look (Me → AI assistant): `a` one eye, `b` two eyes (default), `c` cool, `d` plain (no face), and the
+ * weekend looks `e` Friday (sunglasses, a lazy sway), `f` Saturday (cap, the liveliest), `g` Sunday (nightcap, half-open
+ * eyes, a mug; slow). */
+enum class AiDotLook { OneEye, TwoEyes, Cool, Plain, Evening, Outing, Lazy };
 
 /** Where the dot rests: the side it sticks to and how far down the band it stands (0 top, 1000 bottom). */
 struct AiDotPlace {
@@ -121,42 +138,58 @@ public:
   static constexpr int64_t kSleepAfterMs = 120000;
   /** The keyframes' lengths in components.rcss (ai-dot-sway, ai-dot-blink, …); the class goes a little after. The calm
    * looks (C, D) wave and poke more slowly (the mockup's tiltC / hopC 2.2 s, pokeC 0.45 s). */
-  static constexpr int64_t kSwayMs = 1200;
-  static constexpr int64_t kBlinkMs = 500;
-  static constexpr int64_t kLookMs = 2000;
-  static constexpr int64_t kTalkMs = 1680;
-  static constexpr int64_t kShyMs = 1600;
-  static constexpr int64_t kWaveMs = 1600;
-  static constexpr int64_t kWaveCalmMs = 2200;
-  static constexpr int64_t kListenMs = 2400;
-  static constexpr int64_t kThinkMs = 2400;
-  static constexpr int64_t kFiveMs = 1500;
-  static constexpr int64_t kHappyMs = 1800;
-  static constexpr int64_t kPrivateMs = 2000;
-  static constexpr int64_t kSleepMs = 4000;
-  static constexpr int64_t kPokeMs = 600;
-  static constexpr int64_t kPokeCalmMs = 450;
-  static constexpr int64_t kPopMs = 700;
-  static constexpr int64_t kFloatMs = 2500;
+  static constexpr int64_t kSwayMs = 1560;
+  static constexpr int64_t kBlinkMs = 650;
+  static constexpr int64_t kLookMs = 2600;
+  static constexpr int64_t kTalkMs = 2184;
+  static constexpr int64_t kShyMs = 2080;
+  static constexpr int64_t kWaveMs = 2080;
+  static constexpr int64_t kWaveCalmMs = 2860;
+  static constexpr int64_t kListenMs = 3120;
+  static constexpr int64_t kThinkMs = 3120;
+  static constexpr int64_t kFiveMs = 1950;
+  static constexpr int64_t kHappyMs = 2340;
+  static constexpr int64_t kPrivateMs = 2600;
+  static constexpr int64_t kSleepMs = 5200;
+  static constexpr int64_t kPokeMs = 780;
+  static constexpr int64_t kPokeCalmMs = 585;
+  static constexpr int64_t kPopMs = 910;
+  static constexpr int64_t kFloatMs = 3250;
+  /** The lazy look (G, Sunday) is slower by design (the weekend mockup's 1.3 x longer timings): these actions last
+   * longer than the shared ones above; the others are shared. */
+  static constexpr int64_t kTalkSlowMs = 3120; ///< The yawn.
+  static constexpr int64_t kWaveSlowMs = 2600;
+  static constexpr int64_t kFiveSlowMs = 2860;
+  static constexpr int64_t kHappySlowMs = 3120;
+  static constexpr int64_t kPokeSlowMs = 1040;
+  static constexpr int64_t kFloatSlowMs = 5200; ///< One slow breath.
   static constexpr int64_t kIdleTailMs = 100;
 
   static AiDotLook LookFrom(const std::string_view look) {
-    return look == "a" ? AiDotLook::OneEye : look == "c" ? AiDotLook::Cool : look == "d" ? AiDotLook::Plain
-                                                                                      : AiDotLook::TwoEyes;
+    return look == "a"   ? AiDotLook::OneEye
+           : look == "c" ? AiDotLook::Cool
+           : look == "d" ? AiDotLook::Plain
+           : look == "e" ? AiDotLook::Evening
+           : look == "f" ? AiDotLook::Outing
+           : look == "g" ? AiDotLook::Lazy
+                         : AiDotLook::TwoEyes;
   }
 
   /** C and D move less and more slowly (DESIGN-pp-ui §8.14). */
   static bool Calm(const AiDotLook look) { return look == AiDotLook::Cool || look == AiDotLook::Plain; }
 
+  /** G moves more slowly: longer talk (a yawn), wave, five, happy, poke and float. */
+  static bool Slow(const AiDotLook look) { return look == AiDotLook::Lazy; }
+
   /** The random rotation of a look: every mockup action but Sleep and Poke; the plain look has no eyes, so no blink and
    * no glance (its talk, listen, think, happy and private show symbols in its bubble instead). */
   static std::span<const AiDotIdle> IdleActions(const AiDotLook look) {
-    static constexpr AiDotIdle kFace[] = {AiDotIdle::Sway,   AiDotIdle::Blink, AiDotIdle::Look,  AiDotIdle::Talk,
-                                          AiDotIdle::Shy,    AiDotIdle::Wave,  AiDotIdle::Listen, AiDotIdle::Think,
-                                          AiDotIdle::Five,   AiDotIdle::Happy, AiDotIdle::Private, AiDotIdle::Float};
-    static constexpr AiDotIdle kPlain[] = {AiDotIdle::Sway,  AiDotIdle::Talk,  AiDotIdle::Shy,
-                                           AiDotIdle::Wave,  AiDotIdle::Listen, AiDotIdle::Think,
-                                           AiDotIdle::Five,  AiDotIdle::Happy, AiDotIdle::Private, AiDotIdle::Float};
+    static constexpr AiDotIdle kFace[] = {AiDotIdle::Sway, AiDotIdle::Blink, AiDotIdle::Look,    AiDotIdle::Talk,
+                                          AiDotIdle::Shy,  AiDotIdle::Wave,  AiDotIdle::Listen,  AiDotIdle::Think,
+                                          AiDotIdle::Five, AiDotIdle::Happy, AiDotIdle::Private, AiDotIdle::Float};
+    static constexpr AiDotIdle kPlain[] = {AiDotIdle::Sway,    AiDotIdle::Talk,  AiDotIdle::Shy,  AiDotIdle::Wave,
+                                           AiDotIdle::Listen,  AiDotIdle::Think, AiDotIdle::Five, AiDotIdle::Happy,
+                                           AiDotIdle::Private, AiDotIdle::Float};
     return look == AiDotLook::Plain ? std::span<const AiDotIdle>(kPlain) : std::span<const AiDotIdle>(kFace);
   }
 
@@ -175,38 +208,38 @@ public:
   /** The class suffix (ai-dot--<name>) and bound value for an action; empty for none. */
   static const char* IdleName(const AiDotIdle idle) {
     switch (idle) {
-    case AiDotIdle::Sway:
-      return "sway";
-    case AiDotIdle::Blink:
-      return "blink";
-    case AiDotIdle::Look:
-      return "look";
-    case AiDotIdle::Talk:
-      return "talk";
-    case AiDotIdle::Shy:
-      return "shy";
-    case AiDotIdle::Wave:
-      return "wave";
-    case AiDotIdle::Listen:
-      return "listen";
-    case AiDotIdle::Think:
-      return "think";
-    case AiDotIdle::Five:
-      return "five";
-    case AiDotIdle::Happy:
-      return "happy";
-    case AiDotIdle::Private:
-      return "private";
-    case AiDotIdle::Sleep:
-      return "sleep";
-    case AiDotIdle::Poke:
-      return "poke";
-    case AiDotIdle::Pop:
-      return "pop";
-    case AiDotIdle::Float:
-      return "float";
-    case AiDotIdle::None:
-      break;
+      case AiDotIdle::Sway:
+        return "sway";
+      case AiDotIdle::Blink:
+        return "blink";
+      case AiDotIdle::Look:
+        return "look";
+      case AiDotIdle::Talk:
+        return "talk";
+      case AiDotIdle::Shy:
+        return "shy";
+      case AiDotIdle::Wave:
+        return "wave";
+      case AiDotIdle::Listen:
+        return "listen";
+      case AiDotIdle::Think:
+        return "think";
+      case AiDotIdle::Five:
+        return "five";
+      case AiDotIdle::Happy:
+        return "happy";
+      case AiDotIdle::Private:
+        return "private";
+      case AiDotIdle::Sleep:
+        return "sleep";
+      case AiDotIdle::Poke:
+        return "poke";
+      case AiDotIdle::Pop:
+        return "pop";
+      case AiDotIdle::Float:
+        return "float";
+      case AiDotIdle::None:
+        break;
     }
     return "";
   }
@@ -254,38 +287,38 @@ public:
 
   static int64_t IdleLengthMs(const AiDotIdle idle, const AiDotLook look) {
     switch (idle) {
-    case AiDotIdle::Sway:
-      return kSwayMs;
-    case AiDotIdle::Blink:
-      return kBlinkMs;
-    case AiDotIdle::Look:
-      return kLookMs;
-    case AiDotIdle::Talk:
-      return kTalkMs;
-    case AiDotIdle::Shy:
-      return kShyMs;
-    case AiDotIdle::Wave:
-      return Calm(look) ? kWaveCalmMs : kWaveMs;
-    case AiDotIdle::Listen:
-      return kListenMs;
-    case AiDotIdle::Think:
-      return kThinkMs;
-    case AiDotIdle::Five:
-      return kFiveMs;
-    case AiDotIdle::Happy:
-      return kHappyMs;
-    case AiDotIdle::Private:
-      return kPrivateMs;
-    case AiDotIdle::Sleep:
-      return kSleepMs;
-    case AiDotIdle::Poke:
-      return Calm(look) ? kPokeCalmMs : kPokeMs;
-    case AiDotIdle::Pop:
-      return kPopMs;
-    case AiDotIdle::Float:
-      return kFloatMs;
-    case AiDotIdle::None:
-      break;
+      case AiDotIdle::Sway:
+        return kSwayMs;
+      case AiDotIdle::Blink:
+        return kBlinkMs;
+      case AiDotIdle::Look:
+        return kLookMs;
+      case AiDotIdle::Talk:
+        return Slow(look) ? kTalkSlowMs : kTalkMs;
+      case AiDotIdle::Shy:
+        return kShyMs;
+      case AiDotIdle::Wave:
+        return Calm(look) ? kWaveCalmMs : Slow(look) ? kWaveSlowMs : kWaveMs;
+      case AiDotIdle::Listen:
+        return kListenMs;
+      case AiDotIdle::Think:
+        return kThinkMs;
+      case AiDotIdle::Five:
+        return Slow(look) ? kFiveSlowMs : kFiveMs;
+      case AiDotIdle::Happy:
+        return Slow(look) ? kHappySlowMs : kHappyMs;
+      case AiDotIdle::Private:
+        return kPrivateMs;
+      case AiDotIdle::Sleep:
+        return kSleepMs;
+      case AiDotIdle::Poke:
+        return Calm(look) ? kPokeCalmMs : Slow(look) ? kPokeSlowMs : kPokeMs;
+      case AiDotIdle::Pop:
+        return kPopMs;
+      case AiDotIdle::Float:
+        return Slow(look) ? kFloatSlowMs : kFloatMs;
+      case AiDotIdle::None:
+        break;
     }
     return 0;
   }
@@ -457,12 +490,12 @@ public:
   }
 
   struct Release {
-    bool tap = false;          ///< No drag: a poke, or a jump out of the tuck; then Changes::open opens the panel.
-    bool untucked = false;     ///< The tap was on it tucked: it is out now, at the same place (persist that).
-    bool moved = false;        ///< Dragged: `place` is where it now rests.
+    bool tap = false;      ///< No drag: a poke, or a jump out of the tuck; then Changes::open opens the panel.
+    bool untucked = false; ///< The tap was on it tucked: it is out now, at the same place (persist that).
+    bool moved = false;    ///< Dragged: `place` is where it now rests.
     AiDotPlace place;
-    bool tucked = false;       ///< Dragged past the edge or flung at it: `place` is its side, half off the screen.
-    AiDotPoint dropped;        ///< Where the finger left it (top-left), for the slide to `place`.
+    bool tucked = false; ///< Dragged past the edge or flung at it: `place` is its side, half off the screen.
+    AiDotPoint dropped;  ///< Where the finger left it (top-left), for the slide to `place`.
   };
 
   /** The finger lifted: a tap, or a drag that rests at an edge, out or tucked (see the class comment). */

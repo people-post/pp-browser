@@ -16,13 +16,13 @@ namespace {
 
 BriefRelayHealth MapBriefHealth(MeshDeliveryOrchestrator::BriefRelayHealthState health) {
   switch (health) {
-  case MeshDeliveryOrchestrator::BriefRelayHealthState::Ok:
-    return BriefRelayHealth::Ok;
-  case MeshDeliveryOrchestrator::BriefRelayHealthState::Failed:
-    return BriefRelayHealth::Failed;
-  case MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown:
-  default:
-    return BriefRelayHealth::Unknown;
+    case MeshDeliveryOrchestrator::BriefRelayHealthState::Ok:
+      return BriefRelayHealth::Ok;
+    case MeshDeliveryOrchestrator::BriefRelayHealthState::Failed:
+      return BriefRelayHealth::Failed;
+    case MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown:
+    default:
+      return BriefRelayHealth::Unknown;
   }
 }
 
@@ -51,7 +51,7 @@ MeshTrafficRates MeshTrafficRatesBetween(const MeshTrafficTotals& before, const 
     return rates;
   }
   const auto delta = [](const uint64_t later, const uint64_t earlier) {
-    return later >= earlier ? later - earlier : uint64_t{0};  // a restarted mesh counts from zero
+    return later >= earlier ? later - earlier : uint64_t{0}; // a restarted mesh counts from zero
   };
   rates.valid = true;
   rates.sent_bps = static_cast<double>(delta(now.sent_bytes, before.sent_bytes)) / seconds;

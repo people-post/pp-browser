@@ -23,8 +23,16 @@ namespace pbr {
 /** How the call got through, in the user's words. Only trusted once the call is connected. */
 enum class CallRoute { Unknown, Direct, AroundLimits, Relayed };
 
+/** `CallMediaHealthView::path_kind` read once: the one mapping the route and the path word both come from. */
+enum class CallPathKind { Unknown, Direct, Punched, Circuit, MediaRelay };
+/** "direct" / "punched" / "circuit" / "media_relay" (also the older "relay"); anything else is Unknown. */
+CallPathKind ParseCallPathKind(const std::string& path_kind);
+
 /** `CallMediaHealthView::path_kind` as a route: direct, punched (around the limits), circuit / media_relay (relayed). */
 CallRoute CallRouteFromPathKind(const std::string& path_kind);
+
+/** The desktop's short path word (`call.details.path.*`) for a path kind; "" when the kind is not known. */
+const char* CallPathWordKey(const std::string& path_kind);
 
 /** The signal bar's colour: secure when good, warn with its word, danger with its word. */
 enum class CallSignalTone { Good, Fair, Poor };
@@ -163,6 +171,20 @@ private:
   CallSignalTone last_tone_ = CallSignalTone::Good;
 };
 
+/**
+ * The phone page's connecting steps (#172) as the story stands: their words (locale keys, in order; the 1:1 "calling"
+ * and "answered" lines take {name}, the other side) and the step on screen (the ones before it are done; `shown` ==
+ * the line count once every step is done). A group call has three lines; a 1:1 call the five steps, or four on a
+ * device that answered (it never called: no "Calling {name}…"). CallStoryView::stage numbers the five steps.
+ */
+struct CallStorySteps {
+  std::vector<std::string> keys;
+  int shown = 0;
+
+  bool operator==(const CallStorySteps&) const = default;
+};
+CallStorySteps CallStoryLines(const CallStoryView& view, bool group);
+
 /** The just-connected line: "Connected directly" / "Connected around network limits" / "…through an encrypted relay". */
 const char* CallRouteResultKey(CallRoute route);
 /** The timeline's "connected" line for a 1:1 call. */
@@ -173,12 +195,5 @@ const char* CallRouteHowKey(CallRoute route);
 const char* CallStoryNoticeKey(CallStoryNotice notice);
 /** The word next to the signal bars (empty when good). */
 const char* CallSignalWordKey(CallPathQuality quality);
-/** The four true loading tips, shown in turn every 3 s before connect. */
-inline constexpr const char* kCallStoryTipKeys[] = {
-    "call.story.tip.encrypted",
-    "call.story.tip.no_vpn",
-    "call.story.tip.reroute",
-    "call.story.tip.closer",
-};
 
 } // namespace pbr

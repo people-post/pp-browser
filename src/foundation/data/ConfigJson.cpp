@@ -1,5 +1,6 @@
 #include "foundation/data/ConfigJson.h"
 
+#include "foundation/crypto/CryptoConstants.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/ICredentialStore.h"
 #include "common/ValueJson.h"
@@ -462,13 +463,10 @@ Object MeshDhtConfigToObject(const mesh::MeshDhtConfig& config) {
   object.set("find_peer_timeout_ms", static_cast<int64_t>(config.find_peer_timeout_ms));
   object.set("max_concurrent_lookups", static_cast<int64_t>(config.max_concurrent_lookups));
   object.set("k_bucket_size", static_cast<int64_t>(config.k_bucket_size));
-  object.set("inbound_ops_per_peer_per_window",
-             static_cast<int64_t>(config.inbound_ops_per_peer_per_window));
+  object.set("inbound_ops_per_peer_per_window", static_cast<int64_t>(config.inbound_ops_per_peer_per_window));
   object.set("inbound_rate_window_seconds", static_cast<int64_t>(config.inbound_rate_window_seconds));
-  object.set("soft_reputation_penalty_threshold",
-             static_cast<int64_t>(config.soft_reputation_penalty_threshold));
-  object.set("soft_reputation_cooldown_seconds",
-             static_cast<int64_t>(config.soft_reputation_cooldown_seconds));
+  object.set("soft_reputation_penalty_threshold", static_cast<int64_t>(config.soft_reputation_penalty_threshold));
+  object.set("soft_reputation_cooldown_seconds", static_cast<int64_t>(config.soft_reputation_cooldown_seconds));
   return object;
 }
 
@@ -670,8 +668,7 @@ Object AppConfigToObject(const AppConfig& config) {
   const bool saved = config.backend.has_saved_urls;
   object.set("relay", ServiceEndpointToObject(saved ? config.backend.saved_relay : config.relay));
   object.set("directory", DirectoryConfigToObject(saved ? config.backend.saved_directory : config.directory));
-  object.set("registration",
-             ServiceEndpointToObject(saved ? config.backend.saved_registration : config.registration));
+  object.set("registration", ServiceEndpointToObject(saved ? config.backend.saved_registration : config.registration));
   object.set("mesh", MeshConfigToObject(config.mesh));
   object.set("initiation_floor", config.initiation_floor);
   if (!config.data_dir.empty()) {
@@ -839,6 +836,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   }
   object.set("home_widgets_order", makeArray(std::move(widget_order)));
   object.set("home_show_dynamic", prefs.home_show_dynamic);
+  object.set("home_animated_logo", prefs.home_animated_logo);
   std::vector<Value> starred;
   for (const std::string& id : prefs.starred_contacts) {
     starred.emplace_back(id);
@@ -848,6 +846,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
 }
 
 void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
+  const int64_t file_schema_version = ReadI64(object, "schema_version").value_or(0);
   if (auto schema_version = ReadI64(object, "schema_version")) {
     prefs.schema_version = static_cast<int>(*schema_version);
   }
@@ -872,10 +871,10 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
                          : std::nullopt;
   prefs.recovery_phrase_seen = object.getIf<bool>("recovery_phrase_seen").value_or(false);
   const int64_t grace_minutes = ReadI64(object, "unlock_grace_minutes").value_or(15);
-  prefs.unlock_grace_minutes =
-      (grace_minutes == 0 || grace_minutes == 5 || grace_minutes == 15 || grace_minutes == 60)
-          ? static_cast<int>(grace_minutes)
-          : 15;
+  prefs.unlock_grace_minutes = (grace_minutes == 0 || grace_minutes == 5 || grace_minutes == 15 ||
+                                grace_minutes == 60 || grace_minutes == kUnlockGraceAlways)
+                                   ? static_cast<int>(grace_minutes)
+                                   : 15;
   if (auto auto_renew = object.getIf<bool>("auto_renew_registration")) {
     prefs.auto_renew_registration = *auto_renew;
   } else {
@@ -906,7 +905,8 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   if (auto call_invite_policy = object.getString("call_invite_policy")) {
     prefs.call_invite_policy = *call_invite_policy;
   } else {
-    prefs.call_invite_policy = "everyone";
+    // The default was everyone before schema 15; keep it for those files.
+    prefs.call_invite_policy = file_schema_version < 15 ? "everyone" : "contacts_only";
   }
   if (auto attachment_download_policy = object.getString("attachment_download_policy")) {
     prefs.attachment_download_policy = *attachment_download_policy;
@@ -926,8 +926,9 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   if (auto look = object.getString("ai_dot_look")) {
     prefs.ai_dot_look = *look;
   }
-  if (prefs.ai_dot_look != "a" && prefs.ai_dot_look != "b" && prefs.ai_dot_look != "c" && prefs.ai_dot_look != "d") {
-    prefs.ai_dot_look = "b";
+  if (prefs.ai_dot_look != "auto" &&
+      !(prefs.ai_dot_look.size() == 1 && prefs.ai_dot_look[0] >= 'a' && prefs.ai_dot_look[0] <= 'g')) {
+    prefs.ai_dot_look = "auto";
   }
   if (auto size = object.getString("ai_dot_size")) {
     prefs.ai_dot_size = *size;
@@ -936,7 +937,8 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     prefs.ai_dot_size = "m";
   }
   prefs.ai_dot_left = object.getIf<bool>("ai_dot_left").value_or(false);
-  prefs.ai_dot_y_permille = static_cast<int>(std::clamp<int64_t>(ReadI64(object, "ai_dot_y_permille").value_or(600), 0, 1000));
+  prefs.ai_dot_y_permille =
+      static_cast<int>(std::clamp<int64_t>(ReadI64(object, "ai_dot_y_permille").value_or(600), 0, 1000));
   prefs.ai_dot_tucked = object.getIf<bool>("ai_dot_tucked").value_or(false);
   if (auto reduce_transparency = object.getIf<bool>("reduce_transparency")) {
     prefs.reduce_transparency = *reduce_transparency;
@@ -998,11 +1000,13 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     }
   }
   prefs.home_show_dynamic = object.getIf<bool>("home_show_dynamic").value_or(false);
+  prefs.home_animated_logo = object.getIf<bool>("home_animated_logo").value_or(true);
   prefs.starred_contacts.clear();
   if (const Array* starred = object.getArray("starred_contacts")) {
     for (const Value& item : starred->elements) {
       if (auto id = asString(item); id && !id->empty() &&
-          std::find(prefs.starred_contacts.begin(), prefs.starred_contacts.end(), *id) == prefs.starred_contacts.end()) {
+                                    std::find(prefs.starred_contacts.begin(), prefs.starred_contacts.end(), *id) ==
+                                        prefs.starred_contacts.end()) {
         prefs.starred_contacts.push_back(*id);
       }
     }

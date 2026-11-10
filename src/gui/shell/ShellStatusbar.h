@@ -10,7 +10,7 @@
 namespace ui {
 class Context;
 class DataModelConstructor;
-}
+} // namespace ui
 
 namespace pbr {
 

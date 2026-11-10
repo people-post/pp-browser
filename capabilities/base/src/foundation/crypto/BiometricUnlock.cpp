@@ -15,14 +15,14 @@ constexpr char kFileName[] = "biometric.bin";
 
 BiometricUnlock::Status StatusOf(const SealedDek::Status status) {
   switch (status) {
-  case SealedDek::Status::Found:
-    return BiometricUnlock::Status::Found;
-  case SealedDek::Status::Missing:
-    break;
-  case SealedDek::Status::Unavailable:
-    return BiometricUnlock::Status::Unavailable;
-  case SealedDek::Status::Canceled:
-    return BiometricUnlock::Status::Canceled;
+    case SealedDek::Status::Found:
+      return BiometricUnlock::Status::Found;
+    case SealedDek::Status::Missing:
+      break;
+    case SealedDek::Status::Unavailable:
+      return BiometricUnlock::Status::Unavailable;
+    case SealedDek::Status::Canceled:
+      return BiometricUnlock::Status::Canceled;
   }
   return BiometricUnlock::Status::Missing;
 }

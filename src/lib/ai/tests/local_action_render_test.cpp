@@ -24,7 +24,9 @@ std::string ReadFile(const std::string& path) {
   return out.str();
 }
 
-std::string AssetsRoot() { return std::string(PP_BROWSER_SOURCE_ROOT) + "/assets"; }
+std::string AssetsRoot() {
+  return std::string(PP_BROWSER_SOURCE_ROOT) + "/assets";
+}
 
 Object Parse(const std::string& json) {
   auto parsed = TryParseObject(json);
@@ -113,7 +115,9 @@ TEST_P(LocalActionRenderTest, OverviewListsEveryAreaWithoutRawKeys) {
 
 TEST_P(LocalActionRenderTest, WriterSentencesCarryTheirValues) {
   LocalRenderContext ctx;
-  auto render = [&](const std::string& tool, const std::string& json) { return RenderLocalResult(tool, Parse(json), ctx); };
+  auto render = [&](const std::string& tool, const std::string& json) {
+    return RenderLocalResult(tool, Parse(json), ctx);
+  };
 
   ctx.args = Parse(R"({"nickname":"Bob"})");
   const std::string nick = render("update_profile_nickname", R"({"success":true,"message":"ok"})");
@@ -158,7 +162,8 @@ TEST_P(LocalActionRenderTest, FailureNeverShowsTheRawMessage) {
 
   const std::string blocked = RenderLocalResult(
       "set_notifications",
-      Parse(R"({"success":false,"blocked":true,"message":"Tool 'set_notifications' is blocked by your tool permission settings."})"),
+      Parse(
+          R"({"success":false,"blocked":true,"message":"Tool 'set_notifications' is blocked by your tool permission settings."})"),
       {});
   EXPECT_EQ(blocked, Tr("ai.blocked_by_permissions"));
   EXPECT_EQ(blocked.find("Tool '"), std::string::npos);
@@ -189,7 +194,8 @@ TEST_P(LocalActionRenderTest, CardLabelsEveryKeyAndFlagsMissingOnes) {
 
 TEST_P(LocalActionRenderTest, CardShowsListsAndEmptyValues) {
   const std::string card = RenderLocalResult(
-      "get_integrations", Parse(R"({"search_provider":"","mcp_servers":[{"id":"a","enabled":true,"kind":"custom"}]})"), {});
+      "get_integrations", Parse(R"({"search_provider":"","mcp_servers":[{"id":"a","enabled":true,"kind":"custom"}]})"),
+      {});
   EXPECT_EQ(card.find("??"), std::string::npos) << card;
   EXPECT_NE(card.find("a ("), std::string::npos) << card;
 }
@@ -207,7 +213,11 @@ TEST_P(LocalActionRenderTest, OnlyFirstActionHintIsAppended) {
 TEST_P(LocalActionRenderTest, AmbiguousListsOneOpenRowPerCandidate) {
   LocalAmbiguous amb;
   amb.tool = "open_conversation";
-  amb.candidates = {{.id = "c1", .thread_id = "t1", .remark = "Old Wang (debt)", .nickname = "Wang", .last_contact_ms = 1700000000000},
+  amb.candidates = {{.id = "c1",
+                     .thread_id = "t1",
+                     .remark = "Old Wang (debt)",
+                     .nickname = "Wang",
+                     .last_contact_ms = 1700000000000},
                     {.id = "c2", .thread_id = "", .remark = "", .nickname = "Wang", .last_contact_ms = 0}};
   const Object root = Parse(RenderLocalAmbiguous(amb));
   const Array* blocks = root.getArray("blocks");

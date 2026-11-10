@@ -1,5 +1,6 @@
 #include "gui/shell/ShellFeedback.h"
 #include "gui/shell/ShellHost.h"
+#include "gui/shell/ShellLayoutRml.h"
 #include "lib/ui/ShellInterruption.h"
 #include "lib/ui/ShellLayout.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -116,18 +117,15 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
 
   ShellState compact_base{};
   compact_base.layout_mode = LayoutMode::Compact;
-  EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_base),
-            CompactChromeFrostSurface::BottomNav);
+  EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_base), CompactChromeFrostSurface::BottomNav);
 
   ShellState compact_chat_frost = compact_base;
   compact_chat_frost.compact_chat_open = true;
-  EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_chat_frost),
-            CompactChromeFrostSurface::ChatOverlayHeader);
+  EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_chat_frost), CompactChromeFrostSurface::ChatOverlayHeader);
 
   ShellState compact_aux_frost = compact_base;
   compact_aux_frost.auxiliary_open = true;
-  EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_aux_frost),
-            CompactChromeFrostSurface::AuxiliarySheetChrome);
+  EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_aux_frost), CompactChromeFrostSurface::AuxiliarySheetChrome);
 
   ShellState compact_me_frost = compact_base;
   compact_me_frost.nav_tab = NavTab::Me;
@@ -139,14 +137,44 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_transient_frost),
             CompactChromeFrostSurface::TransientHeader);
 
+  // Two bar positions, one frosted surface each: the chat view blurs its header and its composer, nothing else does.
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_chat_frost).top, CompactChromeFrostSurface::ChatOverlayHeader);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_chat_frost).bottom, CompactChromeFrostSurface::None)
+      << "the composer floats on a clear bar: no bottom frost in the chat view";
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_base).bottom, CompactChromeFrostSurface::BottomNav);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_aux_frost).bottom, CompactChromeFrostSurface::None);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_transient_frost).bottom, CompactChromeFrostSurface::None)
+      << "a pushed page over the chat takes the frost; the composer under it does not blur";
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_transient_frost).top, CompactChromeFrostSurface::TransientHeader);
+
+  // TODO #200: Settings keeps the tab bar, also under its pushed pages: top = the page's header, bottom = the bar.
+  PaneState settings_page;
+  settings_page.spec.key = "contact_detail";
+  ShellState compact_settings_frost = compact_me_frost;
+  compact_settings_frost.transient_stack.push_back(settings_page);
+  compact_settings_frost.transient_active = true;
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_settings_frost).top, CompactChromeFrostSurface::TransientHeader);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_settings_frost).bottom, CompactChromeFrostSurface::BottomNav);
+  compact_settings_frost.secret_page_open = true;
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_settings_frost).bottom, CompactChromeFrostSurface::None)
+      << "a secret page has no bar";
+  ShellState compact_scan_frost = compact_me_frost;
+  settings_page.spec.key = "qr_scan";
+  compact_scan_frost.transient_stack.push_back(settings_page);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_scan_frost).bottom, CompactChromeFrostSurface::None);
+
   ShellState compact_dialog_frost = compact_base;
   compact_dialog_frost.dialog.active = true;
-  EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_dialog_frost),
-            CompactChromeFrostSurface::None);
+  EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_dialog_frost), CompactChromeFrostSurface::None);
 
   ShellState expanded_base{};
   expanded_base.layout_mode = LayoutMode::Expanded;
   EXPECT_EQ(ShellInterruption::ResolveFrostSurface(expanded_base), CompactChromeFrostSurface::None);
+  ShellState compact_dialog_over_chat = compact_chat_frost;
+  compact_dialog_over_chat.dialog.active = true;
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_dialog_over_chat).top, CompactChromeFrostSurface::None);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(compact_dialog_over_chat).bottom, CompactChromeFrostSurface::None);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(expanded_base).bottom, CompactChromeFrostSurface::None);
 
   ShellState toast_state{};
   ShellFeedback::ShowToast(toast_state, "Hello", ToastDuration::Short, 1000.f);
@@ -252,8 +280,8 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
 
   // Emoji / attachment panel open over a tab-bar page (bottom_chrome_open): its own inset is zeroed at the call site,
   // so no keyboard is detected, but the tab bar still hides so the panel sits right under the docked composer.
-  const CompactChromeLayout tab_bar_bottom_chrome =
-      ShellLayout::ComputeCompactChromeLayout(config, 47, 0, 0.f, CompactBottomSurface::TabBar, /*bottom_chrome_open=*/true);
+  const CompactChromeLayout tab_bar_bottom_chrome = ShellLayout::ComputeCompactChromeLayout(
+      config, 47, 0, 0.f, CompactBottomSurface::TabBar, /*bottom_chrome_open=*/true);
   EXPECT_TRUE(tab_bar_bottom_chrome.tab_bar_hidden);
   EXPECT_FLOAT_EQ(tab_bar_bottom_chrome.content_padding_bottom_dp, 0.f);
 
@@ -273,8 +301,8 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   // longer shrinks, so the toast adds the keyboard inset to clear it (and a hidden tab bar is not there to clear).
   EXPECT_FLOAT_EQ(with_inset.toast_bottom_dp, 0.f);
   EXPECT_FLOAT_EQ(tab_bar.toast_bottom_dp, 34.f + 48.f + 12.f);
-  EXPECT_FLOAT_EQ(tab_bar_keyboard.toast_bottom_dp, 336.f + 12.f);  // tab bar hidden; inset clears the keyboard
-  EXPECT_FLOAT_EQ(composer_keyboard.toast_bottom_dp, 336.f + 52.f + 12.f);  // above the composer, above the keyboard
+  EXPECT_FLOAT_EQ(tab_bar_keyboard.toast_bottom_dp, 336.f + 12.f);         // tab bar hidden; inset clears the keyboard
+  EXPECT_FLOAT_EQ(composer_keyboard.toast_bottom_dp, 336.f + 52.f + 12.f); // above the composer, above the keyboard
   EXPECT_FLOAT_EQ(composer.toast_bottom_dp, 34.f + 52.f + 12.f);
   EXPECT_FLOAT_EQ(
       ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 0.f, CompactBottomSurface::Page).toast_bottom_dp,
@@ -290,8 +318,7 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_FLOAT_EQ(with_titlebar.content_top_dp, 36.f);
   EXPECT_FLOAT_EQ(with_titlebar.shell_bottom_dp, 0.f);
 
-  const CompactChromeLayout titlebar_and_safe =
-      ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 36.f);
+  const CompactChromeLayout titlebar_and_safe = ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 36.f);
   EXPECT_FLOAT_EQ(titlebar_and_safe.content_top_dp, 83.f);
   EXPECT_FLOAT_EQ(titlebar_and_safe.shell_bottom_dp, 34.f);
 }
@@ -369,7 +396,8 @@ TEST(ShellHostTest, AChatPickedOnThePhonesHomeOpensFromChats) {
   EXPECT_TRUE(ShellLayout::OpenChatSwitchesToChats(LayoutMode::Compact, NavTab::Home));
   EXPECT_FALSE(ShellLayout::OpenChatSwitchesToChats(LayoutMode::Compact, NavTab::Sessions));
   EXPECT_FALSE(ShellLayout::OpenChatSwitchesToChats(LayoutMode::Compact, NavTab::Contacts));
-  EXPECT_FALSE(ShellLayout::OpenChatSwitchesToChats(LayoutMode::Expanded, NavTab::Home)) << "the desktop keeps its panes";
+  EXPECT_FALSE(ShellLayout::OpenChatSwitchesToChats(LayoutMode::Expanded, NavTab::Home))
+      << "the desktop keeps its panes";
 }
 
 TEST(ShellHostTest, AnOverLongPasteInThePinBoxIsHiddenNotRendered) {
@@ -421,7 +449,7 @@ TEST(ShellHostHiddenTabTest, BackFromSettingsReturnsToTheTabItWasOpenedFrom) {
   ShellHost& from_chats = PhoneHost(NavTab::Sessions);
   from_chats.OpenSettingsFromAvatar();
   EXPECT_EQ(from_chats.State().nav_tab, NavTab::Me);
-  EXPECT_EQ(ShellLayout::CompactTabBarDp(from_chats.State()), 0.f) << "no tab bar under Settings";
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(from_chats.State()), 48.f) << "Settings keeps the tab bar (TODO #200)";
   from_chats.HiddenTabBack();
   EXPECT_EQ(from_chats.State().nav_tab, NavTab::Sessions);
 
@@ -431,10 +459,41 @@ TEST(ShellHostHiddenTabTest, BackFromSettingsReturnsToTheTabItWasOpenedFrom) {
   EXPECT_EQ(from_ai.State().nav_tab, NavTab::Home);
 }
 
+// TODO #200: a tab in the bar on Settings (or a page pushed from it) leaves the whole stack and shows that tab.
+TEST(ShellHostHiddenTabTest, ATabTapOnSettingsLeavesTheWholeSettingsStack) {
+  ShellHost& host = PhoneHost(NavTab::Sessions);
+  host.OpenSettingsFromAvatar();
+  EXPECT_EQ(host.State().nav_bar_tab_str, "sessions") << "the bar highlights the tab Settings was entered from";
+  host.PushTransient({.key = "contact_detail"});
+  host.PushTransient({.key = "blocked_people"});
+  ASSERT_EQ(host.State().transient_stack.size(), 2u);
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(host.State()), 48.f);
+
+  host.OnNavTabClicked("home");
+  EXPECT_EQ(host.State().nav_tab, NavTab::Home);
+  EXPECT_TRUE(host.State().transient_stack.empty());
+  EXPECT_EQ(host.State().nav_bar_tab_str, "home");
+
+  // From the AI page: back to the AI page, by the same tap.
+  ShellHost& from_ai = PhoneHost(NavTab::Home);
+  from_ai.OpenSettingsFromAvatar();
+  EXPECT_EQ(from_ai.State().nav_bar_tab_str, "home");
+  from_ai.OnNavTabClicked("home");
+  EXPECT_EQ(from_ai.State().nav_tab, NavTab::Home);
+
+  // A secret page hides the bar until it closes; leaving Settings drops the flag too.
+  ShellHost& secret = PhoneHost(NavTab::Home);
+  secret.OpenSettingsFromAvatar();
+  secret.SetSecretPageOpen(true);
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(secret.State()), 0.f);
+  secret.HiddenTabBack();
+  EXPECT_FALSE(secret.State().secret_page_open);
+}
+
 TEST(ShellHostHiddenTabTest, HiddenToHiddenKeepsTheTabBeforeTheFirst) {
   ShellHost& host = PhoneHost(NavTab::Home);
   host.OpenSettingsFromAvatar();
-  host.SelectNavTab(NavTab::Contacts);  // an invite opened from Settings
+  host.SelectNavTab(NavTab::Contacts); // an invite opened from Settings
   host.HiddenTabBack();
   EXPECT_EQ(host.State().nav_tab, NavTab::Home) << "the tab before Me, not Me";
   host.HiddenTabBack();
@@ -444,7 +503,7 @@ TEST(ShellHostHiddenTabTest, HiddenToHiddenKeepsTheTabBeforeTheFirst) {
 TEST(ShellHostHiddenTabTest, AnInviteOverAnOpenChatKeepsTheChatForTheWayBack) {
   ShellHost& host = PhoneHost(NavTab::Home);
   OpenChat(host);
-  std::vector<std::pair<NavTab, bool>> changes;  // the tab, and whether the chat overlay is still open then
+  std::vector<std::pair<NavTab, bool>> changes; // the tab, and whether the chat overlay is still open then
   host.SetOnNavTabChanged([&](const NavTab tab) { changes.emplace_back(tab, host.State().compact_chat_open); });
 
   // ContactsController::OfferInvite picks Contacts through the navigation port.
@@ -519,7 +578,7 @@ TEST(ShellHostHiddenTabTest, SystemBackOnAHiddenTabRootReturnsToThePreviousTab) 
 TEST(ShellHostHiddenTabTest, SettingsEnteredOnTheDesktopStillGoesBackAfterTheWindowNarrows) {
   ShellHost& host = KeptHost();
   host.SelectNavTab(NavTab::Home);
-  host.SelectNavTab(NavTab::Me);  // the desktop rail's Me
+  host.SelectNavTab(NavTab::Me); // the desktop rail's Me
   host.State().layout_mode = LayoutMode::Compact;
   ShellLayout::SyncLayoutModeString(host.State());
   host.HiddenTabBack();
@@ -558,7 +617,7 @@ TEST(ShellHostHiddenTabTest, TheChatShownAgainIsMarkedRead) {
     std::stringstream buffer;
     buffer << in.rdbuf();
     std::string text = buffer.str();
-    std::erase(text, '\r');  // a Windows checkout has CRLF line ends
+    std::erase(text, '\r'); // a Windows checkout has CRLF line ends
     return text;
   };
   EXPECT_NE(read("src/app/Application.cpp")
@@ -573,13 +632,15 @@ TEST(ShellHostHiddenTabTest, TheChatShownAgainIsMarkedRead) {
   EXPECT_NE(body.find("scroller_.RequestScrollToLatest();"), std::string::npos);
 }
 
-TEST(ShellHostHiddenTabTest, ASecondTapOnTheAiTabOpensTheAiList) {
+TEST(ShellHostHiddenTabTest, ASecondTapOnTheAiTabDoesNotOpenTheAiList) {
   ShellHost& host = PhoneHost(NavTab::Sessions);
   host.OnNavTabClicked("home");
   EXPECT_EQ(host.State().nav_tab, NavTab::Home);
   EXPECT_FALSE(host.State().ai_drawer_open) << "the first tap only goes to the AI page";
   host.OnNavTabClicked("home");
-  EXPECT_TRUE(host.State().ai_drawer_open);
+  EXPECT_FALSE(host.State().ai_drawer_open) << "a second tap stays on the AI page";
+  host.OpenAiDrawer();
+  EXPECT_TRUE(host.State().ai_drawer_open) << "the drawer still opens from its own entry";
   host.CloseAiDrawer();
   EXPECT_FALSE(host.State().ai_drawer_open);
 
@@ -602,3 +663,88 @@ TEST(ShellHostHiddenTabTest, TheAiDrawerFlagNeverSurvivesATabSwitch) {
   EXPECT_FALSE(cleared.State().ai_drawer_open) << "the tab's context goes with it";
 }
 
+namespace pbr {
+
+// Reaches ShellHost's private call answer handlers (a friend of the class).
+struct ShellHostTestAccess {
+  static void Accept(ShellHost& host) { host.CallAccept(); }
+  static void AcceptVoice(ShellHost& host) { host.CallAcceptVoice(); }
+  static void AcceptCharge(ShellHost& host) { host.CallAcceptCharge(); }
+  static void Decline(ShellHost& host) { host.CallDecline(); }
+};
+
+namespace {
+
+CallChromeSnapshot Ring(const bool awaiting) {
+  CallChromeSnapshot snapshot;
+  snapshot.ring.active = true;
+  snapshot.ring.awaiting_invite = awaiting;
+  return snapshot;
+}
+
+bool PinLayerHasOverCall(ShellHost& host) {
+  return ShellLayoutRml(host.State(), false, "").PinGate().find("shell-pin-gate--over-call") != std::string::npos;
+}
+
+} // namespace
+
+// The unlock layer follows the awaiting page: the class is there while it is up and gone when it goes, whichever came
+// first (the layer is remounted on the flip; here the markup it would mount is checked).
+TEST(ShellHostCallRingTest, ThePinLayerClassFollowsTheAwaitingFlag) {
+  ShellHost& host = PhoneHost(NavTab::Home);
+  PinGateState pin;
+  pin.active = true;
+  pin.unlock_mode = true;
+  host.ApplyPinGateState(pin);
+  EXPECT_FALSE(PinLayerHasOverCall(host));
+  host.ApplyCallChromeSnapshot(Ring(true), CallChromeUpdate::Remount);
+  EXPECT_TRUE(host.State().call_ring.awaiting_invite);
+  EXPECT_TRUE(PinLayerHasOverCall(host)) << "PIN card was already up when the page came";
+  host.ApplyCallChromeSnapshot(Ring(false), CallChromeUpdate::Remount);
+  EXPECT_FALSE(PinLayerHasOverCall(host)) << "a real ring: the card is back in the middle";
+  host.ApplyCallChromeSnapshot(Ring(true), CallChromeUpdate::Remount);
+  host.ApplyCallChromeSnapshot(CallChromeSnapshot{}, CallChromeUpdate::Remount);
+  EXPECT_FALSE(PinLayerHasOverCall(host)) << "the page ended while the card was up";
+}
+
+TEST(ShellHostCallRingTest, TheAnswersDoNothingWhileAwaitingTheInviteAndActOtherwise) {
+  ShellHost& host = PhoneHost(NavTab::Home);
+  int accepts = 0;
+  int voice = 0;
+  int charge = 0;
+  int declines = 0;
+  CallActionsPorts ports;
+  ports.accept_incoming = [&]() { ++accepts; };
+  ports.accept_incoming_voice_only = [&]() { ++voice; };
+  ports.accept_incoming_with_charge = [&]() { ++charge; };
+  ports.decline_incoming = [&]() { ++declines; };
+  host.BindCallActions(std::move(ports));
+
+  host.ApplyCallChromeSnapshot(Ring(true), CallChromeUpdate::Remount);
+  ShellHostTestAccess::Accept(host);
+  ShellHostTestAccess::AcceptVoice(host);
+  ShellHostTestAccess::AcceptCharge(host);
+  ShellHostTestAccess::Decline(host);
+  EXPECT_EQ(accepts + voice + charge + declines, 0);
+
+  host.ApplyCallChromeSnapshot(Ring(false), CallChromeUpdate::DirtyOnly);
+  ShellHostTestAccess::Accept(host);
+  ShellHostTestAccess::AcceptVoice(host);
+  ShellHostTestAccess::AcceptCharge(host);
+  ShellHostTestAccess::Decline(host);
+  EXPECT_EQ(accepts, 1);
+  EXPECT_EQ(voice, 1);
+  EXPECT_EQ(charge, 1);
+  EXPECT_EQ(declines, 1);
+}
+
+TEST(ShellHostCallRingTest, TheStartupCoverIsNotShownOverAnActiveRing) {
+  ShellHost& host = KeptHost();
+  host.ReconcileStartupCover();
+  EXPECT_TRUE(host.State().startup_cover_visible) << "cold start: the logo cover";
+  host.ApplyCallChromeSnapshot(Ring(true), CallChromeUpdate::Remount);
+  EXPECT_FALSE(host.State().startup_cover_visible);
+  host.ApplyCallChromeSnapshot(CallChromeSnapshot{}, CallChromeUpdate::Remount);
+}
+
+} // namespace pbr

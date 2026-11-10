@@ -25,7 +25,6 @@
 namespace pbr {
 namespace {
 
-
 std::vector<uint8_t> JsonToBody(const std::string& json_utf8) {
   return std::vector<uint8_t>(json_utf8.begin(), json_utf8.end());
 }
@@ -43,8 +42,7 @@ std::string MakeProgramKey(const std::string& program_id, const std::string& joi
 }
 
 int64_t DefaultNowMs() {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::system_clock::now().time_since_epoch())
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
       .count();
 }
 
@@ -132,7 +130,7 @@ struct AmpBroadcastTransport::Impl {
   }
 
   HopSlotWinContext LookupSlotWin(const std::string& program_id, const std::string& join_handle,
-                              const std::string& relay_peer_id) {
+                                  const std::string& relay_peer_id) {
     ResolveHopSlotWinContext resolver;
     {
       std::lock_guard lock(mutex);
@@ -196,8 +194,7 @@ struct AmpBroadcastTransport::Impl {
   BroadcastViewerAttachResult HandleViewerAttach(const BroadcastViewerAttachRequest& req) {
     BroadcastViewerAttachResult result;
     result.action = BroadcastLadderViewerAction::Refuse;
-    if (req.program_id.empty() || req.join_handle.empty() || req.viewer_peer_id.empty() ||
-        req.ticket_json.empty()) {
+    if (req.program_id.empty() || req.join_handle.empty() || req.viewer_peer_id.empty() || req.ticket_json.empty()) {
       result.refuse_reason = "viewer_attach missing fields";
       return result;
     }
@@ -276,48 +273,49 @@ struct AmpBroadcastTransport::Impl {
     // session → handler → holder → session leaks every served request (LeakSanitizer).
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     auto policy = mesh::InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
-    *session_holder = links->BindChannelOnLink(link, channel_id, policy,
+    *session_holder = links->BindChannelOnLink(
+        link, channel_id, policy,
         [this, session_holder](Roe<std::vector<uint8_t>> frame) {
-      auto session = std::exchange(*session_holder, nullptr);
-      if (!session || !frame || stopped.load(std::memory_order_acquire)) {
-        return false;
-      }
-      auto body = std::move(*frame);
-      // Keep the channel open for the worker's reply (InboundReply.h); `reply` closes it.
-      auto reply = mesh::MakeInboundReply(session, post_io);
-      RunWorker(post_worker, [this, reply, body = std::move(body)]() mutable {
-        if (stopped.load(std::memory_order_acquire)) {
-          return;
-        }
-        const std::string json_utf8(body.begin(), body.end());
-        auto decoded = DecodeBroadcastRpcJson(json_utf8);
-        Roe<std::string> response_json = [&]() -> Roe<std::string> {
-          if (!decoded) {
-            BroadcastTicketResponse err;
-            err.ok = false;
-            err.error = decoded.error().message;
-            return EncodeBroadcastTicketResponse(err);
+          auto session = std::exchange(*session_holder, nullptr);
+          if (!session || !frame || stopped.load(std::memory_order_acquire)) {
+            return false;
           }
-          return EncodeResponseForRequest(*decoded);
-        }();
-        if (!response_json) {
-          return;
-        }
-        reply->Send(JsonToBody(*response_json));
-      });
-      return true;
-    },
+          auto body = std::move(*frame);
+          // Keep the channel open for the worker's reply (InboundReply.h); `reply` closes it.
+          auto reply = mesh::MakeInboundReply(session, post_io);
+          RunWorker(post_worker, [this, reply, body = std::move(body)]() mutable {
+            if (stopped.load(std::memory_order_acquire)) {
+              return;
+            }
+            const std::string json_utf8(body.begin(), body.end());
+            auto decoded = DecodeBroadcastRpcJson(json_utf8);
+            Roe<std::string> response_json = [&]() -> Roe<std::string> {
+              if (!decoded) {
+                BroadcastTicketResponse err;
+                err.ok = false;
+                err.error = decoded.error().message;
+                return EncodeBroadcastTicketResponse(err);
+              }
+              return EncodeResponseForRequest(*decoded);
+            }();
+            if (!response_json) {
+              return;
+            }
+            reply->Send(JsonToBody(*response_json));
+          });
+          return true;
+        },
         [session_holder](const char* /*reason*/) { session_holder->reset(); });
   }
-
 };
 
-
-
-AmpBroadcastTransport::AmpBroadcastTransport(mesh::IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker, IoPost post_io,
-                                             IoAfter post_after)
-    : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
+AmpBroadcastTransport::AmpBroadcastTransport(mesh::IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker,
+                                             IoPost post_io, IoAfter post_after)
+    : impl_(std::make_unique<Impl>()),
+      links_(links),
+      io_pump_(std::move(io_pump)),
+      post_worker_(std::move(post_worker)),
+      post_io_(std::move(post_io)),
       post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
@@ -325,7 +323,9 @@ AmpBroadcastTransport::AmpBroadcastTransport(mesh::IChatPeerLinks& links, IoPump
   impl_->post_io = post_io_;
 }
 
-AmpBroadcastTransport::~AmpBroadcastTransport() { Stop(); }
+AmpBroadcastTransport::~AmpBroadcastTransport() {
+  Stop();
+}
 
 void AmpBroadcastTransport::Start() {
   if (started_) {
@@ -335,8 +335,7 @@ void AmpBroadcastTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kRpcBroadcastProtocolId,
-      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
-                                                const std::string& remote_peer_id,
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle, const std::string& remote_peer_id,
                                                 const uint32_t channel_id) {
         impl->HandleInboundChannel(handle, remote_peer_id, channel_id);
       }));
@@ -384,7 +383,7 @@ void AmpBroadcastTransport::SetHopSlotWinResolver(ResolveHopSlotWinContext resol
 }
 
 void AmpBroadcastTransport::PutLiveProgramKey(const std::string& program_id, const std::string& join_handle,
-                                            LiveProgramKey key) {
+                                              LiveProgramKey key) {
   std::lock_guard lock(impl_->mutex);
   impl_->live_keys[MakeProgramKey(program_id, join_handle)] = std::move(key);
 }
@@ -397,6 +396,5 @@ void AmpBroadcastTransport::ClearLiveProgramKey(const std::string& program_id, c
 bool AmpBroadcastTransport::IsPeerReachable(const std::string& peer_identity_value) const {
   return links_.GetLinkSnapshot(peer_identity_value).has_endpoint || links_.IsConnected(peer_identity_value);
 }
-
 
 } // namespace pbr

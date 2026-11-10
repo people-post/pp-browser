@@ -31,7 +31,9 @@ constexpr float kSize = kArea.size_dp;
 const float kGap = AiDotModel::EdgeGapDp(kSize);
 constexpr AiDotLook kLook = AiDotLook::TwoEyes;
 
-AiDotScene Home() { return AiDotScene{}; }
+AiDotScene Home() {
+  return AiDotScene{};
+}
 
 TEST(AiDotModelTest, ShowsOnAPhonePageWhenSwitchedOn) {
   EXPECT_TRUE(AiDotModel::Shown(Home()));
@@ -44,7 +46,7 @@ TEST(AiDotModelTest, ShowsOnAPhonePageWhenSwitchedOn) {
 }
 
 TEST(AiDotModelTest, HidesDuringACallTheScannerThePinGateAndSecretPages) {
-  const auto hidden_with = [](bool AiDotScene::*field) {
+  const auto hidden_with = [](bool AiDotScene::* field) {
     AiDotScene scene = Home();
     scene.*field = true;
     return !AiDotModel::Shown(scene);
@@ -203,9 +205,10 @@ TEST(AiDotModelTest, EachLookPlaysEveryMockupActionThePlainOneWithoutEyes) {
                                             AiDotIdle::Five, AiDotIdle::Happy, AiDotIdle::Private, AiDotIdle::Float}));
   }
   const auto plain = AiDotModel::IdleActions(AiDotLook::Plain);
-  EXPECT_EQ(std::set<AiDotIdle>(plain.begin(), plain.end()),
-            (std::set<AiDotIdle>{AiDotIdle::Sway, AiDotIdle::Talk, AiDotIdle::Shy, AiDotIdle::Wave, AiDotIdle::Listen,
-                                 AiDotIdle::Think, AiDotIdle::Five, AiDotIdle::Happy, AiDotIdle::Private, AiDotIdle::Float}))
+  EXPECT_EQ(
+      std::set<AiDotIdle>(plain.begin(), plain.end()),
+      (std::set<AiDotIdle>{AiDotIdle::Sway, AiDotIdle::Talk, AiDotIdle::Shy, AiDotIdle::Wave, AiDotIdle::Listen,
+                           AiDotIdle::Think, AiDotIdle::Five, AiDotIdle::Happy, AiDotIdle::Private, AiDotIdle::Float}))
       << "no eyes: no blink or glance";
   for (const AiDotLook look : {AiDotLook::OneEye, AiDotLook::TwoEyes, AiDotLook::Cool, AiDotLook::Plain}) {
     for (const AiDotIdle idle : AiDotModel::IdleActions(look)) {
@@ -221,12 +224,12 @@ TEST(AiDotModelTest, EachLookPlaysEveryMockupActionThePlainOneWithoutEyes) {
   EXPECT_EQ(AiDotModel::LookFrom("?"), AiDotLook::TwoEyes);
 }
 
-TEST(AiDotModelTest, TheFloatIsOneTimedActionOfAboutTwoAndAHalfSecondsForEveryLook) {
+TEST(AiDotModelTest, TheFloatIsOneTimedActionOfAboutThreeAndAQuarterSecondsForEveryLook) {
   EXPECT_STREQ(AiDotModel::IdleName(AiDotIdle::Float), "float");
   for (const AiDotLook look : {AiDotLook::OneEye, AiDotLook::TwoEyes, AiDotLook::Cool, AiDotLook::Plain}) {
     const auto actions = AiDotModel::IdleActions(look);
     EXPECT_NE(std::find(actions.begin(), actions.end(), AiDotIdle::Float), actions.end());
-    EXPECT_EQ(AiDotModel::IdleLengthMs(AiDotIdle::Float, look), 2500);
+    EXPECT_EQ(AiDotModel::IdleLengthMs(AiDotIdle::Float, look), 3250);
     for (uint32_t roll = 0; roll < 64; ++roll) {
       EXPECT_NE(AiDotModel::PickIdle(look, AiDotIdle::Float, roll), AiDotIdle::Float) << "never twice in a row";
     }
@@ -490,6 +493,29 @@ TEST(AiDotModelTest, CalmLooksWaveAndPokeMoreSlowly) {
   EXPECT_EQ(AiDotModel::IdleLengthMs(AiDotIdle::None, AiDotLook::TwoEyes), 0);
 }
 
+TEST(AiDotModelTest, TheLazyLookIsSlowerAndTheOtherWeekendLooksShareTheLengths) {
+  EXPECT_TRUE(AiDotModel::Slow(AiDotLook::Lazy));
+  for (const AiDotLook look : {AiDotLook::OneEye, AiDotLook::TwoEyes, AiDotLook::Cool, AiDotLook::Plain,
+                               AiDotLook::Evening, AiDotLook::Outing}) {
+    EXPECT_FALSE(AiDotModel::Slow(look));
+  }
+  for (const AiDotLook look : {AiDotLook::Evening, AiDotLook::Outing}) {
+    for (const AiDotIdle idle : {AiDotIdle::Wave, AiDotIdle::Poke, AiDotIdle::Talk, AiDotIdle::Float}) {
+      EXPECT_EQ(AiDotModel::IdleLengthMs(idle, look), AiDotModel::IdleLengthMs(idle, AiDotLook::TwoEyes));
+    }
+  }
+  EXPECT_EQ(AiDotModel::IdleLengthMs(AiDotIdle::Talk, AiDotLook::Lazy), AiDotModel::kTalkSlowMs);
+  EXPECT_EQ(AiDotModel::IdleLengthMs(AiDotIdle::Wave, AiDotLook::Lazy), AiDotModel::kWaveSlowMs);
+  EXPECT_EQ(AiDotModel::IdleLengthMs(AiDotIdle::Five, AiDotLook::Lazy), AiDotModel::kFiveSlowMs);
+  EXPECT_EQ(AiDotModel::IdleLengthMs(AiDotIdle::Happy, AiDotLook::Lazy), AiDotModel::kHappySlowMs);
+  EXPECT_EQ(AiDotModel::IdleLengthMs(AiDotIdle::Poke, AiDotLook::Lazy), AiDotModel::kPokeSlowMs);
+  EXPECT_EQ(AiDotModel::IdleLengthMs(AiDotIdle::Float, AiDotLook::Lazy), AiDotModel::kFloatSlowMs);
+  EXPECT_EQ(AiDotModel::IdleLengthMs(AiDotIdle::Sleep, AiDotLook::Lazy), AiDotModel::kSleepMs);
+  EXPECT_EQ(AiDotModel::LookFrom("e"), AiDotLook::Evening);
+  EXPECT_EQ(AiDotModel::LookFrom("f"), AiDotLook::Outing);
+  EXPECT_EQ(AiDotModel::LookFrom("g"), AiDotLook::Lazy);
+}
+
 TEST(AiDotModelTest, ATapPokesItAndThePanelOpensWhenThePokeHasPlayed) {
   for (const AiDotLook look : {AiDotLook::TwoEyes, AiDotLook::Cool}) {
     AiDotModel model;
@@ -666,12 +692,12 @@ protected:
         "<div id=\"back\" class=\"ai-dot-part ai-dot-back\">" +
         layers({"eyes-back-open", "eyes-back-hap", "eyes-back-shut", "arc-1", "arc-2", "arc-3"}) +
         "</div><div id=\"front\" class=\"ai-dot-part ai-dot-front\">" +
-        layers({"blush", "eyes-front-open", "eyes-front-hap", "eyes-front-shut", "mouth", "eq-1", "eq-2", "eq-3",
-                "line-1", "line-2", "line-3", "bar-1", "bar-2", "bar-3", "bar-4", "bar-5", "ddot-1", "ddot-2",
-                "ddot-3", "check", "dlock"}) +
+        layers({"blush",  "eyes-front-open", "eyes-front-hap", "eyes-front-shut", "mouth", "eq-1",  "eq-2",  "eq-3",
+                "line-1", "line-2",          "line-3",         "bar-1",           "bar-2", "bar-3", "bar-4", "bar-5",
+                "ddot-1", "ddot-2",          "ddot-3",         "check",           "dlock", "pom"}) +
         "</div>" +
         layers({"bubble", "tdot-1", "tdot-2", "tdot-3", "star", "spark", "heart-1", "heart-2", "z-1", "z-2", "z-3",
-                "lock"}) +
+                "lock", "steam-1", "steam-2"}) +
         "</div></div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml, themes + "ai_dot_keyframes_test.rml");
     ASSERT_NE(document, nullptr);
@@ -749,15 +775,18 @@ TEST_F(AiDotKeyframesTest, TheCalmSwayIsAsLongAsTheOther) {
 
 /** Every action there is: each look's rotation, and sleep, poke and pop. */
 std::vector<AiDotIdle> AllActions() {
-  return {AiDotIdle::Sway,  AiDotIdle::Blink, AiDotIdle::Look,    AiDotIdle::Talk,  AiDotIdle::Shy,
-          AiDotIdle::Wave,  AiDotIdle::Listen, AiDotIdle::Think,  AiDotIdle::Five,  AiDotIdle::Happy,
-          AiDotIdle::Private, AiDotIdle::Float, AiDotIdle::Sleep, AiDotIdle::Poke, AiDotIdle::Pop};
+  return {AiDotIdle::Sway,    AiDotIdle::Blink,  AiDotIdle::Look,  AiDotIdle::Talk, AiDotIdle::Shy,
+          AiDotIdle::Wave,    AiDotIdle::Listen, AiDotIdle::Think, AiDotIdle::Five, AiDotIdle::Happy,
+          AiDotIdle::Private, AiDotIdle::Float,  AiDotIdle::Sleep, AiDotIdle::Poke, AiDotIdle::Pop};
 }
 
 /** The dot's look classes as window_shell.rml binds them (calm: C and D; plain: D). */
 void SetLook(ui::Element* dot, const AiDotLook look) {
   dot->SetClass("ai-dot--calm", AiDotModel::Calm(look));
   dot->SetClass("ai-dot--plain", look == AiDotLook::Plain);
+  dot->SetClass("ai-dot--look-e", look == AiDotLook::Evening);
+  dot->SetClass("ai-dot--look-f", look == AiDotLook::Outing);
+  dot->SetClass("ai-dot--look-g", look == AiDotLook::Lazy);
 }
 
 // Every action with every particle (all layers of all looks are in the document), in the full (A, B), calm (C) and
@@ -765,7 +794,8 @@ void SetLook(ui::Element* dot, const AiDotLook look) {
 // is gone. So the dot draws only while an action runs: exactly one wake per action, nothing between them.
 TEST_F(AiDotKeyframesTest, EveryActionAsksForFramesOnlyWhileItRuns) {
   ui::Element* dot = document->GetElementById("dot");
-  for (const AiDotLook look : {AiDotLook::TwoEyes, AiDotLook::Cool, AiDotLook::Plain}) {
+  for (const AiDotLook look : {AiDotLook::TwoEyes, AiDotLook::Cool, AiDotLook::Plain, AiDotLook::Evening,
+                               AiDotLook::Outing, AiDotLook::Lazy}) {
     for (const AiDotIdle idle : AllActions()) {
       const std::string name = AiDotModel::IdleName(idle);
       SCOPED_TRACE(name + " look " + std::to_string(static_cast<int>(look)));
@@ -806,9 +836,9 @@ TEST_F(AiDotKeyframesTest, AsleepItHoldsStillAndAsksForNoFrames) {
 TEST_F(AiDotKeyframesTest, EachActionShowsItsParticlesOnlyWhileItRuns) {
   ui::Element* dot = document->GetElementById("dot");
   const std::vector<std::string> particles = {
-      "blush", "mouth", "eq-1", "eq-2", "eq-3", "line-1", "line-2", "line-3", "bar-1", "bar-2", "bar-3", "bar-4",
-      "bar-5", "ddot-1", "ddot-2", "ddot-3", "check", "dlock", "arc-1", "arc-2", "arc-3", "bubble", "tdot-1", "tdot-2",
-      "tdot-3", "star", "spark", "heart-1", "heart-2", "z-1", "z-2", "z-3", "lock"};
+      "blush",  "mouth",  "eq-1",   "eq-2",   "eq-3",   "line-1",  "line-2",  "line-3", "bar-1", "bar-2", "bar-3",
+      "bar-4",  "bar-5",  "ddot-1", "ddot-2", "ddot-3", "check",   "dlock",   "arc-1",  "arc-2", "arc-3", "bubble",
+      "tdot-1", "tdot-2", "tdot-3", "star",   "spark",  "heart-1", "heart-2", "z-1",    "z-2",   "z-3",   "lock"};
   const auto shown = [this](const std::string& id) {
     ui::Element* layer = document->GetElementById(id);
     return layer->IsVisible() && layer->GetComputedValues().opacity() > 0.01f;
@@ -909,17 +939,20 @@ TEST(AiDotWindowMarkupTest, EveryActionHasItsClassAndEveryLookItsLayers) {
   const std::string rml = buffer.str();
   for (const AiDotIdle idle : AllActions()) {
     const std::string name = AiDotModel::IdleName(idle);
-    EXPECT_NE(rml.find("data-class-ai-dot--" + name + "=\"ai_dot_idle == '" + name + "'\""), std::string::npos)
-        << name;
+    EXPECT_NE(rml.find("data-class-ai-dot--" + name + "=\"ai_dot_idle == '" + name + "'\""), std::string::npos) << name;
   }
   EXPECT_NE(rml.find("data-class-ai-dot--asleep=\"ai_dot_asleep\""), std::string::npos);
   EXPECT_NE(rml.find("data-class-ai-dot--plain=\"ai_dot_look == 'd'\""), std::string::npos);
-  std::vector<std::string> files = {"body-back.svg", "body-front.svg", "body-back-c.svg", "body-front-c.svg",
-                                    "a-mouth.svg",   "b-mouth.svg",    "a-blush.svg",     "b-blush.svg",
-                                    "d-check.svg",   "d-lock.svg",     "bubble.svg",      "bubble-c.svg",
-                                    "star.svg",      "spark-c.svg",    "spark-d.svg",     "lock.svg",
-                                    "lock-c.svg"};
-  for (const char* look : {"a", "b", "c"}) {
+  for (const char look : {'e', 'f', 'g'}) {
+    EXPECT_NE(rml.find(std::string("data-class-ai-dot--look-") + look + "=\"ai_dot_look == '" + look + "'\""),
+              std::string::npos)
+        << look;
+  }
+  std::vector<std::string> files = {
+      "body-back.svg", "body-front.svg", "body-back-c.svg", "body-front-c.svg", "a-mouth.svg", "b-mouth.svg",
+      "a-blush.svg",   "b-blush.svg",    "d-check.svg",     "d-lock.svg",       "bubble.svg",  "bubble-c.svg",
+      "star.svg",      "spark-c.svg",    "spark-d.svg",     "lock.svg",         "lock-c.svg"};
+  for (const char* look : {"a", "b", "c", "e", "f", "g"}) {
     for (const char* kind : {"eyes", "hap", "shut"}) {
       for (const char* part : {"front", "back"}) {
         files.push_back(std::string(look) + "-" + kind + "-" + part + ".svg");
@@ -933,6 +966,13 @@ TEST(AiDotWindowMarkupTest, EveryActionHasItsClassAndEveryLookItsLayers) {
     for (const char* name : {"c-eq-", "d-line-", "d-dot-", "arc-", "arc-c-", "dot-", "dot-c-", "z-"}) {
       files.push_back(name + std::to_string(i) + ".svg");
     }
+  }
+  for (const char* weekend_part :
+       {"body-back-e.svg",  "body-front-e.svg", "body-back-f.svg",     "body-front-f.svg",   "body-back-g.svg",
+        "body-front-g.svg", "e-mouth.svg",      "f-mouth.svg",         "g-mouth.svg",        "e-blush.svg",
+        "f-blush.svg",      "g-blush.svg",      "e-glasses-front.svg", "e-glasses-back.svg", "f-cap.svg",
+        "g-nightcap.svg",   "g-pom.svg",        "g-mug.svg",           "g-steam-1.svg",      "g-steam-2.svg"}) {
+    files.push_back(weekend_part);
   }
   files.push_back("heart-1.svg");
   files.push_back("heart-2.svg");

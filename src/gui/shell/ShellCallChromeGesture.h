@@ -15,7 +15,7 @@ namespace ui {
 class Context;
 class Event;
 class ElementDocument;
-}
+} // namespace ui
 
 namespace pbr {
 
@@ -27,6 +27,9 @@ namespace pbr {
  * group page's members (grid, spotlight, strip): a drag there never changes the mode (#94).
  * Minimized: tap → restore; drag → move; let go → it slides to the nearer side at the height it was dropped
  * (#166, CallChipDock; like the phone AI dot). No swipe-to-mode.
+ * #189: the full bar thrown to a side edge (dropped within kTuckSnapDp of it) becomes the small handle hanging on that
+ * edge; the handle's tap, or a drag let go farther than kTuckSnapDp from the edge, brings the full bar back at that
+ * side and height. Both switches go through on_chip_place with the new form; the chip then remounts.
  */
 class ShellCallChromeGesture : public ui::EventListener {
 public:
@@ -35,8 +38,9 @@ public:
     std::function<void()> on_immersive;
     std::function<void()> on_expand;
     std::function<void()> on_restore;
-    /** #166: the chip was dropped; where it now rests (CallChipDock: side 1 left / 2 right, height 0..1000). */
-    std::function<void(int side, int y_permille)> on_chip_place;
+    /** #166: the chip was dropped; where it now rests (CallChipDock: side 1 left / 2 right, height 0..1000). #189:
+     * `tucked`: as the handle on that edge (else the full bar). Also the answer to a handle's tap or pull-out. */
+    std::function<void(int side, int y_permille, bool tucked)> on_chip_place;
     /** #166: the gesture let go of the chip's position: its slide ended (it is anchored on its side), a press ended
      * without a drop (a tap, an aborted drag), or the gesture was detached. A rebuild held meanwhile may run now. */
     std::function<void()> on_chip_released;
@@ -98,6 +102,11 @@ private:
   /** The slide reached the side: anchor the chip there (right: `right`, left: `left`), at its band height. */
   void FinishSlide();
   void DockChip(const CallChipPlace& place);
+  /** #189: the chip on screen is the handle (not the full bar). */
+  bool IsHandle() const;
+  /** #189: puts the chip in the other form: the place goes to the call state at once, the chip remounts there. */
+  void SwitchForm(const CallChipPlace& place, float top_dp, float chip_height_dp, const CallChipArea& area);
+  void TapHandle();
   void NotifyChipReleased();
 
   ui::Element* root_ = nullptr;

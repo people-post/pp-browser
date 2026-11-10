@@ -58,7 +58,7 @@ TEST(DecideEscapeTest, SinglePressCancelsQueuedOrDoesNothing) {
 TEST(DecideEscapeTest, SecondPressInsideTheWindowStopsTheTurnHere) {
   EXPECT_EQ(DecideEscape(1300, 1000, false, true), EscapeAction::StopTurn);
   EXPECT_EQ(DecideEscape(1000 + kDoubleEscapeWindowMs, 1000, false, true), EscapeAction::StopTurn); // exactly 500 ms
-  EXPECT_EQ(DecideEscape(1000, 1000, false, true), EscapeAction::StopTurn);                          // same instant
+  EXPECT_EQ(DecideEscape(1000, 1000, false, true), EscapeAction::StopTurn);                         // same instant
   // Stop wins over a queued send in the same thread.
   EXPECT_EQ(DecideEscape(1300, 1000, true, true), EscapeAction::StopTurn);
 }

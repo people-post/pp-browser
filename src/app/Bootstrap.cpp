@@ -22,11 +22,9 @@ namespace pbr {
 
 namespace {
 
-Roe<void> UnlockProfileForBootstrap(ConversationsHub& messaging, ProfileSecretsEngine& secrets,
-                                    const SecretText& pin) {
+Roe<void> UnlockProfileForBootstrap(ConversationsHub& messaging, ProfileSecretsEngine& secrets, const SecretText& pin) {
   StartupPhase phase("Bootstrap::Unlock+EnsureMessagingReady");
-  return UnlockProfileSecretsAndReady(secrets, pin,
-                                      [&messaging]() { return messaging.EnsureMessagingReady(); });
+  return UnlockProfileSecretsAndReady(secrets, pin, [&messaging]() { return messaging.EnsureMessagingReady(); });
 }
 
 } // namespace
@@ -101,8 +99,8 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   // is deferred until after first present (see DeferredStartup / ProfileUnlockGate).
   if (auto pin = PinResolver::Resolve(ResolveBootstrapPin(kUiDemoBuild, options.pin.Reveal())); pin) {
     if (!options.restore_recovery_phrase.empty()) {
-      if (auto restored = messaging.RestoreFromRecoveryPhrase(options.restore_recovery_phrase, *pin,
-                                                                  options.restore_saved_copies);
+      if (auto restored =
+              messaging.RestoreFromRecoveryPhrase(options.restore_recovery_phrase, *pin, options.restore_saved_copies);
           !restored) {
         return restored.error();
       }

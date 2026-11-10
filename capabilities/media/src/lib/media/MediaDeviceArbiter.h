@@ -109,7 +109,10 @@ public:
   /** The OS refused camera access (the user said no, or it is off in settings). */
   virtual bool PermissionDenied() const { return false; }
   /** Requests bounded native zoom when supported; false lets the caller use a software viewport. */
-  virtual bool SetZoom(float factor) { (void)factor; return false; }
+  virtual bool SetZoom(float factor) {
+    (void)factor;
+    return false;
+  }
   virtual CameraZoomState ZoomState() const { return {}; }
   /** Latest sensor frame as RGBA (not yet rotated / cropped); nullopt when none is ready. */
   virtual std::optional<VideoFrameRgba> NextFrame() = 0;
@@ -124,8 +127,7 @@ public:
   virtual ~IMediaDeviceBackend() = default;
   /** An audio lease is still granted without a device. `still_wanted` aborts platform open retries. */
   virtual std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind kind, const AudioDeviceFormat& format,
-                                                    const std::function<bool()>& still_wanted,
-                                                    std::string* error) = 0;
+                                                    const std::function<bool()>& still_wanted, std::string* error) = 0;
   /** A camera lease is refused without a device. */
   virtual std::unique_ptr<ICameraEndpoint> OpenCamera(const CameraRequestFormat& format, std::string* error) {
     (void)format;

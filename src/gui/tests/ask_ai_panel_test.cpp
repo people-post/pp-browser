@@ -442,7 +442,7 @@ TEST_F(AskAiPanelTest, AHomeAnswerWithNoChatIsNeverStoredInTheOpenChat) {
 }
 
 TEST_F(AskAiPanelTest, AOneOffWaitsForAFreeTurnShownAsQueued) {
-  max_turns_ = 1; // a guest
+  max_turns_ = 1;                                                  // a guest
   can_start_ = [](const std::string&) { return TurnStart::Full; }; // another chat's answer takes the one turn
   ASSERT_TRUE(panel_.OpenOnce("q"));
   EXPECT_TRUE(home_submits_.empty()) << "the cap counts the one-off too";
@@ -518,7 +518,7 @@ TEST_F(AskAiPanelTest, ClosingAndTappingTheDotAgainStartsAnotherEmptyPanel) {
   panel_.Send();
   EndSharedTurn("ai-new-1", "answer");
   EXPECT_FALSE(panel_.View().rows.empty());
-  panel_host_.AskAiCloseSheet(0);  // runs on_closed itself (moved out: calling it again throws on MSVC)
+  panel_host_.AskAiCloseSheet(0); // runs on_closed itself (moved out: calling it again throws on MSVC)
   ASSERT_TRUE(panel_.Open(AskAiEntry::Dot));
   EXPECT_TRUE(panel_.View().rows.empty());
   panel_.SetDraftForTest("again");
@@ -529,7 +529,7 @@ TEST_F(AskAiPanelTest, ClosingAndTappingTheDotAgainStartsAnotherEmptyPanel) {
 
 TEST_F(AskAiPanelTest, TheChatMenuStillContinuesTheMostRecentChat) {
   ASSERT_TRUE(panel_.Open(AskAiEntry::Dot));
-  panel_host_.AskAiCloseSheet(0);  // runs on_closed itself (moved out: calling it again throws on MSVC)
+  panel_host_.AskAiCloseSheet(0); // runs on_closed itself (moved out: calling it again throws on MSVC)
   panel_host_.messages["ai-used-last"] = {{true, "earlier"}};
   ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
   EXPECT_EQ(panel_.View().rows.size(), 1u);
@@ -738,7 +738,8 @@ protected:
       image.file_path = "thumb-" + std::to_string(prepared_paths_.size()) + ".jpg";
       done(std::move(image));
     };
-    ports.send = [this](const std::string& thread_id, const std::string& text, AgentTurnController::PendingAiImage image) {
+    ports.send = [this](const std::string& thread_id, const std::string& text,
+                        AgentTurnController::PendingAiImage image) {
       sends_.push_back({thread_id, text, image.file_path});
       return send_result_;
     };
@@ -865,7 +866,7 @@ TEST_F(AskAiInputRowTest, ThePanelPreparesThroughTheChatsOneAndAHalfMegabytePath
 }
 
 // Kenneth 2026-11-04 ("风格不统一…一会儿在左边，一会儿在右边"), 2026-11-07 (one composer everywhere): the chat
-// composer's row, its classes and icons: the emoji key, the pill [input … bold plus], then Send; no paperclip, no
+// composer's row, its classes and icons: the pill [input … bold plus], the emoji key at its right end, then Send; no paperclip, no
 // camera of its own (the plus card has it).
 TEST(AskAiInputRowSourceTest, TheRowIsTheChatComposersPillThenSend) {
   const std::string rml = ReadSource("assets/views/ask_ai.rml");
@@ -879,13 +880,15 @@ TEST(AskAiInputRowSourceTest, TheRowIsTheChatComposersPillThenSend) {
   ASSERT_NE(input, std::string::npos);
   ASSERT_NE(attach, std::string::npos);
   ASSERT_NE(send, std::string::npos);
-  EXPECT_LT(emoji, pill);
   EXPECT_LT(pill, input);
   EXPECT_LT(input, attach);
-  EXPECT_LT(attach, send);
+  EXPECT_LT(attach, emoji);
+  EXPECT_LT(emoji, send);
   EXPECT_EQ(rml.find("ask_ai_camera()"), std::string::npos);
   EXPECT_EQ(rml.find("paperclip.svg"), std::string::npos);
-  const auto tag_of = [&rml](const size_t at) { return rml.substr(rml.rfind("<button", at), at - rml.rfind("<button", at)); };
+  const auto tag_of = [&rml](const size_t at) {
+    return rml.substr(rml.rfind("<button", at), at - rml.rfind("<button", at));
+  };
   EXPECT_NE(tag_of(emoji).find("class=\"prompt-emoji-btn\""), std::string::npos);
   EXPECT_NE(tag_of(attach).find("class=\"prompt-attach-btn\""), std::string::npos);
   EXPECT_NE(tag_of(send).find("class=\"prompt-send-btn\""), std::string::npos);
@@ -896,7 +899,8 @@ TEST(AskAiInputRowSourceTest, TheRowIsTheChatComposersPillThenSend) {
   const std::string composer = ReadSource("assets/views/composer.rml");
   for (const char* icon : {"<svg class=\"prompt-icon-v2\" src=\"../icons/v2/emoji.svg\" width=\"20\" height=\"20\">",
                            "src=\"../icons/v2/plus-bold.svg\" width=\"24\" height=\"24\">",
-                           "<span class=\"prompt-send-disc\"><svg src=\"../icons/send.svg\" width=\"14\" height=\"14\" crop-to-content=\"true\">"}) {
+                           "<span class=\"prompt-send-disc\"><svg src=\"../icons/send.svg\" width=\"14\" height=\"14\" "
+                           "crop-to-content=\"true\">"}) {
     EXPECT_NE(rml.find(icon), std::string::npos) << icon;
     EXPECT_NE(composer.find(icon), std::string::npos) << icon;
   }
@@ -911,7 +915,7 @@ TEST(AskAiInputRowSourceTest, ThePanelHasNoMicrophone) {
   }
   std::string panel = ReadSource("src/gui/chat/AskAiPanel.cpp") + ReadSource("src/gui/chat/AskAiPanel.h");
   for (size_t at = panel.find("dynamic_cast"); at != std::string::npos; at = panel.find("dynamic_cast", at)) {
-    panel.erase(at, std::string("dynamic_cast").size());  // not a microphone
+    panel.erase(at, std::string("dynamic_cast").size()); // not a microphone
   }
   EXPECT_EQ(panel.find("Mic"), std::string::npos);
   EXPECT_EQ(panel.find("mic_"), std::string::npos);

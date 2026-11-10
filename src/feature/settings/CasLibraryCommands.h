@@ -32,8 +32,8 @@ Roe<void> UnpublishCasForSettings(CasStore& content, const std::string& public_c
  * asynchronously, the cache write runs on a worker, and `on_done` runs once (on that worker, or
  * inline for an immediate refusal) — callers hop to their own thread.
  */
-void FetchCasPublicTipForSettingsAsync(std::shared_ptr<CasStore> content, IChatBlobPeerClient& blob, const std::string& local_relay_user_id,
-                                       const std::string& tip, const std::string& peer_relay_user_id,
-                                       std::function<void(Roe<void>)> on_done);
+void FetchCasPublicTipForSettingsAsync(std::shared_ptr<CasStore> content, IChatBlobPeerClient& blob,
+                                       const std::string& local_relay_user_id, const std::string& tip,
+                                       const std::string& peer_relay_user_id, std::function<void(Roe<void>)> on_done);
 
 } // namespace pbr

@@ -21,7 +21,9 @@ public:
     return ++geometry_id;
   }
   void RenderGeometry(ui::CompiledGeometryHandle, ui::Vector2f, ui::TextureHandle texture) override {
-    if (texture) { ++textured_draws; }
+    if (texture) {
+      ++textured_draws;
+    }
   }
   void ReleaseGeometry(ui::CompiledGeometryHandle) override {}
   ui::TextureHandle LoadTexture(ui::Vector2i&, const ui::String&) override { return 0; }
@@ -51,8 +53,12 @@ protected:
   }
   void TearDown() override {
     DataModelHost::Instance().Clear();
-    if (context) { ui::RemoveContext("scan-preview-test"); }
-    if (initialized) { ui::Shutdown(); }
+    if (context) {
+      ui::RemoveContext("scan-preview-test");
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
   PreviewRender renderer;
@@ -69,8 +75,10 @@ TEST_F(ScanPreviewTest, ActualScanViewMountsAndPreviewTextureDiesWithTheDocument
   std::ostringstream body;
   body << file.rdbuf();
   const auto localized = LocalizationService::Instance().LocalizeText(body.str());
-  const std::string rml = "<rml><head><style>scan-preview {display:block; width:200px; height:200px;}"
-                          "</style></head><body>" + localized + "</body></rml>";
+  const std::string rml =
+      "<rml><head><style>scan-preview {display:block; width:200px; height:200px;}"
+      "</style></head><body>" +
+      localized + "</body></rml>";
   auto* document = context->LoadDocumentFromMemory(rml);
   ASSERT_NE(document, nullptr);
   auto* preview = dynamic_cast<ElementScanPreview*>(document->GetElementById("qr-scan-preview"));
@@ -115,12 +123,14 @@ TEST_F(ScanPreviewTest, ThePhoneScanFillsTheScreenAndMyQrLeavesWithoutAResult) {
   scan.Open([&](std::string) { ++delivered; });
   EXPECT_TRUE(full_screen);
 
-  const std::string view = LocalizationService::Instance().LocalizeText(
-      ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/views/qr_scan.rml"));
-  const std::string rml = "<rml><head><style>" + ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss") +
+  const std::string view =
+      LocalizationService::Instance().LocalizeText(ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/views/qr_scan.rml"));
+  const std::string rml = "<rml><head><style>" +
+                          ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss") +
                           "body { width: 400px; height: 400px; }</style></head><body>"
                           "<div class=\"shell-layer shell-layer-overlay shell-layer-full-screen\">"
-                          "<div class=\"shell-overlay-body shell-layer-compact\">" + view + "</div></div></body></rml>";
+                          "<div class=\"shell-overlay-body shell-layer-compact\">" +
+                          view + "</div></div></body></rml>";
   auto* document = context->LoadDocumentFromMemory(rml);
   ASSERT_NE(document, nullptr);
   document->Show();
@@ -130,8 +140,8 @@ TEST_F(ScanPreviewTest, ThePhoneScanFillsTheScreenAndMyQrLeavesWithoutAResult) {
     document->GetElementsByClassName(found, cls);
     return found.empty() ? nullptr : found.front();
   };
-  for (const char* shown : {"qr-scan-camera", "qr-scan-finder", "qr-scan-frame", "qr-scan-line", "qr-scan-back",
-                            "qr-scan-tool"}) {
+  for (const char* shown :
+       {"qr-scan-camera", "qr-scan-finder", "qr-scan-frame", "qr-scan-line", "qr-scan-back", "qr-scan-tool"}) {
     ASSERT_NE(first(shown), nullptr) << shown;
     EXPECT_TRUE(first(shown)->IsVisible(true)) << shown;
   }

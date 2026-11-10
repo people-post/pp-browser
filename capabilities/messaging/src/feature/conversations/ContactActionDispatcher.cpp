@@ -21,8 +21,14 @@ ContactActionDispatcher::ContactActionDispatcher(InboxController& inbox, Contact
                                                  GroupMembershipWorkflow* groups, IRegistrationClient* registration,
                                                  MeshDeliveryOrchestrator* mesh_messaging,
                                                  mesh::IDirectoryClient* directory)
-    : inbox_(inbox), contacts_(contacts), identity_(identity), store_(store), groups_(groups),
-      registration_(registration), mesh_messaging_(mesh_messaging), directory_(directory) {
+    : inbox_(inbox),
+      contacts_(contacts),
+      identity_(identity),
+      store_(store),
+      groups_(groups),
+      registration_(registration),
+      mesh_messaging_(mesh_messaging),
+      directory_(directory) {
   redirectLogger("ContactActionDispatcher");
 }
 
@@ -34,7 +40,7 @@ void ContactActionDispatcher::SetGroupMembership(GroupMembershipWorkflow* groups
   groups_ = groups;
 }
 
-void ContactActionDispatcher::SetOnActionMessage(std::function<void(const std::string& message)> callback) {
+void ContactActionDispatcher::SetOnActionMessage(std::function<void(const ActionNotice& notice)> callback) {
   on_action_message_ = std::move(callback);
 }
 
@@ -90,8 +96,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Dispatch(const 
   return Run(*payload, looked_up);
 }
 
-void ContactActionDispatcher::DispatchAsync(const std::string& payload_json,
-                                            std::function<void(DispatchResult)> done) {
+void ContactActionDispatcher::DispatchAsync(const std::string& payload_json, std::function<void(DispatchResult)> done) {
   const auto payload = TryParseObject(payload_json);
   const auto account_id = payload ? AccountToLookUp(*payload) : std::nullopt;
   if (!account_id) {
@@ -152,7 +157,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
       mesh_messaging_->WarmPeerForThread(thread->id);
     }
     if (on_action_message_) {
-      on_action_message_("Opened conversation with " + thread->title);
+      on_action_message_(ActionNotice{ActionNotice::Kind::OpenedConversation, thread->title});
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
@@ -175,7 +180,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
       mesh_messaging_->WarmPeerForThread(thread->id);
     }
     if (on_action_message_) {
-      on_action_message_("Opened secure conversation with " + thread->title);
+      on_action_message_(ActionNotice{ActionNotice::Kind::OpenedSecureConversation, thread->title});
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
@@ -193,7 +198,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
       mesh_messaging_->RegisterContactDirectEndpoints(*contact);
     }
     if (on_action_message_) {
-      on_action_message_("Added " + contact->display_name + " to contacts");
+      on_action_message_(ActionNotice{ActionNotice::Kind::AddedContact, contact->display_name});
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
@@ -220,7 +225,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
       return thread.error();
     }
     if (on_action_message_) {
-      on_action_message_("Opened " + thread->title);
+      on_action_message_(ActionNotice{ActionNotice::Kind::OpenedThread, thread->title});
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
@@ -239,7 +244,8 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
       return result.error();
     }
     if (on_action_message_) {
-      on_action_message_(result->registered ? "Registered on network" : "Registration failed");
+      on_action_message_(ActionNotice{
+          result->registered ? ActionNotice::Kind::Registered : ActionNotice::Kind::RegistrationFailed, {}});
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
@@ -258,7 +264,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
     }
     (void)inbox_.OpenThread(thread->id);
     if (on_action_message_) {
-      on_action_message_("Joined " + thread->title);
+      on_action_message_(ActionNotice{ActionNotice::Kind::JoinedGroup, thread->title});
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
@@ -275,7 +281,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
       return declined.error();
     }
     if (on_action_message_) {
-      on_action_message_("Declined group invitation");
+      on_action_message_(ActionNotice{ActionNotice::Kind::DeclinedInvitation, {}});
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
@@ -308,7 +314,8 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
                                        "You blocked the inviter");
     }
     if (on_action_message_) {
-      on_action_message_(updated ? "Blocked inviter" : "Blocked unknown inviter");
+      on_action_message_(
+          ActionNotice{updated ? ActionNotice::Kind::BlockedInviter : ActionNotice::Kind::BlockedUnknownInviter, {}});
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
@@ -331,7 +338,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
       return thread.error();
     }
     if (on_action_message_) {
-      on_action_message_("Created group " + thread->title);
+      on_action_message_(ActionNotice{ActionNotice::Kind::CreatedGroup, thread->title});
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
@@ -374,7 +381,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
     (void)groups_->ResolveOwnerUnreachableAdvisory(*group_id);
     (void)inbox_.OpenThread(forked->id);
     if (on_action_message_) {
-      on_action_message_("Started " + forked->title + " (fresh history)");
+      on_action_message_(ActionNotice{ActionNotice::Kind::StartedFresh, forked->title});
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
@@ -393,7 +400,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
     }
     (void)inbox_.OpenThread(thread->id);
     if (on_action_message_) {
-      on_action_message_("Opened chat with owner");
+      on_action_message_(ActionNotice{ActionNotice::Kind::OpenedOwnerChat, {}});
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }

@@ -109,9 +109,9 @@ void DirectoryShadowCache::EnsureLookup(const std::string& identity) {
           inflight_.erase(identity);
           if (!result) {
             // Until now a failed lookup left no trace: the chat kept showing a bare id and nothing said why.
-            logging::getLogger("DirectoryShadow").warning
-                << "directory lookup failed (" << (by_account ? "account" : "relay user") << " " << identity
-                << "): " << result.error().message;
+            logging::getLogger("DirectoryShadow").warning << "directory lookup failed ("
+                                                          << (by_account ? "account" : "relay user") << " " << identity
+                                                          << "): " << result.error().message;
           }
           if (result) {
             mesh::DirectoryHit hit = *result;

@@ -74,7 +74,7 @@ std::string EndCall(Tracker& t, int64_t& now, const DeviceVitals& v = Vitals()) 
 
 TEST(CallMetricsLineTest, FormatsKeyValuesAndShortCallId) {
   const std::string line = MetricsLine("x.y").Add("a", "b").Add("n", int64_t{3}).Add("f", 2.25).str();
-  EXPECT_EQ(line, "event=x.y a=b n=3 f=2.2");  // one decimal
+  EXPECT_EQ(line, "event=x.y a=b n=3 f=2.2"); // one decimal
   EXPECT_EQ(ShortRandomId(kCall), "01234567");
   EXPECT_EQ(ShortRandomId("abc"), "abc");
 }
@@ -96,7 +96,7 @@ TEST(CallMetricsTrackerTest, CalleeConnectedCallReportsSetupAndSummary) {
   EXPECT_TRUE(Has(setup[0], "path=direct"));
 
   now += 3000;
-  for (int i = 1; i <= 10; ++i) {  // 10 s connected; audio from 1 s, video from 2 s
+  for (int i = 1; i <= 10; ++i) { // 10 s connected; audio from 1 s, video from 2 s
     now += 1000;
     t.NoteMedia(kCall, Media(true, i >= 1 ? 50u * i : 0u, i >= 2 ? 20u * (i - 1) : 0u), now, Vitals());
     t.Tick(true, now, Vitals());
@@ -107,7 +107,7 @@ TEST(CallMetricsTrackerTest, CalleeConnectedCallReportsSetupAndSummary) {
   EXPECT_TRUE(Has(summary, "first_audio_ms=1000")) << summary;
   EXPECT_TRUE(Has(summary, "first_video_ms=2000")) << summary;
   EXPECT_TRUE(Has(summary, "rx_audio=500")) << summary;
-  EXPECT_TRUE(Has(summary, "rx_fps=18.0")) << summary;  // 180 frames / 10 s
+  EXPECT_TRUE(Has(summary, "rx_fps=18.0")) << summary; // 180 frames / 10 s
   EXPECT_TRUE(Has(summary, "q_excellent_pct=100")) << summary;
   EXPECT_TRUE(Has(summary, "cpu_s=4.5")) << summary;
   EXPECT_TRUE(Has(summary, "battery_start=80")) << summary;
@@ -227,7 +227,8 @@ TEST(CallMetricsTrackerTest, CountsReconnectsPathChangesAndThermalChanges) {
   t.NoteMedia(kCall, Media(false), now += 1000, Vitals(1.0, 0));
   t.NoteMedia(kCall, Media(false), now += 1000, Vitals(1.0, 0));
   t.NoteMedia(kCall, Media(true, 0, 0, CallPathQuality::Poor, "circuit"), now += 1000, Vitals(1.0, 0));
-  const auto hot = Text(t.NoteMedia(kCall, Media(true, 0, 0, CallPathQuality::Poor, "circuit"), now += 1000, Vitals(1.0, 2)));
+  const auto hot =
+      Text(t.NoteMedia(kCall, Media(true, 0, 0, CallPathQuality::Poor, "circuit"), now += 1000, Vitals(1.0, 2)));
   ASSERT_EQ(hot.size(), 1u);
   EXPECT_TRUE(Has(hot[0], "event=device.thermal")) << hot[0];
   EXPECT_TRUE(Has(hot[0], "state=serious")) << hot[0];

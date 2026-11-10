@@ -34,7 +34,8 @@ bool WatchScreenKeyboard(std::function<void()> on_change) {
                       const CGRect screen = UIScreen.mainScreen.bounds;
                       const CGRect covered = CGRectIntersection(end, screen);
                       // A floating or undocked keyboard (iPad) does not sit on the bottom edge: nothing to lift for.
-                      const bool docked = !CGRectIsEmpty(covered) && CGRectGetMaxY(covered) >= CGRectGetMaxY(screen) - 1.0;
+                      const bool docked =
+                          !CGRectIsEmpty(covered) && CGRectGetMaxY(covered) >= CGRectGetMaxY(screen) - 1.0;
                       SetHeight(docked ? static_cast<int>(std::ceil(covered.size.height)) : 0);
                     }];
     [center addObserverForName:UIKeyboardWillHideNotification

@@ -111,16 +111,14 @@ Roe<std::vector<uint8_t>> FetchAttachmentCiphertextFromCdn(const ChatAttachmentF
   return bytes;
 }
 
-void FetchAttachmentCiphertextFromPeerAsync(const ChatAttachmentFields& fields,
-                                            const AttachmentFetchContext& context,
+void FetchAttachmentCiphertextFromPeerAsync(const ChatAttachmentFields& fields, const AttachmentFetchContext& context,
                                             std::function<void(Roe<std::vector<uint8_t>>)> on_done) {
   auto finish = [on_done = std::move(on_done)](Roe<std::vector<uint8_t>> value) {
     if (on_done) {
       on_done(std::move(value));
     }
   };
-  if (!context.peer_client || !context.store || !context.contacts || !context.identity ||
-      context.thread_id.empty()) {
+  if (!context.peer_client || !context.store || !context.contacts || !context.identity || context.thread_id.empty()) {
     finish(Error("Peer blob client not configured"));
     return;
   }
@@ -197,8 +195,8 @@ void FetchAttachmentCiphertextAsync(const ChatAttachmentFields& fields, const At
 
   if (fields.content_hash.size() == kAttachmentContentHashSize && !context.profile_data_dir.empty() &&
       !context.thread_id.empty()) {
-    if (auto pending = LoadPendingAttachmentCiphertext(context.profile_data_dir, context.thread_id,
-                                                       fields.content_hash);
+    if (auto pending =
+            LoadPendingAttachmentCiphertext(context.profile_data_dir, context.thread_id, fields.content_hash);
         pending) {
       finish(std::vector<uint8_t>(pending->begin(), pending->end()));
       return;
@@ -210,13 +208,14 @@ void FetchAttachmentCiphertextAsync(const ChatAttachmentFields& fields, const At
   const bool large_with_url = fields.byte_length > kMaxDirectAttachmentBytes && !fields.url.empty();
   if (!large_with_url && context.peer_client && context.store && context.contacts && context.identity &&
       !context.thread_id.empty()) {
-    FetchAttachmentCiphertextFromPeerAsync(fields, context, [fields, context, finish](Roe<std::vector<uint8_t>> peer_bytes) {
-      if (peer_bytes) {
-        finish(std::move(peer_bytes));
-        return;
-      }
-      finish(FetchAttachmentCiphertextFromCdn(fields, context));
-    });
+    FetchAttachmentCiphertextFromPeerAsync(fields, context,
+                                           [fields, context, finish](Roe<std::vector<uint8_t>> peer_bytes) {
+                                             if (peer_bytes) {
+                                               finish(std::move(peer_bytes));
+                                               return;
+                                             }
+                                             finish(FetchAttachmentCiphertextFromCdn(fields, context));
+                                           });
     return;
   }
 
@@ -247,55 +246,55 @@ Roe<std::vector<uint8_t>> FetchAttachmentCiphertext(const ChatAttachmentFields& 
 
 void FetchAndDecryptAttachmentAsync(const ChatAttachmentFields& fields, const AttachmentFetchContext& context,
                                     std::function<void(Roe<std::vector<uint8_t>>)> on_done) {
-  FetchAttachmentCiphertextAsync(fields, context, [fields, context, on_done = std::move(on_done)](
-                                                      Roe<std::vector<uint8_t>> ciphertext) {
-    if (!ciphertext) {
-      if (on_done) {
-        on_done(ciphertext.error());
-      }
-      return;
-    }
+  FetchAttachmentCiphertextAsync(
+      fields, context, [fields, context, on_done = std::move(on_done)](Roe<std::vector<uint8_t>> ciphertext) {
+        if (!ciphertext) {
+          if (on_done) {
+            on_done(ciphertext.error());
+          }
+          return;
+        }
 
-    // The length must be exactly what the message declared, whichever way the bytes came (pending push, peer,
-    // CDN): a different one is a lying sender or a corrupt object, never decrypted, and a pending copy is dropped.
-    if (fields.byte_length == 0 || ciphertext->size() != ExpectedCiphertextBytes(fields)) {
-      if (!context.profile_data_dir.empty() && !context.thread_id.empty() &&
-          fields.content_hash.size() == kAttachmentContentHashSize) {
-        RemovePendingAttachmentCiphertext(context.profile_data_dir, context.thread_id, fields.content_hash);
-      }
-      if (on_done) {
-        on_done(Error("Attachment size does not match what the message declared"));
-      }
-      return;
-    }
+        // The length must be exactly what the message declared, whichever way the bytes came (pending push, peer,
+        // CDN): a different one is a lying sender or a corrupt object, never decrypted, and a pending copy is dropped.
+        if (fields.byte_length == 0 || ciphertext->size() != ExpectedCiphertextBytes(fields)) {
+          if (!context.profile_data_dir.empty() && !context.thread_id.empty() &&
+              fields.content_hash.size() == kAttachmentContentHashSize) {
+            RemovePendingAttachmentCiphertext(context.profile_data_dir, context.thread_id, fields.content_hash);
+          }
+          if (on_done) {
+            on_done(Error("Attachment size does not match what the message declared"));
+          }
+          return;
+        }
 
-    // The ciphertext moves into the decrypt (a bad pending copy is dropped by hash below, not by its bytes), so
-    // a large file is never held three times over.
-    auto plaintext = AttachmentContentCipher::Decrypt(fields.content_key, fields.blob_nonce, std::move(*ciphertext),
-                                                      fields.content_hash);
-    if (!plaintext) {
-      // Whatever we just fed to Decrypt was bad — most likely a poisoned/corrupt pending push
-      // (see ChatBlobResponder::ServePush). Drop it so the next attempt re-fetches instead of
-      // repeating the same failing decrypt forever.
-      if (!context.profile_data_dir.empty() && !context.thread_id.empty() &&
-          fields.content_hash.size() == kAttachmentContentHashSize) {
-        RemovePendingAttachmentCiphertext(context.profile_data_dir, context.thread_id, fields.content_hash);
-      }
-      if (on_done) {
-        on_done(plaintext.error());
-      }
-      return;
-    }
+        // The ciphertext moves into the decrypt (a bad pending copy is dropped by hash below, not by its bytes), so
+        // a large file is never held three times over.
+        auto plaintext = AttachmentContentCipher::Decrypt(fields.content_key, fields.blob_nonce, std::move(*ciphertext),
+                                                          fields.content_hash);
+        if (!plaintext) {
+          // Whatever we just fed to Decrypt was bad — most likely a poisoned/corrupt pending push
+          // (see ChatBlobResponder::ServePush). Drop it so the next attempt re-fetches instead of
+          // repeating the same failing decrypt forever.
+          if (!context.profile_data_dir.empty() && !context.thread_id.empty() &&
+              fields.content_hash.size() == kAttachmentContentHashSize) {
+            RemovePendingAttachmentCiphertext(context.profile_data_dir, context.thread_id, fields.content_hash);
+          }
+          if (on_done) {
+            on_done(plaintext.error());
+          }
+          return;
+        }
 
-    if (!context.profile_data_dir.empty() && !context.thread_id.empty() &&
-        fields.content_hash.size() == kAttachmentContentHashSize) {
-      RemovePendingAttachmentCiphertext(context.profile_data_dir, context.thread_id, fields.content_hash);
-    }
+        if (!context.profile_data_dir.empty() && !context.thread_id.empty() &&
+            fields.content_hash.size() == kAttachmentContentHashSize) {
+          RemovePendingAttachmentCiphertext(context.profile_data_dir, context.thread_id, fields.content_hash);
+        }
 
-    if (on_done) {
-      on_done(std::move(*plaintext));
-    }
-  });
+        if (on_done) {
+          on_done(std::move(*plaintext));
+        }
+      });
 }
 
 Roe<std::vector<uint8_t>> FetchAndDecryptAttachment(const ChatAttachmentFields& fields,

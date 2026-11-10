@@ -31,8 +31,7 @@ std::vector<int16_t> MakeRingbackCycle(int sample_rate) {
         envelope = 0.5 * (1.0 - std::cos(kPi * j / (fade_len - 1)));
       }
     }
-    const double sample =
-        std::sin(2.0 * kPi * kToneHz * i / sample_rate) * envelope * kPeakAmplitude;
+    const double sample = std::sin(2.0 * kPi * kToneHz * i / sample_rate) * envelope * kPeakAmplitude;
     cycle[static_cast<size_t>(i)] = static_cast<int16_t>(std::lround(sample));
   }
 

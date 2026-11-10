@@ -80,15 +80,13 @@ TEST(DesktopPathProviderTest, ExpandsTildeUnderUserProfile) {
 TEST(DesktopPathProviderTest, ConfigDirUsesApplicationSupport) {
   ScopedEnv home("HOME", "/tmp/pp-browser-test-home");
   pbr::DesktopPathProvider provider;
-  ExpectPathEq(provider.ConfigDir(),
-               "/tmp/pp-browser-test-home/Library/Application Support/pp-browser");
+  ExpectPathEq(provider.ConfigDir(), "/tmp/pp-browser-test-home/Library/Application Support/pp-browser");
 }
 
 TEST(DesktopPathProviderTest, DataDirUsesApplicationSupportData) {
   ScopedEnv home("HOME", "/tmp/pp-browser-test-home");
   pbr::DesktopPathProvider provider;
-  ExpectPathEq(provider.DataDir(""),
-               "/tmp/pp-browser-test-home/Library/Application Support/pp-browser/data");
+  ExpectPathEq(provider.DataDir(""), "/tmp/pp-browser-test-home/Library/Application Support/pp-browser/data");
 }
 
 TEST(DesktopPathProviderTest, ExpandsTildeUnderHome) {

@@ -338,7 +338,7 @@ Roe<Contact> ContactsStore::AddFromDirectoryHitUnnotified(const mesh::DirectoryH
 }
 
 Roe<Contact> ContactsStore::ApplyRemoteSnapshotUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
-                                                const int64_t fetched_at_ms) {
+                                                          const int64_t fetched_at_ms) {
   auto loaded = Get(contact_id);
   if (!loaded) {
     return loaded.error();
@@ -428,7 +428,7 @@ void ContactsStore::NotifyChanged() const {
     on_changed = on_changed_;
   }
   if (on_changed) {
-    on_changed();  // outside every lock: the observer may read the store
+    on_changed(); // outside every lock: the observer may read the store
   }
 }
 
@@ -456,7 +456,8 @@ Roe<Contact> ContactsStore::AddFromDirectoryHit(const mesh::DirectoryHit& hit) {
   return result;
 }
 
-Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, const mesh::DirectoryHit& hit, const int64_t fetched_at_ms) {
+Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, const mesh::DirectoryHit& hit,
+                                                const int64_t fetched_at_ms) {
   auto result = ApplyRemoteSnapshotUnnotified(contact_id, hit, fetched_at_ms);
   if (result) {
     NotifyChanged();

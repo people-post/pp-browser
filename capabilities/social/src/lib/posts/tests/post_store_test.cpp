@@ -99,8 +99,12 @@ TEST_F(PostStoreTest, ARivalEntryAtTheSameSeqIsAFork) {
   PostAuthor phone = AuthorOn("QmPhone", PostLane{1});
   ASSERT_TRUE(phone.Append(PostKind::Post, Text("one"), kNow));
   // The same account signs another seq-1 entry (a second device misusing the lane, or a lie).
-  const PostEntry rival{.author = alice_.account_id, .lane = PostLane{1}, .seq = 1, .claimed_at = kNow,
-                        .kind = static_cast<uint8_t>(PostKind::Post), .body = Text("one, rewritten")};
+  const PostEntry rival{.author = alice_.account_id,
+                        .lane = PostLane{1},
+                        .seq = 1,
+                        .claimed_at = kNow,
+                        .kind = static_cast<uint8_t>(PostKind::Post),
+                        .body = Text("one, rewritten")};
   const SignedPostEntry signed_rival = SignPostEntry(rival, alice_.Signer()).value();
   auto added = store_->AddEntry(signed_rival, rival, PostEntryHash(signed_rival.canonical));
   ASSERT_TRUE(added);
@@ -128,12 +132,22 @@ TEST_F(PostStoreTest, StubsKeepThePlaceWithoutTheBytes) {
       << "a deleted entry stays deleted when a copy comes back";
 
   // An entry this reader would not keep (an unknown kind) stands as a stub, then fills when it is understood.
-  const PostEntry later{.author = alice_.account_id, .lane = PostLane{5}, .seq = 1, .claimed_at = kNow,
-                        .kind = static_cast<uint8_t>(PostKind::Post), .body = Text("later")};
+  const PostEntry later{.author = alice_.account_id,
+                        .lane = PostLane{5},
+                        .seq = 1,
+                        .claimed_at = kNow,
+                        .kind = static_cast<uint8_t>(PostKind::Post),
+                        .body = Text("later")};
   const SignedPostEntry signed_later = SignPostEntry(later, alice_.Signer()).value();
   const PostHash later_hash = PostEntryHash(signed_later.canonical);
-  ASSERT_TRUE(store_->AddStub({.author = alice_.account_id, .lane = PostLane{5}, .seq = 1, .entry_hash = later_hash,
-                               .kind = later.kind, .claimed_at = kNow, .size = 100, .stub = PostStub::Unkept}));
+  ASSERT_TRUE(store_->AddStub({.author = alice_.account_id,
+                               .lane = PostLane{5},
+                               .seq = 1,
+                               .entry_hash = later_hash,
+                               .kind = later.kind,
+                               .claimed_at = kNow,
+                               .size = 100,
+                               .stub = PostStub::Unkept}));
   EXPECT_FALSE(store_->At(alice_.account_id, PostLane{5}, 1).value()[0].signed_bytes.has_value());
   EXPECT_EQ(store_->AddEntry(signed_later, later, later_hash).value(), IPostStore::Added::Duplicate);
   EXPECT_TRUE(store_->At(alice_.account_id, PostLane{5}, 1).value()[0].signed_bytes.has_value());

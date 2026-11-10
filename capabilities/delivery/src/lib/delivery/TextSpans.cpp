@@ -13,14 +13,19 @@ namespace pbr {
 namespace text_spans {
 namespace {
 
-bool IsContinuationByte(const unsigned char c) { return (c & 0xC0) == 0x80; }
+bool IsContinuationByte(const unsigned char c) {
+  return (c & 0xC0) == 0x80;
+}
 
 /** A byte offset that starts a UTF-8 character (or is the end of the text). */
 bool OnCharBoundary(const std::string& text, const uint32_t offset) {
-  return offset == text.size() || (offset < text.size() && !IsContinuationByte(static_cast<unsigned char>(text[offset])));
+  return offset == text.size() ||
+         (offset < text.size() && !IsContinuationByte(static_cast<unsigned char>(text[offset])));
 }
 
-bool Marks(const TextSpan& span) { return span.Is(TextSpanKind::Mention) || span.Is(TextSpanKind::Everyone); }
+bool Marks(const TextSpan& span) {
+  return span.Is(TextSpanKind::Mention) || span.Is(TextSpanKind::Everyone);
+}
 
 } // namespace
 

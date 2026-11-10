@@ -8,22 +8,22 @@ namespace {
 
 const char* KindName(const WorkingSetKind kind) {
   switch (kind) {
-  case WorkingSetKind::LongList:
-    return "long_list";
-  case WorkingSetKind::Form:
-    return "form";
-  case WorkingSetKind::Calendar:
-    return "calendar";
-  case WorkingSetKind::Table:
-    return "table";
-  case WorkingSetKind::Code:
-    return "code";
-  case WorkingSetKind::KeyValue:
-    return "key_value";
-  case WorkingSetKind::Card:
-    return "card";
-  case WorkingSetKind::None:
-    return "none";
+    case WorkingSetKind::LongList:
+      return "long_list";
+    case WorkingSetKind::Form:
+      return "form";
+    case WorkingSetKind::Calendar:
+      return "calendar";
+    case WorkingSetKind::Table:
+      return "table";
+    case WorkingSetKind::Code:
+      return "code";
+    case WorkingSetKind::KeyValue:
+      return "key_value";
+    case WorkingSetKind::Card:
+      return "card";
+    case WorkingSetKind::None:
+      return "none";
   }
   return "none";
 }
@@ -55,16 +55,16 @@ WorkingSetKind KindFromName(const std::string& name) {
 
 const char* AffinityName(const WorkingSetAffinity affinity) {
   switch (affinity) {
-  case WorkingSetAffinity::Feed:
-    return "feed";
-  case WorkingSetAffinity::Form:
-    return "form";
-  case WorkingSetAffinity::DataTable:
-    return "data_table";
-  case WorkingSetAffinity::Document:
-    return "document";
-  case WorkingSetAffinity::None:
-    return "none";
+    case WorkingSetAffinity::Feed:
+      return "feed";
+    case WorkingSetAffinity::Form:
+      return "form";
+    case WorkingSetAffinity::DataTable:
+      return "data_table";
+    case WorkingSetAffinity::Document:
+      return "document";
+    case WorkingSetAffinity::None:
+      return "none";
   }
   return "none";
 }
@@ -85,7 +85,7 @@ WorkingSetAffinity AffinityFromName(const std::string& name) {
   return WorkingSetAffinity::None;
 }
 
-}  // namespace
+} // namespace
 
 std::string WorkingSetCandidatesToJson(const std::vector<WorkingSetCandidate>& candidates) {
   std::vector<Value> rows;
@@ -176,16 +176,16 @@ std::string MarkWorkingSetChipsUnavailable(const std::string& rml) {
       continue;
     }
     out.append(rml, pos, button_start - pos);
-    out += "<button class=\"chat-working-set-chip chat-working-set-chip-disabled\" type=\"button\" "
-           "disabled>Results no longer available</button>";
-    pos = button_end + 9;  // len("</button>")
+    out +=
+        "<button class=\"chat-working-set-chip chat-working-set-chip-disabled\" type=\"button\" "
+        "disabled>Results no longer available</button>";
+    pos = button_end + 9; // len("</button>")
   }
   return out;
 }
 
 std::string StripInlinedWorkingSetActionSuggestions(const std::string& rml) {
-  if (rml.find("chat-suggestion") == std::string::npos ||
-      rml.find("send_chat_action") == std::string::npos) {
+  if (rml.find("chat-suggestion") == std::string::npos || rml.find("send_chat_action") == std::string::npos) {
     return rml;
   }
   std::string out;
@@ -203,10 +203,9 @@ std::string StripInlinedWorkingSetActionSuggestions(const std::string& rml) {
       break;
     }
     const std::string button = rml.substr(button_start, button_end + 9 - button_start);
-    const bool is_panel_action_dump =
-        button.find("chat-suggestion") != std::string::npos &&
-        button.find("send_chat_action") != std::string::npos &&
-        button.find("chat-working-set-chip") == std::string::npos;
+    const bool is_panel_action_dump = button.find("chat-suggestion") != std::string::npos &&
+                                      button.find("send_chat_action") != std::string::npos &&
+                                      button.find("chat-working-set-chip") == std::string::npos;
     out.append(rml, pos, button_start - pos);
     if (!is_panel_action_dump) {
       out += button;
@@ -216,4 +215,4 @@ std::string StripInlinedWorkingSetActionSuggestions(const std::string& rml) {
   return out;
 }
 
-}  // namespace pbr
+} // namespace pbr

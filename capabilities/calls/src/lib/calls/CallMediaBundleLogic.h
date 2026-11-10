@@ -84,22 +84,54 @@ struct CallMediaHelloAckContext {
 
 CallMediaHelloAckDecision DecideCallMediaHelloAck(const CallMediaHelloAckContext& ctx);
 
-enum class CallMediaChannelCloseDecision {
-  Ignore = 0,
-  FailLeg,
-  /** Tear down without on_failed (local cancel / SoftMigrate). */
-  SuppressNotify,
+/** Which of a call's paths holds a channel (call-path-resilience k3 / k4). */
+enum class CallMediaPathSlot {
+  /** The path media flows on. */
+  Active = 0,
+  /** A migration's / `path_add`'s path being brought up. */
+  Candidate,
+  /** The path the call just left, draining until its release. */
+  Retiring,
+  /** The warm fallback. */
+  Standby,
 };
 
-struct CallMediaChannelCloseContext {
+/** A channel of one of a leg's paths closed (either end, any reason). */
+struct CallMediaChannelCloseInput {
+  /** The leg is an inbound placeholder: its control channel never said hello / migrate. */
+  bool placeholder = false;
+  CallMediaPathSlot slot = CallMediaPathSlot::Active;
   CallMediaBundlePhase phase = CallMediaBundlePhase::Idle;
   CallMediaChannelRole role = CallMediaChannelRole::OutboundControl;
+  /** This end cancelled the leg. */
   bool local_cancel = false;
+  /** The peer closed or reset the channel (`peer_close` / `peer_reset`). */
   bool remote_terminal = false;
-  bool slot_still_owned = true;
 };
 
-CallMediaChannelCloseDecision DecideCallMediaChannelClose(const CallMediaChannelCloseContext& ctx);
+enum class CallMediaChannelCloseAction {
+  /** It carried no call: drop the placeholder. */
+  DropPlaceholder = 0,
+  /** The migration (or standby add) failed: the call stays where it is. */
+  AbandonCandidate,
+  /** Expected while (or after) the old path is released — never a failure. */
+  DropRetiring,
+  /** The call loses its standby only. */
+  DropStandby,
+  /** K014: a live call's active path closed under it — DecideCallMediaActiveClose says what next. */
+  ActivePathClosed,
+  /** Dual-dial: the peer's abandoned outbound (our inbound) closed while ours wins — drop that slot only. */
+  DropInboundControl,
+  /** A leg that is not connecting yet. */
+  Ignore,
+  /** The connecting leg fails, unreported (this end cancelled, or a local / link-side close). */
+  TearDownQuietly,
+  /** The connecting leg fails and says so (`on_failed`): the peer closed or reset the channel. */
+  TearDownReported,
+};
+
+/** Where a closed channel's leg goes: by the path that held it, then the leg's phase. */
+CallMediaChannelCloseAction RouteCallMediaChannelClose(const CallMediaChannelCloseInput& in);
 
 /** Map AMP bundle phase → libp2p session phase for transitional Phase() API. */
 CallMediaSessionPhase CallMediaBundlePhaseToSessionPhase(CallMediaBundlePhase phase);
@@ -108,6 +140,20 @@ CallMediaLegPhase CallMediaBundlePhaseToLegPhase(CallMediaBundlePhase phase);
 
 bool CallMediaBundlePhaseIsActive(CallMediaBundlePhase phase);
 
+// --- The leg's timers -------------------------------------------------------------------------
+// Every one is milliseconds on the mesh runtime's clock (amp `Endpoint::GetClock()`): the leg
+// coordinator reads no other clock, so a VirtualClock harness drives them all.
+
+/** A leg's connect (control hello → media ready) when its caller sets none; an inbound hello's leg too. */
+inline constexpr int64_t kCallMediaConnectTimeoutMs = 15000;
+/** An inbound control channel is held (a placeholder) this long for its `hello` / `migrate`. */
+inline constexpr int64_t kCallMediaPlaceholderTimeoutMs = 15000;
+/** k3: a candidate path must be up and acknowledged within this, or the call stays where it is. */
+inline constexpr int64_t kCallMediaMigrateTimeoutMs = 5000;
+/** k3: between automatic attempts to move a relayed call onto a direct link. */
+inline constexpr int64_t kCallMediaAutoMigrateBackoffMs = 10000;
+/** k4 (K008): a call without any path waits this long for a new one before it fails. */
+inline constexpr int64_t kCallMediaReconnectWindowMs = 30000;
 /** k4 (K008): heartbeat cadence per path role, and when a silent path counts as dead. */
 inline constexpr int64_t kCallMediaActiveHeartbeatMs = 500;
 inline constexpr int64_t kCallMediaStandbyHeartbeatMs = 10000;
@@ -134,6 +180,13 @@ inline constexpr int64_t kCallMediaFailoverHoldDownMs = 3000;
  * path) before it counts as lost.
  */
 inline constexpr int64_t kCallMediaByeAwaitMs = 1500;
+
+/** k3: after a switch, the old path is released once media arrived on the new one and this long passed ... */
+inline constexpr int64_t kCallMediaRetireAfterSwitchMs = 1000;
+/** ... or after this long regardless (a muted / silent peer). */
+inline constexpr int64_t kCallMediaRetireAtMostMs = 5000;
+/** A retiring path whose release was never acknowledged is dropped after this. */
+inline constexpr int64_t kCallMediaRetireAbandonMs = 10000;
 
 /** K014: one of the active path's channels of a live (MediaReady) call closed — not by this end. */
 struct CallMediaActiveCloseInput {
@@ -177,12 +230,17 @@ struct CallMediaFailoverInput {
   int64_t standby_silence_ms = 0;
   /** Since this end last failed over (large when never). */
   int64_t since_failover_ms = INT64_MAX;
+  /**
+   * K014: the peer closed the active media channel and the path waits (kCallMediaByeAwaitMs) for its control
+   * channel's `bye` or close. Silence decides nothing meanwhile — the wait's end does; a lost link still does.
+   */
+  bool awaiting_bye = false;
 };
 
 /**
  * k4 failover: switch TX to the standby path when the active one is lost, or silent 1.5 s while the
  * peer is known to heartbeat (a muted mic still heartbeats and sends silence frames — only a dead
- * path goes quiet). Never onto a standby that is itself gone or stale.
+ * path goes quiet) and no `bye` is awaited. Never onto a standby that is itself gone or stale.
  */
 bool ShouldFailOverToStandby(const CallMediaFailoverInput& in);
 
@@ -204,15 +262,8 @@ public:
 private:
   bool have_ = false;
   uint32_t highest_ = 0;
-  std::bitset<kWindow> seen_;  // bit i = highest_ - i
+  std::bitset<kWindow> seen_; // bit i = highest_ - i
 };
-
-/** k3: after a switch, the old path is released once media arrived on the new one and this long passed ... */
-inline constexpr int64_t kCallMediaRetireAfterSwitchMs = 1000;
-/** ... or after this long regardless (a muted / silent peer). */
-inline constexpr int64_t kCallMediaRetireAtMostMs = 5000;
-/** A retiring path whose release was never acknowledged is dropped after this. */
-inline constexpr int64_t kCallMediaRetireAbandonMs = 10000;
 
 struct CallMediaRetiringInput {
   bool link_lost = false;

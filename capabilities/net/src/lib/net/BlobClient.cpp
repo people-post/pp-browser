@@ -295,8 +295,7 @@ std::optional<BlobStatus> BlobStatusFromWire(const std::string& value) {
 }
 
 Roe<void> IBlobClient::PutUploadFile(const std::string& upload_url, const std::string& content_type,
-                                     const std::string& path,
-                                     const std::function<bool(uint64_t, uint64_t)>& progress) {
+                                     const std::string& path, const std::function<bool(uint64_t, uint64_t)>& progress) {
   std::ifstream input(path, std::ios::binary);
   if (!input) {
     return Error("Upload file is not readable");

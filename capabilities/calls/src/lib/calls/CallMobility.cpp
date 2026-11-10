@@ -7,12 +7,12 @@ namespace pbr {
 
 const char* MobilityClassWire(const MobilityClass mobility) {
   switch (mobility) {
-  case MobilityClass::Stationary:
-    return "stationary";
-  case MobilityClass::Mobile:
-    return "mobile";
-  case MobilityClass::Unknown:
-    break;
+    case MobilityClass::Stationary:
+      return "stationary";
+    case MobilityClass::Mobile:
+      return "mobile";
+    case MobilityClass::Unknown:
+      break;
   }
   return "unknown";
 }
@@ -71,15 +71,19 @@ void MobilityClassifier::OnAttachment(const MobilityAttachment& attachment, cons
   }
 }
 
-void MobilityClassifier::OnObservedAddressChanged(const Clock::time_point now) { NoteChurn(now); }
+void MobilityClassifier::OnObservedAddressChanged(const Clock::time_point now) {
+  NoteChurn(now);
+}
 
-void MobilityClassifier::SetOverride(std::optional<MobilityClass> pinned) { override_ = pinned; }
+void MobilityClassifier::SetOverride(std::optional<MobilityClass> pinned) {
+  override_ = pinned;
+}
 
 std::optional<MobilityClassifier::Clock::time_point> MobilityClassifier::NextReevaluationAt(
     const Clock::time_point now) const {
-  if (override_ || class_ != MobilityClass::Mobile || churn_.empty() || !attachment_ ||
-      attachment_->cellular || attachment_->expensive) {
-    return std::nullopt;  // pinned, not Mobile, or Mobile for a reason only an event changes
+  if (override_ || class_ != MobilityClass::Mobile || churn_.empty() || !attachment_ || attachment_->cellular ||
+      attachment_->expensive) {
+    return std::nullopt; // pinned, not Mobile, or Mobile for a reason only an event changes
   }
   // The oldest change leaving the window is always ahead (Evaluate dropped the expired ones);
   // the calm point may already have passed while too many changes are still in the window.
@@ -93,7 +97,7 @@ std::optional<MobilityClassifier::Clock::time_point> MobilityClassifier::NextRee
 
 void MobilityClassifier::NoteChurn(const Clock::time_point now) {
   if (!churn_.empty() && now - churn_.back() < kMobilityChurnDedupe) {
-    return;  // one move: the network change and the new observed address it brings
+    return; // one move: the network change and the new observed address it brings
   }
   churn_.push_back(now);
   DropOldChurn(now);
@@ -116,7 +120,7 @@ MobilityClass MobilityClassifier::Evaluate(const Clock::time_point now) {
     return class_;
   }
   if (!attachment_->online) {
-    return class_;  // offline says nothing about the next attachment: keep what we had
+    return class_; // offline says nothing about the next attachment: keep what we had
   }
   const bool primary_mobile = attachment_->cellular || attachment_->expensive;
   if (primary_mobile || churn_.size() >= kMobilityChurnToMobile) {

@@ -24,7 +24,7 @@ namespace {
 class FakeHost : public AgentTurnHost {
 public:
   std::string active_thread;
-  std::vector<bool> activity; // ShellSetActivity(visible, ...) calls, in order
+  std::vector<bool> activity;             // ShellSetActivity(visible, ...) calls, in order
   std::deque<QueuedSendOutcome> outcomes; // scripted; NotStarted when it runs dry
   std::vector<QueuedAgentSend> handed_over;
   std::vector<std::pair<std::string, std::string>> put_back; // (thread, text) handed back to that thread's composer
@@ -691,8 +691,8 @@ protected:
 
   /** What ChatController does with an AI send in `thread_id`: DecideSend, then start it or queue it. */
   SendDecision Send(const std::string& thread_id) {
-    const SendDecision decision = DecideSend(true, controller_.CanStart(thread_id), controller_.Busy().BusyIn(thread_id),
-                                             controller_.HasQueued(thread_id));
+    const SendDecision decision = DecideSend(true, controller_.CanStart(thread_id),
+                                             controller_.Busy().BusyIn(thread_id), controller_.HasQueued(thread_id));
     if (decision == SendDecision::Send) {
       sessions_.running.insert(thread_id);
       controller_.MarkAgentBusy(thread_id);

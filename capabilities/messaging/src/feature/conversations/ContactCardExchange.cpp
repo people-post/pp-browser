@@ -79,7 +79,7 @@ Roe<Contact> ContactCardExchange::Add(const ChatContactCardFields& card, int64_t
     return existing.error();
   }
   if (*existing) {
-    return **existing;  // known already: its keys are refreshed above, its route stays its own
+    return **existing; // known already: its keys are refreshed above, its route stays its own
   }
   mesh::DirectoryHit hit;
   hit.hit_id = account_id;
@@ -104,14 +104,15 @@ void ContactCardExchange::FetchFromDevices(std::vector<std::string> devices, con
   }
   const std::string device = devices.front();
   devices.erase(devices.begin());
-  fetch_card_(device, account_id,
-              [this, devices = std::move(devices), account_id, done = std::move(done)](Roe<PeerCardRecord> kept) mutable {
-                if (kept) {
-                  done(true);
-                  return;
-                }
-                FetchFromDevices(std::move(devices), account_id, std::move(done));
-              });
+  fetch_card_(
+      device, account_id,
+      [this, devices = std::move(devices), account_id, done = std::move(done)](Roe<PeerCardRecord> kept) mutable {
+        if (kept) {
+          done(true);
+          return;
+        }
+        FetchFromDevices(std::move(devices), account_id, std::move(done));
+      });
 }
 
 void ContactCardExchange::AddFromLocator(const ContactLocator& locator, std::function<void(Roe<LocatorAdded>)> done) {
@@ -161,8 +162,8 @@ void ContactCardExchange::FetchCard(const std::string& account_id, std::vector<s
     auto task = [this, account_id, done]() {
       auto resolved = keys_.Resolve(account_id);
       if (!resolved) {
-        log().info << "no card for " << account_id << " from its devices or the directory: "
-                   << resolved.error().message;
+        log().info << "no card for " << account_id
+                   << " from its devices or the directory: " << resolved.error().message;
       }
       done(static_cast<bool>(resolved));
     };

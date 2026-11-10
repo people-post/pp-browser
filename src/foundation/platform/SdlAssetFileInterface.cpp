@@ -16,14 +16,14 @@ namespace {
 
 SDL_IOWhence SeekOrigin(int origin) {
   switch (origin) {
-  case SEEK_SET:
-    return SDL_IO_SEEK_SET;
-  case SEEK_CUR:
-    return SDL_IO_SEEK_CUR;
-  case SEEK_END:
-    return SDL_IO_SEEK_END;
-  default:
-    return SDL_IO_SEEK_SET;
+    case SEEK_SET:
+      return SDL_IO_SEEK_SET;
+    case SEEK_CUR:
+      return SDL_IO_SEEK_CUR;
+    case SEEK_END:
+      return SDL_IO_SEEK_END;
+    default:
+      return SDL_IO_SEEK_SET;
   }
 }
 

@@ -83,11 +83,14 @@ TEST(ChatRowAvatarTest, APlaceholderPreviewMarksTheRowAndTheTemplateKeepsTheType
 
   const std::string rml = ReadAsset("views/sidebar.rml");
   EXPECT_NE(rml.find("data-class-sidebar-session--empty=\"session.preview_empty\""), std::string::npos);
-  for (const char* type : {"chat-row-type--ai", "chat-row-type--private", "chat-row-type--public", "chat-row-type--group"}) {
+  for (const char* type :
+       {"chat-row-type--ai", "chat-row-type--private", "chat-row-type--public", "chat-row-type--group"}) {
     EXPECT_NE(rml.find(type), std::string::npos) << type;
   }
-  EXPECT_NE(ReadAsset("views/ai_drawer.rml").find("data-class-sidebar-session--empty=\"session.preview_empty\""), std::string::npos);
-  EXPECT_NE(ReadAsset("themes/components.rcss").find("height: 64dp;\n  min-height: 64dp;"), std::string::npos) << "rows are 64dp";
+  EXPECT_NE(ReadAsset("views/ai_drawer.rml").find("data-class-sidebar-session--empty=\"session.preview_empty\""),
+            std::string::npos);
+  EXPECT_NE(ReadAsset("themes/components.rcss").find("height: 64dp;\n  min-height: 64dp;"), std::string::npos)
+      << "rows are 64dp";
 }
 
 // The AI drawer's search (and the Chats one): a row stays when its title or last message contains the query, any case.

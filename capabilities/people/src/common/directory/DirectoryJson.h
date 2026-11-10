@@ -29,4 +29,4 @@ pp::common::Object ProfileIconRefToJson(const mesh::ProfileIconRef& icon);
 pp::common::Object DirectoryHitToJson(const mesh::DirectoryHit& hit);
 mesh::DirectoryHit DirectoryHitFromJson(const pp::common::Object& json);
 
-}  // namespace pbr
+} // namespace pbr

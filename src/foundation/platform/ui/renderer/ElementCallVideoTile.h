@@ -15,7 +15,7 @@ class ElementCallVideoTile : public ui::Element {
 public:
   UI_RTTI_DefineWithParent(ElementCallVideoTile, ui::Element)
 
-  explicit ElementCallVideoTile(const ui::String& tag);
+      explicit ElementCallVideoTile(const ui::String& tag);
 
 protected:
   void OnRender() override;

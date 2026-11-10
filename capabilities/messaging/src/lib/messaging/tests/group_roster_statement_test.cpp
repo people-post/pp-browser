@@ -149,9 +149,9 @@ TEST(GroupRosterStatementTest, ADissolveIsSignedUnderItsOwnTagAndRoundTrips) {
   TestSigner alice;
   const GroupRosterStatement roster = SignedBy(alice, 3, {"account:bob"});
   EXPECT_FALSE(roster.dissolved);
-  const GroupRosterStatement dissolve = group_roster_statement::Sign(alice, alice.Key(), "group:g1", 3,
-                                                                     Roster(alice.Id(), {"account:bob"}), {}, true)
-                                            .value();
+  const GroupRosterStatement dissolve =
+      group_roster_statement::Sign(alice, alice.Key(), "group:g1", 3, Roster(alice.Id(), {"account:bob"}), {}, true)
+          .value();
   EXPECT_TRUE(dissolve.dissolved);
   EXPECT_TRUE(group_roster_statement::Verify(dissolve, alice.Id()));
   EXPECT_NE(dissolve.owner_signature_b64, roster.owner_signature_b64) << "the mark is signed, not added after";
@@ -168,7 +168,8 @@ TEST(GroupRosterStatementTest, ADissolveIsSignedUnderItsOwnTagAndRoundTrips) {
   ASSERT_TRUE(parsed);
   EXPECT_TRUE(parsed->dissolved);
   EXPECT_TRUE(group_roster_statement::Verify(*parsed, alice.Id()));
-  EXPECT_FALSE(group_roster_statement::ToJson(roster).getIf<bool>("dissolved").has_value()) << "a roster statement is as it was";
+  EXPECT_FALSE(group_roster_statement::ToJson(roster).getIf<bool>("dissolved").has_value())
+      << "a roster statement is as it was";
 }
 
 TEST(GroupRosterStatementTest, ThePresetAndTheAdminsAreWhatTheOwnerSigned) {

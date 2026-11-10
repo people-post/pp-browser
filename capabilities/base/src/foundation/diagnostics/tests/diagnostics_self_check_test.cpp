@@ -11,7 +11,7 @@ namespace {
 const std::string kAccount = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE";
 const std::string kPeer = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
 
-}  // namespace
+} // namespace
 
 // The check is the last gate behind shareable lines: what they write must pass it, or every send is refused.
 TEST(DiagnosticsSelfCheckTest, ShareableLinesPassIt) {
@@ -28,8 +28,9 @@ TEST(DiagnosticsSelfCheckTest, ShareableLinesPassIt) {
 }
 
 TEST(DiagnosticsSelfCheckTest, SelfCheckAcceptsPlainLogText) {
-  EXPECT_EQ(pbr::SelfCheck("[2026-10-28 08:57:32.329] [INFO] [Diag] elapsed 01:23 at 0x00007ff812345678 peer=3fa9c2d1\n", {}),
-            std::nullopt);
+  EXPECT_EQ(
+      pbr::SelfCheck("[2026-10-28 08:57:32.329] [INFO] [Diag] elapsed 01:23 at 0x00007ff812345678 peer=3fa9c2d1\n", {}),
+      std::nullopt);
 }
 
 TEST(DiagnosticsSelfCheckTest, SelfCheckLongTokenIsIdLikeOnly) {
@@ -37,7 +38,7 @@ TEST(DiagnosticsSelfCheckTest, SelfCheckLongTokenIsIdLikeOnly) {
                          "AbcdefghijKlmnopqrstuvwX1"}) {
     EXPECT_EQ(pbr::SelfCheck(std::string("x ") + ok + " y", {}), std::nullopt) << ok;
   }
-  const std::string base58 = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";  // 46 chars, 7 digits
+  const std::string base58 = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"; // 46 chars, 7 digits
   EXPECT_EQ(pbr::SelfCheck("x " + base58.substr(0, 44) + " y", {}), std::optional<std::string>("long_token"));
   EXPECT_EQ(pbr::SelfCheck("x " + kAccount + " y", {}), std::optional<std::string>("long_token"));
 }
@@ -57,12 +58,12 @@ TEST(DiagnosticsSelfCheckTest, KnownIdentifierSchemeIsStrippedBeforeMatching) {
   EXPECT_EQ(pbr::SelfCheck("[t] [INFO] [Application] saw " + bare + " here", known),
             std::optional<std::string>("known_identifier"));
   EXPECT_EQ(pbr::SelfCheck("[t] [INFO] [Application] state account:none", known), std::nullopt);
-  EXPECT_EQ(pbr::SelfCheck("[t] [INFO] [Application] ab", known), std::nullopt);  // too short to be a needle
+  EXPECT_EQ(pbr::SelfCheck("[t] [INFO] [Application] ab", known), std::nullopt); // too short to be a needle
 }
 
 TEST(DiagnosticsSelfCheckTest, SelfCheckKnownIdentifierPrefix) {
   const std::vector<std::string> known = {"relay-eu-1.example.net"};
   EXPECT_EQ(pbr::SelfCheck("seen relay-eu done", known), std::optional<std::string>("known_identifier"));
-  EXPECT_EQ(pbr::SelfCheck("seen relay-e done", known), std::nullopt);  // 7-char prefix is not enough
+  EXPECT_EQ(pbr::SelfCheck("seen relay-e done", known), std::nullopt); // 7-char prefix is not enough
   EXPECT_EQ(pbr::SelfCheck("seen relay-eu done", {}), std::nullopt);
 }

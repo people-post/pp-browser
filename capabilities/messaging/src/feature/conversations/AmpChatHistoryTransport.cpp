@@ -76,38 +76,37 @@ struct AmpChatHistoryTransport::Impl {
   void ServeRequest(std::shared_ptr<mesh::InboundReply> reply, std::vector<uint8_t> body,
                     const std::string& remote_peer_id) {
     RunWorker(post_worker, [this, reply, remote_peer_id, body = std::move(body)]() mutable {
-                      if (stopped.load(std::memory_order_acquire)) {
-                        return;
-                      }
-                      const std::string json_utf8(body.begin(), body.end());
-                      auto root = TryParseObject(json_utf8);
-                      if (!root) {
-                        return;
-                      }
-                      auto request = ChatHistoryRequestFromJson(*root);
-                      if (!request) {
-                        return;
-                      }
-                      auto local_identity = identity.Get();
-                      if (!local_identity) {
-                        return;
-                      }
-                      const std::string local_account_id = !local_identity->account_id.empty()
-                                                               ? local_identity->account_id
-                                                               : local_identity->relay_user_id;
-                      auto local_device = DevicePeerIdFromKey(local_identity->public_key_b64);
-                      if (!local_device) {
-                        return;
-                      }
-                      auto response = ChatHistoryResponder::Serve(
-                          store, psk_store, *request, local_identity->relay_user_id, local_account_id, *local_device,
-                          [this](const std::vector<uint8_t>& bytes) { return identity.SignDeviceBytes(bytes); },
-                          remote_peer_id, signing_keys, util::NowUnixMs());
-                      if (!response) {
-                        return;  // refused or failed: the asker gets no answer either way
-                      }
-                      const std::string response_json = DumpJson(ChatHistoryResponseToJson(*response));
-                      reply->Send(JsonToBody(response_json));
+      if (stopped.load(std::memory_order_acquire)) {
+        return;
+      }
+      const std::string json_utf8(body.begin(), body.end());
+      auto root = TryParseObject(json_utf8);
+      if (!root) {
+        return;
+      }
+      auto request = ChatHistoryRequestFromJson(*root);
+      if (!request) {
+        return;
+      }
+      auto local_identity = identity.Get();
+      if (!local_identity) {
+        return;
+      }
+      const std::string local_account_id =
+          !local_identity->account_id.empty() ? local_identity->account_id : local_identity->relay_user_id;
+      auto local_device = DevicePeerIdFromKey(local_identity->public_key_b64);
+      if (!local_device) {
+        return;
+      }
+      auto response = ChatHistoryResponder::Serve(
+          store, psk_store, *request, local_identity->relay_user_id, local_account_id, *local_device,
+          [this](const std::vector<uint8_t>& bytes) { return identity.SignDeviceBytes(bytes); }, remote_peer_id,
+          signing_keys, util::NowUnixMs());
+      if (!response) {
+        return; // refused or failed: the asker gets no answer either way
+      }
+      const std::string response_json = DumpJson(ChatHistoryResponseToJson(*response));
+      reply->Send(JsonToBody(response_json));
     });
   }
 
@@ -116,7 +115,8 @@ struct AmpChatHistoryTransport::Impl {
       return;
     }
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
-    *session_holder = links->BindChannelOnLink(link, channel_id, mesh::InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy()),
+    *session_holder = links->BindChannelOnLink(
+        link, channel_id, mesh::InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy()),
         [this, session_holder, remote_peer_id](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
           if (!session || !frame || stopped.load(std::memory_order_acquire)) {
@@ -130,11 +130,14 @@ struct AmpChatHistoryTransport::Impl {
 };
 
 AmpChatHistoryTransport::AmpChatHistoryTransport(mesh::IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
-                                             IdentityStore& identity, IPeerSessionStore& psk_store,
-                                             IPeerSigningKeyResolver& signing_keys, WorkerPost post_worker,
-                                             IoPost post_io, IoAfter post_after)
-    : impl_(std::make_unique<Impl>(store, identity, psk_store, signing_keys)), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
+                                                 IdentityStore& identity, IPeerSessionStore& psk_store,
+                                                 IPeerSigningKeyResolver& signing_keys, WorkerPost post_worker,
+                                                 IoPost post_io, IoAfter post_after)
+    : impl_(std::make_unique<Impl>(store, identity, psk_store, signing_keys)),
+      links_(links),
+      io_pump_(std::move(io_pump)),
+      post_worker_(std::move(post_worker)),
+      post_io_(std::move(post_io)),
       post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
@@ -154,8 +157,7 @@ void AmpChatHistoryTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kChatHistoryProtocolId,
-      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
-                                                const std::string& remote_peer_id,
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle, const std::string& remote_peer_id,
                                                 const uint32_t channel_id) {
         impl->HandleInboundChannel(handle, remote_peer_id, channel_id);
       }));
@@ -172,13 +174,13 @@ void AmpChatHistoryTransport::Stop() {
   impl_->deferred.Invalidate();
 }
 
-void AmpChatHistoryTransport::RegisterPeerEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr) {
+void AmpChatHistoryTransport::RegisterPeerEndpoint(const std::string& peer_relay_user_id,
+                                                   const std::string& multiaddr) {
   (void)links_.RegisterEndpoint(peer_relay_user_id, multiaddr);
 }
 
 bool AmpChatHistoryTransport::IsPeerReachable(const std::string& peer_identity_value) const {
-  return links_.IsReachable(peer_identity_value) ||
-         links_.GetLinkSnapshot(peer_identity_value).has_endpoint;
+  return links_.IsReachable(peer_identity_value) || links_.GetLinkSnapshot(peer_identity_value).has_endpoint;
 }
 
 void AmpChatHistoryTransport::FetchChatHistoryAsync(const ChatHistoryRequest& request,
@@ -236,10 +238,9 @@ void AmpChatHistoryTransport::FetchChatHistoryAsync(const ChatHistoryRequest& re
     (*finish)(peer_id.error());
     return;
   }
-  if (auto signed_ok = PeerRequestAuth::Sign(signed_request, local->account_id, *peer_id,
-                                             util::NowUnixMs(), [this](const std::vector<uint8_t>& bytes) {
-                                               return impl_->identity.SignBytes(bytes);
-                                             });
+  if (auto signed_ok =
+          PeerRequestAuth::Sign(signed_request, local->account_id, *peer_id, util::NowUnixMs(),
+                                [this](const std::vector<uint8_t>& bytes) { return impl_->identity.SignBytes(bytes); });
       !signed_ok) {
     (*finish)(signed_ok.error());
     return;
@@ -298,10 +299,9 @@ void AmpChatHistoryTransport::FetchChatHistoryAsync(const ChatHistoryRequest& re
                                  return;
                                }
 
-                               mesh::AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
-                                 (*finish)(Error("amp chat-history fetch timed out"));
-                               },
-                                                      post_after_);
+                               mesh::AmpScheduleUntilSettled(
+                                   post_io_, io_pump_, settled, deadline,
+                                   [finish]() { (*finish)(Error("amp chat-history fetch timed out")); }, post_after_);
                              });
                        });
   });
@@ -321,7 +321,7 @@ Roe<ChatHistoryResponse> AmpChatHistoryTransport::FetchChatHistory(const ChatHis
   });
 
   mesh::AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
-               deadline, io_pump_);
+                     deadline, io_pump_);
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     return Error("amp chat-history fetch timed out");
   }

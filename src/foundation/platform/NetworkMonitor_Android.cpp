@@ -57,7 +57,7 @@ public:
       (void)CallActivity("stopNetworkMonitor");
       started_ = false;
     }
-    std::lock_guard lock(g_sink_mu);  // waits out a report in flight
+    std::lock_guard lock(g_sink_mu); // waits out a report in flight
     g_sink = nullptr;
   }
 
@@ -77,19 +77,19 @@ extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_PpNetworkMonitor_nati
     JNIEnv* env, jclass, jboolean online, jint transport, jboolean expensive, jstring fingerprint) {
   pbr::NetworkState state;
   state.online = online == JNI_TRUE;
-  switch (transport) {  // PpNetworkMonitor.TRANSPORT_*
-  case 1:
-    state.transport = pbr::NetworkTransport::Wifi;
-    break;
-  case 2:
-    state.transport = pbr::NetworkTransport::Cellular;
-    break;
-  case 3:
-    state.transport = pbr::NetworkTransport::Other;
-    break;
-  default:
-    state.transport = pbr::NetworkTransport::Unknown;
-    break;
+  switch (transport) { // PpNetworkMonitor.TRANSPORT_*
+    case 1:
+      state.transport = pbr::NetworkTransport::Wifi;
+      break;
+    case 2:
+      state.transport = pbr::NetworkTransport::Cellular;
+      break;
+    case 3:
+      state.transport = pbr::NetworkTransport::Other;
+      break;
+    default:
+      state.transport = pbr::NetworkTransport::Unknown;
+      break;
   }
   state.expensive = expensive == JNI_TRUE;
   if (fingerprint != nullptr) {

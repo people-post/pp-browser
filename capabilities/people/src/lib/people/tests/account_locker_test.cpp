@@ -114,7 +114,7 @@ TEST(AccountLockerTest, SizesAreBucketedSoSmallChangesDoNotShow) {
 }
 
 TEST(AccountLockerTest, PublishingMergesWhatAnotherDeviceStored) {
-  AccountLockerState ours = SampleState();  // bob, group:hike at epoch 3, floor for bob
+  AccountLockerState ours = SampleState(); // bob, group:hike at epoch 3, floor for bob
   AccountLockerState stored = SampleState();
   Contact carol;
   carol.id = "c2";
@@ -122,7 +122,7 @@ TEST(AccountLockerTest, PublishingMergesWhatAnotherDeviceStored) {
   SyncContactMirrors(carol);
   stored.contacts.push_back(carol);
   stored.contacts[0].local.display_name = "Bob (laptop's name)";
-  stored.extras.groups[0].roster_epoch = 5;       // the laptop saw a newer roster
+  stored.extras.groups[0].roster_epoch = 5; // the laptop saw a newer roster
   stored.extras.groups[0].title = "Hike (renamed)";
   AccountStateGroup book_club;
   book_club.group_id = "group:books";
@@ -163,7 +163,7 @@ TEST(AccountLockerTest, ASyncWithNothingNewerChangesNothingOnEitherDevice) {
   std::reverse(laptop.extras.groups.begin(), laptop.extras.groups.end());
   std::reverse(laptop.extras.card_floors.begin(), laptop.extras.card_floors.end());
 
-  const AccountLockerState stored = account_locker::MergeForPublish(phone, phone);  // what the phone wrote
+  const AccountLockerState stored = account_locker::MergeForPublish(phone, phone); // what the phone wrote
   EXPECT_EQ(account_locker::StateToJson(account_locker::MergeForPublish(laptop, stored)),
             account_locker::StateToJson(stored));
   const AccountLockerState laptop_wrote = account_locker::MergeForPublish(laptop, laptop);
@@ -175,7 +175,7 @@ TEST(AccountLockerTest, AGroupLeftOnOneDeviceStaysLeft) {
   // M023 s4: the laptop left the hike group (epoch 4, a tombstone); the phone's stored copy is from epoch 3 and,
   // after the check, the phone's own record is a tombstone at the epoch it still had.
   AccountLockerState laptop = SampleState();
-  AccountLockerState stored = SampleState();  // group:hike at epoch 3, we are in
+  AccountLockerState stored = SampleState(); // group:hike at epoch 3, we are in
   laptop.extras.groups[0].roster_epoch = 4;
   laptop.extras.groups[0].left = true;
   AccountLockerState merged = account_locker::MergeForPublish(laptop, stored);
@@ -183,12 +183,12 @@ TEST(AccountLockerTest, AGroupLeftOnOneDeviceStaysLeft) {
   EXPECT_TRUE(merged.extras.groups[0].left) << "the older copy where we were in does not bring it back";
 
   AccountLockerState phone = SampleState();
-  phone.extras.groups[0].left = true;  // same epoch 3: removed, found by the member check
+  phone.extras.groups[0].left = true; // same epoch 3: removed, found by the member check
   merged = account_locker::MergeForPublish(stored, phone);
   EXPECT_TRUE(merged.extras.groups[0].left) << "at the same epoch, being out wins";
 
   AccountLockerState reinvited = SampleState();
-  reinvited.extras.groups[0].roster_epoch = 6;  // invited back later
+  reinvited.extras.groups[0].roster_epoch = 6; // invited back later
   merged = account_locker::MergeForPublish(reinvited, laptop);
   EXPECT_FALSE(merged.extras.groups[0].left) << "a newer roster with us in it wins over the tombstone";
 }
@@ -201,7 +201,7 @@ TEST(AccountLockerTest, ADissolvedGroupStaysDissolvedWhateverTheOtherCopySays) {
   dissolved.extras.groups[0].left = true;
   dissolved.extras.groups[0].dissolved = true;
   AccountLockerState live = SampleState();
-  live.extras.groups[0].roster_epoch = 9;  // a device that never heard of it
+  live.extras.groups[0].roster_epoch = 9; // a device that never heard of it
 
   AccountLockerState merged = account_locker::MergeForPublish(live, dissolved);
   ASSERT_EQ(merged.extras.groups.size(), 1u);
@@ -225,9 +225,10 @@ TEST(AccountLockerTest, SignBytesMatchTheRelaysGoldenVector) {
   for (size_t i = 0; i < locker_id.size(); ++i) {
     locker_id[i] = static_cast<uint8_t>(i);
   }
-  EXPECT_EQ(BytesToHex(account_locker::SignBytes(locker_id, 7, ByteVector{0xaa, 0xbb})),
-            "70702d62726f777365723a6163636f756e742d6c6f636b65722d763100010000000000000020000102030405060708090a0b0c0d0e0f"
-            "101112131415161718191a1b1c1d1e1f00000000000000070000000000000002aabb");
+  EXPECT_EQ(
+      BytesToHex(account_locker::SignBytes(locker_id, 7, ByteVector{0xaa, 0xbb})),
+      "70702d62726f777365723a6163636f756e742d6c6f636b65722d763100010000000000000020000102030405060708090a0b0c0d0e0f"
+      "101112131415161718191a1b1c1d1e1f00000000000000070000000000000002aabb");
 }
 
 } // namespace

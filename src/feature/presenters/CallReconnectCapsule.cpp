@@ -39,14 +39,14 @@ const CallReconnectView& CallReconnectCapsule::Step(const std::string& call_id, 
 
 const char* CallReconnectKey(const CallReconnectKind kind) {
   switch (kind) {
-  case CallReconnectKind::Reconnecting:
-    return "call.status.reconnecting";
-  case CallReconnectKind::Restored:
-    return "call.reconnect.restored";
-  case CallReconnectKind::Offline:
-    return "call.reconnect.offline";
-  case CallReconnectKind::None:
-    break;
+    case CallReconnectKind::Reconnecting:
+      return "call.status.reconnecting";
+    case CallReconnectKind::Restored:
+      return "call.reconnect.restored";
+    case CallReconnectKind::Offline:
+      return "call.reconnect.offline";
+    case CallReconnectKind::None:
+      break;
   }
   return "";
 }

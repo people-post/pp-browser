@@ -37,8 +37,12 @@ MessagingPeoplePickerPorts MakeMessagingPeoplePickerPorts(ConversationsHub& hub)
     auto identity = hub.Identity().Get();
     return identity ? identity->nickname : std::string();
   };
-  ports.list_unreachable_members = [&hub](const std::string& group_id) { return hub.Groups().ListUnreachable(group_id); };
-  ports.list_invited_waiting = [&hub](const std::string& group_id) { return hub.Groups().ListInvitedWaiting(group_id); };
+  ports.list_unreachable_members = [&hub](const std::string& group_id) {
+    return hub.Groups().ListUnreachable(group_id);
+  };
+  ports.list_invited_waiting = [&hub](const std::string& group_id) {
+    return hub.Groups().ListInvitedWaiting(group_id);
+  };
   ports.kept_card_nickname = [&hub](const std::string& account_id) { return hub.KeptCardNickname(account_id); };
   ports.remove_member_by_identity = [&hub](const std::string& group_id, const std::string& member_identity) {
     return hub.Groups().RemoveMemberByIdentity(group_id, member_identity);

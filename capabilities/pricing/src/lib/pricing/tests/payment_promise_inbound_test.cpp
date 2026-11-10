@@ -129,8 +129,8 @@ TEST_F(PaymentPromiseInboundTest, OfferedCannotGoBack) {
 TEST_F(PaymentPromiseInboundTest, OutcomeSignedByTheCounterpartyAsActor) {
   PaymentPromise ours = OurOffer();
   ours.state = PaymentPromiseState::Accepted;
-  auto row = MergeInboundPaymentPromise(ours, TheirOutcome(ours, PaymentPromiseState::Rejected), kAlice,
-                                        bob_.public_key);
+  auto row =
+      MergeInboundPaymentPromise(ours, TheirOutcome(ours, PaymentPromiseState::Rejected), kAlice, bob_.public_key);
   ASSERT_TRUE(row) << row.error().message;
   EXPECT_EQ(row->state, PaymentPromiseState::Rejected);
   EXPECT_EQ(row->outcome_actor_account_id, kBob);

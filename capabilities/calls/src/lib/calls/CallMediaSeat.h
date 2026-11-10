@@ -32,10 +32,10 @@ public:
   };
 
   enum class AttachBeginResult {
-    Started = 0,       // new flight; ticket filled
-    CoalescedSameHop,  // same hop already attaching; ticket filled with in-flight gen
-    DeferredOtherHop,  // different hop in flight — caller must defer
-    Rejected,          // empty args / wrong call
+    Started = 0,      // new flight; ticket filled
+    CoalescedSameHop, // same hop already attaching; ticket filled with in-flight gen
+    DeferredOtherHop, // different hop in flight — caller must defer
+    Rejected,         // empty args / wrong call
   };
 
   /** Topology OnMediaStopped (Detach + clear attach state). */
@@ -45,8 +45,7 @@ public:
    * When force=false: no-op if Epoch() != epoch_at_post (NoteStart / Acquire advanced).
    * When force=true: always stop (Acquire releasing a prior bind).
    */
-  using StopEngineFn =
-      std::function<void(const std::string& call_id, uint64_t epoch_at_post, bool force)>;
+  using StopEngineFn = std::function<void(const std::string& call_id, uint64_t epoch_at_post, bool force)>;
 
   CallMediaSeat();
 
@@ -69,8 +68,7 @@ public:
    * Single in-flight SFU attach under the seat. Same hop → coalesce; different hop →
    * defer. Does not bump media epoch.
    */
-  AttachBeginResult BeginAttach(const std::string& call_id, const std::string& hop_peer_id,
-                                AttachTicket* out);
+  AttachBeginResult BeginAttach(const std::string& call_id, const std::string& hop_peer_id, AttachTicket* out);
   bool IsAttachCurrent(const AttachTicket& ticket) const;
   void EndAttach(const AttachTicket& ticket);
   /** Clear in-flight attach when call+hop still match (CompleteAttach success/fail). */

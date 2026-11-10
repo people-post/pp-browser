@@ -24,7 +24,7 @@ TEST(AccountCardRequestAuthTest, TheRequestersOwnKeyCardStandsInForALookup) {
   EXPECT_TRUE(PeerRequestAuth::Verify(request, "QmAsker", kNow, no_keys)) << "checked with the card it carries";
   EXPECT_FALSE(PeerRequestAuth::Verify(request, "QmOther", kNow, no_keys)) << "another link";
   AccountCardRequest swapped = request;
-  swapped.requester_keys = mallory.Card();  // someone else's card: does not prove itself for the asker
+  swapped.requester_keys = mallory.Card(); // someone else's card: does not prove itself for the asker
   EXPECT_FALSE(PeerRequestAuth::Verify(swapped, "QmAsker", kNow, no_keys));
   AccountCardRequest retargeted = request;
   retargeted.account_id = "account:another";

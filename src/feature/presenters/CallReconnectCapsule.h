@@ -9,7 +9,7 @@ namespace pbr {
  * The reconnect capsule of a running call (#171): the call page stays where it is (no way back to the connecting
  * page) and a capsule above the button bar says "Reconnecting…", then "Restored" for kRestoredShowMs, or, when the
  * line stays down for kOfflineAfterMs, "They may be offline". The call timer greys while it shows and keeps running.
- * Decided here (no GUI); CallController only feeds the poll and copies the view.
+ * Decided here (no GUI); CallMediaFrame steps it each poll and CallController words the view.
  */
 enum class CallReconnectKind { None, Reconnecting, Restored, Offline };
 

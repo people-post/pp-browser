@@ -134,7 +134,6 @@ public:
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   std::function<void()> notify_surface_changed_;
-
 };
 
 } // namespace pbr

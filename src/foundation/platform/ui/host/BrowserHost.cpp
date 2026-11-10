@@ -31,16 +31,16 @@
 #endif
 
 #if SDL_MAJOR_VERSION >= 3
-	#include <SDL3_image/SDL_image.h>
-	#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
+#include <SDL3/SDL.h>
 #else
-	#include <SDL_image.h>
+#include <SDL_image.h>
 #endif
 
 #if defined UI_PLATFORM_EMSCRIPTEN
-	#include <emscripten.h>
+#include <emscripten.h>
 #elif SDL_MAJOR_VERSION == 2 && !(SDL_VIDEO_RENDER_OGL)
-	#error "Only the OpenGL SDL backend is supported."
+#error "Only the OpenGL SDL backend is supported."
 #endif
 
 /**
@@ -50,73 +50,79 @@
  */
 class RenderInterface_GL3_SDL : public RenderInterface_GL3 {
 public:
-	RenderInterface_GL3_SDL() {}
+  RenderInterface_GL3_SDL() {}
 
-	ui::TextureHandle LoadTexture(ui::Vector2i& texture_dimensions, const ui::String& source) override
-	{
-		ui::FileInterface* file_interface = ui::GetFileInterface();
-		ui::FileHandle file_handle = file_interface->Open(source);
-		if (!file_handle)
-			return {};
+  ui::TextureHandle LoadTexture(ui::Vector2i& texture_dimensions, const ui::String& source) override {
+    ui::FileInterface* file_interface = ui::GetFileInterface();
+    ui::FileHandle file_handle = file_interface->Open(source);
+    if (!file_handle)
+      return {};
 
-		file_interface->Seek(file_handle, 0, SEEK_END);
-		const size_t buffer_size = file_interface->Tell(file_handle);
-		file_interface->Seek(file_handle, 0, SEEK_SET);
+    file_interface->Seek(file_handle, 0, SEEK_END);
+    const size_t buffer_size = file_interface->Tell(file_handle);
+    file_interface->Seek(file_handle, 0, SEEK_SET);
 
-		using ui::byte;
-		ui::UniquePtr<byte[]> buffer(new byte[buffer_size]);
-		file_interface->Read(buffer.get(), buffer_size, file_handle);
-		file_interface->Close(file_handle);
+    using ui::byte;
+    ui::UniquePtr<byte[]> buffer(new byte[buffer_size]);
+    file_interface->Read(buffer.get(), buffer_size, file_handle);
+    file_interface->Close(file_handle);
 
-		const size_t i_ext = source.rfind('.');
-		ui::String extension = (i_ext == ui::String::npos ? ui::String() : source.substr(i_ext + 1));
+    const size_t i_ext = source.rfind('.');
+    ui::String extension = (i_ext == ui::String::npos ? ui::String() : source.substr(i_ext + 1));
 
 #if SDL_MAJOR_VERSION >= 3
-		// A phone's portrait photo stands up (EXIF orientation) in a chat bubble and in the picture preview.
-		auto CreateSurface = [&]() { return pbr::DecodeImageUpright(reinterpret_cast<const uint8_t*>(buffer.get()), buffer_size, extension.c_str()); };
-		auto GetSurfaceFormat = [](SDL_Surface* surface) { return surface->format; };
-		auto ConvertSurface = [](SDL_Surface* surface, SDL_PixelFormat format) { return SDL_ConvertSurface(surface, format); };
-		auto DestroySurface = [](SDL_Surface* surface) { SDL_DestroySurface(surface); };
+    // A phone's portrait photo stands up (EXIF orientation) in a chat bubble and in the picture preview.
+    auto CreateSurface = [&]() {
+      return pbr::DecodeImageUpright(reinterpret_cast<const uint8_t*>(buffer.get()), buffer_size, extension.c_str());
+    };
+    auto GetSurfaceFormat = [](SDL_Surface* surface) { return surface->format; };
+    auto ConvertSurface = [](SDL_Surface* surface, SDL_PixelFormat format) {
+      return SDL_ConvertSurface(surface, format);
+    };
+    auto DestroySurface = [](SDL_Surface* surface) { SDL_DestroySurface(surface); };
 #else
-		auto CreateSurface = [&]() { return IMG_LoadTyped_RW(SDL_RWFromMem(buffer.get(), int(buffer_size)), 1, extension.c_str()); };
-		auto GetSurfaceFormat = [](SDL_Surface* surface) { return surface->format->format; };
-		auto ConvertSurface = [](SDL_Surface* surface, Uint32 format) { return SDL_ConvertSurfaceFormat(surface, format, 0); };
-		auto DestroySurface = [](SDL_Surface* surface) { SDL_FreeSurface(surface); };
+    auto CreateSurface = [&]() {
+      return IMG_LoadTyped_RW(SDL_RWFromMem(buffer.get(), int(buffer_size)), 1, extension.c_str());
+    };
+    auto GetSurfaceFormat = [](SDL_Surface* surface) { return surface->format->format; };
+    auto ConvertSurface = [](SDL_Surface* surface, Uint32 format) {
+      return SDL_ConvertSurfaceFormat(surface, format, 0);
+    };
+    auto DestroySurface = [](SDL_Surface* surface) { SDL_FreeSurface(surface); };
 #endif
 
-		SDL_Surface* surface = CreateSurface();
-		if (!surface)
-			return {};
+    SDL_Surface* surface = CreateSurface();
+    if (!surface)
+      return {};
 
-		texture_dimensions = {surface->w, surface->h};
+    texture_dimensions = {surface->w, surface->h};
 
-		if (GetSurfaceFormat(surface) != SDL_PIXELFORMAT_RGBA32)
-		{
-			// Ensure correct format for premultiplied alpha conversion and GenerateTexture below.
-			SDL_Surface* converted_surface = ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
-			DestroySurface(surface);
-			if (!converted_surface)
-				return {};
+    if (GetSurfaceFormat(surface) != SDL_PIXELFORMAT_RGBA32) {
+      // Ensure correct format for premultiplied alpha conversion and GenerateTexture below.
+      SDL_Surface* converted_surface = ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
+      DestroySurface(surface);
+      if (!converted_surface)
+        return {};
 
-			surface = converted_surface;
-		}
+      surface = converted_surface;
+    }
 
-		// Convert colors to premultiplied alpha, which is necessary for correct alpha compositing.
-		const size_t pixels_byte_size = surface->w * surface->h * 4;
-		byte* pixels = static_cast<byte*>(surface->pixels);
-		for (size_t i = 0; i < pixels_byte_size; i += 4)
-		{
-			const byte alpha = pixels[i + 3];
-			for (size_t j = 0; j < 3; ++j)
-				pixels[i + j] = byte(int(pixels[i + j]) * int(alpha) / 255);
-		}
+    // Convert colors to premultiplied alpha, which is necessary for correct alpha compositing.
+    const size_t pixels_byte_size = surface->w * surface->h * 4;
+    byte* pixels = static_cast<byte*>(surface->pixels);
+    for (size_t i = 0; i < pixels_byte_size; i += 4) {
+      const byte alpha = pixels[i + 3];
+      for (size_t j = 0; j < 3; ++j)
+        pixels[i + j] = byte(int(pixels[i + j]) * int(alpha) / 255);
+    }
 
-		ui::TextureHandle texture_handle = RenderInterface_GL3::GenerateTexture({pixels, pixels_byte_size}, texture_dimensions);
+    ui::TextureHandle texture_handle =
+        RenderInterface_GL3::GenerateTexture({pixels, pixels_byte_size}, texture_dimensions);
 
-		DestroySurface(surface);
+    DestroySurface(surface);
 
-		return texture_handle;
-	}
+    return texture_handle;
+  }
 };
 
 /**
@@ -125,17 +131,17 @@ public:
     Lifetime governed by the calls to Backend::Initialize() and Backend::Shutdown().
  */
 struct BackendData {
-	SystemInterface_SDL system_interface;
-	RenderInterface_GL3_SDL render_interface;
+  SystemInterface_SDL system_interface;
+  RenderInterface_GL3_SDL render_interface;
 
-	SDL_Window* window = nullptr;
-	SDL_GLContext glcontext = nullptr;
-	unsigned int uikit_framebuffer = 0;
-	unsigned int uikit_renderbuffer = 0;
+  SDL_Window* window = nullptr;
+  SDL_GLContext glcontext = nullptr;
+  unsigned int uikit_framebuffer = 0;
+  unsigned int uikit_renderbuffer = 0;
 
-	bool running = true;
-	/** Cross-thread: RequestForceFrame / SyncContext may set from any thread. */
-	std::atomic<bool> force_next_frame{false};
+  bool running = true;
+  /** Cross-thread: RequestForceFrame / SyncContext may set from any thread. */
+  std::atomic<bool> force_next_frame{false};
 };
 static ui::UniquePtr<BackendData> data;
 #if SDL_MAJOR_VERSION >= 3
@@ -149,79 +155,74 @@ static int g_live_resize_last_pixel_h = 0;
 // PollEvent/WaitEvent block during interactive resize on several OSes; SDL still
 // delivers events to watches. Redraw from here so the compositor does not stretch
 // the last frame (see SDL wiki AppFreezeDuringDrag).
-static bool SDLCALL LiveResizeEventWatch(void* /*userdata*/, SDL_Event* event)
-{
-	if (!data || !g_live_resize_redraw || !g_live_resize_context || !event || g_in_live_resize_redraw)
-		return true;
+static bool SDLCALL LiveResizeEventWatch(void* /*userdata*/, SDL_Event* event) {
+  if (!data || !g_live_resize_redraw || !g_live_resize_context || !event || g_in_live_resize_redraw)
+    return true;
 
-	switch (event->type)
-	{
-	case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-	case SDL_EVENT_WINDOW_RESIZED:
-	case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
-	case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
-	case SDL_EVENT_WINDOW_EXPOSED:
-		if (event->window.windowID != SDL_GetWindowID(data->window))
-			return true;
-		break;
-	default:
-		return true;
-	}
+  switch (event->type) {
+    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+    case SDL_EVENT_WINDOW_RESIZED:
+    case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+    case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
+    case SDL_EVENT_WINDOW_EXPOSED:
+      if (event->window.windowID != SDL_GetWindowID(data->window))
+        return true;
+      break;
+    default:
+      return true;
+  }
 
-	bool size_may_have_changed = false;
-	bool live_expose = false;
-	bool safe_area_only = false;
-	switch (event->type)
-	{
-	case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-	case SDL_EVENT_WINDOW_RESIZED:
-	case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
-		size_may_have_changed = true;
-		break;
-	case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
-		// Android publishes IME insets from the Java UI thread via JNI → PushEvent →
-		// this watch. Running a full SyncContext/Update here nests Rml layout inside
-		// FlexFormattingContext and has crashed (SIGSEGV) when the OSK toggles with
-		// the emoji panel. Only force a main-loop frame; ProcessEvents handles the event.
-		safe_area_only = true;
-		break;
-	case SDL_EVENT_WINDOW_EXPOSED:
-		// data1 == 1: live-resize expose while the modal resize/drag loop is active.
-		live_expose = (event->window.data1 == 1);
-		break;
-	default:
-		break;
-	}
+  bool size_may_have_changed = false;
+  bool live_expose = false;
+  bool safe_area_only = false;
+  switch (event->type) {
+    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+    case SDL_EVENT_WINDOW_RESIZED:
+    case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+      size_may_have_changed = true;
+      break;
+    case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
+      // Android publishes IME insets from the Java UI thread via JNI → PushEvent →
+      // this watch. Running a full SyncContext/Update here nests Rml layout inside
+      // FlexFormattingContext and has crashed (SIGSEGV) when the OSK toggles with
+      // the emoji panel. Only force a main-loop frame; ProcessEvents handles the event.
+      safe_area_only = true;
+      break;
+    case SDL_EVENT_WINDOW_EXPOSED:
+      // data1 == 1: live-resize expose while the modal resize/drag loop is active.
+      live_expose = (event->window.data1 == 1);
+      break;
+    default:
+      break;
+  }
 
-	if (safe_area_only)
-	{
-		Backend::RequestForceFrame();
-		return true;
-	}
+  if (safe_area_only) {
+    Backend::RequestForceFrame();
+    return true;
+  }
 
-	if (!size_may_have_changed && !live_expose)
-		return true;
+  if (!size_may_have_changed && !live_expose)
+    return true;
 
-	int pixel_w = 0;
-	int pixel_h = 0;
-	SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
-	const bool same_pixels = (pixel_w == g_live_resize_last_pixel_w && pixel_h == g_live_resize_last_pixel_h);
-	// Coalesce RESIZED + PIXEL_SIZE_CHANGED + follow-up EXPOSED for the same size.
-	// Still redraw on display-scale / safe-area when pixels are unchanged.
-	if (same_pixels)
-	{
-		if (live_expose)
-			return true;
-		if (event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || event->type == SDL_EVENT_WINDOW_RESIZED)
-			return true;
-	}
+  int pixel_w = 0;
+  int pixel_h = 0;
+  SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
+  const bool same_pixels = (pixel_w == g_live_resize_last_pixel_w && pixel_h == g_live_resize_last_pixel_h);
+  // Coalesce RESIZED + PIXEL_SIZE_CHANGED + follow-up EXPOSED for the same size.
+  // Still redraw on display-scale / safe-area when pixels are unchanged.
+  if (same_pixels) {
+    if (live_expose)
+      return true;
+    if (event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || event->type == SDL_EVENT_WINDOW_RESIZED)
+      return true;
+  }
 
-	g_in_live_resize_redraw = true;
-	g_live_resize_redraw(g_live_resize_context);
-	g_live_resize_last_pixel_w = pixel_w;
-	g_live_resize_last_pixel_h = pixel_h;
-	g_in_live_resize_redraw = false;
-	return true;
+  g_in_live_resize_redraw = true;
+  g_live_resize_redraw(g_live_resize_context);
+  g_live_resize_last_pixel_w = pixel_w;
+  g_live_resize_last_pixel_h = pixel_h;
+  g_in_live_resize_redraw = false;
+  return true;
 }
 #endif
 // Custom SDL user event that wakes SDL_WaitEventTimeout when UI work is posted.
@@ -235,560 +236,530 @@ static std::atomic<bool> g_wake_pending{false};
 static std::mutex g_idle_wait_mu;
 static std::condition_variable g_idle_wait_cv;
 
-bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize, bool borderless)
-{
-	UI_ASSERT(!data);
+bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize, bool borderless) {
+  UI_ASSERT(!data);
 
-	// Mobile: lock UI to portrait so rotation does not tear down EGL / reshape the
-	// shell mid-frame (and so in-call video avoids orientation-related crashes).
-	// Must be set before SDL_Init. Desktop window resize is unaffected.
+  // Mobile: lock UI to portrait so rotation does not tear down EGL / reshape the
+  // shell mid-frame (and so in-call video avoids orientation-related crashes).
+  // Must be set before SDL_Init. Desktop window resize is unaffected.
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
-	SDL_SetHint(SDL_HINT_ORIENTATIONS, "Portrait");
+  SDL_SetHint(SDL_HINT_ORIENTATIONS, "Portrait");
 #endif
 
 #if SDL_MAJOR_VERSION >= 3
-        // Audio is initialized on demand by MediaEngine (a2); do not fail window
-        // bring-up if Pulse/ALSA is missing on a headless or minimal host.
-        if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-          ui::Log::Message(ui::Log::LT_ERROR, "SDL_Init failed: %s", SDL_GetError());
-          return false;
-        }
+  // Audio is initialized on demand by MediaEngine (a2); do not fail window
+  // bring-up if Pulse/ALSA is missing on a headless or minimal host.
+  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+    ui::Log::Message(ui::Log::LT_ERROR, "SDL_Init failed: %s", SDL_GetError());
+    return false;
+  }
 #else
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0) {
-		ui::Log::Message(ui::Log::LT_ERROR, "SDL_Init failed: %s", SDL_GetError());
-		return false;
-	}
+  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0) {
+    ui::Log::Message(ui::Log::LT_ERROR, "SDL_Init failed: %s", SDL_GetError());
+    return false;
+  }
 #endif
 
-	g_wake_event_type = SDL_RegisterEvents(1);
-	g_wake_pending.store(false, std::memory_order_relaxed);
+  g_wake_event_type = SDL_RegisterEvents(1);
+  g_wake_pending.store(false, std::memory_order_relaxed);
 
-	// Submit click events when focusing the window.
-	SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
-	// Touch events are handled natively, no need to generate synthetic mouse events for touch devices.
-	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+  // Submit click events when focusing the window.
+  SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
+  // Touch events are handled natively, no need to generate synthetic mouse events for touch devices.
+  SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
 
 #if defined UI_BACKEND_SIMULATE_TOUCH
-	// Simulate touch events from mouse events for testing touch behavior on a desktop machine.
-	SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "1");
+  // Simulate touch events from mouse events for testing touch behavior on a desktop machine.
+  SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "1");
 #endif
 
-	MobileGlLifecycle::ConfigureSdlGlAttributes();
-	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+  MobileGlLifecycle::ConfigureSdlGlAttributes();
+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
 #if SDL_MAJOR_VERSION >= 3
-	const float window_size_scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
-	SDL_PropertiesID props = SDL_CreateProperties();
-	SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, window_name);
-	SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, SDL_WINDOWPOS_CENTERED);
-	SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, SDL_WINDOWPOS_CENTERED);
-	SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, int(width * window_size_scale));
-	SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, int(height * window_size_scale));
-	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
-	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, allow_resize);
-	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
-	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_BORDERLESS_BOOLEAN, borderless);
-	// macOS desktop: transparent buffer so CALayer-rounded corners composite to the
-	// desktop instead of opaque black (see DesktopWindowChrome::RefreshAppearance).
+  const float window_size_scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
+  SDL_PropertiesID props = SDL_CreateProperties();
+  SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, window_name);
+  SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, SDL_WINDOWPOS_CENTERED);
+  SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, SDL_WINDOWPOS_CENTERED);
+  SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, int(width * window_size_scale));
+  SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, int(height * window_size_scale));
+  SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
+  SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, allow_resize);
+  SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
+  SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_BORDERLESS_BOOLEAN, borderless);
+  // macOS desktop: transparent buffer so CALayer-rounded corners composite to the
+  // desktop instead of opaque black (see DesktopWindowChrome::RefreshAppearance).
 #if defined(__APPLE__) && !TARGET_OS_IPHONE
-	if (borderless) {
-		SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN, true);
-	}
+  if (borderless) {
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN, true);
+  }
 #endif
-	MobileGlLifecycle::SetMobileWindowCreateProperties(props);
-	SDL_Window* window = SDL_CreateWindowWithProperties(props);
-	SDL_DestroyProperties(props);
+  MobileGlLifecycle::SetMobileWindowCreateProperties(props);
+  SDL_Window* window = SDL_CreateWindowWithProperties(props);
+  SDL_DestroyProperties(props);
 #else
-	Uint32 window_flags = (SDL_WINDOW_OPENGL | (allow_resize ? SDL_WINDOW_RESIZABLE : 0));
-	if (borderless) {
-		window_flags |= SDL_WINDOW_BORDERLESS;
-	}
-	SDL_Window* window = SDL_CreateWindow(window_name, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, window_flags);
-	// SDL2 implicitly activates text input on window creation. Turn it off for now, it will be activated again e.g. when focusing a text input field.
-	SDL_StopTextInput();
+  Uint32 window_flags = (SDL_WINDOW_OPENGL | (allow_resize ? SDL_WINDOW_RESIZABLE : 0));
+  if (borderless) {
+    window_flags |= SDL_WINDOW_BORDERLESS;
+  }
+  SDL_Window* window =
+      SDL_CreateWindow(window_name, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, window_flags);
+  // SDL2 implicitly activates text input on window creation. Turn it off for now, it will be activated again e.g. when focusing a text input field.
+  SDL_StopTextInput();
 #endif
 
-	if (!window)
-	{
-		ui::Log::Message(ui::Log::LT_ERROR, "SDL error on create window: %s", SDL_GetError());
-		return false;
-	}
+  if (!window) {
+    ui::Log::Message(ui::Log::LT_ERROR, "SDL error on create window: %s", SDL_GetError());
+    return false;
+  }
 
-	SDL_GLContext glcontext = SDL_GL_CreateContext(window);
-	if (!glcontext)
-	{
-		ui::Log::Message(ui::Log::LT_ERROR, "SDL error on create GL context: %s", SDL_GetError());
-		SDL_DestroyWindow(window);
-		return false;
-	}
-	if (!SDL_GL_MakeCurrent(window, glcontext))
-	{
-		ui::Log::Message(ui::Log::LT_ERROR, "SDL error on MakeCurrent: %s", SDL_GetError());
-		SDL_GL_DestroyContext(glcontext);
-		SDL_DestroyWindow(window);
-		return false;
-	}
-	SDL_GL_SetSwapInterval(1);
+  SDL_GLContext glcontext = SDL_GL_CreateContext(window);
+  if (!glcontext) {
+    ui::Log::Message(ui::Log::LT_ERROR, "SDL error on create GL context: %s", SDL_GetError());
+    SDL_DestroyWindow(window);
+    return false;
+  }
+  if (!SDL_GL_MakeCurrent(window, glcontext)) {
+    ui::Log::Message(ui::Log::LT_ERROR, "SDL error on MakeCurrent: %s", SDL_GetError());
+    SDL_GL_DestroyContext(glcontext);
+    SDL_DestroyWindow(window);
+    return false;
+  }
+  SDL_GL_SetSwapInterval(1);
 
-	if (!RmlGL3::Initialize())
-	{
-		ui::Log::Message(ui::Log::LT_ERROR, "Failed to initialize OpenGL renderer");
-		return false;
-	}
+  if (!RmlGL3::Initialize()) {
+    ui::Log::Message(ui::Log::LT_ERROR, "Failed to initialize OpenGL renderer");
+    return false;
+  }
 
-	data = ui::MakeUnique<BackendData>();
+  data = ui::MakeUnique<BackendData>();
 
-	if (!data->render_interface)
-	{
-		data.reset();
-		ui::Log::Message(ui::Log::LT_ERROR, "Failed to initialize OpenGL3 render interface");
-		return false;
-	}
+  if (!data->render_interface) {
+    data.reset();
+    ui::Log::Message(ui::Log::LT_ERROR, "Failed to initialize OpenGL3 render interface");
+    return false;
+  }
 
-	data->window = window;
-	data->glcontext = glcontext;
+  data->window = window;
+  data->glcontext = glcontext;
 
-	data->system_interface.SetWindow(window);
-	// iOS: the shell lifts its own layout above the keyboard (ShellHost::ReadSafeAreaFromSdl), so SDL must
-	// not also pan the view.
-	if (pbr::WatchScreenKeyboard([] { Backend::RequestForceFrame(); }))
-		data->system_interface.SetAppHandlesKeyboardInset(true);
-	data->render_interface.SetViewport(width, height);
+  data->system_interface.SetWindow(window);
+  // iOS: the shell lifts its own layout above the keyboard (ShellHost::ReadSafeAreaFromSdl), so SDL must
+  // not also pan the view.
+  if (pbr::WatchScreenKeyboard([] { Backend::RequestForceFrame(); }))
+    data->system_interface.SetAppHandlesKeyboardInset(true);
+  data->render_interface.SetViewport(width, height);
 
 #if SDL_MAJOR_VERSION >= 3
-	{
-		int pixel_w = 0;
-		int pixel_h = 0;
-		SDL_GetWindowSizeInPixels(window, &pixel_w, &pixel_h);
-		data->render_interface.SetViewport(pixel_w, pixel_h);
-	}
-	MobileGlLifecycle::InitIosDrawableFromWindow(window, data->uikit_framebuffer, data->uikit_renderbuffer);
-	if (data->uikit_framebuffer != 0) {
-		data->render_interface.SetOutputFramebuffer(data->uikit_framebuffer);
-		ui::Log::Message(ui::Log::LT_ERROR, "iOS drawable FBO=%u RBO=%u", data->uikit_framebuffer,
-			data->uikit_renderbuffer);
-	}
+  {
+    int pixel_w = 0;
+    int pixel_h = 0;
+    SDL_GetWindowSizeInPixels(window, &pixel_w, &pixel_h);
+    data->render_interface.SetViewport(pixel_w, pixel_h);
+  }
+  MobileGlLifecycle::InitIosDrawableFromWindow(window, data->uikit_framebuffer, data->uikit_renderbuffer);
+  if (data->uikit_framebuffer != 0) {
+    data->render_interface.SetOutputFramebuffer(data->uikit_framebuffer);
+    ui::Log::Message(ui::Log::LT_ERROR, "iOS drawable FBO=%u RBO=%u", data->uikit_framebuffer,
+                     data->uikit_renderbuffer);
+  }
 #endif
 
-	TouchSimOverlay::Initialize(window);
+  TouchSimOverlay::Initialize(window);
 
 #if SDL_MAJOR_VERSION >= 3
-	SDL_AddEventWatch(LiveResizeEventWatch, nullptr);
+  SDL_AddEventWatch(LiveResizeEventWatch, nullptr);
 #endif
 
-	return true;
+  return true;
 }
 
-void Backend::SyncContext(ui::Context* context)
-{
-	if (!data || !context)
-		return;
+void Backend::SyncContext(ui::Context* context) {
+  if (!data || !context)
+    return;
 
 #if SDL_MAJOR_VERSION >= 3
-	int pixel_w = 0;
-	int pixel_h = 0;
-	SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
-	context->SetDimensions(ui::Vector2i(pixel_w, pixel_h));
-	context->SetDensityIndependentPixelRatio(SDL_GetWindowDisplayScale(data->window));
-	data->render_interface.SetViewport(pixel_w, pixel_h);
-	data->force_next_frame.store(true, std::memory_order_release);
-	ui::Log::Message(ui::Log::LT_DEBUG, "SyncContext: %dx%d scale=%.3f", pixel_w, pixel_h,
-		SDL_GetWindowDisplayScale(data->window));
+  int pixel_w = 0;
+  int pixel_h = 0;
+  SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
+  context->SetDimensions(ui::Vector2i(pixel_w, pixel_h));
+  context->SetDensityIndependentPixelRatio(SDL_GetWindowDisplayScale(data->window));
+  data->render_interface.SetViewport(pixel_w, pixel_h);
+  data->force_next_frame.store(true, std::memory_order_release);
+  ui::Log::Message(ui::Log::LT_DEBUG, "SyncContext: %dx%d scale=%.3f", pixel_w, pixel_h,
+                   SDL_GetWindowDisplayScale(data->window));
 #else
-	(void)context;
+  (void)context;
 #endif
 }
 
 #if SDL_MAJOR_VERSION >= 3
-void Backend::SetPreProcessEventHandler(PreProcessEventCallback callback)
-{
-	g_pre_process_event = callback;
+void Backend::SetPreProcessEventHandler(PreProcessEventCallback callback) {
+  g_pre_process_event = callback;
 }
 
-void Backend::SetLiveResizeHandler(ui::Context* context, LiveResizeRedrawCallback callback)
-{
-	g_live_resize_context = context;
-	g_live_resize_redraw = std::move(callback);
-	g_live_resize_last_pixel_w = 0;
-	g_live_resize_last_pixel_h = 0;
+void Backend::SetLiveResizeHandler(ui::Context* context, LiveResizeRedrawCallback callback) {
+  g_live_resize_context = context;
+  g_live_resize_redraw = std::move(callback);
+  g_live_resize_last_pixel_w = 0;
+  g_live_resize_last_pixel_h = 0;
 }
 
-SDL_Window* Backend::GetWindow()
-{
-	return data ? data->window : nullptr;
+SDL_Window* Backend::GetWindow() {
+  return data ? data->window : nullptr;
 }
 
-void Backend::RecoverAfterDeviceReset(ui::Context* context)
-{
-	if (!data)
-		return;
+void Backend::RecoverAfterDeviceReset(ui::Context* context) {
+  if (!data)
+    return;
 
-	SDL_GLContext current = SDL_GL_GetCurrentContext();
-	if (current)
-		data->glcontext = current;
-	else if (data->glcontext)
-		SDL_GL_MakeCurrent(data->window, data->glcontext);
+  SDL_GLContext current = SDL_GL_GetCurrentContext();
+  if (current)
+    data->glcontext = current;
+  else if (data->glcontext)
+    SDL_GL_MakeCurrent(data->window, data->glcontext);
 
-	ui::Log::Message(ui::Log::LT_WARNING, "Recovering GPU resources after RENDER_DEVICE_RESET");
+  ui::Log::Message(ui::Log::LT_WARNING, "Recovering GPU resources after RENDER_DEVICE_RESET");
 
-	// Drop RmlUi-owned GPU caches first (stale GL names), then rebuild renderer objects.
-	ui::ReleaseTextures(&data->render_interface);
-	ui::ReleaseCompiledGeometry(&data->render_interface);
-	ui::ReleaseFontResources();
+  // Drop RmlUi-owned GPU caches first (stale GL names), then rebuild renderer objects.
+  ui::ReleaseTextures(&data->render_interface);
+  ui::ReleaseCompiledGeometry(&data->render_interface);
+  ui::ReleaseFontResources();
 
-	TextLoupeRenderer::ReleaseGpuResources();
-	pbr::CallVideoTileRenderer::Instance().ReleaseGpuResources();
-	data->render_interface.RecoverGpuResources();
+  TextLoupeRenderer::ReleaseGpuResources();
+  pbr::CallVideoTileRenderer::Instance().ReleaseGpuResources();
+  data->render_interface.RecoverGpuResources();
 
-	MobileGlLifecycle::UpdateIosDrawableFromWindow(data->window, data->uikit_framebuffer, data->uikit_renderbuffer);
-	if (data->uikit_framebuffer != 0) {
-		data->render_interface.SetOutputFramebuffer(data->uikit_framebuffer);
-	}
+  MobileGlLifecycle::UpdateIosDrawableFromWindow(data->window, data->uikit_framebuffer, data->uikit_renderbuffer);
+  if (data->uikit_framebuffer != 0) {
+    data->render_interface.SetOutputFramebuffer(data->uikit_framebuffer);
+  }
 
-	if (context)
-		SyncContext(context);
+  if (context)
+    SyncContext(context);
 
-	data->force_next_frame.store(true, std::memory_order_release);
+  data->force_next_frame.store(true, std::memory_order_release);
 }
 #endif
 
-bool Backend::CanRender()
-{
-	if (!data || !data->window || !data->glcontext)
-		return false;
+bool Backend::CanRender() {
+  if (!data || !data->window || !data->glcontext)
+    return false;
 
 #if SDL_MAJOR_VERSION >= 3
-	// iOS/Android can drop the current context across lifecycle events.
-	if (SDL_GL_GetCurrentContext() != data->glcontext)
-	{
-		if (!SDL_GL_MakeCurrent(data->window, data->glcontext))
-			return false;
-	}
+  // iOS/Android can drop the current context across lifecycle events.
+  if (SDL_GL_GetCurrentContext() != data->glcontext) {
+    if (!SDL_GL_MakeCurrent(data->window, data->glcontext))
+      return false;
+  }
 
-	int pixel_w = 0;
-	int pixel_h = 0;
-	SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
-	return pixel_w > 0 && pixel_h > 0;
+  int pixel_w = 0;
+  int pixel_h = 0;
+  SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
+  return pixel_w > 0 && pixel_h > 0;
 #else
-	return true;
+  return true;
 #endif
 }
 
-void Backend::Shutdown()
-{
-	UI_ASSERT(data);
+void Backend::Shutdown() {
+  UI_ASSERT(data);
 
-	TouchSimOverlay::Shutdown();
+  TouchSimOverlay::Shutdown();
 
 #if SDL_MAJOR_VERSION >= 3
-	SDL_RemoveEventWatch(LiveResizeEventWatch, nullptr);
-	g_live_resize_redraw = nullptr;
-	g_live_resize_context = nullptr;
-	g_pre_process_event = nullptr;
+  SDL_RemoveEventWatch(LiveResizeEventWatch, nullptr);
+  g_live_resize_redraw = nullptr;
+  g_live_resize_context = nullptr;
+  g_pre_process_event = nullptr;
 
-	SDL_GL_MakeCurrent(data->window, nullptr);
-	SDL_GL_DestroyContext(data->glcontext);
+  SDL_GL_MakeCurrent(data->window, nullptr);
+  SDL_GL_DestroyContext(data->glcontext);
 #else
-	SDL_GL_DeleteContext(data->glcontext);
+  SDL_GL_DeleteContext(data->glcontext);
 #endif
 
-	SDL_DestroyWindow(data->window);
+  SDL_DestroyWindow(data->window);
 
-	data.reset();
-	g_wake_event_type = 0;
-	g_wake_pending.store(false, std::memory_order_relaxed);
+  data.reset();
+  g_wake_event_type = 0;
+  g_wake_pending.store(false, std::memory_order_relaxed);
 
-	SDL_Quit();
+  SDL_Quit();
 }
 
-ui::SystemInterface* Backend::GetSystemInterface()
-{
-	UI_ASSERT(data);
-	return &data->system_interface;
+ui::SystemInterface* Backend::GetSystemInterface() {
+  UI_ASSERT(data);
+  return &data->system_interface;
 }
 
-ui::RenderInterface* Backend::GetRenderInterface()
-{
-	UI_ASSERT(data);
-	return &data->render_interface;
+ui::RenderInterface* Backend::GetRenderInterface() {
+  UI_ASSERT(data);
+  return &data->render_interface;
 }
 
-bool Backend::ProcessEvents(ui::Context* context, KeyDownCallback key_down_callback, bool power_save)
-{
-	UI_ASSERT(data && context);
+bool Backend::ProcessEvents(ui::Context* context, KeyDownCallback key_down_callback, bool power_save) {
+  UI_ASSERT(data && context);
 
 #if defined UI_PLATFORM_EMSCRIPTEN
 
-	// Ideally we would hand over control of the main loop to emscripten:
-	//
-	//  // Hand over control of the main loop to the WebAssembly runtime.
-	//  emscripten_set_main_loop_arg(EventLoopIteration, (void*)user_data_handle, 0, true);
-	//
-	// The above is the recommended approach. However, as we don't control the main loop here we have to make due with another approach. Instead, use
-	// Asyncify to yield by sleeping.
-	// Important: Must be linked with option -sASYNCIFY
-	emscripten_sleep(1);
+  // Ideally we would hand over control of the main loop to emscripten:
+  //
+  //  // Hand over control of the main loop to the WebAssembly runtime.
+  //  emscripten_set_main_loop_arg(EventLoopIteration, (void*)user_data_handle, 0, true);
+  //
+  // The above is the recommended approach. However, as we don't control the main loop here we have to make due with another approach. Instead, use
+  // Asyncify to yield by sleeping.
+  // Important: Must be linked with option -sASYNCIFY
+  emscripten_sleep(1);
 
 #endif
 
 #if SDL_MAJOR_VERSION >= 3
-	#define RMLSDL_WINDOW_EVENTS_BEGIN
-	#define RMLSDL_WINDOW_EVENTS_END
-	auto GetKey = [](const SDL_Event& event) { return event.key.key; };
-	auto GetDisplayScale = []() { return SDL_GetWindowDisplayScale(data->window); };
-	constexpr auto event_quit = SDL_EVENT_QUIT;
-	constexpr auto event_key_down = SDL_EVENT_KEY_DOWN;
-	constexpr auto event_window_size_changed = SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED;
-	bool has_event = false;
+#define RMLSDL_WINDOW_EVENTS_BEGIN
+#define RMLSDL_WINDOW_EVENTS_END
+  auto GetKey = [](const SDL_Event& event) { return event.key.key; };
+  auto GetDisplayScale = []() { return SDL_GetWindowDisplayScale(data->window); };
+  constexpr auto event_quit = SDL_EVENT_QUIT;
+  constexpr auto event_key_down = SDL_EVENT_KEY_DOWN;
+  constexpr auto event_window_size_changed = SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED;
+  bool has_event = false;
 #else
-	#define RMLSDL_WINDOW_EVENTS_BEGIN \
-	case SDL_WINDOWEVENT:              \
-	{                                  \
-		switch (ev.window.event)       \
-		{
-	#define RMLSDL_WINDOW_EVENTS_END \
-		}                            \
-		}                            \
-		break;
-	auto GetKey = [](const SDL_Event& event) { return event.key.keysym.sym; };
-	auto GetDisplayScale = []() { return 1.f; };
-	constexpr auto event_quit = SDL_QUIT;
-	constexpr auto event_key_down = SDL_KEYDOWN;
-	constexpr auto event_window_size_changed = SDL_WINDOWEVENT_SIZE_CHANGED;
-	int has_event = 0;
+#define RMLSDL_WINDOW_EVENTS_BEGIN \
+  case SDL_WINDOWEVENT: {          \
+    switch (ev.window.event) {
+#define RMLSDL_WINDOW_EVENTS_END \
+  }                              \
+  }                              \
+  break;
+  auto GetKey = [](const SDL_Event& event) { return event.key.keysym.sym; };
+  auto GetDisplayScale = []() { return 1.f; };
+  constexpr auto event_quit = SDL_QUIT;
+  constexpr auto event_key_down = SDL_KEYDOWN;
+  constexpr auto event_window_size_changed = SDL_WINDOWEVENT_SIZE_CHANGED;
+  int has_event = 0;
 #endif
 
-	// Exit without blocking in power-save wait — RequestExit / quit must feel instant.
-	if (!data->running) {
-		return false;
-	}
+  // Exit without blocking in power-save wait — RequestExit / quit must feel instant.
+  if (!data->running) {
+    return false;
+  }
 
-	bool result = true;
+  bool result = true;
 
-	// Never use SDL_WaitEventTimeout for idle — on some X11/SDL builds it ignored the timeout
-	// until real input, so SyncLayout / call ring stayed invisible until Sessions was opened.
-	const bool force_frame = data->force_next_frame.exchange(false, std::memory_order_acq_rel);
+  // Never use SDL_WaitEventTimeout for idle — on some X11/SDL builds it ignored the timeout
+  // until real input, so SyncLayout / call ring stayed invisible until Sessions was opened.
+  const bool force_frame = data->force_next_frame.exchange(false, std::memory_order_acq_rel);
 
-	SDL_Event ev;
-	if (force_frame)
-		has_event = SDL_PollEvent(&ev);
-	else if (power_save) {
-		constexpr double k_max_power_save_wait_sec = pbr::kIdleFrameMaxWaitSec;
-		double delay_sec = context->GetNextUpdateDelay();
-		if (!std::isfinite(delay_sec) || delay_sec > k_max_power_save_wait_sec) {
-			delay_sec = k_max_power_save_wait_sec;
-		}
-		if (delay_sec < 0.0) {
-			delay_sec = 0.0;
-		}
-		const int timeout_ms = static_cast<int>(delay_sec * 1000.0);
-		const Uint64 deadline = SDL_GetTicks() + static_cast<Uint64>(timeout_ms);
-		SDL_PumpEvents();
-		has_event = SDL_PollEvent(&ev);
-		while (!has_event) {
-			// Mid-idle ForceFrame from another thread — exit without waiting out the slice.
-			if (data->force_next_frame.exchange(false, std::memory_order_acq_rel)) {
-				SDL_PumpEvents();
-				has_event = SDL_PollEvent(&ev);
-				break;
-			}
-			const Uint64 now = SDL_GetTicks();
-			if (now >= deadline) {
-				break;
-			}
-			Uint64 remaining = deadline - now;
-			if (remaining > 50) {
-				remaining = 50; // ≤50ms slices so PushEvent / ForceFrame are observed promptly
-			}
-			{
-				std::unique_lock lock(g_idle_wait_mu);
-				g_idle_wait_cv.wait_for(lock, std::chrono::milliseconds(remaining), [] {
-					return data->force_next_frame.load(std::memory_order_acquire);
-				});
-			}
-			SDL_PumpEvents();
-			has_event = SDL_PollEvent(&ev);
-		}
-	} else
-		has_event = SDL_PollEvent(&ev);
+  SDL_Event ev;
+  if (force_frame)
+    has_event = SDL_PollEvent(&ev);
+  else if (power_save) {
+    constexpr double k_max_power_save_wait_sec = pbr::kIdleFrameMaxWaitSec;
+    double delay_sec = context->GetNextUpdateDelay();
+    if (!std::isfinite(delay_sec) || delay_sec > k_max_power_save_wait_sec) {
+      delay_sec = k_max_power_save_wait_sec;
+    }
+    if (delay_sec < 0.0) {
+      delay_sec = 0.0;
+    }
+    const int timeout_ms = static_cast<int>(delay_sec * 1000.0);
+    const Uint64 deadline = SDL_GetTicks() + static_cast<Uint64>(timeout_ms);
+    SDL_PumpEvents();
+    has_event = SDL_PollEvent(&ev);
+    while (!has_event) {
+      // Mid-idle ForceFrame from another thread — exit without waiting out the slice.
+      if (data->force_next_frame.exchange(false, std::memory_order_acq_rel)) {
+        SDL_PumpEvents();
+        has_event = SDL_PollEvent(&ev);
+        break;
+      }
+      const Uint64 now = SDL_GetTicks();
+      if (now >= deadline) {
+        break;
+      }
+      Uint64 remaining = deadline - now;
+      if (remaining > 50) {
+        remaining = 50; // ≤50ms slices so PushEvent / ForceFrame are observed promptly
+      }
+      {
+        std::unique_lock lock(g_idle_wait_mu);
+        g_idle_wait_cv.wait_for(lock, std::chrono::milliseconds(remaining),
+                                [] { return data->force_next_frame.load(std::memory_order_acquire); });
+      }
+      SDL_PumpEvents();
+      has_event = SDL_PollEvent(&ev);
+    }
+  } else
+    has_event = SDL_PollEvent(&ev);
 
-	while (has_event)
-	{
-		bool propagate_event = true;
-		if (g_wake_event_type != 0 && ev.type == g_wake_event_type) {
-			g_wake_pending.store(false, std::memory_order_relaxed);
-			has_event = SDL_PollEvent(&ev);
-			continue;
-		}
+  while (has_event) {
+    bool propagate_event = true;
+    if (g_wake_event_type != 0 && ev.type == g_wake_event_type) {
+      g_wake_pending.store(false, std::memory_order_relaxed);
+      has_event = SDL_PollEvent(&ev);
+      continue;
+    }
 #if SDL_MAJOR_VERSION >= 3
-		if (g_pre_process_event && g_pre_process_event(context, ev, propagate_event)) {
-			has_event = SDL_PollEvent(&ev);
-			continue;
-		}
+    if (g_pre_process_event && g_pre_process_event(context, ev, propagate_event)) {
+      has_event = SDL_PollEvent(&ev);
+      continue;
+    }
 #endif
-		switch (ev.type)
-		{
-		case event_quit:
-		{
-			propagate_event = false;
-			result = false;
-			data->running = false;
-		}
-		break;
-		case event_key_down:
-		{
-			propagate_event = false;
+    switch (ev.type) {
+      case event_quit: {
+        propagate_event = false;
+        result = false;
+        data->running = false;
+      } break;
+      case event_key_down: {
+        propagate_event = false;
 #if SDL_MAJOR_VERSION >= 3
-			if (GetKey(ev) == SDLK_ESCAPE || GetKey(ev) == SDLK_AC_BACK) {
-				if (g_pre_process_event && g_pre_process_event(context, ev, propagate_event)) {
-					break;
-				}
-			}
+        if (GetKey(ev) == SDLK_ESCAPE || GetKey(ev) == SDLK_AC_BACK) {
+          if (g_pre_process_event && g_pre_process_event(context, ev, propagate_event)) {
+            break;
+          }
+        }
 #endif
-			const ui::Input::KeyIdentifier key = RmlSDL::ConvertKey(GetKey(ev));
-			const int key_modifier = RmlSDL::GetKeyModifierState();
-			const float native_dp_ratio = GetDisplayScale();
+        const ui::Input::KeyIdentifier key = RmlSDL::ConvertKey(GetKey(ev));
+        const int key_modifier = RmlSDL::GetKeyModifierState();
+        const float native_dp_ratio = GetDisplayScale();
 
-			// See if we have any global shortcuts that take priority over the context.
-			if (key_down_callback && !key_down_callback(context, key, key_modifier, native_dp_ratio, true))
-				break;
-			// Otherwise, hand the event over to the context by calling the input handler as normal.
-			if (!RmlSDL::InputEventHandler(context, data->window, ev))
-				break;
-			// The key was not consumed by the context either, try keyboard shortcuts of lower priority.
-			if (key_down_callback && !key_down_callback(context, key, key_modifier, native_dp_ratio, false))
-				break;
-		}
-		break;
+        // See if we have any global shortcuts that take priority over the context.
+        if (key_down_callback && !key_down_callback(context, key, key_modifier, native_dp_ratio, true))
+          break;
+        // Otherwise, hand the event over to the context by calling the input handler as normal.
+        if (!RmlSDL::InputEventHandler(context, data->window, ev))
+          break;
+        // The key was not consumed by the context either, try keyboard shortcuts of lower priority.
+        if (key_down_callback && !key_down_callback(context, key, key_modifier, native_dp_ratio, false))
+          break;
+      } break;
 
 #if SDL_MAJOR_VERSION >= 3
-		case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
-		case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
-			SyncContext(context);
-			propagate_event = false;
-			break;
-		case SDL_EVENT_RENDER_DEVICE_RESET:
-			RecoverAfterDeviceReset(context);
-			propagate_event = false;
-			break;
-		case SDL_EVENT_WILL_ENTER_BACKGROUND:
-		case SDL_EVENT_DID_ENTER_FOREGROUND:
-		case SDL_EVENT_LOW_MEMORY:
-			if (g_pre_process_event) {
-				g_pre_process_event(context, ev, propagate_event);
-			}
-			propagate_event = false;
-			break;
+      case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+      case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
+        SyncContext(context);
+        propagate_event = false;
+        break;
+      case SDL_EVENT_RENDER_DEVICE_RESET:
+        RecoverAfterDeviceReset(context);
+        propagate_event = false;
+        break;
+      case SDL_EVENT_WILL_ENTER_BACKGROUND:
+      case SDL_EVENT_DID_ENTER_FOREGROUND:
+      case SDL_EVENT_LOW_MEMORY:
+        if (g_pre_process_event) {
+          g_pre_process_event(context, ev, propagate_event);
+        }
+        propagate_event = false;
+        break;
 #endif
 
-			RMLSDL_WINDOW_EVENTS_BEGIN
+        RMLSDL_WINDOW_EVENTS_BEGIN
 
-		case event_window_size_changed:
-			SyncContext(context);
-			propagate_event = false;
-			break;
+      case event_window_size_changed:
+        SyncContext(context);
+        propagate_event = false;
+        break;
 
-			RMLSDL_WINDOW_EVENTS_END
+        RMLSDL_WINDOW_EVENTS_END
 
-		default: break;
-		}
+      default:
+        break;
+    }
 
-		if (propagate_event)
-			RmlSDL::InputEventHandler(context, data->window, ev);
+    if (propagate_event)
+      RmlSDL::InputEventHandler(context, data->window, ev);
 
-		has_event = SDL_PollEvent(&ev);
-	}
+    has_event = SDL_PollEvent(&ev);
+  }
 
-	return result && data->running;
+  return result && data->running;
 }
 
-void Backend::RequestExit()
-{
-	UI_ASSERT(data);
+void Backend::RequestExit() {
+  UI_ASSERT(data);
 
-	data->running = false;
-	// Close feel: hide before Application::Shutdown joins mesh/runtime (can take hundreds of ms).
-	HideWindow();
-	// Arm quit deadline / watchdog as soon as the user closes (Application::Shutdown is idempotent).
-	pbr::AppRuntime::BeginShutdown();
-	// Unblock SDL_WaitEventTimeout in ProcessEvents so titlebar close is not capped
-	// by the power-save idle wait (up to 2s).
-	WakeEventLoop();
+  data->running = false;
+  // Close feel: hide before Application::Shutdown joins mesh/runtime (can take hundreds of ms).
+  HideWindow();
+  // Arm quit deadline / watchdog as soon as the user closes (Application::Shutdown is idempotent).
+  pbr::AppRuntime::BeginShutdown();
+  // Unblock SDL_WaitEventTimeout in ProcessEvents so titlebar close is not capped
+  // by the power-save idle wait (up to 2s).
+  WakeEventLoop();
 }
 
-void Backend::HideWindow()
-{
-	if (!data || !data->window) {
-		return;
-	}
-	SDL_HideWindow(data->window);
+void Backend::HideWindow() {
+  if (!data || !data->window) {
+    return;
+  }
+  SDL_HideWindow(data->window);
 }
 
-void Backend::WakeEventLoop()
-{
-	if (!data || g_wake_event_type == 0)
-		return;
+void Backend::WakeEventLoop() {
+  if (!data || g_wake_event_type == 0)
+    return;
 
-	// Always push a wake event. Coalescing via g_wake_pending alone dropped wakes when the
-	// flag was still set from a prior push that SDL had not yet delivered, leaving UI tasks
-	// (SyncLayout, call ring) queued until the next real input.
-	g_wake_pending.store(true, std::memory_order_release);
+  // Always push a wake event. Coalescing via g_wake_pending alone dropped wakes when the
+  // flag was still set from a prior push that SDL had not yet delivered, leaving UI tasks
+  // (SyncLayout, call ring) queued until the next real input.
+  g_wake_pending.store(true, std::memory_order_release);
 
-	SDL_Event ev{};
-	ev.type = g_wake_event_type;
+  SDL_Event ev{};
+  ev.type = g_wake_event_type;
 #if SDL_MAJOR_VERSION >= 3
-	if (!SDL_PushEvent(&ev))
+  if (!SDL_PushEvent(&ev))
 #else
-	if (SDL_PushEvent(&ev) < 0)
+  if (SDL_PushEvent(&ev) < 0)
 #endif
-	{
-		g_wake_pending.store(false, std::memory_order_relaxed);
-	}
+  {
+    g_wake_pending.store(false, std::memory_order_relaxed);
+  }
 }
 
-void Backend::RequestForceFrame()
-{
-	if (!data)
-		return;
-	data->force_next_frame.store(true, std::memory_order_release);
-	{
-		std::lock_guard lock(g_idle_wait_mu); // a waiter between its check and its sleep sees the flag
-	}
-	g_idle_wait_cv.notify_one();
-	WakeEventLoop();
+void Backend::RequestForceFrame() {
+  if (!data)
+    return;
+  data->force_next_frame.store(true, std::memory_order_release);
+  {
+    std::lock_guard lock(g_idle_wait_mu); // a waiter between its check and its sleep sees the flag
+  }
+  g_idle_wait_cv.notify_one();
+  WakeEventLoop();
 }
 
-void Backend::BeginFrame()
-{
-	UI_ASSERT(data);
+void Backend::BeginFrame() {
+  UI_ASSERT(data);
 #if SDL_MAJOR_VERSION >= 3
-	if (data->glcontext && SDL_GL_GetCurrentContext() != data->glcontext)
-		SDL_GL_MakeCurrent(data->window, data->glcontext);
+  if (data->glcontext && SDL_GL_GetCurrentContext() != data->glcontext)
+    SDL_GL_MakeCurrent(data->window, data->glcontext);
 #endif
 
-	data->render_interface.Clear();
-	data->render_interface.BeginFrame();
+  data->render_interface.Clear();
+  data->render_interface.BeginFrame();
 }
 
-void Backend::PresentFrame()
-{
-	UI_ASSERT(data);
+void Backend::PresentFrame() {
+  UI_ASSERT(data);
 
-	data->render_interface.EndFrame();
+  data->render_interface.EndFrame();
 
 #if SDL_MAJOR_VERSION >= 3
-	{
-		int pixel_w = 0;
-		int pixel_h = 0;
-		SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
-		TouchSimOverlay::Draw(data->window, pixel_w, pixel_h);
-	}
+  {
+    int pixel_w = 0;
+    int pixel_h = 0;
+    SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
+    TouchSimOverlay::Draw(data->window, pixel_w, pixel_h);
+  }
 #endif
 
-	MobileGlLifecycle::BindIosPresentTargets(data->uikit_framebuffer, data->uikit_renderbuffer);
+  MobileGlLifecycle::BindIosPresentTargets(data->uikit_framebuffer, data->uikit_renderbuffer);
 
-	SDL_GL_SwapWindow(data->window);
+  SDL_GL_SwapWindow(data->window);
 
-	// Optional, used to mark frames during performance profiling.
-	UI_FrameMark;
+  // Optional, used to mark frames during performance profiling.
+  UI_FrameMark;
 }

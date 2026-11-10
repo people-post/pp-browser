@@ -66,7 +66,10 @@ AccountCardReply AccountCardService::Answer(const AccountCardRequest& request, c
   };
   context.audience_everyone = audience_everyone_;
   AccountCardReply reply = AnswerCardRequest(request, remote_peer_id, context);
-  log().info << "card asked by " << remote_peer_id << ": " << (reply.card ? "card" : reply.key_card ? "key card" : reply.error);
+  log().info << "card asked by " << remote_peer_id << ": "
+             << (reply.card       ? "card"
+                 : reply.key_card ? "key card"
+                                  : reply.error);
   return reply;
 }
 
@@ -83,8 +86,8 @@ void AccountCardService::FetchReaching(const std::string& peer_id, const std::st
                                        std::function<void(Outcome, Roe<PeerCardRecord>)> on_done) {
   // The device's own link first, then the account's dial key (a call registers that one).
   FetchOver({peer_id, account_id}, peer_id, account_id,
-            [this, alive = std::weak_ptr<int>(alive_), peer_id, account_id,
-             on_done](Outcome outcome, Roe<PeerCardRecord> result) {
+            [this, alive = std::weak_ptr<int>(alive_), peer_id, account_id, on_done](Outcome outcome,
+                                                                                     Roe<PeerCardRecord> result) {
               if (outcome != Outcome::NotReached || !reach_ || alive.expired()) {
                 on_done(outcome, std::move(result));
                 return;
@@ -97,8 +100,7 @@ void AccountCardService::FetchReaching(const std::string& peer_id, const std::st
                     if (settled->exchange(true) || alive.expired()) {
                       return;
                     }
-                    log().info << "card ask: reaching " << peer_id << " did not settle in " << kReachTimeoutMs
-                               << " ms";
+                    log().info << "card ask: reaching " << peer_id << " did not settle in " << kReachTimeoutMs << " ms";
                     on_done(Outcome::NotReached, result);
                   });
               reach_(peer_id, [this, alive, settled, peer_id, account_id, on_done, result](bool reached) mutable {
@@ -142,47 +144,46 @@ void AccountCardService::FetchOver(std::vector<std::string> link_keys, const std
   }
   const std::string link_key = link_keys.front();
   link_keys.erase(link_keys.begin());
-  transport->FetchAsync(
-      link_key, request,
-      [this, link_key, link_keys = std::move(link_keys), peer_id, account_id, sibling,
-       on_done](Roe<AccountCardReply> reply) mutable {
-        if (!reply) {
-          log().info << "card ask over " << link_key << " failed: " << reply.error().message;
-          if (!link_keys.empty()) {
-            FetchOver(std::move(link_keys), peer_id, account_id, std::move(on_done));
-            return;
-          }
-          on_done(Outcome::NotReached, reply.error());
-          return;
-        }
-        const int64_t now = util::NowUnixMs();
-        auto card = AcceptCardReply(*reply, account_id, peer_id, now);
-        if (!card) {
-          on_done(Outcome::Answered, card.error());
-          return;
-        }
-        if (sibling) {
-          // A sibling's device list: taken into ours (OwnCards::Learn), not filed as a peer's.
-          if (auto learned = own_.Learn(*card, now); !learned) {
-            on_done(Outcome::Answered, learned.error());
-            return;
-          }
-          auto kept = keys_.Kept(account_id);
-          if (!kept || !kept->has_value()) {
-            on_done(Outcome::Answered, Error("own card not kept"));
-            return;
-          }
-          on_done(Outcome::Answered, std::move(**kept));
-          return;
-        }
-        auto kept = keys_.AddAccountCard(*card, now, "device");
-        if (!kept) {
-          on_done(Outcome::Answered, kept.error());
-          return;
-        }
-        AddDevicesToContact(*kept);
-        on_done(Outcome::Answered, std::move(kept.value()));
-      });
+  transport->FetchAsync(link_key, request,
+                        [this, link_key, link_keys = std::move(link_keys), peer_id, account_id, sibling,
+                         on_done](Roe<AccountCardReply> reply) mutable {
+                          if (!reply) {
+                            log().info << "card ask over " << link_key << " failed: " << reply.error().message;
+                            if (!link_keys.empty()) {
+                              FetchOver(std::move(link_keys), peer_id, account_id, std::move(on_done));
+                              return;
+                            }
+                            on_done(Outcome::NotReached, reply.error());
+                            return;
+                          }
+                          const int64_t now = util::NowUnixMs();
+                          auto card = AcceptCardReply(*reply, account_id, peer_id, now);
+                          if (!card) {
+                            on_done(Outcome::Answered, card.error());
+                            return;
+                          }
+                          if (sibling) {
+                            // A sibling's device list: taken into ours (OwnCards::Learn), not filed as a peer's.
+                            if (auto learned = own_.Learn(*card, now); !learned) {
+                              on_done(Outcome::Answered, learned.error());
+                              return;
+                            }
+                            auto kept = keys_.Kept(account_id);
+                            if (!kept || !kept->has_value()) {
+                              on_done(Outcome::Answered, Error("own card not kept"));
+                              return;
+                            }
+                            on_done(Outcome::Answered, std::move(**kept));
+                            return;
+                          }
+                          auto kept = keys_.AddAccountCard(*card, now, "device");
+                          if (!kept) {
+                            on_done(Outcome::Answered, kept.error());
+                            return;
+                          }
+                          AddDevicesToContact(*kept);
+                          on_done(Outcome::Answered, std::move(kept.value()));
+                        });
 }
 
 void AccountCardService::NoteDevice(const std::string& account_id, const std::string& peer_id) {
@@ -200,40 +201,40 @@ void AccountCardService::NoteDevice(const std::string& account_id, const std::st
     if (now < asking.next_allowed_ms) {
       return;
     }
-    asking.next_allowed_ms = now + kAskAgainAfterMs;  // until this ask settles
+    asking.next_allowed_ms = now + kAskAgainAfterMs; // until this ask settles
   }
-  FetchReaching(peer_id, account_id,
-            [this, alive = std::weak_ptr<int>(alive_), account_id, peer_id](Outcome outcome, Roe<PeerCardRecord> result) {
-              if (alive.expired()) {
-                return;
-              }
-              if (!result) {
-                log().info << "card from " << peer_id << " not taken: " << result.error().message;
-              }
-              bool retry = false;
-              {
-                std::lock_guard lock(mutex_);
-                Asking& asking = asking_[peer_id];
-                const int64_t after = util::NowUnixMs();
-                if (outcome == Outcome::NotReached && ++asking.tries < kMaxTries) {
-                  asking.next_allowed_ms = after + kRetryAfterMs;
-                  retry = true;
-                } else {
-                  asking.next_allowed_ms = after + kAskAgainAfterMs;
-                  asking.tries = 0;
-                }
-              }
-              if (retry) {
-                // The link may still be coming up (a call names its device before media connects).
-                AppRuntime::ScheduleCoordinatorOneShot(
-                    std::chrono::milliseconds(kRetryAfterMs + 100),
-                    [this, alive, account_id, peer_id]() {
-                      if (!alive.expired()) {
-                        NoteDevice(account_id, peer_id);
-                      }
-                    });
-              }
-            });
+  FetchReaching(
+      peer_id, account_id,
+      [this, alive = std::weak_ptr<int>(alive_), account_id, peer_id](Outcome outcome, Roe<PeerCardRecord> result) {
+        if (alive.expired()) {
+          return;
+        }
+        if (!result) {
+          log().info << "card from " << peer_id << " not taken: " << result.error().message;
+        }
+        bool retry = false;
+        {
+          std::lock_guard lock(mutex_);
+          Asking& asking = asking_[peer_id];
+          const int64_t after = util::NowUnixMs();
+          if (outcome == Outcome::NotReached && ++asking.tries < kMaxTries) {
+            asking.next_allowed_ms = after + kRetryAfterMs;
+            retry = true;
+          } else {
+            asking.next_allowed_ms = after + kAskAgainAfterMs;
+            asking.tries = 0;
+          }
+        }
+        if (retry) {
+          // The link may still be coming up (a call names its device before media connects).
+          AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kRetryAfterMs + 100),
+                                                 [this, alive, account_id, peer_id]() {
+                                                   if (!alive.expired()) {
+                                                     NoteDevice(account_id, peer_id);
+                                                   }
+                                                 });
+        }
+      });
 }
 
 void AccountCardService::AddDevicesToContact(const PeerCardRecord& record) {

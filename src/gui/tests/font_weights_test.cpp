@@ -43,7 +43,9 @@ protected:
   }
 
   void TearDown() override {
-    if (initialized_) { ui::Shutdown(); }
+    if (initialized_) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
 
@@ -66,8 +68,8 @@ protected:
 };
 
 TEST_F(FontWeightsTest, InterHasAFaceForEachWeight) {
-  for (const char* file : {"fonts/Inter-Regular.ttf", "fonts/Inter-Medium.ttf", "fonts/Inter-SemiBold.ttf",
-                           "fonts/Inter-Bold.ttf"}) {
+  for (const char* file :
+       {"fonts/Inter-Regular.ttf", "fonts/Inter-Medium.ttf", "fonts/Inter-SemiBold.ttf", "fonts/Inter-Bold.ttf"}) {
     ASSERT_TRUE(ui::LoadFontFace(Asset(file)));
   }
   const std::string text = "Hamburgefonstiv";
@@ -107,7 +109,9 @@ const ui::byte* FallbackBitmap(ui::FontFaceHandle handle, ui::Character c) {
 }
 const ui::byte* OwnBitmap(ui::FontFaceHandle handle, ui::Character c) {
   for (const auto& [index, glyph] : reinterpret_cast<FontFaceHandleHarfBuzz*>(handle)->GetGlyphs()) {
-    if (glyph.character == c) { return glyph.bitmap.bitmap_data; }
+    if (glyph.character == c) {
+      return glyph.bitmap.bitmap_data;
+    }
   }
   return nullptr;
 }
@@ -117,7 +121,7 @@ TEST_F(FontWeightsTest, ChineseRunDrawsTheGlyphOfTheFaceForItsWeight) {
   ASSERT_TRUE(ui::LoadFontFace(Asset("fonts/NotoEmoji-Regular.ttf"), false, Weight(700)));
   ASSERT_TRUE(LoadChineseFonts());
 
-  const std::string text = "\xE6\xB0\xB8";  // 永
+  const std::string text = "\xE6\xB0\xB8"; // 永
   const auto c = static_cast<ui::Character>(0x6C38);
   // The face's own glyph in each weight of the Chinese family.
   for (const int weight : {400, 500, 700}) {
@@ -139,7 +143,7 @@ TEST_F(FontWeightsTest, ChineseRunDrawsTheGlyphOfTheFaceForItsWeight) {
   }
   EXPECT_EQ(FallbackBitmap(Handle("noto emoji", 400), c), regular);
   EXPECT_EQ(FallbackBitmap(Handle("noto emoji", 500), c), medium);
-  EXPECT_EQ(FallbackBitmap(Handle("noto emoji", 600), c), bold);  // Tie between 500 and 700: the heavier.
+  EXPECT_EQ(FallbackBitmap(Handle("noto emoji", 600), c), bold); // Tie between 500 and 700: the heavier.
   EXPECT_EQ(FallbackBitmap(Handle("noto emoji", 700), c), bold);
 }
 

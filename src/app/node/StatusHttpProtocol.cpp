@@ -39,8 +39,7 @@ bool EqualsIgnoreCase(std::string_view a, std::string_view b) {
     return false;
   }
   for (size_t i = 0; i < a.size(); ++i) {
-    if (std::tolower(static_cast<unsigned char>(a[i])) !=
-        std::tolower(static_cast<unsigned char>(b[i]))) {
+    if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i]))) {
       return false;
     }
   }
@@ -64,8 +63,7 @@ bool AuthOk(const StatusHttpAuthConfig& auth, std::string_view authorization) {
     return true;
   }
   const std::string prefix = "Bearer ";
-  if (authorization.size() < prefix.size() ||
-      !EqualsIgnoreCase(authorization.substr(0, prefix.size()), prefix)) {
+  if (authorization.size() < prefix.size() || !EqualsIgnoreCase(authorization.substr(0, prefix.size()), prefix)) {
     return false;
   }
   return ConstantTimeEquals(authorization.substr(prefix.size()), auth.bearer_token);
@@ -108,8 +106,7 @@ bool IsLoopbackHostHeader(std::string_view host) {
     return false;
   }
   const auto colon = host.front() == '[' ? host.find(':', host.find(']')) : host.rfind(':');
-  return IsLoopbackStatusBindHost(host.substr(0, colon)) ||
-         EqualsIgnoreCase(host.substr(0, colon), "[::1]");
+  return IsLoopbackStatusBindHost(host.substr(0, colon)) || EqualsIgnoreCase(host.substr(0, colon), "[::1]");
 }
 
 StatusHttpResponse Forbidden() {
@@ -120,28 +117,28 @@ StatusHttpResponse Forbidden() {
 
 const char* StatusReason(int code) {
   switch (code) {
-  case 200:
-    return "OK";
-  case 202:
-    return "Accepted";
-  case 400:
-    return "Bad Request";
-  case 401:
-    return "Unauthorized";
-  case 403:
-    return "Forbidden";
-  case 404:
-    return "Not Found";
-  case 405:
-    return "Method Not Allowed";
-  case 409:
-    return "Conflict";
-  case 415:
-    return "Unsupported Media Type";
-  case 500:
-    return "Internal Server Error";
-  default:
-    return "Error";
+    case 200:
+      return "OK";
+    case 202:
+      return "Accepted";
+    case 400:
+      return "Bad Request";
+    case 401:
+      return "Unauthorized";
+    case 403:
+      return "Forbidden";
+    case 404:
+      return "Not Found";
+    case 405:
+      return "Method Not Allowed";
+    case 409:
+      return "Conflict";
+    case 415:
+      return "Unsupported Media Type";
+    case 500:
+      return "Internal Server Error";
+    default:
+      return "Error";
   }
 }
 
@@ -217,8 +214,7 @@ std::optional<StatusHttpRequest> TryParseStatusHttpRequest(std::string_view raw)
   const std::string_view headers = raw.substr(0, header_end);
   const std::string_view after_headers = raw.substr(header_end + 4);
   const auto line_end = headers.find("\r\n");
-  const std::string_view request_line =
-      line_end == std::string_view::npos ? headers : headers.substr(0, line_end);
+  const std::string_view request_line = line_end == std::string_view::npos ? headers : headers.substr(0, line_end);
 
   const auto sp1 = request_line.find(' ');
   if (sp1 == std::string_view::npos) {
@@ -276,10 +272,8 @@ std::optional<StatusHttpRequest> TryParseStatusHttpRequest(std::string_view raw)
   return req;
 }
 
-StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
-                                           const StatusHttpAuthConfig& auth,
-                                           const StatusHttpSnapshot& snap,
-                                           const StatusHttpActions& actions) {
+StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request, const StatusHttpAuthConfig& auth,
+                                           const StatusHttpSnapshot& snap, const StatusHttpActions& actions) {
   if (!AuthOk(auth, request.authorization)) {
     return Unauthorized();
   }
@@ -318,9 +312,9 @@ StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
     r.status_code = 200;
     r.content_type = "text/plain; version=0.0.4; charset=utf-8";
     try {
-      r.body = MetricsRegistry::Global().RenderPrometheus();  // runs every collector
+      r.body = MetricsRegistry::Global().RenderPrometheus(); // runs every collector
     } catch (...) {
-      return StatusHttpInternalError();  // a failed scrape must not take the node down
+      return StatusHttpInternalError(); // a failed scrape must not take the node down
     }
     return r;
   }

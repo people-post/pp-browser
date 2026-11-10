@@ -83,10 +83,9 @@ Roe<std::string> EncodeBroadcastRelaySlotWinResult(const BroadcastRelaySlotWinRe
 
 Roe<BroadcastRpcMessage> DecodeBroadcastRpcJson(std::string_view json);
 
-BroadcastViewerAttachResult BroadcastViewerAttachResultFromDecision(
-    const BroadcastLadderViewerDecision& decision, std::string_view self_peer_id);
+BroadcastViewerAttachResult BroadcastViewerAttachResultFromDecision(const BroadcastLadderViewerDecision& decision,
+                                                                    std::string_view self_peer_id);
 
-BroadcastRelaySlotWinResult BroadcastRelaySlotWinResultFromDecision(
-    const BroadcastLadderSlotWinDecision& decision);
+BroadcastRelaySlotWinResult BroadcastRelaySlotWinResultFromDecision(const BroadcastLadderSlotWinDecision& decision);
 
 } // namespace pbr

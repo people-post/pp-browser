@@ -217,7 +217,7 @@ TEST(E2eIngestClassifierTest, AGapAfterARestartIsAGapNotACompromise) {
   input.sync_state.contiguous_peer_seq = 50;
   input.sync_state.loaded_max_seq = 50;
 
-  ReplayWindow fresh(32);  // what a restarted app holds
+  ReplayWindow fresh(32); // what a restarted app holds
   const IngestClassifierResult gap = E2eIngestClassifier::Classify(input, fresh);
   EXPECT_EQ(gap.decision, IngestDecision::AcceptGap);
   EXPECT_NE(gap.sync_state.phase, PeerSyncPhase::Compromised);

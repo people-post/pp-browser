@@ -1,5 +1,6 @@
 #include "feature/calls/CallMediaPlane.h"
 
+#include "domain/call_media/MonotonicClock.h"
 #include "common/MeshConfig.h"
 #include "mesh/reach/PeerReachSelect.h"
 
@@ -38,7 +39,9 @@ void CallMediaPlane::OnMeshStarted() {
     return;
   }
   auto pump = [m]() { m->Tick(); };
-  call_media_amp_ = std::make_unique<CallMediaAmpTransport>(m->Amp()->Runtime(), std::move(pump));
+  // The legs' timers on a monotonic clock: the runtime's amp clock follows the wall clock.
+  call_media_amp_ =
+      std::make_unique<CallMediaAmpTransport>(m->Amp()->Runtime(), MonotonicClock::Process(), std::move(pump));
   call_media_amp_->Start();
   log().info << "call-media transport=amp";
 }
@@ -122,7 +125,7 @@ CallDirectPathDeps CallMediaPlane::DirectPathDeps() {
   deps.circuit_reach = connectivity_->CircuitReach();
   deps.lane = connectivity_->Lane();
   deps.local_listen_addrs = [connectivity = connectivity_]() {
-    return connectivity->LocalView()->advertised_listen_multiaddrs;  // a published snapshot: any thread
+    return connectivity->LocalView()->advertised_listen_multiaddrs; // a published snapshot: any thread
   };
   // The connect sequence's Diag lines (a handful of reads per call, on the calls owner). The dial registry
   // is the one handed to the reach: the stack detaches this probe where it detaches the reach.
@@ -177,7 +180,7 @@ void CallMediaPlane::DetachRelayClient() {
 
 void CallMediaPlane::DetachTransport() {
   if (ICallMediaTransport* transport = Transport()) {
-    transport->Detach();
+    transport->DetachAll();
   }
 }
 
@@ -187,7 +190,7 @@ void CallMediaPlane::Clear() {
 }
 
 void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identity,
-                                                     const std::vector<std::string>& multiaddrs) {
+                                                      const std::vector<std::string>& multiaddrs) {
   if (!connectivity_) {
     return;
   }

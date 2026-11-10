@@ -119,17 +119,16 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
           identity, own_cards_, account_keys, contacts, routes_, session_keys_,
           [this]() { return transports_.DirectChat(); }, outbox_) {
   redirectLogger("MeshDeliveryOrchestrator");
-  receive_pipeline_ =
-      std::make_unique<RelayReceivePipeline>(store_,
-                                             [this](const std::string& account_id) -> std::optional<AccountCard> {
-                                               auto kept = account_keys_.Kept(account_id);
-                                               if (!kept || !kept->has_value()) {
-                                                 return std::nullopt;
-                                               }
-                                               return (*kept)->newest_card;
-                                             },
-                                             psk_store_, LocalKeysFromIdentity(identity_), group_roster_,
-                                             invite_gate);
+  receive_pipeline_ = std::make_unique<RelayReceivePipeline>(
+      store_,
+      [this](const std::string& account_id) -> std::optional<AccountCard> {
+        auto kept = account_keys_.Kept(account_id);
+        if (!kept || !kept->has_value()) {
+          return std::nullopt;
+        }
+        return (*kept)->newest_card;
+      },
+      psk_store_, LocalKeysFromIdentity(identity_), group_roster_, invite_gate);
   receive_pipeline_->SetContactTrust(&contacts_);
   // A session opener's newer card that verified it: the sender's devices are answerable from now on. Our own
   // account's (a sibling's notice) is our device list (M021).
@@ -159,28 +158,19 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
       [this](const std::string& account, const std::string& device, const int64_t issued_at) {
         auto own = identity_.Get();
         if (own && account == own->account_id) {
-          return;  // our own list arrives by the device_list notice
+          return; // our own list arrives by the device_list notice
         }
-        AskForNewerCard(account, device, issued_at);
+        AskForNewerCard(account, device, issued_at, CardAskGate::Source::Verified);
       });
   // An envelope we could not check (no card for its device; lane messages carry the card only when the peer may
-  // lack it): ask that device. Unverified, so at most once per account per kUnknownDeviceAskGapMs.
+  // lack it): ask that device. Unverified, so its hint counts for nothing and the asks are rate-limited (CardAskGate).
   receive_pipeline_->SetOnUnknownSenderDevice(
       [this](const std::string& account, const std::string& device, const int64_t issued_at) {
         auto own = identity_.Get();
         if (own && account == own->account_id) {
           return; // our own list arrives by the device_list notice
         }
-        {
-          const int64_t now_ms = util::NowUnixMs();
-          std::lock_guard lock(card_asks_mutex_);
-          int64_t& last = unknown_device_asks_[account];
-          if (last != 0 && now_ms - last < kUnknownDeviceAskGapMs) {
-            return;
-          }
-          last = now_ms;
-        }
-        AskForNewerCard(account, device, issued_at);
+        AskForNewerCard(account, device, issued_at, CardAskGate::Source::Unverified);
       });
   receive_pipeline_->SetAccountCardFloor(
       [this](const std::string& account_id) { return account_keys_.CardFloor(account_id); });
@@ -192,8 +182,8 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
   });
   receive_pipeline_->SetOnRosterMember([this](const GroupMembershipCodec::MemberJoinedEntry& member) {
     if (member.card) {
-      if (auto kept = account_keys_.AddCarriedCard(*member.card, util::NowUnixMs(), "group_roster",
-                                                   member.member_identity);
+      if (auto kept =
+              account_keys_.AddCarriedCard(*member.card, util::NowUnixMs(), "group_roster", member.member_identity);
           !kept) {
         log().warning << "roster card not kept: " << kept.error().message;
       } else {
@@ -205,8 +195,9 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
     }
   });
   // A peer withdrew a message we hold: its bytes, summary and preview follow (the pipeline wiped the row).
-  receive_pipeline_->SetOnMessageRetracted(
-      [this](const std::string& thread_id, const ThreadMessage& original) { inbox_.AfterMessageDeleted(thread_id, original); });
+  receive_pipeline_->SetOnMessageRetracted([this](const std::string& thread_id, const ThreadMessage& original) {
+    inbox_.AfterMessageDeleted(thread_id, original);
+  });
   transports_.SetInboundHandler([this](RelayEnvelope envelope, std::string from_peer_id) {
     HandleDirectInbound(std::move(envelope), from_peer_id);
   });
@@ -224,7 +215,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
         AppRuntime::PostUI([this]() { on_messages_changed_(); });
       }
     } else if (outcome.ok) {
-      ApplySendSucceeded(outcome.thread_id, outcome.message_id, outcome.transport, outcome.relay_after_direct);
+      ApplySendSucceeded(outcome.thread_id, outcome.message_id, outcome.transport);
     } else {
       ApplySendFailed(outcome.thread_id, outcome.message_id, outcome.failure, outcome.detail);
     }
@@ -238,7 +229,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
     log().warning << "direct chat/history/blob unavailable (Amp required)";
   }
   chat_sync_ = std::make_unique<ChatSyncWorkflow>(store_, identity_, contacts_, relay_, *receive_pipeline_, inbox_,
-                                                 transports_.History());
+                                                  transports_.History());
   chat_sync_->SetOnMessagesChanged([this]() {
     if (on_messages_changed_) {
       AppRuntime::PostUI([this]() { on_messages_changed_(); });
@@ -314,7 +305,7 @@ void MeshDeliveryOrchestrator::MirrorToSiblings(const ThreadMessage& sent, SentC
   }
   AppRuntime::PostWorkerNormal([this, sent, target = std::move(target)]() {
     if (auto card = own_cards_.Card(util::NowUnixMs()); !card || card->devices.size() < 2) {
-      return;  // no other device, or signed out
+      return; // no other device, or signed out
     }
     auto notice = sent_copy::BuildNotice(sent, target);
     if (!notice) {
@@ -349,14 +340,12 @@ GroupCardLookup MeshDeliveryOrchestrator::GroupChangeCards() {
 }
 
 void MeshDeliveryOrchestrator::AskForNewerCard(const std::string& account, const std::string& device,
-                                               const int64_t issued_at) {
+                                               const int64_t issued_at, const CardAskGate::Source source) {
   {
     std::lock_guard lock(card_asks_mutex_);
-    int64_t& asked = card_asks_[account];
-    if (asked >= issued_at) {
-      return;  // asked for this list already (or a newer one)
+    if (!card_ask_gate_.Allow(account, issued_at, source, util::NowUnixMs())) {
+      return; // asked lately (or too many unverified asks just now)
     }
-    asked = issued_at;
   }
   AppRuntime::PostWorkerNormal([this, account, device]() {
     auto notice = card_ask::BuildNotice(device);
@@ -365,7 +354,7 @@ void MeshDeliveryOrchestrator::AskForNewerCard(const std::string& account, const
     }
     // Through the relay: a direct link may be refused by the peer's privacy gate (not a contact of theirs). With
     // our card: the device answering may not know ours either.
-    if (auto asked = control_lane_.Send(account, *notice, std::nullopt, false, true); !asked) {
+    if (auto asked = control_lane_.Send(account, *notice, false, true); !asked) {
       log().info << "newer card not asked of " << account << ": " << asked.error().message;
       return;
     }
@@ -387,7 +376,7 @@ void MeshDeliveryOrchestrator::ShowCardTo(const std::string& account) {
     it->second = now;
   }
   AppRuntime::PostWorkerNormal([this, account]() {
-    if (auto sent = control_lane_.Send(account, DeviceListNotice(), std::nullopt, false, true); !sent) {
+    if (auto sent = control_lane_.Send(account, DeviceListNotice(), false, true); !sent) {
       log().info << "card not shown to " << account << ": " << sent.error().message;
       return;
     }
@@ -398,9 +387,9 @@ void MeshDeliveryOrchestrator::ShowCardTo(const std::string& account) {
 void MeshDeliveryOrchestrator::AnswerCardAsk(const std::string& to_device, const std::string& asker_account) {
   auto self = own_cards_.DevicePeerId();
   if (!self || *self != to_device) {
-    return;  // the device named answers (its siblings hold the same list)
+    return; // the device named answers (its siblings hold the same list)
   }
-  if (auto sent = control_lane_.Send(asker_account, DeviceListNotice(), std::nullopt, false, true); !sent) {
+  if (auto sent = control_lane_.Send(asker_account, DeviceListNotice(), false, true); !sent) {
     log().info << "card not sent to " << asker_account << ": " << sent.error().message;
     return;
   }
@@ -445,7 +434,7 @@ void MeshDeliveryOrchestrator::NoteMissingCopy(const RelayReceiveOutcome::Missin
         return;
       }
       // With our card: the asker's device may be one the sender does not know yet (that is why it missed a copy).
-      if (auto asked = control_lane_.Send(missing.sender_account, *notice, std::nullopt, false, true); !asked) {
+      if (auto asked = control_lane_.Send(missing.sender_account, *notice, false, true); !asked) {
         log().info << "copy not asked for message_id=" << missing.message_id << ": " << asked.error().message;
         return;
       }
@@ -457,15 +446,14 @@ void MeshDeliveryOrchestrator::NoteMissingCopy(const RelayReceiveOutcome::Missin
 void MeshDeliveryOrchestrator::AnswerCopyAsk(const CopyAsk& ask, const std::string& asker_account) {
   auto self = own_cards_.DevicePeerId();
   if (!self || *self != ask.to_device) {
-    return;  // another device of ours sent it (each holds its own sessions)
+    return; // another device of ours sent it (each holds its own sessions)
   }
   Roe<std::optional<Thread>> thread = std::optional<Thread>{};
   if (!ask.group_id.empty()) {
     thread = store_.FindGroupThread(ask.group_id);
   } else {
-    thread = store_.FindDirectThread(DirectChatTarget{.peer_identity_kind = "account",
-                                                      .peer_identity_value = asker_account,
-                                                      .channel = ThreadChannel::E2ePublic});
+    thread = store_.FindDirectThread(DirectChatTarget{
+        .peer_identity_kind = "account", .peer_identity_value = asker_account, .channel = ThreadChannel::E2ePublic});
   }
   if (!thread || !*thread) {
     return;
@@ -483,7 +471,7 @@ void MeshDeliveryOrchestrator::AnswerCopyAsk(const CopyAsk& ask, const std::stri
   if (!ask.group_id.empty()) {
     auto member = group_roster_.IsMember(ask.group_id, asker_account);
     if (!member || !*member) {
-      return;  // not one of the group's: no copy of its messages
+      return; // not one of the group's: no copy of its messages
     }
   }
   // The asking device as the asker's account card lists it (the ask carried the card: just learned).
@@ -641,7 +629,7 @@ bool MeshDeliveryOrchestrator::LinkedTo(const std::string& peer_id) const {
 
 Roe<EnvelopeSender> MeshDeliveryOrchestrator::OwnSender(const LocalIdentity& identity) {
   if (own_cards_.SignedOut()) {
-    return Error(kSignedOutMessage);  // M021 d4: the account's newest list leaves this device out
+    return Error(kSignedOutMessage); // M021 d4: the account's newest list leaves this device out
   }
   auto device = own_cards_.DevicePeerId();
   if (!device) {
@@ -691,7 +679,7 @@ void MeshDeliveryOrchestrator::SetRelayClient(IRelayClient* relay) {
   }
   if (chat_sync_) {
     chat_sync_ = std::make_unique<ChatSyncWorkflow>(store_, identity_, contacts_, relay_, *receive_pipeline_, inbox_,
-                                                 transports_.History());
+                                                    transports_.History());
     chat_sync_->SetOnMessagesChanged([this]() {
       if (on_messages_changed_) {
         AppRuntime::PostUI([this]() { on_messages_changed_(); });
@@ -758,12 +746,12 @@ void MeshDeliveryOrchestrator::PersistRelayCursor(const std::string& relay_user_
 }
 
 void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id,
-                                                     const std::string& multiaddr) {
+                                                          const std::string& multiaddr) {
   transports_.RegisterEndpoint(peer_relay_user_id, multiaddr);
 }
 
-void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoints(
-    const std::string& peer_relay_user_id, const std::vector<std::string>& multiaddrs) {
+void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoints(const std::string& peer_relay_user_id,
+                                                           const std::vector<std::string>& multiaddrs) {
   transports_.RegisterEndpoints(peer_relay_user_id, multiaddrs);
 }
 
@@ -775,8 +763,7 @@ void MeshDeliveryOrchestrator::SetPeerRouteSources(DirectoryShadowCache* shadows
   routes_.SetSources(shadows, directory);
 }
 
-void MeshDeliveryOrchestrator::NoteAccountRelayRoute(const std::string& account_id,
-                                                const std::string& relay_user_id) {
+void MeshDeliveryOrchestrator::NoteAccountRelayRoute(const std::string& account_id, const std::string& relay_user_id) {
   routes_.NoteAccountRoute(account_id, relay_user_id);
 }
 
@@ -902,7 +889,9 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
     local.relay_visible = false;
     local.generation = "local";
     if (store_.AppendMessage(local)) {
-      inbox_.OnInboundMessagePersisted(*outcome.receive_failure_thread_id);
+      inbox_.OnInboundMessagePersisted(*outcome.receive_failure_thread_id, std::nullopt,
+                                       AppLifecycle::IsUserAttentive());
+      notice.thread_id = *outcome.receive_failure_thread_id; // the line is stored: the presenter adds no toast
     }
   }
 
@@ -977,14 +966,14 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
         });
       }
     } else {
-      inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
-      if (on_inbound_message_) {
-        AppRuntime::PostUI([this, message_id = envelope.message_id, thread_id = outcome.thread_id]() {
-          if (on_inbound_message_) {
-            on_inbound_message_(message_id, thread_id);
+      inbox_.OnInboundMessagePersisted(outcome.thread_id, preview, AppLifecycle::IsUserAttentive());
+      AppRuntime::PostUI([this, ids = NoteInbound(envelope.message_id, outcome), thread_id = outcome.thread_id]() {
+        if (on_inbound_message_) {
+          for (const auto& id : ids) {
+            on_inbound_message_(id, thread_id);
           }
-        });
-      }
+        }
+      });
       MaybeEnqueueAttachmentDownload(outcome);
       NoteMention(outcome, identity->account_id);
       // Over a link, as from the relay: the user away gets a notice (a mention alerts in a muted group, G015).
@@ -1033,14 +1022,17 @@ void MeshDeliveryOrchestrator::WarmPeerByKey(const std::string& peer_key) {
   transports_.WarmByKey(peer_key);
 }
 
-Roe<EnsuredE2ePublicSessionKey> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(
-    const std::string& peer_identity) {
+Roe<ByteVector> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(const std::string& peer_identity) {
   return session_keys_.Ensure(peer_identity);
+}
+
+Roe<ByteVector> MeshDeliveryOrchestrator::HeldE2ePublicSessionKey(const std::string& peer_identity) const {
+  return session_keys_.Held(peer_identity);
 }
 
 Roe<ByteVector> MeshDeliveryOrchestrator::PeerKemPublicKey(const PeerSessionKey& key) const {
   if (key.peer_device.empty()) {
-    return session_keys_.PeerKemPublicKey(key);  // the account's (an account copy)
+    return session_keys_.PeerKemPublicKey(key); // the account's (an account copy)
   }
   // The device's own, as the peer's newest kept card lists it (M021).
   auto kept = account_keys_.Kept(key.peer_identity_value);
@@ -1055,9 +1047,8 @@ Roe<ByteVector> MeshDeliveryOrchestrator::PeerKemPublicKey(const PeerSessionKey&
 }
 
 Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity, const ThreadMessage& control,
-                                                const std::optional<std::string>& key_init_b64, const bool urgent,
-                                                const bool with_card) {
-  return control_lane_.Send(peer_identity, control, key_init_b64, urgent, with_card);
+                                                const bool urgent, const bool with_card) {
+  return control_lane_.Send(peer_identity, control, urgent, with_card);
 }
 
 void MeshDeliveryOrchestrator::SendControlToMany(std::vector<ControlSend> sends, ControlSendsDone done,
@@ -1086,24 +1077,24 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
   view.backoff_seconds = static_cast<int>((snap.backoff_remaining.count() + 999) / 1000);
   view.detail = snap.detail;
   switch (snap.phase) {
-  case mesh::MeshPeerLinkPhase::Connected:
-    view.path_kind = snap.carrier_backed ? ThreadPeerPathKind::ViaHop : ThreadPeerPathKind::Direct;
-    break;
-  case mesh::MeshPeerLinkPhase::Dialing:
-  case mesh::MeshPeerLinkPhase::Handshaking:
-    view.path_kind = ThreadPeerPathKind::Connecting;  // includes a punch burst: never a settled badge
-    break;
-  case mesh::MeshPeerLinkPhase::Backoff:
-    view.path_kind = ThreadPeerPathKind::Degraded;
-    view.show_retry = true;
-    break;
-  case mesh::MeshPeerLinkPhase::Idle:
-    view.path_kind = ThreadPeerPathKind::Ready;
-    break;
-  case mesh::MeshPeerLinkPhase::Unavailable:
-  default:
-    view.path_kind = view.relay_available ? ThreadPeerPathKind::ViaRelay : ThreadPeerPathKind::Failed;
-    break;
+    case mesh::MeshPeerLinkPhase::Connected:
+      view.path_kind = snap.carrier_backed ? ThreadPeerPathKind::ViaHop : ThreadPeerPathKind::Direct;
+      break;
+    case mesh::MeshPeerLinkPhase::Dialing:
+    case mesh::MeshPeerLinkPhase::Handshaking:
+      view.path_kind = ThreadPeerPathKind::Connecting; // includes a punch burst: never a settled badge
+      break;
+    case mesh::MeshPeerLinkPhase::Backoff:
+      view.path_kind = ThreadPeerPathKind::Degraded;
+      view.show_retry = true;
+      break;
+    case mesh::MeshPeerLinkPhase::Idle:
+      view.path_kind = ThreadPeerPathKind::Ready;
+      break;
+    case mesh::MeshPeerLinkPhase::Unavailable:
+    default:
+      view.path_kind = view.relay_available ? ThreadPeerPathKind::ViaRelay : ThreadPeerPathKind::Failed;
+      break;
   }
   return view;
 }
@@ -1166,7 +1157,7 @@ Roe<void> MeshDeliveryOrchestrator::MaybeSendPublicAutoRekey(const std::string& 
 }
 
 Roe<ThreadMessage> MeshDeliveryOrchestrator::SendPublicPskRotate(const std::string& thread_id,
-                                                           const PublicPskRotateKind kind) {
+                                                                 const PublicPskRotateKind kind) {
   if (const auto live = LiveExchange()) {
     return Error("Finish the " + *live + " first");
   }
@@ -1200,8 +1191,9 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendPublicPskRotate(const std::stri
   opts.content_type = ChatContentType::System;
   opts.payload_json = *payload;
   opts.key_init_b64 = plan->key_init_b64;
-  const char* text =
-      kind == PublicPskRotateKind::Lock ? "New messages stay on this device." : "Chat key updated.";
+  // Stored and sent as English, as before (an older peer shows it); the UI words it at display time
+  // (LegacySystemLineText).
+  const char* text = kind == PublicPskRotateKind::Lock ? "New messages stay on this device." : "Chat key updated.";
   auto sent = SendUserMessage(thread_id, text, opts);
   if (!sent) {
     (void)public_lock_.AbortPrepare(*plan);
@@ -1311,12 +1303,13 @@ Roe<void> MeshDeliveryOrchestrator::MarkPskVerified(const std::string& thread_id
 }
 
 void MeshDeliveryOrchestrator::ScrollBackfill(const std::string& thread_id,
-                                         std::function<void(Roe<ChatSyncResult>)> on_complete) {
-  RunSyncOnIo(thread_id,
-              [this, thread_id](std::function<void(Roe<ChatSyncResult>)> done) {
-                chat_sync_->ScrollBackfillAsync(thread_id, std::move(done));
-              },
-              std::move(on_complete));
+                                              std::function<void(Roe<ChatSyncResult>)> on_complete) {
+  RunSyncOnIo(
+      thread_id,
+      [this, thread_id](std::function<void(Roe<ChatSyncResult>)> done) {
+        chat_sync_->ScrollBackfillAsync(thread_id, std::move(done));
+      },
+      std::move(on_complete));
 }
 
 void MeshDeliveryOrchestrator::TailSyncActiveE2eThread() {
@@ -1327,13 +1320,12 @@ void MeshDeliveryOrchestrator::TailSyncActiveE2eThread() {
   MaybeTailSync(active_id);
 }
 
-void MeshDeliveryOrchestrator::RunSyncOnIo(
-    const std::string& thread_id, std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
-    std::function<void(Roe<ChatSyncResult>)> on_complete) {
+void MeshDeliveryOrchestrator::RunSyncOnIo(const std::string& thread_id,
+                                           std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
+                                           std::function<void(Roe<ChatSyncResult>)> on_complete) {
   if (!chat_sync_ || !IsE2ePrivateThread(thread_id)) {
     if (on_complete) {
-      AppRuntime::PostUI(
-          [on_complete = std::move(on_complete)]() { on_complete(Error("Sync not available")); });
+      AppRuntime::PostUI([on_complete = std::move(on_complete)]() { on_complete(Error("Sync not available")); });
     }
     return;
   }
@@ -1341,9 +1333,7 @@ void MeshDeliveryOrchestrator::RunSyncOnIo(
   bool expected = false;
   if (!sync_pending_.compare_exchange_strong(expected, true)) {
     if (on_complete) {
-      AppRuntime::PostUI([on_complete = std::move(on_complete)]() {
-        on_complete(Error("Sync already in progress"));
-      });
+      AppRuntime::PostUI([on_complete = std::move(on_complete)]() { on_complete(Error("Sync already in progress")); });
     }
     return;
   }
@@ -1364,21 +1354,23 @@ void MeshDeliveryOrchestrator::RunSyncOnIo(
 }
 
 void MeshDeliveryOrchestrator::SyncWithPeer(const std::string& thread_id,
-                                       std::function<void(Roe<ChatSyncResult>)> on_complete) {
-  RunSyncOnIo(thread_id,
-              [this, thread_id](std::function<void(Roe<ChatSyncResult>)> done) {
-                chat_sync_->UserInitiatedSyncAsync(thread_id, std::move(done));
-              },
-              std::move(on_complete));
+                                            std::function<void(Roe<ChatSyncResult>)> on_complete) {
+  RunSyncOnIo(
+      thread_id,
+      [this, thread_id](std::function<void(Roe<ChatSyncResult>)> done) {
+        chat_sync_->UserInitiatedSyncAsync(thread_id, std::move(done));
+      },
+      std::move(on_complete));
 }
 
 void MeshDeliveryOrchestrator::RetryGapSync(const std::string& thread_id,
-                                       std::function<void(Roe<ChatSyncResult>)> on_complete) {
-  RunSyncOnIo(thread_id,
-              [this, thread_id](std::function<void(Roe<ChatSyncResult>)> done) {
-                chat_sync_->RetryGapSyncAsync(thread_id, std::move(done));
-              },
-              std::move(on_complete));
+                                            std::function<void(Roe<ChatSyncResult>)> on_complete) {
+  RunSyncOnIo(
+      thread_id,
+      [this, thread_id](std::function<void(Roe<ChatSyncResult>)> done) {
+        chat_sync_->RetryGapSyncAsync(thread_id, std::move(done));
+      },
+      std::move(on_complete));
 }
 
 TrustLevel MeshDeliveryOrchestrator::ResolveThreadTrust(const Thread& thread) const {
@@ -1392,30 +1384,19 @@ TrustLevel MeshDeliveryOrchestrator::ResolveThreadTrust(const Thread& thread) co
   return (*contact)->trust;
 }
 
-void MeshDeliveryOrchestrator::NotifyDeliveryIssue(const Thread& thread, const SendFailure failure,
-                                                   const std::string& detail) {
+void MeshDeliveryOrchestrator::NotifyDeliveryIssue(const Thread& thread, const std::string& message_id,
+                                                   const SendFailure failure, const std::string& detail) {
   if (!on_delivery_notice_) {
     return;
   }
   log().info << "send failed thread=" << thread.id << " detail=" << detail;
   DeliveryNotice notice;
   notice.kind = DeliveryNotice::Kind::SendFailed;
+  notice.thread_id = thread.id;
+  notice.message_id = message_id;
   notice.send = SendFailureForThread(failure, ResolveThreadTrust(thread) == TrustLevel::Friendly);
   DiagLine("chat.send_failed").Add("failure", SendFailureWord(notice.send)).Ref("thread", thread.id).Emit();
   notice.detail = detail;
-  AppRuntime::PostUI([this, notice]() {
-    if (on_delivery_notice_) {
-      on_delivery_notice_(notice);
-    }
-  });
-}
-
-void MeshDeliveryOrchestrator::NotifyRelayFallback(const std::string& /*thread_id*/) {
-  if (!on_delivery_notice_) {
-    return;
-  }
-  DeliveryNotice notice;
-  notice.kind = DeliveryNotice::Kind::SentViaRelay;
   AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
       on_delivery_notice_(notice);
@@ -1472,7 +1453,7 @@ bool MeshDeliveryOrchestrator::MarkDelivery(const std::string& thread_id, const 
                                             const bool success, const MessageTransport transport,
                                             const bool unless_delivered) {
   if (thread_id.empty()) {
-    return false;  // a control-lane send: no transcript row to update
+    return false; // a control-lane send: no transcript row to update
   }
   auto messages = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
   if (!messages) {
@@ -1495,13 +1476,9 @@ bool MeshDeliveryOrchestrator::MarkDelivery(const std::string& thread_id, const 
 }
 
 void MeshDeliveryOrchestrator::ApplySendSucceeded(const std::string& thread_id, const std::string& message_id,
-                                                  const MessageTransport transport,
-                                                  const bool relay_after_direct_attempt) {
+                                                  const MessageTransport transport) {
   if (!MarkDelivery(thread_id, message_id, true, transport)) {
     return;
-  }
-  if (transport == MessageTransport::Relay && relay_after_direct_attempt) {
-    NotifyRelayFallback(thread_id);
   }
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
@@ -1514,7 +1491,7 @@ void MeshDeliveryOrchestrator::ApplySendFailed(const std::string& thread_id, con
     return;
   }
   if (auto thread = store_.GetThread(thread_id); thread && *thread) {
-    NotifyDeliveryIssue(**thread, failure, detail);
+    NotifyDeliveryIssue(**thread, message_id, failure, detail);
   }
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
@@ -1543,7 +1520,7 @@ Roe<void> MeshDeliveryOrchestrator::StartNextPairEpochIfRestored(const PeerSessi
   if (!key.peer_device.empty()) {
     // A device pair numbers on its own (M021): its session's next epoch, the thread's count untouched.
   } else if (auto thread = store_.FindDirectThread(direct); thread && thread->has_value()) {
-    auto bumped = store_.BumpLocalChatTargetEpoch((**thread).id);  // the 1:1 count starts over too
+    auto bumped = store_.BumpLocalChatTargetEpoch((**thread).id); // the 1:1 count starts over too
     if (!bumped) {
       return bumped.error();
     }
@@ -1558,7 +1535,7 @@ Roe<void> MeshDeliveryOrchestrator::StartNextPairEpochIfRestored(const PeerSessi
 }
 
 Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& thread_id, const std::string& text,
-                                                         const SendRelayOptions& options) {
+                                                             const SendRelayOptions& options) {
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -1584,15 +1561,13 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
   }
   // P001: first initiate blocked when peer floor > 0 and payment rails unavailable.
   // System/control traffic (call invite, charge_required, …) must not hit this gate.
-  const bool system_control =
-      options.content_type && *options.content_type == ChatContentType::System;
+  const bool system_control = options.content_type && *options.content_type == ChatContentType::System;
   if (!system_control && (*thread)->channel == ThreadChannel::E2ePublic) {
     if (auto rotated = MaybeSendPublicAutoRekey(thread_id); !rotated) {
       return rotated.error();
     }
   }
-  if (!system_control && initiation_billing_ &&
-      !initiation_billing_->IsOpen((*thread)->peer_identity_value)) {
+  if (!system_control && initiation_billing_ && !initiation_billing_->IsOpen((*thread)->peer_identity_value)) {
     const InitiationPeerBilling billing = initiation_billing_->Get((*thread)->peer_identity_value);
     const int64_t offer = InitiationPricing::DefaultOfferForFloor(billing.floor_minor);
     if (auto payable = InitiationPricing::CheckOutboundPayable(offer); !payable) {
@@ -1649,9 +1624,9 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
   // A public chat goes to each of the peer's devices on its card, each copy in its device pair (M021); with no
   // device known yet (a first contact), or a key rotation of the account-level session, as one account copy.
   const bool rotating = options.key_init_b64 && !options.key_init_b64->empty();
-  const std::vector<AccountCardDevice> devices =
-      (*thread)->channel == ThreadChannel::E2ePublic && !rotating ? PeerDevices(amp_peer_key)
-                                                                   : std::vector<AccountCardDevice>{};
+  const std::vector<AccountCardDevice> devices = (*thread)->channel == ThreadChannel::E2ePublic && !rotating
+                                                     ? PeerDevices(amp_peer_key)
+                                                     : std::vector<AccountCardDevice>{};
   if (!devices.empty()) {
     // M022: a device we have a live link to gets its copy over it (the relay if that fails — a record of its
     // own); every other device's copy shares one relay record to the account.
@@ -1747,7 +1722,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
 }
 
 Roe<void> MeshDeliveryOrchestrator::SendChargeRequired(const std::string& peer_identity,
-                                                  const std::optional<int64_t> floor_minor) {
+                                                       const std::optional<int64_t> floor_minor) {
   if (peer_identity.empty()) {
     return Error("Missing peer identity");
   }
@@ -1794,8 +1769,7 @@ Roe<void> MeshDeliveryOrchestrator::SendChargeRequired(const std::string& peer_i
   SendRelayOptions opts;
   opts.content_type = ChatContentType::System;
   Object payload;
-  payload.set("control_type",
-              InitiationBillingCodec::ControlTypeToWire(InitiationBillingControlType::ChargeRequired));
+  payload.set("control_type", InitiationBillingCodec::ControlTypeToWire(InitiationBillingControlType::ChargeRequired));
   payload.set("detail", *detail_json);
   opts.payload_json = DumpJson(payload);
   opts.generation = "system";
@@ -1815,7 +1789,7 @@ Roe<void> MeshDeliveryOrchestrator::SendChargeRequired(const std::string& peer_i
 }
 
 Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string& thread_id, const std::string& text,
-                                                          const SendRelayOptions& options) {
+                                                              const SendRelayOptions& options) {
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
     return Error("Not a group thread");
@@ -1825,12 +1799,12 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   if (auto metadata = group_roster_.LoadMetadata(*(*thread)->group_id);
       metadata && *metadata && !group_roster_sync::MaySend(**metadata)) {
     switch ((*metadata)->sync_state) {
-    case GroupSyncState::Removed:
-      return Error(group_roster_sync::kGroupRemovedError);
-    case GroupSyncState::Dissolved:
-      return Error(group_roster_sync::kGroupDissolvedError);
-    default:
-      return Error(group_roster_sync::kGroupCheckingError);
+      case GroupSyncState::Removed:
+        return Error(group_roster_sync::kGroupRemovedError);
+      case GroupSyncState::Dissolved:
+        return Error(group_roster_sync::kGroupDissolvedError);
+      default:
+        return Error(group_roster_sync::kGroupCheckingError);
     }
   }
 
@@ -1879,8 +1853,8 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
       }
       auto pair = psk_store_.Load(target.target_key);
       target.session_epoch = pair && pair->has_value() ? (*pair)->session_epoch : 1;
-      auto seq = group_roster_.AllocateMemberSeq(*(*thread)->group_id, member.member_identity, target.session_epoch,
-                                                 device);
+      auto seq =
+          group_roster_.AllocateMemberSeq(*(*thread)->group_id, member.member_identity, target.session_epoch, device);
       if (!seq) {
         return FailOutbound(store_, *appended, seq.error());
       }
@@ -1953,9 +1927,8 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
       continue;
     }
     const std::optional<std::string> relay_route = routes_.ResolveAccountWithDirectory(recipient);
-    RelayEnvelope envelope = BuildGroupMemberEnvelope(message, *sender, group_id, recipient,
-                                                      relay_route.value_or(recipient), {std::move(copy)},
-                                                      NextRelayOrderKey());
+    RelayEnvelope envelope = BuildGroupMemberEnvelope(
+        message, *sender, group_id, recipient, relay_route.value_or(recipient), {std::move(copy)}, NextRelayOrderKey());
     if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
       MarkGroupMemberMissed(group_id, recipient);
       any_missed = true;
@@ -1975,9 +1948,9 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
       any_missed = true;
       continue;
     }
-    RelayEnvelope envelope = BuildGroupMemberEnvelope(message, *sender, group_id, recipient,
-                                                      relay_route.value_or(recipient),
-                                                      std::move(relay_copies[recipient]), NextRelayOrderKey());
+    RelayEnvelope envelope =
+        BuildGroupMemberEnvelope(message, *sender, group_id, recipient, relay_route.value_or(recipient),
+                                 std::move(relay_copies[recipient]), NextRelayOrderKey());
     if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {
       MarkGroupMemberMissed(group_id, recipient);
       any_missed = true;
@@ -1991,7 +1964,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
                                  .group_member = recipient});
   }
   if (any_missed) {
-    NotifyGroupMembersMissed();
+    NotifyGroupMembersMissed(thread_id, message.id);
   }
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
@@ -2006,11 +1979,13 @@ void MeshDeliveryOrchestrator::MarkGroupMemberMissed(const std::string& group_id
   }
 }
 
-void MeshDeliveryOrchestrator::NotifyGroupMembersMissed() {
-  AppRuntime::PostUI([this]() {
+void MeshDeliveryOrchestrator::NotifyGroupMembersMissed(const std::string& thread_id, const std::string& message_id) {
+  DeliveryNotice notice;
+  notice.kind = DeliveryNotice::Kind::GroupMembersMissed;
+  notice.thread_id = thread_id;
+  notice.message_id = message_id;
+  AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
-      DeliveryNotice notice;
-      notice.kind = DeliveryNotice::Kind::GroupMembersMissed;
       on_delivery_notice_(notice);
     }
   });
@@ -2024,7 +1999,7 @@ void MeshDeliveryOrchestrator::ApplyGroupMemberOutcome(const DeliveryOutcome& ou
     if (group_id) {
       MarkGroupMemberMissed(*group_id, outcome.group_member);
     }
-    NotifyGroupMembersMissed();
+    NotifyGroupMembersMissed(outcome.thread_id, outcome.message_id);
     return;
   }
   if (groups_ && group_id) {
@@ -2038,9 +2013,9 @@ void MeshDeliveryOrchestrator::ApplyGroupMemberOutcome(const DeliveryOutcome& ou
 
 namespace {
 
-Roe<ThreadMessage> SendAnnotationReaction(MeshDeliveryOrchestrator& mesh_messaging, IThreadStore& store, const std::string& thread_id,
-                                          const std::string& target_message_id, const std::string& emoji,
-                                          const char* annotation_type) {
+Roe<ThreadMessage> SendAnnotationReaction(MeshDeliveryOrchestrator& mesh_messaging, IThreadStore& store,
+                                          const std::string& thread_id, const std::string& target_message_id,
+                                          const std::string& emoji, const char* annotation_type) {
   if (target_message_id.empty()) {
     return Error("Missing target message");
   }
@@ -2079,19 +2054,19 @@ Roe<ThreadMessage> SendAnnotationReaction(MeshDeliveryOrchestrator& mesh_messagi
 } // namespace
 
 Roe<ThreadMessage> MeshDeliveryOrchestrator::SendReaction(const std::string& thread_id,
-                                                     const std::string& target_message_id,
-                                                     const std::string& emoji) {
+                                                          const std::string& target_message_id,
+                                                          const std::string& emoji) {
   return SendAnnotationReaction(*this, store_, thread_id, target_message_id, emoji, kAnnotationTypeReaction);
 }
 
 Roe<ThreadMessage> MeshDeliveryOrchestrator::ClearReaction(const std::string& thread_id,
-                                                      const std::string& target_message_id,
-                                                      const std::string& emoji) {
+                                                           const std::string& target_message_id,
+                                                           const std::string& emoji) {
   return SendAnnotationReaction(*this, store_, thread_id, target_message_id, emoji, kAnnotationTypeReactionClear);
 }
 
 Roe<ThreadMessage> MeshDeliveryOrchestrator::SendRetract(const std::string& thread_id,
-                                                        const std::string& target_message_id) {
+                                                         const std::string& target_message_id) {
   return SendAnnotationReaction(*this, store_, thread_id, target_message_id, std::string(), kAnnotationTypeRetract);
 }
 
@@ -2101,6 +2076,25 @@ void MeshDeliveryOrchestrator::CancelPendingSend(const std::string& message_id) 
 
 void MeshDeliveryOrchestrator::RetryFailedOutbound() {
   outbox_.Retry();
+}
+
+void MeshDeliveryOrchestrator::SetOnBriefRelayHealthChanged(std::function<void(BriefRelayHealthState)> callback) {
+  std::lock_guard lock(brief_relay_health_cb_mu_);
+  on_brief_relay_health_changed_ = std::move(callback);
+}
+
+void MeshDeliveryOrchestrator::StoreBriefRelayHealth(const BriefRelayHealthState state) {
+  if (brief_relay_health_.exchange(static_cast<int>(state), std::memory_order_relaxed) == static_cast<int>(state)) {
+    return;
+  }
+  std::function<void(BriefRelayHealthState)> callback;
+  {
+    std::lock_guard lock(brief_relay_health_cb_mu_); // the poll worker vs. the owner's reset
+    callback = on_brief_relay_health_changed_;
+  }
+  if (callback) {
+    callback(state);
+  }
 }
 
 void MeshDeliveryOrchestrator::PollAndMerge() {
@@ -2175,11 +2169,10 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
       if (!poll) {
         log().warning << "PollInbox failed: " << poll.error().message;
         DiagLine("relay.poll_failed").Fail("error", poll.error()).Emit();
-        brief_relay_health_.store(static_cast<int>(BriefRelayHealthState::Failed),
-                                  std::memory_order_relaxed);
+        StoreBriefRelayHealth(BriefRelayHealthState::Failed);
         continue;
       }
-      brief_relay_health_.store(static_cast<int>(BriefRelayHealthState::Ok), std::memory_order_relaxed);
+      StoreBriefRelayHealth(BriefRelayHealthState::Ok);
       std::string next_cursor = poll->next_cursor;
       if (poll->messages.size() > kMaxPollBatchMessages) {
         log().warning << "PollInbox batch too large n=" << poll->messages.size() << " — skip advance";
@@ -2195,115 +2188,116 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
       auto messages = std::move(poll->messages);
       const std::string local_account_id = identity->account_id;
       if (!messages.empty()) {
-        log().info << "PollInbox ok n=" << messages.size()
-                      << " cursor_advanced=" << (next_cursor.empty() ? 0 : 1);
+        log().info << "PollInbox ok n=" << messages.size() << " cursor_advanced=" << (next_cursor.empty() ? 0 : 1);
       }
 
       // Front of IO so ingest is not stuck behind other long work; HTTP already finished.
-      AppRuntime::PostWorkerCritical( [this, local_account_id, local_relay_id = identity->relay_user_id,
-                                                         messages = std::move(messages)]() mutable {
-        bool changed = false;
-        std::vector<BackgroundNotice> background_notices;
-        std::vector<std::pair<std::string, std::string>> inbound_messages;
-        for (const RelayEnvelope& envelope : messages) {
-          const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
-          routes_.RememberFromEnvelope(envelope, outcome.sender_verified);
-          FollowUpMembershipAfterIngest(groups_, outcome);
-          if (outcome.from_sibling && on_sibling_notice_) {
-            on_sibling_notice_();
-          }
-          MaybeSurfaceReceiveFailure(outcome);
-          if (outcome.missing_copy) {
-            NoteMissingCopy(*outcome.missing_copy);
-          }
-          if (outcome.show_card_to) {
-            ShowCardTo(*outcome.show_card_to);
-          }
-          if (outcome.replay_held_from) {
-            ReplayHeldControl(*outcome.replay_held_from);
-          }
-          if (outcome.decision == IngestDecision::AcceptGap) {
-            const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
-            auto thread = store_.FindDirectThread(inbound_target);
-            if (thread && *thread) {
-              MaybeRepairGap((*thread)->id, envelope);
-            }
-          }
-          if (auto notice = NoticeGroupDissolved(outcome)) {
-            background_notices.push_back(std::move(*notice));
-          }
-          if (!outcome.persisted) {
-            continue;
-          }
-          changed = true;
-          if (outcome.thread_id.empty()) {
-            continue;
-          }
-          const std::string& resolved_thread_id = outcome.thread_id;
-          if (outcome.suppress_inbox_chrome) {
-            // Call MediaKey / SFU / roster — apply side effects only; do not bump sidebar/unread. A sibling's sent
-            // attachment still has its bytes fetched, as a received one does.
-            if (outcome.sibling_copy) {
+      AppRuntime::PostWorkerCritical(
+          [this, local_account_id, local_relay_id = identity->relay_user_id, messages = std::move(messages)]() mutable {
+            bool changed = false;
+            std::vector<BackgroundNotice> background_notices;
+            std::vector<std::pair<std::string, std::string>> inbound_messages;
+            for (const RelayEnvelope& envelope : messages) {
+              const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
+              routes_.RememberFromEnvelope(envelope, outcome.sender_verified);
+              FollowUpMembershipAfterIngest(groups_, outcome);
+              if (outcome.from_sibling && on_sibling_notice_) {
+                on_sibling_notice_();
+              }
+              MaybeSurfaceReceiveFailure(outcome);
+              if (outcome.missing_copy) {
+                NoteMissingCopy(*outcome.missing_copy);
+              }
+              if (outcome.show_card_to) {
+                ShowCardTo(*outcome.show_card_to);
+              }
+              if (outcome.replay_held_from) {
+                ReplayHeldControl(*outcome.replay_held_from);
+              }
+              if (outcome.decision == IngestDecision::AcceptGap) {
+                const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
+                auto thread = store_.FindDirectThread(inbound_target);
+                if (thread && *thread) {
+                  MaybeRepairGap((*thread)->id, envelope);
+                }
+              }
+              if (auto notice = NoticeGroupDissolved(outcome)) {
+                background_notices.push_back(std::move(*notice));
+              }
+              if (!outcome.persisted) {
+                continue;
+              }
+              changed = true;
+              if (outcome.thread_id.empty()) {
+                continue;
+              }
+              const std::string& resolved_thread_id = outcome.thread_id;
+              if (outcome.suppress_inbox_chrome) {
+                // Call MediaKey / SFU / roster — apply side effects only; do not bump sidebar/unread. A sibling's sent
+                // attachment still has its bytes fetched, as a received one does.
+                if (outcome.sibling_copy) {
+                  MaybeEnqueueAttachmentDownload(outcome);
+                }
+                if (auto notice = NoteEventAboutUs(outcome)) {
+                  background_notices.push_back(std::move(*notice));
+                }
+                continue;
+              }
+              std::optional<std::string> preview;
+              if (outcome.persisted_message) {
+                preview = outcome.persisted_message->text;
+              }
+              inbox_.OnInboundMessagePersisted(resolved_thread_id, preview, AppLifecycle::IsUserAttentive());
+              for (auto& id : NoteInbound(envelope.message_id, outcome)) {
+                inbound_messages.emplace_back(std::move(id), resolved_thread_id);
+              }
               MaybeEnqueueAttachmentDownload(outcome);
-            }
-            if (auto notice = NoteEventAboutUs(outcome)) {
-              background_notices.push_back(std::move(*notice));
-            }
-            continue;
-          }
-          std::optional<std::string> preview;
-          if (outcome.persisted_message) {
-            preview = outcome.persisted_message->text;
-          }
-          inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
-          inbound_messages.emplace_back(envelope.message_id, resolved_thread_id);
-          MaybeEnqueueAttachmentDownload(outcome);
-          NoteMention(outcome, local_account_id);
-          if (auto notice = BackgroundNoticeFor(outcome, local_account_id)) {
-            background_notices.push_back(std::move(*notice));
-          }
-        }
-
-        if (!relay_cursor_.empty() && relay_) {
-          // Ack off Browser IO — another HTTP round-trip must not stall the queue.
-          const std::string ack_cursor = relay_cursor_;
-          const std::string ack_user = local_relay_id;
-          IRelayClient* relay = relay_;
-          AppRuntime::PostWorkerNormal([relay, ack_user, ack_cursor]() {
-            if (!relay) {
-              return;
-            }
-            auto ack = relay->AckInbox(ack_user, ack_cursor);
-            if (!ack) {
-              logging::getLogger("MeshDeliveryOrchestrator").warning
-                  << "Relay inbox ack failed: " << ack.error().message;
-            }
-          });
-        }
-
-        if (changed && on_messages_changed_) {
-          AppRuntime::PostUI([this]() { on_messages_changed_(); });
-        }
-        if (!inbound_messages.empty() && on_inbound_message_) {
-          AppRuntime::PostUI([this, inbound = std::move(inbound_messages)]() {
-            for (const auto& [message_id, thread_id] : inbound) {
-              if (on_inbound_message_) {
-                on_inbound_message_(message_id, thread_id);
+              NoteMention(outcome, local_account_id);
+              if (auto notice = BackgroundNoticeFor(outcome, local_account_id)) {
+                background_notices.push_back(std::move(*notice));
               }
             }
+
+            if (!relay_cursor_.empty() && relay_) {
+              // Ack off Browser IO — another HTTP round-trip must not stall the queue.
+              const std::string ack_cursor = relay_cursor_;
+              const std::string ack_user = local_relay_id;
+              IRelayClient* relay = relay_;
+              AppRuntime::PostWorkerNormal([relay, ack_user, ack_cursor]() {
+                if (!relay) {
+                  return;
+                }
+                auto ack = relay->AckInbox(ack_user, ack_cursor);
+                if (!ack) {
+                  logging::getLogger("MeshDeliveryOrchestrator").warning << "Relay inbox ack failed: "
+                                                                         << ack.error().message;
+                }
+              });
+            }
+
+            if (changed && on_messages_changed_) {
+              AppRuntime::PostUI([this]() { on_messages_changed_(); });
+            }
+            if (!inbound_messages.empty()) {
+              // The handler is checked on the UI thread: it may be wired (after unlock) between here and there.
+              AppRuntime::PostUI([this, inbound = std::move(inbound_messages)]() {
+                if (!on_inbound_message_) {
+                  return;
+                }
+                for (const auto& [message_id, thread_id] : inbound) {
+                  on_inbound_message_(message_id, thread_id);
+                }
+              });
+            }
+            if (!background_notices.empty() && on_background_unread_) {
+              AppRuntime::PostUI([this, notices = std::move(background_notices)]() mutable {
+                for (auto& notice : notices) {
+                  on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id),
+                                        notice.mentions_us);
+                }
+              });
+            }
           });
-        }
-        if (!background_notices.empty() && on_background_unread_) {
-          AppRuntime::PostUI(
-                                  [this, notices = std::move(background_notices)]() mutable {
-                                    for (auto& notice : notices) {
-                                      on_background_unread_(std::move(notice.title),
-                                                            std::move(notice.body),
-                                                            std::move(notice.thread_id), notice.mentions_us);
-                                    }
-                                  });
-        }
-      });
     }
   });
 }
@@ -2315,10 +2309,10 @@ void MeshDeliveryOrchestrator::SetAttachmentDownloads(AttachmentFetchWorkflow* d
   }
 }
 
-void MeshDeliveryOrchestrator::AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
-                                                   std::function<void(std::function<void()>)> amp_worker_post,
-                                                   std::function<void(std::function<void()>)> amp_post_io,
-                                                   std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after) {
+void MeshDeliveryOrchestrator::AttachAmpTransports(
+    mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
+    std::function<void(std::function<void()>)> amp_worker_post, std::function<void(std::function<void()>)> amp_post_io,
+    std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after) {
   if (!transports_.Attach(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
                           std::move(amp_post_after))) {
     return;
@@ -2331,9 +2325,8 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(mesh::IChatPeerLinks* amp_lin
   // mesh that comes up again later (network change, foreground) does not repeat it for the same card (#391:
   // one notice per bring-up, each refused and retried).
   AppRuntime::PostWorkerNormal([this]() {
-    if (auto card = own_cards_.Card(util::NowUnixMs()); card && card->devices.size() > 1 &&
-                                                        siblings_told_card_at_.exchange(card->issued_at) !=
-                                                            card->issued_at) {
+    if (auto card = own_cards_.Card(util::NowUnixMs());
+        card && card->devices.size() > 1 && siblings_told_card_at_.exchange(card->issued_at) != card->issued_at) {
       NotifySiblings();
     }
   });
@@ -2374,6 +2367,24 @@ void MeshDeliveryOrchestrator::SetOnDeliveryNotice(std::function<void(const Deli
   on_delivery_notice_ = std::move(callback);
 }
 
+std::vector<std::string> MeshDeliveryOrchestrator::NoteInbound(const std::string& message_id,
+                                                               const RelayReceiveOutcome& outcome) {
+  std::vector<std::string> ids{message_id};
+  inbound_threads_.Remember(message_id, outcome.thread_id);
+  if (outcome.persisted_message) {
+    // A missed 1:1 call reaches the callee as the caller's summary; the call alert's tap names the call id.
+    const auto payload = TryParseObject(outcome.persisted_message->payload_json);
+    if (payload && payload->getString("control_type") == std::optional<std::string>("call_summary")) {
+      const auto detail = TryParseObject(payload->getString("detail").value_or(""));
+      if (auto call_id = detail ? detail->getString("call_id") : std::nullopt; call_id && !call_id->empty()) {
+        inbound_threads_.Remember(*call_id, outcome.thread_id);
+        ids.push_back(std::move(*call_id));
+      }
+    }
+  }
+  return ids;
+}
+
 void MeshDeliveryOrchestrator::SetOnInboundMessage(std::function<void(std::string, std::string)> callback) {
   on_inbound_message_ = std::move(callback);
 }
@@ -2388,15 +2399,15 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
   if (outcome.about_us == RelayReceiveOutcome::AboutUs::None || outcome.about_us_group_thread_id.empty()) {
     return std::nullopt;
   }
-  const std::string text = Localized(outcome.about_us == RelayReceiveOutcome::AboutUs::Removed
-                                  ? "chat.group_event.you_removed"
-                                  : "chat.group_event.full");
-  inbox_.OnInboundMessagePersisted(outcome.about_us_group_thread_id, text);
+  const std::string text =
+      Localized(outcome.about_us == RelayReceiveOutcome::AboutUs::Removed ? "chat.group_event.you_removed"
+                                                                          : "chat.group_event.full");
+  inbox_.OnInboundMessagePersisted(outcome.about_us_group_thread_id, text, AppLifecycle::IsUserAttentive());
   if (AppLifecycle::IsUserAttentive()) {
     return std::nullopt;
   }
   BackgroundNotice notice;
-  notice.title = "New message";
+  notice.title = Localized("notification.new_message");
   if (auto thread = store_.GetThread(outcome.about_us_group_thread_id); thread && *thread) {
     if (std::string label = inbox_.ResolveThreadLabel(**thread).title; !label.empty()) {
       notice.title = std::move(label);
@@ -2415,17 +2426,17 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
     return std::nullopt;
   }
   BackgroundNotice notice;
-  notice.title = "New message";
+  notice.title = Localized("notification.new_message");
   if (auto thread = store_.GetThread(outcome.thread_id); thread && *thread) {
     if (std::string label = inbox_.ResolveThreadLabel(**thread).title; !label.empty()) {
       notice.title = std::move(label);
     }
   }
   const std::string preview = outcome.persisted_message ? outcome.persisted_message->text : std::string();
-  notice.body = preview.empty() ? "You have a new message" : preview;
+  notice.body = preview.empty() ? Localized("notification.new_message_body") : preview;
   notice.thread_id = outcome.thread_id;
-  notice.mentions_us = outcome.persisted_message &&
-                       InboundMentionsUs(outcome.thread_id, *outcome.persisted_message, local_account);
+  notice.mentions_us =
+      outcome.persisted_message && InboundMentionsUs(outcome.thread_id, *outcome.persisted_message, local_account);
   return notice;
 }
 
@@ -2441,12 +2452,12 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
     const std::string& thread_id) {
   // In the reader's language: the preview is kept as written, the notice shown once.
   const std::string text = Localized("chat.group.dissolved_preview");
-  inbox_.OnInboundMessagePersisted(thread_id, text);
+  inbox_.OnInboundMessagePersisted(thread_id, text, AppLifecycle::IsUserAttentive());
   if (AppLifecycle::IsUserAttentive()) {
     return std::nullopt;
   }
   BackgroundNotice notice;
-  notice.title = "New message";
+  notice.title = Localized("notification.new_message");
   if (auto thread = store_.GetThread(thread_id); thread && *thread) {
     if (std::string label = inbox_.ResolveThreadLabel(**thread).title; !label.empty()) {
       notice.title = std::move(label);
@@ -2497,7 +2508,9 @@ void MeshDeliveryOrchestrator::NoteMention(const RelayReceiveOutcome& outcome, c
                                          .held_at_ms = util::NowUnixMs()});
     return;
   }
-  if (verdict == MentionVerdict::Us && mentions_ && inbox_.ActiveThreadId() != outcome.thread_id) {
+  // Same rule as the unread count: the open chat counts too when nobody is looking at it.
+  if (verdict == MentionVerdict::Us && mentions_ &&
+      CountsAsUnread(outcome.thread_id, inbox_.ActiveThreadId(), AppLifecycle::IsUserAttentive())) {
     if (auto marked = mentions_->Add(outcome.thread_id, message.id, message.timestamp); !marked) {
       log().warning << "mention not marked: " << marked.error().message;
     }
@@ -2526,7 +2539,7 @@ void MeshDeliveryOrchestrator::DecideHeldMentions(const std::string& group_id) {
       continue;
     }
     if (verdict != MentionVerdict::Us || now_ms - held.held_at_ms >= kHeldMentionMaxAgeMs) {
-      continue;  // not ours after all, or too late to alert (G015 limit 3)
+      continue; // not ours after all, or too late to alert (G015 limit 3)
     }
     RelayReceiveOutcome decided;
     decided.persisted = true;

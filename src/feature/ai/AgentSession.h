@@ -85,7 +85,7 @@ struct AgentEvent {
   /** AssistantReady: false only for blocks the host built itself; the GUI filters privileged payloads of the rest (PB-007). */
   bool from_model = true;
   /** Error: `thread_id` / `entry_id` name the turn it ended (Home's turn: no thread); both empty outside a turn. */
-  bool retryable = false;             // Error
+  bool retryable = false; // Error
   /** Error of an image turn the GUI words itself: "image_too_large" (HTTP 413) or "image_unsupported" (HTTP 400). */
   std::string error_kind;
   std::string approval_id;                                   // ApprovalClosed
@@ -252,7 +252,8 @@ private:
   struct Impl;
 
   void BeginStreamTurn();
-  SubmitOutcome SubmitHomeTurn(const std::string& user_text, std::optional<std::string> user_payload, bool explain_only);
+  SubmitOutcome SubmitHomeTurn(const std::string& user_text, std::optional<std::string> user_payload,
+                               bool explain_only);
   /** Runs a step of a turn where turns run (AgentSessionShared::turn_pool). */
   static void PostTurnTask(const std::shared_ptr<Impl>& state, std::function<void()> task);
   static void ConfigureOnIO(const std::shared_ptr<Impl>& state);

@@ -55,4 +55,4 @@ TEST(WorkingSetCodecTest, StripsInlinedPanelActionSuggestions) {
   EXPECT_EQ(cleaned.find("chat-suggestion"), std::string::npos);
 }
 
-}  // namespace
+} // namespace

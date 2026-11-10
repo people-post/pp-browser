@@ -27,15 +27,15 @@ bool IsLiveStatus(const CallMediaStatus status) {
 
 bool IsConnectingStatus(const CallMediaStatus status) {
   switch (status) {
-  case CallMediaStatus::DirectConnecting:
-  case CallMediaStatus::HopWaiting:
-  case CallMediaStatus::HopAttaching:
-  case CallMediaStatus::Migrating:
-  case CallMediaStatus::Reconnecting:
-  case CallMediaStatus::DegradedTxOnly:
-    return true;
-  default:
-    return false;
+    case CallMediaStatus::DirectConnecting:
+    case CallMediaStatus::HopWaiting:
+    case CallMediaStatus::HopAttaching:
+    case CallMediaStatus::Migrating:
+    case CallMediaStatus::Reconnecting:
+    case CallMediaStatus::DegradedTxOnly:
+      return true;
+    default:
+      return false;
   }
 }
 
@@ -51,21 +51,21 @@ bool AllowsHop(const CallMediaStatus status) {
 
 CallArmedPlanner PlannerFor(const CallMediaStatus status) {
   switch (status) {
-  case CallMediaStatus::Deciding:
-    return CallArmedPlanner::Lifecycle;
-  case CallMediaStatus::DirectConnecting:
-  case CallMediaStatus::DirectLive:
-  case CallMediaStatus::DegradedTxOnly:
-  case CallMediaStatus::Reconnecting:
-    return CallArmedPlanner::Bridge;
-  case CallMediaStatus::HopWaiting:
-  case CallMediaStatus::HopAttaching:
-  case CallMediaStatus::HopLive:
-  case CallMediaStatus::Migrating:
-    return CallArmedPlanner::Topology;
-  case CallMediaStatus::None:
-  case CallMediaStatus::Failed:
-    return CallArmedPlanner::None;
+    case CallMediaStatus::Deciding:
+      return CallArmedPlanner::Lifecycle;
+    case CallMediaStatus::DirectConnecting:
+    case CallMediaStatus::DirectLive:
+    case CallMediaStatus::DegradedTxOnly:
+    case CallMediaStatus::Reconnecting:
+      return CallArmedPlanner::Bridge;
+    case CallMediaStatus::HopWaiting:
+    case CallMediaStatus::HopAttaching:
+    case CallMediaStatus::HopLive:
+    case CallMediaStatus::Migrating:
+      return CallArmedPlanner::Topology;
+    case CallMediaStatus::None:
+    case CallMediaStatus::Failed:
+      return CallArmedPlanner::None;
   }
   return CallArmedPlanner::None;
 }
@@ -74,16 +74,16 @@ CallArmedPlanner PlannerFor(const CallMediaStatus status) {
 
 const char* LiveCallStateName(const LiveCallState state) {
   switch (state) {
-  case LiveCallState::Calling:
-    return "Calling";
-  case LiveCallState::Ringing:
-    return "Ringing";
-  case LiveCallState::Accepting:
-    return "Accepting";
-  case LiveCallState::Joined:
-    return "Joined";
-  case LiveCallState::Ended:
-    return "Ended";
+    case LiveCallState::Calling:
+      return "Calling";
+    case LiveCallState::Ringing:
+      return "Ringing";
+    case LiveCallState::Accepting:
+      return "Accepting";
+    case LiveCallState::Joined:
+      return "Joined";
+    case LiveCallState::Ended:
+      return "Ended";
   }
   return "?";
 }
@@ -93,58 +93,58 @@ CallOutcome SummaryOutcome(const bool answered, const LiveCallEndReason reason) 
     return CallOutcome::Completed;
   }
   switch (reason) {
-  case LiveCallEndReason::DeclinedByPeer:
-    return CallOutcome::Declined;
-  case LiveCallEndReason::Unanswered:
-  case LiveCallEndReason::Expired:
-    return CallOutcome::Missed;
-  case LiveCallEndReason::LocalLeave:
-  case LiveCallEndReason::RemoteEnded:
-  case LiveCallEndReason::Superseded:
-  case LiveCallEndReason::Declined:
-    return CallOutcome::Cancelled;
-  case LiveCallEndReason::None:
-  case LiveCallEndReason::StartFailed:
-  case LiveCallEndReason::MediaUnavailable:
-  case LiveCallEndReason::Shutdown:
-  case LiveCallEndReason::Orphaned:
-  case LiveCallEndReason::Merged:
-  case LiveCallEndReason::AnsweredElsewhere:
-    return CallOutcome::Failed;
+    case LiveCallEndReason::DeclinedByPeer:
+      return CallOutcome::Declined;
+    case LiveCallEndReason::Unanswered:
+    case LiveCallEndReason::Expired:
+      return CallOutcome::Missed;
+    case LiveCallEndReason::LocalLeave:
+    case LiveCallEndReason::RemoteEnded:
+    case LiveCallEndReason::Superseded:
+    case LiveCallEndReason::Declined:
+      return CallOutcome::Cancelled;
+    case LiveCallEndReason::None:
+    case LiveCallEndReason::StartFailed:
+    case LiveCallEndReason::MediaUnavailable:
+    case LiveCallEndReason::Shutdown:
+    case LiveCallEndReason::Orphaned:
+    case LiveCallEndReason::Merged:
+    case LiveCallEndReason::AnsweredElsewhere:
+      return CallOutcome::Failed;
   }
   return CallOutcome::Failed;
 }
 
 const char* LiveCallEndReasonName(const LiveCallEndReason reason) {
   switch (reason) {
-  case LiveCallEndReason::None:
-    return "None";
-  case LiveCallEndReason::LocalLeave:
-    return "LocalLeave";
-  case LiveCallEndReason::RemoteEnded:
-    return "RemoteEnded";
-  case LiveCallEndReason::Declined:
-    return "Declined";
-  case LiveCallEndReason::DeclinedByPeer:
-    return "DeclinedByPeer";
-  case LiveCallEndReason::Expired:
-    return "Expired";
-  case LiveCallEndReason::Unanswered:
-    return "Unanswered";
-  case LiveCallEndReason::Superseded:
-    return "Superseded";
-  case LiveCallEndReason::StartFailed:
-    return "StartFailed";
-  case LiveCallEndReason::MediaUnavailable:
-    return "MediaUnavailable";
-  case LiveCallEndReason::Shutdown:
-    return "Shutdown";
-  case LiveCallEndReason::Orphaned:
-    return "Orphaned";
-  case LiveCallEndReason::Merged:
-    return "Merged";
-  case LiveCallEndReason::AnsweredElsewhere:
-    return "AnsweredElsewhere";
+    case LiveCallEndReason::None:
+      return "None";
+    case LiveCallEndReason::LocalLeave:
+      return "LocalLeave";
+    case LiveCallEndReason::RemoteEnded:
+      return "RemoteEnded";
+    case LiveCallEndReason::Declined:
+      return "Declined";
+    case LiveCallEndReason::DeclinedByPeer:
+      return "DeclinedByPeer";
+    case LiveCallEndReason::Expired:
+      return "Expired";
+    case LiveCallEndReason::Unanswered:
+      return "Unanswered";
+    case LiveCallEndReason::Superseded:
+      return "Superseded";
+    case LiveCallEndReason::StartFailed:
+      return "StartFailed";
+    case LiveCallEndReason::MediaUnavailable:
+      return "MediaUnavailable";
+    case LiveCallEndReason::Shutdown:
+      return "Shutdown";
+    case LiveCallEndReason::Orphaned:
+      return "Orphaned";
+    case LiveCallEndReason::Merged:
+      return "Merged";
+    case LiveCallEndReason::AnsweredElsewhere:
+      return "AnsweredElsewhere";
   }
   return "?";
 }
@@ -156,15 +156,15 @@ bool LiveCall::EndedByPeer() const {
 
 CallPhase LiveCall::Phase() const {
   switch (state_) {
-  case LiveCallState::Ringing:
-    return CallPhase::Ringing;
-  case LiveCallState::Accepting:
-    return CallPhase::Accepting;
-  case LiveCallState::Ended:
-    return CallPhase::Idle;
-  case LiveCallState::Calling:
-  case LiveCallState::Joined:
-    break;
+    case LiveCallState::Ringing:
+      return CallPhase::Ringing;
+    case LiveCallState::Accepting:
+      return CallPhase::Accepting;
+    case LiveCallState::Ended:
+      return CallPhase::Idle;
+    case LiveCallState::Calling:
+    case LiveCallState::Joined:
+      break;
   }
   if (progress_.status == CallMediaStatus::Failed) {
     return CallPhase::ConnectFailed;
@@ -173,7 +173,7 @@ CallPhase LiveCall::Phase() const {
     return CallPhase::InCall;
   }
   if (state_ == LiveCallState::Calling) {
-    return CallPhase::OutboundCalling;  // nobody answered yet
+    return CallPhase::OutboundCalling; // nobody answered yet
   }
   if (progress_.key_pending) {
     return CallPhase::MediaPending;
@@ -241,7 +241,7 @@ const LiveCall* LiveCalls::LastEnded() const {
 
 const LiveCall* LiveCalls::LastEndedByPeer() const {
   const LiveCall* call = last_ended_by_peer_.empty() ? nullptr : Find(last_ended_by_peer_);
-  return call && call->EndedByPeer() ? call : nullptr;  // re-admitted or pruned: no news
+  return call && call->EndedByPeer() ? call : nullptr; // re-admitted or pruned: no news
 }
 
 const LiveCall* LiveCalls::Shown() const {
@@ -353,7 +353,7 @@ void LiveCalls::SetStatus(LiveCall& call, const CallMediaStatus next, const char
   const CallMediaStatus prev = progress.status;
   const CallPhase prev_phase = call.Phase();
   if (next == CallMediaStatus::Deciding && prev != CallMediaStatus::Deciding) {
-    ++media_cancel_gen_;  // a new path decision: late work for the previous one aborts
+    ++media_cancel_gen_; // a new path decision: late work for the previous one aborts
   }
   progress.status = next;
   // The status names its path: a Hop status puts the call on the hop for good; a Direct one decides it.
@@ -472,13 +472,13 @@ void LiveCalls::NoteDirectHandedToHop(const std::string& call_id) {
     return;
   }
   switch (call->progress_.status) {
-  case CallMediaStatus::HopWaiting:
-  case CallMediaStatus::HopAttaching:
-  case CallMediaStatus::HopLive:
-  case CallMediaStatus::Migrating:
-    return;  // the hop's own progress owns the status
-  default:
-    SetStatus(*call, CallMediaStatus::HopWaiting, "DirectHandedToHop");
+    case CallMediaStatus::HopWaiting:
+    case CallMediaStatus::HopAttaching:
+    case CallMediaStatus::HopLive:
+    case CallMediaStatus::Migrating:
+      return; // the hop's own progress owns the status
+    default:
+      SetStatus(*call, CallMediaStatus::HopWaiting, "DirectHandedToHop");
   }
 }
 
@@ -488,13 +488,19 @@ void LiveCalls::NoteMediaFailed(const std::string& call_id) {
   }
 }
 
+void LiveCalls::NoteMediaDropped(const std::string& call_id) {
+  if (LiveCall* call = Resolve(call_id)) {
+    SetStatus(*call, CallMediaStatus::Failed, "Dropped");
+  }
+}
+
 LiveCall& LiveCalls::AdmitPlaced(const std::string& call_id, const std::vector<std::string>& peers) {
   return Admit(call_id, LiveCallOrigin::Placed, LiveCallState::Calling, peers);
 }
 
 LiveCall& LiveCalls::AdmitInvited(const std::string& call_id, const std::vector<std::string>& peers) {
   if (LiveCall* open = Find(call_id); open && open->IsOpen()) {
-    return *open;  // redelivered invite
+    return *open; // redelivered invite
   }
   return Admit(call_id, LiveCallOrigin::Invited, LiveCallState::Ringing, peers);
 }
@@ -592,7 +598,7 @@ void LiveCalls::Close(const std::string& call_id, const LiveCallEndReason reason
   call->state_at_close_ = call->state_;
   call->state_ = LiveCallState::Ended;
   call->end_reason_ = reason;
-  ++media_cancel_gen_;  // late path work for the closed call aborts
+  ++media_cancel_gen_; // late path work for the closed call aborts
   if (call->EndedByPeer()) {
     last_ended_by_peer_ = call_id;
   }

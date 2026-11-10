@@ -90,7 +90,7 @@ void BroadcastParticipant::OnMeshServicesStarted(ConversationsHub& hub) {
 
 void BroadcastParticipant::OnMeshStopping(const std::function<void()>&) {
   Reset();
-  services_.reset();  // removes its protocol handlers while the mesh is still up
+  services_.reset(); // removes its protocol handlers while the mesh is still up
 }
 
 void BroadcastParticipant::OnShutdown() {
@@ -99,8 +99,8 @@ void BroadcastParticipant::OnShutdown() {
 }
 
 void BroadcastParticipant::Reset() {
-  deferred_.Invalidate();  // announces still queued for UI drop
-  broadcast_.reset();      // its workflows end on the media-sessions owner (the destructor waits)
+  deferred_.Invalidate(); // announces still queued for UI drop
+  broadcast_.reset();     // its workflows end on the media-sessions owner (the destructor waits)
 }
 
 void BroadcastParticipant::Rebuild(ConversationsHub& hub) {
@@ -221,8 +221,7 @@ Roe<ThreadMessage> BroadcastParticipant::ReplyToAnnouncePublisher(const std::str
 }
 
 Roe<ThreadMessage> BroadcastParticipant::ReplyToAnnounceOverlay(const std::string& tip_peer_id,
-                                                                const std::string& join_handle,
-                                                                const std::string& text,
+                                                                const std::string& join_handle, const std::string& text,
                                                                 const std::string& viewer_msg_id) {
   if (tip_peer_id.empty()) {
     return Error("Missing announce publisher peer_id");

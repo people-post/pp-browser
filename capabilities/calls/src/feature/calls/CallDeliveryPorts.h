@@ -1,7 +1,6 @@
 #pragma once
 
 #include "lib/delivery/SendRelayOptions.h"
-#include "lib/delivery/E2ePublicSessionLogic.h"
 #include "lib/delivery/ControlSend.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/thread/ThreadTypes.h"
@@ -24,12 +23,9 @@ namespace pbr {
 struct CallDeliveryPorts {
   /**
    * Call signaling to a peer on the control lane (no thread, never a transcript row; a copy per device of the
-   * peer's, M024). `key_init_b64`: the AutoKey init of the account pair's session an old-form media-key wrap just
-   * opened — it rides an account copy only. `urgent`: a call invite — the relay wakes the peer as for an incoming
-   * call (P012).
+   * peer's, M024). `urgent`: a call invite — the relay wakes the peer as for an incoming call (P012).
    */
-  std::function<pp::Roe<void>(const std::string& peer_identity, const ThreadMessage& control,
-                              const std::optional<std::string>& key_init_b64, bool urgent)>
+  std::function<pp::Roe<void>(const std::string& peer_identity, const ThreadMessage& control, bool urgent)>
       send_control;
   /**
    * Call signaling to many peers at once (V058 2): each resolved and sealed for its pair off the calls loop, in
@@ -56,10 +52,15 @@ struct CallDeliveryPorts {
   std::function<void(bool force)> sync_inbox_from_wake;
   /**
    * The account pair's e2e_public session key, for the media key's old form (AutoKey if missing; M024 bridge — gone
-   * with kMediaKeyAccountWrapBridge). When `first_message_key_init_b64` is set, it rides the next control-lane send
-   * to that peer that goes as the account copy.
+   * with kMediaKeyAccountWrapBridge). An opener it made rides the lane's account copies to that peer until confirmed
+   * (delivery's own doing).
    */
-  std::function<pp::Roe<EnsuredE2ePublicSessionKey>(const std::string& peer_identity)> ensure_peer_session_key;
+  std::function<pp::Roe<ByteVector>(const std::string& peer_identity)> ensure_peer_session_key;
+  /**
+   * The same key when a session with the peer is held — never opened: reading the media key's old form (a session
+   * opened then could not open what the peer wrapped). Gone with kMediaKeyAccountWrapRead.
+   */
+  std::function<pp::Roe<ByteVector>(const std::string& peer_identity)> held_peer_session_key;
   /**
    * After the last local call ends — flush inbox + TailSync that were deferred while
    * HasActiveLocalCall. No-op while another call is still ActiveLocalCall.
@@ -77,16 +78,14 @@ struct CallDeliveryPorts {
  * host without a control lane of its own (the call probe, tests).
  */
 inline auto ControlSendsOneByOne(
-    std::function<pp::Roe<void>(const std::string& peer_identity, const ThreadMessage& control,
-                                const std::optional<std::string>& key_init_b64, bool urgent)>
+    std::function<pp::Roe<void>(const std::string& peer_identity, const ThreadMessage& control, bool urgent)>
         send_control) {
   return [send_control = std::move(send_control)](std::vector<ControlSend> sends, ControlSendsDone done) {
     std::vector<ControlSendResult> results;
     results.reserve(sends.size());
     for (const ControlSend& send : sends) {
-      results.push_back(
-          ControlSendResult{.peer_identity = send.peer_identity,
-                            .queued = send_control(send.peer_identity, send.control, send.key_init_b64, send.urgent)});
+      results.push_back(ControlSendResult{.peer_identity = send.peer_identity,
+                                          .queued = send_control(send.peer_identity, send.control, send.urgent)});
     }
     if (done) {
       done(std::move(results));

@@ -55,18 +55,18 @@ uint8_t EnvelopeSigner::RouteKindByte(const RelayRoute& route) {
 
 uint8_t EnvelopeSigner::ChannelByte(const RelayRoute& route) {
   if (route.kind == kRelayRouteControl) {
-    return 1;  // always e2e_public
+    return 1; // always e2e_public
   }
   if (route.kind != kRelayRouteDirect) {
     return 0xFF;
   }
   switch (route.channel) {
-  case ThreadChannel::E2e:
-    return 0;
-  case ThreadChannel::E2ePublic:
-    return 1;
-  case ThreadChannel::None:
-    return 0xFF;
+    case ThreadChannel::E2e:
+      return 0;
+    case ThreadChannel::E2ePublic:
+      return 1;
+    case ThreadChannel::None:
+      return 0xFF;
   }
   return 0xFF;
 }

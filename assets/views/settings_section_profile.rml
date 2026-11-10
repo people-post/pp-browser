@@ -1,7 +1,8 @@
       <div class="settings-section settings-section--grouped stack">
         <div class="group-card group-card--pad">
         <div class="me-profile-avatar-row row">
-          <div class="me-profile-avatar-frame" data-event-click="pick_profile_icon()"
+          <div class="me-profile-avatar-wrap">
+          <div class="me-profile-avatar-frame" data-event-click="tap_profile_avatar()"
                data-class-me-profile-avatar-frame--disabled="profile_icon_uploading"
                data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
                data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
@@ -14,17 +15,15 @@
             <img class="me-profile-avatar-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
             <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
           </div>
-          <button class="btn btn-secondary me-profile-avatar-btn" type="button"
-                  data-event-click="pick_profile_icon()"
+          <div class="me-profile-avatar-uploading" data-if="profile_icon_uploading">
+            <p class="me-profile-avatar-uploading-text">{{i18n:settings.profile.photo_uploading}}</p>
+          </div>
+          <!-- The camera badge opens the source menu (camera, library, remove); the only visible way to change the photo. -->
+          <button class="me-profile-avatar-badge" type="button" data-event-click="pick_profile_icon()"
                   data-attrif-disabled="profile_icon_uploading">
-            {{i18n:settings.profile.change_photo}}
+            <svg src="../icons/v2/camera.svg" width="16" height="16"></svg>
           </button>
-          <button class="btn btn-secondary me-profile-avatar-btn" type="button"
-                  data-if="profile_show_clear_icon"
-                  data-event-click="clear_profile_icon()"
-                  data-attrif-disabled="profile_icon_uploading">
-            {{i18n:settings.profile.remove_photo}}
-          </button>
+          </div>
         </div>
         </div>
         <div class="group-card">
@@ -103,6 +102,14 @@
           </div>
         </div>
         <p class="text muted settings-help group-foot">{{i18n:settings.notifications.help}}</p>
+        <div class="group-card" data-if="call_banner_tip_available">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label group-row-text settings-row-sentence">{{i18n:settings.notifications.banner_tip}}</span>
+              <button class="btn btn-secondary" type="button" data-event-click="open_notification_settings()">{{i18n:settings.notifications.banner_tip.action}}</button>
+            </span>
+          </div>
+        </div>
         <div class="group-card">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">

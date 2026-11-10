@@ -4,8 +4,7 @@
 
 namespace pbr {
 
-std::optional<std::string> CallSessionLogic::SelectEpochCoordinator(
-    const std::vector<std::string>& joined_identities) {
+std::optional<std::string> CallSessionLogic::SelectEpochCoordinator(const std::vector<std::string>& joined_identities) {
   std::optional<std::string> best;
   for (const std::string& identity : joined_identities) {
     if (identity.empty()) {
@@ -32,21 +31,18 @@ bool CallSessionLogic::IsInviteExpired(const CallInviteDetail& invite, const int
   return now_ms >= *invite.expires_at;
 }
 
-int64_t CallSessionLogic::RelayInviteAgeMs(const int64_t relay_created_at_ms,
-                                           const int64_t relay_server_time_ms) {
+int64_t CallSessionLogic::RelayInviteAgeMs(const int64_t relay_created_at_ms, const int64_t relay_server_time_ms) {
   return relay_server_time_ms - relay_created_at_ms;
 }
 
-int64_t CallSessionLogic::DeltaRelayReceiverMs(const int64_t recv_local_ms,
-                                               const int64_t relay_server_time_ms) {
+int64_t CallSessionLogic::DeltaRelayReceiverMs(const int64_t recv_local_ms, const int64_t relay_server_time_ms) {
   return recv_local_ms - relay_server_time_ms;
 }
 
 bool CallSessionLogic::ShouldDropStaleInvite(const CallInviteDetail& invite, const int64_t now_ms,
                                              const std::optional<int64_t> relay_created_at_ms,
                                              const std::optional<int64_t> relay_server_time_ms) {
-  if (relay_created_at_ms && relay_server_time_ms && *relay_created_at_ms > 0 &&
-      *relay_server_time_ms > 0) {
+  if (relay_created_at_ms && relay_server_time_ms && *relay_created_at_ms > 0 && *relay_server_time_ms > 0) {
     const int64_t age = RelayInviteAgeMs(*relay_created_at_ms, *relay_server_time_ms);
     return age > kDefaultCallInviteTtlMs + kCallInviteRelayAgeSlackMs;
   }
@@ -81,8 +77,8 @@ bool CallSessionLogic::IsGroupCall(const CallSession& session, const size_t offe
   return (session.origin_group_id && !session.origin_group_id->empty()) || offered_participants > 2;
 }
 
-CallSessionState CallSessionLogic::TransitionOnLeave(const CallSessionState current,
-                                                     const size_t remaining_joined, const bool group) {
+CallSessionState CallSessionLogic::TransitionOnLeave(const CallSessionState current, const size_t remaining_joined,
+                                                     const bool group) {
   if (current == CallSessionState::Ended) {
     return CallSessionState::Ended;
   }
@@ -113,8 +109,7 @@ bool CallSessionLogic::ShouldHonorInboundVideoRefresh(const std::string& refresh
                                                       const std::string& refresh_publisher_identity,
                                                       const std::string& sender_identity,
                                                       const std::string& local_identity,
-                                                      const std::string& active_call_id,
-                                                      const bool sender_joined) {
+                                                      const std::string& active_call_id, const bool sender_joined) {
   if (refresh_call_id.empty() || active_call_id.empty() || refresh_call_id != active_call_id) {
     return false;
   }
@@ -127,10 +122,9 @@ bool CallSessionLogic::ShouldHonorInboundVideoRefresh(const std::string& refresh
   return true;
 }
 
-bool CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(const bool outbound_calling,
-                                                         const bool media_active,
-                                                         const int64_t session_created_at_ms,
-                                                         const int64_t now_ms, const int64_t ttl_ms) {
+bool CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(const bool outbound_calling, const bool media_active,
+                                                         const int64_t session_created_at_ms, const int64_t now_ms,
+                                                         const int64_t ttl_ms) {
   if (!outbound_calling || media_active || session_created_at_ms <= 0 || ttl_ms <= 0) {
     return false;
   }
@@ -138,8 +132,8 @@ bool CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(const bool outbound_cal
 }
 
 std::vector<std::string> SelectCallFanoutIdentities(const std::vector<CallParticipant>& participants,
-                                                   const std::string& skip_identity, bool include_joined,
-                                                   bool include_ringing_or_invited) {
+                                                    const std::string& skip_identity, bool include_joined,
+                                                    bool include_ringing_or_invited) {
   std::vector<std::string> out;
   out.reserve(participants.size());
   for (const CallParticipant& row : participants) {
@@ -147,9 +141,8 @@ std::vector<std::string> SelectCallFanoutIdentities(const std::vector<CallPartic
       continue;
     }
     const bool ok_joined = include_joined && row.state == CallParticipantState::Joined;
-    const bool ok_ring =
-        include_ringing_or_invited &&
-        (row.state == CallParticipantState::Ringing || row.state == CallParticipantState::Invited);
+    const bool ok_ring = include_ringing_or_invited &&
+                         (row.state == CallParticipantState::Ringing || row.state == CallParticipantState::Invited);
     if (!ok_joined && !ok_ring) {
       continue;
     }

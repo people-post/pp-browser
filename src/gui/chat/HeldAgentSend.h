@@ -34,9 +34,9 @@ public:
 
   void Hold(Send send, const std::chrono::steady_clock::time_point now) {
     const std::string thread_id = send.thread_id;
-    held_.erase(std::remove_if(held_.begin(), held_.end(),
-                               [&](const Held& held) { return held.send.thread_id == thread_id; }),
-                held_.end());
+    held_.erase(
+        std::remove_if(held_.begin(), held_.end(), [&](const Held& held) { return held.send.thread_id == thread_id; }),
+        held_.end());
     held_.push_back(Held{std::move(send), now + kHeldAgentSendTimeout});
   }
 

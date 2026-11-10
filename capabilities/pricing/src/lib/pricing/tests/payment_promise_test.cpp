@@ -115,8 +115,7 @@ TEST_F(PaymentPromiseTest, AvoidBlocksContactAndStampsReceipt) {
   ASSERT_TRUE(static_cast<bool>(promises.Load()));
   ASSERT_TRUE(static_cast<bool>(promises.Upsert(SamplePromise())));
 
-  auto avoided =
-      PaymentPromiseAvoid::AvoidCounterparty(promises, contacts, "promise:test-1", "account:alice");
+  auto avoided = PaymentPromiseAvoid::AvoidCounterparty(promises, contacts, "promise:test-1", "account:alice");
   ASSERT_TRUE(static_cast<bool>(avoided)) << avoided.error().message;
   EXPECT_TRUE(PaymentPromiseAvoid::ShouldAvoid(promises, contacts, "account:alice", "account:bob"));
 

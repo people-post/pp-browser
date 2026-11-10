@@ -21,13 +21,13 @@ namespace pbr {
  */
 class ShareWord {
 public:
-  consteval ShareWord(const char* text) : text_(text) {  // NOLINT(google-explicit-constructor): the point
+  consteval ShareWord(const char* text) : text_(text) { // NOLINT(google-explicit-constructor): the point
     std::size_t size = 0;
     for (const char* c = text; *c != '\0'; ++c, ++size) {
-      const bool ok = (*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || (*c >= '0' && *c <= '9') ||
-                      *c == '_' || *c == '.' || *c == '-' || *c == ':' || *c == '<' || *c == '>';
+      const bool ok = (*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || (*c >= '0' && *c <= '9') || *c == '_' ||
+                      *c == '.' || *c == '-' || *c == ':' || *c == '<' || *c == '>';
       if (!ok) {
-        throw "ShareWord: letters, digits and _ . - : < > only";  // a compile error: consteval
+        throw "ShareWord: letters, digits and _ . - : < > only"; // a compile error: consteval
       }
     }
     if (size == 0 || size > 48) {

@@ -38,8 +38,10 @@ Roe<ByteVector> HexToBytes(const std::string& hex) {
   out.reserve(hex.size() / 2);
   for (size_t i = 0; i < hex.size(); i += 2) {
     const auto nibble = [](char c) -> int {
-      if (c >= '0' && c <= '9') return c - '0';
-      if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+      if (c >= '0' && c <= '9')
+        return c - '0';
+      if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
       return -1;
     };
     const int hi = nibble(hex[i]);
@@ -265,7 +267,7 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
   }
   const AccountLockerState merged = *stored ? account_locker::MergeForPublish(*state, (*stored)->state) : *state;
   if (*stored && account_locker::StateToJson(merged) == account_locker::StateToJson((*stored)->state)) {
-    return (*stored)->version;  // nothing new: no write
+    return (*stored)->version; // nothing new: no write
   }
   const std::string locker_id = BytesToHex(keys->locker_id);
   const uint64_t version = std::max<uint64_t>(static_cast<uint64_t>(util::NowUnixMs()), HighestSeen(locker_id) + 1);

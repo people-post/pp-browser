@@ -26,8 +26,8 @@ bool PlatformShareText(SDL_Window* window, const std::string& text, const ShareA
       return false; // UIKit refuses a second presentation mid-transition without telling us
     }
     NSString* item = [NSString stringWithUTF8String:text.c_str()];
-    UIActivityViewController* sheet =
-        [[[UIActivityViewController alloc] initWithActivityItems:@[ item ] applicationActivities:nil] autorelease];
+    UIActivityViewController* sheet = [[[UIActivityViewController alloc] initWithActivityItems:@[ item ]
+                                                                         applicationActivities:nil] autorelease];
     // iPad presents this as a popover and needs an anchor: the button (window pixels → points) or the centre.
     if (sheet.popoverPresentationController != nil) {
       const float density = SDL_GetWindowPixelDensity(window) > 0.f ? SDL_GetWindowPixelDensity(window) : 1.f;

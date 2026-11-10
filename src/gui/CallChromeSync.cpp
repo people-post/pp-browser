@@ -49,9 +49,8 @@ CallChromeMode DefaultCallChromeMode(bool show_roster) {
 }
 
 CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const CallChromeLayer& next) {
-  const bool layer_changed = synced.ring_active != next.ring_active ||
-                             synced.in_call_active != next.in_call_active ||
-                             synced.ring_call_id != next.ring_call_id ||
+  const bool layer_changed = synced.ring_active != next.ring_active || synced.in_call_active != next.in_call_active ||
+                             (synced.ring_call_id != next.ring_call_id && !synced.ring_awaiting_invite) ||
                              synced.in_call_id != next.in_call_id;
   if (layer_changed) {
     return CallChromeUpdate::Remount;
@@ -73,21 +72,22 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
       synced.in_call_spotlight_fill != next.in_call_spotlight_fill ||
       synced.in_call_minimized_side != next.in_call_minimized_side ||
       synced.in_call_minimized_y_permille != next.in_call_minimized_y_permille ||
+      synced.in_call_minimized_tucked != next.in_call_minimized_tucked ||
       synced.ring_show_pricing != next.ring_show_pricing ||
       synced.ring_accept_charge_enabled != next.ring_accept_charge_enabled) {
     return CallChromeUpdate::Remount;
   }
 
-  // The phone page writes these into its markup (ShellCallChromeRml): the story's steps, the failure page, names and
+  // The phone page writes these into its markup (ShellCallChromeRml): the story's shape (not the stage, words or scroll:
+  // those are bound, so a step advance keeps the pair's spark and the spinner running), the failure page, names and
   // avatars, and the sheet's lines while it is open.
-  if (synced.phone != next.phone || synced.ring_phone_title != next.ring_phone_title ||
-      synced.ring_phone_subtitle != next.ring_phone_subtitle || synced.ring_avatar != next.ring_avatar ||
-      synced.in_call_phone_title != next.in_call_phone_title || synced.in_call_video != next.in_call_video ||
-      synced.in_call_avatars != next.in_call_avatars || synced.in_call_phone_failed != next.in_call_phone_failed ||
+  // (The ring page's title, subtitle, avatars, three lines and awaiting flag are all bound: they only dirty, below.)
+  if (synced.phone != next.phone || synced.in_call_phone_title != next.in_call_phone_title ||
+      synced.in_call_video != next.in_call_video || synced.in_call_avatars != next.in_call_avatars ||
+      synced.in_call_phone_failed != next.in_call_phone_failed ||
       synced.in_call_failed_text != next.in_call_failed_text ||
       synced.in_call_story_active != next.in_call_story_active ||
-      synced.in_call_story_stage != next.in_call_story_stage ||
-      synced.in_call_story_steps != next.in_call_story_steps ||
+      synced.in_call_story_shape != next.in_call_story_shape ||
       synced.in_call_story_sheet_open != next.in_call_story_sheet_open ||
       (next.in_call_story_sheet_open && (synced.in_call_story_lines != next.in_call_story_lines ||
                                          synced.in_call_story_how != next.in_call_story_how))) {
@@ -96,79 +96,78 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
 
   // Status subtitle must remount: deferred RemountCallChrome + DirtyOnly can leave data-rml on a
   // pre-bind element while synced_chrome_ already advanced (dogfood: stuck Connecting…).
-  if (CallChromeStatusLabelChanged(synced.in_call_subtitle, next.in_call_subtitle)) {
+  // (The 1:1 story page shows no status line, so its changes do not remount that page mid-story.)
+  const bool story_page = synced.in_call_story_active && next.in_call_story_active && !next.in_call_show_roster;
+  if (!story_page && CallChromeStatusLabelChanged(synced.in_call_subtitle, next.in_call_subtitle)) {
     return CallChromeUpdate::Remount;
   }
 
-  const bool labels_changed = synced.in_call_status_hint != next.in_call_status_hint ||
-                              synced.in_call_roster != next.in_call_roster ||
-                              synced.ring_caller_label != next.ring_caller_label ||
-                              synced.ring_media_label != next.ring_media_label ||
-                              synced.in_call_title != next.in_call_title ||
-                              synced.in_call_muted != next.in_call_muted ||
-                              synced.in_call_camera_on != next.in_call_camera_on ||
-                              synced.in_call_camera_front != next.in_call_camera_front ||
-                              synced.in_call_speaker_on != next.in_call_speaker_on ||
-                              synced.in_call_remote_video != next.in_call_remote_video ||
-                              synced.in_call_local_preview != next.in_call_local_preview ||
-                              synced.in_call_peer_label != next.in_call_peer_label ||
-                              synced.in_call_remote_placeholder != next.in_call_remote_placeholder ||
-                              synced.in_call_participant_count != next.in_call_participant_count ||
-                              synced.ring_pulse != next.ring_pulse ||
-                              synced.ring_conflict != next.ring_conflict ||
-                              synced.ring_eyebrow != next.ring_eyebrow ||
-                              synced.ring_conflict_hint != next.ring_conflict_hint ||
-                              synced.ring_accept_label != next.ring_accept_label ||
-                              synced.ring_voice_answer_label != next.ring_voice_answer_label ||
-                              synced.ring_decline_label != next.ring_decline_label ||
-                              synced.ring_pricing_label != next.ring_pricing_label ||
-                              synced.ring_accept_charge_label != next.ring_accept_charge_label ||
-                              synced.ring_accept_charge_hint != next.ring_accept_charge_hint ||
-                              synced.ring_accept_short != next.ring_accept_short ||
-                              synced.ring_voice_short != next.ring_voice_short;
+  const bool labels_changed =
+      synced.in_call_status_hint != next.in_call_status_hint || synced.in_call_roster != next.in_call_roster ||
+      synced.ring_phone_title != next.ring_phone_title || synced.ring_phone_subtitle != next.ring_phone_subtitle ||
+      synced.ring_avatar != next.ring_avatar || synced.ring_awaiting_invite != next.ring_awaiting_invite ||
+      synced.ring_caller_unknown != next.ring_caller_unknown || synced.ring_group != next.ring_group ||
+      synced.ring_video_allowed != next.ring_video_allowed || synced.ring_steps != next.ring_steps ||
+      synced.in_call_story_stage != next.in_call_story_stage ||
+      synced.in_call_story_steps != next.in_call_story_steps ||
+      synced.in_call_story_scroll != next.in_call_story_scroll || synced.ring_caller_label != next.ring_caller_label ||
+      synced.ring_media_label != next.ring_media_label || synced.in_call_title != next.in_call_title ||
+      synced.in_call_muted != next.in_call_muted || synced.in_call_camera_on != next.in_call_camera_on ||
+      synced.in_call_camera_front != next.in_call_camera_front ||
+      synced.in_call_speaker_on != next.in_call_speaker_on ||
+      synced.in_call_remote_video != next.in_call_remote_video ||
+      synced.in_call_local_preview != next.in_call_local_preview ||
+      synced.in_call_peer_label != next.in_call_peer_label ||
+      synced.in_call_remote_placeholder != next.in_call_remote_placeholder ||
+      synced.in_call_participant_count != next.in_call_participant_count || synced.ring_pulse != next.ring_pulse ||
+      synced.ring_conflict != next.ring_conflict || synced.ring_eyebrow != next.ring_eyebrow ||
+      synced.ring_conflict_hint != next.ring_conflict_hint || synced.ring_accept_label != next.ring_accept_label ||
+      synced.ring_voice_answer_label != next.ring_voice_answer_label ||
+      synced.ring_decline_label != next.ring_decline_label || synced.ring_pricing_label != next.ring_pricing_label ||
+      synced.ring_accept_charge_label != next.ring_accept_charge_label ||
+      synced.ring_accept_charge_hint != next.ring_accept_charge_hint ||
+      synced.ring_accept_short != next.ring_accept_short || synced.ring_voice_short != next.ring_voice_short;
   if (labels_changed) {
     return CallChromeUpdate::DirtyOnly; // dirties the meters too
   }
 
   // The clock ticking ("0:05" → "0:06", a status kind change remounted above), the quality chip, and the phone's
   // result line / signal bar / top pill / speaking rings: each changed variable alone (B146).
-  const bool parts_changed = synced.in_call_subtitle != next.in_call_subtitle ||
-                             synced.in_call_elapsed != next.in_call_elapsed ||
-                             synced.in_call_quality_bars != next.in_call_quality_bars ||
-                             synced.in_call_quality_ok != next.in_call_quality_ok ||
-                             synced.in_call_quality_warn != next.in_call_quality_warn ||
-                             synced.in_call_quality_error != next.in_call_quality_error ||
-                             synced.in_call_quality_label != next.in_call_quality_label ||
-                             synced.in_call_quality_hint != next.in_call_quality_hint ||
-                             synced.in_call_result_text != next.in_call_result_text ||
-                             synced.in_call_result_fading != next.in_call_result_fading ||
-                             synced.in_call_signal_shown != next.in_call_signal_shown ||
-                             synced.in_call_signal_bars != next.in_call_signal_bars ||
-                             synced.in_call_signal_tone != next.in_call_signal_tone ||
-                             synced.in_call_signal_word != next.in_call_signal_word ||
-                             synced.in_call_notice_text != next.in_call_notice_text ||
-                             synced.in_call_notice_warn != next.in_call_notice_warn ||
-                             synced.in_call_notice_fading != next.in_call_notice_fading ||
-                             synced.in_call_reconnect_text != next.in_call_reconnect_text ||
-                             synced.in_call_reconnect_ok != next.in_call_reconnect_ok ||
-                             synced.in_call_reconnect_fading != next.in_call_reconnect_fading ||
-                             synced.in_call_reconnect_dim != next.in_call_reconnect_dim ||
-                             synced.in_call_show_debug_subtitle != next.in_call_show_debug_subtitle ||
-                             synced.in_call_debug_subtitle != next.in_call_debug_subtitle ||
-                             synced.in_call_speaking != next.in_call_speaking;
+  const bool parts_changed =
+      synced.in_call_subtitle != next.in_call_subtitle || synced.in_call_elapsed != next.in_call_elapsed ||
+      synced.in_call_quality_bars != next.in_call_quality_bars ||
+      synced.in_call_quality_ok != next.in_call_quality_ok ||
+      synced.in_call_quality_warn != next.in_call_quality_warn ||
+      synced.in_call_quality_error != next.in_call_quality_error ||
+      synced.in_call_quality_label != next.in_call_quality_label ||
+      synced.in_call_quality_hint != next.in_call_quality_hint ||
+      synced.in_call_result_text != next.in_call_result_text ||
+      synced.in_call_result_fading != next.in_call_result_fading ||
+      synced.in_call_signal_shown != next.in_call_signal_shown ||
+      synced.in_call_signal_bars != next.in_call_signal_bars ||
+      synced.in_call_signal_tone != next.in_call_signal_tone ||
+      synced.in_call_signal_word != next.in_call_signal_word ||
+      synced.in_call_notice_text != next.in_call_notice_text ||
+      synced.in_call_notice_warn != next.in_call_notice_warn ||
+      synced.in_call_notice_fading != next.in_call_notice_fading ||
+      synced.in_call_reconnect_text != next.in_call_reconnect_text ||
+      synced.in_call_reconnect_ok != next.in_call_reconnect_ok ||
+      synced.in_call_reconnect_fading != next.in_call_reconnect_fading ||
+      synced.in_call_reconnect_dim != next.in_call_reconnect_dim ||
+      synced.in_call_show_debug_subtitle != next.in_call_show_debug_subtitle ||
+      synced.in_call_debug_subtitle != next.in_call_debug_subtitle || synced.in_call_speaking != next.in_call_speaking;
   if (parts_changed) {
     return CallChromeUpdate::PartsOnly; // the meters' variables go too when they changed
   }
 
-  const bool levels_changed = synced.in_call_mic_level != next.in_call_mic_level ||
-                              synced.in_call_peer_level != next.in_call_peer_level ||
-                              synced.in_call_mic_hint != next.in_call_mic_hint ||
-                              synced.in_call_peer_hint != next.in_call_peer_hint;
+  const bool levels_changed =
+      synced.in_call_mic_level != next.in_call_mic_level || synced.in_call_peer_level != next.in_call_peer_level ||
+      synced.in_call_mic_hint != next.in_call_mic_hint || synced.in_call_peer_hint != next.in_call_peer_hint;
   if (levels_changed) {
     // Meters exist only in the Expanded bar without a roster (ShellCallChromeRml): elsewhere a
     // level change is invisible, and pushing it re-laid the whole call screen every frame (B146).
     const bool meters_on_screen = next.in_call_active && next.in_call_mode == CallChromeMode::Expanded &&
-                                  !next.in_call_show_roster && !next.phone;  // the phone page has no meters
+                                  !next.in_call_show_roster && !next.phone; // the phone page has no meters
     return meters_on_screen ? CallChromeUpdate::LevelsOnly : CallChromeUpdate::None;
   }
   return CallChromeUpdate::None;
@@ -216,8 +215,7 @@ std::vector<const char*> CallChromeChangedVariables(const CallInProgressState& b
   return out;
 }
 
-CallChromeUpdate CallChromeSyncGate::Decide(const CallChromeLayer& next,
-                                            std::chrono::steady_clock::time_point now) {
+CallChromeUpdate CallChromeSyncGate::Decide(const CallChromeLayer& next, std::chrono::steady_clock::time_point now) {
   const CallChromeUpdate update = ClassifyCallChromeUpdate(synced_, next);
   if (update == CallChromeUpdate::LevelsOnly) {
     if (levels_pushed_ && now - last_levels_ < kLevelInterval) {

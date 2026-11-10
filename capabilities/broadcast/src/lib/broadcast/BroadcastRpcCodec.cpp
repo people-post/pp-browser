@@ -36,12 +36,12 @@ std::vector<std::string> ReadStringArray(const Object& o, const char* key) {
 
 const char* ViewerActionToWire(BroadcastLadderViewerAction action) {
   switch (action) {
-  case BroadcastLadderViewerAction::Admit:
-    return "admit";
-  case BroadcastLadderViewerAction::Redirect:
-    return "redirect";
-  case BroadcastLadderViewerAction::Refuse:
-    return "refuse";
+    case BroadcastLadderViewerAction::Admit:
+      return "admit";
+    case BroadcastLadderViewerAction::Redirect:
+      return "redirect";
+    case BroadcastLadderViewerAction::Refuse:
+      return "refuse";
   }
   return "refuse";
 }
@@ -61,12 +61,12 @@ std::optional<BroadcastLadderViewerAction> ViewerActionFromWire(std::string_view
 
 const char* SlotWinActionToWire(BroadcastLadderSlotWinAction action) {
   switch (action) {
-  case BroadcastLadderSlotWinAction::AdmitRelay:
-    return "admit_relay";
-  case BroadcastLadderSlotWinAction::DemoteViewersAndAdmitRelay:
-    return "demote_and_admit_relay";
-  case BroadcastLadderSlotWinAction::Refuse:
-    return "refuse";
+    case BroadcastLadderSlotWinAction::AdmitRelay:
+      return "admit_relay";
+    case BroadcastLadderSlotWinAction::DemoteViewersAndAdmitRelay:
+      return "demote_and_admit_relay";
+    case BroadcastLadderSlotWinAction::Refuse:
+      return "refuse";
   }
   return "refuse";
 }
@@ -208,8 +208,8 @@ Roe<BroadcastRpcMessage> DecodeBroadcastRpcJson(const std::string_view json) {
     req.join_handle = ObjectString(root, "join_handle").value_or("");
     req.viewer_peer_id = ObjectString(root, "viewer_peer_id").value_or("");
     req.ticket_json = ObjectString(root, "ticket_json").value_or("");
-    req.redirect_budget = static_cast<int>(
-        ObjectInt64(root, "redirect_budget").value_or(kDefaultBroadcastRedirectBudget));
+    req.redirect_budget =
+        static_cast<int>(ObjectInt64(root, "redirect_budget").value_or(kDefaultBroadcastRedirectBudget));
     req.path_stamp = ReadStringArray(root, "path_stamp");
     return BroadcastRpcMessage{std::move(req)};
   }
@@ -222,8 +222,7 @@ Roe<BroadcastRpcMessage> DecodeBroadcastRpcJson(const std::string_view json) {
     }
     result.action = *action;
     result.redirect_peer_ids = ReadStringArray(root, "redirect_peer_ids");
-    result.redirect_budget_remaining =
-        static_cast<int>(ObjectInt64(root, "redirect_budget_remaining").value_or(0));
+    result.redirect_budget_remaining = static_cast<int>(ObjectInt64(root, "redirect_budget_remaining").value_or(0));
     result.refuse_reason = ObjectString(root, "refuse_reason").value_or("");
     result.admitted_hop_peer_id = ObjectString(root, "admitted_hop_peer_id").value_or("");
     return BroadcastRpcMessage{std::move(result)};
@@ -253,8 +252,8 @@ Roe<BroadcastRpcMessage> DecodeBroadcastRpcJson(const std::string_view json) {
   return Error("unsupported broadcast rpc op");
 }
 
-BroadcastViewerAttachResult BroadcastViewerAttachResultFromDecision(
-    const BroadcastLadderViewerDecision& decision, const std::string_view self_peer_id) {
+BroadcastViewerAttachResult BroadcastViewerAttachResultFromDecision(const BroadcastLadderViewerDecision& decision,
+                                                                    const std::string_view self_peer_id) {
   BroadcastViewerAttachResult out;
   out.action = decision.action;
   out.redirect_peer_ids = decision.redirect_peer_ids;
@@ -266,8 +265,7 @@ BroadcastViewerAttachResult BroadcastViewerAttachResultFromDecision(
   return out;
 }
 
-BroadcastRelaySlotWinResult BroadcastRelaySlotWinResultFromDecision(
-    const BroadcastLadderSlotWinDecision& decision) {
+BroadcastRelaySlotWinResult BroadcastRelaySlotWinResultFromDecision(const BroadcastLadderSlotWinDecision& decision) {
   BroadcastRelaySlotWinResult out;
   out.action = decision.action;
   out.demote_viewer_peer_ids = decision.demote_viewer_peer_ids;

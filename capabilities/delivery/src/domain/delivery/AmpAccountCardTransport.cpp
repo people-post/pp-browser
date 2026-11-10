@@ -25,7 +25,9 @@ int64_t SteadyDeadlineMs(const Clock::time_point deadline) {
   return std::chrono::duration_cast<std::chrono::milliseconds>(deadline.time_since_epoch()).count();
 }
 
-std::vector<uint8_t> Body(const std::string& json) { return std::vector<uint8_t>(json.begin(), json.end()); }
+std::vector<uint8_t> Body(const std::string& json) {
+  return std::vector<uint8_t>(json.begin(), json.end());
+}
 
 } // namespace
 
@@ -45,7 +47,8 @@ struct AmpAccountCardTransport::Impl {
     }
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     auto policy = mesh::InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
-    *session_holder = links->BindChannelOnLink(link, channel_id, policy, [this, session_holder, remote_peer_id](Roe<std::vector<uint8_t>> frame) {
+    *session_holder = links->BindChannelOnLink(
+        link, channel_id, policy, [this, session_holder, remote_peer_id](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
           if (!session || !frame || stopped.load(std::memory_order_acquire)) {
             return false;
@@ -77,14 +80,19 @@ struct AmpAccountCardTransport::Impl {
 
 AmpAccountCardTransport::AmpAccountCardTransport(mesh::IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker,
                                                  IoPost post_io, IoAfter post_after)
-    : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)), post_io_(std::move(post_io)),
+    : impl_(std::make_unique<Impl>()),
+      links_(links),
+      io_pump_(std::move(io_pump)),
+      post_io_(std::move(post_io)),
       post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->post_worker = std::move(post_worker);
   impl_->post_io = post_io_;
 }
 
-AmpAccountCardTransport::~AmpAccountCardTransport() { Stop(); }
+AmpAccountCardTransport::~AmpAccountCardTransport() {
+  Stop();
+}
 
 void AmpAccountCardTransport::Start() {
   if (started_) {
@@ -92,12 +100,12 @@ void AmpAccountCardTransport::Start() {
   }
   started_ = true;
   impl_->stopped.store(false, std::memory_order_release);
-  links_.SetProtocolHandler(kAccountCardProtocolId,
-                            impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
-                                                                      const std::string& remote_peer_id,
-                                                                      const uint32_t channel_id) {
-                              impl->HandleInboundChannel(handle, remote_peer_id, channel_id);
-                            }));
+  links_.SetProtocolHandler(
+      kAccountCardProtocolId,
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle, const std::string& remote_peer_id,
+                                                const uint32_t channel_id) {
+        impl->HandleInboundChannel(handle, remote_peer_id, channel_id);
+      }));
 }
 
 void AmpAccountCardTransport::Stop() {
@@ -135,44 +143,44 @@ void AmpAccountCardTransport::FetchAsync(const std::string& peer_id, const Accou
     return;
   }
   const auto deadline = Clock::now() + kFetchTimeout;
-  links_.OpenChannel(
-      peer_id, kAccountCardProtocolId, pp::amp::ControlJsonChannelPolicy(),
-      [this, peer_id, json = EncodeAccountCardRequest(request), finish, settled, session_holder,
-       deadline](mesh::IChatPeerLinks::ChannelRoe channel) mutable {
-        if (!channel) {
-          finish(Error(channel.error().message));
-          return;
-        }
-        if (impl_->stopped.load(std::memory_order_acquire)) {
-          finish(Error("account card service stopped"));
-          return;
-        }
-        const uint32_t channel_id = *channel;
-        links_.WhenChannelOpen(peer_id, channel_id, SteadyDeadlineMs(deadline),
-                               [this, peer_id, channel_id, json, finish, settled, session_holder, deadline](bool open) {
-                                 if (!open || impl_->stopped.load(std::memory_order_acquire)) {
-                                   finish(Error("account card: channel did not open"));
-                                   return;
-                                 }
-                                 *session_holder = links_.BindChannel(
-                                     peer_id, channel_id, pp::amp::ControlJsonChannelPolicy(),
-                                     [finish](Roe<std::vector<uint8_t>> frame) {
-                                       if (!frame) {
-                                         finish(Error("account card: no reply"));
-                                         return false;
-                                       }
-                                       finish(DecodeAccountCardReply(std::string(frame->begin(), frame->end())));
-                                       return false;
-                                     });
-                                 if (!(*session_holder)->EnqueueOutbound(Body(json))) {
-                                   finish(Error("account card: request not sent"));
-                                   return;
-                                 }
-                                 mesh::AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline,
-                                                               [finish]() { finish(Error("account card: timed out")); },
-                                                               post_after_);
-                               });
-      });
+  links_.OpenChannel(peer_id, kAccountCardProtocolId, pp::amp::ControlJsonChannelPolicy(),
+                     [this, peer_id, json = EncodeAccountCardRequest(request), finish, settled, session_holder,
+                      deadline](mesh::IChatPeerLinks::ChannelRoe channel) mutable {
+                       if (!channel) {
+                         finish(Error(channel.error().message));
+                         return;
+                       }
+                       if (impl_->stopped.load(std::memory_order_acquire)) {
+                         finish(Error("account card service stopped"));
+                         return;
+                       }
+                       const uint32_t channel_id = *channel;
+                       links_.WhenChannelOpen(
+                           peer_id, channel_id, SteadyDeadlineMs(deadline),
+                           [this, peer_id, channel_id, json, finish, settled, session_holder, deadline](bool open) {
+                             if (!open || impl_->stopped.load(std::memory_order_acquire)) {
+                               finish(Error("account card: channel did not open"));
+                               return;
+                             }
+                             *session_holder = links_.BindChannel(
+                                 peer_id, channel_id, pp::amp::ControlJsonChannelPolicy(),
+                                 [finish](Roe<std::vector<uint8_t>> frame) {
+                                   if (!frame) {
+                                     finish(Error("account card: no reply"));
+                                     return false;
+                                   }
+                                   finish(DecodeAccountCardReply(std::string(frame->begin(), frame->end())));
+                                   return false;
+                                 });
+                             if (!(*session_holder)->EnqueueOutbound(Body(json))) {
+                               finish(Error("account card: request not sent"));
+                               return;
+                             }
+                             mesh::AmpScheduleUntilSettled(
+                                 post_io_, io_pump_, settled, deadline,
+                                 [finish]() { finish(Error("account card: timed out")); }, post_after_);
+                           });
+                     });
 }
 
 } // namespace pbr

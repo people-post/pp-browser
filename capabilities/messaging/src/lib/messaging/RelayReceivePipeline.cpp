@@ -93,7 +93,8 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
  * The session a copy is read under (M021): the pair with the sending device for a copy to this device,
  * the account-level session for an account copy.
  */
-PeerSessionKey CopyTargetKey(const RelayEnvelope& envelope, const DirectChatTarget& sender, const CryptoChannel channel) {
+PeerSessionKey CopyTargetKey(const RelayEnvelope& envelope, const DirectChatTarget& sender,
+                             const CryptoChannel channel) {
   PeerSessionKey key;
   key.peer_identity_kind = sender.peer_identity_kind;
   key.peer_identity_value = sender.peer_identity_value;
@@ -141,7 +142,7 @@ void MarkReceiveFailure(RelayReceiveOutcome& outcome, const std::string& sender,
 /** An invite refused for want of a contact is told to the user apart from other membership failures. */
 ReceiveFailure MembershipFailure(const Error& err) {
   return err.message == kGroupInviteNeedsContactError ? ReceiveFailure::GroupInviteNeedsContact
-                                                       : ReceiveFailure::MembershipUpdateFailed;
+                                                      : ReceiveFailure::MembershipUpdateFailed;
 }
 
 /** Membership DMs must apply even when the 1:1 seq stream is SoftCompromised. */
@@ -154,8 +155,13 @@ bool IsGroupMembershipControlMessage(const ThreadMessage& message) {
 RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, AccountCardLookup account_cards,
                                            IPeerSessionStore& psk_store, LocalKeys local_keys,
                                            IGroupRosterStore& group_roster, GroupInviteGate* invite_gate)
-    : store_(store), account_cards_(std::move(account_cards)), psk_store_(psk_store), local_keys_(std::move(local_keys)),
-      group_roster_(group_roster), invite_gate_(invite_gate), public_lock_(store, psk_store) {
+    : store_(store),
+      account_cards_(std::move(account_cards)),
+      psk_store_(psk_store),
+      local_keys_(std::move(local_keys)),
+      group_roster_(group_roster),
+      invite_gate_(invite_gate),
+      public_lock_(store, psk_store) {
   redirectLogger("RelayReceivePipeline");
 }
 
@@ -196,7 +202,7 @@ void RelayReceivePipeline::KeepCarriedStatement(const ThreadMessage& message, co
   auto detail = group_roster_sync_codec::DetailOf(message);
   auto statement = detail ? group_roster_sync_codec::StatementIn(*detail) : std::nullopt;
   if (!statement) {
-    return;  // an event from an app before G012
+    return; // an event from an app before G012
   }
   group_roster_sync::GroupViewApplied applied;
   if (auto kept =
@@ -496,12 +502,11 @@ Roe<void> RelayReceivePipeline::ApplyGroupSettingChanged(const ThreadMessage& me
   return {};
 }
 
-Roe<void> RelayReceivePipeline::ApplyRosterStatement(const ThreadMessage& message,
-                                                     const std::string& actor_identity,
+Roe<void> RelayReceivePipeline::ApplyRosterStatement(const ThreadMessage& message, const std::string& actor_identity,
                                                      const std::string& local_account,
                                                      RelayReceiveOutcome* outcome) const {
   if (outcome) {
-    outcome->suppress_inbox_chrome = true;  // bookkeeping between members, not something to read
+    outcome->suppress_inbox_chrome = true; // bookkeeping between members, not something to read
   }
   auto detail = group_roster_sync_codec::DetailOf(message);
   if (!detail) {
@@ -513,7 +518,7 @@ Roe<void> RelayReceivePipeline::ApplyRosterStatement(const ThreadMessage& messag
   }
   auto member = group_roster_.IsMember(statement->group_id, local_account);
   if (!member || !*member || statement->owner_identity != actor_identity) {
-    return {};  // not our group, or not sent by the owner it names
+    return {}; // not our group, or not sent by the owner it names
   }
   group_roster_sync::GroupViewApplied applied;
   if (auto kept =
@@ -530,7 +535,7 @@ Roe<void> RelayReceivePipeline::ApplyGroupDissolved(const ThreadMessage& message
                                                     const std::string& local_account,
                                                     RelayReceiveOutcome* outcome) const {
   if (outcome) {
-    outcome->suppress_inbox_chrome = true;  // the DM that carried it is bookkeeping; the group's chat gets the notice
+    outcome->suppress_inbox_chrome = true; // the DM that carried it is bookkeeping; the group's chat gets the notice
   }
   auto detail = group_roster_sync_codec::DetailOf(message);
   if (!detail) {
@@ -579,8 +584,8 @@ void RelayReceivePipeline::MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome
 }
 
 Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message, const std::string& actor_identity,
-                                                  const std::string& local_account,
-                                                  RelayReceiveOutcome* outcome) const {
+                                                   const std::string& local_account,
+                                                   RelayReceiveOutcome* outcome) const {
   auto refused = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
   if (!refused) {
     return refused.error();
@@ -619,8 +624,7 @@ Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message,
     (void)group_roster_.UpsertMetadata(removed);
   }
   if (auto thread = store_.FindGroupThread(refused->group_id); thread && *thread) {
-    auto detail = GroupMembershipCodec::EncodeInviteRefused(refused->invite_nonce, refused->group_id,
-                                                           refused->reason);
+    auto detail = GroupMembershipCodec::EncodeInviteRefused(refused->invite_nonce, refused->group_id, refused->reason);
     if (detail) {
       const char* line = refused->reason == kInviteRefusedNotAllowed ? "You were not added to the group"
                                                                      : "The group is full: you were not added";
@@ -683,8 +687,7 @@ Roe<void> RelayReceivePipeline::ApplyInviteAccepted(const GroupMembershipCodec::
   return {};
 }
 
-Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& message,
-                                                              const std::string& actor_identity,
+Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& message, const std::string& actor_identity,
                                                               RelayReceiveOutcome* outcome) const {
   // Resolve group_id from any membership control we understand, then ignore events for groups
   // the local user has already left/dismissed (prevents transfer-to-leaver resurrection).
@@ -717,8 +720,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   if (kind == GroupMembershipControlType::GroupInviteRefused) {
     return ApplyInviteRefused(message, actor_identity, local_account, outcome);
   }
-  if (kind == GroupMembershipControlType::GroupInviteAccept ||
-      kind == GroupMembershipControlType::GroupInviteDecline) {
+  if (kind == GroupMembershipControlType::GroupInviteAccept || kind == GroupMembershipControlType::GroupInviteDecline) {
     auto response = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
     if (!response) {
       return response.error();
@@ -726,8 +728,8 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     if (response->control_type == GroupMembershipControlType::GroupInviteAccept) {
       return ApplyInviteAccepted(*response, actor_identity, local_account, outcome);
     }
-    if (auto declined = ApplyInviteDeclineToRoster(group_roster_, response->invite_nonce, actor_identity,
-                                                   response->group_id);
+    if (auto declined =
+            ApplyInviteDeclineToRoster(group_roster_, response->invite_nonce, actor_identity, response->group_id);
         !declined) {
       return declined.error();
     }
@@ -735,9 +737,9 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     // group's thread.
     if (auto thread = store_.FindGroupThread(response->group_id); thread && *thread) {
       if (auto detail = GroupMembershipCodec::EncodeInviteResponse(response->invite_nonce, response->group_id)) {
-        if (auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id,
-                                                                GroupMembershipControlType::GroupInviteDecline,
-                                                                "Invitation declined", *detail, actor_identity)) {
+        if (auto sys =
+                GroupMembershipCodec::BuildSystemMessage((*thread)->id, GroupMembershipControlType::GroupInviteDecline,
+                                                         "Invitation declined", *detail, actor_identity)) {
           (void)store_.AppendMessage(*sys);
         }
       }
@@ -773,9 +775,8 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       line.invite_nonce.clear();
       auto detail = GroupMembershipCodec::EncodeMemberJoined(line); // with who added them (G019 5)
       if (detail) {
-        auto sys = GroupMembershipCodec::BuildSystemMessage(
-            (*thread)->id, GroupMembershipControlType::MemberJoined, "Member joined the group", *detail,
-            actor_identity);
+        auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id, GroupMembershipControlType::MemberJoined,
+                                                            "Member joined the group", *detail, actor_identity);
         if (sys) {
           (void)store_.AppendMessage(*sys);
         }
@@ -805,15 +806,14 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     }
     auto thread = store_.FindGroupThread(transferred->group_id);
     if (thread && *thread) {
-      auto detail = GroupMembershipCodec::EncodeOwnerTransferred(
-          transferred->group_id, transferred->new_owner_identity, transferred->roster_epoch,
-          transferred->leave_previous);
+      auto detail =
+          GroupMembershipCodec::EncodeOwnerTransferred(transferred->group_id, transferred->new_owner_identity,
+                                                       transferred->roster_epoch, transferred->leave_previous);
       if (detail) {
-        const std::string text = transferred->leave_previous ? "Ownership transferred; previous owner left"
-                                                             : "Group ownership transferred";
-        auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id,
-                                                            GroupMembershipControlType::OwnerTransferred, text,
-                                                            *detail, actor_identity);
+        const std::string text =
+            transferred->leave_previous ? "Ownership transferred; previous owner left" : "Group ownership transferred";
+        auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id, GroupMembershipControlType::OwnerTransferred,
+                                                            text, *detail, actor_identity);
         if (sys) {
           (void)store_.AppendMessage(*sys);
         }
@@ -847,8 +847,8 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       auto detail = GroupMembershipCodec::EncodeMemberRemoved(removed->group_id, removed->member_identity,
                                                               removed->roster_epoch, actor_identity);
       if (detail) {
-        auto sys = GroupMembershipCodec::BuildSystemMessage(
-            (*thread)->id, GroupMembershipControlType::MemberRemoved, "Member removed", *detail, actor_identity);
+        auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id, GroupMembershipControlType::MemberRemoved,
+                                                            "Member removed", *detail, actor_identity);
         if (sys) {
           (void)store_.AppendMessage(*sys);
           if (outcome && !local_account.empty() && removed->member_identity == local_account) {
@@ -874,7 +874,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       return applied.error();
     }
     if (!*applied) {
-      return {};  // not newer than the title we hold
+      return {}; // not newer than the title we hold
     }
     auto thread = store_.FindGroupThread(renamed->group_id);
     if (thread && *thread) {
@@ -882,13 +882,12 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       row.title = renamed->title;
       row.updated_at = util::NowUnixMs();
       (void)store_.UpsertThread(row);
-      auto detail =
-          GroupMembershipCodec::EncodeGroupRenamed(renamed->group_id, renamed->title, renamed->roster_epoch,
-                                                   renamed->title_version);
+      auto detail = GroupMembershipCodec::EncodeGroupRenamed(renamed->group_id, renamed->title, renamed->roster_epoch,
+                                                             renamed->title_version);
       if (detail) {
-        auto sys = GroupMembershipCodec::BuildSystemMessage(row.id, GroupMembershipControlType::GroupRenamed,
-                                                            "Group renamed to " + renamed->title, *detail,
-                                                            actor_identity);
+        auto sys =
+            GroupMembershipCodec::BuildSystemMessage(row.id, GroupMembershipControlType::GroupRenamed,
+                                                     "Group renamed to " + renamed->title, *detail, actor_identity);
         if (sys) {
           (void)store_.AppendMessage(*sys);
         }
@@ -933,7 +932,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     return known.error();
   } else if (*known) {
     if ((*known)->sync_state == GroupSyncState::Dissolved) {
-      return {};  // G016: the group is over; an invite to it is void
+      return {}; // G016: the group is over; an invite to it is void
     }
     auto member = group_roster_.IsMember(invite->group_id, local_account);
     if (!member) {
@@ -980,8 +979,7 @@ ReplayWindow& RelayReceivePipeline::ReplayWindowFor(const std::string& thread_id
   return replay_windows_[key];
 }
 
-Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope,
-                                              const DirectChatTarget& target) const {
+Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope, const DirectChatTarget& target) const {
   const SenderSignatureCheck check = CheckSignature(envelope, target);
   switch (check.result) {
     case SenderSignatureCheck::Result::Verified:
@@ -1076,7 +1074,7 @@ Roe<ByteVector> RelayReceivePipeline::CopyKemPrivateKey(const RelayEnvelope& env
 }
 
 Roe<void> RelayReceivePipeline::ValidateInboundPskRotate(const RelayEnvelope& envelope,
-                                                        const ThreadMessage& message) const {
+                                                         const ThreadMessage& message) const {
   if (!PskRotateCodec::IsPskRotateMessage(message)) {
     return {};
   }
@@ -1098,7 +1096,7 @@ Roe<void> RelayReceivePipeline::ValidateInboundPskRotate(const RelayEnvelope& en
 }
 
 Roe<void> RelayReceivePipeline::ApplyInboundPskRotate(const std::string& thread_id, const RelayEnvelope& envelope,
-                                                     const ThreadMessage& message) {
+                                                      const ThreadMessage& message) {
   if (!PskRotateCodec::IsPskRotateMessage(message)) {
     return {};
   }
@@ -1110,8 +1108,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundPskRotate(const std::string& thread_
   if (!account) {
     return account.error();
   }
-  auto applied = public_lock_.ApplyInbound(thread_id, envelope, message, *kem, *account,
-                                          util::NowUnixMs());
+  auto applied = public_lock_.ApplyInbound(thread_id, envelope, message, *kem, *account, util::NowUnixMs());
   if (!applied) {
     return applied.error();
   }
@@ -1229,7 +1226,7 @@ bool ControlLaneFresh(const RelayEnvelope& envelope, const int64_t max_age_ms, c
   if (envelope.relay_created_at_ms && envelope.relay_server_time_ms) {
     return *envelope.relay_server_time_ms - *envelope.relay_created_at_ms <= max_age_ms;
   }
-  return true;  // direct (Amp): delivered as sent
+  return true; // direct (Amp): delivered as sent
 }
 
 RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnvelope& received,
@@ -1247,8 +1244,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
       DumpJson(RelayEnvelopeToJson(envelope)).size() > kMaxRelayEnvelopeBytes) {
     return outcome;
   }
-  if (envelope.route.channel != ThreadChannel::E2ePublic || envelope.sender_seq != 0 ||
-      envelope.message_id.empty() || envelope.sender_contact_id.empty()) {
+  if (envelope.route.channel != ThreadChannel::E2ePublic || envelope.sender_seq != 0 || envelope.message_id.empty() ||
+      envelope.sender_contact_id.empty()) {
     return outcome;
   }
   if (SenderBlocked(envelope.sender_contact_id)) {
@@ -1256,7 +1253,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
     return outcome;
   }
   if (WhoseCopy(envelope) == CopyTo::Sibling) {
-    outcome.decision = IngestDecision::SilentDiscard;  // another device's copy, in the shared mailbox (M013)
+    outcome.decision = IngestDecision::SilentDiscard; // another device's copy, in the shared mailbox (M013)
     return outcome;
   }
   const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
@@ -1286,8 +1283,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
   // the account pair's (M024).
   const PeerSessionKey target_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
   AutoKeyRead read;
-  auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key, psk_store_,
-                                                         *kem_private, &read);
+  auto decrypted =
+      E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key, psk_store_, *kem_private, &read);
   if (!decrypted) {
     ReportUnreadableControl(envelope, target_key, decrypted.error(), outcome);
     return outcome;
@@ -1330,7 +1327,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
   message.timestamp = envelope.timestamp;
   if (auto applied = ApplyInboundControl(message, envelope, &outcome); !applied) {
     if (control_lane_seen_) {
-      control_lane_seen_->Forget(envelope.sender_contact_id, envelope.message_id);  // a redelivery may still apply
+      control_lane_seen_->Forget(envelope.sender_contact_id, envelope.message_id); // a redelivery may still apply
     }
     return outcome;
   }
@@ -1510,7 +1507,7 @@ void RelayReceivePipeline::ApplySiblingNotice(const RelayEnvelope& envelope, con
                                               const DirectChatTarget& inbound_target, RelayReceiveOutcome& outcome) {
   if (local_keys_.device_peer_id) {
     if (auto self = local_keys_.device_peer_id(); self && envelope.sender_device == *self) {
-      return;  // our own notice, back from the shared mailbox
+      return; // our own notice, back from the shared mailbox
     }
   }
   auto kem_private = CopyKemPrivateKey(envelope);
@@ -1520,8 +1517,8 @@ void RelayReceivePipeline::ApplySiblingNotice(const RelayEnvelope& envelope, con
   // A one-off opener to our account KEM (ControlLane::NotifySiblings): read, no session kept between siblings.
   const PeerSessionKey target_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
   AutoKeyRead read;
-  auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_account_id, target_key, psk_store_,
-                                                         *kem_private, &read);
+  auto decrypted =
+      E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_account_id, target_key, psk_store_, *kem_private, &read);
   if (!decrypted) {
     log().info << "sibling notice not read message_id=" << envelope.message_id << ": " << decrypted.error().message;
     return;
@@ -1532,7 +1529,7 @@ void RelayReceivePipeline::ApplySiblingNotice(const RelayEnvelope& envelope, con
     return;
   }
   if (*copy) {
-    outcome.from_sibling = false;  // a sent message, not news about the account's state (no locker sync)
+    outcome.from_sibling = false; // a sent message, not news about the account's state (no locker sync)
     FileSentCopy(**copy, envelope, outcome);
     return;
   }
@@ -1541,7 +1538,7 @@ void RelayReceivePipeline::ApplySiblingNotice(const RelayEnvelope& envelope, con
   ThreadMessage message = std::move(*decrypted);
   const auto family = controls_ ? controls_->Find(message) : std::nullopt;
   if (!family || !family->on_lane || !family->on_lane(message)) {
-    return;  // the device list notice: its card is what counts (taken above)
+    return; // the device list notice: its card is what counts (taken above)
   }
   const int64_t now_ms = util::NowUnixMs();
   if (!ControlLaneFresh(envelope, family->lane_max_age_ms, now_ms)) {
@@ -1553,7 +1550,7 @@ void RelayReceivePipeline::ApplySiblingNotice(const RelayEnvelope& envelope, con
       return;
     }
   }
-  outcome.from_sibling = false;  // not a nudge to sync the locker
+  outcome.from_sibling = false; // not a nudge to sync the locker
   message.id = envelope.message_id;
   message.thread_id.clear();
   message.sender_contact_id = envelope.sender_contact_id;
@@ -1569,11 +1566,11 @@ void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelop
   if (!copy.target.group_id.empty()) {
     auto thread = store_.FindGroupThread(copy.target.group_id);
     if (!thread || !*thread) {
-      return;  // a group this device does not hold
+      return; // a group this device does not hold
     }
     if (auto metadata = group_roster_.LoadMetadata(copy.target.group_id);
         metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Dissolved) {
-      return;  // G016: nothing more is filed in a group that ended
+      return; // G016: nothing more is filed in a group that ended
     }
     thread_id = (*thread)->id;
   } else {
@@ -1596,7 +1593,7 @@ void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelop
   }
   ThreadMessage message = copy.message;
   message.thread_id = thread_id;
-  message.sender_contact_id = kLocalSelfContactId;  // ours, from another of our devices
+  message.sender_contact_id = kLocalSelfContactId; // ours, from another of our devices
   message.sender_device = envelope.sender_device;
   message.delivery = MessageDelivery::Relayed;
   message.transport = MessageTransport::Relay;
@@ -1611,12 +1608,12 @@ void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelop
     log().warning << "sibling's sent copy not stored: " << stored.error().message;
     return;
   }
-  ApplyInboundRetract(*stored, outcome);  // our delete for everyone, made on another device
+  ApplyInboundRetract(*stored, outcome); // our delete for everyone, made on another device
   outcome.decision = IngestDecision::AcceptControl;
   outcome.persisted = true;
   outcome.thread_id = thread_id;
   outcome.persisted_message = *stored;
-  outcome.suppress_inbox_chrome = true;  // what we sent ourselves: no unread count, no notice
+  outcome.suppress_inbox_chrome = true; // what we sent ourselves: no unread count, no notice
   outcome.sibling_copy = true;
 }
 
@@ -1672,8 +1669,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
 
   if (!auto_create && !IsEnvelopeFromPeer(**thread, envelope)) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::SenderMismatch, "Envelope sender is not the thread peer",
-                       (*thread)->id);
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::SenderMismatch,
+                       "Envelope sender is not the thread peer", (*thread)->id);
     return outcome;
   }
 
@@ -1683,8 +1680,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     auto has_message_id = store_.HasMessageId(resolved_thread_id, envelope.message_id);
     if (!has_message_id) {
       outcome.decision = IngestDecision::HardReject;
-      MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::StoreError, has_message_id.error().message,
-                         resolved_thread_id);
+      MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::StoreError,
+                         has_message_id.error().message, resolved_thread_id);
       return outcome;
     }
     if (*has_message_id) {
@@ -1694,8 +1691,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       auto verified_dup = VerifySignature(envelope, inbound_target);
       outcome.sender_verified = verified_dup && *verified_dup;
       if (verified_dup && *verified_dup && E2eRelayPayloadCodec::RequiresEncryption(envelope.route.channel)) {
-        const PeerSessionKey target_key = CopyTargetKey(envelope, inbound_target,
-                                                       E2eRelayPayloadCodec::ChannelFromThread(envelope.route.channel));
+        const PeerSessionKey target_key =
+            CopyTargetKey(envelope, inbound_target, E2eRelayPayloadCodec::ChannelFromThread(envelope.route.channel));
         std::optional<ByteVector> local_kem_private_key;
         if (envelope.route.channel == ThreadChannel::E2ePublic) {
           if (auto kem_private = CopyKemPrivateKey(envelope)) {
@@ -1727,13 +1724,15 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   auto verified = VerifySignature(envelope, inbound_target);
   if (!verified) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::SignatureCheckFailed, verified.error().message,
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::SignatureCheckFailed,
+                       verified.error().message,
                        resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
     return outcome;
   }
   if (!*verified) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::BadSignature, "Envelope signature did not verify",
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::BadSignature,
+                       "Envelope signature did not verify",
                        resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
     return outcome;
   }
@@ -1810,10 +1809,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       return outcome;
     }
     if (decoded->content_type != ChatContentType::Text && decoded->content_type != ChatContentType::System &&
-        decoded->content_type != ChatContentType::Annotation &&
-        decoded->content_type != ChatContentType::ContactCard &&
-        decoded->content_type != ChatContentType::CryptoTx &&
-        decoded->content_type != ChatContentType::Attachment &&
+        decoded->content_type != ChatContentType::Annotation && decoded->content_type != ChatContentType::ContactCard &&
+        decoded->content_type != ChatContentType::CryptoTx && decoded->content_type != ChatContentType::Attachment &&
         decoded->content_type != ChatContentType::Unsupported) {
       outcome.decision = IngestDecision::HardReject;
       MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::Unsupported,
@@ -1898,9 +1895,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     if (loaded_sync_state) {
       sync_state = *loaded_sync_state;
     } else if (!numbering.empty()) {
-      sync_state = DefaultPeerSyncState();  // a sending device's account copies, new to us (M021)
+      sync_state = DefaultPeerSyncState(); // a sending device's account copies, new to us (M021)
     } else if (envelope.session_epoch > chat_target_epoch) {
-      sync_state = DefaultPeerSyncState();  // the peer moved the pair to an epoch nothing is held in yet
+      sync_state = DefaultPeerSyncState(); // the peer moved the pair to an epoch nothing is held in yet
     } else {
       outcome.decision = IngestDecision::HardReject;
       log().info << "refuse message_id=" << envelope.message_id << " epoch=" << envelope.session_epoch
@@ -1947,8 +1944,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   if (classified.decision == IngestDecision::SilentDiscard || classified.decision == IngestDecision::BenignDuplicate) {
     if (classified.decision == IngestDecision::SilentDiscard) {
       log().info << "drop message_id=" << envelope.message_id << " sender=" << envelope.sender_contact_id
-                 << " epoch=" << envelope.session_epoch << " seq=" << envelope.sender_seq << ": "
-                 << classified.reason;
+                 << " epoch=" << envelope.session_epoch << " seq=" << envelope.sender_seq << ": " << classified.reason;
     }
     // Out-of-order controls (call media keys, accepts, membership) are idempotent — do not skip when
     // the classifier drops a resent seq/id.
@@ -2023,8 +2019,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   persisted.session_epoch = envelope.session_epoch;
   persisted.sender_device = RowDevice(numbering);
 
-  if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id, &outcome);
-      !membership) {
+  if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id, &outcome); !membership) {
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, MembershipFailure(membership.error()),
                        membership.error().message, resolved_thread_id);
@@ -2155,12 +2150,14 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   auto verified = VerifySignature(envelope, inbound_target);
   if (!verified) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::SignatureCheckFailed, verified.error().message);
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::SignatureCheckFailed,
+                       verified.error().message);
     return outcome;
   }
   if (!*verified) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::BadSignature, "Group envelope signature did not verify");
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::BadSignature,
+                       "Group envelope signature did not verify");
     return outcome;
   }
   outcome.sender_verified = true;
@@ -2175,7 +2172,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   const PeerSessionKey pair_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
   AutoKeyRead read;
   auto decrypted = GroupE2ePayloadCodec::DecryptForLocalMember(envelope, local_relay_user_id, pair_key, psk_store_,
-                                                                 *kem_private, &read);
+                                                               *kem_private, &read);
   if (!decrypted) {
     outcome.decision = IngestDecision::HardReject;
     std::optional<std::string> tid; // the chat to tell, when the stream id shows which group (a hint, unsigned)
@@ -2184,7 +2181,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
         tid = (**existing).id;
       }
     }
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::DecryptFailed, decrypted.error().message, tid);
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::DecryptFailed, decrypted.error().message,
+                       tid);
     return outcome;
   }
   const std::string group_id = std::move(decrypted->group_id);
@@ -2284,15 +2282,14 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   persisted.session_epoch = envelope.session_epoch;
   persisted.sender_device = RowDevice(numbering);
 
-  if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id, &outcome);
-      !membership) {
+  if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id, &outcome); !membership) {
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, MembershipFailure(membership.error()),
                        membership.error().message, resolved_thread_id);
     return outcome;
   }
 
-  MaybeSuppressInboxChrome(outcome, persisted);  // a family's quiet line (a group call summary)
+  MaybeSuppressInboxChrome(outcome, persisted); // a family's quiet line (a group call summary)
   TombstoneIfRetractedBeforeArrival(persisted, outcome);
   if (auto cap = RejectIfAnnotationCapExceeded(store_, persisted); !cap) {
     outcome.decision = IngestDecision::HardReject;

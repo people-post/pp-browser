@@ -44,7 +44,9 @@ public:
   TimerId next = 0;
 };
 
-std::string Name(const CallStackEvent& event) { return CallStackEventName(event); }
+std::string Name(const CallStackEvent& event) {
+  return CallStackEventName(event);
+}
 
 // Events run in order on the owner; one enqueued while another is handled runs after it.
 TEST(CallsLoopTest, EventsRunInOrderAndNeverReenter) {

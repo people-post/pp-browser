@@ -37,8 +37,7 @@ struct HistoryMessage {
   std::string content;
 };
 
-std::vector<HistoryMessage> TakeRecentTurnPairs(const std::vector<TranscriptEntry>& completed,
-                                                int recent_turn_pairs) {
+std::vector<HistoryMessage> TakeRecentTurnPairs(const std::vector<TranscriptEntry>& completed, int recent_turn_pairs) {
   if (completed.empty() || recent_turn_pairs <= 0) {
     return {};
   }
@@ -52,8 +51,7 @@ std::vector<HistoryMessage> TakeRecentTurnPairs(const std::vector<TranscriptEntr
     flattened.push_back(
         HistoryMessage{.entry_id = entry.id, .role = "user", .content = FormatUserContentForLlm(entry)});
     if (entry.assistant_raw) {
-      flattened.push_back(
-          HistoryMessage{.entry_id = entry.id, .role = "assistant", .content = *entry.assistant_raw});
+      flattened.push_back(HistoryMessage{.entry_id = entry.id, .role = "assistant", .content = *entry.assistant_raw});
     }
   }
 
@@ -96,10 +94,9 @@ std::vector<HistoryMessage> TrimRecentFromStart(std::vector<HistoryMessage> rece
 
 } // namespace
 
-ContextBuildResult SlidingWindowContextPolicy::Build(const std::string& system_prompt,
-                                                      const Conversation& conversation,
-                                                      const TranscriptEntry& current_turn,
-                                                      const ContextBudget& budget) const {
+ContextBuildResult SlidingWindowContextPolicy::Build(const std::string& system_prompt, const Conversation& conversation,
+                                                     const TranscriptEntry& current_turn,
+                                                     const ContextBudget& budget) const {
   ContextBuildResult result;
   ContextProvenance provenance;
 
@@ -132,8 +129,7 @@ ContextBuildResult SlidingWindowContextPolicy::Build(const std::string& system_p
   }
 
   result.messages.insert(result.messages.begin(), prefix.begin(), prefix.end());
-  result.messages.push_back(
-      ChatMessage{.role = "user", .content = FormatUserContentForLlm(current_turn)});
+  result.messages.push_back(ChatMessage{.role = "user", .content = FormatUserContentForLlm(current_turn)});
 
   const int max_tokens = static_cast<int>(std::floor(budget.max_input_tokens * budget.token_estimate_margin));
   while (EstimateMessagesTokens(result.messages) > max_tokens && recent.size() > 2) {
@@ -145,8 +141,7 @@ ContextBuildResult SlidingWindowContextPolicy::Build(const std::string& system_p
     for (const HistoryMessage& message : recent) {
       result.messages.push_back(ChatMessage{.role = message.role, .content = message.content});
     }
-    result.messages.push_back(
-        ChatMessage{.role = "user", .content = FormatUserContentForLlm(current_turn)});
+    result.messages.push_back(ChatMessage{.role = "user", .content = FormatUserContentForLlm(current_turn)});
   }
 
   provenance.estimated_input_tokens =

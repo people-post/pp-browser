@@ -98,10 +98,12 @@ TEST_F(InboxControlRowsTest, TheFamilysLineWinsAndLaneSignalingIsNeverARow) {
   call.name = "call";
   call.owns = [](const ThreadMessage& m) { return m.payload_json.find("call_") != std::string::npos; };
   call.on_lane = [](const ThreadMessage& m) { return m.payload_json.find("call_summary") == std::string::npos; };
-  call.line = [](const ThreadMessage&, const SystemControlLabels&) { return std::optional<std::string>("Summary line"); };
+  call.line = [](const ThreadMessage&, const SystemControlLabels&) {
+    return std::optional<std::string>("Summary line");
+  };
   controls_.Bind(call);
   ASSERT_TRUE(store_->AppendMessage(Control("sum-1", "call_summary", "Voice call")));
-  ASSERT_TRUE(store_->AppendMessage(Control("inv-1", "call_invite", "Call invite")));  // an old store's row
+  ASSERT_TRUE(store_->AppendMessage(Control("inv-1", "call_invite", "Call invite"))); // an old store's row
   EXPECT_NE(RowRml("sum-1").find("Summary line"), std::string::npos) << RowRml("sum-1");
   EXPECT_EQ(RowRml("inv-1"), "<no row>");
 }

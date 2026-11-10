@@ -19,11 +19,9 @@ TEST(ReachabilityNudgeTest, ShowsUntilAckedAtSameOrWorseSeverity) {
 }
 
 TEST(ReachabilityNudgeTest, StatusKeyMapsViewStatus) {
-  EXPECT_EQ(pbr::ReachabilityNudgeStatusKey(pbr::SettingsReachabilityView::Status::OutboundOnly),
-            "outbound_only");
+  EXPECT_EQ(pbr::ReachabilityNudgeStatusKey(pbr::SettingsReachabilityView::Status::OutboundOnly), "outbound_only");
   EXPECT_EQ(pbr::ReachabilityNudgeStatusKey(pbr::SettingsReachabilityView::Status::Blocked), "blocked");
-  EXPECT_TRUE(
-      pbr::ReachabilityNudgeStatusKey(pbr::SettingsReachabilityView::Status::Reachable).empty());
+  EXPECT_TRUE(pbr::ReachabilityNudgeStatusKey(pbr::SettingsReachabilityView::Status::Reachable).empty());
 }
 
 } // namespace

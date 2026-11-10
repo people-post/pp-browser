@@ -1,4 +1,5 @@
 #include "lib/net/BriefGuestLlmClient.h"
+#include "common/Localized.h"
 
 #include "foundation/error/AppError.h"
 #include "lib/net/HttpClient.h"
@@ -25,8 +26,7 @@ std::string ResolveBriefLlmApiKey(const std::string& registered_key, const std::
   return guest_key;
 }
 
-Roe<BriefGuestLlmMintResult> MintBriefGuestLlmKey(const std::string& llm_base_url,
-                                                 const std::string& install_id) {
+Roe<BriefGuestLlmMintResult> MintBriefGuestLlmKey(const std::string& llm_base_url, const std::string& install_id) {
   const std::string base = TrimTrailingSlashes(llm_base_url);
   if (base.empty()) {
     return AppError::Internal("Brief LLM base URL is empty");
@@ -45,7 +45,7 @@ Roe<BriefGuestLlmMintResult> MintBriefGuestLlmKey(const std::string& llm_base_ur
   }
   if (response->status_code == 429) {
     return AppError::Network(Err::Network::HttpError, "Guest LLM mint rate limited")
-        .WithUser("Brief free tier is temporarily rate-limited — try again later.");
+        .WithUser(Localized("chat.hint.brief_unavailable_temp"));
   }
   if (response->status_code < 200 || response->status_code >= 300) {
     std::string detail = "Guest LLM mint failed (HTTP " + std::to_string(response->status_code) + ")";

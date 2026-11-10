@@ -24,7 +24,10 @@ PostLane RandomLane() {
 
 PostAuthor::PostAuthor(IPostStore& store, std::string account_id, std::string device, PostSigner signer,
                        std::function<PostLane()> random_lane)
-    : store_(store), account_id_(std::move(account_id)), device_(std::move(device)), signer_(std::move(signer)),
+    : store_(store),
+      account_id_(std::move(account_id)),
+      device_(std::move(device)),
+      signer_(std::move(signer)),
       random_lane_(random_lane ? std::move(random_lane) : std::function<PostLane()>(RandomLane)) {}
 
 Roe<OwnPostLane> PostAuthor::CurrentLane() {
@@ -59,7 +62,7 @@ Roe<SignedPostEntry> PostAuthor::Append(const PostKind kind, const ByteVector& b
                   .lane = own.lane,
                   .seq = own.next_seq,
                   .prev = own.next_seq == 1 ? PostHash{} : own.last_hash,
-                  .claimed_at = std::max(now_ms, own.last_claimed_at),  // never back in time within a lane
+                  .claimed_at = std::max(now_ms, own.last_claimed_at), // never back in time within a lane
                   .kind = kind_byte,
                   .body = body};
   auto signed_entry = SignPostEntry(entry, signer_);
@@ -84,8 +87,8 @@ Roe<SignedPostHead> PostAuthor::IssueHead(const int64_t now_ms, std::vector<std:
   if (!lanes) {
     return lanes.error();
   }
-  PostHead head{.author = account_id_, .issued_at = now_ms, .lanes = std::move(lanes.value()),
-                .targets = std::move(targets)};
+  PostHead head{
+      .author = account_id_, .issued_at = now_ms, .lanes = std::move(lanes.value()), .targets = std::move(targets)};
   if (head.lanes.size() > kMaxPostHeadLanes) {
     // A head names every lane or it lets a carrier hide one; 64 devices' lanes is the protocol's bound.
     return Error("post: more lanes than a head can name");

@@ -22,8 +22,7 @@ Roe<std::string> RequireRegisteredRelayUserId(IdentityStore& identity) {
 } // namespace
 
 Roe<BlobPresignResult> UploadPreparedProfileIcon(IBlobClient& blob, IdentityStore& identity,
-                                                 const std::string& profile_dir,
-                                                 const PreparedProfileIcon& prepared) {
+                                                 const std::string& profile_dir, const PreparedProfileIcon& prepared) {
   auto relay_user_id = RequireRegisteredRelayUserId(identity);
   if (!relay_user_id) {
     return relay_user_id.error();
@@ -33,8 +32,7 @@ Roe<BlobPresignResult> UploadPreparedProfileIcon(IBlobClient& blob, IdentityStor
   }
 
   const std::string body(reinterpret_cast<const char*>(prepared.bytes.data()), prepared.bytes.size());
-  auto uploaded =
-      UploadRelayBlobBytes(blob, *relay_user_id, prepared.content_type, BlobPurpose::Icon, body);
+  auto uploaded = UploadRelayBlobBytes(blob, *relay_user_id, prepared.content_type, BlobPurpose::Icon, body);
   if (!uploaded) {
     return uploaded.error();
   }

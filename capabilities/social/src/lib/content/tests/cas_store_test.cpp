@@ -109,8 +109,8 @@ TEST_F(CasStoreTest, TwoWritersOfTheSameBlockBothSucceedAndItReadsBackWhole) {
   EXPECT_EQ(*loaded, plain);
   // No temporary file is left next to the block.
   int stray = 0;
-  for (const auto& entry :
-       std::filesystem::directory_iterator(std::filesystem::path(store_->BlockPath(CasRealm::Private, *hash)).parent_path())) {
+  for (const auto& entry : std::filesystem::directory_iterator(
+           std::filesystem::path(store_->BlockPath(CasRealm::Private, *hash)).parent_path())) {
     stray += entry.path().filename().string().find(".tmp") != std::string::npos ? 1 : 0;
   }
   EXPECT_EQ(stray, 0);
@@ -195,7 +195,6 @@ TEST_F(CasStoreTest, DeleteRemovesBlockAndIndex) {
   EXPECT_FALSE(meta->has_value());
 }
 
-
 TEST_F(CasStoreTest, ListFiltersByRealmAndPinned) {
   auto hash = AttachmentContentHash(plain_);
   ASSERT_TRUE(hash);
@@ -256,7 +255,6 @@ TEST_F(CasStoreTest, PublishFromPrivatePinsPublicAndUnpublishCaches) {
   EXPECT_EQ(public_cache->size(), 1u);
 }
 
-
 TEST_F(CasStoreTest, PublicTipRoundTripAndPinnedProvideGate) {
   auto hash = AttachmentContentHash(plain_);
   ASSERT_TRUE(hash);
@@ -288,7 +286,6 @@ TEST_F(CasStoreTest, PublicTipRoundTripAndPinnedProvideGate) {
   auto cache_refuse = LoadPinnedPublicCasBytes(*store_, *other_hash);
   EXPECT_FALSE(static_cast<bool>(cache_refuse));
 }
-
 
 } // namespace
 } // namespace pbr

@@ -21,10 +21,10 @@ QrDetection InspectQr(const VideoFrameRgba& frame) {
   uint8_t* gray = quirc_begin(decoder.get(), nullptr, nullptr);
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
-      const size_t i = (static_cast<size_t>(y * step) * static_cast<size_t>(frame.width) +
-                        static_cast<size_t>(x * step)) * 4;
-      gray[y * width + x] = static_cast<uint8_t>((77 * frame.rgba[i] + 150 * frame.rgba[i + 1] +
-                                                29 * frame.rgba[i + 2]) >> 8);
+      const size_t i =
+          (static_cast<size_t>(y * step) * static_cast<size_t>(frame.width) + static_cast<size_t>(x * step)) * 4;
+      gray[y * width + x] =
+          static_cast<uint8_t>((77 * frame.rgba[i] + 150 * frame.rgba[i + 1] + 29 * frame.rgba[i + 2]) >> 8);
     }
   }
   quirc_end(decoder.get());
@@ -62,5 +62,7 @@ QrDetection InspectQr(const VideoFrameRgba& frame) {
   return result;
 }
 
-std::optional<std::string> DecodeQr(const VideoFrameRgba& frame) { return InspectQr(frame).text; }
+std::optional<std::string> DecodeQr(const VideoFrameRgba& frame) {
+  return InspectQr(frame).text;
+}
 } // namespace pbr

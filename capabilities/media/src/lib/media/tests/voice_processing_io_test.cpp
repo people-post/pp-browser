@@ -23,5 +23,5 @@ TEST(VoiceProcessingIoTest, CloseIsIdempotentWithoutOpen) {
   EXPECT_FALSE(io.IsOpen());
 }
 
-}  // namespace
-}  // namespace pbr
+} // namespace
+} // namespace pbr

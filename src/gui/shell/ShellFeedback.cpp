@@ -180,8 +180,7 @@ void ShellFeedback::ShowConfirmWithCheckbox(ShellState& state, const std::string
 }
 
 void ShellFeedback::ShowPrompt(ShellState& state, const std::string& title, const std::string& message,
-                               const std::string& default_value,
-                               std::function<void(bool, std::string)> on_result) {
+                               const std::string& default_value, std::function<void(bool, std::string)> on_result) {
   state.dialog.active = true;
   state.dialog.kind = OverlayKind::Confirm;
   state.dialog.title = ui::String(title.c_str());

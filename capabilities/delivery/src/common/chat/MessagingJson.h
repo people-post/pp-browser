@@ -31,8 +31,7 @@ pp::common::Object RelayEnvelopeToApplicationJson(const RelayEnvelope& envelope)
 pp::Roe<RelayEnvelope> ParseRelayEnvelope(const pp::common::Object& json);
 
 pp::common::Object RelayWireSendRecordToJson(const RelayWireSendRecord& record);
-pp::Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(
-    const RelayEnvelope& envelope);
+pp::Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& envelope);
 pp::Roe<RelayEnvelope> RelayEnvelopeFromInboundRecord(const RelayInboundRecord& record);
 pp::Roe<RelayInboundRecord> ParseRelayInboundRecord(const pp::common::Object& json);
 

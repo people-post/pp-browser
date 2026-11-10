@@ -12,8 +12,7 @@ std::string VoiceFileName(const int64_t duration_ms) {
 std::optional<int64_t> ParseVoiceFileName(const std::string& filename) {
   static const std::string kPrefix = "voice-";
   static const std::string kSuffix = ".ogg";
-  if (filename.size() <= kPrefix.size() + kSuffix.size() ||
-      filename.compare(0, kPrefix.size(), kPrefix) != 0 ||
+  if (filename.size() <= kPrefix.size() + kSuffix.size() || filename.compare(0, kPrefix.size(), kPrefix) != 0 ||
       filename.compare(filename.size() - kSuffix.size(), kSuffix.size(), kSuffix) != 0) {
     return std::nullopt;
   }

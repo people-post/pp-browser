@@ -99,6 +99,7 @@ struct SettingsUiState {
   std::string call_diagnostics = "off";
   /** UI select value: `on` or `off` — phone Home shows the 动态 widgets section (default off = minimal AI-first). */
   std::string home_show_dynamic = "off";
+  std::string home_animated_logo = "on";
   /** UI select value: `on` or `off` — opt-in crash dump upload. */
   std::string crash_reports_enabled = "off";
   /** Display label for the language row / picker value. */
@@ -123,7 +124,7 @@ struct SettingsUiState {
   bool security_can_export_link = false;
   /** The account has a recovery phrase to show (M023; accounts minted before have none). */
   bool security_has_recovery_phrase = false;
-  /** PIN grace window (#21): 0 / 5 / 15 / 60 minutes, and its display label. */
+  /** PIN grace window (#21): 0 / 5 / 15 / 60 minutes, or -1 (always), and its display label. */
   int unlock_grace_minutes = 15;
   std::string unlock_grace_label;
   /** The "Ask for PIN again after" row shows: an own PIN (not the app default) on a platform with a secure store. */
@@ -140,8 +141,8 @@ struct SettingsUiState {
   /** Display label for the group-invite picker value. */
   std::string group_invite_policy_label = "Contacts only";
   /** projects/privacy T3 — who may call: everyone | contacts_only | nobody */
-  std::string call_invite_policy = "everyone";
-  std::string call_invite_policy_label = "Everyone";
+  std::string call_invite_policy = "contacts_only";
+  std::string call_invite_policy_label = "Contacts only";
   /** Summary of remembered agent tool allow/deny decisions. */
   std::string tool_permissions_summary = "None saved";
   bool tool_permissions_has_saved = false;

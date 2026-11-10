@@ -4,7 +4,6 @@
 #include "common/thread/ThreadTypes.h"
 
 #include <functional>
-#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -15,8 +14,6 @@ namespace pbr {
 struct ControlSend {
   std::string peer_identity;
   ThreadMessage control;
-  /** A session init the caller holds for this pair (its media-key wrap opened the session); rides the send. */
-  std::optional<std::string> key_init_b64;
   /** Wake the peer at once, the platform's most urgent push (an incoming call's). Carries our card too. */
   bool urgent = false;
   /** Our account card rides it whatever the peer was sent before: the peer may hold none of our cards. */

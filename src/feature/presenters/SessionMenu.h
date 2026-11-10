@@ -63,37 +63,37 @@ inline bool SessionMenuItemIsDestructive(const SessionMenuItem item) {
 /** Leading icon of an item (asset-relative SVG under assets/icons/v2/); every item has one. */
 inline const char* SessionMenuIcon(const SessionMenuItem item) {
   switch (item) {
-  case SessionMenuItem::MarkUnread:
-    return "../icons/v2/circle-dot.svg";
-  case SessionMenuItem::MarkRead:
-    return "../icons/v2/check-circle.svg";
-  case SessionMenuItem::Pin:
-  case SessionMenuItem::Unpin:
-    return "../icons/v2/pin.svg";
-  case SessionMenuItem::Rename:
-    return "../icons/v2/compose.svg";
-  case SessionMenuItem::Mute:
-  case SessionMenuItem::MuteMentions:
-    return "../icons/v2/bell-off.svg";
-  case SessionMenuItem::Unmute:
-  case SessionMenuItem::AllowMentions:
-    return "../icons/v2/bell.svg";
-  case SessionMenuItem::AskBeforeSharingAi:
-    return "../icons/v2/shield.svg";
-  case SessionMenuItem::Archive:
-  case SessionMenuItem::Unarchive:
-    return "../icons/v2/archive.svg";
-  case SessionMenuItem::ViewContact:
-    return "../icons/v2/user.svg";
-  case SessionMenuItem::Block:
-  case SessionMenuItem::Unblock:
-    return "../icons/v2/block.svg";
-  case SessionMenuItem::ClearChat:
-    return "../icons/v2/eraser.svg";
-  case SessionMenuItem::Delete:
-    return "../icons/v2/trash.svg";
-  case SessionMenuItem::LeaveGroup:
-    return "../icons/v2/log-out.svg";
+    case SessionMenuItem::MarkUnread:
+      return "../icons/v2/circle-dot.svg";
+    case SessionMenuItem::MarkRead:
+      return "../icons/v2/check-circle.svg";
+    case SessionMenuItem::Pin:
+    case SessionMenuItem::Unpin:
+      return "../icons/v2/pin.svg";
+    case SessionMenuItem::Rename:
+      return "../icons/v2/compose.svg";
+    case SessionMenuItem::Mute:
+    case SessionMenuItem::MuteMentions:
+      return "../icons/v2/bell-off.svg";
+    case SessionMenuItem::Unmute:
+    case SessionMenuItem::AllowMentions:
+      return "../icons/v2/bell.svg";
+    case SessionMenuItem::AskBeforeSharingAi:
+      return "../icons/v2/shield.svg";
+    case SessionMenuItem::Archive:
+    case SessionMenuItem::Unarchive:
+      return "../icons/v2/archive.svg";
+    case SessionMenuItem::ViewContact:
+      return "../icons/v2/user.svg";
+    case SessionMenuItem::Block:
+    case SessionMenuItem::Unblock:
+      return "../icons/v2/block.svg";
+    case SessionMenuItem::ClearChat:
+      return "../icons/v2/eraser.svg";
+    case SessionMenuItem::Delete:
+      return "../icons/v2/trash.svg";
+    case SessionMenuItem::LeaveGroup:
+      return "../icons/v2/log-out.svg";
   }
   return "";
 }
@@ -149,18 +149,20 @@ enum class SessionMuteChoice { EightHours, OneWeek, Always };
 inline int64_t MutedUntilFor(const SessionMuteChoice choice, const int64_t now_ms) {
   constexpr int64_t kHourMs = 60LL * 60 * 1000;
   switch (choice) {
-  case SessionMuteChoice::EightHours:
-    return now_ms + 8 * kHourMs;
-  case SessionMuteChoice::OneWeek:
-    return now_ms + 7 * 24 * kHourMs;
-  case SessionMuteChoice::Always:
-    return kSessionMutedForever;
+    case SessionMuteChoice::EightHours:
+      return now_ms + 8 * kHourMs;
+    case SessionMuteChoice::OneWeek:
+      return now_ms + 7 * 24 * kHourMs;
+    case SessionMuteChoice::Always:
+      return kSessionMutedForever;
   }
   return 0;
 }
 
 /** A mute is in force until its time passes; 0 is "not muted". */
-inline bool ThreadIsMuted(const int64_t muted_until_ms, const int64_t now_ms) { return muted_until_ms > now_ms; }
+inline bool ThreadIsMuted(const int64_t muted_until_ms, const int64_t now_ms) {
+  return muted_until_ms > now_ms;
+}
 
 /** Row order: pinned rows first, the most recently pinned on top; then newest activity first. */
 inline bool SessionSortsBefore(const int64_t a_pinned_at, const int64_t a_updated_at, const int64_t b_pinned_at,

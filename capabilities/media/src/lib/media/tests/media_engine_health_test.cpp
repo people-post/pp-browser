@@ -23,5 +23,5 @@ TEST(MediaEngineHealthTest, SkipDeviceOpenReportsNoAudioIo) {
   engine.Stop();
 }
 
-}  // namespace
-}  // namespace pbr
+} // namespace
+} // namespace pbr

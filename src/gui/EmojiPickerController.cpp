@@ -98,8 +98,7 @@ bool EmojiPickerController::RegisterModel(ui::Context* context) {
   });
 }
 
-void EmojiPickerController::OpenInsert(
-    std::function<void(std::string emoji, bool restore_composer_focus)> on_pick) {
+void EmojiPickerController::OpenInsert(std::function<void(std::string emoji, bool restore_composer_focus)> on_pick) {
   // ☺ again while the composer's emoji sheet is open: back to the keyboard.
   if (IsBottomChromeEmojiOpen()) {
     CloseToKeyboard();
@@ -117,8 +116,7 @@ void EmojiPickerController::OpenInsert(
   RebuildModel();
   DirtyAll();
 
-  const bool prefer_bottom =
-      shell_navigation_.uses_bottom_chrome && shell_navigation_.uses_bottom_chrome();
+  const bool prefer_bottom = shell_navigation_.uses_bottom_chrome && shell_navigation_.uses_bottom_chrome();
   if (prefer_bottom) {
     OpenBottomChromePresentation();
     if (bottom_chrome_mode_) {
@@ -128,8 +126,7 @@ void EmojiPickerController::OpenInsert(
   OpenOverlayPresentation();
 }
 
-void EmojiPickerController::OpenReact(std::string message_id,
-                                      std::function<void(std::string emoji)> on_pick) {
+void EmojiPickerController::OpenReact(std::string message_id, std::function<void(std::string emoji)> on_pick) {
   if (IsBottomChromeEmojiOpen()) {
     Close();
   }
@@ -188,9 +185,7 @@ void EmojiPickerController::RegisterFlow() {
   if (!flow_coordinator_.begin_modal) {
     return;
   }
-  flow_coordinator_.begin_modal(
-      layer_id_, []() { return false; },
-      [this]() { OnFlowDismissed(); });
+  flow_coordinator_.begin_modal(layer_id_, []() { return false; }, [this]() { OnFlowDismissed(); });
 }
 
 void EmojiPickerController::OnFlowDismissed() {
@@ -232,8 +227,8 @@ void EmojiPickerController::ResetState() {
   pending_scroll_top_before_.reset();
 }
 
-void EmojiPickerController::ComputeSectionWindow(int center_index, int section_count, int span,
-                                                 int prev_end, int& begin_out, int& end_out) {
+void EmojiPickerController::ComputeSectionWindow(int center_index, int section_count, int span, int prev_end,
+                                                 int& begin_out, int& end_out) {
   if (section_count <= 0 || span <= 0) {
     begin_out = 0;
     end_out = 0;
@@ -510,16 +505,14 @@ void EmojiPickerController::ScrollToCategory(const std::string& category_id) {
   }
 }
 
-void EmojiPickerController::SelectEmojiCallback(ui::DataModelHandle, ui::Event&,
-                                                const ui::VariantList& args) {
+void EmojiPickerController::SelectEmojiCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList& args) {
   if (args.empty()) {
     return;
   }
   Instance().OnEmojiPicked(args[0].Get<ui::String>().c_str());
 }
 
-void EmojiPickerController::SelectCategoryCallback(ui::DataModelHandle, ui::Event&,
-                                                   const ui::VariantList& args) {
+void EmojiPickerController::SelectCategoryCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList& args) {
   if (args.empty()) {
     return;
   }
@@ -544,7 +537,8 @@ void EmojiPickerController::CloseToKeyboard() {
     return;
   }
   // The field takes the focus with the caret after the last emoji; the keyboard comes up with it.
-  auto* draft = ui_dynamic_cast<ui::ElementFormControlTextArea*>(context_->GetDocument(0)->GetElementById("draft-input"));
+  auto* draft =
+      ui_dynamic_cast<ui::ElementFormControlTextArea*>(context_->GetDocument(0)->GetElementById("draft-input"));
   if (!draft) {
     return;
   }

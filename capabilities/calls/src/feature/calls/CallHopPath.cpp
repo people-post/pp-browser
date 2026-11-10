@@ -2256,7 +2256,7 @@ void CallHopPath::AttachThroughRelay(HopAttach at, std::function<void(Roe<void>)
 Roe<void> CallHopPath::CompleteHopAttach(const HopAttach& at, int64_t a_up_bps) {
   const std::string& call_id = at.call_id;
   channel_->MakeLive(at.keys); // a rotation from now on reaches this attach's frames
-  InstallMediaKey(call_id); // and one that arrived while attaching (the ring holds the epoch it started with)
+  InstallMediaKey(call_id);    // and one that arrived while attaching (the ring holds the epoch it started with)
   // Whoever is on the hop can say so: an invite this device sends (a mid-call add, an answer to a
   // join request — V053) names the hop the call is on, not only the picker's.
   if (!at.attach.hop_peer_id.empty()) {

@@ -50,5 +50,31 @@ TEST(DeliveryNoticeTest, ReceiveReasonsRoundTripTheirStoredNames) {
   EXPECT_FALSE(ReceiveFailureFromWire("from the future"));
 }
 
+TEST(DeliveryNoticeTest, ASendFailureRowKeepsItsReasonAndNoWords) {
+  const ThreadMessage row = MakeSendFailureRow("t1", "m1", SendFailureWord(SendFailure::PeerNoAnswer).c_str(), 42);
+  EXPECT_EQ(row.thread_id, "t1");
+  EXPECT_EQ(row.sender_contact_id, kLocalSelfContactId);
+  EXPECT_EQ(row.content_type, ChatContentType::System);
+  EXPECT_TRUE(row.text.empty()) << "the transcript words it, in the reader's language";
+  EXPECT_EQ(row.delivery, MessageDelivery::Local);
+  const auto reason = SendFailureRowReason(row);
+  ASSERT_TRUE(reason);
+  EXPECT_EQ(SendFailureFromWire(*reason), SendFailure::PeerNoAnswer);
+}
+
+TEST(DeliveryNoticeTest, TheRowIdIsOnePerMessageAndKind) {
+  EXPECT_EQ(MakeSendFailureRow("t", "m", "relay_busy", 1).id, MakeSendFailureRow("t", "m", "relay_busy", 2).id);
+  EXPECT_NE(MakeSendFailureRow("t", "m", "relay_busy", 1).id,
+            MakeSendFailureRow("t", "m", kGroupMembersMissedWire, 1).id);
+}
+
+TEST(DeliveryNoticeTest, OtherMessagesAreNotSendFailureRows) {
+  ThreadMessage plain;
+  plain.content_type = ChatContentType::System;
+  plain.text = "hello";
+  EXPECT_FALSE(SendFailureRowReason(plain));
+  EXPECT_FALSE(SendFailureFromWire("nonsense"));
+}
+
 } // namespace
 } // namespace pbr

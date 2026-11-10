@@ -1,5 +1,6 @@
 #include "foundation/platform/DesktopLocalNotifier.h"
 
+#include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/desktop/LocalNotifierImpl.h"
@@ -13,33 +14,30 @@ DesktopLocalNotifier::DesktopLocalNotifier() {
 }
 
 void DesktopLocalNotifier::NotifyIncoming(const std::string& title, const std::string& body,
-                                          const std::string& thread_id) {
+                                          const std::string& thread_id, int /*thread_unread*/) {
   if (AppLifecycle::IsUserAttentive()) {
     return;
   }
-  desktop::PostDesktopNotification(title.empty() ? "New message" : title,
-                                   body.empty() ? "You have a new message" : body, thread_id);
+  desktop::PostDesktopNotification(title.empty() ? Tr("notification.new_message") : title,
+                                   body.empty() ? Tr("notification.new_message_body") : body, thread_id);
 }
 
 void DesktopLocalNotifier::ClearForThread(const std::string& thread_id) {
   desktop::ClearDesktopNotification(thread_id);
 }
 
-void DesktopLocalNotifier::SetActivationHandler(
-    std::function<void(std::string thread_id)> handler) {
-  desktop::SetDesktopNotificationActivationHandler(
-      [handler = std::move(handler)](const std::string& thread_id) {
-        // Named logger (same node as Module redirect) — safe from watch thread.
-        if (!handler) {
-          logging::getLogger("LocalNotifier").warning << "Activation ignored: no handler";
-          return;
-        }
-        AppRuntime::PostUI([handler, thread_id]() mutable {
-          logging::getLogger("LocalNotifier").info
-              << "Activation on UI thread thread=" << thread_id;
-          handler(thread_id);
-        });
-      });
+void DesktopLocalNotifier::SetActivationHandler(std::function<void(std::string thread_id)> handler) {
+  desktop::SetDesktopNotificationActivationHandler([handler = std::move(handler)](const std::string& thread_id) {
+    // Named logger (same node as Module redirect) — safe from watch thread.
+    if (!handler) {
+      logging::getLogger("LocalNotifier").warning << "Activation ignored: no handler";
+      return;
+    }
+    AppRuntime::PostUI([handler, thread_id]() mutable {
+      logging::getLogger("LocalNotifier").info << "Activation on UI thread thread=" << thread_id;
+      handler(thread_id);
+    });
+  });
 }
 
 void DesktopLocalNotifier::Shutdown() {

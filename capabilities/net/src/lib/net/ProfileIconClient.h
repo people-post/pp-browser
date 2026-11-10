@@ -17,8 +17,7 @@ struct PreparedProfileIcon {
 };
 
 Roe<BlobPresignResult> UploadPreparedProfileIcon(IBlobClient& blob, IdentityStore& identity,
-                                                 const std::string& profile_dir,
-                                                 const PreparedProfileIcon& prepared);
+                                                 const std::string& profile_dir, const PreparedProfileIcon& prepared);
 
 Roe<void> ClearHostedProfileIcon(IBlobClient& blob, IdentityStore& identity, const std::string& profile_dir);
 

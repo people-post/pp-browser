@@ -17,7 +17,7 @@ namespace pbr {
 /** Where decoded 48 kHz mono s16 PCM goes. Real code: the speaker lease; tests: a recording sink. */
 class IVoicePlaybackSink {
 public:
-  static constexpr int32_t kOpenBusy = 1;     // a call (or a recording) has the device
+  static constexpr int32_t kOpenBusy = 1; // a call (or a recording) has the device
   static constexpr int32_t kOpenNoDevice = 2;
 
   virtual ~IVoicePlaybackSink() = default;
@@ -37,9 +37,9 @@ std::unique_ptr<IVoicePlaybackSink> CreateArbiterVoicePlaybackSink(
 
 enum class VoicePlayEnd {
   Finished,
-  Stopped,     // Stop() or another clip started
-  Unplayable,  // not a valid voice file (parsing failed): "cannot play"
-  Busy,        // a call has the device: not played
+  Stopped,    // Stop() or another clip started
+  Unplayable, // not a valid voice file (parsing failed): "cannot play"
+  Busy,       // a call has the device: not played
   NoDevice,
   Interrupted, // a call started ringing or began
 };

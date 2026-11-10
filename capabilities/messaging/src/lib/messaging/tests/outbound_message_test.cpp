@@ -77,8 +77,8 @@ struct Device {
   /** The direct send as MeshDeliveryOrchestrator runs it, minus the transports. */
   Roe<RelayEnvelope> Send(const Thread& thread, const Device& peer, const std::string& text,
                           const SendRelayOptions& options = {}) {
-    auto appended = AppendOutboundMessage(*store, NewOutboundMessage(thread.id, text, options, util::GenerateUuid(),
-                                                                     util::NowUnixMs()));
+    auto appended = AppendOutboundMessage(
+        *store, NewOutboundMessage(thread.id, text, options, util::GenerateUuid(), util::NowUnixMs()));
     if (!appended) {
       return appended.error();
     }
@@ -87,10 +87,9 @@ struct Device {
     if (!sealed) {
       return sealed.error();
     }
-    RelayEnvelope envelope =
-        BuildDirectEnvelope(*appended, EnvelopeSender{"relay:" + tag, keys.account_id, keys.device.peer_id},
-                            thread.channel, "relay:" + peer.tag, {AccountCopy(*appended, std::move(*sealed))},
-                            NextRelayOrderKey());
+    RelayEnvelope envelope = BuildDirectEnvelope(
+        *appended, EnvelopeSender{"relay:" + tag, keys.account_id, keys.device.peer_id}, thread.channel,
+        "relay:" + peer.tag, {AccountCopy(*appended, std::move(*sealed))}, NextRelayOrderKey());
     test::SignEnvelopeAs(keys, envelope);
     return envelope;
   }
@@ -124,7 +123,8 @@ TEST_F(OutboundMessageTest, AFirstPublicSendOpensTheSessionAndThePeerReadsIt) {
   const Thread thread = alice_->DirectThreadTo(*bob_, ThreadChannel::E2ePublic);
   auto first = alice_->Send(thread, *bob_, "hello");
   ASSERT_TRUE(first) << first.error().message;
-  EXPECT_TRUE(first->body.e2e.key_init_b64 && !first->body.e2e.key_init_b64->empty()) << "the opening send carries its key_init";
+  EXPECT_TRUE(first->body.e2e.key_init_b64 && !first->body.e2e.key_init_b64->empty())
+      << "the opening send carries its key_init";
   EXPECT_EQ(first->route.kind, "direct");
   EXPECT_EQ(first->recipient_contact_id, "relay:bob");
   EXPECT_EQ(first->stream_key, BuildDeviceRelayStreamKey("relay:alice", "relay:bob", ThreadChannel::E2ePublic,
@@ -172,8 +172,8 @@ TEST_F(OutboundMessageTest, TheRowAndTheReactionCap) {
   EXPECT_EQ(row.timestamp, 42);
 
   for (size_t i = 0; i < kMaxAnnotationsPerTarget; ++i) {
-    ASSERT_TRUE(AppendOutboundMessage(*alice_->store, NewOutboundMessage(thread.id, "👍", options,
-                                                                         util::GenerateUuid(), 1)));
+    ASSERT_TRUE(
+        AppendOutboundMessage(*alice_->store, NewOutboundMessage(thread.id, "👍", options, util::GenerateUuid(), 1)));
   }
   auto over = AppendOutboundMessage(*alice_->store, NewOutboundMessage(thread.id, "👍", options, "over", 1));
   ASSERT_FALSE(over);
@@ -223,10 +223,13 @@ TEST(OutboundSendRulesTest, AGroupMembersEnvelopeCarriesACopyPerDevice) {
   message.session_epoch = 2;
   message.timestamp = 5;
   const EnvelopeSender sender{"relay:a", "account:a", "QmA"};
-  const RelayCopy phone{.recipient_device = "QmBPhone", .session_epoch = 5, .sender_seq = 9,
-                        .key_init_b64 = std::string("init"), .payload_b64 = "cGF5bG9hZA=="};
-  const RelayCopy laptop{.recipient_device = "QmBLaptop", .session_epoch = 1, .sender_seq = 3,
-                         .payload_b64 = "cGF5bG9hZDI="};
+  const RelayCopy phone{.recipient_device = "QmBPhone",
+                        .session_epoch = 5,
+                        .sender_seq = 9,
+                        .key_init_b64 = std::string("init"),
+                        .payload_b64 = "cGF5bG9hZA=="};
+  const RelayCopy laptop{
+      .recipient_device = "QmBLaptop", .session_epoch = 1, .sender_seq = 3, .payload_b64 = "cGF5bG9hZDI="};
   RelayEnvelope e = BuildGroupMemberEnvelope(message, sender, "group-1", "account:b", "relay:b", {phone, laptop}, 11);
   EXPECT_EQ(e.route.kind, "group");
   EXPECT_EQ(e.body.e2e.copies, (std::vector<RelayCopy>{phone, laptop})) << "one record, each device's copy (M022)";

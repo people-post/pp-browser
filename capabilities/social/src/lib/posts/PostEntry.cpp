@@ -136,9 +136,8 @@ PostHash PostEntryHash(const ByteVector& canonical) {
 
 Roe<SignedPostEntry> SignPostEntry(const PostEntry& entry, const PostSigner& signer) {
   if (entry.extensions.size() > kMaxPostExtensions ||
-      std::adjacent_find(entry.extensions.begin(), entry.extensions.end(), [](const auto& a, const auto& b) {
-        return a.tag >= b.tag;
-      }) != entry.extensions.end()) {
+      std::adjacent_find(entry.extensions.begin(), entry.extensions.end(),
+                         [](const auto& a, const auto& b) { return a.tag >= b.tag; }) != entry.extensions.end()) {
     return Error("post: extensions must be at most 16, tags increasing");
   }
   SignedPostEntry signed_entry;
@@ -241,7 +240,7 @@ ByteVector PostHeadCanonicalBytes(const PostHead& head) {
 }
 
 Roe<PostHead> ParsePostHead(const ByteVector& canonical) {
-  if (canonical.size() > kMaxPostEntryBytes) {  // 64 lanes are 3.5 KiB
+  if (canonical.size() > kMaxPostEntryBytes) { // 64 lanes are 3.5 KiB
     return Error("post: head over the size limit");
   }
   post_wire::Reader r(canonical);

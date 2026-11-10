@@ -28,7 +28,7 @@ DirectHealthAction DecideDirectHealth(const DirectHealthInput& in) {
     return DirectHealthAction::HealConnected; // the stream came up before it was committed
   }
   if (ShouldArmHopPlanner(in.n_joined) || in.started_at_ms <= 0) {
-    return DirectHealthAction::None;  // a group call's media is the hop's to judge
+    return DirectHealthAction::None; // a group call's media is the hop's to judge
   }
   return in.now_ms - in.started_at_ms >= in.timeout_ms ? DirectHealthAction::TimedOut : DirectHealthAction::None;
 }
@@ -49,8 +49,7 @@ BundleFailureAction DecideBundleFailure(const BundleFailureInput& in) {
   return BundleFailureAction::Fail;
 }
 
-NetworkChangeAction DecideOnNetworkChange(const CallDirectPlannerPhase phase, const bool on_relay,
-                                          const bool offerer) {
+NetworkChangeAction DecideOnNetworkChange(const CallDirectPlannerPhase phase, const bool on_relay, const bool offerer) {
   if (phase == CallDirectPlannerPhase::Reconnecting) {
     return NetworkChangeAction::Reanchor;
   }

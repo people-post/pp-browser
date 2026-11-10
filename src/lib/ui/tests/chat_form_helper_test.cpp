@@ -8,8 +8,7 @@
 
 TEST(ChatFormHelperTest, AppliesSubmitTemplate) {
   const std::map<std::string, std::string> values{{"name", "Alice"}, {"date", "2026-06-15"}};
-  const std::string display =
-      pbr::ApplySubmitTemplate("Book for {{name}} on {{date}}", values);
+  const std::string display = pbr::ApplySubmitTemplate("Book for {{name}} on {{date}}", values);
   EXPECT_EQ(display, "Book for Alice on 2026-06-15");
 }
 
@@ -22,8 +21,7 @@ TEST(ChatFormHelperTest, BuildsFormSubmissionPayload) {
 }
 
 TEST(ChatFormHelperTest, ExtractsFormIdAndInjectsPlaceholders) {
-  const std::string rml =
-      R"(<div class="chat-form" data-form-id="booking" id="form-__ENTRY__-booking"></div>)";
+  const std::string rml = R"(<div class="chat-form" data-form-id="booking" id="form-__ENTRY__-booking"></div>)";
   const std::optional<std::string> form_id = pbr::ExtractFormId(rml);
   ASSERT_TRUE(form_id.has_value());
   EXPECT_EQ(*form_id, "booking");

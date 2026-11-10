@@ -31,7 +31,6 @@
 
 namespace pbr::agent_test {
 
-
 inline BriefAiEvent Meta() {
   BriefAiEvent event;
   event.type = BriefAiEvent::Type::Meta;
@@ -99,10 +98,15 @@ public:
   Roe<std::optional<Thread>> GetThread(const std::string&) const override { return std::optional<Thread>{}; }
   Roe<Thread> UpsertThread(const Thread& thread) override { return thread; }
   Roe<bool> DeleteThread(const std::string&) override { return true; }
-  Roe<std::optional<Thread>> FindDirectThread(const DirectChatTarget&) const override { return std::optional<Thread>{}; }
-  Roe<Thread> FindOrCreateDirectThread(const DirectChatTarget&, const std::string&, const std::string&) override { return Thread{}; }
+  Roe<std::optional<Thread>> FindDirectThread(const DirectChatTarget&) const override {
+    return std::optional<Thread>{};
+  }
+  Roe<Thread> FindOrCreateDirectThread(const DirectChatTarget&, const std::string&, const std::string&) override {
+    return Thread{};
+  }
   Roe<std::optional<Thread>> FindGroupThread(const std::string&) const override { return std::optional<Thread>{}; }
-  Roe<Thread> FindOrCreateGroupThread(const std::string&, const std::string&, const std::vector<std::string>&) override {
+  Roe<Thread> FindOrCreateGroupThread(const std::string&, const std::string&,
+                                      const std::vector<std::string>&) override {
     return Thread{};
   }
   Roe<std::vector<ThreadMessage>> GetMessages(const std::string&) const override { return messages; }
@@ -134,7 +138,8 @@ public:
   }
   Roe<bool> HasMessageId(const std::string&, const std::string&) const override { return false; }
   Roe<void> ClearMessages(const std::string&, const ClearMessagesOptions&) override { return {}; }
-  Roe<std::vector<ThreadMessage>> ExportMessagesUpTo(const std::string&, const std::optional<std::string>&) const override {
+  Roe<std::vector<ThreadMessage>> ExportMessagesUpTo(const std::string&,
+                                                     const std::optional<std::string>&) const override {
     return messages;
   }
   Roe<std::optional<ConversationSummary>> GetThreadMemory(const std::string&) const override {

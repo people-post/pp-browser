@@ -42,7 +42,7 @@ struct TranscriptRow {
  * chat only: the DM that carried it is not read.
  */
 std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& messages,
-                                                const SystemControlRegistry* controls,
-                                                ThreadKind thread_kind = ThreadKind::Group);
+                                              const SystemControlRegistry* controls,
+                                              ThreadKind thread_kind = ThreadKind::Group);
 
 } // namespace pbr

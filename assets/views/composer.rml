@@ -75,15 +75,10 @@
             data-event-click="voice_mode_toggle()" title="{{i18n:chat.voice.mode_keyboard}}">
       <svg src="../icons/keyboard.svg" width="18" height="18" crop-to-content="true"></svg>
     </button>
-    <button class="prompt-emoji-btn" type="button" data-if="!voice_mode" data-event-click="open_emoji_insert()"
-            data-attrif-disabled="composer_input_disabled" title="{{i18n:chat.insert_emoji}}">
-      <svg class="prompt-icon-classic" src="../icons/emoji.svg" width="18" height="18" crop-to-content="true"></svg>
-        <svg class="prompt-icon-v2" src="../icons/v2/emoji.svg" width="20" height="20"></svg>
-    </button>
     <!-- The input is one pill: the text grows from one line to five (then scrolls). Desktop: the paperclip and the
-         camera sit inside its right end. Phones (Kenneth 2026-11-07): the bold plus and the emoji key sit inside its
-         bottom left, the microphone (Send once there is text) inside its bottom right; no camera (the plus card has
-         it). components.rcss places them. -->
+         camera sit inside its right end. Phones (TODO #202): the emoji key sits at the pill's right end, the bold plus
+         floats left of the pill and the microphone (Send once there is text) right of it, as round 44dp buttons; no
+         camera (the plus card has it). components.rcss places them. -->
     <div class="prompt-composer-pill" data-if="!voice_mode">
       <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="1" max-rows="5"
                 maxlength="65536"
@@ -117,6 +112,14 @@
         <svg class="prompt-icon-v2" src="../icons/v2/camera.svg" width="20" height="20"></svg>
       </button>
     </div>
+    <!-- The emoji key follows the pill (Kenneth 2026-11-10: right side of every input): the desktop shows it right of the pill,
+         phones draw it over the pill's right end (components.rcss). -->
+    <button class="prompt-emoji-btn" type="button" data-if="!voice_mode" data-event-click="open_emoji_insert()"
+            data-attrif-disabled="composer_input_disabled" title="{{i18n:chat.insert_emoji}}">
+      <svg class="prompt-icon-classic" src="../icons/emoji.svg" width="18" height="18" crop-to-content="true"></svg>
+        <svg class="prompt-icon-v2" src="../icons/v2/emoji.svg" width="20" height="20"></svg>
+        <svg class="prompt-icon-home-emoji" src="../icons/v2/emoji-round.svg" width="24" height="24"></svg>
+    </button>
     <!-- Voice mode (WeChat style): one wide bar takes the pill's place. A phone presses and holds on it (mousedown
          starts, the document sees the release); the desktop clicks, then uses Cancel / Send beside it. While
          recording it shows the red dot, the timer and the hint. -->
@@ -145,9 +148,15 @@
             data-event-click="send_message()" data-attrif-disabled="composer_input_disabled">
       <span class="prompt-send-disc"><svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg></span>
     </button>
+    <!-- An AI conversation and the Home card (no human chat) have no microphone yet (no speech-to-text): the round slot is always Send, drawn disabled
+         while the field is empty (TODO #205). Human chats keep the microphone <-> Send switch. -->
+    <button class="prompt-send-btn prompt-send-btn--idle" type="button" disabled="disabled"
+            data-if="!thread_is_private &amp;&amp; !thread_is_public &amp;&amp; !thread_is_group &amp;&amp; !voice_mode &amp;&amp; draft == '' &amp;&amp; !loading">
+      <span class="prompt-send-disc"><svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg></span>
+    </button>
     <!-- Phones (WhatsApp, Kenneth 2026-11-04): the microphone ends the row and gives its place to Send once there is
          text; in voice mode the keyboard key takes it. Same buttons and handlers as the desktop's leading pair. -->
-    <button class="prompt-voice-toggle-btn prompt-voice-toggle-btn--end" type="button"
+    <button class="prompt-voice-toggle-btn prompt-voice-toggle-btn--end prompt-mic-btn" type="button"
             data-if="show_voice && !voice_mode && !voice_recording && draft == ''"
             data-event-click="voice_mode_toggle()" data-attrif-disabled="composer_input_disabled"
             title="{{i18n:chat.voice.mode_voice}}">

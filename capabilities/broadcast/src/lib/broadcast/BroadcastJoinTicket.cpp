@@ -111,8 +111,7 @@ Roe<BroadcastJoinTicket> DecodeBroadcastJoinTicketJson(const std::string_view js
   return ticket;
 }
 
-Roe<BroadcastJoinTicket> MintBroadcastJoinTicket(BroadcastJoinTicketDraft draft,
-                                                 const ByteVector& media_key_bytes,
+Roe<BroadcastJoinTicket> MintBroadcastJoinTicket(BroadcastJoinTicketDraft draft, const ByteVector& media_key_bytes,
                                                  const ByteVector& publisher_mldsa_secret_key,
                                                  const ByteVector* viewer_pairwise_session_key) {
   if (draft.publisher_peer_id.empty() || draft.join_handle.empty() || draft.viewer_peer_id.empty()) {
@@ -167,9 +166,8 @@ Roe<BroadcastJoinTicket> MintBroadcastJoinTicket(BroadcastJoinTicketDraft draft,
   return ticket;
 }
 
-Roe<void> VerifyBroadcastJoinTicket(const BroadcastJoinTicket& ticket,
-                                    const ByteVector& publisher_mldsa_public_key, const int64_t now_ms,
-                                    const std::string_view expected_viewer_peer_id) {
+Roe<void> VerifyBroadcastJoinTicket(const BroadcastJoinTicket& ticket, const ByteVector& publisher_mldsa_public_key,
+                                    const int64_t now_ms, const std::string_view expected_viewer_peer_id) {
   if (publisher_mldsa_public_key.size() != kMlDsa65PublicKeyBytes) {
     return Error("broadcast join ticket verify requires ML-DSA-65 public key");
   }
@@ -211,12 +209,10 @@ Roe<void> VerifyBroadcastJoinTicket(const BroadcastJoinTicket& ticket,
 }
 
 Roe<BroadcastMediaKey> ExtractBroadcastMediaKey(const BroadcastJoinTicket& ticket,
-                                                const ByteVector& publisher_mldsa_public_key,
-                                                const int64_t now_ms,
+                                                const ByteVector& publisher_mldsa_public_key, const int64_t now_ms,
                                                 const std::string_view expected_viewer_peer_id,
                                                 const ByteVector* viewer_pairwise_session_key) {
-  auto verified =
-      VerifyBroadcastJoinTicket(ticket, publisher_mldsa_public_key, now_ms, expected_viewer_peer_id);
+  auto verified = VerifyBroadcastJoinTicket(ticket, publisher_mldsa_public_key, now_ms, expected_viewer_peer_id);
   if (!verified) {
     return verified.error();
   }

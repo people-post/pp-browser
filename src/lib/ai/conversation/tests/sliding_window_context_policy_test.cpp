@@ -44,8 +44,7 @@ TEST(SlidingWindowContextPolicyTest, ConversationContextScenarios) {
   AddCompletedTurn(conversation, "third user", "third assistant");
 
   pbr::TranscriptEntry& current = conversation.AppendUser("fourth user");
-  const pbr::ContextBuildResult built =
-      policy.Build("system prompt", conversation, current, budget);
+  const pbr::ContextBuildResult built = policy.Build("system prompt", conversation, current, budget);
 
   ASSERT_FALSE(built.messages.empty());
   EXPECT_EQ(built.messages.front().role, "system");
@@ -70,15 +69,13 @@ TEST(SlidingWindowContextPolicyTest, ConversationContextScenarios) {
   }
   pbr::TranscriptEntry& trimmed_current = trimmed_conversation.AppendUser("current");
   const pbr::ContextBudget tight_budget{.max_turn_pairs = 10, .max_recent_chars = 600, .max_input_tokens = 8000};
-  const pbr::ContextBuildResult trimmed =
-      policy.Build("system", trimmed_conversation, trimmed_current, tight_budget);
+  const pbr::ContextBuildResult trimmed = policy.Build("system", trimmed_conversation, trimmed_current, tight_budget);
   EXPECT_GT(trimmed.provenance.trimmed_turn_count, 0);
 
   pbr::Conversation summary_conversation;
   summary_conversation.SetSummary({.text = "User prefers blue.", .version = 1});
   pbr::TranscriptEntry& summary_current = summary_conversation.AppendUser("follow up");
-  const pbr::ContextBuildResult with_summary =
-      policy.Build("system", summary_conversation, summary_current, budget);
+  const pbr::ContextBuildResult with_summary = policy.Build("system", summary_conversation, summary_current, budget);
   EXPECT_TRUE(with_summary.provenance.summary_included);
   bool saw_summary = false;
   int system_count = 0;
@@ -113,8 +110,7 @@ TEST(SlidingWindowContextPolicyTest, ConversationContextScenarios) {
       "Book for Alice on 2026-06-15",
       R"({"type":"form_submission","form_id":"booking","values":{"name":"Alice","date":"2026-06-15"}})");
   payload_conversation.CompleteTurn(payload_entry.id, "Confirmed.");
-  const pbr::ContextBuildResult payload_history =
-      policy.Build("system", payload_conversation, payload_entry, budget);
+  const pbr::ContextBuildResult payload_history = policy.Build("system", payload_conversation, payload_entry, budget);
   bool saw_payload_fence = false;
   for (const pbr::ChatMessage& message : payload_history.messages) {
     if (message.role == "user" && message.content.find("```json") != std::string::npos &&
@@ -126,8 +122,7 @@ TEST(SlidingWindowContextPolicyTest, ConversationContextScenarios) {
 
   pbr::Conversation current_payload_conversation;
   pbr::TranscriptEntry& current_payload = current_payload_conversation.AppendUser(
-      "Submit booking",
-      R"({"type":"form_submission","form_id":"booking","values":{"name":"Bob"}})");
+      "Submit booking", R"({"type":"form_submission","form_id":"booking","values":{"name":"Bob"}})");
   const pbr::ContextBuildResult current_payload_built =
       policy.Build("system", current_payload_conversation, current_payload, budget);
   EXPECT_EQ(current_payload_built.messages.back().role, "user");

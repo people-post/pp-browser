@@ -33,15 +33,15 @@ FILE* g_log_file = nullptr;
 
 const char* LevelTag(logging::Level level) {
   switch (level) {
-  case logging::kLevelDebug:
-    return "D";
-  case logging::Level::INFO:
-    return "I";
-  case logging::Level::WARNING:
-    return "W";
-  case logging::kLevelError:
-  case logging::Level::CRITICAL:
-    return "E";
+    case logging::kLevelDebug:
+      return "D";
+    case logging::Level::INFO:
+      return "I";
+    case logging::Level::WARNING:
+      return "W";
+    case logging::kLevelError:
+    case logging::Level::CRITICAL:
+      return "E";
   }
   return "I";
 }
@@ -91,19 +91,19 @@ void WriteIosLog(logging::Level level, const std::string& message) {
   const char* tag = LevelTag(level);
   os_log_type_t os_type = OS_LOG_TYPE_INFO;
   switch (level) {
-  case logging::kLevelDebug:
-    os_type = OS_LOG_TYPE_DEBUG;
-    break;
-  case logging::Level::INFO:
-    os_type = OS_LOG_TYPE_INFO;
-    break;
-  case logging::Level::WARNING:
-    os_type = OS_LOG_TYPE_DEFAULT;
-    break;
-  case logging::kLevelError:
-  case logging::Level::CRITICAL:
-    os_type = OS_LOG_TYPE_ERROR;
-    break;
+    case logging::kLevelDebug:
+      os_type = OS_LOG_TYPE_DEBUG;
+      break;
+    case logging::Level::INFO:
+      os_type = OS_LOG_TYPE_INFO;
+      break;
+    case logging::Level::WARNING:
+      os_type = OS_LOG_TYPE_DEFAULT;
+      break;
+    case logging::kLevelError:
+    case logging::Level::CRITICAL:
+      os_type = OS_LOG_TYPE_ERROR;
+      break;
   }
   os_log_with_type(OS_LOG_DEFAULT, os_type, "[%{public}s] %{public}s", kProductLogTag, message.c_str());
   std::fprintf(stderr, "[%s][%s] %s\n", kProductLogTag, tag, message.c_str());
@@ -124,21 +124,21 @@ public:
 #if defined(__ANDROID__)
     int priority = ANDROID_LOG_INFO;
     switch (level) {
-    case logging::kLevelDebug:
-      priority = ANDROID_LOG_DEBUG;
-      break;
-    case logging::Level::INFO:
-      priority = ANDROID_LOG_INFO;
-      break;
-    case logging::Level::WARNING:
-      priority = ANDROID_LOG_WARN;
-      break;
-    case logging::kLevelError:
-      priority = ANDROID_LOG_ERROR;
-      break;
-    case logging::Level::CRITICAL:
-      priority = ANDROID_LOG_FATAL;
-      break;
+      case logging::kLevelDebug:
+        priority = ANDROID_LOG_DEBUG;
+        break;
+      case logging::Level::INFO:
+        priority = ANDROID_LOG_INFO;
+        break;
+      case logging::Level::WARNING:
+        priority = ANDROID_LOG_WARN;
+        break;
+      case logging::kLevelError:
+        priority = ANDROID_LOG_ERROR;
+        break;
+      case logging::Level::CRITICAL:
+        priority = ANDROID_LOG_FATAL;
+        break;
     }
     __android_log_write(priority, kProductLogTag, message.c_str());
 #elif defined(__APPLE__) && TARGET_OS_IPHONE

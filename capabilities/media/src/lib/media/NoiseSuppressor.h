@@ -37,17 +37,17 @@ private:
   void ProcessHop();
   static void Fft(std::vector<std::complex<float>>& x, bool inverse);
 
-  std::vector<float> window_;              // sqrt-Hann, kFftSize
-  std::vector<float> in_fifo_;             // pending input samples (float, -1..1)
-  std::vector<float> out_fifo_;            // processed samples ready to emit
-  std::vector<float> analysis_;            // last kFftSize input samples
-  std::vector<float> overlap_;             // kFftSize synthesis overlap-add tail
-  std::vector<std::complex<float>> spec_;  // kFftSize
-  std::vector<float> noise_psd_;           // kBins
-  std::vector<float> smoothed_psd_;        // kBins
-  std::vector<float> prev_gain_;           // kBins
-  std::vector<float> prev_mag2_;           // kBins, |X|^2 of previous frame
-  std::vector<float> gain_;                // kBins
+  std::vector<float> window_;             // sqrt-Hann, kFftSize
+  std::vector<float> in_fifo_;            // pending input samples (float, -1..1)
+  std::vector<float> out_fifo_;           // processed samples ready to emit
+  std::vector<float> analysis_;           // last kFftSize input samples
+  std::vector<float> overlap_;            // kFftSize synthesis overlap-add tail
+  std::vector<std::complex<float>> spec_; // kFftSize
+  std::vector<float> noise_psd_;          // kBins
+  std::vector<float> smoothed_psd_;       // kBins
+  std::vector<float> prev_gain_;          // kBins
+  std::vector<float> prev_mag2_;          // kBins, |X|^2 of previous frame
+  std::vector<float> gain_;               // kBins
   uint32_t frames_ = 0;
   float noise_floor_dbfs_ = -100.f;
 };

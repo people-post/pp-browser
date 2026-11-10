@@ -2,9 +2,9 @@
 
 namespace pbr {
 
-std::vector<std::string> SelectPairwiseFanoutTargets(
-    const std::vector<std::string>& identities, const std::string& skip_identity,
-    const std::function<bool(const std::string& identity)>& include) {
+std::vector<std::string> SelectPairwiseFanoutTargets(const std::vector<std::string>& identities,
+                                                     const std::string& skip_identity,
+                                                     const std::function<bool(const std::string& identity)>& include) {
   std::vector<std::string> out;
   out.reserve(identities.size());
   for (const std::string& id : identities) {
@@ -19,10 +19,8 @@ std::vector<std::string> SelectPairwiseFanoutTargets(
   return out;
 }
 
-
-PairwiseFanoutResult FanOutPairwise(
-    const std::vector<std::string>& targets, PairwiseFanoutMode mode,
-    const std::function<pp::Roe<void>(const std::string& identity)>& send) {
+PairwiseFanoutResult FanOutPairwise(const std::vector<std::string>& targets, PairwiseFanoutMode mode,
+                                    const std::function<pp::Roe<void>(const std::string& identity)>& send) {
   PairwiseFanoutResult result;
   if (!send) {
     result.first_error = pp::Error("Pairwise fan-out send not bound");

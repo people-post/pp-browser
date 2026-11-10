@@ -52,7 +52,8 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(roundtrip));
   EXPECT_EQ(roundtrip.value().message_id, "m1");
 
-  const Object legacy = TryParseObject(R"({"thread_id":"t1","message_id":"m2","body":{"text":"nope"}})").value_or(Object{});
+  const Object legacy =
+      TryParseObject(R"({"thread_id":"t1","message_id":"m2","body":{"text":"nope"}})").value_or(Object{});
   EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(legacy)));
 
   mesh::DirectoryHit hit;
@@ -108,7 +109,10 @@ TEST(QuoteReplyTest, ComposeAndSplitRoundTrip) {
 TEST(PlainTextLinksTest, FindsHttpsLinksAndViewDetailsLabels) {
   using namespace pbr;
 
-  const std::string shared = "G7 to release oil reserves.\n\xE3\x80\x90\xE6\x9F\xA5\xE7\x9C\x8B\xE8\xAF\xA6\xE6\x83\x85\xE3\x80\x91https://www.aa.com.tr/en/x?id=1";
+  const std::string shared =
+      "G7 to release oil "
+      "reserves.\n\xE3\x80\x90\xE6\x9F\xA5\xE7\x9C\x8B\xE8\xAF\xA6\xE6\x83\x85\xE3\x80\x91https://www.aa.com.tr/en/"
+      "x?id=1";
   auto links = FindPlainTextLinks(shared);
   ASSERT_EQ(links.size(), 1u);
   EXPECT_EQ(links[0].url, "https://www.aa.com.tr/en/x?id=1");
@@ -124,7 +128,8 @@ TEST(PlainTextLinksTest, FindsHttpsLinksAndViewDetailsLabels) {
   EXPECT_EQ(links[1].display, "[View details]");
 
   // A link ends at CJK text; http, bare "https://" and "xhttps://" are not links.
-  links = FindPlainTextLinks("\xE7\x9C\x8Bhttps://example.com/a\xE8\xBF\x99\xE9\x87\x8C http://plain.example https:// xhttps://no.example");
+  links = FindPlainTextLinks(
+      "\xE7\x9C\x8Bhttps://example.com/a\xE8\xBF\x99\xE9\x87\x8C http://plain.example https:// xhttps://no.example");
   ASSERT_EQ(links.size(), 1u);
   EXPECT_EQ(links[0].url, "https://example.com/a");
   EXPECT_TRUE(FindPlainTextLinks("no links here").empty());
@@ -250,9 +255,9 @@ TEST(MessagingFoundationTest, PeerKemKeyStoreKeepsOnlyKeysTheAccountBound) {
   substituted.kem_public_key_b64 = mallory.KemPublicB64();
   EXPECT_FALSE(store.Put(account, alice.account_id, substituted)) << "another key under Alice's binding";
   const PeerKemKeyRecord mallory_own{.kem_public_key_b64 = mallory.KemPublicB64(),
-                                  .signing_public_key_b64 = mallory.SigningPublicB64(),
-                                  .binding_signature_b64 = mallory.KemBindingB64(),
-                                  .source = "test"};
+                                     .signing_public_key_b64 = mallory.SigningPublicB64(),
+                                     .binding_signature_b64 = mallory.KemBindingB64(),
+                                     .source = "test"};
   EXPECT_FALSE(store.Put(account, alice.account_id, mallory_own)) << "Mallory's own binding, claimed for Alice";
   EXPECT_FALSE(store.Put("relay_user", alice.account_id, bound)) << "accounts only";
   EXPECT_FALSE(store.Get(account, alice.account_id).has_value());

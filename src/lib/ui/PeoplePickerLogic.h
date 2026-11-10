@@ -37,8 +37,7 @@ enum class PeoplePickerCta {
 };
 
 /** free_selected_count excludes locked rows. `sending`: invites to an existing group are going out. */
-inline PeoplePickerCta ComputePeoplePickerCta(PeoplePickerMode mode, int free_selected_count,
-                                              bool sending = false) {
+inline PeoplePickerCta ComputePeoplePickerCta(PeoplePickerMode mode, int free_selected_count, bool sending = false) {
   if (mode == PeoplePickerMode::GroupMembers) {
     return PeoplePickerCta::Disabled;
   }

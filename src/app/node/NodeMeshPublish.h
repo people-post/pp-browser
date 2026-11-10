@@ -13,7 +13,6 @@ namespace pbr {
  * Uses registration.base_url + advertise_multiaddrs + local capabilities.
  * No-op (Ok) when mesh_publish is false or registration URL empty.
  */
-Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& identity,
-                                        const std::string& nickname);
+Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& identity, const std::string& nickname);
 
 } // namespace pbr

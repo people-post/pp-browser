@@ -65,9 +65,8 @@ void CallsLoop::Ref::Enqueue(CallStackEvent event) const {
 }
 
 OwnerExecutor::TimerId CallsLoop::Ref::After(const std::chrono::milliseconds delay, CallStackEvent event) const {
-  return tasks_->After(delay, [loop = loop_, event = std::make_shared<CallStackEvent>(std::move(event))]() {
-    loop->Handle(*event);
-  });
+  return tasks_->After(
+      delay, [loop = loop_, event = std::make_shared<CallStackEvent>(std::move(event))]() { loop->Handle(*event); });
 }
 
 void CallsLoop::Ref::Cancel(const OwnerExecutor::TimerId id) const {
@@ -83,7 +82,7 @@ void CallsLoop::Handle(CallStackEvent& event) {
 
 void CallsWakeSlot::ArmAt(const std::optional<Clock::time_point> at) {
   if (at == at_ && (timer_ != 0 || !at)) {
-    return;  // already armed there (or already disarmed)
+    return; // already armed there (or already disarmed)
   }
   Disarm();
   if (!at) {

@@ -31,7 +31,7 @@ void ConfigApplyBridge::InstallListeners() {
   last_network_ = ProjectNetwork(snap.config);
   last_policy_ = ProjectPolicy(snap.profile_prefs);
   last_notifications_ = ProjectNotifications(snap.profile_prefs);
-  messaging_->Apply(*last_notifications_);  // stay connected (P011) holds from unlock
+  messaging_->Apply(*last_notifications_); // stay connected (P011) holds from unlock
   last_chrome_ = ShellHost::ProjectChrome(snap.profile_prefs);
   last_locale_ = LocalizationService::Prefs{.language = snap.profile_prefs.language};
   last_agent_ = ChatController::ProjectAgent(snap.config);
@@ -97,16 +97,9 @@ void ConfigApplyBridge::OnProfilePrefs(const ProfilePreferences& prefs) {
   }
 }
 
-void ConfigApplyBridge::ApplyChrome(const ShellHost::ChromePrefs& next,
-                                    const ShellHost::ChromePrefs* previous) {
+void ConfigApplyBridge::ApplyChrome(const ShellHost::ChromePrefs& next, const ShellHost::ChromePrefs* previous) {
   const bool theme_changed = !previous || next.theme != previous->theme;
   const bool appearance_changed = !previous || next.appearance != previous->appearance;
-  const bool material_changed =
-      !previous || next.reduce_transparency != previous->reduce_transparency ||
-      next.compact_chrome_frost != previous->compact_chrome_frost;
-  const bool ai_dot_changed = !previous || next.ai_dot != previous->ai_dot || next.ai_dot_look != previous->ai_dot_look ||
-                              next.ai_dot_size != previous->ai_dot_size;
-
   if (theme_changed && resolve_asset_) {
     Theme::LoadBase(resolve_asset_(next.theme));
     if (auto* ctx = ui::GetContext("main")) {
@@ -120,7 +113,7 @@ void ConfigApplyBridge::ApplyChrome(const ShellHost::ChromePrefs& next,
       Theme::ApplyAppearance(ctx, Theme::ParseAppearance(next.appearance));
     }
   }
-  if ((material_changed || ai_dot_changed) && shell_) {
+  if (ShellHost::NeedsApply(next, previous) && shell_) {
     shell_->Apply(next);
   }
 }

@@ -11,4 +11,4 @@ struct TranscriptChatAction {
   std::optional<std::string> payload;
 };
 
-}  // namespace pbr
+} // namespace pbr

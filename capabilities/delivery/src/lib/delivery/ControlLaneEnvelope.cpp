@@ -123,8 +123,8 @@ Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params,
   envelope.order_key = params.order_key;
   // Per sending device: an account's devices share its `relay:` id, and the relay keeps one row per sender,
   // stream and index (M022).
-  envelope.stream_key = BuildControlRelayStreamKey(params.sender_relay_id, params.route_party) + ":from:" +
-                        params.sender_device;
+  envelope.stream_key =
+      BuildControlRelayStreamKey(params.sender_relay_id, params.route_party) + ":from:" + params.sender_device;
   envelope.recipient_contact_id = params.route_party;
   envelope.timestamp = control.timestamp;
   auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);

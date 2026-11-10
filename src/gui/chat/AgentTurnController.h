@@ -110,9 +110,8 @@ public:
     ContextBudget context = DefaultContextBudget();
 
     bool operator==(const AgentConfig& other) const {
-      if (llm.base_url != other.llm.base_url || llm.model != other.llm.model ||
-          llm.api_key != other.llm.api_key || llm.preset != other.llm.preset ||
-          llm.require_api_key != other.llm.require_api_key ||
+      if (llm.base_url != other.llm.base_url || llm.model != other.llm.model || llm.api_key != other.llm.api_key ||
+          llm.preset != other.llm.preset || llm.require_api_key != other.llm.require_api_key ||
           llm_api_key_env != other.llm_api_key_env || promoted_mcp.url != other.promoted_mcp.url ||
           search.provider != other.search.provider || mcp_servers.size() != other.mcp_servers.size()) {
         return false;
@@ -120,8 +119,7 @@ public:
       for (size_t i = 0; i < mcp_servers.size(); ++i) {
         const McpConfig& a = mcp_servers[i];
         const McpConfig& b = other.mcp_servers[i];
-        if (a.id != b.id || a.url != b.url || a.command != b.command || a.enabled != b.enabled ||
-            a.args != b.args) {
+        if (a.id != b.id || a.url != b.url || a.command != b.command || a.enabled != b.enabled || a.args != b.args) {
           return false;
         }
       }
@@ -131,8 +129,9 @@ public:
   };
   static AgentConfig ProjectAgent(const AppConfig& config);
 
-  AgentTurnController(AgentTurnHost& host, ChatScreenState& chat, std::map<std::string, std::vector<std::string>>& chat_links,
-                      ChatWidgetHost& widgets, WorkingSetController& working_set, ShellFeedbackPorts& shell_feedback);
+  AgentTurnController(AgentTurnHost& host, ChatScreenState& chat,
+                      std::map<std::string, std::vector<std::string>>& chat_links, ChatWidgetHost& widgets,
+                      WorkingSetController& working_set, ShellFeedbackPorts& shell_feedback);
 
   // --- the agent -------------------------------------------------------------------------------
   void BindPorts(AgentUiPorts ports);
@@ -366,7 +365,7 @@ private:
     std::optional<std::chrono::steady_clock::time_point> last_render;
   };
   std::map<std::string, StreamingRow> streaming_; // by thread
-  std::set<std::string> forgotten_threads_;        // deleted conversations: their late events are dropped
+  std::set<std::string> forgotten_threads_;       // deleted conversations: their late events are dropped
 };
 
 } // namespace pbr

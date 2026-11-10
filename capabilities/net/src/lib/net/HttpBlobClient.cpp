@@ -86,22 +86,22 @@ Error ClassifyBlobFailure(const int status_code, const std::string& detail, cons
     return AppError::Blob(Err::Blob::UploadNotConfigured, logged);
   }
   switch (status_code) {
-  case 429:
-    // The same status carries three causes; only the relay's two quota texts mean a full space (freeing space
-    // helps). Any other 429 (its rate limit, too many pending uploads, a proxy or WAF page) must never lead to
-    // an offer to delete the oldest file.
-    if (detail == "Small file quota exceeded" || detail == "Large file storage quota exceeded") {
-      return AppError::Blob(Err::Blob::QuotaExceeded, logged);
-    }
-    return AppError::Blob(Err::Blob::RateLimited, logged);
-  case 413:
-    return AppError::Blob(Err::Blob::TooLarge, logged);
-  case 403:
-    return AppError::Blob(Err::Blob::UploadRejected, logged);
-  case 404:
-    return AppError::Blob(Err::Blob::Expired, logged);
-  default:
-    break;
+    case 429:
+      // The same status carries three causes; only the relay's two quota texts mean a full space (freeing space
+      // helps). Any other 429 (its rate limit, too many pending uploads, a proxy or WAF page) must never lead to
+      // an offer to delete the oldest file.
+      if (detail == "Small file quota exceeded" || detail == "Large file storage quota exceeded") {
+        return AppError::Blob(Err::Blob::QuotaExceeded, logged);
+      }
+      return AppError::Blob(Err::Blob::RateLimited, logged);
+    case 413:
+      return AppError::Blob(Err::Blob::TooLarge, logged);
+    case 403:
+      return AppError::Blob(Err::Blob::UploadRejected, logged);
+    case 404:
+      return AppError::Blob(Err::Blob::Expired, logged);
+    default:
+      break;
   }
   if (status_code == 400 && detail == "File exceeds size limit") {
     return AppError::Blob(Err::Blob::TooLarge, logged);

@@ -26,7 +26,7 @@ Roe<ThreadMessage> BuildNotice(const CopyAsk& ask) {
   detail.set("from_device", ask.from_device);
   Object payload;
   payload.set("control_type", kCopyAskControlType);
-  payload.set("detail", DumpJson(detail));  // a system payload keeps only its type and one detail string
+  payload.set("detail", DumpJson(detail)); // a system payload keeps only its type and one detail string
   ThreadMessage notice;
   notice.id = util::GenerateUuid();
   notice.content_type = ChatContentType::System;
@@ -69,7 +69,8 @@ SystemControlFamily MakeFamily(std::function<void(CopyAsk ask, std::string asker
   family.owns = is_ask;
   family.on_lane = is_ask;
   family.lane_max_age_ms = kCopyAskMaxAgeMs;
-  family.apply = [answer = std::move(answer)](ThreadMessage& message, const SystemControlContext& context) -> Roe<void> {
+  family.apply = [answer = std::move(answer)](ThreadMessage& message,
+                                              const SystemControlContext& context) -> Roe<void> {
     auto parsed = Parse(message);
     if (!parsed) {
       return parsed.error();

@@ -24,7 +24,7 @@ inline constexpr int kOggOpusRate = 48000;
 inline constexpr int kOggOpusFrameSamples = 960; // 20 ms
 
 struct OggOpusWriteParams {
-  int pre_skip = 312;       // decoder delay in samples, from the encoder (OPUS_GET_LOOKAHEAD)
+  int pre_skip = 312; // decoder delay in samples, from the encoder (OPUS_GET_LOOKAHEAD)
   uint32_t input_rate = 48000;
   uint32_t serial = 0x50505643; // arbitrary; one stream per file
 };

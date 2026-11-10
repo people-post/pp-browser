@@ -1,0 +1,31 @@
+<div class="avatar-crop" data-model="avatar_crop">
+  <div class="avatar-crop-bg"></div>
+  <div class="avatar-crop-bar">
+    <!-- Phones: the way out that does not depend on the bottom row; does what Cancel does (off while locked). -->
+    <button class="avatar-crop-close shell-circle-btn" type="button" data-event-click="crop_cancel()"
+            data-class-avatar-crop-close--disabled="crop_locked" data-attrif-disabled="crop_locked" title="{{i18n:common.close}}">
+      <span class="shell-circle-btn-face"><svg src="../icons/v2/close.svg" width="24" height="24"></svg></span>
+    </button>
+    <h2 class="avatar-crop-title">{{i18n:settings.profile.crop_title}}</h2>
+  </div>
+  <!-- The photo: one custom element drawing the picture under a fixed round viewport (ElementAvatarCrop). Fingers are
+       taken before the UI library sees them (SdlAppEvents); the mouse drags and the wheel zooms on this element. -->
+  <div class="avatar-crop-stage">
+    <avatar-crop id="avatar-crop-surface" class="avatar-crop-surface"></avatar-crop>
+    <p class="avatar-crop-loading" data-if="crop_loading">…</p>
+    <!-- While the upload itself runs (after Done and the PIN): a centred pill over the picture, taps pass through. -->
+    <div class="avatar-crop-pill-host" data-if="crop_uploading">
+      <p class="avatar-crop-pill">{{i18n:settings.profile.photo_uploading}}</p>
+    </div>
+  </div>
+  <div class="avatar-crop-actions">
+    <button class="avatar-crop-btn avatar-crop-btn--cancel" type="button" data-event-click="crop_cancel()"
+            data-class-avatar-crop-btn--disabled="crop_locked" data-attrif-disabled="crop_locked">{{i18n:common.cancel}}</button>
+    <button class="avatar-crop-btn avatar-crop-btn--rotate" type="button" data-event-click="crop_rotate()"
+            data-class-avatar-crop-btn--disabled="crop_locked || crop_loading"
+            data-attrif-disabled="crop_locked || crop_loading">{{i18n:settings.profile.crop_rotate}}</button>
+    <button class="avatar-crop-btn avatar-crop-btn--done" type="button" data-event-click="crop_done()"
+            data-class-avatar-crop-btn--disabled="crop_locked || crop_loading"
+            data-attrif-disabled="crop_locked || crop_loading">{{i18n:settings.profile.crop_done}}</button>
+  </div>
+</div>

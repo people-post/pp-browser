@@ -22,7 +22,8 @@ Roe<std::vector<uint8_t>> MakeImageThumbnailJpeg(const std::vector<uint8_t>& ima
   }
   // The header says the size before anything is decoded; an unreadable header is refused too.
   const auto header = ReadImageHeaderBytes(image_bytes);
-  if (!header || static_cast<uint64_t>(header->width) * static_cast<uint64_t>(header->height) > kMaxThumbnailSourcePixels) {
+  if (!header ||
+      static_cast<uint64_t>(header->width) * static_cast<uint64_t>(header->height) > kMaxThumbnailSourcePixels) {
     return Error("Image is too large to thumbnail");
   }
   SDL_IOStream* io = SDL_IOFromConstMem(image_bytes.data(), image_bytes.size());
@@ -38,7 +39,7 @@ Roe<std::vector<uint8_t>> MakeImageThumbnailJpeg(const std::vector<uint8_t>& ima
   if (!scaled) {
     return Error("Failed to scale image");
   }
-  scaled = ApplyExifOrientation(scaled, header->exif_orientation);  // a phone's portrait photo stands up
+  scaled = ApplyExifOrientation(scaled, header->exif_orientation); // a phone's portrait photo stands up
   if (!scaled) {
     return Error("Failed to rotate image");
   }

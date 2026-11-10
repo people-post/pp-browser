@@ -52,7 +52,7 @@ bool PeerTransports::Attach(mesh::IChatPeerLinks* links, std::function<void()> i
     return false;
   }
   if (links_ == links && direct_chat_ && history_ && blob_) {
-    return true;  // already attached to these links
+    return true; // already attached to these links
   }
   Detach();
   links_ = links;
@@ -101,7 +101,7 @@ void PeerTransports::Detach() {
   history_.reset();
   blob_.reset();
   account_card_.reset();
-  people_links_.reset();  // after the transports that hold it
+  people_links_.reset(); // after the transports that hold it
   links_ = nullptr;
 }
 

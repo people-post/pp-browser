@@ -40,32 +40,32 @@ struct CaptureFlowPorts {
 inline void HandleCaptureResult(const CaptureFlowPorts& ports, const CameraCaptureOutcome outcome,
                                 std::vector<std::string> paths) {
   switch (outcome) {
-  case CameraCaptureOutcome::Cancelled:
-    break;
-  case CameraCaptureOutcome::Unavailable:
-    ports.say(CaptureNotice::CameraUnavailable);
-    break;
-  case CameraCaptureOutcome::Unprocessable:
-    ports.say(CaptureNotice::VideoUnprocessable);
-    break;
-  case CameraCaptureOutcome::Picked: {
-    if (paths.empty()) {
-      ports.say(CaptureNotice::CameraUnavailable); // "picked" with no file: not silent
+    case CameraCaptureOutcome::Cancelled:
+      break;
+    case CameraCaptureOutcome::Unavailable:
+      ports.say(CaptureNotice::CameraUnavailable);
+      break;
+    case CameraCaptureOutcome::Unprocessable:
+      ports.say(CaptureNotice::VideoUnprocessable);
+      break;
+    case CameraCaptureOutcome::Picked: {
+      if (paths.empty()) {
+        ports.say(CaptureNotice::CameraUnavailable); // "picked" with no file: not silent
+        break;
+      }
+      std::string path = std::move(paths.front());
+      if (AttachmentMimeFromFilename(path).rfind("video/", 0) != 0) {
+        ports.ask_picture(std::move(path));
+        break;
+      }
+      if (!VideoWithinLimit(ports.file_size(path), ports.limits())) {
+        ports.release(path);
+        ports.say(CaptureNotice::VideoTooLarge);
+        break;
+      }
+      ports.send_video(std::move(path));
       break;
     }
-    std::string path = std::move(paths.front());
-    if (AttachmentMimeFromFilename(path).rfind("video/", 0) != 0) {
-      ports.ask_picture(std::move(path));
-      break;
-    }
-    if (!VideoWithinLimit(ports.file_size(path), ports.limits())) {
-      ports.release(path);
-      ports.say(CaptureNotice::VideoTooLarge);
-      break;
-    }
-    ports.send_video(std::move(path));
-    break;
-  }
   }
 }
 
@@ -73,9 +73,11 @@ inline void HandleCaptureResult(const CaptureFlowPorts& ports, const CameraCaptu
  * "Send / Send original / Cancel" for a picture. Whichever is chosen, the file is released exactly once: the two
  * sends hand it to `send` (StartAttachmentUpload releases it), Cancel releases it here.
  */
-inline std::vector<ContextMenuAction> PictureChoiceActions(std::string path, std::function<void(const std::string&, bool original)> send,
+inline std::vector<ContextMenuAction> PictureChoiceActions(std::string path,
+                                                           std::function<void(const std::string&, bool original)> send,
                                                            std::function<void(const std::string&)> release,
-                                                           const std::string& send_label, const std::string& original_label,
+                                                           const std::string& send_label,
+                                                           const std::string& original_label,
                                                            const std::string& cancel_label) {
   auto picture = std::make_shared<std::string>(std::move(path));
   std::vector<ContextMenuAction> actions;

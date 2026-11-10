@@ -25,8 +25,8 @@ KeyCard KeysOf(const test::TestAccount& account) {
 
 AccountCard CardOf(const test::TestAccount& account, std::vector<AccountCardDevice> devices, int64_t issued_at,
                    std::string nickname = "alice") {
-  AccountCard card{.keys = KeysOf(account), .nickname = std::move(nickname), .devices = std::move(devices),
-                   .issued_at = issued_at};
+  AccountCard card{
+      .keys = KeysOf(account), .nickname = std::move(nickname), .devices = std::move(devices), .issued_at = issued_at};
   return SignAccountCard(card, [&account](const ByteVector& bytes) { return account.Sign(bytes); }).value();
 }
 
@@ -118,7 +118,7 @@ TEST(PeerCardMergeTest, AnUndatedKeyCardDoesNotOverrideASignedCard) {
   const test::TestAccount other = test::TestAccount::Make();
   PeerCardRecord known = MergeAccountCard(std::nullopt, CardOf(alice, test::Devices({"QmPhone"}), kNow), "envelope");
   KeyCard different = KeysOf(alice);
-  different.kem_public_key_b64 = other.KemPublicB64();  // shape only: merging trusts checked input
+  different.kem_public_key_b64 = other.KemPublicB64(); // shape only: merging trusts checked input
   EXPECT_TRUE(SameKeys(MergeKeyCard(known, different, "directory").keys, KeysOf(alice)));
   // With only key cards known, the latest one is taken.
   PeerCardRecord keys_only = MergeKeyCard(std::nullopt, KeysOf(alice), "directory");
@@ -126,7 +126,7 @@ TEST(PeerCardMergeTest, AnUndatedKeyCardDoesNotOverrideASignedCard) {
 }
 
 TEST(PeerCardsTest, KeepsOnlyCheckedCardsAndTheNewest) {
-  InMemoryPeerCards cards;  // that the cards survive a restart is the app storage's (peer_card_store_contract_test)
+  InMemoryPeerCards cards; // that the cards survive a restart is the app storage's (peer_card_store_contract_test)
   const test::TestAccount alice = test::TestAccount::Make();
   const test::TestAccount mallory = test::TestAccount::Make();
   {
@@ -153,7 +153,7 @@ TEST(PeerCardsTest, KeepsOnlyCheckedCardsAndTheNewest) {
 }
 
 TEST(PeerCardsTest, ARestoredFloorRefusesOlderCardsAndIsBackedUp) {
-  InMemoryPeerCards cards;  // that the cards survive a restart is the app storage's (peer_card_store_contract_test)
+  InMemoryPeerCards cards; // that the cards survive a restart is the app storage's (peer_card_store_contract_test)
   const test::TestAccount alice = test::TestAccount::Make();
   const test::TestAccount bob = test::TestAccount::Make();
   {
@@ -166,8 +166,8 @@ TEST(PeerCardsTest, ARestoredFloorRefusesOlderCardsAndIsBackedUp) {
     EXPECT_EQ(store.Floor(alice.account_id).value(), kNow + 5);
     EXPECT_EQ(store.Floor(bob.account_id).value(), 0);
 
-    EXPECT_FALSE(store.AddAccountCard(CardOf(alice, test::Devices({"QmStolen", "QmPhone"}), kNow), kNow + 10,
-                                      "envelope"))
+    EXPECT_FALSE(
+        store.AddAccountCard(CardOf(alice, test::Devices({"QmStolen", "QmPhone"}), kNow), kNow + 10, "envelope"))
         << "an older card listing the stolen phone";
     EXPECT_FALSE(store.Get(alice.account_id).value().has_value());
     ASSERT_TRUE(store.AddAccountCard(CardOf(alice, test::Devices({"QmPhone"}), kNow + 5), kNow + 10, "envelope"));

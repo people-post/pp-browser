@@ -3,8 +3,7 @@
 #include <gtest/gtest.h>
 
 TEST(RmlMountTest, ValidatesFragmentsAndDocuments) {
-  const std::string valid_fragment =
-      R"frag(<div class="stack"><button data-event-click="go()">Go</button></div>)frag";
+  const std::string valid_fragment = R"frag(<div class="stack"><button data-event-click="go()">Go</button></div>)frag";
   auto ok = pbr::RmlValidator::ValidateFragment(valid_fragment);
   EXPECT_TRUE(ok.ok);
 

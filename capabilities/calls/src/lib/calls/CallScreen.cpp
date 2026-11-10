@@ -6,42 +6,42 @@ namespace pbr {
 
 const char* CallScreenKindName(const CallScreen::Kind kind) {
   switch (kind) {
-  case CallScreen::Kind::None:
-    return "none";
-  case CallScreen::Kind::Ringing:
-    return "ringing";
-  case CallScreen::Kind::Answering:
-    return "answering";
-  case CallScreen::Kind::InCall:
-    return "in_call";
+    case CallScreen::Kind::None:
+      return "none";
+    case CallScreen::Kind::Ringing:
+      return "ringing";
+    case CallScreen::Kind::Answering:
+      return "answering";
+    case CallScreen::Kind::InCall:
+      return "in_call";
   }
   return "?";
 }
 
 const char* CallScreenStatusName(const CallScreen::Status status) {
   switch (status) {
-  case CallScreen::Status::Calling:
-    return "calling";
-  case CallScreen::Status::Connecting:
-    return "connecting";
-  case CallScreen::Status::SettingUpGroup:
-    return "setting_up_group";
-  case CallScreen::Status::WaitingForMediaPath:
-    return "waiting_for_media_path";
-  case CallScreen::Status::Connected:
-    return "connected";
-  case CallScreen::Status::Reconnecting:
-    return "reconnecting";
-  case CallScreen::Status::SendingOnly:
-    return "sending_only";
-  case CallScreen::Status::CouldntConnect:
-    return "couldnt_connect";
-  case CallScreen::Status::Disconnected:
-    return "disconnected";
-  case CallScreen::Status::Activity:
-    return "activity";
-  case CallScreen::Status::WaitingForOthers:
-    return "waiting_for_others";
+    case CallScreen::Status::Calling:
+      return "calling";
+    case CallScreen::Status::Connecting:
+      return "connecting";
+    case CallScreen::Status::SettingUpGroup:
+      return "setting_up_group";
+    case CallScreen::Status::WaitingForMediaPath:
+      return "waiting_for_media_path";
+    case CallScreen::Status::Connected:
+      return "connected";
+    case CallScreen::Status::Reconnecting:
+      return "reconnecting";
+    case CallScreen::Status::SendingOnly:
+      return "sending_only";
+    case CallScreen::Status::CouldntConnect:
+      return "couldnt_connect";
+    case CallScreen::Status::Disconnected:
+      return "disconnected";
+    case CallScreen::Status::Activity:
+      return "activity";
+    case CallScreen::Status::WaitingForOthers:
+      return "waiting_for_others";
   }
   return "?";
 }
@@ -105,8 +105,7 @@ bool StepNoMediaWatch(NoMediaWatch& watch, const NoMediaSample& sample) {
   const bool woke = watch.last_step_ms > 0 && sample.now_ms - watch.last_step_ms > CallSessionLogic::kAppSleptGapMs;
   watch.last_step_ms = sample.now_ms;
   const bool arriving = sample.last_rx_ms > 0 && sample.now_ms - sample.last_rx_ms < kMediaArrivingWindowMs;
-  if (sample.call_id.empty() || !sample.group || sample.others_joined == 0 || !sample.media_live || woke ||
-      arriving) {
+  if (sample.call_id.empty() || !sample.group || sample.others_joined == 0 || !sample.media_live || woke || arriving) {
     watch.silent_since_ms = 0;
     return false;
   }
@@ -124,10 +123,9 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
   // Connected when the call's media is live (InCall + DirectLive|HopLive): the call's own state, not
   // the seat's (a reattach keeps the seat bound while nothing flows).
   out.media_connected = s.media_chrome_live;
-  const bool media_connecting = s.media_status == CallMediaStatus::DirectConnecting ||
-                                s.media_status == CallMediaStatus::HopAttaching ||
-                                s.media_status == CallMediaStatus::HopWaiting ||
-                                s.media_status == CallMediaStatus::Migrating;
+  const bool media_connecting =
+      s.media_status == CallMediaStatus::DirectConnecting || s.media_status == CallMediaStatus::HopAttaching ||
+      s.media_status == CallMediaStatus::HopWaiting || s.media_status == CallMediaStatus::Migrating;
   bool activity = !s.activity.empty();
   if (activity && out.media_connected && !recovering) {
     out.activity_spent = true;
@@ -151,6 +149,11 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
     out.status = Status::CouldntConnect;
     out.hint = s.group_context ? CallScreen::Hint::GroupMedia : CallScreen::Hint::DirectConnect;
     out.show_invite = false;
+  } else if (activity && s.was_connected && !out.media_connected) {
+    // A live call moving to another path ("switching line", "looking for another way"): that is a reconnect, and the
+    // reconnect capsule is its only prompt (#181) — the stack's activity words are not shown on top of it.
+    out.status = Status::Reconnecting;
+    out.show_elapsed = true;
   } else if (activity) {
     out.status = Status::Activity;
   } else if (s.media_status == CallMediaStatus::Reconnecting) {

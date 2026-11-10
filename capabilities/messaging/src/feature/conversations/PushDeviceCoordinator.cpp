@@ -29,40 +29,7 @@ PushDeviceRegistration MakeRegistration(ConversationsHub& hub, const std::string
   return reg;
 }
 
-/** The VoIP binding beside `reg` (P016): its own platform, device id and token. */
-PushDeviceRegistration VoipBinding(const PushDeviceRegistration& reg, const std::string& voip_token) {
-  PushDeviceRegistration call_reg = reg;
-  call_reg.platform = IPushDeviceRegistrar::kVoipPushPlatform;
-  call_reg.device_id = reg.device_id + IPushDeviceRegistrar::kVoipPushDeviceSuffix;
-  call_reg.push_token = voip_token;
-  return call_reg;
-}
-
 } // namespace
-
-Roe<void> PushDeviceCoordinator::RegisterWith(IPushDeviceClient& client, const PushDeviceRegistration& reg,
-                                              const std::string& voip_token) {
-  auto registered = client.RegisterDevice(reg);
-  // A CallKit iPhone's calls come by VoIP push, to their own token (P016).
-  if (!voip_token.empty()) {
-    if (auto call_registered = client.RegisterDevice(VoipBinding(reg, voip_token)); !call_registered && registered) {
-      return call_registered;
-    }
-  }
-  return registered;
-}
-
-Roe<void> PushDeviceCoordinator::UnregisterWith(IPushDeviceClient& client, const PushDeviceRegistration& reg,
-                                                const std::string& voip_token) {
-  auto unregistered = client.UnregisterDevice(reg);
-  if (!voip_token.empty()) {
-    if (auto call_unregistered = client.UnregisterDevice(VoipBinding(reg, voip_token));
-        !call_unregistered && unregistered) {
-      return call_unregistered;
-    }
-  }
-  return unregistered;
-}
 
 Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
   // Registered whatever "Show notifications" says (P005 / P010): in the background a phone is
@@ -82,7 +49,7 @@ Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
   if (reg.relay_user_id.empty()) {
     return Error("Relay user not registered");
   }
-  return RegisterWith(*client, reg, IPushDeviceRegistrar::Instance().VoipPushToken());
+  return client->RegisterDevice(reg);
 }
 
 Roe<void> PushDeviceCoordinator::Unregister(ConversationsHub& hub) {
@@ -101,27 +68,27 @@ Roe<void> PushDeviceCoordinator::Unregister(ConversationsHub& hub) {
   if (reg.relay_user_id.empty()) {
     return {};
   }
-  return UnregisterWith(*client, reg, IPushDeviceRegistrar::Instance().VoipPushToken());
+  return client->UnregisterDevice(reg);
 }
 
 void PushDeviceCoordinator::OnBackendSwitchPending(ConversationsHub& hub, const bool pending) {
   switch (hub.PushGate().OnSwitchPending(pending)) {
-  case PushBindingGate::Action::Unbind:
-    AppRuntime::PostWorkerNormal([&hub]() {
-      auto unbound = Unregister(hub);
-      if (!unbound) {
-        PushLog().warning << "Push unbind on the old backend failed: " << AppError::Log(unbound.error());
-      }
-      if (hub.PushGate().OnUnbound(static_cast<bool>(unbound))) {
-        (void)Register(hub);
-      }
-    });
-    break;
-  case PushBindingGate::Action::Rebind:
-    AppRuntime::PostWorkerNormal([&hub]() { (void)Register(hub); });
-    break;
-  case PushBindingGate::Action::None:
-    break;
+    case PushBindingGate::Action::Unbind:
+      AppRuntime::PostWorkerNormal([&hub]() {
+        auto unbound = Unregister(hub);
+        if (!unbound) {
+          PushLog().warning << "Push unbind on the old backend failed: " << AppError::Log(unbound.error());
+        }
+        if (hub.PushGate().OnUnbound(static_cast<bool>(unbound))) {
+          (void)Register(hub);
+        }
+      });
+      break;
+    case PushBindingGate::Action::Rebind:
+      AppRuntime::PostWorkerNormal([&hub]() { (void)Register(hub); });
+      break;
+    case PushBindingGate::Action::None:
+      break;
   }
 }
 

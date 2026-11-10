@@ -41,7 +41,8 @@ void SettingsOwnDevices::Refresh() {
   }
   const uint64_t count = ++refresh_count_;
   AppRuntime::PostWorkerNormal([this, count]() {
-    auto listed = commands_.own_devices ? commands_.own_devices() : Roe<OwnDevicesView>(Error("Messaging is not ready"));
+    auto listed =
+        commands_.own_devices ? commands_.own_devices() : Roe<OwnDevicesView>(Error("Messaging is not ready"));
     AppRuntime::PostUI([this, count, listed = std::move(listed)]() mutable {
       if (count == refresh_count_) {
         Show(std::move(listed));
@@ -106,8 +107,8 @@ void SettingsOwnDevices::ConfirmChange(const int index, const std::string& title
     report_failure_(Error("Messaging is not ready"));
     return;
   }
-  const auto& show_confirm = destructive && feedback_.show_confirm_destructive ? feedback_.show_confirm_destructive
-                                                                                 : feedback_.show_confirm;
+  const auto& show_confirm =
+      destructive && feedback_.show_confirm_destructive ? feedback_.show_confirm_destructive : feedback_.show_confirm;
   show_confirm(
       title, message,
       [this, peer_id = device->peer_id, change = std::move(change), done](const bool ok) {

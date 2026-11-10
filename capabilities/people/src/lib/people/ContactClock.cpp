@@ -40,7 +40,7 @@ ContactClockEntry* ContactClock::Find(const std::string& account_id) {
 
 bool ContactClock::Observe(const std::vector<Contact>& contacts, const int64_t now_ms) {
   bool changed = false;
-  std::map<std::string, std::string> present;  // account → digest
+  std::map<std::string, std::string> present; // account → digest
   for (const Contact& contact : contacts) {
     const std::string account = ContactClockAccount(contact);
     if (!account.empty()) {
@@ -73,7 +73,7 @@ ContactClock::Plan ContactClock::MergeRemote(const std::vector<ContactClockEntry
   for (const ContactClockEntry& theirs : remote_entries) {
     ContactClockEntry* ours = Find(theirs.account_id);
     if (ours && ours->at >= theirs.at) {
-      continue;  // ours is as new or newer
+      continue; // ours is as new or newer
     }
     const auto local = std::find_if(local_contacts.begin(), local_contacts.end(),
                                     [&](const Contact& c) { return ContactClockAccount(c) == theirs.account_id; });
@@ -81,11 +81,11 @@ ContactClock::Plan ContactClock::MergeRemote(const std::vector<ContactClockEntry
       const auto remote = std::find_if(remote_contacts.begin(), remote_contacts.end(),
                                        [&](const Contact& c) { return ContactClockAccount(c) == theirs.account_id; });
       if (remote == remote_contacts.end()) {
-        continue;  // an entry without its contact: nothing to put in
+        continue; // an entry without its contact: nothing to put in
       }
       Contact merged = *remote;
       if (local != local_contacts.end()) {
-        merged = *local;  // keep this device's row (id, directory snapshot); take the user's fields
+        merged = *local; // keep this device's row (id, directory snapshot); take the user's fields
         merged.local.display_name = remote->local.display_name;
         merged.local.trust = remote->local.trust;
         SyncContactMirrors(merged);

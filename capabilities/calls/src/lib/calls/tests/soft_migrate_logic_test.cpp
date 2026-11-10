@@ -39,7 +39,8 @@ TEST(SoftMigrateLogicTest, NeverPicksAHopForTwoJoined) {
   in.initiator_identity = "account:A";
   in.joined_identities = {"account:A", "account:B"};
   in.sfu_hint_empty = true;
-  for (SoftMigrateTrigger trigger : {SoftMigrateTrigger::JoinedCountObserved, SoftMigrateTrigger::RemoteAcceptObserved}) {
+  for (SoftMigrateTrigger trigger :
+       {SoftMigrateTrigger::JoinedCountObserved, SoftMigrateTrigger::RemoteAcceptObserved}) {
     in.trigger = trigger;
     EXPECT_EQ(DecideSoftMigrate(in), SoftMigrateAction::NoOp) << static_cast<int>(trigger);
   }

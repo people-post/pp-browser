@@ -13,7 +13,6 @@ ByteVector ContentIdFromHash(const std::vector<uint8_t>& content_hash) {
   return ByteVector(content_hash.begin(), content_hash.end());
 }
 
-
 } // namespace
 
 bool PrivateContentExists(const CasStore& content, const std::vector<uint8_t>& content_hash) {
@@ -23,8 +22,9 @@ bool PrivateContentExists(const CasStore& content, const std::vector<uint8_t>& c
   return content.Exists(CasRealm::Private, ContentIdFromHash(content_hash));
 }
 
-Roe<std::string> SavePrivateContent(CasStore& content, const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                    const ByteVector& plaintext, const std::string& filename, const ByteVector& dek) {
+Roe<std::string> SavePrivateContent(CasStore& content, const std::vector<uint8_t>& content_hash,
+                                    const std::string& mime, const ByteVector& plaintext, const std::string& filename,
+                                    const ByteVector& dek) {
   if (content.ProfileId().empty()) {
     return Error("Private content save requires profile_id");
   }

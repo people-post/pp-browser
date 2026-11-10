@@ -45,8 +45,9 @@ SDL_Surface* Noisy(const int w, const int h) {
 
 /** Exif segment: orientation + a fake GPS block that must not survive an original send. */
 std::vector<uint8_t> ExifWithGps(const int orientation) {
-  std::vector<uint8_t> tiff = {'M', 'M', 0, 0x2A, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1,
-                               0,   static_cast<uint8_t>(orientation), 0, 0, 0, 0, 0, 0};
+  std::vector<uint8_t> tiff = {'M',  'M',  0, 0x2A, 0, 0, 0, 8, 0, 1,
+                               0x01, 0x12, 0, 3,    0, 0, 0, 1, 0, static_cast<uint8_t>(orientation),
+                               0,    0,    0, 0,    0, 0};
   const std::string gps = "GPSLATITUDE-31.2304N";
   tiff.insert(tiff.end(), gps.begin(), gps.end());
   std::vector<uint8_t> payload = {'E', 'x', 'i', 'f', 0, 0};
@@ -193,7 +194,8 @@ TEST_F(OutgoingAttachmentPrepTest, ACopiedPickIsPreparedAndTheCopyRemoved) {
   EXPECT_EQ(out->filename, "note.pdf");
   EXPECT_FALSE(std::filesystem::exists(scratch));
   // An unreadable content:// pick is an error the person can read, not a crash.
-  auto gone = PrepareOutgoingAttachment("content://nowhere/document/video%3A1", limits_, OutgoingPickSource::Photo, scratch);
+  auto gone =
+      PrepareOutgoingAttachment("content://nowhere/document/video%3A1", limits_, OutgoingPickSource::Photo, scratch);
   ASSERT_FALSE(gone);
   EXPECT_EQ(gone.error().code, static_cast<int32_t>(OutgoingAttachmentError::Unreadable));
   EXPECT_FALSE(gone.error().user.empty());
@@ -256,8 +258,14 @@ TEST_F(OutgoingAttachmentPrepTest, AJpegWithoutAnExtensionIsStillAPictureByItsCo
   EXPECT_EQ(shrunk->filename, "IMG_0001.jpg");
   EXPECT_FALSE(Contains(shrunk->bytes, "GPSLATITUDE"));
 
-  auto original = PrepareOutgoingAttachment(path, [] { AttachmentLimits l; l.max_original_image_bytes = 100'000'000; return l; }(),
-                                            OutgoingPickSource::Original);
+  auto original = PrepareOutgoingAttachment(
+      path,
+      [] {
+        AttachmentLimits l;
+        l.max_original_image_bytes = 100'000'000;
+        return l;
+      }(),
+      OutgoingPickSource::Original);
   ASSERT_TRUE(original) << original.error().message;
   EXPECT_EQ(original->mime, "image/jpeg");
   EXPECT_FALSE(Contains(original->bytes, "GPSLATITUDE")) << "the location goes whatever the file is called";
@@ -349,8 +357,8 @@ TEST_F(OutgoingAttachmentPrepTest, AnOriginalPictureUsesTheOriginalLimit) {
 
 TEST_F(OutgoingAttachmentPrepTest, AHugePictureIsRefusedBeforeDecoding) {
   // A small file whose header says 100000 x 100000 pixels.
-  std::vector<uint8_t> bomb = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 'I', 'H', 'D', 'R',
-                               0x00, 0x01, 0x86, 0xA0, 0x00, 0x01, 0x86, 0xA0, 8, 2, 0, 0, 0};
+  std::vector<uint8_t> bomb = {0x89, 'P',  'N',  'G',  0x0D, 0x0A, 0x1A, 0x0A, 0,    0, 0, 13, 'I', 'H', 'D',
+                               'R',  0x00, 0x01, 0x86, 0xA0, 0x00, 0x01, 0x86, 0xA0, 8, 2, 0,  0,   0};
   const std::string path = (dir_ / "bomb.png").string();
   WriteFile(path, bomb);
   auto out = PrepareOutgoingAttachment(path, limits_, OutgoingPickSource::File);
@@ -368,7 +376,7 @@ TEST_F(OutgoingAttachmentPrepTest, ARecordedVoiceMessageIsAudioOggNamedByItsLeng
   EXPECT_EQ(out->filename, "voice-4200.ogg");
   EXPECT_EQ(out->mime, kVoiceMime);
   EXPECT_EQ(out->mime, "audio/ogg");
-  EXPECT_EQ(out->bytes, ogg);          // not re-encoded, not shrunk
+  EXPECT_EQ(out->bytes, ogg); // not re-encoded, not shrunk
   EXPECT_FALSE(out->image_is_shrunk);
   // The receiver's bubble decision accepts exactly what was sent.
   EXPECT_TRUE(DecideVoiceBubble(out->mime, out->filename, out->bytes.size(), limits_.voice_max_seconds).bubble);

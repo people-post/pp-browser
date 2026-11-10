@@ -24,8 +24,8 @@ std::vector<uint8_t> BuildRelayApiSendSignBytes(const RelayWireSendRecord& recor
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildRelayApiPollInboxSignBytes(const std::string& requester_contact_id,
-                                                     const std::string& cursor, const int64_t timestamp) {
+std::vector<uint8_t> BuildRelayApiPollInboxSignBytes(const std::string& requester_contact_id, const std::string& cursor,
+                                                     const int64_t timestamp) {
   std::ostringstream oss;
   AppendRelayApiHeader(oss, RelayApiOp::PollInbox, timestamp);
   RelaySignAppendWireLenUtf8(oss, requester_contact_id);
@@ -33,8 +33,8 @@ std::vector<uint8_t> BuildRelayApiPollInboxSignBytes(const std::string& requeste
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildRelayApiAckInboxSignBytes(const std::string& requester_contact_id,
-                                                    const std::string& cursor, const int64_t timestamp) {
+std::vector<uint8_t> BuildRelayApiAckInboxSignBytes(const std::string& requester_contact_id, const std::string& cursor,
+                                                    const int64_t timestamp) {
   std::ostringstream oss;
   AppendRelayApiHeader(oss, RelayApiOp::AckInbox, timestamp);
   RelaySignAppendWireLenUtf8(oss, requester_contact_id);
@@ -43,8 +43,7 @@ std::vector<uint8_t> BuildRelayApiAckInboxSignBytes(const std::string& requester
 }
 
 std::vector<uint8_t> BuildRelayApiClearInboxSignBytes(const std::string& requester_contact_id,
-                                                      const std::string& before_created_at,
-                                                      const int64_t timestamp) {
+                                                      const std::string& before_created_at, const int64_t timestamp) {
   std::ostringstream oss;
   AppendRelayApiHeader(oss, RelayApiOp::ClearInbox, timestamp);
   RelaySignAppendWireLenUtf8(oss, requester_contact_id);
@@ -52,11 +51,9 @@ std::vector<uint8_t> BuildRelayApiClearInboxSignBytes(const std::string& request
   return RelaySignOssToBytes(oss);
 }
 
-std::vector<uint8_t> BuildRelayApiStreamHistorySignBytes(const ChatHistoryRequest& request,
-                                                         const int64_t timestamp) {
-  const std::string stream_id =
-      BuildCanonicalRelayStreamKey(request.requester_identity_value, request.peer_identity_value, request.channel,
-                                 request.session_epoch);
+std::vector<uint8_t> BuildRelayApiStreamHistorySignBytes(const ChatHistoryRequest& request, const int64_t timestamp) {
+  const std::string stream_id = BuildCanonicalRelayStreamKey(
+      request.requester_identity_value, request.peer_identity_value, request.channel, request.session_epoch);
 
   std::ostringstream oss;
   AppendRelayApiHeader(oss, RelayApiOp::StreamHistory, timestamp);

@@ -138,7 +138,8 @@ inline constexpr size_t kHomeFavoritesFillTo = 4;
  * hint. Each opens its newest direct chat in `rows`. `starred`: the star order; `starred_without_chat`: the starred
  * contacts StarredWithoutChat named, as looked up (blocked ones left out by the caller).
  */
-std::vector<HomeFavorite> HomeFavorites(const std::vector<ChatSessionRow>& rows, const std::vector<std::string>& starred,
+std::vector<HomeFavorite> HomeFavorites(const std::vector<ChatSessionRow>& rows,
+                                        const std::vector<std::string>& starred,
                                         const std::vector<HomeFavorite>& starred_without_chat);
 
 /** The Calls widget. */

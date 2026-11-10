@@ -23,8 +23,9 @@ GroupInfoFacts Facts(const bool owner) {
   facts.title = "Weekend hike";
   facts.is_owner = owner;
   facts.self_identity = "acct:me";
-  facts.members = {Row("acct:me", "You", owner), Row("acct:b", "Bea"), Row("acct:a", "Ann"),
-                   Row("acct:o", "Olga", !owner), Row("acct:c", "Cid"), Row("acct:d", "Dan"), Row("acct:e", "Eve")};
+  facts.members = {Row("acct:me", "You", owner),  Row("acct:b", "Bea"), Row("acct:a", "Ann"),
+                   Row("acct:o", "Olga", !owner), Row("acct:c", "Cid"), Row("acct:d", "Dan"),
+                   Row("acct:e", "Eve")};
   return facts;
 }
 

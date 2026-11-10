@@ -19,7 +19,7 @@ namespace {
 class BiometryStore final : public ISecureBlobStore {
 public:
   bool supported = true;
-  bool biometry = true; ///< Supports(kBiometryCurrentSet)
+  bool biometry = true;                           ///< Supports(kBiometryCurrentSet)
   std::optional<SecureBlobLookup::Status> answer; ///< Set: the next lookups answer this (Unavailable / Canceled)
   int64_t answer_code = 0;
   bool lookup_fails = false;
@@ -281,8 +281,8 @@ TEST(SecureBlobStoreDefaultsTest, TheBiometryLevelIsNotSupportedByDefault) {
 class ProfileSecretsEngineBiometricTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    dir_ = std::filesystem::temp_directory_path() /
-           ("pp_bio_engine_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    dir_ =
+        std::filesystem::temp_directory_path() / ("pp_bio_engine_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
     std::filesystem::remove_all(dir_);
     std::filesystem::create_directories(dir_);
     ASSERT_TRUE(static_cast<bool>(engine_.Initialize(dir_.string())));

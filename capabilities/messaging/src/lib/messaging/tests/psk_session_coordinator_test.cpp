@@ -21,8 +21,7 @@ ByteVector TestDek() {
 }
 
 TEST(PskSessionCoordinatorTest, GenerateImportVerifyAndRotate) {
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_psk_session_coordinator";
+  const std::filesystem::path data_dir = std::filesystem::temp_directory_path() / "pp_browser_psk_session_coordinator";
   std::filesystem::remove_all(data_dir);
   InMemoryDeliveryStore store;
   InMemoryPeerSessions psk_store(store);

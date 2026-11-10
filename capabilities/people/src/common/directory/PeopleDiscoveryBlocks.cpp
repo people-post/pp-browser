@@ -176,8 +176,7 @@ void SetAvatarFields(Object& item, const std::string& display_name, const std::s
   item.set("avatar_tone", static_cast<int64_t>(AvatarTone(stable_id.empty() ? display_name : stable_id)));
 }
 
-Object MakeAction(const std::string& label, const std::string& message, Object payload,
-                  const std::string& style) {
+Object MakeAction(const std::string& label, const std::string& message, Object payload, const std::string& style) {
   Object action;
   action.set("label", label);
   action.set("message", message);
@@ -222,8 +221,7 @@ Object PersonActionPayload(const std::string& type, const mesh::DirectoryHit& hi
 }
 
 Value DirectoryHitItemActions(const mesh::DirectoryHit& hit, const bool already_contact,
-                              const std::optional<std::string>& contact_id,
-                              const PeopleDiscoveryLabels& labels) {
+                              const std::optional<std::string>& contact_id, const PeopleDiscoveryLabels& labels) {
   std::vector<Value> actions;
   const std::string label_name =
       !hit.display_name.empty() ? hit.display_name : (!hit.nickname.empty() ? hit.nickname : "contact");
@@ -236,26 +234,22 @@ Value DirectoryHitItemActions(const mesh::DirectoryHit& hit, const bool already_
     } else {
       message_payload = PersonActionPayload("start_conversation", hit);
     }
-    actions.push_back(ObjectValue(
-        MakeAction(labels.message, Fill(labels.start_chat_with, "name", label_name),
-                                           std::move(message_payload), "primary")));
+    actions.push_back(ObjectValue(MakeAction(labels.message, Fill(labels.start_chat_with, "name", label_name),
+                                             std::move(message_payload), "primary")));
 
     if (contact_id && !contact_id->empty()) {
       Object view_payload;
       view_payload.set("type", "show_contact");
       view_payload.set("contact_id", *contact_id);
-      actions.push_back(
-          ObjectValue(MakeAction(labels.view, Fill(labels.show_name, "name", label_name),
-                                                  std::move(view_payload), "secondary")));
+      actions.push_back(ObjectValue(
+          MakeAction(labels.view, Fill(labels.show_name, "name", label_name), std::move(view_payload), "secondary")));
     }
   } else {
-    actions.push_back(
-        ObjectValue(MakeAction(labels.add_contact, Fill(labels.add_name, "name", label_name),
-                                         PersonActionPayload("add_contact", hit), "primary")));
+    actions.push_back(ObjectValue(MakeAction(labels.add_contact, Fill(labels.add_name, "name", label_name),
+                                             PersonActionPayload("add_contact", hit), "primary")));
 
-    actions.push_back(ObjectValue(
-        MakeAction(labels.message, Fill(labels.start_chat_with, "name", label_name),
-                                           PersonActionPayload("start_conversation", hit), "secondary")));
+    actions.push_back(ObjectValue(MakeAction(labels.message, Fill(labels.start_chat_with, "name", label_name),
+                                             PersonActionPayload("start_conversation", hit), "secondary")));
   }
 
   return ArrayValue(std::move(actions));
@@ -273,9 +267,8 @@ Value ContactItemActions(const PeopleDiscoveryContactView& contact, const People
   Object view_payload;
   view_payload.set("type", "show_contact");
   view_payload.set("contact_id", contact.id);
-  actions.push_back(ObjectValue(
-      MakeAction(labels.view, Fill(labels.show_ids_for, "name", contact.display_name),
-                                                  std::move(view_payload), "secondary")));
+  actions.push_back(ObjectValue(MakeAction(labels.view, Fill(labels.show_ids_for, "name", contact.display_name),
+                                           std::move(view_payload), "secondary")));
 
   return ArrayValue(std::move(actions));
 }
@@ -395,8 +388,8 @@ Value ShowMoreFooter(const PeopleDiscoveryLabels& labels, const size_t block_ind
   payload.set("type", kShowMoreRowsActionType);
   payload.set("block", static_cast<int64_t>(block_index));
   payload.set("step", static_cast<int64_t>(step));
-  return ArrayValue({ObjectValue(
-      MakeAction(ShowMoreLabel(labels, rest), labels.show_more_message, std::move(payload), "primary"))});
+  return ArrayValue(
+      {ObjectValue(MakeAction(ShowMoreLabel(labels, rest), labels.show_more_message, std::move(payload), "primary"))});
 }
 
 bool IsShowMoreRowsAction(const Value& action_value) {
@@ -421,8 +414,7 @@ std::unordered_set<std::string> SelfIdentityValuesFromLocal(const LocalIdentity&
   return out;
 }
 
-bool DirectoryHitMatchesIdentities(const mesh::DirectoryHit& hit,
-                                   const std::unordered_set<std::string>& identities) {
+bool DirectoryHitMatchesIdentities(const mesh::DirectoryHit& hit, const std::unordered_set<std::string>& identities) {
   if (identities.empty()) {
     return false;
   }
@@ -446,15 +438,13 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
                                            const PeopleDiscoveryBuildOptions& options) {
   const PeopleDiscoveryLabels& labels = options.labels;
   std::vector<Value> blocks;
-  const size_t max_visible =
-      options.max_visible_items == 0 ? kDefaultMaxVisible : options.max_visible_items;
+  const size_t max_visible = options.max_visible_items == 0 ? kDefaultMaxVisible : options.max_visible_items;
   const auto known = CollectKnownIdentities(contacts, options);
 
   std::vector<mesh::DirectoryHit> filtered_hits;
   filtered_hits.reserve(directory_hits.size());
   for (const mesh::DirectoryHit& hit : directory_hits) {
-    if (!options.self_identity_values.empty() &&
-        DirectoryHitMatchesIdentities(hit, options.self_identity_values)) {
+    if (!options.self_identity_values.empty() && DirectoryHitMatchesIdentities(hit, options.self_identity_values)) {
       continue;
     }
     filtered_hits.push_back(hit);
@@ -478,9 +468,8 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
     std::vector<Value> items;
     items.reserve(total);
     for (const mesh::DirectoryHit& hit : filtered_hits) {
-      const bool already =
-          IdentityKnown(hit.ids, hit.account_id, known) ||
-          MatchingContactId(hit.ids, hit.account_id, contacts).has_value();
+      const bool already = IdentityKnown(hit.ids, hit.account_id, known) ||
+                           MatchingContactId(hit.ids, hit.account_id, contacts).has_value();
       const auto contact_id = MatchingContactId(hit.ids, hit.account_id, contacts);
 
       Object item;
@@ -513,7 +502,7 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
       paragraph.set("text", labels.local_one);
     } else if (visible < total) {
       paragraph.set("text", Fill(Fill(labels.local_many_partial, "count", std::to_string(total)), "shown",
-                                  std::to_string(visible)));
+                                 std::to_string(visible)));
     } else {
       paragraph.set("text", Fill(labels.local_many, "count", std::to_string(total)));
     }
@@ -611,8 +600,7 @@ std::optional<std::string> RevealMoreRowsInBlocksJson(const std::string& blocks_
   return DumpJson(*doc);
 }
 
-std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json,
-                                                 const PeopleDiscoveryLabels& labels) {
+std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json, const PeopleDiscoveryLabels& labels) {
   auto parsed = ParseValue(raw_json);
   if (!parsed) {
     return {};

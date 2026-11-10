@@ -69,7 +69,6 @@ struct MeshTrafficView {
   MeshTrafficRates rates;
 };
 
-
 /** Last known HTTP Brief / relay poll outcome for ambient chrome. */
 enum class BriefRelayHealth {
   Unknown,

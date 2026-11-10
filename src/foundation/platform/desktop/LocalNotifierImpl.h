@@ -21,8 +21,7 @@ void SetPendingDesktopActivationToken(std::string token);
 /** Takes the pending token if still fresh; empty if none. */
 std::string TakePendingDesktopActivationToken();
 
-void PostDesktopNotification(const std::string& title, const std::string& body,
-                             const std::string& thread_id);
+void PostDesktopNotification(const std::string& title, const std::string& body, const std::string& thread_id);
 void ClearDesktopNotification(const std::string& thread_id);
 void ShutdownDesktopNotifications();
 

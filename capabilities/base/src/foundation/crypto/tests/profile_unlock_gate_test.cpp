@@ -101,7 +101,7 @@ TEST_F(ProfileUnlockGateTest, APhraseRestoreUnlocksUnderThePinChosenHere) {
   };
   auto diag = std::make_shared<DiagCapture>();
   DiagLog().addHandler(diag);
-  std::vector<std::pair<std::string, std::string>> restores;  // pin, phrase
+  std::vector<std::pair<std::string, std::string>> restores; // pin, phrase
   int imported_notices = 0;
   int errors = 0;
   bool dismissed = false;
@@ -145,7 +145,6 @@ TEST_F(ProfileUnlockGateTest, APhraseRestoreUnlocksUnderThePinChosenHere) {
   EXPECT_TRUE(saw_done_with_ms) << "unlock.done carries the time since unlock.start";
 }
 
-
 // --- PIN grace window (#21 phase 1, DEV/PLAN-pin-grace.md) ---
 
 class ProfileUnlockGateGraceTest : public ProfileUnlockGateTest {
@@ -153,7 +152,7 @@ protected:
   void SetUp() override {
     ProfileUnlockGateTest::SetUp();
     ASSERT_TRUE(static_cast<bool>(engine_.Vault()->CreateWithDek("4321", ByteVector(kDataEncryptionKeySize, 0x47))));
-    engine_.Vault()->Lock();  // as after a cold start: the PIN is needed
+    engine_.Vault()->Lock(); // as after a cold start: the PIN is needed
     ASSERT_TRUE(engine_.NeedsUnlock());
   }
 
@@ -193,7 +192,7 @@ protected:
       return ++handler_ids_;
     };
     ports.remove_protected_data_handler = [this](const uint64_t id) {
-      removed_.push_back(id);  // handler_ itself stays: it may be the one running
+      removed_.push_back(id); // handler_ itself stays: it may be the one running
     };
     ports.run_on_ui = [](std::function<void()> fn) { fn(); };
     ports.run_later = [this](const std::chrono::milliseconds delay, std::function<void()> fn) {
@@ -247,7 +246,7 @@ TEST_F(ProfileUnlockGateGraceTest, APushWakeThroughTheWindowNeverExtendsIt) {
   Answers({GraceUnlock::Status::Found});
   gate_.BindPorts(Ports());
   gate_.BeginDeferredUnlockAfterFirstPresent();
-  gate_.OnForeground();  // nothing pending: no second read either
+  gate_.OnForeground(); // nothing pending: no second read either
 
   EXPECT_EQ(tries_, 1);
   EXPECT_TRUE(remembered_.empty());
@@ -295,6 +294,34 @@ TEST_F(ProfileUnlockGateGraceTest, WindowOffSkipsTheRead) {
   gate_.BeginDeferredUnlockAfterFirstPresent();
   EXPECT_EQ(tries_, 0);
   EXPECT_EQ(doors_, 1);
+}
+
+// A015: "Always" (kUnlockGraceAlways = -1) is a window like any other: the gate reads it, and a PIN unlock keeps it.
+TEST_F(ProfileUnlockGateGraceTest, AlwaysUnlocksWithoutThePin) {
+  Answers({GraceUnlock::Status::Found});
+  ProfileUnlockPorts ports = Ports();
+  ports.grace_minutes = []() { return kUnlockGraceAlways; };
+  gate_.BindPorts(std::move(ports));
+
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+
+  EXPECT_EQ(tries_, 1);
+  EXPECT_EQ(doors_, 0);
+  EXPECT_EQ(dismissed_, 1);
+  EXPECT_TRUE(remembered_.empty());
+}
+
+TEST_F(ProfileUnlockGateGraceTest, AlwaysIsKeptAfterAPinUnlock) {
+  ProfileUnlockPorts ports = Ports();
+  ports.grace_minutes = []() { return kUnlockGraceAlways; };
+  gate_.BindPorts(std::move(ports));
+  gate_.BeginDeferredUnlockAfterFirstPresent(); // Missing: the door
+  ASSERT_EQ(doors_, 1);
+
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+
+  EXPECT_TRUE(engine_.IsUnlocked());
+  EXPECT_EQ(remembered_, std::vector<int>{kUnlockGraceAlways});
 }
 
 TEST_F(ProfileUnlockGateGraceTest, APinUnlockKeepsTheWindow) {
@@ -491,13 +518,13 @@ TEST_F(ProfileUnlockGateGraceTest, ALockedPhoneWithACallWaitsForTheUnlockThenCon
   EXPECT_EQ(timers_[0].first, std::chrono::milliseconds(std::chrono::minutes(3)));
   ASSERT_TRUE(handler_);
 
-  handler_();  // the phone was unlocked
+  handler_(); // the phone was unlocked
 
   EXPECT_EQ(tries_, 3);
   EXPECT_EQ(dismissed_, 1);
   EXPECT_EQ(waiting_, (std::vector<bool>{true, false}));
   EXPECT_EQ(removed_.size(), 1u);
-  timers_[0].second();  // a late timeout changes nothing
+  timers_[0].second(); // a late timeout changes nothing
   EXPECT_EQ(waiting_.size(), 2u);
 }
 
@@ -583,7 +610,7 @@ TEST_F(ProfileUnlockGateGraceTest, ALockedPhoneWithoutACallOpensWhenThePhoneIsUn
   gate_.BeginDeferredUnlockAfterFirstPresent();
   ASSERT_TRUE(handler_);
 
-  handler_();  // a spurious notice: still unreadable, the handler stays
+  handler_(); // a spurious notice: still unreadable, the handler stays
   EXPECT_EQ(dismissed_, 0);
   EXPECT_TRUE(removed_.empty());
 
@@ -613,10 +640,10 @@ protected:
         bio_answers_.pop_front();
       }
       if (result.status == BiometricUnlock::Status::Missing) {
-        bio_enabled_ = false;  // the engine deleted both pieces
+        bio_enabled_ = false; // the engine deleted both pieces
       }
       if (result.status == BiometricUnlock::Status::Found && bio_opens_vault_) {
-        EXPECT_TRUE(static_cast<bool>(engine_.Unlock("4321")));  // as the engine does with the DEK on the worker
+        EXPECT_TRUE(static_cast<bool>(engine_.Unlock("4321"))); // as the engine does with the DEK on the worker
       }
       return result;
     };
@@ -703,7 +730,7 @@ TEST_F(ProfileUnlockGateBiometricTest, DoorRaisedInForegroundPromptsOnce) {
 }
 
 TEST_F(ProfileUnlockGateBiometricTest, DoorRaisedInBackgroundPromptsOnForeground) {
-  app_shown_ = false;  // a push wake: the door rises behind the lock screen
+  app_shown_ = false; // a push wake: the door rises behind the lock screen
   gate_.BindPorts(BioPorts());
   gate_.BeginDeferredUnlockAfterFirstPresent();
   RunAll();
@@ -733,7 +760,7 @@ TEST_F(ProfileUnlockGateBiometricTest, CanceledDoesNotRepromptOnForeground) {
   RunAll();
   EXPECT_EQ(Prompts(), 1);
 
-  gate_.TryBiometric();  // the door's key: always again
+  gate_.TryBiometric(); // the door's key: always again
   RunAll();
   EXPECT_EQ(Prompts(), 2);
 
@@ -754,15 +781,15 @@ TEST_F(ProfileUnlockGateBiometricTest, GraceRetryDoesNotPrompt) {
   EXPECT_EQ(Prompts(), 0) << "the grace entry is still awaited";
   ASSERT_TRUE(handler_);
 
-  handler_();  // the phone's unlock notice: still unreadable
+  handler_(); // the phone's unlock notice: still unreadable
   RunAll();
   EXPECT_EQ(Prompts(), 0);
-  gate_.OnForeground();  // the foreground retries the grace entry, no prompt
+  gate_.OnForeground(); // the foreground retries the grace entry, no prompt
   RunAll();
   EXPECT_EQ(tries_, 4);
   EXPECT_EQ(Prompts(), 0);
 
-  gate_.OnForeground();  // the window has expired meanwhile: the PIN is needed now
+  gate_.OnForeground(); // the window has expired meanwhile: the PIN is needed now
   RunAll();
   EXPECT_EQ(tries_, 5);
   EXPECT_EQ(Prompts(), 1);
@@ -774,7 +801,7 @@ TEST_F(ProfileUnlockGateBiometricTest, PinSubmitDuringBiometricIsDeclined) {
   BioAnswers({BiometricUnlock::Status::Canceled});
   gate_.BindPorts(BioPorts());
   gate_.BeginDeferredUnlockAfterFirstPresent();
-  RunJob(0);  // the grace read: the door rises, the prompt is queued
+  RunJob(0); // the grace read: the door rises, the prompt is queued
   ASSERT_EQ(jobs_.size(), 1U);
   busy_ui_.clear();
 
@@ -784,7 +811,7 @@ TEST_F(ProfileUnlockGateBiometricTest, PinSubmitDuringBiometricIsDeclined) {
   EXPECT_TRUE(busy_ui_.empty()) << "the shell's unlock indicator is left alone";
   EXPECT_FALSE(gate_.IsUnlockInProgress());
 
-  RunAll();  // the prompt is canceled
+  RunAll(); // the prompt is canceled
   gate_.CompleteWithPin("4321", /*create_mode=*/false);
   RunAll();
   EXPECT_TRUE(engine_.IsUnlocked());
@@ -802,7 +829,7 @@ TEST_F(ProfileUnlockGateBiometricTest, PinSubmitDuringAGraceRetryIsDeclined) {
   RunAll();
   ASSERT_EQ(doors_, 1);
   ASSERT_TRUE(handler_);
-  handler_();  // the phone's unlock: the retry is queued, an unlock in progress
+  handler_(); // the phone's unlock: the retry is queued, an unlock in progress
   ASSERT_EQ(jobs_.size(), 1U);
   ASSERT_TRUE(gate_.IsUnlockInProgress());
   busy_ui_.clear();
@@ -812,7 +839,7 @@ TEST_F(ProfileUnlockGateBiometricTest, PinSubmitDuringAGraceRetryIsDeclined) {
   EXPECT_EQ(declined_, 1);
   EXPECT_TRUE(busy_ui_.empty()) << "the retry's indicator stays on";
 
-  RunAll();  // the window has expired: the door stays
+  RunAll(); // the window has expired: the door stays
   gate_.CompleteWithPin("4321", /*create_mode=*/false);
   RunAll();
   EXPECT_TRUE(engine_.IsUnlocked());
@@ -826,7 +853,7 @@ TEST_F(ProfileUnlockGateBiometricTest, BiometricResultAfterGateClosedIsDropped) 
   RunJob(0);
   ASSERT_EQ(jobs_.size(), 1U);
 
-  gate_.Cancel();  // the gate finishes without an unlock
+  gate_.Cancel(); // the gate finishes without an unlock
   ASSERT_EQ(dismissed_, 1);
   RunAll();
   EXPECT_EQ(dismissed_, 1);
@@ -887,7 +914,7 @@ TEST_F(ProfileUnlockGateBiometricTest, BiometricKeyIgnoredWhileInFlight) {
   RunAll();
   EXPECT_EQ(Prompts(), 1);
 
-  gate_.TryBiometric();  // answered (canceled): the key prompts again
+  gate_.TryBiometric(); // answered (canceled): the key prompts again
   EXPECT_EQ(jobs_.size(), 1U);
   RunAll();
   EXPECT_EQ(Prompts(), 2);

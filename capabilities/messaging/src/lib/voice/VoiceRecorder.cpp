@@ -101,8 +101,7 @@ std::unique_ptr<IVoiceCaptureSource> CreateArbiterVoiceCaptureSource(MediaDevice
   return std::make_unique<ArbiterVoiceCaptureSource>(devices);
 }
 
-VoiceRecorder::VoiceRecorder(SourceFactory factory, Callbacks callbacks)
-    : shared_(std::make_shared<Shared>()) {
+VoiceRecorder::VoiceRecorder(SourceFactory factory, Callbacks callbacks) : shared_(std::make_shared<Shared>()) {
   shared_->factory = std::move(factory);
   shared_->callbacks = std::move(callbacks);
 }
@@ -198,7 +197,8 @@ void VoiceRecorder::Run(std::shared_ptr<Shared> shared, VoiceRecorderConfig conf
 
   const auto encode_frame = [&]() {
     std::array<unsigned char, 1275> out{};
-    const int bytes = opus_encode(encoder, frame.data(), kOggOpusFrameSamples, out.data(), static_cast<opus_int32>(out.size()));
+    const int bytes =
+        opus_encode(encoder, frame.data(), kOggOpusFrameSamples, out.data(), static_cast<opus_int32>(out.size()));
     if (bytes < 0) {
       failed = true;
       return;
@@ -278,7 +278,8 @@ void VoiceRecorder::Run(std::shared_ptr<Shared> shared, VoiceRecorderConfig conf
   // A part-filled last frame counts for what it holds; the rest of it is silence.
   if (filled_bytes > 0) {
     samples += static_cast<uint64_t>(filled_bytes / static_cast<int>(sizeof(int16_t)));
-    std::memset(reinterpret_cast<uint8_t*>(frame.data()) + filled_bytes, 0, static_cast<size_t>(kFrameBytes - filled_bytes));
+    std::memset(reinterpret_cast<uint8_t*>(frame.data()) + filled_bytes, 0,
+                static_cast<size_t>(kFrameBytes - filled_bytes));
     encode_frame();
   }
   result.duration_ms = static_cast<int64_t>(samples * 1000 / kOggOpusRate);
@@ -304,7 +305,8 @@ void VoiceRecorder::Run(std::shared_ptr<Shared> shared, VoiceRecorderConfig conf
     return;
   }
 
-  if (requested() == Request::Cancel) { // cancelled (a lock, leaving the chat) while the last frames were encoded: no file
+  if (requested() ==
+      Request::Cancel) { // cancelled (a lock, leaving the chat) while the last frames were encoded: no file
     result.end = VoiceEnd::Cancelled;
     result.duration_ms = 0;
     deliver();

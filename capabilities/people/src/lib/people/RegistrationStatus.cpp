@@ -51,8 +51,7 @@ std::optional<int64_t> ParseIso8601ToUnixMs(const std::string& iso) {
   if (dot != std::string::npos && dot + 1 < iso.size()) {
     int frac = 0;
     int digits = 0;
-    for (size_t i = dot + 1; i < iso.size() && std::isdigit(static_cast<unsigned char>(iso[i])) && digits < 3;
-         ++i) {
+    for (size_t i = dot + 1; i < iso.size() && std::isdigit(static_cast<unsigned char>(iso[i])) && digits < 3; ++i) {
       frac = frac * 10 + (iso[i] - '0');
       ++digits;
     }
@@ -103,26 +102,26 @@ bool ShouldPublishKemBinding(const LocalIdentity& identity) {
 
 std::string RegistrationStatusLabel(RegistrationStatus status) {
   switch (status) {
-  case RegistrationStatus::Unregistered:
-    return "not registered";
-  case RegistrationStatus::Active:
-    return "active";
-  case RegistrationStatus::ExpiringSoon:
-    return "expiring soon";
-  case RegistrationStatus::Expired:
-    return "expired";
+    case RegistrationStatus::Unregistered:
+      return "not registered";
+    case RegistrationStatus::Active:
+      return "active";
+    case RegistrationStatus::ExpiringSoon:
+      return "expiring soon";
+    case RegistrationStatus::Expired:
+      return "expired";
   }
   return "not registered";
 }
 
 std::string RegistrationActionLabel(RegistrationStatus status) {
   switch (status) {
-  case RegistrationStatus::Unregistered:
-    return "Register on network";
-  case RegistrationStatus::Active:
-  case RegistrationStatus::ExpiringSoon:
-  case RegistrationStatus::Expired:
-    return "Renew registration";
+    case RegistrationStatus::Unregistered:
+      return "Register on network";
+    case RegistrationStatus::Active:
+    case RegistrationStatus::ExpiringSoon:
+    case RegistrationStatus::Expired:
+      return "Renew registration";
   }
   return "Register on network";
 }

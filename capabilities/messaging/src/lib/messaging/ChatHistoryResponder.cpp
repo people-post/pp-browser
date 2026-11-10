@@ -23,16 +23,14 @@ namespace {
 
 Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const Thread& thread,
                                              const std::string& local_relay_user_id,
-                                             const std::string& peer_relay_user_id,
-                                             const std::string& local_account_id,
+                                             const std::string& peer_relay_user_id, const std::string& local_account_id,
                                              const std::string& local_device, IPeerSessionStore& psk_store,
                                              const ChatHistoryResponder::SignBytesFn& sign_bytes) {
   if (!message.sender_seq || !message.session_epoch) {
     return Error("History row missing seq fields");
   }
 
-  const std::string sender_contact_id =
-      !local_account_id.empty() ? local_account_id : local_relay_user_id;
+  const std::string sender_contact_id = !local_account_id.empty() ? local_account_id : local_relay_user_id;
   const std::string peer_communicating_id =
       !thread.peer_identity_value.empty() ? thread.peer_identity_value : peer_relay_user_id;
 
@@ -91,7 +89,7 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
   envelope.sender_device = local_device;
   envelope.route.kind = "direct";
   envelope.route.channel = thread.channel;
-  RelayCopy copy;  // served as the account copy it was numbered as (the thread's numbering)
+  RelayCopy copy; // served as the account copy it was numbered as (the thread's numbering)
   copy.session_epoch = *message.session_epoch;
   copy.sender_seq = *message.sender_seq;
   copy.payload_b64 = *payload_b64;
@@ -123,8 +121,7 @@ Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IPeerS
                                                      const ChatHistoryRequest& request,
                                                      const std::string& local_relay_user_id,
                                                      const std::string& local_account_id,
-                                                     const std::string& local_device,
-                                                     const SignBytesFn& sign_bytes,
+                                                     const std::string& local_device, const SignBytesFn& sign_bytes,
                                                      const std::string& remote_peer_id,
                                                      IPeerSigningKeyResolver& signing_keys, const int64_t now_ms) {
   if (local_relay_user_id.empty()) {

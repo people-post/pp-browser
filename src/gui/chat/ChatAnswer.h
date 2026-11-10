@@ -89,26 +89,26 @@ inline std::string WithDetailsLink(std::string_view markdown, const std::vector<
   std::string dest;
   for (const char c : source->url) {
     switch (c) {
-    case '(':
-      dest += "%28";
-      break;
-    case ')':
-      dest += "%29";
-      break;
-    case ' ':
-      dest += "%20";
-      break;
-    case '<':
-      dest += "%3C";
-      break;
-    case '>':
-      dest += "%3E";
-      break;
-    case '\\':
-      dest += "%5C";
-      break;
-    default:
-      dest += c;
+      case '(':
+        dest += "%28";
+        break;
+      case ')':
+        dest += "%29";
+        break;
+      case ' ':
+        dest += "%20";
+        break;
+      case '<':
+        dest += "%3C";
+        break;
+      case '>':
+        dest += "%3E";
+        break;
+      case '\\':
+        dest += "%5C";
+        break;
+      default:
+        dest += c;
     }
   }
   const std::vector<std::string> existing = MarkdownToRml(markdown).links;

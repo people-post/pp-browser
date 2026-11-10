@@ -33,60 +33,71 @@ InterruptionKind ShellInterruption::Top(const ShellState& state) {
   return InterruptionKind::None;
 }
 
-CompactChromeFrostSurface ShellInterruption::ResolveFrostSurface(const ShellState& state) {
+CompactChromeFrost ShellInterruption::ResolveFrost(const ShellState& state) {
+  using Surface = CompactChromeFrostSurface;
   if (state.layout_mode != LayoutMode::Compact) {
-    return CompactChromeFrostSurface::None;
+    return {};
   }
   switch (Top(state)) {
-  case InterruptionKind::PinGate:
-  case InterruptionKind::CallRing:
-  case InterruptionKind::Dialog:
-  case InterruptionKind::OverlayLayer:
-    return CompactChromeFrostSurface::None;
-  case InterruptionKind::LiveSessionOn:
-    // Compact call bar sits above chrome without a full-screen frost.
-    return CompactChromeFrostSurface::None;
-  case InterruptionKind::Transient:
-    return CompactChromeFrostSurface::TransientHeader;
-  case InterruptionKind::AuxiliarySheet:
-    return CompactChromeFrostSurface::AuxiliarySheetChrome;
-  case InterruptionKind::CompactChatOverlay:
-    return CompactChromeFrostSurface::ChatOverlayHeader;
-  case InterruptionKind::None:
-    return CompactChromeFrostSurface::BottomNav;
+    case InterruptionKind::PinGate:
+    case InterruptionKind::CallRing:
+    case InterruptionKind::Dialog:
+    case InterruptionKind::OverlayLayer:
+      return {};
+    case InterruptionKind::LiveSessionOn:
+      // Compact call bar sits above chrome without a full-screen frost.
+      return {};
+    case InterruptionKind::Transient:
+      // A page pushed from Settings keeps the tab bar under it: that bottom position is the bar's, the top the page's.
+      if (ShellLayout::SettingsTabBarShown(state)) {
+        return {.top = Surface::TransientHeader, .bottom = Surface::BottomNav};
+      }
+      return {.top = Surface::TransientHeader};
+    case InterruptionKind::AuxiliarySheet:
+      return {.top = Surface::AuxiliarySheetChrome};
+    case InterruptionKind::CompactChatOverlay:
+      // The chat view floats a header over the transcript: one blur. Its composer is a floating pill and two round buttons
+      // on a clear bar (TODO #202): no bottom frost.
+      return {.top = Surface::ChatOverlayHeader};
+    case InterruptionKind::None:
+      return {.top = Surface::BottomNav, .bottom = Surface::BottomNav};
   }
-  return CompactChromeFrostSurface::None;
+  return {};
+}
+
+CompactChromeFrostSurface ShellInterruption::ResolveFrostSurface(const ShellState& state) {
+  return ResolveFrost(state).top;
 }
 
 bool ShellInterruption::DismissTop(ShellState& state) {
   switch (Top(state)) {
-  case InterruptionKind::PinGate:
-    // Handled in ShellHost::HandleDismiss (create cancels; unlock blocks).
-    return false;
-  case InterruptionKind::CallRing:
-    // Decline is explicit; Escape does not silently dismiss a ring.
-    return false;
-  case InterruptionKind::LiveSessionOn:
-    return false;
-  case InterruptionKind::Dialog:
-    state.dialog = {};
-    state.transient_active = !state.transient_stack.empty();
-    return true;
-  case InterruptionKind::OverlayLayer:
-    state.overlay_stack.pop_back();
-    return true;
-  case InterruptionKind::Transient:
-    state.transient_stack.pop_back();
-    state.transient_active = !state.transient_stack.empty();
-    return true;
-  case InterruptionKind::AuxiliarySheet:
-    state.auxiliary_open = false;
-    return true;
-  case InterruptionKind::CompactChatOverlay:
-    state.compact_chat_open = false;
-    return true;
-  case InterruptionKind::None:
-    return false;
+    case InterruptionKind::PinGate:
+      // Handled in ShellHost::HandleDismiss (create cancels; unlock blocks).
+      return false;
+    case InterruptionKind::CallRing:
+      // Decline is explicit; Escape does not silently dismiss a ring.
+      return false;
+    case InterruptionKind::LiveSessionOn:
+      return false;
+    case InterruptionKind::Dialog:
+      state.dialog = {};
+      state.transient_active = !state.transient_stack.empty();
+      return true;
+    case InterruptionKind::OverlayLayer:
+      state.overlay_stack.pop_back();
+      return true;
+    case InterruptionKind::Transient:
+      state.transient_stack.pop_back();
+      state.transient_active = !state.transient_stack.empty();
+      return true;
+    case InterruptionKind::AuxiliarySheet:
+      state.auxiliary_open = false;
+      return true;
+    case InterruptionKind::CompactChatOverlay:
+      state.compact_chat_open = false;
+      return true;
+    case InterruptionKind::None:
+      return false;
   }
   return false;
 }

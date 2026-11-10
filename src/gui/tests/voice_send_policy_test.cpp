@@ -7,7 +7,7 @@ namespace {
 
 TEST(VoiceSendPolicy, TheFileGoesOnlyAfterTheSendOrItsStagedCopy) {
   EXPECT_EQ(DecideVoiceFileFate(/*sent=*/true, 0, 0), VoiceFileFate::Delete);
-  EXPECT_EQ(DecideVoiceFileFate(false, 0, 1), VoiceFileFate::Delete);       // failed after staging: Retry has the copy
+  EXPECT_EQ(DecideVoiceFileFate(false, 0, 1), VoiceFileFate::Delete); // failed after staging: Retry has the copy
   EXPECT_EQ(DecideVoiceFileFate(false, 2, 3), VoiceFileFate::Delete);
 }
 

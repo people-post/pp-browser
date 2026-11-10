@@ -76,7 +76,8 @@ mesh::MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in)
   // The hub's snapshot: normalized by the app (its seeds, else the deployment's) and effective on this device.
   const MeshConfig mesh_cfg = MeshConfigOf(in);
   const std::vector<Contact> contacts = ListContacts(in.contacts);
-  const auto directory_nodes = in.list_directory_nodes ? in.list_directory_nodes() : std::vector<mesh::MeshDirectoryNode>{};
+  const auto directory_nodes =
+      in.list_directory_nodes ? in.list_directory_nodes() : std::vector<mesh::MeshDirectoryNode>{};
   const auto dht_nodes = in.list_dht_nodes ? in.list_dht_nodes() : std::vector<mesh::MeshDirectoryNode>{};
   const bool include_seeds = !in.seed_dial_ok || in.seed_dial_ok();
 
@@ -112,10 +113,11 @@ mesh::MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in)
     });
   }
   std::vector<mesh::MeshHopCandidate> contact_introducers = CollectContactHopCandidates(contacts);
-  if (mesh_cfg.trusted_relays_only) {  // privacy T4; an introducer sees both ends' addresses
+  if (mesh_cfg.trusted_relays_only) { // privacy T4; an introducer sees both ends' addresses
     const auto trusted = TrustedRelayPeerIds(contacts, mesh_cfg.bootstrap_peers);
     rendezvous = KeepTrustedRelays(std::move(rendezvous), trusted);
-    std::erase_if(contact_introducers, [&trusted](const mesh::MeshHopCandidate& hop) { return !trusted.contains(hop.peer_id); });
+    std::erase_if(contact_introducers,
+                  [&trusted](const mesh::MeshHopCandidate& hop) { return !trusted.contains(hop.peer_id); });
   }
 
   rendezvous = ComposeRendezvousSurface(std::move(rendezvous), in, contacts, directory_nodes, mesh_cfg);
@@ -126,7 +128,7 @@ mesh::MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in)
     grant(hop, mesh::kReachRoleSeed);
   }
   for (auto hop : contact_introducers) {
-    hop.affinity = mesh::MeshHopAffinity::Contact;  // asked before the seeds
+    hop.affinity = mesh::MeshHopAffinity::Contact; // asked before the seeds
     grant(hop, mesh::kReachRoleIntroducer);
   }
   for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {

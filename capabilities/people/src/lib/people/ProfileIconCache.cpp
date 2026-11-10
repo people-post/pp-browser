@@ -29,8 +29,8 @@ std::filesystem::path MetaPath(const std::string& profile_dir, const std::string
 // Names the file after its bytes. The UI caches a texture by file path, so a
 // new picture written over the old file kept showing the old one.
 std::string IconFilename(const std::vector<uint8_t>& bytes, const std::string& ext) {
-  const size_t tag = std::hash<std::string_view>{}(
-      std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+  const size_t tag =
+      std::hash<std::string_view>{}(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
   std::ostringstream name;
   name << "icon-" << std::hex << tag << "." << ext;
   return name.str();
@@ -144,8 +144,7 @@ std::string ProfileIconLocalPath(const std::string& profile_dir, const std::stri
   if (!meta) {
     return {};
   }
-  const std::string filename =
-      meta.value().local_filename.empty() ? kDefaultIconFilename : meta.value().local_filename;
+  const std::string filename = meta.value().local_filename.empty() ? kDefaultIconFilename : meta.value().local_filename;
   const auto path = std::filesystem::path(ProfileIconCacheRoot(profile_dir, cache_key)) / filename;
   if (!std::filesystem::exists(path)) {
     return {};

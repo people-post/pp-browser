@@ -15,7 +15,7 @@ std::optional<CallSummaryPlan> PlanCallSummary(const CallSession& session,
   const bool group = session.origin_group_id.has_value() && !session.origin_group_id->empty();
   const bool started = session.initiator_identity == local_identity;
   if (!group && !started) {
-    return std::nullopt;  // 1:1: the starter reports the call; the other side reads its summary
+    return std::nullopt; // 1:1: the starter reports the call; the other side reads its summary
   }
   CallSummaryPlan plan;
   CallSummaryDetail& summary = plan.detail;
@@ -43,7 +43,7 @@ std::optional<CallSummaryPlan> PlanCallSummary(const CallSession& session,
     answered_at = std::max(*self_joined, *other_joined);
   }
   if (reason == LiveCallEndReason::Orphaned) {
-    answered_at.reset();  // ended by a restart, maybe hours later: no talk time to report
+    answered_at.reset(); // ended by a restart, maybe hours later: no talk time to report
   }
   summary.outcome = SummaryOutcome(answered_at.has_value(), reason);
   if (group && !answered_at && !started) {
@@ -69,13 +69,13 @@ std::optional<CallSummaryDetail> MergeGroupSummary(const std::optional<CallSumma
     return next;
   }
   if (mode == SummaryWrite::Final) {
-    return std::nullopt;  // it was written when this device left (a restart cleanup would also wipe its talk time)
+    return std::nullopt; // it was written when this device left (a restart cleanup would also wipe its talk time)
   }
   if (!existing->duration_ms) {
-    return next;  // nothing said about talk time yet (missed, declined): the later write knows more
+    return next; // nothing said about talk time yet (missed, declined): the later write knows more
   }
   if (!next.duration_ms || !next.talk_started_at) {
-    return std::nullopt;  // this stay had no talk time: the record stands
+    return std::nullopt; // this stay had no talk time: the record stands
   }
   // From the first join to the last leave. Worked out from the times, so writing a stay twice changes nothing.
   const int64_t next_end = *next.talk_started_at + *next.duration_ms;

@@ -18,7 +18,7 @@ namespace ui {
 class Element;
 class ElementDocument;
 class Event;
-}
+} // namespace ui
 
 namespace pbr {
 
@@ -105,10 +105,10 @@ private:
   std::unique_ptr<IAudioFilePlayer> file_player_;
   bool current_is_file_ = false; // `current_` plays through `file_player_`
   uint64_t file_serial_ = 0;     // serials of file plays: kept apart from the voice player's
-  std::string current_;   // the clip started or being started
-  std::string resolving_; // a tap is waiting for its file
+  std::string current_;          // the clip started or being started
+  std::string resolving_;        // a tap is waiting for its file
   uint64_t resolve_generation_ = 0;
-  uint64_t serial_ = 0;   // the Play() whose events count
+  uint64_t serial_ = 0; // the Play() whose events count
   bool stopped_by_user_ = false;
   std::vector<std::function<void()>> after_stop_;
   bool paused_ = false;

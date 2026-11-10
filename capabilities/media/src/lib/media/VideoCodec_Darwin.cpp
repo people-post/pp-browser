@@ -30,10 +30,9 @@ constexpr int64_t kMinBitrateBps = 200000;
 constexpr int64_t kMaxBitrateBps = 4000000;
 
 int32_t EstimateBitrateBps(int width, int height, int fps) {
-  const double raw = static_cast<double>(width) * static_cast<double>(height) *
-                      static_cast<double>(std::max(fps, 1)) * 0.07;
-  const double clamped =
-      std::clamp(raw, static_cast<double>(kMinBitrateBps), static_cast<double>(kMaxBitrateBps));
+  const double raw =
+      static_cast<double>(width) * static_cast<double>(height) * static_cast<double>(std::max(fps, 1)) * 0.07;
+  const double clamped = std::clamp(raw, static_cast<double>(kMinBitrateBps), static_cast<double>(kMaxBitrateBps));
   return static_cast<int32_t>(clamped);
 }
 
@@ -102,8 +101,7 @@ void FillNv12PixelBuffer(CVPixelBufferRef pixel_buffer, const VideoFrameI420& fr
   const int width = frame.width;
   const int height = frame.height;
   for (int row = 0; row < height; ++row) {
-    std::memcpy(y_dst + static_cast<size_t>(row) * y_stride,
-                frame.y.data() + static_cast<size_t>(row) * width, width);
+    std::memcpy(y_dst + static_cast<size_t>(row) * y_stride, frame.y.data() + static_cast<size_t>(row) * width, width);
   }
 
   const int chroma_width = (width + 1) / 2;
@@ -167,8 +165,7 @@ void AppendEncodedSample(CMSampleBufferRef sample_buffer, EncodeOutput& out) {
   CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(sample_buffer, false);
   if (attachments && CFArrayGetCount(attachments) > 0) {
     auto* dict = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(attachments, 0));
-    auto* not_sync =
-        static_cast<CFBooleanRef>(CFDictionaryGetValue(dict, kCMSampleAttachmentKey_NotSync));
+    auto* not_sync = static_cast<CFBooleanRef>(CFDictionaryGetValue(dict, kCMSampleAttachmentKey_NotSync));
     keyframe = !(not_sync && CFBooleanGetValue(not_sync));
   }
 
@@ -177,14 +174,13 @@ void AppendEncodedSample(CMSampleBufferRef sample_buffer, EncodeOutput& out) {
     if (format) {
       size_t param_count = 0;
       int header_length = 4;
-      if (CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, 0, nullptr, nullptr,
-                                                              &param_count, &header_length) ==
-          noErr) {
+      if (CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, 0, nullptr, nullptr, &param_count,
+                                                             &header_length) == noErr) {
         for (size_t i = 0; i < param_count; ++i) {
           const uint8_t* param_data = nullptr;
           size_t param_size = 0;
-          if (CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
-                  format, i, &param_data, &param_size, nullptr, nullptr) == noErr) {
+          if (CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, i, &param_data, &param_size, nullptr,
+                                                                 nullptr) == noErr) {
             AppendStartCodeAndNal(out.annex_b, param_data, param_size);
           }
         }
@@ -199,8 +195,7 @@ void AppendEncodedSample(CMSampleBufferRef sample_buffer, EncodeOutput& out) {
   }
   const size_t total_length = CMBlockBufferGetDataLength(block);
   std::vector<uint8_t> payload(total_length);
-  if (total_length > 0 &&
-      CMBlockBufferCopyDataBytes(block, 0, total_length, payload.data()) != kCMBlockBufferNoErr) {
+  if (total_length > 0 && CMBlockBufferCopyDataBytes(block, 0, total_length, payload.data()) != kCMBlockBufferNoErr) {
     out.error = true;
     return;
   }
@@ -250,18 +245,14 @@ public:
 
 private:
   Roe<VideoFrameRgba> DecodeFrame(const uint8_t* annex_b, size_t size);
-  bool EnsureDecompressionSession(const uint8_t* sps, size_t sps_size, const uint8_t* pps,
-                                   size_t pps_size, std::string& error_out);
+  bool EnsureDecompressionSession(const uint8_t* sps, size_t sps_size, const uint8_t* pps, size_t pps_size,
+                                  std::string& error_out);
 
-  static void CompressionOutputCallback(void* output_ref_con, void* source_frame_ref_con,
-                                         OSStatus status, VTEncodeInfoFlags info_flags,
-                                         CMSampleBufferRef sample_buffer);
-  static void DecompressionOutputCallback(void* decompression_output_ref_con,
-                                           void* source_frame_ref_con, OSStatus status,
-                                           VTDecodeInfoFlags info_flags,
-                                           CVImageBufferRef image_buffer,
-                                           CMTime presentation_time_stamp,
-                                           CMTime presentation_duration);
+  static void CompressionOutputCallback(void* output_ref_con, void* source_frame_ref_con, OSStatus status,
+                                        VTEncodeInfoFlags info_flags, CMSampleBufferRef sample_buffer);
+  static void DecompressionOutputCallback(void* decompression_output_ref_con, void* source_frame_ref_con,
+                                          OSStatus status, VTDecodeInfoFlags info_flags, CVImageBufferRef image_buffer,
+                                          CMTime presentation_time_stamp, CMTime presentation_duration);
 
   VTCompressionSessionRef compression_session_ = nullptr;
   int enc_width_ = 0;
@@ -299,8 +290,7 @@ Roe<void> VideoToolboxVideoCodec::ConfigureEncoder(int width, int height, int fp
   // Without a guard, -Wunguarded-availability-new fails when targeting iOS < 17.4.
 #if TARGET_OS_IPHONE
   if (__builtin_available(iOS 17.4, *)) {
-    CFDictionarySetValue(encoder_spec,
-                         kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder,
+    CFDictionarySetValue(encoder_spec, kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder,
                          kCFBooleanTrue);
   }
 #else
@@ -310,8 +300,7 @@ Roe<void> VideoToolboxVideoCodec::ConfigureEncoder(int width, int height, int fp
 #if defined(kVTVideoEncoderSpecification_EnableLowLatencyRateControl)
   // Prefer 1-in-1-out HW encode so CompleteFrames does not flush multi-frame Annex-B blobs
   // that break Linux's VA-API slice decoder (Android MediaCodec tolerates them).
-  CFDictionarySetValue(encoder_spec, kVTVideoEncoderSpecification_EnableLowLatencyRateControl,
-                       kCFBooleanTrue);
+  CFDictionarySetValue(encoder_spec, kVTVideoEncoderSpecification_EnableLowLatencyRateControl, kCFBooleanTrue);
 #endif
 
   CFMutableDictionaryRef source_attrs = CFDictionaryCreateMutable(
@@ -322,18 +311,16 @@ Roe<void> VideoToolboxVideoCodec::ConfigureEncoder(int width, int height, int fp
   CFRelease(pixel_format_number);
 
   VTCompressionSessionRef session = nullptr;
-  OSStatus status = VTCompressionSessionCreate(
-      kCFAllocatorDefault, width, height, kCMVideoCodecType_H264, encoder_spec, source_attrs,
-      nullptr, &VideoToolboxVideoCodec::CompressionOutputCallback, this, &session);
+  OSStatus status =
+      VTCompressionSessionCreate(kCFAllocatorDefault, width, height, kCMVideoCodecType_H264, encoder_spec, source_attrs,
+                                 nullptr, &VideoToolboxVideoCodec::CompressionOutputCallback, this, &session);
   CFRelease(encoder_spec);
   CFRelease(source_attrs);
 
   if (status != noErr || !session) {
     // Retry without requesting hardware in case only a software path exists.
-    status = VTCompressionSessionCreate(kCFAllocatorDefault, width, height, kCMVideoCodecType_H264,
-                                         nullptr, nullptr, nullptr,
-                                         &VideoToolboxVideoCodec::CompressionOutputCallback, this,
-                                         &session);
+    status = VTCompressionSessionCreate(kCFAllocatorDefault, width, height, kCMVideoCodecType_H264, nullptr, nullptr,
+                                        nullptr, &VideoToolboxVideoCodec::CompressionOutputCallback, this, &session);
   }
   if (status != noErr || !session) {
     return Error("VTCompressionSessionCreate failed");
@@ -345,8 +332,8 @@ Roe<void> VideoToolboxVideoCodec::ConfigureEncoder(int width, int height, int fp
   status = VTSessionSetProperty(session, kVTCompressionPropertyKey_ProfileLevel,
                                 kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel);
   if (status != noErr) {
-    status = VTSessionSetProperty(session, kVTCompressionPropertyKey_ProfileLevel,
-                                  kVTProfileLevel_H264_Baseline_AutoLevel);
+    status =
+        VTSessionSetProperty(session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_Baseline_AutoLevel);
   }
   if (status != noErr) {
     VTCompressionSessionInvalidate(session);
@@ -361,8 +348,7 @@ Roe<void> VideoToolboxVideoCodec::ConfigureEncoder(int width, int height, int fp
   CFRelease(max_delay_number);
 
   const int32_t max_keyframe_interval = fps * kKeyframeIntervalSeconds;
-  CFNumberRef max_keyframe_number =
-      CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &max_keyframe_interval);
+  CFNumberRef max_keyframe_number = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &max_keyframe_interval);
   VTSessionSetProperty(session, kVTCompressionPropertyKey_MaxKeyFrameInterval, max_keyframe_number);
   CFRelease(max_keyframe_number);
 
@@ -391,8 +377,7 @@ Roe<void> VideoToolboxVideoCodec::ConfigureEncoder(int width, int height, int fp
   return {};
 }
 
-Roe<EncodedAccessUnit> VideoToolboxVideoCodec::Encode(const VideoFrameI420& frame,
-                                                       bool force_keyframe) {
+Roe<EncodedAccessUnit> VideoToolboxVideoCodec::Encode(const VideoFrameI420& frame, bool force_keyframe) {
   if (!compression_session_) {
     return Error("H264 encoder not configured");
   }
@@ -405,8 +390,7 @@ Roe<EncodedAccessUnit> VideoToolboxVideoCodec::Encode(const VideoFrameI420& fram
   CVReturn cv_status =
       pool ? CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &pixel_buffer)
            : CVPixelBufferCreate(kCFAllocatorDefault, frame.width, frame.height,
-                                  kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, nullptr,
-                                  &pixel_buffer);
+                                 kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, nullptr, &pixel_buffer);
   if (cv_status != kCVReturnSuccess || !pixel_buffer) {
     return Error("failed to allocate encoder pixel buffer");
   }
@@ -414,9 +398,8 @@ Roe<EncodedAccessUnit> VideoToolboxVideoCodec::Encode(const VideoFrameI420& fram
 
   CFMutableDictionaryRef frame_properties = nullptr;
   if (force_keyframe) {
-    frame_properties = CFDictionaryCreateMutable(kCFAllocatorDefault, 1,
-                                                  &kCFTypeDictionaryKeyCallBacks,
-                                                  &kCFTypeDictionaryValueCallBacks);
+    frame_properties = CFDictionaryCreateMutable(kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks,
+                                                 &kCFTypeDictionaryValueCallBacks);
     CFDictionarySetValue(frame_properties, kVTEncodeFrameOptionKey_ForceKeyFrame, kCFBooleanTrue);
   }
 
@@ -427,8 +410,8 @@ Roe<EncodedAccessUnit> VideoToolboxVideoCodec::Encode(const VideoFrameI420& fram
   EncodeOutput output;
   pending_encode_output_ = &output;
   VTEncodeInfoFlags info_flags = 0;
-  const OSStatus status = VTCompressionSessionEncodeFrame(
-      compression_session_, pixel_buffer, pts, duration, frame_properties, nullptr, &info_flags);
+  const OSStatus status = VTCompressionSessionEncodeFrame(compression_session_, pixel_buffer, pts, duration,
+                                                          frame_properties, nullptr, &info_flags);
   if (frame_properties) {
     CFRelease(frame_properties);
   }
@@ -465,13 +448,11 @@ Roe<void> VideoToolboxVideoCodec::ConfigureDecoder() {
   return {};
 }
 
-bool VideoToolboxVideoCodec::EnsureDecompressionSession(const uint8_t* sps, size_t sps_size,
-                                                         const uint8_t* pps, size_t pps_size,
-                                                         std::string& error_out) {
-  const bool unchanged = decompression_session_ && cached_sps_.size() == sps_size &&
-                          cached_pps_.size() == pps_size &&
-                          std::equal(cached_sps_.begin(), cached_sps_.end(), sps) &&
-                          std::equal(cached_pps_.begin(), cached_pps_.end(), pps);
+bool VideoToolboxVideoCodec::EnsureDecompressionSession(const uint8_t* sps, size_t sps_size, const uint8_t* pps,
+                                                        size_t pps_size, std::string& error_out) {
+  const bool unchanged = decompression_session_ && cached_sps_.size() == sps_size && cached_pps_.size() == pps_size &&
+                         std::equal(cached_sps_.begin(), cached_sps_.end(), sps) &&
+                         std::equal(cached_pps_.begin(), cached_pps_.end(), pps);
   if (unchanged) {
     return true;
   }
@@ -479,15 +460,15 @@ bool VideoToolboxVideoCodec::EnsureDecompressionSession(const uint8_t* sps, size
   const uint8_t* param_ptrs[2] = {sps, pps};
   const size_t param_sizes[2] = {sps_size, pps_size};
   CMFormatDescriptionRef format = nullptr;
-  OSStatus status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
-      kCFAllocatorDefault, 2, param_ptrs, param_sizes, 4, &format);
+  OSStatus status =
+      CMVideoFormatDescriptionCreateFromH264ParameterSets(kCFAllocatorDefault, 2, param_ptrs, param_sizes, 4, &format);
   if (status != noErr || !format) {
     error_out = "failed to build H264 format description from SPS/PPS";
     return false;
   }
 
-  CFMutableDictionaryRef dest_attrs = CFDictionaryCreateMutable(
-      kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+  CFMutableDictionaryRef dest_attrs = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks,
+                                                                &kCFTypeDictionaryValueCallBacks);
   const int pixel_format = kCVPixelFormatType_32BGRA;
   CFNumberRef pixel_format_number = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &pixel_format);
   CFDictionarySetValue(dest_attrs, kCVPixelBufferPixelFormatTypeKey, pixel_format_number);
@@ -498,8 +479,7 @@ bool VideoToolboxVideoCodec::EnsureDecompressionSession(const uint8_t* sps, size
   callback.decompressionOutputRefCon = this;
 
   VTDecompressionSessionRef session = nullptr;
-  status = VTDecompressionSessionCreate(kCFAllocatorDefault, format, nullptr, dest_attrs, &callback,
-                                         &session);
+  status = VTDecompressionSessionCreate(kCFAllocatorDefault, format, nullptr, dest_attrs, &callback, &session);
   CFRelease(dest_attrs);
   if (status != noErr || !session) {
     CFRelease(format);
@@ -589,9 +569,8 @@ Roe<VideoFrameRgba> VideoToolboxVideoCodec::DecodeFrame(const uint8_t* annex_b, 
   }
 
   CMBlockBufferRef block = nullptr;
-  OSStatus status = CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, nullptr,
-                                                        avcc_payload.size(), kCFAllocatorDefault,
-                                                        nullptr, 0, avcc_payload.size(), 0, &block);
+  OSStatus status = CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, nullptr, avcc_payload.size(),
+                                                       kCFAllocatorDefault, nullptr, 0, avcc_payload.size(), 0, &block);
   if (status != kCMBlockBufferNoErr || !block) {
     return Error("failed to allocate decoder block buffer");
   }
@@ -603,8 +582,8 @@ Roe<VideoFrameRgba> VideoToolboxVideoCodec::DecodeFrame(const uint8_t* annex_b, 
 
   const size_t sample_size = avcc_payload.size();
   CMSampleBufferRef sample = nullptr;
-  status = CMSampleBufferCreateReady(kCFAllocatorDefault, block, decoder_format_, 1, 0, nullptr, 1,
-                                      &sample_size, &sample);
+  status =
+      CMSampleBufferCreateReady(kCFAllocatorDefault, block, decoder_format_, 1, 0, nullptr, 1, &sample_size, &sample);
   CFRelease(block);
   if (status != noErr || !sample) {
     return Error("failed to build decoder sample buffer");
@@ -670,9 +649,8 @@ void VideoToolboxVideoCodec::ResetDecoder() {
   decoder_configured_ = false;
 }
 
-void VideoToolboxVideoCodec::CompressionOutputCallback(void* output_ref_con, void*, OSStatus status,
-                                                        VTEncodeInfoFlags,
-                                                        CMSampleBufferRef sample_buffer) {
+void VideoToolboxVideoCodec::CompressionOutputCallback(void* output_ref_con, void*, OSStatus status, VTEncodeInfoFlags,
+                                                       CMSampleBufferRef sample_buffer) {
   auto* self = static_cast<VideoToolboxVideoCodec*>(output_ref_con);
   if (!self || !self->pending_encode_output_) {
     return;
@@ -690,10 +668,9 @@ void VideoToolboxVideoCodec::CompressionOutputCallback(void* output_ref_con, voi
   AppendEncodedSample(sample_buffer, out);
 }
 
-void VideoToolboxVideoCodec::DecompressionOutputCallback(void* decompression_output_ref_con, void*,
-                                                          OSStatus status, VTDecodeInfoFlags,
-                                                          CVImageBufferRef image_buffer, CMTime,
-                                                          CMTime) {
+void VideoToolboxVideoCodec::DecompressionOutputCallback(void* decompression_output_ref_con, void*, OSStatus status,
+                                                         VTDecodeInfoFlags, CVImageBufferRef image_buffer, CMTime,
+                                                         CMTime) {
   auto* self = static_cast<VideoToolboxVideoCodec*>(decompression_output_ref_con);
   if (!self) {
     return;
@@ -714,9 +691,8 @@ std::unique_ptr<IVideoCodec> CreateOsVideoCodec() {
   // all, fall back to the unavailable stub instead of returning a codec
   // whose ConfigureEncoder() would merely fail every time.
   VTCompressionSessionRef probe_session = nullptr;
-  const OSStatus status = VTCompressionSessionCreate(kCFAllocatorDefault, 64, 64, kCMVideoCodecType_H264,
-                                                      nullptr, nullptr, nullptr, nullptr, nullptr,
-                                                      &probe_session);
+  const OSStatus status = VTCompressionSessionCreate(kCFAllocatorDefault, 64, 64, kCMVideoCodecType_H264, nullptr,
+                                                     nullptr, nullptr, nullptr, nullptr, &probe_session);
   if (status != noErr || !probe_session) {
     return MakeUnavailableVideoCodec("VideoToolbox H264 encode unavailable on this device");
   }

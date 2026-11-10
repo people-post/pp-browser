@@ -35,6 +35,35 @@ TEST(EnvelopeSignerTest, CopyHashMatchesFrozenVector) {
   EXPECT_EQ(BytesToHex(*body_hash), "f046c5fdbe2e312864d2dc1386e8c63eda7062f3ce2a2c1abed3860a1a566f3c");
 }
 
+// The signed bytes, frozen: every signed field set to a fixed value (two copies, a key_init, an e2e_public route).
+// A receiver checks `envelope_version` before it verifies, so changing what is signed — the sign domain or version,
+// a field covered, its order or encoding — without bumping a version the receiver checks makes every older peer see
+// forgeries instead of "update" (docs/contracts/COMPATIBILITY.md, "Changing what is signed"; #555). If this hash
+// changes, bump such a version in the same change and update both expectations here.
+TEST(EnvelopeSignerTest, SignBytesMatchFrozenHash) {
+  EXPECT_EQ(kRelayEnvelopeVersion, 2) << "the version a receiver checks before it verifies";
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = "8d7f6e5c-4b3a-4291-8f0e-1d2c3b4a5968";
+  envelope.sender_relay_id = "relay:alice123";
+  envelope.sender_contact_id = "account:alice";
+  envelope.sender_device = "QmAliceDevice";
+  envelope.route.kind = kRelayRouteDirect;
+  envelope.route.channel = ThreadChannel::E2ePublic;
+  envelope.timestamp = 1762646400123;
+  envelope.body.e2e.copies = {
+      RelayCopy{.recipient_device = "QmBobPhone",
+                .session_epoch = 3,
+                .sender_seq = 17,
+                .key_init_b64 = "AAECAwQFBgcICQoLDA0ODw==",
+                .payload_b64 = "EBESExQVFhcYGRobHB0eHw=="},
+      RelayCopy{.recipient_device = "QmBobLaptop", .session_epoch = 1, .sender_seq = 5, .payload_b64 = "ICEiIyQlJico"},
+  };
+  auto bytes = EnvelopeSigner::BuildSignBytes(envelope);
+  ASSERT_TRUE(bytes) << bytes.error().message;
+  EXPECT_EQ(BytesToHex(Blake2b256(*bytes)), "13290d86c3bcec43b3f5ceeff4f34a23b4c2c7ee55088391f7be5ccaf429f2fa");
+}
+
 TEST(EnvelopeSignerTest, BuildSignBytesUsesE2eChannelZero) {
   const RelayEnvelope envelope = MakeE2eVectorEnvelope();
   auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);

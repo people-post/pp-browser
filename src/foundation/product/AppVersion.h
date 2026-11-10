@@ -28,8 +28,7 @@ inline constexpr int kProtocolGen = 1;
 /** Minimum peer protocol_gen this build will accept once in-band hello exists. */
 inline constexpr int kMinPeerProtocolGen = 1;
 
-inline constexpr const char* kDefaultUpgradeUrl =
-    "https://github.com/people-post/pp-browser/releases";
+inline constexpr const char* kDefaultUpgradeUrl = "https://github.com/people-post/pp-browser/releases";
 
 } // namespace pbr
 

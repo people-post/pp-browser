@@ -4,6 +4,7 @@
 #include "lib/media/MediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallLifecycleTypes.h"
+#include "lib/calls/CallMediaError.h"
 #include "lib/calls/ICallSessionStore.h"
 #include "feature/calls/CallReads.h"
 #include "feature/calls/CallMeshGlue.h"
@@ -170,7 +171,6 @@ public:
   std::string& LastErrorMutable() { return last_error_; }
   void ClearLastError() { last_error_.clear(); }
   int64_t AloneUntilMs(const std::string& call_id) const { return workflow_.AloneUntilMs(call_id); }
-  const RecentCallsOver& CallsOver() const { return workflow_.CallsOver(); }
   bool IsAwaitingSfuRecovery() const;
   /** Why the hop path is being recovered (the screen's status line). */
   CallRecovery Recovery() const;
@@ -178,11 +178,11 @@ public:
   bool DirectConnectMissingMic() const;
   bool DirectConnectSeedUnreachable() const;
   bool IsDirectConnectInFlight() const;
-  std::optional<std::string> TakeLastMediaError();
+  std::optional<CallMediaError> TakeLastMediaError();
   /** Non-mutating read (UI snapshot); the GUI takes it through the owner. */
-  std::optional<std::string> PeekLastMediaError() const { return last_media_error_; }
+  std::optional<CallMediaError> PeekLastMediaError() const { return last_media_error_; }
   /** Clear only if still `seen` (the GUI showed it; a newer error stays). */
-  void ClearLastMediaErrorIf(const std::string& seen);
+  void ClearLastMediaErrorIf(const CallMediaError& seen);
   /** The shown call's media activity line is dismissed (it lives on the call, V057 3). */
   void ClearMediaActivity();
   /** Combined hop health when SFU attached (empty otherwise). */
@@ -197,7 +197,7 @@ private:
   Roe<void> TopologyLeaveCall(const std::string& call_id);
   Roe<void> TopologyFanOutToJoined(const std::string& call_id, CallControlType type, const std::string& detail_json,
                                    const std::string& display, const std::string& skip_identity);
-  void SetLastMediaError(std::string message);
+  void SetLastMediaError(CallMediaError error);
   void TopologyNoteMediaAttempted(const std::string& call_id);
   void RequestInboxSync();
   CallHopPath::HostPorts MakeTopologyHostPorts();
@@ -291,7 +291,7 @@ private:
   mesh::PeerMediaRelayCaps media_relay_caps_;
   /** mesh PeerId ↔ account learned from CallAccept / Invite / mDNS, over the contacts. */
   PeerAccountBook peer_accounts_;
-  std::optional<std::string> last_media_error_;
+  std::optional<CallMediaError> last_media_error_;
   /** Why the last accept failed (the workflow's ports write it). */
   std::string last_error_;
   std::function<void()> on_call_state_changed_;

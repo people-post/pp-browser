@@ -134,9 +134,7 @@ MeshConnectivityWiringInputs ConversationsHub::MeshInputs() {
   reach.mesh = [this]() { return mesh_; };
   reach.contacts = contacts_.get();
   reach.mesh_config = [this]() { return MeshConfigSnapshot(); };
-  reach.list_directory_nodes = [this]() {
-    return DirectoryNodes();
-  };
+  reach.list_directory_nodes = [this]() { return DirectoryNodes(); };
   reach.list_dht_nodes = [this]() {
     if (!mesh_ || !mesh_->AmpDht()) {
       return std::vector<mesh::MeshDirectoryNode>{};
@@ -243,9 +241,8 @@ void ConversationsHub::WireRelayAuthSigner() {
   if (!identity_) {
     return;
   }
-  clients_.SetSigner([this](const std::vector<uint8_t>& sign_bytes) -> Roe<std::string> {
-    return identity_->SignBytes(sign_bytes);
-  });
+  clients_.SetSigner(
+      [this](const std::vector<uint8_t>& sign_bytes) -> Roe<std::string> { return identity_->SignBytes(sign_bytes); });
 }
 
 void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
@@ -291,7 +288,7 @@ Roe<void> ConversationsHub::StartMesh(const HubSettings& settings) {
       PublishNodeAdvertisedAddrs();
       RegisterContactEndpoints();
       if (mesh_owner_) {
-        mesh_owner_->RefreshMeshView();  // the local view follows the probe; seed reachability gates the hop policy
+        mesh_owner_->RefreshMeshView(); // the local view follows the probe; seed reachability gates the hop policy
       }
       NoteObservedAddress();
       if (on_reachability_updated_) {
@@ -397,14 +394,7 @@ void ConversationsHub::OnLocalNetworkChanged(const NetworkChange& change) {
     const bool linked = change.current.online && !change.current.tunnel_only;
     const int online = linked ? 1 : 0;
     if (network_online_.exchange(online) != online) {
-      std::function<void(bool, bool)> callback;
-      {
-        std::lock_guard lock(network_online_cb_mu_); // the monitor thread vs. Shutdown's reset
-        callback = on_network_online_changed_;
-      }
-      if (callback) {
-        callback(true, linked);
-      }
+      OnLinkNetwork(linked);
     }
   }
   // Offline or an unknown link keeps the last known kind of network.
@@ -419,13 +409,9 @@ void ConversationsHub::PublishNodeAdvertisedAddrs() {
   // A017: Identify/Host advertisement retired. Amp peers learn via mDNS / pasted ADP MAs.
 }
 
-
-
 void ConversationsHub::PublishMobileCallScopedAddrs() {
   // A017: TCP ephemeral Identify publish retired; Amp listen is always advertised via mDNS.
 }
-
-
 
 void ConversationsHub::SyncMobileEphemeralListen() {
   if (!host_.mobile || !messaging_ready_) {
@@ -436,8 +422,6 @@ void ConversationsHub::SyncMobileEphemeralListen() {
     SyncLanMdnsAdvertisement();
   }
 }
-
-
 
 void ConversationsHub::SyncLanMdnsAdvertisement() {
   if (!mesh_owner_) {
@@ -468,7 +452,6 @@ void ConversationsHub::SyncLanMdnsAdvertisement() {
   mesh_owner_->AdvertiseOnLan(peer_id, amp_udp);
 }
 
-
 void ConversationsHub::OnLanMdnsPeerDiscovered(const mesh::LanMdnsDiscoveredPeer& peer) {
   // Discovery thread → the hub's thread (contacts, endpoints and the mDNS id set are ours).
   AppRuntime::PostUI([this, peer]() {
@@ -494,21 +477,18 @@ void ConversationsHub::OnLanMdnsPeerDiscovered(const mesh::LanMdnsDiscoveredPeer
           if (PeerIdFromContact(contact) != peer.peer_id_base58) {
             continue;
           }
-          const DirectChatTarget target =
-              DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
-          if (target.peer_identity_value.empty() ||
-              target.peer_identity_value == peer.peer_id_base58) {
+          const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
+          if (target.peer_identity_value.empty() || target.peer_identity_value == peer.peer_id_base58) {
             continue;
           }
           mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, *adp);
           log().info << "LAN mDNS dial alias peer=" << peer.peer_id_base58
-                        << " dial_key=" << target.peer_identity_value;
+                     << " dial_key=" << target.peer_identity_value;
         }
       }
     }
   });
 }
-
 
 mesh::DirectAudience ConversationsHub::EffectiveDirectAudience() const {
   // P004: a Node is reachable by role — its address is published anyway.
@@ -535,7 +515,6 @@ void ConversationsHub::PublishAddressDisclosure() {
   address_disclosure_.Publish(BuildAddressDisclosurePolicy(audience, book, own_devices));
 }
 
-
 void ConversationsHub::ApplyMeshAdmissionPolicies() {
   PublishAddressDisclosure();
   const bool prefer = config_.mesh.prefer_contacts_for_routing;
@@ -553,28 +532,26 @@ void ConversationsHub::ApplyMeshAdmissionPolicies() {
 
   mesh::MeshReachabilityClass reach_class = mesh::MeshReachabilityClass::Unknown;
   switch (Reachability().status) {
-  case mesh::ReachabilityStatus::Reachable:
-    reach_class = mesh::MeshReachabilityClass::Reachable;
-    break;
-  case mesh::ReachabilityStatus::OutboundOnly:
-    reach_class = mesh::MeshReachabilityClass::OutboundOnly;
-    break;
-  case mesh::ReachabilityStatus::Blocked:
-    reach_class = mesh::MeshReachabilityClass::Blocked;
-    break;
-  case mesh::ReachabilityStatus::Unknown:
-  case mesh::ReachabilityStatus::Checking:
-  default:
-    reach_class = mesh::MeshReachabilityClass::Unknown;
-    break;
+    case mesh::ReachabilityStatus::Reachable:
+      reach_class = mesh::MeshReachabilityClass::Reachable;
+      break;
+    case mesh::ReachabilityStatus::OutboundOnly:
+      reach_class = mesh::MeshReachabilityClass::OutboundOnly;
+      break;
+    case mesh::ReachabilityStatus::Blocked:
+      reach_class = mesh::MeshReachabilityClass::Blocked;
+      break;
+    case mesh::ReachabilityStatus::Unknown:
+    case mesh::ReachabilityStatus::Checking:
+    default:
+      reach_class = mesh::MeshReachabilityClass::Unknown;
+      break;
   }
 
   mesh::RelayScopeMask serve_mask = ProviderServeScopeMask(reach_class, node);
-  const bool force_limit_strangers =
-      node && (reach_class == mesh::MeshReachabilityClass::OutboundOnly ||
-               reach_class == mesh::MeshReachabilityClass::Blocked);
-  const bool limit_strangers =
-      (prefer && node && !contact_ids.empty()) || force_limit_strangers;
+  const bool force_limit_strangers = node && (reach_class == mesh::MeshReachabilityClass::OutboundOnly ||
+                                              reach_class == mesh::MeshReachabilityClass::Blocked);
+  const bool limit_strangers = (prefer && node && !contact_ids.empty()) || force_limit_strangers;
   if (!limit_strangers && node) {
     serve_mask |= static_cast<mesh::RelayScopeMask>(mesh::RelayScope::Public);
   }
@@ -600,7 +577,6 @@ void ConversationsHub::ApplyMeshAdmissionPolicies() {
     mesh_->AmpMediaRelayServer()->SetAdmissionPolicy(std::move(policy));
   }
 }
-
 
 void ConversationsHub::PublishMeshConfig() {
   // As it applies on this device (a phone is a client): what the mesh's readers act on.
@@ -714,6 +690,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
     actions_.reset();
   }
   if (mesh_messaging_) {
+    mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
     mesh_messaging_->SetOnMessagesChanged(nullptr);
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
@@ -775,7 +752,7 @@ void ConversationsHub::RegisterContactEndpoints() {
 
 std::vector<mesh::MeshDirectoryNode> ConversationsHub::DirectoryNodes() const {
   return mesh_owner_ ? DirectoryNodesForDial(mesh_owner_->DirectoryNodesSnapshot())
-                               : std::vector<mesh::MeshDirectoryNode>{};
+                     : std::vector<mesh::MeshDirectoryNode>{};
 }
 
 void ConversationsHub::RegisterMeshDirectoryEndpoints() {
@@ -787,8 +764,7 @@ void ConversationsHub::RegisterMeshDirectoryEndpoints() {
     if (node.peer_id.empty() || node.multiaddrs.empty()) {
       continue;
     }
-    mesh_messaging_->RegisterPeerDirectEndpoints(node.peer_id,
-                                                 mesh::RankAmpDialMultiaddrs(node.multiaddrs, local_ctx));
+    mesh_messaging_->RegisterPeerDirectEndpoints(node.peer_id, mesh::RankAmpDialMultiaddrs(node.multiaddrs, local_ctx));
   }
 }
 
@@ -813,8 +789,8 @@ void ConversationsHub::ApplyDhtFindPeerResult(const std::string& peer_id, const 
   if (!mesh_messaging_ || peer_id.empty()) {
     return;
   }
-  mesh_messaging_->RegisterPeerDirectEndpoints(peer_id,
-                                               mesh::RankAmpDialMultiaddrs(record.multiaddrs, mesh::CollectAmpDialLocalContext()));
+  mesh_messaging_->RegisterPeerDirectEndpoints(
+      peer_id, mesh::RankAmpDialMultiaddrs(record.multiaddrs, mesh::CollectAmpDialLocalContext()));
 }
 
 void ConversationsHub::ConfigureMeshQueries() {
@@ -848,7 +824,6 @@ bool ConversationsHub::IsContactReachable(const Contact& contact) const {
   }
   return IsContactReachableForMessaging(contact, relay_ != nullptr, keys_known);
 }
-
 
 void ConversationsHub::PrefetchPeerReachability(const std::string& identity) {
   if (!messaging_ready_ || identity.empty() || !mesh_messaging_) {
@@ -886,8 +861,7 @@ void ConversationsHub::PrefetchPeerReachability(const std::string& identity) {
   }
   // Same Amp warm path as open-chat WarmPeerForThread — call invite/accept should share it.
   mesh_messaging_->WarmPeerByKey(peer_id);
-  if (mesh_ && mesh_->AmpDht() && IsHelpNetworkEnabled() &&
-      config_.mesh.capabilities.dht) {
+  if (mesh_ && mesh_->AmpDht() && IsHelpNetworkEnabled() && config_.mesh.capabilities.dht) {
     mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](mesh::AmpDhtProtocol::FindPeerRoe result) {
       if (!result) {
         return;
@@ -896,7 +870,6 @@ void ConversationsHub::PrefetchPeerReachability(const std::string& identity) {
     });
   }
 }
-
 
 Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::string& profile_data_dir) {
   if (initialized_) {
@@ -982,7 +955,8 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   group_invite_gate_ = std::make_unique<GroupInviteGate>(InviterStandingFromContacts(*contacts_), *group_roster_);
   group_invite_gate_->SetInLiveCall(in_live_call_);
   directory_shadows_ = std::make_unique<DirectoryShadowCache>(directory_);
-  peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, PeerDisplaySourcesFrom(*directory_shadows_, group_roster_.get()));
+  peer_labels_ = std::make_unique<PeerDisplayResolver>(
+      *contacts_, PeerDisplaySourcesFrom(*directory_shadows_, group_roster_.get()));
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());
   inbox_->SetSystemControls(&system_controls_);
   inbox_->SetThreadMentions(thread_mentions_.get());
@@ -1035,7 +1009,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
         }
         RegisterMeshDirectoryEndpoints();
         ConfigureMeshQueries();
-        mesh_owner_->PushHopPolicySoon();  // directory nodes are rendezvous / seed candidates
+        mesh_owner_->PushHopPolicySoon(); // directory nodes are rendezvous / seed candidates
       });
     });
   }
@@ -1059,19 +1033,19 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   account_keys_->LoadKeptCards();
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
-  contact_cards_->SetCardFetcher([this](const std::string& peer_id, const std::string& account_id,
-                                        std::function<void(Roe<PeerCardRecord>)> done) {
-    // On the hub's thread, with the address book as it is now: a contact just added (a scanned QR code) is
-    // one we may dial — the republish its add posted may not have run yet (#409).
-    AppRuntime::PostUI([this, peer_id, account_id, done = std::move(done)]() mutable {
-      if (!mesh_messaging_ || shutdown_requested_.load(std::memory_order_acquire)) {
-        done(Error("Messaging not ready"));
-        return;
-      }
-      PublishAddressDisclosure();
-      mesh_messaging_->AccountCards().Fetch(peer_id, account_id, std::move(done));
-    });
-  });
+  contact_cards_->SetCardFetcher(
+      [this](const std::string& peer_id, const std::string& account_id, std::function<void(Roe<PeerCardRecord>)> done) {
+        // On the hub's thread, with the address book as it is now: a contact just added (a scanned QR code) is
+        // one we may dial — the republish its add posted may not have run yet (#409).
+        AppRuntime::PostUI([this, peer_id, account_id, done = std::move(done)]() mutable {
+          if (!mesh_messaging_ || shutdown_requested_.load(std::memory_order_acquire)) {
+            done(Error("Messaging not ready"));
+            return;
+          }
+          PublishAddressDisclosure();
+          mesh_messaging_->AccountCards().Fetch(peer_id, account_id, std::move(done));
+        });
+      });
 
   // The messaging stack, relay-capable once the profile unlocks (no Amp until the mesh is up).
   BuildMessagingObjects();
@@ -1129,10 +1103,18 @@ void ConversationsHub::NotifyMeshReady() {
 }
 
 void ConversationsHub::BuildMessagingObjects() {
-  mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_,
-                                                *account_keys_,
-                                                *psk_store_, *group_roster_, group_invite_gate_.get());
+  mesh_messaging_ =
+      std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_, *account_keys_,
+                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetSystemControls(&system_controls_);
+  // The relay's poll results feed the status line (#175); a fresh orchestrator starts with no result.
+  mesh_messaging_->SetOnBriefRelayHealthChanged(
+      [this](const MeshDeliveryOrchestrator::BriefRelayHealthState health) { OnBriefRelayHealthChanged(health); });
+  {
+    std::unique_lock lock(link_mu_);
+    ResetLinkHealthLocked();
+    ArmLinkGraceLocked(); // messaging is up: the 5 s clock for the first poll result starts now
+  }
   mesh_messaging_->SetThreadMentions(thread_mentions_.get());
   // Our device list changed: our address goes to our other devices too (M021).
   mesh_messaging_->SetOnOwnDevicesChanged([this]() { PublishAddressDisclosure(); });
@@ -1147,9 +1129,8 @@ void ConversationsHub::BuildMessagingObjects() {
         done(false);
         return;
       }
-      mesh_owner_->Connectivity().TryEnsurePeerReachableAsync(peer_id, [done](mesh::CircuitReachRoe reached) {
-        done(static_cast<bool>(reached));
-      });
+      mesh_owner_->Connectivity().TryEnsurePeerReachableAsync(
+          peer_id, [done](mesh::CircuitReachRoe reached) { done(static_cast<bool>(reached)); });
     });
   });
   mesh_messaging_->SetProfileDataDir(data_dir_);
@@ -1161,7 +1142,7 @@ void ConversationsHub::BuildMessagingObjects() {
   WireAttachmentDownloads();
   CleanStaleAttachmentFiles(); // once per start: staged sends older than a day, half-finished downloads
   group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
-                                                               *group_invite_gate_, *mesh_messaging_, *account_keys_);
+                                                                *group_invite_gate_, *mesh_messaging_, *account_keys_);
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
   BindGroupRosterSyncFamily();
@@ -1181,13 +1162,14 @@ void ConversationsHub::BuildMessagingObjects() {
             return peer_cards_ ? peer_cards_->NewestKnown()
                                : Roe<std::vector<PeerCardFloor>>(std::vector<PeerCardFloor>{});
           },
-          .take_dissolved = [this](const std::vector<AccountStateGroup>& groups) {
-            if (group_membership_) {
-              for (const AccountStateGroup& group : groups) {
-                group_membership_->EndDissolvedFromLocker(group);
-              }
-            }
-          }});
+          .take_dissolved =
+              [this](const std::vector<AccountStateGroup>& groups) {
+                if (group_membership_) {
+                  for (const AccountStateGroup& group : groups) {
+                    group_membership_->EndDissolvedFromLocker(group);
+                  }
+                }
+              }});
   account_locker_->SetClient(clients_.Locker());
   account_locker_->SetDataDir(data_dir_);
   // The account's devices keep one address book: a write here nudges the others; a nudge from one syncs here.
@@ -1201,9 +1183,9 @@ void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_->OwnAccountCards().SetOnDeviceJoined(
       [this](const AccountCard&) { AppRuntime::PostWorkerNormal([this]() { AnnounceOwnDevicesToContacts(); }); });
   NotifyMessagingBuilt();
-  actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
-                                                       group_membership_.get(), registration_, mesh_messaging_.get(),
-                                                       &directory_);
+  actions_ =
+      std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_, group_membership_.get(),
+                                                registration_, mesh_messaging_.get(), &directory_);
   group_invite_gate_->SetInboundPolicy(policy_.group_invite_policy);
   group_membership_->SetInboundPolicy(policy_.group_invite_policy);
   NotifyPolicyPrefs(policy_);
@@ -1264,8 +1246,8 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
 
   // Keep the same MeshDeliveryOrchestrator instance — timers / SyncInbox workers may already
   // hold `this`. Recreating here caused "mutex lock failed: Invalid argument" + segfault.
-  mesh_messaging_->AttachAmpTransports(amp_links, std::move(amp_pump), std::move(amp_worker),
-                                       std::move(amp_post_io), std::move(amp_post_after));
+  mesh_messaging_->AttachAmpTransports(amp_links, std::move(amp_pump), std::move(amp_worker), std::move(amp_post_io),
+                                       std::move(amp_post_after));
   WireAttachmentDownloads();
   // Same orchestrator, now with Amp transports: participants keep what they built on it (rebuilding
   // the call sessions here abandoned a call already ringing over the relay).
@@ -1466,9 +1448,7 @@ constexpr auto kHubPolicyTimerInterval = std::chrono::seconds(1);
 
 void ConversationsHub::StartCoordinatorTimers() {
   if (hub_policy_timer_id_ == 0) {
-    hub_policy_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(kHubPolicyTimerInterval, [this]() {
-      TickMesh();
-    });
+    hub_policy_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(kHubPolicyTimerInterval, [this]() { TickMesh(); });
   }
   if (locker_sync_timer_id_ == 0) {
     // What another device of the account changed (a contact removed, a remark) arrives through the locker.
@@ -1517,9 +1497,103 @@ void ConversationsHub::SetOnReachabilityUpdated(std::function<void()> callback) 
   on_reachability_updated_ = std::move(callback);
 }
 
-void ConversationsHub::SetOnNetworkOnlineChanged(std::function<void(bool known, bool online)> callback) {
-  std::lock_guard lock(network_online_cb_mu_);
-  on_network_online_changed_ = std::move(callback);
+void ConversationsHub::SetOnLinkStateChanged(std::function<void(LinkState)> callback) {
+  std::lock_guard lock(link_mu_);
+  on_link_state_changed_ = std::move(callback);
+}
+
+ConversationsHub::LinkState ConversationsHub::CurrentLinkState() const {
+  std::lock_guard lock(link_mu_);
+  return link_state_;
+}
+
+void ConversationsHub::SetLinkGraceScheduler(
+    std::function<void(std::chrono::milliseconds, std::function<void()>)> scheduler) {
+  std::lock_guard lock(link_mu_);
+  link_grace_scheduler_ = std::move(scheduler);
+}
+
+void ConversationsHub::ResetLinkHealthLocked() {
+  link_health_ = MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown;
+  if (mesh_messaging_) {
+    // Its atomic still holds the old Ok: without this the next Ok poll is "no change", fires nothing, and the
+    // line sticks on Connecting (iPhone, 2026-11-09).
+    mesh_messaging_->ResetBriefRelayHealth();
+  }
+}
+
+void ConversationsHub::OnLinkNetwork(const bool linked) {
+  std::unique_lock lock(link_mu_);
+  link_net_ = linked ? 1 : 0;
+  if (!linked) {
+    // An outage makes the last relay result stale: when the network returns, Connecting shows until a new one.
+    ResetLinkHealthLocked();
+  }
+  ++link_grace_gen_; // cancels a pending timer either way
+  link_grace_over_ = false;
+  if (linked && link_state_ == LinkState::Offline) {
+    // Red says "no network", which is false now: replace it at once, no grace (the line has nothing to keep).
+    link_grace_over_ = true;
+  } else if (linked) {
+    ArmLinkGraceLocked();
+  }
+  ReevaluateLink(std::move(lock));
+}
+
+void ConversationsHub::OnBriefRelayHealthChanged(const MeshDeliveryOrchestrator::BriefRelayHealthState health) {
+  std::unique_lock lock(link_mu_);
+  link_health_ = health;
+  if (health != MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown) {
+    ++link_grace_gen_; // a result is in: the Unknown timer is moot
+    link_grace_over_ = false;
+  }
+  ReevaluateLink(std::move(lock));
+}
+
+void ConversationsHub::ArmLinkGraceLocked() {
+  if (link_net_ != 1 || link_health_ != MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown) {
+    return;
+  }
+  const uint64_t gen = ++link_grace_gen_;
+  link_grace_over_ = false;
+  auto fire = link_grace_lifetime_.Bind([this, gen]() { OnLinkGraceElapsed(gen); });
+  if (link_grace_scheduler_) {
+    link_grace_scheduler_(kLinkUnknownGrace, std::move(fire));
+  } else {
+    AppRuntime::ScheduleCoordinatorOneShot(kLinkUnknownGrace, std::move(fire));
+  }
+}
+
+void ConversationsHub::OnLinkGraceElapsed(const uint64_t gen) {
+  std::unique_lock lock(link_mu_);
+  if (gen != link_grace_gen_) {
+    return;
+  }
+  link_grace_over_ = true;
+  ReevaluateLink(std::move(lock));
+}
+
+void ConversationsHub::ReevaluateLink(std::unique_lock<std::mutex> lock) {
+  using Health = MeshDeliveryOrchestrator::BriefRelayHealthState;
+  LinkState next = link_state_;
+  if (link_net_ == 0) {
+    next = LinkState::Offline;
+  } else if (link_net_ == 1) {
+    if (link_health_ == Health::Ok) {
+      next = LinkState::Online;
+    } else if (link_health_ == Health::Failed || link_grace_over_) {
+      next = LinkState::Connecting;
+    } // else: no result yet, inside the grace period — keep what the line shows
+  }
+  if (next == link_state_) {
+    return;
+  }
+  link_state_ = next;
+  const auto callback = on_link_state_changed_;
+  lock.unlock();
+  if (callback) {
+    callback(next);
+  }
 }
 
 void ConversationsHub::SetOnStoredAttachmentsChanged(std::function<void()> callback) {
@@ -1704,8 +1778,6 @@ void ConversationsHub::TryUpnpPortMapping() {
   mesh_->StartReachabilityProbe(true);
 }
 
-
-
 ProfileIdentityView ConversationsHub::LoadProfileIdentityView() {
   ProfileIdentityView view;
   if (!IsInitialized() || !IsMessagingReady()) {
@@ -1758,7 +1830,7 @@ Roe<void> ConversationsHub::SaveProfileNickname(const std::string& nickname) {
       return result.error();
     }
   }
-  PublishAccountLockerSoon();  // the locker keeps the nickname
+  PublishAccountLockerSoon(); // the locker keeps the nickname
   return {};
 }
 
@@ -1800,12 +1872,12 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
   if (!applied) {
     return applied.error();
   }
-  PublishAccountLockerSoon();  // the locker keeps the relay binding: a phrase restore needs it
+  PublishAccountLockerSoon(); // the locker keeps the relay binding: a phrase restore needs it
   return {};
 }
 
 Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const SecretText& phrase, const SecretText& pin,
-                                                     const std::vector<std::string>& saved_copies) {
+                                                      const std::vector<std::string>& saved_copies) {
   if (!IsInitialized() || Secrets() == nullptr || Secrets()->Vault() == nullptr || !account_locker_) {
     return Error("Messaging is not ready");
   }
@@ -1868,7 +1940,7 @@ void ConversationsHub::PublishAccountLockerSoon() {
     return;
   }
   if (locker_publish_queued_.exchange(true, std::memory_order_acq_rel)) {
-    return;  // the queued publish reads everything when it runs
+    return; // the queued publish reads everything when it runs
   }
   // Batched: a burst of changes (a group's roster, its cards) becomes one snapshot.
   AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kLockerPublishDelayMs), [this]() {
@@ -1880,10 +1952,10 @@ void ConversationsHub::PublishAccountLockerSoon() {
       auto seed = Identity().RecoverySeed();
       auto identity = Identity().Get();
       if (!seed || !*seed || !identity || identity->relay_user_id.empty()) {
-        return;  // an account from before M023, or not registered yet: nothing to publish
+        return; // an account from before M023, or not registered yet: nothing to publish
       }
       if (mesh_messaging_ && mesh_messaging_->OwnAccountCards().SignedOut()) {
-        return;  // M021 d4: a signed-out device no longer speaks for the account
+        return; // M021 d4: a signed-out device no longer speaks for the account
       }
       if (auto published = account_locker_->Publish(); !published) {
         log().info << "Account locker not published: " << published.error().message;
@@ -1956,13 +2028,13 @@ void ConversationsHub::ResumeGroupRosterChecks() {
   }
   for (const AccountStateGroup& group : restored) {
     if (group.left || group.dissolved) {
-      continue;  // a group the account is out of, or one that ended: nothing to bring back
+      continue; // a group the account is out of, or one that ended: nothing to bring back
     }
     if (auto recreated = group_membership_->RestoreGroup(group); !recreated) {
       log().warning << "Group not restored group=" << group.group_id << ": " << recreated.error().message;
     }
   }
-  PublishAccountLockerSoon();  // at every start too: the locker catches up with what changed while it was off
+  PublishAccountLockerSoon(); // at every start too: the locker catches up with what changed while it was off
   // Every group still checking its members (just restored, or the app quit mid-check) asks again.
   auto ids = group_roster_->ListGroupIds();
   if (!ids) {
@@ -2119,7 +2191,9 @@ Roe<void> ConversationsHub::DeleteRelayFileById(const std::string& blob_id) {
   return DeleteRelayFile(*blob_, identity->relay_user_id, blob_id);
 }
 
-AttachmentLimits ConversationsHub::CurrentAttachmentLimits() const { return DefaultAttachmentLimits(); }
+AttachmentLimits ConversationsHub::CurrentAttachmentLimits() const {
+  return DefaultAttachmentLimits();
+}
 
 void ConversationsHub::SetOnBlobSpaceWarning(std::function<void(int percent)> callback) {
   std::lock_guard lock(blob_space_mutex_);
@@ -2242,18 +2316,18 @@ void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, Outgoin
 
   auto run = [this, job, finish, name = attachment.filename, mime = attachment.mime,
               upload_opts = std::move(upload_opts)]() mutable {
-    UploadChatAttachmentAsync(
-        *blob_, Identity(), *job->plaintext, name, mime, std::move(upload_opts),
-        [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
-          auto continue_send = [this, job, finish = std::move(finish), fields = std::move(fields)]() mutable {
-            FinishAttachmentSend(job, std::move(fields), finish);
-          };
-          if (AppRuntime::IsRunning()) {
-            AppRuntime::PostWorkerNormal(std::move(continue_send));
-          } else {
-            continue_send();
-          }
-        });
+    UploadChatAttachmentAsync(*blob_, Identity(), *job->plaintext, name, mime, std::move(upload_opts),
+                              [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
+                                auto continue_send = [this, job, finish = std::move(finish),
+                                                      fields = std::move(fields)]() mutable {
+                                  FinishAttachmentSend(job, std::move(fields), finish);
+                                };
+                                if (AppRuntime::IsRunning()) {
+                                  AppRuntime::PostWorkerNormal(std::move(continue_send));
+                                } else {
+                                  continue_send();
+                                }
+                              });
   };
   // A large file is encrypted, staged and uploaded on the upload lane, not on a shared worker (minutes).
   if (job->bytes > kMaxDirectAttachmentBytes && AppRuntime::IsRunning()) {
@@ -2346,18 +2420,18 @@ void ConversationsHub::ResumeAttachmentNow(const std::string& thread_id, const s
   upload_opts.outgoing = store.get();
   upload_opts.dek = dek;
   auto run = [this, job, finish, record = std::move(*record), upload_opts = std::move(upload_opts)]() mutable {
-    ResumeChatAttachmentAsync(
-        *blob_, Identity(), record, std::move(upload_opts),
-        [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
-          auto continue_send = [this, job, finish = std::move(finish), fields = std::move(fields)]() mutable {
-            FinishAttachmentSend(job, std::move(fields), finish);
-          };
-          if (AppRuntime::IsRunning()) {
-            AppRuntime::PostWorkerNormal(std::move(continue_send));
-          } else {
-            continue_send();
-          }
-        });
+    ResumeChatAttachmentAsync(*blob_, Identity(), record, std::move(upload_opts),
+                              [this, job, finish](Roe<ChatAttachmentFields> fields) mutable {
+                                auto continue_send = [this, job, finish = std::move(finish),
+                                                      fields = std::move(fields)]() mutable {
+                                  FinishAttachmentSend(job, std::move(fields), finish);
+                                };
+                                if (AppRuntime::IsRunning()) {
+                                  AppRuntime::PostWorkerNormal(std::move(continue_send));
+                                } else {
+                                  continue_send();
+                                }
+                              });
   };
   if (job->bytes > kMaxDirectAttachmentBytes && AppRuntime::IsRunning()) {
     transfer_lane_.Post(LargeTransferLane::Direction::Upload, std::move(run));
@@ -2439,8 +2513,8 @@ void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSend
         // A resumed send has no plaintext in memory: it is rebuilt from the staged ciphertext and its key. The
         // ciphertext is moved into Decrypt, which frees it before returning: only the plaintext is held for the copy.
         if (auto cipher = job->store->ReadCipher(job->record_id)) {
-          if (auto plain = AttachmentContentCipher::Decrypt(fields->content_key, fields->blob_nonce,
-                                                            std::move(*cipher), fields->content_hash)) {
+          if (auto plain = AttachmentContentCipher::Decrypt(fields->content_key, fields->blob_nonce, std::move(*cipher),
+                                                            fields->content_hash)) {
             (void)CopyAttachmentPlaintext(data_dir_, *content, job->thread_id, *fields, *plain, attachment_dek,
                                           max_receive_bytes);
             Attachments().MaybeBuildImageThumbnail(job->thread_id, *fields, *plain);
@@ -2511,7 +2585,7 @@ void ConversationsHub::WireAttachmentDownloads() {
   attachment_downloads_->SetLimits(CurrentAttachmentLimits());
   attachment_downloads_->SetTransferLane(&transfer_lane_);
   attachment_downloads_->SetFetchDependencies(&Store(), contacts_.get(), identity_.get(),
-                                                  mesh_messaging_ ? mesh_messaging_->PeerBlobClient() : nullptr);
+                                              mesh_messaging_ ? mesh_messaging_->PeerBlobClient() : nullptr);
   attachment_downloads_->SetSuppressionStore(attachment_suppressions_.get());
   attachment_downloads_->SetDownloadPolicy(EffectiveAttachmentDownloadPolicy(
       policy_.attachment_download_policy, policy_.attachment_auto_on_wifi, policy_.attachment_auto_on_cellular));
@@ -2641,7 +2715,7 @@ std::string ConversationsHub::GridThumbnailPath(const std::string& thread_id,
 }
 
 Roe<void> ConversationsHub::SendChargeRequired(const std::string& peer_identity,
-                                           const std::optional<int64_t> floor_minor) {
+                                               const std::optional<int64_t> floor_minor) {
   if (!IsInitialized() || !IsMessagingReady() || !mesh_messaging_) {
     return Error("Messaging not ready");
   }
@@ -2806,7 +2880,7 @@ Roe<PaymentPromise> ConversationsHub::CreatePaymentPromiseOffer(const PaymentPro
 }
 
 Roe<PaymentPromise> ConversationsHub::CreatePaymentPromiseOfferForThread(const std::string& thread_id,
-                                                                     PaymentPromiseLifecycle::OfferParams params) {
+                                                                         PaymentPromiseLifecycle::OfferParams params) {
   if (thread_id.empty()) {
     return Error("thread_id required");
   }
@@ -2830,8 +2904,8 @@ Roe<PaymentPromise> ConversationsHub::MarkPaymentPromiseDelivering(const std::st
 }
 
 Roe<PaymentPromise> ConversationsHub::RecordPaymentPromiseOutcome(const std::string& promise_id,
-                                                             const PaymentPromiseState outcome,
-                                                             const std::string& note) {
+                                                                  const PaymentPromiseState outcome,
+                                                                  const std::string& note) {
   if (!payment_promises_) {
     return Error("payment promise store unavailable");
   }
@@ -2900,9 +2974,9 @@ bool ConversationsHub::ShouldAvoidPaymentCounterparty(const std::string& other_a
 }
 
 Roe<ThreadMessage> ConversationsHub::BuildPaymentPromiseControlMessage(const std::string& thread_id,
-                                                                   const PaymentPromiseControlType type,
-                                                                   const PaymentPromise& promise,
-                                                                   const std::string& body_text) {
+                                                                       const PaymentPromiseControlType type,
+                                                                       const PaymentPromise& promise,
+                                                                       const std::string& body_text) {
   return PaymentPromiseWireCodec::BuildSystemMessage(thread_id, type, promise, body_text);
 }
 
@@ -2920,7 +2994,7 @@ Roe<void> ConversationsHub::RotateBriefLlmKey(const std::string& llm_base_url) {
   }
   if (identity->brief_llm_api_key.empty()) {
     return AppError::Auth(Err::Auth::NotRegistered, "No Brief API key yet")
-        .WithUser("No Brief API key yet — register on the network in Me first.");
+        .WithUser(Localized("chat.hint.brief_register"));
   }
 
   if (llm_base_url.empty()) {
@@ -2928,8 +3002,9 @@ Roe<void> ConversationsHub::RotateBriefLlmKey(const std::string& llm_base_url) {
   }
   const std::string url = llm_base_url + "/keys/rotate";
 
-  auto response = HttpClient::Post(url, "{}", {{"Authorization", "Bearer " + identity->brief_llm_api_key.Reveal()},
-                                               {"Content-Type", "application/json"}});
+  auto response = HttpClient::Post(
+      url, "{}",
+      {{"Authorization", "Bearer " + identity->brief_llm_api_key.Reveal()}, {"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }
@@ -2940,8 +3015,7 @@ Roe<void> ConversationsHub::RotateBriefLlmKey(const std::string& llm_base_url) {
     const char* renew_hint = response->status_code == 403
                                  ? "Registration expired — use Renew registration in Me → Profile."
                                  : "Brief API key rejected — renew registration in Me → Profile.";
-    return AppError::Auth(Err::Auth::Forbidden,
-                          "Brief key rotate HTTP " + std::to_string(response->status_code))
+    return AppError::Auth(Err::Auth::Forbidden, "Brief key rotate HTTP " + std::to_string(response->status_code))
         .WithUser(renew_hint);
   }
   if (response->status_code < 200 || response->status_code >= 300) {
@@ -2963,12 +3037,12 @@ Roe<void> ConversationsHub::RotateBriefLlmKey(const std::string& llm_base_url) {
   auto new_key_opt = root ? root->getString("llm_api_key") : std::nullopt;
   if (!new_key_opt) {
     return AppError::Auth(Err::Auth::Generic, "Brief API key rotate response missing llm_api_key")
-        .WithUser("Couldn't update Brief API key — try Renew registration in Me → Profile.");
+        .WithUser(Localized("chat.hint.brief_key_save_failed"));
   }
   const std::string new_key = *new_key_opt;
   if (new_key.empty()) {
     return AppError::Auth(Err::Auth::Generic, "Brief API key rotate returned empty key")
-        .WithUser("Couldn't update Brief API key — try Renew registration in Me → Profile.");
+        .WithUser(Localized("chat.hint.brief_key_save_failed"));
   }
 
   LocalIdentity updated = *identity;
@@ -2989,9 +3063,9 @@ void ConversationsHub::TickReachabilityUx() {
     reachability_outbound_since_ms_ = 0;
     return;
   }
-  const auto now = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                             std::chrono::steady_clock::now().time_since_epoch())
-                                             .count());
+  const auto now = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+          .count());
   if (reachability_outbound_since_ms_ == 0) {
     reachability_outbound_since_ms_ = now;
     return;
@@ -3019,20 +3093,18 @@ void ConversationsHub::RefreshMeshCapabilities(const MeshConfig& mesh) {
     mesh_owner_->DetachMeshObjects();
   }
   if (mesh_owner_) {
-    mesh_owner_->ApplyServing(config_.mesh);  // what the role serves inbound (circuit, media relay)
+    mesh_owner_->ApplyServing(config_.mesh); // what the role serves inbound (circuit, media relay)
   }
   ConfigureMeshQueries();
   ApplyMeshAdmissionPolicies();
   if (mesh_owner_) {
-    mesh_owner_->WireMeshObjects();  // the hop policy pushes now: the role may have changed what is a candidate
+    mesh_owner_->WireMeshObjects(); // the hop policy pushes now: the role may have changed what is a candidate
   }
   for (HubParticipant* participant : Participants()) {
     participant->OnMeshMediaRebound(*this);
   }
   SyncMobileEphemeralListen();
 }
-
-
 
 void ConversationsHub::Apply(const NetworkConfig& next) {
   if (!initialized_) {
@@ -3045,12 +3117,10 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
                                     next.directory.providers != config_.directory.providers ||
                                     next.registration.base_url != config_.registration.base_url;
   const bool mesh_changed =
-      next.node_enabled != config_.mesh.node_enabled ||
-      next.circuit_relay != config_.mesh.capabilities.circuit_relay ||
-      next.media_relay != config_.mesh.capabilities.media_relay ||
-      next.dht != config_.mesh.capabilities.dht ||
+      next.node_enabled != config_.mesh.node_enabled || next.circuit_relay != config_.mesh.capabilities.circuit_relay ||
+      next.media_relay != config_.mesh.capabilities.media_relay || next.dht != config_.mesh.capabilities.dht ||
       next.prefer_contacts_for_routing != config_.mesh.prefer_contacts_for_routing ||
-      next.trusted_relays_only != config_.mesh.trusted_relays_only;  // relay deps are built at Wire
+      next.trusted_relays_only != config_.mesh.trusted_relays_only; // relay deps are built at Wire
 
   config_.relay = next.relay;
   config_.directory = next.directory;
@@ -3064,7 +3134,7 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
   config_.mesh.trusted_relays_only = next.trusted_relays_only;
   config_.mesh.reachable_without_relay = next.reachable_without_relay;
   PublishMeshConfig();
-  SyncStayReachable();  // republishes who may learn our address too
+  SyncStayReachable(); // republishes who may learn our address too
 
   if (service_urls_changed) {
     UpdateOrgBackendClients(config_);
@@ -3081,7 +3151,7 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
 }
 
 void ConversationsHub::Apply(const PolicyPrefs& prefs) {
-  policy_ = prefs;  // a stack built later takes it too
+  policy_ = prefs; // a stack built later takes it too
   if (!initialized_) {
     return;
   }
@@ -3132,7 +3202,6 @@ void ConversationsHub::OnAppForeground() {
   }
 }
 
-
 void ConversationsHub::FlushForExit() {
   if (!initialized_) {
     return;
@@ -3153,6 +3222,12 @@ void ConversationsHub::Shutdown() {
   // The unknown-network timer (and its UI post) of this run never reach the hub again; a later run arms its own.
   attachment_network_lifetime_.InvalidateAndWait();
   attachment_network_timer_armed_.store(false);
+  {
+    std::lock_guard lock(link_mu_);
+    ++link_grace_gen_;
+    link_grace_over_ = false;
+  }
+  link_grace_lifetime_.InvalidateAndWait();        // the status line's Unknown timer of this run
   storage_callbacks_lifetime_.InvalidateAndWait(); // the attachment change reports of this run (rewired at Initialize)
   transfer_lane_.Shutdown(); // aborts a transfer at its next progress tick and joins both lane threads
   AppLifecycle::RemoveListener(lifecycle_background_id_);
@@ -3175,6 +3250,7 @@ void ConversationsHub::Shutdown() {
     inbox_->SetOnThreadChanged(nullptr);
   }
   if (mesh_messaging_) {
+    mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
     mesh_messaging_->SetOnMessagesChanged(nullptr);
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
@@ -3298,9 +3374,13 @@ InboxController& ConversationsHub::Inbox() {
   return *inbox_;
 }
 
-IThreadLocalPrefsStore& ConversationsHub::ThreadPrefs() { return *thread_prefs_; }
+IThreadLocalPrefsStore& ConversationsHub::ThreadPrefs() {
+  return *thread_prefs_;
+}
 
-IThreadMentionsStore* ConversationsHub::ThreadMentions() { return thread_mentions_.get(); }
+IThreadMentionsStore* ConversationsHub::ThreadMentions() {
+  return thread_mentions_.get();
+}
 
 MeshDeliveryOrchestrator& ConversationsHub::MeshMessaging() {
   return *mesh_messaging_;
@@ -3512,18 +3592,14 @@ public:
   }
   Roe<RegistrationResult> FinishRegistration(const std::string&, const std::string&, const std::string&,
                                              const std::string&, int64_t, const std::string&, const std::string&,
-                                             const std::string&, const std::string&,
-                                             const std::vector<std::string>&, int64_t,
-                                             const RegistrationPublishOpts&) override {
+                                             const std::string&, const std::string&, const std::vector<std::string>&,
+                                             int64_t, const RegistrationPublishOpts&) override {
     return Unavailable();
   }
-  Roe<RegistrationResult> UpdateNickname(const std::string&, const std::string&, int64_t,
-                                         const std::string&) override {
+  Roe<RegistrationResult> UpdateNickname(const std::string&, const std::string&, int64_t, const std::string&) override {
     return Unavailable();
   }
-  Roe<void> RevokeRegistration(const std::string&, const std::string&, int64_t) override {
-    return Unavailable();
-  }
+  Roe<void> RevokeRegistration(const std::string&, const std::string&, int64_t) override { return Unavailable(); }
 
 private:
   static Error Unavailable() { return Error("registration not configured"); }
@@ -3536,20 +3612,13 @@ public:
   }
   Roe<void> Retain(const std::string&, const std::string&) override { return Unavailable(); }
   Roe<void> Delete(const std::string&, const std::string&) override { return Unavailable(); }
-  Roe<void> SetProfileIcon(const std::string&, const std::string&, const std::string&,
-                           const std::string&) override {
+  Roe<void> SetProfileIcon(const std::string&, const std::string&, const std::string&, const std::string&) override {
     return Unavailable();
   }
-  Roe<void> PutUpload(const std::string&, const std::string&, const std::string&) override {
-    return Unavailable();
-  }
+  Roe<void> PutUpload(const std::string&, const std::string&, const std::string&) override { return Unavailable(); }
   Roe<RelayFileStartResult> FileStart(const std::string&, uint64_t) override { return Unavailable(); }
-  Roe<RelayFilePartResult> FilePart(const std::string&, const std::string&, uint64_t) override {
-    return Unavailable();
-  }
-  Roe<RelayFileCompleteResult> FileComplete(const std::string&, const std::string&) override {
-    return Unavailable();
-  }
+  Roe<RelayFilePartResult> FilePart(const std::string&, const std::string&, uint64_t) override { return Unavailable(); }
+  Roe<RelayFileCompleteResult> FileComplete(const std::string&, const std::string&) override { return Unavailable(); }
   Roe<void> FileDelete(const std::string&, const std::string&) override { return Unavailable(); }
   Roe<RelayFileListResult> FileList(const std::string&, const std::string&) override { return Unavailable(); }
 

@@ -52,7 +52,8 @@ TEST(StructuredTextParserTest, ComprehensiveParsingScenarios) {
   const std::string bad_json = "not json";
   auto bad_json_result = pbr::StructuredTextParser::ParseBlocksJson(bad_json);
   ASSERT_TRUE(!bad_json_result.ok);
-  const std::string llm_output = "Here is the answer:\n```json\n{\"blocks\":[{\"type\":\"paragraph\",\"text\":\"Hi\"}]}\n```";
+  const std::string llm_output =
+      "Here is the answer:\n```json\n{\"blocks\":[{\"type\":\"paragraph\",\"text\":\"Hi\"}]}\n```";
   auto llm_result = pbr::StructuredTextParser::ParseFromLlmOutput(llm_output);
   ASSERT_TRUE(llm_result.ok);
   ASSERT_TRUE(llm_result.rml.find("<p>Hi</p>") != std::string::npos);
@@ -80,7 +81,8 @@ TEST(StructuredTextParserTest, ComprehensiveParsingScenarios) {
   ASSERT_TRUE(embedded.has_value());
   ASSERT_TRUE(embedded->size() == 1);
   ASSERT_TRUE(embedded->at(0).name == "web_search");
-  ASSERT_TRUE(embedded->at(0).arguments.getString("query") == std::optional<std::string>("today's stock market summary"));
+  ASSERT_TRUE(embedded->at(0).arguments.getString("query") ==
+              std::optional<std::string>("today's stock market summary"));
   const std::string embedded_parameters = R"(```json
 {
   "blocks": [
@@ -96,7 +98,8 @@ TEST(StructuredTextParserTest, ComprehensiveParsingScenarios) {
   auto embedded_parameters_result = pbr::StructuredTextParser::ExtractEmbeddedToolCalls(embedded_parameters);
   ASSERT_TRUE(embedded_parameters_result.has_value());
   ASSERT_TRUE(embedded_parameters_result->at(0).name == "web_search");
-  ASSERT_TRUE(embedded_parameters_result->at(0).arguments.getString("query") == std::optional<std::string>("latest world news"));
+  ASSERT_TRUE(embedded_parameters_result->at(0).arguments.getString("query") ==
+              std::optional<std::string>("latest world news"));
   const std::string embedded_type = R"(```json
 {
   "blocks": [
@@ -110,7 +113,8 @@ TEST(StructuredTextParserTest, ComprehensiveParsingScenarios) {
   auto embedded_type_result = pbr::StructuredTextParser::ExtractEmbeddedToolCalls(embedded_type);
   ASSERT_TRUE(embedded_type_result.has_value());
   ASSERT_TRUE(embedded_type_result->at(0).name == "web_search");
-  ASSERT_TRUE(embedded_type_result->at(0).arguments.getString("query") == std::optional<std::string>("latest news on artificial intelligence"));
+  ASSERT_TRUE(embedded_type_result->at(0).arguments.getString("query") ==
+              std::optional<std::string>("latest news on artificial intelligence"));
   auto embedded_parse = pbr::StructuredTextParser::ParseFromLlmOutput(embedded_tools);
   ASSERT_TRUE(!embedded_parse.ok);
   const std::string heading_clamp = R"({"blocks":[{"type":"heading","level":6,"text":"Big"}]})";
@@ -196,7 +200,7 @@ TEST(StructuredTextParserTest, ComprehensiveParsingScenarios) {
   ASSERT_TRUE(form_result.rml.find("data-value=\"field.value\"") == std::string::npos);
   ASSERT_TRUE(form_result.working_set_candidates[0].artifact_rml.find("working-set-form") != std::string::npos);
   ASSERT_TRUE(form_result.working_set_candidates[0].artifact_rml.find("submit_form('__ENTRY__', 'booking')") !=
-         std::string::npos);
+              std::string::npos);
 
   const std::string calendar_block = R"({
     "blocks": [
@@ -209,10 +213,12 @@ TEST(StructuredTextParserTest, ComprehensiveParsingScenarios) {
   ASSERT_TRUE(calendar_result.working_set_candidates.size() == 1);
   ASSERT_TRUE(calendar_result.rml.find("chat-working-set-chip") != std::string::npos);
   ASSERT_TRUE(calendar_result.working_set_candidates[0].artifact_rml.find("working-set-calendar") != std::string::npos);
-  ASSERT_TRUE(calendar_result.working_set_candidates[0].artifact_rml.find("calendar_prev('__ENTRY__')") != std::string::npos);
-  ASSERT_TRUE(calendar_result.working_set_candidates[0].artifact_rml.find("working_set.calendar.weeks") != std::string::npos);
+  ASSERT_TRUE(calendar_result.working_set_candidates[0].artifact_rml.find("calendar_prev('__ENTRY__')") !=
+              std::string::npos);
+  ASSERT_TRUE(calendar_result.working_set_candidates[0].artifact_rml.find("working_set.calendar.weeks") !=
+              std::string::npos);
   ASSERT_TRUE(calendar_result.working_set_candidates[0].artifact_rml.find("<table class=\"calendar-grid\">") !=
-         std::string::npos);
+              std::string::npos);
 
   const std::string calendar_defaults = R"({"blocks":[{"type":"calendar"}]})";
   auto calendar_defaults_result = pbr::StructuredTextParser::ParseBlocksJson(calendar_defaults);
@@ -268,16 +274,20 @@ TEST(StructuredTextParserTest, ComprehensiveParsingScenarios) {
       }
     ]
   })";
-  auto long_list_result = pbr::StructuredTextParser::ParseBlocksJson(long_list_block, pbr::ResponseGoal::PeopleDiscovery);
+  auto long_list_result =
+      pbr::StructuredTextParser::ParseBlocksJson(long_list_block, pbr::ResponseGoal::PeopleDiscovery);
   ASSERT_TRUE(long_list_result.ok);
   ASSERT_TRUE(long_list_result.working_set_candidates.size() == 1);
   ASSERT_TRUE(long_list_result.rml.find("chat-working-set-chip") != std::string::npos);
   ASSERT_TRUE(long_list_result.rml.find("chat-long-list-scroll") == std::string::npos);
-  ASSERT_TRUE(long_list_result.working_set_candidates[0].artifact_rml.find("working-set-long-list") != std::string::npos);
-  ASSERT_TRUE(long_list_result.working_set_candidates[0].artifact_rml.find("chat-long-list-title") != std::string::npos);
+  ASSERT_TRUE(long_list_result.working_set_candidates[0].artifact_rml.find("working-set-long-list") !=
+              std::string::npos);
+  ASSERT_TRUE(long_list_result.working_set_candidates[0].artifact_rml.find("chat-long-list-title") !=
+              std::string::npos);
   ASSERT_TRUE(long_list_result.working_set_candidates[0].artifact_rml.find("&lt;Q2&gt;") != std::string::npos);
   ASSERT_TRUE(long_list_result.working_set_candidates[0].artifact_rml.find("&amp;") != std::string::npos);
-  ASSERT_TRUE(long_list_result.working_set_candidates[0].artifact_rml.find("chat-long-list-footer") != std::string::npos);
+  ASSERT_TRUE(long_list_result.working_set_candidates[0].artifact_rml.find("chat-long-list-footer") !=
+              std::string::npos);
   ASSERT_TRUE(long_list_result.chat_actions.size() == 3);
   const std::string paragraph_only = R"({"blocks":[{"type":"paragraph","text":"Hello"}]})";
   auto paragraph_only_result = pbr::StructuredTextParser::ParseBlocksJson(paragraph_only);
@@ -313,21 +323,21 @@ TEST(StructuredTextParserTest, BoundsRenderedRmlAtConfiguredLimit) {
   ASSERT_TRUE(empty_result.ok);
 
   const size_t text_bytes = pbr::kMaxStructuredParserOutputBytes - empty_result.rml.size();
-  const auto at_limit = pbr::StructuredTextParser::ParseBlocksJson(
-      R"({"blocks":[{"type":"paragraph","text":")" + std::string(text_bytes, 'x') + R"("}]})");
+  const auto at_limit = pbr::StructuredTextParser::ParseBlocksJson(R"({"blocks":[{"type":"paragraph","text":")" +
+                                                                   std::string(text_bytes, 'x') + R"("}]})");
   ASSERT_TRUE(at_limit.ok);
   EXPECT_EQ(at_limit.rml.size(), pbr::kMaxStructuredParserOutputBytes);
 
-  const auto over_limit = pbr::StructuredTextParser::ParseBlocksJson(
-      R"({"blocks":[{"type":"paragraph","text":")" + std::string(text_bytes + 1, 'x') + R"("}]})");
+  const auto over_limit = pbr::StructuredTextParser::ParseBlocksJson(R"({"blocks":[{"type":"paragraph","text":")" +
+                                                                     std::string(text_bytes + 1, 'x') + R"("}]})");
   ASSERT_FALSE(over_limit.ok);
-  EXPECT_EQ(over_limit.error,
-            "Structured parser output exceeds limit of " + std::to_string(pbr::kMaxStructuredParserOutputBytes) +
-                " bytes");
+  EXPECT_EQ(over_limit.error, "Structured parser output exceeds limit of " +
+                                  std::to_string(pbr::kMaxStructuredParserOutputBytes) + " bytes");
 }
 
 TEST(StructuredTextParserTest, PlainTextReadsFencedAndBareBlocksAndPassesProseThrough) {
-  const std::string fenced = "```json { \"blocks\": [ { \"type\": \"paragraph\", \"text\": \"你好！很高兴见到你。\" } ] } ```";
+  const std::string fenced =
+      "```json { \"blocks\": [ { \"type\": \"paragraph\", \"text\": \"你好！很高兴见到你。\" } ] } ```";
   EXPECT_EQ(pbr::StructuredTextParser::PlainText(fenced), "你好！很高兴见到你。");
 
   const std::string bare = R"({"blocks":[
@@ -349,9 +359,10 @@ TEST(StructuredTextParserTest, PlainTextReadsFencedAndBareBlocksAndPassesProseTh
   EXPECT_EQ(pbr::StructuredTextParser::PlainTextIfBlocks(R"({"blocks":[{"type":"button","label":"x"}]})"), "");
 
   // Tables and poll options read as lines; a truncated document gets the renderer's brace repair.
-  EXPECT_EQ(pbr::StructuredTextParser::PlainText(
-                R"({"blocks":[{"type":"table","headers":["A","B"],"rows":[["1","2"]]},{"type":"poll","question":"Q?","options":["yes","no"]}]})"),
-            "A | B\n1 | 2\nQ?\n- yes\n- no");
+  EXPECT_EQ(
+      pbr::StructuredTextParser::PlainText(
+          R"({"blocks":[{"type":"table","headers":["A","B"],"rows":[["1","2"]]},{"type":"poll","question":"Q?","options":["yes","no"]}]})"),
+      "A | B\n1 | 2\nQ?\n- yes\n- no");
   EXPECT_EQ(pbr::StructuredTextParser::PlainText(R"({"blocks":[{"type":"paragraph","text":"cut off"}])"), "cut off");
 }
 
@@ -360,8 +371,9 @@ TEST(StructuredTextParserTest, StorableTextKeepsSmallAnswersAndReducesHugeOnesTo
   EXPECT_EQ(pbr::StructuredTextParser::StorableText(small), small);
 
   // A people list whose action payloads carry large public keys.
-  const std::string huge = R"({"blocks":[{"type":"paragraph","text":"Found 9 people:"},{"type":"long_list","title":"Search results","items":[{"title":"A","key":")" +
-                           std::string(pbr::kMaxComposeTextBytes + 100, 'k') + R"("}]}]})";
+  const std::string huge =
+      R"({"blocks":[{"type":"paragraph","text":"Found 9 people:"},{"type":"long_list","title":"Search results","items":[{"title":"A","key":")" +
+      std::string(pbr::kMaxComposeTextBytes + 100, 'k') + R"("}]}]})";
   const std::string stored = pbr::StructuredTextParser::StorableText(huge);
   EXPECT_LE(stored.size(), pbr::kMaxComposeTextBytes);
   EXPECT_NE(stored.find("Found 9 people:"), std::string::npos);
@@ -381,8 +393,9 @@ TEST(StructuredTextParserTest, ListBlockDrawsItsOwnMarkers) {
   // The engine draws no list markers; the block uses the same marker markup as Markdown lists.
   auto bullets = pbr::StructuredTextParser::ParseBlocksJson(R"({"blocks":[{"type":"list","items":["A","B"]}]})");
   ASSERT_TRUE(bullets.ok);
-  EXPECT_NE(bullets.rml.find("<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">A</div></li>"),
-            std::string::npos);
+  EXPECT_NE(
+      bullets.rml.find("<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">A</div></li>"),
+      std::string::npos);
 
   auto numbered =
       pbr::StructuredTextParser::ParseBlocksJson(R"({"blocks":[{"type":"list","ordered":true,"items":["A","B"]}]})");

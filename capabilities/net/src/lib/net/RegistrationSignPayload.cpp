@@ -21,8 +21,8 @@ constexpr uint8_t kHeartbeatSignVersion = 1;
 } // namespace
 
 std::vector<uint8_t> BuildRegistrationSignBytes(const std::string& challenge, const std::string& public_key_b64,
-                                                const std::string& kem_public_key_b64,
-                                                const std::string& signature_alg, const int64_t timestamp) {
+                                                const std::string& kem_public_key_b64, const std::string& signature_alg,
+                                                const int64_t timestamp) {
   const auto public_key = Base64Decode(public_key_b64);
   if (!public_key || public_key.value().size() != kMlDsa65PublicKeyBytes) {
     return {};

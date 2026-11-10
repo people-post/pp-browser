@@ -15,10 +15,10 @@ namespace pbr {
  * keys are not derived — each device mints its own (M021 §1).
  */
 struct RecoveryKeys {
-  ByteVector account_ml_dsa_seed;   // 32 — MlDsa::GenerateKeyPairFromSeed
-  ByteVector account_ml_kem_coins;  // 64 — HybridKem::GenerateKeyPairFromSeed
-  ByteVector locker_key;            // 32 — AEAD key of locker snapshots
-  ByteVector locker_signing_seed;   // 32 — MlDsa::GenerateKeyPairFromSeed; signs snapshots
+  ByteVector account_ml_dsa_seed;  // 32 — MlDsa::GenerateKeyPairFromSeed
+  ByteVector account_ml_kem_coins; // 64 — HybridKem::GenerateKeyPairFromSeed
+  ByteVector locker_key;           // 32 — AEAD key of locker snapshots
+  ByteVector locker_signing_seed;  // 32 — MlDsa::GenerateKeyPairFromSeed; signs snapshots
 };
 
 /** A fresh 256-bit recovery seed (OS randomness). */

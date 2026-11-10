@@ -16,8 +16,7 @@ bool PathContains(const std::vector<std::string>& path, const std::string& peer_
 
 std::vector<std::string> PickRedirectChildren(std::vector<std::string> children,
                                               const std::vector<std::string>& path_stamp,
-                                              const std::string& self_peer_id, size_t max_hints,
-                                              double jitter_unit) {
+                                              const std::string& self_peer_id, size_t max_hints, double jitter_unit) {
   std::vector<std::string> eligible;
   eligible.reserve(children.size());
   std::unordered_set<std::string> seen;
@@ -133,8 +132,7 @@ BroadcastLadderSlotWinDecision DecideBroadcastSlotWin(const BroadcastLadderSlotW
 }
 
 std::vector<std::string> FilterOnlineWhitelist(const std::vector<std::string>& whitelist,
-                                               const std::vector<std::string>& online_peer_ids,
-                                               size_t max_hints) {
+                                               const std::vector<std::string>& online_peer_ids, size_t max_hints) {
   std::unordered_set<std::string> online;
   online.reserve(online_peer_ids.size());
   for (const std::string& id : online_peer_ids) {
@@ -158,8 +156,7 @@ std::vector<std::string> FilterOnlineWhitelist(const std::vector<std::string>& w
   return out;
 }
 
-std::string PrimaryBroadcastHopPeerId(const std::string& hop_peer_id,
-                                      const std::vector<std::string>& l1_hop_peer_ids) {
+std::string PrimaryBroadcastHopPeerId(const std::string& hop_peer_id, const std::vector<std::string>& l1_hop_peer_ids) {
   if (!hop_peer_id.empty()) {
     return hop_peer_id;
   }

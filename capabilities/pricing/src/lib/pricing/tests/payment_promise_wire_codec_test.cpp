@@ -25,10 +25,8 @@ PaymentPromise SamplePromise() {
 
 TEST(PaymentPromiseWireCodecTest, ControlTypeRoundTrip) {
   EXPECT_EQ(PaymentPromiseWireCodec::ControlTypeToWire(PaymentPromiseControlType::PromiseOffer), "promise_offer");
-  EXPECT_EQ(PaymentPromiseWireCodec::ControlTypeFromWire("promise_accept"),
-            PaymentPromiseControlType::PromiseAccept);
-  EXPECT_EQ(PaymentPromiseWireCodec::ControlTypeFromWire("promise_outcome"),
-            PaymentPromiseControlType::PromiseOutcome);
+  EXPECT_EQ(PaymentPromiseWireCodec::ControlTypeFromWire("promise_accept"), PaymentPromiseControlType::PromiseAccept);
+  EXPECT_EQ(PaymentPromiseWireCodec::ControlTypeFromWire("promise_outcome"), PaymentPromiseControlType::PromiseOutcome);
   EXPECT_FALSE(PaymentPromiseWireCodec::ControlTypeFromWire("nope").has_value());
 }
 

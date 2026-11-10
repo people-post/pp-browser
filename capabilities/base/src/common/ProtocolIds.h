@@ -30,8 +30,8 @@ inline constexpr const char* kAccountCardProtocolId = "/pp/account-card/1.0.0";
  * (MeshHost::SetAppProtocols). pp-node serves none of them.
  */
 inline std::vector<std::string> ProductMeshProtocols() {
-  return {kRpcChatProtocolId,         kRpcHistoryProtocolId,   kBlobProtocolId,       kRpcPeerAnnounceProtocolId,
-          kRpcBroadcastProtocolId,    kRealtimeProtocolId,     kAccountCardProtocolId};
+  return {kRpcChatProtocolId,      kRpcHistoryProtocolId, kBlobProtocolId,       kRpcPeerAnnounceProtocolId,
+          kRpcBroadcastProtocolId, kRealtimeProtocolId,   kAccountCardProtocolId};
 }
 
 } // namespace pbr

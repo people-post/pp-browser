@@ -2,6 +2,7 @@
 # the platform's) and the media engine (MediaEngine: capture, encode, send / receive, decode, play).
 pp_browser_add_lib_library(pp_lib_media
   SOURCES
+    AudioFocusInterruption.cpp
     AudioSessionHolds.cpp
     AudioSessionInterruptions.cpp
     DecodeStallPolicy.h

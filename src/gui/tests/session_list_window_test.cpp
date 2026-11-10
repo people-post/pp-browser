@@ -40,7 +40,7 @@ TEST(SessionListWindowTest, NeverExceedsTheRowCount) {
   EXPECT_FALSE(window.ExtendIfNearBottom(7, true));
   EXPECT_TRUE(window.ExtendIfNearBottom(25, true));
   EXPECT_EQ(window.Visible(25), 25u);
-  EXPECT_EQ(window.Visible(10), 10u);  // the list shrank under the window
+  EXPECT_EQ(window.Visible(10), 10u); // the list shrank under the window
 }
 
 TEST(SessionListWindowTest, MoreIsFalseOnceEverythingIsShown) {
@@ -92,11 +92,10 @@ TEST(SessionListWindowTest, SidebarLoadingLineFollowsTheMoreFlag) {
 // always-visible search box with its overlay label (inputs render no placeholder).
 TEST(SessionListWindowTest, SidebarRowHasAvatarTimeTypeIconUnreadAndSearch) {
   const std::string rml = ReadAsset("views/sidebar.rml");
-  for (const char* piece :
-       {"class=\"chat-row-avatar\"", "{{session.avatar_letter}}", "data-class-avatar-tone-7=", "chat-row-type--private",
-        "class=\"sidebar-session-date\"", "{{session.date_label}}", "{{session.unread_display}}", "class=\"chat-row-mute\"",
-        "data-value=\"sessions_query\"", "data-event-change=\"sessions_search_changed()\"",
-        "{{i18n:sidebar.search_placeholder}}"}) {
+  for (const char* piece : {"class=\"chat-row-avatar\"", "{{session.avatar_letter}}", "data-class-avatar-tone-7=",
+                            "chat-row-type--private", "class=\"sidebar-session-date\"", "{{session.date_label}}",
+                            "{{session.unread_display}}", "class=\"chat-row-mute\"", "data-value=\"sessions_query\"",
+                            "data-event-change=\"sessions_search_changed()\"", "{{i18n:sidebar.search_placeholder}}"}) {
     EXPECT_NE(rml.find(piece), std::string::npos) << piece;
   }
   EXPECT_NE(ReadAsset("locales/en.json").find("\"sidebar.search_placeholder\": \"Search\""), std::string::npos);
@@ -118,7 +117,6 @@ TEST(SessionListWindowTest, IncludeReachesTheOpenChatInWholeSteps) {
   window.Reset();
   EXPECT_EQ(window.Visible(100), 20u);
 }
-
 
 TEST(SessionListWindowTest, AListThatDoesNotFillItsViewportAsksForMore) {
   EXPECT_TRUE(SessionListNeedsFill(300.f, 600.f)) << "five rows on a tall phone";

@@ -40,7 +40,7 @@ std::string AddressText(const sockaddr* addr) {
   if (addr->sa_family == AF_INET) {
     const auto* v4 = reinterpret_cast<const sockaddr_in*>(addr);
     const uint32_t host = ntohl(v4->sin_addr.s_addr);
-    if ((host >> 16) == 0xa9fe) {  // 169.254/16 link-local
+    if ((host >> 16) == 0xa9fe) { // 169.254/16 link-local
       return {};
     }
     inet_ntop(AF_INET, &v4->sin_addr, buf, sizeof(buf));
@@ -81,7 +81,9 @@ NetworkState Snapshot() {
     freeifaddrs(list);
   }
   state.online = !parts.empty();
-  state.transport = !state.online ? NetworkTransport::Unknown : wireless ? NetworkTransport::Wifi : NetworkTransport::Other;
+  state.transport = !state.online ? NetworkTransport::Unknown
+                    : wireless    ? NetworkTransport::Wifi
+                                  : NetworkTransport::Other;
   state.fingerprint = JoinSorted(std::move(parts));
   return state;
 }
@@ -143,7 +145,7 @@ private:
   void Run() {
     sink_(Snapshot());
     constexpr int kPollFallbackMs = 2000;
-    constexpr int kSettleMs = 200;  // one change arrives as a burst of netlink messages
+    constexpr int kSettleMs = 200; // one change arrives as a burst of netlink messages
     for (;;) {
       pollfd fds[2] = {{wake_[0], POLLIN, 0}, {route_fd_, POLLIN, 0}};
       const int n = poll(fds, route_fd_ >= 0 ? 2 : 1, route_fd_ >= 0 ? -1 : kPollFallbackMs);

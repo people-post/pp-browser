@@ -276,41 +276,41 @@ void ShellAiDot::ProcessEvent(ui::Event& event) {
     return;
   }
   switch (event.GetId()) {
-  case ui::EventId::Mousedown: {
-    // The dot's own press: nothing under it sees it (no row, no swipe, no scroll starts there).
-    event.StopPropagation();
-    if (!model_.ShownNow() || pressed_) {
-      return;
-    }
-    const AiDotArea area = Area();
-    // Where it stands now: a tucked dot stays half out until it is dragged or let go (a tap makes it jump out).
-    model_.Press(finger(), AiDotModel::Rest(Place(), area, model_.Tucked()));
-    pressed_ = true;
-    SyncIdle();
-    SetDocumentCapture(true);
-    break;
-  }
-  case ui::EventId::Mousemove:
-    if (pressed_) {
-      if (const auto offset = model_.Move(finger(), Area(), SteadyMs())) {
-        char buffer[80];
-        std::snprintf(buffer, sizeof(buffer), "translate(%.1fdp, %.1fdp)", offset->x_dp, offset->y_dp);
-        dot_->SetProperty("transform", buffer);
-        event.StopPropagation();
+    case ui::EventId::Mousedown: {
+      // The dot's own press: nothing under it sees it (no row, no swipe, no scroll starts there).
+      event.StopPropagation();
+      if (!model_.ShownNow() || pressed_) {
+        return;
       }
+      const AiDotArea area = Area();
+      // Where it stands now: a tucked dot stays half out until it is dragged or let go (a tap makes it jump out).
+      model_.Press(finger(), AiDotModel::Rest(Place(), area, model_.Tucked()));
+      pressed_ = true;
+      SyncIdle();
+      SetDocumentCapture(true);
+      break;
     }
-    break;
-  case ui::EventId::Mouseup:
-    if (pressed_) {
-      EndPress(/*cancelled=*/false);
-    }
-    break;
-  case ui::EventId::Click:
-    // The tap was taken at mouseup (or it was a drag): the click stops here.
-    event.StopPropagation();
-    break;
-  default:
-    break;
+    case ui::EventId::Mousemove:
+      if (pressed_) {
+        if (const auto offset = model_.Move(finger(), Area(), SteadyMs())) {
+          char buffer[80];
+          std::snprintf(buffer, sizeof(buffer), "translate(%.1fdp, %.1fdp)", offset->x_dp, offset->y_dp);
+          dot_->SetProperty("transform", buffer);
+          event.StopPropagation();
+        }
+      }
+      break;
+    case ui::EventId::Mouseup:
+      if (pressed_) {
+        EndPress(/*cancelled=*/false);
+      }
+      break;
+    case ui::EventId::Click:
+      // The tap was taken at mouseup (or it was a drag): the click stops here.
+      event.StopPropagation();
+      break;
+    default:
+      break;
   }
 }
 

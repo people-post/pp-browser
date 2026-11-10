@@ -121,7 +121,7 @@ Roe<InviteAccepted> ApplyInviteAcceptToRoster(IGroupRosterStore& roster, const s
 
 Roe<void> ApplyInviteDeclineToRoster(IGroupRosterStore& roster, const std::string& invite_nonce,
                                      const std::string& member_identity, const std::string& group_id) {
-  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate(); // read-then-write of the roster
   auto pending = roster.LoadPendingInvite(invite_nonce);
   if (!pending) {
     return pending.error();
@@ -163,7 +163,7 @@ Roe<void> RequireNewerEpoch(const GroupMetadata& metadata, const uint64_t inboun
 
 Roe<void> ApplyMemberJoinedToRoster(IGroupRosterStore& roster, const GroupMembershipCodec::MemberJoinedPayload& payload,
                                     const std::string& actor_identity) {
-  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate(); // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -209,7 +209,7 @@ Roe<void> ApplyMemberJoinedToRoster(IGroupRosterStore& roster, const GroupMember
 Roe<void> ApplyOwnerTransferredToRoster(IGroupRosterStore& roster,
                                         const GroupMembershipCodec::OwnerTransferredPayload& payload,
                                         const std::string& actor_identity) {
-  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate(); // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -263,7 +263,7 @@ Roe<void> ApplyOwnerTransferredToRoster(IGroupRosterStore& roster,
 Roe<void> ApplyMemberRemovedToRoster(IGroupRosterStore& roster,
                                      const GroupMembershipCodec::MemberRemovedPayload& payload,
                                      const std::string& actor_identity) {
-  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate(); // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -287,7 +287,7 @@ Roe<void> ApplyMemberRemovedToRoster(IGroupRosterStore& roster,
 
 Roe<bool> ApplyGroupRenamedToRoster(IGroupRosterStore& roster, const GroupMembershipCodec::GroupRenamedPayload& payload,
                                     const std::string& actor_identity) {
-  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate(); // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -296,7 +296,7 @@ Roe<bool> ApplyGroupRenamedToRoster(IGroupRosterStore& roster, const GroupMember
     return Error("Rename rejected: actor is not the group owner");
   }
   if (payload.title_version <= metadata->title_version) {
-    return false;  // not newer than the title we hold
+    return false; // not newer than the title we hold
   }
   GroupMetadata updated = *metadata;
   updated.title = payload.title;
@@ -311,9 +311,9 @@ Roe<bool> ApplyGroupRenamedToRoster(IGroupRosterStore& roster, const GroupMember
 }
 
 Roe<GroupDissolvedApplied> EndGroupInRoster(IGroupRosterStore& roster, const std::string& group_id,
-                                           const std::string& owner_identity, const uint64_t roster_epoch,
-                                           const std::string& statement_json,
-                                           const std::vector<PendingGroupSend>& sends) {
+                                            const std::string& owner_identity, const uint64_t roster_epoch,
+                                            const std::string& statement_json,
+                                            const std::vector<PendingGroupSend>& sends) {
   GroupEnding ending;
   ending.owner_identity = owner_identity;
   ending.roster_epoch = roster_epoch;
@@ -336,21 +336,21 @@ namespace {
 /** The shared rule; `actor` (the DM's sender) must be the owner it names when given. */
 Roe<GroupDissolvedApplied> ApplyDissolved(IGroupRosterStore& roster, const GroupRosterStatement& statement,
                                           const std::string& local_identity, const std::string* actor) {
-  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate(); // read-then-write of the roster
   GroupDissolvedApplied result;
   auto metadata = roster.LoadMetadata(statement.group_id);
   if (!metadata) {
     return metadata.error();
   }
   if (!*metadata || (*metadata)->sync_state == GroupSyncState::Dissolved) {
-    return result;  // not a group we hold, or already over: a late or repeated copy does nothing
+    return result; // not a group we hold, or already over: a late or repeated copy does nothing
   }
   auto member = local_identity.empty() ? Roe<bool>(false) : roster.IsMember(statement.group_id, local_identity);
   if (!member) {
     return member.error();
   }
   if (!*member) {
-    return result;  // a group we are not in (left, removed, deleted): not ours to end
+    return result; // a group we are not in (left, removed, deleted): not ours to end
   }
   if (!statement.dissolved) {
     return Error("Dissolve rejected: the statement does not say the group ended");
@@ -398,7 +398,7 @@ Roe<std::optional<std::string>> EnsureDissolvedLine(IThreadStore& store, const s
     return thread.error();
   }
   if (!*thread) {
-    return std::optional<std::string>{};  // the chat was deleted: nothing to keep
+    return std::optional<std::string>{}; // the chat was deleted: nothing to keep
   }
   auto page = store.GetMessagesPage((*thread)->id, std::nullopt, 500);
   if (!page) {

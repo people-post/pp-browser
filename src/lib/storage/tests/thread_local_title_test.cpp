@@ -8,7 +8,9 @@ namespace pbr {
 namespace {
 
 TEST(SqliteThreadStoreLocalTitleTest, MigratesAndPersistsLocalTitle) {
-  const auto data_dir = std::filesystem::temp_directory_path() / ("pp_browser_local_title_migrate_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
+  const auto data_dir =
+      std::filesystem::temp_directory_path() /
+      ("pp_browser_local_title_migrate_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
   std::filesystem::remove_all(data_dir);
 
   {

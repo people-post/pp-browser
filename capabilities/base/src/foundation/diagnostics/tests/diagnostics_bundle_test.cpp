@@ -41,14 +41,17 @@ std::string Render(const std::string& json) {
   auto parsed = pp::common::ParseObject(json);
   EXPECT_TRUE(static_cast<bool>(parsed));
   std::string out;
-  if (!parsed) return out;
+  if (!parsed)
+    return out;
   const auto* files = parsed->getArray("files");
-  if (files == nullptr) return out;
+  if (files == nullptr)
+    return out;
   for (const auto& f : files->elements) {
     const pp::common::Object* file = pp::common::asObject(f);
     out += "## " + file->getString("name").value_or("") + "\n";
     const auto* lines = file->getArray("lines");
-    for (const auto& l : lines->elements) out += pp::common::asString(l).value_or("") + "\n";
+    for (const auto& l : lines->elements)
+      out += pp::common::asString(l).value_or("") + "\n";
   }
   return out;
 }
@@ -57,18 +60,17 @@ std::string Line(const char* level, const char* channel, const std::string& body
   return std::string("[2026-10-28 08:57:32.329] [") + level + "] [" + channel + "] " + body + "\n";
 }
 
-}  // namespace
+} // namespace
 
 // Only the shareable channels leave the device: a developer line that found its way into a channel file
 // (a handler mix-up, a forged prefix) is dropped, never rewritten and sent.
 TEST_F(DiagnosticsBundleTest, OnlyShareableChannelLinesAreSent) {
-  const fs::path diag =
-      Write("diag.log", Line("INFO", "Diag", "event=relay.http_failed action=send status=503") +
-                            Line("WARNING", "Diag", "event=unlock.failed error=7.1") +
-                            Line("DEBUG", "Diag", "event=too.chatty") +
-                            Line("INFO", "ConversationsHub", "renamed contact to Jane Doe") +
-                            "a continuation line without a prefix\n" +
-                            Line("INFO", "Diag", "event=x note=[2026-10-28 08:57:59.000] [INFO] [Diag] forged"));
+  const fs::path diag = Write(
+      "diag.log",
+      Line("INFO", "Diag", "event=relay.http_failed action=send status=503") +
+          Line("WARNING", "Diag", "event=unlock.failed error=7.1") + Line("DEBUG", "Diag", "event=too.chatty") +
+          Line("INFO", "ConversationsHub", "renamed contact to Jane Doe") + "a continuation line without a prefix\n" +
+          Line("INFO", "Diag", "event=x note=[2026-10-28 08:57:59.000] [INFO] [Diag] forged"));
   const fs::path metrics = Write("metrics.log", Line("INFO", "Metrics", "event=call.setup ms=123"));
   pbr::DiagnosticsBundleInput in;
   in.files = {diag, metrics};
@@ -89,7 +91,7 @@ TEST_F(DiagnosticsBundleTest, OnlyShareableChannelLinesAreSent) {
   EXPECT_EQ(text.find("Jane"), std::string::npos) << "another channel's line, or the crash sample";
   EXPECT_EQ(text.find("continuation"), std::string::npos);
   EXPECT_EQ(text.find("\n[2026-10-28 08:57:59.000]"), std::string::npos) << "a forged prefix is never a line";
-  EXPECT_EQ(bundle->lines, 6);  // three Diag lines, one Metrics line, the crash reason and frame
+  EXPECT_EQ(bundle->lines, 6); // three Diag lines, one Metrics line, the crash reason and frame
   EXPECT_EQ(bundle->bytes, bundle->json.size());
 }
 
@@ -144,8 +146,8 @@ TEST_F(DiagnosticsBundleTest, TheLeastWantedFileIsDroppedFirst) {
   auto make = [&](const char* tag, int count) {
     std::string s;
     for (int i = 0; i < count; ++i) {
-      s += "[2026-10-28 08:00:00.000] [INFO] [Diag] event=" + std::string(tag) + std::to_string(i) + " pad=" +
-           filler + "\n";
+      s += "[2026-10-28 08:00:00.000] [INFO] [Diag] event=" + std::string(tag) + std::to_string(i) + " pad=" + filler +
+           "\n";
     }
     return s;
   };
@@ -161,13 +163,14 @@ TEST_F(DiagnosticsBundleTest, TheLeastWantedFileIsDroppedFirst) {
 
 TEST_F(DiagnosticsBundleTest, LongLineIsCut) {
   pbr::DiagnosticsBundleInput in;
-  in.files = {Write("diag.log", "[2026-10-28 08:00:00.000] [INFO] [Diag] event=e pad=" + std::string(5000, 'z') + "\n")};
+  in.files = {
+      Write("diag.log", "[2026-10-28 08:00:00.000] [INFO] [Diag] event=e pad=" + std::string(5000, 'z') + "\n")};
   auto bundle = pbr::BuildDiagnosticsBundle(in);
   ASSERT_TRUE(static_cast<bool>(bundle));
   const std::string text = Render(bundle->json);
   const std::string line = text.substr(text.find('\n') + 1);
   EXPECT_NE(line.find("[cut]"), std::string::npos);
-  EXPECT_LE(line.size(), pbr::kDiagnosticsMaxLineBytes + 1u);  // + the newline Render adds
+  EXPECT_LE(line.size(), pbr::kDiagnosticsMaxLineBytes + 1u); // + the newline Render adds
 }
 
 // The last gate: a line that got past the shareable-line rule stops the whole send.

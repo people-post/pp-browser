@@ -56,22 +56,22 @@ enum class ApprovalResumeError {
 
 inline const char* ApprovalResumeErrorCode(ApprovalResumeError err) {
   switch (err) {
-  case ApprovalResumeError::Ok:
-    return "ok";
-  case ApprovalResumeError::NotFound:
-    return "approval_not_found";
-  case ApprovalResumeError::AlreadyResolved:
-    return "approval_already_resolved";
-  case ApprovalResumeError::Superseded:
-    return "approval_superseded";
-  case ApprovalResumeError::Expired:
-    return "approval_expired";
-  case ApprovalResumeError::ThreadMismatch:
-    return "approval_thread_mismatch";
-  case ApprovalResumeError::TurnBusy:
-    return "turn_busy";
-  case ApprovalResumeError::InvalidDecision:
-    return "approval_invalid_decision";
+    case ApprovalResumeError::Ok:
+      return "ok";
+    case ApprovalResumeError::NotFound:
+      return "approval_not_found";
+    case ApprovalResumeError::AlreadyResolved:
+      return "approval_already_resolved";
+    case ApprovalResumeError::Superseded:
+      return "approval_superseded";
+    case ApprovalResumeError::Expired:
+      return "approval_expired";
+    case ApprovalResumeError::ThreadMismatch:
+      return "approval_thread_mismatch";
+    case ApprovalResumeError::TurnBusy:
+      return "turn_busy";
+    case ApprovalResumeError::InvalidDecision:
+      return "approval_invalid_decision";
   }
   return "approval_error";
 }

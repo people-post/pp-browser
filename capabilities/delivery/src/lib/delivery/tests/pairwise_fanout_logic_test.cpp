@@ -27,14 +27,14 @@ TEST(PairwiseFanoutLogicTest, SelectAppliesIncludePredicate) {
 TEST(PairwiseFanoutLogicTest, BestEffortContinuesAfterFailure) {
   const std::vector<std::string> targets = {"ok1", "bad", "ok2"};
   std::vector<std::string> sent;
-  const auto result = FanOutPairwise(targets, PairwiseFanoutMode::BestEffort,
-                                     [&](const std::string& id) -> pp::Roe<void> {
-                                       if (id == "bad") {
-                                         return pp::Error("nope");
-                                       }
-                                       sent.push_back(id);
-                                       return {};
-                                     });
+  const auto result =
+      FanOutPairwise(targets, PairwiseFanoutMode::BestEffort, [&](const std::string& id) -> pp::Roe<void> {
+        if (id == "bad") {
+          return pp::Error("nope");
+        }
+        sent.push_back(id);
+        return {};
+      });
   EXPECT_EQ(result.attempted, 3u);
   EXPECT_EQ(result.succeeded, 2u);
   ASSERT_EQ(result.failed_identities.size(), 1u);
@@ -48,14 +48,14 @@ TEST(PairwiseFanoutLogicTest, BestEffortContinuesAfterFailure) {
 TEST(PairwiseFanoutLogicTest, FailFastStopsOnFirstError) {
   const std::vector<std::string> targets = {"ok", "bad", "never"};
   std::vector<std::string> sent;
-  const auto result = FanOutPairwise(targets, PairwiseFanoutMode::FailFast,
-                                     [&](const std::string& id) -> pp::Roe<void> {
-                                       if (id == "bad") {
-                                         return pp::Error("stop");
-                                       }
-                                       sent.push_back(id);
-                                       return {};
-                                     });
+  const auto result =
+      FanOutPairwise(targets, PairwiseFanoutMode::FailFast, [&](const std::string& id) -> pp::Roe<void> {
+        if (id == "bad") {
+          return pp::Error("stop");
+        }
+        sent.push_back(id);
+        return {};
+      });
   EXPECT_EQ(result.attempted, 2u);
   EXPECT_EQ(result.succeeded, 1u);
   ASSERT_TRUE(result.first_error.has_value());

@@ -59,5 +59,4 @@ void NormalizeMeshConfig(MeshConfig& config);
 std::vector<std::string> ResolveEffectiveBootstrapPeers(
     const MeshConfig& config, const std::vector<mesh::MeshDirectoryNode>& directory_nodes = {});
 
-
 } // namespace pbr

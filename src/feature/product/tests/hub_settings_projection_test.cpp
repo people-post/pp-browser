@@ -44,8 +44,7 @@ TEST(HubSettingsProjectionTest, ClientCircuitRelayFlagDoesNotImplyHostingRole) {
   EXPECT_EQ(pbr::ResolveMeshRole(config.mesh), pbr::MeshRole::Client);
   EXPECT_TRUE(config.mesh.capabilities.circuit_relay);
   // Host gate in ConversationsHub: role == Node && capabilities.circuit_relay.
-  EXPECT_FALSE(pbr::ResolveMeshRole(config.mesh) == pbr::MeshRole::Node &&
-               config.mesh.capabilities.circuit_relay);
+  EXPECT_FALSE(pbr::ResolveMeshRole(config.mesh) == pbr::MeshRole::Node && config.mesh.capabilities.circuit_relay);
 }
 
 TEST(HubSettingsProjectionTest, ProjectsPolicyAndNotificationPrefs) {
@@ -59,8 +58,7 @@ TEST(HubSettingsProjectionTest, ProjectsPolicyAndNotificationPrefs) {
   EXPECT_EQ(policy.group_invite_policy, pbr::GroupInvitePolicy::Everyone);
   EXPECT_EQ(policy.attachment_download_policy, pbr::AttachmentDownloadPolicy::OnDemand);
 
-  const pbr::ConversationsHub::NotificationPrefs notifications =
-      pbr::ProjectNotifications(prefs);
+  const pbr::ConversationsHub::NotificationPrefs notifications = pbr::ProjectNotifications(prefs);
   EXPECT_FALSE(notifications.show_notifications);
 
   EXPECT_TRUE(policy.attachment_auto_on_wifi);

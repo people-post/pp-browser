@@ -57,23 +57,27 @@ protected:
     ASSERT_NE(context, nullptr);
     ASSERT_TRUE(DataModelHost::Instance().Register(context, "chat", [this](ui::DataModelConstructor& ctor) {
       BindChatScreenState(ctor, state);
-      ctor.BindEventCallback("send_message", [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
-        ++sends;
-      });
+      ctor.BindEventCallback("send_message",
+                             [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) { ++sends; });
     }));
     const LocalizationService& i18n = LocalizationService::Instance();
-    const std::string rml =
-        "<rml><head><style>" + Asset("themes/components.rcss") + Asset("themes/colors-light.rcss") +
-        "</style></head><body style=\"padding: 0;\">"
-        "<div style=\"position: absolute; top: 0; left: 0; width: " + std::to_string(kWidth) + "dp; height: " +
-        std::to_string(kHeight) + "dp;\">"
-        "<div class=\"shell-layer shell-layer-base shell-layer-compact\">"
-        "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">"
-        "<div class=\"shell-chat-overlay-chrome row surface-chrome\"><div class=\"bar-fade\"></div></div>"
-        "<div class=\"shell-pane-body\" id=\"pane-body-chat\">" + i18n.LocalizeText(Asset("views/chat.rml")) + "</div>"
-        "<div class=\"shell-composer-mount surface-chrome\" id=\"shell-composer-mount\">" +
-        i18n.LocalizeText(Asset("views/composer.rml")) + "</div>"
-        "</div></div></div></body></rml>";
+    const std::string rml = "<rml><head><style>" + Asset("themes/components.rcss") + Asset("themes/colors-light.rcss") +
+                            "</style></head><body style=\"padding: 0;\">"
+                            "<div style=\"position: absolute; top: 0; left: 0; width: " +
+                            std::to_string(kWidth) + "dp; height: " + std::to_string(kHeight) +
+                            "dp;\">"
+                            "<div class=\"shell-layer shell-layer-base shell-layer-compact\">"
+                            "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">"
+                            "<div class=\"shell-chat-overlay-chrome row surface-chrome surface-chrome--frost\">"
+                            "<div class=\"bar-material bar-material--frost\"></div><div class=\"bar-fade\"></div></div>"
+                            "<div class=\"shell-pane-body\" id=\"pane-body-chat\">" +
+                            i18n.LocalizeText(Asset("views/chat.rml")) +
+                            "</div>"
+                            "<div class=\"shell-composer-bar\">"
+                            "<div class=\"shell-composer-mount surface-chrome\" id=\"shell-composer-mount\">" +
+                            i18n.LocalizeText(Asset("views/composer.rml")) +
+                            "</div></div>"
+                            "</div></div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
     document->Show();
@@ -82,8 +86,12 @@ protected:
   }
   void TearDown() override {
     DataModelHost::Instance().Clear();
-    if (context) { ui::RemoveContext("chat-bottom-chrome-test"); }
-    if (initialized) { ui::Shutdown(); }
+    if (context) {
+      ui::RemoveContext("chat-bottom-chrome-test");
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
   /** The first shown element with class `cls`. */
@@ -142,26 +150,107 @@ TEST_F(ChatBottomChromeTest, SendKeepsTheDraftFocusedAndATapOnTheMessagesTakesIt
 }
 
 // #89 (Kenneth 2026-11-05): the composer runs edge to edge and down. 2026-11-07: it is a frosted bar over the
-// transcript, which runs down under it to the screen bottom; the fade sits right on the bar (KeepClearOfComposer).
+// transcript, which runs down under it to the screen bottom. 2026-11-09 (#202): the bar is clear and the fade is off.
 TEST_F(ChatBottomChromeTest, TheComposerFloatsOverTheTranscriptEdgeToEdge) {
   ChatController::KeepClearOfComposer(document->GetElementById("shell-chat-overlay"));
   context->Update();
   const Edges overlay = BorderEdges(ByClass("shell-chat-overlay"));
-  ui::Element* fade = ByClass("chat-composer-fade");
+  ui::ElementList fades;
+  document->GetElementsByClassName(fades, "chat-composer-fade");
+  ASSERT_EQ(fades.size(), 1U);
+  ui::Element* fade = fades[0];
+  EXPECT_FALSE(fade->IsVisible(/*include_ancestors=*/true)) << "no bar colour to fade into: the fade is off";
   ui::Element* mount = document->GetElementById("shell-composer-mount");
   ui::Element* messages = document->GetElementById("chat-messages");
   ASSERT_NE(fade, nullptr);
   ASSERT_NE(mount, nullptr);
   ASSERT_NE(messages, nullptr);
-  const Edges f = BorderEdges(fade);
   const Edges m = BorderEdges(mount);
-  EXPECT_FLOAT_EQ(f.left, overlay.left);
-  EXPECT_FLOAT_EQ(f.right, overlay.right);
-  EXPECT_NEAR(f.bottom, m.top, 1.f) << "the fade sits right on the composer";
   EXPECT_FLOAT_EQ(m.left, overlay.left);
   EXPECT_FLOAT_EQ(m.right, overlay.right);
   EXPECT_FLOAT_EQ(m.bottom, overlay.bottom);
   EXPECT_FLOAT_EQ(BorderEdges(messages).bottom, overlay.bottom) << "the transcript runs under the composer";
+}
+
+// #188 / #202 (TODO): the header is the only frosted bar. The composer bar is clear (a floating pill and two round
+// buttons; the transcript scrolls under them) and exactly as tall as its mount.
+TEST_F(ChatBottomChromeTest, OnlyTheHeaderIsFrostedAndTheComposerBarIsClear) {
+  ChatController::KeepClearOfComposer(document->GetElementById("shell-chat-overlay"));
+  context->Update();
+  ui::ElementList materials;
+  document->GetElementsByClassName(materials, "bar-material--frost");
+  ASSERT_EQ(materials.size(), 1U) << "one blur: the header";
+  ui::Element* header = ByClass("shell-chat-overlay-chrome");
+  ui::Element* bar = ByClass("shell-composer-bar");
+  ui::Element* mount = document->GetElementById("shell-composer-mount");
+  ASSERT_NE(header, nullptr);
+  ASSERT_NE(bar, nullptr);
+  ASSERT_NE(mount, nullptr);
+  EXPECT_EQ(materials[0]->GetParentNode(), header);
+  ui::ElementList in_bar;
+  bar->GetElementsByClassName(in_bar, "bar-material");
+  EXPECT_TRUE(in_bar.empty()) << "no material under the composer";
+  const Edges b = BorderEdges(bar);
+  const Edges m = BorderEdges(mount);
+  EXPECT_NEAR(b.top, m.top, 0.5f) << "the bar is exactly as tall as the composer mount";
+  EXPECT_NEAR(b.bottom, m.bottom, 0.5f);
+}
+
+// #202 (Kenneth 2026-11-09): the phone composer is a floating 46dp pill with the accent emoji circle (32dp, 7dp inside its right end,
+// no camera), a round 44dp plus 10dp left of it and a round 44dp microphone 10dp right of it (14dp from the screen
+// edges), which becomes Send with text.
+TEST_F(ChatBottomChromeTest, TheComposerIsAFloatingPillBetweenTwoRoundButtons) {
+  state.show_voice = true;
+  state.thread_is_private = true; // a human chat: the microphone, no idle Send
+  DataModelHost::Instance().Dirty("chat", "thread_is_private");
+  state.show_attach_button = true;
+  DataModelHost::Instance().Dirty("chat", "show_voice");
+  DataModelHost::Instance().Dirty("chat", "show_attach_button");
+  context->Update();
+  ui::Element* pill = ByClass("prompt-composer-pill");
+  ui::Element* plus = ByClass("prompt-attach-btn");
+  ui::Element* emoji = ByClass("prompt-emoji-btn");
+  ui::Element* mic = ByClass("prompt-mic-btn");
+  ASSERT_NE(pill, nullptr);
+  ASSERT_NE(plus, nullptr);
+  ASSERT_NE(emoji, nullptr);
+  ASSERT_NE(mic, nullptr) << "an empty field shows the microphone";
+  EXPECT_EQ(ByClass("prompt-send-btn"), nullptr);
+  const Edges p = BorderEdges(pill);
+  const Edges pl = BorderEdges(plus);
+  const Edges e = BorderEdges(emoji);
+  const Edges mi = BorderEdges(mic);
+  const Edges overlay = BorderEdges(ByClass("shell-chat-overlay"));
+  EXPECT_NEAR(p.bottom - p.top, 46.f, 0.5f) << "the pill is 46dp high";
+  EXPECT_NEAR(pl.right - pl.left, 44.f, 0.5f);
+  EXPECT_NEAR(pl.bottom - pl.top, 44.f, 0.5f);
+  EXPECT_NEAR(mi.right - mi.left, 44.f, 0.5f);
+  EXPECT_NEAR(mi.bottom - mi.top, 44.f, 0.5f);
+  EXPECT_NEAR(p.left - pl.right, 10.f, 0.5f) << "10dp between the plus and the pill";
+  EXPECT_NEAR(mi.left - p.right, 10.f, 0.5f) << "10dp between the pill and the microphone";
+  EXPECT_NEAR(pl.left - overlay.left, 14.f, 0.5f) << "14dp from the screen edge";
+  EXPECT_NEAR(overlay.right - mi.right, 14.f, 0.5f);
+  EXPECT_NEAR(e.right - e.left, 32.f, 0.5f);
+  EXPECT_NEAR(e.bottom - e.top, 32.f, 0.5f);
+  EXPECT_NEAR(p.right - e.right, 7.f, 0.5f) << "the emoji circle is 7dp inside the pill's right end";
+  EXPECT_GT(e.left, BorderEdges(ByClass("prompt-composer-input")).left) << "the emoji is right of the text field";
+  EXPECT_LE(BorderEdges(ByClass("prompt-composer-input")).right, e.left) << "the text does not run under the emoji";
+  EXPECT_LT(e.right, mi.left) << "the microphone stays outside, right of the emoji";
+  EXPECT_GT(e.left, pl.right) << "the plus stays at the far left";
+  EXPECT_NEAR((e.top + e.bottom) / 2, (p.top + p.bottom) / 2, 0.5f);
+  EXPECT_EQ(ByClass("prompt-capture-btn"), nullptr) << "no camera in the pill";
+  EXPECT_NEAR((pl.top + pl.bottom) / 2, (p.top + p.bottom) / 2, 0.5f) << "round buttons centre on a one-line pill";
+
+  state.draft = "hello";
+  DataModelHost::Instance().Dirty("chat", "draft");
+  context->Update();
+  EXPECT_EQ(ByClass("prompt-mic-btn"), nullptr) << "text replaces the microphone with Send";
+  ui::Element* send = ByClass("prompt-send-btn");
+  ASSERT_NE(send, nullptr);
+  const Edges sd = BorderEdges(send);
+  EXPECT_NEAR(sd.left, mi.left, 0.5f) << "Send takes the microphone's place";
+  EXPECT_NEAR(sd.right - sd.left, 44.f, 0.5f);
+  EXPECT_NEAR(sd.bottom - sd.top, 44.f, 0.5f);
 }
 
 // #89: scrolled to the latest, the last message stood under the composer (the transcript's bottom padding is left out
@@ -179,7 +268,7 @@ TEST_F(ChatBottomChromeTest, TheLatestMessageEndsAboveTheComposer) {
     last = messages->InsertBefore(std::move(row), clear);
   }
   const auto check = [&](const char* when) {
-    for (int frame = 0; frame < 2; ++frame) {  // what ChatController::AfterLayout does each frame
+    for (int frame = 0; frame < 2; ++frame) { // what ChatController::AfterLayout does each frame
       context->Update();
       ChatController::KeepClearOfComposer(document->GetElementById("shell-chat-overlay"));
     }

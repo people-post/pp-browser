@@ -55,9 +55,7 @@ public:
   }
 
   /** Grows the window when the user is near the bottom and rows remain. True when it grew. */
-  bool ExtendIfNearBottom(const size_t total, const bool near_bottom) {
-    return near_bottom && Extend(total);
-  }
+  bool ExtendIfNearBottom(const size_t total, const bool near_bottom) { return near_bottom && Extend(total); }
 
 private:
   size_t shown_ = kSessionListStep;

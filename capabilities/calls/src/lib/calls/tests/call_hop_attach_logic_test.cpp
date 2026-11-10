@@ -109,9 +109,9 @@ TEST(CallHopAttachLogicTest, WaitExpiredWithNobodyConnectedLeavesTheCall) {
   group.media_active_mesh_for_call = false;
   EXPECT_EQ(PollSfuAttachWait(group), SfuAttachWaitPollResult::TimeoutLeave);
   SfuAttachWaitPollInput pair = group;
-  pair.joined_count = 2;  // 1:1 whose mesh never came up
+  pair.joined_count = 2; // 1:1 whose mesh never came up
   EXPECT_EQ(PollSfuAttachWait(pair), SfuAttachWaitPollResult::TimeoutLeave);
-  pair.media_active_mesh_for_call = true;  // a 1:1 still connecting is not cut off
+  pair.media_active_mesh_for_call = true; // a 1:1 still connecting is not cut off
   EXPECT_EQ(PollSfuAttachWait(pair), SfuAttachWaitPollResult::ClearAsP2p);
 }
 

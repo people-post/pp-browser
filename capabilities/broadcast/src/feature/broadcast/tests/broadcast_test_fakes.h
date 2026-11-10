@@ -37,13 +37,15 @@ class FakeRelay final : public mesh::IMediaRelayClient {
 public:
   Roe<std::string> LocalPeerIdBase58() const override { return std::string(kFakeRelaySelf); }
   bool IsStarted() const override { return true; }
-  mesh::MediaRelayRoe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop, const mesh::MediaRelayQuoteRequest& request,
-                                    int /*timeout_ms*/) override {
+  mesh::MediaRelayRoe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop,
+                                                          const mesh::MediaRelayQuoteRequest& request,
+                                                          int /*timeout_ms*/) override {
     last_quote = request;
     // The relay's answer to the video offer (B009), by this hop's policy (none = any level).
     const auto policy = video_policies.find(hop);
-    auto carried = mesh::ChooseCarriedVideoLevels({request.video_levels, request.video_parallel},
-                                            policy == video_policies.end() ? mesh::MediaRelayVideoPolicy{} : policy->second);
+    auto carried =
+        mesh::ChooseCarriedVideoLevels({request.video_levels, request.video_parallel},
+                                       policy == video_policies.end() ? mesh::MediaRelayVideoPolicy{} : policy->second);
     if (!carried) {
       return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::HopRefused, carried.error().message);
     }
@@ -54,14 +56,16 @@ public:
     q.video_levels = *carried;
     return q;
   }
-  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string&, const std::string&, const std::string&,
-                                              const std::string&, std::function<void(mesh::MediaDataFrame)>,
-                                              int) override {
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string&, const std::string&,
+                                                                    const std::string&, const std::string&,
+                                                                    std::function<void(mesh::MediaDataFrame)>,
+                                                                    int) override {
     return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "sync unused");
   }
   void AcceptAndAttachAsync(const std::string& hop, const std::string& /*quote_id*/, const std::string& session_id,
                             const std::string& /*auth*/, std::function<void(mesh::MediaDataFrame)> on_frame,
-                            std::function<void(mesh::MediaRelayRoe<mesh::MediaRelayAttachResult>)> on_done, int /*timeout_ms*/) override {
+                            std::function<void(mesh::MediaRelayRoe<mesh::MediaRelayAttachResult>)> on_done,
+                            int /*timeout_ms*/) override {
     attach_hops.push_back(hop);
     last_session = session_id;
     auto complete = [this, hop, on_frame = std::move(on_frame), on_done = std::move(on_done)]() mutable {
@@ -87,7 +91,8 @@ public:
     return next_token++;
   }
   void RemoveClientTransportLostObserver(uint64_t token) override { observers.erase(token); }
-  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AttachAsLocalHop(const std::string&, std::function<void(mesh::MediaDataFrame)>) override {
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AttachAsLocalHop(
+      const std::string&, std::function<void(mesh::MediaDataFrame)>) override {
     return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "unused");
   }
   mesh::MediaRelayRoe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
@@ -116,7 +121,7 @@ public:
   bool IsLocalHopAttached() const override { return false; }
 
   void Lose(mesh::MediaRelayClientLoss loss = mesh::MediaRelayClientLoss::TransportLost) {
-    attached = loss == mesh::MediaRelayClientLoss::Replaced;  // replaced: someone else holds it now
+    attached = loss == mesh::MediaRelayClientLoss::Replaced; // replaced: someone else holds it now
     for (auto& [token, observer] : std::map<uint64_t, std::function<void(mesh::MediaRelayClientLoss)>>(observers)) {
       (void)token;
       observer(loss);

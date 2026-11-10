@@ -117,13 +117,13 @@ Roe<std::optional<std::vector<uint8_t>>> SecureBlobRead(const std::string& name)
     return looked.error();
   }
   switch (looked->status) {
-  case pbr::SecureBlobLookup::Status::Found:
-    return std::optional<std::vector<uint8_t>>(std::move(looked->bytes));
-  case pbr::SecureBlobLookup::Status::Missing:
-    return std::optional<std::vector<uint8_t>>{};
-  case pbr::SecureBlobLookup::Status::Unavailable:
-  case pbr::SecureBlobLookup::Status::Canceled:  // no prompts on Android yet (#137)
-    break;
+    case pbr::SecureBlobLookup::Status::Found:
+      return std::optional<std::vector<uint8_t>>(std::move(looked->bytes));
+    case pbr::SecureBlobLookup::Status::Missing:
+      return std::optional<std::vector<uint8_t>>{};
+    case pbr::SecureBlobLookup::Status::Unavailable:
+    case pbr::SecureBlobLookup::Status::Canceled: // no prompts on Android yet (#137)
+      break;
   }
   return Error("Secure blob: not readable now (code " + std::to_string(looked->code) + ")");
 }
@@ -149,7 +149,7 @@ Roe<void> SecureBlobWriteWithAccess(const std::string& name, const std::vector<u
     return Error("Secure blob store is not supported on this platform");
   }
   if (access == SecureBlobAccess::kBiometryCurrentSet) {
-    return Error("Biometry-bound secure blobs are not supported on Android yet");  // fingerprint unlock: #137
+    return Error("Biometry-bound secure blobs are not supported on Android yet"); // fingerprint unlock: #137
   }
   JNIEnv* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
   if (env == nullptr) {
@@ -163,7 +163,7 @@ Roe<void> SecureBlobWriteWithAccess(const std::string& name, const std::vector<u
   args[2].z = access == SecureBlobAccess::kWhenUnlocked ? JNI_TRUE : JNI_FALSE;
   auto written = CallReturningFailure(env, "secureBlobWrite", "([B[BZ)Ljava/lang/String;", args);
   if (args[1].l != nullptr) {
-    WipeJava(env, static_cast<jbyteArray>(args[1].l));  // Java wipes it too; not when the call never got there
+    WipeJava(env, static_cast<jbyteArray>(args[1].l)); // Java wipes it too; not when the call never got there
     env->DeleteLocalRef(args[1].l);
   }
   env->DeleteLocalRef(args[0].l);
@@ -201,20 +201,20 @@ Roe<pbr::SecureBlobLookup> SecureBlobLookup(const std::string& name) {
   // GraceUnlock deletes on Missing. Locked → Unavailable with PpSecureBlob's code (1 lock screen up, 2 the Keystore
   // refused); anything else is an error, and errors keep the blob too.
   switch (bytes[0]) {
-  case kFound:
-    out.status = pbr::SecureBlobLookup::Status::Found;
-    out.bytes.assign(bytes.begin() + 1, bytes.end());
-    Wipe(bytes);
-    return out;
-  case kMissing:
-    out.status = pbr::SecureBlobLookup::Status::Missing;
-    return out;
-  case kUnavailable:
-    out.status = pbr::SecureBlobLookup::Status::Unavailable;
-    out.code = bytes.size() > 1 ? bytes[1] : 0;
-    return out;
-  default:
-    return Error("Secure blob: " + std::string(bytes.begin() + 1, bytes.end()));
+    case kFound:
+      out.status = pbr::SecureBlobLookup::Status::Found;
+      out.bytes.assign(bytes.begin() + 1, bytes.end());
+      Wipe(bytes);
+      return out;
+    case kMissing:
+      out.status = pbr::SecureBlobLookup::Status::Missing;
+      return out;
+    case kUnavailable:
+      out.status = pbr::SecureBlobLookup::Status::Unavailable;
+      out.code = bytes.size() > 1 ? bytes[1] : 0;
+      return out;
+    default:
+      return Error("Secure blob: " + std::string(bytes.begin() + 1, bytes.end()));
   }
 }
 

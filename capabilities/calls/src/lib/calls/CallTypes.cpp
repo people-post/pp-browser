@@ -11,16 +11,16 @@ std::string GenerateCallId() {
 
 std::string CallOutcomeToString(const CallOutcome outcome) {
   switch (outcome) {
-  case CallOutcome::Completed:
-    return "completed";
-  case CallOutcome::Missed:
-    return "missed";
-  case CallOutcome::Declined:
-    return "declined";
-  case CallOutcome::Cancelled:
-    return "cancelled";
-  case CallOutcome::Failed:
-    return "failed";
+    case CallOutcome::Completed:
+      return "completed";
+    case CallOutcome::Missed:
+      return "missed";
+    case CallOutcome::Declined:
+      return "declined";
+    case CallOutcome::Cancelled:
+      return "cancelled";
+    case CallOutcome::Failed:
+      return "failed";
   }
   return "failed";
 }
@@ -43,10 +43,10 @@ CallOutcome CallOutcomeFromString(const std::string& value) {
 
 std::string CallMediaModeToString(const CallMediaMode mode) {
   switch (mode) {
-  case CallMediaMode::Voice:
-    return "voice";
-  case CallMediaMode::Video:
-    return "video";
+    case CallMediaMode::Voice:
+      return "voice";
+    case CallMediaMode::Video:
+      return "video";
   }
   return "voice";
 }
@@ -60,10 +60,10 @@ CallMediaMode CallMediaModeFromString(const std::string& value) {
 
 std::string CallSessionKindToString(const CallSessionKind kind) {
   switch (kind) {
-  case CallSessionKind::Broadcast:
-    return "broadcast";
-  case CallSessionKind::Group:
-    return "group";
+    case CallSessionKind::Broadcast:
+      return "broadcast";
+    case CallSessionKind::Group:
+      return "group";
   }
   return "group";
 }
@@ -77,12 +77,12 @@ CallSessionKind CallSessionKindFromString(const std::string& value) {
 
 std::string CallSessionStateToString(const CallSessionState state) {
   switch (state) {
-  case CallSessionState::Ringing:
-    return "ringing";
-  case CallSessionState::Active:
-    return "active";
-  case CallSessionState::Ended:
-    return "ended";
+    case CallSessionState::Ringing:
+      return "ringing";
+    case CallSessionState::Active:
+      return "active";
+    case CallSessionState::Ended:
+      return "ended";
   }
   return "ringing";
 }
@@ -99,18 +99,18 @@ CallSessionState CallSessionStateFromString(const std::string& value) {
 
 std::string CallParticipantStateToString(const CallParticipantState state) {
   switch (state) {
-  case CallParticipantState::Invited:
-    return "invited";
-  case CallParticipantState::Ringing:
-    return "ringing";
-  case CallParticipantState::Joined:
-    return "joined";
-  case CallParticipantState::Left:
-    return "left";
-  case CallParticipantState::Declined:
-    return "declined";
-  case CallParticipantState::Missed:
-    return "missed";
+    case CallParticipantState::Invited:
+      return "invited";
+    case CallParticipantState::Ringing:
+      return "ringing";
+    case CallParticipantState::Joined:
+      return "joined";
+    case CallParticipantState::Left:
+      return "left";
+    case CallParticipantState::Declined:
+      return "declined";
+    case CallParticipantState::Missed:
+      return "missed";
   }
   return "invited";
 }
@@ -136,50 +136,50 @@ CallParticipantState CallParticipantStateFromString(const std::string& value) {
 
 std::string CallControlTypeToWire(const CallControlType type) {
   switch (type) {
-  case CallControlType::CallInvite:
-    return "call_invite";
-  case CallControlType::CallAccept:
-    return "call_accept";
-  case CallControlType::CallDecline:
-    return "call_decline";
-  case CallControlType::CallLeave:
-    return "call_leave";
-  case CallControlType::CallRoster:
-    return "call_roster";
-  case CallControlType::CallMediaKey:
-    return "call_media_key";
-  case CallControlType::CallEnded:
-    return "call_ended";
-  case CallControlType::CallSummary:
-    return "call_summary";
-  case CallControlType::CallSdp:
-    return "call_sdp";
-  case CallControlType::CallIce:
-    return "call_ice";
-  case CallControlType::CallSfuAttach:
-    return "call_sfu_attach";
-  case CallControlType::CallSfuAttachFailed:
-    return "call_sfu_attach_failed";
-  case CallControlType::CallHopRefuse:
-    return "call_hop_refuse";
-  case CallControlType::CallVideoRefresh:
-    return "call_video_refresh";
-  case CallControlType::CallCircuitR1:
-    return "call_circuit_r1";
-  case CallControlType::CallPunchOffer:
-    return "call_punch_offer";
-  case CallControlType::CallPunchAnswer:
-    return "call_punch_answer";
-  case CallControlType::CallJoinRequest:
-    return "call_join_request";
-  case CallControlType::CallAnsweredElsewhere:
-    return "call_answered_elsewhere";
-  case CallControlType::CallCapsUpdate:
-    return "call_caps_update";
-  case CallControlType::CallConnectGiveUp:
-    return "call_connect_give_up";
-  case CallControlType::CallRemove:
-    return "call_remove";
+    case CallControlType::CallInvite:
+      return "call_invite";
+    case CallControlType::CallAccept:
+      return "call_accept";
+    case CallControlType::CallDecline:
+      return "call_decline";
+    case CallControlType::CallLeave:
+      return "call_leave";
+    case CallControlType::CallRoster:
+      return "call_roster";
+    case CallControlType::CallMediaKey:
+      return "call_media_key";
+    case CallControlType::CallEnded:
+      return "call_ended";
+    case CallControlType::CallSummary:
+      return "call_summary";
+    case CallControlType::CallSdp:
+      return "call_sdp";
+    case CallControlType::CallIce:
+      return "call_ice";
+    case CallControlType::CallSfuAttach:
+      return "call_sfu_attach";
+    case CallControlType::CallSfuAttachFailed:
+      return "call_sfu_attach_failed";
+    case CallControlType::CallHopRefuse:
+      return "call_hop_refuse";
+    case CallControlType::CallVideoRefresh:
+      return "call_video_refresh";
+    case CallControlType::CallCircuitR1:
+      return "call_circuit_r1";
+    case CallControlType::CallPunchOffer:
+      return "call_punch_offer";
+    case CallControlType::CallPunchAnswer:
+      return "call_punch_answer";
+    case CallControlType::CallJoinRequest:
+      return "call_join_request";
+    case CallControlType::CallAnsweredElsewhere:
+      return "call_answered_elsewhere";
+    case CallControlType::CallCapsUpdate:
+      return "call_caps_update";
+    case CallControlType::CallConnectGiveUp:
+      return "call_connect_give_up";
+    case CallControlType::CallRemove:
+      return "call_remove";
   }
   return "call_invite";
 }

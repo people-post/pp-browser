@@ -12,8 +12,7 @@ bool PlatformOpenUrl(const std::string& url) {
     return false;
   }
   if (!SDL_OpenURL(url.c_str())) {
-    logging::getLogger("PlatformOpenUrl").warning
-        << "SDL_OpenURL failed for " << url << ": " << SDL_GetError();
+    logging::getLogger("PlatformOpenUrl").warning << "SDL_OpenURL failed for " << url << ": " << SDL_GetError();
     return false;
   }
   return true;

@@ -16,7 +16,9 @@
 namespace pbr {
 namespace {
 
-ByteVector Filled(uint8_t byte) { return ByteVector(kRecoverySeedBytes, byte); }
+ByteVector Filled(uint8_t byte) {
+  return ByteVector(kRecoverySeedBytes, byte);
+}
 
 // BIP-0039 reference vectors for 256-bit entropy (trezor/python-mnemonic vectors.json).
 TEST(RecoveryPhraseTest, MatchesTheBip39Vectors) {
@@ -40,8 +42,9 @@ TEST(RecoveryPhraseTest, ATypedPhraseComesBackAsTheSeed) {
     EXPECT_EQ(DecodeRecoveryPhrase(phrase).value(), seed);
   }
   // As people type it: other spacing, capitals, a trailing newline.
-  auto typed = DecodeRecoveryPhrase("  Legal winner THANK year wave sausage worth useful\nlegal winner thank year wave "
-                                    "sausage worth useful legal winner thank year wave sausage worth title\n");
+  auto typed = DecodeRecoveryPhrase(
+      "  Legal winner THANK year wave sausage worth useful\nlegal winner thank year wave "
+      "sausage worth useful legal winner thank year wave sausage worth title\n");
   ASSERT_TRUE(typed) << typed.error().message;
   EXPECT_EQ(*typed, Filled(0x7f));
 }
@@ -49,13 +52,15 @@ TEST(RecoveryPhraseTest, ATypedPhraseComesBackAsTheSeed) {
 TEST(RecoveryPhraseTest, AMistypedPhraseIsRefusedAndSaysWhy) {
   const std::string good = EncodeRecoveryPhrase(Filled(0x7f)).value().Reveal();
   EXPECT_FALSE(DecodeRecoveryPhrase("legal winner thank")) << "too few words";
-  auto unknown = DecodeRecoveryPhrase("legal winnar thank year wave sausage worth useful legal winner thank year wave "
-                                      "sausage worth useful legal winner thank year wave sausage worth title");
+  auto unknown = DecodeRecoveryPhrase(
+      "legal winnar thank year wave sausage worth useful legal winner thank year wave "
+      "sausage worth useful legal winner thank year wave sausage worth title");
   ASSERT_FALSE(unknown);
   EXPECT_NE(unknown.error().message.find("word 2"), std::string::npos) << unknown.error().message;
   // Two words swapped: every word is real, the checksum catches it.
-  auto swapped = DecodeRecoveryPhrase("winner legal thank year wave sausage worth useful legal winner thank year wave "
-                                      "sausage worth useful legal winner thank year wave sausage worth title");
+  auto swapped = DecodeRecoveryPhrase(
+      "winner legal thank year wave sausage worth useful legal winner thank year wave "
+      "sausage worth useful legal winner thank year wave sausage worth title");
   ASSERT_FALSE(swapped);
   EXPECT_NE(swapped.error().message.find("does not check out"), std::string::npos);
   EXPECT_FALSE(EncodeRecoveryPhrase(ByteVector(16, 0))) << "only a 256-bit seed";
@@ -69,7 +74,8 @@ TEST(RecoverySeedTest, TheSameSeedDerivesTheSameAccountEveryTime) {
   EXPECT_EQ(a.locker_key, b.locker_key);
   const auto first = MlDsa::GenerateKeyPairFromSeed(a.account_ml_dsa_seed).value();
   const auto again = MlDsa::GenerateKeyPairFromSeed(b.account_ml_dsa_seed).value();
-  EXPECT_EQ(AccountIdFromMlDsaPublicKey(first.public_key).value(), AccountIdFromMlDsaPublicKey(again.public_key).value());
+  EXPECT_EQ(AccountIdFromMlDsaPublicKey(first.public_key).value(),
+            AccountIdFromMlDsaPublicKey(again.public_key).value());
   EXPECT_EQ(HybridKem::GenerateKeyPairFromSeed(a.account_ml_kem_coins)->public_key,
             HybridKem::GenerateKeyPairFromSeed(b.account_ml_kem_coins)->public_key);
 

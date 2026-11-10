@@ -5,13 +5,13 @@
 #include <ui/render/Renderer_GL3.h>
 
 #if defined(UI_GL_ES3)
-	#if defined(__APPLE__) && TARGET_OS_IPHONE
-		#include <OpenGLES/ES3/gl.h>
-	#else
-		#include <GLES3/gl3.h>
-	#endif
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+#include <OpenGLES/ES3/gl.h>
 #else
-	#include "Include_GL3.h"
+#include <GLES3/gl3.h>
+#endif
+#else
+#include "Include_GL3.h"
 #endif
 
 #include <ui/dom/Element.h>
@@ -166,8 +166,7 @@ void CallVideoTileRenderer::DrawTile(ui::Element* element, GpuTile& tile, const 
     }
   } else if (tile.tex_width > 0 && tile.tex_height > 0) {
     // Letterbox / pillarbox into the tile so frames keep their native aspect ratio.
-    const float tex_aspect =
-        static_cast<float>(tile.tex_width) / static_cast<float>(tile.tex_height);
+    const float tex_aspect = static_cast<float>(tile.tex_width) / static_cast<float>(tile.tex_height);
     const float box_aspect = size.x / size.y;
     if (tex_aspect > box_aspect) {
       draw_size.y = size.x / tex_aspect;

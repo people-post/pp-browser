@@ -15,7 +15,9 @@ namespace {
 
 using pbr::MarkdownToRml;
 
-std::string Rml(const std::string& md) { return MarkdownToRml(md).rml; }
+std::string Rml(const std::string& md) {
+  return MarkdownToRml(md).rml;
+}
 
 std::string LinkSpan(int index, const std::string& label) {
   return "<span class=\"chat-link\" data-event-click=\"open_chat_link('__ENTRY__', " + std::to_string(index) + ")\">" +
@@ -76,15 +78,39 @@ TEST(MarkdownToRmlTest, Headings) {
 }
 
 TEST(MarkdownToRmlTest, Lists) {
-  EXPECT_EQ(Rml("- a\n* b\n+ c"), "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b</div></li><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">c</div></li></ul>");
-  EXPECT_EQ(Rml("1. a\n2. b"), "<ol><li><span class=\"md-marker\">1.</span><div class=\"md-item\">a</div></li><li><span class=\"md-marker\">2.</span><div class=\"md-item\">b</div></li></ol>");
-  EXPECT_EQ(Rml("- a\n  - b\n    - c\n- d"), "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">c</div></li></ul></div></li></ul></div></li><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">d</div></li></ul>");
-  EXPECT_EQ(Rml("1. a\n   - b\n2. c"), "<ol><li><span class=\"md-marker\">1.</span><div class=\"md-item\">a<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b</div></li></ul></div></li><li><span class=\"md-marker\">2.</span><div class=\"md-item\">c</div></li></ol>");
-  EXPECT_EQ(Rml("- a\n\n- b"), "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b</div></li></ul>");
-  EXPECT_EQ(Rml("- a\n  more\n- b"), "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a<br />more</div></li><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b</div></li></ul>");
-  EXPECT_EQ(Rml("Intro:\n- a"), "<p>Intro:</p><ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li></ul>");
-  EXPECT_EQ(Rml("- a\n1. b"), "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li></ul><ol><li><span class=\"md-marker\">1.</span><div class=\"md-item\">b</div></li></ol>");
-  EXPECT_EQ(Rml("- a\n\ntext"), "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li></ul><p>text</p>");
+  EXPECT_EQ(Rml("- a\n* b\n+ c"),
+            "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li><li><span "
+            "class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b</div></li><li><span "
+            "class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">c</div></li></ul>");
+  EXPECT_EQ(Rml("1. a\n2. b"),
+            "<ol><li><span class=\"md-marker\">1.</span><div class=\"md-item\">a</div></li><li><span "
+            "class=\"md-marker\">2.</span><div class=\"md-item\">b</div></li></ol>");
+  EXPECT_EQ(Rml("- a\n  - b\n    - c\n- d"),
+            "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a<ul><li><span "
+            "class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b<ul><li><span "
+            "class=\"md-marker\">\xE2\x80\xA2</span><div "
+            "class=\"md-item\">c</div></li></ul></div></li></ul></div></li><li><span "
+            "class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">d</div></li></ul>");
+  EXPECT_EQ(Rml("1. a\n   - b\n2. c"),
+            "<ol><li><span class=\"md-marker\">1.</span><div class=\"md-item\">a<ul><li><span "
+            "class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b</div></li></ul></div></li><li><span "
+            "class=\"md-marker\">2.</span><div class=\"md-item\">c</div></li></ol>");
+  EXPECT_EQ(Rml("- a\n\n- b"),
+            "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li><li><span "
+            "class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b</div></li></ul>");
+  EXPECT_EQ(
+      Rml("- a\n  more\n- b"),
+      "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a<br />more</div></li><li><span "
+      "class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b</div></li></ul>");
+  EXPECT_EQ(
+      Rml("Intro:\n- a"),
+      "<p>Intro:</p><ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li></ul>");
+  EXPECT_EQ(
+      Rml("- a\n1. b"),
+      "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li></ul><ol><li><span "
+      "class=\"md-marker\">1.</span><div class=\"md-item\">b</div></li></ol>");
+  EXPECT_EQ(Rml("- a\n\ntext"),
+            "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li></ul><p>text</p>");
   EXPECT_EQ(Rml("**not a list**"), "<p><strong>not a list</strong></p>");
 }
 
@@ -108,7 +134,8 @@ TEST(MarkdownToRmlTest, ListDepthIsCapped) {
 }
 
 TEST(MarkdownToRmlTest, FencedCode) {
-  EXPECT_EQ(Rml("```cpp\nint x = 1 < 2;\n\n  y();\n```"), "<div class=\"code-block\">int x = 1 &lt; 2;\n\n  y();</div>");
+  EXPECT_EQ(Rml("```cpp\nint x = 1 < 2;\n\n  y();\n```"),
+            "<div class=\"code-block\">int x = 1 &lt; 2;\n\n  y();</div>");
   EXPECT_EQ(Rml("~~~\n**x**\n~~~\nafter"), "<div class=\"code-block\">**x**</div><p>after</p>");
   EXPECT_EQ(Rml("```\nunterminated\n"), "<div class=\"code-block\">unterminated</div>");
   EXPECT_EQ(Rml("```"), "<div class=\"code-block\"></div>");
@@ -304,9 +331,12 @@ TEST(MarkdownToRmlTest, EveryPrefixIsWellFormed) {
 // Random mixes of every marker the converter reacts to. Fixed seed: a failure is reproducible.
 TEST(MarkdownToRmlTest, RandomMarkerSoupIsWellFormed) {
   const std::vector<std::string> pieces = {
-      "*",  "**", "_",   "__",  "`",    "```",  "~~~", "[",    "]",   "(",      ")",  "![",  "](",
-      "\\", "\n", "\n\n", " ",  "  ",   "- ",   "1. ", "> ",   "# ",  "|",      "---", "a",  "b c",
-      "<",  ">",  "&",   "\"", "'",    "{{",   "}}",  "你好", "https://x.com/a", "http://x", "javascript:", "onclick=",
+      "*",        "**",          "_",        "__", "`",   "```",  "~~~",
+      "[",        "]",           "(",        ")",  "![",  "](",   "\\",
+      "\n",       "\n\n",        " ",        "  ", "- ",  "1. ",  "> ",
+      "# ",       "|",           "---",      "a",  "b c", "<",    ">",
+      "&",        "\"",          "'",        "{{", "}}",  "你好", "https://x.com/a",
+      "http://x", "javascript:", "onclick=",
   };
   std::mt19937 rng(20260930);
   for (int round = 0; round < 20000; ++round) {
@@ -334,11 +364,12 @@ TEST(MarkdownToRmlTest, AdversarialInputReturnsPromptly) {
     return s;
   };
   const std::vector<std::string> inputs = {
-      rep("*", 100000),        rep("[", 100000),      rep("](", 100000),      rep("![", 100000),
-      rep("`", 100000),        rep("_", 100000),      rep("*a ", 100000),     rep("[a](", 100000),
-      rep("**a *b ", 100000),  rep("`a``b```", 100000), rep("https://", 100000), rep("a*b_c[d](e)", 100000),
-      rep("- x\n", 100000),    rep("> x\n", 100000),  rep("| a |\n", 100000), rep("```\n", 100000),
-      rep("  - x\n", 100000),  rep("[a](https://x.com/(", 100000),
+      rep("*", 100000),        rep("[", 100000),        rep("](", 100000),
+      rep("![", 100000),       rep("`", 100000),        rep("_", 100000),
+      rep("*a ", 100000),      rep("[a](", 100000),     rep("**a *b ", 100000),
+      rep("`a``b```", 100000), rep("https://", 100000), rep("a*b_c[d](e)", 100000),
+      rep("- x\n", 100000),    rep("> x\n", 100000),    rep("| a |\n", 100000),
+      rep("```\n", 100000),    rep("  - x\n", 100000),  rep("[a](https://x.com/(", 100000),
   };
   for (const auto& md : inputs) {
     const auto start = std::chrono::steady_clock::now();

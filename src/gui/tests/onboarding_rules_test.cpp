@@ -13,8 +13,7 @@ TEST(OnboardingRulesTest, StartsAtNameForAFreshAccountAndAtAccountWhenRegistered
 TEST(OnboardingRulesTest, NeverBeforeIdentityOrAfterCompletion) {
   EXPECT_EQ(OnboardingStartStep({.identity_ready = false}), OnboardingStep::None);
   EXPECT_EQ(OnboardingStartStep({.identity_ready = true, .completed = true}), OnboardingStep::None);
-  EXPECT_EQ(OnboardingStartStep({.identity_ready = true, .registered = true, .completed = true}),
-            OnboardingStep::None);
+  EXPECT_EQ(OnboardingStartStep({.identity_ready = true, .registered = true, .completed = true}), OnboardingStep::None);
 }
 
 TEST(OnboardingRulesTest, StepsRunNameAccountFriendsThenEnd) {

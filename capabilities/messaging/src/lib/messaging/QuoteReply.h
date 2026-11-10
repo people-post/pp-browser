@@ -16,7 +16,8 @@ struct QuoteReplyParts {
 };
 
 /** `quoted` is cut to `max_quote_chars` code points (an ellipsis marks the cut). */
-inline std::string ComposeQuoteReply(const std::string& reply, const std::string& quoted, const size_t max_quote_chars = 300) {
+inline std::string ComposeQuoteReply(const std::string& reply, const std::string& quoted,
+                                     const size_t max_quote_chars = 300) {
   std::string out = reply + "\n\n> ";
   size_t chars = 0;
   for (size_t i = 0; i < quoted.size(); ++i) {

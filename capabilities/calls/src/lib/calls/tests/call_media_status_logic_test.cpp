@@ -14,8 +14,8 @@ TEST(CallMediaStatusLogicTest, PlannerProgressMapsToStatus) {
   EXPECT_EQ(MediaStatusForHopProgress(CallHopPlannerPhase::Idle), std::nullopt);
   EXPECT_EQ(MediaStatusForHopProgress(CallHopPlannerPhase::Stopping), std::nullopt);
 
-  for (const auto phase : {CallDirectPlannerPhase::Arming, CallDirectPlannerPhase::KeyWait,
-                           CallDirectPlannerPhase::Connecting}) {
+  for (const auto phase :
+       {CallDirectPlannerPhase::Arming, CallDirectPlannerPhase::KeyWait, CallDirectPlannerPhase::Connecting}) {
     EXPECT_EQ(MediaStatusForDirectProgress(phase), CallMediaStatus::DirectConnecting);
   }
   EXPECT_EQ(MediaStatusForDirectProgress(CallDirectPlannerPhase::DegradedTxOnly), CallMediaStatus::DegradedTxOnly);
@@ -39,12 +39,12 @@ TEST(CallMediaStatusLogicTest, SoftMigrateArmsFromDirectStatusesOnly) {
 }
 
 TEST(CallMediaStatusLogicTest, DirectArmingRequestHonoredDuringSetUpOnly) {
-  for (const auto phase : {CallPhase::Accepting, CallPhase::JoinedLocal, CallPhase::MediaPending,
-                           CallPhase::MediaConnecting}) {
+  for (const auto phase :
+       {CallPhase::Accepting, CallPhase::JoinedLocal, CallPhase::MediaPending, CallPhase::MediaConnecting}) {
     EXPECT_TRUE(ShouldHonorDirectArmingRequest(phase)) << static_cast<int>(phase);
   }
-  for (const auto phase : {CallPhase::Idle, CallPhase::Ringing, CallPhase::OutboundCalling, CallPhase::InCall,
-                           CallPhase::ConnectFailed}) {
+  for (const auto phase :
+       {CallPhase::Idle, CallPhase::Ringing, CallPhase::OutboundCalling, CallPhase::InCall, CallPhase::ConnectFailed}) {
     EXPECT_FALSE(ShouldHonorDirectArmingRequest(phase)) << static_cast<int>(phase);
   }
 }

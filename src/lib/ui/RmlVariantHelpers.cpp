@@ -8,22 +8,22 @@ std::optional<int> EventArgAsInt(const ui::VariantList& args, size_t index) {
   }
   const ui::Variant& value = args[index];
   switch (value.GetType()) {
-  case ui::Variant::INT:
-    return value.Get<int>();
-  case ui::Variant::INT64:
-    return static_cast<int>(value.Get<int64_t>());
-  case ui::Variant::FLOAT:
-    return static_cast<int>(value.Get<float>());
-  case ui::Variant::DOUBLE:
-    return static_cast<int>(value.Get<double>());
-  case ui::Variant::STRING:
-    try {
-      return std::stoi(std::string(value.Get<ui::String>().c_str()));
-    } catch (...) {
+    case ui::Variant::INT:
+      return value.Get<int>();
+    case ui::Variant::INT64:
+      return static_cast<int>(value.Get<int64_t>());
+    case ui::Variant::FLOAT:
+      return static_cast<int>(value.Get<float>());
+    case ui::Variant::DOUBLE:
+      return static_cast<int>(value.Get<double>());
+    case ui::Variant::STRING:
+      try {
+        return std::stoi(std::string(value.Get<ui::String>().c_str()));
+      } catch (...) {
+        return std::nullopt;
+      }
+    default:
       return std::nullopt;
-    }
-  default:
-    return std::nullopt;
   }
 }
 

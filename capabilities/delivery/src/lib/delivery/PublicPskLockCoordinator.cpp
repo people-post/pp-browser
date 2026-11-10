@@ -128,9 +128,9 @@ Roe<void> PublicPskLockCoordinator::EnsureConversationKem(PeerSessionRecord& rec
 }
 
 Roe<PublicPskRotatePlan> PublicPskLockCoordinator::PrepareRotate(const std::string& thread_id,
-                                                                const PublicPskRotateKind kind,
-                                                                const ByteVector& peer_account_kem_pk,
-                                                                const int64_t now_ms) {
+                                                                 const PublicPskRotateKind kind,
+                                                                 const ByteVector& peer_account_kem_pk,
+                                                                 const int64_t now_ms) {
   (void)now_ms;
   auto key = TargetKeyForPublicThread(thread_id);
   if (!key) {
@@ -213,13 +213,13 @@ Roe<PublicPskRotatePlan> PublicPskLockCoordinator::PrepareRotate(const std::stri
 }
 
 Roe<PublicPskRotatePlan> PublicPskLockCoordinator::PrepareLock(const std::string& thread_id,
-                                                              const ByteVector& peer_account_kem_pk,
-                                                              const int64_t now_ms) {
+                                                               const ByteVector& peer_account_kem_pk,
+                                                               const int64_t now_ms) {
   return PrepareRotate(thread_id, PublicPskRotateKind::Lock, peer_account_kem_pk, now_ms);
 }
 
 Roe<PublicPskRotatePlan> PublicPskLockCoordinator::PrepareAutoRekey(const std::string& thread_id,
-                                                                   const int64_t now_ms) {
+                                                                    const int64_t now_ms) {
   return PrepareRotate(thread_id, PublicPskRotateKind::Auto, {}, now_ms);
 }
 
@@ -266,12 +266,10 @@ Roe<void> PublicPskLockCoordinator::AbortPrepare(const PublicPskRotatePlan& plan
   return {};
 }
 
-Roe<PublicKeyScope> PublicPskLockCoordinator::ApplyInbound(const std::string& thread_id,
-                                                           const RelayEnvelope& envelope,
+Roe<PublicKeyScope> PublicPskLockCoordinator::ApplyInbound(const std::string& thread_id, const RelayEnvelope& envelope,
                                                            const ThreadMessage& message,
                                                            const ByteVector& local_account_kem_sk,
-                                                           const std::string& local_account_id,
-                                                           const int64_t now_ms) {
+                                                           const std::string& local_account_id, const int64_t now_ms) {
   auto key = TargetKeyForPublicThread(thread_id);
   if (!key) {
     return key.error();

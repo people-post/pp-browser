@@ -10,9 +10,15 @@ using Clock = MobilityClassifier::Clock;
 using std::chrono::minutes;
 using std::chrono::seconds;
 
-MobilityAttachment Wifi() { return {true, false, false}; }
-MobilityAttachment Cellular() { return {true, true, true}; }
-MobilityAttachment Hotspot() { return {true, false, true}; }
+MobilityAttachment Wifi() {
+  return {true, false, false};
+}
+MobilityAttachment Cellular() {
+  return {true, true, true};
+}
+MobilityAttachment Hotspot() {
+  return {true, false, true};
+}
 
 TEST(MobilityClassifierTest, UnknownUntilTheFirstAttachment) {
   MobilityClassifier c;
@@ -40,7 +46,7 @@ TEST(MobilityClassifierTest, ChurnMakesAPlainAttachmentMobile) {
   c.OnAttachment(Wifi(), true, t0 + minutes(1));
   c.OnAttachment(Wifi(), true, t0 + minutes(3));
   EXPECT_EQ(c.Evaluate(t0 + minutes(3)), MobilityClass::Stationary) << "two changes: not yet";
-  c.OnObservedAddressChanged(t0 + minutes(4));  // a NAT rebind counts too
+  c.OnObservedAddressChanged(t0 + minutes(4)); // a NAT rebind counts too
   EXPECT_EQ(c.Evaluate(t0 + minutes(4)), MobilityClass::Mobile);
 }
 

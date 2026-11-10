@@ -20,9 +20,9 @@ body {
   background-color: #f2f2f7;
 }
 
-/* The home-indicator band under the grouped pages (Me and its detail pages, New chat); clear elsewhere. */
-.shell-home-indicator-strip.shell-home-indicator-strip--me,
-.shell-home-indicator-strip.shell-home-indicator-strip--new_chat {
+/* The home-indicator band under the grouped Me pages; clear elsewhere. New chat's list scrolls under the frosted bar
+   and under the home indicator alike (Kenneth 2026-11-09: the opaque band there broke the frosted look). */
+.shell-home-indicator-strip.shell-home-indicator-strip--me {
   background-color: #f2f2f7;
 }
 
@@ -757,12 +757,18 @@ select selectbox option:hover {
   background-color: #f2f2f7;
 }
 
-.shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome {
-  background-color: #f2f2f7;
+.shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome,
+.shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome--frost {
+  background-color: transparent;
   border-width: 0;
 }
 
-.shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome--frost {
+/* The chat header's and the composer's material: the bar colour, see-through and blurred on the frosted surface. */
+.bar-material {
+  background-color: #f2f2f7;
+}
+
+.bar-material--frost {
   background-color: #f2f2f7c7;
 }
 
@@ -839,7 +845,7 @@ select selectbox option:hover {
   color: #007aff;
 }
 
-.large-title, .pane-nav-title, .pane-nav-avatar-name {
+.large-title, .pane-nav-title {
   color: #000000;
 }
 
@@ -913,12 +919,8 @@ select selectbox option:hover {
 }
 
 .shell-composer-mount.surface-chrome {
-  background-color: #f2f2f7;
+  background-color: transparent;
   border-width: 0;
-}
-
-.shell-composer-mount.surface-chrome--frost {
-  background-color: #f2f2f7c7;
 }
 
 .shell-composer-mount.surface-chrome .prompt-composer-pill {
@@ -1132,6 +1134,10 @@ select selectbox option:hover {
   background-color: transparent;
 }
 
+.shell-dialog.shell-pin-gate--frost {
+  background-color: transparent;
+}
+
 .shell-dialog {
   background-color: #ffffff;
 }
@@ -1305,6 +1311,17 @@ input.checkbox:checked {
 .shell-call-minimized-chip {
   background-color: #ffffff;
   border: 1dp #3c3c434a;
+}
+
+/* #189: the edge handle is the call green with a white phone (iOS's "call in progress" colour): visible on any page and
+   read as "the live call", never as hang-up (Kenneth 2026-11-09: red would scare a tap). */
+.shell-call-minimized-chip--handle {
+  background-color: #34c759;
+  border-color: #34c759;
+}
+
+.shell-call-minimized-icon {
+  image-color: #ffffff;
 }
 
 .shell-call-minimized-title {
@@ -2612,6 +2629,66 @@ input.checkbox:checked {
   image-color: #2e8dff;
 }
 
+/* The voice message bubble (components.rcss): received = the accent on the received bubble, own = white on the own one. */
+.chat-voice-card {
+  background-color: #ffffff;
+  color: #000000;
+}
+
+.chat-voice-bar {
+  background-color: #c7ccd4;
+}
+
+.chat-voice-bars--played .chat-voice-bar {
+  background-color: #007aff;
+}
+
+.chat-voice-knob {
+  background-color: #007aff;
+}
+
+.chat-voice-card .chat-voice-play svg {
+  image-color: #007aff;
+}
+
+.chat-voice-badge {
+  background-color: #007aff;
+  border: 1.5dp #ffffff;
+}
+
+.chat-voice-badge-mic {
+  image-color: #ffffff;
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-play {
+  background-color: transparent;
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-play svg {
+  image-color: #ffffff;
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-bar {
+  background-color: #ffffff80;
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-bars--played .chat-voice-bar {
+  background-color: #ffffff;
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-knob {
+  background-color: #ffffff;
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-badge {
+  background-color: #ffffff;
+  border: 1.5dp #2e8dff;
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-card .chat-voice-badge-mic {
+  image-color: #2e8dff;
+}
+
 .shell-chat-overlay .message-row-user .chat-voice-fill {
   background-color: #ffffff;
 }
@@ -2657,22 +2734,45 @@ input.checkbox:checked {
   color: #3c3c434c;
 }
 
+/* Phone composer (TODO #202): the pill is a floating card with a soft shadow, the microphone / Send button beside it an
+   accent disc with the same shadow, white glyph. The plus is a flat glyph. */
 .shell-chat-overlay .shell-composer-mount .prompt-composer-pill,
 .ask-ai .prompt-composer-pill {
   background-color: #ffffff;
   border: 1dp #3c3c434a;
-  box-shadow: none;
+  box-shadow: 0 2dp 10dp #00000029;
 }
 
-/* Phones: Send is a clear 44dp target round its 32dp accent disc (components.rcss). */
+.shell-chat-overlay .prompt-composer-pill .prompt-attach-btn,
+.ask-ai .prompt-composer-pill .prompt-attach-btn {
+  background-color: #ffffff;
+  border: 1dp #3c3c434a;
+  box-shadow: 0 2dp 10dp #00000029;
+}
+
+.shell-chat-overlay .prompt-emoji-btn .prompt-icon-home-emoji,
+.ask-ai .prompt-emoji-btn .prompt-icon-home-emoji {
+  background-color: #007aff1f;
+  image-color: #007aff;
+}
+
 .shell-chat-overlay .prompt-composer-row .prompt-send-btn,
+.shell-chat-overlay .prompt-composer-row .prompt-mic-btn,
 .ask-ai .prompt-composer-row .prompt-send-btn {
-  background-color: transparent;
+  background-color: #007aff;
+  box-shadow: 0 2dp 10dp #00000029;
+}
+
+/* Empty AI field (TODO #205): the same round slot, muted and flat. */
+.shell-chat-overlay .prompt-composer-row .prompt-send-btn--idle,
+.ask-ai .prompt-composer-row .prompt-send-btn--idle {
+  background-color: #c7c7cc;
+  box-shadow: none;
 }
 
 .shell-chat-overlay .prompt-send-disc,
 .ask-ai .prompt-send-disc {
-  background-color: #007aff;
+  background-color: transparent;
 }
 
 .shell-chat-overlay .prompt-icon-v2,
@@ -2682,8 +2782,8 @@ input.checkbox:checked {
   image-color: #3c3c4399;
 }
 
-.shell-chat-overlay .prompt-voice-toggle-btn .prompt-icon-v2 {
-  image-color: #007aff;
+.shell-chat-overlay .prompt-mic-btn .prompt-icon-v2 {
+  image-color: #ffffff;
 }
 
 /* The phone Home's box is the whole composer (the picture chip sits inside it); the pill in it is clear. */
@@ -2703,8 +2803,12 @@ input.checkbox:checked {
   image-color: #3c3c4399;
 }
 
+.shell-layer-compact .home-composer-mount .prompt-emoji-btn .prompt-icon-home-emoji {
+  background-color: #007aff1f;
+}
+
 .shell-layer-compact .home-composer-mount .prompt-emoji-btn svg {
-  image-color: #3c3c4399;
+  image-color: #007aff;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {
@@ -2713,6 +2817,10 @@ input.checkbox:checked {
 
 .shell-layer-compact .home-composer-mount .prompt-send-disc {
   background-color: #007aff;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-send-btn--idle .prompt-send-disc {
+  background-color: #c7c7cc;
 }
 
 /* Grouped lists on phones: Me tab and settings pages (DESIGN-pp-ui 8.7 / 8.10); geometry in components.rcss. */
@@ -3050,10 +3158,14 @@ input.checkbox:checked {
 .call-phone-tile-note,
 .call-phone-hint,
 .call-phone-debug,
-.call-phone-tip,
 .call-phone-remote-note,
 .call-phone-step--done .call-phone-step-text {
   color: #ffffffb3;
+}
+
+/* The other party's name stands out from "You" (both are .call-phone-pair-name). */
+.call-phone-pair-name.call-phone-pair-name--peer {
+  color: #ffffff;
 }
 
 .call-phone-sealed svg {
@@ -3195,10 +3307,6 @@ input.checkbox:checked {
   border-color: transparent #40c8e0 #40c8e0 #40c8e0;
 }
 
-.call-phone-tip-text {
-  color: #40c8e0;
-}
-
 .call-phone-card {
   background-color: #161819f7;
 }
@@ -3271,6 +3379,11 @@ input.checkbox:checked {
 
 .call-phone-avatar--group {
   background-color: #ff9500;
+}
+
+/* The unknown caller: the blue of avatar-tone-0 (the class is on the element), a touch lighter at the top. */
+.call-phone-avatar--unknown {
+  decorator: linear-gradient(to bottom, #2b90ff, #0066d9);
 }
 
 .call-phone-sheet-lead,
@@ -3417,30 +3530,6 @@ input.checkbox:checked {
   decorator: linear-gradient(to bottom, #78788033, #78788033);
 }
 
-/* Chats header plus (B3): a flat teal-tint disc with a teal plus; no 3-D gradient, no shadow. */
-.shell-layer-compact .pane-nav-plus .shell-circle-btn-face,
-.shell-layer-compact .pane-nav-plus:active .shell-circle-btn-face {
-  background-color: #30b0c71f;
-  decorator: none;
-  box-shadow: none;
-}
-
-.shell-layer-compact .pane-nav-actions .pane-nav-plus .shell-circle-btn-face svg {
-  image-color: #30b0c7;
-}
-
-.pane-nav-link-icon--ok {
-  image-color: #30b0c7;
-}
-
-.pane-nav-link-icon--offline {
-  image-color: #ff3b30;
-}
-
-.pane-nav-link-text {
-  color: #3c3c4399;
-}
-
 .shell-layer-compact .shell-circle-btn .shell-circle-btn-face svg {
   image-color: #000000;
 }
@@ -3460,14 +3549,25 @@ input.checkbox:checked {
   color: #000000;
 }
 
-/* The ask-AI panel's input bar: the bar colour, frosted with Transparency on (like a chat's composer). */
-.ask-ai-composer {
-  background-color: #f2f2f7;
+.ai-drawer-me-link-icon--ok {
+  image-color: #30b0c7;
 }
 
-.shell-page-sheet--frost .ask-ai-composer {
-  background-color: #f2f2f7c7;
-  backdrop-filter: blur(20px);
+.ai-drawer-me-link-icon--connecting {
+  image-color: #ff9500;
+}
+
+.ai-drawer-me-link-icon--offline {
+  image-color: #ff3b30;
+}
+
+.ai-drawer-me-link-text {
+  color: #3c3c4399;
+}
+
+/* The ask-AI panel's input bar is clear (TODO #202): a floating pill and two round buttons over the bubbles. */
+.ask-ai-composer {
+  background-color: transparent;
 }
 
 /* The drawer's top bar and "you" row: the bar colour, frosted with Transparency on (like .pane-nav-bg). */
@@ -3534,5 +3634,66 @@ input.checkbox:checked {
 
 .context-menu-layer--popover-left .context-menu-item-icon {
   background-color: #7878801f;
+}
+
+/* Avatar crop page: always dark, like the scanner. */
+.avatar-crop,
+.avatar-crop-bg,
+.avatar-crop-stage {
+  background-color: #000000;
+}
+
+.avatar-crop-title,
+.avatar-crop-loading,
+.avatar-crop-btn {
+  color: #ffffff;
+}
+
+.avatar-crop-btn {
+  background-color: transparent;
+}
+
+.avatar-crop-btn--done {
+  color: #007aff;
+}
+
+.avatar-crop-pill {
+  background-color: #00000080;
+  color: #ffffff;
+}
+
+/* Profile page camera badge and the photo viewer. */
+.me-profile-avatar-badge {
+  background-color: #007aff;
+  border-color: #ffffff;
+}
+
+.me-profile-avatar-badge svg {
+  image-color: #ffffff;
+}
+
+.avatar-view-bg {
+  background-color: #000000;
+}
+
+.avatar-view-close,
+.avatar-view-close:active,
+.avatar-crop-close,
+.avatar-crop-close:active {
+  background-color: transparent;
+}
+
+.avatar-view-close .shell-circle-btn-face,
+.avatar-view-close:active .shell-circle-btn-face,
+.avatar-crop-close .shell-circle-btn-face,
+.avatar-crop-close:active .shell-circle-btn-face {
+  background-color: #00000066;
+  decorator: none;
+  box-shadow: none;
+}
+
+.avatar-view-close .shell-circle-btn-face svg,
+.avatar-crop-close .shell-circle-btn-face svg {
+  image-color: #ffffff;
 }
 }

@@ -7,8 +7,8 @@
 
 namespace pbr {
 
-AccountKeyResolver::AccountKeyResolver(PeerSigningKeyStore& signing_keys, PeerKemKeyStore& kem_keys,
-                                       PeerCards& cards, mesh::IDirectoryClient& directory)
+AccountKeyResolver::AccountKeyResolver(PeerSigningKeyStore& signing_keys, PeerKemKeyStore& kem_keys, PeerCards& cards,
+                                       mesh::IDirectoryClient& directory)
     : signing_keys_(signing_keys), kem_keys_(kem_keys), cards_(cards), directory_(directory) {
   redirectLogger("AccountKeyResolver");
 }
@@ -45,7 +45,7 @@ void AccountKeyResolver::LoadKeptCards() {
 }
 
 Roe<PeerCardRecord> AccountKeyResolver::AddAccountCard(const AccountCard& card, int64_t now_ms,
-                                                      const std::string& source) {
+                                                       const std::string& source) {
   auto kept = cards_.AddAccountCard(card, now_ms, source);
   if (!kept) {
     return kept.error();
@@ -64,7 +64,7 @@ Roe<PeerCardRecord> AccountKeyResolver::AddKeyCard(const KeyCard& card, const st
 }
 
 Roe<PeerCardRecord> AccountKeyResolver::AddCarriedCard(const Object& json, int64_t now_ms, const std::string& source,
-                                                      const std::string& account_id) {
+                                                       const std::string& account_id) {
   if (json.contains("card_signature_b64")) {
     auto card = AccountCardFromJson(json);
     if (!card) {
@@ -133,7 +133,7 @@ Roe<PeerSigningKeyRecord> AccountKeyResolver::SigningView::Resolve(const std::st
 }
 
 Roe<PeerSigningKeyRecord> AccountKeyResolver::KeptSigningView::Resolve(const std::string& kind,
-                                                                     const std::string& value) {
+                                                                       const std::string& value) {
   if (auto cached = owner_.signing_keys_.Get(kind, value)) {
     return *cached;
   }

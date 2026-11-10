@@ -108,20 +108,23 @@ bool AskAiPanel::Register(ui::Context* context) {
     ctor.Bind("has_picture", &view_.has_picture);
     ctor.Bind("picture_preparing", &view_.picture_preparing);
     ctor.Bind("picture_src", &view_.picture_src);
-    ctor.BindEventCallback("ask_ai_attach", DataEventAt([this](ui::Event& ev) { ShowAttachMenu(ev.GetCurrentElement()); }));
+    ctor.BindEventCallback("ask_ai_attach",
+                           DataEventAt([this](ui::Event& ev) { ShowAttachMenu(ev.GetCurrentElement()); }));
     ctor.BindEventCallback("ask_ai_emoji", DataEvent([this] {
-      host_.AskAiOpenEmoji([this](const std::string& emoji) { InsertEmoji(emoji); });
-    }));
+                             host_.AskAiOpenEmoji([this](const std::string& emoji) { InsertEmoji(emoji); });
+                           }));
     ctor.BindEventCallback("ask_ai_remove_picture", DataEvent([this] { RemovePicture(); }));
     ctor.BindEventCallback("ask_ai_send", DataEvent([this] { Send(); }));
     ctor.BindEventCallback("ask_ai_intro_seen", DataEvent([this] { DismissIntro(); }));
     ctor.BindEventCallback("ask_ai_support", DataEvent([this] { AskSupport(); }));
     ctor.BindEventCallback("ask_ai_open_in_chat", DataEvent([this] { OpenInChat(); }));
     // The answers' own buttons and links (their markup is the chat's, bound to this model here).
-    ctor.BindEventCallback("send_chat_action", DataEvent<std::string, int>(
-        [this](const std::string& entry_id, const int index) { RunAction(entry_id, index); }));
-    ctor.BindEventCallback("open_chat_link", DataEvent<std::string, int>(
-        [this](const std::string& entry_id, const int index) { OpenLink(entry_id, index); }));
+    ctor.BindEventCallback("send_chat_action",
+                           DataEvent<std::string, int>(
+                               [this](const std::string& entry_id, const int index) { RunAction(entry_id, index); }));
+    ctor.BindEventCallback("open_chat_link",
+                           DataEvent<std::string, int>(
+                               [this](const std::string& entry_id, const int index) { OpenLink(entry_id, index); }));
   });
 }
 
@@ -308,8 +311,9 @@ void AskAiPanel::ShowAttachMenu(ui::Element* anchor) {
     };
   };
   ContextMenuHost::Instance().ShowActionsPopoverLeftAligned(
-      anchor, AgentTurnController::HomeAttachActions([this]() { PickPicture(/*camera=*/true); }, pick_from(false),
-                                                     pick_from(true)),
+      anchor,
+      AgentTurnController::HomeAttachActions([this]() { PickPicture(/*camera=*/true); }, pick_from(false),
+                                             pick_from(true)),
       {}, /*above=*/true);
 }
 
@@ -324,8 +328,8 @@ void AskAiPanel::InsertEmoji(const std::string& emoji) {
     return;
   }
   // The field shows it now (the model copies on the next update); the caret goes to its end.
-  if (auto* input = ui_dynamic_cast<ui::ElementFormControlTextArea*>(
-          context_->GetDocument(0)->GetElementById("ask-ai-input"))) {
+  if (auto* input =
+          ui_dynamic_cast<ui::ElementFormControlTextArea*>(context_->GetDocument(0)->GetElementById("ask-ai-input"))) {
     input->SetValue(next.c_str());
     const ui::String value = input->GetValue();
     const int end = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(value, static_cast<int>(value.size()));
@@ -385,24 +389,24 @@ void AskAiPanel::SendPicture(const std::string& text) {
   }
   // The picture is not queued (it lives in this panel only): with every turn taken it stays, with the text.
   switch (image_ports_.send(thread_id, text, *picture_)) {
-  case AgentTurnController::ImageSend::Started:
-    awaiting_answer_ = true;
-    asked_question_ = question;
-    view_.draft = "";
-    Dirty("draft");
-    picture_preparing_ = false;
-    ++picture_generation_;
-    picture_.reset(); // the thread's own copy takes over; the controller removes the preview file
-    break;
-  case AgentTurnController::ImageSend::Full:
-    host_.AskAiToast(Tr("chat.ai_queue.image_busy"));
-    break;
-  case AgentTurnController::ImageSend::BusyHere:
-    host_.AskAiToast(Tr("chat.ai_queue.image_busy_here"));
-    break;
-  case AgentTurnController::ImageSend::Unavailable:
-    FailShared(question);
-    break;
+    case AgentTurnController::ImageSend::Started:
+      awaiting_answer_ = true;
+      asked_question_ = question;
+      view_.draft = "";
+      Dirty("draft");
+      picture_preparing_ = false;
+      ++picture_generation_;
+      picture_.reset(); // the thread's own copy takes over; the controller removes the preview file
+      break;
+    case AgentTurnController::ImageSend::Full:
+      host_.AskAiToast(Tr("chat.ai_queue.image_busy"));
+      break;
+    case AgentTurnController::ImageSend::BusyHere:
+      host_.AskAiToast(Tr("chat.ai_queue.image_busy_here"));
+      break;
+    case AgentTurnController::ImageSend::Unavailable:
+      FailShared(question);
+      break;
   }
   Refresh();
   SyncPictureView();
@@ -432,7 +436,8 @@ void AskAiPanel::AskSupport() {
 }
 
 void AskAiPanel::OpenInChat() {
-  const std::string thread_id = shared_thread_.empty() && !fresh_ ? host_.AskAiSharedThread(/*create=*/true) : shared_thread_;
+  const std::string thread_id =
+      shared_thread_.empty() && !fresh_ ? host_.AskAiSharedThread(/*create=*/true) : shared_thread_;
   if (thread_id.empty()) {
     return;
   }
@@ -518,31 +523,31 @@ void AskAiPanel::SendShared(const std::string& text) {
     return;
   }
   switch (DecideSend(true, agent_.CanStart(thread_id), agent_.Busy().BusyIn(thread_id), agent_.HasQueued(thread_id))) {
-  case SendDecision::Send:
-    switch (host_.AskAiSendNow(item)) {
-    case QueuedSendOutcome::Started:
-      awaiting_answer_ = true;
-      asked_question_ = text;
+    case SendDecision::Send:
+      switch (host_.AskAiSendNow(item)) {
+        case QueuedSendOutcome::Started:
+          awaiting_answer_ = true;
+          asked_question_ = text;
+          break;
+        case QueuedSendOutcome::Busy:
+          (void)agent_.QueueSend(std::move(item));
+          break;
+        case QueuedSendOutcome::NotStarted:
+          FailShared(text);
+          break;
+      }
       break;
-    case QueuedSendOutcome::Busy:
+    case SendDecision::Queue:
+    case SendDecision::BlockedHere:
+      // Every turn is taken (a guest has one), or this conversation still answers: it waits, shown as it was asked.
       (void)agent_.QueueSend(std::move(item));
       break;
-    case QueuedSendOutcome::NotStarted:
-      FailShared(text);
+    case SendDecision::AlreadyQueued:
+      // Another question already waits here: this one stays in the input.
+      view_.draft = text.c_str();
+      Dirty("draft");
+      host_.AskAiToast(Tr("chat.ai_queue.already"));
       break;
-    }
-    break;
-  case SendDecision::Queue:
-  case SendDecision::BlockedHere:
-    // Every turn is taken (a guest has one), or this conversation still answers: it waits, shown as it was asked.
-    (void)agent_.QueueSend(std::move(item));
-    break;
-  case SendDecision::AlreadyQueued:
-    // Another question already waits here: this one stays in the input.
-    view_.draft = text.c_str();
-    Dirty("draft");
-    host_.AskAiToast(Tr("chat.ai_queue.already"));
-    break;
   }
   Refresh();
   scroll_frames_ = kScrollFrames;
@@ -631,11 +636,9 @@ void AskAiPanel::OnOnceReply(const AgentEvent& event) {
     body = InjectEntryPlaceholders(answer.rml, entry_id);
     once_links_[entry_id] = std::move(answer.links);
   } else {
-    const ParseResult parsed = event.from_model
-                                   ? StructuredTextParser::ParseFromLlmOutput(event.text, event.response_goal,
-                                                                              event.render_mode)
-                                   : StructuredTextParser::ParseBlocksJson(event.text, event.response_goal,
-                                                                           event.render_mode);
+    const ParseResult parsed =
+        event.from_model ? StructuredTextParser::ParseFromLlmOutput(event.text, event.response_goal, event.render_mode)
+                         : StructuredTextParser::ParseBlocksJson(event.text, event.response_goal, event.render_mode);
     body = parsed.ok ? InjectEntryPlaceholders(parsed.rml, entry_id)
                      : "<p>" + StructuredTextParser::EscapeText(StructuredTextParser::PlainText(event.text)) + "</p>";
   }
@@ -831,7 +834,8 @@ void AskAiPanel::SyncComposerClear() {
   if (bar_px <= 0.f || std::abs(clear->GetOffsetHeight() - bar_px) < 0.5f) {
     return;
   }
-  const float ratio = context_->GetDensityIndependentPixelRatio() > 0.f ? context_->GetDensityIndependentPixelRatio() : 1.f;
+  const float ratio =
+      context_->GetDensityIndependentPixelRatio() > 0.f ? context_->GetDensityIndependentPixelRatio() : 1.f;
   // At the newest bubble (or not yet laid out) it stays there as the bar grows; read further up, it stays put.
   const float from_end = scroll->GetScrollHeight() - scroll->GetClientHeight() - scroll->GetScrollTop();
   clear->SetProperty("height", std::to_string(bar_px / ratio) + "dp");

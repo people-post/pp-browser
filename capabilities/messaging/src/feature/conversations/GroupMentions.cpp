@@ -46,8 +46,7 @@ size_t FindToken(const std::string& text, const std::string& token, size_t from)
     }
     const size_t end = pos + token.size();
     const bool clear_before = pos == 0 || !IsAsciiWordChar(text[pos - 1]);
-    const bool clear_after =
-        end == text.size() || !IsAsciiWordChar(text[end]) || !IsAsciiWordChar(token.back());
+    const bool clear_after = end == text.size() || !IsAsciiWordChar(text[end]) || !IsAsciiWordChar(token.back());
     if (clear_before && clear_after) {
       return pos;
     }
@@ -145,7 +144,7 @@ void MentionCandidatePreload::Open(const std::string& thread_id) {
 
 void MentionCandidatePreload::Changed() {
   if (thread_id_.empty() || (!ready_ && !loading_)) {
-    return;  // nothing loaded for this chat yet: Open / Typed start it
+    return; // nothing loaded for this chat yet: Open / Typed start it
   }
   const uint64_t version = version_();
   if (loading_) {
@@ -160,7 +159,7 @@ void MentionCandidatePreload::Typed() {
     return;
   }
   if (!ready_ || pending_ || version_() != loaded_version_ || now_ms_() - last_started_ms_ >= kStaleMs) {
-    Start();  // answers from what is held meanwhile; the open picker refreshes when this lands
+    Start(); // answers from what is held meanwhile; the open picker refreshes when this lands
   }
 }
 
@@ -192,7 +191,7 @@ void MentionCandidatePreload::Loaded(const std::string& thread_id, Lines lines) 
   loading_ = false;
   loaded_version_ = loading_version_;
   if (pending_) {
-    Start();  // the membership changed while this load ran
+    Start(); // the membership changed while this load ran
   }
   if (on_loaded_) {
     on_loaded_();
@@ -224,7 +223,7 @@ std::optional<std::string> MentionQueryAt(const std::string& text, const size_t 
   }
   std::string query = text.substr(at + 1, std::min(caret, text.size()) - at - 1);
   if (std::any_of(query.begin(), query.end(), IsAsciiSpace)) {
-    return std::nullopt;  // whitespace after the @: the user typed on
+    return std::nullopt; // whitespace after the @: the user typed on
   }
   return query;
 }
@@ -237,7 +236,7 @@ MentionInsert InsertMention(const std::string& text, const size_t at, const size
   MentionInsert out;
   out.text = text.substr(0, at) + token;
   if (end < text.size() && text[end] == ' ') {
-    out.caret = out.text.size() + 1;  // the space already there separates it
+    out.caret = out.text.size() + 1; // the space already there separates it
   } else {
     out.text += ' ';
     out.caret = out.text.size();
@@ -253,7 +252,7 @@ bool Overlaps(const std::vector<std::pair<size_t, size_t>>& claimed, const size_
                      [begin, end](const auto& range) { return begin < range.second && range.first < end; });
 }
 
-}  // namespace
+} // namespace
 
 void PruneRecordedMentions(const std::string& text, std::vector<ComposerMention>& recorded) {
   std::map<std::pair<TextSpanKind, std::string>, std::vector<size_t>> by_token;
@@ -272,7 +271,7 @@ void PruneRecordedMentions(const std::string& text, std::vector<ComposerMention>
       from = pos + key.second.size();
     }
     for (size_t i = 0; i + occurrences < indexes.size(); ++i) {
-      drop[indexes[i]] = true;  // more picks than tokens left: the oldest ones are the ones deleted
+      drop[indexes[i]] = true; // more picks than tokens left: the oldest ones are the ones deleted
     }
   }
   size_t kept = 0;
@@ -314,11 +313,11 @@ std::vector<TextSpan> MentionSpansForDraft(const std::string& text, const std::v
       pos = FindToken(text, mention->token, pos + 1);
     }
     if (pos == std::string::npos) {
-      continue;  // edited away: the text stays as typed
+      continue; // edited away: the text stays as typed
     }
     const size_t end = pos + mention->token.size();
     if (is_everyone ? std::exchange(everyone, true) : !accounts.insert(mention->account_id).second) {
-      continue;  // a second mention of the same: plain text (the receiver would reject the message)
+      continue; // a second mention of the same: plain text (the receiver would reject the message)
     }
     if (!is_everyone && accounts.size() > text_spans::kMaxMentions) {
       continue;

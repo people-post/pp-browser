@@ -34,8 +34,8 @@ public:
   using OnTipIngested = std::function<void(const PeerAnnounceTip& tip)>;
 
   AmpPeerAnnounceTransport(mesh::IChatPeerLinks& links, PeerAnnounceFeed& feed, IoPump io_pump,
-                         WorkerPost post_worker = {}, ResolvePublisherKey resolve_key = {},
-                         IoPost post_io = {}, IoAfter post_after = {});
+                           WorkerPost post_worker = {}, ResolvePublisherKey resolve_key = {}, IoPost post_io = {},
+                           IoAfter post_after = {});
   ~AmpPeerAnnounceTransport();
 
   AmpPeerAnnounceTransport(const AmpPeerAnnounceTransport&) = delete;

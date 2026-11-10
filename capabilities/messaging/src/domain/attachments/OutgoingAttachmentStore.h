@@ -49,7 +49,8 @@ public:
   static std::string NewId();
 
   /** Write the ciphertext, then the sealed record. */
-  Roe<void> Begin(const OutgoingAttachmentRecord& record, const std::vector<uint8_t>& ciphertext, const ByteVector& dek);
+  Roe<void> Begin(const OutgoingAttachmentRecord& record, const std::vector<uint8_t>& ciphertext,
+                  const ByteVector& dek);
   Roe<void> Update(const OutgoingAttachmentRecord& record, const ByteVector& dek);
   Roe<OutgoingAttachmentRecord> Load(const std::string& id, const ByteVector& dek) const;
   /** The records of a thread whose ciphertext file is still there, oldest first; unreadable ones are skipped. */

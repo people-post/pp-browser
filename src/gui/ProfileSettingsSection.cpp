@@ -8,8 +8,7 @@
 namespace pbr {
 
 void RefreshProfileAvatarGlyph(SettingsUiState& state) {
-  const std::string stable =
-      AvatarStableId(state.profile_account_id, state.profile_relay_id, state.profile_peer_id);
+  const std::string stable = AvatarStableId(state.profile_account_id, state.profile_relay_id, state.profile_peer_id);
   const AvatarGlyph glyph = MakeAvatarGlyph(state.profile_nickname, stable);
   state.profile_avatar_letter = glyph.letter;
   state.profile_avatar_tone = glyph.tone;
@@ -136,7 +135,8 @@ Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& st
     prefs.show_notifications = show_notifications;
     prefs_dirty = true;
   }
-  if (const bool show_preview = state.show_notification_preview != "off"; show_preview != prefs.show_notification_preview) {
+  if (const bool show_preview = state.show_notification_preview != "off";
+      show_preview != prefs.show_notification_preview) {
     prefs.show_notification_preview = show_preview;
     prefs_dirty = true;
   }

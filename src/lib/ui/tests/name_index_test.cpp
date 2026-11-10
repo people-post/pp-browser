@@ -31,14 +31,14 @@ TEST(NameIndexTest, DigitsSymbolsOtherScriptsAndEmptyGoUnderHash) {
   EXPECT_EQ(NameIndexLetter("Ольга"), '#');
   EXPECT_EQ(NameIndexLetter("😀 Sun"), '#');
   EXPECT_EQ(NameIndexLetter(""), '#');
-  EXPECT_EQ(NameIndexLetter("\xE5"), '#');  // a cut-off UTF-8 sequence
+  EXPECT_EQ(NameIndexLetter("\xE5"), '#'); // a cut-off UTF-8 sequence
 }
 
 TEST(NameIndexTest, ContactsSortByLetterThenByInitialsWithHashLast) {
   std::vector<std::string> names = {"王小明", "123", "bob", "张三", "Alice", "王伟", "李雷", "阿明", "Zed", "#tag"};
   std::sort(names.begin(), names.end(), [](const std::string& a, const std::string& b) { return NameIndexLess(a, b); });
-  EXPECT_EQ(names, (std::vector<std::string>{"Alice", "阿明", "bob", "李雷", "王伟", "王小明", "Zed", "张三", "#tag",
-                                             "123"}));
+  EXPECT_EQ(names,
+            (std::vector<std::string>{"Alice", "阿明", "bob", "李雷", "王伟", "王小明", "Zed", "张三", "#tag", "123"}));
 }
 
 TEST(NameIndexTest, InitialsAreLatinLettersAndPinyinInitials) {

@@ -161,96 +161,96 @@ void SessionSwipeGesture::ProcessEvent(ui::Event& event) {
   const float dpr = context_->GetDensityIndependentPixelRatio();
 
   switch (event.GetId()) {
-  case ui::EventId::Scroll:
-    // Scrolling the list closes the open row.
-    if (!model_.OpenRow().empty()) {
-      model_.CloseOpen();
-      CloseRow(open_row_);
-    }
-    break;
-  case ui::EventId::Click: {
-    if (swallow_click_) {
-      // Only the click of the same pointer sequence; a later keyboard / programmatic click goes through.
-      const bool same_sequence =
-          std::chrono::steady_clock::now() - swallow_click_since_ < std::chrono::milliseconds(300);
-      swallow_click_ = false;
-      if (same_sequence) {
-        event.StopPropagation();
-        return;
-      }
-    }
-    ui::Element* target = event.GetTargetElement();
-    ui::Element* button = ButtonOf(target);
-    ui::Element* row = button ? RowOf(button) : nullptr;
-    SessionSwipeAction action{};
-    if (!button || !row || !ParseAction(button->GetAttribute("swipe-action", ui::String()), action)) {
-      return;
-    }
-    event.StopPropagation(); // the button is inside the row: it must not also open the chat
-    const std::string thread_id = row->GetAttribute("session-id", ui::String()).c_str();
-    model_.CloseOpen();
-    CloseRow(open_row_);
-    Run(thread_id, action);
-    break;
-  }
-  case ui::EventId::Mousedown: {
-    swallow_click_ = false;
-    ui::Element* target = event.GetTargetElement();
-    if (ButtonOf(target)) {
-      return; // a revealed button: its click does the work, and must not close the row first
-    }
-    ui::Element* row = RowOf(target);
-    if (!row) {
-      // Tap elsewhere closes the open row.
+    case ui::EventId::Scroll:
+      // Scrolling the list closes the open row.
       if (!model_.OpenRow().empty()) {
         model_.CloseOpen();
         CloseRow(open_row_);
       }
-      return;
-    }
-    const float ratio = dpr > 0.f ? dpr : 1.f;
-    const float width_dp = row->GetBox().GetSize(ui::BoxArea::Border).x / ratio;
-    const std::string id = row->GetAttribute("session-id", ui::String()).c_str();
-    const std::string closed = model_.Press(id, EventMouseX(event), EventMouseY(event), width_dp);
-    if (!closed.empty()) {
+      break;
+    case ui::EventId::Click: {
+      if (swallow_click_) {
+        // Only the click of the same pointer sequence; a later keyboard / programmatic click goes through.
+        const bool same_sequence =
+            std::chrono::steady_clock::now() - swallow_click_since_ < std::chrono::milliseconds(300);
+        swallow_click_ = false;
+        if (same_sequence) {
+          event.StopPropagation();
+          return;
+        }
+      }
+      ui::Element* target = event.GetTargetElement();
+      ui::Element* button = ButtonOf(target);
+      ui::Element* row = button ? RowOf(button) : nullptr;
+      SessionSwipeAction action{};
+      if (!button || !row || !ParseAction(button->GetAttribute("swipe-action", ui::String()), action)) {
+        return;
+      }
+      event.StopPropagation(); // the button is inside the row: it must not also open the chat
+      const std::string thread_id = row->GetAttribute("session-id", ui::String()).c_str();
+      model_.CloseOpen();
       CloseRow(open_row_);
-    }
-    active_row_ = row->GetObserverPtr();
-    SetDragCapture(true);
-    break;
-  }
-  case ui::EventId::Mousemove: {
-    const SessionSwipeModel::Move move = model_.Update(EventMouseX(event), EventMouseY(event), dpr);
-    if (move.claimed && active_row_) {
-      SetRowOffset(active_row_.get(), move.offset_dp, false);
-      event.StopPropagation();
-    }
-    break;
-  }
-  case ui::EventId::Mouseup: {
-    SetDragCapture(false);
-    const SessionSwipeOutcome out = model_.Release();
-    if (out.swallow_click) {
-      swallow_click_ = true;
-      swallow_click_since_ = std::chrono::steady_clock::now();
-    }
-    switch (out.kind) {
-    case SessionSwipeOutcome::Kind::Open:
-      SetRowOffset(active_row_.get(), model_.RestOffsetDp(out.side), true);
-      open_row_ = active_row_;
-      break;
-    case SessionSwipeOutcome::Kind::Close:
-      CloseRow(active_row_);
-      open_row_ = nullptr;
-      break;
-    case SessionSwipeOutcome::Kind::None:
+      Run(thread_id, action);
       break;
     }
-    active_row_ = nullptr;
-    break;
-  }
-  default:
-    break;
+    case ui::EventId::Mousedown: {
+      swallow_click_ = false;
+      ui::Element* target = event.GetTargetElement();
+      if (ButtonOf(target)) {
+        return; // a revealed button: its click does the work, and must not close the row first
+      }
+      ui::Element* row = RowOf(target);
+      if (!row) {
+        // Tap elsewhere closes the open row.
+        if (!model_.OpenRow().empty()) {
+          model_.CloseOpen();
+          CloseRow(open_row_);
+        }
+        return;
+      }
+      const float ratio = dpr > 0.f ? dpr : 1.f;
+      const float width_dp = row->GetBox().GetSize(ui::BoxArea::Border).x / ratio;
+      const std::string id = row->GetAttribute("session-id", ui::String()).c_str();
+      const std::string closed = model_.Press(id, EventMouseX(event), EventMouseY(event), width_dp);
+      if (!closed.empty()) {
+        CloseRow(open_row_);
+      }
+      active_row_ = row->GetObserverPtr();
+      SetDragCapture(true);
+      break;
+    }
+    case ui::EventId::Mousemove: {
+      const SessionSwipeModel::Move move = model_.Update(EventMouseX(event), EventMouseY(event), dpr);
+      if (move.claimed && active_row_) {
+        SetRowOffset(active_row_.get(), move.offset_dp, false);
+        event.StopPropagation();
+      }
+      break;
+    }
+    case ui::EventId::Mouseup: {
+      SetDragCapture(false);
+      const SessionSwipeOutcome out = model_.Release();
+      if (out.swallow_click) {
+        swallow_click_ = true;
+        swallow_click_since_ = std::chrono::steady_clock::now();
+      }
+      switch (out.kind) {
+        case SessionSwipeOutcome::Kind::Open:
+          SetRowOffset(active_row_.get(), model_.RestOffsetDp(out.side), true);
+          open_row_ = active_row_;
+          break;
+        case SessionSwipeOutcome::Kind::Close:
+          CloseRow(active_row_);
+          open_row_ = nullptr;
+          break;
+        case SessionSwipeOutcome::Kind::None:
+          break;
+      }
+      active_row_ = nullptr;
+      break;
+    }
+    default:
+      break;
   }
 }
 

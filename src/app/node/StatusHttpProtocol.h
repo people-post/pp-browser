@@ -85,10 +85,8 @@ struct StatusHttpRequest {
 /** Returns nullopt if the buffer (headers, and the body Content-Length announces) is incomplete or malformed. */
 std::optional<StatusHttpRequest> TryParseStatusHttpRequest(std::string_view raw);
 
-StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
-                                           const StatusHttpAuthConfig& auth,
-                                           const StatusHttpSnapshot& snap,
-                                           const StatusHttpActions& actions = {});
+StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request, const StatusHttpAuthConfig& auth,
+                                           const StatusHttpSnapshot& snap, const StatusHttpActions& actions = {});
 
 /** Serialize a complete HTTP/1.1 response. */
 std::string FormatStatusHttpResponse(const StatusHttpResponse& response);

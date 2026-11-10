@@ -68,7 +68,6 @@ Roe<void> SqliteThreadDb::RequireDek() const {
   return {};
 }
 
-
 ByteVector SqliteThreadDb::CopyDek() const {
   std::lock_guard lock(dek_mutex_);
   return dek_;
@@ -81,7 +80,6 @@ std::string SqliteThreadDb::ProfileDbPath() const {
 Roe<void> SqliteThreadDb::EnsureProfileOpen() const {
   return OpenProfileDb();
 }
-
 
 Roe<void> SqliteThreadDb::EnsureInitialized() const {
   if (initialized_) {
@@ -164,8 +162,8 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
                  std::to_string(kSqliteThreadProfileUserVersion) + ") — reset chats in Me → Storage");
   }
   // Additive threads column (an older profile.db lacks it: its threads are all listed).
-  (void)sqlite3_exec(profile_db_, "ALTER TABLE threads ADD COLUMN listed INTEGER NOT NULL DEFAULT 1;", nullptr,
-                     nullptr, nullptr);
+  (void)sqlite3_exec(profile_db_, "ALTER TABLE threads ADD COLUMN listed INTEGER NOT NULL DEFAULT 1;", nullptr, nullptr,
+                     nullptr);
   // Additive chat_targets columns (an older profile.db lacks them; already there: the ALTER fails, ignored).
   (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN auto_key_session_id TEXT;", nullptr, nullptr,
                      nullptr);
@@ -287,7 +285,8 @@ Roe<void> SqliteThreadDb::RepairOrphanThreadDirs() const {
       continue;
     }
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(profile_db_, "SELECT 1 FROM threads WHERE id = ? LIMIT 1;", -1, &stmt, nullptr) != SQLITE_OK) {
+    if (sqlite3_prepare_v2(profile_db_, "SELECT 1 FROM threads WHERE id = ? LIMIT 1;", -1, &stmt, nullptr) !=
+        SQLITE_OK) {
       continue;
     }
     sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);

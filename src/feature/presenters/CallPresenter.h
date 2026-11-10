@@ -7,6 +7,9 @@
 #include "feature/calls/CallFunctionalPorts.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/presenters/CallBackOffer.h"
+#include "feature/presenters/CallMediaFrame.h"
+#include "feature/presenters/CallWakePlaceholder.h"
+#include "foundation/platform/PendingNotificationTap.h"
 
 #include <functional>
 #include <memory>
@@ -25,8 +28,6 @@ struct CallNotice {
   enum class Kind {
     /** A call action failed: `key` (an i18n key) or the stack's `text`. */
     Error,
-    /** A media path failure the user should be able to read: stays up (`text`). */
-    StickyError,
     /** The peer ended (or declined) a call this device placed or was in: `identity`. */
     PeerEnded,
     PeerDeclined,
@@ -49,7 +50,7 @@ struct CallNotice {
 
 /** What pressing a call button led to. */
 struct CallStartResult {
-  enum class Kind { Started, Joined, PickPeople, Failed };
+  enum class Kind { Started, Joined, PickPeople, Cancelled, Failed };
   Kind kind = Kind::Failed;
   std::string call_id;
   /** Failed: an i18n key (`call.error.*`), or the stack's message in `error_text`. */
@@ -71,6 +72,12 @@ struct CallJoinBar {
   bool operator==(const CallJoinBar&) const = default;
 };
 CallJoinBar MakeCallJoinBar(const std::optional<CallUiBackend::JoinableCallInfo>& call);
+
+/**
+ * A call from a chat (CallPresenter::CallFromChat): whether it asks for video. A call that goes on in the chat is
+ * joined as it is (no voice / video choice); video this device cannot send goes voice; else as asked.
+ */
+bool ChatCallAsksVideo(bool call_joinable, bool want_video, bool video_available);
 
 /**
  * The call surface's decisions and the call buttons, without a GUI: which call shows (ring,
@@ -98,8 +105,12 @@ public:
     std::function<void(const std::string& call_id, bool video)> on_outbound_started;
     std::function<void(const std::string& call_id, bool voice_only)> on_accept;
     std::function<void(const std::string& call_id)> on_decline;
-    /** P017: the calls layer learned `call_id` is over (each once): the phone's call screen lets a push's call go. */
-    std::function<void(const std::string& call_id)> on_call_over;
+    /** A call button was pressed in a call to another chat: asks "end your current call?"; `answer(true)` = go on. */
+    std::function<void(std::function<void(bool)> answer)> confirm_end_current_call;
+    /** A call button was pressed in the chat of the call already up: bring its screen back (from the minimised chip). */
+    std::function<void()> show_current_call;
+    /** V060: the OS has this device's call audio (the GUI's CallLocalHold); none: never on hold here. */
+    std::function<bool()> on_hold_here;
   };
   using StartDone = std::function<void(const CallStartResult&)>;
 
@@ -116,8 +127,36 @@ public:
   void Refresh();
   /** The app was woken for a call: look for its ring now. */
   void OnCallWake();
+  /**
+   * The vault is unlocked and the messaging stack is up (ConversationsHub::EnsureMessagingReady finished): a woken
+   * app's inbox sync can run now. Only then does the placeholder's "no ring" clock start. Unlock happens once per run
+   * (the app never re-locks while running), so it is latched.
+   */
+  void NoteMessagingReady();
+  /** What the GUI does with the "Incoming call, connecting…" ring page this step. */
+  enum class WakeRing { Keep, Show, Clear };
+  struct WakeStep {
+    /** Show: put the page up (once it is up, nothing more); Clear: take it down quietly; Keep: leave the ring alone. */
+    WakeRing ring = WakeRing::Keep;
+    /** Set on the one step where the placeholder ends; the two fields below go with it. */
+    CallWakePlaceholder::Outcome outcome = CallWakePlaceholder::Outcome::None;
+    int64_t shown_ms = 0;
+    std::optional<int64_t> ready_ms;
+  };
+  /**
+   * The incoming-call placeholder (CallWakePlaceholder) for the latest call-alert tap (PendingNotificationTap) and the
+   * app's visibility. Works with no backend (a locked vault). "Messaging ready" = NoteMessagingReady (after unlock); "no
+   * call screen" = our own screen_. `phone_layout`: only phones have the page (anything else clears one that is up).
+   */
+  WakeStep StepWakePlaceholder(bool phone_layout,
+                               PendingNotificationTap::Clock::time_point now = PendingNotificationTap::Clock::now());
 
   const CallScreen& Screen() const { return screen_; }
+  /**
+   * The media decisions of the call on screen, stepped with each refresh (CallMediaFrame): the status line, whether
+   * it reconnects (the capsule), the video stage, the one-way-audio hint and the connection story.
+   */
+  const CallMediaScreen& MediaScreen() const { return media_frame_.View(); }
   /** The call this device is in (empty: none). */
   const std::string& ActiveCallId() const { return active_call_id_; }
   /** The call placed or answered with video (its camera comes on once connected; "Starting video…"). */
@@ -126,7 +165,12 @@ public:
 
   // --- buttons ----------------------------------------------------------------------------------
 
-  /** A chat's call button: a 1:1 call, the group's call to join, or the member picker. */
+  /**
+   * The one way a chat calls (ChatCallAsksVideo, then StartCall): the chat's call button, a tapped call record (#164)
+   * and "Call {name} back?" (V064). False when nothing was asked (no chat).
+   */
+  bool CallFromChat(const std::string& thread_id, bool want_video, StartDone done = {});
+  /** A 1:1 call, the group's call to join, or the member picker — `video` as given (CallFromChat decides it). */
   bool StartCall(const std::string& thread_id, bool video, StartDone done = {});
   /** The member picker's Call (or a 1:1 with its peer). */
   bool StartCallWithInvitees(const std::string& thread_id, bool video, const std::vector<std::string>& invitees,
@@ -175,8 +219,12 @@ public:
   void ReportCameraFailure(const CameraFailure& failure);
 
 private:
-  void RequestStart(const std::string& thread_id, bool video, const std::vector<std::string>& invitees,
-                    StartDone done);
+  /**
+   * A call button while a call is up: another chat's call asks first (then leaves it and runs `place` again), the
+   * same chat's call is shown, no question. True when handled here (`place` is for the Place case only).
+   */
+  bool GuardNewCall(const std::string& thread_id, const std::function<void()>& place, const StartDone& done);
+  void RequestStart(const std::string& thread_id, bool video, const std::vector<std::string>& invitees, StartDone done);
   std::string RingCallId(CallUiBackend& backend) const;
   void Fail(const std::string& key, const StartDone& done = {});
   void FailText(const std::string& text);
@@ -200,11 +248,23 @@ private:
   void OfferCallBack(const CallScreen& next, const CallUiBackend::Surface& surface);
   /** V062 1: "{name} joined as {bringer}'s guest", once per guest of the call on `s`. */
   void AnnounceGuests(const CallScreen& s);
+  /** The media frame of the screen `next` (in a call: its facts read, then acted on; answering: the story only). */
+  void StepMedia(CallUiBackend& backend, const CallScreen& next, int64_t now);
+  /** One tick's media facts for the call on `s`, after the engine's video upkeep. */
+  CallMediaFacts ReadMediaFacts(CallUiBackend& backend, const CallScreen& s, int64_t now);
+  /** What the frame asks of the call: the camera's failure told, a narrowed call's camera off, a dropped picture. */
+  void ActOnMedia(CallUiBackend& backend, const CallMediaScreen& frame);
+  /** The peer's camera (roster / frames) and the story's new moments, each change logged once. */
+  void LogMedia(const CallMediaFacts& facts, const CallMediaScreen& frame);
   bool MessagingInitialized() const;
 
   CallFunctionalPorts ports_;
   Callbacks callbacks_;
   CallScreen screen_;
+  CallWakePlaceholder wake_placeholder_;
+  /** The last StepWakePlaceholder asked for the page to show (so it is asked to clear it once). */
+  bool wake_ring_shown_ = false;
+  bool messaging_ready_ = false;
   NoMediaWatch no_media_watch_;
   int64_t no_media_checked_ms_ = 0;
   /** Last CallSessionManager identity the ring callbacks were installed on. */
@@ -223,6 +283,11 @@ private:
    */
   std::string answered_call_id_;
   CallBackOffer call_back_;
+  CallMediaFrame media_frame_;
+  /** What LogMedia last logged: the peer's camera ("roster/frames"), and the story's moments of `story_logged_call_`. */
+  std::string peer_video_log_key_;
+  std::string story_logged_call_;
+  size_t story_events_logged_ = 0;
   std::string declined_call_id_;
   /**
    * 2026-09-28: video calls start with the local camera on — set by the caller (video StartCall)

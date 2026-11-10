@@ -5,6 +5,7 @@
 #include "common/Module.h"
 #include "feature/conversations/GroupMentions.h"
 #include "feature/presenters/SessionMenu.h"
+#include "lib/delivery/DeliveryNotice.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
 #include "lib/people/ContactTypes.h"
@@ -97,7 +98,8 @@ struct ArchiveViews {
   bool showing_archived = false;
   bool showing_archived_ai = false;
 };
-ArchiveViews ResolveArchiveViews(const std::vector<ArchiveItem>& items, bool showing_archived, bool showing_archived_ai);
+ArchiveViews ResolveArchiveViews(const std::vector<ArchiveItem>& items, bool showing_archived,
+                                 bool showing_archived_ai);
 
 /** What closing a chat does (the GUI asks before it does it). */
 struct CloseChatPlan {
@@ -374,6 +376,12 @@ public:
   bool SelectThread(const std::string& thread_id);
   /** The last SelectThread's chat had an unread mention: the message to show first (G015). */
   const std::optional<std::string>& OpenedAtMention() const { return opened_at_mention_; }
+  /**
+   * A delivery notice (DeliveryNotice) of the messaging layer: a send that did not go out becomes a line in its chat
+   * (PlanDeliveryNotice), once per message. True: the caller tells the user with a toast instead (no chat to
+   * put it in, or the cause is unknown). False: it is told, or already was.
+   */
+  bool ApplyDeliveryNotice(const DeliveryNotice& notice);
   /** Back to the chats list (the Home tab): no chat is open, so new messages count as unread. */
   void ShowHome();
   /** The archived list's entry / back button. */

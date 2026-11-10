@@ -113,8 +113,7 @@ void ToolRegistry::RegisterProvider(IToolProvider& provider) {
     bool exists = false;
     for (const ToolDescriptor& existing : tools_) {
       if (existing.definition.name == tool.definition.name) {
-        log().warning << "Skipping duplicate tool from provider " << provider_id << ": "
-                      << tool.definition.name;
+        log().warning << "Skipping duplicate tool from provider " << provider_id << ": " << tool.definition.name;
         exists = true;
         break;
       }

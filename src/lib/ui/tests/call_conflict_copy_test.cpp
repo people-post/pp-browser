@@ -69,3 +69,54 @@ TEST(CallConflictCopyTest, ChineseNamesTheCallerAndTheCallThatEnds) {
   EXPECT_EQ(copy.accept_label, "结束并接听");
   LoadLocales("en");
 }
+
+// Call pages never name someone by their account id: no known name reads "Stranger" / "陌生人" and flags the silhouette.
+TEST(CallerNameTest, ANameIsKeptAndNoNameIsAStrangerInBothLanguages) {
+  LoadLocales("en");
+  const pbr::CallerName known = pbr::MakeCallerName("Alice");
+  EXPECT_EQ(known.label, "Alice");
+  EXPECT_FALSE(known.unknown);
+  const pbr::CallerName stranger = pbr::MakeCallerName("");
+  EXPECT_EQ(stranger.label, "Stranger");
+  EXPECT_TRUE(stranger.unknown);
+  LoadLocales("zh-Hans");
+  EXPECT_EQ(pbr::MakeCallerName("").label, "陌生人");
+  EXPECT_EQ(pbr::MakeCallerName("爱丽丝").label, "爱丽丝");
+  LoadLocales("en");
+}
+
+// The incoming-call notification for a caller with no name (CallController picks the key: identity but no name).
+TEST(CallerNameTest, TheStrangerNotificationReadsNaturallyInBothLanguages) {
+  LoadLocales("en");
+  EXPECT_EQ(pbr::Tr("call.notify.body_stranger"), "Stranger is calling you");
+  LoadLocales("zh-Hans");
+  EXPECT_EQ(pbr::Tr("call.notify.body_stranger"), "陌生人正在呼叫你");
+  EXPECT_NE(pbr::Tr("call.notify.body_stranger"), pbr::Tr("call.notify.body_unknown"));
+  LoadLocales("en");
+}
+
+// A stranger starting a group call: the ring's subtitle names the Stranger, not the id.
+TEST(CallerNameTest, TheGroupRingSubtitleNamesAStranger) {
+  LoadLocales("en");
+  EXPECT_EQ(pbr::Tr("call.ring.phone.group_voice", {{"name", pbr::MakeCallerName("").label}}),
+            "Stranger started a voice call");
+  LoadLocales("zh-Hans");
+  EXPECT_EQ(pbr::Tr("call.ring.phone.group_video", {{"name", pbr::MakeCallerName("").label}}), "陌生人 发起了视频通话");
+  LoadLocales("en");
+}
+
+// One word for a peer in every sentence's {name} slot: a stranger is "Stranger", never blank; no identity: blank.
+TEST(CallConflictCopyTest, APeerWithoutANameIsAStrangerInEverySentenceAndNoIdentityIsBlank) {
+  LoadLocales();
+  EXPECT_EQ(pbr::PeerLabel("acct-1", "Bob"), "Bob");
+  EXPECT_EQ(pbr::PeerLabel("acct-1", ""), "Stranger");
+  EXPECT_EQ(pbr::PeerLabel("", ""), "");
+  EXPECT_EQ(pbr::PeerLabel("", "Bob"), "");
+
+  const std::string stranger = pbr::PeerLabel("acct-1", "");
+  const pbr::CallConflictCopy copy = pbr::MakeCallConflictCopy(true, Names(stranger, stranger, false, true));
+  EXPECT_EQ(copy.title, "Stranger is calling");
+  EXPECT_EQ(copy.hint, "Accepting ends your other call with Stranger.") << "same peer wording keeps the caller's word";
+  const pbr::CallConflictCopy other = pbr::MakeCallConflictCopy(true, Names("Carol", stranger));
+  EXPECT_EQ(other.hint, "Accepting ends your call with Stranger.");
+}

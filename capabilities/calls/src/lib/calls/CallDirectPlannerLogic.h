@@ -33,6 +33,8 @@ enum class CallDirectPlannerEvent : uint8_t {
   PathMigrated,
   /** k4: the call lost its last path (no standby) — reconnect window. */
   PathLost,
+  /** K014: the call was connected and lost its media for good (CallMediaErr::Dropped): never ConnectFailed. */
+  Dropped,
 };
 
 enum class CallDirectPlannerDecision : uint8_t {
@@ -56,52 +58,54 @@ struct CallDirectPlannerPhaseOutcome {
 
 inline const char* CallDirectPlannerPhaseName(CallDirectPlannerPhase p) {
   switch (p) {
-  case CallDirectPlannerPhase::Idle:
-    return "Idle";
-  case CallDirectPlannerPhase::Arming:
-    return "Arming";
-  case CallDirectPlannerPhase::KeyWait:
-    return "KeyWait";
-  case CallDirectPlannerPhase::Connecting:
-    return "Connecting";
-  case CallDirectPlannerPhase::Live:
-    return "Live";
-  case CallDirectPlannerPhase::DegradedTxOnly:
-    return "DegradedTxOnly";
-  case CallDirectPlannerPhase::Stopping:
-    return "Stopping";
-  case CallDirectPlannerPhase::Reconnecting:
-    return "Reconnecting";
+    case CallDirectPlannerPhase::Idle:
+      return "Idle";
+    case CallDirectPlannerPhase::Arming:
+      return "Arming";
+    case CallDirectPlannerPhase::KeyWait:
+      return "KeyWait";
+    case CallDirectPlannerPhase::Connecting:
+      return "Connecting";
+    case CallDirectPlannerPhase::Live:
+      return "Live";
+    case CallDirectPlannerPhase::DegradedTxOnly:
+      return "DegradedTxOnly";
+    case CallDirectPlannerPhase::Stopping:
+      return "Stopping";
+    case CallDirectPlannerPhase::Reconnecting:
+      return "Reconnecting";
   }
   return "?";
 }
 
 inline const char* CallDirectPlannerEventName(CallDirectPlannerEvent ev) {
   switch (ev) {
-  case CallDirectPlannerEvent::ScheduleOfferer:
-    return "ScheduleOfferer";
-  case CallDirectPlannerEvent::ScheduleAnswerer:
-    return "ScheduleAnswerer";
-  case CallDirectPlannerEvent::KeyReady:
-    return "KeyReady";
-  case CallDirectPlannerEvent::KeyTimeout:
-    return "KeyTimeout";
-  case CallDirectPlannerEvent::ConnectSucceeded:
-    return "ConnectSucceeded";
-  case CallDirectPlannerEvent::ConnectFailed:
-    return "ConnectFailed";
-  case CallDirectPlannerEvent::TxOnlyGraceExpired:
-    return "TxOnlyGraceExpired";
-  case CallDirectPlannerEvent::CircuitEscalated:
-    return "CircuitEscalated";
-  case CallDirectPlannerEvent::ReleaseTransport:
-    return "ReleaseTransport";
-  case CallDirectPlannerEvent::Stop:
-    return "Stop";
-  case CallDirectPlannerEvent::PathMigrated:
-    return "PathMigrated";
-  case CallDirectPlannerEvent::PathLost:
-    return "PathLost";
+    case CallDirectPlannerEvent::ScheduleOfferer:
+      return "ScheduleOfferer";
+    case CallDirectPlannerEvent::ScheduleAnswerer:
+      return "ScheduleAnswerer";
+    case CallDirectPlannerEvent::KeyReady:
+      return "KeyReady";
+    case CallDirectPlannerEvent::KeyTimeout:
+      return "KeyTimeout";
+    case CallDirectPlannerEvent::ConnectSucceeded:
+      return "ConnectSucceeded";
+    case CallDirectPlannerEvent::ConnectFailed:
+      return "ConnectFailed";
+    case CallDirectPlannerEvent::TxOnlyGraceExpired:
+      return "TxOnlyGraceExpired";
+    case CallDirectPlannerEvent::CircuitEscalated:
+      return "CircuitEscalated";
+    case CallDirectPlannerEvent::ReleaseTransport:
+      return "ReleaseTransport";
+    case CallDirectPlannerEvent::Stop:
+      return "Stop";
+    case CallDirectPlannerEvent::PathMigrated:
+      return "PathMigrated";
+    case CallDirectPlannerEvent::PathLost:
+      return "PathLost";
+    case CallDirectPlannerEvent::Dropped:
+      return "Dropped";
   }
   return "?";
 }
@@ -116,145 +120,145 @@ inline CallDirectPlannerPhaseOutcome DecideCallDirectPlannerPhase(CallDirectPlan
   CallDirectPlannerPhaseOutcome out;
   out.next = phase;
 
-  if (ctx.stopping && ev != CallDirectPlannerEvent::Stop &&
-      ev != CallDirectPlannerEvent::ReleaseTransport) {
+  if (ctx.stopping && ev != CallDirectPlannerEvent::Stop && ev != CallDirectPlannerEvent::ReleaseTransport) {
     out.decision = CallDirectPlannerDecision::Ignore;
     return out;
   }
 
   switch (ev) {
-  case CallDirectPlannerEvent::PathMigrated:
-    // Only a call with media has a path to move. Live stays Live; a TX-only call that moved
-    // (make-before-break escalation, k3-4) is Live again on its new path.
-    if (phase == CallDirectPlannerPhase::Live) {
-      out.decision = CallDirectPlannerDecision::Keep;
-      out.next = phase;
-    } else if (phase == CallDirectPlannerPhase::DegradedTxOnly || phase == CallDirectPlannerPhase::Reconnecting) {
-      out.decision = CallDirectPlannerDecision::Transition;
-      out.next = CallDirectPlannerPhase::Live;
-    } else {
-      out.decision = CallDirectPlannerDecision::Ignore;
-      out.next = phase;
-    }
-    return out;
-
-  case CallDirectPlannerEvent::PathLost:
-    if (phase == CallDirectPlannerPhase::Live || phase == CallDirectPlannerPhase::DegradedTxOnly) {
-      out.decision = CallDirectPlannerDecision::Transition;
-      out.next = CallDirectPlannerPhase::Reconnecting;
-    } else {
-      out.decision = CallDirectPlannerDecision::Ignore;
-      out.next = phase;
-    }
-    return out;
-
-  case CallDirectPlannerEvent::Stop:
-    if (phase == CallDirectPlannerPhase::Idle) {
-      out.decision = CallDirectPlannerDecision::Keep;
+    case CallDirectPlannerEvent::PathMigrated:
+      // Only a call with media has a path to move. Live stays Live; a TX-only call that moved
+      // (make-before-break escalation, k3-4) is Live again on its new path.
+      if (phase == CallDirectPlannerPhase::Live) {
+        out.decision = CallDirectPlannerDecision::Keep;
+        out.next = phase;
+      } else if (phase == CallDirectPlannerPhase::DegradedTxOnly || phase == CallDirectPlannerPhase::Reconnecting) {
+        out.decision = CallDirectPlannerDecision::Transition;
+        out.next = CallDirectPlannerPhase::Live;
+      } else {
+        out.decision = CallDirectPlannerDecision::Ignore;
+        out.next = phase;
+      }
       return out;
-    }
-    out.decision = CallDirectPlannerDecision::Transition;
-    out.next = CallDirectPlannerPhase::Idle;
-    return out;
 
-  case CallDirectPlannerEvent::ReleaseTransport:
-    // SoftMigrate: drop stream; capture may stay up — planner returns to Idle for Direct path.
-    if (phase == CallDirectPlannerPhase::Idle) {
-      out.decision = CallDirectPlannerDecision::Keep;
+    case CallDirectPlannerEvent::PathLost:
+      if (phase == CallDirectPlannerPhase::Live || phase == CallDirectPlannerPhase::DegradedTxOnly) {
+        out.decision = CallDirectPlannerDecision::Transition;
+        out.next = CallDirectPlannerPhase::Reconnecting;
+      } else {
+        out.decision = CallDirectPlannerDecision::Ignore;
+        out.next = phase;
+      }
       return out;
-    }
-    out.decision = CallDirectPlannerDecision::Transition;
-    out.next = CallDirectPlannerPhase::Idle;
-    return out;
 
-  case CallDirectPlannerEvent::ScheduleOfferer:
-  case CallDirectPlannerEvent::ScheduleAnswerer:
-    if (!ctx.allows_direct_path) {
-      out.decision = CallDirectPlannerDecision::Ignore;
-      return out;
-    }
-    if (ctx.media_live_same_call &&
-        (phase == CallDirectPlannerPhase::Live || phase == CallDirectPlannerPhase::Connecting ||
-         phase == CallDirectPlannerPhase::DegradedTxOnly)) {
-      out.decision = CallDirectPlannerDecision::Keep;
-      return out;
-    }
-    if (!ctx.peer_nonempty) {
-      out.decision = CallDirectPlannerDecision::Ignore;
-      return out;
-    }
-    out.decision = CallDirectPlannerDecision::Transition;
-    out.next = CallDirectPlannerPhase::Arming;
-    return out;
-
-  case CallDirectPlannerEvent::KeyReady:
-    if (phase != CallDirectPlannerPhase::KeyWait && phase != CallDirectPlannerPhase::Arming &&
-        phase != CallDirectPlannerPhase::Idle) {
-      if (phase == CallDirectPlannerPhase::Connecting || phase == CallDirectPlannerPhase::Live) {
+    case CallDirectPlannerEvent::Stop:
+      if (phase == CallDirectPlannerPhase::Idle) {
         out.decision = CallDirectPlannerDecision::Keep;
         return out;
       }
-      out.decision = CallDirectPlannerDecision::Ignore;
+      out.decision = CallDirectPlannerDecision::Transition;
+      out.next = CallDirectPlannerPhase::Idle;
       return out;
-    }
-    if (!ctx.allows_direct_path) {
-      out.decision = CallDirectPlannerDecision::Ignore;
-      return out;
-    }
-    out.decision = CallDirectPlannerDecision::Transition;
-    out.next = CallDirectPlannerPhase::Connecting;
-    return out;
 
-  case CallDirectPlannerEvent::KeyTimeout:
-    if (phase != CallDirectPlannerPhase::KeyWait && phase != CallDirectPlannerPhase::Arming) {
-      out.decision = CallDirectPlannerDecision::Ignore;
+    case CallDirectPlannerEvent::ReleaseTransport:
+      // SoftMigrate: drop stream; capture may stay up — planner returns to Idle for Direct path.
+      if (phase == CallDirectPlannerPhase::Idle) {
+        out.decision = CallDirectPlannerDecision::Keep;
+        return out;
+      }
+      out.decision = CallDirectPlannerDecision::Transition;
+      out.next = CallDirectPlannerPhase::Idle;
       return out;
-    }
-    out.decision = CallDirectPlannerDecision::Transition;
-    out.next = CallDirectPlannerPhase::Idle;
-    return out;
 
-  case CallDirectPlannerEvent::ConnectSucceeded:
-    if (phase != CallDirectPlannerPhase::Connecting && phase != CallDirectPlannerPhase::Arming &&
-        phase != CallDirectPlannerPhase::DegradedTxOnly && phase != CallDirectPlannerPhase::Live &&
-        phase != CallDirectPlannerPhase::Reconnecting) {
-      out.decision = CallDirectPlannerDecision::Ignore;
+    case CallDirectPlannerEvent::ScheduleOfferer:
+    case CallDirectPlannerEvent::ScheduleAnswerer:
+      if (!ctx.allows_direct_path) {
+        out.decision = CallDirectPlannerDecision::Ignore;
+        return out;
+      }
+      if (ctx.media_live_same_call &&
+          (phase == CallDirectPlannerPhase::Live || phase == CallDirectPlannerPhase::Connecting ||
+           phase == CallDirectPlannerPhase::DegradedTxOnly)) {
+        out.decision = CallDirectPlannerDecision::Keep;
+        return out;
+      }
+      if (!ctx.peer_nonempty) {
+        out.decision = CallDirectPlannerDecision::Ignore;
+        return out;
+      }
+      out.decision = CallDirectPlannerDecision::Transition;
+      out.next = CallDirectPlannerPhase::Arming;
       return out;
-    }
-    if (!ctx.allows_direct_path && phase != CallDirectPlannerPhase::Live) {
-      out.decision = CallDirectPlannerDecision::Ignore;
-      return out;
-    }
-    out.decision = CallDirectPlannerDecision::Transition;
-    out.next = CallDirectPlannerPhase::Live;
-    return out;
 
-  case CallDirectPlannerEvent::ConnectFailed:
-    if (phase == CallDirectPlannerPhase::Idle || phase == CallDirectPlannerPhase::Stopping) {
-      out.decision = CallDirectPlannerDecision::Ignore;
+    case CallDirectPlannerEvent::KeyReady:
+      if (phase != CallDirectPlannerPhase::KeyWait && phase != CallDirectPlannerPhase::Arming &&
+          phase != CallDirectPlannerPhase::Idle) {
+        if (phase == CallDirectPlannerPhase::Connecting || phase == CallDirectPlannerPhase::Live) {
+          out.decision = CallDirectPlannerDecision::Keep;
+          return out;
+        }
+        out.decision = CallDirectPlannerDecision::Ignore;
+        return out;
+      }
+      if (!ctx.allows_direct_path) {
+        out.decision = CallDirectPlannerDecision::Ignore;
+        return out;
+      }
+      out.decision = CallDirectPlannerDecision::Transition;
+      out.next = CallDirectPlannerPhase::Connecting;
       return out;
-    }
-    out.decision = CallDirectPlannerDecision::Transition;
-    out.next = CallDirectPlannerPhase::Idle;
-    return out;
 
-  case CallDirectPlannerEvent::TxOnlyGraceExpired:
-    if (phase != CallDirectPlannerPhase::Live) {
-      out.decision = CallDirectPlannerDecision::Ignore;
+    case CallDirectPlannerEvent::KeyTimeout:
+      if (phase != CallDirectPlannerPhase::KeyWait && phase != CallDirectPlannerPhase::Arming) {
+        out.decision = CallDirectPlannerDecision::Ignore;
+        return out;
+      }
+      out.decision = CallDirectPlannerDecision::Transition;
+      out.next = CallDirectPlannerPhase::Idle;
       return out;
-    }
-    out.decision = CallDirectPlannerDecision::Transition;
-    out.next = CallDirectPlannerPhase::DegradedTxOnly;
-    return out;
 
-  case CallDirectPlannerEvent::CircuitEscalated:
-    if (phase != CallDirectPlannerPhase::DegradedTxOnly && phase != CallDirectPlannerPhase::Live) {
-      out.decision = CallDirectPlannerDecision::Ignore;
+    case CallDirectPlannerEvent::ConnectSucceeded:
+      if (phase != CallDirectPlannerPhase::Connecting && phase != CallDirectPlannerPhase::Arming &&
+          phase != CallDirectPlannerPhase::DegradedTxOnly && phase != CallDirectPlannerPhase::Live &&
+          phase != CallDirectPlannerPhase::Reconnecting) {
+        out.decision = CallDirectPlannerDecision::Ignore;
+        return out;
+      }
+      if (!ctx.allows_direct_path && phase != CallDirectPlannerPhase::Live) {
+        out.decision = CallDirectPlannerDecision::Ignore;
+        return out;
+      }
+      out.decision = CallDirectPlannerDecision::Transition;
+      out.next = CallDirectPlannerPhase::Live;
       return out;
-    }
-    out.decision = CallDirectPlannerDecision::Transition;
-    out.next = CallDirectPlannerPhase::Connecting;
-    return out;
+
+    case CallDirectPlannerEvent::ConnectFailed:
+    case CallDirectPlannerEvent::Dropped:
+      if (phase == CallDirectPlannerPhase::Idle || phase == CallDirectPlannerPhase::Stopping) {
+        out.decision = CallDirectPlannerDecision::Ignore;
+        return out;
+      }
+      out.decision = CallDirectPlannerDecision::Transition;
+      out.next = CallDirectPlannerPhase::Idle;
+      return out;
+
+    case CallDirectPlannerEvent::TxOnlyGraceExpired:
+      if (phase != CallDirectPlannerPhase::Live) {
+        out.decision = CallDirectPlannerDecision::Ignore;
+        return out;
+      }
+      out.decision = CallDirectPlannerDecision::Transition;
+      out.next = CallDirectPlannerPhase::DegradedTxOnly;
+      return out;
+
+    case CallDirectPlannerEvent::CircuitEscalated:
+      if (phase != CallDirectPlannerPhase::DegradedTxOnly && phase != CallDirectPlannerPhase::Live) {
+        out.decision = CallDirectPlannerDecision::Ignore;
+        return out;
+      }
+      out.decision = CallDirectPlannerDecision::Transition;
+      out.next = CallDirectPlannerPhase::Connecting;
+      return out;
   }
 
   out.decision = CallDirectPlannerDecision::Ignore;
@@ -268,7 +272,6 @@ inline CallDirectPlannerPhase DirectPlannerPhaseAfterArm(bool offerer, bool has_
   }
   return CallDirectPlannerPhase::Connecting;
 }
-
 
 /**
  * What is known when a call's connect sequence has given up (B44). A failed connection leaves the

@@ -23,7 +23,7 @@ namespace {
 
 using Args = std::map<std::string, std::string>;
 
-constexpr std::string_view kReaders[] = {"get_profile_identity", "get_preferences",   "list_locales",
+constexpr std::string_view kReaders[] = {"get_profile_identity", "get_preferences",     "list_locales",
                                          "get_reachability",     "get_security_status", "get_network_settings",
                                          "get_llm_settings",     "get_integrations"};
 
@@ -74,7 +74,7 @@ std::string OptionGroup(const std::string& key) {
   if (key == "group_invite_policy" || key == "call_invite_policy") {
     return "policy";
   }
-  static constexpr std::string_view kGroups[] = {"appearance", "status", "pin_status", "direct_connections",
+  static constexpr std::string_view kGroups[] = {"appearance", "status",  "pin_status", "direct_connections",
                                                  "preset",     "api_key", "kind"};
   for (const std::string_view g : kGroups) {
     if (key == g) {
@@ -309,7 +309,7 @@ std::string RenderLocalResult(const std::string& tool, const Object& result_json
     // Never the tool's own message: it is internal English ("appearance must be …") or an error detail.
     const bool blocked = result_json.getIf<bool>("blocked").value_or(false);
     // PP Support off or not reachable: a plain sentence, the reason stays in the log.
-    text = Tr(blocked                     ? "ai.blocked_by_permissions"
+    text = Tr(blocked                  ? "ai.blocked_by_permissions"
               : tool == "open_support" ? "ai.open_support.unavailable"
                                        : "ai.action_failed");
   } else if (IsReader(tool)) {
@@ -355,13 +355,19 @@ std::string RenderLocalAmbiguous(const LocalAmbiguous& ambiguous, const std::str
   return DumpJson(root);
 }
 
-void SetLocalRenderStrictForTests(const bool strict) { g_strict_cards.store(strict); }
+void SetLocalRenderStrictForTests(const bool strict) {
+  g_strict_cards.store(strict);
+}
 
-std::string RenderLocalCancelled() { return Tr("ai.cancelled"); }
-std::string RenderLocalGaveUp() { return Tr("ai.gave_up"); }
+std::string RenderLocalCancelled() {
+  return Tr("ai.cancelled");
+}
+std::string RenderLocalGaveUp() {
+  return Tr("ai.gave_up");
+}
 bool HasLocalHowTo(const std::string& tool) {
-  static constexpr std::string_view kTools[] = {"search_people",   "open_conversation", "update_profile_nickname",
-                                                "set_appearance",  "set_notifications", "set_language",
+  static constexpr std::string_view kTools[] = {"search_people",   "open_conversation",    "update_profile_nickname",
+                                                "set_appearance",  "set_notifications",    "set_language",
                                                 "get_preferences", "get_network_settings", "get_reachability"};
   return std::find(std::begin(kTools), std::end(kTools), tool) != std::end(kTools);
 }
@@ -379,8 +385,14 @@ std::string RenderLocalOverview() {
   return out;
 }
 
-std::string RenderLocalUnsupported() { return Tr("ai.cannot_do_that_yet"); }
-std::string RenderLocalNotShareable() { return Tr("ai.action_not_shareable"); }
-std::string RenderLocalContactGone() { return Tr("ai.contact.gone"); }
+std::string RenderLocalUnsupported() {
+  return Tr("ai.cannot_do_that_yet");
+}
+std::string RenderLocalNotShareable() {
+  return Tr("ai.action_not_shareable");
+}
+std::string RenderLocalContactGone() {
+  return Tr("ai.contact.gone");
+}
 
 } // namespace pbr

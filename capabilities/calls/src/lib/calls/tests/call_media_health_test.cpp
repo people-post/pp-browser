@@ -200,7 +200,7 @@ TEST(CallMediaHealthTest, LinkHealthRoundTripAndResendsBetweenSamples) {
   CallLinkCounters now{.available = true, .reliable_sent = 150, .retransmits = 7, .srtt_ms = 55};
   const CallLinkHealth health = CallLinkHealthBetween(before, now);
   EXPECT_TRUE(health.available);
-  EXPECT_EQ(health.rtt_ms, 55);  // the smoothed figure now, not a delta
+  EXPECT_EQ(health.rtt_ms, 55); // the smoothed figure now, not a delta
   EXPECT_DOUBLE_EQ(health.resend_pct, 10.0);
 }
 

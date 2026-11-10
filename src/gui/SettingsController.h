@@ -13,6 +13,7 @@
 #include "gui/SettingsSecurityActions.h"
 #include "gui/StorageManagerController.h"
 #include "gui/shell/ShellFeedbackPorts.h"
+#include "foundation/platform/PlatformNotificationSettings.h"
 #include "foundation/platform/PlatformShare.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/PinPromptPorts.h"
@@ -40,6 +41,11 @@ class Context;
 
 namespace pbr {
 
+/** Me → Notifications shows the "set Banner Style to Persistent" row only for a banner that goes away by itself. */
+inline bool ShowCallBannerTip(BannerStyle style) {
+  return style == BannerStyle::Temporary;
+}
+
 class SettingsController : public Module, public SettingsHost {
 public:
   struct SectionListRow {
@@ -57,9 +63,8 @@ public:
     bool enabled = true;
   };
 
-
   SettingsController();
-  ~SettingsController() override = default;
+  ~SettingsController() override;
 
   /** App fills ports (session, messaging views, register, UPnP, …). Not a process singleton. */
   void BindCommands(SettingsCommands commands);
@@ -75,7 +80,7 @@ public:
   /** Developer builds only: Settings -> About -> Engine test. Clear via BindOpenUiPerfTest({}). */
   void BindOpenUiPerfTest(std::function<void()> open);
   /** Developer builds only: Settings -> About -> "Simulate: offline / online" drives the Chats header's status line. */
-  void BindSimulateChatsLink(std::function<void(bool online)> simulate);
+  void BindSimulateChatsLink(std::function<void(const std::string& state)> simulate);
   /** Phones: Me -> Appearance -> Home widgets opens the Edit Home sheet (ChatController). */
   void BindOpenHomeEdit(std::function<void()> open);
   void BindUnlockEnsure(UnlockEnsurePorts ports);
@@ -180,6 +185,8 @@ private:
     ui::String stay_connected = "off";
     /** The "Stay connected" row shows (Android: phones without a push service). */
     bool stay_connected_available = false;
+    /** The "banner style" tip row shows (iOS: PP's banner style is "Temporary", which cuts a call ringtone short). */
+    bool call_banner_tip_available = false;
     /** kDevToolsBuild: the About page shows the developer-only rows. */
     bool dev_tools_available = false;
     ui::String brief_llm_key_masked;
@@ -190,6 +197,7 @@ private:
     ui::String reduce_transparency = "off";
     ui::String call_diagnostics = "off";
     ui::String home_show_dynamic = "off";
+    ui::String home_animated_logo = "on";
     ui::String crash_reports_enabled = "off";
     ui::String show_advanced_settings = "off";
     /** show_advanced_settings == "on"; templates gate technical rows on it. */
@@ -220,8 +228,8 @@ private:
     ui::String security_biometric_label;
     ui::String group_invite_policy = "contacts_only";
     ui::String group_invite_policy_label = "Contacts only";
-    ui::String call_invite_policy = "everyone";
-    ui::String call_invite_policy_label = "Everyone";
+    ui::String call_invite_policy = "contacts_only";
+    ui::String call_invite_policy_label = "Contacts only";
     ui::String tool_permissions_summary = "None saved";
     bool tool_permissions_has_saved = false;
     ui::String app_name;
@@ -247,12 +255,15 @@ private:
   void ToggleShowNotifications();
   void ToggleShowNotificationPreview();
   void ToggleStayConnected();
+  /** Reads PP's notification banner style again (Me → Notifications entered, app back in the foreground). */
+  void RefreshBannerTip();
   /** Me → Appearance → Transparency: flips the reduce_transparency pref (the switch shows it inverted). */
   void ToggleTransparency();
   void ToggleCallDiagnostics();
   void ToggleHomeShowDynamic();
   void ToggleShowAdvancedSettings();
   /** Me → AI assistant: the AI dot's switch, look (`a`–`d`) and size (`s` / `m` / `l`), saved to the profile prefs at once. */
+  void ToggleHomeAnimatedLogo();
   void ToggleAiDot();
   void SetAiDotLook(const std::string& look);
   /** "Assistant size": the pushed choice page (phones) with small / medium / large. */
@@ -260,7 +271,6 @@ private:
   void SaveAiDot(bool shown, const std::string& look, const std::string& size);
   void ToggleCrashReports();
   void ToggleAutoRenewRegistration();
-
 
   void InitSections();
   SettingsSectionHandler* FindHandler(const std::string& section_id);
@@ -366,7 +376,7 @@ private:
   int blocked_count_ = 0;
   /** Me → AI assistant (phones): the AI dot's switch, its look and size (with the size's name for its row). */
   bool ai_dot_shown_ = true;
-  ui::String ai_dot_look_ = "b";
+  ui::String ai_dot_look_ = "auto";
   ui::String ai_dot_size_ = "m";
   ui::String ai_dot_size_label_;
   bool compact_layout_ = false;
@@ -380,13 +390,17 @@ private:
   /** Dirty sections whose next flush must not toast (switch toggles). */
   std::unordered_set<std::string> quiet_sections_;
   uint64_t debounce_deadline_ms_ = 0;
+  /** The app-foreground listener (AppLifecycle) that re-reads the banner style. */
+  uint64_t foreground_listener_ = 0;
+  /** Cleared when this controller goes: a banner-style answer still in flight then does nothing. */
+  std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
   std::optional<std::string> last_toast_section_;
   uint64_t last_toast_at_ms_ = 0;
   SettingsCommands commands_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   std::function<void()> open_ui_perf_test_;
-  std::function<void(bool online)> simulate_chats_link_;
+  std::function<void(const std::string& state)> simulate_chats_link_; // "online" / "connecting" / "offline"
   std::function<void()> open_home_edit_;
   UnlockEnsurePorts unlock_ensure_;
   PinPromptPorts pin_prompt_;
@@ -396,10 +410,9 @@ private:
   SettingsOwnDevices own_devices_{commands_, shell_feedback_, [this](const Error& err) { ReportFailure(err); }};
   SettingsProfileActions profile_actions_{*this, commands_, unlock_ensure_};
   StorageManagerController storage_manager_{commands_, shell_navigation_, shell_feedback_, [this]() {
-    const ShellChromeSnapshot chrome = ChromeSnapshot();
-    return selected_id_ == "storage" && chrome.nav_tab == NavTab::Me;
-  }};
-
+                                              const ShellChromeSnapshot chrome = ChromeSnapshot();
+                                              return selected_id_ == "storage" && chrome.nav_tab == NavTab::Me;
+                                            }};
 };
 
 /**

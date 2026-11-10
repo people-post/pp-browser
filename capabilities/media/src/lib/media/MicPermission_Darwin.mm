@@ -6,13 +6,13 @@ namespace pbr {
 
 MicPermission MicPermissionState() {
   switch ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio]) {
-  case AVAuthorizationStatusAuthorized:
-    return MicPermission::Granted;
-  case AVAuthorizationStatusNotDetermined:
-    return MicPermission::NotDetermined;
-  case AVAuthorizationStatusDenied:
-  case AVAuthorizationStatusRestricted:
-    return MicPermission::Denied;
+    case AVAuthorizationStatusAuthorized:
+      return MicPermission::Granted;
+    case AVAuthorizationStatusNotDetermined:
+      return MicPermission::NotDetermined;
+    case AVAuthorizationStatusDenied:
+    case AVAuthorizationStatusRestricted:
+      return MicPermission::Denied;
   }
   return MicPermission::Denied;
 }

@@ -9,42 +9,76 @@ using Status = CallScreen::Status;
 /** Before media comes up these lines all mean "still getting through"; the failure lines have their own screen. */
 bool StillConnecting(const Status status) {
   switch (status) {
-  case Status::Calling:
-  case Status::Connecting:
-  case Status::SettingUpGroup:
-  case Status::WaitingForMediaPath:
-  case Status::Activity:
-    return true;
-  default:
-    return false;
+    case Status::Calling:
+    case Status::Connecting:
+    case Status::SettingUpGroup:
+    case Status::WaitingForMediaPath:
+    case Status::Activity:
+      return true;
+    default:
+      return false;
   }
 }
 
 CallSignalTone ToneFor(const CallPathQuality quality) {
   switch (quality) {
-  case CallPathQuality::Excellent:
-  case CallPathQuality::Good:
-    return CallSignalTone::Good;
-  case CallPathQuality::Fair:
-    return CallSignalTone::Fair;
-  default:
-    return CallSignalTone::Poor;
+    case CallPathQuality::Excellent:
+    case CallPathQuality::Good:
+      return CallSignalTone::Good;
+    case CallPathQuality::Fair:
+      return CallSignalTone::Fair;
+    default:
+      return CallSignalTone::Poor;
   }
 }
 
 } // namespace
 
-CallRoute CallRouteFromPathKind(const std::string& path_kind) {
+CallPathKind ParseCallPathKind(const std::string& path_kind) {
   if (path_kind == "direct") {
-    return CallRoute::Direct;
+    return CallPathKind::Direct;
   }
   if (path_kind == "punched") {
-    return CallRoute::AroundLimits;
+    return CallPathKind::Punched;
   }
-  if (path_kind == "circuit" || path_kind == "media_relay" || path_kind == "relay") {
-    return CallRoute::Relayed;
+  if (path_kind == "circuit") {
+    return CallPathKind::Circuit;
+  }
+  if (path_kind == "media_relay" || path_kind == "relay") {
+    return CallPathKind::MediaRelay;
+  }
+  return CallPathKind::Unknown;
+}
+
+CallRoute CallRouteFromPathKind(const std::string& path_kind) {
+  switch (ParseCallPathKind(path_kind)) {
+    case CallPathKind::Direct:
+      return CallRoute::Direct;
+    case CallPathKind::Punched:
+      return CallRoute::AroundLimits;
+    case CallPathKind::Circuit:
+    case CallPathKind::MediaRelay:
+      return CallRoute::Relayed;
+    case CallPathKind::Unknown:
+      break;
   }
   return CallRoute::Unknown;
+}
+
+const char* CallPathWordKey(const std::string& path_kind) {
+  switch (ParseCallPathKind(path_kind)) {
+    case CallPathKind::Direct:
+      return "call.details.path.direct";
+    case CallPathKind::Punched:
+      return "call.details.path.punched";
+    case CallPathKind::Circuit:
+      return "call.details.path.circuit";
+    case CallPathKind::MediaRelay:
+      return "call.details.path.media_relay";
+    case CallPathKind::Unknown:
+      break;
+  }
+  return "";
 }
 
 void CallConnectStory::Reset() {
@@ -74,8 +108,8 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
       answered_ = true;
       answered_ms_ = now;
     }
-    view_.events.push_back({.kind = view_.outgoing ? CallStoryEvent::Kind::Placed : CallStoryEvent::Kind::Answered,
-                            .wall_ms = now});
+    view_.events.push_back(
+        {.kind = view_.outgoing ? CallStoryEvent::Kind::Placed : CallStoryEvent::Kind::Answered, .wall_ms = now});
     if (in.media_connected) {
       // Already live at first sight (the app came back to a running call): how long it took is not known, so no
       // result line and no times relative to a start this device did not see.
@@ -99,8 +133,7 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
     answered_ = true;
     answered_ms_ = now;
     if (!in.group) {
-      view_.events.push_back(
-          {.kind = CallStoryEvent::Kind::PeerAnswered, .at_ms = now - began_ms_, .wall_ms = now});
+      view_.events.push_back({.kind = CallStoryEvent::Kind::PeerAnswered, .at_ms = now - began_ms_, .wall_ms = now});
     }
   }
 
@@ -220,72 +253,101 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
   return view_;
 }
 
+CallStorySteps CallStoryLines(const CallStoryView& view, const bool group) {
+  CallStorySteps steps;
+  if (group) {
+    steps.keys = {view.stage == 0 ? "call.story.step.group_calling" : "call.story.step.group_joined",
+                  "call.story.step.group_line", "call.story.step.group_heard"};
+    steps.shown = view.stage;
+    return steps;
+  }
+  // The five steps (#172): calling, answered, matching the fastest line, setting up the encrypted channel, connected.
+  std::string matching = "call.story.step.matching";
+  if (view.stage > CallConnectStory::kStageMatching) {
+    matching = view.route == CallRoute::Relayed   ? "call.story.step.matched_relayed"
+               : view.route == CallRoute::Unknown ? "call.story.step.matched"
+                                                  : "call.story.step.matched_direct";
+  }
+  if (view.outgoing) {
+    steps.keys = {"call.story.step.calling", "call.story.step.peer_answered"};
+  } else {
+    steps.keys = {"call.story.step.you_answered"};
+  }
+  steps.keys.push_back(matching);
+  steps.keys.push_back("call.story.step.securing");
+  steps.keys.push_back("call.story.step.connected");
+  // The stage numbers the five steps; a device that answered has no "calling" line, so it counts one less.
+  const int first = view.outgoing ? 0 : 1;
+  steps.shown = view.stage == CallConnectStory::kStageDone ? static_cast<int>(steps.keys.size()) : view.stage - first;
+  return steps;
+}
+
 const char* CallRouteResultKey(const CallRoute route) {
   switch (route) {
-  case CallRoute::Direct:
-    return "call.story.result.direct";
-  case CallRoute::AroundLimits:
-    return "call.story.result.around";
-  case CallRoute::Relayed:
-    return "call.story.result.relayed";
-  case CallRoute::Unknown:
-    break;
+    case CallRoute::Direct:
+      return "call.story.result.direct";
+    case CallRoute::AroundLimits:
+      return "call.story.result.around";
+    case CallRoute::Relayed:
+      return "call.story.result.relayed";
+    case CallRoute::Unknown:
+      break;
   }
   return "call.story.result.unknown";
 }
 
 const char* CallRouteEventKey(const CallRoute route) {
   switch (route) {
-  case CallRoute::Direct:
-    return "call.story.event.direct";
-  case CallRoute::AroundLimits:
-    return "call.story.event.around";
-  case CallRoute::Relayed:
-    return "call.story.event.relayed";
-  case CallRoute::Unknown:
-    break;
+    case CallRoute::Direct:
+      return "call.story.event.direct";
+    case CallRoute::AroundLimits:
+      return "call.story.event.around";
+    case CallRoute::Relayed:
+      return "call.story.event.relayed";
+    case CallRoute::Unknown:
+      break;
   }
   return "call.story.event.unknown";
 }
 
 const char* CallRouteHowKey(const CallRoute route) {
   switch (route) {
-  case CallRoute::Direct:
-    return "call.story.how.direct";
-  case CallRoute::AroundLimits:
-    return "call.story.how.around";
-  case CallRoute::Relayed:
-    return "call.story.how.relayed";
-  case CallRoute::Unknown:
-    break;
+    case CallRoute::Direct:
+      return "call.story.how.direct";
+    case CallRoute::AroundLimits:
+      return "call.story.how.around";
+    case CallRoute::Relayed:
+      return "call.story.how.relayed";
+    case CallRoute::Unknown:
+      break;
   }
   return "call.story.how.unknown";
 }
 
 const char* CallStoryNoticeKey(const CallStoryNotice notice) {
   switch (notice) {
-  case CallStoryNotice::Slow:
-    return "call.story.notice.slow";
-  case CallStoryNotice::Closer:
-    return "call.story.notice.closer";
-  case CallStoryNotice::None:
-    break;
+    case CallStoryNotice::Slow:
+      return "call.story.notice.slow";
+    case CallStoryNotice::Closer:
+      return "call.story.notice.closer";
+    case CallStoryNotice::None:
+      break;
   }
   return "";
 }
 
 const char* CallSignalWordKey(const CallPathQuality quality) {
   switch (quality) {
-  case CallPathQuality::Fair:
-    return "call.quality.fair";
-  case CallPathQuality::Poor:
-  case CallPathQuality::Reconnecting:
-    return "call.quality.poor";
-  case CallPathQuality::NoAudio:
-    return "call.quality.no_audio";
-  case CallPathQuality::Excellent:
-  case CallPathQuality::Good:
-    break;
+    case CallPathQuality::Fair:
+      return "call.quality.fair";
+    case CallPathQuality::Poor:
+    case CallPathQuality::Reconnecting:
+      return "call.quality.poor";
+    case CallPathQuality::NoAudio:
+      return "call.quality.no_audio";
+    case CallPathQuality::Excellent:
+    case CallPathQuality::Good:
+      break;
   }
   return "";
 }

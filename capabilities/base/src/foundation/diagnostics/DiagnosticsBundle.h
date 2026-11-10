@@ -31,8 +31,8 @@ struct DiagnosticsBundleInput {
    * kDiagnosticsMaxFiles - 1: the crash record is an entry too.
    */
   std::vector<std::filesystem::path> files;
-  std::vector<std::string> crash_lines;          // already formatted "[ts] [INFO] [Crash] ..." lines; kept longest
-  std::vector<std::string> known_identifiers;    // own account id, contact peer ids, device id, relay id
+  std::vector<std::string> crash_lines;       // already formatted "[ts] [INFO] [Crash] ..." lines; kept longest
+  std::vector<std::string> known_identifiers; // own account id, contact peer ids, device id, relay id
   std::string client_token, product, version, os;
   int64_t captured_at_ms = 0;
 };

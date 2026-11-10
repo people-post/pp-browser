@@ -187,8 +187,8 @@ protected:
     }
 
     Wait<void> nested_wait;
-    harness_->mgr_a().EstablishNestedOverCarrier(
-        harness_->peer_id_b, bridge_wait.result->session, true, nested_wait.LinkFn());
+    harness_->mgr_a().EstablishNestedOverCarrier(harness_->peer_id_b, bridge_wait.result->session, true,
+                                                 nested_wait.LinkFn());
     nested_wait.PumpUntilDone(*harness_);
     if (!nested_wait.result) {
       return nested_wait.result.error();

@@ -19,9 +19,9 @@ struct StoredAttachmentItem {
   std::vector<uint8_t> content_hash;
   std::string mime;
   std::string filename;
-  uint64_t bytes = 0;            // actual bytes held on this device (CAS), never the sender's declared size
+  uint64_t bytes = 0; // actual bytes held on this device (CAS), never the sender's declared size
   int64_t timestamp_ms = 0;
-  bool has_server_copy = false;  // fields.url non-empty
+  bool has_server_copy = false; // fields.url non-empty
 };
 
 /** What a local delete did: items taken off, bytes freed, items whose bytes stay because something else uses them. */

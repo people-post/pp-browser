@@ -40,7 +40,6 @@ inline constexpr int64_t kKeepDirectRecheckMs = 500;
 bool ReleaseDirectAfterHopAttachNow(bool still_on_hop, const std::vector<int64_t>& stream_last_rx_ms,
                                     int64_t attached_ms, int64_t now_ms, int64_t deadline_ms);
 
-
 // --- Attach-wait ---
 
 /** Default attach-wait budget (must outlast multi-hop quote/attach IO). */

@@ -15,7 +15,11 @@ namespace pbr {
  */
 struct CallActionsPorts {
   // Chat
-  std::function<bool(const std::string& thread_id, bool video_allowed)> start_call;
+  /**
+   * A chat calls — its call button, a tapped call record (#164), a group's Join: CallPresenter::CallFromChat (a call
+   * that goes on is joined, video this device cannot send goes voice). False when nothing was asked.
+   */
+  std::function<bool(const std::string& thread_id, bool want_video)> start_call;
   std::function<void()> refresh_pending_ring;
   /** Platform can encode/send video for a call (gates the "Video call" menu item). */
   std::function<bool()> video_call_available;
@@ -33,8 +37,7 @@ struct CallActionsPorts {
   std::function<void(const std::vector<std::string>& identities)> invite_identities;
   /** V062 2: the add-people picker lists `identity` for the active call (a group's call: per the guest rule). */
   std::function<bool(const std::string& identity)> may_add_to_call;
-  std::function<bool(const std::string& thread_id, bool video_allowed,
-                     const std::vector<std::string>& identities)>
+  std::function<bool(const std::string& thread_id, bool video_allowed, const std::vector<std::string>& identities)>
       start_with_invitees;
 
   // Shell
@@ -65,7 +68,7 @@ struct CallActionsPorts {
   std::function<void()> spotlight_toggle_fill;
   std::function<void()> restore_chrome_from_minimized;
   /** #166: the minimised chip was dropped (side 1 left / 2 right, height 0..1000 in its band; CallChipDock). */
-  std::function<void(int side, int y_permille)> set_minimized_place;
+  std::function<void(int side, int y_permille, bool tucked)> set_minimized_place;
   std::function<void()> show_call_details;
 };
 

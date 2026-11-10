@@ -9,7 +9,7 @@
 namespace ui {
 class Element;
 class ElementDocument;
-}
+} // namespace ui
 
 namespace pbr {
 

@@ -16,10 +16,10 @@ enum class CasRealm : uint8_t { Private = 0, Public = 1 };
 
 inline const char* CasRealmToString(const CasRealm realm) {
   switch (realm) {
-  case CasRealm::Private:
-    return "private";
-  case CasRealm::Public:
-    return "public";
+    case CasRealm::Private:
+      return "private";
+    case CasRealm::Public:
+      return "public";
   }
   return "private";
 }

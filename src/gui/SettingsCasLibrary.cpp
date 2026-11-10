@@ -120,13 +120,13 @@ void SettingsCasLibrary::Unpublish(const int index) {
     return;
   }
   feedback_.show_confirm_destructive(Tr("settings.storage.library.unpublish_confirm_title"),
-                         Tr("settings.storage.library.unpublish_confirm_message"),
-                         [this, content_id_hex = item->content_id_hex](const bool ok) {
-                           if (ok) {
-                             PerformUnpublish(content_id_hex);
-                           }
-                         },
-                         {});
+                                     Tr("settings.storage.library.unpublish_confirm_message"),
+                                     [this, content_id_hex = item->content_id_hex](const bool ok) {
+                                       if (ok) {
+                                         PerformUnpublish(content_id_hex);
+                                       }
+                                     },
+                                     {});
 }
 
 void SettingsCasLibrary::PerformShare(const std::string& content_id_hex) {
@@ -171,22 +171,22 @@ void SettingsCasLibrary::FetchTip() {
   if (!feedback_.show_prompt) {
     return;
   }
-  feedback_.show_prompt(
-      Tr("settings.storage.library.fetch_tip_title"), Tr("settings.storage.library.fetch_tip_message"), "",
-      [this](const bool confirmed, const std::string& entered_tip) {
-        const std::string tip = util::Trim(entered_tip);
-        if (!confirmed || tip.empty()) {
-          return;
-        }
-        feedback_.show_prompt(Tr("settings.storage.library.fetch_tip_peer_title"),
-                              Tr("settings.storage.library.fetch_tip_peer_message"), "",
-                              [this, tip](const bool peer_ok, const std::string& entered_peer) {
-                                const std::string peer = util::Trim(entered_peer);
-                                if (peer_ok && !peer.empty()) {
-                                  PerformFetchTip(tip, peer);
-                                }
-                              });
-      });
+  feedback_.show_prompt(Tr("settings.storage.library.fetch_tip_title"),
+                        Tr("settings.storage.library.fetch_tip_message"), "",
+                        [this](const bool confirmed, const std::string& entered_tip) {
+                          const std::string tip = util::Trim(entered_tip);
+                          if (!confirmed || tip.empty()) {
+                            return;
+                          }
+                          feedback_.show_prompt(Tr("settings.storage.library.fetch_tip_peer_title"),
+                                                Tr("settings.storage.library.fetch_tip_peer_message"), "",
+                                                [this, tip](const bool peer_ok, const std::string& entered_peer) {
+                                                  const std::string peer = util::Trim(entered_peer);
+                                                  if (peer_ok && !peer.empty()) {
+                                                    PerformFetchTip(tip, peer);
+                                                  }
+                                                });
+                        });
 }
 
 void SettingsCasLibrary::PerformFetchTip(const std::string& tip, const std::string& peer_relay_user_id) {

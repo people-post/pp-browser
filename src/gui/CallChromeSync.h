@@ -68,6 +68,7 @@ struct CallChromeLayer {
   bool in_call_spotlight_fill = true;
   int in_call_minimized_side = 0;
   int in_call_minimized_y_permille = 0;
+  bool in_call_minimized_tucked = false;
   int in_call_quality_bars = 4;
   bool in_call_quality_ok = true;
   bool in_call_quality_warn = false;
@@ -88,15 +89,28 @@ struct CallChromeLayer {
   bool phone = false;
   std::string ring_phone_title;
   std::string ring_phone_subtitle;
-  std::string ring_avatar;  // group / photo / letter / tone in one key
+  std::string ring_avatar; // group / photo / letter / tone in one key
+  /** Written into the phone ring markup (dimmed, click-less answers): a change remounts. */
+  bool ring_awaiting_invite = false;
+  /** Bound (the silhouette variant's data-if): a change dirties. */
+  bool ring_caller_unknown = false;
+  /** Bound (the 1:1 and group blocks' data-if, the voice-answer button's data-if): a change dirties. */
+  bool ring_group = false;
+  bool ring_video_allowed = false;
+  /** Bound: the ring page's three lines (words + flags) and our own avatar on its left. Changes dirty. */
+  std::string ring_steps;
   std::string in_call_phone_title;
   bool in_call_video = false;
-  std::string in_call_avatars;  // the peer's and our own, as for ring_avatar
+  std::string in_call_avatars; // the peer's and our own, as for ring_avatar
   bool in_call_phone_failed = false;
   std::string in_call_failed_text;
   bool in_call_story_active = false;
+  /** Bound (a stage advance, the step words and the list's scroll only dirty): the stage, the step words, the offset. */
   int in_call_story_stage = 0;
   std::string in_call_story_steps;
+  std::string in_call_story_scroll;
+  /** Written into the markup (a change remounts): the list's shape, i.e. row count, lead rows, spark side. */
+  std::string in_call_story_shape;
   bool in_call_story_sheet_open = false;
   std::vector<CallStoryLine> in_call_story_lines;
   std::string in_call_story_how;
@@ -117,9 +131,9 @@ struct CallChromeLayer {
 };
 
 enum class CallChromeUpdate {
-  None,      // idle poll / no visible change
-  DirtyOnly, // subtitle/labels while layer already shown
-  Remount,   // layer appear / disappear / switch call_id → RemountCallChrome mounts
+  None,       // idle poll / no visible change
+  DirtyOnly,  // subtitle/labels while layer already shown
+  Remount,    // layer appear / disappear / switch call_id → RemountCallChrome mounts
   LevelsOnly, // only the audio meters changed while they are on screen → dirty kCallLevelVariables
   /** Only bound parts changed (the call clock, the signal, the result line, the top pill, the quality chip): each
    * changed variable is dirtied on its own (CallChromeChangedVariables), never the whole call group (B146). */
@@ -139,7 +153,8 @@ inline constexpr std::array<const char*, 4> kCallLevelVariables = {
  * the meters, the call clock, the quality chip, the phone's result line, signal bar and top pill, and the roster arrays
  * whose speaking rings changed. LevelsOnly and PartsOnly dirty exactly these.
  */
-std::vector<const char*> CallChromeChangedVariables(const CallInProgressState& before, const CallInProgressState& after);
+std::vector<const char*> CallChromeChangedVariables(const CallInProgressState& before,
+                                                    const CallInProgressState& after);
 
 /** Pure gate: remount on layer identity / control presence / mode / status kind; Dirty for icon toggles;
  * meter-only changes are LevelsOnly while the meters are on screen (Expanded, no roster) and None otherwise. */

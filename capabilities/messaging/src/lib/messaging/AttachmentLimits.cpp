@@ -9,7 +9,9 @@ namespace {
 constexpr int64_t kWindowMs = 60 * 1000;
 } // namespace
 
-AttachmentLimits DefaultAttachmentLimits() { return AttachmentLimits{}; }
+AttachmentLimits DefaultAttachmentLimits() {
+  return AttachmentLimits{};
+}
 
 AttachmentKind AttachmentKindOfMime(const std::string& mime) {
   if (mime.rfind("image/", 0) == 0) {
@@ -24,18 +26,20 @@ AttachmentKind AttachmentKindOfMime(const std::string& mime) {
   return AttachmentKind::File;
 }
 
-bool VideoWithinLimit(const uint64_t bytes, const AttachmentLimits& limits) { return bytes <= limits.max_video_bytes; }
+bool VideoWithinLimit(const uint64_t bytes, const AttachmentLimits& limits) {
+  return bytes <= limits.max_video_bytes;
+}
 
 uint64_t MaxAttachmentSendBytes(const AttachmentLimits& limits, const std::string& mime, const bool image_is_shrunk) {
   switch (AttachmentKindOfMime(mime)) {
-  case AttachmentKind::Image:
-    return image_is_shrunk ? limits.max_image_bytes : limits.max_original_image_bytes;
-  case AttachmentKind::Video:
-    return limits.max_video_bytes;
-  case AttachmentKind::Audio:
-    return limits.max_audio_bytes;
-  case AttachmentKind::File:
-    break;
+    case AttachmentKind::Image:
+      return image_is_shrunk ? limits.max_image_bytes : limits.max_original_image_bytes;
+    case AttachmentKind::Video:
+      return limits.max_video_bytes;
+    case AttachmentKind::Audio:
+      return limits.max_audio_bytes;
+    case AttachmentKind::File:
+      break;
   }
   return limits.max_file_bytes;
 }

@@ -1,6 +1,7 @@
 // Which rows a transcript shows and what folds onto them (the GUI draws them).
 #include "lib/messaging/TranscriptAssembly.h"
 
+#include "lib/delivery/DeliveryNotice.h"
 #include "lib/delivery/ReactionTypes.h"
 
 #include <gtest/gtest.h>
@@ -36,6 +37,23 @@ std::vector<std::string> Ids(const std::vector<TranscriptRow>& rows) {
   return out;
 }
 
+TEST(TranscriptAssemblyTest, ASendFailureLineGoesWhenARetryDeliveredTheMessage) {
+  ThreadMessage sent = Msg("m1", kLocalSelfContactId, "hi", 1);
+  sent.delivery = MessageDelivery::Failed;
+  ThreadMessage line = MakeSendFailureRow("t", "m1", "relay_unreachable", 2);
+  line.display_order = 2;
+  ThreadMessage group_line = MakeSendFailureRow("t", "m1", kGroupMembersMissedWire, 3);
+  group_line.display_order = 3;
+  EXPECT_EQ(Ids(AssembleTranscript({sent, line}, nullptr)), (std::vector<std::string>{"m1", "send-failure-m1"}));
+  sent.delivery = MessageDelivery::Relayed;
+  EXPECT_EQ(Ids(AssembleTranscript({sent, line}, nullptr)), (std::vector<std::string>{"m1"}));
+  EXPECT_EQ(Ids(AssembleTranscript({sent, group_line}, nullptr)),
+            (std::vector<std::string>{"m1", "send-failure-m1-group"}))
+      << "members missing it is still true after delivery";
+  sent.delivery = MessageDelivery::Failed; // a second failure
+  EXPECT_EQ(Ids(AssembleTranscript({sent, line}, nullptr)), (std::vector<std::string>{"m1", "send-failure-m1"}));
+}
+
 TEST(TranscriptAssemblyTest, ReactionsFoldOntoTheirTarget) {
   const std::string thumbs = "\xF0\x9F\x91\x8D";
   const std::vector<ThreadMessage> messages = {
@@ -43,7 +61,7 @@ TEST(TranscriptAssemblyTest, ReactionsFoldOntoTheirTarget) {
       Reaction("r1", "account:p", "m1", thumbs, 2),
       Reaction("r2", kLocalSelfContactId, "m1", thumbs, 3),
       Reaction("r3", "account:q", "m1", thumbs, 4),
-      Reaction("r4", "account:q", "m1", thumbs, 5, kAnnotationTypeReactionClear),  // q takes it back
+      Reaction("r4", "account:q", "m1", thumbs, 5, kAnnotationTypeReactionClear), // q takes it back
       Reaction("r5", "account:p", "gone", thumbs, 6),                             // target not here
   };
   const auto rows = AssembleTranscript(messages, nullptr);
@@ -81,10 +99,10 @@ TEST(TranscriptAssemblyTest, WhatNeverShows) {
 }
 
 TEST(TranscriptAssemblyTest, AnAiAnswerCarriesTheQuestion) {
-  const auto rows = AssembleTranscript({Msg("q", kLocalSelfContactId, "@ai what is up", 1),
-                                        Msg("a", kAiAssistantContactId, "sky", 2),
-                                        Msg("a2", kAiAssistantContactId, "more", 3)},
-                                       nullptr);
+  const auto rows =
+      AssembleTranscript({Msg("q", kLocalSelfContactId, "@ai what is up", 1), Msg("a", kAiAssistantContactId, "sky", 2),
+                          Msg("a2", kAiAssistantContactId, "more", 3)},
+                         nullptr);
   ASSERT_EQ(rows.size(), 3u);
   ASSERT_TRUE(rows[1].asked_question);
   EXPECT_NE(rows[1].asked_question->find("what is up"), std::string::npos);

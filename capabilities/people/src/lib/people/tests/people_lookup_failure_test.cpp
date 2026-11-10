@@ -25,9 +25,9 @@ TEST(PeopleLookupFailureTest, TransportErrorsAreUnreachable) {
             PeopleLookupFailure::DirectoryUnreachable);
   EXPECT_EQ(ClassifyPeopleLookupError(AppError::Network(Err::Network::Timeout, "curl failed: Timeout was reached")),
             PeopleLookupFailure::DirectoryUnreachable);
-  EXPECT_EQ(ClassifyPeopleLookupError(
-                AppError::Network(Err::Network::DnsFailed, "curl failed: Could not resolve host")),
-            PeopleLookupFailure::DirectoryUnreachable);
+  EXPECT_EQ(
+      ClassifyPeopleLookupError(AppError::Network(Err::Network::DnsFailed, "curl failed: Could not resolve host")),
+      PeopleLookupFailure::DirectoryUnreachable);
 }
 
 TEST(PeopleLookupFailureTest, EverythingElseIsOther) {

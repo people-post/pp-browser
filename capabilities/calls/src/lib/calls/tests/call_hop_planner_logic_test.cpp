@@ -30,38 +30,34 @@ TEST(CallHopPlannerLogicTest, LocalAcceptWithHintToAttaching) {
 TEST(CallHopPlannerLogicTest, InboundSfuIgnoredWhenStatusDisallowsHop) {
   CallHopPlannerApplyContext ctx;
   ctx.allows_hop_path = false;
-  auto out =
-      DecideCallHopPlannerPhase(CallHopPlannerPhase::Idle, CallHopPlannerEvent::SfuAttachInbound, ctx);
+  auto out = DecideCallHopPlannerPhase(CallHopPlannerPhase::Idle, CallHopPlannerEvent::SfuAttachInbound, ctx);
   EXPECT_EQ(out.decision, CallHopPlannerDecision::Ignore);
 }
 
 TEST(CallHopPlannerLogicTest, SoftMigrateToMigrating) {
   CallHopPlannerApplyContext ctx;
   ctx.should_arm_hop = true;
-  auto out = DecideCallHopPlannerPhase(CallHopPlannerPhase::WaitingAttach,
-                                       CallHopPlannerEvent::SoftMigrateRequested, ctx);
+  auto out =
+      DecideCallHopPlannerPhase(CallHopPlannerPhase::WaitingAttach, CallHopPlannerEvent::SoftMigrateRequested, ctx);
   EXPECT_EQ(out.decision, CallHopPlannerDecision::Transition);
   EXPECT_EQ(out.next, CallHopPlannerPhase::Migrating);
 }
 
 TEST(CallHopPlannerLogicTest, AttachSucceededToLive) {
   CallHopPlannerApplyContext ctx;
-  auto out =
-      DecideCallHopPlannerPhase(CallHopPlannerPhase::Attaching, CallHopPlannerEvent::AttachSucceeded, ctx);
+  auto out = DecideCallHopPlannerPhase(CallHopPlannerPhase::Attaching, CallHopPlannerEvent::AttachSucceeded, ctx);
   EXPECT_EQ(out.next, CallHopPlannerPhase::Live);
 }
 
 TEST(CallHopPlannerLogicTest, AttachWaitExpiredClears) {
   CallHopPlannerApplyContext ctx;
-  auto out = DecideCallHopPlannerPhase(CallHopPlannerPhase::WaitingAttach,
-                                       CallHopPlannerEvent::AttachWaitExpired, ctx);
+  auto out = DecideCallHopPlannerPhase(CallHopPlannerPhase::WaitingAttach, CallHopPlannerEvent::AttachWaitExpired, ctx);
   EXPECT_EQ(out.next, CallHopPlannerPhase::Idle);
 }
 
 TEST(CallHopPlannerLogicTest, LateAttachSucceededFromIdleIgnored) {
   CallHopPlannerApplyContext ctx;
-  auto out =
-      DecideCallHopPlannerPhase(CallHopPlannerPhase::Idle, CallHopPlannerEvent::AttachSucceeded, ctx);
+  auto out = DecideCallHopPlannerPhase(CallHopPlannerPhase::Idle, CallHopPlannerEvent::AttachSucceeded, ctx);
   EXPECT_EQ(out.decision, CallHopPlannerDecision::Ignore);
 }
 

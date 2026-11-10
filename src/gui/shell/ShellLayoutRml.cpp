@@ -11,8 +11,19 @@ namespace pbr {
 
 namespace {
 
-std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeFrostSurface active,
-                               bool frost_enabled, bool solid) {
+/** A bar's material: a child element carrying the bar colour and, when this bar is a frosted surface, the backdrop
+ *  blur. The engine draws no backdrop blur on a bar that has a z-index and children itself, so the blur goes on this
+ *  child (like .pane-nav-bg and .nav-bar-bg). Put it first in the bar; its content is positioned above it. */
+std::string BarMaterial(bool frosted, bool frost_enabled, bool solid) {
+  std::string out = "<div class=\"bar-material";
+  if (frosted && frost_enabled && !solid) {
+    out += " bar-material--frost";
+  }
+  return out + "\"></div>";
+}
+
+std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeFrostSurface active, bool frost_enabled,
+                               bool solid) {
   std::string cls = "surface-chrome";
   if (frost_enabled && surface != CompactChromeFrostSurface::None && surface == active) {
     cls += " surface-chrome--frost";
@@ -104,7 +115,8 @@ std::string ShellLayoutRml::ExpandedBase() const {
 }
 
 std::string ShellLayoutRml::CompactBase() const {
-  const CompactChromeFrostSurface frost = ShellInterruption::ResolveFrostSurface(state_);
+  const CompactChromeFrost frosts = ShellInterruption::ResolveFrost(state_);
+  const CompactChromeFrostSurface frost = frosts.top;
   const bool frost_enabled = ChromeFrostEnabled();
   const bool solid = state_.reduce_transparency;
   std::ostringstream out;
@@ -121,8 +133,12 @@ std::string ShellLayoutRml::CompactBase() const {
       out << " shell-nav-page--home";
     }
     if (hidden_tab) {
-      // Its bar: back, the title always shown, no large title, and no tab bar under it.
+      // Its bar: back, the title always shown, no large title, and no tab bar under it (Settings keeps the tab bar:
+      // its content then clears it, TODO #200).
       out << " shell-nav-page--hidden-tab";
+      if (ShellLayout::SettingsTabBarShown(state_)) {
+        out << " shell-nav-page--tab-bar";
+      }
     }
     // The tab page's bars (nav bar, a settings page's bar) are the frosted ones while nothing covers them.
     if (frost == CompactChromeFrostSurface::BottomNav && frost_enabled) {
@@ -146,7 +162,9 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">";
     out << "<div class=\"shell-chat-overlay-chrome row "
         << SurfaceChromeClass(CompactChromeFrostSurface::ChatOverlayHeader, frost, frost_enabled, solid) << "\">";
-    out << "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
+    out << BarMaterial(frost == CompactChromeFrostSurface::ChatOverlayHeader, frost_enabled, solid);
+    out << "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" "
+           "data-event-click=\"compact_chat_back()\">";
     out << "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/back.svg\"></svg></span>";
     out << "</button>";
     // An AI conversation's bar: a new conversation on the right (DEV/PLAN-minimal-nav.md B). thread_is_ai is the chat
@@ -159,15 +177,12 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "<div class=\"bar-fade\"></div>";
     out << "</div>";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
-    out << "<div class=\"shell-composer-mount surface-chrome";
-    if (frost_enabled && !solid) {
-      // Frosted like the bars (Kenneth 2026-11-07): a translucent bar colour over a blur.
-      out << " surface-chrome--frost";
-    }
-    if (solid) {
-      out << " surface-chrome--solid";
-    }
-    out << "\" id=\"shell-composer-mount\"></div>";
+    // The composer bar is clear (TODO #202: a floating pill and two round buttons, the transcript scrolls under them);
+    // its height is the mount's, whose content is replaced on every mount.
+    out << "<div class=\"shell-composer-bar\">";
+    out << "<div class=\"shell-composer-mount surface-chrome" << (solid ? " surface-chrome--solid" : "")
+        << "\" id=\"shell-composer-mount\"></div>";
+    out << "</div>";
     out << "</div>";
   }
 
@@ -192,8 +207,12 @@ std::string ShellLayoutRml::CompactBase() const {
   // The tab bar only where it is drawn (ShellLayout::CompactTabBarDp): not on a hidden tab or under the chat.
   if (ShellLayout::CompactTabBarDp(state_) > 0.f) {
     out << "<div class=\"shell-bottom-chrome";
-    if (frost == CompactChromeFrostSurface::BottomNav && frost_enabled) {
+    if (frosts.bottom == CompactChromeFrostSurface::BottomNav && frost_enabled) {
       out << " shell-bottom-chrome--frost";
+    }
+    if (!state_.transient_stack.empty()) {
+      // Settings' pushed pages (contact, blocked list) are drawn under the bar, not over it.
+      out << " shell-bottom-chrome--over-page";
     }
     if (solid) {
       out << " shell-bottom-chrome--solid";
@@ -204,7 +223,8 @@ std::string ShellLayoutRml::CompactBase() const {
     }
     out << "\" id=\"shell-bottom-chrome\">";
     out << "<div class=\"bar-fade bar-fade--up\"></div>";
-    out << "<div class=\"shell-nav-rail shell-nav-rail--compact shell-nav-rail--text\" id=\"shell-nav-rail-mount\"></div>";
+    out << "<div class=\"shell-nav-rail shell-nav-rail--compact shell-nav-rail--text\" "
+           "id=\"shell-nav-rail-mount\"></div>";
     out << "</div>";
   }
 
@@ -223,10 +243,11 @@ std::string ShellLayoutRml::TransientLayer() const {
   std::ostringstream out;
   // On phones the pushed page gets the compact class too, so the phone styles of the page it shows apply.
   const char* compact = state_.layout_mode == LayoutMode::Compact ? " shell-layer-compact" : "";
-  // The contact page and the blocked list have a 48dp bar on phones with only the back arrow, the colour of every phone
+  // New chat and Add contact (TODO #176 / #177) are titled the same way: their title row is the page's, the list scrolls
+  // under the frosted bar. The contact page and the blocked list have a 48dp bar on phones with only the back arrow, the colour of every phone
   // bar, no lines; it hides while the page is scrolled away from its top (ShellNavBarScroll).
-  const bool titled =
-      compact[0] != '\0' && (top.spec.key == "contact_detail" || top.spec.key == "blocked_people");
+  const bool titled = compact[0] != '\0' && (top.spec.key == "contact_detail" || top.spec.key == "blocked_people" ||
+                                             top.spec.key == "new_chat" || top.spec.key == "add_contact");
   out << "<div class=\"shell-layer shell-layer-transient" << compact << (titled ? " nav-bar-host" : "")
       << "\" id=\"shell-transient-layer\" data-model=\"window\">";
   out << "<div class=\"shell-transient-chrome " << (titled ? "shell-transient-chrome--titled " : "")
@@ -277,7 +298,8 @@ std::string ShellLayoutRml::Overlays() const {
       const char* layer_stop = detent == SheetDetent::Small  ? " shell-layer-sheet--small"
                                : detent == SheetDetent::Half ? " shell-layer-sheet--half"
                                                              : "";
-      out << "<div class=\"shell-layer shell-layer-overlay shell-layer-sheet" << layer_stop << "\" data-model=\"window\">";
+      out << "<div class=\"shell-layer shell-layer-overlay shell-layer-sheet" << layer_stop
+          << "\" data-model=\"window\">";
       out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
       // The view's key as a modifier class: a page with its own edge-to-edge rows (New chat) drops the side padding.
       // Frosted bars inside it (the ask-AI panel's input bar) follow the Transparency setting like the top bars.
@@ -287,7 +309,8 @@ std::string ShellLayoutRml::Overlays() const {
       out << "<div class=\"shell-page-sheet-grabber\"></div>";
       out << "<button class=\"shell-close-btn shell-page-sheet-close\" type=\"button\" data-event-click=\"close_layer("
           << overlay.id << ")\">";
-      out << "<span class=\"sheet-icon-disc\"><svg src=\"../icons/v2/close.svg\" width=\"12\" height=\"12\"></svg></span>";
+      out << "<span class=\"sheet-icon-disc\"><svg src=\"../icons/v2/close.svg\" width=\"12\" "
+             "height=\"12\"></svg></span>";
       out << "</button>";
       // The compact class: a phone page shown in a sheet (New chat) keeps its phone styles.
       out << "<div class=\"shell-overlay-body shell-layer-compact\" id=\"overlay-body-" << overlay.id << "\"></div>";
@@ -297,8 +320,7 @@ std::string ShellLayoutRml::Overlays() const {
     out << "<div class=\"shell-layer shell-layer-overlay\" data-model=\"window\">";
     out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
     out << "<div class=\"shell-frame\">";
-    out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_layer("
-        << overlay.id << ")\">";
+    out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_layer(" << overlay.id << ")\">";
     out << "<svg src=\"../icons/close.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
     out << "</button>";
     out << "<div class=\"shell-overlay-body\" id=\"overlay-body-" << overlay.id << "\"></div>";
@@ -361,8 +383,8 @@ std::string ShellLayoutRml::Dialog() const {
       state_.dialog.ok_label.empty() ? Tr("common.ok") : std::string(state_.dialog.ok_label.c_str());
   const std::string cancel_label = Tr("common.cancel");
   const bool stacked = state_.dialog.show_cancel && DialogButtonsStacked(cancel_label, ok_label);
-  out << "<div class=\"shell-dialog shell-dialog--alert" << (state_.dialog.destructive ? " shell-dialog--destructive" : "")
-      << "\">";
+  out << "<div class=\"shell-dialog shell-dialog--alert"
+      << (state_.dialog.destructive ? " shell-dialog--destructive" : "") << "\">";
   out << "<div class=\"shell-dialog-body\">";
   out << "<h2 class=\"heading-2 shell-dialog-title\">{{dialog_title}}</h2>";
   out << "<p class=\"text shell-dialog-message\">{{dialog_message}}</p>";
@@ -378,8 +400,9 @@ std::string ShellLayoutRml::Dialog() const {
   out << "<button class=\"btn btn-secondary shell-dialog-cancel\" data-if=\"dialog_show_cancel\" "
          "data-event-click=\"dialog_cancel()\">"
       << cancel_label << "</button>";
-  out << "<button class=\"btn btn-primary shell-dialog-ok" << (state_.dialog.show_cancel ? " shell-dialog-ok--split" : "")
-      << "\" data-event-click=\"dialog_ok()\">" << ok_label << "</button>";
+  out << "<button class=\"btn btn-primary shell-dialog-ok"
+      << (state_.dialog.show_cancel ? " shell-dialog-ok--split" : "") << "\" data-event-click=\"dialog_ok()\">"
+      << ok_label << "</button>";
   out << "</div></div></div>";
   return out.str();
 }
@@ -389,37 +412,45 @@ std::string ShellLayoutRml::PinGate() const {
     return {};
   }
   std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
+  // Over the "Incoming call, connecting…" page: the scrim goes clear and the card steps below its title (rcss).
+  out << "<div class=\"shell-layer shell-layer-dialog"
+      << (state_.call_ring.awaiting_invite ? " shell-pin-gate--over-call" : "") << "\" data-model=\"window\">";
   out << "<div class=\"shell-scrim\"></div>";
-  out << "<div class=\"shell-dialog shell-pin-gate\">";
+  const bool frost = ChromeFrostEnabled();
+  out << "<div class=\"shell-dialog shell-pin-gate" << (frost ? " shell-pin-gate--frost" : "") << "\">";
+  if (frost) {
+    out << "<div class=\"bar-material bar-material--frost shell-pin-gate-material\"></div>";
+  }
   out << "<h2 class=\"heading-2 shell-dialog-title\">{{pin_gate_title}}</h2>";
   out << "<p class=\"text shell-dialog-message\">{{pin_gate_message}}</p>";
   out << "<p class=\"text shell-pin-gate-error\">{{pin_gate_error}}</p>";
   out << "<p class=\"text muted shell-pin-gate-note\" data-if=\"pin_gate_biometric_hint != ''\">"
          "{{pin_gate_biometric_hint}}</p>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_identity_fork_mode\">";
-  out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_identity_new()\">"
-      << Tr("pin.identity_new") << "</button>";
-  out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_identity_link()\">"
-      << Tr("pin.identity_link") << "</button>";
-  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_identity_phrase()\">"
-      << Tr("pin.identity_phrase") << "</button>";
+  out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_identity_new()\">" << Tr("pin.identity_new")
+      << "</button>";
+  out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_identity_link()\">" << Tr("pin.identity_link")
+      << "</button>";
+  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_identity_phrase()\">" << Tr("pin.identity_phrase")
+      << "</button>";
   out << "</div>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_chooser_mode\">";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_set_pin()\">" << Tr("pin.set_pin")
       << "</button>";
-  out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_use_default()\">"
-      << Tr("pin.just_continue") << "</button>";
-  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("common.back")
+  out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_use_default()\">" << Tr("pin.just_continue")
       << "</button>";
+  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("common.back") << "</button>";
   out << "</div>";
-  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow && !pin_gate_payload_hidden\" "
+  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow "
+         "&& !pin_gate_payload_hidden\" "
          "data-value=\"pin_gate_link_payload\" maxlength=\"65536\" placeholder=\""
       << Tr("pin.link_paste_placeholder") << "\"></textarea>";
-  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && !pin_gate_payload_hidden\" "
+  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && "
+         "!pin_gate_payload_hidden\" "
          "data-value=\"pin_gate_link_payload\" maxlength=\"65536\" placeholder=\""
       << Tr("pin.phrase_paste_placeholder") << "\"></textarea>";
-  out << "<button class=\"btn btn-secondary shell-pin-gate-paste\" data-if=\"pin_gate_link_paste_mode && !pin_gate_payload_hidden\" "
+  out << "<button class=\"btn btn-secondary shell-pin-gate-paste\" data-if=\"pin_gate_link_paste_mode && "
+         "!pin_gate_payload_hidden\" "
          "data-event-click=\"pin_gate_paste()\">"
       << Tr("pin.paste_button") << "</button>";
   // B166/B167: a transfer code is a multi-KB blob; rendering it in the textarea froze the app. Once a paste is too big
@@ -432,9 +463,11 @@ std::string ShellLayoutRml::PinGate() const {
          "data-event-click=\"pin_gate_clear_payload()\">"
       << Tr("pin.clear_pasted") << "</button>";
   out << "<p class=\"text muted shell-pin-gate-note\" "
-         "data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && !pin_gate_payload_hidden && pin_gate_saved_copy_name != ''\">"
+         "data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && !pin_gate_payload_hidden && "
+         "pin_gate_saved_copy_name != ''\">"
       << Tr("pin.phrase_saved_copy") << " {{pin_gate_saved_copy_name}}</p>";
-  out << "<button class=\"btn btn-ghost\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && !pin_gate_payload_hidden\" "
+  out << "<button class=\"btn btn-ghost\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && "
+         "!pin_gate_payload_hidden\" "
          "data-event-click=\"pin_gate_use_saved_copy()\">"
       << Tr("pin.phrase_use_saved_copy") << "</button>";
   if (state_.pin_gate.biometric_first) {
@@ -464,7 +497,8 @@ bool ShellLayoutRml::PinGateFocusesField(const PinGateState& gate) {
 
 // The field mode: the PIN (and a new PIN's confirmation) in password fields with the system keyboard; Continue submits.
 void ShellLayoutRml::PinGateFields(std::ostringstream& out) const {
-  out << "<input id=\"" << kPinGateFieldId << "\" class=\"field shell-pin-gate-input\" type=\"password\" "
+  out << "<input id=\"" << kPinGateFieldId
+      << "\" class=\"field shell-pin-gate-input\" type=\"password\" "
          "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode && !pin_gate_link_paste_mode && "
          "!pin_gate_waiting_device_unlock\" "
          "data-value=\"pin_gate_pin\" placeholder=\""
@@ -531,7 +565,8 @@ void ShellLayoutRml::PinGateKeypad(std::ostringstream& out) const {
     out << "<button class=\"shell-pin-key\" data-event-click=\"pin_gate_key(" << digit << ")\">" << digit
         << "</button>";
   }
-  out << "<button class=\"shell-pin-key shell-pin-key--plain shell-pin-key--word\" data-if=\"pin_gate_keypad_ok_shown\" "
+  out << "<button class=\"shell-pin-key shell-pin-key--plain shell-pin-key--word\" "
+         "data-if=\"pin_gate_keypad_ok_shown\" "
          "data-event-click=\"pin_gate_ok()\">"
       << Tr("pin.keypad_ok") << "</button>";
   // Face / fingerprint unlock on (unlock only, where no "OK" is due): its key prompts again.
@@ -595,12 +630,15 @@ std::string ShellLayoutRml::ShellRoot() const {
   // built, so an inline copy here would leave a second dialog that dialog_close never removes
   // (scan -> confirm: cancel left a dead OK button and a scrim over the whole app, 2026-10-28).
   // Overlay chrome mounts stay empty here; Remount* fills them (avoids full-shell remount).
-  out << "<div id=\"shell-dialog-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--dialog\"></div>";
+  out << "<div id=\"shell-dialog-mount\" class=\"shell-overlay-chrome-mount "
+         "shell-overlay-chrome-mount--dialog\"></div>";
   out << "<div id=\"shell-photo-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--photo\"></div>";
-  out << "<div id=\"shell-call-in-progress-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--bar\"></div>";
+  out << "<div id=\"shell-call-in-progress-mount\" class=\"shell-call-chrome-mount "
+         "shell-call-chrome-mount--bar\"></div>";
   out << "<div id=\"shell-call-ring-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--ring\"></div>";
   out << "<div id=\"shell-pin-gate-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--pin\"></div>";
-  out << "<div id=\"shell-onboarding-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--pin\"></div>";
+  out << "<div id=\"shell-onboarding-mount\" class=\"shell-overlay-chrome-mount "
+         "shell-overlay-chrome-mount--pin\"></div>";
   return out.str();
 }
 

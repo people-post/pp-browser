@@ -175,7 +175,7 @@ TEST(VoicePlayer, OneAtATime) {
   ASSERT_TRUE(WaitFor([&] { return probe.Count() >= 1; }));
   EXPECT_EQ(probe.At(0), std::make_pair(std::string("a"), VoicePlayEnd::Stopped));
   ASSERT_TRUE(WaitFor([&] { return state->opens.load() == 2; }));
-  EXPECT_EQ(state->closes.load(), 1);  // a's speaker was closed before b's opened
+  EXPECT_EQ(state->closes.load(), 1); // a's speaker was closed before b's opened
   player.Stop();
   ASSERT_TRUE(WaitFor([&] { return probe.Count() == 2; }));
   EXPECT_EQ(probe.At(1), std::make_pair(std::string("b"), VoicePlayEnd::Stopped));
@@ -197,8 +197,8 @@ TEST(VoicePlayer, PauseHoldsAndResumeContinuesFromWhereItWasHeard) {
   ASSERT_TRUE(WaitFor([&] { return state->clears.load() >= 1; })); // the queue was thrown away
   const size_t written_at_pause = state->Written();
   std::this_thread::sleep_for(100ms);
-  EXPECT_EQ(state->Written(), written_at_pause);   // nothing is fed while paused
-  EXPECT_EQ(player.CurrentId(), "m");              // and it is still "the clip"
+  EXPECT_EQ(state->Written(), written_at_pause); // nothing is fed while paused
+  EXPECT_EQ(player.CurrentId(), "m");            // and it is still "the clip"
   EXPECT_EQ(probe.Count(), 0u);
   state->draining = true;
   player.Resume();

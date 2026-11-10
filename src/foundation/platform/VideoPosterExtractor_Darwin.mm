@@ -125,8 +125,7 @@ Roe<std::vector<uint8_t>> ExtractWithAvFoundation(const std::string& video_path,
       return Error("Empty CGImage from video");
     }
 
-    SDL_Surface* surface =
-        SDL_CreateSurface(static_cast<int>(width), static_cast<int>(height), SDL_PIXELFORMAT_RGBA32);
+    SDL_Surface* surface = SDL_CreateSurface(static_cast<int>(width), static_cast<int>(height), SDL_PIXELFORMAT_RGBA32);
     if (!surface) {
       CGImageRelease(image);
       return Error("Failed to create SDL surface for poster");

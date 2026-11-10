@@ -10,10 +10,8 @@
 #include "feature/calls/CallDeliveryPorts.h"
 
 #include <functional>
-#include <mutex>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -49,9 +47,8 @@ public:
   Roe<void> FanOutToJoined(const std::string& call_id, CallControlType type, const std::string& detail_json,
                            const std::string& display, const std::string& skip_identity);
   /** Also to ringing / invited participants — ending a call so invitees clear their ring. */
-  Roe<void> FanOutToJoinedAndRinging(const std::string& call_id, CallControlType type,
-                                     const std::string& detail_json, const std::string& display,
-                                     const std::string& skip_identity);
+  Roe<void> FanOutToJoinedAndRinging(const std::string& call_id, CallControlType type, const std::string& detail_json,
+                                     const std::string& display, const std::string& skip_identity);
   /**
    * The call's media key to `peer_identity` (CallMediaKey): the key itself, its lane copies sealed per device of the
    * peer's (M024); its old form beside it, wrapped under the account pair's session, while kMediaKeyAccountWrapBridge.
@@ -61,22 +58,18 @@ public:
 
   /**
    * The account pair's e2e_public session key with `peer_identity` (delivery's: opened when missing) — the media
-   * key's old form is wrapped under it (M024 bridge). A key_init the session still carries rides the next SendDirect
-   * to that peer when that goes as the account copy; a send per device has no use for it.
+   * key's old form is wrapped under it (M024 bridge). While the session is unconfirmed its opener rides every account
+   * copy the lane sends that peer (delivery's own: E2ePublicSessionKeys::Resolve); a send per device has no use for it.
    */
   Roe<ByteVector> SessionKeyWith(const std::string& peer_identity) const;
+  /** The same key when a session with `peer_identity` is held, never opening one: reading the old form. */
+  Roe<ByteVector> HeldSessionKeyWith(const std::string& peer_identity) const;
 
 private:
   IThreadTranscript& transcript_;
   const ILocalAccount& account_;
   const ICallSessionReader& sessions_;
   const CallDeliveryPorts& delivery_;
-  /**
-   * AutoKey key_init from ensure_peer_session_key — rides the next SendDirect to that peer (the
-   * peer needs it to open the session the media key is wrapped under).
-   */
-  mutable std::mutex pending_key_init_mutex_;
-  mutable std::unordered_map<std::string, std::string> pending_key_init_;
 };
 
 } // namespace pbr

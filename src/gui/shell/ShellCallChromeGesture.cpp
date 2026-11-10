@@ -32,6 +32,7 @@ constexpr double kSlideDeadlineSeconds = 0.4;
 /** How often Reflow re-reads a docked chip's box (it only moves for a size change: a new window, the chip's words). */
 constexpr double kReflowIntervalSeconds = 0.25;
 constexpr const char* kDefaultCornerClass = "shell-call-minimized-chip--tr";
+constexpr const char* kHandleClass = "shell-call-minimized-chip--handle";
 
 int EventMouseX(const ui::Event& event) {
   return event.GetParameter<int>("mouse_x", 0);
@@ -60,8 +61,8 @@ void SetDp(ui::Element* element, const char* property, const float dp) {
 
 } // namespace
 
-void ShellCallChromeGesture::Attach(ui::Element* root, ui::Context* context, CallChromeMode mode,
-                                    Callbacks callbacks, ShellGestureAxisLock* axis_lock) {
+void ShellCallChromeGesture::Attach(ui::Element* root, ui::Context* context, CallChromeMode mode, Callbacks callbacks,
+                                    ShellGestureAxisLock* axis_lock) {
   Detach();
   if (!root || !context) {
     return;
@@ -207,8 +208,8 @@ bool ShellCallChromeGesture::ShouldIgnoreOutsideDismiss(ui::Element* target) con
     if (id == "shell-call-ring-mount" || id == "shell-dialog-mount" || id == "shell-pin-gate-mount") {
       return true;
     }
-    if (node->IsClassSet("shell-overlay-chrome-mount") ||
-        node->IsClassSet("shell-sheet-scrim") || node->IsClassSet("shell-scrim")) {
+    if (node->IsClassSet("shell-overlay-chrome-mount") || node->IsClassSet("shell-sheet-scrim") ||
+        node->IsClassSet("shell-scrim")) {
       return true;
     }
   }
@@ -377,7 +378,36 @@ void ShellCallChromeGesture::DropChip() {
   // ③ Then the translate goes: in the same frame, so it does not move.
   SetChipOffset(0.f, 0.f, true);
   // ④ To the nearer side at the height it was let go, clamped into the band.
-  const CallChipPlace place = CallChipDock::Release(chip, area);
+  CallChipPlace place = CallChipDock::Release(chip, area);
+  // #189: how close its outer edge is to that side, and how far it was thrown at it. A bar becomes the handle only
+  // when thrown toward the edge (a bar at rest is 12dp from it: a vertical move alone must not tuck it); a handle
+  // stays one unless it was let go farther than kTuckSnapDp from the edge.
+  const bool handle = IsHandle();
+  const float edge_dist =
+      place.side == CallChipDock::kSideLeft ? chip.left_dp : area.width_dp - (chip.left_dp + chip.width_dp);
+  const float thrown = place.side == CallChipDock::kSideLeft ? -drag_dx : drag_dx;
+  const bool near_edge = edge_dist <= CallChipDock::kTuckSnapDp;
+  const bool tuck = handle ? near_edge : (near_edge && thrown >= CallChipDock::kTuckThrowDp);
+  if (tuck != handle) {
+    // The other form is a different element: no slide, the chip remounts there at once.
+    const float h = tuck ? CallChipDock::kHandleDp : chip.height_dp;
+    const CallChipRect shown{chip.left_dp, chip.top_dp, tuck ? CallChipDock::kHandleDp : chip.width_dp, h};
+    place = CallChipDock::Release(shown, area);
+    place.tucked = tuck;
+    const float top = tuck ? CallChipDock::Place(place, area, shown.width_dp, h).top_dp
+                           : std::max(CallChipDock::MinTop(), chip.top_dp);
+    DiagLine switched("call.chip");
+    switched.Add("what", "switch");
+    if (tuck) {
+      switched.Add("form", "handle");
+    } else {
+      switched.Add("form", "bar");
+    }
+    switched.Add("side", place.side).Emit();
+    SwitchForm(place, top, tuck ? h : 0.f, area);
+    return;
+  }
+  place.tucked = handle;
   const CallChipPoint end = CallChipDock::Place(place, area, chip.width_dp, chip.height_dp);
   const ui::Tween tween(ui::Tween::Cubic, ui::Tween::Out);
   const ui::Property from_x(chip.left_dp, ui::Unit::DP);
@@ -394,8 +424,13 @@ void ShellCallChromeGesture::DropChip() {
     const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
     const float viewport_h = context_ && ratio > 0.f ? static_cast<float>(context_->GetDimensions().y) / ratio : 0.f;
     ui::Element* rebuilt = document_ ? document_->GetElementById("shell-call-minimized-chip") : nullptr;
-    DiagLine("call.chip")
-        .Add("what", "drop")
+    DiagLine drop("call.chip");
+    if (handle) {
+      drop.Add("form", "handle");
+    } else {
+      drop.Add("form", "bar");
+    }
+    drop.Add("what", "drop")
         .Add("left", Dp(chip.left_dp))
         .Add("top", Dp(chip.top_dp))
         .Add("w", Dp(chip.width_dp))
@@ -416,8 +451,41 @@ void ShellCallChromeGesture::DropChip() {
   // ⑤ comes when the slide ends (FinishSlide). ⑥ The place goes to the call state now, so a restore mid-slide
   // still finds it there; until the state has it, and while the slide runs, ShellHost does not rebuild the chip.
   if (callbacks_.on_chip_place) {
-    callbacks_.on_chip_place(place.side, place.y_permille);
+    callbacks_.on_chip_place(place.side, place.y_permille, place.tucked);
   }
+}
+
+bool ShellCallChromeGesture::IsHandle() const {
+  return root_ && root_->IsClassSet(kHandleClass);
+}
+
+void ShellCallChromeGesture::SwitchForm(const CallChipPlace& place, const float top_dp, const float chip_height_dp,
+                                        const CallChipArea& area) {
+  SetChipOffset(0.f, 0.f, false);
+  settling_ = false;
+  docked_ = true;
+  target_ = place;
+  reflow_area_height_dp_ = area.height_dp;
+  // What the remounted chip is placed from (ShellHost::MeasureCallChip copies it): the same side, at this top.
+  layout_ = CallChipLayout{place, top_dp, area.height_dp, chip_height_dp};
+  if (callbacks_.on_chip_place) {
+    callbacks_.on_chip_place(place.side, place.y_permille, place.tucked);
+  }
+}
+
+void ShellCallChromeGesture::TapHandle() {
+  CallChipRect chip;
+  CallChipArea area;
+  if (!MeasureChip(&chip, &area)) {
+    if (callbacks_.on_restore) {
+      callbacks_.on_restore();
+    }
+    return;
+  }
+  CallChipPlace place = CallChipDock::Release(chip, area);
+  place.tucked = false;
+  DiagLine("call.chip").Add("what", "switch").Add("form", "bar").Add("side", place.side).Add("tap", true).Emit();
+  SwitchForm(place, std::max(CallChipDock::MinTop(), chip.top_dp), 0.f, area);
 }
 
 void ShellCallChromeGesture::FreezeChip() {
@@ -467,11 +535,12 @@ void ShellCallChromeGesture::DockChip(const CallChipPlace& place) {
   const CallChipPoint at = CallChipDock::Place(place, area, chip.width_dp, chip.height_dp);
   root_->SetClass(kDefaultCornerClass, false);
   root_->RemoveProperty("width");
+  const float edge = place.tucked ? -CallChipDock::kTuckDp : CallChipDock::kEdgeDp;
   if (place.side == CallChipDock::kSideLeft) {
-    SetDp(root_, "left", CallChipDock::kEdgeDp);
+    SetDp(root_, "left", edge);
     root_->SetProperty("right", "auto");
   } else {
-    SetDp(root_, "right", CallChipDock::kEdgeDp);
+    SetDp(root_, "right", edge);
     root_->SetProperty("left", "auto");
   }
   SetDp(root_, "top", at.top_dp);
@@ -495,7 +564,8 @@ bool ShellCallChromeGesture::HoldsChip(const CallInProgressState& call) const {
   if (tracking_ || settling_) {
     return true;
   }
-  return target_ && (call.minimized_side != target_->side || call.minimized_y_permille != target_->y_permille);
+  return target_ && (call.minimized_side != target_->side || call.minimized_y_permille != target_->y_permille ||
+                     call.minimized_tucked != target_->tucked);
 }
 
 ui::Element* CallChromeGestureElement(ui::ElementDocument* doc, const CallChromeMode mode) {
@@ -532,7 +602,8 @@ void ShellCallChromeGesture::Reflow(const CallInProgressState& call) {
     }
     FinishSlide(); // its Animationend never came
   }
-  const CallChipPlace place = target_ ? *target_ : CallChipPlace{call.minimized_side, call.minimized_y_permille};
+  const CallChipPlace place =
+      target_ ? *target_ : CallChipPlace{call.minimized_side, call.minimized_y_permille, call.minimized_tucked};
   if (place.side == CallChipDock::kSideDefault) {
     return;
   }
@@ -640,8 +711,8 @@ void ShellCallChromeGesture::UpdateDrag(int x_px, int y_px, ui::Event& /*event*/
   const int dy_px = y_px - drag_start_y_px_;
 
   if (mode_ == CallChromeMode::Minimized) {
-    const float dist_dp = std::sqrt(PixelDeltaToDp(dx_px) * PixelDeltaToDp(dx_px) +
-                                    PixelDeltaToDp(dy_px) * PixelDeltaToDp(dy_px));
+    const float dist_dp =
+        std::sqrt(PixelDeltaToDp(dx_px) * PixelDeltaToDp(dx_px) + PixelDeltaToDp(dy_px) * PixelDeltaToDp(dy_px));
     if (!dragging_) {
       if (dist_dp <= kTapSlopDp) {
         return;
@@ -657,8 +728,8 @@ void ShellCallChromeGesture::UpdateDrag(int x_px, int y_px, ui::Event& /*event*/
 
   // Expanded, and a drag over the phone group's members: only a drag (no click); never a mode change.
   if (mode_ == CallChromeMode::Expanded || members_drag_) {
-    const float dist_dp = std::sqrt(PixelDeltaToDp(dx_px) * PixelDeltaToDp(dx_px) +
-                                    PixelDeltaToDp(dy_px) * PixelDeltaToDp(dy_px));
+    const float dist_dp =
+        std::sqrt(PixelDeltaToDp(dx_px) * PixelDeltaToDp(dx_px) + PixelDeltaToDp(dy_px) * PixelDeltaToDp(dy_px));
     if (!dragging_ && dist_dp > kTapSlopDp) {
       dragging_ = true;
       suppress_click_ = true;
@@ -728,6 +799,10 @@ void ShellCallChromeGesture::EndDrag() {
     if (!was_dragging) {
       SetChipOffset(0.f, 0.f, false);
       unlock();
+      if (IsHandle()) {
+        TapHandle(); // #189: the handle's tap brings the full bar back; the call screen is the bar's tap
+        return;
+      }
       // The press is over with no drop: a rebuild held for it runs (it merges with the restore's own remount).
       NotifyChipReleased();
       if (callbacks_.on_restore) {
@@ -758,83 +833,83 @@ void ShellCallChromeGesture::EndDrag() {
 
 void ShellCallChromeGesture::ProcessEvent(ui::Event& event) {
   switch (event.GetId()) {
-  case ui::EventId::Mousedown: {
-    if (tracking_) {
-      return;
-    }
-    if (suppress_click_) {
-      // The click the last drag held back never came (a touch that scrolled sends none): this press is a new tap.
-      suppress_click_ = false;
-      SetClickSuppress(false);
-    }
-    ui::Element* target = event.GetTargetElement();
-    if (mode_ == CallChromeMode::Minimized) {
+    case ui::EventId::Mousedown: {
+      if (tracking_) {
+        return;
+      }
+      if (suppress_click_) {
+        // The click the last drag held back never came (a touch that scrolled sends none): this press is a new tap.
+        suppress_click_ = false;
+        SetClickSuppress(false);
+      }
+      ui::Element* target = event.GetTargetElement();
+      if (mode_ == CallChromeMode::Minimized) {
+        if (!IsUnderRoot(target) || ShouldIgnoreTarget(target)) {
+          return;
+        }
+        if (settling_) {
+          FreezeChip(); // caught mid-slide: it stops under the finger, then follows it
+        }
+        BeginArm(EventMouseX(event), EventMouseY(event), target);
+        return;
+      }
+      if (mode_ == CallChromeMode::Immersive) {
+        // The phone group page's members (the grid, the spotlit one, the strip, the gaps between them): a swipe there
+        // looks through them and must never shrink the call (#94); a tap still spotlights the one tapped.
+        members_drag_ = IsUnderRoot(target) && !ShouldIgnoreTarget(target) && IsMemberArea(target);
+        if (!members_drag_ && !ShouldArmImmersivePullDown(target)) {
+          return;
+        }
+        BeginArm(EventMouseX(event), EventMouseY(event), target);
+        return;
+      }
+      // Expanded — only arm on call chrome under root, not buttons.
       if (!IsUnderRoot(target) || ShouldIgnoreTarget(target)) {
         return;
       }
-      if (settling_) {
-        FreezeChip(); // caught mid-slide: it stops under the finger, then follows it
-      }
       BeginArm(EventMouseX(event), EventMouseY(event), target);
-      return;
+      break;
     }
-    if (mode_ == CallChromeMode::Immersive) {
-      // The phone group page's members (the grid, the spotlit one, the strip, the gaps between them): a swipe there
-      // looks through them and must never shrink the call (#94); a tap still spotlights the one tapped.
-      members_drag_ = IsUnderRoot(target) && !ShouldIgnoreTarget(target) && IsMemberArea(target);
-      if (!members_drag_ && !ShouldArmImmersivePullDown(target)) {
-        return;
+    case ui::EventId::Mousemove:
+      if (tracking_) {
+        UpdateDrag(EventMouseX(event), EventMouseY(event), event);
       }
-      BeginArm(EventMouseX(event), EventMouseY(event), target);
-      return;
-    }
-    // Expanded — only arm on call chrome under root, not buttons.
-    if (!IsUnderRoot(target) || ShouldIgnoreTarget(target)) {
-      return;
-    }
-    BeginArm(EventMouseX(event), EventMouseY(event), target);
-    break;
-  }
-  case ui::EventId::Mousemove:
-    if (tracking_) {
-      UpdateDrag(EventMouseX(event), EventMouseY(event), event);
-    }
-    break;
-  case ui::EventId::Mouseup:
-    if (tracking_) {
-      EndDrag();
-    }
-    break;
-  case ui::EventId::Animationend:
-    // The slide's left and top end in the same frame: the first one anchors the chip on its side.
-    if (settling_ && event.GetTargetElement() == root_) {
-      const ui::String property = event.GetParameter<ui::String>("property", "");
-      if (property == "left" || property == "top") {
-        FinishSlide();
+      break;
+    case ui::EventId::Mouseup:
+      if (tracking_) {
+        EndDrag();
       }
-    }
-    break;
-  case ui::EventId::Click:
-    if (mode_ == CallChromeMode::Expanded && outside_tap_capture_) {
-      ui::Element* target = event.GetTargetElement();
-      if (!IsUnderRoot(target) && !ShouldIgnoreOutsideDismiss(target)) {
-        if (callbacks_.on_minimize) {
-          callbacks_.on_minimize();
+      break;
+    case ui::EventId::Animationend:
+      // The slide's left and top end in the same frame: the first one anchors the chip on its side.
+      if (settling_ && event.GetTargetElement() == root_) {
+        const ui::String property = event.GetParameter<ui::String>("property", "");
+        if (property == "left" || property == "top") {
+          FinishSlide();
         }
+      }
+      break;
+    case ui::EventId::Click:
+      if (mode_ == CallChromeMode::Expanded && outside_tap_capture_) {
+        ui::Element* target = event.GetTargetElement();
+        if (!IsUnderRoot(target) && !ShouldIgnoreOutsideDismiss(target)) {
+          if (callbacks_.on_minimize) {
+            callbacks_.on_minimize();
+          }
+          event.StopPropagation();
+          event.StopImmediatePropagation();
+          return;
+        }
+      }
+      if (suppress_click_) {
         event.StopPropagation();
         event.StopImmediatePropagation();
-        return;
+        suppress_click_ = false;
+        SetClickSuppress(false);
       }
-    }
-    if (suppress_click_) {
-      event.StopPropagation();
-      event.StopImmediatePropagation();
-      suppress_click_ = false;
-      SetClickSuppress(false);
-    }
-    break;
-  default:
-    break;
+      break;
+    default:
+      break;
   }
 }
 

@@ -48,8 +48,8 @@ public:
       body.set("multiaddrs", ArrayValue(std::move(addrs)));
     }
     ApplyRegistrationPublishOpts(body, publish);
-    const auto response = HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body),
-                                           {{"Content-Type", "application/json"}});
+    const auto response =
+        HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body), {{"Content-Type", "application/json"}});
     if (!response) {
       return response.error();
     }
@@ -106,8 +106,8 @@ public:
       body.set("multiaddrs", ArrayValue(std::move(addrs)));
     }
     ApplyRegistrationPublishOpts(body, publish);
-    const auto response = HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body),
-                                           {{"Content-Type", "application/json"}});
+    const auto response =
+        HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body), {{"Content-Type", "application/json"}});
     if (!response) {
       return response.error();
     }
@@ -153,8 +153,7 @@ private:
 
 } // namespace
 
-Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& identity,
-                                        const std::string& nickname) {
+Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& identity, const std::string& nickname) {
   if (!config.mesh.mesh_publish) {
     return false;
   }
@@ -191,8 +190,8 @@ Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& 
   if (!persisted) {
     return persisted.error();
   }
-  std::cerr << "pp-node: mesh directory publish ok account=" << persisted->account_id
-            << " peer=" << persisted->peer_id << " expires=" << persisted->registration_expires_at << "\n";
+  std::cerr << "pp-node: mesh directory publish ok account=" << persisted->account_id << " peer=" << persisted->peer_id
+            << " expires=" << persisted->registration_expires_at << "\n";
   return true;
 }
 

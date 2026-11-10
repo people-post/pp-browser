@@ -34,8 +34,7 @@ bool AnyPrivateLocal(const std::vector<std::string>& local_mas) {
   return false;
 }
 
-bool PeerSharesLink(const std::vector<std::string>& local_mas,
-                    const std::vector<std::string>& remote_mas) {
+bool PeerSharesLink(const std::vector<std::string>& local_mas, const std::vector<std::string>& remote_mas) {
   if (remote_mas.empty()) {
     return false;
   }
@@ -78,9 +77,8 @@ bool HopHasPublicMa(const mesh::MeshHopCandidate& hop) {
 
 } // namespace
 
-CallHopScope InferCallHopScope(
-    const std::vector<std::string>& local_mas,
-    const std::unordered_map<std::string, std::vector<std::string>>& remote_mas_by_peer) {
+CallHopScope InferCallHopScope(const std::vector<std::string>& local_mas,
+                               const std::unordered_map<std::string, std::vector<std::string>>& remote_mas_by_peer) {
   if (remote_mas_by_peer.empty()) {
     return CallHopScope::Wide;
   }
@@ -118,8 +116,7 @@ bool LocalAdvertiseHasPublicIpv4(const std::vector<std::string>& local_mas) {
   return false;
 }
 
-bool PreferLocalAllowedForScope(CallHopScope scope, bool prefer_local_as_hop,
-                                const std::string& local_advertise_ma,
+bool PreferLocalAllowedForScope(CallHopScope scope, bool prefer_local_as_hop, const std::string& local_advertise_ma,
                                 bool lan_reachability_confirmed) {
   if (!prefer_local_as_hop || local_advertise_ma.empty()) {
     return false;
@@ -140,8 +137,7 @@ bool PreferLocalAllowedForScope(CallHopScope scope, bool prefer_local_as_hop,
   return mesh::MultiaddrHasPublicDialHost(local_advertise_ma);
 }
 
-bool GuestMayDialPrivateHopMa(const std::string& hop_multiaddr,
-                              const std::vector<std::string>& local_mas) {
+bool GuestMayDialPrivateHopMa(const std::string& hop_multiaddr, const std::vector<std::string>& local_mas) {
   if (hop_multiaddr.empty() || !mesh::MultiaddrHasPrivateIpv4Host(hop_multiaddr)) {
     return true;
   }
@@ -155,14 +151,11 @@ bool GuestMayDialPrivateHopMa(const std::string& hop_multiaddr,
   return AnySameSubnet24(local_mas, hop_multiaddr);
 }
 
-std::vector<mesh::MeshHopCandidate> SelectCallMediaHop(std::vector<mesh::MeshHopCandidate> ranked,
-                                                 CallHopScope scope,
-                                                 const std::string& local_peer_id,
-                                                 bool prefer_local_as_hop,
-                                                 const std::string& local_advertise_ma,
-                                                 bool lan_reachability_confirmed) {
-  if (PreferLocalAllowedForScope(scope, prefer_local_as_hop, local_advertise_ma,
-                                 lan_reachability_confirmed)) {
+std::vector<mesh::MeshHopCandidate> SelectCallMediaHop(std::vector<mesh::MeshHopCandidate> ranked, CallHopScope scope,
+                                                       const std::string& local_peer_id, bool prefer_local_as_hop,
+                                                       const std::string& local_advertise_ma,
+                                                       bool lan_reachability_confirmed) {
+  if (PreferLocalAllowedForScope(scope, prefer_local_as_hop, local_advertise_ma, lan_reachability_confirmed)) {
     return mesh::PreferLocalMediaHop(std::move(ranked), local_peer_id, local_advertise_ma);
   }
 
@@ -183,8 +176,7 @@ std::vector<mesh::MeshHopCandidate> SelectCallMediaHop(std::vector<mesh::MeshHop
       rest.push_back(std::move(hop));
     }
   }
-  public_org.insert(public_org.end(), std::make_move_iterator(rest.begin()),
-                    std::make_move_iterator(rest.end()));
+  public_org.insert(public_org.end(), std::make_move_iterator(rest.begin()), std::make_move_iterator(rest.end()));
   return public_org;
 }
 

@@ -12,6 +12,7 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
     shell.PushLocalBack(id, std::move(commit));
   };
   navigation.has_local_back = [&shell](const std::string& id) { return shell.HasLocalBack(id); };
+  navigation.set_secret_page_open = [&shell](const bool open) { shell.SetSecretPageOpen(open); };
   navigation.select_nav_tab = [&shell](const NavTab tab) { shell.SelectNavTab(tab); };
   navigation.clear_primary_pane = [&shell]() { shell.ClearPrimaryPane(); };
   navigation.set_primary_pane = [&shell](const std::string& key) { shell.SetPrimaryPane(key); };

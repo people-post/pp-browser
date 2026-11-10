@@ -200,8 +200,7 @@ Roe<PeerAnnounceTip> DecodePeerAnnounceTipJson(const std::string_view json) {
   }
   const Object& o = *parsed;
   PeerAnnounceTip tip;
-  tip.schema_version =
-      static_cast<int>(ObjectInt64(o, "schema_version").value_or(kPeerAnnounceTipSchemaVersion));
+  tip.schema_version = static_cast<int>(ObjectInt64(o, "schema_version").value_or(kPeerAnnounceTipSchemaVersion));
   if (tip.schema_version != kPeerAnnounceTipSchemaVersion) {
     return Error("unsupported peer announce schema_version");
   }
@@ -272,10 +271,9 @@ Roe<void> VerifyPeerAnnounceTip(const PeerAnnounceTip& tip, const std::vector<ui
 
 int64_t PeerAnnounceNextHeartbeatAtMs(const int64_t last_emit_ms, const double jitter_unit) {
   const double u = std::clamp(jitter_unit, 0.0, 1.0);
-  const double span = static_cast<double>(kPeerAnnounceLiveHeartbeatMaxIntervalMs -
-                                          kPeerAnnounceLiveHeartbeatMinIntervalMs);
-  const auto interval =
-      kPeerAnnounceLiveHeartbeatMinIntervalMs + static_cast<int64_t>(std::llround(u * span));
+  const double span =
+      static_cast<double>(kPeerAnnounceLiveHeartbeatMaxIntervalMs - kPeerAnnounceLiveHeartbeatMinIntervalMs);
+  const auto interval = kPeerAnnounceLiveHeartbeatMinIntervalMs + static_cast<int64_t>(std::llround(u * span));
   return last_emit_ms + interval;
 }
 

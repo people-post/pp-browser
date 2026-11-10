@@ -202,8 +202,7 @@ bool RmlMount::InjectRcss(ui::ElementDocument* doc, const std::string& rcss, con
   }
 
   auto test_sheet = ui::MakeShared<ui::StyleSheetContainer>();
-  auto test_stream =
-      ui::MakeUnique<ui::StreamMemory>(reinterpret_cast<const ui::byte*>(rcss.c_str()), rcss.size());
+  auto test_stream = ui::MakeUnique<ui::StreamMemory>(reinterpret_cast<const ui::byte*>(rcss.c_str()), rcss.size());
   test_stream->SetSourceURL(source_tag.c_str());
   if (!test_sheet->LoadStyleSheetContainer(test_stream.get())) {
     MountLog().error << "InjectRcss: failed to parse RCSS";

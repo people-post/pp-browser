@@ -22,4 +22,4 @@ inline std::string TruncateCodePoints(const std::string& s, const size_t max_cp)
   return s;
 }
 
-}  // namespace pbr
+} // namespace pbr

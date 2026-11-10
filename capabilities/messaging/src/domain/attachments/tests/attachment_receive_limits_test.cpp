@@ -29,7 +29,9 @@ protected:
     std::filesystem::remove_all(dir_, ec);
   }
 
-  static std::vector<uint8_t> Hash(const uint8_t seed) { return std::vector<uint8_t>(kAttachmentContentHashSize, seed); }
+  static std::vector<uint8_t> Hash(const uint8_t seed) {
+    return std::vector<uint8_t>(kAttachmentContentHashSize, seed);
+  }
 
   static ChatAttachmentFields Fields(const std::string& id, const uint8_t seed, const uint64_t byte_length) {
     ChatAttachmentFields fields;
@@ -82,8 +84,7 @@ TEST_F(ReceiveLimitsTest, DeclaredSizeAboveTheReceiveLimitIsTooLargeAndNeverQueu
 TEST_F(ReceiveLimitsTest, ShippingReceiveLimitIsTheDefault) {
   const AttachmentLimits limits = workflow_.Limits();
   EXPECT_EQ(limits.max_receive_bytes, kDefaultAttachmentReceiveMaxBytes);
-  EXPECT_EQ(State(2, kDefaultAttachmentReceiveMaxBytes + 1),
-            AttachmentFetchWorkflow::DownloadState::TooLarge);
+  EXPECT_EQ(State(2, kDefaultAttachmentReceiveMaxBytes + 1), AttachmentFetchWorkflow::DownloadState::TooLarge);
 }
 
 TEST_F(ReceiveLimitsTest, ASenderOverItsMinuteLimitStaysADownloadRowButAnotherSenderDoesNot) {
@@ -165,8 +166,8 @@ TEST_F(ReceiveLimitsTest, TheEleventhSmallFileInAMinuteIsHeldBackWhateverThePoli
   workflow_.SetClockForTest([]() { return int64_t{5'000}; });
   workflow_.SetDiskUsageProvider([]() { return uint64_t{0}; });
   for (int i = 0; i < 11; ++i) {
-    workflow_.EnqueueFromMessage("t1", AttachmentMessage("s" + std::to_string(i), "alice",
-                                                         static_cast<uint8_t>(60 + i), 1000));
+    workflow_.EnqueueFromMessage(
+        "t1", AttachmentMessage("s" + std::to_string(i), "alice", static_cast<uint8_t>(60 + i), 1000));
   }
   EXPECT_EQ(State(69, 1000), AttachmentFetchWorkflow::DownloadState::Downloading) << "the tenth";
   EXPECT_EQ(State(70, 1000), AttachmentFetchWorkflow::DownloadState::Pending) << "the eleventh";
@@ -256,8 +257,8 @@ TEST_F(ReceiveLimitsTest, DirectPushesFollowTheSamePaceAndTheDiskCapCountsPendin
   // Real scan: 5000 bytes of pushed ciphertext waiting in a thread.
   ASSERT_TRUE(SavePendingAttachmentCiphertext(dir_.string(), "t1", Hash(9), std::vector<uint8_t>(5000, 1), {}));
 
-  EXPECT_TRUE(workflow_.TryAcceptDirectPush("alice", 500));  // 5000 waiting
-  EXPECT_TRUE(workflow_.TryAcceptDirectPush("alice", 500));  // 5500
+  EXPECT_TRUE(workflow_.TryAcceptDirectPush("alice", 500)); // 5000 waiting
+  EXPECT_TRUE(workflow_.TryAcceptDirectPush("alice", 500)); // 5500
   EXPECT_FALSE(workflow_.TryAcceptDirectPush("alice", 500)) << "6000 is the cap: the pending ciphertext counts";
   EXPECT_FALSE(workflow_.TryAcceptDirectPush("bob", 500)) << "the cap is for everyone";
 
@@ -278,7 +279,7 @@ TEST_F(ReceiveLimitsTest, DirectPushesFollowTheSamePaceAndTheDiskCapCountsPendin
 TEST_F(ReceiveLimitsTest, SmartNeverStartsAFileAboveTheDirectSizeEvenWithATierThatWouldAllowIt) {
   AttachmentLimits limits;
   limits.max_receive_bytes = 100'000'000;
-  limits.auto_download_max_bytes = 100'000'000;  // a tier that would allow it
+  limits.auto_download_max_bytes = 100'000'000; // a tier that would allow it
   workflow_.SetLimits(limits);
   workflow_.SetAutoAllowedOnNetwork(true);
   workflow_.SetClockForTest([]() { return int64_t{5'000}; });
@@ -315,7 +316,7 @@ TEST_F(ReceiveLimitsTest, DownloadEverythingLeavesALargeFileWithoutAServerLinkTo
   workflow_.SetClockForTest([]() { return int64_t{5'000}; });
   workflow_.SetDiskUsageProvider([]() { return uint64_t{0}; });
   ChatAttachmentFields fields = Fields("peer", 13, 30'000'000);
-  fields.url.clear();  // peer-direct only: the peer refuses a file this large
+  fields.url.clear(); // peer-direct only: the peer refuses a file this large
   EXPECT_EQ(workflow_.StateFor("t1", fields), AttachmentFetchWorkflow::DownloadState::Pending);
   workflow_.EnqueueFromMessage("t1", MessageWith("peer", "alice", fields));
   EXPECT_EQ(workflow_.StateFor("t1", fields), AttachmentFetchWorkflow::DownloadState::Pending);
@@ -382,7 +383,7 @@ TEST_F(ReceiveLimitsTest, AVoiceMessageUnderDownloadNothingStillCountsAgainstThe
     voice.filename = "voice-" + std::to_string(1000 + i) + ".ogg";
     workflow_.EnqueueFromMessage("t1", MessageWith("v" + std::to_string(i), "alice", voice));
     EXPECT_EQ(workflow_.StateFor("t1", voice), i == 0 ? AttachmentFetchWorkflow::DownloadState::Downloading
-                                                       : AttachmentFetchWorkflow::DownloadState::Pending);
+                                                      : AttachmentFetchWorkflow::DownloadState::Pending);
   }
 }
 

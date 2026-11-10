@@ -104,7 +104,7 @@ void ProfileUnlockGate::DeclineSubmit() {
 
 void ProfileUnlockGate::Finish(const bool unlocked) {
   if (unlocked && biometric_in_flight_) {
-    unlocked_beside_prompt_ = true;  // the prompt's late Found must not lock this unlock away
+    unlocked_beside_prompt_ = true; // the prompt's late Found must not lock this unlock away
   }
   StopGrace();
   // The door closes: a face / fingerprint answer still on its way is for a door that is gone.
@@ -112,9 +112,10 @@ void ProfileUnlockGate::Finish(const bool unlocked) {
   biometric_prompted_this_door_ = false;
   ++door_generation_;
   const int64_t elapsed_ms =
-      unlock_started_ ? std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::steady_clock::now() - *unlock_started_).count()
-                      : 0;
+      unlock_started_
+          ? std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *unlock_started_)
+                .count()
+          : 0;
   unlock_started_.reset();
   unlock_started_by_grace_ = false;
   DiagLine("unlock.done").Add("unlocked", unlocked).Add("ms", elapsed_ms).Emit();
@@ -209,8 +210,8 @@ void ProfileUnlockGate::RequestShowUnlock(std::function<void(bool)> done) {
   }
 }
 
-void ProfileUnlockGate::RunUnlockAndReadyAsync(SecretText pin, const bool set_default_pin,
-                                               const bool clear_default_pin, const bool remember_grace) {
+void ProfileUnlockGate::RunUnlockAndReadyAsync(SecretText pin, const bool set_default_pin, const bool clear_default_pin,
+                                               const bool remember_grace) {
   if (unlock_in_progress_ || biometric_in_flight_) {
     DeclineSubmit();
     return;
@@ -371,7 +372,7 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
   }
   // PIN grace window (#21 phase 1): a PIN typed a short while ago opens the vault again without asking; before the
   // dev PIN, so a dev build exercises it too.
-  if (ports_.try_grace_unlock && ports_.grace_minutes && ports_.grace_minutes() > 0) {
+  if (ports_.try_grace_unlock && ports_.grace_minutes && GraceIsOn(ports_.grace_minutes())) {
     StartupMark("deferred_grace_unlock_begin");
     RunGraceAttempt(GraceStep::First);
     return;
@@ -584,43 +585,43 @@ void ProfileUnlockGate::OnGraceAttemptDone(const GraceStep step, const std::opti
 
 void ProfileUnlockGate::OnGraceUnavailable(const GraceStep step) {
   switch (step) {
-  case GraceStep::First:
-    // Register first, then read once more: the phone may be unlocked between the two (the handler would not fire).
-    if (ports_.on_protected_data_available && !protected_data_handler_) {
-      protected_data_handler_ = ports_.on_protected_data_available([this]() {
-        if (ports_.run_on_ui) {
-          ports_.run_on_ui([this]() { RetryGrace(); });
-          return;
-        }
-        RetryGrace();
-      });
-    }
-    RunGraceAttempt(GraceStep::Recheck);
-    return;
-  case GraceStep::Recheck:
-    grace_pending_ = true;
-    RequestShowUnlock(nullptr);
-    if (ports_.has_pending_push_call && ports_.has_pending_push_call()) {
-      // A call answered on the locked phone: it connects as soon as the phone is unlocked, no PIN.
-      waiting_device_unlock_ = true;
-      if (ports_.ui.show_waiting_device_unlock) {
-        ports_.ui.show_waiting_device_unlock(true);
-      }
-      if (ports_.run_later) {
-        const uint64_t generation = device_unlock_wait_generation_;
-        ports_.run_later(kDeviceUnlockWait, [this, generation]() {
-          if (generation == device_unlock_wait_generation_) {
-            EndDeviceUnlockWait();
+    case GraceStep::First:
+      // Register first, then read once more: the phone may be unlocked between the two (the handler would not fire).
+      if (ports_.on_protected_data_available && !protected_data_handler_) {
+        protected_data_handler_ = ports_.on_protected_data_available([this]() {
+          if (ports_.run_on_ui) {
+            ports_.run_on_ui([this]() { RetryGrace(); });
+            return;
           }
+          RetryGrace();
         });
       }
-    }
-    // Without a call: the plain unlock screen; the phone's unlock or the next foreground may still open it.
-    return;
-  case GraceStep::Retry:
-    // Still locked: a call stops waiting (the PIN screen), the handler stays for a later unlock.
-    EndDeviceUnlockWait();
-    return;
+      RunGraceAttempt(GraceStep::Recheck);
+      return;
+    case GraceStep::Recheck:
+      grace_pending_ = true;
+      RequestShowUnlock(nullptr);
+      if (ports_.has_pending_push_call && ports_.has_pending_push_call()) {
+        // A call answered on the locked phone: it connects as soon as the phone is unlocked, no PIN.
+        waiting_device_unlock_ = true;
+        if (ports_.ui.show_waiting_device_unlock) {
+          ports_.ui.show_waiting_device_unlock(true);
+        }
+        if (ports_.run_later) {
+          const uint64_t generation = device_unlock_wait_generation_;
+          ports_.run_later(kDeviceUnlockWait, [this, generation]() {
+            if (generation == device_unlock_wait_generation_) {
+              EndDeviceUnlockWait();
+            }
+          });
+        }
+      }
+      // Without a call: the plain unlock screen; the phone's unlock or the next foreground may still open it.
+      return;
+    case GraceStep::Retry:
+      // Still locked: a call stops waiting (the PIN screen), the handler stays for a later unlock.
+      EndDeviceUnlockWait();
+      return;
   }
 }
 
@@ -743,55 +744,55 @@ void ProfileUnlockGate::OnBiometricDone(const uint64_t door, std::optional<Biome
   if (!result) {
     log().warning << "Face / fingerprint unlock not read: " << result.error().message;
     DiagLine("unlock.biometric").Add("result", "error").Fail("error", result.error()).Emit();
-    return;  // the PIN, as without it
+    return; // the PIN, as without it
   }
   const BiometricUnlock::Status status = got ? got->status : BiometricUnlock::Status::Missing;
   switch (status) {
-  case BiometricUnlock::Status::Found: {
-    DiagLine("unlock.biometric").Add("result", "hit").Emit();
-    // The vault is open; messaging starts off the UI thread, the PIN held back like after a typed one.
-    SetUnlockInProgress(true);
-    StartupMark("biometric_unlock_ok");
-    auto work = [ensure = ports_.ensure_messaging_ready]() -> Roe<void> { return ensure ? ensure() : Roe<void>{}; };
-    auto on_ready = [this](Roe<void> ready) {
-      if (!ready) {
-        StartupMark("biometric_unlock_fail");
-        // Locked again, so the face / fingerprint key and the PIN both start over (an open vault would refuse both).
-        Secrets().Lock();
-        ReportError(ready.error());
+    case BiometricUnlock::Status::Found: {
+      DiagLine("unlock.biometric").Add("result", "hit").Emit();
+      // The vault is open; messaging starts off the UI thread, the PIN held back like after a typed one.
+      SetUnlockInProgress(true);
+      StartupMark("biometric_unlock_ok");
+      auto work = [ensure = ports_.ensure_messaging_ready]() -> Roe<void> { return ensure ? ensure() : Roe<void>{}; };
+      auto on_ready = [this](Roe<void> ready) {
+        if (!ready) {
+          StartupMark("biometric_unlock_fail");
+          // Locked again, so the face / fingerprint key and the PIN both start over (an open vault would refuse both).
+          Secrets().Lock();
+          ReportError(ready.error());
+          return;
+        }
+        RememberGraceAfterPinUnlock(); // as after a PIN unlock: the grace window starts
+        Finish(true);
+      };
+      if (ports_.run_heavy) {
+        ports_.run_heavy(std::move(work), std::move(on_ready));
         return;
       }
-      RememberGraceAfterPinUnlock();  // as after a PIN unlock: the grace window starts
-      Finish(true);
-    };
-    if (ports_.run_heavy) {
-      ports_.run_heavy(std::move(work), std::move(on_ready));
+      on_ready(work());
       return;
     }
-    on_ready(work());
-    return;
-  }
-  case BiometricUnlock::Status::Canceled:
-    // iOS errSecAuthFailed: the face / finger did not pass (or biometry is locked out); else the user canceled.
-    if (got->code == kBiometricNotPassedCode) {
-      DiagLine("unlock.biometric").Add("result", "failed").Emit();
-    } else {
-      DiagLine("unlock.biometric").Add("result", "canceled").Emit();
-    }
-    return;  // stays on the door; the key prompts again
-  case BiometricUnlock::Status::Unavailable:
-    DiagLine("unlock.biometric").Add("result", "unavailable").Emit();
-    return;
-  case BiometricUnlock::Status::Missing:
-    // The engine deleted both pieces: the key goes, the door says why, the settings switch reads off.
-    DiagLine("unlock.biometric").Add("result", "missing").Emit();
-    if (ports_.ui.show_biometric_reset) {
-      ports_.ui.show_biometric_reset(Localized("pin.biometric_reset_hint"));
-    }
-    if (ports_.on_biometric_lost) {
-      ports_.on_biometric_lost();
-    }
-    return;
+    case BiometricUnlock::Status::Canceled:
+      // iOS errSecAuthFailed: the face / finger did not pass (or biometry is locked out); else the user canceled.
+      if (got->code == kBiometricNotPassedCode) {
+        DiagLine("unlock.biometric").Add("result", "failed").Emit();
+      } else {
+        DiagLine("unlock.biometric").Add("result", "canceled").Emit();
+      }
+      return; // stays on the door; the key prompts again
+    case BiometricUnlock::Status::Unavailable:
+      DiagLine("unlock.biometric").Add("result", "unavailable").Emit();
+      return;
+    case BiometricUnlock::Status::Missing:
+      // The engine deleted both pieces: the key goes, the door says why, the settings switch reads off.
+      DiagLine("unlock.biometric").Add("result", "missing").Emit();
+      if (ports_.ui.show_biometric_reset) {
+        ports_.ui.show_biometric_reset(Localized("pin.biometric_reset_hint"));
+      }
+      if (ports_.on_biometric_lost) {
+        ports_.on_biometric_lost();
+      }
+      return;
   }
 }
 

@@ -145,8 +145,7 @@ Roe<void> SqlitePeerSessionStore::RequireDek() const {
   return {};
 }
 
-Roe<std::string> SqlitePeerSessionStore::EncryptFieldB64(const std::string& plaintext_b64,
-                                                       const char* aad_kind) const {
+Roe<std::string> SqlitePeerSessionStore::EncryptFieldB64(const std::string& plaintext_b64, const char* aad_kind) const {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();
   }
@@ -160,7 +159,7 @@ Roe<std::string> SqlitePeerSessionStore::EncryptFieldB64(const std::string& plai
 }
 
 Roe<std::string> SqlitePeerSessionStore::DecryptFieldB64(const std::string& ciphertext_b64,
-                                                       const char* aad_kind) const {
+                                                         const char* aad_kind) const {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();
   }
@@ -445,8 +444,7 @@ Roe<void> SqlitePeerSessionStore::Save(const PeerSessionRecord& record) {
     item.set("retired_at", entry.retired_at);
     retired_elements.push_back(ObjectValue(std::move(item)));
   }
-  const std::string retired_json =
-      retired_elements.empty() ? "[]" : DumpJson(ArrayValue(std::move(retired_elements)));
+  const std::string retired_json = retired_elements.empty() ? "[]" : DumpJson(ArrayValue(std::move(retired_elements)));
   if (!to_save.key.peer_device.empty()) {
     return SaveDeviceSession(*db, to_save, retired_json);
   }
@@ -546,7 +544,7 @@ Roe<void> SqlitePeerSessionStore::Save(const PeerSessionRecord& record) {
 }
 
 Roe<void> SqlitePeerSessionStore::SaveDeviceSession(sqlite3* db, const PeerSessionRecord& to_save,
-                                                   const std::string& retired_json) {
+                                                    const std::string& retired_json) {
   // A session moved to another epoch numbers from 1 there (its old epoch's count is the old epoch's).
   const char* sql =
       "INSERT INTO device_sessions (peer_identity_kind, peer_identity_value, channel, peer_device, session_epoch, "

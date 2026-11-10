@@ -45,47 +45,47 @@ const char* EnvOrEmpty(const char* name) {
 }
 
 void PrintUsage(const char* argv0) {
-  std::cerr
-      << "Usage: " << argv0 << " [options]\n"
-      << "\n"
-      << "Headless Brief mesh node (N011). Always Node.\n"
-      << "Precedence: CLI flags → environment → config file → defaults.\n"
-      << "\n"
-      << "Options:\n"
-      << "  --config <path>       Config JSON (or PP_BROWSER_CONFIG). None: defaults + environment\n"
-      << "                        (never the desktop app's config of the same user)\n"
-      << "  --status              Print reachability JSON and exit (nr ops)\n"
-      << "  --status-addr <addr>  HTTP admin bind (default 127.0.0.1:18518).\n"
-      << "                       Use 0.0.0.0:18518 (or a host IP) for console/probes.\n"
-      << "                       Empty string disables. Env: PP_NODE_STATUS_ADDR\n"
-      << "  --status-token <tok>  Optional Bearer token for /healthz, /status and /metrics.\n"
-      << "                       Env: PP_NODE_STATUS_TOKEN\n"
-      << "  --pin <pin>           Profile PIN (or PP_BROWSER_PIN) — required\n"
-      << "  --ledger-role <role>  Run a pp-ledger relay or miner on this node's mesh (relay|miner;\n"
-      << "                        or PP_NODE_LEDGER_ROLE)\n"
-      << "  --ledger-dir <path>   Its work directory: config.json, keys, data (or PP_NODE_LEDGER_DIR;\n"
-      << "                        default <profile data dir>/ledger)\n"
-      << "  --profile <id>        Profile id override (or PP_NODE_PROFILE)\n"
-      << "  --log-level <level>   debug|info|warning|error (or PP_NODE_LOG_LEVEL; default info)\n"
-      << "  --debug               Verbose logging (--log-level debug)\n"
-      << "  --help                Show this help\n"
-      << "\n"
-      << "Deploy env (see docs/ops/CONFIGURATION.md):\n"
-      << "  PP_NODE_DATA_DIR, PP_NODE_AMP_UDP_PORT, PP_NODE_BOOTSTRAP_PEERS,\n"
-      << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY, PP_NODE_CAP_DHT, PP_NODE_DHT_K,\n"
-      << "  PP_NODE_CAPACITY_LINKS, PP_NODE_CAPACITY_RESERVATIONS, PP_NODE_CAPACITY_BRIDGES,\n"
-      << "  PP_NODE_CAPACITY_GROUP_CALLS,\n"
-      << "  PP_NODE_ADVERTISE_MULTIADDRS, PP_NODE_MESH_PUBLISH, PP_NODE_MESH_HEARTBEAT,\n"
-      << "  PP_NODE_STATUS_ADDR, PP_NODE_STATUS_TOKEN, PP_NODE_LOG_LEVEL,\n"
-      << "  PP_NODE_LEDGER_ROLE, PP_NODE_LEDGER_DIR\n"
-      << "\n"
-      << "Live status HTTP (long-running mode), e.g.:\n"
-      << "  curl -sS http://127.0.0.1:18518/healthz\n"
-      << "  curl -sS http://127.0.0.1:18518/status\n"
-      << "  curl -sS http://127.0.0.1:18518/metrics   (Prometheus text)\n"
-      << "\n"
-      << "Drain before maintenance (loopback status bind only; the mesh directory sees the new state):\n"
-      << "  curl -sS -X POST -H 'Content-Type: application/json' -d '{\"state\":\"draining\"}' http://127.0.0.1:18518/control/state\n";
+  std::cerr << "Usage: " << argv0 << " [options]\n"
+            << "\n"
+            << "Headless Brief mesh node (N011). Always Node.\n"
+            << "Precedence: CLI flags → environment → config file → defaults.\n"
+            << "\n"
+            << "Options:\n"
+            << "  --config <path>       Config JSON (or PP_BROWSER_CONFIG). None: defaults + environment\n"
+            << "                        (never the desktop app's config of the same user)\n"
+            << "  --status              Print reachability JSON and exit (nr ops)\n"
+            << "  --status-addr <addr>  HTTP admin bind (default 127.0.0.1:18518).\n"
+            << "                       Use 0.0.0.0:18518 (or a host IP) for console/probes.\n"
+            << "                       Empty string disables. Env: PP_NODE_STATUS_ADDR\n"
+            << "  --status-token <tok>  Optional Bearer token for /healthz, /status and /metrics.\n"
+            << "                       Env: PP_NODE_STATUS_TOKEN\n"
+            << "  --pin <pin>           Profile PIN (or PP_BROWSER_PIN) — required\n"
+            << "  --ledger-role <role>  Run a pp-ledger relay or miner on this node's mesh (relay|miner;\n"
+            << "                        or PP_NODE_LEDGER_ROLE)\n"
+            << "  --ledger-dir <path>   Its work directory: config.json, keys, data (or PP_NODE_LEDGER_DIR;\n"
+            << "                        default <profile data dir>/ledger)\n"
+            << "  --profile <id>        Profile id override (or PP_NODE_PROFILE)\n"
+            << "  --log-level <level>   debug|info|warning|error (or PP_NODE_LOG_LEVEL; default info)\n"
+            << "  --debug               Verbose logging (--log-level debug)\n"
+            << "  --help                Show this help\n"
+            << "\n"
+            << "Deploy env (see docs/ops/CONFIGURATION.md):\n"
+            << "  PP_NODE_DATA_DIR, PP_NODE_AMP_UDP_PORT, PP_NODE_BOOTSTRAP_PEERS,\n"
+            << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY, PP_NODE_CAP_DHT, PP_NODE_DHT_K,\n"
+            << "  PP_NODE_CAPACITY_LINKS, PP_NODE_CAPACITY_RESERVATIONS, PP_NODE_CAPACITY_BRIDGES,\n"
+            << "  PP_NODE_CAPACITY_GROUP_CALLS,\n"
+            << "  PP_NODE_ADVERTISE_MULTIADDRS, PP_NODE_MESH_PUBLISH, PP_NODE_MESH_HEARTBEAT,\n"
+            << "  PP_NODE_STATUS_ADDR, PP_NODE_STATUS_TOKEN, PP_NODE_LOG_LEVEL,\n"
+            << "  PP_NODE_LEDGER_ROLE, PP_NODE_LEDGER_DIR\n"
+            << "\n"
+            << "Live status HTTP (long-running mode), e.g.:\n"
+            << "  curl -sS http://127.0.0.1:18518/healthz\n"
+            << "  curl -sS http://127.0.0.1:18518/status\n"
+            << "  curl -sS http://127.0.0.1:18518/metrics   (Prometheus text)\n"
+            << "\n"
+            << "Drain before maintenance (loopback status bind only; the mesh directory sees the new state):\n"
+            << "  curl -sS -X POST -H 'Content-Type: application/json' -d '{\"state\":\"draining\"}' "
+               "http://127.0.0.1:18518/control/state\n";
 }
 
 /**
@@ -400,8 +400,8 @@ int main(int argc, char** argv) {
         return true;
       };
     }
-    if (auto started = status_http.Start(*bind, std::move(auth),
-                                         [boot_ptr]() { return MakeSnapshot(*boot_ptr); }, std::move(actions));
+    if (auto started = status_http.Start(
+            *bind, std::move(auth), [boot_ptr]() { return MakeSnapshot(*boot_ptr); }, std::move(actions));
         !started) {
       root.error << "status HTTP failed: " << started.error().message;
       ShutdownNode(*boot);
@@ -421,9 +421,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  auto schedule_probe = [&]() {
-    boot->mesh->StartReachabilityProbe(/*try_upnp_first=*/false);
-  };
+  auto schedule_probe = [&]() { boot->mesh->StartReachabilityProbe(/*try_upnp_first=*/false); };
   schedule_probe();
 
   // Publish/renew mesh_node listing when advertise multiaddrs configured (N027); a failed first
@@ -479,9 +477,9 @@ int main(int argc, char** argv) {
 
   root.info << "pp-node shutting down";
   if (heartbeat) {
-    heartbeat->SendFinal();  // before the mesh stops; bounded by a short timeout
+    heartbeat->SendFinal(); // before the mesh stops; bounded by a short timeout
   }
-  ledger.Stop();  // its protocols withdrawn, its thread joined — before the mesh stops
+  ledger.Stop(); // its protocols withdrawn, its thread joined — before the mesh stops
   status_http.Stop();
   node_metrics.Reset();
   ShutdownNode(*boot);

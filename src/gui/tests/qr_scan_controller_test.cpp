@@ -20,7 +20,10 @@ TEST(QrScanControllerTest, CancelClosesItsLayerAndNeverDeliversAResult) {
     EXPECT_EQ(spec.key, "qr_scan");
     return ++opened;
   };
-  navigation.close_layer = [&](int id) { EXPECT_EQ(id, opened); ++closed; };
+  navigation.close_layer = [&](int id) {
+    EXPECT_EQ(id, opened);
+    ++closed;
+  };
   scan.BindShellNavigation(std::move(navigation));
   FlowCoordinatorPorts flow;
   flow.begin_modal = [&](int, std::function<bool()>, std::function<void()> on_cancel) {

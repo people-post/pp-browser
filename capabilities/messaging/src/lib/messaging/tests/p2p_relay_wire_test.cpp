@@ -30,7 +30,8 @@ TEST(P2pRelayWireTest, RejectsLegacyThreadIdEnvelope) {
     "sender_relay_id": "relay:a",
     "body": {"text": "hi"},
     "timestamp": 1
-  })").value_or(Object{});
+  })")
+                            .value_or(Object{});
   EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(legacy)));
 }
 
@@ -89,7 +90,8 @@ TEST(P2pRelayWireTest, TheSendersCardRidesWithAKeyInitAndTheDevicesAreSigned) {
       << "the card proves itself; the envelope signature does not cover it";
   RelayEnvelope other_device = envelope;
   other_device.recipient_device = "QmBobPhone";
-  EXPECT_NE(EnvelopeSigner::BuildSignBytes(other_device).value(), *unsigned_bytes) << "which device it is for is signed";
+  EXPECT_NE(EnvelopeSigner::BuildSignBytes(other_device).value(), *unsigned_bytes)
+      << "which device it is for is signed";
   RelayEnvelope other_sender = envelope;
   other_sender.sender_device = "QmAliceLaptop";
   EXPECT_NE(EnvelopeSigner::BuildSignBytes(other_sender).value(), *unsigned_bytes) << "and which device sent it";
@@ -196,9 +198,9 @@ TEST(P2pRelayWireTest, ChatHistoryResponseSkipsOneBadMessageInsteadOfFailingTheP
   response.set("peer_identity_value", "relay:alice123");
   response.set("has_more", false);
   response.set("messages", makeArray(std::vector<Value>{
-                              std::make_shared<Object>(RelayEnvelopeToJson(good)),
-                              std::make_shared<Object>(bad),
-                          }));
+                               std::make_shared<Object>(RelayEnvelopeToJson(good)),
+                               std::make_shared<Object>(bad),
+                           }));
 
   auto parsed = ChatHistoryResponseFromJson(response);
   ASSERT_TRUE(static_cast<bool>(parsed)) << parsed.error().message;
@@ -393,8 +395,7 @@ TEST(P2pRelayWireTest, WakeHintAcceptsOnlyShortPlainIds) {
 TEST(P2pRelayWireTest, DirectTargetRoutingAndOutboxReconcile) {
   using namespace pbr;
 
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_p2p_routing_test";
+  const std::filesystem::path data_dir = std::filesystem::temp_directory_path() / "pp_browser_p2p_routing_test";
   std::filesystem::remove_all(data_dir);
   InMemoryDeliveryStore store;
   ASSERT_TRUE(store.SetDek(TestDek()));

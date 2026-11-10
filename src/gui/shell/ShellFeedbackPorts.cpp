@@ -31,8 +31,8 @@ ShellFeedbackPorts BindSharedShellFeedback(ShellHost& shell) {
     ShellFeedback::DismissBanner(shell.State());
     shell.DirtyFeedback();
   };
-  feedback.show_alert = [&shell](const std::string& title, const std::string& message,
-                                   std::function<void()> on_ok, const std::string& ok_label) {
+  feedback.show_alert = [&shell](const std::string& title, const std::string& message, std::function<void()> on_ok,
+                                 const std::string& ok_label) {
     ShellFeedback::ShowAlert(shell.State(), title, message, std::move(on_ok), ok_label);
   };
   feedback.dialog_active = [&shell]() { return shell.State().dialog.active; };
@@ -48,11 +48,10 @@ ShellFeedbackPorts BindSharedShellFeedback(ShellHost& shell) {
       [&shell](const std::string& title, const std::string& message, const std::string& checkbox_label,
                const bool checkbox_default, std::function<void(bool, bool)> on_result, const std::string& ok_label) {
         ShellFeedback::ShowConfirmWithCheckbox(shell.State(), title, message, checkbox_label, checkbox_default,
-                                             std::move(on_result), ok_label);
+                                               std::move(on_result), ok_label);
       };
   feedback.show_prompt = [&shell](const std::string& title, const std::string& message,
-                                  const std::string& default_value,
-                                  std::function<void(bool, std::string)> on_result) {
+                                  const std::string& default_value, std::function<void(bool, std::string)> on_result) {
     ShellFeedback::ShowPrompt(shell.State(), title, message, default_value, std::move(on_result));
   };
   feedback.mount_photo_preview = [&shell](const std::string& body) {

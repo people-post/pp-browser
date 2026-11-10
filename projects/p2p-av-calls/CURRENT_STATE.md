@@ -93,6 +93,26 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 (group topology rules: V050 / phase gt) |
 | N≥3 unify engine on libp2p send/recv | N021 follow-on |
 
+### Lab coverage: adding people and making a group during a call (noted 2026-11-09, not scheduled)
+
+`scripts/test/pp_app_lab.py` covers the main paths, in both suites:
+- `call_grows_into_a_group`: a 1:1 call adds someone, then makes a group (G022).
+- `group_add_someone_mid_call`: a group's call adds a member.
+- `group_call_guest`: a group's call adds a non-member (V062).
+
+Each asserts that everyone hears everyone. The cases below have no scenario. Each one states what the design says should happen, which is the oracle for a future scenario:
+
+| Case | What the design says |
+|------|----------------------|
+| The person added mid-call declines, doesn't answer, or is offline | The call goes on unchanged. Their ring ends on Decline or at the ring TTL (60 s, [CALLS.md § Invite TTL](../../docs/architecture/CALLS.md)), and nobody already in the call loses media |
+| A guest added with no hop the guest can reach (behind NATs) | Refused or ejected, never left on Connecting while the others stay on direct media ([CALLS.md](../../docs/architecture/CALLS.md), mid-call guest without a hop) |
+| Two people added at once, or a fourth into a call that grew from 1:1 | One call. It moves onto the hop once a third person has joined, and later joiners attach there (V050) |
+| "Make a group…" in a group's own call | Never offered: only a call with no group (`origin_group_id` empty) offers it (G022 §1) |
+| "Make a group…" after a grown call shrinks back to two | No longer offered: it needs three or more in the call (G022 §1) |
+| The made group's next call | A group call (G022 §5) that rings the members who joined. Someone who chose Not now is not a member and is not rung |
+| Making a group from a video call | The same rules as voice (G022 doesn't distinguish) |
+| A guest who sends a mid-call invite (bypassing the hidden button) | Refused: each participant's device checks the bringer against the group's roster (V062 §2). `group_call_guest` checks only that the button is hidden |
+
 ### rd automated exit (V038) — prefer over device dogfood
 
 Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); inventory [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md) `B-CALL-*` / `B-HARD-CALL`.

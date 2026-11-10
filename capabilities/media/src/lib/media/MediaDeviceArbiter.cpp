@@ -26,8 +26,8 @@ logging::Logger& ArbiterLog() {
 class NullMediaDeviceBackend final : public IMediaDeviceBackend {
 public:
   std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind /*kind*/, const AudioDeviceFormat& /*format*/,
-                                       const std::function<bool()>& /*still_wanted*/,
-                                       std::string* error) override {
+                                            const std::function<bool()>& /*still_wanted*/,
+                                            std::string* error) override {
     if (error) {
       *error = "no audio devices (null backend)";
     }
@@ -39,24 +39,24 @@ public:
 
 const char* MediaDeviceKindName(MediaDeviceKind kind) {
   switch (kind) {
-  case MediaDeviceKind::Mic:
-    return "mic";
-  case MediaDeviceKind::Speaker:
-    return "speaker";
-  case MediaDeviceKind::Camera:
-    return "camera";
+    case MediaDeviceKind::Mic:
+      return "mic";
+    case MediaDeviceKind::Speaker:
+      return "speaker";
+    case MediaDeviceKind::Camera:
+      return "camera";
   }
   return "device";
 }
 
 bool MediaDeviceSharePolicy::Exclusive(MediaDeviceKind kind) const {
   switch (kind) {
-  case MediaDeviceKind::Mic:
-    return exclusive_mic;
-  case MediaDeviceKind::Speaker:
-    return exclusive_speaker;
-  case MediaDeviceKind::Camera:
-    return exclusive_camera;
+    case MediaDeviceKind::Mic:
+      return exclusive_mic;
+    case MediaDeviceKind::Speaker:
+      return exclusive_speaker;
+    case MediaDeviceKind::Camera:
+      return exclusive_camera;
   }
   return true;
 }
@@ -331,9 +331,9 @@ struct MediaDeviceArbiter::Core {
 
   void Unhold(uint64_t id) {
     std::lock_guard lock(mu);
-    holders.erase(std::remove_if(holders.begin(), holders.end(),
-                                 [id](const auto& entry) { return entry.second.id == id; }),
-                  holders.end());
+    holders.erase(
+        std::remove_if(holders.begin(), holders.end(), [id](const auto& entry) { return entry.second.id == id; }),
+        holders.end());
   }
 
   bool Held(MediaDeviceKind kind) const {
@@ -397,7 +397,7 @@ struct LeaseSlot {
     }
     auto live = core.lock();
     if (!live) {
-      return;  // closes here, inline
+      return; // closes here, inline
     }
     live->Unhold(id);
     if (closing) {
@@ -774,7 +774,7 @@ Roe<std::unique_ptr<CameraDeviceLease>> MediaDeviceArbiter::AcquireCamera(const 
     }
     error = state->open_error.empty() ? std::string("no camera") : state->open_error;
   }
-  lease.reset();  // unholds
+  lease.reset(); // unholds
   return Error(error);
 }
 

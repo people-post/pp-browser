@@ -1,5 +1,6 @@
 #include "foundation/platform/IosLocalNotifier.h"
 
+#include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/PendingNotificationTap.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
@@ -28,17 +29,19 @@ std::string IosNotificationIdForThread(const std::string& thread_id) {
   return thread_id.empty() ? std::string(kIosCallNotificationId) : "pp-msg-" + thread_id;
 }
 
-void IosLocalNotifier::NotifyIncoming(const std::string& title, const std::string& body,
-                                      const std::string& thread_id) {
+void IosLocalNotifier::NotifyIncoming(const std::string& title, const std::string& body, const std::string& thread_id,
+                                      int /*thread_unread*/) {
   // In the foreground the app shows it itself (and rings).
   if (AppLifecycle::IsForeground()) {
     return;
   }
   @autoreleasepool {
     UNMutableNotificationContent* content = [[UNMutableNotificationContent new] autorelease]; // MRC
-    content.title = ToNs(title.empty() ? "New message" : title);
-    content.body = ToNs(body.empty() ? "You have a new message" : body);
-    content.sound = [UNNotificationSound defaultSound];
+    content.title = ToNs(title.empty() ? Tr("notification.new_message") : title);
+    content.body = ToNs(body.empty() ? Tr("notification.new_message_body") : body);
+    // Our own tones (bundle root); if a file is missing iOS falls back to the default sound.
+    // The call alert has an empty thread id.
+    content.sound = [UNNotificationSound soundNamed:(thread_id.empty() ? @"call.caf" : @"msg.caf")];
     if (!thread_id.empty()) {
       content.threadIdentifier = ToNs(thread_id);
       content.userInfo = @{ToNs(kIosNotificationThreadKey) : ToNs(thread_id)};
@@ -51,14 +54,14 @@ void IosLocalNotifier::NotifyIncoming(const std::string& title, const std::strin
         [UNNotificationRequest requestWithIdentifier:ToNs(IosNotificationIdForThread(thread_id))
                                              content:content
                                              trigger:nil];
-    [[UNUserNotificationCenter currentNotificationCenter]
-        addNotificationRequest:request
-         withCompletionHandler:^(NSError* error) {
-           if (error) {
-             logging::getLogger("LocalNotifier").warning
-                 << "Failed to post notification: " << [[error localizedDescription] UTF8String];
-           }
-         }];
+    [[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:request
+                                                           withCompletionHandler:^(NSError* error) {
+                                                             if (error) {
+                                                               logging::getLogger("LocalNotifier").warning
+                                                                   << "Failed to post notification: "
+                                                                   << [[error localizedDescription] UTF8String];
+                                                             }
+                                                           }];
   }
 }
 
@@ -79,10 +82,16 @@ void IosLocalNotifier::SetActivationHandler(std::function<void(std::string threa
   g_activation = std::move(handler);
 }
 
-void DispatchIosNotificationActivation(const std::string& thread_id, const bool call_wake,
-                                       const std::string& wake_hint) {
+void DispatchIosNotificationActivation(const std::string& thread_id, const bool call_wake, const std::string& wake_hint,
+                                       const std::optional<std::chrono::milliseconds> notification_age) {
   // Recorded first: with no handler yet (locked / cold start) WireMessagingBindings picks it up.
-  PendingNotificationTap::Instance().Record(thread_id, call_wake, wake_hint, PendingNotificationTap::Clock::now());
+  PendingNotificationTap::Instance().Record(thread_id, call_wake, wake_hint, PendingNotificationTap::Clock::now(),
+                                            notification_age);
+  if (call_wake) {
+    logging::getLogger("LocalNotifier").info
+        << "Call tap recorded, notification age ms: "
+        << (notification_age ? std::to_string(notification_age->count()) : std::string("unknown"));
+  }
   if (thread_id.empty()) {
     return;
   }

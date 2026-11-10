@@ -53,37 +53,35 @@ enum class ProbeMode {
 };
 
 void PrintUsage(const char* argv0) {
-  std::cerr
-      << "Usage: " << argv0
-      << " [--hop <adp-multiaddr-with-p2p>] [--mode MODE]\n"
-      << "       [--advertise-host <ip>] [--attachers N|N,N,...] [--sweep A:B:S]\n"
-      << "       [--bridges M|M,M,...] [--duration SEC] [--churn N]\n"
-      << "       [--ready-file PATH] [--target-file PATH] [--call-id ID] [--hold-seconds N]\n"
-      << "       [--warm-hop <adp-ma>] [--peer-id-only] [--stale-ma <adp-ma>]\n"
-      << "\n"
-      << "Amp thin client against a live hop (pp-node Amp listen MA).\n"
-      << "Hop example: /ip4/127.0.0.1/udp/4001/adp/2/p2p/<PeerId>\n"
-      << "\n"
-      << "Modes:\n"
-      << "  l1 (default)            Amp media-relay RequestQuote + Amp circuit StartBridge payload\n"
-      << "  media-fanout (N-FANOUT) quote → AcceptAndAttach ×2 → subscribe → frame fan-out\n"
-      << "  media-cap (N-CAP-MEDIA) attach N clients; print n attached success_rate p50_ms p95_ms\n"
-      << "  circuit-cap (N-CAP-CIRCUIT) M concurrent bridges + payload; print circuit_curve\n"
-      << "  media-soak (N-SOAK)     attach/detach/fan-out loop for --duration (default 120s)\n"
-      << "  bridge-target          hard-lab: listen; write ready-file; wait circuit payload\n"
-      << "                         optional --warm-hop: dial hop so it learns this peer (seed-only)\n"
-      << "  bridge-via-hop         hard-lab: StartBridge via hop using target-file; send payload\n"
-      << "                         optional --peer-id-only: omit target_multiaddr (hop book)\n"
-      << "  direct-expect-fail     hard-lab: dial --stale-ma and require failure (N-HARD-STALE-ADDR)\n"
-      << "  media-recv             hard-lab: quote/attach/subscribe; wait one frame\n"
-      << "  media-send             hard-lab: quote/attach; send frames until recv ack or timeout\n"
-      << "  reserve                dial hop + StartReserve (verify op=reserve on live Brief)\n"
-      << "\n"
-      << "When the hop runs in Docker, pass --advertise-host for circuit dial-back\n"
-      << "(e.g. docker0 bridge 172.17.0.1), not 127.0.0.1.\n"
-      << "Hard-lab peers in containers should bind LAN (bridge-*/media-* use 0.0.0.0).\n"
-      << "\n"
-      << "See packaging/pp-node/IMAGE_SMOKE.md, HARD_LAB.md, docs/ops/TEST_STRATEGY.md\n";
+  std::cerr << "Usage: " << argv0 << " [--hop <adp-multiaddr-with-p2p>] [--mode MODE]\n"
+            << "       [--advertise-host <ip>] [--attachers N|N,N,...] [--sweep A:B:S]\n"
+            << "       [--bridges M|M,M,...] [--duration SEC] [--churn N]\n"
+            << "       [--ready-file PATH] [--target-file PATH] [--call-id ID] [--hold-seconds N]\n"
+            << "       [--warm-hop <adp-ma>] [--peer-id-only] [--stale-ma <adp-ma>]\n"
+            << "\n"
+            << "Amp thin client against a live hop (pp-node Amp listen MA).\n"
+            << "Hop example: /ip4/127.0.0.1/udp/4001/adp/2/p2p/<PeerId>\n"
+            << "\n"
+            << "Modes:\n"
+            << "  l1 (default)            Amp media-relay RequestQuote + Amp circuit StartBridge payload\n"
+            << "  media-fanout (N-FANOUT) quote → AcceptAndAttach ×2 → subscribe → frame fan-out\n"
+            << "  media-cap (N-CAP-MEDIA) attach N clients; print n attached success_rate p50_ms p95_ms\n"
+            << "  circuit-cap (N-CAP-CIRCUIT) M concurrent bridges + payload; print circuit_curve\n"
+            << "  media-soak (N-SOAK)     attach/detach/fan-out loop for --duration (default 120s)\n"
+            << "  bridge-target          hard-lab: listen; write ready-file; wait circuit payload\n"
+            << "                         optional --warm-hop: dial hop so it learns this peer (seed-only)\n"
+            << "  bridge-via-hop         hard-lab: StartBridge via hop using target-file; send payload\n"
+            << "                         optional --peer-id-only: omit target_multiaddr (hop book)\n"
+            << "  direct-expect-fail     hard-lab: dial --stale-ma and require failure (N-HARD-STALE-ADDR)\n"
+            << "  media-recv             hard-lab: quote/attach/subscribe; wait one frame\n"
+            << "  media-send             hard-lab: quote/attach; send frames until recv ack or timeout\n"
+            << "  reserve                dial hop + StartReserve (verify op=reserve on live Brief)\n"
+            << "\n"
+            << "When the hop runs in Docker, pass --advertise-host for circuit dial-back\n"
+            << "(e.g. docker0 bridge 172.17.0.1), not 127.0.0.1.\n"
+            << "Hard-lab peers in containers should bind LAN (bridge-*/media-* use 0.0.0.0).\n"
+            << "\n"
+            << "See packaging/pp-node/IMAGE_SMOKE.md, HARD_LAB.md, docs/ops/TEST_STRATEGY.md\n";
 }
 
 double PercentileMs(std::vector<double> samples, double pct) {
@@ -104,8 +102,7 @@ double PercentileMs(std::vector<double> samples, double pct) {
   return samples[lo] * (1.0 - w) + samples[hi] * w;
 }
 
-std::optional<std::vector<int>> ParseIntList(const std::string& spec, int min_v, int max_v,
-                                             const char* what) {
+std::optional<std::vector<int>> ParseIntList(const std::string& spec, int min_v, int max_v, const char* what) {
   std::vector<int> out;
   if (spec.empty()) {
     std::cerr << "error: empty " << what << "\n";
@@ -124,8 +121,7 @@ std::optional<std::vector<int>> ParseIntList(const std::string& spec, int min_v,
       return std::nullopt;
     }
     if (step <= 0 || start < min_v || end > max_v || start > end) {
-      std::cerr << "error: invalid sweep " << spec << " (each value " << min_v << ".." << max_v
-                << ")\n";
+      std::cerr << "error: invalid sweep " << spec << " (each value " << min_v << ".." << max_v << ")\n";
       return std::nullopt;
     }
     for (int n = start; n <= end; n += step) {
@@ -141,8 +137,7 @@ std::optional<std::vector<int>> ParseIntList(const std::string& spec, int min_v,
     }
     const int n = std::atoi(tok.c_str());
     if (n < min_v || n > max_v) {
-      std::cerr << "error: " << what << " value " << n << " out of " << min_v << ".." << max_v
-                << "\n";
+      std::cerr << "error: " << what << " value " << n << " out of " << min_v << ".." << max_v << "\n";
       return std::nullopt;
     }
     out.push_back(n);
@@ -256,8 +251,7 @@ bool PumpUntil(const std::vector<AmpPeer*>& peers, Pred&& done, const int timeou
   return done();
 }
 
-pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pp::adp::IpEndpoint& bind_ep,
-                                               const bool accept_inbound) {
+pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pp::adp::IpEndpoint& bind_ep, const bool accept_inbound) {
   auto keys = pbr::MlDsa::GenerateKeyPair();
   if (!keys) {
     return keys.error();
@@ -437,10 +431,10 @@ int RunReserve(const std::string& hop_ma) {
       }
       warm_done.store(true, std::memory_order_release);
     });
-    if (!PumpUntil(pumps, [&] { return warm_done.load(std::memory_order_acquire); }, 15000) ||
+    if (!PumpUntil(
+            pumps, [&] { return warm_done.load(std::memory_order_acquire); }, 15000) ||
         !warm_ok.load(std::memory_order_acquire)) {
-      std::cerr << "error: hop associate: "
-                << (warm_detail.empty() ? "timeout" : warm_detail) << "\n";
+      std::cerr << "error: hop associate: " << (warm_detail.empty() ? "timeout" : warm_detail) << "\n";
       return 1;
     }
     std::cout << "ok  hop associated\n";
@@ -454,8 +448,7 @@ int RunReserve(const std::string& hop_ma) {
       return 1;
     }
     if (!wait.PumpUntilDone(pumps, 20000) || !wait.result) {
-      std::cerr << "error: reserve: "
-                << WhyNot(wait.result) << "\n";
+      std::cerr << "error: reserve: " << WhyNot(wait.result) << "\n";
       return 1;
     }
     std::cout << "ok  circuit_relay StartReserve (op=reserve accepted)\n";
@@ -510,8 +503,7 @@ int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
       return 1;
     }
     if (!wait.PumpUntilDone(pumps) || !wait.result) {
-      std::cerr << "error: media_relay quote: "
-                << WhyNot(wait.result) << "\n";
+      std::cerr << "error: media_relay quote: " << WhyNot(wait.result) << "\n";
       return 1;
     }
     if (!wait.result->ok) {
@@ -535,8 +527,7 @@ int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
       return 1;
     }
     if (!wait.PumpUntilDone(pumps, 12000) || !wait.result) {
-      std::cerr << "error: circuit_relay bridge: "
-                << WhyNot(wait.result) << "\n";
+      std::cerr << "error: circuit_relay bridge: " << WhyNot(wait.result) << "\n";
       return 1;
     }
     if (!wait.result->session) {
@@ -620,13 +611,11 @@ int RunMediaFanout(const std::string& hop_ma) {
     return 1;
   }
   if (!qa.PumpUntilDone(pumps) || !qa.result || !qa.result->ok) {
-    std::cerr << "error: client-a quote: "
-              << WhyNot(qa.result) << "\n";
+    std::cerr << "error: client-a quote: " << WhyNot(qa.result) << "\n";
     return 1;
   }
   if (!qb.PumpUntilDone(pumps) || !qb.result || !qb.result->ok) {
-    std::cerr << "error: client-b quote: "
-              << WhyNot(qb.result) << "\n";
+    std::cerr << "error: client-b quote: " << WhyNot(qb.result) << "\n";
     return 1;
   }
   std::cout << "ok  quotes a=" << qa.result->quote_id << " b=" << qb.result->quote_id << "\n";
@@ -636,8 +625,8 @@ int RunMediaFanout(const std::string& hop_ma) {
 
   AsyncWait<pp::mesh::MediaRelayAttachResult> attach_a;
   AsyncWait<pp::mesh::MediaRelayAttachResult> attach_b;
-  if (!a_relay->StartAttach("hop", qa.result->quote_id, call_id, call_id, [](pp::mesh::MediaDataFrame) {},
-                            attach_a.Fn(), 8000)) {
+  if (!a_relay->StartAttach(
+          "hop", qa.result->quote_id, call_id, call_id, [](pp::mesh::MediaDataFrame) {}, attach_a.Fn(), 8000)) {
     std::cerr << "error: client-a attach start failed\n";
     return 1;
   }
@@ -652,13 +641,11 @@ int RunMediaFanout(const std::string& hop_ma) {
     return 1;
   }
   if (!attach_a.PumpUntilDone(pumps) || !attach_a.result || !attach_a.result->ok) {
-    std::cerr << "error: client-a attach: "
-              << WhyNot(attach_a.result) << "\n";
+    std::cerr << "error: client-a attach: " << WhyNot(attach_a.result) << "\n";
     return 1;
   }
   if (!attach_b.PumpUntilDone(pumps) || !attach_b.result || !attach_b.result->ok) {
-    std::cerr << "error: client-b attach: "
-              << WhyNot(attach_b.result) << "\n";
+    std::cerr << "error: client-b attach: " << WhyNot(attach_b.result) << "\n";
     return 1;
   }
   std::cout << "ok  AcceptAndAttach ×2\n";
@@ -724,9 +711,8 @@ struct MediaCapResult {
 
 void PrintCapCurve(const MediaCapResult& r) {
   std::cout << std::fixed << std::setprecision(1);
-  std::cout << "cap_curve n=" << r.n << " attached=" << r.attached
-            << " success_rate=" << r.success_rate << " p50_ms=" << r.p50_ms
-            << " p95_ms=" << r.p95_ms << "\n";
+  std::cout << "cap_curve n=" << r.n << " attached=" << r.attached << " success_rate=" << r.success_rate
+            << " p50_ms=" << r.p50_ms << " p95_ms=" << r.p95_ms << "\n";
   std::cout.unsetf(std::ios::floatfield);
 }
 
@@ -784,8 +770,7 @@ MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
       continue;
     }
     if (!quote_wait.PumpUntilDone(pumps) || !quote_wait.result || !quote_wait.result->ok) {
-      const std::string err =
-          quote_wait.result ? quote_wait.result->error : quote_wait.result.error().message;
+      const std::string err = quote_wait.result ? quote_wait.result->error : quote_wait.result.error().message;
       std::cerr << "warn: client-" << i << " quote failed: " << err << "\n";
       if (!quote_wait.result) {
         ++transport_fails;
@@ -795,16 +780,15 @@ MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
     }
 
     AsyncWait<pp::mesh::MediaRelayAttachResult> attach_wait;
-    if (!c->relay->StartAttach("hop", quote_wait.result->quote_id, call_id, call_id,
-                               [](pp::mesh::MediaDataFrame) {}, attach_wait.Fn(), 8000)) {
+    if (!c->relay->StartAttach(
+            "hop", quote_wait.result->quote_id, call_id, call_id, [](pp::mesh::MediaDataFrame) {}, attach_wait.Fn(),
+            8000)) {
       ++transport_fails;
       clients.push_back(std::move(c));
       continue;
     }
     if (!attach_wait.PumpUntilDone(pumps) || !attach_wait.result || !attach_wait.result->ok) {
-      std::cerr << "warn: client-" << i << " attach failed: "
-                << WhyNot(attach_wait.result)
-                << "\n";
+      std::cerr << "warn: client-" << i << " attach failed: " << WhyNot(attach_wait.result) << "\n";
       if (!attach_wait.result) {
         ++transport_fails;
       }
@@ -871,8 +855,7 @@ struct CircuitTarget {
   std::vector<std::shared_ptr<pp::amp::ChannelSession>> sessions;
 };
 
-int RunCircuitCapOnce(const std::string& hop_ma, const std::string& advertise_host, int bridges,
-                      int& out_ok) {
+int RunCircuitCapOnce(const std::string& hop_ma, const std::string& advertise_host, int bridges, int& out_ok) {
   out_ok = 0;
   if (bridges < 1 || bridges > 16) {
     std::cerr << "error: --bridges must be 1..16 (got " << bridges << ")\n";
@@ -922,8 +905,7 @@ int RunCircuitCapOnce(const std::string& hop_ma, const std::string& advertise_ho
     AsyncWait<pp::mesh::CircuitTunnelBridgeResult> wait;
     auto tunnel_id = circuit->StartBridge("hop", bridge_target, {}, {}, wait.Fn(), 10000);
     if (!tunnel_id || !wait.PumpUntilDone(pumps, 12000) || !wait.result || !wait.result->session) {
-      std::cerr << "warn: bridge-" << i << " failed: "
-                << WhyNot(wait.result) << "\n";
+      std::cerr << "warn: bridge-" << i << " failed: " << WhyNot(wait.result) << "\n";
       continue;
     }
 
@@ -969,8 +951,7 @@ int RunCircuitCapOnce(const std::string& hop_ma, const std::string& advertise_ho
   return 0;
 }
 
-int RunCircuitCap(const std::string& hop_ma, const std::string& advertise_host,
-                  const std::vector<int>& ms) {
+int RunCircuitCap(const std::string& hop_ma, const std::string& advertise_host, const std::vector<int>& ms) {
   bool slo_fail = false;
   for (int m : ms) {
     int ok = 0;
@@ -1000,8 +981,7 @@ int RunMediaSoak(const std::string& hop_ma, int duration_sec, int churn) {
     return 2;
   }
 
-  std::cout << "pp-node N-SOAK probe hop=" << hop_ma << " duration=" << duration_sec
-            << " churn=" << churn << "\n";
+  std::cout << "pp-node N-SOAK probe hop=" << hop_ma << " duration=" << duration_sec << " churn=" << churn << "\n";
 
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(duration_sec);
   int rounds = 0;
@@ -1029,13 +1009,12 @@ int RunMediaSoak(const std::string& hop_ma, int duration_sec, int churn) {
   }
 
   std::cout << "soak_summary rounds=" << rounds << " attached_total=" << attached_total << "\n";
-  std::cout << "pp-node N-SOAK probe PASSED rounds=" << rounds << " attached_total=" << attached_total
-            << "\n";
+  std::cout << "pp-node N-SOAK probe PASSED rounds=" << rounds << " attached_total=" << attached_total << "\n";
   return 0;
 }
 
-int RunBridgeTarget(const std::string& advertise_host, const std::string& ready_file,
-                    const int hold_seconds, const std::string& warm_hop_ma) {
+int RunBridgeTarget(const std::string& advertise_host, const std::string& ready_file, const int hold_seconds,
+                    const std::string& warm_hop_ma) {
   if (ready_file.empty()) {
     std::cerr << "error: --ready-file required for bridge-target\n";
     return 2;
@@ -1052,8 +1031,7 @@ int RunBridgeTarget(const std::string& advertise_host, const std::string& ready_
     std::cerr << "error: write ready-file " << ready_file << "\n";
     return 1;
   }
-  std::cout << "pp-node bridge-target ready peer=" << (*target)->peer_id << " ma=" << target_ma
-            << "\n";
+  std::cout << "pp-node bridge-target ready peer=" << (*target)->peer_id << " ma=" << target_ma << "\n";
 
   const std::vector<AmpPeer*> pumps = {target->get()};
   if (!warm_hop_ma.empty()) {
@@ -1072,10 +1050,10 @@ int RunBridgeTarget(const std::string& advertise_host, const std::string& ready_
       }
       warm_done.store(true, std::memory_order_release);
     });
-    if (!PumpUntil(pumps, [&] { return warm_done.load(std::memory_order_acquire); }, 15000) ||
+    if (!PumpUntil(
+            pumps, [&] { return warm_done.load(std::memory_order_acquire); }, 15000) ||
         !warm_ok.load(std::memory_order_acquire)) {
-      std::cerr << "error: warm-hop associate: "
-                << (warm_detail.empty() ? "timeout" : warm_detail) << "\n";
+      std::cerr << "error: warm-hop associate: " << (warm_detail.empty() ? "timeout" : warm_detail) << "\n";
       return 1;
     }
     // Allow hop to ingest ch0 listen addrs into its peer book.
@@ -1161,8 +1139,7 @@ int RunBridgeViaHop(const std::string& hop_ma, const std::string& target_file, c
     return 1;
   }
   if (!wait.PumpUntilDone(pumps, 20000) || !wait.result) {
-    std::cerr << "error: circuit_relay bridge: "
-              << WhyNot(wait.result) << "\n";
+    std::cerr << "error: circuit_relay bridge: " << WhyNot(wait.result) << "\n";
     return 1;
   }
   if (!wait.result->session) {
@@ -1224,16 +1201,14 @@ int RunDirectExpectFail(const std::string& stale_ma) {
   });
 
   const std::vector<AmpPeer*> pumps = {client->get()};
-  const bool finished =
-      PumpUntil(pumps, [&] { return done.load(std::memory_order_acquire); }, 12000);
+  const bool finished = PumpUntil(pumps, [&] { return done.load(std::memory_order_acquire); }, 12000);
   (*client)->stack->Stop();
 
   if (associated.load(std::memory_order_acquire)) {
     std::cerr << "error: direct dial to stale addr unexpectedly succeeded\n";
     return 1;
   }
-  std::cout << "ok  direct dial to stale addr failed (expected)"
-            << (finished ? "" : " (timeout)")
+  std::cout << "ok  direct dial to stale addr failed (expected)" << (finished ? "" : " (timeout)")
             << (detail.empty() ? "" : (" detail=" + detail)) << "\n";
   std::cout << "pp-node direct-expect-fail PASSED\n";
   return 0;
@@ -1263,8 +1238,7 @@ int RunMediaRecv(const std::string& hop_ma, const std::string& call_id, const in
     return 1;
   }
   if (!quote.PumpUntilDone(pumps) || !quote.result || !quote.result->ok) {
-    std::cerr << "error: media-recv quote: "
-              << WhyNot(quote.result) << "\n";
+    std::cerr << "error: media-recv quote: " << WhyNot(quote.result) << "\n";
     return 1;
   }
 
@@ -1282,8 +1256,7 @@ int RunMediaRecv(const std::string& hop_ma, const std::string& call_id, const in
     return 1;
   }
   if (!attach.PumpUntilDone(pumps) || !attach.result || !attach.result->ok) {
-    std::cerr << "error: media-recv attach: "
-              << WhyNot(attach.result) << "\n";
+    std::cerr << "error: media-recv attach: " << WhyNot(attach.result) << "\n";
     return 1;
   }
   relay->StartClientFrameReader();
@@ -1306,8 +1279,7 @@ int RunMediaRecv(const std::string& hop_ma, const std::string& call_id, const in
     std::cerr << "error: media-recv timed out waiting for frame\n";
     return 1;
   }
-  if (received.stream_id != 1u ||
-      received.payload != std::vector<uint8_t>{'f', 'a', 'n', 'o', 'u', 't'}) {
+  if (received.stream_id != 1u || received.payload != std::vector<uint8_t>{'f', 'a', 'n', 'o', 'u', 't'}) {
     std::cerr << "error: media-recv frame mismatch\n";
     return 1;
   }
@@ -1341,19 +1313,17 @@ int RunMediaSend(const std::string& hop_ma, const std::string& call_id, const in
     return 1;
   }
   if (!quote.PumpUntilDone(pumps) || !quote.result || !quote.result->ok) {
-    std::cerr << "error: media-send quote: "
-              << WhyNot(quote.result) << "\n";
+    std::cerr << "error: media-send quote: " << WhyNot(quote.result) << "\n";
     return 1;
   }
   AsyncWait<pp::mesh::MediaRelayAttachResult> attach;
-  if (!relay->StartAttach("hop", quote.result->quote_id, call_id, call_id, [](pp::mesh::MediaDataFrame) {},
-                          attach.Fn(), 10000)) {
+  if (!relay->StartAttach(
+          "hop", quote.result->quote_id, call_id, call_id, [](pp::mesh::MediaDataFrame) {}, attach.Fn(), 10000)) {
     std::cerr << "error: media-send attach start failed\n";
     return 1;
   }
   if (!attach.PumpUntilDone(pumps) || !attach.result || !attach.result->ok) {
-    std::cerr << "error: media-send attach: "
-              << WhyNot(attach.result) << "\n";
+    std::cerr << "error: media-send attach: " << WhyNot(attach.result) << "\n";
     return 1;
   }
   relay->StartClientFrameReader();
@@ -1364,8 +1334,7 @@ int RunMediaSend(const std::string& hop_ma, const std::string& call_id, const in
   sent.channel_id = 0;
   sent.channel_type = pp::mesh::MediaChannelType::LatestLossy;
   sent.payload = {'f', 'a', 'n', 'o', 'u', 't'};
-  const auto deadline =
-      std::chrono::steady_clock::now() + std::chrono::seconds(std::max(5, hold_seconds));
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(std::max(5, hold_seconds));
   uint32_t seq = 1;
   while (std::chrono::steady_clock::now() < deadline) {
     sent.seq = seq++;

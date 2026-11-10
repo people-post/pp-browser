@@ -21,7 +21,7 @@ Roe<ThreadMessage> BuildNotice(const std::string& to_device) {
   detail.set("to_device", to_device);
   Object payload;
   payload.set("control_type", kCardAskControlType);
-  payload.set("detail", DumpJson(detail));  // a system payload keeps only its type and one detail string
+  payload.set("detail", DumpJson(detail)); // a system payload keeps only its type and one detail string
   ThreadMessage notice;
   notice.id = util::GenerateUuid();
   notice.content_type = ChatContentType::System;
@@ -57,7 +57,8 @@ SystemControlFamily MakeFamily(std::function<void(std::string to_device, std::st
   family.owns = is_ask;
   family.on_lane = is_ask;
   family.lane_max_age_ms = kCardAskMaxAgeMs;
-  family.apply = [answer = std::move(answer)](ThreadMessage& message, const SystemControlContext& context) -> Roe<void> {
+  family.apply = [answer = std::move(answer)](ThreadMessage& message,
+                                              const SystemControlContext& context) -> Roe<void> {
     auto parsed = Parse(message);
     if (!parsed) {
       return parsed.error();

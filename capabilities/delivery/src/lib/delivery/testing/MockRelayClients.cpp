@@ -50,7 +50,7 @@ Roe<void> MockRelayClient::Send(const RelayEnvelope& envelope) {
 }
 
 Roe<RelayPollResult> MockRelayClient::PollInbox(const std::string& /*requester_contact_id*/,
-                                              const std::string& /*cursor*/) {
+                                                const std::string& /*cursor*/) {
   std::lock_guard lock(mutex_);
   RelayPollResult result;
   if (poll_index_ < delivered_.size()) {
@@ -90,9 +90,8 @@ Roe<RelayDeleteResult> MockRelayClient::ClearInbox(const std::string& /*requeste
 namespace {
 
 bool EnvelopeMatchesHistoryRequest(const RelayEnvelope& envelope, const ChatHistoryRequest& request) {
-  const std::string expected_stream =
-      BuildCanonicalRelayStreamKey(request.requester_identity_value, request.peer_identity_value, request.channel,
-                                   request.session_epoch);
+  const std::string expected_stream = BuildCanonicalRelayStreamKey(
+      request.requester_identity_value, request.peer_identity_value, request.channel, request.session_epoch);
   if (!envelope.stream_key.empty()) {
     if (envelope.stream_key != expected_stream) {
       return false;

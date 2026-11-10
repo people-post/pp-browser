@@ -21,8 +21,9 @@ namespace {
 constexpr const char* kAadPurpose = "outgoing-attachment";
 
 bool SafeId(const std::string& id) {
-  return !id.empty() && id.size() <= 64 &&
-         std::all_of(id.begin(), id.end(), [](const char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '-'; });
+  return !id.empty() && id.size() <= 64 && std::all_of(id.begin(), id.end(), [](const char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '-';
+  });
 }
 
 Roe<void> WriteBytes(const std::string& path, const uint8_t* data, const size_t size) {
@@ -62,9 +63,13 @@ std::string OutgoingAttachmentStore::CipherPath(const std::string& id) const {
   return (std::filesystem::path(Dir()) / id).string();
 }
 
-std::string OutgoingAttachmentStore::RecordPath(const std::string& id) const { return CipherPath(id) + ".rec"; }
+std::string OutgoingAttachmentStore::RecordPath(const std::string& id) const {
+  return CipherPath(id) + ".rec";
+}
 
-std::string OutgoingAttachmentStore::NewId() { return util::GenerateUuid(); }
+std::string OutgoingAttachmentStore::NewId() {
+  return util::GenerateUuid();
+}
 
 Roe<void> OutgoingAttachmentStore::Update(const OutgoingAttachmentRecord& record, const ByteVector& dek) {
   if (!SafeId(record.id)) {
@@ -78,16 +83,16 @@ Roe<void> OutgoingAttachmentStore::Update(const OutgoingAttachmentRecord& record
   json.setJsonUInt("delivered", record.delivered ? 1 : 0);
   json.set("created_ms", record.created_ms);
   const std::string text = DumpJson(json);
-  auto sealed = FileCipher::Encrypt(dek, ByteVector(text.begin(), text.end()),
-                                    FileCipher::BuildAad(kAadPurpose, profile_id_));
+  auto sealed =
+      FileCipher::Encrypt(dek, ByteVector(text.begin(), text.end()), FileCipher::BuildAad(kAadPurpose, profile_id_));
   if (!sealed) {
     return sealed.error();
   }
   return WriteBytesAtomic(RecordPath(record.id), sealed->data(), sealed->size());
 }
 
-Roe<void> OutgoingAttachmentStore::Begin(const OutgoingAttachmentRecord& record,
-                                         const std::vector<uint8_t>& ciphertext, const ByteVector& dek) {
+Roe<void> OutgoingAttachmentStore::Begin(const OutgoingAttachmentRecord& record, const std::vector<uint8_t>& ciphertext,
+                                         const ByteVector& dek) {
   if (!SafeId(record.id)) {
     return Error("Invalid outgoing attachment id");
   }
@@ -162,7 +167,7 @@ Roe<std::vector<uint8_t>> OutgoingAttachmentStore::ReadCipher(const std::string&
 }
 
 std::vector<OutgoingAttachmentRecord> OutgoingAttachmentStore::ListForThread(const std::string& thread_id,
-                                                                              const ByteVector& dek) const {
+                                                                             const ByteVector& dek) const {
   std::vector<OutgoingAttachmentRecord> found;
   std::error_code ec;
   for (std::filesystem::directory_iterator it(Dir(), ec), end; !ec && it != end; it.increment(ec)) {
@@ -178,8 +183,9 @@ std::vector<OutgoingAttachmentRecord> OutgoingAttachmentStore::ListForThread(con
       found.push_back(std::move(*record));
     }
   }
-  std::sort(found.begin(), found.end(),
-            [](const OutgoingAttachmentRecord& a, const OutgoingAttachmentRecord& b) { return a.created_ms < b.created_ms; });
+  std::sort(found.begin(), found.end(), [](const OutgoingAttachmentRecord& a, const OutgoingAttachmentRecord& b) {
+    return a.created_ms < b.created_ms;
+  });
   return found;
 }
 

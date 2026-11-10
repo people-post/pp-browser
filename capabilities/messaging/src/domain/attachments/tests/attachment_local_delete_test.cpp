@@ -49,7 +49,9 @@ bool WaitFor(const std::function<bool()>& done, const std::chrono::milliseconds 
   return true;
 }
 
-ByteVector Dek() { return ByteVector(kDataEncryptionKeySize, 0x5a); }
+ByteVector Dek() {
+  return ByteVector(kDataEncryptionKeySize, 0x5a);
+}
 
 /** Me → Storage's local delete, its lists and the storage grid's thumbnails, on a real runtime and a loopback CDN. */
 class AttachmentLocalDeleteTest : public ::testing::Test {
@@ -209,8 +211,7 @@ TEST_F(AttachmentLocalDeleteTest, ADeletedItemShowsDownloadAndItsBytesAreGone) {
   const File photo = MakeFile("photo", 3000);
   Keep(photo);
   Post("A", "a1", photo.fields);
-  ASSERT_TRUE(workflow_->EnsureLocalViewPath("A", photo.fields.content_hash, photo.fields.mime,
-                                             photo.fields.filename));
+  ASSERT_TRUE(workflow_->EnsureLocalViewPath("A", photo.fields.content_hash, photo.fields.mime, photo.fields.filename));
   ASSERT_EQ(StateIn("A", photo.fields), State::Ready);
   ASSERT_EQ(ItemsIn("A").size(), 1u);
   const uint64_t stored = AttachmentLocalBytes(*content_, photo.fields.content_hash);
@@ -233,8 +234,7 @@ TEST_F(AttachmentLocalDeleteTest, BytesAnotherChatUsesStayAndShowThereButNotHere
   Keep(photo);
   Post("A", "a1", photo.fields);
   Post("B", "b1", photo.fields);
-  ASSERT_TRUE(workflow_->EnsureLocalViewPath("A", photo.fields.content_hash, photo.fields.mime,
-                                             photo.fields.filename));
+  ASSERT_TRUE(workflow_->EnsureLocalViewPath("A", photo.fields.content_hash, photo.fields.mime, photo.fields.filename));
   EXPECT_EQ(workflow_->ReleasableBytes(threads_, {{"A", photo.fields.content_hash}}), 0u);
 
   const auto result = Delete({{"A", photo.fields.content_hash}});
@@ -246,10 +246,9 @@ TEST_F(AttachmentLocalDeleteTest, BytesAnotherChatUsesStayAndShowThereButNotHere
   EXPECT_EQ(StateIn("A", photo.fields), State::Pending) << "deleted in this chat: Download here";
   EXPECT_EQ(StateIn("B", photo.fields), State::Ready) << "the other chat still shows it";
   EXPECT_EQ(ViewFiles("A", photo.fields), 0u);
-  EXPECT_FALSE(workflow_->EnsureLocalViewPath("A", photo.fields.content_hash, photo.fields.mime,
-                                              photo.fields.filename));
-  EXPECT_TRUE(workflow_->EnsureLocalViewPath("B", photo.fields.content_hash, photo.fields.mime,
-                                             photo.fields.filename));
+  EXPECT_FALSE(
+      workflow_->EnsureLocalViewPath("A", photo.fields.content_hash, photo.fields.mime, photo.fields.filename));
+  EXPECT_TRUE(workflow_->EnsureLocalViewPath("B", photo.fields.content_hash, photo.fields.mime, photo.fields.filename));
   EXPECT_TRUE(ItemsIn("A").empty()) << "not in this chat's list";
   EXPECT_EQ(ItemsIn("B").size(), 1u);
 }
@@ -715,8 +714,8 @@ TEST_F(AttachmentLocalDeleteTest, TheListCountsTheBytesOnThisDeviceNotTheDeclare
 
   const auto items = ItemsIn("A");
   ASSERT_EQ(items.size(), 1u);
-  const uint64_t on_disk = std::filesystem::file_size(
-      content_->BlockPath(CasRealm::Private, ByteVector(photo.fields.content_hash.begin(), photo.fields.content_hash.end())));
+  const uint64_t on_disk = std::filesystem::file_size(content_->BlockPath(
+      CasRealm::Private, ByteVector(photo.fields.content_hash.begin(), photo.fields.content_hash.end())));
   EXPECT_EQ(items[0].bytes, on_disk);
   EXPECT_GT(items[0].bytes, 20'000u);
   EXPECT_EQ(items[0].message_id, "a1");
@@ -775,8 +774,7 @@ TEST_F(AttachmentLocalDeleteTest, ListingThreeThousandItemsInFiftyChatsIsQuick) 
       ChatAttachmentFields fields = prepared->fields;
       fields.mime = i % 3 == 0 ? "video/mp4" : (i % 3 == 1 ? "image/jpeg" : "application/pdf");
       fields.url = "https://example.invalid/f";
-      ASSERT_TRUE(
-          SaveAttachmentPlaintext(*content_, fields.content_hash, fields.mime, plain, fields.filename, Dek()));
+      ASSERT_TRUE(SaveAttachmentPlaintext(*content_, fields.content_hash, fields.mime, plain, fields.filename, Dek()));
       Post(thread.id, "m" + std::to_string(i), fields);
     }
   }

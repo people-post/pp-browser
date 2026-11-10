@@ -55,8 +55,7 @@ TEST(CryptoVectors, AeadRoundTripWithFixedInputs) {
   const auto aad = CanonicalAad::Build(fields);
   ASSERT_TRUE(aad);
 
-  const auto encrypted =
-      MessageCipher::Encrypt(FixedSessionKey(), VectorAPlaintext(), aad.value(), FixedNonce());
+  const auto encrypted = MessageCipher::Encrypt(FixedSessionKey(), VectorAPlaintext(), aad.value(), FixedNonce());
   ASSERT_TRUE(encrypted);
 
   const auto blob = EncryptedPayload::EncodeBlob(encrypted.value());
@@ -87,8 +86,7 @@ TEST(CryptoVectors, AeadTamperFails) {
 
   const auto aad = CanonicalAad::Build(fields);
   ASSERT_TRUE(aad);
-  const auto encrypted =
-      MessageCipher::Encrypt(FixedSessionKey(), VectorAPlaintext(), aad.value(), FixedNonce());
+  const auto encrypted = MessageCipher::Encrypt(FixedSessionKey(), VectorAPlaintext(), aad.value(), FixedNonce());
   ASSERT_TRUE(encrypted);
 
   EncryptedBlob tampered = encrypted.value();
@@ -108,8 +106,7 @@ TEST(CryptoVectors, WrongAadFailsDecrypt) {
 
   const auto aad = CanonicalAad::Build(fields);
   ASSERT_TRUE(aad);
-  const auto encrypted =
-      MessageCipher::Encrypt(FixedSessionKey(), VectorAPlaintext(), aad.value(), FixedNonce());
+  const auto encrypted = MessageCipher::Encrypt(FixedSessionKey(), VectorAPlaintext(), aad.value(), FixedNonce());
   ASSERT_TRUE(encrypted);
 
   fields.sender_seq = 43;

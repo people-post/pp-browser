@@ -55,11 +55,10 @@ bool NetworkSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
   const bool saved = config.backend.has_saved_urls;
   const std::string& relay = saved ? config.backend.saved_relay.base_url : config.relay.base_url;
   const std::string& directory = saved ? config.backend.saved_directory.base_url : config.directory.base_url;
-  const std::string& registration =
-      saved ? config.backend.saved_registration.base_url : config.registration.base_url;
+  const std::string& registration = saved ? config.backend.saved_registration.base_url : config.registration.base_url;
   return (state.backend_env.empty() || state.backend_env == config.backend.env) && state.relay_base_url == relay &&
-         state.directory_base_url == directory && state.registration_base_url == registration && node_on == config.mesh.node_enabled &&
-         circuit_on == config.mesh.capabilities.circuit_relay &&
+         state.directory_base_url == directory && state.registration_base_url == registration &&
+         node_on == config.mesh.node_enabled && circuit_on == config.mesh.capabilities.circuit_relay &&
          media_on == config.mesh.capabilities.media_relay && dht_on == config.mesh.capabilities.dht &&
          prefer_contacts == config.mesh.prefer_contacts_for_routing &&
          state.direct_connections == mesh::DirectAudienceName(config.mesh.direct_connections) &&

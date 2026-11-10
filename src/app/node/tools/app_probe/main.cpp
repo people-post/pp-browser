@@ -28,6 +28,8 @@
 //   minimize / restore                  a desktop window minimized / restored
 //   push_wake                           a call push arrives (what FCM's wake does)
 //   stay_connected {on}                 the "Stay connected in the background" setting (P011)
+//   add_to_contacts {thread}            "Add to contacts" in a direct chat with someone not in contacts
+//   call_invite_policy {policy}         "Who can call me": everyone | contacts_only (a new profile's) | nobody
 //   create_group {title, accounts}      a group with these contacts (each invited)
 //   group_invites                       group invites in this user's chats {nonce, group_id, title, from,
 //                                       member_count} (G019: the invite shows the count, never the members)
@@ -192,20 +194,18 @@ void ReplyError(int64_t id, const std::string& message) {
 
 const char* NoticeKindName(CallNotice::Kind kind) {
   switch (kind) {
-  case CallNotice::Kind::Error:
-    return "error";
-  case CallNotice::Kind::StickyError:
-    return "sticky_error";
-  case CallNotice::Kind::PeerEnded:
-    return "peer_ended";
-  case CallNotice::Kind::PeerDeclined:
-    return "peer_declined";
-  case CallNotice::Kind::IncomingCall:
-    return "incoming_call";
-  case CallNotice::Kind::GuestJoined:
-    return "guest_joined";
-  case CallNotice::Kind::CallBack:
-    return "call_back";
+    case CallNotice::Kind::Error:
+      return "error";
+    case CallNotice::Kind::PeerEnded:
+      return "peer_ended";
+    case CallNotice::Kind::PeerDeclined:
+      return "peer_declined";
+    case CallNotice::Kind::IncomingCall:
+      return "incoming_call";
+    case CallNotice::Kind::GuestJoined:
+      return "guest_joined";
+    case CallNotice::Kind::CallBack:
+      return "call_back";
   }
   return "?";
 }
@@ -223,7 +223,7 @@ public:
     CallPresenter::Callbacks callbacks;
     callbacks.on_changed = [this]() { EmitSurface(); };
     callbacks.notify = [this](const CallNotice& notice) {
-      if (notice.kind == CallNotice::Kind::Error || notice.kind == CallNotice::Kind::StickyError) {
+      if (notice.kind == CallNotice::Kind::Error) {
         last_error_ = notice.key.empty() ? notice.text : notice.key;
       }
       Object event;
@@ -373,6 +373,18 @@ public:
     return members;
   }
 
+  /** What the call screen's media frame decided (CallMediaFrame): the status line, the reconnect and its capsule. */
+  static Object MediaFrameObject(const CallMediaScreen& frame) {
+    Object out;
+    out.set("line", frame.line.key);
+    out.set("reconnect", frame.media.reconnect);
+    out.set("capsule", std::string(CallReconnectKey(frame.reconnect.kind)));
+    out.set("on_hold", frame.media.on_hold);
+    out.set("starting_video", frame.media.starting_video);
+    out.set("hint", frame.hint_shown ? frame.hint_key : std::string());
+    return out;
+  }
+
   Object SurfaceObject() {
     Object out;
     out.set("kind", last_kind_);
@@ -391,6 +403,7 @@ public:
     out.set("members", ArrayValue(MembersOf(screen))); // V062: who is a guest, and what this user may do
     out.set("ring_guest", screen.ring_guest);
     out.set("ring_people", static_cast<int64_t>(screen.ring_people));
+    out.set("media_frame", ObjectValue(MediaFrameObject(presenter_.MediaScreen())));
     if (calls_->Available()) {
       IMediaView& media = calls_->Media();
       const auto health = media.HealthSnapshot();
@@ -484,43 +497,43 @@ public:
       Emit(out);
     } else if (cmd == "add_from_locator") {
       // "Add contact" with a pasted invite: the contact, then the account's card from a listed device.
-      facade_->AddContactFromLocator(
-          request->getString("text").value_or(""), [id](Roe<ContactCardExchange::LocatorAdded> added) {
-            AppRuntime::PostUI([id, added = std::move(added)]() {
-              if (!added) {
-                ReplyError(id, added.error().message);
-                return;
-              }
-              Object out = Reply(id, true);
-              out.set("contact", added.value().contact.id);
-              out.set("keys_known", added.value().keys_known);
-              Emit(out);
-            });
-          });
+      facade_->AddContactFromLocator(request->getString("text").value_or(""),
+                                     [id](Roe<ContactCardExchange::LocatorAdded> added) {
+                                       AppRuntime::PostUI([id, added = std::move(added)]() {
+                                         if (!added) {
+                                           ReplyError(id, added.error().message);
+                                           return;
+                                         }
+                                         Object out = Reply(id, true);
+                                         out.set("contact", added.value().contact.id);
+                                         out.set("keys_known", added.value().keys_known);
+                                         Emit(out);
+                                       });
+                                     });
     } else if (cmd == "fetch_card") {
       // Ask device `peer` for `account`'s card over Amp (ACCOUNT_CARD.md); kept when it proves itself.
       if (!Hub().IsMessagingReady()) {
         ReplyError(id, "messaging not ready");
         return;
       }
-      Hub().MeshMessaging().AccountCards().Fetch(
-          request->getString("peer").value_or(""), request->getString("account").value_or(""),
-          [id](Roe<PeerCardRecord> kept) {
-            AppRuntime::PostUI([id, kept = std::move(kept)]() {
-              if (!kept) {
-                ReplyError(id, kept.error().message);
-                return;
-              }
-              Object out = Reply(id, true);
-              std::vector<Value> devices;
-              for (const std::string& peer_id : kept.value().devices) {
-                devices.emplace_back(peer_id);
-              }
-              out.set("devices", ArrayValue(std::move(devices)));
-              out.set("nickname", kept.value().nickname);
-              Emit(out);
-            });
-          });
+      Hub().MeshMessaging().AccountCards().Fetch(request->getString("peer").value_or(""),
+                                                 request->getString("account").value_or(""),
+                                                 [id](Roe<PeerCardRecord> kept) {
+                                                   AppRuntime::PostUI([id, kept = std::move(kept)]() {
+                                                     if (!kept) {
+                                                       ReplyError(id, kept.error().message);
+                                                       return;
+                                                     }
+                                                     Object out = Reply(id, true);
+                                                     std::vector<Value> devices;
+                                                     for (const std::string& peer_id : kept.value().devices) {
+                                                       devices.emplace_back(peer_id);
+                                                     }
+                                                     out.set("devices", ArrayValue(std::move(devices)));
+                                                     out.set("nickname", kept.value().nickname);
+                                                     Emit(out);
+                                                   });
+                                                 });
     } else if (cmd == "kept_card") {
       // What this device keeps for `account`: where its card came from, and its devices.
       Object out = Reply(id, true);
@@ -614,8 +627,8 @@ public:
       out.set("contacts", ArrayValue(std::move(rows)));
       Emit(out);
     } else if (cmd == "rename_contact" || cmd == "remove_contact") {
-      auto found = Hub().Contacts().FindByIdentity(request->getString("account").value_or(""),
-                                                   mesh::ContactIdKind::Account);
+      auto found =
+          Hub().Contacts().FindByIdentity(request->getString("account").value_or(""), mesh::ContactIdKind::Account);
       if (!found || !*found) {
         ReplyError(id, "no such contact");
         return;
@@ -749,8 +762,8 @@ public:
     } else if (cmd == "joinable") {
       BindCalls();
       Object out = Reply(id, true);
-      const auto call = calls_->Available() ? calls_->JoinableCallInThread(request->getString("thread").value_or(""))
-                                            : std::nullopt;
+      const auto call =
+          calls_->Available() ? calls_->JoinableCallInThread(request->getString("thread").value_or("")) : std::nullopt;
       out.set("call_id", call.value_or(""));
       Emit(out);
     } else if (cmd == "invite_to_call") {
@@ -782,7 +795,7 @@ public:
         }
         Object out = Reply(id, true);
         out.set("members", ArrayValue(std::move(members)));
-        out.set("roles", std::move(roles)); // G017: owner / admin / member, as the signed roster says
+        out.set("roles", std::move(roles));       // G017: owner / admin / member, as the signed roster says
         out.set("added_by", std::move(added_by)); // G019: who brought each in ("" for the first members)
         if (auto owner = facade_->OwnerIdentity(request->getString("group_id").value_or(""))) {
           out.set("owner", *owner);
@@ -812,8 +825,8 @@ public:
       auto thread = facade_->GetThread(request->getString("thread").value_or(""));
       if (!thread || !*thread || !(*thread)->group_id) {
         ReplyError(id, "not a group chat");
-      } else if (auto removed = facade_->RemoveMemberByIdentity(*(*thread)->group_id,
-                                                                request->getString("account").value_or(""));
+      } else if (auto removed =
+                     facade_->RemoveMemberByIdentity(*(*thread)->group_id, request->getString("account").value_or(""));
                  !removed) {
         ReplyError(id, removed.error().message);
       } else {
@@ -911,7 +924,7 @@ public:
     } else if (cmd == "show_chat") {
       // The chat on screen: what tapping it in the chats list does (ChatPresenter).
       chats_.SelectThread(request->getString("thread").value_or("")) ? Emit(Reply(id, true))
-                                                                      : ReplyError(id, "could not open the chat");
+                                                                     : ReplyError(id, "could not open the chat");
     } else if (cmd == "send_mentions") {
       SendMentions(id, *request);
     } else if (cmd == "pin" || cmd == "unpin" || cmd == "mute" || cmd == "unmute" || cmd == "archive" ||
@@ -939,14 +952,31 @@ public:
       Transcript(id, request->getString("thread").value_or(""));
     } else if (cmd == "share_contact") {
       // *Share contact* (ChatPresenter): contact `account` as a card into chat `thread`.
-      auto contact = facade_->FindContactByIdentity(request->getString("account").value_or(""),
-                                                    mesh::ContactIdKind::Account);
+      auto contact =
+          facade_->FindContactByIdentity(request->getString("account").value_or(""), mesh::ContactIdKind::Account);
       if (!contact || !*contact) {
         ReplyError(id, "no such contact");
         return;
       }
       auto done = chats_.ShareContact(request->getString("thread").value_or(""), (*contact)->id);
       done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message);
+    } else if (cmd == "add_to_contacts") {
+      // *Add to contacts* in the sheet of a direct chat with someone not in contacts (ChatPeerSheet →
+      // ChatPresenter): the chat on screen, its peer added from what this device holds for them.
+      const std::string thread_id = request->getString("thread").value_or("");
+      auto thread = facade_->GetThread(thread_id);
+      if (!thread || !*thread || !chats_.SelectThread(thread_id)) {
+        ReplyError(id, "could not open the chat");
+        return;
+      }
+      auto added = chats_.AddPeerToContacts((*thread)->peer_identity_value);
+      if (!added) {
+        ReplyError(id, added.error().message);
+        return;
+      }
+      Object out = Reply(id, true);
+      out.set("contact", *added);
+      Emit(out);
     } else if (cmd == "add_from_card") {
       // *Add to contacts* on a contact card in the open chat (ChatPresenter): the card checked, keys kept.
       auto added = chats_.AddContactFromCard(request->getString("message").value_or(""));
@@ -959,8 +989,8 @@ public:
       Emit(out);
     } else if (cmd == "chat_with") {
       // A direct chat with contact `account`, as from the contacts screen (no directory lookup).
-      auto contact = facade_->FindContactByIdentity(request->getString("account").value_or(""),
-                                                    mesh::ContactIdKind::Account);
+      auto contact =
+          facade_->FindContactByIdentity(request->getString("account").value_or(""), mesh::ContactIdKind::Account);
       if (!contact || !*contact) {
         ReplyError(id, "no such contact");
         return;
@@ -975,8 +1005,8 @@ public:
       Emit(out);
     } else if (cmd == "react") {
       // A message's reaction button in the open chat (ChatPresenter): adds, or takes ours back.
-      auto done = chats_.ToggleReaction(request->getString("message").value_or(""),
-                                        request->getString("emoji").value_or(""));
+      auto done =
+          chats_.ToggleReaction(request->getString("message").value_or(""), request->getString("emoji").value_or(""));
       done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message);
     } else if (cmd == "delete_for_me") {
       auto done = chats_.DeleteForMe(request->getString("message").value_or(""));
@@ -987,9 +1017,8 @@ public:
         ReplyError(id, "delete for everyone is not offered for this message");
         return;
       }
-      chats_.DeleteForEveryone(message, [id](Roe<void> done) {
-        done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message);
-      });
+      chats_.DeleteForEveryone(
+          message, [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
     } else if (cmd == "quote") {
       // "Reply" on a message of the open chat: the composer quotes it (ChatPresenter).
       const std::string thread = facade_->ActiveThreadId();
@@ -1043,24 +1072,24 @@ public:
       const CloseChatPlan plan = chats_.PlanClose(thread);
       Roe<void> done;
       switch (plan.kind) {
-      case CloseChatPlan::Kind::Delete:
-      case CloseChatPlan::Kind::DeleteAi:
-        done = chats_.CloseThread(thread);
-        break;
-      case CloseChatPlan::Kind::Dismiss:
-        done = chats_.DismissGroupAndClose(thread, plan.group_id);
-        break;
-      case CloseChatPlan::Kind::Leave:
-        done = chats_.LeaveGroupAndClose(thread, plan.group_id);
-        break;
-      case CloseChatPlan::Kind::LeaveAsOwner:
-        // No successor: the owner dissolves the group (the chat stays, read-only).
-        done = successor.empty() ? chats_.DissolveGroup(plan.group_id)
-                                 : chats_.HandOverAndClose(thread, plan.group_id, successor);
-        break;
-      case CloseChatPlan::Kind::Dissolve:
-        done = chats_.DissolveGroup(plan.group_id);
-        break;
+        case CloseChatPlan::Kind::Delete:
+        case CloseChatPlan::Kind::DeleteAi:
+          done = chats_.CloseThread(thread);
+          break;
+        case CloseChatPlan::Kind::Dismiss:
+          done = chats_.DismissGroupAndClose(thread, plan.group_id);
+          break;
+        case CloseChatPlan::Kind::Leave:
+          done = chats_.LeaveGroupAndClose(thread, plan.group_id);
+          break;
+        case CloseChatPlan::Kind::LeaveAsOwner:
+          // No successor: the owner dissolves the group (the chat stays, read-only).
+          done = successor.empty() ? chats_.DissolveGroup(plan.group_id)
+                                   : chats_.HandOverAndClose(thread, plan.group_id, successor);
+          break;
+        case CloseChatPlan::Kind::Dissolve:
+          done = chats_.DissolveGroup(plan.group_id);
+          break;
       }
       done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message);
     } else if (cmd == "home") {
@@ -1097,6 +1126,24 @@ public:
         Hub().Apply(ProjectNotifications(prefs));
         Object out = Reply(id, true);
         out.set("stay_connected", AppLifecycle::StaysConnected());
+        Emit(out);
+      }
+    } else if (cmd == "call_invite_policy") {
+      // Me → Security → Who can call me (privacy P007; `contacts_only` for a new profile): the profile pref,
+      // applied as ConfigApplyBridge applies a pref change.
+      const std::string policy = request->getString("policy").value_or("");
+      if (policy != "everyone" && policy != "contacts_only" && policy != "nobody") {
+        ReplyError(id, "policy: everyone | contacts_only | nobody");
+        return;
+      }
+      ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+      prefs.call_invite_policy = policy;
+      if (auto saved = store_.SaveProfilePrefs(prefs); !saved) {
+        ReplyError(id, saved.error().message);
+      } else {
+        Hub().Apply(ProjectPolicy(prefs));
+        Object out = Reply(id, true);
+        out.set("call_invite_policy", store_.Snapshot().profile_prefs.call_invite_policy);
         Emit(out);
       }
     } else if (cmd == "push_wake") {
@@ -1144,7 +1191,7 @@ public:
       }
     } else {
       Hub().FlushForExit();
-      (void)product_.release();  // work still running may touch it
+      (void)product_.release(); // work still running may touch it
     }
     if (AppRuntime::IsRunning()) {
       AppRuntime::Shutdown();
@@ -1222,7 +1269,9 @@ private:
       Object row;
       row.set("id", thread.id);
       row.set("title", thread.title);
-      row.set("kind", thread.kind == ThreadKind::Direct ? "direct" : thread.kind == ThreadKind::Group ? "group" : "other");
+      row.set("kind", thread.kind == ThreadKind::Direct  ? "direct"
+                      : thread.kind == ThreadKind::Group ? "group"
+                                                         : "other");
       row.set("peer", thread.peer_identity_value);
       if (thread.group_id) {
         row.set("group_id", *thread.group_id);
@@ -1319,15 +1368,16 @@ private:
       }
       ReplyError(id, result.error_key.empty() ? result.error_text : result.error_key);
     };
-    presenter_.StartCall(thread_id, video,
-                         [this, thread_id, video, accounts = std::move(accounts), finish](const CallStartResult& result) {
-      if (result.kind != CallStartResult::Kind::PickPeople) {
-        finish(result);
-        return;
-      }
-      presenter_.StartCallWithInvitees(thread_id, video, accounts.empty() ? OtherMembers(thread_id) : accounts,
-                                       finish);
-    });
+    presenter_.StartCall(
+        thread_id, video,
+        [this, thread_id, video, accounts = std::move(accounts), finish](const CallStartResult& result) {
+          if (result.kind != CallStartResult::Kind::PickPeople) {
+            finish(result);
+            return;
+          }
+          presenter_.StartCallWithInvitees(thread_id, video, accounts.empty() ? OtherMembers(thread_id) : accounts,
+                                           finish);
+        });
   }
 
   /** The member picker's default: everyone in the chat's group but us. */
@@ -1866,7 +1916,8 @@ int main(int argc, char** argv) {
   }
   if (!restore_saved_copy.empty()) {
     std::ifstream copy_in(restore_saved_copy, std::ios::binary);
-    options.restore_saved_copies.emplace_back(std::istreambuf_iterator<char>(copy_in), std::istreambuf_iterator<char>());
+    options.restore_saved_copies.emplace_back(std::istreambuf_iterator<char>(copy_in),
+                                              std::istreambuf_iterator<char>());
   }
   auto booted = pbr::Bootstrap::Run(options, probe->Hub(), probe->Secrets());
   if (!booted) {
@@ -1916,5 +1967,5 @@ int main(int argc, char** argv) {
     out.set("event", "exited");
     pbr::Emit(out);
   }
-  std::_Exit(0);  // the stdin reader may still be blocked in getline
+  std::_Exit(0); // the stdin reader may still be blocked in getline
 }

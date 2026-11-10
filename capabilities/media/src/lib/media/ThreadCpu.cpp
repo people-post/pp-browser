@@ -22,8 +22,8 @@ std::string OwnThreadName(const std::string_view name) {
     if (out.size() >= 32) {
       break;
     }
-    const bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' ||
-                    c == '_' || c == '-';
+    const bool ok =
+        (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-';
     out.push_back(ok ? c : '_');
   }
   return out.empty() ? std::string("unnamed") : out;
@@ -55,7 +55,8 @@ std::vector<ThreadCpuDelta> TopDeltas(const std::vector<ThreadCpuSample>& now,
   for (const auto& [name, ms] : by_name) {
     out.push_back({name, ms});
   }
-  std::stable_sort(out.begin(), out.end(), [](const ThreadCpuDelta& a, const ThreadCpuDelta& b) { return a.ms > b.ms; });
+  std::stable_sort(out.begin(), out.end(),
+                   [](const ThreadCpuDelta& a, const ThreadCpuDelta& b) { return a.ms > b.ms; });
   if (out.size() > top_n) {
     out.resize(top_n);
   }

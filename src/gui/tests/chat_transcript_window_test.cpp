@@ -35,8 +35,8 @@ TEST(ChatTranscriptWindowTest, TrimWhilePinnedDropsOldest) {
   std::optional<int64_t> loaded_min = 1;
   std::optional<int64_t> loaded_max;
   bool has_more = false;
-  EXPECT_TRUE(pbr::ChatTranscriptScroller::TrimDomWindow(rows, /*pinned_to_bottom=*/true, loaded_min,
-                                                         loaded_max, has_more));
+  EXPECT_TRUE(
+      pbr::ChatTranscriptScroller::TrimDomWindow(rows, /*pinned_to_bottom=*/true, loaded_min, loaded_max, has_more));
   // Drops a batch below the cap, so the next messages do not trim (and re-parse every row) again.
   const size_t kept = pbr::kMaxMessagesDomWindow - pbr::kMessagesDomWindowTrimBatch;
   EXPECT_EQ(rows.size(), kept);
@@ -48,8 +48,8 @@ TEST(ChatTranscriptWindowTest, TrimWhilePinnedDropsOldest) {
 
   // One more message after a trim is under the cap again.
   rows.push_back(rows.back());
-  EXPECT_FALSE(pbr::ChatTranscriptScroller::TrimDomWindow(rows, /*pinned_to_bottom=*/true, loaded_min,
-                                                          loaded_max, has_more));
+  EXPECT_FALSE(
+      pbr::ChatTranscriptScroller::TrimDomWindow(rows, /*pinned_to_bottom=*/true, loaded_min, loaded_max, has_more));
 }
 
 TEST(ChatTranscriptWindowTest, TrimWhileReadingHistoryDropsNewest) {
@@ -57,8 +57,8 @@ TEST(ChatTranscriptWindowTest, TrimWhileReadingHistoryDropsNewest) {
   std::optional<int64_t> loaded_min = 1;
   std::optional<int64_t> loaded_max;
   bool has_more = true;
-  EXPECT_TRUE(pbr::ChatTranscriptScroller::TrimDomWindow(rows, /*pinned_to_bottom=*/false, loaded_min,
-                                                         loaded_max, has_more));
+  EXPECT_TRUE(
+      pbr::ChatTranscriptScroller::TrimDomWindow(rows, /*pinned_to_bottom=*/false, loaded_min, loaded_max, has_more));
   EXPECT_EQ(rows.size(), pbr::kMaxMessagesDomWindow);
   EXPECT_EQ(rows.front().display_order, 1);
   EXPECT_EQ(rows.back().display_order, static_cast<int64_t>(pbr::kMaxMessagesDomWindow));

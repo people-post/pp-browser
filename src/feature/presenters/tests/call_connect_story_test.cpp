@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <vector>
 
 namespace pbr {
 namespace {
@@ -117,7 +118,7 @@ TEST(CallConnectStoryTest, TheResultLineFadesAfterFourSecondsThenTheSignalBarSho
   story.Step(At(1'000, Status::Connecting, false, ""));
   story.Step(At(1'500, Status::Connecting, false, ""));
   story.Step(At(2'000, Status::Connected, true, "direct"));
-  story.Step(At(2'500, Status::Connected, true, "direct"));  // securing -> done: the list holds 1.5 s
+  story.Step(At(2'500, Status::Connected, true, "direct")); // securing -> done: the list holds 1.5 s
   const int64_t gone = 2'500 + CallConnectStory::kListHoldMs;
   CallStoryView v = story.Step(At(gone + 3'999, Status::Connected, true, "direct"));
   EXPECT_TRUE(v.result_shown);
@@ -260,22 +261,49 @@ TEST(CallConnectStoryTest, EveryWordExistsInEnglishAndChineseAndNoneIsATechWord)
   for (const CallStoryNotice notice : {CallStoryNotice::Slow, CallStoryNotice::Closer}) {
     keys.emplace_back(CallStoryNoticeKey(notice));
   }
-  for (const char* tip : kCallStoryTipKeys) {
-    keys.emplace_back(tip);
-  }
-  for (const char* key : {"call.reconnect.restored", "call.reconnect.offline", "call.status.reconnecting",
-                          "call.quality.hint.connecting_voice", "call.quality.hint.connecting_video",
-                          "call.quality.hint.retrying_voice", "call.quality.hint.retrying_video",
-                          "call.story.result", "call.story.step.calling", "call.story.step.peer_answered",
-                          "call.story.step.you_answered", "call.story.step.matching", "call.story.step.matched",
-                          "call.story.step.matched_direct", "call.story.step.matched_relayed", "call.story.step.securing", "call.story.step.connected",
-                          "call.story.step.group_joined", "call.story.step.group_calling", "call.story.step.group_line",
-                          "call.story.step.group_heard", "call.story.sheet.title", "call.story.sheet.lead",
-                          "call.story.sheet.now", "call.story.sheet.how", "call.story.sheet.encryption",
-                          "call.story.sheet.e2e", "call.story.event.placed", "call.story.event.answered",
-                          "call.story.event.joined", "call.story.event.peer_answered", "call.story.event.encrypted",
-                          "call.story.event.group_encrypted", "call.story.event.group_connected",
-                          "call.story.event.closer", "call.story.seconds", "call.story.prefix"}) {
+  for (const char* key : {"call.reconnect.restored",
+                          "call.reconnect.offline",
+                          "call.status.reconnecting",
+                          "call.quality.hint.connecting_voice",
+                          "call.quality.hint.connecting_video",
+                          "call.quality.hint.retrying_voice",
+                          "call.quality.hint.retrying_video",
+                          "call.story.result",
+                          "call.ring.awaiting.name",
+                          "call.ring.step.received",
+                          "call.ring.step.received_voice",
+                          "call.ring.step.received_video",
+                          "call.ring.step.joining",
+                          "call.ring.step.joined",
+                          "call.ring.step.verifying",
+                          "call.story.step.calling",
+                          "call.story.step.peer_answered",
+                          "call.story.step.you_answered",
+                          "call.story.step.matching",
+                          "call.story.step.matched",
+                          "call.story.step.matched_direct",
+                          "call.story.step.matched_relayed",
+                          "call.story.step.securing",
+                          "call.story.step.connected",
+                          "call.story.step.group_joined",
+                          "call.story.step.group_calling",
+                          "call.story.step.group_line",
+                          "call.story.step.group_heard",
+                          "call.story.sheet.title",
+                          "call.story.sheet.lead",
+                          "call.story.sheet.now",
+                          "call.story.sheet.how",
+                          "call.story.sheet.encryption",
+                          "call.story.sheet.e2e",
+                          "call.story.event.placed",
+                          "call.story.event.answered",
+                          "call.story.event.joined",
+                          "call.story.event.peer_answered",
+                          "call.story.event.encrypted",
+                          "call.story.event.group_encrypted",
+                          "call.story.event.group_connected",
+                          "call.story.event.closer",
+                          "call.story.seconds"}) {
     keys.emplace_back(key);
   }
   for (const std::string& key : keys) {
@@ -378,6 +406,107 @@ TEST(CallConnectStoryTest, ACallFoundLiveListsHowItConnectedWithoutResultLine) {
   EXPECT_EQ(v.events[1].kind, CallStoryEvent::Kind::Connected);
   EXPECT_EQ(v.events[1].route, CallRoute::Relayed);
   EXPECT_EQ(v.events[1].wall_ms, 50'000);
+}
+
+// The phone page's steps (#172): an outgoing 1:1 call lists five, a call this device answered four (no "Calling"),
+// a group three; the step on screen follows the story's stage, and "matched" names how the line went once known.
+TEST(CallConnectStoryTest, AnOutgoingCallListsTheFiveStepsAndShowsItsStage) {
+  CallStoryView v;
+  v.outgoing = true;
+  v.stage = CallConnectStory::kStageMatching;
+  CallStorySteps steps = CallStoryLines(v, false);
+  ASSERT_EQ(steps.keys.size(), 5u);
+  EXPECT_EQ(steps.keys[0], "call.story.step.calling");
+  EXPECT_EQ(steps.keys[1], "call.story.step.peer_answered");
+  EXPECT_EQ(steps.keys[2], "call.story.step.matching") << "still matching: no route word yet";
+  EXPECT_EQ(steps.keys[3], "call.story.step.securing");
+  EXPECT_EQ(steps.keys[4], "call.story.step.connected");
+  EXPECT_EQ(steps.shown, 2);
+
+  v.stage = CallConnectStory::kStageSecuring;
+  v.route = CallRoute::Relayed;
+  steps = CallStoryLines(v, false);
+  EXPECT_EQ(steps.keys[2], "call.story.step.matched_relayed");
+  EXPECT_EQ(steps.shown, 3);
+  v.route = CallRoute::AroundLimits;
+  EXPECT_EQ(CallStoryLines(v, false).keys[2], "call.story.step.matched_direct");
+  v.route = CallRoute::Unknown;
+  EXPECT_EQ(CallStoryLines(v, false).keys[2], "call.story.step.matched");
+
+  v.stage = CallConnectStory::kStageDone;
+  EXPECT_EQ(CallStoryLines(v, false).shown, 5) << "every step done";
+}
+
+TEST(CallConnectStoryTest, ACallThisDeviceAnsweredListsFourStepsFromAnswered) {
+  CallStoryView v;
+  v.outgoing = false;
+  v.stage = CallConnectStory::kStageAnswered;
+  CallStorySteps steps = CallStoryLines(v, false);
+  ASSERT_EQ(steps.keys.size(), 4u);
+  EXPECT_EQ(steps.keys[0], "call.story.step.you_answered");
+  EXPECT_EQ(steps.shown, 0) << "the answer is the first line on screen";
+  v.stage = CallConnectStory::kStageSecuring;
+  EXPECT_EQ(CallStoryLines(v, false).shown, 2);
+  v.stage = CallConnectStory::kStageDone;
+  EXPECT_EQ(CallStoryLines(v, false).shown, 4);
+}
+
+TEST(CallConnectStoryTest, AGroupCallListsThreeStepsCallingThenJoined) {
+  CallStoryView v;
+  v.stage = 0;
+  CallStorySteps steps = CallStoryLines(v, true);
+  ASSERT_EQ(steps.keys.size(), 3u);
+  EXPECT_EQ(steps.keys[0], "call.story.step.group_calling");
+  EXPECT_EQ(steps.keys[1], "call.story.step.group_line");
+  EXPECT_EQ(steps.keys[2], "call.story.step.group_heard");
+  EXPECT_EQ(steps.shown, 0);
+  v.stage = 1;
+  steps = CallStoryLines(v, true);
+  EXPECT_EQ(steps.keys[0], "call.story.step.group_joined");
+  EXPECT_EQ(steps.shown, 1);
+}
+
+TEST(CallConnectStoryTest, EveryStepHasWordsInEnglishAndChinese) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  CallStoryView v;
+  std::vector<std::string> keys;
+  for (const bool outgoing : {true, false}) {
+    for (const CallRoute route : {CallRoute::Unknown, CallRoute::Direct, CallRoute::Relayed}) {
+      for (const int stage : {0, 1, CallConnectStory::kStageSecuring}) {
+        v.outgoing = outgoing;
+        v.route = route;
+        v.stage = stage;
+        for (const bool group : {false, true}) {
+          const CallStorySteps steps = CallStoryLines(v, group);
+          keys.insert(keys.end(), steps.keys.begin(), steps.keys.end());
+        }
+      }
+    }
+  }
+  for (const std::string& key : keys) {
+    LocalizationService::Instance().SetPreferredLanguage("en");
+    const std::string en = Tr(key);
+    LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+    EXPECT_NE(en, key);
+    EXPECT_NE(Tr(key), en) << key;
+  }
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
+// One reading of the path kind: the story's route and the desktop's path word agree on every kind.
+TEST(CallConnectStoryTest, ThePathKindMapsToOneRouteAndOneWord) {
+  EXPECT_EQ(CallRouteFromPathKind("direct"), CallRoute::Direct);
+  EXPECT_EQ(CallRouteFromPathKind("punched"), CallRoute::AroundLimits);
+  EXPECT_EQ(CallRouteFromPathKind("circuit"), CallRoute::Relayed);
+  EXPECT_EQ(CallRouteFromPathKind("media_relay"), CallRoute::Relayed);
+  EXPECT_EQ(CallRouteFromPathKind("relay"), CallRoute::Relayed);
+  EXPECT_EQ(CallRouteFromPathKind(""), CallRoute::Unknown);
+  EXPECT_STREQ(CallPathWordKey("direct"), "call.details.path.direct");
+  EXPECT_STREQ(CallPathWordKey("punched"), "call.details.path.punched");
+  EXPECT_STREQ(CallPathWordKey("circuit"), "call.details.path.circuit");
+  EXPECT_STREQ(CallPathWordKey("media_relay"), "call.details.path.media_relay");
+  EXPECT_STREQ(CallPathWordKey("relay"), "call.details.path.media_relay");
+  EXPECT_STREQ(CallPathWordKey("sfu?"), "") << "an unknown kind shows no word";
 }
 
 } // namespace

@@ -23,8 +23,8 @@ public:
    * @param controls_leading When true, exclude the left controls band from drag
    *        (macOS traffic lights); otherwise exclude the right band (Win/Linux).
    */
-  static void SetLayout(float titlebar_height_dp, float controls_width_dp,
-                        float edge_margin_dp = 5.f, bool controls_leading = false);
+  static void SetLayout(float titlebar_height_dp, float controls_width_dp, float edge_margin_dp = 5.f,
+                        bool controls_leading = false);
 
   /** Re-apply platform window appearance (e.g. macOS corner radius). */
   static void RefreshAppearance();

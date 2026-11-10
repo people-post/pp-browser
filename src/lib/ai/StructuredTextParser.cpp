@@ -22,32 +22,32 @@ std::string StructuredTextParser::EscapeText(const std::string& text) {
   out.reserve(text.size());
   for (char c : text) {
     switch (c) {
-    case '&':
-      out += "&amp;";
-      break;
-    case '<':
-      out += "&lt;";
-      break;
-    case '>':
-      out += "&gt;";
-      break;
-    case '"':
-      out += "&quot;";
-      break;
-    case '{':
-      // `{{expr}}` is the RML data-binding syntax (see RML_PROFILE.md); peer/user text that
-      // happens to contain literal braces must not be reinterpreted as a live binding
-      // expression once it lands in an RML document via data-rml. Entity-escaping survives
-      // HTML parsing (renders back to a literal brace) but is not literal `{{` for the
-      // template substitution pass that runs over the raw markup.
-      out += "&#123;";
-      break;
-    case '}':
-      out += "&#125;";
-      break;
-    default:
-      out += c;
-      break;
+      case '&':
+        out += "&amp;";
+        break;
+      case '<':
+        out += "&lt;";
+        break;
+      case '>':
+        out += "&gt;";
+        break;
+      case '"':
+        out += "&quot;";
+        break;
+      case '{':
+        // `{{expr}}` is the RML data-binding syntax (see RML_PROFILE.md); peer/user text that
+        // happens to contain literal braces must not be reinterpreted as a live binding
+        // expression once it lands in an RML document via data-rml. Entity-escaping survives
+        // HTML parsing (renders back to a literal brace) but is not literal `{{` for the
+        // template substitution pass that runs over the raw markup.
+        out += "&#123;";
+        break;
+      case '}':
+        out += "&#125;";
+        break;
+      default:
+        out += c;
+        break;
     }
   }
   return out;
@@ -108,10 +108,12 @@ constexpr const char* kFormWidgetRml =
     "<p class=\"muted\">{{turn.form.title}}</p>"
     "<div data-for=\"field : turn.form.fields\">"
     "<label class=\"chat-form-label\">{{field.label}}"
-    "<input class=\"chat-form-field\" type=\"text\" data-if=\"field.field_type == 'text'\" data-value=\"field.value\" />"
+    "<input class=\"chat-form-field\" type=\"text\" data-if=\"field.field_type == 'text'\" data-value=\"field.value\" "
+    "/>"
     "<input class=\"chat-form-field\" type=\"text\" data-if=\"field.field_type == 'date'\" data-value=\"field.value\" "
     "placeholder=\"YYYY-MM-DD\" />"
-    "<textarea class=\"chat-form-field\" rows=\"2\" data-if=\"field.field_type == 'textarea'\" data-value=\"field.value\"></textarea>"
+    "<textarea class=\"chat-form-field\" rows=\"2\" data-if=\"field.field_type == 'textarea'\" "
+    "data-value=\"field.value\"></textarea>"
     "<select class=\"chat-form-field\" data-if=\"field.field_type == 'select'\" data-value=\"field.value\">"
     "<option data-for=\"option : field.options\" data-value=\"option.value\">{{option.label}}</option>"
     "</select>"
@@ -123,15 +125,19 @@ constexpr const char* kFormWidgetRml =
     "</div>";
 
 constexpr const char* kFormPanelWidgetRml =
-    "<p class=\"muted chat-form-expired-label\" data-if=\"working_set.has_form && working_set.form.expired\">Form closed</p>"
-    "<div class=\"working-set-form chat-form\" data-form-id=\"__FORM_ID__\" data-if=\"working_set.has_form && !working_set.form.expired\">"
+    "<p class=\"muted chat-form-expired-label\" data-if=\"working_set.has_form && working_set.form.expired\">Form "
+    "closed</p>"
+    "<div class=\"working-set-form chat-form\" data-form-id=\"__FORM_ID__\" data-if=\"working_set.has_form && "
+    "!working_set.form.expired\">"
     "<p class=\"muted\">{{working_set.form.title}}</p>"
     "<div data-for=\"field : working_set.form.fields\">"
     "<label class=\"chat-form-label\">{{field.label}}"
-    "<input class=\"chat-form-field\" type=\"text\" data-if=\"field.field_type == 'text'\" data-value=\"field.value\" />"
+    "<input class=\"chat-form-field\" type=\"text\" data-if=\"field.field_type == 'text'\" data-value=\"field.value\" "
+    "/>"
     "<input class=\"chat-form-field\" type=\"text\" data-if=\"field.field_type == 'date'\" data-value=\"field.value\" "
     "placeholder=\"YYYY-MM-DD\" />"
-    "<textarea class=\"chat-form-field\" rows=\"2\" data-if=\"field.field_type == 'textarea'\" data-value=\"field.value\"></textarea>"
+    "<textarea class=\"chat-form-field\" rows=\"2\" data-if=\"field.field_type == 'textarea'\" "
+    "data-value=\"field.value\"></textarea>"
     "<select class=\"chat-form-field\" data-if=\"field.field_type == 'select'\" data-value=\"field.value\">"
     "<option data-for=\"option : field.options\" data-value=\"option.value\">{{option.label}}</option>"
     "</select>"
@@ -240,8 +246,7 @@ std::optional<std::string> PayloadAllowedFor(ParseResult& parent, const std::opt
 }
 
 ParseResult AppendChatActionButton(ParseResult& parent, const std::string& label, const std::string& message,
-                                   const std::optional<std::string>& payload,
-                                   const std::string& style = {}) {
+                                   const std::optional<std::string>& payload, const std::string& style = {}) {
   if (message.empty()) {
     return BlockError("button message must not be empty");
   }
@@ -282,8 +287,7 @@ ParseResult ParseButtonBlock(const Object& block, ParseResult& parent) {
     }
   }
 
-  return AppendChatActionButton(parent, *block.getString("label"), *block.getString("message"),
-                                payload);
+  return AppendChatActionButton(parent, *block.getString("label"), *block.getString("message"), payload);
 }
 
 ParseResult ParseCardBlock(const Object& block) {
@@ -395,8 +399,7 @@ ParseResult ParseQuoteBlock(const Object& block) {
     return BlockError("quote block requires text");
   }
   std::ostringstream out;
-  out << "<blockquote class=\"chat-quote\"><p>" << StructuredTextParser::EscapeText(*block.getString("text"))
-      << "</p>";
+  out << "<blockquote class=\"chat-quote\"><p>" << StructuredTextParser::EscapeText(*block.getString("text")) << "</p>";
   if (block.getString("attribution")) {
     out << "<p class=\"muted\">— " << StructuredTextParser::EscapeText(*block.getString("attribution")) << "</p>";
   }
@@ -485,11 +488,10 @@ ParseResult ParseLongListActionButton(ParseResult& parent, const Value& action_v
     if (!payload) {
       return BlockError("long_list action payload must be a JSON object or object string");
     }
-    return AppendChatActionButton(parent, *action->getString("label"), *action->getString("message"),
-                                  payload, style);
+    return AppendChatActionButton(parent, *action->getString("label"), *action->getString("message"), payload, style);
   }
-  return AppendChatActionButton(parent, *action->getString("label"), *action->getString("message"),
-                                std::nullopt, style);
+  return AppendChatActionButton(parent, *action->getString("label"), *action->getString("message"), std::nullopt,
+                                style);
 }
 
 // `inline_tail` (link-style actions) sits at the right end of the meta row under the item's text, so
@@ -501,8 +503,8 @@ std::string RenderLongListItemBody(const Object& item, const std::string& inline
     out << "<div class=\"row chat-long-list-item-row\">";
     const int tone = static_cast<int>(item.getNonNegInt("avatar_tone").value_or(0) % 8);
     out << "<div class=\"chat-long-list-avatar avatar-tone-" << tone << "\">";
-    out << "<p class=\"avatar-letter\">"
-        << StructuredTextParser::EscapeText(*item.getString("avatar_letter")) << "</p></div>";
+    out << "<p class=\"avatar-letter\">" << StructuredTextParser::EscapeText(*item.getString("avatar_letter"))
+        << "</p></div>";
     out << "<div class=\"chat-long-list-item-body\">";
   }
 
@@ -667,29 +669,29 @@ ParseResult ParseLongListArtifact(const Object& block, ParseResult& parent) {
 std::string BuildArtifactRml(const Object& block, const WorkingSetKind kind, const std::string& inline_rml,
                              ParseResult& parent) {
   switch (kind) {
-  case WorkingSetKind::LongList: {
-    const auto artifact = ParseLongListArtifact(block, parent);
-    return artifact.ok ? artifact.rml : inline_rml;
-  }
-  case WorkingSetKind::Form: {
-    const std::string form_id = *block.getString("id");
-    if (!IsPlainToken(form_id)) { // ParseFormBlock already refused it; never substitute anything else
-      return inline_rml;
+    case WorkingSetKind::LongList: {
+      const auto artifact = ParseLongListArtifact(block, parent);
+      return artifact.ok ? artifact.rml : inline_rml;
     }
-    return ReplaceAll(ReplaceAll(kFormPanelWidgetRml, "__FORM_ID__", form_id), "__ENTRY__", "__ENTRY__");
-  }
-  case WorkingSetKind::Calendar:
-    return kCalendarPanelWidgetRml;
-  case WorkingSetKind::Table:
-    return ReplaceAll(inline_rml, "chat-table", "working-set-table chat-table");
-  case WorkingSetKind::Code:
-    return ReplaceAll(inline_rml, "code-block", "working-set-code code-block");
-  case WorkingSetKind::KeyValue:
-    return ReplaceAll(inline_rml, "chat-key-value", "working-set-key-value chat-key-value");
-  case WorkingSetKind::Card:
-    return ReplaceAll(inline_rml, "chat-card", "working-set-card chat-card");
-  default:
-    return inline_rml;
+    case WorkingSetKind::Form: {
+      const std::string form_id = *block.getString("id");
+      if (!IsPlainToken(form_id)) { // ParseFormBlock already refused it; never substitute anything else
+        return inline_rml;
+      }
+      return ReplaceAll(ReplaceAll(kFormPanelWidgetRml, "__FORM_ID__", form_id), "__ENTRY__", "__ENTRY__");
+    }
+    case WorkingSetKind::Calendar:
+      return kCalendarPanelWidgetRml;
+    case WorkingSetKind::Table:
+      return ReplaceAll(inline_rml, "chat-table", "working-set-table chat-table");
+    case WorkingSetKind::Code:
+      return ReplaceAll(inline_rml, "code-block", "working-set-code code-block");
+    case WorkingSetKind::KeyValue:
+      return ReplaceAll(inline_rml, "chat-key-value", "working-set-key-value chat-key-value");
+    case WorkingSetKind::Card:
+      return ReplaceAll(inline_rml, "chat-card", "working-set-card chat-card");
+    default:
+      return inline_rml;
   }
 }
 
@@ -718,10 +720,9 @@ ParseResult ParseActionListBlock(const Object& block, ParseResult& parent) {
         if (!action || !action->getString("label") || !action->getString("message")) {
           return BlockError("action_list actions require label and message");
         }
-        auto button = AppendChatActionButton(parent, *action->getString("label"),
-                                               *action->getString("message"),
-                                               action->contains("payload") ? ParseOptionalButtonPayload(*action)
-                                                                          : std::nullopt);
+        auto button =
+            AppendChatActionButton(parent, *action->getString("label"), *action->getString("message"),
+                                   action->contains("payload") ? ParseOptionalButtonPayload(*action) : std::nullopt);
         if (!button.ok) {
           return button;
         }
@@ -755,9 +756,9 @@ ParseResult ParseChoiceBlock(const Object& block, ParseResult& parent) {
     if (!option || !option->getString("label") || !option->getString("message")) {
       return BlockError("choice options require label and message");
     }
-    auto button = AppendChatActionButton(parent, *option->getString("label"), *option->getString("message"),
-                                         option->contains("payload") ? ParseOptionalButtonPayload(*option)
-                                                                    : std::nullopt);
+    auto button =
+        AppendChatActionButton(parent, *option->getString("label"), *option->getString("message"),
+                               option->contains("payload") ? ParseOptionalButtonPayload(*option) : std::nullopt);
     if (!button.ok) {
       return button;
     }
@@ -781,16 +782,15 @@ ParseResult ParsePollBlock(const Object& block, ParseResult& parent) {
 
   std::ostringstream out;
   out << "<div class=\"chat-poll\"><p class=\"chat-poll-question\">"
-      << StructuredTextParser::EscapeText(*block.getString("question"))
-      << "</p><div class=\"row chat-poll-options\">";
+      << StructuredTextParser::EscapeText(*block.getString("question")) << "</p><div class=\"row chat-poll-options\">";
   for (const Value& option_value : block.getArray("options")->elements) {
     const Object* option = asObject(option_value);
     if (!option || !option->getString("label") || !option->getString("message")) {
       return BlockError("poll options require label and message");
     }
-    auto button = AppendChatActionButton(parent, *option->getString("label"), *option->getString("message"),
-                                         option->contains("payload") ? ParseOptionalButtonPayload(*option)
-                                                                    : std::nullopt);
+    auto button =
+        AppendChatActionButton(parent, *option->getString("label"), *option->getString("message"),
+                               option->contains("payload") ? ParseOptionalButtonPayload(*option) : std::nullopt);
     if (!button.ok) {
       return button;
     }
@@ -1032,8 +1032,7 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json, const
     }
     const Object& block = *block_ptr;
     const BlockEligibility eligibility = EvaluateBlock(block, goal);
-    const bool undo_inline_long_list_actions =
-        eligibility.eligible && eligibility.kind == WorkingSetKind::LongList;
+    const bool undo_inline_long_list_actions = eligibility.eligible && eligibility.kind == WorkingSetKind::LongList;
     const size_t chat_actions_before = undo_inline_long_list_actions ? result.chat_actions.size() : 0;
 
     auto rendered = RenderBlock(block, result);
@@ -1276,7 +1275,8 @@ ParseResult StructuredTextParser::ParseFromLlmOutput(const std::string& llm_outp
     }
   }
 
-  if (const std::string blocks = TryPeopleDiscoveryBlocksFromToolJson(trimmed, LocalizedPeopleDiscoveryLabels()); !blocks.empty()) {
+  if (const std::string blocks = TryPeopleDiscoveryBlocksFromToolJson(trimmed, LocalizedPeopleDiscoveryLabels());
+      !blocks.empty()) {
     return ParseBlocksJson(blocks, ResponseGoal::PeopleDiscovery, render_mode, PayloadSource::Model);
   }
 

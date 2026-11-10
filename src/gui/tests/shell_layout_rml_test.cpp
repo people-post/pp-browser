@@ -53,14 +53,17 @@ TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAHiddenTab) {
   state.compact_chat_open = false;
   const std::string chats = ShellLayoutRml(state, false, "").ShellRoot();
   EXPECT_TRUE(Has(chats, "id=\"shell-bottom-chrome\""));
-  EXPECT_TRUE(Has(chats, "<div class=\"shell-nav-rail shell-nav-rail--compact shell-nav-rail--text\" "
-                         "id=\"shell-nav-rail-mount\">")) << "the two-word tab bar mounts here";
+  EXPECT_TRUE(Has(chats,
+                  "<div class=\"shell-nav-rail shell-nav-rail--compact shell-nav-rail--text\" "
+                  "id=\"shell-nav-rail-mount\">"))
+      << "the two-word tab bar mounts here";
   EXPECT_FALSE(Has(chats, "shell-nav-page--hidden-tab"));
 
-  // DEV/PLAN-minimal-nav.md A: Settings (Me) fills the screen with its own back, no tab bar.
+  // DEV/PLAN-minimal-nav.md A: Settings (Me) fills the screen with its own back; TODO #200: the tab bar stays.
   state.nav_tab = NavTab::Me;
   const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
-  EXPECT_FALSE(Has(rml, "id=\"shell-bottom-chrome\""));
+  EXPECT_TRUE(Has(rml, "id=\"shell-bottom-chrome\""));
+  EXPECT_TRUE(Has(rml, "shell-nav-page--tab-bar")) << "its list clears the bar";
   EXPECT_TRUE(Has(rml, "shell-nav-page--hidden-tab"));
   EXPECT_TRUE(Has(rml, "id=\"pane-body-settings\""));
   EXPECT_FALSE(Has(rml, "account-sheet"));
@@ -94,17 +97,20 @@ TEST(ShellLayoutRmlTest, ThePhoneTabBarHasTwoWordsAndTheDesktopRailFourTabs) {
 TEST(ShellLayoutRmlTest, TheTabBarIsOnlyOnTheAiAndChatsPages) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = false;
-  const auto bar_drawn = [&state]() { return Has(ShellLayoutRml(state, false, "").ShellRoot(), "shell-bottom-chrome"); };
+  const auto bar_drawn = [&state]() {
+    return Has(ShellLayoutRml(state, false, "").ShellRoot(), "shell-bottom-chrome");
+  };
   for (const NavTab tab : {NavTab::Home, NavTab::Sessions}) {
     state.nav_tab = tab;
     EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 48.f);
     EXPECT_TRUE(bar_drawn());
   }
-  for (const NavTab tab : {NavTab::Me, NavTab::Contacts}) {
-    state.nav_tab = tab;
-    EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f);
-    EXPECT_FALSE(bar_drawn());
-  }
+  state.nav_tab = NavTab::Contacts;
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f);
+  EXPECT_FALSE(bar_drawn());
+  state.nav_tab = NavTab::Me; // Settings keeps the bar (TODO #200)
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 48.f);
+  EXPECT_TRUE(bar_drawn());
   state.nav_tab = NavTab::Home;
   state.compact_chat_open = true;
   EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f) << "a chat open";
@@ -121,6 +127,56 @@ TEST(ShellLayoutRmlTest, TheTabBarIsOnlyOnTheAiAndChatsPages) {
   state.layout_mode = LayoutMode::Expanded;
   EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f) << "the desktop has its rail";
   EXPECT_EQ(ShellConfig{}.compact_nav_height_dp, 48.f);
+}
+
+// TODO #200: the bar stays on Settings and the pages pushed from it, and only those.
+TEST(ShellLayoutRmlTest, SettingsAndItsPushedPagesKeepTheTabBar) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = false;
+  state.nav_tab = NavTab::Me;
+  const auto root = [&state]() { return ShellLayoutRml(state, false, "").ShellRoot(); };
+  const auto push = [&state](const char* key) {
+    PaneState pane;
+    pane.spec.key = key;
+    pane.id = 7;
+    state.transient_stack.push_back(pane);
+  };
+
+  EXPECT_TRUE(Has(root(), "id=\"shell-bottom-chrome\""));
+  EXPECT_FALSE(Has(root(), "shell-bottom-chrome--over-page")) << "nothing pushed";
+  for (const char* key : {"settings_detail", "contact_detail", "blocked_people"}) {
+    state.transient_stack.clear();
+    push(key);
+    EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 48.f) << key;
+    EXPECT_TRUE(Has(root(), "id=\"shell-bottom-chrome\"")) << key;
+    EXPECT_TRUE(Has(root(), "shell-bottom-chrome--over-page")) << key << ": drawn above the pushed page";
+  }
+  // A page that is not Settings' (a chat's group sheet, the people picker...) keeps no bar.
+  state.transient_stack.clear();
+  push("contact_detail");
+  push("people_picker");
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f);
+  EXPECT_FALSE(Has(root(), "id=\"shell-bottom-chrome\""));
+  state.transient_stack.clear();
+
+  // A secret page (the transfer code) is bare.
+  state.secret_page_open = true;
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f);
+  EXPECT_FALSE(Has(root(), "id=\"shell-bottom-chrome\""));
+  state.secret_page_open = false;
+
+  // A chat left open under Settings is not on screen: Settings keeps its bar, and the chat view has none.
+  state.compact_chat_open = true;
+  EXPECT_TRUE(Has(root(), "id=\"shell-bottom-chrome\""));
+  state.nav_tab = NavTab::Sessions;
+  EXPECT_TRUE(Has(root(), "shell-chat-overlay"));
+  EXPECT_FALSE(Has(root(), "id=\"shell-bottom-chrome\""));
+
+  state.nav_tab = NavTab::Me;
+  state.compact_chat_open = false;
+  state.layout_mode = LayoutMode::Expanded;
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f) << "the desktop has its rail";
+  EXPECT_FALSE(Has(root(), "shell-nav-page--tab-bar"));
 }
 
 // A hidden tab entered over an open chat (an invite, Settings from the AI) is drawn instead of the chat overlay.
@@ -141,8 +197,9 @@ TEST(ShellLayoutRmlTest, ThePhoneBacksAreRoundButtons) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = true;
   const std::string chat = ShellLayoutRml(state, false, "").ShellRoot();
-  EXPECT_TRUE(Has(chat, "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" "
-                        "data-event-click=\"compact_chat_back()\"><span class=\"shell-circle-btn-face\">"));
+  EXPECT_TRUE(Has(chat,
+                  "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" "
+                  "data-event-click=\"compact_chat_back()\"><span class=\"shell-circle-btn-face\">"));
   EXPECT_FALSE(Has(chat, "</svg>返回")) << "no word";
 
   state.compact_chat_open = false;
@@ -161,11 +218,13 @@ TEST(ShellLayoutRmlTest, ThePhoneBacksAreRoundButtons) {
   // The views' own backs: Settings' pages, the hidden tabs' roots, the group picker.
   const std::string settings = ReadAsset("views/settings.rml");
   EXPECT_EQ(Count(settings, "class=\"settings-back-btn shell-circle-btn\""), 2u);
-  EXPECT_TRUE(Has(settings, "class=\"pane-nav-back shell-circle-btn\" type=\"button\" data-model=\"window\" "
-                            "data-event-click=\"hidden_tab_back()\""));
+  EXPECT_TRUE(Has(settings,
+                  "class=\"pane-nav-back shell-circle-btn\" type=\"button\" data-model=\"window\" "
+                  "data-event-click=\"hidden_tab_back()\""));
   EXPECT_TRUE(Has(settings, "{{i18n:settings.title}}"));
-  EXPECT_TRUE(Has(ReadAsset("views/contacts.rml"), "class=\"pane-nav-back shell-circle-btn\" type=\"button\" "
-                                                   "data-model=\"window\" data-event-click=\"hidden_tab_back()\""));
+  EXPECT_TRUE(Has(ReadAsset("views/contacts.rml"),
+                  "class=\"pane-nav-back shell-circle-btn\" type=\"button\" "
+                  "data-model=\"window\" data-event-click=\"hidden_tab_back()\""));
   EXPECT_TRUE(Has(ReadAsset("views/people_picker.rml"),
                   "class=\"shell-circle-btn people-picker-back-circle\" type=\"button\" "
                   "data-event-click=\"back_picker()\""));
@@ -189,8 +248,9 @@ TEST(ShellLayoutRmlTest, ThePhoneBacksAreRoundButtons) {
 TEST(ShellLayoutRmlTest, ThePhoneTabBarIs48dpWith16dpWords) {
   // DEV/PLAN-minimal-nav.md A (Kenneth 2026-11-07): two words, the chosen one bold.
   const std::string css = ReadAsset("themes/components.rcss");
-  const size_t bar = css.find(".shell-nav-rail--text,\n.shell-nav-rail--text .shell-nav-rail-inner,\n"
-                              ".shell-nav-rail--text .shell-nav-tab {");
+  const size_t bar = css.find(
+      ".shell-nav-rail--text,\n.shell-nav-rail--text .shell-nav-rail-inner,\n"
+      ".shell-nav-rail--text .shell-nav-tab {");
   ASSERT_NE(bar, std::string::npos);
   EXPECT_EQ(css.find("height: 48dp;", bar), css.find("height:", bar));
   const size_t label = css.find(".shell-nav-rail--text .shell-nav-tab-label {");
@@ -200,9 +260,11 @@ TEST(ShellLayoutRmlTest, ThePhoneTabBarIs48dpWith16dpWords) {
   ASSERT_NE(active, std::string::npos);
   EXPECT_EQ(css.find("font-weight: bold;", active), css.find("font-weight:", active));
   // The chosen word sits on a 72 x 32dp rounded pill (its colour is a token in colors-*.rcss).
-  const size_t wrap = css.find(".shell-nav-rail--text .shell-nav-tab-text-wrap {\n  width: 72dp;\n  height: 32dp;\n  border-radius: 16dp;");
+  const size_t wrap = css.find(
+      ".shell-nav-rail--text .shell-nav-tab-text-wrap {\n  width: 72dp;\n  height: 32dp;\n  border-radius: 16dp;");
   EXPECT_NE(wrap, std::string::npos);
-  EXPECT_NE(ReadAsset("themes/colors-light.rcss").find(".shell-nav-rail--text .shell-nav-tab--active .shell-nav-tab-text-wrap {"),
+  EXPECT_NE(ReadAsset("themes/colors-light.rcss")
+                .find(".shell-nav-rail--text .shell-nav-tab--active .shell-nav-tab-text-wrap {"),
             std::string::npos);
 }
 
@@ -286,6 +348,58 @@ TEST(ShellLayoutRmlTest, ACompactChatOverlayHasOneHeaderRowHoldingTheBackButton)
   EXPECT_FALSE(Has(rml, "chat-header"));
 }
 
+// #188 / #202: the chat view frosts its header only; its composer bar is clear (a floating pill and two round buttons,
+// no material child). A pushed page over the chat leaves no frost of the chat's, and Transparency off leaves none.
+TEST(ShellLayoutRmlTest, TheChatViewFrostsItsHeaderAndItsComposerBarIsClear) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = true;
+  const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_EQ(Count(rml, "bar-material--frost"), 1U) << "the header only";
+  EXPECT_EQ(Count(rml, "class=\"bar-material"), 1U) << "the composer bar has no material child";
+  const size_t chrome = rml.find("shell-chat-overlay-chrome");
+  const size_t bar = rml.find("shell-composer-bar");
+  const size_t mount = rml.find("id=\"shell-composer-mount\"");
+  ASSERT_NE(chrome, std::string::npos);
+  ASSERT_NE(bar, std::string::npos);
+  EXPECT_LT(rml.find("bar-material--frost", chrome), rml.find("back.svg", chrome)) << "the header's material is first";
+  ASSERT_NE(mount, std::string::npos);
+  EXPECT_EQ(rml.find("bar-material", bar), std::string::npos) << "nothing under the composer mount";
+  EXPECT_FALSE(Has(rml, "shell-composer-mount surface-chrome surface-chrome--frost"));
+
+  ShellState solid = state;
+  solid.reduce_transparency = true;
+  const std::string opaque = ShellLayoutRml(solid, false, "").ShellRoot();
+  EXPECT_EQ(Count(opaque, "bar-material--frost"), 0U);
+  EXPECT_EQ(Count(opaque, "class=\"bar-material"), 1U) << "the header's material, solid";
+
+  ShellState pushed_over = state;
+  PaneState pushed;
+  pushed.spec.key = "contact_detail";
+  pushed.id = 4;
+  pushed_over.transient_stack.push_back(pushed);
+  pushed_over.transient_active = true;
+  const std::string over = ShellLayoutRml(pushed_over, false, "").ShellRoot();
+  EXPECT_EQ(Count(over, "bar-material--frost"), 0U) << "the chat under a pushed page is not frosted";
+}
+
+// #176 / #177: New chat and Add contact are titled pushed pages on phones (hide on scroll, frosted once the list is
+// under the bar), like the contact page; a desktop window has no such bar.
+TEST(ShellLayoutRmlTest, NewChatAndAddContactAreTitledPushedPages) {
+  for (const char* key : {"new_chat", "add_contact", "contact_detail"}) {
+    ShellState state = WithChatPane(LayoutMode::Compact);
+    PaneState pushed;
+    pushed.spec.key = key;
+    pushed.id = 4;
+    state.transient_stack.push_back(pushed);
+    state.transient_active = true;
+    const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+    EXPECT_TRUE(Has(rml, "shell-layer-transient shell-layer-compact nav-bar-host")) << key;
+    EXPECT_TRUE(Has(rml, "shell-transient-chrome--titled")) << key;
+    EXPECT_TRUE(Has(rml, "<div class=\"nav-bar-bg\"></div>")) << key;
+    EXPECT_TRUE(Has(rml, "surface-chrome--frost")) << key << ": the pushed page's bar is the frosted one";
+  }
+}
+
 TEST(ShellLayoutRmlTest, TheCompactNavPageFollowsTheLargeTitleState) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = false;
@@ -341,6 +455,41 @@ TEST(ShellLayoutRmlTest, ALongButtonLabelStacksTheDialogButtons) {
   EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").Dialog(), "shell-dialog-actions--stack"));
 }
 
+// The unlock card is frosted glass with Transparency on (material child first) and the plain solid card with it off.
+TEST(ShellLayoutRmlTest, ThePinGateCardIsFrostedOnlyWithTransparencyOn) {
+  ShellState state;
+  state.pin_gate.active = true;
+  state.pin_gate.unlock_mode = true;
+  state.compact_chrome_frost = true;
+  const std::string frosted = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_TRUE(Has(frosted, "shell-pin-gate shell-pin-gate--frost"));
+  EXPECT_EQ(Count(frosted, "bar-material--frost"), 1U);
+  EXPECT_LT(frosted.find("bar-material--frost"), frosted.find("shell-dialog-title")) << "the material is first";
+
+  state.reduce_transparency = true;
+  const std::string solid = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_FALSE(Has(solid, "shell-pin-gate--frost"));
+  EXPECT_FALSE(Has(solid, "bar-material"));
+}
+
+// Over the "Incoming call, connecting…" page the unlock layer is marked so its scrim goes clear and the card steps aside.
+TEST(ShellLayoutRmlTest, ThePinGateOverTheAwaitingCallPageCarriesTheOverCallClass) {
+  ShellState state;
+  state.pin_gate.active = true;
+  state.pin_gate.unlock_mode = true;
+  state.compact_chrome_frost = true;
+  EXPECT_FALSE(Has(ShellLayoutRml(state, false, "").PinGate(), "shell-pin-gate--over-call"));
+  state.call_ring.active = true;
+  state.call_ring.awaiting_invite = true;
+  const std::string over = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_TRUE(Has(over, "shell-layer shell-layer-dialog shell-pin-gate--over-call\""));
+  EXPECT_LT(over.find("shell-pin-gate--over-call"), over.find("shell-scrim")) << "on the layer, above the scrim";
+  EXPECT_TRUE(Has(over, "shell-pin-gate shell-pin-gate--frost")) << "the frosted card is unchanged";
+  state.call_ring.awaiting_invite = false;
+  EXPECT_FALSE(Has(ShellLayoutRml(state, false, "").PinGate(), "shell-pin-gate--over-call"))
+      << "a real ring: as before";
+}
+
 // DEV/PLAN-pin-gate-redesign.md B: the number pad has no input element (no system keyboard, the PIN bound nowhere);
 // the field mode keeps its field, which takes the focus as the gate comes up (Kenneth 2026-11-07).
 TEST(ShellLayoutRmlTest, ThePinPadHasNoFieldAndTheFieldModeFocusesItsField) {
@@ -368,9 +517,9 @@ TEST(ShellLayoutRmlTest, ThePinPadHasNoFieldAndTheFieldModeFocusesItsField) {
   EXPECT_TRUE(Has(field, "pin_gate_use_keypad()"));
   EXPECT_TRUE(ShellLayoutRml::PinGateFocusesField(state.pin_gate));
 
-  for (bool PinGateState::*mode : {&PinGateState::chooser_mode, &PinGateState::identity_fork_mode,
-                                   &PinGateState::link_paste_mode, &PinGateState::waiting_device_unlock,
-                                   &PinGateState::biometric_first}) {
+  for (bool PinGateState::* mode :
+       {&PinGateState::chooser_mode, &PinGateState::identity_fork_mode, &PinGateState::link_paste_mode,
+        &PinGateState::waiting_device_unlock, &PinGateState::biometric_first}) {
     PinGateState gate = state.pin_gate;
     gate.*mode = true;
     EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(gate)) << "no PIN field to type in there";
@@ -387,8 +536,9 @@ TEST(ShellLayoutRmlTest, TheBiometricKeyLinkAndHintFollowTheirFields) {
   state.pin_gate.unlock_mode = true;
   state.pin_gate.keypad = true;
   const std::string pad = ShellLayoutRml(state, false, "").PinGate();
-  EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_key && !pin_gate_keypad_ok_shown\" "
-                       "data-event-click=\"pin_gate_biometric()\""));
+  EXPECT_TRUE(Has(pad,
+                  "data-if=\"pin_gate_biometric_key && !pin_gate_keypad_ok_shown\" "
+                  "data-event-click=\"pin_gate_biometric()\""));
   EXPECT_TRUE(Has(pad, "data-if=\"!pin_gate_keypad_ok_shown && !pin_gate_biometric_key\"")) << "else the blank";
   EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_kind == 'face'\" src=\"../icons/v2/face-id.svg\""));
   EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_kind != 'face'\" src=\"../icons/v2/fingerprint.svg\""));

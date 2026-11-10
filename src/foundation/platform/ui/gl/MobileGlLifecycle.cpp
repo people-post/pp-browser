@@ -44,10 +44,10 @@ void SetMobileWindowCreateProperties(SDL_PropertiesID props) {
 void InitIosDrawableFromWindow(SDL_Window* window, unsigned int& framebuffer, unsigned int& renderbuffer) {
 #if defined(__APPLE__) && TARGET_OS_IPHONE
   const SDL_PropertiesID wprops = SDL_GetWindowProperties(window);
-  framebuffer = static_cast<unsigned int>(
-      SDL_GetNumberProperty(wprops, SDL_PROP_WINDOW_UIKIT_OPENGL_FRAMEBUFFER_NUMBER, 0));
-  renderbuffer = static_cast<unsigned int>(
-      SDL_GetNumberProperty(wprops, SDL_PROP_WINDOW_UIKIT_OPENGL_RENDERBUFFER_NUMBER, 0));
+  framebuffer =
+      static_cast<unsigned int>(SDL_GetNumberProperty(wprops, SDL_PROP_WINDOW_UIKIT_OPENGL_FRAMEBUFFER_NUMBER, 0));
+  renderbuffer =
+      static_cast<unsigned int>(SDL_GetNumberProperty(wprops, SDL_PROP_WINDOW_UIKIT_OPENGL_RENDERBUFFER_NUMBER, 0));
   if (framebuffer == 0) {
     GLint binding = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &binding);
@@ -72,10 +72,10 @@ void InitIosDrawableFromWindow(SDL_Window* window, unsigned int& framebuffer, un
 void UpdateIosDrawableFromWindow(SDL_Window* window, unsigned int& framebuffer, unsigned int& renderbuffer) {
 #if defined(__APPLE__) && TARGET_OS_IPHONE
   const SDL_PropertiesID wprops = SDL_GetWindowProperties(window);
-  framebuffer = static_cast<unsigned int>(
-      SDL_GetNumberProperty(wprops, SDL_PROP_WINDOW_UIKIT_OPENGL_FRAMEBUFFER_NUMBER, 0));
-  renderbuffer = static_cast<unsigned int>(
-      SDL_GetNumberProperty(wprops, SDL_PROP_WINDOW_UIKIT_OPENGL_RENDERBUFFER_NUMBER, 0));
+  framebuffer =
+      static_cast<unsigned int>(SDL_GetNumberProperty(wprops, SDL_PROP_WINDOW_UIKIT_OPENGL_FRAMEBUFFER_NUMBER, 0));
+  renderbuffer =
+      static_cast<unsigned int>(SDL_GetNumberProperty(wprops, SDL_PROP_WINDOW_UIKIT_OPENGL_RENDERBUFFER_NUMBER, 0));
 #else
   (void)window;
   (void)framebuffer;

@@ -5,8 +5,7 @@
 
 namespace pbr {
 
-BroadcastViewerLadder::BroadcastViewerLadder(std::vector<std::string> candidates, int redirect_budget,
-                                             size_t max_asks)
+BroadcastViewerLadder::BroadcastViewerLadder(std::vector<std::string> candidates, int redirect_budget, size_t max_asks)
     : redirect_budget_(redirect_budget), max_asks_(max_asks) {
   for (auto& hop : candidates) {
     if (!hop.empty() && std::find(queue_.begin(), queue_.end(), hop) == queue_.end()) {
@@ -36,14 +35,13 @@ BroadcastViewerLadder::Step BroadcastViewerLadder::Start() {
   return AskNext({});
 }
 
-BroadcastViewerLadder::Step BroadcastViewerLadder::OnAdmitted(const std::string& hop,
-                                                             const std::string& admitted_hop) {
+BroadcastViewerLadder::Step BroadcastViewerLadder::OnAdmitted(const std::string& hop, const std::string& admitted_hop) {
   return Step{Action::Attach, admitted_hop.empty() ? hop : admitted_hop, {}};
 }
 
 BroadcastViewerLadder::Step BroadcastViewerLadder::OnRedirect(const std::string& hop,
-                                                             const std::vector<std::string>& redirect_peer_ids,
-                                                             int redirect_budget_remaining) {
+                                                              const std::vector<std::string>& redirect_peer_ids,
+                                                              int redirect_budget_remaining) {
   path_stamp_.push_back(hop);
   redirect_budget_ = std::min(redirect_budget_ - 1, redirect_budget_remaining);
   if (redirect_budget_ < 0) {

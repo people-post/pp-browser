@@ -28,8 +28,7 @@ struct AnnounceDmReplyPlan {
  * key the thread by PeerId. Never invents epidemic/helper fan-out.
  */
 Roe<AnnounceDmReplyPlan> PlanAnnounceDmReply(std::string_view tip_peer_id, std::string_view contact_id,
-                                             std::string_view contact_account_id,
-                                             std::string_view thread_title);
+                                             std::string_view contact_account_id, std::string_view thread_title);
 
 /** Viewer request for on-screen overlay (still a DM/rpc to the publisher). */
 struct AnnounceOverlayReplyPlan {
@@ -45,13 +44,10 @@ struct AnnounceOverlayReplyPlan {
  * Plan an overlay reply: DM target + length-capped text + opaque viewer_msg_id.
  * Does not speak on the announce topic; publisher must rebroadcast as live_chat.
  */
-Roe<AnnounceOverlayReplyPlan> PlanAnnounceOverlayReply(std::string_view tip_peer_id,
-                                                       std::string_view contact_id,
+Roe<AnnounceOverlayReplyPlan> PlanAnnounceOverlayReply(std::string_view tip_peer_id, std::string_view contact_id,
                                                        std::string_view contact_account_id,
-                                                       std::string_view thread_title,
-                                                       std::string_view join_handle,
-                                                       std::string_view text,
-                                                       std::string_view viewer_msg_id);
+                                                       std::string_view thread_title, std::string_view join_handle,
+                                                       std::string_view text, std::string_view viewer_msg_id);
 
 Roe<std::string> EncodeAnnounceOverlayReplyBody(std::string_view join_handle, std::string_view viewer_msg_id,
                                                 std::string_view text);
@@ -72,8 +68,7 @@ bool AnnounceOverlayPublisherAllowed(int emitted_in_window, int64_t window_start
  * Build a publisher Draft for a signed live_chat tip from a decoded overlay request.
  * Caller supplies topic/program (from the live tip) and viewer_peer_id.
  */
-Roe<PeerAnnouncePublisher::Draft> MakeLiveChatAnnounceDraft(std::string_view topic_id,
-                                                            std::string_view program_id,
+Roe<PeerAnnouncePublisher::Draft> MakeLiveChatAnnounceDraft(std::string_view topic_id, std::string_view program_id,
                                                             std::string_view join_handle,
                                                             std::string_view viewer_peer_id,
                                                             const AnnounceOverlayReplyBody& body);

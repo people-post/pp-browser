@@ -54,7 +54,7 @@ Roe<sqlite3*> SqliteControlLaneSeenStore::OpenDb() const {
 }
 
 Roe<bool> SqliteControlLaneSeenStore::FirstSight(const std::string& sender, const std::string& control_id,
-                                           const int64_t now_ms) {
+                                                 const int64_t now_ms) {
   if (sender.empty() || control_id.empty()) {
     return Error("control lane message without sender or id");
   }

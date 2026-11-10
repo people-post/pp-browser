@@ -22,8 +22,7 @@ std::string DescribeToolCalls(const std::vector<PlannedToolCall>& tools);
  * confirmed every time (ToolPermissionPolicy::AllowAlwaysEligible); the Always option is then left out.
  */
 std::string BuildToolPermissionChoiceBlocks(const std::string& approval_id,
-                                            const std::vector<PlannedToolCall>& offered_tools,
-                                            bool offer_allow_always);
+                                            const std::vector<PlannedToolCall>& offered_tools, bool offer_allow_always);
 
 std::string BuildToolPermissionDeniedBlocks(const std::vector<PlannedToolCall>& offered_tools);
 std::string BuildToolPermissionStaleBlocks(const std::string& reason_code);

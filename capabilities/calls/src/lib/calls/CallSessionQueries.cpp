@@ -151,14 +151,14 @@ bool SenderIsInCall(const ICallSessionReader& sessions, const std::string& call_
     return false;
   }
   switch ((*participant)->state) {
-  case CallParticipantState::Invited:
-  case CallParticipantState::Ringing:
-  case CallParticipantState::Joined:
-    return true;
-  case CallParticipantState::Left:
-  case CallParticipantState::Declined:
-  case CallParticipantState::Missed:
-    return false;
+    case CallParticipantState::Invited:
+    case CallParticipantState::Ringing:
+    case CallParticipantState::Joined:
+      return true;
+    case CallParticipantState::Left:
+    case CallParticipantState::Declined:
+    case CallParticipantState::Missed:
+      return false;
   }
   return false;
 }
@@ -189,7 +189,7 @@ std::optional<CallSession> JoinableGroupCall(const ICallSessionReader& sessions,
   }
   for (const CallSession& call : *calls) {
     if (call.created_at > 0 && now_ms - call.created_at > kJoinableGroupCallMs) {
-      break;  // newest first: the rest are older still
+      break; // newest first: the rest are older still
     }
     auto participants = sessions.ListParticipants(call.call_id);
     if (!participants) {
@@ -319,8 +319,7 @@ std::vector<RecentCall> RecentCalls(const ICallSessionReader& sessions, const st
       if (self && self->has_value()) {
         const CallParticipant& row = **self;
         const bool unanswered = row.state == CallParticipantState::Invited ||
-                                row.state == CallParticipantState::Ringing ||
-                                row.state == CallParticipantState::Missed;
+                                row.state == CallParticipantState::Ringing || row.state == CallParticipantState::Missed;
         call.missed = unanswered && !row.joined_at.has_value();
       }
     }
@@ -335,7 +334,7 @@ Roe<void> ApplyCallRosterToStore(const ICallSessionStore& sessions, const CallRo
                                  const std::string& local_identity) {
   if (auto session = sessions.LoadSession(roster.call_id);
       session && session->has_value() && roster.media_epoch > (*session)->media_epoch) {
-    (*session)->media_epoch = roster.media_epoch;  // epochs only move forward
+    (*session)->media_epoch = roster.media_epoch; // epochs only move forward
     (void)sessions.UpsertSession(**session);
   }
   for (const CallRosterEntry& entry : roster.participants) {
@@ -355,8 +354,7 @@ Roe<void> ApplyCallRosterToStore(const ICallSessionStore& sessions, const CallRo
     }
     if (entry.state == CallParticipantState::Joined || entry.state == CallParticipantState::Ringing ||
         entry.state == CallParticipantState::Invited) {
-      if (auto existing = sessions.FindParticipant(roster.call_id, entry.identity);
-          existing && existing->has_value()) {
+      if (auto existing = sessions.FindParticipant(roster.call_id, entry.identity); existing && existing->has_value()) {
         const CallParticipantState prior = (*existing)->state;
         // V053: joined again — the one who let them in stamped a join newer than the one we know
         // (who left had joined: a stale roster carries that old stamp). Who declined or missed never

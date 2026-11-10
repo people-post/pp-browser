@@ -15,7 +15,7 @@
 namespace ui {
 class Context;
 class Element;
-}
+} // namespace ui
 
 namespace pbr {
 
@@ -58,15 +58,13 @@ struct ContextMenuRequest {
 /** Anchor a float menu just below an element (left-aligned). */
 ui::Vector2i MenuPositionBelow(ui::Element* element, float gap_px = 4.f);
 /** Anchor a float menu below an element, right-aligned to ~menu_min_width_px. */
-ui::Vector2i MenuPositionBelowRightAligned(ui::Element* element, float menu_min_width_px = 180.f,
-                                            float gap_px = 4.f);
+ui::Vector2i MenuPositionBelowRightAligned(ui::Element* element, float menu_min_width_px = 180.f, float gap_px = 4.f);
 /** Anchor a float menu that ends just above an element (left-aligned): a menu over the composer's buttons. */
 ui::Vector2i MenuPositionAboveEvent(ui::Event& ev, float gap_px = 4.f);
 /** Resolve current/target element from an event, then MenuPositionBelow. */
 ui::Vector2i MenuPositionBelowEvent(ui::Event& ev, float gap_px = 4.f);
 /** Resolve current/target element from an event, then MenuPositionBelowRightAligned. */
-ui::Vector2i MenuPositionBelowRightAlignedEvent(ui::Event& ev, float menu_min_width_px = 180.f,
-                                                 float gap_px = 4.f);
+ui::Vector2i MenuPositionBelowRightAlignedEvent(ui::Event& ev, float menu_min_width_px = 180.f, float gap_px = 4.f);
 
 class ContextMenuHost : public ui::EventListener {
 public:
@@ -87,7 +85,9 @@ public:
   /// Maps a pressed element to the item it belongs to (a chat message row), or nullptr. A menu for such an
   /// item shows only the providers' actions, the list below the item and `quick` actions above it.
   /// A descendant with the attribute `menu-anchor-end` marks where the item's body ends: the list opens there.
-  void SetAnchorResolver(std::function<ui::Element*(ui::Element* target)> resolver) { anchor_resolver_ = std::move(resolver); }
+  void SetAnchorResolver(std::function<ui::Element*(ui::Element* target)> resolver) {
+    anchor_resolver_ = std::move(resolver);
+  }
   void ShowAt(const ContextMenuRequest& request);
   /// Show an explicit action list (no copy/select/paste text actions). `on_dismissed` runs once if the menu goes
   /// away without any of its actions running (tap outside, Escape, another menu replacing it). On a phone it is the
@@ -107,7 +107,7 @@ public:
   /// narrow 150dp card; it flips above only where there is no room below. The Home composer's plus. `above`: the card
   /// opens 8dp over the button instead (a chat's composer sits at the screen bottom).
   void ShowActionsPopoverLeftAligned(ui::Element* anchor, std::vector<ContextMenuAction> actions,
-                               std::function<void()> on_dismissed = {}, bool above = false);
+                                     std::function<void()> on_dismissed = {}, bool above = false);
   void Dismiss();
   bool IsOpen() const { return layer_ != nullptr; }
   bool HandleDismiss();
@@ -126,7 +126,7 @@ private:
   std::vector<ContextMenuAction> CollectActions(const ContextMenuRequest& request) const;
   std::vector<ContextMenuAction> BuildTextActions() const;
   void RenderMenu(const ContextMenuRequest& request, const std::vector<ContextMenuAction>& actions,
-                   Presentation presentation);
+                  Presentation presentation);
   void ClampFloatPanel(ui::Vector2i preferred);
   void LayoutBar(ui::Vector2i touch);
   void LayoutAnchored(ui::Vector2i touch);

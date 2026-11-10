@@ -53,9 +53,18 @@ void UserFeedback::Alert(const std::string& title, const std::string& message, s
   }
 }
 
-void UserFeedback::Confirm(const std::string& title, const std::string& message,
-                           std::function<void(bool)> on_result, const std::string& ok_label) {
+void UserFeedback::Confirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result,
+                           const std::string& ok_label) {
   if (ports_.show_confirm) {
+    ports_.show_confirm(title, message, std::move(on_result), ok_label);
+  }
+}
+
+void UserFeedback::ConfirmDestructive(const std::string& title, const std::string& message,
+                                      std::function<void(bool)> on_result, const std::string& ok_label) {
+  if (ports_.show_confirm_destructive) {
+    ports_.show_confirm_destructive(title, message, std::move(on_result), ok_label);
+  } else if (ports_.show_confirm) {
     ports_.show_confirm(title, message, std::move(on_result), ok_label);
   }
 }

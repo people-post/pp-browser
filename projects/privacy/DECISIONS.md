@@ -40,8 +40,9 @@
 ## P007 — Who can call me; strangers' messages stay open for now
 
 **Date:** 2026-09-30
-**Decision:** `call_invite_policy` (preferences: `everyone` default | `contacts_only` | `nobody`; Me → Security) drops invites from outside the audience silently — no decline, the caller learns nothing. Messages from strangers are not restricted yet.
-**Rationale:** Calls from strangers already run relay-only (T1), so the default stays reachable; the setting is for users who want quiet. Restricting stranger messages without a "message requests" inbox would silently lose first contacts (directory discovery depends on them) — that needs UI, and is left open.
+**Decision:** `call_invite_policy` (preferences: `contacts_only` default for new profiles | `everyone` | `nobody`; Me → Security) drops invites from outside the audience silently — no decline, the caller learns nothing. Messages from strangers are not restricted yet.
+**Amended 2026-11-08:** the default is `contacts_only` for new profiles. Preferences saved before schema 15 that lack the key keep `everyone`; a saved value is never changed.
+**Rationale:** Calls from strangers already run relay-only (T1); the setting is for users who want a different audience. Restricting stranger messages without a "message requests" inbox would silently lose first contacts (directory discovery depends on them) — that needs UI, and is left open.
 
 ## P008 — Trusted relays: org seeds and Friendly contacts' nodes
 

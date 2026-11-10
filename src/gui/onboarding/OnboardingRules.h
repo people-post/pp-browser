@@ -29,14 +29,14 @@ inline OnboardingStep OnboardingStartStep(const OnboardingFacts& facts) {
 
 inline const char* OnboardingStepKey(const OnboardingStep step) {
   switch (step) {
-  case OnboardingStep::Name:
-    return "name";
-  case OnboardingStep::Account:
-    return "account";
-  case OnboardingStep::Friends:
-    return "friends";
-  case OnboardingStep::None:
-    break;
+    case OnboardingStep::Name:
+      return "name";
+    case OnboardingStep::Account:
+      return "account";
+    case OnboardingStep::Friends:
+      return "friends";
+    case OnboardingStep::None:
+      break;
   }
   return "";
 }
@@ -44,13 +44,13 @@ inline const char* OnboardingStepKey(const OnboardingStep step) {
 /** The next step after `step`; Friends is the last one. */
 inline OnboardingStep OnboardingNextStep(const OnboardingStep step) {
   switch (step) {
-  case OnboardingStep::Name:
-    return OnboardingStep::Account;
-  case OnboardingStep::Account:
-    return OnboardingStep::Friends;
-  case OnboardingStep::Friends:
-  case OnboardingStep::None:
-    break;
+    case OnboardingStep::Name:
+      return OnboardingStep::Account;
+    case OnboardingStep::Account:
+      return OnboardingStep::Friends;
+    case OnboardingStep::Friends:
+    case OnboardingStep::None:
+      break;
   }
   return OnboardingStep::None;
 }

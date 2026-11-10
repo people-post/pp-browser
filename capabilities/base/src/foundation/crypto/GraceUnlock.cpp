@@ -4,6 +4,7 @@
 #include "foundation/crypto/SealedDek.h"
 
 #include <algorithm>
+#include <limits>
 #include <optional>
 #include <sodium.h>
 #include <utility>
@@ -78,6 +79,9 @@ bool HasClock(const GraceClock& now) {
 }
 
 int64_t ExpiryFrom(const GraceClock& now, const int minutes) {
+  if (GraceIsAlways(minutes)) {
+    return std::numeric_limits<int64_t>::max(); // end of this boot: the boot id is still checked (A015)
+  }
   return now.mono_seconds + static_cast<int64_t>(minutes) * 60;
 }
 
@@ -104,8 +108,8 @@ Roe<GraceUnlock::Result> GraceUnlock::TryUnlock(const GraceClock& now) {
     return result; // Missing, nothing read or deleted
   }
   auto looked = store_.Lookup(EntryName());
-  if (!looked || (looked->status != SecureBlobLookup::Status::Found &&
-                  looked->status != SecureBlobLookup::Status::Missing)) {
+  if (!looked ||
+      (looked->status != SecureBlobLookup::Status::Found && looked->status != SecureBlobLookup::Status::Missing)) {
     // Locked device or an unknown store error: keep both pieces, the caller tries again later.
     result.status = Status::Unavailable;
     return result;
@@ -140,7 +144,7 @@ Roe<void> GraceUnlock::Remember(const ByteVector& dek, const int minutes, const 
   if (!Supported()) {
     return {};
   }
-  if (minutes <= 0) {
+  if (!GraceIsOn(minutes)) {
     Forget();
     return {};
   }
@@ -172,7 +176,7 @@ Roe<void> GraceUnlock::Touch(const int minutes, const GraceClock& now) {
   if (!Supported()) {
     return {};
   }
-  if (minutes <= 0) {
+  if (!GraceIsOn(minutes)) {
     Forget();
     return {};
   }

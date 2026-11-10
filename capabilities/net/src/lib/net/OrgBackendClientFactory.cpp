@@ -28,9 +28,8 @@ OrgBackendClients CreateOrgBackendClients(const ServiceEndpointConfig& relay, co
       const std::string transport = provider.transport.empty() ? "http" : provider.transport;
       if (transport != "http") {
         logging::getLogger("OrgBackendClientFactory").warning
-            << "directory provider transport '" << transport
-            << "' requires MeshHost (N029 nd4 Amp twin); skipping " << provider.base_url
-            << " — ConversationsHub wires Amp via AmpDirectoryProtocol";
+            << "directory provider transport '" << transport << "' requires MeshHost (N029 nd4 Amp twin); skipping "
+            << provider.base_url << " — ConversationsHub wires Amp via AmpDirectoryProtocol";
         continue;
       }
       backends.push_back(std::make_unique<HttpDirectoryClient>(provider.base_url));

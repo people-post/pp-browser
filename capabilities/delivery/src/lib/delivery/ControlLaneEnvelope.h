@@ -53,7 +53,7 @@ struct ControlLaneSendParams {
  * M024 bridge, for one release: a lane message between two accounts that each have one device (as far as the
  * sender knows) goes as the account copy, as before M024 — an app before it refuses a lane envelope with device
  * copies, so a single-device peer still rings while it updates. Drop it (false, then the rule) in the release
- * after: every lane message to a peer with a known card goes per device.
+ * after: every lane message to a peer with a known card goes per device (docs/contracts/COMPATIBILITY.md § Bridges).
  */
 inline constexpr bool kControlLaneAccountCopyBetweenSingleDevices = true;
 

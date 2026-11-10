@@ -29,8 +29,12 @@ QrScanController::~QrScanController() {
   scanner_.Shutdown();
 }
 
-void QrScanController::BindShellNavigation(ShellNavigationPorts ports) { navigation_ = std::move(ports); }
-void QrScanController::BindFlowCoordinator(FlowCoordinatorPorts ports) { flow_ = std::move(ports); }
+void QrScanController::BindShellNavigation(ShellNavigationPorts ports) {
+  navigation_ = std::move(ports);
+}
+void QrScanController::BindFlowCoordinator(FlowCoordinatorPorts ports) {
+  flow_ = std::move(ports);
+}
 void QrScanController::BindShowMyQr(std::function<void()> show_my_qr) {
   show_my_qr_ = std::move(show_my_qr);
   can_show_my_qr_ = static_cast<bool>(show_my_qr_);
@@ -79,7 +83,7 @@ void QrScanController::Open(QrScanResultCallback on_result) {
   spec.key = "qr_scan";
   spec.rml_path = "qr_scan";
   spec.role = PaneRole::Transient;
-  spec.full_screen = true;  // phones: the camera fills the screen, WeChat style (Kenneth 2026-11-04)
+  spec.full_screen = true; // phones: the camera fills the screen, WeChat style (Kenneth 2026-11-04)
   layer_id_ = navigation_.push_layer(spec);
   if (!IsOpen()) {
     ScanLog().warning << "Open ignored: push_layer returned no layer";
@@ -142,8 +146,8 @@ void QrScanController::Tick() {
     return;
   }
 #if UI_SDL_VERSION_MAJOR >= 3
-  if (auto* window = Backend::GetWindow(); window &&
-      (SDL_GetWindowFlags(window) & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN)) != 0) {
+  if (auto* window = Backend::GetWindow();
+      window && (SDL_GetWindowFlags(window) & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN)) != 0) {
     Close();
     return;
   }
@@ -170,7 +174,7 @@ void QrScanController::Tick() {
     }
     auto* preview = dynamic_cast<ElementScanPreview*>(preview_.get());
     if (!preview && preview_) {
-      preview_ = nullptr;  // the id now names something else: look again
+      preview_ = nullptr; // the id now names something else: look again
       FindPreview();
       preview = dynamic_cast<ElementScanPreview*>(preview_.get());
     }

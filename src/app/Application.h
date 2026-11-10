@@ -44,6 +44,8 @@ class ProfileUnlockGate;
 class SettingsController;
 class ContactsController;
 class QrScanController;
+class AvatarCropController;
+class AvatarViewController;
 class ShellHost;
 struct SettingsToolPorts;
 class PeoplePickerController;
@@ -82,10 +84,12 @@ public:
   static std::string AssetsPath(const std::string& relative);
 
 private:
-  bool InitializeUiHost(const char* window_title, int window_width, int window_height,
-                        const BootstrapResult& bootstrap, ui::Context*& context);
+  bool InitializeUiHost(const char* window_title, int window_width, int window_height, const BootstrapResult& bootstrap,
+                        ui::Context*& context);
   SettingsToolPorts WireSettings(ui::Context* context);
   void WireShellPresenters(const SettingsToolPorts& settings_tool_ports);
+  /** One info line per new call-alert tap: when it was recorded against the first presented frame. Any thread. */
+  void LogCallTapTiming();
   void WireCalls();
   void WireUnlockPinAndFlow();
   void WireAgentAndConfig();
@@ -125,6 +129,10 @@ private:
   uint64_t grace_timer_ = 0;
   AppLifecycle::ListenerId grace_foreground_listener_ = 0;
   AppLifecycle::ListenerId grace_background_listener_ = 0;
+  /** Phone foreground / desktop restore or focus regained: the open chat is read, the icon number re-sent. */
+  AppLifecycle::ListenerId attentive_listener_ = 0;
+  /** iOS: a push arrived and may have set the icon number itself. */
+  AppLifecycle::ListenerId remote_notification_listener_ = 0;
   SessionStore store_;
   std::unique_ptr<ProfileSecretsEngine> secrets_;
   /** Typed API keys under the profile DEK (PB-034); registered with secrets_, serves store_. */
@@ -143,11 +151,18 @@ private:
   std::unique_ptr<ShellHost> shell_;
   std::unique_ptr<ChatController> chat_;
   std::atomic<bool> peer_icons_refresh_posted_{false}; // a peer-icon refresh is queued on the UI thread
+  /** Milliseconds from StartupEpoch to the first presented frame; -1 until it is up. */
+  std::atomic<int64_t> first_present_ms_{-1};
+  std::atomic<uint64_t> logged_call_tap_seq_{0};
+  /** PP_DEBUG_CALL_TAP: -1 off; 0 record a call tap before the first frame; N record it N ms after it. */
+  int64_t debug_call_tap_delay_ms_ = -1;
   std::unique_ptr<CallController> call_;
   std::unique_ptr<CallUiBackend> call_ui_;
   std::unique_ptr<SettingsController> settings_;
   std::unique_ptr<ContactsController> contacts_;
   std::unique_ptr<QrScanController> qr_scan_;
+  std::unique_ptr<AvatarCropController> avatar_crop_;
+  std::unique_ptr<AvatarViewController> avatar_view_;
   std::unique_ptr<ContactsShellBridge> contacts_shell_bridge_;
   std::unique_ptr<ChatShellBridge> chat_shell_bridge_;
   std::unique_ptr<PeoplePickerShellBridge> people_picker_shell_bridge_;

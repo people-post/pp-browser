@@ -13,7 +13,7 @@ namespace {
 using namespace pbr;
 
 class ProfileIconCacheTest : public ::testing::Test {
- protected:
+protected:
   void SetUp() override {
     dir_ = std::filesystem::temp_directory_path() /
            ("pp_profile_icon_" + std::to_string(reinterpret_cast<uintptr_t>(this)));

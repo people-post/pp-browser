@@ -28,10 +28,10 @@ namespace pbr {
 
 /** Addresses by family and class — counts only, never an address. */
 struct AddrCounts {
-  int v4_private = 0;  // RFC 1918, link-local, loopback
+  int v4_private = 0; // RFC 1918, link-local, loopback
   int v4_public = 0;
   int v6_global = 0;
-  int v6_other = 0;  // link-local, unique-local
+  int v6_other = 0; // link-local, unique-local
   bool operator==(const AddrCounts&) const = default;
 };
 

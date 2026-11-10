@@ -33,7 +33,7 @@
 namespace {
 
 PPAttachmentPreview* g_preview = nil; // the preview that is up (or being presented); nil when none
-std::function<void()> g_sound_begin;   // SetPlatformOpenFileSoundHooks
+std::function<void()> g_sound_begin;  // SetPlatformOpenFileSoundHooks
 std::function<void()> g_sound_end;
 
 /**
@@ -48,8 +48,8 @@ std::string DescribeForLog(NSURL* url) {
                      " uti=" + (type != nil ? type.identifier.UTF8String : "-") +
                      " can_preview=" + ([QLPreviewController canPreviewItem:url] ? "1" : "0") +
                      " name_len=" + std::to_string(url.lastPathComponent.length) +
-                     " links=" + std::to_string([attributes[NSFileReferenceCount] unsignedLongValue]) +
-                     " protection=" + (attributes[NSFileProtectionKey] != nil ? [attributes[NSFileProtectionKey] UTF8String] : "-");
+                     " links=" + std::to_string([attributes[NSFileReferenceCount] unsignedLongValue]) + " protection=" +
+                     (attributes[NSFileProtectionKey] != nil ? [attributes[NSFileProtectionKey] UTF8String] : "-");
   return line;
 }
 
@@ -111,7 +111,7 @@ bool OpenOnMain(const std::string& path) {
         }
       });
       pbr::logging::getLogger("attachment").info << "attachment preview path=quicklook " << DescribeForLog(url)
-                                                  << " sound_session=" << (preview->sound ? 1 : 0);
+                                                 << " sound_session=" << (preview->sound ? 1 : 0);
       return true;
     }
 
@@ -127,7 +127,7 @@ bool OpenOnMain(const std::string& path) {
       return false;
     }
     pbr::logging::getLogger("attachment").info << "attachment preview path=document-interaction "
-                                                << DescribeForLog(url);
+                                               << DescribeForLog(url);
     return true;
   }
 }

@@ -68,7 +68,7 @@ Roe<LockerKeys> KeysFrom(const RecoveryKeys& recovery) {
 }
 
 ByteVector SignBytes(const ByteVector& locker_id, const uint64_t version, const ByteVector& sealed) {
-  ByteVector out(kSignDomain, kSignDomain + sizeof(kSignDomain));  // the domain and its terminating zero byte
+  ByteVector out(kSignDomain, kSignDomain + sizeof(kSignDomain)); // the domain and its terminating zero byte
   out.push_back(kSignVersion);
   AppendLenBytes(out, locker_id);
   AppendU64(out, version);
@@ -134,8 +134,7 @@ Roe<AccountLockerState> StateFromJson(const std::string& json) {
   if (const Array* floors = root->getArray("card_floors")) {
     for (const Value& item : floors->elements) {
       if (const Object* row = asObject(item)) {
-        AccountCardFloor floor{row->getString("account_id").value_or(""),
-                                     row->getIf<int64_t>("issued_at").value_or(0)};
+        AccountCardFloor floor{row->getString("account_id").value_or(""), row->getIf<int64_t>("issued_at").value_or(0)};
         if (!floor.account_id.empty() && floor.issued_at > 0) {
           state.extras.card_floors.push_back(std::move(floor));
         }
@@ -227,7 +226,7 @@ std::string AccountOf(const Contact& contact) {
 
 /** Contacts by their clocks: per account the newer register wins (ours on a tie); without one, either side's row. */
 void MergeContacts(const AccountLockerState& ours, const AccountLockerState& stored, AccountLockerState& merged) {
-  std::map<std::string, std::pair<ContactClockEntry, bool>> winners;  // account → (entry, from stored)
+  std::map<std::string, std::pair<ContactClockEntry, bool>> winners; // account → (entry, from stored)
   for (const ContactClockEntry& entry : ours.contact_clock) {
     winners[entry.account_id] = {entry, false};
   }
@@ -263,11 +262,11 @@ void MergeContacts(const AccountLockerState& ours, const AccountLockerState& sto
     const Contact* theirs = row_of(stored, account);
     auto winner = winners.find(account);
     if (winner == winners.end()) {
-      merged.contacts.push_back(mine ? *mine : *theirs);  // no register on either side (a snapshot before clocks)
+      merged.contacts.push_back(mine ? *mine : *theirs); // no register on either side (a snapshot before clocks)
       continue;
     }
     if (!winner->second.first.present) {
-      continue;  // removed, on whichever device was last
+      continue; // removed, on whichever device was last
     }
     const Contact* row = winner->second.second ? (theirs ? theirs : mine) : (mine ? mine : theirs);
     if (row) {

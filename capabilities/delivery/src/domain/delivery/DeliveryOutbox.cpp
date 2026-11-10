@@ -56,9 +56,10 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
     // `direct`: the direct send's failure when it was tried — what the notice says when the relay
     // cannot carry the envelope either.
     auto finish_relay = [this, request](std::optional<DirectSendFailure> direct) {
-      DeliveryOutcome outcome{.thread_id = request.thread_id, .message_id = request.message_id,
-                              .group_member = request.group_member, .copy_device = request.copy_device};
-      outcome.relay_after_direct = direct.has_value();
+      DeliveryOutcome outcome{.thread_id = request.thread_id,
+                              .message_id = request.message_id,
+                              .group_member = request.group_member,
+                              .copy_device = request.copy_device};
       if (!request.relay_route) {
         outcome.failure = direct ? SendFailureFromDirect(direct->GetCode()) : SendFailure::NoAddress;
         outcome.detail = direct ? direct->message : "Direct thread missing peer relay id";
@@ -103,20 +104,19 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
     };
 
     IDirectMessageClient* chat = direct_chat_ ? direct_chat_() : nullptr;
-    const bool reachable =
-        chat && !request.amp_peer_key.empty() && chat->IsPeerReachable(request.amp_peer_key);
+    const bool reachable = chat && !request.amp_peer_key.empty() && chat->IsPeerReachable(request.amp_peer_key);
     const bool connected = chat && !request.amp_peer_key.empty() && chat->IsPeerConnected(request.amp_peer_key);
     if (ControlAlsoGoesDirect(connected, request.relay_route.has_value(), request.critical_lane)) {
       // #431 (a): a live link carries it in milliseconds where the inbox can take tens of seconds; the
       // relay copy still goes (the outcome is its), and the receiver applies whichever lands first.
-      chat->SendEnvelopeAsync(request.amp_peer_key, request.envelope,
-                              [this, message_id = request.message_id, peer = request.amp_peer_key](DirectSendRoe direct) {
-                                if (!direct) {
-                                  log().info << "control direct copy failed message_id=" << message_id
-                                             << " peer=" << peer << " err=" << direct.error().message
-                                             << " (the relay copy stands)";
-                                }
-                              });
+      chat->SendEnvelopeAsync(
+          request.amp_peer_key, request.envelope,
+          [this, message_id = request.message_id, peer = request.amp_peer_key](DirectSendRoe direct) {
+            if (!direct) {
+              log().info << "control direct copy failed message_id=" << message_id << " peer=" << peer
+                         << " err=" << direct.error().message << " (the relay copy stands)";
+            }
+          });
       finish_relay(std::nullopt);
       return;
     }
@@ -132,8 +132,11 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
         [this, request, post_continue, finish_relay = std::move(finish_relay)](DirectSendRoe direct) mutable {
           post_continue([this, request, direct = std::move(direct), finish_relay = std::move(finish_relay)]() mutable {
             if (direct) {
-              Report(DeliveryOutcome{.thread_id = request.thread_id, .message_id = request.message_id, .ok = true,
-                                     .transport = MessageTransport::Direct, .group_member = request.group_member,
+              Report(DeliveryOutcome{.thread_id = request.thread_id,
+                                     .message_id = request.message_id,
+                                     .ok = true,
+                                     .transport = MessageTransport::Direct,
+                                     .group_member = request.group_member,
                                      .copy_device = request.copy_device});
               return;
             }
@@ -267,20 +270,26 @@ void DeliveryOutbox::Retry() {
         (*process)(index + 1);
         return;
       }
-      auto try_relay = [this, still_pending, process, index](Pending item, bool tried_direct) mutable {
+      auto try_relay = [this, still_pending, process, index](Pending item) mutable {
         IRelayClient* relay = relay_;
         auto result = relay ? relay->Send(item.envelope) : Roe<void>(Error("Relay client not configured"));
         if (result) {
-          Report(DeliveryOutcome{.thread_id = item.thread_id, .message_id = item.message_id, .ok = true,
-                                 .transport = MessageTransport::Relay, .relay_after_direct = tried_direct,
-                                 .group_member = item.group_member, .copy_device = item.copy_device});
+          Report(DeliveryOutcome{.thread_id = item.thread_id,
+                                 .message_id = item.message_id,
+                                 .ok = true,
+                                 .transport = MessageTransport::Relay,
+                                 .group_member = item.group_member,
+                                 .copy_device = item.copy_device});
         } else if (OutboxRetryAgain(item.attempt_count, result.error())) {
           item.attempt_count += 1;
           still_pending->push_back(std::move(item));
         } else {
-          Report(DeliveryOutcome{.thread_id = item.thread_id, .message_id = item.message_id,
-                                 .failure = SendFailureFromRelay(result.error()), .detail = result.error().message,
-                                 .group_member = item.group_member, .copy_device = item.copy_device});
+          Report(DeliveryOutcome{.thread_id = item.thread_id,
+                                 .message_id = item.message_id,
+                                 .failure = SendFailureFromRelay(result.error()),
+                                 .detail = result.error().message,
+                                 .group_member = item.group_member,
+                                 .copy_device = item.copy_device});
         }
         (*process)(index + 1);
       };
@@ -291,22 +300,26 @@ void DeliveryOutbox::Retry() {
         const RelayEnvelope envelope = item.envelope;
         chat->SendEnvelopeAsync(
             peer_key, envelope,
-            [this, process, index, item = std::move(item), try_relay = std::move(try_relay)](DirectSendRoe direct) mutable {
-              AppRuntime::PostWorkerNormal([this, process, index, item = std::move(item), try_relay = std::move(try_relay),
-                                            direct = std::move(direct)]() mutable {
+            [this, process, index, item = std::move(item),
+             try_relay = std::move(try_relay)](DirectSendRoe direct) mutable {
+              AppRuntime::PostWorkerNormal([this, process, index, item = std::move(item),
+                                            try_relay = std::move(try_relay), direct = std::move(direct)]() mutable {
                 if (direct) {
-                  Report(DeliveryOutcome{.thread_id = item.thread_id, .message_id = item.message_id, .ok = true,
-                                         .transport = MessageTransport::Direct, .group_member = item.group_member,
+                  Report(DeliveryOutcome{.thread_id = item.thread_id,
+                                         .message_id = item.message_id,
+                                         .ok = true,
+                                         .transport = MessageTransport::Direct,
+                                         .group_member = item.group_member,
                                          .copy_device = item.copy_device});
                   (*process)(index + 1);
                   return;
                 }
-                try_relay(std::move(item), true);
+                try_relay(std::move(item));
               });
             });
         return;
       }
-      try_relay(std::move(item), false);
+      try_relay(std::move(item));
     };
     (*process)(0);
   });

@@ -303,9 +303,10 @@ void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "sessions");
   DataModelHost::Instance().Dirty("shell", "ai_sessions");
   DataModelHost::Instance().Dirty("shell", "home_date_label");
-  for (const char* name : {"home_widgets", "home_favorites", "home_recent", "home_missed_calls", "home_calls_latest",
-                           "home_mentions", "home_mentions_where", "home_new_people", "home_security_ok", "home_show_dynamic", "home_brief", "home_edit_on",
-                           "home_edit_off", "home_edit_dragging", "home_fav_avatar", "home_fav_avatar_radius"}) {
+  for (const char* name :
+       {"home_widgets", "home_favorites", "home_recent", "home_missed_calls", "home_calls_latest", "home_mentions",
+        "home_mentions_where", "home_new_people", "home_security_ok", "home_show_dynamic", "home_brief", "home_edit_on",
+        "home_edit_off", "home_edit_dragging", "home_fav_avatar", "home_fav_avatar_radius"}) {
     DataModelHost::Instance().Dirty("shell", name);
   }
   DataModelHost::Instance().Dirty("shell", "archived_count");

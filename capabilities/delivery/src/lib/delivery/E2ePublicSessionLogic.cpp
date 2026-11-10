@@ -44,7 +44,7 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_st
     out.master_psk = std::move(*decoded);
     out.created = false;
     if (loaded->has_value() && (*loaded)->session_epoch == session_epoch) {
-      out.key_init_b64 = (*loaded)->auto_key_init_pending;  // not confirmed yet: keep attaching it
+      out.key_init_b64 = (*loaded)->auto_key_init_pending; // not confirmed yet: keep attaching it
     }
     return out;
   }
@@ -62,7 +62,7 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_st
   }
   PeerSessionRecord record;
   if (loaded->has_value()) {
-    record = **loaded;  // keep what the row holds besides the session (retired epochs, scope …)
+    record = **loaded; // keep what the row holds besides the session (retired epochs, scope …)
   }
   record.key = target_key;
   record.session_epoch = session_epoch;
@@ -120,7 +120,7 @@ Roe<void> ReconcileE2ePublicSession(IPeerSessionStore& psk_store, const PeerSess
     record.session_epoch = session_epoch;
   }
   if (have_row && record.master_psk_b64 && record.session_epoch > session_epoch) {
-    return {};  // an earlier epoch (retired): not this rule's to change
+    return {}; // an earlier epoch (retired): not this rule's to change
   }
   if (have_row && record.master_psk_b64 && record.session_epoch < session_epoch) {
     // The peer started the pair's next epoch with a session it opened (it lost its numbering — a restore
@@ -129,9 +129,8 @@ Roe<void> ReconcileE2ePublicSession(IPeerSessionStore& psk_store, const PeerSess
     if (!read.via_key_init || !envelope_key_init_b64 || envelope_key_init_b64->empty()) {
       return {};
     }
-    record.retired_psks.push_back(RetiredPskEntry{.epoch = record.session_epoch,
-                                                  .master_psk_b64 = *record.master_psk_b64,
-                                                  .retired_at = envelope_timestamp_ms});
+    record.retired_psks.push_back(RetiredPskEntry{
+        .epoch = record.session_epoch, .master_psk_b64 = *record.master_psk_b64, .retired_at = envelope_timestamp_ms});
     record.session_epoch = session_epoch;
     record.master_psk_b64 = Base64Encode(read.master_psk);
     record.auto_key_session_id = AutoKeySessionId(*envelope_key_init_b64);
@@ -163,13 +162,14 @@ Roe<void> ReconcileE2ePublicSession(IPeerSessionStore& psk_store, const PeerSess
   }
   const std::string theirs = AutoKeySessionId(*envelope_key_init_b64);
   if (record.master_psk_b64 && record.auto_key_session_id == theirs) {
-    return note_heard() ? psk_store.Save(record) : Roe<void>{};  // already ours
+    return note_heard() ? psk_store.Save(record) : Roe<void>{}; // already ours
   }
   if (record.master_psk_b64 && record.auto_key_init_pending && record.auto_key_session_id &&
       *record.auto_key_session_id < theirs) {
-    return {};  // both opened at once; ours wins the tie — the peer moves to it
+    return {}; // both opened at once; ours wins the tie — the peer moves to it
   }
-  if (record.master_psk_b64 && record.auto_key_peer_heard_ms && envelope_timestamp_ms <= *record.auto_key_peer_heard_ms) {
+  if (record.master_psk_b64 && record.auto_key_peer_heard_ms &&
+      envelope_timestamp_ms <= *record.auto_key_peer_heard_ms) {
     // The peer has since written under the stored session: this opener is older than that (late or
     // replayed) — adopting it would roll the pair back to a session the peer has left.
     return {};
@@ -177,7 +177,7 @@ Roe<void> ReconcileE2ePublicSession(IPeerSessionStore& psk_store, const PeerSess
   record.session_epoch = session_epoch;
   record.master_psk_b64 = Base64Encode(read.master_psk);
   record.auto_key_session_id = theirs;
-  record.auto_key_init_pending.reset();  // the peer opened it: nothing of ours to announce
+  record.auto_key_init_pending.reset(); // the peer opened it: nothing of ours to announce
   record.auto_key_peer_heard_ms = envelope_timestamp_ms;
   return psk_store.Save(record);
 }
@@ -193,9 +193,8 @@ Roe<void> RestartE2ePublicSession(IPeerSessionStore& psk_store, const PeerSessio
   }
   PeerSessionRecord record = **loaded;
   if (record.master_psk_b64 && old_epoch < new_epoch) {
-    record.retired_psks.push_back(RetiredPskEntry{.epoch = old_epoch,
-                                                  .master_psk_b64 = *record.master_psk_b64,
-                                                  .retired_at = now_ms});
+    record.retired_psks.push_back(
+        RetiredPskEntry{.epoch = old_epoch, .master_psk_b64 = *record.master_psk_b64, .retired_at = now_ms});
   }
   record.session_epoch = new_epoch;
   record.master_psk_b64.reset();

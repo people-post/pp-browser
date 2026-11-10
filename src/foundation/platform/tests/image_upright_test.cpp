@@ -32,11 +32,10 @@ std::vector<uint8_t> TwoToneJpeg(const int orientation) {
   SDL_ReadIO(io, jpeg.data(), jpeg.size());
   SDL_CloseIO(io);
   if (orientation > 0) {
-    const std::vector<uint8_t> segment = {0xFF, 0xE1, 0x00, 0x22, 'E', 'x', 'i', 'f', 0, 0,
-                                          'M',  'M',  0,    0x2A, 0,   0,   0,   8,
-                                          0,    1,    0x01, 0x12, 0,   3,   0,   0,   0, 1,
-                                          0,    static_cast<uint8_t>(orientation), 0, 0,
-                                          0,    0,    0,    0};
+    const std::vector<uint8_t> segment = {
+        0xFF, 0xE1, 0x00, 0x22, 'E', 'x',  'i',  'f', 0, 0, 'M', 'M', 0, 0x2A, 0,
+        0,    0,    8,    0,    1,   0x01, 0x12, 0,   3, 0, 0,   0,   1, 0,    static_cast<uint8_t>(orientation),
+        0,    0,    0,    0,    0,   0};
     jpeg.insert(jpeg.begin() + 2, segment.begin(), segment.end());
   }
   return jpeg;
@@ -60,7 +59,7 @@ TEST(ImageUprightTest, APhotoTaggedToTurnAQuarterStandsUp) {
   ASSERT_NE(surface, nullptr);
   EXPECT_EQ(surface->w, 100) << "portrait, not on its side";
   EXPECT_EQ(surface->h, 200);
-  ExpectColourAt(surface, 50, 25, true);  // the stored left half is now the top
+  ExpectColourAt(surface, 50, 25, true); // the stored left half is now the top
   ExpectColourAt(surface, 50, 175, false);
   SDL_DestroySurface(surface);
 }

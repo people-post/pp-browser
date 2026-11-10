@@ -24,9 +24,9 @@ namespace {
 using namespace voice_test;
 
 // Linux has no voice messages (VoiceSupport_Linux.cpp): the microphone button is hidden and these tests do not apply.
-#define SKIP_WITHOUT_VOICE()                                                                         \
-  if (!VoiceMessagesSupported()) {                                                                    \
-    GTEST_SKIP() << "voice messages are not supported on this platform";                            \
+#define SKIP_WITHOUT_VOICE()                                             \
+  if (!VoiceMessagesSupported()) {                                       \
+    GTEST_SKIP() << "voice messages are not supported on this platform"; \
   }
 
 /** The app's UI queue, run by the test. */
@@ -136,9 +136,7 @@ struct Harness {
   bool WaitFile() {
     return WaitFor([&] { return dir.FileCount() == 1; });
   }
-  bool Said(const std::string& key) const {
-    return std::find(said.begin(), said.end(), Tr(key)) != said.end();
-  }
+  bool Said(const std::string& key) const { return std::find(said.begin(), said.end(), Tr(key)) != said.end(); }
 
   ChatScreenState state;
   std::shared_ptr<UiQueue> ui_ptr = std::make_shared<UiQueue>();
@@ -200,14 +198,14 @@ TEST(VoiceComposer, AHoldWhoseFingerIsGoneIsDiscardedAndNeverSent) {
   ASSERT_TRUE(h.WaitTimer("0:03"));
   auto now = std::chrono::steady_clock::now();
   h.composer->Tick(now);
-  EXPECT_TRUE(h.composer->Recording());      // the finger is still down
-  h.fingers = {};                            // lifted off the window: no mouse-up will ever come
+  EXPECT_TRUE(h.composer->Recording()); // the finger is still down
+  h.fingers = {};                       // lifted off the window: no mouse-up will ever come
   h.composer->Tick(now + 10ms);
   ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
   EXPECT_TRUE(h.sent.empty());
   EXPECT_EQ(h.dir.FileCount(), 0u);
-  EXPECT_TRUE(h.said.empty());               // a lost press is silent
-  h.composer->OnRelease();                   // a late release sends nothing either
+  EXPECT_TRUE(h.said.empty()); // a lost press is silent
+  h.composer->OnRelease();     // a late release sends nothing either
   h.ui.RunAll();
   EXPECT_TRUE(h.sent.empty());
 }
@@ -244,9 +242,8 @@ TEST(VoiceComposer, AtTheLimitItSendsOnlyIfTheFingerIsStillDown) {
       h.fingers = {};
     }
     // The press stays swallowed until its release, so "done" is the send, or the file gone.
-    ASSERT_TRUE(h.ui.PumpUntil([&] {
-      return finger_still_down ? !h.sent.empty() : (h.dir.FileCount() == 0 && !h.composer->Recording());
-    }));
+    ASSERT_TRUE(h.ui.PumpUntil(
+        [&] { return finger_still_down ? !h.sent.empty() : (h.dir.FileCount() == 0 && !h.composer->Recording()); }));
     EXPECT_EQ(h.sent.size(), finger_still_down ? 1u : 0u) << "finger down: " << finger_still_down;
     if (!finger_still_down) {
       EXPECT_EQ(h.dir.FileCount(), 0u);
@@ -329,8 +326,8 @@ TEST(VoiceComposer, LockingAMomentAfterTheReleaseStillSendsNothingAndDeletesTheF
   h.composer->BeginAt(0, nullptr, false);
   ASSERT_TRUE(h.WaitTimer("0:03"));
   h.composer->OnSendButton();
-  ASSERT_TRUE(h.WaitFile());       // the file is written; the UI has not yet seen the result
-  h.composer->DiscardAll();        // the vault locks now
+  ASSERT_TRUE(h.WaitFile()); // the file is written; the UI has not yet seen the result
+  h.composer->DiscardAll();  // the vault locks now
   ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
   EXPECT_TRUE(h.sent.empty());
   EXPECT_EQ(h.dir.FileCount(), 0u);
@@ -372,7 +369,7 @@ TEST(VoiceComposer, ARecordingWaitsForAPlayingClipToLetGoOfTheSpeaker) {
   h.defer_playback_stop = true;
   h.composer->BeginAt(0, nullptr, false);
   std::this_thread::sleep_for(50ms);
-  EXPECT_EQ(h.opens.load(), 0);      // the clip has not let go yet: the microphone is not asked for
+  EXPECT_EQ(h.opens.load(), 0); // the clip has not let go yet: the microphone is not asked for
   ASSERT_EQ(h.pending_then.size(), 1u);
   h.pending_then[0]();
   ASSERT_TRUE(h.WaitTimer("0:03"));

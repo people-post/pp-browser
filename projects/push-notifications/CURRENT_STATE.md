@@ -1,6 +1,6 @@
 # Push notifications — current state
 
-**Last updated:** 2026-11-08
+**Last updated:** 2026-11-09
 
 ## Landed (wave 1 + iOS)
 
@@ -12,8 +12,9 @@
 | Net | `HttpPushDeviceClient` + relay-api device sign ops 3/4 |
 | Messaging | `SyncInboxFromWake`, background unread → OS notify when alerts on |
 | Relay contract | Client calls `/v1/devices/register|unregister`; expects opaque wakes from the provider when tokens are registered |
-| Android | FCM (opt-in via `google-services.json`; token asked for at each start), WorkManager, NotificationCompat, JNI wake/token; incoming-call notification via `CallSystemUiBridge` (P014): rings, full screen when locked, Answer / Decline; a push with the app stopped rings "Incoming call" / shows "New message"; notification permission asked at start (13+). Verify on a device after the 2026-11-06 fix: Answer on the notification connects and its hang-up / mute still reach the call; one ring only |
-| iOS | APNs token via `IosPushDeviceRegistrar` + `IosApnsAppDelegate` (+load hook adding callbacks to SDL's scene delegate); silent `inbox_wake` → `BackgroundSyncScheduler`; the relay's `call_wake` alert (P012): tap or foreground → call wake sync; `IosLocalNotifier` posts banners after a wake (tap → open thread); a tap carries `wake_hint` and routes to its ring / message after unlock (P015). CallKit builds (`PP_BROWSER_IOS_CALLKIT`, default on; off for China): PushKit token (`ios_voip`) + CallKit screen via `CallSystemUiBridge`, the VoIP push's call linked to its ring by `wake_hint`, an open app rings itself (P016); a push older than 65 s by its `sent_at` is ended at once, a push's call whose call the catch-up finds over goes at once, CallKit shows the app's mark (P017) |
+| iOS sounds | `assets/sounds/call.caf` (29 s) and `msg.caf` (short), made by `scripts/ui/gen_ringtone.py`, bundled at `Resources`; local notifications use them; relay `aps.sound` (`call.caf` for `call_wake`, `msg.caf` for message alerts) follows (#563; default sound until then) |
+| Android | FCM (opt-in via `google-services.json`; token asked for at each start), WorkManager, NotificationCompat, JNI wake/token; incoming-call notification via `CallSystemUiBridge` (P014): rings, full screen when locked, Answer / Decline; a push with the app stopped rings "Incoming call" / shows "New message"; notification permission asked at start (13+). Verify on a device after the 2026-11-06 fix: Answer on the notification connects and its hang-up still reaches the call; one ring only |
+| iOS | APNs token via `IosPushDeviceRegistrar` + `IosApnsAppDelegate` (+load hook adding callbacks to SDL's scene delegate); silent `inbox_wake` → `BackgroundSyncScheduler`; the relay's `call_wake` Time Sensitive alert is the only call path (P019: no PushKit, no CallKit): foreground → call wake sync, no banner; tap → PIN if locked → sync → the app's own ring (or the missed call's chat once the invite is expired); `IosLocalNotifier` posts banners after a wake (tap → open thread); a tap carries `wake_hint` and routes to its ring / message / missed-call summary after unlock (P015, P018) |
 | www relay | `FcmPushSender` + `ApnsPushSender` (HTTP/2 + .p8 JWT); branch on `platform` |
 | Desktop local banners | Native OS APIs (Linux Freedesktop/D-Bus, macOS `UNUserNotificationCenter`, Windows WinRT toasts); tap → raise + open thread; `ClearForThread` on select |
 | Desktop lifecycle | Minimize / focus-lost read as not attentive so banners fire; the app keeps working (calls ring) — not background (P010) |
@@ -45,13 +46,14 @@
 - Android notification tap → open specific thread in ChatController (PendingIntent already embeds `thread_id`)
 - Relay (www): honour `urgent` — `call_wake` to Android, the time-sensitive alert to iOS, rate limit (P012)
 - iOS alert tap (P015): verify on a device — tap a call alert and a message alert from the lock screen, PIN, landing on the right chat / ring
-- iOS CallKit (P016; needs app-static-api #237 deployed): verify on a device —
-  - lock-screen answer: full-screen ring, Answer, audio both ways (via CallKit's session), hang-up from either side ends it on both screens
-  - PIN-locked answer: Answer on the lock screen, PIN screen reads "Enter your PIN to connect your call.", the call connects after the PIN
-  - app open and unlocked: the app's own ring, CallKit at most a flash (`push_in_app`); answered in the app, no CallKit call left
-  - AirPods (and CarPlay if at hand): answer and hang up from them
-  - decline on the lock screen: the caller sees it declined; opening the app does not ring that call again
-  - two calls close together: the second ring does not take the first push's answer
-  - a China build (`-DPP_BROWSER_IOS_CALLKIT=OFF`): no `ios_voip` binding, calls ring by the alert (P015)
-  - in-app mute is not mirrored to CallKit's screen yet
-- iOS stale push (P017; needs the relay's `sent_at`, deployed separately): verify on a device — a call hung up while the phone was offline does not ring when the push lands late (`push_stale` in Send diagnostics); a pending push's call whose caller hung up ends as soon as the app syncs (`pending_call_over`); CallKit's screen shows the app's mark
+- iOS call alert (P019; needs app-static-api's alert-only calls deployed and an App ID with Time Sensitive Notifications): verify on a device —
+  - locked phone: the alert breaks through Focus, a tap asks for the PIN, then the app rings the call (voice or video answer), audio both ways
+  - expired invite (tap after about a minute): lands in the caller's chat on the missed-call record
+  - app open and unlocked: no banner, the app's own ring
+  - ringing is a single alert tone, silenced by the silent switch (accepted, P019)
+  - decline in the app: the caller sees it declined; opening the app does not ring that call again
+  - two calls close together: a tap opens the tapped call's ring, not the other
+  - the signing profile includes `com.apple.developer.usernotifications.time-sensitive` before the last commit of the branch is built
+  - a stranger's call posts the alert before anything is decrypted (accepted, P019)
+- Call pushes older than the invite's lifetime (about 65 s) are not filtered at receipt any more: the tap finds the missed-call record instead
+- 2026-11-09 clean-up: the leftovers of P016 / P017 (the push's named call, "the push's call is over", `CallPushAge`, the CallKit mute / end-reason plumbing) are deleted; Android's push names no call. The relay should drop legacy `ios_voip` bindings (SERVICE_ENDPOINTS)

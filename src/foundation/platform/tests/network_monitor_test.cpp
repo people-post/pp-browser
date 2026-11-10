@@ -51,7 +51,7 @@ TEST_F(NetworkMonitorTest, MaterialChangesAreReportedWithGenerations) {
   cell.expensive = true;
   cell.fingerprint = "rmnet0/10.20.30.40";
   monitor_.OnState(cell);
-  monitor_.OnState(Wifi("wlan0/192.168.1.9"));  // back on Wi-Fi, new address
+  monitor_.OnState(Wifi("wlan0/192.168.1.9")); // back on Wi-Fi, new address
 
   ASSERT_EQ(changes_.size(), 3u) << "baseline + two changes";
   EXPECT_EQ(changes_[1].generation, 1u);
@@ -77,7 +77,7 @@ TEST_F(NetworkMonitorTest, NothingIsReportedAfterStop) {
   monitor_.Stop();
   monitor_.OnState(Wifi("b"));
   EXPECT_EQ(changes_.size(), 1u) << "the baseline only";
-  monitor_.Stop();  // idempotent
+  monitor_.Stop(); // idempotent
 }
 
 TEST(NetworkMonitorParseTest, ProcNetRouteDefaultIfaces) {

@@ -15,7 +15,8 @@
 #include <SDL3/SDL.h>
 #endif
 
-using KeyDownCallback = bool (*)(ui::Context* context, ui::Input::KeyIdentifier key, int key_modifier, float native_dp_ratio, bool priority);
+using KeyDownCallback = bool (*)(ui::Context* context, ui::Input::KeyIdentifier key, int key_modifier,
+                                 float native_dp_ratio, bool priority);
 #if UI_SDL_VERSION_MAJOR >= 3
 using PreProcessEventCallback = bool (*)(ui::Context* context, SDL_Event& event, bool& propagate_event);
 // Called from SDL_AddEventWatch while Poll/WaitEvent is blocked in a modal resize/drag.
@@ -25,8 +26,7 @@ using LiveResizeRedrawCallback = std::function<void(ui::Context* context)>;
 
 namespace Backend {
 
-bool Initialize(const char* window_name, int width, int height, bool allow_resize,
-                bool borderless = false);
+bool Initialize(const char* window_name, int width, int height, bool allow_resize, bool borderless = false);
 void Shutdown();
 
 ui::SystemInterface* GetSystemInterface();

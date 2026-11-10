@@ -37,9 +37,8 @@ public:
     friend class CallsLoop;
     Ref(std::shared_ptr<OwnerTasks::Handle> tasks, CallsLoop* loop) : tasks_(std::move(tasks)), loop_(loop) {}
     std::shared_ptr<OwnerTasks::Handle> tasks_;
-    CallsLoop* loop_;  // dereferenced only inside the loop's own tasks (dropped with it)
+    CallsLoop* loop_; // dereferenced only inside the loop's own tasks (dropped with it)
   };
-
 
   CallsLoop(OwnerExecutor& executor, Handler handler) : tasks_(executor), handler_(std::move(handler)) {}
 

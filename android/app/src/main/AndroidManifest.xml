@@ -27,6 +27,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- The call this device is in keeps its microphone in the background (PpCallService). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- The vivo launcher's icon number (MainActivity.setUnreadBadgeCount); other makers ignore unknown permissions. -->
+    <uses-permission android:name="com.vivo.abe.permission.launcher.notification.num" />
+    <uses-permission android:name="com.vivo.notification.permission.BADGE_ICON" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -39,6 +42,8 @@
         <intent>
             <action android:name="android.media.action.VIDEO_CAPTURE" />
         </intent>
+        <!-- vivo's badge provider (package visibility on Android 11+). -->
+        <provider android:authorities="com.vivo.abe.provider.launcher.notification.num" />
     </queries>
 
     <application

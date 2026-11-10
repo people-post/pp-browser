@@ -1,5 +1,6 @@
 #include "foundation/crypto/ProfileSecretsEngine.h"
 
+#include "foundation/crypto/CryptoConstants.h"
 #include "foundation/error/AppError.h"
 
 #include <algorithm>
@@ -68,8 +69,7 @@ void ProfileSecretsEngine::UnregisterDekConsumer(IDekConsumer* consumer) {
   if (consumer == nullptr) {
     return;
   }
-  dek_consumers_.erase(
-      std::remove(dek_consumers_.begin(), dek_consumers_.end(), consumer), dek_consumers_.end());
+  dek_consumers_.erase(std::remove(dek_consumers_.begin(), dek_consumers_.end(), consumer), dek_consumers_.end());
 }
 
 Roe<void> ProfileSecretsEngine::DistributeDek(const ByteVector& dek) {
@@ -222,6 +222,17 @@ Roe<void> ProfileSecretsEngine::TouchGrace(const int minutes) {
     return {};
   }
   return grace_->Touch(minutes, grace_clock_());
+}
+
+Roe<void> ProfileSecretsEngine::ApplyGraceWindow(const int minutes) {
+  if (!GraceIsOn(minutes)) {
+    ForgetGrace();
+    return {};
+  }
+  if (!IsUnlocked()) {
+    return {};
+  }
+  return RememberGrace(minutes);
 }
 
 void ProfileSecretsEngine::ForgetGrace() {

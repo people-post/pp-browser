@@ -93,8 +93,7 @@ PeerDisplayLabel PeerDisplayResolver::ResolveThread(const Thread& thread) const 
     return label;
   }
 
-  PeerDisplayLabel label =
-      ResolveDirectPeer(thread.peer_identity_kind, thread.peer_identity_value);
+  PeerDisplayLabel label = ResolveDirectPeer(thread.peer_identity_kind, thread.peer_identity_value);
   if (label.title.empty() && !thread.title.empty()) {
     // Prefer short form of stored title when identity is empty.
     label.title = ShortRelayId(thread.title);

@@ -16,27 +16,27 @@ inline std::string EscapeRml(const std::string_view text) {
   out.reserve(text.size());
   for (const char c : text) {
     switch (c) {
-    case '&':
-      out += "&amp;";
-      break;
-    case '<':
-      out += "&lt;";
-      break;
-    case '>':
-      out += "&gt;";
-      break;
-    case '"':
-      out += "&quot;";
-      break;
-    case '{':
-      out += "&#123;";
-      break;
-    case '}':
-      out += "&#125;";
-      break;
-    default:
-      out += c;
-      break;
+      case '&':
+        out += "&amp;";
+        break;
+      case '<':
+        out += "&lt;";
+        break;
+      case '>':
+        out += "&gt;";
+        break;
+      case '"':
+        out += "&quot;";
+        break;
+      case '{':
+        out += "&#123;";
+        break;
+      case '}':
+        out += "&#125;";
+        break;
+      default:
+        out += c;
+        break;
     }
   }
   return out;

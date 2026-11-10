@@ -26,7 +26,7 @@ public:
     bool scissor;
     ui::Rectanglei region;
   };
-  std::vector<Draw> draws;  // every draw with the scissor in force at that moment
+  std::vector<Draw> draws; // every draw with the scissor in force at that moment
 
   ui::CompiledGeometryHandle CompileGeometry(ui::Span<const ui::Vertex>, ui::Span<const int>) override { return 1; }
   void RenderGeometry(ui::CompiledGeometryHandle, ui::Vector2f, ui::TextureHandle texture) override {
@@ -84,7 +84,7 @@ protected:
     ASSERT_TRUE(initialized);
     context = ui::CreateContext(kContext, {kWidth, kHeight});
     ASSERT_NE(context, nullptr);
-    context->ActivateTheme("light", true);  // the colours live under @media (theme: light)
+    context->ActivateTheme("light", true); // the colours live under @media (theme: light)
 
     for (int i = 0; i < 7; ++i) {
       items.push_back(Item(i, "image/png", "p" + std::to_string(i) + ".png"));
@@ -94,7 +94,9 @@ protected:
     ports.list_stored = [this](std::function<void(std::vector<StoredAttachmentItem>)> done) { done(items); };
     ports.message_store_bytes = [](std::function<void(uint64_t)> done) { done(0); };
     ports.profile_bytes = [](std::function<void(uint64_t)> done) { done(0); };
-    ports.chat_names = []() { return std::vector<StorageChatName>{{.thread_id = "a", .name = "A", .avatar_seed = "a"}}; };
+    ports.chat_names = []() {
+      return std::vector<StorageChatName>{{.thread_id = "a", .name = "A", .avatar_seed = "a"}};
+    };
     // The sound file has no cover here (one comes from its chat card's tags): only the pictures get one.
     ports.thumbnail_path = [](const std::string&, const std::vector<uint8_t>& hash) {
       return hash.front() == 50 ? std::string() : std::string("tall.png");
@@ -105,16 +107,15 @@ protected:
     navigation.has_local_back = [](const std::string&) { return false; };
     controller = std::make_unique<StorageManagerController>(commands, navigation, feedback, []() { return true; });
 
-    ASSERT_TRUE(DataModelHost::Instance().Register(context, "settings", [this](ui::DataModelConstructor& ctor) {
-      controller->Bind(ctor);
-    }));
+    ASSERT_TRUE(DataModelHost::Instance().Register(context, "settings",
+                                                   [this](ui::DataModelConstructor& ctor) { controller->Bind(ctor); }));
 
-    const std::string rml =
-        "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") + Asset("themes/colors-light.rcss") +
-        "</style></head><body style=\"padding: 0;\"><div style=\"width: " + std::to_string(kWidth) +
-        "dp; padding: 0 16dp; box-sizing: border-box;\" data-model=\"settings\">" +
-        LocalizationService::Instance().LocalizeText(Asset("views/settings_section_storage.rml")) +
-        "</div></body></rml>";
+    const std::string rml = "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+                            Asset("themes/colors-light.rcss") +
+                            "</style></head><body style=\"padding: 0;\"><div style=\"width: " + std::to_string(kWidth) +
+                            "dp; padding: 0 16dp; box-sizing: border-box;\" data-model=\"settings\">" +
+                            LocalizationService::Instance().LocalizeText(Asset("views/settings_section_storage.rml")) +
+                            "</div></body></rml>";
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
     document->Show();
@@ -129,8 +130,12 @@ protected:
   }
   void TearDown() override {
     DataModelHost::Instance().Clear();
-    if (context) { ui::RemoveContext(kContext); }
-    if (initialized) { ui::Shutdown(); }
+    if (context) {
+      ui::RemoveContext(kContext);
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
   struct Box {
@@ -160,7 +165,7 @@ protected:
 
 TEST_F(StorageTileLayoutTest, EveryTileKeepsOneFixedBoxAndAPortraitPictureIsClippedToIt) {
   ASSERT_EQ(controller->Cells().size(), 7u) << controller->Page() << " files " << controller->Files().size();
-  std::vector<ui::Element*> tiles;  // the data-for templates stay in the DOM without the index attribute
+  std::vector<ui::Element*> tiles; // the data-for templates stay in the DOM without the index attribute
   for (ui::Element* tile : ByClass(document, "storage-tile")) {
     if (tile->HasAttribute("storage-cell") || tile->HasAttribute("storage-file")) {
       tiles.push_back(tile);
@@ -176,7 +181,8 @@ TEST_F(StorageTileLayoutTest, EveryTileKeepsOneFixedBoxAndAPortraitPictureIsClip
     EXPECT_FLOAT_EQ(tile.width, first.width) << "tile " << i;
     EXPECT_FLOAT_EQ(tile.height, 118.f) << "tile " << i << " must not grow with its picture";
     EXPECT_FLOAT_EQ(tile.left, first.left + static_cast<float>(i % 3) * first.width) << "tile " << i << " column";
-    EXPECT_FLOAT_EQ(tile.top, first.top + static_cast<float>(i / 3) * 118.f) << "tile " << i << " starts right below the row above";
+    EXPECT_FLOAT_EQ(tile.top, first.top + static_cast<float>(i / 3) * 118.f)
+        << "tile " << i << " starts right below the row above";
 
     const std::vector<ui::Element*> frames = ByClass(tiles[i], "storage-tile-frame");
     ASSERT_EQ(frames.size(), 1u);
@@ -234,7 +240,7 @@ TEST_F(StorageTileLayoutTest, TheCategoryTabsHaveTextAVisibleBoxAndAFilledSelect
     EXPECT_GT(text.alpha, 200) << "tab " << i << " text is see-through";
     EXPECT_FALSE(same(text, bg)) << "tab " << i << " text colour equals its own background";
     EXPECT_FALSE(same(text, bar_bg)) << "tab " << i << " text colour equals the bar";
-    if (i == 0) {  // "All" is the chosen tab on open
+    if (i == 0) { // "All" is the chosen tab on open
       EXPECT_GT(bg.alpha, 200) << "the chosen tab is a filled pill";
     } else {
       EXPECT_EQ(bg.alpha, 0) << "the others sit flat on the bar";

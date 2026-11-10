@@ -269,8 +269,11 @@ TEST_F(ControlLaneTest, APeerWithACardGetsACopyPerDevice) {
   ASSERT_TRUE(account_keys_->AddAccountCard(card, util::NowUnixMs(), "test"));
   routes_->NoteAccountRoute(bob.account_id, "relay:bob");
 
+  auto account_pair = keys_->Resolve(bob.account_id); // a call's old-form media-key wrap opened it (M024 bridge)
+  ASSERT_TRUE(account_pair && account_pair->key_init_b64) << (account_pair ? "" : account_pair.error().message);
+  const std::string account_opener = *account_pair->key_init_b64;
   ControlSend invite = To(bob.account_id);
-  ASSERT_TRUE(lane_->Send(invite.peer_identity, invite.control, std::string("account-pair-opener"), true));
+  ASSERT_TRUE(lane_->Send(invite.peer_identity, invite.control, true));
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
   while (relay_.Sent().empty() && std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -284,7 +287,7 @@ TEST_F(ControlLaneTest, APeerWithACardGetsACopyPerDevice) {
     devices.push_back(copy.recipient_device);
     EXPECT_EQ(copy.sender_seq, 0u) << "the lane is unsequenced";
     ASSERT_TRUE(copy.key_init_b64) << "each device pair's own opener, until heard";
-    EXPECT_NE(*copy.key_init_b64, "account-pair-opener") << "the account pair's opener is no device's";
+    EXPECT_NE(*copy.key_init_b64, account_opener) << "the account pair's opener is no device's";
   }
   std::sort(devices.begin(), devices.end());
   std::vector<std::string> expected{bob.device.peer_id, tablet.peer_id};
@@ -302,9 +305,13 @@ TEST_F(ControlLaneTest, APeerWithACardGetsACopyPerDevice) {
   }
 }
 
-// No card for the peer (a first contact): the account copy, carrying an account-pair opener the caller holds.
+// No card for the peer (a first contact): the account copy, carrying the account pair's opener while unconfirmed —
+// one a call's old-form media-key wrap made (E2ePublicSessionKeys::Ensure) too, so no caller has to carry it.
 TEST_F(ControlLaneTest, APeerWithNoCardGetsTheAccountCopy) {
   routes_->NoteAccountRoute("account:stranger", "relay:stranger");
+  ASSERT_TRUE(keys_->Ensure("account:stranger"));
+  auto opened = keys_->Resolve("account:stranger");
+  ASSERT_TRUE(opened && opened->key_init_b64);
   ControlSend first = To("account:stranger");
   ASSERT_TRUE(lane_->Send(first.peer_identity, first.control));
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
@@ -316,7 +323,8 @@ TEST_F(ControlLaneTest, APeerWithNoCardGetsTheAccountCopy) {
   const std::vector<RelayCopy> copies = RelayCopiesOf(sent.front());
   ASSERT_EQ(copies.size(), 1u);
   EXPECT_TRUE(copies.front().recipient_device.empty());
-  EXPECT_TRUE(copies.front().key_init_b64) << "opened to the account KEM";
+  ASSERT_TRUE(copies.front().key_init_b64) << "opened to the account KEM";
+  EXPECT_EQ(*copies.front().key_init_b64, *opened->key_init_b64) << "the wrap's opener, not a second session";
 }
 
 // #555: our card went to Bob's account once — then Bob linked a tablet. Its first record from us carries the card

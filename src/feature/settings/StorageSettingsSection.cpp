@@ -79,8 +79,8 @@ Roe<void> StorageSettingsSection::Flush(SettingsUiState& state, SessionStore& st
   ProfilePreferences prefs = store.Snapshot().profile_prefs;
   const bool wifi = state.attachment_auto_on_wifi == "on";
   const bool cellular = state.attachment_auto_on_cellular == "on";
-  if (state.attachment_download_policy == prefs.attachment_download_policy &&
-      wifi == prefs.attachment_auto_on_wifi && cellular == prefs.attachment_auto_on_cellular) {
+  if (state.attachment_download_policy == prefs.attachment_download_policy && wifi == prefs.attachment_auto_on_wifi &&
+      cellular == prefs.attachment_auto_on_cellular) {
     return Roe<void>{};
   }
   prefs.attachment_download_policy = state.attachment_download_policy;

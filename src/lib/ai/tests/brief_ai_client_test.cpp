@@ -50,8 +50,8 @@ struct StreamRun {
 StreamRun RunStream(const SseTestServer& server, const std::string& key = {}) {
   StreamRun run;
   std::atomic<bool> cancel{false};
-  run.result = ClientFor(server, key).Stream(
-      pbr::BriefAiRequest{"hi"}, [&](const BriefAiEvent& e) { run.events.push_back(e); }, cancel);
+  run.result = ClientFor(server, key)
+                   .Stream(pbr::BriefAiRequest{"hi"}, [&](const BriefAiEvent& e) { run.events.push_back(e); }, cancel);
   return run;
 }
 
@@ -157,8 +157,7 @@ TEST(BriefAiClientTest, StreamRejectsBadImageWithoutSending) {
   };
   EXPECT_FALSE(static_cast<bool>(run({"image/bmp", {1, 2, 3}})));
   EXPECT_FALSE(static_cast<bool>(run({"image/png", {}})));
-  EXPECT_FALSE(static_cast<bool>(
-      run({"image/png", std::vector<uint8_t>(pbr::BriefAiClient::kMaxImageBytes + 1, 0)})));
+  EXPECT_FALSE(static_cast<bool>(run({"image/png", std::vector<uint8_t>(pbr::BriefAiClient::kMaxImageBytes + 1, 0)})));
   EXPECT_TRUE(server.Request().empty()); // nothing reached the server
 }
 
@@ -469,8 +468,8 @@ TEST(BriefAiClientTest, EmptyBaseUrlFailsWithoutRequest) {
   pbr::LlmConfig config;
   std::atomic<bool> cancel{false};
   bool called = false;
-  auto result = pbr::BriefAiClient(config).Stream(
-      pbr::BriefAiRequest{"hi"}, [&](const BriefAiEvent&) { called = true; }, cancel);
+  auto result =
+      pbr::BriefAiClient(config).Stream(pbr::BriefAiRequest{"hi"}, [&](const BriefAiEvent&) { called = true; }, cancel);
   ASSERT_FALSE(static_cast<bool>(result));
   EXPECT_FALSE(called);
 }

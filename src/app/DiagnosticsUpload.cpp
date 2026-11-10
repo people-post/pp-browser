@@ -61,7 +61,7 @@ DiagnosticsUploadResult Upload(const DiagnosticsUploadDeps& deps, const std::str
   input.files = {diag, metrics, LogFile::RotatedPath(diag, 1)};
   const int64_t now_ms = util::NowUnixMs();
   if (CrashDump::HasPending(deps.data_dir)) {
-    const std::string dump = CrashDump::ReadPending(deps.data_dir);  // read-only: the crash channel clears it
+    const std::string dump = CrashDump::ReadPending(deps.data_dir); // read-only: the crash channel clears it
     if (!dump.empty()) {
       input.crash_lines = CrashEnvelopeLines(BuildCrashReportEnvelope(dump), UtcStamp(now_ms));
     }
@@ -83,7 +83,7 @@ DiagnosticsUploadResult Upload(const DiagnosticsUploadDeps& deps, const std::str
     const std::string& message = bundle.error().message;
     if (message.rfind(kPrefix, 0) == 0) {
       const std::string detector = message.substr(sizeof(kPrefix) - 1);
-      log.warning << "Diagnostics withheld by self-check detector=" << detector;  // the detector, never the hit
+      log.warning << "Diagnostics withheld by self-check detector=" << detector; // the detector, never the hit
       return Failed(DiagnosticsUploadKind::SelfCheckRefused, detector);
     }
     log.warning << "Diagnostics bundle failed: " << message;
@@ -104,11 +104,10 @@ DiagnosticsUploadResult Upload(const DiagnosticsUploadDeps& deps, const std::str
   HttpTimeout timeout;
   timeout.total_s = kUploadTimeoutSeconds;
   log.info << "Uploading diagnostics lines=" << bundle->lines << " bytes=" << bundle->bytes;
-  auto response = HttpClient::Post(url, bundle->json,
-                                   {{"Content-Type", "application/json"},
-                                    {"X-PP-Diagnostics", "1"},
-                                    {"Authorization", "Bearer " + key.value()}},
-                                   kMaxHttpClientBodyBytes, timeout);
+  auto response = HttpClient::Post(
+      url, bundle->json,
+      {{"Content-Type", "application/json"}, {"X-PP-Diagnostics", "1"}, {"Authorization", "Bearer " + key.value()}},
+      kMaxHttpClientBodyBytes, timeout);
   if (!response) {
     log.warning << "Diagnostics upload failed: " << response.error().message;
     if (response.error().category == static_cast<int32_t>(ErrorCategory::Network)) {
@@ -129,7 +128,7 @@ DiagnosticsUploadResult Upload(const DiagnosticsUploadDeps& deps, const std::str
 } // namespace
 
 void SendDiagnostics(DiagnosticsUploadDeps deps, std::function<void(DiagnosticsUploadResult)> on_done) {
-  if (!UploadAllowed(kUiDemoBuild)) {  // the UI demo app sends nothing, wherever the address would come from
+  if (!UploadAllowed(kUiDemoBuild)) { // the UI demo app sends nothing, wherever the address would come from
     if (on_done) {
       on_done(Failed(DiagnosticsUploadKind::Unavailable));
     }
@@ -137,8 +136,7 @@ void SendDiagnostics(DiagnosticsUploadDeps deps, std::function<void(DiagnosticsU
   }
   const std::string client_token = ClientToken().Acquire();
   AppRuntime::PostWorkerAndReplyOnUI<DiagnosticsUploadResult>(
-      WorkerLane::Normal,
-      [deps = std::move(deps), client_token]() { return Upload(deps, client_token); },
+      WorkerLane::Normal, [deps = std::move(deps), client_token]() { return Upload(deps, client_token); },
       [on_done = std::move(on_done)](DiagnosticsUploadResult result) {
         ClientToken().Finish(result.kind);
         if (on_done) {

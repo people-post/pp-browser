@@ -23,28 +23,28 @@ bool IsCjkUnified(char32_t cp) {
 
 bool IsTraditionalIndicator(char32_t cp) {
   switch (cp) {
-  case 0x81FA: // 臺
-  case 0x70BA: // 為
-  case 0x9019: // 這
-  case 0x8AAA: // 說
-  case 0x570B: // 國
-  case 0x9ABD: // 體
-  case 0x7D93: // 經
-  case 0x8655: // 處
-  case 0x61C9: // 應
-  case 0x958B: // 開
-  case 0x95DC: // 關
-  case 0x96FB: // 電
-  case 0x8A71: // 話
-  case 0x6642: // 時
-  case 0x9593: // 間
-  case 0x8207: // 與
-  case 0x7121: // 無
-  case 0x5462: // 呢
-  case 0x55CE: // 嗎
-    return true;
-  default:
-    return false;
+    case 0x81FA: // 臺
+    case 0x70BA: // 為
+    case 0x9019: // 這
+    case 0x8AAA: // 說
+    case 0x570B: // 國
+    case 0x9ABD: // 體
+    case 0x7D93: // 經
+    case 0x8655: // 處
+    case 0x61C9: // 應
+    case 0x958B: // 開
+    case 0x95DC: // 關
+    case 0x96FB: // 電
+    case 0x8A71: // 話
+    case 0x6642: // 時
+    case 0x9593: // 間
+    case 0x8207: // 與
+    case 0x7121: // 無
+    case 0x5462: // 呢
+    case 0x55CE: // 嗎
+      return true;
+    default:
+      return false;
   }
 }
 
@@ -72,22 +72,23 @@ std::optional<char32_t> NextCodepoint(std::string_view text, size_t& index) {
   }
   char32_t cp = 0;
   switch (width) {
-  case 1:
-    cp = lead;
-    break;
-  case 2:
-    cp = ((lead & 0x1F) << 6) | (static_cast<unsigned char>(text[index + 1]) & 0x3F);
-    break;
-  case 3:
-    cp = ((lead & 0x0F) << 12) | ((static_cast<unsigned char>(text[index + 1]) & 0x3F) << 6) |
-         (static_cast<unsigned char>(text[index + 2]) & 0x3F);
-    break;
-  case 4:
-    cp = ((lead & 0x07) << 18) | ((static_cast<unsigned char>(text[index + 1]) & 0x3F) << 12) |
-         ((static_cast<unsigned char>(text[index + 2]) & 0x3F) << 6) | (static_cast<unsigned char>(text[index + 3]) & 0x3F);
-    break;
-  default:
-    break;
+    case 1:
+      cp = lead;
+      break;
+    case 2:
+      cp = ((lead & 0x1F) << 6) | (static_cast<unsigned char>(text[index + 1]) & 0x3F);
+      break;
+    case 3:
+      cp = ((lead & 0x0F) << 12) | ((static_cast<unsigned char>(text[index + 1]) & 0x3F) << 6) |
+           (static_cast<unsigned char>(text[index + 2]) & 0x3F);
+      break;
+    case 4:
+      cp = ((lead & 0x07) << 18) | ((static_cast<unsigned char>(text[index + 1]) & 0x3F) << 12) |
+           ((static_cast<unsigned char>(text[index + 2]) & 0x3F) << 6) |
+           (static_cast<unsigned char>(text[index + 3]) & 0x3F);
+      break;
+    default:
+      break;
   }
   index += width;
   return cp;

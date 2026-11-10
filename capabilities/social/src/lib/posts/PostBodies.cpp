@@ -129,8 +129,7 @@ Roe<T> Decode(const ByteVector& bytes, const char* what, Read read) {
 }
 
 Roe<void> CheckRef(const PostRef& ref) {
-  if (ref.author.empty() || ref.author.size() > kMaxPostAuthorBytes || !IsWellFormedUtf8(ref.author) ||
-      ref.seq == 0) {
+  if (ref.author.empty() || ref.author.size() > kMaxPostAuthorBytes || !IsWellFormedUtf8(ref.author) || ref.seq == 0) {
     return Error("post: malformed ref");
   }
   return {};
@@ -178,20 +177,20 @@ Roe<void> CheckMedia(const PostMedia& media) {
 
 Roe<void> CheckFacetValue(const PostFacet& facet) {
   switch (facet.type) {
-  case static_cast<uint8_t>(PostFacetType::Mention):
-    return !facet.value.empty() && IsUtf8Within(facet.value, kMaxPostAuthorBytes) ? Roe<void>{}
-                                                                                  : Error("post: bad mention");
-  case static_cast<uint8_t>(PostFacetType::Link):
-    return IsUtf8Within(facet.value, kMaxPostLinkUrlBytes) && facet.value.rfind("https://", 0) == 0
-               ? Roe<void>{}
-               : Error("post: a link is not an https URL");
-  case static_cast<uint8_t>(PostFacetType::Hashtag):
-    return !facet.value.empty() && facet.value[0] != '#' && IsUtf8Within(facet.value, kMaxPostHashtagBytes)
-               ? Roe<void>{}
-               : Error("post: bad hashtag");
-  default:  // a type this version does not know: shown as plain text
-    return facet.type != 0 && IsUtf8Within(facet.value, kMaxPostLinkUrlBytes) ? Roe<void>{}
-                                                                              : Error("post: bad facet");
+    case static_cast<uint8_t>(PostFacetType::Mention):
+      return !facet.value.empty() && IsUtf8Within(facet.value, kMaxPostAuthorBytes) ? Roe<void>{}
+                                                                                    : Error("post: bad mention");
+    case static_cast<uint8_t>(PostFacetType::Link):
+      return IsUtf8Within(facet.value, kMaxPostLinkUrlBytes) && facet.value.rfind("https://", 0) == 0
+                 ? Roe<void>{}
+                 : Error("post: a link is not an https URL");
+    case static_cast<uint8_t>(PostFacetType::Hashtag):
+      return !facet.value.empty() && facet.value[0] != '#' && IsUtf8Within(facet.value, kMaxPostHashtagBytes)
+                 ? Roe<void>{}
+                 : Error("post: bad hashtag");
+    default: // a type this version does not know: shown as plain text
+      return facet.type != 0 && IsUtf8Within(facet.value, kMaxPostLinkUrlBytes) ? Roe<void>{}
+                                                                                : Error("post: bad facet");
   }
 }
 
@@ -395,77 +394,77 @@ Roe<void> CheckPostBody(const uint8_t kind, const ByteVector& body, const std::s
     return {};
   }
   switch (static_cast<PostKind>(kind)) {
-  case PostKind::Post: {
-    auto post = DecodePostBody(body);
-    return post ? CheckPostFields(post.value()) : Roe<void>(post.error());
-  }
-  case PostKind::Edit: {
-    auto edit = DecodeEditBody(body);
-    if (!edit) {
-      return edit.error();
+    case PostKind::Post: {
+      auto post = DecodePostBody(body);
+      return post ? CheckPostFields(post.value()) : Roe<void>(post.error());
     }
-    if (auto own = CheckOwnRef(edit.value().target, author); !own) {
-      return own;
-    }
-    return CheckPostFields(edit.value().replacement);
-  }
-  case PostKind::Delete: {
-    auto target = DecodeTargetBody(body);
-    return target ? CheckOwnRef(target.value().target, author) : Roe<void>(target.error());
-  }
-  case PostKind::Repost: {
-    auto target = DecodeTargetBody(body);
-    return target ? CheckRef(target.value().target) : Roe<void>(target.error());
-  }
-  case PostKind::React: {
-    auto react = DecodeReactBody(body);
-    if (!react) {
-      return react.error();
-    }
-    const std::string& reaction = react.value().reaction;
-    if (reaction.empty() || reaction.size() > kMaxPostReactionBytes || !IsWellFormedUtf8(reaction)) {
-      return Error("post: bad reaction");
-    }
-    return CheckRef(react.value().target);
-  }
-  case PostKind::Profile: {
-    auto profile = DecodeProfileBody(body);
-    if (!profile) {
-      return profile.error();
-    }
-    const ProfileBody& p = profile.value();
-    if (p.display_name.size() > kMaxPostDisplayNameBytes || !IsWellFormedUtf8(p.display_name) ||
-        p.bio.size() > kMaxPostBioBytes || !IsWellFormedUtf8(p.bio)) {
-      return Error("post: profile fields too long or not UTF-8");
-    }
-    for (const PostService& service : p.services) {
-      if (service.kind.empty() || service.kind.size() > kMaxPostServiceKindBytes ||
-          service.terms.size() > kMaxPostServiceTermsBytes || !IsWellFormedUtf8(service.kind) ||
-          !IsWellFormedUtf8(service.terms)) {
-        return Error("post: bad service");
+    case PostKind::Edit: {
+      auto edit = DecodeEditBody(body);
+      if (!edit) {
+        return edit.error();
       }
-    }
-    return {};
-  }
-  case PostKind::LaneClose: {
-    auto close = DecodeLaneCloseBody(body);
-    if (!close) {
-      return close.error();
-    }
-    return close.value().last_seq == 0 ? Roe<void>(Error("post: lane_close names no seq")) : Roe<void>{};
-  }
-  case PostKind::Disavow: {
-    auto disavow = DecodeDisavowBody(body);
-    if (!disavow) {
-      return disavow.error();
-    }
-    for (const PostRef& ref : disavow.value().targets) {
-      if (auto own = CheckOwnRef(ref, author); !own) {
+      if (auto own = CheckOwnRef(edit.value().target, author); !own) {
         return own;
       }
+      return CheckPostFields(edit.value().replacement);
     }
-    return {};
-  }
+    case PostKind::Delete: {
+      auto target = DecodeTargetBody(body);
+      return target ? CheckOwnRef(target.value().target, author) : Roe<void>(target.error());
+    }
+    case PostKind::Repost: {
+      auto target = DecodeTargetBody(body);
+      return target ? CheckRef(target.value().target) : Roe<void>(target.error());
+    }
+    case PostKind::React: {
+      auto react = DecodeReactBody(body);
+      if (!react) {
+        return react.error();
+      }
+      const std::string& reaction = react.value().reaction;
+      if (reaction.empty() || reaction.size() > kMaxPostReactionBytes || !IsWellFormedUtf8(reaction)) {
+        return Error("post: bad reaction");
+      }
+      return CheckRef(react.value().target);
+    }
+    case PostKind::Profile: {
+      auto profile = DecodeProfileBody(body);
+      if (!profile) {
+        return profile.error();
+      }
+      const ProfileBody& p = profile.value();
+      if (p.display_name.size() > kMaxPostDisplayNameBytes || !IsWellFormedUtf8(p.display_name) ||
+          p.bio.size() > kMaxPostBioBytes || !IsWellFormedUtf8(p.bio)) {
+        return Error("post: profile fields too long or not UTF-8");
+      }
+      for (const PostService& service : p.services) {
+        if (service.kind.empty() || service.kind.size() > kMaxPostServiceKindBytes ||
+            service.terms.size() > kMaxPostServiceTermsBytes || !IsWellFormedUtf8(service.kind) ||
+            !IsWellFormedUtf8(service.terms)) {
+          return Error("post: bad service");
+        }
+      }
+      return {};
+    }
+    case PostKind::LaneClose: {
+      auto close = DecodeLaneCloseBody(body);
+      if (!close) {
+        return close.error();
+      }
+      return close.value().last_seq == 0 ? Roe<void>(Error("post: lane_close names no seq")) : Roe<void>{};
+    }
+    case PostKind::Disavow: {
+      auto disavow = DecodeDisavowBody(body);
+      if (!disavow) {
+        return disavow.error();
+      }
+      for (const PostRef& ref : disavow.value().targets) {
+        if (auto own = CheckOwnRef(ref, author); !own) {
+          return own;
+        }
+      }
+      return {};
+    }
   }
   return {};
 }

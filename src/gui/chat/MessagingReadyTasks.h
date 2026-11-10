@@ -92,7 +92,7 @@ public:
     /** `started` is still the current session and messaging is ready (ChatController::MessagingReady). */
     std::function<bool(uint64_t started)> still_ready;
 
-    /** Worker: binds this device's push tokens (PushDeviceCoordinator::Register, APNs + VoIP). */
+    /** Worker: binds this device's push tokens (PushDeviceCoordinator::Register). */
     std::function<void()> register_push;
 
     /** UI, read before the renewal is sent off: the "renew automatically" preference. */
@@ -181,7 +181,8 @@ auto RunSharedBriefKeyRenewal(CoalescedRun& run, const std::chrono::milliseconds
     if (stopped()) {
       return std::nullopt;
     }
-    const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+    const auto left =
+        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
     if (left.count() <= 0) {
       break;
     }

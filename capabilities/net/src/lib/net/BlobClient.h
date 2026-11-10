@@ -108,8 +108,8 @@ public:
                                          uint64_t byte_length, BlobPurpose purpose) = 0;
   virtual Roe<void> Retain(const std::string& relay_user_id, const std::string& blob_id) = 0;
   virtual Roe<void> Delete(const std::string& relay_user_id, const std::string& blob_id) = 0;
-  virtual Roe<void> SetProfileIcon(const std::string& relay_user_id, const std::string& url,
-                                   const std::string& blob_id, const std::string& kind) = 0;
+  virtual Roe<void> SetProfileIcon(const std::string& relay_user_id, const std::string& url, const std::string& blob_id,
+                                   const std::string& kind) = 0;
   virtual Roe<void> PutUpload(const std::string& upload_url, const std::string& content_type,
                               const std::string& body) = 0;
   /**

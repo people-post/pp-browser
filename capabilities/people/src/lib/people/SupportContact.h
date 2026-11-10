@@ -41,4 +41,4 @@ inline bool ApplySupportTitle(Contact& contact, const std::string& title) {
   return changed;
 }
 
-}  // namespace pbr
+} // namespace pbr

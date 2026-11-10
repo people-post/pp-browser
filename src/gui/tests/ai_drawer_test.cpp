@@ -74,11 +74,13 @@ TEST(AiDrawerTest, OpensAndCloses) {
   EXPECT_TRUE(host.HomeRootShown());
 }
 
-TEST(AiDrawerTest, ASecondTapOnAiOpensIt) {
+TEST(AiDrawerTest, ASecondTapOnAiDoesNotOpenIt) {
   ShellHost& host = PhoneHost(NavTab::Sessions);
   host.OnNavTabClicked("home");
   EXPECT_FALSE(host.State().ai_drawer_open) << "the first tap goes to the AI page";
   host.OnNavTabClicked("home");
+  EXPECT_FALSE(host.State().ai_drawer_open) << "a second tap stays on the AI page";
+  host.OpenAiDrawer();
   EXPECT_TRUE(host.State().ai_drawer_open);
 }
 
@@ -143,7 +145,7 @@ TEST(AiDrawerTest, TheDesktopNeverHasIt) {
   ShellState state;
   state.layout_mode = LayoutMode::Expanded;
   state.nav_tab = NavTab::Home;
-  state.ai_drawer_open = true;  // even if set
+  state.ai_drawer_open = true; // even if set
   EXPECT_TRUE(ShellLayoutRml(state, false, "").AiDrawer().empty());
   EXPECT_FALSE(Has(ShellLayoutRml(state, false, "").ShellRoot(), "shell-drawer-layer"));
 }
@@ -242,8 +244,8 @@ protected:
 
   void Tap(ui::Element* element) {
     ASSERT_NE(element, nullptr);
-    const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Border) +
-                            element->GetBox().GetSize(ui::BoxArea::Border) * 0.5f;
+    const ui::Vector2f at =
+        element->GetAbsoluteOffset(ui::BoxArea::Border) + element->GetBox().GetSize(ui::BoxArea::Border) * 0.5f;
     context_->ProcessMouseMove(static_cast<int>(at.x), static_cast<int>(at.y), 0);
     context_->ProcessMouseButtonDown(0, 0);
     context_->ProcessMouseButtonUp(0, 0);
@@ -276,8 +278,8 @@ protected:
     ASSERT_NE(document_, nullptr);
     document_->Show();
     context_->Update();
-    gesture_.Attach(document_->GetElementById("page"), context_, {}, [this]() { return can_open_; },
-                    [this]() { ++opened_; });
+    gesture_.Attach(
+        document_->GetElementById("page"), context_, {}, [this]() { return can_open_; }, [this]() { ++opened_; });
   }
 
   void TearDown() override {
@@ -319,7 +321,7 @@ TEST_F(DrawerOpenGestureTest, AMostlyVerticalDragDoesNotOpen) {
 }
 
 TEST_F(DrawerOpenGestureTest, NotWhenThePageSaysNo) {
-  can_open_ = false;  // the drawer already open, or a chat overlay over the AI page (ShellHost::HomeRootShown)
+  can_open_ = false; // the drawer already open, or a chat overlay over the AI page (ShellHost::HomeRootShown)
   Drag(50, kPlainY, 200, kPlainY);
   EXPECT_EQ(opened_, 0);
 }
@@ -339,7 +341,7 @@ public:
   void ProcessEvent(ui::Event&) override { ++count; }
   int count = 0;
 };
-}  // namespace
+} // namespace
 
 // The click that ends the drag which opened the drawer is swallowed however long the drag took, and only that one.
 TEST_F(DrawerOpenGestureTest, ASlowDragStillSwallowsItsOwnClickAndOnlyThat) {
@@ -354,7 +356,7 @@ TEST_F(DrawerOpenGestureTest, ASlowDragStillSwallowsItsOwnClickAndOnlyThat) {
     context_->Update();
   }
   ASSERT_EQ(opened_, 1);
-  std::this_thread::sleep_for(std::chrono::milliseconds(400));  // the finger stays down well past the old window
+  std::this_thread::sleep_for(std::chrono::milliseconds(400)); // the finger stays down well past the old window
   context_->ProcessMouseButtonUp(0, 0);
   context_->Update();
   EXPECT_EQ(clicks.count, 0) << "the drag's own click is swallowed";
@@ -432,11 +434,11 @@ protected:
       BindChatShellState(ctor, shell_);
       // As ChatController: an AI conversation picked opens the chat overlay over the AI page.
       ctor.BindEventCallback("select_thread", DataEvent<std::string>([this](const std::string& id) {
-        selected_ = id;
-        host_.SetPrimaryPane("chat");
-        host_.OpenCompactChat();
-        attached_after_pick_ = host_.AiDrawerRowSwipesAttached();
-      }));
+                               selected_ = id;
+                               host_.SetPrimaryPane("chat");
+                               host_.OpenCompactChat();
+                               attached_after_pick_ = host_.AiDrawerRowSwipesAttached();
+                             }));
       ctor.BindEventCallback("toggle_archived_ai", DataEvent([] {}));
       ctor.BindEventCallback("new_chat", DataEvent([] {}));
     }));
@@ -521,6 +523,54 @@ TEST_F(ShellDrawerTest, TheRealViewMountsAndItsRowsSwipe) {
   EXPECT_EQ(actions_, std::vector<std::string>{"ai1:" + std::to_string(static_cast<int>(SessionSwipeAction::More))});
 }
 
+// The "you" row carries the device's link status under the nickname (ShellHost::SetChatsLink): nothing while unknown,
+// the teal cloud-tick icon and its word when online, the red cloud-slash icon and its word when offline.
+TEST_F(ShellDrawerTest, TheMeRowShowsTheLinkStatusUnderTheName) {
+  host_.OpenAiDrawer();
+  Settle();
+  ui::Element* line = ById("ai-drawer-me")->QuerySelector(".ai-drawer-me-link");
+  ASSERT_NE(line, nullptr);
+  EXPECT_FALSE(line->IsVisible()) << "unknown state shows nothing";
+
+  auto count_visible = [&](const char* cls) {
+    ui::ElementList found;
+    ById("ai-drawer-me")->GetElementsByClassName(found, cls);
+    int n = 0;
+    for (ui::Element* e : found) {
+      n += e->IsVisible() ? 1 : 0;
+    }
+    return n;
+  };
+
+  host_.SetChatsLink(true, true);
+  Settle();
+  EXPECT_TRUE(line->IsVisible());
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--ok"), 1);
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--offline"), 0);
+  EXPECT_FALSE(host_.State().chats_link_text.empty());
+  EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos) << "the word is rendered";
+
+  host_.SetChatsLink(true, false);
+  Settle();
+  EXPECT_TRUE(line->IsVisible());
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--ok"), 0);
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--offline"), 1);
+  EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos);
+
+  host_.SetChatsLink(ChatsLink::Connecting);
+  Settle();
+  EXPECT_TRUE(line->IsVisible());
+  EXPECT_EQ(host_.State().chats_link_state, "connecting");
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--ok"), 0);
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--offline"), 0);
+  EXPECT_EQ(count_visible("ai-drawer-me-link-icon--connecting"), 1);
+  EXPECT_NE(line->GetInnerRML().find(host_.State().chats_link_text), std::string::npos);
+
+  host_.SetChatsLink(false, false);
+  Settle();
+  EXPECT_FALSE(line->IsVisible());
+}
+
 TEST_F(ShellDrawerTest, APickedConversationClosesTheDrawerAndOpensOverTheAiPage) {
   host_.OpenAiDrawer();
   Settle();
@@ -540,7 +590,7 @@ TEST_F(ShellDrawerTest, OpeningLetsGoOfTheKeyboard) {
   ui::Element* probe = ById("probe");
   ASSERT_NE(probe, nullptr);
   probe->Focus();
-  host_.State().safe_area_bottom_dp = 300;  // the keyboard is up
+  host_.State().safe_area_bottom_dp = 300; // the keyboard is up
   ASSERT_EQ(context_->GetFocusElement(), probe);
   host_.OpenAiDrawer();
   EXPECT_NE(context_->GetFocusElement(), probe) << "the field let go";
@@ -600,7 +650,7 @@ TEST_F(ShellDrawerTest, TheHomeIndicatorStripCoversTheInsetUnderGroupedPages) {
   EXPECT_EQ(height(), 0.f) << "Home: the tab bar owns the inset";
   host_.SelectNavTab(NavTab::Me);
   host_.SyncLayout();
-  EXPECT_EQ(height(), 34.f);
+  EXPECT_EQ(height(), 0.f) << "Settings keeps the tab bar (TODO #200): it owns the inset";
   EXPECT_TRUE(bottom->IsClassSet("shell-home-indicator-strip--me"));
   // A settings detail page (安全, 网络…) is Me's inline detail with a local back, not a pushed page: still Me.
   host_.PushLocalBack("settings_detail", [] {});
@@ -615,6 +665,183 @@ TEST_F(ShellDrawerTest, TheHomeIndicatorStripCoversTheInsetUnderGroupedPages) {
   host_.SyncLayout();
   EXPECT_EQ(height(), 34.f);
   EXPECT_TRUE(bottom->IsClassSet("shell-home-indicator-strip--new_chat"));
+}
+
+// The keyboard / emoji sheet lifts #shell-root and, once gone, the lift is gone with it (the Home block re-centres in
+// the page again): nothing on the way up is left behind on the way down.
+TEST_F(ShellDrawerTest, TheShellRootLiftIsGoneWhenTheKeyboardOrEmojiSheetGoes) {
+  ui::Element* root = ById("shell-root");
+  ASSERT_NE(root, nullptr);
+  const auto bottom = [root]() { return root->GetProperty<float>("bottom"); };
+  const float rest = bottom();
+  host_.State().safe_area_bottom_dp = 300; // the keyboard is up
+  host_.RefreshSafeAreaInsets(context_);   // the platform reports it gone
+  Settle();
+  EXPECT_EQ(host_.State().safe_area_bottom_dp, 0);
+  EXPECT_EQ(bottom(), rest) << "keyboard: the lift is dropped";
+  // (Not on the AI Home, which the sheet does not lift any more: TODO #204, HomeKeyboardDockTest.)
+  host_.SelectNavTab(NavTab::Sessions);
+  host_.SyncLayout();
+  Settle();
+  const float rest_chats = bottom();
+  BottomChromeSpec spec;
+  spec.key = "emoji_panel";
+  host_.SetBottomChrome(spec);
+  Settle();
+  EXPECT_GT(bottom(), rest_chats) << "emoji sheet: lifted";
+  host_.ClearBottomChrome();
+  Settle();
+  EXPECT_EQ(host_.State().safe_area_bottom_dp, 0);
+  EXPECT_EQ(bottom(), rest_chats) << "emoji sheet gone: the lift is dropped";
+}
+
+// TODO #204 (real ShellHost): the AI Home does not follow the keyboard / emoji sheet. Its mascot and card stay where they
+// are, the keyboard covers the chips; only when it would cover the card the block moves up by exactly the overlap
+// (card bottom = keyboard top - 8). Every other page keeps the full lift.
+class HomeKeyboardDockTest : public ShellDrawerTest {
+protected:
+  void SetUp() override {
+    ShellDrawerTest::SetUp();
+    ui::ElementList cards;
+    ById("home-landing")->GetElementsByClassName(cards, "prompt-composer");
+    ASSERT_FALSE(cards.empty()) << "the Home card is mounted";
+    card_ = cards.front();
+    mascot_ = ById("home-logo");
+    ASSERT_NE(mascot_, nullptr);
+    root_ = ById("shell-root");
+    ASSERT_NE(root_, nullptr);
+    rest_ = Snapshot();
+  }
+  struct Snap {
+    float lift, card_bottom, card_top, logo_top, chips_top;
+  };
+  Snap Snapshot() {
+    context_->Update();
+    ui::ElementList chips;
+    document_->GetElementsByClassName(chips, "chat-suggestion");
+    return {root_->GetProperty<float>("bottom"),
+            card_->GetAbsoluteOffset(ui::BoxArea::Border).y + card_->GetBox().GetSize(ui::BoxArea::Border).y,
+            card_->GetAbsoluteOffset(ui::BoxArea::Border).y, mascot_->GetAbsoluteOffset(ui::BoxArea::Border).y,
+            chips.empty() ? 0.f : chips.front()->GetAbsoluteOffset(ui::BoxArea::Border).y};
+  }
+  void KeyboardUp(int dp) {
+    host_.SetSafeAreaInsetsFromPrefs(0, dp);
+    Settle();
+  }
+  void KeyboardDown() {
+    host_.SetSafeAreaInsetsFromPrefs(0, 0);
+    host_.RefreshSafeAreaInsets(context_);
+    Settle();
+  }
+  ui::Element* card_ = nullptr;
+  ui::Element* mascot_ = nullptr;
+  ui::Element* root_ = nullptr;
+  Snap rest_{};
+};
+
+TEST_F(HomeKeyboardDockTest, ATallScreenKeepsTheBlockAndTheKeyboardCoversTheChips) {
+  const int keyboard = static_cast<int>(800.f - rest_.card_bottom - 8.f - 20.f); // card clear of it by 28dp
+  ASSERT_GE(keyboard, 100);
+  KeyboardUp(keyboard);
+  const Snap up = Snapshot();
+  std::printf(
+      "[ShellHost tall] keyboard %d (top %d) lift %.1f card %.1f..%.1f (rest %.1f..%.1f) logo %.1f (rest %.1f) chips "
+      "%.1f (rest %.1f)\n",
+      keyboard, 800 - keyboard, up.lift, up.card_top, up.card_bottom, rest_.card_top, rest_.card_bottom, up.logo_top,
+      rest_.logo_top, up.chips_top, rest_.chips_top);
+  EXPECT_EQ(up.lift, rest_.lift) << "the root is not lifted";
+  EXPECT_FLOAT_EQ(up.card_top, rest_.card_top);
+  EXPECT_FLOAT_EQ(up.logo_top, rest_.logo_top);
+  EXPECT_FLOAT_EQ(up.chips_top, rest_.chips_top);
+  EXPECT_GE(up.chips_top, up.card_bottom) << "the chips are under the card, where they were (the keyboard covers them)";
+  EXPECT_LT(up.card_bottom + 8.f, 800.f - keyboard) << "the card is clear of the keyboard";
+  KeyboardDown();
+  const Snap down = Snapshot();
+  EXPECT_EQ(down.lift, rest_.lift);
+  EXPECT_FLOAT_EQ(down.card_top, rest_.card_top);
+  EXPECT_FLOAT_EQ(down.logo_top, rest_.logo_top);
+  EXPECT_FLOAT_EQ(down.chips_top, rest_.chips_top);
+}
+
+TEST_F(HomeKeyboardDockTest, AShortScreenLiftsTheBlockByExactlyTheOverlap) {
+  const float overlap = 40.f;
+  const int keyboard = static_cast<int>(800.f - rest_.card_bottom - 8.f + overlap);
+  KeyboardUp(keyboard);
+  const Snap up = Snapshot();
+  std::printf("[ShellHost short] keyboard %d (top %d) lift %.1f card bottom %.1f (rest %.1f) logo %.1f (rest %.1f)\n",
+              keyboard, 800 - keyboard, up.lift, up.card_bottom, rest_.card_bottom, up.logo_top, rest_.logo_top);
+  EXPECT_EQ(up.lift, rest_.lift) << "the root is not lifted: the block is";
+  EXPECT_NEAR(up.card_bottom, 800.f - keyboard - 8.f, 1.f);
+  EXPECT_NEAR(rest_.logo_top - up.logo_top, overlap, 1.f) << "the mascot moved by the same overlap, not more";
+  KeyboardDown();
+  const Snap down = Snapshot();
+  EXPECT_FLOAT_EQ(down.card_top, rest_.card_top);
+  EXPECT_FLOAT_EQ(down.logo_top, rest_.logo_top);
+}
+
+// The sheet (280dp by default, taller than the room under this window's card) follows the keyboard's rule with its own
+// height: the root is not lifted, the block moves up just enough to keep the card 8dp above the sheet, and it returns.
+TEST_F(HomeKeyboardDockTest, TheEmojiSheetFollowsTheSameRule) {
+  BottomChromeSpec spec;
+  spec.key = "emoji_panel";
+  host_.SetBottomChrome(spec);
+  Settle();
+  const Snap up = Snapshot();
+  const float sheet = 280.f; // ShellHost kDefaultEmojiKeyboardPanelDp (no keyboard was up before)
+  std::printf("[ShellHost sheet] sheet %.0f (top %.0f) lift %.1f card bottom %.1f (rest %.1f) logo %.1f (rest %.1f)\n",
+              sheet, 800.f - sheet, up.lift, up.card_bottom, rest_.card_bottom, up.logo_top, rest_.logo_top);
+  EXPECT_EQ(up.lift, rest_.lift) << "the root is not lifted";
+  EXPECT_NEAR(up.card_bottom, std::min(rest_.card_bottom, 800.f - sheet - 8.f), 1.f);
+  EXPECT_NEAR(rest_.logo_top - up.logo_top, std::max(0.f, rest_.card_bottom + 8.f - (800.f - sheet)), 1.f);
+  host_.ClearBottomChrome();
+  Settle();
+  const Snap down = Snapshot();
+  EXPECT_FLOAT_EQ(down.card_top, rest_.card_top);
+  EXPECT_FLOAT_EQ(down.logo_top, rest_.logo_top);
+  EXPECT_EQ(down.lift, rest_.lift);
+}
+
+// A 2x display (an iPhone): layout sizes are pixels, the cache and what is applied from it dp. Keyboard up / down / up must
+// leave the landing at its natural height in dp (it once doubled on every round trip) and the root unlifted.
+TEST_F(HomeKeyboardDockTest, AtDensityTwoTheLandingKeepsItsNaturalHeightAcrossKeyboardRoundTrips) {
+  context_->SetDimensions({800, 1600});
+  context_->SetDensityIndependentPixelRatio(2.f);
+  host_.SyncLayout();
+  Settle();
+  ui::Element* landing = ById("home-landing");
+  ASSERT_NE(landing, nullptr);
+  const auto landing_dp = [&]() {
+    context_->Update();
+    return landing->GetBox().GetSize(ui::BoxArea::Border).y / 2.f;
+  };
+  const float natural = landing_dp();
+  const float lift_rest = root_->GetProperty<float>("bottom");
+  std::printf("[ratio 2] natural landing %.1f dp (window 800 dp), root bottom %.1f\n", natural, lift_rest);
+  ASSERT_GT(natural, 100.f);
+  ASSERT_LT(natural, 800.f);
+  for (int round = 0; round < 3; ++round) {
+    KeyboardUp(300);
+    std::printf("[ratio 2] round %d up: landing %.1f dp, root bottom %.1f\n", round, landing_dp(),
+                root_->GetProperty<float>("bottom"));
+    EXPECT_NEAR(landing_dp(), natural, 1.f) << "pinned at the natural height in dp, not doubled";
+    EXPECT_EQ(root_->GetProperty<float>("bottom"), lift_rest) << "Home: not lifted";
+    KeyboardDown();
+    std::printf("[ratio 2] round %d down: landing %.1f dp, root bottom %.1f\n", round, landing_dp(),
+                root_->GetProperty<float>("bottom"));
+    EXPECT_NEAR(landing_dp(), natural, 1.f) << "back to the natural height";
+    EXPECT_EQ(root_->GetProperty<float>("bottom"), lift_rest);
+  }
+}
+
+TEST_F(HomeKeyboardDockTest, AChatPageKeepsTheFullLift) {
+  host_.SetPrimaryPane("chat");
+  host_.OpenCompactChat();
+  Settle();
+  const float rest = root_->GetProperty<float>("bottom");
+  KeyboardUp(300);
+  EXPECT_GE(root_->GetProperty<float>("bottom"), rest + 300.f - 0.5f) << "full lift on any other page";
+  KeyboardDown();
+  EXPECT_EQ(root_->GetProperty<float>("bottom"), rest);
 }
 
 TEST_F(ShellDrawerTest, TheLayoutBecomingTheDesktopsClosesIt) {

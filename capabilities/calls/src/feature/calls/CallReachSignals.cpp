@@ -25,11 +25,14 @@ void CallReachSignals::SetMeshPorts(MeshPorts ports) {
 void CallReachSignals::BindExchangePorts() {
   // The exchange's ports read call_ / mesh_ at use: either side may be (re)bound later.
   mesh::SignalingPunchExchange::Ports punch;
-  punch.send_offer = [this](const mesh::PunchSignal& offer) { return SendPunch(CallControlType::CallPunchOffer, offer); };
+  punch.send_offer = [this](const mesh::PunchSignal& offer) {
+    return SendPunch(CallControlType::CallPunchOffer, offer);
+  };
   punch.send_answer = [this](const mesh::PunchSignal& answer) {
     return SendPunch(CallControlType::CallPunchAnswer, answer);
   };
-  punch.burst = [this](const std::vector<std::string>& addrs, int window_ms, mesh::SignalingPunchExchange::DoneFn done) {
+  punch.burst = [this](const std::vector<std::string>& addrs, int window_ms,
+                       mesh::SignalingPunchExchange::DoneFn done) {
     if (!mesh_.punch_burst) {
       done(Error("signaling punch burst unavailable"));
       return;
@@ -41,19 +44,18 @@ void CallReachSignals::BindExchangePorts() {
       return;
     }
     CallPunchLine("burst_start", active->first, window_ms, addrs.size(), 0).Emit();
-    mesh_.punch_burst(addrs, window_ms,
-                      [call_id = active->first, window_ms, count = addrs.size(), started = std::chrono::steady_clock::now(),
-                       done = std::move(done)](Roe<void> result) {
-                        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                            std::chrono::steady_clock::now() - started)
-                                            .count();
-                        if (CallDiagBudget::Shared().Allow(call_id, CallDiagEvent::Punch)) {
-                          CallPunchLine(result ? ShareWord("burst_ok") : ShareWord("burst_fail"), call_id, window_ms, count,
-                                        ms)
-                              .Emit();
-                        }
-                        done(std::move(result));
-                      });
+    mesh_.punch_burst(
+        addrs, window_ms,
+        [call_id = active->first, window_ms, count = addrs.size(), started = std::chrono::steady_clock::now(),
+         done = std::move(done)](Roe<void> result) {
+          const auto ms =
+              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+          if (CallDiagBudget::Shared().Allow(call_id, CallDiagEvent::Punch)) {
+            CallPunchLine(result ? ShareWord("burst_ok") : ShareWord("burst_fail"), call_id, window_ms, count, ms)
+                .Emit();
+          }
+          done(std::move(result));
+        });
   };
   punch.register_listen = [this](const std::string& key, const std::vector<std::string>& addrs) {
     if (call_.register_listen) {
@@ -92,8 +94,7 @@ void CallReachSignals::BindExchangePorts() {
       log().warning << "CallCircuitR1 send failed call_id=" << target->first << " err=" << sent.error().message;
       return false;
     }
-    log().info << "CallCircuitR1 sent call_id=" << target->first << " peer=" << target->second
-               << " r1=" << circuit_r1;
+    log().info << "CallCircuitR1 sent call_id=" << target->first << " peer=" << target->second << " r1=" << circuit_r1;
     if (CallDiagBudget::Shared().Allow(target->first, CallDiagEvent::Relay)) {
       CallRelayLine("out", target->first, circuit_r1).Emit();
     }
@@ -142,8 +143,8 @@ Roe<void> CallReachSignals::SendPunch(const CallControlType type, const mesh::Pu
   if (auto sent = control_.SendDirect(target->second, type, *encoded, ""); !sent) {
     return sent.error();
   }
-  log().info << (type == CallControlType::CallPunchOffer ? "CallPunchOffer" : "CallPunchAnswer") << " sent call_id=" << target->first
-             << " peer=" << target->second << " epoch=" << signal.epoch_id;
+  log().info << (type == CallControlType::CallPunchOffer ? "CallPunchOffer" : "CallPunchAnswer")
+             << " sent call_id=" << target->first << " peer=" << target->second << " epoch=" << signal.epoch_id;
   if (CallDiagBudget::Shared().Allow(target->first, CallDiagEvent::Punch)) {
     CallPunchLine(type == CallControlType::CallPunchOffer ? ShareWord("offer_out") : ShareWord("answer_out"),
                   target->first, signal.window_ms, signal.addrs.size(), 0)
@@ -199,7 +200,7 @@ Roe<void> CallReachSignals::HandleInboundCapsUpdate(const std::string& detail_js
     return decoded.error();
   }
   if (!IsActiveCall(decoded->call_id)) {
-    return {};  // not our live call: nothing to re-plan
+    return {}; // not our live call: nothing to re-plan
   }
   log().info << "caps update inbound call_id=" << decoded->call_id
              << " mobility=" << MobilityClassWire(decoded->caps.mobility);

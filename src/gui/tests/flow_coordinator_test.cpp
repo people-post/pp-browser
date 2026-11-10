@@ -5,10 +5,13 @@
 TEST(FlowCoordinatorTest, StepBackKeepsFlowActive) {
   pbr::FlowCoordinator flow;
   int step = 1;
-  flow.BeginModal(42, [&]() {
-    step = 0;
-    return true;
-  }, []() {});
+  flow.BeginModal(
+      42,
+      [&]() {
+        step = 0;
+        return true;
+      },
+      []() {});
   EXPECT_TRUE(flow.HandleDismiss());
   EXPECT_EQ(step, 0);
   EXPECT_TRUE(flow.IsActive());

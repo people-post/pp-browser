@@ -117,8 +117,7 @@ TEST_F(ContactsStoreTest, AddFromDirectoryHitMergesByAccountAndPreservesLocal) {
   hit.display_name = "Bob";
   hit.nickname = "bob";
   hit.account_id = "account:bob";
-  hit.ids = {{mesh::ContactIdKind::Account, "account:bob", true},
-             {mesh::ContactIdKind::RelayUser, "relay:bob", false}};
+  hit.ids = {{mesh::ContactIdKind::Account, "account:bob", true}, {mesh::ContactIdKind::RelayUser, "relay:bob", false}};
   hit.multiaddrs = {"/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWBob"};
 
   auto first = store.AddFromDirectoryHit(hit);
@@ -192,8 +191,7 @@ TEST_F(ContactsStoreTest, SchemaVersionWrittenAndLegacyMigrated) {
   auto rewritten = TryParseObject(ss.str());
   ASSERT_TRUE(static_cast<bool>(rewritten));
   ASSERT_TRUE(rewritten->contains("schema_version"));
-  EXPECT_EQ(static_cast<int>(rewritten->getIf<int64_t>("schema_version").value_or(-1)),
-            ContactsStore::kSchemaVersion);
+  EXPECT_EQ(static_cast<int>(rewritten->getIf<int64_t>("schema_version").value_or(-1)), ContactsStore::kSchemaVersion);
   const Array* contacts = rewritten->getArray("contacts");
   ASSERT_NE(contacts, nullptr);
   ASSERT_EQ(contacts->elements.size(), 1u);
@@ -380,8 +378,8 @@ TEST_F(ContactsStoreTest, SeededRemarksAreClearedOnceOnLoad) {
   {
     Object root;
     root.set("schema_version", static_cast<int64_t>(1));
-    root.set("contacts", ArrayValue({make("seeded", "Ada", "Ada"), make("own", "Ada-work", "Ada"),
-                                     make("bare", "", "Bob")}));
+    root.set("contacts",
+             ArrayValue({make("seeded", "Ada", "Ada"), make("own", "Ada-work", "Ada"), make("bare", "", "Bob")}));
     std::ofstream out(data_dir_ / "contacts.json");
     ASSERT_TRUE(static_cast<bool>(out));
     out << DumpJson(root, 2);

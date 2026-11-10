@@ -28,8 +28,11 @@ struct UserFeedback {
   static void NeedsSetup(const std::string& message, bool sticky = false);
   static void Alert(const std::string& title, const std::string& message, std::function<void()> on_ok = {},
                     const std::string& ok_label = {});
-  static void Confirm(const std::string& title, const std::string& message,
-                      std::function<void(bool)> on_result, const std::string& ok_label = {});
+  static void Confirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result,
+                      const std::string& ok_label = {});
+  /** Confirm whose OK ends / removes something: the OK label in the danger colour on the phone. */
+  static void ConfirmDestructive(const std::string& title, const std::string& message,
+                                 std::function<void(bool)> on_result, const std::string& ok_label = {});
 
 private:
   static ShellFeedbackPorts ports_;

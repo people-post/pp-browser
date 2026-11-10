@@ -9,7 +9,8 @@
 namespace pbr {
 
 MentionVerdict MentionVerdictFor(const ThreadMessage& message, const std::string& group_id,
-                                 const std::string& local_account, IGroupRosterStore& roster, const bool sender_blocked) {
+                                 const std::string& local_account, IGroupRosterStore& roster,
+                                 const bool sender_blocked) {
   if (group_id.empty() || local_account.empty() || message.content_type != ChatContentType::Text ||
       message.sender_contact_id == local_account || sender_blocked) {
     return MentionVerdict::No;
@@ -18,17 +19,17 @@ MentionVerdict MentionVerdictFor(const ThreadMessage& message, const std::string
   const std::vector<std::string> mentioned = text_spans::MentionedAccounts(spans);
   const bool names_us = std::find(mentioned.begin(), mentioned.end(), local_account) != mentioned.end();
   if (!names_us && !text_spans::MentionsEveryone(spans)) {
-    return MentionVerdict::No;  // nothing that could reach us, whatever the roster says
+    return MentionVerdict::No; // nothing that could reach us, whatever the roster says
   }
   auto metadata = roster.LoadMetadata(group_id);
   if (!metadata || !*metadata) {
-    return MentionVerdict::Held;  // the roster is not known yet
+    return MentionVerdict::Held; // the roster is not known yet
   }
   if ((*metadata)->sync_state == GroupSyncState::Checking) {
-    return MentionVerdict::Held;  // G013: the roster may be stale until the check settles
+    return MentionVerdict::Held; // G013: the roster may be stale until the check settles
   }
   if ((*metadata)->sync_state != GroupSyncState::Active) {
-    return MentionVerdict::No;  // removed
+    return MentionVerdict::No; // removed
   }
   auto sender_in = roster.IsMember(group_id, message.sender_contact_id);
   auto we_are_in = roster.IsMember(group_id, local_account);

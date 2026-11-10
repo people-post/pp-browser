@@ -44,7 +44,7 @@ ByteVector TestDek() {
 
 class PipelineHarness {
 public:
-  explicit   PipelineHarness(const std::string& suffix, const ThreadChannel channel)
+  explicit PipelineHarness(const std::string& suffix, const ThreadChannel channel)
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_cross_cutting_" + suffix)),
         store(),
         local(test::TestAccount::Make()),
@@ -62,7 +62,6 @@ public:
     if (!psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
     }
-
 
     DirectChatTarget target;
     target.peer_identity_kind = "account";
@@ -141,8 +140,8 @@ public:
       params.sender_seq = seq;
       params.session_epoch = 1;
       params.timestamp = envelope.timestamp;
-      auto payload = E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, established->master_psk,
-                                                                  established->key_init_b64);
+      auto payload =
+          E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, established->master_psk, established->key_init_b64);
       if (!payload) {
         throw std::runtime_error("Failed to encrypt public payload");
       }
@@ -161,7 +160,8 @@ public:
   }
 
   /** A peer E2E envelope carrying any chat payload (annotations etc.), signed like the text one. */
-  RelayEnvelope MakeSignedPayloadEnvelope(const std::string& message_id, uint64_t seq, const ThreadMessage& body) const {
+  RelayEnvelope MakeSignedPayloadEnvelope(const std::string& message_id, uint64_t seq,
+                                          const ThreadMessage& body) const {
     RelayEnvelope envelope;
     envelope.envelope_version = kRelayEnvelopeVersion;
     envelope.message_id = message_id;
@@ -447,8 +447,7 @@ TEST(MessagingCrossCuttingTest, E2ePublicIngestUsesEncryptedAutoKeyPath) {
 }
 
 TEST(MessagingCrossCuttingTest, ChatTargetRoutingFindsDirectThread) {
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_cross_cutting_routing";
+  const std::filesystem::path data_dir = std::filesystem::temp_directory_path() / "pp_browser_cross_cutting_routing";
   std::filesystem::remove_all(data_dir);
   InMemoryDeliveryStore store;
   ASSERT_TRUE(store.SetDek(TestDek()));
@@ -508,8 +507,7 @@ struct TestFamily {
 
 /** A pipeline harness with the lane's seen-store wired. */
 struct LaneHarness {
-  explicit LaneHarness(const std::string& suffix)
-      : harness(suffix, ThreadChannel::E2ePublic), seen() {
+  explicit LaneHarness(const std::string& suffix) : harness(suffix, ThreadChannel::E2ePublic), seen() {
     harness.pipeline.SetSystemControls(&controls);
     harness.pipeline.SetControlLaneSeen(&seen);
   }
@@ -704,7 +702,8 @@ TEST(MessagingCrossCuttingTest, ADeclineLeavesALineInTheGroupForTheInviter) {
   EXPECT_EQ(lines[0].message.sender_contact_id, "account:peer");
   EXPECT_EQ(GroupMembershipCodec::ControlTypeFromMessage(lines[0].message),
             std::optional<GroupMembershipControlType>(GroupMembershipControlType::GroupInviteDecline));
-  EXPECT_EQ(outcome.about_us, RelayReceiveOutcome::AboutUs::None) << "a decline is the inviter's news only in the group";
+  EXPECT_EQ(outcome.about_us, RelayReceiveOutcome::AboutUs::None)
+      << "a decline is the inviter's news only in the group";
 }
 
 TEST(MessagingCrossCuttingTest, OnlyEventsAboutThisAccountAreNewsInTheGroup) {
@@ -714,14 +713,16 @@ TEST(MessagingCrossCuttingTest, OnlyEventsAboutThisAccountAreNewsInTheGroup) {
     return harness.pipeline.ProcessEnvelope(EventFromPeer(harness, type, detail, seq), harness.local_account_id);
   };
   // Other people's events: quiet.
-  EXPECT_EQ(run(GroupMembershipControlType::GroupRenamed, *GroupMembershipCodec::EncodeGroupRenamed(kHikeGroup, "X", 2, 1), 1)
-                .about_us,
-            RelayReceiveOutcome::AboutUs::None);
+  EXPECT_EQ(
+      run(GroupMembershipControlType::GroupRenamed, *GroupMembershipCodec::EncodeGroupRenamed(kHikeGroup, "X", 2, 1), 1)
+          .about_us,
+      RelayReceiveOutcome::AboutUs::None);
   EXPECT_EQ(run(GroupMembershipControlType::MemberJoined,
                 *GroupMembershipCodec::EncodeMemberJoined(kHikeGroup, "account:dave", MemberRole::Member, 3), 2)
                 .about_us,
             RelayReceiveOutcome::AboutUs::None);
-  EXPECT_EQ(run(GroupMembershipControlType::MemberRemoved, *GroupMembershipCodec::EncodeMemberRemoved(kHikeGroup, "account:carol", 4), 3)
+  EXPECT_EQ(run(GroupMembershipControlType::MemberRemoved,
+                *GroupMembershipCodec::EncodeMemberRemoved(kHikeGroup, "account:carol", 4), 3)
                 .about_us,
             RelayReceiveOutcome::AboutUs::None);
   // This account removed: news in the GROUP thread.
@@ -811,7 +812,7 @@ TEST(MessagingCrossCuttingTest, LaneMessageAppliesOnceAndIsNeverStored) {
   EXPECT_EQ(family.applied, 1);
   EXPECT_EQ(lane.StoredCount(), 0u) << "no transcript row, no twin thread";
 
-  const RelayReceiveOutcome again = lane.Ingest(envelope);  // relay redelivery / second transport
+  const RelayReceiveOutcome again = lane.Ingest(envelope); // relay redelivery / second transport
   EXPECT_EQ(again.decision, IngestDecision::BenignDuplicate);
   EXPECT_EQ(family.applied, 1);
 }
@@ -874,7 +875,7 @@ TEST(MessagingCrossCuttingTest, LaneRejectsABadSignature) {
   TestFamily family;
   lane.controls.Bind(family.Make("call", "test_signal", true, false));
   auto envelope = lane.harness.MakeControlEnvelope("lane-forged", TestControl("test_signal"), util::NowUnixMs());
-  envelope.timestamp += 1;  // signed field changed after signing
+  envelope.timestamp += 1; // signed field changed after signing
   EXPECT_EQ(lane.Ingest(envelope).decision, IngestDecision::HardReject);
   EXPECT_EQ(family.applied, 0);
 }

@@ -5,6 +5,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
+#include "feature/presenters/DeliveryNoticePlan.h"
 #include "feature/presenters/GroupEventText.h"
 #include "feature/presenters/HomeToday.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -33,12 +34,12 @@ namespace pbr {
 
 std::string ChatSessionKindName(const Thread& thread) {
   switch (thread.kind) {
-  case ThreadKind::Ai:
-    return "ai";
-  case ThreadKind::Group:
-    return "group";
-  case ThreadKind::Direct:
-    return thread.channel == ThreadChannel::E2e ? "private" : "public";
+    case ThreadKind::Ai:
+      return "ai";
+    case ThreadKind::Group:
+      return "group";
+    case ThreadKind::Direct:
+      return thread.channel == ThreadChannel::E2e ? "private" : "public";
   }
   return "public";
 }
@@ -250,18 +251,18 @@ bool MyReactionActive(const std::vector<ThreadMessage>& messages, const std::str
 
 const char* CloseChatPlanKindName(const CloseChatPlan::Kind kind) {
   switch (kind) {
-  case CloseChatPlan::Kind::Delete:
-    return "delete";
-  case CloseChatPlan::Kind::DeleteAi:
-    return "delete_ai";
-  case CloseChatPlan::Kind::Leave:
-    return "leave";
-  case CloseChatPlan::Kind::Dismiss:
-    return "dismiss";
-  case CloseChatPlan::Kind::LeaveAsOwner:
-    return "leave_as_owner";
-  case CloseChatPlan::Kind::Dissolve:
-    return "dissolve";
+    case CloseChatPlan::Kind::Delete:
+      return "delete";
+    case CloseChatPlan::Kind::DeleteAi:
+      return "delete_ai";
+    case CloseChatPlan::Kind::Leave:
+      return "leave";
+    case CloseChatPlan::Kind::Dismiss:
+      return "dismiss";
+    case CloseChatPlan::Kind::LeaveAsOwner:
+      return "leave_as_owner";
+    case CloseChatPlan::Kind::Dissolve:
+      return "dissolve";
   }
   return "?";
 }
@@ -366,7 +367,7 @@ ArchiveViews ResolveArchiveViews(const std::vector<ArchiveItem>& items, const bo
     }
     if (!item.is_ai) {
       ++views.archived_count;
-    } else if (item.listed) {  // an unlisted AI thread is not shown, so not counted
+    } else if (item.listed) { // an unlisted AI thread is not shown, so not counted
       ++views.archived_count_ai;
     }
   }
@@ -402,7 +403,7 @@ void ChatPresenter::Refresh() {
   const ArchiveViews views = ResolveArchiveViews(items, showing_archived_, showing_archived_ai_);
   next.archived_count = views.archived_count;
   next.archived_count_ai = views.archived_count_ai;
-  next.showing_archived = showing_archived_ = views.showing_archived;  // the last archived one left: back to the list
+  next.showing_archived = showing_archived_ = views.showing_archived; // the last archived one left: back to the list
   next.showing_archived_ai = showing_archived_ai_ = views.showing_archived_ai;
   const std::string active_id = facade_->ActiveThreadId();
   const int64_t now_ms = util::NowUnixMs();
@@ -517,7 +518,38 @@ void ChatPresenter::ToggleArchived() {
   Refresh();
 }
 
+bool ChatPresenter::ApplyDeliveryNotice(const DeliveryNotice& notice) {
+  const DeliveryNoticePlan plan = PlanDeliveryNotice(notice, util::NowUnixMs());
+  switch (plan.action) {
+    case DeliveryNoticePlan::Action::Nothing:
+      return false;
+    case DeliveryNoticePlan::Action::Toast:
+      return true;
+    case DeliveryNoticePlan::Action::TranscriptRow:
+      break;
+  }
+  IThreadStore* store = facade_ ? facade_->ThreadStore() : nullptr;
+  if (!store || !plan.row) {
+    return true;
+  }
+  // The same failure reported twice (each group member that missed, a retry) is one line.
+  if (auto present = store->HasMessageId(plan.row->thread_id, plan.row->id); present && *present) {
+    return false;
+  }
+  return !store->AppendMessage(*plan.row);
+}
+
 std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::string& local_account) {
+  // The latest row is a system line stored in English (a joined invitation, a blocked inviter, a rotate notice):
+  // the same words as its transcript line, in the UI language. Only a System row: a person may type these words.
+  if (LegacySystemLineText(thread.preview)) {
+    auto page = facade_->GetMessagesPage(thread.id, std::nullopt, 1);
+    if (page && !page->empty() && page->back().content_type == ChatContentType::System) {
+      if (auto line = LegacySystemLineText(page->back().text)) {
+        return *line;
+      }
+    }
+  }
   // A group whose latest row is a membership line previews the same words as its transcript shows (the stored
   // preview is the English text). Only a preview that is such a text costs a read of the latest message.
   if (thread.kind != ThreadKind::Group || !IsStoredGroupEventText(thread.preview)) {
@@ -549,7 +581,7 @@ void ChatPresenter::Mute(const std::string& thread_id, const SessionMuteChoice c
 void ChatPresenter::Unmute(const std::string& thread_id) {
   UpdatePrefs(thread_id, [](ThreadLocalPrefs& prefs) {
     prefs.muted_until = 0;
-    prefs.mute_mentions = false;  // a mute's own setting: the next mute starts with mentions alerting
+    prefs.mute_mentions = false; // a mute's own setting: the next mute starts with mentions alerting
   });
 }
 
@@ -565,7 +597,7 @@ void ChatPresenter::AskBeforeSharingAi(const std::string& thread_id) {
     Changed();
     return;
   }
-  ForgetCachedPrefs();  // the facade wrote the stored row, not the cache
+  ForgetCachedPrefs(); // the facade wrote the stored row, not the cache
   Refresh();
 }
 
@@ -645,7 +677,7 @@ Roe<std::string> ChatPresenter::BlockStranger(const std::string& peer_id) {
 ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {
   ChatGroupSheet sheet;
   if (!facade_ || facade_->IsGroupDissolved(group_id)) {
-    return sheet;  // an ended group has no owner to act and no one to remove (G016)
+    return sheet; // an ended group has no owner to act and no one to remove (G016)
   }
   std::string local_identity;
   if (auto identity = facade_->GetIdentity()) {
@@ -780,6 +812,9 @@ Roe<void> ChatPresenter::RevokeInviteLink(const std::string& group_id, const std
 std::string GroupActionFailureText(const Error& error) {
   if (error.message == group_roster_sync::kGroupDissolvedError) {
     return Tr(group_roster_sync::kGroupDissolvedError);
+  }
+  if (error.message == kGroupFullError) {
+    return Tr("chat.group.err.full");
   }
   if (error.message == "Group title required") {
     return Tr("chat.group.title_required");
@@ -934,7 +969,7 @@ std::string ChatPresenter::QuotePreview() const {
   size_t chars = 0;
   for (const char ch : quote_source_) {
     if ((static_cast<unsigned char>(ch) & 0xC0) != 0x80 && ++chars > kMaxPreviewChars) {
-      preview += "\xE2\x80\xA6";  // …
+      preview += "\xE2\x80\xA6"; // …
       break;
     }
     preview += (ch == '\n' || ch == '\r') ? ' ' : ch;
@@ -1091,7 +1126,7 @@ CloseChatPlan ChatPresenter::PlanClose(const std::string& thread_id) {
   }
   plan.group_id = *(*thread)->group_id;
   if (facade_->IsGroupDissolved(plan.group_id)) {
-    return plan;  // G016: the chat of a group that ended is deleted like any chat; nobody is left to tell
+    return plan; // G016: the chat of a group that ended is deleted like any chat; nobody is left to tell
   }
   std::string me;
   if (auto identity = facade_->GetIdentity()) {
@@ -1269,7 +1304,9 @@ Roe<void> ChatPresenter::HandOverAndClose(const std::string& thread_id, const st
   return CloseThread(thread_id);
 }
 
-void ChatPresenter::ForgetCachedPrefs() { prefs_.reset(); }
+void ChatPresenter::ForgetCachedPrefs() {
+  prefs_.reset();
+}
 
 void ChatPresenter::ForgetThread(const std::string& thread_id) {
   if (prefs_) {

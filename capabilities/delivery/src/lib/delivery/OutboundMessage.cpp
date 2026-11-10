@@ -16,8 +16,8 @@
 
 namespace pbr {
 
-ThreadMessage NewOutboundMessage(const std::string& thread_id, const std::string& text,
-                                 const SendRelayOptions& options, std::string id, const int64_t now_ms) {
+ThreadMessage NewOutboundMessage(const std::string& thread_id, const std::string& text, const SendRelayOptions& options,
+                                 std::string id, const int64_t now_ms) {
   ThreadMessage message;
   message.id = std::move(id);
   message.thread_id = thread_id;
@@ -55,7 +55,7 @@ Roe<void> CheckAnnotationCap(const IThreadStore& store, const std::string& threa
   }
   if (auto fields = ChatPayloadCodec::DecodeAnnotationJson(message.payload_json);
       fields && fields->annotation_type == kAnnotationTypeRetract) {
-    return {};  // the cap guards against reaction floods; it must never stop a delete
+    return {}; // the cap guards against reaction floods; it must never stop a delete
   }
   auto count = store.CountAnnotationsForTarget(thread_id, target_id);
   if (!count) {
@@ -260,7 +260,7 @@ RelayEnvelope EnvelopeFrom(const ThreadMessage& message, const EnvelopeSender& s
     envelope.body.e2e.sender_card = sender.card;
   }
   if (sender.card) {
-    envelope.body.e2e.sender_card_at = sender.card->getIf<int64_t>("issued_at");  // M021 d6: on every envelope
+    envelope.body.e2e.sender_card_at = sender.card->getIf<int64_t>("issued_at"); // M021 d6: on every envelope
   }
   if (copies.size() == 1) {
     const RelayCopy only = copies.front();

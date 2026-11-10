@@ -14,11 +14,11 @@ namespace pbr {
 
 std::vector<uint8_t> BuildRelayApiSendSignBytes(const RelayWireSendRecord& record, int64_t timestamp);
 
-std::vector<uint8_t> BuildRelayApiPollInboxSignBytes(const std::string& requester_contact_id,
-                                                     const std::string& cursor, int64_t timestamp);
+std::vector<uint8_t> BuildRelayApiPollInboxSignBytes(const std::string& requester_contact_id, const std::string& cursor,
+                                                     int64_t timestamp);
 
-std::vector<uint8_t> BuildRelayApiAckInboxSignBytes(const std::string& requester_contact_id,
-                                                    const std::string& cursor, int64_t timestamp);
+std::vector<uint8_t> BuildRelayApiAckInboxSignBytes(const std::string& requester_contact_id, const std::string& cursor,
+                                                    int64_t timestamp);
 
 std::vector<uint8_t> BuildRelayApiClearInboxSignBytes(const std::string& requester_contact_id,
                                                       const std::string& before_created_at, int64_t timestamp);

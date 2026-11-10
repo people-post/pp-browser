@@ -50,7 +50,7 @@ TEST(ThreadCpuTest, OwnNamesKeepEveryThreadApartForTheDeveloperLog) {
   TopThreadCpuDeltasByOwnName({{1, "amp io", 1.0}, {2, "", 1.0}, {3, "mesh.poll", 1.0}}, prev, 8);
   const auto top = TopThreadCpuDeltasByOwnName({{1, "amp io", 1.5}, {2, "", 1.1}, {3, "mesh.poll", 1.2}}, prev, 8);
   ASSERT_EQ(top.size(), 3u);
-  EXPECT_EQ(top[0].name, "amp_io");  // a space is not kept
+  EXPECT_EQ(top[0].name, "amp_io"); // a space is not kept
   EXPECT_NEAR(top[0].ms, 500.0, 1e-6);
   EXPECT_EQ(top[1].name, "mesh.poll");
   EXPECT_EQ(top[2].name, "unnamed");

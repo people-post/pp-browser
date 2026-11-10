@@ -35,12 +35,12 @@ const char* CallRelayRoleName(const CallRelayRole role) {
 
 const char* CallStandbyPriorityName(const CallStandbyPriority priority) {
   switch (priority) {
-  case CallStandbyPriority::High:
-    return "high";
-  case CallStandbyPriority::Medium:
-    return "medium";
-  case CallStandbyPriority::Low:
-    break;
+    case CallStandbyPriority::High:
+      return "high";
+    case CallStandbyPriority::Medium:
+      return "medium";
+    case CallStandbyPriority::Low:
+      break;
   }
   return "low";
 }
@@ -50,7 +50,7 @@ CallPathPolicy RelayOnlyPolicy(CallPathPolicy policy) {
   policy.punch_at_start = false;
   policy.upgrade_to_direct = false;
   policy.relay_role = CallRelayRole::Anchor;
-  policy.want_relay_standby = false;  // the relay is the primary, not a standby
+  policy.want_relay_standby = false; // the relay is the primary, not a standby
   return policy;
 }
 

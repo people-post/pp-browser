@@ -295,12 +295,12 @@ TEST_F(MessagingReadyTasksTest, ATeardownFreesARunWhoseWorkWasDropped) {
 TEST_F(MessagingReadyTasksTest, ASessionChangeKeepsOneRunAtATime) {
   tasks_->SyncPushDevices(); // on_link_imported
   ASSERT_EQ(jobs_.size(), 1u);
-  RunWorkerPart();           // its worker is running
-  ++session_;                // WireMessagingBindings
+  RunWorkerPart(); // its worker is running
+  ++session_;      // WireMessagingBindings
   tasks_->SyncPushDevices();
   EXPECT_EQ(jobs_.size(), 1u) << "no second binding beside the running one";
   EXPECT_EQ(push_calls_, 1);
-  RunUiPart();               // the first ends: one more is due
+  RunUiPart(); // the first ends: one more is due
   ASSERT_EQ(jobs_.size(), 1u);
   RunAll();
   EXPECT_EQ(push_calls_, 2);
@@ -387,10 +387,12 @@ TEST_F(MessagingReadyTasksTest, AStoppedRenewalGivesUpTheWaitWithinASlice) {
   std::atomic<bool> cancelled{false};
   std::atomic<int> renews{0};
   auto renewal = std::async(std::launch::async, [&]() {
-    return RunSharedBriefKeyRenewal(*brief_run_, kBriefKeyMintWait, [&]() { return cancelled.load(); }, [&]() {
-      ++renews;
-      return 1;
-    });
+    return RunSharedBriefKeyRenewal(
+        *brief_run_, kBriefKeyMintWait, [&]() { return cancelled.load(); },
+        [&]() {
+          ++renews;
+          return 1;
+        });
   });
   std::this_thread::sleep_for(50ms);
   const auto stopped_at = std::chrono::steady_clock::now();

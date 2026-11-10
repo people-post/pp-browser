@@ -1,9 +1,6 @@
 #include "foundation/platform/IosPushDeviceRegistrar.h"
 
 #include "common/IPushDeviceRegistrar.h"
-#if defined(PP_IOS_CALLKIT)
-#include "foundation/platform/IosCallSystemUi.h"
-#endif
 
 #include <mutex>
 #include <string>
@@ -55,14 +52,6 @@ Roe<std::string> IosPushDeviceRegistrar::GetPushToken() {
     return g_cached_apns_token;
   }
   return Error("APNs token not available yet");
-}
-
-std::string IosPushDeviceRegistrar::VoipPushToken() {
-#if defined(PP_IOS_CALLKIT)
-  return IosCachedVoipToken();
-#else
-  return {};
-#endif
 }
 
 std::string IosPushDeviceRegistrar::DeviceId() const {

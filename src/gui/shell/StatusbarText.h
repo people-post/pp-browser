@@ -65,12 +65,11 @@ struct StatusbarClusterSnapshot {
   bool operator==(const StatusbarClusterSnapshot& other) const {
     return brief == other.brief && direct == other.direct && inbound == other.inbound &&
            help_visible == other.help_visible && label == other.label && label_tone == other.label_tone &&
-           brief_title == other.brief_title && direct_title == other.direct_title &&
-           help_title == other.help_title && inbound_title == other.inbound_title &&
-           load_circuit_visible == other.load_circuit_visible &&
-           load_media_visible == other.load_media_visible &&
-           load_circuit_label == other.load_circuit_label && load_media_label == other.load_media_label &&
-           load_circuit_title == other.load_circuit_title && load_media_title == other.load_media_title;
+           brief_title == other.brief_title && direct_title == other.direct_title && help_title == other.help_title &&
+           inbound_title == other.inbound_title && load_circuit_visible == other.load_circuit_visible &&
+           load_media_visible == other.load_media_visible && load_circuit_label == other.load_circuit_label &&
+           load_media_label == other.load_media_label && load_circuit_title == other.load_circuit_title &&
+           load_media_title == other.load_media_title;
   }
   bool operator!=(const StatusbarClusterSnapshot& other) const { return !(*this == other); }
 };
@@ -106,21 +105,17 @@ struct StatusbarPopoverSnapshot {
 
   bool operator==(const StatusbarPopoverSnapshot& other) const {
     return messaging_ready == other.messaging_ready && brief_label == other.brief_label &&
-           direct_label == other.direct_label &&
-           reachability_status_label == other.reachability_status_label &&
+           direct_label == other.direct_label && reachability_status_label == other.reachability_status_label &&
            reachability_summary == other.reachability_summary && help_visible == other.help_visible &&
-           help_label == other.help_label && show_upnp == other.show_upnp &&
-           upnp_mapped == other.upnp_mapped && upnp_label == other.upnp_label &&
-           last_error == other.last_error && show_load == other.show_load &&
+           help_label == other.help_label && show_upnp == other.show_upnp && upnp_mapped == other.upnp_mapped &&
+           upnp_label == other.upnp_label && last_error == other.last_error && show_load == other.show_load &&
            circuit_bridges == other.circuit_bridges && media_sessions == other.media_sessions &&
-           media_participants == other.media_participants &&
-           circuit_load_label == other.circuit_load_label &&
+           media_participants == other.media_participants && circuit_load_label == other.circuit_load_label &&
            media_sessions_label == other.media_sessions_label &&
            media_participants_label == other.media_participants_label && show_network == other.show_network &&
-           network_links_label == other.network_links_label &&
-           network_parked_label == other.network_parked_label && network_rate_label == other.network_rate_label &&
-           network_rtt_label == other.network_rtt_label && network_resend_label == other.network_resend_label &&
-           relay_rate_label == other.relay_rate_label;
+           network_links_label == other.network_links_label && network_parked_label == other.network_parked_label &&
+           network_rate_label == other.network_rate_label && network_rtt_label == other.network_rtt_label &&
+           network_resend_label == other.network_resend_label && relay_rate_label == other.relay_rate_label;
   }
   bool operator!=(const StatusbarPopoverSnapshot& other) const { return !(*this == other); }
 };
@@ -128,15 +123,13 @@ struct StatusbarPopoverSnapshot {
 /** The words and slots the status bar shows for what was read. */
 StatusbarClusterSnapshot BuildStatusbarClusterSnapshot(bool messaging_ready, BriefRelayHealth brief_health,
                                                        bool host_running, bool has_mesh_error,
-                                                       mesh::ReachabilityStatus reachability,
-                                                       bool help_network_enabled,
+                                                       mesh::ReachabilityStatus reachability, bool help_network_enabled,
                                                        const mesh::RelayRuntimeStats& load = {});
 
 StatusbarPopoverSnapshot BuildStatusbarPopoverSnapshot(bool messaging_ready, BriefRelayHealth brief_health,
                                                        bool host_running, const std::string& last_error,
                                                        mesh::ReachabilityStatus reachability, bool has_global_ipv6,
-                                                       bool dial_back_ok, bool upnp_mapped,
-                                                       bool help_network_enabled,
+                                                       bool dial_back_ok, bool upnp_mapped, bool help_network_enabled,
                                                        const mesh::RelayRuntimeStats& load = {},
                                                        const MeshTrafficView& traffic = {});
 

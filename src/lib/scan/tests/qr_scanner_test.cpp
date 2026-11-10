@@ -39,12 +39,12 @@ struct FakeState {
   CameraRequestFormat requested_format;
   std::string error;
   bool no_frames = false;
-  int rotate_cw = 0;  // geometry the fake camera reports
-  bool pre_rotated = false;  // frames arrive rotated so that rotate_cw makes them upright
+  int rotate_cw = 0;        // geometry the fake camera reports
+  bool pre_rotated = false; // frames arrive rotated so that rotate_cw makes them upright
   std::atomic<bool> permission_pending{false};
   bool permission_denied = false; // the OS refused access (what SDL reports as permission state < 0)
   bool zoom_required = false;
-  float blank_until_zoom = 0.f;  // frames show nothing at all below this magnification
+  float blank_until_zoom = 0.f; // frames show nothing at all below this magnification
   int candidate_offset_x = 0;
   std::atomic<float> zoom{1.f};
   bool slow_zoom = false;
@@ -92,8 +92,9 @@ public:
       distant.height = 480;
       distant.rgba.assign(640 * 480 * 4, 255);
       for (int y = 0; y < damaged.height; ++y) {
-        const size_t at = static_cast<size_t>((y + (480 - damaged.height) / 2) * 640 +
-                                            (640 - damaged.width) / 2 + state_.candidate_offset_x) * 4;
+        const size_t at = static_cast<size_t>((y + (480 - damaged.height) / 2) * 640 + (640 - damaged.width) / 2 +
+                                              state_.candidate_offset_x) *
+                          4;
         std::copy_n(damaged.rgba.data() + static_cast<size_t>(y * damaged.width) * 4,
                     static_cast<size_t>(damaged.width) * 4, distant.rgba.data() + at);
       }
@@ -102,8 +103,12 @@ public:
     return state_.no_frames ? std::nullopt : std::optional<VideoFrameRgba>(frame_);
   }
   bool SetZoom(float factor) override {
-    if (!state_.zoom_required || !state_.native_zoom_supported) { return false; }
-    if (state_.zoom_requests++ == 0) { state_.zoom_started = std::chrono::steady_clock::now(); }
+    if (!state_.zoom_required || !state_.native_zoom_supported) {
+      return false;
+    }
+    if (state_.zoom_requests++ == 0) {
+      state_.zoom_started = std::chrono::steady_clock::now();
+    }
     state_.zoom = factor;
     return true;
   }
@@ -117,18 +122,19 @@ public:
     const bool pending = ZoomPending();
     return {state_.zoom_required && state_.native_zoom_supported, pending ? 1.f : state_.zoom.load(), 3.f, pending};
   }
+
 private:
-  bool ZoomPending() const {
-    return state_.slow_zoom && state_.zoom_requests > 0 && !state_.zoom_settled;
-  }
+  bool ZoomPending() const { return state_.slow_zoom && state_.zoom_requests > 0 && !state_.zoom_settled; }
   FakeState& state_;
   VideoFrameRgba frame_;
 };
 class FakeBackend final : public IMediaDeviceBackend {
 public:
   explicit FakeBackend(FakeState& state) : state_(state) {}
-  std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind, const AudioDeviceFormat&,
-      const std::function<bool()>&, std::string*) override { return nullptr; }
+  std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind, const AudioDeviceFormat&, const std::function<bool()>&,
+                                            std::string*) override {
+    return nullptr;
+  }
   std::unique_ptr<ICameraEndpoint> OpenCamera(const CameraRequestFormat& format, std::string*) override {
     const int open = ++state_.opens;
     state_.rear_requested = !format.prefer_front_facing;
@@ -137,13 +143,16 @@ public:
     state_.cv.wait(lock, [&] { return !state_.block_open || state_.release_open; });
     return std::make_unique<FakeCamera>(state_, open == 1 ? "old payload" : "new payload");
   }
+
 private:
   FakeState& state_;
 };
 bool WaitFor(const std::function<bool()>& predicate, std::chrono::seconds timeout = std::chrono::seconds(3)) {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   do {
-    if (predicate()) { return true; }
+    if (predicate()) {
+      return true;
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
   } while (std::chrono::steady_clock::now() < deadline);
   return false;
@@ -165,7 +174,10 @@ TEST(QrScannerTest, DeliversPreviewAndPayloadThenReleasesCamera) {
   QrScanner scanner(devices);
   scanner.Start();
   QrScanner::Update result;
-  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return result.text.has_value(); }));
+  ASSERT_TRUE(WaitFor([&] {
+    result = scanner.Poll();
+    return result.text.has_value();
+  }));
   EXPECT_EQ(result.text, "old payload");
   ASSERT_TRUE(result.preview);
   EXPECT_TRUE(state.rear_requested);
@@ -194,7 +206,10 @@ TEST(QrScannerTest, StopAndRestartDiscardBlockedOldOpenWithoutBlockingUi) {
   }
   ASSERT_TRUE(opening);
   QrScanner::Update result;
-  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return result.text.has_value(); }));
+  ASSERT_TRUE(WaitFor([&] {
+    result = scanner.Poll();
+    return result.text.has_value();
+  }));
   EXPECT_EQ(result.text, "new payload");
   scanner.Shutdown();
   EXPECT_TRUE(WaitFor([&] { return state.closes == 2; }));
@@ -221,7 +236,10 @@ TEST(QrScannerTest, ReportsPermissionDenialAndDeviceOpenFailure) {
   QrScanner scanner(devices);
   scanner.Start();
   QrScanner::Update result;
-  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }));
+  ASSERT_TRUE(WaitFor([&] {
+    result = scanner.Poll();
+    return !result.error.empty();
+  }));
   EXPECT_EQ(result.error, state.error);
   EXPECT_EQ(result.error_kind, QrScanner::ErrorKind::PermissionDenied);
   EXPECT_FALSE(result.text);
@@ -242,7 +260,12 @@ TEST(QrScannerTest, MissingFramesBecomeVisibleErrorAndReleaseCamera) {
   QrScanner scanner(devices);
   scanner.Start();
   QrScanner::Update result;
-  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }, std::chrono::seconds(18)));
+  ASSERT_TRUE(WaitFor(
+      [&] {
+        result = scanner.Poll();
+        return !result.error.empty();
+      },
+      std::chrono::seconds(18)));
   EXPECT_NE(result.error.find("no frames"), std::string::npos);
   EXPECT_EQ(result.error_kind, QrScanner::ErrorKind::Other);
   EXPECT_TRUE(WaitFor([&] { return state.closes == 1; }));
@@ -257,9 +280,14 @@ TEST(QrScannerTest, PermissionPromptDoesNotCountTowardsNoFrameTimeout) {
   ASSERT_TRUE(WaitFor([&] { return state.opens == 1; }));
   std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   EXPECT_TRUE(scanner.Poll().error.empty());
-  state.permission_pending = false;  // user granted, still no frames: the clock starts now
+  state.permission_pending = false; // user granted, still no frames: the clock starts now
   QrScanner::Update result;
-  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }, std::chrono::seconds(10)));
+  ASSERT_TRUE(WaitFor(
+      [&] {
+        result = scanner.Poll();
+        return !result.error.empty();
+      },
+      std::chrono::seconds(10)));
   EXPECT_NE(result.error.find("no frames"), std::string::npos);
 }
 TEST(QrScannerTest, QuarterTurnGeometryDecodesAndKeepsPreviewOrientation) {
@@ -271,12 +299,15 @@ TEST(QrScannerTest, QuarterTurnGeometryDecodesAndKeepsPreviewOrientation) {
     QrScanner scanner(devices);
     scanner.Start();
     QrScanner::Update result;
-    ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return result.text.has_value(); })) << rotate;
+    ASSERT_TRUE(WaitFor([&] {
+      result = scanner.Poll();
+      return result.text.has_value();
+    })) << rotate;
     EXPECT_EQ(result.text, "old payload") << rotate;
   }
   FakeState blank;
   blank.rotate_cw = 90;
-  blank.blank_until_zoom = 99.f;  // 640x480 white frames
+  blank.blank_until_zoom = 99.f; // 640x480 white frames
   MediaDeviceArbiter devices(std::make_unique<FakeBackend>(blank));
   QrScanner scanner(devices);
   scanner.Start();
@@ -284,7 +315,7 @@ TEST(QrScannerTest, QuarterTurnGeometryDecodesAndKeepsPreviewOrientation) {
   ASSERT_TRUE(WaitFor([&] {
     auto update = scanner.Poll();
     if (update.preview) {
-      EXPECT_EQ(update.preview->width, 480);  // the decoded and the cheap preview path agree
+      EXPECT_EQ(update.preview->width, 480); // the decoded and the cheap preview path agree
       EXPECT_EQ(update.preview->height, 640);
       ++previews;
     }
@@ -312,7 +343,10 @@ TEST(QrScannerTest, ReportsCameraAlreadyHeldWithoutOpeningAnother) {
   QrScanner scanner(devices, std::chrono::milliseconds(300));
   scanner.Start();
   QrScanner::Update result;
-  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }));
+  ASSERT_TRUE(WaitFor([&] {
+    result = scanner.Poll();
+    return !result.error.empty();
+  }));
   EXPECT_NE(result.error.find("held by call"), std::string::npos);
   EXPECT_EQ(result.error_kind, QrScanner::ErrorKind::CameraBusy);
   EXPECT_EQ(state.opens, 1);
@@ -328,7 +362,10 @@ TEST(QrScannerTest, DetectedUnreadableDistantCodeRequestsZoomThenReadsPayload) {
   QrScanner scanner(devices);
   scanner.Start();
   QrScanner::Update result;
-  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return result.text.has_value(); }));
+  ASSERT_TRUE(WaitFor([&] {
+    result = scanner.Poll();
+    return result.text.has_value();
+  }));
   EXPECT_GT(state.zoom.load(), 1.f);
   EXPECT_LE(state.zoom.load(), 3.f);
   EXPECT_EQ(result.text, "old payload");
@@ -376,7 +413,12 @@ TEST(QrScannerTest, NothingInViewHuntsThroughZoomLevelsUntilTheCodeAppears) {
   QrScanner scanner(devices);
   scanner.Start();
   QrScanner::Update result;
-  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return result.text.has_value(); }, std::chrono::seconds(8)));
+  ASSERT_TRUE(WaitFor(
+      [&] {
+        result = scanner.Poll();
+        return result.text.has_value();
+      },
+      std::chrono::seconds(8)));
   EXPECT_EQ(result.text, "old payload");
   EXPECT_GE(state.zoom.load(), 2.f);
   EXPECT_LE(state.zoom.load(), 3.f);
@@ -390,7 +432,10 @@ TEST(QrScannerTest, CameraWithoutNativeZoomUsesBoundedSoftwarePreview) {
   QrScanner scanner(devices);
   scanner.Start();
   QrScanner::Update result;
-  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return result.preview.has_value(); }));
+  ASSERT_TRUE(WaitFor([&] {
+    result = scanner.Poll();
+    return result.preview.has_value();
+  }));
   EXPECT_LT(result.preview->width, 640);
   EXPECT_LT(result.preview->height, 480);
   EXPECT_EQ(state.zoom_requests, 0);

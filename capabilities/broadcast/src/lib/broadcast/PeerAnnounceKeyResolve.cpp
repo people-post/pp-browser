@@ -8,9 +8,10 @@
 
 namespace pbr {
 
-std::optional<std::vector<uint8_t>> ResolvePeerAnnouncePublisherKey(
-    const std::string_view tip_peer_id, const std::string_view local_peer_id,
-    const std::vector<uint8_t>& local_device_public_key, const StoredSigningKeyLookup& stored_signing_key) {
+std::optional<std::vector<uint8_t>> ResolvePeerAnnouncePublisherKey(const std::string_view tip_peer_id,
+                                                                    const std::string_view local_peer_id,
+                                                                    const std::vector<uint8_t>& local_device_public_key,
+                                                                    const StoredSigningKeyLookup& stored_signing_key) {
   if (tip_peer_id.empty()) {
     return std::nullopt;
   }
@@ -22,8 +23,7 @@ std::optional<std::vector<uint8_t>> ResolvePeerAnnouncePublisherKey(
   if (!stored_signing_key) {
     return std::nullopt;
   }
-  const auto stored =
-      stored_signing_key(ContactIdKindToString(mesh::ContactIdKind::PeerId), std::string(tip_peer_id));
+  const auto stored = stored_signing_key(ContactIdKindToString(mesh::ContactIdKind::PeerId), std::string(tip_peer_id));
   if (!stored || stored->empty()) {
     return std::nullopt;
   }

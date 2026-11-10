@@ -53,20 +53,18 @@ Roe<ByteVector> LoadAttachmentPlaintext(const CasStore& content, const std::vect
 Roe<std::string> EnsureAttachmentView(const std::string& profile_dir, const CasStore& content,
                                       const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                                       const std::string& mime, const std::string& filename, const ByteVector& dek) {
-  return EnsureAttachmentViewPath(profile_dir, thread_id, content_hash, mime, filename, [&]() {
-    return LoadAttachmentPlaintext(content, content_hash, dek);
-  });
+  return EnsureAttachmentViewPath(profile_dir, thread_id, content_hash, mime, filename,
+                                  [&]() { return LoadAttachmentPlaintext(content, content_hash, dek); });
 }
 
 Roe<std::string> EnsureAttachmentPosterFromContent(const std::string& profile_dir, const CasStore& content,
-                                                   const std::string& thread_id, const std::vector<uint8_t>& content_hash,
-                                                   const std::string& mime, const std::string& filename,
-                                                   const ByteVector& dek, const uint64_t known_byte_length,
-                                                   const uint64_t max_receive_bytes) {
+                                                   const std::string& thread_id,
+                                                   const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                                   const std::string& filename, const ByteVector& dek,
+                                                   const uint64_t known_byte_length, const uint64_t max_receive_bytes) {
   return EnsureAttachmentPoster(
       profile_dir, thread_id, content_hash, mime, filename,
-      [&]() { return LoadAttachmentPlaintext(content, content_hash, dek); }, known_byte_length,
-      max_receive_bytes);
+      [&]() { return LoadAttachmentPlaintext(content, content_hash, dek); }, known_byte_length, max_receive_bytes);
 }
 
 Roe<std::string> EnsureAttachmentImageThumbnailFromContent(const std::string& profile_dir, const CasStore& content,
@@ -82,10 +80,9 @@ Roe<std::string> EnsureAttachmentImageThumbnailFromContent(const std::string& pr
   return EnsureAttachmentImageThumbnail(profile_dir, thread_id, content_hash, mime, *plain);
 }
 
-Roe<void> CopyAttachmentPlaintext(const std::string& profile_dir, CasStore& content,
-                                  const std::string& thread_id, const ChatAttachmentFields& fields,
-                                  const ByteVector& plaintext, const ByteVector& dek,
-                                  const uint64_t max_receive_bytes) {
+Roe<void> CopyAttachmentPlaintext(const std::string& profile_dir, CasStore& content, const std::string& thread_id,
+                                  const ChatAttachmentFields& fields, const ByteVector& plaintext,
+                                  const ByteVector& dek, const uint64_t max_receive_bytes) {
   if (plaintext.empty()) {
     return Error("Sent attachment is empty");
   }

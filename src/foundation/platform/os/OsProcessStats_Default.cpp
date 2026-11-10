@@ -5,7 +5,7 @@
 namespace pbr {
 
 OsProcessStats ReadOsProcessStats() {
-  return {};  // no backend yet (pp-node runs on Linux)
+  return {}; // no backend yet (pp-node runs on Linux)
 }
 
 } // namespace pbr

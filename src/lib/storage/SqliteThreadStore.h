@@ -92,8 +92,7 @@ private:
   Roe<ThreadMessage> AppendMessageImpl(const ThreadMessage& message, bool upsert);
   Roe<ThreadMessage> ReadMessageRow(const std::string& thread_id, sqlite3_stmt* stmt) const;
   Roe<ByteVector> EncryptMessageContent(const std::string& thread_id, const ThreadMessage& message) const;
-  Roe<std::optional<ByteVector>> EncryptPreviewBlob(const std::string& thread_id,
-                                                   const std::string& preview) const;
+  Roe<std::optional<ByteVector>> EncryptPreviewBlob(const std::string& thread_id, const std::string& preview) const;
   Roe<std::string> DecryptPreviewBlob(const std::string& thread_id, const void* blob, int blob_size) const;
   Roe<int64_t> NextDisplayOrder(sqlite3* thread_db) const;
   Roe<void> UpdateThreadCatalogFromMessage(const ThreadMessage& message, bool increment_unread) const;

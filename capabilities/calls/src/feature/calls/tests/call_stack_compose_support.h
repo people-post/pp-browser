@@ -60,9 +60,7 @@ public:
   bool IsDialable(const std::string& peer_key) const override {
     return endpoints.count(peer_key) > 0 || connected.count(peer_key) > 0;
   }
-  bool IsConnected(const std::string& peer_key) const override {
-    return connected.count(peer_key) > 0;
-  }
+  bool IsConnected(const std::string& peer_key) const override { return connected.count(peer_key) > 0; }
   std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const override {
     const auto it = endpoints.find(peer_key);
     if (it != endpoints.end()) {
@@ -89,14 +87,15 @@ public:
   CallMediaSessionPhase Phase() const override {
     return active ? CallMediaSessionPhase::MediaReady : CallMediaSessionPhase::Idle;
   }
-  void Detach() override {
+  void Detach(const std::string& /*call_id*/) override {
     active = false;
     ++detach_calls;
   }
+  void DetachAll() override { Detach({}); }
   /** K014: a hang-up says bye (counted), then detaches. */
-  void HangUp() override {
+  void HangUp(const std::string& call_id) override {
     ++hangup_calls;
-    Detach();
+    Detach(call_id);
   }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     std::function<void(CallMediaRoe)> on_done, int /*timeout_ms*/) override {
@@ -123,14 +122,12 @@ public:
     }
   }
   CallMediaRoe Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    int timeout_ms) override {
+                       int timeout_ms) override {
     CallMediaRoe out;
     ConnectAsync(params, std::move(callbacks), [&](CallMediaRoe r) { out = std::move(r); }, timeout_ms);
     return out;
   }
-  Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override {
-    return {};
-  }
+  Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override { return {}; }
   Roe<void> SendMedia(uint8_t /*channel*/, const std::vector<uint8_t>& /*payload*/, uint32_t /*seq*/, uint8_t /*mark*/,
                       uint64_t /*instance*/) override {
     return {};
@@ -183,7 +180,7 @@ struct StackSide {
   std::unique_ptr<InMemoryDeliveryStore> store;
   std::unique_ptr<ContactsStore> contacts;
   std::unique_ptr<IdentityStore> identity;
-  IPeerSessionStore* psk = nullptr;  // the store's peer sessions (one row with its threads, as in the app)
+  IPeerSessionStore* psk = nullptr; // the store's peer sessions (one row with its threads, as in the app)
   // Outlive the stack (connectivity first: the relay is built on it).
   std::unique_ptr<mesh::MeshConnectivity> connectivity = std::make_unique<mesh::MeshConnectivity>();
   std::unique_ptr<mesh::MeshMediaRelay> media_relay = std::make_unique<mesh::MeshMediaRelay>(*connectivity);
@@ -250,8 +247,9 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   deps.delivery.ensure_peer_session_key = [&side](const std::string& peer) {
     return SeededSessionKey(*side.psk, peer);
   };
+  deps.delivery.held_peer_session_key = deps.delivery.ensure_peer_session_key;
   deps.delivery.send_control = [&side](const std::string& peer, const ThreadMessage& control,
-                                       const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
+                                       bool /*urgent*/) -> Roe<void> {
     if (side.on_send) {
       side.on_send(peer, control);
     }

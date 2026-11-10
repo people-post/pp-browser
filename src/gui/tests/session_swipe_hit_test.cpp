@@ -132,7 +132,9 @@ protected:
     context_->Update();
   }
 
-  static std::string Action(const SessionSwipeAction action) { return "t1:" + std::to_string(static_cast<int>(action)); }
+  static std::string Action(const SessionSwipeAction action) {
+    return "t1:" + std::to_string(static_cast<int>(action));
+  }
 
   NullRender renderer_;
   bool initialized_ = false;

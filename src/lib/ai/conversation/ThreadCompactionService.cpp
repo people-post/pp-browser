@@ -27,8 +27,7 @@ std::string BuildCompactionPrompt(const std::vector<ThreadMessage>& messages,
   std::ostringstream prompt;
   prompt << "Summarize the following conversation transcript for long-term agent memory.\n"
          << "Preserve key facts, preferences, decisions, and open questions.\n"
-         << "Write concise prose (no bullet lists unless necessary). Max "
-         << kMaxSummaryBytes << " bytes.\n\n";
+         << "Write concise prose (no bullet lists unless necessary). Max " << kMaxSummaryBytes << " bytes.\n\n";
   if (existing && !existing->text.empty()) {
     prompt << "Previous summary (merge and update; do not repeat verbatim):\n" << existing->text << "\n\n";
   }
@@ -96,7 +95,8 @@ void ThreadCompactionService::RunCompaction(const std::string& thread_id) {
     return;
   }
 
-  std::vector<ThreadMessage> to_compact(messages->begin(), messages->begin() + static_cast<std::ptrdiff_t>(compact_count));
+  std::vector<ThreadMessage> to_compact(messages->begin(),
+                                        messages->begin() + static_cast<std::ptrdiff_t>(compact_count));
   const int64_t compacted_through = to_compact.back().display_order;
 
   std::optional<ConversationSummary> existing;

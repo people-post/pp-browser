@@ -18,8 +18,8 @@ namespace pbr {
  */
 inline std::string AccountInviteText(const std::string& nickname, const std::string& account_id,
                                      const std::string& locator) {
-  std::string text = Tr("settings.profile.invite_text",
-                        {{"name", nickname.empty() ? account_id : nickname}, {"id", account_id}});
+  std::string text =
+      Tr("settings.profile.invite_text", {{"name", nickname.empty() ? account_id : nickname}, {"id", account_id}});
   if (!locator.empty()) {
     text += "\n" + Tr("settings.profile.invite_locator", {{"locator", locator}});
   }

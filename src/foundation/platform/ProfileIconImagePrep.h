@@ -1,8 +1,14 @@
 #pragma once
 
 #include "common/Error.h"
+#include "foundation/platform/ImageAffine.h"
+
+#include <SDL3/SDL_rect.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -16,9 +22,57 @@ struct EncodedProfileIcon {
   std::string file_extension;
 };
 
-/** Load, scale, and encode an image file for relay profile icon upload. */
-Roe<EncodedProfileIcon> PrepareProfileIconFromFile(const std::string& path,
-                                                    size_t max_bytes = 512u * 1024u,
-                                                    int max_dimension = 256);
+/**
+ * What the avatar crop page chose: the square `side` x `side` picture whose pixels (u, v) are read from the upright
+ * source at `affine` (u, v) (AvatarCropFrame::OutputAffine; SampleAffine does the reading).
+ */
+struct ProfileIconCrop {
+  ImageAffine affine;
+  int side = 0;
+};
+
+/** What a picked photo may weigh: a larger file, or a picture with more pixels, is refused as "too large". */
+struct ProfilePhotoLimits {
+  size_t max_file_bytes = 64u * 1024u * 1024u;
+  int64_t max_pixels = 100'000'000;
+};
+
+/** A picture file decoded upright for the crop page: its real size and a copy of at most `max_edge` px on the long side. */
+struct ProfilePhotoPreview {
+  int full_width = 0;
+  int full_height = 0;
+  int width = 0;
+  int height = 0;
+  /** RGBA, width * height * 4 bytes. */
+  std::vector<uint8_t> rgba;
+};
+
+/** Reads and decodes `path` the way PrepareProfileIconFromFile does (SDL IO, upright). The error carries the
+ *  "can't be opened" words. Runs on a worker thread. */
+Roe<ProfilePhotoPreview> DecodeProfilePhotoPreview(const std::string& path, int max_edge = 2048,
+                                                   ProfilePhotoLimits limits = {});
+
+/** What the crop page hands the caller's upload step to answer with. */
+struct AvatarCropReply {
+  /** The step ended: true = the photo is up (the page closes), false = anything else (the page unlocks and stays). */
+  std::function<void(bool ok)> finished;
+  /** The upload itself started (true) or ended (false); the PIN prompt before it is not "uploading". */
+  std::function<void(bool running)> uploading;
+};
+
+/**
+ * Load, straighten, crop, scale, and encode an image file for relay profile icon upload.
+ * The file is read through SDL's IO (Android's picker hands back content:// addresses only SDL can open) and
+ * turned upright by its EXIF orientation. `crop` is the part to keep, in pixels of the upright picture (a rectangle
+ * reaching outside is clamped to the picture); without it the largest centred square is kept, so the icon is square
+ * either way. With `affine_crop` (the crop page) the picture is instead resampled through it (decode upright ->
+ * SampleAffine -> scale -> encode); passing both `crop` and `affine_crop` is an error. A file over
+ * `limits.max_file_bytes`, or a picture over `limits.max_pixels`, is refused as too large. Failures the person can act on carry their own words (Error::user): the picture cannot be opened, or
+ * it is still too large after scaling.
+ */
+Roe<EncodedProfileIcon> PrepareProfileIconFromFile(const std::string& path, size_t max_bytes = 512u * 1024u,
+                                                   int max_dimension = 512, std::optional<SDL_Rect> crop = std::nullopt,
+                                                   std::optional<ProfileIconCrop> affine_crop = std::nullopt,
+                                                   ProfilePhotoLimits limits = {});
 
 } // namespace pbr

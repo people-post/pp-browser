@@ -32,8 +32,7 @@ struct PinPromptPorts {
    * Current PIN (checked by `check_old`) → new PIN → again → `change`. With `current_pin` (the app default PIN) the
    * first step is skipped and `change` gets it as the old PIN.
    */
-  std::function<void(PinGateCheck check_old, PinGateChange change, std::optional<SecretText> current_pin)>
-      show_change;
+  std::function<void(PinGateCheck check_old, PinGateChange change, std::optional<SecretText> current_pin)> show_change;
 };
 
 } // namespace pbr

@@ -9,8 +9,7 @@ ContactsShellProjection ProjectContactsShell(const ContactsSurfaceSnapshot& surf
   return projection;
 }
 
-ShellChromeOp ClassifyContactsChromeUpdate(const ContactsShellProjection& synced,
-                                           const ContactsShellProjection& next) {
+ShellChromeOp ClassifyContactsChromeUpdate(const ContactsShellProjection& synced, const ContactsShellProjection& next) {
   if (synced.detail_open != next.detail_open) {
     return ShellChromeOp::SyncLayout;
   }

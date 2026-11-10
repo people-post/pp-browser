@@ -12,8 +12,9 @@ using Clock = std::chrono::steady_clock;
 
 } // namespace
 
-CallMediaAmpTransport::CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, IoPump io_pump)
-    : coordinator_(runtime), io_pump_(std::move(io_pump)) {}
+CallMediaAmpTransport::CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, const pp::adp::Clock& timer_clock,
+                                             IoPump io_pump)
+    : coordinator_(runtime, timer_clock), io_pump_(std::move(io_pump)) {}
 
 CallMediaAmpTransport::~CallMediaAmpTransport() {
   alive_->store(false, std::memory_order_release);
@@ -45,14 +46,14 @@ void CallMediaAmpTransport::SetInboundHandler(CallMediaInboundHandler handler) {
       active_params_ = params;
     }
     if (!handler) {
-      answer(std::move(params), {});  // no key: NACK
+      answer(std::move(params), {}); // no key: NACK
       return;
     }
     handler(std::move(params), [this, alive, answer = std::move(answer)](CallMediaDirectConnectParams answered,
                                                                          CallMediaDirectCallbacks cbs) {
       if (alive->load(std::memory_order_acquire)) {
         std::lock_guard lock(mu_);
-        active_params_ = answered;  // leg id is assigned after the answer; refresh via PrimaryLegId()
+        active_params_ = answered; // leg id is assigned after the answer; refresh via PrimaryLegId()
       }
       answer(std::move(answered), std::move(cbs));
     });
@@ -100,7 +101,9 @@ void CallMediaAmpTransport::MigrateTo(const CallMediaLinkKind kind, std::functio
   coordinator_.MigrateLegToKind(leg, kind, std::move(done));
 }
 
-void CallMediaAmpTransport::SetAutoMigrateToDirect(const bool allow) { coordinator_.SetAutoMigrateToDirect(allow); }
+void CallMediaAmpTransport::SetAutoMigrateToDirect(const bool allow) {
+  coordinator_.SetAutoMigrateToDirect(allow);
+}
 
 CallMediaLinkKind CallMediaAmpTransport::StandbyLinkKind() const {
   const CallMediaLegId leg = ActiveLegId();
@@ -130,20 +133,33 @@ CallMediaLinkKind CallMediaAmpTransport::ActiveLinkKind() const {
   return coordinator_.ActiveLinkKind();
 }
 
-void CallMediaAmpTransport::Detach() {
-  coordinator_.Detach();
+void CallMediaAmpTransport::Detach(const std::string& call_id) {
+  coordinator_.DetachCall(call_id);
+  ForgetCall(call_id);
+}
+
+void CallMediaAmpTransport::DetachAll() {
+  coordinator_.DetachAll();
   std::lock_guard lock(mu_);
   active_leg_ = {};
 }
 
-void CallMediaAmpTransport::HangUp() {
-  coordinator_.HangUp();
-  std::lock_guard lock(mu_);
-  active_leg_ = {};
+void CallMediaAmpTransport::HangUp(const std::string& call_id) {
+  coordinator_.HangUpCall(call_id);
+  ForgetCall(call_id);
 }
 
-void CallMediaAmpTransport::ConnectAsync(const CallMediaDirectConnectParams& params,
-                                         CallMediaDirectCallbacks callbacks,
+void CallMediaAmpTransport::ForgetCall(const std::string& call_id) {
+  if (call_id.empty()) {
+    return;
+  }
+  std::lock_guard lock(mu_);
+  if (active_params_.call_id == call_id) { // else the transport has moved on: that call's leg stays
+    active_leg_ = {};
+  }
+}
+
+void CallMediaAmpTransport::ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                                          std::function<void(CallMediaRoe)> on_done, int timeout_ms) {
   if (!started_.load(std::memory_order_acquire)) {
     if (on_done) {
@@ -201,8 +217,7 @@ CallMediaRoe CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& 
     }
   };
 
-  ConnectAsync(params, std::move(callbacks), [finish](CallMediaRoe result) { finish(std::move(result)); },
-               timeout_ms);
+  ConnectAsync(params, std::move(callbacks), [finish](CallMediaRoe result) { finish(std::move(result)); }, timeout_ms);
 
   // Product MeshPump drives Amp. Harnesses without a pump may supply io_pump_ (Tick).
   const auto deadline = Clock::now() + std::chrono::milliseconds(std::max(timeout_ms, 1));
@@ -223,7 +238,7 @@ CallMediaRoe CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& 
 
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     if (!IsActive()) {
-      Detach();
+      Detach(params.call_id);
     }
     finish(CallMediaFailure::Of(CallMediaErr::Timeout, "amp call-media connect timed out"));
   }

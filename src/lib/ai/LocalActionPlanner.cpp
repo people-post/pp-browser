@@ -28,13 +28,21 @@ std::string LowerAscii(std::string s) {
   return s;
 }
 
-bool IsWordChar(const char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'); }
+bool IsWordChar(const char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+}
 
-bool IsAsciiPhrase(const std::string_view w) { return !w.empty() && static_cast<unsigned char>(w.front()) < 0x80; }
+bool IsAsciiPhrase(const std::string_view w) {
+  return !w.empty() && static_cast<unsigned char>(w.front()) < 0x80;
+}
 
-U32 ToU32(const std::string_view in) { return app_action_text::DecodeUtf8(in); }
+U32 ToU32(const std::string_view in) {
+  return app_action_text::DecodeUtf8(in);
+}
 
-size_t CodePoints(const std::string_view s) { return ToU32(s).size(); }
+size_t CodePoints(const std::string_view s) {
+  return ToU32(s).size();
+}
 
 std::vector<size_t> FindAll(const U32& hay, const U32& needle) {
   std::vector<size_t> out;
@@ -48,12 +56,33 @@ std::vector<size_t> FindAll(const U32& hay, const U32& needle) {
 }
 
 /** Whitespace and punctuation that never belong to a parameter at its edges. */
-constexpr auto kEdgeStrings = std::to_array<std::string_view>(
-    {" ", "\t", "\r", "\n", "\xE3\x80\x80", "\xC2\xA0", ":", "\xEF\xBC\x9A", "?", "\xEF\xBC\x9F", "!", "\xEF\xBC\x81",
-     ".", "\xE3\x80\x82", ",", "\xEF\xBC\x8C", "\"", "\xE2\x80\x9C", "\xE2\x80\x9D", "\xE3\x80\x8C", "\xE3\x80\x8D",
-     "\xE3\x80\x81", "~"});
+constexpr auto kEdgeStrings = std::to_array<std::string_view>({" ",
+                                                               "\t",
+                                                               "\r",
+                                                               "\n",
+                                                               "\xE3\x80\x80",
+                                                               "\xC2\xA0",
+                                                               ":",
+                                                               "\xEF\xBC\x9A",
+                                                               "?",
+                                                               "\xEF\xBC\x9F",
+                                                               "!",
+                                                               "\xEF\xBC\x81",
+                                                               ".",
+                                                               "\xE3\x80\x82",
+                                                               ",",
+                                                               "\xEF\xBC\x8C",
+                                                               "\"",
+                                                               "\xE2\x80\x9C",
+                                                               "\xE2\x80\x9D",
+                                                               "\xE3\x80\x8C",
+                                                               "\xE3\x80\x8D",
+                                                               "\xE3\x80\x81",
+                                                               "~"});
 
-bool StartsWith(const std::string& s, const std::string_view p) { return s.compare(0, p.size(), p) == 0; }
+bool StartsWith(const std::string& s, const std::string_view p) {
+  return s.compare(0, p.size(), p) == 0;
+}
 bool EndsWith(const std::string& s, const std::string_view p) {
   return s.size() >= p.size() && s.compare(s.size() - p.size(), p.size(), p) == 0;
 }
@@ -75,7 +104,9 @@ std::string StripEdges(std::string s) {
   return s;
 }
 
-bool IsSingleCjk(const std::string_view w) { return w.size() == 3 && static_cast<unsigned char>(w[0]) >= 0x80; }
+bool IsSingleCjk(const std::string_view w) {
+  return w.size() == 3 && static_cast<unsigned char>(w[0]) >= 0x80;
+}
 
 /** Longest filler at the head of `s` (case-insensitive; an ASCII word must end at a word boundary). */
 std::string_view HeadFiller(const std::string& s, const std::span<const std::string_view> words) {
@@ -162,7 +193,9 @@ std::string StripTail(std::string s, const std::span<const std::string_view> fil
 using Token = app_action_text::WordToken;
 
 /** ASCII words (letters, digits, apostrophes): the classifier's tokenizer, so offsets agree. */
-std::vector<Token> Tokenize(const std::string& lower) { return app_action_text::TokenizeWords(lower); }
+std::vector<Token> Tokenize(const std::string& lower) {
+  return app_action_text::TokenizeWords(lower);
+}
 
 std::vector<std::string> PhraseWords(const std::string_view phrase) {
   std::vector<std::string> out;
@@ -313,7 +346,7 @@ const AppActionWords* WordsFor(const std::string& tool) {
 struct Parts {
   size_t first_begin = 0;
   size_t last_end = 0;
-  std::string region; // the clause with the hit, between stop words: what the booleans / enums are read from
+  std::string region;    // the clause with the hit, between stop words: what the booleans / enums are read from
   std::string rest_full; // everything after the hit
   std::string rest;      // ... up to the first stop word
   bool more = false;     // a second action follows the stop word
@@ -350,7 +383,9 @@ Parts SplitSentence(const std::string& text, const std::vector<AppActionSpan>& s
 // Plans
 // ---------------------------------------------------------------------------------------------------------
 
-bool IsPeopleTool(const std::string& tool) { return tool == "search_people" || tool == "list_contacts"; }
+bool IsPeopleTool(const std::string& tool) {
+  return tool == "search_people" || tool == "list_contacts";
+}
 
 LocalPlan MakePlan(const std::string& tool, Object args, const std::string& text, const bool only_first) {
   TurnPlan plan;
@@ -395,9 +430,9 @@ ToolClass ClassOf(const std::string& tool) {
       {"get_profile_identity", "get_preferences", "get_security_status", "get_network_settings", "get_reachability",
        "get_llm_settings", "get_integrations", "list_locales", "list_conversations", "reset_tool_permissions",
        "open_support"});
-  static constexpr auto kBool = std::to_array<std::string_view>(
-      {"set_notifications", "set_reduce_transparency", "set_auto_renew_registration", "set_call_diagnostics",
-       "set_node_enabled"});
+  static constexpr auto kBool =
+      std::to_array<std::string_view>({"set_notifications", "set_reduce_transparency", "set_auto_renew_registration",
+                                       "set_call_diagnostics", "set_node_enabled"});
   if (std::find(kNoArg.begin(), kNoArg.end(), tool) != kNoArg.end()) {
     return ToolClass::NoArg;
   }
@@ -441,13 +476,16 @@ struct Direction {
   bool negated = false;
 };
 
-bool IsUnclear(const Direction& d) { return d.negated || (d.on == d.off); }
+bool IsUnclear(const Direction& d) {
+  return d.negated || (d.on == d.off);
+}
 
 /**
  * Looks for on / off in `region`. 开 / 关 alone count only next to an object word or at the sentence end (in an
  * answer, also at its start). A negation word shortly before a direction word makes the whole thing unclear.
  */
-Direction ScanDirection(const std::string& region, const std::vector<std::string>& object_words, const bool answer_mode) {
+Direction ScanDirection(const std::string& region, const std::vector<std::string>& object_words,
+                        const bool answer_mode) {
   Direction d;
   const Haystack h(region);
   const U32 r = ToU32(h.lower);
@@ -456,7 +494,8 @@ Direction ScanDirection(const std::string& region, const std::vector<std::string
     for (const std::string_view w : words) {
       const U32 u = ToU32(w);
       for (const size_t p : FindAll(r, u)) {
-        std::fill(v.begin() + static_cast<std::ptrdiff_t>(p), v.begin() + static_cast<std::ptrdiff_t>(p + u.size()), char{1});
+        std::fill(v.begin() + static_cast<std::ptrdiff_t>(p), v.begin() + static_cast<std::ptrdiff_t>(p + u.size()),
+                  char{1});
       }
     }
   };
@@ -469,10 +508,12 @@ Direction ScanDirection(const std::string& region, const std::vector<std::string
       const U32 u = ToU32(w);
       for (const size_t p : FindAll(r, u)) {
         if (std::any_of(covered.begin() + static_cast<std::ptrdiff_t>(p),
-                        covered.begin() + static_cast<std::ptrdiff_t>(p + u.size()), [](const char c) { return c != 0; })) {
+                        covered.begin() + static_cast<std::ptrdiff_t>(p + u.size()),
+                        [](const char c) { return c != 0; })) {
           continue;
         }
-        std::fill(covered.begin() + static_cast<std::ptrdiff_t>(p), covered.begin() + static_cast<std::ptrdiff_t>(p + u.size()), char{1});
+        std::fill(covered.begin() + static_cast<std::ptrdiff_t>(p),
+                  covered.begin() + static_cast<std::ptrdiff_t>(p + u.size()), char{1});
         found.emplace_back(p, on);
       }
     }
@@ -505,7 +546,8 @@ Direction ScanDirection(const std::string& region, const std::vector<std::string
     return j >= r.size();
   };
   const auto at_start = [&](const size_t i) {
-    return std::all_of(r.begin(), r.begin() + static_cast<std::ptrdiff_t>(i), [](const char32_t c) { return c == U' '; });
+    return std::all_of(r.begin(), r.begin() + static_cast<std::ptrdiff_t>(i),
+                       [](const char32_t c) { return c == U' '; });
   };
   const char32_t single_on = ToU32(kBoolSingleOn)[0];
   const char32_t single_off = ToU32(kBoolSingleOff)[0];
@@ -513,9 +555,8 @@ Direction ScanDirection(const std::string& region, const std::vector<std::string
     if (covered[i] || (r[i] != single_on && r[i] != single_off)) {
       continue;
     }
-    const bool next_to_object = std::any_of(objects.begin(), objects.end(), [&](const auto& o) {
-      return o.first == i + 1 || o.second == i;
-    });
+    const bool next_to_object =
+        std::any_of(objects.begin(), objects.end(), [&](const auto& o) { return o.first == i + 1 || o.second == i; });
     if (next_to_object || at_end(i + 1) || (answer_mode && at_start(i))) {
       found.emplace_back(i, r[i] == single_on);
     }
@@ -765,8 +806,8 @@ LocalPlan MeshPlan(const std::string& cap, const bool enabled, const std::string
   return MakeBoolPlan("set_mesh_capabilities", cap.c_str(), enabled, text, only_first);
 }
 
-LocalPlan ParseMesh(const std::string& region, const std::string& text, const bool answer_mode, const std::string& carry_cap,
-                    const std::string& carry_dir, const bool only_first) {
+LocalPlan ParseMesh(const std::string& region, const std::string& text, const bool answer_mode,
+                    const std::string& carry_cap, const std::string& carry_dir, const bool only_first) {
   std::vector<std::string> caps = FindCapabilities(region);
   if (caps.empty() && !carry_cap.empty()) {
     caps = {carry_cap};
@@ -902,10 +943,18 @@ std::string BeforeText(const std::string& text, const Parts& parts) {
   for (Stop s = FindStop(prefix); s.pos != kNpos; s = FindStop(prefix.substr(seg_begin))) {
     seg_begin += s.pos + s.len;
   }
-  return StripTail(StripLead(prefix.substr(seg_begin)), kActionTailFillerWords);
+  std::string before = StripTail(StripLead(prefix.substr(seg_begin)), kActionTailFillerWords);
+  // "帮我搜索用户": the text before the hit is only the request opener ("帮我", "please"), which StripLead keeps
+  // when nothing follows it. That is not a name.
+  if (HeadFiller(before, kLeadWords).size() == before.size()) {
+    before.clear();
+  }
+  return before;
 }
 
-std::string CleanQuery(const std::string& s) { return StripTail(StripHead(s, kQueryFillerWords), kActionTailFillerWords); }
+std::string CleanQuery(const std::string& s) {
+  return StripTail(StripHead(s, kQueryFillerWords), kActionTailFillerWords);
+}
 std::string CleanNickname(const std::string& s) {
   return TruncateCodePoints(StripTail(StripHead(s, kActionFillerWords), kActionTailFillerWords), kMaxNicknameChars);
 }
@@ -927,35 +976,37 @@ LocalPlan Dispatch(const std::string& tool, const std::string& text, const AppAc
 
 } // namespace
 
-bool IsLocalActionQuestion(const std::string& text, const bool settings_read) { return IsQuestion(text, settings_read); }
+bool IsLocalActionQuestion(const std::string& text, const bool settings_read) {
+  return IsQuestion(text, settings_read);
+}
 
 LocalPlan AskForTool(const std::string& tool, const std::string& text) {
   switch (ClassOf(tool)) {
-  case ToolClass::NoArg:
-    return MakePlan(tool, Object{}, text, false);
-  case ToolClass::Probe:
-    return MakeBoolPlan(tool, "try_upnp", Haystack(text).Has(kUpnpWord), text, false);
-  case ToolClass::Query:
-    if (tool == "list_contacts") {
+    case ToolClass::NoArg:
       return MakePlan(tool, Object{}, text, false);
-    }
-    return Ask(tool, "query", "contacts.ask.who");
-  case ToolClass::Nickname:
-    return Ask(tool, "nickname", "profile.ask.nickname");
-  case ToolClass::Bool:
-    return Ask(tool, "enabled", "settings.ask.on_or_off");
-  case ToolClass::Appearance:
-    return Ask(tool, "appearance", "settings.ask.appearance");
-  case ToolClass::Language:
-    return Ask(tool, "language", "settings.ask.language");
-  case ToolClass::Policy:
-    return Ask(tool, "policy", "settings.ask.policy");
-  case ToolClass::Mesh:
-    return Ask(tool, "capability", "settings.ask.mesh_capability");
-  case ToolClass::Contact:
-    return Ask(tool, "contact", "contacts.ask.which_contact");
-  case ToolClass::Unsupported:
-    break;
+    case ToolClass::Probe:
+      return MakeBoolPlan(tool, "try_upnp", Haystack(text).Has(kUpnpWord), text, false);
+    case ToolClass::Query:
+      if (tool == "list_contacts") {
+        return MakePlan(tool, Object{}, text, false);
+      }
+      return Ask(tool, "query", "contacts.ask.who");
+    case ToolClass::Nickname:
+      return Ask(tool, "nickname", "profile.ask.nickname");
+    case ToolClass::Bool:
+      return Ask(tool, "enabled", "settings.ask.on_or_off");
+    case ToolClass::Appearance:
+      return Ask(tool, "appearance", "settings.ask.appearance");
+    case ToolClass::Language:
+      return Ask(tool, "language", "settings.ask.language");
+    case ToolClass::Policy:
+      return Ask(tool, "policy", "settings.ask.policy");
+    case ToolClass::Mesh:
+      return Ask(tool, "capability", "settings.ask.mesh_capability");
+    case ToolClass::Contact:
+      return Ask(tool, "contact", "contacts.ask.which_contact");
+    case ToolClass::Unsupported:
+      break;
   }
   return LocalUnsupported{tool};
 }
@@ -980,78 +1031,83 @@ LocalPlan Dispatch(const std::string& tool, const std::string& text, const AppAc
   const bool only_first = parts.more;
 
   switch (cls) {
-  case ToolClass::NoArg:
-    return MakePlan(tool, Object{}, text, only_first);
-  case ToolClass::Probe:
-    return MakeBoolPlan(tool, "try_upnp", Haystack(parts.region).Has(kUpnpWord), text, only_first);
-  case ToolClass::Query: {
-    const bool list = tool == "list_contacts";
-    if (list && !HitsSearchVerb(text, spans)) {
+    case ToolClass::NoArg:
       return MakePlan(tool, Object{}, text, only_first);
+    case ToolClass::Probe:
+      return MakeBoolPlan(tool, "try_upnp", Haystack(parts.region).Has(kUpnpWord), text, only_first);
+    case ToolClass::Query: {
+      const bool list = tool == "list_contacts";
+      if (list && !HitsSearchVerb(text, spans)) {
+        return MakePlan(tool, Object{}, text, only_first);
+      }
+      std::string q = CleanQuery(parts.rest);
+      if (q.empty()) {
+        q = CleanQuery(GapText(text, spans));
+      }
+      if (q.empty() && !list) {
+        q = BeforeText(text, parts);
+      }
+      const std::string lowered = LowerAscii(q);
+      if (std::find(kPronounWords.begin(), kPronounWords.end(), lowered) != kPronounWords.end()) {
+        // "把他加到联系人": a pronoun names someone we cannot resolve here — ask who.
+        return LocalPlan(Ask(tool, "query", "contacts.ask.who"));
+      }
+      if (std::find(kGenericQueryWords.begin(), kGenericQueryWords.end(), lowered) != kGenericQueryWords.end()) {
+        q.clear();
+      }
+      if (q.empty()) {
+        // Naming no one ("帮我搜索用户", "find someone") lists the public directory — the same call as the home
+        // page's "find someone" chip (SuggestionPayload), instead of asking who (Kenneth 2026-11-09).
+        return MakePlan(tool, Object{}, text, only_first);
+      }
+      return MakeTextPlan(tool, "query", q, text, only_first);
     }
-    std::string q = CleanQuery(parts.rest);
-    if (q.empty()) {
-      q = CleanQuery(GapText(text, spans));
+    case ToolClass::Nickname: {
+      if (parts.more || ContainsAppActionHit(parts.rest_full)) {
+        return Ask(tool, "nickname", "profile.ask.nickname_confirm");
+      }
+      const std::string nick = CleanNickname(parts.rest);
+      if (nick.empty()) {
+        return Ask(tool, "nickname", "profile.ask.nickname");
+      }
+      return MakeTextPlan(tool, "nickname", nick, text, only_first);
     }
-    if (q.empty() && !list) {
-      q = BeforeText(text, parts);
+    case ToolClass::Bool: {
+      const Tri v = ParseBool(tool, parts.region, false);
+      if (v == Tri::Unclear) {
+        return Ask(tool, "enabled", "settings.ask.on_or_off");
+      }
+      return MakeBoolPlan(tool, "enabled", v == Tri::True, text, only_first);
     }
-    const std::string lowered = LowerAscii(q);
-    if (std::find(kPronounWords.begin(), kPronounWords.end(), lowered) != kPronounWords.end() ||
-        std::find(kGenericQueryWords.begin(), kGenericQueryWords.end(), lowered) != kGenericQueryWords.end()) {
-      q.clear();
+    case ToolClass::Appearance: {
+      const std::string v = ParseAppearance(parts.region, false);
+      return v.empty() ? LocalPlan(Ask(tool, "appearance", "settings.ask.appearance"))
+                       : MakeTextPlan(tool, "appearance", v, text, only_first);
     }
-    if (q.empty()) {
-      return list ? MakePlan(tool, Object{}, text, only_first) : LocalPlan(Ask(tool, "query", "contacts.ask.who"));
+    case ToolClass::Language: {
+      const std::string v = ParseLanguage(parts.region, ctx);
+      return v.empty() ? LocalPlan(Ask(tool, "language", "settings.ask.language"))
+                       : MakeTextPlan(tool, "language", v, text, only_first);
     }
-    return MakeTextPlan(tool, "query", q, text, only_first);
-  }
-  case ToolClass::Nickname: {
-    if (parts.more || ContainsAppActionHit(parts.rest_full)) {
-      return Ask(tool, "nickname", "profile.ask.nickname_confirm");
+    case ToolClass::Policy: {
+      const std::string v = ParsePolicy(parts.region);
+      return v.empty() ? LocalPlan(Ask(tool, "policy", "settings.ask.policy"))
+                       : MakeTextPlan(tool, "policy", v, text, only_first);
     }
-    const std::string nick = CleanNickname(parts.rest);
-    if (nick.empty()) {
-      return Ask(tool, "nickname", "profile.ask.nickname");
+    case ToolClass::Mesh:
+      return ParseMesh(parts.region, text, false, {}, {}, only_first);
+    case ToolClass::Contact: {
+      std::string name = CleanName(parts.rest);
+      if (name.empty()) {
+        name = CleanName(GapText(text, spans));
+      }
+      if (name.empty()) {
+        name = CleanName(BeforeText(text, parts));
+      }
+      return ResolveContact(tool, name, ctx, text, only_first);
     }
-    return MakeTextPlan(tool, "nickname", nick, text, only_first);
-  }
-  case ToolClass::Bool: {
-    const Tri v = ParseBool(tool, parts.region, false);
-    if (v == Tri::Unclear) {
-      return Ask(tool, "enabled", "settings.ask.on_or_off");
-    }
-    return MakeBoolPlan(tool, "enabled", v == Tri::True, text, only_first);
-  }
-  case ToolClass::Appearance: {
-    const std::string v = ParseAppearance(parts.region, false);
-    return v.empty() ? LocalPlan(Ask(tool, "appearance", "settings.ask.appearance"))
-                     : MakeTextPlan(tool, "appearance", v, text, only_first);
-  }
-  case ToolClass::Language: {
-    const std::string v = ParseLanguage(parts.region, ctx);
-    return v.empty() ? LocalPlan(Ask(tool, "language", "settings.ask.language"))
-                     : MakeTextPlan(tool, "language", v, text, only_first);
-  }
-  case ToolClass::Policy: {
-    const std::string v = ParsePolicy(parts.region);
-    return v.empty() ? LocalPlan(Ask(tool, "policy", "settings.ask.policy"))
-                     : MakeTextPlan(tool, "policy", v, text, only_first);
-  }
-  case ToolClass::Mesh:
-    return ParseMesh(parts.region, text, false, {}, {}, only_first);
-  case ToolClass::Contact: {
-    std::string name = CleanName(parts.rest);
-    if (name.empty()) {
-      name = CleanName(GapText(text, spans));
-    }
-    if (name.empty()) {
-      name = CleanName(BeforeText(text, parts));
-    }
-    return ResolveContact(tool, name, ctx, text, only_first);
-  }
-  case ToolClass::Unsupported:
-    break;
+    case ToolClass::Unsupported:
+      break;
   }
   return LocalUnsupported{tool};
 }

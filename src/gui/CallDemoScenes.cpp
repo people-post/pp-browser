@@ -12,6 +12,8 @@ namespace {
 constexpr const char* kPeer = "demo-acct-demo-contact-03";
 constexpr const char* kGroupThread = "demo-thread-group-1";
 constexpr const char* kSelf = "demo-acct-self";
+/** The call a V064 scene ends (ring_conflict, call_back): another DemoDataSeeder contact. */
+constexpr const char* kOther = "demo-acct-demo-contact-01";
 
 using Status = CallScreen::Status;
 
@@ -33,7 +35,7 @@ CallScreen InCall(const char* call_id, const bool video, const bool group) {
     s.members.push_back({.identity = kSelf, .is_local = true, .video_enabled = video});
   } else {
     s.peer_identity = kPeer;
-    s.placed_here = true;  // the 1:1 scenes are calls this device placed
+    s.placed_here = true; // the 1:1 scenes are calls this device placed
     if (video) {
       s.members.push_back({.identity = kPeer, .video_enabled = true});
       s.members.push_back({.identity = kSelf, .is_local = true, .video_enabled = true});
@@ -73,6 +75,30 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
     f.screen.thread_id = group ? kGroupThread : "";
     return f;
   }
+  if (scene == "ring_awaiting" || scene == "answer_voice") {
+    // The page a tapped call alert opens, then (answer_voice) the same call ringing, answered and connecting: the
+    // incoming page and the answering page are meant to look like one page going on.
+    if (scene == "ring_awaiting" || t < 2'000) {
+      f.awaiting_invite = true;
+      return f;
+    }
+    if (t < 7'000) {
+      f.screen.kind = t < 5'000 ? CallScreen::Kind::Ringing : CallScreen::Kind::Answering;
+      f.screen.ring_call_id = "demo-voice-answer";
+      f.screen.caller_identity = kPeer;
+      f.screen.show_speaker = true;
+      return f;
+    }
+    f.screen = InCall("demo-voice-answer", false, false);
+    f.screen.placed_here = false; // this device answered
+    if (t < 10'000) {
+      f.screen.status = Status::Connecting;
+    } else {
+      Connected(f.screen, start + 10'000);
+      f.path_kind = "direct";
+    }
+    return f;
+  }
   if (scene == "voice" || scene == "video") {
     const bool video = scene == "video";
     f.screen = InCall(video ? "demo-video" : "demo-voice", video, false);
@@ -92,11 +118,14 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
     }
     return f;
   }
-  if (scene == "reconnect") {
-    f.screen = InCall("demo-reconnect", false, false);
+  if (scene == "reconnect" || scene == "reconnect_recovers") {
+    // Down from 6 s: the capsule says "Reconnecting…", then "They may be offline" 20 s on; the one that recovers is
+    // back at 12 s ("Restored", then the capsule goes).
+    const bool recovers = scene == "reconnect_recovers";
+    f.screen = InCall(recovers ? "demo-reconnect-recovers" : "demo-reconnect", false, false);
     Connected(f.screen, start - 60'000);
     f.path_kind = "direct";
-    if (t >= 6'000) {
+    if (t >= 6'000 && (!recovers || t < 12'000)) {
       f.screen.status = Status::Reconnecting;
       f.screen.media_connected = false;
       f.quality = CallPathQuality::Reconnecting;
@@ -112,7 +141,7 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
     f.screen = InCall(group ? "demo-group-hold" : video ? "demo-video-hold" : "demo-voice-hold", video, group);
     Connected(f.screen, start - 60'000);
     f.path_kind = group ? "media_relay" : "direct";
-    f.video_stage = video && !group;  // as in group_video: the group page draws its own tiles
+    f.video_stage = video && !group; // as in group_video: the group page draws its own tiles
     if (group) {
       f.screen.members[0].on_hold = true;
       f.screen.members[1].video_paused = true;
@@ -124,6 +153,26 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
       }
       f.screen.members[0].on_hold = true;
     }
+    return f;
+  }
+  if (scene == "ring_conflict") {
+    // V064: a call rings over the 1:1 call this device is in: the ring names the caller and the call answering ends.
+    f.screen.kind = CallScreen::Kind::Ringing;
+    f.screen.ring_call_id = "demo-ring-conflict";
+    f.screen.caller_identity = kPeer;
+    f.screen.conflict = true;
+    f.screen.ending = {.call_id = "demo-voice", .peer_identity = kOther, .video = false};
+    return f;
+  }
+  if (scene == "call_back") {
+    // V064: End & accept ended the call with kOther; the call taken (with kPeer) is over at 8 s: "Call them back?".
+    if (t < 8'000) {
+      f.screen = InCall("demo-call-taken", false, false);
+      Connected(f.screen, start);
+      f.path_kind = "direct";
+      return f;
+    }
+    f.call_back = CallScreen::EndingCall{.call_id = "demo-ended", .peer_identity = kOther, .video = false};
     return f;
   }
   if (scene == "failed") {
@@ -167,9 +216,8 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
       Connected(f.screen, start + 5'000);
       f.path_kind = "media_relay";
       if (!video && t >= 30'000 && t < 40'000) {
-        // The stack moving the group onto another path: its line and the hint under it ("everyone reconnects").
-        f.screen.status = Status::Activity;
-        f.screen.activity = Tr("call.status.switching_media_path");
+        // The stack moving the group onto another path: a reconnect (the capsule says so; the line keeps the timer).
+        f.screen.status = Status::Reconnecting;
       }
       if (video && t >= 15'000) {
         f.quality = CallPathQuality::Poor;
@@ -183,6 +231,42 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
     return f;
   }
   return {};
+}
+
+CallMediaFacts DemoCallMediaFacts(const DemoCallFrame& frame, const int64_t now_ms) {
+  const CallScreen& s = frame.screen;
+  CallMediaFacts facts;
+  facts.call_id = s.call_id;
+  facts.now_ms = now_ms;
+  facts.video_allowed = s.video;
+  facts.media_active = s.media_connected;
+  facts.media_chrome_live = s.media_connected;
+  if (s.status == Status::Reconnecting) {
+    facts.media_status = CallMediaStatus::Reconnecting;
+  } else if (s.media_connected) {
+    facts.media_status = s.group ? CallMediaStatus::HopLive : CallMediaStatus::DirectLive;
+  }
+  facts.on_hop = s.group;
+  facts.live_since_ms = s.connected_at_ms;
+  facts.camera_on = frame.video_stage;
+  for (const CallScreen::Member& member : s.members) {
+    if (!s.group && !member.is_local) {
+      // The 1:1 peer's roster row: their camera and the hold (V060).
+      facts.have_peer_row = true;
+      facts.peer_camera_on = member.video_enabled;
+      facts.peer_on_hold = member.on_hold;
+      facts.peer_video_paused = member.video_paused;
+    }
+  }
+  return facts;
+}
+
+CallMediaHealthView DemoCallHealth(const DemoCallFrame& frame) {
+  CallMediaHealthView health;
+  health.path_kind = frame.path_kind;
+  health.quality = frame.quality;
+  health.quality_bars = frame.quality_bars;
+  return health;
 }
 
 } // namespace pbr

@@ -61,8 +61,7 @@ bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
   dst.channels = 1;
   Uint8* converted = nullptr;
   int converted_len = 0;
-  const bool ok =
-      SDL_ConvertAudioSamples(&spec, buf, static_cast<int>(len), &dst, &converted, &converted_len);
+  const bool ok = SDL_ConvertAudioSamples(&spec, buf, static_cast<int>(len), &dst, &converted, &converted_len);
   SDL_free(buf);
   if (!ok || !converted || converted_len <= 0) {
     SDL_Log("CallRingtone: convert failed err=%s", SDL_GetError());
@@ -229,8 +228,7 @@ bool CallRingtone::StopAndJoin(std::chrono::milliseconds budget) {
   });
 
   const auto deadline = std::chrono::steady_clock::now() + budget;
-  while (!finished->load(std::memory_order_acquire) &&
-         std::chrono::steady_clock::now() < deadline) {
+  while (!finished->load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 

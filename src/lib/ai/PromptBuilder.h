@@ -14,8 +14,7 @@ public:
   static std::string DefaultRcssProfile();
   static std::string ChatBlocksProfile();
 
-  static std::string BuildUiGenerationPrompt(const std::string& tools_context,
-                                             const std::string& rml_profile);
+  static std::string BuildUiGenerationPrompt(const std::string& tools_context, const std::string& rml_profile);
 
   /** `brief_backend`: the answer comes from Brief AI (default preset); other presets get a neutral identity. */
   static std::string BuildChatSystemPrompt(bool brief_backend = true);

@@ -44,8 +44,7 @@ public:
     }
   }
   bool Stalled(int64_t now_ms) const {
-    return !WaitingForKeyframe(now_ms) && frames_since_output_ >= kStallFrames &&
-           now_ms - last_output_ms_ >= kStallMs;
+    return !WaitingForKeyframe(now_ms) && frames_since_output_ >= kStallFrames && now_ms - last_output_ms_ >= kStallMs;
   }
   int FramesSinceOutput() const { return frames_since_output_; }
   int64_t MsSinceOutput(int64_t now_ms) const { return now_ms - last_output_ms_; }

@@ -1,5 +1,6 @@
 #include "lib/delivery/DeliveryNotice.h"
 
+#include "common/ValueJson.h"
 #include "foundation/error/AppError.h"
 
 #include <array>
@@ -36,46 +37,46 @@ constexpr std::array<ReceiveWire, 16> kReceiveWire = {{
 
 SendFailure SendFailureFromDirect(const DirectSendErr code) {
   switch (code) {
-  case DirectSendErr::NotStarted:
-    return SendFailure::MeshOff;
-  case DirectSendErr::NoAddress:
-    return SendFailure::NoAddress;
-  case DirectSendErr::DialInBackoff:
-    return SendFailure::BackingOff;
-  case DirectSendErr::DialBusy:
-    return SendFailure::DialBusy;
-  case DirectSendErr::NoAnswer:
-  case DirectSendErr::TransportFailed:
-    return SendFailure::PeerNoAnswer;
-  case DirectSendErr::Refused:
-  case DirectSendErr::ChannelFailed:
-    return SendFailure::HandshakeFailed;
-  case DirectSendErr::NotConfirmed:
-    return SendFailure::DirectUnconfirmed;
-  case DirectSendErr::Ok:
-  case DirectSendErr::Generic:
-    break;
+    case DirectSendErr::NotStarted:
+      return SendFailure::MeshOff;
+    case DirectSendErr::NoAddress:
+      return SendFailure::NoAddress;
+    case DirectSendErr::DialInBackoff:
+      return SendFailure::BackingOff;
+    case DirectSendErr::DialBusy:
+      return SendFailure::DialBusy;
+    case DirectSendErr::NoAnswer:
+    case DirectSendErr::TransportFailed:
+      return SendFailure::PeerNoAnswer;
+    case DirectSendErr::Refused:
+    case DirectSendErr::ChannelFailed:
+      return SendFailure::HandshakeFailed;
+    case DirectSendErr::NotConfirmed:
+      return SendFailure::DirectUnconfirmed;
+    case DirectSendErr::Ok:
+    case DirectSendErr::Generic:
+      break;
   }
   return SendFailure::Unknown;
 }
 
 SendFailure SendFailureFromRelay(const Error& error) {
   switch (AppError::CategoryOf(error)) {
-  case ErrorCategory::Auth:
-    return static_cast<Err::Auth>(error.code) == Err::Auth::RateLimited ? SendFailure::RelayRateLimited
-                                                                         : SendFailure::RelayRejected;
-  case ErrorCategory::Config:
-    return SendFailure::RelayNotConfigured;
-  case ErrorCategory::Network:
-    switch (static_cast<Err::Network>(error.code)) {
-    case Err::Network::HttpError:
-    case Err::Network::HttpRejected:
-      return SendFailure::RelayRejected;
+    case ErrorCategory::Auth:
+      return static_cast<Err::Auth>(error.code) == Err::Auth::RateLimited ? SendFailure::RelayRateLimited
+                                                                          : SendFailure::RelayRejected;
+    case ErrorCategory::Config:
+      return SendFailure::RelayNotConfigured;
+    case ErrorCategory::Network:
+      switch (static_cast<Err::Network>(error.code)) {
+        case Err::Network::HttpError:
+        case Err::Network::HttpRejected:
+          return SendFailure::RelayRejected;
+        default:
+          return SendFailure::RelayUnreachable;
+      }
     default:
-      return SendFailure::RelayUnreachable;
-    }
-  default:
-    return SendFailure::Unknown;
+      return SendFailure::Unknown;
   }
 }
 
@@ -92,36 +93,38 @@ ShareWord ReceiveFailureWord(const ReceiveFailure reason) {
   return "decode_failed";
 }
 
-const char* ReceiveFailureWire(const ReceiveFailure reason) { return ReceiveFailureWord(reason).c_str(); }
+const char* ReceiveFailureWire(const ReceiveFailure reason) {
+  return ReceiveFailureWord(reason).c_str();
+}
 
 ShareWord SendFailureWord(const SendFailure failure) {
   switch (failure) {
-  case SendFailure::Unknown:
-    return "unknown";
-  case SendFailure::MeshOff:
-    return "mesh_off";
-  case SendFailure::NoAddress:
-    return "no_address";
-  case SendFailure::BackingOff:
-    return "backing_off";
-  case SendFailure::DialBusy:
-    return "dial_busy";
-  case SendFailure::PeerNoAnswer:
-    return "peer_no_answer";
-  case SendFailure::HandshakeFailed:
-    return "handshake_failed";
-  case SendFailure::DirectUnconfirmed:
-    return "direct_unconfirmed";
-  case SendFailure::RelayNotConfigured:
-    return "relay_not_configured";
-  case SendFailure::RelayBusy:
-    return "relay_busy";
-  case SendFailure::RelayRateLimited:
-    return "relay_rate_limited";
-  case SendFailure::RelayUnreachable:
-    return "relay_unreachable";
-  case SendFailure::RelayRejected:
-    return "relay_rejected";
+    case SendFailure::Unknown:
+      return "unknown";
+    case SendFailure::MeshOff:
+      return "mesh_off";
+    case SendFailure::NoAddress:
+      return "no_address";
+    case SendFailure::BackingOff:
+      return "backing_off";
+    case SendFailure::DialBusy:
+      return "dial_busy";
+    case SendFailure::PeerNoAnswer:
+      return "peer_no_answer";
+    case SendFailure::HandshakeFailed:
+      return "handshake_failed";
+    case SendFailure::DirectUnconfirmed:
+      return "direct_unconfirmed";
+    case SendFailure::RelayNotConfigured:
+      return "relay_not_configured";
+    case SendFailure::RelayBusy:
+      return "relay_busy";
+    case SendFailure::RelayRateLimited:
+      return "relay_rate_limited";
+    case SendFailure::RelayUnreachable:
+      return "relay_unreachable";
+    case SendFailure::RelayRejected:
+      return "relay_rejected";
   }
   return "unknown";
 }
@@ -133,6 +136,62 @@ std::optional<ReceiveFailure> ReceiveFailureFromWire(const std::string& wire) {
     }
   }
   return std::nullopt;
+}
+
+std::optional<SendFailure> SendFailureFromWire(const std::string& wire) {
+  static constexpr SendFailure kAll[] = {
+      SendFailure::Unknown,         SendFailure::MeshOff,           SendFailure::NoAddress,
+      SendFailure::BackingOff,      SendFailure::DialBusy,          SendFailure::PeerNoAnswer,
+      SendFailure::HandshakeFailed, SendFailure::DirectUnconfirmed, SendFailure::RelayNotConfigured,
+      SendFailure::RelayBusy,       SendFailure::RelayRateLimited,  SendFailure::RelayUnreachable,
+      SendFailure::RelayRejected};
+  for (const SendFailure failure : kAll) {
+    if (wire == SendFailureWord(failure).view()) {
+      return failure;
+    }
+  }
+  return std::nullopt;
+}
+
+std::string SendFailureRowId(const std::string& message_id, const std::string& reason_wire) {
+  return "send-failure-" + message_id + (reason_wire == kGroupMembersMissedWire ? "-group" : "");
+}
+
+ThreadMessage MakeSendFailureRow(const std::string& thread_id, const std::string& message_id,
+                                 const std::string& reason_wire, const int64_t timestamp_ms) {
+  ThreadMessage row;
+  row.id = SendFailureRowId(message_id, reason_wire);
+  row.thread_id = thread_id;
+  row.sender_contact_id = kLocalSelfContactId;
+  row.content_type = ChatContentType::System;
+  // No stored words: the transcript words the line from its payload, in the reader's language.
+  Object detail;
+  detail.set("reason", reason_wire);
+  detail.set("message_id", message_id);
+  Object payload;
+  payload.set("control_type", kSendFailureControlType);
+  payload.set("detail", DumpJson(detail));
+  row.payload_json = DumpJson(payload);
+  row.timestamp = timestamp_ms;
+  row.delivery = MessageDelivery::Local;
+  row.relay_visible = false;
+  row.generation = "local";
+  return row;
+}
+
+std::optional<std::string> SendFailureRowReason(const ThreadMessage& message) {
+  if (message.content_type != ChatContentType::System || message.payload_json.empty()) {
+    return std::nullopt;
+  }
+  auto payload = TryParseObject(message.payload_json);
+  if (!payload || payload->getString("control_type").value_or("") != kSendFailureControlType) {
+    return std::nullopt;
+  }
+  auto detail = TryParseObject(payload->getString("detail").value_or(""));
+  if (!detail) {
+    return std::nullopt;
+  }
+  return detail->getString("reason").value_or("");
 }
 
 } // namespace pbr

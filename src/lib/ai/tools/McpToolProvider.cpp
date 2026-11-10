@@ -6,8 +6,7 @@ namespace pbr {
 
 McpToolProvider::McpToolProvider(std::string id, McpClient& client, McpToolAdapterOptions options,
                                  std::string default_domain)
-    : id_(std::move(id)), client_(client), options_(std::move(options)),
-      default_domain_(std::move(default_domain)) {}
+    : id_(std::move(id)), client_(client), options_(std::move(options)), default_domain_(std::move(default_domain)) {}
 
 std::string McpToolProvider::Id() const {
   return id_;

@@ -24,20 +24,20 @@ TEST(MessageRouterTest, BoundsStructuredUserPayloadWithoutRestrictingText) {
 
 // "@ai+ …" asks before sharing unless the chat's "don't ask again" is in force: ticked this session, or stored.
 TEST(MessageRouterTest, ASharedAiChatTheUserTickedIsNotAskedAgainUntilItIsCleared) {
-  std::unordered_set<std::string> stored;  // what the thread prefs hold
+  std::unordered_set<std::string> stored; // what the thread prefs hold
   pbr::SharedAiConsent consent;
   consent.SetStored([&stored](const std::string& thread_id) { return stored.count(thread_id) > 0; });
 
   EXPECT_FALSE(consent.Given("g")) << "asks by default";
-  stored.insert("g");  // ticked in an earlier session
+  stored.insert("g"); // ticked in an earlier session
   EXPECT_TRUE(consent.Given("g")) << "routed without asking";
   EXPECT_FALSE(consent.Given("other")) << "per chat";
 
-  stored.erase("g");  // "Ask before sharing with AI"
+  stored.erase("g"); // "Ask before sharing with AI"
   consent.Forget("g");
   EXPECT_FALSE(consent.Given("g")) << "asks again";
 
-  consent.Remember("g");  // ticked now: holds even before the stored setting is read back
+  consent.Remember("g"); // ticked now: holds even before the stored setting is read back
   EXPECT_TRUE(consent.Given("g"));
   consent.Forget("g");
   EXPECT_FALSE(consent.Given("g"));

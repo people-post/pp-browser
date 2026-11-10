@@ -28,5 +28,4 @@ std::string FormatContactTitle(const Contact& contact);
 /** Unverified directory nickname: "~nick @relay:…". Empty nickname → empty unless id present. */
 std::string FormatDirectoryTitle(const mesh::DirectoryHit& hit);
 
-
 } // namespace pbr

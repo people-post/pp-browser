@@ -24,21 +24,15 @@ void ActivateForVoip();
  */
 void Deactivate();
 /**
- * A call answered on the phone's call screen (CallKit): the system activates the session itself and tells
- * us (NotifySystemActivation). While managed, ActivateForVoip configures the session but waits for that
- * activation (bounded) instead of activating, and Deactivate leaves the release to the system. No-ops
- * where there is no such call screen.
- */
-void SetSystemManaged(bool managed);
-void NotifySystemActivation(bool active);
-
-/**
  * The OS took the live session away and gave it back (a call screen, Siri, an alarm; or the media services were
  * reset): every handler added here runs once ActivateForVoip has taken the session again, so each audio user can
  * reopen its devices. There are several (each MediaEngine: a call's, a broadcast's two; one not capturing ignores
  * it), so each adds its own. A single handler that each new engine replaced ended up on a broadcast engine, and the
  * call's audio never came back. Fires only while a live session is active, and only where the OS interrupts the
  * session (iOS's interruptions, Android's loss of audio focus); elsewhere the handlers are kept and never run.
+ * Android: on the focus back, or — after a loss for good, which Android never gives back — when asking for it again
+ * is granted (the app back in front, the speaker toggled; AudioFocusInterruption); the call's audio mode,
+ * communication device and speaker are put back first.
  *
  * Handlers run under the registry's lock: keep them short, and do not add or remove from inside one. Remove waits
  * for a running handler, so its owner may go once Remove returns.

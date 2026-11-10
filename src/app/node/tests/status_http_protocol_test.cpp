@@ -43,8 +43,7 @@ TEST(StatusHttpProtocolTest, HealthzAndStatus) {
   pbr::StatusHttpSnapshot snap;
   snap.host_running = true;
   snap.listen_multiaddr = "/ip6/2001:db8::1/udp/443/adp/1.0.0/p2p/12D3KooWTest";
-  snap.listen_multiaddrs = {snap.listen_multiaddr,
-                            "/ip4/10.0.0.5/udp/443/adp/1.0.0/p2p/12D3KooWTest"};
+  snap.listen_multiaddrs = {snap.listen_multiaddr, "/ip4/10.0.0.5/udp/443/adp/1.0.0/p2p/12D3KooWTest"};
   snap.peer_id = "12D3KooWtest";
   snap.circuit_relay = true;
   snap.media_relay = false;
@@ -179,8 +178,7 @@ TEST(StatusHttpProtocolTest, UnknownPathAndMethod) {
 TEST(StatusHttpProtocolTest, ParseRequestWaitsForAnnouncedBody) {
   const std::string body = R"({"state":"retiring"})";
   ASSERT_EQ(body.size(), 20u);
-  const std::string head20 =
-      "POST /control/state HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 20\r\n\r\n";
+  const std::string head20 = "POST /control/state HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 20\r\n\r\n";
   EXPECT_FALSE(pbr::TryParseStatusHttpRequest(head20 + body.substr(0, 5)));
   auto req = pbr::TryParseStatusHttpRequest(head20 + body);
   ASSERT_TRUE(req);
@@ -192,8 +190,7 @@ TEST(StatusHttpProtocolTest, ParseRequestWaitsForAnnouncedBody) {
 namespace {
 
 pbr::StatusHttpResponse PostState(const std::string& body, const pbr::StatusHttpActions& actions,
-                                  const pbr::StatusHttpAuthConfig& auth = {},
-                                  const std::string& authorization = {}) {
+                                  const pbr::StatusHttpAuthConfig& auth = {}, const std::string& authorization = {}) {
   pbr::StatusHttpRequest req;
   req.method = "POST";
   req.path = "/control/state";

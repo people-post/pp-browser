@@ -180,82 +180,81 @@ void ShellPageSheetGesture::ProcessEvent(ui::Event& event) {
     return;
   }
   switch (event.GetId()) {
-  case ui::EventId::Click:
-    if (swallow_click_) {
-      const bool same_press =
-          std::chrono::steady_clock::now() - swallow_since_ < std::chrono::milliseconds(300);
+    case ui::EventId::Click:
+      if (swallow_click_) {
+        const bool same_press = std::chrono::steady_clock::now() - swallow_since_ < std::chrono::milliseconds(300);
+        swallow_click_ = false;
+        if (same_press) {
+          event.StopPropagation();
+        }
+      }
+      break;
+    case ui::EventId::Mousedown: {
       swallow_click_ = false;
-      if (same_press) {
-        event.StopPropagation();
-      }
-    }
-    break;
-  case ui::EventId::Mousedown: {
-    swallow_click_ = false;
-    ui::Element* target = event.GetTargetElement();
-    if (ShouldIgnoreTarget(target)) {
-      return;
-    }
-    press_detent_ = options_.shown_detent ? options_.shown_detent() : SheetDetent::Full;
-    may_drag_up_ = press_detent_ != SheetDetent::Full && !InScrollingContent(target);
-    if (!may_drag_up_ && !ScrolledToTop(target)) {
-      return;
-    }
-    {
-      const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
-      const float top_px = sheet_->GetOffsetTop();
-      press_top_dp_ = ratio > 0.f ? top_px / ratio : top_px;
-    }
-    press_target_ = target;
-    tracking_ = true;
-    dragging_ = false;
-    start_x_px_ = event.GetParameter<int>("mouse_x", 0);
-    start_y_px_ = event.GetParameter<int>("mouse_y", 0);
-    last_y_px_ = start_y_px_;
-    velocity_.Reset();
-    velocity_.Add(NowMs(), 0.f);
-    SetDocumentCapture(true);
-    break;
-  }
-  case ui::EventId::Mousemove: {
-    if (!tracking_) {
-      return;
-    }
-    const int x = event.GetParameter<int>("mouse_x", 0);
-    const int y = event.GetParameter<int>("mouse_y", 0);
-    const int dx = x - start_x_px_;
-    const int dy = y - start_y_px_;
-    if (!dragging_) {
-      if (std::abs(dx) <= kDeadzonePx && std::abs(dy) <= kDeadzonePx) {
+      ui::Element* target = event.GetTargetElement();
+      if (ShouldIgnoreTarget(target)) {
         return;
       }
-      const bool up_ok = dy < 0 && may_drag_up_;
-      if ((dy <= 0 && !up_ok) || std::abs(dx) > std::abs(dy) || (dy > 0 && !ScrolledToTop(press_target_))) {
-        // Up or sideways first: the content scrolls / handles it.
-        tracking_ = false;
-        SetDocumentCapture(false);
+      press_detent_ = options_.shown_detent ? options_.shown_detent() : SheetDetent::Full;
+      may_drag_up_ = press_detent_ != SheetDetent::Full && !InScrollingContent(target);
+      if (!may_drag_up_ && !ScrolledToTop(target)) {
         return;
       }
-      dragging_ = true;
-      if (context_) {
-        // The list must not rubber-band down while the sheet itself follows the finger.
-        context_->SetScrollOverscrollEdges(true, true, false, true);
-        context_->ClearScrollOverscroll();
+      {
+        const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
+        const float top_px = sheet_->GetOffsetTop();
+        press_top_dp_ = ratio > 0.f ? top_px / ratio : top_px;
       }
+      press_target_ = target;
+      tracking_ = true;
+      dragging_ = false;
+      start_x_px_ = event.GetParameter<int>("mouse_x", 0);
+      start_y_px_ = event.GetParameter<int>("mouse_y", 0);
+      last_y_px_ = start_y_px_;
+      velocity_.Reset();
+      velocity_.Add(NowMs(), 0.f);
+      SetDocumentCapture(true);
+      break;
     }
-    last_y_px_ = y;
-    velocity_.Add(NowMs(), ToDp(dy));
-    SetOffset(ToDp(dy), false);
-    event.StopPropagation();
-    break;
-  }
-  case ui::EventId::Mouseup:
-    if (tracking_) {
-      Release();
+    case ui::EventId::Mousemove: {
+      if (!tracking_) {
+        return;
+      }
+      const int x = event.GetParameter<int>("mouse_x", 0);
+      const int y = event.GetParameter<int>("mouse_y", 0);
+      const int dx = x - start_x_px_;
+      const int dy = y - start_y_px_;
+      if (!dragging_) {
+        if (std::abs(dx) <= kDeadzonePx && std::abs(dy) <= kDeadzonePx) {
+          return;
+        }
+        const bool up_ok = dy < 0 && may_drag_up_;
+        if ((dy <= 0 && !up_ok) || std::abs(dx) > std::abs(dy) || (dy > 0 && !ScrolledToTop(press_target_))) {
+          // Up or sideways first: the content scrolls / handles it.
+          tracking_ = false;
+          SetDocumentCapture(false);
+          return;
+        }
+        dragging_ = true;
+        if (context_) {
+          // The list must not rubber-band down while the sheet itself follows the finger.
+          context_->SetScrollOverscrollEdges(true, true, false, true);
+          context_->ClearScrollOverscroll();
+        }
+      }
+      last_y_px_ = y;
+      velocity_.Add(NowMs(), ToDp(dy));
+      SetOffset(ToDp(dy), false);
+      event.StopPropagation();
+      break;
     }
-    break;
-  default:
-    break;
+    case ui::EventId::Mouseup:
+      if (tracking_) {
+        Release();
+      }
+      break;
+    default:
+      break;
   }
 }
 

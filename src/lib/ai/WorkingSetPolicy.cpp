@@ -39,16 +39,16 @@ int CountLines(const std::string& text) {
 
 WorkingSetRouting RouteTurn(const ResponseGoal goal, const RenderMode /*render_mode*/) {
   switch (goal) {
-  case ResponseGoal::DisplayFeed:
-  case ResponseGoal::PeopleDiscovery:
-    return {.panel_primary = true, .auto_open_eligible = true};
-  case ResponseGoal::Summarize:
-  case ResponseGoal::AnswerQuestion:
-  case ResponseGoal::Headlines:
-    return {.panel_primary = false, .auto_open_eligible = true};
-  case ResponseGoal::General:
-  default:
-    return {.panel_primary = false, .auto_open_eligible = true};
+    case ResponseGoal::DisplayFeed:
+    case ResponseGoal::PeopleDiscovery:
+      return {.panel_primary = true, .auto_open_eligible = true};
+    case ResponseGoal::Summarize:
+    case ResponseGoal::AnswerQuestion:
+    case ResponseGoal::Headlines:
+      return {.panel_primary = false, .auto_open_eligible = true};
+    case ResponseGoal::General:
+    default:
+      return {.panel_primary = false, .auto_open_eligible = true};
   }
 }
 
@@ -79,7 +79,7 @@ BlockEligibility EvaluateBlock(const Object& block, const ResponseGoal goal) {
     result.title = block.getString("title").value_or(TrOrDefault("working_set.title_list", "List"));
     const size_t count = items->elements.size();
     result.subtitle = count == 1 ? CountLabel("working_set.items_one", "{count} item", count)
-                                  : CountLabel("working_set.items_many", "{count} items", count);
+                                 : CountLabel("working_set.items_many", "{count} items", count);
     result.teaser_label = CountLabel("working_set.teaser_list", "View in panel ({count} items)", count);
     return result;
   }
@@ -93,7 +93,7 @@ BlockEligibility EvaluateBlock(const Object& block, const ResponseGoal goal) {
     if (const Array* fields = block.getArray("fields")) {
       const size_t count = fields->elements.size();
       result.subtitle = count == 1 ? CountLabel("working_set.fields_one", "{count} field", count)
-                                    : CountLabel("working_set.fields_many", "{count} fields", count);
+                                   : CountLabel("working_set.fields_many", "{count} fields", count);
       result.teaser_label = CountLabel("working_set.teaser_form_fields", "Open form ({count} fields)", count);
     } else {
       result.subtitle = "";
@@ -149,8 +149,7 @@ BlockEligibility EvaluateBlock(const Object& block, const ResponseGoal goal) {
     result.affinity = WorkingSetAffinity::Document;
     result.auto_open = routing.auto_open_eligible;
     result.title = TrOrDefault("working_set.title_code", "Code");
-    result.subtitle = CountLabel("working_set.lines", "{count} lines",
-                              static_cast<size_t>(CountLines(*text)));
+    result.subtitle = CountLabel("working_set.lines", "{count} lines", static_cast<size_t>(CountLines(*text)));
     result.teaser_label = TrOrDefault("working_set.teaser_code", "View full code");
     return result;
   }

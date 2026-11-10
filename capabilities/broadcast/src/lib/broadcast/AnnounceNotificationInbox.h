@@ -12,7 +12,7 @@ namespace pbr {
 
 /** One Notifications-tab row for a subscribed program tip (not live_chat). */
 struct AnnounceNotificationItem {
-  std::string key;  // peer|topic|program
+  std::string key; // peer|topic|program
   PeerAnnounceTip tip;
   bool dismissed = false;
   bool banner_dismissed = false;

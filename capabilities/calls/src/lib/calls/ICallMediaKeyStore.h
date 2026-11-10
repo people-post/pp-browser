@@ -33,8 +33,7 @@ public:
   static std::string BuildWrapAad(const std::string& call_id, uint32_t media_epoch, const std::string& media_key_id);
   /** Wrap an epoch key under a pairwise session key → base64 blob (V015). */
   static Roe<std::string> WrapKeyB64(const ByteVector& session_key, const ByteVector& key_bytes,
-                                     const std::string& call_id, uint32_t media_epoch,
-                                     const std::string& media_key_id);
+                                     const std::string& call_id, uint32_t media_epoch, const std::string& media_key_id);
   static Roe<ByteVector> UnwrapKeyB64(const ByteVector& session_key, const std::string& wrapped_key_b64,
                                       const std::string& call_id, uint32_t media_epoch,
                                       const std::string& media_key_id);

@@ -15,6 +15,7 @@
 #include <memory>
 #include <set>
 #include <stdexcept>
+#include <thread>
 
 namespace pbr {
 namespace {
@@ -32,7 +33,7 @@ struct InboxTestEnv {
     data_dir = std::filesystem::temp_directory_path() / ("pp_browser_inbox_" + suffix);
     std::filesystem::remove_all(data_dir);
     store = std::make_unique<InMemoryDeliveryStore>();
-    store->SetHiddenInDirectThread(&GroupMembershipCodec::IsHiddenInDirectThread);  // as the app's storage does
+    store->SetHiddenInDirectThread(&GroupMembershipCodec::IsHiddenInDirectThread); // as the app's storage does
     if (!store->SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
     }
@@ -94,13 +95,86 @@ TEST(InboxControllerUnreadTest, ActiveThreadSkipsInboundUnread) {
   ASSERT_TRUE(env.store->UpsertThread(direct));
 
   ASSERT_TRUE(env.inbox->OpenThread(direct.id));
-  env.inbox->OnInboundMessagePersisted(direct.id, "hello");
+  env.inbox->OnInboundMessagePersisted(direct.id, "hello", true);
 
   auto loaded = env.store->GetThread(direct.id);
   ASSERT_TRUE(loaded);
   ASSERT_TRUE(*loaded);
   EXPECT_EQ((*loaded)->unread_count, 0);
   EXPECT_EQ(loaded->value().preview, "hello");
+}
+
+TEST(InboxControllerUnreadTest, InboundUnreadFollowsOpenThreadAndAttention) {
+  // The four combinations (open x looking): only "open and looking" is not unread.
+  struct Case {
+    bool open;
+    bool attentive;
+    int expected_unread;
+  };
+  const Case cases[] = {{true, true, 0}, {true, false, 1}, {false, true, 1}, {false, false, 1}};
+  int index = 0;
+  for (const Case& c : cases) {
+    InboxTestEnv env("unread_attention_matrix_" + std::to_string(index++));
+    ASSERT_TRUE(env.inbox->ListThreads());
+
+    Thread direct;
+    direct.id = "thread-direct-attention";
+    direct.kind = ThreadKind::Direct;
+    direct.title = "Peer";
+    direct.updated_at = 1;
+    ASSERT_TRUE(env.store->UpsertThread(direct));
+    if (c.open) {
+      ASSERT_TRUE(env.inbox->OpenThread(direct.id));
+    }
+
+    env.inbox->OnInboundMessagePersisted(direct.id, "hi", c.attentive);
+
+    auto loaded = env.store->GetThread(direct.id);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(*loaded);
+    EXPECT_EQ((*loaded)->unread_count, c.expected_unread) << "open=" << c.open << " attentive=" << c.attentive;
+    EXPECT_EQ(env.inbox->SumUnread(), c.expected_unread);
+  }
+}
+
+TEST(InboxControllerUnreadTest, CountsAsUnreadIsFalseOnlyForTheOpenChatWhileLooking) {
+  EXPECT_FALSE(CountsAsUnread("a", "a", true));
+  EXPECT_TRUE(CountsAsUnread("a", "a", false)); // the same rule marks "you were mentioned"
+  EXPECT_TRUE(CountsAsUnread("a", "b", true));
+  EXPECT_TRUE(CountsAsUnread("a", "b", false));
+  EXPECT_TRUE(CountsAsUnread("a", "", true)); // no chat open
+}
+
+TEST(InboxControllerUnreadTest, InboundAndMarkReadFromTwoThreadsLoseNoUpdate) {
+  // The ingest thread adds unread while another thread rewrites the same row (a preview update): without the row
+  // lock a read-modify-write overlapping the increment drops it.
+  InboxTestEnv env("unread_row_race");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  Thread direct;
+  direct.id = "thread-race";
+  direct.kind = ThreadKind::Direct;
+  direct.title = "Peer";
+  direct.updated_at = 1;
+  ASSERT_TRUE(env.store->UpsertThread(direct));
+
+  constexpr int kInbound = 400;
+  std::thread ingest([&]() {
+    for (int i = 0; i < kInbound; ++i) {
+      env.inbox->OnInboundMessagePersisted(direct.id, std::nullopt, false);
+    }
+  });
+  std::thread ui([&]() {
+    for (int i = 0; i < kInbound; ++i) {
+      (void)env.inbox->UpdatePreview(direct.id, "p" + std::to_string(i));
+    }
+  });
+  ingest.join();
+  ui.join();
+
+  auto loaded = env.store->GetThread(direct.id);
+  ASSERT_TRUE(loaded);
+  ASSERT_TRUE(*loaded);
+  EXPECT_EQ((*loaded)->unread_count, kInbound);
 }
 
 TEST(InboxControllerUnreadTest, AnAnswerToTheActiveThreadCountsWhenItsPageIsNotShown) {
@@ -156,7 +230,7 @@ TEST(InboxControllerUnreadTest, InactiveThreadIncrementsOnInbound) {
   direct.updated_at = 1;
   ASSERT_TRUE(env.store->UpsertThread(direct));
 
-  env.inbox->OnInboundMessagePersisted(direct.id, "ping");
+  env.inbox->OnInboundMessagePersisted(direct.id, "ping", true);
 
   auto loaded = env.store->GetThread(direct.id);
   ASSERT_TRUE(loaded);
@@ -274,7 +348,8 @@ TEST(InboxControllerUnreadTest, ADirectChatMadeOnlyByGroupEventsIsNotListedUntil
   InboxTestEnv env("control_only");
   ASSERT_TRUE(env.inbox->ListThreads());
   const Thread direct = EventChat(env, "account:bob");
-  ASSERT_TRUE(env.store->AppendMessage(Event(direct, GroupMembershipControlType::MemberRemoved, direct.updated_at + 5000)));
+  ASSERT_TRUE(
+      env.store->AppendMessage(Event(direct, GroupMembershipControlType::MemberRemoved, direct.updated_at + 5000)));
   auto after = env.store->GetThread(direct.id);
   ASSERT_TRUE(after && *after);
   EXPECT_TRUE((*after)->preview.empty()) << "the event is not the preview";
@@ -288,7 +363,8 @@ TEST(InboxControllerUnreadTest, ADirectChatMadeOnlyByGroupEventsIsNotListedUntil
   EXPECT_EQ((*listed)[0].preview, "hi there");
 
   // A later event leaves the last readable message as the preview.
-  ASSERT_TRUE(env.store->AppendMessage(Event(direct, GroupMembershipControlType::GroupRenamed, direct.updated_at + 7000)));
+  ASSERT_TRUE(
+      env.store->AppendMessage(Event(direct, GroupMembershipControlType::GroupRenamed, direct.updated_at + 7000)));
   EXPECT_EQ((*env.inbox->ListThreads())[0].preview, "hi there");
 }
 
@@ -299,7 +375,8 @@ TEST(InboxControllerUnreadTest, ARealChatNeverVanishesNotEvenClearedAndRenamed) 
   ASSERT_TRUE(env.store->AppendMessage(Said(direct, "m-1", "hello", direct.updated_at + 1000)));
   ASSERT_EQ(env.inbox->ListThreads()->size(), 1u);
   ASSERT_TRUE(env.inbox->ClearThreadHistory(direct.id, /*forget_memory=*/false));
-  ASSERT_TRUE(env.store->AppendMessage(Event(direct, GroupMembershipControlType::GroupRenamed, direct.updated_at + 9000)));
+  ASSERT_TRUE(
+      env.store->AppendMessage(Event(direct, GroupMembershipControlType::GroupRenamed, direct.updated_at + 9000)));
   EXPECT_EQ(env.inbox->ListThreads()->size(), 1u) << "cleared, then only an event in it: still the user's chat";
 }
 
@@ -310,10 +387,11 @@ TEST(InboxControllerUnreadTest, AnOpenedOrPinnedEmptyChatStaysListed) {
   const Thread pinned = EventChat(env, "account:pinned");
   const Thread untouched = EventChat(env, "account:untouched");
   EXPECT_TRUE(env.inbox->ListThreads()->empty());
-  ASSERT_TRUE(env.inbox->OpenThread(started.id));  // the user started a chat with a contact
+  ASSERT_TRUE(env.inbox->OpenThread(started.id)); // the user started a chat with a contact
   env.inbox->ClearActiveThread();
-  env.inbox->KeepListed(pinned.id);  // what pinning does
-  ASSERT_TRUE(env.store->AppendMessage(Event(started, GroupMembershipControlType::MemberLeft, started.updated_at + 100)));
+  env.inbox->KeepListed(pinned.id); // what pinning does
+  ASSERT_TRUE(
+      env.store->AppendMessage(Event(started, GroupMembershipControlType::MemberLeft, started.updated_at + 100)));
   std::set<std::string> ids;
   const auto listed = env.inbox->ListThreads();
   ASSERT_TRUE(listed);
@@ -329,7 +407,8 @@ TEST(InboxControllerUnreadTest, ALongRunOfEventsOnTopOfHistoryStillShowsTheHisto
   ASSERT_TRUE(env.inbox->ListThreads());
   const Thread direct = EventChat(env, "account:bob");
   for (int i = 0; i < 10; ++i) {
-    ASSERT_TRUE(env.store->AppendMessage(Said(direct, "m-" + std::to_string(i), "real " + std::to_string(i), 1000 + i)));
+    ASSERT_TRUE(
+        env.store->AppendMessage(Said(direct, "m-" + std::to_string(i), "real " + std::to_string(i), 1000 + i)));
   }
   for (int i = 0; i < 150; ++i) {
     ASSERT_TRUE(env.store->AppendMessage(Event(direct, GroupMembershipControlType::GroupRenamed, 2000 + i)));
@@ -432,7 +511,6 @@ TEST(InboxControllerUnreadTest, SenderIconResolvesANonContactAccountThroughTheId
   EXPECT_EQ(facts.sender_icon("account:stranger"), expected);
   EXPECT_TRUE(facts.sender_icon("account:nobody").empty());
 }
-
 
 } // namespace
 } // namespace pbr

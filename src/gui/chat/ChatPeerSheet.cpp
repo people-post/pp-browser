@@ -15,7 +15,10 @@ namespace pbr {
 ChatPeerSheet::ChatPeerSheet(ChatMenusHost& host, ChatPresenter& presenter, const ChatScreenState& chat,
                              const ContactsNotifyPorts& contacts_notify,
                              const PeoplePickerNotifyPorts& people_picker_notify)
-    : host_(host), presenter_(presenter), chat_(chat), contacts_notify_(contacts_notify),
+    : host_(host),
+      presenter_(presenter),
+      chat_(chat),
+      contacts_notify_(contacts_notify),
       people_picker_notify_(people_picker_notify) {}
 
 void ChatPeerSheet::Open(ui::Event& ev) {
@@ -110,9 +113,11 @@ std::vector<ContextMenuAction> ChatPeerSheet::DirectActions(const Thread& thread
         blocked ? "unblock" : "block",
         Tr(blocked ? "chat.menu.unblock" : "chat.menu.block"),
         nullptr,
-        [this, contact_id, peer_id, name, blocked]() { RunBlockFlow(host_, presenter_, contacts_notify_, contact_id, peer_id, name, !blocked); },
+        [this, contact_id, peer_id, name, blocked]() {
+          RunBlockFlow(host_, presenter_, contacts_notify_, contact_id, peer_id, name, !blocked);
+        },
         "../icons/v2/block.svg",
-        !blocked,  // danger styling
+        !blocked, // danger styling
     });
   }
   if (!peer_id.empty()) {
@@ -215,7 +220,7 @@ std::vector<ContextMenuAction> ChatPeerSheet::GroupActions(const Thread& thread)
   const std::string group_id = *thread.group_id;
   const std::string current_local = thread.local_title;
 
-  if (!facade->IsGroupDissolved(group_id)) {  // G016: an ended group has no members to list
+  if (!facade->IsGroupDissolved(group_id)) { // G016: an ended group has no members to list
     actions.push_back({
         "group_members",
         Tr("chat.menu.group_members"),
@@ -268,17 +273,18 @@ std::vector<ContextMenuAction> ChatPeerSheet::GroupActions(const Thread& thread)
           Tr("chat.group.remove_unreachable", {{"name", name}}),
           nullptr,
           [this, group_id, identity = identity, name = name]() {
-            host_.ShowConfirm(Tr("chat.group.remove_member_title"),
-                              Tr("chat.group.remove_member_confirm", {{"name", name}}),
-                              [this, group_id, identity](bool ok) {
-                                if (!ok) {
-                                  return;
-                                }
-                                if (auto removed = presenter_.RemoveGroupMember(group_id, identity); !removed) {
-                                  UserFeedback::Fail(removed.error().message);
-                                }
-                                host_.NotifySurfaceChanged();
-                              }, true);
+            host_.ShowConfirm(
+                Tr("chat.group.remove_member_title"), Tr("chat.group.remove_member_confirm", {{"name", name}}),
+                [this, group_id, identity](bool ok) {
+                  if (!ok) {
+                    return;
+                  }
+                  if (auto removed = presenter_.RemoveGroupMember(group_id, identity); !removed) {
+                    UserFeedback::Fail(removed.error().message);
+                  }
+                  host_.NotifySurfaceChanged();
+                },
+                true);
           },
           "../icons/trash.svg",
           true,

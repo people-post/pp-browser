@@ -12,7 +12,9 @@ void Fire(const ui::DataEventFunc& handler, const ui::VariantList& args) {
   handler(ui::DataModelHandle(), ev, args);
 }
 
-ui::VariantList Args(std::vector<ui::Variant> values) { return ui::VariantList(values.begin(), values.end()); }
+ui::VariantList Args(std::vector<ui::Variant> values) {
+  return ui::VariantList(values.begin(), values.end());
+}
 
 } // namespace
 

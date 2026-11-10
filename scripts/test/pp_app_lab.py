@@ -488,6 +488,14 @@ def open_pair(lab):
     return a, a_thread, b, b_thread
 
 
+def set_call_invite_policy(u, policy):
+    """Me → Security → Who can call me (privacy P007). A new profile takes contacts_only: a call from someone
+    the user has not added is dropped silently, so a scenario about strangers' calls says so here."""
+    got = u.cmd("call_invite_policy", policy=policy).get("call_invite_policy")
+    if got != policy:
+        raise ProbeError("%s: who can call me is %r, not %r" % (u.name, got, policy))
+
+
 def summaries_settle(u, thread, want, timeout=20):
     deadline = time.time() + timeout
     while True:
@@ -510,11 +518,14 @@ def chats_with_settle(u, peer, want=1, timeout=20):
 # --- scenarios ------------------------------------------------------------------------------------
 
 def scenario_first_contact(lab):
-    """Bob has never heard of Alice: her call is the first thing he gets from her."""
+    """Bob has never heard of Alice: her call is the first thing he gets from her. A stranger's call rings
+    only where Who can call me lets everyone call (privacy P007: a new profile takes contacts only, which
+    drops it silently) — Bob chose Everyone."""
     a = lab.user("alice")
     b = lab.user("bob")
     a.wait_mesh()
     b.wait_mesh()
+    set_call_invite_policy(b, "everyone")
     a_thread = a.cmd("open_chat", account=b.account)["thread"]
     started = time.time()
     call_id = a.cmd("call", thread=a_thread)["call_id"]
@@ -559,7 +570,9 @@ def scenario_bystander_is_no_relay(lab):
     connect(c, c_thread, b)
     c.cmd("leave")
     assert_idle(b, c)
+    # Alice and Bob have added each other: Bob's phone rings for contacts only (privacy P007).
     a_thread = a.cmd("open_chat", account=b.account)["thread"]
+    b.cmd("open_chat", account=a.account)
     _, timing = connect(a, a_thread, b)
     a.cmd("leave")
     assert_idle(a, b)
@@ -984,7 +997,7 @@ def scenario_peer_hangs_up_while_backgrounded(lab):
 
 def scenario_answered_in_background(lab):
     """Bob's phone app is in the background; Alice's call wakes it by push and he answers without
-    opening the app (the phone's own call screen, CallKit on iPhone). The call outlasts the push's
+    opening the app (the phone's own call screen). The call outlasts the push's
     wake window, and ends when Alice hangs up."""
     a, a_thread, b, b_thread = open_pair(lab)
     b.cmd("background")
@@ -1636,7 +1649,9 @@ def thread_with(u, account):
 
 def scenario_first_message_brings_keys(lab):
     """Bob's directory never answers. Alice finds him through hers and writes: her first message carries
-    her key card, so Bob checks it and answers with no lookup; then she calls him and he answers."""
+    her key card, so Bob checks it and answers with no lookup, and adds her to his contacts from the chat
+    (what he holds for her — no lookup either; his phone rings for contacts only, privacy P007); then she
+    calls him and he answers."""
     a = lab.user("alice")
     b = lab.user("bob", directory=False)
     a.wait_mesh()
@@ -1647,6 +1662,7 @@ def scenario_first_message_brings_keys(lab):
     wait_for(lambda: transcript_row(b, b_thread, first), 20, "bob: alice's first message")
     reply = b.cmd("send", thread=b_thread, text="hi alice")["message_id"]
     wait_for(lambda: transcript_row(a, a_thread, reply), 20, "alice: bob's answer")
+    b.cmd("add_to_contacts", thread=b_thread)
     call_id = a.cmd("call", thread=a_thread)["call_id"]
     b.wait_surface("ringing", 40, call_id=call_id)
     b.cmd("accept_voice")
@@ -3297,9 +3313,13 @@ def scenario_group_call_one_way_contact(lab):
 
 def scenario_group_call_placed_by_stranger(lab):
     """Dave, whom no other member has added (Bob and Carol added each other), calls the group of
-    four: his ring and his call reach members who do not know him."""
+    four: his ring and his call reach members who do not know him. A member's call rings only where Who
+    can call me lets it (privacy P007: a new profile takes contacts only, which drops it silently) — Bob
+    and Carol chose Everyone; Alice, the owner, added Dave."""
     users, threads = open_group(lab, 4, contacts=("bob=carol",))
     a, b, c, d = users
+    for u in (b, c):
+        set_call_invite_policy(u, "everyone")
     call_id = group_call(d, threads[d.name], [a, b, c])
     assert_everyone_in_call(users, call_id)
     leave_all(users)
@@ -3307,9 +3327,11 @@ def scenario_group_call_placed_by_stranger(lab):
 
 def scenario_group_one_way_joins_late(lab):
     """The other way round, joining late: Dave added Bob, Bob never added Dave. Bob calls the group
-    of four; Dave declines, then joins from the group's call button."""
+    of four; Dave declines, then joins from the group's call button. Carol has not added Bob: his ring
+    reaches her because she lets everyone call (privacy P007: contacts only would drop it)."""
     users, threads = open_group(lab, 4, contacts=("dave>bob",))
     a, b, c, d = users
+    set_call_invite_policy(c, "everyone")
     call_id = b.cmd("call", thread=threads[b.name])["call_id"]
     for u in (a, c, d):
         u.wait_surface("ringing", 40, call_id=call_id)

@@ -38,7 +38,9 @@ struct HomeBriefCache {
   std::vector<HomeBriefItem> items;
 };
 
-inline constexpr int64_t kHomeBriefMaxAgeMs = 24LL * 60 * 60 * 1000;  // once a day: the auto-fetch tells the server IP+language+when Home opens, so keep it rare (privacy, 2026-11-05 review)
+inline constexpr int64_t kHomeBriefMaxAgeMs =
+    24LL * 60 * 60 *
+    1000; // once a day: the auto-fetch tells the server IP+language+when Home opens, so keep it rare (privacy, 2026-11-05 review)
 /** After a failed fetch, Home asks again no sooner than this (tab switches must not hammer the server). */
 inline constexpr int64_t kHomeBriefRetryMs = 10LL * 60 * 1000;
 inline constexpr size_t kHomeBriefShown = 3;

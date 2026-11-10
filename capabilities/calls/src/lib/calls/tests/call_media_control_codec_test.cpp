@@ -29,8 +29,7 @@ TEST(CallMediaControlCodecTest, EachMessageRoundTrips) {
   EXPECT_EQ(migrate->type, CallMediaControlType::Migrate);
   EXPECT_EQ(migrate->path_gen, 7u);
   EXPECT_EQ(migrate->media_epoch, 2u);
-  EXPECT_EQ(DecodeCallMediaControl(EncodeCallMediaMigrate("call:1", 2, 7, true))->type,
-            CallMediaControlType::PathAdd);
+  EXPECT_EQ(DecodeCallMediaControl(EncodeCallMediaMigrate("call:1", 2, 7, true))->type, CallMediaControlType::PathAdd);
   auto ack = DecodeCallMediaControl(EncodeCallMediaMigrateAck(false, 7, "no link"));
   EXPECT_EQ(ack->type, CallMediaControlType::MigrateAck);
   EXPECT_EQ(ack->error, "no link");

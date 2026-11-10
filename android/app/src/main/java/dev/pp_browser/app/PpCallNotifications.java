@@ -27,7 +27,7 @@ import androidx.core.app.Person;
  * It also holds the push's call: a call push that reached the phone before the app found the ring it announced.
  * The push can come with the app not running at all (the process started for it), so its "Incoming call" rings
  * from here and starts the app; once the app finds the ring, the same notification names the caller. Its timeouts
- * are CallKit's (CallSystemUi_Ios.mm).
+ * are the PENDING_* constants below.
  *
  * Every method may be called from any thread (native's UI thread, Firebase's, the main one): they lock the class.
  * The native callbacks only queue for the app's UI thread, so they are called under the lock.
@@ -72,7 +72,8 @@ final class PpCallNotifications {
 
     static native void nativeOnPendingGone();
 
-    static native void nativeOnPendingChanged();
+    /** `pending`: hasPendingPushCall() now (native keeps it, rather than asking every frame). */
+    static native void nativeOnPendingChanged(boolean pending);
 
     static synchronized void init(Context context) {
         if (sContext == null && context != null) {
@@ -235,7 +236,7 @@ final class PpCallNotifications {
         toNative(PpCallNotifications::nativeOnPendingGone);
     }
 
-    /** (Re)starts the push's call's countdown: it goes if its ring has not shown by then (CallKit's rule). */
+    /** (Re)starts the push's call's countdown: it goes if its ring has not shown by then. */
     private static void rearmPending() {
         final long age = SystemClock.elapsedRealtime() - sPendingSinceMs;
         long wait = PENDING_MAX_MS - age;
@@ -257,8 +258,10 @@ final class PpCallNotifications {
         clearPending();
     }
 
+    /** Under the lock: native hears the changes in order. */
     private static void pendingChanged() {
-        toNative(PpCallNotifications::nativeOnPendingChanged);
+        final boolean pending = sPending;
+        toNative(() -> nativeOnPendingChanged(pending));
     }
 
     /** The app's native side is not loaded (the process started for a push): nothing there to tell. */

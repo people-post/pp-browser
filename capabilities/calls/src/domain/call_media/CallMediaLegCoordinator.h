@@ -1,5 +1,6 @@
 #pragma once
 
+#include "amp/L1/Clock.h"
 #include "amp/link/MeshRuntime.h"
 #include "lib/calls/CallMediaBundleLogic.h"
 #include "domain/call_media/ICallMediaTransport.h"
@@ -33,6 +34,11 @@ struct CallMediaPathState {
  * Non-blocking `/pp/realtime/1.0.0` over AMP channel bundles on MeshRuntime.
  * One call attempt = call_id-keyed control+media bundle ([A021]).
  * Product uses CallMediaAmpTransport as the single entry when MeshHost Amp is up ([A020]).
+ * Every deadline and path timer (connect, migrate, heartbeats, silence, bye wait, reconnect window —
+ * CallMediaBundleLogic.h) runs on `timer_clock`, checked on the runtime's io tick. The product passes a
+ * monotonic one (MonotonicClock::Process(): amp's WallClock is system_clock, and a wall-clock step must not
+ * stretch or cut a call's windows); a harness that runs the runtime on a VirtualClock passes that same clock,
+ * so advancing it moves both. A deadline handed to amp (a channel-open wait) is converted to amp's clock.
  */
 class CallMediaLegCoordinator {
 public:
@@ -45,7 +51,8 @@ public:
   static CallMediaFailure WrapLinkFailure(const pp::amp::PeerLinkManager::Failure& link);
   using InboundHandler = CallMediaInboundHandler;
 
-  explicit CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime);
+  /** `timer_clock` outlives the coordinator. */
+  CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime, const pp::adp::Clock& timer_clock);
   ~CallMediaLegCoordinator();
 
   CallMediaLegCoordinator(const CallMediaLegCoordinator&) = delete;
@@ -60,18 +67,22 @@ public:
 
   /** Returns leg id immediately; completion via `on_finished` when MediaReady or error. */
   CallMediaLegId StartLeg(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                          LegConnected on_finished = {}, int timeout_ms = 15000);
+                          LegConnected on_finished = {}, int timeout_ms = static_cast<int>(kCallMediaConnectTimeoutMs));
 
   void CancelLeg(CallMediaLegId id);
+  /** Drop leg `id`'s bundle; an empty or gone id drops nothing (never another call's bundle). */
   void DetachLeg(CallMediaLegId id);
-  /** Detach primary/active bundle (empty id → PrimaryBundle). */
-  void Detach() { DetachLeg({}); }
+  /** Drop `call_id`'s bundle; another call's is untouched. Empty id: nothing. */
+  void DetachCall(const std::string& call_id);
+  /** Device level (shutdown): drop every call's bundle. */
+  void DetachAll();
   /**
    * K014: this end ended the call — a live leg says `bye` on its active path (best-effort, no ack;
-   * the same mux carries it ahead of the channels' close), then is detached. Empty id → primary.
+   * the same mux carries it ahead of the channels' close), then is detached. Empty or gone id: nothing.
    */
   void HangUpLeg(CallMediaLegId id);
-  void HangUp() { HangUpLeg({}); }
+  /** HangUpLeg for `call_id`'s bundle: a late hang-up of an ended call leaves the next call alone. */
+  void HangUpCall(const std::string& call_id);
 
   bool IsLegActive(CallMediaLegId id) const;
   bool IsActive() const;
@@ -106,7 +117,7 @@ public:
   /**
    * Default on: when a relayed call's peer becomes reachable over a Connected direct link (a punch
    * landed, or the peer dialed), the driver migrates the call there (`MigrateLeg`), retrying after
-   * a 10 s backoff. Off for tests that drive `MigrateLeg` themselves.
+   * a 10 s backoff (`kCallMediaAutoMigrateBackoffMs`). Off for tests that drive `MigrateLeg` themselves.
    */
   void SetAutoMigrateToDirect(bool enable);
   /** Test: behave like a peer from before k3 (never answers `migrate`). */
@@ -131,6 +142,7 @@ private:
   struct Impl;
   std::shared_ptr<Impl> impl_;
   pp::amp::MeshRuntime& runtime_;
+  const pp::adp::Clock& timer_clock_;
 };
 
 } // namespace pbr

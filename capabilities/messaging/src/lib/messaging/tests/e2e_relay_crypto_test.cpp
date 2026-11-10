@@ -41,8 +41,7 @@ void InstallTestPsk(InMemoryPeerSessions& psk_store, const Thread& thread) {
 }
 
 TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_e2e_relay_crypto";
+  const std::filesystem::path data_dir = std::filesystem::temp_directory_path() / "pp_browser_e2e_relay_crypto";
   std::filesystem::remove_all(data_dir);
   InMemoryDeliveryStore store;
   InMemoryPeerSessions psk_store(store);
@@ -81,7 +80,8 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(payload_b64));
   envelope.body.e2e.payload_b64 = *payload_b64;
 
-  const RelayCopy copy{.session_epoch = envelope.session_epoch, .sender_seq = envelope.sender_seq,
+  const RelayCopy copy{.session_epoch = envelope.session_epoch,
+                       .sender_seq = envelope.sender_seq,
                        .payload_b64 = envelope.body.e2e.payload_b64};
   auto body_hash = EnvelopeSigner::CopyHash(copy);
   ASSERT_TRUE(static_cast<bool>(body_hash));
@@ -96,8 +96,7 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
 }
 
 TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_e2e_pipeline_crypto";
+  const std::filesystem::path data_dir = std::filesystem::temp_directory_path() / "pp_browser_e2e_pipeline_crypto";
   std::filesystem::remove_all(data_dir);
   InMemoryDeliveryStore store;
   InMemoryPeerSessions psk_store(store);
@@ -119,7 +118,8 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
 
   InMemoryGroupRosterStore roster_store(store);
   RelayReceivePipeline pipeline(
-      store, [&peer_card](const std::string& account) -> std::optional<AccountCard> {
+      store,
+      [&peer_card](const std::string& account) -> std::optional<AccountCard> {
         return account == "account:peer" ? std::optional<AccountCard>(peer_card) : std::nullopt;
       },
       psk_store, test::ReceiveKeysOf(local), roster_store);

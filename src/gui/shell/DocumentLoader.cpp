@@ -27,7 +27,7 @@ ui::ElementDocument* DocumentLoader::LoadFile(ui::Context* context, const std::s
 }
 
 ui::ElementDocument* DocumentLoader::LoadFromMemory(ui::Context* context, const std::string& rml,
-                                                   const std::string& source_url) {
+                                                    const std::string& source_url) {
   if (!context) {
     return nullptr;
   }

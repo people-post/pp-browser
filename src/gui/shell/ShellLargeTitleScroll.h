@@ -8,15 +8,14 @@
 namespace ui {
 class Element;
 class Event;
-}
+} // namespace ui
 
 namespace pbr {
 
 /**
  * Phone layout: the root pages (Chats, Contacts, Me) open on a 52dp large title that collapses into the nav bar's
  * small title once the page is scrolled past it. One bubbling scroll listener on the nav page watches the scroller
- * marked `root-scroll` (its `collapse-at` attribute, in dp, replaces the 52dp default: the Chats page's header is 104dp
- * with its search box right under it) and reports only when the collapsed state flips (no work per scroll event otherwise).
+ * marked `root-scroll` (its `collapse-at` attribute, in dp, replaces the 52dp default) and reports only when the collapsed state flips (no work per scroll event otherwise).
  */
 class ShellLargeTitleScroll : public ui::EventListener {
 public:

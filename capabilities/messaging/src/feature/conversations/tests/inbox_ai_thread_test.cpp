@@ -189,7 +189,8 @@ TEST(InboxAiThreadTest, ALongFirstMessageIsCutOnACharacterBoundary) {
 TEST(InboxAiThreadTest, ATitleNeverSplitsAnEmojiSequence) {
   AiInboxEnv env;
   env.AddAiThread("ai-1", kDefaultAiThreadTitle);
-  const std::string family = "\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA7"; // man+woman+girl
+  const std::string family =
+      "\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA7"; // man+woman+girl
   std::string text(23, 'a');
   text += family + "tail"; // the family is the 24th character
   ASSERT_TRUE(env.inbox->NameAiThreadFromFirstMessage("ai-1", text));
@@ -235,14 +236,14 @@ TEST(InboxAiThreadTest, APlainNumberOrLongCjkIsNotMasked) {
   // A bare number (a year, a PIN, an amount) and ordinary prose — including long space-free Chinese — are not codes.
   std::string long_cjk;
   for (int i = 0; i < 250; ++i) {
-    long_cjk += "中";  // 250 CJK codepoints, no spaces: prose, not a blob
+    long_cjk += "中"; // 250 CJK codepoints, no spaces: prose, not a blob
   }
   for (const std::string& text : {std::string("123456"), std::string("2025"), long_cjk}) {
     AiInboxEnv env;
     env.AddAiThread("ai-1", kDefaultAiThreadTitle);
     ASSERT_TRUE(env.inbox->NameAiThreadFromFirstMessage("ai-1", text));
     ASSERT_TRUE(env.inbox->UpdatePreview("ai-1", text));
-    EXPECT_NE(StoredTitle(env, "ai-1"), kDefaultAiThreadTitle) << text;  // named from the message, not left default
+    EXPECT_NE(StoredTitle(env, "ai-1"), kDefaultAiThreadTitle) << text; // named from the message, not left default
     EXPECT_EQ(StoredPreview(env, "ai-1"), text) << "preview kept unmasked";
   }
 }

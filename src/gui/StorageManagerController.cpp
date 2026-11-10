@@ -137,7 +137,7 @@ std::string TileName(const std::string& name) {
   }
   const size_t dot = name.rfind('.');
   const std::string tail = dot != std::string::npos && name.size() - dot <= 6 ? name.substr(dot) : std::string();
-  size_t room = kBudget - 1 - tail.size();  // the "…" and the extension take their share
+  size_t room = kBudget - 1 - tail.size(); // the "…" and the extension take their share
   std::string head;
   for (const Ch& ch : chars) {
     if (ch.pos >= name.size() - tail.size() || ch.width > room) {
@@ -252,7 +252,7 @@ void StorageManagerController::Bind(ui::DataModelConstructor& ctor) {
             if (attribute != nullptr) {
               int index = cur->GetAttribute<int>(attribute, -1);
               if (index >= 0 && cur->HasAttribute("storage-file")) {
-                index += static_cast<int>(cells_.size());  // a file row follows the cells in tab_items_
+                index += static_cast<int>(cells_.size()); // a file row follows the cells in tab_items_
               }
               // After the press is handled: the rows re-render.
               AppRuntime::PostUI(lifetime_.Bind([this, index]() { PickByLongPress(index); }));
@@ -423,8 +423,9 @@ void StorageManagerController::BuildPageItems() {
     }
   }
   const StorageKindTotals totals = StorageTotalsOf(page_all_);
-  tab_all_label_ = (Tr("settings.storage.manage.kind.all") + " " +
-                    std::to_string(totals.pictures + totals.videos + totals.files)).c_str();
+  tab_all_label_ =
+      (Tr("settings.storage.manage.kind.all") + " " + std::to_string(totals.pictures + totals.videos + totals.files))
+          .c_str();
   tab_picture_label_ = (KindLabel("picture") + " " + std::to_string(totals.pictures)).c_str();
   tab_video_label_ = (KindLabel("video") + " " + std::to_string(totals.videos)).c_str();
   tab_file_label_ = (KindLabel("file") + " " + std::to_string(totals.files)).c_str();
@@ -434,17 +435,16 @@ void StorageManagerController::BuildCells() {
   const auto items_of = [this](const StoredKind kind) {
     return items_large_ ? StorageItemsOfKind(page_all_, kind) : StorageItemsOfChat(page_all_, items_thread_, kind);
   };
-  size_t all_media = 0;  // "all" tab: photos and videos in all, before paging
+  size_t all_media = 0; // "all" tab: photos and videos in all, before paging
   if (tab_ == "all") {
     // Photos and videos together (newest first) for the grid, then the files: a cell's index is its place in
     // tab_items_, and a file row's is cells_.size() + its own, whatever the tab.
     tab_items_ = items_of(StoredKind::Picture);
     const std::vector<StoredAttachmentItem> videos = items_of(StoredKind::Video);
     tab_items_.insert(tab_items_.end(), videos.begin(), videos.end());
-    std::stable_sort(tab_items_.begin(), tab_items_.end(),
-                     [](const StoredAttachmentItem& a, const StoredAttachmentItem& b) {
-                       return a.timestamp_ms > b.timestamp_ms;
-                     });
+    std::stable_sort(
+        tab_items_.begin(), tab_items_.end(),
+        [](const StoredAttachmentItem& a, const StoredAttachmentItem& b) { return a.timestamp_ms > b.timestamp_ms; });
     // Only the photos and videos are paged; the files (few) are all listed under the grid.
     all_media = tab_items_.size();
     if (all_media > shown_) {
@@ -475,11 +475,11 @@ void StorageManagerController::BuildCells() {
                         .detail = MessageTimeLabel(item.timestamp_ms, now).c_str(),
                         .size = FormatByteSize(item.bytes).c_str(),
                         .ext = FileTypeLabel(item).c_str(),
-                         .kind = FileIconKind(item).c_str(),
-                         .tile_name = TileName(file_name).c_str(),
-                         .picked = picked,
-                         .audio = audio && AudioPlayer() != nullptr,
-                         .cover = cover.c_str()});
+                        .kind = FileIconKind(item).c_str(),
+                        .tile_name = TileName(file_name).c_str(),
+                        .picked = picked,
+                        .audio = audio && AudioPlayer() != nullptr,
+                        .cover = cover.c_str()});
       continue;
     }
     std::string thumb = commands_.storage.thumbnail_path
@@ -687,8 +687,8 @@ void StorageManagerController::Back() {
 IAudioFilePlayer* StorageManagerController::AudioPlayer() {
   if (!audio_made_) {
     audio_made_ = true;
-    audio_ = commands_.storage.make_audio_player ? commands_.storage.make_audio_player()
-                                                 : CreatePlatformAudioFilePlayer();
+    audio_ =
+        commands_.storage.make_audio_player ? commands_.storage.make_audio_player() : CreatePlatformAudioFilePlayer();
   }
   return audio_.get();
 }
@@ -791,8 +791,10 @@ void StorageManagerController::ApplyAudioToRows() {
     FileRow& row = files_[i];
     const bool mine = !audio_key_.empty() && item.thread_id + "\n" + HashKey(item.content_hash) == audio_key_;
     row.playing = mine && !audio_paused_;
-    const VoiceBubbleState state{.playing = mine && !audio_paused_, .paused = mine && audio_paused_,
-                                 .position_ms = audio_position_ms_, .duration_ms = audio_duration_ms_};
+    const VoiceBubbleState state{.playing = mine && !audio_paused_,
+                                 .paused = mine && audio_paused_,
+                                 .position_ms = audio_position_ms_,
+                                 .duration_ms = audio_duration_ms_};
     row.progress = mine ? (std::to_string(VoiceBubbleFillPercent(state)) + "%").c_str() : "";
     if (mine && audio_duration_ms_ > 0) {
       row.detail = VoiceBubbleTimeText(state, audio_duration_ms_).c_str();
@@ -833,14 +835,13 @@ void StorageManagerController::OpenItem(const StoredAttachmentItem& item) {
       }
     };
     if (needs_confirm && feedback_.show_confirm) {
-      feedback_.show_confirm(
-          Tr("chat.attachment.open_confirm_title"), Tr("chat.attachment.open_confirm_body"),
-          [open_file](const bool ok) {
-            if (ok) {
-              open_file();
-            }
-          },
-          {});
+      feedback_.show_confirm(Tr("chat.attachment.open_confirm_title"), Tr("chat.attachment.open_confirm_body"),
+                             [open_file](const bool ok) {
+                               if (ok) {
+                                 open_file();
+                               }
+                             },
+                             {});
       return;
     }
     open_file();
@@ -866,14 +867,13 @@ void StorageManagerController::DeleteSelected() {
       message += " " + Tr("settings.storage.manage.delete_only_here", {{"count", std::to_string(facts.only_here)}});
     }
     if (releasable < selected_bytes && facts.shared_elsewhere > 0) {
-      message +=
-          " " + Tr("settings.storage.manage.delete_shared", {{"count", std::to_string(facts.shared_elsewhere)}});
+      message += " " + Tr("settings.storage.manage.delete_shared", {{"count", std::to_string(facts.shared_elsewhere)}});
     }
     feedback_.show_confirm(title, message, lifetime_.Bind([this, refs](const bool ok) {
-                             if (ok) {
-                               PerformDelete(refs);
-                             }
-                           }),
+      if (ok) {
+        PerformDelete(refs);
+      }
+    }),
                            Tr("settings.storage.manage.delete"));
   };
   if (!commands_.storage.releasable_bytes) {
@@ -916,24 +916,24 @@ void StorageManagerController::OnChanged() {
 
 void StorageManagerController::Follow(const StorageRecomputeGate::Decision decision) {
   switch (decision.step) {
-  case StorageRecomputeGate::Step::Nothing:
-    return;
-  case StorageRecomputeGate::Step::RunNow:
-    StartRecompute();
-    return;
-  case StorageRecomputeGate::Step::RunLater:
-    if (!commands_.storage.run_later) {
+    case StorageRecomputeGate::Step::Nothing:
+      return;
+    case StorageRecomputeGate::Step::RunNow:
       StartRecompute();
       return;
-    }
-    commands_.storage.run_later(std::chrono::milliseconds(decision.delay_ms), lifetime_.Bind([this]() {
-                                  if (visible_ && !visible_()) {
-                                    gate_.Reset();
-                                    return;
-                                  }
-                                  Follow(gate_.OnTimer(NowMs()));
-                                }));
-    return;
+    case StorageRecomputeGate::Step::RunLater:
+      if (!commands_.storage.run_later) {
+        StartRecompute();
+        return;
+      }
+      commands_.storage.run_later(std::chrono::milliseconds(decision.delay_ms), lifetime_.Bind([this]() {
+        if (visible_ && !visible_()) {
+          gate_.Reset();
+          return;
+        }
+        Follow(gate_.OnTimer(NowMs()));
+      }));
+      return;
   }
 }
 
@@ -1072,13 +1072,31 @@ void StorageManagerController::DirtyAll() {
   page_binding_ = page_.c_str();
   tab_binding_ = tab_.c_str();
   auto& host = DataModelHost::Instance();
-  for (const char* key :
-       {"storage_page", "storage_ready", "storage_total_label", "storage_segments", "storage_manage_label",
-        "storage_manage_segments", "storage_large_visible", "storage_large_count_label", "storage_large_size_label",
-        "storage_chats", "storage_media_empty", "storage_items_title", "storage_tab", "storage_tab_all_label", "storage_tab_picture_label",
-        "storage_tab_video_label", "storage_tab_file_label", "storage_cells", "storage_files", "storage_list_empty",
-        "storage_has_more", "storage_selecting", "storage_busy", "storage_has_selection",
-        "storage_selection_label"}) {
+  for (const char* key : {"storage_page",
+                          "storage_ready",
+                          "storage_total_label",
+                          "storage_segments",
+                          "storage_manage_label",
+                          "storage_manage_segments",
+                          "storage_large_visible",
+                          "storage_large_count_label",
+                          "storage_large_size_label",
+                          "storage_chats",
+                          "storage_media_empty",
+                          "storage_items_title",
+                          "storage_tab",
+                          "storage_tab_all_label",
+                          "storage_tab_picture_label",
+                          "storage_tab_video_label",
+                          "storage_tab_file_label",
+                          "storage_cells",
+                          "storage_files",
+                          "storage_list_empty",
+                          "storage_has_more",
+                          "storage_selecting",
+                          "storage_busy",
+                          "storage_has_selection",
+                          "storage_selection_label"}) {
     host.Dirty(kModel, key);
   }
 }

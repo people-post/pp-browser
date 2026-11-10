@@ -128,7 +128,7 @@ TEST_F(AccountLockerWorkflowTest, TheNewestCopyWinsWhetherFileOrProvider) {
   EXPECT_EQ(BobsName(**restored), "Bob from work") << "the provider's copy is newer than the file";
 
   RenameBob("Bob (climbing)");
-  auto new_file = workflow_->ExportFileJson();  // saved after the last write: newer than the provider's
+  auto new_file = workflow_->ExportFileJson(); // saved after the last write: newer than the provider's
   ASSERT_TRUE(new_file);
   restored = Restore({*new_file});
   ASSERT_TRUE(restored && restored->has_value());

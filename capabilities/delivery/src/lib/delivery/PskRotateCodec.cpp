@@ -17,7 +17,7 @@ Roe<PskRotateDetail> ParseDetailJson(const std::string& detail_json) {
   detail.rotation_id = json->getString("rotation_id").value_or(std::string{});
   const uint64_t new_epoch = json->getNonNegInt("new_epoch").value_or(0);
   if (new_epoch > UINT32_MAX) {
-    return Error("psk_rotate new_epoch out of range");  // rejected, not truncated
+    return Error("psk_rotate new_epoch out of range"); // rejected, not truncated
   }
   detail.new_epoch = static_cast<uint32_t>(new_epoch);
   detail.wrap_kind = json->getString("wrap_kind").value_or(std::string{});

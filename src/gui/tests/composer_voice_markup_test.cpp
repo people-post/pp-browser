@@ -35,7 +35,7 @@ std::string ReadAll(const std::string& path) {
   std::ostringstream out;
   out << in.rdbuf();
   std::string text = out.str();
-  text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());  // a CRLF checkout (Windows) reads the same
+  text.erase(std::remove(text.begin(), text.end(), '\r'), text.end()); // a CRLF checkout (Windows) reads the same
   return text;
 }
 
@@ -51,8 +51,8 @@ protected:
     ASSERT_NE(context, nullptr);
     ASSERT_TRUE(DataModelHost::Instance().Register(context, "chat", [this](ui::DataModelConstructor& ctor) {
       BindChatScreenState(ctor, state);
-      for (const char* name : {"send_message", "stop_turn", "voice_press", "voice_click", "voice_send",
-                               "voice_cancel", "voice_mode_toggle", "attach_file", "open_emoji_insert", "draft_changed",
+      for (const char* name : {"send_message", "stop_turn", "voice_press", "voice_click", "voice_send", "voice_cancel",
+                               "voice_mode_toggle", "attach_file", "open_emoji_insert", "draft_changed",
                                "cancel_quote_reply", "retry_attachment_send", "discard_attachment_send",
                                "cancel_attachment_send", "remove_image", "attach_capture"}) {
         ctor.BindEventCallback(name, [](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {});
@@ -63,16 +63,20 @@ protected:
     std::ostringstream body;
     body << file.rdbuf();
     const auto localized = LocalizationService::Instance().LocalizeText(body.str());
-    document = context->LoadDocumentFromMemory("<rml><head><style>" + ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss") +
-                                              "</style></head><body>" + wrap_open_ + localized + wrap_close_ +
-                                              "</body></rml>");
+    document = context->LoadDocumentFromMemory(
+        "<rml><head><style>" + ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss") +
+        "</style></head><body>" + wrap_open_ + localized + wrap_close_ + "</body></rml>");
     ASSERT_NE(document, nullptr);
     document->Show();
   }
   void TearDown() override {
     DataModelHost::Instance().Clear();
-    if (context) { ui::RemoveContext("composer-voice-test"); }
-    if (initialized) { ui::Shutdown(); }
+    if (context) {
+      ui::RemoveContext("composer-voice-test");
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
   void Apply() {
@@ -173,7 +177,7 @@ protected:
   ChatScreenState state;
 };
 
-// Desktop layout (Kenneth 2026-10-31): [toggle] [emoji] [pill: input | clip | camera] [send, only with text]; voice
+// Desktop layout (Kenneth 2026-10-31, emoji moved right 2026-11-10): [toggle] [pill: input | clip | camera] [emoji] [send, only with text]; voice
 // mode [toggle] [bar]; a status row above the pill only when something needs saying. Phones: see ComposerPhoneRowTest.
 TEST_F(ComposerVoiceMarkupTest, TextModeWithoutADraftShowsTheToggleThePillAndNoSend) {
   state.show_voice = true;
@@ -474,14 +478,17 @@ TEST_F(ComposerVoiceMarkupTest, TheToggleKeepsItsSizeWhileTypingALongDraftAndAft
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
   EXPECT_FLOAT_EQ(toggle_width(), before);
   // The shell may mount the composer again (RmlMount::MountInner) while the chat stays open.
-  document->SetInnerRML(ui::String(LocalizationService::Instance().LocalizeText(ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/views/composer.rml")).c_str()));
+  document->SetInnerRML(
+      ui::String(LocalizationService::Instance()
+                     .LocalizeText(ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/views/composer.rml"))
+                     .c_str()));
   Apply();
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
   EXPECT_FLOAT_EQ(toggle_width(), before);
 }
 
 // Phones (Kenneth 2026-11-04, WhatsApp style, the same row as the ask-AI panel's; 2026-11-07 every key inside the
-// pill): DOM order [emoji] [pill: input | plus] [microphone], the microphone giving its place to Send once there is
+// pill): DOM order [pill: input | plus] [emoji] [microphone], the microphone giving its place to Send once there is
 // text; voice mode [bar] [keyboard].
 class ComposerPhoneRowTest : public ComposerVoiceMarkupTest {
 protected:
@@ -497,13 +504,14 @@ bool Has(const std::string& classes, const char* cls) {
 
 TEST_F(ComposerPhoneRowTest, WithoutTextTheMicrophoneEndsTheRow) {
   state.show_voice = true;
+  state.thread_is_private = true; // a human chat: the microphone, no idle Send
   state.show_attach_button = true;
   state.show_capture = true;
   Apply();
   const std::vector<std::string> order = RowOrder();
   ASSERT_EQ(order.size(), 3u);
-  EXPECT_TRUE(Has(order[0], "prompt-emoji-btn"));
-  EXPECT_TRUE(Has(order[1], "prompt-composer-pill"));
+  EXPECT_TRUE(Has(order[0], "prompt-composer-pill"));
+  EXPECT_TRUE(Has(order[1], "prompt-emoji-btn"));
   EXPECT_TRUE(Has(order[2], "prompt-voice-toggle-btn--end")) << "the microphone is on the right";
   EXPECT_EQ(Shown("prompt-voice-toggle-btn--start"), 0) << "no microphone on the left";
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
@@ -537,10 +545,10 @@ TEST_F(ComposerPhoneRowTest, VoiceModeShowsTheBarAndTheKeyboardKeyAtTheEnd) {
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 0) << "while recording the bar has the row";
 }
 
-// Kenneth 2026-11-07: one composer on phones, every key inside the pill: the bold plus and the emoji key at its bottom
-// left, the microphone (Send once there is text) at its bottom right; no camera (the plus card has it). The keys are
-// 44dp tall targets on the pill's 36dp line, and the text starts after them.
-TEST_F(ComposerPhoneRowTest, EveryKeySitsInsideThePillOnItsLastLine) {
+// TODO #202 (Kenneth 2026-11-09, tweaked the same day): one composer on phones, a floating pill: 46dp high with the
+// accent emoji circle (32dp) 7dp inside its right end and no camera; the round 44dp plus 10dp left of it, the round
+// 44dp microphone (Send once there is text) 10dp right of it; the row is exactly the pill.
+TEST_F(ComposerPhoneRowTest, ThePillFloatsBetweenTheRoundPlusAndTheRoundMicrophone) {
   state.show_voice = true;
   state.show_attach_button = true;
   state.show_capture = true;
@@ -558,31 +566,40 @@ TEST_F(ComposerPhoneRowTest, EveryKeySitsInsideThePillOnItsLastLine) {
     return std::pair<ui::Vector2f, ui::Vector2f>{};
   };
   const auto [pill_min, pill_max] = box("prompt-composer-pill");
-  const float line = pill_max.y - pill_min.y;
-  EXPECT_LT(line, 44.f);
-  EXPECT_FLOAT_EQ(SizeOf("prompt-composer-row").y, line) << "the keys do not grow the row";
+  EXPECT_FLOAT_EQ(pill_max.y - pill_min.y, 46.f) << "the pill is 46dp high";
+  EXPECT_FLOAT_EQ(SizeOf("prompt-composer-row").y, 46.f) << "the keys do not grow the row";
   const auto [plus_min, plus_max] = box("prompt-attach-btn");
   const auto [emoji_min, emoji_max] = box("prompt-emoji-btn");
-  const auto [mic_min, mic_max] = box("prompt-voice-toggle-btn--end");
-  for (const auto& [lo, hi] : {std::pair{plus_min, plus_max}, std::pair{emoji_min, emoji_max}, std::pair{mic_min, mic_max}}) {
+  const auto [mic_min, mic_max] = box("prompt-mic-btn");
+  for (const auto& [lo, hi] : {std::pair{plus_min, plus_max}, std::pair{mic_min, mic_max}}) {
     EXPECT_FLOAT_EQ(hi.y - lo.y, 44.f);
-    EXPECT_NEAR((lo.y + hi.y) / 2, (pill_min.y + pill_max.y) / 2, 1.5f) << "centred on the one-line pill";
-    EXPECT_GE(lo.x, pill_min.x - 0.5f);
-    EXPECT_LE(hi.x, pill_max.x + 0.5f);
+    EXPECT_FLOAT_EQ(hi.x - lo.x, 44.f);
+    EXPECT_NEAR((lo.y + hi.y) / 2, (pill_min.y + pill_max.y) / 2, 0.5f) << "centred on the one-line pill";
   }
-  EXPECT_LT(plus_max.x, emoji_max.x) << "the plus, then the emoji key";
-  EXPECT_LE(plus_max.x, emoji_min.x + 0.5f);
-  EXPECT_FLOAT_EQ(mic_max.x, pill_max.x) << "the microphone ends the pill";
+  EXPECT_NEAR(pill_min.x - plus_max.x, 10.f, 0.5f) << "10dp between the plus and the pill";
+  EXPECT_NEAR(mic_min.x - pill_max.x, 10.f, 0.5f) << "10dp between the pill and the microphone";
+  EXPECT_FLOAT_EQ(emoji_max.x - emoji_min.x, 32.f);
+  EXPECT_FLOAT_EQ(emoji_max.y - emoji_min.y, 32.f);
+  EXPECT_GE(emoji_min.x, pill_min.x) << "the emoji key is inside the pill, at its right end";
+  EXPECT_LE(emoji_max.x, pill_max.x);
+  EXPECT_NEAR(pill_max.x - emoji_max.x, 7.f, 0.5f) << "7dp inside the pill";
   ui::Element* input = document->GetElementById("draft-input");
   ASSERT_NE(input, nullptr);
-  EXPECT_GE(input->GetAbsoluteOffset(ui::BoxArea::Border).x, emoji_max.x) << "the text starts after the keys";
+  const ui::Vector2f input_at = input->GetAbsoluteOffset(ui::BoxArea::Border);
+  const float input_right = input_at.x + input->GetBox().GetSize(ui::BoxArea::Border).x;
+  EXPECT_LE(input_right, emoji_min.x) << "the text field ends before the emoji key (its width is reserved)";
+  EXPECT_LT(input_at.x, emoji_min.x) << "the text field is left of the emoji key";
+  EXPECT_NEAR(pill_max.y - emoji_max.y, 7.f, 0.5f) << "the emoji sits at the pill's bottom, by the last line";
+  EXPECT_NEAR((emoji_min.y + emoji_max.y) / 2, (pill_min.y + pill_max.y) / 2, 0.5f) << "centred on one line";
+  EXPECT_GT(emoji_min.x, plus_max.x) << "the plus stays at the far left";
+  EXPECT_LT(emoji_max.x, mic_min.x) << "the microphone stays at the far right, outside the pill";
   state.draft = "hello";
   Apply();
   const auto [send_min, send_max] = box("prompt-send-btn");
-  EXPECT_FLOAT_EQ(send_max.x, pill_max.x) << "Send takes the microphone's place";
+  EXPECT_FLOAT_EQ(send_min.x, mic_min.x) << "Send takes the microphone's place";
+  EXPECT_FLOAT_EQ(send_max.x - send_min.x, 44.f);
   EXPECT_FLOAT_EQ(send_max.y - send_min.y, 44.f);
-  EXPECT_FLOAT_EQ(SizeOf("prompt-send-disc").x, 32.f) << "the accent disc inside the target";
-  EXPECT_FLOAT_EQ(SizeOf("prompt-composer-row").y, line) << "Send does not grow the row";
+  EXPECT_FLOAT_EQ(SizeOf("prompt-composer-row").y, 46.f) << "Send does not grow the row";
 }
 
 TEST_F(ComposerVoiceMarkupTest, TheDesktopKeepsTheMicrophoneOnTheLeft) {
@@ -627,7 +644,6 @@ TEST(ComposerVoiceSourceTest, SyncComposerInputStateRefreshesTheVoiceToggle) {
   ASSERT_NE(end, std::string::npos);
   EXPECT_NE(source.substr(start, end - start).find("voice_->Refresh()"), std::string::npos);
 }
-
 
 // The camera icon follows the same state as the toggle: it must be recomputed where an upload ends (Sync...), where a
 // call starts or ends (UpdatePeerLinkChrome) and with the thread chrome (which ends in Sync...).

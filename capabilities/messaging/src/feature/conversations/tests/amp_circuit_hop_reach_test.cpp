@@ -68,9 +68,7 @@ public:
     inner_.SetProtocolHandler(protocol_id, std::move(handler));
   }
 
-  void RemoveProtocolHandler(const std::string& protocol_id) override {
-    inner_.RemoveProtocolHandler(protocol_id);
-  }
+  void RemoveProtocolHandler(const std::string& protocol_id) override { inner_.RemoveProtocolHandler(protocol_id); }
 
   mesh::MeshPeerLinkSnapshot GetLinkSnapshot(const std::string& peer_key) const override {
     return inner_.GetLinkSnapshot(peer_key);
@@ -93,10 +91,9 @@ public:
     return inner_.BindChannel(peer_key, channel_id, std::move(policy), std::move(on_frame), std::move(on_closed));
   }
 
-  std::shared_ptr<pp::amp::ChannelSession> BindChannelOnLink(pp::amp::LinkHandle link, uint32_t channel_id,
-                                                             pp::amp::ChannelPolicy policy,
-                                                             pp::amp::ChannelSession::FrameHandler on_frame,
-                                                             pp::amp::ChannelSession::ClosedCallback on_closed) override {
+  std::shared_ptr<pp::amp::ChannelSession> BindChannelOnLink(
+      pp::amp::LinkHandle link, uint32_t channel_id, pp::amp::ChannelPolicy policy,
+      pp::amp::ChannelSession::FrameHandler on_frame, pp::amp::ChannelSession::ClosedCallback on_closed) override {
     return inner_.BindChannelOnLink(link, channel_id, std::move(policy), std::move(on_frame), std::move(on_closed));
   }
 
@@ -236,8 +233,7 @@ protected:
 TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSkipsEnsureAssociationAndPreferredMultiaddr) {
   WarmAnswererAndOfferer("relay");
 
-  const std::string private_ma =
-      "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_b, private_ma)));
   ASSERT_TRUE(recording_->GetLinkSnapshot(harness_->peer_id_b).has_endpoint);
   ASSERT_FALSE(recording_->IsConnected(harness_->peer_id_b));
@@ -251,7 +247,8 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSkipsEnsureAssociationAndPreferred
       [](const std::string&) { return std::vector<std::string>{"relay"}; },
       // Punch miss (expected under dual-NAT) — fall through to nested circuit.
       [](const std::string&, mesh::PunchIntroducerWalk::Done on_done) {
-        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath, "punch burst dial timed out"));
+        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath,
+                                                       "punch burst dial timed out"));
       },
       mesh::AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
@@ -273,8 +270,7 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
   // still reach Connected via nested circuit and must not call EnsureAssociation (hard-w5 Phase-2).
   WarmAnswererAndOfferer("relay");
 
-  const std::string private_ma =
-      "/ip4/10.255.255.9/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  const std::string private_ma = "/ip4/10.255.255.9/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_b, private_ma)));
   ASSERT_TRUE(recording_->GetLinkSnapshot(harness_->peer_id_b).has_endpoint);
   ASSERT_FALSE(recording_->IsConnected(harness_->peer_id_b));
@@ -296,21 +292,18 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
         on_complete(LinkRoe::error(Failure::Of(Err::DialInBackoff, "amp link: dial in backoff")));
       }
     }
-    void OpenChannel(const std::string& peer_key, const std::string& protocol_id,
-                     pp::amp::ChannelPolicy policy, ChannelCb on_complete) override {
+    void OpenChannel(const std::string& peer_key, const std::string& protocol_id, pp::amp::ChannelPolicy policy,
+                     ChannelCb on_complete) override {
       inner_.OpenChannel(peer_key, protocol_id, std::move(policy), std::move(on_complete));
     }
-    void EstablishNestedOverCarrier(const std::string& peer_key,
-                                    std::shared_ptr<pp::amp::ChannelSession> carrier, bool initiator,
-                                    LinkCb on_complete) override {
+    void EstablishNestedOverCarrier(const std::string& peer_key, std::shared_ptr<pp::amp::ChannelSession> carrier,
+                                    bool initiator, LinkCb on_complete) override {
       inner_.EstablishNestedOverCarrier(peer_key, std::move(carrier), initiator, std::move(on_complete));
     }
     void SetProtocolHandler(const std::string& protocol_id, ProtocolHandler handler) override {
       inner_.SetProtocolHandler(protocol_id, std::move(handler));
     }
-    void RemoveProtocolHandler(const std::string& protocol_id) override {
-      inner_.RemoveProtocolHandler(protocol_id);
-    }
+    void RemoveProtocolHandler(const std::string& protocol_id) override { inner_.RemoveProtocolHandler(protocol_id); }
     mesh::MeshPeerLinkSnapshot GetLinkSnapshot(const std::string& peer_key) const override {
       return inner_.GetLinkSnapshot(peer_key);
     }
@@ -318,24 +311,22 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
       return inner_.SnapshotByPeerId(peer_id);
     }
     bool IsConnected(const std::string& peer_key) const override { return inner_.IsConnected(peer_key); }
-  bool IsConnectedRelayed(const std::string& peer_id) const override { return inner_.IsConnectedRelayed(peer_id); }
+    bool IsConnectedRelayed(const std::string& peer_id) const override { return inner_.IsConnectedRelayed(peer_id); }
     bool IsReachable(const std::string& peer_id) const override { return inner_.IsReachable(peer_id); }
     void MarkWarm(const std::string& peer_key) override { inner_.MarkWarm(peer_key); }
     void WhenChannelOpen(const std::string& peer_key, uint32_t channel_id, int64_t deadline_ms,
                          std::function<void(bool ok)> done) override {
       inner_.WhenChannelOpen(peer_key, channel_id, deadline_ms, std::move(done));
     }
-    std::shared_ptr<pp::amp::ChannelSession> BindChannel(
-        const std::string& peer_key, uint32_t channel_id, pp::amp::ChannelPolicy policy,
-        pp::amp::ChannelSession::FrameHandler on_frame,
-        pp::amp::ChannelSession::ClosedCallback on_closed) override {
-      return inner_.BindChannel(peer_key, channel_id, std::move(policy), std::move(on_frame),
-                                std::move(on_closed));
+    std::shared_ptr<pp::amp::ChannelSession> BindChannel(const std::string& peer_key, uint32_t channel_id,
+                                                         pp::amp::ChannelPolicy policy,
+                                                         pp::amp::ChannelSession::FrameHandler on_frame,
+                                                         pp::amp::ChannelSession::ClosedCallback on_closed) override {
+      return inner_.BindChannel(peer_key, channel_id, std::move(policy), std::move(on_frame), std::move(on_closed));
     }
     std::shared_ptr<pp::amp::ChannelSession> BindChannelOnLink(
         pp::amp::LinkHandle link, uint32_t channel_id, pp::amp::ChannelPolicy policy,
-        pp::amp::ChannelSession::FrameHandler on_frame,
-        pp::amp::ChannelSession::ClosedCallback on_closed) override {
+        pp::amp::ChannelSession::FrameHandler on_frame, pp::amp::ChannelSession::ClosedCallback on_closed) override {
       return inner_.BindChannelOnLink(link, channel_id, std::move(policy), std::move(on_frame), std::move(on_closed));
     }
 
@@ -349,7 +340,8 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
       *circuit_a_, *hops_, backoff_links, [this] { harness_->PumpAll(); },
       [](const std::string&) { return std::vector<std::string>{"relay"}; },
       [](const std::string&, mesh::PunchIntroducerWalk::Done on_done) {
-        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath, "punch burst dial timed out"));
+        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath,
+                                                       "punch burst dial timed out"));
       },
       mesh::AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
@@ -377,7 +369,9 @@ TEST_F(AmpCircuitHopReachTest, RelayedReachBuildsACircuitBesideADirectLink) {
   mesh::AmpCircuitHopReach reach(
       *circuit_a_, *hops_, *recording_, [this] { harness_->PumpAll(); },
       [](const std::string&) { return std::vector<std::string>{"relay"}; },
-      [](const std::string&, mesh::PunchIntroducerWalk::Done on_done) { on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath, "no punch here")); },
+      [](const std::string&, mesh::PunchIntroducerWalk::Done on_done) {
+        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath, "no punch here"));
+      },
       mesh::AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   recording_->nested_over_carrier_calls = 0;
@@ -429,10 +423,8 @@ TEST_F(AmpCircuitHopReachTest, PrivateHopMaDoesNotPoisonPublicPreferred) {
   WarmAnswererAndOfferer(harness_->peer_id_r);
   ASSERT_TRUE(recording_->GetLinkSnapshot(harness_->peer_id_r).has_endpoint);
 
-  const std::string public_ma =
-      "/ip4/203.0.113.50/udp/4001/adp/1.0.0/p2p/" + harness_->peer_id_r;
-  const std::string private_hop_ma =
-      "/ip4/10.255.255.7/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_r;
+  const std::string public_ma = "/ip4/203.0.113.50/udp/4001/adp/1.0.0/p2p/" + harness_->peer_id_r;
+  const std::string private_hop_ma = "/ip4/10.255.255.7/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_r;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_r, public_ma)));
   ASSERT_EQ(recording_->PreferredMultiaddr(harness_->peer_id_r).value_or(""), public_ma);
   EXPECT_FALSE(mesh::CircuitHopDialBookAllowsRegister(private_hop_ma));
@@ -458,7 +450,8 @@ TEST_F(AmpCircuitHopReachTest, PrivateHopMaDoesNotPoisonPublicPreferred) {
         return out;
       },
       [](const std::string&, mesh::PunchIntroducerWalk::Done on_done) {
-        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath, "punch burst dial timed out"));
+        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath,
+                                                       "punch burst dial timed out"));
       },
       mesh::AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
@@ -473,16 +466,14 @@ TEST_F(AmpCircuitHopReachTest, SkipsWildcardPreferredRelayThenUsesDialable) {
   // Dogfood 084055: capability ingest left Preferred=/ip4/0.0.0.0 on seed; StartBridge sendto
   // then AV on next relay. Skip undialable Preferred and advance to a dialable hop.
   WarmAnswererAndOfferer(harness_->peer_id_r);
-  const std::string wildcard_ma =
-      "/ip4/0.0.0.0/udp/53523/adp/1.0.0/p2p/" + harness_->peer_id_r;
+  const std::string wildcard_ma = "/ip4/0.0.0.0/udp/53523/adp/1.0.0/p2p/" + harness_->peer_id_r;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_r, wildcard_ma)));
   ASSERT_EQ(recording_->PreferredMultiaddr(harness_->peer_id_r).value_or(""), wildcard_ma);
   EXPECT_FALSE(mesh::CircuitHopMultiaddrIsUdpDialable(wildcard_ma));
 
   // Alias "relay" keeps MemoryIo-dialable MA so StartBridge can succeed after skip.
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint("relay", harness_->ma_r)));
-  ASSERT_TRUE(mesh::CircuitHopMultiaddrIsUdpDialable(
-      recording_->PreferredMultiaddr("relay").value_or("")));
+  ASSERT_TRUE(mesh::CircuitHopMultiaddrIsUdpDialable(recording_->PreferredMultiaddr("relay").value_or("")));
 
   mesh::AmpCircuitHopReach reach(
       *circuit_a_, *hops_, *recording_, [this] { harness_->PumpAll(); },
@@ -497,7 +488,8 @@ TEST_F(AmpCircuitHopReachTest, SkipsWildcardPreferredRelayThenUsesDialable) {
         return out;
       },
       [](const std::string&, mesh::PunchIntroducerWalk::Done on_done) {
-        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath, "punch burst dial timed out"));
+        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath,
+                                                       "punch burst dial timed out"));
       },
       mesh::AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
@@ -586,7 +578,8 @@ TEST_F(AmpCircuitHopReachTest, HopEnsureFallsThroughToCircuitAfterPunchWindowExp
       [](const std::string&) { return std::vector<std::string>{"relay"}; },
       [punch_calls](const std::string&, mesh::PunchIntroducerWalk::Done on_done) {
         ++(*punch_calls);
-        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath, "punch burst window expired"));
+        on_done(mesh::PunchIntroducerWalk::Failure::Of(mesh::PunchIntroducerWalk::Err::NoPath,
+                                                       "punch burst window expired"));
       },
       mesh::AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 

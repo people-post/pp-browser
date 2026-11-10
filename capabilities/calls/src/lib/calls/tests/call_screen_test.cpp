@@ -52,15 +52,37 @@ TEST(CallScreenTest, ActivityShowsUntilMediaIsLive) {
   EXPECT_EQ(out.status, Status::Activity);
   EXPECT_FALSE(out.activity_spent);
 
-  s.media_chrome_live = true;  // live: the activity is spent
+  s.media_chrome_live = true; // live: the activity is spent
   out = Decide(s);
   EXPECT_TRUE(out.activity_spent);
   EXPECT_EQ(out.status, Status::Connected);
 
-  s.recovery = CallRecovery::Reattaching;  // still recovering the group path: the activity stays
+  s.recovery = CallRecovery::Reattaching; // still recovering the group path: the activity stays
   out = Decide(s);
   EXPECT_FALSE(out.activity_spent);
   EXPECT_EQ(out.status, Status::Activity);
+}
+
+TEST(CallScreenTest, AConnectedCallSwitchingPathReadsReconnectingNotTheStacksActivityWords) {
+  // #181: the reconnect capsule is the only prompt; "Switching to another line…" is not shown on top of it.
+  InCallSignals s;
+  s.was_connected = true;
+  s.activity = "Switching to another line…";
+  s.media_status = CallMediaStatus::HopWaiting;
+  s.recovery = CallRecovery::WaitingForHop;
+  const InCallStatus out = Decide(s);
+  EXPECT_EQ(out.status, Status::Reconnecting);
+  EXPECT_TRUE(out.show_elapsed);
+  EXPECT_EQ(out.hint, CallScreen::Hint::None);
+}
+
+TEST(CallScreenTest, ADroppedCallHasNoHintLineBeyondItsFailedPage) {
+  InCallSignals s;
+  s.was_connected = true;
+  s.media_status = CallMediaStatus::Failed;
+  const InCallStatus out = Decide(s);
+  EXPECT_EQ(out.status, Status::Disconnected);
+  EXPECT_EQ(out.hint, CallScreen::Hint::None);
 }
 
 TEST(CallScreenTest, AFailureAfterBeingConnectedReadsDisconnected) {
@@ -69,7 +91,7 @@ TEST(CallScreenTest, AFailureAfterBeingConnectedReadsDisconnected) {
   EXPECT_EQ(Decide(s).status, Status::CouldntConnect) << "never connected: the user may retry";
   s.was_connected = true;
   EXPECT_EQ(Decide(s).status, Status::Disconnected);
-  InCallSignals mesh;  // the mesh path reports the failure after the reconnect window: still "disconnected"
+  InCallSignals mesh; // the mesh path reports the failure after the reconnect window: still "disconnected"
   mesh.direct_connect_failed = true;
   mesh.was_connected = true;
   const InCallStatus out = Decide(mesh);
@@ -100,9 +122,9 @@ TEST(CallScreenTest, TheHopPathSteps) {
   EXPECT_EQ(Decide(s).status, Status::WaitingForMediaPath);
   s.media_status = CallMediaStatus::HopAttaching;
   EXPECT_EQ(Decide(s).status, Status::Connecting);
-  s.recovery = CallRecovery::Migrating;  // a latch only: HopAttaching still owns the line
+  s.recovery = CallRecovery::Migrating; // a latch only: HopAttaching still owns the line
   EXPECT_EQ(Decide(s).status, Status::Connecting);
-  s.media_status = CallMediaStatus::DirectConnecting;  // the latch shows once nothing else does
+  s.media_status = CallMediaStatus::DirectConnecting; // the latch shows once nothing else does
   EXPECT_EQ(Decide(s).status, Status::SettingUpGroup);
   s.recovery = CallRecovery::WaitingForHop;
   EXPECT_EQ(Decide(s).status, Status::WaitingForMediaPath);
@@ -126,17 +148,17 @@ TEST(CallScreenTest, MediaRunningOnACallNotLiveYetReadsConnecting) {
   EXPECT_EQ(Decide(s).status, Status::Connecting);
   s.recovery = CallRecovery::Reattaching; // the group path is being recovered
   EXPECT_EQ(Decide(s).status, Status::Reconnecting);
-  s.recovery = CallRecovery::HopLost;  // attempts made, none in flight: still nothing flows
+  s.recovery = CallRecovery::HopLost; // attempts made, none in flight: still nothing flows
   EXPECT_EQ(Decide(s).status, Status::Reconnecting);
   EXPECT_FALSE(RecoveryInFlight(CallRecovery::HopLost)) << "path decisions see no recovery in flight";
   EXPECT_TRUE(RecoveryInFlight(CallRecovery::Reattaching));
 
-  InCallSignals connecting;  // the call is connecting before the engine runs
+  InCallSignals connecting; // the call is connecting before the engine runs
   connecting.media_active = false;
   connecting.media_status = CallMediaStatus::DirectConnecting;
   EXPECT_EQ(Decide(connecting).status, Status::Connecting);
 
-  InCallSignals reattaching;  // a guest's hop reattach: the call is not live, whatever the seat says
+  InCallSignals reattaching; // a guest's hop reattach: the call is not live, whatever the seat says
   reattaching.media_active = true;
   reattaching.media_status = CallMediaStatus::HopAttaching;
   reattaching.recovery = CallRecovery::Reattaching;
@@ -201,7 +223,8 @@ TEST(CallScreenTest, ACallThatHungUpByItselfBeforeConnectingIsReported) {
   EXPECT_TRUE(EndedWithoutConnecting(GroupScreen(Status::CouldntConnect, false, false), gone, false));
   EXPECT_FALSE(EndedWithoutConnecting(stuck, gone, true)) << "the others ended it";
   EXPECT_FALSE(EndedWithoutConnecting(GroupScreen(Status::Connected, true, true), gone, false)) << "it was live";
-  EXPECT_FALSE(EndedWithoutConnecting(GroupScreen(Status::Calling, false, false), gone, false)) << "unanswered, not stuck";
+  EXPECT_FALSE(EndedWithoutConnecting(GroupScreen(Status::Calling, false, false), gone, false))
+      << "unanswered, not stuck";
   EXPECT_FALSE(EndedWithoutConnecting(stuck, stuck, false)) << "still on screen";
   EXPECT_FALSE(EndedWithoutConnecting(CallScreen{}, gone, false));
 }
@@ -212,7 +235,7 @@ TEST(CallScreenTest, ACallThatWasLiveIsNotLostForGoodWhileItsPathMoves) {
     InCallSignals s;
     s.was_connected = true;
     s.direct_connect_failed = true; // latched from the 1:1 path
-    s.media_status = moving;      // a third person joined: the call moves onto a hop
+    s.media_status = moving;        // a third person joined: the call moves onto a hop
     EXPECT_NE(Decide(s).status, Status::Disconnected) << static_cast<int>(moving);
     EXPECT_NE(Decide(s).status, Status::CouldntConnect) << static_cast<int>(moving);
   }
@@ -288,7 +311,7 @@ TEST(NoMediaWatchTest, OnlyAGroupCallWithOthersInItCounts) {
   one_to_one.group = false;
   EXPECT_FALSE(StepEverySecond(watch, 10'000, 100'000, one_to_one));
   NoMediaSample alone = LiveGroup(0, 9'000);
-  alone.others_joined = 0;  // waiting alone: V053's own wait applies
+  alone.others_joined = 0; // waiting alone: V053's own wait applies
   EXPECT_FALSE(StepEverySecond(watch, 101'000, 200'000, alone));
 }
 

@@ -31,7 +31,8 @@ TEST(OrgBackendClientFactoryTest, BuildsHttpClientsWhenConfigured) {
 
 TEST(OrgBackendClientFactoryTest, LeavesClientsUnsetWhenBaseUrlEmpty) {
   Endpoints empty_config;
-  auto empty_clients = pbr::CreateOrgBackendClients(empty_config.relay, empty_config.directory, empty_config.registration);
+  auto empty_clients =
+      pbr::CreateOrgBackendClients(empty_config.relay, empty_config.directory, empty_config.registration);
   EXPECT_FALSE(static_cast<bool>(empty_clients.directory));
   EXPECT_FALSE(static_cast<bool>(empty_clients.registration));
   EXPECT_FALSE(static_cast<bool>(empty_clients.blob));
@@ -56,7 +57,6 @@ TEST(OrgBackendClientFactoryTest, SkipsNonHttpDirectoryProviders) {
 }
 
 namespace {
-
 
 class ScriptedDirectoryClient : public pp::mesh::IDirectoryClient {
 public:

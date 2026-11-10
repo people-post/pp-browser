@@ -43,7 +43,9 @@ inline bool IsExtender(uint32_t cp) {
          cp == 0x200C;
 }
 
-inline bool IsRegionalIndicator(uint32_t cp) { return cp >= 0x1F1E6 && cp <= 0x1F1FF; }
+inline bool IsRegionalIndicator(uint32_t cp) {
+  return cp >= 0x1F1E6 && cp <= 0x1F1FF;
+}
 
 /** Byte length of the display character (extended grapheme cluster, approximated) starting at `i`. */
 inline size_t ClusterLength(std::string_view s, size_t i) {
@@ -72,11 +74,12 @@ inline size_t ClusterLength(std::string_view s, size_t i) {
   return end - i;
 }
 
-inline bool IsSpace(char c) { return c == ' ' || c == '\n' || c == '\r' || c == '\t'; }
+inline bool IsSpace(char c) {
+  return c == ' ' || c == '\n' || c == '\r' || c == '\t';
+}
 
 inline bool IsBase64Char(char c) {
-  return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/' ||
-         c == '=';
+  return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=';
 }
 
 } // namespace ai_title_detail

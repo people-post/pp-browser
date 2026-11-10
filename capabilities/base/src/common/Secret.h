@@ -23,7 +23,7 @@ public:
   SecretText() = default;
   SecretText(std::string text) : text_(std::move(text)) {}  // NOLINT(google-explicit-constructor)
   SecretText(std::string_view text) : text_(text) {}        // NOLINT(google-explicit-constructor)
-  SecretText(const char* text) : text_(text ? text : "") {}  // NOLINT(google-explicit-constructor)
+  SecretText(const char* text) : text_(text ? text : "") {} // NOLINT(google-explicit-constructor)
 
   SecretText(const SecretText& other) = default;
   SecretText(SecretText&& other) noexcept : text_(std::move(other.text_)) { other.Wipe(); }

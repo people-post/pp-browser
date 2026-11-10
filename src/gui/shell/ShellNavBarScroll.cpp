@@ -101,7 +101,7 @@ ui::Element* ShellNavBarScroll::PageHost(ui::Element* scroller) {
   while (host && !host->IsClassSet(kPageHostClass)) {
     host = host->GetParentNode();
   }
-  return host;  // none: a page sheet's copy of the page, which keeps its own title row
+  return host; // none: a page sheet's copy of the page, which keeps its own title row
 }
 
 void ShellNavBarScroll::OnPageScroll(ui::Element* scroller) {

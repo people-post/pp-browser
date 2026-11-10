@@ -110,13 +110,10 @@ void BroadcastServices::PublishLiveChatFromOverlayAsync(const std::string& peer_
   PublishAndPushAsync(peer_key, *draft, now_ms, std::move(on_done));
 }
 
-Roe<PeerAnnounceTipAck> BroadcastServices::PublishLiveChatFromOverlay(const std::string& peer_key,
-                                                                      const std::string& topic_id,
-                                                                      const std::string& program_id,
-                                                                      const std::string& join_handle,
-                                                                      const std::string& viewer_peer_id,
-                                                                      const AnnounceOverlayReplyBody& body,
-                                                                      const int64_t now_ms) {
+Roe<PeerAnnounceTipAck> BroadcastServices::PublishLiveChatFromOverlay(
+    const std::string& peer_key, const std::string& topic_id, const std::string& program_id,
+    const std::string& join_handle, const std::string& viewer_peer_id, const AnnounceOverlayReplyBody& body,
+    const int64_t now_ms) {
   auto draft = MakeLiveChatAnnounceDraft(topic_id, program_id, join_handle, viewer_peer_id, body);
   if (!draft) {
     return draft.error();

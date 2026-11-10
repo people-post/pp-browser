@@ -15,7 +15,7 @@
 namespace ui {
 class Context;
 class Element;
-}
+} // namespace ui
 
 namespace pbr {
 
@@ -34,9 +34,8 @@ public:
 
   void SetDirtyTurns(std::function<void()> dirty_turns) { dirty_turns_ = std::move(dirty_turns); }
   /** Draws a thread's transcript window as bound rows (the chat controller renders and decorates). */
-  using RowBuilder = std::function<std::vector<MessageDisplayRow>(const std::string& thread_id,
-                                                                  std::optional<int64_t> oldest_inclusive,
-                                                                  std::optional<int64_t> newest_inclusive)>;
+  using RowBuilder = std::function<std::vector<MessageDisplayRow>(
+      const std::string& thread_id, std::optional<int64_t> oldest_inclusive, std::optional<int64_t> newest_inclusive)>;
   void SetRowBuilder(RowBuilder rows) { rows_ = std::move(rows); }
   /**
    * Marks rows after they are built (search inside the chat tints its hits). Runs on every path that fills the

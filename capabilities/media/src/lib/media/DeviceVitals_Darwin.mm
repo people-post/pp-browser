@@ -18,18 +18,18 @@ DeviceVitals ReadDeviceVitals() {
               static_cast<double>(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1e6;
   }
   switch ([NSProcessInfo processInfo].thermalState) {
-  case NSProcessInfoThermalStateNominal:
-    v.thermal = 0;
-    break;
-  case NSProcessInfoThermalStateFair:
-    v.thermal = 1;
-    break;
-  case NSProcessInfoThermalStateSerious:
-    v.thermal = 2;
-    break;
-  case NSProcessInfoThermalStateCritical:
-    v.thermal = 3;
-    break;
+    case NSProcessInfoThermalStateNominal:
+      v.thermal = 0;
+      break;
+    case NSProcessInfoThermalStateFair:
+      v.thermal = 1;
+      break;
+    case NSProcessInfoThermalStateSerious:
+      v.thermal = 2;
+      break;
+    case NSProcessInfoThermalStateCritical:
+      v.thermal = 3;
+      break;
   }
   if (@available(macOS 12.0, iOS 9.0, *)) {
     v.low_power = [NSProcessInfo processInfo].isLowPowerModeEnabled;

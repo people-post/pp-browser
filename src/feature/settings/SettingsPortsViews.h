@@ -7,7 +7,7 @@ namespace pbr {
 
 /** PIN vault readiness for Me → Security (app → ProfileSecretsEngine). */
 struct PinProtectionView {
-  bool ready = false;    // secrets initialized + has vault
+  bool ready = false; // secrets initialized + has vault
   bool unlocked = false;
 };
 
@@ -31,7 +31,6 @@ struct SettingsReachabilityView {
   /** From ReachabilityHelpKey — empty when no sheet. */
   std::string help_kind;
 };
-
 
 /** Me → Storage CAS library row (P3 / C013). */
 struct CasLibraryItemView {

@@ -44,7 +44,7 @@ constexpr const char* kOrigin = "https://backend.example.test";
 
 TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
   ScopedOrigin origin(kOrigin);
-  const std::string partial_path = 
+  const std::string partial_path =
       (std::filesystem::temp_directory_path() / "pp_browser_config_merge_test.json").string();
   {
     std::ofstream out(partial_path);
@@ -103,7 +103,7 @@ TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
   pbr::SettingsDraft draft;
   draft.llm_preset = "brief";
   draft.llm_base_url = "https://backend.example.test/api/llm/v1";
-  draft.llm_model = "brief";  // preset-name mistake → normalized to default
+  draft.llm_model = "brief"; // preset-name mistake → normalized to default
   const pbr::AppConfig brief_from_draft = pbr::ApplyLlmSettingsDraft(defaults, draft);
   EXPECT_EQ(brief_from_draft.llm.model, "xai");
   EXPECT_TRUE(brief_from_draft.llm.api_key.empty());
@@ -164,15 +164,17 @@ TEST(ConfigMergeTest, NetworkDraftCarriesDirectConnections) {
   EXPECT_EQ(defaults.mesh.direct_connections, pp::mesh::DirectAudience::Contacts);
   pbr::SettingsUiState state;
   state.direct_connections = "friendly";
-  EXPECT_EQ(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.direct_connections, pp::mesh::DirectAudience::Friendly);
+  EXPECT_EQ(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.direct_connections,
+            pp::mesh::DirectAudience::Friendly);
   EXPECT_FALSE(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.trusted_relays_only);
   state.trusted_relays_only = "on";
   EXPECT_TRUE(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.trusted_relays_only);
   EXPECT_FALSE(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.reachable_without_relay) << "off by default";
   state.reachable_without_relay = "on";
   EXPECT_TRUE(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.reachable_without_relay);
-  state.direct_connections = "strangers";  // not a choice: the saved value stands
-  EXPECT_EQ(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.direct_connections, pp::mesh::DirectAudience::Contacts);
+  state.direct_connections = "strangers"; // not a choice: the saved value stands
+  EXPECT_EQ(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.direct_connections,
+            pp::mesh::DirectAudience::Contacts);
 }
 
 TEST(ConfigMergeTest, NetworkDraftCarriesBackendChoiceAndKeepsCustomUrlsWhenNotCustom) {

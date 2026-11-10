@@ -41,8 +41,12 @@ protected:
   }
   void TearDown() override {
     DataModelHost::Instance().Clear();
-    if (context) { ui::RemoveContext("large-title-test"); }
-    if (initialized) { ui::Shutdown(); }
+    if (context) {
+      ui::RemoveContext("large-title-test");
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
   NullRender renderer;
@@ -59,9 +63,8 @@ TEST(LargeTitleRules, CollapsesOnceTheWholeTitleIsScrolledAway) {
   EXPECT_FALSE(ShellState{}.large_title_collapsed);
 }
 
-// The Chats page has a 104dp header with its search box right under it: its scroller says `collapse-at="20"` (dp), the
-// point where the box starts to slide under the avatar row, instead of the 52dp default.
-TEST(LargeTitleRules, ChatsPageCollapsesAtTwentyDpNotFiftyTwo) {
+// A scroller may carry `collapse-at` (dp) to replace the 52dp default threshold; the Chats page uses the default again.
+TEST(LargeTitleRules, ThresholdCanBeOverriddenPerScroller) {
   EXPECT_FALSE(ShellLargeTitleScroll::CollapsedAt(19.f, 1.f, 20.f));
   EXPECT_TRUE(ShellLargeTitleScroll::CollapsedAt(20.f, 1.f, 20.f));
   EXPECT_TRUE(ShellLargeTitleScroll::CollapsedAt(40.f, 2.f, 20.f)) << "px are converted with the dp ratio";
@@ -69,7 +72,8 @@ TEST(LargeTitleRules, ChatsPageCollapsesAtTwentyDpNotFiftyTwo) {
     std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "sidebar.rml");
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   }();
-  EXPECT_NE(rml.find("root-scroll\" collapse-at=\"20\""), std::string::npos);
+  EXPECT_EQ(rml.find("collapse-at"), std::string::npos) << "Chats uses the default threshold";
+  EXPECT_NE(rml.find("<p class=\"large-title\">"), std::string::npos) << "Chats has a large title to collapse";
 }
 
 TEST_F(LargeTitleTest, ValueChangesAndTheNavPageFollows) {
@@ -104,7 +108,8 @@ TEST_F(LargeTitleTest, ChatsLinkStatusFollowsSetChatsLink) {
       "<rml><body><div id=\"page\" data-model=\"window\">"
       "<p id=\"line\" data-if=\"chats_link_state != ''\">{{chats_link_text}}</p>"
       "<span id=\"ok\" style=\"width: 5px; height: 5px;\" data-if=\"chats_link_state == 'ok'\"></span>"
-      "<span id=\"off\" style=\"width: 5px; height: 5px;\" data-if=\"chats_link_state == 'offline'\"></span></div></body></rml>");
+      "<span id=\"off\" style=\"width: 5px; height: 5px;\" data-if=\"chats_link_state == "
+      "'offline'\"></span></div></body></rml>");
   ASSERT_NE(document, nullptr);
   document->Show();
   context->Update();

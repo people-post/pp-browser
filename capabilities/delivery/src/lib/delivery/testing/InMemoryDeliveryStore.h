@@ -35,7 +35,9 @@ public:
    * Which messages do not move a direct thread (its preview, its place, `listed`): messaging's rule — group
    * membership events (`GroupMembershipCodec::IsHiddenInDirectThread`) — for tests that care. None by default.
    */
-  void SetHiddenInDirectThread(std::function<bool(const ThreadMessage&)> hidden) { hidden_in_direct_ = std::move(hidden); }
+  void SetHiddenInDirectThread(std::function<bool(const ThreadMessage&)> hidden) {
+    hidden_in_direct_ = std::move(hidden);
+  }
 
   // IDekConsumer: it takes the profile's data key as the app's stores do, and keeps nothing at rest to use it on.
   Roe<void> SetDek(ByteVector /*dek*/) override { return {}; }

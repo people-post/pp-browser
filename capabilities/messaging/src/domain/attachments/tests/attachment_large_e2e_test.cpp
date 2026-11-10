@@ -1,14 +1,15 @@
-// A manual end-to-end run of a large attachment against DEV/tools/fake_blob_server.py, to read the peak memory
-// of a send, a receive and an open. Skipped unless PP_E2E_BLOB_URL is set; run one phase per process so the
-// process high-water mark belongs to that phase alone:
+// A manual end-to-end run of a large attachment against scripts/dev/fake_blob_server.py (the relay's files routes
+// on loopback), to read the peak memory of a send, a receive and an open. Skipped unless PP_E2E_BLOB_URL is set
+// (manual: `cost/flake` in TESTING.md's skip taxonomy); run one phase per process so the process high-water mark
+// belongs to that phase alone, against the same server (it keeps the blob between them):
 //
-//   python3 DEV/tools/fake_blob_server.py --port 8767 &
+//   python3 scripts/dev/fake_blob_server.py --port 8767 &
 //   for p in send receive open; do
 //     PP_E2E_BLOB_URL=http://127.0.0.1:8767 PP_E2E_DIR=<dir> PP_E2E_PHASE=$p PP_E2E_MB=100 pp_browser_domain_attachments_test --gtest_filter='LargeAttachmentE2e*'
 //   done
 //
 // The limits are passed in by the test (the shipping default is 50 MB); the CDN is plain http on loopback,
-// which only the test-only flag allows. It uses the real HttpBlobClient, OutgoingAttachmentStore, streamed
+// which only the test-only flags allow. It uses the real HttpBlobClient, OutgoingAttachmentStore, streamed
 // upload / capped file download and the private CAS, i.e. the same calls the app's send / receive / open make.
 #include "lib/content/testing/InMemoryObjectIndex.h"
 #include "domain/attachments/AttachmentClient.h"
@@ -21,6 +22,7 @@
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/net/HttpBlobClient.h"
+#include "lib/net/HttpClient.h"
 #include "lib/people/IdentityStore.h"
 #include "common/Utilities.h"
 
@@ -94,7 +96,7 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
 
     // What the app does: read the picked file, hand it to the staged upload, keep a local copy in the CAS.
     std::ifstream in(source, std::ios::binary);
-    std::vector<uint8_t> plaintext(static_cast<size_t>(std::filesystem::file_size(source)));  // as the app reads it
+    std::vector<uint8_t> plaintext(static_cast<size_t>(std::filesystem::file_size(source))); // as the app reads it
     in.read(reinterpret_cast<char*>(plaintext.data()), static_cast<std::streamsize>(plaintext.size()));
     in.close();
     std::cout << "E2E after-read peak_rss_mb=" << PeakResidentBytes() / 1'000'000 << std::endl;
@@ -106,7 +108,8 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     options.dek = Dek();
     int last_percent = -1;
     options.progress = [&](const uint64_t done, const uint64_t total) {
-      const int percent = static_cast<int>(done * 100 / total);
+      // A single PUT's first tick has no total yet (curl's), a multipart one always has it.
+      const int percent = total ? static_cast<int>(done * 100 / total) : 0;
       if (percent / 20 != last_percent / 20) {
         std::cout << "E2E upload " << percent << "%" << std::endl;
       }
@@ -119,7 +122,8 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     ASSERT_TRUE(result) << result.error().message;
     std::cout << "E2E after-upload peak_rss_mb=" << PeakResidentBytes() / 1'000'000 << std::endl;
     ASSERT_FALSE(result->url.empty());
-    ASSERT_TRUE(CopyAttachmentPlaintext(dir.string(), *MakeInMemoryIndexedCasStore(dir.string(), profile_id), "g1", *result, plaintext, Dek(), size));
+    ASSERT_TRUE(CopyAttachmentPlaintext(dir.string(), *MakeInMemoryIndexedCasStore(dir.string(), profile_id), "g1",
+                                        *result, plaintext, Dek(), size));
     std::ofstream(fields_path) << ChatPayloadCodec::AttachmentFieldsToJson(*result);
     Report("send", size, util::NowUnixMs() - started);
   } else if (phase == "resume") {
@@ -135,7 +139,8 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     ASSERT_TRUE(plain) << plain.error().message;
     const std::filesystem::path resumed = dir / "resumed";
     std::filesystem::create_directories(resumed);
-    ASSERT_TRUE(CopyAttachmentPlaintext(resumed.string(), *MakeInMemoryIndexedCasStore(resumed.string(), profile_id), "g1", f, *plain, Dek(), size));
+    ASSERT_TRUE(CopyAttachmentPlaintext(resumed.string(), *MakeInMemoryIndexedCasStore(resumed.string(), profile_id),
+                                        "g1", f, *plain, Dek(), size));
     Report("resume", size, util::NowUnixMs() - started);
   } else if (phase == "receive") {
     std::ifstream in(fields_path);
@@ -159,14 +164,17 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
       return true;
     };
     // What the workflow does after a fetch: decrypt, then store in the private CAS.
+    HttpClient::SetPlainHttpRedirectsForTest(true); // the relay link's 302 goes to the fake's plain-http storage
     auto plaintext = FetchAndDecryptAttachment(*fields, context);
+    HttpClient::SetPlainHttpRedirectsForTest(false);
     ASSERT_TRUE(plaintext) << plaintext.error().message;
     ASSERT_EQ(plaintext->size(), size);
     const ByteVector bytes = std::move(*plaintext);
-    ASSERT_TRUE(SaveAttachmentPlaintext(*receiver_content, fields->content_hash, fields->mime, bytes,
-                                        fields->filename, Dek()));
-    if (size <= kMaxDirectAttachmentBytes) {  // a large file's view is made by an Open only
-      ASSERT_TRUE(StoreAttachmentViewBytes(receiver.string(), "g1", fields->content_hash, fields->mime, fields->filename, bytes));
+    ASSERT_TRUE(
+        SaveAttachmentPlaintext(*receiver_content, fields->content_hash, fields->mime, bytes, fields->filename, Dek()));
+    if (size <= kMaxDirectAttachmentBytes) { // a large file's view is made by an Open only
+      ASSERT_TRUE(StoreAttachmentViewBytes(receiver.string(), "g1", fields->content_hash, fields->mime,
+                                           fields->filename, bytes));
     }
     Report("receive", size, util::NowUnixMs() - started);
   } else if (phase == "open") {
@@ -178,8 +186,8 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     // What opening does after a restart or lock (the views are wiped): decrypt the stored copy into a view file.
     std::filesystem::remove_all(AttachmentViewRoot(receiver.string(), "g1"));
     // A separate run: the stored block is read back from disk (the index holds no bytes).
-    auto view = EnsureAttachmentView(receiver.string(), *MakeInMemoryIndexedCasStore(receiver.string(), profile_id), "g1", fields->content_hash, fields->mime,
-                                     fields->filename, Dek());
+    auto view = EnsureAttachmentView(receiver.string(), *MakeInMemoryIndexedCasStore(receiver.string(), profile_id),
+                                     "g1", fields->content_hash, fields->mime, fields->filename, Dek());
     ASSERT_TRUE(view) << view.error().message;
     ASSERT_EQ(std::filesystem::file_size(*view), size);
     Report("open", size, util::NowUnixMs() - started);

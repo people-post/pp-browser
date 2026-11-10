@@ -15,9 +15,9 @@ TEST(CallDirectPlannerLogicTest, PathLostReconnectsAndANewPathRecovers) {
     EXPECT_EQ(lost.decision, CallDirectPlannerDecision::Transition);
     EXPECT_EQ(lost.next, CallDirectPlannerPhase::Reconnecting);
   }
-  EXPECT_EQ(DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Connecting, CallDirectPlannerEvent::PathLost, ctx)
-                .decision,
-            CallDirectPlannerDecision::Ignore);
+  EXPECT_EQ(
+      DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Connecting, CallDirectPlannerEvent::PathLost, ctx).decision,
+      CallDirectPlannerDecision::Ignore);
   for (const auto ev : {CallDirectPlannerEvent::PathMigrated, CallDirectPlannerEvent::ConnectSucceeded}) {
     auto back = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Reconnecting, ev, ctx);
     EXPECT_EQ(back.decision, CallDirectPlannerDecision::Transition);
@@ -26,6 +26,22 @@ TEST(CallDirectPlannerLogicTest, PathLostReconnectsAndANewPathRecovers) {
   auto failed =
       DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Reconnecting, CallDirectPlannerEvent::ConnectFailed, ctx);
   EXPECT_EQ(failed.next, CallDirectPlannerPhase::Idle);
+}
+
+// K014: a connected call that lost its media for good is its own event (Dropped, not ConnectFailed): the 1:1
+// planner goes Idle from any phase a connected call is in; an idle planner has nothing to drop.
+TEST(CallDirectPlannerLogicTest, ADroppedCallGoesIdle) {
+  CallDirectPlannerApplyContext ctx;
+  ctx.allows_direct_path = true;
+  for (const auto phase :
+       {CallDirectPlannerPhase::Live, CallDirectPlannerPhase::DegradedTxOnly, CallDirectPlannerPhase::Reconnecting}) {
+    auto dropped = DecideCallDirectPlannerPhase(phase, CallDirectPlannerEvent::Dropped, ctx);
+    EXPECT_EQ(dropped.decision, CallDirectPlannerDecision::Transition);
+    EXPECT_EQ(dropped.next, CallDirectPlannerPhase::Idle);
+  }
+  EXPECT_EQ(DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Idle, CallDirectPlannerEvent::Dropped, ctx).decision,
+            CallDirectPlannerDecision::Ignore);
+  EXPECT_STREQ(CallDirectPlannerEventName(CallDirectPlannerEvent::Dropped), "Dropped");
 }
 
 // k3: a path migration keeps a live call live and brings a TX-only one back (k3-4); nothing else
@@ -38,9 +54,9 @@ TEST(CallDirectPlannerLogicTest, PathMigratedKeepsALiveCallAndIsIgnoredOtherwise
       DecideCallDirectPlannerPhase(CallDirectPlannerPhase::DegradedTxOnly, CallDirectPlannerEvent::PathMigrated, ctx);
   EXPECT_EQ(degraded.decision, CallDirectPlannerDecision::Transition);
   EXPECT_EQ(degraded.next, CallDirectPlannerPhase::Live);
-  for (const auto phase : {CallDirectPlannerPhase::Idle, CallDirectPlannerPhase::Arming,
-                           CallDirectPlannerPhase::KeyWait, CallDirectPlannerPhase::Connecting,
-                           CallDirectPlannerPhase::Stopping}) {
+  for (const auto phase :
+       {CallDirectPlannerPhase::Idle, CallDirectPlannerPhase::Arming, CallDirectPlannerPhase::KeyWait,
+        CallDirectPlannerPhase::Connecting, CallDirectPlannerPhase::Stopping}) {
     EXPECT_EQ(DecideCallDirectPlannerPhase(phase, CallDirectPlannerEvent::PathMigrated, ctx).decision,
               CallDirectPlannerDecision::Ignore);
   }
@@ -50,8 +66,7 @@ TEST(CallDirectPlannerLogicTest, ScheduleWhileHopDisallowedIgnoredWhenLive) {
   CallDirectPlannerApplyContext ctx;
   ctx.allows_direct_path = false;
   ctx.peer_nonempty = true;
-  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Live,
-                                          CallDirectPlannerEvent::ScheduleAnswerer, ctx);
+  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Live, CallDirectPlannerEvent::ScheduleAnswerer, ctx);
   EXPECT_EQ(out.decision, CallDirectPlannerDecision::Ignore);
 }
 
@@ -59,8 +74,7 @@ TEST(CallDirectPlannerLogicTest, ScheduleWhileHopDisallowedIgnoredFromIdle) {
   CallDirectPlannerApplyContext ctx;
   ctx.allows_direct_path = false;
   ctx.peer_nonempty = true;
-  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Idle,
-                                          CallDirectPlannerEvent::ScheduleAnswerer, ctx);
+  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Idle, CallDirectPlannerEvent::ScheduleAnswerer, ctx);
   EXPECT_EQ(out.decision, CallDirectPlannerDecision::Ignore);
 }
 
@@ -68,8 +82,7 @@ TEST(CallDirectPlannerLogicTest, ScheduleAnswererArmsFromIdle) {
   CallDirectPlannerApplyContext ctx;
   ctx.allows_direct_path = true;
   ctx.peer_nonempty = true;
-  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Idle,
-                                          CallDirectPlannerEvent::ScheduleAnswerer, ctx);
+  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Idle, CallDirectPlannerEvent::ScheduleAnswerer, ctx);
   EXPECT_EQ(out.decision, CallDirectPlannerDecision::Transition);
   EXPECT_EQ(out.next, CallDirectPlannerPhase::Arming);
 }
@@ -77,8 +90,7 @@ TEST(CallDirectPlannerLogicTest, ScheduleAnswererArmsFromIdle) {
 TEST(CallDirectPlannerLogicTest, ScheduleWithoutPeerIgnored) {
   CallDirectPlannerApplyContext ctx;
   ctx.allows_direct_path = true;
-  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Idle,
-                                          CallDirectPlannerEvent::ScheduleOfferer, ctx);
+  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Idle, CallDirectPlannerEvent::ScheduleOfferer, ctx);
   EXPECT_EQ(out.decision, CallDirectPlannerDecision::Ignore);
 }
 
@@ -86,16 +98,14 @@ TEST(CallDirectPlannerLogicTest, KeyReadyFromKeyWaitToConnecting) {
   CallDirectPlannerApplyContext ctx;
   ctx.allows_direct_path = true;
   ctx.has_media_key = true;
-  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::KeyWait,
-                                          CallDirectPlannerEvent::KeyReady, ctx);
+  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::KeyWait, CallDirectPlannerEvent::KeyReady, ctx);
   EXPECT_EQ(out.decision, CallDirectPlannerDecision::Transition);
   EXPECT_EQ(out.next, CallDirectPlannerPhase::Connecting);
 }
 
 TEST(CallDirectPlannerLogicTest, KeyTimeoutClearsKeyWait) {
   CallDirectPlannerApplyContext ctx;
-  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::KeyWait,
-                                          CallDirectPlannerEvent::KeyTimeout, ctx);
+  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::KeyWait, CallDirectPlannerEvent::KeyTimeout, ctx);
   EXPECT_EQ(out.decision, CallDirectPlannerDecision::Transition);
   EXPECT_EQ(out.next, CallDirectPlannerPhase::Idle);
 }
@@ -103,35 +113,32 @@ TEST(CallDirectPlannerLogicTest, KeyTimeoutClearsKeyWait) {
 TEST(CallDirectPlannerLogicTest, LateConnectSucceededIgnoredFromIdle) {
   CallDirectPlannerApplyContext ctx;
   ctx.allows_direct_path = true;
-  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Idle,
-                                          CallDirectPlannerEvent::ConnectSucceeded, ctx);
+  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Idle, CallDirectPlannerEvent::ConnectSucceeded, ctx);
   EXPECT_EQ(out.decision, CallDirectPlannerDecision::Ignore);
 }
 
 TEST(CallDirectPlannerLogicTest, ConnectSucceededFromConnectingToLive) {
   CallDirectPlannerApplyContext ctx;
   ctx.allows_direct_path = true;
-  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Connecting,
-                                          CallDirectPlannerEvent::ConnectSucceeded, ctx);
+  auto out =
+      DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Connecting, CallDirectPlannerEvent::ConnectSucceeded, ctx);
   EXPECT_EQ(out.decision, CallDirectPlannerDecision::Transition);
   EXPECT_EQ(out.next, CallDirectPlannerPhase::Live);
 }
 
 TEST(CallDirectPlannerLogicTest, TxOnlyOnlyFromLive) {
   CallDirectPlannerApplyContext ctx;
-  auto bad = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Connecting,
-                                          CallDirectPlannerEvent::TxOnlyGraceExpired, ctx);
+  auto bad =
+      DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Connecting, CallDirectPlannerEvent::TxOnlyGraceExpired, ctx);
   EXPECT_EQ(bad.decision, CallDirectPlannerDecision::Ignore);
-  auto ok = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Live,
-                                         CallDirectPlannerEvent::TxOnlyGraceExpired, ctx);
+  auto ok = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Live, CallDirectPlannerEvent::TxOnlyGraceExpired, ctx);
   EXPECT_EQ(ok.decision, CallDirectPlannerDecision::Transition);
   EXPECT_EQ(ok.next, CallDirectPlannerPhase::DegradedTxOnly);
 }
 
 TEST(CallDirectPlannerLogicTest, StopFromConnectingToIdle) {
   CallDirectPlannerApplyContext ctx;
-  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Connecting,
-                                          CallDirectPlannerEvent::Stop, ctx);
+  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Connecting, CallDirectPlannerEvent::Stop, ctx);
   EXPECT_EQ(out.decision, CallDirectPlannerDecision::Transition);
   EXPECT_EQ(out.next, CallDirectPlannerPhase::Idle);
 }
@@ -140,8 +147,8 @@ TEST(CallDirectPlannerLogicTest, StoppingIgnoresConnectSucceeded) {
   CallDirectPlannerApplyContext ctx;
   ctx.stopping = true;
   ctx.allows_direct_path = true;
-  auto out = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Connecting,
-                                          CallDirectPlannerEvent::ConnectSucceeded, ctx);
+  auto out =
+      DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Connecting, CallDirectPlannerEvent::ConnectSucceeded, ctx);
   EXPECT_EQ(out.decision, CallDirectPlannerDecision::Ignore);
 }
 

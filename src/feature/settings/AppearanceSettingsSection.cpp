@@ -32,9 +32,7 @@ const char* AppearanceSettingsSection::Id() const {
 }
 
 SettingsSectionListItem AppearanceSettingsSection::ListItem() const {
-  return {.id = Id(),
-          .title = Tr("settings.appearance.title"),
-          .subtitle = Tr("settings.appearance.subtitle")};
+  return {.id = Id(), .title = Tr("settings.appearance.title"), .subtitle = Tr("settings.appearance.subtitle")};
 }
 
 SettingsFlushMode AppearanceSettingsSection::FlushMode() const {
@@ -49,14 +47,14 @@ void AppearanceSettingsSection::SyncFromSession(const BootstrapResult& bootstrap
   state.reduce_transparency = bootstrap.profile_prefs.reduce_transparency ? "on" : "off";
   state.call_diagnostics = bootstrap.profile_prefs.call_diagnostics ? "on" : "off";
   state.home_show_dynamic = bootstrap.profile_prefs.home_show_dynamic ? "on" : "off";
+  state.home_animated_logo = bootstrap.profile_prefs.home_animated_logo ? "on" : "off";
 }
 
 bool AppearanceSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {
   const bool reduce = state.reduce_transparency == "on";
   const bool diagnostics = state.call_diagnostics == "on";
   const bool show_dynamic = state.home_show_dynamic == "on";
-  return state.appearance == bootstrap.profile_prefs.appearance &&
-         state.language == bootstrap.profile_prefs.language &&
+  return state.appearance == bootstrap.profile_prefs.appearance && state.language == bootstrap.profile_prefs.language &&
          reduce == bootstrap.profile_prefs.reduce_transparency &&
          diagnostics == bootstrap.profile_prefs.call_diagnostics &&
          show_dynamic == bootstrap.profile_prefs.home_show_dynamic;

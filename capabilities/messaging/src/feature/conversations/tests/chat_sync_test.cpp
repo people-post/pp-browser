@@ -65,7 +65,6 @@ public:
       throw std::runtime_error("Failed to set test DEK");
     }
 
-
     Contact peer_contact;
     peer_contact.id = "contact-peer";
     peer_contact.remote.ids = {{mesh::ContactIdKind::Account, "account:peer", true},

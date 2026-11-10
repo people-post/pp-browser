@@ -6,10 +6,13 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 namespace pbr {
 namespace {
 
-TranscriptRow Attachment(const std::string& id, const std::string& name, const std::string& mime, const uint64_t bytes) {
+TranscriptRow Attachment(const std::string& id, const std::string& name, const std::string& mime,
+                         const uint64_t bytes) {
   ChatAttachmentFields fields;
   fields.mime = mime;
   fields.filename = name;
@@ -47,15 +50,80 @@ std::string Render(const TranscriptRow& row, const TranscriptFacts& facts) {
   return rows.empty() ? std::string() : std::string(rows[0].content_rml.c_str());
 }
 
-bool IsBubble(const std::string& rml) { return rml.find("chat-voice-card") != std::string::npos; }
+bool IsBubble(const std::string& rml) {
+  return rml.find("chat-voice-card") != std::string::npos;
+}
 
 TEST(VoiceBubbleRender, SmallMatchingFileIsABubbleWithItsLength) {
   const std::string rml = Render(Attachment("m1", "voice-4200.ogg", "audio/ogg", 25000), Facts(true));
   EXPECT_TRUE(IsBubble(rml)) << rml;
   EXPECT_NE(rml.find("play_voice('m1')"), std::string::npos);
-  EXPECT_NE(rml.find("0:05"), std::string::npos);                    // 4.2 s reads as 0:05
+  EXPECT_NE(rml.find("0:05"), std::string::npos); // 4.2 s reads as 0:05
   EXPECT_NE(rml.find("id=\"vf-m1\""), std::string::npos);
   EXPECT_EQ(rml.find("chat-attachment-card"), std::string::npos);
+}
+
+// #201: a voice message looks like WhatsApp's: the sender's avatar with a mic badge, play, a waveform of thin bars
+// with a knob, the length under it and the clock; a bubble of its own width, not the row's.
+TEST(VoiceBubbleRender, TheBubbleHasAvatarBadgePlayWaveformLengthAndClock) {
+  TranscriptRow row = Attachment("m1", "voice-4200.ogg", "audio/ogg", 25000);
+  row.message.timestamp = 1700000000000;
+  TranscriptFacts facts = Facts(true);
+  facts.sender_label = [](const std::string&) { return std::string("Bob"); };
+  const std::string rml = Render(row, facts);
+  ASSERT_TRUE(IsBubble(rml)) << rml;
+  EXPECT_NE(rml.find("class=\"chat-voice-avatar avatar-tone-"), std::string::npos);
+  EXPECT_NE(rml.find("chat-voice-avatar-letter\">B<"), std::string::npos) << "the letter avatar of the sender";
+  EXPECT_NE(rml.find("class=\"chat-voice-badge\""), std::string::npos);
+  EXPECT_NE(rml.find("icons/v2/mic.svg"), std::string::npos);
+  EXPECT_NE(rml.find("id=\"vp-m1\" class=\"chat-voice-play"), std::string::npos);
+  EXPECT_LT(rml.find("chat-voice-avatar"), rml.find("id=\"vp-m1\""));
+  EXPECT_LT(rml.find("id=\"vp-m1\""), rml.find("chat-voice-wave"));
+  // The bars are drawn twice (quiet layer and played layer), kVoiceWaveBars each.
+  size_t bars = 0;
+  for (size_t at = rml.find("class=\"chat-voice-bar\""); at != std::string::npos;
+       at = rml.find("class=\"chat-voice-bar\"", at + 1)) {
+    ++bars;
+  }
+  EXPECT_EQ(bars, static_cast<size_t>(2 * kVoiceWaveBars));
+  EXPECT_NE(rml.find("id=\"vn-m1\" class=\"chat-voice-knob\" style=\"left: 0%;\""), std::string::npos);
+  EXPECT_LT(rml.find("chat-voice-wave"), rml.find("id=\"vt-m1\""));
+  EXPECT_NE(rml.find("class=\"chat-voice-clock\""), std::string::npos);
+  EXPECT_LT(rml.find("id=\"vt-m1\""), rml.find("class=\"chat-voice-clock\""));
+  EXPECT_EQ(rml.find("chat-audio-seek"), std::string::npos) << "a voice message has no seek bar";
+}
+
+TEST(VoiceBubbleRender, OwnVoiceBubbleIsMarkedAndAPhotoReplacesTheLetter) {
+  VoiceBubbleFace face;
+  face.ours = true;
+  face.icon_path = "/profiles/x/icons/a.jpg";
+  const std::string rml = VoiceBubbleRml("m2", "m2", 4200, VoiceBubbleState{}, face);
+  EXPECT_NE(rml.find("chat-voice-card chat-voice-card--out"), std::string::npos);
+  EXPECT_NE(rml.find("src=\"/profiles/x/icons/a.jpg\""), std::string::npos);
+  EXPECT_EQ(rml.find("chat-voice-avatar-letter"), std::string::npos);
+  EXPECT_EQ(rml.find("chat-voice-clock"), std::string::npos) << "no clock given: none drawn";
+}
+
+TEST(VoiceBubbleRender, TheWaveformIsTheSameForTheSameMessageAndVaries) {
+  const std::vector<int> a = VoiceWaveformHeights("msg-1");
+  EXPECT_EQ(a, VoiceWaveformHeights("msg-1"));
+  EXPECT_NE(a, VoiceWaveformHeights("msg-2"));
+  ASSERT_EQ(a.size(), static_cast<size_t>(kVoiceWaveBars));
+  for (const int h : a) {
+    EXPECT_GE(h, 4);
+    EXPECT_LE(h, 28);
+  }
+  EXPECT_GT(*std::max_element(a.begin(), a.end()) - *std::min_element(a.begin(), a.end()), 8) << "not a flat line";
+  EXPECT_TRUE(VoiceWaveformHeights("x", 0).empty());
+  // A redraw keeps the progress and the same bars.
+  VoiceBubbleState playing;
+  playing.playing = true;
+  playing.position_ms = 1000;
+  playing.duration_ms = 4000;
+  const std::string one = VoiceBubbleRml("m3", "m3", 4000, playing, VoiceBubbleFace{});
+  EXPECT_NE(one.find("id=\"vf-m3\" class=\"chat-voice-played\" style=\"width: 25%;\""), std::string::npos) << one;
+  EXPECT_NE(one.find("style=\"left: 25%;\""), std::string::npos);
+  EXPECT_EQ(one, VoiceBubbleRml("m3", "m3", 4000, playing, VoiceBubbleFace{}));
 }
 
 TEST(VoiceBubbleRender, AFileRowForLargeDeclaredSizeOtherNameOtherTypeOrNoPlayer) {
@@ -142,7 +210,8 @@ TEST(VoiceBubbleRender, ASoundFileCardShowsItsOwnTitleArtistCoverAndLength) {
 
 TEST(VoiceBubbleRender, APlayingSoundFileKeepsItsProgressOnARedraw) {
   const VoiceBubbleState state{.playing = true, .paused = false, .position_ms = 65000, .duration_ms = 130000};
-  const std::string rml = AudioFileBubbleRml("m7", "m7", AudioCardFace{.title = "Song.mp3", .subtitle = "10 MB"}, state);
+  const std::string rml =
+      AudioFileBubbleRml("m7", "m7", AudioCardFace{.title = "Song.mp3", .subtitle = "10 MB"}, state);
   EXPECT_NE(rml.find("chat-voice-play--playing"), std::string::npos);
   EXPECT_NE(rml.find("width: 50%"), std::string::npos);
   EXPECT_NE(rml.find("1:05 / 2:10"), std::string::npos);
@@ -235,20 +304,30 @@ TEST(VoiceBubbleRender, ALargePictureWithAThumbnailIsAnInlineImage) {
   EXPECT_NE(rml.find("/tmp/thumb.poster.jpg"), std::string::npos);
 }
 
-// Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.3): pictures spilled out of their bubble. Every shape fits a
-// 200 x 240dp box with its own ratio, and the picture carries that size so its 3dp frame is laid out round it.
+// Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.3): pictures spilled out of their bubble; 2026-11-09: like WhatsApp,
+// a picture takes the box width (292dp, about three quarters of the phone) and a tall one is cropped to the box
+// height (360dp) showing its middle, instead of shrinking to a sliver.
 TEST(PictureBubbleFit, EveryShapeFitsTheBoxWithItsOwnRatio) {
   const auto fit = [](const int w, const int h) {
     const PictureBubbleSize size = FitPictureInBubble(w, h);
     return std::make_pair(size.width_dp, size.height_dp);
   };
-  EXPECT_EQ(fit(4032, 3024), std::make_pair(200, 150)) << "a landscape photo";
-  EXPECT_EQ(fit(3024, 4032), std::make_pair(180, 240)) << "a portrait photo";
-  EXPECT_EQ(fit(600, 2400), std::make_pair(60, 240)) << "very tall";
-  EXPECT_EQ(fit(2400, 400), std::make_pair(200, 33)) << "very wide";
-  EXPECT_EQ(fit(20000, 10), std::make_pair(200, 1)) << "a sliver keeps 1dp";
-  EXPECT_EQ(fit(120, 90), std::make_pair(120, 90)) << "a small picture is not enlarged";
+  EXPECT_EQ(fit(4032, 3024), std::make_pair(292, 219)) << "a landscape photo";
+  EXPECT_EQ(fit(3024, 4032), std::make_pair(292, 360)) << "a portrait photo keeps the width, cropped to the box height";
+  EXPECT_EQ(fit(600, 2400), std::make_pair(292, 360)) << "very tall: full width, the middle shows";
+  EXPECT_EQ(fit(2400, 400), std::make_pair(292, 49)) << "very wide";
+  EXPECT_EQ(fit(20000, 10), std::make_pair(292, 1)) << "a sliver keeps 1dp";
+  EXPECT_EQ(fit(300, 200), std::make_pair(292, 195)) << "a mid picture shrinks to the width";
+  EXPECT_EQ(fit(160, 130), std::make_pair(160, 130)) << "a picture with a short side over 120 is not enlarged";
+  EXPECT_EQ(fit(120, 90), std::make_pair(160, 120)) << "a small picture grows to a 120dp short side";
   EXPECT_EQ(fit(0, 300), std::make_pair(0, 0)) << "unknown size";
+  // The cropped picture is drawn at its full fitted height, shifted up by half the excess.
+  const PictureBubbleSize tall = FitPictureInBubble(3024, 4032);
+  EXPECT_EQ(tall.image_height_dp, 389);
+  EXPECT_EQ(tall.image_offset_dp, 14);
+  const PictureBubbleSize wide = FitPictureInBubble(4032, 3024);
+  EXPECT_EQ(wide.image_height_dp, 219);
+  EXPECT_EQ(wide.image_offset_dp, 0);
 }
 
 TEST(PictureBubbleFit, ThePictureCarriesItsFittedSize) {
@@ -257,15 +336,14 @@ TEST(PictureBubbleFit, ThePictureCarriesItsFittedSize) {
     TranscriptAttachmentView view;
     view.state = AttachmentFetchWorkflow::DownloadState::Ready;
     view.local_path = "/tmp/tall.jpg";
-    view.image_width = 3024;  // upright: InboxController has swapped a quarter-turned photo's sides
+    view.image_width = 3024; // upright: InboxController has swapped a quarter-turned photo's sides
     view.image_height = 4032;
     return view;
   };
   const std::string rml = Render(Attachment("p3", "tall.jpg", "image/jpeg", 50000), facts);
-  EXPECT_NE(rml.find("width=\"180\" height=\"240\""), std::string::npos) << rml;
+  EXPECT_NE(rml.find("width=\"292\" height=\"389\" style=\"margin-top:-14dp\""), std::string::npos) << rml;
   // The picture sits in a same-sized clip box that rounds its corners (the engine does not round an <img>).
-  EXPECT_NE(rml.find("<div class=\"chat-attachment-clip\" style=\"width:180dp;height:240dp\"><img "),
-            std::string::npos)
+  EXPECT_NE(rml.find("<div class=\"chat-attachment-clip\" style=\"width:292dp;height:360dp\"><img "), std::string::npos)
       << rml;
   EXPECT_NE(rml.find("')\"/></div>"), std::string::npos) << rml;
   // Without a known size the picture is left to the stylesheet's limits.
@@ -288,9 +366,10 @@ TEST(VideoBubbleRender, APosterFrameWithPlayDiscAndNoOpenButton) {
     return view;
   };
   const std::string rml = Render(Attachment("v1", "v.mp4", "video/mp4", 289000), facts);
-  EXPECT_NE(rml.find("chat-attachment-clip chat-attachment-video-frame\" style=\"width:200dp;height:113dp\""),
-            std::string::npos) << rml;
-  EXPECT_NE(rml.find("width=\"200\" height=\"113\""), std::string::npos) << rml;
+  EXPECT_NE(rml.find("chat-attachment-clip chat-attachment-video-frame\" style=\"width:292dp;height:164dp\""),
+            std::string::npos)
+      << rml;
+  EXPECT_NE(rml.find("width=\"292\" height=\"164\""), std::string::npos) << rml;
   EXPECT_NE(rml.find("chat-attachment-video-play"), std::string::npos);
   EXPECT_NE(rml.find("data-event-click=\"open_attachment('v1')\""), std::string::npos);
   EXPECT_EQ(rml.find("chat-suggestion"), std::string::npos) << "no Open button";

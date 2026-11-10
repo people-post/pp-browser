@@ -52,9 +52,9 @@ size_t WriteCallback(char* contents, size_t size, size_t nmemb, StreamState* sta
     const std::string_view type = std::string_view(content_type ? content_type : "").substr(0, kEventStream.size());
     state->not_event_stream =
         state->http_code < 400 &&
-        !std::equal(kEventStream.begin(), kEventStream.end(), type.begin(), type.end(), [](char a, char b) {
-          return a == ((b >= 'A' && b <= 'Z') ? static_cast<char>(b - 'A' + 'a') : b);
-        });
+        !std::equal(
+            kEventStream.begin(), kEventStream.end(), type.begin(), type.end(),
+            [](char a, char b) { return a == ((b >= 'A' && b <= 'Z') ? static_cast<char>(b - 'A' + 'a') : b); });
   }
   state->last_activity = std::chrono::steady_clock::now();
   const size_t total = size * nmemb;
@@ -203,8 +203,7 @@ Roe<SseOutcome> SseClient::Post(const SseRequest& request, const std::function<v
   }
   if (state.limit_exceeded) {
     return AppError::Network(Err::Network::HttpError,
-                             "LLM response body exceeds limit of " + std::to_string(kMaxLlmResponseBytes) +
-                                 " bytes");
+                             "LLM response body exceeds limit of " + std::to_string(kMaxLlmResponseBytes) + " bytes");
   }
   if (http_code >= 400) {
     log().error << "HTTP " << http_code << " (" << state.error_body.size() << " bytes)";

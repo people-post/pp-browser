@@ -28,7 +28,7 @@ void Put(OutputArchive& ar, const std::string& value) {
 std::ostringstream Begin(const char* kind, const std::string& requester_account_id,
                          const std::string& requester_peer_id, const int64_t timestamp_ms) {
   std::ostringstream oss;
-  oss.write(kDomain, sizeof(kDomain));  // with its NUL
+  oss.write(kDomain, sizeof(kDomain)); // with its NUL
   OutputArchive ar(oss);
   Put(ar, kind);
   Put(ar, requester_account_id);

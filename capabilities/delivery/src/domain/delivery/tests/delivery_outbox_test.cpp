@@ -137,7 +137,6 @@ TEST_F(DeliveryOutboxTest, ARelaySendReportsDelivered) {
   ASSERT_EQ(Outcomes().size(), 1u);
   EXPECT_TRUE(Outcomes()[0].ok);
   EXPECT_EQ(Outcomes()[0].transport, MessageTransport::Relay);
-  EXPECT_FALSE(Outcomes()[0].relay_after_direct);
 }
 
 // #431 (a): call control to a peer with a live link goes over it at once as well as by the relay

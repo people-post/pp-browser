@@ -85,20 +85,20 @@ struct BroadcastViewerWorkflow::FrameSink {
 
 const char* BroadcastViewerWorkflow::PhaseName(Phase phase) {
   switch (phase) {
-  case Phase::Idle:
-    return "Idle";
-  case Phase::Ticket:
-    return "Ticket";
-  case Phase::Admission:
-    return "Admission";
-  case Phase::Attaching:
-    return "Attaching";
-  case Phase::Listening:
-    return "Listening";
-  case Phase::Recovering:
-    return "Recovering";
-  case Phase::Failed:
-    return "Failed";
+    case Phase::Idle:
+      return "Idle";
+    case Phase::Ticket:
+      return "Ticket";
+    case Phase::Admission:
+      return "Admission";
+    case Phase::Attaching:
+      return "Attaching";
+    case Phase::Listening:
+      return "Listening";
+    case Phase::Recovering:
+      return "Recovering";
+    case Phase::Failed:
+      return "Failed";
   }
   return "?";
 }
@@ -121,7 +121,7 @@ void BroadcastViewerWorkflow::Handle(ViewerEvent& event) {
       [this](auto& e) {
         using E = std::decay_t<decltype(e)>;
         if (!Current(e.watch)) {
-          return;  // an older watch's result
+          return; // an older watch's result
         }
         if constexpr (std::is_same_v<E, viewer_event::Reached>) {
           if (!e.reached) {
@@ -229,8 +229,8 @@ void BroadcastViewerWorkflow::FetchTicket() {
   }
   ports_.reach_peer(status_.target.publisher_peer_id,
                     [outbox = outbox_, watch = watch_](mesh::PeerReachCoordinator::ReachRoe reached) {
-    outbox.Emit(viewer_event::Reached{watch, std::move(reached)});
-  });
+                      outbox.Emit(viewer_event::Reached{watch, std::move(reached)});
+                    });
 }
 
 void BroadcastViewerWorkflow::RequestTicket() {
@@ -297,15 +297,15 @@ BroadcastViewerLadder BroadcastViewerWorkflow::MakeLadder() const {
 
 void BroadcastViewerWorkflow::RunLadder(BroadcastViewerLadder::Step step) {
   switch (step.action) {
-  case BroadcastViewerLadder::Action::Ask:
-    AskAdmission(step.hop);
-    return;
-  case BroadcastViewerLadder::Action::Attach:
-    Attach(step.hop);
-    return;
-  case BroadcastViewerLadder::Action::GiveUp:
-    Fail("no relay admitted this viewer: " + step.reason);
-    return;
+    case BroadcastViewerLadder::Action::Ask:
+      AskAdmission(step.hop);
+      return;
+    case BroadcastViewerLadder::Action::Attach:
+      Attach(step.hop);
+      return;
+    case BroadcastViewerLadder::Action::GiveUp:
+      Fail("no relay admitted this viewer: " + step.reason);
+      return;
   }
 }
 
@@ -336,15 +336,15 @@ void BroadcastViewerWorkflow::OnAdmission(const std::string& hop, Roe<BroadcastV
     return;
   }
   switch (result->action) {
-  case BroadcastLadderViewerAction::Admit:
-    RunLadder(ladder_->OnAdmitted(hop, result->admitted_hop_peer_id));
-    return;
-  case BroadcastLadderViewerAction::Redirect:
-    RunLadder(ladder_->OnRedirect(hop, result->redirect_peer_ids, result->redirect_budget_remaining));
-    return;
-  case BroadcastLadderViewerAction::Refuse:
-    RunLadder(ladder_->OnRefused(hop, result->refuse_reason));
-    return;
+    case BroadcastLadderViewerAction::Admit:
+      RunLadder(ladder_->OnAdmitted(hop, result->admitted_hop_peer_id));
+      return;
+    case BroadcastLadderViewerAction::Redirect:
+      RunLadder(ladder_->OnRedirect(hop, result->redirect_peer_ids, result->redirect_budget_remaining));
+      return;
+    case BroadcastLadderViewerAction::Refuse:
+      RunLadder(ladder_->OnRefused(hop, result->refuse_reason));
+      return;
   }
 }
 
@@ -378,7 +378,7 @@ void BroadcastViewerWorkflow::Attach(const std::string& hop) {
   if (status_.video_level != 0) {
     request.quote.want_down_bps += ProfileForVideoLevel(static_cast<uint8_t>(status_.video_level)).target_bps;
   }
-  request.quote.video_levels.clear();  // receive-only: publishes no video (B009)
+  request.quote.video_levels.clear(); // receive-only: publishes no video (B009)
 
   mesh::MediaRelayAttachHooks hooks;
   hooks.accept_quote = [](const mesh::MediaRelayQuote& quote) -> Roe<void> {
@@ -396,17 +396,18 @@ void BroadcastViewerWorkflow::Attach(const std::string& hop) {
   // detach it then so the client session does not leak. (A call attaching in that same window would
   // be detached too; l4c stops watching before a call takes media.)
   mesh::AttachToMediaRelayAsync(ports_.relay, std::move(request), std::move(hooks),
-                          [relay, outbox = outbox_, current = current_watch_, watch = watch_,
-                           hop](mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
-                            if (attached && current->load(std::memory_order_acquire) != watch) {
-                              relay->Detach();
-                              return;
-                            }
-                            outbox.Emit(viewer_event::Attached{watch, hop, std::move(attached)});
-                          });
+                                [relay, outbox = outbox_, current = current_watch_, watch = watch_,
+                                 hop](mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
+                                  if (attached && current->load(std::memory_order_acquire) != watch) {
+                                    relay->Detach();
+                                    return;
+                                  }
+                                  outbox.Emit(viewer_event::Attached{watch, hop, std::move(attached)});
+                                });
 }
 
-void BroadcastViewerWorkflow::OnAttached(const std::string& hop, mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
+void BroadcastViewerWorkflow::OnAttached(const std::string& hop,
+                                         mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
   if (!attached) {
     ViewerLog().info << "attach to " << hop << " failed: " << attached.error().message;
     RunLadder(ladder_->OnAttachFailed(hop, attached.error().message));
@@ -437,8 +438,8 @@ void BroadcastViewerWorkflow::StartListening(const std::string& hop) {
     }
   }
   if (lost_observer_ == 0) {
-    lost_observer_ = relay->AddClientTransportLostObserver(
-        [outbox = outbox_, watch = watch_](mesh::MediaRelayClientLoss loss) {
+    lost_observer_ =
+        relay->AddClientTransportLostObserver([outbox = outbox_, watch = watch_](mesh::MediaRelayClientLoss loss) {
           outbox.Emit(viewer_event::SessionEnded{watch, loss});
         });
   }
@@ -455,9 +456,10 @@ void BroadcastViewerWorkflow::OnSessionEnded(mesh::MediaRelayClientLoss loss) {
   }
   // Our observer is removed before our own Detach, so any end here is not ours. Transport loss →
   // re-admit; replaced / detached by a call → re-admission finds the client busy and fails clearly.
-  ViewerLog().info << "relay session ended (" << (loss == mesh::MediaRelayClientLoss::TransportLost ? "lost"
-                                                  : loss == mesh::MediaRelayClientLoss::Replaced    ? "replaced"
-                                                                                              : "detached")
+  ViewerLog().info << "relay session ended ("
+                   << (loss == mesh::MediaRelayClientLoss::TransportLost ? "lost"
+                       : loss == mesh::MediaRelayClientLoss::Replaced    ? "replaced"
+                                                                         : "detached")
                    << ") program=" << status_.target.program_id;
   Recover();
 }

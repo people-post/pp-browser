@@ -360,14 +360,14 @@ void VoiceComposer::OnRelease() {
 
 void VoiceComposer::ProcessEvent(ui::Event& event) {
   switch (event.GetId()) {
-  case ui::EventId::Mousemove:
-    OnMove(static_cast<float>(event.GetParameter<int>("mouse_y", 0)));
-    break;
-  case ui::EventId::Mouseup:
-    OnRelease();
-    break;
-  default:
-    break;
+    case ui::EventId::Mousemove:
+      OnMove(static_cast<float>(event.GetParameter<int>("mouse_y", 0)));
+      break;
+    case ui::EventId::Mouseup:
+      OnRelease();
+      break;
+    default:
+      break;
   }
 }
 
@@ -473,38 +473,38 @@ void VoiceComposer::OnFinished(const int generation, VoiceRecording recording) {
     return;
   }
   switch (end) {
-  case VoiceEnd::LimitReached:
-    if (hold_mode_ && HoldFingerGone()) {
-      RemoveQuietly(recording.path); // the finger was lifted before the limit: that is a lost press, not a send
+    case VoiceEnd::LimitReached:
+      if (hold_mode_ && HoldFingerGone()) {
+        RemoveQuietly(recording.path); // the finger was lifted before the limit: that is a lost press, not a send
+        break;
+      }
+      [[fallthrough]];
+    case VoiceEnd::Sent:
+    case VoiceEnd::Interrupted:
+      if (recording.path.empty()) {
+        break;
+      }
+      if (ports_.send) {
+        ports_.send(thread_id_, recording.path);
+      } else {
+        RemoveQuietly(recording.path);
+      }
       break;
-    }
-    [[fallthrough]];
-  case VoiceEnd::Sent:
-  case VoiceEnd::Interrupted:
-    if (recording.path.empty()) {
+    case VoiceEnd::TooShort:
+      Say(Tr("chat.voice.too_short"));
       break;
-    }
-    if (ports_.send) {
-      ports_.send(thread_id_, recording.path);
-    } else {
+    case VoiceEnd::Cancelled:
       RemoveQuietly(recording.path);
-    }
-    break;
-  case VoiceEnd::TooShort:
-    Say(Tr("chat.voice.too_short"));
-    break;
-  case VoiceEnd::Cancelled:
-    RemoveQuietly(recording.path);
-    break;
-  case VoiceEnd::Busy:
-    Say(Tr("chat.voice.busy_call"));
-    break;
-  case VoiceEnd::NoDevice:
-    Say(Tr(ports_.mic_state() == MicPermission::Denied ? "chat.voice.permission_denied" : "chat.voice.no_mic"));
-    break;
-  case VoiceEnd::Failed:
-    Say(Tr("chat.voice.failed"));
-    break;
+      break;
+    case VoiceEnd::Busy:
+      Say(Tr("chat.voice.busy_call"));
+      break;
+    case VoiceEnd::NoDevice:
+      Say(Tr(ports_.mic_state() == MicPermission::Denied ? "chat.voice.permission_denied" : "chat.voice.no_mic"));
+      break;
+    case VoiceEnd::Failed:
+      Say(Tr("chat.voice.failed"));
+      break;
   }
   Refresh();
 }

@@ -109,8 +109,10 @@ std::unique_ptr<IAudioFilePlayer> CreateSystemAudioFilePlayer() {
 } // namespace pbr
 
 /** PpAudioFilePlayer.nativeAudioFileProgress (the main thread). */
-extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_PpAudioFilePlayer_nativeAudioFileProgress(
-    JNIEnv*, jclass, jlong token, jint position_ms, jint duration_ms) {
+extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_PpAudioFilePlayer_nativeAudioFileProgress(JNIEnv*, jclass,
+                                                                                                     jlong token,
+                                                                                                     jint position_ms,
+                                                                                                     jint duration_ms) {
   std::function<void(int64_t, int64_t)> on_progress;
   {
     std::lock_guard lock(pbr::g_mutex);
@@ -125,8 +127,9 @@ extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_PpAudioFilePlayer_nat
 }
 
 /** PpAudioFilePlayer.nativeAudioFileEnded (the main thread): `finished` false = the file could not be decoded. */
-extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_PpAudioFilePlayer_nativeAudioFileEnded(
-    JNIEnv*, jclass, jlong token, jboolean finished) {
+extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_PpAudioFilePlayer_nativeAudioFileEnded(JNIEnv*, jclass,
+                                                                                                  jlong token,
+                                                                                                  jboolean finished) {
   std::function<void(pbr::VoicePlayEnd)> on_ended;
   {
     std::lock_guard lock(pbr::g_mutex);

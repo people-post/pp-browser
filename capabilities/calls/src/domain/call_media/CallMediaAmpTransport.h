@@ -20,7 +20,8 @@ class CallMediaAmpTransport : public ICallMediaTransport {
 public:
   using IoPump = std::function<void()>;
 
-  CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, IoPump io_pump);
+  /** `timer_clock`: the legs' timers (CallMediaLegCoordinator) — MonotonicClock::Process() in the product. */
+  CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, const pp::adp::Clock& timer_clock, IoPump io_pump);
   ~CallMediaAmpTransport() override;
 
   CallMediaAmpTransport(const CallMediaAmpTransport&) = delete;
@@ -42,14 +43,15 @@ public:
   CallMediaLinkKind StandbyLinkKind() const override;
   void SetAutoMigrateToDirect(bool allow) override;
   void AddStandby(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override;
-  void Detach() override;
-  void HangUp() override;
+  void Detach(const std::string& call_id) override;
+  void DetachAll() override;
+  void HangUp(const std::string& call_id) override;
 
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     std::function<void(CallMediaRoe)> on_done, int timeout_ms = 15000) override;
 
   CallMediaRoe Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    int timeout_ms = 15000) override;
+                       int timeout_ms = 15000) override;
 
   Roe<void> SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0) override;
   Roe<void> SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq, uint8_t mark = 0,
@@ -59,6 +61,8 @@ public:
 
 private:
   CallMediaLegId ActiveLegId() const;
+  /** `call_id` is gone: drop the leg it left, unless the transport already serves another call. */
+  void ForgetCall(const std::string& call_id);
 
   CallMediaLegCoordinator coordinator_;
   IoPump io_pump_;

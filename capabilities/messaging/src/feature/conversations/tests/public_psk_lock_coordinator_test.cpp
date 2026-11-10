@@ -103,7 +103,8 @@ TEST(PublicPskLockCoordinatorTest, HashMismatchRejects) {
   plan->detail.key_init_hash = std::string(64, '0');
   auto message = RotateMessage(plan->detail);
   auto envelope = RotateEnvelope(plan->key_init_b64, plan->old_epoch);
-  auto applied = alice.lock->ApplyInbound(alice.thread_id, envelope, message, bob_kem->private_key, "account:bob", 1001);
+  auto applied =
+      alice.lock->ApplyInbound(alice.thread_id, envelope, message, bob_kem->private_key, "account:bob", 1001);
   ASSERT_FALSE(static_cast<bool>(applied));
   EXPECT_NE(applied.error().message.find("key_init_hash"), std::string::npos);
 }
@@ -166,8 +167,7 @@ TEST(PublicPskLockCoordinatorTest, PeerAdoptsAndInitiatorLocks) {
   auto message = RotateMessage(plan->detail);
   auto envelope = RotateEnvelope(plan->key_init_b64, plan->old_epoch);
   envelope.sender_contact_id = "account:alice";
-  auto bob_scope =
-      bob_lock.ApplyInbound(bob.thread_id, envelope, message, bob_kem->private_key, "account:bob", 2001);
+  auto bob_scope = bob_lock.ApplyInbound(bob.thread_id, envelope, message, bob_kem->private_key, "account:bob", 2001);
   ASSERT_TRUE(static_cast<bool>(bob_scope)) << bob_scope.error().message;
   EXPECT_EQ(*bob_scope, PublicKeyScope::Account);
 

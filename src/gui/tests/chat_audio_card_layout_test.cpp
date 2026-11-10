@@ -57,14 +57,17 @@ protected:
     ASSERT_TRUE(ui::LoadFontFace(AssetPath("fonts/Inter-Regular.ttf"), /*fallback_face=*/true));
     context = ui::CreateContext("chat-audio-card-test", {kWidth, kHeight});
     ASSERT_NE(context, nullptr);
-    ASSERT_TRUE(DataModelHost::Instance().Register(context, "chat", [this](ui::DataModelConstructor& ctor) {
-      BindChatScreenState(ctor, state);
-    }));
+    ASSERT_TRUE(DataModelHost::Instance().Register(
+        context, "chat", [this](ui::DataModelConstructor& ctor) { BindChatScreenState(ctor, state); }));
   }
   void TearDown() override {
     DataModelHost::Instance().Clear();
-    if (context) { ui::RemoveContext("chat-audio-card-test"); }
-    if (initialized) { ui::Shutdown(); }
+    if (context) {
+      ui::RemoveContext("chat-audio-card-test");
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
   /** The phone chat overlay (as ShellLayoutRml lays it out) with `rows` in its transcript. */
@@ -73,16 +76,17 @@ protected:
     state.use_messages_layout = true;
     state.has_turns = true;
     const LocalizationService& i18n = LocalizationService::Instance();
-    const std::string rml =
-        "<rml><head><style>" + ReadAll(AssetPath("themes/components.rcss")) +
-        ReadAll(AssetPath("themes/colors-light.rcss")) +
-        "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
-        "<div style=\"position: absolute; top: 0; left: 0; width: " + std::to_string(kWidth) + "dp; height: " +
-        std::to_string(kHeight) + "dp;\">"
-        "<div class=\"shell-layer shell-layer-base shell-layer-compact\">"
-        "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">"
-        "<div class=\"shell-pane-body\" id=\"pane-body-chat\">" + i18n.LocalizeText(ReadAll(AssetPath("views/chat.rml"))) +
-        "</div></div></div></div></body></rml>";
+    const std::string rml = "<rml><head><style>" + ReadAll(AssetPath("themes/components.rcss")) +
+                            ReadAll(AssetPath("themes/colors-light.rcss")) +
+                            "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+                            "<div style=\"position: absolute; top: 0; left: 0; width: " +
+                            std::to_string(kWidth) + "dp; height: " + std::to_string(kHeight) +
+                            "dp;\">"
+                            "<div class=\"shell-layer shell-layer-base shell-layer-compact\">"
+                            "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">"
+                            "<div class=\"shell-pane-body\" id=\"pane-body-chat\">" +
+                            i18n.LocalizeText(ReadAll(AssetPath("views/chat.rml"))) +
+                            "</div></div></div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
     document->Show();
@@ -126,7 +130,9 @@ TEST_F(ChatAudioCardLayoutTest, TheCardAndItsTimeStayInsideTheBubbleWidthOnAPhon
       .title = "A very long song title that would never fit on one line of a phone's chat bubble.mp3",
       .subtitle = "An artist with a long name as well · 10 MB",
       .duration_ms = 59 * 60 * 1000 + 59 * 1000};
-  const VoiceBubbleState playing{.playing = true, .paused = false, .position_ms = 59 * 60 * 1000 + 58 * 1000,
+  const VoiceBubbleState playing{.playing = true,
+                                 .paused = false,
+                                 .position_ms = 59 * 60 * 1000 + 58 * 1000,
                                  .duration_ms = 59 * 60 * 1000 + 59 * 1000};
   Show({Row("a", "message-row-peer", AudioFileBubbleRml("a", "a", long_title, {})),
         Row("b", "message-row-user", AudioFileBubbleRml("b", "b", long_title, playing)),
@@ -186,7 +192,7 @@ TEST_F(ChatAudioCardLayoutTest, TheKnobIsARoundSpotAtTheEndOfTheFillWhiteWhenOwn
   const VoiceBubbleState half{.playing = true, .paused = false, .position_ms = 50000, .duration_ms = 100000};
   Show({Row("a", "message-row-peer", AudioFileBubbleRml("a", "a", AudioCardFace{.title = "a.mp3"}, half)),
         Row("b", "message-row-user", AudioFileBubbleRml("b", "b", AudioCardFace{.title = "b.mp3"}, half))});
-  context->ActivateTheme("light", true);  // the colours live under @media (theme: light)
+  context->ActivateTheme("light", true); // the colours live under @media (theme: light)
   context->Update();
   ui::Element* received = Nth("chat-audio-knob", 0);
   ui::Element* own = Nth("chat-audio-knob", 1);

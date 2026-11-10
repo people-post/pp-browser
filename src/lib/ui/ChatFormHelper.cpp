@@ -7,8 +7,7 @@
 
 namespace pbr {
 
-std::string ApplySubmitTemplate(const std::string& template_str,
-                                const std::map<std::string, std::string>& values) {
+std::string ApplySubmitTemplate(const std::string& template_str, const std::map<std::string, std::string>& values) {
   std::string out = template_str;
   for (const auto& [field_id, value] : values) {
     const std::string token = "{{" + field_id + "}}";
@@ -21,8 +20,7 @@ std::string ApplySubmitTemplate(const std::string& template_str,
   return out;
 }
 
-std::string BuildFormSubmissionPayload(const std::string& form_id,
-                                       const std::map<std::string, std::string>& values) {
+std::string BuildFormSubmissionPayload(const std::string& form_id, const std::map<std::string, std::string>& values) {
   Object values_obj;
   for (const auto& [key, value] : values) {
     values_obj.set(key, value);

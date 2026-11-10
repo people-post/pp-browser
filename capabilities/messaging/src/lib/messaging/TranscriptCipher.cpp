@@ -36,8 +36,8 @@ std::string TranscriptCipher::BuildMemoryAad(std::string_view profile_id, std::s
 }
 
 Roe<ByteVector> TranscriptCipher::EncryptMessageBody(const ByteVector& dek, std::string_view profile_id,
-                                                   std::string_view thread_id, std::string_view message_id,
-                                                   const ByteVector& plaintext) {
+                                                     std::string_view thread_id, std::string_view message_id,
+                                                     const ByteVector& plaintext) {
   if (auto check = RequireDek(dek); !check) {
     return check.error();
   }
@@ -45,8 +45,8 @@ Roe<ByteVector> TranscriptCipher::EncryptMessageBody(const ByteVector& dek, std:
 }
 
 Roe<ByteVector> TranscriptCipher::DecryptMessageBody(const ByteVector& dek, std::string_view profile_id,
-                                                   std::string_view thread_id, std::string_view message_id,
-                                                   const ByteVector& ciphertext) {
+                                                     std::string_view thread_id, std::string_view message_id,
+                                                     const ByteVector& ciphertext) {
   if (auto check = RequireDek(dek); !check) {
     return check.error();
   }
@@ -54,7 +54,7 @@ Roe<ByteVector> TranscriptCipher::DecryptMessageBody(const ByteVector& dek, std:
 }
 
 Roe<ByteVector> TranscriptCipher::EncryptPreview(const ByteVector& dek, std::string_view profile_id,
-                                                std::string_view thread_id, std::string_view preview_text) {
+                                                 std::string_view thread_id, std::string_view preview_text) {
   if (auto check = RequireDek(dek); !check) {
     return check.error();
   }
@@ -63,7 +63,7 @@ Roe<ByteVector> TranscriptCipher::EncryptPreview(const ByteVector& dek, std::str
 }
 
 Roe<std::string> TranscriptCipher::DecryptPreview(const ByteVector& dek, std::string_view profile_id,
-                                                 std::string_view thread_id, const ByteVector& ciphertext) {
+                                                  std::string_view thread_id, const ByteVector& ciphertext) {
   if (auto check = RequireDek(dek); !check) {
     return check.error();
   }
@@ -75,8 +75,8 @@ Roe<std::string> TranscriptCipher::DecryptPreview(const ByteVector& dek, std::st
 }
 
 Roe<ByteVector> TranscriptCipher::EncryptMemoryValue(const ByteVector& dek, std::string_view profile_id,
-                                                    std::string_view thread_id, std::string_view key,
-                                                    std::string_view value_text) {
+                                                     std::string_view thread_id, std::string_view key,
+                                                     std::string_view value_text) {
   if (auto check = RequireDek(dek); !check) {
     return check.error();
   }
@@ -85,8 +85,8 @@ Roe<ByteVector> TranscriptCipher::EncryptMemoryValue(const ByteVector& dek, std:
 }
 
 Roe<std::string> TranscriptCipher::DecryptMemoryValue(const ByteVector& dek, std::string_view profile_id,
-                                                     std::string_view thread_id, std::string_view key,
-                                                     const ByteVector& ciphertext) {
+                                                      std::string_view thread_id, std::string_view key,
+                                                      const ByteVector& ciphertext) {
   if (auto check = RequireDek(dek); !check) {
     return check.error();
   }

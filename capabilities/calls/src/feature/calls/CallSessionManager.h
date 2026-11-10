@@ -73,7 +73,7 @@ public:
   void ClearLastError() { device_.ClearLastError(); }
   void ClearMediaActivity() { device_.ClearMediaActivity(); }
   /** Clear only if still `seen` (the GUI showed it; a newer error stays). */
-  void ClearLastMediaErrorIf(const std::string& seen) { device_.ClearLastMediaErrorIf(seen); }
+  void ClearLastMediaErrorIf(const CallMediaError& seen) { device_.ClearLastMediaErrorIf(seen); }
 
   // --- What the peers send ---------------------------------------------------------------------
   Roe<void> ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity,

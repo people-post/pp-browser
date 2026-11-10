@@ -1,4 +1,5 @@
 #include "feature/broadcast/AmpBroadcastRpcClient.h"
+#include "common/Localized.h"
 
 #include "common/chat/IDirectMessageClient.h"
 #include "mesh/shared/AmpParkUntil.h"
@@ -47,14 +48,13 @@ ResponseT TakeAs(BroadcastRpcMessage&& msg) {
 template <typename ResponseT>
 void SendAndAwait(const std::shared_ptr<State>& state, const std::string& peer_key, uint32_t channel_id,
                   const std::string& request_json, const char* expect_label, Clock::time_point deadline,
-                  const std::shared_ptr<std::atomic<bool>>& settled,
-                  const std::function<void(Roe<ResponseT>)>& finish,
+                  const std::shared_ptr<std::atomic<bool>>& settled, const std::function<void(Roe<ResponseT>)>& finish,
                   const std::shared_ptr<std::shared_ptr<pp::amp::ChannelSession>>& session_holder) {
   *session_holder = state->links->BindChannel(
       peer_key, channel_id, pp::amp::ControlJsonChannelPolicy(),
       [finish, expect_label](Roe<std::vector<uint8_t>> frame) {
         if (!frame) {
-          finish(Error("Failed to read broadcast response").WithUser("Broadcast control request didn't confirm."));
+          finish(Error("Failed to read broadcast response").WithUser(Localized("broadcast.err.control_unconfirmed")));
           return false;
         }
         auto decoded = DecodeBroadcastRpcJson(std::string(frame->begin(), frame->end()));
@@ -70,16 +70,18 @@ void SendAndAwait(const std::shared_ptr<State>& state, const std::string& peer_k
         return false;
       });
   if (!*session_holder) {
-    finish(Error("amp broadcast: channel open failed").WithUser("Broadcast control request didn't confirm."));
+    finish(Error("amp broadcast: channel open failed").WithUser(Localized("broadcast.err.control_unconfirmed")));
     return;
   }
   if (!(*session_holder)->EnqueueOutbound(std::vector<uint8_t>(request_json.begin(), request_json.end()))) {
-    finish(Error("Failed to send broadcast request").WithUser("Broadcast control request didn't confirm."));
+    finish(Error("Failed to send broadcast request").WithUser(Localized("broadcast.err.control_unconfirmed")));
     return;
   }
   mesh::AmpScheduleUntilSettled(
       state->post_io, state->io_pump, settled, deadline,
-      [finish]() { finish(Error("amp broadcast send timed out").WithUser("Broadcast control timed out.")); },
+      [finish]() {
+        finish(Error("amp broadcast send timed out").WithUser(Localized("broadcast.err.control_timeout")));
+      },
       state->post_after);
 }
 
@@ -90,7 +92,7 @@ void RoundTripAsync(const std::shared_ptr<State>& state, const std::string& peer
   auto settled = std::make_shared<std::atomic<bool>>(false);
   auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
   std::function<void(Roe<ResponseT>)> finish = [on_done = std::move(on_done), settled,
-                                                 session_holder](Roe<ResponseT> value) {
+                                                session_holder](Roe<ResponseT> value) {
     if (settled->exchange(true, std::memory_order_acq_rel)) {
       return;
     }
@@ -112,8 +114,7 @@ void RoundTripAsync(const std::shared_ptr<State>& state, const std::string& peer
     return;
   }
   if (!IsPeerReachable(*state, peer_key)) {
-    finish(Error("Peer-direct endpoint not registered")
-               .WithUser("No usable peer address — add a dialable multiaddr on the contact."));
+    finish(Error("Peer-direct endpoint not registered").WithUser(Localized("broadcast.err.no_peer_address")));
     return;
   }
   const auto deadline = Clock::now() + timeout;
@@ -139,7 +140,7 @@ void RoundTripAsync(const std::shared_ptr<State>& state, const std::string& peer
               }
               if (!open) {
                 finish(Error("amp broadcast: channel open failed")
-                           .WithUser("Broadcast control request didn't confirm."));
+                           .WithUser(Localized("broadcast.err.control_unconfirmed")));
                 return;
               }
               SendAndAwait<ResponseT>(state, peer_key, channel_id, json, expect_label, deadline, settled, finish,
@@ -154,24 +155,24 @@ Roe<ResponseT> RoundTrip(const std::shared_ptr<State>& state, const std::string&
   auto promise = std::make_shared<std::promise<Roe<ResponseT>>>();
   auto future = promise->get_future();
   const auto deadline = Clock::now() + kRoundTripTimeout;
-  RoundTripAsync<ResponseT>(state, peer_key, std::move(request_json), expect_label,
-                            [promise](Roe<ResponseT> value) {
-                              try {
-                                promise->set_value(std::move(value));
-                              } catch (const std::future_error&) {
-                              }
-                            });
-  mesh::AmpParkUntil([&] { return future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; }, deadline,
-               state->io_pump);
+  RoundTripAsync<ResponseT>(state, peer_key, std::move(request_json), expect_label, [promise](Roe<ResponseT> value) {
+    try {
+      promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+  mesh::AmpParkUntil([&] { return future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+                     deadline, state->io_pump);
   if (future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    return Error("amp broadcast send timed out").WithUser("Broadcast control timed out.");
+    return Error("amp broadcast send timed out").WithUser(Localized("broadcast.err.control_timeout"));
   }
   return future.get();
 }
 
 } // namespace
 
-AmpBroadcastRpcClient::AmpBroadcastRpcClient(mesh::IChatPeerLinks& links, IoPump io_pump, IoPost post_io, IoAfter post_after)
+AmpBroadcastRpcClient::AmpBroadcastRpcClient(mesh::IChatPeerLinks& links, IoPump io_pump, IoPost post_io,
+                                             IoAfter post_after)
     : state_(std::make_shared<State>()) {
   state_->links = &links;
   state_->io_pump = std::move(io_pump);

@@ -110,8 +110,8 @@ Roe<std::string> E2eRelayPayloadCodec::EncryptChatPayloadBytes(const E2eEncryptP
 }
 
 Roe<E2eEncryptResult> E2eRelayPayloadCodec::EncryptTextWithAutoKey(const E2eEncryptParams& params,
-                                                                 const ByteVector& master_psk,
-                                                                 const std::optional<std::string>& key_init_b64) {
+                                                                   const ByteVector& master_psk,
+                                                                   const std::optional<std::string>& key_init_b64) {
   auto payload = EncryptText(params, master_psk);
   if (!payload) {
     return payload.error();
@@ -238,7 +238,8 @@ Roe<std::vector<uint8_t>> E2eRelayPayloadCodec::DecryptEnvelopePlaintext(
   if (!envelope.body.e2e.key_init_b64 || envelope.body.e2e.key_init_b64->empty()) {
     return stored ? failure : Error("Missing key_init_b64 for auto-key decrypt");
   }
-  auto derived = AutoKeyEstablishment::DeriveMasterPskFromKeyInit(*local_kem_private_key, *envelope.body.e2e.key_init_b64);
+  auto derived =
+      AutoKeyEstablishment::DeriveMasterPskFromKeyInit(*local_kem_private_key, *envelope.body.e2e.key_init_b64);
   if (!derived) {
     return derived.error();
   }

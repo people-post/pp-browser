@@ -9,6 +9,7 @@
 #include "lib/pricing/InitiationBillingStore.h"
 #include "lib/pricing/PaymentPromiseStore.h"
 #include "lib/messaging/CardAsk.h"
+#include "lib/messaging/CardAskGate.h"
 #include "lib/messaging/CopyAsk.h"
 #include "lib/messaging/IThreadMentionsStore.h"
 #include "lib/messaging/SentCopy.h"
@@ -26,6 +27,7 @@
 #include "domain/peers/DirectoryShadowCache.h"
 #include "lib/messaging/EpochBumpCoordinator.h"
 #include "feature/conversations/InboxController.h"
+#include "feature/conversations/InboundThreadIndex.h"
 #include "common/chat/IDirectMessageClient.h"
 #include "lib/delivery/PskSessionCoordinator.h"
 #include "lib/delivery/PublicPskLockCoordinator.h"
@@ -58,7 +60,6 @@
 
 namespace pbr {
 
-
 class GroupMembershipWorkflow;
 class AttachmentFetchWorkflow;
 class IChatHistoryPeerClient;
@@ -67,13 +68,13 @@ class IChatBlobPeerClient;
 /** Product-facing path for chat header chrome (not dial/punch mechanics). */
 enum class ThreadPeerPathKind {
   None = 0,
-  Direct,      // live ADP PeerLink
-  ViaHop,      // live circuit/media carrier PeerLink
-  ViaRelay,    // Brief/HTTP message relay only (no live mesh link)
-  Connecting,  // dial / handshake / punch — short-lived
-  Degraded,    // backoff / retry soon
-  Failed,      // offline / can't connect
-  Ready,       // idle, not yet dialing
+  Direct,     // live ADP PeerLink
+  ViaHop,     // live circuit/media carrier PeerLink
+  ViaRelay,   // Brief/HTTP message relay only (no live mesh link)
+  Connecting, // dial / handshake / punch — short-lived
+  Degraded,   // backoff / retry soon
+  Failed,     // offline / can't connect
+  Ready,      // idle, not yet dialing
 };
 
 /** Aggregated peer-link UX for a direct chat thread. */
@@ -95,12 +96,12 @@ class MeshDeliveryOrchestrator : public Module {
 public:
   /** Amp single entry for chat / history / blob ([A020]); requires `amp_links`. */
   MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
-                      InboxController& inbox, AccountKeyResolver& account_keys, IPeerSessionStore& psk_store,
-                      IGroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
-                      mesh::IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
-                      std::function<void(std::function<void()>)> amp_worker_post = {},
-                      std::function<void(std::function<void()>)> amp_post_io = {},
-                      std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after = {});
+                           InboxController& inbox, AccountKeyResolver& account_keys, IPeerSessionStore& psk_store,
+                           IGroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
+                           mesh::IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
+                           std::function<void(std::function<void()>)> amp_worker_post = {},
+                           std::function<void(std::function<void()>)> amp_post_io = {},
+                           std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after = {});
 
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text,
                                      const SendRelayOptions& options = {});
@@ -110,8 +111,7 @@ public:
    * P001: re-lock peer initiation billing (`charge_required` system message) then MarkClosed locally.
    * `floor_minor` defaults to local identity initiation_floor when nullopt.
    */
-  Roe<void> SendChargeRequired(const std::string& peer_identity,
-                               std::optional<int64_t> floor_minor = std::nullopt);
+  Roe<void> SendChargeRequired(const std::string& peer_identity, std::optional<int64_t> floor_minor = std::nullopt);
   InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
   /** D098 — append reaction / reaction_clear annotation on direct or group thread. */
   Roe<ThreadMessage> SendReaction(const std::string& thread_id, const std::string& target_message_id,
@@ -134,6 +134,18 @@ public:
   BriefRelayHealthState BriefRelayHealth() const {
     return static_cast<BriefRelayHealthState>(brief_relay_health_.load(std::memory_order_relaxed));
   }
+  /**
+   * The relay health changed (Unknown/Ok/Failed): fired only on a change, on the poll worker thread, so keep the
+   * callback short and thread-safe. Set before messaging runs; pass nullptr to clear (any thread).
+   */
+  /**
+   * Forget the last poll result (back to Unknown) WITHOUT firing the callback: the owner just reset its own copy,
+   * and the next result, Ok included, must count as a change or the owner never hears it.
+   */
+  void ResetBriefRelayHealth() {
+    brief_relay_health_.store(static_cast<int>(BriefRelayHealthState::Unknown), std::memory_order_relaxed);
+  }
+  void SetOnBriefRelayHealthChanged(std::function<void(BriefRelayHealthState)> callback);
   /** Me recovery: delete undelivered relay rows older than `older_than_days` (does not clear local chat). */
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
   void RetryFailedOutbound();
@@ -237,6 +249,8 @@ public:
       std::function<void(std::string title, std::string body, std::string thread_id, bool mentions_us)> callback);
   /** Fired on UI thread per inbound message stored in a thread (message id, thread id), as it is synced. */
   void SetOnInboundMessage(std::function<void(std::string message_id, std::string thread_id)> callback);
+  /** Where a recent inbound message (by message id) or call (by call id, once its summary arrived) went. */
+  std::optional<std::string> ThreadOfInbound(const std::string& id) const { return inbound_threads_.Find(id); }
   /**
    * The keys a directory entry carries for its account: the signing key (kept when it hashes to the
    * Account ID) and the KEM key (kept when the account bound it to itself). Either store refuses the rest.
@@ -244,7 +258,6 @@ public:
   void RegisterPeerKeysFromDirectory(const mesh::DirectoryHit& hit);
 
   /** Spine B: local tip publisher (device ML-DSA); null when Amp/identity not ready. */
-
 
   void MaybeTailSync(const std::string& thread_id);
   /** D059 — full user-initiated sync (async on IO thread). */
@@ -274,8 +287,7 @@ public:
   Roe<void> MarkPskVerified(const std::string& thread_id);
   void RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
   /** B28: best-first candidate list (RankAmpDialMultiaddrs order) via Amp RegisterEndpoints. */
-  void RegisterPeerDirectEndpoints(const std::string& peer_relay_user_id,
-                                   const std::vector<std::string>& multiaddrs);
+  void RegisterPeerDirectEndpoints(const std::string& peer_relay_user_id, const std::vector<std::string>& multiaddrs);
   /** Register all multiaddrs from a contact (keyed by relay id). */
   void RegisterContactDirectEndpoints(const Contact& contact);
   /**
@@ -295,19 +307,19 @@ public:
   void WarmPeerByKey(const std::string& peer_key);
   /**
    * The account pair's e2e_public session key with the peer (AutoKey if missing): a call media key's old form is
-   * wrapped under it (M024 bridge). `first_message_key_init_b64` rides the next lane send that is an account copy.
+   * wrapped under it (M024 bridge). An opener it made rides the lane's account copies to the peer until confirmed.
    */
-  Roe<EnsuredE2ePublicSessionKey> EnsureE2ePublicSessionKey(const std::string& peer_identity);
+  Roe<ByteVector> EnsureE2ePublicSessionKey(const std::string& peer_identity);
+  /** The same key when a session with the peer is held — never opened (reading a media key's old form, M024). */
+  Roe<ByteVector> HeldE2ePublicSessionKey(const std::string& peer_identity) const;
   /**
    * Send `control` (an identified system message) to `peer_identity` on the control lane
    * (kRelayRouteControl): a copy per device on the peer's card, each E2E under that device pair's e2e_public
-   * session (the account copy for a peer with no card; an account-pair `key_init_b64` the caller holds rides only
-   * that, M024), not sequenced, never stored. Queued on the critical lane — relay when a route is known (retried
+   * session (the account copy for a peer with no card, M024), not sequenced, never stored. Queued on the critical lane — relay when a route is known (retried
    * while fresh), else Amp. Our card rides it when the peer may not hold it; `with_card` when the caller knows it
    * may hold none of ours (ControlLane::Send).
    */
-  Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control,
-                        const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false,
+  Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control, bool urgent = false,
                         bool with_card = false);
   /** Each of `sends` on the control lane, sealed per pair and in parallel off this thread (ControlLane::SendToMany). */
   void SendControlToMany(std::vector<ControlSend> sends, ControlSendsDone done = {},
@@ -323,18 +335,16 @@ public:
   void RetryPeerDial(const std::string& thread_id);
 
 private:
-
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
   /** The direct-chat transport is attached and reaches `peer_key` now. */
   bool AmpReaches(const std::string& peer_key) const;
   /** The peer's account KEM public key (directory, M015). */
   Roe<ByteVector> PeerKemPublicKey(const PeerSessionKey& key) const;
-  void NotifyDeliveryIssue(const Thread& thread, SendFailure failure, const std::string& detail);
-  void NotifyRelayFallback(const std::string& thread_id);
+  void NotifyDeliveryIssue(const Thread& thread, const std::string& message_id, SendFailure failure,
+                           const std::string& detail);
   void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
   void MaybeEnqueueAttachmentDownload(const RelayReceiveOutcome& outcome);
-  void ApplySendSucceeded(const std::string& thread_id, const std::string& message_id, MessageTransport transport,
-                          bool relay_after_direct_attempt = false);
+  void ApplySendSucceeded(const std::string& thread_id, const std::string& message_id, MessageTransport transport);
   /** `detail`: the transport's own text, for the log. */
   void ApplySendFailed(const std::string& thread_id, const std::string& message_id, SendFailure failure,
                        const std::string& detail);
@@ -345,13 +355,12 @@ private:
   /** One member's copy of a group message: that member's reachability, and the row once any copy is out. */
   void ApplyGroupMemberOutcome(const DeliveryOutcome& outcome);
   void MarkGroupMemberMissed(const std::string& group_id, const std::string& member);
-  void NotifyGroupMembersMissed();
+  void NotifyGroupMembersMissed(const std::string& thread_id, const std::string& message_id);
   /** The message row's delivery state; false when there is no row (a control-lane send). */
-  bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success, MessageTransport transport,
-                    bool unless_delivered = false);
+  bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success,
+                    MessageTransport transport, bool unless_delivered = false);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
-  void RunSyncOnIo(const std::string& thread_id,
-                   std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
+  void RunSyncOnIo(const std::string& thread_id, std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
                    std::function<void(Roe<ChatSyncResult>)> on_complete);
   bool IsE2ePrivateThread(const std::string& thread_id) const;
   bool IsThreadCompromised(const std::string& thread_id) const;
@@ -398,6 +407,12 @@ private:
   std::function<void(const DeliveryNotice&)> on_delivery_notice_;
   std::function<void(std::string, std::string, std::string, bool)> on_background_unread_;
   std::function<void(std::string, std::string)> on_inbound_message_;
+  InboundThreadIndex inbound_threads_;
+  /**
+   * Remembers where a stored inbound message went (and the call, when it is a call summary); returns the ids
+   * to announce through `on_inbound_message_`. Independent of whether that callback is set yet.
+   */
+  std::vector<std::string> NoteInbound(const std::string& message_id, const RelayReceiveOutcome& outcome);
   /** Whether a stored inbound message in `thread_id` mentions us (G015). */
   /** A persisted message's notice for a user who is away (not attentive — the open chat too); none otherwise. */
   struct BackgroundNotice {
@@ -432,14 +447,15 @@ private:
   /** How long a suspected missing copy waits for the message to come another way before it is asked for. */
   static constexpr int64_t kMissingCopyWaitMs = 20 * 1000;
   std::mutex asked_copies_mutex_;
-  std::set<std::string> asked_copies_;  // message ids asked for (bounded)
-  /** M021 d6: an envelope said its sender's list is newer than ours — ask that device for it, through the relay. */
-  void AskForNewerCard(const std::string& account, const std::string& device, int64_t issued_at);
+  std::set<std::string> asked_copies_; // message ids asked for (bounded)
+  /**
+   * M021 d6: an envelope said its sender's list is newer than ours, or could not be checked for want of a card — ask
+   * that device for it, through the relay, when card_ask_gate_ allows (an unverified envelope's word is rate-limited).
+   */
+  void AskForNewerCard(const std::string& account, const std::string& device, int64_t issued_at,
+                       CardAskGate::Source source);
   std::mutex card_asks_mutex_;
-  std::map<std::string, int64_t> card_asks_;  // account → the newest list asked for
-  /** An unverified envelope's ask (SetOnUnknownSenderDevice): anyone can forge one, so once per account per gap. */
-  static constexpr int64_t kUnknownDeviceAskGapMs = 10 * 60 * 1000;
-  std::map<std::string, int64_t> unknown_device_asks_; // account → when last asked (under card_asks_mutex_)
+  CardAskGate card_ask_gate_; // under card_asks_mutex_
   /**
    * M024: a verified lane message from `account` this device could not read (no copy for it, or an account copy
    * that did not open) — tell it our card (`device_list`), so its next message has a copy for this device. At most
@@ -492,6 +508,9 @@ private:
   uint64_t last_relay_poll_ms_ = 0;
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
   std::atomic<int> brief_relay_health_{0};
+  void StoreBriefRelayHealth(BriefRelayHealthState state);
+  std::mutex brief_relay_health_cb_mu_;
+  std::function<void(BriefRelayHealthState)> on_brief_relay_health_changed_;
   std::atomic<bool> poll_pending_{false};
   /** Set when SyncInbox is requested while a poll is already in flight — worker re-polls. */
   std::atomic<bool> poll_again_{false};

@@ -3,6 +3,7 @@
 #include "common/Error.h"
 #include "common/ShareableLine.h"
 #include "common/chat/IDirectMessageClient.h"
+#include "common/thread/ThreadTypes.h"
 
 #include <optional>
 #include <string>
@@ -44,6 +45,7 @@ enum class SendFailure {
 
 /** `failure` as a word for a shareable line (common/Diag.h). */
 ShareWord SendFailureWord(SendFailure failure);
+std::optional<SendFailure> SendFailureFromWire(const std::string& wire);
 
 /** A direct send's failure, by its code. */
 SendFailure SendFailureFromDirect(DirectSendErr code);
@@ -87,8 +89,6 @@ std::optional<ReceiveFailure> ReceiveFailureFromWire(const std::string& wire);
 struct DeliveryNotice {
   enum class Kind {
     SendFailed,
-    /** The peer could not be reached directly; the message went via the relay. */
-    SentViaRelay,
     /** A group send reached some members only. */
     GroupMembersMissed,
     ReceiveFailed,
@@ -100,8 +100,27 @@ struct DeliveryNotice {
   std::string peer;
   /** ReceiveFailed / ApplyFailed: the system-control family whose update failed. */
   std::string family;
+  /** SendFailed / GroupMembersMissed: the chat and the message that did not go out (empty: not known). */
+  std::string thread_id;
+  std::string message_id;
   /** The transport's or pipeline's own text, for the log. */
   std::string detail;
 };
+
+/**
+ * A local transcript line saying a message did not go out (or reached part of a group only): a stored System
+ * row with no words, its `payload_json` naming `control_type` `send_failure` and the reason, which the
+ * transcript words in the reader's language (like a receive failure's line). One per failed message.
+ */
+inline constexpr const char* kSendFailureControlType = "send_failure";
+/** The reason of a row for a group send that reached some members only (else a SendFailureWord). */
+inline constexpr const char* kGroupMembersMissedWire = "group_members_missed";
+
+/** The row's id for `message_id`: a second notice for the same message finds it already there. */
+std::string SendFailureRowId(const std::string& message_id, const std::string& reason_wire);
+ThreadMessage MakeSendFailureRow(const std::string& thread_id, const std::string& message_id,
+                                 const std::string& reason_wire, int64_t timestamp_ms);
+/** The reason of a send-failure row; none for any other message. */
+std::optional<std::string> SendFailureRowReason(const ThreadMessage& message);
 
 } // namespace pbr

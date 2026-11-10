@@ -12,12 +12,11 @@
 #import <objc/runtime.h>
 
 #include "foundation/platform/IosLocalNotifier.h"
-#if defined(PP_IOS_CALLKIT)
-#include "foundation/platform/IosCallSystemUi.h"
-#endif
 #include "foundation/platform/IosPushDeviceRegistrar.h"
+#include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 
+#include <chrono>
 #include <string>
 
 @interface PpNotificationCenterDelegate : NSObject <UNUserNotificationCenterDelegate>
@@ -44,6 +43,7 @@ bool IsCallWake(NSDictionary* userInfo) {
        willPresentNotification:(UNNotification*)notification
          withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completionHandler {
   (void)center;
+  pbr::AppLifecycle::OnRemoteNotification(); // a push may carry its own icon number: ours is sent again
   if (IsCallWake(notification.request.content.userInfo)) {
     pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
   }
@@ -61,7 +61,10 @@ bool IsCallWake(NSDictionary* userInfo) {
                                     ? std::string([(NSString*)hint_raw UTF8String])
                                     : std::string();
   if (IsCallWake(userInfo)) {
-    pbr::DispatchIosNotificationActivation({}, /*call_wake=*/true, wake_hint);
+    // How long ago the tapped alert was delivered; a stale one is not a call to wait for.
+    const NSTimeInterval age_s = MAX(0.0, -[response.notification.date timeIntervalSinceNow]);
+    pbr::DispatchIosNotificationActivation({}, /*call_wake=*/true, wake_hint,
+                                           std::chrono::milliseconds(static_cast<int64_t>(age_s * 1000.0)));
     pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
   } else {
     id thread = userInfo[[NSString stringWithUTF8String:pbr::kIosNotificationThreadKey]];
@@ -105,21 +108,21 @@ void AddAppDelegateMethods(Class cls) {
                     NSLog(@"[apns] register failed: %@", error.localizedDescription);
                   }),
                   "v@:@@");
-  class_addMethod(
-      cls, @selector(application:didReceiveRemoteNotification:fetchCompletionHandler:),
-      imp_implementationWithBlock(^(id /*self*/, UIApplication* /*app*/, NSDictionary* userInfo,
-                                    void (^completionHandler)(UIBackgroundFetchResult)) {
-        if (IsCallWake(userInfo)) {
-          pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
-        } else {
-          // inbox_wake or unknown opaque wake: force inbox sync.
-          pbr::BackgroundSyncScheduler::Instance().RequestWakeSync();
-        }
-        if (completionHandler) {
-          completionHandler(UIBackgroundFetchResultNewData);
-        }
-      }),
-      "v@:@@@?");
+  class_addMethod(cls, @selector(application:didReceiveRemoteNotification:fetchCompletionHandler:),
+                  imp_implementationWithBlock(^(id /*self*/, UIApplication* /*app*/, NSDictionary* userInfo,
+                                                void (^completionHandler)(UIBackgroundFetchResult)) {
+                    pbr::AppLifecycle::OnRemoteNotification(); // as in willPresentNotification
+                    if (IsCallWake(userInfo)) {
+                      pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
+                    } else {
+                      // inbox_wake or unknown opaque wake: force inbox sync.
+                      pbr::BackgroundSyncScheduler::Instance().RequestWakeSync();
+                    }
+                    if (completionHandler) {
+                      completionHandler(UIBackgroundFetchResultNewData);
+                    }
+                  }),
+                  "v@:@@@?");
 }
 
 PpNotificationCenterDelegate* g_center_delegate = nil;
@@ -142,19 +145,13 @@ PpNotificationCenterDelegate* g_center_delegate = nil;
                   object:nil
                    queue:nil
               usingBlock:^(NSNotification* /*note*/) {
-#if defined(PP_IOS_CALLKIT)
-                // A VoIP push that launched the app (P016).
-                pbr::InstallIosCallSystemUi();
-#endif
                 UIApplication* application = [UIApplication sharedApplication];
                 [[UNUserNotificationCenter currentNotificationCenter]
-                    requestAuthorizationWithOptions:(UNAuthorizationOptionAlert |
-                                                     UNAuthorizationOptionSound |
+                    requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound |
                                                      UNAuthorizationOptionBadge)
                                   completionHandler:^(BOOL /*granted*/, NSError* /*error*/) {
                                     dispatch_async(dispatch_get_main_queue(), ^{
-                                      [[UIApplication sharedApplication]
-                                          registerForRemoteNotifications];
+                                      [[UIApplication sharedApplication] registerForRemoteNotifications];
                                     });
                                   }];
                 // Silent wakes do not require the alert grant.

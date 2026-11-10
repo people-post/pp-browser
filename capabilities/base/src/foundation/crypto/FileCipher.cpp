@@ -10,8 +10,7 @@
 
 namespace pbr {
 
-std::string FileCipher::BuildAad(std::string_view purpose, std::string_view profile_id,
-                                 const uint8_t schema_version) {
+std::string FileCipher::BuildAad(std::string_view purpose, std::string_view profile_id, const uint8_t schema_version) {
   return std::string(purpose) + "|" + std::string(profile_id) + "|" + std::to_string(schema_version);
 }
 
@@ -33,9 +32,9 @@ Roe<ByteVector> FileCipher::Encrypt(const ByteVector& dek, const ByteVector& pla
   out[0] = kEncryptedPayloadVersion;
   std::copy(nonce->begin(), nonce->end(), out.begin() + 1);
   unsigned long long length = 0;
-  if (crypto_aead_xchacha20poly1305_ietf_encrypt(
-          out.data() + 1 + kAeadNonceSize, &length, plaintext.data(), plaintext.size(),
-          reinterpret_cast<const unsigned char*>(aad.data()), aad.size(), nullptr, nonce->data(), dek.data()) != 0) {
+  if (crypto_aead_xchacha20poly1305_ietf_encrypt(out.data() + 1 + kAeadNonceSize, &length, plaintext.data(),
+                                                 plaintext.size(), reinterpret_cast<const unsigned char*>(aad.data()),
+                                                 aad.size(), nullptr, nonce->data(), dek.data()) != 0) {
     return Error("AEAD encrypt failed");
   }
   out.resize(1 + kAeadNonceSize + static_cast<size_t>(length));

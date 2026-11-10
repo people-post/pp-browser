@@ -66,8 +66,8 @@ TEST(RenderedClassesHaveStylesTest, EveryEmittedClassHasAThemeRule) {
   ASSERT_FALSE(css.empty()) << "no .rcss files under " << (root / "assets/themes");
 
   std::set<std::string> emitted;
-  for (const char* file : {"src/lib/ai/StructuredTextParser.cpp", "src/lib/ai/MarkdownToRml.cpp",
-                           "src/lib/ai/WorkingSetPolicy.cpp"}) {
+  for (const char* file :
+       {"src/lib/ai/StructuredTextParser.cpp", "src/lib/ai/MarkdownToRml.cpp", "src/lib/ai/WorkingSetPolicy.cpp"}) {
     const std::string source = ReadFile(root / file);
     ASSERT_FALSE(source.empty()) << file;
     const auto classes = EmittedClasses(source);
@@ -82,7 +82,10 @@ TEST(RenderedClassesHaveStylesTest, EveryEmittedClassHasAThemeRule) {
   // These four were already emitted without any rule when this test was added (they inherit the
   // parent's look); style them and delete the entry, or drop the class from the renderer.
   const std::set<std::string> kUnstyled = {
-      "chat-action-list-title", "chat-key-value-value", "chat-poll-question", "working-set-calendar",
+      "chat-action-list-title",
+      "chat-key-value-value",
+      "chat-poll-question",
+      "working-set-calendar",
   };
 
   for (const std::string& name : emitted) {
@@ -92,6 +95,7 @@ TEST(RenderedClassesHaveStylesTest, EveryEmittedClassHasAThemeRule) {
     // A trailing '-' means the literal is a prefix completed at runtime (chat-card-<variant>):
     // at least one rule must start with it.
     const std::string pattern = name.back() == '-' ? "\\." + name + "[a-z0-9-]*" : "\\." + name + R"((?![a-z0-9-]))";
-    EXPECT_TRUE(std::regex_search(css, std::regex(pattern))) << "class '" << name << "' is emitted but no theme rule styles it";
+    EXPECT_TRUE(std::regex_search(css, std::regex(pattern)))
+        << "class '" << name << "' is emitted but no theme rule styles it";
   }
 }

@@ -60,8 +60,9 @@ TEST(OggCrc, MatchesTheChecksumAnOtherMuxerWrote) {
   // The first page of the ffmpeg-made reference file stores 0x271BAD4F; the parser checks every page's checksum.
   const auto file = ReferenceFile();
   ASSERT_GT(file.size(), 47u);
-  EXPECT_EQ(static_cast<uint32_t>(file[22]) | (file[23] << 8) | (file[24] << 16) | (static_cast<uint32_t>(file[25]) << 24),
-            0x271BAD4Fu);
+  EXPECT_EQ(
+      static_cast<uint32_t>(file[22]) | (file[23] << 8) | (file[24] << 16) | (static_cast<uint32_t>(file[25]) << 24),
+      0x271BAD4Fu);
   std::vector<uint8_t> page(file.begin(), file.begin() + 47);
   std::memset(page.data() + 22, 0, 4);
   EXPECT_EQ(OggCrc32(page.data(), page.size()), 0x271BAD4Fu);
@@ -77,8 +78,8 @@ TEST(OggOpusParse, ReadsTheFfmpegReferenceFile) {
   EXPECT_EQ(stream->channels, 1);
   EXPECT_EQ(stream->pre_skip, 312);
   EXPECT_EQ(stream->input_rate, 48000u);
-  EXPECT_EQ(stream->packets.size(), 76u);       // 75 frames of audio + the one that flushes the decoder delay
-  EXPECT_EQ(stream->valid_samples, 72000u);     // the end granule (73312) minus the pre-skip: exactly 1.5 s
+  EXPECT_EQ(stream->packets.size(), 76u);   // 75 frames of audio + the one that flushes the decoder delay
+  EXPECT_EQ(stream->valid_samples, 72000u); // the end granule (73312) minus the pre-skip: exactly 1.5 s
   EXPECT_EQ(stream->DurationMs(), 1500);
 }
 
@@ -117,7 +118,7 @@ TEST(OggOpusWrite, FileStartsWithTheHeadersAndEndsWithEos) {
   const auto packets = SilentPackets(3);
   const auto file = BuildOggOpus(packets, 3 * 960 - 312);
   ASSERT_GT(file.size(), 100u);
-  EXPECT_EQ(file[5], 0x02);                    // first page: begin of stream
+  EXPECT_EQ(file[5], 0x02); // first page: begin of stream
   EXPECT_EQ(std::memcmp(file.data() + 28, "OpusHead", 8), 0);
   // Last page carries the end-of-stream flag; find it by walking the pages.
   size_t pos = 0;
@@ -136,7 +137,7 @@ TEST(OggOpusWrite, FileStartsWithTheHeadersAndEndsWithEos) {
 
 TEST(OggOpusWrite, ALongPacketSpansSeveralLacingValues) {
   std::vector<std::vector<uint8_t>> packets = SilentPackets(2);
-  packets[0].assign(1000, packets[0][0]);  // not decodable audio, but framing must carry it intact
+  packets[0].assign(1000, packets[0][0]); // not decodable audio, but framing must carry it intact
   const auto file = BuildOggOpus(packets, 2 * 960 - 312);
   // Framing only: read the pages back by hand and count the bytes of packet 0 from the lacing.
   size_t pos = 0;
@@ -259,8 +260,8 @@ TEST_F(OggOpusMalformed, PagesOutOfOrderAreRefused) {
 
 TEST_F(OggOpusMalformed, NotOpusPacketsAreRefused) {
   std::vector<std::vector<uint8_t>> junk(3, std::vector<uint8_t>{});
-  junk[0] = {0xFF};            // a TOC byte that announces a frame count with no frames
-  junk[1] = {0x03};            // code 3 (arbitrary frame count) with no count byte
+  junk[0] = {0xFF}; // a TOC byte that announces a frame count with no frames
+  junk[1] = {0x03}; // code 3 (arbitrary frame count) with no count byte
   junk[2] = {};
   const auto file = BuildOggOpus(junk, 3 * 960 - 312);
   EXPECT_FALSE(ParseOggOpus(file.data(), file.size()));
@@ -314,9 +315,33 @@ TEST_F(OggOpusMalformed, ManyEmptyPagesStopAtThePageLimit) {
   std::vector<uint8_t> file(good_.begin(), good_.begin() + static_cast<std::ptrdiff_t>(head_tags_end));
   for (uint32_t seq = 2; seq < 2 + 500; ++seq) {
     const size_t start = file.size();
-    const uint8_t header[27] = {'O', 'g', 'g', 'S', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                file[14], file[15], file[16], file[17],
-                                static_cast<uint8_t>(seq), static_cast<uint8_t>(seq >> 8), 0, 0, 0, 0, 0, 0, 0};
+    const uint8_t header[27] = {'O',
+                                'g',
+                                'g',
+                                'S',
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                file[14],
+                                file[15],
+                                file[16],
+                                file[17],
+                                static_cast<uint8_t>(seq),
+                                static_cast<uint8_t>(seq >> 8),
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0};
     file.insert(file.end(), header, header + 27);
     FixCrcOfPage(file, start);
   }

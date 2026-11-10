@@ -47,7 +47,8 @@ public:
     return AppendMessage(message);
   }
   /** One message by id (nullopt when unknown). Default: scan the newest page (test doubles). */
-  virtual Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id) const {
+  virtual Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id,
+                                                       const std::string& message_id) const {
     auto page = GetMessagesPage(thread_id, std::nullopt, 10000);
     if (!page) {
       return page.error();
@@ -106,8 +107,8 @@ public:
   }
   virtual Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const = 0;
   virtual Roe<void> ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) = 0;
-  virtual Roe<std::vector<ThreadMessage>> ExportMessagesUpTo(const std::string& thread_id,
-                                                             const std::optional<std::string>& max_message_id) const = 0;
+  virtual Roe<std::vector<ThreadMessage>> ExportMessagesUpTo(
+      const std::string& thread_id, const std::optional<std::string>& max_message_id) const = 0;
 };
 
 } // namespace pbr

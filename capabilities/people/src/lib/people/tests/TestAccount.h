@@ -117,9 +117,7 @@ struct TestAccount {
   std::string DevicePublicB64() const { return Base64Encode(device_public); }
 
   /** The account's binding of its KEM key to itself, base64 (as the directory carries it). */
-  std::string KemBindingB64() const {
-    return Sign(KemBindingSignBytes(SigningPublicB64(), KemPublicB64())).value();
-  }
+  std::string KemBindingB64() const { return Sign(KemBindingSignBytes(SigningPublicB64(), KemPublicB64())).value(); }
 
   /** The account's key card (as the directory or a first message carries it). */
   KeyCard Card() const {

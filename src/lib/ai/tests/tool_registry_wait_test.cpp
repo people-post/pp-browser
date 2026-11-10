@@ -19,7 +19,8 @@ using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
 
 /** Spins until `done` holds or `limit` passes; true when it held. */
-template <typename Pred> bool WaitFor(Pred done, const Clock::duration limit = 2s) {
+template <typename Pred>
+bool WaitFor(Pred done, const Clock::duration limit = 2s) {
   const auto until = Clock::now() + limit;
   while (!done()) {
     if (Clock::now() >= until) {

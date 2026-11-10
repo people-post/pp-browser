@@ -80,8 +80,8 @@ Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
   record->signature = *signature;
 
   const std::string url = base_url_ + "/v1/messages";
-  const auto response = HttpClient::Post(url, DumpJson(RelayWireSendRecordToJson(*record)),
-                                         {{"Content-Type", "application/json"}});
+  const auto response =
+      HttpClient::Post(url, DumpJson(RelayWireSendRecordToJson(*record)), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }
@@ -91,15 +91,15 @@ Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
     // Which recipient the relay refused (a group fan-out sends one envelope per member).
     logging::getLogger("HttpRelayClient").warning << "relay send rejected status=" << response.value().status_code
-                  << " recipient=" << record->recipient_contact_id << " route=" << envelope.route.kind
-                  << " body=" << response.value().body.substr(0, 160);
+                                                  << " recipient=" << record->recipient_contact_id
+                                                  << " route=" << envelope.route.kind
+                                                  << " body=" << response.value().body.substr(0, 160);
     return RelayHttpStatusError("send", response.value().status_code, response.value().body);
   }
   return {};
 }
 
-Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_contact_id,
-                                              const std::string& cursor) {
+Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_contact_id, const std::string& cursor) {
   if (base_url_.empty()) {
     return Error("Relay base_url not configured");
   }
@@ -122,9 +122,8 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
   // B30: poll-specific fail-fast (serialized polls on cellular; global 30s starved Accept/MediaKey).
   // Other relay HTTP keeps default HttpTimeout{30}. Not an env knob.
   constexpr HttpTimeout kRelayPollTimeout{.total_s = 10, .connect_s = 5};
-  const auto response =
-      HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
-                       kMaxHttpClientBodyBytes, kRelayPollTimeout);
+  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
+                                         kMaxHttpClientBodyBytes, kRelayPollTimeout);
   if (!response) {
     return response.error();
   }
@@ -182,8 +181,7 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
   return result;
 }
 
-Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_contact_id,
-                                                 const std::string& cursor) {
+Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_contact_id, const std::string& cursor) {
   if (base_url_.empty()) {
     return Error("Relay base_url not configured");
   }
@@ -234,8 +232,7 @@ Roe<RelayDeleteResult> HttpRelayClient::ClearInbox(const std::string& requester_
     return Error("Missing before_created_at");
   }
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes =
-      BuildRelayApiClearInboxSignBytes(requester_contact_id, before_created_at, timestamp);
+  const auto sign_bytes = BuildRelayApiClearInboxSignBytes(requester_contact_id, before_created_at, timestamp);
   if (sign_bytes.empty()) {
     return Error("Failed to build relay clear sign bytes");
   }

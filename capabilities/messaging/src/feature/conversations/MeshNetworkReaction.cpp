@@ -16,8 +16,8 @@ mesh::LocalNetworkChange ToLocalNetworkChange(const NetworkChange& change) {
 
 void ReportUdpSocketCheck(logging::Logger& log, const mesh::UdpSocketCheck& check) {
   DiagLine("mesh.udp_socket")
-      .Add("reason", check.reason == mesh::UdpSocketCheckReason::NetworkChange ? ShareWord("network")
-                                                                               : ShareWord("foreground"))
+      .Add("reason",
+           check.reason == mesh::UdpSocketCheckReason::NetworkChange ? ShareWord("network") : ShareWord("foreground"))
       .Add("was_alive", check.was_alive)
       .Add("reopened", check.reopened)
       .Add("alive", check.alive)

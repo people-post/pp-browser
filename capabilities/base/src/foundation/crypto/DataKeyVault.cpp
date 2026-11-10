@@ -1,4 +1,5 @@
 #include "foundation/crypto/DataKeyVault.h"
+#include "common/Localized.h"
 #include "common/PlatformLimits.h"
 #include "common/BoundedRead.h"
 
@@ -104,7 +105,7 @@ Roe<ByteVector> DataKeyVault::ReadVaultFile() const {
   if (!in) {
     return Error("Failed to open vault.bin");
   }
-  auto read = ReadBoundedBytes(in, kMaxProfileJsonFileBytes);  // a vault is well under 1 KiB
+  auto read = ReadBoundedBytes(in, kMaxProfileJsonFileBytes); // a vault is well under 1 KiB
   if (!read) {
     return Error("Failed to read vault.bin: " + read.error().message);
   }
@@ -234,8 +235,7 @@ Roe<ByteVector> DataKeyVault::UnwrapDekFromVaultBytes(const ByteVector& vault_by
   auto dek = FileCipher::Decrypt(*kek, *wrapped, FileCipher::BuildAad("vault-dek", profile_id));
   sodium_memzero(kek->data(), kek->size());
   if (!dek) {
-    return AppError::Pin(Err::Pin::Generic, "Incorrect PIN or corrupt vault")
-        .WithUser("Incorrect PIN or corrupt vault");
+    return AppError::Pin(Err::Pin::Generic, "Incorrect PIN or corrupt vault").WithUser(Localized("pin.error.wrong"));
   }
   return dek;
 }

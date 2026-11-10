@@ -23,9 +23,8 @@ std::string CachedCrashReportsUrlOverride(const std::string& profile_data_dir) {
   if (!cache) {
     return {};
   }
-  const auto now = std::chrono::duration_cast<std::chrono::seconds>(
-                       std::chrono::system_clock::now().time_since_epoch())
-                       .count();
+  const auto now =
+      std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
   if (!ClientCompatCacheFresh(*cache, now)) {
     return {};
   }
@@ -34,12 +33,10 @@ std::string CachedCrashReportsUrlOverride(const std::string& profile_data_dir) {
 
 } // namespace
 
-void MaybeUploadPendingCrashReport(const std::string& data_dir,
-                                   const std::string& profile_data_dir,
-                                   bool crash_reports_enabled,
-                                   const std::string& relay_base_url) {
+void MaybeUploadPendingCrashReport(const std::string& data_dir, const std::string& profile_data_dir,
+                                   bool crash_reports_enabled, const std::string& relay_base_url) {
   if (!UploadAllowed(kUiDemoBuild) || data_dir.empty() || !CrashDump::HasPending(data_dir)) {
-    return;  // the UI demo app uploads nothing, whatever address the profile cache holds
+    return; // the UI demo app uploads nothing, whatever address the profile cache holds
   }
 
   auto log = logging::getLogger("CrashReport");
@@ -50,8 +47,7 @@ void MaybeUploadPendingCrashReport(const std::string& data_dir,
     return;
   }
 
-  const std::string url =
-      ResolveCrashReportUploadUrl(relay_base_url, CachedCrashReportsUrlOverride(profile_data_dir));
+  const std::string url = ResolveCrashReportUploadUrl(relay_base_url, CachedCrashReportsUrlOverride(profile_data_dir));
   if (url.empty()) {
     log.info << "Pending crash dump present but relay base URL empty; keeping " << path;
     return;
@@ -68,8 +64,7 @@ void MaybeUploadPendingCrashReport(const std::string& data_dir,
   log.info << "Uploading crash envelope fingerprint=" << envelope.fingerprint << " bytes=" << body.size()
            << " url=" << url;
 
-  auto response = HttpClient::Post(url, body, {{"Content-Type", "application/json"},
-                                               {"X-PP-Crash-Report", "1"}});
+  auto response = HttpClient::Post(url, body, {{"Content-Type", "application/json"}, {"X-PP-Crash-Report", "1"}});
   if (!response) {
     log.warning << "Crash dump upload failed: " << response.error().message;
     return;

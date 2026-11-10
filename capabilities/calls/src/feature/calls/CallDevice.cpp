@@ -1,5 +1,6 @@
 #include "feature/calls/CallDevice.h"
 
+#include "common/Localized.h"
 #include "lib/calls/CallSessionQueries.h"
 #include "feature/calls/CallControlClient.h"
 #include "lib/calls/CallListenAddrsLogic.h"
@@ -76,9 +77,11 @@ CallDevice::CallDevice(const IThreadCatalog& threads, IThreadTranscript& transcr
       key_exchange_(
           sessions, media_keys,
           CallMediaKeyExchange::Transport{
-              [this](const std::string& peer) { return control_.SessionKeyWith(peer); },
-              [this](const std::string& call_id, const std::string& peer, uint32_t epoch, const std::string& key_id,
-                     const ByteVector& key) { return control_.SendMediaKey(call_id, peer, epoch, key_id, key); }}),
+              .resolve_peer_session_key = [this](const std::string& peer) { return control_.SessionKeyWith(peer); },
+              .held_peer_session_key = [this](const std::string& peer) { return control_.HeldSessionKeyWith(peer); },
+              .send_media_key =
+                  [this](const std::string& call_id, const std::string& peer, uint32_t epoch, const std::string& key_id,
+                         const ByteVector& key) { return control_.SendMediaKey(call_id, peer, epoch, key_id, key); }}),
       billing_(account),
       reach_signals_(control_),
       workflow_(threads, sessions, reads, hop_service_, key_exchange_, billing_, live_calls_, call_media_),
@@ -125,7 +128,7 @@ void CallDevice::OnHopReport(const HopReport& report) {
         } else if constexpr (std::is_same_v<R, hop_report::Changed>) {
           NotifyRingChanged();
         } else if constexpr (std::is_same_v<R, hop_report::MediaError>) {
-          SetLastMediaError(r.message);
+          SetLastMediaError({CallMediaErrorKind::Other, r.message});
         } else if constexpr (std::is_same_v<R, hop_report::Activity>) {
           live_calls_.NoteActivity(r.call_id, r.text);
         } else if constexpr (std::is_same_v<R, hop_report::MediaAttempted>) {
@@ -155,9 +158,8 @@ CallSessionWorkflow::WirePorts CallDevice::MakeWorkflowWirePorts() {
   CallSessionWorkflow::WirePorts ports;
   ports.local_relay_identity = [this]() { return control_.LocalRelayIdentity(); };
   ports.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
-                             const std::string& display, bool urgent) {
-    return control_.SendDirect(peer, type, detail, display, urgent);
-  };
+                             const std::string& display,
+                             bool urgent) { return control_.SendDirect(peer, type, detail, display, urgent); };
   ports.send_to_each = [this](const std::vector<std::string>& peers, CallControlType type, const std::string& detail,
                               const std::string& display) { control_.SendToEach(peers, type, detail, display); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
@@ -442,6 +444,8 @@ void CallDevice::OnDirectReport(const DirectReport& report) {
           live_calls_.NoteDirectHandedToHop(r.call_id);
         } else if constexpr (std::is_same_v<R, direct_report::ConnectFailed>) {
           live_calls_.NoteMediaFailed(r.call_id);
+        } else if constexpr (std::is_same_v<R, direct_report::Dropped>) {
+          live_calls_.NoteMediaDropped(r.call_id);
         } else if constexpr (std::is_same_v<R, direct_report::PeerEnded>) {
           workflow_.NotePeerEndedCall(r.call_id, r.peer_identity);
         } else if constexpr (std::is_same_v<R, direct_report::GaveUpReaching>) {
@@ -457,7 +461,7 @@ void CallDevice::OnDirectReport(const DirectReport& report) {
         } else if constexpr (std::is_same_v<R, direct_report::Changed>) {
           NotifyRingChanged();
         } else if constexpr (std::is_same_v<R, direct_report::MediaError>) {
-          SetLastMediaError(r.message);
+          SetLastMediaError({r.kind, r.message});
         } else if constexpr (std::is_same_v<R, direct_report::MediaKeyResendWanted>) {
           ResendMediaKey(r.call_id, r.peer_identity);
         } else if constexpr (std::is_same_v<R, direct_report::InboxSyncWanted>) {
@@ -732,7 +736,7 @@ void CallDevice::ScheduleStartDirectMedia(const std::string& call_id, const std:
           call_media ? call_media->BeginDirect(peer_identity, offerer) : Roe<void>(Error("no live call for media"));
       !begun) {
     log().error << "ScheduleStartDirectMedia: " << begun.error().message << " call_id=" << call_id;
-    last_media_error_ = "Call media unavailable";
+    last_media_error_ = CallMediaError{CallMediaErrorKind::Other, Localized("call.error.media_unavailable")};
     NotifyRingChanged();
   }
 }
@@ -785,13 +789,13 @@ bool CallDevice::IsSfuAttached() const {
   return ActivePathsView().hop_attached;
 }
 
-void CallDevice::ClearLastMediaErrorIf(const std::string& seen) {
+void CallDevice::ClearLastMediaErrorIf(const CallMediaError& seen) {
   if (last_media_error_ && *last_media_error_ == seen) {
     last_media_error_.reset();
   }
 }
 
-std::optional<std::string> CallDevice::TakeLastMediaError() {
+std::optional<CallMediaError> CallDevice::TakeLastMediaError() {
   auto out = std::move(last_media_error_);
   last_media_error_.reset();
   return out;
@@ -955,8 +959,8 @@ Roe<void> CallDevice::SendDirect(const std::string& peer_identity, CallControlTy
   return control_.SendDirect(peer_identity, type, detail_json, display);
 }
 
-void CallDevice::SetLastMediaError(std::string message) {
-  last_media_error_ = std::move(message);
+void CallDevice::SetLastMediaError(CallMediaError error) {
+  last_media_error_ = std::move(error);
 }
 
 void CallDevice::ClearMediaActivity() {

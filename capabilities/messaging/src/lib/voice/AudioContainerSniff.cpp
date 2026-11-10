@@ -57,14 +57,22 @@ AudioContainer SniffAudioFile(const std::filesystem::path& path) {
 
 const char* AudioContainerExtension(AudioContainer container) {
   switch (container) {
-  case AudioContainer::Mp3: return "mp3";
-  case AudioContainer::Mp4: return "m4a";
-  case AudioContainer::Wav: return "wav";
-  case AudioContainer::Flac: return "flac";
-  case AudioContainer::Ogg: return "ogg";
-  case AudioContainer::Aiff: return "aiff";
-  case AudioContainer::Aac: return "aac";
-  case AudioContainer::Unknown: break;
+    case AudioContainer::Mp3:
+      return "mp3";
+    case AudioContainer::Mp4:
+      return "m4a";
+    case AudioContainer::Wav:
+      return "wav";
+    case AudioContainer::Flac:
+      return "flac";
+    case AudioContainer::Ogg:
+      return "ogg";
+    case AudioContainer::Aiff:
+      return "aiff";
+    case AudioContainer::Aac:
+      return "aac";
+    case AudioContainer::Unknown:
+      break;
   }
   return nullptr;
 }

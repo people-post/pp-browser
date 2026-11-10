@@ -301,12 +301,12 @@ TEST(AudioSessionInterruptionTest, TheSessionComingBackTriesVoiceProcessingAgain
   ASSERT_TRUE(WaitFor([&] { return voice_opens.load() == 1; })) << "the call did not start on voice processing";
   EXPECT_EQ(separate_opens.load(), 0);
 
-  engine.RequestAudioDeviceReopen();  // the pair fails this time: separate devices
+  engine.RequestAudioDeviceReopen(); // the pair fails this time: separate devices
   ASSERT_TRUE(WaitFor([&] { return voice_opens.load() == 2 && separate_opens.load() >= 2; }))
       << "the reopen did not fall back to separate devices";
   std::this_thread::sleep_for(50ms);
   const int separate = separate_opens.load();
-  engine.RequestAudioDeviceReopen();  // an ordinary reopen (a starved capture): reopens what it has
+  engine.RequestAudioDeviceReopen(); // an ordinary reopen (a starved capture): reopens what it has
   ASSERT_TRUE(WaitFor([&] { return separate_opens.load() >= separate + 2; })) << "the ordinary reopen did not run";
   EXPECT_EQ(voice_opens.load(), 2) << "an ordinary reopen does not go back to voice processing";
 
@@ -331,19 +331,19 @@ TEST(AudioSessionInterruptionTest, AFailedVoiceRetryIsTriedAgainAtTheNextReopen)
   ASSERT_TRUE(started) << (started ? "" : started.error().message);
   ASSERT_TRUE(WaitFor([&] { return voice_opens.load() == 1; })) << "the call did not start on voice processing";
 
-  engine.RequestAudioDeviceReopen();  // the pair fails: separate devices
+  engine.RequestAudioDeviceReopen(); // the pair fails: separate devices
   ASSERT_TRUE(WaitFor([&] { return voice_opens.load() == 2 && separate_opens.load() >= 2; }))
       << "the reopen did not fall back to separate devices";
   std::this_thread::sleep_for(50ms);
 
   AudioSession::NotifyInterruptionBegan();
   const int separate = separate_opens.load();
-  AudioSession::NotifyInterruptionEnded();  // the retry: the pair refuses once more
+  AudioSession::NotifyInterruptionEnded(); // the retry: the pair refuses once more
   ASSERT_TRUE(WaitFor([&] { return voice_opens.load() == 3 && separate_opens.load() >= separate + 2; }))
       << "the session coming back did not try voice processing";
   std::this_thread::sleep_for(50ms);
 
-  engine.RequestAudioDeviceReopen();  // an ordinary reopen: still meant to bring voice processing back
+  engine.RequestAudioDeviceReopen(); // an ordinary reopen: still meant to bring voice processing back
   EXPECT_TRUE(WaitFor([&] { return voice_opens.load() == 4; })) << "the failed retry was forgotten";
   engine.Stop();
   (void)engine.WaitForRetiredSessions(3s);

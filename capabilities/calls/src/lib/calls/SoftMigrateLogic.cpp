@@ -35,31 +35,31 @@ SoftMigrateAction DecideSoftMigrate(const SoftMigrateDecisionInput& in) {
   }
 
   switch (in.trigger) {
-  case SoftMigrateTrigger::LocalJoinedWithoutHint:
-    return SoftMigrateAction::WaitForAttach;
+    case SoftMigrateTrigger::LocalJoinedWithoutHint:
+      return SoftMigrateAction::WaitForAttach;
 
-  case SoftMigrateTrigger::RemoteAcceptObserved:
-  case SoftMigrateTrigger::JoinedCountObserved:
-    // V038/V050: a group forms at 3 joined — re-checked when the decision runs, since the join
-    // that triggered it may have been refused or left meanwhile (never SoftMigrate a 1:1).
-    if (in.joined_identities.size() < 3) {
-      return SoftMigrateAction::NoOp;
-    }
-    if (!in.sfu_hint_empty) {
+    case SoftMigrateTrigger::RemoteAcceptObserved:
+    case SoftMigrateTrigger::JoinedCountObserved:
+      // V038/V050: a group forms at 3 joined — re-checked when the decision runs, since the join
+      // that triggered it may have been refused or left meanwhile (never SoftMigrate a 1:1).
+      if (in.joined_identities.size() < 3) {
+        return SoftMigrateAction::NoOp;
+      }
+      if (!in.sfu_hint_empty) {
+        return SoftMigrateAction::WaitForAttach;
+      }
+      if (!in.initiator_identity.empty() && in.local_identity == in.initiator_identity) {
+        return SoftMigrateAction::PickHop;
+      }
+      return SoftMigrateAction::WaitForAttach;
+
+    case SoftMigrateTrigger::IceRecover: {
+      const auto coordinator = CallSessionLogic::SelectEpochCoordinator(in.joined_identities);
+      if (coordinator && *coordinator == in.local_identity) {
+        return SoftMigrateAction::PickHop;
+      }
       return SoftMigrateAction::WaitForAttach;
     }
-    if (!in.initiator_identity.empty() && in.local_identity == in.initiator_identity) {
-      return SoftMigrateAction::PickHop;
-    }
-    return SoftMigrateAction::WaitForAttach;
-
-  case SoftMigrateTrigger::IceRecover: {
-    const auto coordinator = CallSessionLogic::SelectEpochCoordinator(in.joined_identities);
-    if (coordinator && *coordinator == in.local_identity) {
-      return SoftMigrateAction::PickHop;
-    }
-    return SoftMigrateAction::WaitForAttach;
-  }
   }
   return SoftMigrateAction::NoOp;
 }

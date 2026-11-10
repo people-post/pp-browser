@@ -18,16 +18,22 @@
 #include <future>
 #include <thread>
 #include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/AppLifecycle.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
 namespace pbr {
 
 ChatSyncWorkflow::ChatSyncWorkflow(IThreadStore& store, IdentityStore& identity, ContactsStore& contacts,
-                                 IRelayClient* relay, RelayReceivePipeline& receive_pipeline, InboxController& inbox,
-                                 IChatHistoryPeerClient* peer_client)
-    : store_(store), identity_(identity), contacts_(contacts), relay_(relay), peer_client_(peer_client),
-      receive_pipeline_(receive_pipeline), inbox_(inbox) {}
+                                   IRelayClient* relay, RelayReceivePipeline& receive_pipeline, InboxController& inbox,
+                                   IChatHistoryPeerClient* peer_client)
+    : store_(store),
+      identity_(identity),
+      contacts_(contacts),
+      relay_(relay),
+      peer_client_(peer_client),
+      receive_pipeline_(receive_pipeline),
+      inbox_(inbox) {}
 
 void ChatSyncWorkflow::SetOnMessagesChanged(std::function<void()> callback) {
   on_messages_changed_ = std::move(callback);
@@ -42,10 +48,10 @@ void ChatSyncWorkflow::SetPeerHistoryClient(IChatHistoryPeerClient* peer_client)
 }
 
 Roe<ChatHistoryRequest> ChatSyncWorkflow::BuildRequest(const Thread& thread, const uint32_t session_epoch,
-                                                      const uint64_t history_floor_seq,
-                                                      const std::optional<uint64_t> min_sender_seq,
-                                                      const std::optional<uint64_t> max_sender_seq, const size_t limit,
-                                                      const std::string& order) const {
+                                                       const uint64_t history_floor_seq,
+                                                       const std::optional<uint64_t> min_sender_seq,
+                                                       const std::optional<uint64_t> max_sender_seq, const size_t limit,
+                                                       const std::string& order) const {
   auto local_identity = identity_.Get();
   if (!local_identity) {
     return local_identity.error();
@@ -72,7 +78,7 @@ Roe<ChatHistoryRequest> ChatSyncWorkflow::BuildRequest(const Thread& thread, con
 }
 
 bool ChatSyncWorkflow::PassesEmptyGapGuard(const std::string& thread_id, const uint32_t session_epoch,
-                                          const std::string& seq_owner, const uint64_t gap_max) const {
+                                           const std::string& seq_owner, const uint64_t gap_max) const {
   SeqRangeQuery query;
   query.session_epoch = session_epoch;
   query.seq_owner_contact_id = seq_owner;
@@ -86,9 +92,9 @@ bool ChatSyncWorkflow::PassesEmptyGapGuard(const std::string& thread_id, const u
 }
 
 Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& thread_id,
-                                                           const ChatHistoryRequest& request,
-                                                           const ChatHistoryResponse& response,
-                                                           const MessageTransport transport) {
+                                                            const ChatHistoryRequest& request,
+                                                            const ChatHistoryResponse& response,
+                                                            const MessageTransport transport) {
   if (response.session_epoch != request.session_epoch) {
     return Error("History response epoch mismatch");
   }
@@ -122,7 +128,10 @@ Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& t
       ++result.ingested;
       changed = true;
       if (!outcome.thread_id.empty() && !outcome.deleted_by_sender) {
-        inbox_.OnInboundMessagePersisted(outcome.thread_id);
+        // As on both relay paths: what we sent ourselves from another device and bookkeeping records are no unread.
+        if (!outcome.suppress_inbox_chrome) {
+          inbox_.OnInboundMessagePersisted(outcome.thread_id, std::nullopt, AppLifecycle::IsUserAttentive());
+        }
         // The stored, decrypted message — never the wire payload (ciphertext).
         if (attachment_downloads_ && outcome.persisted_message &&
             outcome.persisted_message->content_type == ChatContentType::Attachment) {
@@ -156,8 +165,7 @@ Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& t
   return result;
 }
 
-void ChatSyncWorkflow::AdvanceContiguousThroughStoredSeqs(const std::string& thread_id,
-                                                         const uint32_t session_epoch) {
+void ChatSyncWorkflow::AdvanceContiguousThroughStoredSeqs(const std::string& thread_id, const uint32_t session_epoch) {
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
     return;
@@ -185,7 +193,7 @@ void ChatSyncWorkflow::AdvanceContiguousThroughStoredSeqs(const std::string& thr
 }
 
 Roe<ChatSyncResult> ChatSyncWorkflow::FetchChatTargetMessages(const std::string& thread_id,
-                                                             ChatHistoryRequest request) {
+                                                              ChatHistoryRequest request) {
   auto result_promise = std::make_shared<std::promise<Roe<ChatSyncResult>>>();
   auto result_future = result_promise->get_future();
   FetchChatTargetMessagesAsync(thread_id, std::move(request), [result_promise](Roe<ChatSyncResult> value) {
@@ -312,8 +320,7 @@ Roe<ChatSyncResult> ChatSyncWorkflow::TailSync(const std::string& thread_id) {
   return result_future.get();
 }
 
-void ChatSyncWorkflow::TailSyncAsync(const std::string& thread_id,
-                                     std::function<void(Roe<ChatSyncResult>)> on_done) {
+void ChatSyncWorkflow::TailSyncAsync(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_done) {
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
     if (on_done) {
@@ -343,8 +350,7 @@ void ChatSyncWorkflow::TailSyncAsync(const std::string& thread_id,
   }
 
   auto request = BuildRequest(**thread, *session_epoch, sync_state->history_floor_seq,
-                              chat_sync::TailMinSeq(*sync_state), std::nullopt,
-                              kDefaultTailSyncLimit, "desc");
+                              chat_sync::TailMinSeq(*sync_state), std::nullopt, kDefaultTailSyncLimit, "desc");
   if (!request) {
     if (on_done) {
       on_done(request.error());
@@ -355,7 +361,7 @@ void ChatSyncWorkflow::TailSyncAsync(const std::string& thread_id,
 }
 
 Roe<ChatSyncResult> ChatSyncWorkflow::RepairGap(const std::string& thread_id, const uint64_t gap_min,
-                                               const uint64_t gap_max) {
+                                                const uint64_t gap_max) {
   auto result_promise = std::make_shared<std::promise<Roe<ChatSyncResult>>>();
   auto result_future = result_promise->get_future();
   RepairGapAsync(thread_id, gap_min, gap_max, [result_promise](Roe<ChatSyncResult> value) {
@@ -550,37 +556,38 @@ Roe<ChatSyncResult> ChatSyncWorkflow::UserInitiatedSync(const std::string& threa
 void ChatSyncWorkflow::UserInitiatedSyncAsync(const std::string& thread_id,
                                               std::function<void(Roe<ChatSyncResult>)> on_done) {
   auto aggregate = std::make_shared<ChatSyncResult>();
-  TailSyncAsync(thread_id, [this, thread_id, aggregate, on_done = std::move(on_done)](Roe<ChatSyncResult> tail) mutable {
-    if (!tail) {
-      if (on_done) {
-        on_done(tail.error());
-      }
-      return;
-    }
-    MergeSyncResult(*aggregate, *tail);
-    RepairKnownGapAsync(thread_id, [this, thread_id, aggregate, on_done = std::move(on_done)](
-                                        Roe<ChatSyncResult> gap) mutable {
-      if (!gap) {
-        if (on_done) {
-          on_done(gap.error());
-        }
-        return;
-      }
-      MergeSyncResult(*aggregate, *gap);
-      ScrollBackfillAsync(thread_id, [this, aggregate, on_done = std::move(on_done)](Roe<ChatSyncResult> older) {
-        if (!older) {
+  TailSyncAsync(
+      thread_id, [this, thread_id, aggregate, on_done = std::move(on_done)](Roe<ChatSyncResult> tail) mutable {
+        if (!tail) {
           if (on_done) {
-            on_done(older.error());
+            on_done(tail.error());
           }
           return;
         }
-        MergeSyncResult(*aggregate, *older);
-        if (on_done) {
-          on_done(*aggregate);
-        }
+        MergeSyncResult(*aggregate, *tail);
+        RepairKnownGapAsync(thread_id, [this, thread_id, aggregate,
+                                        on_done = std::move(on_done)](Roe<ChatSyncResult> gap) mutable {
+          if (!gap) {
+            if (on_done) {
+              on_done(gap.error());
+            }
+            return;
+          }
+          MergeSyncResult(*aggregate, *gap);
+          ScrollBackfillAsync(thread_id, [this, aggregate, on_done = std::move(on_done)](Roe<ChatSyncResult> older) {
+            if (!older) {
+              if (on_done) {
+                on_done(older.error());
+              }
+              return;
+            }
+            MergeSyncResult(*aggregate, *older);
+            if (on_done) {
+              on_done(*aggregate);
+            }
+          });
+        });
       });
-    });
-  });
 }
 
 Roe<ChatSyncResult> ChatSyncWorkflow::RetryGapSync(const std::string& thread_id) {

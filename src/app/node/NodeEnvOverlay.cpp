@@ -117,7 +117,7 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
       config.mesh.capabilities.dht = *parsed;
     }
   }
-  if (const char* k = EnvOrNull("PP_NODE_DHT_K")) {  // labs: a small k makes lookups walk
+  if (const char* k = EnvOrNull("PP_NODE_DHT_K")) { // labs: a small k makes lookups walk
     try {
       const int parsed = std::stoi(k);
       if (parsed >= 1 && parsed <= 20) {

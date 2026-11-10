@@ -69,8 +69,7 @@ Roe<void> LocalizationService::LoadFromAssets(const std::string& assets_root) {
     if (try_load_locale_file(resolved)) {
       continue;
     }
-    const std::string under_root =
-        (std::filesystem::path(assets_root) / relative).lexically_normal().string();
+    const std::string under_root = (std::filesystem::path(assets_root) / relative).lexically_normal().string();
     if (try_load_locale_file(under_root)) {
       continue;
     }

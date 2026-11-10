@@ -28,11 +28,11 @@ bool Contains(const std::vector<uint8_t>& bytes, const std::string& needle) {
 
 /** An Exif APP1 segment (big endian) holding the orientation and a fake GPS block that must not survive. */
 std::vector<uint8_t> ExifSegmentWithGps(const int orientation) {
-  std::vector<uint8_t> tiff = {'M', 'M', 0, 0x2A, 0, 0, 0, 8,
-                               0,   2,                                        // two entries
-                               0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, static_cast<uint8_t>(orientation), 0, 0,
-                               0x88, 0x25, 0, 4, 0, 0, 0, 1, 0, 0, 0, 38, // GPS IFD pointer
-                               0, 0, 0, 0};
+  std::vector<uint8_t> tiff = {'M',  'M',  0,    0x2A, 0, 0, 0, 8, 0, 2, // two entries
+                               0x01, 0x12, 0,    3,    0, 0, 0, 1, 0, static_cast<uint8_t>(orientation),
+                               0,    0,    0x88, 0x25, 0, 4, 0, 0, 0, 1,
+                               0,    0,    0,    38, // GPS IFD pointer
+                               0,    0,    0,    0};
   const std::string gps = "GPSLATITUDE-31.2304N-LONGITUDE-121.4737E";
   tiff.insert(tiff.end(), gps.begin(), gps.end());
   std::vector<uint8_t> payload = {'E', 'x', 'i', 'f', 0, 0};
@@ -96,9 +96,8 @@ TEST_F(ImageMetadataTest, ReadsGifAndWebpHeaders) {
   EXPECT_EQ(g->width, 320);
   EXPECT_EQ(g->height, 200);
   // Lossy WebP: RIFF, size, WEBP, "VP8 ", chunk size, frame tag (3), start code, 14-bit width / height.
-  std::vector<uint8_t> webp = {'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P', 'V', 'P', '8', ' ',
-                               0,   0,   0,   0,   0, 0, 0,    0x9d, 0x01, 0x2a, 0x90, 0x01, 0x2C, 0x01,
-                               0,   0};
+  std::vector<uint8_t> webp = {'R', 'I', 'F', 'F', 0, 0, 0, 0,    'W',  'E',  'B',  'P',  'V',  'P',  '8', ' ',
+                               0,   0,   0,   0,   0, 0, 0, 0x9d, 0x01, 0x2a, 0x90, 0x01, 0x2C, 0x01, 0,   0};
   const auto w = ReadImageHeaderBytes(webp);
   ASSERT_TRUE(w);
   EXPECT_EQ(w->width, 400);
@@ -269,8 +268,8 @@ TEST_F(ImageMetadataTest, PixelCapReadsTheDeclaredSizeOnly) {
   EXPECT_TRUE(ImageWithinPixelCap(SaveJpeg(100, 100, "ok.jpg"), 10'000));
   EXPECT_FALSE(ImageWithinPixelCap(SaveJpeg(100, 100, "big.jpg"), 9'999));
   // A tiny file whose header claims 30000 x 30000.
-  std::vector<uint8_t> bomb = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 'I', 'H', 'D', 'R',
-                               0x00, 0x00, 0x75, 0x30, 0x00, 0x00, 0x75, 0x30, 8, 2, 0, 0, 0};
+  std::vector<uint8_t> bomb = {0x89, 'P',  'N',  'G',  0x0D, 0x0A, 0x1A, 0x0A, 0,    0, 0, 13, 'I', 'H', 'D',
+                               'R',  0x00, 0x00, 0x75, 0x30, 0x00, 0x00, 0x75, 0x30, 8, 2, 0,  0,   0};
   const std::string path = (dir_ / "claims_huge.png").string();
   {
     std::ofstream out(path, std::ios::binary);

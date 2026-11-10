@@ -130,7 +130,7 @@ bool Clean(const std::string& text) {
 } // namespace
 
 TEST_P(LocalActionRenderSettingsTest, EveryReaderToolRendersAsALabelledCard) {
-  const char* readers[] = {"get_profile_identity", "get_preferences", "list_locales",        "get_reachability",
+  const char* readers[] = {"get_profile_identity", "get_preferences",      "list_locales",     "get_reachability",
                            "get_security_status",  "get_network_settings", "get_llm_settings", "get_integrations"};
   for (const char* tool : readers) {
     const pbr::Object result = Run(tool);
@@ -181,8 +181,8 @@ TEST_P(LocalActionRenderSettingsTest, EveryWriterToolRendersASentence) {
   };
   for (const Case& c : cases) {
     const pbr::Object result = Run(c.tool, c.args);
-    ASSERT_NE(result.getIf<bool>("success"), std::optional<bool>(false)) << c.tool << ": "
-                                                                         << result.getString("message").value_or("");
+    ASSERT_NE(result.getIf<bool>("success"), std::optional<bool>(false))
+        << c.tool << ": " << result.getString("message").value_or("");
     pbr::LocalRenderContext ctx;
     ctx.args = c.args;
     const std::string text = pbr::RenderLocalResult(c.tool, result, ctx);

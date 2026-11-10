@@ -61,7 +61,7 @@ TEST(ArticleFeedBlocksTest, BuildsIntroAndLongListThatTheParserAccepts) {
   const size_t row = rml.rfind("chat-long-list-meta-row", link);
   ASSERT_NE(row, std::string::npos);
   EXPECT_LT(rml.find("chat-long-list-meta\"", row), link); // host · time first, then the link
-  EXPECT_LT(link, rml.find("</div>", row));                 // and the link is inside that row
+  EXPECT_LT(link, rml.find("</div>", row));                // and the link is inside that row
 }
 
 TEST(ArticleFeedBlocksTest, MetaHostDropsTheWwwPrefix) {
@@ -142,8 +142,8 @@ TEST(ArticleFeedBlocksTest, LinkStyleInFooterIsAButton) {
   const std::string& rml = parsed.working_set_candidates[0].artifact_rml;
   const size_t footer = rml.find("chat-long-list-footer");
   ASSERT_NE(footer, std::string::npos);
-  EXPECT_NE(rml.find("chat-inline-link"), std::string::npos);          // the item's action
-  EXPECT_EQ(rml.find("chat-inline-link", footer), std::string::npos);  // not the footer's
+  EXPECT_NE(rml.find("chat-inline-link"), std::string::npos);         // the item's action
+  EXPECT_EQ(rml.find("chat-inline-link", footer), std::string::npos); // not the footer's
   EXPECT_NE(rml.find("chat-suggestion", footer), std::string::npos);
 }
 
@@ -155,7 +155,8 @@ TEST(ArticleFeedBlocksTest, LocalizedLabelsFallBackToEnglishWithoutACatalog) {
 
 // What McpToolAdapter really returns: the MCP result object with the JSON as text content.
 TEST(ArticleFeedBlocksTest, ReadsArticlesFromTheMcpResultWrapper) {
-  const std::string inner = R"({"articles":[{"id":"1","title":"","content":"A brief.","link_to":"https://example.com/a","created_at":1790000000}]})";
+  const std::string inner =
+      R"({"articles":[{"id":"1","title":"","content":"A brief.","link_to":"https://example.com/a","created_at":1790000000}]})";
   pbr::Object part;
   part.set("type", "text");
   part.set("text", inner);

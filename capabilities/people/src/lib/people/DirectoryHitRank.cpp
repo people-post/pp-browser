@@ -55,8 +55,8 @@ std::optional<std::string> NormalizeExactPeopleId(std::string_view query) {
     return std::nullopt;
   }
   for (const char ch : q) {
-    const bool ok = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' ||
-                    ch == '-';
+    const bool ok =
+        (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-';
     if (!ok) {
       return std::nullopt;
     }

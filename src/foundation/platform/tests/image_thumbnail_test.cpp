@@ -38,7 +38,7 @@ TEST_F(ImageThumbnailTest, AWidePictureComesBackAsASmallJpegOfTheSameShape) {
   ASSERT_TRUE(thumb) << thumb.error().message;
   ASSERT_GT(thumb->size(), 3u);
   EXPECT_EQ((*thumb)[0], 0xFF);
-  EXPECT_EQ((*thumb)[1], 0xD8);  // a JPEG
+  EXPECT_EQ((*thumb)[1], 0xD8); // a JPEG
 
   SDL_IOStream* io = SDL_IOFromConstMem(thumb->data(), thumb->size());
   SDL_Surface* decoded = IMG_Load_IO(io, true);

@@ -111,8 +111,7 @@ TEST_F(CallSessionQueriesTest, APeerRosterNeverOverridesOurOwnStateNorResurrects
   CallRosterDetail roster;
   roster.call_id = kCall;
   roster.media_epoch = 3;
-  auto entry = [](const std::string& identity, CallParticipantState state, std::optional<int64_t> joined,
-                  bool video) {
+  auto entry = [](const std::string& identity, CallParticipantState state, std::optional<int64_t> joined, bool video) {
     CallRosterEntry e;
     e.identity = identity;
     e.state = state;
@@ -121,9 +120,9 @@ TEST_F(CallSessionQueriesTest, APeerRosterNeverOverridesOurOwnStateNorResurrects
     return e;
   };
   roster.participants = {
-      entry("account:me", CallParticipantState::Ringing, 40, false),     // stale view of us
+      entry("account:me", CallParticipantState::Ringing, 40, false),           // stale view of us
       entry("account:bob", CallParticipantState::Ringing, std::nullopt, true), // a joiner's stale view
-      entry("account:dave", CallParticipantState::Joined, 30, false),     // left: stays left
+      entry("account:dave", CallParticipantState::Joined, 30, false),          // left: stays left
       entry("account:carol", CallParticipantState::Invited, std::nullopt, false),
   };
   ASSERT_TRUE(ApplyCallRosterToStore(*calls_, roster, "account:me"));
@@ -143,7 +142,7 @@ TEST_F(CallSessionQueriesTest, APeerRosterNeverOverridesOurOwnStateNorResurrects
   Participant("account:erin", CallParticipantState::Left, 25);
   Participant("account:fay", CallParticipantState::Declined);
   roster.media_epoch = 2;
-  roster.participants = {entry("account:erin", CallParticipantState::Joined, 25, false),  // stale
+  roster.participants = {entry("account:erin", CallParticipantState::Joined, 25, false), // stale
                          entry("account:dave", CallParticipantState::Joined, 30, false)};
   ASSERT_TRUE(ApplyCallRosterToStore(*calls_, roster, "account:me"));
   EXPECT_EQ(StateOf("account:erin"), CallParticipantState::Left) << "the old stamp: not back";
@@ -185,7 +184,8 @@ TEST_F(CallSessionQueriesTest, CallingTheSameGroupAtOnce) {
   auto crossed = call_queries::OurUnansweredGroupCall(*calls_, "group-1", "account:alice", "call:bobs");
   ASSERT_TRUE(crossed);
   EXPECT_EQ(crossed->call_id, kCall);
-  EXPECT_FALSE(call_queries::OurUnansweredGroupCall(*calls_, "group-2", "account:alice", "call:bobs")) << "another group";
+  EXPECT_FALSE(call_queries::OurUnansweredGroupCall(*calls_, "group-2", "account:alice", "call:bobs"))
+      << "another group";
   EXPECT_FALSE(call_queries::OurUnansweredGroupCall(*calls_, "group-1", "account:alice", kCall)) << "not itself";
   EXPECT_FALSE(call_queries::OurUnansweredGroupCall(*calls_, "group-1", "account:bob", "call:x")) << "not ours";
   Participant("account:bob", CallParticipantState::Joined, 20);
@@ -235,8 +235,8 @@ TEST_F(CallSessionQueriesTest, WhoMayJoinAGroupCallAndWhichCallIsJoinable) {
   EXPECT_EQ(joinable->call_id, kCall);
   EXPECT_FALSE(call_queries::JoinableGroupCall(*calls_, "group-1", "account:alice", now)) << "alice is in it";
   EXPECT_FALSE(call_queries::JoinableGroupCall(*calls_, "group-2", "account:bob", now));
-  EXPECT_FALSE(call_queries::JoinableGroupCall(*calls_, "group-1", "account:bob",
-                                               now + call_queries::kJoinableGroupCallMs))
+  EXPECT_FALSE(
+      call_queries::JoinableGroupCall(*calls_, "group-1", "account:bob", now + call_queries::kJoinableGroupCallMs))
       << "too old without word that it ended";
   Participant("account:alice", CallParticipantState::Left);
   EXPECT_FALSE(call_queries::JoinableGroupCall(*calls_, "group-1", "account:bob", now)) << "nobody left in it";
@@ -296,7 +296,8 @@ TEST(RecentCallsTest, NewestFirstAndAnIncomingCallNeverAnsweredIsMissed) {
   EXPECT_TRUE(recent[5].missed);
   EXPECT_TRUE(recent[5].video);
   EXPECT_EQ(recent[5].thread_id, "thread-rang-out");
-  EXPECT_EQ(call_queries::RecentCalls(calls, "account:me", 3).size(), 2u) << "`limit` rows read, the broadcast among them";
+  EXPECT_EQ(call_queries::RecentCalls(calls, "account:me", 3).size(), 2u)
+      << "`limit` rows read, the broadcast among them";
 }
 
 // G022: what lets someone met in a call invite us to the group they made there — both of us in it, now.

@@ -2,6 +2,7 @@
 
 #include "lib/messaging/AtAiParser.h"
 #include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/delivery/DeliveryNotice.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/QuoteReply.h"
 #include "lib/delivery/ReactionTypes.h"
@@ -21,16 +22,16 @@ namespace {
 
 bool ShownContentType(const ChatContentType type) {
   switch (type) {
-  case ChatContentType::Text:
-  case ChatContentType::System:
-  case ChatContentType::ContactCard:
-  case ChatContentType::CryptoTx:
-  case ChatContentType::Attachment:
-  case ChatContentType::Unsupported:
-  case ChatContentType::Deleted:
-    return true;
-  default:
-    return false;
+    case ChatContentType::Text:
+    case ChatContentType::System:
+    case ChatContentType::ContactCard:
+    case ChatContentType::CryptoTx:
+    case ChatContentType::Attachment:
+    case ChatContentType::Unsupported:
+    case ChatContentType::Deleted:
+      return true;
+    default:
+      return false;
   }
 }
 
@@ -57,7 +58,7 @@ struct LatestReaction {
 } // namespace
 
 std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& messages,
-                                                const SystemControlRegistry* controls, const ThreadKind thread_kind) {
+                                              const SystemControlRegistry* controls, const ThreadKind thread_kind) {
   const bool direct_thread = thread_kind == ThreadKind::Direct;
   // Messages deleted on this device: an id-only tombstone that shows as one line; what hung off
   // them (reactions) is not shown.
@@ -67,6 +68,17 @@ std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& 
       deleted_ids.insert(message.id);
     }
   }
+
+  // A "did not go out" line (send-failure-<id>) is stale once a retry delivered that message; a later failure
+  // flips the message back to Failed and the line shows again. The "some members missed it" line stays: the
+  // message itself is delivered then.
+  std::unordered_set<std::string> delivered_ids;
+  for (const ThreadMessage& message : messages) {
+    if (message.delivery == MessageDelivery::Relayed) {
+      delivered_ids.insert(message.id);
+    }
+  }
+  const std::string failure_prefix = SendFailureRowId("", "");
 
   std::vector<TranscriptRow> entries;
   std::unordered_map<std::string, size_t> entry_by_id;
@@ -80,20 +92,26 @@ std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& 
       annotations.push_back(&message);
       continue;
     }
+    if (const auto reason = SendFailureRowReason(message);
+        reason && *reason != kGroupMembersMissedWire && message.id.rfind(failure_prefix, 0) == 0 &&
+        delivered_ids.count(message.id.substr(failure_prefix.size())) != 0) {
+      continue;
+    }
     if (!ShownContentType(message.content_type)) {
       continue;
     }
     const auto family = controls ? controls->Find(message) : std::nullopt;
     if (family && family->on_lane && family->on_lane(message)) {
-      continue;  // lane signaling is never a transcript row (an old store may still hold some)
+      continue; // lane signaling is never a transcript row (an old store may still hold some)
     }
     if (const auto membership = GroupMembershipCodec::ControlTypeFromMessage(message);
-        membership && (IsGroupRosterSyncControl(*membership) ||
-                       (*membership == GroupMembershipControlType::GroupDissolved && thread_kind != ThreadKind::Group))) {
-      continue;  // roster bookkeeping between members (G012 / G013), or the dissolve DM (G016): not something to read
+        membership &&
+        (IsGroupRosterSyncControl(*membership) ||
+         (*membership == GroupMembershipControlType::GroupDissolved && thread_kind != ThreadKind::Group))) {
+      continue; // roster bookkeeping between members (G012 / G013), or the dissolve DM (G016): not something to read
     }
     if (direct_thread && GroupMembershipCodec::IsHiddenInDirectThread(message)) {
-      continue;  // a group's event that travelled as a direct message: the group thread has its own line
+      continue; // a group's event that travelled as a direct message: the group thread has its own line
     }
     TranscriptRow entry;
     entry.message = message;
@@ -115,12 +133,12 @@ std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& 
   }
 
   std::unordered_map<std::string, size_t> annotations_on_target;
-  std::map<std::string, LatestReaction> latest;  // key: target|sender|emoji_key
+  std::map<std::string, LatestReaction> latest; // key: target|sender|emoji_key
   std::vector<TranscriptRow> orphans;
   for (const ThreadMessage* annotation : annotations) {
     const ChatAnnotationFields fields = AnnotationFieldsOf(*annotation);
     if (fields.annotation_type == kAnnotationTypeRetract) {
-      continue;  // applied to its target (or waiting for it); never shown
+      continue; // applied to its target (or waiting for it); never shown
     }
     const std::string target_id = annotation->target_message_id.value_or("");
     const auto target = entry_by_id.find(target_id);
@@ -160,7 +178,7 @@ std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& 
   std::map<std::string, std::vector<std::pair<std::string, TranscriptReaction>>> by_target;
   for (const auto& [key, slot] : latest) {
     if (slot.emoji.empty()) {
-      continue;  // cleared
+      continue; // cleared
     }
     const std::string target_id = key.substr(0, key.find('|'));
     const std::string emoji_key = key.substr(key.rfind('|') + 1);

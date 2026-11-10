@@ -18,6 +18,11 @@ struct ShellLayout {
   static bool IsHiddenTabOnCompact(NavTab tab);
   /** Phone layout on a hidden tab (IsHiddenTabOnCompact): its page covers a chat overlay left open under it. */
   static bool HiddenTabShown(const ShellState& state);
+  /** Pages that may be pushed (transient) from Settings and keep the tab bar under them (TODO #200). */
+  static bool IsSettingsFamilyTransient(const std::string& key);
+  /** Phone layout on Settings (Me) with only settings-family pages pushed over it and no secret page: the tab bar is
+   *  drawn, over the pushed pages too. Any other pushed page (a chat, the scanner, the PIN gate...) keeps today's none. */
+  static bool SettingsTabBarShown(const ShellState& state);
   /** Height of the phone tab bar now: 0 where it is not drawn (a hidden tab, the chat overlay), else `bar_height_dp`
    *  (also under a pushed page, which covers it, and under the AI drawer's scrim). 0 on desktop. */
   static float CompactTabBarDp(const ShellState& state, float bar_height_dp = ShellConfig{}.compact_nav_height_dp);
@@ -43,12 +48,9 @@ struct ShellLayout {
   static bool PinGatePayloadTooBigToRender(bool phrase_flow, size_t payload_len);
   /** A bottom inset at or above this is the on-screen keyboard (not the home indicator alone). */
   static constexpr int kImeLatchMinDp = 120;
-  static CompactChromeLayout ComputeCompactChromeLayout(const ShellConfig& config,
-                                                        int safe_area_top_dp,
-                                                        int safe_area_bottom_dp,
-                                                        float titlebar_height_dp = 0.f,
-                                                        CompactBottomSurface bottom_surface = CompactBottomSurface::None,
-                                                        bool bottom_chrome_open = false);
+  static CompactChromeLayout ComputeCompactChromeLayout(
+      const ShellConfig& config, int safe_area_top_dp, int safe_area_bottom_dp, float titlebar_height_dp = 0.f,
+      CompactBottomSurface bottom_surface = CompactBottomSurface::None, bool bottom_chrome_open = false);
 };
 
 } // namespace pbr

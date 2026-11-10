@@ -19,9 +19,7 @@ namespace {
 
 class ContactsPhoneTest : public ::testing::Test {
 protected:
-  static void SetUpTestSuite() {
-    ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
-  }
+  static void SetUpTestSuite() { ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR)); }
   void SetUp() override { LocalizationService::Instance().SetPreferredLanguage("en"); }
 
   static std::vector<std::string> Ids(const std::vector<ContextMenuAction>& actions) {
@@ -35,7 +33,8 @@ protected:
 
 // The phone "+" opens the Add contact sheet; only the desktop keeps the menu.
 TEST_F(ContactsPhoneTest, DesktopMenuKeepsAddAndFindOnly) {
-  EXPECT_EQ(Ids(ContactsController::AddContactMenuActions()), (std::vector<std::string>{"add_contact", "find_someone"}));
+  EXPECT_EQ(Ids(ContactsController::AddContactMenuActions()),
+            (std::vector<std::string>{"add_contact", "find_someone"}));
 }
 
 // Kenneth 2026-11-04: the New group sheet was titled "新建对话".
@@ -69,9 +68,9 @@ TEST_F(ContactsPhoneTest, ContactsAreSectionedByLetterChineseByPinyinHashLast) {
   ASSERT_EQ(index.size(), 27u);
   EXPECT_EQ(std::string(index.front().letter.c_str()), "A");
   EXPECT_EQ(std::string(index.back().letter.c_str()), "#");
-  EXPECT_TRUE(index[0].present);   // A
-  EXPECT_FALSE(index[1].present);  // B
-  EXPECT_TRUE(index[26].present);  // #
+  EXPECT_TRUE(index[0].present);  // A
+  EXPECT_FALSE(index[1].present); // B
+  EXPECT_TRUE(index[26].present); // #
 }
 
 TEST_F(ContactsPhoneTest, AnIndexLetterWithoutContactsJumpsToTheNextSection) {
@@ -82,7 +81,7 @@ TEST_F(ContactsPhoneTest, AnIndexLetterWithoutContactsJumpsToTheNextSection) {
   EXPECT_EQ(ContactsController::ContactSectionForLetter(sections, 'M'), 2);
   EXPECT_EQ(ContactsController::ContactSectionForLetter(sections, '#'), 2);
   sections.pop_back();
-  EXPECT_EQ(ContactsController::ContactSectionForLetter(sections, 'Z'), 1);  // past the last: the last
+  EXPECT_EQ(ContactsController::ContactSectionForLetter(sections, 'Z'), 1); // past the last: the last
   EXPECT_EQ(ContactsController::ContactSectionForLetter({}, 'A'), -1);
 }
 
@@ -164,8 +163,7 @@ TEST_F(ContactsPhoneTest, ShareGivesUpWhenNoCardComes) {
         ++shares;
         return Error("No card for this contact yet");
       },
-      [&](std::function<void(bool)> kept) { kept(false); },
-      [&](bool shared) { results.push_back(shared); });
+      [&](std::function<void(bool)> kept) { kept(false); }, [&](bool shared) { results.push_back(shared); });
   EXPECT_EQ(shares, 1);
   EXPECT_EQ(results, (std::vector<bool>{false}));
 }
@@ -197,7 +195,6 @@ TEST_F(ContactsPhoneTest, ShareFailureMessageIsLocalized) {
   EXPECT_EQ(zh.find("card"), std::string::npos);
   EXPECT_NE(zh, "contacts.share.not_yet");
 }
-
 
 // Kenneth 2026-11-04: "我输一个字母，他就直接都筛选了" - the Contacts search matches name, remark, nickname and account ID.
 Contact MakeContact(const std::string& display_name, const std::string& nickname, const std::string& account_id) {
@@ -268,7 +265,8 @@ TEST_F(ContactsPhoneTest, AddContactSheetHasTopCardsSearchAccountCardAndTwoTiles
   // card and the two tiles; the buttons only exist with an account.
   EXPECT_LT(rml.find("add_action('scan')"), rml.find("add_action('qr')"));
   EXPECT_LT(rml.find("add_action('qr')"), rml.find("data-value=\"add_query\""));
-  EXPECT_NE(rml.find("class=\"ac-top-card\" data-if=\"can_scan\" data-event-click=\"add_action('scan')\""), std::string::npos);
+  EXPECT_NE(rml.find("class=\"ac-top-card\" data-if=\"can_scan\" data-event-click=\"add_action('scan')\""),
+            std::string::npos);
   EXPECT_NE(rml.find("class=\"ac-top-card\" data-event-click=\"add_action('qr')\""), std::string::npos);
   EXPECT_LT(rml.find("add_copy_id()"), rml.find("add_action('invite')"));
   EXPECT_LT(rml.find("add_action('invite')"), rml.find("add_action('group')"));

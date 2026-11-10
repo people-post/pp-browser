@@ -22,9 +22,8 @@ TEST(PeerCapsLogicTest, KeepsOrgSeedsDropsUnknownContacts) {
   friend_node.affinity = mesh::MeshHopAffinity::Contact;
   friend_node.dialable = true;
 
-  auto ranked = FilterHopsByMediaRelayAds(
-      {contact, seed, friend_node},
-      [](const std::string& peer_id) { return peer_id == "12D3KooWDesktop"; });
+  auto ranked = FilterHopsByMediaRelayAds({contact, seed, friend_node},
+                                          [](const std::string& peer_id) { return peer_id == "12D3KooWDesktop"; });
   ASSERT_EQ(ranked.size(), 2u);
   EXPECT_EQ(ranked[0].peer_id, "12D3KooWSeed");
   EXPECT_EQ(ranked[1].peer_id, "12D3KooWDesktop");
@@ -77,9 +76,9 @@ TEST(PeerCapsLogicTest, NullAdsKeepsOnlySeeds) {
 }
 
 TEST(PeerCapsLogicTest, PeerIdsFromListenMultiaddrs) {
-  const auto ids = PeerIdsFromListenMultiaddrs(
-      {"/ip4/10.0.0.1/tcp/18517/p2p/12D3KooWAlice", "/ip4/10.0.0.2/tcp/18517/p2p/12D3KooWAlice",
-       "/ip4/10.0.0.3/tcp/18517/p2p/12D3KooWBob"});
+  const auto ids = PeerIdsFromListenMultiaddrs({"/ip4/10.0.0.1/tcp/18517/p2p/12D3KooWAlice",
+                                                "/ip4/10.0.0.2/tcp/18517/p2p/12D3KooWAlice",
+                                                "/ip4/10.0.0.3/tcp/18517/p2p/12D3KooWBob"});
   ASSERT_EQ(ids.size(), 2u);
   EXPECT_EQ(ids[0], "12D3KooWAlice");
   EXPECT_EQ(ids[1], "12D3KooWBob");
@@ -90,9 +89,8 @@ TEST(PeerCapsLogicTest, MergeAdvertisedMediaRelayHopsPrependsMissing) {
   seed.peer_id = "12D3KooWSeed";
   seed.affinity = mesh::MeshHopAffinity::OrgSeed;
 
-  auto ranked = MergeAdvertisedMediaRelayHops(
-      {seed}, {"12D3KooWLinux", "12D3KooWSeed"},
-      [](const std::string& peer_id) {
+  auto ranked =
+      MergeAdvertisedMediaRelayHops({seed}, {"12D3KooWLinux", "12D3KooWSeed"}, [](const std::string& peer_id) {
         return peer_id == "12D3KooWLinux" ? "/ip4/10.0.0.1/tcp/18517/p2p/12D3KooWLinux" : "";
       });
   ASSERT_EQ(ranked.size(), 2u);

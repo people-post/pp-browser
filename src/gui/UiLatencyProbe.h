@@ -42,7 +42,7 @@ public:
       while (!state->stop) {
         state->cv.wait_for(lock, std::chrono::milliseconds(kIntervalMs), [&] { return state->stop; });
         if (state->stop || state->in_flight.load()) {
-          continue;  // a ping still waiting: its latency keeps growing until the UI runs it
+          continue; // a ping still waiting: its latency keeps growing until the UI runs it
         }
         state->in_flight = true;
         const auto sent = std::chrono::steady_clock::now();
@@ -68,7 +68,7 @@ public:
       std::lock_guard lock(state_->mu);
       state_->stop = true;
     }
-    state_->stopped_ui = true;  // a ping still queued on the UI thread must not report
+    state_->stopped_ui = true; // a ping still queued on the UI thread must not report
     state_->cv.notify_all();
     thread_.join();
     state_.reset();

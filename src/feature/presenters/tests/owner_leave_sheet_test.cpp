@@ -18,8 +18,10 @@ CloseChatPlan Plan(const CloseChatPlan::Kind kind, std::vector<std::string> succ
 }
 
 std::string NameOf(const std::string& identity) {
-  if (identity == "acct:b") return "Bea";
-  if (identity == "acct:a") return "Ann";
+  if (identity == "acct:b")
+    return "Bea";
+  if (identity == "acct:a")
+    return "Ann";
   return "";
 }
 

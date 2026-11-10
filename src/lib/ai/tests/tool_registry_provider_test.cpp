@@ -28,9 +28,7 @@ public:
     tool.definition.parameters = EmptyObjectSchema();
     tool.meta.domain = "general";
     tool.meta.risk = "read";
-    tool.execute = [](const pbr::Object& arguments) -> pbr::Roe<std::string> {
-      return pbr::DumpJson(arguments);
-    };
+    tool.execute = [](const pbr::Object& arguments) -> pbr::Roe<std::string> { return pbr::DumpJson(arguments); };
     return {std::move(tool)};
   }
 };

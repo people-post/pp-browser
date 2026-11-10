@@ -107,7 +107,7 @@ struct Side {
         *psk, test::ReceiveKeysOf(keys), *roster);
     pipeline->SetSystemControls(&controls);
     pipeline->SetControlLaneSeen(seen.get());
-    chat_seq.clear();  // a reinstall numbers its messages from 1 again
+    chat_seq.clear(); // a reinstall numbers its messages from 1 again
     SystemControlFamily family;
     family.name = "call";
     family.owns = [](const ThreadMessage& m) { return m.payload_json.find("test_signal") != std::string::npos; };
@@ -140,9 +140,9 @@ struct Side {
 
   /** Who we are on what we send. */
   EnvelopeSender Sender() const {
-    return EnvelopeSender{"relay:" + tag, account, keys.device.peer_id,
-                          carry_keys ? std::optional<Object>(AccountCardToJson(own_card ? *own_card : keys.DeviceCard()))
-                                     : std::nullopt};
+    return EnvelopeSender{
+        "relay:" + tag, account, keys.device.peer_id,
+        carry_keys ? std::optional<Object>(AccountCardToJson(own_card ? *own_card : keys.DeviceCard())) : std::nullopt};
   }
 
   /** A lane signal to `peer`, as SendControl builds it (opening the session when there is none). */
@@ -173,9 +173,8 @@ struct Side {
     params.sender_device = keys.device.peer_id;
     params.sender_card = Sender().card;
     params.order_key = 1;
-    auto envelope = BuildControlLaneEnvelope(params, control, [this](const std::vector<uint8_t>& bytes) {
-      return keys.device.Sign(bytes);
-    });
+    auto envelope = BuildControlLaneEnvelope(
+        params, control, [this](const std::vector<uint8_t>& bytes) { return keys.device.Sign(bytes); });
     EXPECT_TRUE(envelope) << envelope.error().message;
     return *envelope;
   }
@@ -299,9 +298,8 @@ struct Side {
       auto copy = SealPairCopy(message, account, SendRelayOptions{}, *psk, pair,
                                Base64Decode(device.kem_public_key_b64).value());
       EXPECT_TRUE(copy) << copy.error().message;
-      RelayEnvelope envelope =
-          BuildDirectEnvelope(message, Sender(), ThreadChannel::E2ePublic, "relay:" + peer_account,
-                              {DeviceCopy(device.peer_id, std::move(*copy))}, NextRelayOrderKey());
+      RelayEnvelope envelope = BuildDirectEnvelope(message, Sender(), ThreadChannel::E2ePublic, "relay:" + peer_account,
+                                                   {DeviceCopy(device.peer_id, std::move(*copy))}, NextRelayOrderKey());
       test::SignEnvelopeAs(keys, envelope);
       out[device.peer_id] = envelope;
     }
@@ -387,13 +385,12 @@ struct Side {
         continue;
       }
       if (m->account == account) {
-        continue;  // a sibling: never a copy to our own account here (M021 d3)
+        continue; // a sibling: never a copy to our own account here (M021 d3)
       }
       if (per_device) {
         // One copy per device on the member's card, numbered in its device pair (M021).
-        if (std::any_of(targets.begin(), targets.end(), [&m](const GroupMemberTarget& t) {
-              return t.member_identity == m->account;
-            })) {
+        if (std::any_of(targets.begin(), targets.end(),
+                        [&m](const GroupMemberTarget& t) { return t.member_identity == m->account; })) {
           continue;
         }
         for (const AccountCardDevice& device : cards.at(m->account).devices) {
@@ -433,8 +430,8 @@ struct Side {
                            .sender_seq = target.sender_seq,
                            .key_init_b64 = encrypted->copies[i]->key_init_b64,
                            .payload_b64 = encrypted->copies[i]->payload_b64};
-      RelayEnvelope envelope = BuildGroupMemberEnvelope(message, Sender(), group_id, recipient, recipient, {copy},
-                                                        NextRelayOrderKey());
+      RelayEnvelope envelope =
+          BuildGroupMemberEnvelope(message, Sender(), group_id, recipient, recipient, {copy}, NextRelayOrderKey());
       test::SignEnvelopeAs(keys, envelope);
       out[per_device ? target.target_key.peer_device : recipient] = envelope;
     }
@@ -448,9 +445,7 @@ struct Side {
   }
 
   /** Receive a chat message; true when it was kept. */
-  bool Keep(const RelayEnvelope& envelope) {
-    return pipeline->ProcessEnvelope(envelope, account).persisted;
-  }
+  bool Keep(const RelayEnvelope& envelope) { return pipeline->ProcessEnvelope(envelope, account).persisted; }
 
   /** Receive `envelope`; true when its signal landed. */
   bool Receive(const RelayEnvelope& envelope) {
@@ -474,8 +469,8 @@ struct Side {
   std::unique_ptr<InMemoryControlLaneSeenStore> seen;
   std::unique_ptr<RelayReceivePipeline> pipeline;
   int landed = 0;
-  std::map<uint32_t, uint64_t> chat_seq;  // next seq per epoch
-  std::map<std::pair<std::string, uint32_t>, uint64_t> group_seq;  // our seq per (member, pair epoch)
+  std::map<uint32_t, uint64_t> chat_seq;                          // next seq per epoch
+  std::map<std::pair<std::string, uint32_t>, uint64_t> group_seq; // our seq per (member, pair epoch)
   /** What our group copies say of our roster (G018 item 5); the app reads it from the store. */
   GroupCopyState copy_state;
   /** Carry our account card with a key_init (as the app does): `own_card` when set, else one listing this device. */
@@ -503,7 +498,7 @@ TEST(E2ePublicSessionCardTest, AFirstMessageCarriesTheCardToAnswerIt) {
   EnsureSodiumInit();
   Side alice("alice-card", 0x10);
   Side bob("bob-card", 0x40);
-  alice.Know(bob);  // Alice found Bob (directory, a card); Bob has never looked Alice up.
+  alice.Know(bob); // Alice found Bob (directory, a card); Bob has never looked Alice up.
   alice.carry_keys = true;
   bob.carry_keys = true;
   std::vector<AccountCard> kept;
@@ -547,16 +542,15 @@ TEST(E2ePublicSessionCardTest, ACarriedCardThatIsNotTheSendersProvesNothing) {
 TEST(E2ePublicSessionCardTest, ACarriedCardOlderThanTheRestoredFloorProvesNothing) {
   EnsureSodiumInit();
   Side alice("alice-floor", 0x10);
-  Side bob("bob-floor", 0x40);  // restored: no card of Alice's kept, only how new her newest one was
+  Side bob("bob-floor", 0x40); // restored: no card of Alice's kept, only how new her newest one was
   alice.Know(bob);
   alice.carry_keys = true;
   bob.carry_keys = true;
   int kept = 0;
   bob.pipeline->SetOnSenderCard([&](const AccountCard&) { ++kept; });
   int64_t floor = 0;
-  bob.pipeline->SetAccountCardFloor([&](const std::string& account_id) {
-    return account_id == alice.account ? floor : 0;
-  });
+  bob.pipeline->SetAccountCardFloor(
+      [&](const std::string& account_id) { return account_id == alice.account ? floor : 0; });
 
   RelayEnvelope opening = alice.Signal(bob);
   ASSERT_TRUE(opening.body.e2e.sender_card);
@@ -566,7 +560,7 @@ TEST(E2ePublicSessionCardTest, ACarriedCardOlderThanTheRestoredFloorProvesNothin
   EXPECT_FALSE(bob.Receive(opening)) << "an older card does not speak for her";
   EXPECT_EQ(kept, 0);
 
-  floor = issued_at;  // the newest card Bob knew is the one she carries
+  floor = issued_at; // the newest card Bob knew is the one she carries
   EXPECT_TRUE(bob.Receive(alice.Signal(bob)));
   EXPECT_EQ(kept, 1);
 }
@@ -589,13 +583,13 @@ TEST_F(E2ePublicSessionTest, BothSidesOpeningAtOnceStillGetThrough) {
 }
 
 TEST_F(E2ePublicSessionTest, LosingTheOpeningSendDoesNotLockThePairOut) {
-  (void)alice_->Signal(*bob_);  // opened the session; this send never arrived
+  (void)alice_->Signal(*bob_); // opened the session; this send never arrived
   EXPECT_TRUE(bob_->Receive(alice_->Signal(*bob_))) << "the next send must still be readable";
 }
 
 TEST_F(E2ePublicSessionTest, ASideThatStartsOverIsHeardAgain) {
   ASSERT_TRUE(bob_->Receive(alice_->Signal(*bob_)));
-  alice_->OpenProfile("profile-reinstalled");  // same account, empty session store
+  alice_->OpenProfile("profile-reinstalled"); // same account, empty session store
   EXPECT_TRUE(bob_->Receive(alice_->Signal(*bob_))) << "Bob must not keep reading with the old session";
   EXPECT_TRUE(alice_->Receive(bob_->Signal(*alice_)));
 }
@@ -609,8 +603,7 @@ TEST_F(E2ePublicSessionTest, AfterAChatResetTheDeviceStartsTheNextEpochAndEveryM
   alice_->ResetChats();
   alice_->RestartIfPending(*bob_);
   for (int i = 0; i < 3; ++i) {
-    EXPECT_TRUE(bob_->Keep(alice_->Chat(*bob_, "after " + std::to_string(i))))
-        << "message " << i << " after the reset";
+    EXPECT_TRUE(bob_->Keep(alice_->Chat(*bob_, "after " + std::to_string(i)))) << "message " << i << " after the reset";
   }
   auto threads = bob_->store->ListThreads();
   ASSERT_TRUE(threads);
@@ -626,7 +619,7 @@ TEST_F(E2ePublicSessionTest, RewindingInTheSameEpochIsStillDropped) {
   for (int i = 0; i < 2; ++i) {
     ASSERT_TRUE(bob_->Keep(alice_->Chat(*bob_, "before " + std::to_string(i))));
   }
-  alice_->ResetChats();  // no restart: a device that rewinds where Bob holds its messages
+  alice_->ResetChats(); // no restart: a device that rewinds where Bob holds its messages
   EXPECT_FALSE(bob_->Keep(alice_->Chat(*bob_, "rewound"))) << "first-seen keeps seq 1 (D046)";
 }
 
@@ -1053,8 +1046,8 @@ TEST_F(LinkedDevicesTest, AnOlderCardDoesNotBringBackADeviceTakenOut) {
   bob_->KnowAccount({phone_.get()}, 3);
   laptop_->carry_keys = true;
   laptop_->own_card = Side::CardOf({phone_.get(), laptop_.get()}, 2);
-  const RelayReceiveOutcome outcome =
-      bob_->pipeline->ProcessEnvelope(laptop_->DeviceChat(bob_->account, "still here").at(bob_->Device()), bob_->account);
+  const RelayReceiveOutcome outcome = bob_->pipeline->ProcessEnvelope(
+      laptop_->DeviceChat(bob_->account, "still here").at(bob_->Device()), bob_->account);
   EXPECT_FALSE(outcome.persisted);
   EXPECT_EQ(outcome.receive_failure, std::optional<ReceiveFailure>(ReceiveFailure::SignatureCheckFailed));
 }

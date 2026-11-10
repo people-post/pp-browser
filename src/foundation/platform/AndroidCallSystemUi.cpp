@@ -3,14 +3,18 @@
 #include "foundation/platform/CallSystemUi.h"
 
 #include "common/runtime/AppRuntime.h"
+#include "foundation/runtime/AppLifecycle.h"
 
 #include <SDL3/SDL_system.h>
 #include <jni.h>
 
+#include <atomic>
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 namespace pbr {
@@ -25,24 +29,18 @@ struct CallEvent {
 };
 
 /**
- * MainActivity's call-notification methods (they hand over to PpCallNotifications). The UI thread: SDL's, attached
- * to the VM; the activity's class is looked up from the activity, since FindClass on a native thread sees only the
- * system's classes.
+ * MainActivity's call-notification methods (they hand over to PpCallNotifications). The UI thread only: SDL's,
+ * attached to the VM. The activity's class is looked up once from the activity (FindClass on a native thread sees
+ * only the system's classes) and kept, with each method's id, for the process: neither changes while it runs.
  */
 class Activity {
 public:
   Activity() : env_(static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv())) {
     if (env_ != nullptr) {
       activity_ = static_cast<jobject>(SDL_GetAndroidActivity());
-      if (activity_ != nullptr) {
-        cls_ = env_->GetObjectClass(activity_);
-      }
     }
   }
   ~Activity() {
-    if (cls_ != nullptr) {
-      env_->DeleteLocalRef(cls_);
-    }
     if (activity_ != nullptr) {
       env_->DeleteLocalRef(activity_);
     }
@@ -50,13 +48,17 @@ public:
   Activity(const Activity&) = delete;
   Activity& operator=(const Activity&) = delete;
 
-  bool CallBool(const char* method) {
+  /** Nothing: Java could not be asked (no activity, no such method, it threw). */
+  std::optional<bool> CallBool(const char* method) {
     jmethodID mid = Method(method, "()Z");
     if (mid == nullptr) {
-      return false;
+      return std::nullopt;
     }
     const jboolean out = env_->CallBooleanMethod(activity_, mid);
-    return !ClearedException() && out == JNI_TRUE;
+    if (ClearedException()) {
+      return std::nullopt;
+    }
+    return out == JNI_TRUE;
   }
 
   void CallVoid(const char* method) {
@@ -87,15 +89,41 @@ public:
   }
 
 private:
+  /** The method's id, looked up the first time (UI thread: no lock). Null: no such method (or no activity). */
   jmethodID Method(const char* name, const char* signature) {
-    if (cls_ == nullptr) {
+    if (activity_ == nullptr) {
       return nullptr;
     }
-    jmethodID mid = env_->GetMethodID(cls_, name, signature);
+    static std::unordered_map<std::string, jmethodID> ids;
+    const std::string key = std::string(name) + signature;
+    if (const auto it = ids.find(key); it != ids.end()) {
+      return it->second;
+    }
+    jclass cls = Class();
+    if (cls == nullptr) {
+      return nullptr;
+    }
+    jmethodID mid = env_->GetMethodID(cls, name, signature);
     if (mid == nullptr) {
       env_->ExceptionClear();
+      return nullptr; // not kept: a missing method is a build mismatch, and asking again costs only that call
     }
+    ids.emplace(key, mid);
     return mid;
+  }
+
+  /** The activity's class, as a global reference kept for the process. */
+  jclass Class() {
+    static jclass cls = nullptr;
+    if (cls == nullptr) {
+      jclass local = env_->GetObjectClass(activity_);
+      if (local == nullptr) {
+        return nullptr;
+      }
+      cls = static_cast<jclass>(env_->NewGlobalRef(local));
+      env_->DeleteLocalRef(local);
+    }
+    return cls;
   }
 
   bool ClearedException() {
@@ -108,38 +136,58 @@ private:
 
   JNIEnv* env_ = nullptr;
   jobject activity_ = nullptr;
-  jclass cls_ = nullptr;
 };
 
 /**
  * ICallSystemUi on PpCallNotifications (UI thread). What the user does on the notification comes from Java on its
  * own threads, possibly before the app set its callbacks (Answer launched the app): it waits here until they are.
+ *
+ * The bridge reads Available() and HasPendingPushCall() every frame of a call, and on Java each is a call into the
+ * activity (availability also asks the notification service): both are kept here. Availability is asked again on
+ * RecheckAvailable (a new ring, the app back in front); the pending flag comes with each change from Java
+ * (nativeOnPendingChanged), read from Java only once, before the first change seen.
  */
 class AndroidCallSystemUi final : public ICallSystemUi {
 public:
-  bool Available() const override { return Activity().CallBool("callNotificationsAvailable"); }
+  bool Available() const override {
+    if (const int known = available_.load(); known != kUnknown) {
+      return known != 0;
+    }
+    const std::optional<bool> asked = Activity().CallBool("callNotificationsAvailable");
+    if (asked) {
+      available_.store(*asked ? 1 : 0); // not kept when Java could not answer: asked again next time
+    }
+    return asked.value_or(false);
+  }
+
+  void RecheckAvailable() override { available_.store(kUnknown); }
 
   void SetCallbacks(Callbacks callbacks) override {
     callbacks_ = std::move(callbacks);
     Deliver();
   }
 
-  bool HasPendingPushCall() const override { return Activity().CallBool("hasPendingPushCall"); }
-  void NotifyMessagingReady() override { Activity().CallVoid("callMessagingReady"); }
-  void EndPendingPushCall(const EndReason reason) override {
-    (void)reason; // the notification just goes
-    Activity().CallVoid("endPendingPushCall");
+  bool HasPendingPushCall() const override {
+    if (const int known = pending_.load(); known != kUnknown) {
+      return known != 0;
+    }
+    const std::optional<bool> asked = Activity().CallBool("hasPendingPushCall");
+    if (!asked) {
+      return false;
+    }
+    // A change Java sent meanwhile is newer than this read: it stays.
+    int expected = kUnknown;
+    return pending_.compare_exchange_strong(expected, *asked ? 1 : 0) ? *asked : expected != 0;
   }
+  void NotifyMessagingReady() override { Activity().CallVoid("callMessagingReady"); }
+  void EndPendingPushCall() override { Activity().CallVoid("endPendingPushCall"); }
   void SetPendingChangedHandler(std::function<void()> fn) override { pending_changed_ = std::move(fn); }
 
   void ReportIncoming(const std::string& call_id, const std::string& caller_name, const bool video) override {
     Activity().CallVoid("showIncomingCall", call_id, caller_name, video);
   }
 
-  void ReportEnded(const std::string& call_id, const EndReason reason) override {
-    (void)reason;
-    Activity().CallVoid("endIncomingCall", call_id);
-  }
+  void ReportEnded(const std::string& call_id) override { Activity().CallVoid("endIncomingCall", call_id); }
 
   /** Java, any thread. */
   void Queue(CallEvent event) {
@@ -150,8 +198,9 @@ public:
     AppRuntime::PostUI([this]() { Deliver(); });
   }
 
-  /** Java, any thread. */
-  void PendingChanged() {
+  /** Java, any thread (under PpCallNotifications' lock, so in the order of the changes). */
+  void PendingChanged(const bool pending) {
+    pending_.store(pending ? 1 : 0);
     AppRuntime::PostUI([this]() {
       if (pending_changed_) {
         pending_changed_();
@@ -193,8 +242,13 @@ private:
     }
   }
 
+  static constexpr int kUnknown = -1;
+
   Callbacks callbacks_;
   std::function<void()> pending_changed_;
+  /** 1 / 0, kUnknown: not asked yet (Available: or asked to again). */
+  mutable std::atomic<int> available_{kUnknown};
+  mutable std::atomic<int> pending_{kUnknown};
   std::mutex mu_;
   std::deque<CallEvent> events_;
 };
@@ -221,6 +275,10 @@ std::string StringOf(JNIEnv* env, jstring s) {
 
 void InstallAndroidCallSystemUi() {
   ICallSystemUi::SetInstance(&Ui());
+  // Back from the settings, perhaps with call notifications turned off or on (UI thread).
+  static const AppLifecycle::ListenerId foreground =
+      AppLifecycle::AddForegroundListener([]() { Ui().RecheckAvailable(); });
+  (void)foreground;
 }
 
 } // namespace pbr
@@ -239,6 +297,7 @@ extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_PpCallNotifications_n
   pbr::Ui().Queue({pbr::CallEvent::Kind::PendingGone, {}});
 }
 
-extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_PpCallNotifications_nativeOnPendingChanged(JNIEnv*, jclass) {
-  pbr::Ui().PendingChanged();
+extern "C" JNIEXPORT void JNICALL
+Java_dev_pp_1browser_app_PpCallNotifications_nativeOnPendingChanged(JNIEnv*, jclass, jboolean pending) {
+  pbr::Ui().PendingChanged(pending == JNI_TRUE);
 }

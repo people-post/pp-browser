@@ -22,6 +22,8 @@ struct CaptureStarvePolicy {
   static constexpr int64_t kVoiceStallMs = 1000;
   /** Starvation reopens only count as "in a row" until the unit has run this long after one. */
   static constexpr int64_t kVoiceHealthyMs = 5000;
+  /** Starvation reopens are more than this apart: a reopen in flight takes a while to deliver PCM. */
+  static constexpr int64_t kReopenMinGapMs = 2000;
   /** This many starvation reopens in a row: give up on voice processing for the session. */
   static constexpr int kVoiceMaxReopens = 3;
 

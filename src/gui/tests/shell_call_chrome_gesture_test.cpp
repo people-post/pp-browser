@@ -221,7 +221,9 @@ protected:
     call_.active = true;
     call_.mode = CallChromeMode::Minimized;
     ShellCallChromeGesture::Callbacks callbacks;
-    callbacks.on_chip_place = [this](int side, int y_permille) { placed_ = CallChipPlace{side, y_permille}; };
+    callbacks.on_chip_place = [this](int side, int y_permille, bool tucked) {
+      placed_ = CallChipPlace{side, y_permille, tucked};
+    };
     callbacks.on_chip_released = [this]() { ++released_; };
     callbacks.on_restore = [this]() { ++restores_; };
     gesture_.Attach(chip_, context_, CallChromeMode::Minimized, std::move(callbacks));
@@ -285,10 +287,10 @@ protected:
 };
 
 TEST_F(ShellCallChipDragTest, LetGoItStaysWhereItShowsThenSlidesToTheNearerSide) {
-  // Grabbed at (300, 40), let go 50 right and 360 down: it shows at (258, 372), its centre in the right half.
-  Drag(300, 40, 350, 400);
+  // Grabbed at (300, 40), let go 40 left and 360 down: it shows at (168, 372), its centre in the right half.
+  Drag(300, 40, 260, 400);
   // At once (no frame yet): pinned by left / top at the drop point, the translate gone, the corner class gone.
-  EXPECT_EQ(Local("left"), "258dp");
+  EXPECT_EQ(Local("left"), "168dp");
   EXPECT_EQ(Local("top"), "372dp");
   EXPECT_EQ(Local("right"), "auto");
   EXPECT_EQ(Local("bottom"), "auto");
@@ -301,13 +303,13 @@ TEST_F(ShellCallChipDragTest, LetGoItStaysWhereItShowsThenSlidesToTheNearerSide)
 
   // The first frame lays it out where it showed under the finger: no jump.
   Frame(0.0);
-  EXPECT_FLOAT_EQ(At().x, 258.f);
+  EXPECT_FLOAT_EQ(At().x, 168.f);
   EXPECT_FLOAT_EQ(At().y, 372.f);
 
   // Mid-slide: on its way to the right edge (left 400 - 12 - 180 = 208), the height kept.
   Frame(0.1);
-  EXPECT_LT(At().x, 258.f);
-  EXPECT_GT(At().x, 208.f);
+  EXPECT_GT(At().x, 168.f);
+  EXPECT_LT(At().x, 208.f);
   EXPECT_EQ(released_, 0);
 
   // There: anchored by `right` (a chip that grows grows away from the edge), at the same place.
@@ -326,11 +328,11 @@ TEST_F(ShellCallChipDragTest, LetGoItStaysWhereItShowsThenSlidesToTheNearerSide)
 }
 
 TEST_F(ShellCallChipDragTest, ToTheLeftSideItIsAnchoredByLeft) {
-  Drag(300, 40, 60, 300); // shows at (-32, 272): the left half
+  Drag(300, 40, 150, 300); // shows at (58, 272): the left half
   ASSERT_TRUE(placed_.has_value());
   EXPECT_EQ(placed_->side, CallChipDock::kSideLeft);
   Frame(0.0);
-  EXPECT_FLOAT_EQ(At().x, -32.f);
+  EXPECT_FLOAT_EQ(At().x, 58.f);
   Frame(0.3);
   EXPECT_EQ(Local("left"), "12dp");
   EXPECT_EQ(Local("right"), "auto");
@@ -339,10 +341,10 @@ TEST_F(ShellCallChipDragTest, ToTheLeftSideItIsAnchoredByLeft) {
   EXPECT_NEAR(At().y, 272.f, 1.f);
 
   // And back to the right: no stretch (left and right are never both set), no jump at the drop.
-  Drag(60, 290, 330, 290); // shows at (282, 272)
+  Drag(60, 290, 200, 290); // shows at (152, 272)
   EXPECT_EQ(placed_->side, CallChipDock::kSideRight);
   Frame(0.0);
-  EXPECT_FLOAT_EQ(At().x, 282.f);
+  EXPECT_FLOAT_EQ(At().x, 152.f);
   EXPECT_FLOAT_EQ(chip_->GetBox().GetSize(ui::BoxArea::Border).x, 180.f);
   Frame(0.3);
   Frame(0.0);
@@ -351,12 +353,12 @@ TEST_F(ShellCallChipDragTest, ToTheLeftSideItIsAnchoredByLeft) {
 }
 
 TEST_F(ShellCallChipDragTest, APressMidSlideStopsItWhereItShows) {
-  Drag(300, 40, 350, 400);
+  Drag(300, 40, 260, 400);
   Frame(0.0);
   Frame(0.1);
   const ui::Vector2f caught = At();
-  ASSERT_LT(caught.x, 258.f);
-  ASSERT_GT(caught.x, 208.f);
+  ASSERT_GT(caught.x, 168.f);
+  ASSERT_LT(caught.x, 208.f);
   // The finger comes down on it mid-slide: the slide stops there, now and later.
   context_->ProcessMouseMove(static_cast<int>(caught.x) + 20, static_cast<int>(caught.y) + 20, 0);
   context_->ProcessMouseButtonDown(0, 0);
@@ -391,6 +393,77 @@ TEST_F(ShellCallChipDragTest, ATapStillRestoresTheCall) {
   EXPECT_TRUE(chip_->IsClassSet("shell-call-minimized-chip--tr"));
 }
 
+// #189: the full bar thrown at a side edge shrinks into the handle; the handle's tap or a pull away brings the bar back.
+TEST_F(ShellCallChipDragTest, ABarThrownAtTheEdgeBecomesTheHandle) {
+  // Grabbed at (300, 40), let go 80 right: the bar's outer edge is at 400 - (288 + 180) = -68 from the edge, thrown at it.
+  Drag(300, 40, 380, 300);
+  ASSERT_TRUE(placed_.has_value());
+  EXPECT_EQ(placed_->side, CallChipDock::kSideRight);
+  EXPECT_TRUE(placed_->tucked);
+  EXPECT_EQ(restores_, 0);
+  EXPECT_FALSE(gesture_.IsSettling()) << "the handle is another element: no slide";
+  // The place the remounted handle is put at: 12dp of it beyond the edge, at the bar's height.
+  const std::optional<CallChipLayout>& layout = gesture_.Layout();
+  ASSERT_TRUE(layout.has_value());
+  EXPECT_TRUE(layout->place.tucked);
+  EXPECT_FLOAT_EQ(layout->chip_height_dp, CallChipDock::kHandleDp);
+  const CallChipPoint at =
+      CallChipDock::Place(*placed_, {400.f, 800.f}, CallChipDock::kHandleDp, CallChipDock::kHandleDp);
+  EXPECT_FLOAT_EQ(at.left_dp, 400.f + CallChipDock::kTuckDp - CallChipDock::kHandleDp);
+  EXPECT_FLOAT_EQ(layout->top_dp, at.top_dp);
+}
+
+TEST_F(ShellCallChipDragTest, AVerticalMoveOfTheBarAtRestDoesNotTuckIt) {
+  Drag(300, 40, 300, 400); // 12dp from the edge all along: not thrown at it
+  ASSERT_TRUE(placed_.has_value());
+  EXPECT_FALSE(placed_->tucked);
+  EXPECT_TRUE(gesture_.IsSettling());
+}
+
+TEST_F(ShellCallChipDragTest, TheBarLetGoFarFromTheEdgeStaysTheBar) {
+  Drag(300, 40, 240, 300); // outer edge 400 - (148 + 180) = 72 from the edge
+  ASSERT_TRUE(placed_.has_value());
+  EXPECT_FALSE(placed_->tucked);
+}
+
+TEST_F(ShellCallChipDragTest, TheHandleIsPulledOutOrTappedBackToTheBar) {
+  chip_->SetClass("shell-call-minimized-chip--handle", true);
+  chip_->SetClass("shell-call-minimized-chip--tr", false);
+  chip_->SetProperty("width", "44dp");
+  chip_->SetProperty("height", "44dp");
+  chip_->SetProperty("left", "-12dp");
+  chip_->SetProperty("right", "auto");
+  chip_->SetProperty("top", "300dp");
+  Frame(0.0);
+  // A tap: the bar comes back on this (left) side at this height; the call screen is not opened.
+  context_->ProcessMouseMove(20, 320, 0);
+  context_->ProcessMouseButtonDown(0, 0);
+  context_->ProcessMouseButtonUp(0, 0);
+  ASSERT_TRUE(placed_.has_value());
+  EXPECT_EQ(placed_->side, CallChipDock::kSideLeft);
+  EXPECT_FALSE(placed_->tucked);
+  EXPECT_EQ(restores_, 0);
+  ASSERT_TRUE(gesture_.Layout().has_value());
+  EXPECT_FLOAT_EQ(gesture_.Layout()->top_dp, 300.f);
+
+  // A pull away from the edge (let go 100dp in): the bar again, at the height it was let go.
+  placed_.reset();
+  Drag(20, 320, 120, 420);
+  ASSERT_TRUE(placed_.has_value());
+  EXPECT_FALSE(placed_->tucked);
+  EXPECT_FLOAT_EQ(gesture_.Layout()->top_dp, 400.f);
+
+  // A short pull (still within 24dp of the edge) leaves it the handle, which slides back to the edge.
+  placed_.reset();
+  chip_->SetProperty("left", "-12dp");
+  chip_->SetProperty("top", "300dp");
+  Frame(0.0);
+  Drag(20, 320, 30, 340);
+  ASSERT_TRUE(placed_.has_value());
+  EXPECT_TRUE(placed_->tucked);
+  EXPECT_TRUE(gesture_.IsSettling());
+}
+
 // A remount (ShellHost::RemountCallChromeNow, as the clock's status or the dropped place come back) rebuilds the chip
 // from the call state: never while a drag owns it, nor while the state does not have the dropped place yet.
 TEST_F(ShellCallChipDragTest, NoRebuildWhileItSlidesOrBeforeTheStateHasThePlace) {
@@ -406,7 +479,7 @@ TEST_F(ShellCallChipDragTest, NoRebuildWhileItSlidesOrBeforeTheStateHasThePlace)
 
   EXPECT_FALSE(KeepMinimizedChipOnRemount(call_, chip_, gesture_)) << "never dragged: rebuilt as ever";
 
-  Drag(300, 40, 350, 400, /*hold=*/true);
+  Drag(300, 40, 260, 400, /*hold=*/true);
   EXPECT_TRUE(KeepMinimizedChipOnRemount(call_, chip_, gesture_)) << "under the finger";
   context_->ProcessMouseButtonUp(0, 0);
   ASSERT_TRUE(placed_.has_value());
@@ -449,7 +522,7 @@ TEST_F(ShellCallChipDragTest, NoRebuildWhileItSlidesOrBeforeTheStateHasThePlace)
 }
 
 TEST_F(ShellCallChipDragTest, ReflowKeepsADroppedChipInItsBandAsItGrows) {
-  Drag(300, 40, 350, 760); // let go low: the bottom of the band
+  Drag(300, 40, 260, 760); // let go low: the bottom of the band
   ASSERT_TRUE(placed_.has_value());
   EXPECT_EQ(placed_->y_permille, 1000);
   Frame(0.0);
@@ -546,7 +619,7 @@ TEST_F(ShellCallChipDragTest, ARemountHeldForAPressRunsOnceWhenThePressEndsWitho
 // A slide whose end never comes (no Animationend: the animation did not run, or the chip was hidden) is ended by the
 // frame's Reflow 0.4s after the drop: anchored on its side, and its rebuild no longer held.
 TEST_F(ShellCallChipDragTest, ASlideWhoseEndNeverComesIsEndedByReflow) {
-  Drag(300, 40, 350, 400);
+  Drag(300, 40, 260, 400);
   ASSERT_TRUE(placed_.has_value());
   ASSERT_TRUE(gesture_.IsSettling());
   call_.minimized_side = placed_->side;
@@ -603,7 +676,9 @@ protected:
 
   void Attach() {
     ShellCallChromeGesture::Callbacks callbacks;
-    callbacks.on_chip_place = [this](int side, int y_permille) { placed_ = CallChipPlace{side, y_permille}; };
+    callbacks.on_chip_place = [this](int side, int y_permille, bool tucked) {
+      placed_ = CallChipPlace{side, y_permille, tucked};
+    };
     callbacks.on_chip_released = [this]() { ++released_; };
     callbacks.on_restore = [this]() { ++restores_; };
     gesture_.Attach(CallChromeGestureElement(document_, CallChromeMode::Minimized), context_, CallChromeMode::Minimized,
@@ -623,11 +698,11 @@ TEST_F(ShellCallChipMountedTest, TheGestureMovesTheChipNotItsLayer) {
   EXPECT_FLOAT_EQ(At().x, 208.f);
   EXPECT_FLOAT_EQ(At().y, 12.f);
 
-  Drag(300, 40, 350, 400);
+  Drag(300, 40, 260, 400);
   ASSERT_TRUE(placed_.has_value());
   EXPECT_EQ(placed_->side, CallChipDock::kSideRight);
   EXPECT_EQ(placed_->y_permille, 545) << "measured on the 180x56 chip in the 400x800 layer";
-  EXPECT_EQ(Local("left"), "258dp");
+  EXPECT_EQ(Local("left"), "168dp");
   EXPECT_EQ(Local("width"), "180dp");
   EXPECT_FALSE(chip_->IsClassSet("shell-call-minimized-chip--tr"));
   EXPECT_TRUE(layer_->GetLocalStyleProperties().empty()) << "no inline left / top / width / transform on the layer";
@@ -635,7 +710,7 @@ TEST_F(ShellCallChipMountedTest, TheGestureMovesTheChipNotItsLayer) {
   // The hold, as ShellHost asks it (the chip looked up by id), while it slides and the state lags.
   EXPECT_TRUE(KeepMinimizedChipOnRemount(call_, document_->GetElementById("shell-call-minimized-chip"), gesture_));
   Frame(0.0);
-  EXPECT_FLOAT_EQ(At().x, 258.f);
+  EXPECT_FLOAT_EQ(At().x, 168.f);
   Frame(0.3);
   EXPECT_EQ(released_, 1) << "the chip's own Animationend";
   EXPECT_EQ(Local("right"), "12dp");
@@ -672,7 +747,7 @@ TEST_F(ShellCallChipMountedTest, TheGestureMovesTheChipNotItsLayer) {
 // slide (a full layout rebuild is never held) and after it. It must come back at the drop's target, never at 12dp.
 TEST_F(ShellCallChipMountedTest, ARebuildAfterTheDropLandsOnItsTargetNotTheTopCorner) {
   Attach();
-  Drag(300, 40, 350, 400); // down the right side
+  Drag(300, 40, 260, 400); // down the right side
   ASSERT_TRUE(placed_.has_value());
   const float target = CallChipDock::Place(*placed_, {400.f, 800.f}, 180.f, 56.f).top_dp;
   Frame(0.0);

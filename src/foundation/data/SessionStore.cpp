@@ -116,8 +116,8 @@ Roe<void> SessionStore::ReloadConfig() {
   // Match Config::Load / bootstrap: missing config is not an error — use defaults.
   if (bootstrap_.config_path.empty() || !std::filesystem::exists(bootstrap_.config_path)) {
     AppConfig defaults = Config::DefaultAppConfig(ui_demo_);
-    const bool changed = ConfigToObject(bootstrap_.config, Config::kConfigVersion) !=
-                         ConfigToObject(defaults, Config::kConfigVersion);
+    const bool changed =
+        ConfigToObject(bootstrap_.config, Config::kConfigVersion) != ConfigToObject(defaults, Config::kConfigVersion);
     bootstrap_.config = std::move(defaults);
     if (changed) {
       NotifyConfigListeners(bootstrap_.config);
@@ -134,8 +134,8 @@ Roe<void> SessionStore::ReloadConfig() {
   }
   // Me tab opens ReloadFromDisk every time; skip listener churn when nothing changed so
   // ChatController::ApplyRuntimeConfig does not rebuild the agent (Cancel/find-someone race).
-  const bool changed = ConfigToObject(bootstrap_.config, Config::kConfigVersion) !=
-                       ConfigToObject(*reloaded, Config::kConfigVersion);
+  const bool changed =
+      ConfigToObject(bootstrap_.config, Config::kConfigVersion) != ConfigToObject(*reloaded, Config::kConfigVersion);
   bootstrap_.config = std::move(*reloaded);
   if (changed) {
     NotifyConfigListeners(bootstrap_.config);
@@ -192,8 +192,7 @@ void SessionStore::NotifyProfilePrefsListeners(const ProfilePreferences& prefs) 
   }
 }
 
-void SessionStore::DiffAndNotifyProfilePrefs(const ProfilePreferences& previous,
-                                             const ProfilePreferences& next) {
+void SessionStore::DiffAndNotifyProfilePrefs(const ProfilePreferences& previous, const ProfilePreferences& next) {
   if (ProfilePrefsToObject(previous) == ProfilePrefsToObject(next)) {
     return;
   }

@@ -166,13 +166,14 @@ void CallMediaConnectCoordinator::BeginAttempt(const uint64_t seq, const int att
   }
   mesh::PeerReachRequest reach = request_.reach;
   if (attempt > 1) {
-    reach.exclude_direct = false;  // one escalation per sequence
+    reach.exclude_direct = false; // one escalation per sequence
   }
   reach.fresh_link = std::exchange(fresh_link_next_, false);
   attempt_reused_link_ = false;
-  reach_id_ = reach_.Ensure(std::move(reach), [outbox = outbox_, seq, attempt](mesh::PeerReachCoordinator::ReachRoe reached) {
-    outbox.Emit(connect_event::LinkReady{seq, attempt, std::move(reached)});
-  });
+  reach_id_ =
+      reach_.Ensure(std::move(reach), [outbox = outbox_, seq, attempt](mesh::PeerReachCoordinator::ReachRoe reached) {
+        outbox.Emit(connect_event::LinkReady{seq, attempt, std::move(reached)});
+      });
 }
 
 void CallMediaConnectCoordinator::OnLinkReady(const uint64_t seq, const int attempt,
@@ -219,12 +220,11 @@ void CallMediaConnectCoordinator::OpenBundle(const uint64_t seq, const int attem
     }
   }
   if (!transport_.IsActive()) {
-    transport_.Detach();
+    transport_.Detach(request_.params.call_id);
   }
   attempt_current_ = attempt;
-  log().info << "ConnectAsync attempt=" << attempt << "/" << kConnectAttempts
-             << " call_id=" << request_.params.call_id << " peer=" << request_.params.peer_key
-             << " role=" << Role() << " timeout_ms=" << attempt_timeout_ms_
+  log().info << "ConnectAsync attempt=" << attempt << "/" << kConnectAttempts << " call_id=" << request_.params.call_id
+             << " peer=" << request_.params.peer_key << " role=" << Role() << " timeout_ms=" << attempt_timeout_ms_
              << " media_key_len=" << request_.params.media_key.size();
   // Armed before ConnectAsync: a synchronous completion must find (and cancel) it.
   ArmWatchdog(seq, attempt);
@@ -241,8 +241,8 @@ void CallMediaConnectCoordinator::ArmWatchdog(const uint64_t seq, const int atte
   // MeshRuntime::Pump (dogfood 19f845 / 612b). B42: the watchdog fails only this attempt — it
   // goes through the normal failure path, so remaining attempts still run.
   outbox_.Cancel(watchdog_timer_id_);
-  watchdog_timer_id_ = outbox_.After(std::chrono::milliseconds(attempt_timeout_ms_ + 1000),
-                                     connect_event::WatchdogDue{seq, attempt});
+  watchdog_timer_id_ =
+      outbox_.After(std::chrono::milliseconds(attempt_timeout_ms_ + 1000), connect_event::WatchdogDue{seq, attempt});
 }
 
 void CallMediaConnectCoordinator::OnWatchdog(const uint64_t seq, const int attempt) {
@@ -253,18 +253,17 @@ void CallMediaConnectCoordinator::OnWatchdog(const uint64_t seq, const int attem
                 << " attempt=" << attempt;
   watchdog_timer_id_ = 0;
   // Detach may not deliver on_finished if Mesh IO is wedged — force attempt progress.
-  transport_.Detach();
+  transport_.Detach(request_.params.call_id);
   OnAttemptFinished(seq, attempt,
                     CallMediaFailure::Of(CallMediaErr::Timeout, "amp call-media connect timed out (watchdog)"));
 }
 
-void CallMediaConnectCoordinator::OnAttemptFinished(const uint64_t seq, const int attempt,
-                                                    CallMediaRoe connected) {
+void CallMediaConnectCoordinator::OnAttemptFinished(const uint64_t seq, const int attempt, CallMediaRoe connected) {
   if (!Current(seq)) {
     // Superseded sequence: drop its bundle (Abort / restart already settled InFlight) — unless
     // a newer sequence is connecting the same call and may adopt it.
     if (!InFlight() || transport_.ActiveParams().call_id != request_.params.call_id) {
-      transport_.Detach();
+      transport_.Detach(request_.params.call_id);
     }
     return;
   }
@@ -330,7 +329,7 @@ CallMediaFailure CallMediaConnectCoordinator::WrapReachFailure(const mesh::PeerR
 
 void CallMediaConnectCoordinator::Finish(const uint64_t seq, CallMediaRoe result) {
   if (!Current(seq) || !InFlight()) {
-    return;  // superseded, or already finished (duplicate completion)
+    return; // superseded, or already finished (duplicate completion)
   }
   inflight_.store(false, std::memory_order_release);
   CancelTimers();

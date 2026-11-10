@@ -22,16 +22,16 @@ DeviceVitals ReadDeviceVitals();
 
 inline ShareWord ThermalStateName(const int thermal) {
   switch (thermal) {
-  case 0:
-    return "nominal";
-  case 1:
-    return "fair";
-  case 2:
-    return "serious";
-  case 3:
-    return "critical";
-  default:
-    return "unknown";
+    case 0:
+      return "nominal";
+    case 1:
+      return "fair";
+    case 2:
+      return "serious";
+    case 3:
+      return "critical";
+    default:
+      return "unknown";
   }
 }
 

@@ -26,32 +26,33 @@ std::string IdentityLines(const bool brief_backend) {
 
 void AppendGoalRules(std::ostringstream& out, const ResponseGoal goal) {
   switch (goal) {
-  case ResponseGoal::DisplayFeed:
-    out << "- Map MCP feed tool rows into a long_list block.\n";
-    out << "- Add one short paragraph framing why these match the request.\n";
-    out << "- Do not claim the feed is empty unless the tool returned no rows.\n";
-    out << "- Do not dump raw tool JSON.\n";
-    break;
-  case ResponseGoal::Summarize:
-    out << "- Produce a concise summary in a heading plus paragraph or card block.\n";
-    out << "- Keep the summary short (roughly 3-6 sentences).\n";
-    break;
-  case ResponseGoal::AnswerQuestion:
-    out << "- Answer the user's question directly in a paragraph block first.\n";
-    out << "- Use tool results as supporting evidence only.\n";
-    out << "- Do not only list headlines when explanation was requested.\n";
-    break;
-  case ResponseGoal::Headlines:
-    out << "- Use a list block with one item per real headline from tool results.\n";
-    out << "- Quote specific story titles; do not list news homepages.\n";
-    break;
-  case ResponseGoal::PeopleDiscovery:
-    out << "- Prefer people_list render_mode (runtime builds the long_list). Do not invent unlabeled Add/Message chips.\n";
-    out << "- Each person row needs a clear title, nickname/short id subtitle, and at most one primary action.\n";
-    break;
-  case ResponseGoal::General:
-    out << "- Address the user's request directly using tool results as context.\n";
-    break;
+    case ResponseGoal::DisplayFeed:
+      out << "- Map MCP feed tool rows into a long_list block.\n";
+      out << "- Add one short paragraph framing why these match the request.\n";
+      out << "- Do not claim the feed is empty unless the tool returned no rows.\n";
+      out << "- Do not dump raw tool JSON.\n";
+      break;
+    case ResponseGoal::Summarize:
+      out << "- Produce a concise summary in a heading plus paragraph or card block.\n";
+      out << "- Keep the summary short (roughly 3-6 sentences).\n";
+      break;
+    case ResponseGoal::AnswerQuestion:
+      out << "- Answer the user's question directly in a paragraph block first.\n";
+      out << "- Use tool results as supporting evidence only.\n";
+      out << "- Do not only list headlines when explanation was requested.\n";
+      break;
+    case ResponseGoal::Headlines:
+      out << "- Use a list block with one item per real headline from tool results.\n";
+      out << "- Quote specific story titles; do not list news homepages.\n";
+      break;
+    case ResponseGoal::PeopleDiscovery:
+      out << "- Prefer people_list render_mode (runtime builds the long_list). Do not invent unlabeled Add/Message "
+             "chips.\n";
+      out << "- Each person row needs a clear title, nickname/short id subtitle, and at most one primary action.\n";
+      break;
+    case ResponseGoal::General:
+      out << "- Address the user's request directly using tool results as context.\n";
+      break;
   }
 }
 
@@ -139,8 +140,7 @@ RULES
 - Do not wrap the response in HTML or markdown outside the json fence)";
 }
 
-std::string PromptBuilder::BuildUiGenerationPrompt(const std::string& tools_context,
-                                                   const std::string& rml_profile) {
+std::string PromptBuilder::BuildUiGenerationPrompt(const std::string& tools_context, const std::string& rml_profile) {
   std::ostringstream out;
   out << "You generate RML, RCSS, and a bindings JSON manifest for pp-browser.\n\n";
   out << "RML profile rules:\n" << rml_profile << "\n\n";
@@ -163,7 +163,8 @@ std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_s
     out << "- You may call additional tools only if planned results are insufficient.\n";
     out << "- Never put tool calls inside blocks JSON. Tools use function calling only.\n";
     out << "- Never expose raw tool JSON in blocks; summarize in plain structured blocks.\n";
-    out << "- For people discovery set render_mode people_list (or emit long_list rows with title + subtitle/meta identifying each person).\n";
+    out << "- For people discovery set render_mode people_list (or emit long_list rows with title + subtitle/meta "
+           "identifying each person).\n";
     out << "- Never invent contact or relay IDs; use tool results only.\n";
     out << "- Do not dump a wall of unlabeled Add contact / Message suggestion buttons.\n\n";
   }
@@ -266,7 +267,7 @@ std::string PromptBuilder::BuildSynthesisRefinementReminder(const TurnPlan& plan
 }
 
 std::string PromptBuilder::BuildOutputRepairPrompt(const TurnPlan& plan, const std::string& raw_output,
-                                                 const std::string& parse_error) {
+                                                   const std::string& parse_error) {
   std::ostringstream out;
   out << "Your previous blocks JSON failed to parse: " << parse_error << "\n";
   out << "Goal: " << ResponseGoalName(plan.response_goal) << "\n";

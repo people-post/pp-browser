@@ -22,7 +22,7 @@
 namespace ui {
 class Context;
 class Element;
-}
+} // namespace ui
 
 namespace pbr {
 
@@ -78,8 +78,8 @@ public:
    * `end` never shrinks below `prev_end` so scroll can reach categories below.
    * `begin` tracks behind `center` so far-above sections can unload.
    */
-  static void ComputeSectionWindow(int center_index, int section_count, int span, int prev_end,
-                                   int& begin_out, int& end_out);
+  static void ComputeSectionWindow(int center_index, int section_count, int span, int prev_end, int& begin_out,
+                                   int& end_out);
 
 private:
   void OpenOverlayPresentation();

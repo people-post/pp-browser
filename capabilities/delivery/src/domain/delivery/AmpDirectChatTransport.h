@@ -31,8 +31,8 @@ public:
   using IoPost = std::function<void(std::function<void()>)>;
   using IoAfter = std::function<void(std::chrono::milliseconds, std::function<void()>)>;
 
-  AmpDirectChatTransport(mesh::IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker = {},
-                         IoPost post_io = {}, IoAfter post_after = {});
+  AmpDirectChatTransport(mesh::IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker = {}, IoPost post_io = {},
+                         IoAfter post_after = {});
   ~AmpDirectChatTransport() override;
 
   AmpDirectChatTransport(const AmpDirectChatTransport&) = delete;

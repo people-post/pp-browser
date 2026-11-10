@@ -42,15 +42,14 @@ class IPeerKemKeyResolver {
 public:
   virtual ~IPeerKemKeyResolver() = default;
   virtual Roe<PeerKemKeyRecord> Resolve(const std::string& peer_identity_kind,
-                                          const std::string& peer_identity_value) = 0;
+                                        const std::string& peer_identity_value) = 0;
 };
 
 class PeerKemKeyResolver : public IPeerKemKeyResolver {
 public:
   explicit PeerKemKeyResolver(PeerKemKeyStore& store);
 
-  Roe<PeerKemKeyRecord> Resolve(const std::string& peer_identity_kind,
-                                const std::string& peer_identity_value) override;
+  Roe<PeerKemKeyRecord> Resolve(const std::string& peer_identity_kind, const std::string& peer_identity_value) override;
 
 private:
   PeerKemKeyStore& store_;
