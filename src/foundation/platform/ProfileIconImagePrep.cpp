@@ -36,7 +36,7 @@ std::string TypeHint(const std::string& path) {
     return {};
   }
   std::string hint = path.substr(dot + 1);
-  std::transform(hint.begin(), hint.end(), hint.begin(), [](unsigned char c) { return std::tolower(c); });
+  std::transform(hint.begin(), hint.end(), hint.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return hint;
 }
 
