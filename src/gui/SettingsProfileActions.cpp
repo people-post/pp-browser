@@ -318,8 +318,12 @@ void SettingsProfileActions::UploadIcon(std::shared_ptr<PickedFileLease> file, s
       [this, file, crop]() { return commands_.upload_profile_icon_file(file->path(), crop); },
       [this, file, crop_finished](Roe<void> result) {
         if (crop_finished) {
-          // The crop page owns the file: it lets go when it closes, and stays (file kept) when this failed.
+          // A failure keeps the file for a retry while the crop page is open; when the page is already gone (swept
+          // mid-upload) the last reference dropped here releases it. Either way no explicit release under a reader.
           crop_finished->Answer(static_cast<bool>(result));
+          if (result) {
+            file->Release(); // the photo is up: the page closed (or is gone), nobody needs the file
+          }
         } else {
           file->Release();
         }

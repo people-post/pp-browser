@@ -140,6 +140,33 @@ TEST_F(CropTouchRoutingTest, ATwoFingerTwistAtScaleOneLeavesTheScaleAlone) {
   EXPECT_NEAR(frame.theta(), 0.5235988, 1e-3);
 }
 
+// "Done" reads the crop after the movement summed this frame was applied; pausing the touch first would drop it.
+TEST_F(CropTouchRoutingTest, ApplyingBeforePausingKeepsTheLastMovementAndPausingFirstDropsIt) {
+  const auto drag = [&](AvatarCropFrame& frame, const bool apply_first) -> double {
+    // Returns the centre before the drag.
+    touch.Clear();
+    touch.SetPaused(false);
+    frame.Pinch({0, 0}, 3.0, 0.0);
+    const double before = frame.centre().x;
+    Swallowed(Finger(SDL_EVENT_FINGER_DOWN, 1, 250, 450));
+    Swallowed(Finger(SDL_EVENT_FINGER_MOTION, 1, 270, 450));
+    if (apply_first) {
+      touch.Apply(frame);
+      touch.SetPaused(true);
+    } else {
+      touch.SetPaused(true);
+      touch.Apply(frame);
+    }
+    return before;
+  };
+  AvatarCropFrame flushed(1000, 500, 300);
+  const double flushed_before = drag(flushed, true);
+  EXPECT_NE(flushed.centre().x, flushed_before) << "flush, then pause: the movement is in the frame";
+  AvatarCropFrame dropped(1000, 500, 300);
+  const double dropped_before = drag(dropped, false);
+  EXPECT_EQ(dropped.centre().x, dropped_before) << "pause, then flush: the movement is lost";
+}
+
 TEST_F(CropTouchRoutingTest, AFingerFromATrackpadIsNotATouchOnThePicture) {
   // A fake device id is taken as a direct touch screen (this is the routing of the cases above); the check itself
   // is SDL_GetTouchDeviceType, which only a real indirect device answers with INDIRECT_* (and only once video is up).

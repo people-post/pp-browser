@@ -123,6 +123,8 @@ TEST(AvatarCropRulesTest, DoneAndRotateNeedAPhotoAndNothingInFlightAndCancelOnly
   EXPECT_FALSE(AvatarCropButtons::CanRotate(false, true, true));
   EXPECT_TRUE(AvatarCropButtons::CanCancel(false));
   EXPECT_FALSE(AvatarCropButtons::CanCancel(true));
+  EXPECT_TRUE(AvatarCropButtons::PageMayReleaseFile(false)) << "the page is the file's only holder";
+  EXPECT_FALSE(AvatarCropButtons::PageMayReleaseFile(true)) << "Done in flight: the upload may be reading the file";
 }
 
 // Records whether geometry with the photo's texture is drawn with a scissor region on.

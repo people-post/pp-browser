@@ -138,23 +138,33 @@ void AvatarCropController::OnDecoded(const unsigned generation, Roe<ProfilePhoto
   if (generation != generation_ || !IsOpen()) {
     return;
   }
-  loading_ = false;
   if (!preview) {
+    loading_ = false;
     CropLog().warning << "Decode failed: " << AppError::Log(preview.error());
     UserFeedback::FailFrom(preview.error());
     Close();
     return;
   }
   frame_.emplace(preview->full_width, preview->full_height, 1.0);
-  ui::Element* surface = FindSurface();
-  if (surface) {
-    const ui::Vector2f box = surface->GetBox().GetSize(ui::BoxArea::Content);
-    const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.0f;
-    frame_->SetViewportDiameter(AvatarCropViewportDiameter(box.x / ratio, box.y / ratio));
-    if (auto* crop = dynamic_cast<ElementAvatarCrop*>(surface)) {
-      crop->SetImage(preview->width, preview->height, std::move(preview->rgba));
-    }
+  pending_preview_ = std::move(*preview);
+  // The page stays "loading" until the element has the picture: Tick delivers it as soon as the element exists.
+  DeliverPreview();
+}
+
+void AvatarCropController::DeliverPreview() {
+  if (!pending_preview_ || !frame_) {
+    return;
   }
+  auto* crop = dynamic_cast<ElementAvatarCrop*>(FindSurface());
+  if (!crop) {
+    return;
+  }
+  const ui::Vector2f box = crop->GetBox().GetSize(ui::BoxArea::Content);
+  const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.0f;
+  frame_->SetViewportDiameter(AvatarCropViewportDiameter(box.x / ratio, box.y / ratio));
+  crop->SetImage(pending_preview_->width, pending_preview_->height, std::move(pending_preview_->rgba));
+  pending_preview_.reset();
+  loading_ = false;
   view_dirty_ = true;
   SyncPaused();
   Dirty();
@@ -219,6 +229,7 @@ void AvatarCropController::Tick() {
   if (!surface || !frame_ || !context_) {
     return;
   }
+  DeliverPreview();
   const ui::Vector2f box = surface->GetBox().GetSize(ui::BoxArea::Content);
   const float ratio =
       context_->GetDensityIndependentPixelRatio() > 0.0f ? context_->GetDensityIndependentPixelRatio() : 1.0f;
@@ -261,12 +272,13 @@ void AvatarCropController::Done() {
   if (!AvatarCropButtons::CanDone(loading_, locked_, frame_.has_value()) || !commit_) {
     return;
   }
-  // Freeze everything: buttons off, fingers and mouse stop, the parameters are read once, now.
+  // Freeze everything: buttons off, fingers and mouse stop, the parameters are read once, now. The movement already
+  // summed this frame is applied first (pausing the touch drops it): it is part of what the user sees.
+  Tick();
   locked_ = true;
   EndMouseDrag();
   SyncPaused();
   Dirty();
-  Tick(); // the movement already summed is part of what the user sees
   ProfileIconCrop crop;
   const int side = std::max(1, static_cast<int>(std::lround(std::min(1024.0, frame_->CircleDiameterImagePx()))));
   crop.side = side;
@@ -363,6 +375,7 @@ void AvatarCropController::EndMouseDrag() {
 }
 
 void AvatarCropController::ResetState() {
+  const bool done_in_flight = locked_;
   EndMouseDrag();
   if (surface_ && listening_) {
     surface_->RemoveEventListener(ui::EventId::Mousedown, this);
@@ -380,8 +393,14 @@ void AvatarCropController::ResetState() {
   view_dirty_ = false;
   ++generation_; // a decode still running, or a "Done" still answering, is ignored from here on
   layer_id_ = -1;
+  pending_preview_.reset();
   if (file_) {
-    file_->Release(); // the page was the file's holder: it goes now, whichever way the page ended
+    // Done in flight: the PIN step or the upload worker may be reading the file, and they hold their own references:
+    // the page only lets go of its own and the lease releases the file when the last holder is gone. Otherwise the
+    // page was the file's holder and it goes now, whichever way the page ended.
+    if (AvatarCropButtons::PageMayReleaseFile(done_in_flight)) {
+      file_->Release();
+    }
     file_.reset();
   }
   Dirty();

@@ -35,6 +35,9 @@ struct AvatarCropButtons {
   static bool CanDone(bool loading, bool locked, bool has_frame) { return !loading && !locked && has_frame; }
   static bool CanRotate(bool loading, bool locked, bool has_frame) { return CanDone(loading, locked, has_frame); }
   static bool CanCancel(bool locked) { return !locked; }
+  /** The page may release the picked file itself only while no "Done" is in flight; after that the PIN step and the
+   *  upload hold the file, and the lease releases it when the last of them lets go. */
+  static bool PageMayReleaseFile(bool locked) { return !locked; }
 };
 
 /** "Done" hands this to the caller; the caller answers `reply.finished(ok)` (true closes the page, false unlocks it)
@@ -77,6 +80,7 @@ private:
   void Dirty();
   void SyncPaused();
   void OnDecoded(unsigned generation, Roe<ProfilePhotoPreview> preview);
+  void DeliverPreview();
   ui::Element* FindSurface();
   void PushView();
   void Done();
@@ -94,6 +98,8 @@ private:
   std::shared_ptr<PickedFileLease> file_;
   AvatarCropCommit commit_;
   std::optional<AvatarCropFrame> frame_;
+  /** The decoded picture, until the crop element exists and takes it. */
+  std::optional<ProfilePhotoPreview> pending_preview_;
   AvatarCropTouch touch_;
   ui::ObserverPtr<ui::Element> surface_;
   ui::ObserverPtr<ui::Element> drag_doc_;
