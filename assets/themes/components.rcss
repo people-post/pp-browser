@@ -12077,7 +12077,7 @@ input.checkbox {
 }
 
 /* Phone composer (TODO #202, Kenneth 2026-11-09; chat, AI thread and the ask-AI panel, one component): a floating pill for
-   the text (46dp high, the accent emoji circle at its left end, no camera: the plus card has it), a round 44dp plus outside it on
+   the text (46dp high, the accent emoji circle at its right end, no camera: the plus card has it), a round 44dp plus outside it on
    the left and a round 44dp accent button outside it on the right (the microphone, Send once there is text). 14dp
    from the screen edge to each button, 10dp between a button and the pill; the bar behind is clear, so the transcript scrolls under the floating parts. The
    row is the positioning box and is exactly the pill (which grows upward, up to five lines): the keys sit on its
@@ -12091,7 +12091,7 @@ input.checkbox {
 .ask-ai .prompt-composer-pill {
   min-height: 46dp;
   margin: 0 54dp;
-  padding: 0 16dp 0 46dp;
+  padding: 0 46dp 0 16dp;
   border-radius: 23dp;
 }
 
@@ -12114,7 +12114,7 @@ input.checkbox {
   display: block;
   position: absolute;
   top: 0;
-  left: 47dp;
+  left: 17dp;
   height: 44dp;
   margin: 0;
   font-size: 17dp;
@@ -12167,11 +12167,12 @@ input.checkbox {
   border-radius: 22dp;
 }
 
-/* The emoji key: the home card's accent-tinted 32dp circle, 7dp inside the pill's left end, centred on the one-line pill. */
+/* The emoji key: the home card's accent-tinted 32dp circle, 7dp inside the pill's right end (Kenneth 2026-11-10; the pill's
+   right padding keeps the text clear of it), centred on the one-line pill and on its last line when the text grows. */
 .shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
 .ask-ai .prompt-composer-row .prompt-emoji-btn {
   position: absolute;
-  left: 61dp;
+  right: 61dp;
   bottom: 7dp;
   z-index: 1;
   width: 32dp;
@@ -12255,10 +12256,6 @@ input.checkbox {
 /* The ask-AI panel's settings "?" (text only): no plus, so the pill starts at the left margin. */
 .ask-ai .ask-ai-input-row--text-only .prompt-composer-pill {
   margin-left: 0;
-}
-
-.ask-ai .ask-ai-input-row--text-only .prompt-emoji-btn {
-  left: 7dp;
 }
 
 /* Grouped lists on phones: the Me tab and the settings pages (DESIGN-pp-ui 8.7, 8.10). Same geometry as the .cd-*
@@ -13787,8 +13784,8 @@ textarea:composing ~ .prompt-composer-label,
   display: none;
 }
 
-/* Home card B3 (Kenneth 2026-11-09): the plus (a 44dp target) at the bottom left, the emoji key (a 32dp tinted circle
-   in a 44dp target) right next to it (8dp gap), and Send (a 36dp disc) always at the right end: grey and not tappable
+/* Home card B3 (Kenneth 2026-11-09; emoji moved 2026-11-10): the plus (a 44dp target) at the bottom left, the emoji key (a 32dp
+   tinted circle in a 44dp target) right before Send (10dp gap), and Send (a 36dp disc) always at the right end: grey and not tappable
    while the field is empty (.prompt-send-btn--idle), accent with text. Nothing swaps places. */
 .shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-home-plus {
   display: flex;
@@ -13811,7 +13808,7 @@ textarea:composing ~ .prompt-composer-label,
    target (the circle's centre stays 32dp from the right edge and 28dp from the bottom). */
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {
   position: absolute;
-  left: 42dp; /* the tinted circle 12dp after the plus glyph (Kenneth 2026-11-09: closer) */
+  right: 50dp; /* the tinted circle 10dp before the Send disc (Kenneth 2026-11-10: emoji moved right, next to Send) */
   bottom: 6dp;
   z-index: 1;
   width: 44dp;

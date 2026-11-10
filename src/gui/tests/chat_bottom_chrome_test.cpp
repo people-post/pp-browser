@@ -196,7 +196,7 @@ TEST_F(ChatBottomChromeTest, OnlyTheHeaderIsFrostedAndTheComposerBarIsClear) {
   EXPECT_NEAR(b.bottom, m.bottom, 0.5f);
 }
 
-// #202 (Kenneth 2026-11-09): the phone composer is a floating 46dp pill with the accent emoji circle (32dp, 7dp inside,
+// #202 (Kenneth 2026-11-09): the phone composer is a floating 46dp pill with the accent emoji circle (32dp, 7dp inside its right end,
 // no camera), a round 44dp plus 10dp left of it and a round 44dp microphone 10dp right of it (14dp from the screen
 // edges), which becomes Send with text.
 TEST_F(ChatBottomChromeTest, TheComposerIsAFloatingPillBetweenTwoRoundButtons) {
@@ -232,7 +232,11 @@ TEST_F(ChatBottomChromeTest, TheComposerIsAFloatingPillBetweenTwoRoundButtons) {
   EXPECT_NEAR(overlay.right - mi.right, 14.f, 0.5f);
   EXPECT_NEAR(e.right - e.left, 32.f, 0.5f);
   EXPECT_NEAR(e.bottom - e.top, 32.f, 0.5f);
-  EXPECT_NEAR(e.left - p.left, 7.f, 0.5f) << "the emoji circle is 7dp inside the pill's left end";
+  EXPECT_NEAR(p.right - e.right, 7.f, 0.5f) << "the emoji circle is 7dp inside the pill's right end";
+  EXPECT_GT(e.left, BorderEdges(ByClass("prompt-composer-input")).left) << "the emoji is right of the text field";
+  EXPECT_LE(BorderEdges(ByClass("prompt-composer-input")).right, e.left) << "the text does not run under the emoji";
+  EXPECT_LT(e.right, mi.left) << "the microphone stays outside, right of the emoji";
+  EXPECT_GT(e.left, pl.right) << "the plus stays at the far left";
   EXPECT_NEAR((e.top + e.bottom) / 2, (p.top + p.bottom) / 2, 0.5f);
   EXPECT_EQ(ByClass("prompt-capture-btn"), nullptr) << "no camera in the pill";
   EXPECT_NEAR((pl.top + pl.bottom) / 2, (p.top + p.bottom) / 2, 0.5f) << "round buttons centre on a one-line pill";

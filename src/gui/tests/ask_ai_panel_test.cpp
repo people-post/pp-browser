@@ -866,7 +866,7 @@ TEST_F(AskAiInputRowTest, ThePanelPreparesThroughTheChatsOneAndAHalfMegabytePath
 }
 
 // Kenneth 2026-11-04 ("风格不统一…一会儿在左边，一会儿在右边"), 2026-11-07 (one composer everywhere): the chat
-// composer's row, its classes and icons: the emoji key, the pill [input … bold plus], then Send; no paperclip, no
+// composer's row, its classes and icons: the pill [input … bold plus], the emoji key at its right end, then Send; no paperclip, no
 // camera of its own (the plus card has it).
 TEST(AskAiInputRowSourceTest, TheRowIsTheChatComposersPillThenSend) {
   const std::string rml = ReadSource("assets/views/ask_ai.rml");
@@ -880,10 +880,10 @@ TEST(AskAiInputRowSourceTest, TheRowIsTheChatComposersPillThenSend) {
   ASSERT_NE(input, std::string::npos);
   ASSERT_NE(attach, std::string::npos);
   ASSERT_NE(send, std::string::npos);
-  EXPECT_LT(emoji, pill);
   EXPECT_LT(pill, input);
   EXPECT_LT(input, attach);
-  EXPECT_LT(attach, send);
+  EXPECT_LT(attach, emoji);
+  EXPECT_LT(emoji, send);
   EXPECT_EQ(rml.find("ask_ai_camera()"), std::string::npos);
   EXPECT_EQ(rml.find("paperclip.svg"), std::string::npos);
   const auto tag_of = [&rml](const size_t at) {
