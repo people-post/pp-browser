@@ -61,14 +61,43 @@ TEST(CallChromeSyncTest, AwaitingRingBecomesTheRealRingByDirtyOnly) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, paid), pbr::CallChromeUpdate::Remount) << "pricing is structure";
 }
 
-// The answering page writes its lead rows, the spark's side and the clip into its markup: a change remounts it (the
-// controller puts them in the steps key).
-TEST(CallChromeSyncTest, AnsweringPageStoryKeyChangeRemounts) {
+// The story page: a stage advance (the reached row, the step words, the scroll) is bound, so it only dirties and keeps
+// the pair's spark and the spinner running; a change of the list's shape (rows, lead rows, spark side) remounts.
+TEST(CallChromeSyncTest, AStoryStageAdvanceWithTheSameShapeIsDirtyOnlyAndAShapeChangeRemounts) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
-  synced.in_call_story_steps = "a|b|c||d|4|in|x|y|z|0|0";
+  synced.in_call_story_active = true;
+  synced.in_call_story_shape = "4in|Call received|On the encrypted network|Wang";
+  synced.in_call_story_stage = 0;
+  synced.in_call_story_steps = "Answered|Finding the fastest line…|Opening your line to them…|Connected";
+  synced.in_call_story_scroll = "0dp|auto";
   pbr::CallChromeLayer next = synced;
-  next.in_call_story_steps = "a|b|c||d|4|in|x|y|z|2|170";
+  next.in_call_story_stage = 1;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly) << "the reached row";
+  next.in_call_story_steps = "Answered|Found: direct line|Opening your line to them…|Connected";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly) << "the words swap";
+  next.in_call_story_scroll = "-34dp|170dp";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly) << "the scroll";
+  pbr::CallChromeLayer shape = synced;
+  shape.in_call_story_shape = "5out";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, shape), pbr::CallChromeUpdate::Remount) << "another list";
+  pbr::CallChromeLayer ended = synced;
+  ended.in_call_story_active = false;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, ended), pbr::CallChromeUpdate::Remount) << "the hero page takes over";
+}
+
+// The 1:1 story page shows no status line: the status word changing mid-story does not remount it (that restarted the
+// spark); the group card shows it and still does.
+TEST(CallChromeSyncTest, AStatusWordChangeDoesNotRemountTheOneToOneStoryPage) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_story_active = true;
+  synced.in_call_subtitle = "Calling…";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_subtitle = "Connecting…";
+  EXPECT_NE(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  synced.in_call_show_roster = true;
+  next.in_call_show_roster = true;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
@@ -378,7 +407,7 @@ TEST(CallChromeSyncTest, PhoneStoryPartsArePartsOnly) {
 }
 
 // What the phone page writes into its markup remounts it: the story's steps going, the failure page, the sheet.
-TEST(CallChromeSyncTest, PhoneMarkupChangesRemount) {
+TEST(CallChromeSyncTest, PhoneMarkupChangesRemountAndAStageAdvanceDirties) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
   synced.in_call_id = "c1";
@@ -388,7 +417,10 @@ TEST(CallChromeSyncTest, PhoneMarkupChangesRemount) {
   next.in_call_story_active = false;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
   next = synced;
-  next.in_call_story_stage = 1;
+  next.in_call_story_stage = 1; // bound: a stage advance only dirties
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+  next = synced;
+  next.in_call_story_shape = "5out";
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
   next = synced;
   next.in_call_phone_failed = true;

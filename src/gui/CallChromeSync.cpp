@@ -78,7 +78,8 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
     return CallChromeUpdate::Remount;
   }
 
-  // The phone page writes these into its markup (ShellCallChromeRml): the story's steps, the failure page, names and
+  // The phone page writes these into its markup (ShellCallChromeRml): the story's shape (not the stage, words or scroll:
+  // those are bound, so a step advance keeps the pair's spark and the spinner running), the failure page, names and
   // avatars, and the sheet's lines while it is open.
   // (The ring page's title, subtitle, avatars, three lines and awaiting flag are all bound: they only dirty, below.)
   if (synced.phone != next.phone || synced.in_call_phone_title != next.in_call_phone_title ||
@@ -86,8 +87,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
       synced.in_call_phone_failed != next.in_call_phone_failed ||
       synced.in_call_failed_text != next.in_call_failed_text ||
       synced.in_call_story_active != next.in_call_story_active ||
-      synced.in_call_story_stage != next.in_call_story_stage ||
-      synced.in_call_story_steps != next.in_call_story_steps ||
+      synced.in_call_story_shape != next.in_call_story_shape ||
       synced.in_call_story_sheet_open != next.in_call_story_sheet_open ||
       (next.in_call_story_sheet_open && (synced.in_call_story_lines != next.in_call_story_lines ||
                                          synced.in_call_story_how != next.in_call_story_how))) {
@@ -96,7 +96,9 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
 
   // Status subtitle must remount: deferred RemountCallChrome + DirtyOnly can leave data-rml on a
   // pre-bind element while synced_chrome_ already advanced (dogfood: stuck Connecting…).
-  if (CallChromeStatusLabelChanged(synced.in_call_subtitle, next.in_call_subtitle)) {
+  // (The 1:1 story page shows no status line, so its changes do not remount that page mid-story.)
+  const bool story_page = synced.in_call_story_active && next.in_call_story_active && !next.in_call_show_roster;
+  if (!story_page && CallChromeStatusLabelChanged(synced.in_call_subtitle, next.in_call_subtitle)) {
     return CallChromeUpdate::Remount;
   }
 
@@ -105,9 +107,12 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
       synced.ring_phone_title != next.ring_phone_title || synced.ring_phone_subtitle != next.ring_phone_subtitle ||
       synced.ring_avatar != next.ring_avatar || synced.ring_awaiting_invite != next.ring_awaiting_invite ||
       synced.ring_caller_unknown != next.ring_caller_unknown || synced.ring_steps != next.ring_steps ||
-      synced.ring_caller_label != next.ring_caller_label || synced.ring_media_label != next.ring_media_label ||
-      synced.in_call_title != next.in_call_title || synced.in_call_muted != next.in_call_muted ||
-      synced.in_call_camera_on != next.in_call_camera_on || synced.in_call_camera_front != next.in_call_camera_front ||
+      synced.in_call_story_stage != next.in_call_story_stage ||
+      synced.in_call_story_steps != next.in_call_story_steps ||
+      synced.in_call_story_scroll != next.in_call_story_scroll || synced.ring_caller_label != next.ring_caller_label ||
+      synced.ring_media_label != next.ring_media_label || synced.in_call_title != next.in_call_title ||
+      synced.in_call_muted != next.in_call_muted || synced.in_call_camera_on != next.in_call_camera_on ||
+      synced.in_call_camera_front != next.in_call_camera_front ||
       synced.in_call_speaker_on != next.in_call_speaker_on ||
       synced.in_call_remote_video != next.in_call_remote_video ||
       synced.in_call_local_preview != next.in_call_local_preview ||

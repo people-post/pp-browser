@@ -102,8 +102,12 @@ struct CallChromeLayer {
   bool in_call_phone_failed = false;
   std::string in_call_failed_text;
   bool in_call_story_active = false;
+  /** Bound (a stage advance, the step words and the list's scroll only dirty): the stage, the step words, the offset. */
   int in_call_story_stage = 0;
   std::string in_call_story_steps;
+  std::string in_call_story_scroll;
+  /** Written into the markup (a change remounts): the list's shape, i.e. row count, lead rows, spark side. */
+  std::string in_call_story_shape;
   bool in_call_story_sheet_open = false;
   std::vector<CallStoryLine> in_call_story_lines;
   std::string in_call_story_how;

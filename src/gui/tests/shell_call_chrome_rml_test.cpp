@@ -142,37 +142,6 @@ TEST(ShellCallChromeRmlTest, TheRingPairHasUsFirstThemSecondAndTheSparkComesTowa
   EXPECT_EQ(Count(row, "call-phone-pair-name--peer"), 1u) << "only the other party's name is the big one";
 }
 
-// A running animation makes the app redraw at the display rate: the ring page's spark is endless only while awaiting
-// (a bound class), otherwise it plays three cycles and rests invisible; the answering page's spark stays endless.
-TEST(ShellCallChromeRmlTest, TheRingSparkIsEndlessOnlyWhileAwaitingTheInvite) {
-  ShellState state;
-  state.layout_mode = LayoutMode::Compact;
-  state.call_ring.active = true;
-  const std::string rml = CallRingRml(state);
-  EXPECT_TRUE(Has(rml,
-                  "call-phone-pair-path call-phone-pair-path--inbound call-phone-pair-path--ring\" "
-                  "data-class-call-phone-pair-path--awaiting=\"call_ring_awaiting_invite\""));
-  const std::string rcss = ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss");
-  const auto rule = [&](const std::string& selector) {
-    const size_t at = rcss.find("\n" + selector + " {");
-    return at == std::string::npos ? std::string() : rcss.substr(at, rcss.find('}', at) - at);
-  };
-  const std::string resting = rule(".call-phone-pair-path--ring .call-phone-pair-spark");
-  EXPECT_TRUE(Has(resting, "linear-in-out 3 call-phone-spark-in"));
-  EXPECT_TRUE(Has(resting, "opacity: 0;")) << "a finished animation leaves the spark invisible";
-  EXPECT_FALSE(Has(resting, "infinite"));
-  const std::string awaiting =
-      rule(".call-phone-pair-path--ring.call-phone-pair-path--awaiting .call-phone-pair-spark");
-  EXPECT_TRUE(Has(awaiting, "infinite call-phone-spark-in"));
-  EXPECT_TRUE(Has(rule(".call-phone-pair-path--inbound .call-phone-pair-spark"), "infinite call-phone-spark-in"))
-      << "the answering page keeps its endless spark while connecting";
-  // The answering page's own path has no ring or awaiting class.
-  ShellState answer = PhoneGroupCall();
-  answer.call_in_progress.show_roster = false;
-  answer.call_in_progress.story_active = true;
-  EXPECT_FALSE(Has(CallInProgressRml(answer), "pair-path--ring"));
-}
-
 // Three fixed rows, every difference bound: the first is always done; the second turns from current to done; the
 // third from plain to done (check by data-if, text by value).
 TEST(ShellCallChromeRmlTest, TheRingPageHasThreeBoundStepRowsUnderThePair) {
@@ -510,66 +479,57 @@ TEST(ShellCallChromeRmlTest, PhoneGroupBeforeConnectKeepsTheDimmedGrid) {
   EXPECT_FALSE(Has(rml, "p.speaking"));
 }
 
-// #165: the connection story always shows all three steps; the reached ones are highlighted (done = ✓, current =
-// moving dot), the ones not reached yet are plain dots. Same for the 1:1 page and the group card.
-std::string StepMarkup(const char* modifier, const bool check, const int n) {
-  return std::string("<div class=\"call-phone-step") + modifier + "\"><div class=\"call-phone-step-dot\">" +
-         (check ? "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg>" : "") +
-         "</div><p class=\"call-phone-step-text\">{{call_in_progress_story_step" + std::to_string(n) + "}}</p></div>";
+// #165: the connection story always shows all its steps; which are done (✓), which is current (moving dot) and which are
+// plain dots is bound to the story's stage, not written into the markup, so a stage advance dirties and never remounts
+// (a remount restarted the pair's spark and the spinner). Same for the 1:1 page and the group card.
+std::string StepMarkup(const int i) {
+  const std::string stage = "call_in_progress_story_stage";
+  return "<div class=\"call-phone-step\" data-class-call-phone-step--done=\"" + stage + " > " + std::to_string(i) +
+         "\" data-class-call-phone-step--current=\"" + stage + " == " + std::to_string(i) +
+         "\"><div class=\"call-phone-step-dot\"><svg data-if=\"" + stage + " > " + std::to_string(i) +
+         "\" src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg></div><p "
+         "class=\"call-phone-step-text\">{{call_in_progress_story_step" +
+         std::to_string(i + 1) + "}}</p></div>";
 }
 
-TEST(ShellCallChromeRmlTest, PhoneStoryShowsAllStepsAndHighlightsTheReachedOnes) {
-  const std::string done = " call-phone-step--done";
-  const std::string current = " call-phone-step--current";
-  // expected[stage][step]: 'd' done, 'c' current, 'p' plain.
-  const char* expected[] = {"cpp", "dcp", "ddc", "ddd"};
+TEST(ShellCallChromeRmlTest, PhoneStoryShowsAllStepsAndTheReachedOnesAreBoundToTheStage) {
   for (const bool roster : {false, true}) { // false = 1:1 page, true = group card
+    std::string first;
     for (int stage = 0; stage < 4; ++stage) {
       ShellState state = PhoneGroupCall();
       state.call_in_progress.show_roster = roster;
       state.call_in_progress.story_active = true;
       state.call_in_progress.story_stage = stage;
       const std::string rml = CallInProgressRml(state);
-      EXPECT_EQ(Count(rml, "<div class=\"call-phone-step-dot\">"), 3u) << "roster=" << roster << " stage=" << stage;
+      if (stage == 0) {
+        first = rml;
+      }
+      EXPECT_EQ(rml, first) << "a stage advance does not change the markup: roster=" << roster << " stage=" << stage;
+      EXPECT_EQ(Count(rml, "<div class=\"call-phone-step-dot\">"), 3u);
       size_t last = 0;
       for (int i = 0; i < 3; ++i) {
-        const char kind = expected[stage][i];
-        const std::string want = StepMarkup(kind == 'd'   ? done.c_str()
-                                            : kind == 'c' ? current.c_str()
-                                                          : "",
-                                            kind == 'd', i + 1);
-        const size_t at = rml.find(want);
-        EXPECT_NE(at, std::string::npos) << "roster=" << roster << " stage=" << stage << " step=" << i + 1;
+        const size_t at = rml.find(StepMarkup(i));
+        EXPECT_NE(at, std::string::npos) << "roster=" << roster << " step=" << i + 1;
         EXPECT_GE(at, last); // in order
         last = at;
       }
-      EXPECT_EQ(Count(rml, "call-phone-step--current"), stage < 3 ? 1u : 0u);
+      EXPECT_EQ(Count(rml, "call-phone-step--current"), 3u) << "only as bound classes";
     }
   }
 
-  // #172: a 1:1 call's five steps: calling, answered, matching, encrypted channel, connected (5 = all done).
-  const char* five[] = {"cpppp", "dcppp", "ddcpp", "dddcp", "ddddd"};
-  const int stages[] = {0, 1, 2, 3, 5};
-  for (int k = 0; k < 5; ++k) {
-    ShellState state = PhoneGroupCall();
-    state.call_in_progress.show_roster = false;
-    state.call_in_progress.story_active = true;
-    state.call_in_progress.story_step_count = 5;
-    state.call_in_progress.story_stage = stages[k];
-    const std::string rml = CallInProgressRml(state);
-    EXPECT_EQ(Count(rml, "<div class=\"call-phone-step-dot\">"), 5u) << "stage=" << stages[k];
-    size_t last = 0;
-    for (int i = 0; i < 5; ++i) {
-      const char kind = five[k][i];
-      const std::string want = StepMarkup(kind == 'd'   ? done.c_str()
-                                          : kind == 'c' ? current.c_str()
-                                                        : "",
-                                          kind == 'd', i + 1);
-      const size_t at = rml.find(want);
-      EXPECT_NE(at, std::string::npos) << "five steps stage=" << stages[k] << " step=" << i + 1;
-      EXPECT_GE(at, last);
-      last = at;
-    }
+  // #172: a 1:1 call's five steps: calling, answered, matching, encrypted channel, connected.
+  ShellState five = PhoneGroupCall();
+  five.call_in_progress.show_roster = false;
+  five.call_in_progress.story_active = true;
+  five.call_in_progress.story_step_count = 5;
+  const std::string rml = CallInProgressRml(five);
+  EXPECT_EQ(Count(rml, "<div class=\"call-phone-step-dot\">"), 5u);
+  size_t last = 0;
+  for (int i = 0; i < 5; ++i) {
+    const size_t at = rml.find(StepMarkup(i));
+    EXPECT_NE(at, std::string::npos) << "five steps step=" << i + 1;
+    EXPECT_GE(at, last);
+    last = at;
   }
 
   // "How this call got through" still lists every line so far.
@@ -653,23 +613,23 @@ TEST(ShellCallChromeRmlTest, ThePairKeepsUsFirstAndOnlyTheCalleesSparkRunsToward
 
 // A list that does not fit moves up inside a clip of fixed height: the clip's height and the list's negative margin
 // are written in; with the height unknown nothing is clipped or moved.
-TEST(ShellCallChromeRmlTest, ALongListIsClippedAndMovedUpByTheGivenRows) {
+TEST(ShellCallChromeRmlTest, ALongListIsClippedAndMovedUpByBoundStyles) {
   ShellState state = PhoneGroupCall();
   state.call_in_progress.show_roster = false;
   state.call_in_progress.story_active = true;
   state.call_in_progress.story_step_count = 4;
   state.call_in_progress.story_lead = {"a", "b", "c"};
-  state.call_in_progress.story_clip_dp = 158; // five rows: 5 * 34 - 12
-  state.call_in_progress.story_scroll_rows = 2;
   const std::string rml = CallInProgressRml(state);
-  EXPECT_TRUE(Has(rml, "<div class=\"call-phone-steps-clip\" style=\"height: 158dp\">"));
-  EXPECT_TRUE(Has(rml, "<div class=\"call-phone-steps\" style=\"margin-top: -68dp\">"));
-  state.call_in_progress.story_clip_dp = 0;
-  state.call_in_progress.story_scroll_rows = 0;
-  const std::string free = CallInProgressRml(state);
-  EXPECT_TRUE(Has(free, "<div class=\"call-phone-steps-clip\">")) << "no fixed clip height while nothing moves";
-  EXPECT_FALSE(Has(free, "height:"));
-  EXPECT_FALSE(Has(free, "margin-top: -"));
+  EXPECT_TRUE(Has(rml, "<div class=\"call-phone-steps-clip\" data-style-height=\"call_in_progress_story_clip\">"));
+  EXPECT_TRUE(Has(rml, "<div class=\"call-phone-steps\" data-style-margin-top=\"call_in_progress_story_offset\">"));
+  // The scroll is bound (a stage advance moves the list without a remount): its values are not in the markup.
+  state.call_in_progress.story_clip = "158dp"; // five rows: 5 * 34 - 12
+  state.call_in_progress.story_offset = "-68dp";
+  EXPECT_EQ(CallInProgressRml(state), rml);
+  // Without lead rows (a caller's, a group's list) there is no clip and no bound offset at all.
+  state.call_in_progress.story_lead.clear();
+  EXPECT_FALSE(Has(CallInProgressRml(state), "call-phone-steps-clip"));
+  EXPECT_FALSE(Has(CallInProgressRml(state), "data-style-margin-top"));
 }
 
 // V060: a person on hold has "On hold" on their tile (dimmed), and a paused camera says so — per row, bound.

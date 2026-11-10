@@ -217,13 +217,14 @@ std::string RingStepsKey(const CallRingState& ring) {
          AvatarKey(false, ring.self_has_avatar, ring.self_avatar_src, ring.self_avatar_letter, ring.self_avatar_tone);
 }
 
-/** What the answering page's list writes into its markup besides the four steps: lead rows, spark side, clip. */
-std::string StoryLeadKey(const CallInProgressState& in_call) {
-  std::string key = in_call.story_inbound ? "in" : "out";
+/** What the story page writes into its markup: the row count, the lead rows and the spark's side (the list's shape).
+ *  Which row is reached, the words and the scroll are bound and not part of it. */
+std::string StoryShapeKey(const CallInProgressState& in_call) {
+  std::string key = std::to_string(in_call.story_step_count) + (in_call.story_inbound ? "in" : "out");
   for (const std::string& line : in_call.story_lead) {
     key += "|" + line;
   }
-  return key + "|" + std::to_string(in_call.story_scroll_rows) + "|" + std::to_string(in_call.story_clip_dp);
+  return key;
 }
 
 std::string RosterKey(const std::vector<CallRosterParticipantState>& roster) {
@@ -345,8 +346,9 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_story_stage = in_call.story_stage,
       .in_call_story_steps = std::string(in_call.story_step1.c_str()) + "|" + in_call.story_step2.c_str() + "|" +
                              in_call.story_step3.c_str() + std::string("|") + in_call.story_step4.c_str() + "|" +
-                             in_call.story_step5.c_str() + "|" + std::to_string(in_call.story_step_count) + "|" +
-                             StoryLeadKey(in_call),
+                             in_call.story_step5.c_str(),
+      .in_call_story_scroll = std::string(in_call.story_offset.c_str()) + "|" + in_call.story_clip.c_str(),
+      .in_call_story_shape = StoryShapeKey(in_call),
       .in_call_story_sheet_open = in_call.story_sheet_open,
       .in_call_story_lines = in_call.story_lines,
       .in_call_story_how = in_call.story_how.c_str(),
@@ -510,8 +512,9 @@ void CallController::Tick() {
   presenter_.Tick();     // expired rings; the in-call screen (Calling… / timer / levels) every frame
   StepWakePlaceholder(); // before the ring's pulse / ringtone below: it may start or end the ring page
   const int64_t now = util::NowUnixMs();
-  // The phone ring page has no pulse: no dirty, no forced frame. (Its spark is an RCSS animation that runs endlessly
-  // only while awaiting the invite and then settles, so a long ring idles.)
+  // The phone ring page has no pulse of its own (no dirty, no forced frame), but its pair's spark is an RCSS animation
+  // that runs continuously while the page is up, so the 1:1 phone ring page redraws at the display rate (at most the
+  // ring's 60 s; the owner accepted that cost).
   if (ring_.active && !phone_layout_) {
     if (now - last_pulse_toggle_ms_ >= 600) {
       ring_.pulse = !ring_.pulse;
@@ -2166,8 +2169,9 @@ void CallController::RenderStorySteps(const CallStoryView& v) {
   for (const CallRingStep& lead : plan.lead) {
     in_call.story_lead.push_back(RingStepText(lead));
   }
-  in_call.story_scroll_rows = plan.scroll_rows;
-  in_call.story_clip_dp = plan.clip_dp;
+  in_call.story_offset =
+      (plan.scroll_rows > 0 ? "-" + std::to_string(plan.scroll_rows * call_page_dp::kStepRow) + "dp" : "0dp").c_str();
+  in_call.story_clip = (plan.clip_dp > 0 ? std::to_string(plan.clip_dp) + "dp" : "auto").c_str();
   ui::String* const shown[] = {&in_call.story_step1, &in_call.story_step2, &in_call.story_step3, &in_call.story_step4,
                                &in_call.story_step5};
   for (size_t i = 0; i < std::size(shown); ++i) {

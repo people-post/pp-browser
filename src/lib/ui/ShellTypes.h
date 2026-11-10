@@ -532,10 +532,10 @@ struct CallInProgressState {
   bool story_inbound = false;
   /** 1:1 answerer: the done lines the ring page showed (received, on the network, who), above the steps. Empty: none. */
   std::vector<std::string> story_lead;
-  /** Rows the whole list is moved up so the current one stays in its clip (CallStepScrollRows); 0: not clipped. */
-  int story_scroll_rows = 0;
-  /** Height of the clip in dp: exactly the rows that fit, set only when the list is moved up; 0: not clipped. */
-  int story_clip_dp = 0;
+  /** The answering list's scroll, bound as styles (a stage advance is a dirty, not a remount): the list's margin-top
+   *  ("-68dp" when moved up, else "0dp") and the clip's height (exactly the rows that fit when moved up, else "auto"). */
+  ui::String story_offset = "0dp";
+  ui::String story_clip = "auto";
   /** Just connected (1:1): "Connected directly, 0.9 s" for 4 s, then it fades (bound). */
   ui::String result_text;
   bool result_fading = false;

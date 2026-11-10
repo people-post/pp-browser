@@ -259,6 +259,9 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_ring_self_avatar_tone", &host.state_.call_ring.self_avatar_tone);
     ctor.Bind("call_in_progress_phone_title", &host.state_.call_in_progress.phone_title);
     ctor.Bind("call_in_progress_failed_text", &host.state_.call_in_progress.failed_text);
+    ctor.Bind("call_in_progress_story_stage", &host.state_.call_in_progress.story_stage);
+    ctor.Bind("call_in_progress_story_offset", &host.state_.call_in_progress.story_offset);
+    ctor.Bind("call_in_progress_story_clip", &host.state_.call_in_progress.story_clip);
     ctor.Bind("call_in_progress_story_step1", &host.state_.call_in_progress.story_step1);
     ctor.Bind("call_in_progress_story_step2", &host.state_.call_in_progress.story_step2);
     ctor.Bind("call_in_progress_story_step3", &host.state_.call_in_progress.story_step3);
@@ -1524,6 +1527,9 @@ void ShellHost::DirtyCallChrome() {
                            "call_ring_self_avatar_tone",
                            "call_in_progress_phone_title",
                            "call_in_progress_failed_text",
+                           "call_in_progress_story_stage",
+                           "call_in_progress_story_offset",
+                           "call_in_progress_story_clip",
                            "call_in_progress_story_step1",
                            "call_in_progress_story_step2",
                            "call_in_progress_story_step3",

@@ -203,14 +203,10 @@ void AppendResult(std::ostringstream& out) {
   out << "<span class=\"call-phone-result-text\">{{call_in_progress_result_text}}</span></div>";
 }
 
-/**
- * The line between the pair's avatars with the spark on it (RCSS keyframes; only while connecting). `extra_class` and
- * `extra_attrs` (attributes, with a leading space) are the ring page's: its spark settles once the caller is known.
- */
-void AppendPairPath(std::ostringstream& out, const bool inbound, const char* extra_class = "",
-                    const char* extra_attrs = "") {
-  out << "<div class=\"call-phone-pair-path" << (inbound ? " call-phone-pair-path--inbound" : "") << extra_class << "\""
-      << extra_attrs << "><div class=\"call-phone-pair-dots\">";
+/** The line between the pair's avatars with the spark on it (RCSS keyframes; only while connecting or ringing). */
+void AppendPairPath(std::ostringstream& out, const bool inbound) {
+  out << "<div class=\"call-phone-pair-path" << (inbound ? " call-phone-pair-path--inbound" : "")
+      << "\"><div class=\"call-phone-pair-dots\">";
   for (int i = 0; i < 9; ++i) {
     out << "<div class=\"call-phone-pair-dot\"></div>";
   }
@@ -232,24 +228,21 @@ void AppendDoneStep(std::ostringstream& out, const std::string& text) {
 }
 
 /**
- * The connection steps before connect (3 for a group, up to 5 for a 1:1 call), all always shown: the ones passed as ✓ (done), the one in progress with
- * its moving dot (current), and the ones not reached yet as plain dots. A 1:1 answerer's list opens with the `lead`
- * rows the ring page showed (done), inside a clip of `clip_dp` (0: free) with the list moved up `scroll_rows` rows so
- * the current one stays in sight.
+ * The connection steps before connect (3 for a group, up to 5 for a 1:1 call), all always shown: the ones passed as ✓
+ * (done), the one in progress with its moving dot (current), and the ones not reached yet as plain dots. The rows are a
+ * fixed set for the list's shape; which is done / current, its check and its words are bound to the story's stage, so a
+ * stage advance is a dirty (the pair's spark and the spinner are not restarted by a remount). A 1:1 answerer's list opens
+ * with the `lead` rows the ring page showed (done), inside a clip whose height and list offset are bound too, so the list
+ * moves up as the current row reaches the clip's end.
  */
-void AppendSteps(std::ostringstream& out, const int stage, const int count, const std::vector<std::string>& lead = {},
-                 const int clip_dp = 0, const int scroll_rows = 0) {
+void AppendSteps(std::ostringstream& out, const int count, const std::vector<std::string>& lead = {}) {
   const bool clipped = !lead.empty();
   if (clipped) {
-    out << "<div class=\"call-phone-steps-clip\"";
-    if (clip_dp > 0) {
-      out << " style=\"height: " << clip_dp << "dp\"";
-    }
-    out << ">";
+    out << "<div class=\"call-phone-steps-clip\" data-style-height=\"call_in_progress_story_clip\">";
   }
   out << "<div class=\"call-phone-steps\"";
-  if (scroll_rows > 0) {
-    out << " style=\"margin-top: -" << scroll_rows * call_page_dp::kStepRow << "dp\"";
+  if (clipped) {
+    out << " data-style-margin-top=\"call_in_progress_story_offset\"";
   }
   out << ">";
   for (const std::string& text : lead) {
@@ -258,15 +251,13 @@ void AppendSteps(std::ostringstream& out, const int stage, const int count, cons
   const char* vars[] = {"call_in_progress_story_step1", "call_in_progress_story_step2", "call_in_progress_story_step3",
                         "call_in_progress_story_step4", "call_in_progress_story_step5"};
   for (int i = 0; i < count && i < 5; ++i) {
-    const bool done = i < stage;
-    const bool current = i == stage;
-    out << "<div class=\"call-phone-step"
-        << (done ? " call-phone-step--done" : (current ? " call-phone-step--current" : ""))
-        << "\"><div class=\"call-phone-step-dot\">";
-    if (done) {
-      out << "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg>";
-    }
-    out << "</div><p class=\"call-phone-step-text\">{{" << vars[i] << "}}</p></div>";
+    const std::string stage = "call_in_progress_story_stage";
+    out << "<div class=\"call-phone-step\" data-class-call-phone-step--done=\"" << stage << " > " << i
+        << "\" data-class-call-phone-step--current=\"" << stage << " == " << i
+        << "\"><div class=\"call-phone-step-dot\"><svg data-if=\"" << stage << " > " << i
+        << "\" src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg></div><p "
+           "class=\"call-phone-step-text\">{{"
+        << vars[i] << "}}</p></div>";
   }
   out << "</div>";
   out << (clipped ? "</div>" : "");
@@ -482,10 +473,8 @@ std::string CallRingPhoneRml(const ShellState& state) {
     out << " data-class-avatar-tone-" << tone << "=\"call_ring_self_avatar_tone == " << tone << "\"";
   }
   out << "><p class=\"avatar-letter\">{{call_ring_self_avatar_letter}}</p></div>";
-  // The spark runs endlessly only while the invite is awaited (a bound class); once the caller is known it plays a few
-  // cycles and stops, so a long ring idles instead of redrawing at the display rate.
-  AppendPairPath(out, true, " call-phone-pair-path--ring",
-                 " data-class-call-phone-pair-path--awaiting=\"call_ring_awaiting_invite\"");
+  // The spark runs for as long as the page is up (the owner wants it to keep travelling; the ring lasts 60 s at most).
+  AppendPairPath(out, true);
   // Them, on the right: a silhouette while nobody is known (and for a stranger), then photo / letter.
   out << "<div class=\"call-phone-avatar call-phone-avatar--unknown avatar-tone-0 call-phone-avatar--pair\" "
          "data-if=\"call_ring_awaiting_invite || call_ring_caller_unknown\"><svg "
@@ -674,7 +663,7 @@ std::string CallPhoneRml(const ShellState& state) {
     if (call.story_active) {
       out << "<div class=\"call-phone-story call-phone-story--card call-phone-story--group\"><div "
              "class=\"call-phone-card\">";
-      AppendSteps(out, call.story_stage, call.story_step_count);
+      AppendSteps(out, call.story_step_count);
       out << "</div></div>";
     }
     out << "</div>";
@@ -706,9 +695,7 @@ std::string CallPhoneRml(const ShellState& state) {
     out << "<div class=\"call-phone-story" << (video_layout ? " call-phone-story--card" : "") << "\">";
     out << (video_layout ? "<div class=\"call-phone-card\">" : "");
     AppendPair(out, call, call.story_inbound);
-    AppendSteps(out, call.story_stage, call.story_step_count,
-                video_layout ? std::vector<std::string>{} : call.story_lead, call.story_clip_dp,
-                call.story_scroll_rows);
+    AppendSteps(out, call.story_step_count, video_layout ? std::vector<std::string>{} : call.story_lead);
     AppendHints(out);
     out << (video_layout ? "</div>" : "");
     out << "</div>";
