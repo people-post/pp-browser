@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 
 namespace pbr {
 namespace {
@@ -205,6 +206,68 @@ TEST(SampleAffineTest, AlphaIsKeptOnlyWhenTheSourceHasIt) {
   EXPECT_EQ(alpha, 77);
   SDL_DestroySurface(out);
   SDL_DestroySurface(clear);
+}
+
+// Straight RGBA: a clear pixel's hidden colour (black here) must not darken the edge between it and an opaque one.
+TEST(SampleAffineTest, ATransparentNeighbourDoesNotFringeTheEdgeWithItsHiddenColour) {
+  SDL_Surface* src = SDL_CreateSurface(2, 1, SDL_PIXELFORMAT_RGBA32);
+  auto* p = static_cast<uint8_t*>(src->pixels);
+  p[0] = p[1] = p[2] = p[3] = 0;   // transparent black
+  p[4] = p[5] = p[6] = p[7] = 255; // opaque white
+  // Output pixel 0 reads exactly between the two source pixel centres.
+  SDL_Surface* out = SampleAffine(src, 1, Translate(1.0, 0.5, 0.0));
+  ASSERT_NE(out, nullptr);
+  uint8_t r = 0, g = 0, b = 0, a = 0;
+  ASSERT_TRUE(SDL_ReadSurfacePixel(out, 0, 0, &r, &g, &b, &a));
+  EXPECT_EQ(r, 255) << "white stays white: no dark fringe";
+  EXPECT_EQ(g, 255);
+  EXPECT_EQ(b, 255);
+  EXPECT_NEAR(a, 128, 1) << "half covered";
+  SDL_DestroySurface(out);
+
+  // Only clear pixels under the sample: transparent, whatever colour they hide.
+  p[4] = 9;
+  p[5] = 9;
+  p[6] = 9;
+  p[7] = 0;
+  p[0] = 200;
+  out = SampleAffine(src, 1, Translate(1.0, 0.5, 0.0));
+  ASSERT_NE(out, nullptr);
+  ASSERT_TRUE(SDL_ReadSurfacePixel(out, 0, 0, &r, &g, &b, &a));
+  EXPECT_EQ(a, 0);
+  SDL_DestroySurface(out);
+  SDL_DestroySurface(src);
+}
+
+// An opaque RGBA source gives exactly the bytes the RGB24 path gives for the same pixels.
+TEST(SampleAffineTest, AnOpaqueRgbaSourceMatchesTheRgb24Path) {
+  SDL_Surface* rgb = Pattern(60, 40);
+  SDL_Surface* rgba = SDL_ConvertSurface(rgb, SDL_PIXELFORMAT_RGBA32);
+  ASSERT_NE(rgba, nullptr);
+  ImageAffine a;
+  a.xu = 0.6;
+  a.xv = 0.3;
+  a.yu = -0.3;
+  a.yv = 0.6;
+  a.x0 = 12.3;
+  a.y0 = 17.7;
+  SDL_Surface* want = SampleAffine(rgb, 30, a);
+  SDL_Surface* got = SampleAffine(rgba, 30, a);
+  ASSERT_NE(want, nullptr);
+  ASSERT_NE(got, nullptr);
+  for (int y = 0; y < 30; ++y) {
+    for (int x = 0; x < 30; ++x) {
+      uint8_t w[4] = {}, g[4] = {};
+      ASSERT_TRUE(SDL_ReadSurfacePixel(want, x, y, &w[0], &w[1], &w[2], &w[3]));
+      ASSERT_TRUE(SDL_ReadSurfacePixel(got, x, y, &g[0], &g[1], &g[2], &g[3]));
+      ASSERT_EQ(std::memcmp(w, g, 3), 0) << x << "," << y;
+      ASSERT_EQ(g[3], 255);
+    }
+  }
+  SDL_DestroySurface(want);
+  SDL_DestroySurface(got);
+  SDL_DestroySurface(rgba);
+  SDL_DestroySurface(rgb);
 }
 
 TEST(SampleAffineTest, BadArgumentsGiveNoSurface) {

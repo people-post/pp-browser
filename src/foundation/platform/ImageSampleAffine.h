@@ -12,7 +12,9 @@ namespace pbr {
  * bilinearly between the source pixel centres; a coordinate outside the source reads the nearest edge pixel (a turned
  * crop's corners, outside the round avatar, fall off the picture). The result is SDL_PIXELFORMAT_RGBA32 when the
  * source format has alpha and SDL_PIXELFORMAT_RGB24 otherwise, so SurfaceHasAlpha (PNG or JPEG) answers as for the
- * source. Does not consume `source`. Caller owns the result; nullptr when `source` is null or empty, `side` < 1 or an
+ * source. RGBA32 and RGB24 sources are read in place (no full-size copy). Colour is interpolated weighted by alpha, so a
+ * transparent pixel's hidden colour never fringes its neighbours. Also nullptr when the source's pixels cannot be locked.
+ * Does not consume `source`. Caller owns the result; nullptr when `source` is null or empty, `side` < 1 or an
  * affine coefficient is not finite.
  */
 SDL_Surface* SampleAffine(SDL_Surface* source, int side, const ImageAffine& affine);
