@@ -81,10 +81,16 @@ void IosLocalNotifier::SetActivationHandler(std::function<void(std::string threa
   g_activation = std::move(handler);
 }
 
-void DispatchIosNotificationActivation(const std::string& thread_id, const bool call_wake,
-                                       const std::string& wake_hint) {
+void DispatchIosNotificationActivation(const std::string& thread_id, const bool call_wake, const std::string& wake_hint,
+                                       const std::optional<std::chrono::milliseconds> notification_age) {
   // Recorded first: with no handler yet (locked / cold start) WireMessagingBindings picks it up.
-  PendingNotificationTap::Instance().Record(thread_id, call_wake, wake_hint, PendingNotificationTap::Clock::now());
+  PendingNotificationTap::Instance().Record(thread_id, call_wake, wake_hint, PendingNotificationTap::Clock::now(),
+                                            notification_age);
+  if (call_wake) {
+    logging::getLogger("LocalNotifier").info
+        << "Call tap recorded, notification age ms: "
+        << (notification_age ? std::to_string(notification_age->count()) : std::string("unknown"));
+  }
   if (thread_id.empty()) {
     return;
   }

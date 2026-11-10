@@ -3,6 +3,7 @@
 #include "common/Diag.h"
 
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -35,9 +36,11 @@ public:
 
   /**
    * A banner tap (`thread_id`), a call-alert tap (`call_wake`), or a message-alert tap (`wake_hint` only);
-   * replaces any earlier tap.
+   * replaces any earlier tap. `notification_age`: how long before the tap the tapped notification was delivered
+   * (kept for a call-alert tap only; nullopt = unknown).
    */
-  void Record(std::string thread_id, const bool call_wake, std::string wake_hint, const Clock::time_point now) {
+  void Record(std::string thread_id, const bool call_wake, std::string wake_hint, const Clock::time_point now,
+              const std::optional<std::chrono::milliseconds> notification_age = std::nullopt) {
     std::function<void()> changed;
     {
       std::lock_guard<std::mutex> lock(mu_);
@@ -48,6 +51,8 @@ public:
       miss_logged_ = false;
       Report("recorded", thread_id_.empty() ? (call_wake ? Kind::Call : Kind::Msg) : Kind::Thread);
       if (call_wake) {
+        ++call_tap_seq_;
+        call_tap_age_ = notification_age;
         route_until_ = now + kCallRouteTtl;
       } else if (!hint_.empty()) {
         route_until_ = now + kMessageRouteTtl;
@@ -57,6 +62,18 @@ public:
     if (changed) {
       changed();
     }
+  }
+
+  /** Counts the call-alert taps ever recorded; never reset, so two taps are told apart even once one is taken. */
+  uint64_t CallTapSeq() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return call_tap_seq_;
+  }
+
+  /** How old the notification of the latest call-alert tap was when tapped; nullopt when unknown. */
+  std::optional<std::chrono::milliseconds> CallTapNotificationAge() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return call_tap_age_;
   }
 
   /** `fn` runs on the thread that records a tap (not necessarily the UI thread), after the tap is stored. */
@@ -180,6 +197,8 @@ private:
   std::string hint_;
   std::optional<Clock::time_point> route_until_;
   bool miss_logged_ = false;
+  uint64_t call_tap_seq_ = 0;
+  std::optional<std::chrono::milliseconds> call_tap_age_;
   std::function<void()> on_recorded_;
 };
 

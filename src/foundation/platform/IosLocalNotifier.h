@@ -3,7 +3,9 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "common/PbrCompat.h"
 
+#include <chrono>
 #include <functional>
+#include <optional>
 #include <string>
 
 namespace pbr {
@@ -37,6 +39,7 @@ inline constexpr const char* kIosNotificationWakeHintKey = "wake_hint";
  * activation handler on the UI thread when one is set.
  */
 void DispatchIosNotificationActivation(const std::string& thread_id, bool call_wake = false,
-                                       const std::string& wake_hint = {});
+                                       const std::string& wake_hint = {},
+                                       std::optional<std::chrono::milliseconds> notification_age = std::nullopt);
 
 } // namespace pbr

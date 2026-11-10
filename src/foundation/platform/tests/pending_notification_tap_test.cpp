@@ -143,5 +143,37 @@ TEST(PendingNotificationTapTest, TapBeforeWiringIsConsumedAtWiring) {
   EXPECT_EQ(tap.TakeThread(), std::nullopt) << "the posted dispatch finds the slot already consumed";
 }
 
+TEST(PendingNotificationTapTest, CallTapSeqCountsCallTapsAndIsNeverReset) {
+  PendingNotificationTap tap;
+  EXPECT_EQ(tap.CallTapSeq(), 0u);
+  tap.Record("thread-a", false, "", t0);
+  tap.Record("", false, "m1", t0);
+  EXPECT_EQ(tap.CallTapSeq(), 0u) << "only call-alert taps count";
+  tap.Record("", true, "", t0);
+  EXPECT_EQ(tap.CallTapSeq(), 1u);
+  EXPECT_TRUE(tap.TakeCallRoute("c1", t0));
+  EXPECT_EQ(tap.CallTapSeq(), 1u) << "taking the route keeps the count";
+  tap.Record("", true, "", t0);
+  EXPECT_FALSE(tap.PeekCallRoute(t0 + std::chrono::seconds(91)));
+  EXPECT_FALSE(tap.TakeCallRoute("c1", t0 + std::chrono::seconds(91)));
+  EXPECT_EQ(tap.CallTapSeq(), 2u) << "expiry keeps the count";
+  tap.Record("thread-b", false, "", t0);
+  EXPECT_EQ(tap.CallTapSeq(), 2u);
+}
+
+TEST(PendingNotificationTapTest, CallTapNotificationAgeIsKeptForTheLatestCallTap) {
+  using std::chrono::milliseconds;
+  PendingNotificationTap tap;
+  EXPECT_EQ(tap.CallTapNotificationAge(), std::nullopt);
+  tap.Record("", true, "", t0, milliseconds(1200));
+  EXPECT_EQ(tap.CallTapNotificationAge(), std::optional<milliseconds>(1200));
+  tap.Record("", true, "", t0);
+  EXPECT_EQ(tap.CallTapNotificationAge(), std::nullopt) << "a call tap without an age is unknown, not the old one";
+  tap.Record("", true, "", t0, milliseconds(0));
+  EXPECT_EQ(tap.CallTapNotificationAge(), std::optional<milliseconds>(0));
+  tap.Record("thread-a", false, "", t0, milliseconds(5));
+  EXPECT_EQ(tap.CallTapNotificationAge(), std::optional<milliseconds>(0)) << "a message tap does not touch it";
+}
+
 } // namespace
 } // namespace pbr
