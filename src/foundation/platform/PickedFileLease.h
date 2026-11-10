@@ -19,7 +19,8 @@ class PickedFileLease {
 public:
   using Releaser = std::function<void(const std::string& path)>;
 
-  explicit PickedFileLease(std::string path, Releaser release = [](const std::string& p) { ReleasePickedFile(p); })
+  explicit PickedFileLease(
+      std::string path, Releaser release = [](const std::string& p) { ReleasePickedFile(p); })
       : path_(std::move(path)), release_(std::move(release)) {}
   ~PickedFileLease() { Release(); }
   PickedFileLease(const PickedFileLease&) = delete;

@@ -12,8 +12,7 @@ namespace {
 
 TEST(PickedFileLeaseTest, ReleasesOnceWhenTheLastHolderLetsGo) {
   std::vector<std::string> released;
-  auto lease = std::make_shared<PickedFileLease>("/tmp/a.jpg",
-                                                 [&](const std::string& p) { released.push_back(p); });
+  auto lease = std::make_shared<PickedFileLease>("/tmp/a.jpg", [&](const std::string& p) { released.push_back(p); });
   auto second = lease; // a later page can be handed the same lease
   lease.reset();
   EXPECT_TRUE(released.empty()) << "still held";
@@ -36,7 +35,9 @@ TEST(PickedFileLeaseTest, AnExplicitReleaseIsNotRepeatedByTheDestructor) {
 
 TEST(PickedFileLeaseTest, AnEmptyPathReleasesNothing) {
   int count = 0;
-  { PickedFileLease lease("", [&](const std::string&) { ++count; }); }
+  {
+    PickedFileLease lease("", [&](const std::string&) { ++count; });
+  }
   EXPECT_EQ(count, 0);
 }
 

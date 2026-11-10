@@ -231,8 +231,8 @@ TEST_F(ProfileIconImagePrepTest, ARectangleOutsideThePictureIsClampedAndAnEmptyO
   ExpectNear(out, 5, 5, kYellow);
   SDL_DestroySurface(out);
 
-  for (const SDL_Rect bad : {SDL_Rect{10, 10, 0, 0}, SDL_Rect{10, 10, -5, 20}, SDL_Rect{1000, 1000, 10, 10},
-                             SDL_Rect{-50, -50, 20, 20}}) {
+  for (const SDL_Rect bad :
+       {SDL_Rect{10, 10, 0, 0}, SDL_Rect{10, 10, -5, 20}, SDL_Rect{1000, 1000, 10, 10}, SDL_Rect{-50, -50, 20, 20}}) {
     icon = PrepareProfileIconFromFile(path, 512u * 1024u, 256, bad);
     ASSERT_FALSE(icon) << bad.x << "," << bad.y << " " << bad.w << "x" << bad.h;
     EXPECT_EQ(icon.error().user, Tr("settings.profile.photo_unreadable"));
