@@ -4613,8 +4613,8 @@ select selectbox option {
 
 .ai-drawer-me-name {
   margin: 0;
-  font-size: 20dp;
-  line-height: 26dp;
+  font-size: 24dp;
+  line-height: 30dp;
   font-weight: bold;
   white-space: nowrap;
   overflow: hidden;
