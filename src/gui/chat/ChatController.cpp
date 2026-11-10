@@ -48,6 +48,8 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/i18n/ScriptLanguageDetector.h"
 #include "foundation/runtime/AppLifecycle.h"
+#include "gui/chat/AgentBusyRules.h"
+#include "gui/chat/ReadWhenLooking.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/ILocalNotifier.h"
@@ -929,6 +931,45 @@ void ChatController::OnCompactChatShownAgain() {
   NotifySurfaceChanged();
 }
 
+void ChatController::OnAttentiveAgain() {
+  if (!messaging_ready_) {
+    return;
+  }
+  // Refresh only when something was marked: a focus gain with nothing to read must stay cheap.
+  if (MarkOpenChatReadIfLooking()) {
+    RefreshFromMessaging();
+  }
+}
+
+bool ChatController::MarkOpenChatReadIfLooking() {
+  if (reading_open_chat_ || !facade_) {
+    return false;
+  }
+  const std::string thread_id = ActiveThreadId(); // a copy: MarkRead may reach the facade's own string
+  bool has_unread = false;
+  if (!thread_id.empty()) {
+    if (auto found = facade_->GetThread(thread_id); found && *found) {
+      has_unread = (*found)->unread_count > 0;
+    }
+  }
+  // A notification tap waiting to be routed (the app came to the front for it) opens another chat next: this one
+  // keeps its unread until it is shown again. Peeked, never taken.
+  PendingNotificationTap& tap = PendingNotificationTap::Instance();
+  const auto now = PendingNotificationTap::Clock::now();
+  const bool route_unknown_thread = !tap.FreshHint(now).empty() || tap.PeekCallRoute(now);
+  const bool tap_elsewhere = TapPendingElsewhere(tap.PeekThread(), route_unknown_thread, thread_id);
+  if (!ShouldMarkOpenChatRead(AppLifecycle::IsUserAttentive(), !thread_id.empty(),
+                              ChatTranscriptOnScreen(ChromeSnapshot(), thread_id, thread_id), has_unread,
+                              tap_elsewhere)) {
+    return false;
+  }
+  reading_open_chat_ = true; // MarkRead -> messages changed -> RefreshFromMessaging -> here: stops at this guard
+  presenter_.MarkRead(thread_id);
+  ILocalNotifier::Instance().ClearForThread(thread_id);
+  reading_open_chat_ = false;
+  return true;
+}
+
 void ChatController::OnSelectThread(std::string thread_id) { // by value: ShellSelectNavTab below rebuilds Home (B161)
   if (!messaging_ready_) {
     return;
@@ -1229,6 +1270,7 @@ void ChatController::OnForgetMemory() {
 }
 
 void ChatController::RefreshFromMessaging() {
+  MarkOpenChatReadIfLooking(); // first, so the rest of the refresh draws the read state
   const int prev_sessions = ChromeSnapshot().nav_badges.sessions_unread;
   const int prev_contacts = ChromeSnapshot().nav_badges.contacts_unread;
   SyncShellSessions();
@@ -4160,8 +4202,13 @@ void ChatController::WireMessagingBindings() {
     if (auto thread = facade_->GetThread(thread_id); thread && *thread) {
       bare_id = facade_->ResolveThreadLabel(**thread).trust == PeerLabelTrust::RawId;
     }
+    // The unread count now (the message that raised this notice is in it): Android's notification number.
+    const auto unread_of = [this](const std::string& id) {
+      auto thread = facade_->GetThread(id);
+      return thread && *thread ? (*thread)->unread_count : 0;
+    };
     if (!bare_id) {
-      ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id);
+      ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id, unread_of(thread_id));
       return;
     }
     AppRuntime::PostWorkerAndReplyOnUI<int>(
@@ -4170,7 +4217,7 @@ void ChatController::WireMessagingBindings() {
           std::this_thread::sleep_for(std::chrono::milliseconds(1500));
           return 0;
         },
-        [this, body, thread_id, title](int) {
+        [this, body, thread_id, title, unread_of](int) {
           std::string resolved = title;
           if (auto thread = facade_->GetThread(thread_id); thread && *thread) {
             const std::string now = facade_->ResolveThreadLabel(**thread).title;
@@ -4178,7 +4225,7 @@ void ChatController::WireMessagingBindings() {
               resolved = now;
             }
           }
-          ILocalNotifier::Instance().NotifyIncoming(resolved, body, thread_id);
+          ILocalNotifier::Instance().NotifyIncoming(resolved, body, thread_id, unread_of(thread_id));
         });
   });
   const auto activate = [this](std::string thread_id) {

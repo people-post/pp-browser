@@ -52,6 +52,7 @@ Roe<std::vector<Thread>> InboxController::ListThreads() {
 }
 
 void InboxController::KeepListed(const std::string& thread_id) {
+  std::lock_guard<std::mutex> lock(thread_row_mu_);
   auto thread = store_.GetThread(thread_id);
   if (thread && *thread && !(*thread)->listed) {
     Thread listed = **thread;
@@ -240,10 +241,17 @@ void InboxController::AfterMessageDeleted(const std::string& thread_id, const Th
     }
   }
   if (newest && newest->id == message_id) {
-    if (auto thread = store_.GetThread(thread_id); thread && *thread) {
-      Thread updated = **thread;
-      updated.preview = Localized("chat.message.deleted");
-      (void)store_.UpsertThread(updated); // updated_at untouched: deleting does not move the chat up the list
+    bool row_updated = false;
+    {
+      std::lock_guard<std::mutex> lock(thread_row_mu_);
+      if (auto thread = store_.GetThread(thread_id); thread && *thread) {
+        Thread updated = **thread;
+        updated.preview = Localized("chat.message.deleted");
+        (void)store_.UpsertThread(updated); // updated_at untouched: deleting does not move the chat up the list
+        row_updated = true;
+      }
+    }
+    if (row_updated) {
       // Reached from workers too (delete for everyone, a peer's retract): the UI refresh runs on the UI thread.
       if (on_thread_changed_) {
         if (AppRuntime::IsRunning()) {
@@ -286,12 +294,17 @@ Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, cons
     attachment_downloads_->DeleteMessagesMedia(thread_id, *before, {}); // the history is gone: so are its bytes
   }
 
-  Thread updated = **thread;
-  updated.preview = "";
-  updated.unread_count = 0;
-  updated.updated_at = util::NowUnixMs();
-  if (!store_.UpsertThread(updated)) {
-    return Error("Failed to update thread after clear");
+  {
+    std::lock_guard<std::mutex> lock(thread_row_mu_);
+    auto fresh =
+        store_.GetThread(thread_id); // the row as it is now: an ingest may have changed it since the read above
+    Thread updated = fresh && *fresh ? **fresh : **thread;
+    updated.preview = "";
+    updated.unread_count = 0;
+    updated.updated_at = util::NowUnixMs();
+    if (!store_.UpsertThread(updated)) {
+      return Error("Failed to update thread after clear");
+    }
   }
 
   if (on_thread_changed_) {
@@ -393,6 +406,7 @@ Roe<Thread> InboxController::CreateDirectThread(const std::string& contact_id, T
 }
 
 void InboxController::MarkThreadRead(const std::string& thread_id) {
+  std::lock_guard<std::mutex> lock(thread_row_mu_);
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
     return;
@@ -409,6 +423,7 @@ void InboxController::IncrementUnread(const std::string& thread_id, const int de
   if (delta <= 0 || thread_id.empty() || (thread_id == active_thread_id_ && !even_if_active)) {
     return;
   }
+  std::lock_guard<std::mutex> lock(thread_row_mu_);
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
     return;
@@ -419,11 +434,12 @@ void InboxController::IncrementUnread(const std::string& thread_id, const int de
   (void)store_.UpsertThread(updated);
 }
 
-void InboxController::OnInboundMessagePersisted(const std::string& thread_id,
-                                                const std::optional<std::string>& preview) {
+void InboxController::OnInboundMessagePersisted(const std::string& thread_id, const std::optional<std::string>& preview,
+                                                bool attentive) {
   if (thread_id.empty()) {
     return;
   }
+  std::lock_guard<std::mutex> lock(thread_row_mu_);
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
     return;
@@ -435,7 +451,7 @@ void InboxController::OnInboundMessagePersisted(const std::string& thread_id,
     updated.preview = *preview;
     changed = true;
   }
-  if (thread_id != active_thread_id_) {
+  if (CountsAsUnread(thread_id, active_thread_id_, attentive)) {
     updated.unread_count += 1;
     changed = true;
   }
@@ -447,9 +463,13 @@ void InboxController::OnInboundMessagePersisted(const std::string& thread_id,
 }
 
 int InboxController::SumUnread() const {
+  return SumUnreadIfKnown().value_or(0);
+}
+
+std::optional<int> InboxController::SumUnreadIfKnown() const {
   auto threads = store_.ListThreads();
   if (!threads) {
-    return 0;
+    return std::nullopt;
   }
   int total = 0;
   for (const Thread& thread : *threads) {
@@ -483,6 +503,7 @@ int InboxController::SumUnreadForContact(const std::string& contact_id) const {
 
 Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std::string& preview,
                                          const bool assistant_text) {
+  std::lock_guard<std::mutex> lock(thread_row_mu_);
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -529,28 +550,32 @@ PeerDisplayLabel InboxController::ResolveThreadLabel(const Thread& thread) const
 }
 
 Roe<void> InboxController::SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title) {
-  auto thread = store_.GetThread(thread_id);
-  if (!thread) {
-    return thread.error();
+  {
+    std::lock_guard<std::mutex> lock(thread_row_mu_);
+    auto thread = store_.GetThread(thread_id);
+    if (!thread) {
+      return thread.error();
+    }
+    if (!*thread) {
+      return Error("Thread not found");
+    }
+    if ((*thread)->kind != ThreadKind::Group && (*thread)->kind != ThreadKind::Ai) {
+      return Error("Local titles are only supported for groups and AI conversations");
+    }
+    Thread updated = **thread;
+    updated.local_title = local_title;
+    updated.updated_at = util::NowUnixMs();
+    if (auto saved = store_.UpsertThread(updated); !saved) {
+      return saved.error();
+    }
   }
-  if (!*thread) {
-    return Error("Thread not found");
-  }
-  if ((*thread)->kind != ThreadKind::Group && (*thread)->kind != ThreadKind::Ai) {
-    return Error("Local titles are only supported for groups and AI conversations");
-  }
-  Thread updated = **thread;
-  updated.local_title = local_title;
-  updated.updated_at = util::NowUnixMs();
-  if (auto saved = store_.UpsertThread(updated); !saved) {
-    return saved.error();
-  }
-  NotifyThreadChanged();
+  NotifyThreadChanged(); // outside the lock
   return {};
 }
 
 Roe<void> InboxController::NameAiThreadFromFirstMessage(const std::string& thread_id,
                                                         const std::string& first_message) {
+  std::lock_guard<std::mutex> lock(thread_row_mu_);
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();

@@ -29,7 +29,8 @@ std::string IosNotificationIdForThread(const std::string& thread_id) {
   return thread_id.empty() ? std::string(kIosCallNotificationId) : "pp-msg-" + thread_id;
 }
 
-void IosLocalNotifier::NotifyIncoming(const std::string& title, const std::string& body, const std::string& thread_id) {
+void IosLocalNotifier::NotifyIncoming(const std::string& title, const std::string& body, const std::string& thread_id,
+                                      int /*thread_unread*/) {
   // In the foreground the app shows it itself (and rings).
   if (AppLifecycle::IsForeground()) {
     return;

@@ -16,6 +16,16 @@ TEST(PendingNotificationTapTest, AMessageTapWaitsAndIsTakenOnce) {
   EXPECT_EQ(tap.TakeThread(), std::nullopt);
 }
 
+TEST(PendingNotificationTapTest, PeekThreadShowsTheBannerTapWithoutTakingIt) {
+  PendingNotificationTap tap;
+  EXPECT_FALSE(tap.PeekThread());
+  tap.Record("thread-9", false, "", PendingNotificationTap::Clock::now());
+  EXPECT_EQ(tap.PeekThread(), "thread-9");
+  EXPECT_EQ(tap.PeekThread(), "thread-9");
+  EXPECT_EQ(tap.TakeThread(), "thread-9");
+  EXPECT_FALSE(tap.PeekThread());
+}
+
 TEST(PendingNotificationTapTest, OnlyTheNewestTapIsKept) {
   PendingNotificationTap tap;
   tap.Record("thread-a", false, "", t0);

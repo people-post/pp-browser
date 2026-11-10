@@ -10,7 +10,12 @@ class ILocalNotifier {
 public:
   virtual ~ILocalNotifier() = default;
 
-  virtual void NotifyIncoming(const std::string& title, const std::string& body, const std::string& thread_id = {}) = 0;
+  /**
+   * `thread_unread`: the thread's unread count now (the message just added is in it); Android shows it as the
+   * notification's number. 0 where it is not known (calls) or not used.
+   */
+  virtual void NotifyIncoming(const std::string& title, const std::string& body, const std::string& thread_id = {},
+                              int thread_unread = 0) = 0;
   virtual void ClearForThread(const std::string& thread_id) = 0;
 
   /**

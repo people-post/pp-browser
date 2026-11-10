@@ -387,6 +387,10 @@ int ConversationsFacade::SumUnread() {
   return hub_.Inbox().SumUnread();
 }
 
+std::optional<int> ConversationsFacade::SumUnreadIfKnown() {
+  return hub_.Inbox().SumUnreadIfKnown();
+}
+
 // --- Store ------------------------------------------------------------------
 
 Roe<std::optional<Thread>> ConversationsFacade::GetThread(const std::string& thread_id) {

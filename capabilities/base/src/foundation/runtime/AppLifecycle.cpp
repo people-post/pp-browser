@@ -24,6 +24,8 @@ struct Listener {
 std::mutex g_listeners_mu;
 std::vector<Listener> g_background_listeners;
 std::vector<Listener> g_foreground_listeners;
+std::vector<Listener> g_attentive_listeners;
+std::vector<Listener> g_remote_notification_listeners;
 struct StayConnectedListener {
   AppLifecycle::ListenerId id = 0;
   std::function<void(bool)> fn;
@@ -52,6 +54,23 @@ std::vector<std::function<void()>> Snapshot(const std::vector<Listener>& listene
     out.push_back(listener.fn);
   }
   return out;
+}
+
+/** Set whenever the user's attention goes (background, minimized, focus lost); cleared by the notice that it is back. */
+std::atomic<bool> g_attention_lost{false};
+
+/**
+ * Attention may be back: run the listeners (UI thread, outside the lock) — once per return. Only when the user is
+ * attentive now and attention was lost before, so a restore followed by a focus gain (two events for one return)
+ * and a focus event with nothing lost both stay quiet.
+ */
+void NotifyAttentive() {
+  if (!AppLifecycle::IsUserAttentive() || !g_attention_lost.exchange(false)) {
+    return;
+  }
+  for (const auto& listener : Snapshot(g_attentive_listeners)) {
+    listener();
+  }
 }
 
 AppLifecycle::ListenerId Add(std::vector<Listener>& listeners, std::function<void()> fn) {
@@ -154,11 +173,19 @@ void AppLifecycle::SetDesktopInputFocused(bool focused) {
   const bool prev = g_desktop_input_focused.exchange(focused, std::memory_order_relaxed);
   if (prev != focused) {
     logger().info << "Desktop input focus=" << (focused ? "gained" : "lost");
+    if (focused) {
+      NotifyAttentive();
+    } else {
+      g_attention_lost = true;
+    }
   }
 }
 
 void AppLifecycle::SetDesktopMinimized(bool minimized) {
   g_desktop_minimized.store(minimized, std::memory_order_relaxed);
+  if (minimized) {
+    g_attention_lost = true;
+  }
 }
 
 void AppLifecycle::OnDesktopMinimized() {
@@ -169,6 +196,7 @@ void AppLifecycle::OnDesktopMinimized() {
 
 void AppLifecycle::OnDesktopRestored() {
   SetDesktopMinimized(false);
+  NotifyAttentive();
 }
 
 void AppLifecycle::SetStayConnected(const bool on) {
@@ -242,6 +270,7 @@ void AppLifecycle::OnWillEnterBackground() {
     return;
   }
   g_state = AppLifecycleState::Background;
+  g_attention_lost = true;
   ReconcileWork();
   for (const auto& listener : Snapshot(g_background_listeners)) {
     listener();
@@ -272,6 +301,7 @@ void AppLifecycle::OnDidEnterForeground() {
     listener();
   }
   logger().info << "Entering foreground";
+  NotifyAttentive();
 }
 
 void AppLifecycle::OnLowMemory() {
@@ -286,12 +316,29 @@ AppLifecycle::ListenerId AppLifecycle::AddForegroundListener(std::function<void(
   return Add(g_foreground_listeners, std::move(listener));
 }
 
+void AppLifecycle::OnRemoteNotification() {
+  AppRuntime::PostUI([]() {
+    for (const auto& listener : Snapshot(g_remote_notification_listeners)) {
+      listener();
+    }
+  });
+}
+
+AppLifecycle::ListenerId AppLifecycle::AddRemoteNotificationListener(std::function<void()> listener) {
+  return Add(g_remote_notification_listeners, std::move(listener));
+}
+
+AppLifecycle::ListenerId AppLifecycle::AddAttentiveListener(std::function<void()> listener) {
+  return Add(g_attentive_listeners, std::move(listener));
+}
+
 void AppLifecycle::RemoveListener(const ListenerId id) {
   if (id == 0) {
     return;
   }
   std::lock_guard lock(g_listeners_mu);
-  for (auto* listeners : {&g_background_listeners, &g_foreground_listeners}) {
+  for (auto* listeners :
+       {&g_background_listeners, &g_foreground_listeners, &g_attentive_listeners, &g_remote_notification_listeners}) {
     std::erase_if(*listeners, [id](const Listener& listener) { return listener.id == id; });
   }
   std::erase_if(g_stay_connected_listeners, [id](const StayConnectedListener& listener) { return listener.id == id; });
