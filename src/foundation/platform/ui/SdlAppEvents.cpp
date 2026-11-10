@@ -29,7 +29,16 @@ void MaybeEnterDesktopForeground() {
   AppLifecycle::OnDidEnterForeground();
 }
 
+SdlAppEvents::FingerHandler& FingerHandlerSlot() {
+  static SdlAppEvents::FingerHandler handler;
+  return handler;
+}
+
 } // namespace
+
+void SdlAppEvents::SetFingerHandler(FingerHandler handler) {
+  FingerHandlerSlot() = std::move(handler);
+}
 
 void SdlAppEvents::Install() {
   Backend::SetPreProcessEventHandler(&SdlAppEvents::PreProcess);
@@ -37,6 +46,17 @@ void SdlAppEvents::Install() {
 
 bool SdlAppEvents::PreProcess(ui::Context* context, SDL_Event& event, bool& propagate_event) {
   (void)propagate_event;
+  if (FingerHandlerSlot()) {
+    const bool is_finger = event.type == SDL_EVENT_FINGER_DOWN || event.type == SDL_EVENT_FINGER_MOTION ||
+                           event.type == SDL_EVENT_FINGER_UP || event.type == SDL_EVENT_FINGER_CANCELED;
+    if (is_finger || event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WINDOW_MINIMIZED ||
+        event.type == SDL_EVENT_WILL_ENTER_BACKGROUND || event.type == SDL_EVENT_DID_ENTER_BACKGROUND) {
+      const FingerHandler handler = FingerHandlerSlot(); // a copy: the handler may clear the slot (the page closing)
+      if (handler(context, event) && is_finger) {
+        return true;
+      }
+    }
+  }
   const AppEventHooks& hooks = GetAppEventHooks();
   switch (event.type) {
     case SDL_EVENT_KEY_DOWN:

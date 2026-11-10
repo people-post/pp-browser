@@ -3694,4 +3694,25 @@ input.checkbox:checked {
 .context-menu-layer--popover-left .context-menu-item-icon {
   background-color: #7878803d;
 }
+
+/* Avatar crop page: always dark, like the scanner. */
+.avatar-crop,
+.avatar-crop-bg,
+.avatar-crop-stage {
+  background-color: #000000;
+}
+
+.avatar-crop-title,
+.avatar-crop-loading,
+.avatar-crop-btn {
+  color: #ffffff;
+}
+
+.avatar-crop-btn {
+  background-color: transparent;
+}
+
+.avatar-crop-btn--done {
+  color: #0a84ff;
+}
 }

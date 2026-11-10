@@ -14507,3 +14507,102 @@ textarea:composing ~ .prompt-composer-label,
   top: 0;
   opacity: 1;
 }
+
+/* Avatar crop page (PLAN-avatar-edit item 9): a dark page, the title on top, the photo under a round viewport
+   between the bars (the custom element draws the picture, the dim and the circle line), Cancel / Rotate / Done below.
+   Phones show it in the shell's full-screen layer (the black reaches every screen edge, the bars stay inside the safe
+   areas); the desktop panel is a 420dp-wide card with a tall enough stage. Colours (always dark, like the scanner):
+   colors.rcss.tmpl. */
+.avatar-crop {
+  display: flex;
+  flex-direction: column;
+  width: 420dp;
+  max-width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.shell-layer-compact .avatar-crop {
+  width: 100%;
+}
+
+.avatar-crop-bg {
+  display: none;
+}
+
+.shell-layer-compact .avatar-crop-bg {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.avatar-crop-bar {
+  flex-shrink: 0;
+  height: 48dp;
+}
+
+.avatar-crop-title {
+  margin: 0;
+  height: 48dp;
+  line-height: 48dp;
+  text-align: center;
+  font-size: 17dp;
+  font-weight: bold;
+}
+
+.avatar-crop-stage {
+  position: relative;
+  flex: 1;
+  min-height: 360dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .avatar-crop-stage {
+  min-height: 0;
+}
+
+.avatar-crop-surface {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.avatar-crop-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  text-align: center;
+  line-height: 360dp;
+  font-size: 40dp;
+}
+
+.avatar-crop-actions {
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  padding: 8dp 8dp;
+}
+
+.avatar-crop-btn {
+  flex: 1;
+  min-height: 50dp;
+  margin: 0 4dp;
+  padding: 0;
+  border-width: 0;
+  text-align: center;
+  font-size: 17dp;
+}
+
+.avatar-crop-btn--done {
+  font-weight: bold;
+}
+
+.avatar-crop-btn:disabled {
+  opacity: 0.4;
+}
