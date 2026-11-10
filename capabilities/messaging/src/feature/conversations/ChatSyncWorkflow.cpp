@@ -128,7 +128,10 @@ Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& t
       ++result.ingested;
       changed = true;
       if (!outcome.thread_id.empty() && !outcome.deleted_by_sender) {
-        inbox_.OnInboundMessagePersisted(outcome.thread_id, std::nullopt, AppLifecycle::IsUserAttentive());
+        // As on both relay paths: what we sent ourselves from another device and bookkeeping records are no unread.
+        if (!outcome.suppress_inbox_chrome) {
+          inbox_.OnInboundMessagePersisted(outcome.thread_id, std::nullopt, AppLifecycle::IsUserAttentive());
+        }
         // The stored, decrypted message — never the wire payload (ciphertext).
         if (attachment_downloads_ && outcome.persisted_message &&
             outcome.persisted_message->content_type == ChatContentType::Attachment) {

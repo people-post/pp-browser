@@ -160,6 +160,8 @@ public:
   const std::string& ProfileDataDir() const;
   bool HasLocalMessagesBefore(const std::string& thread_id, int64_t before_display_order);
   int SumUnread();
+  /** SumUnread(), or empty when the chats could not be listed (the app icon is then left alone). */
+  std::optional<int> SumUnreadIfKnown();
 
   // --- Store ----------------------------------------------------------------
   Roe<std::optional<Thread>> GetThread(const std::string& thread_id);

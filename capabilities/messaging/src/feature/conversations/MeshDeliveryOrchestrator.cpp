@@ -2508,7 +2508,9 @@ void MeshDeliveryOrchestrator::NoteMention(const RelayReceiveOutcome& outcome, c
                                          .held_at_ms = util::NowUnixMs()});
     return;
   }
-  if (verdict == MentionVerdict::Us && mentions_ && inbox_.ActiveThreadId() != outcome.thread_id) {
+  // Same rule as the unread count: the open chat counts too when nobody is looking at it.
+  if (verdict == MentionVerdict::Us && mentions_ &&
+      CountsAsUnread(outcome.thread_id, inbox_.ActiveThreadId(), AppLifecycle::IsUserAttentive())) {
     if (auto marked = mentions_->Add(outcome.thread_id, message.id, message.timestamp); !marked) {
       log().warning << "mention not marked: " << marked.error().message;
     }

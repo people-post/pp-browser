@@ -13,6 +13,7 @@
 #include "feature/conversations/PeerDisplaySources.h"
 
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -89,6 +90,14 @@ struct TranscriptFacts {
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */
 inline constexpr const char* kDefaultAiThreadTitle = "New chat";
 
+/**
+ * An inbound message counts as unread in `thread_id`: always, unless it is the open chat and the user is looking at
+ * the app (`attentive`). Shared by the unread count and the "you were mentioned" marker.
+ */
+inline bool CountsAsUnread(const std::string& thread_id, const std::string& active_thread_id, bool attentive) {
+  return thread_id != active_thread_id || !attentive;
+}
+
 class InboxController : public Module {
 public:
   InboxController(IThreadStore& store, ContactsStore& contacts, PeerDisplayResolver& labels,
@@ -148,6 +157,8 @@ public:
   void OnInboundMessagePersisted(const std::string& thread_id, const std::optional<std::string>& preview,
                                  bool attentive);
   int SumUnread() const;
+  /** SumUnread(), or empty when the thread list could not be read (0 would then look like "all read"). */
+  std::optional<int> SumUnreadIfKnown() const;
   int SumUnreadForContact(const std::string& contact_id) const;
   /** `assistant_text`: an AI answer, shown as is (only the user's own text is checked for codes and pasted blobs). */
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview, bool assistant_text = false);
@@ -200,6 +211,12 @@ private:
   };
   mutable std::unordered_map<std::string, InlineImageFacts> inline_image_ok_;
   std::string active_thread_id_;
+  /**
+   * Held around each read-modify-write of one thread row here (GetThread ... UpsertThread): the ingest threads add
+   * unread / preview while the UI thread marks read, and a lost update would resurrect unread or keep a stale
+   * preview. Never held across a callback or another locked method (not recursive).
+   */
+  std::mutex thread_row_mu_;
   IThreadMentionsStore* mentions_ = nullptr;
   ThreadChangedCallback on_thread_changed_;
 };
