@@ -154,6 +154,13 @@ public:
   void NotePeerEndedCall(const std::string& call_id, const std::string& peer);
   /** Test seam: the wait for call_leave after a peer's bye (production kPeerByeLeaveGrace). */
   void SetPeerByeLeaveGraceForTest(std::chrono::milliseconds grace) { peer_bye_leave_grace_ = grace; }
+  /** Test seam: the number of the last peer bye noted (NotePeerEndedCall). */
+  uint64_t LastPeerByeForTest() const { return last_peer_bye_; }
+  /**
+   * Test seam: `bye`'s grace for `peer` ends now, through the workflow's own event queue (epoch check included),
+   * so a test need not wait out a real-time grace.
+   */
+  void EndPeerByeGraceForTest(const std::string& call_id, const std::string& peer, uint64_t bye);
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
