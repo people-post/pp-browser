@@ -66,6 +66,8 @@ struct Options {
   int duration_s = 120;
   int threads = 8;
   int renew_s = 20;
+  /** Park clients re-knock a node that said full every round (an old app, or abuse), instead of skipping it. */
+  bool ignore_full = false;
   int calls = 4;
   int members = 4;
   int audio_kbps = 32;
@@ -269,7 +271,8 @@ public:
     }
     // As the app's park does (N033): a relay that said full or draining, and still fresh, is skipped for the round —
     // unless this client holds a reservation there, whose renewal it takes.
-    if (!parked_ && peer_->book.RefusesNew("hop", MeshService::Park, pp::mesh::PeerLoadBook::NowMs())) {
+    if (!opts_.ignore_full && !parked_ &&
+        peer_->book.RefusesNew("hop", MeshService::Park, pp::mesh::PeerLoadBook::NowMs())) {
       g_stats.skipped_full.fetch_add(1);
       next_at_ = now + std::chrono::seconds(opts_.renew_s);
       return;
@@ -725,6 +728,8 @@ bool ParseArgs(int argc, char** argv, Options& o) {
       o.video_kbps = std::atoi(next().c_str());
     } else if (a == "--fps") {
       o.fps = std::atoi(next().c_str());
+    } else if (a == "--ignore-full") {
+      o.ignore_full = true;
     } else if (a == "--tag") {
       o.tag = next();
     } else {
