@@ -249,6 +249,7 @@ pp_browser_add_foundation_library(pp_foundation_platform
     ${_pp_platform_ui_sources}
   PUBLIC_LIBS
     pp_foundation_platform_core
+    pp_foundation_i18n
     pp_foundation_runtime
     pp_ui
     ui::core
