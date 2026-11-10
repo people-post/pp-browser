@@ -76,7 +76,7 @@ def build_type(build):
 
 def start_node(args, work):
     data = os.path.join(work, "node")
-    os.makedirs(data)
+    os.makedirs(data, exist_ok=True)  # a restart keeps the node's data: the same identity, as a seed's restart
     config = os.path.join(work, "node.json")
     node_config = json.loads(json.dumps(NODE_CONFIG))
     if args.capacity:
@@ -86,7 +86,7 @@ def start_node(args, work):
     env = dict(os.environ, PP_BROWSER_PIN="stress-lab", PP_NODE_DATA_DIR=data,
                PP_NODE_AMP_UDP_PORT=str(args.port), PP_NODE_STATUS_ADDR="127.0.0.1:%d" % (args.port + 1),
                PP_NODE_BOOTSTRAP_PEERS=LAB_BOOTSTRAP)
-    log = open(os.path.join(work, "node.log"), "w")
+    log = open(os.path.join(work, "node.log"), "a")
     cmd = ["taskset", "-c", args.node_cores, os.path.join(args.build, "src/app/node/pp-node"), "--config", config]
     proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT)
     status = "http://127.0.0.1:%d" % (args.port + 1)
@@ -99,6 +99,22 @@ def start_node(args, work):
             time.sleep(0.5)
     proc.kill()
     sys.exit("pp-node did not come up (log: %s)" % log.name)
+
+
+def restart_node(args, work, node):
+    """Stop (or kill) the node and start it again on the same data dir and port."""
+    if args.restart_kill:
+        node.kill()
+    else:
+        node.terminate()
+    try:
+        node.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        node.kill()
+        node.wait()
+    time.sleep(args.restart_down)
+    proc, _, _ = start_node(args, work)
+    return proc
 
 
 def local_addresses():
@@ -165,7 +181,7 @@ def collect(procs):
     return lines, threads
 
 
-SUMMED = ["started", "linked", "link_fail", "parked", "reserve_ok", "reserve_fail", "attached", "attach_fail",
+SUMMED = ["started", "linked", "link_fail", "relinked", "skipped_full", "parked", "reserve_ok", "reserve_fail", "attached", "attach_fail",
           "bridged", "bridge_fail", "tx_frames", "tx_bytes", "rx_frames", "rx_bytes", "lat_n"]
 
 
@@ -203,6 +219,10 @@ def main():
     ap.add_argument("--build", default=os.path.join(ROOT, "build"))
     ap.add_argument("--out", help="write the timeline + summary JSON here")
     ap.add_argument("--keep", action="store_true", help="keep the work dir (node log)")
+    ap.add_argument("--restart-at", type=int, default=0,
+                    help="restart the node this many seconds into the run (same data: the same identity)")
+    ap.add_argument("--restart-kill", action="store_true", help="the restart is a crash (SIGKILL), not a stop")
+    ap.add_argument("--restart-down", type=float, default=2.0, help="seconds the node stays down")
     ap.add_argument("--allow-debug", action="store_true", help="run a non-Release build (its numbers are not a seed's)")
     args, extra = ap.parse_known_args()
     kind = build_type(args.build)
@@ -219,16 +239,23 @@ def main():
         lines, readers = collect(procs)
         t0 = time.time()
         prev_cpu = None
+        restarted = False
         while any(p.poll() is None for p in procs):
             time.sleep(1)
             t = int(time.time() - t0)
+            if args.restart_at and not restarted and t >= args.restart_at:
+                restarted = True
+                node = restart_node(args, work, node)
+                prev_cpu = None
+                print("t=%3ds node restarted (%s, down %.1fs)" % (t, "killed" if args.restart_kill else "stopped",
+                                                                   args.restart_down), flush=True)
             m = read_metrics(status + "/metrics")
             cpu = m.get("pp_process_cpu_seconds", 0)
             cpu_pct = (cpu - prev_cpu) * 100 if prev_cpu is not None else 0
             prev_cpu = cpu
             clients = merge([l[max(k for k in l if isinstance(k, int))]
                              for l in list(lines) if any(isinstance(k, int) for k in l)])
-            row = {"t": t, "node_cpu_pct": round(cpu_pct, 1),
+            row = {"t": t, "node_cpu_pct": round(max(cpu_pct, 0.0), 1), "restarted": restarted,
                    "node_rss_mb": round(m.get("pp_process_resident_memory_bytes", 0) / 1e6, 1),
                    "links": m.get("pp_link_active", 0), "levels": {}, "pressure": {}, "clients": clients,
                    "node": m}
