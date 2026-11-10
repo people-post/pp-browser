@@ -40,6 +40,7 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_amp_reliable_packets_total` | counter | `event` = `sent` \| `retransmitted` \| `lost` | `lost` = given up after the retry cap |
 | `pp_amp_rtt_seconds` | histogram | | Round trips: acks of never-retransmitted reliable packets (buckets 0.005 … 2.5) |
 | `pp_link_active` | gauge | | Amp links in the link table |
+| `pp_link_inbound_refused_busy` | gauge | | New inbound links refused before their handshake while the pump was saturated (its busy share at the full line, 0.95, until below 0.90), since start (use `rate()`; pp-cpp-mesh ≥ v6.6.0) |
 | `pp_io_busy_fraction` | gauge | | Share of the last second the Amp pump thread spent working rather than waiting, 0..1; 1 = it never catches up (pp-cpp-mesh ≥ v6.2.0) |
 | `pp_udp_receive_drops` | gauge | | Datagrams the kernel dropped on the node's Amp socket for want of receive buffer, since start (use `rate()`); Linux |
 | `pp_udp_receive_buffer_bytes` | gauge | | The socket's receive buffer as granted (the host's `net.core.rmem_max` caps the 8 MiB asked) |

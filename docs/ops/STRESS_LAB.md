@@ -38,12 +38,26 @@ The node says `busy` / `full` before its members feel it, and new work goes else
 1. **Socket buffers** — on Release the first limit for media: the OS default (208 KiB) overflows in bursts while the pump has room. Kernel drops are `pp_udp_receive_drops` and a pressure. Hosts should raise the cap (`packaging/pp-node/99-pp-node-udp.conf`).
 2. **One pump thread does the data plane**, sealing every fan-out copy per recipient (XChaCha20-Poly1305), and walking the link table on its 50 ms cadence: past ~23k parked links it saturates one core while the worker pool idles. Its busy share is `pp_io_busy_fraction` and a pressure on every level.
 3. **Media waits without an age limit.** Call media is best effort on every normal path ([V063](../../projects/p2p-av-calls/DECISIONS.md#v063--call-audio-is-best-effort-the-codec-recovers-losses)), but a frame can wait in a link's send queue (the mux holds up to 32 MiB) for seconds; under overload media arrives late instead of being dropped.
-4. **New links cost a handshake** (ML-DSA): ~300 new clients a second fill two cores, and the node says full meanwhile.
-5. **An overloaded node loses parked clients**: once the pump saturates, renewals and keepalives run late, links time out, and their clients redial into the same overload (32k offered on Amp v5.1.0: ~23k parked, then ~2k).
+4. **New links cost a handshake** (ML-DSA): ~300–400 new clients a second on two cores. While the pump is saturated, a node refuses new inbound links before their handshake (`pp_link_inbound_refused_busy`), so the CPU stays with the links it has.
+5. **An overloaded node can lose parked clients**: once the pump saturates, renewals and keepalives run late, links time out, and their clients redial into the same overload (32k offered with capacities raised to 40k: ~23k parked, then ~2k). The defaults (8192 parks) keep a node below that; clients that ignore "full" are what the handshake gate (4) is for.
+
+## Restarts and storms (2026-11-10, Release, two cores, phones renewing every 20 s as the app does)
+
+`pp_node_stress.py --restart-at T [--restart-kill]` restarts the node on the same data (the same identity) mid-run; `pp-node-load` park clients behave as the app's park does — a 30 s hold, a lost link dialed again next round, a relay that said full skipped while that is fresh (`--ignore-full` for an old or abusive client).
+
+| Case | 8000 phones offered (7783 parked: the 8192 reservations' full line) |
+|------|------|
+| Clean restart (SIGTERM) | Reservations back to 50 % in 12 s, 90 % in 20 s, 99 % in 22 s; peak 59 % CPU. The node's Close reaches every phone; each parks again at its next round |
+| Crash (SIGKILL) | 50 % in 42 s, 99 % in 50 s; peak 43 % CPU. Nothing tells the phones: a phone notices only when its link's liveness window ends (25 s), then parks at its next round. Phones park on two relays in prod, so one seed's crash leaves them reachable through the other |
+| 20000 offered, app clients | Calm: 13–35 % CPU, no drops, every parked phone kept. Refused phones skip a full node for 2 min |
+| 20000 offered, `--ignore-full` | Without the handshake gate: 100 % CPU, ~2.3k kernel drops a second, the parked phones at the edge. With it: the gate closes at saturation, then 15–20 % CPU, no drops, every parked phone kept |
+
+Found on the way: a phone whose seed was full, then crashed, skipped the restarted — empty — seed for the 2 min the old "full" stayed fresh (130 s to recover instead of 50). The circuit client now forgets a relay's park level when the last park it held there ends without its cancel (pp-cpp-mesh v6.6.0).
 
 ## Open
 
 - A deadline on real-time media in the send queue (3), and the data plane on more than one thread (2): a design of their own.
 - What is left of the walks (2): perf at 15k parked puts ~45 % of the node's CPU in the 50 ms walk (each mux's tick and its keepalive tier) and ~11 % in per-event scans (a link's drop, an inbound's adoption). A cached keepalive tier and indexed scans would cut most of it.
 - Thresholds per machine type (the 0.70 / 0.95 lines are first guesses); a run on the org seeds' size with the host's buffers raised.
-- Restart storms and an overloaded node's lost parks (4–5), as one piece of work: every parked client redialing at once is the same spiral. Then a soak, and abuse (one client's uncapped bandwidth through a bridge).
+- Crash recovery is detection: a stateless reset (a restarted node tells a phone its association is gone, with a token from the handshake so it cannot be forged) would bring a crash to a clean restart's ~20 s. A wire change of its own.
+- A soak, and abuse (one client's uncapped bandwidth through a bridge).

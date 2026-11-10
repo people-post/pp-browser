@@ -66,6 +66,8 @@ struct Options {
   int duration_s = 120;
   int threads = 8;
   int renew_s = 20;
+  /** Park clients re-knock a node that said full every round (an old app, or abuse), instead of skipping it. */
+  bool ignore_full = false;
   int calls = 4;
   int members = 4;
   int audio_kbps = 32;
@@ -83,6 +85,10 @@ struct Stats {
   std::atomic<uint64_t> started{0};
   std::atomic<uint64_t> linked{0};
   std::atomic<uint64_t> link_fail{0};
+  /** Links made again after one was lost (a node restart, a dead path): the storm's size. */
+  std::atomic<uint64_t> relinked{0};
+  /** Rounds a client skipped because the node said full (as N033 clients do). */
+  std::atomic<uint64_t> skipped_full{0};
   std::atomic<uint64_t> parked{0};
   std::atomic<uint64_t> reserve_ok{0};
   std::atomic<uint64_t> reserve_fail{0};
@@ -234,18 +240,21 @@ void Associate(Peer& peer, const std::string& hop_ma, std::function<void(bool)> 
       "hop", [then = std::move(then)](pp::amp::PeerLinkManager::LinkRoe assoc) { then(static_cast<bool>(assoc)); });
 }
 
-/** A phone parked on the node: reserve, then renew every round; a refusal is retried at the next round. */
+/**
+ * A phone parked on the node, as the app's stay-reachable loop does it: reserve, then renew every --renew seconds
+ * (the app's 20). A refusal is retried at the next round. A link that failed or died (a node restart) is dialed again
+ * at the next round, as the app's next renew does — so a restart's clients come back spread over one round.
+ */
+/** How long a park's reservation is held: the app's (pp-cpp-mesh CircuitRendezvousCoordinator, 30 s). */
+constexpr int kParkHoldMs = 30000;
+
 class ParkUnit final : public Unit {
 public:
   ParkUnit(std::unique_ptr<Peer> peer, const Options& opts) : peer_(std::move(peer)), opts_(opts) {
     circuit_ = std::make_unique<pp::mesh::CircuitClientCoordinator>(peer_->stack->Runtime());
     circuit_->SetPeerLoadBook(&peer_->book);
     circuit_->Start();
-    Associate(*peer_, opts_.hop_ma, [this](const bool ok) {
-      (ok ? g_stats.linked : g_stats.link_fail).fetch_add(1);
-      linked_ = ok;
-      next_at_ = Clock::now();
-    });
+    Link();
   }
   ~ParkUnit() override {
     circuit_->Stop();
@@ -253,7 +262,19 @@ public:
   }
 
   void Step(const Clock::time_point now) override {
-    if (!linked_ || in_flight_ || now < next_at_) {
+    if (in_flight_ || now < next_at_) {
+      return;
+    }
+    if (!linked_) {
+      Link();
+      return;
+    }
+    // As the app's park does (N033): a relay that said full or draining, and still fresh, is skipped for the round —
+    // unless this client holds a reservation there, whose renewal it takes.
+    if (!opts_.ignore_full && !parked_ &&
+        peer_->book.RefusesNew("hop", MeshService::Park, pp::mesh::PeerLoadBook::NowMs())) {
+      g_stats.skipped_full.fetch_add(1);
+      next_at_ = now + std::chrono::seconds(opts_.renew_s);
       return;
     }
     in_flight_ = true;
@@ -277,16 +298,42 @@ public:
             parked_ = false;
             g_stats.parked.fetch_sub(1);
           }
+          if (!peer_->Links().IsConnected("hop")) {
+            linked_ = false; // the node went away: dial it again next round
+          }
         },
-        15000);
+        // The app's hold (pp-cpp-mesh CircuitRendezvousCoordinator's kParkReserveHoldMs, 30 s): longer than a round,
+        // so a renewal lands before the last reservation lapses. 15 s under a 20 s round left every client unparked a
+        // quarter of the time.
+        kParkHoldMs);
   }
   void Pump() override { peer_->Pump(); }
 
 private:
+  void Link() {
+    in_flight_ = true;
+    Associate(*peer_, opts_.hop_ma, [this](const bool ok) {
+      in_flight_ = false;
+      if (ok) {
+        g_stats.linked.fetch_add(1);
+        if (ever_linked_) {
+          g_stats.relinked.fetch_add(1);
+        }
+        ever_linked_ = true;
+        linked_ = true;
+        next_at_ = Clock::now();
+        return;
+      }
+      g_stats.link_fail.fetch_add(1);
+      next_at_ = Clock::now() + std::chrono::seconds(opts_.renew_s);
+    });
+  }
+
   std::unique_ptr<Peer> peer_;
   const Options& opts_;
   std::unique_ptr<pp::mesh::CircuitClientCoordinator> circuit_;
   bool linked_ = false;
+  bool ever_linked_ = false;
   bool in_flight_ = false;
   bool parked_ = false;
   Clock::time_point next_at_ = Clock::time_point::max();
@@ -622,7 +669,8 @@ void Report(const double elapsed_s, const bool summary) {
   std::ostringstream out;
   out << "{\"t\":" << static_cast<int64_t>(elapsed_s) << (summary ? ",\"summary\":true" : "")
       << ",\"started\":" << g_stats.started << ",\"linked\":" << g_stats.linked
-      << ",\"link_fail\":" << g_stats.link_fail << ",\"parked\":" << g_stats.parked
+      << ",\"link_fail\":" << g_stats.link_fail << ",\"relinked\":" << g_stats.relinked
+      << ",\"skipped_full\":" << g_stats.skipped_full << ",\"parked\":" << g_stats.parked
       << ",\"reserve_ok\":" << g_stats.reserve_ok << ",\"reserve_fail\":" << g_stats.reserve_fail
       << ",\"attached\":" << g_stats.attached << ",\"attach_fail\":" << g_stats.attach_fail
       << ",\"bridged\":" << g_stats.bridged << ",\"bridge_fail\":" << g_stats.bridge_fail
@@ -680,6 +728,8 @@ bool ParseArgs(int argc, char** argv, Options& o) {
       o.video_kbps = std::atoi(next().c_str());
     } else if (a == "--fps") {
       o.fps = std::atoi(next().c_str());
+    } else if (a == "--ignore-full") {
+      o.ignore_full = true;
     } else if (a == "--tag") {
       o.tag = next();
     } else {
