@@ -3750,18 +3750,23 @@ input.checkbox:checked {
 }
 
 .avatar-view-close,
-.avatar-view-close:active {
+.avatar-view-close:active,
+.avatar-crop-close,
+.avatar-crop-close:active {
   background-color: transparent;
 }
 
 .avatar-view-close .shell-circle-btn-face,
-.avatar-view-close:active .shell-circle-btn-face {
+.avatar-view-close:active .shell-circle-btn-face,
+.avatar-crop-close .shell-circle-btn-face,
+.avatar-crop-close:active .shell-circle-btn-face {
   background-color: {{scrim}};
   decorator: none;
   box-shadow: none;
 }
 
-.avatar-view-close .shell-circle-btn-face svg {
+.avatar-view-close .shell-circle-btn-face svg,
+.avatar-crop-close .shell-circle-btn-face svg {
   image-color: {{x-scan-ink}};
 }
 }
