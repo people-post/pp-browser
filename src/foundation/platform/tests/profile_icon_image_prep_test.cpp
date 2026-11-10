@@ -367,6 +367,48 @@ TEST_F(ProfileIconImagePrepTest, AnAffineWithNoSidesAndAMissingFileAreErrors) {
   ASSERT_FALSE(icon);
 }
 
+TEST_F(ProfileIconImagePrepTest, ARectangleAndAnAffineCropTogetherAreAnError) {
+  SDL_Surface* s = Quadrants(64, 64);
+  const std::string path = Write("quad.png", PngBytes(s));
+  SDL_DestroySurface(s);
+  ProfileIconCrop affine;
+  affine.side = 32;
+  auto icon = PrepareProfileIconFromFile(path, 512u * 1024u, 256, SDL_Rect{0, 0, 32, 32}, affine);
+  ASSERT_FALSE(icon);
+  EXPECT_EQ(icon.error().user, Tr("settings.profile.photo_unreadable"));
+}
+
+TEST_F(ProfileIconImagePrepTest, AFileOverTheSizeLimitIsTooLargeBeforeItIsDecoded) {
+  SDL_Surface* s = Quadrants(64, 64);
+  const std::string path = Write("quad.png", PngBytes(s));
+  SDL_DestroySurface(s);
+  ProfilePhotoLimits small;
+  small.max_file_bytes = 100; // the PNG is bigger than this
+  auto icon = PrepareProfileIconFromFile(path, 512u * 1024u, 256, std::nullopt, std::nullopt, small);
+  ASSERT_FALSE(icon);
+  EXPECT_EQ(icon.error().user, Tr("settings.profile.photo_too_large"));
+  auto preview = DecodeProfilePhotoPreview(path, 2048, small);
+  ASSERT_FALSE(preview);
+  EXPECT_EQ(preview.error().user, Tr("settings.profile.photo_too_large"));
+  EXPECT_TRUE(DecodeProfilePhotoPreview(path)) << "the default limit lets it through";
+}
+
+TEST_F(ProfileIconImagePrepTest, APictureOverThePixelLimitIsTooLarge) {
+  SDL_Surface* s = Quadrants(64, 64); // 4096 px
+  const std::string path = Write("quad.png", PngBytes(s));
+  SDL_DestroySurface(s);
+  ProfilePhotoLimits small;
+  small.max_pixels = 4095;
+  auto icon = PrepareProfileIconFromFile(path, 512u * 1024u, 256, std::nullopt, std::nullopt, small);
+  ASSERT_FALSE(icon);
+  EXPECT_EQ(icon.error().user, Tr("settings.profile.photo_too_large"));
+  auto preview = DecodeProfilePhotoPreview(path, 2048, small);
+  ASSERT_FALSE(preview);
+  EXPECT_EQ(preview.error().user, Tr("settings.profile.photo_too_large"));
+  small.max_pixels = 4096;
+  EXPECT_TRUE(DecodeProfilePhotoPreview(path, 2048, small)) << "exactly at the limit is allowed";
+}
+
 TEST_F(ProfileIconImagePrepTest, ThePreviewIsUprightLimitedAndKeepsTheRealSize) {
   SDL_Surface* s = Quadrants(300, 100);
   const std::string path = Write("quad.png", PngBytes(s));

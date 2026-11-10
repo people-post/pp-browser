@@ -1,5 +1,7 @@
 #include "foundation/platform/ProfileIconImagePrep.h"
 
+#include "common/ImageMetadata.h"
+#include "common/Logger.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/ImageEncode.h"
 #include "foundation/platform/ImageSampleAffine.h"
@@ -9,6 +11,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <string>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -38,27 +41,55 @@ std::string TypeHint(const std::string& path) {
 }
 
 /** Reads and decodes `path` upright; the caller owns the surface. */
-Roe<SDL_Surface*> LoadUpright(const std::string& path) {
+Roe<SDL_Surface*> LoadUpright(const std::string& path, const ProfilePhotoLimits& limits) {
+  // SDL IO, not a stat: Android's picker hands back content:// addresses only SDL can open.
+  SDL_IOStream* io = SDL_IOFromFile(path.c_str(), "rb");
+  if (!io) {
+    return Unreadable(std::string("Failed to read image: ") + (SDL_GetError() ? SDL_GetError() : "unknown error"));
+  }
+  const Sint64 file_size = SDL_GetIOSize(io);
+  if (file_size > 0 && static_cast<uint64_t>(file_size) > limits.max_file_bytes) {
+    SDL_CloseIO(io);
+    return TooLarge("Image file is too large: " + std::to_string(file_size) + " bytes");
+  }
   size_t size = 0;
-  void* file = SDL_LoadFile(path.c_str(), &size);
+  void* file = SDL_LoadFile_IO(io, &size, true);
   if (!file) {
     return Unreadable(std::string("Failed to read image: ") + (SDL_GetError() ? SDL_GetError() : "unknown error"));
   }
-  SDL_Surface* upright = DecodeImageUpright(static_cast<const uint8_t*>(file), size, TypeHint(path).c_str());
+  if (size > limits.max_file_bytes) {
+    SDL_free(file);
+    return TooLarge("Image file is too large: " + std::to_string(size) + " bytes");
+  }
+  // The size is in the head of the file: refuse a huge picture before it is decoded to memory.
+  const uint8_t* bytes = static_cast<const uint8_t*>(file);
+  const std::vector<uint8_t> head(bytes, bytes + std::min(size, kImageHeaderReadBytes));
+  if (const auto header = ReadImageHeaderBytes(head);
+      header && static_cast<int64_t>(header->width) * header->height > limits.max_pixels) {
+    SDL_free(file);
+    return TooLarge("Image is too large: " + std::to_string(header->width) + "x" + std::to_string(header->height));
+  }
+  SDL_Surface* upright = DecodeImageUpright(bytes, size, TypeHint(path).c_str());
   SDL_free(file);
   if (!upright) {
     return Unreadable(std::string("Failed to decode image: ") + (SDL_GetError() ? SDL_GetError() : "unknown error"));
+  }
+  if (static_cast<int64_t>(upright->w) * upright->h > limits.max_pixels) { // the head said nothing, or less
+    const std::string detail = "Image is too large: " + std::to_string(upright->w) + "x" + std::to_string(upright->h);
+    SDL_DestroySurface(upright);
+    return TooLarge(detail);
   }
   return upright;
 }
 
 } // namespace
 
-Roe<ProfilePhotoPreview> DecodeProfilePhotoPreview(const std::string& path, const int max_edge) {
+Roe<ProfilePhotoPreview> DecodeProfilePhotoPreview(const std::string& path, const int max_edge,
+                                                   const ProfilePhotoLimits limits) {
   if (path.empty()) {
     return Error("Image path is required");
   }
-  auto upright = LoadUpright(path);
+  auto upright = LoadUpright(path, limits);
   if (!upright) {
     return upright.error();
   }
@@ -88,11 +119,16 @@ Roe<ProfilePhotoPreview> DecodeProfilePhotoPreview(const std::string& path, cons
 
 Roe<EncodedProfileIcon> PrepareProfileIconFromFile(const std::string& path, const size_t max_bytes,
                                                    const int max_dimension, const std::optional<SDL_Rect> crop,
-                                                   const std::optional<ProfileIconCrop> affine_crop) {
+                                                   const std::optional<ProfileIconCrop> affine_crop,
+                                                   const ProfilePhotoLimits limits) {
   if (path.empty()) {
     return Error("Image path is required");
   }
-  auto loaded = LoadUpright(path);
+  if (crop && affine_crop) {
+    logging::getLogger("ProfileIconPrep").warning << "Both a rectangle crop and an affine crop were passed";
+    return Unreadable("Pass either a rectangle crop or an affine crop, not both");
+  }
+  auto loaded = LoadUpright(path, limits);
   if (!loaded) {
     return loaded.error();
   }

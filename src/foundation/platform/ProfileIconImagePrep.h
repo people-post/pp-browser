@@ -6,6 +6,7 @@
 #include <SDL3/SDL_rect.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -30,6 +31,12 @@ struct ProfileIconCrop {
   int side = 0;
 };
 
+/** What a picked photo may weigh: a larger file, or a picture with more pixels, is refused as "too large". */
+struct ProfilePhotoLimits {
+  size_t max_file_bytes = 64u * 1024u * 1024u;
+  int64_t max_pixels = 100'000'000;
+};
+
 /** A picture file decoded upright for the crop page: its real size and a copy of at most `max_edge` px on the long side. */
 struct ProfilePhotoPreview {
   int full_width = 0;
@@ -42,7 +49,8 @@ struct ProfilePhotoPreview {
 
 /** Reads and decodes `path` the way PrepareProfileIconFromFile does (SDL IO, upright). The error carries the
  *  "can't be opened" words. Runs on a worker thread. */
-Roe<ProfilePhotoPreview> DecodeProfilePhotoPreview(const std::string& path, int max_edge = 2048);
+Roe<ProfilePhotoPreview> DecodeProfilePhotoPreview(const std::string& path, int max_edge = 2048,
+                                                   ProfilePhotoLimits limits = {});
 
 /** What the crop page hands the caller's upload step to answer with. */
 struct AvatarCropReply {
@@ -58,11 +66,13 @@ struct AvatarCropReply {
  * turned upright by its EXIF orientation. `crop` is the part to keep, in pixels of the upright picture (a rectangle
  * reaching outside is clamped to the picture); without it the largest centred square is kept, so the icon is square
  * either way. With `affine_crop` (the crop page) the picture is instead resampled through it (decode upright ->
- * SampleAffine -> scale -> encode) and `crop` is ignored. Failures the person can act on carry their own words (Error::user): the picture cannot be opened, or
+ * SampleAffine -> scale -> encode); passing both `crop` and `affine_crop` is an error. A file over
+ * `limits.max_file_bytes`, or a picture over `limits.max_pixels`, is refused as too large. Failures the person can act on carry their own words (Error::user): the picture cannot be opened, or
  * it is still too large after scaling.
  */
 Roe<EncodedProfileIcon> PrepareProfileIconFromFile(const std::string& path, size_t max_bytes = 512u * 1024u,
                                                    int max_dimension = 512, std::optional<SDL_Rect> crop = std::nullopt,
-                                                   std::optional<ProfileIconCrop> affine_crop = std::nullopt);
+                                                   std::optional<ProfileIconCrop> affine_crop = std::nullopt,
+                                                   ProfilePhotoLimits limits = {});
 
 } // namespace pbr
