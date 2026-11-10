@@ -522,6 +522,15 @@ void CallController::Tick() {
       SyncShellState();
     }
   }
+  if (ring_.active && shell_call_chrome_.call_page_height_dp &&
+      shell_call_chrome_.call_page_height_dp() != ring_page_height_dp_) {
+    // A rotation / resize / safe-area change: the room for the three lines is decided again (no work otherwise).
+    const bool before = ring_.show_steps;
+    FillRingShowSteps();
+    if (ring_.show_steps != before) {
+      SyncShellState();
+    }
+  }
   SyncRingtone();
   SyncLocalHold();
   SyncOngoingCall();
@@ -664,6 +673,7 @@ void CallController::RenderAwaitingRing() {
   ring_.avatar_letter = ""; // the blank default avatar, no "?"
   FillRingSteps(true, "", CallRingMedia::Unknown);
   FillRingSelfAvatar();
+  FillRingShowSteps();
   SyncShellState();
   SyncRingtone();
 }
@@ -1199,16 +1209,21 @@ void CallController::RenderRing(const CallScreen& screen, const int64_t now_ms) 
   ring_.decline_label = copy.decline_label;
   FillRingAnswerLabels(screen);
   FillRingPhoneFields(screen, caller_label, now_ms);
-  // The three lines give way first on a short page (never the price, conflict or guest text).
-  ring_.show_steps = CallRingShowsSteps(
-      {.page_height_dp = shell_call_chrome_.call_page_height_dp ? shell_call_chrome_.call_page_height_dp() : 0,
-       .group = screen.ring_group,
-       .conflict = screen.conflict,
-       .guest = !ring_.guest_hint.empty(),
-       .pricing = ring_.show_pricing,
-       .charge_enabled = ring_.accept_charge_enabled});
+  FillRingShowSteps();
   SyncShellState();
   SyncRingtone();
+}
+
+void CallController::FillRingShowSteps() {
+  // The three lines give way first on a short page (never the price, conflict or guest text). Read from ring_ itself,
+  // so the awaiting page (nothing but the plain 1:1 blocks) and a real ring use one rule.
+  ring_page_height_dp_ = shell_call_chrome_.call_page_height_dp ? shell_call_chrome_.call_page_height_dp() : 0;
+  ring_.show_steps = CallRingShowsSteps({.page_height_dp = ring_page_height_dp_,
+                                         .group = ring_.group,
+                                         .conflict = ring_.conflict,
+                                         .guest = !ring_.guest_hint.empty(),
+                                         .pricing = ring_.show_pricing,
+                                         .charge_enabled = ring_.accept_charge_enabled});
 }
 
 void CallController::FillRingAnswerLabels(const CallScreen& screen) {

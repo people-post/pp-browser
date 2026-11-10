@@ -157,6 +157,8 @@ private:
   void FillRingSelfAvatar();
   /** The local identity ("" before the unlock). */
   std::string LocalIdentity() const;
+  /** Whether the ring page has room for its three lines (CallRingShowsSteps), from ring_ and the page height now. */
+  void FillRingShowSteps();
   void FillRingPhoneFields(const CallScreen& screen, const std::string& caller_label, int64_t now_ms);
   /** Mute, camera (its buttons, rotation), speaker and the hold, from the engine and the frame. */
   void ApplyLocalMedia(IMediaView& media, const CallMediaScreen& frame);
@@ -362,6 +364,8 @@ private:
   /** The call the ring page last showed and whether it rang as video: the answering page words its lead rows by it. */
   /** The identity the awaiting ring page drew our avatar with (CallSelfAvatarWatch). */
   CallSelfAvatarWatch ring_self_watch_;
+  /** The page height FillRingShowSteps last used: Tick decides again only when it differs. */
+  int ring_page_height_dp_ = 0;
   std::string rung_call_id_;
   bool rung_video_ = false;
   bool demo_call_back_offered_ = false;
