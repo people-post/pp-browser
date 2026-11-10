@@ -9,6 +9,8 @@ pp_browser_add_feature_library(pp_feature_presenters
     CallMediaFrame.cpp
     CallMediaHintClock.cpp
     CallReconnectCapsule.cpp
+    CallRingSteps.cpp
+    CallStepScroll.cpp
     CallWakePlaceholder.cpp
     CallPresenter.cpp
     CallSystemUiBridge.cpp

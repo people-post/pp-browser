@@ -88,15 +88,15 @@ TEST(CallWakePlaceholderPresenterTest, AnythingButAPhoneNeverShowsAndClearsOneTh
   EXPECT_EQ(presenter.StepWakePlaceholder(false, at).ring, WakeRing::Keep);
 }
 
-TEST(CallWakePlaceholderPresenterTest, TheTitleWordExistsInEnglishAndChinese) {
+TEST(CallWakePlaceholderPresenterTest, TheAwaitingNameWordExistsInEnglishAndChinese) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");
-  const std::string en = Tr("call.ring.awaiting.title");
+  const std::string en = Tr("call.ring.awaiting.name");
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  const std::string zh = Tr("call.ring.awaiting.title");
+  const std::string zh = Tr("call.ring.awaiting.name");
   LocalizationService::Instance().SetPreferredLanguage("en");
-  EXPECT_EQ(en, "Incoming call, connecting…");
-  EXPECT_EQ(zh, "来电，正在接入…");
+  EXPECT_EQ(en, "Incoming call");
+  EXPECT_EQ(zh, "来电");
 }
 
 } // namespace
