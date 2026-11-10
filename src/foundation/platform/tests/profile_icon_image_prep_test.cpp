@@ -231,8 +231,8 @@ TEST_F(ProfileIconImagePrepTest, ARectangleOutsideThePictureIsClampedAndAnEmptyO
   ExpectNear(out, 5, 5, kYellow);
   SDL_DestroySurface(out);
 
-  for (const SDL_Rect bad : {SDL_Rect{10, 10, 0, 0}, SDL_Rect{10, 10, -5, 20}, SDL_Rect{1000, 1000, 10, 10},
-                             SDL_Rect{-50, -50, 20, 20}}) {
+  for (const SDL_Rect bad :
+       {SDL_Rect{10, 10, 0, 0}, SDL_Rect{10, 10, -5, 20}, SDL_Rect{1000, 1000, 10, 10}, SDL_Rect{-50, -50, 20, 20}}) {
     icon = PrepareProfileIconFromFile(path, 512u * 1024u, 256, bad);
     ASSERT_FALSE(icon) << bad.x << "," << bad.y << " " << bad.w << "x" << bad.h;
     EXPECT_EQ(icon.error().user, Tr("settings.profile.photo_unreadable"));
@@ -290,6 +290,78 @@ TEST_F(ProfileIconImagePrepTest, AFileThatIsNoPictureOrIsMissingSaysItCannotBeOp
   icon = PrepareProfileIconFromFile((dir_ / "missing.jpg").string());
   ASSERT_FALSE(icon);
   EXPECT_EQ(icon.error().user, Tr("settings.profile.photo_unreadable"));
+}
+
+// The crop page's choice (PLAN-avatar-edit items 10 and 11): decode upright -> SampleAffine -> scale -> encode.
+TEST_F(ProfileIconImagePrepTest, TheIdentityAffineIsTheCentredSquare) {
+  SDL_Surface* s = Quadrants(200, 100);
+  const std::string path = Write("quad.png", PngBytes(s));
+  SDL_DestroySurface(s);
+  ProfileIconCrop crop;
+  crop.side = 100;
+  crop.affine.x0 = 50.0; // the middle square: x 50..150, y 0..100
+  auto icon = PrepareProfileIconFromFile(path, 512u * 1024u, 256, std::nullopt, crop);
+  ASSERT_TRUE(icon) << icon.error().message;
+  SDL_Surface* got = Decode(icon.value());
+  ASSERT_NE(got, nullptr);
+  EXPECT_EQ(got->w, 100);
+  EXPECT_EQ(got->h, 100);
+  ExpectNear(got, 10, 10, kRed);
+  ExpectNear(got, 90, 10, kGreen);
+  ExpectNear(got, 10, 90, kBlue);
+  ExpectNear(got, 90, 90, kYellow);
+  SDL_DestroySurface(got);
+}
+
+TEST_F(ProfileIconImagePrepTest, ATurnedAffineMovesTheQuadrantsAQuarterTurnClockwise) {
+  SDL_Surface* s = Quadrants(200, 100);
+  const std::string path = Write("quad.png", PngBytes(s));
+  SDL_DestroySurface(s);
+  // The picture turned 90 degrees clockwise about its middle: output (u, v) reads the source at (v + 50, 100 - u).
+  ProfileIconCrop crop;
+  crop.side = 100;
+  crop.affine = {0.0, 1.0, 50.0, -1.0, 0.0, 100.0};
+  auto icon = PrepareProfileIconFromFile(path, 512u * 1024u, 256, std::nullopt, crop);
+  ASSERT_TRUE(icon) << icon.error().message;
+  SDL_Surface* got = Decode(icon.value());
+  ASSERT_NE(got, nullptr);
+  ExpectNear(got, 90, 10, kRed);    // red was top left, now top right
+  ExpectNear(got, 90, 90, kGreen);  // green was top right, now bottom right
+  ExpectNear(got, 10, 10, kBlue);   // blue was bottom left, now top left
+  ExpectNear(got, 10, 90, kYellow); // yellow was bottom right, now bottom left
+  SDL_DestroySurface(got);
+}
+
+TEST_F(ProfileIconImagePrepTest, AnAffineWithNoSidesAndAMissingFileAreErrors) {
+  SDL_Surface* s = Quadrants(64, 64);
+  const std::string path = Write("quad.png", PngBytes(s));
+  SDL_DestroySurface(s);
+  ProfileIconCrop empty;
+  empty.side = 0;
+  auto icon = PrepareProfileIconFromFile(path, 512u * 1024u, 256, std::nullopt, empty);
+  ASSERT_FALSE(icon);
+  EXPECT_EQ(icon.error().user, Tr("settings.profile.photo_unreadable"));
+  ProfileIconCrop one;
+  one.side = 10;
+  icon = PrepareProfileIconFromFile((dir_ / "missing.jpg").string(), 512u * 1024u, 256, std::nullopt, one);
+  ASSERT_FALSE(icon);
+}
+
+TEST_F(ProfileIconImagePrepTest, ThePreviewIsUprightLimitedAndKeepsTheRealSize) {
+  SDL_Surface* s = Quadrants(300, 100);
+  const std::string path = Write("quad.png", PngBytes(s));
+  SDL_DestroySurface(s);
+  auto preview = DecodeProfilePhotoPreview(path, 150);
+  ASSERT_TRUE(preview) << preview.error().message;
+  EXPECT_EQ(preview->full_width, 300);
+  EXPECT_EQ(preview->full_height, 100);
+  EXPECT_EQ(preview->width, 150);
+  EXPECT_EQ(preview->height, 50);
+  ASSERT_EQ(preview->rgba.size(), 150u * 50u * 4u);
+  // Top left pixel is red (RGBA order).
+  EXPECT_GT(preview->rgba[0], 200);
+  EXPECT_LT(preview->rgba[1], 60);
+  EXPECT_FALSE(DecodeProfilePhotoPreview(Write("junk.jpg", std::vector<uint8_t>(64, 0x5A))));
 }
 
 } // namespace

@@ -2,6 +2,7 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/ImageEncode.h"
+#include "foundation/platform/ImageSampleAffine.h"
 
 #include <SDL3/SDL.h>
 
@@ -36,13 +37,8 @@ std::string TypeHint(const std::string& path) {
   return hint;
 }
 
-} // namespace
-
-Roe<EncodedProfileIcon> PrepareProfileIconFromFile(const std::string& path, const size_t max_bytes,
-                                                   const int max_dimension, const std::optional<SDL_Rect> crop) {
-  if (path.empty()) {
-    return Error("Image path is required");
-  }
+/** Reads and decodes `path` upright; the caller owns the surface. */
+Roe<SDL_Surface*> LoadUpright(const std::string& path) {
   size_t size = 0;
   void* file = SDL_LoadFile(path.c_str(), &size);
   if (!file) {
@@ -53,10 +49,63 @@ Roe<EncodedProfileIcon> PrepareProfileIconFromFile(const std::string& path, cons
   if (!upright) {
     return Unreadable(std::string("Failed to decode image: ") + (SDL_GetError() ? SDL_GetError() : "unknown error"));
   }
+  return upright;
+}
 
-  const int side = std::min(upright->w, upright->h);
-  const SDL_Rect area = crop ? *crop : SDL_Rect{(upright->w - side) / 2, (upright->h - side) / 2, side, side};
-  SDL_Surface* cropped = CropSurface(upright, area);
+} // namespace
+
+Roe<ProfilePhotoPreview> DecodeProfilePhotoPreview(const std::string& path, const int max_edge) {
+  if (path.empty()) {
+    return Error("Image path is required");
+  }
+  auto upright = LoadUpright(path);
+  if (!upright) {
+    return upright.error();
+  }
+  ProfilePhotoPreview preview;
+  preview.full_width = upright.value()->w;
+  preview.full_height = upright.value()->h;
+  SDL_Surface* scaled = ScaleToMaxDimension(upright.value(), max_edge);
+  SDL_DestroySurface(upright.value());
+  if (!scaled) {
+    return Unreadable("Failed to scale the preview");
+  }
+  SDL_Surface* rgba = SDL_ConvertSurface(scaled, SDL_PIXELFORMAT_RGBA32);
+  SDL_DestroySurface(scaled);
+  if (!rgba) {
+    return Unreadable("Failed to convert the preview");
+  }
+  preview.width = rgba->w;
+  preview.height = rgba->h;
+  preview.rgba.resize(static_cast<size_t>(rgba->w) * rgba->h * 4);
+  for (int y = 0; y < rgba->h; ++y) {
+    std::copy_n(static_cast<const uint8_t*>(rgba->pixels) + static_cast<size_t>(y) * rgba->pitch,
+                static_cast<size_t>(rgba->w) * 4, preview.rgba.begin() + static_cast<size_t>(y) * rgba->w * 4);
+  }
+  SDL_DestroySurface(rgba);
+  return preview;
+}
+
+Roe<EncodedProfileIcon> PrepareProfileIconFromFile(const std::string& path, const size_t max_bytes,
+                                                   const int max_dimension, const std::optional<SDL_Rect> crop,
+                                                   const std::optional<ProfileIconCrop> affine_crop) {
+  if (path.empty()) {
+    return Error("Image path is required");
+  }
+  auto loaded = LoadUpright(path);
+  if (!loaded) {
+    return loaded.error();
+  }
+  SDL_Surface* upright = loaded.value();
+
+  SDL_Surface* cropped = nullptr;
+  if (affine_crop) {
+    cropped = SampleAffine(upright, affine_crop->side, affine_crop->affine);
+  } else {
+    const int side = std::min(upright->w, upright->h);
+    const SDL_Rect area = crop ? *crop : SDL_Rect{(upright->w - side) / 2, (upright->h - side) / 2, side, side};
+    cropped = CropSurface(upright, area);
+  }
   SDL_DestroySurface(upright);
   if (!cropped) {
     return Unreadable("Profile icon crop is outside the image");
