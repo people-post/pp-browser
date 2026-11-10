@@ -14693,7 +14693,7 @@ textarea:composing ~ .prompt-composer-label,
   padding: 0;
   border-width: 0;
   text-align: center;
-  font-size: 17dp;
+  font-size: 19dp;
 }
 
 .avatar-crop-btn--done {
