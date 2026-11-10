@@ -106,7 +106,8 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
       synced.in_call_status_hint != next.in_call_status_hint || synced.in_call_roster != next.in_call_roster ||
       synced.ring_phone_title != next.ring_phone_title || synced.ring_phone_subtitle != next.ring_phone_subtitle ||
       synced.ring_avatar != next.ring_avatar || synced.ring_awaiting_invite != next.ring_awaiting_invite ||
-      synced.ring_caller_unknown != next.ring_caller_unknown || synced.ring_steps != next.ring_steps ||
+      synced.ring_caller_unknown != next.ring_caller_unknown || synced.ring_group != next.ring_group ||
+      synced.ring_video_allowed != next.ring_video_allowed || synced.ring_steps != next.ring_steps ||
       synced.in_call_story_stage != next.in_call_story_stage ||
       synced.in_call_story_steps != next.in_call_story_steps ||
       synced.in_call_story_scroll != next.in_call_story_scroll || synced.ring_caller_label != next.ring_caller_label ||

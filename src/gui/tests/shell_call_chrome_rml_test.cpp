@@ -822,5 +822,148 @@ TEST(ShellCallChromeRmlTest, PhoneGroupVideoHasTheFlipButtonNextToTheCamera) {
   EXPECT_FALSE(Has(CallInProgressRml(state), "call_flip_camera()"));
 }
 
+// What CaptureCallChrome (CallController.cpp) puts into the layer from a ring: the fields the classification reads.
+CallChromeLayer RingLayer(const CallRingState& r) {
+  CallChromeLayer layer;
+  layer.phone = true;
+  layer.ring_active = r.active;
+  layer.ring_awaiting_invite = r.awaiting_invite;
+  layer.ring_conflict = r.conflict;
+  layer.ring_show_pricing = r.show_pricing;
+  layer.ring_accept_charge_enabled = r.accept_charge_enabled;
+  layer.ring_call_id = r.call_id.c_str();
+  layer.ring_caller_label = r.caller_label.c_str();
+  layer.ring_media_label = r.media_label.c_str();
+  layer.ring_eyebrow = r.eyebrow.c_str();
+  layer.ring_conflict_hint = r.conflict_hint.c_str();
+  layer.ring_guest_hint = r.guest_hint.c_str();
+  layer.ring_accept_label = r.accept_label.c_str();
+  layer.ring_voice_answer_label = r.voice_answer_label.c_str();
+  layer.ring_decline_label = r.decline_label.c_str();
+  layer.ring_pricing_label = r.pricing_label.c_str();
+  layer.ring_accept_charge_label = r.accept_charge_label.c_str();
+  layer.ring_accept_charge_hint = r.accept_charge_hint.c_str();
+  layer.ring_accept_short = r.accept_short.c_str();
+  layer.ring_voice_short = r.voice_short.c_str();
+  layer.ring_phone_title = r.phone_title.c_str();
+  layer.ring_phone_subtitle = r.phone_subtitle.c_str();
+  layer.ring_caller_unknown = r.caller_unknown;
+  layer.ring_group = r.group;
+  layer.ring_video_allowed = r.video_allowed;
+  layer.ring_avatar =
+      std::string(r.group ? "g" : "p") + (r.has_avatar ? r.avatar_src.c_str() : r.avatar_letter.c_str());
+  layer.ring_steps = std::string(r.step1.c_str()) + "|" + r.step2.c_str() + "|" + r.step3.c_str() +
+                     (r.step2_current ? "c" : "-") + (r.step3_done ? "d" : "-") + (r.show_steps ? "s" : "-");
+  return layer;
+}
+
+CallRingState AwaitingRing() {
+  CallRingState r;
+  r.active = true;
+  r.awaiting_invite = true;
+  r.accept_label = "Accept";
+  r.decline_label = "Decline";
+  r.voice_answer_label = "Voice answer";
+  r.accept_short = "Accept";
+  r.voice_short = "Voice";
+  r.phone_title = "Connecting";
+  r.step1 = "Call received";
+  r.step2 = "Joining";
+  r.step3 = "Verifying";
+  r.step2_current = true;
+  return r;
+}
+
+struct RingCase {
+  const char* name;
+  /** Structure written into the markup (guest line, price block): the page is mounted again; else it only dirties. */
+  bool remounts;
+  void (*make)(CallRingState&);
+};
+
+// The incoming-call page is not remounted when the invite arrives (a remount flashed it), so whatever differs between
+// the awaiting placeholder and the real ring must be either structure (the classification remounts) or a bound value
+// (same markup, and a dirty). A case that is neither fails here.
+TEST(ShellCallChromeRmlTest, FromTheAwaitingPageEveryKindOfRingEndsUpAsAFreshMountOfIt) {
+  const RingCase cases[] = {
+      {"plain 1:1", false, [](CallRingState&) {}},
+      {"video", false,
+       [](CallRingState& r) {
+         r.video_allowed = true;
+         r.accept_label = "Video answer";
+         r.accept_short = "Video";
+       }},
+      {"group", false,
+       [](CallRingState& r) {
+         r.group = true;
+         r.phone_title = "Family";
+         r.phone_subtitle = "Bob started a voice call";
+       }},
+      {"conflict", false,
+       [](CallRingState& r) {
+         r.conflict = true;
+         r.eyebrow = "You're already in a call";
+         r.media_label = "Carol is calling";
+         r.conflict_hint = "Accepting ends your call with Bob.";
+         r.accept_label = "End & accept";
+         r.voice_answer_label = "End & accept (voice)";
+         r.decline_label = "Ignore";
+       }},
+      {"paid, charge enabled", true,
+       [](CallRingState& r) {
+         r.show_pricing = true;
+         r.accept_charge_enabled = true;
+         r.pricing_label = "Offer 5";
+         r.accept_charge_label = "Take 5";
+         r.accept_charge_hint = "Not enough";
+         r.accept_label = "Accept free";
+       }},
+      {"paid, charge disabled", true,
+       [](CallRingState& r) {
+         r.show_pricing = true;
+         r.pricing_label = "Offer 5";
+         r.accept_charge_label = "Take 5";
+         r.accept_charge_hint = "Not enough";
+         r.accept_label = "Accept free";
+       }},
+      {"guest", true, [](CallRingState& r) { r.guest_hint = "Joining shows you to everyone"; }},
+      {"unknown caller", false, [](CallRingState& r) { r.caller_unknown = true; }},
+      {"conflict + video + guest + paid", true,
+       [](CallRingState& r) {
+         r.conflict = true;
+         r.video_allowed = true;
+         r.guest_hint = "Joining shows you to everyone";
+         r.show_pricing = true;
+         r.conflict_hint = "Accepting ends your call with Bob.";
+         r.pricing_label = "Offer 5";
+       }},
+  };
+  for (const RingCase& c : cases) {
+    ShellState awaiting;
+    awaiting.layout_mode = LayoutMode::Compact;
+    awaiting.call_ring = AwaitingRing();
+    ShellState ring = awaiting;
+    ring.call_ring.awaiting_invite = false;
+    ring.call_ring.call_id = "c1";
+    ring.call_ring.caller_label = "Bob";
+    ring.call_ring.phone_title = "Bob";
+    ring.call_ring.phone_subtitle = "PP voice call";
+    ring.call_ring.step1 = "Voice call received";
+    ring.call_ring.step2_current = false;
+    ring.call_ring.step3_done = true;
+    ring.call_ring.step3 = "Bob";
+    c.make(ring.call_ring);
+
+    const CallChromeUpdate update = ClassifyCallChromeUpdate(RingLayer(awaiting.call_ring), RingLayer(ring.call_ring));
+    if (c.remounts) {
+      EXPECT_EQ(update, CallChromeUpdate::Remount) << c.name << ": mounted fresh from the real ring's own state";
+      continue;
+    }
+    EXPECT_EQ(update, CallChromeUpdate::DirtyOnly) << c.name << ": a bound-only change must dirty";
+    EXPECT_EQ(CallRingRml(awaiting), CallRingRml(ring))
+        << c.name << ": not remounted, so the markup must already be the real ring's";
+  }
+}
+
 } // namespace
 } // namespace pbr

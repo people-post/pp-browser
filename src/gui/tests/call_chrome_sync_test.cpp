@@ -59,6 +59,19 @@ TEST(CallChromeSyncTest, AwaitingRingBecomesTheRealRingByDirtyOnly) {
   pbr::CallChromeLayer paid = awaiting;
   paid.ring_show_pricing = true;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, paid), pbr::CallChromeUpdate::Remount) << "pricing is structure";
+  pbr::CallChromeLayer charge = awaiting;
+  charge.ring_accept_charge_enabled = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, charge), pbr::CallChromeUpdate::Remount) << "the charge block";
+  pbr::CallChromeLayer guest = awaiting;
+  guest.ring_guest_hint = "Joining shows you to everyone";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, guest), pbr::CallChromeUpdate::Remount) << "the guest line";
+  // The group blocks and the voice-answer button are switched by bound flags: a change alone is a dirty.
+  pbr::CallChromeLayer group = awaiting;
+  group.ring_group = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, group), pbr::CallChromeUpdate::DirtyOnly) << "group";
+  pbr::CallChromeLayer video = awaiting;
+  video.ring_video_allowed = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, video), pbr::CallChromeUpdate::DirtyOnly) << "video";
 }
 
 // The story page: a stage advance (the reached row, the step words, the scroll) is bound, so it only dirties and keeps

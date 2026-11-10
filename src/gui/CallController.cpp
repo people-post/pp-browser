@@ -332,6 +332,8 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_avatar = AvatarKey(ring.group, ring.has_avatar, ring.avatar_src, ring.avatar_letter, ring.avatar_tone),
       .ring_awaiting_invite = ring.awaiting_invite,
       .ring_caller_unknown = ring.caller_unknown,
+      .ring_group = ring.group,
+      .ring_video_allowed = ring.video_allowed,
       .ring_steps = RingStepsKey(ring),
       .in_call_phone_title = in_call.phone_title.c_str(),
       .in_call_video = in_call.video,
