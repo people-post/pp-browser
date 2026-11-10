@@ -18,6 +18,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     CallSystemUiBridge.cpp
     ChatPresenter.cpp
     CropFingerOwnership.cpp
+    CropGestureAccumulator.cpp
     DeliveryNoticePlan.cpp
     GroupEventText.cpp
     GroupLinkText.cpp
