@@ -5,7 +5,7 @@
 namespace pbr {
 namespace {
 
-// The incoming-call placeholder page: starts on a fresh call tap, ends on ring / timeout / expiry / close.
+// The incoming-call placeholder page: starts on a fresh call tap, ends on ring / timeout / expiry.
 
 using Outcome = CallWakePlaceholder::Outcome;
 using Input = CallWakePlaceholder::Input;
@@ -73,29 +73,18 @@ TEST(CallWakePlaceholderTest, MessagingAlreadyReadyAtStartCountsTheTenSecondsFro
 TEST(CallWakePlaceholderTest, NotReadyNeverTimesOutButEndsExpiredWhenTheTapGoesStale) {
   CallWakePlaceholder p;
   p.Step(Tap(1, 0));
-  EXPECT_TRUE(p.Step(Tap(1, 89'000)).active);
-  Input in = Tap(1, 90'500);
+  EXPECT_TRUE(p.Step(Tap(1, 29'000)).active);
+  Input in = Tap(1, 30'500);
   in.tap_fresh = false;
   auto v = p.Step(in);
   EXPECT_FALSE(v.active);
   EXPECT_EQ(v.outcome, Outcome::Expired);
-  EXPECT_EQ(v.shown_ms, 90'500);
+  EXPECT_EQ(v.shown_ms, 30'500);
   EXPECT_EQ(v.ready_ms, std::nullopt);
 }
 
-TEST(CallWakePlaceholderTest, DismissedEndsIt) {
-  CallWakePlaceholder p;
-  p.Step(Tap(1, 1'000));
-  Input in = Tap(1, 1'800);
-  in.dismissed = true;
-  auto v = p.Step(in);
-  EXPECT_FALSE(v.active);
-  EXPECT_EQ(v.outcome, Outcome::Dismissed);
-  EXPECT_EQ(v.shown_ms, 800);
-}
-
 TEST(CallWakePlaceholderTest, TheSameTapNeverRestartsAfterAnyEnding) {
-  for (const Outcome end : {Outcome::Ring, Outcome::Dismissed, Outcome::Expired, Outcome::Timeout}) {
+  for (const Outcome end : {Outcome::Ring, Outcome::Expired, Outcome::Timeout}) {
     CallWakePlaceholder p;
     p.Step(Tap(1, 0));
     Input in = Tap(1, 20'000);
@@ -104,8 +93,6 @@ TEST(CallWakePlaceholderTest, TheSameTapNeverRestartsAfterAnyEnding) {
     in.now_ms = 21'000;
     if (end == Outcome::Ring) {
       in.screen_kind = Kind::Ringing;
-    } else if (end == Outcome::Dismissed) {
-      in.dismissed = true;
     } else if (end == Outcome::Expired) {
       in.tap_fresh = false;
     } else {
@@ -120,7 +107,7 @@ TEST(CallWakePlaceholderTest, ANewTapAfterAnEndingStartsAgain) {
   CallWakePlaceholder p;
   p.Step(Tap(1, 0));
   Input in = Tap(1, 500);
-  in.dismissed = true;
+  in.tap_fresh = false;
   p.Step(in);
   EXPECT_TRUE(p.Step(Tap(2, 5'000)).active);
 }
@@ -185,6 +172,36 @@ TEST(CallWakePlaceholderTest, ANewerTapWhileShownWaitsForItsOwnCallFromNow) {
   auto v = p.Step(in);
   EXPECT_EQ(v.outcome, Outcome::Timeout);
   EXPECT_EQ(v.shown_ms, 10'000);
+}
+
+TEST(CallWakePlaceholderTest, ANotificationFortySecondsOldShownTwentyOneSecondsEnds) {
+  CallWakePlaceholder p;
+  Input in = Tap(1, 0);
+  in.tap_notification_age_ms = 40'000;
+  EXPECT_TRUE(p.Step(in).active);
+  in.now_ms = 20'000;
+  EXPECT_TRUE(p.Step(in).active) << "40 s + 20 s is still within the 60 s ring";
+  in.now_ms = 21'000;
+  auto v = p.Step(in);
+  EXPECT_FALSE(v.active);
+  EXPECT_EQ(v.outcome, Outcome::Expired);
+  EXPECT_EQ(v.shown_ms, 21'000);
+}
+
+TEST(CallWakePlaceholderTest, UnknownAgeShownSixtyOneSecondsEndsEvenWhenNeverReady) {
+  CallWakePlaceholder p;
+  EXPECT_TRUE(p.Step(Tap(1, 0)).active);
+  EXPECT_TRUE(p.Step(Tap(1, 60'000)).active) << "exactly the ring length is not over";
+  auto v = p.Step(Tap(1, 61'000));
+  EXPECT_FALSE(v.active);
+  EXPECT_EQ(v.outcome, Outcome::Expired);
+}
+
+TEST(CallWakePlaceholderTest, NotReadyStaysUpFor59Seconds) {
+  CallWakePlaceholder p;
+  p.Step(Tap(1, 0));
+  EXPECT_TRUE(p.Step(Tap(1, 30'000)).active);
+  EXPECT_TRUE(p.Step(Tap(1, 59'000)).active);
 }
 
 } // namespace

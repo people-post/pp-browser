@@ -14,14 +14,15 @@ namespace pbr {
  * PendingNotificationTap says), so it can run before the vault is unlocked.
  *
  * Starts on a fresh call tap that has not been handled, with no call screen up, whose notification is not stale.
- * Ends, quietly, when the ring shows (Ring), the person closes it (Dismissed), the tap goes stale (Expired), or
- * messaging has been ready for kNoRingAfterReadyMs without a ring (Timeout). Before messaging is ready the only
- * timer is the tap's own freshness. Every end marks the tap handled: the same tap never shows it again, a new tap
+ * Ends, quietly, when the ring shows (Ring), the tap goes stale or the caller cannot still be ringing (Expired), or
+ * messaging has been ready for kNoRingAfterReadyMs without a ring (Timeout). The caller rings for at most
+ * kDefaultCallInviteTtlMs, so notification age plus time shown past that ends it even if messaging never became
+ * ready (a locked phone nobody unlocks). Every end marks the tap handled: the same tap never shows it again, a new tap
  * does. A ring that arrives after the end is the ordinary ring; nothing is reported for it.
  */
 class CallWakePlaceholder {
 public:
-  enum class Outcome { None, Ring, Timeout, Expired, Dismissed };
+  enum class Outcome { None, Ring, Timeout, Expired };
 
   /** Messaging ready this long without a ring: the call is not coming. */
   static constexpr int64_t kNoRingAfterReadyMs = 10'000;
@@ -36,8 +37,6 @@ public:
     std::optional<int64_t> tap_notification_age_ms;
     CallScreen::Kind screen_kind = CallScreen::Kind::None;
     bool messaging_ready = false;
-    /** The person pressed Close / back this step. */
-    bool dismissed = false;
     int64_t now_ms = 0;
   };
 

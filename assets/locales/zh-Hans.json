@@ -1346,6 +1346,7 @@
     "call.ring.phone.video": "PP 视频通话",
     "call.ring.phone.group_voice": "{name} 发起了语音通话",
     "call.ring.phone.group_video": "{name} 发起了视频通话",
+    "call.ring.awaiting.title": "来电，正在接入…",
     "call.story.step.calling": "正在呼叫{name}…",
     "call.story.step.peer_answered": "{name}接听了",
     "call.story.step.you_answered": "已接听",

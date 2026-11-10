@@ -28,6 +28,22 @@ TEST(CallChromeSyncTest, RingPricingPresenceRemounts) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
+// The awaiting page becomes the real ring in place: the ring layer is never inactive in between, and the page is
+// rewritten (the answers get their clicks back).
+TEST(CallChromeSyncTest, AwaitingRingBecomesTheRealRingInPlaceWithARemount) {
+  pbr::CallChromeLayer awaiting;
+  awaiting.ring_active = true;
+  awaiting.ring_awaiting_invite = true;
+  pbr::CallChromeLayer real = awaiting;
+  real.ring_awaiting_invite = false;
+  real.ring_call_id = "c1";
+  EXPECT_TRUE(real.ring_active) << "no frame with the ring off";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, real), pbr::CallChromeUpdate::Remount);
+  pbr::CallChromeLayer only_flag = awaiting;
+  only_flag.ring_awaiting_invite = false;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, only_flag), pbr::CallChromeUpdate::Remount);
+}
+
 TEST(CallChromeSyncTest, RingDisappearRemounts) {
   pbr::CallChromeLayer synced;
   synced.ring_active = true;

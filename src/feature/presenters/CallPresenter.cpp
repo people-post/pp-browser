@@ -71,6 +71,21 @@ void CallPresenter::BindToMessaging() {
   Refresh();
 }
 
+CallWakePlaceholder::View CallPresenter::StepWakePlaceholder(const uint64_t tap_seq, const bool tap_fresh,
+                                                             const std::optional<int64_t> tap_notification_age_ms,
+                                                             const int64_t now_ms) {
+  CallWakePlaceholder::Input in;
+  in.tap_seq = tap_seq;
+  in.tap_fresh = tap_fresh;
+  in.tap_notification_age_ms = tap_notification_age_ms;
+  in.screen_kind = screen_.kind;
+  // Ready = the ring callbacks are bound (messaging up, backend available): an invite can be delivered from here on.
+  const auto* backend = Backend();
+  in.messaging_ready = MessagingInitialized() && backend && backend->Available();
+  in.now_ms = now_ms;
+  return wake_placeholder_.Step(in);
+}
+
 void CallPresenter::Tick() {
   BindToMessaging();
   auto* backend = Backend();

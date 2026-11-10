@@ -81,6 +81,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
   // avatars, and the sheet's lines while it is open.
   if (synced.phone != next.phone || synced.ring_phone_title != next.ring_phone_title ||
       synced.ring_phone_subtitle != next.ring_phone_subtitle || synced.ring_avatar != next.ring_avatar ||
+      synced.ring_awaiting_invite != next.ring_awaiting_invite ||
       synced.in_call_phone_title != next.in_call_phone_title || synced.in_call_video != next.in_call_video ||
       synced.in_call_avatars != next.in_call_avatars || synced.in_call_phone_failed != next.in_call_phone_failed ||
       synced.in_call_failed_text != next.in_call_failed_text ||

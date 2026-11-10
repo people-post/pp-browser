@@ -310,6 +310,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_phone_title = ring.phone_title.c_str(),
       .ring_phone_subtitle = ring.phone_subtitle.c_str(),
       .ring_avatar = AvatarKey(ring.group, ring.has_avatar, ring.avatar_src, ring.avatar_letter, ring.avatar_tone),
+      .ring_awaiting_invite = ring.awaiting_invite,
       .in_call_phone_title = in_call.phone_title.c_str(),
       .in_call_video = in_call.video,
       .in_call_avatars = AvatarKey(false, in_call.peer_has_avatar, in_call.peer_avatar_src, in_call.peer_avatar_letter,
@@ -483,7 +484,8 @@ void CallController::Tick() {
       return; // the demo app's scripted call (PP_DEMO_CALL) stands in for the presenter
     }
   }
-  presenter_.Tick(); // expired rings; the in-call screen (Calling… / timer / levels) every frame
+  presenter_.Tick();     // expired rings; the in-call screen (Calling… / timer / levels) every frame
+  StepWakePlaceholder(); // before the ring's pulse / ringtone below: it may start or end the ring page
   const int64_t now = util::NowUnixMs();
   if (ring_.active && !phone_layout_) { // the phone ring page has no pulse: no dirty, no forced frame
     if (now - last_pulse_toggle_ms_ >= 600) {
@@ -498,7 +500,7 @@ void CallController::Tick() {
   EndDisconnectedCall(now);
   if (metrics_.Tracking()) {
     auto* backend = Backend();
-    const bool call_live = ring_.active || !presenter_.ActiveCallId().empty() ||
+    const bool call_live = (ring_.active && !ring_.awaiting_invite) || !presenter_.ActiveCallId().empty() ||
                            (backend && backend->Available() && backend->Phase() != CallPhase::Idle);
     EmitMetrics(metrics_.Tick(call_live, now, Vitals(now)));
     EmitPerfThreads(now);
@@ -594,6 +596,75 @@ void CallController::OnCallWake() {
 
 void CallController::OnMessagingReady() {
   system_call_screen_.OnMessagingReady();
+}
+
+void CallController::StepWakePlaceholder() {
+  // Phones only; read here (not the last Render's): before the vault is unlocked nothing has rendered yet.
+  phone_layout_ = shell_call_chrome_.phone_layout && shell_call_chrome_.phone_layout();
+  if (!phone_layout_) {
+    return;
+  }
+  auto& tap = PendingNotificationTap::Instance();
+  const auto now = PendingNotificationTap::Clock::now();
+  std::optional<int64_t> age_ms;
+  if (const auto age = tap.CallTapNotificationAge()) {
+    age_ms = age->count();
+  }
+  const auto view = presenter_.StepWakePlaceholder(
+      tap.CallTapSeq(), tap.PeekCallRoute(now), age_ms,
+      std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+  const bool no_call_screen = presenter_.Screen().kind == CallScreen::Kind::None;
+  if (view.active) {
+    if (no_call_screen && !ring_.awaiting_invite) {
+      RenderAwaitingRing();
+    }
+    return;
+  }
+  if (view.outcome != CallWakePlaceholder::Outcome::None) {
+    EmitWakeRingMetric(view);
+  }
+  // Over with no call to show: the page goes quietly (as when a ringing caller hangs up). A real ring has already
+  // overwritten it in place; leave that alone.
+  if (ring_.awaiting_invite && no_call_screen) {
+    ClearRing();
+    SyncShellState();
+  }
+}
+
+void CallController::RenderAwaitingRing() {
+  const CallScreen no_call; // no conflict, no price, voice: the plain Accept / Decline words
+  const CallConflictCopy copy = MakeCallConflictCopy(false, {});
+  ring_ = {};
+  ring_.active = true;
+  ring_.awaiting_invite = true;
+  ring_.accept_label = copy.accept_label;
+  ring_.decline_label = copy.decline_label;
+  FillRingAnswerLabels(no_call);
+  ring_.phone_title = Tr("call.ring.awaiting.title").c_str();
+  ring_.avatar_letter = ""; // the blank default avatar, no "?"
+  SyncShellState();
+  SyncRingtone();
+}
+
+void CallController::EmitWakeRingMetric(const CallWakePlaceholder::View& view) {
+  using Outcome = CallWakePlaceholder::Outcome;
+  MetricsLine line("call.wake_ring");
+  switch (view.outcome) {
+    case Outcome::Ring:
+      line.Add("outcome", "ring");
+      break;
+    case Outcome::Timeout:
+      line.Add("outcome", "timeout");
+      break;
+    default:
+      line.Add("outcome", "expired");
+      break;
+  }
+  line.Add("shown_ms", view.shown_ms);
+  if (view.ready_ms) {
+    line.Add("ready_ms", *view.ready_ms);
+  }
+  line.Emit();
 }
 
 void CallController::ClearRing() {
@@ -1032,7 +1103,10 @@ void CallController::Render() {
         return;
       }
       ClearInCall();
-      ClearRing();
+      // "Incoming call, connecting…" has no call screen behind it: only StepWakePlaceholder takes it down.
+      if (!ring_.awaiting_invite) {
+        ClearRing();
+      }
       SyncShellState();
       return;
   }
@@ -1082,6 +1156,7 @@ void CallController::RenderRing(const CallScreen& screen, const int64_t now_ms) 
   HideInCallChrome();
 
   ring_.active = true;
+  ring_.awaiting_invite = false; // the placeholder page, if it was up, is overwritten in place
   ring_.conflict = screen.conflict;
   ring_.call_id = screen.ring_call_id;
   ring_.caller_label = caller_label;

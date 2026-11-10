@@ -287,6 +287,9 @@ struct PinGateState {
 struct CallRingState {
   bool active = false;
   bool pulse = false;
+  /** Phone ring page for a tapped call alert whose invite has not arrived: "Incoming call, connecting…", the answer
+   *  buttons dimmed and dead. The real ring overwrites it in place (`active` stays true). */
+  bool awaiting_invite = false;
   /** True when Accept would end an existing local call. */
   bool conflict = false;
   /** P001: initiation offer > 0 — show waive / take-all actions. */

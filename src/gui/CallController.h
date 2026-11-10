@@ -128,6 +128,13 @@ private:
   // --- Rendering: the presenter's screen and media frame into the shell's ring / in-call state. ---------------------
   void Render();
   void RenderRing(const CallScreen& screen, int64_t now_ms);
+  /**
+   * A tapped call alert's page (phone layout, CallWakePlaceholder decides): the ring page with "Incoming call,
+   * connecting…" in place of the caller. Reads the tap, steps the presenter's placeholder, fills / clears ring_.
+   */
+  void StepWakePlaceholder();
+  void RenderAwaitingRing();
+  void EmitWakeRingMetric(const CallWakePlaceholder::View& view);
   /** The ring's answer buttons: video / voice, free / take-all (P001), the conflict's End & accept (V064). */
   void FillRingAnswerLabels(const CallScreen& screen);
   void FillRingPricing(const CallScreen& screen);

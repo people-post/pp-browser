@@ -27,10 +27,7 @@ CallWakePlaceholder::View CallWakePlaceholder::Step(const Input& in) {
   if (in.screen_kind != CallScreen::Kind::None) {
     return End(in, Outcome::Ring);
   }
-  if (in.dismissed) {
-    return End(in, Outcome::Dismissed);
-  }
-  if (!in.tap_fresh) {
+  if (!in.tap_fresh || in.tap_notification_age_ms.value_or(0) + (in.now_ms - start_ms_) > kMaxNotificationAgeMs) {
     return End(in, Outcome::Expired);
   }
   if (in.messaging_ready && !ready_since_ms_) {

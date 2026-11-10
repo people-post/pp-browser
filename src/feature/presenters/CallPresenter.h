@@ -8,6 +8,7 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/presenters/CallBackOffer.h"
 #include "feature/presenters/CallMediaFrame.h"
+#include "feature/presenters/CallWakePlaceholder.h"
 
 #include <functional>
 #include <memory>
@@ -125,6 +126,12 @@ public:
   void Refresh();
   /** The app was woken for a call: look for its ring now. */
   void OnCallWake();
+  /**
+   * The incoming-call placeholder (CallWakePlaceholder), stepped with the latest call tap. Works with no backend (a
+   * locked vault); the screen kind and "messaging ready" (a ring could now be delivered) are read here.
+   */
+  CallWakePlaceholder::View StepWakePlaceholder(uint64_t tap_seq, bool tap_fresh,
+                                                std::optional<int64_t> tap_notification_age_ms, int64_t now_ms);
 
   const CallScreen& Screen() const { return screen_; }
   /**
@@ -236,6 +243,7 @@ private:
   CallFunctionalPorts ports_;
   Callbacks callbacks_;
   CallScreen screen_;
+  CallWakePlaceholder wake_placeholder_;
   NoMediaWatch no_media_watch_;
   int64_t no_media_checked_ms_ = 0;
   /** Last CallSessionManager identity the ring callbacks were installed on. */

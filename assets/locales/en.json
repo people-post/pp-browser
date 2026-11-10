@@ -1386,6 +1386,7 @@
     "call.ring.phone.video": "PP video call",
     "call.ring.phone.group_voice": "{name} started a voice call",
     "call.ring.phone.group_video": "{name} started a video call",
+    "call.ring.awaiting.title": "Incoming call, connecting…",
     "call.story.step.calling": "Calling {name}…",
     "call.story.step.peer_answered": "{name} answered",
     "call.story.step.you_answered": "Answered",
