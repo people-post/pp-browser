@@ -1388,6 +1388,8 @@
     "call.ring.phone.group_video": "{name} started a video call",
     "call.ring.awaiting.name": "Incoming call",
     "call.ring.step.received": "Call received",
+    "call.ring.step.received_voice": "Voice call received",
+    "call.ring.step.received_video": "Video call received",
     "call.ring.step.joining": "Joining the encrypted network…",
     "call.ring.step.joined": "On the encrypted network",
     "call.ring.step.verifying": "Verifying who is calling",

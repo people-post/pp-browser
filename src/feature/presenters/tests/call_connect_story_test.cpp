@@ -271,6 +271,8 @@ TEST(CallConnectStoryTest, EveryWordExistsInEnglishAndChineseAndNoneIsATechWord)
                           "call.story.result",
                           "call.ring.awaiting.name",
                           "call.ring.step.received",
+                          "call.ring.step.received_voice",
+                          "call.ring.step.received_video",
                           "call.ring.step.joining",
                           "call.ring.step.joined",
                           "call.ring.step.verifying",

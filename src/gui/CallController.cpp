@@ -657,7 +657,7 @@ void CallController::RenderAwaitingRing() {
   FillRingAnswerLabels(no_call);
   ring_.phone_title = Tr("call.ring.awaiting.name").c_str();
   ring_.avatar_letter = ""; // the blank default avatar, no "?"
-  FillRingSteps(true, "");
+  FillRingSteps(true, "", CallRingMedia::Unknown);
   FillRingSelfAvatar();
   SyncShellState();
   SyncRingtone();
@@ -2010,7 +2010,7 @@ void CallController::FillRingPhoneFields(const CallScreen& screen, const std::st
     ring_.avatar_letter = "";
     ring_.avatar_tone = 2;
     ring_.caller_unknown = false;
-    FillRingSteps(false, ring_.phone_title.c_str());
+    FillRingSteps(false, ring_.phone_title.c_str(), CallRingMedia::Unknown); // a group keeps its subtitle
     FillRingSelfAvatar();
     return;
   }
@@ -2023,7 +2023,9 @@ void CallController::FillRingPhoneFields(const CallScreen& screen, const std::st
   ring_.has_avatar = !photo.empty();
   ring_.avatar_src = photo.c_str();
   ring_.caller_unknown = CallerNameFor(screen.caller_identity).unknown && photo.empty();
-  FillRingSteps(false, caller_label);
+  FillRingSteps(false, caller_label, screen.ring_video ? CallRingMedia::Video : CallRingMedia::Voice);
+  rung_call_id_ = screen.ring_call_id;
+  rung_video_ = screen.ring_video;
   FillRingSelfAvatar();
 }
 
@@ -2044,8 +2046,8 @@ std::string RingStepText(const CallRingStep& step) {
 
 } // namespace
 
-void CallController::FillRingSteps(const bool awaiting_invite, const std::string& caller) {
-  const auto steps = CallRingSteps(awaiting_invite, caller);
+void CallController::FillRingSteps(const bool awaiting_invite, const std::string& caller, const CallRingMedia media) {
+  const auto steps = CallRingSteps(awaiting_invite, caller, media);
   ring_.step1 = RingStepText(steps[0]).c_str();
   ring_.step2 = RingStepText(steps[1]).c_str();
   ring_.step3 = RingStepText(steps[2]).c_str();
@@ -2138,7 +2140,11 @@ void CallController::RenderStorySteps(const CallStoryView& v) {
   in_call.story_scroll_rows = 0;
   in_call.story_area_dp = 0;
   if (!v.outgoing && !in_call.show_roster && !in_call.stage_visible) {
-    for (const CallRingStep& lead : CallRingSteps(false, name)) {
+    // The kind the call was rung with; the answering page only knows what was accepted (`video`) for a call that did
+    // not ring here (or whose ring this device has not seen).
+    const bool video = std::string(in_call.call_id.c_str()) == rung_call_id_ ? rung_video_ : in_call.video;
+    const CallRingMedia media = video ? CallRingMedia::Video : CallRingMedia::Voice;
+    for (const CallRingStep& lead : CallRingSteps(false, name, media)) {
       in_call.story_lead.push_back(RingStepText(lead));
     }
     const int rows = static_cast<int>(in_call.story_lead.size() + steps.keys.size());

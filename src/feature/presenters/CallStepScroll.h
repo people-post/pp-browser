@@ -24,7 +24,8 @@ inline constexpr int kStepsMarginTop = 22;
 /** Below the steps on the answering page: the button card (padding 12 + 52 circle + 4 + 13 label + 8) + margin 22. */
 inline constexpr int kControlsReserve = 12 + 52 + 4 + 13 + 8 + 22;
 /** From the top of the page (under the status bar) to the first step row. */
-inline constexpr int kStepsStart = kTopBar + kStoryPaddingTop + kPairRow + kNamesMarginTop + kPeerNameLine + kStepsMarginTop;
+inline constexpr int kStepsStart =
+    kTopBar + kStoryPaddingTop + kPairRow + kNamesMarginTop + kPeerNameLine + kStepsMarginTop;
 } // namespace call_page_dp
 
 /** Height of the step clip on the answering page; `page_height_dp` = window height less the status bar and bottom inset. */

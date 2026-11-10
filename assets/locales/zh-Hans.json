@@ -1348,6 +1348,8 @@
     "call.ring.phone.group_video": "{name} 发起了视频通话",
     "call.ring.awaiting.name": "来电",
     "call.ring.step.received": "收到来电",
+    "call.ring.step.received_voice": "收到语音来电",
+    "call.ring.step.received_video": "收到视频来电",
     "call.ring.step.joining": "正在接入加密网络…",
     "call.ring.step.joined": "已接入加密网络",
     "call.ring.step.verifying": "核实对方身份",

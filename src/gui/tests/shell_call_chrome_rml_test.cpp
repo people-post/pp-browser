@@ -52,6 +52,7 @@ TEST(ShellCallChromeRmlTest, TheAwaitingAndTheRealRingShareOneMarkup) {
   state.call_ring.avatar_letter = "B";
   // The three lines, our own avatar and the name turning over are all bound values too.
   state.call_ring.phone_title = "Bob";
+  state.call_ring.step1 = "Voice call received"; // the first row turns "Call received" into voice / video: bound
   state.call_ring.step2_current = true;
   state.call_ring.step3_done = true;
   state.call_ring.step3 = "Bob";

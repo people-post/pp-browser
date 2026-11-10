@@ -14,6 +14,7 @@
 #include "feature/calls/CallFunctionalPorts.h"
 #include "feature/presenters/CallMediaFrame.h"
 #include "feature/presenters/CallPresenter.h"
+#include "feature/presenters/CallRingSteps.h"
 #include "feature/presenters/CallSystemUiBridge.h"
 #include "gui/CallChromeSync.h"
 #include "gui/CallDemoScenes.h"
@@ -150,7 +151,7 @@ private:
   void FillPhoneCallFields(const CallScreen& screen, int64_t now_ms);
   void FillSelfAvatar(const CallScreen& screen);
   /** The ring page's three lines (CallRingSteps) written into ring_; `caller` is the name or group title shown. */
-  void FillRingSteps(bool awaiting_invite, const std::string& caller);
+  void FillRingSteps(bool awaiting_invite, const std::string& caller, CallRingMedia media);
   /** Our own avatar on the ring page's left: the photo / letter of the local identity, else "You" and a neutral tone. */
   void FillRingSelfAvatar();
   void FillRingPhoneFields(const CallScreen& screen, const std::string& caller_label, int64_t now_ms);
@@ -353,6 +354,9 @@ private:
   CallMediaFrame demo_media_;
   int64_t demo_started_ms_ = 0;
   bool demo_ended_ = false;
+  /** The call the ring page last showed and whether it rang as video: the answering page words its lead rows by it. */
+  std::string rung_call_id_;
+  bool rung_video_ = false;
   bool demo_call_back_offered_ = false;
   /** When its stand-in camera pictures were last handed to the tiles. */
   int64_t demo_frames_ms_ = 0;
