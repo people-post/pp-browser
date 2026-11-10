@@ -43,11 +43,11 @@ struct SettingsCommands {
   std::function<Roe<void>(const std::string& path, std::optional<ProfileIconCrop> crop)> upload_profile_icon_file;
   /**
    * Opens the crop page over `file`. The page holds the lease until it closes. "Done" locks the page and calls
-   * `commit(crop, finished)`; the caller answers `finished(true)` when the photo is up (the page closes) or
+   * `commit(crop, reply)`; the caller answers `reply.finished(true)` when the photo is up (the page closes) or
    * `finished(false)` for any failure, a refused PIN included (the page unlocks and stays). Unset: no crop page.
    */
   std::function<void(std::shared_ptr<PickedFileLease> file,
-                     std::function<void(ProfileIconCrop crop, std::function<void(bool ok)> finished)> commit)>
+                     std::function<void(ProfileIconCrop crop, AvatarCropReply reply)> commit)>
       open_avatar_crop;
   std::function<Roe<void>()> clear_profile_icon;
   std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_relay_quota_recovery;

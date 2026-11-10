@@ -74,6 +74,18 @@ TEST(AvatarCropMarkupTest, OnlyThePhoneHidesRotateAndShowsTheRoundCloseAndTheBar
   EXPECT_NE(rule(".avatar-view-stage").find("z-index: 1"), std::string::npos);
   const std::string rml = ReadView();
   EXPECT_NE(rml.find("class=\"avatar-crop-close shell-circle-btn\""), std::string::npos);
+  // Pressed and disabled looks: a bound class (the button attribute alone showed nothing on the device), a pressed
+  // state, and the pill that floats above the stage and lets taps through.
+  EXPECT_NE(rml.find("data-class-avatar-crop-btn--disabled=\"crop_locked || crop_loading\""), std::string::npos);
+  EXPECT_NE(rml.find("data-class-avatar-crop-btn--disabled=\"crop_locked\""), std::string::npos);
+  EXPECT_NE(rml.find("data-class-avatar-crop-close--disabled=\"crop_locked\""), std::string::npos);
+  EXPECT_NE(rml.find("data-if=\"crop_uploading\""), std::string::npos);
+  EXPECT_NE(rml.find("{{i18n:settings.profile.photo_uploading}}"), std::string::npos);
+  EXPECT_NE(rule(".avatar-crop-btn:active,\n.avatar-crop-close:active").find("opacity"), std::string::npos);
+  const std::string host = rule(".avatar-crop-pill-host");
+  EXPECT_NE(host.find("position: absolute"), std::string::npos);
+  EXPECT_NE(host.find("z-index: 3"), std::string::npos);
+  EXPECT_NE(host.find("pointer-events: none"), std::string::npos);
 }
 
 TEST(AvatarCropMarkupTest, TheViewIsRegisteredInTheCatalog) {
@@ -316,6 +328,96 @@ TEST_F(AvatarCropLayoutTest, OnAPhoneTheBarsAndButtonsAreInsideTheSafeAreaAndRec
   EXPECT_LT(close->GetAbsoluteOffset(ui::BoxArea::Border).x, 40.f);
   EXPECT_TRUE(TapReaches(close));
   EXPECT_TRUE(TapReaches(First(document, "avatar-crop-title")));
+  document->Close();
+  context->Update();
+}
+
+// The page's bindings as the controller exposes them, driven by the test.
+struct CropFlags {
+  bool loading = false;
+  bool locked = false;
+  bool uploading = false;
+};
+
+bool RegisterCropFlags(ui::Context* context, CropFlags* flags) {
+  return DataModelHost::Instance().Register(context, "avatar_crop", [flags](ui::DataModelConstructor& ctor) {
+    ctor.Bind("crop_loading", &flags->loading);
+    ctor.Bind("crop_locked", &flags->locked);
+    ctor.Bind("crop_uploading", &flags->uploading);
+    for (const char* name : {"crop_cancel", "crop_rotate", "crop_done"}) {
+      ctor.BindEventCallback(name, [](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {});
+    }
+  });
+}
+
+// After Done: while the upload runs a pill with "Uploading..." covers the picture, painted and hit-tested above the
+// stage's element, taps pass through it to the bottom buttons; buttons look disabled the moment the page is locked;
+// when it ends the pill goes and the buttons are back.
+TEST_F(AvatarCropLayoutTest, WhileUploadingAPillCoversThePictureAndTheLockedButtonsLookDisabled) {
+  CropFlags flags;
+  ASSERT_TRUE(RegisterCropFlags(context, &flags));
+  ui::ElementDocument* document = Mount("avatar_crop.rml", /*compact=*/true);
+  ASSERT_NE(document, nullptr);
+  ui::Element* stage = First(document, "avatar-crop-stage");
+  ui::Element* cancel = First(document, "avatar-crop-btn--cancel");
+  ui::Element* done = First(document, "avatar-crop-btn--done");
+  ui::Element* close = First(document, "avatar-crop-close");
+  ASSERT_NE(stage, nullptr);
+  auto pill_shown = [&]() {
+    ui::Element* p = First(document, "avatar-crop-pill");
+    return p && p->IsVisible(true);
+  };
+  EXPECT_FALSE(pill_shown()) << "no pill before Done";
+  for (ui::Element* e : {cancel, done}) {
+    EXPECT_FALSE(e->IsClassSet("avatar-crop-btn--disabled"));
+    EXPECT_FALSE(e->HasAttribute("disabled"));
+  }
+
+  // Done accepted, the PIN prompt up: locked, no pill (the PIN pad is the feedback).
+  flags.locked = true;
+  DataModelHost::Instance().Dirty("avatar_crop", "crop_locked");
+  context->Update();
+  for (ui::Element* e : {cancel, done}) {
+    EXPECT_TRUE(e->IsClassSet("avatar-crop-btn--disabled"));
+    EXPECT_TRUE(e->HasAttribute("disabled"));
+  }
+  EXPECT_TRUE(close->IsClassSet("avatar-crop-close--disabled"));
+  EXPECT_FALSE(pill_shown());
+
+  // The upload runs: the pill is there, centred over the stage, and the topmost thing at the stage's middle.
+  flags.uploading = true;
+  DataModelHost::Instance().Dirty("avatar_crop", "crop_uploading");
+  context->Update();
+  ui::Element* pill = First(document, "avatar-crop-pill");
+  ASSERT_NE(pill, nullptr);
+  EXPECT_TRUE(pill->IsVisible(true));
+  EXPECT_NEAR(Top(pill) + H(pill) / 2, Top(stage) + H(stage) / 2, 1.f);
+  EXPECT_NEAR(pill->GetAbsoluteOffset(ui::BoxArea::Border).x + W(pill) / 2, 195.f, 1.f);
+  EXPECT_FALSE(pill->GetInnerRML().empty()) << "the localised 'Uploading' text";
+  EXPECT_EQ(pill->GetInnerRML().find("i18n"), std::string::npos);
+  // Painted above the picture and the dim: a positioned host with a z-index inside the stage, where the element is
+  // in the flow. Its taps pass through (pointer-events: none), so a tap on the pill reaches the picture element.
+  ui::Element* host = First(document, "avatar-crop-pill-host");
+  ASSERT_NE(host, nullptr);
+  EXPECT_GT(host->GetZIndex(), 0.f);
+  EXPECT_EQ(host->GetParentNode(), stage);
+  EXPECT_FALSE(TapReaches(pill));
+  EXPECT_TRUE(TapReaches(document->GetElementById("avatar-crop-surface")));
+  // It does not block the bottom buttons: the host takes no taps, the buttons are still what a tap on them reaches.
+  EXPECT_TRUE(TapReaches(done));
+  EXPECT_TRUE(TapReaches(cancel));
+
+  // The upload failed or finished: the pill goes, the buttons are back.
+  flags.uploading = false;
+  flags.locked = false;
+  DataModelHost::Instance().Dirty("avatar_crop", "crop_uploading");
+  DataModelHost::Instance().Dirty("avatar_crop", "crop_locked");
+  context->Update();
+  EXPECT_FALSE(pill_shown());
+  for (ui::Element* e : {cancel, done}) {
+    EXPECT_FALSE(e->IsClassSet("avatar-crop-btn--disabled"));
+    EXPECT_FALSE(e->HasAttribute("disabled"));
+  }
   document->Close();
   context->Update();
 }

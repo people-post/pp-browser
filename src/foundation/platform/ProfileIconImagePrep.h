@@ -6,6 +6,7 @@
 #include <SDL3/SDL_rect.h>
 
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -42,6 +43,14 @@ struct ProfilePhotoPreview {
 /** Reads and decodes `path` the way PrepareProfileIconFromFile does (SDL IO, upright). The error carries the
  *  "can't be opened" words. Runs on a worker thread. */
 Roe<ProfilePhotoPreview> DecodeProfilePhotoPreview(const std::string& path, int max_edge = 2048);
+
+/** What the crop page hands the caller's upload step to answer with. */
+struct AvatarCropReply {
+  /** The step ended: true = the photo is up (the page closes), false = anything else (the page unlocks and stays). */
+  std::function<void(bool ok)> finished;
+  /** The upload itself started (true) or ended (false); the PIN prompt before it is not "uploading". */
+  std::function<void(bool running)> uploading;
+};
 
 /**
  * Load, straighten, crop, scale, and encode an image file for relay profile icon upload.
