@@ -8514,6 +8514,37 @@ input.checkbox {
   margin-bottom: 8dp;
 }
 
+.me-profile-avatar-wrap {
+  position: relative;
+  width: 64dp;
+  height: 64dp;
+  flex-grow: 0;
+  flex-shrink: 0;
+}
+
+/* "Uploading…" over the photo while it goes up (the frame below is dimmed and inert meanwhile). */
+.me-profile-avatar-uploading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 64dp;
+  height: 64dp;
+  border-radius: 32dp;
+  background-color: rgba(0, 0, 0, 140);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.me-profile-avatar-uploading-text {
+  margin: 0;
+  font-size: 10dp;
+  color: #ffffff;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .me-profile-avatar-frame {
   width: 64dp;
   height: 64dp;

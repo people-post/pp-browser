@@ -90,6 +90,37 @@ SDL_Surface* ScaleToMaxDimension(SDL_Surface* source, const int max_dimension) {
   return SDL_ScaleSurface(source, dst_w, dst_h, SDL_SCALEMODE_LINEAR);
 }
 
+SDL_Surface* CropSurface(SDL_Surface* source, const SDL_Rect rect) {
+  if (!source || source->w <= 0 || source->h <= 0) {
+    return nullptr;
+  }
+  // 64-bit sums: a rectangle with x + w near INT_MAX must not wrap round into the picture.
+  const int64_t x0 = std::max<int64_t>(rect.x, 0);
+  const int64_t y0 = std::max<int64_t>(rect.y, 0);
+  const int64_t x1 = std::min<int64_t>(static_cast<int64_t>(rect.x) + rect.w, source->w);
+  const int64_t y1 = std::min<int64_t>(static_cast<int64_t>(rect.y) + rect.h, source->h);
+  if (x1 <= x0 || y1 <= y0) {
+    return nullptr;
+  }
+  const SDL_Rect from{static_cast<int>(x0), static_cast<int>(y0), static_cast<int>(x1 - x0), static_cast<int>(y1 - y0)};
+  const SDL_PixelFormat format = SDL_ISPIXELFORMAT_INDEXED(source->format) ? SDL_PIXELFORMAT_RGBA32 : source->format;
+  SDL_Surface* out = SDL_CreateSurface(from.w, from.h, format);
+  if (!out) {
+    return nullptr;
+  }
+  // A plain copy: blending a translucent pixel onto the empty copy would darken it.
+  SDL_BlendMode mode = SDL_BLENDMODE_NONE;
+  SDL_GetSurfaceBlendMode(source, &mode);
+  SDL_SetSurfaceBlendMode(source, SDL_BLENDMODE_NONE);
+  const bool copied = SDL_BlitSurface(source, &from, out, nullptr);
+  SDL_SetSurfaceBlendMode(source, mode);
+  if (!copied) {
+    SDL_DestroySurface(out);
+    return nullptr;
+  }
+  return out;
+}
+
 SDL_Surface* ApplyExifOrientation(SDL_Surface* source, const int orientation) {
   if (orientation < 2 || orientation > 8) {
     return source;
