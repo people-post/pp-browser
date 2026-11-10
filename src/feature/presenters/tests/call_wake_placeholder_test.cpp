@@ -11,10 +11,12 @@ using Outcome = CallWakePlaceholder::Outcome;
 using Input = CallWakePlaceholder::Input;
 using Kind = CallScreen::Kind;
 
-Input Tap(const uint64_t seq, const int64_t now_ms) {
+// A tap recorded `elapsed_ms` before this step (0: this very step).
+Input Tap(const uint64_t seq, const int64_t now_ms, const int64_t elapsed_ms = 0) {
   Input in;
   in.tap_seq = seq;
   in.tap_fresh = true;
+  in.tap_elapsed_ms = elapsed_ms;
   in.now_ms = now_ms;
   return in;
 }
@@ -174,25 +176,37 @@ TEST(CallWakePlaceholderTest, ANewerTapWhileShownWaitsForItsOwnCallFromNow) {
   EXPECT_EQ(v.shown_ms, 10'000);
 }
 
-TEST(CallWakePlaceholderTest, ANotificationFortySecondsOldShownTwentyOneSecondsEnds) {
+TEST(CallWakePlaceholderTest, AnAlertFortySecondsOldTappedFiveSecondsBeforeTheFirstStepEndsAfterSixteenShown) {
   CallWakePlaceholder p;
-  Input in = Tap(1, 0);
+  Input in = Tap(1, 0, 5'000);
   in.tap_notification_age_ms = 40'000;
-  EXPECT_TRUE(p.Step(in).active);
-  in.now_ms = 20'000;
-  EXPECT_TRUE(p.Step(in).active) << "40 s + 20 s is still within the 60 s ring";
-  in.now_ms = 21'000;
+  EXPECT_TRUE(p.Step(in).active) << "40 s + 5 s: still ringing";
+  in.now_ms = 15'000;
+  in.tap_elapsed_ms = 20'000;
+  EXPECT_TRUE(p.Step(in).active) << "40 s + 20 s = 60 s exactly is not over";
+  in.now_ms = 16'000;
+  in.tap_elapsed_ms = 21'000;
   auto v = p.Step(in);
   EXPECT_FALSE(v.active);
   EXPECT_EQ(v.outcome, Outcome::Expired);
-  EXPECT_EQ(v.shown_ms, 21'000);
+  EXPECT_EQ(v.shown_ms, 16'000) << "shown_ms is the time it was up";
 }
 
-TEST(CallWakePlaceholderTest, UnknownAgeShownSixtyOneSecondsEndsEvenWhenNeverReady) {
+TEST(CallWakePlaceholderTest, AnAlertFiftyNineSecondsOldTappedTwoAndAHalfSecondsAgoNeverStarts) {
+  CallWakePlaceholder p;
+  Input in = Tap(1, 0, 2'500);
+  in.tap_notification_age_ms = 59'000;
+  EXPECT_FALSE(p.Step(in).active) << "61.5 s old by now: the caller has hung up";
+  in.tap_elapsed_ms = 2'900;
+  in.now_ms = 400;
+  EXPECT_FALSE(p.Step(in).active) << "handled for good";
+}
+
+TEST(CallWakePlaceholderTest, UnknownAgeCountsOnlyFromTheTapAndEndsEvenWhenNeverReady) {
   CallWakePlaceholder p;
   EXPECT_TRUE(p.Step(Tap(1, 0)).active);
-  EXPECT_TRUE(p.Step(Tap(1, 60'000)).active) << "exactly the ring length is not over";
-  auto v = p.Step(Tap(1, 61'000));
+  EXPECT_TRUE(p.Step(Tap(1, 60'000, 60'000)).active) << "exactly the ring length is not over";
+  auto v = p.Step(Tap(1, 61'000, 61'000));
   EXPECT_FALSE(v.active);
   EXPECT_EQ(v.outcome, Outcome::Expired);
 }
@@ -200,8 +214,33 @@ TEST(CallWakePlaceholderTest, UnknownAgeShownSixtyOneSecondsEndsEvenWhenNeverRea
 TEST(CallWakePlaceholderTest, NotReadyStaysUpFor59Seconds) {
   CallWakePlaceholder p;
   p.Step(Tap(1, 0));
-  EXPECT_TRUE(p.Step(Tap(1, 30'000)).active);
-  EXPECT_TRUE(p.Step(Tap(1, 59'000)).active);
+  EXPECT_TRUE(p.Step(Tap(1, 30'000, 30'000)).active);
+  EXPECT_TRUE(p.Step(Tap(1, 59'000, 59'000)).active);
+}
+
+TEST(CallWakePlaceholderTest, AHiddenAppNeverStartsAndTheSameTapDoesNotRestartWhenItIsVisibleAgain) {
+  CallWakePlaceholder p;
+  Input in = Tap(1, 0);
+  in.app_visible = false;
+  EXPECT_FALSE(p.Step(in).active);
+  in.app_visible = true;
+  in.now_ms = 500;
+  EXPECT_FALSE(p.Step(in).active) << "that tap was handled while hidden";
+  EXPECT_TRUE(p.Step(Tap(2, 1'000)).active) << "a new tap starts";
+}
+
+TEST(CallWakePlaceholderTest, GoingHiddenWhileShownEndsItExpiredAndItDoesNotComeBack) {
+  CallWakePlaceholder p;
+  EXPECT_TRUE(p.Step(Tap(1, 0)).active);
+  Input in = Tap(1, 3'000);
+  in.app_visible = false;
+  auto v = p.Step(in);
+  EXPECT_FALSE(v.active);
+  EXPECT_EQ(v.outcome, Outcome::Expired);
+  EXPECT_EQ(v.shown_ms, 3'000);
+  in.app_visible = true;
+  in.now_ms = 4'000;
+  EXPECT_FALSE(p.Step(in).active);
 }
 
 } // namespace

@@ -16,8 +16,9 @@ namespace pbr {
  * Starts on a fresh call tap that has not been handled, with no call screen up, whose notification is not stale.
  * Ends, quietly, when the ring shows (Ring), the tap goes stale or the caller cannot still be ringing (Expired), or
  * messaging has been ready for kNoRingAfterReadyMs without a ring (Timeout). The caller rings for at most
- * kDefaultCallInviteTtlMs, so notification age plus time shown past that ends it even if messaging never became
- * ready (a locked phone nobody unlocks). Every end marks the tap handled: the same tap never shows it again, a new tap
+ * kDefaultCallInviteTtlMs, so the alert's age (at the tap, plus since the tap) past that ends it even if messaging
+ * never became ready (a locked phone nobody unlocks). It does not start, and ends (Expired), while the app is not
+ * visible. Every end marks the tap handled: the same tap never shows it again, a new tap
  * does. A ring that arrives after the end is the ordinary ring; nothing is reported for it.
  */
 class CallWakePlaceholder {
@@ -35,6 +36,10 @@ public:
     bool tap_fresh = false;
     /** How long before the tap the tapped notification was delivered; unknown = nullopt. */
     std::optional<int64_t> tap_notification_age_ms;
+    /** How long ago the tap was recorded (PendingNotificationTap::CallTapElapsed): the alert is this much older. */
+    int64_t tap_elapsed_ms = 0;
+    /** The app's screen is up (AppLifecycle::IsVisible); a ring page nobody can see must not ring. */
+    bool app_visible = true;
     CallScreen::Kind screen_kind = CallScreen::Kind::None;
     bool messaging_ready = false;
     int64_t now_ms = 0;
@@ -53,6 +58,8 @@ public:
   View Step(const Input& in);
 
 private:
+  /** The alert was delivered more than the caller rings for before now. */
+  static bool AlertTooOld(const Input& in);
   View End(const Input& in, Outcome outcome);
 
   bool active_ = false;

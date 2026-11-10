@@ -53,6 +53,7 @@ public:
       if (call_wake) {
         ++call_tap_seq_;
         call_tap_age_ = notification_age;
+        call_tapped_at_ = now;
         route_until_ = now + kCallRouteTtl;
       } else if (!hint_.empty()) {
         route_until_ = now + kMessageRouteTtl;
@@ -74,6 +75,15 @@ public:
   std::optional<std::chrono::milliseconds> CallTapNotificationAge() const {
     std::lock_guard<std::mutex> lock(mu_);
     return call_tap_age_;
+  }
+
+  /** How long ago the latest call-alert tap was recorded; nullopt when there has been none. */
+  std::optional<std::chrono::milliseconds> CallTapElapsed(const Clock::time_point now) const {
+    std::lock_guard<std::mutex> lock(mu_);
+    if (!call_tapped_at_) {
+      return std::nullopt;
+    }
+    return std::chrono::duration_cast<std::chrono::milliseconds>(now - *call_tapped_at_);
   }
 
   /** `fn` runs on the thread that records a tap (not necessarily the UI thread), after the tap is stored. */
@@ -199,6 +209,7 @@ private:
   bool miss_logged_ = false;
   uint64_t call_tap_seq_ = 0;
   std::optional<std::chrono::milliseconds> call_tap_age_;
+  std::optional<Clock::time_point> call_tapped_at_;
   std::function<void()> on_recorded_;
 };
 

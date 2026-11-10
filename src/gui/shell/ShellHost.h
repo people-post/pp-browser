@@ -298,6 +298,8 @@ public:
 
   bool RegisterWindowModel(ui::Context* context);
 
+  friend struct ShellHostTestAccess; // tests press the call answer handlers
+
 private:
   // Data-model events with more to them than one call.
   void DismissBanner();

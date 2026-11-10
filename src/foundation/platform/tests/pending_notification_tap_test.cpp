@@ -175,5 +175,17 @@ TEST(PendingNotificationTapTest, CallTapNotificationAgeIsKeptForTheLatestCallTap
   EXPECT_EQ(tap.CallTapNotificationAge(), std::optional<milliseconds>(0)) << "a message tap does not touch it";
 }
 
+TEST(PendingNotificationTapTest, CallTapElapsedCountsFromTheLatestCallTap) {
+  using std::chrono::milliseconds;
+  PendingNotificationTap tap;
+  EXPECT_EQ(tap.CallTapElapsed(t0), std::nullopt);
+  tap.Record("thread-a", false, "", t0);
+  EXPECT_EQ(tap.CallTapElapsed(t0), std::nullopt) << "only call-alert taps count";
+  tap.Record("", true, "", t0 + milliseconds(1000));
+  EXPECT_EQ(tap.CallTapElapsed(t0 + milliseconds(3500)), std::optional<milliseconds>(2500));
+  tap.Record("", true, "", t0 + milliseconds(5000));
+  EXPECT_EQ(tap.CallTapElapsed(t0 + milliseconds(5100)), std::optional<milliseconds>(100)) << "the newer tap";
+}
+
 } // namespace
 } // namespace pbr

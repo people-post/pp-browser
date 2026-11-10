@@ -1505,9 +1505,13 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
       update == CallChromeUpdate::LevelsOnly || update == CallChromeUpdate::PartsOnly
           ? CallChromeChangedVariables(state_.call_in_progress, snapshot.in_progress)
           : std::vector<const char*>{};
+  const bool awaiting_changed = state_.call_ring.awaiting_invite != snapshot.ring.awaiting_invite;
   state_.call_ring = snapshot.ring;
   state_.call_in_progress = snapshot.in_progress;
   ReconcileStartupCover(); // an active ring takes the logo cover away
+  if (awaiting_changed && state_.pin_gate.active) {
+    RemountPinGateChrome(); // its layer class (clear scrim, card on the bottom edge) follows the awaiting page
+  }
   // A ring or the call screen covers the page: the drawer does not wait under it (the minimised call chip leaves it).
   if (snapshot.ring.active || (snapshot.in_progress.active && snapshot.in_progress.mode != CallChromeMode::Minimized)) {
     CloseAiDrawer();

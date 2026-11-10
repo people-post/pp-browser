@@ -2576,10 +2576,10 @@ void Application::Run() {
         logged_first_present = true;
         first_present_ms_.store(MsSinceStartup());
         if (debug_call_tap_delay_ms_ > 0) {
-          std::thread([delay_ms = debug_call_tap_delay_ms_]() {
-            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-            RecordDebugCallTap();
-          }).detach();
+          // The timer fires on the coordinator; the tap is recorded on the UI thread (nothing captured: it only touches
+          // the process-wide PendingNotificationTap, and a post after teardown is dropped).
+          AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(debug_call_tap_delay_ms_),
+                                                 []() { AppRuntime::PostUI([]() { RecordDebugCallTap(); }); });
         }
         if (ui_perf_ && UiPerfTestController::OpenAtStartupRequested()) {
           AppRuntime::PostUI([this]() { ui_perf_->Open(); }); // --ui-perf-test

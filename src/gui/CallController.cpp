@@ -599,35 +599,19 @@ void CallController::OnMessagingReady() {
 }
 
 void CallController::StepWakePlaceholder() {
-  // Phones only; read here (not the last Render's): before the vault is unlocked nothing has rendered yet.
+  // Read here (not the last Render's): before the vault is unlocked nothing has rendered yet.
   phone_layout_ = shell_call_chrome_.phone_layout && shell_call_chrome_.phone_layout();
-  if (!phone_layout_) {
-    return;
-  }
-  auto& tap = PendingNotificationTap::Instance();
-  const auto now = PendingNotificationTap::Clock::now();
-  std::optional<int64_t> age_ms;
-  if (const auto age = tap.CallTapNotificationAge()) {
-    age_ms = age->count();
-  }
-  const auto view = presenter_.StepWakePlaceholder(
-      tap.CallTapSeq(), tap.PeekCallRoute(now), age_ms,
-      std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
-  const bool no_call_screen = presenter_.Screen().kind == CallScreen::Kind::None;
-  if (view.active) {
-    if (no_call_screen && !ring_.awaiting_invite) {
+  const CallPresenter::WakeStep step = presenter_.StepWakePlaceholder(phone_layout_);
+  if (step.ring == CallPresenter::WakeRing::Show) {
+    if (!ring_.awaiting_invite) {
       RenderAwaitingRing();
     }
-    return;
-  }
-  if (view.outcome != CallWakePlaceholder::Outcome::None) {
-    EmitWakeRingMetric(view);
-  }
-  // Over with no call to show: the page goes quietly (as when a ringing caller hangs up). A real ring has already
-  // overwritten it in place; leave that alone.
-  if (ring_.awaiting_invite && no_call_screen) {
+  } else if (step.ring == CallPresenter::WakeRing::Clear && ring_.awaiting_invite) {
     ClearRing();
     SyncShellState();
+  }
+  if (step.outcome != CallWakePlaceholder::Outcome::None) {
+    EmitWakeRingMetric(step);
   }
 }
 
@@ -646,7 +630,7 @@ void CallController::RenderAwaitingRing() {
   SyncRingtone();
 }
 
-void CallController::EmitWakeRingMetric(const CallWakePlaceholder::View& view) {
+void CallController::EmitWakeRingMetric(const CallPresenter::WakeStep& view) {
   using Outcome = CallWakePlaceholder::Outcome;
   MetricsLine line("call.wake_ring");
   switch (view.outcome) {

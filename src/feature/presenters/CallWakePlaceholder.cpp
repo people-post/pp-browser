@@ -2,14 +2,17 @@
 
 namespace pbr {
 
+bool CallWakePlaceholder::AlertTooOld(const Input& in) {
+  return in.tap_notification_age_ms.value_or(0) + in.tap_elapsed_ms > kMaxNotificationAgeMs;
+}
+
 CallWakePlaceholder::View CallWakePlaceholder::Step(const Input& in) {
   using Outcome = CallWakePlaceholder::Outcome;
   if (!active_) {
     if (!in.tap_fresh || in.tap_seq == handled_seq_) {
       return {};
     }
-    const bool stale = in.tap_notification_age_ms && *in.tap_notification_age_ms > kMaxNotificationAgeMs;
-    if (in.screen_kind != CallScreen::Kind::None || stale) {
+    if (in.screen_kind != CallScreen::Kind::None || AlertTooOld(in) || !in.app_visible) {
       handled_seq_ = in.tap_seq;
       return {};
     }
@@ -27,7 +30,7 @@ CallWakePlaceholder::View CallWakePlaceholder::Step(const Input& in) {
   if (in.screen_kind != CallScreen::Kind::None) {
     return End(in, Outcome::Ring);
   }
-  if (!in.tap_fresh || in.tap_notification_age_ms.value_or(0) + (in.now_ms - start_ms_) > kMaxNotificationAgeMs) {
+  if (!in.tap_fresh || AlertTooOld(in) || !in.app_visible) {
     return End(in, Outcome::Expired);
   }
   if (in.messaging_ready && !ready_since_ms_) {

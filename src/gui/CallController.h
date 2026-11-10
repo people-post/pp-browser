@@ -129,12 +129,12 @@ private:
   void Render();
   void RenderRing(const CallScreen& screen, int64_t now_ms);
   /**
-   * A tapped call alert's page (phone layout, CallWakePlaceholder decides): the ring page with "Incoming call,
-   * connecting…" in place of the caller. Reads the tap, steps the presenter's placeholder, fills / clears ring_.
+   * A tapped call alert's page (phone layout): the ring page with "Incoming call, connecting…" in place of the
+   * caller. CallPresenter::StepWakePlaceholder decides; this only shows / clears ring_ and emits the metric.
    */
   void StepWakePlaceholder();
   void RenderAwaitingRing();
-  void EmitWakeRingMetric(const CallWakePlaceholder::View& view);
+  void EmitWakeRingMetric(const CallPresenter::WakeStep& view);
   /** The ring's answer buttons: video / voice, free / take-all (P001), the conflict's End & accept (V064). */
   void FillRingAnswerLabels(const CallScreen& screen);
   void FillRingPricing(const CallScreen& screen);

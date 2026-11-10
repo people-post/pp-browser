@@ -1,5 +1,6 @@
 #include "gui/shell/ShellFeedback.h"
 #include "gui/shell/ShellHost.h"
+#include "gui/shell/ShellLayoutRml.h"
 #include "lib/ui/ShellInterruption.h"
 #include "lib/ui/ShellLayout.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -661,3 +662,89 @@ TEST(ShellHostHiddenTabTest, TheAiDrawerFlagNeverSurvivesATabSwitch) {
   cleared.ClearTabContext();
   EXPECT_FALSE(cleared.State().ai_drawer_open) << "the tab's context goes with it";
 }
+
+namespace pbr {
+
+// Reaches ShellHost's private call answer handlers (a friend of the class).
+struct ShellHostTestAccess {
+  static void Accept(ShellHost& host) { host.CallAccept(); }
+  static void AcceptVoice(ShellHost& host) { host.CallAcceptVoice(); }
+  static void AcceptCharge(ShellHost& host) { host.CallAcceptCharge(); }
+  static void Decline(ShellHost& host) { host.CallDecline(); }
+};
+
+namespace {
+
+CallChromeSnapshot Ring(const bool awaiting) {
+  CallChromeSnapshot snapshot;
+  snapshot.ring.active = true;
+  snapshot.ring.awaiting_invite = awaiting;
+  return snapshot;
+}
+
+bool PinLayerHasOverCall(ShellHost& host) {
+  return ShellLayoutRml(host.State(), false, "").PinGate().find("shell-pin-gate--over-call") != std::string::npos;
+}
+
+} // namespace
+
+// The unlock layer follows the awaiting page: the class is there while it is up and gone when it goes, whichever came
+// first (the layer is remounted on the flip; here the markup it would mount is checked).
+TEST(ShellHostCallRingTest, ThePinLayerClassFollowsTheAwaitingFlag) {
+  ShellHost& host = PhoneHost(NavTab::Home);
+  PinGateState pin;
+  pin.active = true;
+  pin.unlock_mode = true;
+  host.ApplyPinGateState(pin);
+  EXPECT_FALSE(PinLayerHasOverCall(host));
+  host.ApplyCallChromeSnapshot(Ring(true), CallChromeUpdate::Remount);
+  EXPECT_TRUE(host.State().call_ring.awaiting_invite);
+  EXPECT_TRUE(PinLayerHasOverCall(host)) << "PIN card was already up when the page came";
+  host.ApplyCallChromeSnapshot(Ring(false), CallChromeUpdate::Remount);
+  EXPECT_FALSE(PinLayerHasOverCall(host)) << "a real ring: the card is back in the middle";
+  host.ApplyCallChromeSnapshot(Ring(true), CallChromeUpdate::Remount);
+  host.ApplyCallChromeSnapshot(CallChromeSnapshot{}, CallChromeUpdate::Remount);
+  EXPECT_FALSE(PinLayerHasOverCall(host)) << "the page ended while the card was up";
+}
+
+TEST(ShellHostCallRingTest, TheAnswersDoNothingWhileAwaitingTheInviteAndActOtherwise) {
+  ShellHost& host = PhoneHost(NavTab::Home);
+  int accepts = 0;
+  int voice = 0;
+  int charge = 0;
+  int declines = 0;
+  CallActionsPorts ports;
+  ports.accept_incoming = [&]() { ++accepts; };
+  ports.accept_incoming_voice_only = [&]() { ++voice; };
+  ports.accept_incoming_with_charge = [&]() { ++charge; };
+  ports.decline_incoming = [&]() { ++declines; };
+  host.BindCallActions(std::move(ports));
+
+  host.ApplyCallChromeSnapshot(Ring(true), CallChromeUpdate::Remount);
+  ShellHostTestAccess::Accept(host);
+  ShellHostTestAccess::AcceptVoice(host);
+  ShellHostTestAccess::AcceptCharge(host);
+  ShellHostTestAccess::Decline(host);
+  EXPECT_EQ(accepts + voice + charge + declines, 0);
+
+  host.ApplyCallChromeSnapshot(Ring(false), CallChromeUpdate::DirtyOnly);
+  ShellHostTestAccess::Accept(host);
+  ShellHostTestAccess::AcceptVoice(host);
+  ShellHostTestAccess::AcceptCharge(host);
+  ShellHostTestAccess::Decline(host);
+  EXPECT_EQ(accepts, 1);
+  EXPECT_EQ(voice, 1);
+  EXPECT_EQ(charge, 1);
+  EXPECT_EQ(declines, 1);
+}
+
+TEST(ShellHostCallRingTest, TheStartupCoverIsNotShownOverAnActiveRing) {
+  ShellHost& host = KeptHost();
+  host.ReconcileStartupCover();
+  EXPECT_TRUE(host.State().startup_cover_visible) << "cold start: the logo cover";
+  host.ApplyCallChromeSnapshot(Ring(true), CallChromeUpdate::Remount);
+  EXPECT_FALSE(host.State().startup_cover_visible);
+  host.ApplyCallChromeSnapshot(CallChromeSnapshot{}, CallChromeUpdate::Remount);
+}
+
+} // namespace pbr

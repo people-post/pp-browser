@@ -9,6 +9,7 @@
 #include "feature/presenters/CallBackOffer.h"
 #include "feature/presenters/CallMediaFrame.h"
 #include "feature/presenters/CallWakePlaceholder.h"
+#include "foundation/platform/PendingNotificationTap.h"
 
 #include <functional>
 #include <memory>
@@ -126,12 +127,23 @@ public:
   void Refresh();
   /** The app was woken for a call: look for its ring now. */
   void OnCallWake();
+  /** What the GUI does with the "Incoming call, connecting…" ring page this step. */
+  enum class WakeRing { Keep, Show, Clear };
+  struct WakeStep {
+    /** Show: put the page up (once it is up, nothing more); Clear: take it down quietly; Keep: leave the ring alone. */
+    WakeRing ring = WakeRing::Keep;
+    /** Set on the one step where the placeholder ends; the two fields below go with it. */
+    CallWakePlaceholder::Outcome outcome = CallWakePlaceholder::Outcome::None;
+    int64_t shown_ms = 0;
+    std::optional<int64_t> ready_ms;
+  };
   /**
-   * The incoming-call placeholder (CallWakePlaceholder), stepped with the latest call tap. Works with no backend (a
-   * locked vault); the screen kind and "messaging ready" (a ring could now be delivered) are read here.
+   * The incoming-call placeholder (CallWakePlaceholder) for the latest call-alert tap (PendingNotificationTap) and the
+   * app's visibility. Works with no backend (a locked vault). "Messaging ready" = messaging up with a backend; "no
+   * call screen" = our own screen_. `phone_layout`: only phones have the page (anything else clears one that is up).
    */
-  CallWakePlaceholder::View StepWakePlaceholder(uint64_t tap_seq, bool tap_fresh,
-                                                std::optional<int64_t> tap_notification_age_ms, int64_t now_ms);
+  WakeStep StepWakePlaceholder(bool phone_layout,
+                               PendingNotificationTap::Clock::time_point now = PendingNotificationTap::Clock::now());
 
   const CallScreen& Screen() const { return screen_; }
   /**
@@ -244,6 +256,8 @@ private:
   Callbacks callbacks_;
   CallScreen screen_;
   CallWakePlaceholder wake_placeholder_;
+  /** The last StepWakePlaceholder asked for the page to show (so it is asked to clear it once). */
+  bool wake_ring_shown_ = false;
   NoMediaWatch no_media_watch_;
   int64_t no_media_checked_ms_ = 0;
   /** Last CallSessionManager identity the ring callbacks were installed on. */

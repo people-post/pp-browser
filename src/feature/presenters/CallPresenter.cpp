@@ -1,6 +1,7 @@
 #include "feature/presenters/CallPresenter.h"
 
 #include "feature/presenters/NewCallGuard.h"
+#include "foundation/runtime/AppLifecycle.h"
 #include "lib/calls/CallGuests.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallMediaErrorText.h"
@@ -14,6 +15,7 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <chrono>
 #include <map>
 #include <utility>
 #include "common/PbrCompat.h"
@@ -71,19 +73,44 @@ void CallPresenter::BindToMessaging() {
   Refresh();
 }
 
-CallWakePlaceholder::View CallPresenter::StepWakePlaceholder(const uint64_t tap_seq, const bool tap_fresh,
-                                                             const std::optional<int64_t> tap_notification_age_ms,
-                                                             const int64_t now_ms) {
+CallPresenter::WakeStep CallPresenter::StepWakePlaceholder(const bool phone_layout,
+                                                           const PendingNotificationTap::Clock::time_point now) {
+  WakeStep step;
+  if (!phone_layout) {
+    if (std::exchange(wake_ring_shown_, false)) {
+      step.ring = WakeRing::Clear;
+    }
+    return step;
+  }
+  auto& tap = PendingNotificationTap::Instance();
   CallWakePlaceholder::Input in;
-  in.tap_seq = tap_seq;
-  in.tap_fresh = tap_fresh;
-  in.tap_notification_age_ms = tap_notification_age_ms;
+  in.tap_seq = tap.CallTapSeq();
+  in.tap_fresh = tap.PeekCallRoute(now);
+  if (const auto age = tap.CallTapNotificationAge()) {
+    in.tap_notification_age_ms = age->count();
+  }
+  if (const auto elapsed = tap.CallTapElapsed(now)) {
+    in.tap_elapsed_ms = elapsed->count();
+  }
+  in.app_visible = AppLifecycle::IsVisible();
   in.screen_kind = screen_.kind;
   // Ready = the ring callbacks are bound (messaging up, backend available): an invite can be delivered from here on.
   const auto* backend = Backend();
   in.messaging_ready = MessagingInitialized() && backend && backend->Available();
-  in.now_ms = now_ms;
-  return wake_placeholder_.Step(in);
+  in.now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+  const CallWakePlaceholder::View view = wake_placeholder_.Step(in);
+  step.outcome = view.outcome;
+  step.shown_ms = view.shown_ms;
+  step.ready_ms = view.ready_ms;
+  if (view.active) {
+    wake_ring_shown_ = screen_.kind == CallScreen::Kind::None;
+    step.ring = wake_ring_shown_ ? WakeRing::Show : WakeRing::Keep;
+  } else if (view.outcome != CallWakePlaceholder::Outcome::Ring && std::exchange(wake_ring_shown_, false)) {
+    step.ring = WakeRing::Clear; // over with no call: the page goes quietly (a real ring overwrote it in place: Keep)
+  } else {
+    wake_ring_shown_ = false;
+  }
+  return step;
 }
 
 void CallPresenter::Tick() {
