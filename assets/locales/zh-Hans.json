@@ -145,6 +145,7 @@
     "settings.profile.photo_removed": "头像已移除",
     "settings.profile.photo_updated": "头像已更新",
     "settings.profile.picker_failed": "无法打开文件选择器",
+    "settings.profile.photo_uploading": "正在上传…",
     "settings.profile.photo_from_library": "从相册选",
     "settings.profile.photo_remove_confirm": "移除头像？",
     "settings.profile.photo_unreadable": "这张图片打不开，换一张试试",
