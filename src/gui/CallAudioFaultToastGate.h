@@ -16,6 +16,12 @@ class CallAudioFaultToastGate {
 public:
   static constexpr int64_t kAudioFaultToastMs = 10'000;
 
+  /**
+   * Whether the hint text still needs a toast. The call screen shows a shown quality hint as its own line unless
+   * the status hint occupies that line, so then the toast would repeat it.
+   */
+  static bool ShouldToastHint(bool hint_shown, bool status_hint_empty) { return !(hint_shown && status_hint_empty); }
+
   /** Feed the current state each UI tick; true exactly when a toast should be shown now. */
   bool Update(const std::string& call_id, bool fault, int64_t now_ms) {
     if (call_id != fault_call_id_) {

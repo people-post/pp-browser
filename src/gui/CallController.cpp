@@ -1671,7 +1671,10 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend& backend,
   const bool audio_fault = view.quality == CallPathQuality::NoAudio || view.asymmetry != CallAudioAsymmetry::None;
   if (audio_fault_gate_.Update(presenter_.ActiveCallId(), audio_fault, now_ms)) {
     if (!frame.hint_key.empty()) {
-      UserFeedback::Fail(Tr(frame.hint_key));
+      // The phone layout already shows this hint as the centered line; don't say it twice. The gate stays consumed.
+      if (CallAudioFaultToastGate::ShouldToastHint(frame.hint_shown, in_call.status_hint.empty())) {
+        UserFeedback::Fail(Tr(frame.hint_key));
+      }
     } else if (label_key && label_key[0]) {
       UserFeedback::Fail(Tr(label_key));
     }
