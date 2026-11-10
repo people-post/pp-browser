@@ -33,7 +33,8 @@ Value ToolCallsToJson(const std::vector<PlannedToolCall>& planned, const std::st
   return ArrayValue(std::move(out));
 }
 
-void ParsePeopleToolJson(const std::string& raw, std::vector<mesh::DirectoryHit>& hits, std::vector<Contact>& contacts) {
+void ParsePeopleToolJson(const std::string& raw, std::vector<mesh::DirectoryHit>& hits,
+                         std::vector<Contact>& contacts) {
   auto parsed = ParseValue(raw);
   if (!parsed) {
     return;

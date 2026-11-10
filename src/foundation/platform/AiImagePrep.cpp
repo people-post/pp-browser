@@ -38,8 +38,8 @@ SDL_Surface* FlattenOnWhite(SDL_Surface* source) {
 
 } // namespace
 
-Roe<PreparedAiImage> PrepareAiImageFromFile(const std::string& path, const size_t max_bytes,
-                                            const int max_dimension, const ImagePrepOptions& options) {
+Roe<PreparedAiImage> PrepareAiImageFromFile(const std::string& path, const size_t max_bytes, const int max_dimension,
+                                            const ImagePrepOptions& options) {
   if (path.empty()) {
     return PrepError(AiImagePrepError::NotAnImage, "Image path is required");
   }

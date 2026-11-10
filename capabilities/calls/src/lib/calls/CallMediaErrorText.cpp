@@ -64,7 +64,7 @@ const char* CallMediaErrorUserKey(const std::string& technical) {
     return nullptr;
   }
   if (Has(technical, "payment_unavailable")) {
-    return nullptr;  // PaymentErrorUserMessage owns these
+    return nullptr; // PaymentErrorUserMessage owns these
   }
   if (!LooksTechnical(technical)) {
     return nullptr;

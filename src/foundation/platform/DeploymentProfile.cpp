@@ -52,12 +52,12 @@ BackendEnv ParseBackendEnv(const std::string_view name) {
 
 const char* BackendEnvName(const BackendEnv env) {
   switch (env) {
-  case BackendEnv::Qa:
-    return "qa";
-  case BackendEnv::Custom:
-    return "custom";
-  case BackendEnv::Prod:
-    break;
+    case BackendEnv::Qa:
+      return "qa";
+    case BackendEnv::Custom:
+      return "custom";
+    case BackendEnv::Prod:
+      break;
   }
   return "prod";
 }

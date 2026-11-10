@@ -156,10 +156,9 @@ public:
     ++finish_calls;
     last_kem_public_key_b64 = kem_public_key_b64;
     last_binding = kem_binding_signature_b64;
-    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signature,
-                                                             timestamp, signature_alg, kem_public_key_b64,
-                                                             kem_binding_signature_b64, peer_id, multiaddrs,
-                                                             initiation_floor, publish);
+    auto result = MockRegistrationClient::FinishRegistration(
+        challenge, public_key_b64, nickname, signature, timestamp, signature_alg, kem_public_key_b64,
+        kem_binding_signature_b64, peer_id, multiaddrs, initiation_floor, publish);
     if (result) {
       result->kem_bound = relay_stores_binding;
     }
@@ -314,7 +313,8 @@ TEST_F(KemBindingPublishTest, ConcurrentRenewalAndGuestKeyWritesKeepBothFields) 
   constexpr int kRounds = 60;
   std::thread renewals([&]() {
     for (int i = 0; i < kRounds; ++i) {
-      RegistrationResult result{.success = true, .relay_user_id = "relay:u1",
+      RegistrationResult result{.success = true,
+                                .relay_user_id = "relay:u1",
                                 .expires_at = "2099-01-01T00:00:" + std::to_string(10 + i) + ".000Z",
                                 .kem_bound = true};
       ASSERT_TRUE(static_cast<bool>(PersistRenewal(*identity_, result, account)));

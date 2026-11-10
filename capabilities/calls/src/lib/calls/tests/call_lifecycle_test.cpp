@@ -63,7 +63,7 @@ TEST_F(CallLifecycleTest, PlacedCallRingsOutUntilAnsweredAndKeepsARunningPath) {
   EXPECT_EQ(live_.Status(), CallMediaStatus::DirectConnecting);
   EXPECT_EQ(live_.Phase(), CallPhase::OutboundCalling) << "nobody answered yet";
 
-  live_.MarkJoined("call:out");  // the peer answered
+  live_.MarkJoined("call:out"); // the peer answered
   EXPECT_EQ(live_.Phase(), CallPhase::MediaConnecting);
   live_.NoteMediaConnected("call:out");
   EXPECT_EQ(live_.Phase(), CallPhase::InCall);
@@ -151,7 +151,7 @@ TEST_F(CallLifecycleTest, DirectArmingRequestHonouredWhileSettingUpOnly) {
 
 TEST_F(CallLifecycleTest, CancelGenerationBumpsOnADecisionAndOnClose) {
   const uint64_t start = live_.MediaCancelGen();
-  Answered("call:c");  // Deciding
+  Answered("call:c"); // Deciding
   const uint64_t deciding = live_.MediaCancelGen();
   EXPECT_GT(deciding, start);
   live_.SetMediaStatus("call:c", CallMediaStatus::Deciding, "test");

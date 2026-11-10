@@ -19,13 +19,11 @@ ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), calls
   // What the attachment cache asks of the OS: the platform's (quarantine mark, video posters).
   SetAttachmentPlatform({
       .mark_downloaded = [](const std::string& path) { return os::MarkFileAsDownloaded(path); },
-      .video_poster_jpeg = [](const std::string& path, int max_dimension) {
-        return ExtractVideoPosterJpeg(path, max_dimension);
-      },
+      .video_poster_jpeg = [](const std::string& path,
+                              int max_dimension) { return ExtractVideoPosterJpeg(path, max_dimension); },
       .soft_poster_jpeg = [](int max_dimension) { return SoftVideoPosterJpeg(max_dimension); },
-      .image_thumbnail_jpeg = [](const std::vector<uint8_t>& image_bytes, int max_dimension) {
-        return MakeImageThumbnailJpeg(image_bytes, max_dimension);
-      },
+      .image_thumbnail_jpeg = [](const std::vector<uint8_t>& image_bytes,
+                                 int max_dimension) { return MakeImageThumbnailJpeg(image_bytes, max_dimension); },
       .forget_opened_copies = [] { PlatformForgetOpenedFiles(); },
   });
   // A sound or video shown in the app plays like a voice message: on the loudspeaker, also with the silent switch on

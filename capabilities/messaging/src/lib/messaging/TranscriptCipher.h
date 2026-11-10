@@ -26,10 +26,10 @@ public:
                                             std::string_view thread_id, std::string_view message_id,
                                             const ByteVector& ciphertext);
 
-  static Roe<ByteVector> EncryptPreview(const ByteVector& dek, std::string_view profile_id,
-                                       std::string_view thread_id, std::string_view preview_text);
-  static Roe<std::string> DecryptPreview(const ByteVector& dek, std::string_view profile_id,
-                                         std::string_view thread_id, const ByteVector& ciphertext);
+  static Roe<ByteVector> EncryptPreview(const ByteVector& dek, std::string_view profile_id, std::string_view thread_id,
+                                        std::string_view preview_text);
+  static Roe<std::string> DecryptPreview(const ByteVector& dek, std::string_view profile_id, std::string_view thread_id,
+                                         const ByteVector& ciphertext);
 
   static Roe<ByteVector> EncryptMemoryValue(const ByteVector& dek, std::string_view profile_id,
                                             std::string_view thread_id, std::string_view key,

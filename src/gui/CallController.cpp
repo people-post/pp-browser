@@ -203,8 +203,8 @@ namespace {
 /** One key for an avatar written into the call page's markup: a change remounts it. */
 std::string AvatarKey(const bool group, const bool has_avatar, const ui::String& src, const ui::String& letter,
                       const int tone) {
-  return std::string(group ? "g" : "p") + (has_avatar ? std::string(src.c_str()) : std::string(letter.c_str())) +
-         "|" + std::to_string(tone);
+  return std::string(group ? "g" : "p") + (has_avatar ? std::string(src.c_str()) : std::string(letter.c_str())) + "|" +
+         std::to_string(tone);
 }
 
 std::string RosterKey(const std::vector<CallRosterParticipantState>& roster) {
@@ -347,7 +347,6 @@ std::string FormatTenths(const int64_t tenths) {
   return std::to_string(tenths / 10) + "." + std::to_string(tenths % 10);
 }
 
-
 int QuantizeAudioLevel(float level) {
   if (level < 0.008f) {
     return 0;
@@ -398,7 +397,6 @@ CallVideoTileRenderer::Frame DemoCameraFrame(const uint64_t seq, const uint8_t t
   }
   return frame;
 }
-
 
 std::string ComposeP2pStatusHint(bool missing_mic, bool seed_unreachable) {
   std::string hint;
@@ -482,12 +480,12 @@ void CallController::BindToMessaging() {
 void CallController::Tick() {
   if constexpr (kUiDemoBuild) {
     if (RenderDemoScene(util::NowUnixMs())) {
-      return;  // the demo app's scripted call (PP_DEMO_CALL) stands in for the presenter
+      return; // the demo app's scripted call (PP_DEMO_CALL) stands in for the presenter
     }
   }
-  presenter_.Tick();  // expired rings; the in-call screen (Calling… / timer / levels) every frame
+  presenter_.Tick(); // expired rings; the in-call screen (Calling… / timer / levels) every frame
   const int64_t now = util::NowUnixMs();
-  if (ring_.active && !phone_layout_) {  // the phone ring page has no pulse: no dirty, no forced frame
+  if (ring_.active && !phone_layout_) { // the phone ring page has no pulse: no dirty, no forced frame
     if (now - last_pulse_toggle_ms_ >= 600) {
       ring_.pulse = !ring_.pulse;
       last_pulse_toggle_ms_ = now;
@@ -560,7 +558,8 @@ void CallController::EmitPerfThreads(const int64_t now_ms) {
   static constexpr ShareWord kMsKeys[] = {"t1_ms", "t2_ms", "t3_ms", "t4_ms", "t5_ms", "t6_ms", "t7_ms", "t8_ms"};
   MetricsLine line("perf.threads");
   line.Add("interval_ms", now_ms - prev_sample_ms)
-      .Add("proc_cpu_ms", (vitals.cpu_s >= 0 && prev_proc_cpu_s >= 0) ? (vitals.cpu_s - prev_proc_cpu_s) * 1000.0 : -1.0)
+      .Add("proc_cpu_ms",
+           (vitals.cpu_s >= 0 && prev_proc_cpu_s >= 0) ? (vitals.cpu_s - prev_proc_cpu_s) * 1000.0 : -1.0)
       .Add("thermal", vitals.thermal)
       .Add("battery", vitals.battery_pct)
       .Add("charging", vitals.charging)
@@ -653,8 +652,7 @@ void CallController::SetChromeMode(CallChromeMode mode) {
   }
   if (mode == CallChromeMode::Minimized) {
     if (chrome_mode_ != CallChromeMode::Minimized) {
-      restore_mode_ = chrome_mode_ == CallChromeMode::Immersive ? CallChromeMode::Immersive
-                                                               : CallChromeMode::Expanded;
+      restore_mode_ = chrome_mode_ == CallChromeMode::Immersive ? CallChromeMode::Immersive : CallChromeMode::Expanded;
     }
   } else {
     restore_mode_ = mode;
@@ -728,8 +726,7 @@ void CallController::ToggleSpotlightFill() {
   ResyncSpotlight();
 }
 
-void CallController::NoteActiveSpeaker(const MediaEngineHealth& engine, const float self_level,
-                                       const int64_t now_ms) {
+void CallController::NoteActiveSpeaker(const MediaEngineHealth& engine, const float self_level, const int64_t now_ms) {
   if (!in_call_.show_roster) {
     return; // 1:1: the peer is spotlit anyway
   }
@@ -764,7 +761,7 @@ void CallController::NoteActiveSpeaker(const MediaEngineHealth& engine, const fl
   if (speaker_moved) {
     ResyncSpotlight();
   } else if (rings_changed) {
-    ApplySpotlightToState(in_call_);  // the render's SyncShellState pushes it
+    ApplySpotlightToState(in_call_); // the render's SyncShellState pushes it
   }
 }
 
@@ -780,8 +777,7 @@ void CallController::ImmersiveChrome() {
 }
 
 void CallController::RestoreChromeFromMinimized() {
-  SetChromeMode(restore_mode_ == CallChromeMode::Immersive ? CallChromeMode::Immersive
-                                                          : CallChromeMode::Expanded);
+  SetChromeMode(restore_mode_ == CallChromeMode::Immersive ? CallChromeMode::Immersive : CallChromeMode::Expanded);
 }
 
 void CallController::SetMinimizedPlace(int side, int y_permille, bool tucked) {
@@ -843,8 +839,7 @@ void CallController::SyncRingtone() {
   // no incoming ring is showing and media has not started yet.
   auto* backend = Backend();
   const bool should_ringback = !should_ring && backend && backend->Available() &&
-                                backend->Phase() == CallPhase::OutboundCalling &&
-                                !backend->Media().IsActive();
+                               backend->Phase() == CallPhase::OutboundCalling && !backend->Media().IsActive();
   if (should_ringback && !ringback_.IsPlaying()) {
     ringback_.Start();
   } else if (!should_ringback && ringback_.IsPlaying()) {
@@ -873,8 +868,7 @@ std::string CallController::DisplayNameForIdentity(const std::string& identity) 
   }
   if (auto contact = call_ports_.find_contact_by_identity(identity, mesh::ContactIdKind::Account)) {
     if (*contact) {
-      std::string name =
-          (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+      std::string name = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
       if (!name.empty()) {
         return name;
       }
@@ -920,55 +914,55 @@ std::string CallController::NoticeUserText(const CallNotice& notice) const {
 
 void CallController::ShowNotice(const CallNotice& notice) {
   switch (notice.kind) {
-  case CallNotice::Kind::Error:
-    UserFeedback::Fail(NoticeUserText(notice));
-    return;
-  case CallNotice::Kind::PeerEnded:
-  case CallNotice::Kind::PeerDeclined: {
-    const bool declined = notice.kind == CallNotice::Kind::PeerDeclined;
-    const std::string name = DisplayNameForIdentity(notice.identity);
-    const char* named = declined ? "call.status.declined_by_peer" : "call.status.ended_by_peer";
-    const char* unknown = declined ? "call.status.declined_by_peer_unknown" : "call.status.ended_by_peer_unknown";
-    UserFeedback::Ok(name.empty() ? Tr(unknown) : Tr(named, {{"name", name}}));
-    return;
-  }
-  case CallNotice::Kind::GuestJoined: {
-    std::string name = DisplayNameForIdentity(notice.identity);
-    if (name.empty()) {
-      name = notice.identity;
-    }
-    const std::string local = call_ports_.local_relay_identity ? call_ports_.local_relay_identity().value_or("") : "";
-    if (!local.empty() && notice.brought_by == local) {
-      UserFeedback::Ok(Tr("call.guest.joined_yours", {{"name", name}}));
+    case CallNotice::Kind::Error:
+      UserFeedback::Fail(NoticeUserText(notice));
+      return;
+    case CallNotice::Kind::PeerEnded:
+    case CallNotice::Kind::PeerDeclined: {
+      const bool declined = notice.kind == CallNotice::Kind::PeerDeclined;
+      const std::string name = DisplayNameForIdentity(notice.identity);
+      const char* named = declined ? "call.status.declined_by_peer" : "call.status.ended_by_peer";
+      const char* unknown = declined ? "call.status.declined_by_peer_unknown" : "call.status.ended_by_peer_unknown";
+      UserFeedback::Ok(name.empty() ? Tr(unknown) : Tr(named, {{"name", name}}));
       return;
     }
-    std::string bringer = DisplayNameForIdentity(notice.brought_by);
-    if (bringer.empty()) {
-      bringer = notice.brought_by;
-    }
-    UserFeedback::Ok(Tr("call.guest.joined", {{"name", name}, {"bringer", bringer}}));
-    return;
-  }
-  case CallNotice::Kind::IncomingCall: {
-    if (system_call_screen_.TakesRing(AppLifecycle::IsVisible(), notice.conflict)) {
-      return; // the phone's own call screen rings it (Android's call notification)
-    }
-    const std::string caller = DisplayNameForIdentity(notice.identity);
-    if (notice.conflict) {
-      // V064: over a call, the alert says who is calling and which call answering ends, as the ring does.
-      const CallConflictCopy copy =
-          MakeCallConflictCopy(true, ConflictNames(caller, true, notice.ending, util::NowUnixMs()));
-      ILocalNotifier::Instance().NotifyIncoming(copy.title, copy.hint, "");
+    case CallNotice::Kind::GuestJoined: {
+      std::string name = DisplayNameForIdentity(notice.identity);
+      if (name.empty()) {
+        name = notice.identity;
+      }
+      const std::string local = call_ports_.local_relay_identity ? call_ports_.local_relay_identity().value_or("") : "";
+      if (!local.empty() && notice.brought_by == local) {
+        UserFeedback::Ok(Tr("call.guest.joined_yours", {{"name", name}}));
+        return;
+      }
+      std::string bringer = DisplayNameForIdentity(notice.brought_by);
+      if (bringer.empty()) {
+        bringer = notice.brought_by;
+      }
+      UserFeedback::Ok(Tr("call.guest.joined", {{"name", name}, {"bringer", bringer}}));
       return;
     }
-    const std::string body =
-        caller.empty() ? Tr("call.notify.body_unknown") : Tr("call.notify.body_named", {{"name", caller}});
-    ILocalNotifier::Instance().NotifyIncoming(Tr("call.notify.title"), body, "");
-    return;
-  }
-  case CallNotice::Kind::CallBack:
-    OfferCallBack(notice.ending);
-    return;
+    case CallNotice::Kind::IncomingCall: {
+      if (system_call_screen_.TakesRing(AppLifecycle::IsVisible(), notice.conflict)) {
+        return; // the phone's own call screen rings it (Android's call notification)
+      }
+      const std::string caller = DisplayNameForIdentity(notice.identity);
+      if (notice.conflict) {
+        // V064: over a call, the alert says who is calling and which call answering ends, as the ring does.
+        const CallConflictCopy copy =
+            MakeCallConflictCopy(true, ConflictNames(caller, true, notice.ending, util::NowUnixMs()));
+        ILocalNotifier::Instance().NotifyIncoming(copy.title, copy.hint, "");
+        return;
+      }
+      const std::string body =
+          caller.empty() ? Tr("call.notify.body_unknown") : Tr("call.notify.body_named", {{"name", caller}});
+      ILocalNotifier::Instance().NotifyIncoming(Tr("call.notify.title"), body, "");
+      return;
+    }
+    case CallNotice::Kind::CallBack:
+      OfferCallBack(notice.ending);
+      return;
   }
 }
 
@@ -1005,42 +999,42 @@ void CallController::Render() {
     }
   }
   switch (screen.kind) {
-  case CallScreen::Kind::Answering:
-    RenderAnswering(screen, presenter_.MediaScreen(), now_ms);
-    return;
-  case CallScreen::Kind::Ringing:
-    if (system_call_screen_.SystemRings(screen.ring_call_id)) {
-      // The phone's own call screen rings it (Android's call notification, P014): one ring, not the app's dialog too.
-      ClearRing();
-      SyncShellState();
-      SyncRingtone();
-    } else {
-      RenderRing(screen, now_ms);
-    }
-    // The ring of a tapped call alert (its call id, or the first ring for a push without one): land on its chat
-    // once; a stale tap expires unused.
-    if (open_thread_ && !screen.thread_id.empty() &&
-        PendingNotificationTap::Instance().TakeCallRoute(screen.ring_call_id, PendingNotificationTap::Clock::now())) {
-      AppRuntime::PostUI([this, thread_id = screen.thread_id]() { open_thread_(thread_id); });
-    }
-    return;
-  case CallScreen::Kind::InCall:
-    if (auto* backend = Backend(); backend && backend->Available()) {
-      RenderInCall(screen, presenter_.MediaScreen(), *backend, now_ms);
-    }
-    return;
-  case CallScreen::Kind::None:
-    if (!presenter_.ActiveCallId().empty()) {
-      // Still in a call (a ring over it was answered or declined): only the ring goes; the call's
-      // chrome mode stays as the user left it.
+    case CallScreen::Kind::Answering:
+      RenderAnswering(screen, presenter_.MediaScreen(), now_ms);
+      return;
+    case CallScreen::Kind::Ringing:
+      if (system_call_screen_.SystemRings(screen.ring_call_id)) {
+        // The phone's own call screen rings it (Android's call notification, P014): one ring, not the app's dialog too.
+        ClearRing();
+        SyncShellState();
+        SyncRingtone();
+      } else {
+        RenderRing(screen, now_ms);
+      }
+      // The ring of a tapped call alert (its call id, or the first ring for a push without one): land on its chat
+      // once; a stale tap expires unused.
+      if (open_thread_ && !screen.thread_id.empty() &&
+          PendingNotificationTap::Instance().TakeCallRoute(screen.ring_call_id, PendingNotificationTap::Clock::now())) {
+        AppRuntime::PostUI([this, thread_id = screen.thread_id]() { open_thread_(thread_id); });
+      }
+      return;
+    case CallScreen::Kind::InCall:
+      if (auto* backend = Backend(); backend && backend->Available()) {
+        RenderInCall(screen, presenter_.MediaScreen(), *backend, now_ms);
+      }
+      return;
+    case CallScreen::Kind::None:
+      if (!presenter_.ActiveCallId().empty()) {
+        // Still in a call (a ring over it was answered or declined): only the ring goes; the call's
+        // chrome mode stays as the user left it.
+        ClearRing();
+        SyncShellState();
+        return;
+      }
+      ClearInCall();
       ClearRing();
       SyncShellState();
       return;
-    }
-    ClearInCall();
-    ClearRing();
-    SyncShellState();
-    return;
   }
 }
 
@@ -1487,7 +1481,7 @@ void CallController::SyncCameraRotation(IMediaView& media) {
       pushed_camera_rotation_ = rotation;
     }
   } else if (!in_call_.camera_on && pushed_camera_rotation_ != -1) {
-    StopCameraOrientationTracking();  // camera off: don't keep the motion sensors running
+    StopCameraOrientationTracking(); // camera off: don't keep the motion sensors running
     pushed_camera_rotation_ = -1;
   }
 }
@@ -1842,7 +1836,7 @@ void CallController::RenderDemoInCall(const DemoCallFrame& f, const int64_t now_
   in_call_.on_hold = frame.media.on_hold;
   ApplyStatusLine(f.screen, frame, now_ms);
   ApplyConnectStory(frame);
-  MediaEngineHealth engine;  // the scene's made-up levels, for the speaking rings and the spotlight
+  MediaEngineHealth engine; // the scene's made-up levels, for the speaking rings and the spotlight
   for (const auto& [identity, level] : f.levels) {
     for (const CallRosterParticipantState& row : in_call_.roster) {
       if (identity == row.identity.c_str()) {
@@ -1967,7 +1961,8 @@ void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t
 
   // Couldn't connect / disconnected: the failure page says it plainly; why is in the log (#31 / #37).
   using Status = CallScreen::Status;
-  in_call.phone_failed = !answering && (screen.status == Status::CouldntConnect || screen.status == Status::Disconnected);
+  in_call.phone_failed =
+      !answering && (screen.status == Status::CouldntConnect || screen.status == Status::Disconnected);
   if (screen.status == Status::Disconnected) {
     in_call.failed_text = Tr("call.status.disconnected").c_str();
   } else if (group || screen.hint_missing_mic) {
@@ -1998,7 +1993,7 @@ void CallController::FillSelfAvatar(const CallScreen& screen) {
 
 void CallController::ApplyConnectStory(const CallMediaScreen& frame) {
   if (!phone_layout_) {
-    return;  // desktop keeps its bar as it was
+    return; // desktop keeps its bar as it was
   }
   const CallStoryView& v = frame.story;
   in_call_.story_active = v.connecting && !in_call_.phone_failed;
@@ -2061,33 +2056,33 @@ void CallController::FillStoryLines(const CallStoryView& v) {
       // Where the story starts (or a call found already live): the time of day, never a "0.0 s".
       line.time = MessageClockLabel(event.wall_ms);
     } else if (event.call_ms >= 0) {
-      line.time = FormatMinSec(event.call_ms / 1000);  // after connect: on the call's clock
+      line.time = FormatMinSec(event.call_ms / 1000); // after connect: on the call's clock
     } else {
       line.time = Tr("call.story.seconds", {{"seconds", FormatTenths((event.at_ms + 50) / 100)}});
     }
     using Kind = CallStoryEvent::Kind;
     switch (event.kind) {
-    case Kind::Placed:
-      line.text = Tr("call.story.event.placed", {{"name", name}});
-      break;
-    case Kind::Answered:
-      line.text = Tr(group ? "call.story.event.joined" : "call.story.event.answered");
-      break;
-    case Kind::PeerAnswered:
-      line.text = Tr("call.story.event.peer_answered", {{"name", name}});
-      break;
-    case Kind::Connected:
-      line.text = Tr(group ? "call.story.event.group_connected" : CallRouteEventKey(event.route));
-      line.secure = true;
-      break;
-    case Kind::Encrypted:
-      line.text = Tr(group ? "call.story.event.group_encrypted" : "call.story.event.encrypted");
-      line.secure = true;
-      break;
-    case Kind::Closer:
-      line.text = Tr("call.story.event.closer", {{"name", name}});
-      line.secure = true;
-      break;
+      case Kind::Placed:
+        line.text = Tr("call.story.event.placed", {{"name", name}});
+        break;
+      case Kind::Answered:
+        line.text = Tr(group ? "call.story.event.joined" : "call.story.event.answered");
+        break;
+      case Kind::PeerAnswered:
+        line.text = Tr("call.story.event.peer_answered", {{"name", name}});
+        break;
+      case Kind::Connected:
+        line.text = Tr(group ? "call.story.event.group_connected" : CallRouteEventKey(event.route));
+        line.secure = true;
+        break;
+      case Kind::Encrypted:
+        line.text = Tr(group ? "call.story.event.group_encrypted" : "call.story.event.encrypted");
+        line.secure = true;
+        break;
+      case Kind::Closer:
+        line.text = Tr("call.story.event.closer", {{"name", name}});
+        line.secure = true;
+        break;
     }
     in_call.story_lines.push_back(std::move(line));
   }

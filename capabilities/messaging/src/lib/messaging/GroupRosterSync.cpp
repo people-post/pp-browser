@@ -975,7 +975,7 @@ Roe<Check> BeginCheck(IGroupRosterStore& roster, const std::string& group_id, co
   check.ask.assign(ask.begin(), ask.end());
 
   if (metadata->sync_state == GroupSyncState::Dissolved) {
-    check.ask.clear();  // G016: an ended group checks nothing and asks no one
+    check.ask.clear(); // G016: an ended group checks nothing and asks no one
     return check;
   }
   if (metadata->sync_state != GroupSyncState::Removed) {
@@ -1002,7 +1002,8 @@ Roe<std::optional<group_roster_sync_codec::RosterReply>> Answer(IGroupRosterStor
   group_roster_sync_codec::RosterReply reply;
   reply.group_id = request.group_id;
   reply.request_id = request.request_id;
-  reply.statement = Held(**metadata);  // for a dissolved group (G016): the owner's dissolve, which ends the asker's check
+  reply.statement =
+      Held(**metadata); // for a dissolved group (G016): the owner's dissolve, which ends the asker's check
   if ((*metadata)->sync_state == GroupSyncState::Active) {
     auto member = roster.IsMember(request.group_id, asker);
     if (!member) {

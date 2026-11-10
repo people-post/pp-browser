@@ -35,7 +35,9 @@ Error Unprocessable() {
                    Tr("chat.attachment.image_unprocessable"));
 }
 
-std::string StemOf(const std::string& filename) { return std::filesystem::path(filename).stem().string(); }
+std::string StemOf(const std::string& filename) {
+  return std::filesystem::path(filename).stem().string();
+}
 
 /** Read a whole file, refusing one over `max_bytes` before it is opened. */
 Roe<std::vector<uint8_t>> ReadAll(const std::string& path, const uint64_t max_bytes) {
@@ -103,7 +105,8 @@ Roe<OutgoingAttachment> PrepareFromLocalFile(const std::string& path, const std:
     ImagePrepOptions options;
     options.max_pixels = limits.max_image_pixels;
     options.apply_exif_orientation = true;
-    auto shrunk = PrepareAiImageFromFile(path, static_cast<size_t>(limits.max_image_bytes), kShrunkImageLongEdge, options);
+    auto shrunk =
+        PrepareAiImageFromFile(path, static_cast<size_t>(limits.max_image_bytes), kShrunkImageLongEdge, options);
     if (shrunk) {
       out.filename = StemOf(out.filename) + (shrunk->mime == "image/png" ? ".png" : ".jpg");
       out.mime = shrunk->mime;

@@ -105,9 +105,8 @@ Roe<void> CallSessionWorkflow::LeaveCallIfActiveExcept(const std::string& keep_c
   return {};
 }
 
-
 Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread_id, const bool video_allowed,
-                                               const std::vector<std::string>& invitee_identities) {
+                                                const std::vector<std::string>& invitee_identities) {
   auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
@@ -165,7 +164,7 @@ Roe<void> CallSessionWorkflow::PlaceCall(CallSession& session, const std::vector
     }
   }
   live_calls_.AdmitPlaced(session.call_id, peers);
-  live_calls_.NoteOutboundStarted(session.call_id);  // Deciding: no path planner armed yet
+  live_calls_.NoteOutboundStarted(session.call_id); // Deciding: no path planner armed yet
   return {};
 }
 
@@ -274,7 +273,6 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   return InviteParticipant(call_id, invitee_identity, {});
 }
 
-
 Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
                                                  const std::vector<std::string>& co_invitees,
                                                  const bool reply_to_join) {
@@ -344,7 +342,8 @@ Roe<void> CallSessionWorkflow::CheckCanInvite(const CallSession& session) {
   const CallMedia* call_media = call_media_.Find(session.call_id);
   const bool already_on_sfu = (call_media && call_media->IsOnHop()) || (session.sfu_hint && !session.sfu_hint->empty());
   if (*joined >= 2 && !already_on_sfu && !hops_.Ranking().HasCandidates()) {
-    return Error("Adding a guest needs call hosting help (enable Help host calls on a computer that's helping the network)");
+    return Error(
+        "Adding a guest needs call hosting help (enable Help host calls on a computer that's helping the network)");
   }
   return {};
 }
@@ -466,9 +465,9 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id, Initiati
   // tries a circuit after our accept reaches it, and its StartBridge waits at the relay for us to
   // register (within its 14 s envelope), so a park that lands a moment later still serves it.
   if (host_.reach.park_circuit) {
-    host_.reach.park_circuit(12000, [call_id](bool ready) {  // may answer after this workflow is gone
+    host_.reach.park_circuit(12000, [call_id](bool ready) { // may answer after this workflow is gone
       logging::getLogger("CallSessionWorkflow").info << "AcceptInvite circuit park call_id=" << call_id
-                                                      << " ready=" << (ready ? 1 : 0);
+                                                     << " ready=" << (ready ? 1 : 0);
     });
   }
   Roe<void> accepted = CommitAccept(call_id, charge_decision, voice_only_accept, *local);
@@ -530,7 +529,7 @@ Roe<void> CallSessionWorkflow::CommitAccept(const std::string& call_id, Initiati
 }
 
 Roe<PendingCallInvite> CallSessionWorkflow::LoadAcceptableInvite(const std::string& call_id,
-                                                                const std::string& local_identity) {
+                                                                 const std::string& local_identity) {
   auto pending = sessions_.LoadPendingInvite(call_id, local_identity);
   if (!pending || !pending->has_value() || (*pending)->status != "pending") {
     return Error("Pending call invite not found");
@@ -573,15 +572,14 @@ Roe<void> CallSessionWorkflow::CheckAcceptJoinable(const std::string& call_id) {
   }
   // Concurrent Accept B → LeaveCallIfActiveExcept may End this call while we are still on the
   // AcceptInvite(A) worker. Do not resurrect an Ended row as Joined.
-  if (auto latest = sessions_.LoadSession(call_id); latest && latest->has_value() &&
-      (*latest)->state == CallSessionState::Ended) {
+  if (auto latest = sessions_.LoadSession(call_id);
+      latest && latest->has_value() && (*latest)->state == CallSessionState::Ended) {
     return Error("Call already ended");
   }
   return {};
 }
 
-Roe<CallAcceptDetail> CallSessionWorkflow::SendCallAccept(const std::string& call_id,
-                                                          const std::string& local_identity,
+Roe<CallAcceptDetail> CallSessionWorkflow::SendCallAccept(const std::string& call_id, const std::string& local_identity,
                                                           const std::string& inviter, const bool narrow_to_voice,
                                                           const int64_t offer_minor,
                                                           const InitiationChargeDecision charge_decision) {
@@ -664,7 +662,7 @@ void CallSessionWorkflow::ArmMediaAfterAccept(CallSession& row, const std::strin
   // N→planner: Topology for N≥3 / hint; else Bridge Direct (CallMediaPlannerSelectLogic / V038).
   const std::string& call_id = row.call_id;
   auto joined_after = sessions_.CountJoined(call_id);
-  const size_t planner_n = joined_after ? *joined_after : 0;  // V050: joined only — ringing invitees never arm the hop
+  const size_t planner_n = joined_after ? *joined_after : 0; // V050: joined only — ringing invitees never arm the hop
   // The call's `CallMedia` decides the path (the hop takes a group call; else 1:1 Direct).
   CallMedia* call_media = call_media_.Media(call_id);
   const CallMediaPath path =
@@ -675,8 +673,7 @@ void CallSessionWorkflow::ArmMediaAfterAccept(CallSession& row, const std::strin
     pending_answerer_kick_call_id_.clear();
     pending_answerer_kick_peer_.clear();
     log().info << "AcceptInvite topology owns media (no ScheduleStart) call_id=" << call_id
-               << " planner_n=" << planner_n
-               << " sfu_hint=" << (row.sfu_hint && !row.sfu_hint->empty() ? 1 : 0);
+               << " planner_n=" << planner_n << " sfu_hint=" << (row.sfu_hint && !row.sfu_hint->empty() ? 1 : 0);
     reports_.Emit(workflow_report::Changed{});
   } else {
     if (row.sfu_hint && !row.sfu_hint->empty()) {
@@ -691,9 +688,8 @@ void CallSessionWorkflow::ArmMediaAfterAccept(CallSession& row, const std::strin
     pending_answerer_kick_peer_ = inviter;
     reports_.Emit(workflow_report::Changed{});
     // ScheduleStart after CallAccept is on the wire so offerer can arm inbound while we dial.
-    log().info << "AcceptInvite → ScheduleStartDirectMedia (answerer) call_id=" << call_id
-               << " inviter=" << inviter << " planner_n=" << planner_n
-               << " listen_mas=" << accept.listen_multiaddrs.size()
+    log().info << "AcceptInvite → ScheduleStartDirectMedia (answerer) call_id=" << call_id << " inviter=" << inviter
+               << " planner_n=" << planner_n << " listen_mas=" << accept.listen_multiaddrs.size()
                << " peer_id=" << (accept.libp2p_peer_id.empty() ? 0 : 1);
     if (host_.duplex.schedule_start_direct) {
       host_.duplex.schedule_start_direct(call_id, inviter, false);
@@ -792,7 +788,7 @@ Roe<void> CallSessionWorkflow::DeclineInvite(const std::string& call_id) {
     return Error("Call session workflow host ports not bound");
   }
   if (auto sent = host_.wire.send_direct((*pending)->inviter_identity, CallControlType::CallDecline, *detail,
-                                    "Call declined", true);
+                                         "Call declined", true);
       !sent) {
     return sent.error();
   }
@@ -892,7 +888,7 @@ void CallSessionWorkflow::ResendRotatedMediaKeys(const std::string& local_identi
     ++resend.sent;
     auto key = key_exchange_.Current(it->first);
     if (!key || key->epoch != resend.epoch) {
-      it = media_key_resends_.erase(it);  // the call is gone, or a newer rotation resends its own key
+      it = media_key_resends_.erase(it); // the call is gone, or a newer rotation resends its own key
       continue;
     }
     for (const std::string& peer : call_queries::JoinedRemoteIdentities(sessions_, it->first, local_identity)) {
@@ -923,7 +919,7 @@ void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCall
 }
 
 Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms,
-                                          const LiveCallEndReason reason) {
+                                            const LiveCallEndReason reason) {
   live_calls_.Close(session.call_id, reason);
   // The decision is recorded before the media stops (#452): nothing about a slow stop may leave the
   // call looking live. The stop itself never waits on the devices (L016).
@@ -1112,7 +1108,7 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveC
     } else if (ended_json && host_.wire.fan_out_joined_and_ringing) {
       // Notify Ringing/Invited invitees as well so offline inbox delivery can clear stale rings.
       (void)host_.wire.fan_out_joined_and_ringing(call_id, CallControlType::CallEnded, *ended_json, "Call ended",
-                                             *local);
+                                                  *local);
     }
     return EndCallLocal(**session, duration, reason);
   }
@@ -1199,8 +1195,7 @@ void CallSessionWorkflow::AbandonOrphanedCallsAfterRestart() {
   if (auto active = sessions_.ListActiveSessions(); active) {
     for (const CallSession& session : *active) {
       auto participant = sessions_.FindParticipant(session.call_id, *local);
-      if (participant && participant->has_value() &&
-          (*participant)->state == CallParticipantState::Joined) {
+      if (participant && participant->has_value() && (*participant)->state == CallParticipantState::Joined) {
         joined_calls.push_back(session.call_id);
       } else {
         other_live.push_back(session);
@@ -1244,12 +1239,10 @@ void CallSessionWorkflow::AbandonOrphanedCallsAfterRestart() {
   reports_.Emit(workflow_report::Changed{});
 }
 
-Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_json,
-                                                                        const std::string& sender_identity,
-                                                                        const ThreadMessage& message,
-                                                                        const std::optional<int64_t> relay_created_at_ms,
-                                                                        const std::optional<int64_t> relay_server_time_ms,
-                                                                        const std::string& local_identity) {
+Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(
+    const std::string& detail_json, const std::string& sender_identity, const ThreadMessage& message,
+    const std::optional<int64_t> relay_created_at_ms, const std::optional<int64_t> relay_server_time_ms,
+    const std::string& local_identity) {
   using Answer = std::optional<std::string>;
   auto invite = CallControlCodec::DecodeInvite(detail_json);
   if (!invite) {
@@ -1258,7 +1251,7 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(const s
   if (ShouldIgnoreInvite(*invite, sender_identity, local_identity, relay_created_at_ms, relay_server_time_ms)) {
     return Answer{};
   }
-  const std::string& inviter = sender_identity;  // ShouldIgnoreInvite: the inviter is the sender
+  const std::string& inviter = sender_identity; // ShouldIgnoreInvite: the inviter is the sender
   const std::optional<CallSession> crossed = CrossedCall(*invite, inviter, local_identity);
   if (crossed && crossed->call_id < invite->call_id) {
     log().info << "Calling each other: our call_id=" << crossed->call_id << " wins over call_id=" << invite->call_id
@@ -1301,7 +1294,8 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(const s
     log().info << "Calling each other: call_id=" << invite->call_id << " from " << inviter
                << " wins over our call_id=" << crossed->call_id << " — answering it";
     if (auto left = LeaveCall(crossed->call_id, LiveCallEndReason::Merged); !left) {
-      log().warning << "Calling each other: leaving call_id=" << crossed->call_id << " failed: " << left.error().message;
+      log().warning << "Calling each other: leaving call_id=" << crossed->call_id
+                    << " failed: " << left.error().message;
     }
     pending_accept_voice_only_ = !crossed->video_allowed;
     reports_.Emit(workflow_report::Changed{});
@@ -1319,7 +1313,7 @@ std::optional<CallSession> CallSessionWorkflow::CrossedCall(const CallInviteDeta
   }
   for (const CallRosterEntry& entry : invite.participants) {
     if (entry.identity != peer && entry.identity != local_identity) {
-      return std::nullopt;  // more than the two of us
+      return std::nullopt; // more than the two of us
     }
   }
   return call_queries::OurUnansweredCallTo(sessions_, peer, local_identity, invite.call_id);
@@ -1366,9 +1360,9 @@ bool CallSessionWorkflow::ShouldIgnoreInvite(const CallInviteDetail& invite, con
   }
   // B24: a replayed invite for a call this device already ended must not re-arm the ring
   // (it hijacked the accept button mid-call and joined a dead call id).
-  if (auto ended = sessions_.LoadSession(invite.call_id);
-      ended && ended->has_value() && (*ended)->state == CallSessionState::Ended &&
-      !join_requested_until_ms_.contains(invite.call_id)) {
+  if (auto ended = sessions_.LoadSession(invite.call_id); ended && ended->has_value() &&
+                                                          (*ended)->state == CallSessionState::Ended &&
+                                                          !join_requested_until_ms_.contains(invite.call_id)) {
     log().info << "CallInvite ignored (ended session) call_id=" << invite.call_id;
     return true;
   }
@@ -1400,8 +1394,7 @@ bool CallSessionWorkflow::ShouldIgnoreInvite(const CallInviteDetail& invite, con
   // dropped long-backlogged inbox rows when create/now samples were present.
   if (CallSessionLogic::IsInviteExpired(invite, now)) {
     log().info << "CallInvite past wire expires_at; re-arming locally call_id=" << invite.call_id
-               << " expires_at=" << (invite.expires_at ? std::to_string(*invite.expires_at) : "none")
-               << " now=" << now;
+               << " expires_at=" << (invite.expires_at ? std::to_string(*invite.expires_at) : "none") << " now=" << now;
   }
   return false;
 }
@@ -1475,8 +1468,8 @@ void CallSessionWorkflow::SeedInviteRoster(const CallInviteDetail& invite, const
     if (row.state == CallParticipantState::Joined) {
       // V050 gt2b: the inviter's stamp (one clock for everyone) — this device's receipt time only
       // for peers that send none; it still precedes later acceptors (initiator detection).
-      row.joined_at = entry.joined_at ? entry.joined_at
-                                      : std::optional<int64_t>(CallSessionLogic::LocalJoinStampFallback(session));
+      row.joined_at =
+          entry.joined_at ? entry.joined_at : std::optional<int64_t>(CallSessionLogic::LocalJoinStampFallback(session));
     }
     (void)sessions_.UpsertParticipant(row);
   }
@@ -1516,9 +1509,8 @@ void CallSessionWorkflow::NoteInviterReach(const CallInviteDetail& invite, const
   }
 }
 
-Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_json,
-                                                  const std::string& sender_identity,
-                                                  const std::string& local_identity) {
+Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_json, const std::string& sender_identity,
+                                                   const std::string& local_identity) {
   auto accept = CallControlCodec::DecodeAccept(detail_json);
   if (!accept) {
     return accept.error();
@@ -1662,7 +1654,7 @@ void CallSessionWorkflow::StartMediaAfterRemoteAccept(const CallAcceptDetail& ac
 }
 
 Roe<void> CallSessionWorkflow::HandleInboundDecline(const std::string& detail_json,
-                                                   const std::string& sender_identity) {
+                                                    const std::string& sender_identity) {
   auto decline = CallControlCodec::DecodeDecline(detail_json);
   if (!decline) {
     return decline.error();
@@ -1701,22 +1693,20 @@ Roe<void> CallSessionWorkflow::HandleInboundDecline(const std::string& detail_js
       }
       return EndCallLocal(**session, duration, LiveCallEndReason::DeclinedByPeer);
     }
-    live_calls_.RemovePeer(decline->call_id, identity);  // others still in / ringing: the call goes on
+    live_calls_.RemovePeer(decline->call_id, identity); // others still in / ringing: the call goes on
   }
 
   reports_.Emit(workflow_report::Changed{});
   return {};
 }
 
-Roe<void> CallSessionWorkflow::HandleInboundLeave(const std::string& detail_json,
-                                                 const std::string& sender_identity,
-                                                 const std::string& local_identity) {
+Roe<void> CallSessionWorkflow::HandleInboundLeave(const std::string& detail_json, const std::string& sender_identity,
+                                                  const std::string& local_identity) {
   auto leave = CallControlCodec::DecodeLeave(detail_json);
   if (!leave) {
     return leave.error();
   }
-  return ParticipantGone(leave->call_id, leave->identity.empty() ? sender_identity : leave->identity,
-                         local_identity);
+  return ParticipantGone(leave->call_id, leave->identity.empty() ? sender_identity : leave->identity, local_identity);
 }
 
 Roe<void> CallSessionWorkflow::ParticipantGone(const std::string& call_id, const std::string& identity,
@@ -1758,7 +1748,7 @@ Roe<void> CallSessionWorkflow::ParticipantGone(const std::string& call_id, const
     const CallSessionState next = CallSessionLogic::TransitionOnLeave((*session)->state, remaining, group);
     if (group && next != CallSessionState::Ended && remaining == 1 &&
         call_queries::JoinedRemoteIdentities(sessions_, call_id, local_identity).empty()) {
-      alone_since_ms_[call_id] = util::NowUnixMs();  // V053: waiting for others, for a while
+      alone_since_ms_[call_id] = util::NowUnixMs(); // V053: waiting for others, for a while
       log().info << "Alone in group call call_id=" << call_id;
     }
     if (next == CallSessionState::Ended) {
@@ -1768,7 +1758,7 @@ Roe<void> CallSessionWorkflow::ParticipantGone(const std::string& call_id, const
       }
       return EndCallLocal(**session, duration, LiveCallEndReason::RemoteEnded);
     }
-    live_calls_.RemovePeer(call_id, identity);  // a group call goes on without them
+    live_calls_.RemovePeer(call_id, identity); // a group call goes on without them
     (*session)->state = next;
     (void)sessions_.UpsertSession(**session);
     (void)MaybeRotateMediaKey(call_id, identity);
@@ -1846,7 +1836,7 @@ Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_jso
 }
 
 Roe<void> CallSessionWorkflow::HandleInboundSfuAttach(const std::string& detail_json,
-                                                     const std::string& sender_identity) {
+                                                      const std::string& sender_identity) {
   auto attach = CallControlCodec::DecodeSfuAttach(detail_json);
   if (!attach) {
     return attach.error();
@@ -1859,7 +1849,7 @@ Roe<void> CallSessionWorkflow::HandleInboundSfuAttach(const std::string& detail_
 }
 
 Roe<void> CallSessionWorkflow::HandleInboundSfuAttachFailed(const std::string& detail_json,
-                                                           const std::string& sender_identity) {
+                                                            const std::string& sender_identity) {
   auto failed = CallControlCodec::DecodeSfuAttachFailed(detail_json);
   if (!failed) {
     return failed.error();
@@ -1887,7 +1877,7 @@ Roe<void> CallSessionWorkflow::HandleInboundHopRefuse(const std::string& detail_
 }
 
 Roe<void> CallSessionWorkflow::HandleInboundVideoRefresh(const std::string& detail_json,
-                                                        const std::string& sender_identity) {
+                                                         const std::string& sender_identity) {
   auto refresh = CallControlCodec::DecodeVideoRefresh(detail_json);
   if (!refresh) {
     return refresh.error();
@@ -1905,8 +1895,8 @@ Roe<void> CallSessionWorkflow::HandleInboundVideoRefresh(const std::string& deta
       }
     }
   }
-  if (!CallSessionLogic::ShouldHonorInboundVideoRefresh(refresh->call_id, refresh->identity, sender_identity,
-                                                        *local, call_media_.MediaRunningCallId(), sender_joined)) {
+  if (!CallSessionLogic::ShouldHonorInboundVideoRefresh(refresh->call_id, refresh->identity, sender_identity, *local,
+                                                        call_media_.MediaRunningCallId(), sender_joined)) {
     return {};
   }
   if (CallMedia* call_media = call_media_.Media(refresh->call_id)) {
@@ -1916,28 +1906,27 @@ Roe<void> CallSessionWorkflow::HandleInboundVideoRefresh(const std::string& deta
 }
 
 Roe<void> CallSessionWorkflow::StopRingingAnsweredElsewhere(const std::string& call_id,
-                                                           const std::string& local_identity) {
+                                                            const std::string& local_identity) {
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value()) {
     return {};
   }
   const LiveCall* live = live_calls_.Find(call_id);
   if (!live || live->State() != LiveCallState::Ringing) {
-    return {};  // not ringing here (taken here too, or already over): nothing to stop
+    return {}; // not ringing here (taken here too, or already over): nothing to stop
   }
   (void)sessions_.UpdateInviteStatus(call_id, local_identity, "expired");
   log().info << "call answered on another of our devices: ringing stopped call_id=" << call_id;
   return EndCallLocal(**session, std::nullopt, LiveCallEndReason::AnsweredElsewhere);
 }
 
-Roe<void> CallSessionWorkflow::HandleInboundEnded(const std::string& detail_json,
-                                                 const std::string& local_identity) {
+Roe<void> CallSessionWorkflow::HandleInboundEnded(const std::string& detail_json, const std::string& local_identity) {
   auto ended = CallControlCodec::DecodeEnded(detail_json);
   if (!ended) {
     return ended.error();
   }
   (void)sessions_.UpdateInviteStatus(ended->call_id, local_identity, "expired");
-  MarkEveryoneLeft(ended->call_id, local_identity);  // V053: over — no longer joinable
+  MarkEveryoneLeft(ended->call_id, local_identity); // V053: over — no longer joinable
   join_requested_until_ms_.erase(ended->call_id);
   auto session = sessions_.LoadSession(ended->call_id);
   if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
@@ -1953,8 +1942,8 @@ bool CallSessionWorkflow::IsGroupCall(const CallSession& session) const {
 }
 
 void CallSessionWorkflow::SendToEveryoneOffered(const std::string& call_id, const CallControlType type,
-                                               const std::string& detail_json, const std::string& display,
-                                               const std::string& local_identity) {
+                                                const std::string& detail_json, const std::string& display,
+                                                const std::string& local_identity) {
   auto participants = sessions_.ListParticipants(call_id);
   if (!participants || !host_.wire.send_to_each) {
     return;
@@ -2018,8 +2007,8 @@ Roe<CallSession> CallSessionWorkflow::JoinCall(const std::string& call_id) {
 }
 
 Roe<void> CallSessionWorkflow::HandleInboundJoinRequest(const std::string& detail_json,
-                                                       const std::string& sender_identity,
-                                                       const std::string& local_identity) {
+                                                        const std::string& sender_identity,
+                                                        const std::string& local_identity) {
   auto request = CallControlCodec::DecodeJoinRequest(detail_json);
   if (!request) {
     return request.error();
@@ -2044,7 +2033,7 @@ Roe<void> CallSessionWorkflow::HandleInboundJoinRequest(const std::string& detai
   }
   if (auto existing = sessions_.FindParticipant(request->call_id, sender_identity);
       existing && existing->has_value() && (*existing)->state == CallParticipantState::Joined) {
-    return {};  // already in
+    return {}; // already in
   }
   // One answer: two invites would leave the joiner's accept with one inviter while the other
   // (maybe the hop picker) waits for it. The earliest joiner answers — it picks the hop.
@@ -2189,7 +2178,7 @@ bool CallSessionWorkflow::KnownOutOfGroup(const std::string& group_id, const std
     return false;
   }
   auto members = host_.wire.group_members(group_id);
-  return members.has_value() && members->count(identity) == 0;  // an unknown roster (nullopt) refuses nobody
+  return members.has_value() && members->count(identity) == 0; // an unknown roster (nullopt) refuses nobody
 }
 
 void CallSessionWorkflow::OnGroupMembersGone(const std::string& group_id, const std::optional<std::string>& identity) {
@@ -2240,13 +2229,15 @@ void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_ident
   for (auto it = join_requested_until_ms_.begin(); it != join_requested_until_ms_.end();) {
     if (now < it->second) {
       // Halfway with no answer (our view of who joined first may be stale): anyone in it may answer.
-      if (now >= it->second - CallSessionLogic::kJoinRequestTimeoutMs / 2 && join_any_retry_sent_.insert(it->first).second) {
+      if (now >= it->second - CallSessionLogic::kJoinRequestTimeoutMs / 2 &&
+          join_any_retry_sent_.insert(it->first).second) {
         CallJoinRequestDetail again;
         again.call_id = it->first;
         again.identity = local_identity;
         again.any = true;
         if (auto detail = CallControlCodec::EncodeJoinRequest(again)) {
-          SendToEveryoneOffered(it->first, CallControlType::CallJoinRequest, *detail, "Joining the call", local_identity);
+          SendToEveryoneOffered(it->first, CallControlType::CallJoinRequest, *detail, "Joining the call",
+                                local_identity);
         }
       }
       ++it;
@@ -2284,7 +2275,7 @@ void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_ident
 void CallSessionWorkflow::RecordMissedGroupCall(const CallInviteDetail& invite, const std::string& sender_identity,
                                                 const std::string& local_identity, const int64_t created_at) {
   if (auto known = sessions_.LoadSession(invite.call_id); known && known->has_value()) {
-    return;  // already recorded (a replay)
+    return; // already recorded (a replay)
   }
   const std::string inviter = invite.inviter_identity.empty() ? sender_identity : invite.inviter_identity;
   CallSession session;
@@ -2296,7 +2287,7 @@ void CallSessionWorkflow::RecordMissedGroupCall(const CallInviteDetail& invite, 
   }
   session.media_mode = invite.media_mode;
   session.video_allowed = CallSessionLogic::VideoAllowedFromInvite(invite);
-  session.state = CallSessionState::Ended;  // nothing rings; the group's thread offers Join
+  session.state = CallSessionState::Ended; // nothing rings; the group's thread offers Join
   session.created_at = created_at;
   session.ended_at = created_at;
   session.media_epoch = invite.media_epoch > 0 ? invite.media_epoch : 1;

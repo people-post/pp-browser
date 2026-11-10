@@ -26,9 +26,8 @@ public:
                                      int64_t now_ms, int64_t ttl_ms = kLinkDeviceDefaultTtlMs);
 
   /** Vault + account import, then the DEK fan-out (`secrets` may be null in tests). */
-  static Roe<LinkDeviceImportResult> Import(IdentityStore& identity, DataKeyVault& vault,
-                                            ProfileSecretsEngine* secrets, const std::string& bundle_json,
-                                            const SecretText& pin, int64_t now_ms);
+  static Roe<LinkDeviceImportResult> Import(IdentityStore& identity, DataKeyVault& vault, ProfileSecretsEngine* secrets,
+                                            const std::string& bundle_json, const SecretText& pin, int64_t now_ms);
 };
 
 } // namespace pbr

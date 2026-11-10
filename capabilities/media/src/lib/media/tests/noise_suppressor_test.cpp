@@ -28,8 +28,8 @@ std::vector<int16_t> Sine(size_t n, double hz, double amplitude_dbfs) {
   const double amp = 32767.0 * std::pow(10.0, amplitude_dbfs / 20.0);
   std::vector<int16_t> out(n);
   for (size_t i = 0; i < n; ++i) {
-    out[i] = static_cast<int16_t>(std::lround(amp * std::sin(2.0 * kPi * hz * static_cast<double>(i) /
-                                                             NoiseSuppressor::kSampleRate)));
+    out[i] = static_cast<int16_t>(
+        std::lround(amp * std::sin(2.0 * kPi * hz * static_cast<double>(i) / NoiseSuppressor::kSampleRate)));
   }
   return out;
 }

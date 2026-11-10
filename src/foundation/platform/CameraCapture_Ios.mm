@@ -90,9 +90,8 @@ void FinishWithFile(PPCameraDelegate* delegate, NSString* file) {
  * `done(path)` gets the output path, or nil with nothing left on disk.
  */
 void ExportCleanVideo(AVAsset* asset, NSString* dir, bool mpeg4, void (^done)(NSString* path)) {
-  AVAssetExportSession* session = [[[AVAssetExportSession alloc] initWithAsset:asset
-                                                                    presetName:AVAssetExportPresetPassthrough]
-      autorelease];
+  AVAssetExportSession* session =
+      [[[AVAssetExportSession alloc] initWithAsset:asset presetName:AVAssetExportPresetPassthrough] autorelease];
   NSString* file_type = mpeg4 ? AVFileTypeMPEG4 : AVFileTypeQuickTimeMovie;
   if (session == nil || ![session.supportedFileTypes containsObject:file_type]) {
     if (mpeg4) {
@@ -219,8 +218,7 @@ void PresentWhenReady(SDL_Window* window, PPCameraDelegate* delegate, UIImagePic
   });
 }
 
-void PresentCamera(SDL_Window* window, PPCameraDelegate* delegate, pbr::CameraCaptureKind kind,
-                   int max_video_seconds) {
+void PresentCamera(SDL_Window* window, PPCameraDelegate* delegate, pbr::CameraCaptureKind kind, int max_video_seconds) {
   const bool microphone =
       [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio] == AVAuthorizationStatusAuthorized;
   // The microphone is only checked, never asked for here (a call or a voice message asks). Without it a video would

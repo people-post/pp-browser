@@ -79,8 +79,8 @@ struct Device {
 class OwnCardsTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    dir_ = std::filesystem::temp_directory_path() /
-           ("pp_own_cards_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    dir_ =
+        std::filesystem::temp_directory_path() / ("pp_own_cards_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
     std::filesystem::remove_all(dir_);
   }
   void TearDown() override { std::filesystem::remove_all(dir_); }
@@ -123,9 +123,9 @@ TEST_F(OwnCardsTest, TheCardListsThisDeviceAndIsReissuedOnlyWhenItChanges) {
 AccountCard LinkLaptop(Device& phone, Device& laptop, const int64_t now) {
   laptop.LinkTo(phone);
   const AccountCard phones = phone.own->Card(now).value();
-  EXPECT_TRUE(laptop.own->Learn(phones, now + 10));  // the link bundle's card
+  EXPECT_TRUE(laptop.own->Learn(phones, now + 10)); // the link bundle's card
   const AccountCard joined = laptop.own->Card(now + 20).value();
-  EXPECT_TRUE(phone.own->Learn(joined, now + 30));  // the laptop's notice through the shared mailbox
+  EXPECT_TRUE(phone.own->Learn(joined, now + 30)); // the laptop's notice through the shared mailbox
   return joined;
 }
 
@@ -232,7 +232,7 @@ TEST_F(OwnCardsTest, AJoinThatReachesTheMasterAfterItsNextCardIsKept) {
   Device laptop(dir_ / "laptop");
   laptop.LinkTo(phone);
   const AccountCard phones = phone.own->Card(kNow).value();
-  phone.own->ExpectJoin(kNow + 15 * 60 * 1000);  // the transfer code is out
+  phone.own->ExpectJoin(kNow + 15 * 60 * 1000); // the transfer code is out
   ASSERT_TRUE(laptop.own->Learn(phones, kNow + 10));
   const AccountCard joined = laptop.own->Card(kNow + 20).value();
   // Before hearing of the laptop the phone is renamed: a newer card listing only the phone.

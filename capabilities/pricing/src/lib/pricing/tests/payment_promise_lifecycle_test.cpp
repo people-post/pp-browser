@@ -29,9 +29,8 @@ class PaymentPromiseLifecycleTest : public ::testing::Test {
 protected:
   void SetUp() override {
     data_dir_ = std::filesystem::temp_directory_path() /
-                ("pp_payment_promise_lifecycle_" +
-                 std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "_" +
-                 std::to_string(reinterpret_cast<uintptr_t>(this)));
+                ("pp_payment_promise_lifecycle_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) +
+                 "_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
     std::filesystem::remove_all(data_dir_);
     std::filesystem::create_directories(data_dir_);
 
@@ -124,8 +123,7 @@ TEST_F(PaymentPromiseLifecycleTest, AvoidViaLifecycle) {
   SyncContactMirrors(contact);
   ASSERT_TRUE(static_cast<bool>(contacts.Upsert(contact)));
 
-  auto avoided =
-      PaymentPromiseLifecycle::AvoidCounterparty(*store_, contacts, *identity_, offered->promise_id);
+  auto avoided = PaymentPromiseLifecycle::AvoidCounterparty(*store_, contacts, *identity_, offered->promise_id);
   ASSERT_TRUE(static_cast<bool>(avoided)) << avoided.error().message;
 
   auto got = store_->Get(offered->promise_id);

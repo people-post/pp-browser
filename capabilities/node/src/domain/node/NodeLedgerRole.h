@@ -33,7 +33,7 @@ public:
   };
 
   NodeLedgerRole();
-  ~NodeLedgerRole();  // Stop
+  ~NodeLedgerRole(); // Stop
   NodeLedgerRole(const NodeLedgerRole&) = delete;
   NodeLedgerRole& operator=(const NodeLedgerRole&) = delete;
 

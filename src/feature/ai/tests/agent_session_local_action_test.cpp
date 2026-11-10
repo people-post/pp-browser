@@ -71,7 +71,8 @@ protected:
   }
 
   void RegisterFakes(ToolRegistry& registry) {
-    const auto add = [&](const std::string& name, ToolMeta meta, std::function<Roe<std::string>(const Object&)> result) {
+    const auto add = [&](const std::string& name, ToolMeta meta,
+                         std::function<Roe<std::string>(const Object&)> result) {
       registry.Register(MakeTool(ToolDefinition{name, name, Object{}}, std::move(meta),
                                  [this, name, result](const Object& args) -> Roe<std::string> {
                                    {

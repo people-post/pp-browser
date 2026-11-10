@@ -54,12 +54,13 @@ TEST(NewChatListTest, StarredContactsComeFirstInStarOrderThenTheRecentOnesAtMost
   }
   contacts.push_back(C("quiet", "Quiet")); // starred, never chatted with: still listed
   contacts.back().star_rank = 0;
-  contacts[1].star_rank = 1;                // starred, an old chat: second, before the newer chats
+  contacts[1].star_rank = 1; // starred, an old chat: second, before the newer chats
   contacts.push_back(C("shut", "Shut", true));
-  contacts.back().star_rank = 2;            // starred but blocked: never listed
+  contacts.back().star_rank = 2; // starred but blocked: never listed
   EXPECT_EQ(Ids(contacts, FrequentContacts(contacts, chats)),
             (std::vector<std::string>{"quiet", "c1", "c5", "c4", "c3"}));
-  EXPECT_EQ(Ids(contacts, BuildNewChatList(contacts, chats).frequent), Ids(contacts, FrequentContacts(contacts, chats)));
+  EXPECT_EQ(Ids(contacts, BuildNewChatList(contacts, chats).frequent),
+            Ids(contacts, FrequentContacts(contacts, chats)));
 
   contacts[1].star_rank = -1; // unstarred: back among the recent chats by time
   EXPECT_EQ(Ids(contacts, FrequentContacts(contacts, chats)),

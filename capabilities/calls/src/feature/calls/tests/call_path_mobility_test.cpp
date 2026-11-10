@@ -8,7 +8,9 @@ namespace {
 using Clock = CallPathMobility::Clock;
 using std::chrono::minutes;
 
-MobilityAttachment Wifi() { return {true, false, false}; }
+MobilityAttachment Wifi() {
+  return {true, false, false};
+}
 
 // k6, passive: events report a class flip; the owner wakes it at NextWakeAt and a churn-driven
 // Mobile relaxes there with no new event.

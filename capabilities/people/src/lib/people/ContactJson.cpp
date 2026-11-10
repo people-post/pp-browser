@@ -7,12 +7,12 @@ namespace pbr {
 
 std::string TrustLevelToString(const TrustLevel level) {
   switch (level) {
-  case TrustLevel::Unknown:
-    return "unknown";
-  case TrustLevel::Friendly:
-    return "friendly";
-  case TrustLevel::Blocked:
-    return "blocked";
+    case TrustLevel::Unknown:
+      return "unknown";
+    case TrustLevel::Friendly:
+      return "friendly";
+    case TrustLevel::Blocked:
+      return "blocked";
   }
   return "unknown";
 }
@@ -47,7 +47,7 @@ bool HasPeerId(const std::vector<mesh::ContactId>& ids, const std::string& peer_
   return false;
 }
 
-}  // namespace
+} // namespace
 
 Object ContactToJson(const Contact& contact) {
   Contact mirrored = contact;
@@ -148,4 +148,4 @@ Contact ContactFromJson(const Object& json) {
   return contact;
 }
 
-}  // namespace pbr
+} // namespace pbr

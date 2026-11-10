@@ -28,9 +28,13 @@ ByteVector TestDek() {
 class ResponderHarness {
 public:
   explicit ResponderHarness(const std::string& suffix)
-      : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_chat_history_" + suffix + "_" + util::GenerateUuid())),
-        store(), local(test::TestAccount::Make()), psk_store(store),
-        requester(test::TestAccount::Make()), keys_resolver(keys) {
+      : data_dir(std::filesystem::temp_directory_path() /
+                 ("pp_browser_chat_history_" + suffix + "_" + util::GenerateUuid())),
+        store(),
+        local(test::TestAccount::Make()),
+        psk_store(store),
+        requester(test::TestAccount::Make()),
+        keys_resolver(keys) {
     std::filesystem::remove_all(data_dir);
     if (!psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("dek setup failed");
@@ -94,9 +98,9 @@ public:
     request.session_epoch = 1;
     request.limit = 10;
     request.order = "asc";
-    auto signed_ok = PeerRequestAuth::Sign(request, requester_account,
-                                           *DevicePeerIdFromKey(requester.DevicePublicB64()), now_ms,
-                                           [this](const std::vector<uint8_t>& bytes) { return requester.Sign(bytes); });
+    auto signed_ok =
+        PeerRequestAuth::Sign(request, requester_account, *DevicePeerIdFromKey(requester.DevicePublicB64()), now_ms,
+                              [this](const std::vector<uint8_t>& bytes) { return requester.Sign(bytes); });
     if (!signed_ok) {
       throw std::runtime_error("sign request");
     }
@@ -105,8 +109,7 @@ public:
 
   Roe<ChatHistoryResponse> Serve(const ChatHistoryRequest& request, const std::string& remote_peer_id) {
     return ChatHistoryResponder::Serve(
-        store, psk_store, request, local_relay_id,
-        local.account_id, local.device.peer_id,
+        store, psk_store, request, local_relay_id, local.account_id, local.device.peer_id,
         [this](const std::vector<uint8_t>& bytes) { return local.device.Sign(bytes); }, remote_peer_id, keys_resolver,
         util::NowUnixMs());
   }
@@ -181,7 +184,7 @@ TEST(ChatHistoryResponderTest, DeletedRowsServeAPlaceholderAndAnnotationsStayAnn
 TEST(ChatHistoryResponderTest, RejectsNonParticipantRequester) {
   ResponderHarness harness("reject");
   ChatHistoryRequest request = harness.SignedRequest();
-  auto deleted = harness.store.DeleteThread(harness.thread.id);  // the signer has no thread with us
+  auto deleted = harness.store.DeleteThread(harness.thread.id); // the signer has no thread with us
   ASSERT_TRUE(deleted && *deleted);
   auto response = harness.Serve(request, request.requester_peer_id);
   EXPECT_FALSE(static_cast<bool>(response));

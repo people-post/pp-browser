@@ -14,8 +14,7 @@ namespace pbr {
  */
 class IosLocalNotifier final : public ILocalNotifier {
 public:
-  void NotifyIncoming(const std::string& title, const std::string& body,
-                      const std::string& thread_id = {}) override;
+  void NotifyIncoming(const std::string& title, const std::string& body, const std::string& thread_id = {}) override;
   void ClearForThread(const std::string& thread_id) override;
   void SetActivationHandler(std::function<void(std::string thread_id)> handler) override;
 };

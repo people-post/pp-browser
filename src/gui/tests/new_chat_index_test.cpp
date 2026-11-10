@@ -23,7 +23,10 @@ public:
   ui::CompiledGeometryHandle CompileGeometry(ui::Span<const ui::Vertex>, ui::Span<const int>) override { return 1; }
   void RenderGeometry(ui::CompiledGeometryHandle, ui::Vector2f, ui::TextureHandle) override {}
   void ReleaseGeometry(ui::CompiledGeometryHandle) override {}
-  ui::TextureHandle LoadTexture(ui::Vector2i& d, const ui::String&) override { d = {1, 1}; return 2; }
+  ui::TextureHandle LoadTexture(ui::Vector2i& d, const ui::String&) override {
+    d = {1, 1};
+    return 2;
+  }
   ui::TextureHandle GenerateTexture(ui::Span<const ui::byte>, ui::Vector2i) override { return 1; }
   void ReleaseTexture(ui::TextureHandle) override {}
   void EnableScissorRegion(bool) override {}
@@ -73,13 +76,18 @@ TEST(NewChatIndexTest, TappingMScrollsTheNewChatListAndLeavesTheContactsListAlon
   }
   const std::string rml =
       "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
-      Asset("themes/colors-light.rcss") + "</style></head><body style=\"padding: 0;\">"
+      Asset("themes/colors-light.rcss") +
+      "</style></head><body style=\"padding: 0;\">"
       "<div class=\"shell-layer-compact\">"
       "<div id=\"nc-panel\" style=\"position: absolute; top: 0dp; left: 0dp; width: 390dp; height: 700dp;\">"
-      "<div class=\"nc-page\"><div class=\"nc-scroll\" id=\"nc-scroll\">" + nc_rows + "</div>"
+      "<div class=\"nc-page\"><div class=\"nc-scroll\" id=\"nc-scroll\">" +
+      nc_rows +
+      "</div>"
       "<div class=\"contacts-index\" id=\"nc-strip\"></div></div></div>"
       "<div id=\"contacts-panel\" style=\"position: absolute; top: 0dp; left: 400dp; width: 390dp; height: 700dp;\">"
-      "<div class=\"contacts-list-view\" id=\"contacts-scroll\" style=\"height: 700dp;\">" + contacts_rows + "</div>"
+      "<div class=\"contacts-list-view\" id=\"contacts-scroll\" style=\"height: 700dp;\">" +
+      contacts_rows +
+      "</div>"
       "<div class=\"contacts-index\" id=\"contacts-strip\"></div></div>"
       "</div></body></rml>";
   ui::ElementDocument* document = context->LoadDocumentFromMemory(rml);

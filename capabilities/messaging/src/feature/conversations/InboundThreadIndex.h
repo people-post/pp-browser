@@ -25,7 +25,7 @@ public:
     }
     std::lock_guard<std::mutex> lock(mu_);
     if (threads_.contains(id)) {
-      return;  // first writer wins: a later sender must not redirect an id already bound to another chat
+      return; // first writer wins: a later sender must not redirect an id already bound to another chat
     }
     if (order_.size() >= kCapacity) {
       threads_.erase(order_.front());

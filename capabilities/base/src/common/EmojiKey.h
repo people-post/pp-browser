@@ -22,8 +22,8 @@ inline std::string NormalizeEmojiKey(std::string emoji) {
     break;
   }
   // Trim ASCII whitespace that sometimes arrives from pickers.
-  while (!emoji.empty() && (emoji.back() == ' ' || emoji.back() == '\t' || emoji.back() == '\n' ||
-                            emoji.back() == '\r')) {
+  while (!emoji.empty() &&
+         (emoji.back() == ' ' || emoji.back() == '\t' || emoji.back() == '\n' || emoji.back() == '\r')) {
     emoji.pop_back();
   }
   size_t start = 0;

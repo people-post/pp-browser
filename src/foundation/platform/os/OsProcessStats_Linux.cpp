@@ -25,7 +25,7 @@ double CpuSeconds() {
   }
   std::istringstream fields(line.substr(close + 2));
   std::string skip;
-  for (int i = 3; i < 14; ++i) {  // state (3) … cmajflt (13)
+  for (int i = 3; i < 14; ++i) { // state (3) … cmajflt (13)
     fields >> skip;
   }
   unsigned long long utime = 0;
@@ -49,7 +49,7 @@ int64_t Threads() {
   std::string line;
   while (std::getline(status, line)) {
     if (line.rfind("Threads:", 0) == 0) {
-      return std::strtoll(line.c_str() + 8, nullptr, 10);  // no throw on a malformed line
+      return std::strtoll(line.c_str() + 8, nullptr, 10); // no throw on a malformed line
     }
   }
   return 0;
@@ -67,7 +67,7 @@ int64_t OpenFds() {
     }
   }
   closedir(dir);
-  return count > 0 ? count - 1 : 0;  // the directory handle itself
+  return count > 0 ? count - 1 : 0; // the directory handle itself
 }
 
 } // namespace

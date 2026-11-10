@@ -41,8 +41,12 @@ protected:
   }
   void TearDown() override {
     DataModelHost::Instance().Clear();
-    if (context) { ui::RemoveContext("large-title-test"); }
-    if (initialized) { ui::Shutdown(); }
+    if (context) {
+      ui::RemoveContext("large-title-test");
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
   NullRender renderer;
@@ -104,7 +108,8 @@ TEST_F(LargeTitleTest, ChatsLinkStatusFollowsSetChatsLink) {
       "<rml><body><div id=\"page\" data-model=\"window\">"
       "<p id=\"line\" data-if=\"chats_link_state != ''\">{{chats_link_text}}</p>"
       "<span id=\"ok\" style=\"width: 5px; height: 5px;\" data-if=\"chats_link_state == 'ok'\"></span>"
-      "<span id=\"off\" style=\"width: 5px; height: 5px;\" data-if=\"chats_link_state == 'offline'\"></span></div></body></rml>");
+      "<span id=\"off\" style=\"width: 5px; height: 5px;\" data-if=\"chats_link_state == "
+      "'offline'\"></span></div></body></rml>");
   ASSERT_NE(document, nullptr);
   document->Show();
   context->Update();

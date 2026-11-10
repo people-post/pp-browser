@@ -29,8 +29,7 @@ TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   bootstrap.config.llm.api_key = "saved-key";
   bootstrap.config.promoted_mcp.url = "https://promoted.example/mcp";
   bootstrap.config.search.provider = "duckduckgo";
-  bootstrap.config.mcp_servers.push_back(
-      {.id = "custom", .url = "https://custom.example/mcp", .enabled = true});
+  bootstrap.config.mcp_servers.push_back({.id = "custom", .url = "https://custom.example/mcp", .enabled = true});
   bootstrap.config.relay.base_url = "https://relay.example";
   bootstrap.config.directory.base_url = "https://directory.example";
   bootstrap.config.registration.base_url = "https://registration.example";

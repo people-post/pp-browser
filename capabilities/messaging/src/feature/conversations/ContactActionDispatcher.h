@@ -33,9 +33,9 @@ public:
   using DispatchResult = Roe<std::optional<std::string>>;
 
   /** `directory` (may be null: every lookup then fails) serves the account lookups; it outlives this. */
-  ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts, IdentityStore& identity,
-                          IThreadStore& store, GroupMembershipWorkflow* groups,
-                          IRegistrationClient* registration, MeshDeliveryOrchestrator* mesh_messaging = nullptr,
+  ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts, IdentityStore& identity, IThreadStore& store,
+                          GroupMembershipWorkflow* groups, IRegistrationClient* registration,
+                          MeshDeliveryOrchestrator* mesh_messaging = nullptr,
                           mesh::IDirectoryClient* directory = nullptr);
 
   /** Runs the action now. One that needs a directory lookup blocks on HTTP: the UI thread uses DispatchAsync. */

@@ -44,10 +44,9 @@ public:
                                                   const ByteVector& master_psk);
   static Roe<E2eEncryptResult> EncryptTextWithAutoKey(const E2eEncryptParams& params, const ByteVector& master_psk,
                                                       const std::optional<std::string>& key_init_b64 = std::nullopt);
-  static Roe<E2eEncryptResult> EncryptChatPayloadWithAutoKey(const E2eEncryptParams& params,
-                                                             const std::vector<uint8_t>& plaintext,
-                                                             const ByteVector& master_psk,
-                                                             const std::optional<std::string>& key_init_b64 = std::nullopt);
+  static Roe<E2eEncryptResult> EncryptChatPayloadWithAutoKey(
+      const E2eEncryptParams& params, const std::vector<uint8_t>& plaintext, const ByteVector& master_psk,
+      const std::optional<std::string>& key_init_b64 = std::nullopt);
   /**
    * e2e_public (with `local_kem_private_key`): read under the stored session for the envelope's
    * epoch, else under the session its key_init opens; `read` (optional) says which. Persisting what

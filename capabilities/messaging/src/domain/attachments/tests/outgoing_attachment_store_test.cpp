@@ -119,7 +119,7 @@ TEST_F(OutgoingStoreTest, ListsOnlyThisThreadsWhoseCiphertextIsStillThereOldestF
   ASSERT_TRUE(store_->Begin(Record("a", "t1", 10), {1, 2, 3}, Dek(1)));
   ASSERT_TRUE(store_->Begin(Record("c", "t2", 5), {1, 2, 3}, Dek(1)));
   ASSERT_TRUE(store_->Begin(Record("gone", "t1", 1), {1, 2, 3}, Dek(1)));
-  std::filesystem::remove(store_->CipherPath("gone"));  // ciphertext lost: nothing to resume from
+  std::filesystem::remove(store_->CipherPath("gone")); // ciphertext lost: nothing to resume from
 
   const auto listed = store_->ListForThread("t1", Dek(1));
   ASSERT_EQ(listed.size(), 2u);

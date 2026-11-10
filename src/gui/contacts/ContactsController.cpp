@@ -100,28 +100,28 @@ bool IsContactDetailTransientActive(const ShellChromeSnapshot& chrome) {
 
 std::string IdentityKindLabel(const mesh::ContactIdKind kind) {
   switch (kind) {
-  case mesh::ContactIdKind::Account:
-    return Tr("contacts.id_kind.account");
-  case mesh::ContactIdKind::RelayUser:
-    return Tr("contacts.id_kind.relay");
-  case mesh::ContactIdKind::PeerId:
-    return Tr("contacts.id_kind.peer");
-  case mesh::ContactIdKind::Blockchain:
-    return Tr("contacts.id_kind.blockchain");
-  case mesh::ContactIdKind::Custom:
-    return Tr("contacts.id_kind.custom");
+    case mesh::ContactIdKind::Account:
+      return Tr("contacts.id_kind.account");
+    case mesh::ContactIdKind::RelayUser:
+      return Tr("contacts.id_kind.relay");
+    case mesh::ContactIdKind::PeerId:
+      return Tr("contacts.id_kind.peer");
+    case mesh::ContactIdKind::Blockchain:
+      return Tr("contacts.id_kind.blockchain");
+    case mesh::ContactIdKind::Custom:
+      return Tr("contacts.id_kind.custom");
   }
   return Tr("contacts.id_kind.generic");
 }
 
 std::string TrustDisplayLabel(const TrustLevel level) {
   switch (level) {
-  case TrustLevel::Friendly:
-    return Tr("contacts.trust.friendly");
-  case TrustLevel::Blocked:
-    return Tr("contacts.trust.blocked");
-  case TrustLevel::Unknown:
-    return Tr("contacts.trust.unknown");
+    case TrustLevel::Friendly:
+      return Tr("contacts.trust.friendly");
+    case TrustLevel::Blocked:
+      return Tr("contacts.trust.blocked");
+    case TrustLevel::Unknown:
+      return Tr("contacts.trust.unknown");
   }
   return Tr("contacts.trust.unknown");
 }
@@ -155,24 +155,24 @@ std::string LastSixChars(const std::string& id) {
 
 std::string ChannelLabel(const ThreadChannel channel) {
   switch (channel) {
-  case ThreadChannel::E2e:
-    return Tr("contacts.channel.secure");
-  case ThreadChannel::E2ePublic:
-    return Tr("contacts.channel.public");
-  case ThreadChannel::None:
-    return Tr("contacts.channel.chat");
+    case ThreadChannel::E2e:
+      return Tr("contacts.channel.secure");
+    case ThreadChannel::E2ePublic:
+      return Tr("contacts.channel.public");
+    case ThreadChannel::None:
+      return Tr("contacts.channel.chat");
   }
   return Tr("contacts.channel.chat");
 }
 
 std::string ThreadKindClass(const ThreadChannel channel) {
   switch (channel) {
-  case ThreadChannel::E2e:
-    return "private";
-  case ThreadChannel::E2ePublic:
-    return "public";
-  case ThreadChannel::None:
-    return "ai";
+    case ThreadChannel::E2e:
+      return "private";
+    case ThreadChannel::E2ePublic:
+      return "public";
+    case ThreadChannel::None:
+      return "ai";
   }
   return "ai";
 }
@@ -183,8 +183,7 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact, cons
   const std::string title = ContactEffectiveTitle(contact);
   row.title = title.empty() ? Tr("people_picker.unnamed").c_str() : title.c_str();
   row.subtitle = PrimaryIdentityValue(contact).c_str();
-  if (row.subtitle.empty() && !contact.server_nickname.empty() &&
-      contact.server_nickname != contact.display_name) {
+  if (row.subtitle.empty() && !contact.server_nickname.empty() && contact.server_nickname != contact.display_name) {
     row.subtitle = contact.server_nickname.c_str();
   }
   {
@@ -528,179 +527,181 @@ bool ContactsController::RegisterModel(ui::Context* context) {
   }
   context_ = context;
 
-  const bool registered = DataModelHost::Instance().Register(context, "contacts", [this](ui::DataModelConstructor& ctor) {
-    auto& controller = *this;
-    if (auto list_handle = ctor.RegisterStruct<ContactListRow>()) {
-      list_handle.RegisterMember("id", &ContactListRow::id);
-      list_handle.RegisterMember("title", &ContactListRow::title);
-      list_handle.RegisterMember("subtitle", &ContactListRow::subtitle);
-      list_handle.RegisterMember("short_id", &ContactListRow::short_id);
-      list_handle.RegisterMember("trust", &ContactListRow::trust);
-      list_handle.RegisterMember("unread_count", &ContactListRow::unread_count);
-      list_handle.RegisterMember("unread_display", &ContactListRow::unread_display);
-      list_handle.RegisterMember("has_icon", &ContactListRow::has_icon);
-      list_handle.RegisterMember("icon_src", &ContactListRow::icon_src);
-      list_handle.RegisterMember("avatar_letter", &ContactListRow::avatar_letter);
-      list_handle.RegisterMember("avatar_tone", &ContactListRow::avatar_tone);
-      list_handle.RegisterMember("starred", &ContactListRow::starred);
-    }
-    if (auto identity_handle = ctor.RegisterStruct<ContactIdentityRow>()) {
-      identity_handle.RegisterMember("label", &ContactIdentityRow::label);
-      identity_handle.RegisterMember("value", &ContactIdentityRow::value);
-      identity_handle.RegisterMember("kind", &ContactIdentityRow::kind);
-      identity_handle.RegisterMember("is_primary", &ContactIdentityRow::is_primary);
-    }
-    if (auto thread_handle = ctor.RegisterStruct<ContactThreadRow>()) {
-      thread_handle.RegisterMember("id", &ContactThreadRow::id);
-      thread_handle.RegisterMember("title", &ContactThreadRow::title);
-      thread_handle.RegisterMember("channel_label", &ContactThreadRow::channel_label);
-      thread_handle.RegisterMember("kind", &ContactThreadRow::kind);
-      thread_handle.RegisterMember("unread_count", &ContactThreadRow::unread_count);
-      thread_handle.RegisterMember("unread_display", &ContactThreadRow::unread_display);
-    }
-    if (auto hit_handle = ctor.RegisterStruct<AddHitRow>()) {
-      hit_handle.RegisterMember("index", &AddHitRow::index);
-      hit_handle.RegisterMember("title", &AddHitRow::title);
-      hit_handle.RegisterMember("short_id", &AddHitRow::short_id);
-      hit_handle.RegisterMember("avatar_letter", &AddHitRow::avatar_letter);
-      hit_handle.RegisterMember("avatar_tone", &AddHitRow::avatar_tone);
-    }
-    // Arrays must be registered before they are used as struct members.
-    ctor.RegisterArray<std::vector<AddHitRow>>();
-    ctor.RegisterArray<std::vector<ContactListRow>>();
-    if (auto section_handle = ctor.RegisterStruct<NewChatSectionRow>()) {
-      section_handle.RegisterMember("letter", &NewChatSectionRow::letter);
-      section_handle.RegisterMember("rows", &NewChatSectionRow::rows);
-    }
-    ctor.RegisterArray<std::vector<NewChatSectionRow>>();
-    if (auto index_handle = ctor.RegisterStruct<IndexLetterRow>()) {
-      index_handle.RegisterMember("letter", &IndexLetterRow::letter);
-      index_handle.RegisterMember("present", &IndexLetterRow::present);
-    }
-    ctor.RegisterArray<std::vector<IndexLetterRow>>();
-    ctor.RegisterArray<std::vector<ContactIdentityRow>>();
-    ctor.RegisterArray<std::vector<ContactThreadRow>>();
-    if (auto detail_handle = ctor.RegisterStruct<ContactDetail>()) {
-      detail_handle.RegisterMember("id", &ContactDetail::id);
-      detail_handle.RegisterMember("title", &ContactDetail::title);
-      detail_handle.RegisterMember("subtitle", &ContactDetail::subtitle);
-      detail_handle.RegisterMember("short_id", &ContactDetail::short_id);
-      detail_handle.RegisterMember("display_name", &ContactDetail::display_name);
-      detail_handle.RegisterMember("nickname", &ContactDetail::nickname);
-      detail_handle.RegisterMember("their_nickname", &ContactDetail::their_nickname);
-      detail_handle.RegisterMember("relay_id", &ContactDetail::relay_id);
-      detail_handle.RegisterMember("peer_id", &ContactDetail::peer_id);
-      detail_handle.RegisterMember("multiaddrs_text", &ContactDetail::multiaddrs_text);
-      detail_handle.RegisterMember("multiaddrs_summary", &ContactDetail::multiaddrs_summary);
-      detail_handle.RegisterMember("trust", &ContactDetail::trust);
-      detail_handle.RegisterMember("trust_key", &ContactDetail::trust_key);
-      detail_handle.RegisterMember("signing_fingerprint", &ContactDetail::signing_fingerprint);
-      detail_handle.RegisterMember("message_hint", &ContactDetail::message_hint);
-      detail_handle.RegisterMember("remote_updated", &ContactDetail::remote_updated);
-      detail_handle.RegisterMember("can_message", &ContactDetail::can_message);
-      detail_handle.RegisterMember("name_placeholder", &ContactDetail::name_placeholder);
-      detail_handle.RegisterMember("has_relay_id", &ContactDetail::has_relay_id);
-      detail_handle.RegisterMember("has_icon", &ContactDetail::has_icon);
-      detail_handle.RegisterMember("icon_src", &ContactDetail::icon_src);
-      detail_handle.RegisterMember("avatar_letter", &ContactDetail::avatar_letter);
-      detail_handle.RegisterMember("avatar_tone", &ContactDetail::avatar_tone);
-      detail_handle.RegisterMember("identities", &ContactDetail::identities);
-      detail_handle.RegisterMember("threads", &ContactDetail::threads);
-      detail_handle.RegisterMember("member_preview", &ContactDetail::member_preview);
-      detail_handle.RegisterMember("starred", &ContactDetail::starred);
-    }
-    ctor.Bind("contacts", &controller.contacts_);
-    ctor.Bind("contact_sections", &controller.contact_sections_);
-    ctor.Bind("contact_index", &controller.contact_index_);
-    ctor.Bind("contact_index_bubble", &controller.contact_index_bubble_);
-    ctor.Bind("search_query", &controller.search_query_);
-    ctor.Bind("add_query", &controller.add_query_);
-    ctor.Bind("add_rows", &controller.add_rows_);
-    ctor.Bind("add_searching", &controller.add_searching_);
-    ctor.Bind("add_no_results", &controller.add_no_results_);
-    ctor.Bind("my_has_account", &controller.my_has_account_);
-    ctor.Bind("my_name", &controller.my_name_);
-    ctor.Bind("my_account_id", &controller.my_account_id_);
-    ctor.Bind("my_account_id_shown", &controller.my_account_id_shown_);
-    ctor.Bind("my_has_icon", &controller.my_has_icon_);
-    ctor.Bind("my_icon_src", &controller.my_icon_src_);
-    ctor.Bind("my_avatar_letter", &controller.my_avatar_letter_);
-    ctor.Bind("my_avatar_tone", &controller.my_avatar_tone_);
-    ctor.Bind("my_qr_svg_rml", &controller.my_qr_svg_rml_);
-    ctor.Bind("can_scan", &controller.can_scan_);
-    ctor.Bind("can_new_group", &controller.can_new_group_);
-    ctor.Bind("nc_sections", &controller.new_chat_sections_);
-    ctor.Bind("nc_index", &controller.new_chat_index_);
-    ctor.Bind("nc_has_contacts", &controller.new_chat_has_contacts_);
-    ctor.Bind("nc_query", &controller.new_chat_query_);
-    ctor.Bind("blocked_rows", &controller.blocked_rows_);
-    ctor.Bind("compact_layout", &controller.compact_layout_);
-    ctor.Bind("advanced", &controller.advanced_);
-    ctor.Bind("selected", &controller.selected_);
-    ctor.BindEventCallback("select_contact", &ContactsController::SelectContactCallback);
-    ctor.BindEventCallback("back_to_list", &ContactsController::BackToListCallback);
-    ctor.BindEventCallback("start_chat", &ContactsController::StartChatCallback);
-    ctor.BindEventCallback("secure_message", &ContactsController::SecureMessageCallback);
-    ctor.BindEventCallback("add_member_contact", &ContactsController::AddMemberContactCallback);
-    ctor.BindEventCallback("on_add_contact_menu", &ContactsController::AddContactMenuCallback);
-    ctor.BindEventCallback("find_someone", &ContactsController::FindSomeoneCallback);
-    ctor.BindEventCallback("copy_contact_id", &ContactsController::CopyIdCallback);
-    ctor.BindEventCallback("share_contact", &ContactsController::ShareContactCallback);
-    ctor.BindEventCallback("toggle_trust_friendly", &ContactsController::ToggleTrustFriendlyCallback);
-    ctor.BindEventCallback("toggle_star", DataEvent<>([this]() { OnToggleStar(); }));
-    ctor.BindEventCallback("block_contact", &ContactsController::BlockContactCallback);
-    ctor.BindEventCallback("unblock_contact", &ContactsController::UnblockContactCallback);
-    ctor.BindEventCallback("remove_contact", &ContactsController::RemoveContactCallback);
-    ctor.BindEventCallback("open_thread", &ContactsController::OpenThreadCallback);
-    ctor.BindEventCallback("on_search_changed", &ContactsController::OnSearchChangedCallback);
-    ctor.BindEventCallback("on_contact_field_changed", &ContactsController::OnContactFieldChangedCallback);
-    ctor.BindEventCallback("on_contact_field_left", DataEvent<>([this]() { OnContactFieldLeft(); }));
-    ctor.Bind("admin_shown", &admin_shown_);
-    ctor.Bind("group_role_shown", &group_role_shown_);
-    ctor.Bind("group_role_text", &group_role_text_);
-    ctor.BindEventCallback("admin_menu", DataEvent<>([this]() { OnGroupAdminMenu(); }));
-    ctor.Bind("admin_can_reinvite", &admin_can_reinvite_);
-    ctor.Bind("admin_can_remove", &admin_can_remove_);
-    ctor.Bind("admin_can_set_admin", &admin_can_set_admin_);
-    ctor.Bind("admin_is_admin", &admin_is_admin_);
-    ctor.Bind("admin_reinvite_note", &admin_reinvite_note_);
-    ctor.Bind("admin_can_remove_added", &admin_can_remove_added_);
-    ctor.Bind("admin_remove_added_label", &admin_remove_added_label_);
-    ctor.Bind("admin_can_reinvite_removed", &admin_can_reinvite_removed_);
-    ctor.Bind("admin_reinvite_removed_label", &admin_reinvite_removed_label_);
-    ctor.BindEventCallback("admin_remove_added", DataEvent<>([this]() {
-                             if (admin_can_remove_added_ && group_admin_.remove_added) {
-                               group_admin_.remove_added();
-                             }
-                           }));
-    ctor.BindEventCallback("admin_reinvite_removed", DataEvent<>([this]() {
-                             if (admin_can_reinvite_removed_ && group_admin_.reinvite_removed) {
-                               group_admin_.reinvite_removed();
-                             }
-                           }));
-    ctor.BindEventCallback("admin_reinvite", DataEvent<>([this]() { OnGroupAdminReinvite(); }));
-    ctor.BindEventCallback("admin_remove", DataEvent<>([this]() { OnGroupAdminRemove(); }));
-    ctor.BindEventCallback("admin_set_admin", DataEvent<>([this]() { OnGroupAdminSetAdmin(); }));
-    ctor.BindEventCallback("sync_contact_remote", &ContactsController::SyncRemoteCallback);
-    ctor.BindEventCallback("add_search_changed", &ContactsController::AddSearchChangedCallback);
-    ctor.BindEventCallback("add_pick", DataEvent<std::string>([this](const std::string& i) { OnAddPick(i); }));
-    ctor.BindEventCallback("add_action", DataEvent<std::string>([this](const std::string& a) { OnAddAction(a); }));
-    ctor.BindEventCallback("add_copy_id", DataEvent<>([this]() { OnAddCopyId(); }));
-    ctor.BindEventCallback("add_share", DataEventAt([this](ui::Event& ev) { OnAddShare(ShareAnchorFromEvent(ev)); }));
-    ctor.BindEventCallback("new_chat_pick", &ContactsController::NewChatPickCallback);
-    ctor.BindEventCallback("new_chat_action", &ContactsController::NewChatActionCallback);
-    ctor.BindEventCallback("new_chat_search_changed", &ContactsController::NewChatSearchCallback);
-    ctor.BindEventCallback("blocked_unblock",
-                           DataEvent<std::string>([this](const std::string& id) { OnUnblockListed(id); }));
-    ctor.BindEventCallback("blocked_open_contact",
-                           DataEvent<std::string>([this](const std::string& id) { OnOpenBlockedContact(id); }));
-    // The strip says which list it drives: contacts_index_at('new_chat'); no argument is the Contacts tab.
-    ctor.BindEventCallback("contacts_index_at",
-                           [this](ui::DataModelHandle, ui::Event& ev, const ui::VariantList& args) {
-                             OnContactsIndexAt(ev, EventArgAsString(args, 0).value_or("contacts"));
-                           });
-    ctor.BindEventCallback("contacts_index_end", DataEventAt([this](ui::Event&) { OnContactsIndexEnd(); }));
-  });
+  const bool registered =
+      DataModelHost::Instance().Register(context, "contacts", [this](ui::DataModelConstructor& ctor) {
+        auto& controller = *this;
+        if (auto list_handle = ctor.RegisterStruct<ContactListRow>()) {
+          list_handle.RegisterMember("id", &ContactListRow::id);
+          list_handle.RegisterMember("title", &ContactListRow::title);
+          list_handle.RegisterMember("subtitle", &ContactListRow::subtitle);
+          list_handle.RegisterMember("short_id", &ContactListRow::short_id);
+          list_handle.RegisterMember("trust", &ContactListRow::trust);
+          list_handle.RegisterMember("unread_count", &ContactListRow::unread_count);
+          list_handle.RegisterMember("unread_display", &ContactListRow::unread_display);
+          list_handle.RegisterMember("has_icon", &ContactListRow::has_icon);
+          list_handle.RegisterMember("icon_src", &ContactListRow::icon_src);
+          list_handle.RegisterMember("avatar_letter", &ContactListRow::avatar_letter);
+          list_handle.RegisterMember("avatar_tone", &ContactListRow::avatar_tone);
+          list_handle.RegisterMember("starred", &ContactListRow::starred);
+        }
+        if (auto identity_handle = ctor.RegisterStruct<ContactIdentityRow>()) {
+          identity_handle.RegisterMember("label", &ContactIdentityRow::label);
+          identity_handle.RegisterMember("value", &ContactIdentityRow::value);
+          identity_handle.RegisterMember("kind", &ContactIdentityRow::kind);
+          identity_handle.RegisterMember("is_primary", &ContactIdentityRow::is_primary);
+        }
+        if (auto thread_handle = ctor.RegisterStruct<ContactThreadRow>()) {
+          thread_handle.RegisterMember("id", &ContactThreadRow::id);
+          thread_handle.RegisterMember("title", &ContactThreadRow::title);
+          thread_handle.RegisterMember("channel_label", &ContactThreadRow::channel_label);
+          thread_handle.RegisterMember("kind", &ContactThreadRow::kind);
+          thread_handle.RegisterMember("unread_count", &ContactThreadRow::unread_count);
+          thread_handle.RegisterMember("unread_display", &ContactThreadRow::unread_display);
+        }
+        if (auto hit_handle = ctor.RegisterStruct<AddHitRow>()) {
+          hit_handle.RegisterMember("index", &AddHitRow::index);
+          hit_handle.RegisterMember("title", &AddHitRow::title);
+          hit_handle.RegisterMember("short_id", &AddHitRow::short_id);
+          hit_handle.RegisterMember("avatar_letter", &AddHitRow::avatar_letter);
+          hit_handle.RegisterMember("avatar_tone", &AddHitRow::avatar_tone);
+        }
+        // Arrays must be registered before they are used as struct members.
+        ctor.RegisterArray<std::vector<AddHitRow>>();
+        ctor.RegisterArray<std::vector<ContactListRow>>();
+        if (auto section_handle = ctor.RegisterStruct<NewChatSectionRow>()) {
+          section_handle.RegisterMember("letter", &NewChatSectionRow::letter);
+          section_handle.RegisterMember("rows", &NewChatSectionRow::rows);
+        }
+        ctor.RegisterArray<std::vector<NewChatSectionRow>>();
+        if (auto index_handle = ctor.RegisterStruct<IndexLetterRow>()) {
+          index_handle.RegisterMember("letter", &IndexLetterRow::letter);
+          index_handle.RegisterMember("present", &IndexLetterRow::present);
+        }
+        ctor.RegisterArray<std::vector<IndexLetterRow>>();
+        ctor.RegisterArray<std::vector<ContactIdentityRow>>();
+        ctor.RegisterArray<std::vector<ContactThreadRow>>();
+        if (auto detail_handle = ctor.RegisterStruct<ContactDetail>()) {
+          detail_handle.RegisterMember("id", &ContactDetail::id);
+          detail_handle.RegisterMember("title", &ContactDetail::title);
+          detail_handle.RegisterMember("subtitle", &ContactDetail::subtitle);
+          detail_handle.RegisterMember("short_id", &ContactDetail::short_id);
+          detail_handle.RegisterMember("display_name", &ContactDetail::display_name);
+          detail_handle.RegisterMember("nickname", &ContactDetail::nickname);
+          detail_handle.RegisterMember("their_nickname", &ContactDetail::their_nickname);
+          detail_handle.RegisterMember("relay_id", &ContactDetail::relay_id);
+          detail_handle.RegisterMember("peer_id", &ContactDetail::peer_id);
+          detail_handle.RegisterMember("multiaddrs_text", &ContactDetail::multiaddrs_text);
+          detail_handle.RegisterMember("multiaddrs_summary", &ContactDetail::multiaddrs_summary);
+          detail_handle.RegisterMember("trust", &ContactDetail::trust);
+          detail_handle.RegisterMember("trust_key", &ContactDetail::trust_key);
+          detail_handle.RegisterMember("signing_fingerprint", &ContactDetail::signing_fingerprint);
+          detail_handle.RegisterMember("message_hint", &ContactDetail::message_hint);
+          detail_handle.RegisterMember("remote_updated", &ContactDetail::remote_updated);
+          detail_handle.RegisterMember("can_message", &ContactDetail::can_message);
+          detail_handle.RegisterMember("name_placeholder", &ContactDetail::name_placeholder);
+          detail_handle.RegisterMember("has_relay_id", &ContactDetail::has_relay_id);
+          detail_handle.RegisterMember("has_icon", &ContactDetail::has_icon);
+          detail_handle.RegisterMember("icon_src", &ContactDetail::icon_src);
+          detail_handle.RegisterMember("avatar_letter", &ContactDetail::avatar_letter);
+          detail_handle.RegisterMember("avatar_tone", &ContactDetail::avatar_tone);
+          detail_handle.RegisterMember("identities", &ContactDetail::identities);
+          detail_handle.RegisterMember("threads", &ContactDetail::threads);
+          detail_handle.RegisterMember("member_preview", &ContactDetail::member_preview);
+          detail_handle.RegisterMember("starred", &ContactDetail::starred);
+        }
+        ctor.Bind("contacts", &controller.contacts_);
+        ctor.Bind("contact_sections", &controller.contact_sections_);
+        ctor.Bind("contact_index", &controller.contact_index_);
+        ctor.Bind("contact_index_bubble", &controller.contact_index_bubble_);
+        ctor.Bind("search_query", &controller.search_query_);
+        ctor.Bind("add_query", &controller.add_query_);
+        ctor.Bind("add_rows", &controller.add_rows_);
+        ctor.Bind("add_searching", &controller.add_searching_);
+        ctor.Bind("add_no_results", &controller.add_no_results_);
+        ctor.Bind("my_has_account", &controller.my_has_account_);
+        ctor.Bind("my_name", &controller.my_name_);
+        ctor.Bind("my_account_id", &controller.my_account_id_);
+        ctor.Bind("my_account_id_shown", &controller.my_account_id_shown_);
+        ctor.Bind("my_has_icon", &controller.my_has_icon_);
+        ctor.Bind("my_icon_src", &controller.my_icon_src_);
+        ctor.Bind("my_avatar_letter", &controller.my_avatar_letter_);
+        ctor.Bind("my_avatar_tone", &controller.my_avatar_tone_);
+        ctor.Bind("my_qr_svg_rml", &controller.my_qr_svg_rml_);
+        ctor.Bind("can_scan", &controller.can_scan_);
+        ctor.Bind("can_new_group", &controller.can_new_group_);
+        ctor.Bind("nc_sections", &controller.new_chat_sections_);
+        ctor.Bind("nc_index", &controller.new_chat_index_);
+        ctor.Bind("nc_has_contacts", &controller.new_chat_has_contacts_);
+        ctor.Bind("nc_query", &controller.new_chat_query_);
+        ctor.Bind("blocked_rows", &controller.blocked_rows_);
+        ctor.Bind("compact_layout", &controller.compact_layout_);
+        ctor.Bind("advanced", &controller.advanced_);
+        ctor.Bind("selected", &controller.selected_);
+        ctor.BindEventCallback("select_contact", &ContactsController::SelectContactCallback);
+        ctor.BindEventCallback("back_to_list", &ContactsController::BackToListCallback);
+        ctor.BindEventCallback("start_chat", &ContactsController::StartChatCallback);
+        ctor.BindEventCallback("secure_message", &ContactsController::SecureMessageCallback);
+        ctor.BindEventCallback("add_member_contact", &ContactsController::AddMemberContactCallback);
+        ctor.BindEventCallback("on_add_contact_menu", &ContactsController::AddContactMenuCallback);
+        ctor.BindEventCallback("find_someone", &ContactsController::FindSomeoneCallback);
+        ctor.BindEventCallback("copy_contact_id", &ContactsController::CopyIdCallback);
+        ctor.BindEventCallback("share_contact", &ContactsController::ShareContactCallback);
+        ctor.BindEventCallback("toggle_trust_friendly", &ContactsController::ToggleTrustFriendlyCallback);
+        ctor.BindEventCallback("toggle_star", DataEvent<>([this]() { OnToggleStar(); }));
+        ctor.BindEventCallback("block_contact", &ContactsController::BlockContactCallback);
+        ctor.BindEventCallback("unblock_contact", &ContactsController::UnblockContactCallback);
+        ctor.BindEventCallback("remove_contact", &ContactsController::RemoveContactCallback);
+        ctor.BindEventCallback("open_thread", &ContactsController::OpenThreadCallback);
+        ctor.BindEventCallback("on_search_changed", &ContactsController::OnSearchChangedCallback);
+        ctor.BindEventCallback("on_contact_field_changed", &ContactsController::OnContactFieldChangedCallback);
+        ctor.BindEventCallback("on_contact_field_left", DataEvent<>([this]() { OnContactFieldLeft(); }));
+        ctor.Bind("admin_shown", &admin_shown_);
+        ctor.Bind("group_role_shown", &group_role_shown_);
+        ctor.Bind("group_role_text", &group_role_text_);
+        ctor.BindEventCallback("admin_menu", DataEvent<>([this]() { OnGroupAdminMenu(); }));
+        ctor.Bind("admin_can_reinvite", &admin_can_reinvite_);
+        ctor.Bind("admin_can_remove", &admin_can_remove_);
+        ctor.Bind("admin_can_set_admin", &admin_can_set_admin_);
+        ctor.Bind("admin_is_admin", &admin_is_admin_);
+        ctor.Bind("admin_reinvite_note", &admin_reinvite_note_);
+        ctor.Bind("admin_can_remove_added", &admin_can_remove_added_);
+        ctor.Bind("admin_remove_added_label", &admin_remove_added_label_);
+        ctor.Bind("admin_can_reinvite_removed", &admin_can_reinvite_removed_);
+        ctor.Bind("admin_reinvite_removed_label", &admin_reinvite_removed_label_);
+        ctor.BindEventCallback("admin_remove_added", DataEvent<>([this]() {
+                                 if (admin_can_remove_added_ && group_admin_.remove_added) {
+                                   group_admin_.remove_added();
+                                 }
+                               }));
+        ctor.BindEventCallback("admin_reinvite_removed", DataEvent<>([this]() {
+                                 if (admin_can_reinvite_removed_ && group_admin_.reinvite_removed) {
+                                   group_admin_.reinvite_removed();
+                                 }
+                               }));
+        ctor.BindEventCallback("admin_reinvite", DataEvent<>([this]() { OnGroupAdminReinvite(); }));
+        ctor.BindEventCallback("admin_remove", DataEvent<>([this]() { OnGroupAdminRemove(); }));
+        ctor.BindEventCallback("admin_set_admin", DataEvent<>([this]() { OnGroupAdminSetAdmin(); }));
+        ctor.BindEventCallback("sync_contact_remote", &ContactsController::SyncRemoteCallback);
+        ctor.BindEventCallback("add_search_changed", &ContactsController::AddSearchChangedCallback);
+        ctor.BindEventCallback("add_pick", DataEvent<std::string>([this](const std::string& i) { OnAddPick(i); }));
+        ctor.BindEventCallback("add_action", DataEvent<std::string>([this](const std::string& a) { OnAddAction(a); }));
+        ctor.BindEventCallback("add_copy_id", DataEvent<>([this]() { OnAddCopyId(); }));
+        ctor.BindEventCallback("add_share",
+                               DataEventAt([this](ui::Event& ev) { OnAddShare(ShareAnchorFromEvent(ev)); }));
+        ctor.BindEventCallback("new_chat_pick", &ContactsController::NewChatPickCallback);
+        ctor.BindEventCallback("new_chat_action", &ContactsController::NewChatActionCallback);
+        ctor.BindEventCallback("new_chat_search_changed", &ContactsController::NewChatSearchCallback);
+        ctor.BindEventCallback("blocked_unblock",
+                               DataEvent<std::string>([this](const std::string& id) { OnUnblockListed(id); }));
+        ctor.BindEventCallback("blocked_open_contact",
+                               DataEvent<std::string>([this](const std::string& id) { OnOpenBlockedContact(id); }));
+        // The strip says which list it drives: contacts_index_at('new_chat'); no argument is the Contacts tab.
+        ctor.BindEventCallback("contacts_index_at",
+                               [this](ui::DataModelHandle, ui::Event& ev, const ui::VariantList& args) {
+                                 OnContactsIndexAt(ev, EventArgAsString(args, 0).value_or("contacts"));
+                               });
+        ctor.BindEventCallback("contacts_index_end", DataEventAt([this](ui::Event&) { OnContactsIndexEnd(); }));
+      });
 
   return registered;
 }
@@ -800,7 +801,8 @@ void ContactsController::SyncFromStore() {
   }
 }
 
-std::vector<ContactsController::NewChatSectionRow> ContactsController::ContactSections(std::vector<ContactListRow> rows) {
+std::vector<ContactsController::NewChatSectionRow> ContactsController::ContactSections(
+    std::vector<ContactListRow> rows) {
   std::stable_sort(rows.begin(), rows.end(), [](const ContactListRow& a, const ContactListRow& b) {
     return NameIndexLess(a.title.c_str(), b.title.c_str());
   });
@@ -895,7 +897,8 @@ void ContactsController::ScrollIndexListTo(ui::Element* strip, const std::string
   const float view_top = view->GetAbsoluteOffset(ui::BoxArea::Border).y;
   const float under_bar = view->GetBox().GetEdge(ui::BoxArea::Padding, ui::BoxEdge::Top);
   const float max_top = std::max(0.f, view->Scroll().GetScrollHeight() - view->GetClientHeight());
-  view->Scroll().SetScrollTop(std::clamp(view->Scroll().GetScrollTop() + header_top - view_top - under_bar, 0.f, max_top));
+  view->Scroll().SetScrollTop(
+      std::clamp(view->Scroll().GetScrollTop() + header_top - view_top - under_bar, 0.f, max_top));
 }
 
 void ContactsController::OnContactsIndexEnd() {
@@ -971,7 +974,7 @@ void ContactsController::AddMemberContactCallback(ui::DataModelHandle /*model*/,
 }
 
 void ContactsController::AddContactMenuCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
-                                              const ui::VariantList& /*args*/) {
+                                                const ui::VariantList& /*args*/) {
   Instance().OnAddContactMenu(ev);
 }
 
@@ -981,7 +984,7 @@ void ContactsController::FindSomeoneCallback(ui::DataModelHandle /*model*/, ui::
 }
 
 void ContactsController::OnContactFieldChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                         const ui::VariantList& /*args*/) {
+                                                       const ui::VariantList& /*args*/) {
   Instance().OnContactFieldChanged();
 }
 
@@ -1001,12 +1004,14 @@ void ContactsController::BlockContactCallback(ui::DataModelHandle /*model*/, ui:
   auto& controller = Instance();
   const std::string name = controller.selected_.title.empty() ? Tr("contacts.this_contact")
                                                               : std::string(controller.selected_.title.c_str());
-  controller.ShowConfirm(Tr("contacts.block_confirm_title"), Tr("contacts.block_confirm_body", {{"name", name}}),
-                         [](const bool ok) {
-                           if (ok) {
-                             Instance().OnSetTrust("blocked");
-                           }
-                         }, true);
+  controller.ShowConfirm(
+      Tr("contacts.block_confirm_title"), Tr("contacts.block_confirm_body", {{"name", name}}),
+      [](const bool ok) {
+        if (ok) {
+          Instance().OnSetTrust("blocked");
+        }
+      },
+      true);
 }
 
 void ContactsController::UnblockContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -1228,8 +1233,7 @@ void ContactsController::SetGroupAdminCard(GroupAdminCard card) {
 
 std::vector<ContextMenuAction> ContactsController::GroupAdminActions() {
   std::vector<ContextMenuAction> actions;
-  auto add = [&actions](const char* id, std::string label, std::function<void()> run, const char* icon,
-                        bool danger) {
+  auto add = [&actions](const char* id, std::string label, std::function<void()> run, const char* icon, bool danger) {
     ContextMenuAction action;
     action.id = id;
     action.label = std::move(label);
@@ -1239,23 +1243,28 @@ std::vector<ContextMenuAction> ContactsController::GroupAdminActions() {
     actions.push_back(std::move(action));
   };
   if (admin_can_set_admin_) {
-    add("admin_set_admin", Tr(admin_is_admin_ ? "people_picker.remove_admin" : "people_picker.make_admin"),
+    add(
+        "admin_set_admin", Tr(admin_is_admin_ ? "people_picker.remove_admin" : "people_picker.make_admin"),
         [this]() { OnGroupAdminSetAdmin(); }, "../icons/v2/shield.svg", false);
   }
   if (admin_can_reinvite_) {
-    add("admin_reinvite", Tr("people_picker.reinvite"), [this]() { OnGroupAdminReinvite(); },
-        "../icons/v2/send.svg", false);
+    add(
+        "admin_reinvite", Tr("people_picker.reinvite"), [this]() { OnGroupAdminReinvite(); }, "../icons/v2/send.svg",
+        false);
   }
   if (admin_can_reinvite_removed_ && group_admin_.reinvite_removed) {
-    add("admin_reinvite_removed", group_admin_.reinvite_removed_label,
-        [this]() { group_admin_.reinvite_removed(); }, "../icons/v2/send.svg", false);
+    add(
+        "admin_reinvite_removed", group_admin_.reinvite_removed_label, [this]() { group_admin_.reinvite_removed(); },
+        "../icons/v2/send.svg", false);
   }
   if (admin_can_remove_added_ && group_admin_.remove_added) {
-    add("admin_remove_added", group_admin_.remove_added_label, [this]() { group_admin_.remove_added(); },
+    add(
+        "admin_remove_added", group_admin_.remove_added_label, [this]() { group_admin_.remove_added(); },
         "../icons/v2/user-minus.svg", true);
   }
   if (admin_can_remove_) {
-    add("admin_remove", Tr("people_picker.remove_from_group"), [this]() { OnGroupAdminRemove(); },
+    add(
+        "admin_remove", Tr("people_picker.remove_from_group"), [this]() { OnGroupAdminRemove(); },
         "../icons/v2/user-minus.svg", true);
   }
   return actions;
@@ -1270,8 +1279,8 @@ void ContactsController::OnGroupAdminMenu() {
 }
 
 void ContactsController::ClearGroupAdminCard() {
-  if (!admin_shown_ && !group_role_shown_ && !group_admin_.reinvite && !group_admin_.set_admin && !group_admin_.remove &&
-      !group_admin_.remove_added && !group_admin_.reinvite_removed) {
+  if (!admin_shown_ && !group_role_shown_ && !group_admin_.reinvite && !group_admin_.set_admin &&
+      !group_admin_.remove && !group_admin_.remove_added && !group_admin_.reinvite_removed) {
     return;
   }
   group_admin_ = {};
@@ -1483,7 +1492,8 @@ void ContactsController::SyncNewChat() {
   for (const Contact& contact : *stored) {
     ContactListRow row = ToContactListRow(contact, contacts_ports_);
     row.starred = StarRank(starred, contact.id) >= 0;
-    input.push_back({contact.id, row.title.c_str(), contact.trust == TrustLevel::Blocked, StarRank(starred, contact.id)});
+    input.push_back(
+        {contact.id, row.title.c_str(), contact.trust == TrustLevel::Blocked, StarRank(starred, contact.id)});
     rows.push_back(std::move(row));
   }
   std::vector<NewChatDirectChat> chats;
@@ -1536,7 +1546,7 @@ void ContactsController::OnNewChatPick(const std::string& contact_id) {
     return;
   }
   if (!selected_.can_message) {
-    if (!selected_.message_hint.empty()) { // the demo app has no hint: no empty pill
+    if (!selected_.message_hint.empty()) {       // the demo app has no hint: no empty pill
       ShowToast(selected_.message_hint.c_str()); // the page stays; the person cannot be messaged yet
     }
     selected_ = {};
@@ -1894,7 +1904,8 @@ void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vec
                        [hit]() {
                          ContactsController& self = ContactsController::Instance();
                          const std::string account = PrimaryAccountIdFromHit(hit).value_or("");
-                         if (std::optional<Contact> known = account.empty() ? std::nullopt : self.FindContactByAccount(account)) {
+                         if (std::optional<Contact> known =
+                                 account.empty() ? std::nullopt : self.FindContactByAccount(account)) {
                            self.ShowAlreadyContact(*known);
                            return;
                          }
@@ -1913,23 +1924,23 @@ void ContactsController::OfferHit(const mesh::DirectoryHit& hit, const std::stri
   const std::string shown_id = !account.empty() ? account : PrimaryRelayIdFromHit(hit).value_or("");
   std::optional<Contact> known = account.empty() ? std::nullopt : FindContactByAccount(account);
   switch (DecideAddFromSearch(HitMatchesExactPeopleId(hit, query), known.has_value())) {
-  case AddFromSearchDecision::AlreadyContact:
-    ShowAlreadyContact(*known);
-    return;
-  case AddFromSearchDecision::ConfirmByName: {
-    const std::string name = !hit.display_name.empty() ? hit.display_name : hit.nickname;
-    ShowConfirm(Tr("contacts.confirm_add_title"),
-                Tr("contacts.confirm_add_body", {{"name", name}, {"account", ShortRelayId(shown_id)}}),
-                [hit](const bool ok) {
-                  if (ok) {
-                    ContactsController::Instance().AddContactFromHit(hit);
-                  }
-                });
-    return;
-  }
-  case AddFromSearchDecision::AddDirect:
-    AddContactFromHit(hit);
-    return;
+    case AddFromSearchDecision::AlreadyContact:
+      ShowAlreadyContact(*known);
+      return;
+    case AddFromSearchDecision::ConfirmByName: {
+      const std::string name = !hit.display_name.empty() ? hit.display_name : hit.nickname;
+      ShowConfirm(Tr("contacts.confirm_add_title"),
+                  Tr("contacts.confirm_add_body", {{"name", name}, {"account", ShortRelayId(shown_id)}}),
+                  [hit](const bool ok) {
+                    if (ok) {
+                      ContactsController::Instance().AddContactFromHit(hit);
+                    }
+                  });
+      return;
+    }
+    case AddFromSearchDecision::AddDirect:
+      AddContactFromHit(hit);
+      return;
   }
 }
 
@@ -2072,7 +2083,8 @@ void ContactsController::OnShareContact(const ui::Vector2i position) {
       }
     }
   }
-  std::sort(targets.begin(), targets.end(), [](const Thread& a, const Thread& b) { return a.updated_at > b.updated_at; });
+  std::sort(targets.begin(), targets.end(),
+            [](const Thread& a, const Thread& b) { return a.updated_at > b.updated_at; });
   if (targets.size() > kMaxShareTargets) {
     targets.resize(kMaxShareTargets);
   }
@@ -2083,8 +2095,7 @@ void ContactsController::OnShareContact(const ui::Vector2i position) {
   std::vector<ContextMenuAction> actions;
   for (const Thread& thread : targets) {
     const std::string name = thread.local_title.empty() ? thread.title : thread.local_title;
-    actions.push_back({"share_contact_to_" + thread.id, name, nullptr,
-                       [thread_id = thread.id, contact_id, name]() {
+    actions.push_back({"share_contact_to_" + thread.id, name, nullptr, [thread_id = thread.id, contact_id, name]() {
                          ContactsController::Instance().ShareContactTo(thread_id, contact_id, name);
                        }});
   }
@@ -2129,7 +2140,8 @@ void ContactsController::ShareContactTo(const std::string& thread_id, const std:
   if (contacts_ports_.refresh_contact_card && contacts_ports_.get_contact) {
     auto contact = contacts_ports_.get_contact(contact_id);
     if (contact && *contact) {
-      refresh_card = [refresh = contacts_ports_.refresh_contact_card, found = **contact](std::function<void(bool)> kept) {
+      refresh_card = [refresh = contacts_ports_.refresh_contact_card,
+                      found = **contact](std::function<void(bool)> kept) {
         // The answer comes on a worker or I/O thread; the retry and the toast belong on the UI thread.
         refresh(found, [kept = std::move(kept)](const bool got) { AppRuntime::PostUI([kept, got]() { kept(got); }); });
       };
@@ -2332,8 +2344,7 @@ void ContactsController::OnSyncRemote() {
   }
   auto applied = contacts_ports_.apply_remote_snapshot(selected_.id.c_str(), *hit, util::NowUnixMs());
   if (!applied) {
-    UserFeedback::Fail(applied.error().message.empty() ? Tr("contacts.err.save_synced")
-                                                       : applied.error().message);
+    UserFeedback::Fail(applied.error().message.empty() ? Tr("contacts.err.save_synced") : applied.error().message);
     return;
   }
   if (contacts_ports_.register_contact_direct_endpoints) {
@@ -2353,33 +2364,37 @@ void ContactsController::OnRemoveContact() {
   }
 
   const std::string contact_id = selected_.id.c_str();
-  const std::string display_name = selected_.display_name.empty() ? Tr("contacts.this_contact") : selected_.display_name.c_str();
+  const std::string display_name =
+      selected_.display_name.empty() ? Tr("contacts.this_contact") : selected_.display_name.c_str();
   const std::string message = Tr("contacts.remove_confirm_body", {{"name", display_name}});
 
-  ShowConfirm(Tr("contacts.remove"), message, [this, contact_id](const bool ok) {
-    if (!ok) {
-      return;
-    }
-    auto removed = contacts_ports_.remove_contact(contact_id);
-    if (!removed) {
-      UserFeedback::Fail(Tr("contacts.err.remove"));
-      return;
-    }
-    if (!*removed) {
-      ShowToast(Tr("contacts.err.not_found"));
-      return;
-    }
-    if (!CloseContactDetailPane()) {
-      OnDetailDismissed();
-    }
-    SyncFromStore();
-    DirtyAll();
-    ShowToast(Tr("contacts.toast.removed"));
-    if (contacts_ports_.notify_thread_changed) {
-      contacts_ports_.notify_thread_changed();
-    }
-    NotifySurfaceChanged();
-  }, true);
+  ShowConfirm(
+      Tr("contacts.remove"), message,
+      [this, contact_id](const bool ok) {
+        if (!ok) {
+          return;
+        }
+        auto removed = contacts_ports_.remove_contact(contact_id);
+        if (!removed) {
+          UserFeedback::Fail(Tr("contacts.err.remove"));
+          return;
+        }
+        if (!*removed) {
+          ShowToast(Tr("contacts.err.not_found"));
+          return;
+        }
+        if (!CloseContactDetailPane()) {
+          OnDetailDismissed();
+        }
+        SyncFromStore();
+        DirtyAll();
+        ShowToast(Tr("contacts.toast.removed"));
+        if (contacts_ports_.notify_thread_changed) {
+          contacts_ports_.notify_thread_changed();
+        }
+        NotifySurfaceChanged();
+      },
+      true);
 }
 
 void ContactsController::OnOpenThread(const std::string& thread_id) {
@@ -2481,16 +2496,16 @@ void ContactsController::CloseAddContactPage() {
 
 void ContactsController::DirtyAddContact() {
   auto& host = DataModelHost::Instance();
-  for (const char* name :
-       {"add_query", "add_rows", "add_searching", "add_no_results", "my_has_account", "my_name", "my_account_id", "my_account_id_shown",
-        "my_has_icon", "my_icon_src", "my_avatar_letter", "my_avatar_tone", "my_qr_svg_rml", "can_scan",
-        "can_new_group"}) {
+  for (const char* name : {"add_query", "add_rows", "add_searching", "add_no_results", "my_has_account", "my_name",
+                           "my_account_id", "my_account_id_shown", "my_has_icon", "my_icon_src", "my_avatar_letter",
+                           "my_avatar_tone", "my_qr_svg_rml", "can_scan", "can_new_group"}) {
     host.Dirty("contacts", name);
   }
 }
 
 void ContactsController::LoadMyAccount() {
-  const ProfileIdentityView view = account_ports_.load_identity ? account_ports_.load_identity() : ProfileIdentityView{};
+  const ProfileIdentityView view =
+      account_ports_.load_identity ? account_ports_.load_identity() : ProfileIdentityView{};
   my_has_account_ = view.ready && !view.relay_id.empty();
   my_nickname_ = view.nickname;
   my_locator_ = view.contact_locator;
@@ -2646,7 +2661,8 @@ void ContactsController::OnAddShare(const ShareAnchor anchor) {
   ShareInviteOrCopy(
       AccountInviteText(my_nickname_, my_account_id_.c_str(), my_locator_),
       [](const std::string& text, const ShareAnchor at) { return PlatformShareText(Backend::GetWindow(), text, at); },
-      anchor, [](const std::string& text) {
+      anchor,
+      [](const std::string& text) {
         if (ui::SystemInterface* system = ui::GetSystemInterface()) {
           system->SetClipboardText(text.c_str());
         }
@@ -2654,7 +2670,7 @@ void ContactsController::OnAddShare(const ShareAnchor anchor) {
 }
 
 void ContactsController::OpenMyQr() {
-  LoadMyAccount();  // the scanner may open from outside the Add contact sheet, which loads it otherwise
+  LoadMyAccount(); // the scanner may open from outside the Add contact sheet, which loads it otherwise
   if (!my_has_account_ || my_locator_.empty()) {
     ShowToast(Tr("settings.profile.no_peer_id"));
     return;

@@ -144,15 +144,16 @@ std::string BuildArticleFeedBlocksJson(const std::string& raw_json, const Articl
       item.set("meta_end", time);
     }
     // What the item menu copies, shares or asks the AI about: the article as the user reads it.
-    item.set("share_text", title.empty() || content.empty() ? (title.empty() ? content : title) : title + "\n" + content);
+    item.set("share_text",
+             title.empty() || content.empty() ? (title.empty() ? content : title) : title + "\n" + content);
     if (IsHttpsUrl(link)) {
       item.set("share_url", link);
       Object open_payload;
       open_payload.set("type", "open_url");
       open_payload.set("url", link);
       // "link": a small text link at the end of the article's text instead of a button under it.
-      item.set("actions", ArrayValue({ObjectValue(MakeAction(labels.open, labels.open, std::move(open_payload),
-                                                              "link"))}));
+      item.set("actions",
+               ArrayValue({ObjectValue(MakeAction(labels.open, labels.open, std::move(open_payload), "link"))}));
     }
     items.push_back(ObjectValue(std::move(item)));
     if (auto id = article->getString("id")) {

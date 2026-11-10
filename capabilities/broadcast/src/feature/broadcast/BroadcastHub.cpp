@@ -67,7 +67,8 @@ std::unique_ptr<BroadcastHub> BroadcastHub::ForMesh(BroadcastMeshDeps deps, Medi
     return nullptr;
   }
   auto rpc = std::make_unique<AmpBroadcastRpcClient>(*deps.links, deps.io.io_pump, deps.io.post_io, deps.io.post_after);
-  auto reach = std::make_unique<mesh::PeerReachCoordinator>(mesh::PeerReachPorts{deps.relay.dial, deps.relay.service_reach, deps.lane});
+  auto reach = std::make_unique<mesh::PeerReachCoordinator>(
+      mesh::PeerReachPorts{deps.relay.dial, deps.relay.service_reach, deps.lane});
 
   BroadcastViewerPorts ports;
   ports.local_peer_id = [peer = deps.io.local_peer_id]() { return peer; };
@@ -119,7 +120,7 @@ std::unique_ptr<BroadcastHub> BroadcastHub::ForMesh(BroadcastMeshDeps deps, Medi
   // B009: a phone publishes one level; a desktop can produce the high level too (one at a time
   // until it runs a second encoder). The relay answers which one it carries.
   publish.video_offer = deps.mobile ? mesh::MediaRelayVideoOffer{{mesh::kDefaultVideoLevel}, 1}
-                                             : mesh::MediaRelayVideoOffer{{mesh::kDefaultVideoLevel, 2}, 1};
+                                    : mesh::MediaRelayVideoOffer{{mesh::kDefaultVideoLevel, 2}, 1};
 
   auto hub = std::make_unique<BroadcastHub>(std::move(ports), devices, std::move(publish));
   hub->rpc_ = std::move(rpc);

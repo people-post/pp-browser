@@ -69,16 +69,15 @@ TEST(CallSessionLogicTest, RelayAgeAndStaleDrop) {
   CallInviteDetail invite;
   invite.expires_at = 1000;
   // Relay age beyond TTL + slack → drop.
-  EXPECT_TRUE(CallSessionLogic::ShouldDropStaleInvite(invite, 999999, 1000, 1000 + kDefaultCallInviteTtlMs +
-                                                                             kCallInviteRelayAgeSlackMs + 1));
-  EXPECT_FALSE(CallSessionLogic::ShouldDropStaleInvite(invite, 999999, 1000,
-                                                       1000 + kDefaultCallInviteTtlMs));
+  EXPECT_TRUE(CallSessionLogic::ShouldDropStaleInvite(invite, 999999, 1000,
+                                                      1000 + kDefaultCallInviteTtlMs + kCallInviteRelayAgeSlackMs + 1));
+  EXPECT_FALSE(CallSessionLogic::ShouldDropStaleInvite(invite, 999999, 1000, 1000 + kDefaultCallInviteTtlMs));
 
   // Direct path: within skew slack of wire expiry → keep; far past → drop.
-  EXPECT_FALSE(CallSessionLogic::ShouldDropStaleInvite(invite, 1000 + kCallInviteWireSkewSlackMs, std::nullopt,
-                                                       std::nullopt));
-  EXPECT_TRUE(CallSessionLogic::ShouldDropStaleInvite(
-      invite, 1000 + kCallInviteWireSkewSlackMs + 1, std::nullopt, std::nullopt));
+  EXPECT_FALSE(
+      CallSessionLogic::ShouldDropStaleInvite(invite, 1000 + kCallInviteWireSkewSlackMs, std::nullopt, std::nullopt));
+  EXPECT_TRUE(CallSessionLogic::ShouldDropStaleInvite(invite, 1000 + kCallInviteWireSkewSlackMs + 1, std::nullopt,
+                                                      std::nullopt));
 }
 
 TEST(CallSessionLogicTest, CanAcceptJoinRespectsCap) {
@@ -291,8 +290,8 @@ TEST(CallControlCodecTest, AcceptWithoutVideoAllowedDecodesAsUnset) {
   d.call_id = "call:1";
   auto json = CallControlCodec::EncodeAccept(d);
   ASSERT_TRUE(json);
-  EXPECT_EQ(json->find("video_allowed"), std::string::npos);  // not written when unset
-  auto back = CallControlCodec::DecodeAccept(R"({"call_id":"call:1","identity":"x"})");  // old peer
+  EXPECT_EQ(json->find("video_allowed"), std::string::npos);                            // not written when unset
+  auto back = CallControlCodec::DecodeAccept(R"({"call_id":"call:1","identity":"x"})"); // old peer
   ASSERT_TRUE(back);
   EXPECT_FALSE(back->video_allowed.has_value());
 }
@@ -403,8 +402,8 @@ TEST(CallControlCodecTest, CircuitR1RoundTrip) {
 TEST(CallControlCodecTest, AcceptCarriesTheParkedRelays) {
   CallAcceptDetail accept;
   accept.call_id = "call:parked";
-  accept.circuit_parked = {"QmRelayA", "QmRelayB", "QmRelayA", std::string(200, 'x'), "QmRelayC", "QmRelayD",
-                           "QmRelayE"};
+  accept.circuit_parked = {"QmRelayA", "QmRelayB", "QmRelayA", std::string(200, 'x'),
+                           "QmRelayC", "QmRelayD", "QmRelayE"};
   auto encoded = CallControlCodec::EncodeAccept(accept);
   ASSERT_TRUE(encoded);
   auto decoded = CallControlCodec::DecodeAccept(*encoded);
@@ -505,7 +504,7 @@ TEST(CallSessionLogicTest, VoiceAnswerNarrowsOnlyDirectOriginCalls) {
   CallSession direct;
   EXPECT_TRUE(CallSessionLogic::VoiceAnswerNarrowsCall(direct));
   CallSession group;
-  group.origin_group_id = "group-1";  // a group-thread call with one invitee still has 2 rows
+  group.origin_group_id = "group-1"; // a group-thread call with one invitee still has 2 rows
   EXPECT_FALSE(CallSessionLogic::VoiceAnswerNarrowsCall(group));
   group.origin_group_id = "";
   EXPECT_TRUE(CallSessionLogic::VoiceAnswerNarrowsCall(group));
@@ -522,7 +521,6 @@ TEST(CallSessionLogicTest, VideoAllowedFromInvite) {
   allowed.video_allowed = true;
   EXPECT_TRUE(CallSessionLogic::VideoAllowedFromInvite(allowed));
 }
-
 
 TEST(CallSessionLogicTest, FanoutSelectJoinedOnly) {
   std::vector<CallParticipant> rows(3);

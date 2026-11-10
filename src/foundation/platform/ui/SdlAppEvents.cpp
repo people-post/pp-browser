@@ -39,76 +39,76 @@ bool SdlAppEvents::PreProcess(ui::Context* context, SDL_Event& event, bool& prop
   (void)propagate_event;
   const AppEventHooks& hooks = GetAppEventHooks();
   switch (event.type) {
-  case SDL_EVENT_KEY_DOWN:
-    if (event.key.key == SDLK_AC_BACK) {
-      return PlatformNavigation::OnSystemBack();
-    }
-    if (event.key.key == SDLK_ESCAPE) {
-      return PlatformNavigation::OnDismissKey();
-    }
-    break;
-  case SDL_EVENT_WILL_ENTER_BACKGROUND:
-    AppLifecycle::OnWillEnterBackground();
-    return true;
-  case SDL_EVENT_DID_ENTER_FOREGROUND:
-    AppLifecycle::OnDidEnterForeground();
-    if (context && hooks.on_sync_system_theme) {
-      Backend::SyncContext(context);
-      hooks.on_sync_system_theme(context);
-    }
-    return true;
-  case SDL_EVENT_WINDOW_MINIMIZED:
-    if (Platform::IsDesktop()) {
-      // Not background: a minimized messenger still rings and receives (it pausing all work held
-      // every incoming call until the window came back).
-      AppLifecycle::OnDesktopMinimized();
-    }
-    break;
-  case SDL_EVENT_WINDOW_RESTORED:
-    if (Platform::IsDesktop()) {
-      AppLifecycle::OnDesktopRestored();
-    }
-    MaybeEnterDesktopForeground();
-    break;
-  case SDL_EVENT_WINDOW_FOCUS_LOST:
-    if (Platform::IsDesktop()) {
-      AppLifecycle::SetDesktopInputFocused(false);
-    }
-    break;
-  case SDL_EVENT_WINDOW_FOCUS_GAINED:
-    if (Platform::IsDesktop()) {
-      AppLifecycle::SetDesktopInputFocused(true);
-    }
-    MaybeEnterDesktopForeground();
-    break;
-  case SDL_EVENT_SYSTEM_THEME_CHANGED:
-    if (context && hooks.on_sync_system_theme) {
-      hooks.on_sync_system_theme(context);
-    }
-    return true;
-  case SDL_EVENT_LOW_MEMORY:
-    AppLifecycle::OnLowMemory();
-    return true;
-  case SDL_EVENT_DROP_FILE:
-    // macOS and iOS hand over an opened URL (a registered scheme) as a drop.
-    if (event.drop.data && IncomingLink::LooksLikeLink(event.drop.data)) {
-      IncomingLink::Deliver(event.drop.data);
+    case SDL_EVENT_KEY_DOWN:
+      if (event.key.key == SDLK_AC_BACK) {
+        return PlatformNavigation::OnSystemBack();
+      }
+      if (event.key.key == SDLK_ESCAPE) {
+        return PlatformNavigation::OnDismissKey();
+      }
+      break;
+    case SDL_EVENT_WILL_ENTER_BACKGROUND:
+      AppLifecycle::OnWillEnterBackground();
       return true;
-    }
-    break;
-  case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    if (event.button.button == SDL_BUTTON_RIGHT && context && hooks.on_context_pointer) {
-      const float scale = context->GetDensityIndependentPixelRatio();
-      const int x = static_cast<int>(event.button.x * scale);
-      const int y = static_cast<int>(event.button.y * scale);
-      if (hooks.on_context_pointer(context, x, y)) {
-        propagate_event = false;
+    case SDL_EVENT_DID_ENTER_FOREGROUND:
+      AppLifecycle::OnDidEnterForeground();
+      if (context && hooks.on_sync_system_theme) {
+        Backend::SyncContext(context);
+        hooks.on_sync_system_theme(context);
+      }
+      return true;
+    case SDL_EVENT_WINDOW_MINIMIZED:
+      if (Platform::IsDesktop()) {
+        // Not background: a minimized messenger still rings and receives (it pausing all work held
+        // every incoming call until the window came back).
+        AppLifecycle::OnDesktopMinimized();
+      }
+      break;
+    case SDL_EVENT_WINDOW_RESTORED:
+      if (Platform::IsDesktop()) {
+        AppLifecycle::OnDesktopRestored();
+      }
+      MaybeEnterDesktopForeground();
+      break;
+    case SDL_EVENT_WINDOW_FOCUS_LOST:
+      if (Platform::IsDesktop()) {
+        AppLifecycle::SetDesktopInputFocused(false);
+      }
+      break;
+    case SDL_EVENT_WINDOW_FOCUS_GAINED:
+      if (Platform::IsDesktop()) {
+        AppLifecycle::SetDesktopInputFocused(true);
+      }
+      MaybeEnterDesktopForeground();
+      break;
+    case SDL_EVENT_SYSTEM_THEME_CHANGED:
+      if (context && hooks.on_sync_system_theme) {
+        hooks.on_sync_system_theme(context);
+      }
+      return true;
+    case SDL_EVENT_LOW_MEMORY:
+      AppLifecycle::OnLowMemory();
+      return true;
+    case SDL_EVENT_DROP_FILE:
+      // macOS and iOS hand over an opened URL (a registered scheme) as a drop.
+      if (event.drop.data && IncomingLink::LooksLikeLink(event.drop.data)) {
+        IncomingLink::Deliver(event.drop.data);
         return true;
       }
-    }
-    break;
-  default:
-    break;
+      break;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+      if (event.button.button == SDL_BUTTON_RIGHT && context && hooks.on_context_pointer) {
+        const float scale = context->GetDensityIndependentPixelRatio();
+        const int x = static_cast<int>(event.button.x * scale);
+        const int y = static_cast<int>(event.button.y * scale);
+        if (hooks.on_context_pointer(context, x, y)) {
+          propagate_event = false;
+          return true;
+        }
+      }
+      break;
+    default:
+      break;
   }
   return false;
 }

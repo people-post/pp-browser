@@ -14,14 +14,14 @@ int ReachabilityNudgeSeverity(const std::string& status_key) {
 
 std::string ReachabilityNudgeStatusKey(SettingsReachabilityView::Status status) {
   switch (status) {
-  case SettingsReachabilityView::Status::OutboundOnly:
-    return kReachabilityNudgeOutboundOnly;
-  case SettingsReachabilityView::Status::Blocked:
-    return kReachabilityNudgeBlocked;
-  case SettingsReachabilityView::Status::Unknown:
-  case SettingsReachabilityView::Status::Checking:
-  case SettingsReachabilityView::Status::Reachable:
-    break;
+    case SettingsReachabilityView::Status::OutboundOnly:
+      return kReachabilityNudgeOutboundOnly;
+    case SettingsReachabilityView::Status::Blocked:
+      return kReachabilityNudgeBlocked;
+    case SettingsReachabilityView::Status::Unknown:
+    case SettingsReachabilityView::Status::Checking:
+    case SettingsReachabilityView::Status::Reachable:
+      break;
   }
   return {};
 }

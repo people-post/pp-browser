@@ -5,7 +5,7 @@
 namespace pbr {
 
 int64_t PeakResidentBytes() {
-  struct rusage usage {};
+  struct rusage usage{};
   if (getrusage(RUSAGE_SELF, &usage) != 0) {
     return 0;
   }

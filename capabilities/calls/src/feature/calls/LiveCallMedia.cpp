@@ -61,7 +61,7 @@ CallMedia* LiveCallMedia::Media(const std::string& call_id) {
     LiveCallMediaLog().warning << "media for a call not admitted here call_id=" << call_id;
     return nullptr;
   }
-  Entry& entry = media_[call_id];  // Sweep dropped an earlier admission's
+  Entry& entry = media_[call_id]; // Sweep dropped an earlier admission's
   entry.instance = call->Instance();
   if (!entry.media && resources_.engine) {
     entry.media = std::make_unique<CallMedia>(call_id, resources_);
@@ -71,7 +71,7 @@ CallMedia* LiveCallMedia::Media(const std::string& call_id) {
 
 void LiveCallMedia::StopMedia(const std::string& call_id) {
   if (resources_.seat) {
-    resources_.seat->Release(call_id);  // Detach then engine Stop (seat teardown hooks)
+    resources_.seat->Release(call_id); // Detach then engine Stop (seat teardown hooks)
     return;
   }
   if (CallMedia* call = Find(call_id)) {

@@ -50,7 +50,8 @@ Roe<RecoveryKeys> DeriveRecoveryKeys(const ByteVector& seed) {
     size_t length;
   };
   const Part parts[] = {
-      {&keys.account_ml_dsa_seed, kAccountMlDsaInfo, 32}, {&keys.account_ml_kem_coins, kAccountMlKemInfo, 64},
+      {&keys.account_ml_dsa_seed, kAccountMlDsaInfo, 32},
+      {&keys.account_ml_kem_coins, kAccountMlKemInfo, 64},
       {&keys.locker_key, kLockerKeyInfo, 32},
       {&keys.locker_signing_seed, kLockerSigningInfo, 32},
   };

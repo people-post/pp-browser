@@ -86,30 +86,32 @@ private:
 
   void Respond(tcp::socket socket) {
     auto connection = std::make_shared<Connection>(std::move(socket));
-    asio::async_read_until(
-        connection->socket, connection->request, "\r\n\r\n",
-        [this, connection](const std::error_code& ec, std::size_t) {
-          if (ec || stopping_.load()) {
-            return;
-          }
+    asio::async_read_until(connection->socket, connection->request, "\r\n\r\n",
+                           [this, connection](const std::error_code& ec, std::size_t) {
+                             if (ec || stopping_.load()) {
+                               return;
+                             }
 
-          std::string body;
-          {
-            std::lock_guard lock(response_mutex_);
-            body = response_;
-          }
-          connection->response = "HTTP/1.1 200 OK\r\n"
+                             std::string body;
+                             {
+                               std::lock_guard lock(response_mutex_);
+                               body = response_;
+                             }
+                             connection->response =
+                                 "HTTP/1.1 200 OK\r\n"
                                  "Content-Type: application/json\r\n"
                                  "Content-Length: " +
-                                 std::to_string(body.size()) + "\r\n"
-                                 "Connection: close\r\n\r\n" + body;
-          asio::async_write(connection->socket, asio::buffer(connection->response),
-                            [connection](const std::error_code&, std::size_t) {
-                              std::error_code ignored;
-                              connection->socket.shutdown(tcp::socket::shutdown_both, ignored);
-                              connection->socket.close(ignored);
-                            });
-        });
+                                 std::to_string(body.size()) +
+                                 "\r\n"
+                                 "Connection: close\r\n\r\n" +
+                                 body;
+                             asio::async_write(connection->socket, asio::buffer(connection->response),
+                                               [connection](const std::error_code&, std::size_t) {
+                                                 std::error_code ignored;
+                                                 connection->socket.shutdown(tcp::socket::shutdown_both, ignored);
+                                                 connection->socket.close(ignored);
+                                               });
+                           });
   }
 
   asio::io_context io_;

@@ -28,11 +28,9 @@ public:
   static std::vector<ToolDescriptor> ListTools(McpClient& client, const McpToolAdapterOptions& options = {},
                                                const std::unordered_set<std::string>& occupied_names = {},
                                                const std::string& provider_id = {},
-                                               const std::string& default_domain = "feeds",
-                                               bool* listed = nullptr);
+                                               const std::string& default_domain = "feeds", bool* listed = nullptr);
 
-  static void RegisterTools(ToolRegistry& registry, McpClient& client,
-                            const McpToolAdapterOptions& options = {});
+  static void RegisterTools(ToolRegistry& registry, McpClient& client, const McpToolAdapterOptions& options = {});
 };
 
 } // namespace pbr

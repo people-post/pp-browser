@@ -70,8 +70,7 @@ void CallMediaSeat::Release(const std::string& call_id) {
     // B24: a stale Leave/Ended for an *older* call (relay inbox replays them on every poll)
     // must not stop the engine that a live, different call is holding.
     if (!bound_call_id_.empty() && bound_call_id_ != target && attach_call_id_ != target) {
-      log().info << "Release ignored: seat held by another call bound=" << bound_call_id_
-                 << " release=" << target;
+      log().info << "Release ignored: seat held by another call bound=" << bound_call_id_ << " release=" << target;
       return;
     }
   }
@@ -85,8 +84,8 @@ void CallMediaSeat::Release(const Token& token) {
   {
     std::lock_guard lock(mu_);
     if (token.epoch != epoch_) {
-      log().info << "Release skip stale token call_id=" << token.call_id
-                 << " token_epoch=" << token.epoch << " seat_epoch=" << epoch_;
+      log().info << "Release skip stale token call_id=" << token.call_id << " token_epoch=" << token.epoch
+                 << " seat_epoch=" << epoch_;
       return;
     }
   }
@@ -107,8 +106,7 @@ void CallMediaSeat::NoteStart(const std::string& call_id) {
   log().info << "NoteStart call_id=" << call_id << " epoch=" << epoch_;
 }
 
-CallMediaSeat::AttachBeginResult CallMediaSeat::BeginAttach(const std::string& call_id,
-                                                            const std::string& hop_peer_id,
+CallMediaSeat::AttachBeginResult CallMediaSeat::BeginAttach(const std::string& call_id, const std::string& hop_peer_id,
                                                             AttachTicket* out) {
   if (call_id.empty() || hop_peer_id.empty() || !out) {
     return AttachBeginResult::Rejected;
@@ -133,8 +131,7 @@ CallMediaSeat::AttachBeginResult CallMediaSeat::BeginAttach(const std::string& c
   out->gen = attach_gen_;
   out->call_id = call_id;
   out->hop_peer_id = hop_peer_id;
-  log().info << "BeginAttach call_id=" << call_id << " hop=" << hop_peer_id
-             << " gen=" << attach_gen_;
+  log().info << "BeginAttach call_id=" << call_id << " hop=" << hop_peer_id << " gen=" << attach_gen_;
   return AttachBeginResult::Started;
 }
 
@@ -152,8 +149,7 @@ void CallMediaSeat::EndAttach(const AttachTicket& ticket) {
   if (ticket.call_id != attach_call_id_ || ticket.hop_peer_id != attach_hop_peer_id_) {
     return;
   }
-  log().info << "EndAttach call_id=" << ticket.call_id << " hop=" << ticket.hop_peer_id
-             << " gen=" << ticket.gen;
+  log().info << "EndAttach call_id=" << ticket.call_id << " hop=" << ticket.hop_peer_id << " gen=" << ticket.gen;
   ClearAttachLocked();
 }
 
@@ -162,8 +158,7 @@ void CallMediaSeat::EndAttachIfMatching(const std::string& call_id, const std::s
   if (call_id.empty() || attach_call_id_ != call_id || attach_hop_peer_id_ != hop_peer_id) {
     return;
   }
-  log().info << "EndAttachIfMatching call_id=" << call_id << " hop=" << hop_peer_id
-             << " gen=" << attach_gen_;
+  log().info << "EndAttachIfMatching call_id=" << call_id << " hop=" << hop_peer_id << " gen=" << attach_gen_;
   ClearAttachLocked();
 }
 

@@ -27,12 +27,12 @@ inline bool ShowAttachButton(const AttachButtonInput& in) {
 /** Locale key for a failed PrepareAiImageFromFile; the cause decides the wording, never a generic hint. */
 inline const char* AiImagePrepErrorKey(const AiImagePrepError error) {
   switch (error) {
-  case AiImagePrepError::NotAnImage:
-    return "chat.image.not_supported";
-  case AiImagePrepError::TooLarge:
-    return "chat.image.too_large";
-  case AiImagePrepError::Failed:
-    break;
+    case AiImagePrepError::NotAnImage:
+      return "chat.image.not_supported";
+    case AiImagePrepError::TooLarge:
+      return "chat.image.too_large";
+    case AiImagePrepError::Failed:
+      break;
   }
   return "chat.image.read_failed";
 }
@@ -72,13 +72,15 @@ inline std::string DecorateAiImageBubble(std::string rml, const std::string& ima
     return rml;
   }
   const PictureBubbleSize fit = FitPictureInBubble(width, height);
-  const std::string size = fit.width_dp > 0 ? " style=\"width: " + std::to_string(fit.width_dp) + "dp; height: " +
-                                                  std::to_string(fit.height_dp) + "dp;\""
+  const std::string size = fit.width_dp > 0 ? " style=\"width: " + std::to_string(fit.width_dp) +
+                                                  "dp; height: " + std::to_string(fit.height_dp) + "dp;\""
                                             : std::string();
   const std::string img_size =
-      fit.width_dp > 0 ? " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.image_height_dp) +
-                             "\"" + (fit.image_offset_dp > 0 ? " style=\"margin-top: -" + std::to_string(fit.image_offset_dp) + "dp;\"" : "")
-                       : std::string();
+      fit.width_dp > 0
+          ? " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.image_height_dp) + "\"" +
+                (fit.image_offset_dp > 0 ? " style=\"margin-top: -" + std::to_string(fit.image_offset_dp) + "dp;\""
+                                         : "")
+          : std::string();
   rml.replace(at, anchor.size(),
               "<div class=\"chat-ai-image-clip\"" + size + "><img class=\"chat-ai-image\" src=\"" + image_src + "\"" +
                   img_size + "/></div>" + head);

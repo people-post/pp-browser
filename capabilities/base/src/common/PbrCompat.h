@@ -59,27 +59,23 @@ OwnerOutbox<Event> MakeOwnerOutbox(OwnerTasks& tasks, std::function<void(Event&)
 
 namespace pbr {
 
-using ::pp::RoeErrorBase;
-using ::pp::ResultOrError;
-using ::pp::Error;
-using ::pp::Roe;
-using ::pp::Module;
-using ::pp::WorkerLane;
-using ::pp::WorkerPool;
-using ::pp::SequencedTaskRunner;
-using ::pp::WireLenUtf8;
-using ::pp::WireLenBytes;
-using ::pp::OutputArchive;
-using ::pp::InputArchive;
 using ::pp::binaryPack;
 using ::pp::binaryUnpack;
+using ::pp::Error;
+using ::pp::InputArchive;
+using ::pp::Module;
+using ::pp::OutputArchive;
+using ::pp::ResultOrError;
+using ::pp::Roe;
+using ::pp::RoeErrorBase;
+using ::pp::SequencedTaskRunner;
+using ::pp::WireLenBytes;
+using ::pp::WireLenUtf8;
+using ::pp::WorkerLane;
+using ::pp::WorkerPool;
 
 using ::pp::common::Array;
 using ::pp::common::ArrayPtr;
-using ::pp::common::Null;
-using ::pp::common::Object;
-using ::pp::common::ObjectPtr;
-using ::pp::common::Value;
 using ::pp::common::asArray;
 using ::pp::common::asNonNegInt;
 using ::pp::common::asObject;
@@ -90,6 +86,10 @@ using ::pp::common::isNullValue;
 using ::pp::common::isObjectValue;
 using ::pp::common::isStringValue;
 using ::pp::common::makeArray;
+using ::pp::common::Null;
+using ::pp::common::Object;
+using ::pp::common::ObjectPtr;
+using ::pp::common::Value;
 using ::pp::common::valueEqual;
 
 // JSON helpers (pp-cpp-common ValueJson).

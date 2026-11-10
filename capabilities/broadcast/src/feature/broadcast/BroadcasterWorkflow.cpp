@@ -33,7 +33,7 @@ struct BroadcasterWorkflow::Sender {
   uint32_t epoch = 1;
   uint32_t stream_id = 0;
   std::atomic<bool> live{false};
-  std::shared_ptr<std::atomic<uint64_t>> sent;  // the workflow's counter (outlives the show)
+  std::shared_ptr<std::atomic<uint64_t>> sent; // the workflow's counter (outlives the show)
   mesh::MediaFrameSendGuard guard;
 
   void Send(const MediaEngine::MediaPacket& packet) {
@@ -59,16 +59,16 @@ struct BroadcasterWorkflow::Sender {
 
 const char* BroadcasterWorkflow::PhaseName(Phase phase) {
   switch (phase) {
-  case Phase::Idle:
-    return "Idle";
-  case Phase::Attaching:
-    return "Attaching";
-  case Phase::Live:
-    return "Live";
-  case Phase::Recovering:
-    return "Recovering";
-  case Phase::Failed:
-    return "Failed";
+    case Phase::Idle:
+      return "Idle";
+    case Phase::Attaching:
+      return "Attaching";
+    case Phase::Live:
+      return "Live";
+    case Phase::Recovering:
+      return "Recovering";
+    case Phase::Failed:
+      return "Failed";
   }
   return "?";
 }
@@ -91,7 +91,7 @@ void BroadcasterWorkflow::Handle(BroadcasterEvent& event) {
       [this](auto& e) {
         using E = std::decay_t<decltype(e)>;
         if (e.show != show_) {
-          return;  // an older show's result
+          return; // an older show's result
         }
         if constexpr (std::is_same_v<E, broadcaster_event::Attached>) {
           OnAttached(e.hop, std::move(e.attached));
@@ -207,7 +207,7 @@ void BroadcasterWorkflow::Teardown(bool announce_end) {
   }
   attached_ = false;
   if (engine_started_ && ports_.engine) {
-    ports_.engine->Stop();  // joins the capture thread: no Send runs after this
+    ports_.engine->Stop(); // joins the capture thread: no Send runs after this
   }
   engine_started_ = false;
   if (announced_live_ && announce_end) {
@@ -262,7 +262,7 @@ void BroadcasterWorkflow::AttachNext(const std::string& why) {
   }
   mesh::IMediaRelayClient* relay = ports_.relay.relay;
   if (relay->IsAttached() || relay->IsLocalHopAttached()) {
-    Fail("media relay client in use by a call");  // one client session per mesh host (L013)
+    Fail("media relay client in use by a call"); // one client session per mesh host (L013)
     return;
   }
   const std::string hop = hops_[next_hop_++];
@@ -301,17 +301,17 @@ void BroadcasterWorkflow::AttachNext(const std::string& why) {
   hooks.still_wanted = [current = current_show_, show = show_]() {
     return current->load(std::memory_order_acquire) == show;
   };
-  hooks.on_frame = [](mesh::MediaDataFrame) {};  // publish-only: subscribes to nothing
+  hooks.on_frame = [](mesh::MediaDataFrame) {}; // publish-only: subscribes to nothing
 
   mesh::AttachToMediaRelayAsync(ports_.relay, std::move(request), std::move(hooks),
-                          [relay, outbox = outbox_, current = current_show_, show = show_,
-                           hop](mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
-                            if (attached && current->load(std::memory_order_acquire) != show) {
-                              relay->Detach();  // ended while AcceptAndAttach was on the wire
-                              return;
-                            }
-                            outbox.Emit(broadcaster_event::Attached{show, hop, std::move(attached)});
-                          });
+                                [relay, outbox = outbox_, current = current_show_, show = show_,
+                                 hop](mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
+                                  if (attached && current->load(std::memory_order_acquire) != show) {
+                                    relay->Detach(); // ended while AcceptAndAttach was on the wire
+                                    return;
+                                  }
+                                  outbox.Emit(broadcaster_event::Attached{show, hop, std::move(attached)});
+                                });
 }
 
 void BroadcasterWorkflow::OnAttached(const std::string& hop, mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
@@ -347,8 +347,8 @@ void BroadcasterWorkflow::StartPublishing(const std::string& hop) {
   }
   mesh::IMediaRelayClient* relay = ports_.relay.relay;
   if (lost_observer_ == 0) {
-    lost_observer_ = relay->AddClientTransportLostObserver(
-        [outbox = outbox_, show = show_](mesh::MediaRelayClientLoss loss) {
+    lost_observer_ =
+        relay->AddClientTransportLostObserver([outbox = outbox_, show = show_](mesh::MediaRelayClientLoss loss) {
           outbox.Emit(broadcaster_event::SessionEnded{show, loss});
         });
   }
@@ -381,7 +381,7 @@ void BroadcasterWorkflow::ApplyVideoLevels(const std::vector<uint8_t>& carried) 
   video_level_ = level;
   status_.video_level = level;
   if (!engine_started_ || !ports_.engine) {
-    return;  // StartPublishing applies it
+    return; // StartPublishing applies it
   }
   // A new relay answered another level (re-attach): reopen the camera at it.
   (void)ports_.engine->SetCameraEnabled(false);
@@ -413,7 +413,7 @@ void BroadcasterWorkflow::OnSessionEnded(mesh::MediaRelayClientLoss loss) {
   BroadcasterLog().info << "relay session ended ("
                         << (loss == mesh::MediaRelayClientLoss::TransportLost ? "lost"
                             : loss == mesh::MediaRelayClientLoss::Replaced    ? "replaced"
-                                                                        : "detached")
+                                                                              : "detached")
                         << ") program=" << status_.program_id;
   if (consecutive_losses_ >= kMaxConsecutiveLosses) {
     Fail("relay connection lost (" + std::to_string(consecutive_losses_) + " re-attaches in a row failed)");

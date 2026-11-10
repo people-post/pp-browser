@@ -87,8 +87,7 @@ public:
 
   /** The 1:1 start the session workflow schedules. */
   struct DuplexPorts {
-    std::function<void(const std::string& call_id, const std::string& peer, bool offerer)>
-        schedule_start_direct;
+    std::function<void(const std::string& call_id, const std::string& peer, bool offerer)> schedule_start_direct;
   };
 
   /** Hop-path / SFU attach outcomes observed by durable session. */
@@ -96,15 +95,15 @@ public:
   /** Peer reach, caps, listen addrs. */
   struct ReachPorts {
     std::function<void(const std::string& identity, const std::vector<std::string>&)> register_peer_listen;
-    std::function<void(const std::string& identity, const CallPeerCaps& caps,
-                       const std::vector<std::string>& listen)>
+    std::function<void(const std::string& identity, const CallPeerCaps& caps, const std::vector<std::string>& listen)>
         note_caps_for_identity;
     /** The peer's caps for this call (invite / accept) — mobility feeds the call's path policy. */
     std::function<void(const std::string& call_id, const CallPeerCaps& caps)> note_call_peer_caps;
     /** H013: the relays we are parked on now — our CallAccept advertises them. */
     std::function<std::vector<std::string>()> parked_relays;
     /** H013: the relays the call's answerer advertised in its CallAccept (the caller tries them first). */
-    std::function<void(const std::string& call_id, const std::vector<std::string>& relays)> note_call_peer_parked_relays;
+    std::function<void(const std::string& call_id, const std::vector<std::string>& relays)>
+        note_call_peer_parked_relays;
     std::function<void(const std::string& identity)> prefetch_reach;
     /** Kick mesh circuit park (composition projects MeshConnectivity rendezvous ReserveOnBootstrapSeeds). */
     std::function<void()> ensure_circuit_ready;
@@ -228,8 +227,8 @@ public:
    * A call invite. Returns the call to answer at once: the inviter and this device called each
    * other at the same moment and the inviter's call won (CrossedCall), so ours gave way.
    */
-  Roe<std::optional<std::string>> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
-                                                      const ThreadMessage& message,
+  Roe<std::optional<std::string>> HandleInboundInvite(const std::string& detail_json,
+                                                      const std::string& sender_identity, const ThreadMessage& message,
                                                       std::optional<int64_t> relay_created_at_ms,
                                                       std::optional<int64_t> relay_server_time_ms,
                                                       const std::string& local_identity);
@@ -287,8 +286,7 @@ private:
   /** G016: a roster this device holds that lacks `identity`; a roster it does not hold (nullopt) is not "out". */
   bool KnownOutOfGroup(const std::string& group_id, const std::string& identity) const;
   /** `identity` is no longer in the call (left, or out of its group). */
-  Roe<void> ParticipantGone(const std::string& call_id, const std::string& identity,
-                            const std::string& local_identity);
+  Roe<void> ParticipantGone(const std::string& call_id, const std::string& identity, const std::string& local_identity);
   /** V053: a group call's invite that arrived too late to ring: recorded as missed, still joinable. */
   void RecordMissedGroupCall(const CallInviteDetail& invite, const std::string& sender_identity,
                              const std::string& local_identity, int64_t created_at);

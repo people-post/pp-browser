@@ -58,8 +58,7 @@ HopHintOwnerDecision DecideHopHintOwnerAction(const std::vector<std::string>& gu
 }
 
 std::vector<std::string> CapGuestHopPreferences(std::vector<std::string> preferred,
-                                                const std::string& failed_hop_peer_id,
-                                                size_t max_prefs) {
+                                                const std::string& failed_hop_peer_id, size_t max_prefs) {
   std::vector<std::string> out;
   out.reserve(std::min(preferred.size(), max_prefs));
   std::unordered_set<std::string> seen;
@@ -82,7 +81,7 @@ bool ReleaseDirectAfterHopAttachNow(const bool still_on_hop, const std::vector<i
     return true;
   }
   if (stream_last_rx_ms.empty()) {
-    return false;  // nobody heard on the hop yet
+    return false; // nobody heard on the hop yet
   }
   return std::all_of(stream_last_rx_ms.begin(), stream_last_rx_ms.end(),
                      [attached_ms](const int64_t last_rx_ms) { return last_rx_ms >= attached_ms; });

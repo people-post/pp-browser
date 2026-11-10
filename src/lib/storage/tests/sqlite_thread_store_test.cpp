@@ -18,11 +18,12 @@ ByteVector TestDek() {
   return dek;
 }
 
-void AssertStoreUnlocked(SqliteThreadStore& store) { ASSERT_TRUE(store.SetDek(TestDek())); }
+void AssertStoreUnlocked(SqliteThreadStore& store) {
+  ASSERT_TRUE(store.SetDek(TestDek()));
+}
 
 TEST(SqliteThreadStoreTest, AiThreadSurvivesRestartAndClearHistory) {
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_sqlite_thread_store_test";
+  const std::filesystem::path data_dir = std::filesystem::temp_directory_path() / "pp_browser_sqlite_thread_store_test";
   std::filesystem::remove_all(data_dir);
 
   Thread thread;
@@ -233,8 +234,7 @@ TEST(SqliteThreadStoreTest, ThreadMemoryRoundTripAndForgetOnClear) {
 }
 
 TEST(SqliteThreadStoreTest, MessageBodyIsEncryptedOnDisk) {
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_sqlite_thread_enc_test";
+  const std::filesystem::path data_dir = std::filesystem::temp_directory_path() / "pp_browser_sqlite_thread_enc_test";
   std::filesystem::remove_all(data_dir);
 
   Thread thread;
@@ -259,8 +259,7 @@ TEST(SqliteThreadStoreTest, MessageBodyIsEncryptedOnDisk) {
   sqlite3* db = nullptr;
   ASSERT_EQ(sqlite3_open_v2(thread_db.string().c_str(), &db, SQLITE_OPEN_READONLY, nullptr), SQLITE_OK);
   sqlite3_stmt* stmt = nullptr;
-  ASSERT_EQ(sqlite3_prepare_v2(db, "SELECT content_enc FROM messages WHERE id = ?;", -1, &stmt, nullptr),
-            SQLITE_OK);
+  ASSERT_EQ(sqlite3_prepare_v2(db, "SELECT content_enc FROM messages WHERE id = ?;", -1, &stmt, nullptr), SQLITE_OK);
   sqlite3_bind_text(stmt, 1, message.id.c_str(), -1, SQLITE_TRANSIENT);
   ASSERT_EQ(sqlite3_step(stmt), SQLITE_ROW);
   const void* blob = sqlite3_column_blob(stmt, 0);
@@ -298,8 +297,9 @@ TEST(SqliteThreadStoreTest, OneUnreadableRowDoesNotBlankThePage) {
   ASSERT_EQ(sqlite3_open_v2((data_dir / "threads" / thread.id / "thread.db").string().c_str(), &db,
                             SQLITE_OPEN_READWRITE, nullptr),
             SQLITE_OK);
-  ASSERT_EQ(sqlite3_exec(db, "UPDATE messages SET content_enc = x'0102030405' WHERE id = 'm2';", nullptr, nullptr, nullptr),
-            SQLITE_OK);
+  ASSERT_EQ(
+      sqlite3_exec(db, "UPDATE messages SET content_enc = x'0102030405' WHERE id = 'm2';", nullptr, nullptr, nullptr),
+      SQLITE_OK);
   sqlite3_close(db);
 
   auto page = store.GetMessagesPage(thread.id, std::nullopt, 50);
@@ -321,8 +321,7 @@ TEST(SqliteThreadStoreTest, OneUnreadableRowDoesNotBlankThePage) {
 }
 
 TEST(SqliteThreadStoreTest, ListThreadsPreviewRoundTripEncrypted) {
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_sqlite_preview_enc_test";
+  const std::filesystem::path data_dir = std::filesystem::temp_directory_path() / "pp_browser_sqlite_preview_enc_test";
   std::filesystem::remove_all(data_dir);
 
   Thread thread;
@@ -361,17 +360,15 @@ TEST(ConversationSummaryCodecTest, RoundTripMatchesSchema) {
 TEST(ChatPayloadCodecTest, VectorATextRoundTrip) {
   const auto encoded = ChatPayloadCodec::EncodeText("Hello");
   ASSERT_TRUE(encoded);
-  EXPECT_EQ(
-      "0100000000000000000548656c6c6f",
-      [](const std::vector<uint8_t>& bytes) {
-        static constexpr char kHex[] = "0123456789abcdef";
-        std::string out;
-        for (const uint8_t byte : bytes) {
-          out.push_back(kHex[byte >> 4]);
-          out.push_back(kHex[byte & 0x0f]);
-        }
-        return out;
-      }(*encoded));
+  EXPECT_EQ("0100000000000000000548656c6c6f", [](const std::vector<uint8_t>& bytes) {
+    static constexpr char kHex[] = "0123456789abcdef";
+    std::string out;
+    for (const uint8_t byte : bytes) {
+      out.push_back(kHex[byte >> 4]);
+      out.push_back(kHex[byte & 0x0f]);
+    }
+    return out;
+  }(*encoded));
 
   ThreadMessage message;
   ASSERT_TRUE(ChatPayloadCodec::ApplyRowToMessage(*encoded, message));

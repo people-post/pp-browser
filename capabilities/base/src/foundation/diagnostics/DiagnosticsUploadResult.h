@@ -21,9 +21,9 @@ enum class DiagnosticsUploadKind {
 
 struct DiagnosticsUploadResult {
   DiagnosticsUploadKind kind = DiagnosticsUploadKind::Failed;
-  std::string upload_id;  // Sent
-  int lines = 0;          // Sent
-  std::string detail;     // SelfCheckRefused: detector name; Failed: what went wrong (no identifiers)
+  std::string upload_id; // Sent
+  int lines = 0;         // Sent
+  std::string detail;    // SelfCheckRefused: detector name; Failed: what went wrong (no identifiers)
 };
 
 /** An HTTP answer (status + body) as a result. 2xx without an `upload_id` is a Failed. */

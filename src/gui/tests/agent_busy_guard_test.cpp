@@ -77,7 +77,8 @@ TEST_P(AgentQueueLocaleTest, QueueWordingExists) {
 // Kenneth 2026-11-02: the note under a queued question says how many chats are answered at once.
 TEST_P(AgentQueueLocaleTest, QueuedNoteSaysTheCap) {
   const std::string text = Tr("chat.ai_queue.pending_cap", {{"count", "3"}});
-  EXPECT_EQ(text, std::string(GetParam()) == "en" ? "Up to 3 chats answer at once — queued" : "同时最多答 3 个，排队中");
+  EXPECT_EQ(text,
+            std::string(GetParam()) == "en" ? "Up to 3 chats answer at once — queued" : "同时最多答 3 个，排队中");
 }
 
 } // namespace

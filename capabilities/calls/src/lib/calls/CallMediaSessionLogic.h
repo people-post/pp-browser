@@ -28,8 +28,7 @@ struct CallMediaSessionPhaseOutcome {
  * Pure call-media phase table (V033). Logging / SetPhase / stream IO stay in
  * CallMediaSession.
  */
-CallMediaSessionPhaseOutcome DecideCallMediaSessionPhase(CallMediaSessionPhase phase,
-                                                         CallMediaSessionEvent ev,
+CallMediaSessionPhaseOutcome DecideCallMediaSessionPhase(CallMediaSessionPhase phase, CallMediaSessionEvent ev,
                                                          const CallMediaSessionApplyContext& ctx = {});
 
 /**

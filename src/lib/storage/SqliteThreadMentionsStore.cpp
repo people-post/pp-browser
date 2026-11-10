@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS thread_mentions_read (
 
 } // namespace
 
-SqliteThreadMentionsStore::SqliteThreadMentionsStore(std::string profile_db_path) : profile_db_path_(std::move(profile_db_path)) {}
+SqliteThreadMentionsStore::SqliteThreadMentionsStore(std::string profile_db_path)
+    : profile_db_path_(std::move(profile_db_path)) {}
 
 Roe<sqlite3*> SqliteThreadMentionsStore::OpenDb() const {
   sqlite3* db = nullptr;
@@ -53,7 +54,7 @@ Roe<void> SqliteThreadMentionsStore::EnsureSchema(sqlite3* profile_db) const {
 }
 
 Roe<void> SqliteThreadMentionsStore::Exec(const char* sql, const std::string& a, const std::string& b,
-                                    const int64_t n) const {
+                                          const int64_t n) const {
   auto db = OpenDb();
   if (!db) {
     return db.error();
@@ -80,13 +81,13 @@ Roe<void> SqliteThreadMentionsStore::Exec(const char* sql, const std::string& a,
 }
 
 Roe<void> SqliteThreadMentionsStore::Add(const std::string& thread_id, const std::string& message_id,
-                                   const int64_t created_at) const {
+                                         const int64_t created_at) const {
   return Exec("INSERT OR IGNORE INTO thread_mentions (thread_id, message_id, created_at) VALUES (?, ?, ?);", thread_id,
               message_id, created_at);
 }
 
 Roe<void> SqliteThreadMentionsStore::ExecThreadScript(const char* const* statements, const size_t count,
-                                                     const std::string& thread_id) const {
+                                                      const std::string& thread_id) const {
   auto db = OpenDb();
   if (!db) {
     return db.error();
@@ -131,7 +132,8 @@ Roe<void> SqliteThreadMentionsStore::DropThread(const std::string& thread_id) co
 }
 
 Roe<void> SqliteThreadMentionsStore::DropMessage(const std::string& thread_id, const std::string& message_id) const {
-  if (auto read = Exec("DELETE FROM thread_mentions_read WHERE thread_id = ? AND message_id = ?;", thread_id, message_id);
+  if (auto read =
+          Exec("DELETE FROM thread_mentions_read WHERE thread_id = ? AND message_id = ?;", thread_id, message_id);
       !read) {
     return read;
   }
@@ -211,10 +213,11 @@ Roe<std::optional<IThreadMentionsStore::Mention>> SqliteThreadMentionsStore::Lat
     return db.error();
   }
   sqlite3_stmt* stmt = nullptr;
-  const char* sql = "SELECT thread_id, message_id, created_at FROM ("
-                    "SELECT thread_id, message_id, created_at FROM thread_mentions UNION ALL "
-                    "SELECT thread_id, message_id, created_at FROM thread_mentions_read) "
-                    "ORDER BY created_at DESC, message_id DESC LIMIT 1;";
+  const char* sql =
+      "SELECT thread_id, message_id, created_at FROM ("
+      "SELECT thread_id, message_id, created_at FROM thread_mentions UNION ALL "
+      "SELECT thread_id, message_id, created_at FROM thread_mentions_read) "
+      "ORDER BY created_at DESC, message_id DESC LIMIT 1;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
     return Error("Failed to read thread mentions");

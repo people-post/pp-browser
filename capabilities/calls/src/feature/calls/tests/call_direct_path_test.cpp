@@ -366,8 +366,7 @@ public:
   CallMediaRoe Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                        int timeout_ms) override {
     CallMediaRoe out;
-    ConnectAsync(
-        params, std::move(callbacks), [&](CallMediaRoe r) { out = std::move(r); }, timeout_ms);
+    ConnectAsync(params, std::move(callbacks), [&](CallMediaRoe r) { out = std::move(r); }, timeout_ms);
     return out;
   }
   Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override { return {}; }

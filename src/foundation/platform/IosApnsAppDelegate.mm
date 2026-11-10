@@ -102,21 +102,20 @@ void AddAppDelegateMethods(Class cls) {
                     NSLog(@"[apns] register failed: %@", error.localizedDescription);
                   }),
                   "v@:@@");
-  class_addMethod(
-      cls, @selector(application:didReceiveRemoteNotification:fetchCompletionHandler:),
-      imp_implementationWithBlock(^(id /*self*/, UIApplication* /*app*/, NSDictionary* userInfo,
-                                    void (^completionHandler)(UIBackgroundFetchResult)) {
-        if (IsCallWake(userInfo)) {
-          pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
-        } else {
-          // inbox_wake or unknown opaque wake: force inbox sync.
-          pbr::BackgroundSyncScheduler::Instance().RequestWakeSync();
-        }
-        if (completionHandler) {
-          completionHandler(UIBackgroundFetchResultNewData);
-        }
-      }),
-      "v@:@@@?");
+  class_addMethod(cls, @selector(application:didReceiveRemoteNotification:fetchCompletionHandler:),
+                  imp_implementationWithBlock(^(id /*self*/, UIApplication* /*app*/, NSDictionary* userInfo,
+                                                void (^completionHandler)(UIBackgroundFetchResult)) {
+                    if (IsCallWake(userInfo)) {
+                      pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
+                    } else {
+                      // inbox_wake or unknown opaque wake: force inbox sync.
+                      pbr::BackgroundSyncScheduler::Instance().RequestWakeSync();
+                    }
+                    if (completionHandler) {
+                      completionHandler(UIBackgroundFetchResultNewData);
+                    }
+                  }),
+                  "v@:@@@?");
 }
 
 PpNotificationCenterDelegate* g_center_delegate = nil;
@@ -141,13 +140,11 @@ PpNotificationCenterDelegate* g_center_delegate = nil;
               usingBlock:^(NSNotification* /*note*/) {
                 UIApplication* application = [UIApplication sharedApplication];
                 [[UNUserNotificationCenter currentNotificationCenter]
-                    requestAuthorizationWithOptions:(UNAuthorizationOptionAlert |
-                                                     UNAuthorizationOptionSound |
+                    requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound |
                                                      UNAuthorizationOptionBadge)
                                   completionHandler:^(BOOL /*granted*/, NSError* /*error*/) {
                                     dispatch_async(dispatch_get_main_queue(), ^{
-                                      [[UIApplication sharedApplication]
-                                          registerForRemoteNotifications];
+                                      [[UIApplication sharedApplication] registerForRemoteNotifications];
                                     });
                                   }];
                 // Silent wakes do not require the alert grant.

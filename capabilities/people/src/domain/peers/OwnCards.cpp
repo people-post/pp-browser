@@ -22,7 +22,8 @@ Roe<KeyCard> OwnCards::Keys() {
       keys_->kem_public_key_b64 == identity->kem_public_key_b64) {
     return *keys_;
   }
-  const auto binding_bytes = KemBindingSignBytes(identity->account_signing_public_key_b64, identity->kem_public_key_b64);
+  const auto binding_bytes =
+      KemBindingSignBytes(identity->account_signing_public_key_b64, identity->kem_public_key_b64);
   if (binding_bytes.empty()) {
     return Error("account keys do not decode");
   }
@@ -97,7 +98,7 @@ Roe<AccountCard> OwnCards::IssueLocked(const std::optional<AccountCard>& base, s
     return Error("This account already has " + std::to_string(kMaxAccountCardDevices) + " devices");
   }
   if (base && SameKeys(base->keys, *keys) && base->nickname == nickname && base->devices == devices) {
-    return *base;  // it says it all: the card stands
+    return *base; // it says it all: the card stands
   }
   // Newer than any card of the account this device knows (or knew before a restore: the floor), whatever its
   // clock says.
@@ -140,13 +141,13 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
     }
     std::vector<AccountCardDevice> devices;
     if (identity->card_intent == kCardIntentFresh || !*newest) {
-      devices = {*self};  // a new account, or restored: a fresh list, this device its master
+      devices = {*self}; // a new account, or restored: a fresh list, this device its master
     } else if (Lists((*newest)->devices, self->peer_id)) {
       for (const AccountCardDevice& device : (*newest)->devices) {
-        devices.push_back(device.peer_id == self->peer_id ? *self : device);  // the list as it is, this entry now
+        devices.push_back(device.peer_id == self->peer_id ? *self : device); // the list as it is, this entry now
       }
     } else if (identity->card_intent == kCardIntentJoin) {
-      devices = (*newest)->devices;  // linked: at the end of the master's list
+      devices = (*newest)->devices; // linked: at the end of the master's list
       devices.push_back(*self);
     } else {
       return Error(kSignedOutMessage);
@@ -239,9 +240,8 @@ Roe<AccountCard> OwnCards::Learn(const AccountCard& card, const int64_t now_ms) 
   if (on_joined_ && ours && !result->devices.empty()) {
     auto self = Self();
     const bool master = self && result->devices.front().peer_id == self->peer_id;
-    const bool grew = std::any_of(result->devices.begin(), result->devices.end(), [&](const AccountCardDevice& d) {
-      return !Lists(ours->devices, d.peer_id);
-    });
+    const bool grew = std::any_of(result->devices.begin(), result->devices.end(),
+                                  [&](const AccountCardDevice& d) { return !Lists(ours->devices, d.peer_id); });
     if (master && grew) {
       on_joined_(*result);
     }
@@ -303,7 +303,7 @@ Roe<AccountCard> OwnCards::ChangeList(const std::string& peer_id, const bool mak
       return Error("That device is not another device of this account");
     }
     if (make_master) {
-      std::rotate(devices.begin(), target, target + 1);  // to the front; the rest keep their order
+      std::rotate(devices.begin(), target, target + 1); // to the front; the rest keep their order
     } else {
       devices.erase(target);
     }

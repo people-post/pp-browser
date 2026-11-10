@@ -69,10 +69,9 @@ protected:
     detail.call_id = kCall;
     detail.media_epoch = epoch;
     detail.media_key_id = "mk:" + std::to_string(epoch);
-    detail.wrapped_key_b64 =
-        ICallMediaKeyStore::WrapKeyB64(session_key_, Bytes(static_cast<uint8_t>(0x40 + epoch)), kCall, epoch,
-                                     detail.media_key_id)
-            .value();
+    detail.wrapped_key_b64 = ICallMediaKeyStore::WrapKeyB64(session_key_, Bytes(static_cast<uint8_t>(0x40 + epoch)),
+                                                            kCall, epoch, detail.media_key_id)
+                                 .value();
     return CallControlCodec::EncodeMediaKey(detail).value();
   }
 

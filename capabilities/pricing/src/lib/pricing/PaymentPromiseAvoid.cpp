@@ -18,8 +18,7 @@ std::string CounterpartyAccountId(const PaymentPromise& promise, const std::stri
 } // namespace
 
 Roe<void> PaymentPromiseAvoid::AvoidCounterparty(PaymentPromiseStore& promises, IContactTrustAccess& contacts,
-                                                 const std::string& promise_id,
-                                                 const std::string& local_account_id) {
+                                                 const std::string& promise_id, const std::string& local_account_id) {
   if (local_account_id.empty()) {
     return Error("local_account_id required");
   }

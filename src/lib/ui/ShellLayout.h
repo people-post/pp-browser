@@ -48,12 +48,9 @@ struct ShellLayout {
   static bool PinGatePayloadTooBigToRender(bool phrase_flow, size_t payload_len);
   /** A bottom inset at or above this is the on-screen keyboard (not the home indicator alone). */
   static constexpr int kImeLatchMinDp = 120;
-  static CompactChromeLayout ComputeCompactChromeLayout(const ShellConfig& config,
-                                                        int safe_area_top_dp,
-                                                        int safe_area_bottom_dp,
-                                                        float titlebar_height_dp = 0.f,
-                                                        CompactBottomSurface bottom_surface = CompactBottomSurface::None,
-                                                        bool bottom_chrome_open = false);
+  static CompactChromeLayout ComputeCompactChromeLayout(
+      const ShellConfig& config, int safe_area_top_dp, int safe_area_bottom_dp, float titlebar_height_dp = 0.f,
+      CompactBottomSurface bottom_surface = CompactBottomSurface::None, bool bottom_chrome_open = false);
 };
 
 } // namespace pbr

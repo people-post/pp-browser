@@ -170,7 +170,8 @@ private:
   void AfterGroupChange(const std::string& group_id);
   void AddMemberAsContact(const GroupMemberRow& row);
   void OnInviteMembers();
-  void OnInviteFinished(uint64_t batch, const std::string& group_id, const std::unordered_map<std::string, std::string>& names,
+  void OnInviteFinished(uint64_t batch, const std::string& group_id,
+                        const std::unordered_map<std::string, std::string>& names,
                         const GroupInviteBatchResult& result);
   void UpdateCta();
   void DirtyAll();

@@ -49,7 +49,7 @@ namespace call_probe {
 namespace {
 
 std::optional<mesh::DirectAudience>& DirectConnectionsOverride() {
-  static std::optional<mesh::DirectAudience> audience;  // set once from the command line, before Create
+  static std::optional<mesh::DirectAudience> audience; // set once from the command line, before Create
   return audience;
 }
 
@@ -83,9 +83,11 @@ std::optional<std::string> PeerIdFromMa(const std::string& ma) {
 
 } // namespace
 
-Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
-    std::unique_ptr<pp::amp::AmpStack> stack, std::shared_ptr<pp::adp::Clock> clock,
-    std::string advertise_ma, const std::string& hop_ma, std::vector<std::string> extra_hops) {
+Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(std::unique_ptr<pp::amp::AmpStack> stack,
+                                                                      std::shared_ptr<pp::adp::Clock> clock,
+                                                                      std::string advertise_ma,
+                                                                      const std::string& hop_ma,
+                                                                      std::vector<std::string> extra_hops) {
   if (!stack) {
     return Error("null AmpStack");
   }
@@ -304,9 +306,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     return Error("MeshHost chat deps unavailable");
   }
   // Same wiring as MeshDeliveryOrchestrator (empty io_pump under MeshPump).
-  chat_ = std::make_unique<AmpDirectChatTransport>(chat_deps->links, chat_deps->io.io_pump,
-                                                   chat_deps->io.post_worker, chat_deps->io.post_io,
-                                                   chat_deps->io.post_after);
+  chat_ = std::make_unique<AmpDirectChatTransport>(chat_deps->links, chat_deps->io.io_pump, chat_deps->io.post_worker,
+                                                   chat_deps->io.post_io, chat_deps->io.post_after);
   chat_->Start();
   chat_->SetInboundHandler([this](RelayEnvelope env, std::string /*from_peer_id*/) { OnChatInbound(std::move(env)); });
 
@@ -403,8 +404,7 @@ Roe<std::string> ProductStackHarness::FindPeerViaDht(const std::string& peer_id,
   return ranked.front();
 }
 
-Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
-                                                 const std::string& peer_id,
+Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id, const std::string& peer_id,
                                                  const std::string& multiaddr) {
   if (account_id.empty() || peer_id.empty()) {
     return Error("peer contact requires account+peer_id");
@@ -423,7 +423,7 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
     return up.error();
   }
   if (hop_policy_feed_) {
-    hop_policy_feed_->PushSoon();  // contacts are rendezvous / punch-introducer candidates
+    hop_policy_feed_->PushSoon(); // contacts are rendezvous / punch-introducer candidates
   }
   if (stack_) {
     stack_->RunOnOwner([account_id, peer_id](CallDevice& calls) { calls.NoteMeshPeerIdForRelay(account_id, peer_id); });
@@ -442,7 +442,7 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
 }
 
 void ProductStackHarness::RefreshMeshMedia() {
-  broadcast_.reset();  // borrows the relay objects the rewire replaces
+  broadcast_.reset(); // borrows the relay objects the rewire replaces
   stack_->DetachMeshMedia();
   mesh_media_relay_->ResetRelayClient();
   mesh_connectivity_->ResetDialRegistry();
@@ -458,7 +458,8 @@ Roe<void> ProductStackHarness::EnsurePeerCircuitPath(const std::string& peer_id)
   }
   // Async + PumpUntil: the completion lands on the UI mailbox.
   std::optional<mesh::CircuitReachRoe> result;
-  mesh_connectivity_->TryEnsurePeerReachableAsync(peer_id, [&](mesh::CircuitReachRoe value) { result = std::move(value); });
+  mesh_connectivity_->TryEnsurePeerReachableAsync(peer_id,
+                                                  [&](mesh::CircuitReachRoe value) { result = std::move(value); });
   if (!PumpUntil([&] { return result.has_value(); }, 30000)) {
     return Error("call-media circuit reach timed out");
   }
@@ -472,8 +473,7 @@ Roe<void> ProductStackHarness::EnsurePeerCircuitPath(const std::string& peer_id)
   return {};
 }
 
-Roe<void> ProductStackHarness::EnsureOriginThread(const std::string& thread_id,
-                                                  const std::string& peer_account) {
+Roe<void> ProductStackHarness::EnsureOriginThread(const std::string& thread_id, const std::string& peer_account) {
   Thread thread;
   thread.id = thread_id;
   thread.kind = ThreadKind::Direct;
@@ -533,13 +533,11 @@ std::string ProductStackHarness::AmpDialKeyForAccount(const std::string& account
   }
   // Prefer mesh PeerId: under dual-SNAT the nested circuit is keyed by PeerId, and chat
   // OpenChannel(account) would dial a private invite listen MA instead of reusing carrier.
-  if (const auto it = account_to_peer_id_.find(account_id); it != account_to_peer_id_.end() &&
-                                                              !it->second.empty()) {
+  if (const auto it = account_to_peer_id_.find(account_id); it != account_to_peer_id_.end() && !it->second.empty()) {
     return it->second;
   }
   if (contacts_) {
-    if (auto found = contacts_->FindByIdentity(account_id, mesh::ContactIdKind::Account);
-        found && found->has_value()) {
+    if (auto found = contacts_->FindByIdentity(account_id, mesh::ContactIdKind::Account); found && found->has_value()) {
       const std::string peer_id = PeerIdFromContact(**found);
       if (!peer_id.empty()) {
         return peer_id;
@@ -549,8 +547,7 @@ std::string ProductStackHarness::AmpDialKeyForAccount(const std::string& account
   return account_id;
 }
 
-void ProductStackHarness::LearnAccountPeerId(const std::string& account_id,
-                                             const std::string& peer_id) {
+void ProductStackHarness::LearnAccountPeerId(const std::string& account_id, const std::string& peer_id) {
   if (account_id.empty() || peer_id.empty()) {
     return;
   }
@@ -560,8 +557,7 @@ void ProductStackHarness::LearnAccountPeerId(const std::string& account_id,
   }
 }
 
-Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account,
-                                               const ThreadMessage& msg) {
+Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account, const ThreadMessage& msg) {
   // Same contract as the product's SendUserMessage: prepare, enqueue, return — delivery completes
   // later (Amp on Mesh I/O). A blocking send here parked the calls owner on the peer's ack; after
   // hangup the peer was gone, quiesce ran out and teardown freed the stack under it (hard-w5).
@@ -578,9 +574,8 @@ Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account,
   env.sender_contact_id = local_account_;
   env.sender_device = local_peer_id_;
   env.timestamp = msg.timestamp;
-  env.body.e2e.payload_b64 =
-      Base64Encode(ByteVector(reinterpret_cast<const uint8_t*>(json.data()),
-                              reinterpret_cast<const uint8_t*>(json.data()) + json.size()));
+  env.body.e2e.payload_b64 = Base64Encode(ByteVector(reinterpret_cast<const uint8_t*>(json.data()),
+                                                     reinterpret_cast<const uint8_t*>(json.data()) + json.size()));
   if (!signal_dir_.empty()) {
     auto written = WriteSignal(peer_account, env);
     control_sends_.fetch_add(1, std::memory_order_release);
@@ -611,8 +606,7 @@ void ProductStackHarness::SetSignalDir(std::filesystem::path dir) {
 std::filesystem::path ProductStackHarness::SignalInbox(const std::string& account) const {
   std::string name = account;
   std::replace_if(
-      name.begin(), name.end(), [](char c) { return !std::isalnum(static_cast<unsigned char>(c)) && c != '-'; },
-      '_');
+      name.begin(), name.end(), [](char c) { return !std::isalnum(static_cast<unsigned char>(c)) && c != '-'; }, '_');
   return signal_dir_ / ("inbox-" + name);
 }
 
@@ -702,8 +696,7 @@ void ProductStackHarness::ForceDialMiss(const std::string& peer_id) {
             << "\n";
 }
 
-Roe<void> ProductStackHarness::RegisterPeerPrivateEndpoint(const std::string& peer_id,
-                                                           const std::string& multiaddr) {
+Roe<void> ProductStackHarness::RegisterPeerPrivateEndpoint(const std::string& peer_id, const std::string& multiaddr) {
   if (!host_ || !host_->Amp()) {
     return Error("mesh amp down");
   }
@@ -743,27 +736,23 @@ void ProductStackHarness::OnChatInbound(RelayEnvelope env) {
     return;
   }
   // Learn inviter PeerId before Accept so AmpDialKey uses carrier-keyed PeerId (HL004).
-  if (auto ctype = CallControlCodec::ControlTypeFromMessage(msg);
-      ctype && *ctype == CallControlType::CallInvite) {
+  if (auto ctype = CallControlCodec::ControlTypeFromMessage(msg); ctype && *ctype == CallControlType::CallInvite) {
     if (auto payload = TryParseObject(msg.payload_json)) {
       const std::string detail = payload->getString("detail").value_or("");
       if (auto invite = CallControlCodec::DecodeInvite(detail); invite) {
-        const std::string account =
-            invite->inviter_identity.empty()
-                ? (env.sender_contact_id.empty() ? env.sender_relay_id : env.sender_contact_id)
-                : invite->inviter_identity;
+        const std::string account = invite->inviter_identity.empty()
+                                        ? (env.sender_contact_id.empty() ? env.sender_relay_id : env.sender_contact_id)
+                                        : invite->inviter_identity;
         if (!invite->libp2p_peer_id.empty()) {
           LearnAccountPeerId(account, invite->libp2p_peer_id);
-        } else if (auto pid = PeerIdFromMa(
-                       invite->listen_multiaddrs.empty() ? "" : invite->listen_multiaddrs.front());
+        } else if (auto pid = PeerIdFromMa(invite->listen_multiaddrs.empty() ? "" : invite->listen_multiaddrs.front());
                    pid) {
           LearnAccountPeerId(account, *pid);
         }
       }
     }
   }
-  const std::string sender =
-      env.sender_contact_id.empty() ? env.sender_relay_id : env.sender_contact_id;
+  const std::string sender = env.sender_contact_id.empty() ? env.sender_relay_id : env.sender_contact_id;
   const auto family = controls_.Find(msg);
   if (!family || !family->apply) {
     return;
@@ -784,8 +773,12 @@ public:
   /** `watch_ms` > 0: only judge stalls within this long after the first rx frame (the remote
    * leaving at the end of its hold also flattens rx). */
   MediaFlowMonitor(const char* role, int stall_ms, int watch_ms = 0)
-      : role_(role), stall_ms_(stall_ms), watch_ms_(watch_ms), start_(std::chrono::steady_clock::now()),
-        last_change_(start_), next_report_(start_) {}
+      : role_(role),
+        stall_ms_(stall_ms),
+        watch_ms_(watch_ms),
+        start_(std::chrono::steady_clock::now()),
+        last_change_(start_),
+        next_report_(start_) {}
 
   /** Returns an error message once rx has been flat for stall_ms after first audio. */
   std::optional<std::string> Tick(const uint64_t rx, const uint64_t tx) {
@@ -798,14 +791,15 @@ public:
       last_change_ = now;
     }
     if (now >= next_report_) {
-      std::cout << "flow " << role_ << " t=" << Ms(now - start_) / 1000.0 << "s rx=" << rx << " tx=" << tx
-                << "\n" << std::flush;
+      std::cout << "flow " << role_ << " t=" << Ms(now - start_) / 1000.0 << "s rx=" << rx << " tx=" << tx << "\n"
+                << std::flush;
       next_report_ = now + std::chrono::seconds(1);
     }
     const bool watching = watch_ms_ <= 0 || Ms(now - first_rx_) < watch_ms_;
     if (stall_ms_ > 0 && rx > 0 && watching && Ms(now - last_change_) >= stall_ms_) {
-      return std::string("rx stall ") + role_ + ": rx=" + std::to_string(rx) + " flat since t=" +
-             std::to_string(Ms(last_change_ - start_) / 1000.0) + "s (tx=" + std::to_string(tx) + ")";
+      return std::string("rx stall ") + role_ + ": rx=" + std::to_string(rx) +
+             " flat since t=" + std::to_string(Ms(last_change_ - start_) / 1000.0) + "s (tx=" + std::to_string(tx) +
+             ")";
     }
     return std::nullopt;
   }
@@ -833,7 +827,9 @@ private:
 class PublisherRxGate {
 public:
   PublisherRxGate(const char* role, int streams, int frames, int window_ms)
-      : role_(role), streams_(streams), frames_(static_cast<uint64_t>(std::max(frames, 1))),
+      : role_(role),
+        streams_(streams),
+        frames_(static_cast<uint64_t>(std::max(frames, 1))),
         window_(std::chrono::milliseconds(std::max(window_ms, 500))) {}
 
   bool Enabled() const { return streams_ > 0; }
@@ -857,7 +853,7 @@ public:
     }
     const Sample& oldest = samples_.front();
     if (now - oldest.at < window_ - std::chrono::milliseconds(300)) {
-      return;  // window not covered yet
+      return; // window not covered yet
     }
     std::ostringstream desc;
     int live = 0;
@@ -873,8 +869,8 @@ public:
     if (live >= streams_) {
       met_ = true;
       met_at_ = now;
-      std::cout << "ok  publisher rx gate " << role_ << " live=" << live << " (need " << streams_ << " x "
-                << frames_ << " frames/" << window_.count() << "ms) " << last_ << "\n"
+      std::cout << "ok  publisher rx gate " << role_ << " live=" << live << " (need " << streams_ << " x " << frames_
+                << " frames/" << window_.count() << "ms) " << last_ << "\n"
                 << std::flush;
     }
   }
@@ -1003,7 +999,7 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
       gate.Tick(RxStreams());
       if (gate.Met() && leave_after_gate_ms_ > 0 &&
           std::chrono::steady_clock::now() - gate.MetAt() >= std::chrono::milliseconds(leave_after_gate_ms_)) {
-        const uint64_t rx_before_leave = RxAudioFrames();  // the engine stops on Leave
+        const uint64_t rx_before_leave = RxAudioFrames(); // the engine stops on Leave
         LeaveAndFlush(call_id);
         std::cout << "ok  product-stack answerer left the live call rx_frames=" << rx_before_leave << "\n";
         return gates_ok() ? 0 : 1;
@@ -1018,7 +1014,7 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
       if (was_in_call && std::chrono::steady_clock::now() >= next_alone_check) {
         next_alone_check = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
         if (auto joined = ui_->ListJoinedParticipants(call_id); joined && joined->size() <= 1) {
-          const uint64_t rx_before_leave = RxAudioFrames();  // the engine stops on Leave
+          const uint64_t rx_before_leave = RxAudioFrames(); // the engine stops on Leave
           LeaveAndFlush(call_id);
           std::cout << "ok  product-stack answerer: the others left rx_frames=" << rx_before_leave << "\n";
           return gates_ok() ? 0 : 1;
@@ -1065,8 +1061,8 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::vector<std::string>& pe
   const bool reached = PumpUntil(
       [this]() {
         const auto phase = ui_->Phase();
-        return phase == CallPhase::InCall || phase == CallPhase::MediaConnecting ||
-               phase == CallPhase::ConnectFailed || ui_->MediaChromeLive();
+        return phase == CallPhase::InCall || phase == CallPhase::MediaConnecting || phase == CallPhase::ConnectFailed ||
+               ui_->MediaChromeLive();
       },
       timeout_ms);
   if (!reached) {
@@ -1075,8 +1071,7 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::vector<std::string>& pe
   if (ui_->Phase() == CallPhase::ConnectFailed) {
     return Error(std::string("product-stack ConnectFailed: ") + ui_->LastError());
   }
-  std::cout << "ok  product-stack media phase=" << CallPhaseName(ui_->Phase())
-            << " rx=" << RxAudioFrames() << "\n";
+  std::cout << "ok  product-stack media phase=" << CallPhaseName(ui_->Phase()) << " rx=" << RxAudioFrames() << "\n";
 
   const auto hold_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(hold_ms);
   MediaFlowMonitor flow("offerer", rx_stall_ms_);
@@ -1095,14 +1090,13 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::vector<std::string>& pe
     MaybeInviteLater(call_id, media_at, invited_later);
     if (gate.Met() && leave_after_gate_ms_ > 0 &&
         std::chrono::steady_clock::now() - gate.MetAt() >= std::chrono::milliseconds(leave_after_gate_ms_)) {
-      break;  // heard everyone; leave while the others stay (initiator leave)
+      break; // heard everyone; leave while the others stay (initiator leave)
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   if (gate.Enabled() && !gate.Met()) {
     LeaveAndFlush(call_id);
-    return Error("publisher rx gate not met (need " + std::to_string(gate_streams_) + " streams) last " +
-                 gate.Last());
+    return Error("publisher rx gate not met (need " + std::to_string(gate_streams_) + " streams) last " + gate.Last());
   }
 
   LeaveAndFlush(call_id);
@@ -1110,8 +1104,8 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::vector<std::string>& pe
   return {};
 }
 
-void ProductStackHarness::MaybeInviteLater(const std::string& call_id,
-                                           std::chrono::steady_clock::time_point media_at, bool& sent) {
+void ProductStackHarness::MaybeInviteLater(const std::string& call_id, std::chrono::steady_clock::time_point media_at,
+                                           bool& sent) {
   if (sent || invite_later_account_.empty() ||
       std::chrono::steady_clock::now() - media_at < std::chrono::milliseconds(invite_later_ms_)) {
     return;
@@ -1167,8 +1161,7 @@ void ProductStackHarness::ArmTeardownWatchdog() {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(40);
     while (!teardown_done_.load(std::memory_order_acquire)) {
       if (std::chrono::steady_clock::now() >= deadline) {
-        std::cerr << "error: probe teardown stuck at " << shutdown_step_.load(std::memory_order_acquire)
-                  << std::endl;
+        std::cerr << "error: probe teardown stuck at " << shutdown_step_.load(std::memory_order_acquire) << std::endl;
         os::DumpAllThreadStacks();
         std::error_code ec;
         if (std::filesystem::is_directory("/share", ec)) {
@@ -1248,7 +1241,7 @@ Roe<void> ProductStackHarness::EnableBroadcast(
 
 void ProductStackHarness::ShutdownImpl() {
   if (network_monitor_) {
-    network_monitor_->Stop();  // before anything it reaches goes away
+    network_monitor_->Stop(); // before anything it reaches goes away
     network_monitor_.reset();
   }
   // Broadcast borrows the mesh media plane's relay objects and this host's links: it goes first.
@@ -1279,7 +1272,7 @@ void ProductStackHarness::ShutdownImpl() {
   }
   ShutdownStep("stop-mesh");
   if (hop_policy_feed_) {
-    hop_policy_feed_->Stop();  // its inputs read the mesh
+    hop_policy_feed_->Stop(); // its inputs read the mesh
   }
   if (stack_ && host_) {
     // Same order as ConversationsHub::StopMesh (L015). Detach = destroy (product

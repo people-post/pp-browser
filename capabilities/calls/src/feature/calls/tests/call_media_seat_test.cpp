@@ -20,9 +20,7 @@ TEST(CallMediaSeatTest, AcquireReleasesPriorBind) {
   std::vector<std::string> engine_stopped;
   seat.SetTeardownHooks(
       [&](const std::string& id) { topo_stopped.push_back(id); },
-      [&](const std::string& id, uint64_t /*epoch*/, bool /*force*/) {
-        engine_stopped.push_back(id);
-      });
+      [&](const std::string& id, uint64_t /*epoch*/, bool /*force*/) { engine_stopped.push_back(id); });
 
   auto a = seat.Acquire("call:a");
   EXPECT_EQ(a.call_id, "call:a");
@@ -116,13 +114,11 @@ TEST(CallMediaSeatTest, AttachFlightSerializesHops) {
   EXPECT_EQ(seat.AttachingHopPeerId(), "hop-a");
 
   CallMediaSeat::AttachTicket same;
-  EXPECT_EQ(seat.BeginAttach("call:1", "hop-a", &same),
-            CallMediaSeat::AttachBeginResult::CoalescedSameHop);
+  EXPECT_EQ(seat.BeginAttach("call:1", "hop-a", &same), CallMediaSeat::AttachBeginResult::CoalescedSameHop);
   EXPECT_EQ(same.gen, a.gen);
 
   CallMediaSeat::AttachTicket other;
-  EXPECT_EQ(seat.BeginAttach("call:1", "hop-b", &other),
-            CallMediaSeat::AttachBeginResult::DeferredOtherHop);
+  EXPECT_EQ(seat.BeginAttach("call:1", "hop-b", &other), CallMediaSeat::AttachBeginResult::DeferredOtherHop);
 
   seat.EndAttach(a);
   EXPECT_FALSE(seat.HasAttachInFlight());

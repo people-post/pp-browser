@@ -27,7 +27,8 @@ TEST(AiImageRefTest, ImageRefRejectsBadJson) {
   EXPECT_FALSE(AiImageRefFromJson("").has_value());
   EXPECT_FALSE(AiImageRefFromJson("not json").has_value());
   EXPECT_FALSE(AiImageRefFromJson(R"({"content_hash":"abcd","mime":"image/png"})").has_value()); // short hash
-  EXPECT_FALSE(AiImageRefFromJson(R"({"content_hash":")" + std::string(64, 'g') + R"(","mime":"image/png"})").has_value());
+  EXPECT_FALSE(
+      AiImageRefFromJson(R"({"content_hash":")" + std::string(64, 'g') + R"(","mime":"image/png"})").has_value());
   EXPECT_FALSE(AiImageRefFromJson(R"({"content_hash":")" + std::string(64, 'a') + R"("})").has_value()); // no mime
   const auto no_size = AiImageRefFromJson(R"({"content_hash":")" + std::string(64, 'a') + R"(","mime":"image/jpeg"})");
   ASSERT_TRUE(no_size.has_value());

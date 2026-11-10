@@ -155,8 +155,7 @@ protected:
    * @param peer_id_only when true, omit target_multiaddr (hop must already know B — warm path).
    * @param override_multiaddr when set (and not peer_id_only), send this MA to the hop (poison probe).
    */
-  Roe<void> EstablishNestedCallMediaPath(bool peer_id_only = false,
-                                         const std::string& override_multiaddr = {}) {
+  Roe<void> EstablishNestedCallMediaPath(bool peer_id_only = false, const std::string& override_multiaddr = {}) {
     mesh::CircuitBridgeTarget target;
     target.target_peer_id = harness_->peer_id_b;
     if (!peer_id_only) {
@@ -178,8 +177,8 @@ protected:
     }
 
     Wait<void> nested_wait;
-    harness_->mgr_a().EstablishNestedOverCarrier(
-        harness_->peer_id_b, bridge_wait.result->session, true, nested_wait.LinkFn());
+    harness_->mgr_a().EstablishNestedOverCarrier(harness_->peer_id_b, bridge_wait.result->session, true,
+                                                 nested_wait.LinkFn());
     nested_wait.PumpUntilDone(*harness_);
     if (!nested_wait.result) {
       return nested_wait.result.error();
@@ -203,7 +202,7 @@ protected:
 // K003 end to end: the bridge request carries `standby_priority`; the relay refuses a standby
 // circuit once its (priority-scaled) capacity is used, while higher priorities still get in.
 TEST_F(AmpCircuitCallMediaComposeTest, RelayRefusesStandbyCircuitsLowestPriorityFirst) {
-  circuit_r_->SetStandbyLimits(/*max_standby=*/2, /*max_per_dialer=*/4);  // Low: < 1, High: < 2
+  circuit_r_->SetStandbyLimits(/*max_standby=*/2, /*max_per_dialer=*/4); // Low: < 1, High: < 2
   const auto bridge = [&](mesh::CircuitStandbyPriority priority) {
     mesh::CircuitBridgeTarget target;
     target.target_peer_id = harness_->peer_id_b;
@@ -230,7 +229,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, RelayRefusesStandbyCircuitsLowestPriority
 TEST_F(AmpCircuitCallMediaComposeTest, BridgeRequestThatCannotBeSentFailsInsteadOfDeadlocking) {
   mesh::CircuitBridgeTarget target;
   target.target_peer_id = harness_->peer_id_b;
-  target.target_multiaddr = std::string(8 * 1024 * 1024, 'x');  // over every channel's size limit
+  target.target_multiaddr = std::string(8 * 1024 * 1024, 'x'); // over every channel's size limit
   target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
   Wait<mesh::CircuitTunnelBridgeResult> wait;
   ASSERT_TRUE(circuit_a_->StartBridge("relay", target, {}, {}, wait.Fn(), 8000));
@@ -296,8 +295,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedHelloAndEncryptedAudioRoundT
   leg_done.PumpUntilDone(*harness_);
   ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
 
-  harness_->PumpUntil(
-      [&] { return answerer_connected && offerer_connected.load(std::memory_order_acquire); }, 2500);
+  harness_->PumpUntil([&] { return answerer_connected && offerer_connected.load(std::memory_order_acquire); }, 2500);
   ASSERT_TRUE(answerer_connected);
   ASSERT_TRUE(offerer_connected.load(std::memory_order_acquire));
 
@@ -371,14 +369,15 @@ protected:
       ADD_FAILURE() << nested.error().message;
       return false;
     }
-    b_call_->SetInboundHandler(AnswerInline([this](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
-      params.media_key = ByteVector(32, 0x42);
-      params.call_id = "call-renew-probe";
-      params.media_epoch = 1;
-      params.offerer = false;
-      cbs.on_connected = [this] { answerer_connected_ = true; };
-      cbs.on_audio = [this](const std::vector<uint8_t>& opus) { received_ = opus; };
-    }));
+    b_call_->SetInboundHandler(
+        AnswerInline([this](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+          params.media_key = ByteVector(32, 0x42);
+          params.call_id = "call-renew-probe";
+          params.media_epoch = 1;
+          params.offerer = false;
+          cbs.on_connected = [this] { answerer_connected_ = true; };
+          cbs.on_audio = [this](const std::vector<uint8_t>& opus) { received_ = opus; };
+        }));
     CallMediaDirectConnectParams params;
     params.peer_key = harness_->peer_id_b;
     params.call_id = "call-renew-probe";
@@ -436,7 +435,7 @@ TEST_F(RelayedCallDisturbanceTest, RenewalsOverTimeKeepAudioBothWays) {
 
   std::vector<uint8_t> back;
   for (int round = 0; round < 4; ++round) {
-    for (int i = 0; i < 40; ++i) {  // 10 s of Amp time
+    for (int i = 0; i < 40; ++i) { // 10 s of Amp time
       harness_->clock->Advance(250);
       harness_->PumpAll();
     }
@@ -525,7 +524,8 @@ TEST_F(RelayedCallDisturbanceTest, CallerUplinkLossDoesNotWedgeCallerToCallee) {
 TEST_F(RelayedCallDisturbanceTest, CallerReserveOnCalleeViaCarrierKeepsAudio) {
   ASSERT_TRUE(LiveCall());
   Reserve(harness_->peer_id_b);
-  EXPECT_TRUE(AudioReaches({0x03, 0x03}, 3)) << "caller→callee audio lost after reserve on the callee via nested carrier";
+  EXPECT_TRUE(AudioReaches({0x03, 0x03}, 3))
+      << "caller→callee audio lost after reserve on the callee via nested carrier";
 }
 
 // Dogfood 2026-09-24 (call-path-resilience k0 red test): call rides the relay carrier, a direct
@@ -607,11 +607,15 @@ TEST_F(AmpCircuitCallMediaComposeTest, CallSurvivesRelaySilenceWithDirectPath) {
   const std::vector<uint8_t> opus = {0x0d, 0x1e, 0xc7};
   auto sent = a_call_->SendAudio(leg_id, opus, ++seq, 0);
   ASSERT_TRUE(sent) << sent.error().message;
-  harness_->PumpUntil([&] { std::lock_guard lock(mu); return received == opus; }, 2500);
+  harness_->PumpUntil(
+      [&] {
+        std::lock_guard lock(mu);
+        return received == opus;
+      },
+      2500);
   std::lock_guard lock(mu);
   EXPECT_EQ(received, opus) << "audio must keep flowing on the direct path";
 }
-
 
 // k3-2 make-before-break: a call on the relay moves to a direct link while audio keeps flowing —
 // every frame arrives once, in order — then the relay path is released and the relay can go
@@ -688,7 +692,7 @@ protected:
   /** One audio frame each way, as a live call sends. */
   void SendNext() {
     const auto sent = a_call_->SendAudio(leg_, {0x11, 0x22}, ++seq_, 0);
-    if (!a_call_->PathState(leg_).reconnecting) {  // no path to send on while reconnecting
+    if (!a_call_->PathState(leg_).reconnecting) { // no path to send on while reconnecting
       ASSERT_TRUE(static_cast<bool>(sent)) << sent.error().message;
     }
     (void)b_call_->SendAudio(b_call_->PrimaryLegId(), {0x33}, seq_, 0);
@@ -777,7 +781,12 @@ TEST_F(CallPathMigrationTest, RelayedCallMovesToDirectWithoutLosingAFrame) {
     SendNext();
     harness_->PumpAll();
   }
-  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() >= seq_; }, 2000);
+  harness_->PumpUntil(
+      [&] {
+        std::lock_guard lock(mu_);
+        return b_seqs_.size() >= seq_;
+      },
+      2000);
 
   EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
   EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
@@ -813,9 +822,17 @@ TEST_F(CallPathMigrationTest, RelayedCallMovesToDirectWithoutLosingAFrame) {
   }
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
   EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
-  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  const size_t before = [&] {
+    std::lock_guard lock(mu_);
+    return b_seqs_.size();
+  }();
   SendNext();
-  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);
+  harness_->PumpUntil(
+      [&] {
+        std::lock_guard lock(mu_);
+        return b_seqs_.size() > before;
+      },
+      2000);
   std::lock_guard lock(mu_);
   EXPECT_GT(b_seqs_.size(), before) << "audio flows on the direct path";
 }
@@ -855,12 +872,20 @@ TEST_F(CallPathMigrationTest, LostDirectLinkFailsOverToTheRelayStandby) {
   EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
   EXPECT_EQ(a_path_.load(), CallMediaLinkKind::Relayed);
   EXPECT_EQ(b_path_.load(), CallMediaLinkKind::Relayed);
-  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  const size_t before = [&] {
+    std::lock_guard lock(mu_);
+    return b_seqs_.size();
+  }();
   for (int i = 0; i < 10; ++i) {
     SendNext();
     harness_->PumpAll();
   }
-  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() >= before + 10; }, 2000);
+  harness_->PumpUntil(
+      [&] {
+        std::lock_guard lock(mu_);
+        return b_seqs_.size() >= before + 10;
+      },
+      2000);
   {
     std::lock_guard lock(mu_);
     EXPECT_GE(b_seqs_.size(), before + 10) << "every frame after the switch arrives";
@@ -885,9 +910,17 @@ TEST_F(CallPathMigrationTest, SilentDirectPathFailsOverToTheRelayStandby) {
       std::chrono::seconds(5)))
       << "both ends fail over";
   b_call_->SetSilencedPathKindForTest(CallMediaLinkKind::Unknown);
-  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  const size_t before = [&] {
+    std::lock_guard lock(mu_);
+    return b_seqs_.size();
+  }();
   SendNext();
-  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);
+  harness_->PumpUntil(
+      [&] {
+        std::lock_guard lock(mu_);
+        return b_seqs_.size() > before;
+      },
+      2000);
   std::lock_guard lock(mu_);
   EXPECT_GT(b_seqs_.size(), before);
   EXPECT_FALSE(a_failed_.load());
@@ -933,7 +966,7 @@ TEST_F(CallPathMigrationTest, QuietButAliveDirectPathStays) {
   ASSERT_ON_DIRECT_WITH_RELAY_STANDBY();
   EXPECT_FALSE(PumpVirtualUntil(
       [&] {
-        SendNext();  // "muted": frames of silence still flow
+        SendNext(); // "muted": frames of silence still flow
         return a_call_->ActiveLinkKind() != CallMediaLinkKind::Direct ||
                b_call_->ActiveLinkKind() != CallMediaLinkKind::Direct;
       },
@@ -945,8 +978,8 @@ TEST_F(CallPathMigrationTest, QuietButAliveDirectPathStays) {
 TEST_F(CallPathMigrationTest, CallWithNoPathLeftReconnectsOntoANewLink) {
   LiveRelayedCallWithDirectLink(/*with_direct=*/false);
   harness_->io_r->SetDropRate(1.0);
-  for (int i = 0; i < 60 && !(a_call_->PathState(leg_).reconnecting &&
-                              b_call_->PathState(b_call_->PrimaryLegId()).reconnecting);
+  for (int i = 0;
+       i < 60 && !(a_call_->PathState(leg_).reconnecting && b_call_->PathState(b_call_->PrimaryLegId()).reconnecting);
        ++i) {
     harness_->clock->Advance(250);
     harness_->PumpAll();
@@ -987,9 +1020,17 @@ TEST_F(CallPathMigrationTest, CallWithNoPathLeftReconnectsOntoANewLink) {
       std::chrono::milliseconds(1500)); // past the release
   EXPECT_FALSE(a_call_->PathState(leg_).standby);
   EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).standby);
-  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  const size_t before = [&] {
+    std::lock_guard lock(mu_);
+    return b_seqs_.size();
+  }();
   SendNext();
-  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);
+  harness_->PumpUntil(
+      [&] {
+        std::lock_guard lock(mu_);
+        return b_seqs_.size() > before;
+      },
+      2000);
   std::lock_guard lock(mu_);
   EXPECT_GT(b_seqs_.size(), before) << "media flows again";
   EXPECT_FALSE(a_failed_.load());
@@ -1147,8 +1188,8 @@ TEST_F(CallPathMigrationTest, LostLinkWithAnotherLinkToThePeerRebindsQuietly) {
       [&] {
         SendNext();
         return a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
-               b_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
-               !a_call_->PathState(leg_).reconnecting && !b_call_->PathState(b_call_->PrimaryLegId()).reconnecting;
+               b_call_->ActiveLinkKind() == CallMediaLinkKind::Direct && !a_call_->PathState(leg_).reconnecting &&
+               !b_call_->PathState(b_call_->PrimaryLegId()).reconnecting;
       },
       std::chrono::seconds(3)))
       << "both ends on the surviving direct link";
@@ -1165,9 +1206,17 @@ TEST_F(CallPathMigrationTest, LostLinkWithAnotherLinkToThePeerRebindsQuietly) {
   EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).standby);
   EXPECT_EQ(a_path_.load(), CallMediaLinkKind::Direct);
   EXPECT_EQ(b_path_.load(), CallMediaLinkKind::Direct);
-  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  const size_t before = [&] {
+    std::lock_guard lock(mu_);
+    return b_seqs_.size();
+  }();
   SendNext();
-  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);
+  harness_->PumpUntil(
+      [&] {
+        std::lock_guard lock(mu_);
+        return b_seqs_.size() > before;
+      },
+      2000);
   {
     std::lock_guard lock(mu_);
     EXPECT_GT(b_seqs_.size(), before) << "media flows on the direct link";
@@ -1315,9 +1364,17 @@ TEST_F(CallPathMigrationTest, NewPathDyingBeforeTheReleaseFallsBackToThePathItLe
   EXPECT_FALSE(a_call_->PathState(leg_).reconnecting);
   EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).reconnecting);
   EXPECT_EQ(a_path_.load(), CallMediaLinkKind::Relayed);
-  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  const size_t before = [&] {
+    std::lock_guard lock(mu_);
+    return b_seqs_.size();
+  }();
   SendNext();
-  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);
+  harness_->PumpUntil(
+      [&] {
+        std::lock_guard lock(mu_);
+        return b_seqs_.size() > before;
+      },
+      2000);
   {
     std::lock_guard lock(mu_);
     EXPECT_GT(b_seqs_.size(), before) << "media flows on the relay again";
@@ -1338,7 +1395,7 @@ TEST_F(CallPathMigrationTest, NewPathDyingBeforeTheReleaseFallsBackToThePathItLe
 // it right away — not after the auto-migrate backoff, by which time an unused cold link is dead.
 TEST_F(CallPathMigrationTest, AfterFallingBackTheCallTakesTheSurvivingDirectLinkAtOnce) {
   LiveRelayedCallWithDirectLink();
-  a_call_->SetAutoMigrateToDirect(true);  // the transport's own move arms its 10 s backoff
+  a_call_->SetAutoMigrateToDirect(true); // the transport's own move arms its 10 s backoff
   EXPECT_TRUE(PumpVirtualUntil(
       [&] {
         SendNext();
@@ -1378,7 +1435,7 @@ TEST_F(CallPathMigrationTest, AfterFallingBackTheCallTakesTheSurvivingDirectLink
 // winning direct link at once instead of waiting out the auto-migrate backoff.
 TEST_F(CallPathMigrationTest, LostCandidateLinkDoesNotHoldBackTheNextDirectLink) {
   LiveRelayedCallWithDirectLink();
-  b_call_->SetIgnoreMigrateForTest(true);  // keep the first migration in flight
+  b_call_->SetIgnoreMigrateForTest(true); // keep the first migration in flight
   a_call_->SetAutoMigrateToDirect(true);
   EXPECT_TRUE(PumpVirtualUntil(
       [&] {
@@ -1434,9 +1491,17 @@ TEST_F(CallPathMigrationTest, LostCandidateLeavesTheCallOnItsPath) {
   EXPECT_FALSE(a_call_->PathState(leg_).candidate);
   harness_->PumpUntil([&] { return !b_call_->PathState(b_call_->PrimaryLegId()).candidate; }, 500);
   EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).candidate) << "the peer dropped its half too";
-  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  const size_t before = [&] {
+    std::lock_guard lock(mu_);
+    return b_seqs_.size();
+  }();
   SendNext();
-  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);
+  harness_->PumpUntil(
+      [&] {
+        std::lock_guard lock(mu_);
+        return b_seqs_.size() > before;
+      },
+      2000);
   EXPECT_FALSE(a_failed_.load());
   EXPECT_FALSE(b_failed_.load());
 }
@@ -1680,8 +1745,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedEncryptedVideoOver16KiB) {
   leg_done.PumpUntilDone(*harness_);
   ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
 
-  harness_->PumpUntil(
-      [&] { return answerer_connected && offerer_connected.load(std::memory_order_acquire); }, 2500);
+  harness_->PumpUntil([&] { return answerer_connected && offerer_connected.load(std::memory_order_acquire); }, 2500);
   ASSERT_TRUE(answerer_connected);
   ASSERT_TRUE(offerer_connected.load(std::memory_order_acquire));
   ASSERT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
@@ -1735,8 +1799,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyNestDoesNotPoisonRelayBookWithP
   a_assoc.PumpUntilDone(*harness_);
   ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
 
-  const std::string private_ma =
-      "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_b, private_ma)));
   ASSERT_EQ(harness_->mgr_a().PreferredMultiaddr(harness_->peer_id_b).value_or(""), private_ma);
 
@@ -1750,8 +1813,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyNestDoesNotPoisonRelayBookWithP
 
   const auto relay_ma_after = harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b);
   ASSERT_TRUE(relay_ma_after.has_value());
-  EXPECT_EQ(*relay_ma_after, harness_->ma_b)
-      << "hop book must stay dialable; private punch MA must not overwrite";
+  EXPECT_EQ(*relay_ma_after, harness_->ma_b) << "hop book must stay dialable; private punch MA must not overwrite";
 }
 
 /**
@@ -1770,8 +1832,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrefersConnectedOverStalePrivat
   a_assoc.PumpUntilDone(*harness_);
   ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
 
-  const std::string private_ma =
-      "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_r().RegisterEndpoint(harness_->peer_id_b, private_ma)));
   ASSERT_EQ(harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b).value_or(""), private_ma);
   ASSERT_GT(harness_->mgr_r().CountConnectedLinksForPeerId(harness_->peer_id_b), 0);
@@ -1794,8 +1855,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrivatePreferredFastFailsWhenNo
 
   // Do not park B. Poison hop book with a private Preferred for B.
   ASSERT_EQ(harness_->mgr_r().CountConnectedLinksForPeerId(harness_->peer_id_b), 0u);
-  const std::string private_ma =
-      "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_r().RegisterEndpoint(harness_->peer_id_b, private_ma)));
   ASSERT_EQ(harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b).value_or(""), private_ma);
 
@@ -1820,15 +1880,13 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrivatePreferredFastFailsWhenNo
       },
       2000);
   ASSERT_TRUE(bridge_wait.done.load(std::memory_order_acquire));
-  const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                              std::chrono::steady_clock::now() - t0)
-                              .count();
+  const auto elapsed_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
 
   ASSERT_FALSE(bridge_wait.result);
   EXPECT_NE(bridge_wait.result.error().message.find("not registered"), std::string::npos)
       << bridge_wait.result.error().message;
-  EXPECT_LT(elapsed_ms, 2500) << "must not WaitAck-hang dialing private Preferred (elapsed_ms="
-                              << elapsed_ms << ")";
+  EXPECT_LT(elapsed_ms, 2500) << "must not WaitAck-hang dialing private Preferred (elapsed_ms=" << elapsed_ms << ")";
 }
 
 /**
@@ -1877,8 +1935,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, PrivateTargetMultiaddrPoisonsRelayBook) {
   a_assoc.PumpUntilDone(*harness_);
   ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
 
-  const std::string private_ma =
-      "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
   ASSERT_EQ(harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b).value_or(""), harness_->ma_b);
 
   mesh::CircuitBridgeTarget target;

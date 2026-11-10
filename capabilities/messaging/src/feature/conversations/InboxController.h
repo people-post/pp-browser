@@ -154,8 +154,8 @@ public:
    *        (expanded window after scroll-up); otherwise newest page only.
    */
   std::vector<TranscriptRow> BuildTranscript(const std::string& thread_id,
-                                               std::optional<int64_t> oldest_inclusive = std::nullopt,
-                                               std::optional<int64_t> newest_inclusive = std::nullopt) const;
+                                             std::optional<int64_t> oldest_inclusive = std::nullopt,
+                                             std::optional<int64_t> newest_inclusive = std::nullopt) const;
   /** Bound to this controller; valid while it lives. */
   TranscriptFacts Facts() const;
   /** True when local transcript has rows older than the given display_order. */

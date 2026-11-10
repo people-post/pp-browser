@@ -93,7 +93,6 @@ std::vector<std::string> FilterOnlineWhitelist(const std::vector<std::string>& w
                                                size_t max_hints = kDefaultBroadcastMaxL1Hints);
 
 /** Dial target: explicit hop_peer_id, else first L1 hint. */
-std::string PrimaryBroadcastHopPeerId(const std::string& hop_peer_id,
-                                      const std::vector<std::string>& l1_hop_peer_ids);
+std::string PrimaryBroadcastHopPeerId(const std::string& hop_peer_id, const std::vector<std::string>& l1_hop_peer_ids);
 
 } // namespace pbr

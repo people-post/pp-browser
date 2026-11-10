@@ -69,7 +69,10 @@ class ScriptedSource final : public IVoiceCaptureSource {
 public:
   explicit ScriptedSource(std::vector<int16_t> pcm, std::string open_failure = {}, int open_code = 0,
                           std::atomic<bool>* closed_flag = nullptr)
-      : pcm_(std::move(pcm)), open_failure_(std::move(open_failure)), open_code_(open_code), closed_flag_(closed_flag) {}
+      : pcm_(std::move(pcm)),
+        open_failure_(std::move(open_failure)),
+        open_code_(open_code),
+        closed_flag_(closed_flag) {}
 
   Roe<void> Open(const std::function<bool()>& /*still_wanted*/) override {
     opened = true;

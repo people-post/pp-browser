@@ -50,21 +50,20 @@ public:
 class CallSystemUiBridgeTest : public ::testing::Test {
 protected:
   CallSystemUiBridgeTest()
-      : bridge_(ui_,
-                {
-                    .accept =
-                        [this](const std::string& call_id, bool voice_only) {
-                          did.push_back(voice_only ? "accept voice" : "accept");
-                          accepted_ids.push_back(call_id);
-                          if (on_accept) {
-                            on_accept(); // what the presenter does: it redraws at once
-                          }
-                        },
-                    .decline = [this]() { did.push_back("decline"); },
-                    .leave = [this]() { did.push_back("leave"); },
-                    .display_name = [](const std::string& identity) { return "name-of-" + identity; },
-                    .now_ms = [this]() { return now; },
-                }) {}
+      : bridge_(ui_, {
+                         .accept =
+                             [this](const std::string& call_id, bool voice_only) {
+                               did.push_back(voice_only ? "accept voice" : "accept");
+                               accepted_ids.push_back(call_id);
+                               if (on_accept) {
+                                 on_accept(); // what the presenter does: it redraws at once
+                               }
+                             },
+                         .decline = [this]() { did.push_back("decline"); },
+                         .leave = [this]() { did.push_back("leave"); },
+                         .display_name = [](const std::string& identity) { return "name-of-" + identity; },
+                         .now_ms = [this]() { return now; },
+                     }) {}
 
   static CallScreen Ring(const std::string& call_id, bool video = false) {
     CallScreen s;
@@ -160,7 +159,7 @@ TEST_F(CallSystemUiBridgeTest, AnsweredOnTheSystemScreenItKeepsTheCallUntilItEnd
   ui_.callbacks_.end("c1");
   EXPECT_EQ(did.back(), "leave");
   bridge_.Sync(CallScreen{}, "", false);
-  EXPECT_EQ(ui_.log.size(), 1u);  // the system screen ended it itself
+  EXPECT_EQ(ui_.log.size(), 1u); // the system screen ended it itself
 }
 
 // The bug answered calls had: Accept redraws inside the system screen's answer (CallPresenter::Accept, Changed),
@@ -221,7 +220,7 @@ TEST_F(CallSystemUiBridgeTest, DeclinedOnTheSystemScreen) {
 
 TEST_F(CallSystemUiBridgeTest, AnsweredInTheAppTheSystemScreenLetsItGo) {
   bridge_.Sync(Ring("c1"), "", false);
-  bridge_.Sync(Answering("c1"), "", true);  // he opened the app and tapped Accept
+  bridge_.Sync(Answering("c1"), "", true); // he opened the app and tapped Accept
   EXPECT_EQ(ui_.log.back(), "ended c1");
   bridge_.Sync(InCall("c1"), "c1", true);
   EXPECT_EQ(ui_.log.size(), 2u);
@@ -229,7 +228,7 @@ TEST_F(CallSystemUiBridgeTest, AnsweredInTheAppTheSystemScreenLetsItGo) {
 
 TEST_F(CallSystemUiBridgeTest, ThePushsCallAnsweredBeforeItsRingShowedAnswersTheRing) {
   ui_.pending_push = true;
-  ui_.callbacks_.answer("");  // the app was still waking (or locked)
+  ui_.callbacks_.answer(""); // the app was still waking (or locked)
   now += 10'000;
   bridge_.Sync(Ring("c1"), "", false);
   EXPECT_EQ(did, (std::vector<std::string>{"accept voice"}));
@@ -249,7 +248,7 @@ TEST_F(CallSystemUiBridgeTest, AnAnswerForACallNotOnTheSystemScreenIsNoChoice) {
 TEST_F(CallSystemUiBridgeTest, ThePushsCallDeclinedBeforeItsRingShowedDeclinesTheRing) {
   ui_.pending_push = true;
   ui_.callbacks_.end("");
-  ui_.pending_push = false;  // the system screen ended it
+  ui_.pending_push = false; // the system screen ended it
   bridge_.Sync(Ring("c1"), "", false);
   EXPECT_EQ(did, (std::vector<std::string>{"decline"}));
   EXPECT_TRUE(ui_.log.empty());
@@ -273,7 +272,7 @@ TEST_F(CallSystemUiBridgeTest, ThePushsCallGoingAwayForgetsAChoiceMadeOnIt) {
   ui_.pending_push = true;
   ui_.callbacks_.answer("");
   ui_.pending_push = false;
-  ui_.callbacks_.pending_gone();  // timed out or reset: its choice must not hit a later ring
+  ui_.callbacks_.pending_gone(); // timed out or reset: its choice must not hit a later ring
   bridge_.Sync(Ring("c1"), "", false);
   EXPECT_TRUE(did.empty());
   EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"}));
@@ -289,13 +288,13 @@ TEST_F(CallSystemUiBridgeTest, AChoiceOnThePushsCallExpires) {
 
 TEST_F(CallSystemUiBridgeTest, AnsweredWhileLockedTheWindowCountsFromTheUnlock) {
   ui_.pending_push = true;
-  ui_.callbacks_.answer("");  // answered on the system screen; the PIN gate is still up
+  ui_.callbacks_.answer(""); // answered on the system screen; the PIN gate is still up
   now += 100'000;            // longer than kPendingChoiceMs: typing the PIN
   bridge_.OnMessagingReady();
   EXPECT_EQ(ui_.log, (std::vector<std::string>{"ready"}));
   now += 30'000;
   bridge_.Sync(Ring("c1", true), "", false);
-  EXPECT_EQ(did, (std::vector<std::string>{"accept"}));  // video ring: not voice-only
+  EXPECT_EQ(did, (std::vector<std::string>{"accept"})); // video ring: not voice-only
   EXPECT_FALSE(bridge_.SystemRings("c1"));
 }
 
@@ -322,7 +321,7 @@ TEST_F(CallSystemUiBridgeTest, AnAnswerWhileLockedNeverOutlivesTheAbsoluteCap) {
   ui_.callbacks_.answer("");
   now += CallSystemUiBridge::kPendingMaxMs - 1'000;
   bridge_.OnMessagingReady();
-  now += 2'000;  // inside the window after the unlock, past the cap since the answer
+  now += 2'000; // inside the window after the unlock, past the cap since the answer
   bridge_.Sync(Ring("c1"), "", false);
   EXPECT_TRUE(did.empty());
 }

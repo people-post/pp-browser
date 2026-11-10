@@ -50,24 +50,37 @@ const char* Utf8(NSString* text) {
 /** AVAudioSessionInterruptionReasonKey; raw values: 1 and 4 are deprecated / newer than the deployment target. */
 ShareWord InterruptionReasonWord(NSUInteger reason) {
   switch (reason) {
-    case 0: return "default";
-    case 1: return "app_was_suspended";
-    case 2: return "built_in_mic_muted";
-    case 4: return "route_disconnected";  // iOS 17+: no "ended" follows
-    default: return "other";
+    case 0:
+      return "default";
+    case 1:
+      return "app_was_suspended";
+    case 2:
+      return "built_in_mic_muted";
+    case 4:
+      return "route_disconnected"; // iOS 17+: no "ended" follows
+    default:
+      return "other";
   }
 }
 
 ShareWord RouteChangeReasonWord(AVAudioSessionRouteChangeReason reason) {
   switch (reason) {
-    case AVAudioSessionRouteChangeReasonNewDeviceAvailable: return "NewDeviceAvailable";
-    case AVAudioSessionRouteChangeReasonOldDeviceUnavailable: return "OldDeviceUnavailable";
-    case AVAudioSessionRouteChangeReasonCategoryChange: return "CategoryChange";
-    case AVAudioSessionRouteChangeReasonOverride: return "Override";
-    case AVAudioSessionRouteChangeReasonWakeFromSleep: return "WakeFromSleep";
-    case AVAudioSessionRouteChangeReasonNoSuitableRouteForCategory: return "NoSuitableRouteForCategory";
-    case AVAudioSessionRouteChangeReasonRouteConfigurationChange: return "RouteConfigurationChange";
-    default: return "Unknown";
+    case AVAudioSessionRouteChangeReasonNewDeviceAvailable:
+      return "NewDeviceAvailable";
+    case AVAudioSessionRouteChangeReasonOldDeviceUnavailable:
+      return "OldDeviceUnavailable";
+    case AVAudioSessionRouteChangeReasonCategoryChange:
+      return "CategoryChange";
+    case AVAudioSessionRouteChangeReasonOverride:
+      return "Override";
+    case AVAudioSessionRouteChangeReasonWakeFromSleep:
+      return "WakeFromSleep";
+    case AVAudioSessionRouteChangeReasonNoSuitableRouteForCategory:
+      return "NoSuitableRouteForCategory";
+    case AVAudioSessionRouteChangeReasonRouteConfigurationChange:
+      return "RouteConfigurationChange";
+    default:
+      return "Unknown";
   }
 }
 
@@ -75,18 +88,30 @@ ShareWord RouteChangeReasonWord(AVAudioSessionRouteChangeReason reason) {
 ShareWord OutputPortWord() {
   AVAudioSessionRouteDescription* route = [AVAudioSession sharedInstance].currentRoute;
   NSString* port = route.outputs.count > 0 ? route.outputs.firstObject.portType : nil;
-  if (port == nil) return "none";
-  if ([port isEqualToString:AVAudioSessionPortBuiltInReceiver]) return "Receiver";
-  if ([port isEqualToString:AVAudioSessionPortBuiltInSpeaker]) return "Speaker";
-  if ([port isEqualToString:AVAudioSessionPortHeadphones]) return "Headphones";
-  if ([port isEqualToString:AVAudioSessionPortBluetoothHFP]) return "BluetoothHFP";
-  if ([port isEqualToString:AVAudioSessionPortBluetoothA2DP]) return "BluetoothA2DPOutput";
-  if ([port isEqualToString:AVAudioSessionPortBluetoothLE]) return "BluetoothLE";
-  if ([port isEqualToString:AVAudioSessionPortUSBAudio]) return "USBAudio";
-  if ([port isEqualToString:AVAudioSessionPortLineOut]) return "LineOut";
-  if ([port isEqualToString:AVAudioSessionPortHDMI]) return "HDMI";
-  if ([port isEqualToString:AVAudioSessionPortAirPlay]) return "AirPlay";
-  if ([port isEqualToString:AVAudioSessionPortCarAudio]) return "CarAudio";
+  if (port == nil)
+    return "none";
+  if ([port isEqualToString:AVAudioSessionPortBuiltInReceiver])
+    return "Receiver";
+  if ([port isEqualToString:AVAudioSessionPortBuiltInSpeaker])
+    return "Speaker";
+  if ([port isEqualToString:AVAudioSessionPortHeadphones])
+    return "Headphones";
+  if ([port isEqualToString:AVAudioSessionPortBluetoothHFP])
+    return "BluetoothHFP";
+  if ([port isEqualToString:AVAudioSessionPortBluetoothA2DP])
+    return "BluetoothA2DPOutput";
+  if ([port isEqualToString:AVAudioSessionPortBluetoothLE])
+    return "BluetoothLE";
+  if ([port isEqualToString:AVAudioSessionPortUSBAudio])
+    return "USBAudio";
+  if ([port isEqualToString:AVAudioSessionPortLineOut])
+    return "LineOut";
+  if ([port isEqualToString:AVAudioSessionPortHDMI])
+    return "HDMI";
+  if ([port isEqualToString:AVAudioSessionPortAirPlay])
+    return "AirPlay";
+  if ([port isEqualToString:AVAudioSessionPortCarAudio])
+    return "CarAudio";
   return "other";
 }
 
@@ -121,15 +146,17 @@ void InstallInterruptionObservers() {
                       const auto type = static_cast<AVAudioSessionInterruptionType>(
                           [note.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue]);
                       if (type == AVAudioSessionInterruptionTypeEnded) {
-                        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
-                                       ^{ ResumeAfterInterruption("interruption ended"); });
+                        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                          ResumeAfterInterruption("interruption ended");
+                        });
                       } else if (type == AVAudioSessionInterruptionTypeBegan && g_session_active.load()) {
                         NSNumber* reason_value = note.userInfo[AVAudioSessionInterruptionReasonKey];
-                        const ShareWord reason =
-                            reason_value ? InterruptionReasonWord(reason_value.unsignedIntegerValue) : ShareWord("none");
+                        const ShareWord reason = reason_value
+                                                     ? InterruptionReasonWord(reason_value.unsignedIntegerValue)
+                                                     : ShareWord("none");
                         SessionLog().info << "AudioSession interruption began reason=" << reason.view();
                         NotifyInterruptionBegan();
-                        if (reason_value && reason_value.unsignedIntegerValue == 4) {  // route_disconnected
+                        if (reason_value && reason_value.unsignedIntegerValue == 4) { // route_disconnected
                           ResumeSoonIfSessionFree();
                         }
                       }
@@ -139,7 +166,7 @@ void InstallInterruptionObservers() {
                          queue:nil
                     usingBlock:^(NSNotification* note) {
                       if (!g_session_active.load()) {
-                        return;  // a call's route only (B178)
+                        return; // a call's route only (B178)
                       }
                       const auto reason = static_cast<AVAudioSessionRouteChangeReason>(
                           [note.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue]);
@@ -157,16 +184,18 @@ void InstallInterruptionObservers() {
                          queue:nil
                     usingBlock:^(NSNotification*) {
                       if (IsInterrupted()) {
-                        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
-                                       ^{ ResumeIfSessionFree(); });
+                        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                          ResumeIfSessionFree();
+                        });
                       }
                     }];
     [center addObserverForName:AVAudioSessionMediaServicesWereResetNotification
                         object:nil
                          queue:nil
                     usingBlock:^(NSNotification*) {
-                      dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
-                                     ^{ ResumeAfterInterruption("media services reset"); });
+                      dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                        ResumeAfterInterruption("media services reset");
+                      });
                     }];
   });
 }

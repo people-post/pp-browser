@@ -242,7 +242,8 @@ TEST(GroupMembershipCodecTest, GroupDissolvedHasItsOwnWireNameAndIsNotRosterBook
                                                           "Group dissolved", *detail, "account:alice");
   ASSERT_TRUE(message);
   EXPECT_EQ(GroupMembershipCodec::ControlTypeFromMessage(*message), GroupMembershipControlType::GroupDissolved);
-  EXPECT_EQ(GroupMembershipControlTypeFromWire("group_dissolved_sibling"), GroupMembershipControlType::GroupDissolvedSibling);
+  EXPECT_EQ(GroupMembershipControlTypeFromWire("group_dissolved_sibling"),
+            GroupMembershipControlType::GroupDissolvedSibling);
 }
 
 // G022: an invite made during a call carries `context: call` and the call id; other invites carry neither.

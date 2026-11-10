@@ -47,7 +47,7 @@ TEST_F(AgentSessionBriefStreamTest, MissingKeyIsASettingsErrorNotARetry) {
   EXPECT_TRUE(error);
   EXPECT_FALSE(retryable);
   EXPECT_FALSE(ready);
-  EXPECT_TRUE(Requests().empty()); // the fake stream was never called
+  EXPECT_TRUE(Requests().empty());    // the fake stream was never called
   EXPECT_TRUE(LlmRequests().empty()); // nor the completions route (B99)
 }
 
@@ -92,9 +92,12 @@ TEST_F(AgentSessionBriefStreamTest, DoneStreamsDeltasThenReady) {
   // Order: loading(true), activity..., deltas, ready, loading(false).
   size_t first_delta = 0, ready_at = 0, last_activity = 0;
   for (size_t i = 0; i < events.size(); ++i) {
-    if (events[i].type == AgentEventType::AssistantDelta && first_delta == 0) first_delta = i;
-    if (events[i].type == AgentEventType::AssistantReady) ready_at = i;
-    if (events[i].type == AgentEventType::ToolActivity) last_activity = i;
+    if (events[i].type == AgentEventType::AssistantDelta && first_delta == 0)
+      first_delta = i;
+    if (events[i].type == AgentEventType::AssistantReady)
+      ready_at = i;
+    if (events[i].type == AgentEventType::ToolActivity)
+      last_activity = i;
   }
   EXPECT_LT(last_activity, first_delta);
   EXPECT_LT(first_delta, ready_at);
@@ -141,8 +144,10 @@ TEST_F(AgentSessionBriefStreamTest, ErrorAfterTokensKeepsPartial) {
 
   size_t ready_at = 0, error_at = 0;
   for (size_t i = 0; i < events.size(); ++i) {
-    if (events[i].type == AgentEventType::AssistantReady) ready_at = i;
-    if (events[i].type == AgentEventType::Error) error_at = i;
+    if (events[i].type == AgentEventType::AssistantReady)
+      ready_at = i;
+    if (events[i].type == AgentEventType::Error)
+      error_at = i;
   }
   EXPECT_LT(ready_at, error_at);
   EXPECT_LT(error_at, events.size() - 1);
@@ -292,7 +297,7 @@ TEST_F(AgentSessionBriefStreamTest, ImageTurnSendsImageWithoutCapabilitiesAndStr
   // The stored user message is text only, with the marker.
   ASSERT_GE(store.messages.size(), 2u);
   EXPECT_EQ(store.messages[0].text, std::string(kAiImageTurnMarker) + "What is this?");
-  EXPECT_EQ(store.messages[0].id, "msg-1"); // the caller's id, so the GUI can pair its thumbnail
+  EXPECT_EQ(store.messages[0].id, "msg-1");                 // the caller's id, so the GUI can pair its thumbnail
   ASSERT_TRUE(store.messages[0].ai_image_json.has_value()); // the GUI's reference to the stored image
   EXPECT_EQ(*store.messages[0].ai_image_json, R"({"content_hash":"ab"})");
   EXPECT_FALSE(store.messages[1].ai_image_json.has_value()); // the answer carries none
@@ -345,7 +350,7 @@ TEST_F(AgentSessionBriefStreamTest, AtAiInAChatSendsThatChatsPreviousRole) {
   ASSERT_EQ(requests.size(), 3u);
   EXPECT_TRUE(requests[0].last_role.empty());
   EXPECT_EQ(requests[1].last_role, "pp_news_analyst"); // same chat
-  EXPECT_TRUE(requests[2].last_role.empty()); // another chat
+  EXPECT_TRUE(requests[2].last_role.empty());          // another chat
 }
 
 TEST_F(AgentSessionBriefStreamTest, SharedReplyAtAiStreamsThroughBriefAndLeavesRelayToTheUi) {
@@ -392,7 +397,8 @@ TEST_F(AgentSessionBriefStreamTest, ImageTurnCancelKeepsPartial) {
   Start();
   MemoryThreadStore store;
   session_->SetThreadStore(&store);
-  session_->SetBriefAiStream([this](const BriefAiRequest& request, const std::function<void(const BriefAiEvent&)>& on_event,
+  session_->SetBriefAiStream([this](const BriefAiRequest& request,
+                                    const std::function<void(const BriefAiEvent&)>& on_event,
                                     const std::atomic<bool>& cancel) -> Roe<BriefAiOutcome> {
     Record(request);
     on_event(Meta());
@@ -689,7 +695,7 @@ TEST_F(AgentSessionPayloadTurnTest, ArticlesChipShowsTheFeedWithoutAnyModelCall)
                            std::string(R"({"tool":"blog_articles","brf_domain":"en","brf_language":"en","size":2})"));
   const auto events = WaitForTurn();
 
-  EXPECT_TRUE(Requests().empty()); // no stream
+  EXPECT_TRUE(Requests().empty());    // no stream
   EXPECT_TRUE(LlmRequests().empty()); // no completions call
   EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
   const auto ready = Of(events, AgentEventType::AssistantReady);
@@ -792,8 +798,8 @@ struct FakeMcpServer {
   std::atomic<int> failing_lists{0}; // tools/list fails this many times, then answers; < 0: always fails
   std::atomic<long> last_list_timeout_s{-1};
   std::string tool_name = "blog_articles"; // what tools/list offers
-  std::atomic<int> list_status{200};        // non-200: the server is up but answers tools/list with this status
-  std::atomic<bool> hold_list{false};       // tools/list waits (up to 2 s) until this is cleared
+  std::atomic<int> list_status{200};       // non-200: the server is up but answers tools/list with this status
+  std::atomic<bool> hold_list{false};      // tools/list waits (up to 2 s) until this is cleared
 };
 
 HttpPostFn FakeMcpPost(std::shared_ptr<FakeMcpServer> server) {
@@ -814,15 +820,15 @@ HttpPostFn FakeMcpPost(std::shared_ptr<FakeMcpServer> server) {
       }
       return HttpResponse{
           .status_code = 200,
-          .body = R"({"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":")" + server->tool_name +
-                  R"(","description":"articles","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}}]}})"};
+          .body =
+              R"({"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":")" + server->tool_name +
+              R"(","description":"articles","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}}]}})"};
     }
     if (body.find("\"tools/call\"") != std::string::npos) {
-      return HttpResponse{
-          .status_code = 200,
-          .body = R"({"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":)"
-                  R"("{\"articles\":[{\"id\":\"a1\",\"title\":\"First\",\"content\":\"First brief.\",)"
-                  R"(\"link_to\":\"https://apnews.com/x\",\"created_at\":1759000000}]}"}]}})"};
+      return HttpResponse{.status_code = 200,
+                          .body = R"({"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":)"
+                                  R"("{\"articles\":[{\"id\":\"a1\",\"title\":\"First\",\"content\":\"First brief.\",)"
+                                  R"(\"link_to\":\"https://apnews.com/x\",\"created_at\":1759000000}]}"}]}})"};
     }
     return HttpResponse{.status_code = 200, .body = R"({"jsonrpc":"2.0","id":0,"result":{}})"};
   };
@@ -944,7 +950,8 @@ TEST_F(AgentSessionFeedRelistTest, FeedToolNeverListedEndsWithUnavailableAfterTh
   SubmitArticles();
   const auto events = WaitForTurn();
 
-  EXPECT_GE(std::chrono::steady_clock::now() - started, std::chrono::milliseconds(300)); // it waited (last poll may be skipped)
+  EXPECT_GE(std::chrono::steady_clock::now() - started,
+            std::chrono::milliseconds(300)); // it waited (last poll may be skipped)
   EXPECT_GE(server_->list_calls.load(), 2);
   EXPECT_TRUE(Of(events, AgentEventType::AssistantReady).empty());
   const auto errors = Of(events, AgentEventType::Error);
@@ -1128,7 +1135,8 @@ protected:
   void StartWithMessagingTool() {
     session_ = std::make_unique<AgentSession>();
     session_->SetToolRegistrationHook([](ToolRegistry& registry) {
-      registry.Register(MakeTool(ToolDefinition{"add_contact", "add a contact", Object{}}, ToolMeta{.provider = "messaging"},
+      registry.Register(MakeTool(ToolDefinition{"add_contact", "add a contact", Object{}},
+                                 ToolMeta{.provider = "messaging"},
                                  [](const Object&) -> Roe<std::string> { return std::string("{}"); }));
     });
     session_->Configure(MakeConfig("brief"));
@@ -1216,19 +1224,19 @@ class AgentSessionBriefKeyRenewTest : public AgentSessionBriefStreamTest {
 protected:
   // The fake stream answers with `outcomes` in order (the last one repeats) and counts its calls.
   void ScriptOutcomes(std::vector<Roe<BriefAiOutcome>> outcomes) {
-    session_->SetBriefAiStream([this, outcomes = std::move(outcomes)](
-                                   const BriefAiRequest& request,
-                                   const std::function<void(const BriefAiEvent&)>& on_event,
-                                   const std::atomic<bool>&) -> Roe<BriefAiOutcome> {
-      Record(request);
-      const size_t call = stream_calls_.fetch_add(1);
-      const Roe<BriefAiOutcome>& outcome = outcomes[std::min(call, outcomes.size() - 1)];
-      if (outcome && *outcome == BriefAiOutcome::Done) {
-        on_event(Token("ok"));
-        on_event(Done("ok"));
-      }
-      return outcome;
-    });
+    session_->SetBriefAiStream(
+        [this, outcomes = std::move(outcomes)](const BriefAiRequest& request,
+                                               const std::function<void(const BriefAiEvent&)>& on_event,
+                                               const std::atomic<bool>&) -> Roe<BriefAiOutcome> {
+          Record(request);
+          const size_t call = stream_calls_.fetch_add(1);
+          const Roe<BriefAiOutcome>& outcome = outcomes[std::min(call, outcomes.size() - 1)];
+          if (outcome && *outcome == BriefAiOutcome::Done) {
+            on_event(Token("ok"));
+            on_event(Done("ok"));
+          }
+          return outcome;
+        });
   }
 
   // The key ports: `renew` answers `key` (or an error when empty), `stored_key` answers stored_ (under mu_); each call
@@ -1333,7 +1341,8 @@ TEST_F(AgentSessionBriefKeyRenewTest, AStopDuringTheRenewalLeavesTheNextTurnFree
   std::atomic<bool> in_renew{false};
   std::atomic<bool> first_returned{false};
   BriefKeyPorts ports;
-  ports.renew = [&](const std::string&, const std::string&, const std::atomic<bool>& cancelled) -> Roe<BriefKeyRenewal> {
+  ports.renew = [&](const std::string&, const std::string&,
+                    const std::atomic<bool>& cancelled) -> Roe<BriefKeyRenewal> {
     if (++renew_calls_ == 1) {
       in_renew = true;
       const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);

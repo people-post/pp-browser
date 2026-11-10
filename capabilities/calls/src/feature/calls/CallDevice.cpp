@@ -158,9 +158,8 @@ CallSessionWorkflow::WirePorts CallDevice::MakeWorkflowWirePorts() {
   CallSessionWorkflow::WirePorts ports;
   ports.local_relay_identity = [this]() { return control_.LocalRelayIdentity(); };
   ports.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
-                             const std::string& display, bool urgent) {
-    return control_.SendDirect(peer, type, detail, display, urgent);
-  };
+                             const std::string& display,
+                             bool urgent) { return control_.SendDirect(peer, type, detail, display, urgent); };
   ports.send_to_each = [this](const std::vector<std::string>& peers, CallControlType type, const std::string& detail,
                               const std::string& display) { control_.SendToEach(peers, type, detail, display); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,

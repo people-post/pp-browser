@@ -67,19 +67,17 @@ AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState
   if (state.backend_env.empty() || state.backend_env == "custom") {
     // When an origin replaced the loaded URLs, the saved copies are what the fields show and what a save writes.
     ServiceEndpointConfig& relay = config.backend.has_saved_urls ? config.backend.saved_relay : config.relay;
-    DirectoryConfig& directory =
-        config.backend.has_saved_urls ? config.backend.saved_directory : config.directory;
+    DirectoryConfig& directory = config.backend.has_saved_urls ? config.backend.saved_directory : config.directory;
     ServiceEndpointConfig& registration =
         config.backend.has_saved_urls ? config.backend.saved_registration : config.registration;
     relay.base_url = state.relay_base_url.empty() ? defaults.relay.base_url : state.relay_base_url;
-    directory.base_url =
-        state.directory_base_url.empty() ? defaults.directory.base_url : state.directory_base_url;
+    directory.base_url = state.directory_base_url.empty() ? defaults.directory.base_url : state.directory_base_url;
     // Settings UI edits the primary URL only; clear providers so EffectiveDirectoryProviders
     // follows base_url (N029 nd3). Advanced providers[] remain config.json / ops.
     directory.providers.clear();
     directory.transport = "http";
-    registration.base_url = state.registration_base_url.empty() ? defaults.registration.base_url
-                                                                : state.registration_base_url;
+    registration.base_url =
+        state.registration_base_url.empty() ? defaults.registration.base_url : state.registration_base_url;
   }
   config.mesh.node_enabled = (state.node_enabled != "off");
   config.mesh.capabilities.circuit_relay = (state.circuit_relay_enabled == "on");

@@ -79,8 +79,8 @@ std::unique_ptr<AmpDirectChatTransport> MakeChat(mesh::MeshHost& host) {
   if (!deps) {
     return nullptr;
   }
-  return std::make_unique<AmpDirectChatTransport>(deps->links, deps->io.io_pump, deps->io.post_worker,
-                                                  deps->io.post_io, deps->io.post_after);
+  return std::make_unique<AmpDirectChatTransport>(deps->links, deps->io.io_pump, deps->io.post_worker, deps->io.post_io,
+                                                  deps->io.post_after);
 }
 
 RelayEnvelope MakeEnvelope() {
@@ -115,15 +115,15 @@ TEST(AmpDirectChatMeshPumpTest, SyncSendFromNonDriveThreadIsAcked) {
   ASSERT_NE(a_chat, nullptr);
   ASSERT_NE(b_chat, nullptr);
   std::atomic<bool> received{false};
-  b_chat->SetInboundHandler([&received](RelayEnvelope, std::string) { received.store(true, std::memory_order_release); });
+  b_chat->SetInboundHandler(
+      [&received](RelayEnvelope, std::string) { received.store(true, std::memory_order_release); });
   a_chat->Start();
   b_chat->Start();
 
   ASSERT_TRUE(static_cast<bool>(a->host->Amp()->Links().RegisterEndpoint(b->peer_id, b->listen_ma)));
   std::atomic<bool> associated{false};
-  a->host->Amp()->Links().EnsureAssociation(b->peer_id, [&associated](auto) {
-    associated.store(true, std::memory_order_release);
-  });
+  a->host->Amp()->Links().EnsureAssociation(b->peer_id,
+                                            [&associated](auto) { associated.store(true, std::memory_order_release); });
   const auto assoc_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
   while (!a->host->Amp()->Links().IsConnected(b->peer_id) && std::chrono::steady_clock::now() < assoc_deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));

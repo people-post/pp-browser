@@ -87,7 +87,7 @@ TEST(UiDemoConfigTest, ConfigReloadKeepsTheMeshOffAndEveryAddressEmpty) {
   const std::string dir = UniqueDir("pp_ui_demo_reload_");
   BootstrapResult bootstrap{};
   bootstrap.config = Config::DefaultAppConfig(true);
-  bootstrap.config_path = dir + "/config.json";  // no file: ReloadConfig falls back to defaults
+  bootstrap.config_path = dir + "/config.json"; // no file: ReloadConfig falls back to defaults
   bootstrap.profile_data_dir = dir;
   bootstrap.profile_prefs = UserPreferences::DefaultProfile();
   SessionStore store;
@@ -99,7 +99,7 @@ TEST(UiDemoConfigTest, ConfigReloadKeepsTheMeshOffAndEveryAddressEmpty) {
 
   AppConfig edited = store.Snapshot().config;
   edited.llm.model = "edited";
-  ASSERT_TRUE(store.SaveConfig(edited));  // writes the file, so the next reload takes the load-from-file path
+  ASSERT_TRUE(store.SaveConfig(edited)); // writes the file, so the next reload takes the load-from-file path
   ASSERT_TRUE(store.ReloadConfig());
   ExpectNoBackend(store.Snapshot().config);
   EXPECT_EQ(store.Snapshot().config.llm.model, "edited");
@@ -117,7 +117,7 @@ TEST(UiDemoConfigTest, ProfilePrefsReloadKeepsOnboardingCompleted) {
   store.Initialize(std::move(bootstrap));
   store.SetUiDemo(true);
 
-  ASSERT_TRUE(store.ReloadProfilePrefs());  // fresh profile dir: the file holds the default (not completed)
+  ASSERT_TRUE(store.ReloadProfilePrefs()); // fresh profile dir: the file holds the default (not completed)
   EXPECT_TRUE(store.Snapshot().profile_prefs.onboarding_completed);
 
   ProfilePreferences reset = store.Snapshot().profile_prefs;

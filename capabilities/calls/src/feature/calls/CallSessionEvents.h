@@ -125,8 +125,8 @@ struct RelayAttached {
 
 using HopMigrateEvent =
     std::variant<hop_migrate_event::RefanOutPickedHop, hop_migrate_event::ReleaseDirectAfterAttach,
-                 hop_migrate_event::ReleaseDirectWhenHopHeard,
-                 hop_migrate_event::GuestReattachRetry, hop_migrate_event::Continue, hop_migrate_event::RelayAttached>;
+                 hop_migrate_event::ReleaseDirectWhenHopHeard, hop_migrate_event::GuestReattachRetry,
+                 hop_migrate_event::Continue, hop_migrate_event::RelayAttached>;
 
 /** V050 hop planning's own events. */
 namespace planning_event {

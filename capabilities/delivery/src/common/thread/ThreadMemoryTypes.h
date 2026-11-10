@@ -15,4 +15,4 @@ struct ConversationSummary {
   int64_t updated_at = 0;
 };
 
-}  // namespace pbr
+} // namespace pbr

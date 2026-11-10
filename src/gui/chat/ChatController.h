@@ -76,7 +76,7 @@
 namespace ui {
 class Context;
 class Element;
-}
+} // namespace ui
 
 namespace pbr {
 
@@ -234,7 +234,6 @@ private:
     std::string output;
     bool from_llm = false;
   };
-
 
   /** Events both data models ("chat" and "shell") bind: the agent's widgets, chat actions, "new message". */
   void BindSharedEvents(ui::DataModelConstructor& ctor);
@@ -402,7 +401,9 @@ private:
   void SetCallBarText(const std::string& text);
   /** The call bar's "Join": joins the group's call, or says it has ended when it is gone. */
   void OnJoinGroupCall();
-  void OpenChatLink(const std::string& entry_id, int link_index) { OpenChatLinkIn(ActiveThreadId(), entry_id, link_index); }
+  void OpenChatLink(const std::string& entry_id, int link_index) {
+    OpenChatLinkIn(ActiveThreadId(), entry_id, link_index);
+  }
   /** Link `link_index` of answer `entry_id` in `thread_id` (after a restart rebuilt from its stored text). */
   void OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, int link_index);
   /** A link someone sent in a chat: opens an https URL after the user confirms its host; the dialog offers to stop
@@ -560,7 +561,9 @@ private:
   /** Ask, then revoke the link (off the UI thread); `done(true)` once revoked. */
   void RevokeLinkAfterConfirm(const std::string& group_id, const std::string& link_id, std::function<void(bool)> done);
   // The owner's "choose a new owner" sheet (GroupLeaveSheetHost).
-  OwnerLeaveSheet GroupLeaveRead(const std::string& thread_id) override { return presenter_.OwnerLeaveSheetOf(thread_id); }
+  OwnerLeaveSheet GroupLeaveRead(const std::string& thread_id) override {
+    return presenter_.OwnerLeaveSheetOf(thread_id);
+  }
   int GroupLeavePushSheet(const PaneSpec& spec) override { return GroupInfoPushSheet(spec); }
   void GroupLeaveCloseSheet(int layer_id) override { GroupInfoCloseSheet(layer_id); }
   bool GroupLeaveSheetOpen(int layer_id) const override { return GroupInfoSheetOpen(layer_id); }
@@ -598,8 +601,6 @@ private:
                                const std::string& ok_label = {});
   void ShowPrompt(const std::string& title, const std::string& message, const std::string& default_value,
                   std::function<void(bool, std::string)> on_result) override;
-
-
 
   ui::Context* context_ = nullptr;
   ConversationsFacade* facade_ = nullptr;
@@ -641,7 +642,6 @@ private:
   ChatWidgetHost widgets_;
   std::optional<PendingReply> pending_reply_;
 
-
   /** entry id -> https links its rendered bubble refers to (open_chat_link index). */
   std::map<std::string, std::vector<std::string>> chat_links_;
   /** The agent's side of the screen (turns, streaming, held sends, AI images, its widgets). */
@@ -652,8 +652,8 @@ private:
   std::function<void(const std::string& section_id)> open_settings_section_;
   FlowCoordinatorPorts flow_coordinator_;
   /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */
-  ChatMenus menus_{*this, presenter_, chat_, working_set_, contacts_notify_, emoji_picker_notify_, shell_feedback_,
-                   call_actions_};
+  ChatMenus menus_{*this,           presenter_,   chat_, working_set_, contacts_notify_, emoji_picker_notify_,
+                   shell_feedback_, call_actions_};
   ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
   /** The phone's group info sheet over a group chat (DEV/PLAN-ui-batch8-group-pages.md 1). */
   GroupInfoSheet group_info_{*this};
@@ -689,7 +689,7 @@ private:
   /** The newest calls as last read (RefreshHomeCalls), and whether a read is running. */
   std::vector<call_queries::RecentCall> home_calls_;
   bool home_calls_reading_ = false;
-  bool home_calls_again_ = false;  // asked again while a read ran: read once more when it ends
+  bool home_calls_again_ = false; // asked again while a read ran: read once more when it ends
   /** The order being dragged in Edit Home (saved when the handle is let go); none while no handle is held. */
   std::optional<HomeWidgetLayout> home_edit_drag_;
   std::string home_edit_drag_id_;
@@ -699,16 +699,16 @@ private:
   float home_edit_grab_px_ = 0.f;
   bool home_edit_grabbed_ = false;
   HomeBriefCache home_brief_;
-  std::string home_brief_dir_;          // the profile directory the cache was read from
+  std::string home_brief_dir_; // the profile directory the cache was read from
   bool home_brief_fetching_ = false;
   int64_t home_brief_failed_ms_ = 0;    // the last fetch that failed; 0 none
   int home_edit_layer_ = -1;            // the Edit Home sheet while it is open
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
-  std::optional<int64_t> last_escape_ms_; // a second Escape within kDoubleEscapeWindowMs stops the turn
-  ThreadSearchSession search_;            // search inside the open chat; its index lives only while open
-  std::string search_thread_;             // the chat it was opened on
-  std::string search_thread_tail_;        // that chat's newest message id when last checked
+  std::optional<int64_t> last_escape_ms_;          // a second Escape within kDoubleEscapeWindowMs stops the turn
+  ThreadSearchSession search_;                     // search inside the open chat; its index lives only while open
+  std::string search_thread_;                      // the chat it was opened on
+  std::string search_thread_tail_;                 // that chat's newest message id when last checked
   std::unordered_set<std::string> search_hit_ids_; // the rows whose matching text the decorator marks
   std::string search_current_id_;
   std::string search_folded_query_;
@@ -716,9 +716,9 @@ private:
   std::optional<std::chrono::steady_clock::time_point> search_query_due_;
   enum class SearchFocus { None, Input, Composer };
   SearchFocus search_focus_ = SearchFocus::None; // moved after the next layout (data-if shows the element first)
-  SessionListWindow session_window_;      // how many rows of the chats list the sidebar draws
-  SessionListWindow ai_session_window_;   // how many AI conversations the drawer (or the desktop's AI list) draws
-  ThreadDrafts drafts_;                   // unsent text per conversation; the composer widget is shared
+  SessionListWindow session_window_;             // how many rows of the chats list the sidebar draws
+  SessionListWindow ai_session_window_;       // how many AI conversations the drawer (or the desktop's AI list) draws
+  ThreadDrafts drafts_;                       // unsent text per conversation; the composer widget is shared
   std::map<std::string, std::string> quotes_; // a quote being replied to, per conversation, while another is shown
   void StashComposerExtras(const std::string& key);
   void RestoreComposerExtras(const std::string& key);

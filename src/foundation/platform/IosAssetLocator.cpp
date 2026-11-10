@@ -7,9 +7,7 @@
 namespace pbr {
 
 std::string IosAssetLocator::Resolve(const std::string& relative) const {
-  return (std::filesystem::path(IPathProvider::Instance().BundleAssetsDir()) / relative)
-      .lexically_normal()
-      .string();
+  return (std::filesystem::path(IPathProvider::Instance().BundleAssetsDir()) / relative).lexically_normal().string();
 }
 
 } // namespace pbr

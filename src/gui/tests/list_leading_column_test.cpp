@@ -52,8 +52,9 @@ bool Has(const std::optional<std::string>& rule, const std::string& declaration)
 }
 
 TEST(ListLeadingColumnTest, PersonAvatarsAre44dp) {
-  for (const char* selector : {".shell-layer-compact .chat-row-avatar", ".shell-layer-compact .contacts-row-avatar-frame",
-                               ".shell-layer-compact .home-chat-av"}) {
+  for (const char* selector :
+       {".shell-layer-compact .chat-row-avatar", ".shell-layer-compact .contacts-row-avatar-frame",
+        ".shell-layer-compact .home-chat-av"}) {
     const auto rule = Rule(selector);
     ASSERT_TRUE(rule.has_value()) << selector;
     EXPECT_TRUE(Has(rule, "width: 44dp")) << selector;

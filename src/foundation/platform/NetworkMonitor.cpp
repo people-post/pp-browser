@@ -99,7 +99,9 @@ std::string JoinSorted(std::vector<std::string> parts) {
 NetworkMonitor::NetworkMonitor(const bool with_os_backend)
     : backend_(with_os_backend ? detail::CreateNetworkMonitorBackend() : nullptr) {}
 
-NetworkMonitor::~NetworkMonitor() { Stop(); }
+NetworkMonitor::~NetworkMonitor() {
+  Stop();
+}
 
 bool NetworkMonitor::Start(Listener listener) {
   {
@@ -130,7 +132,7 @@ void NetworkMonitor::Stop() {
   if (backend_) {
     backend_->Stop();
   }
-  std::lock_guard lock(listener_mu_);  // waits out a listener call in flight
+  std::lock_guard lock(listener_mu_); // waits out a listener call in flight
   listener_ = nullptr;
 }
 
@@ -157,7 +159,7 @@ void NetworkMonitor::OnState(const NetworkState& state) {
     if (!have_baseline_) {
       have_baseline_ = true;
       state_ = state;
-      change.current = state;  // generation 0: the baseline
+      change.current = state; // generation 0: the baseline
     } else if (state == state_) {
       return;
     } else {

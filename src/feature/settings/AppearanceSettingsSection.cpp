@@ -32,9 +32,7 @@ const char* AppearanceSettingsSection::Id() const {
 }
 
 SettingsSectionListItem AppearanceSettingsSection::ListItem() const {
-  return {.id = Id(),
-          .title = Tr("settings.appearance.title"),
-          .subtitle = Tr("settings.appearance.subtitle")};
+  return {.id = Id(), .title = Tr("settings.appearance.title"), .subtitle = Tr("settings.appearance.subtitle")};
 }
 
 SettingsFlushMode AppearanceSettingsSection::FlushMode() const {
@@ -56,8 +54,7 @@ bool AppearanceSettingsSection::IsPersisted(const SettingsUiState& state, const 
   const bool reduce = state.reduce_transparency == "on";
   const bool diagnostics = state.call_diagnostics == "on";
   const bool show_dynamic = state.home_show_dynamic == "on";
-  return state.appearance == bootstrap.profile_prefs.appearance &&
-         state.language == bootstrap.profile_prefs.language &&
+  return state.appearance == bootstrap.profile_prefs.appearance && state.language == bootstrap.profile_prefs.language &&
          reduce == bootstrap.profile_prefs.reduce_transparency &&
          diagnostics == bootstrap.profile_prefs.call_diagnostics &&
          show_dynamic == bootstrap.profile_prefs.home_show_dynamic;

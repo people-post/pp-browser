@@ -275,8 +275,8 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
   });
 }
 
-bool ProcessKeyDown(ui::Context* context, ui::Input::KeyIdentifier key, int key_modifier,
-                    float /*native_dp_ratio*/, bool priority) {
+bool ProcessKeyDown(ui::Context* context, ui::Input::KeyIdentifier key, int key_modifier, float /*native_dp_ratio*/,
+                    bool priority) {
   if (!g_input_coordinator) {
     return true;
   }
@@ -603,25 +603,25 @@ std::string Application::BiometricKind() const {
     return {};
   }
   switch (os::BiometryKind()) {
-  case os::Biometry::Face:
-    return "face";
-  case os::Biometry::Touch:
-    return "touch";
-  case os::Biometry::Fingerprint:
-    return "fingerprint";
-  case os::Biometry::None:
-    break;
+    case os::Biometry::Face:
+      return "face";
+    case os::Biometry::Touch:
+      return "touch";
+    case os::Biometry::Fingerprint:
+      return "fingerprint";
+    case os::Biometry::None:
+      break;
   }
   return {};
 }
 
 void Application::TouchGrace() {
   if (!secrets_ || !secrets_->IsInitialized() || !secrets_->IsUnlocked() || !secrets_->GraceSupported()) {
-    return;  // a locked vault's entry is the gate's to read (an expired one must not be renewed)
+    return; // a locked vault's entry is the gate's to read (an expired one must not be renewed)
   }
   const int minutes = GraceMinutes();
-  if (!GraceIsOn(minutes) || GraceIsAlways(minutes)) {  // off, or "until restart": nothing to touch
-    return;  // off, or "Always" (kUnlockGraceAlways): that entry never runs out, nothing to extend
+  if (!GraceIsOn(minutes) || GraceIsAlways(minutes)) { // off, or "until restart": nothing to touch
+    return; // off, or "Always" (kUnlockGraceAlways): that entry never runs out, nothing to extend
   }
   if (auto touched = secrets_->TouchGrace(minutes); !touched) {
     log().warning << "Grace window not extended: " << touched.error().message;
@@ -630,8 +630,9 @@ void Application::TouchGrace() {
 }
 
 void Application::StartGraceTimer() {
-  if (grace_timer_ != 0 || !secrets_ || !secrets_->GraceSupported() || !GraceIsOn(GraceMinutes()) || GraceIsAlways(GraceMinutes())) {
-    return;  // the window's length is read at each tick (TouchGrace): 0 extends nothing, "Always" needs no ticks
+  if (grace_timer_ != 0 || !secrets_ || !secrets_->GraceSupported() || !GraceIsOn(GraceMinutes()) ||
+      GraceIsAlways(GraceMinutes())) {
+    return; // the window's length is read at each tick (TouchGrace): 0 extends nothing, "Always" needs no ticks
   }
   // A kill without a background event may cost up to one interval of the window, so the interval stays at most half
   // the window chosen (5 → 2 minutes) and at most 5 minutes (15 / 60): no keychain write every minute for nothing.
@@ -730,8 +731,8 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
   {
     // Family "Inter" in four weights (each file's own weight); RCSS opts in with font-family: Inter.
     StartupPhase phase("LoadFontFace:Inter");
-    for (const char* file : {"fonts/Inter-Regular.ttf", "fonts/Inter-Medium.ttf", "fonts/Inter-SemiBold.ttf",
-                             "fonts/Inter-Bold.ttf"}) {
+    for (const char* file :
+         {"fonts/Inter-Regular.ttf", "fonts/Inter-Medium.ttf", "fonts/Inter-SemiBold.ttf", "fonts/Inter-Bold.ttf"}) {
       ui::LoadFontFace(AssetsPath(file));
     }
   }
@@ -739,7 +740,8 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
   {
     StartupPhase phase("Localization::LoadFromAssets");
     // The platform's own network tip for the key capabilities use (common/Localized.h).
-    LocalizationService::Instance().SetKeyAlias(kPlatformNetworkHintKey, std::string(PlatformUserHints::P2pNetworkHintKey()));
+    LocalizationService::Instance().SetKeyAlias(kPlatformNetworkHintKey,
+                                                std::string(PlatformUserHints::P2pNetworkHintKey()));
     if (auto loaded = LocalizationService::Instance().LoadFromAssets(IPathProvider::Instance().BundleAssetsDir());
         !loaded) {
       log().warning << "Localization catalogs failed to load: " << loaded.error().message;
@@ -755,29 +757,24 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
     return false;
   }
 
-  context->SetTextLoupeRenderCallback([context](ui::TextLoupePhase phase, const ui::TextLoupeState& state, ui::RenderManager&) {
-    TextLoupeRenderer::Render(phase, state, static_cast<RenderInterface_GL3&>(*Backend::GetRenderInterface()),
-      context->GetDensityIndependentPixelRatio());
-  });
+  context->SetTextLoupeRenderCallback(
+      [context](ui::TextLoupePhase phase, const ui::TextLoupeState& state, ui::RenderManager&) {
+        TextLoupeRenderer::Render(phase, state, static_cast<RenderInterface_GL3&>(*Backend::GetRenderInterface()),
+                                  context->GetDensityIndependentPixelRatio());
+      });
 
   Backend::SyncContext(context);
 
-  const AppearanceMode appearance =
-      Theme::ParseAppearance(bootstrap.profile_prefs.appearance);
+  const AppearanceMode appearance = Theme::ParseAppearance(bootstrap.profile_prefs.appearance);
   Theme::ApplyAppearance(context, appearance);
 
   SetAppEventHooks(AppEventHooks{
-      .on_sync_system_theme =
-          [](ui::Context* ctx) {
-            Theme::SyncSystemTheme(ctx);
-          },
-      .on_context_pointer =
-          [](ui::Context* ctx, int x, int y) {
-            return ContextMenuHost::Instance().OnContextPointer(ctx, x, y);
-          },
+      .on_sync_system_theme = [](ui::Context* ctx) { Theme::SyncSystemTheme(ctx); },
+      .on_context_pointer = [](ui::Context* ctx, int x,
+                               int y) { return ContextMenuHost::Instance().OnContextPointer(ctx, x, y); },
   });
   SdlAppEvents::Install();
-  InstallStayConnectedService();  // P011: Android's foreground service follows the setting
+  InstallStayConnectedService(); // P011: Android's foreground service follows the setting
 
   ContextMenuHost::Instance().Install(context);
   return true;
@@ -786,17 +783,14 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
 SettingsToolPorts Application::WireSettings(ui::Context* context) {
   ConversationsFacade& facade = *messaging_facade_;
   SettingsCommands settings_commands;
-  settings_commands.load_profile_identity = [&facade]() {
-    return facade.LoadProfileIdentityView();
-  };
+  settings_commands.load_profile_identity = [&facade]() { return facade.LoadProfileIdentityView(); };
   settings_commands.save_profile_nickname = [&facade](const std::string& nickname) {
     return facade.SaveProfileNickname(nickname);
   };
   settings_commands.pick_profile_icon_image = [](std::function<void(std::vector<std::string> paths)> on_picked) {
     ShowOpenImageFileDialog(Backend::GetWindow(), [on_picked = std::move(on_picked)](std::vector<std::string> paths) {
-      AppRuntime::PostUI([on_picked = std::move(on_picked), paths = std::move(paths)]() mutable {
-        on_picked(std::move(paths));
-      });
+      AppRuntime::PostUI(
+          [on_picked = std::move(on_picked), paths = std::move(paths)]() mutable { on_picked(std::move(paths)); });
     });
   };
   settings_commands.upload_profile_icon_file = [&facade](const std::string& path) -> Roe<void> {
@@ -877,8 +871,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       return;
     }
     // The fetch rides the mesh (never parks UI); its answer comes back to UI.
-    FetchCasPublicTipForSettingsAsync(messaging_->Content(), *blob,
-                                      local->relay_user_id, tip, peer_relay_user_id,
+    FetchCasPublicTipForSettingsAsync(messaging_->Content(), *blob, local->relay_user_id, tip, peer_relay_user_id,
                                       [on_done = std::move(on_done)](Roe<void> fetched) {
                                         AppRuntime::PostUI([on_done, fetched]() { on_done(fetched); });
                                       });
@@ -906,9 +899,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
     return {};
   };
-  settings_commands.run_reachability_probe = [&facade](bool try_upnp) {
-    facade.RunReachabilityProbe(try_upnp);
-  };
+  settings_commands.run_reachability_probe = [&facade](bool try_upnp) { facade.RunReachabilityProbe(try_upnp); };
   settings_commands.try_upnp_port_mapping = [&facade]() { facade.TryUpnpPortMapping(); };
   settings_commands.reset_active_profile = [this]() { return ResetActiveProfile(); };
   settings_commands.set_backend_switch_pending = [&facade](const bool pending) {
@@ -918,9 +909,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.language_display_label = [](const std::string& pref) {
     return LocalizationService::Instance().LanguageDisplayLabel(pref);
   };
-  settings_commands.available_locales = []() {
-    return LocalizationService::Instance().AvailableLocales();
-  };
+  settings_commands.available_locales = []() { return LocalizationService::Instance().AvailableLocales(); };
   settings_commands.apply_appearance = [](const std::string& appearance_pref) {
     // Settings tools run on the worker pool; RmlUi theme activation is UI-thread only.
     AppRuntime::PostUI([appearance_pref]() {
@@ -931,12 +920,8 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   };
   settings_commands.session_store = [this]() -> SessionStore& { return store_; };
   settings_commands.reload_from_disk = [this]() { return store_.ReloadFromDisk(); };
-  settings_commands.messaging_ready = [&facade]() {
-    return facade.IsInitialized() && facade.IsMessagingReady();
-  };
-  settings_commands.mesh_ready = [&facade]() {
-    return facade.IsInitialized() && facade.IsMeshReady();
-  };
+  settings_commands.messaging_ready = [&facade]() { return facade.IsInitialized() && facade.IsMessagingReady(); };
+  settings_commands.mesh_ready = [&facade]() { return facade.IsInitialized() && facade.IsMeshReady(); };
   settings_commands.last_mesh_error = [&facade]() -> std::string {
     if (!facade.IsInitialized()) {
       return {};
@@ -963,22 +948,22 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
     const mesh::ReachabilitySnapshot snap = facade.Reachability();
     switch (snap.status) {
-    case mesh::ReachabilityStatus::Checking:
-      view.status = SettingsReachabilityView::Status::Checking;
-      break;
-    case mesh::ReachabilityStatus::Reachable:
-      view.status = SettingsReachabilityView::Status::Reachable;
-      break;
-    case mesh::ReachabilityStatus::OutboundOnly:
-      view.status = SettingsReachabilityView::Status::OutboundOnly;
-      break;
-    case mesh::ReachabilityStatus::Blocked:
-      view.status = SettingsReachabilityView::Status::Blocked;
-      break;
-    case mesh::ReachabilityStatus::Unknown:
-    default:
-      view.status = SettingsReachabilityView::Status::Unknown;
-      break;
+      case mesh::ReachabilityStatus::Checking:
+        view.status = SettingsReachabilityView::Status::Checking;
+        break;
+      case mesh::ReachabilityStatus::Reachable:
+        view.status = SettingsReachabilityView::Status::Reachable;
+        break;
+      case mesh::ReachabilityStatus::OutboundOnly:
+        view.status = SettingsReachabilityView::Status::OutboundOnly;
+        break;
+      case mesh::ReachabilityStatus::Blocked:
+        view.status = SettingsReachabilityView::Status::Blocked;
+        break;
+      case mesh::ReachabilityStatus::Unknown:
+      default:
+        view.status = SettingsReachabilityView::Status::Unknown;
+        break;
     }
     view.has_global_ipv6 = snap.signals.has_global_ipv6;
     view.dial_back_ok = snap.signals.dial_back_ok;
@@ -1014,7 +999,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.grace_supported = [this]() { return secrets_->GraceSupported(); };
   settings_commands.set_grace_minutes = [this](const int minutes) {
     if (minutes == 0) {
-      ForgetGrace();  // both pieces and the foreground timer
+      ForgetGrace(); // both pieces and the foreground timer
       return;
     }
     // The new length at once (a 15-minute window becomes 5), and an entry when none existed yet ("Until restart"
@@ -1026,8 +1011,8 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       }
     }
     if (AppLifecycle::IsForeground()) {
-      StopGraceTimer();   // its interval follows the window's length
-      StartGraceTimer();  // kept running, or back after "Immediately"; not started for "Always"
+      StopGraceTimer();  // its interval follows the window's length
+      StartGraceTimer(); // kept running, or back after "Immediately"; not started for "Always"
     }
   };
   // Face / fingerprint unlock (at-rest A014): Me → Security's switch. Enabling runs Argon2 (the caller is a worker).
@@ -1133,8 +1118,8 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
     return {};
   };
-  settings_commands.ask_support = [this, open = settings_commands.open_support_chat](const std::string& question)
-      -> Roe<void> {
+  settings_commands.ask_support =
+      [this, open = settings_commands.open_support_chat](const std::string& question) -> Roe<void> {
     if (auto opened = open({}); !opened) {
       return opened;
     }
@@ -1181,7 +1166,8 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       if (!identity) {
         return Error("Messaging is not ready");
       }
-      std::string key = ResolveBriefLlmApiKey(identity->brief_llm_api_key.Reveal(), identity->brief_llm_guest_api_key.Reveal());
+      std::string key =
+          ResolveBriefLlmApiKey(identity->brief_llm_api_key.Reveal(), identity->brief_llm_guest_api_key.Reveal());
       if (!key.empty()) {
         return key;
       }
@@ -1202,8 +1188,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     const auto last = ReadLastUpload(store_.Snapshot().data_dir);
     return last ? last->upload_id : std::string();
   };
-  settings_commands.storage =
-      MakeStorageManagerPorts(facade, [this]() { return store_.Snapshot().profile_data_dir; });
+  settings_commands.storage = MakeStorageManagerPorts(facade, [this]() { return store_.Snapshot().profile_data_dir; });
   // Copy ports before BindCommands moves the command bag.
   SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
   settings_tool_ports.open_support_chat = [open = settings_commands.open_support_chat]() {
@@ -1241,9 +1226,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   shell.BindScanAction([this]() { contacts_->OnScanQr(); });
   contacts_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "contacts_chrome"));
   contacts_->BindSurfaceNotify(ContactsSurfaceNotifyPorts{
-      .push_surface = [this](const ContactsSurfaceSnapshot& snap) {
-        contacts_shell_bridge_->OnSurface(snap);
-      },
+      .push_surface = [this](const ContactsSurfaceSnapshot& snap) { contacts_shell_bridge_->OnSurface(snap); },
   });
 
   chat_->BindShellNavigation(shell_navigation);
@@ -1265,8 +1248,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   chat_->BindMessagingUi(std::move(messaging_ui));
 
   contacts_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
-  call_->BindCallPorts(
-      MakeCallFunctionalPorts(*call_ui_, messaging, store_.IsInitialized() ? &store_ : nullptr));
+  call_->BindCallPorts(MakeCallFunctionalPorts(*call_ui_, messaging, store_.IsInitialized() ? &store_ : nullptr));
   call_->BindShellCallChrome(MakeShellCallChromePorts(shell));
   call_->BindPeerLinkRefresh([this]() {
     if (chat_) {
@@ -1316,9 +1298,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   people_picker_->BindShellFeedback(shared_feedback);
   people_picker_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "people_picker_chrome"));
   people_picker_->BindSurfaceNotify(PeoplePickerSurfaceNotifyPorts{
-      .push_surface = [this](const PeoplePickerSurfaceSnapshot& snap) {
-        people_picker_shell_bridge_->OnSurface(snap);
-      },
+      .push_surface = [this](const PeoplePickerSurfaceSnapshot& snap) { people_picker_shell_bridge_->OnSurface(snap); },
   });
   if (ui_perf_) {
     ui_perf_->BindShellNavigation(shell_navigation);
@@ -1370,8 +1350,8 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
     if (Platform::IsDesktop() && store_.Snapshot().config.mesh.node_enabled) {
       const mesh::ReachabilitySnapshot snap = facade.Reachability();
       const std::string status_key = mesh::ReachabilityStatusKey(snap.status);
-      inputs.me_attention = ReachabilityNudgeActive(
-          true, status_key, store_.Snapshot().profile_prefs.reachability_nudge_acked_status);
+      inputs.me_attention =
+          ReachabilityNudgeActive(true, status_key, store_.Snapshot().profile_prefs.reachability_nudge_acked_status);
     }
     return inputs;
   });
@@ -1382,9 +1362,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
         badges_->Refresh();
       }
     };
-    badge_notify.sessions_unread = [this]() {
-      return badges_ ? badges_->State().sessions_unread : 0;
-    };
+    badge_notify.sessions_unread = [this]() { return badges_ ? badges_->State().sessions_unread : 0; };
     chat_->BindBadgeNotify(std::move(badge_notify));
   }
   chat_->BindInputCoordinator(*input_);
@@ -1398,9 +1376,14 @@ void Application::WireCalls() {
     };
     call_actions.refresh_pending_ring = [this]() { call_->RefreshPendingRing(); };
     call_actions.video_call_available = [this]() { return call_->VideoCallAvailable(); };
-    call_actions.call_joinable = [this](const std::string& thread_id) { return call_->CallJoinableInThread(thread_id); };
-    call_actions.call_join_bar_text = [this](const std::string& thread_id) { return call_->CallJoinBarText(thread_id); };
-    call_actions.recent_calls_reader = [this](const size_t limit) -> std::function<std::vector<call_queries::RecentCall>()> {
+    call_actions.call_joinable = [this](const std::string& thread_id) {
+      return call_->CallJoinableInThread(thread_id);
+    };
+    call_actions.call_join_bar_text = [this](const std::string& thread_id) {
+      return call_->CallJoinBarText(thread_id);
+    };
+    call_actions.recent_calls_reader =
+        [this](const size_t limit) -> std::function<std::vector<call_queries::RecentCall>()> {
       ConversationsHub& hub = Conversations();
       const std::optional<LocalIdentity> identity = messaging_facade_ ? messaging_facade_->GetIdentity() : std::nullopt;
       if (!hub.IsInitialized() || hub.ProfileDbPath().empty() || !identity || identity->account_id.empty()) {
@@ -1414,11 +1397,10 @@ void Application::WireCalls() {
     call_actions.invite_identities = [this](const std::vector<std::string>& identities) {
       call_->InviteIdentitiesToActiveCall(identities);
     };
-    call_actions.start_with_invitees =
-        [this](const std::string& thread_id, const bool video_allowed,
-               const std::vector<std::string>& identities) {
-          return call_->StartCallWithInvitees(thread_id, video_allowed, identities);
-        };
+    call_actions.start_with_invitees = [this](const std::string& thread_id, const bool video_allowed,
+                                              const std::vector<std::string>& identities) {
+      return call_->StartCallWithInvitees(thread_id, video_allowed, identities);
+    };
     call_actions.accept_incoming = [this]() { call_->AcceptIncoming(); };
     call_actions.accept_incoming_voice_only = [this]() { call_->AcceptIncomingVoiceOnly(); };
     call_actions.accept_incoming_with_charge = [this]() { call_->AcceptIncomingWithCharge(); };
@@ -1554,13 +1536,11 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.show_waiting_device_unlock = [this](const bool waiting) {
     pin_gate_->SetWaitingDeviceUnlock(waiting);
   };
-  unlock_ports.ui.on_default_provisioned = []() {
-    UserFeedback::Ok(Tr("pin.default_provisioned_toast"));
-  };
+  unlock_ports.ui.on_default_provisioned = []() { UserFeedback::Ok(Tr("pin.default_provisioned_toast")); };
   // Both bring another DEK: once it is in, a face / fingerprint entry left from before could not open it (A014). A
   // failed import keeps it (the old DEK stays).
   unlock_ports.import_link_device = [this, &facade](const SecretText& pin,
-                                                   const std::string& bundle_json) -> Roe<void> {
+                                                    const std::string& bundle_json) -> Roe<void> {
     auto imported = facade.ImportLinkDevice(bundle_json, pin);
     if (imported && secrets_) {
       secrets_->DisableBiometric();
@@ -1588,8 +1568,7 @@ void Application::WireUnlockPinAndFlow() {
     UserFeedback::Ok(Tr("pin.link_imported"));
   };
   // Argon2 + libp2p stack init must not block the UI thread (Android / iOS first unlock).
-  unlock_ports.run_heavy = [](std::function<Roe<void>()> work,
-                              std::function<void(Roe<void>)> on_done) {
+  unlock_ports.run_heavy = [](std::function<Roe<void>()> work, std::function<void(Roe<void>)> on_done) {
     // Cold-start surface blips can PauseBackgroundWork without Resume; unlock must still run.
     AppRuntime::ResumeBackgroundWork();
     AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Normal, std::move(work), std::move(on_done));
@@ -1602,7 +1581,7 @@ void Application::WireUnlockPinAndFlow() {
     // The timer starts with the gate's dismiss, when the app is on screen.
     auto kept = secrets_->RememberGrace(minutes);
     if (!GraceIsOn(minutes) || GraceIsAlways(minutes)) {
-      StopGraceTimer();  // 0 forgets, "Always" never runs out: nothing to extend
+      StopGraceTimer(); // 0 forgets, "Always" never runs out: nothing to extend
     }
     return kept;
   };
@@ -1611,7 +1590,7 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.biometric_enabled = [this]() { return secrets_ && secrets_->BiometricEnabled(); };
   unlock_ports.try_biometric_unlock = [this](const std::string& prompt) -> Roe<BiometricUnlock::Result> {
     if (!secrets_) {
-      return BiometricUnlock::Result{};  // Missing: nothing to prompt for
+      return BiometricUnlock::Result{}; // Missing: nothing to prompt for
     }
     return secrets_->TryBiometricUnlock(prompt);
   };
@@ -1647,7 +1626,7 @@ void Application::WireUnlockPinAndFlow() {
     StartGraceTimer();
   });
   grace_background_listener_ = AppLifecycle::AddBackgroundListener([this]() {
-    TouchGrace();  // best effort: a phone already locked keeps the entry unreadable and the touch is skipped
+    TouchGrace(); // best effort: a phone already locked keeps the entry unreadable and the touch is skipped
     StopGraceTimer();
   });
 
@@ -1763,10 +1742,9 @@ void Application::WireUnlockPinAndFlow() {
   }
   {
     FlowCoordinatorPorts flow_ports;
-    flow_ports.begin_modal =
-        [this](int layer_id, std::function<bool()> on_step_back, std::function<void()> on_cancel) {
-          flow_->BeginModal(layer_id, std::move(on_step_back), std::move(on_cancel));
-        };
+    flow_ports.begin_modal = [this](int layer_id, std::function<bool()> on_step_back, std::function<void()> on_cancel) {
+      flow_->BeginModal(layer_id, std::move(on_step_back), std::move(on_cancel));
+    };
     flow_ports.end_modal = [this]() { flow_->EndModal(); };
     flow_ports.handle_dismiss = [this]() { return flow_->HandleDismiss(); };
     flow_ports.notify_layer_closing = [this](int layer_id) { flow_->NotifyLayerClosing(layer_id); };
@@ -1781,7 +1759,8 @@ void Application::WireUnlockPinAndFlow() {
 
 void Application::WireAgentAndConfig() {
   ConversationsHub& messaging = Conversations();
-  config_apply_->Bind(messaging, store_, *shell_, *chat_, [](const std::string& relative) { return AssetsPath(relative); });
+  config_apply_->Bind(messaging, store_, *shell_, *chat_,
+                      [](const std::string& relative) { return AssetsPath(relative); });
 
   agent_sessions_.emplace();
   chat_->BindAgentPorts(MakeAgentUiPorts(*agent_sessions_));
@@ -1835,7 +1814,7 @@ void Application::WireAgentAndConfig() {
     };
     AgentInboundPorts inbound;
     inbound.submit_scoped_assist = [this, log_not_started](const std::string& thread_id, const std::string& prompt,
-                                          std::optional<std::string> user_payload, AtAiMode mode) {
+                                                           std::optional<std::string> user_payload, AtAiMode mode) {
       if (agent_sessions_) {
         log_not_started(agent_sessions_->SubmitScopedAssist(thread_id, prompt, std::move(user_payload), mode));
       }
@@ -1864,7 +1843,7 @@ void Application::WireAgentAndConfig() {
         }
       }
       log_not_started(agent_sessions_->SubmitLocalAction(thread_id, text, doc->getString("tool").value_or(""),
-                                                       std::move(args), in_peer_chat));
+                                                         std::move(args), in_peer_chat));
     };
     inbound.is_app_action_request = [this](const std::string& text) {
       return agent_sessions_ && agent_sessions_->IsAppActionRequest(text);
@@ -1892,7 +1871,8 @@ void Application::WireAgentAndConfig() {
       }
       out.reserve(contacts->size());
       for (const Contact& contact : *contacts) {
-        LocalPlanContact flat{.id = contact.id, .remark = contact.local.display_name, .nickname = contact.remote.nickname};
+        LocalPlanContact flat{
+            .id = contact.id, .remark = contact.local.display_name, .nickname = contact.remote.nickname};
         if (const auto it = direct_threads.find(contact.id); it != direct_threads.end()) {
           flat.thread_id = it->second.first;
           flat.last_contact_ms = it->second.second;
@@ -1978,7 +1958,7 @@ bool Application::MountPresenters(ui::Context* context) {
   contacts_notify.select_contact = [this](const std::string& id) { contacts_->OnSelectContact(id); };
   contacts_notify.select_contact_sheet = [this](const std::string& id) { contacts_->OnSelectContactSheet(id); };
   contacts_notify.show_member_sheet = [this](const std::string& account_id, const std::string& name,
-                                            const std::string& icon_src) {
+                                             const std::string& icon_src) {
     contacts_->OnShowMemberSheet(account_id, name, icon_src);
   };
   contacts_notify.set_group_admin = [this](GroupAdminCard card) { contacts_->SetGroupAdminCard(std::move(card)); };
@@ -2006,17 +1986,15 @@ bool Application::MountPresenters(ui::Context* context) {
 
   EmojiPickerNotifyPorts emoji_notify;
   emoji_notify.open_insert = [this]() {
-    emoji_picker_->OpenInsert([this](std::string emoji, bool restore_focus) {
-      chat_->InsertEmojiIntoDraft(emoji, restore_focus);
-    });
+    emoji_picker_->OpenInsert(
+        [this](std::string emoji, bool restore_focus) { chat_->InsertEmojiIntoDraft(emoji, restore_focus); });
   };
   emoji_notify.open_insert_into = [this](std::function<void(const std::string& emoji)> insert) {
     emoji_picker_->OpenInsert([insert = std::move(insert)](std::string emoji, bool) { insert(emoji); });
   };
   emoji_notify.open_react = [this](const std::string& message_id) {
-    emoji_picker_->OpenReact(message_id, [this, message_id](std::string emoji) {
-      chat_->ReactWithEmoji(message_id, emoji);
-    });
+    emoji_picker_->OpenReact(message_id,
+                             [this, message_id](std::string emoji) { chat_->ReactWithEmoji(message_id, emoji); });
   };
   emoji_notify.close_if_open = [this]() {
     if (emoji_picker_->IsOpen()) {
@@ -2194,7 +2172,7 @@ bool SeedUiDemoDataOnce(ConversationsHub& messaging, SessionStore& store) {
 
 void Application::SeedAndRefreshUiDemo() {
   if (!SeedUiDemoDataOnce(Conversations(), store_)) {
-    return;  // already seeded, or failed (logged as an error by the seeder wrapper)
+    return; // already seeded, or failed (logged as an error by the seeder wrapper)
   }
   // The lists may already have loaded the empty stores: tell them (and the tab badges) about the new rows.
   chat_->OnMessagingReady();
@@ -2211,7 +2189,7 @@ void Application::WireHubCallbacks() {
   ConversationsHub& messaging = Conversations();
   const auto on_ready = [this]() {
     if constexpr (kUiDemoBuild) {
-      SeedAndRefreshUiDemo();  // first and synchronous: chat_ and contacts_ read the rows right after
+      SeedAndRefreshUiDemo(); // first and synchronous: chat_ and contacts_ read the rows right after
     }
     // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
     AppRuntime::PostWorkerNormal([this]() {
@@ -2281,18 +2259,18 @@ void Application::WireHubCallbacks() {
         return;
       }
       switch (state) {
-      case ConversationsHub::LinkState::Online:
-        shell_->SetChatsLink(ChatsLink::Online);
-        break;
-      case ConversationsHub::LinkState::Connecting:
-        shell_->SetChatsLink(ChatsLink::Connecting);
-        break;
-      case ConversationsHub::LinkState::Offline:
-        shell_->SetChatsLink(ChatsLink::Offline);
-        break;
-      case ConversationsHub::LinkState::Unknown:
-        shell_->SetChatsLink(ChatsLink::Unknown);
-        break;
+        case ConversationsHub::LinkState::Online:
+          shell_->SetChatsLink(ChatsLink::Online);
+          break;
+        case ConversationsHub::LinkState::Connecting:
+          shell_->SetChatsLink(ChatsLink::Connecting);
+          break;
+        case ConversationsHub::LinkState::Offline:
+          shell_->SetChatsLink(ChatsLink::Offline);
+          break;
+        case ConversationsHub::LinkState::Unknown:
+          shell_->SetChatsLink(ChatsLink::Unknown);
+          break;
       }
     });
   });
@@ -2338,12 +2316,12 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   // Escape (not the system Back) in the composer: cancel this chat's queued AI question / stop its turn (B112).
   PlatformNavigation::SetEscapeKeyHandler([this]() {
     switch (chat_->OnComposerEscape()) {
-    case ChatController::ComposerEscape::Handled:
-      return 1;
-    case ChatController::ComposerEscape::Idle:
-      return 2;
-    case ChatController::ComposerEscape::NotInComposer:
-      break;
+      case ChatController::ComposerEscape::Handled:
+        return 1;
+      case ChatController::ComposerEscape::Idle:
+        return 2;
+      case ChatController::ComposerEscape::NotInComposer:
+        break;
     }
     return 0;
   });
@@ -2362,8 +2340,7 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
     }
   });
 
-  shell_->SetSafeAreaInsetsFromPrefs(bootstrap.machine_prefs.safe_area.top,
-                                    bootstrap.machine_prefs.safe_area.bottom);
+  shell_->SetSafeAreaInsetsFromPrefs(bootstrap.machine_prefs.safe_area.top, bootstrap.machine_prefs.safe_area.bottom);
   shell_->RefreshSafeAreaInsets(context);
   shell_->SyncChromeMaterialPrefs(bootstrap.profile_prefs.reduce_transparency,
                                   bootstrap.profile_prefs.compact_chrome_frost);
@@ -2383,7 +2360,7 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   shell_->SetAiDot(bootstrap.profile_prefs.ai_dot_shown, bootstrap.profile_prefs.ai_dot_look,
                    bootstrap.profile_prefs.ai_dot_size);
   shell_->SetAiDotPlace(bootstrap.profile_prefs.ai_dot_left, bootstrap.profile_prefs.ai_dot_y_permille,
-                         bootstrap.profile_prefs.ai_dot_tucked);
+                        bootstrap.profile_prefs.ai_dot_tucked);
   shell_->SetOnAiDotTap([this]() { chat_->OpenAskAiFromDot(); });
   shell_->SetOnAiDotMoved([this](const bool left, const int y_permille, const bool tucked) {
     ProfilePreferences prefs = store_.Snapshot().profile_prefs;
@@ -2567,20 +2544,22 @@ void Application::Run() {
       // the swap is left out). The first presented
       // frame is not counted, and at most one line a second is written, carrying how many were skipped.
       const auto frame_done = std::chrono::steady_clock::now();
-      UiFrameStats::AddFrame(
-          std::chrono::duration_cast<std::chrono::microseconds>(layout_done - tasks_done).count(),
-          std::chrono::duration_cast<std::chrono::microseconds>(draw_done - draw_started).count());
+      UiFrameStats::AddFrame(std::chrono::duration_cast<std::chrono::microseconds>(layout_done - tasks_done).count(),
+                             std::chrono::duration_cast<std::chrono::microseconds>(draw_done - draw_started).count());
       const auto frame_ms = std::chrono::duration_cast<std::chrono::milliseconds>(draw_done - frame_started).count();
       if (count_slow_frame && frame_ms >= kSlowFrameMs) {
         if (frame_done - last_slow_frame_line >= std::chrono::seconds(1)) {
           MetricsLine("ui.slow_frame")
               .Add("ms", static_cast<int64_t>(frame_ms))
-              .Add("tasks_ms", static_cast<int64_t>(
-                                   std::chrono::duration_cast<std::chrono::milliseconds>(tasks_done - frame_started).count()))
-              .Add("layout_ms", static_cast<int64_t>(
-                                    std::chrono::duration_cast<std::chrono::milliseconds>(layout_done - tasks_done).count()))
-              .Add("draw_ms", static_cast<int64_t>(
-                                  std::chrono::duration_cast<std::chrono::milliseconds>(draw_done - draw_started).count()))
+              .Add("tasks_ms",
+                   static_cast<int64_t>(
+                       std::chrono::duration_cast<std::chrono::milliseconds>(tasks_done - frame_started).count()))
+              .Add("layout_ms",
+                   static_cast<int64_t>(
+                       std::chrono::duration_cast<std::chrono::milliseconds>(layout_done - tasks_done).count()))
+              .Add("draw_ms",
+                   static_cast<int64_t>(
+                       std::chrono::duration_cast<std::chrono::milliseconds>(draw_done - draw_started).count()))
               .Add("skipped", static_cast<int64_t>(slow_frames_skipped))
               .Emit();
           last_slow_frame_line = frame_done;
@@ -2625,15 +2604,11 @@ void Application::Shutdown() {
 
   // Cheap context flags for dogfood latency diagnosis (grep [startup] shutdown_context).
   {
-    const bool call_active =
-        product_ != nullptr && product_->Calls().Stack().HasActiveLocalCall();
-    const bool connect_inflight =
-        product_ != nullptr && product_->Calls().Stack().IsConnectWorkerInflight();
-    const size_t worker_queued =
-        AppRuntime::IsRunning() ? AppRuntime::WorkerTotalQueuedCount() : 0;
+    const bool call_active = product_ != nullptr && product_->Calls().Stack().HasActiveLocalCall();
+    const bool connect_inflight = product_ != nullptr && product_->Calls().Stack().IsConnectWorkerInflight();
+    const size_t worker_queued = AppRuntime::IsRunning() ? AppRuntime::WorkerTotalQueuedCount() : 0;
     StartupLog().info << "[startup] shutdown_context call_active=" << (call_active ? 1 : 0)
-                      << " connect_inflight=" << (connect_inflight ? 1 : 0)
-                      << " worker_queued=" << worker_queued
+                      << " connect_inflight=" << (connect_inflight ? 1 : 0) << " worker_queued=" << worker_queued
                       << " shutdown_gen=" << AppRuntime::ShutdownGeneration();
   }
   settings_->BindCommands({});

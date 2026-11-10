@@ -5,8 +5,7 @@
 TEST(SchemaVersionTest, AcceptsCurrentSchemaVersion) {
   pbr::Object good;
   good.set("schema_version", static_cast<int64_t>(pbr::SchemaVersion::kCurrentSchemaVersion));
-  const auto result =
-      pbr::SchemaVersion::Validate(good, pbr::SchemaVersion::kCurrentSchemaVersion, "good.json");
+  const auto result = pbr::SchemaVersion::Validate(good, pbr::SchemaVersion::kCurrentSchemaVersion, "good.json");
   EXPECT_TRUE(static_cast<bool>(result));
 }
 

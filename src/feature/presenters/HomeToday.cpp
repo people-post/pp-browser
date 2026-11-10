@@ -168,9 +168,8 @@ std::vector<std::string> StarredWithoutChat(const std::vector<ChatSessionRow>& r
                                             const std::vector<std::string>& starred) {
   std::vector<std::string> missing;
   for (const std::string& id : starred) {
-    const bool has_chat = std::any_of(rows.begin(), rows.end(), [&id](const ChatSessionRow& row) {
-      return row.contact_id == id;
-    });
+    const bool has_chat =
+        std::any_of(rows.begin(), rows.end(), [&id](const ChatSessionRow& row) { return row.contact_id == id; });
     if (!has_chat) {
       missing.push_back(id);
     }
@@ -178,7 +177,8 @@ std::vector<std::string> StarredWithoutChat(const std::vector<ChatSessionRow>& r
   return missing;
 }
 
-std::vector<HomeFavorite> HomeFavorites(const std::vector<ChatSessionRow>& rows, const std::vector<std::string>& starred,
+std::vector<HomeFavorite> HomeFavorites(const std::vector<ChatSessionRow>& rows,
+                                        const std::vector<std::string>& starred,
                                         const std::vector<HomeFavorite>& starred_without_chat) {
   std::vector<HomeFavorite> favorites;
   for (const std::string& id : starred) {
@@ -226,9 +226,8 @@ std::vector<HomeFavorite> HomeFavorites(const std::vector<ChatSessionRow>& rows,
       recent.push_back(&row);
     }
   }
-  std::stable_sort(recent.begin(), recent.end(), [](const ChatSessionRow* a, const ChatSessionRow* b) {
-    return a->updated_at > b->updated_at;
-  });
+  std::stable_sort(recent.begin(), recent.end(),
+                   [](const ChatSessionRow* a, const ChatSessionRow* b) { return a->updated_at > b->updated_at; });
   for (const ChatSessionRow* row : recent) {
     if (favorites.size() == kHomeFavoritesFillTo) {
       break;
@@ -237,7 +236,8 @@ std::vector<HomeFavorite> HomeFavorites(const std::vector<ChatSessionRow>& rows,
     const bool skip =
         std::find(starred.begin(), starred.end(), id) != starred.end() ||
         std::any_of(favorites.begin(), favorites.end(), [&id](const HomeFavorite& f) { return f.contact_id == id; }) ||
-        std::any_of(rows.begin(), rows.end(), [&id](const ChatSessionRow& r) { return r.contact_id == id && r.blocked; });
+        std::any_of(rows.begin(), rows.end(),
+                    [&id](const ChatSessionRow& r) { return r.contact_id == id && r.blocked; });
     if (skip) {
       continue;
     }
@@ -292,10 +292,9 @@ std::vector<std::string> ShownHomeWidgets(const HomeWidgetLayout& layout, const 
 std::string HomeDateLabel(const std::tm& now) {
   const int weekday = (now.tm_wday % 7 + 7) % 7;
   const int month = now.tm_mon + 1;
-  return Tr("home.date",
-            {{"weekday", Tr("home.weekday." + std::to_string(weekday))},
-             {"month", Tr("home.month." + std::to_string(month))},
-             {"day", std::to_string(now.tm_mday)}});
+  return Tr("home.date", {{"weekday", Tr("home.weekday." + std::to_string(weekday))},
+                          {"month", Tr("home.month." + std::to_string(month))},
+                          {"day", std::to_string(now.tm_mday)}});
 }
 
 } // namespace pbr

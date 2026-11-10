@@ -31,8 +31,9 @@ bool OnlyFillers(std::string text, const std::array<std::string_view, N>& filler
     for (size_t pos = text.find(filler); pos != std::string::npos; pos = text.find(filler, pos)) {
       const size_t end = pos + filler.size();
       // An English filler must be a whole word ("the" is not removed from "other").
-      const bool whole = !ascii_words || ((pos == 0 || std::isalpha(static_cast<unsigned char>(text[pos - 1])) == 0) &&
-                                          (end == text.size() || std::isalpha(static_cast<unsigned char>(text[end])) == 0));
+      const bool whole =
+          !ascii_words || ((pos == 0 || std::isalpha(static_cast<unsigned char>(text[pos - 1])) == 0) &&
+                           (end == text.size() || std::isalpha(static_cast<unsigned char>(text[end])) == 0));
       if (whole) {
         text.replace(pos, filler.size(), " ");
         ++pos;
@@ -62,18 +63,36 @@ inline BriefFeedRequest MatchBriefFeedRequest(const std::string_view text) {
   if (text.find(kWordZh) != std::string_view::npos) {
     // Longest first. 我想看 我要看 有什么 有哪些 有没有 帮我 给我 看看 看一下 一下 今天 今日 现在 最新 最近
     // 新的 的 新 看 来 请 有 吗 呢 吧 啊 和 full-width punctuation ？ ！ 。 ，
-    constexpr std::array<std::string_view, 30> kFillers = {
-        kWordZh,
-        "\xE6\x88\x91\xE6\x83\xB3\xE7\x9C\x8B", "\xE6\x88\x91\xE8\xA6\x81\xE7\x9C\x8B", "\xE6\x9C\x89\xE4\xBB\x80\xE4\xB9\x88",
-        "\xE6\x9C\x89\xE5\x93\xAA\xE4\xBA\x9B", "\xE6\x9C\x89\xE6\xB2\xA1\xE6\x9C\x89", "\xE7\x9C\x8B\xE4\xB8\x80\xE4\xB8\x8B",
-        "\xE5\xB8\xAE\xE6\x88\x91",             "\xE7\xBB\x99\xE6\x88\x91",             "\xE7\x9C\x8B\xE7\x9C\x8B",
-        "\xE4\xB8\x80\xE4\xB8\x8B",             "\xE4\xBB\x8A\xE5\xA4\xA9",             "\xE4\xBB\x8A\xE6\x97\xA5",
-        "\xE7\x8E\xB0\xE5\x9C\xA8",             "\xE6\x9C\x80\xE6\x96\xB0",             "\xE6\x9C\x80\xE8\xBF\x91",
-        "\xE6\x96\xB0\xE7\x9A\x84",             "\xE7\x9A\x84",                         "\xE6\x96\xB0",
-        "\xE7\x9C\x8B",                         "\xE6\x9D\xA5",                         "\xE8\xAF\xB7",
-        "\xE6\x9C\x89",                         "\xE5\x90\x97",                         "\xE5\x91\xA2",
-        "\xE5\x90\xA7",                         "\xEF\xBC\x9F",                         "\xEF\xBC\x81",
-        "\xE3\x80\x82",                         "\xEF\xBC\x8C"};
+    constexpr std::array<std::string_view, 30> kFillers = {kWordZh,
+                                                           "\xE6\x88\x91\xE6\x83\xB3\xE7\x9C\x8B",
+                                                           "\xE6\x88\x91\xE8\xA6\x81\xE7\x9C\x8B",
+                                                           "\xE6\x9C\x89\xE4\xBB\x80\xE4\xB9\x88",
+                                                           "\xE6\x9C\x89\xE5\x93\xAA\xE4\xBA\x9B",
+                                                           "\xE6\x9C\x89\xE6\xB2\xA1\xE6\x9C\x89",
+                                                           "\xE7\x9C\x8B\xE4\xB8\x80\xE4\xB8\x8B",
+                                                           "\xE5\xB8\xAE\xE6\x88\x91",
+                                                           "\xE7\xBB\x99\xE6\x88\x91",
+                                                           "\xE7\x9C\x8B\xE7\x9C\x8B",
+                                                           "\xE4\xB8\x80\xE4\xB8\x8B",
+                                                           "\xE4\xBB\x8A\xE5\xA4\xA9",
+                                                           "\xE4\xBB\x8A\xE6\x97\xA5",
+                                                           "\xE7\x8E\xB0\xE5\x9C\xA8",
+                                                           "\xE6\x9C\x80\xE6\x96\xB0",
+                                                           "\xE6\x9C\x80\xE8\xBF\x91",
+                                                           "\xE6\x96\xB0\xE7\x9A\x84",
+                                                           "\xE7\x9A\x84",
+                                                           "\xE6\x96\xB0",
+                                                           "\xE7\x9C\x8B",
+                                                           "\xE6\x9D\xA5",
+                                                           "\xE8\xAF\xB7",
+                                                           "\xE6\x9C\x89",
+                                                           "\xE5\x90\x97",
+                                                           "\xE5\x91\xA2",
+                                                           "\xE5\x90\xA7",
+                                                           "\xEF\xBC\x9F",
+                                                           "\xEF\xBC\x81",
+                                                           "\xE3\x80\x82",
+                                                           "\xEF\xBC\x8C"};
     return BriefFeedRequest{brief_feed_detail::OnlyFillers(std::string(text), kFillers, false), true};
   }
 
@@ -82,10 +101,10 @@ inline BriefFeedRequest MatchBriefFeedRequest(const std::string_view text) {
   for (char& c : lower) {
     c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   }
-  constexpr std::array<std::string_view, 26> kFillers = {"briefings", "briefing", "briefs", "today's", "todays", "please", "latest",
-                                                         "newest",    "recent",   "today",  "there",   "could",  "show",   "give",
-                                                         "want",      "the",      "new",    "any",     "get",    "see",    "can",
-                                                         "you",       "are",      "me",     "to",      "i"};
+  constexpr std::array<std::string_view, 26> kFillers = {
+      "briefings", "briefing", "briefs", "today's", "todays", "please", "latest", "newest", "recent",
+      "today",     "there",    "could",  "show",    "give",   "want",   "the",    "new",    "any",
+      "get",       "see",      "can",    "you",     "are",    "me",     "to",     "i"};
   const bool has_word = lower.find("briefs") != std::string::npos || lower.find("briefing") != std::string::npos;
   return BriefFeedRequest{has_word && brief_feed_detail::OnlyFillers(lower, kFillers, true), false};
 }

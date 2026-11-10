@@ -16,17 +16,17 @@ namespace pbr {
 /** The media Status a group (hop) planner phase shows as; nullopt: no change (idle / stopping). */
 inline std::optional<CallMediaStatus> MediaStatusForHopProgress(const CallHopPlannerPhase phase) {
   switch (phase) {
-  case CallHopPlannerPhase::WaitingAttach:
-    return CallMediaStatus::HopWaiting;
-  case CallHopPlannerPhase::Attaching:
-    return CallMediaStatus::HopAttaching;
-  case CallHopPlannerPhase::Live:
-    return CallMediaStatus::HopLive;
-  case CallHopPlannerPhase::Migrating:
-    return CallMediaStatus::Migrating;
-  case CallHopPlannerPhase::Idle:
-  case CallHopPlannerPhase::Stopping:
-    return std::nullopt;
+    case CallHopPlannerPhase::WaitingAttach:
+      return CallMediaStatus::HopWaiting;
+    case CallHopPlannerPhase::Attaching:
+      return CallMediaStatus::HopAttaching;
+    case CallHopPlannerPhase::Live:
+      return CallMediaStatus::HopLive;
+    case CallHopPlannerPhase::Migrating:
+      return CallMediaStatus::Migrating;
+    case CallHopPlannerPhase::Idle:
+    case CallHopPlannerPhase::Stopping:
+      return std::nullopt;
   }
   return std::nullopt;
 }
@@ -37,18 +37,18 @@ inline std::optional<CallMediaStatus> MediaStatusForHopProgress(const CallHopPla
  */
 inline std::optional<CallMediaStatus> MediaStatusForDirectProgress(const CallDirectPlannerPhase phase) {
   switch (phase) {
-  case CallDirectPlannerPhase::Arming:
-  case CallDirectPlannerPhase::Connecting:
-  case CallDirectPlannerPhase::KeyWait:
-    return CallMediaStatus::DirectConnecting;
-  case CallDirectPlannerPhase::DegradedTxOnly:
-    return CallMediaStatus::DegradedTxOnly;
-  case CallDirectPlannerPhase::Reconnecting:
-    return CallMediaStatus::Reconnecting;
-  case CallDirectPlannerPhase::Live:
-  case CallDirectPlannerPhase::Idle:
-  case CallDirectPlannerPhase::Stopping:
-    return std::nullopt;
+    case CallDirectPlannerPhase::Arming:
+    case CallDirectPlannerPhase::Connecting:
+    case CallDirectPlannerPhase::KeyWait:
+      return CallMediaStatus::DirectConnecting;
+    case CallDirectPlannerPhase::DegradedTxOnly:
+      return CallMediaStatus::DegradedTxOnly;
+    case CallDirectPlannerPhase::Reconnecting:
+      return CallMediaStatus::Reconnecting;
+    case CallDirectPlannerPhase::Live:
+    case CallDirectPlannerPhase::Idle:
+    case CallDirectPlannerPhase::Stopping:
+      return std::nullopt;
   }
   return std::nullopt;
 }

@@ -3,8 +3,8 @@
 namespace pbr {
 
 bool CallScreenIsFailedPage(const CallScreen& screen) {
-  return screen.kind == CallScreen::Kind::InCall && (screen.status == CallScreen::Status::CouldntConnect ||
-                                                     screen.status == CallScreen::Status::Disconnected);
+  return screen.kind == CallScreen::Kind::InCall &&
+         (screen.status == CallScreen::Status::CouldntConnect || screen.status == CallScreen::Status::Disconnected);
 }
 
 NewCallVerdict DecideNewCall(const CallScreen& screen, const std::string& thread_id) {
@@ -12,7 +12,7 @@ NewCallVerdict DecideNewCall(const CallScreen& screen, const std::string& thread
     return NewCallVerdict::Place;
   }
   if (CallScreenIsFailedPage(screen)) {
-    return NewCallVerdict::Place;  // the dead call's page is no call to ask about
+    return NewCallVerdict::Place; // the dead call's page is no call to ask about
   }
   if (!thread_id.empty() && screen.thread_id == thread_id) {
     return NewCallVerdict::ShowCurrent;
@@ -22,38 +22,38 @@ NewCallVerdict DecideNewCall(const CallScreen& screen, const std::string& thread
 
 void RunNewCall(const NewCallVerdict verdict, const NewCallSteps& steps) {
   switch (verdict) {
-  case NewCallVerdict::Place:
-    if (steps.place) {
-      steps.place();
-    }
-    return;
-  case NewCallVerdict::ShowCurrent:
-    if (steps.show_current) {
-      steps.show_current();
-    }
-    return;
-  case NewCallVerdict::AskThenReplace:
-    if (!steps.ask) {
-      if (steps.cancelled) {
-        steps.cancelled();
+    case NewCallVerdict::Place:
+      if (steps.place) {
+        steps.place();
       }
       return;
-    }
-    steps.ask([steps](const bool yes) {
-      if (!yes) {
+    case NewCallVerdict::ShowCurrent:
+      if (steps.show_current) {
+        steps.show_current();
+      }
+      return;
+    case NewCallVerdict::AskThenReplace:
+      if (!steps.ask) {
         if (steps.cancelled) {
           steps.cancelled();
         }
         return;
       }
-      if (steps.leave_current) {
-        steps.leave_current();
-      }
-      if (steps.place) {
-        steps.place();
-      }
-    });
-    return;
+      steps.ask([steps](const bool yes) {
+        if (!yes) {
+          if (steps.cancelled) {
+            steps.cancelled();
+          }
+          return;
+        }
+        if (steps.leave_current) {
+          steps.leave_current();
+        }
+        if (steps.place) {
+          steps.place();
+        }
+      });
+      return;
   }
 }
 

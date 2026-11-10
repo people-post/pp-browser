@@ -31,8 +31,7 @@ protected:
     // logger (the logger has no removeHandler), and on Windows an open file can be neither removed
     // nor renamed — a shared directory would break the next test when the binary runs in-process.
     dir_ = fs::temp_directory_path() /
-           (std::string("pp-browser-log-file-test-") +
-            ::testing::UnitTest::GetInstance()->current_test_info()->name());
+           (std::string("pp-browser-log-file-test-") + ::testing::UnitTest::GetInstance()->current_test_info()->name());
     std::error_code ec;
     fs::remove_all(dir_, ec);
     fs::create_directories(dir_ / "logs", ec);

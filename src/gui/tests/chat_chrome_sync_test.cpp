@@ -14,9 +14,7 @@ TEST(ChatChromeSyncTest, ActiveThreadSyncsLayout) {
 }
 
 TEST(ChatChromeSyncTest, SessionsUnreadDirtiesNav) {
-  const pbr::ChatShellProjection synced =
-      pbr::ProjectChatShell({.has_active_thread = true, .sessions_unread = 0});
-  const pbr::ChatShellProjection next =
-      pbr::ProjectChatShell({.has_active_thread = true, .sessions_unread = 2});
+  const pbr::ChatShellProjection synced = pbr::ProjectChatShell({.has_active_thread = true, .sessions_unread = 0});
+  const pbr::ChatShellProjection next = pbr::ProjectChatShell({.has_active_thread = true, .sessions_unread = 2});
   EXPECT_EQ(pbr::ClassifyChatChromeUpdate(synced, next), pbr::ShellChromeOp::DirtyNav);
 }

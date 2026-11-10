@@ -32,7 +32,9 @@ std::optional<NodeLedgerRole::Role> NodeLedgerRole::RoleNamed(const std::string&
 
 NodeLedgerRole::NodeLedgerRole() : impl_(std::make_unique<Impl>()) {}
 
-NodeLedgerRole::~NodeLedgerRole() { Stop(); }
+NodeLedgerRole::~NodeLedgerRole() {
+  Stop();
+}
 
 Roe<void> NodeLedgerRole::Start(mesh::MeshHost& mesh, Options options) {
   if (impl_->runner) {
@@ -50,8 +52,8 @@ Roe<void> NodeLedgerRole::Start(mesh::MeshHost& mesh, Options options) {
   pp::RoleRunner::Options run;
   run.role = options.role == Role::Miner ? pp::RoleRunner::Role::Miner : pp::RoleRunner::Role::Relay;
   run.workDir = std::move(options.work_dir);
-  run.host = pp::network::HostedAmpRuntime::Host{&mesh.Amp()->Runtime(),
-                                                  [&mesh]() { return mesh.AmpListenMultiaddr(); }};
+  run.host =
+      pp::network::HostedAmpRuntime::Host{&mesh.Amp()->Runtime(), [&mesh]() { return mesh.AmpListenMultiaddr(); }};
   // The mesh refuses opens for protocols nothing serves: advertise the ledger's only while bound.
   run.onListening = [&mesh, impl = impl_.get()](const bool listening) {
     impl->listening = listening;
@@ -81,7 +83,9 @@ void NodeLedgerRole::Stop() {
   impl_->runner.reset();
 }
 
-bool NodeLedgerRole::Listening() const { return impl_->listening; }
+bool NodeLedgerRole::Listening() const {
+  return impl_->listening;
+}
 
 std::optional<std::string> NodeLedgerRole::Failure() const {
   std::lock_guard lock(impl_->mu);

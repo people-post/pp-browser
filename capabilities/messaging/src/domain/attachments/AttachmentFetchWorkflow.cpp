@@ -57,7 +57,7 @@ std::shared_ptr<CasStore> AttachmentFetchWorkflow::Content() const {
 }
 
 void AttachmentFetchWorkflow::SetFetchDependencies(IThreadStore* store, ContactsStore* contacts,
-                                                     IdentityStore* identity, IChatBlobPeerClient* peer_client) {
+                                                   IdentityStore* identity, IChatBlobPeerClient* peer_client) {
   store_ = store;
   contacts_ = contacts;
   identity_ = identity;
@@ -296,7 +296,7 @@ std::string AttachmentFetchWorkflow::JobKey(const Job& job) const {
 }
 
 std::string AttachmentFetchWorkflow::JobKey(const std::string& thread_id,
-                                             const std::vector<uint8_t>& content_hash) const {
+                                            const std::vector<uint8_t>& content_hash) const {
   return thread_id + "|" + AttachmentHashHex(content_hash);
 }
 
@@ -365,7 +365,7 @@ void AttachmentFetchWorkflow::KickDrain() {
 }
 
 void AttachmentFetchWorkflow::EnqueueFromMessage(const std::string& thread_id, const ThreadMessage& message,
-                                                   const bool force) {
+                                                 const bool force) {
   if (message.content_type != ChatContentType::Attachment) {
     return;
   }
@@ -815,7 +815,7 @@ void AttachmentFetchWorkflow::NotifyGridThumbnailReady(const std::string& thread
 }
 
 AttachmentFetchWorkflow::DownloadState AttachmentFetchWorkflow::StateFor(const std::string& thread_id,
-                                                                       const ChatAttachmentFields& fields) const {
+                                                                         const ChatAttachmentFields& fields) const {
   const std::vector<uint8_t>& content_hash = fields.content_hash;
   const uint64_t byte_length = fields.byte_length;
   if (profile_dir_.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
@@ -853,21 +853,20 @@ AttachmentFetchWorkflow::DownloadState AttachmentFetchWorkflow::StateFor(const s
   }
   // Not seen yet: what queueing it would do (the same rule). One waiting for the network to be known stays queued.
   switch (AutoVerdictLocked(fields)) {
-  case AutoVerdict::Yes:
-  case AutoVerdict::YesOnThisNetwork:
-  case AutoVerdict::NetworkUnknown:
-    return DownloadState::Downloading;
-  case AutoVerdict::NotOnThisNetwork:
-  case AutoVerdict::No:
-  default:
-    return DownloadState::Pending;
+    case AutoVerdict::Yes:
+    case AutoVerdict::YesOnThisNetwork:
+    case AutoVerdict::NetworkUnknown:
+      return DownloadState::Downloading;
+    case AutoVerdict::NotOnThisNetwork:
+    case AutoVerdict::No:
+    default:
+      return DownloadState::Pending;
   }
 }
 
 Roe<std::string> AttachmentFetchWorkflow::EnsureLocalViewPath(const std::string& thread_id,
-                                                                const std::vector<uint8_t>& content_hash,
-                                                                const std::string& mime,
-                                                                const std::string& filename) {
+                                                              const std::vector<uint8_t>& content_hash,
+                                                              const std::string& mime, const std::string& filename) {
   const ByteVector dek_copy = CopyDek();
   const std::shared_ptr<CasStore> content = Content();
   if (dek_copy.empty() || !content) {
@@ -879,8 +878,9 @@ Roe<std::string> AttachmentFetchWorkflow::EnsureLocalViewPath(const std::string&
   return EnsureAttachmentView(profile_dir_, *content, thread_id, content_hash, mime, filename, dek_copy);
 }
 
-Roe<AttachmentFetchWorkflow::StoredLocalImage> AttachmentFetchWorkflow::StoreLocalImage(
-    const std::string& thread_id, const ByteVector& plaintext, const std::string& mime) {
+Roe<AttachmentFetchWorkflow::StoredLocalImage> AttachmentFetchWorkflow::StoreLocalImage(const std::string& thread_id,
+                                                                                        const ByteVector& plaintext,
+                                                                                        const std::string& mime) {
   const ByteVector dek_copy = CopyDek();
   const std::shared_ptr<CasStore> content = Content();
   if (dek_copy.empty() || !content) {
@@ -917,7 +917,7 @@ void DeleteLocalBytes(const std::string& profile_dir, CasStore& content, const s
   if (const auto view = AttachmentLocalPath(profile_dir, thread_id, content_hash, mime, filename); !view.empty()) {
     std::filesystem::remove(view, ec);
   }
-  std::filesystem::remove(AttachmentPosterPath(profile_dir, thread_id, content_hash), ec); // video first frame
+  std::filesystem::remove(AttachmentPosterPath(profile_dir, thread_id, content_hash), ec);      // video first frame
   std::filesystem::remove_all(AttachmentOpenLinkDir(profile_dir, thread_id, content_hash), ec); // its named link
 }
 
@@ -1107,8 +1107,7 @@ void AttachmentFetchWorkflow::MaybeBuildPoster(const std::string& thread_id, con
                                           fields.filename, dek_copy, fields.byte_length, Limits().max_receive_bytes);
 }
 
-void AttachmentFetchWorkflow::MaybeBuildImageThumbnail(const std::string& thread_id,
-                                                       const ChatAttachmentFields& fields,
+void AttachmentFetchWorkflow::MaybeBuildImageThumbnail(const std::string& thread_id, const ChatAttachmentFields& fields,
                                                        const ByteVector& plaintext) {
   if (!IsAttachmentImageMime(fields.mime) || fields.byte_length <= kMaxDirectAttachmentBytes || profile_dir_.empty() ||
       thread_id.empty()) {
@@ -1169,8 +1168,8 @@ void AttachmentFetchWorkflow::RequestImageThumbnail(const std::string& thread_id
   });
 }
 
-std::optional<AttachmentFetchWorkflow::AudioCardTags>
-AttachmentFetchWorkflow::AudioTags(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const {
+std::optional<AttachmentFetchWorkflow::AudioCardTags> AttachmentFetchWorkflow::AudioTags(
+    const std::string& thread_id, const std::vector<uint8_t>& content_hash) const {
   std::lock_guard lock(mutex_);
   const auto found = audio_tags_.find(JobKey(thread_id, content_hash));
   if (found == audio_tags_.end()) {
@@ -1228,12 +1227,12 @@ void AttachmentFetchWorkflow::RequestAudioTags(const std::string& thread_id, con
 }
 
 void AttachmentFetchWorkflow::RetryDownload(const std::string& thread_id, const std::string& message_id,
-                                              IThreadStore& store) {
+                                            IThreadStore& store) {
   RequestDownload(thread_id, message_id, store);
 }
 
 void AttachmentFetchWorkflow::RequestDownload(const std::string& thread_id, const std::string& message_id,
-                                                IThreadStore& store) {
+                                              IThreadStore& store) {
   auto page = store.GetMessagesPage(thread_id, std::nullopt, 10000);
   if (!page) {
     return;
@@ -1250,7 +1249,8 @@ void AttachmentFetchWorkflow::RequestDownload(const std::string& thread_id, cons
       std::lock_guard lock(mutex_);
       if (deleting_.contains(AttachmentHashHex(fields->content_hash))) {
         // Asked for while its bytes are being deleted: done right after, so the delete cannot suppress it again.
-        deferred_requests_.push_back(DeferredRequest{.thread_id = thread_id, .message_id = message_id, .store = &store});
+        deferred_requests_.push_back(
+            DeferredRequest{.thread_id = thread_id, .message_id = message_id, .store = &store});
         return;
       }
     }
@@ -1438,11 +1438,12 @@ void AttachmentFetchWorkflow::DeleteLocalAttachments(IThreadStore& store, std::v
   }
   std::lock_guard serial(delete_serial_);
 
-  std::unordered_set<std::string> keys; // "thread|hex"
+  std::unordered_set<std::string> keys;                          // "thread|hex"
   std::unordered_map<std::string, std::vector<uint8_t>> targets; // hex → hash
   std::unordered_map<std::string, std::vector<std::vector<uint8_t>>> by_thread;
   for (auto& [thread_id, hash] : items) {
-    if (thread_id.empty() || hash.size() != kAttachmentContentHashSize || !keys.insert(JobKey(thread_id, hash)).second) {
+    if (thread_id.empty() || hash.size() != kAttachmentContentHashSize ||
+        !keys.insert(JobKey(thread_id, hash)).second) {
       continue;
     }
     targets.emplace(AttachmentHashHex(hash), hash);

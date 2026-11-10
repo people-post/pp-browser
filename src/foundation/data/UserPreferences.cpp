@@ -57,8 +57,7 @@ Roe<MachinePreferences> UserPreferences::LoadMachine(const std::string& data_dir
     return Error("Failed to parse machine preferences: " + path);
   }
 
-  if (auto checked = SchemaVersion::Validate(*root, MachinePreferences::kSchemaVersion, "machine.json");
-      !checked) {
+  if (auto checked = SchemaVersion::Validate(*root, MachinePreferences::kSchemaVersion, "machine.json"); !checked) {
     return checked.error();
   }
 
@@ -99,8 +98,7 @@ Roe<ProfilePreferences> UserPreferences::LoadProfile(const std::string& profile_
     return Error("Failed to parse profile preferences: " + path);
   }
 
-  if (auto checked = SchemaVersion::Validate(*root, ProfilePreferences::kSchemaVersion, "preferences.json");
-      !checked) {
+  if (auto checked = SchemaVersion::Validate(*root, ProfilePreferences::kSchemaVersion, "preferences.json"); !checked) {
     return checked.error();
   }
 

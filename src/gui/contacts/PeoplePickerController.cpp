@@ -105,8 +105,7 @@ bool MatchesQuery(const Contact& contact, const std::string& query_lower) {
   return false;
 }
 
-bool MatchesIdentityQuery(const std::string& title, const std::string& identity,
-                          const std::string& query_lower) {
+bool MatchesIdentityQuery(const std::string& title, const std::string& identity, const std::string& query_lower) {
   if (query_lower.empty()) {
     return true;
   }
@@ -512,7 +511,7 @@ void PeoplePickerController::OnFlowDismissed() {
 }
 
 void PeoplePickerController::ResetState() {
-  ++invite_batch_;  // a batch still in flight must not act on whatever opens next
+  ++invite_batch_; // a batch still in flight must not act on whatever opens next
   rows_.clear();
   member_summary_.clear();
   selected_ids_.clear();
@@ -572,8 +571,7 @@ void PeoplePickerController::SyncRows() {
 
   for (const std::string& locked_id : locked_ids_) {
     const bool present =
-        std::any_of(candidates.begin(), candidates.end(),
-                    [&](const Contact& c) { return c.id == locked_id; });
+        std::any_of(candidates.begin(), candidates.end(), [&](const Contact& c) { return c.id == locked_id; });
     if (present) {
       continue;
     }
@@ -585,9 +583,8 @@ void PeoplePickerController::SyncRows() {
     }
   }
 
-  std::sort(candidates.begin(), candidates.end(), [](const Contact& a, const Contact& b) {
-    return FormatContactTitle(a) < FormatContactTitle(b);
-  });
+  std::sort(candidates.begin(), candidates.end(),
+            [](const Contact& a, const Contact& b) { return FormatContactTitle(a) < FormatContactTitle(b); });
 
   rows_.reserve(candidates.size());
   for (const Contact& contact : candidates) {
@@ -651,7 +648,8 @@ void PeoplePickerController::SyncGroupCallRows() {
       }
     }
     if (!contact && picker_ports_.find_contact_by_identity) {
-      if (auto found = picker_ports_.find_contact_by_identity(identity, mesh::ContactIdKind::Account); found && *found) {
+      if (auto found = picker_ports_.find_contact_by_identity(identity, mesh::ContactIdKind::Account);
+          found && *found) {
         contact = **found;
       }
     }
@@ -889,19 +887,20 @@ void PeoplePickerController::SyncGroupAddRows() {
     if (!ContactIsSelectable(contact, MessagingReady() ? &contacts_ports_ : nullptr) || !MatchesQuery(contact, query)) {
       continue;
     }
-    candidates.push_back({contact.id, DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic).peer_identity_value});
+    candidates.push_back(
+        {contact.id, DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic).peer_identity_value});
     selectable.push_back(contact);
   }
-  const std::vector<std::string> ids = AddMemberCandidateIds(candidates, roster_identities, local_identity, invited_identities);
+  const std::vector<std::string> ids =
+      AddMemberCandidateIds(candidates, roster_identities, local_identity, invited_identities);
   std::vector<Contact> shown;
   for (const Contact& contact : selectable) {
     if (std::find(ids.begin(), ids.end(), contact.id) != ids.end()) {
       shown.push_back(contact);
     }
   }
-  std::sort(shown.begin(), shown.end(), [](const Contact& a, const Contact& b) {
-    return FormatContactTitle(a) < FormatContactTitle(b);
-  });
+  std::sort(shown.begin(), shown.end(),
+            [](const Contact& a, const Contact& b) { return FormatContactTitle(a) < FormatContactTitle(b); });
   rows_.reserve(shown.size());
   for (const Contact& contact : shown) {
     PickerRow row;
@@ -970,9 +969,8 @@ void PeoplePickerController::SyncCallAddGuestRows() {
     }
     candidates.push_back(contact);
   }
-  std::sort(candidates.begin(), candidates.end(), [](const Contact& a, const Contact& b) {
-    return FormatContactTitle(a) < FormatContactTitle(b);
-  });
+  std::sort(candidates.begin(), candidates.end(),
+            [](const Contact& a, const Contact& b) { return FormatContactTitle(a) < FormatContactTitle(b); });
 
   rows_.reserve(candidates.size());
   for (const Contact& contact : candidates) {
@@ -1079,29 +1077,29 @@ void PeoplePickerController::UpdateCta() {
     RefreshGroupAddLimit();
   }
   switch (cta) {
-  case PeoplePickerCta::Invite:
-    cta_label_ = Tr("people_picker.cta_invite", {{"count", std::to_string(FreeSelectedCount())}}).c_str();
-    break;
-  case PeoplePickerCta::Inviting:
-    cta_label_ = Tr("people_picker.cta_inviting").c_str();
-    break;
-  case PeoplePickerCta::Message:
-    cta_label_ = Tr("people_picker.cta_message").c_str();
-    break;
-  case PeoplePickerCta::CreateGroup:
-    cta_label_ = Tr("people_picker.cta_next").c_str();
-    break;
-  case PeoplePickerCta::StartCall:
-    if (mode_ == PeoplePickerMode::CallAddGuest) {
-      cta_label_ = Tr("people_picker.cta_invite_to_call").c_str();
-    } else {
-      cta_label_ = Tr("people_picker.cta_start_call").c_str();
-    }
-    break;
-  case PeoplePickerCta::Disabled:
-  default:
-    cta_label_ = Tr("people_picker.cta_select").c_str();
-    break;
+    case PeoplePickerCta::Invite:
+      cta_label_ = Tr("people_picker.cta_invite", {{"count", std::to_string(FreeSelectedCount())}}).c_str();
+      break;
+    case PeoplePickerCta::Inviting:
+      cta_label_ = Tr("people_picker.cta_inviting").c_str();
+      break;
+    case PeoplePickerCta::Message:
+      cta_label_ = Tr("people_picker.cta_message").c_str();
+      break;
+    case PeoplePickerCta::CreateGroup:
+      cta_label_ = Tr("people_picker.cta_next").c_str();
+      break;
+    case PeoplePickerCta::StartCall:
+      if (mode_ == PeoplePickerMode::CallAddGuest) {
+        cta_label_ = Tr("people_picker.cta_invite_to_call").c_str();
+      } else {
+        cta_label_ = Tr("people_picker.cta_start_call").c_str();
+      }
+      break;
+    case PeoplePickerCta::Disabled:
+    default:
+      cta_label_ = Tr("people_picker.cta_select").c_str();
+      break;
   }
 }
 
@@ -1236,7 +1234,7 @@ void PeoplePickerController::BackCallback(ui::DataModelHandle /*model*/, ui::Eve
 }
 
 void PeoplePickerController::CreateGroupCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                                   const ui::VariantList& /*args*/) {
+                                                 const ui::VariantList& /*args*/) {
   Instance().OnCreateGroup();
 }
 
@@ -1286,7 +1284,7 @@ void PeoplePickerController::CloseAddMembers() {
   const bool from_list = mode_ == PeoplePickerMode::GroupAddMember && !thread_id.empty() && add_returns_to_list_;
   Close();
   if (from_list) {
-    OpenForGroupMembers(thread_id);  // Add members is only opened from the member list
+    OpenForGroupMembers(thread_id); // Add members is only opened from the member list
   }
 }
 
@@ -1409,8 +1407,8 @@ void PeoplePickerController::OnInviteMembers() {
 void PeoplePickerController::OnInviteFinished(const uint64_t batch, const std::string& group_id,
                                               const std::unordered_map<std::string, std::string>& names,
                                               const GroupInviteBatchResult& result) {
-  const bool still_here = layer_id_ >= 0 && mode_ == PeoplePickerMode::GroupAddMember &&
-                          group_id_ == group_id && invite_batch_ == batch;
+  const bool still_here =
+      layer_id_ >= 0 && mode_ == PeoplePickerMode::GroupAddMember && group_id_ == group_id && invite_batch_ == batch;
   if (still_here) {
     group_sending_ = false;
   }
@@ -1425,10 +1423,9 @@ void PeoplePickerController::OnInviteFinished(const uint64_t batch, const std::s
       failed_names += it != names.end() ? it->second : Tr("people_picker.unnamed");
       log().warning << "Group invite not sent: " << reason;
     }
-    ShowToast(Tr("people_picker.invite_partial",
-                 {{"ok", std::to_string(result.sent.size())},
-                  {"failed", std::to_string(result.failed.size())},
-                  {"names", failed_names}}),
+    ShowToast(Tr("people_picker.invite_partial", {{"ok", std::to_string(result.sent.size())},
+                                                  {"failed", std::to_string(result.failed.size())},
+                                                  {"names", failed_names}}),
               ToastDuration::Long);
   }
   if (still_here) {
@@ -1474,8 +1471,7 @@ void PeoplePickerController::OnMemberTapped(const std::string& identity, const u
     // A member already in the group needs no invite; resend only to someone still waiting or out of reach.
     if (row.IsContact() && (row.invited || row.unreachable)) {
       actions.push_back({"member_reinvite", Tr("people_picker.reinvite"), nullptr,
-                         [this, group_id = group_id_, row]() { ReinviteMember(group_id, row); },
-                         "../icons/group.svg"});
+                         [this, group_id = group_id_, row]() { ReinviteMember(group_id, row); }, "../icons/group.svg"});
     }
     if (!row.invited && !row.is_owner) {
       actions.push_back({row.is_admin ? "member_remove_admin" : "member_make_admin",
@@ -1564,8 +1560,8 @@ void PeoplePickerController::TapGroupMember(const std::string& thread_id, const 
   if (identity.empty()) {
     return;
   }
-  const auto found = FindMemberInGroup(
-      thread_id, [&identity](const GroupRosterMember& m) { return m.member_identity == identity; });
+  const auto found =
+      FindMemberInGroup(thread_id, [&identity](const GroupRosterMember& m) { return m.member_identity == identity; });
   if (found) {
     ShowMemberTap(found->row, found->group_id, found->viewer_role, found->is_self);
   }
@@ -1618,46 +1614,49 @@ void PeoplePickerController::OfferAdminCard(const GroupMemberTap& tap, const std
     }
   }
   if (!row.added_by.empty()) {
-    card.role_text += " · " + (row.added_by == local_identity ? Tr("people_picker.added_by_you")
-                                                              : Tr("people_picker.added_by", {{"name", row.added_by_title}}));
+    card.role_text +=
+        " · " + (row.added_by == local_identity ? Tr("people_picker.added_by_you")
+                                                : Tr("people_picker.added_by", {{"name", row.added_by_title}}));
   }
   for (const GroupMemberAction action : tap.admin_actions) {
     switch (action) {
-    case GroupMemberAction::Reinvite:
-      card.can_reinvite = true;
-      card.reinvite = [this, group_id, row]() { ReinviteMember(group_id, row); };
-      break;
-    case GroupMemberAction::MakeAdmin:
-    case GroupMemberAction::RemoveAdmin: {
-      const bool admin = action == GroupMemberAction::MakeAdmin;
-      card.can_set_admin = true;
-      card.is_admin = !admin;
-      card.set_admin = [this, group_id, row, admin]() { SetMemberAdmin(group_id, row, admin); };
-      break;
-    }
-    case GroupMemberAction::Remove:
-      card.can_remove = true;
-      card.remove = [this, group_id, row](std::function<void()> done) { RemoveMember(group_id, row, std::move(done)); };
-      break;
-    case GroupMemberAction::RemoveEveryoneAdded:
-      card.remove_added_label = Tr("people_picker.remove_everyone_added", {{"name", row.title}});
-      card.remove_added = [this, group_id, row]() { RemoveEveryoneAddedBy(group_id, row); };
-      break;
-    case GroupMemberAction::ReinviteEveryoneRemoved:
-      card.reinvite_removed_label = Tr("people_picker.reinvite_everyone_removed", {{"name", row.title}});
-      card.reinvite_removed = [this, group_id, row]() { ReinviteEveryoneRemovedBy(group_id, row); };
-      break;
+      case GroupMemberAction::Reinvite:
+        card.can_reinvite = true;
+        card.reinvite = [this, group_id, row]() { ReinviteMember(group_id, row); };
+        break;
+      case GroupMemberAction::MakeAdmin:
+      case GroupMemberAction::RemoveAdmin: {
+        const bool admin = action == GroupMemberAction::MakeAdmin;
+        card.can_set_admin = true;
+        card.is_admin = !admin;
+        card.set_admin = [this, group_id, row, admin]() { SetMemberAdmin(group_id, row, admin); };
+        break;
+      }
+      case GroupMemberAction::Remove:
+        card.can_remove = true;
+        card.remove = [this, group_id, row](std::function<void()> done) {
+          RemoveMember(group_id, row, std::move(done));
+        };
+        break;
+      case GroupMemberAction::RemoveEveryoneAdded:
+        card.remove_added_label = Tr("people_picker.remove_everyone_added", {{"name", row.title}});
+        card.remove_added = [this, group_id, row]() { RemoveEveryoneAddedBy(group_id, row); };
+        break;
+      case GroupMemberAction::ReinviteEveryoneRemoved:
+        card.reinvite_removed_label = Tr("people_picker.reinvite_everyone_removed", {{"name", row.title}});
+        card.reinvite_removed = [this, group_id, row]() { ReinviteEveryoneRemovedBy(group_id, row); };
+        break;
     }
   }
   switch (tap.reinvite_note) {
-  case GroupReinviteNote::NotJoined:
-    card.reinvite_note = Tr("contacts.group_admin.not_joined");
-    break;
-  case GroupReinviteNote::Unreachable:
-    card.reinvite_note = Tr("group_info.unreachable");
-    break;
-  case GroupReinviteNote::None:
-    break;
+    case GroupReinviteNote::NotJoined:
+      card.reinvite_note = Tr("contacts.group_admin.not_joined");
+      break;
+    case GroupReinviteNote::Unreachable:
+      card.reinvite_note = Tr("group_info.unreachable");
+      break;
+    case GroupReinviteNote::None:
+      break;
   }
   contacts_notify_.set_group_admin(std::move(card));
 }
@@ -1678,18 +1677,19 @@ void PeoplePickerController::ReinviteMember(const std::string& group_id, const G
   if (group_id.empty() || !picker_ports_.invite_members_async) {
     return;
   }
-  picker_ports_.invite_members_async(group_id, {row.contact_id}, [this, name = row.title](GroupInviteBatchResult result) {
-    if (!result.failed.empty()) {
-      log().warning << "Group re-invite not sent: " << result.failed.front().second;
-      ShowToast(Tr("people_picker.invite_partial", {{"ok", "0"}, {"failed", "1"}, {"names", name}}),
-                ToastDuration::Long);
-      return;
-    }
-    if (mode_ == PeoplePickerMode::GroupMembers) {
-      SyncGroupMemberRows();
-      NotifySurfaceChanged();
-    }
-  });
+  picker_ports_.invite_members_async(
+      group_id, {row.contact_id}, [this, name = row.title](GroupInviteBatchResult result) {
+        if (!result.failed.empty()) {
+          log().warning << "Group re-invite not sent: " << result.failed.front().second;
+          ShowToast(Tr("people_picker.invite_partial", {{"ok", "0"}, {"failed", "1"}, {"names", name}}),
+                    ToastDuration::Long);
+          return;
+        }
+        if (mode_ == PeoplePickerMode::GroupMembers) {
+          SyncGroupMemberRows();
+          NotifySurfaceChanged();
+        }
+      });
 }
 
 void PeoplePickerController::SetMemberAdmin(const std::string& group_id, const GroupMemberRow& row, const bool admin) {
@@ -1827,16 +1827,16 @@ void PeoplePickerController::AddMemberAsContact(const GroupMemberRow& row) {
       DumpJson(payload), [this, name = row.title](Roe<std::optional<std::string>> added) {
         if (!added) {
           switch (ClassifyPeopleLookupError(added.error())) {
-          case PeopleLookupFailure::NotFound:
-            UserFeedback::Fail(Tr("contacts.err.user_not_found"));
-            break;
-          case PeopleLookupFailure::DirectoryUnreachable:
-            UserFeedback::Fail(Tr("contacts.err.directory_unreachable"));
-            break;
-          case PeopleLookupFailure::Other:
-            log().warning << "Add member as contact failed: " << AppError::Log(added.error());
-            UserFeedback::Fail(Tr("contacts.err.add"));
-            break;
+            case PeopleLookupFailure::NotFound:
+              UserFeedback::Fail(Tr("contacts.err.user_not_found"));
+              break;
+            case PeopleLookupFailure::DirectoryUnreachable:
+              UserFeedback::Fail(Tr("contacts.err.directory_unreachable"));
+              break;
+            case PeopleLookupFailure::Other:
+              log().warning << "Add member as contact failed: " << AppError::Log(added.error());
+              UserFeedback::Fail(Tr("contacts.err.add"));
+              break;
           }
           return;
         }
@@ -1899,9 +1899,8 @@ void PeoplePickerController::FinishOpenThread() {
 
 void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
   // The everyday chat, same as "Message" on the contact page (not the safety-code chat).
-  auto contact = contacts_ports_.get_contact
-                     ? contacts_ports_.get_contact(contact_id)
-                     : Roe<std::optional<Contact>>::error(Error("contacts port unavailable"));
+  auto contact = contacts_ports_.get_contact ? contacts_ports_.get_contact(contact_id)
+                                             : Roe<std::optional<Contact>>::error(Error("contacts port unavailable"));
   if (contact && *contact && contacts_ports_.register_contact_direct_endpoints) {
     contacts_ports_.register_contact_direct_endpoints(**contact);
   }

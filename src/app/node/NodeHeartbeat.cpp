@@ -17,8 +17,8 @@ constexpr int64_t kReregisterMaxMs = 5 * 60 * 1000;
 constexpr int64_t kClockSkewWarnMs = 60 * 1000;
 
 const char* OutcomeLabel(const int outcome) {
-  static const char* const kLabels[] = {"ok",           "auth",       "stale",      "not_registered",
-                                        "unknown_peer", "rejected",   "http_error", "network"};
+  static const char* const kLabels[] = {"ok",           "auth",     "stale",      "not_registered",
+                                        "unknown_peer", "rejected", "http_error", "network"};
   return kLabels[outcome];
 }
 
@@ -42,12 +42,12 @@ ParsedError ParseBody(const std::string& body) {
 
 const char* HeartbeatStateName(const HeartbeatState state) {
   switch (state) {
-  case HeartbeatState::Active:
-    return "active";
-  case HeartbeatState::Draining:
-    return "draining";
-  case HeartbeatState::Retiring:
-    return "retiring";
+    case HeartbeatState::Active:
+      return "active";
+    case HeartbeatState::Draining:
+      return "draining";
+    case HeartbeatState::Retiring:
+      return "retiring";
   }
   return "active";
 }
@@ -180,12 +180,12 @@ void NodeHeartbeat::HandleNotRegistered(const int64_t now) {
     return;
   }
   // Backoff keeps a failing register/start from being hammered; a successful heartbeat resets it.
-  reregister_delay_ms_ = reregister_delay_ms_ == 0 ? kReregisterInitialMs
-                                                   : std::min(reregister_delay_ms_ * 2, kReregisterMaxMs);
+  reregister_delay_ms_ =
+      reregister_delay_ms_ == 0 ? kReregisterInitialMs : std::min(reregister_delay_ms_ * 2, kReregisterMaxMs);
   reregister_due_ms_ = now + reregister_delay_ms_;
   auto renewed = deps_.reregister();
   if (renewed) {
-    next_send_ms_ = now;  // retry the heartbeat right away
+    next_send_ms_ = now; // retry the heartbeat right away
   } else {
     logging::getLogger("pp-node").warning << "heartbeat re-registration failed: " << renewed.error().message;
     next_send_ms_ = reregister_due_ms_;

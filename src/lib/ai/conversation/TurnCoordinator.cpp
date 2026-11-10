@@ -19,7 +19,7 @@ TurnSnapshot TurnCoordinator::BeginTurn(Conversation& conversation, const std::s
 }
 
 bool TurnCoordinator::CompleteTurn(Conversation& conversation, const std::string& entry_id,
-                                    const std::string& assistant_raw) const {
+                                   const std::string& assistant_raw) const {
   return conversation.CompleteTurn(entry_id, assistant_raw);
 }
 

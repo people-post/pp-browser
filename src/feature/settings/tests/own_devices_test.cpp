@@ -19,15 +19,15 @@ void LoadLocales() {
 
 TEST(OwnDevicesTest, MainDeviceManagesTheOthers) {
   LoadLocales();
-  const pbr::OwnDevicesView view = pbr::OwnDevicesViewFor({"12D3KooSelf000001", "12D3KooOtherABCDEF", "12D3KooThird123456"},
-                                                          "12D3KooSelf000001", false);
+  const pbr::OwnDevicesView view = pbr::OwnDevicesViewFor(
+      {"12D3KooSelf000001", "12D3KooOtherABCDEF", "12D3KooThird123456"}, "12D3KooSelf000001", false);
   EXPECT_TRUE(view.this_is_main);
   EXPECT_FALSE(view.signed_out);
   ASSERT_EQ(view.devices.size(), 3u);
 
   EXPECT_TRUE(view.devices[0].is_main);
   EXPECT_TRUE(view.devices[0].is_this_device);
-  EXPECT_FALSE(view.devices[0].can_manage);  // never itself
+  EXPECT_FALSE(view.devices[0].can_manage); // never itself
   EXPECT_EQ(view.devices[0].label, "This device");
 
   EXPECT_FALSE(view.devices[1].is_main);

@@ -44,8 +44,8 @@ public:
   // Scripted GET answer.
   int get_status = 200;
   uint64_t get_body_bytes = 0;
-  bool get_send_content_length = true;  // false: the body is delimited by closing the connection
-  int get_drip_ms = 0;                  // > 0: 10 bytes, then this long a pause, again and again
+  bool get_send_content_length = true; // false: the body is delimited by closing the connection
+  int get_drip_ms = 0;                 // > 0: 10 bytes, then this long a pause, again and again
   // PUT result.
   int put_status = 200;
   std::atomic<uint64_t> put_received{0};
@@ -71,7 +71,8 @@ private:
     if (ec) {
       return;
     }
-    std::string head(asio::buffers_begin(buf.data()), asio::buffers_begin(buf.data()) + static_cast<std::ptrdiff_t>(head_size));
+    std::string head(asio::buffers_begin(buf.data()),
+                     asio::buffers_begin(buf.data()) + static_cast<std::ptrdiff_t>(head_size));
     buf.consume(head_size);
     const bool is_put = head.rfind("PUT ", 0) == 0;
     if (is_put) {
@@ -92,7 +93,8 @@ private:
         received += n;
       }
       put_received = received;
-      const std::string reply = "HTTP/1.1 " + std::to_string(put_status) + " X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+      const std::string reply =
+          "HTTP/1.1 " + std::to_string(put_status) + " X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
       asio::write(socket, asio::buffer(reply), ec);
     } else {
       std::string reply = "HTTP/1.1 " + std::to_string(get_status) + " X\r\nConnection: close\r\n";
@@ -126,7 +128,8 @@ private:
 class HttpFileTransferTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    dir_ = std::filesystem::temp_directory_path() / ("pp_http_file_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    dir_ =
+        std::filesystem::temp_directory_path() / ("pp_http_file_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
     std::filesystem::create_directories(dir_);
   }
   void TearDown() override {
@@ -184,11 +187,11 @@ TEST_F(HttpFileTransferTest, GetToFileWritesWhatArrivesAndReportsProgress) {
   server_.get_body_bytes = 2 * 1024 * 1024 + 5;
   const std::string dest = (dir_ / "down.bin").string();
   uint64_t last_done = 0;
-  auto result = HttpClient::GetToFile(server_.Url(), dest, server_.get_body_bytes + 16,
-                                      [&](const uint64_t done, uint64_t) {
-                                        last_done = done;
-                                        return true;
-                                      });
+  auto result =
+      HttpClient::GetToFile(server_.Url(), dest, server_.get_body_bytes + 16, [&](const uint64_t done, uint64_t) {
+        last_done = done;
+        return true;
+      });
   ASSERT_TRUE(result) << result.error().message;
   EXPECT_EQ(result->status_code, 200);
   EXPECT_EQ(result->bytes, server_.get_body_bytes);
@@ -197,7 +200,7 @@ TEST_F(HttpFileTransferTest, GetToFileWritesWhatArrivesAndReportsProgress) {
 }
 
 TEST_F(HttpFileTransferTest, GetToFileIsBiggerThan8MiBWithoutBuffering) {
-  server_.get_body_bytes = 9 * 1024 * 1024;  // above kMaxHttpClientBodyBytes, which a buffered GET refuses
+  server_.get_body_bytes = 9 * 1024 * 1024; // above kMaxHttpClientBodyBytes, which a buffered GET refuses
   const std::string dest = (dir_ / "big.bin").string();
   auto result = HttpClient::GetToFile(server_.Url(), dest, server_.get_body_bytes + 16);
   ASSERT_TRUE(result) << result.error().message;
@@ -205,7 +208,7 @@ TEST_F(HttpFileTransferTest, GetToFileIsBiggerThan8MiBWithoutBuffering) {
 }
 
 TEST_F(HttpFileTransferTest, ABodyLongerThanTheCapIsAbortedAndTheFileDeleted) {
-  server_.get_send_content_length = false;  // no declared length: only the cap protects
+  server_.get_send_content_length = false; // no declared length: only the cap protects
   server_.get_body_bytes = 4 * 1024 * 1024;
   const std::string dest = (dir_ / "overrun.bin").string();
   auto result = HttpClient::GetToFile(server_.Url(), dest, 1024 * 1024);
@@ -235,9 +238,9 @@ TEST_F(HttpFileTransferTest, ANon2xxAnswerWritesNothing) {
 
 // A server that trickles bytes must not hold the transfer: the speed floor aborts it (shortened for the test).
 TEST_F(HttpFileTransferTest, ADrippingServerIsAbortedByTheSpeedLimitAndLeavesNothing) {
-  HttpClient::SetStreamingStallLimitForTest(5000, 1);  // under 5 KB/s for 1 s
+  HttpClient::SetStreamingStallLimitForTest(5000, 1); // under 5 KB/s for 1 s
   server_.get_body_bytes = 1024 * 1024;
-  server_.get_drip_ms = 100;  // 100 B/s
+  server_.get_drip_ms = 100; // 100 B/s
   const std::string dest = (dir_ / "drip.bin").string();
   const auto started = std::chrono::steady_clock::now();
   auto result = HttpClient::GetToFile(server_.Url(), dest, server_.get_body_bytes + 16);
@@ -261,7 +264,8 @@ TEST_F(HttpFileTransferTest, AFastUploadIsNotCaughtByTheSpeedFloor) {
 TEST_F(HttpFileTransferTest, GetToFileCanBeCancelledAndLeavesNothing) {
   server_.get_body_bytes = 6 * 1024 * 1024;
   const std::string dest = (dir_ / "cancelled.bin").string();
-  auto result = HttpClient::GetToFile(server_.Url(), dest, server_.get_body_bytes + 16, [](uint64_t, uint64_t) { return false; });
+  auto result =
+      HttpClient::GetToFile(server_.Url(), dest, server_.get_body_bytes + 16, [](uint64_t, uint64_t) { return false; });
   ASSERT_FALSE(result);
   EXPECT_FALSE(std::filesystem::exists(dest));
 }

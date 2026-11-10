@@ -79,10 +79,11 @@ TEST(SseParserTest, CrLfSplitAcrossChunks) {
 }
 
 TEST(SseParserTest, ByteByByteMatchesWholeIncludingSplitUtf8) {
-  const std::string stream = "\xEF\xBB\xBF: hi\r\n"
-                             "event: delta\r\ndata: 你好，世界\r\n\r\n"
-                             "data: 第一行\ndata: 第二行 🙂\n\n"
-                             "id: 3\r\rdata: tail\r\r";
+  const std::string stream =
+      "\xEF\xBB\xBF: hi\r\n"
+      "event: delta\r\ndata: 你好，世界\r\n\r\n"
+      "data: 第一行\ndata: 第二行 🙂\n\n"
+      "id: 3\r\rdata: tail\r\r";
   const auto whole = ParseWhole(stream);
   const auto bytes = ParseByteByByte(stream);
   ASSERT_EQ(whole.size(), 3u);
@@ -103,7 +104,9 @@ TEST(SseParserTest, BlankLineWithoutDataDispatchesNothing) {
 }
 
 TEST(SseParserTest, LeadingBomIsDropped) {
-  const auto events = ParseWhole("\xEF\xBB\xBF" "data: bom\n\n");
+  const auto events = ParseWhole(
+      "\xEF\xBB\xBF"
+      "data: bom\n\n");
   ASSERT_EQ(events.size(), 1u);
   EXPECT_EQ(events[0].data, "bom");
 }

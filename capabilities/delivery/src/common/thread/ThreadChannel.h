@@ -13,12 +13,12 @@ inline bool ThreadChannelIsE2e(const ThreadChannel channel) {
 
 inline std::string ThreadChannelToString(const ThreadChannel channel) {
   switch (channel) {
-  case ThreadChannel::E2e:
-    return "e2e";
-  case ThreadChannel::E2ePublic:
-    return "e2e_public";
-  case ThreadChannel::None:
-    return "";
+    case ThreadChannel::E2e:
+      return "e2e";
+    case ThreadChannel::E2ePublic:
+      return "e2e_public";
+    case ThreadChannel::None:
+      return "";
   }
   return "";
 }

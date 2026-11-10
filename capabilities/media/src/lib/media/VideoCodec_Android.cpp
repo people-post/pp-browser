@@ -49,14 +49,13 @@ constexpr int64_t kInputDropWarnEveryMs = 2000;
 constexpr int64_t kSlowDecodeMs = 50;
 /** Per decoder (one per remote stream per call): slow-decode, stall and input-drop warnings each. */
 constexpr int kMaxDecoderWarns = 10;
-constexpr int kColorFormatYv12 = 19;       // COLOR_FormatYUV420Planar
-constexpr int kColorFormatNv12 = 21;       // COLOR_FormatYUV420SemiPlanar
+constexpr int kColorFormatYv12 = 19; // COLOR_FormatYUV420Planar
+constexpr int kColorFormatNv12 = 21; // COLOR_FormatYUV420SemiPlanar
 
 int32_t EstimateBitrateBps(int width, int height, int fps) {
-  const double raw = static_cast<double>(width) * static_cast<double>(height) *
-                      static_cast<double>(std::max(fps, 1)) * 0.07;
-  const double clamped =
-      std::clamp(raw, static_cast<double>(kMinBitrateBps), static_cast<double>(kMaxBitrateBps));
+  const double raw =
+      static_cast<double>(width) * static_cast<double>(height) * static_cast<double>(std::max(fps, 1)) * 0.07;
+  const double clamped = std::clamp(raw, static_cast<double>(kMinBitrateBps), static_cast<double>(kMaxBitrateBps));
   return static_cast<int32_t>(clamped);
 }
 
@@ -66,8 +65,7 @@ logging::Logger& DecoderLog() {
 }
 
 int64_t SteadyMs() {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::steady_clock::now().time_since_epoch())
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
       .count();
 }
 
@@ -224,20 +222,20 @@ bool ParseSpsDimensions(const uint8_t* sps_nal, size_t sps_size, int& width, int
   }
   BitReader br(rbsp.data() + 1, rbsp.size() - 1); // skip NAL header
   const int profile_idc = static_cast<int>(br.ReadBits(8));
-  br.SkipBits(8); // constraint flags
+  br.SkipBits(8);       // constraint flags
   (void)br.ReadBits(8); // level_idc
-  (void)br.ReadUe(); // sps id
+  (void)br.ReadUe();    // sps id
   int chroma_format_idc = 1;
-  if (profile_idc == 100 || profile_idc == 110 || profile_idc == 122 || profile_idc == 244 ||
-      profile_idc == 44 || profile_idc == 83 || profile_idc == 86 || profile_idc == 118 ||
-      profile_idc == 128 || profile_idc == 138 || profile_idc == 139 || profile_idc == 134) {
+  if (profile_idc == 100 || profile_idc == 110 || profile_idc == 122 || profile_idc == 244 || profile_idc == 44 ||
+      profile_idc == 83 || profile_idc == 86 || profile_idc == 118 || profile_idc == 128 || profile_idc == 138 ||
+      profile_idc == 139 || profile_idc == 134) {
     chroma_format_idc = static_cast<int>(br.ReadUe());
     if (chroma_format_idc == 3) {
       br.SkipBits(1);
     }
     (void)br.ReadUe(); // bit_depth_luma
     (void)br.ReadUe(); // bit_depth_chroma
-    br.SkipBits(1); // qpprime_y_zero_transform_bypass
+    br.SkipBits(1);    // qpprime_y_zero_transform_bypass
     if (br.ReadBits(1)) {
       return false; // scaling matrix unsupported here
     }
@@ -262,7 +260,7 @@ bool ParseSpsDimensions(const uint8_t* sps_nal, size_t sps_size, int& width, int
     }
   }
   (void)br.ReadUe(); // max_num_ref_frames
-  br.SkipBits(1); // gaps_in_frame_num
+  br.SkipBits(1);    // gaps_in_frame_num
   const int pic_width_in_mbs_minus1 = static_cast<int>(br.ReadUe());
   const int pic_height_in_map_units_minus1 = static_cast<int>(br.ReadUe());
   const int frame_mbs_only_flag = static_cast<int>(br.ReadBits(1));
@@ -290,8 +288,7 @@ bool ParseSpsDimensions(const uint8_t* sps_nal, size_t sps_size, int& width, int
   // below into a bogus (or negative-then-cast-huge) width/height.
   constexpr int64_t kMaxReasonableDimension = 16384;
   const int64_t width_mbs = static_cast<int64_t>(pic_width_in_mbs_minus1) + 1;
-  const int64_t height_mbs =
-      (static_cast<int64_t>(pic_height_in_map_units_minus1) + 1) * (2 - frame_mbs_only_flag);
+  const int64_t height_mbs = (static_cast<int64_t>(pic_height_in_map_units_minus1) + 1) * (2 - frame_mbs_only_flag);
   int64_t wide = width_mbs * 16;
   int64_t tall = height_mbs * 16;
   if (wide <= 0 || tall <= 0 || wide > kMaxReasonableDimension || tall > kMaxReasonableDimension) {
@@ -299,8 +296,7 @@ bool ParseSpsDimensions(const uint8_t* sps_nal, size_t sps_size, int& width, int
   }
   if (frame_cropping_flag) {
     const int64_t crop_unit_x = (chroma_format_idc == 1 || chroma_format_idc == 2) ? 2 : 1;
-    const int64_t crop_unit_y =
-        (chroma_format_idc == 1) ? (2 * (2 - frame_mbs_only_flag)) : (2 - frame_mbs_only_flag);
+    const int64_t crop_unit_y = (chroma_format_idc == 1) ? (2 * (2 - frame_mbs_only_flag)) : (2 - frame_mbs_only_flag);
     wide -= (static_cast<int64_t>(crop_left) + crop_right) * crop_unit_x;
     tall -= (static_cast<int64_t>(crop_top) + crop_bottom) * crop_unit_y;
   }
@@ -326,8 +322,7 @@ std::vector<uint8_t> ToAnnexB(const uint8_t* data, size_t size) {
   while (offset + 4 <= size) {
     const uint32_t nal_size = (static_cast<uint32_t>(data[offset]) << 24) |
                               (static_cast<uint32_t>(data[offset + 1]) << 16) |
-                              (static_cast<uint32_t>(data[offset + 2]) << 8) |
-                              static_cast<uint32_t>(data[offset + 3]);
+                              (static_cast<uint32_t>(data[offset + 2]) << 8) | static_cast<uint32_t>(data[offset + 3]);
     offset += 4;
     if (nal_size == 0 || offset + nal_size > size) {
       break;
@@ -347,8 +342,7 @@ ssize_t DequeueOutputBuffer(AMediaCodec* codec, AMediaCodecBufferInfo* info, int
     if (index == AMEDIACODEC_INFO_TRY_AGAIN_LATER) {
       continue;
     }
-    if (index == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED ||
-        index == AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED) {
+    if (index == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED || index == AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED) {
       continue;
     }
     return index;
@@ -379,8 +373,8 @@ void I420ToNv12(const VideoFrameI420& frame, std::vector<uint8_t>& out) {
   }
 }
 
-bool Nv12ToRgba(const uint8_t* y_plane, const uint8_t* uv_plane, int width, int height, int y_stride,
-                int uv_stride, VideoFrameRgba& out) {
+bool Nv12ToRgba(const uint8_t* y_plane, const uint8_t* uv_plane, int width, int height, int y_stride, int uv_stride,
+                VideoFrameRgba& out) {
   out.width = width;
   out.height = height;
   out.rgba.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
@@ -405,8 +399,8 @@ bool Nv12ToRgba(const uint8_t* y_plane, const uint8_t* uv_plane, int width, int 
   return true;
 }
 
-bool I420PlanesToRgba(const uint8_t* y_plane, const uint8_t* u_plane, const uint8_t* v_plane, int width,
-                      int height, int y_stride, int u_stride, int v_stride, VideoFrameRgba& out) {
+bool I420PlanesToRgba(const uint8_t* y_plane, const uint8_t* u_plane, const uint8_t* v_plane, int width, int height,
+                      int y_stride, int u_stride, int v_stride, VideoFrameRgba& out) {
   VideoFrameI420 i420;
   i420.width = width;
   i420.height = height;
@@ -414,16 +408,16 @@ bool I420PlanesToRgba(const uint8_t* y_plane, const uint8_t* u_plane, const uint
   i420.u.resize(static_cast<size_t>((width + 1) / 2) * static_cast<size_t>((height + 1) / 2));
   i420.v.resize(i420.u.size());
   for (int row = 0; row < height; ++row) {
-    std::memcpy(i420.y.data() + static_cast<size_t>(row) * width,
-                y_plane + static_cast<size_t>(row) * y_stride, static_cast<size_t>(width));
+    std::memcpy(i420.y.data() + static_cast<size_t>(row) * width, y_plane + static_cast<size_t>(row) * y_stride,
+                static_cast<size_t>(width));
   }
   const int chroma_h = (height + 1) / 2;
   const int chroma_w = (width + 1) / 2;
   for (int row = 0; row < chroma_h; ++row) {
-    std::memcpy(i420.u.data() + static_cast<size_t>(row) * chroma_w,
-                u_plane + static_cast<size_t>(row) * u_stride, static_cast<size_t>(chroma_w));
-    std::memcpy(i420.v.data() + static_cast<size_t>(row) * chroma_w,
-                v_plane + static_cast<size_t>(row) * v_stride, static_cast<size_t>(chroma_w));
+    std::memcpy(i420.u.data() + static_cast<size_t>(row) * chroma_w, u_plane + static_cast<size_t>(row) * u_stride,
+                static_cast<size_t>(chroma_w));
+    std::memcpy(i420.v.data() + static_cast<size_t>(row) * chroma_w, v_plane + static_cast<size_t>(row) * v_stride,
+                static_cast<size_t>(chroma_w));
   }
   return I420ToRgba(i420, out);
 }
@@ -448,7 +442,10 @@ bool H264EncoderPresent() {
 
 class AndroidVideoCodec final : public IVideoCodec {
 public:
-  ~AndroidVideoCodec() override { ResetEncoder(); ResetDecoder(); }
+  ~AndroidVideoCodec() override {
+    ResetEncoder();
+    ResetDecoder();
+  }
 
   std::string BackendName() const override { return "mediacodec"; }
   bool EncoderSupported() const override { return H264EncoderPresent(); }
@@ -537,10 +534,10 @@ Roe<void> AndroidVideoCodec::ConfigureEncoder(int width, int height, int fps) {
   // AMEDIAFORMAT_KEY_PROFILE / LEVEL exist from API 28; string keys are identical.
 #if __ANDROID_API__ >= 28
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_PROFILE, 1); // AVCProfileBaseline
-  AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_LEVEL, 512);  // AVCLevel3_1
+  AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_LEVEL, 512); // AVCLevel3_1
 #else
   AMediaFormat_setInt32(format, "profile", 1); // AVCProfileBaseline
-  AMediaFormat_setInt32(format, "level", 512);  // AVCLevel3_1
+  AMediaFormat_setInt32(format, "level", 512); // AVCLevel3_1
 #endif
 
   media_status_t status = AMediaCodec_configure(encoder_, format, nullptr, nullptr, AMEDIACODEC_CONFIGURE_FLAG_ENCODE);
@@ -595,8 +592,7 @@ Roe<EncodedAccessUnit> AndroidVideoCodec::Encode(const VideoFrameI420& frame, bo
   }
   const int64_t pts_us = (enc_frame_index_ * 1000000LL) / std::max(enc_fps_, 1);
   ++enc_frame_index_;
-  if (AMediaCodec_queueInputBuffer(encoder_, static_cast<size_t>(buf_index), 0, nv12.size(), pts_us, 0) !=
-      AMEDIA_OK) {
+  if (AMediaCodec_queueInputBuffer(encoder_, static_cast<size_t>(buf_index), 0, nv12.size(), pts_us, 0) != AMEDIA_OK) {
     return Error("AMediaCodec_queueInputBuffer failed");
   }
 
@@ -651,10 +647,10 @@ Roe<void> AndroidVideoCodec::ConfigureDecoder() {
 }
 
 Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t sps_size, const uint8_t* pps,
-                                                      size_t pps_size) {
+                                                     size_t pps_size) {
   const bool unchanged = decoder_ && cached_sps_.size() == sps_size && cached_pps_.size() == pps_size &&
-                          std::equal(cached_sps_.begin(), cached_sps_.end(), sps) &&
-                          std::equal(cached_pps_.begin(), cached_pps_.end(), pps);
+                         std::equal(cached_sps_.begin(), cached_sps_.end(), sps) &&
+                         std::equal(cached_pps_.begin(), cached_pps_.end(), pps);
   if (unchanged) {
     return {};
   }
@@ -805,16 +801,14 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
 
   for (const auto& nal : nals) {
     if (nal.type == 7) {
-      if (cached_sps_.size() != nal.size ||
-          !std::equal(cached_sps_.begin(), cached_sps_.end(), nal.data)) {
+      if (cached_sps_.size() != nal.size || !std::equal(cached_sps_.begin(), cached_sps_.end(), nal.data)) {
         cached_sps_.assign(nal.data, nal.data + nal.size);
         sps_updated = true;
       }
       continue;
     }
     if (nal.type == 8) {
-      if (cached_pps_.size() != nal.size ||
-          !std::equal(cached_pps_.begin(), cached_pps_.end(), nal.data)) {
+      if (cached_pps_.size() != nal.size || !std::equal(cached_pps_.begin(), cached_pps_.end(), nal.data)) {
         cached_pps_.assign(nal.data, nal.data + nal.size);
         pps_updated = true;
       }
@@ -831,8 +825,7 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
   // Cache SPS/PPS across access units (Linux path). MF often emits parameter
   // sets in a separate AU from the IDR; requiring both in one AU left Android
   // waiting forever while Linux still decoded.
-  if (!cached_sps_.empty() && !cached_pps_.empty() &&
-      (sps_updated || pps_updated || !decoder_)) {
+  if (!cached_sps_.empty() && !cached_pps_.empty() && (sps_updated || pps_updated || !decoder_)) {
     if ((sps_updated || pps_updated) && decoder_) {
       // cached_* already hold the new sets; drop the old codec so Ensure does
       // not treat the update as a no-op via the unchanged check.
@@ -842,8 +835,7 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
       decoder_ = nullptr;
     }
     const int64_t configure_from = SteadyMs();
-    auto cfg = EnsureDecoderConfigured(cached_sps_.data(), cached_sps_.size(), cached_pps_.data(),
-                                       cached_pps_.size());
+    auto cfg = EnsureDecoderConfigured(cached_sps_.data(), cached_sps_.size(), cached_pps_.data(), cached_pps_.size());
     configure_ms_in_decode_ = SteadyMs() - configure_from;
     if (!cfg) {
       return cfg.error();
@@ -918,8 +910,8 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
   std::memcpy(buf, slice_annex_b.data(), slice_annex_b.size());
   const int64_t pts_us = dec_frame_index_ * 66666LL; // ~15fps pacing hint
   ++dec_frame_index_;
-  if (AMediaCodec_queueInputBuffer(decoder_, static_cast<size_t>(buf_index), 0, slice_annex_b.size(),
-                                    pts_us, 0) != AMEDIA_OK) {
+  if (AMediaCodec_queueInputBuffer(decoder_, static_cast<size_t>(buf_index), 0, slice_annex_b.size(), pts_us, 0) !=
+      AMEDIA_OK) {
     ReleaseHeldOutput();
     return Error("decoder queueInputBuffer failed");
   }
@@ -950,10 +942,10 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
     first_output_logged_ = true;
     DecoderLog().info << "first decoded frame codec=" << CodecName(decoder_)
                       << " queued_to_first=" << queued_since_configure_
-                      << " ms_since_configure=" << (SteadyMs() - configured_at_ms_)
-                      << " configure_ms=" << configure_ms_ << " low_latency=" << (low_latency_ ? 1 : 0)
-                      << " input_drops=" << input_drops_ << " color_format=" << dec_color_format_
-                      << " stride=" << dec_stride_ << " size=" << frame->width << "x" << frame->height;
+                      << " ms_since_configure=" << (SteadyMs() - configured_at_ms_) << " configure_ms=" << configure_ms_
+                      << " low_latency=" << (low_latency_ ? 1 : 0) << " input_drops=" << input_drops_
+                      << " color_format=" << dec_color_format_ << " stride=" << dec_stride_ << " size=" << frame->width
+                      << "x" << frame->height;
   }
   return std::optional<VideoFrameRgba>(std::move(*frame));
 }
@@ -968,10 +960,10 @@ void AndroidVideoCodec::DrainOutputs() {
       continue;
     }
     if (index == AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED) {
-      continue;  // not sent on NDK 21+
+      continue; // not sent on NDK 21+
     }
     if (index < 0) {
-      return;  // TRY_AGAIN_LATER (nothing ready) or an error
+      return; // TRY_AGAIN_LATER (nothing ready) or an error
     }
     // An older frame still held is stale next to this one: release it unconverted.
     ReleaseHeldOutput();
@@ -1032,13 +1024,12 @@ Roe<VideoFrameRgba> AndroidVideoCodec::ConvertHeldOutput() {
   bool converted = false;
   if (out_buf && info.size > 0 && width > 0 && height > 0) {
     const uint8_t* base = out_buf + info.offset;
-    const uint8_t* y = base + static_cast<size_t>(crop_top) * static_cast<size_t>(stride) +
-                       static_cast<size_t>(crop_left);
+    const uint8_t* y =
+        base + static_cast<size_t>(crop_top) * static_cast<size_t>(stride) + static_cast<size_t>(crop_left);
     if (color_format == kColorFormatYv12) {
-      const uint8_t* u =
-          base + static_cast<size_t>(slice_height) * static_cast<size_t>(stride) +
-          static_cast<size_t>(crop_top / 2) * static_cast<size_t>(stride / 2) +
-          static_cast<size_t>(crop_left / 2);
+      const uint8_t* u = base + static_cast<size_t>(slice_height) * static_cast<size_t>(stride) +
+                         static_cast<size_t>(crop_top / 2) * static_cast<size_t>(stride / 2) +
+                         static_cast<size_t>(crop_left / 2);
       const uint8_t* v = u + static_cast<size_t>(slice_height / 2) * static_cast<size_t>(stride / 2);
       converted = I420PlanesToRgba(y, u, v, width, height, stride, stride / 2, stride / 2, result);
     } else {

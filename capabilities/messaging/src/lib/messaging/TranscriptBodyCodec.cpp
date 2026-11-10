@@ -121,8 +121,7 @@ Roe<TranscriptBodyPlaintext> TranscriptBodyCodec::FromMessage(const ThreadMessag
   TranscriptBodyPlaintext body;
   body.chat_payload = std::move(*chat_payload);
   body.text = message.text;
-  body.payload_json =
-      message.payload_json.empty() ? ChatPayloadCodec::BuildPayloadJson(message) : message.payload_json;
+  body.payload_json = message.payload_json.empty() ? ChatPayloadCodec::BuildPayloadJson(message) : message.payload_json;
   body.content_rml = message.content_rml;
   body.chat_actions = message.chat_actions;
   body.working_set_json = message.working_set_json;

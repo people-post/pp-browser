@@ -20,18 +20,18 @@ std::string HashKey(const std::vector<uint8_t>& hash) {
 
 void AddToTotals(StorageKindTotals& totals, const StoredAttachmentItem& item) {
   switch (StoredKindOfMime(item.mime)) {
-  case StoredKind::Picture:
-    ++totals.pictures;
-    totals.picture_bytes += item.bytes;
-    return;
-  case StoredKind::Video:
-    ++totals.videos;
-    totals.video_bytes += item.bytes;
-    return;
-  case StoredKind::File:
-    ++totals.files;
-    totals.file_bytes += item.bytes;
-    return;
+    case StoredKind::Picture:
+      ++totals.pictures;
+      totals.picture_bytes += item.bytes;
+      return;
+    case StoredKind::Video:
+      ++totals.videos;
+      totals.video_bytes += item.bytes;
+      return;
+    case StoredKind::File:
+      ++totals.files;
+      totals.file_bytes += item.bytes;
+      return;
   }
 }
 
@@ -56,12 +56,12 @@ StoredKind StoredKindOfMime(const std::string& mime) {
 
 const char* StoredKindId(const StoredKind kind) {
   switch (kind) {
-  case StoredKind::Picture:
-    return "picture";
-  case StoredKind::Video:
-    return "video";
-  case StoredKind::File:
-    return "file";
+    case StoredKind::Picture:
+      return "picture";
+    case StoredKind::Video:
+      return "video";
+    case StoredKind::File:
+      return "file";
   }
   return "file";
 }
@@ -129,12 +129,12 @@ uint64_t DirectoryByteSize(const std::filesystem::path& root) {
 
 size_t StorageKindTotals::CountOf(const StoredKind kind) const {
   switch (kind) {
-  case StoredKind::Picture:
-    return pictures;
-  case StoredKind::Video:
-    return videos;
-  case StoredKind::File:
-    return files;
+    case StoredKind::Picture:
+      return pictures;
+    case StoredKind::Video:
+      return videos;
+    case StoredKind::File:
+      return files;
   }
   return 0;
 }
@@ -165,10 +165,9 @@ StorageOverview BuildStorageOverview(const std::vector<StoredAttachmentItem>& it
       overview.chats.push_back(std::move(summary));
     }
   }
-  std::stable_sort(overview.chats.begin(), overview.chats.end(),
-                   [](const StorageChatSummary& a, const StorageChatSummary& b) {
-                     return a.totals.Bytes() > b.totals.Bytes();
-                   });
+  std::stable_sort(
+      overview.chats.begin(), overview.chats.end(),
+      [](const StorageChatSummary& a, const StorageChatSummary& b) { return a.totals.Bytes() > b.totals.Bytes(); });
 
   // Larger than 5 MB across chats: one entry per hash (its newest message), most bytes first.
   std::unordered_map<std::string, size_t> large_index;
@@ -354,8 +353,8 @@ std::vector<StorageBarSegment> StorageBarSegments(const StorageUsage& usage, con
     sum += segment.bytes;
   }
   for (StorageBarSegment& segment : segments) {
-    segment.percent = sum == 0 ? 0.f : static_cast<float>(static_cast<double>(segment.bytes) * 100.0 /
-                                                          static_cast<double>(sum));
+    segment.percent =
+        sum == 0 ? 0.f : static_cast<float>(static_cast<double>(segment.bytes) * 100.0 / static_cast<double>(sum));
   }
   return segments;
 }

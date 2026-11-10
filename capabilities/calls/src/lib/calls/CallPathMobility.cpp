@@ -1,6 +1,5 @@
 #include "lib/calls/CallPathMobility.h"
 
-
 #include <algorithm>
 #include <chrono>
 #include "common/PbrCompat.h"

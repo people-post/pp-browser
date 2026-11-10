@@ -199,8 +199,7 @@ using AccountCardLookup = std::function<std::optional<AccountCard>(const std::st
 class RelayReceivePipeline : public Module {
 public:
   RelayReceivePipeline(IThreadStore& store, AccountCardLookup account_cards, IPeerSessionStore& psk_store,
-                       LocalKeys local_keys, IGroupRosterStore& group_roster,
-                       GroupInviteGate* invite_gate = nullptr);
+                       LocalKeys local_keys, IGroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr);
 
   /** The system-control families features bind (call control, …). Not owned; null: none. */
   void SetSystemControls(const SystemControlRegistry* controls) { controls_ = controls; }
@@ -248,7 +247,8 @@ public:
     on_roster_member_ = std::move(callback);
   }
   /** Called after a sender's retract wiped one of their messages here (`original` = the row before). */
-  void SetOnMessageRetracted(std::function<void(const std::string& thread_id, const ThreadMessage& original)> callback) {
+  void SetOnMessageRetracted(
+      std::function<void(const std::string& thread_id, const ThreadMessage& original)> callback) {
     on_message_retracted_ = std::move(callback);
   }
 
@@ -369,8 +369,8 @@ private:
   /** The KEM secret that opens a copy's key_init: this device's for its device pair, the account's for an account copy. */
   Roe<ByteVector> CopyKemPrivateKey(const RelayEnvelope& envelope) const;
   std::optional<std::string> FindMessageIdAtSeq(const std::string& thread_id, const uint32_t session_epoch,
-                                                const std::string& seq_owner_contact_id,
-                                                const uint64_t sender_seq, const std::string& sender_device) const;
+                                                const std::string& seq_owner_contact_id, const uint64_t sender_seq,
+                                                const std::string& sender_device) const;
   ReplayWindow& ReplayWindowFor(const std::string& thread_id, uint32_t session_epoch, const std::string& sender);
   Roe<void> ApplyInboundMembershipMessage(ThreadMessage& message, const std::string& actor_identity,
                                           RelayReceiveOutcome* outcome) const;
@@ -450,7 +450,7 @@ private:
                                 const std::string& local_account, RelayReceiveOutcome* outcome) const;
   Roe<void> ValidateInboundPskRotate(const RelayEnvelope& envelope, const ThreadMessage& message) const;
   Roe<void> ApplyInboundPskRotate(const std::string& thread_id, const RelayEnvelope& envelope,
-                                 const ThreadMessage& message);
+                                  const ThreadMessage& message);
 
   IThreadStore& store_;
   AccountCardLookup account_cards_;

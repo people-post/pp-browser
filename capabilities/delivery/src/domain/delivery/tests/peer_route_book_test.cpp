@@ -23,8 +23,7 @@ Thread DirectThreadWith(const std::string& account) {
 class PeerRouteBookTest : public ::testing::Test {
 protected:
   PeerRouteBookTest()
-      : dir_(std::filesystem::temp_directory_path() /
-             ("pp_route_book_" + std::to_string(std::random_device{}()))),
+      : dir_(std::filesystem::temp_directory_path() / ("pp_route_book_" + std::to_string(std::random_device{}()))),
         contacts_((std::filesystem::create_directories(dir_), dir_.string())) {}
   ~PeerRouteBookTest() override { std::filesystem::remove_all(dir_); }
 

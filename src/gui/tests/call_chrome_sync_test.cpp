@@ -392,7 +392,7 @@ TEST(CallChromeSyncTest, ChangedVariablesAreOnlyTheOnesThatChanged) {
   after.signal_bars = 2;
   after.subtitle = "0:07";
   after.notice_fading = true;
-  after.title = "not a part";  // labels go through DirtyOnly, never here
+  after.title = "not a part"; // labels go through DirtyOnly, never here
   const std::vector<const char*> changed = pbr::CallChromeChangedVariables(before, after);
   std::vector<std::string> names(changed.begin(), changed.end());
   EXPECT_EQ(names, (std::vector<std::string>{"call_in_progress_subtitle", "call_in_progress_signal_bars",
@@ -403,9 +403,7 @@ TEST(CallChromePortsTest, MuteClassifyNotifiesDirtyOnly) {
   // CallController path: classify mute → apply_snapshot(..., DirtyOnly), never DirtyWindow.
   std::vector<pbr::CallChromeUpdate> applied;
   pbr::ShellCallChromePorts ports;
-  ports.apply_snapshot = [&](const pbr::CallChromeSnapshot&, pbr::CallChromeUpdate u) {
-    applied.push_back(u);
-  };
+  ports.apply_snapshot = [&](const pbr::CallChromeSnapshot&, pbr::CallChromeUpdate u) { applied.push_back(u); };
 
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;

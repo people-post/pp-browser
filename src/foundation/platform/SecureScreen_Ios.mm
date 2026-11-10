@@ -12,9 +12,9 @@ bool g_inactive = false;
 /** A secret can be read on screen (SetSecretLegible), and the screen is being recorded or mirrored. */
 bool g_legible = false;
 bool g_captured = false;
-UIView* g_cover = nil;  // retained while shown
+UIView* g_cover = nil; // retained while shown
 /** The cover says why only while it hides a recording (the app switcher's picture needs no words). */
-UILabel* g_cover_label = nil;  // owned by g_cover
+UILabel* g_cover_label = nil; // owned by g_cover
 
 /** The app's window: the key one, else the first. */
 UIWindow* AppWindow() {
@@ -64,7 +64,7 @@ void Refresh() {
                                                         table:nil];
     [cover addSubview:label];
     g_cover_label = label;
-    [label release];  // the cover holds it
+    [label release]; // the cover holds it
     [window addSubview:cover];
     g_cover = cover;
   } else if (!want && g_cover != nil) {

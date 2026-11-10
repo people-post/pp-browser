@@ -33,9 +33,8 @@ enum class CallHopScope {
  * Note: same RFC1918 /24 across remotes is only a *candidate* Link — PreferLocal still
  * requires lan_reachability_confirmed (coincidental 192.168.1.0/24 on different LANs).
  */
-CallHopScope InferCallHopScope(
-    const std::vector<std::string>& local_mas,
-    const std::unordered_map<std::string, std::vector<std::string>>& remote_mas_by_peer);
+CallHopScope InferCallHopScope(const std::vector<std::string>& local_mas,
+                               const std::unordered_map<std::string, std::vector<std::string>>& remote_mas_by_peer);
 
 /**
  * Scope-aware SoftMigrate hop order (V035).
@@ -43,12 +42,10 @@ CallHopScope InferCallHopScope(
  * Wide / Site → org/directory public MAs first. PreferLocal on Wide only when
  * local_advertise_ma is publicly dialable (public /ip4 or global /ip6).
  */
-std::vector<mesh::MeshHopCandidate> SelectCallMediaHop(std::vector<mesh::MeshHopCandidate> ranked,
-                                                 CallHopScope scope,
-                                                 const std::string& local_peer_id,
-                                                 bool prefer_local_as_hop,
-                                                 const std::string& local_advertise_ma,
-                                                 bool lan_reachability_confirmed = false);
+std::vector<mesh::MeshHopCandidate> SelectCallMediaHop(std::vector<mesh::MeshHopCandidate> ranked, CallHopScope scope,
+                                                       const std::string& local_peer_id, bool prefer_local_as_hop,
+                                                       const std::string& local_advertise_ma,
+                                                       bool lan_reachability_confirmed = false);
 
 /** `hop_peer_id` moved to the front of `ranked` when it is listed (order otherwise kept). */
 std::vector<mesh::MeshHopCandidate> PreferNamedHopFirst(std::vector<mesh::MeshHopCandidate> ranked,
@@ -67,8 +64,7 @@ std::vector<mesh::MeshHopCandidate> PlannedHopFirst(std::vector<mesh::MeshHopCan
  * - Site → never PreferLocal (different private subnets cannot dial PreferLocal MA)
  * - Wide → only when advertise MA is publicly dialable (public /ip4 or global /ip6)
  */
-bool PreferLocalAllowedForScope(CallHopScope scope, bool prefer_local_as_hop,
-                                const std::string& local_advertise_ma,
+bool PreferLocalAllowedForScope(CallHopScope scope, bool prefer_local_as_hop, const std::string& local_advertise_ma,
                                 bool lan_reachability_confirmed = false);
 
 /** True when local advertise includes a publicly dialable IPv4 or global IPv6 host. */
@@ -78,8 +74,7 @@ bool LocalAdvertiseHasPublicIpv4(const std::vector<std::string>& local_mas);
  * Guest: may dial a private hop MA only when same /24 as local private advertise
  * and local is not also advertising a public IPv4 (WAN node must not dial PreferLocal LAN).
  */
-bool GuestMayDialPrivateHopMa(const std::string& hop_multiaddr,
-                              const std::vector<std::string>& local_mas);
+bool GuestMayDialPrivateHopMa(const std::string& hop_multiaddr, const std::vector<std::string>& local_mas);
 
 /** V050 gt4: the hop a group forms on when the third participant joins. */
 enum class GroupHopAtJoin {

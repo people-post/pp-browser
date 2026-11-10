@@ -181,8 +181,8 @@ TEST_F(SecuritySettingsGraceTest, ThePageHasTheRowItsHelpAndBothLanguages) {
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = ReadAsset(locale);
     for (const char* key : {"settings.security.grace.title", "settings.security.grace.now", "settings.security.grace.5",
-                            "settings.security.grace.15", "settings.security.grace.60", "settings.security.grace.always",
-                            "settings.security.grace.help",
+                            "settings.security.grace.15", "settings.security.grace.60",
+                            "settings.security.grace.always", "settings.security.grace.help",
                             "pin.verify_export_message", "pin.verify_recovery_message", "pin.change_old_message"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
@@ -239,7 +239,7 @@ TEST_F(TransferCodePinTest, AnOwnPinIsAskedForBeforeTheCode) {
   EXPECT_EQ(exports_, 0);
 
   ASSERT_TRUE(on_ok_);
-  on_ok_();  // the gate took the PIN and closed
+  on_ok_(); // the gate took the PIN and closed
   EXPECT_EQ(confirms_, 1);
   EXPECT_EQ(host.failures, 0);
 }
@@ -359,8 +359,8 @@ TEST_F(SecuritySettingsBiometricTest, OnAsksForThePinFirstOffDoesNot) {
   EXPECT_FALSE(host.UiState().security_biometric_on) << "not before the PIN";
   EXPECT_EQ(host.pushes, 0);
   ASSERT_TRUE(on_ok_);
-  enabled_ = true;  // the gate's check ran enable_biometric with the PIN: the engine sealed the DEK
-  on_ok_();         // and the gate closed
+  enabled_ = true; // the gate's check ran enable_biometric with the PIN: the engine sealed the DEK
+  on_ok_();        // and the gate closed
   EXPECT_TRUE(host.UiState().security_biometric_on);
   EXPECT_EQ(host.pushes, 1) << "the switch redrawn";
 

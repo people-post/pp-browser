@@ -61,8 +61,8 @@ struct AmpDirectChatTransport::Impl {
     }
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     auto policy = mesh::InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
-    *session_holder = links->BindChannelOnLink(link, channel_id, policy,
-        [this, session_holder, remote_peer_id](Roe<std::vector<uint8_t>> frame) {
+    *session_holder = links->BindChannelOnLink(
+        link, channel_id, policy, [this, session_holder, remote_peer_id](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
           if (!session || !frame || stopped.load(std::memory_order_acquire)) {
             return false;
@@ -103,8 +103,11 @@ struct AmpDirectChatTransport::Impl {
 
 AmpDirectChatTransport::AmpDirectChatTransport(mesh::IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker,
                                                IoPost post_io, IoAfter post_after)
-    : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
+    : impl_(std::make_unique<Impl>()),
+      links_(links),
+      io_pump_(std::move(io_pump)),
+      post_worker_(std::move(post_worker)),
+      post_io_(std::move(post_io)),
       post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
@@ -124,8 +127,7 @@ void AmpDirectChatTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kDirectChatProtocolId,
-      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
-                                                const std::string& remote_peer_id,
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle, const std::string& remote_peer_id,
                                                 const uint32_t channel_id) {
         impl->HandleInboundChannel(handle, remote_peer_id, channel_id);
       }));
@@ -153,34 +155,34 @@ DirectSendFailure AmpDirectChatTransport::WrapLinkFailure(const mesh::IChatPeerL
   using LinkErr = mesh::IChatPeerLinks::Err;
   DirectSendErr code = DirectSendErr::Generic;
   switch (link.GetCode()) {
-  case LinkErr::EndpointNotRegistered:
-    code = DirectSendErr::NoAddress;
-    break;
-  case LinkErr::DialInBackoff:
-    code = DirectSendErr::DialInBackoff;
-    break;
-  case LinkErr::TooManyConcurrentDials:
-  case LinkErr::MaxLinksReached:
-    code = DirectSendErr::DialBusy;
-    break;
-  case LinkErr::DialTimeout:
-    code = DirectSendErr::NoAnswer;
-    break;
-  case LinkErr::HandshakeFailed:
-    code = DirectSendErr::Refused;
-    break;
-  case LinkErr::TransportFailed:
-    code = DirectSendErr::TransportFailed;
-    break;
-  case LinkErr::ChannelOpenFailed:
-  case LinkErr::AssociationNotReady:
-  case LinkErr::LinkNotFound:
-  case LinkErr::NestedCarrierIncomplete:
-    code = DirectSendErr::ChannelFailed;
-    break;
-  default:
-    code = DirectSendErr::Generic;
-    break;
+    case LinkErr::EndpointNotRegistered:
+      code = DirectSendErr::NoAddress;
+      break;
+    case LinkErr::DialInBackoff:
+      code = DirectSendErr::DialInBackoff;
+      break;
+    case LinkErr::TooManyConcurrentDials:
+    case LinkErr::MaxLinksReached:
+      code = DirectSendErr::DialBusy;
+      break;
+    case LinkErr::DialTimeout:
+      code = DirectSendErr::NoAnswer;
+      break;
+    case LinkErr::HandshakeFailed:
+      code = DirectSendErr::Refused;
+      break;
+    case LinkErr::TransportFailed:
+      code = DirectSendErr::TransportFailed;
+      break;
+    case LinkErr::ChannelOpenFailed:
+    case LinkErr::AssociationNotReady:
+    case LinkErr::LinkNotFound:
+    case LinkErr::NestedCarrierIncomplete:
+      code = DirectSendErr::ChannelFailed;
+      break;
+    default:
+      code = DirectSendErr::Generic;
+      break;
   }
   return DirectSendFailure::Of(code, detail::AppendFrom("amp direct chat: link failed", "link", link.message));
 }
@@ -235,8 +237,7 @@ bool AmpDirectChatTransport::IsPeerReachable(const std::string& peer_identity_va
   return !ReachableKey(peer_identity_value).empty();
 }
 
-void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_user_id,
-                                               const RelayEnvelope& envelope,
+void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_user_id, const RelayEnvelope& envelope,
                                                std::function<void(DirectSendRoe)> on_done) {
   auto settled = std::make_shared<std::atomic<bool>>(false);
   auto finish_once = std::make_shared<std::function<void(DirectSendRoe)>>();
@@ -271,61 +272,57 @@ void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_use
   };
 
   const std::string peer_key = ReachableKey(peer_relay_user_id);
-  links_.OpenChannel(peer_key, kDirectChatProtocolId, pp::amp::ControlJsonChannelPolicy(),
-                     [this, peer_key, envelope_json, finish, settled, session_holder,
-                      deadline](mesh::IChatPeerLinks::ChannelRoe channel) mutable {
-                       if (!channel) {
-                         (*finish)(WrapLinkFailure(channel.error()));
-                         return;
-                       }
-                       if (impl_->stopped.load(std::memory_order_acquire)) {
-                         (*finish)(DirectSendFailure::Of(DirectSendErr::NotStarted, "amp direct chat service stopped"));
-                         return;
-                       }
-                       const uint32_t channel_id = *channel;
-                       links_.WhenChannelOpen(
-                           peer_key, channel_id, SteadyDeadlineMs(deadline),
-                           [this, peer_key, channel_id, envelope_json, finish, settled, session_holder,
-                            deadline](bool open) mutable {
-                             if (impl_->stopped.load(std::memory_order_acquire)) {
-                               (*finish)(DirectSendFailure::Of(DirectSendErr::NotStarted, "amp direct chat service stopped"));
-                               return;
-                             }
-                             if (!open) {
-                               (*finish)(DirectSendFailure::Of(DirectSendErr::ChannelFailed,
-                                                               "amp direct chat: channel open failed"));
-                               return;
-                             }
+  links_.OpenChannel(
+      peer_key, kDirectChatProtocolId, pp::amp::ControlJsonChannelPolicy(),
+      [this, peer_key, envelope_json, finish, settled, session_holder,
+       deadline](mesh::IChatPeerLinks::ChannelRoe channel) mutable {
+        if (!channel) {
+          (*finish)(WrapLinkFailure(channel.error()));
+          return;
+        }
+        if (impl_->stopped.load(std::memory_order_acquire)) {
+          (*finish)(DirectSendFailure::Of(DirectSendErr::NotStarted, "amp direct chat service stopped"));
+          return;
+        }
+        const uint32_t channel_id = *channel;
+        links_.WhenChannelOpen(
+            peer_key, channel_id, SteadyDeadlineMs(deadline),
+            [this, peer_key, channel_id, envelope_json, finish, settled, session_holder, deadline](bool open) mutable {
+              if (impl_->stopped.load(std::memory_order_acquire)) {
+                (*finish)(DirectSendFailure::Of(DirectSendErr::NotStarted, "amp direct chat service stopped"));
+                return;
+              }
+              if (!open) {
+                (*finish)(DirectSendFailure::Of(DirectSendErr::ChannelFailed, "amp direct chat: channel open failed"));
+                return;
+              }
 
-                             *session_holder = links_.BindChannel(
-                                 peer_key, channel_id, pp::amp::ControlJsonChannelPolicy(),
-                                 [finish](Roe<std::vector<uint8_t>> ack) {
-                                   if (!ack) {
-                                     (*finish)(DirectSendFailure::Of(DirectSendErr::NotConfirmed,
-                                                                     "Failed to read direct chat ack"));
-                                     return false;
-                                   }
-                                   (*finish)(DirectSendRoe());
-                                   return false;
-                                 });
-                             if (!*session_holder) {
-                               (*finish)(DirectSendFailure::Of(DirectSendErr::ChannelFailed,
-                                                               "amp direct chat: channel open failed"));
-                               return;
-                             }
+              *session_holder = links_.BindChannel(
+                  peer_key, channel_id, pp::amp::ControlJsonChannelPolicy(), [finish](Roe<std::vector<uint8_t>> ack) {
+                    if (!ack) {
+                      (*finish)(DirectSendFailure::Of(DirectSendErr::NotConfirmed, "Failed to read direct chat ack"));
+                      return false;
+                    }
+                    (*finish)(DirectSendRoe());
+                    return false;
+                  });
+              if (!*session_holder) {
+                (*finish)(DirectSendFailure::Of(DirectSendErr::ChannelFailed, "amp direct chat: channel open failed"));
+                return;
+              }
 
-                             if (!(*session_holder)->EnqueueOutbound(JsonToBody(envelope_json))) {
-                               (*finish)(DirectSendFailure::Of(DirectSendErr::ChannelFailed,
-                                                               "Failed to send direct chat envelope"));
-                               return;
-                             }
-                             mesh::AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
-                               (*finish)(DirectSendFailure::Of(DirectSendErr::NotConfirmed,
-                                                               "amp direct chat send timed out"));
-                             },
-                                                    post_after_);
-                           });
-                     });
+              if (!(*session_holder)->EnqueueOutbound(JsonToBody(envelope_json))) {
+                (*finish)(DirectSendFailure::Of(DirectSendErr::ChannelFailed, "Failed to send direct chat envelope"));
+                return;
+              }
+              mesh::AmpScheduleUntilSettled(
+                  post_io_, io_pump_, settled, deadline,
+                  [finish]() {
+                    (*finish)(DirectSendFailure::Of(DirectSendErr::NotConfirmed, "amp direct chat send timed out"));
+                  },
+                  post_after_);
+            });
+      });
 }
 
 DirectSendRoe AmpDirectChatTransport::SendEnvelope(const std::string& peer_relay_user_id,
@@ -343,7 +340,7 @@ DirectSendRoe AmpDirectChatTransport::SendEnvelope(const std::string& peer_relay
   });
 
   mesh::AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
-               deadline, io_pump_);
+                     deadline, io_pump_);
 
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     return DirectSendFailure::Of(DirectSendErr::NotConfirmed, "amp direct chat send timed out");

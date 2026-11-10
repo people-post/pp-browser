@@ -90,8 +90,8 @@ void SettingsSecurityActions::SendDiagnostics() {
     return;
   }
   if (!commands_.send_diagnostics || !feedback_.show_confirm) {
-    host_.ReportFailure(Error("Diagnostics are not available")
-                            .WithUser(Tr("settings.security.diagnostics.unavailable")));
+    host_.ReportFailure(
+        Error("Diagnostics are not available").WithUser(Tr("settings.security.diagnostics.unavailable")));
     return;
   }
   feedback_.show_confirm(
@@ -153,16 +153,12 @@ void SettingsSecurityActions::EnsureUnlocked(const std::string& not_ready_messag
     then();
     return;
   }
-  auto locked = [this]() {
-    host_.ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN first"));
-  };
+  auto locked = [this]() { host_.ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN first")); };
   if (!unlock_.ensure_unlocked) {
     locked();
     return;
   }
-  unlock_.ensure_unlocked([locked, then = std::move(then)](const bool unlocked) {
-    unlocked ? then() : locked();
-  });
+  unlock_.ensure_unlocked([locked, then = std::move(then)](const bool unlocked) { unlocked ? then() : locked(); });
 }
 
 void SettingsSecurityActions::CheckPin(const SecretText& pin, std::function<void(Roe<void>)> done) {
@@ -195,9 +191,9 @@ void SettingsSecurityActions::ChangePin() {
           }
           ProfilePreferences prefs = host_.Store().Snapshot().profile_prefs;
           prefs.pin_is_default = false;
-          prefs.pin_digits = PinDigitsOf(new_pin.Reveal());  // the gate's pad follows the new PIN
+          prefs.pin_digits = PinDigitsOf(new_pin.Reveal()); // the gate's pad follows the new PIN
           auto saved = host_.Store().SaveProfilePrefs(prefs);
-          done({});  // the PIN is changed: the gate closes either way
+          done({}); // the PIN is changed: the gate closes either way
           if (!saved) {
             host_.ReportFailure(saved.error());
             return;
@@ -233,8 +229,9 @@ void SettingsSecurityActions::ToggleBiometric() {
       [this](const SecretText& pin, std::function<void(Roe<void>)> done) {
         AppRuntime::PostWorkerNormal([this, pin, done = std::move(done)]() {
           // A wrong PIN comes back as the vault's refusal: the gate says so and stays.
-          Roe<void> enabled = commands_.enable_biometric ? commands_.enable_biometric(pin)
-                                                         : Roe<void>(Error("Face / fingerprint unlock is not available"));
+          Roe<void> enabled = commands_.enable_biometric
+                                  ? commands_.enable_biometric(pin)
+                                  : Roe<void>(Error("Face / fingerprint unlock is not available"));
           AppRuntime::PostUI([done, enabled = std::move(enabled)]() { done(enabled); });
         });
       },
@@ -277,30 +274,30 @@ void SettingsSecurityActions::ConfirmExportLinkDevice() {
   if (!feedback_.show_confirm) {
     return;
   }
-  feedback_.show_confirm(
-      Tr("settings.security.link_device.export_confirm_title"),
-      Tr("settings.security.link_device.export_confirm_message"),
-      [this](const bool ok) {
-        if (!ok) {
-          return;
-        }
-        AppRuntime::PostWorkerNormal([this]() {
-          auto result = commands_.export_link_device ? commands_.export_link_device()
-                                                     : Roe<std::string>{Error("Messaging is not ready")};
-          AppRuntime::PostUI([this, result = std::move(result)]() {
-            if (!result) {
-              host_.ReportFailure(result.error());
-              return;
-            }
-            if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-              system->SetClipboardText(result.value().c_str());
-            }
-            UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
-            host_.ShowStatus("");
-          });
-        });
-      },
-      {});
+  feedback_.show_confirm(Tr("settings.security.link_device.export_confirm_title"),
+                         Tr("settings.security.link_device.export_confirm_message"),
+                         [this](const bool ok) {
+                           if (!ok) {
+                             return;
+                           }
+                           AppRuntime::PostWorkerNormal([this]() {
+                             auto result = commands_.export_link_device
+                                               ? commands_.export_link_device()
+                                               : Roe<std::string>{Error("Messaging is not ready")};
+                             AppRuntime::PostUI([this, result = std::move(result)]() {
+                               if (!result) {
+                                 host_.ReportFailure(result.error());
+                                 return;
+                               }
+                               if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+                                 system->SetClipboardText(result.value().c_str());
+                               }
+                               UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
+                               host_.ShowStatus("");
+                             });
+                           });
+                         },
+                         {});
 }
 
 void SettingsSecurityActions::ShowRecoveryPhrase() {
@@ -330,7 +327,7 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
                                                   : Roe<std::optional<SecretText>>(Error("Messaging is not ready"));
           AppRuntime::PostUI([revealed, done, phrase = std::move(phrase)]() {
             if (!phrase) {
-              done(phrase.error());  // a wrong PIN: the gate says so and stays
+              done(phrase.error()); // a wrong PIN: the gate says so and stays
               return;
             }
             *revealed = *phrase;
@@ -346,7 +343,7 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
           host_.ReportFailure(Error("No recovery phrase").WithUser(Tr("settings.security.recovery.none")));
           return;
         }
-        recovery_phrase_ = (*revealed)->Reveal().c_str();  // shown to its owner, on their screen
+        recovery_phrase_ = (*revealed)->Reveal().c_str(); // shown to its owner, on their screen
         revealed->reset();
         host_.PushToView(false);
         // Home's Security widget: the phrase has been in front of its owner once (Kenneth 2026-11-05 原话 98).
@@ -411,34 +408,33 @@ void SettingsSecurityActions::SaveAccountCopy() {
 
 void SettingsSecurityActions::ClearUndeliveredOlderThan() {
   if (!commands_.clear_undelivered_older_than) {
-    host_.ReportFailure(
-        Error("Messaging is not ready").WithUser(Tr("settings.security.clear_undelivered.not_ready")));
+    host_.ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.clear_undelivered.not_ready")));
     return;
   }
   if (!feedback_.show_confirm_destructive) {
     return;
   }
-  feedback_.show_confirm_destructive(
-      Tr("settings.security.clear_undelivered_confirm_title"),
-      Tr("settings.security.clear_undelivered_confirm_message"),
-      [this](const bool ok) {
-        if (!ok) {
-          return;
-        }
-        AppRuntime::PostWorkerNormal([this]() {
-          auto result = commands_.clear_undelivered_older_than ? commands_.clear_undelivered_older_than(7)
-                                                               : Roe<void>{Error("Messaging is not ready")};
-          AppRuntime::PostUI([this, result = std::move(result)]() {
-            if (!result) {
-              host_.ReportFailure(result.error());
-              return;
-            }
-            UserFeedback::Ok(Tr("settings.security.clear_undelivered_done"));
-            host_.ShowStatus("");
-          });
-        });
-      },
-      {});
+  feedback_.show_confirm_destructive(Tr("settings.security.clear_undelivered_confirm_title"),
+                                     Tr("settings.security.clear_undelivered_confirm_message"),
+                                     [this](const bool ok) {
+                                       if (!ok) {
+                                         return;
+                                       }
+                                       AppRuntime::PostWorkerNormal([this]() {
+                                         auto result = commands_.clear_undelivered_older_than
+                                                           ? commands_.clear_undelivered_older_than(7)
+                                                           : Roe<void>{Error("Messaging is not ready")};
+                                         AppRuntime::PostUI([this, result = std::move(result)]() {
+                                           if (!result) {
+                                             host_.ReportFailure(result.error());
+                                             return;
+                                           }
+                                           UserFeedback::Ok(Tr("settings.security.clear_undelivered_done"));
+                                           host_.ShowStatus("");
+                                         });
+                                       });
+                                     },
+                                     {});
 }
 
 void SettingsSecurityActions::ResetToolPermissions() {
@@ -446,35 +442,36 @@ void SettingsSecurityActions::ResetToolPermissions() {
     return;
   }
   feedback_.show_confirm_destructive(Tr("settings.security.tool_permissions.reset_title"),
-                         Tr("settings.security.tool_permissions.reset_message"),
-                         [this](const bool ok) {
-                           if (!ok) {
-                             return;
-                           }
-                           if (auto reset = host_.ForgetToolPermissions(); !reset) {
-                             host_.ReportFailure(reset.error());
-                           }
-                         },
-                         {});
+                                     Tr("settings.security.tool_permissions.reset_message"),
+                                     [this](const bool ok) {
+                                       if (!ok) {
+                                         return;
+                                       }
+                                       if (auto reset = host_.ForgetToolPermissions(); !reset) {
+                                         host_.ReportFailure(reset.error());
+                                       }
+                                     },
+                                     {});
 }
 
 void SettingsSecurityActions::ResetProfile() {
   if (!feedback_.show_confirm_with_checkbox) {
     return;
   }
-  feedback_.show_confirm_with_checkbox(
-      Tr("settings.storage.reset_confirm_title"), Tr("settings.storage.reset_confirm_message"),
-      Tr("settings.storage.reset_confirm_check"), false, [this](const bool confirmed, const bool checked) {
-        if (!confirmed) {
-          return;
-        }
-        if (!checked) {
-          UserFeedback::Fail(Tr("settings.storage.reset_confirm_check"));
-          return;
-        }
-        PerformResetProfile();
-      },
-      {});
+  feedback_.show_confirm_with_checkbox(Tr("settings.storage.reset_confirm_title"),
+                                       Tr("settings.storage.reset_confirm_message"),
+                                       Tr("settings.storage.reset_confirm_check"), false,
+                                       [this](const bool confirmed, const bool checked) {
+                                         if (!confirmed) {
+                                           return;
+                                         }
+                                         if (!checked) {
+                                           UserFeedback::Fail(Tr("settings.storage.reset_confirm_check"));
+                                           return;
+                                         }
+                                         PerformResetProfile();
+                                       },
+                                       {});
 }
 
 void SettingsSecurityActions::PerformResetProfile() {
@@ -497,14 +494,14 @@ void SettingsSecurityActions::ResetChats() {
   if (!feedback_.show_confirm_destructive) {
     return;
   }
-  feedback_.show_confirm_destructive(Tr("settings.storage.reset_chats_confirm_title"),
-                         Tr("settings.storage.reset_chats_confirm_message"),
-                         [this](const bool ok) {
-                           if (ok) {
-                             PerformResetChats();
-                           }
-                         },
-                         Tr("settings.storage.reset_chats_confirm_ok"));
+  feedback_.show_confirm_destructive(
+      Tr("settings.storage.reset_chats_confirm_title"), Tr("settings.storage.reset_chats_confirm_message"),
+      [this](const bool ok) {
+        if (ok) {
+          PerformResetChats();
+        }
+      },
+      Tr("settings.storage.reset_chats_confirm_ok"));
 }
 
 void SettingsSecurityActions::PerformResetChats() {

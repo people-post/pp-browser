@@ -43,12 +43,12 @@ enum class PeerAnnounceState : uint8_t { Scheduled = 0, Live = 1, Ended = 2 };
 
 inline const char* PeerAnnounceStateToString(PeerAnnounceState state) {
   switch (state) {
-  case PeerAnnounceState::Scheduled:
-    return "scheduled";
-  case PeerAnnounceState::Live:
-    return "live";
-  case PeerAnnounceState::Ended:
-    return "ended";
+    case PeerAnnounceState::Scheduled:
+      return "scheduled";
+    case PeerAnnounceState::Live:
+      return "live";
+    case PeerAnnounceState::Ended:
+      return "ended";
   }
   return "scheduled";
 }

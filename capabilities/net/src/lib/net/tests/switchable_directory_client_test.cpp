@@ -40,7 +40,7 @@ TEST(SwitchableDirectoryClientTest, WithNoBackendEveryLookupSaysNotConfigured) {
 
 TEST(SwitchableDirectoryClientTest, AHolderFollowsTheConfiguredBackendAcrossChanges) {
   SwitchableDirectoryClient directory;
-  mesh::IDirectoryClient& held = directory;  // what a resolver keeps
+  mesh::IDirectoryClient& held = directory; // what a resolver keeps
 
   directory.SetBackend(std::make_shared<NamedDirectory>("first"));
   EXPECT_TRUE(directory.Configured());

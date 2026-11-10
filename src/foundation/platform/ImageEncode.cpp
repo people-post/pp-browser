@@ -109,16 +109,37 @@ SDL_Surface* ApplyExifOrientation(SDL_Surface* source, const int orientation) {
       int dx = x;
       int dy = y;
       switch (orientation) {
-      case 2: dx = w - 1 - x; break;
-      case 3: dx = w - 1 - x; dy = h - 1 - y; break;
-      case 4: dy = h - 1 - y; break;
-      case 5: dx = y; dy = x; break;
-      case 6: dx = h - 1 - y; dy = x; break;
-      case 7: dx = h - 1 - y; dy = w - 1 - x; break;
-      case 8: dx = y; dy = w - 1 - x; break;
-      default: break;
+        case 2:
+          dx = w - 1 - x;
+          break;
+        case 3:
+          dx = w - 1 - x;
+          dy = h - 1 - y;
+          break;
+        case 4:
+          dy = h - 1 - y;
+          break;
+        case 5:
+          dx = y;
+          dy = x;
+          break;
+        case 6:
+          dx = h - 1 - y;
+          dy = x;
+          break;
+        case 7:
+          dx = h - 1 - y;
+          dy = w - 1 - x;
+          break;
+        case 8:
+          dx = y;
+          dy = w - 1 - x;
+          break;
+        default:
+          break;
       }
-      auto* to = static_cast<uint8_t*>(out->pixels) + static_cast<size_t>(dy) * out->pitch + static_cast<size_t>(dx) * bpp;
+      auto* to =
+          static_cast<uint8_t*>(out->pixels) + static_cast<size_t>(dy) * out->pitch + static_cast<size_t>(dx) * bpp;
       std::memcpy(to, from + static_cast<size_t>(x) * bpp, static_cast<size_t>(bpp));
     }
   }

@@ -31,7 +31,7 @@ void ConfigApplyBridge::InstallListeners() {
   last_network_ = ProjectNetwork(snap.config);
   last_policy_ = ProjectPolicy(snap.profile_prefs);
   last_notifications_ = ProjectNotifications(snap.profile_prefs);
-  messaging_->Apply(*last_notifications_);  // stay connected (P011) holds from unlock
+  messaging_->Apply(*last_notifications_); // stay connected (P011) holds from unlock
   last_chrome_ = ShellHost::ProjectChrome(snap.profile_prefs);
   last_locale_ = LocalizationService::Prefs{.language = snap.profile_prefs.language};
   last_agent_ = ChatController::ProjectAgent(snap.config);
@@ -97,8 +97,7 @@ void ConfigApplyBridge::OnProfilePrefs(const ProfilePreferences& prefs) {
   }
 }
 
-void ConfigApplyBridge::ApplyChrome(const ShellHost::ChromePrefs& next,
-                                    const ShellHost::ChromePrefs* previous) {
+void ConfigApplyBridge::ApplyChrome(const ShellHost::ChromePrefs& next, const ShellHost::ChromePrefs* previous) {
   const bool theme_changed = !previous || next.theme != previous->theme;
   const bool appearance_changed = !previous || next.appearance != previous->appearance;
   if (theme_changed && resolve_asset_) {

@@ -27,8 +27,8 @@ public:
   using IoAfter = std::function<void(std::chrono::milliseconds, std::function<void()>)>;
 
   AmpChatHistoryTransport(mesh::IChatPeerLinks& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
-                        IPeerSessionStore& psk_store, IPeerSigningKeyResolver& signing_keys,
-                        WorkerPost post_worker = {}, IoPost post_io = {}, IoAfter post_after = {});
+                          IPeerSessionStore& psk_store, IPeerSigningKeyResolver& signing_keys,
+                          WorkerPost post_worker = {}, IoPost post_io = {}, IoAfter post_after = {});
   /** Tests whose mesh does not run on the identity's device key: the PeerId requests are signed for. */
   void SetLocalPeerIdForTest(std::string peer_id) { local_peer_id_override_ = std::move(peer_id); }
   ~AmpChatHistoryTransport() override;

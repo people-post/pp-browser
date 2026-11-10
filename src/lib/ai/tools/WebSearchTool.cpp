@@ -63,9 +63,8 @@ bool WantsNewsHeadlines(const std::string& user_message) {
   if (Contains(text, "headline")) {
     return true;
   }
-  if (Contains(text, "news") &&
-      (Contains(text, "today") || Contains(text, "latest") || Contains(text, "breaking") ||
-       Contains(text, "current") || Contains(text, "top stories"))) {
+  if (Contains(text, "news") && (Contains(text, "today") || Contains(text, "latest") || Contains(text, "breaking") ||
+                                 Contains(text, "current") || Contains(text, "top stories"))) {
     return true;
   }
   return Contains(text, "news about") || Contains(text, "latest news");
@@ -73,9 +72,9 @@ bool WantsNewsHeadlines(const std::string& user_message) {
 
 std::string StripLeadingPhrases(std::string text) {
   static const char* prefixes[] = {
-      "please ", "can you ", "could you ", "would you ", "show me ", "tell me ", "give me ",
-      "what are ", "what is ", "what's ", "whats ", "find me ", "search for ", "look up ",
-      "get me ", "i want ", "i need ", "some ", "the ", "a ",
+      "please ",   "can you ", "could you ", "would you ", "show me ", "tell me ",    "give me ",
+      "what are ", "what is ", "what's ",    "whats ",     "find me ", "search for ", "look up ",
+      "get me ",   "i want ",  "i need ",    "some ",      "the ",     "a ",
   };
 
   bool changed = true;
@@ -257,8 +256,7 @@ Value ParseDuckDuckGoInstantAnswer(const Object& json) {
 Value ParseDuckDuckGoLiteHtml(const std::string& html) {
   std::vector<Value> results;
 
-  static const std::regex link_re(
-      R"(<a[^>]*href=['"]([^'"]*)['"][^>]*class=['"]result-link['"][^>]*>([^<]*)</a>)");
+  static const std::regex link_re(R"(<a[^>]*href=['"]([^'"]*)['"][^>]*class=['"]result-link['"][^>]*>([^<]*)</a>)");
   static const std::regex snippet_re(R"(class=['"]result-snippet['"][^>]*>\s*([\s\S]*?)\s*</td>)");
 
   auto link_it = std::sregex_iterator(html.begin(), html.end(), link_re);
@@ -287,8 +285,7 @@ Value ParseDuckDuckGoLiteHtml(const std::string& html) {
 Value ParseDuckDuckGoHtmlResults(const std::string& html) {
   std::vector<Value> results;
 
-  static const std::regex link_re(
-      R"(<a[^>]*href=['"]([^'"]*)['"][^>]*class=['"]result__a['"][^>]*>([^<]*)</a>)");
+  static const std::regex link_re(R"(<a[^>]*href=['"]([^'"]*)['"][^>]*class=['"]result__a['"][^>]*>([^<]*)</a>)");
   static const std::regex snippet_re(R"(class=['"]result__snippet['"][^>]*>([\s\S]*?)</a>)");
 
   auto link_it = std::sregex_iterator(html.begin(), html.end(), link_re);
@@ -377,9 +374,9 @@ Value ParseGoogleNewsRssXml(const std::string& xml) {
 }
 
 Roe<std::string> SearchGoogleNewsRss(const std::string& query) {
-  const std::string url = query.empty()
-                              ? "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"
-                              : "https://news.google.com/rss/search?q=" + UrlEncode(query) + "&hl=en-US&gl=US&ceid=US:en";
+  const std::string url =
+      query.empty() ? "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"
+                    : "https://news.google.com/rss/search?q=" + UrlEncode(query) + "&hl=en-US&gl=US&ceid=US:en";
   // The query is the user's own words: never at info level in a file that may be shared (PB-057).
   logging::getLogger("WebSearchTool").debug << "web_search (google news rss) query: " << query;
 
@@ -395,8 +392,8 @@ Roe<std::string> SearchGoogleNewsRss(const std::string& query) {
     return Error("Google News RSS returned no items");
   }
 
-  logging::getLogger("WebSearchTool").info << "web_search (google news rss) returned "
-                                           << results_array->elements.size() << " result(s)";
+  logging::getLogger("WebSearchTool").info << "web_search (google news rss) returned " << results_array->elements.size()
+                                           << " result(s)";
   Object out;
   out.set("results", results);
   out.set("source", "google_news_rss");
@@ -465,18 +462,18 @@ ToolDescriptor WebSearchTool::Make(const SearchConfig& config) {
   ToolDescriptor tool;
   tool.definition = ToolDefinition{
       .name = "web_search",
-      .description = "Search the web for up-to-date information. Returns numbered result lines "
-                     "(title, snippet, url). Use for news, current events, prices, weather, and recent facts. "
-                     "Call again with a refined query if the first results are incomplete or off-topic.",
+      .description =
+          "Search the web for up-to-date information. Returns numbered result lines "
+          "(title, snippet, url). Use for news, current events, prices, weather, and recent facts. "
+          "Call again with a refined query if the first results are incomplete or off-topic.",
       .parameters = TryParseObject(R"({
         "type": "object",
         "properties": {"query": {"type": "string", "description": "Concise search query"}},
         "required": ["query"]
-      })").value_or(Object{}),
+      })")
+                        .value_or(Object{}),
   };
-  tool.execute = [config](const Object& arguments) -> Roe<std::string> {
-    return Search(config, arguments);
-  };
+  tool.execute = [config](const Object& arguments) -> Roe<std::string> { return Search(config, arguments); };
   return tool;
 }
 

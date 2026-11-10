@@ -17,12 +17,9 @@ void FillEchoRegistry(pbr::ToolRegistry& registry) {
   parameters.set("type", "object");
   parameters.set("properties", properties);
 
-  registry.Register(pbr::MakeTool(
-      pbr::ToolDefinition{"echo_tool", "echo", std::move(parameters)},
-      pbr::ToolMeta{},
-      [](const pbr::Object& args) -> pbr::Roe<std::string> {
-        return pbr::DumpJson(args);
-      }));
+  registry.Register(
+      pbr::MakeTool(pbr::ToolDefinition{"echo_tool", "echo", std::move(parameters)}, pbr::ToolMeta{},
+                    [](const pbr::Object& args) -> pbr::Roe<std::string> { return pbr::DumpJson(args); }));
 }
 
 } // namespace
@@ -48,11 +45,11 @@ TEST(TurnExecutorTest, ExecutesToolAndBuildsScratchMessages) {
 // nickname in small print), taken from the local contacts on the device.
 TEST(TurnExecutorTest, ContactRowsShowTheRemarkFromTheLocalContacts) {
   pbr::ToolRegistry registry;
-  registry.Register(pbr::MakeTool(
-      pbr::ToolDefinition{"list_contacts", "contacts", pbr::Object{}}, pbr::ToolMeta{.risk = "read"},
-      [](const pbr::Object&) -> pbr::Roe<std::string> {
-        return std::string(R"([{"id":"c1","local":{"trust":"unknown"},"remote":{"nickname":"Wang"}}])");
-      }));
+  registry.Register(pbr::MakeTool(pbr::ToolDefinition{"list_contacts", "contacts", pbr::Object{}},
+                                  pbr::ToolMeta{.risk = "read"}, [](const pbr::Object&) -> pbr::Roe<std::string> {
+                                    return std::string(
+                                        R"([{"id":"c1","local":{"trust":"unknown"},"remote":{"nickname":"Wang"}}])");
+                                  }));
   pbr::TurnPlan plan;
   plan.render_mode = pbr::RenderMode::PeopleList;
   plan.response_goal = pbr::ResponseGoal::PeopleDiscovery;

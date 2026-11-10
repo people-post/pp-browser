@@ -53,9 +53,8 @@ void BuildToolRegistryFromConfig(ToolRegistry& registry, const AppConfig& config
     if (!client || !client->IsRunning()) {
       continue;
     }
-    const std::string prefix = i < custom_prefixes.size() && !custom_prefixes[i].empty()
-                                   ? custom_prefixes[i] + "__"
-                                   : "";
+    const std::string prefix =
+        i < custom_prefixes.size() && !custom_prefixes[i].empty() ? custom_prefixes[i] + "__" : "";
     const std::string id = prefix.empty() ? ("mcp:custom_" + std::to_string(i)) : ("mcp:" + custom_prefixes[i]);
     McpToolProvider custom(id, *client, {.tool_prefix = prefix}, "feeds");
     registry.RegisterProvider(custom);

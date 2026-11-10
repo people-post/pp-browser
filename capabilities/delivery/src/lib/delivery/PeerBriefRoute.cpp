@@ -47,9 +47,8 @@ std::optional<std::string> ContactRelayRoute(const Thread& thread, ContactsStore
   return std::nullopt;
 }
 
-std::optional<std::string> ResolvePeerBriefRoute(
-    const Thread& thread, ContactsStore& contacts,
-    const std::unordered_map<std::string, std::string>& account_to_relay) {
+std::optional<std::string> ResolvePeerBriefRoute(const Thread& thread, ContactsStore& contacts,
+                                                 const std::unordered_map<std::string, std::string>& account_to_relay) {
   if (auto relay = ContactRelayRoute(thread, contacts)) {
     return relay;
   }

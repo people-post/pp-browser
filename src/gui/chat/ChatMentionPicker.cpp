@@ -47,8 +47,7 @@ ChatMentionPicker::ChatMentionPicker(ChatMenusHost& host, ChatPresenter& present
           [this]() -> MentionCandidatePreload::Reader {
             ConversationsFacade* facade = presenter_.Facade();
             return [facade](const std::string& thread_id) {
-              return facade ? ChatPresenter::ReadMentionCandidates(facade, thread_id)
-                            : std::vector<MentionCandidate>{};
+              return facade ? ChatPresenter::ReadMentionCandidates(facade, thread_id) : std::vector<MentionCandidate>{};
             };
           },
           []() { return GroupRosterVersion::Get(); }, []() { return util::NowUnixMs(); }) {
@@ -71,7 +70,7 @@ void ChatMentionPicker::SyncThread() {
     preload_.Drop();
     preload_.Open(thread_id);
   } else {
-    preload_.Changed();  // messaging changed: a member joined or left, a name arrived
+    preload_.Changed(); // messaging changed: a member joined or left, a name arrived
   }
 }
 
@@ -128,7 +127,7 @@ void ChatMentionPicker::OnDraftChanged() {
     return;
   }
   if (at_ && !waiting_ && !ContextMenuHost::Instance().IsOpen()) {
-    at_.reset();  // closed from outside (Escape, a tap beside it): typing on does not bring it back
+    at_.reset(); // closed from outside (Escape, a tap beside it): typing on does not bring it back
     lines_.clear();
   }
   if (!at_) {
@@ -138,7 +137,7 @@ void ChatMentionPicker::OnDraftChanged() {
     }
     at_ = *trigger;
     if (thread_id != preload_.ThreadId()) {
-      SyncThread();  // the chat opened without the picker hearing of it
+      SyncThread(); // the chat opened without the picker hearing of it
     }
     preload_.Typed();
   }
@@ -163,7 +162,7 @@ void ChatMentionPicker::RefreshLines() {
     return;
   }
   if (lines == lines_ && ContextMenuHost::Instance().IsOpen()) {
-    return;  // the same lines are showing
+    return; // the same lines are showing
   }
   Show(lines);
 }
@@ -201,7 +200,7 @@ void ChatMentionPicker::Choose(const MentionCandidate& line) {
   at_.reset();
   lines_.clear();
   picks.push_back({line.kind, line.account_id, line.Token()});
-  last_text_ = inserted.text;  // the change this makes is ours, not typing
+  last_text_ = inserted.text; // the change this makes is ours, not typing
   last_thread_ = thread_id;
   chat_.draft = inserted.text.c_str();
   DataModelHost::Instance().Dirty("chat", "draft");

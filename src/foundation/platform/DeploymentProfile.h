@@ -41,23 +41,35 @@ std::string ResolveBriefOrigin(bool ui_demo, const char* env_origin, BackendEnv 
  */
 std::string ResolveDiagnosticsUploadUrl(bool ui_demo, const char* env_url, const std::string& origin);
 /** False in the UI demo app: nothing may leave the device (diagnostics, crash reports). */
-inline bool UploadAllowed(bool ui_demo) { return !ui_demo; }
+inline bool UploadAllowed(bool ui_demo) {
+  return !ui_demo;
+}
 /** The "simulated replies, no LLM configured" banner: hidden in the UI demo app (it has no backend by design). */
-inline bool MockReplyBannerVisible(bool ui_demo) { return !ui_demo; }
+inline bool MockReplyBannerVisible(bool ui_demo) {
+  return !ui_demo;
+}
 /** A direct chat's link line and "can't reach" banner: hidden in the UI demo app (offline by design, so every chat
  *  would say "can't connect" and no screen would match the mockups). */
-inline bool PeerLinkStatusVisible(bool ui_demo) { return !ui_demo; }
+inline bool PeerLinkStatusVisible(bool ui_demo) {
+  return !ui_demo;
+}
 /** Runs `sender` only when UploadAllowed(ui_demo); returns whether it ran. */
 bool RunIfUploadAllowed(bool ui_demo, const std::function<void()>& sender);
 /** The Me -> Network prod / qa / custom switch: hidden in the UI demo app (its profile key stays `prod`). */
-inline bool BackendSwitchVisible(bool ui_demo) { return !ui_demo; }
+inline bool BackendSwitchVisible(bool ui_demo) {
+  return !ui_demo;
+}
 /** Me -> Security "change PIN": hidden in the UI demo app, whose bootstrap PIN is fixed (a change would lock it out). */
-inline bool ChangePinVisible(bool ui_demo) { return !ui_demo; }
+inline bool ChangePinVisible(bool ui_demo) {
+  return !ui_demo;
+}
 /** The compile-time prod origin ("" unless configured). */
 const char* CompiledDefaultOrigin();
 /** The compile-time QA origin ("" unless configured); empty hides the QA option. */
 const char* CompiledQaOrigin();
-inline bool QaBackendAvailable() { return *CompiledQaOrigin() != '\0'; }
+inline bool QaBackendAvailable() {
+  return *CompiledQaOrigin() != '\0';
+}
 /** The rule behind LatchActiveBackend(): `Qa` without a QA origin (`qa_available` false) is `Prod`. */
 BackendEnv ResolveLatchedBackend(BackendEnv requested, bool qa_available);
 

@@ -12,8 +12,8 @@ protected:
   void TearDown() override { McpClient::SetHttpPost(nullptr); }
 
   void Serve(Roe<HttpResponse> response) {
-    McpClient::SetHttpPost([response](const std::string&, const std::string&,
-                                      const std::map<std::string, std::string>&, long) { return response; });
+    McpClient::SetHttpPost([response](const std::string&, const std::string&, const std::map<std::string, std::string>&,
+                                      long) { return response; });
     ASSERT_TRUE(client_.StartHttp("http://127.0.0.1:1/mcp"));
   }
 

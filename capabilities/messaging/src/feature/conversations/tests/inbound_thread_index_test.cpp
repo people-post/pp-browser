@@ -34,7 +34,7 @@ TEST(InboundThreadIndexTest, TheOldestEntryGoesFirstAtCapacity) {
   for (size_t i = 0; i < InboundThreadIndex::kCapacity; ++i) {
     index.Remember("m" + std::to_string(i), "t");
   }
-  index.Remember("m0", "t-again");  // a repeat does not refresh its age or grow the index
+  index.Remember("m0", "t-again"); // a repeat does not refresh its age or grow the index
   index.Remember("new", "t");
   EXPECT_EQ(index.Find("m0"), std::nullopt);
   EXPECT_EQ(index.Find("m1"), std::optional<std::string>("t"));

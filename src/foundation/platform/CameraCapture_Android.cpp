@@ -134,8 +134,10 @@ std::string CaptureScratchDir() {
 } // namespace pbr
 
 /** PpCameraCapture.nativeCameraCaptureResult: the camera flow ended (any thread). */
-extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_PpCameraCapture_nativeCameraCaptureResult(
-    JNIEnv* env, jclass, jint outcome, jstring path) {
+extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_PpCameraCapture_nativeCameraCaptureResult(JNIEnv* env,
+                                                                                                     jclass,
+                                                                                                     jint outcome,
+                                                                                                     jstring path) {
   std::string file;
   if (path != nullptr) {
     const char* chars = env->GetStringUTFChars(path, nullptr);

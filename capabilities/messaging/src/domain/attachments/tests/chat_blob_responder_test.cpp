@@ -33,9 +33,12 @@ ByteVector TestDek() {
 class ChatBlobResponderHarness {
 public:
   explicit ChatBlobResponderHarness(const std::string& suffix)
-      : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_chat_blob_" + suffix + "_" + util::GenerateUuid())),
-        store(), identity(data_dir.string(), "test"),
-        requester((data_dir / "requester").string(), "requester"), keys_resolver(keys) {
+      : data_dir(std::filesystem::temp_directory_path() /
+                 ("pp_browser_chat_blob_" + suffix + "_" + util::GenerateUuid())),
+        store(),
+        identity(data_dir.string(), "test"),
+        requester((data_dir / "requester").string(), "requester"),
+        keys_resolver(keys) {
     std::filesystem::remove_all(data_dir);
     std::filesystem::create_directories(data_dir / "requester");
     if (!identity.SetDek(TestDek()) || !store.SetDek(TestDek()) || !requester.SetDek(TestDek())) {
@@ -167,7 +170,7 @@ TEST(ChatBlobResponderTest, RejectsNonParticipantRequester) {
   harness.SeedAttachmentMessage(fields);
 
   ChatBlobRequest request = harness.MakeFetchRequest(fields);
-  auto deleted = harness.store.DeleteThread(harness.thread.id);  // the signer has no thread with us
+  auto deleted = harness.store.DeleteThread(harness.thread.id); // the signer has no thread with us
   ASSERT_TRUE(deleted && *deleted);
 
   auto response = ChatBlobResponder::ServeFetch(harness.store, request, harness.local_relay_id,
@@ -180,16 +183,15 @@ TEST(ChatBlobResponderTest, ServeFetchReturnsCiphertextForCachedPlaintext) {
   const auto fields = harness.MakeAttachmentFields();
   harness.SeedAttachmentMessage(fields);
   const ByteVector dek = TestDek();
-  ASSERT_TRUE(static_cast<bool>(
-      SaveAttachmentPlaintext(*harness.content, fields.content_hash, fields.mime, harness.plain, fields.filename, dek)));
+  ASSERT_TRUE(static_cast<bool>(SaveAttachmentPlaintext(*harness.content, fields.content_hash, fields.mime,
+                                                        harness.plain, fields.filename, dek)));
 
   ChatBlobContentSource content;
   content.private_plaintext = [&](const std::vector<uint8_t>& content_hash) {
     return LoadAttachmentPlaintext(*harness.content, content_hash, dek);
   };
-  auto response = ChatBlobResponder::ServeFetch(harness.store, harness.MakeFetchRequest(fields),
-                                                harness.local_relay_id, harness.profile_data_dir, content,
-                                                harness.OnItsLink());
+  auto response = ChatBlobResponder::ServeFetch(harness.store, harness.MakeFetchRequest(fields), harness.local_relay_id,
+                                                harness.profile_data_dir, content, harness.OnItsLink());
   ASSERT_TRUE(static_cast<bool>(response));
 
   const ByteVector cipher_bytes(response->begin(), response->end());
@@ -254,9 +256,8 @@ TEST(ChatBlobResponderTest, ServePushRejectsPastPerThreadPendingCap) {
   for (int i = 0; i < 65; ++i) {
     ChatAttachmentFields fields = harness.MakeAttachmentFields();
     fields.content_hash.assign(kAttachmentContentHashSize, static_cast<uint8_t>(i));
-    last_result = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields),
-                                               harness.local_relay_id, harness.profile_data_dir, ciphertext,
-                                               harness.OnItsLink());
+    last_result = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields), harness.local_relay_id,
+                                               harness.profile_data_dir, ciphertext, harness.OnItsLink());
   }
   EXPECT_FALSE(static_cast<bool>(last_result));
 }
@@ -266,10 +267,10 @@ TEST(ChatBlobResponderTest, ServePushRejectsPastPerThreadPendingCap) {
 TEST(ChatBlobResponderTest, FetchServesOnlyAttachmentsWeSent) {
   ChatBlobResponderHarness harness("ours-only");
   const auto fields = harness.MakeAttachmentFields();
-  harness.SeedAttachmentMessage(fields, harness.requester_account);  // a row the peer sent us
+  harness.SeedAttachmentMessage(fields, harness.requester_account); // a row the peer sent us
   const ByteVector dek = TestDek();
-  ASSERT_TRUE(static_cast<bool>(SaveAttachmentPlaintext(*harness.content, fields.content_hash,
-                                                        fields.mime, harness.plain, fields.filename, dek)));
+  ASSERT_TRUE(static_cast<bool>(SaveAttachmentPlaintext(*harness.content, fields.content_hash, fields.mime,
+                                                        harness.plain, fields.filename, dek)));
   ChatBlobContentSource content;
   content.private_plaintext = [&](const std::vector<uint8_t>& content_hash) {
     return LoadAttachmentPlaintext(*harness.content, content_hash, dek);

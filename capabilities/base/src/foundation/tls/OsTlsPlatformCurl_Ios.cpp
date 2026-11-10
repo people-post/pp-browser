@@ -74,8 +74,7 @@ int AppleCertVerifyCallback(X509_STORE_CTX* store_ctx, void* /*arg*/) {
   }
 
   CFStringRef host = nullptr;
-  if (SSL* ssl = static_cast<SSL*>(
-          X509_STORE_CTX_get_ex_data(store_ctx, SSL_get_ex_data_X509_STORE_CTX_idx()))) {
+  if (SSL* ssl = static_cast<SSL*>(X509_STORE_CTX_get_ex_data(store_ctx, SSL_get_ex_data_X509_STORE_CTX_idx()))) {
     if (const char* sni = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name)) {
       if (sni[0] != '\0') {
         host = CFStringCreateWithCString(kCFAllocatorDefault, sni, kCFStringEncodingUTF8);

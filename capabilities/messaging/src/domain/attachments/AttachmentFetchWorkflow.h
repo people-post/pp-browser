@@ -45,7 +45,7 @@ public:
   /** The profile's content store (the hub's); none: nothing is stored or found. */
   void SetContent(std::shared_ptr<CasStore> content);
   void SetFetchDependencies(IThreadStore* store, ContactsStore* contacts, IdentityStore* identity,
-                              IChatBlobPeerClient* peer_client);
+                            IChatBlobPeerClient* peer_client);
   void SetSuppressionStore(AttachmentSuppressionStore* suppression);
   void SetDownloadPolicy(AttachmentDownloadPolicy policy);
   /**

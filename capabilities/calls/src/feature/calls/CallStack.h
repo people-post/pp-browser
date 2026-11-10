@@ -122,8 +122,8 @@ public:
   void BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial,
                          mesh::ICircuitHopReach* circuit_reach);
   /** Test-only, group calls: also stand in for the hub's media_relay client (SoftMigrate / hop attach). */
-  void BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial, mesh::ICircuitHopReach* circuit_reach,
-                         mesh::IMediaRelayClient* relay);
+  void BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial,
+                         mesh::ICircuitHopReach* circuit_reach, mesh::IMediaRelayClient* relay);
   /** Teardown before mesh Stop: clear bindings, PrepareForTeardown; abort circuit via callback. */
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
   /** Teardown after mesh Stop: drop the bridge and the call-media transport. */
@@ -208,8 +208,7 @@ public:
   std::vector<std::string> LocalCallListenMultiaddrs() const;
   /** This node's mesh as the connectivity owner last published it (empty without mesh media). */
   std::shared_ptr<const mesh::MeshLocalView> LocalMeshView() const;
-  void RegisterCallPeerListenMultiaddrs(const std::string& identity,
-                                        const std::vector<std::string>& multiaddrs);
+  void RegisterCallPeerListenMultiaddrs(const std::string& identity, const std::vector<std::string>& multiaddrs);
 
 private:
   // Bodies of the hub-facing edges above; the public methods run them on the calls owner.
@@ -230,8 +229,7 @@ private:
   void RebindMeshMediaOnOwner();
   void ResetSessionsOnOwner();
   void AbortCallMediaForShutdownOnOwner();
-  void RegisterCallPeerListenMultiaddrsOnOwner(const std::string& identity,
-                                               const std::vector<std::string>& multiaddrs);
+  void RegisterCallPeerListenMultiaddrsOnOwner(const std::string& identity, const std::vector<std::string>& multiaddrs);
   void ReleaseOnOwner();
   /** Wake the hub's N025 listen sync (on UI) after publishing the listen desire. */
   void SyncHubEphemeralListen();

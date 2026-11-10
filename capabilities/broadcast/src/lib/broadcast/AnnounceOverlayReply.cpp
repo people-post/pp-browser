@@ -23,8 +23,7 @@ std::string TrimCopy(std::string_view in) {
 
 } // namespace
 
-Roe<AnnounceDmReplyPlan> PlanAnnounceDmReply(const std::string_view tip_peer_id,
-                                             const std::string_view contact_id,
+Roe<AnnounceDmReplyPlan> PlanAnnounceDmReply(const std::string_view tip_peer_id, const std::string_view contact_id,
                                              const std::string_view contact_account_id,
                                              const std::string_view thread_title) {
   if (tip_peer_id.empty()) {
@@ -47,8 +46,7 @@ Roe<AnnounceDmReplyPlan> PlanAnnounceDmReply(const std::string_view tip_peer_id,
 }
 
 Roe<std::string> EncodeAnnounceOverlayReplyBody(const std::string_view join_handle,
-                                                const std::string_view viewer_msg_id,
-                                                const std::string_view text) {
+                                                const std::string_view viewer_msg_id, const std::string_view text) {
   if (join_handle.empty() || viewer_msg_id.empty()) {
     return Error("overlay reply requires join_handle and viewer_msg_id");
   }
@@ -93,8 +91,7 @@ Roe<AnnounceOverlayReplyPlan> PlanAnnounceOverlayReply(const std::string_view ti
                                                        const std::string_view contact_id,
                                                        const std::string_view contact_account_id,
                                                        const std::string_view thread_title,
-                                                       const std::string_view join_handle,
-                                                       const std::string_view text,
+                                                       const std::string_view join_handle, const std::string_view text,
                                                        const std::string_view viewer_msg_id) {
   if (join_handle.empty()) {
     return Error("overlay reply requires join_handle");
@@ -126,8 +123,7 @@ bool AnnounceOverlayViewerAllowed(const int64_t last_request_ms, const int64_t n
   return now_ms - last_request_ms >= kAnnounceOverlayViewerMinIntervalMs;
 }
 
-bool AnnounceOverlayPublisherAllowed(const int emitted_in_window, const int64_t window_start_ms,
-                                     const int64_t now_ms) {
+bool AnnounceOverlayPublisherAllowed(const int emitted_in_window, const int64_t window_start_ms, const int64_t now_ms) {
   if (window_start_ms <= 0 || now_ms - window_start_ms >= 60'000) {
     return true;
   }

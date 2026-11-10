@@ -36,10 +36,10 @@ Roe<std::string> EnsureAttachmentView(const std::string& profile_dir, const CasS
 
 /** The video poster beside the view, made from the content store's plaintext when missing. */
 Roe<std::string> EnsureAttachmentPosterFromContent(const std::string& profile_dir, const CasStore& content,
-                                                   const std::string& thread_id, const std::vector<uint8_t>& content_hash,
-                                                   const std::string& mime, const std::string& filename,
-                                                   const ByteVector& dek, uint64_t known_byte_length,
-                                                   uint64_t max_receive_bytes);
+                                                   const std::string& thread_id,
+                                                   const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                                   const std::string& filename, const ByteVector& dek,
+                                                   uint64_t known_byte_length, uint64_t max_receive_bytes);
 
 /**
  * The low-res thumbnail of a stored image (kept at the poster path, wiped with the view cache), made on the
@@ -55,8 +55,8 @@ Roe<std::string> EnsureAttachmentImageThumbnailFromContent(const std::string& pr
  * A file we sent: its plaintext (exactly the bytes that were encrypted and uploaded) into the content store,
  * and its view when it shows inline (`max_receive_bytes`: AttachmentLimits).
  */
-Roe<void> CopyAttachmentPlaintext(const std::string& profile_dir, CasStore& content,
-                                  const std::string& thread_id, const ChatAttachmentFields& fields,
-                                  const ByteVector& plaintext, const ByteVector& dek, uint64_t max_receive_bytes);
+Roe<void> CopyAttachmentPlaintext(const std::string& profile_dir, CasStore& content, const std::string& thread_id,
+                                  const ChatAttachmentFields& fields, const ByteVector& plaintext,
+                                  const ByteVector& dek, uint64_t max_receive_bytes);
 
 } // namespace pbr

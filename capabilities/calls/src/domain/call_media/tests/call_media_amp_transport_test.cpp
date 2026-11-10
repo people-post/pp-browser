@@ -61,9 +61,7 @@ protected:
     params.offerer = true;
     std::optional<bool> ok;
     a_->ConnectAsync(params, {}, [&ok](CallMediaRoe r) { ok = static_cast<bool>(r); }, 5000);
-    harness_->PumpUntil([&] {
-      return ok.has_value() && b_connected_.load(std::memory_order_acquire) >= b_connects;
-    });
+    harness_->PumpUntil([&] { return ok.has_value() && b_connected_.load(std::memory_order_acquire) >= b_connects; });
     ASSERT_TRUE(ok.value_or(false)) << call_id;
     ASSERT_EQ(a_->Phase(), CallMediaSessionPhase::MediaReady) << call_id;
     ASSERT_EQ(b_->Phase(), CallMediaSessionPhase::MediaReady) << call_id;

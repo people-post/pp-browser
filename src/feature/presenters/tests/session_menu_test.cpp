@@ -37,8 +37,8 @@ TEST(SessionMenuTest, NoBlockForAStrangerWithoutAnIdentity) {
 
 TEST(SessionMenuTest, DirectChatWithAContact) {
   EXPECT_EQ(Items(SessionKind::Direct, false, true),
-            (std::vector<Item>{Item::MarkUnread, Item::Pin, Item::Mute, Item::Archive, Item::ViewContact,
-                               Item::Block, Item::ClearChat, Item::Delete}));
+            (std::vector<Item>{Item::MarkUnread, Item::Pin, Item::Mute, Item::Archive, Item::ViewContact, Item::Block,
+                               Item::ClearChat, Item::Delete}));
 }
 
 TEST(SessionMenuTest, DirectChatWithAStrangerHasNoContactToView) {
@@ -52,16 +52,15 @@ TEST(SessionMenuTest, UnreadChatOffersMarkRead) {
 
 TEST(SessionMenuTest, GroupLeavesInsteadOfDeleting) {
   // Closing a group thread is leaving the group (the close flow asks and hands the group over when needed).
-  EXPECT_EQ(Items(SessionKind::Group, false, true),
-            (std::vector<Item>{Item::MarkUnread, Item::Pin, Item::Mute, Item::Archive, Item::ClearChat,
-                               Item::LeaveGroup}));
+  EXPECT_EQ(
+      Items(SessionKind::Group, false, true),
+      (std::vector<Item>{Item::MarkUnread, Item::Pin, Item::Mute, Item::Archive, Item::ClearChat, Item::LeaveGroup}));
 }
 
 TEST(SessionMenuTest, AiThreadHasNothingToMute) {
   // An AI thread never notifies, and has no contact or group.
-  EXPECT_EQ(Items(SessionKind::Ai, false, true),
-            (std::vector<Item>{Item::MarkUnread, Item::Pin, Item::Rename, Item::Archive, Item::ClearChat,
-                               Item::Delete}));
+  EXPECT_EQ(Items(SessionKind::Ai, false, true), (std::vector<Item>{Item::MarkUnread, Item::Pin, Item::Rename,
+                                                                    Item::Archive, Item::ClearChat, Item::Delete}));
 }
 
 TEST(SessionMenuTest, PinnedAiThreadSortsBeforeNewerUnpinnedOnes) {
@@ -196,8 +195,15 @@ TEST(SessionMenuTest, EveryItemHasAnIconThatExists) {
   const SessionKind kinds[] = {SessionKind::Ai, SessionKind::Direct, SessionKind::Group};
   for (const SessionKind kind : kinds) {
     for (const bool flip : {false, true}) {
-      SessionMenuState state{.kind = kind, .unread = flip, .has_contact = true, .blocked = flip, .pinned = flip,
-                             .muted = flip, .mute_mentions = flip, .share_ai_confirmed = true, .archived = flip};
+      SessionMenuState state{.kind = kind,
+                             .unread = flip,
+                             .has_contact = true,
+                             .blocked = flip,
+                             .pinned = flip,
+                             .muted = flip,
+                             .mute_mentions = flip,
+                             .share_ai_confirmed = true,
+                             .archived = flip};
       for (const Item item : SessionMenuItems(state)) {
         const std::string icon = SessionMenuIcon(item);
         ASSERT_FALSE(icon.empty());

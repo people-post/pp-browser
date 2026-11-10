@@ -27,8 +27,7 @@ bool BearerAllowedFor(const std::string& url, const bool overridden) {
 }
 
 bool IsTerminal(BriefAiEvent::Type type) {
-  return type == BriefAiEvent::Type::Done || type == BriefAiEvent::Type::Handoff ||
-         type == BriefAiEvent::Type::Error;
+  return type == BriefAiEvent::Type::Done || type == BriefAiEvent::Type::Handoff || type == BriefAiEvent::Type::Error;
 }
 
 } // namespace
@@ -48,8 +47,8 @@ Roe<void> BriefAiClient::ValidateImage(const BriefAiRequest& request) {
     return AppError::Config(Err::Config::Invalid, "unsupported image type: " + image.mime);
   }
   if (image.data.empty() || image.data.size() > kMaxImageBytes) {
-    return AppError::Config(Err::Config::Invalid, "image must be 1 byte to 4 MB, got " +
-                                                      std::to_string(image.data.size()) + " bytes");
+    return AppError::Config(Err::Config::Invalid,
+                            "image must be 1 byte to 4 MB, got " + std::to_string(image.data.size()) + " bytes");
   }
   return {};
 }
@@ -225,8 +224,8 @@ Roe<BriefAiOutcome> BriefAiClient::Stream(const BriefAiRequest& request,
     log().error << "stream ended without a terminal event (" << events << " events, " << tokens << " tokens)";
     return AppError::Network(Err::Network::HttpError, "answer interrupted");
   }
-  log().debug << "stream ended outcome=" << static_cast<int>(*terminal) << " events=" << events
-              << " tokens=" << tokens << " route=" << route;
+  log().debug << "stream ended outcome=" << static_cast<int>(*terminal) << " events=" << events << " tokens=" << tokens
+              << " route=" << route;
   return *terminal;
 }
 

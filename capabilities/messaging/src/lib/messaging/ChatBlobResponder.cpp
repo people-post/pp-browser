@@ -172,7 +172,7 @@ Roe<std::vector<uint8_t>> ChatBlobResponder::ServeFetch(IThreadStore& store, con
 Roe<void> ChatBlobResponder::ServePush(IThreadStore& store, const ChatBlobRequest& request,
                                        const std::string& local_relay_user_id, const std::string& profile_data_dir,
                                        const std::vector<uint8_t>& ciphertext, const ChatBlobRequester& requester,
-                                  const ChatBlobPushGate& push_gate) {
+                                       const ChatBlobPushGate& push_gate) {
   if (request.op != ChatBlobOp::Push) {
     return Error("Expected push chat-blob request");
   }

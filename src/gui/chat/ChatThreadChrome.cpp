@@ -188,29 +188,29 @@ void ChatThreadChrome::UpdatePeerLink() {
   view_.peer_link_banner = link_text.banner_key ? Tr(link_text.banner_key).c_str() : "";
   view_.show_retry_peer_dial = link_text.show_retry;
   switch (link_text.display_kind) {
-  case ThreadPeerPathKind::Direct:
-    view_.peer_link_direct = true;
-    break;
-  case ThreadPeerPathKind::ViaHop:
-    view_.peer_link_via_hop = true;
-    break;
-  case ThreadPeerPathKind::ViaRelay:
-    view_.peer_link_via_relay = true;
-    break;
-  case ThreadPeerPathKind::Connecting:
-    view_.peer_link_connecting = true;
-    break;
-  case ThreadPeerPathKind::Degraded:
-    view_.peer_link_degraded = true;
-    break;
-  case ThreadPeerPathKind::Failed:
-    view_.peer_link_failed = true;
-    break;
-  case ThreadPeerPathKind::Ready:
-    view_.peer_link_ready = true;
-    break;
-  case ThreadPeerPathKind::None:
-    break;
+    case ThreadPeerPathKind::Direct:
+      view_.peer_link_direct = true;
+      break;
+    case ThreadPeerPathKind::ViaHop:
+      view_.peer_link_via_hop = true;
+      break;
+    case ThreadPeerPathKind::ViaRelay:
+      view_.peer_link_via_relay = true;
+      break;
+    case ThreadPeerPathKind::Connecting:
+      view_.peer_link_connecting = true;
+      break;
+    case ThreadPeerPathKind::Degraded:
+      view_.peer_link_degraded = true;
+      break;
+    case ThreadPeerPathKind::Failed:
+      view_.peer_link_failed = true;
+      break;
+    case ThreadPeerPathKind::Ready:
+      view_.peer_link_ready = true;
+      break;
+    case ThreadPeerPathKind::None:
+      break;
   }
 }
 
@@ -222,8 +222,7 @@ void ChatThreadChrome::Update() {
     return;
   }
   if (auto thread = facade_->GetActiveThread()) {
-    const PeerDisplayLabel label =
-        facade_ ? facade_->ResolveThreadLabel(*thread) : PeerDisplayLabel{};
+    const PeerDisplayLabel label = facade_ ? facade_->ResolveThreadLabel(*thread) : PeerDisplayLabel{};
     view_.thread_title = label.title.c_str();
     // The stored default AI title is English; show it in the UI language.
     if (thread->kind == ThreadKind::Ai && label.title == "New chat") {
@@ -252,14 +251,14 @@ void ChatThreadChrome::Update() {
     // G016: a group the owner dissolved is read-only: no composer, no calls, no attach.
     const bool group_dissolved = thread->kind == ThreadKind::Group && thread->group_id && messaging_ready_ &&
                                  PortsMessagingReady(facade_) && facade_->IsGroupDissolved(*thread->group_id);
-    view_.show_call_actions =
-        (thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group) && messaging_ready_ &&
-        mesh_ready_ && !group_dissolved;
+    view_.show_call_actions = (thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group) &&
+                              messaging_ready_ && mesh_ready_ && !group_dissolved;
     const AiAttachInfo ai_info = ai_attach_info_ ? ai_attach_info_() : AiAttachInfo{};
-    view_.show_attach_button = ShowAttachButton({.peer_thread_attach = view_.show_call_actions && thread->kind != ThreadKind::Ai,
-                                                 .ai_composer = thread->kind == ThreadKind::Ai,
-                                                 .brief_preset = ai_info.brief_preset,
-                                                 .ai_usable = ai_info.ai_usable});
+    view_.show_attach_button =
+        ShowAttachButton({.peer_thread_attach = view_.show_call_actions && thread->kind != ThreadKind::Ai,
+                          .ai_composer = thread->kind == ThreadKind::Ai,
+                          .brief_preset = ai_info.brief_preset,
+                          .ai_usable = ai_info.ai_usable});
     view_.show_thread_actions = true;
     view_.show_forget_memory = thread->kind == ThreadKind::Ai;
     view_.show_sync_with_peer = false;
@@ -284,8 +283,7 @@ void ChatThreadChrome::Update() {
               if (!compromised) {
                 view_.show_sync_with_peer = true;
                 view_.show_gap_banner = sync_state->phase == PeerSyncPhase::Gap;
-                view_.show_older_history_hint =
-                    sync_state->loaded_min_seq > sync_state->history_floor_seq + 1;
+                view_.show_older_history_hint = sync_state->loaded_min_seq > sync_state->history_floor_seq + 1;
               }
             } else {
               view_.show_sync_with_peer = true;
@@ -342,9 +340,8 @@ void ChatThreadChrome::Update() {
       view_.compose_disabled = !PortsMessagingReady(facade_) || group_dissolved;
     }
     // P001: unpaid initiation floor blocks compose (same gate as outbound send).
-    if (!view_.compose_disabled && thread->kind == ThreadKind::Direct &&
-        !thread->peer_identity_value.empty() && facade_ &&
-        facade_->IsInitiationOutboundBlocked(thread->peer_identity_value)) {
+    if (!view_.compose_disabled && thread->kind == ThreadKind::Direct && !thread->peer_identity_value.empty() &&
+        facade_ && facade_->IsInitiationOutboundBlocked(thread->peer_identity_value)) {
       view_.compose_disabled = true;
       if (view_.status.empty()) {
         view_.status = Tr("call.error.payment_unavailable").c_str();
@@ -386,10 +383,10 @@ void ChatThreadChrome::Update() {
         if (facade_) {
           if (auto roster = facade_->ListGroupRoster(*thread->group_id)) {
             roster_label += " · " + Tr("chat.subtitle.members", {{"count", std::to_string(roster->size())}});
-            view_.thread_phone_subtitle =
-                (roster->size() == 1 ? Tr("chat.subtitle.members_short_one")
-                                     : Tr("chat.subtitle.members_short_many", {{"count", std::to_string(roster->size())}}))
-                    .c_str();
+            view_.thread_phone_subtitle = (roster->size() == 1 ? Tr("chat.subtitle.members_short_one")
+                                                               : Tr("chat.subtitle.members_short_many",
+                                                                    {{"count", std::to_string(roster->size())}}))
+                                              .c_str();
           }
         }
         if (facade_ && facade_->IsOwnerUnreachable(*thread->group_id)) {
@@ -400,7 +397,8 @@ void ChatThreadChrome::Update() {
         roster_label = Tr("chat.subtitle.shared", {{"title", *label.shared_title}}) + " · " + roster_label;
       }
       view_.thread_subtitle = roster_label.c_str();
-      view_.draft_placeholder = Tr(group_dissolved ? "chat.group.dissolved_composer" : "chat.group.placeholder").c_str();
+      view_.draft_placeholder =
+          Tr(group_dissolved ? "chat.group.dissolved_composer" : "chat.group.placeholder").c_str();
     }
     // Search inside the chat: every open chat (direct, group, AI) once messaging is ready.
     view_.show_search = messaging_ready_;
@@ -429,10 +427,10 @@ void ChatThreadChrome::Update() {
     view_.thread_is_private = false;
     view_.thread_is_public = false;
     view_.thread_is_group = false;
-  view_.thread_avatar_letter = "";
-  view_.thread_avatar_tone = 0;
-  view_.thread_icon_src = "";
-  view_.thread_has_icon = false;
+    view_.thread_avatar_letter = "";
+    view_.thread_avatar_tone = 0;
+    view_.thread_icon_src = "";
+    view_.thread_has_icon = false;
     view_.compose_disabled = false;
     view_.show_attach_button = ShowAttachWithoutThread();
     view_.show_thread_actions = false;
@@ -622,28 +620,26 @@ void ChatThreadChrome::OnStartNewSecureChat() {
       return;
     }
 
-    ShowConfirm(
-        shell_feedback_, Tr("chat.psk.new_secure_title"),
-        Tr("chat.psk.new_secure_body"),
-        [this, thread_id](bool ok) {
-          if (!ok) {
-            return;
-          }
-          if (!facade_) {
-            return;
-          }
-          auto result = facade_->StartNewSecureChat(thread_id);
-          if (!result) {
-            view_.status = result.error().message.c_str();
-          } else {
-            view_.status = Tr("chat.psk.new_secure_done").c_str();
-          }
-          if (refresh_) {
-            refresh_();
-          }
-          DirtyChatChrome();
-          NotifySurfaceChanged(notify_surface_changed_);
-        });
+    ShowConfirm(shell_feedback_, Tr("chat.psk.new_secure_title"), Tr("chat.psk.new_secure_body"),
+                [this, thread_id](bool ok) {
+                  if (!ok) {
+                    return;
+                  }
+                  if (!facade_) {
+                    return;
+                  }
+                  auto result = facade_->StartNewSecureChat(thread_id);
+                  if (!result) {
+                    view_.status = result.error().message.c_str();
+                  } else {
+                    view_.status = Tr("chat.psk.new_secure_done").c_str();
+                  }
+                  if (refresh_) {
+                    refresh_();
+                  }
+                  DirtyChatChrome();
+                  NotifySurfaceChanged(notify_surface_changed_);
+                });
   });
 }
 
@@ -767,29 +763,27 @@ void ChatThreadChrome::OnVerifyPsk() {
     return;
   }
 
-  ShowConfirmWithCheckbox(
-      shell_feedback_, Tr("chat.psk.verify_title"),
-      Tr("chat.psk.verify_body"),
-      Tr("chat.psk.verify_checkbox"), false,
-      [this, thread_id](const bool confirmed, const bool checked) {
-        if (!confirmed || !checked) {
-          return;
-        }
-        if (!facade_) {
-          return;
-        }
-        auto result = facade_->MarkPskVerified(thread_id);
-        if (!result) {
-          view_.status = result.error().message.c_str();
-        } else {
-          view_.status = Tr("chat.psk.verified").c_str();
-        }
-        if (refresh_) {
-          refresh_();
-        }
-        DirtyChatHeader();
-        NotifySurfaceChanged(notify_surface_changed_);
-      });
+  ShowConfirmWithCheckbox(shell_feedback_, Tr("chat.psk.verify_title"), Tr("chat.psk.verify_body"),
+                          Tr("chat.psk.verify_checkbox"), false,
+                          [this, thread_id](const bool confirmed, const bool checked) {
+                            if (!confirmed || !checked) {
+                              return;
+                            }
+                            if (!facade_) {
+                              return;
+                            }
+                            auto result = facade_->MarkPskVerified(thread_id);
+                            if (!result) {
+                              view_.status = result.error().message.c_str();
+                            } else {
+                              view_.status = Tr("chat.psk.verified").c_str();
+                            }
+                            if (refresh_) {
+                              refresh_();
+                            }
+                            DirtyChatHeader();
+                            NotifySurfaceChanged(notify_surface_changed_);
+                          });
 }
 
 void ChatThreadChrome::OnRotatePskExport() {
@@ -807,36 +801,35 @@ void ChatThreadChrome::OnRotatePskExport() {
     return;
   }
 
-  ShowConfirm(
-      shell_feedback_, Tr("chat.psk.rotate_title"),
-      Tr("chat.psk.rotate_body"),
-      [this, thread_id](const bool ok) {
-        if (!ok) {
-          return;
-        }
-        if (!facade_) {
-          return;
-        }
-        auto bundle = facade_->RotatePskAndExportBundle(thread_id);
-        if (!bundle) {
-          view_.status = bundle.error().message.c_str();
-          DirtyChatChrome();
-          NotifySurfaceChanged(notify_surface_changed_);
-          return;
-        }
-        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-          system->SetClipboardText(*bundle);
-        }
-        if (shell_feedback_.show_toast) {
-          shell_feedback_.show_toast(Tr("chat.psk.rotated_title"), ToastDuration::Short); // the line below says what to do next
-        }
-        view_.status = Tr("chat.psk.rotated").c_str();
-        if (refresh_) {
-          refresh_();
-        }
-        DirtyChatHeader();
-        NotifySurfaceChanged(notify_surface_changed_);
-      });
+  ShowConfirm(shell_feedback_, Tr("chat.psk.rotate_title"), Tr("chat.psk.rotate_body"),
+              [this, thread_id](const bool ok) {
+                if (!ok) {
+                  return;
+                }
+                if (!facade_) {
+                  return;
+                }
+                auto bundle = facade_->RotatePskAndExportBundle(thread_id);
+                if (!bundle) {
+                  view_.status = bundle.error().message.c_str();
+                  DirtyChatChrome();
+                  NotifySurfaceChanged(notify_surface_changed_);
+                  return;
+                }
+                if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+                  system->SetClipboardText(*bundle);
+                }
+                if (shell_feedback_.show_toast) {
+                  shell_feedback_.show_toast(Tr("chat.psk.rotated_title"),
+                                             ToastDuration::Short); // the line below says what to do next
+                }
+                view_.status = Tr("chat.psk.rotated").c_str();
+                if (refresh_) {
+                  refresh_();
+                }
+                DirtyChatHeader();
+                NotifySurfaceChanged(notify_surface_changed_);
+              });
 }
 
 } // namespace pbr

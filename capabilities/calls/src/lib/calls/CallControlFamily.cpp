@@ -50,8 +50,8 @@ std::string FormatDurationMs(const int64_t duration_ms) {
   const int64_t secs = total_sec % 60;
   char buf[32];
   if (hours > 0) {
-    std::snprintf(buf, sizeof(buf), "%lld:%02lld:%02lld", static_cast<long long>(hours),
-                  static_cast<long long>(mins), static_cast<long long>(secs));
+    std::snprintf(buf, sizeof(buf), "%lld:%02lld:%02lld", static_cast<long long>(hours), static_cast<long long>(mins),
+                  static_cast<long long>(secs));
   } else {
     std::snprintf(buf, sizeof(buf), "%lld:%02lld", static_cast<long long>(mins), static_cast<long long>(secs));
   }
@@ -75,30 +75,30 @@ std::optional<std::string> CallSummaryLine(const ThreadMessage& message, const S
   if (summary->group) {
     // Written by this device, about its own user's part in the call.
     switch (summary->outcome) {
-    case CallOutcome::Completed:
-      return line("group", {{"duration", duration}});
-    case CallOutcome::Missed:
-    case CallOutcome::Cancelled:
-      return line(summary->started ? (summary->outcome == CallOutcome::Missed ? "group_no_answer" : "group_cancelled")
-                                   : "group_missed");
-    case CallOutcome::Declined:
-      return line("group_declined");
-    case CallOutcome::Failed:
-      return line("group_failed");
+      case CallOutcome::Completed:
+        return line("group", {{"duration", duration}});
+      case CallOutcome::Missed:
+      case CallOutcome::Cancelled:
+        return line(summary->started ? (summary->outcome == CallOutcome::Missed ? "group_no_answer" : "group_cancelled")
+                                     : "group_missed");
+      case CallOutcome::Declined:
+        return line("group_declined");
+      case CallOutcome::Failed:
+        return line("group_failed");
     }
     return line("group_failed");
   }
   switch (summary->outcome) {
-  case CallOutcome::Completed:
-    return line(ours ? "outgoing" : "incoming", {{"duration", duration}});
-  case CallOutcome::Missed:
-    return line(ours ? "no_answer" : "missed");
-  case CallOutcome::Cancelled:
-    return line(ours ? "cancelled" : "missed");
-  case CallOutcome::Declined:
-    return line(ours ? "declined_by_peer" : "declined");
-  case CallOutcome::Failed:
-    return line("failed");
+    case CallOutcome::Completed:
+      return line(ours ? "outgoing" : "incoming", {{"duration", duration}});
+    case CallOutcome::Missed:
+      return line(ours ? "no_answer" : "missed");
+    case CallOutcome::Cancelled:
+      return line(ours ? "cancelled" : "missed");
+    case CallOutcome::Declined:
+      return line(ours ? "declined_by_peer" : "declined");
+    case CallOutcome::Failed:
+      return line("failed");
   }
   return line("failed");
 }
@@ -117,22 +117,22 @@ std::optional<CallSummaryRow> CallSummaryRowOf(const ThreadMessage& message) {
   row.group = summary->group;
   using Outcome = CallSummaryRow::Outcome;
   switch (summary->outcome) {
-  case CallOutcome::Completed:
-    row.outcome = summary->duration_ms ? Outcome::Connected : Outcome::Failed;
-    row.duration = summary->duration_ms ? FormatDurationMs(*summary->duration_ms) : std::string();
-    break;
-  case CallOutcome::Missed:
-    row.outcome = (summary->group ? summary->started : row.ours) ? Outcome::NoAnswer : Outcome::Missed;
-    break;
-  case CallOutcome::Cancelled:
-    row.outcome = (summary->group ? summary->started : row.ours) ? Outcome::Cancelled : Outcome::Missed;
-    break;
-  case CallOutcome::Declined:
-    row.outcome = !summary->group && row.ours ? Outcome::DeclinedByPeer : Outcome::Declined;
-    break;
-  case CallOutcome::Failed:
-    row.outcome = Outcome::Failed;
-    break;
+    case CallOutcome::Completed:
+      row.outcome = summary->duration_ms ? Outcome::Connected : Outcome::Failed;
+      row.duration = summary->duration_ms ? FormatDurationMs(*summary->duration_ms) : std::string();
+      break;
+    case CallOutcome::Missed:
+      row.outcome = (summary->group ? summary->started : row.ours) ? Outcome::NoAnswer : Outcome::Missed;
+      break;
+    case CallOutcome::Cancelled:
+      row.outcome = (summary->group ? summary->started : row.ours) ? Outcome::Cancelled : Outcome::Missed;
+      break;
+    case CallOutcome::Declined:
+      row.outcome = !summary->group && row.ours ? Outcome::DeclinedByPeer : Outcome::Declined;
+      break;
+    case CallOutcome::Failed:
+      row.outcome = Outcome::Failed;
+      break;
   }
   return row;
 }
@@ -152,7 +152,7 @@ SystemControlFamily MakeCallControlFamily(CallControlFamilyPorts ports) {
   family.apply = [receive = ports.receive](ThreadMessage& message, const SystemControlContext& context) -> Roe<void> {
     const auto type = CallControlCodec::ControlTypeFromMessage(message);
     if (type && *type == CallControlType::CallSummary) {
-      return {};  // history: nothing to do
+      return {}; // history: nothing to do
     }
     if (receive) {
       receive(message, context);

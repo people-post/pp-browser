@@ -20,8 +20,8 @@ std::string PeerAnnounceFeed::ProgramMapKey(const std::string& peer_id, const st
 
 std::string PeerAnnounceFeed::MapKey(const PeerAnnounceTip& tip) {
   if (TipIsLiveChatKind(tip)) {
-    return ProgramMapKey(tip.peer_id, tip.topic_id, tip.program_id) + '\x1f' +
-           kPeerAnnounceKindLiveChat + '\x1f' + tip.viewer_msg_id;
+    return ProgramMapKey(tip.peer_id, tip.topic_id, tip.program_id) + '\x1f' + kPeerAnnounceKindLiveChat + '\x1f' +
+           tip.viewer_msg_id;
   }
   return ProgramMapKey(tip.peer_id, tip.topic_id, tip.program_id);
 }
@@ -81,8 +81,7 @@ std::vector<PeerAnnounceTip> PeerAnnounceFeed::ListForTopic(const std::string& p
 std::vector<PeerAnnounceTip> PeerAnnounceFeed::ListLiveChat(const std::string& peer_id, const std::string& topic_id,
                                                             const std::string& program_id) const {
   std::vector<PeerAnnounceTip> out;
-  const std::string prefix =
-      ProgramMapKey(peer_id, topic_id, program_id) + '\x1f' + kPeerAnnounceKindLiveChat + '\x1f';
+  const std::string prefix = ProgramMapKey(peer_id, topic_id, program_id) + '\x1f' + kPeerAnnounceKindLiveChat + '\x1f';
   for (const auto& [key, tip] : tips_) {
     if (key.rfind(prefix, 0) == 0) {
       out.push_back(tip);

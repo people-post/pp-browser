@@ -57,7 +57,6 @@ public:
     bool enabled = true;
   };
 
-
   SettingsController();
   ~SettingsController() override = default;
 
@@ -263,7 +262,6 @@ private:
   void ToggleCrashReports();
   void ToggleAutoRenewRegistration();
 
-
   void InitSections();
   SettingsSectionHandler* FindHandler(const std::string& section_id);
   const SettingsSectionHandler* FindHandler(const std::string& section_id) const;
@@ -398,10 +396,9 @@ private:
   SettingsOwnDevices own_devices_{commands_, shell_feedback_, [this](const Error& err) { ReportFailure(err); }};
   SettingsProfileActions profile_actions_{*this, commands_, unlock_ensure_};
   StorageManagerController storage_manager_{commands_, shell_navigation_, shell_feedback_, [this]() {
-    const ShellChromeSnapshot chrome = ChromeSnapshot();
-    return selected_id_ == "storage" && chrome.nav_tab == NavTab::Me;
-  }};
-
+                                              const ShellChromeSnapshot chrome = ChromeSnapshot();
+                                              return selected_id_ == "storage" && chrome.nav_tab == NavTab::Me;
+                                            }};
 };
 
 /**

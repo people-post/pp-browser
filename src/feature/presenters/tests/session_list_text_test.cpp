@@ -30,7 +30,8 @@ TEST(SessionListTextTest, ShortMessageBecomesTheTitleAsIs) {
 }
 
 TEST(SessionListTextTest, LongMessageIsCutOnACharacterBoundary) {
-  const std::string title = AiThreadTitleFromMessage("请给我一条今天最新的政治新闻并且详细说明它的背景和各方的反应以及后续影响");
+  const std::string title =
+      AiThreadTitleFromMessage("请给我一条今天最新的政治新闻并且详细说明它的背景和各方的反应以及后续影响");
   EXPECT_EQ(title, "请给我一条今天最新的政治新闻并且详细说明它的背景…");
 
   const std::string latin = AiThreadTitleFromMessage("abcdefghijklmnopqrstuvwxyz0123456789");
@@ -105,8 +106,10 @@ TEST(SessionListTextTest, PreviewIsOneLineOfReadableText) {
 
 TEST(SessionListTextTest, PreviewShowsLinkTextNotMarkdown) {
   // An AI answer's last message is Markdown; the row shows what the reader would see.
-  EXPECT_EQ(SessionPreviewLine("1. [五角大楼停用 Anthropic 工具](https://www.bbc.com/zhongwen/a-1)\n2. [诺贝尔物理学奖](https://dw.com/x)"),
-            "1. 五角大楼停用 Anthropic 工具 2. 诺贝尔物理学奖");
+  EXPECT_EQ(
+      SessionPreviewLine(
+          "1. [五角大楼停用 Anthropic 工具](https://www.bbc.com/zhongwen/a-1)\n2. [诺贝尔物理学奖](https://dw.com/x)"),
+      "1. 五角大楼停用 Anthropic 工具 2. 诺贝尔物理学奖");
   EXPECT_EQ(SessionPreviewLine("**结论**：见 [原文](https://a.example/x) 和 [1]"), "结论：见 原文 和 [1]");
 }
 
@@ -117,10 +120,12 @@ TEST(SessionListTextTest, PreviewIsCutOnACharacterBoundary) {
 
 TEST(SessionListTextTest, PreviewShowsTheTextOfStoredMarkup) {
   // An AI answer's preview is stored as rendered markup; the row shows its text, never the tags.
-  EXPECT_EQ(SessionPreviewLine("<ol><li><span class=\"md-marker\">1.</span><div class=\"md-item\">五角大楼停用工具</div></li>"
-                               "<li><span class=\"md-marker\">2.</span><div class=\"md-item\">诺贝尔物理学奖</div></li></ol>"),
+  EXPECT_EQ(SessionPreviewLine(
+                "<ol><li><span class=\"md-marker\">1.</span><div class=\"md-item\">五角大楼停用工具</div></li>"
+                "<li><span class=\"md-marker\">2.</span><div class=\"md-item\">诺贝尔物理学奖</div></li></ol>"),
             "1. 五角大楼停用工具 2. 诺贝尔物理学奖");
-  EXPECT_EQ(SessionPreviewLine("<div class=\"stack\"><p>Brief 最新简报（10 条）：</p><button class=\"x\">打开</button></div>"),
+  EXPECT_EQ(SessionPreviewLine(
+                "<div class=\"stack\"><p>Brief 最新简报（10 条）：</p><button class=\"x\">打开</button></div>"),
             "Brief 最新简报（10 条）： 打开");
   EXPECT_EQ(SessionPreviewLine("<p>A &amp; B &lt;tag&gt; &quot;q&quot; it&#39;s</p>"), "A & B <tag> \"q\" it's");
 }

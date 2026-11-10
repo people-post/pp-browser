@@ -32,8 +32,8 @@ std::optional<std::string> MockPeerKemPublicKeyB64() {
 } // namespace
 
 Roe<BlobPresignResult> MockBlobClient::Presign(const std::string& /*relay_user_id*/,
-                                                 const std::string& /*content_type*/, const uint64_t byte_length,
-                                                 const BlobPurpose /*purpose*/) {
+                                               const std::string& /*content_type*/, const uint64_t byte_length,
+                                               const BlobPurpose /*purpose*/) {
   ++presign_call_count_;
   if (presign_error_) {
     return presign_error_.value();
@@ -228,30 +228,20 @@ Roe<mesh::DirectoryHit> MockDirectoryClient::LookupByAccount(const std::string& 
   return Error("Account not found");
 }
 
-
-Roe<RegistrationStartResult> MockRegistrationClient::StartRegistration(const std::string& /*public_key_b64*/,
-                                                                       const std::string& /*nickname*/,
-                                                                       const std::string& signature_alg,
-                                                                       const std::string& /*kem_public_key_b64*/,
-                                                                       const std::string& /*peer_id*/,
-                                                                       const std::vector<std::string>& /*multiaddrs*/,
-                                                                       const RegistrationPublishOpts& /*publish*/) {
-  return RegistrationStartResult{.challenge = "mock-challenge", .signature_alg = signature_alg,
-                                 .expires_at = "2099-01-01T00:00:00.000Z"};
+Roe<RegistrationStartResult> MockRegistrationClient::StartRegistration(
+    const std::string& /*public_key_b64*/, const std::string& /*nickname*/, const std::string& signature_alg,
+    const std::string& /*kem_public_key_b64*/, const std::string& /*peer_id*/,
+    const std::vector<std::string>& /*multiaddrs*/, const RegistrationPublishOpts& /*publish*/) {
+  return RegistrationStartResult{
+      .challenge = "mock-challenge", .signature_alg = signature_alg, .expires_at = "2099-01-01T00:00:00.000Z"};
 }
 
-Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(const std::string& /*challenge*/,
-                                                                   const std::string& public_key_b64,
-                                                                   const std::string& nickname,
-                                                                   const std::string& /*signature*/,
-                                                                   int64_t /*timestamp*/,
-                                                                   const std::string& /*signature_alg*/,
-                                                                   const std::string& /*kem_public_key_b64*/,
-                                                                   const std::string& /*kem_binding_signature_b64*/,
-                                                                   const std::string& /*peer_id*/,
-                                                                   const std::vector<std::string>& /*multiaddrs*/,
-                                                                   int64_t initiation_floor,
-                                                                   const RegistrationPublishOpts& /*publish*/) {
+Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(
+    const std::string& /*challenge*/, const std::string& public_key_b64, const std::string& nickname,
+    const std::string& /*signature*/, int64_t /*timestamp*/, const std::string& /*signature_alg*/,
+    const std::string& /*kem_public_key_b64*/, const std::string& /*kem_binding_signature_b64*/,
+    const std::string& /*peer_id*/, const std::vector<std::string>& /*multiaddrs*/, int64_t initiation_floor,
+    const RegistrationPublishOpts& /*publish*/) {
   return RegistrationResult{.success = true,
                             .relay_user_id = "relay:" + public_key_b64.substr(0, 12),
                             .message = "Registered as " + nickname,
@@ -263,9 +253,8 @@ Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(const std::st
 }
 
 Roe<RegistrationResult> MockRegistrationClient::UpdateNickname(const std::string& new_nickname,
-                                                                 const std::string& /*signature*/,
-                                                                 int64_t /*timestamp*/,
-                                                                 const std::string& /*relay_user_id*/) {
+                                                               const std::string& /*signature*/, int64_t /*timestamp*/,
+                                                               const std::string& /*relay_user_id*/) {
   return RegistrationResult{.success = true, .message = "Nickname updated to " + new_nickname};
 }
 

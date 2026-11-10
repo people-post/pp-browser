@@ -21,8 +21,8 @@ std::string VectorKemPublicKeyB64(uint8_t fill = 0x43) {
 } // namespace
 
 TEST(RegistrationSignPayloadTest, BuildRegistrationSignBytesBindsKemKey) {
-  const auto bytes = BuildRegistrationSignBytes("ch-1", VectorMlDsaPublicKeyB64(), VectorKemPublicKeyB64(),
-                                                "ml-dsa-65", 1700000000000);
+  const auto bytes = BuildRegistrationSignBytes("ch-1", VectorMlDsaPublicKeyB64(), VectorKemPublicKeyB64(), "ml-dsa-65",
+                                                1700000000000);
   // domain+NUL + ver + len-prefixed "ch-1" + ML-DSA-65 pk + ML-KEM-768 pk + alg + i64 ts
   ASSERT_EQ(bytes.size(), kMlDsa65PublicKeyBytes + kHybridKemPublicKeyBytes + 51u);
   EXPECT_EQ(bytes[bytes.size() - 10], 0x43);

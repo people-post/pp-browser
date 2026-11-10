@@ -55,13 +55,13 @@ TEST(CallMediaErrorTextTest, UserCopyAndPaymentPassThrough) {
 
 TEST(CallMediaErrorTextTest, TheFeaturesOwnLocalizedNoticesPassThroughInBothLanguages) {
   const std::map<std::string, std::string> zh = {{"call.notice.removed", "你已被移出通话"},
-                                                  {"call.notice.left_group", "你已不在这个群里"},
-                                                  {"call.notice.call_ended", "这通电话已经结束"},
-                                                  {"call.error.media_unavailable", "通话音视频暂时不可用。"}};
+                                                 {"call.notice.left_group", "你已不在这个群里"},
+                                                 {"call.notice.call_ended", "这通电话已经结束"},
+                                                 {"call.error.media_unavailable", "通话音视频暂时不可用。"}};
   const std::map<std::string, std::string> en = {{"call.notice.removed", "You were removed from the call"},
-                                                  {"call.notice.left_group", "You are no longer in this group"},
-                                                  {"call.notice.call_ended", "That call has ended"},
-                                                  {"call.error.media_unavailable", "Call media isn't available."}};
+                                                 {"call.notice.left_group", "You are no longer in this group"},
+                                                 {"call.notice.call_ended", "That call has ended"},
+                                                 {"call.error.media_unavailable", "Call media isn't available."}};
   for (const auto* table : {&zh, &en}) {
     SetTranslator([table](std::string_view key, const TextArgs&) {
       const auto it = table->find(std::string(key));

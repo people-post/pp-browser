@@ -10,7 +10,6 @@
 
 namespace pbr {
 
-
 Roe<ChatBlobRequest> BuildChatBlobRequest(const Thread& thread, ContactsStore& contacts, IdentityStore& identity,
                                           const ChatBlobOp op, const std::string& thread_id,
                                           const std::vector<uint8_t>& content_hash) {

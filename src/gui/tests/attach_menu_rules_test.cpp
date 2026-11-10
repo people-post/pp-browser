@@ -17,7 +17,8 @@ TEST_P(ShowCaptureEntryTest, OnlyAPhoneWithNothingElseGoingOnShowsTheCamera) {
 }
 
 INSTANTIATE_TEST_SUITE_P(AllCombinations, ShowCaptureEntryTest,
-                         ::testing::Combine(::testing::Bool(), ::testing::Bool(), ::testing::Bool(), ::testing::Bool()));
+                         ::testing::Combine(::testing::Bool(), ::testing::Bool(), ::testing::Bool(),
+                                            ::testing::Bool()));
 
 TEST(ShowCaptureEntryNamedTest, TheReasonsThatTakeTheCameraAway) {
   EXPECT_TRUE(ShowCaptureEntry(true, false, false, false));

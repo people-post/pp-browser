@@ -81,27 +81,33 @@ struct FakeContacts : IContactTrustAccess {
 struct PartyHarness {
   explicit PartyHarness(const std::string& suffix, const std::string& local_account, const std::string& peer_account,
                         const ThreadChannel channel = ThreadChannel::E2e)
-      : data_dir(std::filesystem::temp_directory_path() /
-                 ("pp_invite_ingest_" + suffix + "_" + util::GenerateUuid())),
-        store(), keys(test::TestAccount::Make()), roster(store),
-        psk_store(store), peer(test::TestAccount::Make()), gate(contacts.Standing(), roster),
-        pipeline(store,
-                 [this, peer_account](const std::string& account) -> std::optional<AccountCard> {
-                   // The peer's device as its kept card lists it (filed under the fixture's readable id).
-                   return account == peer_account ? std::optional<AccountCard>(peer.DeviceCard()) : std::nullopt;
-                 },
-                 psk_store,
-                 LocalKeys{[local_account]() -> Roe<std::string> { return local_account; },
-                           [kem = keys.kem_private]() -> Roe<ByteVector> { return kem; }},
-                 roster, &gate),
-        local_account(local_account), peer_account(peer_account),
-        local_relay(RelayForAccount(local_account)), peer_relay(RelayForAccount(peer_account)), channel(channel) {
+      : data_dir(std::filesystem::temp_directory_path() / ("pp_invite_ingest_" + suffix + "_" + util::GenerateUuid())),
+        store(),
+        keys(test::TestAccount::Make()),
+        roster(store),
+        psk_store(store),
+        peer(test::TestAccount::Make()),
+        gate(contacts.Standing(), roster),
+        pipeline(
+            store,
+            [this, peer_account](const std::string& account) -> std::optional<AccountCard> {
+              // The peer's device as its kept card lists it (filed under the fixture's readable id).
+              return account == peer_account ? std::optional<AccountCard>(peer.DeviceCard()) : std::nullopt;
+            },
+            psk_store,
+            LocalKeys{[local_account]() -> Roe<std::string> { return local_account; },
+                      [kem = keys.kem_private]() -> Roe<ByteVector> { return kem; }},
+            roster, &gate),
+        local_account(local_account),
+        peer_account(peer_account),
+        local_relay(RelayForAccount(local_account)),
+        peer_relay(RelayForAccount(peer_account)),
+        channel(channel) {
     std::filesystem::remove_all(data_dir);
     std::filesystem::create_directories(data_dir);
     if (!psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
     }
-
 
     contacts.known.insert(peer_account); // a friendly contact
     gate.SetInboundPolicy(GroupInvitePolicy::ContactsOnly);
@@ -133,8 +139,8 @@ struct PartyHarness {
     return account_id;
   }
 
-  RelayEnvelope MakeSystemEnvelope(const std::string& control_type, const std::string& detail,
-                                   const std::string& text, const uint64_t seq) const {
+  RelayEnvelope MakeSystemEnvelope(const std::string& control_type, const std::string& detail, const std::string& text,
+                                   const uint64_t seq) const {
     ThreadMessage system;
     system.content_type = ChatContentType::System;
     system.text = text;
@@ -301,7 +307,7 @@ TEST(GroupInviteIngestTest, InboundAcceptAddsInviteeToOwnerRoster) {
   pending.roster_epoch = 1;
   pending.status = InviteStatus::Pending;
   pending.created_at = util::NowUnixMs();
-  pending.outbound = true;  // alice issued it
+  pending.outbound = true; // alice issued it
   ASSERT_TRUE(owner.roster.UpsertPendingInvite(pending));
 
   auto detail = GroupMembershipCodec::EncodeInviteResponse("nonce-accept-1", "group:hike");
@@ -450,7 +456,7 @@ TEST(GroupInviteIngestTest, InboundAcceptAppliesEvenWhenDmSoftCompromised) {
   pending.roster_epoch = 1;
   pending.status = InviteStatus::Pending;
   pending.created_at = util::NowUnixMs();
-  pending.outbound = true;  // alice issued it
+  pending.outbound = true; // alice issued it
   ASSERT_TRUE(owner.roster.UpsertPendingInvite(pending));
 
   PeerSyncState compromised = DefaultPeerSyncState();
@@ -500,7 +506,7 @@ TEST(GroupInviteIngestTest, InboundAcceptOnPublicClearsCompromisedLatch) {
   pending.roster_epoch = 1;
   pending.status = InviteStatus::Pending;
   pending.created_at = util::NowUnixMs();
-  pending.outbound = true;  // alice issued it
+  pending.outbound = true; // alice issued it
   ASSERT_TRUE(owner.roster.UpsertPendingInvite(pending));
 
   PeerSyncState compromised = DefaultPeerSyncState();
@@ -509,8 +515,7 @@ TEST(GroupInviteIngestTest, InboundAcceptOnPublicClearsCompromisedLatch) {
   compromised.loaded_max_seq = 5;
   compromised.phase = PeerSyncPhase::Compromised;
   // The state of what Bob's device numbered in its account copies (M021: per sending device on a public chat).
-  ASSERT_TRUE(
-      owner.store.SetPeerSyncState(owner.dm_thread.id, 1, compromised, owner.peer.device.peer_id + "@account"));
+  ASSERT_TRUE(owner.store.SetPeerSyncState(owner.dm_thread.id, 1, compromised, owner.peer.device.peer_id + "@account"));
 
   auto detail = GroupMembershipCodec::EncodeInviteResponse("nonce-accept-public", "group:hike");
   ASSERT_TRUE(detail);
@@ -587,8 +592,7 @@ TEST(GroupInviteIngestTest, InboundMemberJoinedAddsPeerToRoster) {
 
   auto detail = GroupMembershipCodec::EncodeMemberJoined("group:hike", "account:bob", MemberRole::Member, 2);
   ASSERT_TRUE(detail);
-  const RelayEnvelope envelope =
-      member.MakeSystemEnvelope("member_joined", *detail, "Member joined the group", 1);
+  const RelayEnvelope envelope = member.MakeSystemEnvelope("member_joined", *detail, "Member joined the group", 1);
   const RelayReceiveOutcome outcome = member.pipeline.ProcessEnvelope(envelope, "account:carol");
   EXPECT_TRUE(outcome.persisted) << "decision=" << static_cast<int>(outcome.decision);
 
@@ -624,9 +628,8 @@ TEST(GroupInviteIngestTest, InboundMemberJoinedHandsOverTheOwnersCardsAndStoresN
 
   Object card;
   card.set("account_id", "account:bob");
-  GroupMembershipCodec::MemberJoinedPayload payload{.group_id = "group:hike",
-                                                    .member_identity = "account:carol",
-                                                    .roster_epoch = 2};
+  GroupMembershipCodec::MemberJoinedPayload payload{
+      .group_id = "group:hike", .member_identity = "account:carol", .roster_epoch = 2};
   payload.members = {{.member_identity = "account:alice", .role = MemberRole::Owner},
                      {.member_identity = "account:bob", .card = card, .relay_user_id = "relay:bob"},
                      {.member_identity = "account:carol", .card = card}};
@@ -911,7 +914,8 @@ TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsClosedThreadEvenIfStillMembe
   envelope.stream_key = BuildGroupRelayStreamKey("group:hike", "account:alice", "account:bob", "");
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
-  envelope = WithSingleRelayCopy(std::move(envelope), RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
+  envelope = WithSingleRelayCopy(std::move(envelope),
+                                 RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
   const RelayReceiveOutcome outcome = party.pipeline.ProcessEnvelope(envelope, "account:bob");
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
@@ -943,7 +947,8 @@ TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsNonMember) {
   envelope.stream_key = BuildGroupRelayStreamKey("group:hike", "account:alice", "account:bob", "");
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
-  envelope = WithSingleRelayCopy(std::move(envelope), RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
+  envelope = WithSingleRelayCopy(std::move(envelope),
+                                 RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
   const RelayReceiveOutcome outcome = invitee.pipeline.ProcessEnvelope(envelope, "account:bob");
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
@@ -961,7 +966,8 @@ RelayEnvelope GroupEnvelopeFrom(const std::string& sender, const std::string& gr
   envelope.stream_key = BuildGroupRelayStreamKey(group_id, sender, to, "");
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
-  envelope = WithSingleRelayCopy(std::move(envelope), RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
+  envelope = WithSingleRelayCopy(std::move(envelope),
+                                 RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
   return envelope;
 }
 
@@ -982,7 +988,7 @@ void SeedHike(PartyHarness& party, const std::vector<std::string>& members) {
   ASSERT_TRUE(party.store.FindOrCreateGroupThread("group:hike", "Weekend hike", {}));
 }
 
-}  // namespace
+} // namespace
 
 // Group messages need both ends on this device's roster: dropped (silently, before signature and
 // decrypt) when the sender is not a member...
@@ -1010,7 +1016,7 @@ TEST(GroupInviteIngestTest, GroupEnvelopeAfterLocalRemovalIsDropped) {
 
 TEST(GroupInviteIngestTest, AnInviteFromANonContactIsToldApartFromOtherMembershipFailures) {
   PartyHarness invitee("invite_needs_contact", "account:bob", "account:alice");
-  invitee.contacts.known.erase("account:alice");  // Bob has not added Alice
+  invitee.contacts.known.erase("account:alice"); // Bob has not added Alice
 
   GroupInvitePayload invite;
   invite.group_id = "group:hike";
@@ -1079,7 +1085,6 @@ TEST(GroupInviteIngestTest, AnInviteIsRecordedOnlyFromItsInviterToUs) {
   EXPECT_TRUE(send(invite, 4));
 }
 
-
 // G016: the owner dissolves a group for everyone. Bob is a member; the owner signs with its own account key.
 class GroupDissolvedIngestTest : public ::testing::Test {
 protected:
@@ -1094,8 +1099,10 @@ protected:
     metadata.title = "Weekend hike";
     metadata.roster_epoch = 3;
     ASSERT_TRUE(bob_.roster.UpsertMetadata(metadata));
-    for (const auto& [identity, role] : std::vector<std::pair<std::string, MemberRole>>{
-             {alice_.Id(), MemberRole::Owner}, {"account:bob", MemberRole::Member}, {"account:carol", MemberRole::Member}}) {
+    for (const auto& [identity, role] :
+         std::vector<std::pair<std::string, MemberRole>>{{alice_.Id(), MemberRole::Owner},
+                                                         {"account:bob", MemberRole::Member},
+                                                         {"account:carol", MemberRole::Member}}) {
       GroupRosterMember member;
       member.member_identity = identity;
       member.role = role;
@@ -1239,7 +1246,7 @@ TEST_F(GroupDissolvedIngestTest, ARepeatedDissolveDoesNothing) {
 }
 
 TEST_F(GroupDissolvedIngestTest, AGroupWeAreNotInIsNotEnded) {
-  ASSERT_TRUE(bob_.roster.RemoveMember(kGroup, "account:bob"));  // left or removed before it arrived
+  ASSERT_TRUE(bob_.roster.RemoveMember(kGroup, "account:bob")); // left or removed before it arrived
   const RelayReceiveOutcome outcome = Receive(Statement(alice_));
   EXPECT_FALSE(outcome.receive_failure);
   EXPECT_FALSE(outcome.dissolved_group_thread_id);
@@ -1279,7 +1286,8 @@ TEST_F(GroupDissolvedIngestTest, LateGroupTrafficAndInvitesAreDropped) {
   invite.roster_epoch = 5;
   invite.expires_at = util::NowUnixMs() + 86400000;
   (void)bob_.pipeline.ProcessEnvelope(
-      bob_.MakeSystemEnvelope("group_invite", GroupMembershipCodec::EncodeInvite(invite).value(), "Group invitation", ++seq_),
+      bob_.MakeSystemEnvelope("group_invite", GroupMembershipCodec::EncodeInvite(invite).value(), "Group invitation",
+                              ++seq_),
       "account:bob");
   EXPECT_FALSE(bob_.roster.LoadPendingInvite("after").value().has_value());
 }
@@ -1304,7 +1312,6 @@ TEST_F(GroupDissolvedIngestTest, ADeletedChatStaysGoneAndTheMarkerSurvivesAResta
   EXPECT_EQ(metadata->sync_state, GroupSyncState::Dissolved);
   EXPECT_TRUE(bob_.roster.ListMembers(kGroup).value().empty());
 }
-
 
 TEST_F(GroupDissolvedIngestTest, ARedeliveryFinishesADissolveThatCrashedBeforeItsLine) {
   // The group ended (one transaction) but the process died before its chat got the line.
@@ -1361,7 +1368,7 @@ TEST(GroupInviteIngestTest, AnInviteRefusedBecauseTheGroupWasDissolvedEndsTheInv
   pending.group_id = "group:hike";
   pending.inviter_identity = "account:alice";
   pending.invitee_identity = "account:bob";
-  pending.status = InviteStatus::Accepted;  // bob accepted: its group exists, the owner's end beat the accept
+  pending.status = InviteStatus::Accepted; // bob accepted: its group exists, the owner's end beat the accept
   pending.created_at = util::NowUnixMs();
   ASSERT_TRUE(invitee.roster.UpsertPendingInvite(pending));
   GroupMetadata metadata;
@@ -1696,8 +1703,8 @@ TEST(BlockedSenderIngestTest, DirectEnvelopesFromABlockedSenderAreDropped) {
   invite.invite_nonce = "nonce-after-block";
   detail = GroupMembershipCodec::EncodeInvite(invite);
   ASSERT_TRUE(detail);
-  outcome = invitee.pipeline.ProcessEnvelope(
-      invitee.MakeSystemEnvelope("group_invite", *detail, "Group invitation", 2), "account:bob");
+  outcome = invitee.pipeline.ProcessEnvelope(invitee.MakeSystemEnvelope("group_invite", *detail, "Group invitation", 2),
+                                             "account:bob");
   EXPECT_FALSE(outcome.persisted);
   EXPECT_EQ(outcome.decision, IngestDecision::SilentDiscard);
   auto pending = invitee.roster.LoadPendingInvite("nonce-after-block");

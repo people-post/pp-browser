@@ -345,7 +345,7 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
     return; // the state, and "busy", belong to the newer turn
   }
   const std::string ended_thread = state->pending_thread_id; // cleared below; the UI matches its "ended" to the turn
-  state->pending_image.reset(); // up to ~1.5 MB; not needed once the turn is over
+  state->pending_image.reset();                              // up to ~1.5 MB; not needed once the turn is over
   state->turn_trace.Log();
   if (state->handoff_turn) {
     bool parked = false;
@@ -545,7 +545,8 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
     return;
   }
 
-  PushApprovalClosed(state, park, decision == "allow_always" ? ApprovalOutcome::AllowAlways : ApprovalOutcome::AllowOnce);
+  PushApprovalClosed(state, park,
+                     decision == "allow_always" ? ApprovalOutcome::AllowAlways : ApprovalOutcome::AllowOnce);
 
   if (decision == "allow_always") {
     for (const PlannedToolCall& tool : park.offered_tools) {
@@ -561,9 +562,9 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
     session_grants.insert(tool.name);
   }
 
-  append_decision_user(decision_label.empty()
-                           ? Tr(decision == "allow_always" ? "chat.permission.allow_always" : "chat.permission.allow_once")
-                           : decision_label);
+  append_decision_user(decision_label.empty() ? Tr(decision == "allow_always" ? "chat.permission.allow_always"
+                                                                              : "chat.permission.allow_once")
+                                              : decision_label);
 
   const auto on_activity = [state](const std::string& tool_name, const std::string& status) {
     if (!StaleStep(state, "activity")) { // a stopped turn's tools must not report into the newer turn's chat
@@ -697,10 +698,8 @@ void AgentSession::RecordParkedCardEntry(const std::shared_ptr<Impl>& state, con
   std::lock_guard lock(state->park_mutex);
   // Only the card's own turn records it: a shared "@ai+" card is stored by the UI (no id here), and a later answer
   // in another thread must not be taken for it.
-  if (!entry_id.empty() && state->parked_approval &&
-      state->parked_approval->state == ParkedApprovalState::Pending &&
-      state->parked_approval->thread_id == state->pending_thread_id &&
-      state->parked_approval->card_entry_id.empty()) {
+  if (!entry_id.empty() && state->parked_approval && state->parked_approval->state == ParkedApprovalState::Pending &&
+      state->parked_approval->thread_id == state->pending_thread_id && state->parked_approval->card_entry_id.empty()) {
     state->parked_approval->card_entry_id = entry_id;
   }
 }
@@ -758,8 +757,7 @@ void AgentSession::RunOutputRepair(const std::shared_ptr<Impl>& state, const std
   }
 
   state->turn_trace.output_repair_used = true;
-  const std::string repair_prompt =
-      PromptBuilder::BuildOutputRepairPrompt(state->turn_plan, raw_output, parse_error);
+  const std::string repair_prompt = PromptBuilder::BuildOutputRepairPrompt(state->turn_plan, raw_output, parse_error);
 
   ChatCompletionRequest request;
   request.messages = state->turn_scratch;
@@ -845,8 +843,7 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
   });
 }
 
-void AgentSession::HandleSynthesisResponse(const std::shared_ptr<Impl>& state,
-                                           const ChatCompletionResponse& response) {
+void AgentSession::HandleSynthesisResponse(const std::shared_ptr<Impl>& state, const ChatCompletionResponse& response) {
   if (StaleStep(state, "synthesis")) {
     return; // the model answered after the turn was stopped and replaced
   }
@@ -937,7 +934,7 @@ void AgentSession::ContinueAfterExecution(const std::shared_ptr<Impl>& state) {
 }
 
 Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state, bool& cancelled, const bool allow_model,
-                                             bool& unplanned) {
+                                            bool& unplanned) {
   if (state->pending_user_payload && !state->pending_user_payload->empty()) {
     if (auto payload_plan = TryBuildPlanFromPayload(state->pending_user_text, *state->pending_user_payload)) {
       auto validated = ValidateTurnPlan(*payload_plan, AllowedToolNames(state));
@@ -949,16 +946,16 @@ Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state, 
         // model instead would only produce a confusing answer. Right after launch the server may simply not have
         // been reachable yet when the session was configured, so give it a bounded chance to list its tools.
         switch (RelistMissingFeedTools(state, *payload_plan)) {
-        case FeedRelist::Listed:
-          if (auto relisted = ValidateTurnPlan(*payload_plan, AllowedToolNames(state))) {
-            return relisted;
-          }
-          break;
-        case FeedRelist::Cancelled:
-          cancelled = true;
-          return Error("Turn cancelled");
-        case FeedRelist::Unavailable:
-          break;
+          case FeedRelist::Listed:
+            if (auto relisted = ValidateTurnPlan(*payload_plan, AllowedToolNames(state))) {
+              return relisted;
+            }
+            break;
+          case FeedRelist::Cancelled:
+            cancelled = true;
+            return Error("Turn cancelled");
+          case FeedRelist::Unavailable:
+            break;
         }
         Error unavailable = validated.error();
         unavailable.user = TrOrDefault("feed.unavailable", "Briefs are unavailable right now.");
@@ -1033,8 +1030,8 @@ AgentSession::FeedRelist AgentSession::RelistMissingFeedTools(const std::shared_
       }
       if (first) {
         state->Log().warning << "Planned tool(s) not registered: " << wanted
-                             << "; re-listing the promoted MCP server for up to "
-                             << state->missing_tool_wait.count() << " ms";
+                             << "; re-listing the promoted MCP server for up to " << state->missing_tool_wait.count()
+                             << " ms";
         first = false;
       }
       // A turn that replaced this one after Cancel() may already read the registry: register nothing then.
@@ -1231,7 +1228,8 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
   }
 
   state->turn_trace.tools_executed = execution.tools_executed;
-  state->turn_scratch.insert(state->turn_scratch.end(), execution.scratch_append.begin(), execution.scratch_append.end());
+  state->turn_scratch.insert(state->turn_scratch.end(), execution.scratch_append.begin(),
+                             execution.scratch_append.end());
   state->people_list_blocks = execution.people_list_blocks;
   state->local_raw_results = std::move(execution.raw_results);
 
@@ -1388,7 +1386,8 @@ void AgentSession::HandleHandoff(const std::shared_ptr<Impl>& state, const std::
   } else {
     plan = AskForTool(capability, state->pending_user_text);
   }
-  if (!std::holds_alternative<TurnPlan>(plan) && IsLocalActionQuestion(state->pending_user_text, ToolIsSettingsRead(capability))) {
+  if (!std::holds_alternative<TurnPlan>(plan) &&
+      IsLocalActionQuestion(state->pending_user_text, ToolIsSettingsRead(capability))) {
     // "怎么搜索用户？": a how-to question, not a request; "要搜谁？" would be a silly answer.
     state->local_turn = true;
     EmitLocalActionMetric(state->Log(), capability, "question", false);
@@ -1408,7 +1407,8 @@ void AgentSession::HandleLocalPlan(const std::shared_ptr<Impl>& state, LocalPlan
   if (auto* turn = std::get_if<TurnPlan>(&plan)) {
     turn->local = true;
     const std::string planned = turn->tools.empty() ? tool : turn->tools.front().name;
-    EmitLocalActionMetric(state->Log(), planned, outcome, !turn->tools.empty() && !turn->tools.front().arguments.empty());
+    EmitLocalActionMetric(state->Log(), planned, outcome,
+                          !turn->tools.empty() && !turn->tools.front().arguments.empty());
     ExecutePlan(state, std::move(*turn));
     return;
   }
@@ -1530,8 +1530,8 @@ void AgentSession::MarkUserEntryLocal(const std::shared_ptr<Impl>& state) {
   }
 }
 
-void AgentSession::FinishLocalAnswer(const std::shared_ptr<Impl>& state, const std::string& text,
-                                     const RenderMode mode, const bool keep_out_of_history) {
+void AgentSession::FinishLocalAnswer(const std::shared_ptr<Impl>& state, const std::string& text, const RenderMode mode,
+                                     const bool keep_out_of_history) {
   state->local_turn = keep_out_of_history;
   if (keep_out_of_history) {
     MarkUserEntryLocal(state);
@@ -1567,8 +1567,9 @@ void AgentSession::FinishLocalResult(const std::shared_ptr<Impl>& state, const b
   ctx.synthesis_hints = state->turn_plan.synthesis_hints;
   if (call.name == "open_conversation" || call.name == "start_conversation") {
     const LocalPlanContext contacts = BuildLocalPlanContext(state, call.name);
-    if (const LocalPlanContact* contact = FindLocalContact(contacts, call.arguments.getString("contact_id").value_or(""),
-                                                           call.arguments.getString("thread_id").value_or(""))) {
+    if (const LocalPlanContact* contact =
+            FindLocalContact(contacts, call.arguments.getString("contact_id").value_or(""),
+                             call.arguments.getString("thread_id").value_or(""))) {
       ctx.name = !contact->remark.empty() ? contact->remark : contact->nickname; // UI text only
     }
   }
@@ -1661,7 +1662,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   auto stats = std::make_shared<TurnStats>();
   // Size bucket only: no name, dimensions or content.
   const bool has_image = request.image.has_value();
-  const ShareWord image_kb = !has_image                                 ? ShareWord("none")
+  const ShareWord image_kb = !has_image                                   ? ShareWord("none")
                              : request.image->data.size() < 500u * 1024u  ? ShareWord("<500")
                              : request.image->data.size() < 1536u * 1024u ? ShareWord("<1536")
                                                                           : ShareWord(">1535");
@@ -1749,7 +1750,8 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   };
   sinks.on_error = [state, current, emit_turn, image_error_kind](const std::string& message, const bool retryable,
                                                                  const std::string& partial) {
-    state->Log().warning << "brief_AI stream error (retryable=" << retryable << ", partial_chars=" << partial.size() << ")";
+    state->Log().warning << "brief_AI stream error (retryable=" << retryable << ", partial_chars=" << partial.size()
+                         << ")";
     emit_turn(partial.empty() ? ShareWord("error") : ShareWord("error_partial"));
     if (!current()) {
       return;
@@ -1808,7 +1810,11 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
           return BriefAiOutcome::Cancelled;
         }
         if (!renewed) {
-          DiagLine("ai.llm_key").Add("reason", "401").Add("outcome", "mint_failed").Fail("error", renewed.error()).Emit();
+          DiagLine("ai.llm_key")
+              .Add("reason", "401")
+              .Add("outcome", "mint_failed")
+              .Fail("error", renewed.error())
+              .Emit();
           return renewed.error();
         }
         DiagLine("ai.llm_key")
@@ -1930,7 +1936,8 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     user_message.sender_contact_id = kLocalSelfContactId;
     // Stored as text: later history reads "[Image] <question>"; the bytes are never kept here. The GUI's
     // reference to the stored image (private CAS) rides along so the bubble can show it after a restart.
-    user_message.text = (state->pending_image ? std::string(kAiImageTurnMarker) : std::string()) + state->pending_user_text;
+    user_message.text =
+        (state->pending_image ? std::string(kAiImageTurnMarker) : std::string()) + state->pending_user_text;
     if (state->pending_image && !state->pending_image->ai_image_json.empty()) {
       user_message.ai_image_json = state->pending_image->ai_image_json;
     }
@@ -1956,9 +1963,10 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     }
 
     ThreadContextPolicy policy(state->config.context);
-    const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->tools.SummaryForPrompt(), ResolvePreset(state->config) == "brief");
-    const ContextBuildResult built = policy.Build(*messages, system_prompt, state->pending_user_text,
-                                                  state->pending_user_payload, summary);
+    const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(
+        state->tools.SummaryForPrompt(), ResolvePreset(state->config) == "brief");
+    const ContextBuildResult built =
+        policy.Build(*messages, system_prompt, state->pending_user_text, state->pending_user_payload, summary);
     state->turn_scratch = built.messages;
     if (UseBriefStream(state)) {
       if (TryPendingLocalAnswer(state) || TryLocalAppAction(state)) {
@@ -2004,8 +2012,8 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     ThreadContextPolicy policy(state->config.context);
     state->turn_scratch = policy.BuildAssistContext(state->pending_user_text);
     if (!state->turn_scratch.empty() && state->turn_scratch.front().role == "system") {
-      state->turn_scratch.front().content =
-          PromptBuilder::BuildScopedAssistSystemPrompt(state->tools.SummaryForPrompt(), ResolvePreset(state->config) == "brief");
+      state->turn_scratch.front().content = PromptBuilder::BuildScopedAssistSystemPrompt(
+          state->tools.SummaryForPrompt(), ResolvePreset(state->config) == "brief");
     }
     // With the brief preset an "@ai" in a chat is a brief_AI question like any other, so it gets the
     // current date, retrieval and sources (the bare model answered from its training data: wrong year,
@@ -2015,7 +2023,8 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     // route any more (B99), so a shared reply that kept the local path answered with HTTP 404.
     const bool stream = BriefStreamAvailable(state);
     state->Log().info << "scoped assist path=" << (stream ? "brief_stream" : "pipeline")
-                      << " preset=" << ResolvePreset(state->config) << " key=" << (state->config.llm.api_key.empty() ? "none" : "set");
+                      << " preset=" << ResolvePreset(state->config)
+                      << " key=" << (state->config.llm.api_key.empty() ? "none" : "set");
     if (state->assist_mode != AtAiMode::Local && ResolvePreset(state->config) == "brief") {
       // "@ai++ 搜索用户 ken": an app action is not shared with the other side. Decided before anything else
       // (stream available or not): nothing is executed, asked or relayed; the answer stays on this device.
@@ -2041,7 +2050,8 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
   TranscriptEntry& entry = state->conversation.AppendUser(state->pending_user_text, state->pending_user_payload);
   state->pending_entry_id = entry.id;
 
-  const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->tools.SummaryForPrompt(), ResolvePreset(state->config) == "brief");
+  const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->tools.SummaryForPrompt(),
+                                                                              ResolvePreset(state->config) == "brief");
   const TurnSnapshot snapshot =
       state->coordinator.BeginTurn(state->conversation, system_prompt, entry, state->config.context);
   state->turn_scratch = snapshot.messages;
@@ -2064,7 +2074,8 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
 
 void AgentSession::RefreshCompactionService(const std::shared_ptr<Impl>& state) {
   if (state->thread_store && state->llm) {
-    state->compaction = std::make_unique<ThreadCompactionService>(*state->thread_store, *state->thread_store, *state->thread_store, state->llm.get());
+    state->compaction = std::make_unique<ThreadCompactionService>(*state->thread_store, *state->thread_store,
+                                                                  *state->thread_store, state->llm.get());
   } else {
     state->compaction.reset();
   }
@@ -2119,11 +2130,9 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     // PP_BROWSER_BRIEF_STREAM_URL only redirects them to a local fake server for development.
     {
       const auto brief_client = std::make_shared<BriefAiClient>(llm_config, BriefStreamUrlOverride());
-      state->brief_stream = [brief_client](const BriefAiRequest& request,
-                                           const std::function<void(const BriefAiEvent&)>& on_event,
-                                           const std::atomic<bool>& cancel) {
-        return brief_client->Stream(request, on_event, cancel);
-      };
+      state->brief_stream =
+          [brief_client](const BriefAiRequest& request, const std::function<void(const BriefAiEvent&)>& on_event,
+                         const std::atomic<bool>& cancel) { return brief_client->Stream(request, on_event, cancel); };
     }
 
     const AppConfig defaults = Config::DefaultAppConfig();
@@ -2329,8 +2338,7 @@ Roe<void> AgentSession::ResumeToolPermission(const std::string& approval_id, con
 
   {
     std::lock_guard lock(impl_->park_mutex);
-    const ApprovalResumeError err =
-        ValidateParkedResume(impl_->parked_approval, approval_id, impl_->busy.load());
+    const ApprovalResumeError err = ValidateParkedResume(impl_->parked_approval, approval_id, impl_->busy.load());
     if (err != ApprovalResumeError::Ok) {
       return Error(ApprovalResumeErrorCode(err));
     }
@@ -2342,10 +2350,9 @@ Roe<void> AgentSession::ResumeToolPermission(const std::string& approval_id, con
     impl_->turn_in_flight = true;
   }
 
-  PostTurnTask(impl_,
-      [impl = impl_, approval_id, decision, decision_label]() {
-        ResumeToolPermissionOnWorker(impl, approval_id, decision, decision_label);
-      });
+  PostTurnTask(impl_, [impl = impl_, approval_id, decision, decision_label]() {
+    ResumeToolPermissionOnWorker(impl, approval_id, decision, decision_label);
+  });
   return {};
 }
 
@@ -2513,8 +2520,7 @@ SubmitOutcome AgentSession::SubmitScopedAssist(const std::string& thread_id, con
     return SubmitOutcome::Ignored;
   }
   if (impl_->busy.exchange(true)) {
-    impl_->Log().info << "scoped assist not taken: a turn runs in this session (mode=" << static_cast<int>(mode)
-                      << ")";
+    impl_->Log().info << "scoped assist not taken: a turn runs in this session (mode=" << static_cast<int>(mode) << ")";
     return SubmitOutcome::BusyHere;
   }
   impl_->turn_in_flight = true;

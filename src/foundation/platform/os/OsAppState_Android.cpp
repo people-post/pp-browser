@@ -13,7 +13,7 @@ bool AppShownNow() {
   if (env == nullptr || activity == nullptr) {
     return false;
   }
-  bool shown = false;  // not shown when the activity cannot be asked
+  bool shown = false; // not shown when the activity cannot be asked
   // The activity's class: FindClass from a native thread does not see app classes.
   jclass cls = env->GetObjectClass(activity);
   jmethodID mid = cls != nullptr ? env->GetStaticMethodID(cls, "isAppShown", "()Z") : nullptr;

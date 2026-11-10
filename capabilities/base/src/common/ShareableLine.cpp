@@ -25,7 +25,7 @@ const std::array<unsigned char, crypto_generichash_KEYBYTES>& RefKey() {
   static const std::array<unsigned char, crypto_generichash_KEYBYTES> key = [] {
     std::array<unsigned char, crypto_generichash_KEYBYTES> k{};
     if (sodium_init() < 0) {
-      std::abort();  // no randomness: never fall back to a guessable key
+      std::abort(); // no randomness: never fall back to a guessable key
     }
     randombytes_buf(k.data(), k.size());
     return k;
@@ -42,8 +42,8 @@ std::string ShareableRef(std::string_view id) {
   }
   const auto& key = RefKey();
   std::array<unsigned char, 16> out{};
-  crypto_generichash(out.data(), out.size(), reinterpret_cast<const unsigned char*>(id.data()), id.size(),
-                     key.data(), key.size());
+  crypto_generichash(out.data(), out.size(), reinterpret_cast<const unsigned char*>(id.data()), id.size(), key.data(),
+                     key.size());
   char hex[9];
   std::snprintf(hex, sizeof(hex), "%02x%02x%02x%02x", out[0], out[1], out[2], out[3]);
   return hex;
@@ -67,7 +67,9 @@ ShareableLine& ShareableLine::AddRaw(const ShareWord key, const std::string_view
   return *this;
 }
 
-ShareableLine& ShareableLine::Add(const ShareWord key, const ShareWord value) { return AddRaw(key, value.view()); }
+ShareableLine& ShareableLine::Add(const ShareWord key, const ShareWord value) {
+  return AddRaw(key, value.view());
+}
 
 ShareableLine& ShareableLine::AddInt(const ShareWord key, const int64_t value) {
   return AddRaw(key, std::to_string(value));
@@ -116,6 +118,8 @@ ShareableLine& ShareableLine::Fail(const ShareWord key, const Error& error) {
   return AddRaw(key, std::to_string(error.category) + "." + std::to_string(error.code));
 }
 
-void ShareableLine::Emit() const { sink_->info << text_; }
+void ShareableLine::Emit() const {
+  sink_->info << text_;
+}
 
 } // namespace pbr

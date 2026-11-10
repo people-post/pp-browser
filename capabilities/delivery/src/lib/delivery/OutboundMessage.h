@@ -28,8 +28,8 @@ namespace pbr {
 // --- The message row --------------------------------------------------------------------------------
 
 /** A pending, relay-visible message from us (rich payload options applied). */
-ThreadMessage NewOutboundMessage(const std::string& thread_id, const std::string& text,
-                                 const SendRelayOptions& options, std::string id, int64_t now_ms);
+ThreadMessage NewOutboundMessage(const std::string& thread_id, const std::string& text, const SendRelayOptions& options,
+                                 std::string id, int64_t now_ms);
 
 /** The per-target reaction cap; never stops a delete. */
 Roe<void> CheckAnnotationCap(const IThreadStore& store, const std::string& thread_id, const ThreadMessage& message);
@@ -107,8 +107,7 @@ RelayCopy DeviceCopy(const std::string& device, PairCopy copy);
  * with `copies` for the account's devices, or the account copy (M022). `order_key`: its relay index.
  */
 RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSender& sender, ThreadChannel channel,
-                                  const std::string& route_party, std::vector<RelayCopy> copies,
-                                  uint64_t order_key);
+                                  const std::string& route_party, std::vector<RelayCopy> copies, uint64_t order_key);
 
 /**
  * Control-lane signaling (call control) prefers the relay when a route is known (Amp's open + ack per message races the

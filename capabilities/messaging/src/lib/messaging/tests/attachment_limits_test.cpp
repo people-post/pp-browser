@@ -56,8 +56,8 @@ TEST(AutoDownloadBudgetTest, ARefundGivesBackOneDownloadOfThatSize) {
   EXPECT_FALSE(budget.TryAcquire("alice", 50'000'000, 1'000, 10, 80'000'000)) << "100 MB > 80 MB in the minute";
   budget.Refund("alice", 50'000'000);
   EXPECT_TRUE(budget.TryAcquire("alice", 50'000'000, 1'000, 10, 80'000'000)) << "the first one gave its bytes back";
-  budget.Refund("bob", 1);  // nothing recorded: no effect
-  budget.Refund("alice", 7);  // no entry of that size: no effect
+  budget.Refund("bob", 1);   // nothing recorded: no effect
+  budget.Refund("alice", 7); // no entry of that size: no effect
   EXPECT_FALSE(budget.TryAcquire("alice", 50'000'000, 1'000, 10, 80'000'000));
 }
 
@@ -174,9 +174,18 @@ TEST(AttachmentMimeTest, TypeTableCoversTheFourKinds) {
 TEST(AttachmentMimeTest, AFileWithNoNameIsTypedByItsFirstBytes) {
   const auto bytes = [](const std::string& s) { return std::vector<uint8_t>(s.begin(), s.end()); };
   const auto raw = [](const char* s, const size_t n) { return std::vector<uint8_t>(s, s + n); };
-  EXPECT_EQ(AttachmentExtensionFromContent(bytes(std::string("\0\0\0\x18" "ftypqt  \0\0\0\0", 16))), "mov");
-  EXPECT_EQ(AttachmentExtensionFromContent(bytes(std::string("\0\0\0\x18" "ftypisom\0\0\0\0", 16))), "mp4");
-  EXPECT_EQ(AttachmentExtensionFromContent(bytes(std::string("\0\0\0\x18" "ftypM4A \0\0\0\0", 16))), "m4a");
+  EXPECT_EQ(AttachmentExtensionFromContent(bytes(std::string("\0\0\0\x18"
+                                                             "ftypqt  \0\0\0\0",
+                                                             16))),
+            "mov");
+  EXPECT_EQ(AttachmentExtensionFromContent(bytes(std::string("\0\0\0\x18"
+                                                             "ftypisom\0\0\0\0",
+                                                             16))),
+            "mp4");
+  EXPECT_EQ(AttachmentExtensionFromContent(bytes(std::string("\0\0\0\x18"
+                                                             "ftypM4A \0\0\0\0",
+                                                             16))),
+            "m4a");
   EXPECT_EQ(AttachmentExtensionFromContent(bytes("\x1a\x45\xdf\xa3 more")), "webm");
   EXPECT_EQ(AttachmentExtensionFromContent(raw("OggS\0\2", 6)), "ogg");
   EXPECT_EQ(AttachmentExtensionFromContent(raw("RIFF\0\0\0\0WAVEfmt ", 16)), "wav");
@@ -200,7 +209,8 @@ TEST(AttachmentMimeTest, NewTypesKeepTheirExtensionOnDisk) {
 
 TEST(AttachmentOpenFilenameTest, TheSendersNameIsKeptWithASafeExtension) {
   EXPECT_EQ(AttachmentOpenFilename("Song Title.mp3", "audio/mpeg", "ab12"), "Song Title.mp3");
-  EXPECT_EQ(AttachmentOpenFilename("歌.MP3", "audio/mpeg", "ab12"), "歌.MP3") << "the case of a matching extension stays";
+  EXPECT_EQ(AttachmentOpenFilename("歌.MP3", "audio/mpeg", "ab12"), "歌.MP3")
+      << "the case of a matching extension stays";
   EXPECT_EQ(AttachmentOpenFilename("song", "audio/mpeg", "ab12"), "song.mp3") << "missing: from the type";
   EXPECT_EQ(AttachmentOpenFilename("notes", "text/plain", "ab12"), "notes.txt");
   EXPECT_EQ(AttachmentOpenFilename("report.exe", "application/pdf", "ab12"), "report.exe.pdf")
@@ -250,7 +260,7 @@ TEST(AttachmentOpenFilenameTest, TheNamedLinkHoldsTheViewsBytes) {
   {
     std::ifstream in(opened, std::ios::binary);
     EXPECT_EQ(std::string(std::istreambuf_iterator<char>(in), {}), "ID3 sound");
-  }  // closed: Windows cannot remove an open file
+  } // closed: Windows cannot remove an open file
   EXPECT_EQ(AttachmentNamedOpenPath(dir.string(), "t1", hash, "audio/mpeg", "My Song.mp3", view.string()), opened);
   EXPECT_EQ(AttachmentLocalPath(dir.string(), "t1", hash, "audio/mpeg", "My Song.mp3"), view.string())
       << "the link folder is not taken for the view";
@@ -281,7 +291,7 @@ TEST(AttachmentNamedOpenPathTest, Mp4BytesUnderAnMp3NameOpenAsM4a) {
   std::ofstream(view, std::ios::binary) << "mp4 sound";
   const std::string opened =
       AttachmentNamedOpenPath(dir.string(), "t1", hash, "audio/mpeg", "六字大明咒.mp3", view.string(), "m4a");
-  const std::filesystem::path opened_path = PathFromUtf8(opened);  // not path(std::string): throws on Windows for CJK
+  const std::filesystem::path opened_path = PathFromUtf8(opened); // not path(std::string): throws on Windows for CJK
   EXPECT_EQ(PathToUtf8(opened_path.extension()), ".m4a");
   EXPECT_EQ(PathToUtf8(opened_path.filename()), "六字大明咒.mp3.m4a");
   std::filesystem::remove_all(dir);

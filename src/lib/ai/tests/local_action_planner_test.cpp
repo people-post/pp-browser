@@ -37,7 +37,8 @@ LocalPlan PlanFor(const std::string& text, const LocalPlanContext& ctx = {}) {
 }
 
 /** For sentences the wordlist does not classify (no object word, tool outside the table): the hit is `hit`. */
-LocalPlan PlanAs(const std::string& tool, const std::string& text, const std::string& hit, const LocalPlanContext& ctx = {}) {
+LocalPlan PlanAs(const std::string& tool, const std::string& text, const std::string& hit,
+                 const LocalPlanContext& ctx = {}) {
   AppActionMatch match{tool, {}};
   if (!hit.empty()) {
     const size_t at = text.find(hit);
@@ -47,7 +48,9 @@ LocalPlan PlanAs(const std::string& tool, const std::string& text, const std::st
   return BuildLocalTurnPlan(match, text, ctx);
 }
 
-const TurnPlan* AsPlan(const LocalPlan& p) { return std::get_if<TurnPlan>(&p); }
+const TurnPlan* AsPlan(const LocalPlan& p) {
+  return std::get_if<TurnPlan>(&p);
+}
 
 std::string Hints(const LocalPlan& p) {
   const TurnPlan* plan = AsPlan(p);
@@ -67,14 +70,16 @@ void ExpectPlan(const LocalPlan& p, const std::string& tool, const std::string& 
   EXPECT_TRUE(static_cast<bool>(ValidateTurnPlan(*plan, AllTools()))) << context;
 }
 
-void ExpectText(const LocalPlan& p, const std::string& tool, const char* key, const std::string& value, const std::string& context) {
+void ExpectText(const LocalPlan& p, const std::string& tool, const char* key, const std::string& value,
+                const std::string& context) {
   ExpectPlan(p, tool, context);
   if (const TurnPlan* plan = AsPlan(p)) {
     EXPECT_EQ(plan->tools[0].arguments.getString(key), value) << context;
   }
 }
 
-void ExpectBool(const LocalPlan& p, const std::string& tool, const char* key, const bool value, const std::string& context) {
+void ExpectBool(const LocalPlan& p, const std::string& tool, const char* key, const bool value,
+                const std::string& context) {
   ExpectPlan(p, tool, context);
   if (const TurnPlan* plan = AsPlan(p)) {
     EXPECT_EQ(plan->tools[0].arguments.getIf<bool>(key), std::optional<bool>(value)) << context;
@@ -142,7 +147,8 @@ TEST(LocalActionPlannerTest, NamesAreTakenAsTheyAre) {
   ExpectText(PlanFor("change my nickname to Bob"), "update_profile_nickname", "nickname", "Bob", "change to Bob");
   ExpectText(PlanFor("改昵称为 小成"), "update_profile_nickname", "nickname", "小成", "小成 keeps its last character");
   ExpectText(PlanFor("改昵称为成龙"), "update_profile_nickname", "nickname", "成龙", "成龙 keeps its first character");
-  ExpectText(PlanFor("change my nickname to Tony the Great"), "update_profile_nickname", "nickname", "Tony the Great", "Tony");
+  ExpectText(PlanFor("change my nickname to Tony the Great"), "update_profile_nickname", "nickname", "Tony the Great",
+             "Tony");
   ExpectText(PlanFor("把昵称改成 Bob。"), "update_profile_nickname", "nickname", "Bob", "trailing mark");
 }
 
@@ -167,7 +173,8 @@ TEST(LocalActionPlannerTest, SearchWithoutAnyoneNamedListsTheDirectory) {
   for (const char* text : {"帮我找人", "帮我搜索用户", "搜索用户", "find someone", "please search users"}) {
     const LocalPlan p = text == std::string("帮我找人") ? PlanAs("search_people", text, "找") : PlanFor(text);
     ExpectPlan(p, "search_people", text);
-    EXPECT_FALSE(Arg(p, "query").has_value()) << text << " must not carry a query, got " << Arg(p, "query").value_or("");
+    EXPECT_FALSE(Arg(p, "query").has_value())
+        << text << " must not carry a query, got " << Arg(p, "query").value_or("");
   }
   ExpectAsk(PlanFor("把他加到联系人"), "contacts.ask.who", "pronoun");
   ExpectText(PlanFor("加张三为好友"), "search_people", "query", "张三", "add by name");
@@ -211,8 +218,10 @@ TEST(LocalActionPlannerTest, HowAndWhyQuestionsGoBackToTheStream) {
 }
 
 TEST(LocalActionPlannerTest, PoliteRequestsAreCommands) {
-  ExpectText(PlanAs("set_appearance", "可以打开深色模式吗？", "打开深色模式"), "set_appearance", "appearance", "dark", "可以…吗");
-  ExpectBool(PlanAs("set_notifications", "能不能帮我把通知关掉", "关掉"), "set_notifications", "enabled", false, "能不能帮我");
+  ExpectText(PlanAs("set_appearance", "可以打开深色模式吗？", "打开深色模式"), "set_appearance", "appearance", "dark",
+             "可以…吗");
+  ExpectBool(PlanAs("set_notifications", "能不能帮我把通知关掉", "关掉"), "set_notifications", "enabled", false,
+             "能不能帮我");
   ExpectBool(PlanFor("能不能关掉通知"), "set_notifications", "enabled", false, "能不能 is not a negation");
   ExpectBool(PlanFor("Can you turn off notifications?"), "set_notifications", "enabled", false, "can you");
   ExpectBool(PlanFor("麻烦关掉通知"), "set_notifications", "enabled", false, "麻烦");
@@ -260,10 +269,12 @@ TEST(LocalActionPlannerTest, OnOffThatIsNotClearIsAsked) {
 
 TEST(LocalActionPlannerTest, BlurIsTheOppositeOfTheSetting) {
   ExpectBool(PlanFor("关掉毛玻璃"), "set_reduce_transparency", "enabled", true, "off blur = reduce");
-  ExpectBool(PlanAs("set_reduce_transparency", "打开毛玻璃", "打开"), "set_reduce_transparency", "enabled", false, "on blur = not reduce");
+  ExpectBool(PlanAs("set_reduce_transparency", "打开毛玻璃", "打开"), "set_reduce_transparency", "enabled", false,
+             "on blur = not reduce");
   ExpectBool(PlanFor("reduce transparency"), "set_reduce_transparency", "enabled", true, "reduce");
   ExpectBool(PlanFor("turn off the blur"), "set_reduce_transparency", "enabled", true, "turn off the blur");
-  ExpectBool(PlanAs("set_reduce_transparency", "关闭减少透明度", "减少透明度"), "set_reduce_transparency", "enabled", false, "off reduce");
+  ExpectBool(PlanAs("set_reduce_transparency", "关闭减少透明度", "减少透明度"), "set_reduce_transparency", "enabled",
+             false, "off reduce");
 }
 
 // --- enumerations -------------------------------------------------------------------------------------------
@@ -272,7 +283,8 @@ TEST(LocalActionPlannerTest, Appearance) {
   ExpectText(PlanFor("换成深色模式"), "set_appearance", "appearance", "dark", "深色");
   ExpectText(PlanAs("set_appearance", "切换到浅色模式", "切换"), "set_appearance", "appearance", "light", "浅色");
   ExpectText(PlanFor("switch to dark mode"), "set_appearance", "appearance", "dark", "dark mode");
-  ExpectText(PlanAs("set_appearance", "跟随系统外观", "跟随系统外观"), "set_appearance", "appearance", "system", "跟随系统");
+  ExpectText(PlanAs("set_appearance", "跟随系统外观", "跟随系统外观"), "set_appearance", "appearance", "system",
+             "跟随系统");
   ExpectText(PlanFor("follow the system"), "set_appearance", "appearance", "system", "follow the system");
   ExpectText(PlanFor("turn off dark mode"), "set_appearance", "appearance", "light", "off dark = light");
   ExpectAsk(PlanAs("set_appearance", "改外观", "改外观"), "settings.ask.appearance", "no value");
@@ -293,26 +305,31 @@ TEST(LocalActionPlannerTest, InvitePolicies) {
   ExpectText(PlanFor("谁都能拉我进群"), "set_group_invite_policy", "policy", "everyone", "谁都");
   ExpectText(PlanFor("只允许联系人邀请我"), "set_group_invite_policy", "policy", "contacts_only", "联系人");
   ExpectText(PlanFor("不让陌生人拉我进群"), "set_group_invite_policy", "policy", "contacts_only", "strangers");
-  ExpectText(PlanAs("set_call_invite_policy", "不允许任何人打给我", "不允许"), "set_call_invite_policy", "policy", "nobody",
-             "不允许任何人");
-  ExpectText(PlanAs("set_call_invite_policy", "只让好友打给我", "只让"), "set_call_invite_policy", "policy", "contacts_only", "好友");
-  ExpectText(PlanAs("set_call_invite_policy", "没人能打给我", "没人"), "set_call_invite_policy", "policy", "nobody", "没人");
-  ExpectText(PlanAs("set_group_invite_policy", "let anyone add me to groups", "add me to groups"), "set_group_invite_policy",
-             "policy", "everyone", "anyone");
+  ExpectText(PlanAs("set_call_invite_policy", "不允许任何人打给我", "不允许"), "set_call_invite_policy", "policy",
+             "nobody", "不允许任何人");
+  ExpectText(PlanAs("set_call_invite_policy", "只让好友打给我", "只让"), "set_call_invite_policy", "policy",
+             "contacts_only", "好友");
+  ExpectText(PlanAs("set_call_invite_policy", "没人能打给我", "没人"), "set_call_invite_policy", "policy", "nobody",
+             "没人");
+  ExpectText(PlanAs("set_group_invite_policy", "let anyone add me to groups", "add me to groups"),
+             "set_group_invite_policy", "policy", "everyone", "anyone");
   ExpectAsk(PlanAs("set_group_invite_policy", "改一下邀请策略", "邀请策略"), "settings.ask.policy", "no value");
   ExpectAsk(PlanAs("set_group_invite_policy", "任何人或者联系人", "联系人"), "settings.ask.policy", "two values");
 }
 
 TEST(LocalActionPlannerTest, MeshCapabilities) {
-  ExpectBool(PlanAs("set_mesh_capabilities", "关掉媒体中继", "关掉"), "set_mesh_capabilities", "media_relay", false, "媒体中继");
+  ExpectBool(PlanAs("set_mesh_capabilities", "关掉媒体中继", "关掉"), "set_mesh_capabilities", "media_relay", false,
+             "媒体中继");
   ExpectBool(PlanFor("关掉中继"), "set_mesh_capabilities", "circuit_relay", false, "中继");
   ExpectBool(PlanFor("打开 DHT"), "set_mesh_capabilities", "dht", true, "DHT");
   ExpectBool(PlanFor("turn off media relay"), "set_mesh_capabilities", "media_relay", false, "media relay");
   ExpectBool(PlanFor("turn on relay"), "set_mesh_capabilities", "circuit_relay", true, "relay");
-  ExpectBool(PlanAs("set_mesh_capabilities", "打开优先联系人", "打开"), "set_mesh_capabilities", "prefer_contacts_for_routing", true,
-             "prefer contacts");
-  ExpectText(PlanAs("set_mesh_capabilities", "关掉直连", "关掉"), "set_mesh_capabilities", "direct_connections", "nobody", "direct off");
-  ExpectAsk(PlanAs("set_mesh_capabilities", "打开直连", "打开"), "settings.ask.direct_audience", "direct on is not a flag");
+  ExpectBool(PlanAs("set_mesh_capabilities", "打开优先联系人", "打开"), "set_mesh_capabilities",
+             "prefer_contacts_for_routing", true, "prefer contacts");
+  ExpectText(PlanAs("set_mesh_capabilities", "关掉直连", "关掉"), "set_mesh_capabilities", "direct_connections",
+             "nobody", "direct off");
+  ExpectAsk(PlanAs("set_mesh_capabilities", "打开直连", "打开"), "settings.ask.direct_audience",
+            "direct on is not a flag");
   const LocalPlan both = PlanAs("set_mesh_capabilities", "同时开中继和 DHT", "中继");
   ExpectAsk(both, "settings.ask.mesh_capability", "two capabilities");
   EXPECT_EQ(std::get<LocalAsk>(both).missing, "capability");
@@ -325,7 +342,8 @@ TEST(LocalActionPlannerTest, MeshCapabilities) {
 }
 
 TEST(LocalActionPlannerTest, UpnpOnlyWhenMentioned) {
-  ExpectBool(PlanAs("probe_reachability", "探测一下连通性", "连通"), "probe_reachability", "try_upnp", false, "no upnp");
+  ExpectBool(PlanAs("probe_reachability", "探测一下连通性", "连通"), "probe_reachability", "try_upnp", false,
+             "no upnp");
   ExpectBool(PlanAs("probe_reachability", "用 UPnP 探测", "探测"), "probe_reachability", "try_upnp", true, "upnp");
   ExpectBool(PlanFor("重新检测一下网络"), "probe_reachability", "try_upnp", false, "zh");
   ExpectBool(PlanFor("test my network with UPnP"), "probe_reachability", "try_upnp", true, "en");
@@ -375,7 +393,8 @@ TEST(LocalActionPlannerTest, OneContactOpensItsThread) {
   ctx.contacts = {Contact("c1", "", "Tom", 0, "thread-1"), Contact("c2", "", "Alice")};
   ExpectText(PlanFor("打开和 Tom 的聊天", ctx), "open_conversation", "thread_id", "thread-1", "打开和 Tom 的聊天");
   ExpectText(PlanFor("open the chat with tom", ctx), "open_conversation", "thread_id", "thread-1", "case-insensitive");
-  ExpectText(PlanFor("打开和 Tom 的聊天，然后关掉通知", ctx), "open_conversation", "thread_id", "thread-1", "stop word");
+  ExpectText(PlanFor("打开和 Tom 的聊天，然后关掉通知", ctx), "open_conversation", "thread_id", "thread-1",
+             "stop word");
   ExpectText(PlanFor("发消息给 Tom", ctx), "start_conversation", "contact_id", "c1", "start by name");
   ExpectText(PlanFor("给 Tom 发消息", ctx), "start_conversation", "contact_id", "c1", "name between the words");
   ExpectText(PlanFor("和 Tom 开个聊天", ctx), "start_conversation", "contact_id", "c1", "name before the phrase");
@@ -396,7 +415,8 @@ TEST(LocalActionPlannerTest, RemarkAndNicknameAreMergedAndDeduplicated) {
   ExpectText(PlanFor("打开和 Wang 的聊天", ctx), "open_conversation", "thread_id", "t1", "nickname");
 
   ctx.contacts = {Contact("c1", "Tom", "Tom", 0, "t1"), Contact("c2", "", "Alice")};
-  ExpectText(PlanFor("打开和 Tom 的聊天", ctx), "open_conversation", "thread_id", "t1", "same name twice is one contact");
+  ExpectText(PlanFor("打开和 Tom 的聊天", ctx), "open_conversation", "thread_id", "t1",
+             "same name twice is one contact");
 
   ctx.contacts = {Contact("c1", "Tom-公司", "Tomas", 0, "t1"), Contact("c2", "", "Tom", 0, "t2")};
   const LocalPlan p = PlanFor("打开和 Tom 的聊天", ctx);
@@ -458,23 +478,29 @@ TEST(LocalActionPlannerTest, DirectConnectionsOnAsksForTheAudience) {
   ExpectAsk(asked, "settings.ask.direct_audience", "直连 开");
   const LocalAsk ask = std::get<LocalAsk>(asked);
   EXPECT_EQ(ask.missing, "audience");
-  for (const auto& [answer, audience] : std::vector<std::pair<std::string, std::string>>{
-           {"任何人", "everyone"}, {"联系人", "contacts"}, {"好友", "friendly"}, {"没有人", "nobody"},
-           {"everyone", "everyone"}, {"contacts", "contacts"}, {"friendly", "friendly"}, {"nobody", "nobody"},
-           {"只让好友吧", "friendly"}}) {
+  for (const auto& [answer, audience] : std::vector<std::pair<std::string, std::string>>{{"任何人", "everyone"},
+                                                                                         {"联系人", "contacts"},
+                                                                                         {"好友", "friendly"},
+                                                                                         {"没有人", "nobody"},
+                                                                                         {"everyone", "everyone"},
+                                                                                         {"contacts", "contacts"},
+                                                                                         {"friendly", "friendly"},
+                                                                                         {"nobody", "nobody"},
+                                                                                         {"只让好友吧", "friendly"}}) {
     ExpectText(ResolvePendingAnswer(ask, answer, {}), "set_mesh_capabilities", "direct_connections", audience, answer);
   }
   ExpectAsk(ResolvePendingAnswer(ask, "开", {}), "settings.ask.direct_audience", "still no audience");
   // Named in the sentence: no question.
-  ExpectText(PlanAs("set_mesh_capabilities", "打开直连 只对好友", "打开"), "set_mesh_capabilities", "direct_connections",
-             "friendly", "audience in the sentence");
+  ExpectText(PlanAs("set_mesh_capabilities", "打开直连 只对好友", "打开"), "set_mesh_capabilities",
+             "direct_connections", "friendly", "audience in the sentence");
 }
 
 // --- follow-up answers --------------------------------------------------------------------------------------
 
 TEST(LocalActionPlannerTest, CancelWordsInAShortAnswer) {
   const LocalAsk ask{"update_profile_nickname", "nickname", "profile.ask.nickname", ""};
-  for (const char* answer : {"算了", "取消吧", "算了，不改了吧", "不用了", "别了", "never mind", "Cancel", "forget it"}) {
+  for (const char* answer :
+       {"算了", "取消吧", "算了，不改了吧", "不用了", "别了", "never mind", "Cancel", "forget it"}) {
     EXPECT_TRUE(std::holds_alternative<LocalCancelled>(ResolvePendingAnswer(ask, answer, {}))) << answer;
   }
   // A cancel word with a value next to it is an answer, not a cancellation.
@@ -486,13 +512,16 @@ TEST(LocalActionPlannerTest, CancelWordsInAShortAnswer) {
   EXPECT_TRUE(std::holds_alternative<LocalCancelled>(ResolvePendingAnswer(ask, "算了吧！", {})));
   // Longer than the limit: it is a name that happens to contain a cancel word.
   const std::string long_answer = "取消的那个世界的另一个我的名字叫什么好呢";
-  ExpectText(ResolvePendingAnswer(ask, long_answer, {}), "update_profile_nickname", "nickname", long_answer, "long answer");
+  ExpectText(ResolvePendingAnswer(ask, long_answer, {}), "update_profile_nickname", "nickname", long_answer,
+             "long answer");
 }
 
 TEST(LocalActionPlannerTest, TextAnswerIsTheWholeSentence) {
   const LocalAsk nick{"update_profile_nickname", "nickname", "profile.ask.nickname", ""};
-  ExpectText(ResolvePendingAnswer(nick, "搜索达人", {}), "update_profile_nickname", "nickname", "搜索达人", "word-table words");
-  ExpectText(ResolvePendingAnswer(nick, "Tony the Great", {}), "update_profile_nickname", "nickname", "Tony the Great", "english");
+  ExpectText(ResolvePendingAnswer(nick, "搜索达人", {}), "update_profile_nickname", "nickname", "搜索达人",
+             "word-table words");
+  ExpectText(ResolvePendingAnswer(nick, "Tony the Great", {}), "update_profile_nickname", "nickname", "Tony the Great",
+             "english");
   EXPECT_TRUE(std::holds_alternative<LocalQuestion>(ResolvePendingAnswer(nick, "这个怎么用？", {})));
   EXPECT_TRUE(std::holds_alternative<LocalQuestion>(ResolvePendingAnswer(nick, "how do I do that", {})));
   ExpectAsk(ResolvePendingAnswer(nick, "   ", {}), "profile.ask.nickname", "empty");
@@ -519,21 +548,23 @@ TEST(LocalActionPlannerTest, BooleanAnswer) {
 }
 
 TEST(LocalActionPlannerTest, EnumAnswers) {
-  ExpectText(ResolvePendingAnswer({"set_appearance", "appearance", "settings.ask.appearance", ""}, "深色", {}), "set_appearance",
-             "appearance", "dark", "appearance");
+  ExpectText(ResolvePendingAnswer({"set_appearance", "appearance", "settings.ask.appearance", ""}, "深色", {}),
+             "set_appearance", "appearance", "dark", "appearance");
   ExpectText(ResolvePendingAnswer({"set_group_invite_policy", "policy", "settings.ask.policy", ""}, "只有联系人", {}),
              "set_group_invite_policy", "policy", "contacts_only", "policy");
-  ExpectText(ResolvePendingAnswer({"set_language", "language", "settings.ask.language", ""}, "English", {}), "set_language",
-             "language", "en", "language");
+  ExpectText(ResolvePendingAnswer({"set_language", "language", "settings.ask.language", ""}, "English", {}),
+             "set_language", "language", "en", "language");
   ExpectAsk(ResolvePendingAnswer({"set_appearance", "appearance", "settings.ask.appearance", ""}, "嗯", {}),
             "settings.ask.appearance", "unclear");
 }
 
 TEST(LocalActionPlannerTest, MeshAnswers) {
   const LocalAsk which{"set_mesh_capabilities", "capability", "settings.ask.mesh_capability", "true"};
-  ExpectBool(ResolvePendingAnswer(which, "DHT", {}), "set_mesh_capabilities", "dht", true, "capability, direction carried");
+  ExpectBool(ResolvePendingAnswer(which, "DHT", {}), "set_mesh_capabilities", "dht", true,
+             "capability, direction carried");
   const LocalAsk direction{"set_mesh_capabilities", "enabled", "settings.ask.on_or_off", "circuit_relay"};
-  ExpectBool(ResolvePendingAnswer(direction, "关", {}), "set_mesh_capabilities", "circuit_relay", false, "direction, capability carried");
+  ExpectBool(ResolvePendingAnswer(direction, "关", {}), "set_mesh_capabilities", "circuit_relay", false,
+             "direction, capability carried");
   const LocalAsk neither{"set_mesh_capabilities", "capability", "settings.ask.mesh_capability", ""};
   const LocalPlan half = ResolvePendingAnswer(neither, "DHT", {});
   ExpectAsk(half, "settings.ask.on_or_off", "capability without direction");
@@ -545,7 +576,8 @@ TEST(LocalActionPlannerTest, ContactAnswer) {
   ctx.contacts = {Contact("c1", "", "Tom", 0, "t1")};
   const LocalAsk ask{"open_conversation", "contact", "contacts.ask.which_contact", ""};
   ExpectText(ResolvePendingAnswer(ask, "Tom", ctx), "open_conversation", "thread_id", "t1", "name");
-  ExpectText(ResolvePendingAnswer(ask, "和 Tom 的聊天", ctx), "open_conversation", "thread_id", "t1", "name with filler");
+  ExpectText(ResolvePendingAnswer(ask, "和 Tom 的聊天", ctx), "open_conversation", "thread_id", "t1",
+             "name with filler");
   const LocalPlan none = ResolvePendingAnswer(ask, "Zed", ctx);
   ASSERT_TRUE(std::holds_alternative<LocalAmbiguous>(none));
   EXPECT_TRUE(std::get<LocalAmbiguous>(none).candidates.empty());
@@ -591,8 +623,8 @@ TEST(LocalActionPlannerTest, ABareSettingNameAsksOnOrOff) {
     ASSERT_NE(ask, nullptr) << text;
     EXPECT_EQ(ask->tool, "set_notifications") << text;
     EXPECT_EQ(ask->missing, "enabled") << text;
-    ExpectBool(ResolvePendingAnswer(*ask, std::string(text) == "通知呢" ? "关" : "off", {}), "set_notifications", "enabled",
-               false, text);
+    ExpectBool(ResolvePendingAnswer(*ask, std::string(text) == "通知呢" ? "关" : "off", {}), "set_notifications",
+               "enabled", false, text);
   }
   ExpectAsk(PlanFor("透明度呢"), "settings.ask.on_or_off", "透明度呢");
   EXPECT_EQ(std::get<LocalAsk>(PlanFor("透明度呢")).tool, "set_reduce_transparency");

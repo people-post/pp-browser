@@ -158,7 +158,8 @@ TEST_F(PricingControlFamiliesTest, OfferWithAForgedSignatureIsRefused) {
   auto promise = PaymentPromiseWireCodec::DecodeDetail(*payload->getString("detail"));
   ASSERT_TRUE(promise);
   promise->amount_minor = 1'000'000;
-  auto forged = PaymentPromiseWireCodec::BuildSystemMessage("t-1", PaymentPromiseControlType::PromiseOffer, *promise, "x");
+  auto forged =
+      PaymentPromiseWireCodec::BuildSystemMessage("t-1", PaymentPromiseControlType::PromiseOffer, *promise, "x");
   ASSERT_TRUE(forged);
   EXPECT_FALSE(family.apply(*forged, From(kBob)));
   EXPECT_EQ(Pending(), 0u);

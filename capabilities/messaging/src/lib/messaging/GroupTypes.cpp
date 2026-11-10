@@ -11,12 +11,12 @@ std::string GenerateGroupId() {
 
 std::string MemberRoleToString(const MemberRole role) {
   switch (role) {
-  case MemberRole::Owner:
-    return "owner";
-  case MemberRole::Admin:
-    return "admin";
-  case MemberRole::Member:
-    return "member";
+    case MemberRole::Owner:
+      return "owner";
+    case MemberRole::Admin:
+      return "admin";
+    case MemberRole::Member:
+      return "member";
   }
   return "member";
 }
@@ -43,44 +43,44 @@ GroupInvitePolicy GroupInvitePolicyFromString(const std::string& value) {
 
 std::string GroupMembershipControlTypeToWire(const GroupMembershipControlType type) {
   switch (type) {
-  case GroupMembershipControlType::GroupInvite:
-    return "group_invite";
-  case GroupMembershipControlType::GroupInviteAccept:
-    return "group_invite_accept";
-  case GroupMembershipControlType::GroupInviteDecline:
-    return "group_invite_decline";
-  case GroupMembershipControlType::MemberJoined:
-    return "member_joined";
-  case GroupMembershipControlType::MemberLeft:
-    return "member_left";
-  case GroupMembershipControlType::MemberRemoved:
-    return "member_removed";
-  case GroupMembershipControlType::OwnerTransferred:
-    return "owner_transferred";
-  case GroupMembershipControlType::GroupRenamed:
-    return "group_renamed";
-  case GroupMembershipControlType::GroupForked:
-    return "group_forked";
-  case GroupMembershipControlType::GroupOwnerUnreachable:
-    return "group_owner_unreachable";
-  case GroupMembershipControlType::GroupRosterStatement:
-    return "group_roster_statement";
-  case GroupMembershipControlType::GroupRosterRequest:
-    return "group_roster_request";
-  case GroupMembershipControlType::GroupRosterReply:
-    return "group_roster_reply";
-  case GroupMembershipControlType::GroupInviteRefused:
-    return "group_invite_refused";
-  case GroupMembershipControlType::GroupDissolved:
-    return "group_dissolved";
-  case GroupMembershipControlType::GroupDissolvedSibling:
-    return "group_dissolved_sibling";
-  case GroupMembershipControlType::MemberRoleChanged:
-    return "member_role_changed";
-  case GroupMembershipControlType::GroupPresetChanged:
-    return "group_preset_changed";
-  case GroupMembershipControlType::GroupChange:
-    return "group_change";
+    case GroupMembershipControlType::GroupInvite:
+      return "group_invite";
+    case GroupMembershipControlType::GroupInviteAccept:
+      return "group_invite_accept";
+    case GroupMembershipControlType::GroupInviteDecline:
+      return "group_invite_decline";
+    case GroupMembershipControlType::MemberJoined:
+      return "member_joined";
+    case GroupMembershipControlType::MemberLeft:
+      return "member_left";
+    case GroupMembershipControlType::MemberRemoved:
+      return "member_removed";
+    case GroupMembershipControlType::OwnerTransferred:
+      return "owner_transferred";
+    case GroupMembershipControlType::GroupRenamed:
+      return "group_renamed";
+    case GroupMembershipControlType::GroupForked:
+      return "group_forked";
+    case GroupMembershipControlType::GroupOwnerUnreachable:
+      return "group_owner_unreachable";
+    case GroupMembershipControlType::GroupRosterStatement:
+      return "group_roster_statement";
+    case GroupMembershipControlType::GroupRosterRequest:
+      return "group_roster_request";
+    case GroupMembershipControlType::GroupRosterReply:
+      return "group_roster_reply";
+    case GroupMembershipControlType::GroupInviteRefused:
+      return "group_invite_refused";
+    case GroupMembershipControlType::GroupDissolved:
+      return "group_dissolved";
+    case GroupMembershipControlType::GroupDissolvedSibling:
+      return "group_dissolved_sibling";
+    case GroupMembershipControlType::MemberRoleChanged:
+      return "member_role_changed";
+    case GroupMembershipControlType::GroupPresetChanged:
+      return "group_preset_changed";
+    case GroupMembershipControlType::GroupChange:
+      return "group_change";
   }
   return "group_invite";
 }
@@ -153,14 +153,14 @@ bool IsGroupRosterSyncControl(const GroupMembershipControlType type) {
 
 std::string GroupSyncStateToString(const GroupSyncState state) {
   switch (state) {
-  case GroupSyncState::Checking:
-    return "checking";
-  case GroupSyncState::Removed:
-    return "removed";
-  case GroupSyncState::Dissolved:
-    return "dissolved";
-  case GroupSyncState::Active:
-    break;
+    case GroupSyncState::Checking:
+      return "checking";
+    case GroupSyncState::Removed:
+      return "removed";
+    case GroupSyncState::Dissolved:
+      return "dissolved";
+    case GroupSyncState::Active:
+      break;
   }
   return "active";
 }

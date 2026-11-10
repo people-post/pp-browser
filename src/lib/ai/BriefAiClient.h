@@ -21,19 +21,19 @@ struct BriefAiHistoryTurn {
 };
 
 struct BriefAiImage {
-  std::string mime; // image/png | image/jpeg | image/gif | image/webp
+  std::string mime;          // image/png | image/jpeg | image/gif | image/webp
   std::vector<uint8_t> data; // raw bytes; base64-encoded on the wire
 };
 
 struct BriefAiRequest {
   std::string message;
-  std::optional<std::string> intent; // omitted from the JSON when nullopt
+  std::optional<std::string> intent;       // omitted from the JSON when nullopt
   std::vector<BriefAiHistoryTurn> history; // oldest first; at most the last 6 are sent
-  std::string summary; // omitted when empty
+  std::string summary;                     // omitted when empty
   std::string last_role; // context.last_role: the role that answered the previous turn (omitted when empty)
   std::string app_version, platform, lang; // client.version / platform / lang (omitted when empty)
-  std::vector<std::string> capabilities; // client.capabilities (omitted when empty, and always when image is set)
-  std::optional<BriefAiImage> image; // null on the wire when nullopt; at most kMaxImageBytes decoded
+  std::vector<std::string> capabilities;   // client.capabilities (omitted when empty, and always when image is set)
+  std::optional<BriefAiImage> image;       // null on the wire when nullopt; at most kMaxImageBytes decoded
 };
 
 struct BriefAiSource {
@@ -43,16 +43,16 @@ struct BriefAiSource {
 struct BriefAiEvent {
   enum class Type { Meta, Status, Token, Done, Handoff, Error };
   Type type = Type::Meta;
-  std::string route; // Meta, Done
-  std::string phase, tool, query; // Status
-  std::string delta; // Token
-  std::string response, finish; // Done
-  std::string role; // Done (empty when absent)
+  std::string route;                  // Meta, Done
+  std::string phase, tool, query;     // Status
+  std::string delta;                  // Token
+  std::string response, finish;       // Done
+  std::string role;                   // Done (empty when absent)
   std::vector<BriefAiSource> sources; // Done
-  std::string capability; // Handoff (empty when the server sent null)
-  std::string reason; // Handoff: "app_action", "user_confirmed", ... (empty when absent)
-  std::string code, message; // Error
-  bool retryable = false; // Error
+  std::string capability;             // Handoff (empty when the server sent null)
+  std::string reason;                 // Handoff: "app_action", "user_confirmed", ... (empty when absent)
+  std::string code, message;          // Error
+  bool retryable = false;             // Error
 };
 
 enum class BriefAiOutcome { Done, Handoff, Error, Cancelled };

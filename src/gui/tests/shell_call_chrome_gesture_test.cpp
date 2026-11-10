@@ -221,7 +221,9 @@ protected:
     call_.active = true;
     call_.mode = CallChromeMode::Minimized;
     ShellCallChromeGesture::Callbacks callbacks;
-    callbacks.on_chip_place = [this](int side, int y_permille, bool tucked) { placed_ = CallChipPlace{side, y_permille, tucked}; };
+    callbacks.on_chip_place = [this](int side, int y_permille, bool tucked) {
+      placed_ = CallChipPlace{side, y_permille, tucked};
+    };
     callbacks.on_chip_released = [this]() { ++released_; };
     callbacks.on_restore = [this]() { ++restores_; };
     gesture_.Attach(chip_, context_, CallChromeMode::Minimized, std::move(callbacks));
@@ -405,7 +407,8 @@ TEST_F(ShellCallChipDragTest, ABarThrownAtTheEdgeBecomesTheHandle) {
   ASSERT_TRUE(layout.has_value());
   EXPECT_TRUE(layout->place.tucked);
   EXPECT_FLOAT_EQ(layout->chip_height_dp, CallChipDock::kHandleDp);
-  const CallChipPoint at = CallChipDock::Place(*placed_, {400.f, 800.f}, CallChipDock::kHandleDp, CallChipDock::kHandleDp);
+  const CallChipPoint at =
+      CallChipDock::Place(*placed_, {400.f, 800.f}, CallChipDock::kHandleDp, CallChipDock::kHandleDp);
   EXPECT_FLOAT_EQ(at.left_dp, 400.f + CallChipDock::kTuckDp - CallChipDock::kHandleDp);
   EXPECT_FLOAT_EQ(layout->top_dp, at.top_dp);
 }
@@ -673,7 +676,9 @@ protected:
 
   void Attach() {
     ShellCallChromeGesture::Callbacks callbacks;
-    callbacks.on_chip_place = [this](int side, int y_permille, bool tucked) { placed_ = CallChipPlace{side, y_permille, tucked}; };
+    callbacks.on_chip_place = [this](int side, int y_permille, bool tucked) {
+      placed_ = CallChipPlace{side, y_permille, tucked};
+    };
     callbacks.on_chip_released = [this]() { ++released_; };
     callbacks.on_restore = [this]() { ++restores_; };
     gesture_.Attach(CallChromeGestureElement(document_, CallChromeMode::Minimized), context_, CallChromeMode::Minimized,

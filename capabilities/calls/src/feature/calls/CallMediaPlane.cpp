@@ -125,7 +125,7 @@ CallDirectPathDeps CallMediaPlane::DirectPathDeps() {
   deps.circuit_reach = connectivity_->CircuitReach();
   deps.lane = connectivity_->Lane();
   deps.local_listen_addrs = [connectivity = connectivity_]() {
-    return connectivity->LocalView()->advertised_listen_multiaddrs;  // a published snapshot: any thread
+    return connectivity->LocalView()->advertised_listen_multiaddrs; // a published snapshot: any thread
   };
   // The connect sequence's Diag lines (a handful of reads per call, on the calls owner). The dial registry
   // is the one handed to the reach: the stack detaches this probe where it detaches the reach.
@@ -190,7 +190,7 @@ void CallMediaPlane::Clear() {
 }
 
 void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identity,
-                                                     const std::vector<std::string>& multiaddrs) {
+                                                      const std::vector<std::string>& multiaddrs) {
   if (!connectivity_) {
     return;
   }

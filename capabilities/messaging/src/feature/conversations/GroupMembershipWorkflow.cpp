@@ -50,10 +50,16 @@ std::string RefusedDisplay(const std::string& reason) {
 } // namespace
 
 GroupMembershipWorkflow::GroupMembershipWorkflow(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                                               IGroupRosterStore& roster, GroupInviteGate& invite_gate,
-                                               MeshDeliveryOrchestrator& mesh_messaging, AccountKeyResolver& account_keys)
-    : store_(store), contacts_(contacts), identity_(identity), roster_(roster), invite_gate_(invite_gate),
-      mesh_messaging_(mesh_messaging), account_keys_(account_keys) {
+                                                 IGroupRosterStore& roster, GroupInviteGate& invite_gate,
+                                                 MeshDeliveryOrchestrator& mesh_messaging,
+                                                 AccountKeyResolver& account_keys)
+    : store_(store),
+      contacts_(contacts),
+      identity_(identity),
+      roster_(roster),
+      invite_gate_(invite_gate),
+      mesh_messaging_(mesh_messaging),
+      account_keys_(account_keys) {
   redirectLogger("GroupMembershipWorkflow");
 }
 
@@ -99,24 +105,22 @@ Roe<GroupMetadata> GroupMembershipWorkflow::LoadMetadataOrError(const std::strin
 }
 
 Roe<void> GroupMembershipWorkflow::AppendMembershipSystemEvent(const std::string& thread_id,
-                                                              const GroupMembershipControlType type,
-                                                              const std::string& text,
-                                                              const std::string& detail_json,
-                                                              const std::string& sender_identity) {
-  auto message =
-      GroupMembershipCodec::BuildSystemMessage(thread_id, type, text, detail_json, sender_identity);
+                                                               const GroupMembershipControlType type,
+                                                               const std::string& text, const std::string& detail_json,
+                                                               const std::string& sender_identity) {
+  auto message = GroupMembershipCodec::BuildSystemMessage(thread_id, type, text, detail_json, sender_identity);
   if (!message) {
     return message.error();
   }
   if (auto appended = store_.AppendMessage(*message); !appended) {
     return appended.error();
   }
-  GroupRosterVersion::Bump();  // every local membership change writes one of these lines
+  GroupRosterVersion::Bump(); // every local membership change writes one of these lines
   return {};
 }
 
 Roe<void> GroupMembershipWorkflow::SendInviteDirectMessage(const GroupInvitePayload& invite,
-                                                          const std::string& invitee_contact_id) {
+                                                           const std::string& invitee_contact_id) {
   // The DM with the invitee: their contact's, else (G022: someone met in a call) the one with their account.
   DirectChatTarget direct_target;
   direct_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
@@ -175,7 +179,7 @@ Roe<Thread> GroupMembershipWorkflow::StartGroup(const std::string& title, const 
   }
 
   if (invitee_count + 1 > kMaxGroupMembers) {
-    return Error(kGroupFullError);  // G014: the owner and its members
+    return Error(kGroupFullError); // G014: the owner and its members
   }
   const std::string group_id = GenerateGroupId();
 
@@ -316,7 +320,7 @@ Roe<void> GroupMembershipWorkflow::InviteIdentity(const std::string& group_id, c
     return local.error();
   }
   if (metadata->sync_state == GroupSyncState::Dissolved) {
-    return Error(group_roster_sync::kGroupDissolvedError);  // G016: no invites into an ended group
+    return Error(group_roster_sync::kGroupDissolvedError); // G016: no invites into an ended group
   }
   // G019: whoever the preset lets invite (G017: Open, any member; Managed, the owner and admins).
   const std::optional<MemberRole> role = LocalRole(group_id);
@@ -373,7 +377,7 @@ Roe<void> GroupMembershipWorkflow::InviteIdentity(const std::string& group_id, c
 }
 
 Roe<void> GroupMembershipWorkflow::RefuseInvite(const std::string& group_id, const std::string& invite_nonce,
-                                               const std::string& invitee_identity, const std::string& reason) {
+                                                const std::string& invitee_identity, const std::string& reason) {
   const std::string why = reason.empty() ? std::string(kInviteRefusedGroupFull) : reason;
   auto detail = GroupMembershipCodec::EncodeInviteRefused(invite_nonce, group_id, why);
   if (!detail) {
@@ -384,9 +388,9 @@ Roe<void> GroupMembershipWorkflow::RefuseInvite(const std::string& group_id, con
 }
 
 Roe<void> GroupMembershipWorkflow::SendInviteResponseDirectMessage(const std::string& inviter_identity,
-                                                                  const std::string& invite_nonce,
-                                                                  const std::string& group_id,
-                                                                  const GroupMembershipControlType response_type) {
+                                                                   const std::string& invite_nonce,
+                                                                   const std::string& group_id,
+                                                                   const GroupMembershipControlType response_type) {
   DirectChatTarget direct_target;
   direct_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   direct_target.peer_identity_value = inviter_identity;
@@ -567,8 +571,7 @@ Roe<Thread> GroupMembershipWorkflow::AcceptInvite(const std::string& invite_nonc
       !sent) {
     return sent.error();
   }
-  (void)ResolveInviteCard((*pending)->inviter_identity, invite_nonce, InviteStatus::Accepted,
-                          "You joined " + title);
+  (void)ResolveInviteCard((*pending)->inviter_identity, invite_nonce, InviteStatus::Accepted, "You joined " + title);
   return *thread;
 }
 
@@ -594,10 +597,8 @@ Roe<void> GroupMembershipWorkflow::DeclineInvite(const std::string& invite_nonce
   // Best-effort notify inviter; local decline already recorded.
   (void)SendInviteResponseDirectMessage((*pending)->inviter_identity, invite_nonce, (*pending)->group_id,
                                         GroupMembershipControlType::GroupInviteDecline);
-  const std::string title =
-      (*pending)->group_title.empty() ? std::string("group invitation") : (*pending)->group_title;
-  (void)ResolveInviteCard((*pending)->inviter_identity, invite_nonce, InviteStatus::Declined,
-                          "You declined " + title);
+  const std::string title = (*pending)->group_title.empty() ? std::string("group invitation") : (*pending)->group_title;
+  (void)ResolveInviteCard((*pending)->inviter_identity, invite_nonce, InviteStatus::Declined, "You declined " + title);
   return {};
 }
 
@@ -614,8 +615,8 @@ Roe<void> GroupMembershipWorkflow::DismissLocalGroup(const std::string& group_id
 }
 
 Roe<void> GroupMembershipWorkflow::ResolveInviteCard(const std::string& inviter_identity,
-                                                    const std::string& invite_nonce, const InviteStatus status,
-                                                    const std::string& status_text) {
+                                                     const std::string& invite_nonce, const InviteStatus status,
+                                                     const std::string& status_text) {
   DirectChatTarget direct_target;
   direct_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   direct_target.peer_identity_value = inviter_identity;
@@ -649,10 +650,10 @@ Roe<void> GroupMembershipWorkflow::ResolveInviteCard(const std::string& inviter_
 }
 
 Roe<void> GroupMembershipWorkflow::SendMembershipDirectMessage(const std::string& peer_identity,
-                                                              const GroupMembershipControlType control_type,
-                                                              const std::string& detail_json,
-                                                              const std::string& display,
-                                                              const std::optional<std::string>& stored_detail_json) {
+                                                               const GroupMembershipControlType control_type,
+                                                               const std::string& detail_json,
+                                                               const std::string& display,
+                                                               const std::optional<std::string>& stored_detail_json) {
   DirectChatTarget direct_target;
   direct_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   direct_target.peer_identity_value = peer_identity;
@@ -715,11 +716,9 @@ Roe<void> GroupMembershipWorkflow::FanOutMembershipEvent(const std::string& grou
     identities.push_back(member.member_identity);
   }
   const auto targets = SelectPairwiseFanoutTargets(identities, skip_identity);
-  const auto result = FanOutPairwise(targets, PairwiseFanoutMode::FailFast,
-                                     [&](const std::string& identity) {
-                                       return SendMembershipDirectMessage(identity, control_type, detail_json,
-                                                                         display);
-                                     });
+  const auto result = FanOutPairwise(targets, PairwiseFanoutMode::FailFast, [&](const std::string& identity) {
+    return SendMembershipDirectMessage(identity, control_type, detail_json, display);
+  });
   if (result.first_error) {
     return *result.first_error;
   }
@@ -806,7 +805,7 @@ Roe<void> GroupMembershipWorkflow::RemoveAsOwner(const std::string& group_id, co
   }
   // Signed under the same lock as the removal: a change arriving in between cannot be lost from the fold.
   const std::string sent = WithSignedRoster(group_id, *detail);
-  update.unlock();  // not across the sends below
+  update.unlock(); // not across the sends below
   // A removed member must not keep showing as "invited, waiting".
   (void)roster_.ExpireOutboundInvitesTo(group_id, member_identity);
   // The removed member reads nothing that follows: no copy is made for it (every copy is pairwise, G011).
@@ -862,7 +861,7 @@ Roe<void> GroupMembershipWorkflow::RemoveMember(const std::string& group_id, con
 }
 
 Roe<void> GroupMembershipWorkflow::RemoveMemberByIdentity(const std::string& group_id,
-                                                         const std::string& member_identity) {
+                                                          const std::string& member_identity) {
   if (member_identity.empty()) {
     return Error("member_identity required");
   }
@@ -957,7 +956,7 @@ Roe<void> GroupMembershipWorkflow::LeaveAsOwner(const std::string& group_id, con
   if (!local) {
     return local.error();
   }
-  auto update = IGroupRosterStore::LockForUpdate();  // the epoch read below and its apply, as one
+  auto update = IGroupRosterStore::LockForUpdate(); // the epoch read below and its apply, as one
   auto metadata = LoadMetadataOrError(group_id);
   if (!metadata) {
     return metadata.error();
@@ -979,15 +978,14 @@ Roe<void> GroupMembershipWorkflow::LeaveAsOwner(const std::string& group_id, con
     return Error("Successor is unreachable — dismiss locally or pick someone else");
   }
 
-  const GroupMembershipCodec::OwnerTransferredPayload transfer{group_id, new_owner_identity,
-                                                               metadata->roster_epoch + 1, /*leave_previous=*/true};
+  const GroupMembershipCodec::OwnerTransferredPayload transfer{group_id, new_owner_identity, metadata->roster_epoch + 1,
+                                                               /*leave_previous=*/true};
   if (auto applied = ApplyOwnerTransferredToRoster(roster_, transfer, *local); !applied) {
     return applied.error();
   }
-  update.unlock();  // not across the sends below
+  update.unlock(); // not across the sends below
 
-  auto detail =
-      GroupMembershipCodec::EncodeOwnerTransferred(group_id, new_owner_identity, transfer.roster_epoch, true);
+  auto detail = GroupMembershipCodec::EncodeOwnerTransferred(group_id, new_owner_identity, transfer.roster_epoch, true);
   if (!detail) {
     return detail.error();
   }
@@ -1019,7 +1017,7 @@ void GroupMembershipWorkflow::AppendDissolvedLine(const std::string& group_id, c
                                                   const std::string& sender_identity) {
   auto added = EnsureDissolvedLine(store_, group_id, owner_identity, sender_identity);
   if (!added || !*added) {
-    return;  // the chat was deleted, or already says so
+    return; // the chat was deleted, or already says so
   }
   if (auto thread = store_.GetThread(**added); thread && *thread) {
     Thread row = **thread;
@@ -1035,8 +1033,9 @@ void GroupMembershipWorkflow::OnGroupDissolvedElsewhere(const GroupDissolvedEnd&
     return;
   }
   // The owner's other device sees "You dissolved this group"; anyone else the owner's name.
-  auto added = EnsureDissolvedLine(store_, end.group_id, end.owner_identity,
-                                   end.owner_identity == *local ? std::string(kLocalSelfContactId) : end.owner_identity);
+  auto added =
+      EnsureDissolvedLine(store_, end.group_id, end.owner_identity,
+                          end.owner_identity == *local ? std::string(kLocalSelfContactId) : end.owner_identity);
   if (added && *added) {
     mesh_messaging_.SurfaceGroupDissolved(**added);
   }
@@ -1056,7 +1055,7 @@ void GroupMembershipWorkflow::EndDissolvedFromLocker(const AccountStateGroup& gr
   }
   auto member = roster_.IsMember(group.group_id, *local);
   if (!member || !*member || IsDissolved(group.group_id)) {
-    return;  // not a group we are in, or already over
+    return; // not a group we are in, or already over
   }
   // Our own locker, written only by our own devices: no statement to check. It cannot be undone, so no epoch gate.
   auto ended = EndGroupInRoster(roster_, group.group_id, group.owner_identity, group.roster_epoch);
@@ -1076,7 +1075,7 @@ Roe<void> GroupMembershipWorkflow::DissolveGroup(const std::string& group_id) {
   }
   std::string sibling_detail;
   {
-    auto update = IGroupRosterStore::LockForUpdate();  // the roster we sign and the one we end, as one
+    auto update = IGroupRosterStore::LockForUpdate(); // the roster we sign and the one we end, as one
     auto metadata = LoadMetadataOrError(group_id);
     if (!metadata) {
       return metadata.error();
@@ -1086,7 +1085,7 @@ Roe<void> GroupMembershipWorkflow::DissolveGroup(const std::string& group_id) {
     }
     if (metadata->sync_state == GroupSyncState::Dissolved) {
       update.unlock();
-      ResumePendingGroupSends();  // asked again: finish what an earlier go left
+      ResumePendingGroupSends(); // asked again: finish what an earlier go left
       return {};
     }
     auto members = roster_.ListMembers(group_id);
@@ -1120,7 +1119,8 @@ Roe<void> GroupMembershipWorkflow::DissolveGroup(const std::string& group_id) {
                        detail, "The group owner dissolved this group"});
     }
     for (const PendingGroupInvite& invite : ListInvitedWaiting(group_id)) {
-      auto refusal = GroupMembershipCodec::EncodeInviteRefused(invite.invite_nonce, group_id, kInviteRefusedGroupDissolved);
+      auto refusal =
+          GroupMembershipCodec::EncodeInviteRefused(invite.invite_nonce, group_id, kInviteRefusedGroupDissolved);
       if (refusal) {
         sends.push_back({group_id, invite.invitee_identity,
                          GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupInviteRefused), *refusal,
@@ -1133,11 +1133,12 @@ Roe<void> GroupMembershipWorkflow::DissolveGroup(const std::string& group_id) {
     }
     log().info << "Group dissolved group=" << group_id << " sends=" << sends.size();
   }
-  AppendDissolvedLine(group_id, *local, kLocalSelfContactId);  // our own line reads "You dissolved…"
+  AppendDissolvedLine(group_id, *local, kLocalSelfContactId); // our own line reads "You dissolved…"
   // Our other devices end it too (M021 sibling lane; best effort — a device that was off finds the locker's tombstone).
   if (!sibling_detail.empty()) {
-    if (auto notice = GroupMembershipCodec::BuildSystemMessage(std::string(), GroupMembershipControlType::GroupDissolvedSibling,
-                                                               "Group dissolved", sibling_detail, *local)) {
+    if (auto notice =
+            GroupMembershipCodec::BuildSystemMessage(std::string(), GroupMembershipControlType::GroupDissolvedSibling,
+                                                     "Group dissolved", sibling_detail, *local)) {
       if (auto sent = mesh_messaging_.NotifyOwnDevices(*notice); !sent) {
         log().info << "Group dissolve not sent to our other devices: " << sent.error().message;
       }
@@ -1162,7 +1163,7 @@ void GroupMembershipWorkflow::ResumePendingGroupSends(const size_t attempt) {
   for (const PendingGroupSend& send : *pending) {
     const auto type = GroupMembershipControlTypeFromWire(send.control_type);
     if (!type) {
-      (void)roster_.DeletePendingSend(send);  // a type this app does not know cannot be sent
+      (void)roster_.DeletePendingSend(send); // a type this app does not know cannot be sent
       continue;
     }
     // Done once the copy has reached the outbox (SendUserMessage keeps it and retries until it is delivered).
@@ -1207,8 +1208,7 @@ void GroupMembershipWorkflow::MarkMemberUnreachable(const std::string& group_id,
   }
 }
 
-void GroupMembershipWorkflow::ClearMemberUnreachable(const std::string& group_id,
-                                                    const std::string& member_identity) {
+void GroupMembershipWorkflow::ClearMemberUnreachable(const std::string& group_id, const std::string& member_identity) {
   if (group_id.empty() || member_identity.empty()) {
     return;
   }
@@ -1227,7 +1227,7 @@ void GroupMembershipWorkflow::ClearMemberUnreachable(const std::string& group_id
 }
 
 bool GroupMembershipWorkflow::IsMemberUnreachable(const std::string& group_id,
-                                                 const std::string& member_identity) const {
+                                                  const std::string& member_identity) const {
   std::lock_guard lock(unreachable_mutex_);
   return unreachable_.find({group_id, member_identity}) != unreachable_.end();
 }
@@ -1251,7 +1251,7 @@ std::vector<PendingGroupInvite> GroupMembershipWorkflow::ListInvitedWaiting(cons
 bool GroupMembershipWorkflow::IsOwnerUnreachable(const std::string& group_id) const {
   auto metadata = roster_.LoadMetadata(group_id);
   if (!metadata || !*metadata || (*metadata)->sync_state == GroupSyncState::Dissolved) {
-    return false;  // an ended group waits for no owner
+    return false; // an ended group waits for no owner
   }
   return IsMemberUnreachable(group_id, (**metadata).owner_identity);
 }
@@ -1262,7 +1262,7 @@ Roe<void> GroupMembershipWorkflow::EnsureOwnerUnreachableAdvisory(const std::str
     return metadata.error();
   }
   if (metadata->sync_state == GroupSyncState::Dissolved) {
-    return {};  // G016: an ended group has no owner to wait for
+    return {}; // G016: an ended group has no owner to wait for
   }
   auto thread = store_.FindGroupThread(group_id);
   if (!thread || !*thread) {
@@ -1287,14 +1287,13 @@ Roe<void> GroupMembershipWorkflow::EnsureOwnerUnreachableAdvisory(const std::str
   detail_obj.set("group_id", group_id);
   detail_obj.set("owner_identity", metadata->owner_identity);
   const std::string detail = DumpJson(detail_obj);
-  auto message = GroupMembershipCodec::BuildSystemMessage((*thread)->id,
-                                                          GroupMembershipControlType::GroupOwnerUnreachable,
-                                                          title + "\n" + body, detail, metadata->owner_identity);
+  auto message =
+      GroupMembershipCodec::BuildSystemMessage((*thread)->id, GroupMembershipControlType::GroupOwnerUnreachable,
+                                               title + "\n" + body, detail, metadata->owner_identity);
   if (!message) {
     return message.error();
   }
-  message->chat_actions =
-      GroupMembershipCodec::BuildOwnerUnreachableChatActions(group_id, metadata->owner_identity);
+  message->chat_actions = GroupMembershipCodec::BuildOwnerUnreachableChatActions(group_id, metadata->owner_identity);
   message->text = title;
   if (auto appended = store_.AppendMessage(*message); !appended) {
     return appended.error();
@@ -1346,7 +1345,7 @@ Roe<Thread> GroupMembershipWorkflow::OpenOwnerDirectMessage(const std::string& o
 }
 
 Roe<Thread> GroupMembershipWorkflow::ForkGroup(const std::string& group_id, const std::string& new_title,
-                                              const std::vector<std::string>& member_contact_ids) {
+                                               const std::vector<std::string>& member_contact_ids) {
   auto local = LocalRelayIdentity();
   if (!local) {
     return local.error();
@@ -1404,17 +1403,16 @@ Roe<Thread> GroupMembershipWorkflow::ForkGroup(const std::string& group_id, cons
   if (!fork_detail) {
     return fork_detail.error();
   }
-  (void)AppendMembershipSystemEvent((**source_thread).id, GroupMembershipControlType::GroupForked,
-                                    "Group forked", *fork_detail, *local);
+  (void)AppendMembershipSystemEvent((**source_thread).id, GroupMembershipControlType::GroupForked, "Group forked",
+                                    *fork_detail, *local);
   (void)AppendMembershipSystemEvent(new_thread->id, GroupMembershipControlType::GroupForked, "Forked from group",
                                     *fork_detail, *local);
   return *new_thread;
 }
 
 Roe<void> GroupMembershipWorkflow::SendRenameDirectMessage(const std::string& member_identity,
-                                                          const std::string& group_id, const std::string& title,
-                                                          const uint64_t roster_epoch,
-                                                          const uint64_t title_version) {
+                                                           const std::string& group_id, const std::string& title,
+                                                           const uint64_t roster_epoch, const uint64_t title_version) {
   auto detail = GroupMembershipCodec::EncodeGroupRenamed(group_id, title, roster_epoch, title_version);
   if (!detail) {
     return detail.error();
@@ -1513,9 +1511,7 @@ Roe<void> GroupMembershipWorkflow::SetGroupPreset(const std::string& group_id, c
         metadata.policy.preset = preset;
         return true;
       },
-      [&](const uint64_t epoch) {
-        return GroupMembershipCodec::EncodeGroupPresetChanged({group_id, preset, epoch});
-      });
+      [&](const uint64_t epoch) { return GroupMembershipCodec::EncodeGroupPresetChanged({group_id, preset, epoch}); });
 }
 
 Roe<GroupPreset> GroupMembershipWorkflow::GroupPresetOf(const std::string& group_id) const {
@@ -1562,8 +1558,8 @@ Roe<void> GroupMembershipWorkflow::RenameGroupShared(const std::string& group_id
     if (auto upserted = store_.UpsertThread(updated); !upserted) {
       return upserted.error();
     }
-    auto detail = GroupMembershipCodec::EncodeGroupRenamed(group_id, title, metadata->roster_epoch,
-                                                           metadata->title_version);
+    auto detail =
+        GroupMembershipCodec::EncodeGroupRenamed(group_id, title, metadata->roster_epoch, metadata->title_version);
     if (!detail) {
       return detail.error();
     }
@@ -1684,7 +1680,7 @@ Roe<size_t> GroupMembershipWorkflow::ReinviteEveryoneRemovedBy(const std::string
 }
 
 Roe<void> GroupMembershipWorkflow::ApplyInboundGroupRenamed(const GroupMembershipCodec::GroupRenamedPayload& payload,
-                                                           const std::string& actor_identity) {
+                                                            const std::string& actor_identity) {
   auto applied = ApplyGroupRenamedToRoster(roster_, payload, actor_identity);
   if (!applied) {
     return applied.error();
@@ -2087,7 +2083,7 @@ Roe<GroupRosterStatement> GroupMembershipWorkflow::SignRoster(const std::string&
   if (!account) {
     return account.error();
   }
-  auto update = IGroupRosterStore::LockForUpdate();  // the roster read and the statement kept, as one
+  auto update = IGroupRosterStore::LockForUpdate(); // the roster read and the statement kept, as one
   auto metadata = LoadMetadataOrError(group_id);
   if (!metadata) {
     return metadata.error();
@@ -2386,8 +2382,8 @@ Roe<void> GroupMembershipWorkflow::SendRosterControl(const std::string& peer_ide
                                                      const std::string& local_identity) {
   // On the control lane (MakeGroupRosterSyncFamily): no chat row on either side, and an account copy with
   // our card — the asker may be a device restored from the account locker, which keeps none of the cards it had.
-  auto control = GroupMembershipCodec::BuildSystemMessage(std::string(), control_type, display, detail_json,
-                                                          local_identity);
+  auto control =
+      GroupMembershipCodec::BuildSystemMessage(std::string(), control_type, display, detail_json, local_identity);
   if (!control) {
     return control.error();
   }
@@ -2411,17 +2407,16 @@ Roe<std::vector<AccountStateGroup>> GroupMembershipWorkflow::StateGroups() const
     group.group_id = group_id;
     group.owner_identity = (*metadata)->owner_identity;
     group.roster_epoch = (*metadata)->roster_epoch;
-    const bool member = local && std::any_of(members->begin(), members->end(), [&](const GroupRosterMember& m) {
-                          return m.member_identity == *local;
-                        });
+    const bool member = local && std::any_of(members->begin(), members->end(),
+                                             [&](const GroupRosterMember& m) { return m.member_identity == *local; });
     if ((*metadata)->sync_state == GroupSyncState::Dissolved) {
       group.left = true;
-      group.dissolved = true;  // terminal: no copy of the group, whatever its epoch, brings it back (G016)
+      group.dissolved = true; // terminal: no copy of the group, whatever its epoch, brings it back (G016)
       groups.push_back(std::move(group));
       continue;
     }
     if ((*metadata)->sync_state == GroupSyncState::Removed || (local && !member)) {
-      group.left = true;  // a tombstone: an older copy where we were in must not bring it back
+      group.left = true; // a tombstone: an older copy where we were in must not bring it back
       groups.push_back(std::move(group));
       continue;
     }

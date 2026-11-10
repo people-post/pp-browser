@@ -163,9 +163,7 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedAudioRoundTrip) {
   leg_done.PumpUntilDone(*harness_);
   ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
 
-  harness_->PumpUntil([&] {
-    return connected && offerer_connected.load(std::memory_order_acquire);
-  });
+  harness_->PumpUntil([&] { return connected && offerer_connected.load(std::memory_order_acquire); });
   ASSERT_TRUE(connected);
   ASSERT_TRUE(offerer_connected.load(std::memory_order_acquire));
 
@@ -280,9 +278,8 @@ TEST_F(CallMediaLegCoordinatorTest, CallbacksMayReenterCoordinator) {
   ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
   EXPECT_EQ(leg_in_finished.value, leg_id.value);
 
-  harness_->PumpUntil([&] {
-    return a_connected.load(std::memory_order_acquire) && b_connected.load(std::memory_order_acquire);
-  });
+  harness_->PumpUntil(
+      [&] { return a_connected.load(std::memory_order_acquire) && b_connected.load(std::memory_order_acquire); });
   ASSERT_TRUE(a_connected.load(std::memory_order_acquire));
   ASSERT_TRUE(b_connected.load(std::memory_order_acquire));
   EXPECT_TRUE(a_active_in_cb.load(std::memory_order_acquire));
@@ -333,9 +330,8 @@ TEST_F(CallMediaLegCoordinatorTest, AliasRebindKeepsLegAlive) {
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_b().RegisterEndpoint("moved-alias", harness_->ma_a)));
   std::atomic<bool> assoc_done{false};
   harness_->runtime_b->PostToIo([&] {
-    harness_->mgr_b().EnsureAssociation("moved-alias", [&](pp::amp::PeerLinkManager::LinkRoe) {
-      assoc_done.store(true, std::memory_order_release);
-    });
+    harness_->mgr_b().EnsureAssociation(
+        "moved-alias", [&](pp::amp::PeerLinkManager::LinkRoe) { assoc_done.store(true, std::memory_order_release); });
   });
   harness_->PumpUntil([&] { return assoc_done.load(std::memory_order_acquire); });
   ASSERT_TRUE(assoc_done.load(std::memory_order_acquire));
@@ -414,10 +410,12 @@ TEST_F(CallMediaLegCoordinatorTest, SecondHelloForALiveCallLeavesTheCallAlone) {
                                                  return true;
                                                });
   ASSERT_NE(session, nullptr);
-  const std::string hello =
-      R"({"v":1,"type":"hello","call_id":")" + call_id + R"(","media_epoch":1,"role":"offerer"})";
+  const std::string hello = R"({"v":1,"type":"hello","call_id":")" + call_id + R"(","media_epoch":1,"role":"offerer"})";
   ASSERT_TRUE(session->EnqueueOutbound(std::vector<uint8_t>(hello.begin(), hello.end())));
-  harness_->PumpUntil([&] { std::lock_guard lock(mu); return !reply.empty(); });
+  harness_->PumpUntil([&] {
+    std::lock_guard lock(mu);
+    return !reply.empty();
+  });
   {
     std::lock_guard lock(mu);
     EXPECT_NE(reply.find(R"("ok":false)"), std::string::npos) << reply;
@@ -463,10 +461,10 @@ TEST_F(CallMediaLegCoordinatorTest, AudioSurvivesSingleDatagramLoss) {
   ASSERT_TRUE(b_connected.load(std::memory_order_acquire));
 
   const std::vector<uint8_t> opus = {9, 9, 9, 9};
-  constexpr int kFrames = 300;  // > replay window (64) after the hole
+  constexpr int kFrames = 300; // > replay window (64) after the hole
   for (int i = 1; i <= kFrames; ++i) {
     if (i == 10) {
-      harness_->io_a->DropNext(1);  // lose exactly one audio datagram A→B
+      harness_->io_a->DropNext(1); // lose exactly one audio datagram A→B
     }
     auto sent = a_call_->SendAudio(leg_id, opus, static_cast<uint32_t>(i), 0);
     ASSERT_TRUE(sent) << sent.error().message;
@@ -515,7 +513,10 @@ TEST_F(CallMediaLegCoordinatorTest, OnMediaCarriesSeqAndMark) {
     ASSERT_TRUE(static_cast<bool>(a_call_->SendAudio(leg_id, opus, seq, seq == 41 ? 1 : 0)));
     harness_->PumpBoth();
   }
-  harness_->PumpUntil([&] { std::lock_guard lock(mu); return seen.size() >= 5; });
+  harness_->PumpUntil([&] {
+    std::lock_guard lock(mu);
+    return seen.size() >= 5;
+  });
   std::lock_guard lock(mu);
   ASSERT_EQ(seen.size(), 5u);
   for (size_t i = 0; i < seen.size(); ++i) {
@@ -674,11 +675,11 @@ TEST_F(CallMediaLegCoordinatorTest, DetachUnblocksConnectWait) {
   std::atomic<bool> b_stalled{false};
   auto held_answer = std::make_shared<CallMediaInboundAnswer>();
 
-  b_call_->SetInboundHandler([held_answer, &b_stalled](CallMediaDirectConnectParams /*params*/,
-                                                       CallMediaInboundAnswer answer) {
-    *held_answer = std::move(answer);  // not answered while the test runs
-    b_stalled.store(true, std::memory_order_release);
-  });
+  b_call_->SetInboundHandler(
+      [held_answer, &b_stalled](CallMediaDirectConnectParams /*params*/, CallMediaInboundAnswer answer) {
+        *held_answer = std::move(answer); // not answered while the test runs
+        b_stalled.store(true, std::memory_order_release);
+      });
 
   CallMediaDirectConnectParams params;
   params.peer_key = "b";
@@ -758,9 +759,7 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedVideoRoundTripOver16KiB) {
   ASSERT_TRUE(leg_id);
   leg_done.PumpUntilDone(*harness_);
 
-  harness_->PumpUntil([&] {
-    return connected && offerer_connected.load(std::memory_order_acquire);
-  });
+  harness_->PumpUntil([&] { return connected && offerer_connected.load(std::memory_order_acquire); });
 
   const std::vector<uint8_t> au(20 * 1024, 0x5a);
   auto sent = a_call_->SendMedia(leg_id, 1, au, 1, 1);
@@ -1340,9 +1339,8 @@ TEST(CallMediaLegTripleTest, SecondInboundRejectedThenEndAndAccept) {
   LegCompletion ab_done;
   const CallMediaLegId ab_leg = a_call.StartLeg(ab, a_cbs, ab_done.Fn(), 5000);
   ASSERT_TRUE(ab_leg);
-  harness->PumpUntil([&] {
-    return ab_done.finished.load(std::memory_order_acquire) && b_connected >= 1 && a_connected.load();
-  }, 2000);
+  harness->PumpUntil(
+      [&] { return ab_done.finished.load(std::memory_order_acquire) && b_connected >= 1 && a_connected.load(); }, 2000);
   ASSERT_TRUE(ab_done.result);
 
   ASSERT_TRUE(a_call.SendAudio(ab_leg, {0xab}, 1, 0));
@@ -1377,9 +1375,8 @@ TEST(CallMediaLegTripleTest, SecondInboundRejectedThenEndAndAccept) {
   LegCompletion cb_done;
   const CallMediaLegId cb_leg2 = c_call.StartLeg(cb, c_cbs, cb_done.Fn(), 5000);
   ASSERT_TRUE(cb_leg2);
-  harness->PumpUntil([&] {
-    return cb_done.finished.load(std::memory_order_acquire) && b_connected >= 2 && c_connected.load();
-  }, 2000);
+  harness->PumpUntil(
+      [&] { return cb_done.finished.load(std::memory_order_acquire) && b_connected >= 2 && c_connected.load(); }, 2000);
   ASSERT_TRUE(cb_done.result) << "end-and-accept after A left";
 
   ASSERT_TRUE(c_call.SendAudio(cb_leg2, {0xcb}, 1, 0));

@@ -49,8 +49,7 @@ public:
   static bool SetDirectConnectionsOverride(const std::string& audience);
   static Roe<std::unique_ptr<ProductStackHarness>> Create(std::unique_ptr<pp::amp::AmpStack> stack,
                                                           std::shared_ptr<pp::adp::Clock> clock,
-                                                          std::string advertise_ma,
-                                                          const std::string& hop_ma,
+                                                          std::string advertise_ma, const std::string& hop_ma,
                                                           std::vector<std::string> extra_hops = {});
 
   ~ProductStackHarness();
@@ -64,8 +63,7 @@ public:
   const std::string& LocalPeerId() const { return local_peer_id_; }
   const std::string& AdvertiseMa() const { return advertise_ma_; }
 
-  Roe<void> UpsertPeerContact(const std::string& account_id, const std::string& peer_id,
-                              const std::string& multiaddr);
+  Roe<void> UpsertPeerContact(const std::string& account_id, const std::string& peer_id, const std::string& multiaddr);
   Roe<void> EnsureOriginThread(const std::string& thread_id, const std::string& peer_account);
   /** Group call origin (B-HARD-GROUP-CALL-NAT): call-control still rides per-peer direct threads. */
   Roe<void> EnsureGroupOriginThread(const std::string& thread_id, const std::vector<std::string>& peer_accounts);
@@ -74,8 +72,8 @@ public:
    * signing records with this probe's Amp identity key (the records bind its PeerId). `k`: the
    * DHT's k (0: default). Waits until the self record has been stored somewhere.
    */
-  Roe<void> EnableDht(const std::string& bootstrap_ma, ByteVector signing_secret, ByteVector signing_public,
-                      int k, int timeout_ms);
+  Roe<void> EnableDht(const std::string& bootstrap_ma, ByteVector signing_secret, ByteVector signing_public, int k,
+                      int timeout_ms);
   /** Look `peer_id` up in the DHT; registers its record's addresses (as ConversationsHub does) and
    * returns the one to dial. */
   Roe<std::string> FindPeerViaDht(const std::string& peer_id, int timeout_ms);
@@ -183,8 +181,8 @@ private:
   AppConfig app_config_;
   // Outlives the call stack and broadcast (they borrow its objects).
   std::unique_ptr<mesh::MeshConnectivity> mesh_connectivity_;
-  std::unique_ptr<mesh::MeshMediaRelay> mesh_media_relay_;  // built on connectivity (goes first)
-  std::unique_ptr<MeshHopPolicyFeed> hop_policy_feed_;  // pushes into connectivity (goes first)
+  std::unique_ptr<mesh::MeshMediaRelay> mesh_media_relay_; // built on connectivity (goes first)
+  std::unique_ptr<MeshHopPolicyFeed> hop_policy_feed_;     // pushes into connectivity (goes first)
   /** The call stack binds its control family here and unbinds it on teardown: declared first. */
   SystemControlRegistry controls_;
   std::unique_ptr<CallStack> stack_;

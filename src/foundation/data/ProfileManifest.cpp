@@ -66,11 +66,14 @@ Roe<void> EnsureProfileManifest(const std::string& profile_data_dir, const std::
     return Roe<void>::error(Error("Failed to parse profile manifest"));
   }
 
-  if (auto validated = SchemaVersion::Validate(*root, SchemaVersion::kCurrentSchemaVersion, "manifest.json"); !validated) {
+  if (auto validated = SchemaVersion::Validate(*root, SchemaVersion::kCurrentSchemaVersion, "manifest.json");
+      !validated) {
     return Roe<void>::error(Error(validated.error().message));
   }
 
-  if (auto migrated = SchemaVersion::RunForwardMigrators(manifest_path.string(), *root, SchemaVersion::kCurrentSchemaVersion); !migrated) {
+  if (auto migrated =
+          SchemaVersion::RunForwardMigrators(manifest_path.string(), *root, SchemaVersion::kCurrentSchemaVersion);
+      !migrated) {
     return Roe<void>::error(Error(migrated.error().message));
   }
 

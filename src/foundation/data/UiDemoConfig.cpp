@@ -3,7 +3,7 @@
 namespace pbr {
 
 void ApplyUiDemoConfig(AppConfig& config) {
-  config.backend = BackendConfig{};  // env = prod, no saved URLs
+  config.backend = BackendConfig{}; // env = prod, no saved URLs
   config.relay = ServiceEndpointConfig{};
   config.directory = DirectoryConfig{};
   config.registration = ServiceEndpointConfig{};

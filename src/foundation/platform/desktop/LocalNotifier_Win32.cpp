@@ -30,10 +30,10 @@
 // Shobjidl.h; forward-declare to avoid pulling shell COM headers alongside WinRT.
 extern "C" HRESULT WINAPI SetCurrentProcessExplicitAppUserModelID(PCWSTR AppID);
 
+using Microsoft::WRL::ClassicCom;
 using Microsoft::WRL::ComPtr;
 using Microsoft::WRL::RuntimeClass;
 using Microsoft::WRL::RuntimeClassFlags;
-using Microsoft::WRL::ClassicCom;
 using namespace ABI::Windows::Data::Xml::Dom;
 using namespace ABI::Windows::Foundation;
 using namespace ABI::Windows::UI::Notifications;
@@ -58,16 +58,14 @@ void LogFailOnce(const char* detail) {
     return;
   }
   g_logged_fail = true;
-  logging::getLogger("LocalNotifier").warning
-      << "Desktop notifications unavailable: " << (detail ? detail : "unknown");
+  logging::getLogger("LocalNotifier").warning << "Desktop notifications unavailable: " << (detail ? detail : "unknown");
 }
 
 std::wstring Utf8ToWide(const std::string& utf8) {
   if (utf8.empty()) {
     return {};
   }
-  const int needed =
-      MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), static_cast<int>(utf8.size()), nullptr, 0);
+  const int needed = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), static_cast<int>(utf8.size()), nullptr, 0);
   if (needed <= 0) {
     return {};
   }
@@ -81,24 +79,24 @@ std::string XmlEscape(const std::string& input) {
   out.reserve(input.size());
   for (char c : input) {
     switch (c) {
-    case '&':
-      out += "&amp;";
-      break;
-    case '<':
-      out += "&lt;";
-      break;
-    case '>':
-      out += "&gt;";
-      break;
-    case '"':
-      out += "&quot;";
-      break;
-    case '\'':
-      out += "&apos;";
-      break;
-    default:
-      out += c;
-      break;
+      case '&':
+        out += "&amp;";
+        break;
+      case '<':
+        out += "&lt;";
+        break;
+      case '>':
+        out += "&gt;";
+        break;
+      case '"':
+        out += "&quot;";
+        break;
+      case '\'':
+        out += "&apos;";
+        break;
+      default:
+        out += c;
+        break;
     }
   }
   return out;
@@ -110,8 +108,7 @@ std::string TagForThread(const std::string& thread_id) {
   }
   std::string tag = "t-";
   for (unsigned char c : thread_id) {
-    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' ||
-        c == '_') {
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
       tag += static_cast<char>(c);
     } else {
       char buf[8];
@@ -130,8 +127,7 @@ HRESULT CreateHString(const wchar_t* value, HSTRING* out) {
 }
 
 class ToastActivatedHandler final
-    : public RuntimeClass<RuntimeClassFlags<ClassicCom>,
-                          ITypedEventHandler<ToastNotification*, IInspectable*>> {
+    : public RuntimeClass<RuntimeClassFlags<ClassicCom>, ITypedEventHandler<ToastNotification*, IInspectable*>> {
 public:
   explicit ToastActivatedHandler(std::string thread_id) : thread_id_(std::move(thread_id)) {}
 
@@ -211,8 +207,7 @@ bool EnsureInitLocked() {
   return true;
 }
 
-std::wstring BuildToastXml(const std::string& title, const std::string& body,
-                           const std::string& thread_id) {
+std::wstring BuildToastXml(const std::string& title, const std::string& body, const std::string& thread_id) {
   const std::string args = thread_id.empty() ? std::string("open") : ("open&thread_id=" + thread_id);
   std::string xml = "<toast launch=\"";
   xml += XmlEscape(args);
@@ -226,8 +221,7 @@ std::wstring BuildToastXml(const std::string& title, const std::string& body,
 
 } // namespace
 
-void PostDesktopNotification(const std::string& title, const std::string& body,
-                             const std::string& thread_id) {
+void PostDesktopNotification(const std::string& title, const std::string& body, const std::string& thread_id) {
   std::lock_guard<std::mutex> lock(g_mu);
   if (!EnsureInitLocked()) {
     return;
@@ -320,8 +314,7 @@ void ClearDesktopNotification(const std::string& thread_id) {
   HSTRING hs_tag = nullptr;
   HSTRING hs_group = nullptr;
   HSTRING hs_aumid = nullptr;
-  if (FAILED(CreateHString(Utf8ToWide(tag).c_str(), &hs_tag)) ||
-      FAILED(CreateHString(L"frame.messages", &hs_group)) ||
+  if (FAILED(CreateHString(Utf8ToWide(tag).c_str(), &hs_tag)) || FAILED(CreateHString(L"frame.messages", &hs_group)) ||
       FAILED(CreateHString(Utf8ToWide(kProductAumid).c_str(), &hs_aumid))) {
     if (hs_tag) {
       WindowsDeleteString(hs_tag);

@@ -42,8 +42,7 @@ TEST(RelayApiSignPayloadTest, BuildAckInboxSignBytesMatchesGoldenVector) {
 }
 
 TEST(RelayApiSignPayloadTest, BuildClearInboxSignBytesMatchesGoldenVector) {
-  const auto bytes =
-      BuildRelayApiClearInboxSignBytes("relay:a", "2024-01-01T00:00:00.000Z", 1700000000005);
+  const auto bytes = BuildRelayApiClearInboxSignBytes("relay:a", "2024-01-01T00:00:00.000Z", 1700000000005);
   ASSERT_FALSE(bytes.empty());
   EXPECT_EQ(BytesToHex(bytes),
             "70702d62726f777365723a72656c61792d6170692d76310001060000018bcfe568050000000000000007"

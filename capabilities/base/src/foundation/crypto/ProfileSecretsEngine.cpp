@@ -69,8 +69,7 @@ void ProfileSecretsEngine::UnregisterDekConsumer(IDekConsumer* consumer) {
   if (consumer == nullptr) {
     return;
   }
-  dek_consumers_.erase(
-      std::remove(dek_consumers_.begin(), dek_consumers_.end(), consumer), dek_consumers_.end());
+  dek_consumers_.erase(std::remove(dek_consumers_.begin(), dek_consumers_.end(), consumer), dek_consumers_.end());
 }
 
 Roe<void> ProfileSecretsEngine::DistributeDek(const ByteVector& dek) {

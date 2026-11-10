@@ -51,7 +51,6 @@ public:
   }
 };
 
-
 class AttachmentClientTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -418,7 +417,7 @@ TEST_F(StagedUploadTest, ResumeWithoutTheCiphertextTellsTheCallerToPickAgain) {
   ASSERT_FALSE(UploadStaged(5000, Staged(direct_)));
   auto record = store_->Load(staged_.id, TestDek());
   ASSERT_TRUE(record);
-  std::filesystem::remove(store_->CipherPath(staged_.id));  // cleaned after a day, or lost
+  std::filesystem::remove(store_->CipherPath(staged_.id)); // cleaned after a day, or lost
   Roe<ChatAttachmentFields> resumed = Error("not called");
   ResumeChatAttachmentAsync(blob_, *identity_, *record, Staged(direct_),
                             [&](Roe<ChatAttachmentFields> value) { resumed = std::move(value); });

@@ -40,14 +40,14 @@ std::unique_ptr<IVoiceCaptureSource> CreateArbiterVoiceCaptureSource(
     MediaDeviceArbiter& devices = MediaDeviceArbiter::Default());
 
 enum class VoiceEnd {
-  Sent,        // the person stopped it (release / Send): the file is ready
-  LimitReached,// the length limit passed in was reached: the file is ready
-  Interrupted, // a call needs the device: what was said so far is ready
-  TooShort,    // under the minimum: no file
-  Cancelled,   // no file
-  Busy,        // the microphone is in use (a call): no file
-  NoDevice,    // no microphone could be opened: no file
-  Failed,      // the device gave up or the file could not be written: no file
+  Sent,         // the person stopped it (release / Send): the file is ready
+  LimitReached, // the length limit passed in was reached: the file is ready
+  Interrupted,  // a call needs the device: what was said so far is ready
+  TooShort,     // under the minimum: no file
+  Cancelled,    // no file
+  Busy,         // the microphone is in use (a call): no file
+  NoDevice,     // no microphone could be opened: no file
+  Failed,       // the device gave up or the file could not be written: no file
 };
 
 /** True for the ends that leave a file to send. */
@@ -110,7 +110,8 @@ private:
     Callbacks callbacks;
     std::atomic<bool> running{false};
   };
-  static void Run(std::shared_ptr<Shared> shared, VoiceRecorderConfig config, std::shared_ptr<std::atomic<int>> request);
+  static void Run(std::shared_ptr<Shared> shared, VoiceRecorderConfig config,
+                  std::shared_ptr<std::atomic<int>> request);
 
   std::shared_ptr<Shared> shared_;
   std::mutex mutex_;

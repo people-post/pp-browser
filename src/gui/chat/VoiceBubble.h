@@ -50,9 +50,9 @@ double SeekFractionAt(float x, float left, float width);
 
 /** What a sound file's music card shows besides its controls. */
 struct AudioCardFace {
-  std::string title;      // the file's own title, else its name
-  std::string subtitle;   // "Artist · 10.3 MB", or the size alone
-  std::string cover_path; // a small JPEG of its embedded picture ("": the music-note placeholder)
+  std::string title;       // the file's own title, else its name
+  std::string subtitle;    // "Artist · 10.3 MB", or the size alone
+  std::string cover_path;  // a small JPEG of its embedded picture ("": the music-note placeholder)
   int64_t duration_ms = 0; // its length from its tags (0: unknown, the time stays empty until it plays)
 };
 

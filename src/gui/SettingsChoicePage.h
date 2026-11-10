@@ -55,8 +55,8 @@ public:
     if (!IsOpen() || picked_) {
       return false;
     }
-    const auto found = std::find_if(options_.begin(), options_.end(),
-                                    [&id](const Option& option) { return id == option.id.c_str(); });
+    const auto found =
+        std::find_if(options_.begin(), options_.end(), [&id](const Option& option) { return id == option.id.c_str(); });
     if (found == options_.end()) {
       return false;
     }

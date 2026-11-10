@@ -17,8 +17,7 @@ namespace {
 class GroupRosterInviteApplyTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    data_dir_ = std::filesystem::temp_directory_path() /
-                ("pp_group_roster_apply_" + util::GenerateUuid());
+    data_dir_ = std::filesystem::temp_directory_path() / ("pp_group_roster_apply_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
     store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->ListThreads());
@@ -41,7 +40,7 @@ protected:
     pending.roster_epoch = 1;
     pending.status = InviteStatus::Pending;
     pending.created_at = util::NowUnixMs();
-    pending.outbound = true;  // alice (this device) issued it
+    pending.outbound = true; // alice (this device) issued it
     return pending;
   }
 
@@ -341,8 +340,8 @@ TEST_F(GroupRosterInviteApplyTest, AcceptNeedsAnInviteWeIssuedForAGroupWeOwn) {
 
   ASSERT_TRUE(roster_->UpsertPendingInvite(MakePending()));
   EXPECT_FALSE(Accept("nonce-1", "relay:bob", "group:other")) << "another group";
-  EXPECT_FALSE(ApplyInviteAcceptToRoster(*roster_, "nonce-1", "relay:bob", "group:hike", "relay:carol",
-                                         util::NowUnixMs()))
+  EXPECT_FALSE(
+      ApplyInviteAcceptToRoster(*roster_, "nonce-1", "relay:bob", "group:hike", "relay:carol", util::NowUnixMs()))
       << "a group this device does not own";
   EXPECT_FALSE(IsMember("relay:bob"));
 }
@@ -457,7 +456,7 @@ TEST_F(GroupRosterInviteApplyTest, OnlyANewerOwnerRenameChangesTheTitle) {
 // is refused — the member is not added and the invite closes (the owner then tells the invitee).
 TEST_F(GroupRosterInviteApplyTest, AnAcceptWhenTheGroupIsFullIsRefused) {
   SeedOwnedGroup(1);
-  for (size_t i = 0; i + 1 < kMaxGroupMembers; ++i) {  // 49 members: room for one more
+  for (size_t i = 0; i + 1 < kMaxGroupMembers; ++i) { // 49 members: room for one more
     GroupRosterMember member;
     member.member_identity = "relay:m" + std::to_string(i);
     member.role = i == 0 ? MemberRole::Owner : MemberRole::Member;
@@ -498,8 +497,9 @@ TEST_F(GroupRosterInviteApplyTest, ConcurrentAcceptsBothLandAndEachBumpsTheEpoch
     workers.emplace_back([this, i, &applied]() {
       // One roster for every worker: the update lock keeps each accept's read-then-bump whole (that the app's many
       // connections to profile.db hold up too is sqlite_group_roster_store_test's).
-      auto accepted = ApplyInviteAcceptToRoster(*roster_, "nonce-" + std::to_string(i), "relay:member" + std::to_string(i),
-                                                "group:hike", "relay:alice", util::NowUnixMs());
+      auto accepted =
+          ApplyInviteAcceptToRoster(*roster_, "nonce-" + std::to_string(i), "relay:member" + std::to_string(i),
+                                    "group:hike", "relay:alice", util::NowUnixMs());
       if (accepted && *accepted == InviteAccepted::Added) {
         applied.fetch_add(1);
       }

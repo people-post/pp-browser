@@ -197,8 +197,7 @@ public:
    * Adds the person a locator in `text` names (an invite line, a scanned code): the contact, then the
    * account's card from a listed device or the directory. `done` once, on a worker or I/O thread.
    */
-  void AddContactFromLocator(const std::string& text,
-                             std::function<void(Roe<ContactCardExchange::LocatorAdded>)> done);
+  void AddContactFromLocator(const std::string& text, std::function<void(Roe<ContactCardExchange::LocatorAdded>)> done);
   /** *Add* on a contact card in a chat: checks the card, keeps the account's keys, adds (or finds) the contact. */
   Roe<Contact> AddContactFromCard(const std::string& thread_id, const std::string& message_id);
   Roe<ThreadMessage> SendReaction(const std::string& thread_id, const std::string& target_message_id,
@@ -313,8 +312,7 @@ public:
   // --- Actions --------------------------------------------------------------
   Roe<std::optional<std::string>> DispatchAction(const std::string& payload_json);
   /** UI thread: Add / Message on a directory row look the person up first (HTTP), so `done` may run later. */
-  void DispatchActionAsync(const std::string& payload_json,
-                           std::function<void(Roe<std::optional<std::string>>)> done);
+  void DispatchActionAsync(const std::string& payload_json, std::function<void(Roe<std::optional<std::string>>)> done);
   void SetOnActionMessage(std::function<void(const ActionNotice& notice)> callback);
 
   // --- Router ---------------------------------------------------------------
@@ -326,8 +324,7 @@ public:
   // --- Pricing (P001) -------------------------------------------------------
   /** True when peer initiation floor > 0, relationship not open, and payment rails unavailable. */
   bool IsInitiationOutboundBlocked(const std::string& peer_identity);
-  Roe<void> SendChargeRequired(const std::string& peer_identity,
-                               std::optional<int64_t> floor_minor = std::nullopt);
+  Roe<void> SendChargeRequired(const std::string& peer_identity, std::optional<int64_t> floor_minor = std::nullopt);
 
   // --- Payment promises (P002 / P003) ----------------------------------------
   Roe<PaymentPromise> CreatePaymentPromiseOffer(const PaymentPromiseLifecycle::OfferParams& params);
@@ -345,10 +342,8 @@ public:
   Roe<PaymentPromise> AcceptInboundPaymentPromise(const std::string& promise_id);
   Roe<bool> IgnoreInboundPaymentPromise(const std::string& promise_id);
   bool ShouldAvoidPaymentCounterparty(const std::string& other_account_id);
-  Roe<ThreadMessage> BuildPaymentPromiseControlMessage(const std::string& thread_id,
-                                                       PaymentPromiseControlType type,
-                                                       const PaymentPromise& promise,
-                                                       const std::string& body_text);
+  Roe<ThreadMessage> BuildPaymentPromiseControlMessage(const std::string& thread_id, PaymentPromiseControlType type,
+                                                       const PaymentPromise& promise, const std::string& body_text);
   void SetOnLocalAction(std::function<void(const std::string&, const std::optional<std::string>&)> callback);
   void SetSharedAiConfirmCallback(MessageRouter::SharedAiConfirmCallback callback);
   /** "Don't ask again" before sharing with the AI: kept for the chat across restarts. */

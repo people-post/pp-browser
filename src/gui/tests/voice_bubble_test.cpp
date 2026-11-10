@@ -11,7 +11,8 @@
 namespace pbr {
 namespace {
 
-TranscriptRow Attachment(const std::string& id, const std::string& name, const std::string& mime, const uint64_t bytes) {
+TranscriptRow Attachment(const std::string& id, const std::string& name, const std::string& mime,
+                         const uint64_t bytes) {
   ChatAttachmentFields fields;
   fields.mime = mime;
   fields.filename = name;
@@ -49,13 +50,15 @@ std::string Render(const TranscriptRow& row, const TranscriptFacts& facts) {
   return rows.empty() ? std::string() : std::string(rows[0].content_rml.c_str());
 }
 
-bool IsBubble(const std::string& rml) { return rml.find("chat-voice-card") != std::string::npos; }
+bool IsBubble(const std::string& rml) {
+  return rml.find("chat-voice-card") != std::string::npos;
+}
 
 TEST(VoiceBubbleRender, SmallMatchingFileIsABubbleWithItsLength) {
   const std::string rml = Render(Attachment("m1", "voice-4200.ogg", "audio/ogg", 25000), Facts(true));
   EXPECT_TRUE(IsBubble(rml)) << rml;
   EXPECT_NE(rml.find("play_voice('m1')"), std::string::npos);
-  EXPECT_NE(rml.find("0:05"), std::string::npos);                    // 4.2 s reads as 0:05
+  EXPECT_NE(rml.find("0:05"), std::string::npos); // 4.2 s reads as 0:05
   EXPECT_NE(rml.find("id=\"vf-m1\""), std::string::npos);
   EXPECT_EQ(rml.find("chat-attachment-card"), std::string::npos);
 }
@@ -207,7 +210,8 @@ TEST(VoiceBubbleRender, ASoundFileCardShowsItsOwnTitleArtistCoverAndLength) {
 
 TEST(VoiceBubbleRender, APlayingSoundFileKeepsItsProgressOnARedraw) {
   const VoiceBubbleState state{.playing = true, .paused = false, .position_ms = 65000, .duration_ms = 130000};
-  const std::string rml = AudioFileBubbleRml("m7", "m7", AudioCardFace{.title = "Song.mp3", .subtitle = "10 MB"}, state);
+  const std::string rml =
+      AudioFileBubbleRml("m7", "m7", AudioCardFace{.title = "Song.mp3", .subtitle = "10 MB"}, state);
   EXPECT_NE(rml.find("chat-voice-play--playing"), std::string::npos);
   EXPECT_NE(rml.find("width: 50%"), std::string::npos);
   EXPECT_NE(rml.find("1:05 / 2:10"), std::string::npos);
@@ -332,15 +336,14 @@ TEST(PictureBubbleFit, ThePictureCarriesItsFittedSize) {
     TranscriptAttachmentView view;
     view.state = AttachmentFetchWorkflow::DownloadState::Ready;
     view.local_path = "/tmp/tall.jpg";
-    view.image_width = 3024;  // upright: InboxController has swapped a quarter-turned photo's sides
+    view.image_width = 3024; // upright: InboxController has swapped a quarter-turned photo's sides
     view.image_height = 4032;
     return view;
   };
   const std::string rml = Render(Attachment("p3", "tall.jpg", "image/jpeg", 50000), facts);
   EXPECT_NE(rml.find("width=\"292\" height=\"389\" style=\"margin-top:-14dp\""), std::string::npos) << rml;
   // The picture sits in a same-sized clip box that rounds its corners (the engine does not round an <img>).
-  EXPECT_NE(rml.find("<div class=\"chat-attachment-clip\" style=\"width:292dp;height:360dp\"><img "),
-            std::string::npos)
+  EXPECT_NE(rml.find("<div class=\"chat-attachment-clip\" style=\"width:292dp;height:360dp\"><img "), std::string::npos)
       << rml;
   EXPECT_NE(rml.find("')\"/></div>"), std::string::npos) << rml;
   // Without a known size the picture is left to the stylesheet's limits.
@@ -364,7 +367,8 @@ TEST(VideoBubbleRender, APosterFrameWithPlayDiscAndNoOpenButton) {
   };
   const std::string rml = Render(Attachment("v1", "v.mp4", "video/mp4", 289000), facts);
   EXPECT_NE(rml.find("chat-attachment-clip chat-attachment-video-frame\" style=\"width:292dp;height:164dp\""),
-            std::string::npos) << rml;
+            std::string::npos)
+      << rml;
   EXPECT_NE(rml.find("width=\"292\" height=\"164\""), std::string::npos) << rml;
   EXPECT_NE(rml.find("chat-attachment-video-play"), std::string::npos);
   EXPECT_NE(rml.find("data-event-click=\"open_attachment('v1')\""), std::string::npos);

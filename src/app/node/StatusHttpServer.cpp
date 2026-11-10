@@ -49,7 +49,7 @@ void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig 
       // Weak: the timer must not keep a finished connection alive; it only closes a slow one.
       deadline->async_wait([weak = std::weak_ptr<Reader>(shared_from_this())](const std::error_code& ec) {
         if (ec) {
-          return;  // cancelled: the connection finished first
+          return; // cancelled: the connection finished first
         }
         if (auto self = weak.lock()) {
           std::error_code ignored;
@@ -61,49 +61,45 @@ void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig 
 
     void ReadMore() {
       auto self = shared_from_this();
-      socket->async_read_some(
-          asio::buffer(*chunk),
-          [self](const std::error_code& rec, std::size_t n) {
-            if (rec || n == 0) {
-              std::error_code ignored;
-              self->socket->shutdown(tcp::socket::shutdown_both, ignored);
-              self->socket->close(ignored);
-              return;
-            }
-            self->buf->append(self->chunk->data(), n);
-            if (self->buf->size() > kMaxRequestBytes) {
-              std::error_code ignored;
-              self->socket->close(ignored);
-              return;
-            }
-            if (auto req = TryParseStatusHttpRequest(*self->buf)) {
-              StatusHttpSnapshot snap;
-              try {
-                snap = self->snapshot ? self->snapshot() : StatusHttpSnapshot{};
-              } catch (...) {
-                snap = StatusHttpSnapshot{};
-              }
-              StatusHttpResponse response;
-              try {
-                response = HandleStatusHttpRequest(*req, self->auth, snap, self->actions);
-              } catch (...) {
-                response = StatusHttpInternalError();  // never let a request unwind io.run()
-              }
-              if (req->method == "HEAD") {
-                response.body.clear();
-              }
-              auto out = std::make_shared<std::string>(FormatStatusHttpResponse(response));
-              asio::async_write(
-                  *self->socket, asio::buffer(*out),
-                  [self, out](const std::error_code&, std::size_t) {
-                    std::error_code ignored;
-                    self->socket->shutdown(tcp::socket::shutdown_both, ignored);
-                    self->socket->close(ignored);
-                  });
-              return;
-            }
-            self->ReadMore();
+      socket->async_read_some(asio::buffer(*chunk), [self](const std::error_code& rec, std::size_t n) {
+        if (rec || n == 0) {
+          std::error_code ignored;
+          self->socket->shutdown(tcp::socket::shutdown_both, ignored);
+          self->socket->close(ignored);
+          return;
+        }
+        self->buf->append(self->chunk->data(), n);
+        if (self->buf->size() > kMaxRequestBytes) {
+          std::error_code ignored;
+          self->socket->close(ignored);
+          return;
+        }
+        if (auto req = TryParseStatusHttpRequest(*self->buf)) {
+          StatusHttpSnapshot snap;
+          try {
+            snap = self->snapshot ? self->snapshot() : StatusHttpSnapshot{};
+          } catch (...) {
+            snap = StatusHttpSnapshot{};
+          }
+          StatusHttpResponse response;
+          try {
+            response = HandleStatusHttpRequest(*req, self->auth, snap, self->actions);
+          } catch (...) {
+            response = StatusHttpInternalError(); // never let a request unwind io.run()
+          }
+          if (req->method == "HEAD") {
+            response.body.clear();
+          }
+          auto out = std::make_shared<std::string>(FormatStatusHttpResponse(response));
+          asio::async_write(*self->socket, asio::buffer(*out), [self, out](const std::error_code&, std::size_t) {
+            std::error_code ignored;
+            self->socket->shutdown(tcp::socket::shutdown_both, ignored);
+            self->socket->close(ignored);
           });
+          return;
+        }
+        self->ReadMore();
+      });
     }
   };
 
@@ -143,7 +139,7 @@ struct StatusHttpServer::Impl {
         if (open->fetch_add(1, std::memory_order_acq_rel) >= kMaxOpenConnections) {
           open->fetch_sub(1, std::memory_order_acq_rel);
           std::error_code ignored;
-          socket->close(ignored);  // full: refuse at once rather than queue
+          socket->close(ignored); // full: refuse at once rather than queue
         } else {
           HandleConnection(socket, auth, snapshot, actions, open);
         }
@@ -168,8 +164,8 @@ std::string StatusHttpServer::BoundEndpoint() const {
   return impl_->bound;
 }
 
-Roe<void> StatusHttpServer::Start(const StatusHttpBind& bind, StatusHttpAuthConfig auth,
-                                  SnapshotFn snapshot, StatusHttpActions actions) {
+Roe<void> StatusHttpServer::Start(const StatusHttpBind& bind, StatusHttpAuthConfig auth, SnapshotFn snapshot,
+                                  StatusHttpActions actions) {
   if (running_.load()) {
     return Error("status HTTP server already running");
   }
@@ -219,8 +215,7 @@ Roe<void> StatusHttpServer::Start(const StatusHttpBind& bind, StatusHttpAuthConf
   auto* raw = impl_.get();
   thread_ = std::thread([this, raw]() {
     raw->ScheduleAccept();
-    logging::getLogger("pp-node").info << "status HTTP listening on " << raw->bound
-                                       << " (/healthz, /status, /metrics)";
+    logging::getLogger("pp-node").info << "status HTTP listening on " << raw->bound << " (/healthz, /status, /metrics)";
     raw->io.run();
     running_.store(false);
   });

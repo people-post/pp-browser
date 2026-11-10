@@ -64,7 +64,7 @@ TEST(UiDemoGatesTest, DemoUploadsNothing) {
 
 TEST(UiDemoGatesTest, TheSenderIsNotCalledInTheDemo) {
   int calls = 0;
-  const auto sender = [&calls] { ++calls; };  // stands in for the diagnostics POST and the crash-report worker
+  const auto sender = [&calls] { ++calls; }; // stands in for the diagnostics POST and the crash-report worker
   EXPECT_FALSE(RunIfUploadAllowed(true, sender));
   EXPECT_EQ(calls, 0);
   EXPECT_TRUE(RunIfUploadAllowed(false, sender));

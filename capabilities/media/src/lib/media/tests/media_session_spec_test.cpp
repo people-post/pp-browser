@@ -398,9 +398,7 @@ public:
   Roe<void> ConfigureEncoder(int, int, int) override { return Error("no encoder"); }
   Roe<void> ConfigureDecoder() override { return {}; }
   Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override { return Error("no encoder"); }
-  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t*, size_t) override {
-    return std::optional<VideoFrameRgba>();
-  }
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t*, size_t) override { return std::optional<VideoFrameRgba>(); }
   void ResetEncoder() override {}
   void ResetDecoder() override {}
 

@@ -18,7 +18,6 @@ struct ContactsShellProjection {
 ContactsShellProjection ProjectContactsShell(const ContactsSurfaceSnapshot& surface);
 
 /** Pure gate: structural detail → SyncLayout; unread → DirtyNav. */
-ShellChromeOp ClassifyContactsChromeUpdate(const ContactsShellProjection& synced,
-                                           const ContactsShellProjection& next);
+ShellChromeOp ClassifyContactsChromeUpdate(const ContactsShellProjection& synced, const ContactsShellProjection& next);
 
 } // namespace pbr

@@ -199,8 +199,7 @@ private:
    * same chat's call is shown, no question. True when handled here (`place` is for the Place case only).
    */
   bool GuardNewCall(const std::string& thread_id, const std::function<void()>& place, const StartDone& done);
-  void RequestStart(const std::string& thread_id, bool video, const std::vector<std::string>& invitees,
-                    StartDone done);
+  void RequestStart(const std::string& thread_id, bool video, const std::vector<std::string>& invitees, StartDone done);
   std::string RingCallId(CallUiBackend& backend) const;
   void Fail(const std::string& key, const StartDone& done = {});
   void FailText(const std::string& text);

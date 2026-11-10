@@ -41,8 +41,7 @@ public:
    * under the current DEK.
    */
   static Roe<LinkDeviceImportResult> Import(IdentityStore& identity, DataKeyVault& vault,
-                                            const std::string& bundle_json, const SecretText& pin,
-                                            int64_t now_ms);
+                                            const std::string& bundle_json, const SecretText& pin, int64_t now_ms);
 };
 
 } // namespace pbr

@@ -64,7 +64,8 @@ TEST(DeliveryNoticeTest, ASendFailureRowKeepsItsReasonAndNoWords) {
 
 TEST(DeliveryNoticeTest, TheRowIdIsOnePerMessageAndKind) {
   EXPECT_EQ(MakeSendFailureRow("t", "m", "relay_busy", 1).id, MakeSendFailureRow("t", "m", "relay_busy", 2).id);
-  EXPECT_NE(MakeSendFailureRow("t", "m", "relay_busy", 1).id, MakeSendFailureRow("t", "m", kGroupMembersMissedWire, 1).id);
+  EXPECT_NE(MakeSendFailureRow("t", "m", "relay_busy", 1).id,
+            MakeSendFailureRow("t", "m", kGroupMembersMissedWire, 1).id);
 }
 
 TEST(DeliveryNoticeTest, OtherMessagesAreNotSendFailureRows) {

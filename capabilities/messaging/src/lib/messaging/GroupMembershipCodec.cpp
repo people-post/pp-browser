@@ -11,12 +11,12 @@ namespace {
 
 std::string HistoryModeToString(const GroupHistoryMode mode) {
   switch (mode) {
-  case GroupHistoryMode::Fresh:
-    return "fresh";
-  case GroupHistoryMode::CopyToForkPoint:
-    return "copy_to_fork_point";
-  case GroupHistoryMode::UserSelected:
-    return "user_selected";
+    case GroupHistoryMode::Fresh:
+      return "fresh";
+    case GroupHistoryMode::CopyToForkPoint:
+      return "copy_to_fork_point";
+    case GroupHistoryMode::UserSelected:
+      return "user_selected";
   }
   return "fresh";
 }
@@ -131,13 +131,12 @@ Roe<std::string> GroupMembershipCodec::EncodeInviteResponse(const std::string& i
   return DumpJson(MakeStringObject({{"invite_nonce", invite_nonce}, {"group_id", group_id}}));
 }
 
-Roe<std::string> GroupMembershipCodec::EncodeInviteRefused(const std::string& invite_nonce,
-                                                           const std::string& group_id, const std::string& reason) {
+Roe<std::string> GroupMembershipCodec::EncodeInviteRefused(const std::string& invite_nonce, const std::string& group_id,
+                                                           const std::string& reason) {
   return DumpJson(MakeStringObject({{"invite_nonce", invite_nonce}, {"group_id", group_id}, {"reason", reason}}));
 }
 
-Roe<std::pair<std::string, std::string>> GroupMembershipCodec::DecodeInviteResponse(
-    const std::string& detail_json) {
+Roe<std::pair<std::string, std::string>> GroupMembershipCodec::DecodeInviteResponse(const std::string& detail_json) {
   auto json = TryParseObject(detail_json);
   if (!json) {
     return Error("Invalid invite response JSON");
@@ -154,8 +153,8 @@ Roe<GroupMembershipCodec::InviteResponsePayload> GroupMembershipCodec::DecodeInv
     const ThreadMessage& message) {
   const auto control_type = ControlTypeFromMessage(message);
   if (!control_type || (*control_type != GroupMembershipControlType::GroupInviteAccept &&
-                       *control_type != GroupMembershipControlType::GroupInviteDecline &&
-                       *control_type != GroupMembershipControlType::GroupInviteRefused)) {
+                        *control_type != GroupMembershipControlType::GroupInviteDecline &&
+                        *control_type != GroupMembershipControlType::GroupInviteRefused)) {
     return Error("Message is not a group invite response");
   }
   auto payload = TryParseObject(message.payload_json);
@@ -236,8 +235,7 @@ Roe<std::string> GroupMembershipCodec::WithoutCards(MemberJoinedPayload payload)
   return EncodeMemberJoined(payload);
 }
 
-Roe<std::string> GroupMembershipCodec::EncodeMemberLeft(const std::string& group_id,
-                                                        const std::string& member_identity,
+Roe<std::string> GroupMembershipCodec::EncodeMemberLeft(const std::string& group_id, const std::string& member_identity,
                                                         const uint64_t roster_epoch) {
   Object json;
   json.set("group_id", group_id);
@@ -260,9 +258,8 @@ Roe<std::string> GroupMembershipCodec::EncodeMemberRemoved(const std::string& gr
 }
 
 Roe<std::string> GroupMembershipCodec::EncodeOwnerTransferred(const std::string& group_id,
-                                                            const std::string& new_owner_identity,
-                                                            const uint64_t roster_epoch,
-                                                            const bool leave_previous) {
+                                                              const std::string& new_owner_identity,
+                                                              const uint64_t roster_epoch, const bool leave_previous) {
   Object json;
   json.set("group_id", group_id);
   json.set("new_owner_identity", new_owner_identity);
@@ -322,16 +319,14 @@ Roe<GroupMembershipCodec::MemberJoinedPayload> GroupMembershipCodec::DecodeMembe
 
 Roe<GroupMembershipCodec::MemberJoinedPayload> GroupMembershipCodec::DecodeMemberJoinedFromMessage(
     const ThreadMessage& message) {
-  auto detail =
-      DetailFromMessage(message, GroupMembershipControlType::MemberJoined, "Message is not a member_joined");
+  auto detail = DetailFromMessage(message, GroupMembershipControlType::MemberJoined, "Message is not a member_joined");
   if (!detail) {
     return detail.error();
   }
   return DecodeMemberJoined(*detail);
 }
 
-Roe<GroupMembershipCodec::MemberLeftPayload> GroupMembershipCodec::DecodeMemberLeft(
-    const std::string& detail_json) {
+Roe<GroupMembershipCodec::MemberLeftPayload> GroupMembershipCodec::DecodeMemberLeft(const std::string& detail_json) {
   auto json = TryParseObject(detail_json);
   if (!json) {
     return Error("Invalid member_left detail");
@@ -496,8 +491,8 @@ Roe<GroupMembershipCodec::OwnerTransferredPayload> GroupMembershipCodec::DecodeO
 
 Roe<GroupMembershipCodec::OwnerTransferredPayload> GroupMembershipCodec::DecodeOwnerTransferredFromMessage(
     const ThreadMessage& message) {
-  auto detail = DetailFromMessage(message, GroupMembershipControlType::OwnerTransferred,
-                                  "Message is not an owner_transferred");
+  auto detail =
+      DetailFromMessage(message, GroupMembershipControlType::OwnerTransferred, "Message is not an owner_transferred");
   if (!detail) {
     return detail.error();
   }
@@ -654,18 +649,18 @@ void GroupMembershipCodec::ApplyInviteResolution(ThreadMessage& message, const I
   Object payload = TryParseObject(message.payload_json).value_or(Object{});
   payload.set("control_type", GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupInvite));
   switch (status) {
-  case InviteStatus::Accepted:
-    payload.set("resolution", "accepted");
-    break;
-  case InviteStatus::Declined:
-    payload.set("resolution", "declined");
-    break;
-  case InviteStatus::Blocked:
-    payload.set("resolution", "blocked");
-    break;
-  default:
-    payload.set("resolution", "resolved");
-    break;
+    case InviteStatus::Accepted:
+      payload.set("resolution", "accepted");
+      break;
+    case InviteStatus::Declined:
+      payload.set("resolution", "declined");
+      break;
+    case InviteStatus::Blocked:
+      payload.set("resolution", "blocked");
+      break;
+    default:
+      payload.set("resolution", "resolved");
+      break;
   }
   message.payload_json = DumpJson(payload);
   message.text = status_text;

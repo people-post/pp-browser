@@ -14,9 +14,7 @@ namespace {
 TEST(FailoverDirectoryClientTest, FallsBackWhenTheFirstBackendFails) {
   class FakeHttpDirectory : public mesh::IDirectoryClient {
   public:
-    Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override {
-      return Error("unused");
-    }
+    Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override { return Error("unused"); }
     Roe<mesh::DirectoryHit> LookupRelayUser(const std::string&) override { return Error("unused"); }
     Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override { return Error("unused"); }
     Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override {
@@ -32,12 +30,8 @@ TEST(FailoverDirectoryClientTest, FallsBackWhenTheFirstBackendFails) {
     Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override {
       return Error("amp person unsupported");
     }
-    Roe<mesh::DirectoryHit> LookupRelayUser(const std::string&) override {
-      return Error("amp person unsupported");
-    }
-    Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override {
-      return Error("amp person unsupported");
-    }
+    Roe<mesh::DirectoryHit> LookupRelayUser(const std::string&) override { return Error("amp person unsupported"); }
+    Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override { return Error("amp person unsupported"); }
     Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override { return Error("amp unavailable"); }
   };
 

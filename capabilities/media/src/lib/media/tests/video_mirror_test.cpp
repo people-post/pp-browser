@@ -41,8 +41,8 @@ TEST(VideoMirrorTest, RowsStayInPlaceAndPixelsKeepTheirChannels) {
   VideoFrameRgba frame;
   frame.width = 2;
   frame.height = 2;
-  frame.rgba = {1, 2, 3, 4, 5, 6, 7, 8,  // row 0
-                9, 10, 11, 12, 13, 14, 15, 16};  // row 1
+  frame.rgba = {1, 2,  3,  4,  5,  6,  7,  8,   // row 0
+                9, 10, 11, 12, 13, 14, 15, 16}; // row 1
   MirrorRgbaInPlace(frame);
   EXPECT_EQ(frame.rgba, (std::vector<uint8_t>{5, 6, 7, 8, 1, 2, 3, 4, 13, 14, 15, 16, 9, 10, 11, 12}));
 }

@@ -61,8 +61,8 @@ void SetDp(ui::Element* element, const char* property, const float dp) {
 
 } // namespace
 
-void ShellCallChromeGesture::Attach(ui::Element* root, ui::Context* context, CallChromeMode mode,
-                                    Callbacks callbacks, ShellGestureAxisLock* axis_lock) {
+void ShellCallChromeGesture::Attach(ui::Element* root, ui::Context* context, CallChromeMode mode, Callbacks callbacks,
+                                    ShellGestureAxisLock* axis_lock) {
   Detach();
   if (!root || !context) {
     return;
@@ -208,8 +208,8 @@ bool ShellCallChromeGesture::ShouldIgnoreOutsideDismiss(ui::Element* target) con
     if (id == "shell-call-ring-mount" || id == "shell-dialog-mount" || id == "shell-pin-gate-mount") {
       return true;
     }
-    if (node->IsClassSet("shell-overlay-chrome-mount") ||
-        node->IsClassSet("shell-sheet-scrim") || node->IsClassSet("shell-scrim")) {
+    if (node->IsClassSet("shell-overlay-chrome-mount") || node->IsClassSet("shell-sheet-scrim") ||
+        node->IsClassSet("shell-scrim")) {
       return true;
     }
   }
@@ -602,7 +602,8 @@ void ShellCallChromeGesture::Reflow(const CallInProgressState& call) {
     }
     FinishSlide(); // its Animationend never came
   }
-  const CallChipPlace place = target_ ? *target_ : CallChipPlace{call.minimized_side, call.minimized_y_permille, call.minimized_tucked};
+  const CallChipPlace place =
+      target_ ? *target_ : CallChipPlace{call.minimized_side, call.minimized_y_permille, call.minimized_tucked};
   if (place.side == CallChipDock::kSideDefault) {
     return;
   }
@@ -710,8 +711,8 @@ void ShellCallChromeGesture::UpdateDrag(int x_px, int y_px, ui::Event& /*event*/
   const int dy_px = y_px - drag_start_y_px_;
 
   if (mode_ == CallChromeMode::Minimized) {
-    const float dist_dp = std::sqrt(PixelDeltaToDp(dx_px) * PixelDeltaToDp(dx_px) +
-                                    PixelDeltaToDp(dy_px) * PixelDeltaToDp(dy_px));
+    const float dist_dp =
+        std::sqrt(PixelDeltaToDp(dx_px) * PixelDeltaToDp(dx_px) + PixelDeltaToDp(dy_px) * PixelDeltaToDp(dy_px));
     if (!dragging_) {
       if (dist_dp <= kTapSlopDp) {
         return;
@@ -727,8 +728,8 @@ void ShellCallChromeGesture::UpdateDrag(int x_px, int y_px, ui::Event& /*event*/
 
   // Expanded, and a drag over the phone group's members: only a drag (no click); never a mode change.
   if (mode_ == CallChromeMode::Expanded || members_drag_) {
-    const float dist_dp = std::sqrt(PixelDeltaToDp(dx_px) * PixelDeltaToDp(dx_px) +
-                                    PixelDeltaToDp(dy_px) * PixelDeltaToDp(dy_px));
+    const float dist_dp =
+        std::sqrt(PixelDeltaToDp(dx_px) * PixelDeltaToDp(dx_px) + PixelDeltaToDp(dy_px) * PixelDeltaToDp(dy_px));
     if (!dragging_ && dist_dp > kTapSlopDp) {
       dragging_ = true;
       suppress_click_ = true;
@@ -832,83 +833,83 @@ void ShellCallChromeGesture::EndDrag() {
 
 void ShellCallChromeGesture::ProcessEvent(ui::Event& event) {
   switch (event.GetId()) {
-  case ui::EventId::Mousedown: {
-    if (tracking_) {
-      return;
-    }
-    if (suppress_click_) {
-      // The click the last drag held back never came (a touch that scrolled sends none): this press is a new tap.
-      suppress_click_ = false;
-      SetClickSuppress(false);
-    }
-    ui::Element* target = event.GetTargetElement();
-    if (mode_ == CallChromeMode::Minimized) {
+    case ui::EventId::Mousedown: {
+      if (tracking_) {
+        return;
+      }
+      if (suppress_click_) {
+        // The click the last drag held back never came (a touch that scrolled sends none): this press is a new tap.
+        suppress_click_ = false;
+        SetClickSuppress(false);
+      }
+      ui::Element* target = event.GetTargetElement();
+      if (mode_ == CallChromeMode::Minimized) {
+        if (!IsUnderRoot(target) || ShouldIgnoreTarget(target)) {
+          return;
+        }
+        if (settling_) {
+          FreezeChip(); // caught mid-slide: it stops under the finger, then follows it
+        }
+        BeginArm(EventMouseX(event), EventMouseY(event), target);
+        return;
+      }
+      if (mode_ == CallChromeMode::Immersive) {
+        // The phone group page's members (the grid, the spotlit one, the strip, the gaps between them): a swipe there
+        // looks through them and must never shrink the call (#94); a tap still spotlights the one tapped.
+        members_drag_ = IsUnderRoot(target) && !ShouldIgnoreTarget(target) && IsMemberArea(target);
+        if (!members_drag_ && !ShouldArmImmersivePullDown(target)) {
+          return;
+        }
+        BeginArm(EventMouseX(event), EventMouseY(event), target);
+        return;
+      }
+      // Expanded — only arm on call chrome under root, not buttons.
       if (!IsUnderRoot(target) || ShouldIgnoreTarget(target)) {
         return;
       }
-      if (settling_) {
-        FreezeChip(); // caught mid-slide: it stops under the finger, then follows it
-      }
       BeginArm(EventMouseX(event), EventMouseY(event), target);
-      return;
+      break;
     }
-    if (mode_ == CallChromeMode::Immersive) {
-      // The phone group page's members (the grid, the spotlit one, the strip, the gaps between them): a swipe there
-      // looks through them and must never shrink the call (#94); a tap still spotlights the one tapped.
-      members_drag_ = IsUnderRoot(target) && !ShouldIgnoreTarget(target) && IsMemberArea(target);
-      if (!members_drag_ && !ShouldArmImmersivePullDown(target)) {
-        return;
+    case ui::EventId::Mousemove:
+      if (tracking_) {
+        UpdateDrag(EventMouseX(event), EventMouseY(event), event);
       }
-      BeginArm(EventMouseX(event), EventMouseY(event), target);
-      return;
-    }
-    // Expanded — only arm on call chrome under root, not buttons.
-    if (!IsUnderRoot(target) || ShouldIgnoreTarget(target)) {
-      return;
-    }
-    BeginArm(EventMouseX(event), EventMouseY(event), target);
-    break;
-  }
-  case ui::EventId::Mousemove:
-    if (tracking_) {
-      UpdateDrag(EventMouseX(event), EventMouseY(event), event);
-    }
-    break;
-  case ui::EventId::Mouseup:
-    if (tracking_) {
-      EndDrag();
-    }
-    break;
-  case ui::EventId::Animationend:
-    // The slide's left and top end in the same frame: the first one anchors the chip on its side.
-    if (settling_ && event.GetTargetElement() == root_) {
-      const ui::String property = event.GetParameter<ui::String>("property", "");
-      if (property == "left" || property == "top") {
-        FinishSlide();
+      break;
+    case ui::EventId::Mouseup:
+      if (tracking_) {
+        EndDrag();
       }
-    }
-    break;
-  case ui::EventId::Click:
-    if (mode_ == CallChromeMode::Expanded && outside_tap_capture_) {
-      ui::Element* target = event.GetTargetElement();
-      if (!IsUnderRoot(target) && !ShouldIgnoreOutsideDismiss(target)) {
-        if (callbacks_.on_minimize) {
-          callbacks_.on_minimize();
+      break;
+    case ui::EventId::Animationend:
+      // The slide's left and top end in the same frame: the first one anchors the chip on its side.
+      if (settling_ && event.GetTargetElement() == root_) {
+        const ui::String property = event.GetParameter<ui::String>("property", "");
+        if (property == "left" || property == "top") {
+          FinishSlide();
         }
+      }
+      break;
+    case ui::EventId::Click:
+      if (mode_ == CallChromeMode::Expanded && outside_tap_capture_) {
+        ui::Element* target = event.GetTargetElement();
+        if (!IsUnderRoot(target) && !ShouldIgnoreOutsideDismiss(target)) {
+          if (callbacks_.on_minimize) {
+            callbacks_.on_minimize();
+          }
+          event.StopPropagation();
+          event.StopImmediatePropagation();
+          return;
+        }
+      }
+      if (suppress_click_) {
         event.StopPropagation();
         event.StopImmediatePropagation();
-        return;
+        suppress_click_ = false;
+        SetClickSuppress(false);
       }
-    }
-    if (suppress_click_) {
-      event.StopPropagation();
-      event.StopImmediatePropagation();
-      suppress_click_ = false;
-      SetClickSuppress(false);
-    }
-    break;
-  default:
-    break;
+      break;
+    default:
+      break;
   }
 }
 

@@ -22,16 +22,18 @@ AtAiParseResult MatchPrompt(const std::string& trimmed, const std::regex& patter
 AtAiParseResult ParseAtAiPrefix(const std::string& text) {
   // The prompt may span lines (a question with a quoted message under it), hence [\s\S] rather than '.'.
   const std::string trimmed = util::Trim(text);
-  if (auto result = MatchPrompt(trimmed, std::regex(R"(^@ai\+\+\s+([\s\S]+)$)", std::regex::icase), AtAiMode::SharedFull);
-      result.is_ai_invoke) {
-    return result;
-  }
-  if (auto result = MatchPrompt(trimmed, std::regex(R"(^@ai\+\s+([\s\S]+)$)", std::regex::icase), AtAiMode::SharedReply);
+  if (auto result =
+          MatchPrompt(trimmed, std::regex(R"(^@ai\+\+\s+([\s\S]+)$)", std::regex::icase), AtAiMode::SharedFull);
       result.is_ai_invoke) {
     return result;
   }
   if (auto result =
-          MatchPrompt(trimmed, std::regex(R"(^@ai\s+share\s+all\s+([\s\S]+)$)", std::regex::icase), AtAiMode::SharedFull);
+          MatchPrompt(trimmed, std::regex(R"(^@ai\+\s+([\s\S]+)$)", std::regex::icase), AtAiMode::SharedReply);
+      result.is_ai_invoke) {
+    return result;
+  }
+  if (auto result = MatchPrompt(trimmed, std::regex(R"(^@ai\s+share\s+all\s+([\s\S]+)$)", std::regex::icase),
+                                AtAiMode::SharedFull);
       result.is_ai_invoke) {
     return result;
   }

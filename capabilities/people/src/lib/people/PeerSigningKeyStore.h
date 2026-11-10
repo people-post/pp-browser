@@ -25,8 +25,7 @@ public:
    * not derive the identity it is filed under — or one filed under any other identity kind — is
    * refused, whoever offers it (directory, contact card, sync). False when refused.
    */
-  bool Put(const std::string& peer_identity_kind, const std::string& peer_identity_value,
-           PeerSigningKeyRecord record);
+  bool Put(const std::string& peer_identity_kind, const std::string& peer_identity_value, PeerSigningKeyRecord record);
   std::optional<PeerSigningKeyRecord> Get(const std::string& peer_identity_kind,
                                           const std::string& peer_identity_value) const;
   /** Tests whose fixtures use readable ids (`account:peer`) instead of derived ones: no binding check. */

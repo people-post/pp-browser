@@ -311,9 +311,9 @@ TEST_F(GroupInfoSheetTest, LeavingTheChatClosesTheSheet) {
 TEST(GroupInfoViewTest, TheMarkupUsesTheSharedSheetHeaderCardsAndRows) {
   const std::string rml = ReadAsset("views/group_info.rml");
   for (const char* part : {"class=\"sheet-header\"", "class=\"sheet-title\"", "data-model=\"group_info\"",
-                           "class=\"cd-card", "class=\"cd-row cd-row--danger\"", "data-event-click=\"group_info_leave()\"",
-                           "data-event-click=\"group_info_dissolve()\"", "group_info_member(member.identity)",
-                           "data-class-cd-act--on=\"muted\""}) {
+                           "class=\"cd-card", "class=\"cd-row cd-row--danger\"",
+                           "data-event-click=\"group_info_leave()\"", "data-event-click=\"group_info_dissolve()\"",
+                           "group_info_member(member.identity)", "data-class-cd-act--on=\"muted\""}) {
     EXPECT_NE(rml.find(part), std::string::npos) << part;
   }
   // Colours come from the theme: none written in the view.

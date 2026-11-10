@@ -53,8 +53,10 @@ TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAHiddenTab) {
   state.compact_chat_open = false;
   const std::string chats = ShellLayoutRml(state, false, "").ShellRoot();
   EXPECT_TRUE(Has(chats, "id=\"shell-bottom-chrome\""));
-  EXPECT_TRUE(Has(chats, "<div class=\"shell-nav-rail shell-nav-rail--compact shell-nav-rail--text\" "
-                         "id=\"shell-nav-rail-mount\">")) << "the two-word tab bar mounts here";
+  EXPECT_TRUE(Has(chats,
+                  "<div class=\"shell-nav-rail shell-nav-rail--compact shell-nav-rail--text\" "
+                  "id=\"shell-nav-rail-mount\">"))
+      << "the two-word tab bar mounts here";
   EXPECT_FALSE(Has(chats, "shell-nav-page--hidden-tab"));
 
   // DEV/PLAN-minimal-nav.md A: Settings (Me) fills the screen with its own back; TODO #200: the tab bar stays.
@@ -95,7 +97,9 @@ TEST(ShellLayoutRmlTest, ThePhoneTabBarHasTwoWordsAndTheDesktopRailFourTabs) {
 TEST(ShellLayoutRmlTest, TheTabBarIsOnlyOnTheAiAndChatsPages) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = false;
-  const auto bar_drawn = [&state]() { return Has(ShellLayoutRml(state, false, "").ShellRoot(), "shell-bottom-chrome"); };
+  const auto bar_drawn = [&state]() {
+    return Has(ShellLayoutRml(state, false, "").ShellRoot(), "shell-bottom-chrome");
+  };
   for (const NavTab tab : {NavTab::Home, NavTab::Sessions}) {
     state.nav_tab = tab;
     EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 48.f);
@@ -104,7 +108,7 @@ TEST(ShellLayoutRmlTest, TheTabBarIsOnlyOnTheAiAndChatsPages) {
   state.nav_tab = NavTab::Contacts;
   EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f);
   EXPECT_FALSE(bar_drawn());
-  state.nav_tab = NavTab::Me;  // Settings keeps the bar (TODO #200)
+  state.nav_tab = NavTab::Me; // Settings keeps the bar (TODO #200)
   EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 48.f);
   EXPECT_TRUE(bar_drawn());
   state.nav_tab = NavTab::Home;
@@ -193,8 +197,9 @@ TEST(ShellLayoutRmlTest, ThePhoneBacksAreRoundButtons) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = true;
   const std::string chat = ShellLayoutRml(state, false, "").ShellRoot();
-  EXPECT_TRUE(Has(chat, "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" "
-                        "data-event-click=\"compact_chat_back()\"><span class=\"shell-circle-btn-face\">"));
+  EXPECT_TRUE(Has(chat,
+                  "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" "
+                  "data-event-click=\"compact_chat_back()\"><span class=\"shell-circle-btn-face\">"));
   EXPECT_FALSE(Has(chat, "</svg>返回")) << "no word";
 
   state.compact_chat_open = false;
@@ -213,11 +218,13 @@ TEST(ShellLayoutRmlTest, ThePhoneBacksAreRoundButtons) {
   // The views' own backs: Settings' pages, the hidden tabs' roots, the group picker.
   const std::string settings = ReadAsset("views/settings.rml");
   EXPECT_EQ(Count(settings, "class=\"settings-back-btn shell-circle-btn\""), 2u);
-  EXPECT_TRUE(Has(settings, "class=\"pane-nav-back shell-circle-btn\" type=\"button\" data-model=\"window\" "
-                            "data-event-click=\"hidden_tab_back()\""));
+  EXPECT_TRUE(Has(settings,
+                  "class=\"pane-nav-back shell-circle-btn\" type=\"button\" data-model=\"window\" "
+                  "data-event-click=\"hidden_tab_back()\""));
   EXPECT_TRUE(Has(settings, "{{i18n:settings.title}}"));
-  EXPECT_TRUE(Has(ReadAsset("views/contacts.rml"), "class=\"pane-nav-back shell-circle-btn\" type=\"button\" "
-                                                   "data-model=\"window\" data-event-click=\"hidden_tab_back()\""));
+  EXPECT_TRUE(Has(ReadAsset("views/contacts.rml"),
+                  "class=\"pane-nav-back shell-circle-btn\" type=\"button\" "
+                  "data-model=\"window\" data-event-click=\"hidden_tab_back()\""));
   EXPECT_TRUE(Has(ReadAsset("views/people_picker.rml"),
                   "class=\"shell-circle-btn people-picker-back-circle\" type=\"button\" "
                   "data-event-click=\"back_picker()\""));
@@ -241,8 +248,9 @@ TEST(ShellLayoutRmlTest, ThePhoneBacksAreRoundButtons) {
 TEST(ShellLayoutRmlTest, ThePhoneTabBarIs48dpWith16dpWords) {
   // DEV/PLAN-minimal-nav.md A (Kenneth 2026-11-07): two words, the chosen one bold.
   const std::string css = ReadAsset("themes/components.rcss");
-  const size_t bar = css.find(".shell-nav-rail--text,\n.shell-nav-rail--text .shell-nav-rail-inner,\n"
-                              ".shell-nav-rail--text .shell-nav-tab {");
+  const size_t bar = css.find(
+      ".shell-nav-rail--text,\n.shell-nav-rail--text .shell-nav-rail-inner,\n"
+      ".shell-nav-rail--text .shell-nav-tab {");
   ASSERT_NE(bar, std::string::npos);
   EXPECT_EQ(css.find("height: 48dp;", bar), css.find("height:", bar));
   const size_t label = css.find(".shell-nav-rail--text .shell-nav-tab-label {");
@@ -252,9 +260,11 @@ TEST(ShellLayoutRmlTest, ThePhoneTabBarIs48dpWith16dpWords) {
   ASSERT_NE(active, std::string::npos);
   EXPECT_EQ(css.find("font-weight: bold;", active), css.find("font-weight:", active));
   // The chosen word sits on a 72 x 32dp rounded pill (its colour is a token in colors-*.rcss).
-  const size_t wrap = css.find(".shell-nav-rail--text .shell-nav-tab-text-wrap {\n  width: 72dp;\n  height: 32dp;\n  border-radius: 16dp;");
+  const size_t wrap = css.find(
+      ".shell-nav-rail--text .shell-nav-tab-text-wrap {\n  width: 72dp;\n  height: 32dp;\n  border-radius: 16dp;");
   EXPECT_NE(wrap, std::string::npos);
-  EXPECT_NE(ReadAsset("themes/colors-light.rcss").find(".shell-nav-rail--text .shell-nav-tab--active .shell-nav-tab-text-wrap {"),
+  EXPECT_NE(ReadAsset("themes/colors-light.rcss")
+                .find(".shell-nav-rail--text .shell-nav-tab--active .shell-nav-tab-text-wrap {"),
             std::string::npos);
 }
 
@@ -472,9 +482,9 @@ TEST(ShellLayoutRmlTest, ThePinPadHasNoFieldAndTheFieldModeFocusesItsField) {
   EXPECT_TRUE(Has(field, "pin_gate_use_keypad()"));
   EXPECT_TRUE(ShellLayoutRml::PinGateFocusesField(state.pin_gate));
 
-  for (bool PinGateState::*mode : {&PinGateState::chooser_mode, &PinGateState::identity_fork_mode,
-                                   &PinGateState::link_paste_mode, &PinGateState::waiting_device_unlock,
-                                   &PinGateState::biometric_first}) {
+  for (bool PinGateState::* mode :
+       {&PinGateState::chooser_mode, &PinGateState::identity_fork_mode, &PinGateState::link_paste_mode,
+        &PinGateState::waiting_device_unlock, &PinGateState::biometric_first}) {
     PinGateState gate = state.pin_gate;
     gate.*mode = true;
     EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(gate)) << "no PIN field to type in there";
@@ -491,8 +501,9 @@ TEST(ShellLayoutRmlTest, TheBiometricKeyLinkAndHintFollowTheirFields) {
   state.pin_gate.unlock_mode = true;
   state.pin_gate.keypad = true;
   const std::string pad = ShellLayoutRml(state, false, "").PinGate();
-  EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_key && !pin_gate_keypad_ok_shown\" "
-                       "data-event-click=\"pin_gate_biometric()\""));
+  EXPECT_TRUE(Has(pad,
+                  "data-if=\"pin_gate_biometric_key && !pin_gate_keypad_ok_shown\" "
+                  "data-event-click=\"pin_gate_biometric()\""));
   EXPECT_TRUE(Has(pad, "data-if=\"!pin_gate_keypad_ok_shown && !pin_gate_biometric_key\"")) << "else the blank";
   EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_kind == 'face'\" src=\"../icons/v2/face-id.svg\""));
   EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_kind != 'face'\" src=\"../icons/v2/fingerprint.svg\""));

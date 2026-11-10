@@ -6,7 +6,9 @@ namespace pbr {
 namespace {
 
 // PP助手 (AI conversations) and Chats (people) keep separate archive views that never mix.
-ArchiveItem Human(const bool archived) { return {.is_ai = false, .listed = true, .archived = archived}; }
+ArchiveItem Human(const bool archived) {
+  return {.is_ai = false, .listed = true, .archived = archived};
+}
 ArchiveItem Ai(const bool archived, const bool listed = true) {
   return {.is_ai = true, .listed = listed, .archived = archived};
 }

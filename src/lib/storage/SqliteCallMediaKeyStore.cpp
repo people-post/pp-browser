@@ -69,7 +69,7 @@ Roe<sqlite3*> SqliteCallMediaKeyStore::OpenDb() const {
 }
 
 Roe<std::string> SqliteCallMediaKeyStore::PutEpochKey(const std::string& call_id, const uint32_t media_epoch,
-                                               const ByteVector& key_bytes) {
+                                                      const ByteVector& key_bytes) {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();
   }
@@ -110,7 +110,7 @@ Roe<std::string> SqliteCallMediaKeyStore::PutEpochKey(const std::string& call_id
 }
 
 Roe<std::optional<ByteVector>> SqliteCallMediaKeyStore::LoadEpochKey(const std::string& call_id,
-                                                              const uint32_t media_epoch) const {
+                                                                     const uint32_t media_epoch) const {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();
   }

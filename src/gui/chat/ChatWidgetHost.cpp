@@ -148,8 +148,7 @@ std::optional<ChatWidgetHost::FormSubmission> ChatWidgetHost::TrySubmit(const st
 
   const std::map<std::string, std::string> values = FormValuesMap(widgets->form);
   FormSubmission submission;
-  submission.display_text =
-      ApplySubmitTemplate(std::string(widgets->form.submit_template.c_str()), values);
+  submission.display_text = ApplySubmitTemplate(std::string(widgets->form.submit_template.c_str()), values);
   submission.payload = BuildFormSubmissionPayload(form_id, values);
 
   submitted_forms_.insert({entry_id, form_id});
@@ -167,8 +166,7 @@ bool ChatWidgetHost::ShiftCalendar(const std::string& entry_id, const int delta_
   return true;
 }
 
-bool ChatWidgetHost::IsCalendarDayAvailable(const std::string& entry_id,
-                                            const std::string& iso_date) const {
+bool ChatWidgetHost::IsCalendarDayAvailable(const std::string& entry_id, const std::string& iso_date) const {
   const TurnWidgetState* widgets = Find(entry_id);
   if (!widgets || !widgets->has_calendar) {
     return false;

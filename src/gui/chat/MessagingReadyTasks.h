@@ -181,7 +181,8 @@ auto RunSharedBriefKeyRenewal(CoalescedRun& run, const std::chrono::milliseconds
     if (stopped()) {
       return std::nullopt;
     }
-    const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+    const auto left =
+        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
     if (left.count() <= 0) {
       break;
     }

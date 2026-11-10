@@ -32,7 +32,7 @@ struct InboxTestEnv {
     data_dir = std::filesystem::temp_directory_path() / ("pp_browser_inbox_" + suffix);
     std::filesystem::remove_all(data_dir);
     store = std::make_unique<InMemoryDeliveryStore>();
-    store->SetHiddenInDirectThread(&GroupMembershipCodec::IsHiddenInDirectThread);  // as the app's storage does
+    store->SetHiddenInDirectThread(&GroupMembershipCodec::IsHiddenInDirectThread); // as the app's storage does
     if (!store->SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
     }
@@ -274,7 +274,8 @@ TEST(InboxControllerUnreadTest, ADirectChatMadeOnlyByGroupEventsIsNotListedUntil
   InboxTestEnv env("control_only");
   ASSERT_TRUE(env.inbox->ListThreads());
   const Thread direct = EventChat(env, "account:bob");
-  ASSERT_TRUE(env.store->AppendMessage(Event(direct, GroupMembershipControlType::MemberRemoved, direct.updated_at + 5000)));
+  ASSERT_TRUE(
+      env.store->AppendMessage(Event(direct, GroupMembershipControlType::MemberRemoved, direct.updated_at + 5000)));
   auto after = env.store->GetThread(direct.id);
   ASSERT_TRUE(after && *after);
   EXPECT_TRUE((*after)->preview.empty()) << "the event is not the preview";
@@ -288,7 +289,8 @@ TEST(InboxControllerUnreadTest, ADirectChatMadeOnlyByGroupEventsIsNotListedUntil
   EXPECT_EQ((*listed)[0].preview, "hi there");
 
   // A later event leaves the last readable message as the preview.
-  ASSERT_TRUE(env.store->AppendMessage(Event(direct, GroupMembershipControlType::GroupRenamed, direct.updated_at + 7000)));
+  ASSERT_TRUE(
+      env.store->AppendMessage(Event(direct, GroupMembershipControlType::GroupRenamed, direct.updated_at + 7000)));
   EXPECT_EQ((*env.inbox->ListThreads())[0].preview, "hi there");
 }
 
@@ -299,7 +301,8 @@ TEST(InboxControllerUnreadTest, ARealChatNeverVanishesNotEvenClearedAndRenamed) 
   ASSERT_TRUE(env.store->AppendMessage(Said(direct, "m-1", "hello", direct.updated_at + 1000)));
   ASSERT_EQ(env.inbox->ListThreads()->size(), 1u);
   ASSERT_TRUE(env.inbox->ClearThreadHistory(direct.id, /*forget_memory=*/false));
-  ASSERT_TRUE(env.store->AppendMessage(Event(direct, GroupMembershipControlType::GroupRenamed, direct.updated_at + 9000)));
+  ASSERT_TRUE(
+      env.store->AppendMessage(Event(direct, GroupMembershipControlType::GroupRenamed, direct.updated_at + 9000)));
   EXPECT_EQ(env.inbox->ListThreads()->size(), 1u) << "cleared, then only an event in it: still the user's chat";
 }
 
@@ -310,10 +313,11 @@ TEST(InboxControllerUnreadTest, AnOpenedOrPinnedEmptyChatStaysListed) {
   const Thread pinned = EventChat(env, "account:pinned");
   const Thread untouched = EventChat(env, "account:untouched");
   EXPECT_TRUE(env.inbox->ListThreads()->empty());
-  ASSERT_TRUE(env.inbox->OpenThread(started.id));  // the user started a chat with a contact
+  ASSERT_TRUE(env.inbox->OpenThread(started.id)); // the user started a chat with a contact
   env.inbox->ClearActiveThread();
-  env.inbox->KeepListed(pinned.id);  // what pinning does
-  ASSERT_TRUE(env.store->AppendMessage(Event(started, GroupMembershipControlType::MemberLeft, started.updated_at + 100)));
+  env.inbox->KeepListed(pinned.id); // what pinning does
+  ASSERT_TRUE(
+      env.store->AppendMessage(Event(started, GroupMembershipControlType::MemberLeft, started.updated_at + 100)));
   std::set<std::string> ids;
   const auto listed = env.inbox->ListThreads();
   ASSERT_TRUE(listed);
@@ -329,7 +333,8 @@ TEST(InboxControllerUnreadTest, ALongRunOfEventsOnTopOfHistoryStillShowsTheHisto
   ASSERT_TRUE(env.inbox->ListThreads());
   const Thread direct = EventChat(env, "account:bob");
   for (int i = 0; i < 10; ++i) {
-    ASSERT_TRUE(env.store->AppendMessage(Said(direct, "m-" + std::to_string(i), "real " + std::to_string(i), 1000 + i)));
+    ASSERT_TRUE(
+        env.store->AppendMessage(Said(direct, "m-" + std::to_string(i), "real " + std::to_string(i), 1000 + i)));
   }
   for (int i = 0; i < 150; ++i) {
     ASSERT_TRUE(env.store->AppendMessage(Event(direct, GroupMembershipControlType::GroupRenamed, 2000 + i)));
@@ -432,7 +437,6 @@ TEST(InboxControllerUnreadTest, SenderIconResolvesANonContactAccountThroughTheId
   EXPECT_EQ(facts.sender_icon("account:stranger"), expected);
   EXPECT_TRUE(facts.sender_icon("account:nobody").empty());
 }
-
 
 } // namespace
 } // namespace pbr

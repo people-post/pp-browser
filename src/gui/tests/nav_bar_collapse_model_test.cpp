@@ -41,7 +41,7 @@ TEST(NavBarCollapseModelTest, TheThresholdsCountFromWhereTheUserTurned) {
   Model::Bar bar;
   bar.OnScroll(600.f);
   ASSERT_TRUE(bar.hidden);
-  bar.OnScroll(900.f);  // further away
+  bar.OnScroll(900.f); // further away
   EXPECT_FALSE(bar.OnScroll(880.f));
   EXPECT_TRUE(bar.hidden) << "back 20dp from the furthest point: still hidden";
   EXPECT_TRUE(bar.OnScroll(860.f));

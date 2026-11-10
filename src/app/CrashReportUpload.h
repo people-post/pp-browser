@@ -11,9 +11,7 @@ namespace pbr {
  * When consent is off, leaves the file for a later opt-in restart.
  * Blocks on HTTP (up to 30 s): call it from a worker, never the main thread.
  */
-void MaybeUploadPendingCrashReport(const std::string& data_dir,
-                                   const std::string& profile_data_dir,
-                                   bool crash_reports_enabled,
-                                   const std::string& relay_base_url);
+void MaybeUploadPendingCrashReport(const std::string& data_dir, const std::string& profile_data_dir,
+                                   bool crash_reports_enabled, const std::string& relay_base_url);
 
 } // namespace pbr

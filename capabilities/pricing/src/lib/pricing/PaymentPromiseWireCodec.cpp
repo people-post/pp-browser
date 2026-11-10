@@ -9,12 +9,12 @@ namespace pbr {
 
 std::string PaymentPromiseWireCodec::ControlTypeToWire(const PaymentPromiseControlType type) {
   switch (type) {
-  case PaymentPromiseControlType::PromiseOffer:
-    return "promise_offer";
-  case PaymentPromiseControlType::PromiseAccept:
-    return "promise_accept";
-  case PaymentPromiseControlType::PromiseOutcome:
-    return "promise_outcome";
+    case PaymentPromiseControlType::PromiseOffer:
+      return "promise_offer";
+    case PaymentPromiseControlType::PromiseAccept:
+      return "promise_accept";
+    case PaymentPromiseControlType::PromiseOutcome:
+      return "promise_outcome";
   }
   return "promise_offer";
 }
@@ -32,8 +32,7 @@ std::optional<PaymentPromiseControlType> PaymentPromiseWireCodec::ControlTypeFro
   return std::nullopt;
 }
 
-std::optional<PaymentPromiseControlType> PaymentPromiseWireCodec::ControlTypeFromMessage(
-    const ThreadMessage& message) {
+std::optional<PaymentPromiseControlType> PaymentPromiseWireCodec::ControlTypeFromMessage(const ThreadMessage& message) {
   auto json = TryParseObject(message.payload_json);
   if (!json) {
     return std::nullopt;

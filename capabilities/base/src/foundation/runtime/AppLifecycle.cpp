@@ -97,12 +97,12 @@ void ReconcileWorkLocked() {
   }
   g_work_paused = pause;
   if (pause) {
-    AppRuntime::PauseBackgroundWork();  // push only (P010)
+    AppRuntime::PauseBackgroundWork(); // push only (P010)
     AppLifecycle::logger().info << "Background: work paused (push only)";
   } else {
     AppRuntime::ResumeBackgroundWork();
-    AppLifecycle::logger().info << "Background: work runs (" << (KeepsWorkingReason() ? KeepsWorkingReason() : "foreground")
-                                << ")";
+    AppLifecycle::logger().info << "Background: work runs ("
+                                << (KeepsWorkingReason() ? KeepsWorkingReason() : "foreground") << ")";
   }
 }
 
@@ -153,8 +153,7 @@ bool AppLifecycle::IsUserAttentive() {
 void AppLifecycle::SetDesktopInputFocused(bool focused) {
   const bool prev = g_desktop_input_focused.exchange(focused, std::memory_order_relaxed);
   if (prev != focused) {
-    logger().info
-        << "Desktop input focus=" << (focused ? "gained" : "lost");
+    logger().info << "Desktop input focus=" << (focused ? "gained" : "lost");
   }
 }
 
@@ -177,7 +176,7 @@ void AppLifecycle::SetStayConnected(const bool on) {
     return;
   }
   logger().info << "Stay connected in the background: " << (on ? "on" : "off");
-  ReconcileWork();  // already in the background: follow the setting now
+  ReconcileWork(); // already in the background: follow the setting now
   std::vector<std::function<void(bool)>> listeners;
   {
     std::lock_guard lock(g_listeners_mu);
@@ -231,7 +230,7 @@ void AppLifecycle::OpenWakeWindow(const std::chrono::milliseconds window) {
   AppRuntime::ScheduleCoordinatorOneShot(window, [generation]() {
     std::lock_guard lock(g_work_mu);
     if (g_wake_window != generation) {
-      return;  // a newer window replaced it
+      return; // a newer window replaced it
     }
     g_wake_window = 0;
     ReconcileWorkLocked();

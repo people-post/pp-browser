@@ -90,7 +90,7 @@ std::optional<std::string> PeerRouteBook::ResolveWithDirectory(const Thread& thr
   }
   NoteAccountRoute(thread.peer_identity_value, *relay);
   if (shadows_) {
-    shadows_->Put(*hit);  // the directory's own answer
+    shadows_->Put(*hit); // the directory's own answer
   }
   return relay;
 }

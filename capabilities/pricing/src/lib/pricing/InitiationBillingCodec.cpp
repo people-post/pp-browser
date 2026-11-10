@@ -8,12 +8,12 @@ namespace pbr {
 
 std::string InitiationBillingCodec::ControlTypeToWire(const InitiationBillingControlType type) {
   switch (type) {
-  case InitiationBillingControlType::ChargeRequired:
-    return "charge_required";
-  case InitiationBillingControlType::InitiationOffer:
-    return "initiation_offer";
-  case InitiationBillingControlType::InitiationAccept:
-    return "initiation_accept";
+    case InitiationBillingControlType::ChargeRequired:
+      return "charge_required";
+    case InitiationBillingControlType::InitiationOffer:
+      return "initiation_offer";
+    case InitiationBillingControlType::InitiationAccept:
+      return "initiation_accept";
   }
   return "charge_required";
 }

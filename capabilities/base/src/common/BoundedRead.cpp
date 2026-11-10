@@ -27,7 +27,9 @@ Roe<Buffer> ReadUpTo(std::istream& in, const size_t max_bytes) {
 
 } // namespace
 
-Roe<std::string> ReadBounded(std::istream& in, const size_t max_bytes) { return ReadUpTo<std::string>(in, max_bytes); }
+Roe<std::string> ReadBounded(std::istream& in, const size_t max_bytes) {
+  return ReadUpTo<std::string>(in, max_bytes);
+}
 
 Roe<std::vector<uint8_t>> ReadBoundedBytes(std::istream& in, const size_t max_bytes) {
   return ReadUpTo<std::vector<uint8_t>>(in, max_bytes);

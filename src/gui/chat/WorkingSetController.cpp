@@ -72,8 +72,7 @@ void WorkingSetController::ShowUnavailable(const std::string& entry_id) {
   shell_.working_set_active = true;
   shell_.working_set_title = Tr("working_set.unavailable_title").c_str();
   shell_.working_set_subtitle = "";
-  shell_.working_set_rml =
-      ui::String(("<p class=\"muted\">" + Tr("working_set.unavailable_body") + "</p>").c_str());
+  shell_.working_set_rml = ui::String(("<p class=\"muted\">" + Tr("working_set.unavailable_body") + "</p>").c_str());
   active_affinity_ = WorkingSetAffinity::None;
   active_entry_id_ = entry_id;
   shell_.working_set = {};
@@ -153,8 +152,7 @@ void WorkingSetController::ApplyFromParse(const std::string& entry_id,
   }
 
   const bool same_task = shell_.working_set_active && active_entry_id_ == entry_id &&
-                         active_affinity_ == primary->affinity &&
-                         active_affinity_ != WorkingSetAffinity::None;
+                         active_affinity_ == primary->affinity && active_affinity_ != WorkingSetAffinity::None;
 
   shell_.working_set_active = true;
   shell_.working_set_title = ui::String(primary->title.c_str());
@@ -167,8 +165,7 @@ void WorkingSetController::ApplyFromParse(const std::string& entry_id,
   if (shell_navigation_.set_auxiliary_available) {
     shell_navigation_.set_auxiliary_available(true);
   }
-  const bool auxiliary_open =
-      shell_navigation_.snapshot ? shell_navigation_.snapshot().auxiliary_open : false;
+  const bool auxiliary_open = shell_navigation_.snapshot ? shell_navigation_.snapshot().auxiliary_open : false;
   if (!same_task || !auxiliary_open) {
     if (shell_navigation_.open_auxiliary) {
       shell_navigation_.open_auxiliary();
@@ -177,9 +174,9 @@ void WorkingSetController::ApplyFromParse(const std::string& entry_id,
   Dirty();
 }
 
-std::vector<WorkingSetCandidate> WorkingSetController::RestoreEntry(
-    const std::string& entry_id, const std::vector<WorkingSetCandidate>& candidates,
-    std::vector<TranscriptChatAction> chat_actions) {
+std::vector<WorkingSetCandidate> WorkingSetController::RestoreEntry(const std::string& entry_id,
+                                                                    const std::vector<WorkingSetCandidate>& candidates,
+                                                                    std::vector<TranscriptChatAction> chat_actions) {
   if (entry_id.empty() || candidates.empty()) {
     return {};
   }

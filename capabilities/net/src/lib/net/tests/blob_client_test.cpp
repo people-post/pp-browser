@@ -16,7 +16,6 @@ struct Endpoints {
   pbr::ServiceEndpointConfig registration;
 };
 
-
 TEST(BlobClientTest, MockUploadRelayBlobBytesPresignPutRetain) {
   MockBlobClient blob;
   const std::string body = "encrypted-bytes";
@@ -39,8 +38,8 @@ TEST(BlobClientTest, OrgBackendClientFactoryCreatesBlobClient) {
 namespace {
 
 Error Fail(const int status, const std::string& error_text) {
-  const auto result = CheckBlobResponse(
-      HttpResponse{.status_code = status, .body = error_text.empty() ? "oops" : R"({"error":")" + error_text + R"("})"});
+  const auto result = CheckBlobResponse(HttpResponse{
+      .status_code = status, .body = error_text.empty() ? "oops" : R"({"error":")" + error_text + R"("})"});
   EXPECT_FALSE(static_cast<bool>(result)) << status;
   return result ? Error() : result.error();
 }

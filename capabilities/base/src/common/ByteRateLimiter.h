@@ -41,8 +41,7 @@ public:
       tokens_ = static_cast<double>(burst_bytes_);
     } else if (now_ms > last_ms_) {
       const double elapsed_s = static_cast<double>(now_ms - last_ms_) / 1000.0;
-      tokens_ = std::min(static_cast<double>(burst_bytes_),
-                         tokens_ + elapsed_s * static_cast<double>(rate_bps_) / 8.0);
+      tokens_ = std::min(static_cast<double>(burst_bytes_), tokens_ + elapsed_s * static_cast<double>(rate_bps_) / 8.0);
       last_ms_ = now_ms;
     }
     if (tokens_ < static_cast<double>(bytes)) {

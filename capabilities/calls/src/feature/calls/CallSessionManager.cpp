@@ -47,23 +47,23 @@ Roe<void> CallSessionManager::LeaveCall(const std::string& call_id, const LiveCa
 
 void CallSessionManager::Apply(const CallLifecycleEvent ev, const std::string& call_id) {
   switch (ev) {
-  case CallLifecycleEvent::AcceptClicked:
-    ClickAccept(call_id);
-    return;
-  case CallLifecycleEvent::DeclineClicked:
-    ClickDecline(call_id);
-    return;
-  case CallLifecycleEvent::LeaveClicked:
-    ClickLeave(call_id);
-    return;
-  case CallLifecycleEvent::RetryClicked:
-    device_.RestartMedia(call_id, false);
-    return;
-  case CallLifecycleEvent::InviteSeen:
-  case CallLifecycleEvent::InviteCleared:
-    // The ring is the LiveCall's: nothing to change, only to show.
-    device_.NotifyCallStateChanged();
-    return;
+    case CallLifecycleEvent::AcceptClicked:
+      ClickAccept(call_id);
+      return;
+    case CallLifecycleEvent::DeclineClicked:
+      ClickDecline(call_id);
+      return;
+    case CallLifecycleEvent::LeaveClicked:
+      ClickLeave(call_id);
+      return;
+    case CallLifecycleEvent::RetryClicked:
+      device_.RestartMedia(call_id, false);
+      return;
+    case CallLifecycleEvent::InviteSeen:
+    case CallLifecycleEvent::InviteCleared:
+      // The ring is the LiveCall's: nothing to change, only to show.
+      device_.NotifyCallStateChanged();
+      return;
   }
 }
 
@@ -128,7 +128,7 @@ void CallSessionManager::ClickDecline(const std::string& call_id_arg) {
   }
   if (auto declined = DeclineInvite(call_id); !declined) {
     log().warning << "DeclineInvite failed call_id=" << call_id << " err=" << declined.error().message;
-    live_calls_.Close(call_id, LiveCallEndReason::Declined);  // the ring goes either way
+    live_calls_.Close(call_id, LiveCallEndReason::Declined); // the ring goes either way
   }
   device_.NotifyCallStateChanged();
 }
@@ -146,7 +146,7 @@ void CallSessionManager::ClickLeave(const std::string& call_id_arg) {
   }
   if (auto left = device_.LeaveCall(call_id); !left) {
     log().warning << "LeaveCall failed call_id=" << call_id << " err=" << left.error().message;
-    live_calls_.Close(call_id, LiveCallEndReason::LocalLeave);  // the call leaves the screen either way
+    live_calls_.Close(call_id, LiveCallEndReason::LocalLeave); // the call leaves the screen either way
   }
   device_.NotifyCallStateChanged();
 }
@@ -236,8 +236,7 @@ Roe<void> CallSessionManager::SetLocalVideoPaused(const bool paused, const int d
   return workflow_.PublishLocalMedia(call_id, *local, media);
 }
 
-Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
-                                                 const std::string& publisher_identity) {
+Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity) {
   auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
@@ -269,12 +268,12 @@ Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_
                                                const std::vector<std::string>& invitee_identities) {
   // Calling someone whose call is ringing here is answering it (they got there first).
   if (invitee_identities.size() == 1) {
-    if (auto pending = workflow_.TopPendingInvite(); pending && pending->has_value() &&
-        (*pending)->inviter_identity == invitee_identities.front() &&
+    if (auto pending = workflow_.TopPendingInvite();
+        pending && pending->has_value() && (*pending)->inviter_identity == invitee_identities.front() &&
         !((*pending)->origin_group_id && !(*pending)->origin_group_id->empty())) {
       const std::string call_id = (*pending)->call_id;
-      log().info << "StartCall to " << invitee_identities.front() << " while their call rings — answering call_id="
-                 << call_id;
+      log().info << "StartCall to " << invitee_identities.front()
+                 << " while their call rings — answering call_id=" << call_id;
       workflow_.SetPendingAcceptVoiceOnly(!video_allowed);
       ClickAccept(call_id);
       if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
@@ -291,7 +290,6 @@ Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_
   return started;
 }
 
-
 Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, const std::string& invitee_identity) {
   return workflow_.InviteParticipant(call_id, invitee_identity);
 }
@@ -303,7 +301,6 @@ Roe<void> CallSessionManager::RemoveFromCall(const std::string& call_id, const s
 void CallSessionManager::SetPendingAcceptChargeDecision(const InitiationChargeDecision decision) {
   workflow_.SetPendingAcceptChargeDecision(decision);
 }
-
 
 void CallSessionManager::SetPendingAcceptVoiceOnly(const bool voice_only) {
   workflow_.SetPendingAcceptVoiceOnly(voice_only);
@@ -326,9 +323,9 @@ void CallSessionManager::TellOwnDevicesAnswered(const std::string& call_id, cons
   if (!local || !detail) {
     return;
   }
-  auto control = CallControlCodec::BuildSystemMessage("", CallControlType::CallAnsweredElsewhere,
-                                                      accepted ? "Answered on another device" : "Declined on another device",
-                                                      *detail, *local);
+  auto control = CallControlCodec::BuildSystemMessage(
+      "", CallControlType::CallAnsweredElsewhere,
+      accepted ? "Answered on another device" : "Declined on another device", *detail, *local);
   if (!control) {
     return;
   }
@@ -337,7 +334,8 @@ void CallSessionManager::TellOwnDevicesAnswered(const std::string& call_id, cons
   }
 }
 
-Roe<void> CallSessionManager::HandleAnsweredElsewhere(const std::string& detail_json, const std::string& sender_identity,
+Roe<void> CallSessionManager::HandleAnsweredElsewhere(const std::string& detail_json,
+                                                      const std::string& sender_identity,
                                                       const std::string& local_identity) {
   if (sender_identity != local_identity) {
     log().info << "call_answered_elsewhere dropped: not from our own account (" << sender_identity << ")";
@@ -350,10 +348,6 @@ Roe<void> CallSessionManager::HandleAnsweredElsewhere(const std::string& detail_
   return workflow_.StopRingingAnsweredElsewhere(answered->first, local_identity);
 }
 
-
-
-
-
 Roe<void> CallSessionManager::DeclineInvite(const std::string& call_id) {
   auto declined = workflow_.DeclineInvite(call_id);
   if (declined) {
@@ -365,7 +359,6 @@ Roe<void> CallSessionManager::DeclineInvite(const std::string& call_id) {
 void CallSessionManager::SweepExpiredInvites() {
   workflow_.SweepExpiredInvites();
 }
-
 
 void CallSessionManager::AbandonOrphanedCallsAfterRestart() {
   workflow_.AbandonOrphanedCallsAfterRestart();
@@ -384,38 +377,32 @@ void CallSessionManager::LeaveIfOrphaned(const std::string& call_id) {
   (void)device_.LeaveCall(call_id, LiveCallEndReason::Orphaned);
 }
 
-Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json,
-                                                  const std::string& sender_identity,
+Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
                                                   const ThreadMessage& message,
                                                   const std::optional<int64_t> relay_created_at_ms,
                                                   const std::optional<int64_t> relay_server_time_ms,
                                                   const std::string& local_identity) {
-  auto answer = workflow_.HandleInboundInvite(detail_json, sender_identity, message, relay_created_at_ms, relay_server_time_ms, local_identity);
+  auto answer = workflow_.HandleInboundInvite(detail_json, sender_identity, message, relay_created_at_ms,
+                                              relay_server_time_ms, local_identity);
   if (!answer) {
     return answer.error();
   }
   if (*answer) {
-    ClickAccept(**answer);  // calling each other: theirs won, ours gave way
+    ClickAccept(**answer); // calling each other: theirs won, ours gave way
   }
   return {};
 }
 
-
-Roe<void> CallSessionManager::HandleInboundAccept(const std::string& detail_json,
-                                                  const std::string& sender_identity,
+Roe<void> CallSessionManager::HandleInboundAccept(const std::string& detail_json, const std::string& sender_identity,
                                                   const std::string& local_identity) {
   return workflow_.HandleInboundAccept(detail_json, sender_identity, local_identity);
 }
 
-
-Roe<void> CallSessionManager::HandleInboundDecline(const std::string& detail_json,
-                                                   const std::string& sender_identity) {
+Roe<void> CallSessionManager::HandleInboundDecline(const std::string& detail_json, const std::string& sender_identity) {
   return workflow_.HandleInboundDecline(detail_json, sender_identity);
 }
 
-
-Roe<void> CallSessionManager::HandleInboundLeave(const std::string& detail_json,
-                                                 const std::string& sender_identity,
+Roe<void> CallSessionManager::HandleInboundLeave(const std::string& detail_json, const std::string& sender_identity,
                                                  const std::string& local_identity) {
   return workflow_.HandleInboundLeave(detail_json, sender_identity, local_identity);
 }
@@ -436,45 +423,39 @@ Roe<void> CallSessionManager::HandleInboundRoster(const std::string& detail_json
   return workflow_.HandleInboundRoster(detail_json);
 }
 
-
 Roe<void> CallSessionManager::HandleInboundSfuAttach(const std::string& detail_json,
-                                                    const std::string& sender_identity) {
+                                                     const std::string& sender_identity) {
   return workflow_.HandleInboundSfuAttach(detail_json, sender_identity);
 }
-
 
 Roe<void> CallSessionManager::HandleInboundSfuAttachFailed(const std::string& detail_json,
                                                            const std::string& sender_identity) {
   return workflow_.HandleInboundSfuAttachFailed(detail_json, sender_identity);
 }
 
-
 Roe<void> CallSessionManager::HandleInboundHopRefuse(const std::string& detail_json) {
   return workflow_.HandleInboundHopRefuse(detail_json);
 }
-
 
 Roe<void> CallSessionManager::HandleInboundVideoRefresh(const std::string& detail_json,
                                                         const std::string& sender_identity) {
   return workflow_.HandleInboundVideoRefresh(detail_json, sender_identity);
 }
 
-Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json,
-                                                 const std::string& local_identity) {
+Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json, const std::string& local_identity) {
   return workflow_.HandleInboundEnded(detail_json, local_identity);
 }
 
-
 bool CallSessionManager::AllowsInboundCall(const std::string& caller) const {
   switch (inbound_call_audience_) {
-  case mesh::InboundAudience::Everyone:
-    return true;
-  case mesh::InboundAudience::Nobody:
-    return false;
-  case mesh::InboundAudience::ContactsOnly:
-    // No gate wired (tests, tools): nothing to judge by — let it ring.
-    return !device_.MeshGlue().address_disclosure ||
-           device_.MeshGlue().address_disclosure->Snapshot()->contacts.contains(caller);
+    case mesh::InboundAudience::Everyone:
+      return true;
+    case mesh::InboundAudience::Nobody:
+      return false;
+    case mesh::InboundAudience::ContactsOnly:
+      // No gate wired (tests, tools): nothing to judge by — let it ring.
+      return !device_.MeshGlue().address_disclosure ||
+             device_.MeshGlue().address_disclosure->Snapshot()->contacts.contains(caller);
   }
   return true;
 }
@@ -597,7 +578,6 @@ Roe<void> CallSessionManager::HandleInboundConnectGiveUp(const std::string& deta
   call_media->OnPeerGaveUpReaching();
   return {};
 }
-
 
 bool CallSessionManager::SenderMayJoin(const std::string& detail_json, const std::string& sender_identity) const {
   auto detail = TryParseObject(detail_json);

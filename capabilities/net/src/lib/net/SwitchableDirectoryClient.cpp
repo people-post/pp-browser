@@ -6,7 +6,9 @@ namespace pbr {
 
 namespace {
 
-Error NotConfigured() { return Error("Directory not configured"); }
+Error NotConfigured() {
+  return Error("Directory not configured");
+}
 
 } // namespace
 
@@ -15,7 +17,9 @@ void SwitchableDirectoryClient::SetBackend(std::shared_ptr<mesh::IDirectoryClien
   backend_ = std::move(backend);
 }
 
-bool SwitchableDirectoryClient::Configured() const { return Backend() != nullptr; }
+bool SwitchableDirectoryClient::Configured() const {
+  return Backend() != nullptr;
+}
 
 std::shared_ptr<mesh::IDirectoryClient> SwitchableDirectoryClient::Backend() const {
   std::lock_guard lock(mutex_);

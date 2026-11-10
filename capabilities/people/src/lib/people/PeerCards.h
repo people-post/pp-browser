@@ -40,7 +40,8 @@ PeerCardRecord MergeKeyCard(std::optional<PeerCardRecord> known, const KeyCard& 
  * Folds a checked account card in: the newest card (`issued_at`) is the account's word on its keys,
  * nickname and device list (M021) — an older one changes nothing.
  */
-PeerCardRecord MergeAccountCard(std::optional<PeerCardRecord> known, const AccountCard& card, const std::string& source);
+PeerCardRecord MergeAccountCard(std::optional<PeerCardRecord> known, const AccountCard& card,
+                                const std::string& source);
 
 /**
  * The newest account card this device knew for an account, by issue time only: kept in the account locker so

@@ -73,7 +73,7 @@ public:
   }
 
   void Detach(const FakeHopClient* client) {
-    std::unique_lock lock(mu_);  // waits for in-flight deliveries to this member
+    std::unique_lock lock(mu_); // waits for in-flight deliveries to this member
     members_.erase(client);
   }
 
@@ -170,8 +170,9 @@ public:
   Roe<std::string> LocalPeerIdBase58() const override { return local_peer_id_; }
   bool IsStarted() const override { return true; }
 
-  mesh::MediaRelayRoe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop_peer_key, const mesh::MediaRelayQuoteRequest& /*request*/,
-                                    int /*timeout_ms*/) override {
+  mesh::MediaRelayRoe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop_peer_key,
+                                                          const mesh::MediaRelayQuoteRequest& /*request*/,
+                                                          int /*timeout_ms*/) override {
     std::lock_guard lock(mu_);
     if (unreachable_.count(hop_peer_key) > 0) {
       return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "hop unreachable from " + local_peer_id_);
@@ -186,10 +187,12 @@ public:
     return q;
   }
 
-  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string& hop_peer_key, const std::string& /*quote_id*/,
-                                              const std::string& session_id, const std::string& /*auth_stub*/,
-                                              std::function<void(mesh::MediaDataFrame)> on_frame,
-                                              int /*timeout_ms*/) override {
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string& hop_peer_key,
+                                                                    const std::string& /*quote_id*/,
+                                                                    const std::string& session_id,
+                                                                    const std::string& /*auth_stub*/,
+                                                                    std::function<void(mesh::MediaDataFrame)> on_frame,
+                                                                    int /*timeout_ms*/) override {
     {
       std::lock_guard lock(mu_);
       if (unreachable_.count(hop_peer_key) > 0) {
@@ -205,8 +208,8 @@ public:
 
   void StartClientFrameReader() override { hop_.StartReading(this); }
 
-  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AttachAsLocalHop(const std::string& /*session_id*/,
-                                               std::function<void(mesh::MediaDataFrame)> /*on_frame*/) override {
+  mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> AttachAsLocalHop(
+      const std::string& /*session_id*/, std::function<void(mesh::MediaDataFrame)> /*on_frame*/) override {
     return mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "not a local hop");
   }
 
@@ -244,10 +247,10 @@ private:
 
 class CallGroupStackComposeTest : public ::testing::Test {
 protected:
-  static constexpr size_t kA = 0;  // initiator (sticky hop picker)
+  static constexpr size_t kA = 0; // initiator (sticky hop picker)
   static constexpr size_t kB = 1;
   static constexpr size_t kC = 2;
-  static constexpr size_t kD = 3;  // joins a live group mid-call (gt5); idle otherwise
+  static constexpr size_t kD = 3; // joins a live group mid-call (gt5); idle otherwise
   static constexpr size_t kSides = 4;
 
   void SetUp() override {
@@ -266,10 +269,10 @@ protected:
       options.relay = relays_[i].get();
       options.group_members = [this, i](const std::string& /*group_id*/) -> std::optional<std::set<std::string>> {
         if (dissolved_) {
-          return std::set<std::string>{};  // a dissolved group (G016): a roster with nobody in it
+          return std::set<std::string>{}; // a dissolved group (G016): a roster with nobody in it
         }
         if (unknown_roster_) {
-          return std::nullopt;  // a roster this device does not hold (G016 says nothing about such a group)
+          return std::nullopt; // a roster this device does not hold (G016 says nothing about such a group)
         }
         if (!group_of_[i].empty()) {
           return group_of_[i];
@@ -516,7 +519,7 @@ protected:
     thread.title = "Group";
     thread.updated_at = util::NowUnixMs();
     if (group_id_) {
-      thread.group_id = *group_id_;  // a real group: every member holds its thread
+      thread.group_id = *group_id_; // a real group: every member holds its thread
       for (size_t i : members_) {
         EXPECT_TRUE(sides_[i].store->UpsertThread(thread));
       }
@@ -620,7 +623,7 @@ protected:
     std::string sender;
   };
 
-  FakeMediaRelayHop hop_;  // outlives the stacks (their relay clients point at it)
+  FakeMediaRelayHop hop_; // outlives the stacks (their relay clients point at it)
   std::unique_ptr<FakeHopClient> relays_[kSides];
   /** The call's participants (GroupLive / per-member asserts); D is added by the mid-call tests. */
   std::vector<size_t> members_ = {kA, kB, kC};
@@ -657,7 +660,7 @@ TEST_F(CallGroupStackComposeTest, EveryInviteeSeesTheWholeInviteList) {
   const std::string call_id = StartGroupCall();
   ASSERT_FALSE(call_id.empty());
   for (size_t i : {kB, kC}) {
-    ICallSessionStore& sessions = *sides_[i].stack->Sessions();  // read-only view of the stack's rows
+    ICallSessionStore& sessions = *sides_[i].stack->Sessions(); // read-only view of the stack's rows
     auto rows = sessions.ListParticipants(call_id);
     ASSERT_TRUE(rows) << rows.error().message;
     std::set<std::string> ids;
@@ -712,7 +715,7 @@ TEST_F(CallGroupStackComposeTest, InviteesNeverStampJoinsFromTheirOwnClock) {
 
   AcceptInvite(kB, call_id);
   for (int k = 0; k < 20; ++k) {
-    AppRuntime::RunUIAndOwnerTasks();  // B's accept runs locally; nothing reaches A yet
+    AppRuntime::RunUIAndOwnerTasks(); // B's accept runs locally; nothing reaches A yet
   }
   EXPECT_FALSE(stamp(kB, kB, call_id)) << "B stamped its own join from its own clock";
 
@@ -779,8 +782,7 @@ TEST_F(CallGroupStackComposeTest, InviteCarriesTheMediaKeyToEveryInvitee) {
   thread.title = "Group";
   thread.updated_at = util::NowUnixMs();
   ASSERT_TRUE(sides_[kA].store->UpsertThread(thread));
-  auto started =
-      StartCallNow(*sides_[kA].ui, thread.id, false, {sides_[kB].local_identity, sides_[kC].local_identity});
+  auto started = StartCallNow(*sides_[kA].ui, thread.id, false, {sides_[kB].local_identity, sides_[kC].local_identity});
   ASSERT_TRUE(started) << started.error().message;
   const std::string call_id = started->call_id;
   PumpWire();
@@ -917,7 +919,7 @@ TEST_F(CallGroupStackComposeTest, RosterBeforeTheAcceptStillMakesTheAdjustment) 
   ASSERT_TRUE(DirectPairLive(kA, kB)) << Describe(call_id);
   AcceptInvite(kC, call_id);
   for (int k = 0; k < 40; ++k) {
-    AppRuntime::RunUIAndOwnerTasks();  // C accepts and queues its CallAccept + CallRoster for A
+    AppRuntime::RunUIAndOwnerTasks(); // C accepts and queues its CallAccept + CallRoster for A
   }
   {
     std::lock_guard lock(wire_mu_);
@@ -997,7 +999,12 @@ TEST_F(CallGroupStackComposeTest, NoSharedHopRefusesTheJoinerAndKeepsTheCall) {
   });
   EXPECT_EQ(sides_[kC].ui->Phase(), CallPhase::Idle) << "C must be refused";
   // A little longer: nothing may start migrating A↔B afterwards.
-  DrainUntil([&]() { PumpWire(); return false; }, 1500);
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return false;
+      },
+      1500);
   EXPECT_TRUE(DirectPairLive(kA, kB)) << "A↔B must stay on their direct call:" << Describe(call_id);
   for (size_t i : members_) {
     EXPECT_FALSE(relays_[i]->IsAttached()) << "side " << i << " attached to a hop";
@@ -1030,13 +1037,18 @@ TEST_F(CallGroupStackComposeTest, LaterJoinerRefusedWhenNoHopServesEveryone) {
   const std::string call_id = RunGroupCallToHopLive();
   ASSERT_FALSE(call_id.empty());
   InviteAndAcceptD(call_id);
-  members_ = {kA, kB, kC};  // D is expected to be refused
+  members_ = {kA, kB, kC}; // D is expected to be refused
   DrainUntil([&]() {
     PumpWire();
     return sides_[kD].ui->Phase() == CallPhase::Idle && !sides_[kD].stack->HasActiveLocalCall();
   });
   EXPECT_EQ(sides_[kD].ui->Phase(), CallPhase::Idle) << "D must be refused";
-  DrainUntil([&]() { PumpWire(); return false; }, 1500);
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return false;
+      },
+      1500);
   EXPECT_TRUE(GroupLive(call_id)) << "A, B, C must stay on their hop:" << Describe(call_id);
   EXPECT_FALSE(relays_[kD]->IsAttached());
 }
@@ -1046,7 +1058,7 @@ TEST_F(CallGroupStackComposeTest, LaterJoinerRefusedWhenNoHopServesEveryone) {
 TEST_F(CallGroupStackComposeTest, NoSecondHopChangeForTheSameJoiner) {
   OfferBothHops();
   relays_[kD]->MakeUnreachable(kHopPeerId);
-  relays_[kD]->MakeUnreachable(kOtherHopPeerId);  // D still lists Other as dialable
+  relays_[kD]->MakeUnreachable(kOtherHopPeerId); // D still lists Other as dialable
   const std::string call_id = RunGroupCallToHopLive();
   ASSERT_FALSE(call_id.empty());
   InviteAndAcceptD(call_id);
@@ -1061,7 +1073,12 @@ TEST_F(CallGroupStackComposeTest, NoSecondHopChangeForTheSameJoiner) {
   // Past the eject's key rotation and the delayed hop re-announces: the group stays on the hop it
   // moved to (CI: slow runners saw members eject each other over the rotated key, and the owner's
   // stale 2 s re-announce sent everyone back to the first hop).
-  DrainUntil([&]() { PumpWire(); return false; }, 1500);
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return false;
+      },
+      1500);
   EXPECT_TRUE(GroupLive(call_id, kOtherHopPeerId)) << "the group keeps the hop it moved to:" << Describe(call_id);
 }
 
@@ -1073,7 +1090,7 @@ TEST_F(CallGroupStackComposeTest, StoppedStackDropsItsPendingHopReannounce) {
   for (StackSide& side : sides_) {
     SoftStopStackSide(side);
   }
-  DrainUntil([]() { return false; }, 2500);  // past every re-announce / settle timer
+  DrainUntil([]() { return false; }, 2500); // past every re-announce / settle timer
 }
 
 // A guest leaving a live group call ends only their media: the other two stay InCall and keep
@@ -1278,8 +1295,8 @@ TEST_F(CallGroupStackComposeTest, AByeBeforeALeaveAndRejoinDoesNotEndTheNewJoin)
   ASSERT_TRUE(joined) << joined.error().message;
   const auto c_on_a = [&]() {
     auto rows = sides_[kA].ui->ListJoinedParticipants(call_id);
-    return rows && std::any_of(rows->begin(), rows->end(),
-                               [&](const CallParticipant& row) { return row.identity == member; });
+    return rows &&
+           std::any_of(rows->begin(), rows->end(), [&](const CallParticipant& row) { return row.identity == member; });
   };
   DrainUntil(
       [&]() {
@@ -1325,7 +1342,7 @@ TEST_F(CallGroupStackComposeTest, LeavingAGroupCallWritesTheRecordAtOnceAndRejoi
       },
       20000);
   ASSERT_TRUE(GroupLive(call_id)) << Describe(call_id);
-  DrainUntil([]() { return false; }, 300);  // some talk time in the second stay
+  DrainUntil([]() { return false; }, 300); // some talk time in the second stay
   leave(kC);
   ASSERT_EQ(SummariesIn(kC).size(), 1u) << "leave, rejoin, leave: still one record";
   const int64_t both = SummariesIn(kC).front().duration_ms.value_or(0);
@@ -1334,10 +1351,12 @@ TEST_F(CallGroupStackComposeTest, LeavingAGroupCallWritesTheRecordAtOnceAndRejoi
   // The call then ends for everyone (CallEnded reaches C): its record is left as it was.
   leave(kA);
   leave(kB);
-  DrainUntil([&]() {
-    PumpWire();
-    return false;
-  }, 1500);
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return false;
+      },
+      1500);
   ASSERT_EQ(SummariesIn(kC).size(), 1u);
   EXPECT_EQ(SummariesIn(kC).front().duration_ms.value_or(0), both);
   EXPECT_EQ(SummariesIn(kA).size(), 1u);
@@ -1536,8 +1555,8 @@ TEST_F(CallGroupStackComposeTest, TwoCallingTheGroupAtOnceEndUpInOneCall) {
     ICallSessionStore& sessions = *sides_[i].stack->Sessions();
     auto session = sessions.LoadSession(call_id);
     auto row = sessions.FindParticipant(call_id, sides_[i].local_identity);
-    return session && session->has_value() && (*session)->state != CallSessionState::Ended && row &&
-           row->has_value() && (*row)->state == CallParticipantState::Ringing;
+    return session && session->has_value() && (*session)->state != CallSessionState::Ended && row && row->has_value() &&
+           (*row)->state == CallParticipantState::Ringing;
   };
   DrainUntil([&]() {
     PumpWire();

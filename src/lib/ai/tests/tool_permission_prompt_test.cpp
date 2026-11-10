@@ -103,7 +103,8 @@ TEST_P(ToolPermissionPromptTest, CardRewriteRemovesTheButtons) {
     EXPECT_EQ(rewritten->find("tool_permission"), std::string::npos) << "buttons must be gone";
     EXPECT_EQ(rewritten->find("choice"), std::string::npos);
     EXPECT_NE(rewritten->find(intro), std::string::npos) << "the explanation stays";
-    EXPECT_NE(rewritten->find(DescribeToolCalls(tools)), std::string::npos) << "the answered card still names the action";
+    EXPECT_NE(rewritten->find(DescribeToolCalls(tools)), std::string::npos)
+        << "the answered card still names the action";
     EXPECT_NE(rewritten->find(Tr(c.key)), std::string::npos);
   }
 
@@ -117,9 +118,9 @@ TEST_P(ToolPermissionPromptTest, CardRewriteRemovesTheButtons) {
 }
 
 TEST_P(ToolPermissionPromptTest, NewKeysExist) {
-  for (const char* key : {"chat.permission.busy_elsewhere", "chat.permission.done.allow_once",
-                          "chat.permission.done.allow_always", "chat.permission.done.deny",
-                          "chat.permission.tool.generic", "chat.permission.stale"}) {
+  for (const char* key :
+       {"chat.permission.busy_elsewhere", "chat.permission.done.allow_once", "chat.permission.done.allow_always",
+        "chat.permission.done.deny", "chat.permission.tool.generic", "chat.permission.stale"}) {
     EXPECT_NE(Tr(key), key) << key << " missing in " << GetParam();
   }
 }

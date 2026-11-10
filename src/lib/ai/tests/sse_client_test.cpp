@@ -113,7 +113,8 @@ TEST(SseClientTest, CancelWhileServerIsSilentReturnsCancelledQuickly) {
   auto result = worker.get();
   ASSERT_TRUE(static_cast<bool>(result));
   EXPECT_EQ(*result, pbr::SseOutcome::Cancelled);
-  const auto elapsed = std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(finished_at.load())) - cancelled_at;
+  const auto elapsed =
+      std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(finished_at.load())) - cancelled_at;
   EXPECT_LT(elapsed, 1s);
   EXPECT_TRUE(server.WaitForDisconnect());
 }
@@ -122,7 +123,8 @@ TEST(SseClientTest, CancelBeforeAnyResponseReturnsCancelled) {
   SseTestServer server({}, true); // accepts and reads the request, never answers
   pbr::SseClient client;
   std::atomic<bool> cancel{false};
-  auto worker = std::async(std::launch::async, [&] { return client.Post(RequestFor(server), [](const pbr::SseEvent&) {}, cancel); });
+  auto worker = std::async(std::launch::async,
+                           [&] { return client.Post(RequestFor(server), [](const pbr::SseEvent&) {}, cancel); });
   ASSERT_TRUE(server.WaitForRequest());
   cancel = true;
   ASSERT_EQ(worker.wait_for(10s), std::future_status::ready);

@@ -60,7 +60,9 @@ inline std::vector<std::string> ToggleStarred(std::vector<std::string> starred, 
 
 namespace new_chat_detail {
 
-inline char Lower(const char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; }
+inline char Lower(const char c) {
+  return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+}
 
 inline std::string LowerAscii(std::string text) {
   for (char& c : text) {
@@ -72,7 +74,9 @@ inline std::string LowerAscii(std::string text) {
 } // namespace new_chat_detail
 
 /** The section letter of a name: A-Z (a Chinese name by its pinyin initial), else "#" (NameIndexLetter). */
-inline std::string NewChatLetter(const std::string& name) { return std::string(1, NameIndexLetter(name)); }
+inline std::string NewChatLetter(const std::string& name) {
+  return std::string(1, NameIndexLetter(name));
+}
 
 /**
  * The frequent contacts (常用联系人; the New chat page, Home's Favourites widget): up to kNewChatFrequentMax, the

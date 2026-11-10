@@ -45,7 +45,7 @@ class DiagnosticsFeedbackTest : public ::testing::Test {
 protected:
   static void SetUpTestSuite() {
     ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
-    LocalizationService::Instance().SetPreferredLanguage("en");  // not the machine's language
+    LocalizationService::Instance().SetPreferredLanguage("en"); // not the machine's language
   }
 };
 
@@ -86,10 +86,10 @@ TEST_F(DiagnosticsFeedbackTest, NoMessageTellsTheUserToCheckTheirNetworkOrPermis
 }
 
 TEST(DiagnosticsLocaleTest, EveryDiagnosticsKeyExistsInBothLocales) {
-  const std::set<std::string> required = {"send", "sending", "help", "help_question", "last_id", "confirm_title",
-                                          "confirm_body", "confirm_ok", "sent", "refused", "no_network",
-                                          "quota_key", "quota_key_no_id", "quota_limit", "in_progress",
-                                          "unavailable", "too_large", "failed"};
+  const std::set<std::string> required = {
+      "send",        "sending",     "help",      "help_question", "last_id",   "confirm_title",   "confirm_body",
+      "confirm_ok",  "sent",        "refused",   "no_network",    "quota_key", "quota_key_no_id", "quota_limit",
+      "in_progress", "unavailable", "too_large", "failed"};
   const std::set<std::string> en = DiagnosticsKeys("en.json");
   const std::set<std::string> zh = DiagnosticsKeys("zh-Hans.json");
   EXPECT_EQ(en, zh) << "en.json and zh-Hans.json must carry the same settings.security.diagnostics.* keys";
@@ -102,7 +102,8 @@ TEST(DiagnosticsViewTest, SecuritySectionHasBothButtonsTheLastIdLineAndTheSendin
   const std::string rml =
       ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "settings_section_security.rml");
   EXPECT_NE(rml.find("data-event-click=\"send_diagnostics()\""), std::string::npos);
-  EXPECT_NE(rml.find("data-attrif-disabled=\"diagnostics_sending\""), std::string::npos) << "no second send while sending";
+  EXPECT_NE(rml.find("data-attrif-disabled=\"diagnostics_sending\""), std::string::npos)
+      << "no second send while sending";
   EXPECT_NE(rml.find("data-event-click=\"open_diagnostics_help()\""), std::string::npos);
   EXPECT_NE(rml.find("data-help-key=\"troubleshooting/send-diagnostics\""), std::string::npos);
   EXPECT_NE(rml.find("data-if=\"diagnostics_last_id != ''\""), std::string::npos);

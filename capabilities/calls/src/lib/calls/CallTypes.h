@@ -478,7 +478,9 @@ std::string CallMediaModeToString(CallMediaMode mode);
 CallMediaMode CallMediaModeFromString(const std::string& value);
 std::string CallSessionKindToString(CallSessionKind kind);
 CallSessionKind CallSessionKindFromString(const std::string& value);
-inline bool IsBroadcastSession(CallSessionKind kind) { return kind == CallSessionKind::Broadcast; }
+inline bool IsBroadcastSession(CallSessionKind kind) {
+  return kind == CallSessionKind::Broadcast;
+}
 std::string CallSessionStateToString(CallSessionState state);
 CallSessionState CallSessionStateFromString(const std::string& value);
 std::string CallParticipantStateToString(CallParticipantState state);

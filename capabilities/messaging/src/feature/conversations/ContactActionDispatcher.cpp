@@ -21,8 +21,14 @@ ContactActionDispatcher::ContactActionDispatcher(InboxController& inbox, Contact
                                                  GroupMembershipWorkflow* groups, IRegistrationClient* registration,
                                                  MeshDeliveryOrchestrator* mesh_messaging,
                                                  mesh::IDirectoryClient* directory)
-    : inbox_(inbox), contacts_(contacts), identity_(identity), store_(store), groups_(groups),
-      registration_(registration), mesh_messaging_(mesh_messaging), directory_(directory) {
+    : inbox_(inbox),
+      contacts_(contacts),
+      identity_(identity),
+      store_(store),
+      groups_(groups),
+      registration_(registration),
+      mesh_messaging_(mesh_messaging),
+      directory_(directory) {
   redirectLogger("ContactActionDispatcher");
 }
 
@@ -90,8 +96,7 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Dispatch(const 
   return Run(*payload, looked_up);
 }
 
-void ContactActionDispatcher::DispatchAsync(const std::string& payload_json,
-                                            std::function<void(DispatchResult)> done) {
+void ContactActionDispatcher::DispatchAsync(const std::string& payload_json, std::function<void(DispatchResult)> done) {
   const auto payload = TryParseObject(payload_json);
   const auto account_id = payload ? AccountToLookUp(*payload) : std::nullopt;
   if (!account_id) {
@@ -239,7 +244,8 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
       return result.error();
     }
     if (on_action_message_) {
-      on_action_message_(ActionNotice{result->registered ? ActionNotice::Kind::Registered : ActionNotice::Kind::RegistrationFailed, {}});
+      on_action_message_(ActionNotice{
+          result->registered ? ActionNotice::Kind::Registered : ActionNotice::Kind::RegistrationFailed, {}});
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
@@ -308,7 +314,8 @@ ContactActionDispatcher::DispatchResult ContactActionDispatcher::Run(
                                        "You blocked the inviter");
     }
     if (on_action_message_) {
-      on_action_message_(ActionNotice{updated ? ActionNotice::Kind::BlockedInviter : ActionNotice::Kind::BlockedUnknownInviter, {}});
+      on_action_message_(
+          ActionNotice{updated ? ActionNotice::Kind::BlockedInviter : ActionNotice::Kind::BlockedUnknownInviter, {}});
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }

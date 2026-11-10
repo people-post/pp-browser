@@ -37,8 +37,7 @@ constexpr ShareWord kRoutes[] = {"server", "local"};
 
 TEST(ShareableLineTest, PickKeepsOnlyTheListedWords) {
   EXPECT_EQ(MetricsLine("ai.turn").Pick("route", "local", kRoutes).str(), "event=ai.turn route=local");
-  EXPECT_EQ(MetricsLine("ai.turn").Pick("route", "Alice's phone", kRoutes).str(),
-            "event=ai.turn route=other");
+  EXPECT_EQ(MetricsLine("ai.turn").Pick("route", "Alice's phone", kRoutes).str(), "event=ai.turn route=other");
   EXPECT_EQ(MetricsLine("ai.turn").Pick("route", "", kRoutes).str(), "event=ai.turn route=-");
 }
 

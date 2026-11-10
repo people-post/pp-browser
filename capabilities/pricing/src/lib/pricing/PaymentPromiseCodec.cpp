@@ -73,8 +73,7 @@ PaymentPromise PromiseFromObject(const Object& json) {
   promise.service_ref = json.getString("service_ref").value_or("");
   promise.terms_hash_b64 = json.getString("terms_hash_b64").value_or("");
   promise.content_commitment_b64 = json.getString("content_commitment_b64").value_or("");
-  promise.release_rule =
-      PaymentPromiseReleaseRuleFromString(json.getString("release_rule").value_or("payer_ack"));
+  promise.release_rule = PaymentPromiseReleaseRuleFromString(json.getString("release_rule").value_or("payer_ack"));
   promise.created_at_ms = json.getIf<int64_t>("created_at_ms").value_or(0);
   promise.expires_at_ms = json.getIf<int64_t>("expires_at_ms").value_or(0);
   promise.state = PaymentPromiseStateFromString(json.getString("state").value_or("offered"));

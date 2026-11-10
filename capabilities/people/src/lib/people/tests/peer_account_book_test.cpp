@@ -16,8 +16,8 @@ class PeerAccountBookTest : public ::testing::Test {
 protected:
   void SetUp() override {
     dir_ = std::filesystem::temp_directory_path() /
-           ("pp_browser_peer_account_book_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) +
-            "_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+           ("pp_browser_peer_account_book_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "_" +
+            std::to_string(reinterpret_cast<uintptr_t>(this)));
     std::filesystem::remove_all(dir_);
     contacts_ = std::make_unique<ContactsStore>(dir_.string());
     book_ = std::make_unique<PeerAccountBook>(*contacts_);

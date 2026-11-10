@@ -34,8 +34,8 @@ struct NodeHeartbeatDeps {
   std::string base_url;
   std::function<HeartbeatIdentity()> identity;
   /** Account-key signature (base64) over the heartbeat sign bytes. */
-  std::function<Roe<std::string>(const std::string& relay_user_id, const std::string& peer_id,
-                                 const std::string& state, int64_t timestamp)>
+  std::function<Roe<std::string>(const std::string& relay_user_id, const std::string& peer_id, const std::string& state,
+                                 int64_t timestamp)>
       sign;
   HttpPostFn post;
   /** The same entry point as startup / periodic registration renewal. */

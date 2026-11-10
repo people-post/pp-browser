@@ -33,7 +33,7 @@ Roe<std::string> QrSvgContent(const std::string& text) {
     svg << "\"/></g>";
     return svg.str();
   } catch (const std::exception& e) {
-    return Error(std::string("QR code: ") + e.what());  // text too long for any version
+    return Error(std::string("QR code: ") + e.what()); // text too long for any version
   }
 }
 

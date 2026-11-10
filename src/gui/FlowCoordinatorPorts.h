@@ -10,8 +10,7 @@ namespace pbr {
  * Clear via BindFlowCoordinator({}).
  */
 struct FlowCoordinatorPorts {
-  std::function<void(int layer_id, std::function<bool()> on_step_back, std::function<void()> on_cancel)>
-      begin_modal;
+  std::function<void(int layer_id, std::function<bool()> on_step_back, std::function<void()> on_cancel)> begin_modal;
   std::function<void()> end_modal;
   std::function<bool()> handle_dismiss;
   std::function<void(int layer_id)> notify_layer_closing;

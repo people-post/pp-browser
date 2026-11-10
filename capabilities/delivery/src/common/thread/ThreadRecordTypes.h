@@ -27,8 +27,8 @@ struct DirectChatTarget {
   ThreadChannel channel = ThreadChannel::E2e;
 
   bool operator==(const DirectChatTarget& other) const {
-    return peer_identity_kind == other.peer_identity_kind &&
-           peer_identity_value == other.peer_identity_value && channel == other.channel;
+    return peer_identity_kind == other.peer_identity_kind && peer_identity_value == other.peer_identity_value &&
+           channel == other.channel;
   }
 };
 

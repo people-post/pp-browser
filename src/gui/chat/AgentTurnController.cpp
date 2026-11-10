@@ -133,7 +133,8 @@ Roe<PreparedDraft> PrepareAiImageDraft(const std::string& path, const std::strin
     const std::filesystem::path file = dir / (util::GenerateUuid() + (prepared->mime == "image/png" ? ".png" : ".jpg"));
     if (!ec) {
       std::ofstream out(file, std::ios::binary | std::ios::trunc);
-      out.write(reinterpret_cast<const char*>(prepared->bytes.data()), static_cast<std::streamsize>(prepared->bytes.size()));
+      out.write(reinterpret_cast<const char*>(prepared->bytes.data()),
+                static_cast<std::streamsize>(prepared->bytes.size()));
       out.close();
       if (out) {
         draft.file_path = file.string();
@@ -158,7 +159,11 @@ AgentTurnController::AgentTurnController(AgentTurnHost& host, ChatScreenState& c
                                          std::map<std::string, std::vector<std::string>>& chat_links,
                                          ChatWidgetHost& widgets, WorkingSetController& working_set,
                                          ShellFeedbackPorts& shell_feedback)
-    : host_(host), chat_(chat), chat_links_(chat_links), widgets_(widgets), working_set_(working_set),
+    : host_(host),
+      chat_(chat),
+      chat_links_(chat_links),
+      widgets_(widgets),
+      working_set_(working_set),
       shell_feedback_(shell_feedback) {
   redirectLogger("ChatController");
 }
@@ -323,7 +328,7 @@ bool AgentTurnController::AgentHasCredentials() const {
 }
 
 void AgentTurnController::SendSharedAssistantRelay(const std::string& thread_id, const AtAiMode mode,
-                                              const std::string& plain_text) {
+                                                   const std::string& plain_text) {
   if (!host_.MessagingIsReady() || plain_text.empty()) {
     return;
   }
@@ -352,13 +357,13 @@ void AgentTurnController::OnAttachAiImage() {
 }
 
 std::vector<ContextMenuAction> AgentTurnController::HomeAttachActions(std::function<void()> camera,
-                                                                       std::function<void()> photos,
-                                                                       std::function<void()> file) {
+                                                                      std::function<void()> photos,
+                                                                      std::function<void()> file) {
   std::vector<ContextMenuAction> actions;
-  actions.push_back({"home_attach_camera", Tr("home.attach.camera"), nullptr, std::move(camera),
-                     "../icons/v2/camera.svg"});
-  actions.push_back({"home_attach_photo", Tr("home.attach.photo"), nullptr, std::move(photos),
-                     "../icons/v2/photo.svg"});
+  actions.push_back(
+      {"home_attach_camera", Tr("home.attach.camera"), nullptr, std::move(camera), "../icons/v2/camera.svg"});
+  actions.push_back(
+      {"home_attach_photo", Tr("home.attach.photo"), nullptr, std::move(photos), "../icons/v2/photo.svg"});
   actions.push_back({"home_attach_file", Tr("chat.attach.file"), nullptr, std::move(file), "../icons/v2/file.svg"});
   return actions;
 }
@@ -404,22 +409,23 @@ void AgentTurnController::PickAiImage(std::function<void(std::string path)> pick
     return;
   }
   // Same two ways as a chat; the assistant reads images only, so "File" offers image files.
-  host_.ShowAttachChoice([on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); },
-                   [on_picked]() { ShowOpenImageDocumentDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); });
+  host_.ShowAttachChoice(
+      [on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); },
+      [on_picked]() { ShowOpenImageDocumentDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); });
 }
 
 void AgentTurnController::CaptureAiPhoto(std::function<void(std::string path)> picked) {
-  ShowCameraCapture(Backend::GetWindow(), CameraCaptureKind::Photo, 0, 0,
-                    [picked = std::move(picked)](const CameraCaptureOutcome outcome, std::vector<std::string> paths) {
-                      AppRuntime::PostUI([picked, outcome, paths = std::move(paths)]() mutable {
-                        if (outcome == CameraCaptureOutcome::Picked && !paths.empty()) {
-                          picked(std::move(paths.front()));
-                        } else if (outcome == CameraCaptureOutcome::Unavailable ||
-                                   outcome == CameraCaptureOutcome::Unprocessable) {
-                          UserFeedback::Fail(Tr("chat.attach.camera_unavailable"));
-                        }
-                      });
-                    });
+  ShowCameraCapture(
+      Backend::GetWindow(), CameraCaptureKind::Photo, 0, 0,
+      [picked = std::move(picked)](const CameraCaptureOutcome outcome, std::vector<std::string> paths) {
+        AppRuntime::PostUI([picked, outcome, paths = std::move(paths)]() mutable {
+          if (outcome == CameraCaptureOutcome::Picked && !paths.empty()) {
+            picked(std::move(paths.front()));
+          } else if (outcome == CameraCaptureOutcome::Unavailable || outcome == CameraCaptureOutcome::Unprocessable) {
+            UserFeedback::Fail(Tr("chat.attach.camera_unavailable"));
+          }
+        });
+      });
 }
 
 void AgentTurnController::PrepareAiImage(std::string path, std::function<void(Roe<PendingAiImage>)> done) {
@@ -448,8 +454,8 @@ void AgentTurnController::DropAiImage(const PendingAiImage& image) {
   RemoveSessionFile(image.file_path);
 }
 
-AgentTurnController::ImageSend AgentTurnController::SendAiImageTo(const std::string& thread_id,
-                                                                  const std::string& text, PendingAiImage image) {
+AgentTurnController::ImageSend AgentTurnController::SendAiImageTo(const std::string& thread_id, const std::string& text,
+                                                                  PendingAiImage image) {
   if (thread_id.empty() || !host_.MessagingIsReady() || !host_.Facade() || !agent_ports_.submit_image_to_thread ||
       !AgentCloudReady()) {
     return ImageSend::Unavailable;
@@ -476,41 +482,42 @@ void AgentTurnController::StartAiImagePrepare(std::string path) {
 
   const std::string profile_dir = host_.Facade() ? host_.Facade()->ProfileDataDir() : std::string();
   // Decoding and re-encoding a photo is blocking work: off the UI thread, reply on it.
-  AppRuntime::PostWorkerNormal([this, path = std::move(path), profile_dir, generation, name = std::move(name)]() mutable {
-    Roe<PreparedDraft> result = PrepareAiImageDraft(path, profile_dir);
-    ReleasePickedFile(path); // the draft keeps its own copy
-    AppRuntime::PostUI([this, generation, name = std::move(name), result = std::move(result)]() mutable {
-      if (generation != image_prepare_generation_) {
-        if (result) {
-          RemoveSessionFile(result->file_path); // removed or replaced while it was being prepared
-        }
-        return;
-      }
-      chat_.image_preparing = false;
-      if (!result) {
-        // Sizes and kinds only in the log: no file name, no path.
-        log().warning << "AI image not prepared: kind=" << result.error().code;
-        chat_.image_chip = false;
-        chat_.image_draft_name = "";
-        host_.SyncComposerInputState();
-        DirtyChatChrome();
-        DirtyChatHeader();
-        UserFeedback::Fail(Tr(AiImagePrepErrorKey(AiImagePrepErrorOf(result.error()))));
-        return;
-      }
-      log().info << "AI image ready: " << result->image.data.size() << " bytes";
-      pending_image_ = PendingAiImage{
-          .image = std::move(result->image), .name = std::move(name),
-          .file_path = std::move(result->file_path),
-          .width = result->width,
-          .height = result->height};
-      chat_.image_thumb_ready = !pending_image_->file_path.empty();
-      chat_.image_thumb_src = pending_image_->file_path.c_str();
-      host_.SyncComposerInputState();
-      DirtyChatChrome();
-      DirtyChatHeader();
-    });
-  });
+  AppRuntime::PostWorkerNormal(
+      [this, path = std::move(path), profile_dir, generation, name = std::move(name)]() mutable {
+        Roe<PreparedDraft> result = PrepareAiImageDraft(path, profile_dir);
+        ReleasePickedFile(path); // the draft keeps its own copy
+        AppRuntime::PostUI([this, generation, name = std::move(name), result = std::move(result)]() mutable {
+          if (generation != image_prepare_generation_) {
+            if (result) {
+              RemoveSessionFile(result->file_path); // removed or replaced while it was being prepared
+            }
+            return;
+          }
+          chat_.image_preparing = false;
+          if (!result) {
+            // Sizes and kinds only in the log: no file name, no path.
+            log().warning << "AI image not prepared: kind=" << result.error().code;
+            chat_.image_chip = false;
+            chat_.image_draft_name = "";
+            host_.SyncComposerInputState();
+            DirtyChatChrome();
+            DirtyChatHeader();
+            UserFeedback::Fail(Tr(AiImagePrepErrorKey(AiImagePrepErrorOf(result.error()))));
+            return;
+          }
+          log().info << "AI image ready: " << result->image.data.size() << " bytes";
+          pending_image_ = PendingAiImage{.image = std::move(result->image),
+                                          .name = std::move(name),
+                                          .file_path = std::move(result->file_path),
+                                          .width = result->width,
+                                          .height = result->height};
+          chat_.image_thumb_ready = !pending_image_->file_path.empty();
+          chat_.image_thumb_src = pending_image_->file_path.c_str();
+          host_.SyncComposerInputState();
+          DirtyChatChrome();
+          DirtyChatHeader();
+        });
+      });
 }
 
 void AgentTurnController::DiscardPendingAiImage() {
@@ -633,23 +640,23 @@ void AgentTurnController::StartPreparedImageSend(const std::string& thread_id, c
   // ~1.5 MB is blocking work: off the UI thread, submit from the reply. If the store fails the question
   // still goes out and the bubble shows only the marker.
   ConversationsFacade* facade = host_.Facade();
-  AppRuntime::PostWorkerNormal([this, facade, thread_id, text, question, message_id,
-                                image = std::move(image)]() mutable {
-    auto stored = facade->StoreAiImage(thread_id, image.image.data, image.image.mime);
-    AppRuntime::PostUI([this, thread_id, text, question, message_id, image = std::move(image),
-                        stored = std::move(stored)]() mutable {
-      std::string ai_image_json;
-      if (stored) {
-        ai_image_json = AiImageRefToJson(AiImageRef{.content_hash = std::move(stored->content_hash),
-                                                    .mime = image.image.mime,
-                                                    .width = image.width,
-                                                    .height = image.height});
-      } else {
-        log().warning << "AI image not stored: " << AppError::Log(stored.error());
-      }
-      SubmitStoredImageQuestion(thread_id, text, question, message_id, std::move(image), std::move(ai_image_json));
-    });
-  });
+  AppRuntime::PostWorkerNormal(
+      [this, facade, thread_id, text, question, message_id, image = std::move(image)]() mutable {
+        auto stored = facade->StoreAiImage(thread_id, image.image.data, image.image.mime);
+        AppRuntime::PostUI([this, thread_id, text, question, message_id, image = std::move(image),
+                            stored = std::move(stored)]() mutable {
+          std::string ai_image_json;
+          if (stored) {
+            ai_image_json = AiImageRefToJson(AiImageRef{.content_hash = std::move(stored->content_hash),
+                                                        .mime = image.image.mime,
+                                                        .width = image.width,
+                                                        .height = image.height});
+          } else {
+            log().warning << "AI image not stored: " << AppError::Log(stored.error());
+          }
+          SubmitStoredImageQuestion(thread_id, text, question, message_id, std::move(image), std::move(ai_image_json));
+        });
+      });
 }
 
 void AgentTurnController::SubmitStoredImageQuestion(const std::string& thread_id, const std::string& text,
@@ -661,11 +668,9 @@ void AgentTurnController::SubmitStoredImageQuestion(const std::string& thread_id
   }
   log().info << "Submitting an image question to the agent session";
   // The bytes are copied (about 1.5 MB at most) so a question the session does not take can be given back whole.
-  const SubmitOutcome outcome =
-      agent_ports_.submit_image_to_thread(thread_id, question,
-                                          AgentImageTurn{.image = image.image,
-                                                         .message_id = message_id,
-                                                         .ai_image_json = std::move(ai_image_json)});
+  const SubmitOutcome outcome = agent_ports_.submit_image_to_thread(
+      thread_id, question,
+      AgentImageTurn{.image = image.image, .message_id = message_id, .ai_image_json = std::move(ai_image_json)});
   if (outcome == SubmitOutcome::Started) {
     RemoveSessionFile(image.file_path); // the composer's preview; the thread's view file takes over
     return;
@@ -768,8 +773,8 @@ void AgentTurnController::FlushStreamingRow() {
     bool changed = false;
     if (row.dirty && ShouldRenderStreamDelta(row.last_render, now)) {
       ChatAnswerRml answer = BuildMarkdownAnswer(row.text);
-      row.rml = ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", row.text) +
-                R"( selectable="text">)" + InjectEntryPlaceholders(answer.rml, row.row_id) + "</div>";
+      row.rml = ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", row.text) + R"( selectable="text">)" +
+                InjectEntryPlaceholders(answer.rml, row.row_id) + "</div>";
       chat_links_[row.row_id] = std::move(answer.links);
       row.last_render = now;
       row.dirty = false;
@@ -828,7 +833,7 @@ void AgentTurnController::SubmitHomeQuestion(const std::string& thread_id, const
     host_.PutBackDraft(thread_id, text);
     return;
   }
-  MarkAgentBusy(thread_id);     // "thinking" shows in the chat it was typed in
+  MarkAgentBusy(thread_id);      // "thinking" shows in the chat it was typed in
   home_turn_thread_ = thread_id; // but it runs in the Home session: stop and recovery ask that one
   NoteHomeTurnStarted();
 }
@@ -1142,10 +1147,11 @@ void AgentTurnController::CloseApprovalCard(const std::string& thread_id, const 
   DirtyChat();
 }
 
-void AgentTurnController::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, const bool from_llm,
-                                    const std::string& finish_reason, const std::string& thread_id,
-                                    ResponseGoal response_goal, RenderMode render_mode, const AtAiMode shared_ai_mode,
-                                    const std::vector<BriefAiSource>& sources) {
+void AgentTurnController::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output,
+                                               const bool from_llm, const std::string& finish_reason,
+                                               const std::string& thread_id, ResponseGoal response_goal,
+                                               RenderMode render_mode, const AtAiMode shared_ai_mode,
+                                               const std::vector<BriefAiSource>& sources) {
   if (thread_id.empty()) {
     log().warning << "AI answer with no chat to go in dropped (never stored in the open chat)";
     return;
@@ -1266,8 +1272,7 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
             action_entry_id = appended->id;
             if (action_entry_id != ai_message.id) {
               hydrated = InjectEntryPlaceholders(parsed.rml, action_entry_id);
-              working_set_candidates =
-                  working_set_.HydrateCandidates(parsed.working_set_candidates, action_entry_id);
+              working_set_candidates = working_set_.HydrateCandidates(parsed.working_set_candidates, action_entry_id);
               if (working_set_candidates.empty()) {
                 hydrated = HydrateChatActionButtons(hydrated, chat_actions);
               }
@@ -1281,8 +1286,7 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
             }
           }
         } else {
-          log().warning << "Failed to append assistant message for chat actions: "
-                        << appended.error().message;
+          log().warning << "Failed to append assistant message for chat actions: " << appended.error().message;
         }
       }
       (void)host_.Facade()->UpdatePreview(active_thread, parsed.rml, /*assistant_text=*/true);
@@ -1336,89 +1340,89 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
   const char* image_error_key = AiImageErrorKindKey(event.error_kind);
   const std::string error_message = image_error_key ? Tr(image_error_key) : event.message;
   switch (event.type) {
-  case AgentEventType::LoadingChanged:
-    if (!event.loading) {
-      const std::string thread = EventThread(event);
-      if (streaming_.count(thread) > 0) { // turn ended without a persisted answer
-        ClearStreamingRow(thread);
-        host_.SyncDisplayFromThread();
-        DirtyChatTurns();
-      }
-      if (!thread.empty() && busy_.BusyIn(thread)) {
-        MarkAgentIdle(thread);
+    case AgentEventType::LoadingChanged:
+      if (!event.loading) {
+        const std::string thread = EventThread(event);
+        if (streaming_.count(thread) > 0) { // turn ended without a persisted answer
+          ClearStreamingRow(thread);
+          host_.SyncDisplayFromThread();
+          DirtyChatTurns();
+        }
+        if (!thread.empty() && busy_.BusyIn(thread)) {
+          MarkAgentIdle(thread);
+        } else {
+          log().debug << "Turn-end of a chat not shown as busy (an earlier turn's)";
+        }
+        if (event.thread_id.empty()) {
+          home_turn_thread_.reset(); // the Home session's turn is over
+        }
+        host_.OnAgentTurnEnded(thread);
+        DrainQueue(); // a turn ended: the next question waiting, if one does
       } else {
-        log().debug << "Turn-end of a chat not shown as busy (an earlier turn's)";
+        if (event.thread_id.empty() && !home_turn_thread_) {
+          // A Home session turn started elsewhere than the composer (a card, a button): it shows in the open chat.
+          home_turn_thread_ = host_.ActiveThreadId();
+        }
+        MarkAgentBusy(EventThread(event));
+        if (host_.MessagingIsReady()) {
+          host_.SyncDisplayFromThread();
+          DirtyChatTurns();
+        }
       }
-      if (event.thread_id.empty()) {
-        home_turn_thread_.reset(); // the Home session's turn is over
+      DirtyChatChrome();
+      break;
+    case AgentEventType::ToolActivity:
+      // The "answer" phase has no tool and gets no label of its own: the last step ("Searching the web…")
+      // stays until the text arrives. Saying "Writing…" read as the AI making the answer up.
+      if (event.tool_name.empty() && event.status == "answer") {
+        break;
       }
-      host_.OnAgentTurnEnded(thread);
-      DrainQueue(); // a turn ended: the next question waiting, if one does
-    } else {
-      if (event.thread_id.empty() && !home_turn_thread_) {
-        // A Home session turn started elsewhere than the composer (a card, a button): it shows in the open chat.
-        home_turn_thread_ = host_.ActiveThreadId();
+      // The step label belongs to the thread whose turn takes it; shown while that thread is open.
+      step_status_[EventThread(event)] = ToolActivityLabel(event.tool_name, event.status);
+      RefreshBusyForActiveThread();
+      break;
+    case AgentEventType::AssistantDelta:
+      OnAssistantDelta(event);
+      break;
+    case AgentEventType::AssistantReady: {
+      const std::string thread = EventThread(event);
+      ClearStreamingRow(thread);
+      if (thread == kAskAiOnceThread) {
+        host_.OnAskAiOnceReply(event); // the panel's one-off answer: shown there, stored nowhere
+        break;
       }
-      MarkAgentBusy(EventThread(event));
-      if (host_.MessagingIsReady()) {
+      if (thread.empty()) {
+        // A Home answer whose turn the UI no longer knows: storing it in the open chat could put it in a chat with a
+        // person. Dropped, said in the log.
+        log().warning << "AI answer with no chat to go in dropped (never stored in the open chat)";
+        break;
+      }
+      FinishAssistantReply(event.entry_id, event.text, event.from_model, event.finish_reason, thread,
+                           event.response_goal, event.render_mode, event.shared_ai_mode, event.sources);
+      break;
+    }
+    case AgentEventType::ApprovalClosed:
+      CloseApprovalCard(event.thread_id, event.entry_id, event.approval_outcome, event.approval_id);
+      break;
+    case AgentEventType::Error:
+      log().error << "Agent session error: " << event.message;
+      // A partial answer was already persisted via AssistantReady; the error toast is separate.
+      UserFeedback::NeedsSetup(error_message);
+      // Only the Home session's own turn (no thread, its entry named) writes into the Home conversation: an error of
+      // another chat, or one outside any turn, must not replace a Home answer (it would go to brief_AI as history).
+      if (AgentReady() && event.thread_id.empty() && !event.entry_id.empty() &&
+          agent_ports_.complete_assistant_message && agent_ports_.set_assistant_display_plain) {
+        agent_ports_.complete_assistant_message(event.entry_id, error_message);
+        agent_ports_.set_assistant_display_plain(event.entry_id, error_message);
         host_.SyncDisplayFromThread();
         DirtyChatTurns();
       }
-    }
-    DirtyChatChrome();
-    break;
-  case AgentEventType::ToolActivity:
-    // The "answer" phase has no tool and gets no label of its own: the last step ("Searching the web…")
-    // stays until the text arrives. Saying "Writing…" read as the AI making the answer up.
-    if (event.tool_name.empty() && event.status == "answer") {
+      chat_.status = "";
+      // "Busy" ends with the turn's LoadingChanged(false), which follows; ending it here could mark the next queued
+      // turn idle when that late event arrives.
+      RefreshBusyForActiveThread();
+      DirtyChatChrome();
       break;
-    }
-    // The step label belongs to the thread whose turn takes it; shown while that thread is open.
-    step_status_[EventThread(event)] = ToolActivityLabel(event.tool_name, event.status);
-    RefreshBusyForActiveThread();
-    break;
-  case AgentEventType::AssistantDelta:
-    OnAssistantDelta(event);
-    break;
-  case AgentEventType::AssistantReady: {
-    const std::string thread = EventThread(event);
-    ClearStreamingRow(thread);
-    if (thread == kAskAiOnceThread) {
-      host_.OnAskAiOnceReply(event); // the panel's one-off answer: shown there, stored nowhere
-      break;
-    }
-    if (thread.empty()) {
-      // A Home answer whose turn the UI no longer knows: storing it in the open chat could put it in a chat with a
-      // person. Dropped, said in the log.
-      log().warning << "AI answer with no chat to go in dropped (never stored in the open chat)";
-      break;
-    }
-    FinishAssistantReply(event.entry_id, event.text, event.from_model, event.finish_reason, thread,
-                         event.response_goal, event.render_mode, event.shared_ai_mode, event.sources);
-    break;
-  }
-  case AgentEventType::ApprovalClosed:
-    CloseApprovalCard(event.thread_id, event.entry_id, event.approval_outcome, event.approval_id);
-    break;
-  case AgentEventType::Error:
-    log().error << "Agent session error: " << event.message;
-    // A partial answer was already persisted via AssistantReady; the error toast is separate.
-    UserFeedback::NeedsSetup(error_message);
-    // Only the Home session's own turn (no thread, its entry named) writes into the Home conversation: an error of
-    // another chat, or one outside any turn, must not replace a Home answer (it would go to brief_AI as history).
-    if (AgentReady() && event.thread_id.empty() && !event.entry_id.empty() && agent_ports_.complete_assistant_message &&
-        agent_ports_.set_assistant_display_plain) {
-      agent_ports_.complete_assistant_message(event.entry_id, error_message);
-      agent_ports_.set_assistant_display_plain(event.entry_id, error_message);
-      host_.SyncDisplayFromThread();
-      DirtyChatTurns();
-    }
-    chat_.status = "";
-    // "Busy" ends with the turn's LoadingChanged(false), which follows; ending it here could mark the next queued
-    // turn idle when that late event arrives.
-    RefreshBusyForActiveThread();
-    DirtyChatChrome();
-    break;
   }
 }
 
@@ -1497,21 +1501,21 @@ void AgentTurnController::EnsureBriefGuestLlmKey() {
 
 void AgentTurnController::OnBriefKeyMintEnded(const BriefKeyMintEnd& end) {
   switch (end.outcome) {
-  case BriefKeyMintOutcome::Stored:
-    brief_guest_mint_user_hint_.clear();
-    return; // after_identity_changed reloads the agent and refreshes the banner
-  case BriefKeyMintOutcome::MintFailed:
-    brief_guest_mint_user_hint_ = end.error ? AppError::Display(*end.error) : std::string();
-    if (brief_guest_mint_user_hint_.empty()) {
-      brief_guest_mint_user_hint_ = Tr("chat.hint.brief_unavailable_temp");
-    }
-    break;
-  case BriefKeyMintOutcome::SaveFailed:
-    brief_guest_mint_user_hint_ = Tr("chat.hint.brief_key_save_failed");
-    break;
-  case BriefKeyMintOutcome::Discarded:
-    brief_guest_mint_attempted_ = false; // nothing was written: the next session mints again
-    return;
+    case BriefKeyMintOutcome::Stored:
+      brief_guest_mint_user_hint_.clear();
+      return; // after_identity_changed reloads the agent and refreshes the banner
+    case BriefKeyMintOutcome::MintFailed:
+      brief_guest_mint_user_hint_ = end.error ? AppError::Display(*end.error) : std::string();
+      if (brief_guest_mint_user_hint_.empty()) {
+        brief_guest_mint_user_hint_ = Tr("chat.hint.brief_unavailable_temp");
+      }
+      break;
+    case BriefKeyMintOutcome::SaveFailed:
+      brief_guest_mint_user_hint_ = Tr("chat.hint.brief_key_save_failed");
+      break;
+    case BriefKeyMintOutcome::Discarded:
+      brief_guest_mint_attempted_ = false; // nothing was written: the next session mints again
+      return;
   }
   RefreshLlmSetupBanner(); // it kept the banner while the mint was in flight
 }
@@ -1540,7 +1544,8 @@ void AgentTurnController::ApplyConfig(const AgentConfig& config) {
     std::string brief_key;
     if (host_.MessagingInitialized() && host_.MessagingReady()) {
       if (auto identity = host_.Facade()->GetIdentity()) {
-        brief_key = ResolveBriefLlmApiKey(identity->brief_llm_api_key.Reveal(), identity->brief_llm_guest_api_key.Reveal());
+        brief_key =
+            ResolveBriefLlmApiKey(identity->brief_llm_api_key.Reveal(), identity->brief_llm_guest_api_key.Reveal());
       }
     }
     if (!brief_key.empty()) {
@@ -1563,9 +1568,7 @@ void AgentTurnController::ApplyConfig(const AgentConfig& config) {
         }
       });
     }
-    AppConfig configure = host_.Store().IsInitialized()
-                              ? host_.Store().Snapshot().config
-                              : AppConfig{};
+    AppConfig configure = host_.Store().IsInitialized() ? host_.Store().Snapshot().config : AppConfig{};
     configure.llm = runtime.llm;
     configure.llm_api_key_env = runtime.llm_api_key_env;
     configure.promoted_mcp = runtime.promoted_mcp;
@@ -1601,17 +1604,17 @@ void AgentTurnController::FlushHeldAgentSend() {
   for (HeldAgentSend::Send& send : polled.ready) {
     // Only a turn in the send's own thread holds it back; a full assistant just queues it (SendUserText).
     switch (HeldSendFateOf(send, host_.ActiveThreadId(), busy_.BusyIn(send.thread_id))) {
-    case HeldSendFate::Send:
-      log().info << "Sending the held message: the assistant is connected";
-      host_.SendUserText(send.text, std::move(send.payload), send.from_home_chip);
-      break;
-    case HeldSendFate::BackToDraft:
-      log().info << "Held send put back in its own composer: another thread is open, or a reply is loading";
-      host_.PutBackDraft(send.thread_id, send.text);
-      break;
-    case HeldSendFate::Drop:
-      log().info << "Held chip send dropped: another thread is open, or a reply is loading";
-      break;
+      case HeldSendFate::Send:
+        log().info << "Sending the held message: the assistant is connected";
+        host_.SendUserText(send.text, std::move(send.payload), send.from_home_chip);
+        break;
+      case HeldSendFate::BackToDraft:
+        log().info << "Held send put back in its own composer: another thread is open, or a reply is loading";
+        host_.PutBackDraft(send.thread_id, send.text);
+        break;
+      case HeldSendFate::Drop:
+        log().info << "Held chip send dropped: another thread is open, or a reply is loading";
+        break;
     }
   }
 }

@@ -125,8 +125,7 @@ Roe<PaymentPromise> PaymentPromiseLifecycle::Accept(PaymentPromiseStore& store, 
   return *promise;
 }
 
-Roe<PaymentPromise> PaymentPromiseLifecycle::MarkDelivering(PaymentPromiseStore& store,
-                                                            const std::string& promise_id) {
+Roe<PaymentPromise> PaymentPromiseLifecycle::MarkDelivering(PaymentPromiseStore& store, const std::string& promise_id) {
   auto promise = LoadRequired(store, promise_id);
   if (!promise) {
     return promise.error();
@@ -144,8 +143,7 @@ Roe<PaymentPromise> PaymentPromiseLifecycle::MarkDelivering(PaymentPromiseStore&
 
 Roe<PaymentPromise> PaymentPromiseLifecycle::RecordOutcome(PaymentPromiseStore& store, IAccountSigningAccess& identity,
                                                            const std::string& promise_id,
-                                                           const PaymentPromiseState outcome,
-                                                           const std::string& note) {
+                                                           const PaymentPromiseState outcome, const std::string& note) {
   if (!PaymentPromiseStateIsTerminal(outcome)) {
     return Error("outcome must be a terminal PaymentPromiseState");
   }

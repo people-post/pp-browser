@@ -8,13 +8,19 @@ namespace pbr {
 
 namespace {
 
-uint16_t Be16(const uint8_t* p) { return static_cast<uint16_t>((p[0] << 8) | p[1]); }
+uint16_t Be16(const uint8_t* p) {
+  return static_cast<uint16_t>((p[0] << 8) | p[1]);
+}
 uint32_t Be32(const uint8_t* p) {
   return (static_cast<uint32_t>(p[0]) << 24) | (static_cast<uint32_t>(p[1]) << 16) |
          (static_cast<uint32_t>(p[2]) << 8) | static_cast<uint32_t>(p[3]);
 }
-uint16_t Le16(const uint8_t* p) { return static_cast<uint16_t>(p[0] | (p[1] << 8)); }
-uint32_t Le24(const uint8_t* p) { return static_cast<uint32_t>(p[0] | (p[1] << 8) | (p[2] << 16)); }
+uint16_t Le16(const uint8_t* p) {
+  return static_cast<uint16_t>(p[0] | (p[1] << 8));
+}
+uint32_t Le24(const uint8_t* p) {
+  return static_cast<uint32_t>(p[0] | (p[1] << 8) | (p[2] << 16));
+}
 
 /** Orientation tag from the TIFF block of an Exif segment (`tiff`, `size` bytes); 1 when absent or odd. */
 int ExifOrientation(const uint8_t* tiff, const size_t size) {
@@ -154,11 +160,10 @@ std::optional<ImageHeaderInfo> ReadWebpHeader(const std::vector<uint8_t>& d) {
 
 /** APP1 "Exif" segment that only says the orientation. */
 std::vector<uint8_t> MinimalOrientationExif(const int orientation) {
-  std::vector<uint8_t> seg = {0xFF, 0xE1, 0x00, 0x22, 'E', 'x', 'i', 'f', 0, 0,
-                              'M',  'M',  0x00, 0x2A, 0x00, 0x00, 0x00, 0x08,
-                              0x00, 0x01, 0x01, 0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01,
-                              0x00, static_cast<uint8_t>(orientation), 0x00, 0x00,
-                              0x00, 0x00, 0x00, 0x00};
+  std::vector<uint8_t> seg = {0xFF, 0xE1, 0x00, 0x22, 'E',  'x',  'i',  'f',  0,    0,
+                              'M',  'M',  0x00, 0x2A, 0x00, 0x00, 0x00, 0x08, 0x00, 0x01,
+                              0x01, 0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01, 0x00, static_cast<uint8_t>(orientation),
+                              0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
   return seg;
 }
 

@@ -118,7 +118,7 @@ TEST(CallConnectStoryTest, TheResultLineFadesAfterFourSecondsThenTheSignalBarSho
   story.Step(At(1'000, Status::Connecting, false, ""));
   story.Step(At(1'500, Status::Connecting, false, ""));
   story.Step(At(2'000, Status::Connected, true, "direct"));
-  story.Step(At(2'500, Status::Connected, true, "direct"));  // securing -> done: the list holds 1.5 s
+  story.Step(At(2'500, Status::Connected, true, "direct")); // securing -> done: the list holds 1.5 s
   const int64_t gone = 2'500 + CallConnectStory::kListHoldMs;
   CallStoryView v = story.Step(At(gone + 3'999, Status::Connected, true, "direct"));
   EXPECT_TRUE(v.result_shown);
@@ -261,19 +261,42 @@ TEST(CallConnectStoryTest, EveryWordExistsInEnglishAndChineseAndNoneIsATechWord)
   for (const CallStoryNotice notice : {CallStoryNotice::Slow, CallStoryNotice::Closer}) {
     keys.emplace_back(CallStoryNoticeKey(notice));
   }
-  for (const char* key : {"call.reconnect.restored", "call.reconnect.offline", "call.status.reconnecting",
-                          "call.quality.hint.connecting_voice", "call.quality.hint.connecting_video",
-                          "call.quality.hint.retrying_voice", "call.quality.hint.retrying_video",
-                          "call.story.result", "call.story.step.calling", "call.story.step.peer_answered",
-                          "call.story.step.you_answered", "call.story.step.matching", "call.story.step.matched",
-                          "call.story.step.matched_direct", "call.story.step.matched_relayed", "call.story.step.securing", "call.story.step.connected",
-                          "call.story.step.group_joined", "call.story.step.group_calling", "call.story.step.group_line",
-                          "call.story.step.group_heard", "call.story.sheet.title", "call.story.sheet.lead",
-                          "call.story.sheet.now", "call.story.sheet.how", "call.story.sheet.encryption",
-                          "call.story.sheet.e2e", "call.story.event.placed", "call.story.event.answered",
-                          "call.story.event.joined", "call.story.event.peer_answered", "call.story.event.encrypted",
-                          "call.story.event.group_encrypted", "call.story.event.group_connected",
-                          "call.story.event.closer", "call.story.seconds"}) {
+  for (const char* key : {"call.reconnect.restored",
+                          "call.reconnect.offline",
+                          "call.status.reconnecting",
+                          "call.quality.hint.connecting_voice",
+                          "call.quality.hint.connecting_video",
+                          "call.quality.hint.retrying_voice",
+                          "call.quality.hint.retrying_video",
+                          "call.story.result",
+                          "call.story.step.calling",
+                          "call.story.step.peer_answered",
+                          "call.story.step.you_answered",
+                          "call.story.step.matching",
+                          "call.story.step.matched",
+                          "call.story.step.matched_direct",
+                          "call.story.step.matched_relayed",
+                          "call.story.step.securing",
+                          "call.story.step.connected",
+                          "call.story.step.group_joined",
+                          "call.story.step.group_calling",
+                          "call.story.step.group_line",
+                          "call.story.step.group_heard",
+                          "call.story.sheet.title",
+                          "call.story.sheet.lead",
+                          "call.story.sheet.now",
+                          "call.story.sheet.how",
+                          "call.story.sheet.encryption",
+                          "call.story.sheet.e2e",
+                          "call.story.event.placed",
+                          "call.story.event.answered",
+                          "call.story.event.joined",
+                          "call.story.event.peer_answered",
+                          "call.story.event.encrypted",
+                          "call.story.event.group_encrypted",
+                          "call.story.event.group_connected",
+                          "call.story.event.closer",
+                          "call.story.seconds"}) {
     keys.emplace_back(key);
   }
   for (const std::string& key : keys) {

@@ -140,7 +140,6 @@ public:
 
   using PolicyPrefs = HubPolicyPrefs;
 
-
   /** Push / OS notification preference projected from ProfilePreferences. */
   struct NotificationPrefs {
     bool show_notifications = true;
@@ -152,7 +151,6 @@ public:
     }
     bool operator!=(const NotificationPrefs& other) const { return !(*this == other); }
   };
-
 
   ConversationsHub();
   ~ConversationsHub();
@@ -182,7 +180,6 @@ public:
   void RequestShutdown();
   /** Undo RequestShutdown when the teardown was abandoned (profile reset quiesce timed out). */
   void CancelShutdownRequest();
-
 
   /** App-owned profile vault/DEK service. Bind before EnsureMessagingReady. */
   void BindSecrets(ProfileSecretsEngine& secrets);
@@ -378,8 +375,7 @@ public:
   Roe<void> RotateBriefLlmKey(const std::string& llm_base_url);
 
   /** P001: send `charge_required` and re-lock peer initiation billing. */
-  Roe<void> SendChargeRequired(const std::string& peer_identity,
-                               std::optional<int64_t> floor_minor = std::nullopt);
+  Roe<void> SendChargeRequired(const std::string& peer_identity, std::optional<int64_t> floor_minor = std::nullopt);
   InitiationBillingStore* InitiationBilling() const { return initiation_billing_.get(); }
   PaymentPromiseStore* PaymentPromises() const { return payment_promises_.get(); }
 
@@ -402,10 +398,8 @@ public:
   /** Drop a staged inbound receipt without committing (P003). */
   Roe<bool> IgnoreInboundPaymentPromise(const std::string& promise_id);
   bool ShouldAvoidPaymentCounterparty(const std::string& other_account_id);
-  Roe<ThreadMessage> BuildPaymentPromiseControlMessage(const std::string& thread_id,
-                                                       PaymentPromiseControlType type,
-                                                       const PaymentPromise& promise,
-                                                       const std::string& body_text);
+  Roe<ThreadMessage> BuildPaymentPromiseControlMessage(const std::string& thread_id, PaymentPromiseControlType type,
+                                                       const PaymentPromise& promise, const std::string& body_text);
 
   mesh::ReachabilitySnapshot Reachability() const;
   void RunReachabilityProbe(bool try_upnp);
@@ -580,7 +574,7 @@ private:
 
   std::string data_dir_;
   std::string profile_id_;
-  HubSettings config_;  // UI (the hub's thread)
+  HubSettings config_; // UI (the hub's thread)
   /** The policies in force (from the settings, then Apply). */
   PolicyPrefs policy_;
   /** `config_.mesh` as owners read it (call stack, mesh media policy): republished on every write. */
@@ -714,7 +708,8 @@ private:
   std::function<void(std::chrono::milliseconds, std::function<void()>)> link_grace_scheduler_;
   LinkState link_state_ = LinkState::Unknown;
   int link_net_ = -1; // -1 no report yet, 0 offline, 1 linked
-  MeshDeliveryOrchestrator::BriefRelayHealthState link_health_ = MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown;
+  MeshDeliveryOrchestrator::BriefRelayHealthState link_health_ =
+      MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown;
   bool link_grace_over_ = false;
   uint64_t link_grace_gen_ = 0; // a timer carries the generation it was armed with; a stale one does nothing
   pp::Lifetime link_grace_lifetime_;

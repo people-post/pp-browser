@@ -67,8 +67,7 @@ public:
 
   /** Returns leg id immediately; completion via `on_finished` when MediaReady or error. */
   CallMediaLegId StartLeg(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                          LegConnected on_finished = {},
-                          int timeout_ms = static_cast<int>(kCallMediaConnectTimeoutMs));
+                          LegConnected on_finished = {}, int timeout_ms = static_cast<int>(kCallMediaConnectTimeoutMs));
 
   void CancelLeg(CallMediaLegId id);
   /** Drop leg `id`'s bundle; an empty or gone id drops nothing (never another call's bundle). */

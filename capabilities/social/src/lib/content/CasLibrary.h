@@ -21,9 +21,9 @@ struct CasLibraryRow {
   std::string content_id_hex;
   CasRealm realm = CasRealm::Private;
   std::string title;
-  std::string detail;       // size · mime
-  std::string realm_label;  // Private / Public
-  std::string pin_label;    // Kept / Cache
+  std::string detail;      // size · mime
+  std::string realm_label; // Private / Public
+  std::string pin_label;   // Kept / Cache
   bool pinned = true;
   bool can_share_publicly = false;
   bool can_unpublish = false;
@@ -32,14 +32,14 @@ struct CasLibraryRow {
 
 inline const char* CasLibraryFilterToString(const CasLibraryFilter filter) {
   switch (filter) {
-  case CasLibraryFilter::All:
-    return "all";
-  case CasLibraryFilter::Private:
-    return "private";
-  case CasLibraryFilter::Public:
-    return "public";
-  case CasLibraryFilter::Cache:
-    return "cache";
+    case CasLibraryFilter::All:
+      return "all";
+    case CasLibraryFilter::Private:
+      return "private";
+    case CasLibraryFilter::Public:
+      return "public";
+    case CasLibraryFilter::Cache:
+      return "cache";
   }
   return "all";
 }

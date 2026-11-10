@@ -124,19 +124,19 @@ Roe<SealedDek::Result> SealedDek::Open(ISecureBlobStore& store, const std::strin
     return looked.error();
   }
   switch (looked->status) {
-  case SecureBlobLookup::Status::Found:
-    break;
-  case SecureBlobLookup::Status::Missing:
-    Forget(store, entry_name, file);
-    return result;
-  case SecureBlobLookup::Status::Unavailable:
-    result.status = Status::Unavailable;
-    result.code = looked->code;
-    return result;
-  case SecureBlobLookup::Status::Canceled:
-    result.status = Status::Canceled;
-    result.code = looked->code;
-    return result;
+    case SecureBlobLookup::Status::Found:
+      break;
+    case SecureBlobLookup::Status::Missing:
+      Forget(store, entry_name, file);
+      return result;
+    case SecureBlobLookup::Status::Unavailable:
+      result.status = Status::Unavailable;
+      result.code = looked->code;
+      return result;
+    case SecureBlobLookup::Status::Canceled:
+      result.status = Status::Canceled;
+      result.code = looked->code;
+      return result;
   }
   if (looked->bytes.size() != kEntrySize || looked->bytes[0] != kEntryVersion) {
     Wipe(looked->bytes);

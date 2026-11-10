@@ -13,10 +13,10 @@ enum class CryptoChannel : uint8_t { E2e = 0, E2ePublic = 1 };
 
 inline std::string CryptoChannelToString(const CryptoChannel channel) {
   switch (channel) {
-  case CryptoChannel::E2e:
-    return "e2e";
-  case CryptoChannel::E2ePublic:
-    return "e2e_public";
+    case CryptoChannel::E2e:
+      return "e2e";
+    case CryptoChannel::E2ePublic:
+      return "e2e_public";
   }
   return "e2e";
 }
@@ -26,14 +26,14 @@ enum class PublicKeyScope : uint8_t { Account = 0, DeviceSelf = 1, DevicePair = 
 
 inline const char* PublicKeyScopeToString(const PublicKeyScope scope) {
   switch (scope) {
-  case PublicKeyScope::Account:
-    return "account";
-  case PublicKeyScope::DeviceSelf:
-    return "device_self";
-  case PublicKeyScope::DevicePair:
-    return "device_pair";
-  case PublicKeyScope::LockedOut:
-    return "locked_out";
+    case PublicKeyScope::Account:
+      return "account";
+    case PublicKeyScope::DeviceSelf:
+      return "device_self";
+    case PublicKeyScope::DevicePair:
+      return "device_pair";
+    case PublicKeyScope::LockedOut:
+      return "locked_out";
   }
   return "account";
 }

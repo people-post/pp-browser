@@ -41,14 +41,14 @@ TEST(MeshTrafficRatesTest, TrafficRatesAreDeltasOverTheInterval) {
   EXPECT_DOUBLE_EQ(rates.sent_bps, 2000.0);
   EXPECT_DOUBLE_EQ(rates.received_bps, 1000.0);
   EXPECT_DOUBLE_EQ(rates.relayed_bps, 2048.0);
-  EXPECT_EQ(rates.rtt_ms, 50);  // 200 ms over 4 samples
+  EXPECT_EQ(rates.rtt_ms, 50); // 200 ms over 4 samples
   EXPECT_DOUBLE_EQ(rates.resend_pct, 5.0);
 }
 
 TEST(MeshTrafficRatesTest, TrafficRatesWithoutSamplesOrAfterRestart) {
   const auto t0 = std::chrono::steady_clock::now();
   pbr::MeshTrafficTotals before = TrafficAt(t0);
-  before.sent_bytes = 9000;  // the mesh restarted: counters went back
+  before.sent_bytes = 9000; // the mesh restarted: counters went back
   pbr::MeshTrafficTotals now = TrafficAt(t0 + std::chrono::seconds(1));
   now.sent_bytes = 100;
 

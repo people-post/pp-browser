@@ -66,39 +66,39 @@ ui::String EventValue(ui::Event& ev) {
 
 std::string ReachabilityStatusLabel(SettingsReachabilityView::Status status) {
   switch (status) {
-  case SettingsReachabilityView::Status::Checking:
-    return Tr("settings.network.reachability.checking");
-  case SettingsReachabilityView::Status::Reachable:
-    return Tr("settings.network.reachability.reachable");
-  case SettingsReachabilityView::Status::OutboundOnly:
-    return Tr("settings.network.reachability.outbound_only");
-  case SettingsReachabilityView::Status::Blocked:
-    return Tr("settings.network.reachability.blocked");
-  case SettingsReachabilityView::Status::Unknown:
-  default:
-    return Tr("settings.network.reachability.unknown");
+    case SettingsReachabilityView::Status::Checking:
+      return Tr("settings.network.reachability.checking");
+    case SettingsReachabilityView::Status::Reachable:
+      return Tr("settings.network.reachability.reachable");
+    case SettingsReachabilityView::Status::OutboundOnly:
+      return Tr("settings.network.reachability.outbound_only");
+    case SettingsReachabilityView::Status::Blocked:
+      return Tr("settings.network.reachability.blocked");
+    case SettingsReachabilityView::Status::Unknown:
+    default:
+      return Tr("settings.network.reachability.unknown");
   }
 }
 
 std::string ReachabilitySummary(const SettingsReachabilityView& view) {
   switch (view.status) {
-  case SettingsReachabilityView::Status::Checking:
-    return Tr("settings.network.reachability.summary_checking");
-  case SettingsReachabilityView::Status::Reachable:
-    if (view.has_global_ipv6 && view.dial_back_ok) {
-      return Tr("settings.network.reachability.summary_reachable_ipv6");
-    }
-    if (view.upnp_mapped) {
-      return Tr("settings.network.reachability.summary_reachable_upnp");
-    }
-    return Tr("settings.network.reachability.summary_reachable");
-  case SettingsReachabilityView::Status::OutboundOnly:
-    return Tr("settings.network.reachability.summary_outbound_only");
-  case SettingsReachabilityView::Status::Blocked:
-    return Tr("settings.network.reachability.summary_blocked");
-  case SettingsReachabilityView::Status::Unknown:
-  default:
-    return Tr("settings.network.reachability.summary_unknown");
+    case SettingsReachabilityView::Status::Checking:
+      return Tr("settings.network.reachability.summary_checking");
+    case SettingsReachabilityView::Status::Reachable:
+      if (view.has_global_ipv6 && view.dial_back_ok) {
+        return Tr("settings.network.reachability.summary_reachable_ipv6");
+      }
+      if (view.upnp_mapped) {
+        return Tr("settings.network.reachability.summary_reachable_upnp");
+      }
+      return Tr("settings.network.reachability.summary_reachable");
+    case SettingsReachabilityView::Status::OutboundOnly:
+      return Tr("settings.network.reachability.summary_outbound_only");
+    case SettingsReachabilityView::Status::Blocked:
+      return Tr("settings.network.reachability.summary_blocked");
+    case SettingsReachabilityView::Status::Unknown:
+    default:
+      return Tr("settings.network.reachability.summary_unknown");
   }
 }
 
@@ -233,10 +233,8 @@ void SettingsController::InitSections() {
     if (item.advanced_only && !advanced) {
       continue;
     }
-    sections_.push_back({.id = item.id.c_str(),
-                         .title = item.title.c_str(),
-                         .subtitle = item.subtitle.c_str(),
-                         .attention = false});
+    sections_.push_back(
+        {.id = item.id.c_str(), .title = item.title.c_str(), .subtitle = item.subtitle.c_str(), .attention = false});
   }
   ApplySectionAttention();
 }
@@ -440,10 +438,10 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.mcp_servers.reserve(ui_state_.mcp_servers.size());
   for (const McpServerUiState& row : ui_state_.mcp_servers) {
     bindings_.mcp_servers.push_back({.id = row.id.c_str(),
-                                      .url = row.url.c_str(),
-                                      .command = row.command.c_str(),
-                                      .args_text = row.args_text.c_str(),
-                                      .enabled = row.enabled});
+                                     .url = row.url.c_str(),
+                                     .command = row.command.c_str(),
+                                     .args_text = row.args_text.c_str(),
+                                     .enabled = row.enabled});
   }
 }
 
@@ -484,15 +482,13 @@ void SettingsController::SyncBindingsFromSession() {
     if (view.ready) {
       // Resolve against the *previous* baseline first. OnLoaded before Resolve makes an
       // empty binding look mid-edit vs the freshly loaded nickname (keeps nickname blank).
-      ui_state_.profile_nickname =
-          edits.ResolveAfterLoad(kUiFieldProfileNickname, view.nickname, live);
+      ui_state_.profile_nickname = edits.ResolveAfterLoad(kUiFieldProfileNickname, view.nickname, live);
       if (!edits.IsMidEdit(kUiFieldProfileNickname, live)) {
         edits.OnLoaded(kUiFieldProfileNickname, view.nickname);
       }
     }
   } else if (const std::string* baseline = edits.Baseline(kUiFieldProfileNickname)) {
-    ui_state_.profile_nickname =
-        edits.ResolveAfterLoad(kUiFieldProfileNickname, *baseline, live);
+    ui_state_.profile_nickname = edits.ResolveAfterLoad(kUiFieldProfileNickname, *baseline, live);
   }
   PushUiStateToBindings();
 }
@@ -660,18 +656,20 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("ai_dot_shown", &controller.ai_dot_shown_);
     ctor.Bind("ai_dot_look", &controller.ai_dot_look_);
     ctor.Bind("ai_dot_size_label", &controller.ai_dot_size_label_);
-    ctor.BindEventCallback("select_section", DataEvent<std::string>([this](const std::string& id) { OnSelectSection(id); }));
+    ctor.BindEventCallback("select_section",
+                           DataEvent<std::string>([this](const std::string& id) { OnSelectSection(id); }));
     ctor.BindEventCallback("back_to_list", DataEvent<>([this]() { OnBackToList(); }));
     ctor.BindEventCallback("open_security_page",
                            DataEvent<std::string>([this](const std::string& page) { OpenSecurityPage(page); }));
     ctor.BindEventCallback("close_security_page", DataEvent<>([this]() { OnCloseSecurityPage(); }));
     ctor.BindEventCallback("pick_choice", DataEvent<std::string>([this](const std::string& id) { OnPickChoice(id); }));
     ctor.BindEventCallback("open_blocked_people", DataEvent<>([this]() {
-      if (commands_.open_blocked_people) {
-        commands_.open_blocked_people();
-      }
-    }));
-    ctor.BindEventCallback("reset_section", DataEvent<std::string>([this](const std::string& id) { OnResetSection(id); }));
+                             if (commands_.open_blocked_people) {
+                               commands_.open_blocked_people();
+                             }
+                           }));
+    ctor.BindEventCallback("reset_section",
+                           DataEvent<std::string>([this](const std::string& id) { OnResetSection(id); }));
     ctor.BindEventCallback("open_support_chat", DataEvent<>([this]() { OnOpenSupportChat(); }));
     ctor.BindEventCallback("ask_setting_help", [this](ui::DataModelHandle, ui::Event& ev, const ui::VariantList& args) {
       ev.StopPropagation(); // the "?" can sit inside a row that opens a page or toggles a switch
@@ -684,50 +682,59 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_choose_theme", DataEventAt([this](ui::Event& ev) { OnChooseTheme(ev); }));
     ctor.BindEventCallback("on_choose_ai_dot_size", DataEventAt([this](ui::Event& ev) { OnChooseAiDotSize(ev); }));
     ctor.BindEventCallback("on_choose_language", DataEventAt([this](ui::Event& ev) { OnChooseLanguage(ev); }));
-    ctor.BindEventCallback("on_choose_group_invite_policy", DataEventAt([this](ui::Event& ev) { OnChooseGroupInvitePolicy(ev); }));
-    ctor.BindEventCallback("on_choose_call_invite_policy", DataEventAt([this](ui::Event& ev) { OnChooseCallInvitePolicy(ev); }));
+    ctor.BindEventCallback("on_choose_group_invite_policy",
+                           DataEventAt([this](ui::Event& ev) { OnChooseGroupInvitePolicy(ev); }));
+    ctor.BindEventCallback("on_choose_call_invite_policy",
+                           DataEventAt([this](ui::Event& ev) { OnChooseCallInvitePolicy(ev); }));
     ctor.BindEventCallback("on_choose_unlock_grace", DataEventAt([this](ui::Event& ev) { OnChooseUnlockGrace(ev); }));
     ctor.BindEventCallback("on_choose_backend", DataEventAt([this](ui::Event& ev) { OnChooseBackend(ev); }));
-    ctor.BindEventCallback("on_choose_direct_connections", DataEventAt([this](ui::Event& ev) { OnChooseDirectConnections(ev); }));
-    ctor.BindEventCallback("toggle_attachment_auto_wifi", DataEvent<>([this]() { ToggleAttachmentAutoNetwork(false); }));
-    ctor.BindEventCallback("toggle_attachment_auto_cellular", DataEvent<>([this]() { ToggleAttachmentAutoNetwork(true); }));
-    ctor.BindEventCallback("choose_attachment_download_policy", DataEvent<std::string>([this](const std::string& policy) { ApplyAttachmentDownloadPolicyChoice(policy); }));
+    ctor.BindEventCallback("on_choose_direct_connections",
+                           DataEventAt([this](ui::Event& ev) { OnChooseDirectConnections(ev); }));
+    ctor.BindEventCallback("toggle_attachment_auto_wifi",
+                           DataEvent<>([this]() { ToggleAttachmentAutoNetwork(false); }));
+    ctor.BindEventCallback("toggle_attachment_auto_cellular",
+                           DataEvent<>([this]() { ToggleAttachmentAutoNetwork(true); }));
+    ctor.BindEventCallback(
+        "choose_attachment_download_policy",
+        DataEvent<std::string>([this](const std::string& policy) { ApplyAttachmentDownloadPolicyChoice(policy); }));
     ctor.BindEventCallback("toggle_show_notifications", DataEvent<>([this]() { ToggleShowNotifications(); }));
-    ctor.BindEventCallback("toggle_show_notification_preview", DataEvent<>([this]() { ToggleShowNotificationPreview(); }));
+    ctor.BindEventCallback("toggle_show_notification_preview",
+                           DataEvent<>([this]() { ToggleShowNotificationPreview(); }));
     ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
     ctor.BindEventCallback("toggle_transparency", DataEvent<>([this]() { ToggleTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
     ctor.BindEventCallback("toggle_home_show_dynamic", DataEvent<>([this]() { ToggleHomeShowDynamic(); }));
     ctor.BindEventCallback("toggle_home_animated_logo", DataEvent<>([this]() { ToggleHomeAnimatedLogo(); }));
     ctor.BindEventCallback("open_ui_perf_test", DataEvent<>([this]() {
-      if constexpr (kDevToolsBuild) {
-        if (open_ui_perf_test_) {
-          open_ui_perf_test_();
-        }
-      }
-    }));
+                             if constexpr (kDevToolsBuild) {
+                               if (open_ui_perf_test_) {
+                                 open_ui_perf_test_();
+                               }
+                             }
+                           }));
     for (const char* state : {"offline", "connecting", "online"}) {
       ctor.BindEventCallback(std::string("simulate_chats_link_") + state, DataEvent<>([this, state]() {
-        (void)state;
-        if constexpr (kDevToolsBuild) {
-          if (simulate_chats_link_) {
-            simulate_chats_link_(state);
-          }
-        }
-      }));
+                               (void)state;
+                               if constexpr (kDevToolsBuild) {
+                                 if (simulate_chats_link_) {
+                                   simulate_chats_link_(state);
+                                 }
+                               }
+                             }));
     }
     ctor.BindEventCallback("open_home_edit", DataEvent<>([this]() {
-      if (open_home_edit_) {
-        open_home_edit_();
-      }
-    }));
+                             if (open_home_edit_) {
+                               open_home_edit_();
+                             }
+                           }));
     ctor.BindEventCallback("toggle_show_advanced_settings", DataEvent<>([this]() { ToggleShowAdvancedSettings(); }));
     ctor.BindEventCallback("toggle_ai_dot", DataEvent<>([this]() { ToggleAiDot(); }));
     ctor.BindEventCallback("set_ai_dot_look",
                            DataEvent<std::string>([this](const std::string& look) { SetAiDotLook(look); }));
     ctor.BindEventCallback("toggle_crash_reports", DataEvent<>([this]() { ToggleCrashReports(); }));
     ctor.BindEventCallback("toggle_auto_renew_registration", DataEvent<>([this]() { ToggleAutoRenewRegistration(); }));
-    ctor.BindEventCallback("on_integrations_field_changed", DataEvent<>([this]() { MarkSectionDirty("integrations"); }));
+    ctor.BindEventCallback("on_integrations_field_changed",
+                           DataEvent<>([this]() { MarkSectionDirty("integrations"); }));
     ctor.BindEventCallback("on_network_field_changed", DataEvent<>([this]() { MarkSectionDirty("network"); }));
     ctor.BindEventCallback("toggle_node_enabled", DataEvent<>([this]() { ToggleNodeEnabled(); }));
     ctor.BindEventCallback("retest_reachability", DataEvent<>([this]() { RetestReachability(); }));
@@ -741,7 +748,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_trusted_relays", DataEvent<>([this]() { ToggleTrustedRelays(); }));
     ctor.BindEventCallback("toggle_reachable_without_relay", DataEvent<>([this]() { ToggleReachableWithoutRelay(); }));
     // Persist on blur only when the field differs from last loaded/saved nickname.
-    ctor.BindEventCallback("on_profile_nickname_commit", DataEvent<>([this]() { CommitProfileNickname(/*show_toast=*/false); }));
+    ctor.BindEventCallback("on_profile_nickname_commit",
+                           DataEvent<>([this]() { CommitProfileNickname(/*show_toast=*/false); }));
     ctor.BindEventCallback("add_mcp_server", DataEvent<>([this]() { OnAddMcpServer(); }));
     ctor.BindEventCallback("remove_mcp_server", DataEvent<int>([this](int index) { OnRemoveMcpServer(index); }));
   });
@@ -751,8 +759,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   auto& host = DataModelHost::Instance();
   const std::string live = bindings_.profile_nickname.c_str();
   const bool push_nick =
-      include_profile_nickname &&
-      UiEditSession::Instance().ShouldPushToView(kUiFieldProfileNickname, live);
+      include_profile_nickname && UiEditSession::Instance().ShouldPushToView(kUiFieldProfileNickname, live);
   host.Dirty("settings", "sections");
   host.Dirty("settings", "selected_id");
   host.Dirty("settings", "selected_title");
@@ -1198,15 +1205,15 @@ void SettingsController::OnResetSection(const std::string& section_id) {
   if (!shell_feedback_.show_confirm_destructive) {
     return;
   }
-  shell_feedback_.show_confirm_destructive(
-      Tr("settings.reset_defaults_confirm_title"), Tr("settings.reset_defaults_confirm_message"),
-      [this, section_id](const bool ok) {
-        if (!ok) {
-          return;
-        }
-        PerformResetSection(section_id);
-      },
-      {});
+  shell_feedback_.show_confirm_destructive(Tr("settings.reset_defaults_confirm_title"),
+                                           Tr("settings.reset_defaults_confirm_message"),
+                                           [this, section_id](const bool ok) {
+                                             if (!ok) {
+                                               return;
+                                             }
+                                             PerformResetSection(section_id);
+                                           },
+                                           {});
 }
 
 void SettingsController::PerformResetSection(const std::string& section_id) {
@@ -1382,7 +1389,7 @@ void SettingsController::RefreshBlockedCount() {
 
 void SettingsController::OpenSecurityPage(const std::string& page) {
   if (page == "change_pin") {
-    OpenChangePin();  // B2: the PIN gate's three steps, not a page of fields
+    OpenChangePin(); // B2: the PIN gate's three steps, not a page of fields
     return;
   }
   if (selected_id_ != "security" || !show_detail_) {
@@ -1404,7 +1411,7 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
     shell_navigation_.push_local_back("settings_subpage", [this] { ApplyCloseSecurityPage(); });
   }
   if (shell_navigation_.set_secret_page_open) {
-    shell_navigation_.set_secret_page_open(true);  // the transfer code is on it: no tab bar under it
+    shell_navigation_.set_secret_page_open(true); // the transfer code is on it: no tab bar under it
   }
 }
 
@@ -1446,7 +1453,7 @@ void SettingsController::ResetSecurityPage() {
   if (shell_navigation_.set_secret_page_open) {
     shell_navigation_.set_secret_page_open(false);
   }
-  security_actions_.HideRecoveryPhrase();  // the phrase does not follow the user off the page
+  security_actions_.HideRecoveryPhrase(); // the phrase does not follow the user off the page
   if (security_page_.empty()) {
     return;
   }
@@ -1558,8 +1565,7 @@ void SettingsController::OnPickChoice(const std::string& id) {
 }
 
 void SettingsController::OnChooseTheme(ui::Event& ev) {
-  const std::string current =
-      bindings_.appearance.empty() ? "system" : std::string(bindings_.appearance.c_str());
+  const std::string current = bindings_.appearance.empty() ? "system" : std::string(bindings_.appearance.c_str());
   std::vector<SettingsChoicePage::Option> options;
   for (const char* id : {"system", "light", "dark"}) {
     options.push_back({id, ThemeDisplayLabel(id).c_str(), current == id});
@@ -1625,8 +1631,8 @@ void SettingsController::OnChooseBackend(ui::Event& ev) {
     }
     options.push_back({id, BackendDisplayLabel(id).c_str(), current == id});
   }
-  ShowChoice(ev, "backend", Tr("settings.network.backend"), Tr("settings.network.backend.help"), {},
-             std::move(options), [this](const std::string& id) { ApplyBackendChoice(id); });
+  ShowChoice(ev, "backend", Tr("settings.network.backend"), Tr("settings.network.backend.help"), {}, std::move(options),
+             [this](const std::string& id) { ApplyBackendChoice(id); });
 }
 
 void SettingsController::ApplyBackendChoice(const std::string& env) {
@@ -1644,8 +1650,8 @@ void SettingsController::OnChooseDirectConnections(ui::Event& ev) {
   const std::string current =
       bindings_.direct_connections.empty() ? "contacts" : std::string(bindings_.direct_connections.c_str());
   std::vector<SettingsChoicePage::Option> options;
-  for (const mesh::DirectAudience audience :
-       {mesh::DirectAudience::Everyone, mesh::DirectAudience::Contacts, mesh::DirectAudience::Friendly, mesh::DirectAudience::Nobody}) {
+  for (const mesh::DirectAudience audience : {mesh::DirectAudience::Everyone, mesh::DirectAudience::Contacts,
+                                              mesh::DirectAudience::Friendly, mesh::DirectAudience::Nobody}) {
     const std::string id = mesh::DirectAudienceName(audience);
     options.push_back({id.c_str(), DirectConnectionsDisplayLabel(id).c_str(), current == id});
   }
@@ -1703,20 +1709,22 @@ void SettingsController::ApplyUnlockGraceChoice(const std::string& minutes_id) {
   if (suppress_auto_save_) {
     return;
   }
-  const int minutes = minutes_id == "0" ? 0 : minutes_id == "5" ? 5 : minutes_id == "60" ? 60
-                      : minutes_id == std::to_string(kUnlockGraceAlways) ? kUnlockGraceAlways : 15;
+  const int minutes = minutes_id == "0"                                  ? 0
+                      : minutes_id == "5"                                ? 5
+                      : minutes_id == "60"                               ? 60
+                      : minutes_id == std::to_string(kUnlockGraceAlways) ? kUnlockGraceAlways
+                                                                         : 15;
   bindings_.unlock_grace_minutes = minutes;
   bindings_.unlock_grace_label = UnlockGraceDisplayLabel(minutes).c_str();
   PullBindingsToUiState();
   MarkSectionDirty("security");
-  FlushPending();  // the section saves it, then tells the app (set_grace_minutes)
+  FlushPending(); // the section saves it, then tells the app (set_grace_minutes)
   DirtyAll();
 }
 
 void SettingsController::OnChooseGroupInvitePolicy(ui::Event& ev) {
-  const std::string current = bindings_.group_invite_policy.empty()
-                                  ? "contacts_only"
-                                  : std::string(bindings_.group_invite_policy.c_str());
+  const std::string current =
+      bindings_.group_invite_policy.empty() ? "contacts_only" : std::string(bindings_.group_invite_policy.c_str());
   std::vector<SettingsChoicePage::Option> options;
   for (const char* id : {"everyone", "contacts_only", "nobody"}) {
     options.push_back({id, GroupInvitePolicyDisplayLabel(id).c_str(), current == id});
@@ -1857,10 +1865,9 @@ void SettingsController::OpenSection(const std::string& section_id) {
 }
 
 void SettingsController::ApplyReachability() {
-  const bool mesh_ready = commands_.mesh_ready ? commands_.mesh_ready()
-                                               : (commands_.messaging_ready && commands_.messaging_ready());
-  ui_state_.show_connection_card =
-      ui_state_.show_node_toggle && ui_state_.node_enabled == "on" && mesh_ready;
+  const bool mesh_ready =
+      commands_.mesh_ready ? commands_.mesh_ready() : (commands_.messaging_ready && commands_.messaging_ready());
+  ui_state_.show_connection_card = ui_state_.show_node_toggle && ui_state_.node_enabled == "on" && mesh_ready;
   ui_state_.show_circuit_relay_toggle = ui_state_.show_connection_card;
   ui_state_.show_media_relay_toggle = ui_state_.show_connection_card;
   ui_state_.show_dht_toggle = ui_state_.show_connection_card;
@@ -1908,8 +1915,7 @@ bool SettingsController::ComputeNetworkAttention() const {
   }
   const SettingsReachabilityView view = commands_.load_reachability();
   const std::string status_key = ReachabilityNudgeStatusKey(view.status);
-  const std::string& acked =
-      commands_.session_store().Snapshot().profile_prefs.reachability_nudge_acked_status;
+  const std::string& acked = commands_.session_store().Snapshot().profile_prefs.reachability_nudge_acked_status;
   return ReachabilityNudgeActive(true, status_key, acked);
 }
 
@@ -1997,8 +2003,7 @@ void SettingsController::ToggleCircuitRelay() {
   if (!bindings_.show_circuit_relay_toggle) {
     return;
   }
-  bindings_.circuit_relay_enabled =
-      bindings_.circuit_relay_enabled == "on" ? "off" : "on";
+  bindings_.circuit_relay_enabled = bindings_.circuit_relay_enabled == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("network", /*show_toast=*/false);
   DirtyAll();
@@ -2008,8 +2013,7 @@ void SettingsController::ToggleMediaRelay() {
   if (!bindings_.show_media_relay_toggle) {
     return;
   }
-  bindings_.media_relay_enabled =
-      bindings_.media_relay_enabled == "on" ? "off" : "on";
+  bindings_.media_relay_enabled = bindings_.media_relay_enabled == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("network", /*show_toast=*/false);
   DirtyAll();
@@ -2029,16 +2033,14 @@ void SettingsController::TogglePreferContacts() {
   if (!bindings_.show_prefer_contacts_toggle) {
     return;
   }
-  bindings_.prefer_contacts_for_routing =
-      bindings_.prefer_contacts_for_routing == "on" ? "off" : "on";
+  bindings_.prefer_contacts_for_routing = bindings_.prefer_contacts_for_routing == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("network", /*show_toast=*/false);
   DirtyAll();
 }
 
 void SettingsController::ToggleReachableWithoutRelay() {
-  bindings_.reachable_without_relay =
-      bindings_.reachable_without_relay == "on" ? "off" : "on";
+  bindings_.reachable_without_relay = bindings_.reachable_without_relay == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("network", /*show_toast=*/false);
   DirtyAll();
@@ -2052,16 +2054,14 @@ void SettingsController::ToggleTrustedRelays() {
 }
 
 void SettingsController::ToggleShowNotifications() {
-  bindings_.show_notifications =
-      bindings_.show_notifications == "on" ? "off" : "on";
+  bindings_.show_notifications = bindings_.show_notifications == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("profile", /*show_toast=*/false);
   DirtyAll();
 }
 
 void SettingsController::ToggleShowNotificationPreview() {
-  bindings_.show_notification_preview =
-      bindings_.show_notification_preview == "on" ? "off" : "on";
+  bindings_.show_notification_preview = bindings_.show_notification_preview == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("profile", /*show_toast=*/false);
   DirtyAll();
@@ -2083,8 +2083,7 @@ void SettingsController::ToggleTransparency() {
 }
 
 void SettingsController::ToggleCallDiagnostics() {
-  bindings_.call_diagnostics =
-      bindings_.call_diagnostics == "on" ? "off" : "on";
+  bindings_.call_diagnostics = bindings_.call_diagnostics == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("appearance", /*show_toast=*/false);
   DirtyAll();
@@ -2113,8 +2112,7 @@ void SettingsController::ToggleHomeAnimatedLogo() {
 void SettingsController::ToggleHomeShowDynamic() {
   // Phones only: on shows the 动态 widgets section on Home, off is the minimal AI-first Home. Saved through the
   // appearance section (SaveProfilePrefs), which the Home's prefs listener picks up to redraw.
-  bindings_.home_show_dynamic =
-      bindings_.home_show_dynamic == "on" ? "off" : "on";
+  bindings_.home_show_dynamic = bindings_.home_show_dynamic == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("appearance", /*show_toast=*/false);
   DirtyAll();
@@ -2166,8 +2164,7 @@ void SettingsController::SaveAiDot(const bool shown, const std::string& look, co
 }
 
 void SettingsController::ToggleShowAdvancedSettings() {
-  bindings_.show_advanced_settings =
-      bindings_.show_advanced_settings == "on" ? "off" : "on";
+  bindings_.show_advanced_settings = bindings_.show_advanced_settings == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("about", /*show_toast=*/false);
   InitSections(); // the advanced-only sections appear or go
@@ -2176,16 +2173,14 @@ void SettingsController::ToggleShowAdvancedSettings() {
 }
 
 void SettingsController::ToggleCrashReports() {
-  bindings_.crash_reports_enabled =
-      bindings_.crash_reports_enabled == "on" ? "off" : "on";
+  bindings_.crash_reports_enabled = bindings_.crash_reports_enabled == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("security", /*show_toast=*/false);
   DirtyAll();
 }
 
 void SettingsController::ToggleAutoRenewRegistration() {
-  bindings_.auto_renew_registration =
-      bindings_.auto_renew_registration == "auto" ? "off" : "auto";
+  bindings_.auto_renew_registration = bindings_.auto_renew_registration == "auto" ? "off" : "auto";
   PullBindingsToUiState();
   MarkSectionDirty("profile", /*show_toast=*/false);
   DirtyAll();

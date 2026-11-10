@@ -36,7 +36,7 @@ struct DeviceLog {
     if (in_flight.fetch_add(1) != 0) {
       overlapped = true;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));  // widen any race window
+    std::this_thread::sleep_for(std::chrono::milliseconds(2)); // widen any race window
     std::lock_guard lock(mu);
     events.push_back(event);
     threads.insert(std::this_thread::get_id());
@@ -189,8 +189,8 @@ public:
   /** The facing the last camera open asked for: 1 front, 0 rear, -1 none yet. */
   std::atomic<int> last_prefer_front{-1};
   std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind kind, const AudioDeviceFormat& /*format*/,
-                                       const std::function<bool()>& /*still_wanted*/,
-                                       std::string* error) override {
+                                            const std::function<bool()>& /*still_wanted*/,
+                                            std::string* error) override {
     const std::string name = MediaDeviceKindName(kind);
     log_.Enter("open " + name);
     log_.Leave();
@@ -971,7 +971,7 @@ TEST_F(EngineDeviceLeaseTest, StopNeverWaitsOnAStuckCameraAndTheNextCallGetsTheM
   EXPECT_FALSE(engine->IsActive());
 
   bool warned = false;
-  for (int i = 0; i < 700 && !warned; ++i) {  // ~3.5 s
+  for (int i = 0; i < 700 && !warned; ++i) { // ~3.5 s
     warned = capture->Has("media stop join_video slow stage=configure_encoder");
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }

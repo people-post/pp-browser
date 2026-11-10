@@ -16,8 +16,7 @@ TEST(RelayBlobSignPayloadTest, BuildBlobPresignSignBytesMatchesGoldenVector) {
 }
 
 TEST(RelayBlobSignPayloadTest, BuildBlobRetainSignBytesMatchesGoldenVector) {
-  const auto bytes =
-      BuildBlobRetainSignBytes("relay:u1", "00000000-0000-4000-8000-000000000001", 1700000000003);
+  const auto bytes = BuildBlobRetainSignBytes("relay:u1", "00000000-0000-4000-8000-000000000001", 1700000000003);
   ASSERT_FALSE(bytes.empty());
   EXPECT_EQ(BytesToHex(bytes),
             "70702d62726f777365723a72656c61792d626c6f622d72657461696e2d76310001000000000000000872656c61793a"
@@ -26,8 +25,8 @@ TEST(RelayBlobSignPayloadTest, BuildBlobRetainSignBytesMatchesGoldenVector) {
 }
 
 TEST(RelayBlobSignPayloadTest, BuildProfileIconSignBytesMatchesGoldenVector) {
-  const auto bytes = BuildProfileIconSignBytes("relay:u1", "", "00000000-0000-4000-8000-000000000001",
-                                               "image/jpeg", 1700000000003);
+  const auto bytes =
+      BuildProfileIconSignBytes("relay:u1", "", "00000000-0000-4000-8000-000000000001", "image/jpeg", 1700000000003);
   ASSERT_FALSE(bytes.empty());
   EXPECT_EQ(BytesToHex(bytes),
             "70702d62726f777365723a72656c61792d70726f66696c652d69636f6e2d76310001000000000000000872656c61793a"

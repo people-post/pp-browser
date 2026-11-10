@@ -77,8 +77,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   config.registration.base_url = "https://backend.example.test/api/relay";
 
   SetEnv("PP_NODE_DATA_DIR", "/var/lib/pp-node");
-  SetEnv("PP_NODE_BOOTSTRAP_PEERS",
-         "/ip4/1.1.1.1/udp/443/adp/1.0.0/p2p/a,/ip4/2.2.2.2/udp/443/adp/1.0.0/p2p/b");
+  SetEnv("PP_NODE_BOOTSTRAP_PEERS", "/ip4/1.1.1.1/udp/443/adp/1.0.0/p2p/a,/ip4/2.2.2.2/udp/443/adp/1.0.0/p2p/b");
   SetEnv("PP_NODE_AMP_UDP_PORT", "443");
   SetEnv("PP_NODE_CAP_CIRCUIT_RELAY", "true");
   SetEnv("PP_NODE_CAP_MEDIA_RELAY", "0");

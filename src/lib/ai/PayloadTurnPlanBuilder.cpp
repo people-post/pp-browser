@@ -54,8 +54,7 @@ std::optional<TurnPlan> TryBuildPlanFromPayload(const std::string& user_text, co
   if (type == "article") {
     plan.response_goal = ResponseGoal::Summarize;
     plan.render_mode = RenderMode::Blocks;
-    plan.synthesis_hints =
-        "Summarize the referenced article concisely in a heading plus paragraph or card block.";
+    plan.synthesis_hints = "Summarize the referenced article concisely in a heading plus paragraph or card block.";
     return plan;
   }
 
@@ -76,8 +75,7 @@ std::optional<TurnPlan> TryBuildPlanFromPayload(const std::string& user_text, co
     if (tool == "blog_articles" || IsMcpArticleFeedToolName(tool)) {
       plan.response_goal = ResponseGoal::DisplayFeed;
       plan.render_mode = RenderMode::Blocks;
-      plan.synthesis_hints =
-          "Map MCP feed tool results into a long_list block with a short intro paragraph.";
+      plan.synthesis_hints = "Map MCP feed tool results into a long_list block with a short intro paragraph.";
       plan.tools.push_back(std::move(call));
       return plan;
     }

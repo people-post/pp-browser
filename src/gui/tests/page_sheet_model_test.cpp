@@ -58,7 +58,8 @@ TEST(PageSheetModelTest, DraggedFromLargeToAThirdOfTheScreenItStopsAtSmallInstea
 TEST(PageSheetModelTest, ItClosesOnlyLetGoBelowEightyFivePercent) {
   EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Small, kCloseTop - kSmallTop - 1.f, kLayerDp, 0.f), Release::Stay)
       << "just above the line: back to small";
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Small, kCloseTop - kSmallTop + 1.f, kLayerDp, 0.f), Release::Dismiss);
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Small, kCloseTop - kSmallTop + 1.f, kLayerDp, 0.f),
+            Release::Dismiss);
   EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Large, kCloseTop - kLargeTop + 10.f, kLayerDp, 0.f),
             Release::Dismiss)
       << "a long slow drag from 4/5 to the bottom closes too";
@@ -106,7 +107,7 @@ TEST(PageSheetModelTest, TheKeyboardShowsFullAndItsGoingBackRestoresTheStop) {
 TEST(PageSheetModelTest, VelocityComesFromTheLastMoves) {
   PageSheetModel::Velocity velocity;
   velocity.Add(0.0, 0.f);
-  velocity.Add(200.0, 20.f);  // slow start, dropped from the window
+  velocity.Add(200.0, 20.f); // slow start, dropped from the window
   velocity.Add(260.0, 50.f);
   velocity.Add(300.0, 90.f);
   EXPECT_NEAR(velocity.AtRelease(310.0), (90.f - 20.f) * 1000.f / 100.f, 1.f);

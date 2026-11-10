@@ -54,13 +54,13 @@ enum class InitiationBillingState : uint8_t {
 
 inline constexpr const char* InitiationBillingStateToString(const InitiationBillingState state) {
   switch (state) {
-  case InitiationBillingState::Offered:
-    return "offered";
-  case InitiationBillingState::Open:
-    return "open";
-  case InitiationBillingState::Closed:
-  default:
-    return "closed";
+    case InitiationBillingState::Offered:
+      return "offered";
+    case InitiationBillingState::Open:
+      return "open";
+    case InitiationBillingState::Closed:
+    default:
+      return "closed";
   }
 }
 

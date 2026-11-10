@@ -175,7 +175,9 @@ public:
   const std::string& SharedThread() const { return shared_thread_; }
   const AskAiView& View() const { return view_; }
   /** The UI demo app (no AI backend): answers come from `answer` ("" = it fails), streamed in small steps. */
-  void SetFakeAnswers(std::function<std::string(const std::string& question)> answer) { fake_answer_ = std::move(answer); }
+  void SetFakeAnswers(std::function<std::string(const std::string& question)> answer) {
+    fake_answer_ = std::move(answer);
+  }
   AskAiImagePorts& ImagePorts() { return image_ports_; }
   /** Tests: the panel's draft as if typed. */
   void SetDraftForTest(const std::string& text) { view_.draft = text.c_str(); }

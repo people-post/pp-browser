@@ -46,7 +46,8 @@ TEST(McpStdioFramingTest, TakesTheLineWithTheMatchingIdAndKeepsTheRest) {
   const pbr::Object* payload = result->getObject("result");
   ASSERT_NE(payload, nullptr);
   EXPECT_TRUE(payload->getIf<bool>("ok").value_or(false));
-  EXPECT_EQ(carry, R"({"jsonrpc":"2.0","id":43,"result":{}})" "\n");
+  EXPECT_EQ(carry, R"({"jsonrpc":"2.0","id":43,"result":{}})"
+                   "\n");
 }
 
 TEST(McpStdioFramingTest, AnOverlongLineIsAnErrorNotAnEndlessRead) {
@@ -79,7 +80,8 @@ TEST(McpStdioFramingTest, TimeoutAndEofAreErrors) {
 TEST(McpStdioFramingTest, TooManyForeignLinesIsAnError) {
   std::string flood;
   for (size_t i = 0; i < pbr::kMaxMcpSkippedLines + 1; ++i) {
-    flood += R"({"jsonrpc":"2.0","method":"notifications/x"})" "\n";
+    flood += R"({"jsonrpc":"2.0","method":"notifications/x"})"
+             "\n";
   }
   ScriptedReader reader{flood, 1024};
   std::string carry;
@@ -102,8 +104,8 @@ TEST(McpRuntimeTest, HttpServerSurvivesAFailedInitialize) {
     ~Reset() { pbr::McpClient::SetHttpPost({}); }
   } reset;
   int posts = 0;
-  pbr::McpClient::SetHttpPost([&](const std::string&, const std::string&,
-                                  const std::map<std::string, std::string>&, long) -> pbr::Roe<pbr::HttpResponse> {
+  pbr::McpClient::SetHttpPost([&](const std::string&, const std::string&, const std::map<std::string, std::string>&,
+                                  long) -> pbr::Roe<pbr::HttpResponse> {
     ++posts;
     return pbr::Error("HTTP request failed: Could not resolve hostname");
   });

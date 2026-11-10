@@ -113,7 +113,7 @@ std::vector<uint8_t> BuildOggOpus(const std::vector<std::vector<uint8_t>>& packe
   std::vector<uint8_t> head = {'O', 'p', 'u', 's', 'H', 'e', 'a', 'd', 1, 1};
   PutLe16(head, static_cast<uint16_t>(params.pre_skip));
   PutLe32(head, params.input_rate);
-  PutLe16(head, 0); // output gain
+  PutLe16(head, 0);  // output gain
   head.push_back(0); // mapping family 0: mono or stereo, no table
   AppendPage(out, params.serial, sequence++, kFlagBegin, 0, {static_cast<uint8_t>(head.size())}, head);
 
@@ -270,8 +270,8 @@ Roe<OggOpusStream> ParseOggOpus(const uint8_t* data, const size_t size, const Og
         if (current.empty()) {
           return Error("ogg: empty audio packet");
         }
-        const int samples = opus_packet_get_nb_samples(current.data(), static_cast<opus_int32>(current.size()),
-                                                       kOggOpusRate);
+        const int samples =
+            opus_packet_get_nb_samples(current.data(), static_cast<opus_int32>(current.size()), kOggOpusRate);
         if (samples <= 0) {
           return Error("ogg: not an Opus packet");
         }

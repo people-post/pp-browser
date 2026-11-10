@@ -143,10 +143,10 @@ TEST(HomeTodayTest, MissedCallsCountTodaysUnansweredCallsAndShowTheLatest) {
     c.at_ms = at;
     return c;
   };
-  const HomeCalls calls = SummarizeHomeCalls(
-      {call("answered", now - 1000, false), call("missed-2", now - 2000, true), call("missed-1", midnight + 5, true),
-       call("yesterday", midnight - 5, true)},
-      midnight, now);
+  const HomeCalls calls =
+      SummarizeHomeCalls({call("answered", now - 1000, false), call("missed-2", now - 2000, true),
+                          call("missed-1", midnight + 5, true), call("yesterday", midnight - 5, true)},
+                         midnight, now);
   EXPECT_EQ(calls.missed_today, 2) << "yesterday's missed call is not today's";
   ASSERT_TRUE(calls.latest.has_value());
   EXPECT_EQ(calls.latest->call_id, "answered");
@@ -160,9 +160,13 @@ TEST(HomeTodayTest, MissedCallsCountTodaysUnansweredCallsAndShowTheLatest) {
 // the contacts chatted with most recently fill the first row, marked as suggestions.
 TEST(HomeTodayTest, FavoritesAreTheStarredContactsInStarOrderFilledToFourWithSuggestions) {
   const std::vector<ChatSessionRow> rows = {
-      Direct("t-ann", "ann", 500), Direct("t-bob", "bob", 400), Direct("t-cy", "cy", 300),
-      Direct("t-cy-secure", "cy", 600),  // a contact's newer chat is the one opened
-      Direct("t-dee", "dee", 200, /*blocked=*/true), Row("group", 0, false, 900), Row("stranger", 1, true, 800)};
+      Direct("t-ann", "ann", 500),
+      Direct("t-bob", "bob", 400),
+      Direct("t-cy", "cy", 300),
+      Direct("t-cy-secure", "cy", 600), // a contact's newer chat is the one opened
+      Direct("t-dee", "dee", 200, /*blocked=*/true),
+      Row("group", 0, false, 900),
+      Row("stranger", 1, true, 800)};
   // Nobody starred: saved contacts by their newest chat fill in (no group, stranger or blocked one; one per person).
   const std::vector<HomeFavorite> suggested = HomeFavorites(rows, {}, {});
   EXPECT_EQ(ContactIds(suggested), (std::vector<std::string>{"cy", "ann", "bob"}));
@@ -212,9 +216,10 @@ TEST(HomeTodayTest, AWidgetWithNothingToShowIsHiddenButFavoritesCallsMentionsNew
   const HomeTodaySummary busy = SummarizeHomeToday({mention, Row("s", 1, true, 4)}, kAll);
   HomeCalls calls;
   calls.latest = call_queries::RecentCall{};
-  EXPECT_EQ(ShownHomeWidgets(kAll, HomeWidgetDataOf(busy, calls, 3)),
-            (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetCalls, kHomeWidgetMentions,
-                                      kHomeWidgetRecentChats, kHomeWidgetBrief, kHomeWidgetNewPeople, kHomeWidgetSecurity}))
+  EXPECT_EQ(
+      ShownHomeWidgets(kAll, HomeWidgetDataOf(busy, calls, 3)),
+      (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetCalls, kHomeWidgetMentions, kHomeWidgetRecentChats,
+                                kHomeWidgetBrief, kHomeWidgetNewPeople, kHomeWidgetSecurity}))
       << "every widget, in the default order";
 }
 
@@ -222,9 +227,8 @@ TEST(HomeTodayTest, ARemovedWidgetIsNeitherShownNorComputed) {
   ChatSessionRow mention = Row("g", 1, false, 5);
   mention.mention_count = 2;
   const std::vector<ChatSessionRow> rows = {mention, Row("s", 1, true, 4)};
-  const HomeWidgetLayout layout =
-      RemoveHomeWidget(RemoveHomeWidget(RemoveHomeWidget(kAll, kHomeWidgetRecentChats), kHomeWidgetMentions),
-                       kHomeWidgetNewPeople);
+  const HomeWidgetLayout layout = RemoveHomeWidget(
+      RemoveHomeWidget(RemoveHomeWidget(kAll, kHomeWidgetRecentChats), kHomeWidgetMentions), kHomeWidgetNewPeople);
   const HomeTodaySummary summary = SummarizeHomeToday(rows, layout);
   EXPECT_TRUE(summary.recent.empty()) << "not computed";
   EXPECT_EQ(summary.mentions.count, 0) << "not computed";
@@ -257,8 +261,9 @@ TEST(HomeTodayTest, AMovedWidgetKeepsItsPlaceAndHomeFollowsTheSavedOrder) {
   const HomeWidgetLayout no_calls = RemoveHomeWidget(kAll, kHomeWidgetCalls);
   // Today's briefs dragged to the top; the removed Calls stays after everything on Home.
   const HomeWidgetLayout moved = MoveHomeWidget(no_calls, kHomeWidgetBrief, 0);
-  EXPECT_EQ(moved.OnHome(), (std::vector<std::string>{kHomeWidgetBrief, kHomeWidgetFavorites, kHomeWidgetMentions,
-                                                      kHomeWidgetRecentChats, kHomeWidgetNewPeople, kHomeWidgetSecurity}));
+  EXPECT_EQ(moved.OnHome(),
+            (std::vector<std::string>{kHomeWidgetBrief, kHomeWidgetFavorites, kHomeWidgetMentions,
+                                      kHomeWidgetRecentChats, kHomeWidgetNewPeople, kHomeWidgetSecurity}));
   EXPECT_EQ(moved.order.back(), kHomeWidgetCalls);
   EXPECT_EQ(MoveHomeWidget(moved, kHomeWidgetFavorites, 99).OnHome().back(), kHomeWidgetFavorites) << "to the bottom";
   EXPECT_EQ(MoveHomeWidget(moved, kHomeWidgetCalls, 0), moved) << "a removed widget is not moved";
@@ -308,7 +313,7 @@ protected:
     tm.tm_year = 2026 - 1900;
     tm.tm_mon = 10;
     tm.tm_mday = 3;
-    tm.tm_wday = 2;  // Tuesday
+    tm.tm_wday = 2; // Tuesday
     return tm;
   }
 };

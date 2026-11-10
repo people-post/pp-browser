@@ -54,7 +54,8 @@ TEST(InboxHideMessageTest, DeletedMessageBecomesATombstoneLine) {
     reaction.target_message_id = "m2";
     reaction.payload_json = BuildReactionPayloadJson(kAnnotationTypeReaction, "m2", "\xF0\x9F\x91\x8D");
     ASSERT_TRUE(store.AppendMessage(reaction));
-    ASSERT_EQ(RenderTranscript(inbox.BuildTranscript("thread-1", std::nullopt, std::nullopt), inbox.Facts()).size(), 2u);
+    ASSERT_EQ(RenderTranscript(inbox.BuildTranscript("thread-1", std::nullopt, std::nullopt), inbox.Facts()).size(),
+              2u);
 
     ASSERT_TRUE(inbox.DeleteMessageForMe("thread-1", "m2"));
 
@@ -85,7 +86,8 @@ TEST(InboxHideMessageTest, DeletedMessageBecomesATombstoneLine) {
     retract.target_message_id = "not-here-yet";
     retract.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, "not-here-yet", "");
     ASSERT_TRUE(store.AppendMessage(retract));
-    EXPECT_EQ(RenderTranscript(inbox.BuildTranscript("thread-1", std::nullopt, std::nullopt), inbox.Facts()).size(), 2u);
+    EXPECT_EQ(RenderTranscript(inbox.BuildTranscript("thread-1", std::nullopt, std::nullopt), inbox.Facts()).size(),
+              2u);
 
     // Deleting the newest message: the list preview stops showing its text.
     ASSERT_TRUE(store.AppendMessage(Text("m3", "contact-1", "newest secret")));
@@ -233,8 +235,9 @@ TEST(TranscriptRmlTest, AnAiAnswerShowsTheQuestionAndAControlLineHasNoSenderChip
   facts.control_line = [](const ThreadMessage&) { return std::optional<std::string>("Peer called"); };
   const auto rows = RenderTranscript({answer, control}, facts);
   ASSERT_EQ(rows.size(), 2u);
-  EXPECT_NE(std::string(rows[0].content_rml.c_str()).find("chat-quote--asked\"><p class=\"chat-quote-text\">what is it"),
-            std::string::npos);
+  EXPECT_NE(
+      std::string(rows[0].content_rml.c_str()).find("chat-quote--asked\"><p class=\"chat-quote-text\">what is it"),
+      std::string::npos);
   EXPECT_EQ(std::string(rows[0].row_class.c_str()), "message-row-ai");
   EXPECT_NE(std::string(rows[1].content_rml.c_str()).find("Peer called"), std::string::npos);
   EXPECT_TRUE(rows[1].sender_label.empty());
@@ -260,7 +263,9 @@ TranscriptRow TextRow(const std::string& id, const std::string& sender, const in
 
 TranscriptFacts NamedFacts() {
   TranscriptFacts facts;
-  facts.sender_label = [](const std::string& id) { return id == "account:a" ? std::string("Alice") : std::string("Bob"); };
+  facts.sender_label = [](const std::string& id) {
+    return id == "account:a" ? std::string("Alice") : std::string("Bob");
+  };
   facts.sender_stable_id = [](const std::string& id) { return id; };
   return facts;
 }
@@ -285,10 +290,9 @@ TEST(TranscriptRmlTest, ASenderNameShowsOnlyOnTheFirstBubbleOfARunInAGroup) {
   MentionRoster roster; // a group chat has one
   roster.local_account = "account:me";
   const std::vector<TranscriptRow> entries = {
-      TextRow("1", "account:a", kNoon),
-      TextRow("2", "account:a", kNoon + kMinute),          // same run
-      TextRow("3", "account:b", kNoon + 2 * kMinute),      // another sender
-      TextRow("4", "account:b", kNoon + 12 * kMinute),     // gap over 5 minutes: a new run
+      TextRow("1", "account:a", kNoon), TextRow("2", "account:a", kNoon + kMinute), // same run
+      TextRow("3", "account:b", kNoon + 2 * kMinute),                               // another sender
+      TextRow("4", "account:b", kNoon + 12 * kMinute),                              // gap over 5 minutes: a new run
       TextRow("5", kLocalSelfContactId, kNoon + 13 * kMinute)};
   const auto rows = RenderTranscript(entries, NamedFacts(), roster);
   ASSERT_EQ(rows.size(), 5u);
@@ -369,7 +373,9 @@ TEST(TranscriptRmlTest, ADissolvedGroupSaysWhoDissolvedIt) {
                       GroupMembershipCodec::EncodeGroupDissolved("group:hike", "account:alice").value(), sender)
                       .value();
     TranscriptFacts facts;
-    facts.sender_label = [](const std::string& id) { return id == "account:alice" ? std::string("Alice") : std::string(); };
+    facts.sender_label = [](const std::string& id) {
+      return id == "account:alice" ? std::string("Alice") : std::string();
+    };
     const auto rows = RenderTranscript({row}, facts);
     EXPECT_EQ(rows.size(), 1u);
     return rows.empty() ? std::string() : std::string(rows[0].content_rml.c_str());
@@ -413,8 +419,8 @@ TEST(TranscriptRmlTest, TheGroupAvatarColumnShowsTheSendersPhotoWhenItIsCachedAn
   facts.sender_icon = [](const std::string& id) {
     return id == "account:a" ? std::string("/profiles/x/icons/a.jpg") : std::string();
   };
-  const auto rows = RenderTranscript({TextRow("1", "account:a", kNoon), TextRow("2", "account:b", kNoon + kMinute)},
-                                     facts, roster);
+  const auto rows =
+      RenderTranscript({TextRow("1", "account:a", kNoon), TextRow("2", "account:b", kNoon + kMinute)}, facts, roster);
   ASSERT_EQ(rows.size(), 2u);
   EXPECT_TRUE(rows[0].group_has_icon);
   EXPECT_EQ(std::string(rows[0].group_avatar_src.c_str()), "/profiles/x/icons/a.jpg");
@@ -437,7 +443,6 @@ TEST(TranscriptRmlTest, ARebuiltTranscriptPicksUpASendersNewPhoto) {
   EXPECT_EQ(std::string(RenderTranscript(messages, facts, roster)[0].group_avatar_src.c_str()),
             "/profiles/x/icons/icon-2.jpg");
 }
-
 
 } // namespace
 } // namespace pbr

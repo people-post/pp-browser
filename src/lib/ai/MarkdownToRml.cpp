@@ -19,17 +19,29 @@ constexpr size_t kMaxUrl = 2048;
 
 using sv = std::string_view;
 
-void AppendEscaped(std::string& out, sv text) { out += StructuredTextParser::EscapeText(std::string(text)); }
+void AppendEscaped(std::string& out, sv text) {
+  out += StructuredTextParser::EscapeText(std::string(text));
+}
 
-bool IsWs(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
+bool IsWs(char c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
 bool IsAsciiPunct(char c) {
   return (c >= '!' && c <= '/') || (c >= ':' && c <= '@') || (c >= '[' && c <= '`') || (c >= '{' && c <= '~');
 }
-bool IsDigit(char c) { return c >= '0' && c <= '9'; }
+bool IsDigit(char c) {
+  return c >= '0' && c <= '9';
+}
 // Non-ASCII bytes count as word characters so CJK / emoji neighbours behave like letters.
-bool IsAsciiAlnum(char c) { return IsDigit(c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
-bool IsWord(char c) { return IsAsciiAlnum(c) || static_cast<unsigned char>(c) >= 0x80; }
-char Lower(char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; }
+bool IsAsciiAlnum(char c) {
+  return IsDigit(c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+bool IsWord(char c) {
+  return IsAsciiAlnum(c) || static_cast<unsigned char>(c) >= 0x80;
+}
+char Lower(char c) {
+  return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+}
 
 bool MatchCi(sv s, size_t pos, sv lower_needle) {
   if (pos + lower_needle.size() > s.size()) {
@@ -106,43 +118,43 @@ public:
     std::string out;
     for (const Tok& t : toks_) {
       switch (t.kind) {
-      case Tok::Text:
-        AppendEscaped(out, t.text);
-        break;
-      case Tok::Delim:
-        if (t.role == 0) {
+        case Tok::Text:
           AppendEscaped(out, t.text);
-        } else {
-          const bool strong = t.text.size() == 2;
-          out += t.role == 1 ? (strong ? "<strong>" : "<em>") : (strong ? "</strong>" : "</em>");
-        }
-        break;
-      case Tok::Bracket:
-        AppendEscaped(out, t.text);
-        break;
-      case Tok::Code:
-        out += "<span class=\"inline-code\">";
-        AppendEscaped(out, t.text);
-        out += "</span>";
-        break;
-      case Tok::LinkOpen:
-        if (t.link >= 0) {
-          out += "<span class=\"chat-link\" data-event-click=\"open_chat_link('__ENTRY__', " + std::to_string(t.link) +
-                 ")\">";
-        }
-        break;
-      case Tok::LinkClose:
-        if (t.link >= 0) {
+          break;
+        case Tok::Delim:
+          if (t.role == 0) {
+            AppendEscaped(out, t.text);
+          } else {
+            const bool strong = t.text.size() == 2;
+            out += t.role == 1 ? (strong ? "<strong>" : "<em>") : (strong ? "</strong>" : "</em>");
+          }
+          break;
+        case Tok::Bracket:
+          AppendEscaped(out, t.text);
+          break;
+        case Tok::Code:
+          out += "<span class=\"inline-code\">";
+          AppendEscaped(out, t.text);
           out += "</span>";
-        } else if (!t.text.empty()) {
-          out += " (";
-          AppendEscaped(out, t.text);
-          out += ")";
-        }
-        break;
-      case Tok::Br:
-        out += "<br />";
-        break;
+          break;
+        case Tok::LinkOpen:
+          if (t.link >= 0) {
+            out += "<span class=\"chat-link\" data-event-click=\"open_chat_link('__ENTRY__', " +
+                   std::to_string(t.link) + ")\">";
+          }
+          break;
+        case Tok::LinkClose:
+          if (t.link >= 0) {
+            out += "</span>";
+          } else if (!t.text.empty()) {
+            out += " (";
+            AppendEscaped(out, t.text);
+            out += ")";
+          }
+          break;
+        case Tok::Br:
+          out += "<br />";
+          break;
       }
     }
     return out;
@@ -360,33 +372,33 @@ private:
       for (size_t k = b.tok; k < toks_.size(); ++k) {
         Tok& t = toks_[k];
         switch (t.kind) {
-        case Tok::Text:
-          break;
-        case Tok::Code:
-          t.kind = Tok::Text;
-          break;
-        case Tok::Br:
-          t.kind = Tok::Text;
-          t.text = " ";
-          break;
-        case Tok::Delim:
-          if (t.role != 0) {
-            t.text.clear(); // resolved emphasis markers inside alt text vanish
-          }
-          t.kind = Tok::Text;
-          t.role = 0;
-          break;
-        case Tok::Bracket:
-          if (k == b.tok) {
+          case Tok::Text:
+            break;
+          case Tok::Code:
+            t.kind = Tok::Text;
+            break;
+          case Tok::Br:
+            t.kind = Tok::Text;
+            t.text = " ";
+            break;
+          case Tok::Delim:
+            if (t.role != 0) {
+              t.text.clear(); // resolved emphasis markers inside alt text vanish
+            }
+            t.kind = Tok::Text;
+            t.role = 0;
+            break;
+          case Tok::Bracket:
+            if (k == b.tok) {
+              t.text.clear();
+            }
+            t.kind = Tok::Text;
+            break;
+          case Tok::LinkOpen:
+          case Tok::LinkClose:
             t.text.clear();
-          }
-          t.kind = Tok::Text;
-          break;
-        case Tok::LinkOpen:
-        case Tok::LinkClose:
-          t.text.clear();
-          t.kind = Tok::Text;
-          break;
+            t.kind = Tok::Text;
+            break;
         }
       }
       return;
@@ -462,7 +474,9 @@ private:
   }
 };
 
-std::string Inline(sv text, InlineContext& ctx) { return InlineParser(text, ctx).Render(); }
+std::string Inline(sv text, InlineContext& ctx) {
+  return InlineParser(text, ctx).Render();
+}
 
 // ---------------------------------------------------------------------------------------------
 // Block parsing
@@ -470,7 +484,9 @@ std::string Inline(sv text, InlineContext& ctx) { return InlineParser(text, ctx)
 
 using Lines = std::vector<sv>;
 
-bool IsBlank(sv l) { return Trim(l).empty(); }
+bool IsBlank(sv l) {
+  return Trim(l).empty();
+}
 
 size_t Indent(sv l) {
   size_t ind = 0;

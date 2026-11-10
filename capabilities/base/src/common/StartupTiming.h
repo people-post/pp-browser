@@ -31,8 +31,7 @@ inline void EnableStartupTimingLogs() {
 }
 
 inline void StartupMark(std::string_view name) {
-  const auto ms =
-      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - StartupEpoch()).count();
+  const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - StartupEpoch()).count();
   StartupLog().info << "[startup] +" << ms << " ms mark=" << name;
 }
 

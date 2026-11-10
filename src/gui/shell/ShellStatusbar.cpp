@@ -23,60 +23,60 @@ ShellStatusbar::ShellStatusbar(ShellState& state, ui::Context*& context, const M
     : state_(state), context_(context), ports_(ports), apply_safe_area_layout_(std::move(apply_safe_area_layout)) {}
 
 void ShellStatusbar::Bind(ui::DataModelConstructor& ctor) {
-    ctor.Bind("statusbar_visible", &state_.statusbar_visible);
-    ctor.Bind("statusbar_brief_visible", &state_.statusbar_brief_visible);
-    ctor.Bind("statusbar_brief_ok", &state_.statusbar_brief_ok);
-    ctor.Bind("statusbar_brief_failed", &state_.statusbar_brief_failed);
-    ctor.Bind("statusbar_brief_unknown", &state_.statusbar_brief_unknown);
-    ctor.Bind("statusbar_direct_visible", &state_.statusbar_direct_visible);
-    ctor.Bind("statusbar_direct_ok", &state_.statusbar_direct_ok);
-    ctor.Bind("statusbar_direct_off", &state_.statusbar_direct_off);
-    ctor.Bind("statusbar_direct_error", &state_.statusbar_direct_error);
-    ctor.Bind("statusbar_direct_checking", &state_.statusbar_direct_checking);
-    ctor.Bind("statusbar_help_visible", &state_.statusbar_help_visible);
-    ctor.Bind("statusbar_inbound_visible", &state_.statusbar_inbound_visible);
-    ctor.Bind("statusbar_inbound_ok", &state_.statusbar_inbound_ok);
-    ctor.Bind("statusbar_inbound_off", &state_.statusbar_inbound_off);
-    ctor.Bind("statusbar_load_circuit_visible", &state_.statusbar_load_circuit_visible);
-    ctor.Bind("statusbar_load_media_visible", &state_.statusbar_load_media_visible);
-    ctor.Bind("statusbar_load_circuit_label", &state_.statusbar_load_circuit_label);
-    ctor.Bind("statusbar_load_media_label", &state_.statusbar_load_media_label);
-    ctor.Bind("statusbar_load_circuit_title", &state_.statusbar_load_circuit_title);
-    ctor.Bind("statusbar_load_media_title", &state_.statusbar_load_media_title);
-    ctor.Bind("statusbar_label", &state_.statusbar_label);
-    ctor.Bind("statusbar_label_warn", &state_.statusbar_label_warn);
-    ctor.Bind("statusbar_label_error", &state_.statusbar_label_error);
-    ctor.Bind("statusbar_brief_title", &state_.statusbar_brief_title);
-    ctor.Bind("statusbar_direct_title", &state_.statusbar_direct_title);
-    ctor.Bind("statusbar_help_title", &state_.statusbar_help_title);
-    ctor.Bind("statusbar_inbound_title", &state_.statusbar_inbound_title);
-    ctor.Bind("statusbar_cluster_title", &state_.statusbar_cluster_title);
-    ctor.Bind("statusbar_popover_open", &state_.statusbar_popover_open);
-    ctor.Bind("statusbar_popover_brief_label", &state_.statusbar_popover_brief_label);
-    ctor.Bind("statusbar_popover_direct_label", &state_.statusbar_popover_direct_label);
-    ctor.Bind("statusbar_popover_reach_label", &state_.statusbar_popover_reach_label);
-    ctor.Bind("statusbar_popover_reach_summary", &state_.statusbar_popover_reach_summary);
-    ctor.Bind("statusbar_popover_help_visible", &state_.statusbar_popover_help_visible);
-    ctor.Bind("statusbar_popover_help_label", &state_.statusbar_popover_help_label);
-    ctor.Bind("statusbar_popover_upnp_visible", &state_.statusbar_popover_upnp_visible);
-    ctor.Bind("statusbar_popover_upnp_label", &state_.statusbar_popover_upnp_label);
-    ctor.Bind("statusbar_popover_error_visible", &state_.statusbar_popover_error_visible);
-    ctor.Bind("statusbar_popover_error", &state_.statusbar_popover_error);
-    ctor.Bind("statusbar_popover_load_visible", &state_.statusbar_popover_load_visible);
-    ctor.Bind("statusbar_popover_circuit_load", &state_.statusbar_popover_circuit_load);
-    ctor.Bind("statusbar_popover_media_sessions", &state_.statusbar_popover_media_sessions);
-    ctor.Bind("statusbar_popover_media_participants", &state_.statusbar_popover_media_participants);
-    ctor.Bind("statusbar_popover_network_visible", &state_.statusbar_popover_network_visible);
-    ctor.Bind("statusbar_popover_network_links", &state_.statusbar_popover_network_links);
-    ctor.Bind("statusbar_popover_network_parked", &state_.statusbar_popover_network_parked);
-    ctor.Bind("statusbar_popover_network_rate", &state_.statusbar_popover_network_rate);
-    ctor.Bind("statusbar_popover_network_rtt", &state_.statusbar_popover_network_rtt);
-    ctor.Bind("statusbar_popover_network_resend", &state_.statusbar_popover_network_resend);
-    ctor.Bind("statusbar_popover_relay_rate", &state_.statusbar_popover_relay_rate);
-    ctor.BindEventCallback("toggle_statusbar_popover", DataEvent<>([this]() { TogglePopover(); }));
-    ctor.BindEventCallback("dismiss_statusbar_popover", DataEvent<>([this]() { ClosePopover(); }));
-    ctor.BindEventCallback("retest_statusbar_reachability", DataEvent<>([this]() { RetestReachability(); }));
-    ctor.BindEventCallback("open_network_settings", DataEvent<>([this]() { OpenNetworkSettings(); }));
+  ctor.Bind("statusbar_visible", &state_.statusbar_visible);
+  ctor.Bind("statusbar_brief_visible", &state_.statusbar_brief_visible);
+  ctor.Bind("statusbar_brief_ok", &state_.statusbar_brief_ok);
+  ctor.Bind("statusbar_brief_failed", &state_.statusbar_brief_failed);
+  ctor.Bind("statusbar_brief_unknown", &state_.statusbar_brief_unknown);
+  ctor.Bind("statusbar_direct_visible", &state_.statusbar_direct_visible);
+  ctor.Bind("statusbar_direct_ok", &state_.statusbar_direct_ok);
+  ctor.Bind("statusbar_direct_off", &state_.statusbar_direct_off);
+  ctor.Bind("statusbar_direct_error", &state_.statusbar_direct_error);
+  ctor.Bind("statusbar_direct_checking", &state_.statusbar_direct_checking);
+  ctor.Bind("statusbar_help_visible", &state_.statusbar_help_visible);
+  ctor.Bind("statusbar_inbound_visible", &state_.statusbar_inbound_visible);
+  ctor.Bind("statusbar_inbound_ok", &state_.statusbar_inbound_ok);
+  ctor.Bind("statusbar_inbound_off", &state_.statusbar_inbound_off);
+  ctor.Bind("statusbar_load_circuit_visible", &state_.statusbar_load_circuit_visible);
+  ctor.Bind("statusbar_load_media_visible", &state_.statusbar_load_media_visible);
+  ctor.Bind("statusbar_load_circuit_label", &state_.statusbar_load_circuit_label);
+  ctor.Bind("statusbar_load_media_label", &state_.statusbar_load_media_label);
+  ctor.Bind("statusbar_load_circuit_title", &state_.statusbar_load_circuit_title);
+  ctor.Bind("statusbar_load_media_title", &state_.statusbar_load_media_title);
+  ctor.Bind("statusbar_label", &state_.statusbar_label);
+  ctor.Bind("statusbar_label_warn", &state_.statusbar_label_warn);
+  ctor.Bind("statusbar_label_error", &state_.statusbar_label_error);
+  ctor.Bind("statusbar_brief_title", &state_.statusbar_brief_title);
+  ctor.Bind("statusbar_direct_title", &state_.statusbar_direct_title);
+  ctor.Bind("statusbar_help_title", &state_.statusbar_help_title);
+  ctor.Bind("statusbar_inbound_title", &state_.statusbar_inbound_title);
+  ctor.Bind("statusbar_cluster_title", &state_.statusbar_cluster_title);
+  ctor.Bind("statusbar_popover_open", &state_.statusbar_popover_open);
+  ctor.Bind("statusbar_popover_brief_label", &state_.statusbar_popover_brief_label);
+  ctor.Bind("statusbar_popover_direct_label", &state_.statusbar_popover_direct_label);
+  ctor.Bind("statusbar_popover_reach_label", &state_.statusbar_popover_reach_label);
+  ctor.Bind("statusbar_popover_reach_summary", &state_.statusbar_popover_reach_summary);
+  ctor.Bind("statusbar_popover_help_visible", &state_.statusbar_popover_help_visible);
+  ctor.Bind("statusbar_popover_help_label", &state_.statusbar_popover_help_label);
+  ctor.Bind("statusbar_popover_upnp_visible", &state_.statusbar_popover_upnp_visible);
+  ctor.Bind("statusbar_popover_upnp_label", &state_.statusbar_popover_upnp_label);
+  ctor.Bind("statusbar_popover_error_visible", &state_.statusbar_popover_error_visible);
+  ctor.Bind("statusbar_popover_error", &state_.statusbar_popover_error);
+  ctor.Bind("statusbar_popover_load_visible", &state_.statusbar_popover_load_visible);
+  ctor.Bind("statusbar_popover_circuit_load", &state_.statusbar_popover_circuit_load);
+  ctor.Bind("statusbar_popover_media_sessions", &state_.statusbar_popover_media_sessions);
+  ctor.Bind("statusbar_popover_media_participants", &state_.statusbar_popover_media_participants);
+  ctor.Bind("statusbar_popover_network_visible", &state_.statusbar_popover_network_visible);
+  ctor.Bind("statusbar_popover_network_links", &state_.statusbar_popover_network_links);
+  ctor.Bind("statusbar_popover_network_parked", &state_.statusbar_popover_network_parked);
+  ctor.Bind("statusbar_popover_network_rate", &state_.statusbar_popover_network_rate);
+  ctor.Bind("statusbar_popover_network_rtt", &state_.statusbar_popover_network_rtt);
+  ctor.Bind("statusbar_popover_network_resend", &state_.statusbar_popover_network_resend);
+  ctor.Bind("statusbar_popover_relay_rate", &state_.statusbar_popover_relay_rate);
+  ctor.BindEventCallback("toggle_statusbar_popover", DataEvent<>([this]() { TogglePopover(); }));
+  ctor.BindEventCallback("dismiss_statusbar_popover", DataEvent<>([this]() { ClosePopover(); }));
+  ctor.BindEventCallback("retest_statusbar_reachability", DataEvent<>([this]() { RetestReachability(); }));
+  ctor.BindEventCallback("open_network_settings", DataEvent<>([this]() { OpenNetworkSettings(); }));
 }
 
 void ShellStatusbar::Dirty() {
@@ -214,24 +214,20 @@ bool ShellStatusbar::ApplyCluster(const StatusbarClusterSnapshot& snap) {
   const ui::String load_media_title = snap.load_media_title.c_str();
 
   if (state_.statusbar_brief_visible == brief_visible && state_.statusbar_brief_ok == brief_ok &&
-      state_.statusbar_brief_failed == brief_failed &&
-      state_.statusbar_brief_unknown == brief_unknown &&
+      state_.statusbar_brief_failed == brief_failed && state_.statusbar_brief_unknown == brief_unknown &&
       state_.statusbar_direct_visible == direct_visible && state_.statusbar_direct_ok == direct_ok &&
       state_.statusbar_direct_off == direct_off && state_.statusbar_direct_error == direct_error &&
-      state_.statusbar_direct_checking == direct_checking &&
-      state_.statusbar_help_visible == snap.help_visible &&
-      state_.statusbar_inbound_visible == inbound_visible &&
-      state_.statusbar_inbound_ok == inbound_ok && state_.statusbar_inbound_off == inbound_off &&
+      state_.statusbar_direct_checking == direct_checking && state_.statusbar_help_visible == snap.help_visible &&
+      state_.statusbar_inbound_visible == inbound_visible && state_.statusbar_inbound_ok == inbound_ok &&
+      state_.statusbar_inbound_off == inbound_off &&
       state_.statusbar_load_circuit_visible == snap.load_circuit_visible &&
       state_.statusbar_load_media_visible == snap.load_media_visible &&
-      state_.statusbar_load_circuit_label == load_circuit &&
-      state_.statusbar_load_media_label == load_media &&
+      state_.statusbar_load_circuit_label == load_circuit && state_.statusbar_load_media_label == load_media &&
       state_.statusbar_load_circuit_title == load_circuit_title &&
-      state_.statusbar_load_media_title == load_media_title &&
-      state_.statusbar_label == label && state_.statusbar_label_warn == label_warn &&
-      state_.statusbar_label_error == label_error && state_.statusbar_brief_title == brief_title &&
-      state_.statusbar_direct_title == direct_title && state_.statusbar_help_title == help_title &&
-      state_.statusbar_inbound_title == inbound_title &&
+      state_.statusbar_load_media_title == load_media_title && state_.statusbar_label == label &&
+      state_.statusbar_label_warn == label_warn && state_.statusbar_label_error == label_error &&
+      state_.statusbar_brief_title == brief_title && state_.statusbar_direct_title == direct_title &&
+      state_.statusbar_help_title == help_title && state_.statusbar_inbound_title == inbound_title &&
       state_.statusbar_cluster_title == cluster_title) {
     return false;
   }
@@ -311,12 +307,9 @@ bool ShellStatusbar::ApplyPopover(const StatusbarPopoverSnapshot& snap) {
 
   if (state_.statusbar_popover_brief_label == brief && state_.statusbar_popover_direct_label == direct &&
       state_.statusbar_popover_reach_label == reach && state_.statusbar_popover_reach_summary == summary &&
-      state_.statusbar_popover_help_visible == snap.help_visible &&
-      state_.statusbar_popover_help_label == help &&
-      state_.statusbar_popover_upnp_visible == snap.show_upnp &&
-      state_.statusbar_popover_upnp_label == upnp &&
-      state_.statusbar_popover_error_visible == error_visible &&
-      state_.statusbar_popover_error == error &&
+      state_.statusbar_popover_help_visible == snap.help_visible && state_.statusbar_popover_help_label == help &&
+      state_.statusbar_popover_upnp_visible == snap.show_upnp && state_.statusbar_popover_upnp_label == upnp &&
+      state_.statusbar_popover_error_visible == error_visible && state_.statusbar_popover_error == error &&
       state_.statusbar_popover_load_visible == snap.show_load &&
       state_.statusbar_popover_circuit_load == circuit_load &&
       state_.statusbar_popover_media_sessions == media_sessions &&
@@ -324,10 +317,8 @@ bool ShellStatusbar::ApplyPopover(const StatusbarPopoverSnapshot& snap) {
       state_.statusbar_popover_network_visible == snap.show_network &&
       state_.statusbar_popover_network_links == network_links &&
       state_.statusbar_popover_network_parked == network_parked &&
-      state_.statusbar_popover_network_rate == network_rate &&
-      state_.statusbar_popover_network_rtt == network_rtt &&
-      state_.statusbar_popover_network_resend == network_resend &&
-      state_.statusbar_popover_relay_rate == relay_rate) {
+      state_.statusbar_popover_network_rate == network_rate && state_.statusbar_popover_network_rtt == network_rtt &&
+      state_.statusbar_popover_network_resend == network_resend && state_.statusbar_popover_relay_rate == relay_rate) {
     return false;
   }
 
@@ -452,8 +443,8 @@ void ShellStatusbar::RefreshCluster() {
   if (!state_.statusbar_visible) {
     const bool had_cluster = state_.statusbar_brief_visible || state_.statusbar_direct_visible ||
                              state_.statusbar_help_visible || state_.statusbar_inbound_visible ||
-                             state_.statusbar_load_circuit_visible ||
-                             state_.statusbar_load_media_visible || !state_.statusbar_label.empty();
+                             state_.statusbar_load_circuit_visible || state_.statusbar_load_media_visible ||
+                             !state_.statusbar_label.empty();
     if (had_cluster) {
       ClearCluster();
       Dirty();

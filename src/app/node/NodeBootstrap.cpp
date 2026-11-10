@@ -75,8 +75,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     return unlocked.error();
   }
 
-  if (const char* seed_hex = std::getenv("PP_NODE_IDENTITY_SEED");
-      seed_hex != nullptr && seed_hex[0] != '\0') {
+  if (const char* seed_hex = std::getenv("PP_NODE_IDENTITY_SEED"); seed_hex != nullptr && seed_hex[0] != '\0') {
     auto seed_bytes = HexToBytes(seed_hex);
     if (!seed_bytes) {
       secrets->UnregisterDekConsumer(identity.get());
@@ -108,16 +107,14 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   ApplyNodeHosting(mesh_cfg, config->mesh, ResolveMeshRole(config->mesh) == MeshRole::Node);
   // pp-node drives reachability probes from its run loop (--status / periodic refresh).
   mesh_cfg.start_reachability_probe = false;
-  mesh_cfg.mesh_enabled = config->mesh.mesh_enabled && mesh_cfg.host.device_ml_dsa_private_key &&
-                          mesh_cfg.host.device_ml_dsa_public_key;
-  mesh_cfg.amp_udp_port =
-      config->mesh.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(config->mesh.amp_udp_port);
+  mesh_cfg.mesh_enabled =
+      config->mesh.mesh_enabled && mesh_cfg.host.device_ml_dsa_private_key && mesh_cfg.host.device_ml_dsa_public_key;
+  mesh_cfg.amp_udp_port = config->mesh.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(config->mesh.amp_udp_port);
   mesh_cfg.bootstrap_peers = config->mesh.bootstrap_peers;
 
   auto mesh = std::make_unique<mesh::MeshHost>(AppRuntimeMeshExecutors(), MetricsRegistry::Global());
   if (auto started = mesh->Start(mesh_cfg); !started) {
-    log.error << "mesh start failed: "
-              << (mesh->LastError().empty() ? started.error().message : mesh->LastError());
+    log.error << "mesh start failed: " << (mesh->LastError().empty() ? started.error().message : mesh->LastError());
     AppRuntime::Shutdown();
     secrets->UnregisterDekConsumer(identity.get());
     return started.error();
@@ -158,11 +155,9 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     if (!advertised.empty()) {
       return advertised.front();
     }
-    return result.mesh->AmpListenMultiaddr().empty() ? std::string("(none)")
-                                                     : result.mesh->AmpListenMultiaddr();
+    return result.mesh->AmpListenMultiaddr().empty() ? std::string("(none)") : result.mesh->AmpListenMultiaddr();
   }();
-  log.info << "pp-node listening on " << listen
-           << (peer_id.empty() ? std::string() : (" peer=" + peer_id))
+  log.info << "pp-node listening on " << listen << (peer_id.empty() ? std::string() : (" peer=" + peer_id))
            << " underlay=amp"
            << " circuit-relay=" << (result.config.mesh.capabilities.circuit_relay ? "on" : "off")
            << " media-relay=" << (result.config.mesh.capabilities.media_relay ? "on" : "off")

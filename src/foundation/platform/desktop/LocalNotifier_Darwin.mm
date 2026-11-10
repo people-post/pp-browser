@@ -72,8 +72,7 @@ void LogFailOnce(const char* detail) {
     return;
   }
   g_logged_fail = true;
-  logging::getLogger("LocalNotifier").warning
-      << "Desktop notifications unavailable: " << (detail ? detail : "unknown");
+  logging::getLogger("LocalNotifier").warning << "Desktop notifications unavailable: " << (detail ? detail : "unknown");
 }
 
 std::string IdentifierForThread(const std::string& thread_id) {
@@ -113,11 +112,10 @@ bool EnsureInitLocked() {
       g_delegate = [FrameNotificationDelegate new];
       [center setDelegate:g_delegate];
     }
-    UNNotificationCategory* category =
-        [UNNotificationCategory categoryWithIdentifier:kFrameCategoryId
-                                               actions:@[]
-                                     intentIdentifiers:@[]
-                                               options:UNNotificationCategoryOptionNone];
+    UNNotificationCategory* category = [UNNotificationCategory categoryWithIdentifier:kFrameCategoryId
+                                                                              actions:@[]
+                                                                    intentIdentifiers:@[]
+                                                                              options:UNNotificationCategoryOptionNone];
     [center setNotificationCategories:[NSSet setWithObject:category]];
     [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings* settings) {
       if (settings.authorizationStatus == UNAuthorizationStatusNotDetermined) {
@@ -126,9 +124,8 @@ bool EnsureInitLocked() {
         [center requestAuthorizationWithOptions:options
                               completionHandler:^(BOOL granted, NSError* error) {
                                 if (!granted) {
-                                  const char* detail =
-                                      error ? [[error localizedDescription] UTF8String]
-                                            : "Notification permission denied";
+                                  const char* detail = error ? [[error localizedDescription] UTF8String]
+                                                             : "Notification permission denied";
                                   logging::getLogger("LocalNotifier").warning << detail;
                                 }
                               }];
@@ -143,8 +140,7 @@ bool EnsureInitLocked() {
 
 } // namespace
 
-void PostDesktopNotification(const std::string& title, const std::string& body,
-                             const std::string& thread_id) {
+void PostDesktopNotification(const std::string& title, const std::string& body, const std::string& thread_id) {
   @autoreleasepool {
     std::lock_guard<std::mutex> lock(g_mu);
     if (!EnsureInitLocked()) {
@@ -165,15 +161,14 @@ void PostDesktopNotification(const std::string& title, const std::string& body,
           [UNNotificationRequest requestWithIdentifier:[NSString stringWithUTF8String:identifier.c_str()]
                                                content:content
                                                trigger:nil];
-      [[UNUserNotificationCenter currentNotificationCenter]
-          addNotificationRequest:request
-           withCompletionHandler:^(NSError* error) {
-             if (error) {
-               logging::getLogger("LocalNotifier").warning
-                   << "Failed to post notification: "
-                   << [[error localizedDescription] UTF8String];
-             }
-           }];
+      [[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:request
+                                                             withCompletionHandler:^(NSError* error) {
+                                                               if (error) {
+                                                                 logging::getLogger("LocalNotifier").warning
+                                                                     << "Failed to post notification: "
+                                                                     << [[error localizedDescription] UTF8String];
+                                                               }
+                                                             }];
       if (!thread_id.empty()) {
         g_thread_to_identifier[thread_id] = identifier;
       }

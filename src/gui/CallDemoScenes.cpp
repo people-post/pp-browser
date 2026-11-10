@@ -35,7 +35,7 @@ CallScreen InCall(const char* call_id, const bool video, const bool group) {
     s.members.push_back({.identity = kSelf, .is_local = true, .video_enabled = video});
   } else {
     s.peer_identity = kPeer;
-    s.placed_here = true;  // the 1:1 scenes are calls this device placed
+    s.placed_here = true; // the 1:1 scenes are calls this device placed
     if (video) {
       s.members.push_back({.identity = kPeer, .video_enabled = true});
       s.members.push_back({.identity = kSelf, .is_local = true, .video_enabled = true});
@@ -117,7 +117,7 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
     f.screen = InCall(group ? "demo-group-hold" : video ? "demo-video-hold" : "demo-voice-hold", video, group);
     Connected(f.screen, start - 60'000);
     f.path_kind = group ? "media_relay" : "direct";
-    f.video_stage = video && !group;  // as in group_video: the group page draws its own tiles
+    f.video_stage = video && !group; // as in group_video: the group page draws its own tiles
     if (group) {
       f.screen.members[0].on_hold = true;
       f.screen.members[1].video_paused = true;

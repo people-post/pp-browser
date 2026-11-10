@@ -128,7 +128,6 @@ public:
   void OpenMute(const std::string& thread_id, ui::Vector2i position, bool offer_unmute = false);
 
 private:
-
   ChatMenusHost& host_;
   ChatPresenter& presenter_;
   const ChatScreenState& chat_;

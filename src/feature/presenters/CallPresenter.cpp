@@ -79,7 +79,7 @@ void CallPresenter::Tick() {
   }
   backend->SweepExpiredInvites();
   if (!active_call_id_.empty() && backend->Available()) {
-    Refresh();  // Calling… / the timer / levels stay fresh, before media starts too
+    Refresh(); // Calling… / the timer / levels stay fresh, before media starts too
   }
 }
 
@@ -240,8 +240,8 @@ void CallPresenter::Refresh() {
     FillInCall(next, *backend, surface.active->call_id, surface.active->video_allowed,
                surface.active->origin_group_id.has_value());
     next.thread_id = surface.active->origin_thread_id.value_or(std::string{});
-    const std::string local = ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{})
-                                                          : std::string{};
+    const std::string local =
+        ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{}) : std::string{};
     next.placed_here = !local.empty() && surface.active->initiator_identity == local;
     active_group_id_ = surface.active->origin_group_id.value_or(std::string{});
     FillGuests(next, *backend, active_group_id_, local);
@@ -257,8 +257,8 @@ void CallPresenter::Refresh() {
   const int64_t now = util::NowUnixMs();
   // The screen's call went away by itself only when nothing replaced it and the stack is not still in it
   // (a ring over it, a declined ring, a merged call keep or replace it).
-  const bool went_away = next.kind == CallScreen::Kind::None &&
-                         (!surface.active || surface.active->call_id != screen_.call_id);
+  const bool went_away =
+      next.kind == CallScreen::Kind::None && (!surface.active || surface.active->call_id != screen_.call_id);
   if (went_away && EndedWithoutConnecting(screen_, next, remote_ended)) {
     CallNotice notice;
     notice.kind = CallNotice::Kind::Error;
@@ -375,7 +375,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
     s.alone_until_ms = alone_until;
   }
   if (decided.show_elapsed || ShowsParticipantCount(s)) {
-    s.connected_at_ms = live_since_ms;  // the call's, not the current path's
+    s.connected_at_ms = live_since_ms; // the call's, not the current path's
   }
 }
 
@@ -412,8 +412,8 @@ void CallPresenter::WatchForNoMedia(CallUiBackend& backend, const CallScreen& s,
     sample.call_id = s.call_id;
     sample.group = s.group;
     // A hop reattach keeps the seat "live" while nothing flows: recovering pauses the count too.
-    sample.media_live = s.media_connected && backend.Recovery() == CallRecovery::None &&
-                        s.status != CallScreen::Status::Reconnecting;
+    sample.media_live =
+        s.media_connected && backend.Recovery() == CallRecovery::None && s.status != CallScreen::Status::Reconnecting;
     sample.others_joined = static_cast<size_t>(
         std::count_if(s.members.begin(), s.members.end(), [](const CallScreen::Member& m) { return !m.is_local; }));
     sample.last_rx_ms = std::max(health.last_rx_audio_ms, health.last_rx_video_ms);
@@ -463,11 +463,12 @@ void CallPresenter::MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s)
     if (!backend.Media().IsCameraEnabled()) {
       log().info << "auto camera on call_id=" << active_call_id_;
       backend.SetLocalVideoEnabled(true, WhileAlive([call_id = active_call_id_](Roe<void> cam) {
-        if (!cam) {
-          logging::getLogger("CallPresenter").warning << "auto camera on failed call_id=" << call_id << ": "
-                                                      << cam.error().message;
-        }
-      }));
+                                     if (!cam) {
+                                       logging::getLogger("CallPresenter").warning
+                                           << "auto camera on failed call_id=" << call_id << ": "
+                                           << cam.error().message;
+                                     }
+                                   }));
     }
   } else if (allowed && allowed->has_value() && !**allowed) {
     // Narrowed to voice-only before we got here: drop the intent (the renderer's camera-off sync
@@ -588,7 +589,7 @@ bool CallPresenter::GuardNewCall(const std::string& thread_id, const std::functi
   const NewCallVerdict verdict = DecideNewCall(screen_, thread_id);
   if (verdict == NewCallVerdict::Place) {
     if (CallScreenIsFailedPage(screen_)) {
-      (void)Leave();  // clear the failed page (shown or minimized) and its dead call before the new one
+      (void)Leave(); // clear the failed page (shown or minimized) and its dead call before the new one
     }
     return false;
   }
@@ -646,7 +647,7 @@ bool CallPresenter::StartCall(const std::string& thread_id, const bool video, St
   }
   if ((*thread)->kind == ThreadKind::Group) {
     if (backend->JoinableCallInThread(thread_id)) {
-      RequestStart(thread_id, false, {}, std::move(done));  // V053: the group's call goes on — join it
+      RequestStart(thread_id, false, {}, std::move(done)); // V053: the group's call goes on — join it
       return true;
     }
     if (callbacks_.open_group_picker) {
@@ -672,9 +673,10 @@ bool CallPresenter::StartCall(const std::string& thread_id, const bool video, St
 
 bool CallPresenter::StartCallWithInvitees(const std::string& thread_id, const bool video,
                                           const std::vector<std::string>& invitees, StartDone done) {
-  if (GuardNewCall(thread_id,
-                   [this, thread_id, video, invitees, done]() { (void)StartCallWithInvitees(thread_id, video, invitees, done); },
-                   done)) {
+  if (GuardNewCall(
+          thread_id,
+          [this, thread_id, video, invitees, done]() { (void)StartCallWithInvitees(thread_id, video, invitees, done); },
+          done)) {
     return true;
   }
   BindToMessaging();
@@ -698,33 +700,33 @@ void CallPresenter::RequestStart(const std::string& thread_id, const bool video,
   // The calls owner starts it and reports back on UI.
   Backend()->StartCall(thread_id, video, invitees,
                        WhileAlive([this, video, joining, done = std::move(done)](Roe<CallSession> started) {
-    CallStartResult result;
-    if (!started) {
-      FailText(started.error().message);
-      result.error_text = started.error().message;
-      if (done) {
-        done(result);
-      }
-      return;
-    }
-    active_call_id_ = started->call_id;
-    result.kind = joining ? CallStartResult::Kind::Joined : CallStartResult::Kind::Started;
-    result.call_id = started->call_id;
-    if (!joining) {
-      if (callbacks_.on_outbound_started) {
-        callbacks_.on_outbound_started(started->call_id, video);
-      }
-      if (video) {
-        // The caller picked "Video call": the camera comes on once the call connects.
-        auto_camera_pending_ = true;
-        auto_camera_call_id_ = started->call_id;
-      }
-    }
-    if (done) {
-      done(result);
-    }
-    Refresh();
-  }));
+                         CallStartResult result;
+                         if (!started) {
+                           FailText(started.error().message);
+                           result.error_text = started.error().message;
+                           if (done) {
+                             done(result);
+                           }
+                           return;
+                         }
+                         active_call_id_ = started->call_id;
+                         result.kind = joining ? CallStartResult::Kind::Joined : CallStartResult::Kind::Started;
+                         result.call_id = started->call_id;
+                         if (!joining) {
+                           if (callbacks_.on_outbound_started) {
+                             callbacks_.on_outbound_started(started->call_id, video);
+                           }
+                           if (video) {
+                             // The caller picked "Video call": the camera comes on once the call connects.
+                             auto_camera_pending_ = true;
+                             auto_camera_call_id_ = started->call_id;
+                           }
+                         }
+                         if (done) {
+                           done(result);
+                         }
+                         Refresh();
+                       }));
 }
 
 CallJoinBar MakeCallJoinBar(const std::optional<CallUiBackend::JoinableCallInfo>& call) {
@@ -945,15 +947,15 @@ void CallPresenter::InviteToActiveCall(const std::vector<std::string>& identitie
       continue;
     }
     backend->InviteParticipant(active_call_id_, identity, WhileAlive([this, done](Roe<void> ok) {
-      if (!ok) {
-        FailText(ok.error().message);
-      } else {
-        Refresh();
-      }
-      if (done) {
-        done(ok);
-      }
-    }));
+                                 if (!ok) {
+                                   FailText(ok.error().message);
+                                 } else {
+                                   Refresh();
+                                 }
+                                 if (done) {
+                                   done(ok);
+                                 }
+                               }));
   }
 }
 
@@ -1017,7 +1019,7 @@ std::string CallPresenter::Accept(const bool voice_only, const std::string& answ
     auto_camera_pending_ = true;
     auto_camera_call_id_ = call_id;
   } else if (auto_camera_call_id_ == call_id) {
-    auto_camera_pending_ = false;  // answered voice-only: never the camera for this call
+    auto_camera_pending_ = false; // answered voice-only: never the camera for this call
   }
   // The ring goes on the click frame (CALLS.md Accept → Accepting): leaving it up until
   // AcceptInvite finished made Accept look hung.
@@ -1129,7 +1131,7 @@ void CallPresenter::Retry() {
     return;
   }
   backend->Apply(CallLifecycleEvent::RetryClicked, call_id);
-  Refresh();  // a refusal reads as the stack's last error, which Refresh reports
+  Refresh(); // a refusal reads as the stack's last error, which Refresh reports
 }
 
 void CallPresenter::ToggleMute() {
@@ -1160,20 +1162,19 @@ void CallPresenter::ToggleCamera() {
   }
   const bool next = !backend->Media().IsCameraEnabled();
   if (next && !active_call_id_.empty()) {
-    if (auto allowed = backend->VideoAllowedForCall(active_call_id_);
-        !allowed || !allowed->has_value() || !**allowed) {
+    if (auto allowed = backend->VideoAllowedForCall(active_call_id_); !allowed || !allowed->has_value() || !**allowed) {
       Fail("call.error.video_not_allowed");
       return;
     }
   }
   backend->SetLocalVideoEnabled(next, WhileAlive([this](Roe<void> cam) {
-    if (!cam) {
-      // The backend's reason is English technical text: the log keeps it, the user sees a plain sentence.
-      log().info << "camera toggle failed: " << cam.error().message;
-      Fail("call.error.camera_failed");
-    }
-    Refresh();
-  }));
+                                  if (!cam) {
+                                    // The backend's reason is English technical text: the log keeps it, the user sees a plain sentence.
+                                    log().info << "camera toggle failed: " << cam.error().message;
+                                    Fail("call.error.camera_failed");
+                                  }
+                                  Refresh();
+                                }));
 }
 
 void CallPresenter::FlipCamera() {

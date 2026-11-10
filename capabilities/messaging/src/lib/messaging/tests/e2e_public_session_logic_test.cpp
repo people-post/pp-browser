@@ -26,7 +26,8 @@ ByteVector TestDek() {
 class E2ePublicSessionLogicTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    data_dir_ = std::filesystem::temp_directory_path() / ("pp_browser_e2e_public_session_logic_" + util::GenerateUuid());
+    data_dir_ =
+        std::filesystem::temp_directory_path() / ("pp_browser_e2e_public_session_logic_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
     store_ = std::make_unique<InMemoryDeliveryStore>();
     psk_ = std::make_unique<InMemoryPeerSessions>(*store_);
@@ -144,8 +145,10 @@ TEST_F(E2ePublicSessionLogicTest, BothOpeningAtOnceSettleOnTheLowerId) {
   auto at_alice = AutoKeyEstablishment::DeriveMasterPskFromKeyInit(alice->private_key, *bob_opened->key_init_b64);
   auto at_bob = AutoKeyEstablishment::DeriveMasterPskFromKeyInit(bob->private_key, *alice_opened->key_init_b64);
   ASSERT_TRUE(at_alice && at_bob);
-  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, to_bob, 1, AutoKeyRead{*at_alice, true}, bob_opened->key_init_b64, 1000));
-  ASSERT_TRUE(ReconcileE2ePublicSession(bob_psk, to_alice, 1, AutoKeyRead{*at_bob, true}, alice_opened->key_init_b64, 1000));
+  ASSERT_TRUE(
+      ReconcileE2ePublicSession(*psk_, to_bob, 1, AutoKeyRead{*at_alice, true}, bob_opened->key_init_b64, 1000));
+  ASSERT_TRUE(
+      ReconcileE2ePublicSession(bob_psk, to_alice, 1, AutoKeyRead{*at_bob, true}, alice_opened->key_init_b64, 1000));
 
   auto alice_now = psk_->Load(to_bob);
   auto bob_now = bob_psk.Load(to_alice);
@@ -167,7 +170,8 @@ TEST_F(E2ePublicSessionLogicTest, AConfirmedSessionGivesWayToTheOneThePeerNowUse
   ASSERT_TRUE(alice);
   auto fresh = AutoKeyEstablishment::EncapsulateForRecipient(alice->public_key);
   ASSERT_TRUE(fresh);
-  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{fresh->master_psk, true}, fresh->key_init_b64, 2000));
+  ASSERT_TRUE(
+      ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{fresh->master_psk, true}, fresh->key_init_b64, 2000));
   auto now = psk_->Load(key);
   ASSERT_TRUE(now && now->has_value());
   EXPECT_EQ((*now)->master_psk_b64, std::optional<std::string>(Base64Encode(fresh->master_psk)));
@@ -184,20 +188,24 @@ TEST_F(E2ePublicSessionLogicTest, AnOlderOpenerDoesNotUndoTheSessionThePeerUses)
   auto earlier = AutoKeyEstablishment::EncapsulateForRecipient(alice->public_key);
   ASSERT_TRUE(current && earlier);
   // Bob's session, then Bob writing under it at t=3000.
-  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{current->master_psk, true}, current->key_init_b64, 2000));
+  ASSERT_TRUE(
+      ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{current->master_psk, true}, current->key_init_b64, 2000));
   ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{current->master_psk, false}, std::nullopt, 3000));
 
-  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{earlier->master_psk, true}, earlier->key_init_b64, 1500));
+  ASSERT_TRUE(
+      ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{earlier->master_psk, true}, earlier->key_init_b64, 1500));
   auto now = psk_->Load(key);
   ASSERT_TRUE(now && now->has_value());
   EXPECT_EQ((*now)->master_psk_b64, std::optional<std::string>(Base64Encode(current->master_psk))) << "kept";
 
   auto later = AutoKeyEstablishment::EncapsulateForRecipient(alice->public_key);
   ASSERT_TRUE(later);
-  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{later->master_psk, true}, later->key_init_b64, 4000));
+  ASSERT_TRUE(
+      ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{later->master_psk, true}, later->key_init_b64, 4000));
   now = psk_->Load(key);
   ASSERT_TRUE(now && now->has_value());
-  EXPECT_EQ((*now)->master_psk_b64, std::optional<std::string>(Base64Encode(later->master_psk))) << "a newer start wins";
+  EXPECT_EQ((*now)->master_psk_b64, std::optional<std::string>(Base64Encode(later->master_psk)))
+      << "a newer start wins";
 }
 
 } // namespace

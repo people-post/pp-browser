@@ -23,7 +23,7 @@ struct Sent {
 // Scripted transport + manual clocks; `network_error` makes the post fail.
 struct Fixture {
   std::vector<Sent> sent;
-  std::vector<std::pair<long, std::string>> replies;  // consumed in order; the last repeats
+  std::vector<std::pair<long, std::string>> replies; // consumed in order; the last repeats
   bool network_error = false;
   int reregisters = 0;
   bool reregister_ok = true;
@@ -34,9 +34,7 @@ struct Fixture {
   pbr::NodeHeartbeatDeps Deps() {
     pbr::NodeHeartbeatDeps d;
     d.base_url = "https://relay.example/api";
-    d.identity = [this] {
-      return registered ? pbr::HeartbeatIdentity{"relay:u1", "peer1"} : pbr::HeartbeatIdentity{};
-    };
+    d.identity = [this] { return registered ? pbr::HeartbeatIdentity{"relay:u1", "peer1"} : pbr::HeartbeatIdentity{}; };
     d.sign = [](const std::string&, const std::string&, const std::string& state, int64_t ts) -> pbr::Roe<std::string> {
       return "sig-" + state + "-" + std::to_string(ts);
     };
@@ -159,9 +157,9 @@ TEST(NodeHeartbeatTest, TimestampsStrictlyIncreaseEvenWhenClockStalls) {
   pbr::NodeHeartbeat hb(f.Deps());
   hb.Tick();
   hb.SetState(pbr::HeartbeatState::Draining);
-  hb.Tick();  // same unix_ms
+  hb.Tick(); // same unix_ms
   hb.SetState(pbr::HeartbeatState::Active);
-  f.unix_ms -= 5000;  // clock stepped back
+  f.unix_ms -= 5000; // clock stepped back
   hb.Tick();
   ASSERT_EQ(f.sent.size(), 3u);
   EXPECT_LT(Ts(f.sent[0]), Ts(f.sent[1]));
@@ -172,16 +170,16 @@ TEST(NodeHeartbeatTest, NotRegisteredReRegistersWithBackoffAndSuccessResets) {
   Fixture f;
   f.replies = {{404, R"({"error":"x","code":"not_registered"})"}};
   pbr::NodeHeartbeat hb(f.Deps());
-  hb.Tick();  // 404 -> re-register now, retry right away
+  hb.Tick(); // 404 -> re-register now, retry right away
   EXPECT_EQ(f.reregisters, 1);
-  hb.Tick();  // 404 again, backoff (10s) not elapsed
+  hb.Tick(); // 404 again, backoff (10s) not elapsed
   EXPECT_EQ(f.reregisters, 1);
   ASSERT_EQ(f.sent.size(), 2u);
   f.Advance(5'000);
   hb.Tick();
   EXPECT_EQ(f.sent.size(), 2u) << "waits for the backoff";
   f.Advance(5'000);
-  hb.Tick();  // backoff elapsed: send 404s, re-register (delay now 20s)
+  hb.Tick(); // backoff elapsed: send 404s, re-register (delay now 20s)
   EXPECT_EQ(f.reregisters, 2);
   f.Advance(20'000);
   hb.Tick();
@@ -241,7 +239,7 @@ TEST(NodeHeartbeatTest, StaleTimestampSkipsToNextPeriod) {
 
 TEST(NodeHeartbeatTest, UnauthorizedIsCountedAndRetriedNextPeriod) {
   Fixture f;
-  f.replies = {{401, R"({"error":"bad signature","server_time":1700000200000})"}};  // 200 s ahead
+  f.replies = {{401, R"({"error":"bad signature","server_time":1700000200000})"}}; // 200 s ahead
   pbr::NodeHeartbeat hb(f.Deps());
   hb.Tick();
   f.Advance(1000);

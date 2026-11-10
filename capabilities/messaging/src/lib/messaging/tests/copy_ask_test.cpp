@@ -18,7 +18,8 @@ ThreadMessage OverTheWire(const ThreadMessage& notice) {
 }
 
 TEST(CopyAskTest, AnAskNamesTheMessageTheSendingDeviceAndTheAskingOne) {
-  const CopyAsk ask{.message_id = "m-1", .group_id = "group:hike", .to_device = "QmBobPhone", .from_device = "QmLaptop"};
+  const CopyAsk ask{
+      .message_id = "m-1", .group_id = "group:hike", .to_device = "QmBobPhone", .from_device = "QmLaptop"};
   auto notice = copy_ask::BuildNotice(ask);
   ASSERT_TRUE(notice) << notice.error().message;
   auto parsed = copy_ask::Parse(OverTheWire(*notice));

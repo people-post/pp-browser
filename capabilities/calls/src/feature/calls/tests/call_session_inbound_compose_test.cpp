@@ -148,14 +148,12 @@ public:
     }
   }
   CallMediaRoe Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    int timeout_ms) override {
+                       int timeout_ms) override {
     CallMediaRoe out;
     ConnectAsync(params, std::move(callbacks), [&](CallMediaRoe r) { out = std::move(r); }, timeout_ms);
     return out;
   }
-  Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override {
-    return {};
-  }
+  Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override { return {}; }
   Roe<void> SendMedia(uint8_t /*channel*/, const std::vector<uint8_t>& /*payload*/, uint32_t /*seq*/, uint8_t /*mark*/,
                       uint64_t /*instance*/) override {
     return {};
@@ -283,7 +281,7 @@ protected:
     CallDirectPathDeps direct;
     direct.transport = transport_.get();
     direct.dial = dial_.get();
-    direct.lane = AppRuntime::MakeLaneForTesting();  // stands in for the mesh's io lane
+    direct.lane = AppRuntime::MakeLaneForTesting(); // stands in for the mesh's io lane
     device_->AttachDirectPath(std::move(direct));
 
     dial_->force_dialable["account:peer"] = true;
@@ -328,8 +326,7 @@ protected:
     std::filesystem::remove_all(data_dir_, ec);
   }
 
-  Roe<ThreadMessage> MakeInviteMessage(const std::string& call_id,
-                                       std::optional<int64_t> expires_at = std::nullopt,
+  Roe<ThreadMessage> MakeInviteMessage(const std::string& call_id, std::optional<int64_t> expires_at = std::nullopt,
                                        std::optional<bool> video_allowed = std::nullopt) {
     CallInviteDetail invite;
     invite.call_id = call_id;
@@ -350,8 +347,8 @@ protected:
     if (!detail) {
       return detail.error();
     }
-    return CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallInvite, "Incoming call",
-                                                *detail, "account:peer");
+    return CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallInvite, "Incoming call", *detail,
+                                                "account:peer");
   }
 
   /** Answerer Invite → AcceptClicked → Leave → Ended. Returns false on assertion failure path. */
@@ -444,7 +441,7 @@ protected:
   bool fail_sends_ = false;
   /** Sends to this peer fail (no route). */
   std::string unreachable_peer_;
-  std::atomic<int> inbox_syncs_{0};  // bumped from the deferred-key poll on workers
+  std::atomic<int> inbox_syncs_{0}; // bumped from the deferred-key poll on workers
   std::string last_sent_payload_;
   /** The last CallAccept on the wire (the answerer start may send more after it). */
   std::string last_sent_accept_payload_;
@@ -485,7 +482,7 @@ TEST_F(CallSessionInboundComposeTest, InboundInviteCreatesPendingAndRingingSessi
 // would ring as peer and make peer the call's initiator: it does not ring at all.
 TEST_F(CallSessionInboundComposeTest, AnInviteNamingSomeoneElseAsTheCallerDoesNotRing) {
   const std::string call_id = "call:spoofed-inviter";
-  auto msg = MakeInviteMessage(call_id);  // inviter_identity "account:peer"
+  auto msg = MakeInviteMessage(call_id); // inviter_identity "account:peer"
   ASSERT_TRUE(msg) << msg.error().message;
 
   (void)OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:mallory"); });
@@ -548,7 +545,7 @@ TEST_F(CallSessionInboundComposeTest, AcceptClickedDedupesWhileInFlight) {
   int parks = 0;
   device_->MeshGlue().park_circuit = ([&](int /*timeout_ms*/, std::function<void(bool)> /*done*/) { ++parks; });
 
-  OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, {}); });  // the ring's call
+  OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, {}); }); // the ring's call
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
   AppRuntime::RunAllOwnerTasks();
   EXPECT_EQ(parks, 1) << "the second click started no second accept";
@@ -578,9 +575,9 @@ TEST_F(CallSessionInboundComposeTest, ADuplicateResumeThatFailsLeavesTheResumedC
     device_->Handle(report);
   };
   OnCallsOwner(peer_reconnected);
-  OnCallsOwner(peer_reconnected);    // ignored: no longer failed
-  live.NoteMediaConnected(call_id);  // the first resume committed the peer's stream
-  AppRuntime::RunAllOwnerTasks();    // the queued resume finds nothing to resume and fails
+  OnCallsOwner(peer_reconnected);   // ignored: no longer failed
+  live.NoteMediaConnected(call_id); // the first resume committed the peer's stream
+  AppRuntime::RunAllOwnerTasks();   // the queued resume finds nothing to resume and fails
   EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall);
 }
 
@@ -605,7 +602,7 @@ TEST_F(CallSessionInboundComposeTest, AcceptParksWithoutWaitingForThePark) {
   EXPECT_EQ((*self)->state, CallParticipantState::Joined);
   EXPECT_GE(sent_control_messages_, 1) << "CallAccept sent before the park answered";
 
-  OnCallsOwner([&] { park_done(false); });  // a late (failed) park changes nothing
+  OnCallsOwner([&] { park_done(false); }); // a late (failed) park changes nothing
   AppRuntime::RunAllOwnerTasks();
   self = sessions_->FindParticipant(call_id, local_identity_);
   ASSERT_TRUE(self && self->has_value());
@@ -712,7 +709,7 @@ TEST_F(CallSessionInboundComposeTest, InboundCallEndedEndsActiveSession) {
   local.state = CallParticipantState::Joined;
   local.joined_at = session.created_at;
   ASSERT_TRUE(sessions_->UpsertParticipant(local));
-  CallParticipant peer;  // the peer who ends it is in the call
+  CallParticipant peer; // the peer who ends it is in the call
   peer.call_id = call_id;
   peer.identity = "account:peer";
   peer.state = CallParticipantState::Joined;
@@ -891,7 +888,7 @@ TEST_F(CallSessionInboundComposeTest, VoiceOnlyAnswerNarrowsCalleeSessionAndSend
 // A voice-only accept on a call that was already voice-only writes nothing extra on the wire.
 TEST_F(CallSessionInboundComposeTest, VoiceOnlyAnswerOnVoiceCallWritesNothing) {
   const std::string call_id = "call:voice-only-noop";
-  auto msg = MakeInviteMessage(call_id);  // voice invite (video_allowed=false)
+  auto msg = MakeInviteMessage(call_id); // voice invite (video_allowed=false)
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
@@ -1038,20 +1035,20 @@ TEST_F(CallSessionInboundComposeTest, CallerIgnoresMissingFieldAndNeverRewidens)
   auto narrow_detail = CallControlCodec::EncodeAccept(narrow_accept);
   ASSERT_TRUE(narrow_detail);
   auto narrow_msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallAccept, "Accepted",
-                                                          *narrow_detail, "account:peer");
+                                                         *narrow_detail, "account:peer");
   ASSERT_TRUE(narrow_msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*narrow_msg, "account:peer"); }));
   auto after_narrow = reads_->VideoAllowedForCall(call_id);
   ASSERT_TRUE(after_narrow && after_narrow->has_value());
   ASSERT_FALSE(**after_narrow);
 
-  CallAcceptDetail replay_accept;  // relay replay of the same Accept, missing the field this time
+  CallAcceptDetail replay_accept; // relay replay of the same Accept, missing the field this time
   replay_accept.call_id = call_id;
   replay_accept.identity = "account:peer";
   auto replay_detail = CallControlCodec::EncodeAccept(replay_accept);
   ASSERT_TRUE(replay_detail);
   auto replay_msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallAccept, "Accepted",
-                                                          *replay_detail, "account:peer");
+                                                         *replay_detail, "account:peer");
   ASSERT_TRUE(replay_msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*replay_msg, "account:peer"); }));
   auto after_replay = reads_->VideoAllowedForCall(call_id);
@@ -1081,7 +1078,7 @@ TEST_F(CallSessionInboundComposeTest, GroupVoiceAnswerDoesNotNarrowCaller) {
   CallSession session;
   session.call_id = call_id;
   session.origin_thread_id = "thread:out";
-  session.origin_group_id = "group:out";  // started from a group thread
+  session.origin_group_id = "group:out"; // started from a group thread
   session.media_mode = CallMediaMode::Voice;
   session.video_allowed = true;
   session.state = CallSessionState::Ringing;
@@ -1204,9 +1201,8 @@ TEST_F(CallSessionInboundComposeTest, InboundMediaKeyUnwrapsAndKicksAnswerer) {
   key_detail.wrapped_key_b64 = *wrapped;
   auto key_json = CallControlCodec::EncodeMediaKey(key_detail);
   ASSERT_TRUE(key_json);
-  auto key_msg =
-      CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallMediaKey, "Media key", *key_json,
-                                           "account:peer");
+  auto key_msg = CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallMediaKey, "Media key",
+                                                      *key_json, "account:peer");
   ASSERT_TRUE(key_msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*key_msg, "account:peer"); }));
 
@@ -1259,8 +1255,8 @@ TEST_F(CallSessionInboundComposeTest, InboundPeerLeaveEndsActiveOneToOne) {
   leave.identity = "account:peer";
   auto detail = CallControlCodec::EncodeLeave(leave);
   ASSERT_TRUE(detail);
-  auto msg = CallControlCodec::BuildSystemMessage("thread:1", CallControlType::CallLeave, "Left", *detail,
-                                                  "account:peer");
+  auto msg =
+      CallControlCodec::BuildSystemMessage("thread:1", CallControlType::CallLeave, "Left", *detail, "account:peer");
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
 
@@ -1424,9 +1420,8 @@ TEST_F(CallSessionInboundComposeTest, InboundSfuAttachIgnoredWhileDirectConnecti
   attach.publisher_stream_id = 1;
   auto detail = CallControlCodec::EncodeSfuAttach(attach);
   ASSERT_TRUE(detail);
-  auto attach_msg =
-      CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallSfuAttach, "SFU", *detail,
-                                           "account:peer");
+  auto attach_msg = CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallSfuAttach, "SFU", *detail,
+                                                         "account:peer");
   ASSERT_TRUE(attach_msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*attach_msg, "account:peer"); }));
 
@@ -1454,9 +1449,8 @@ TEST_F(CallSessionInboundComposeTest, InboundHopRefuseEndsBoundCall) {
   refuse.message = "No shared hop";
   auto detail = CallControlCodec::EncodeHopRefuse(refuse);
   ASSERT_TRUE(detail);
-  auto refuse_msg =
-      CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallHopRefuse, "Refuse", *detail,
-                                           "account:peer");
+  auto refuse_msg = CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallHopRefuse, "Refuse",
+                                                         *detail, "account:peer");
   ASSERT_TRUE(refuse_msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*refuse_msg, "account:peer"); }));
 
@@ -1474,9 +1468,8 @@ TEST_F(CallSessionInboundComposeTest, InboundHopRefuseEndsBoundCall) {
 }
 
 TEST_F(CallSessionInboundComposeTest, LegacySdpAndIceIgnored) {
-  auto sdp = CallControlCodec::BuildSystemMessage(
-      "thread:1", CallControlType::CallSdp, "sdp", R"({"call_id":"call:x","sdp":"v=0","type":"offer"})",
-      "account:peer");
+  auto sdp = CallControlCodec::BuildSystemMessage("thread:1", CallControlType::CallSdp, "sdp",
+                                                  R"({"call_id":"call:x","sdp":"v=0","type":"offer"})", "account:peer");
   ASSERT_TRUE(sdp);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*sdp, "account:peer"); }));
 
@@ -1524,8 +1517,8 @@ TEST_F(CallSessionInboundComposeTest, InboundDeclineClearsOffererOutboundCalling
   decline.identity = "account:peer";
   auto detail = CallControlCodec::EncodeDecline(decline);
   ASSERT_TRUE(detail);
-  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallDecline, "Declined",
-                                                  *detail, "account:peer");
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallDecline, "Declined", *detail,
+                                                  "account:peer");
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
 
@@ -1557,8 +1550,8 @@ TEST_F(CallSessionInboundComposeTest, InboundDeclineKeepsCallWhenOtherInviteeSti
   decline.identity = "account:peer";
   auto detail = CallControlCodec::EncodeDecline(decline);
   ASSERT_TRUE(detail);
-  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallDecline, "Declined",
-                                                  *detail, "account:peer");
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallDecline, "Declined", *detail,
+                                                  "account:peer");
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
 
@@ -1622,8 +1615,8 @@ TEST_F(CallSessionInboundComposeTest, InboundSfuAttachFailedDispatched) {
   fail.error = "attach_failed";
   auto detail = CallControlCodec::EncodeSfuAttachFailed(fail);
   ASSERT_TRUE(detail);
-  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallSfuAttachFailed, "fail",
-                                                  *detail, "account:peer");
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallSfuAttachFailed, "fail", *detail,
+                                                  "account:peer");
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
 }
@@ -1821,9 +1814,8 @@ TEST_F(CallSessionInboundComposeTest, AGroupCallRingsWhoeverCanBeInvited) {
   ASSERT_TRUE(store_->UpsertThread(thread));
   unreachable_peer_ = "account:away";
 
-  auto started = OnCallsOwner([&] {
-    return csm_->StartCall(thread.id, false, {"account:away", "account:peer1", "account:peer2"});
-  });
+  auto started = OnCallsOwner(
+      [&] { return csm_->StartCall(thread.id, false, {"account:away", "account:peer1", "account:peer2"}); });
   ASSERT_TRUE(started) << started.error().message;
   EXPECT_EQ(started->state, CallSessionState::Ringing);
   EXPECT_GE(sent_control_messages_, 2) << "the two in reach were invited";

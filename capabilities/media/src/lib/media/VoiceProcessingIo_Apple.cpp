@@ -20,15 +20,15 @@ namespace pbr {
 namespace {
 
 constexpr double kSampleRate = 48000.0;
-constexpr size_t kRingSamples = 48000 / 5;  // 200 ms each way
+constexpr size_t kRingSamples = 48000 / 5; // 200 ms each way
 constexpr UInt32 kMaxFramesPerSlice = 4096;
 #if TARGET_OS_OSX
 /** Ask for a 10 ms hardware IO buffer; VPIO on macOS otherwise ran 4096-frame (85 ms) cycles.
  *  (iOS sets the IO buffer on AVAudioSession instead.) */
 constexpr UInt32 kPreferredIoFrames = 480;
 #endif
-constexpr AudioUnitElement kOutputBus = 0;  // speaker
-constexpr AudioUnitElement kInputBus = 1;   // mic
+constexpr AudioUnitElement kOutputBus = 0; // speaker
+constexpr AudioUnitElement kInputBus = 1;  // mic
 
 AudioStreamBasicDescription MonoS16() {
   AudioStreamBasicDescription f{};
@@ -81,8 +81,7 @@ void QueryDefaultDevices(AudioDeviceID* in, AudioDeviceID* out) {
 // IO buffer. Returns the buffer size in effect afterwards (0 if it cannot be read).
 UInt32 RequestIoBufferFrames(AudioUnit unit, UInt32 frames) {
   UInt32 want = frames;
-  (void)AudioUnitSetProperty(unit, kAudioDevicePropertyBufferFrameSize, kAudioUnitScope_Global, 0, &want,
-                             sizeof(want));
+  (void)AudioUnitSetProperty(unit, kAudioDevicePropertyBufferFrameSize, kAudioUnitScope_Global, 0, &want, sizeof(want));
   UInt32 now = 0;
   UInt32 size = sizeof(now);
   if (AudioUnitGetProperty(unit, kAudioDevicePropertyBufferFrameSize, kAudioUnitScope_Global, 0, &now, &size) ==
@@ -92,8 +91,8 @@ UInt32 RequestIoBufferFrames(AudioUnit unit, UInt32 frames) {
   }
   AudioDeviceID device = kAudioObjectUnknown;
   size = sizeof(device);
-  if (AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &device,
-                           &size) != noErr ||
+  if (AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &device, &size) !=
+          noErr ||
       device == kAudioObjectUnknown) {
     return now;
   }
@@ -109,8 +108,7 @@ UInt32 RequestIoBufferFrames(AudioUnit unit, UInt32 frames) {
 }
 #endif
 
-}  // namespace
-
+} // namespace
 
 struct VoiceProcessingIo::Impl {
   AudioUnit unit = nullptr;
@@ -172,8 +170,8 @@ struct VoiceProcessingIo::Impl {
     return st;
   }
 
-  static OSStatus OnRender(void* ref, AudioUnitRenderActionFlags* flags, const AudioTimeStamp* /*ts*/,
-                           UInt32 /*bus*/, UInt32 frames, AudioBufferList* io) {
+  static OSStatus OnRender(void* ref, AudioUnitRenderActionFlags* flags, const AudioTimeStamp* /*ts*/, UInt32 /*bus*/,
+                           UInt32 frames, AudioBufferList* io) {
     auto* self = static_cast<Impl*>(ref);
     auto* dst = static_cast<int16_t*>(io->mBuffers[0].mData);
     const size_t want = std::min<size_t>(frames, io->mBuffers[0].mDataByteSize / sizeof(int16_t));
@@ -297,19 +295,19 @@ bool VoiceProcessingIo::Open(std::string* reason) {
   }
 #endif
   const AudioStreamBasicDescription fmt = MonoS16();
-  st = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, kInputBus, &fmt,
-                            sizeof(fmt));
+  st =
+      AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, kInputBus, &fmt, sizeof(fmt));
   if (st != noErr) {
     return fail(Failed("set capture format", st));
   }
-  st = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, kOutputBus, &fmt,
-                            sizeof(fmt));
+  st =
+      AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, kOutputBus, &fmt, sizeof(fmt));
   if (st != noErr) {
     return fail(Failed("set playback format", st));
   }
   const UInt32 max_frames = kMaxFramesPerSlice;
-  (void)AudioUnitSetProperty(unit, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0,
-                             &max_frames, sizeof(max_frames));
+  (void)AudioUnitSetProperty(unit, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &max_frames,
+                             sizeof(max_frames));
 
   AURenderCallbackStruct input_cb{&Impl::OnInput, impl_.get()};
   st = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, kInputBus,
@@ -318,8 +316,8 @@ bool VoiceProcessingIo::Open(std::string* reason) {
     return fail(Failed("set input callback", st));
   }
   AURenderCallbackStruct render_cb{&Impl::OnRender, impl_.get()};
-  st = AudioUnitSetProperty(unit, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, kOutputBus,
-                            &render_cb, sizeof(render_cb));
+  st = AudioUnitSetProperty(unit, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, kOutputBus, &render_cb,
+                            sizeof(render_cb));
   if (st != noErr) {
     return fail(Failed("set render callback", st));
   }
@@ -337,7 +335,7 @@ bool VoiceProcessingIo::Open(std::string* reason) {
 
   st = AudioUnitInitialize(unit);
   if (st != noErr) {
-    return fail(Failed("AudioUnitInitialize", st));  // e.g. -10875 on mismatched in/out devices
+    return fail(Failed("AudioUnitInitialize", st)); // e.g. -10875 on mismatched in/out devices
   }
 #if TARGET_OS_OSX
   impl_->io_buffer_frames.store(RequestIoBufferFrames(unit, kPreferredIoFrames), std::memory_order_relaxed);
@@ -389,7 +387,7 @@ bool VoiceProcessingIo::Open(std::string* reason) {
 
 void VoiceProcessingIo::Close() {
   if (impl_->unit) {
-    AudioOutputUnitStop(impl_->unit);  // returns after in-flight callbacks finish
+    AudioOutputUnitStop(impl_->unit); // returns after in-flight callbacks finish
     AudioUnitUninitialize(impl_->unit);
     AudioComponentInstanceDispose(impl_->unit);
     impl_->unit = nullptr;
@@ -461,4 +459,4 @@ std::string VoiceProcessingIo::TakeDiag() {
          " capture_ring_max=" + std::to_string(d.capture_ring_max.exchange(0, std::memory_order_relaxed));
 }
 
-}  // namespace pbr
+} // namespace pbr

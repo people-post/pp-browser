@@ -120,10 +120,8 @@ PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {
   return vis;
 }
 
-CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& config,
-                                                            int safe_area_top_dp,
-                                                            int safe_area_bottom_dp,
-                                                            float titlebar_height_dp,
+CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& config, int safe_area_top_dp,
+                                                            int safe_area_bottom_dp, float titlebar_height_dp,
                                                             CompactBottomSurface bottom_surface,
                                                             bool bottom_chrome_open) {
   CompactChromeLayout layout{};
@@ -145,8 +143,7 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
   layout.shell_bottom_dp = (covers_strip || keyboard) ? 0.f : safe_bottom;
   layout.content_bottom_inset_dp = keyboard ? safe_bottom : 0.f;
   layout.bottom_surface_padding_dp = covers_strip ? safe_bottom : 0.f;
-  const float tab_bar_inset =
-      bottom_surface == CompactBottomSurface::TabBar ? layout.bottom_surface_padding_dp : 0.f;
+  const float tab_bar_inset = bottom_surface == CompactBottomSurface::TabBar ? layout.bottom_surface_padding_dp : 0.f;
   // Keyboard up, or an emoji/attachment bottom sheet open, over a tab-bar page: hide the tab bar and stop reserving its
   // height, so the content (and its docked composer) sits right above the keyboard / panel that covers where the bar
   // was, instead of being squeezed above a floating bar (Kenneth 2026-11-05). bottom_chrome_open is the emoji/attachment
@@ -163,7 +160,7 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
     constexpr float kComposerMinHeightDp = 52.f;
     constexpr float kToastGapDp = 12.f;
     const float bar = layout.tab_bar_hidden                              ? 0.f
-                      : bottom_surface == CompactBottomSurface::TabBar     ? config.compact_nav_height_dp
+                      : bottom_surface == CompactBottomSurface::TabBar   ? config.compact_nav_height_dp
                       : bottom_surface == CompactBottomSurface::Composer ? kComposerMinHeightDp
                                                                          : 0.f;
     layout.toast_bottom_dp = layout.content_bottom_inset_dp + layout.bottom_surface_padding_dp + bar + kToastGapDp;

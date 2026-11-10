@@ -19,15 +19,15 @@ bool g_handler_installed = false;
 
 const char* LevelTag(logging::Level level) {
   switch (level) {
-  case logging::kLevelDebug:
-    return "D";
-  case logging::Level::INFO:
-    return "I";
-  case logging::Level::WARNING:
-    return "W";
-  case logging::kLevelError:
-  case logging::Level::CRITICAL:
-    return "E";
+    case logging::kLevelDebug:
+      return "D";
+    case logging::Level::INFO:
+      return "I";
+    case logging::Level::WARNING:
+      return "W";
+    case logging::kLevelError:
+    case logging::Level::CRITICAL:
+      return "E";
   }
   return "I";
 }

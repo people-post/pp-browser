@@ -16,8 +16,7 @@ std::vector<std::string> QuickReactions(const std::vector<std::string>& recent) 
   std::vector<std::string> keys;
   const auto add = [&](const std::string& emoji) {
     const std::string key = NormalizeEmojiKey(emoji);
-    if (key.empty() || row.size() >= kQuickReactionCount ||
-        std::find(keys.begin(), keys.end(), key) != keys.end()) {
+    if (key.empty() || row.size() >= kQuickReactionCount || std::find(keys.begin(), keys.end(), key) != keys.end()) {
       return;
     }
     keys.push_back(key);

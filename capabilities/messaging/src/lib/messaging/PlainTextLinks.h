@@ -16,15 +16,15 @@ namespace pbr {
  * the bubble's markup.
  */
 struct PlainTextLink {
-  size_t begin = 0;      // first byte of the span in the text (the label when there is one)
-  size_t end = 0;        // one past the last byte of the URL
+  size_t begin = 0; // first byte of the span in the text (the label when there is one)
+  size_t end = 0;   // one past the last byte of the URL
   std::string url;
-  std::string display;   // the label, or the URL itself
+  std::string display; // the label, or the URL itself
 };
 
 /** The labels recognised before a link; the same strings as locale key feed.result.open. */
-inline constexpr std::array<std::string_view, 2> kViewDetailsLabels = {"\xE3\x80\x90\xE6\x9F\xA5\xE7\x9C\x8B\xE8\xAF\xA6\xE6\x83\x85\xE3\x80\x91",
-                                                                       "[View details]"};
+inline constexpr std::array<std::string_view, 2> kViewDetailsLabels = {
+    "\xE3\x80\x90\xE6\x9F\xA5\xE7\x9C\x8B\xE8\xAF\xA6\xE6\x83\x85\xE3\x80\x91", "[View details]"};
 
 inline std::vector<PlainTextLink> FindPlainTextLinks(const std::string_view text) {
   constexpr std::string_view kScheme = "https://";

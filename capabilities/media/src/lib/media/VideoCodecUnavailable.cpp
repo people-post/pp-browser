@@ -13,9 +13,7 @@ public:
   bool HasDecoder() const override { return false; }
   bool EncoderSupported() const override { return false; }
 
-  Roe<void> ConfigureEncoder(int, int, int) override {
-    return Error("H264 encoder unavailable: " + reason_);
-  }
+  Roe<void> ConfigureEncoder(int, int, int) override { return Error("H264 encoder unavailable: " + reason_); }
   Roe<void> ConfigureDecoder() override { return Error("H264 decoder unavailable: " + reason_); }
 
   Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override {

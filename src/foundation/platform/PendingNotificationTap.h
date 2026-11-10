@@ -134,15 +134,15 @@ private:
     DiagLine line("notification.tap");
     line.Add("what", what);
     switch (kind) {
-    case Kind::Call:
-      line.Add("kind", "call");
-      break;
-    case Kind::Thread:
-      line.Add("kind", "thread");
-      break;
-    case Kind::Msg:
-      line.Add("kind", "msg");
-      break;
+      case Kind::Call:
+        line.Add("kind", "call");
+        break;
+      case Kind::Thread:
+        line.Add("kind", "thread");
+        break;
+      case Kind::Msg:
+        line.Add("kind", "msg");
+        break;
     }
     line.Add("has_hint", !hint_.empty()).Emit();
   }

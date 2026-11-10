@@ -20,7 +20,8 @@ TEST(TranscriptBodyCodecTest, RoundTripPreservesFields) {
   body.payload_json = R"({"control_type":"system"})";
   body.content_rml = "<p>rml</p>";
   body.chat_actions.push_back(TranscriptChatAction{.label = "Go", .message = "do it"});
-  body.working_set_json = R"({"candidates":[{"block_index":1,"kind":"long_list","affinity":"feed","auto_open":true,"title":"T","subtitle":"1 item","artifact_rml":"<div/>","teaser_rml":"<button/>"}]})";
+  body.working_set_json =
+      R"({"candidates":[{"block_index":1,"kind":"long_list","affinity":"feed","auto_open":true,"title":"T","subtitle":"1 item","artifact_rml":"<div/>","teaser_rml":"<button/>"}]})";
   body.ai_image_json = R"({"content_hash":"ab","mime":"image/jpeg","width":4,"height":3})";
 
   auto encoded = TranscriptBodyCodec::Encode(body);
@@ -103,8 +104,7 @@ TEST(TranscriptCipherTest, MessageBodyRoundTripAndAadBind) {
   ASSERT_TRUE(round);
   EXPECT_EQ(*round, plain);
 
-  auto wrong_thread =
-      TranscriptCipher::DecryptMessageBody(dek, "profile-a", "thread-2", "msg-1", *cipher);
+  auto wrong_thread = TranscriptCipher::DecryptMessageBody(dek, "profile-a", "thread-2", "msg-1", *cipher);
   EXPECT_FALSE(static_cast<bool>(wrong_thread));
 }
 

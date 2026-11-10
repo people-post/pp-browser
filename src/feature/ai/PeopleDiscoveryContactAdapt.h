@@ -17,8 +17,7 @@ inline PeopleDiscoveryContactView ToPeopleDiscoveryContactView(const Contact& co
   };
 }
 
-inline std::vector<PeopleDiscoveryContactView> ToPeopleDiscoveryContactViews(
-    const std::vector<Contact>& contacts) {
+inline std::vector<PeopleDiscoveryContactView> ToPeopleDiscoveryContactViews(const std::vector<Contact>& contacts) {
   std::vector<PeopleDiscoveryContactView> views;
   views.reserve(contacts.size());
   for (const Contact& contact : contacts) {

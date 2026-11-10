@@ -43,9 +43,8 @@ public:
 
   Roe<ByteVector> GetPrivate(const ByteVector& content_id, const ByteVector& dek) const;
 
-  Roe<void> PutPublic(const ByteVector& content_id, const ByteVector& published_bytes,
-                      std::string_view mime = {}, std::string_view filename = {},
-                      std::string_view published_from_hex = {}, bool pinned = true);
+  Roe<void> PutPublic(const ByteVector& content_id, const ByteVector& published_bytes, std::string_view mime = {},
+                      std::string_view filename = {}, std::string_view published_from_hex = {}, bool pinned = true);
 
   Roe<ByteVector> GetPublic(const ByteVector& content_id) const;
 

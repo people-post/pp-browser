@@ -108,8 +108,8 @@ Roe<GraceUnlock::Result> GraceUnlock::TryUnlock(const GraceClock& now) {
     return result; // Missing, nothing read or deleted
   }
   auto looked = store_.Lookup(EntryName());
-  if (!looked || (looked->status != SecureBlobLookup::Status::Found &&
-                  looked->status != SecureBlobLookup::Status::Missing)) {
+  if (!looked ||
+      (looked->status != SecureBlobLookup::Status::Found && looked->status != SecureBlobLookup::Status::Missing)) {
     // Locked device or an unknown store error: keep both pieces, the caller tries again later.
     result.status = Status::Unavailable;
     return result;

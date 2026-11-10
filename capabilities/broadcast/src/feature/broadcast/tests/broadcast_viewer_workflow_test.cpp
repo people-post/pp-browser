@@ -51,7 +51,8 @@ protected:
     engine_.SetVideoCodecFactoryForTest([]() { return MakeUnavailableVideoCodec("test"); });
     workflow_ = std::make_unique<BroadcastViewerWorkflow>(Ports());
     // The fixture plays the runner: the workflow's events come back through `ui_`.
-    workflow_->SetOutbox(MakeOwnerOutbox<ViewerEvent>(tasks_, [this](ViewerEvent& event) { workflow_->Handle(event); }));
+    workflow_->SetOutbox(
+        MakeOwnerOutbox<ViewerEvent>(tasks_, [this](ViewerEvent& event) { workflow_->Handle(event); }));
   }
   void TearDown() override {
     workflow_.reset();
@@ -62,7 +63,8 @@ protected:
   void PreferVideoLevel(const int level) {
     preferred_video_level_ = level;
     workflow_ = std::make_unique<BroadcastViewerWorkflow>(Ports());
-    workflow_->SetOutbox(MakeOwnerOutbox<ViewerEvent>(tasks_, [this](ViewerEvent& event) { workflow_->Handle(event); }));
+    workflow_->SetOutbox(
+        MakeOwnerOutbox<ViewerEvent>(tasks_, [this](ViewerEvent& event) { workflow_->Handle(event); }));
   }
   int preferred_video_level_ = mesh::kDefaultVideoLevel;
 
@@ -223,8 +225,8 @@ TEST_F(BroadcastViewerWorkflowTest, WatchesThePublishedVideoLevelNearestItsPrefe
   ASSERT_EQ(workflow_->CurrentStatus().phase, Phase::Listening) << workflow_->CurrentStatus().error;
   EXPECT_EQ(workflow_->CurrentStatus().video_level, 2);
   const uint32_t stream = BroadcastPublisherStreamId(kPublisher);
-  EXPECT_EQ(relay_.subscriptions,
-            (std::vector<std::pair<uint32_t, uint16_t>>{{stream, mesh::kMediaChannelAudio}, {stream, mesh::VideoChannel(2)}}));
+  EXPECT_EQ(relay_.subscriptions, (std::vector<std::pair<uint32_t, uint16_t>>{{stream, mesh::kMediaChannelAudio},
+                                                                              {stream, mesh::VideoChannel(2)}}));
   EXPECT_GT(relay_.last_quote.want_down_bps, 64000) << "the quote asks for the video's downlink too";
   EXPECT_TRUE(relay_.last_quote.video_levels.empty()) << "a viewer publishes nothing";
 }
@@ -304,7 +306,7 @@ TEST_F(BroadcastViewerWorkflowTest, TicketProblemsFailBeforeAnyRelayWork) {
   refuse_ticket_ = false;
   auto other = MlDsa::GenerateKeyPair();
   ASSERT_TRUE(other);
-  verify_key_ = other->public_key;  // announce key does not match the ticket signer
+  verify_key_ = other->public_key; // announce key does not match the ticket signer
   ASSERT_TRUE(workflow_->Watch(Target({"h1"})));
   Drain();
   EXPECT_EQ(workflow_->CurrentStatus().phase, Phase::Failed);
@@ -372,7 +374,7 @@ TEST_F(BroadcastViewerWorkflowTest, StopDetachesStopsPlaybackAndDropsLateComplet
   EXPECT_EQ(relay_.detaches, 1);
   EXPECT_FALSE(engine_.IsActive());
   EXPECT_TRUE(relay_.observers.empty());
-  sink(SealedFrame(context_, 9));  // a frame already in flight
+  sink(SealedFrame(context_, 9)); // a frame already in flight
   EXPECT_EQ(engine_.HealthSnapshot().rx_audio_frames, 0u);
 }
 
@@ -420,7 +422,7 @@ TEST_F(BroadcastViewerWorkflowTest, HubWatchesALiveTipAndStopsOnDestruction) {
     EXPECT_EQ(hub.Viewer().phase, Phase::Listening);
     EXPECT_GT(changes, 0);
     for (int i = 0; i < 400 && devices_.Holders(MediaDeviceKind::Speaker).empty(); ++i) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));  // leased on the engine's device thread
+      std::this_thread::sleep_for(std::chrono::milliseconds(5)); // leased on the engine's device thread
     }
     EXPECT_EQ(devices_.Holders(MediaDeviceKind::Speaker), std::vector<std::string>{kJoin});
     tip.state = PeerAnnounceState::Ended;

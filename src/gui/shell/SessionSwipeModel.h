@@ -69,7 +69,8 @@ public:
       Clear();
       closed_other_ = true;
     }
-    base_dp_ = pressed_open_ ? (open_side_ == SwipeSide::End ? -OpenWidthDp(open_side_) : OpenWidthDp(open_side_)) : 0.f;
+    base_dp_ =
+        pressed_open_ ? (open_side_ == SwipeSide::End ? -OpenWidthDp(open_side_) : OpenWidthDp(open_side_)) : 0.f;
     offset_dp_ = base_dp_;
     return closed;
   }

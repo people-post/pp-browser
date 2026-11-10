@@ -11,8 +11,8 @@
 
 namespace pbr {
 
-MessageRouter::MessageRouter(InboxController& inbox, MeshDeliveryOrchestrator& mesh_messaging,
-                             AgentInboundPorts agent, IThreadStore& store)
+MessageRouter::MessageRouter(InboxController& inbox, MeshDeliveryOrchestrator& mesh_messaging, AgentInboundPorts agent,
+                             IThreadStore& store)
     : mesh_messaging_(mesh_messaging), agent_(std::move(agent)), store_(store) {
   (void)inbox;
   redirectLogger("MessageRouter");
@@ -75,8 +75,7 @@ Roe<void> MessageRouter::ValidateUserPayload(const std::optional<std::string>& u
   return {};
 }
 
-Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::string& prompt,
-                                       const AtAiMode mode) {
+Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::string& prompt, const AtAiMode mode) {
   if (!agent_.submit_scoped_assist) {
     return Error("Agent not bound");
   }
@@ -175,8 +174,8 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
       }
       if (NeedsSharedAiConfirmFor(thread_id, text)) { // the one rule the UI also asks before it sends
         shared_ai_confirm_(thread_id, at_ai.mode, at_ai.prompt,
-                           [this, thread_id, mode = at_ai.mode, prompt = at_ai.prompt](
-                               const bool confirmed, const bool dont_ask_again) {
+                           [this, thread_id, mode = at_ai.mode, prompt = at_ai.prompt](const bool confirmed,
+                                                                                       const bool dont_ask_again) {
                              if (!confirmed) {
                                return;
                              }

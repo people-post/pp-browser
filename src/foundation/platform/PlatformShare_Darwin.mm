@@ -35,7 +35,8 @@ bool PlatformShareText(SDL_Window* window, const std::string& text, const ShareA
     }
     static PpSharePickerDelegate* delegate = [[PpSharePickerDelegate alloc] init]; // lives for the process
     NSString* item = [NSString stringWithUTF8String:text.c_str()];
-    NSSharingServicePicker* picker = [[NSSharingServicePicker alloc] initWithItems:@[ item ]]; // released by the delegate
+    NSSharingServicePicker* picker =
+        [[NSSharingServicePicker alloc] initWithItems:@[ item ]]; // released by the delegate
     picker.delegate = delegate;
     // RmlUi gives window pixels from the top-left; the view wants points from the bottom-left.
     const NSRect bounds = content.bounds;

@@ -37,10 +37,8 @@ struct AutoKeyRead {
  * Callers that wrap before the first outbound message must attach `key_init_b64` on that send
  * so the peer can open the session.
  */
-Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_store,
-                                                      const PeerSessionKey& target_key,
-                                                      uint32_t session_epoch,
-                                                      const ByteVector& peer_kem_public);
+Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_store, const PeerSessionKey& target_key,
+                                                       uint32_t session_epoch, const ByteVector& peer_kem_public);
 /**
  * Same, asking for the peer's KEM public key only when the session has to be opened: an open session
  * never waits on a directory lookup for a key it does not need.

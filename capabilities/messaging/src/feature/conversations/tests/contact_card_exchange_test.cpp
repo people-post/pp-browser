@@ -29,7 +29,7 @@ protected:
     std::filesystem::create_directories(dir_);
     contacts_ = std::make_unique<ContactsStore>(dir_.string());
     cards_ = std::make_unique<InMemoryPeerCards>();
-    keys_ = std::make_unique<AccountKeyResolver>(signing_, kem_, *cards_, directory_);  // no directory
+    keys_ = std::make_unique<AccountKeyResolver>(signing_, kem_, *cards_, directory_); // no directory
     exchange_ = std::make_unique<ContactCardExchange>(*contacts_, *keys_);
   }
   void TearDown() override {
@@ -87,7 +87,7 @@ TEST_F(ContactCardExchangeTest, AddingASignedCardKeepsTheKeysDevicesAndRoute) {
 
 TEST_F(ContactCardExchangeTest, AForgedCardAddsNobody) {
   AccountCard card = SignedCard(mallory_, test::Devices({"QmMallory"}));
-  card.keys.account_id = bob_.account_id;  // Mallory's keys presented as Bob's
+  card.keys.account_id = bob_.account_id; // Mallory's keys presented as Bob's
   EXPECT_FALSE(exchange_->Add(Shared(DumpJson(AccountCardToJson(card))), kNow));
   AccountCard tampered = SignedCard(bob_, test::Devices({"QmBobPhone"}));
   tampered.devices.push_back(test::NamedDevice("QmMallory").Entry());
@@ -120,19 +120,19 @@ TEST_F(ContactCardExchangeTest, AContactIsSharedWithItsAccountsNewestSignedCard)
 TEST_F(ContactCardExchangeTest, AnInviteAddsThePersonAndFetchesTheirCardFromAListedDevice) {
   const AccountCard card = SignedCard(bob_, test::Devices({"QmBobLaptop"}));
   std::vector<std::string> asked;
-  exchange_->SetCardFetcher([&](const std::string& peer_id, const std::string& account_id,
-                                std::function<void(Roe<PeerCardRecord>)> done) {
-    asked.push_back(peer_id);
-    if (peer_id != "QmBobLaptop") {
-      done(Error("not reached"));
-      return;
-    }
-    done(keys_->AddAccountCard(card, kNow, "device"));
-  });
+  exchange_->SetCardFetcher(
+      [&](const std::string& peer_id, const std::string& account_id, std::function<void(Roe<PeerCardRecord>)> done) {
+        asked.push_back(peer_id);
+        if (peer_id != "QmBobLaptop") {
+          done(Error("not reached"));
+          return;
+        }
+        done(keys_->AddAccountCard(card, kNow, "device"));
+      });
   std::optional<Roe<ContactCardExchange::LocatorAdded>> result;
-  exchange_->AddFromLocator(ContactLocator{.account_id = bob_.account_id, .nickname = "bob",
-                                           .devices = {"QmBobPhone", "QmBobLaptop"}},
-                            [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); });
+  exchange_->AddFromLocator(
+      ContactLocator{.account_id = bob_.account_id, .nickname = "bob", .devices = {"QmBobPhone", "QmBobLaptop"}},
+      [&](Roe<ContactCardExchange::LocatorAdded> added) { result = std::move(added); });
   ASSERT_TRUE(result.has_value());
   ASSERT_TRUE(*result) << result->error().message;
   EXPECT_TRUE((*result)->keys_known);

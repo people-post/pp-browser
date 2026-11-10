@@ -24,7 +24,7 @@ logging::Logger& PlayerLog() {
   return log;
 }
 
-constexpr int kChunkSamples = kOggOpusFrameSamples;  // 20 ms
+constexpr int kChunkSamples = kOggOpusFrameSamples; // 20 ms
 constexpr int kChunkBytes = kChunkSamples * static_cast<int>(sizeof(int16_t));
 /** Keep about 100 ms queued in the device. */
 constexpr int kQueueTargetBytes = 5 * kChunkBytes;
@@ -242,7 +242,8 @@ void VoicePlayer::Run(std::shared_ptr<Shared> shared, std::shared_ptr<Job> job) 
         end_with(VoicePlayEnd::Stopped);
         return;
       }
-      in.read(reinterpret_cast<char*>(bytes.data()) + got, static_cast<std::streamsize>(std::min<size_t>(64 * 1024, bytes.size() - got)));
+      in.read(reinterpret_cast<char*>(bytes.data()) + got,
+              static_cast<std::streamsize>(std::min<size_t>(64 * 1024, bytes.size() - got)));
       const auto n = static_cast<size_t>(in.gcount());
       if (n == 0) {
         break;
@@ -292,7 +293,8 @@ void VoicePlayer::Run(std::shared_ptr<Shared> shared, std::shared_ptr<Job> job) 
   if (!opened) {
     // Told to stop while it was opening: not a device error.
     end_with(stopped() ? VoicePlayEnd::Stopped
-                       : (opened.error().code == IVoicePlaybackSink::kOpenBusy ? VoicePlayEnd::Busy : VoicePlayEnd::NoDevice));
+                       : (opened.error().code == IVoicePlaybackSink::kOpenBusy ? VoicePlayEnd::Busy
+                                                                               : VoicePlayEnd::NoDevice));
     return;
   }
 
@@ -334,7 +336,8 @@ void VoicePlayer::Run(std::shared_ptr<Shared> shared, std::shared_ptr<Job> job) 
 
     if (callbacks.on_progress && Clock::now() - last_progress >= std::chrono::milliseconds(100)) {
       last_progress = Clock::now();
-      callbacks.on_progress(job->id, job->serial, static_cast<int64_t>(position_samples() * 1000 / kOggOpusRate), duration_ms);
+      callbacks.on_progress(job->id, job->serial, static_cast<int64_t>(position_samples() * 1000 / kOggOpusRate),
+                            duration_ms);
     }
     const int queued = std::max(sink->Queued(), 0);
     if (queued != last_queued) {

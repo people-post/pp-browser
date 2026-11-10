@@ -17,8 +17,8 @@ std::string OwnDeviceLabel(const std::string& peer_id, const bool is_this_device
   if (is_this_device) {
     return Tr("settings.security.devices.this_device");
   }
-  const std::string short_id = peer_id.size() > kShortIdChars ? peer_id.substr(peer_id.size() - kShortIdChars)
-                                                              : peer_id;
+  const std::string short_id =
+      peer_id.size() > kShortIdChars ? peer_id.substr(peer_id.size() - kShortIdChars) : peer_id;
   return Tr("settings.security.devices.device", {{"id", short_id}});
 }
 

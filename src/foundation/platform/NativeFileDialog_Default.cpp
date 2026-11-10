@@ -134,8 +134,9 @@ std::optional<ImportedPick> ImportPickedFile(const std::string& picked, const st
     return std::nullopt;
   }
   std::error_code ec;
-  const std::filesystem::path dir = std::filesystem::path(scratch_dir) /
-                                    (std::to_string(SDL_GetTicksNS()) + "-" + std::to_string(reinterpret_cast<uintptr_t>(in)));
+  const std::filesystem::path dir =
+      std::filesystem::path(scratch_dir) /
+      (std::to_string(SDL_GetTicksNS()) + "-" + std::to_string(reinterpret_cast<uintptr_t>(in)));
   std::filesystem::create_directories(dir, ec);
   const std::string file_name = pick.name.empty() ? std::string("attachment") : pick.name;
   const std::filesystem::path dest = dir / file_name;

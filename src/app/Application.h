@@ -82,8 +82,8 @@ public:
   static std::string AssetsPath(const std::string& relative);
 
 private:
-  bool InitializeUiHost(const char* window_title, int window_width, int window_height,
-                        const BootstrapResult& bootstrap, ui::Context*& context);
+  bool InitializeUiHost(const char* window_title, int window_width, int window_height, const BootstrapResult& bootstrap,
+                        ui::Context*& context);
   SettingsToolPorts WireSettings(ui::Context* context);
   void WireShellPresenters(const SettingsToolPorts& settings_tool_ports);
   void WireCalls();

@@ -103,7 +103,7 @@ TEST_F(BackendProfileTest, ExistingProfileIsAdoptedAsProdWithoutMovingData) {
   auto registry = pbr::ProfileRegistry::Load(data_dir_);
   ASSERT_TRUE(static_cast<bool>(registry));
   const std::string dir = registry->ActiveProfileDataDir();
-  ASSERT_TRUE(static_cast<bool>(pbr::EnsureProfileManifest(dir)));  // pre-existing manifest: no backend
+  ASSERT_TRUE(static_cast<bool>(pbr::EnsureProfileManifest(dir))); // pre-existing manifest: no backend
   EXPECT_TRUE(pbr::ReadProfileBackend(dir).empty());
 
   ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("prod")));

@@ -15,4 +15,4 @@ TrustLevel TrustLevelFromString(const std::string& value);
 pp::common::Object ContactToJson(const Contact& contact);
 Contact ContactFromJson(const pp::common::Object& json);
 
-}  // namespace pbr
+} // namespace pbr

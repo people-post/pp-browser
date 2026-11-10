@@ -277,8 +277,7 @@ void CallStack::SyncMediaPlaneDeps() {
       return true;
     }
     // Mesh directory / DHT ads — SoftMigrate must not wait for Invite/Accept caps (V030).
-    if (deps_.list_directory_nodes &&
-        PeerHasMediaRelayInDirectory(peer_id, deps_.list_directory_nodes())) {
+    if (deps_.list_directory_nodes && PeerHasMediaRelayInDirectory(peer_id, deps_.list_directory_nodes())) {
       return true;
     }
     if (deps_.list_dht_nodes && PeerHasMediaRelayInDirectory(peer_id, deps_.list_dht_nodes())) {
@@ -298,8 +297,8 @@ void CallStack::SyncMediaPlaneDeps() {
     return MergeMediaRelayCapablePeerIds(from_caps, directory, dht);
   };
   plane_deps.note_mesh_peer_id_for_relay = [loop = loop_.Share()](const std::string& account,
-                                                                   const std::string& peer_id) {
-    loop.Enqueue(calls_event::MeshPeerIdLearned{account, peer_id});  // connectivity owner → calls owner
+                                                                  const std::string& peer_id) {
+    loop.Enqueue(calls_event::MeshPeerIdLearned{account, peer_id}); // connectivity owner → calls owner
   };
   media_plane_->SetDeps(std::move(plane_deps));
   media_plane_->SetMesh(connectivity(), media_relay());
@@ -338,8 +337,7 @@ void CallStack::RebindMeshMediaOnOwner() {
 }
 
 void CallStack::BindMediaProducts() {
-  if (!media_plane_ || !call_sessions_ || !call_session_store_ || !call_media_keys_ ||
-      !call_media_engine_) {
+  if (!media_plane_ || !call_sessions_ || !call_session_store_ || !call_media_keys_ || !call_media_engine_) {
     return;
   }
   CallDirectPathDeps direct = media_plane_->DirectPathDeps();
@@ -502,8 +500,8 @@ CallPeerCaps CallStack::LocalPeerCaps() const {
   // Durable Node host only — never advertise media_relay for ephemeral listen-only (V030).
   const auto view = LocalMeshView();
   const auto cfg = mesh_config();
-  caps.media_relay = MeshRoleOf(*cfg) == MeshRole::Node && cfg->capabilities.media_relay && view->amp_up &&
-                     view->media_relay_started;
+  caps.media_relay =
+      MeshRoleOf(*cfg) == MeshRole::Node && cfg->capabilities.media_relay && view->amp_up && view->media_relay_started;
   return caps;
 }
 
@@ -661,8 +659,7 @@ std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
     return {};
   }
 
-  const bool listening =
-      MeshRoleOf(*mesh_config()) == MeshRole::Node || amp_up || WantEphemeralListen();
+  const bool listening = MeshRoleOf(*mesh_config()) == MeshRole::Node || amp_up || WantEphemeralListen();
   if (!listening) {
     return {};
   }
@@ -678,7 +675,7 @@ std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
 }
 
 void CallStack::RegisterCallPeerListenMultiaddrsOnOwner(const std::string& identity,
-                                                 const std::vector<std::string>& multiaddrs) {
+                                                        const std::vector<std::string>& multiaddrs) {
   if (media_plane_) {
     media_plane_->RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
   }
@@ -747,9 +744,9 @@ void CallStack::ResetSessionsOnOwner() {
   call_sessions_.reset();
   call_device_.reset();
   reads_.reset();
-  ++sessions_generation_;       // its events still queued go nowhere
-  chrome_self_.Invalidate();    // refreshes queued for the dropped sessions (a later bind posts fresh ones)
-  OnCallStateChangedOnOwner();  // nothing is shown any more
+  ++sessions_generation_;      // its events still queued go nowhere
+  chrome_self_.Invalidate();   // refreshes queued for the dropped sessions (a later bind posts fresh ones)
+  OnCallStateChangedOnOwner(); // nothing is shown any more
   PublishUiState();
 }
 
@@ -759,7 +756,7 @@ void CallStack::Shutdown() {
       call_device_->DropFollowUps();
       call_device_->SetOnCallStateChanged({});
     }
-    chrome_self_.Invalidate();  // no chrome refresh after shutdown
+    chrome_self_.Invalidate(); // no chrome refresh after shutdown
   });
   // LeaveCall / DeclineInvite workers must finish while sessions_ / seat still live. From the
   // caller, not the owner: the drain pumps UI and the owners.
@@ -796,6 +793,5 @@ void CallStack::ReleaseOnOwner() {
   call_session_store_.reset();
   PublishUiState();
 }
-
 
 } // namespace pbr

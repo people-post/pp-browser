@@ -22,7 +22,6 @@ std::string EncodePathSegment(const std::string& value);
 
 namespace pbr {
 
-
 HttpPushDeviceClient::HttpPushDeviceClient(std::string base_url) : base_url_(std::move(base_url)) {}
 
 Roe<std::string> HttpPushDeviceClient::SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const {
@@ -108,8 +107,7 @@ Roe<std::vector<mesh::DirectoryHit>> FailoverDirectoryClient::SearchPeople(const
 }
 
 Roe<mesh::DirectoryHit> FailoverDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
-  return FailoverTry(backends_,
-                     [&](mesh::IDirectoryClient& client) { return client.LookupRelayUser(relay_user_id); });
+  return FailoverTry(backends_, [&](mesh::IDirectoryClient& client) { return client.LookupRelayUser(relay_user_id); });
 }
 
 Roe<mesh::DirectoryHit> FailoverDirectoryClient::LookupByAccount(const std::string& account_id) {
@@ -124,7 +122,7 @@ Roe<std::vector<mesh::DirectoryHit>> HttpDirectoryClient::SearchPeople(const std
   if (base_url_.empty()) {
     return Error("Directory base_url not configured");
   }
-  const std::string url = base_url_ + "/v1/search?q=" + EncodePathSegment(query);  // free text from the user
+  const std::string url = base_url_ + "/v1/search?q=" + EncodePathSegment(query); // free text from the user
   const auto response = HttpClient::Get(url);
   if (!response) {
     return response.error();
@@ -180,9 +178,8 @@ std::string EncodePathSegment(const std::string& value) {
   std::string out;
   out.reserve(value.size() * 3);
   for (const unsigned char c : value) {
-    const bool unreserved =
-        (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' ||
-        c == '.' || c == '~';
+    const bool unreserved = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
+                            c == '_' || c == '.' || c == '~';
     if (unreserved) {
       out.push_back(static_cast<char>(c));
     } else {
@@ -378,13 +375,10 @@ Roe<std::vector<mesh::MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
 
 HttpRegistrationClient::HttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}
 
-Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(const std::string& public_key_b64,
-                                                                     const std::string& nickname,
-                                                                     const std::string& signature_alg,
-                                                                     const std::string& kem_public_key_b64,
-                                                                     const std::string& peer_id,
-                                                                     const std::vector<std::string>& multiaddrs,
-                                                                     const RegistrationPublishOpts& publish) {
+Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(
+    const std::string& public_key_b64, const std::string& nickname, const std::string& signature_alg,
+    const std::string& kem_public_key_b64, const std::string& peer_id, const std::vector<std::string>& multiaddrs,
+    const RegistrationPublishOpts& publish) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
@@ -408,8 +402,8 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(const std
     body.set("multiaddrs", ArrayValue(std::move(addrs)));
   }
   ApplyRegistrationPublishOpts(body, publish);
-  const auto response = HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body),
-                                         {{"Content-Type", "application/json"}});
+  const auto response =
+      HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }
@@ -436,18 +430,11 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(const std
   return result;
 }
 
-Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::string& challenge,
-                                                                   const std::string& public_key_b64,
-                                                                   const std::string& nickname,
-                                                                   const std::string& signature,
-                                                                   int64_t timestamp,
-                                                                   const std::string& signature_alg,
-                                                                   const std::string& kem_public_key_b64,
-                                                                   const std::string& kem_binding_signature_b64,
-                                                                   const std::string& peer_id,
-                                                                   const std::vector<std::string>& multiaddrs,
-                                                                   int64_t initiation_floor,
-                                                                   const RegistrationPublishOpts& publish) {
+Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
+    const std::string& challenge, const std::string& public_key_b64, const std::string& nickname,
+    const std::string& signature, int64_t timestamp, const std::string& signature_alg,
+    const std::string& kem_public_key_b64, const std::string& kem_binding_signature_b64, const std::string& peer_id,
+    const std::vector<std::string>& multiaddrs, int64_t initiation_floor, const RegistrationPublishOpts& publish) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
@@ -478,8 +465,8 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
     body.set("multiaddrs", ArrayValue(std::move(addrs)));
   }
   ApplyRegistrationPublishOpts(body, publish);
-  const auto response = HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body),
-                                         {{"Content-Type", "application/json"}});
+  const auto response =
+      HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body), {{"Content-Type", "application/json"}});
   if (!response) {
     return response.error();
   }
@@ -515,8 +502,8 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
 }
 
 Roe<RegistrationResult> HttpRegistrationClient::UpdateNickname(const std::string& new_nickname,
-                                                             const std::string& signature, int64_t timestamp,
-                                                             const std::string& relay_user_id) {
+                                                               const std::string& signature, int64_t timestamp,
+                                                               const std::string& relay_user_id) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
@@ -546,9 +533,9 @@ Roe<void> HttpRegistrationClient::RevokeRegistration(const std::string& relay_us
   body.set("timestamp", timestamp);
   body.set("signature", signature);
   // Called on the way into a profile reset: keep a stuck network from holding the UI for long.
-  const auto response = HttpClient::Post(base_url_ + "/v1/register/revoke", DumpJson(body),
-                                         {{"Content-Type", "application/json"}}, kMaxHttpClientBodyBytes,
-                                         HttpTimeout{.total_s = 10, .connect_s = 5});
+  const auto response =
+      HttpClient::Post(base_url_ + "/v1/register/revoke", DumpJson(body), {{"Content-Type", "application/json"}},
+                       kMaxHttpClientBodyBytes, HttpTimeout{.total_s = 10, .connect_s = 5});
   if (!response) {
     return response.error();
   }

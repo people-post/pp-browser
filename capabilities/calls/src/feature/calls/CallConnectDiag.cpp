@@ -59,14 +59,14 @@ CallDiagBudget& CallDiagBudget::Shared() {
 
 ShareWord LinkKindWord(const mesh::PeerLinkKind kind) {
   switch (kind) {
-  case mesh::PeerLinkKind::Direct:
-    return "direct";
-  case mesh::PeerLinkKind::Punched:
-    return "punched";
-  case mesh::PeerLinkKind::Relayed:
-    return "relayed";
-  case mesh::PeerLinkKind::Unknown:
-    break;
+    case mesh::PeerLinkKind::Direct:
+      return "direct";
+    case mesh::PeerLinkKind::Punched:
+      return "punched";
+    case mesh::PeerLinkKind::Relayed:
+      return "relayed";
+    case mesh::PeerLinkKind::Unknown:
+      break;
   }
   return "unknown";
 }
@@ -74,32 +74,32 @@ ShareWord LinkKindWord(const mesh::PeerLinkKind kind) {
 ShareWord ReachErrWord(const mesh::PeerReachCoordinator::Err code) {
   using E = mesh::PeerReachCoordinator::Err;
   switch (code) {
-  case E::Ok:
-    return "ok";
-  case E::Unavailable:
-    return "unavailable";
-  case E::BadRequest:
-    return "bad_request";
-  case E::Cancelled:
-    return "cancelled";
-  case E::NoEndpoint:
-    return "no_endpoint";
-  case E::DialInBackoff:
-    return "dial_backoff";
-  case E::DialBusy:
-    return "dial_busy";
-  case E::NoAnswer:
-    return "no_answer";
-  case E::Refused:
-    return "refused";
-  case E::TransportFailed:
-    return "transport_failed";
-  case E::CircuitFailed:
-    return "circuit_failed";
-  case E::NotConnected:
-    return "not_connected";
-  case E::Generic:
-    break;
+    case E::Ok:
+      return "ok";
+    case E::Unavailable:
+      return "unavailable";
+    case E::BadRequest:
+      return "bad_request";
+    case E::Cancelled:
+      return "cancelled";
+    case E::NoEndpoint:
+      return "no_endpoint";
+    case E::DialInBackoff:
+      return "dial_backoff";
+    case E::DialBusy:
+      return "dial_busy";
+    case E::NoAnswer:
+      return "no_answer";
+    case E::Refused:
+      return "refused";
+    case E::TransportFailed:
+      return "transport_failed";
+    case E::CircuitFailed:
+      return "circuit_failed";
+    case E::NotConnected:
+      return "not_connected";
+    case E::Generic:
+      break;
   }
   return "generic";
 }
@@ -129,73 +129,75 @@ ShareWord ReachWhyWord(const std::string& message) {
 
 ShareWord PeerStateWord(const mesh::PeerReachState state) {
   switch (state) {
-  case mesh::PeerReachState::Live:
-    return "live";
-  case mesh::PeerReachState::Down:
-    return "down";
-  case mesh::PeerReachState::Unknown:
-    break;
+    case mesh::PeerReachState::Live:
+      return "live";
+    case mesh::PeerReachState::Down:
+      return "down";
+    case mesh::PeerReachState::Unknown:
+      break;
   }
   return "unknown";
 }
 
 ShareWord PeerFailWord(const mesh::PeerReachFailure failure) {
   switch (failure) {
-  case mesh::PeerReachFailure::NoAnswer:
-    return "no_answer";
-  case mesh::PeerReachFailure::Refused:
-    return "refused";
-  case mesh::PeerReachFailure::KeepaliveLost:
-    return "keepalive_lost";
-  case mesh::PeerReachFailure::Unreachable:
-    return "unreachable";
-  case mesh::PeerReachFailure::VersionMismatch:
-    return "version_mismatch";
-  case mesh::PeerReachFailure::None:
-    break;
+    case mesh::PeerReachFailure::NoAnswer:
+      return "no_answer";
+    case mesh::PeerReachFailure::Refused:
+      return "refused";
+    case mesh::PeerReachFailure::KeepaliveLost:
+      return "keepalive_lost";
+    case mesh::PeerReachFailure::Unreachable:
+      return "unreachable";
+    case mesh::PeerReachFailure::VersionMismatch:
+      return "version_mismatch";
+    case mesh::PeerReachFailure::None:
+      break;
   }
   return "none";
 }
 
 ShareWord MediaErrWord(const CallMediaErr code) {
   switch (code) {
-  case CallMediaErr::Ok:
-    return "ok";
-  case CallMediaErr::NotStarted:
-    return "not_started";
-  case CallMediaErr::BadRequest:
-    return "bad_request";
-  case CallMediaErr::Unreachable:
-    return "unreachable";
-  case CallMediaErr::StaleLink:
-    return "stale_link";
-  case CallMediaErr::LinkFailed:
-    return "link_failed";
-  case CallMediaErr::ChannelFailed:
-    return "channel_failed";
-  case CallMediaErr::HelloRejected:
-    return "hello_rejected";
-  case CallMediaErr::Timeout:
-    return "timeout";
-  case CallMediaErr::Closed:
-    return "closed";
-  case CallMediaErr::StreamClosed:
-    return "stream_closed";
-  case CallMediaErr::Aborted:
-    return "aborted";
-  case CallMediaErr::AlreadyOnLink:
-    return "already_on_link";
-  case CallMediaErr::Dropped:
-    return "dropped";
-  case CallMediaErr::Generic:
-    break;
+    case CallMediaErr::Ok:
+      return "ok";
+    case CallMediaErr::NotStarted:
+      return "not_started";
+    case CallMediaErr::BadRequest:
+      return "bad_request";
+    case CallMediaErr::Unreachable:
+      return "unreachable";
+    case CallMediaErr::StaleLink:
+      return "stale_link";
+    case CallMediaErr::LinkFailed:
+      return "link_failed";
+    case CallMediaErr::ChannelFailed:
+      return "channel_failed";
+    case CallMediaErr::HelloRejected:
+      return "hello_rejected";
+    case CallMediaErr::Timeout:
+      return "timeout";
+    case CallMediaErr::Closed:
+      return "closed";
+    case CallMediaErr::StreamClosed:
+      return "stream_closed";
+    case CallMediaErr::Aborted:
+      return "aborted";
+    case CallMediaErr::AlreadyOnLink:
+      return "already_on_link";
+    case CallMediaErr::Dropped:
+      return "dropped";
+    case CallMediaErr::Generic:
+      break;
   }
   return "generic";
 }
 
 namespace {
 
-ShareWord Role(const bool offerer) { return offerer ? ShareWord("caller") : ShareWord("callee"); }
+ShareWord Role(const bool offerer) {
+  return offerer ? ShareWord("caller") : ShareWord("callee");
+}
 
 void AddCounts(DiagLine& line, const AddrCounts& counts) {
   line.Add("v4_private", counts.v4_private)
@@ -204,7 +206,7 @@ void AddCounts(DiagLine& line, const AddrCounts& counts) {
       .Add("v6_other", counts.v6_other);
 }
 
-}  // namespace
+} // namespace
 
 DiagLine CallNetLine(const std::string_view call_id, const bool offerer, const CallConnectEnv& env) {
   DiagLine line("call.net");

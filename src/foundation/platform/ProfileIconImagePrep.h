@@ -17,8 +17,7 @@ struct EncodedProfileIcon {
 };
 
 /** Load, scale, and encode an image file for relay profile icon upload. */
-Roe<EncodedProfileIcon> PrepareProfileIconFromFile(const std::string& path,
-                                                    size_t max_bytes = 512u * 1024u,
-                                                    int max_dimension = 256);
+Roe<EncodedProfileIcon> PrepareProfileIconFromFile(const std::string& path, size_t max_bytes = 512u * 1024u,
+                                                   int max_dimension = 256);
 
 } // namespace pbr

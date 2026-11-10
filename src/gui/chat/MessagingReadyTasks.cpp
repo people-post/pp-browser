@@ -232,8 +232,7 @@ void MintBriefKeyOn(const std::shared_ptr<State>& state) {
   RunOffUi<Roe<SecretText>>(
       state, state->brief_key_run, *ticket,
       [mint = state->ports.mint_brief_key_network, base_url = state->brief_key_base_url]() { return mint(base_url); },
-      [state, account_id = std::move(account_id)](Box<Roe<SecretText>>& box,
-                                                   const bool live) -> std::function<void()> {
+      [state, account_id = std::move(account_id)](Box<Roe<SecretText>>& box, const bool live) -> std::function<void()> {
         BriefKeyMintEnd end;
         if (!live) {
           log().info << "Brief guest key dropped: the messaging session changed";
@@ -275,9 +274,13 @@ MessagingReadyTasks::~MessagingReadyTasks() {
   state_->ports = {};
 }
 
-void MessagingReadyTasks::SyncPushDevices() { SyncPushDevicesOn(state_); }
+void MessagingReadyTasks::SyncPushDevices() {
+  SyncPushDevicesOn(state_);
+}
 
-void MessagingReadyTasks::RenewRegistration() { RenewRegistrationOn(state_); }
+void MessagingReadyTasks::RenewRegistration() {
+  RenewRegistrationOn(state_);
+}
 
 void MessagingReadyTasks::MintBriefKey(const std::string& llm_base_url) {
   state_->brief_key_base_url = llm_base_url;
@@ -296,8 +299,12 @@ void MessagingReadyTasks::OnMessagingTornDown() {
   state_->brief_key_run->Reset();
 }
 
-bool MessagingReadyTasks::PushInFlight() const { return state_->push_run->InFlight(); }
+bool MessagingReadyTasks::PushInFlight() const {
+  return state_->push_run->InFlight();
+}
 
-bool MessagingReadyTasks::RenewInFlight() const { return state_->renew_run->InFlight(); }
+bool MessagingReadyTasks::RenewInFlight() const {
+  return state_->renew_run->InFlight();
+}
 
 } // namespace pbr

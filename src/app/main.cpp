@@ -33,22 +33,21 @@ bool EnvTruthy(const char* name) {
   if (value == nullptr || value[0] == '\0') {
     return false;
   }
-  return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0 &&
-         std::strcmp(value, "FALSE") != 0;
+  return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0 && std::strcmp(value, "FALSE") != 0;
 }
 
 const char* LevelName(pbr::logging::Level level) {
   switch (level) {
-  case pbr::logging::kLevelDebug:
-    return "DEBUG";
-  case pbr::logging::Level::INFO:
-    return "INFO";
-  case pbr::logging::Level::WARNING:
-    return "WARNING";
-  case pbr::logging::kLevelError:
-    return "ERROR";
-  case pbr::logging::Level::CRITICAL:
-    return "CRITICAL";
+    case pbr::logging::kLevelDebug:
+      return "DEBUG";
+    case pbr::logging::Level::INFO:
+      return "INFO";
+    case pbr::logging::Level::WARNING:
+      return "WARNING";
+    case pbr::logging::kLevelError:
+      return "ERROR";
+    case pbr::logging::Level::CRITICAL:
+      return "CRITICAL";
   }
   return "UNKNOWN";
 }
@@ -67,7 +66,8 @@ int main(int argc, char** argv) {
     if (std::strcmp(argv[i], "--debug") == 0) {
       debug_mode = true;
     } else if (std::strcmp(argv[i], "--ui-perf-test") == 0) {
-      pbr::UiPerfTestController::RequestOpenAtStartup(); // developer builds only: open Settings -> About -> Engine test page
+      pbr::UiPerfTestController::
+          RequestOpenAtStartup(); // developer builds only: open Settings -> About -> Engine test page
     } else if (std::strcmp(argv[i], "--ui-perf-test-stress") == 0) {
       pbr::UiPerfTestController::RequestOpenAtStartup(true); // same page, starting on the 2000-row stress list
     } else if (std::strcmp(argv[i], "--startup-timing") == 0) {
@@ -84,12 +84,12 @@ int main(int argc, char** argv) {
     } else if (std::strcmp(argv[i], "--no-log-file") == 0) {
       log_file_enabled = false;
     } else if (std::strcmp(argv[i], "--mobility") == 0 && i + 1 < argc) {
-      pbr::SetMobilityCliOverride(argv[i + 1]);  // call path mobility class (dogfood / lab)
+      pbr::SetMobilityCliOverride(argv[i + 1]); // call path mobility class (dogfood / lab)
       ++i;
     } else if (std::strncmp(argv[i], "--mobility=", 11) == 0) {
       pbr::SetMobilityCliOverride(argv[i] + 11);
     } else if (pbr::IncomingLink::LooksLikeLink(argv[i])) {
-      pbr::IncomingLink::Deliver(argv[i]);  // a desktop launcher's %u: an invite link opened with the app
+      pbr::IncomingLink::Deliver(argv[i]); // a desktop launcher's %u: an invite link opened with the app
     }
   }
 
@@ -130,15 +130,14 @@ int main(int argc, char** argv) {
     if (!log_path.empty()) {
       // WARNING so the header survives the desktop default level (every log starts with it).
       root.warning << "Log file " << log_path << " version=" << pbr::AppVersionString()
-                << " level=" << LevelName(root.getLevel());
+                   << " level=" << LevelName(root.getLevel());
       pbr::LogFile::InstallMetrics(log_path);
       pbr::LogFile::InstallDiag(log_path);
     }
   }
 
   if (!profile_override.empty()) {
-    root.warning << "Using profile override '" << profile_override
-                 << "' (multi-profile UI is not shipped yet)";
+    root.warning << "Using profile override '" << profile_override << "' (multi-profile UI is not shipped yet)";
   }
 
   pbr::BootstrapOptions options;

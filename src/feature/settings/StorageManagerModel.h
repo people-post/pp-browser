@@ -56,13 +56,13 @@ StorageKindTotals StorageTotalsOf(const std::vector<StoredAttachmentItem>& items
 
 struct StorageChatSummary {
   std::string thread_id;
-  StorageKindTotals totals;  // this chat's items, each hash once
+  StorageKindTotals totals; // this chat's items, each hash once
 };
 
 struct StorageOverview {
-  StorageKindTotals totals;                 // every chat, each hash once
-  std::vector<StorageChatSummary> chats;    // chats holding anything, most bytes first
-  std::vector<StoredAttachmentItem> large;  // > kStorageLargeItemBytes, one per hash (newest), most bytes first
+  StorageKindTotals totals;                // every chat, each hash once
+  std::vector<StorageChatSummary> chats;   // chats holding anything, most bytes first
+  std::vector<StoredAttachmentItem> large; // > kStorageLargeItemBytes, one per hash (newest), most bytes first
   uint64_t large_bytes = 0;
 };
 
@@ -119,8 +119,8 @@ struct StorageUsage {
   uint64_t pictures = 0;
   uint64_t videos = 0;
   uint64_t files = 0;
-  uint64_t chats = 0;  // the message databases
-  uint64_t other = 0;  // logs, avatars, AI data, caches
+  uint64_t chats = 0; // the message databases
+  uint64_t other = 0; // logs, avatars, AI data, caches
 };
 
 /**
@@ -131,7 +131,7 @@ StorageUsage ComputeStorageUsage(uint64_t profile_bytes, const StorageKindTotals
                                  uint64_t message_store_bytes);
 
 struct StorageBarSegment {
-  std::string kind;  // picture | video | file | chats | other
+  std::string kind; // picture | video | file | chats | other
   uint64_t bytes = 0;
   float percent = 0.f;
 };

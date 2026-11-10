@@ -18,7 +18,8 @@ HomeBriefCache CacheOf(const std::string& feed, const int64_t fetched_at_ms, con
   cache.feed = feed;
   cache.fetched_at_ms = fetched_at_ms;
   for (size_t i = 0; i < count; ++i) {
-    cache.items.push_back({.title = "headline " + std::to_string(i + 1), .url = "https://example.com/" + std::to_string(i + 1)});
+    cache.items.push_back(
+        {.title = "headline " + std::to_string(i + 1), .url = "https://example.com/" + std::to_string(i + 1)});
   }
   return cache;
 }
@@ -100,8 +101,9 @@ TEST(HomeBriefTest, TheCacheRoundTripsInTheProfileDirectory) {
   HomeBriefCache cache;
   cache.fetched_at_ms = kNow;
   cache.feed = "en";
-  cache.items = {{.title = "A", .category = "example.com", .url = "https://example.com/a", .published_at_ms = kNow - kHour},
-                 {.title = "B"}};
+  cache.items = {
+      {.title = "A", .category = "example.com", .url = "https://example.com/a", .published_at_ms = kNow - kHour},
+      {.title = "B"}};
   ASSERT_TRUE(SaveHomeBriefCache(dir.string(), cache));
   EXPECT_TRUE(std::filesystem::exists(dir / "home_brief.json"));
   const HomeBriefCache back = LoadHomeBriefCache(dir.string());
@@ -117,7 +119,8 @@ TEST(HomeBriefTest, TheCacheRoundTripsInTheProfileDirectory) {
 TEST(HomeBriefTest, TheLineUnderAHeadlineNamesTheSiteAndTheTime) {
   EXPECT_EQ(HomeBriefMeta({.title = "t", .category = "example.com"}, kNow), "example.com");
   EXPECT_TRUE(HomeBriefMeta({.title = "t"}, kNow).empty());
-  const std::string both = HomeBriefMeta({.title = "t", .category = "example.com", .published_at_ms = kNow - 60'000}, kNow);
+  const std::string both =
+      HomeBriefMeta({.title = "t", .category = "example.com", .published_at_ms = kNow - 60'000}, kNow);
   EXPECT_EQ(both.rfind("example.com · ", 0), 0u) << both;
 }
 

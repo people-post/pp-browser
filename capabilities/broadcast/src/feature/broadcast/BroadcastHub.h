@@ -126,7 +126,7 @@ private:
   std::unique_ptr<BroadcastViewerWorkflow> viewer_;
   std::unique_ptr<BroadcasterWorkflow> broadcaster_;
   std::shared_ptr<const std::atomic<uint64_t>> frames_sent_;
-  std::function<void()> on_changed_;  // owner
+  std::function<void()> on_changed_; // owner
 
   mutable std::mutex state_mu_;
   std::shared_ptr<const BroadcastUiState> state_ = std::make_shared<BroadcastUiState>();

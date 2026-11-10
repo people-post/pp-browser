@@ -58,8 +58,8 @@ std::string DescribeForLog(NSURL* url) {
 
 @implementation PPAudioFileDelegate
 - (void)audioPlayerDidFinishPlaying:(AVAudioPlayer*)player successfully:(BOOL)flag {
-  Log().info << "sound file ended " << (flag ? "at its end" : "undecodable") << " at_ms="
-             << static_cast<int64_t>(player.currentTime * 1000);
+  Log().info << "sound file ended " << (flag ? "at its end" : "undecodable")
+             << " at_ms=" << static_cast<int64_t>(player.currentTime * 1000);
   if (ended) {
     auto call = std::move(ended);
     ended = nullptr;
@@ -82,11 +82,16 @@ namespace {
 // The AVFileTypes to try for a sniffed container, best first (none for Flac / Ogg / Aac / Unknown: no hint).
 std::vector<NSString*> TypeHints(AudioContainer container) {
   switch (container) {
-  case AudioContainer::Mp3: return {AVFileTypeMPEGLayer3};
-  case AudioContainer::Mp4: return {AVFileTypeAppleM4A, AVFileTypeMPEG4};
-  case AudioContainer::Wav: return {AVFileTypeWAVE};
-  case AudioContainer::Aiff: return {AVFileTypeAIFF};
-  default: return {};
+    case AudioContainer::Mp3:
+      return {AVFileTypeMPEGLayer3};
+    case AudioContainer::Mp4:
+      return {AVFileTypeAppleM4A, AVFileTypeMPEG4};
+    case AudioContainer::Wav:
+      return {AVFileTypeWAVE};
+    case AudioContainer::Aiff:
+      return {AVFileTypeAIFF};
+    default:
+      return {};
   }
 }
 
@@ -152,13 +157,9 @@ public:
     }
   }
 
-  void Pause() override {
-    [player_ pause];
-  }
+  void Pause() override { [player_ pause]; }
 
-  void Resume() override {
-    [player_ play];
-  }
+  void Resume() override { [player_ play]; }
 
   Roe<void> Seek(double seconds) override {
     if (player_ == nil) {

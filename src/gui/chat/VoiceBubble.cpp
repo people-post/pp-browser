@@ -78,23 +78,28 @@ std::string VoiceBubbleRml(const std::string& message_id, const std::string& cli
   for (const int height : VoiceWaveformHeights(message_id)) {
     bars += "<div class=\"chat-voice-bar\" style=\"height: " + std::to_string(height) + "dp;\"></div>";
   }
-  std::string html = std::string("<div class=\"chat-card chat-voice-card") + (face.ours ? " chat-voice-card--out" : "") +
-                     "\"><div class=\"chat-voice-main\">";
+  std::string html = std::string("<div class=\"chat-card chat-voice-card") +
+                     (face.ours ? " chat-voice-card--out" : "") + "\"><div class=\"chat-voice-main\">";
   html += "<div class=\"chat-voice-avatar avatar-tone-" + std::to_string(std::clamp(face.tone, 0, 7)) + "\">";
   if (!face.icon_path.empty()) {
-    html += "<img class=\"avatar-photo chat-voice-avatar-photo\" src=\"" + StructuredTextParser::EscapeText(face.icon_path) +
-            "\"/>";
+    html += "<img class=\"avatar-photo chat-voice-avatar-photo\" src=\"" +
+            StructuredTextParser::EscapeText(face.icon_path) + "\"/>";
   } else {
     html += "<p class=\"chat-voice-avatar-letter\">" + StructuredTextParser::EscapeText(face.letter) + "</p>";
   }
-  html += "</div><div class=\"chat-voice-badge\"><svg class=\"chat-voice-badge-mic\" src=\"../icons/v2/mic.svg\" "
-          "width=\"10\" height=\"10\"></svg></div>";
+  html +=
+      "</div><div class=\"chat-voice-badge\"><svg class=\"chat-voice-badge-mic\" src=\"../icons/v2/mic.svg\" "
+      "width=\"10\" height=\"10\"></svg></div>";
   html += "<button type=\"button\" id=\"vp-" + key + "\" class=\"chat-voice-play" +
           std::string(running ? " chat-voice-play--playing" : "") + "\" title=\"" +
           StructuredTextParser::EscapeText(Tr(running ? "chat.voice.pause" : "chat.voice.play")) +
           "\" data-event-click=\"play_voice('" + click_arg + "')\">";
-  html += "<svg class=\"chat-voice-icon-play\" src=\"../icons/play.svg\" width=\"22\" height=\"22\" crop-to-content=\"true\"></svg>";
-  html += "<svg class=\"chat-voice-icon-pause\" src=\"../icons/pause.svg\" width=\"22\" height=\"22\" crop-to-content=\"true\"></svg>";
+  html +=
+      "<svg class=\"chat-voice-icon-play\" src=\"../icons/play.svg\" width=\"22\" height=\"22\" "
+      "crop-to-content=\"true\"></svg>";
+  html +=
+      "<svg class=\"chat-voice-icon-pause\" src=\"../icons/pause.svg\" width=\"22\" height=\"22\" "
+      "crop-to-content=\"true\"></svg>";
   html += "</button>";
   // The waveform: the quiet bars, over them a clip as wide as the played part holding the same bars in the played
   // colour, and the knob at its end (VoicePlayback sets both by percent). Seeking by tap is not offered: a voice
@@ -136,17 +141,23 @@ std::string AudioFileBubbleRml(const std::string& message_id, const std::string&
           std::string(running ? " chat-voice-play--playing" : "") + "\" title=\"" +
           StructuredTextParser::EscapeText(Tr(running ? "chat.voice.pause" : "chat.voice.play")) +
           "\" data-event-click=\"play_audio_file('" + click_arg + "')\">";
-  html += "<svg class=\"chat-voice-icon-play\" src=\"../icons/play.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
-  html += "<svg class=\"chat-voice-icon-pause\" src=\"../icons/pause.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
+  html +=
+      "<svg class=\"chat-voice-icon-play\" src=\"../icons/play.svg\" width=\"16\" height=\"16\" "
+      "crop-to-content=\"true\"></svg>";
+  html +=
+      "<svg class=\"chat-voice-icon-pause\" src=\"../icons/pause.svg\" width=\"16\" height=\"16\" "
+      "crop-to-content=\"true\"></svg>";
   html += "</button>";
   // The bar is 4dp thin: its wrapper is the 32dp hit area of a tap or drag (audio_seek_press follows the drag).
   html += "<div id=\"vk-" + key + "\" class=\"chat-audio-seek\" data-event-mousedown=\"audio_seek_press()\">";
-  html += "<div class=\"chat-voice-track\"><div id=\"vf-" + key + "\" class=\"chat-voice-fill\" style=\"width: " +
-          std::to_string(VoiceBubbleFillPercent(state)) + "%;\"></div></div>";
+  html += "<div class=\"chat-voice-track\"><div id=\"vf-" + key +
+          "\" class=\"chat-voice-fill\" style=\"width: " + std::to_string(VoiceBubbleFillPercent(state)) +
+          "%;\"></div></div>";
   // The drag knob rides the end of the filled part (white on an own bubble, dark on a received one: see the theme);
   // it sits outside the track (which clips) and lets the press through to the wrapper.
-  html += "<div id=\"vn-" + key + "\" class=\"chat-audio-knob\" style=\"left: " +
-          std::to_string(VoiceBubbleFillPercent(state)) + "%;\"></div></div>";
+  html += "<div id=\"vn-" + key +
+          "\" class=\"chat-audio-knob\" style=\"left: " + std::to_string(VoiceBubbleFillPercent(state)) +
+          "%;\"></div></div>";
   const std::string time = started ? VoiceBubbleTimeText(state, face.duration_ms)
                                    : (face.duration_ms > 0 ? FormatVoiceDuration(face.duration_ms) : std::string());
   html += "<span id=\"vt-" + key + "\" class=\"chat-voice-time chat-audio-time\">" +

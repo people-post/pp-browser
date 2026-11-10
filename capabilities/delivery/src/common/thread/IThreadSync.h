@@ -23,13 +23,12 @@ public:
   /** The receive state of the peer's numbering at `session_epoch` — of one of its devices with `sender_device` (M021). */
   virtual Roe<PeerSyncState> GetPeerSyncState(const std::string& thread_id, uint32_t session_epoch,
                                               const std::string& sender_device = {}) const = 0;
-  virtual Roe<void> SetPeerSyncState(const std::string& thread_id, uint32_t session_epoch,
-                                     const PeerSyncState& state, const std::string& sender_device = {}) = 0;
+  virtual Roe<void> SetPeerSyncState(const std::string& thread_id, uint32_t session_epoch, const PeerSyncState& state,
+                                     const std::string& sender_device = {}) = 0;
   virtual Roe<void> CancelOldEpochPending(const std::string& thread_id, uint32_t old_session_epoch) = 0;
   virtual Roe<void> AdoptChatTargetEpoch(const std::string& thread_id, uint32_t new_session_epoch) = 0;
   virtual Roe<ThreadMessage> AppendMessageWithPassiveEpochAdopt(const ThreadMessage& message,
-                                                                uint32_t old_session_epoch,
-                                                                uint32_t new_session_epoch,
+                                                                uint32_t old_session_epoch, uint32_t new_session_epoch,
                                                                 const PeerSyncState& new_sync_state) = 0;
   virtual Roe<uint32_t> BumpLocalChatTargetEpoch(const std::string& thread_id) = 0;
   virtual Roe<void> ReconcileOutbox() = 0;

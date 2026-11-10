@@ -8,9 +8,9 @@ namespace pbr {
 
 /** One SVG layer of the mascot's figure and the looks (letters `a`–`g`) it is drawn in. */
 struct MascotLayer {
-  int part;           ///< 0 back bubble, 1 front bubble, 2 over both.
-  const char* classes;///< After `ai-dot-layer`.
-  const char* src;    ///< File in assets/icons/mascot/.
+  int part;            ///< 0 back bubble, 1 front bubble, 2 over both.
+  const char* classes; ///< After `ai-dot-layer`.
+  const char* src;     ///< File in assets/icons/mascot/.
   const char* looks;
 };
 

@@ -212,7 +212,7 @@ void CallSystemUiBridge::OnEnd(const std::string& call_id) {
   if (call_id != shown_) {
     return;
   }
-  shown_.clear();  // the system screen already ended it
+  shown_.clear(); // the system screen already ended it
   if (Ringing(call_id)) {
     if (actions_.decline) {
       actions_.decline();

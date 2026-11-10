@@ -25,12 +25,12 @@ std::string CustomKey(const std::string& url) {
 
 std::string KeyFor(const BackendEnv env, const std::string& registration_url) {
   switch (env) {
-  case BackendEnv::Qa:
-    return "qa";
-  case BackendEnv::Custom:
-    return CustomKey(registration_url);
-  case BackendEnv::Prod:
-    break;
+    case BackendEnv::Qa:
+      return "qa";
+    case BackendEnv::Custom:
+      return CustomKey(registration_url);
+    case BackendEnv::Prod:
+      break;
   }
   return "prod";
 }
@@ -71,8 +71,8 @@ std::string SavedBackendKey(const AppConfig& config) {
   if (env == BackendEnv::Qa && !QaBackendAvailable()) {
     env = BackendEnv::Prod;
   }
-  return KeyFor(env, config.backend.has_saved_urls ? config.backend.saved_registration.base_url
-                                                   : config.registration.base_url);
+  return KeyFor(
+      env, config.backend.has_saved_urls ? config.backend.saved_registration.base_url : config.registration.base_url);
 }
 
 } // namespace pbr

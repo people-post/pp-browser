@@ -21,18 +21,20 @@ TEST(AmpAccountCardTransportTest, OneRequestOneAnswerNamingTheAskingDevice) {
   auto harness = std::move(*created);
   ASSERT_TRUE(static_cast<bool>(harness->chat_a().RegisterEndpoint("b", harness->ma_b)));
   ASSERT_TRUE(static_cast<bool>(harness->chat_b().RegisterEndpoint("a", harness->ma_a)));
-  AmpAccountCardTransport a(harness->chat_a(), [&] { harness->PumpBoth(); }, {}, harness->MakePostIoA(),
-                            harness->MakePostAfterA());
-  AmpAccountCardTransport b(harness->chat_b(), [&] { harness->PumpBoth(); }, {}, harness->MakePostIoB(),
-                            harness->MakePostAfterB());
+  AmpAccountCardTransport a(
+      harness->chat_a(), [&] { harness->PumpBoth(); }, {}, harness->MakePostIoA(), harness->MakePostAfterA());
+  AmpAccountCardTransport b(
+      harness->chat_b(), [&] { harness->PumpBoth(); }, {}, harness->MakePostIoB(), harness->MakePostAfterB());
   a.Start();
   b.Start();
 
   std::string asked_by;
   b.SetAnswer([&](const AccountCardRequest& request, const std::string& remote_peer_id) {
     asked_by = remote_peer_id;
-    return AccountCardReply{.key_card = KeyCard{.account_id = request.account_id, .signing_public_key_b64 = "s",
-                                                .kem_public_key_b64 = "k", .kem_binding_signature_b64 = "b"}};
+    return AccountCardReply{.key_card = KeyCard{.account_id = request.account_id,
+                                                .signing_public_key_b64 = "s",
+                                                .kem_public_key_b64 = "k",
+                                                .kem_binding_signature_b64 = "b"}};
   });
 
   std::mutex mu;

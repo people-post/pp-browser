@@ -45,7 +45,7 @@ public:
 
   /** Placing a call. Returns the previous call's final line if one was still tracked. */
   std::vector<ShareableLine> NoteOutbound(const std::string& call_id, bool video, int64_t now_ms,
-                                        const DeviceVitals& vitals) {
+                                          const DeviceVitals& vitals) {
     std::vector<ShareableLine> out = Begin(call_id, "caller", video, now_ms, vitals);
     call_.outbound_ms = now_ms;
     return out;
@@ -53,7 +53,7 @@ public:
 
   /** The ring dialog for an incoming call. Returns the previous call's final line, if any. */
   std::vector<ShareableLine> NoteRing(const std::string& call_id, bool video, int64_t now_ms,
-                                    const DeviceVitals& vitals) {
+                                      const DeviceVitals& vitals) {
     if (call_.id == call_id) {
       return {};
     }
@@ -80,7 +80,7 @@ public:
 
   /** Each media-health tick of the active call; returns lines to emit (call.setup on connect). */
   std::vector<ShareableLine> NoteMedia(const std::string& call_id, const MediaTick& tick, int64_t now_ms,
-                                     const DeviceVitals& vitals) {
+                                       const DeviceVitals& vitals) {
     std::vector<ShareableLine> out;
     if (call_.id != call_id || call_id.empty()) {
       return out;
@@ -94,7 +94,7 @@ public:
     if (tick.connected && call_.connected_ms == 0) {
       call_.connected_ms = now_ms;
       call_.path = tick.path;
-      call_.base = h;  // counters for the call start here
+      call_.base = h; // counters for the call start here
       out.push_back(SetupLine("connected", now_ms));
     }
     if (call_.connected_ms == 0) {
@@ -240,7 +240,7 @@ private:
   static uint64_t Delta(uint64_t now, uint64_t base) { return now >= base ? now - base : now; }
 
   std::vector<ShareableLine> Begin(const std::string& call_id, const char* role, bool video, int64_t now_ms,
-                                 const DeviceVitals& vitals) {
+                                   const DeviceVitals& vitals) {
     std::vector<ShareableLine> out;
     if (!call_.id.empty() && call_.id != call_id) {
       out.push_back(EndLine(call_.last_seen_ms, vitals));

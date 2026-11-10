@@ -14,7 +14,7 @@ namespace ui {
 class Context;
 class Element;
 class Event;
-}
+} // namespace ui
 
 namespace pbr {
 

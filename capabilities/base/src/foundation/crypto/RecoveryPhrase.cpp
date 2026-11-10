@@ -28,7 +28,9 @@ uint8_t ChecksumByte(const ByteVector& seed) {
 }
 
 /** Bit `i` (most significant first) of `bytes`. */
-bool BitAt(const std::vector<uint8_t>& bytes, size_t i) { return (bytes[i / 8] >> (7 - i % 8)) & 1u; }
+bool BitAt(const std::vector<uint8_t>& bytes, size_t i) {
+  return (bytes[i / 8] >> (7 - i % 8)) & 1u;
+}
 
 } // namespace
 
@@ -37,7 +39,7 @@ Roe<SecretText> EncodeRecoveryPhrase(const ByteVector& seed) {
     return Error("recovery seed must be 32 bytes");
   }
   std::vector<uint8_t> bits(seed.begin(), seed.end());
-  bits.push_back(ChecksumByte(seed));  // 256 + 8 bits = 24 × 11
+  bits.push_back(ChecksumByte(seed)); // 256 + 8 bits = 24 × 11
   std::string phrase;
   for (size_t w = 0; w < kRecoveryPhraseWords; ++w) {
     size_t index = 0;

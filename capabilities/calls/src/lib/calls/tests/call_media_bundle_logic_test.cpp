@@ -54,10 +54,10 @@ TEST(CallMediaBundleLogicTest, SimultaneousOpenHasExactlyOneWinner) {
         };
         const auto a = decide(a_offerer, b_offerer, a_id, b_id);
         const auto b = decide(b_offerer, a_offerer, b_id, a_id);
-        const int rejects = (a == CallMediaInboundHelloDecision::RejectGlare) +
-                            (b == CallMediaInboundHelloDecision::RejectGlare);
-        const int yields = (a == CallMediaInboundHelloDecision::AcceptAndYield) +
-                           (b == CallMediaInboundHelloDecision::AcceptAndYield);
+        const int rejects =
+            (a == CallMediaInboundHelloDecision::RejectGlare) + (b == CallMediaInboundHelloDecision::RejectGlare);
+        const int yields =
+            (a == CallMediaInboundHelloDecision::AcceptAndYield) + (b == CallMediaInboundHelloDecision::AcceptAndYield);
         EXPECT_EQ(rejects, 1) << "a=" << a_id << (a_offerer ? "/offerer" : "/answerer") << " b=" << b_id
                               << (b_offerer ? "/offerer" : "/answerer");
         EXPECT_EQ(yields, 1);
@@ -182,10 +182,8 @@ TEST(CallMediaChannelCloseTest, AConnectingLegFailsOnAnyCloseAndReportsThePeers)
 TEST(CallMediaBundleLogicTest, PhaseMapsMatchSessionVocabulary) {
   EXPECT_EQ(CallMediaBundlePhaseToSessionPhase(CallMediaBundlePhase::OutboundHello),
             CallMediaSessionPhase::HelloOutbound);
-  EXPECT_EQ(CallMediaBundlePhaseToSessionPhase(CallMediaBundlePhase::MediaReady),
-            CallMediaSessionPhase::MediaReady);
-  EXPECT_EQ(CallMediaBundlePhaseToLegPhase(CallMediaBundlePhase::AwaitingMedia),
-            CallMediaLegPhase::AwaitingMedia);
+  EXPECT_EQ(CallMediaBundlePhaseToSessionPhase(CallMediaBundlePhase::MediaReady), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(CallMediaBundlePhaseToLegPhase(CallMediaBundlePhase::AwaitingMedia), CallMediaLegPhase::AwaitingMedia);
   EXPECT_TRUE(LocalWinsCallMediaGlare("b", "a"));
 }
 

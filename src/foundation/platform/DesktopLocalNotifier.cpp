@@ -26,21 +26,18 @@ void DesktopLocalNotifier::ClearForThread(const std::string& thread_id) {
   desktop::ClearDesktopNotification(thread_id);
 }
 
-void DesktopLocalNotifier::SetActivationHandler(
-    std::function<void(std::string thread_id)> handler) {
-  desktop::SetDesktopNotificationActivationHandler(
-      [handler = std::move(handler)](const std::string& thread_id) {
-        // Named logger (same node as Module redirect) — safe from watch thread.
-        if (!handler) {
-          logging::getLogger("LocalNotifier").warning << "Activation ignored: no handler";
-          return;
-        }
-        AppRuntime::PostUI([handler, thread_id]() mutable {
-          logging::getLogger("LocalNotifier").info
-              << "Activation on UI thread thread=" << thread_id;
-          handler(thread_id);
-        });
-      });
+void DesktopLocalNotifier::SetActivationHandler(std::function<void(std::string thread_id)> handler) {
+  desktop::SetDesktopNotificationActivationHandler([handler = std::move(handler)](const std::string& thread_id) {
+    // Named logger (same node as Module redirect) — safe from watch thread.
+    if (!handler) {
+      logging::getLogger("LocalNotifier").warning << "Activation ignored: no handler";
+      return;
+    }
+    AppRuntime::PostUI([handler, thread_id]() mutable {
+      logging::getLogger("LocalNotifier").info << "Activation on UI thread thread=" << thread_id;
+      handler(thread_id);
+    });
+  });
 }
 
 void DesktopLocalNotifier::Shutdown() {

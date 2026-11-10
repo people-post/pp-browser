@@ -46,13 +46,15 @@ protected:
     pk_b_ = keys_b->public_key;
 
     AmpBroadcastTransport::WorkerPost no_worker;
-    a_svc_ = std::make_unique<AmpBroadcastTransport>(harness_->chat_a(), [this] { harness_->PumpBoth(); }, no_worker,
-                                                     harness_->MakePostIoA(), harness_->MakePostAfterA());
-    b_svc_ = std::make_unique<AmpBroadcastTransport>(harness_->chat_b(), [this] { harness_->PumpBoth(); }, no_worker,
-                                                     harness_->MakePostIoB(), harness_->MakePostAfterB());
+    a_svc_ = std::make_unique<AmpBroadcastTransport>(
+        harness_->chat_a(), [this] { harness_->PumpBoth(); }, no_worker, harness_->MakePostIoA(),
+        harness_->MakePostAfterA());
+    b_svc_ = std::make_unique<AmpBroadcastTransport>(
+        harness_->chat_b(), [this] { harness_->PumpBoth(); }, no_worker, harness_->MakePostIoB(),
+        harness_->MakePostAfterB());
     // B asks (viewer / relay candidate); A serves (publisher / hop).
-    b_client_ = std::make_unique<AmpBroadcastRpcClient>(harness_->chat_b(), [this] { harness_->PumpBoth(); },
-                                                        harness_->MakePostIoB(), harness_->MakePostAfterB());
+    b_client_ = std::make_unique<AmpBroadcastRpcClient>(
+        harness_->chat_b(), [this] { harness_->PumpBoth(); }, harness_->MakePostIoB(), harness_->MakePostAfterB());
 
     auto resolve = [this](const std::string& peer_id) -> std::optional<ByteVector> {
       if (peer_id == "publisher-a") {

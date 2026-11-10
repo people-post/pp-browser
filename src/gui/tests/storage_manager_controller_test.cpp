@@ -26,8 +26,8 @@ std::vector<uint8_t> Hash(const int n) {
   return hash;
 }
 
-pbr::StoredAttachmentItem Item(const std::string& thread, const int hash, const std::string& mime,
-                               const uint64_t bytes, const bool server = true) {
+pbr::StoredAttachmentItem Item(const std::string& thread, const int hash, const std::string& mime, const uint64_t bytes,
+                               const bool server = true) {
   pbr::StoredAttachmentItem item;
   item.thread_id = thread;
   item.message_id = thread + "-" + std::to_string(hash);
@@ -98,9 +98,9 @@ protected:
   }
 
   void ClearStep(const std::string& id) {
-    back_stack_.erase(std::remove_if(back_stack_.begin(), back_stack_.end(),
-                                     [&id](const auto& step) { return step.first == id; }),
-                      back_stack_.end());
+    back_stack_.erase(
+        std::remove_if(back_stack_.begin(), back_stack_.end(), [&id](const auto& step) { return step.first == id; }),
+        back_stack_.end());
   }
 
   /** The phone's back (header button, swipe, system back): the shell pops the top step and runs it. */
@@ -178,7 +178,7 @@ TEST_F(StorageManagerControllerTest, BackWhileSelectingLeavesSelectModeFirst) {
   controller_.Enter();
   controller_.OpenManage();
   controller_.OpenChat(0);
-  controller_.PickByLongPress(0);  // a long press starts selecting with that cell picked
+  controller_.PickByLongPress(0); // a long press starts selecting with that cell picked
   ASSERT_TRUE(controller_.Selecting());
   ASSERT_EQ(controller_.SelectedCount(), 1u);
   EXPECT_TRUE(controller_.Cells()[0].picked);
@@ -215,7 +215,7 @@ TEST_F(StorageManagerControllerTest, LayoutSwitchKeepsThePageAndPutsItsBackSteps
   controller_.OpenManage();
   controller_.OpenChat(0);
   controller_.ToggleSelect();
-  back_stack_.clear();  // the shell dropped its stack when the layout changed
+  back_stack_.clear(); // the shell dropped its stack when the layout changed
   controller_.RestoreBackStack();
   EXPECT_EQ(controller_.Page(), "items");
   ASSERT_EQ(back_stack_.size(), 3u);
@@ -512,7 +512,7 @@ TEST_F(StorageManagerControllerTest, DeleteAsksOnceThenLocksThePageUntilDone) {
   EXPECT_EQ(deleted_refs_[0].first, "a");
   EXPECT_EQ(deleted_refs_[1].first, "a");
   EXPECT_TRUE(controller_.Busy());
-  controller_.TapCell(0);  // locked: no toggle while deleting
+  controller_.TapCell(0); // locked: no toggle while deleting
   EXPECT_EQ(controller_.SelectedCount(), 2u);
 
   const int lists_before = list_calls_;

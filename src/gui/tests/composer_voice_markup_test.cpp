@@ -35,7 +35,7 @@ std::string ReadAll(const std::string& path) {
   std::ostringstream out;
   out << in.rdbuf();
   std::string text = out.str();
-  text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());  // a CRLF checkout (Windows) reads the same
+  text.erase(std::remove(text.begin(), text.end(), '\r'), text.end()); // a CRLF checkout (Windows) reads the same
   return text;
 }
 
@@ -51,8 +51,8 @@ protected:
     ASSERT_NE(context, nullptr);
     ASSERT_TRUE(DataModelHost::Instance().Register(context, "chat", [this](ui::DataModelConstructor& ctor) {
       BindChatScreenState(ctor, state);
-      for (const char* name : {"send_message", "stop_turn", "voice_press", "voice_click", "voice_send",
-                               "voice_cancel", "voice_mode_toggle", "attach_file", "open_emoji_insert", "draft_changed",
+      for (const char* name : {"send_message", "stop_turn", "voice_press", "voice_click", "voice_send", "voice_cancel",
+                               "voice_mode_toggle", "attach_file", "open_emoji_insert", "draft_changed",
                                "cancel_quote_reply", "retry_attachment_send", "discard_attachment_send",
                                "cancel_attachment_send", "remove_image", "attach_capture"}) {
         ctor.BindEventCallback(name, [](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {});
@@ -63,16 +63,20 @@ protected:
     std::ostringstream body;
     body << file.rdbuf();
     const auto localized = LocalizationService::Instance().LocalizeText(body.str());
-    document = context->LoadDocumentFromMemory("<rml><head><style>" + ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss") +
-                                              "</style></head><body>" + wrap_open_ + localized + wrap_close_ +
-                                              "</body></rml>");
+    document = context->LoadDocumentFromMemory(
+        "<rml><head><style>" + ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss") +
+        "</style></head><body>" + wrap_open_ + localized + wrap_close_ + "</body></rml>");
     ASSERT_NE(document, nullptr);
     document->Show();
   }
   void TearDown() override {
     DataModelHost::Instance().Clear();
-    if (context) { ui::RemoveContext("composer-voice-test"); }
-    if (initialized) { ui::Shutdown(); }
+    if (context) {
+      ui::RemoveContext("composer-voice-test");
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
   void Apply() {
@@ -474,7 +478,10 @@ TEST_F(ComposerVoiceMarkupTest, TheToggleKeepsItsSizeWhileTypingALongDraftAndAft
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
   EXPECT_FLOAT_EQ(toggle_width(), before);
   // The shell may mount the composer again (RmlMount::MountInner) while the chat stays open.
-  document->SetInnerRML(ui::String(LocalizationService::Instance().LocalizeText(ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/views/composer.rml")).c_str()));
+  document->SetInnerRML(
+      ui::String(LocalizationService::Instance()
+                     .LocalizeText(ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/views/composer.rml"))
+                     .c_str()));
   Apply();
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
   EXPECT_FLOAT_EQ(toggle_width(), before);
@@ -576,7 +583,9 @@ TEST_F(ComposerPhoneRowTest, ThePillFloatsBetweenTheRoundPlusAndTheRoundMicropho
   EXPECT_GE(emoji_min.x, pill_min.x) << "the emoji key is inside the pill, at its left end";
   EXPECT_LE(emoji_max.x, pill_max.x);
   EXPECT_NEAR(emoji_min.x - pill_min.x, 7.f, 0.5f) << "7dp inside the pill";
-  EXPECT_NEAR(document->GetElementById("draft-input")->GetAbsoluteOffset(ui::BoxArea::Content).x - emoji_max.x, 8.f, 1.5f) << "8dp from the circle to the text";
+  EXPECT_NEAR(document->GetElementById("draft-input")->GetAbsoluteOffset(ui::BoxArea::Content).x - emoji_max.x, 8.f,
+              1.5f)
+      << "8dp from the circle to the text";
   ui::Element* input = document->GetElementById("draft-input");
   ASSERT_NE(input, nullptr);
   EXPECT_GE(input->GetAbsoluteOffset(ui::BoxArea::Border).x, emoji_max.x) << "the text starts after the emoji key";
@@ -631,7 +640,6 @@ TEST(ComposerVoiceSourceTest, SyncComposerInputStateRefreshesTheVoiceToggle) {
   ASSERT_NE(end, std::string::npos);
   EXPECT_NE(source.substr(start, end - start).find("voice_->Refresh()"), std::string::npos);
 }
-
 
 // The camera icon follows the same state as the toggle: it must be recomputed where an upload ends (Sync...), where a
 // call starts or ends (UpdatePeerLinkChrome) and with the thread chrome (which ends in Sync...).

@@ -169,8 +169,7 @@ TEST_F(IdentityStoreTest, RejectsLegacyEd25519DeviceKeys) {
   {
     std::ofstream out(data_dir_ / "identity.enc", std::ios::binary);
     ASSERT_TRUE(static_cast<bool>(out));
-    out.write(reinterpret_cast<const char*>(ciphertext->data()),
-              static_cast<std::streamsize>(ciphertext->size()));
+    out.write(reinterpret_cast<const char*>(ciphertext->data()), static_cast<std::streamsize>(ciphertext->size()));
   }
 
   IdentityStore store(data_dir_.string(), "test-profile");
@@ -196,8 +195,7 @@ TEST_F(IdentityStoreTest, WritesSchemaVersionOnCreate) {
   auto root = TryParseObject(text);
   ASSERT_TRUE(static_cast<bool>(root));
   ASSERT_TRUE(root->contains("schema_version"));
-  EXPECT_EQ(static_cast<int>(root->getIf<int64_t>("schema_version").value_or(-1)),
-            IdentityStore::kSchemaVersion);
+  EXPECT_EQ(static_cast<int>(root->getIf<int64_t>("schema_version").value_or(-1)), IdentityStore::kSchemaVersion);
 }
 
 TEST_F(IdentityStoreTest, RejectsNewerSchemaVersion) {
@@ -220,8 +218,7 @@ TEST_F(IdentityStoreTest, RejectsNewerSchemaVersion) {
   {
     std::ofstream out(data_dir_ / "identity.enc", std::ios::binary);
     ASSERT_TRUE(static_cast<bool>(out));
-    out.write(reinterpret_cast<const char*>(ciphertext->data()),
-              static_cast<std::streamsize>(ciphertext->size()));
+    out.write(reinterpret_cast<const char*>(ciphertext->data()), static_cast<std::streamsize>(ciphertext->size()));
   }
 
   IdentityStore store(data_dir_.string(), "test-profile");
@@ -339,7 +336,9 @@ TEST_F(IdentityStoreTest, AFailedSaveLeavesTheIdentityAsItWas) {
   const std::filesystem::path file = data_dir_ / "identity.enc";
   std::filesystem::remove(file);
   std::filesystem::create_directories(file);
-  { std::ofstream(file / "keep") << "x"; }
+  {
+    std::ofstream(file / "keep") << "x";
+  }
 
   auto modified = store.Modify([](LocalIdentity& identity) {
     identity.brief_llm_guest_api_key = "brf_guest_unsaved";

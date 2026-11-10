@@ -2,7 +2,6 @@
 
 #include "lib/messaging/ModelFacingJson.h"
 
-
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/people/ContactJson.h"
@@ -95,37 +94,39 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     Object properties;
     properties.set("query", StringProp("Search query"));
     tools.push_back(MakeTool(
-      ToolDefinition{"search_people", "Find people to view or add as contacts. Search by name or nickname; a full account id (account:…) or relay id (relay:…) is looked up exactly. Show matching people so the user can choose Add contact.", ObjectSchema(std::move(properties), {"query"})},
-      Meta("people", "read", false),
-      [&messaging](const Object& arguments) -> Roe<std::string> {
-           const std::string query = arguments.getString("query").value_or("");
-           auto hits = messaging.SearchPeople(query);
-           if (!hits) {
-             return hits.error();
-           }
-           std::vector<Value> out;
-           out.reserve(hits->size());
-           for (const mesh::DirectoryHit& hit : *hits) {
-             out.push_back(ObjectValue(DirectoryHitToJson(hit)));
-           }
-           return DumpJson(ArrayValue(std::move(out)));
-         }));
+        ToolDefinition{
+            "search_people",
+            "Find people to view or add as contacts. Search by name or nickname; a full account id (account:…) or "
+            "relay id (relay:…) is looked up exactly. Show matching people so the user can choose Add contact.",
+            ObjectSchema(std::move(properties), {"query"})},
+        Meta("people", "read", false), [&messaging](const Object& arguments) -> Roe<std::string> {
+          const std::string query = arguments.getString("query").value_or("");
+          auto hits = messaging.SearchPeople(query);
+          if (!hits) {
+            return hits.error();
+          }
+          std::vector<Value> out;
+          out.reserve(hits->size());
+          for (const mesh::DirectoryHit& hit : *hits) {
+            out.push_back(ObjectValue(DirectoryHitToJson(hit)));
+          }
+          return DumpJson(ArrayValue(std::move(out)));
+        }));
   }
 
   {
     Object properties;
     properties.set("query", StringProp("Optional filter"));
-    tools.push_back(MakeTool(
-      ToolDefinition{"list_contacts", "List or search local contacts.", ObjectSchema(std::move(properties))},
-      AppState(Meta("people", "read", false)),
-      [&messaging](const Object& arguments) -> Roe<std::string> {
-                       const std::string query = arguments.getString("query").value_or("");
-                       auto contacts = messaging.SearchLocalContacts(query);
-                       if (!contacts) {
-                         return contacts.error();
-                       }
-                       return DumpJson(ContactsToJson(*contacts));
-                     }));
+    tools.push_back(
+        MakeTool(ToolDefinition{"list_contacts", "List or search local contacts.", ObjectSchema(std::move(properties))},
+                 AppState(Meta("people", "read", false)), [&messaging](const Object& arguments) -> Roe<std::string> {
+                   const std::string query = arguments.getString("query").value_or("");
+                   auto contacts = messaging.SearchLocalContacts(query);
+                   if (!contacts) {
+                     return contacts.error();
+                   }
+                   return DumpJson(ContactsToJson(*contacts));
+                 }));
   }
 
   // Adding a person is the selected search row's action (ContactActionDispatcher),
@@ -133,104 +134,103 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
 
   tools.push_back(MakeTool(
       ToolDefinition{"list_conversations", "List inbox threads (AI and person-to-person).", ObjectSchema(Object{})},
-      AppState(Meta("communications", "read", false)),
-      [&messaging](const Object& /*arguments*/) -> Roe<std::string> {
-                     auto threads = messaging.ListThreads();
-                     if (!threads) {
-                       return threads.error();
-                     }
-                     return DumpJson(ThreadsToJson(*threads));
-                   }));
+      AppState(Meta("communications", "read", false)), [&messaging](const Object& /*arguments*/) -> Roe<std::string> {
+        auto threads = messaging.ListThreads();
+        if (!threads) {
+          return threads.error();
+        }
+        return DumpJson(ThreadsToJson(*threads));
+      }));
 
   {
     Object properties;
     properties.set("thread_id", StringProp());
-    tools.push_back(MakeTool(
-      ToolDefinition{"open_conversation", "Switch the active inbox thread by thread id.", ObjectSchema(std::move(properties), {"thread_id"})},
-      OnUi(Meta("communications", "read", false)),
-      [&messaging](const Object& arguments) -> Roe<std::string> {
-           const std::string thread_id = arguments.getString("thread_id").value_or("");
-           auto thread = messaging.OpenThread(thread_id);
-           if (!thread) {
-             return thread.error();
-           }
-           return DumpJson(ThreadForModel(*thread));
-         }));
+    tools.push_back(MakeTool(ToolDefinition{"open_conversation", "Switch the active inbox thread by thread id.",
+                                            ObjectSchema(std::move(properties), {"thread_id"})},
+                             OnUi(Meta("communications", "read", false)),
+                             [&messaging](const Object& arguments) -> Roe<std::string> {
+                               const std::string thread_id = arguments.getString("thread_id").value_or("");
+                               auto thread = messaging.OpenThread(thread_id);
+                               if (!thread) {
+                                 return thread.error();
+                               }
+                               return DumpJson(ThreadForModel(*thread));
+                             }));
   }
 
   {
     Object properties;
     properties.set("contact_id", StringProp());
     tools.push_back(MakeTool(
-      ToolDefinition{"start_conversation", "Open or create a direct conversation with a local contact id.", ObjectSchema(std::move(properties), {"contact_id"})},
-      OnUi(Meta("communications", "write", true)),
-      [&messaging](const Object& arguments) -> Roe<std::string> {
-           const std::string contact_id = arguments.getString("contact_id").value_or("");
-           auto thread = messaging.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
-           if (!thread) {
-             return thread.error();
-           }
-           return DumpJson(ThreadForModel(*thread));
-         }));
+        ToolDefinition{"start_conversation", "Open or create a direct conversation with a local contact id.",
+                       ObjectSchema(std::move(properties), {"contact_id"})},
+        OnUi(Meta("communications", "write", true)), [&messaging](const Object& arguments) -> Roe<std::string> {
+          const std::string contact_id = arguments.getString("contact_id").value_or("");
+          auto thread = messaging.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
+          if (!thread) {
+            return thread.error();
+          }
+          return DumpJson(ThreadForModel(*thread));
+        }));
   }
 
   {
     Object properties;
     properties.set("nickname", StringProp("Optional nickname override"));
-    tools.push_back(MakeTool(
-      ToolDefinition{"register_user", "Register this device on the network with its identity.", ObjectSchema(std::move(properties))},
-      Meta("identity", "write", true),
-      [&messaging](const Object& arguments) -> Roe<std::string> {
-           auto identity = messaging.GetLocalIdentity();
-           if (!identity) {
-             return identity.error();
-           }
-           if (auto nickname = arguments.getString("nickname")) {
-             LocalIdentity updated = *identity;
-             updated.nickname = *nickname;
-             (void)messaging.UpdateLocalIdentity(updated);
-             identity = messaging.GetLocalIdentity();
-           }
+    tools.push_back(MakeTool(ToolDefinition{"register_user", "Register this device on the network with its identity.",
+                                            ObjectSchema(std::move(properties))},
+                             Meta("identity", "write", true),
+                             [&messaging](const Object& arguments) -> Roe<std::string> {
+                               auto identity = messaging.GetLocalIdentity();
+                               if (!identity) {
+                                 return identity.error();
+                               }
+                               if (auto nickname = arguments.getString("nickname")) {
+                                 LocalIdentity updated = *identity;
+                                 updated.nickname = *nickname;
+                                 (void)messaging.UpdateLocalIdentity(updated);
+                                 identity = messaging.GetLocalIdentity();
+                               }
 
-           auto result = messaging.FinishAndPersistRegistration(identity->nickname);
-           if (!result) {
-             return result.error();
-           }
-           Object out;
-           out.set("success", result->registered);
-           out.set("relay_user_id", result->relay_user_id);
-           out.set("message", "Registered");
-           out.set("expires_at", result->registration_expires_at);
-           return DumpJson(out);
-         }));
+                               auto result = messaging.FinishAndPersistRegistration(identity->nickname);
+                               if (!result) {
+                                 return result.error();
+                               }
+                               Object out;
+                               out.set("success", result->registered);
+                               out.set("relay_user_id", result->relay_user_id);
+                               out.set("message", "Registered");
+                               out.set("expires_at", result->registration_expires_at);
+                               return DumpJson(out);
+                             }));
   }
 
   {
     Object properties;
     properties.set("nickname", StringProp());
-    tools.push_back(MakeTool(
-      ToolDefinition{"update_profile_nickname", "Update the registered nickname on the network.", ObjectSchema(std::move(properties), {"nickname"})},
-      Meta("identity", "write", true),
-      [&messaging](const Object& arguments) -> Roe<std::string> {
-           const std::string nickname = arguments.getString("nickname").value_or("");
-           if (nickname.empty()) {
-             return Error("nickname required");
-           }
-           auto result = messaging.UpdateRegisteredNickname(nickname);
-           if (!result) {
-             return result.error();
-           }
-           auto identity = messaging.GetLocalIdentity();
-           if (identity) {
-             LocalIdentity updated = *identity;
-             updated.nickname = nickname;
-             (void)messaging.UpdateLocalIdentity(updated);
-           }
-           Object out;
-           out.set("success", result->success);
-           out.set("message", result->message);
-           return DumpJson(out);
-         }));
+    tools.push_back(MakeTool(ToolDefinition{"update_profile_nickname", "Update the registered nickname on the network.",
+                                            ObjectSchema(std::move(properties), {"nickname"})},
+                             Meta("identity", "write", true),
+                             [&messaging](const Object& arguments) -> Roe<std::string> {
+                               const std::string nickname = arguments.getString("nickname").value_or("");
+                               if (nickname.empty()) {
+                                 return Error("nickname required");
+                               }
+                               auto result = messaging.UpdateRegisteredNickname(nickname);
+                               if (!result) {
+                                 return result.error();
+                               }
+                               auto identity = messaging.GetLocalIdentity();
+                               if (identity) {
+                                 LocalIdentity updated = *identity;
+                                 updated.nickname = nickname;
+                                 (void)messaging.UpdateLocalIdentity(updated);
+                               }
+                               Object out;
+                               out.set("success", result->success);
+                               out.set("message", result->message);
+                               return DumpJson(out);
+                             }));
   }
 
   return tools;

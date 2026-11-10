@@ -38,14 +38,14 @@ struct PageSheetModel {
   /** The sheet's top edge at `detent`, in dp from the top of a layer `layer_height_dp` tall. */
   static float TopDp(const SheetDetent detent, const float layer_height_dp) {
     switch (detent) {
-    case SheetDetent::Full:
-      return kFullTopDp;
-    case SheetDetent::Large:
-      return layer_height_dp * kLargeTopRatio;
-    case SheetDetent::Half:
-      return layer_height_dp * kHalfTopRatio;
-    case SheetDetent::Small:
-      return layer_height_dp * kSmallTopRatio;
+      case SheetDetent::Full:
+        return kFullTopDp;
+      case SheetDetent::Large:
+        return layer_height_dp * kLargeTopRatio;
+      case SheetDetent::Half:
+        return layer_height_dp * kHalfTopRatio;
+      case SheetDetent::Small:
+        return layer_height_dp * kSmallTopRatio;
     }
     return kFullTopDp;
   }
@@ -98,14 +98,14 @@ struct PageSheetModel {
       return Release::Stay;
     }
     switch (*to) {
-    case SheetDetent::Full:
-      return Release::ToFull;
-    case SheetDetent::Large:
-      return Release::ToLarge;
-    case SheetDetent::Half:
-      return Release::ToHalf;
-    case SheetDetent::Small:
-      return Release::ToSmall;
+      case SheetDetent::Full:
+        return Release::ToFull;
+      case SheetDetent::Large:
+        return Release::ToLarge;
+      case SheetDetent::Half:
+        return Release::ToHalf;
+      case SheetDetent::Small:
+        return Release::ToSmall;
     }
     return Release::Stay;
   }

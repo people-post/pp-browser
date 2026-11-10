@@ -66,8 +66,7 @@ void E2eIngestClassifier::ApplyBackfillMessage(PeerSyncState& state, const uint6
   }
 }
 
-IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput& input,
-                                                     ReplayWindow& replay_window) {
+IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput& input, ReplayWindow& replay_window) {
   IngestClassifierResult result;
   result.sync_state = input.sync_state;
   // The window is memory, the sync state is persisted: start the window where the thread is.

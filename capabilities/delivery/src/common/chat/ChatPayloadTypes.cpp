@@ -4,23 +4,23 @@ namespace pbr {
 
 std::string ChatContentTypeToDb(const ChatContentType type) {
   switch (type) {
-  case ChatContentType::System:
-    return "system";
-  case ChatContentType::Annotation:
-    return "annotation";
-  case ChatContentType::ContactCard:
-    return "contact_card";
-  case ChatContentType::CryptoTx:
-    return "crypto_tx";
-  case ChatContentType::Attachment:
-    return "attachment";
-  case ChatContentType::Unsupported:
-    return "unsupported";
-  case ChatContentType::Deleted:
-    return "deleted";
-  case ChatContentType::Text:
-  default:
-    return "text";
+    case ChatContentType::System:
+      return "system";
+    case ChatContentType::Annotation:
+      return "annotation";
+    case ChatContentType::ContactCard:
+      return "contact_card";
+    case ChatContentType::CryptoTx:
+      return "crypto_tx";
+    case ChatContentType::Attachment:
+      return "attachment";
+    case ChatContentType::Unsupported:
+      return "unsupported";
+    case ChatContentType::Deleted:
+      return "deleted";
+    case ChatContentType::Text:
+    default:
+      return "text";
   }
 }
 

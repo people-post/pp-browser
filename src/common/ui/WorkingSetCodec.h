@@ -32,4 +32,4 @@ std::string MarkWorkingSetChipsUnavailable(const std::string& rml);
  */
 std::string StripInlinedWorkingSetActionSuggestions(const std::string& rml);
 
-}  // namespace pbr
+} // namespace pbr

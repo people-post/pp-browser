@@ -66,8 +66,8 @@ private:
   }
 
   std::vector<int16_t> buf_;
-  std::atomic<size_t> read_pos_{0};   // total samples ever read (monotonic)
-  std::atomic<size_t> write_pos_{0};  // total samples ever written (monotonic)
+  std::atomic<size_t> read_pos_{0};  // total samples ever read (monotonic)
+  std::atomic<size_t> write_pos_{0}; // total samples ever written (monotonic)
 };
 
-}  // namespace pbr
+} // namespace pbr

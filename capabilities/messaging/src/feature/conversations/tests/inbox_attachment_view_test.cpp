@@ -82,10 +82,35 @@ protected:
   }
 
   static std::vector<uint8_t> PngHeader(const uint32_t w, const uint32_t h) {
-    return {0x89, 'P',  'N',  'G',  0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 'I', 'H', 'D', 'R',
-            static_cast<uint8_t>(w >> 24), static_cast<uint8_t>(w >> 16), static_cast<uint8_t>(w >> 8), static_cast<uint8_t>(w),
-            static_cast<uint8_t>(h >> 24), static_cast<uint8_t>(h >> 16), static_cast<uint8_t>(h >> 8), static_cast<uint8_t>(h),
-            8, 2, 0, 0, 0};
+    return {0x89,
+            'P',
+            'N',
+            'G',
+            0x0D,
+            0x0A,
+            0x1A,
+            0x0A,
+            0,
+            0,
+            0,
+            13,
+            'I',
+            'H',
+            'D',
+            'R',
+            static_cast<uint8_t>(w >> 24),
+            static_cast<uint8_t>(w >> 16),
+            static_cast<uint8_t>(w >> 8),
+            static_cast<uint8_t>(w),
+            static_cast<uint8_t>(h >> 24),
+            static_cast<uint8_t>(h >> 16),
+            static_cast<uint8_t>(h >> 8),
+            static_cast<uint8_t>(h),
+            8,
+            2,
+            0,
+            0,
+            0};
   }
 
   std::filesystem::path data_dir_;
@@ -123,7 +148,7 @@ TEST_F(InboxAttachmentViewTest, ALargeFileHasNoViewUntilItIsOpened) {
   EXPECT_TRUE(before.local_path.empty());
   EXPECT_TRUE(before.inline_image_ok);
 
-  const auto after = ViewOf(4, PngHeader(10, 10), large, /*write_view=*/true);  // an Open made it
+  const auto after = ViewOf(4, PngHeader(10, 10), large, /*write_view=*/true); // an Open made it
   EXPECT_TRUE(after.on_demand);
   EXPECT_FALSE(after.local_path.empty());
 
@@ -194,13 +219,13 @@ TEST_F(InboxAttachmentViewTest, AStoredLargePictureWithoutItsThumbnailGetsItMade
 
   std::atomic<int> calls{0};
   std::atomic<bool> same_bytes{false};
-  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::vector<uint8_t>& bytes,
-                                                     int) -> Roe<std::vector<uint8_t>> {
-    ++calls;
-    same_bytes = bytes == plain;
-    std::this_thread::sleep_for(std::chrono::milliseconds(20)); // re-draws arrive while it is being made
-    return std::vector<uint8_t>(PngHeader(480, 360));
-  }});
+  SetAttachmentPlatform(
+      {.image_thumbnail_jpeg = [&](const std::vector<uint8_t>& bytes, int) -> Roe<std::vector<uint8_t>> {
+        ++calls;
+        same_bytes = bytes == plain;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20)); // re-draws arrive while it is being made
+        return std::vector<uint8_t>(PngHeader(480, 360));
+      }});
 
   const auto first = inbox_->Facts().attachment(message);
   EXPECT_EQ(first.state, AttachmentFetchWorkflow::DownloadState::Ready);

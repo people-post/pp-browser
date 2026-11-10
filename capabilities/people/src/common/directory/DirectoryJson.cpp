@@ -7,16 +7,16 @@ namespace pbr {
 
 std::string ContactIdKindToString(const mesh::ContactIdKind kind) {
   switch (kind) {
-  case mesh::ContactIdKind::Account:
-    return "account";
-  case mesh::ContactIdKind::RelayUser:
-    return "relay_user";
-  case mesh::ContactIdKind::PeerId:
-    return "peer_id";
-  case mesh::ContactIdKind::Blockchain:
-    return "blockchain";
-  case mesh::ContactIdKind::Custom:
-    return "custom";
+    case mesh::ContactIdKind::Account:
+      return "account";
+    case mesh::ContactIdKind::RelayUser:
+      return "relay_user";
+    case mesh::ContactIdKind::PeerId:
+      return "peer_id";
+    case mesh::ContactIdKind::Blockchain:
+      return "blockchain";
+    case mesh::ContactIdKind::Custom:
+      return "custom";
   }
   return "account";
 }
@@ -183,7 +183,7 @@ bool HasAccountId(const std::vector<mesh::ContactId>& ids, const std::string& ac
   return false;
 }
 
-}  // namespace
+} // namespace
 
 Object DirectoryHitToJson(const mesh::DirectoryHit& hit) {
   Object out;
@@ -285,4 +285,4 @@ mesh::DirectoryHit DirectoryHitFromJson(const Object& json) {
   return hit;
 }
 
-}  // namespace pbr
+} // namespace pbr

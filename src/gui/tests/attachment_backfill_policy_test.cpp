@@ -14,7 +14,8 @@ TEST(AttachmentBackfillPolicyTest, OnThreadOpenThenAtMostOncePerInterval) {
 
   // Syncs for new messages right after do not read the thread again...
   EXPECT_FALSE(ShouldBackfillAttachments(false, opened + std::chrono::seconds(1), opened));
-  EXPECT_FALSE(ShouldBackfillAttachments(false, opened + kAttachmentBackfillInterval - std::chrono::seconds(1), opened));
+  EXPECT_FALSE(
+      ShouldBackfillAttachments(false, opened + kAttachmentBackfillInterval - std::chrono::seconds(1), opened));
   // ...but a failed download in an open thread is retried within the interval.
   EXPECT_TRUE(ShouldBackfillAttachments(false, opened + kAttachmentBackfillInterval, opened));
 }

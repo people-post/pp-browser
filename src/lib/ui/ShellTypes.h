@@ -384,13 +384,13 @@ enum class CallChromeMode {
 
 inline const char* CallChromeModeName(CallChromeMode mode) {
   switch (mode) {
-  case CallChromeMode::Minimized:
-    return "minimized";
-  case CallChromeMode::Immersive:
-    return "immersive";
-  case CallChromeMode::Expanded:
-  default:
-    return "expanded";
+    case CallChromeMode::Minimized:
+      return "minimized";
+    case CallChromeMode::Immersive:
+      return "immersive";
+    case CallChromeMode::Expanded:
+    default:
+      return "expanded";
   }
 }
 

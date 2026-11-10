@@ -137,8 +137,7 @@ TEST(ConfigJsonTest, RoundTripsDirectoryProviders) {
   pbr::AppConfig config;
   config.directory.base_url = "https://primary.example/api/relay";
   config.directory.transport = "http";
-  config.directory.providers = {{"https://a.example/api/relay", "http"},
-                                {"https://b.example/api/relay", "http"}};
+  config.directory.providers = {{"https://a.example/api/relay", "http"}, {"https://b.example/api/relay", "http"}};
 
   const pbr::Object out = pbr::AppConfigToObject(config);
   const pbr::Object* directory = out.getObject("directory");
@@ -283,8 +282,9 @@ TEST(ConfigJsonTest, ProfilePrefsUnlockGraceMinutesRoundTripsAndRejectsOddValues
     EXPECT_EQ(parsed.unlock_grace_minutes, minutes);
   }
 
-  for (const char* odd_json : {R"({ "unlock_grace_minutes": 7 })", R"({ "unlock_grace_minutes": -2 })", R"({ "unlock_grace_minutes": -60 })",
-                               R"({ "unlock_grace_minutes": 100000 })", R"({ "unlock_grace_minutes": "15" })"}) {
+  for (const char* odd_json :
+       {R"({ "unlock_grace_minutes": 7 })", R"({ "unlock_grace_minutes": -2 })", R"({ "unlock_grace_minutes": -60 })",
+        R"({ "unlock_grace_minutes": 100000 })", R"({ "unlock_grace_minutes": "15" })"}) {
     auto odd = pbr::TryParseObject(odd_json);
     ASSERT_TRUE(odd.has_value());
     pbr::ProfilePreferences parsed;
@@ -313,8 +313,8 @@ TEST(ConfigJsonTest, ProfilePrefsPinDigitsUnknownWhenAbsentAndRejectsOddValues) 
     EXPECT_EQ(parsed.pin_digits, digits);
   }
 
-  for (const char* odd_json : {R"({ "pin_digits": 3 })", R"({ "pin_digits": 9 })", R"({ "pin_digits": -1 })",
-                               R"({ "pin_digits": true })"}) {
+  for (const char* odd_json :
+       {R"({ "pin_digits": 3 })", R"({ "pin_digits": 9 })", R"({ "pin_digits": -1 })", R"({ "pin_digits": true })"}) {
     auto odd = pbr::TryParseObject(odd_json);
     ASSERT_TRUE(odd.has_value());
     pbr::ProfilePreferences parsed;

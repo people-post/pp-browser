@@ -28,8 +28,7 @@ void DumpThisThreadStack(int /*sig*/) {
   void* frames[64];
   const int n = backtrace(frames, 64);
   char header[64];
-  const int len =
-      std::snprintf(header, sizeof(header), "--- thread %ld\n", static_cast<long>(syscall(SYS_gettid)));
+  const int len = std::snprintf(header, sizeof(header), "--- thread %ld\n", static_cast<long>(syscall(SYS_gettid)));
   (void)!write(STDERR_FILENO, header, static_cast<size_t>(len));
   backtrace_symbols_fd(frames, n, STDERR_FILENO);
   g_stack_dump_busy.clear(std::memory_order_release);

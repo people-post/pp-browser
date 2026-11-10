@@ -192,7 +192,8 @@ void VoicePlayback::Start(const std::string& message_id, const std::string& path
   const auto alive = alive_;
   const auto post = ports_.post_ui;
   AudioFilePlayerCallbacks callbacks;
-  callbacks.on_progress = [this, alive, post, message_id, serial](const int64_t position_ms, const int64_t duration_ms) {
+  callbacks.on_progress = [this, alive, post, message_id, serial](const int64_t position_ms,
+                                                                  const int64_t duration_ms) {
     post([this, alive, message_id, serial, position_ms, duration_ms]() {
       if (alive->load()) {
         OnProgress(message_id, serial, position_ms, duration_ms);
@@ -289,19 +290,19 @@ void VoicePlayback::OnEnded(const std::string& message_id, const uint64_t serial
   // A clip the person (or a call, or a recording) stopped says nothing: a stop is not a device error.
   if (!by_user) {
     switch (end) {
-    case VoicePlayEnd::Unplayable:
-      Say(Tr(was_file ? "chat.attachment.audio_cannot_play" : "chat.voice.cannot_play"));
-      break;
-    case VoicePlayEnd::Busy:
-      Say(Tr("chat.voice.play_in_call"));
-      break;
-    case VoicePlayEnd::NoDevice:
-      Say(Tr("chat.voice.no_speaker"));
-      break;
-    case VoicePlayEnd::Finished:
-    case VoicePlayEnd::Stopped:
-    case VoicePlayEnd::Interrupted:
-      break;
+      case VoicePlayEnd::Unplayable:
+        Say(Tr(was_file ? "chat.attachment.audio_cannot_play" : "chat.voice.cannot_play"));
+        break;
+      case VoicePlayEnd::Busy:
+        Say(Tr("chat.voice.play_in_call"));
+        break;
+      case VoicePlayEnd::NoDevice:
+        Say(Tr("chat.voice.no_speaker"));
+        break;
+      case VoicePlayEnd::Finished:
+      case VoicePlayEnd::Stopped:
+      case VoicePlayEnd::Interrupted:
+        break;
     }
   }
   auto then = std::move(after_stop_);
@@ -368,16 +369,16 @@ void VoicePlayback::ProcessEvent(ui::Event& event) {
     return;
   }
   switch (event.GetId()) {
-  case ui::EventId::Mousemove:
-    if (const std::optional<double> fraction = PointerFraction(event)) {
-      ShowSeekPreview(*fraction);
-    }
-    break;
-  case ui::EventId::Mouseup:
-    EndSeek(true, PointerFraction(event));
-    break;
-  default:
-    break;
+    case ui::EventId::Mousemove:
+      if (const std::optional<double> fraction = PointerFraction(event)) {
+        ShowSeekPreview(*fraction);
+      }
+      break;
+    case ui::EventId::Mouseup:
+      EndSeek(true, PointerFraction(event));
+      break;
+    default:
+      break;
   }
 }
 

@@ -26,8 +26,7 @@ TEST(DiagnosticsUploadResultTest, SuccessWithoutAReferenceIsAFailure) {
 TEST(DiagnosticsUploadResultTest, RateLimitReasonsMapToTheirKind) {
   EXPECT_EQ(MapDiagnosticsResponse(429, R"({"error":"rate_limited","reason":"quota_key"})").kind, Kind::QuotaKey);
   EXPECT_EQ(MapDiagnosticsResponse(429, R"({"error":"rate_limited","reason":"quota_ip"})").kind, Kind::QuotaIp);
-  EXPECT_EQ(MapDiagnosticsResponse(429, R"({"error":"rate_limited","reason":"quota_global"})").kind,
-            Kind::QuotaGlobal);
+  EXPECT_EQ(MapDiagnosticsResponse(429, R"({"error":"rate_limited","reason":"quota_global"})").kind, Kind::QuotaGlobal);
   const auto unknown = MapDiagnosticsResponse(429, R"({"error":"rate_limited","reason":"new_reason"})");
   EXPECT_EQ(unknown.kind, Kind::Failed);
   EXPECT_EQ(MapDiagnosticsResponse(429, "").kind, Kind::Failed);
@@ -77,11 +76,11 @@ TEST(DiagnosticsUploadResultTest, LastUploadRoundTripsOwnerOnly) {
   EXPECT_EQ(read->upload_id, "ABCDEFGH12");
   EXPECT_EQ(read->at_ms, 1761600000000);
 
-  ASSERT_TRUE(WriteLastUpload(dir.string(), {"ZZZZZZZZ99", 5}));  // newer replaces older
+  ASSERT_TRUE(WriteLastUpload(dir.string(), {"ZZZZZZZZ99", 5})); // newer replaces older
   EXPECT_EQ(ReadLastUpload(dir.string())->upload_id, "ZZZZZZZZ99");
 
 #ifndef _WIN32
-  struct stat st {};
+  struct stat st{};
   ASSERT_EQ(::stat(LastUploadPath(dir.string()).c_str(), &st), 0);
   EXPECT_EQ(st.st_mode & 0777, 0600);
 #endif

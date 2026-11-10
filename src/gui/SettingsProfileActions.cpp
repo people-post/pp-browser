@@ -78,8 +78,7 @@ void SettingsProfileActions::Register() {
       host_.ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Registration is not available"));
       return;
     }
-    if (auto registered = commands_.register_identity({.nickname = host_.UiState().profile_nickname});
-        !registered) {
+    if (auto registered = commands_.register_identity({.nickname = host_.UiState().profile_nickname}); !registered) {
       host_.ReportFailure(registered.error());
       return;
     }
@@ -104,7 +103,7 @@ void SettingsProfileActions::RotateBriefLlmKey() {
       return;
     }
     if (auto rotated = commands_.rotate_brief_llm_key(); !rotated) {
-      host_.Resync();  // the identity may have been marked expired (401 / 403)
+      host_.Resync(); // the identity may have been marked expired (401 / 403)
       host_.ReportFailure(rotated.error());
       return;
     }
@@ -182,9 +181,8 @@ void SettingsProfileActions::ClearIcon() {
     host_.PushToView(/*include_profile_nickname=*/false);
     AppRuntime::PostWorkerNormal([this]() {
       Roe<void> result = commands_.clear_profile_icon();
-      AppRuntime::PostUI([this, result = std::move(result)]() {
-        AfterIconChange(result, Tr("settings.profile.photo_removed"));
-      });
+      AppRuntime::PostUI(
+          [this, result = std::move(result)]() { AfterIconChange(result, Tr("settings.profile.photo_removed")); });
     });
   });
 }
@@ -212,7 +210,8 @@ void SettingsProfileActions::Share(const ShareAnchor anchor) {
   ShareInviteOrCopy(
       AccountInviteText(state.profile_nickname, state.profile_relay_id, state.profile_contact_locator),
       [](const std::string& text, const ShareAnchor at) { return PlatformShareText(Backend::GetWindow(), text, at); },
-      anchor, [](const std::string& text) {
+      anchor,
+      [](const std::string& text) {
         if (ui::SystemInterface* system = ui::GetSystemInterface()) {
           system->SetClipboardText(text.c_str());
         }

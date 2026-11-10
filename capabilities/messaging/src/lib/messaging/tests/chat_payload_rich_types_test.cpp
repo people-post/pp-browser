@@ -166,10 +166,12 @@ TEST(ChatPayloadRichTypesTest, DirectOnlyAttachmentWithoutUrlRoundTrips) {
   // Still invalid: no declared size, no type, damaged key material.
   ChatAttachmentFields no_size = fields;
   no_size.byte_length = 0;
-  EXPECT_FALSE(static_cast<bool>(ChatPayloadCodec::DecodeAttachmentJson(ChatPayloadCodec::AttachmentFieldsToJson(no_size))));
+  EXPECT_FALSE(
+      static_cast<bool>(ChatPayloadCodec::DecodeAttachmentJson(ChatPayloadCodec::AttachmentFieldsToJson(no_size))));
   ChatAttachmentFields no_key = fields;
   no_key.content_key.clear();
-  EXPECT_FALSE(static_cast<bool>(ChatPayloadCodec::DecodeAttachmentJson(ChatPayloadCodec::AttachmentFieldsToJson(no_key))));
+  EXPECT_FALSE(
+      static_cast<bool>(ChatPayloadCodec::DecodeAttachmentJson(ChatPayloadCodec::AttachmentFieldsToJson(no_key))));
 }
 
 TEST(ChatPayloadRichTypesTest, AttachmentContentCipherRoundTrip) {
@@ -182,8 +184,7 @@ TEST(ChatPayloadRichTypesTest, AttachmentContentCipherRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(encrypted));
   auto hash = AttachmentContentHash(plaintext);
   ASSERT_TRUE(static_cast<bool>(hash));
-  auto decrypted =
-      AttachmentContentCipher::Decrypt(*key, encrypted->nonce, encrypted->ciphertext, hash.value());
+  auto decrypted = AttachmentContentCipher::Decrypt(*key, encrypted->nonce, encrypted->ciphertext, hash.value());
   ASSERT_TRUE(static_cast<bool>(decrypted));
   EXPECT_EQ(*decrypted, plaintext);
 }

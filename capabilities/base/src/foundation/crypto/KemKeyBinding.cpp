@@ -4,7 +4,6 @@
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/MlDsa.h"
 
-
 namespace pbr {
 
 namespace {

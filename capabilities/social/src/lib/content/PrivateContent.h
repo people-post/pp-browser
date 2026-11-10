@@ -19,8 +19,9 @@ namespace pbr {
 bool PrivateContentExists(const CasStore& content, const std::vector<uint8_t>& content_hash);
 
 /** Store `plaintext` (its hash must be `content_hash`); returns the block path. */
-Roe<std::string> SavePrivateContent(CasStore& content, const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                    const ByteVector& plaintext, const std::string& filename, const ByteVector& dek);
+Roe<std::string> SavePrivateContent(CasStore& content, const std::vector<uint8_t>& content_hash,
+                                    const std::string& mime, const ByteVector& plaintext, const std::string& filename,
+                                    const ByteVector& dek);
 
 Roe<ByteVector> LoadPrivateContent(const CasStore& content, const std::vector<uint8_t>& content_hash,
                                    const ByteVector& dek);

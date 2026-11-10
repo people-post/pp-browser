@@ -41,7 +41,7 @@ Roe<ByteVector> AutoKeyEstablishment::DeriveMasterPskFromSharedSecret(const Byte
 }
 
 Roe<ByteVector> AutoKeyEstablishment::DeriveMasterPskFromKeyInit(const ByteVector& local_private_key,
-                                                               const std::string& key_init_b64) {
+                                                                 const std::string& key_init_b64) {
   auto shared_secret = HybridKem::Decapsulate(local_private_key, key_init_b64);
   if (!shared_secret) {
     return shared_secret.error();

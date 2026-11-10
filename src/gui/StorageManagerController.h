@@ -58,8 +58,8 @@ public:
     ui::String detail;
     ui::String size;
     ui::String ext;
-    ui::String kind;       // "audio" | "pdf" | "file": which icon the All tab's tile shows
-    ui::String tile_name;  // the name cut to fit one line of a tile
+    ui::String kind;      // "audio" | "pdf" | "file": which icon the All tab's tile shows
+    ui::String tile_name; // the name cut to fit one line of a tile
     bool picked = false;
     /** A sound file: a tap plays it here (play / pause in the badge, the time in `detail`, the bar). */
     bool audio = false;
@@ -157,7 +157,7 @@ private:
   StorageHashUses hash_uses_; // all_items_ by hash: a selection is weighed from it
   StorageUsage usage_;
   std::vector<StorageChatName> names_;
-  std::vector<std::string> chat_ids_;  // chats_ order
+  std::vector<std::string> chat_ids_; // chats_ order
   StorageRecomputeGate gate_;
   uint64_t refresh_seq_ = 0;
 
@@ -166,12 +166,12 @@ private:
   std::string tab_ = "all";
   bool items_large_ = false;
   std::string items_thread_;
-  std::vector<StoredAttachmentItem> page_all_;   // the open chat's items (or the large list), every kind
-  std::vector<StoredAttachmentItem> tab_items_;  // the open tab's, in display order
+  std::vector<StoredAttachmentItem> page_all_;  // the open chat's items (or the large list), every kind
+  std::vector<StoredAttachmentItem> tab_items_; // the open tab's, in display order
   size_t shown_ = kStoragePageSize;
   uint64_t generation_ = 0;
-  std::set<std::string> requested_;  // thumbnails asked for in this generation
-  std::set<std::string> selected_;   // content hashes on the open page
+  std::set<std::string> requested_; // thumbnails asked for in this generation
+  std::set<std::string> selected_;  // content hashes on the open page
   bool selecting_ = false;
   bool busy_ = false;
   std::optional<uint64_t> releasable_;
@@ -179,7 +179,7 @@ private:
   // The sound file playing on the page.
   std::unique_ptr<IAudioFilePlayer> audio_;
   bool audio_made_ = false;
-  std::string audio_key_;  // thread + hash of the file playing or paused ("" none)
+  std::string audio_key_; // thread + hash of the file playing or paused ("" none)
   bool audio_paused_ = false;
   int64_t audio_position_ms_ = 0;
   int64_t audio_duration_ms_ = 0;

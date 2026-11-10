@@ -43,14 +43,16 @@ Roe<void> LinkDeviceCodec::Validate(const LinkDeviceBundleV1& bundle, const int6
   if (auto pk = RequireB64Size(bundle.account_ml_dsa_pk_b64, kMlDsa65PublicKeyBytes, "Account public key"); !pk) {
     return pk.error();
   }
-  if (auto sk = RequireB64Size(bundle.account_ml_dsa_sk_b64.Reveal(), kMlDsa65SecretKeyBytes, "Account secret key"); !sk) {
+  if (auto sk = RequireB64Size(bundle.account_ml_dsa_sk_b64.Reveal(), kMlDsa65SecretKeyBytes, "Account secret key");
+      !sk) {
     return sk.error();
   }
   if (auto kem_pk = RequireB64Size(bundle.account_kem_pk_b64, kHybridKemPublicKeyBytes, "Account KEM public key");
       !kem_pk) {
     return kem_pk.error();
   }
-  if (auto kem_sk = RequireB64Size(bundle.account_kem_sk_b64.Reveal(), kHybridKemPrivateKeyBytes, "Account KEM secret key");
+  if (auto kem_sk =
+          RequireB64Size(bundle.account_kem_sk_b64.Reveal(), kHybridKemPrivateKeyBytes, "Account KEM secret key");
       !kem_sk) {
     return kem_sk.error();
   }
@@ -73,7 +75,8 @@ Roe<void> LinkDeviceCodec::Validate(const LinkDeviceBundleV1& bundle, const int6
     auto seed = Base64Decode(*bundle.recovery_seed_b64);
     auto keys = seed ? DeriveRecoveryKeys(*seed) : Roe<RecoveryKeys>(seed.error());
     auto signing = keys ? MlDsa::GenerateKeyPairFromSeed(keys->account_ml_dsa_seed) : Roe<MlDsaKeyPair>(keys.error());
-    auto kem = keys ? HybridKem::GenerateKeyPairFromSeed(keys->account_ml_kem_coins) : Roe<HybridKemKeyPair>(keys.error());
+    auto kem =
+        keys ? HybridKem::GenerateKeyPairFromSeed(keys->account_ml_kem_coins) : Roe<HybridKemKeyPair>(keys.error());
     if (!signing || !kem || Base64Encode(signing->public_key) != bundle.account_ml_dsa_pk_b64 ||
         Base64Encode(kem->public_key) != bundle.account_kem_pk_b64) {
       return Error("Link bundle recovery seed does not derive its account keys");

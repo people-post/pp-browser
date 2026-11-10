@@ -30,14 +30,15 @@ constexpr int kMaxDpbSurfaces = 4;
 constexpr int kIntraIdrPeriod = 45; // force IDR periodically (kKeyframeIntervalSeconds at 15 fps)
 
 int32_t EstimateBitrateBps(int width, int height, int fps) {
-  const double raw = static_cast<double>(width) * static_cast<double>(height) *
-                      static_cast<double>(std::max(fps, 1)) * 0.07;
-  const double clamped =
-      std::clamp(raw, static_cast<double>(kMinBitrateBps), static_cast<double>(kMaxBitrateBps));
+  const double raw =
+      static_cast<double>(width) * static_cast<double>(height) * static_cast<double>(std::max(fps, 1)) * 0.07;
+  const double clamped = std::clamp(raw, static_cast<double>(kMinBitrateBps), static_cast<double>(kMaxBitrateBps));
   return static_cast<int32_t>(clamped);
 }
 
-int Align16(int v) { return (v + 15) & ~15; }
+int Align16(int v) {
+  return (v + 15) & ~15;
+}
 
 void InvalidatePicture(VAPictureH264& pic) {
   pic.picture_id = VA_INVALID_ID;
@@ -277,10 +278,9 @@ bool ParseSpsRbsp(const uint8_t* rbsp, size_t size, ParsedSps& out) {
   out.level_idc = static_cast<int>(br.ReadBits(8));
   (void)br.ReadUe(); // sps id
   out.chroma_format_idc = 1;
-  if (out.profile_idc == 100 || out.profile_idc == 110 || out.profile_idc == 122 ||
-      out.profile_idc == 244 || out.profile_idc == 44 || out.profile_idc == 83 ||
-      out.profile_idc == 86 || out.profile_idc == 118 || out.profile_idc == 128 ||
-      out.profile_idc == 138 || out.profile_idc == 139 || out.profile_idc == 134) {
+  if (out.profile_idc == 100 || out.profile_idc == 110 || out.profile_idc == 122 || out.profile_idc == 244 ||
+      out.profile_idc == 44 || out.profile_idc == 83 || out.profile_idc == 86 || out.profile_idc == 118 ||
+      out.profile_idc == 128 || out.profile_idc == 138 || out.profile_idc == 139 || out.profile_idc == 134) {
     out.chroma_format_idc = static_cast<int>(br.ReadUe());
     if (out.chroma_format_idc == 3) {
       br.SkipBits(1);
@@ -426,8 +426,8 @@ struct ParsedSliceHeader {
   bool idr = false;
 };
 
-bool ParseSliceHeader(const uint8_t* rbsp, size_t size, const ParsedSps& sps, const ParsedPps& pps,
-                      bool idr, ParsedSliceHeader& out) {
+bool ParseSliceHeader(const uint8_t* rbsp, size_t size, const ParsedSps& sps, const ParsedPps& pps, bool idr,
+                      ParsedSliceHeader& out) {
   if (size < 2) {
     return false;
   }
@@ -507,8 +507,7 @@ bool ParseSliceHeader(const uint8_t* rbsp, size_t size, const ParsedSps& sps, co
       }
     }
   }
-  if ((pps.weighted_pred_flag && out.slice_type == 0) ||
-      (pps.weighted_bipred_idc == 1 && out.slice_type == 1)) {
+  if ((pps.weighted_pred_flag && out.slice_type == 0) || (pps.weighted_bipred_idc == 1 && out.slice_type == 1)) {
     return false; // weighted pred not handled
   }
   if (idr) {
@@ -572,13 +571,12 @@ bool ParseSliceHeader(const uint8_t* rbsp, size_t size, const ParsedSps& sps, co
 
 // ---- NV12 helpers ----------------------------------------------------
 
-void FillNv12(uint8_t* y_dst, size_t y_stride, uint8_t* uv_dst, size_t uv_stride,
-              const VideoFrameI420& frame) {
+void FillNv12(uint8_t* y_dst, size_t y_stride, uint8_t* uv_dst, size_t uv_stride, const VideoFrameI420& frame) {
   const int width = frame.width;
   const int height = frame.height;
   for (int row = 0; row < height; ++row) {
-    std::memcpy(y_dst + static_cast<size_t>(row) * y_stride,
-                frame.y.data() + static_cast<size_t>(row) * width, static_cast<size_t>(width));
+    std::memcpy(y_dst + static_cast<size_t>(row) * y_stride, frame.y.data() + static_cast<size_t>(row) * width,
+                static_cast<size_t>(width));
   }
   const int chroma_width = (width + 1) / 2;
   const int chroma_height = (height + 1) / 2;
@@ -593,8 +591,8 @@ void FillNv12(uint8_t* y_dst, size_t y_stride, uint8_t* uv_dst, size_t uv_stride
   }
 }
 
-bool Nv12ToRgba(const uint8_t* y_src, size_t y_stride, const uint8_t* uv_src, size_t uv_stride,
-                int width, int height, VideoFrameRgba& out) {
+bool Nv12ToRgba(const uint8_t* y_src, size_t y_stride, const uint8_t* uv_src, size_t uv_stride, int width, int height,
+                VideoFrameRgba& out) {
   VideoFrameI420 i420;
   i420.width = width;
   i420.height = height;
@@ -637,11 +635,9 @@ struct VaCaps {
 VAProfile SelectDecodeProfile(const VaCaps& caps, const ParsedSps& sps, const ParsedPps& pps) {
   // Honor SPS profile_idc. Do not upgrade Baseline solely because PPS more_rbsp_data was
   // misread (VideoToolbox CBP PPS ends with rbsp_trailing 0x80).
-  const bool needs_high = sps.profile_idc == 100 || sps.profile_idc == 110 ||
-                          sps.profile_idc == 122 || sps.profile_idc == 244 ||
-                          (pps.transform_8x8_mode_flag != 0 && sps.profile_idc >= 100);
-  const bool needs_main =
-      needs_high || sps.profile_idc == 77 || pps.entropy_coding_mode_flag != 0;
+  const bool needs_high = sps.profile_idc == 100 || sps.profile_idc == 110 || sps.profile_idc == 122 ||
+                          sps.profile_idc == 244 || (pps.transform_8x8_mode_flag != 0 && sps.profile_idc >= 100);
+  const bool needs_main = needs_high || sps.profile_idc == 77 || pps.entropy_coding_mode_flag != 0;
   if (needs_high && caps.decode_high) {
     return VAProfileH264High;
   }
@@ -700,8 +696,7 @@ bool QueryProfileEntrypoint(VADisplay dpy, VAProfile profile, VAEntrypoint entry
 
 bool ProbeCaps(VADisplay dpy, VaCaps& caps) {
   caps = {};
-  static const VAProfile kEncProfiles[] = {VAProfileH264ConstrainedBaseline, VAProfileH264Main,
-                                           VAProfileH264High};
+  static const VAProfile kEncProfiles[] = {VAProfileH264ConstrainedBaseline, VAProfileH264Main, VAProfileH264High};
   static const VAEntrypoint kEncEntries[] = {VAEntrypointEncSlice, VAEntrypointEncSliceLP};
   for (VAProfile profile : kEncProfiles) {
     for (VAEntrypoint entry : kEncEntries) {
@@ -736,8 +731,7 @@ bool ProbeCaps(VADisplay dpy, VaCaps& caps) {
           caps.rc_mode = VA_RC_NONE;
         }
         if (attrs[1].value != VA_ATTRIB_NOT_SUPPORTED) {
-          caps.packed_headers = attrs[1].value &
-                                (VA_ENC_PACKED_HEADER_SEQUENCE | VA_ENC_PACKED_HEADER_PICTURE);
+          caps.packed_headers = attrs[1].value & (VA_ENC_PACKED_HEADER_SEQUENCE | VA_ENC_PACKED_HEADER_PICTURE);
         }
       }
       break;
@@ -817,8 +811,8 @@ std::vector<uint8_t> BuildSpsNal(int width, int height, int level_idc, int const
 
   BitWriter bw;
   bw.PutBits(0, 1);
-  bw.PutBits(3, 2); // nal_ref_idc
-  bw.PutBits(7, 5); // SPS
+  bw.PutBits(3, 2);  // nal_ref_idc
+  bw.PutBits(7, 5);  // SPS
   bw.PutBits(66, 8); // Baseline profile_idc
   bw.PutBits(!!(constraint_set_flags & 1), 1);
   bw.PutBits(!!(constraint_set_flags & 2), 1);
@@ -877,15 +871,13 @@ std::vector<uint8_t> BuildPpsNal() {
 bool FillMappedImage(VAImage& image, void* ptr, const VideoFrameI420& frame) {
   auto* base = static_cast<uint8_t*>(ptr);
   if (image.format.fourcc == VA_FOURCC_NV12 && image.num_planes >= 2) {
-    FillNv12(base + image.offsets[0], image.pitches[0], base + image.offsets[1], image.pitches[1],
-             frame);
+    FillNv12(base + image.offsets[0], image.pitches[0], base + image.offsets[1], image.pitches[1], frame);
     return true;
   }
   if (image.format.fourcc == VA_FOURCC_I420 || image.format.fourcc == VA_FOURCC_YV12) {
     for (int row = 0; row < frame.height; ++row) {
       std::memcpy(base + image.offsets[0] + static_cast<size_t>(row) * image.pitches[0],
-                  frame.y.data() + static_cast<size_t>(row) * frame.width,
-                  static_cast<size_t>(frame.width));
+                  frame.y.data() + static_cast<size_t>(row) * frame.width, static_cast<size_t>(frame.width));
     }
     const int cw = frame.width / 2;
     const int ch = frame.height / 2;
@@ -935,8 +927,7 @@ bool UploadI420ToSurface(VADisplay dpy, VASurfaceID surface, const VideoFrameI42
   VAImage image{};
   if (vaDeriveImage(dpy, surface, &image) == VA_STATUS_SUCCESS) {
     void* ptr = nullptr;
-    if (vaMapBuffer(dpy, image.buf, &ptr) == VA_STATUS_SUCCESS && ptr &&
-        FillMappedImage(image, ptr, frame)) {
+    if (vaMapBuffer(dpy, image.buf, &ptr) == VA_STATUS_SUCCESS && ptr && FillMappedImage(image, ptr, frame)) {
       vaUnmapBuffer(dpy, image.buf);
       vaDestroyImage(dpy, image.image_id);
       return true;
@@ -961,8 +952,7 @@ bool UploadI420ToSurface(VADisplay dpy, VASurfaceID surface, const VideoFrameI42
     }
   }
   void* ptr = nullptr;
-  if (vaMapBuffer(dpy, image.buf, &ptr) != VA_STATUS_SUCCESS || !ptr ||
-      !FillMappedImage(image, ptr, staged)) {
+  if (vaMapBuffer(dpy, image.buf, &ptr) != VA_STATUS_SUCCESS || !ptr || !FillMappedImage(image, ptr, staged)) {
     if (ptr) {
       vaUnmapBuffer(dpy, image.buf);
     }
@@ -970,14 +960,13 @@ bool UploadI420ToSurface(VADisplay dpy, VASurfaceID surface, const VideoFrameI42
     return false;
   }
   vaUnmapBuffer(dpy, image.buf);
-  const VAStatus put = vaPutImage(dpy, surface, image.image_id, 0, 0, staged.width, staged.height, 0, 0,
-                                  staged.width, staged.height);
+  const VAStatus put =
+      vaPutImage(dpy, surface, image.image_id, 0, 0, staged.width, staged.height, 0, 0, staged.width, staged.height);
   vaDestroyImage(dpy, image.image_id);
   return put == VA_STATUS_SUCCESS;
 }
 
-bool DownloadSurfaceToRgba(VADisplay dpy, VASurfaceID surface, int width, int height,
-                           VideoFrameRgba& out) {
+bool DownloadSurfaceToRgba(VADisplay dpy, VASurfaceID surface, int width, int height, VideoFrameRgba& out) {
   if (vaSyncSurface(dpy, surface) != VA_STATUS_SUCCESS) {
     return false;
   }
@@ -985,8 +974,8 @@ bool DownloadSurfaceToRgba(VADisplay dpy, VASurfaceID surface, int width, int he
   auto image_to_rgba = [&](VAImage& image, void* ptr) -> bool {
     auto* base = static_cast<uint8_t*>(ptr);
     if (image.format.fourcc == VA_FOURCC_NV12 && image.num_planes >= 2) {
-      return Nv12ToRgba(base + image.offsets[0], image.pitches[0], base + image.offsets[1],
-                        image.pitches[1], width, height, out);
+      return Nv12ToRgba(base + image.offsets[0], image.pitches[0], base + image.offsets[1], image.pitches[1], width,
+                        height, out);
     }
     if (image.format.fourcc == VA_FOURCC_I420 || image.format.fourcc == VA_FOURCC_YV12) {
       VideoFrameI420 i420;
@@ -997,8 +986,7 @@ bool DownloadSurfaceToRgba(VADisplay dpy, VASurfaceID surface, int width, int he
       i420.v.resize(i420.u.size());
       for (int row = 0; row < height; ++row) {
         std::memcpy(i420.y.data() + static_cast<size_t>(row) * width,
-                    base + image.offsets[0] + static_cast<size_t>(row) * image.pitches[0],
-                    static_cast<size_t>(width));
+                    base + image.offsets[0] + static_cast<size_t>(row) * image.pitches[0], static_cast<size_t>(width));
       }
       const int cw = width / 2;
       const int ch = height / 2;
@@ -1060,8 +1048,7 @@ bool DownloadSurfaceToRgba(VADisplay dpy, VASurfaceID surface, int width, int he
 
 class VaapiVideoCodec final : public IVideoCodec {
 public:
-  VaapiVideoCodec(VaDisplayState display, VaCaps caps)
-      : display_(std::move(display)), caps_(caps) {}
+  VaapiVideoCodec(VaDisplayState display, VaCaps caps) : display_(std::move(display)), caps_(caps) {}
   ~VaapiVideoCodec() override {
     ResetEncoder();
     ResetDecoder();
@@ -1166,15 +1153,14 @@ Roe<void> VaapiVideoCodec::ConfigureEncoder(int width, int height, int fps) {
     ++attr_n;
   }
 
-  if (vaCreateConfig(display_.display, caps_.encode_profile, caps_.encode_entrypoint, attrs, attr_n,
-                     &enc_config_) != VA_STATUS_SUCCESS) {
+  if (vaCreateConfig(display_.display, caps_.encode_profile, caps_.encode_entrypoint, attrs, attr_n, &enc_config_) !=
+      VA_STATUS_SUCCESS) {
     return Error("vaCreateConfig (encode) failed");
   }
 
   VASurfaceID surfaces[3];
-  if (vaCreateSurfaces(display_.display, VA_RT_FORMAT_YUV420,
-                       static_cast<unsigned>(enc_aligned_w_), static_cast<unsigned>(enc_aligned_h_),
-                       surfaces, 3, nullptr, 0) != VA_STATUS_SUCCESS) {
+  if (vaCreateSurfaces(display_.display, VA_RT_FORMAT_YUV420, static_cast<unsigned>(enc_aligned_w_),
+                       static_cast<unsigned>(enc_aligned_h_), surfaces, 3, nullptr, 0) != VA_STATUS_SUCCESS) {
     ResetEncoder();
     return Error("vaCreateSurfaces (encode) failed");
   }
@@ -1182,16 +1168,15 @@ Roe<void> VaapiVideoCodec::ConfigureEncoder(int width, int height, int fps) {
   enc_recon_[0] = surfaces[1];
   enc_recon_[1] = surfaces[2];
 
-  if (vaCreateContext(display_.display, enc_config_, enc_aligned_w_, enc_aligned_h_, VA_PROGRESSIVE,
-                      surfaces, 3, &enc_context_) != VA_STATUS_SUCCESS) {
+  if (vaCreateContext(display_.display, enc_config_, enc_aligned_w_, enc_aligned_h_, VA_PROGRESSIVE, surfaces, 3,
+                      &enc_context_) != VA_STATUS_SUCCESS) {
     ResetEncoder();
     return Error("vaCreateContext (encode) failed");
   }
 
-  const unsigned coded_size =
-      static_cast<unsigned>((static_cast<size_t>(enc_aligned_w_) * enc_aligned_h_ * 400) / 256);
-  if (vaCreateBuffer(display_.display, enc_context_, VAEncCodedBufferType, coded_size, 1, nullptr,
-                     &enc_coded_) != VA_STATUS_SUCCESS) {
+  const unsigned coded_size = static_cast<unsigned>((static_cast<size_t>(enc_aligned_w_) * enc_aligned_h_ * 400) / 256);
+  if (vaCreateBuffer(display_.display, enc_context_, VAEncCodedBufferType, coded_size, 1, nullptr, &enc_coded_) !=
+      VA_STATUS_SUCCESS) {
     ResetEncoder();
     return Error("vaCreateBuffer (coded) failed");
   }
@@ -1313,8 +1298,8 @@ Roe<EncodedAccessUnit> VaapiVideoCodec::Encode(const VideoFrameI420& frame, bool
   };
 
   VABufferID seq_buf = VA_INVALID_ID;
-  if (vaCreateBuffer(display_.display, enc_context_, VAEncSequenceParameterBufferType, sizeof(seq), 1,
-                     &seq, &seq_buf) != VA_STATUS_SUCCESS) {
+  if (vaCreateBuffer(display_.display, enc_context_, VAEncSequenceParameterBufferType, sizeof(seq), 1, &seq,
+                     &seq_buf) != VA_STATUS_SUCCESS) {
     return Error("vaCreateBuffer (seq) failed");
   }
   buffers.push_back(seq_buf);
@@ -1322,11 +1307,10 @@ Roe<EncodedAccessUnit> VaapiVideoCodec::Encode(const VideoFrameI420& frame, bool
   if (caps_.rc_mode == VA_RC_CBR || caps_.rc_mode == VA_RC_VBR) {
     VABufferID rc_buf = VA_INVALID_ID;
     if (vaCreateBuffer(display_.display, enc_context_, VAEncMiscParameterBufferType,
-                       sizeof(VAEncMiscParameterBuffer) + sizeof(VAEncMiscParameterRateControl), 1,
-                       nullptr, &rc_buf) == VA_STATUS_SUCCESS) {
+                       sizeof(VAEncMiscParameterBuffer) + sizeof(VAEncMiscParameterRateControl), 1, nullptr,
+                       &rc_buf) == VA_STATUS_SUCCESS) {
       VAEncMiscParameterBuffer* misc = nullptr;
-      if (vaMapBuffer(display_.display, rc_buf, reinterpret_cast<void**>(&misc)) == VA_STATUS_SUCCESS &&
-          misc) {
+      if (vaMapBuffer(display_.display, rc_buf, reinterpret_cast<void**>(&misc)) == VA_STATUS_SUCCESS && misc) {
         misc->type = VAEncMiscParameterTypeRateControl;
         auto* rc = reinterpret_cast<VAEncMiscParameterRateControl*>(misc->data);
         std::memset(rc, 0, sizeof(*rc));
@@ -1345,8 +1329,8 @@ Roe<EncodedAccessUnit> VaapiVideoCodec::Encode(const VideoFrameI420& frame, bool
   }
 
   VABufferID pic_buf = VA_INVALID_ID;
-  if (vaCreateBuffer(display_.display, enc_context_, VAEncPictureParameterBufferType, sizeof(pic), 1,
-                     &pic, &pic_buf) != VA_STATUS_SUCCESS) {
+  if (vaCreateBuffer(display_.display, enc_context_, VAEncPictureParameterBufferType, sizeof(pic), 1, &pic, &pic_buf) !=
+      VA_STATUS_SUCCESS) {
     destroy_temps();
     return Error("vaCreateBuffer (pic) failed");
   }
@@ -1359,11 +1343,10 @@ Roe<EncodedAccessUnit> VaapiVideoCodec::Encode(const VideoFrameI420& frame, bool
     ph.has_emulation_bytes = 0;
     VABufferID ph_param = VA_INVALID_ID;
     VABufferID ph_data = VA_INVALID_ID;
-    if (vaCreateBuffer(display_.display, enc_context_, VAEncPackedHeaderParameterBufferType,
-                       sizeof(ph), 1, &ph, &ph_param) == VA_STATUS_SUCCESS &&
+    if (vaCreateBuffer(display_.display, enc_context_, VAEncPackedHeaderParameterBufferType, sizeof(ph), 1, &ph,
+                       &ph_param) == VA_STATUS_SUCCESS &&
         vaCreateBuffer(display_.display, enc_context_, VAEncPackedHeaderDataBufferType,
-                       static_cast<unsigned>(sps_nal_.size()), 1, sps_nal_.data(), &ph_data) ==
-            VA_STATUS_SUCCESS) {
+                       static_cast<unsigned>(sps_nal_.size()), 1, sps_nal_.data(), &ph_data) == VA_STATUS_SUCCESS) {
       buffers.push_back(ph_param);
       buffers.push_back(ph_data);
     } else {
@@ -1382,11 +1365,10 @@ Roe<EncodedAccessUnit> VaapiVideoCodec::Encode(const VideoFrameI420& frame, bool
     ph.has_emulation_bytes = 0;
     VABufferID ph_param = VA_INVALID_ID;
     VABufferID ph_data = VA_INVALID_ID;
-    if (vaCreateBuffer(display_.display, enc_context_, VAEncPackedHeaderParameterBufferType,
-                       sizeof(ph), 1, &ph, &ph_param) == VA_STATUS_SUCCESS &&
+    if (vaCreateBuffer(display_.display, enc_context_, VAEncPackedHeaderParameterBufferType, sizeof(ph), 1, &ph,
+                       &ph_param) == VA_STATUS_SUCCESS &&
         vaCreateBuffer(display_.display, enc_context_, VAEncPackedHeaderDataBufferType,
-                       static_cast<unsigned>(pps_nal_.size()), 1, pps_nal_.data(), &ph_data) ==
-            VA_STATUS_SUCCESS) {
+                       static_cast<unsigned>(pps_nal_.size()), 1, pps_nal_.data(), &ph_data) == VA_STATUS_SUCCESS) {
       buffers.push_back(ph_param);
       buffers.push_back(ph_data);
     } else {
@@ -1400,8 +1382,8 @@ Roe<EncodedAccessUnit> VaapiVideoCodec::Encode(const VideoFrameI420& frame, bool
   }
 
   VABufferID slice_buf = VA_INVALID_ID;
-  if (vaCreateBuffer(display_.display, enc_context_, VAEncSliceParameterBufferType, sizeof(slice), 1,
-                     &slice, &slice_buf) != VA_STATUS_SUCCESS) {
+  if (vaCreateBuffer(display_.display, enc_context_, VAEncSliceParameterBufferType, sizeof(slice), 1, &slice,
+                     &slice_buf) != VA_STATUS_SUCCESS) {
     destroy_temps();
     return Error("vaCreateBuffer (slice) failed");
   }
@@ -1411,8 +1393,8 @@ Roe<EncodedAccessUnit> VaapiVideoCodec::Encode(const VideoFrameI420& frame, bool
     destroy_temps();
     return Error("vaBeginPicture (encode) failed");
   }
-  if (vaRenderPicture(display_.display, enc_context_, buffers.data(),
-                      static_cast<int>(buffers.size())) != VA_STATUS_SUCCESS) {
+  if (vaRenderPicture(display_.display, enc_context_, buffers.data(), static_cast<int>(buffers.size())) !=
+      VA_STATUS_SUCCESS) {
     vaEndPicture(display_.display, enc_context_);
     destroy_temps();
     return Error("vaRenderPicture (encode) failed");
@@ -1428,9 +1410,7 @@ Roe<EncodedAccessUnit> VaapiVideoCodec::Encode(const VideoFrameI420& frame, bool
   }
 
   VACodedBufferSegment* segment = nullptr;
-  if (vaMapBuffer(display_.display, enc_coded_, reinterpret_cast<void**>(&segment)) !=
-          VA_STATUS_SUCCESS ||
-      !segment) {
+  if (vaMapBuffer(display_.display, enc_coded_, reinterpret_cast<void**>(&segment)) != VA_STATUS_SUCCESS || !segment) {
     return Error("vaMapBuffer (coded) failed");
   }
 
@@ -1485,8 +1465,7 @@ bool VaapiVideoCodec::EnsureDecoderContext(const ParsedSps& sps, std::string& er
   const int width = sps.coded_width > 0 ? sps.coded_width : Align16(sps.width);
   const int height = sps.coded_height > 0 ? sps.coded_height : Align16(sps.height);
   const VAProfile profile = SelectDecodeProfile(caps_, sps, dec_pps_);
-  if (dec_context_ != VA_INVALID_ID && dec_width_ == width && dec_height_ == height &&
-      dec_active_profile_ == profile) {
+  if (dec_context_ != VA_INVALID_ID && dec_width_ == width && dec_height_ == height && dec_active_profile_ == profile) {
     return true;
   }
 
@@ -1511,8 +1490,7 @@ bool VaapiVideoCodec::EnsureDecoderContext(const ParsedSps& sps, std::string& er
   VAConfigAttrib attr{};
   attr.type = VAConfigAttribRTFormat;
   attr.value = VA_RT_FORMAT_YUV420;
-  if (vaCreateConfig(display_.display, profile, VAEntrypointVLD, &attr, 1, &dec_config_) !=
-      VA_STATUS_SUCCESS) {
+  if (vaCreateConfig(display_.display, profile, VAEntrypointVLD, &attr, 1, &dec_config_) != VA_STATUS_SUCCESS) {
     error = "vaCreateConfig (decode) failed";
     return false;
   }
@@ -1522,8 +1500,8 @@ bool VaapiVideoCodec::EnsureDecoderContext(const ParsedSps& sps, std::string& er
     error = "vaCreateSurfaces (decode) failed";
     return false;
   }
-  if (vaCreateContext(display_.display, dec_config_, width, height, VA_PROGRESSIVE,
-                      dec_surfaces_.data(), kMaxDpbSurfaces, &dec_context_) != VA_STATUS_SUCCESS) {
+  if (vaCreateContext(display_.display, dec_config_, width, height, VA_PROGRESSIVE, dec_surfaces_.data(),
+                      kMaxDpbSurfaces, &dec_context_) != VA_STATUS_SUCCESS) {
     error = "vaCreateContext (decode) failed";
     return false;
   }
@@ -1620,8 +1598,7 @@ Roe<VideoFrameRgba> VaapiVideoCodec::DecodeSliceAccessUnit(const std::vector<Ann
   pic.pic_fields.bits.transform_8x8_mode_flag = dec_pps_.transform_8x8_mode_flag;
   pic.pic_fields.bits.constrained_intra_pred_flag = dec_pps_.constrained_intra_pred_flag;
   pic.pic_fields.bits.pic_order_present_flag = dec_pps_.bottom_field_pic_order_in_frame_present_flag;
-  pic.pic_fields.bits.deblocking_filter_control_present_flag =
-      dec_pps_.deblocking_filter_control_present_flag;
+  pic.pic_fields.bits.deblocking_filter_control_present_flag = dec_pps_.deblocking_filter_control_present_flag;
   pic.pic_fields.bits.redundant_pic_cnt_present_flag = dec_pps_.redundant_pic_cnt_present_flag;
   pic.pic_fields.bits.reference_pic_flag = 1;
   pic.frame_num = static_cast<uint16_t>(sh0.frame_num);
@@ -1640,10 +1617,10 @@ Roe<VideoFrameRgba> VaapiVideoCodec::DecodeSliceAccessUnit(const std::vector<Ann
 
   VABufferID pic_buf = VA_INVALID_ID;
   VABufferID iq_buf = VA_INVALID_ID;
-  if (vaCreateBuffer(display_.display, dec_context_, VAPictureParameterBufferType, sizeof(pic), 1,
-                     &pic, &pic_buf) != VA_STATUS_SUCCESS ||
-      vaCreateBuffer(display_.display, dec_context_, VAIQMatrixBufferType, sizeof(iq), 1, &iq,
-                     &iq_buf) != VA_STATUS_SUCCESS) {
+  if (vaCreateBuffer(display_.display, dec_context_, VAPictureParameterBufferType, sizeof(pic), 1, &pic, &pic_buf) !=
+          VA_STATUS_SUCCESS ||
+      vaCreateBuffer(display_.display, dec_context_, VAIQMatrixBufferType, sizeof(iq), 1, &iq, &iq_buf) !=
+          VA_STATUS_SUCCESS) {
     if (pic_buf != VA_INVALID_ID) {
       vaDestroyBuffer(display_.display, pic_buf);
     }
@@ -1680,8 +1657,7 @@ Roe<VideoFrameRgba> VaapiVideoCodec::DecodeSliceAccessUnit(const std::vector<Ann
     slice.num_ref_idx_l1_active_minus1 = static_cast<uint8_t>(work.sh.num_ref_idx_l1_active_minus1);
     slice.cabac_init_idc = static_cast<uint8_t>(work.sh.cabac_init_idc);
     slice.slice_qp_delta = static_cast<int8_t>(work.sh.slice_qp_delta);
-    slice.disable_deblocking_filter_idc =
-        static_cast<uint8_t>(work.sh.disable_deblocking_filter_idc);
+    slice.disable_deblocking_filter_idc = static_cast<uint8_t>(work.sh.disable_deblocking_filter_idc);
     slice.slice_alpha_c0_offset_div2 = static_cast<int8_t>(work.sh.slice_alpha_c0_offset_div2);
     slice.slice_beta_offset_div2 = static_cast<int8_t>(work.sh.slice_beta_offset_div2);
     for (auto& r : slice.RefPicList0) {
@@ -1695,10 +1671,9 @@ Roe<VideoFrameRgba> VaapiVideoCodec::DecodeSliceAccessUnit(const std::vector<Ann
     }
 
     VABufferID slice_bufs[2] = {VA_INVALID_ID, VA_INVALID_ID};
-    if (vaCreateBuffer(display_.display, dec_context_, VASliceParameterBufferType, sizeof(slice), 1,
-                       &slice, &slice_bufs[0]) != VA_STATUS_SUCCESS ||
-        vaCreateBuffer(display_.display, dec_context_, VASliceDataBufferType,
-                       static_cast<unsigned>(work.nal->size), 1,
+    if (vaCreateBuffer(display_.display, dec_context_, VASliceParameterBufferType, sizeof(slice), 1, &slice,
+                       &slice_bufs[0]) != VA_STATUS_SUCCESS ||
+        vaCreateBuffer(display_.display, dec_context_, VASliceDataBufferType, static_cast<unsigned>(work.nal->size), 1,
                        const_cast<uint8_t*>(work.nal->data), &slice_bufs[1]) != VA_STATUS_SUCCESS) {
       for (VABufferID b : slice_bufs) {
         if (b != VA_INVALID_ID) {

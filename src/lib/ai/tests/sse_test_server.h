@@ -24,14 +24,14 @@
 
 namespace {
 
-
 using tcp = asio::ip::tcp;
 using namespace std::chrono_literals;
 
-const char* const kSseHead = "HTTP/1.1 200 OK\r\n"
-                             "Content-Type: text/event-stream\r\n"
-                             "Cache-Control: no-cache\r\n"
-                             "Connection: close\r\n\r\n";
+const char* const kSseHead =
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: text/event-stream\r\n"
+    "Cache-Control: no-cache\r\n"
+    "Connection: close\r\n\r\n";
 
 struct Step {
   std::string bytes;
@@ -42,7 +42,8 @@ struct Step {
 // (or holds the connection open). Records the request and whether the client disconnected.
 class SseTestServer {
 public:
-  SseTestServer(std::vector<Step> steps, bool hold_open) : steps_(std::move(steps)), hold_open_(hold_open), acceptor_(io_) {
+  SseTestServer(std::vector<Step> steps, bool hold_open)
+      : steps_(std::move(steps)), hold_open_(hold_open), acceptor_(io_) {
     const tcp::endpoint endpoint(asio::ip::address_v4::loopback(), 0);
     acceptor_.open(endpoint.protocol());
     acceptor_.bind(endpoint);
@@ -61,8 +62,12 @@ public:
 
   std::string Url() const { return "http://127.0.0.1:" + std::to_string(port_); }
 
-  bool WaitForRequest() { return Wait([this] { return !request_.empty(); }); }
-  bool WaitForDisconnect() { return Wait([this] { return disconnected_; }); }
+  bool WaitForRequest() {
+    return Wait([this] { return !request_.empty(); });
+  }
+  bool WaitForDisconnect() {
+    return Wait([this] { return disconnected_; });
+  }
 
   std::string Request() {
     std::lock_guard lock(mutex_);
@@ -188,8 +193,10 @@ private:
 };
 
 std::string HttpError(int status, const std::string& reason, const std::string& body) {
-  return "HTTP/1.1 " + std::to_string(status) + " " + reason + "\r\nContent-Type: application/json\r\n"
-         "Content-Length: " + std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+  return "HTTP/1.1 " + std::to_string(status) + " " + reason +
+         "\r\nContent-Type: application/json\r\n"
+         "Content-Length: " +
+         std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
 }
 
 } // namespace

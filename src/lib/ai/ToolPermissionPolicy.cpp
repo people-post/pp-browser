@@ -58,8 +58,8 @@ ToolPermissionEval ToolPermissionPolicy::Evaluate(const std::string& tool_name, 
   } else if (out.risk == "destructive") {
     default_decision = prefs.default_destructive;
   }
-  out.verdict = ParseDecision(default_decision, out.risk == "read" ? ToolPermissionVerdict::Allow
-                                                                  : ToolPermissionVerdict::Ask);
+  out.verdict =
+      ParseDecision(default_decision, out.risk == "read" ? ToolPermissionVerdict::Allow : ToolPermissionVerdict::Ask);
   out.source = "default";
 
   // Fail closed for mutating tools with empty/unknown defaults.

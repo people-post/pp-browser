@@ -34,11 +34,11 @@ std::string StatusText(const char* what, const OSStatus status) {
 // The PIN grace key uses WhenUnlockedThisDeviceOnly: not readable while the phone is locked (#21 phase 1).
 CFStringRef AccessLevel(const SecureBlobAccess access) {
   switch (access) {
-  case SecureBlobAccess::kWhenUnlocked:
-  case SecureBlobAccess::kBiometryCurrentSet: // written through WriteBiometryBound (an access control, not this)
-    return kSecAttrAccessibleWhenUnlockedThisDeviceOnly;
-  case SecureBlobAccess::kAfterFirstUnlock:
-    break;
+    case SecureBlobAccess::kWhenUnlocked:
+    case SecureBlobAccess::kBiometryCurrentSet: // written through WriteBiometryBound (an access control, not this)
+      return kSecAttrAccessibleWhenUnlockedThisDeviceOnly;
+    case SecureBlobAccess::kAfterFirstUnlock:
+      break;
   }
   return kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly;
 }
@@ -96,28 +96,28 @@ pbr::SecureBlobLookup LookupItem(const std::string& name, LAContext* context) {
   const OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
   pbr::SecureBlobLookup out;
   switch (MapKeychainStatus(static_cast<int32_t>(status))) {
-  case KeychainLookup::Found:
-    if (result != nullptr && CFGetTypeID(result) == CFDataGetTypeID()) {
-      CFDataRef data = static_cast<CFDataRef>(result);
-      const UInt8* begin = CFDataGetBytePtr(data);
-      out.bytes.assign(begin, begin + CFDataGetLength(data));
-      out.status = pbr::SecureBlobLookup::Status::Found;
-    } else {
-      out.status = pbr::SecureBlobLookup::Status::Unavailable;  // success without data: unexpected, keep it
+    case KeychainLookup::Found:
+      if (result != nullptr && CFGetTypeID(result) == CFDataGetTypeID()) {
+        CFDataRef data = static_cast<CFDataRef>(result);
+        const UInt8* begin = CFDataGetBytePtr(data);
+        out.bytes.assign(begin, begin + CFDataGetLength(data));
+        out.status = pbr::SecureBlobLookup::Status::Found;
+      } else {
+        out.status = pbr::SecureBlobLookup::Status::Unavailable; // success without data: unexpected, keep it
+        out.code = status;
+      }
+      break;
+    case KeychainLookup::Missing:
+      out.status = pbr::SecureBlobLookup::Status::Missing;
+      break;
+    case KeychainLookup::Unavailable:
+      out.status = pbr::SecureBlobLookup::Status::Unavailable;
       out.code = status;
-    }
-    break;
-  case KeychainLookup::Missing:
-    out.status = pbr::SecureBlobLookup::Status::Missing;
-    break;
-  case KeychainLookup::Unavailable:
-    out.status = pbr::SecureBlobLookup::Status::Unavailable;
-    out.code = status;
-    break;
-  case KeychainLookup::Canceled:
-    out.status = pbr::SecureBlobLookup::Status::Canceled;
-    out.code = status;
-    break;
+      break;
+    case KeychainLookup::Canceled:
+      out.status = pbr::SecureBlobLookup::Status::Canceled;
+      out.code = status;
+      break;
   }
   if (result != nullptr) {
     CFRelease(result);

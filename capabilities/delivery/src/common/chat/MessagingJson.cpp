@@ -138,12 +138,12 @@ Object BuildRouteObject(const RelayEnvelope& envelope) {
 
 std::string ThreadKindToString(const ThreadKind kind) {
   switch (kind) {
-  case ThreadKind::Ai:
-    return "ai";
-  case ThreadKind::Direct:
-    return "direct";
-  case ThreadKind::Group:
-    return "group";
+    case ThreadKind::Ai:
+      return "ai";
+    case ThreadKind::Direct:
+      return "direct";
+    case ThreadKind::Group:
+      return "group";
   }
   return "ai";
 }
@@ -160,14 +160,14 @@ ThreadKind ThreadKindFromString(const std::string& value) {
 
 std::string MessageDeliveryToString(const MessageDelivery delivery) {
   switch (delivery) {
-  case MessageDelivery::Local:
-    return "local";
-  case MessageDelivery::Pending:
-    return "pending";
-  case MessageDelivery::Relayed:
-    return "relayed";
-  case MessageDelivery::Failed:
-    return "failed";
+    case MessageDelivery::Local:
+      return "local";
+    case MessageDelivery::Pending:
+      return "pending";
+    case MessageDelivery::Relayed:
+      return "relayed";
+    case MessageDelivery::Failed:
+      return "failed";
   }
   return "local";
 }
@@ -187,12 +187,12 @@ MessageDelivery MessageDeliveryFromString(const std::string& value) {
 
 std::string MessageTransportToString(const MessageTransport transport) {
   switch (transport) {
-  case MessageTransport::Relay:
-    return "relay";
-  case MessageTransport::Direct:
-    return "direct";
-  case MessageTransport::Local:
-    return "local";
+    case MessageTransport::Relay:
+      return "relay";
+    case MessageTransport::Direct:
+      return "direct";
+    case MessageTransport::Local:
+      return "local";
   }
   return "local";
 }
@@ -386,7 +386,7 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (!version_opt) {
     return Error("Missing envelope_version");
   }
-  if (*version_opt != kRelayEnvelopeVersion) {  // compared before narrowing
+  if (*version_opt != kRelayEnvelopeVersion) { // compared before narrowing
     return Error("Unsupported envelope_version");
   }
   const int version = kRelayEnvelopeVersion;
@@ -450,7 +450,7 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   envelope.sender_relay_id = *sender_relay_id;
   envelope.sender_contact_id = *sender_contact_id;
   envelope.sender_device = *sender_device;
-  bool introduces = false;  // a session opener or an account copy: the sender's card may ride it
+  bool introduces = false; // a session opener or an account copy: the sender's card may ride it
   std::set<std::string> devices;
   for (const Value& item : copies->elements) {
     const Object* row = asObject(item);
@@ -463,7 +463,7 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
     auto seq = row->getNonNegInt("sender_seq");
     auto payload = row->getString("payload_b64");
     if (!epoch || *epoch > UINT32_MAX || !seq || !payload || payload->empty()) {
-      return Error("Invalid body.e2e.copies entry");  // out of range is rejected, not truncated
+      return Error("Invalid body.e2e.copies entry"); // out of range is rejected, not truncated
     }
     if (!devices.insert(copy.recipient_device).second) {
       return Error("Two copies for one device");
@@ -483,7 +483,7 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   }
   if (envelope.body.e2e.copies.size() == 1) {
     const RelayCopy only = envelope.body.e2e.copies.front();
-    envelope = ViewRelayCopy(std::move(envelope), only);  // a single copy reads as itself
+    envelope = ViewRelayCopy(std::move(envelope), only); // a single copy reads as itself
   }
   if (auto card_at = e2e->getIf<int64_t>("sender_card_at"); card_at && *card_at > 0) {
     envelope.body.e2e.sender_card_at = *card_at;
@@ -498,7 +498,7 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
     if (sender_card->getString("account_id").value_or("") != envelope.sender_contact_id) {
       return Error("Invalid body.e2e.sender_card");
     }
-    envelope.body.e2e.sender_card = *sender_card;  // the receiver checks it (VerifyAccountCard)
+    envelope.body.e2e.sender_card = *sender_card; // the receiver checks it (VerifyAccountCard)
   }
 
   if (auto kind = route->getString("kind")) {
@@ -519,7 +519,7 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   } else if (envelope.route.kind == "group") {
     envelope.route.channel = ThreadChannel::None;
   } else if (envelope.route.kind == kRelayRouteControl) {
-    envelope.route.channel = ThreadChannel::E2ePublic;  // the lane rides the e2e_public session
+    envelope.route.channel = ThreadChannel::E2ePublic; // the lane rides the e2e_public session
   } else if (auto channel_value = route->getString("channel")) {
     envelope.route.channel = ThreadChannelFromString(*channel_value);
   }
@@ -725,9 +725,8 @@ Roe<ChatHistoryRequest> ChatHistoryRequestFromJson(const Object& json) {
 }
 
 std::string StreamHistoryRequestToQueryString(const ChatHistoryRequest& request) {
-  const std::string stream_key =
-      BuildCanonicalRelayStreamKey(request.requester_identity_value, request.peer_identity_value, request.channel,
-                                 request.session_epoch);
+  const std::string stream_key = BuildCanonicalRelayStreamKey(
+      request.requester_identity_value, request.peer_identity_value, request.channel, request.session_epoch);
   std::ostringstream out;
   bool first = true;
   auto append = [&](const char* key, const std::string& value) {
@@ -878,12 +877,12 @@ Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const Object& json) {
 
 std::string ChatBlobOpToString(const ChatBlobOp op) {
   switch (op) {
-  case ChatBlobOp::Fetch:
-    return "fetch";
-  case ChatBlobOp::Push:
-    return "push";
-  case ChatBlobOp::FetchPublic:
-    return "fetch_public";
+    case ChatBlobOp::Fetch:
+      return "fetch";
+    case ChatBlobOp::Push:
+      return "push";
+    case ChatBlobOp::FetchPublic:
+      return "fetch_public";
   }
   return "fetch";
 }

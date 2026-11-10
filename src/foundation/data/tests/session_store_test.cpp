@@ -13,16 +13,13 @@ namespace {
 
 std::string UniquePath(const char* prefix) {
   const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
-  return (std::filesystem::temp_directory_path() /
-          (std::string(prefix) + std::to_string(now)))
-      .string();
+  return (std::filesystem::temp_directory_path() / (std::string(prefix) + std::to_string(now))).string();
 }
 
 } // namespace
 
 TEST(SessionStoreTest, SavesAndReloadsConfigAndProfilePreferences) {
-  const std::string config_path =
-      UniquePath("pp_browser_session_store_test_") + ".json";
+  const std::string config_path = UniquePath("pp_browser_session_store_test_") + ".json";
   const std::string profile_dir = UniquePath("pp_browser_session_store_profile_");
   const std::string data_dir = UniquePath("pp_browser_session_store_data_");
 
@@ -90,8 +87,7 @@ TEST(SessionStoreTest, SavesAndReloadsConfigAndProfilePreferences) {
 }
 
 TEST(SessionStoreTest, ReloadFromDiskUsesDefaultsWhenConfigMissing) {
-  const std::string config_path =
-      UniquePath("pp_browser_session_store_missing_config_") + ".json";
+  const std::string config_path = UniquePath("pp_browser_session_store_missing_config_") + ".json";
   const std::string profile_dir = UniquePath("pp_browser_session_store_missing_profile_");
   const std::string data_dir = UniquePath("pp_browser_session_store_missing_data_");
 
@@ -111,16 +107,14 @@ TEST(SessionStoreTest, ReloadFromDiskUsesDefaultsWhenConfigMissing) {
   store.Initialize(std::move(bootstrap));
 
   EXPECT_TRUE(store.ReloadFromDisk());
-  EXPECT_EQ(store.Snapshot().config.llm.model,
-            pbr::Config::DefaultAppConfig().llm.model);
+  EXPECT_EQ(store.Snapshot().config.llm.model, pbr::Config::DefaultAppConfig().llm.model);
 
   std::filesystem::remove_all(profile_dir);
   std::filesystem::remove_all(data_dir);
 }
 
 TEST(SessionStoreTest, ReloadConfigSkipsListenerWhenUnchanged) {
-  const std::string config_path =
-      UniquePath("pp_browser_session_store_reload_unchanged_") + ".json";
+  const std::string config_path = UniquePath("pp_browser_session_store_reload_unchanged_") + ".json";
   const std::string profile_dir = UniquePath("pp_browser_session_store_reload_unchanged_profile_");
   const std::string data_dir = UniquePath("pp_browser_session_store_reload_unchanged_data_");
 
@@ -159,8 +153,7 @@ TEST(SessionStoreTest, ReloadConfigSkipsListenerWhenUnchanged) {
 }
 
 TEST(SessionStoreTest, ProfilePrefsListenerFiresOnRelevantChange) {
-  const std::string config_path =
-      UniquePath("pp_browser_session_store_prefs_listener_") + ".json";
+  const std::string config_path = UniquePath("pp_browser_session_store_prefs_listener_") + ".json";
   const std::string profile_dir = UniquePath("pp_browser_session_store_prefs_listener_profile_");
   const std::string data_dir = UniquePath("pp_browser_session_store_prefs_listener_data_");
 
@@ -185,8 +178,7 @@ TEST(SessionStoreTest, ProfilePrefsListenerFiresOnRelevantChange) {
     ++prefs_notify;
     last_policy = prefs.group_invite_policy;
   });
-  store.AddAppearanceListener(
-      [&](const std::string&) { ++appearance_notify; });
+  store.AddAppearanceListener([&](const std::string&) { ++appearance_notify; });
 
   pbr::ProfilePreferences prefs = store.Snapshot().profile_prefs;
   EXPECT_TRUE(store.SaveProfilePrefs(prefs));

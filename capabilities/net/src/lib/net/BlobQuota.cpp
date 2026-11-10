@@ -23,8 +23,7 @@ Roe<std::string> RequireRelayUserId(const std::string& relay_user_id) {
 } // namespace
 
 bool IsBlobQuotaError(const Error& err) {
-  return AppError::CategoryOf(err) == ErrorCategory::Blob &&
-         err.code == static_cast<int32_t>(Err::Blob::QuotaExceeded);
+  return AppError::CategoryOf(err) == ErrorCategory::Blob && err.code == static_cast<int32_t>(Err::Blob::QuotaExceeded);
 }
 
 bool IsRelayFileQuotaError(const Error& err) {

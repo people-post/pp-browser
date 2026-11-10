@@ -73,22 +73,22 @@ Roe<void> PushDeviceCoordinator::Unregister(ConversationsHub& hub) {
 
 void PushDeviceCoordinator::OnBackendSwitchPending(ConversationsHub& hub, const bool pending) {
   switch (hub.PushGate().OnSwitchPending(pending)) {
-  case PushBindingGate::Action::Unbind:
-    AppRuntime::PostWorkerNormal([&hub]() {
-      auto unbound = Unregister(hub);
-      if (!unbound) {
-        PushLog().warning << "Push unbind on the old backend failed: " << AppError::Log(unbound.error());
-      }
-      if (hub.PushGate().OnUnbound(static_cast<bool>(unbound))) {
-        (void)Register(hub);
-      }
-    });
-    break;
-  case PushBindingGate::Action::Rebind:
-    AppRuntime::PostWorkerNormal([&hub]() { (void)Register(hub); });
-    break;
-  case PushBindingGate::Action::None:
-    break;
+    case PushBindingGate::Action::Unbind:
+      AppRuntime::PostWorkerNormal([&hub]() {
+        auto unbound = Unregister(hub);
+        if (!unbound) {
+          PushLog().warning << "Push unbind on the old backend failed: " << AppError::Log(unbound.error());
+        }
+        if (hub.PushGate().OnUnbound(static_cast<bool>(unbound))) {
+          (void)Register(hub);
+        }
+      });
+      break;
+    case PushBindingGate::Action::Rebind:
+      AppRuntime::PostWorkerNormal([&hub]() { (void)Register(hub); });
+      break;
+    case PushBindingGate::Action::None:
+      break;
   }
 }
 

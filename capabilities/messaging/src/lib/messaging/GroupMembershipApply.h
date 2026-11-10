@@ -86,9 +86,9 @@ struct GroupDissolvedApplied {
  * (`applied` false).
  */
 Roe<GroupDissolvedApplied> EndGroupInRoster(IGroupRosterStore& roster, const std::string& group_id,
-                                           const std::string& owner_identity, uint64_t roster_epoch,
-                                           const std::string& statement_json = {},
-                                           const std::vector<PendingGroupSend>& sends = {});
+                                            const std::string& owner_identity, uint64_t roster_epoch,
+                                            const std::string& statement_json = {},
+                                            const std::vector<PendingGroupSend>& sends = {});
 
 /**
  * Apply a dissolve statement (G016) however it reached us — the owner's DM, a member's answer to our member check,

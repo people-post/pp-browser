@@ -46,7 +46,7 @@ protected:
       std::error_code ec;
       socket.read_some(asio::buffer(&byte, 1), ec);
       if (ec && ec != asio::error::would_block) {
-        return true;  // eof / reset: closed
+        return true; // eof / reset: closed
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -72,7 +72,7 @@ TEST_F(StatusHttpServerTest, PastTheCapANewConnectionIsRefusedAndTheServerRecove
   for (int i = 0; i < 64; ++i) {
     held.push_back(Connect());
   }
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));  // the server has accepted them
+  std::this_thread::sleep_for(std::chrono::milliseconds(200)); // the server has accepted them
   auto over = Connect();
   EXPECT_TRUE(ClosedWithin(*over, std::chrono::milliseconds(1000)));
 

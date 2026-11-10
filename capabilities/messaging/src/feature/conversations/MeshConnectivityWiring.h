@@ -81,10 +81,10 @@ private:
   mesh::MeshConnectivity& connectivity_;
   /** Pushes in order: each reads the inputs as of its turn, so an older one never lands last. */
   std::mutex push_mu_;
-  MeshConnectivityWiringInputs inputs_;  // push_mu_
+  MeshConnectivityWiringInputs inputs_; // push_mu_
   /** Read inside the bound push: one that saw it set is still running when Stop waits. */
   std::atomic<bool> started_{false};
-  uint64_t refresh_timer_ = 0;  // hub's thread
+  uint64_t refresh_timer_ = 0; // hub's thread
   pp::Lifetime lifetime_;
 };
 

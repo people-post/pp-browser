@@ -32,9 +32,8 @@ public:
   static Roe<ChatHistoryResponse> Serve(IThreadStore& store, IPeerSessionStore& psk_store,
                                         const ChatHistoryRequest& request, const std::string& local_relay_user_id,
                                         const std::string& local_account_id, const std::string& local_device,
-                                        const SignBytesFn& sign_bytes,
-                                        const std::string& remote_peer_id, IPeerSigningKeyResolver& signing_keys,
-                                        int64_t now_ms);
+                                        const SignBytesFn& sign_bytes, const std::string& remote_peer_id,
+                                        IPeerSigningKeyResolver& signing_keys, int64_t now_ms);
 };
 
 } // namespace pbr

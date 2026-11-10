@@ -6,7 +6,8 @@
 namespace pbr {
 namespace {
 
-BackendClientSet::Endpoints At(const std::string& relay, const std::string& directory, const std::string& registration) {
+BackendClientSet::Endpoints At(const std::string& relay, const std::string& directory,
+                               const std::string& registration) {
   BackendClientSet::Endpoints endpoints;
   endpoints.relay.base_url = relay;
   endpoints.directory.base_url = directory;

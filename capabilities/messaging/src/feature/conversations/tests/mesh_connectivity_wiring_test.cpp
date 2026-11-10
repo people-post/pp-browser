@@ -55,7 +55,7 @@ protected:
   }
 
   MeshConnectivityWiringInputs Inputs(const bool trusted_only) {
-    MeshConfig cfg;  // as the app hands it over: normalized, here with two org seeds
+    MeshConfig cfg; // as the app hands it over: normalized, here with two org seeds
     cfg.bootstrap_peers = OrgSeeds();
     cfg.trusted_relays_only = trusted_only;
     MeshConnectivityWiringInputs in;

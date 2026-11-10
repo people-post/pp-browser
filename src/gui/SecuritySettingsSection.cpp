@@ -90,8 +90,7 @@ void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, 
   state.call_invite_policy_label = CallInvitePolicyDisplayLabel(state.call_invite_policy);
   state.crash_reports_enabled = bootstrap.profile_prefs.crash_reports_enabled ? "on" : "off";
   state.tool_permissions_summary = ToolPermissionsSummaryLabel(bootstrap.profile_prefs.tool_permissions);
-  state.tool_permissions_has_saved =
-      RememberedToolPermissionCount(bootstrap.profile_prefs.tool_permissions) > 0;
+  state.tool_permissions_has_saved = RememberedToolPermissionCount(bootstrap.profile_prefs.tool_permissions) > 0;
   state.unlock_grace_minutes = bootstrap.profile_prefs.unlock_grace_minutes;
   state.unlock_grace_label = UnlockGraceDisplayLabel(state.unlock_grace_minutes);
 
@@ -138,14 +137,12 @@ void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, 
   state.security_biometric_label = BiometricSwitchLabel(biometric_kind);
 }
 
-bool SecuritySettingsSection::IsPersisted(const SettingsUiState& state,
-                                          const BootstrapResult& bootstrap) const {
+bool SecuritySettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {
   const bool invites_match = state.group_invite_policy == bootstrap.profile_prefs.group_invite_policy &&
                              state.call_invite_policy == bootstrap.profile_prefs.call_invite_policy;
-  const bool crash_match =
-      (state.crash_reports_enabled == "on") == bootstrap.profile_prefs.crash_reports_enabled;
-  const bool tools_match = state.tool_permissions_summary ==
-                           ToolPermissionsSummaryLabel(bootstrap.profile_prefs.tool_permissions);
+  const bool crash_match = (state.crash_reports_enabled == "on") == bootstrap.profile_prefs.crash_reports_enabled;
+  const bool tools_match =
+      state.tool_permissions_summary == ToolPermissionsSummaryLabel(bootstrap.profile_prefs.tool_permissions);
   const bool grace_match = state.unlock_grace_minutes == bootstrap.profile_prefs.unlock_grace_minutes;
   return invites_match && crash_match && tools_match && grace_match;
 }

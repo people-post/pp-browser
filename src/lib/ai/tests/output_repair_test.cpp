@@ -16,8 +16,7 @@ TEST(OutputRepairTest, BuildsSynthesisAndRepairPrompts) {
   EXPECT_NE(synthesis.find("Why is the Fed raising rates?"), std::string::npos);
   EXPECT_NE(synthesis.find("Answer directly."), std::string::npos);
 
-  const std::string repair =
-      pbr::PromptBuilder::BuildOutputRepairPrompt(plan, "bad json", "missing blocks array");
+  const std::string repair = pbr::PromptBuilder::BuildOutputRepairPrompt(plan, "bad json", "missing blocks array");
   EXPECT_NE(repair.find("missing blocks array"), std::string::npos);
   EXPECT_NE(repair.find("bad json"), std::string::npos);
 }

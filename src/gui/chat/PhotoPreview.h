@@ -19,8 +19,7 @@ inline constexpr const char* kPhotoPreviewMountId = "shell-photo-mount";
 inline std::string PhotoPreviewRml(const std::string& local_path) {
   return "<div class=\"photo-preview\" data-model=\"window\" data-event-click=\"photo_preview_close()\">"
          "<img class=\"photo-preview-image\" src=\"" +
-         StructuredTextParser::EscapeText(local_path) +
-         "\"/><div class=\"photo-preview-spinner\"></div></div>";
+         StructuredTextParser::EscapeText(local_path) + "\"/><div class=\"photo-preview-spinner\"></div></div>";
 }
 
 /** The "Opening..." toast is only for a non-picture above the direct size (decrypting it takes a moment). */

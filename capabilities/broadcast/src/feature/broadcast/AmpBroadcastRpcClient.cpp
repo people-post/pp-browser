@@ -48,8 +48,7 @@ ResponseT TakeAs(BroadcastRpcMessage&& msg) {
 template <typename ResponseT>
 void SendAndAwait(const std::shared_ptr<State>& state, const std::string& peer_key, uint32_t channel_id,
                   const std::string& request_json, const char* expect_label, Clock::time_point deadline,
-                  const std::shared_ptr<std::atomic<bool>>& settled,
-                  const std::function<void(Roe<ResponseT>)>& finish,
+                  const std::shared_ptr<std::atomic<bool>>& settled, const std::function<void(Roe<ResponseT>)>& finish,
                   const std::shared_ptr<std::shared_ptr<pp::amp::ChannelSession>>& session_holder) {
   *session_holder = state->links->BindChannel(
       peer_key, channel_id, pp::amp::ControlJsonChannelPolicy(),
@@ -80,7 +79,9 @@ void SendAndAwait(const std::shared_ptr<State>& state, const std::string& peer_k
   }
   mesh::AmpScheduleUntilSettled(
       state->post_io, state->io_pump, settled, deadline,
-      [finish]() { finish(Error("amp broadcast send timed out").WithUser(Localized("broadcast.err.control_timeout"))); },
+      [finish]() {
+        finish(Error("amp broadcast send timed out").WithUser(Localized("broadcast.err.control_timeout")));
+      },
       state->post_after);
 }
 
@@ -91,7 +92,7 @@ void RoundTripAsync(const std::shared_ptr<State>& state, const std::string& peer
   auto settled = std::make_shared<std::atomic<bool>>(false);
   auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
   std::function<void(Roe<ResponseT>)> finish = [on_done = std::move(on_done), settled,
-                                                 session_holder](Roe<ResponseT> value) {
+                                                session_holder](Roe<ResponseT> value) {
     if (settled->exchange(true, std::memory_order_acq_rel)) {
       return;
     }
@@ -113,8 +114,7 @@ void RoundTripAsync(const std::shared_ptr<State>& state, const std::string& peer
     return;
   }
   if (!IsPeerReachable(*state, peer_key)) {
-    finish(Error("Peer-direct endpoint not registered")
-               .WithUser(Localized("broadcast.err.no_peer_address")));
+    finish(Error("Peer-direct endpoint not registered").WithUser(Localized("broadcast.err.no_peer_address")));
     return;
   }
   const auto deadline = Clock::now() + timeout;
@@ -155,15 +155,14 @@ Roe<ResponseT> RoundTrip(const std::shared_ptr<State>& state, const std::string&
   auto promise = std::make_shared<std::promise<Roe<ResponseT>>>();
   auto future = promise->get_future();
   const auto deadline = Clock::now() + kRoundTripTimeout;
-  RoundTripAsync<ResponseT>(state, peer_key, std::move(request_json), expect_label,
-                            [promise](Roe<ResponseT> value) {
-                              try {
-                                promise->set_value(std::move(value));
-                              } catch (const std::future_error&) {
-                              }
-                            });
-  mesh::AmpParkUntil([&] { return future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; }, deadline,
-               state->io_pump);
+  RoundTripAsync<ResponseT>(state, peer_key, std::move(request_json), expect_label, [promise](Roe<ResponseT> value) {
+    try {
+      promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+  mesh::AmpParkUntil([&] { return future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+                     deadline, state->io_pump);
   if (future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     return Error("amp broadcast send timed out").WithUser(Localized("broadcast.err.control_timeout"));
   }
@@ -172,7 +171,8 @@ Roe<ResponseT> RoundTrip(const std::shared_ptr<State>& state, const std::string&
 
 } // namespace
 
-AmpBroadcastRpcClient::AmpBroadcastRpcClient(mesh::IChatPeerLinks& links, IoPump io_pump, IoPost post_io, IoAfter post_after)
+AmpBroadcastRpcClient::AmpBroadcastRpcClient(mesh::IChatPeerLinks& links, IoPump io_pump, IoPost post_io,
+                                             IoAfter post_after)
     : state_(std::make_shared<State>()) {
   state_->links = &links;
   state_->io_pump = std::move(io_pump);

@@ -10,13 +10,15 @@
 namespace pbr {
 namespace {
 
-const char* kCall = "call:ddc19c94-a3a1-4f57-b5e6-a22c198cb406";  // the failed call of #416
+const char* kCall = "call:ddc19c94-a3a1-4f57-b5e6-a22c198cb406"; // the failed call of #416
 
 std::vector<std::string> IphoneAdvertised() {
   // One private v4 (carrier NAT range) and fifteen global v6, as the iPhone advertised on cellular.
-  std::vector<std::string> mas = {"/ip4/10.0.0.7/udp/49733/adp/1.0.0/p2p/QmQ8NYJNCrpGNdzsafFpowL7Z5JzW1dSZzTuJfKP5piwVF"};
+  std::vector<std::string> mas = {
+      "/ip4/10.0.0.7/udp/49733/adp/1.0.0/p2p/QmQ8NYJNCrpGNdzsafFpowL7Z5JzW1dSZzTuJfKP5piwVF"};
   for (int i = 1; i <= 15; ++i) {
-    mas.push_back("/ip6/2001:db8::" + std::to_string(i) + "/udp/49733/adp/1.0.0/p2p/QmQ8NYJNCrpGNdzsafFpowL7Z5JzW1dSZzTuJfKP5piwVF");
+    mas.push_back("/ip6/2001:db8::" + std::to_string(i) +
+                  "/udp/49733/adp/1.0.0/p2p/QmQ8NYJNCrpGNdzsafFpowL7Z5JzW1dSZzTuJfKP5piwVF");
   }
   return mas;
 }
@@ -41,18 +43,20 @@ TEST(CallConnectDiagTest, NetLineSaysWhatThisDeviceCouldOffer) {
   env.relays_surface = 9;
   env.relays_connected = 4;
   env.relays_held_down = 2;
-  EXPECT_EQ(CallNetLine(kCall, true, env).str(),
-            "event=call.net call=ddc19c94 role=caller known=1 online=1 cellular=1 expensive=0 v4_private=1 v4_public=0 "
-            "v6_global=15 v6_other=0 relays=9 relays_up=4 relays_down=2 peer_state=unknown peer_fail=none peer_fails=0");
+  EXPECT_EQ(
+      CallNetLine(kCall, true, env).str(),
+      "event=call.net call=ddc19c94 role=caller known=1 online=1 cellular=1 expensive=0 v4_private=1 v4_public=0 "
+      "v6_global=15 v6_other=0 relays=9 relays_up=4 relays_down=2 peer_state=unknown peer_fail=none peer_fails=0");
 }
 
 TEST(CallConnectDiagTest, SignalLineCarriesThePeersAddressCountsAndTheWait) {
   EXPECT_EQ(CallSignalLine("invite_in", kCall, IphoneAdvertised(), 0, false).str(),
             "event=call.signal call=ddc19c94 phase=invite_in age_ms=0 implicit=0 v4_private=1 v4_public=0 v6_global=15 "
             "v6_other=0");
-  EXPECT_EQ(CallSignalLine("accept_in", kCall, {"/ip4/192.168.0.105/udp/48569/adp/1.0.0"}, 6200, false).str(),
-            "event=call.signal call=ddc19c94 phase=accept_in age_ms=6200 implicit=0 v4_private=1 v4_public=0 v6_global=0 "
-            "v6_other=0");
+  EXPECT_EQ(
+      CallSignalLine("accept_in", kCall, {"/ip4/192.168.0.105/udp/48569/adp/1.0.0"}, 6200, false).str(),
+      "event=call.signal call=ddc19c94 phase=accept_in age_ms=6200 implicit=0 v4_private=1 v4_public=0 v6_global=0 "
+      "v6_other=0");
   EXPECT_NE(CallSignalLine("accept_in", kCall, {}, -5, true).str().find("age_ms=0 implicit=1"), std::string::npos);
 }
 
@@ -104,15 +108,17 @@ TEST(CallConnectDiagTest, ResultLineOkAndGiveUp) {
   env.peer_state = mesh::PeerReachState::Down;
   env.peer_fail = mesh::PeerReachFailure::NoAnswer;
   env.peer_fails_in_row = 2;
-  EXPECT_EQ(CallResultLine(kCall, gave_up, env).str(),
-            "event=call.result call=ddc19c94 role=callee ok=0 attempts=1 ms=31000 kind=unknown family=0 err=unreachable "
-            "reach_err=not_connected why=other relays=7 relays_up=2 peer_state=down peer_fail=no_answer peer_fails=2");
+  EXPECT_EQ(
+      CallResultLine(kCall, gave_up, env).str(),
+      "event=call.result call=ddc19c94 role=callee ok=0 attempts=1 ms=31000 kind=unknown family=0 err=unreachable "
+      "reach_err=not_connected why=other relays=7 relays_up=2 peer_state=down peer_fail=no_answer peer_fails=2");
 }
 
 TEST(CallConnectDiagTest, RelayAndPunchLines) {
   const std::string relay = CallRelayLine("out", kCall, "QmXYY8waMbbuh4cpUXtKiwum8G6no8BKuEmCxFhS1hGwS1").str();
   EXPECT_EQ(relay.rfind("event=call.relay call=ddc19c94 dir=out relay=", 0), 0u);
-  EXPECT_EQ(relay.size(), std::string("event=call.relay call=ddc19c94 dir=out relay=").size() + 8) << "a short ref, not the id";
+  EXPECT_EQ(relay.size(), std::string("event=call.relay call=ddc19c94 dir=out relay=").size() + 8)
+      << "a short ref, not the id";
   EXPECT_EQ(relay.find("QmXYY8wa"), std::string::npos);
   EXPECT_EQ(CallPunchLine("burst_fail", kCall, 3000, 4, 3010).str(),
             "event=call.punch call=ddc19c94 phase=burst_fail window_ms=3000 addrs=4 ms=3010");
@@ -124,11 +130,12 @@ TEST(CallConnectDiagTest, EveryLinePassesTheSelfCheck) {
   env.local = CountAddrs(IphoneAdvertised());
   CallResultFacts facts;
   facts.attempts = 3;
-  const std::string all =
-      CallNetLine(kCall, true, env).str() + "\n" + CallSignalLine("accept_in", kCall, IphoneAdvertised(), 5, false).str() +
-      "\n" + CallReachOkLine(kCall, false, 1, mesh::PeerLinkKind::Relayed, true, 0, 7).str() + "\n" +
-      CallRelayLine("in", kCall, "QmXYY8waMbbuh4cpUXtKiwum8G6no8BKuEmCxFhS1hGwS1").str() + "\n" +
-      CallPunchLine("offer_in", kCall, 3000, 4, 0).str() + "\n" + CallResultLine(kCall, facts, env).str() + "\n";
+  const std::string all = CallNetLine(kCall, true, env).str() + "\n" +
+                          CallSignalLine("accept_in", kCall, IphoneAdvertised(), 5, false).str() + "\n" +
+                          CallReachOkLine(kCall, false, 1, mesh::PeerLinkKind::Relayed, true, 0, 7).str() + "\n" +
+                          CallRelayLine("in", kCall, "QmXYY8waMbbuh4cpUXtKiwum8G6no8BKuEmCxFhS1hGwS1").str() + "\n" +
+                          CallPunchLine("offer_in", kCall, 3000, 4, 0).str() + "\n" +
+                          CallResultLine(kCall, facts, env).str() + "\n";
   EXPECT_EQ(SelfCheck(all, {}), std::nullopt) << all;
 }
 
@@ -148,5 +155,5 @@ TEST(CallDiagBudgetTest, CapsEachEventPerCallAndForgetsOldCalls) {
   EXPECT_TRUE(budget.Allow("call:aaaaaaaa11", CallDiagEvent::Reach)) << "its room started over";
 }
 
-}  // namespace
-}  // namespace pbr
+} // namespace
+} // namespace pbr

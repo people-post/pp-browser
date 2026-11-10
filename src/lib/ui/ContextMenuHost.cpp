@@ -192,7 +192,8 @@ void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuA
   for (size_t i = 0; i < actions.size(); ++i) {
     const ContextMenuAction& action = actions[i];
     const bool enabled = !action.enabled || action.enabled();
-    if (!enabled || (filter == ActionFilter::Quick && !action.quick) || (filter == ActionFilter::List && action.quick)) {
+    if (!enabled || (filter == ActionFilter::Quick && !action.quick) ||
+        (filter == ActionFilter::List && action.quick)) {
       continue;
     }
     out << "<button class=\"context-menu-item";
@@ -204,8 +205,8 @@ void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuA
     }
     out << "\" type=\"button\" data-item-index=\"" << i << "\">";
     if (!action.icon.empty()) {
-      out << "<div class=\"context-menu-item-icon\"><svg src=\"" << action.icon
-          << "\" width=\"" << icon_dp << "\" height=\"" << icon_dp << "\" crop-to-content=\"true\"></svg></div>";
+      out << "<div class=\"context-menu-item-icon\"><svg src=\"" << action.icon << "\" width=\"" << icon_dp
+          << "\" height=\"" << icon_dp << "\" crop-to-content=\"true\"></svg></div>";
     }
     // Labels carry names people typed (share targets, group members).
     AppendLabel(out, action);
@@ -278,9 +279,8 @@ void ContextMenuHost::Install(ui::Context* context) {
   }
   // A long press opens this host's menu for the pressed item; it does not start a word selection with handles.
   context_->SetTouchLongPressSelectsText(false);
-  context_->SetTouchLongPressCallback([](ui::Vector2i position, ui::Element* target) {
-    ContextMenuHost::Instance().OnLongPress(position, target);
-  });
+  context_->SetTouchLongPressCallback(
+      [](ui::Vector2i position, ui::Element* target) { ContextMenuHost::Instance().OnLongPress(position, target); });
 }
 
 void ContextMenuHost::SetCompactLayout(bool compact) {
@@ -605,8 +605,10 @@ void ContextMenuHost::LayoutActionSheet() {
     return;
   }
   context_->GetDocument(0)->UpdateDocument();
-  const float list_top = list->GetAbsoluteOffset(ui::BoxArea::Border).y - panel_->GetAbsoluteOffset(ui::BoxArea::Border).y;
-  const float max_list = std::max(2.f * 50.f * dp, static_cast<float>(dims.y) * kSheetMaxShare - list_top - kSheetBottomGapDp * dp);
+  const float list_top =
+      list->GetAbsoluteOffset(ui::BoxArea::Border).y - panel_->GetAbsoluteOffset(ui::BoxArea::Border).y;
+  const float max_list =
+      std::max(2.f * 50.f * dp, static_cast<float>(dims.y) * kSheetMaxShare - list_top - kSheetBottomGapDp * dp);
   char max_buf[32];
   std::snprintf(max_buf, sizeof(max_buf), "%.0fpx", max_list);
   list->SetProperty("max-height", max_buf);
@@ -647,9 +649,8 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
     out << "<button class=\"context-menu-sheet-close\" type=\"button\" id=\"context-menu-cancel\" title=\""
         << EscapeRml(Tr("common.close")) << "\"><span class=\"context-menu-sheet-disc\">"
         << "<svg src=\"../icons/v2/close.svg\" width=\"12\" height=\"12\"></svg></span></button>";
-    if (std::any_of(actions.begin(), actions.end(), [](const ContextMenuAction& a) {
-          return a.quick && (!a.enabled || a.enabled());
-        })) {
+    if (std::any_of(actions.begin(), actions.end(),
+                    [](const ContextMenuAction& a) { return a.quick && (!a.enabled || a.enabled()); })) {
       // The reactions scroll sideways when there are more than fit; the "+" stays at the right end.
       out << "<div class=\"context-menu-sheet-quick\"><div class=\"context-menu-sheet-quick-scroll\">";
       AppendSheetRows(out, actions, /*quick=*/true);
@@ -765,7 +766,7 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
   // A text field's menu is a row above the field, for a pointer as for a finger. On a phone any other long-press
   // menu (a chat message, a chat row) is the small sheet like every other phone menu (Kenneth 2026-11-04); the
   // desktop's stays anchored near the pointer.
-  const Presentation presentation = menu_editor_    ? Presentation::Bar
+  const Presentation presentation = menu_editor_      ? Presentation::Bar
                                     : compact_layout_ ? Presentation::ActionSheet
                                                       : Presentation::Float;
   title_ = presentation == Presentation::ActionSheet && title_resolver_ ? title_resolver_(request) : std::string();
@@ -819,16 +820,17 @@ void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenu
     // Opened from a menu item's click (Mute…, React): the first menu's DOM is still dispatching that
     // event, which is why its teardown was deferred. Tearing it down here instead would leave the
     // dangling Context::active pointers RequestDismiss() exists to avoid. Open this one from Update().
-    pending_show_ = PendingShow{position, std::move(actions), above, popover, left, std::move(on_dismissed), std::move(title)};
+    pending_show_ =
+        PendingShow{position, std::move(actions), above, popover, left, std::move(on_dismissed), std::move(title)};
     return;
   }
-  Dismiss();  // a menu still open went away without a choice: its notice runs in there
+  Dismiss(); // a menu still open went away without a choice: its notice runs in there
   float_above_ = above;
   float_popover_ = popover;
   float_left_ = left;
   if (!context_ || actions.empty()) {
     if (on_dismissed) {
-      on_dismissed();  // nothing was shown, so nothing can be chosen
+      on_dismissed(); // nothing was shown, so nothing can be chosen
     }
     return;
   }
@@ -873,8 +875,7 @@ void ContextMenuHost::Dismiss() {
   const std::function<void()> dismissed = std::exchange(on_dismissed_, nullptr);
   const bool restore_focus = restore_focus_on_dismiss_;
   restore_focus_on_dismiss_ = false;
-  ui::ObserverPtr<ui::Element> restore =
-      restore_focus ? std::move(focus_restore_) : ui::ObserverPtr<ui::Element>();
+  ui::ObserverPtr<ui::Element> restore = restore_focus ? std::move(focus_restore_) : ui::ObserverPtr<ui::Element>();
   focus_restore_ = nullptr;
   // Capture and clear before RemoveEventListener: DetachEvent invokes OnDetach, which
   // would otherwise null layer_ mid-function and crash the second RemoveEventListener.
@@ -983,7 +984,7 @@ void ContextMenuHost::HandleMenuAction(int index) {
   ui::Context* action_context = menu_context_ ? menu_context_ : context_;
   // Copy run callback before deferred dismiss clears active_actions_.
   const std::function<void()> run = action.run;
-  on_dismissed_ = nullptr;  // chosen, not dismissed
+  on_dismissed_ = nullptr; // chosen, not dismissed
   RequestDismiss();
 
   if (run) {
@@ -1015,7 +1016,7 @@ void ContextMenuHost::ExpandSheet(const int index) {
   std::snprintf(height_buf, sizeof(height_buf), "%.0fpx", std::max(0.f, dims.y * kSheetLargeShare - BottomInsetPx()));
   panel_->SetProperty("height", height_buf);
   expand(mount, [this]() {
-    on_dismissed_ = nullptr;  // chosen, not dismissed
+    on_dismissed_ = nullptr; // chosen, not dismissed
     RequestDismiss();
   });
 }
@@ -1040,128 +1041,127 @@ bool ContextMenuHost::HandleSheetEvent(ui::Event& event) {
     return false;
   };
   switch (event.GetId()) {
-  case ui::EventId::Mousedown: {
-    sheet_swallow_click_ = false;
-    if (!panel_ || !inside_panel(target)) {
-      return false; // the scrim: closes as before
-    }
-    for (ui::Element* node = target; node && node != panel_; node = node->GetParentNode()) {
-      if (node->GetId() == "context-menu-cancel") {
-        return false; // the close disc: closes at once
+    case ui::EventId::Mousedown: {
+      sheet_swallow_click_ = false;
+      if (!panel_ || !inside_panel(target)) {
+        return false; // the scrim: closes as before
       }
-    }
-    sheet_tracking_ = true;
-    sheet_dragging_ = false;
-    sheet_press_target_ = target;
-    sheet_press_x_ = event.GetParameter<int>("mouse_x", 0);
-    sheet_press_y_ = event.GetParameter<int>("mouse_y", 0);
-    sheet_last_y_ = sheet_prev_y_ = sheet_press_y_;
-    sheet_last_at_ = sheet_prev_at_ = now;
-    event.StopPropagation();
-    return true;
-  }
-  case ui::EventId::Mousemove: {
-    if (!sheet_tracking_ || !panel_) {
-      return true;
-    }
-    const int x = event.GetParameter<int>("mouse_x", 0);
-    const int y = event.GetParameter<int>("mouse_y", 0);
-    const int dx = x - sheet_press_x_;
-    const int dy = y - sheet_press_y_;
-    if (!sheet_dragging_) {
-      if (std::abs(dx) <= kSheetDeadzonePx && std::abs(dy) <= kSheetDeadzonePx) {
-        return true;
-      }
-      // Moved: whatever happens next, the release is no tap on a row.
-      sheet_swallow_click_ = true;
-      sheet_swallow_since_ = now;
-      bool list_at_top = true;
-      for (ui::Element* node = sheet_press_target_; node && node != panel_; node = node->GetParentNode()) {
-        if (node->GetScrollTop() > 1.f) {
-          list_at_top = false;
+      for (ui::Element* node = target; node && node != panel_; node = node->GetParentNode()) {
+        if (node->GetId() == "context-menu-cancel") {
+          return false; // the close disc: closes at once
         }
       }
-      if (dy <= 0 || std::abs(dx) > std::abs(dy) || !list_at_top) {
-        sheet_tracking_ = false; // up, sideways, or the rows scroll back up first
-        return true;
-      }
-      sheet_dragging_ = true;
-      if (context_) {
-        // The rows must not rubber-band while the sheet itself follows the finger.
-        context_->SetScrollOverscrollEdges(true, true, false, true);
-        context_->ClearScrollOverscroll();
-      }
-    }
-    sheet_prev_y_ = sheet_last_y_;
-    sheet_prev_at_ = sheet_last_at_;
-    sheet_last_y_ = y;
-    sheet_last_at_ = now;
-    char buffer[48];
-    std::snprintf(buffer, sizeof(buffer), "translateY(%dpx)", std::max(0, dy));
-    panel_->SetClass("context-menu-sheet--dragging", true);
-    panel_->SetProperty("transform", buffer);
-    event.StopPropagation();
-    return true;
-  }
-  case ui::EventId::Mouseup: {
-    if (!sheet_tracking_) {
+      sheet_tracking_ = true;
+      sheet_dragging_ = false;
+      sheet_press_target_ = target;
+      sheet_press_x_ = event.GetParameter<int>("mouse_x", 0);
+      sheet_press_y_ = event.GetParameter<int>("mouse_y", 0);
+      sheet_last_y_ = sheet_prev_y_ = sheet_press_y_;
+      sheet_last_at_ = sheet_prev_at_ = now;
+      event.StopPropagation();
       return true;
     }
-    const bool dragged = sheet_dragging_;
-    EndSheetDrag();
-    if (!dragged || !panel_) {
-      return true;
-    }
-    sheet_swallow_click_ = true;
-    sheet_swallow_since_ = now;
-    const float dp = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
-    const float drag_px = static_cast<float>(sheet_last_y_ - sheet_press_y_);
-    const float height_px = panel_->GetBox().GetSize(ui::BoxArea::Border).y;
-    const double seconds = ToSeconds(sheet_last_at_ - sheet_prev_at_);
-    const bool recent = ToSeconds(now - sheet_last_at_) < 0.1;
-    const float speed_dp = seconds > 0.0 && recent
-                               ? static_cast<float>((sheet_last_y_ - sheet_prev_y_) / seconds) / dp
-                               : 0.f;
-    panel_->SetClass("context-menu-sheet--dragging", false);
-    if (drag_px >= height_px * kSheetDismissShare ||
-        (drag_px >= kSheetFlickMinDp * dp && speed_dp >= kSheetFlickDpPerS)) {
-      RequestDismiss(/*restore_focus=*/true);
-    } else {
-      panel_->SetProperty("transform", "translateY(0px)");
-    }
-    return true;
-  }
-  case ui::EventId::Click: {
-    if (sheet_swallow_click_) {
-      sheet_swallow_click_ = false;
-      if (now - sheet_swallow_since_ < kSheetSwallowWindow) {
-        event.StopPropagation();
+    case ui::EventId::Mousemove: {
+      if (!sheet_tracking_ || !panel_) {
         return true;
       }
+      const int x = event.GetParameter<int>("mouse_x", 0);
+      const int y = event.GetParameter<int>("mouse_y", 0);
+      const int dx = x - sheet_press_x_;
+      const int dy = y - sheet_press_y_;
+      if (!sheet_dragging_) {
+        if (std::abs(dx) <= kSheetDeadzonePx && std::abs(dy) <= kSheetDeadzonePx) {
+          return true;
+        }
+        // Moved: whatever happens next, the release is no tap on a row.
+        sheet_swallow_click_ = true;
+        sheet_swallow_since_ = now;
+        bool list_at_top = true;
+        for (ui::Element* node = sheet_press_target_; node && node != panel_; node = node->GetParentNode()) {
+          if (node->GetScrollTop() > 1.f) {
+            list_at_top = false;
+          }
+        }
+        if (dy <= 0 || std::abs(dx) > std::abs(dy) || !list_at_top) {
+          sheet_tracking_ = false; // up, sideways, or the rows scroll back up first
+          return true;
+        }
+        sheet_dragging_ = true;
+        if (context_) {
+          // The rows must not rubber-band while the sheet itself follows the finger.
+          context_->SetScrollOverscrollEdges(true, true, false, true);
+          context_->ClearScrollOverscroll();
+        }
+      }
+      sheet_prev_y_ = sheet_last_y_;
+      sheet_prev_at_ = sheet_last_at_;
+      sheet_last_y_ = y;
+      sheet_last_at_ = now;
+      char buffer[48];
+      std::snprintf(buffer, sizeof(buffer), "translateY(%dpx)", std::max(0, dy));
+      panel_->SetClass("context-menu-sheet--dragging", true);
+      panel_->SetProperty("transform", buffer);
+      event.StopPropagation();
+      return true;
     }
-    if (!target || !inside_panel(target)) {
-      return false;
+    case ui::EventId::Mouseup: {
+      if (!sheet_tracking_) {
+        return true;
+      }
+      const bool dragged = sheet_dragging_;
+      EndSheetDrag();
+      if (!dragged || !panel_) {
+        return true;
+      }
+      sheet_swallow_click_ = true;
+      sheet_swallow_since_ = now;
+      const float dp = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
+      const float drag_px = static_cast<float>(sheet_last_y_ - sheet_press_y_);
+      const float height_px = panel_->GetBox().GetSize(ui::BoxArea::Border).y;
+      const double seconds = ToSeconds(sheet_last_at_ - sheet_prev_at_);
+      const bool recent = ToSeconds(now - sheet_last_at_) < 0.1;
+      const float speed_dp =
+          seconds > 0.0 && recent ? static_cast<float>((sheet_last_y_ - sheet_prev_y_) / seconds) / dp : 0.f;
+      panel_->SetClass("context-menu-sheet--dragging", false);
+      if (drag_px >= height_px * kSheetDismissShare ||
+          (drag_px >= kSheetFlickMinDp * dp && speed_dp >= kSheetFlickDpPerS)) {
+        RequestDismiss(/*restore_focus=*/true);
+      } else {
+        panel_->SetProperty("transform", "translateY(0px)");
+      }
+      return true;
     }
-    for (ui::Element* node = target; node && node != panel_; node = node->GetParentNode()) {
-      if (node->GetId() == "context-menu-cancel") {
+    case ui::EventId::Click: {
+      if (sheet_swallow_click_) {
+        sheet_swallow_click_ = false;
+        if (now - sheet_swallow_since_ < kSheetSwallowWindow) {
+          event.StopPropagation();
+          return true;
+        }
+      }
+      if (!target || !inside_panel(target)) {
         return false;
       }
-      if (node->GetId() == "context-menu-sheet-expand") {
-        return true;  // the expanded body's own buttons take their clicks
+      for (ui::Element* node = target; node && node != panel_; node = node->GetParentNode()) {
+        if (node->GetId() == "context-menu-cancel") {
+          return false;
+        }
+        if (node->GetId() == "context-menu-sheet-expand") {
+          return true; // the expanded body's own buttons take their clicks
+        }
       }
+      const int index = FindMenuItemIndex(target);
+      if (index >= 0 && index < static_cast<int>(active_actions_.size()) &&
+          active_actions_[static_cast<size_t>(index)].expand) {
+        ExpandSheet(index);
+      } else if (index >= 0) {
+        HandleMenuAction(index);
+      }
+      event.StopPropagation();
+      return true;
     }
-    const int index = FindMenuItemIndex(target);
-    if (index >= 0 && index < static_cast<int>(active_actions_.size()) &&
-        active_actions_[static_cast<size_t>(index)].expand) {
-      ExpandSheet(index);
-    } else if (index >= 0) {
-      HandleMenuAction(index);
-    }
-    event.StopPropagation();
-    return true;
-  }
-  default:
-    return false;
+    default:
+      return false;
   }
 }
 

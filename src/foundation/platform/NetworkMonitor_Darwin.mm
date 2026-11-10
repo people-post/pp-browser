@@ -21,7 +21,7 @@ std::string AddressText(const sockaddr* addr) {
   char buf[INET6_ADDRSTRLEN] = {};
   if (addr->sa_family == AF_INET) {
     const auto* v4 = reinterpret_cast<const sockaddr_in*>(addr);
-    if ((ntohl(v4->sin_addr.s_addr) >> 16) == 0xa9fe) {  // 169.254/16 link-local
+    if ((ntohl(v4->sin_addr.s_addr) >> 16) == 0xa9fe) { // 169.254/16 link-local
       return {};
     }
     inet_ntop(AF_INET, &v4->sin_addr, buf, sizeof(buf));
@@ -55,7 +55,7 @@ NetworkState Snapshot(nw_path_t path) {
   state.tunnel_only = !wifi && !cellular && !wired;
   state.expensive = nw_path_is_expensive(path);
   if (@available(macOS 10.15, iOS 13.0, *)) {
-    state.expensive = state.expensive || nw_path_is_constrained(path);  // Low Data Mode
+    state.expensive = state.expensive || nw_path_is_constrained(path); // Low Data Mode
   }
 
   __block std::vector<std::string> names;
@@ -84,7 +84,7 @@ NetworkState Snapshot(nw_path_t path) {
     freeifaddrs(list);
   }
   if (parts.empty()) {
-    parts = names;  // addresses unknown: interface identity only
+    parts = names; // addresses unknown: interface identity only
   }
   state.fingerprint = JoinSorted(std::move(parts));
   return state;
@@ -120,7 +120,7 @@ public:
     nw_path_monitor_cancel(monitor_);
     // Updates run on queue_: once an empty block has run there, none is running or pending.
     dispatch_sync(queue_, ^{
-    });
+                  });
     Release();
   }
 

@@ -123,8 +123,8 @@ std::string FormatCallDebugSubtitle(const CallMediaHealthView& v, int64_t now_ms
 
 struct CallDetailsCopy {
   std::string elapsed;
-  std::string path_label;     // already localized ("Direct" / "Via relay")
-  std::string quality_label;  // already localized
+  std::string path_label;    // already localized ("Direct" / "Via relay")
+  std::string quality_label; // already localized
   std::string mic_label;
   std::string incoming_label;
   std::string asymmetry_hint; // optional localized coaching
@@ -146,8 +146,7 @@ std::string FormatCallDetailsText(const CallMediaHealthView& v, int64_t now_ms, 
                                   const CallDetailsCopy& copy);
 
 /** Single-line log: `media_health call=… …`. */
-std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_ms,
-                                     const std::string& call_id);
+std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_ms, const std::string& call_id);
 
 /** CLI `--debug` ORs with profile pref (not persisted). */
 void SetCallDiagnosticsCliOverride(bool enabled);

@@ -16,18 +16,16 @@ std::string Conversation::MakeEntryId() {
   return "entry_" + std::to_string(next_entry_id_++);
 }
 
-TranscriptEntry& Conversation::AppendUser(const std::string& user_text,
-                                          std::optional<std::string> user_payload) {
+TranscriptEntry& Conversation::AppendUser(const std::string& user_text, std::optional<std::string> user_payload) {
   std::lock_guard lock(mutex_);
   if (conversation_id_.empty()) {
     conversation_id_ = "conv_" + std::to_string(next_conversation_id_++);
   }
 
-  const int turn_index = static_cast<int>(std::count_if(entries_.begin(), entries_.end(),
-                                                        [](const TranscriptEntry& entry) {
-                                                          return entry.assistant_raw.has_value();
-                                                        })) +
-                         1;
+  const int turn_index =
+      static_cast<int>(std::count_if(entries_.begin(), entries_.end(),
+                                     [](const TranscriptEntry& entry) { return entry.assistant_raw.has_value(); })) +
+      1;
 
   entries_.push_back(TranscriptEntry{
       .id = MakeEntryId(),
@@ -80,9 +78,8 @@ void Conversation::SetSummary(ConversationSummary summary) {
 
 int Conversation::CompletedTurnCount() const {
   std::lock_guard lock(mutex_);
-  return static_cast<int>(std::count_if(entries_.begin(), entries_.end(), [](const TranscriptEntry& entry) {
-    return entry.assistant_raw.has_value();
-  }));
+  return static_cast<int>(std::count_if(entries_.begin(), entries_.end(),
+                                        [](const TranscriptEntry& entry) { return entry.assistant_raw.has_value(); }));
 }
 
 std::vector<TranscriptEntry> Conversation::CompletedEntries() const {

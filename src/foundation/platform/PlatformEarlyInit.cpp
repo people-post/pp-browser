@@ -21,17 +21,17 @@ namespace {
  */
 bool SDLCALL AppLifecycleWatch(void* /*userdata*/, SDL_Event* event) {
   switch (event->type) {
-  case SDL_EVENT_WILL_ENTER_BACKGROUND:
-    AppLifecycle::OnWillEnterBackground();
-    break;
-  case SDL_EVENT_DID_ENTER_BACKGROUND:
-    AppLifecycle::OnDidEnterBackground();
-    break;
-  case SDL_EVENT_DID_ENTER_FOREGROUND:
-    AppLifecycle::OnDidEnterForeground();
-    break;
-  default:
-    break;
+    case SDL_EVENT_WILL_ENTER_BACKGROUND:
+      AppLifecycle::OnWillEnterBackground();
+      break;
+    case SDL_EVENT_DID_ENTER_BACKGROUND:
+      AppLifecycle::OnDidEnterBackground();
+      break;
+    case SDL_EVENT_DID_ENTER_FOREGROUND:
+      AppLifecycle::OnDidEnterForeground();
+      break;
+    default:
+      break;
   }
   return true;
 }
@@ -60,7 +60,7 @@ bool Platform::EarlyInit() {
     return false;
   }
 #endif
-  SDL_AddEventWatch(AppLifecycleWatch, nullptr);  // before the first pause can arrive (B127)
+  SDL_AddEventWatch(AppLifecycleWatch, nullptr); // before the first pause can arrive (B127)
   return true;
 }
 

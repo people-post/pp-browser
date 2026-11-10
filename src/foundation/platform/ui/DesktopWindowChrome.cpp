@@ -81,8 +81,7 @@ bool SDLCALL TitlebarEventWatch(void* /*userdata*/, SDL_Event* event) {
   if (!window || event->button.windowID != SDL_GetWindowID(window)) {
     return true;
   }
-  if (PointInTitlebarDrag(window, static_cast<int>(event->button.x),
-                          static_cast<int>(event->button.y))) {
+  if (PointInTitlebarDrag(window, static_cast<int>(event->button.x), static_cast<int>(event->button.y))) {
     DesktopWindowChrome::ToggleMaximize();
   }
   return true;
@@ -184,8 +183,7 @@ void DesktopWindowChrome::RefreshAppearance() {
   if (!window) {
     return;
   }
-  const bool square = IsMaximized() ||
-                      ((SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0);
+  const bool square = IsMaximized() || ((SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0);
   desktop::ApplyMacWindowRoundedCorners(window, square);
 #endif
 }
@@ -203,8 +201,8 @@ void DesktopWindowChrome::Uninstall() {
 #endif
 }
 
-void DesktopWindowChrome::SetLayout(float titlebar_height_dp, float controls_width_dp,
-                                    float edge_margin_dp, bool controls_leading) {
+void DesktopWindowChrome::SetLayout(float titlebar_height_dp, float controls_width_dp, float edge_margin_dp,
+                                    bool controls_leading) {
 #if UI_SDL_VERSION_MAJOR >= 3
   if (!Enabled()) {
     return;
@@ -213,12 +211,9 @@ void DesktopWindowChrome::SetLayout(float titlebar_height_dp, float controls_wid
   if (!window) {
     return;
   }
-  g_layout.titlebar_height_win =
-      static_cast<int>(std::lround(DpToWindow(window, titlebar_height_dp)));
-  g_layout.controls_width_win =
-      static_cast<int>(std::lround(DpToWindow(window, controls_width_dp)));
-  g_layout.edge_margin_win =
-      static_cast<int>(std::lround(DpToWindow(window, edge_margin_dp)));
+  g_layout.titlebar_height_win = static_cast<int>(std::lround(DpToWindow(window, titlebar_height_dp)));
+  g_layout.controls_width_win = static_cast<int>(std::lround(DpToWindow(window, controls_width_dp)));
+  g_layout.edge_margin_win = static_cast<int>(std::lround(DpToWindow(window, edge_margin_dp)));
   g_layout.controls_leading = controls_leading;
   g_layout.titlebar_height_win = std::max(1, g_layout.titlebar_height_win);
   g_layout.controls_width_win = std::max(0, g_layout.controls_width_win);
@@ -279,8 +274,7 @@ bool DesktopWindowChrome::IsMaximized() {
 #endif
 }
 
-#if UI_SDL_VERSION_MAJOR >= 3 && !defined(_WIN32) && !defined(__APPLE__) && \
-    !defined(__ANDROID__)
+#if UI_SDL_VERSION_MAJOR >= 3 && !defined(_WIN32) && !defined(__APPLE__) && !defined(__ANDROID__)
 // GNOME X11 ignores XDG_ACTIVATION_TOKEN (SDL only consumes it on Wayland).
 // Apply the notification ActivationToken as _NET_STARTUP_ID and activate via EWMH.
 bool RaiseX11WithStartupId(SDL_Window* window, const std::string& token) {
@@ -288,10 +282,8 @@ bool RaiseX11WithStartupId(SDL_Window* window, const std::string& token) {
     return false;
   }
   const SDL_PropertiesID props = SDL_GetWindowProperties(window);
-  auto* display = static_cast<Display*>(
-      SDL_GetPointerProperty(props, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr));
-  const Window xid = static_cast<Window>(
-      SDL_GetNumberProperty(props, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+  auto* display = static_cast<Display*>(SDL_GetPointerProperty(props, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr));
+  const Window xid = static_cast<Window>(SDL_GetNumberProperty(props, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
   if (!display || xid == 0) {
     return false;
   }
@@ -299,8 +291,7 @@ bool RaiseX11WithStartupId(SDL_Window* window, const std::string& token) {
   if (!token.empty()) {
     const Atom startup_id = XInternAtom(display, "_NET_STARTUP_ID", False);
     XChangeProperty(display, xid, startup_id, XA_STRING, 8, PropModeReplace,
-                    reinterpret_cast<const unsigned char*>(token.c_str()),
-                    static_cast<int>(token.size()));
+                    reinterpret_cast<const unsigned char*>(token.c_str()), static_cast<int>(token.size()));
   }
 
   XMapRaised(display, xid);
@@ -316,8 +307,7 @@ bool RaiseX11WithStartupId(SDL_Window* window, const std::string& token) {
   ev.xclient.data.l[0] = 1; // application
   ev.xclient.data.l[1] = CurrentTime;
   ev.xclient.data.l[2] = 0;
-  XSendEvent(display, DefaultRootWindow(display), False,
-             SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+  XSendEvent(display, DefaultRootWindow(display), False, SubstructureRedirectMask | SubstructureNotifyMask, &ev);
   XFlush(display);
   return true;
 }
@@ -341,8 +331,7 @@ void DesktopWindowChrome::RaiseAndFocus() {
   // SDL Wayland RaiseWindow consumes XDG_ACTIVATION_TOKEN; GNOME Notifications
   // emit ActivationToken (startup id / xdg-activation) before ActionInvoked.
   const std::string token = desktop::TakePendingDesktopActivationToken();
-  logging::getLogger("LocalNotifier").info
-      << "RaiseAndFocus token=" << (token.empty() ? "none" : "yes");
+  logging::getLogger("LocalNotifier").info << "RaiseAndFocus token=" << (token.empty() ? "none" : "yes");
 
   if (!token.empty()) {
     SDL_setenv_unsafe("XDG_ACTIVATION_TOKEN", token.c_str(), 1);

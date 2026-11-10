@@ -71,8 +71,8 @@ TEST(MeshHopPolicyTest, DhtHopsArePublic) {
 
 TEST(MeshHopPolicyTest, CircuitOrdersContactsBeforeSeeds) {
   auto contacts = CollectContactHopCandidates({MakeContact("12D3KooWFriend")});
-  auto seeds = CollectSeedHopCandidates(
-      {"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"});
+  auto seeds =
+      CollectSeedHopCandidates({"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"});
   auto ordered = OrderCircuitHops(contacts, {}, {}, seeds, true);
   ASSERT_EQ(ordered.size(), 2u);
   EXPECT_EQ(ordered[0].peer_id, "12D3KooWFriend");
@@ -87,8 +87,8 @@ TEST(MeshHopPolicyTest, CircuitOrdersContactsDirectoryThenSeeds) {
   dir.multiaddrs = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/12D3KooWNode"};
   dir.media_relay = true;
   auto directory = CollectDirectoryHopCandidates({dir});
-  auto seeds = CollectSeedHopCandidates(
-      {"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"});
+  auto seeds =
+      CollectSeedHopCandidates({"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"});
   auto ordered = OrderCircuitHops(contacts, directory, {}, seeds, true);
   ASSERT_EQ(ordered.size(), 3u);
   EXPECT_EQ(ordered[0].peer_id, "12D3KooWFriend");
@@ -101,9 +101,8 @@ TEST(MeshHopPolicyTest, BuildCircuitHopListSkipsSeedsWhenRequested) {
   mesh::MeshDirectoryNode dir;
   dir.peer_id = "12D3KooWNode";
   dir.multiaddrs = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/12D3KooWNode"};
-  auto hops = BuildCircuitHopList({}, {dir}, {},
-                                  {"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"},
-                                  true, false);
+  auto hops = BuildCircuitHopList(
+      {}, {dir}, {}, {"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"}, true, false);
   ASSERT_EQ(hops.size(), 1u);
   EXPECT_EQ(hops[0].affinity, mesh::MeshHopAffinity::DirectoryNode);
 }
@@ -157,8 +156,8 @@ TEST(MeshHopPolicyTest, MediaRankPreferContactsOffPutsSeedsFirst) {
 
 TEST(MeshHopPolicyTest, CircuitPreferContactsOffPutsSeedsFirst) {
   auto contacts = CollectContactHopCandidates({MakeContact("12D3KooWFriend")});
-  auto seeds = CollectSeedHopCandidates(
-      {"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"});
+  auto seeds =
+      CollectSeedHopCandidates({"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"});
   auto ordered = OrderCircuitHops(contacts, {}, {}, seeds, false);
   ASSERT_EQ(ordered.size(), 2u);
   EXPECT_EQ(ordered[0].affinity, mesh::MeshHopAffinity::OrgSeed);
@@ -251,8 +250,8 @@ TEST(MeshHopPolicyTest, TrustedRelaysAreOrgSeedsAndFriendlyContacts) {
   EXPECT_FALSE(trusted.contains("12D3KooWPlain"));
 
   std::vector<mesh::MeshHopCandidate> hops;
-  for (const std::string& id : {std::string("12D3KooWPlain"), seed, std::string("12D3KooWVolunteer"),
-                                std::string("12D3KooWFriend")}) {
+  for (const std::string& id :
+       {std::string("12D3KooWPlain"), seed, std::string("12D3KooWVolunteer"), std::string("12D3KooWFriend")}) {
     mesh::MeshHopCandidate hop;
     hop.peer_id = id;
     hops.push_back(hop);

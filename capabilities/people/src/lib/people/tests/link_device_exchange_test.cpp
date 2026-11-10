@@ -23,8 +23,10 @@ ByteVector MakeDek() {
 class LinkDeviceExchangeTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    old_dir_ = std::filesystem::temp_directory_path() / ("pp_link_old_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
-    new_dir_ = std::filesystem::temp_directory_path() / ("pp_link_new_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    old_dir_ =
+        std::filesystem::temp_directory_path() / ("pp_link_old_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    new_dir_ =
+        std::filesystem::temp_directory_path() / ("pp_link_new_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
     std::filesystem::remove_all(old_dir_);
     std::filesystem::remove_all(new_dir_);
     std::filesystem::create_directories(old_dir_);

@@ -50,7 +50,7 @@ void RunBlockFlow(ChatMenusHost& host, ChatPresenter& presenter, const ContactsN
     if (!facade) {
       return;
     }
-    if (!contact_id) {  // a stranger: saved as a blocked contact
+    if (!contact_id) { // a stranger: saved as a blocked contact
       if (auto blocked = presenter.BlockStranger(peer_id); !blocked) {
         UserFeedback::Fail(Tr(blocked.error().message));
         host.NotifySurfaceChanged();
@@ -66,26 +66,34 @@ void RunBlockFlow(ChatMenusHost& host, ChatPresenter& presenter, const ContactsN
       contacts_notify.refresh();
     }
     host.ShowToast(Tr(block ? "contacts.toast.blocked" : "contacts.toast.unblocked", {{"name", name}}));
-    host.AfterThreadPrefsChanged();  // the row shows (or drops) its "Blocked" mark at once
+    host.AfterThreadPrefsChanged(); // the row shows (or drops) its "Blocked" mark at once
   };
   if (!block) {
     apply();
     return;
   }
-  host.ShowConfirm(Tr("chat.menu.block_confirm_title"), Tr("chat.menu.block_confirm_body"),
-                   [apply](const bool ok) {
-                     if (ok) {
-                       apply();
-                     }
-                   }, true);
+  host.ShowConfirm(
+      Tr("chat.menu.block_confirm_title"), Tr("chat.menu.block_confirm_body"),
+      [apply](const bool ok) {
+        if (ok) {
+          apply();
+        }
+      },
+      true);
 }
 
 ChatMenus::ChatMenus(ChatMenusHost& host, ChatPresenter& presenter, const ChatScreenState& chat,
                      WorkingSetController& working_set, const ContactsNotifyPorts& contacts_notify,
                      const EmojiPickerNotifyPorts& emoji_picker_notify, const ShellFeedbackPorts& shell_feedback,
                      const CallActionsPorts& call_actions)
-    : host_(host), presenter_(presenter), chat_(chat), working_set_(working_set), contacts_notify_(contacts_notify),
-      emoji_picker_notify_(emoji_picker_notify), shell_feedback_(shell_feedback), call_actions_(call_actions) {}
+    : host_(host),
+      presenter_(presenter),
+      chat_(chat),
+      working_set_(working_set),
+      contacts_notify_(contacts_notify),
+      emoji_picker_notify_(emoji_picker_notify),
+      shell_feedback_(shell_feedback),
+      call_actions_(call_actions) {}
 
 std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& request) {
   std::vector<ContextMenuAction> actions;
@@ -116,19 +124,23 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
     auto active = facade->GetActiveThread();
     const std::string prefix = active && active->kind == ThreadKind::Direct ? "@ai " : "";
     // The list panel closes so the composer with the quote bar is what the user sees next.
-    actions.push_back({"ask_ai_item", Tr("chat.menu.ask_ai"), nullptr, [this, shared, prefix]() {
+    actions.push_back({"ask_ai_item", Tr("chat.menu.ask_ai"), nullptr,
+                       [this, shared, prefix]() {
                          AppRuntime::PostUI([this, shared, prefix]() {
                            working_set_.Clear();
                            host_.StartQuoteReply(shared, prefix);
                          });
-                       }, "../icons/v2/sparkle.svg"});
-    actions.push_back({"copy_item", Tr("common.copy"), nullptr, [shared]() { CopyToClipboard(shared); },
-                       "../icons/v2/copy.svg"});
+                       },
+                       "../icons/v2/sparkle.svg"});
+    actions.push_back(
+        {"copy_item", Tr("common.copy"), nullptr, [shared]() { CopyToClipboard(shared); }, "../icons/v2/copy.svg"});
     const ui::Vector2i position = request.position;
     // Opened after this menu is gone: a menu cannot replace itself from inside its own click.
-    actions.push_back({"share_item", Tr("chat.menu.share"), nullptr, [this, shared, position]() {
+    actions.push_back({"share_item", Tr("chat.menu.share"), nullptr,
+                       [this, shared, position]() {
                          AppRuntime::PostUI([this, shared, position]() { OpenShareTargets(shared, position); });
-                       }, "../icons/v2/share.svg"});
+                       },
+                       "../icons/v2/share.svg"});
     return actions;
   }
 
@@ -169,21 +181,19 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   }
   if (!text.empty()) {
     // Reply: the message shows as a quote bar above the composer and is attached to the next send.
+    actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { host_.StartQuoteReply(text); },
+                       "../icons/v2/reply.svg"});
     actions.push_back(
-        {"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { host_.StartQuoteReply(text); },
-         "../icons/v2/reply.svg"});
-    actions.push_back({"copy_message", Tr("common.copy"), nullptr, [text]() { CopyToClipboard(text); },
-                       "../icons/v2/copy.svg"});
+        {"copy_message", Tr("common.copy"), nullptr, [text]() { CopyToClipboard(text); }, "../icons/v2/copy.svg"});
     // Ask AI: the message goes into the quote bar and "@ai " into the input; the user adds the question.
     if (auto active = facade->GetActiveThread(); active && active->kind == ThreadKind::Direct) {
       actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr,
                          [this, text]() { host_.StartQuoteReply(text, "@ai "); }, "../icons/v2/sparkle.svg"});
     }
   }
-  ContextMenuAction remove{"delete_message", Tr("common.delete"), nullptr,
-                           [this, message_id, position = request.position]() {
-                             OpenDeleteChoice(message_id, position);
-                           }};
+  ContextMenuAction remove{
+      "delete_message", Tr("common.delete"), nullptr,
+      [this, message_id, position = request.position]() { OpenDeleteChoice(message_id, position); }};
   remove.danger = true;
   remove.icon = "../icons/v2/trash.svg";
   actions.push_back(std::move(remove));
@@ -218,30 +228,30 @@ void ChatMenus::RunSessionSwipeAction(const std::string& thread_id, const Sessio
   // The menu offers one of each pair (pin / unpin, ...) depending on the row's state; Delete is "leave" for a group.
   const char* ids[2] = {nullptr, nullptr};
   switch (action) {
-  case SessionSwipeAction::More:
-    // The long-press menu itself (a bottom action sheet on phones).
-    ContextMenuHost::Instance().ShowActions(ui::Vector2i(0, 0), SessionActions(thread_id, ui::Vector2i(0, 0)), {},
-                                            SessionTitle(thread_id));
-    return;
-  case SessionSwipeAction::Archive:
-    ids[0] = "session_archive";
-    ids[1] = "session_unarchive";
-    break;
-  case SessionSwipeAction::Delete:
-    ids[0] = "session_delete";
-    ids[1] = "session_leave_group";
-    break;
-  case SessionSwipeAction::Pin:
-    ids[0] = "session_pin";
-    ids[1] = "session_unpin";
-    break;
-  case SessionSwipeAction::Read:
-    ids[0] = "session_mark_read";
-    ids[1] = "session_mark_unread";
-    break;
-  case SessionSwipeAction::Rename:
-    ids[0] = "session_rename"; // offered for AI conversations only
-    break;
+    case SessionSwipeAction::More:
+      // The long-press menu itself (a bottom action sheet on phones).
+      ContextMenuHost::Instance().ShowActions(ui::Vector2i(0, 0), SessionActions(thread_id, ui::Vector2i(0, 0)), {},
+                                              SessionTitle(thread_id));
+      return;
+    case SessionSwipeAction::Archive:
+      ids[0] = "session_archive";
+      ids[1] = "session_unarchive";
+      break;
+    case SessionSwipeAction::Delete:
+      ids[0] = "session_delete";
+      ids[1] = "session_leave_group";
+      break;
+    case SessionSwipeAction::Pin:
+      ids[0] = "session_pin";
+      ids[1] = "session_unpin";
+      break;
+    case SessionSwipeAction::Read:
+      ids[0] = "session_mark_read";
+      ids[1] = "session_mark_unread";
+      break;
+    case SessionSwipeAction::Rename:
+      ids[0] = "session_rename"; // offered for AI conversations only
+      break;
   }
   for (ContextMenuAction& item : SessionActions(thread_id, ui::Vector2i(0, 0))) {
     // An action with no second id (e.g. Rename) leaves ids[1] null; comparing a std::string to a null char* would
@@ -326,114 +336,113 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
     action.danger = SessionMenuItemIsDestructive(item);
     action.icon = SessionMenuIcon(item);
     switch (item) {
-    case SessionMenuItem::MarkUnread:
-      action.id = "session_mark_unread";
-      action.label = Tr("sidebar.menu.mark_unread");
-      // A mark, not a message count: the row shows a dot and keeps its place in the list.
-      action.run = [this, thread_id]() {
-        presenter_.MarkUnread(thread_id);
-        host_.AfterThreadPrefsChanged();
-      };
-      break;
-    case SessionMenuItem::MarkRead:
-      action.id = "session_mark_read";
-      action.label = Tr("sidebar.menu.mark_read");
-      action.run = [this, thread_id]() {
-        presenter_.MarkRead(thread_id);
-        host_.AfterThreadPrefsChanged();
-      };
-      break;
-    case SessionMenuItem::Pin:
-    case SessionMenuItem::Unpin:
-      action.id = item == SessionMenuItem::Pin ? "session_pin" : "session_unpin";
-      action.label = Tr(item == SessionMenuItem::Pin ? "sidebar.menu.pin" : "sidebar.menu.unpin");
-      action.run = [this, thread_id, pin = item == SessionMenuItem::Pin]() {
-        presenter_.SetPinned(thread_id, pin);
-        host_.AfterThreadPrefsChanged();
-      };
-      break;
-    case SessionMenuItem::Rename:
-      action.id = "session_rename";
-      action.label = Tr("sidebar.menu.rename");
-      action.run = [this, thread_id]() { RenameAiThread(thread_id); };
-      break;
-    case SessionMenuItem::Mute:
-      action.id = "session_mute";
-      action.label = Tr("sidebar.menu.mute");
-      action.run = [this, thread_id, position]() { OpenMute(thread_id, position); };
-      break;
-    case SessionMenuItem::Unmute:
-      action.id = "session_unmute";
-      action.label = Tr("sidebar.menu.unmute");
-      action.run = [this, thread_id]() {
-        presenter_.Unmute(thread_id);
-        host_.AfterThreadPrefsChanged();
-      };
-      break;
-    case SessionMenuItem::MuteMentions:
-    case SessionMenuItem::AllowMentions:
-      action.id = item == SessionMenuItem::MuteMentions ? "session_mute_mentions" : "session_allow_mentions";
-      action.label = Tr(item == SessionMenuItem::MuteMentions ? "sidebar.menu.mute_mentions"
-                                                              : "sidebar.menu.allow_mentions");
-      action.run = [this, thread_id, mute = item == SessionMenuItem::MuteMentions]() {
-        presenter_.SetMuteMentions(thread_id, mute);
-        host_.AfterThreadPrefsChanged();
-      };
-      break;
-    case SessionMenuItem::AskBeforeSharingAi:
-      action.id = "session_ask_before_sharing_ai";
-      action.label = Tr("sidebar.menu.ask_before_sharing_ai");
-      action.run = [this, thread_id]() {
-        presenter_.AskBeforeSharingAi(thread_id);
-        host_.AfterThreadPrefsChanged();
-      };
-      break;
-    case SessionMenuItem::Archive:
-    case SessionMenuItem::Unarchive:
-      action.id = item == SessionMenuItem::Archive ? "session_archive" : "session_unarchive";
-      action.label = Tr(item == SessionMenuItem::Archive ? "sidebar.menu.archive" : "sidebar.menu.unarchive");
-      action.run = [this, thread_id, archive = item == SessionMenuItem::Archive]() {
-        presenter_.SetArchived(thread_id, archive);
-        host_.AfterThreadPrefsChanged();
-      };
-      break;
-    case SessionMenuItem::ViewContact:
-      action.id = "session_view_contact";
-      action.label = Tr("chat.menu.view_contact");
-      action.run = [this, id = *contact_id]() {
-        if (contacts_notify_.select_contact) {
-          contacts_notify_.select_contact(id);
-        }
-      };
-      break;
-    case SessionMenuItem::Block:
-    case SessionMenuItem::Unblock: {
-      const bool block = item == SessionMenuItem::Block;
-      action.id = block ? "session_block" : "session_unblock";
-      action.label = Tr(block ? "chat.menu.block" : "chat.menu.unblock");
-      action.run = [this, id = contact_id, peer_id = thread.peer_identity_value,
-                    name = facade->ResolveThreadLabel(thread).title, block]() {
-        RunBlockFlow(host_, presenter_, contacts_notify_, id, peer_id, name, block);
-      };
-      break;
-    }
-    case SessionMenuItem::ClearChat:
-      action.id = "session_clear_chat";
-      action.label = Tr("chat.menu.clear_history");
-      action.run = [this, thread_id]() { host_.ClearHistoryOf(thread_id); };
-      break;
-    case SessionMenuItem::Delete:
-      action.id = "session_delete";
-      action.label = Tr("sidebar.menu.delete");
-      // The close flow asks before it deletes.
-      action.run = [this, thread_id]() { host_.OnCloseThread(thread_id); };
-      break;
-    case SessionMenuItem::LeaveGroup:
-      action.id = "session_leave_group";
-      action.label = Tr("chat.group.leave_title");
-      // The close flow asks by itself and, for an owner, hands the group over first.
-      action.run = [this, thread_id]() { host_.OnCloseThread(thread_id); };
-      break;
+      case SessionMenuItem::MarkUnread:
+        action.id = "session_mark_unread";
+        action.label = Tr("sidebar.menu.mark_unread");
+        // A mark, not a message count: the row shows a dot and keeps its place in the list.
+        action.run = [this, thread_id]() {
+          presenter_.MarkUnread(thread_id);
+          host_.AfterThreadPrefsChanged();
+        };
+        break;
+      case SessionMenuItem::MarkRead:
+        action.id = "session_mark_read";
+        action.label = Tr("sidebar.menu.mark_read");
+        action.run = [this, thread_id]() {
+          presenter_.MarkRead(thread_id);
+          host_.AfterThreadPrefsChanged();
+        };
+        break;
+      case SessionMenuItem::Pin:
+      case SessionMenuItem::Unpin:
+        action.id = item == SessionMenuItem::Pin ? "session_pin" : "session_unpin";
+        action.label = Tr(item == SessionMenuItem::Pin ? "sidebar.menu.pin" : "sidebar.menu.unpin");
+        action.run = [this, thread_id, pin = item == SessionMenuItem::Pin]() {
+          presenter_.SetPinned(thread_id, pin);
+          host_.AfterThreadPrefsChanged();
+        };
+        break;
+      case SessionMenuItem::Rename:
+        action.id = "session_rename";
+        action.label = Tr("sidebar.menu.rename");
+        action.run = [this, thread_id]() { RenameAiThread(thread_id); };
+        break;
+      case SessionMenuItem::Mute:
+        action.id = "session_mute";
+        action.label = Tr("sidebar.menu.mute");
+        action.run = [this, thread_id, position]() { OpenMute(thread_id, position); };
+        break;
+      case SessionMenuItem::Unmute:
+        action.id = "session_unmute";
+        action.label = Tr("sidebar.menu.unmute");
+        action.run = [this, thread_id]() {
+          presenter_.Unmute(thread_id);
+          host_.AfterThreadPrefsChanged();
+        };
+        break;
+      case SessionMenuItem::MuteMentions:
+      case SessionMenuItem::AllowMentions:
+        action.id = item == SessionMenuItem::MuteMentions ? "session_mute_mentions" : "session_allow_mentions";
+        action.label =
+            Tr(item == SessionMenuItem::MuteMentions ? "sidebar.menu.mute_mentions" : "sidebar.menu.allow_mentions");
+        action.run = [this, thread_id, mute = item == SessionMenuItem::MuteMentions]() {
+          presenter_.SetMuteMentions(thread_id, mute);
+          host_.AfterThreadPrefsChanged();
+        };
+        break;
+      case SessionMenuItem::AskBeforeSharingAi:
+        action.id = "session_ask_before_sharing_ai";
+        action.label = Tr("sidebar.menu.ask_before_sharing_ai");
+        action.run = [this, thread_id]() {
+          presenter_.AskBeforeSharingAi(thread_id);
+          host_.AfterThreadPrefsChanged();
+        };
+        break;
+      case SessionMenuItem::Archive:
+      case SessionMenuItem::Unarchive:
+        action.id = item == SessionMenuItem::Archive ? "session_archive" : "session_unarchive";
+        action.label = Tr(item == SessionMenuItem::Archive ? "sidebar.menu.archive" : "sidebar.menu.unarchive");
+        action.run = [this, thread_id, archive = item == SessionMenuItem::Archive]() {
+          presenter_.SetArchived(thread_id, archive);
+          host_.AfterThreadPrefsChanged();
+        };
+        break;
+      case SessionMenuItem::ViewContact:
+        action.id = "session_view_contact";
+        action.label = Tr("chat.menu.view_contact");
+        action.run = [this, id = *contact_id]() {
+          if (contacts_notify_.select_contact) {
+            contacts_notify_.select_contact(id);
+          }
+        };
+        break;
+      case SessionMenuItem::Block:
+      case SessionMenuItem::Unblock: {
+        const bool block = item == SessionMenuItem::Block;
+        action.id = block ? "session_block" : "session_unblock";
+        action.label = Tr(block ? "chat.menu.block" : "chat.menu.unblock");
+        action.run = [this, id = contact_id, peer_id = thread.peer_identity_value,
+                      name = facade->ResolveThreadLabel(thread).title,
+                      block]() { RunBlockFlow(host_, presenter_, contacts_notify_, id, peer_id, name, block); };
+        break;
+      }
+      case SessionMenuItem::ClearChat:
+        action.id = "session_clear_chat";
+        action.label = Tr("chat.menu.clear_history");
+        action.run = [this, thread_id]() { host_.ClearHistoryOf(thread_id); };
+        break;
+      case SessionMenuItem::Delete:
+        action.id = "session_delete";
+        action.label = Tr("sidebar.menu.delete");
+        // The close flow asks before it deletes.
+        action.run = [this, thread_id]() { host_.OnCloseThread(thread_id); };
+        break;
+      case SessionMenuItem::LeaveGroup:
+        action.id = "session_leave_group";
+        action.label = Tr("chat.group.leave_title");
+        // The close flow asks by itself and, for an owner, hands the group over first.
+        action.run = [this, thread_id]() { host_.OnCloseThread(thread_id); };
+        break;
     }
     actions.push_back(std::move(action));
   }
@@ -667,7 +676,8 @@ void ChatMenus::OpenShareTargets(const std::string& text, const ui::Vector2i pos
       }
     }
   }
-  std::sort(targets.begin(), targets.end(), [](const Thread& a, const Thread& b) { return a.updated_at > b.updated_at; });
+  std::sort(targets.begin(), targets.end(),
+            [](const Thread& a, const Thread& b) { return a.updated_at > b.updated_at; });
   if (targets.size() > kMaxShareTargets) {
     targets.resize(kMaxShareTargets);
   }
@@ -700,11 +710,14 @@ void ChatMenus::OpenDeleteChoice(const std::string& message_id, const ui::Vector
     return;
   }
   if (!presenter_.CanDeleteForEveryone(message_id)) {
-    host_.ShowConfirm(Tr("chat.menu.delete_title"), Tr("chat.menu.delete_confirm"), [this, message_id](const bool ok) {
-      if (ok) {
-        host_.DeleteMessageForMe(message_id);
-      }
-    }, true);
+    host_.ShowConfirm(
+        Tr("chat.menu.delete_title"), Tr("chat.menu.delete_confirm"),
+        [this, message_id](const bool ok) {
+          if (ok) {
+            host_.DeleteMessageForMe(message_id);
+          }
+        },
+        true);
     return;
   }
   std::vector<ContextMenuAction> actions;

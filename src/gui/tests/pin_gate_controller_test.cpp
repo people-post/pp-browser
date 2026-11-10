@@ -27,7 +27,7 @@ protected:
       typed.payload_hidden = payload_hidden_;
       typed.link_payload_full = hidden_full_.c_str();
       if (field_pin_) {
-        typed.pin = field_pin_->c_str();  // typed in the field (field mode only: the pad has none)
+        typed.pin = field_pin_->c_str(); // typed in the field (field mode only: the pad has none)
       }
       if (field_confirm_) {
         typed.pin_confirm = field_confirm_->c_str();
@@ -78,9 +78,9 @@ protected:
   int completes_ = 0;
   int use_pin_instead_ = 0;
   int remounts_ = 0;
-  bool keypad_available_ = true;  // a phone
+  bool keypad_available_ = true; // a phone
   std::optional<int> pin_digits_;
-  std::string biometric_kind_;  // "": face / fingerprint unlock off
+  std::string biometric_kind_; // "": face / fingerprint unlock off
   int biometric_tries_ = 0;
   std::optional<std::string> field_pin_;
   std::optional<std::string> field_confirm_;
@@ -177,7 +177,7 @@ TEST_F(PinGateControllerTest, ASavedCopyPickedOnThePhrasePageRidesWithTheWords) 
   controller_.OnUseDefaultPin();
   typed_payload_ = "legal winner thank year";
 
-  pick_name_ = "pp-account-2026-10-30.json";  // unreadable (no text): said, nothing kept
+  pick_name_ = "pp-account-2026-10-30.json"; // unreadable (no text): said, nothing kept
   controller_.OnUseSavedCopy();
   EXPECT_FALSE(std::string(shown_.error.c_str()).empty());
   EXPECT_TRUE(std::string(shown_.saved_copy_name.c_str()).empty());
@@ -196,7 +196,7 @@ TEST_F(PinGateControllerTest, ASavedCopyPickedOnThePhrasePageRidesWithTheWords) 
 TEST_F(PinGateControllerTest, TheLinkPathStillTakesATransferCode) {
   controller_.ShowIdentityFork();
   controller_.OnIdentityPhrase();
-  controller_.OnCancel();  // no gate bound: stays; back to the fork the way the app does
+  controller_.OnCancel(); // no gate bound: stays; back to the fork the way the app does
   controller_.ShowIdentityFork();
   controller_.OnIdentityLink();
   controller_.OnUseDefaultPin();
@@ -317,7 +317,7 @@ TEST_F(PinGateControllerTest, CreateKeypadBackspace) {
   controller_.OnKey(1);
   controller_.OnBackspace();
   EXPECT_EQ(Confirm(), "");
-  controller_.OnBackspace();  // an empty repeat does not go back to the first entry
+  controller_.OnBackspace(); // an empty repeat does not go back to the first entry
   EXPECT_EQ(Confirm(), "");
   EXPECT_EQ(Pin(), "1234");
   EXPECT_EQ(Message(), Tr("pin.create_repeat_message"));
@@ -355,7 +355,7 @@ TEST_F(PinGateControllerTest, CreateTextSwitchToKeypad) {
 }
 
 TEST_F(PinGateControllerTest, CreateTextChecksLengthAndRepeatAsBefore) {
-  keypad_available_ = false;  // desktop: the field, as before
+  keypad_available_ = false; // desktop: the field, as before
   ShowCreate();
   EXPECT_FALSE(shown_.keypad);
   EXPECT_FALSE(shown_.keypad_offered);
@@ -406,7 +406,7 @@ TEST_F(PinGateControllerTest, UnlockKeypadWrongPinClears) {
   pin_digits_ = 4;
   controller_.ShowUnlock();
   Keys("1234");
-  controller_.ShowError(Tr("pin.error.wrong"));  // what the unlock gate reports
+  controller_.ShowError(Tr("pin.error.wrong")); // what the unlock gate reports
   EXPECT_FALSE(shown_.keypad_busy);
   EXPECT_EQ(Pin(), "");
   EXPECT_EQ(shown_.keypad_filled, 0);
@@ -451,19 +451,19 @@ TEST_F(PinGateControllerTest, UnlockKeypadSwitchToTextAcceptsAnyPin) {
   EXPECT_FALSE(shown_.keypad);
   EXPECT_FALSE(shown_.ask_confirm);
   EXPECT_EQ(Pin(), "");
-  field_pin_ = "1234567890";  // remembered as four digits, typed as ten: still goes in
+  field_pin_ = "1234567890"; // remembered as four digits, typed as ten: still goes in
   controller_.OnSubmit();
   EXPECT_EQ(typed_pin_, "1234567890");
 }
 
 TEST_F(PinGateControllerTest, UnlockTextSwitchToKeypadWhenDigitsKnown) {
-  controller_.ShowUnlock();  // unknown kind (a profile from before): the field
+  controller_.ShowUnlock(); // unknown kind (a profile from before): the field
   EXPECT_FALSE(shown_.keypad);
   EXPECT_FALSE(shown_.keypad_offered);
   controller_.OnUseKeypad();
   EXPECT_FALSE(shown_.keypad);
 
-  pin_digits_ = 0;  // a text PIN
+  pin_digits_ = 0; // a text PIN
   controller_.ShowUnlock();
   EXPECT_FALSE(shown_.keypad);
   EXPECT_FALSE(shown_.keypad_offered);
@@ -516,7 +516,7 @@ TEST_F(PinGateControllerTest, VerifyCancelReturns) {
   pin_digits_ = 4;
   controller_.ShowVerify(PinVerifyPurpose::ExportTransferCode, Check(), [this]() { ++verified_ok_; });
   Keys("2468");
-  controller_.OnCancel();  // while the check runs
+  controller_.OnCancel(); // while the check runs
   EXPECT_FALSE(shown_.active) << "back to settings";
   check_done_(Roe<void>{});
   EXPECT_EQ(verified_ok_, 0) << "a late answer does nothing";
@@ -583,7 +583,7 @@ TEST_F(PinGateControllerTest, ChangeRepeatMismatchBackToNew) {
 }
 
 TEST_F(PinGateControllerTest, ChangeTextModeWhenUnknown) {
-  controller_.ShowChange(Check(), Change());  // the current PIN's kind unknown: the field
+  controller_.ShowChange(Check(), Change()); // the current PIN's kind unknown: the field
   EXPECT_FALSE(shown_.keypad);
   EXPECT_FALSE(shown_.ask_confirm);
   field_pin_ = "old secret";
@@ -657,13 +657,13 @@ TEST_F(PinGateControllerTest, UnlockShowsTheBiometricKeyWhenOn) {
   controller_.OnUsePin();
   EXPECT_EQ(remounts_, remounts + 1) << "nothing more to open";
 
-  controller_.OnUseText();  // the field: the link prompts too
+  controller_.OnUseText(); // the field: the link prompts too
   EXPECT_FALSE(shown_.keypad);
   EXPECT_TRUE(shown_.biometric_key);
   controller_.OnBiometric();
   EXPECT_EQ(biometric_tries_, 2);
 
-  biometric_kind_.clear();  // off
+  biometric_kind_.clear(); // off
   controller_.ShowUnlock();
   EXPECT_FALSE(shown_.biometric_key);
   EXPECT_FALSE(shown_.biometric_first) << "straight to the pad";

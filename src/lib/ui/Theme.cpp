@@ -17,12 +17,12 @@ ui::Context* g_context = nullptr;
 
 bool SystemPrefersDark() {
   switch (SDL_GetSystemTheme()) {
-  case SDL_SYSTEM_THEME_DARK:
-    return true;
-  case SDL_SYSTEM_THEME_LIGHT:
-    return false;
-  default:
-    return false;
+    case SDL_SYSTEM_THEME_DARK:
+      return true;
+    case SDL_SYSTEM_THEME_LIGHT:
+      return false;
+    default:
+      return false;
   }
 }
 
@@ -57,25 +57,25 @@ AppearanceMode Theme::ParseAppearance(const std::string& value) {
 
 std::string Theme::ToAppearanceString(AppearanceMode mode) {
   switch (mode) {
-  case AppearanceMode::Light:
-    return "light";
-  case AppearanceMode::Dark:
-    return "dark";
-  case AppearanceMode::System:
-  default:
-    return "system";
+    case AppearanceMode::Light:
+      return "light";
+    case AppearanceMode::Dark:
+      return "dark";
+    case AppearanceMode::System:
+    default:
+      return "system";
   }
 }
 
 bool Theme::ResolveDark(AppearanceMode preference) {
   switch (preference) {
-  case AppearanceMode::Light:
-    return false;
-  case AppearanceMode::Dark:
-    return true;
-  case AppearanceMode::System:
-  default:
-    return SystemPrefersDark();
+    case AppearanceMode::Light:
+      return false;
+    case AppearanceMode::Dark:
+      return true;
+    case AppearanceMode::System:
+    default:
+      return SystemPrefersDark();
   }
 }
 

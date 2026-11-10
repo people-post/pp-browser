@@ -16,9 +16,8 @@ Roe<DerivedNodeIdentitySeeds> DeriveNodeIdentitySeeds(const ByteVector& master_s
   }
 
   unsigned char prk[crypto_kdf_hkdf_sha256_KEYBYTES];
-  if (crypto_kdf_hkdf_sha256_extract(
-          prk, reinterpret_cast<const unsigned char*>(kNodeIdentityHkdfSalt),
-          std::strlen(kNodeIdentityHkdfSalt), master_seed.data(), master_seed.size()) != 0) {
+  if (crypto_kdf_hkdf_sha256_extract(prk, reinterpret_cast<const unsigned char*>(kNodeIdentityHkdfSalt),
+                                     std::strlen(kNodeIdentityHkdfSalt), master_seed.data(), master_seed.size()) != 0) {
     return Error("identity seed HKDF extract failed");
   }
 

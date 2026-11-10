@@ -32,11 +32,9 @@ protected:
 
     // Each side treats the other as already connected for EnsurePeerReachable.
     offer_.dial->connected[answer_.local_identity] = true;
-    offer_.dial->endpoints[answer_.local_identity] =
-        "/ip4/127.0.0.1/udp/47101/adp/1.0.0/p2p/12D3KooWAnswer";
+    offer_.dial->endpoints[answer_.local_identity] = "/ip4/127.0.0.1/udp/47101/adp/1.0.0/p2p/12D3KooWAnswer";
     answer_.dial->connected[offer_.local_identity] = true;
-    answer_.dial->endpoints[offer_.local_identity] =
-        "/ip4/127.0.0.1/udp/47100/adp/1.0.0/p2p/12D3KooWOffer";
+    answer_.dial->endpoints[offer_.local_identity] = "/ip4/127.0.0.1/udp/47100/adp/1.0.0/p2p/12D3KooWOffer";
 
     // Answerer reverse-dial arms offerer inbound (product: stream lands on offerer before dial).
     answer_.transport->peer_inbound = [this](CallMediaDirectConnectParams params) {
@@ -93,7 +91,7 @@ protected:
         ThreadMessage msg = offer_inbox_.front();
         offer_inbox_.pop_front();
         if (hold_accepts_to_offer_ && msg.payload_json.find("call_accept") != std::string::npos) {
-          held_to_offer_.push_back(std::move(msg));  // a relay that has not delivered it yet
+          held_to_offer_.push_back(std::move(msg)); // a relay that has not delivered it yet
           continue;
         }
         ASSERT_TRUE(offer_.Deliver(msg, answer_.local_identity));
@@ -156,8 +154,7 @@ protected:
       return answer_idle && offer_idle;
     });
     EXPECT_EQ(answer_.ui->Phase(), CallPhase::Idle);
-    EXPECT_EQ(offer_.ui->Phase(), CallPhase::Idle)
-        << "offerer must Idle on remote Leave without local LeaveClicked";
+    EXPECT_EQ(offer_.ui->Phase(), CallPhase::Idle) << "offerer must Idle on remote Leave without local LeaveClicked";
     EXPECT_FALSE(answer_.stack->HasActiveLocalCall());
     EXPECT_FALSE(offer_.stack->HasActiveLocalCall());
     offer_inbox_.clear();
@@ -174,8 +171,7 @@ protected:
       return answer_idle && offer_idle;
     });
     EXPECT_EQ(offer_.ui->Phase(), CallPhase::Idle);
-    EXPECT_EQ(answer_.ui->Phase(), CallPhase::Idle)
-        << "answerer must Idle on remote Leave without local LeaveClicked";
+    EXPECT_EQ(answer_.ui->Phase(), CallPhase::Idle) << "answerer must Idle on remote Leave without local LeaveClicked";
     EXPECT_FALSE(answer_.stack->HasActiveLocalCall());
     EXPECT_FALSE(offer_.stack->HasActiveLocalCall());
     offer_inbox_.clear();
@@ -346,8 +342,8 @@ TEST_F(CallDualStackComposeTest, CallingEachOtherAtOnceMergesIntoOneCall) {
   auto from_answer = StartCallNow(*answer_.ui, answer_thread.id, false, {offer_.local_identity});
   ASSERT_TRUE(from_offer) << from_offer.error().message;
   ASSERT_TRUE(from_answer) << from_answer.error().message;
-  for (const auto& [call, from, to] : {std::tuple{from_offer->call_id, &offer_, &answer_},
-                                       std::tuple{from_answer->call_id, &answer_, &offer_}}) {
+  for (const auto& [call, from, to] :
+       {std::tuple{from_offer->call_id, &offer_, &answer_}, std::tuple{from_answer->call_id, &answer_, &offer_}}) {
     auto key = from->stack->MediaKeys()->LoadEpochKey(call, 1);
     ASSERT_TRUE(key && key->has_value());
     ASSERT_TRUE(to->stack->MediaKeys()->PutEpochKey(call, 1, **key));
@@ -740,8 +736,7 @@ TEST_F(CallDualStackComposeTest, OfferInviteAnswerDeclineClearsOfferer) {
            !offer_.stack->HasActiveLocalCall();
   });
   EXPECT_EQ(answer_.ui->Phase(), CallPhase::Idle);
-  EXPECT_EQ(offer_.ui->Phase(), CallPhase::Idle)
-      << "offerer must Idle on remote Decline without local LeaveClicked";
+  EXPECT_EQ(offer_.ui->Phase(), CallPhase::Idle) << "offerer must Idle on remote Decline without local LeaveClicked";
   EXPECT_FALSE(offer_.stack->HasActiveLocalCall());
   EXPECT_FALSE(answer_.stack->HasActiveLocalCall());
   ExpectLive(answer_, call_id, LiveCallState::Ended, LiveCallEndReason::Declined, "answer");
@@ -796,8 +791,8 @@ TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   DrainUntil([&]() {
     PumpWire();
     auto active = answer_.ui->ActiveLocalCall();
-    return active && active->has_value() && (*active)->call_id == call_b &&
-           answer_.ui->Phase() == CallPhase::InCall && offer_.ui->Phase() == CallPhase::InCall;
+    return active && active->has_value() && (*active)->call_id == call_b && answer_.ui->Phase() == CallPhase::InCall &&
+           offer_.ui->Phase() == CallPhase::InCall;
   });
   auto active_b = answer_.ui->ActiveLocalCall();
   ASSERT_TRUE(active_b && active_b->has_value());

@@ -19,8 +19,8 @@ DirectChatTarget MakeTarget(const std::string& peer) {
   return target;
 }
 
-ThreadMessage MakeOutbound(SqliteThreadStore& store, const std::string& thread_id, const std::string& id,
-                           uint64_t seq, uint32_t epoch, MessageDelivery delivery) {
+ThreadMessage MakeOutbound(SqliteThreadStore& store, const std::string& thread_id, const std::string& id, uint64_t seq,
+                           uint32_t epoch, MessageDelivery delivery) {
   ThreadMessage message;
   message.id = id;
   message.thread_id = thread_id;
@@ -47,8 +47,7 @@ ByteVector TestDek() {
 } // namespace
 
 TEST(V6IntegrityTest, BumpLocalEpochCancelsOldPendingAndResetsSeq) {
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_v6_integrity_bump_test";
+  const std::filesystem::path data_dir = std::filesystem::temp_directory_path() / "pp_browser_v6_integrity_bump_test";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
   ASSERT_TRUE(store.SetDek(TestDek()));

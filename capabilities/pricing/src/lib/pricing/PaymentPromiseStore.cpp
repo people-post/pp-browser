@@ -22,8 +22,7 @@ std::string PaymentPromiseStore::Path() const {
   return (std::filesystem::path(data_dir_) / "payment_promises.json").string();
 }
 
-Roe<void> PaymentPromiseStore::DecodeArrayInto(const Array* arr,
-                                               std::unordered_map<std::string, PaymentPromise>& out) {
+Roe<void> PaymentPromiseStore::DecodeArrayInto(const Array* arr, std::unordered_map<std::string, PaymentPromise>& out) {
   if (!arr) {
     return {};
   }

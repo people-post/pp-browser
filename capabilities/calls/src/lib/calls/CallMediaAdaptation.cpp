@@ -85,11 +85,11 @@ bool CallMediaAdaptation::CameraPathAllowsVideo(const double path_pressure, cons
 
 const char* CallMediaAdaptation::ChannelTypeName(CallMediaRole role) {
   switch (role) {
-  case CallMediaRole::Audio:
-    return "reliable_ordered";
-  case CallMediaRole::VideoLo:
-  case CallMediaRole::VideoHi:
-    return "latest_lossy";
+    case CallMediaRole::Audio:
+      return "reliable_ordered";
+    case CallMediaRole::VideoLo:
+    case CallMediaRole::VideoHi:
+      return "latest_lossy";
   }
   return "best_effort";
 }

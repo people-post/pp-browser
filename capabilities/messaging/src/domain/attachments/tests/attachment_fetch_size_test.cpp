@@ -51,10 +51,11 @@ TEST_F(FetchSizeTest, TheOverheadConstantIsTheRealOverhead) {
 }
 
 TEST_F(FetchSizeTest, TheConsumingDecryptMatchesTheCopyingOne) {
-  auto copying = AttachmentContentCipher::Decrypt(fields_.content_key, fields_.blob_nonce, cipher_, fields_.content_hash);
+  auto copying =
+      AttachmentContentCipher::Decrypt(fields_.content_key, fields_.blob_nonce, cipher_, fields_.content_hash);
   ASSERT_TRUE(copying);
-  auto consuming = AttachmentContentCipher::Decrypt(fields_.content_key, fields_.blob_nonce, std::vector<uint8_t>(cipher_),
-                                                    fields_.content_hash);
+  auto consuming = AttachmentContentCipher::Decrypt(fields_.content_key, fields_.blob_nonce,
+                                                    std::vector<uint8_t>(cipher_), fields_.content_hash);
   ASSERT_TRUE(consuming);
   EXPECT_EQ(*copying, *consuming);
   EXPECT_EQ(*consuming, plain_);
@@ -82,7 +83,7 @@ TEST_F(FetchSizeTest, ADifferentCiphertextLengthIsRefusedAndDropped) {
 
 TEST_F(FetchSizeTest, ALyingDeclaredSizeIsRefused) {
   ChatAttachmentFields small_claim = fields_;
-  small_claim.byte_length = 10;  // claims 10 bytes, the object is 1000
+  small_claim.byte_length = 10; // claims 10 bytes, the object is 1000
   EXPECT_FALSE(RunWith(cipher_, small_claim));
   ChatAttachmentFields big_claim = fields_;
   big_claim.byte_length = 5'000'000;
@@ -93,7 +94,7 @@ TEST_F(FetchSizeTest, ZeroDeclaredSizeIsNeverFetched) {
   ChatAttachmentFields zero = fields_;
   zero.byte_length = 0;
   EXPECT_FALSE(RunWith(cipher_, zero));
-  zero.url = "https://cdn.example/x";  // the CDN path also refuses before any request
+  zero.url = "https://cdn.example/x"; // the CDN path also refuses before any request
   auto cdn = FetchAttachmentCiphertext(zero, AttachmentFetchContext{});
   ASSERT_FALSE(cdn);
   EXPECT_NE(cdn.error().message.find("no size"), std::string::npos);
@@ -131,7 +132,7 @@ protected:
 };
 
 TEST_F(CdnFetchTest, ADownloadAboveTheBufferedClientsLimitIsStreamedAndDecrypted) {
-  auto prepared = Prepare(9 * 1024 * 1024);  // the buffered client stops at 8 MiB
+  auto prepared = Prepare(9 * 1024 * 1024); // the buffered client stops at 8 MiB
   server_.SetResponse(std::string(prepared.ciphertext.begin(), prepared.ciphertext.end()));
   prepared.fields.url = server_.Url();
   uint64_t last_done = 0;

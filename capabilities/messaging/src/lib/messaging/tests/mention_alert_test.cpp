@@ -70,7 +70,9 @@ protected:
   static TextSpan MentionOf(const std::string& account) {
     return TextSpan{.kind = static_cast<uint8_t>(TextSpanKind::Mention), .start = 0, .end = 2, .account_id = account};
   }
-  static TextSpan Everyone() { return TextSpan{.kind = static_cast<uint8_t>(TextSpanKind::Everyone), .start = 0, .end = 9}; }
+  static TextSpan Everyone() {
+    return TextSpan{.kind = static_cast<uint8_t>(TextSpanKind::Everyone), .start = 0, .end = 9};
+  }
 
   std::filesystem::path dir_;
   std::unique_ptr<InMemoryDeliveryStore> store_;

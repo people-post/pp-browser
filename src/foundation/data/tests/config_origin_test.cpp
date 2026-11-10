@@ -153,9 +153,8 @@ TEST(ConfigBackendTest, ProdIgnoresSavedUrlsButKeepsThemForSave) {
 TEST(ConfigBackendTest, CustomUsesSavedUrls) {
   pbr::ResetActiveBackendForTest();
   ScopedOrigin origin(nullptr);
-  const std::string path = WriteConfig(
-      "pp_browser_config_backend_custom.json",
-      R"({"config_version": 1, "backend": {"env": "custom"},
+  const std::string path = WriteConfig("pp_browser_config_backend_custom.json",
+                                       R"({"config_version": 1, "backend": {"env": "custom"},
           "relay": {"base_url": "https://custom.example.test/api/relay"}})");
   auto loaded = pbr::Config::LoadFromFile(path);
   ASSERT_TRUE(static_cast<bool>(loaded));
@@ -168,9 +167,8 @@ TEST(ConfigBackendTest, CustomUsesSavedUrls) {
 TEST(ConfigBackendTest, EnvOriginBeatsCustomBackend) {
   pbr::ResetActiveBackendForTest();
   ScopedOrigin origin("https://backend.example.test");
-  const std::string path = WriteConfig(
-      "pp_browser_config_backend_env_wins.json",
-      R"({"config_version": 1, "backend": {"env": "custom"},
+  const std::string path = WriteConfig("pp_browser_config_backend_env_wins.json",
+                                       R"({"config_version": 1, "backend": {"env": "custom"},
           "relay": {"base_url": "https://custom.example.test/api/relay"}})");
   auto loaded = pbr::Config::LoadFromFile(path);
   ASSERT_TRUE(static_cast<bool>(loaded));
@@ -197,9 +195,8 @@ TEST(ConfigBackendTest, ReloadAfterChoosingAnotherBackendKeepsTheLatchedOne) {
   ScopedOrigin origin(nullptr);
   const std::string path = WriteConfig("pp_browser_config_backend_latch.json", kBackendProdConfig);
   ASSERT_TRUE(static_cast<bool>(pbr::Config::LoadFromFile(path)));
-  const std::string switched = WriteConfig(
-      "pp_browser_config_backend_latch2.json",
-      R"({"config_version": 1, "backend": {"env": "custom"},
+  const std::string switched = WriteConfig("pp_browser_config_backend_latch2.json",
+                                           R"({"config_version": 1, "backend": {"env": "custom"},
           "relay": {"base_url": "https://custom.example.test/api/relay"}})");
   auto loaded = pbr::Config::LoadFromFile(switched);
   ASSERT_TRUE(static_cast<bool>(loaded));

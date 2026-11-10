@@ -33,8 +33,7 @@ int CameraDisplayRotationDegrees() {
   }
 
   int degrees = 0;
-  jmethodID get_wm = env->GetMethodID(activity_cls, "getWindowManager",
-                                      "()Landroid/view/WindowManager;");
+  jmethodID get_wm = env->GetMethodID(activity_cls, "getWindowManager", "()Landroid/view/WindowManager;");
   if (!get_wm) {
     env->ExceptionClear();
     env->DeleteLocalRef(activity_cls);
@@ -46,8 +45,7 @@ int CameraDisplayRotationDegrees() {
     return 0;
   }
   jclass wm_cls = env->GetObjectClass(wm);
-  jmethodID get_display =
-      env->GetMethodID(wm_cls, "getDefaultDisplay", "()Landroid/view/Display;");
+  jmethodID get_display = env->GetMethodID(wm_cls, "getDefaultDisplay", "()Landroid/view/Display;");
   if (!get_display) {
     env->ExceptionClear();
     env->DeleteLocalRef(wm_cls);
@@ -68,18 +66,18 @@ int CameraDisplayRotationDegrees() {
     const jint rotation = env->CallIntMethod(display, get_rotation);
     // android.view.Surface.ROTATION_0/90/180/270
     switch (rotation) {
-    case 1:
-      degrees = 90;
-      break;
-    case 2:
-      degrees = 180;
-      break;
-    case 3:
-      degrees = 270;
-      break;
-    default:
-      degrees = 0;
-      break;
+      case 1:
+        degrees = 90;
+        break;
+      case 2:
+        degrees = 180;
+        break;
+      case 3:
+        degrees = 270;
+        break;
+      default:
+        degrees = 0;
+        break;
     }
   } else {
     env->ExceptionClear();
@@ -118,11 +116,9 @@ bool QuerySensorOrientation(uint8_t want_facing, int32_t* out_sensor_deg) {
     ACameraMetadata_const_entry facing_entry{};
     ACameraMetadata_const_entry orient_entry{};
     const bool have_facing =
-        ACameraMetadata_getConstEntry(meta, ACAMERA_LENS_FACING, &facing_entry) == ACAMERA_OK &&
-        facing_entry.count > 0;
+        ACameraMetadata_getConstEntry(meta, ACAMERA_LENS_FACING, &facing_entry) == ACAMERA_OK && facing_entry.count > 0;
     const bool have_orient =
-        ACameraMetadata_getConstEntry(meta, ACAMERA_SENSOR_ORIENTATION, &orient_entry) ==
-            ACAMERA_OK &&
+        ACameraMetadata_getConstEntry(meta, ACAMERA_SENSOR_ORIENTATION, &orient_entry) == ACAMERA_OK &&
         orient_entry.count > 0;
     if (have_facing && have_orient && facing_entry.data.u8[0] == want_facing) {
       *out_sensor_deg = orient_entry.data.i32[0];
@@ -156,8 +152,7 @@ CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int
   const SDL_CameraPosition pos = SDL_GetCameraPosition(camera_id);
   const bool front = (pos != SDL_CAMERA_POSITION_BACK_FACING);
   t.front_facing = front;
-  const uint8_t want_facing =
-      front ? ACAMERA_LENS_FACING_FRONT : ACAMERA_LENS_FACING_BACK;
+  const uint8_t want_facing = front ? ACAMERA_LENS_FACING_FRONT : ACAMERA_LENS_FACING_BACK;
 
   int32_t sensor_deg = front ? 270 : 90; // conventional phone fallback
   (void)QuerySensorOrientation(want_facing, &sensor_deg);

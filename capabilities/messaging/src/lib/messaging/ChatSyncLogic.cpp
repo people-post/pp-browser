@@ -24,7 +24,8 @@ std::optional<SeqRange> KnownGap(const PeerSyncState& state) {
   return SeqRange{state.contiguous_peer_seq + 1, state.loaded_max_seq - 1};
 }
 
-std::optional<SeqRange> ClampGapRange(const uint64_t gap_min, const uint64_t gap_max, const uint64_t history_floor_seq) {
+std::optional<SeqRange> ClampGapRange(const uint64_t gap_min, const uint64_t gap_max,
+                                      const uint64_t history_floor_seq) {
   if (gap_max < gap_min) {
     return std::nullopt;
   }

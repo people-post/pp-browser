@@ -57,25 +57,27 @@ protected:
     ASSERT_NE(context, nullptr);
     ASSERT_TRUE(DataModelHost::Instance().Register(context, "chat", [this](ui::DataModelConstructor& ctor) {
       BindChatScreenState(ctor, state);
-      ctor.BindEventCallback("send_message", [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
-        ++sends;
-      });
+      ctor.BindEventCallback("send_message",
+                             [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) { ++sends; });
     }));
     const LocalizationService& i18n = LocalizationService::Instance();
-    const std::string rml =
-        "<rml><head><style>" + Asset("themes/components.rcss") + Asset("themes/colors-light.rcss") +
-        "</style></head><body style=\"padding: 0;\">"
-        "<div style=\"position: absolute; top: 0; left: 0; width: " + std::to_string(kWidth) + "dp; height: " +
-        std::to_string(kHeight) + "dp;\">"
-        "<div class=\"shell-layer shell-layer-base shell-layer-compact\">"
-        "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">"
-        "<div class=\"shell-chat-overlay-chrome row surface-chrome surface-chrome--frost\">"
-        "<div class=\"bar-material bar-material--frost\"></div><div class=\"bar-fade\"></div></div>"
-        "<div class=\"shell-pane-body\" id=\"pane-body-chat\">" + i18n.LocalizeText(Asset("views/chat.rml")) + "</div>"
-        "<div class=\"shell-composer-bar\">"
-        "<div class=\"shell-composer-mount surface-chrome\" id=\"shell-composer-mount\">" +
-        i18n.LocalizeText(Asset("views/composer.rml")) + "</div></div>"
-        "</div></div></div></body></rml>";
+    const std::string rml = "<rml><head><style>" + Asset("themes/components.rcss") + Asset("themes/colors-light.rcss") +
+                            "</style></head><body style=\"padding: 0;\">"
+                            "<div style=\"position: absolute; top: 0; left: 0; width: " +
+                            std::to_string(kWidth) + "dp; height: " + std::to_string(kHeight) +
+                            "dp;\">"
+                            "<div class=\"shell-layer shell-layer-base shell-layer-compact\">"
+                            "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">"
+                            "<div class=\"shell-chat-overlay-chrome row surface-chrome surface-chrome--frost\">"
+                            "<div class=\"bar-material bar-material--frost\"></div><div class=\"bar-fade\"></div></div>"
+                            "<div class=\"shell-pane-body\" id=\"pane-body-chat\">" +
+                            i18n.LocalizeText(Asset("views/chat.rml")) +
+                            "</div>"
+                            "<div class=\"shell-composer-bar\">"
+                            "<div class=\"shell-composer-mount surface-chrome\" id=\"shell-composer-mount\">" +
+                            i18n.LocalizeText(Asset("views/composer.rml")) +
+                            "</div></div>"
+                            "</div></div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
     document->Show();
@@ -84,8 +86,12 @@ protected:
   }
   void TearDown() override {
     DataModelHost::Instance().Clear();
-    if (context) { ui::RemoveContext("chat-bottom-chrome-test"); }
-    if (initialized) { ui::Shutdown(); }
+    if (context) {
+      ui::RemoveContext("chat-bottom-chrome-test");
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
   /** The first shown element with class `cls`. */
@@ -258,7 +264,7 @@ TEST_F(ChatBottomChromeTest, TheLatestMessageEndsAboveTheComposer) {
     last = messages->InsertBefore(std::move(row), clear);
   }
   const auto check = [&](const char* when) {
-    for (int frame = 0; frame < 2; ++frame) {  // what ChatController::AfterLayout does each frame
+    for (int frame = 0; frame < 2; ++frame) { // what ChatController::AfterLayout does each frame
       context->Update();
       ChatController::KeepClearOfComposer(document->GetElementById("shell-chat-overlay"));
     }

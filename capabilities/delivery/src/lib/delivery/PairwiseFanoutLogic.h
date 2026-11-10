@@ -39,8 +39,7 @@ std::vector<std::string> SelectPairwiseFanoutTargets(
  * Invoke `send` once per target. BestEffort always returns ok(); FailFast returns first_error
  * via result (and stops). Callers that need Roe wrap FailFast themselves.
  */
-PairwiseFanoutResult FanOutPairwise(
-    const std::vector<std::string>& targets, PairwiseFanoutMode mode,
-    const std::function<pp::Roe<void>(const std::string& identity)>& send);
+PairwiseFanoutResult FanOutPairwise(const std::vector<std::string>& targets, PairwiseFanoutMode mode,
+                                    const std::function<pp::Roe<void>(const std::string& identity)>& send);
 
 } // namespace pbr

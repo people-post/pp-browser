@@ -62,8 +62,7 @@ void LogFailOnce(const char* detail) {
 }
 
 void CloseNotificationId(DBusConnection* conn, dbus_uint32_t id) {
-  DBusMessage* msg =
-      dbus_message_new_method_call(kNotifyNode, kNotifyPath, kNotifyIface, "CloseNotification");
+  DBusMessage* msg = dbus_message_new_method_call(kNotifyNode, kNotifyPath, kNotifyIface, "CloseNotification");
   if (!msg) {
     return;
   }
@@ -156,8 +155,7 @@ DBusHandlerResult FilterMessage(DBusConnection* /*conn*/, DBusMessage* message, 
     char* token = nullptr;
     DBusError err;
     dbus_error_init(&err);
-    if (dbus_message_get_args(message, &err, DBUS_TYPE_UINT32, &id, DBUS_TYPE_STRING, &token,
-                              DBUS_TYPE_INVALID) &&
+    if (dbus_message_get_args(message, &err, DBUS_TYPE_UINT32, &id, DBUS_TYPE_STRING, &token, DBUS_TYPE_INVALID) &&
         token && *token) {
       SetPendingDesktopActivationToken(token);
       Log().info << "ActivationToken id=" << id;
@@ -172,8 +170,7 @@ DBusHandlerResult FilterMessage(DBusConnection* /*conn*/, DBusMessage* message, 
     dbus_uint32_t reason = 0;
     DBusError err;
     dbus_error_init(&err);
-    if (dbus_message_get_args(message, &err, DBUS_TYPE_UINT32, &id, DBUS_TYPE_UINT32, &reason,
-                              DBUS_TYPE_INVALID)) {
+    if (dbus_message_get_args(message, &err, DBUS_TYPE_UINT32, &id, DBUS_TYPE_UINT32, &reason, DBUS_TYPE_INVALID)) {
       std::lock_guard<std::mutex> lock(g_mu);
       const auto it = g_id_to_thread.find(id);
       if (it != g_id_to_thread.end()) {
@@ -194,8 +191,7 @@ DBusHandlerResult FilterMessage(DBusConnection* /*conn*/, DBusMessage* message, 
   char* action = nullptr;
   DBusError err;
   dbus_error_init(&err);
-  if (!dbus_message_get_args(message, &err, DBUS_TYPE_UINT32, &id, DBUS_TYPE_STRING, &action,
-                             DBUS_TYPE_INVALID)) {
+  if (!dbus_message_get_args(message, &err, DBUS_TYPE_UINT32, &id, DBUS_TYPE_STRING, &action, DBUS_TYPE_INVALID)) {
     Log().warning << "ActionInvoked parse failed";
     if (dbus_error_is_set(&err)) {
       dbus_error_free(&err);
@@ -212,8 +208,7 @@ DBusHandlerResult FilterMessage(DBusConnection* /*conn*/, DBusMessage* message, 
     }
     g_pending_activations.push_back(thread_id);
   }
-  Log().info << "ActionInvoked id=" << id << " action=" << (action ? action : "")
-             << " thread=" << thread_id;
+  Log().info << "ActionInvoked id=" << id << " action=" << (action ? action : "") << " thread=" << thread_id;
   return DBUS_HANDLER_RESULT_HANDLED;
 }
 
@@ -277,10 +272,8 @@ void SendNotify(DBusConnection* conn, const PendingPost& post) {
   }
   const uint8_t urgency = 1;
   const dbus_int32_t sender_pid = static_cast<dbus_int32_t>(getpid());
-  if (!AppendHintByte(&hints, "urgency", urgency) ||
-      !AppendHintString(&hints, "category", "im.received") ||
-      !AppendHintInt32(&hints, "sender-pid", sender_pid) ||
-      !dbus_message_iter_close_container(&args, &hints) ||
+  if (!AppendHintByte(&hints, "urgency", urgency) || !AppendHintString(&hints, "category", "im.received") ||
+      !AppendHintInt32(&hints, "sender-pid", sender_pid) || !dbus_message_iter_close_container(&args, &hints) ||
       !dbus_message_iter_append_basic(&args, DBUS_TYPE_INT32, &expire_ms)) {
     dbus_message_unref(msg);
     LogFailOnce("dbus Notify hints failed");
@@ -351,8 +344,7 @@ bool InitConnection() {
   }
 
   dbus_error_init(&err);
-  dbus_bus_add_match(
-      conn, "type='signal',interface='org.freedesktop.Notifications',member='ActionInvoked'", &err);
+  dbus_bus_add_match(conn, "type='signal',interface='org.freedesktop.Notifications',member='ActionInvoked'", &err);
   if (dbus_error_is_set(&err)) {
     LogFailOnce(err.message ? err.message : "dbus add_match ActionInvoked failed");
     dbus_error_free(&err);
@@ -362,17 +354,13 @@ bool InitConnection() {
   }
 
   dbus_error_init(&err);
-  dbus_bus_add_match(
-      conn, "type='signal',interface='org.freedesktop.Notifications',member='ActivationToken'",
-      &err);
+  dbus_bus_add_match(conn, "type='signal',interface='org.freedesktop.Notifications',member='ActivationToken'", &err);
   if (dbus_error_is_set(&err)) {
     dbus_error_free(&err);
   }
 
   dbus_error_init(&err);
-  dbus_bus_add_match(
-      conn, "type='signal',interface='org.freedesktop.Notifications',member='NotificationClosed'",
-      &err);
+  dbus_bus_add_match(conn, "type='signal',interface='org.freedesktop.Notifications',member='NotificationClosed'", &err);
   if (dbus_error_is_set(&err)) {
     dbus_error_free(&err);
   }
@@ -435,8 +423,7 @@ void WatchLoop() {
     {
       std::lock_guard<std::mutex> lock(g_mu);
       if (!g_pending_activations.empty()) {
-        activations.insert(activations.end(), g_pending_activations.begin(),
-                           g_pending_activations.end());
+        activations.insert(activations.end(), g_pending_activations.begin(), g_pending_activations.end());
         g_pending_activations.clear();
       }
     }
@@ -457,8 +444,7 @@ void EnsureWatchStartedLocked() {
 
 } // namespace
 
-void PostDesktopNotification(const std::string& title, const std::string& body,
-                             const std::string& thread_id) {
+void PostDesktopNotification(const std::string& title, const std::string& body, const std::string& thread_id) {
   std::lock_guard<std::mutex> lock(g_mu);
   if (g_init_started && !g_init_ok && !g_running.load(std::memory_order_acquire)) {
     // Init already failed on the watch thread.

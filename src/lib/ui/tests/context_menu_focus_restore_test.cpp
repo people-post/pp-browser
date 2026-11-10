@@ -48,8 +48,12 @@ protected:
   void TearDown() override {
     ContextMenuHost::Instance().Dismiss();
     ContextMenuHost::Instance().Install(nullptr);
-    if (context_) { ui::RemoveContext("context-menu-focus-test"); }
-    if (initialized_) { ui::Shutdown(); }
+    if (context_) {
+      ui::RemoveContext("context-menu-focus-test");
+    }
+    if (initialized_) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
 
@@ -95,7 +99,9 @@ TEST_F(ContextMenuFocusRestoreTest, ClosingTheMenuAfterTheFocusedFieldWasRemoved
   // The pane is remounted while the menu is open: the field it remembered is destroyed.
   ui::Element* pane = document_->GetElementById("pane");
   ASSERT_NE(pane, nullptr);
-  { ui::ElementPtr removed = pane->RemoveChild(field); }
+  {
+    ui::ElementPtr removed = pane->RemoveChild(field);
+  }
   context_->Update();
 
   EXPECT_TRUE(ContextMenuHost::Instance().HandleDismiss());
@@ -304,9 +310,8 @@ TEST_F(ContextMenuSheetTest, ALongPressMenuOnThePhoneIsTheSheetWithItsTitleAndRe
     actions.push_back(reply);
     return actions;
   });
-  ContextMenuHost::Instance().SetAnchorResolver([](ui::Element* target) -> ui::Element* {
-    return target && target->GetId() == "other" ? target : nullptr;
-  });
+  ContextMenuHost::Instance().SetAnchorResolver(
+      [](ui::Element* target) -> ui::Element* { return target && target->GetId() == "other" ? target : nullptr; });
   ContextMenuHost::Instance().SetTitleResolver([](const ContextMenuRequest&) { return std::string("Message"); });
   ContextMenuHost::Instance().OnLongPress({20, 380}, document_->GetElementById("other"));
   context_->Update();
@@ -394,7 +399,7 @@ TEST_F(ContextMenuSheetTest, ThePlusGrowsTheSheetAndHandsItsBodyOver) {
   ContextMenuHost::Instance().Update();
   EXPECT_TRUE(ContextMenuHost::Instance().IsOpen());
   ASSERT_TRUE(close_sheet);
-  close_sheet();  // the body's pick
+  close_sheet(); // the body's pick
   ContextMenuHost::Instance().Update();
   EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
   EXPECT_FALSE(dismissed) << "a pick is a choice, not a dismissal";
@@ -465,8 +470,8 @@ TEST_F(ContextMenuPopoverTest, APopoverOnTheDesktopIsAPlainFloatMenu) {
   EXPECT_FALSE(layer->IsClassSet("context-menu-layer--sheet"));
 }
 
-}  // namespace
-}  // namespace pbr
+} // namespace
+} // namespace pbr
 
 namespace pbr {
 namespace {

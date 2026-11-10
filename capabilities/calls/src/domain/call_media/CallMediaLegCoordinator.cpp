@@ -57,18 +57,18 @@ logging::Logger& CallMediaLegLog() {
 
 const char* BundlePhaseName(const CallMediaBundlePhase phase) {
   switch (phase) {
-  case CallMediaBundlePhase::Idle:
-    return "Idle";
-  case CallMediaBundlePhase::OutboundHello:
-    return "OutboundHello";
-  case CallMediaBundlePhase::InboundHello:
-    return "InboundHello";
-  case CallMediaBundlePhase::AwaitingMedia:
-    return "AwaitingMedia";
-  case CallMediaBundlePhase::MediaReady:
-    return "MediaReady";
-  case CallMediaBundlePhase::Closing:
-    return "Closing";
+    case CallMediaBundlePhase::Idle:
+      return "Idle";
+    case CallMediaBundlePhase::OutboundHello:
+      return "OutboundHello";
+    case CallMediaBundlePhase::InboundHello:
+      return "InboundHello";
+    case CallMediaBundlePhase::AwaitingMedia:
+      return "AwaitingMedia";
+    case CallMediaBundlePhase::MediaReady:
+      return "MediaReady";
+    case CallMediaBundlePhase::Closing:
+      return "Closing";
   }
   return "?";
 }
@@ -251,11 +251,13 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (!runtime || stopped.load(std::memory_order_acquire) || !task) {
       return;
     }
-    io_deferred.Post([rt = runtime](std::function<void()> t) {
-      if (rt) {
-        rt->PostToIo(std::move(t));
-      }
-    }, std::move(task));
+    io_deferred.Post(
+        [rt = runtime](std::function<void()> t) {
+          if (rt) {
+            rt->PostToIo(std::move(t));
+          }
+        },
+        std::move(task));
   }
 
   /** Remote PeerId for the glare tiebreak (dialed alias link first, then the given link). */
@@ -341,8 +343,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       if (id == except_call_id || !bundle || IsPendingCallId(id)) {
         continue;
       }
-      if (bundle->phase == CallMediaBundlePhase::MediaReady ||
-          bundle->phase == CallMediaBundlePhase::AwaitingMedia ||
+      if (bundle->phase == CallMediaBundlePhase::MediaReady || bundle->phase == CallMediaBundlePhase::AwaitingMedia ||
           bundle->phase == CallMediaBundlePhase::InboundHello) {
         return true;
       }
@@ -383,35 +384,30 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     return ready ? ready : active;
   }
 
-  const Bundle* PrimaryBundle() const {
-    return const_cast<Impl*>(this)->PrimaryBundle();
-  }
+  const Bundle* PrimaryBundle() const { return const_cast<Impl*>(this)->PrimaryBundle(); }
 
   void IndexChannel(const uint32_t channel_id, const std::string& call_id, const CallMediaChannelRole role) {
     channel_index[channel_id] = {call_id, role};
   }
 
-  void UnindexChannel(const uint32_t channel_id) {
-    channel_index.erase(channel_id);
-  }
+  void UnindexChannel(const uint32_t channel_id) { channel_index.erase(channel_id); }
 
   static bool PathOwnsRole(const Path& path, const CallMediaChannelRole role, const pp::amp::ChannelSession* session) {
     if (!session) {
       return false;
     }
     switch (role) {
-    case CallMediaChannelRole::OutboundControl:
-      return path.outbound_control.get() == session;
-    case CallMediaChannelRole::InboundControl:
-      return path.inbound_control.get() == session;
-    case CallMediaChannelRole::Media:
-      return path.media.get() == session;
+      case CallMediaChannelRole::OutboundControl:
+        return path.outbound_control.get() == session;
+      case CallMediaChannelRole::InboundControl:
+        return path.inbound_control.get() == session;
+      case CallMediaChannelRole::Media:
+        return path.media.get() == session;
     }
     return false;
   }
 
-  bool OwnsRole(const Bundle& bundle, const CallMediaChannelRole role,
-                const pp::amp::ChannelSession* session) const {
+  bool OwnsRole(const Bundle& bundle, const CallMediaChannelRole role, const pp::amp::ChannelSession* session) const {
     return PathOwnsRole(bundle.active, role, session);
   }
 
@@ -437,16 +433,16 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     pp::amp::PeerLink* link = ResolvePathLink(bundle, path);
     std::shared_ptr<pp::amp::ChannelSession>* slot = nullptr;
     switch (role) {
-    case CallMediaChannelRole::OutboundControl:
-      slot = &path.outbound_control;
-      break;
-    case CallMediaChannelRole::InboundControl:
-      slot = &path.inbound_control;
-      break;
-    case CallMediaChannelRole::Media:
-      slot = &path.media;
-      path.media_bound = false;
-      break;
+      case CallMediaChannelRole::OutboundControl:
+        slot = &path.outbound_control;
+        break;
+      case CallMediaChannelRole::InboundControl:
+        slot = &path.inbound_control;
+        break;
+      case CallMediaChannelRole::Media:
+        slot = &path.media;
+        path.media_bound = false;
+        break;
     }
     if (*slot) {
       UnindexChannel((*slot)->ChannelId());
@@ -530,7 +526,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       DropPath(*bundle, *bundle->standby);
     }
     if (bundle->migration && bundle->migration->done) {
-      pending_user_cbs.push_back([done = std::move(bundle->migration->done)]() { done(Error("call-media: call ended")); });
+      pending_user_cbs.push_back(
+          [done = std::move(bundle->migration->done)]() { done(Error("call-media: call ended")); });
     }
     bundles.erase(call_id);
   }
@@ -540,9 +537,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     const std::string& fail_message = failure.message;
     const std::string call_id = bundle.call_id;
     CallMediaLegLog().info << "CallMediaLeg teardown call_id=" << call_id << " peer=" << bundle.params.peer_key
-                           << " phase=" << BundlePhaseName(bundle.phase)
-                           << " abort=" << (finish_with_abort ? 1 : 0) << " notify=" << (notify_failed ? 1 : 0)
-                           << " reason=" << fail_message;
+                           << " phase=" << BundlePhaseName(bundle.phase) << " abort=" << (finish_with_abort ? 1 : 0)
+                           << " notify=" << (notify_failed ? 1 : 0) << " reason=" << fail_message;
     const bool was_ready = bundle.phase == CallMediaBundlePhase::MediaReady;
     bundle.local_cancel = bundle.local_cancel || finish_with_abort;
     bundle.phase = CallMediaBundlePhase::Closing;
@@ -877,7 +873,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   void OpenMediaOutbound(Bundle& bundle) {
     pp::amp::PeerLink* link = ResolveLink(bundle);
     if (!link || !link->Mux()) {
-      TearDownBundle(bundle, false, false, Fail(CallMediaErr::ChannelFailed, "amp call-media: no link for media channel"));
+      TearDownBundle(bundle, false, false,
+                     Fail(CallMediaErr::ChannelFailed, "amp call-media: no link for media channel"));
       return;
     }
     auto channel_id = link->Mux()->OpenOutbound(kCallMediaDirectProtocolId, pp::amp::CallMediaChannelPolicy());
@@ -888,32 +885,30 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     const auto call_id = bundle.call_id;
     const auto leg_id = bundle.leg_id;
     const int64_t deadline = bundle.deadline.value_or(NowMs());
-    ScheduleWhenChannelOpen(link->Handle(), *channel_id, deadline,
-                            [this, self = shared_from_this(), call_id, leg_id,
-                             channel_id = *channel_id](const bool open) {
-                              CallbackLock lock(*this);
-                              auto* bundle = FindByCallId(call_id);
-                              if (!bundle || bundle->leg_id.value != leg_id.value) {
-                                return;
-                              }
-                              if (!open) {
-                                if (bundle->phase == CallMediaBundlePhase::OutboundHello ||
-                                    bundle->phase == CallMediaBundlePhase::AwaitingMedia) {
-                                  TearDownBundle(*bundle, false, false,
-                                                 Fail(CallMediaErr::ChannelFailed,
-                                                      "amp call-media: media channel open failed"));
-                                }
-                                return;
-                              }
-                              auto* resolved = ResolveLink(*bundle);
-                              if (!resolved) {
-                                TearDownBundle(*bundle, false, false,
-                                               Fail(CallMediaErr::Closed, "amp call-media: peer link missing"));
-                                return;
-                              }
-                              BindMediaChannel(*bundle, *resolved, channel_id);
-                              TryEnterMediaReady(*bundle);
-                            });
+    ScheduleWhenChannelOpen(
+        link->Handle(), *channel_id, deadline,
+        [this, self = shared_from_this(), call_id, leg_id, channel_id = *channel_id](const bool open) {
+          CallbackLock lock(*this);
+          auto* bundle = FindByCallId(call_id);
+          if (!bundle || bundle->leg_id.value != leg_id.value) {
+            return;
+          }
+          if (!open) {
+            if (bundle->phase == CallMediaBundlePhase::OutboundHello ||
+                bundle->phase == CallMediaBundlePhase::AwaitingMedia) {
+              TearDownBundle(*bundle, false, false,
+                             Fail(CallMediaErr::ChannelFailed, "amp call-media: media channel open failed"));
+            }
+            return;
+          }
+          auto* resolved = ResolveLink(*bundle);
+          if (!resolved) {
+            TearDownBundle(*bundle, false, false, Fail(CallMediaErr::Closed, "amp call-media: peer link missing"));
+            return;
+          }
+          BindMediaChannel(*bundle, *resolved, channel_id);
+          TryEnterMediaReady(*bundle);
+        });
   }
 
   void BindControlChannel(Bundle& bundle, pp::amp::PeerLink& link, const uint32_t channel_id,
@@ -1008,7 +1003,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         path->last_rx = NowMs();
       }
       if (!bundle->rx_seq[static_cast<uint8_t>(decoded->channel_id)].Accept(decoded->seq)) {
-        return true;  // the same frame over the other path
+        return true; // the same frame over the other path
       }
     }
     const auto channel = static_cast<uint8_t>(decoded->channel_id);
@@ -1019,7 +1014,6 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
     return true;
   }
-
 
   Bundle* FindByInboundSession(const std::shared_ptr<pp::amp::ChannelSession>& session) {
     for (auto& [_, bundle] : bundles) {
@@ -1138,7 +1132,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       return fail("the call already has a standby");
     }
     if (bundle->standby && link->Mux() == bundle->standby->mux) {
-      DropPath(*bundle, *bundle->standby);  // fresh channels on that link replace the warm ones
+      DropPath(*bundle, *bundle->standby); // fresh channels on that link replace the warm ones
       bundle->standby.reset();
     }
     auto channel = link->Mux()->OpenOutbound(kCallMediaDirectProtocolId, pp::amp::CallMediaControlChannelPolicy());
@@ -1156,9 +1150,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     migration.done = std::move(done);
     migration.standby_only = standby_only;
     bundle->migration = std::move(migration);
-    CallMediaLegLog().info << "CallMediaLeg " << (standby_only ? "standby add" : "migrate") << " start call_id=" << bundle->call_id
-                           << " path_gen=" << bundle->candidate->gen << " to="
-                           << (bundle->candidate->kind == CallMediaLinkKind::Relayed ? "relayed" : "direct");
+    CallMediaLegLog().info << "CallMediaLeg " << (standby_only ? "standby add" : "migrate")
+                           << " start call_id=" << bundle->call_id << " path_gen=" << bundle->candidate->gen
+                           << " to=" << (bundle->candidate->kind == CallMediaLinkKind::Relayed ? "relayed" : "direct");
   }
 
   /**
@@ -1248,8 +1242,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     bundle.rx_since_switch = false;
     bundle.release_sent = false;
     CallMediaLegLog().info << "CallMediaLeg migrate switched call_id=" << bundle.call_id
-                           << " path_gen=" << bundle.active.gen << " path="
-                           << (bundle.active.kind == CallMediaLinkKind::Relayed ? "relayed" : "direct")
+                           << " path_gen=" << bundle.active.gen
+                           << " path=" << (bundle.active.kind == CallMediaLinkKind::Relayed ? "relayed" : "direct")
                            << " driver=" << (drove ? 1 : 0);
     if (bundle.callbacks.on_path_changed) {
       pending_user_cbs.push_back([cb = bundle.callbacks.on_path_changed, kind = bundle.active.kind]() { cb(kind); });
@@ -1307,7 +1301,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
     Path candidate = std::move(holder->active);
     holder->active = Path{};
-    EraseBundle(holder->call_id);  // the placeholder only: its channel now belongs to the call
+    EraseBundle(holder->call_id); // the placeholder only: its channel now belongs to the call
     candidate.gen = gen;
     IndexChannel(candidate.inbound_control->ChannelId(), call_id, CallMediaChannelRole::InboundControl);
     target->candidate = std::move(candidate);
@@ -1335,8 +1329,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (!link || !link->Mux()) {
       return AbandonMigration(*bundle, "candidate link lost");
     }
-    auto media = link->Mux()->OpenOutbound(kCallMediaDirectProtocolId,
-                                          pp::amp::CallMediaChannelPolicy());
+    auto media = link->Mux()->OpenOutbound(kCallMediaDirectProtocolId, pp::amp::CallMediaChannelPolicy());
     if (!media) {
       return AbandonMigration(*bundle, media.error().message);
     }
@@ -1377,9 +1370,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   void KeepRetiringAsStandby(Bundle& bundle) {
     Path released = std::move(*bundle.retiring);
     bundle.retiring.reset();
-    const bool keep = !PathLinkMissing(bundle, released) &&
-                      (!bundle.standby || (released.kind == CallMediaLinkKind::Relayed &&
-                                           bundle.standby->kind != CallMediaLinkKind::Relayed));
+    const bool keep =
+        !PathLinkMissing(bundle, released) && (!bundle.standby || (released.kind == CallMediaLinkKind::Relayed &&
+                                                                   bundle.standby->kind != CallMediaLinkKind::Relayed));
     if (!keep) {
       DropPath(bundle, released);
       CallMediaLegLog().info << "CallMediaLeg path released call_id=" << bundle.call_id << " path_gen=" << released.gen;
@@ -1390,8 +1383,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
     released.last_rx = NowMs();
     CallMediaLegLog().info << "CallMediaLeg path released to standby call_id=" << bundle.call_id
-                           << " path_gen=" << released.gen << " path="
-                           << (released.kind == CallMediaLinkKind::Relayed ? "relayed" : "direct");
+                           << " path_gen=" << released.gen
+                           << " path=" << (released.kind == CallMediaLinkKind::Relayed ? "relayed" : "direct");
     bundle.standby = std::move(released);
   }
 
@@ -1412,8 +1405,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     bundle.next_auto_migrate = {};
     DropPath(bundle, dead);
     CallMediaLegLog().warning << "CallMediaLeg back onto the path it left call_id=" << bundle.call_id
-                              << " reason=" << why << " path_gen=" << bundle.active.gen << " path="
-                              << (bundle.active.kind == CallMediaLinkKind::Relayed ? "relayed" : "direct");
+                              << " reason=" << why << " path_gen=" << bundle.active.gen
+                              << " path=" << (bundle.active.kind == CallMediaLinkKind::Relayed ? "relayed" : "direct");
     if (bundle.callbacks.on_path_changed) {
       pending_user_cbs.push_back([cb = bundle.callbacks.on_path_changed, kind = bundle.active.kind]() { cb(kind); });
     }
@@ -1429,12 +1422,12 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (bundle.active.kind == CallMediaLinkKind::Relayed && old_active.kind == CallMediaLinkKind::Direct) {
       bundle.left_direct = old_active.link;
     }
-    CallMediaLegLog().warning << "CallMediaLeg failover call_id=" << bundle.call_id << " reason=" << why << " to="
-                              << (bundle.active.kind == CallMediaLinkKind::Relayed ? "relayed" : "direct")
+    CallMediaLegLog().warning << "CallMediaLeg failover call_id=" << bundle.call_id << " reason=" << why
+                              << " to=" << (bundle.active.kind == CallMediaLinkKind::Relayed ? "relayed" : "direct")
                               << " path_gen=" << bundle.active.gen;
     if (!PathLinkMissing(bundle, old_active)) {
       old_active.last_rx = NowMs();
-      bundle.standby = std::move(old_active);  // silent, not gone: it may come back
+      bundle.standby = std::move(old_active); // silent, not gone: it may come back
     } else {
       DropPath(bundle, old_active);
     }
@@ -1455,7 +1448,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     const CallMediaLinkKind lost_kind = bundle.active.kind;
     const pp::amp::LinkHandle lost_link = bundle.active.link;
     Path lost;
-    lost.gen = bundle.active.gen;  // the next path is gen + 1
+    lost.gen = bundle.active.gen; // the next path is gen + 1
     DropPath(bundle, bundle.active);
     bundle.active = std::move(lost);
     bundle.reconnect_deadline = NowMs() + reconnect_window_ms;
@@ -1471,9 +1464,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     // unless that fails to land within the grace.
     bundle.path_lost_notify_at = NowMs() + kCallMediaQuietRebindGraceMs;
     const bool drive = LocalWinsForBundle(bundle, *other);
-    CallMediaLegLog().info << "CallMediaLeg quiet rebind call_id=" << bundle.call_id << " to="
-                           << (other->IsCarrierBacked() ? "relayed" : "direct") << " drive=" << (drive ? 1 : 0)
-                           << " phase=" << BundlePhaseName(bundle.phase);
+    CallMediaLegLog().info << "CallMediaLeg quiet rebind call_id=" << bundle.call_id
+                           << " to=" << (other->IsCarrierBacked() ? "relayed" : "direct")
+                           << " drive=" << (drive ? 1 : 0) << " phase=" << BundlePhaseName(bundle.phase);
     if (drive) {
       BeginMigrationLocked(bundle.leg_id, other->Handle(), [call_id = bundle.call_id](Roe<void> moved) {
         if (!moved) {
@@ -1497,8 +1490,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (!runtime || bundle.remote_peer_id.empty()) {
       return nullptr;
     }
-    const auto first = lost_kind == CallMediaLinkKind::Relayed ? pp::amp::TransportClass::Carrier
-                                                               : pp::amp::TransportClass::Adp;
+    const auto first =
+        lost_kind == CallMediaLinkKind::Relayed ? pp::amp::TransportClass::Carrier : pp::amp::TransportClass::Adp;
     const auto second =
         first == pp::amp::TransportClass::Adp ? pp::amp::TransportClass::Carrier : pp::amp::TransportClass::Adp;
     for (const auto transport : {first, second}) {
@@ -1528,10 +1521,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     Bundle* bundle = FindByLegId(leg_id);
     pp::amp::PeerLink* link =
         bundle && !bundle->remote_peer_id.empty()
-            ? runtime->Links().FindConnectedLinkByPeerId(bundle->remote_peer_id,
-                                                         kind == CallMediaLinkKind::Relayed
-                                                             ? pp::amp::TransportClass::Carrier
-                                                             : pp::amp::TransportClass::Adp)
+            ? runtime->Links().FindConnectedLinkByPeerId(bundle->remote_peer_id, kind == CallMediaLinkKind::Relayed
+                                                                                     ? pp::amp::TransportClass::Carrier
+                                                                                     : pp::amp::TransportClass::Adp)
             : nullptr;
     if (!link) {
       if (done) {
@@ -1563,8 +1555,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       return;
     }
     bundle.next_auto_migrate = now + kCallMediaAutoMigrateBackoffMs;
-    CallMediaLegLog().info << "CallMediaLeg direct link up for relayed call_id=" << bundle.call_id
-                           << " — migrating";
+    CallMediaLegLog().info << "CallMediaLeg direct link up for relayed call_id=" << bundle.call_id << " — migrating";
     BeginMigrationLocked(bundle.leg_id, direct->Handle(), {});
   }
 
@@ -1972,23 +1963,23 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       return true;
     }();
     switch (DecideCallMediaHelloAck(ctx)) {
-    case CallMediaHelloAckDecision::IgnoreStale:
-      return;
-    case CallMediaHelloAckDecision::YieldOutbound:
-      DropRole(*bundle, CallMediaChannelRole::OutboundControl);
-      bundle->control_ready = false;
-      if (bundle->active.inbound_control) {
-        bundle->phase = CallMediaBundlePhase::InboundHello;
-      }
-      return;
-    case CallMediaHelloAckDecision::Fail:
-      TearDownBundle(*bundle, false, false, Fail(CallMediaErr::HelloRejected, "amp call-media: hello rejected"));
-      return;
-    case CallMediaHelloAckDecision::ProceedToMedia:
-      bundle->control_ready = true;
-      bundle->phase = CallMediaBundlePhase::AwaitingMedia;
-      OpenMediaOutbound(*bundle);
-      return;
+      case CallMediaHelloAckDecision::IgnoreStale:
+        return;
+      case CallMediaHelloAckDecision::YieldOutbound:
+        DropRole(*bundle, CallMediaChannelRole::OutboundControl);
+        bundle->control_ready = false;
+        if (bundle->active.inbound_control) {
+          bundle->phase = CallMediaBundlePhase::InboundHello;
+        }
+        return;
+      case CallMediaHelloAckDecision::Fail:
+        TearDownBundle(*bundle, false, false, Fail(CallMediaErr::HelloRejected, "amp call-media: hello rejected"));
+        return;
+      case CallMediaHelloAckDecision::ProceedToMedia:
+        bundle->control_ready = true;
+        bundle->phase = CallMediaBundlePhase::AwaitingMedia;
+        OpenMediaOutbound(*bundle);
+        return;
     }
   }
 
@@ -2004,7 +1995,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       // Unique per placeholder: channel ids restart at 1 on every link, so a placeholder left on
       // one link (an ignored migrate) collided with the next link's channel 1 — the emplace below
       // kept the old entry and `raw` dangled (use-after-free).
-      pending->call_id = std::string("__pending_") + std::to_string(pending->leg_id.value) + "_" + std::to_string(channel_id);
+      pending->call_id =
+          std::string("__pending_") + std::to_string(pending->leg_id.value) + "_" + std::to_string(channel_id);
       pending->params.peer_key = link.PeerKey();
       pending->deadline = NowMs() + kCallMediaPlaceholderTimeoutMs;
       pending->finished = true;
@@ -2054,15 +2046,14 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
 
   /** Dual-dial: StartLeg arrived after inbound already claimed this call_id. */
   bool AdoptOutboundIntoExisting(Bundle& existing, const CallMediaLegId leg_id, const bool local_offerer,
-                                 CallMediaDirectCallbacks& callbacks, LegConnected& on_finished,
-                                 const int timeout_ms) {
+                                 CallMediaDirectCallbacks& callbacks, LegConnected& on_finished, const int timeout_ms) {
     const auto phase = existing.phase;
     if (phase != CallMediaBundlePhase::InboundHello && phase != CallMediaBundlePhase::AwaitingMedia &&
         phase != CallMediaBundlePhase::MediaReady) {
       return false;
     }
     existing.leg_id = leg_id;
-    existing.offerer = local_offerer;  // our own role: authoritative over what the inbound hello implied
+    existing.offerer = local_offerer; // our own role: authoritative over what the inbound hello implied
     existing.deadline = NowMs() + (timeout_ms > 0 ? timeout_ms : kCallMediaConnectTimeoutMs);
     // Inbound worker may not have installed answer callbacks yet.
     if (!existing.callbacks.on_audio && !existing.callbacks.on_media && !existing.callbacks.on_connected) {
@@ -2073,7 +2064,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       LegConnected cb = std::move(on_finished);
       if (cb) {
         CallMediaRoe result = phase == CallMediaBundlePhase::MediaReady ? CallMediaRoe{} : CallMediaRoe(Aborted());
-        pending_user_cbs.push_back([cb = std::move(cb), result = std::move(result)]() mutable { cb(std::move(result)); });
+        pending_user_cbs.push_back(
+            [cb = std::move(cb), result = std::move(result)]() mutable { cb(std::move(result)); });
       }
       return true;
     }
@@ -2097,11 +2089,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
    */
   void OpenOutboundControl(OutboundOpen open, const int retries) {
     if (retries == 0) {
-      CallMediaLegLog().info << "CallMediaLeg OpenChannel invoke call_id=" << open.call_id
-                             << " peer=" << open.peer_key;
+      CallMediaLegLog().info << "CallMediaLeg OpenChannel invoke call_id=" << open.call_id << " peer=" << open.peer_key;
     }
     auto on_channel = [this, self = shared_from_this(), open, retries](const pp::amp::LinkHandle bound,
-                                                                         pp::amp::PeerLinkManager::ChannelRoe channel) {
+                                                                       pp::amp::PeerLinkManager::ChannelRoe channel) {
       OnOutboundControlOpened(open, retries, bound, std::move(channel));
     };
     // Any Connected link to the peer (the relay carrier included) — a dial in flight under the key
@@ -2113,11 +2104,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
                                << " peer=" << open.peer_key
                                << " path=" << (link->IsCarrierBacked() ? "relayed" : "direct");
       }
-      runtime->Links().OpenChannelOnLink(
-          *link, kCallMediaDirectProtocolId, pp::amp::CallMediaControlChannelPolicy(),
-          [on_channel, bound](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
-            on_channel(bound, std::move(channel));
-          });
+      runtime->Links().OpenChannelOnLink(*link, kCallMediaDirectProtocolId, pp::amp::CallMediaControlChannelPolicy(),
+                                         [on_channel, bound](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
+                                           on_channel(bound, std::move(channel));
+                                         });
       return;
     }
     // Nothing up: dial, then open on the link the next pass resolves. Never open by key — the
@@ -2165,7 +2155,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       CallMediaLegLog().info << "CallMediaLeg OpenChannel ok call_id=" << open.call_id << " peer=" << open.peer_key
                              << " after_retries=" << retries;
     }
-    auto* link = LiveLink(bound);  // the link the channel was opened on (its id is that mux's)
+    auto* link = LiveLink(bound); // the link the channel was opened on (its id is that mux's)
     if (!link) {
       CallMediaLegLog().info << "CallMediaLeg OpenChannel ok but link missing call_id=" << open.call_id
                              << " peer=" << open.peer_key;
@@ -2220,9 +2210,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
     BindControlChannel(*bundle, *link, channel_id, CallMediaChannelRole::OutboundControl);
     if (!bundle->active.outbound_control ||
-        !bundle->active.outbound_control->EnqueueOutbound(Utf8Body(EncodeCallMediaHello(open.params.call_id, open.params.media_epoch, open.params.offerer)))) {
-      CallMediaLegLog().info << "CallMediaLeg hello write failed call_id=" << open.call_id
-                             << " peer=" << open.peer_key;
+        !bundle->active.outbound_control->EnqueueOutbound(
+            Utf8Body(EncodeCallMediaHello(open.params.call_id, open.params.media_epoch, open.params.offerer)))) {
+      CallMediaLegLog().info << "CallMediaLeg hello write failed call_id=" << open.call_id << " peer=" << open.peer_key;
       TearDownBundle(*bundle, false, false, Fail(CallMediaErr::ChannelFailed, "amp call-media: hello write failed"));
       return;
     }
@@ -2245,8 +2235,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       CallbackLock lock(*this);
       if (auto* existing = FindByCallId(params.call_id)) {
         if (AdoptOutboundIntoExisting(*existing, leg_id, params.offerer, callbacks, on_finished, timeout_ms)) {
-        return;
-      }
+          return;
+        }
         TearDownBundle(*existing, true, false, Aborted());
       }
       std::vector<std::string> others;
@@ -2281,11 +2271,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       if (auto preferred = runtime->Links().PreferredMultiaddr(peer_key)) {
         ma = *preferred;
       }
-      CallMediaLegLog().info << "CallMediaLeg outbound begin call_id=" << call_id
-                             << " peer=" << peer_key
+      CallMediaLegLog().info << "CallMediaLeg outbound begin call_id=" << call_id << " peer=" << peer_key
                              << " role=" << (params.offerer ? "offerer" : "answerer")
-                             << " has_endpoint=" << (snap.has_endpoint ? 1 : 0)
-                             << " connected=" << (connected ? 1 : 0)
+                             << " has_endpoint=" << (snap.has_endpoint ? 1 : 0) << " connected=" << (connected ? 1 : 0)
                              << " ma=" << (ma.empty() ? "(none)" : ma);
     }
 
@@ -2318,14 +2306,13 @@ void CallMediaLegCoordinator::Start() {
   runtime_.Links().SetProtocolHandler(
       kCallMediaDirectProtocolId,
       [weak = std::weak_ptr(impl_)](pp::amp::LinkHandle handle, const std::string& /*remote_peer_id*/,
-                                   const uint32_t ch) {
+                                    const uint32_t ch) {
         if (auto impl = weak.lock()) {
           if (!impl->runtime) {
             return;
           }
-          impl->runtime->Links().WithLiveLink(handle, [&](pp::amp::PeerLink& link) {
-            impl->HandleInboundChannel(link, ch);
-          });
+          impl->runtime->Links().WithLiveLink(handle,
+                                              [&](pp::amp::PeerLink& link) { impl->HandleInboundChannel(link, ch); });
         }
       });
 }
@@ -2377,18 +2364,18 @@ CallMediaFailure CallMediaLegCoordinator::WrapLinkFailure(const pp::amp::PeerLin
   using LinkErr = pp::amp::PeerLinkManager::Err;
   CallMediaErr code = CallMediaErr::LinkFailed;
   switch (link.GetCode()) {
-  case LinkErr::TransportFailed:
-    code = CallMediaErr::StaleLink;  // B39: the next attempt drops this link and dials fresh
-    break;
-  case LinkErr::EndpointNotRegistered:
-    code = CallMediaErr::Unreachable;
-    break;
-  case LinkErr::ChannelOpenFailed:
-    code = CallMediaErr::ChannelFailed;
-    break;
-  default:
-    code = CallMediaErr::LinkFailed;
-    break;
+    case LinkErr::TransportFailed:
+      code = CallMediaErr::StaleLink; // B39: the next attempt drops this link and dials fresh
+      break;
+    case LinkErr::EndpointNotRegistered:
+      code = CallMediaErr::Unreachable;
+      break;
+    case LinkErr::ChannelOpenFailed:
+      code = CallMediaErr::ChannelFailed;
+      break;
+    default:
+      code = CallMediaErr::LinkFailed;
+      break;
   }
   return CallMediaFailure::Of(code, detail::AppendFrom("amp call-media: control channel failed", "link", link.message));
 }
@@ -2398,21 +2385,17 @@ CallMediaLegId CallMediaLegCoordinator::StartLeg(const CallMediaDirectConnectPar
                                                  const int timeout_ms) {
   if (!impl_->started.load(std::memory_order_acquire)) {
     if (on_finished) {
-      runtime_.PostToIo(
-          [on_finished = std::move(on_finished)]() mutable {
-            on_finished(Fail(CallMediaErr::NotStarted, "call-media service not started"));
-          });
+      runtime_.PostToIo([on_finished = std::move(on_finished)]() mutable {
+        on_finished(Fail(CallMediaErr::NotStarted, "call-media service not started"));
+      });
     }
     return {};
   }
   if (params.peer_key.empty() || params.call_id.empty() || params.media_key.empty()) {
     if (on_finished) {
-      const char* which = params.peer_key.empty()   ? "peer_key"
-                          : params.call_id.empty()  ? "call_id"
-                                                    : "media_key";
-      CallMediaLegLog().info << "CallMediaLeg reject invalid params missing=" << which
-                             << " call_id=" << params.call_id << " peer=" << params.peer_key
-                             << " media_key_len=" << params.media_key.size();
+      const char* which = params.peer_key.empty() ? "peer_key" : params.call_id.empty() ? "call_id" : "media_key";
+      CallMediaLegLog().info << "CallMediaLeg reject invalid params missing=" << which << " call_id=" << params.call_id
+                             << " peer=" << params.peer_key << " media_key_len=" << params.media_key.size();
       runtime_.PostToIo([on_finished = std::move(on_finished)]() mutable {
         on_finished(Fail(CallMediaErr::BadRequest, "amp call-media: invalid connect params"));
       });
@@ -2431,8 +2414,8 @@ CallMediaLegId CallMediaLegCoordinator::StartLeg(const CallMediaDirectConnectPar
   }
 
   const CallMediaLegId leg_id{impl_->next_leg_id.fetch_add(1, std::memory_order_relaxed)};
-  impl_->PostIo([impl = impl_, leg_id, params, callbacks = std::move(callbacks),
-                 on_finished = std::move(on_finished), timeout_ms]() mutable {
+  impl_->PostIo([impl = impl_, leg_id, params, callbacks = std::move(callbacks), on_finished = std::move(on_finished),
+                 timeout_ms]() mutable {
     impl->BeginOutboundLeg(leg_id, params, std::move(callbacks), std::move(on_finished), timeout_ms);
   });
   return leg_id;
@@ -2611,9 +2594,8 @@ CallMediaBundlePhase CallMediaLegCoordinator::BundlePhase(const CallMediaLegId i
 }
 
 void CallMediaLegCoordinator::MigrateLeg(const CallMediaLegId id, const pp::amp::LinkHandle link, LegFinished done) {
-  impl_->PostIo([impl = impl_, id, link, done = std::move(done)]() mutable {
-    impl->BeginMigration(id, link, std::move(done));
-  });
+  impl_->PostIo(
+      [impl = impl_, id, link, done = std::move(done)]() mutable { impl->BeginMigration(id, link, std::move(done)); });
   runtime_.Pump();
 }
 
@@ -2705,7 +2687,7 @@ Roe<void> CallMediaLegCoordinator::SendMedia(const CallMediaLegId id, const uint
     guard = bundle->send_guard;
     own_instance = bundle->own_instance;
     if (bundle->active.kind == impl_->silenced_kind_for_test.load(std::memory_order_relaxed)) {
-      return Roe<void>();  // test: this path went quiet
+      return Roe<void>(); // test: this path went quiet
     }
   }
   // One media frame (A029 H2): the stream id is the sender's (0 on a 1:1 call: the instance tells the two ends'

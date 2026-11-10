@@ -41,9 +41,7 @@ public:
     std::lock_guard lock(mu);
     return connected.count(peer_key) > 0;
   }
-  std::optional<std::string> PreferredMultiaddr(const std::string& /*peer*/) const override {
-    return std::nullopt;
-  }
+  std::optional<std::string> PreferredMultiaddr(const std::string& /*peer*/) const override { return std::nullopt; }
   void ClearDialBackoff(const std::string& /*peer*/) override {}
   void AbortInflightDial(const std::string& /*peer*/) override { ++abort_calls; }
   void DropLink(const std::string& peer_key) override {
@@ -66,7 +64,7 @@ public:
   mesh::CircuitReachRoe TryEnsureHopReachable(const std::string& /*hop*/) override { return {}; }
   mesh::CircuitReachRoe TryEnsurePeerReachable(const std::string& /*peer*/) override { return {}; }
   void TryEnsurePeerReachableAsync(const std::string& peer_key, mesh::CircuitReachDone on_done,
-                                        bool /*allow_circuit*/) override {
+                                   bool /*allow_circuit*/) override {
     {
       std::lock_guard lock(dial_.mu);
       dial_.connected.insert(peer_key);
@@ -302,9 +300,9 @@ public:
   mesh::CircuitReachRoe TryEnsureHopReachable(const std::string&) override { return {}; }
   mesh::CircuitReachRoe TryEnsurePeerReachable(const std::string&) override { return {}; }
   void TryEnsurePeerReachableAsync(const std::string&, mesh::CircuitReachDone on_done, bool) override {
-    on_done(mesh::CircuitReachFailure::Of(
-        mesh::CircuitReachErr::TargetNotReserved,
-        "circuit hop reach failed [tunnel: circuit-relay: refused [relay: circuit target peer endpoint not registered]]"));
+    on_done(mesh::CircuitReachFailure::Of(mesh::CircuitReachErr::TargetNotReserved,
+                                          "circuit hop reach failed [tunnel: circuit-relay: refused [relay: circuit "
+                                          "target peer endpoint not registered]]"));
   }
 };
 
@@ -372,7 +370,9 @@ TEST_F(CallConnectDiagSequenceTest, SuccessWritesNetReachAndResult) {
             "event=call.net call=5ca1ab01 role=caller known=1 online=1 cellular=1 expensive=0 v4_private=1 "
             "v4_public=0 v6_global=2 v6_other=0 relays=9 relays_up=4 relays_down=2 peer_state=down "
             "peer_fail=no_answer peer_fails=3");
-  EXPECT_EQ(lines[1].rfind("event=call.reach call=5ca1ab01 role=caller attempt=1 ok=1 kind=direct family=6 reused=1 ms=", 0), 0u)
+  EXPECT_EQ(
+      lines[1].rfind("event=call.reach call=5ca1ab01 role=caller attempt=1 ok=1 kind=direct family=6 reused=1 ms=", 0),
+      0u)
       << lines[1];
   EXPECT_EQ(lines[2].rfind("event=call.result call=5ca1ab01 role=caller ok=1 attempts=1 ms=", 0), 0u) << lines[2];
   EXPECT_NE(lines[2].find(" kind=direct family=6"), std::string::npos) << lines[2];
@@ -386,13 +386,15 @@ TEST_F(CallConnectDiagSequenceTest, GiveUpWritesOneReachLinePerAttemptAndTheReas
   ASSERT_TRUE(PumpUntil([&] { return finished_ > 0; }, std::chrono::seconds(20)));
   ASSERT_TRUE(result_ && !*result_);
   const std::vector<std::string> lines = Lines();
-  ASSERT_EQ(lines.size(), 7u) << ::testing::PrintToString(lines);  // net, five attempts, result
+  ASSERT_EQ(lines.size(), 7u) << ::testing::PrintToString(lines); // net, five attempts, result
   EXPECT_EQ(lines.front().rfind("event=call.net ", 0), 0u);
   for (size_t i = 1; i <= 5; ++i) {
-    EXPECT_EQ(lines[i].rfind("event=call.reach call=5ca1ab02 role=caller attempt=" + std::to_string(i) + " ok=1", 0), 0u)
+    EXPECT_EQ(lines[i].rfind("event=call.reach call=5ca1ab02 role=caller attempt=" + std::to_string(i) + " ok=1", 0),
+              0u)
         << lines[i];
   }
-  EXPECT_EQ(lines.back().rfind("event=call.result call=5ca1ab02 role=caller ok=0 attempts=5 ms=", 0), 0u) << lines.back();
+  EXPECT_EQ(lines.back().rfind("event=call.result call=5ca1ab02 role=caller ok=0 attempts=5 ms=", 0), 0u)
+      << lines.back();
   EXPECT_NE(lines.back().find(" err=timeout reach_err=none why=none relays=9 relays_up=4 peer_state=down "
                               "peer_fail=no_answer peer_fails=3"),
             std::string::npos)
@@ -408,7 +410,8 @@ TEST_F(CallConnectDiagSequenceTest, ARefusedCircuitIsNamedWithoutItsText) {
   ASSERT_TRUE(result_ && !*result_);
   const std::vector<std::string> lines = Lines();
   ASSERT_GE(lines.size(), 3u) << ::testing::PrintToString(lines);
-  EXPECT_NE(lines[1].find("event=call.reach call=5ca1ab03 role=caller attempt=1 ok=0 err="), std::string::npos) << lines[1];
+  EXPECT_NE(lines[1].find("event=call.reach call=5ca1ab03 role=caller attempt=1 ok=0 err="), std::string::npos)
+      << lines[1];
   EXPECT_NE(lines.back().find("ok=0 attempts=1"), std::string::npos) << lines.back();
   EXPECT_NE(lines.back().find(" err=unreachable reach_err="), std::string::npos) << lines.back();
   for (const std::string& line : lines) {
@@ -467,7 +470,7 @@ TEST_F(CallMediaConnectCoordinatorTest, AbortClearsInFlightWithoutFinishing) {
   if (transport_->pending) {
     transport_->pending({});
   }
-  PumpFor(std::chrono::milliseconds(1300));  // past the watchdog
+  PumpFor(std::chrono::milliseconds(1300)); // past the watchdog
   EXPECT_EQ(finished_, 0);
   EXPECT_EQ(transport_->connect_calls, 1) << "no retry after abort";
 }

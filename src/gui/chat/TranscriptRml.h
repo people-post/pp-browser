@@ -16,16 +16,15 @@ namespace pbr {
  * lines and says what an attachment card can show. `mentions`: a group's roster, against which the
  * messages' mention / `@everyone` spans are highlighted (G015); none (a direct chat): they show as plain text.
  */
-std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,
-                                                const TranscriptFacts& facts,
+std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries, const TranscriptFacts& facts,
                                                 const std::optional<MentionRoster>& mentions = std::nullopt);
 
 /** The size a picture shows at in its chat bubble, in dp. */
 struct PictureBubbleSize {
   int width_dp = 0;
   int height_dp = 0;
-  int image_height_dp = 0;  ///< the drawn picture's height (== height_dp unless cropped)
-  int image_offset_dp = 0;  ///< how far above the clip's top the picture starts (0 unless cropped)
+  int image_height_dp = 0; ///< the drawn picture's height (== height_dp unless cropped)
+  int image_offset_dp = 0; ///< how far above the clip's top the picture starts (0 unless cropped)
 };
 
 /** The phone's picture bubble box: about three quarters of a 390dp phone's transcript (Kenneth 2026-11-09: like

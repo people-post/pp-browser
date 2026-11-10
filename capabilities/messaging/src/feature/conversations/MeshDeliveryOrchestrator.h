@@ -60,7 +60,6 @@
 
 namespace pbr {
 
-
 class GroupMembershipWorkflow;
 class AttachmentFetchWorkflow;
 class IChatHistoryPeerClient;
@@ -69,13 +68,13 @@ class IChatBlobPeerClient;
 /** Product-facing path for chat header chrome (not dial/punch mechanics). */
 enum class ThreadPeerPathKind {
   None = 0,
-  Direct,      // live ADP PeerLink
-  ViaHop,      // live circuit/media carrier PeerLink
-  ViaRelay,    // Brief/HTTP message relay only (no live mesh link)
-  Connecting,  // dial / handshake / punch — short-lived
-  Degraded,    // backoff / retry soon
-  Failed,      // offline / can't connect
-  Ready,       // idle, not yet dialing
+  Direct,     // live ADP PeerLink
+  ViaHop,     // live circuit/media carrier PeerLink
+  ViaRelay,   // Brief/HTTP message relay only (no live mesh link)
+  Connecting, // dial / handshake / punch — short-lived
+  Degraded,   // backoff / retry soon
+  Failed,     // offline / can't connect
+  Ready,      // idle, not yet dialing
 };
 
 /** Aggregated peer-link UX for a direct chat thread. */
@@ -97,12 +96,12 @@ class MeshDeliveryOrchestrator : public Module {
 public:
   /** Amp single entry for chat / history / blob ([A020]); requires `amp_links`. */
   MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
-                      InboxController& inbox, AccountKeyResolver& account_keys, IPeerSessionStore& psk_store,
-                      IGroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
-                      mesh::IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
-                      std::function<void(std::function<void()>)> amp_worker_post = {},
-                      std::function<void(std::function<void()>)> amp_post_io = {},
-                      std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after = {});
+                           InboxController& inbox, AccountKeyResolver& account_keys, IPeerSessionStore& psk_store,
+                           IGroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
+                           mesh::IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
+                           std::function<void(std::function<void()>)> amp_worker_post = {},
+                           std::function<void(std::function<void()>)> amp_post_io = {},
+                           std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after = {});
 
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text,
                                      const SendRelayOptions& options = {});
@@ -112,8 +111,7 @@ public:
    * P001: re-lock peer initiation billing (`charge_required` system message) then MarkClosed locally.
    * `floor_minor` defaults to local identity initiation_floor when nullopt.
    */
-  Roe<void> SendChargeRequired(const std::string& peer_identity,
-                               std::optional<int64_t> floor_minor = std::nullopt);
+  Roe<void> SendChargeRequired(const std::string& peer_identity, std::optional<int64_t> floor_minor = std::nullopt);
   InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
   /** D098 — append reaction / reaction_clear annotation on direct or group thread. */
   Roe<ThreadMessage> SendReaction(const std::string& thread_id, const std::string& target_message_id,
@@ -144,7 +142,9 @@ public:
    * Forget the last poll result (back to Unknown) WITHOUT firing the callback: the owner just reset its own copy,
    * and the next result, Ok included, must count as a change or the owner never hears it.
    */
-  void ResetBriefRelayHealth() { brief_relay_health_.store(static_cast<int>(BriefRelayHealthState::Unknown), std::memory_order_relaxed); }
+  void ResetBriefRelayHealth() {
+    brief_relay_health_.store(static_cast<int>(BriefRelayHealthState::Unknown), std::memory_order_relaxed);
+  }
   void SetOnBriefRelayHealthChanged(std::function<void(BriefRelayHealthState)> callback);
   /** Me recovery: delete undelivered relay rows older than `older_than_days` (does not clear local chat). */
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
@@ -259,7 +259,6 @@ public:
 
   /** Spine B: local tip publisher (device ML-DSA); null when Amp/identity not ready. */
 
-
   void MaybeTailSync(const std::string& thread_id);
   /** D059 — full user-initiated sync (async on IO thread). */
   void SyncWithPeer(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
@@ -288,8 +287,7 @@ public:
   Roe<void> MarkPskVerified(const std::string& thread_id);
   void RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
   /** B28: best-first candidate list (RankAmpDialMultiaddrs order) via Amp RegisterEndpoints. */
-  void RegisterPeerDirectEndpoints(const std::string& peer_relay_user_id,
-                                   const std::vector<std::string>& multiaddrs);
+  void RegisterPeerDirectEndpoints(const std::string& peer_relay_user_id, const std::vector<std::string>& multiaddrs);
   /** Register all multiaddrs from a contact (keyed by relay id). */
   void RegisterContactDirectEndpoints(const Contact& contact);
   /**
@@ -337,7 +335,6 @@ public:
   void RetryPeerDial(const std::string& thread_id);
 
 private:
-
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
   /** The direct-chat transport is attached and reaches `peer_key` now. */
   bool AmpReaches(const std::string& peer_key) const;
@@ -360,11 +357,10 @@ private:
   void MarkGroupMemberMissed(const std::string& group_id, const std::string& member);
   void NotifyGroupMembersMissed(const std::string& thread_id, const std::string& message_id);
   /** The message row's delivery state; false when there is no row (a control-lane send). */
-  bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success, MessageTransport transport,
-                    bool unless_delivered = false);
+  bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success,
+                    MessageTransport transport, bool unless_delivered = false);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
-  void RunSyncOnIo(const std::string& thread_id,
-                   std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
+  void RunSyncOnIo(const std::string& thread_id, std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
                    std::function<void(Roe<ChatSyncResult>)> on_complete);
   bool IsE2ePrivateThread(const std::string& thread_id) const;
   bool IsThreadCompromised(const std::string& thread_id) const;
@@ -451,7 +447,7 @@ private:
   /** How long a suspected missing copy waits for the message to come another way before it is asked for. */
   static constexpr int64_t kMissingCopyWaitMs = 20 * 1000;
   std::mutex asked_copies_mutex_;
-  std::set<std::string> asked_copies_;  // message ids asked for (bounded)
+  std::set<std::string> asked_copies_; // message ids asked for (bounded)
   /**
    * M021 d6: an envelope said its sender's list is newer than ours, or could not be checked for want of a card — ask
    * that device for it, through the relay, when card_ask_gate_ allows (an unverified envelope's word is rate-limited).

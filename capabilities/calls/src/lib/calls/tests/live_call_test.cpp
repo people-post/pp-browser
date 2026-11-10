@@ -123,7 +123,7 @@ TEST(LiveCallsTest, EndedByPeerOnlyForACallThisSideHad) {
   // PR #240 review: a later local close must not hide the peer's end before the UI reads it.
   ASSERT_NE(calls.LastEndedByPeer(), nullptr);
   EXPECT_EQ(calls.LastEndedByPeer()->Id(), "call:placed");
-  calls.AdmitPlaced("call:placed", {"account:bob"});  // the same id again: that news is gone
+  calls.AdmitPlaced("call:placed", {"account:bob"}); // the same id again: that news is gone
   EXPECT_EQ(calls.LastEndedByPeer(), nullptr);
 }
 

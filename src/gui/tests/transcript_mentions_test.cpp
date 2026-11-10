@@ -66,13 +66,14 @@ TEST(TranscriptMentionsTest, ADirectChatShowsSpansAsPlainText) {
 TEST(TranscriptMentionsTest, OnlyEligibleSpansAreHighlighted) {
   // A non-member's mention, and @everyone from someone who is not the owner: plain.
   const std::string text = "@Zed @everyone";
-  const auto row = Row("m1", kBob, text,
-                       {Span(TextSpanKind::Mention, 0, 4, "acct-zed"), Span(TextSpanKind::Everyone, 5, 14)});
+  const auto row =
+      Row("m1", kBob, text, {Span(TextSpanKind::Mention, 0, 4, "acct-zed"), Span(TextSpanKind::Everyone, 5, 14)});
   EXPECT_EQ(Rml(row, Roster()).find("chat-mention"), std::string::npos);
   // The owner's @everyone is, without a tap target; ours too once we are the owner.
   const auto from_owner = Row("m2", kOwner, "@everyone go", {Span(TextSpanKind::Everyone, 0, 9)});
   const std::string owner_rml = Rml(from_owner, Roster());
-  EXPECT_NE(owner_rml.find("<span class=\"chat-mention chat-mention--everyone\">@everyone</span> go"), std::string::npos)
+  EXPECT_NE(owner_rml.find("<span class=\"chat-mention chat-mention--everyone\">@everyone</span> go"),
+            std::string::npos)
       << owner_rml;
   MentionRoster me_owner = Roster();
   me_owner.everyone_senders = {kMe};
@@ -95,7 +96,8 @@ TEST(TranscriptMentionsTest, OnlyAPeersMessageThatMentionsMeTintsTheRow) {
   // A direct chat has no roster: plain text, no row.
   EXPECT_FALSE(MentionsMe(Row("m4", kBob, "hi @Me", {Span(TextSpanKind::Mention, 3, 6, kMe)}), std::nullopt));
   // Our own message never gets the row, even when it names us.
-  EXPECT_FALSE(MentionsMe(Row("m5", kLocalSelfContactId, "hi @Me", {Span(TextSpanKind::Mention, 3, 6, kMe)}), Roster()));
+  EXPECT_FALSE(
+      MentionsMe(Row("m5", kLocalSelfContactId, "hi @Me", {Span(TextSpanKind::Mention, 3, 6, kMe)}), Roster()));
 }
 
 TEST(TranscriptMentionsTest, AnEligibleEveryoneTintsTheRowAnIneligibleOneDoesNot) {
@@ -105,18 +107,20 @@ TEST(TranscriptMentionsTest, AnEligibleEveryoneTintsTheRowAnIneligibleOneDoesNot
   // Our own @everyone (we are the owner) does not tint our row.
   MentionRoster me_owner = Roster();
   me_owner.everyone_senders = {kMe};
-  EXPECT_FALSE(MentionsMe(Row("m3", kLocalSelfContactId, "@everyone go", {Span(TextSpanKind::Everyone, 0, 9)}), me_owner));
+  EXPECT_FALSE(
+      MentionsMe(Row("m3", kLocalSelfContactId, "@everyone go", {Span(TextSpanKind::Everyone, 0, 9)}), me_owner));
 }
 
 TEST(TranscriptMentionsTest, Utf8TextIsSplitByBytesAndEscaped) {
-  const std::string name = "\xE5\xBC\xA0<\xE4\xB8\x89>";  // 张<三> (a name with markup characters)
-  const std::string text = "\xE4\xBD\xA0\xE5\xA5\xBD @" + name + " & bye";  // 你好 @张<三> & bye
+  const std::string name = "\xE5\xBC\xA0<\xE4\xB8\x89>";                   // 张<三> (a name with markup characters)
+  const std::string text = "\xE4\xBD\xA0\xE5\xA5\xBD @" + name + " & bye"; // 你好 @张<三> & bye
   MentionRoster roster = Roster();
   roster.members.insert("acct-zhang");
   const std::string rml =
       Rml(Row("m1", kBob, text, {Span(TextSpanKind::Mention, 7, 7 + 1 + name.size(), "acct-zhang")}), roster);
-  const std::string expected = "\xE4\xBD\xA0\xE5\xA5\xBD <span class=\"chat-mention\" data-event-click=\"open_mention('m1', "
-                               "0)\">@\xE5\xBC\xA0&lt;\xE4\xB8\x89&gt;</span> &amp; bye";
+  const std::string expected =
+      "\xE4\xBD\xA0\xE5\xA5\xBD <span class=\"chat-mention\" data-event-click=\"open_mention('m1', "
+      "0)\">@\xE5\xBC\xA0&lt;\xE4\xB8\x89&gt;</span> &amp; bye";
   EXPECT_NE(rml.find(expected), std::string::npos) << rml;
 }
 
@@ -131,7 +135,8 @@ TEST(TranscriptMentionsTest, MentionsAndLinksTogether) {
   // A span inside a link: the link wins, the mention is not drawn.
   const std::string inside = "https://example.com/@Bob";
   const size_t at = inside.find('@');
-  const std::string link_rml = Rml(Row("m2", kAlice, inside, {Span(TextSpanKind::Mention, at, at + 4, kBob)}), Roster());
+  const std::string link_rml =
+      Rml(Row("m2", kAlice, inside, {Span(TextSpanKind::Mention, at, at + 4, kBob)}), Roster());
   EXPECT_EQ(link_rml.find("chat-mention"), std::string::npos);
   EXPECT_NE(link_rml.find("open_message_link('m2', 0)"), std::string::npos);
 }
@@ -139,8 +144,9 @@ TEST(TranscriptMentionsTest, MentionsAndLinksTogether) {
 TEST(TranscriptMentionsTest, AQuoteReplyHighlightsItsOwnWordsNotTheQuote) {
   const std::string out = ComposeQuoteReply("@Bob ok", "@Alice said so");
   const size_t quoted_at = out.find("@Alice");
-  const auto row = Row("m1", kOwner, out,
-                       {Span(TextSpanKind::Mention, 0, 4, kBob), Span(TextSpanKind::Mention, quoted_at, quoted_at + 6, kAlice)});
+  const auto row =
+      Row("m1", kOwner, out,
+          {Span(TextSpanKind::Mention, 0, 4, kBob), Span(TextSpanKind::Mention, quoted_at, quoted_at + 6, kAlice)});
   const std::string rml = Rml(row, Roster());
   EXPECT_NE(rml.find("chat-quote"), std::string::npos);
   EXPECT_NE(rml.find(">@Bob</span> ok"), std::string::npos) << rml;

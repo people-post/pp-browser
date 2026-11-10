@@ -120,7 +120,7 @@ Roe<void> ReadExactEnd(InputArchive& ar) {
 
 void WriteSpans(OutputArchive& ar, const std::vector<TextSpan>& spans) {
   ar & kSubVersion;
-  ar & static_cast<uint8_t>(spans.size());
+  ar& static_cast<uint8_t>(spans.size());
   for (const TextSpan& span : spans) {
     ar & span.kind;
     ar & span.start;
@@ -278,62 +278,62 @@ Roe<ThreadMessage> ChatPayloadCodec::DecodeToMessageFields(const std::vector<uin
 
 Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeToRow(const ThreadMessage& message) {
   switch (message.content_type) {
-  case ChatContentType::System: {
-    std::string control_type = "system";
-    std::string detail;
-    if (auto payload = TryParseObject(message.payload_json)) {
-      if (auto ct = payload->getString("control_type")) {
-        control_type = *ct;
+    case ChatContentType::System: {
+      std::string control_type = "system";
+      std::string detail;
+      if (auto payload = TryParseObject(message.payload_json)) {
+        if (auto ct = payload->getString("control_type")) {
+          control_type = *ct;
+        }
+        if (auto d = payload->getString("detail")) {
+          detail = *d;
+        }
       }
-      if (auto d = payload->getString("detail")) {
-        detail = *d;
+      return EncodePayloadBytes(kContentTypeSystem, message.text, [&](OutputArchive& ar) {
+        ar & kSubVersion;
+        WriteLenUtf8(ar, control_type);
+        WriteLenUtf8(ar, detail);
+      });
+    }
+    case ChatContentType::Annotation: {
+      ChatAnnotationFields fields;
+      if (auto decoded = DecodeAnnotationJson(message.payload_json)) {
+        fields = *decoded;
       }
+      fields.text = message.text;
+      if (message.target_message_id) {
+        fields.target_message_id = *message.target_message_id;
+      }
+      return EncodeAnnotation(fields);
     }
-    return EncodePayloadBytes(kContentTypeSystem, message.text, [&](OutputArchive& ar) {
-      ar & kSubVersion;
-      WriteLenUtf8(ar, control_type);
-      WriteLenUtf8(ar, detail);
-    });
-  }
-  case ChatContentType::Annotation: {
-    ChatAnnotationFields fields;
-    if (auto decoded = DecodeAnnotationJson(message.payload_json)) {
-      fields = *decoded;
+    case ChatContentType::ContactCard: {
+      ChatContactCardFields fields;
+      if (auto decoded = DecodeContactCardJson(message.payload_json)) {
+        fields = *decoded;
+      }
+      return EncodeContactCard(fields, message.text);
     }
-    fields.text = message.text;
-    if (message.target_message_id) {
-      fields.target_message_id = *message.target_message_id;
+    case ChatContentType::CryptoTx: {
+      ChatCryptoTxFields fields;
+      if (auto decoded = DecodeCryptoTxJson(message.payload_json)) {
+        fields = *decoded;
+      }
+      return EncodeCryptoTx(fields, message.text);
     }
-    return EncodeAnnotation(fields);
-  }
-  case ChatContentType::ContactCard: {
-    ChatContactCardFields fields;
-    if (auto decoded = DecodeContactCardJson(message.payload_json)) {
-      fields = *decoded;
+    case ChatContentType::Attachment: {
+      ChatAttachmentFields fields;
+      if (auto decoded = DecodeAttachmentJson(message.payload_json)) {
+        fields = *decoded;
+      }
+      return EncodeAttachment(fields, message.text);
     }
-    return EncodeContactCard(fields, message.text);
-  }
-  case ChatContentType::CryptoTx: {
-    ChatCryptoTxFields fields;
-    if (auto decoded = DecodeCryptoTxJson(message.payload_json)) {
-      fields = *decoded;
-    }
-    return EncodeCryptoTx(fields, message.text);
-  }
-  case ChatContentType::Attachment: {
-    ChatAttachmentFields fields;
-    if (auto decoded = DecodeAttachmentJson(message.payload_json)) {
-      fields = *decoded;
-    }
-    return EncodeAttachment(fields, message.text);
-  }
-  case ChatContentType::Unsupported:
-    return Error("Cannot encode unsupported ChatPayload");
-  case ChatContentType::Deleted: // the row body of a tombstone: no content
-    return EncodeText(std::string());
-  case ChatContentType::Text:
-  default:
-    return EncodeText(message.text, text_spans::FromPayloadJson(message.payload_json));
+    case ChatContentType::Unsupported:
+      return Error("Cannot encode unsupported ChatPayload");
+    case ChatContentType::Deleted: // the row body of a tombstone: no content
+      return EncodeText(std::string());
+    case ChatContentType::Text:
+    default:
+      return EncodeText(message.text, text_spans::FromPayloadJson(message.payload_json));
   }
 }
 
@@ -546,10 +546,8 @@ Roe<ChatAttachmentFields> ChatPayloadCodec::DecodeAttachmentJson(const std::stri
   fields.blob_nonce = attachment_codec::ReadByteArray(*json, "blob_nonce");
   // An empty url is valid: a file pushed peer-direct only has no server copy (fetched from the pending push or
   // from the sender), and the receiver's size and hash checks do not depend on it.
-  if (fields.mime.empty() || fields.byte_length == 0 ||
-      fields.content_hash.size() != kAttachmentContentHashSize ||
-      fields.content_key.size() != kAttachmentContentKeySize ||
-      fields.blob_nonce.size() != kAttachmentBlobNonceSize) {
+  if (fields.mime.empty() || fields.byte_length == 0 || fields.content_hash.size() != kAttachmentContentHashSize ||
+      fields.content_key.size() != kAttachmentContentKeySize || fields.blob_nonce.size() != kAttachmentBlobNonceSize) {
     return Error("Invalid attachment payload");
   }
   return fields;

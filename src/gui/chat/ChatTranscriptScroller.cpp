@@ -65,7 +65,7 @@ void ChatTranscriptScroller::Reset() {
   last_messages_scroll_height_ = 0.f;
   unread_while_scrolled_ = 0;
   pending_jump_id_.clear();
-  flash_id_.clear();  // the rows it named are gone
+  flash_id_.clear(); // the rows it named are gone
   view_.show_jump_to_latest = false;
   view_.jump_to_latest_label = "";
 }
@@ -113,8 +113,8 @@ void ChatTranscriptScroller::RequestScrollToLatest() {
 }
 
 float ChatTranscriptScroller::ScrollTopAfterViewportResize(const float top, const float old_client_height,
-                                                            const float new_client_height,
-                                                            const float scroll_height, const bool pinned_to_bottom) {
+                                                           const float new_client_height, const float scroll_height,
+                                                           const bool pinned_to_bottom) {
   const float max_top = std::max(0.f, scroll_height - new_client_height);
   if (pinned_to_bottom) {
     return max_top;
@@ -277,7 +277,7 @@ void ChatTranscriptScroller::LoadOlderLocalHistory() {
 
   loading_older_local_ = true;
   auto older = facade_ ? facade_->GetMessagesPage(thread_id, oldest, kDefaultMessagesPageSize)
-                                             : Roe<std::vector<ThreadMessage>>::error(Error("chat port unavailable"));
+                       : Roe<std::vector<ThreadMessage>>::error(Error("chat port unavailable"));
   if (!older || older->empty()) {
     has_more_local_history_ = false;
     loading_older_local_ = false;
@@ -286,13 +286,11 @@ void ChatTranscriptScroller::LoadOlderLocalHistory() {
     return;
   }
   loaded_min_display_order_ = older->front().display_order;
-  has_more_local_history_ =
-      facade_ &&
-      facade_->HasLocalMessagesBefore(thread_id, *loaded_min_display_order_);
+  has_more_local_history_ = facade_ && facade_->HasLocalMessagesBefore(thread_id, *loaded_min_display_order_);
 
   view_.messages = Rows(thread_id, loaded_min_display_order_, loaded_max_display_order_);
-  if (TrimDomWindow(view_.messages, /*pinned_to_bottom=*/false, loaded_min_display_order_,
-                    loaded_max_display_order_, has_more_local_history_)) {
+  if (TrimDomWindow(view_.messages, /*pinned_to_bottom=*/false, loaded_min_display_order_, loaded_max_display_order_,
+                    has_more_local_history_)) {
     pinned_to_bottom_ = false;
     SetShowJumpToLatest(true);
     // Rebuild with new max bound so store sync stays coherent.
@@ -336,8 +334,7 @@ void ChatTranscriptScroller::OnJumpToLatest() {
       view_.has_turns = !view_.messages.empty();
       if (!view_.messages.empty()) {
         loaded_min_display_order_ = view_.messages.front().display_order;
-        has_more_local_history_ =
-            facade_->HasLocalMessagesBefore(thread_id, view_.messages.front().display_order);
+        has_more_local_history_ = facade_->HasLocalMessagesBefore(thread_id, view_.messages.front().display_order);
       }
       if (dirty_turns_) {
         dirty_turns_();
@@ -378,8 +375,8 @@ ChatTranscriptScroller::JumpResult ChatTranscriptScroller::JumpToMessage(const s
     loaded_min_display_order_ = window.loaded_min;
     loaded_max_display_order_ = window.loaded_max;
     view_.messages = Rows(thread_id, loaded_min_display_order_, loaded_max_display_order_);
-    if (TrimDomWindow(view_.messages, /*pinned_to_bottom=*/false, loaded_min_display_order_,
-                      loaded_max_display_order_, has_more_local_history_)) {
+    if (TrimDomWindow(view_.messages, /*pinned_to_bottom=*/false, loaded_min_display_order_, loaded_max_display_order_,
+                      has_more_local_history_)) {
       view_.messages = Rows(thread_id, loaded_min_display_order_, loaded_max_display_order_);
     }
     if (!view_.messages.empty()) {
@@ -481,7 +478,7 @@ bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id) {
   const bool thread_changed = thread_id != scroll_thread_id_;
   if (thread_changed) {
     pending_jump_id_.clear();
-    flash_id_.clear();  // another chat's rows
+    flash_id_.clear(); // another chat's rows
     scroll_thread_id_ = thread_id;
     loaded_min_display_order_.reset();
     loaded_max_display_order_.reset();
@@ -491,8 +488,7 @@ bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id) {
   return thread_changed;
 }
 
-void ChatTranscriptScroller::EndDisplaySync(bool thread_changed, const std::string& prev_tail_id,
-                                            size_t prev_count) {
+void ChatTranscriptScroller::EndDisplaySync(bool thread_changed, const std::string& prev_tail_id, size_t prev_count) {
   if (!view_.messages.empty()) {
     if (TrimDomWindow(view_.messages, pinned_to_bottom_, loaded_min_display_order_, loaded_max_display_order_,
                       has_more_local_history_)) {
@@ -513,8 +509,7 @@ void ChatTranscriptScroller::EndDisplaySync(bool thread_changed, const std::stri
       }
       const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string{};
       has_more_local_history_ =
-          facade_ &&
-          facade_->HasLocalMessagesBefore(thread_id, view_.messages.front().display_order);
+          facade_ && facade_->HasLocalMessagesBefore(thread_id, view_.messages.front().display_order);
     }
   } else {
     loaded_min_display_order_.reset();
@@ -535,8 +530,8 @@ void ChatTranscriptScroller::EndDisplaySync(bool thread_changed, const std::stri
 }
 
 bool ChatTranscriptScroller::TrimDomWindow(std::vector<MessageDisplayRow>& messages, bool pinned_to_bottom,
-                                           std::optional<int64_t>& loaded_min,
-                                           std::optional<int64_t>& loaded_max, bool& has_more_local_history) {
+                                           std::optional<int64_t>& loaded_min, std::optional<int64_t>& loaded_max,
+                                           bool& has_more_local_history) {
   if (messages.size() <= kMaxMessagesDomWindow) {
     return false;
   }
@@ -562,11 +557,9 @@ void ChatTranscriptScroller::CaptureScrollBeforePrependIfUnpinned() {
   }
 }
 
-void ChatTranscriptScroller::ExpandLoadedMinFromOlderPage(const std::string& thread_id,
-                                                          int64_t before_display_order) {
-  auto older =
-      facade_ ? facade_->GetMessagesPage(thread_id, before_display_order, kDefaultMessagesPageSize)
-                                    : Roe<std::vector<ThreadMessage>>::error(Error("chat port unavailable"));
+void ChatTranscriptScroller::ExpandLoadedMinFromOlderPage(const std::string& thread_id, int64_t before_display_order) {
+  auto older = facade_ ? facade_->GetMessagesPage(thread_id, before_display_order, kDefaultMessagesPageSize)
+                       : Roe<std::vector<ThreadMessage>>::error(Error("chat port unavailable"));
   if (older && !older->empty()) {
     loaded_min_display_order_ = older->front().display_order;
   }

@@ -98,7 +98,8 @@ struct ArchiveViews {
   bool showing_archived = false;
   bool showing_archived_ai = false;
 };
-ArchiveViews ResolveArchiveViews(const std::vector<ArchiveItem>& items, bool showing_archived, bool showing_archived_ai);
+ArchiveViews ResolveArchiveViews(const std::vector<ArchiveItem>& items, bool showing_archived,
+                                 bool showing_archived_ai);
 
 /** What closing a chat does (the GUI asks before it does it). */
 struct CloseChatPlan {

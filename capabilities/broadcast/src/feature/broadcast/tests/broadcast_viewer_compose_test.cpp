@@ -105,14 +105,15 @@ protected:
     publisher_relay_->Start();
     viewer_relay_coord_->Start();
     viewer_relay_ = std::make_unique<mesh::AmpMediaRelayClient>(*viewer_relay_coord_, pump, viewer_,
-                                                          PostIo(*h_->runtime_a), PostAfter(*h_->runtime_a));
+                                                                PostIo(*h_->runtime_a), PostAfter(*h_->runtime_a));
 
     rpc_ = std::make_unique<AmpBroadcastRpcClient>(*links_a_, pump, PostIo(*h_->runtime_a), PostAfter(*h_->runtime_a));
     engine_ = std::make_unique<MediaEngine>(devices_);
     engine_->SetVideoCodecFactoryForTest([]() { return MakeUnavailableVideoCodec("test"); });
     workflow_ = std::make_unique<BroadcastViewerWorkflow>(ViewerPorts());
     // The fixture plays the runner: the workflow's events come back through `ui_`.
-    workflow_->SetOutbox(MakeOwnerOutbox<ViewerEvent>(tasks_, [this](ViewerEvent& event) { workflow_->Handle(event); }));
+    workflow_->SetOutbox(
+        MakeOwnerOutbox<ViewerEvent>(tasks_, [this](ViewerEvent& event) { workflow_->Handle(event); }));
   }
 
   void TearDown() override {
@@ -190,7 +191,8 @@ protected:
 
   void PublisherAttach() {
     std::atomic<bool> quoted{false};
-    mesh::MediaRelayRoe<mesh::MediaRelayQuote> quote = mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "pending");
+    mesh::MediaRelayRoe<mesh::MediaRelayQuote> quote =
+        mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "pending");
     mesh::MediaRelayQuoteRequest req;
     req.session_id = kJoin;
     ASSERT_TRUE(publisher_relay_->StartQuote(hop_, req, [&](mesh::MediaRelayRoe<mesh::MediaRelayQuote> q) {
@@ -200,11 +202,13 @@ protected:
     ASSERT_TRUE(RunUntil([&] { return quoted.load(); }));
     ASSERT_TRUE(quote && quote->ok) << (quote ? quote->error : quote.error().message);
     std::atomic<bool> attached{false};
-    mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> result = mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "pending");
-    ASSERT_TRUE(publisher_relay_->StartAttach(hop_, quote->quote_id, kJoin, kJoin, {}, [&](mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> r) {
-      result = std::move(r);
-      attached = true;
-    }));
+    mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> result =
+        mesh::MediaRelayFailure::Of(mesh::MediaRelayErr::Generic, "pending");
+    ASSERT_TRUE(publisher_relay_->StartAttach(hop_, quote->quote_id, kJoin, kJoin, {},
+                                              [&](mesh::MediaRelayRoe<mesh::MediaRelayAttachResult> r) {
+                                                result = std::move(r);
+                                                attached = true;
+                                              }));
     ASSERT_TRUE(RunUntil([&] { return attached.load(); }));
     ASSERT_TRUE(result && result->ok);
   }
@@ -251,7 +255,8 @@ TEST_F(BroadcastViewerComposeTest, ViewerListensToThePublisherThroughAPlainRelay
   ASSERT_TRUE(RunUntil([&] {
     const auto phase = workflow_->CurrentStatus().phase;
     return phase == BroadcastViewerWorkflow::Phase::Listening || phase == BroadcastViewerWorkflow::Phase::Failed;
-  })) << "phase=" << BroadcastViewerWorkflow::PhaseName(workflow_->CurrentStatus().phase);
+  })) << "phase="
+      << BroadcastViewerWorkflow::PhaseName(workflow_->CurrentStatus().phase);
   ASSERT_EQ(workflow_->CurrentStatus().phase, BroadcastViewerWorkflow::Phase::Listening)
       << workflow_->CurrentStatus().error;
   EXPECT_EQ(workflow_->CurrentStatus().hop, hop_);
@@ -265,7 +270,8 @@ TEST_F(BroadcastViewerComposeTest, ViewerListensToThePublisherThroughAPlainRelay
   ASSERT_TRUE(RunUntil([&] {
     PublishFrame(seq++);
     return engine_->HealthSnapshot().rx_audio_frames >= 3;
-  })) << "rx=" << engine_->HealthSnapshot().rx_audio_frames;
+  })) << "rx="
+      << engine_->HealthSnapshot().rx_audio_frames;
 
   workflow_->Stop();
   EXPECT_FALSE(viewer_relay_->IsAttached());
@@ -277,9 +283,9 @@ TEST_F(BroadcastViewerComposeTest, ViewerListensToThePublisherThroughAPlainRelay
 // A hop that serves admission (a B1 ladder relay): the viewer is admitted, then attaches there.
 TEST_F(BroadcastViewerComposeTest, AdmittingHopAdmitsThenTheViewerListens) {
   hop_links_ = mesh::NewAmpChatPeerLinks(*h_->runtime_r);
-  hop_admission_ = std::make_unique<AmpBroadcastTransport>(*hop_links_, [this]() { h_->PumpAll(); },
-                                                           AmpBroadcastTransport::WorkerPost{}, PostIo(*h_->runtime_r),
-                                                           PostAfter(*h_->runtime_r));
+  hop_admission_ = std::make_unique<AmpBroadcastTransport>(
+      *hop_links_, [this]() { h_->PumpAll(); }, AmpBroadcastTransport::WorkerPost{}, PostIo(*h_->runtime_r),
+      PostAfter(*h_->runtime_r));
   hop_admission_->SetPublisherKeyResolver([this](const std::string& peer) -> std::optional<ByteVector> {
     return peer == publisher_ ? std::optional<ByteVector>(publisher_keys_.public_key) : std::nullopt;
   });
@@ -292,8 +298,8 @@ TEST_F(BroadcastViewerComposeTest, AdmittingHopAdmitsThenTheViewerListens) {
   hop_admission_->Start();
   PublisherAttach();
   ASSERT_TRUE(workflow_->Watch(BroadcastWatchTarget{publisher_, kProgram, kJoin, {hop_}}));
-  ASSERT_TRUE(RunUntil([&] { return workflow_->CurrentStatus().phase == BroadcastViewerWorkflow::Phase::Listening; },
-                       600))
+  ASSERT_TRUE(
+      RunUntil([&] { return workflow_->CurrentStatus().phase == BroadcastViewerWorkflow::Phase::Listening; }, 600))
       << "phase=" << BroadcastViewerWorkflow::PhaseName(workflow_->CurrentStatus().phase) << " "
       << workflow_->CurrentStatus().error << " (admitted without waiting out the admission timeout)";
   hop_admission_->Stop();
@@ -303,9 +309,8 @@ TEST_F(BroadcastViewerComposeTest, AdmittingHopAdmitsThenTheViewerListens) {
 // server, capture engine sealing silence frames), A watches from the tip B announced.
 TEST_F(BroadcastViewerComposeTest, BroadcasterToRelayToViewerEndToEnd) {
   std::vector<BroadcastTipDraft> tips;
-  auto publisher_client = std::make_unique<mesh::AmpMediaRelayClient>(*publisher_relay_, [this]() { h_->PumpAll(); },
-                                                                publisher_, PostIo(*h_->runtime_b),
-                                                                PostAfter(*h_->runtime_b));
+  auto publisher_client = std::make_unique<mesh::AmpMediaRelayClient>(
+      *publisher_relay_, [this]() { h_->PumpAll(); }, publisher_, PostIo(*h_->runtime_b), PostAfter(*h_->runtime_b));
   MediaEngine capture(devices_);
   capture.SetVideoCodecFactoryForTest([]() { return MakeUnavailableVideoCodec("test"); });
   BroadcasterPorts bp;
@@ -339,7 +344,8 @@ TEST_F(BroadcastViewerComposeTest, BroadcasterToRelayToViewerEndToEnd) {
 
   ASSERT_TRUE(broadcaster->GoLive({"topic", "show-e2e", {hop_}}));
   ASSERT_TRUE(RunUntil([&] { return broadcaster->CurrentStatus().phase == BroadcasterWorkflow::Phase::Live; }))
-      << BroadcasterWorkflow::PhaseName(broadcaster->CurrentStatus().phase) << " " << broadcaster->CurrentStatus().error;
+      << BroadcasterWorkflow::PhaseName(broadcaster->CurrentStatus().phase) << " "
+      << broadcaster->CurrentStatus().error;
   ASSERT_EQ(tips.size(), 1u);
   const BroadcastTipDraft live = tips.front();
 

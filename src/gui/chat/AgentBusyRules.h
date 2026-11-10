@@ -66,7 +66,8 @@ inline constexpr int64_t kDoubleEscapeWindowMs = 500;
  */
 inline EscapeAction DecideEscape(const int64_t now_ms, const std::optional<int64_t> last_escape_ms,
                                  const bool has_queued_here, const bool busy_here) {
-  const bool second_press = last_escape_ms && now_ms >= *last_escape_ms && now_ms - *last_escape_ms <= kDoubleEscapeWindowMs;
+  const bool second_press =
+      last_escape_ms && now_ms >= *last_escape_ms && now_ms - *last_escape_ms <= kDoubleEscapeWindowMs;
   if (second_press && busy_here) {
     return EscapeAction::StopTurn;
   }

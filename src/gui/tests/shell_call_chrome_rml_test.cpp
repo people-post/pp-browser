@@ -177,11 +177,13 @@ TEST(ShellCallChromeRmlTest, PhoneGroupSpotlightFillsTheAreaWithAStripAndAGridBu
   state.call_in_progress.spotlight_fill = true;
   const std::string rml = CallInProgressRml(state);
   EXPECT_FALSE(Has(rml, "data-for=\"p : call_in_progress_roster\"")) << "the grid is gone";
-  EXPECT_TRUE(Has(rml, "data-for=\"p : call_in_progress_spotlight_rows\" class=\"call-phone-tile "
-                       "call-phone-tile--spotlit\""));
+  EXPECT_TRUE(Has(rml,
+                  "data-for=\"p : call_in_progress_spotlight_rows\" class=\"call-phone-tile "
+                  "call-phone-tile--spotlit\""));
   EXPECT_TRUE(Has(rml, "data-event-dblclick=\"call_spotlight_fit()\""));
-  EXPECT_TRUE(Has(rml, "data-for=\"p : call_in_progress_strip_rows\" class=\"call-phone-tile "
-                       "call-phone-tile--strip\""));
+  EXPECT_TRUE(Has(rml,
+                  "data-for=\"p : call_in_progress_strip_rows\" class=\"call-phone-tile "
+                  "call-phone-tile--strip\""));
   EXPECT_EQ(Count(rml, "data-event-click=\"call_spotlight(p.stream_id)\""), 1u) << "the strip's tap";
   EXPECT_EQ(Count(rml, "data-class-call-phone-tile--speaking=\"p.speaking\""), 2u) << "spotlight and strip";
   const size_t grid = rml.find("data-event-click=\"call_spotlight_grid()\"");
@@ -224,7 +226,7 @@ TEST(ShellCallChromeRmlTest, PhoneStoryShowsAllStepsAndHighlightsTheReachedOnes)
   const std::string current = " call-phone-step--current";
   // expected[stage][step]: 'd' done, 'c' current, 'p' plain.
   const char* expected[] = {"cpp", "dcp", "ddc", "ddd"};
-  for (const bool roster : {false, true}) {  // false = 1:1 page, true = group card
+  for (const bool roster : {false, true}) { // false = 1:1 page, true = group card
     for (int stage = 0; stage < 4; ++stage) {
       ShellState state = PhoneGroupCall();
       state.call_in_progress.show_roster = roster;
@@ -235,11 +237,13 @@ TEST(ShellCallChromeRmlTest, PhoneStoryShowsAllStepsAndHighlightsTheReachedOnes)
       size_t last = 0;
       for (int i = 0; i < 3; ++i) {
         const char kind = expected[stage][i];
-        const std::string want = StepMarkup(kind == 'd' ? done.c_str() : kind == 'c' ? current.c_str() : "",
+        const std::string want = StepMarkup(kind == 'd'   ? done.c_str()
+                                            : kind == 'c' ? current.c_str()
+                                                          : "",
                                             kind == 'd', i + 1);
         const size_t at = rml.find(want);
         EXPECT_NE(at, std::string::npos) << "roster=" << roster << " stage=" << stage << " step=" << i + 1;
-        EXPECT_GE(at, last);  // in order
+        EXPECT_GE(at, last); // in order
         last = at;
       }
       EXPECT_EQ(Count(rml, "call-phone-step--current"), stage < 3 ? 1u : 0u);
@@ -260,7 +264,9 @@ TEST(ShellCallChromeRmlTest, PhoneStoryShowsAllStepsAndHighlightsTheReachedOnes)
     size_t last = 0;
     for (int i = 0; i < 5; ++i) {
       const char kind = five[k][i];
-      const std::string want = StepMarkup(kind == 'd' ? done.c_str() : kind == 'c' ? current.c_str() : "",
+      const std::string want = StepMarkup(kind == 'd'   ? done.c_str()
+                                          : kind == 'c' ? current.c_str()
+                                                        : "",
                                           kind == 'd', i + 1);
       const size_t at = rml.find(want);
       EXPECT_NE(at, std::string::npos) << "five steps stage=" << stages[k] << " step=" << i + 1;
@@ -318,19 +324,22 @@ TEST(ShellCallChromeRmlTest, PhoneVideoCallSwapsOnATapOnTheSmallPicture) {
   state.call_in_progress.stage_visible = true;
   state.call_in_progress.spotlight_stream = "22";
   const std::string normal = CallInProgressRml(state);
-  EXPECT_TRUE(Has(normal, "class=\"call-phone-pip\" id=\"call-local-tile\" tile=\"local\" "
-                          "data-if=\"call_in_progress_local_preview\" data-event-click=\"call_spotlight('11')\""));
+  EXPECT_TRUE(Has(normal,
+                  "class=\"call-phone-pip\" id=\"call-local-tile\" tile=\"local\" "
+                  "data-if=\"call_in_progress_local_preview\" data-event-click=\"call_spotlight('11')\""));
   EXPECT_TRUE(Has(normal, "class=\"call-phone-remote\" id=\"call-remote-tile\" tile=\"remote\">"));
   EXPECT_TRUE(Has(normal, "<div class=\"call-hold-pill call-hold-pill--who\" data-if=\"call_in_progress_on_hold\">"))
       << "V060: their picture may still run while they are on hold";
 
   state.call_in_progress.spotlight_stream = "11";
   const std::string swapped = CallInProgressRml(state);
-  EXPECT_TRUE(Has(swapped, "<call-video-tile class=\"call-phone-remote\" tile=\"local\" "
-                           "data-if=\"call_in_progress_local_preview\">"));
+  EXPECT_TRUE(Has(swapped,
+                  "<call-video-tile class=\"call-phone-remote\" tile=\"local\" "
+                  "data-if=\"call_in_progress_local_preview\">"));
   EXPECT_TRUE(Has(swapped, "tile=\"remote\" data-if=\"!call_in_progress_local_preview\"")) << "camera off: theirs";
-  EXPECT_TRUE(Has(swapped, "class=\"call-phone-pip\" tile=\"remote\" "
-                           "data-if=\"call_in_progress_local_preview\" data-event-click=\"call_spotlight('22')\""));
+  EXPECT_TRUE(Has(swapped,
+                  "class=\"call-phone-pip\" tile=\"remote\" "
+                  "data-if=\"call_in_progress_local_preview\" data-event-click=\"call_spotlight('22')\""));
   EXPECT_FALSE(Has(swapped, "call_spotlight_grid()"));
 }
 
@@ -341,8 +350,9 @@ TEST(ShellCallChromeRmlTest, PhoneVideoFlipButtonIsLitOnTheFrontCamera) {
   state.call_in_progress.stage_visible = true;
   state.call_in_progress.show_flip = true;
   const std::string rml = CallInProgressRml(state);
-  EXPECT_TRUE(Has(rml, "data-event-click=\"call_flip_camera()\" "
-                       "data-class-call-phone-control--on=\"call_in_progress_camera_front\""));
+  EXPECT_TRUE(Has(rml,
+                  "data-event-click=\"call_flip_camera()\" "
+                  "data-class-call-phone-control--on=\"call_in_progress_camera_front\""));
 }
 
 // #189: the minimised chip is the full bar (title, timer, quality, mute, hang-up) ...
@@ -459,8 +469,9 @@ TEST(ShellCallChromeRmlTest, PhoneGroupVideoHasTheFlipButtonNextToTheCamera) {
   state.call_in_progress.show_camera = true;
   state.call_in_progress.show_flip = true;
   const std::string rml = CallInProgressRml(state);
-  const size_t flip = rml.find("data-event-click=\"call_flip_camera()\" "
-                               "data-class-call-phone-control--on=\"call_in_progress_camera_front\"");
+  const size_t flip = rml.find(
+      "data-event-click=\"call_flip_camera()\" "
+      "data-class-call-phone-control--on=\"call_in_progress_camera_front\"");
   ASSERT_NE(flip, std::string::npos);
   EXPECT_LT(rml.find("data-event-click=\"call_camera()\""), flip);
   EXPECT_LT(flip, rml.find("data-event-click=\"call_leave()\""));

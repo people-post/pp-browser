@@ -46,14 +46,14 @@ void CallMediaAmpTransport::SetInboundHandler(CallMediaInboundHandler handler) {
       active_params_ = params;
     }
     if (!handler) {
-      answer(std::move(params), {});  // no key: NACK
+      answer(std::move(params), {}); // no key: NACK
       return;
     }
     handler(std::move(params), [this, alive, answer = std::move(answer)](CallMediaDirectConnectParams answered,
                                                                          CallMediaDirectCallbacks cbs) {
       if (alive->load(std::memory_order_acquire)) {
         std::lock_guard lock(mu_);
-        active_params_ = answered;  // leg id is assigned after the answer; refresh via PrimaryLegId()
+        active_params_ = answered; // leg id is assigned after the answer; refresh via PrimaryLegId()
       }
       answer(std::move(answered), std::move(cbs));
     });
@@ -101,7 +101,9 @@ void CallMediaAmpTransport::MigrateTo(const CallMediaLinkKind kind, std::functio
   coordinator_.MigrateLegToKind(leg, kind, std::move(done));
 }
 
-void CallMediaAmpTransport::SetAutoMigrateToDirect(const bool allow) { coordinator_.SetAutoMigrateToDirect(allow); }
+void CallMediaAmpTransport::SetAutoMigrateToDirect(const bool allow) {
+  coordinator_.SetAutoMigrateToDirect(allow);
+}
 
 CallMediaLinkKind CallMediaAmpTransport::StandbyLinkKind() const {
   const CallMediaLegId leg = ActiveLegId();
@@ -157,8 +159,7 @@ void CallMediaAmpTransport::ForgetCall(const std::string& call_id) {
   }
 }
 
-void CallMediaAmpTransport::ConnectAsync(const CallMediaDirectConnectParams& params,
-                                         CallMediaDirectCallbacks callbacks,
+void CallMediaAmpTransport::ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                                          std::function<void(CallMediaRoe)> on_done, int timeout_ms) {
   if (!started_.load(std::memory_order_acquire)) {
     if (on_done) {
@@ -216,8 +217,7 @@ CallMediaRoe CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& 
     }
   };
 
-  ConnectAsync(params, std::move(callbacks), [finish](CallMediaRoe result) { finish(std::move(result)); },
-               timeout_ms);
+  ConnectAsync(params, std::move(callbacks), [finish](CallMediaRoe result) { finish(std::move(result)); }, timeout_ms);
 
   // Product MeshPump drives Amp. Harnesses without a pump may supply io_pump_ (Tick).
   const auto deadline = Clock::now() + std::chrono::milliseconds(std::max(timeout_ms, 1));

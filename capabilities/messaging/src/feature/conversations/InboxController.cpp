@@ -26,7 +26,6 @@
 
 namespace pbr {
 
-
 InboxController::InboxController(IThreadStore& store, ContactsStore& contacts, PeerDisplayResolver& labels,
                                  DirectoryShadowCache* shadows)
     : store_(store), contacts_(contacts), labels_(labels), shadows_(shadows) {
@@ -45,9 +44,10 @@ Roe<std::vector<Thread>> InboxController::ListThreads() {
   // A direct chat made only by a group's membership events (they travel as direct messages) is not a chat the
   // user has: it stays out until something readable is in it, or they open it (the store's `listed` flag, which
   // once set stays — a cleared or renamed chat is never dropped).
-  threads->erase(std::remove_if(threads->begin(), threads->end(),
-                                [](const Thread& thread) { return thread.kind == ThreadKind::Direct && !thread.listed; }),
-                 threads->end());
+  threads->erase(
+      std::remove_if(threads->begin(), threads->end(),
+                     [](const Thread& thread) { return thread.kind == ThreadKind::Direct && !thread.listed; }),
+      threads->end());
   return threads;
 }
 
@@ -84,10 +84,10 @@ Roe<Thread> InboxController::OpenThread(const std::string& thread_id) {
   }
 
   active_thread_id_ = thread_id;
-  KeepListed(thread_id);  // a chat the user opened is theirs, even before anything is said in it
+  KeepListed(thread_id); // a chat the user opened is theirs, even before anything is said in it
   MarkThreadRead(thread_id);
   if (mentions_) {
-    (void)mentions_->MarkThreadRead(thread_id);  // read: "You were mentioned" goes with the unread count
+    (void)mentions_->MarkThreadRead(thread_id); // read: "You were mentioned" goes with the unread count
   }
   if (on_thread_changed_) {
     on_thread_changed_();
@@ -203,7 +203,7 @@ Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, cons
 void InboxController::AfterMessageDeleted(const std::string& thread_id, const ThreadMessage& original) {
   const std::string& message_id = original.id;
   if (mentions_) {
-    (void)mentions_->DropMessage(thread_id, message_id);  // a deleted mention leaves no marker (G015)
+    (void)mentions_->DropMessage(thread_id, message_id); // a deleted mention leaves no marker (G015)
   }
   if (attachment_downloads_ && (original.content_type == ChatContentType::Attachment || original.ai_image_json)) {
     // The rest of the thread, so bytes another message here still shows are kept. Reading it decrypts the
@@ -220,8 +220,9 @@ void InboxController::AfterMessageDeleted(const std::string& thread_id, const Th
   }
   // A summary that already folded this message in still carries its words: forget it (it is rebuilt from
   // what is left).
-  if (auto memory = store_.GetThreadMemory(thread_id); memory && *memory && (*memory)->compacted_through_display_order &&
-                                                       original.display_order <= *(*memory)->compacted_through_display_order) {
+  if (auto memory = store_.GetThreadMemory(thread_id);
+      memory && *memory && (*memory)->compacted_through_display_order &&
+      original.display_order <= *(*memory)->compacted_through_display_order) {
     (void)store_.ClearThreadMemory(thread_id);
   }
   // The list preview shows the newest message: if that was this one, it must not keep showing its text.
@@ -279,7 +280,7 @@ Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, cons
     return cleared.error();
   }
   if (mentions_) {
-    (void)mentions_->DropThread(thread_id);  // the messages that mentioned us are gone: so is "You were mentioned"
+    (void)mentions_->DropThread(thread_id); // the messages that mentioned us are gone: so is "You were mentioned"
   }
   if (attachment_downloads_ && before) {
     attachment_downloads_->DeleteMessagesMedia(thread_id, *before, {}); // the history is gone: so are its bytes
@@ -339,8 +340,7 @@ Roe<Thread> InboxController::FindOrCreateDirectThread(const std::string& contact
     return Error("Contact has no messaging identity");
   }
 
-  const std::string title =
-      (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+  const std::string title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
   auto thread = store_.FindOrCreateDirectThread(target, contact_id, title);
   if (!thread) {
     return thread.error();
@@ -348,8 +348,7 @@ Roe<Thread> InboxController::FindOrCreateDirectThread(const std::string& contact
   return OpenThread(thread->id);
 }
 
-Roe<Thread> InboxController::CreateGroup(const std::string& title,
-                                         const std::vector<std::string>& member_contact_ids) {
+Roe<Thread> InboxController::CreateGroup(const std::string& title, const std::vector<std::string>& member_contact_ids) {
   if (!groups_) {
     return Error("Messaging not initialized");
   }
@@ -483,7 +482,7 @@ int InboxController::SumUnreadForContact(const std::string& contact_id) const {
 }
 
 Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std::string& preview,
-                                           const bool assistant_text) {
+                                         const bool assistant_text) {
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -551,7 +550,7 @@ Roe<void> InboxController::SetThreadLocalTitle(const std::string& thread_id, con
 }
 
 Roe<void> InboxController::NameAiThreadFromFirstMessage(const std::string& thread_id,
-                                                         const std::string& first_message) {
+                                                        const std::string& first_message) {
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -564,7 +563,8 @@ Roe<void> InboxController::NameAiThreadFromFirstMessage(const std::string& threa
   }
   // A sensitive first message (device-link code, PIN, pasted blob) leaves the neutral default title: the title
   // is shown in lists and notifications. A renamed thread's own name lives in local_title and is not touched.
-  const std::string title = LooksSensitiveForAiTitle(first_message) ? std::string() : AiThreadTitleFromMessage(first_message);
+  const std::string title =
+      LooksSensitiveForAiTitle(first_message) ? std::string() : AiThreadTitleFromMessage(first_message);
   if (title.empty()) {
     return {};
   }
@@ -583,15 +583,14 @@ std::string InboxController::ResolveSenderLabel(const std::string& sender_contac
   return labels_.ResolveSender(sender_contact_id).title;
 }
 
-bool InboxController::HasLocalMessagesBefore(const std::string& thread_id,
-                                             int64_t before_display_order) const {
+bool InboxController::HasLocalMessagesBefore(const std::string& thread_id, int64_t before_display_order) const {
   auto page = store_.GetMessagesPage(thread_id, before_display_order, 1);
   return page && !page->empty();
 }
 
-std::vector<TranscriptRow> InboxController::BuildTranscript(
-    const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
-    std::optional<int64_t> newest_inclusive) const {
+std::vector<TranscriptRow> InboxController::BuildTranscript(const std::string& thread_id,
+                                                            std::optional<int64_t> oldest_inclusive,
+                                                            std::optional<int64_t> newest_inclusive) const {
   std::vector<ThreadMessage> messages;
   std::optional<int64_t> before;
   for (;;) {
@@ -616,9 +615,7 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
     }
     if (page_oldest <= *oldest_inclusive) {
       messages.erase(std::remove_if(messages.begin(), messages.end(),
-                                    [&](const ThreadMessage& m) {
-                                      return m.display_order < *oldest_inclusive;
-                                    }),
+                                    [&](const ThreadMessage& m) { return m.display_order < *oldest_inclusive; }),
                      messages.end());
       break;
     }
@@ -630,9 +627,7 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
 
   if (newest_inclusive.has_value()) {
     messages.erase(std::remove_if(messages.begin(), messages.end(),
-                                  [&](const ThreadMessage& m) {
-                                    return m.display_order > *newest_inclusive;
-                                  }),
+                                  [&](const ThreadMessage& m) { return m.display_order > *newest_inclusive; }),
                    messages.end());
   }
 
@@ -645,8 +640,8 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
   // A run of a group's events on top of a direct chat's history would leave the page blank: go back for older
   // pages until something shows or the history ends (bounded). A caller that asked for a window gets exactly it.
   constexpr int kMaxExtraPages = 20;
-  for (int extra = 0; direct_thread && rows.empty() && !oldest_inclusive.has_value() && !messages.empty() &&
-                      extra < kMaxExtraPages;
+  for (int extra = 0;
+       direct_thread && rows.empty() && !oldest_inclusive.has_value() && !messages.empty() && extra < kMaxExtraPages;
        ++extra) {
     auto older = store_.GetMessagesPage(thread_id, messages.front().display_order, kDefaultMessagesPageSize);
     if (!older || older->empty()) {
@@ -661,7 +656,9 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
 TranscriptFacts InboxController::Facts() const {
   TranscriptFacts facts;
   facts.sender_label = [this](const std::string& contact_id) { return ResolveSenderLabel(contact_id); };
-  facts.sender_stable_id = [this](const std::string& contact_id) { return labels_.ResolveSender(contact_id).stable_id; };
+  facts.sender_stable_id = [this](const std::string& contact_id) {
+    return labels_.ResolveSender(contact_id).stable_id;
+  };
   facts.sender_icon = [this](const std::string& contact_id) -> std::string {
     // A contact id, or the account / relay id of a group member who is not a contact.
     if (auto contact = contacts_.Get(contact_id); contact && *contact) {
@@ -691,14 +688,14 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
   if (!fields) {
     return view;
   }
-  const uint64_t max_receive_bytes =
-      attachment_downloads_ ? attachment_downloads_->Limits().max_receive_bytes : DefaultAttachmentLimits().max_receive_bytes;
+  const uint64_t max_receive_bytes = attachment_downloads_ ? attachment_downloads_->Limits().max_receive_bytes
+                                                           : DefaultAttachmentLimits().max_receive_bytes;
   // Rendering never decrypts a large file: its plaintext view is made by an explicit Open (on a worker).
   view.on_demand = fields->byte_length > kMaxDirectAttachmentBytes;
   if (!view.on_demand && AttachmentAllowsInlinePrivateView(fields->mime, fields->byte_length, max_receive_bytes)) {
     if (attachment_downloads_) {
       if (auto local = attachment_downloads_->EnsureLocalViewPath(message.thread_id, fields->content_hash, fields->mime,
-                                                                 fields->filename)) {
+                                                                  fields->filename)) {
         view.local_path = *local;
       }
     } else if (!profile_data_dir_.empty()) {

@@ -24,7 +24,7 @@ TEST(ContactClockTest, LocalAddsEditsAndRemovalsAreNoticed) {
   EXPECT_FALSE(clock.Observe({Person("c1", "account:bob")}, 200)) << "nothing changed";
   Contact renamed = Person("c1", "account:bob", "Bob from work");
   EXPECT_TRUE(clock.Observe({renamed}, 300));
-  renamed.remote.nickname = "bobby";  // a directory refresh is not the user's edit
+  renamed.remote.nickname = "bobby"; // a directory refresh is not the user's edit
   SyncContactMirrors(renamed);
   EXPECT_FALSE(clock.Observe({renamed}, 350));
   EXPECT_TRUE(clock.Observe({}, 400));
@@ -64,12 +64,12 @@ TEST(ContactClockTest, ANewerRemoteRegisterWinsAndARemovalCarries) {
 TEST(ContactClockTest, TheLockerMergeCarriesARemovalByItsClock) {
   ContactClock laptop;
   laptop.Observe({Person("l1", "account:bob"), Person("l2", "account:carol")}, 100);
-  laptop.Observe({Person("l1", "account:bob")}, 200);  // Carol removed
+  laptop.Observe({Person("l1", "account:bob")}, 200); // Carol removed
   AccountLockerState stored;
   stored.contacts = {Person("l1", "account:bob")};
   stored.contact_clock = laptop.Entries();
 
-  ContactClock phone;  // still has Carol, from before
+  ContactClock phone; // still has Carol, from before
   phone.Observe({Person("p1", "account:bob"), Person("p2", "account:carol")}, 100);
   AccountLockerState ours;
   ours.contacts = {Person("p1", "account:bob"), Person("p2", "account:carol")};

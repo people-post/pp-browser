@@ -41,9 +41,9 @@ StorageManagerPorts MakeStorageManagerPorts(ConversationsFacade& facade,
     }
     names.reserve(threads->size());
     for (const Thread& thread : *threads) {
-      const std::string seed =
-          thread.kind == ThreadKind::Direct && !thread.peer_identity_value.empty() ? thread.peer_identity_value
-                                                                                   : thread.id;
+      const std::string seed = thread.kind == ThreadKind::Direct && !thread.peer_identity_value.empty()
+                                   ? thread.peer_identity_value
+                                   : thread.id;
       names.push_back({.thread_id = thread.id, .name = facade.ResolveThreadLabel(thread).title, .avatar_seed = seed});
     }
     return names;
@@ -83,9 +83,8 @@ StorageManagerPorts MakeStorageManagerPorts(ConversationsFacade& facade,
         facade.SetOnGridThumbnailReady(std::move(on_ready));
       };
   ports.run_later = [](const std::chrono::milliseconds delay, std::function<void()> task) {
-    AppRuntime::ScheduleCoordinatorOneShot(delay, [task = std::move(task)]() mutable {
-      AppRuntime::PostUI(std::move(task));
-    });
+    AppRuntime::ScheduleCoordinatorOneShot(delay,
+                                           [task = std::move(task)]() mutable { AppRuntime::PostUI(std::move(task)); });
   };
   return ports;
 }

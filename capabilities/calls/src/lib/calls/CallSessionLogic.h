@@ -34,8 +34,7 @@ public:
                                     std::optional<int64_t> relay_server_time_ms);
 
   /** Mark pending invites past expires_at as expired/missed. Returns updated rows. */
-  static std::vector<PendingCallInvite> ExpirePendingInvites(std::vector<PendingCallInvite> invites,
-                                                             int64_t now_ms);
+  static std::vector<PendingCallInvite> ExpirePendingInvites(std::vector<PendingCallInvite> invites, int64_t now_ms);
 
   /**
    * After a remote accept while session is ringing → active.
@@ -79,17 +78,15 @@ public:
    */
   static bool ShouldHonorInboundVideoRefresh(const std::string& refresh_call_id,
                                              const std::string& refresh_publisher_identity,
-                                             const std::string& sender_identity,
-                                             const std::string& local_identity,
+                                             const std::string& sender_identity, const std::string& local_identity,
                                              const std::string& active_call_id, bool sender_joined);
 
   /**
    * CALLS: offerer OutboundCalling with no media past invite TTL → auto-Leave.
    * Pure predicate — CSM SweepExpiredInvites owns the side effect.
    */
-  static bool ShouldAutoLeaveOutboundUnanswered(bool outbound_calling, bool media_active,
-                                                int64_t session_created_at_ms, int64_t now_ms,
-                                                int64_t ttl_ms = kDefaultCallInviteTtlMs);
+  static bool ShouldAutoLeaveOutboundUnanswered(bool outbound_calling, bool media_active, int64_t session_created_at_ms,
+                                                int64_t now_ms, int64_t ttl_ms = kDefaultCallInviteTtlMs);
 
   /** Join stamp the roster carries for `identity` (the sender's clock), if any. */
   static std::optional<int64_t> RosterJoinStamp(const std::vector<CallRosterEntry>& participants,
@@ -108,8 +105,8 @@ public:
  * `include_ringing_or_invited` adds Ringing + Invited (cancel/end clear path).
  */
 std::vector<std::string> SelectCallFanoutIdentities(const std::vector<CallParticipant>& participants,
-                                                   const std::string& skip_identity, bool include_joined,
-                                                   bool include_ringing_or_invited);
+                                                    const std::string& skip_identity, bool include_joined,
+                                                    bool include_ringing_or_invited);
 
 /**
  * Active call touches this thread: origin_thread_id match, or Direct peer is Joined

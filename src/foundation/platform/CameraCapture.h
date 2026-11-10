@@ -14,10 +14,10 @@ enum class CameraCaptureKind { Photo, Video, PhotoOrVideo };
 
 /** How a capture ended. The GUI maps Unavailable / Unprocessable to a user message; Cancelled says nothing. */
 enum class CameraCaptureOutcome {
-  Picked,         // `paths` holds the one captured file
-  Cancelled,      // the user backed out of the camera
-  Unavailable,    // no camera, camera permission denied, no camera app, or the camera returned no file
-  Unprocessable,  // the file came back but could not be made safe to send (metadata strip failed)
+  Picked,        // `paths` holds the one captured file
+  Cancelled,     // the user backed out of the camera
+  Unavailable,   // no camera, camera permission denied, no camera app, or the camera returned no file
+  Unprocessable, // the file came back but could not be made safe to send (metadata strip failed)
 };
 
 using CameraCaptureCallback = std::function<void(CameraCaptureOutcome outcome, std::vector<std::string> paths)>;

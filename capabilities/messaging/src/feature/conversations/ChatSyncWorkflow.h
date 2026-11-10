@@ -28,8 +28,8 @@ struct ChatSyncResult {
 class ChatSyncWorkflow {
 public:
   ChatSyncWorkflow(IThreadStore& store, IdentityStore& identity, ContactsStore& contacts, IRelayClient* relay,
-                  RelayReceivePipeline& receive_pipeline, InboxController& inbox,
-                  IChatHistoryPeerClient* peer_client = nullptr);
+                   RelayReceivePipeline& receive_pipeline, InboxController& inbox,
+                   IChatHistoryPeerClient* peer_client = nullptr);
 
   Roe<ChatSyncResult> FetchChatTargetMessages(const std::string& thread_id, ChatHistoryRequest request);
   void FetchChatTargetMessagesAsync(const std::string& thread_id, ChatHistoryRequest request,
@@ -60,8 +60,8 @@ private:
   void MergeSyncResult(ChatSyncResult& aggregate, const ChatSyncResult& partial) const;
   void AdvanceContiguousThroughStoredSeqs(const std::string& thread_id, uint32_t session_epoch);
   Roe<ChatHistoryRequest> BuildRequest(const Thread& thread, uint32_t session_epoch, uint64_t history_floor_seq,
-                                     std::optional<uint64_t> min_sender_seq, std::optional<uint64_t> max_sender_seq,
-                                     size_t limit, const std::string& order) const;
+                                       std::optional<uint64_t> min_sender_seq, std::optional<uint64_t> max_sender_seq,
+                                       size_t limit, const std::string& order) const;
   Roe<ChatSyncResult> IngestHistoryResponse(const std::string& thread_id, const ChatHistoryRequest& request,
                                             const ChatHistoryResponse& response,
                                             MessageTransport transport = MessageTransport::Relay);

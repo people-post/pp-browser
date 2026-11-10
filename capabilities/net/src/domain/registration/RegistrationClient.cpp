@@ -71,9 +71,8 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
     return kem_binding.error();
   }
 
-  return registration.FinishRegistration(start->challenge, loaded->account_signing_public_key_b64, nickname,
-                                         *signature, timestamp, start->signature_alg, loaded->kem_public_key_b64,
-                                         *kem_binding,
+  return registration.FinishRegistration(start->challenge, loaded->account_signing_public_key_b64, nickname, *signature,
+                                         timestamp, start->signature_alg, loaded->kem_public_key_b64, *kem_binding,
                                          loaded->peer_id, multiaddrs, loaded->initiation_floor, publish);
 }
 
@@ -108,8 +107,7 @@ Roe<LocalIdentity> PersistRenewal(IdentityStore& identity, const RegistrationRes
 }
 
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,
-                                                const std::string& nickname,
-                                                const std::vector<std::string>& multiaddrs,
+                                                const std::string& nickname, const std::vector<std::string>& multiaddrs,
                                                 const RegistrationPublishOpts& publish) {
   auto loaded = identity.Get(); // the account the registration runs for
   if (!loaded) {

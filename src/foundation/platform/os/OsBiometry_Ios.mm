@@ -12,14 +12,14 @@ Biometry BiometryKind() {
     Biometry kind = Biometry::None;
     if ([context canEvaluatePolicy:LAPolicyDeviceOwnerAuthenticationWithBiometrics error:&error]) {
       switch (context.biometryType) {
-      case LABiometryTypeFaceID:
-        kind = Biometry::Face;
-        break;
-      case LABiometryTypeTouchID:
-        kind = Biometry::Touch;
-        break;
-      default:
-        break; // LABiometryTypeNone, and kinds this build does not name (Optic ID): no switch
+        case LABiometryTypeFaceID:
+          kind = Biometry::Face;
+          break;
+        case LABiometryTypeTouchID:
+          kind = Biometry::Touch;
+          break;
+        default:
+          break; // LABiometryTypeNone, and kinds this build does not name (Optic ID): no switch
       }
     }
     [context release];

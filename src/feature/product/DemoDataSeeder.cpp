@@ -47,7 +47,7 @@ enum class Pic { None, Landscape, Portrait, File, Video };
 
 struct Line {
   Who who;
-  const char* text;  // for a picture: its file name
+  const char* text; // for a picture: its file name
   At at;
   Pic pic = Pic::None;
   /** Group chats only: index into the group's members (1-based; 0 = not used for direct chats). */
@@ -93,14 +93,15 @@ constexpr std::array<DemoContact, 18> kContacts = {{
 }};
 
 struct DirectChat {
-  int contact;  // index into kContacts
+  int contact; // index into kContacts
   int unread;
   std::vector<Line> lines;
 };
 
 const std::vector<DirectChat>& DirectChats() {
   static const std::vector<DirectChat> chats = {
-      {0, 0,
+      {0,
+       0,
        {
            {Who::Them, "在吗？晚上一起吃饭吧", {3, 18, 20}},
            {Who::Me, "好啊，去哪儿？", {3, 18, 22}},
@@ -110,7 +111,8 @@ const std::vector<DirectChat>& DirectChats() {
            {Who::Me, "没问题，今天就放包里", {1, 21, 9}, Pic::None, 0, "对了，记得带上上次说的那本书"},
            {Who::Them, "谢谢！那明天见", {0, 10, 42}},
        }},
-      {1, 3,
+      {1,
+       3,
        {
            {Who::Me, "Hi Emma, did the files arrive?", {1, 9, 12}},
            {Who::Them, "Yes, got them. Thanks!", {1, 9, 40}},
@@ -118,7 +120,8 @@ const std::vector<DirectChat>& DirectChats() {
            {Who::Them, "Could you check the numbers again?", {0, 8, 16}},
            {Who::Them, "No rush, any time today works.", {0, 8, 17}},
        }},
-      {2, 0,
+      {2,
+       0,
        {
            {Who::Them,
             "周末活动的安排我整理了一下：\n1. 周六上午 9:00 在公园门口集合\n2. 中午自带午餐，下午三点前返回\n"
@@ -127,40 +130,47 @@ const std::vector<DirectChat>& DirectChats() {
            {Who::Me, "收到，周六我可以，OK 👍", {9, 14, 30}},
            {Who::Them, "太好了，到时候见", {9, 14, 31}},
        }},
-      {3, 120,
+      {3,
+       120,
        {
            {Who::Them, "Please find the quarterly report attached to my previous mail.", {2, 11, 0}},
            {Who::Me, "Received, I will read it tonight.", {2, 11, 30}},
            {Who::Them, "报告里第二部分的数据还需要你确认一下。", {1, 16, 45}},
        }},
-      {4, 0,
+      {4,
+       0,
        {
            {Who::Them, "这是上次课堂上拍的照片", {5, 15, 10}},
            {Who::Them, "课堂.png", {5, 15, 11}, Pic::Landscape},
            {Who::Me, "真好看，谢谢老师", {5, 15, 40}},
        }},
-      {5, 0,
+      {5,
+       0,
        {
            {Who::Me, "This is the poster draft", {1, 20, 3}},
            {Who::Me, "poster.png", {1, 20, 4}, Pic::Portrait},
            {Who::Them, "Looks great, ship it", {1, 20, 30}},
        }},
-      {6, 0,
+      {6,
+       0,
        {
            {Who::Them, "明天的会议改到下午两点", {0, 7, 55}},
            {Who::Me, "好的", {0, 7, 58}},
        }},
-      {7, 0,
+      {7,
+       0,
        {
            {Who::Them, "Merci beaucoup for yesterday!", {3, 22, 10}},
            {Who::Me, "You are welcome, see you next week", {3, 22, 30}},
        }},
-      {8, 0,
+      {8,
+       0,
        {
            {Who::Me, "最近怎么样？", {9, 12, 0}},
            {Who::Them, "挺好的，刚搬了新家", {9, 12, 50}},
        }},
-      {9, 0,
+      {9,
+       0,
        {
            {Who::Them, "Dinner on Friday?", {6, 19, 15}},
            {Who::Me, "周五可以，几点？", {6, 19, 20}},
@@ -174,9 +184,9 @@ struct DemoGroup {
   const char* thread_id;
   const char* group_id;
   const char* title;
-  std::vector<int> members;  // indexes into kContacts (the user is a member too)
+  std::vector<int> members; // indexes into kContacts (the user is a member too)
   int unread;
-  std::vector<Line> lines;  // `member` is 1-based into `members`
+  std::vector<Line> lines; // `member` is 1-based into `members`
   std::vector<DemoReaction> reactions;
   /** Members who are not contacts: account ids (the senders of `stranger` lines). */
   std::vector<std::string> strangers;
@@ -204,7 +214,15 @@ const std::vector<DemoGroup>& Groups() {
            {Who::Them, "我是小明的同事，也想一起去，可以吗？", {0, 8, 5}, Pic::None, 0, nullptr, "demo-acct-guest-01"},
            {Who::Me, "欢迎！周六九点见", {0, 8, 7}},
        },
-       {{7, 0, "😍"}, {7, 3, "😍"}, {6, 2, "👍"}, {9, 1, "🙏"}, {12, 2, "👍"}, {12, 3, "👍"}, {12, 1, "🎉"}, {13, 1, "❤️"}, {10, 2, "👍"}},
+       {{7, 0, "😍"},
+        {7, 3, "😍"},
+        {6, 2, "👍"},
+        {9, 1, "🙏"},
+        {12, 2, "👍"},
+        {12, 3, "👍"},
+        {12, 1, "🎉"},
+        {13, 1, "❤️"},
+        {10, 2, "👍"}},
        {"demo-acct-guest-01"}},
       {"demo-thread-group-2",
        "demo-group-2",
@@ -373,7 +391,7 @@ Roe<void> PutReactions(const DemoSeedDeps& deps, const std::string& thread_id, c
     message.id = id_prefix + "-r" + std::to_string(order);
     message.thread_id = thread_id;
     message.display_order = order;
-    message.timestamp = TimeOf(deps, lines.back().at);  // after the last line: times keep the display order
+    message.timestamp = TimeOf(deps, lines.back().at); // after the last line: times keep the display order
     message.transport = MessageTransport::Relay;
     message.delivery = MessageDelivery::Relayed;
     message.content_type = ChatContentType::Annotation;
@@ -412,8 +430,8 @@ Roe<void> PutMessages(const DemoSeedDeps& deps, const std::string& thread_id, co
       message.relay_visible = false;
     } else {
       message.sender_contact_id = line.stranger != nullptr ? std::string(line.stranger)
-                                  : line.member > 0      ? sender_of_member.at(static_cast<size_t>(line.member - 1))
-                                                         : sender_of_member.at(0);
+                                  : line.member > 0        ? sender_of_member.at(static_cast<size_t>(line.member - 1))
+                                                           : sender_of_member.at(0);
     }
     if (line.pic != Pic::None) {
       message.content_type = ChatContentType::Attachment;
@@ -451,7 +469,8 @@ Thread ThreadFor(const std::string& id, const ThreadKind kind, const std::string
   thread.listed = true;
   const Line& last = lines.back();
   thread.updated_at = TimeOf(deps, last.at);
-  thread.preview = last.pic != Pic::None || last.quote == nullptr ? last.text : ComposeQuoteReply(last.text, last.quote);
+  thread.preview =
+      last.pic != Pic::None || last.quote == nullptr ? last.text : ComposeQuoteReply(last.text, last.quote);
   return thread;
 }
 
@@ -530,7 +549,7 @@ Roe<bool> DemoDataSeeder::SeedOnce(const DemoSeedDeps& deps) {
         !put) {
       return put.error();
     }
-    if (auto put = deps.threads.UpsertThread(thread); !put) {  // the final unread / preview / time
+    if (auto put = deps.threads.UpsertThread(thread); !put) { // the final unread / preview / time
       return put.error();
     }
     for (const Line& line : chat.lines) {
@@ -578,8 +597,8 @@ Roe<bool> DemoDataSeeder::SeedOnce(const DemoSeedDeps& deps) {
     for (const int member : group.members) {
       member_contacts.push_back(kContacts[static_cast<size_t>(member)].id);
     }
-    Thread thread = ThreadFor(group.thread_id, ThreadKind::Group, group.title, member_contacts, group.lines,
-                              group.unread, deps);
+    Thread thread =
+        ThreadFor(group.thread_id, ThreadKind::Group, group.title, member_contacts, group.lines, group.unread, deps);
     thread.group_id = group.group_id;
     if (auto put = deps.threads.UpsertThread(thread); !put) {
       return put.error();
@@ -644,8 +663,7 @@ Roe<bool> DemoDataSeeder::SeedOnce(const DemoSeedDeps& deps) {
       return put.error();
     }
     // Their lines are the assistant's.
-    if (auto put = PutMessages(deps, kAiThreadId, "demo-msg-ai", lines, {kAiAssistantContactId}, *landscape,
-                               *portrait);
+    if (auto put = PutMessages(deps, kAiThreadId, "demo-msg-ai", lines, {kAiAssistantContactId}, *landscape, *portrait);
         !put) {
       return put.error();
     }
@@ -700,7 +718,7 @@ Roe<bool> DemoDataSeeder::SeedOnce(const DemoSeedDeps& deps) {
 }
 
 std::vector<std::string> DemoStarredContacts() {
-  return {kContacts[1].id, kContacts[4].id};  // Emma, and 陈老师 (no recent chat: shows the star brings them up)
+  return {kContacts[1].id, kContacts[4].id}; // Emma, and 陈老师 (no recent chat: shows the star brings them up)
 }
 
 Roe<DemoSeedDeps> MakeDemoSeedDeps(ConversationsHub& hub) {
@@ -737,8 +755,8 @@ std::string DemoAskAiAnswer(const std::string& question) {
   if (question.find("出错") != std::string::npos || util::ToLowerAscii(question).find("error") != std::string::npos) {
     return {};
   }
-  const bool chinese = std::any_of(question.begin(), question.end(),
-                                   [](const char c) { return static_cast<unsigned char>(c) >= 0xE0; });
+  const bool chinese =
+      std::any_of(question.begin(), question.end(), [](const char c) { return static_cast<unsigned char>(c) >= 0xE0; });
   // A setting's "?" asks about that setting; anything else gets a general sample.
   const bool about_setting = question.find("「") != std::string::npos || question.find("“") != std::string::npos;
   if (!about_setting) {
@@ -778,10 +796,11 @@ std::vector<DemoHeadline> DemoBriefHeadlines(const bool chinese) {
             {"新款手机续航测试结果出炉：最长超过两天", "https://tech.example.net/phones/battery", 26 * 60},
             {"本地图书馆周末延长开放时间", "https://www.example.com/city/library", 30 * 60}};
   }
-  return {{"Fuel prices ease slightly this week", "https://www.example.com/news/oil", 60},
-          {"First snow of the winter reaches the north", "https://news.example.org/weather/snow", 150},
-          {"New phones tested: the best battery lasts over two days", "https://tech.example.net/phones/battery", 26 * 60},
-          {"City library opens longer at weekends", "https://www.example.com/city/library", 30 * 60}};
+  return {
+      {"Fuel prices ease slightly this week", "https://www.example.com/news/oil", 60},
+      {"First snow of the winter reaches the north", "https://news.example.org/weather/snow", 150},
+      {"New phones tested: the best battery lasts over two days", "https://tech.example.net/phones/battery", 26 * 60},
+      {"City library opens longer at weekends", "https://www.example.com/city/library", 30 * 60}};
 }
 
 std::string DemoPeerReply(const std::string& sent) {

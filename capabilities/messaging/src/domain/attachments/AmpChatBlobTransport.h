@@ -33,8 +33,8 @@ public:
   using IoAfter = std::function<void(std::chrono::milliseconds, std::function<void()>)>;
 
   AmpChatBlobTransport(mesh::IChatPeerLinks& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
-                     IPeerSigningKeyResolver& signing_keys, WorkerPost post_worker = {}, IoPost post_io = {},
-                     IoAfter post_after = {});
+                       IPeerSigningKeyResolver& signing_keys, WorkerPost post_worker = {}, IoPost post_io = {},
+                       IoAfter post_after = {});
   ~AmpChatBlobTransport() override;
 
   AmpChatBlobTransport(const AmpChatBlobTransport&) = delete;

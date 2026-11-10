@@ -14,9 +14,9 @@ namespace fs = std::filesystem;
 
 // What the user reads comes from the locale files (Tr / Localized), never from a literal in the code (#178): a
 // literal handed straight to a toast, a dialog or `WithUser` shows English in a Chinese interface.
-const char* const kCalls[] = {"UserFeedback::Ok(",   "UserFeedback::Fail(",  "UserFeedback::Note(",
-                              "UserFeedback::NeedsSetup(", "UserFeedback::Alert(", "UserFeedback::Confirm(",
-                              "ShowToast(",          ".WithUser("};
+const char* const kCalls[] = {
+    "UserFeedback::Ok(",    "UserFeedback::Fail(",    "UserFeedback::Note(", "UserFeedback::NeedsSetup(",
+    "UserFeedback::Alert(", "UserFeedback::Confirm(", "ShowToast(",          ".WithUser("};
 
 bool IsSource(const fs::path& path) {
   const std::string ext = path.extension().string();
@@ -57,13 +57,14 @@ TEST(UserTextSourceTest, NoLiteralIsHandedToTheUserWithoutTheLocaleFiles) {
       }
     }
   }
-  EXPECT_TRUE(offenders.empty()) << "a literal reaches the user; use Tr() / Localized():\n" << [&] {
-    std::string joined;
-    for (const std::string& offender : offenders) {
-      joined += offender + "\n";
-    }
-    return joined;
-  }();
+  EXPECT_TRUE(offenders.empty()) << "a literal reaches the user; use Tr() / Localized():\n"
+                                 << [&] {
+                                      std::string joined;
+                                      for (const std::string& offender : offenders) {
+                                        joined += offender + "\n";
+                                      }
+                                      return joined;
+                                    }();
 }
 
 } // namespace

@@ -47,7 +47,7 @@ TEST(StorageManagerModelTest, GroupsByChatSortsBySizeAndCountsEachHashOnce) {
       Item("a", 1, "image/jpeg", 2 * kMiB),
       Item("a", 2, "video/mp4", 10 * kMiB),
       Item("a", 3, "application/pdf", 1 * kMiB),
-      Item("b", 1, "image/jpeg", 2 * kMiB),   // the same picture forwarded into b
+      Item("b", 1, "image/jpeg", 2 * kMiB), // the same picture forwarded into b
       Item("b", 4, "image/png", 30 * kMiB),
       Item("c", 5, "application/zip", 512),
   };
@@ -83,7 +83,7 @@ TEST(StorageManagerModelTest, LargeListCrossesChatsOncePerHash) {
       Item("a", 1, "video/mp4", 40 * kMiB, /*ts=*/100),
       Item("b", 1, "video/mp4", 40 * kMiB, /*ts=*/200),
       Item("a", 2, "application/zip", 6 * kMiB),
-      Item("b", 3, "image/jpeg", 5 * kMiB),  // exactly 5 MB is not "larger than"
+      Item("b", 3, "image/jpeg", 5 * kMiB), // exactly 5 MB is not "larger than"
       Item("c", 4, "image/jpeg", 2 * kMiB),
   };
   const pbr::StorageOverview overview = pbr::BuildStorageOverview(items);
@@ -128,7 +128,7 @@ TEST(StorageManagerModelTest, DeleteFactsCountOnlyHereAndSharedElsewhere) {
   const std::vector<pbr::StoredAttachmentItem> items = {
       Item("a", 1, "image/jpeg", 3 * kMiB, 0, /*server=*/true),
       Item("b", 1, "image/jpeg", 3 * kMiB, 0, /*server=*/true),  // also in b
-      Item("a", 2, "image/jpeg", 4 * kMiB, 0, /*server=*/false),  // never uploaded
+      Item("a", 2, "image/jpeg", 4 * kMiB, 0, /*server=*/false), // never uploaded
       Item("a", 3, "application/pdf", 1 * kMiB, 0, /*server=*/true),
   };
   const std::vector<pbr::StoredAttachmentItem> selected = {items[0], items[2], items[3]};
@@ -211,7 +211,7 @@ TEST(StorageManagerModelTest, RecomputeGateCoalescesBursts) {
   pbr::StorageRecomputeGate gate(2000);
   int runs = 0;
   int64_t now = 0;
-  gate.OnStarted(now);  // the count on entering
+  gate.OnStarted(now); // the count on entering
   ++runs;
   EXPECT_EQ(gate.OnFinished(100).step, Step::Nothing);
 

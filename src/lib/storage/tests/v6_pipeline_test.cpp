@@ -21,8 +21,7 @@ ByteVector TestDek() {
 TEST(V6PipelineTest, ClearHistorySetsHistoryFloorToLoadedMax) {
   using namespace pbr;
 
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_v6_floor_test";
+  const std::filesystem::path data_dir = std::filesystem::temp_directory_path() / "pp_browser_v6_floor_test";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
   ASSERT_TRUE(store.SetDek(TestDek()));

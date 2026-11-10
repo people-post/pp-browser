@@ -45,6 +45,5 @@ TEST(MlDsaTest, AccountIdGoldenVector) {
   EXPECT_EQ(*account_id, "account:GfmolD8fsSJ4FcK1d_6wOhTbZaVr0_ELv9iiZG0_Idk");
 }
 
-
 } // namespace
 } // namespace pbr

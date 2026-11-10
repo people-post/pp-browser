@@ -26,8 +26,8 @@ bool ProfileRegistry::IsValidProfileId(const std::string_view id) {
     return false;
   }
   for (const char c : id) {
-    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' ||
-                    c == '_' || c == '-';
+    const bool ok =
+        (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-';
     if (!ok) {
       return false;
     }
@@ -43,11 +43,13 @@ Roe<void> ProfileRegistry::CheckActiveProfileId() const {
   return {};
 }
 
-ProfileRegistry::ProfileRegistry()
-    : ProfileRegistry("", "default", {}) {}
+ProfileRegistry::ProfileRegistry() : ProfileRegistry("", "default", {}) {}
 
-ProfileRegistry::ProfileRegistry(std::string data_dir, std::string active_profile_id, std::vector<ProfileEntry> profiles)
-    : data_dir_(std::move(data_dir)), active_profile_id_(std::move(active_profile_id)), profiles_(std::move(profiles)) {}
+ProfileRegistry::ProfileRegistry(std::string data_dir, std::string active_profile_id,
+                                 std::vector<ProfileEntry> profiles)
+    : data_dir_(std::move(data_dir)),
+      active_profile_id_(std::move(active_profile_id)),
+      profiles_(std::move(profiles)) {}
 
 Roe<ProfileRegistry> ProfileRegistry::Load(const std::string& data_dir) {
   const std::string path = RegistryPath(data_dir);
@@ -81,8 +83,9 @@ Roe<ProfileRegistry> ProfileRegistry::Load(const std::string& data_dir) {
   }
 
   std::string active = "default";
-  if (auto active_profile_id = root->getString("active_profile_id"); active_profile_id && IsValidProfileId(*active_profile_id)) {
-    active = *active_profile_id;  // one that is not an id falls back to the default profile
+  if (auto active_profile_id = root->getString("active_profile_id");
+      active_profile_id && IsValidProfileId(*active_profile_id)) {
+    active = *active_profile_id; // one that is not an id falls back to the default profile
   }
 
   std::vector<ProfileEntry> profiles;

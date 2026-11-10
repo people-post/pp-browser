@@ -11,16 +11,16 @@ namespace {
 
 bool IsSupportedContentType(const ChatContentType type) {
   switch (type) {
-  case ChatContentType::Text:
-  case ChatContentType::System:
-  case ChatContentType::Annotation:
-  case ChatContentType::ContactCard:
-  case ChatContentType::CryptoTx:
-  case ChatContentType::Attachment:
-  case ChatContentType::Unsupported:
-    return true;
-  case ChatContentType::Deleted: // local tombstone, never on the wire
-    return false;
+    case ChatContentType::Text:
+    case ChatContentType::System:
+    case ChatContentType::Annotation:
+    case ChatContentType::ContactCard:
+    case ChatContentType::CryptoTx:
+    case ChatContentType::Attachment:
+    case ChatContentType::Unsupported:
+      return true;
+    case ChatContentType::Deleted: // local tombstone, never on the wire
+      return false;
   }
   return false;
 }

@@ -127,8 +127,7 @@ TEST(ChatPayloadValidatorTest, RelayWireRejectsLegacyBodyShapes) {
 TEST(ChatPayloadValidatorTest, TransportColumnRoundTrip) {
   using namespace pbr;
 
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_transport_test";
+  const std::filesystem::path data_dir = std::filesystem::temp_directory_path() / "pp_browser_transport_test";
   std::filesystem::remove_all(data_dir);
   InMemoryDeliveryStore store;
   ASSERT_TRUE(store.SetDek(TestDek()));

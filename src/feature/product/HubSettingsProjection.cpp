@@ -41,11 +41,12 @@ ConversationsHub::NetworkConfig ProjectNetwork(const AppConfig& config) {
 }
 
 HubPolicyPrefs ProjectPolicy(const ProfilePreferences& prefs) {
-  return {.group_invite_policy = GroupInvitePolicyFromString(prefs.group_invite_policy),
-          .attachment_download_policy = AttachmentDownloadPolicyFromString(prefs.attachment_download_policy),
-          .attachment_auto_on_wifi = prefs.attachment_auto_on_wifi,
-          .attachment_auto_on_cellular = prefs.attachment_auto_on_cellular,
-          .call_invite_policy = mesh::InboundAudienceFromName(prefs.call_invite_policy, mesh::InboundAudience::Everyone)};
+  return {
+      .group_invite_policy = GroupInvitePolicyFromString(prefs.group_invite_policy),
+      .attachment_download_policy = AttachmentDownloadPolicyFromString(prefs.attachment_download_policy),
+      .attachment_auto_on_wifi = prefs.attachment_auto_on_wifi,
+      .attachment_auto_on_cellular = prefs.attachment_auto_on_cellular,
+      .call_invite_policy = mesh::InboundAudienceFromName(prefs.call_invite_policy, mesh::InboundAudience::Everyone)};
 }
 
 ConversationsHub::NotificationPrefs ProjectNotifications(const ProfilePreferences& prefs) {

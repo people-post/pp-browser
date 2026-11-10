@@ -58,7 +58,7 @@ Roe<void> CallControlClient::SendSummary(const std::string& thread_id, const Cal
     std::optional<CallSummaryDetail> existing;
     auto row = transcript_.GetMessage(thread_id, message_id);
     if (!row) {
-      return row.error();  // could not read it: do not write over a record that may be there
+      return row.error(); // could not read it: do not write over a record that may be there
     }
     if (row->has_value()) {
       auto payload = TryParseObject((*row)->payload_json);
@@ -156,8 +156,8 @@ void CallControlClient::SendToEach(const std::vector<std::string>& peers, const 
 }
 
 Roe<void> CallControlClient::FanOutToJoined(const std::string& call_id, const CallControlType type,
-                                             const std::string& detail_json, const std::string& display,
-                                             const std::string& skip_identity) {
+                                            const std::string& detail_json, const std::string& display,
+                                            const std::string& skip_identity) {
   auto participants = sessions_.ListParticipants(call_id);
   if (!participants) {
     return participants.error();
@@ -168,8 +168,8 @@ Roe<void> CallControlClient::FanOutToJoined(const std::string& call_id, const Ca
 }
 
 Roe<void> CallControlClient::FanOutToJoinedAndRinging(const std::string& call_id, const CallControlType type,
-                                                       const std::string& detail_json, const std::string& display,
-                                                       const std::string& skip_identity) {
+                                                      const std::string& detail_json, const std::string& display,
+                                                      const std::string& skip_identity) {
   auto participants = sessions_.ListParticipants(call_id);
   if (!participants) {
     return participants.error();

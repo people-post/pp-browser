@@ -60,7 +60,8 @@ TEST_F(CallControlFamilyTest, OneLinePerCallFromTheReadersSide) {
   EXPECT_EQ(Line(Summary("account:bob", CallOutcome::Missed, std::nullopt)),
             std::optional<std::string>("Missed voice call"));
   EXPECT_EQ(Line(Summary("account:bob", CallOutcome::Cancelled, std::nullopt)),
-            std::optional<std::string>("Missed voice call")) << "hung up before we answered: we missed it";
+            std::optional<std::string>("Missed voice call"))
+      << "hung up before we answered: we missed it";
   EXPECT_EQ(Line(Summary(kLocalSelfContactId, CallOutcome::Missed, std::nullopt)),
             std::optional<std::string>("Voice call · no answer"));
   EXPECT_EQ(Line(Summary(kLocalSelfContactId, CallOutcome::Declined, std::nullopt, false, CallMediaMode::Video)),
@@ -75,8 +76,8 @@ TEST_F(CallControlFamilyTest, AGroupSummaryIsTheReadersOwnPartInTheCall) {
   EXPECT_EQ(Line(Summary(kLocalSelfContactId, CallOutcome::Declined, std::nullopt, true, CallMediaMode::Video)),
             std::optional<std::string>("Declined group video call"));
   auto started = Summary(kLocalSelfContactId, CallOutcome::Missed, std::nullopt, true);
-  CallSummaryDetail detail = CallControlCodec::DecodeSummary(
-      TryParseObject(started.payload_json)->getString("detail").value()).value();
+  CallSummaryDetail detail =
+      CallControlCodec::DecodeSummary(TryParseObject(started.payload_json)->getString("detail").value()).value();
   detail.started = true;
   started = Message(CallControlType::CallSummary, kLocalSelfContactId, CallControlCodec::EncodeSummary(detail).value());
   EXPECT_EQ(Line(started), std::optional<std::string>("Group voice call · no answer"));

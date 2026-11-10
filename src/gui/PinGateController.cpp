@@ -236,11 +236,11 @@ void PinGateController::ShowBiometricReset(const std::string& hint) {
   pin_state_.biometric_first = false;
   pin_state_.biometric_hint = hint.c_str();
   if (!pin_state_.waiting_device_unlock) {
-    pin_state_.message = UnlockMessage().c_str();  // the waiting screen keeps its own words
+    pin_state_.message = UnlockMessage().c_str(); // the waiting screen keeps its own words
   }
   ApplyPinGate();
   if (was_first) {
-    Remount();  // the pad / field instead of the key-only door
+    Remount(); // the pad / field instead of the key-only door
     return;
   }
   DirtyPinFields();
@@ -254,7 +254,7 @@ void PinGateController::OnUsePin() {
   pin_state_.biometric_first = false;
   pin_state_.message = UnlockMessage().c_str();
   ApplyPinGate();
-  Remount();  // the pad / field instead of the key-only door
+  Remount(); // the pad / field instead of the key-only door
 }
 
 void PinGateController::OnBiometric() {
@@ -424,15 +424,15 @@ void PinGateController::ShowVerify(const PinVerifyPurpose purpose, PinGateCheck 
   pin_state_.verify_mode = true;
   pin_state_.title = Tr("pin.verify_title").c_str();
   switch (purpose) {
-  case PinVerifyPurpose::ExportTransferCode:
-    pin_state_.message = Tr("pin.verify_export_message").c_str();
-    break;
-  case PinVerifyPurpose::ShowRecoveryPhrase:
-    pin_state_.message = Tr("pin.verify_recovery_message").c_str();
-    break;
-  case PinVerifyPurpose::EnableBiometric:
-    pin_state_.message = Tr("pin.verify_biometric_message").c_str();
-    break;
+    case PinVerifyPurpose::ExportTransferCode:
+      pin_state_.message = Tr("pin.verify_export_message").c_str();
+      break;
+    case PinVerifyPurpose::ShowRecoveryPhrase:
+      pin_state_.message = Tr("pin.verify_recovery_message").c_str();
+      break;
+    case PinVerifyPurpose::EnableBiometric:
+      pin_state_.message = Tr("pin.verify_biometric_message").c_str();
+      break;
   }
   SetupKnownPinEntry();
   ApplyPinGate();
@@ -494,7 +494,7 @@ void PinGateController::OnUseSavedCopy() {
   if (!pin_state_.active || !pin_state_.link_paste_mode || !phrase_flow_ || !gate_complete_.pick_saved_copy) {
     return;
   }
-  PullBoundPinFields();  // keep the words typed so far
+  PullBoundPinFields(); // keep the words typed so far
   gate_complete_.pick_saved_copy([this](std::string name, std::optional<std::string> text) {
     if (name.empty() || !pin_state_.active || !pin_state_.link_paste_mode || !phrase_flow_) {
       return;
@@ -563,7 +563,7 @@ void PinGateController::OnSubmit() {
   PullBoundPinFields();
   if (!pin_state_.active || pin_state_.biometric_first || pin_state_.chooser_mode || pin_state_.identity_fork_mode ||
       pin_state_.waiting_device_unlock || pin_state_.keypad || pin_state_.keypad_busy) {
-    return;  // the pad has no Continue: a full PIN submits itself
+    return; // the pad has no Continue: a full PIN submits itself
   }
 
   if (pin_state_.link_paste_mode) {
@@ -619,7 +619,7 @@ void PinGateController::SubmitKnownPin(const std::string& pin) {
       return;
     }
     pin_state_.error = "";
-    pin_state_.keypad_busy = pin_state_.keypad;  // until the vault answers (Dismiss, or ShowError)
+    pin_state_.keypad_busy = pin_state_.keypad; // until the vault answers (Dismiss, or ShowError)
     ApplyPinGate();
     DirtyPinFields();
     gate_complete_.complete_with_pin(pin, /*create_mode=*/false);
@@ -713,22 +713,20 @@ void PinGateController::SubmitNewPin(const std::string& pin, const std::string& 
   ApplyPinGate();
   DirtyPinFields();
   const uint64_t request = ++request_;
-  change(change_old_pin_, pin, [this, request](Roe<void> result) {
-    OnCheckDone(request, std::move(result), [this]() { Dismiss(); });
-  });
+  change(change_old_pin_, pin,
+         [this, request](Roe<void> result) { OnCheckDone(request, std::move(result), [this]() { Dismiss(); }); });
 }
 
 void PinGateController::OnCheckDone(const uint64_t request, Roe<void> result, std::function<void()> then) {
   if (request != request_ || !pin_state_.active) {
-    return;  // cancelled, or another flow took the gate, while it was checked
+    return; // cancelled, or another flow took the gate, while it was checked
   }
   PullBoundPinFields();
   pin_state_.keypad_busy = false;
   if (!result) {
-    pin_state_.error =
-        (ProfileUnlockGate::IsWrongPinError(result.error()) ? Tr("pin.error.wrong")
-                                                             : UserFeedback::UserMessage(result.error()))
-            .c_str();
+    pin_state_.error = (ProfileUnlockGate::IsWrongPinError(result.error()) ? Tr("pin.error.wrong")
+                                                                           : UserFeedback::UserMessage(result.error()))
+                           .c_str();
     pin_state_.pin = "";
     pin_state_.pin_confirm = "";
     if (InNewPinStep()) {
@@ -744,8 +742,8 @@ void PinGateController::OnCheckDone(const uint64_t request, Roe<void> result, st
 }
 
 void PinGateController::OnKey(const int digit) {
-  if (!pin_state_.active || pin_state_.biometric_first || !pin_state_.keypad || pin_state_.keypad_busy || pin_state_.waiting_device_unlock ||
-      digit < 0 || digit > 9) {
+  if (!pin_state_.active || pin_state_.biometric_first || !pin_state_.keypad || pin_state_.keypad_busy ||
+      pin_state_.waiting_device_unlock || digit < 0 || digit > 9) {
     return;
   }
   const char key = static_cast<char>('0' + digit);
@@ -793,7 +791,8 @@ void PinGateController::OnKey(const int digit) {
 }
 
 void PinGateController::OnBackspace() {
-  if (!pin_state_.active || pin_state_.biometric_first || !pin_state_.keypad || pin_state_.keypad_busy || pin_state_.waiting_device_unlock) {
+  if (!pin_state_.active || pin_state_.biometric_first || !pin_state_.keypad || pin_state_.keypad_busy ||
+      pin_state_.waiting_device_unlock) {
     return;
   }
   // The repeat's backspace stays in the repeat (an empty repeat does not go back to the first entry).
@@ -810,8 +809,8 @@ void PinGateController::OnBackspace() {
 }
 
 void PinGateController::OnKeypadOk() {
-  if (!pin_state_.active || pin_state_.biometric_first || !pin_state_.keypad || pin_state_.keypad_busy || !InNewPinStep() || new_pin_step_ != 0 ||
-      std::string(pin_state_.pin.c_str()).size() < 4) {
+  if (!pin_state_.active || pin_state_.biometric_first || !pin_state_.keypad || pin_state_.keypad_busy ||
+      !InNewPinStep() || new_pin_step_ != 0 || std::string(pin_state_.pin.c_str()).size() < 4) {
     return;
   }
   new_pin_step_ = 1;
@@ -824,7 +823,8 @@ void PinGateController::OnKeypadOk() {
 }
 
 void PinGateController::OnUseText() {
-  if (!pin_state_.active || pin_state_.biometric_first || !pin_state_.keypad || pin_state_.keypad_busy || pin_state_.waiting_device_unlock) {
+  if (!pin_state_.active || pin_state_.biometric_first || !pin_state_.keypad || pin_state_.keypad_busy ||
+      pin_state_.waiting_device_unlock) {
     return;
   }
   pin_state_.keypad = false;
@@ -838,12 +838,12 @@ void PinGateController::OnUseText() {
   }
   RefreshKeypad();
   ApplyPinGate();
-  Remount();  // the field instead of the pad
+  Remount(); // the field instead of the pad
 }
 
 void PinGateController::OnUseKeypad() {
-  if (!pin_state_.active || pin_state_.biometric_first || pin_state_.keypad || !pin_state_.keypad_offered || pin_state_.keypad_busy ||
-      pin_state_.waiting_device_unlock) {
+  if (!pin_state_.active || pin_state_.biometric_first || pin_state_.keypad || !pin_state_.keypad_offered ||
+      pin_state_.keypad_busy || pin_state_.waiting_device_unlock) {
     return;
   }
   PullBoundPinFields();
@@ -858,7 +858,7 @@ void PinGateController::OnUseKeypad() {
   }
   RefreshKeypad();
   ApplyPinGate();
-  Remount();  // the pad instead of the field
+  Remount(); // the pad instead of the field
 }
 
 void PinGateController::OnCancel() {
@@ -866,11 +866,11 @@ void PinGateController::OnCancel() {
     return;
   }
   if (pin_state_.verify_mode || pin_state_.change_mode) {
-    Dismiss();  // back to settings; a check still running is void
+    Dismiss(); // back to settings; a check still running is void
     return;
   }
-  const bool cancellable = pin_state_.create_mode || pin_state_.chooser_mode || pin_state_.identity_fork_mode ||
-                           pin_state_.link_paste_mode;
+  const bool cancellable =
+      pin_state_.create_mode || pin_state_.chooser_mode || pin_state_.identity_fork_mode || pin_state_.link_paste_mode;
   if (!cancellable || !gate_complete_.cancel) {
     return;
   }

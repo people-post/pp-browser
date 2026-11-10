@@ -26,12 +26,12 @@ TEST_F(ActionNoticeTextTest, ALocalActionIsWordedInTheUiLanguage) {
   const std::string zh = ActionNoticeText(notice);
   EXPECT_EQ(zh.find("Added"), std::string::npos) << zh;
   EXPECT_NE(zh.find("Ann"), std::string::npos) << zh;
-  for (const auto kind : {ActionNotice::Kind::OpenedConversation, ActionNotice::Kind::OpenedSecureConversation,
-                          ActionNotice::Kind::OpenedThread, ActionNotice::Kind::Registered,
-                          ActionNotice::Kind::RegistrationFailed, ActionNotice::Kind::JoinedGroup,
-                          ActionNotice::Kind::DeclinedInvitation, ActionNotice::Kind::BlockedInviter,
-                          ActionNotice::Kind::BlockedUnknownInviter, ActionNotice::Kind::CreatedGroup,
-                          ActionNotice::Kind::StartedFresh, ActionNotice::Kind::OpenedOwnerChat}) {
+  for (const auto kind :
+       {ActionNotice::Kind::OpenedConversation, ActionNotice::Kind::OpenedSecureConversation,
+        ActionNotice::Kind::OpenedThread, ActionNotice::Kind::Registered, ActionNotice::Kind::RegistrationFailed,
+        ActionNotice::Kind::JoinedGroup, ActionNotice::Kind::DeclinedInvitation, ActionNotice::Kind::BlockedInviter,
+        ActionNotice::Kind::BlockedUnknownInviter, ActionNotice::Kind::CreatedGroup, ActionNotice::Kind::StartedFresh,
+        ActionNotice::Kind::OpenedOwnerChat}) {
     notice.kind = kind;
     const std::string text = ActionNoticeText(notice);
     EXPECT_FALSE(text.empty());

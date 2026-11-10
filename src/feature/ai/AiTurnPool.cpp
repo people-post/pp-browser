@@ -35,9 +35,7 @@ void AiTurnPool::Post(std::function<void()> task) {
     std::lock_guard lock(outstanding_->mu);
     ++outstanding_->count;
   }
-  pool_.Post(WorkerLane::Normal, [token = std::make_shared<Token>(outstanding_), task = std::move(task)]() {
-    task();
-  });
+  pool_.Post(WorkerLane::Normal, [token = std::make_shared<Token>(outstanding_), task = std::move(task)]() { task(); });
 }
 
 bool AiTurnPool::WaitIdle(const std::chrono::milliseconds budget) {

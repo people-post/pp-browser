@@ -40,7 +40,7 @@
 namespace ui {
 class Context;
 class Element;
-}
+} // namespace ui
 
 namespace pbr {
 
@@ -79,9 +79,8 @@ public:
 
     bool operator==(const ChromePrefs& other) const {
       return theme == other.theme && appearance == other.appearance &&
-             reduce_transparency == other.reduce_transparency &&
-             compact_chrome_frost == other.compact_chrome_frost && ai_dot == other.ai_dot &&
-             ai_dot_look == other.ai_dot_look && ai_dot_size == other.ai_dot_size &&
+             reduce_transparency == other.reduce_transparency && compact_chrome_frost == other.compact_chrome_frost &&
+             ai_dot == other.ai_dot && ai_dot_look == other.ai_dot_look && ai_dot_size == other.ai_dot_size &&
              home_animated_logo == other.home_animated_logo;
     }
     bool operator!=(const ChromePrefs& other) const { return !(*this == other); }
@@ -100,7 +99,6 @@ public:
   void Apply(const ChromePrefs& prefs);
 
   ShellHost();
-
 
   void BindShellMessaging(MessagingShellPorts ports);
   void BindPinGateActions(PinGateActionPorts ports);
@@ -193,8 +191,7 @@ public:
    * Animated style schedules CommitDismiss after the exit transition.
    * When `force` is set, that target is dismissed (sheet swipe ignores local back).
    */
-  bool RequestDismiss(DismissStyle style = DismissStyle::Instant,
-                      DismissTarget force = DismissTarget::None);
+  bool RequestDismiss(DismissStyle style = DismissStyle::Instant, DismissTarget force = DismissTarget::None);
   bool HandleDismiss();
 
   /** Nested back within the current interruption (e.g. settings list→detail). */
@@ -308,8 +305,8 @@ private:
   void DialogCancel();
   void DialogToggleCheckbox();
   void PinGateSubmit();
-  void PinGatePaste();  // read the clipboard into the transfer-code / phrase box (iOS has no paste menu there, B163)
-  void PinGateClearPayload();  // clear a pasted transfer code so the textarea comes back (B166)
+  void PinGatePaste(); // read the clipboard into the transfer-code / phrase box (iOS has no paste menu there, B163)
+  void PinGateClearPayload(); // clear a pasted transfer code so the textarea comes back (B166)
   void PinGateCancel();
   void PinGateSetPin();
   void PinGateUseDefault();
@@ -318,7 +315,7 @@ private:
   void PinGateIdentityPhrase();
   void PinGateUseSavedCopy();
   void PinGateForgotToggle();
-  void PinGateUsePinInstead();  // "Enter PIN instead" while waiting for the phone's unlock (PIN grace window)
+  void PinGateUsePinInstead(); // "Enter PIN instead" while waiting for the phone's unlock (PIN grace window)
   void CallAccept();
   void CallAcceptVoice();
   void CallAcceptCharge();
@@ -338,7 +335,6 @@ private:
   void TitlebarMinimize();
   void TitlebarToggleMaximize();
   void TitlebarClose();
-
 
   ui::Element* ShellRoot() const;
   /** The shell's markup from its state now. */

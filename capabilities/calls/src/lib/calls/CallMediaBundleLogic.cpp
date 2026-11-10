@@ -10,22 +10,22 @@ CallMediaInboundHelloDecision DecideCallMediaInboundHello(const CallMediaInbound
     return CallMediaInboundHelloDecision::RejectBusy;
   }
   switch (ctx.phase) {
-  case CallMediaBundlePhase::MediaReady:
-  case CallMediaBundlePhase::AwaitingMedia:
-  case CallMediaBundlePhase::InboundHello:
-  case CallMediaBundlePhase::Closing:
-    return CallMediaInboundHelloDecision::RejectBusy;
-  case CallMediaBundlePhase::OutboundHello:
-    // Simultaneous open: exactly one side must win. local_wins_glare is role-aware and
-    // antisymmetric (LocalWinsCallMediaGlareForRoles). The old rule let an answerer always yield
-    // and an offerer with the lower PeerId yield too — both yielded, both bundles closed.
-    if (ctx.local_wins_glare) {
-      return CallMediaInboundHelloDecision::RejectGlare;
-    }
-    // Loser (or outbound not bound yet): accept inbound and drop any provisional outbound.
-    return CallMediaInboundHelloDecision::AcceptAndYield;
-  case CallMediaBundlePhase::Idle:
-    return CallMediaInboundHelloDecision::Accept;
+    case CallMediaBundlePhase::MediaReady:
+    case CallMediaBundlePhase::AwaitingMedia:
+    case CallMediaBundlePhase::InboundHello:
+    case CallMediaBundlePhase::Closing:
+      return CallMediaInboundHelloDecision::RejectBusy;
+    case CallMediaBundlePhase::OutboundHello:
+      // Simultaneous open: exactly one side must win. local_wins_glare is role-aware and
+      // antisymmetric (LocalWinsCallMediaGlareForRoles). The old rule let an answerer always yield
+      // and an offerer with the lower PeerId yield too — both yielded, both bundles closed.
+      if (ctx.local_wins_glare) {
+        return CallMediaInboundHelloDecision::RejectGlare;
+      }
+      // Loser (or outbound not bound yet): accept inbound and drop any provisional outbound.
+      return CallMediaInboundHelloDecision::AcceptAndYield;
+    case CallMediaBundlePhase::Idle:
+      return CallMediaInboundHelloDecision::Accept;
   }
   return CallMediaInboundHelloDecision::RejectBusy;
 }
@@ -88,34 +88,34 @@ CallMediaChannelCloseAction RouteCallMediaChannelClose(const CallMediaChannelClo
 
 CallMediaSessionPhase CallMediaBundlePhaseToSessionPhase(const CallMediaBundlePhase phase) {
   switch (phase) {
-  case CallMediaBundlePhase::Idle:
-    return CallMediaSessionPhase::Idle;
-  case CallMediaBundlePhase::OutboundHello:
-    return CallMediaSessionPhase::HelloOutbound;
-  case CallMediaBundlePhase::InboundHello:
-    return CallMediaSessionPhase::HelloInbound;
-  case CallMediaBundlePhase::AwaitingMedia:
-    return CallMediaSessionPhase::Adopting;
-  case CallMediaBundlePhase::MediaReady:
-    return CallMediaSessionPhase::MediaReady;
-  case CallMediaBundlePhase::Closing:
-    return CallMediaSessionPhase::Detaching;
+    case CallMediaBundlePhase::Idle:
+      return CallMediaSessionPhase::Idle;
+    case CallMediaBundlePhase::OutboundHello:
+      return CallMediaSessionPhase::HelloOutbound;
+    case CallMediaBundlePhase::InboundHello:
+      return CallMediaSessionPhase::HelloInbound;
+    case CallMediaBundlePhase::AwaitingMedia:
+      return CallMediaSessionPhase::Adopting;
+    case CallMediaBundlePhase::MediaReady:
+      return CallMediaSessionPhase::MediaReady;
+    case CallMediaBundlePhase::Closing:
+      return CallMediaSessionPhase::Detaching;
   }
   return CallMediaSessionPhase::Idle;
 }
 
 CallMediaLegPhase CallMediaBundlePhaseToLegPhase(const CallMediaBundlePhase phase) {
   switch (phase) {
-  case CallMediaBundlePhase::Idle:
-  case CallMediaBundlePhase::Closing:
-    return CallMediaLegPhase::Closed;
-  case CallMediaBundlePhase::OutboundHello:
-  case CallMediaBundlePhase::InboundHello:
-    return CallMediaLegPhase::ControlHello;
-  case CallMediaBundlePhase::AwaitingMedia:
-    return CallMediaLegPhase::AwaitingMedia;
-  case CallMediaBundlePhase::MediaReady:
-    return CallMediaLegPhase::MediaReady;
+    case CallMediaBundlePhase::Idle:
+    case CallMediaBundlePhase::Closing:
+      return CallMediaLegPhase::Closed;
+    case CallMediaBundlePhase::OutboundHello:
+    case CallMediaBundlePhase::InboundHello:
+      return CallMediaLegPhase::ControlHello;
+    case CallMediaBundlePhase::AwaitingMedia:
+      return CallMediaLegPhase::AwaitingMedia;
+    case CallMediaBundlePhase::MediaReady:
+      return CallMediaLegPhase::MediaReady;
   }
   return CallMediaLegPhase::Closed;
 }
@@ -186,7 +186,7 @@ bool CallMediaSeqWindow::Accept(const uint32_t seq) {
   }
   const uint32_t behind = highest_ - seq;
   if (behind >= kWindow) {
-    return anchor();  // far behind: the sender restarted its seq
+    return anchor(); // far behind: the sender restarted its seq
   }
   if (seen_.test(behind)) {
     return false;

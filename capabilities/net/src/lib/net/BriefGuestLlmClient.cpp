@@ -26,8 +26,7 @@ std::string ResolveBriefLlmApiKey(const std::string& registered_key, const std::
   return guest_key;
 }
 
-Roe<BriefGuestLlmMintResult> MintBriefGuestLlmKey(const std::string& llm_base_url,
-                                                 const std::string& install_id) {
+Roe<BriefGuestLlmMintResult> MintBriefGuestLlmKey(const std::string& llm_base_url, const std::string& install_id) {
   const std::string base = TrimTrailingSlashes(llm_base_url);
   if (base.empty()) {
     return AppError::Internal("Brief LLM base URL is empty");

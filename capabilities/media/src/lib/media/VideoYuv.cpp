@@ -12,8 +12,8 @@ inline uint8_t ClampU8(int v) {
 
 } // namespace
 
-bool RgbaToI420(const uint8_t* rgba, const int width, const int height, const int stride_bytes,
-                const bool has_alpha, VideoFrameI420& out) {
+bool RgbaToI420(const uint8_t* rgba, const int width, const int height, const int stride_bytes, const bool has_alpha,
+                VideoFrameI420& out) {
   if (!rgba || width <= 0 || height <= 0 || (width & 1) || (height & 1)) {
     return false;
   }
@@ -34,8 +34,7 @@ bool RgbaToI420(const uint8_t* rgba, const int width, const int height, const in
       const int r = px[0];
       const int g = px[1];
       const int b = px[2];
-      out.y[static_cast<size_t>(y * width + x)] =
-          ClampU8(((66 * r + 129 * g + 25 * b + 128) >> 8) + 16);
+      out.y[static_cast<size_t>(y * width + x)] = ClampU8(((66 * r + 129 * g + 25 * b + 128) >> 8) + 16);
     }
   }
   for (int y = 0; y < height; y += 2) {
@@ -45,8 +44,7 @@ bool RgbaToI420(const uint8_t* rgba, const int width, const int height, const in
       int b_sum = 0;
       for (int dy = 0; dy < 2; ++dy) {
         for (int dx = 0; dx < 2; ++dx) {
-          const uint8_t* px =
-              rgba + static_cast<size_t>(y + dy) * static_cast<size_t>(stride_bytes) + (x + dx) * bpp;
+          const uint8_t* px = rgba + static_cast<size_t>(y + dy) * static_cast<size_t>(stride_bytes) + (x + dx) * bpp;
           r_sum += px[0];
           g_sum += px[1];
           b_sum += px[2];
@@ -91,8 +89,8 @@ bool I420ToRgba(const VideoFrameI420& in, VideoFrameRgba& out) {
   return true;
 }
 
-bool CopyRgbToRgba(const uint8_t* src, const int width, const int height, const int stride_bytes,
-                   const bool has_alpha, VideoFrameRgba& out) {
+bool CopyRgbToRgba(const uint8_t* src, const int width, const int height, const int stride_bytes, const bool has_alpha,
+                   VideoFrameRgba& out) {
   if (!src || width <= 0 || height <= 0) {
     return false;
   }
@@ -129,11 +127,8 @@ bool RotateRgba90Cw(const VideoFrameRgba& in, VideoFrameRgba& out) {
     for (int x = 0; x < out.width; ++x) {
       const int src_x = y;
       const int src_y = in.height - 1 - x;
-      const size_t si = (static_cast<size_t>(src_y) * static_cast<size_t>(in.width) +
-                         static_cast<size_t>(src_x)) *
-                        4;
-      const size_t di =
-          (static_cast<size_t>(y) * static_cast<size_t>(out.width) + static_cast<size_t>(x)) * 4;
+      const size_t si = (static_cast<size_t>(src_y) * static_cast<size_t>(in.width) + static_cast<size_t>(src_x)) * 4;
+      const size_t di = (static_cast<size_t>(y) * static_cast<size_t>(out.width) + static_cast<size_t>(x)) * 4;
       out.rgba[di + 0] = in.rgba[si + 0];
       out.rgba[di + 1] = in.rgba[si + 1];
       out.rgba[di + 2] = in.rgba[si + 2];
@@ -155,11 +150,8 @@ bool RotateRgba90Ccw(const VideoFrameRgba& in, VideoFrameRgba& out) {
     for (int x = 0; x < out.width; ++x) {
       const int src_x = in.width - 1 - y;
       const int src_y = x;
-      const size_t si = (static_cast<size_t>(src_y) * static_cast<size_t>(in.width) +
-                         static_cast<size_t>(src_x)) *
-                        4;
-      const size_t di =
-          (static_cast<size_t>(y) * static_cast<size_t>(out.width) + static_cast<size_t>(x)) * 4;
+      const size_t si = (static_cast<size_t>(src_y) * static_cast<size_t>(in.width) + static_cast<size_t>(src_x)) * 4;
+      const size_t di = (static_cast<size_t>(y) * static_cast<size_t>(out.width) + static_cast<size_t>(x)) * 4;
       out.rgba[di + 0] = in.rgba[si + 0];
       out.rgba[di + 1] = in.rgba[si + 1];
       out.rgba[di + 2] = in.rgba[si + 2];
@@ -196,9 +188,8 @@ bool ScaleCenterCropRgba(const VideoFrameRgba& in, int out_w, int out_h, VideoFr
     return true;
   }
 
-  const double scale =
-      std::max(static_cast<double>(out_w) / static_cast<double>(in.width),
-               static_cast<double>(out_h) / static_cast<double>(in.height));
+  const double scale = std::max(static_cast<double>(out_w) / static_cast<double>(in.width),
+                                static_cast<double>(out_h) / static_cast<double>(in.height));
   const double src_w = static_cast<double>(out_w) / scale;
   const double src_h = static_cast<double>(out_h) / scale;
   const double src_x0 = (static_cast<double>(in.width) - src_w) * 0.5;
@@ -208,15 +199,11 @@ bool ScaleCenterCropRgba(const VideoFrameRgba& in, int out_w, int out_h, VideoFr
   out.height = out_h;
   out.rgba.resize(static_cast<size_t>(out_w) * static_cast<size_t>(out_h) * 4);
   for (int y = 0; y < out_h; ++y) {
-    const int sy = std::clamp(static_cast<int>(src_y0 + (static_cast<double>(y) + 0.5) / scale), 0,
-                              in.height - 1);
+    const int sy = std::clamp(static_cast<int>(src_y0 + (static_cast<double>(y) + 0.5) / scale), 0, in.height - 1);
     for (int x = 0; x < out_w; ++x) {
-      const int sx = std::clamp(static_cast<int>(src_x0 + (static_cast<double>(x) + 0.5) / scale), 0,
-                                in.width - 1);
-      const size_t si =
-          (static_cast<size_t>(sy) * static_cast<size_t>(in.width) + static_cast<size_t>(sx)) * 4;
-      const size_t di =
-          (static_cast<size_t>(y) * static_cast<size_t>(out_w) + static_cast<size_t>(x)) * 4;
+      const int sx = std::clamp(static_cast<int>(src_x0 + (static_cast<double>(x) + 0.5) / scale), 0, in.width - 1);
+      const size_t si = (static_cast<size_t>(sy) * static_cast<size_t>(in.width) + static_cast<size_t>(sx)) * 4;
+      const size_t di = (static_cast<size_t>(y) * static_cast<size_t>(out_w) + static_cast<size_t>(x)) * 4;
       out.rgba[di + 0] = in.rgba[si + 0];
       out.rgba[di + 1] = in.rgba[si + 1];
       out.rgba[di + 2] = in.rgba[si + 2];
@@ -241,8 +228,7 @@ void ForceOpaqueAlphaInPlace(std::vector<uint8_t>& rgba) {
   }
 }
 
-bool Nv12ToRgba(const uint8_t* src, const int width, const int height, const int y_stride,
-                VideoFrameRgba& out) {
+bool Nv12ToRgba(const uint8_t* src, const int width, const int height, const int y_stride, VideoFrameRgba& out) {
   if (!src || width < 2 || height < 2 || (width & 1) || (height & 1) || y_stride < width) {
     return false;
   }
@@ -254,8 +240,7 @@ bool Nv12ToRgba(const uint8_t* src, const int width, const int height, const int
   out.rgba.assign(static_cast<size_t>(width) * static_cast<size_t>(height) * 4, 255);
   for (int y = 0; y < height; ++y) {
     const uint8_t* y_row = y_plane + static_cast<size_t>(y) * static_cast<size_t>(y_stride);
-    const uint8_t* uv_row =
-        uv_plane + static_cast<size_t>(y / 2) * static_cast<size_t>(uv_stride);
+    const uint8_t* uv_row = uv_plane + static_cast<size_t>(y / 2) * static_cast<size_t>(uv_stride);
     uint8_t* dst = out.rgba.data() + static_cast<size_t>(y) * static_cast<size_t>(width) * 4;
     for (int x = 0; x < width; ++x) {
       const int Y = static_cast<int>(y_row[x]) - 16;
@@ -272,8 +257,7 @@ bool Nv12ToRgba(const uint8_t* src, const int width, const int height, const int
   return true;
 }
 
-bool Yuy2ToRgba(const uint8_t* src, const int width, const int height, const int stride_bytes,
-                VideoFrameRgba& out) {
+bool Yuy2ToRgba(const uint8_t* src, const int width, const int height, const int stride_bytes, VideoFrameRgba& out) {
   if (!src || width < 2 || height < 1 || (width & 1) || stride_bytes < width * 2) {
     return false;
   }

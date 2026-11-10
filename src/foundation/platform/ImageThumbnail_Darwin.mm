@@ -30,7 +30,7 @@ Roe<std::vector<uint8_t>> MakeImageThumbnailJpeg(const std::vector<uint8_t>& ima
   }
   // A view over the caller's bytes (no copy); they outlive every use below.
   CfRelease<CFDataRef> data_in(CFDataCreateWithBytesNoCopy(kCFAllocatorDefault, image_bytes.data(),
-                                                            static_cast<CFIndex>(image_bytes.size()), kCFAllocatorNull));
+                                                           static_cast<CFIndex>(image_bytes.size()), kCFAllocatorNull));
   if (!data_in.ref) {
     return Error("Cannot read image");
   }
@@ -45,9 +45,8 @@ Roe<std::vector<uint8_t>> MakeImageThumbnailJpeg(const std::vector<uint8_t>& ima
   const void* keys[] = {kCGImageSourceCreateThumbnailFromImageAlways, kCGImageSourceCreateThumbnailWithTransform,
                         kCGImageSourceThumbnailMaxPixelSize, kCGImageSourceShouldCache};
   const void* values[] = {kCFBooleanTrue, kCFBooleanTrue, size.ref, kCFBooleanFalse};
-  CfRelease<CFDictionaryRef> options(CFDictionaryCreate(kCFAllocatorDefault, keys, values, 4,
-                                                        &kCFTypeDictionaryKeyCallBacks,
-                                                        &kCFTypeDictionaryValueCallBacks));
+  CfRelease<CFDictionaryRef> options(CFDictionaryCreate(
+      kCFAllocatorDefault, keys, values, 4, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
   CfRelease<CGImageRef> thumb(CGImageSourceCreateThumbnailAtIndex(source.ref, 0, options.ref));
   if (!thumb.ref) {
     return Error("Cannot decode image");

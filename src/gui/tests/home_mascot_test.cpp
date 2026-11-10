@@ -312,7 +312,8 @@ protected:
         "<div id=\"outer\" class=\"shell-layer-compact\"><div class=\"home-landing--minimal\">"
         "<div class=\"home-logo\" id=\"home-logo\">" +
         std::string(ShellHomeMascot::StaticRml()) + "</div></div></div></body></rml>";
-    document = context->LoadDocumentFromMemory(rml, std::string(PP_BROWSER_ASSETS_DIR) + "/themes/home_mascot_test.rml");
+    document =
+        context->LoadDocumentFromMemory(rml, std::string(PP_BROWSER_ASSETS_DIR) + "/themes/home_mascot_test.rml");
     ASSERT_NE(document, nullptr);
     document->Show();
     context->Update();

@@ -59,25 +59,25 @@ void ShellFavoritesSnap::Detach() {
 void ShellFavoritesSnap::ProcessEvent(ui::Event& event) {
   ui::Element* target = event.GetTargetElement();
   switch (event.GetId()) {
-  case ui::EventId::Scroll:
-    if (target && target->IsClassSet(kRowClass)) {
-      row_ = target->GetObserverPtr();
-      pending_ = true;
-      last_move_s_ = NowSeconds();
-    }
-    break;
-  case ui::EventId::Mousedown:
-    pressed_ = InRow(target);
-    break;
-  case ui::EventId::Mouseup:
-    // The finger is up: a coast may follow; the rest timer starts again from here.
-    if (pressed_ && pending_) {
-      last_move_s_ = NowSeconds();
-    }
-    pressed_ = false;
-    break;
-  default:
-    break;
+    case ui::EventId::Scroll:
+      if (target && target->IsClassSet(kRowClass)) {
+        row_ = target->GetObserverPtr();
+        pending_ = true;
+        last_move_s_ = NowSeconds();
+      }
+      break;
+    case ui::EventId::Mousedown:
+      pressed_ = InRow(target);
+      break;
+    case ui::EventId::Mouseup:
+      // The finger is up: a coast may follow; the rest timer starts again from here.
+      if (pressed_ && pending_) {
+        last_move_s_ = NowSeconds();
+      }
+      pressed_ = false;
+      break;
+    default:
+      break;
   }
 }
 

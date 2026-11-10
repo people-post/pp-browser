@@ -44,7 +44,7 @@ TEST(PskRotateCodecTest, RejectsEpochPastUint32) {
   ASSERT_TRUE(payload.has_value());
   auto detail = TryParseObject(payload->getString("detail").value_or(""));
   ASSERT_TRUE(detail.has_value());
-  detail->set("new_epoch", (int64_t{1} << 32) + 2);  // would read as epoch 2 if truncated
+  detail->set("new_epoch", (int64_t{1} << 32) + 2); // would read as epoch 2 if truncated
   payload->set("detail", DumpJson(*detail));
 
   ThreadMessage message;

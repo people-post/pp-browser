@@ -26,8 +26,7 @@ CREATE TABLE IF NOT EXISTS cas_objects (
 )sql";
 
 int64_t NowMs() {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::system_clock::now().time_since_epoch())
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
       .count();
 }
 
@@ -215,9 +214,8 @@ Roe<void> SqliteObjectIndex::SetPinned(const CasRealm realm, const ByteVector& c
   return {};
 }
 
-
 Roe<std::vector<CasObjectMeta>> SqliteObjectIndex::List(const std::optional<CasRealm> realm,
-                                                  const std::optional<bool> pinned) const {
+                                                        const std::optional<bool> pinned) const {
   std::lock_guard lock(mutex_);
   if (auto opened = EnsureOpen(); !opened) {
     return opened.error();

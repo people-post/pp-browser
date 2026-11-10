@@ -42,20 +42,17 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
 
   const double pressure = std::max(in.engine.path_pressure, in.hop.path_pressure);
   const int64_t now = in.now_ms;
-  const int64_t rx_age =
-      (in.engine.last_rx_audio_ms > 0 && now > in.engine.last_rx_audio_ms)
-          ? (now - in.engine.last_rx_audio_ms)
-          : (in.engine.last_rx_audio_ms > 0 ? 0 : 1'000'000);
-  const int64_t tx_age =
-      (in.engine.last_tx_audio_ms > 0 && now > in.engine.last_tx_audio_ms)
-          ? (now - in.engine.last_tx_audio_ms)
-          : (in.engine.last_tx_audio_ms > 0 ? 0 : 1'000'000);
+  const int64_t rx_age = (in.engine.last_rx_audio_ms > 0 && now > in.engine.last_rx_audio_ms)
+                             ? (now - in.engine.last_rx_audio_ms)
+                             : (in.engine.last_rx_audio_ms > 0 ? 0 : 1'000'000);
+  const int64_t tx_age = (in.engine.last_tx_audio_ms > 0 && now > in.engine.last_tx_audio_ms)
+                             ? (now - in.engine.last_tx_audio_ms)
+                             : (in.engine.last_tx_audio_ms > 0 ? 0 : 1'000'000);
 
   const bool rx_alive = in.engine.rx_audio_frames > 0 && rx_age < 1500;
   // No mic (intentional headless / missing device) is not a TX fault — same as muted.
   const bool tx_expected = !in.engine.muted && in.engine.capture_available;
-  const bool tx_alive =
-      !tx_expected || (in.engine.tx_audio_frames > 0 && tx_age < 1500);
+  const bool tx_alive = !tx_expected || (in.engine.tx_audio_frames > 0 && tx_age < 1500);
 
   if (in.reconnecting) {
     out.quality = CallPathQuality::Reconnecting;
@@ -86,56 +83,55 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
 
 const char* CallPathQualityLabelKey(CallPathQuality q) {
   switch (q) {
-  case CallPathQuality::Excellent:
-  case CallPathQuality::Good:
-    return "";
-  case CallPathQuality::Fair:
-    return "call.quality.fair";
-  case CallPathQuality::Poor:
-    return "call.quality.poor";
-  case CallPathQuality::Reconnecting:
-    return "call.status.reconnecting";
-  case CallPathQuality::NoAudio:
-    return "call.quality.no_audio";
+    case CallPathQuality::Excellent:
+    case CallPathQuality::Good:
+      return "";
+    case CallPathQuality::Fair:
+      return "call.quality.fair";
+    case CallPathQuality::Poor:
+      return "call.quality.poor";
+    case CallPathQuality::Reconnecting:
+      return "call.status.reconnecting";
+    case CallPathQuality::NoAudio:
+      return "call.quality.no_audio";
   }
   return "";
 }
 
 const char* CallPathQualityDetailsLabelKey(CallPathQuality q) {
   switch (q) {
-  case CallPathQuality::Excellent:
-    return "call.quality.excellent";
-  case CallPathQuality::Good:
-    return "call.quality.good";
-  case CallPathQuality::Fair:
-    return "call.quality.fair";
-  case CallPathQuality::Poor:
-    return "call.quality.poor";
-  case CallPathQuality::Reconnecting:
-    return "call.status.reconnecting";
-  case CallPathQuality::NoAudio:
-    return "call.quality.no_audio";
+    case CallPathQuality::Excellent:
+      return "call.quality.excellent";
+    case CallPathQuality::Good:
+      return "call.quality.good";
+    case CallPathQuality::Fair:
+      return "call.quality.fair";
+    case CallPathQuality::Poor:
+      return "call.quality.poor";
+    case CallPathQuality::Reconnecting:
+      return "call.status.reconnecting";
+    case CallPathQuality::NoAudio:
+      return "call.quality.no_audio";
   }
   return "call.quality.good";
 }
 
 const char* CallAudioAsymmetryHintKey(CallAudioAsymmetry a) {
   switch (a) {
-  case CallAudioAsymmetry::None:
-    return "";
-  case CallAudioAsymmetry::SendingOnly:
-    return "call.quality.hint.connecting_voice"; // voice wording; callers pick the video one
-  case CallAudioAsymmetry::ReceivingOnly:
-    return "call.quality.hint.receiving_only";
+    case CallAudioAsymmetry::None:
+      return "";
+    case CallAudioAsymmetry::SendingOnly:
+      return "call.quality.hint.connecting_voice"; // voice wording; callers pick the video one
+    case CallAudioAsymmetry::ReceivingOnly:
+      return "call.quality.hint.receiving_only";
   }
   return "";
 }
 
 std::string FormatCallDebugSubtitle(const CallMediaHealthView& v, int64_t now_ms) {
-  const int64_t rx_age =
-      (v.engine.last_rx_audio_ms > 0 && now_ms >= v.engine.last_rx_audio_ms)
-          ? (now_ms - v.engine.last_rx_audio_ms)
-          : -1;
+  const int64_t rx_age = (v.engine.last_rx_audio_ms > 0 && now_ms >= v.engine.last_rx_audio_ms)
+                             ? (now_ms - v.engine.last_rx_audio_ms)
+                             : -1;
   std::ostringstream out;
   out << (v.path_kind.empty() ? (v.engine.packet_mode ? "SFU" : "P2P") : v.path_kind) << " · ";
   out << (v.engine.opus_target_bps / 1000) << "k · p";
@@ -168,8 +164,7 @@ CallLinkHealth CallLinkHealthBetween(const CallLinkCounters& before, const CallL
     const uint64_t sent = now.reliable_sent - before.reliable_sent;
     if (sent > 0) {
       // Retransmits in the window can belong to packets first sent before it: cap at every one resent.
-      const double pct =
-          100.0 * static_cast<double>(now.retransmits - before.retransmits) / static_cast<double>(sent);
+      const double pct = 100.0 * static_cast<double>(now.retransmits - before.retransmits) / static_cast<double>(sent);
       health.resend_pct = std::min(pct, 100.0);
     }
   }
@@ -197,22 +192,19 @@ std::string FormatCallDetailsText(const CallMediaHealthView& v, int64_t now_ms, 
     out << "pressure_engine=" << v.engine.path_pressure << " hop=" << v.hop.path_pressure << "\n";
     out << "opus_bps=" << v.engine.opus_target_bps << " streams=" << v.engine.stream_count << "\n";
     out << "rx_frames=" << v.engine.rx_audio_frames << " tx_frames=" << v.engine.tx_audio_frames
-        << " rx_video=" << v.engine.rx_video_frames << " tx_video=" << v.engine.tx_video_frames
-        << "\n";
-    out << "underrun=" << v.engine.playout_underruns << " plc=" << v.engine.plc_frames
-        << " fec=" << v.engine.fec_frames << " tx_drops=" << v.engine.outbound_drops << "\n";
-    out << "hop_drops rate=" << v.hop.drops_rate << " queue=" << v.hop.drops_queue
-        << " ceiling=" << v.hop.drops_ceiling << " total=" << v.hop.drops_total << "\n";
+        << " rx_video=" << v.engine.rx_video_frames << " tx_video=" << v.engine.tx_video_frames << "\n";
+    out << "underrun=" << v.engine.playout_underruns << " plc=" << v.engine.plc_frames << " fec=" << v.engine.fec_frames
+        << " tx_drops=" << v.engine.outbound_drops << "\n";
+    out << "hop_drops rate=" << v.hop.drops_rate << " queue=" << v.hop.drops_queue << " ceiling=" << v.hop.drops_ceiling
+        << " total=" << v.hop.drops_total << "\n";
   }
   return out.str();
 }
 
-std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_ms,
-                                     const std::string& call_id) {
-  const int64_t rx_age =
-      (v.engine.last_rx_audio_ms > 0 && now_ms >= v.engine.last_rx_audio_ms)
-          ? (now_ms - v.engine.last_rx_audio_ms)
-          : -1;
+std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_ms, const std::string& call_id) {
+  const int64_t rx_age = (v.engine.last_rx_audio_ms > 0 && now_ms >= v.engine.last_rx_audio_ms)
+                             ? (now_ms - v.engine.last_rx_audio_ms)
+                             : -1;
   std::ostringstream out;
   out << "media_health call=" << call_id << " path=" << v.path_kind << " quality=" << static_cast<int>(v.quality)
       << " asymmetry=" << static_cast<int>(v.asymmetry) << " streams=" << v.engine.stream_count
@@ -239,8 +231,7 @@ std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_m
       if (i > 0) {
         out << ',';
       }
-      const int64_t age =
-          (s.last_rx_ms > 0 && now_ms >= s.last_rx_ms) ? (now_ms - s.last_rx_ms) : -1;
+      const int64_t age = (s.last_rx_ms > 0 && now_ms >= s.last_rx_ms) ? (now_ms - s.last_rx_ms) : -1;
       out << s.stream_id << ":n=" << s.rx_frames << "/age=" << age << "/lvl=" << s.peak_level;
     }
   }
@@ -253,8 +244,7 @@ std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_m
       }
       // Short peer id suffix for log scanability.
       const std::string& id = p.peer_id;
-      const std::string short_id =
-          id.size() > 8 ? id.substr(id.size() - 8) : id;
+      const std::string short_id = id.size() > 8 ? id.substr(id.size() - 8) : id;
       out << short_id << ":up=" << p.bytes_up << "/dn=" << p.bytes_down << "/dq=" << p.drops_queue
           << "/bl=" << p.outbound_backlog;
     }

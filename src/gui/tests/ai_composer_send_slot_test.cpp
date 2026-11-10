@@ -80,8 +80,12 @@ TEST(AiComposerSendSlotMarkup, DisabledFillIsAThemeToken) {
 class AiComposerSendSlotGeometry : public testing::TestWithParam<const char*> {
 protected:
   void TearDown() override {
-    if (context) { ui::RemoveContext("ai-send-slot-test"); }
-    if (initialized) { ui::Shutdown(); }
+    if (context) {
+      ui::RemoveContext("ai-send-slot-test");
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
   NullRender renderer;
@@ -102,10 +106,14 @@ TEST_P(AiComposerSendSlotGeometry, TheRightSlotIsOccupiedByA44dpRoundButton) {
   button = std::regex_replace(button, std::regex("\\s+data-[a-z-]+=\"[^\"]*\""), "");
   const std::string rml =
       "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
-      Asset("themes/colors-light.rcss") + "</style></head><body style=\"padding: 0;\">"
+      Asset("themes/colors-light.rcss") +
+      "</style></head><body style=\"padding: 0;\">"
       "<div class=\"shell-layer-compact\" style=\"position: absolute; left: 0dp; top: 600dp; width: 390dp;\">"
-      "<div class=\"" + std::string(GetParam()) + "\"><div class=\"prompt-composer-row\" style=\"position: relative; height: 46dp;\">"
-      "<div class=\"prompt-composer-pill\"></div>" + button + "</div></div></div></body></rml>";
+      "<div class=\"" +
+      std::string(GetParam()) +
+      "\"><div class=\"prompt-composer-row\" style=\"position: relative; height: 46dp;\">"
+      "<div class=\"prompt-composer-pill\"></div>" +
+      button + "</div></div></div></body></rml>";
   ui::ElementDocument* document = context->LoadDocumentFromMemory(rml);
   ASSERT_NE(document, nullptr);
   document->Show();

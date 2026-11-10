@@ -28,8 +28,7 @@ auto& CompatIoLog() {
 }
 
 int64_t NowUnix() {
-  return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
-      .count();
+  return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
 struct CompatResolveResult {
@@ -94,8 +93,8 @@ void ClientCompatController::CheckAsync() {
   IClientCompatClient* client = compat_ports_.client_compat ? compat_ports_.client_compat() : nullptr;
   const std::string profile_dir = compat_ports_.profile_data_dir ? compat_ports_.profile_data_dir() : std::string{};
 
-  AppRuntime::PostWorkerAndReplyOnUI<CompatResolveResult>(WorkerLane::Normal,
-      [client, profile_dir]() { return ResolveDocumentOnIO(client, profile_dir); },
+  AppRuntime::PostWorkerAndReplyOnUI<CompatResolveResult>(
+      WorkerLane::Normal, [client, profile_dir]() { return ResolveDocumentOnIO(client, profile_dir); },
       [this](CompatResolveResult result) {
         if (!result.document) {
           if (!result.error.empty()) {
@@ -133,8 +132,7 @@ void ClientCompatController::PresentAction(CompatUiAction action, const ClientCo
   }
   if (action == CompatUiAction::SoftUpdateAvailable && !soft_banner_shown_) {
     soft_banner_shown_ = true;
-    const std::string message =
-        doc.message.empty() ? Tr("compat.update_available.message") : doc.message;
+    const std::string message = doc.message.empty() ? Tr("compat.update_available.message") : doc.message;
     UserFeedback::NeedsSetup(message, /*sticky=*/true); // once per session; must outlive a glance away
   }
 }
@@ -145,12 +143,10 @@ void ClientCompatController::ShowUpdateRequired(const ClientCompatDocument& doc)
   }
   force_dialog_shown_ = true;
   const std::string title = Tr("compat.update_required.title");
-  const std::string message =
-      doc.message.empty() ? Tr("compat.update_required.message") : doc.message;
+  const std::string message = doc.message.empty() ? Tr("compat.update_required.message") : doc.message;
   const std::string url = upgrade_url_;
   if (shell_feedback_.show_alert) {
-    shell_feedback_.show_alert(title, message, [url]() { PlatformOpenUrl(url); },
-                               Tr("compat.update_required.action"));
+    shell_feedback_.show_alert(title, message, [url]() { PlatformOpenUrl(url); }, Tr("compat.update_required.action"));
   }
 }
 

@@ -134,8 +134,6 @@ Roe<void> WriteBytesAtomic(const std::filesystem::path& path, const ByteVector& 
   return {};
 }
 
-
-
 } // namespace
 
 std::string AttachmentBlobRoot(const std::string& profile_dir, const std::string& thread_id) {
@@ -150,9 +148,6 @@ std::string AttachmentHashHex(const std::vector<uint8_t>& content_hash) {
   return BytesToHex(ByteVector(content_hash.begin(), content_hash.end()));
 }
 
-
-
-
 namespace {
 
 /**
@@ -163,9 +158,9 @@ namespace {
  */
 bool IsInertAttachmentExtension(const std::string& ext) {
   static const std::unordered_set<std::string> kInert = {
-      "pdf", "txt",  "md",  "csv", "rtf",  "doc", "docx", "xls",  "xlsx", "ppt", "pptx", "odt", "ods",
-      "odp", "epub", "zip", "7z",  "tar",  "gz",  "tgz",  "bz2",  "xz",   "rar", "mp3",  "m4a", "wav",
-      "ogg", "oga",  "opus", "flac", "aac", "heic", "heif", "avif", "bmp", "tif", "tiff", "mov", "mkv",
+      "pdf", "txt",  "md",   "csv",  "rtf", "doc",  "docx", "xls",  "xlsx", "ppt", "pptx", "odt", "ods",
+      "odp", "epub", "zip",  "7z",   "tar", "gz",   "tgz",  "bz2",  "xz",   "rar", "mp3",  "m4a", "wav",
+      "ogg", "oga",  "opus", "flac", "aac", "heic", "heif", "avif", "bmp",  "tif", "tiff", "mov", "mkv",
   };
   return kInert.count(ext) != 0;
 }
@@ -180,7 +175,8 @@ std::string LowerFilenameExtension(const std::string& filename) {
     return {};
   }
   ext.erase(0, 1);
-  std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  std::transform(ext.begin(), ext.end(), ext.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return ext;
 }
 
@@ -188,11 +184,10 @@ std::string LowerFilenameExtension(const std::string& filename) {
 
 std::string AttachmentMimeFromFilename(const std::string& filename) {
   static const std::unordered_map<std::string, std::string> kMimeByExtension = {
-      {"png", "image/png"},        {"jpg", "image/jpeg"},        {"jpeg", "image/jpeg"},
-      {"webp", "image/webp"},      {"gif", "image/gif"},         {"pdf", "application/pdf"},
-      {"txt", "text/plain"},       {"mp4", "video/mp4"},         {"webm", "video/webm"},
-      {"mov", "video/quicktime"},  {"mp3", "audio/mpeg"},        {"m4a", "audio/mp4"},
-      {"wav", "audio/wav"},        {"ogg", "audio/ogg"},
+      {"png", "image/png"},   {"jpg", "image/jpeg"},      {"jpeg", "image/jpeg"}, {"webp", "image/webp"},
+      {"gif", "image/gif"},   {"pdf", "application/pdf"}, {"txt", "text/plain"},  {"mp4", "video/mp4"},
+      {"webm", "video/webm"}, {"mov", "video/quicktime"}, {"mp3", "audio/mpeg"},  {"m4a", "audio/mp4"},
+      {"wav", "audio/wav"},   {"ogg", "audio/ogg"},
   };
   const auto found = kMimeByExtension.find(LowerFilenameExtension(filename));
   return found == kMimeByExtension.end() ? std::string("application/octet-stream") : found->second;
@@ -391,7 +386,8 @@ std::string AttachmentOpenFilename(const std::string& filename, const std::strin
 
 std::string AttachmentOpenLinkDir(const std::string& profile_dir, const std::string& thread_id,
                                   const std::vector<uint8_t>& content_hash) {
-  return (std::filesystem::path(AttachmentViewRoot(profile_dir, thread_id)) / (AttachmentHashHex(content_hash) + ".open"))
+  return (std::filesystem::path(AttachmentViewRoot(profile_dir, thread_id)) /
+          (AttachmentHashHex(content_hash) + ".open"))
       .string();
 }
 
@@ -404,7 +400,7 @@ std::string AttachmentNamedOpenPath(const std::string& profile_dir, const std::s
     return view_path;
   }
   const std::filesystem::path dir = PathFromUtf8(AttachmentOpenLinkDir(profile_dir, thread_id, content_hash));
-  const std::filesystem::path link = dir / PathFromUtf8(name);  // the sender's name may be CJK
+  const std::filesystem::path link = dir / PathFromUtf8(name); // the sender's name may be CJK
   std::error_code ec;
   if (std::filesystem::is_regular_file(link, ec) && std::filesystem::equivalent(link, PathFromUtf8(view_path), ec)) {
     return PathToUtf8(link); // made by an earlier open of the same view
@@ -851,7 +847,7 @@ size_t PruneOrphanPendingCiphertext(const std::filesystem::path& root,
       continue;
     }
     if (referenced_hex.count(entry.path().filename().string()) != 0) {
-      continue;  // a real attachment, maybe left unopened: kept until it is opened
+      continue; // a real attachment, maybe left unopened: kept until it is opened
     }
     const auto mtime = entry.last_write_time(ec);
     if (ec) {
@@ -909,8 +905,8 @@ bool AttachmentPendingCiphertextExists(const std::string& profile_dir, const std
   if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return false;
   }
-  const auto path = std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir, thread_id)) /
-                    AttachmentHashHex(content_hash);
+  const auto path =
+      std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir, thread_id)) / AttachmentHashHex(content_hash);
   std::error_code ec;
   return std::filesystem::is_regular_file(path, ec) && !ec;
 }
@@ -920,8 +916,8 @@ Roe<ByteVector> LoadPendingAttachmentCiphertext(const std::string& profile_dir, 
   if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return Error("Invalid pending attachment lookup");
   }
-  const auto path = std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir, thread_id)) /
-                    AttachmentHashHex(content_hash);
+  const auto path =
+      std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir, thread_id)) / AttachmentHashHex(content_hash);
   if (!std::filesystem::exists(path)) {
     return Error("Pending attachment ciphertext not found");
   }
@@ -937,8 +933,8 @@ void RemovePendingAttachmentCiphertext(const std::string& profile_dir, const std
   if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return;
   }
-  const auto path = std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir, thread_id)) /
-                    AttachmentHashHex(content_hash);
+  const auto path =
+      std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir, thread_id)) / AttachmentHashHex(content_hash);
   std::error_code ec;
   std::filesystem::remove(path, ec);
 }
@@ -977,6 +973,5 @@ Roe<void> WipeAllAttachmentCaches(const std::string& profile_dir) {
   }
   return {};
 }
-
 
 } // namespace pbr

@@ -51,7 +51,7 @@ public:
                     std::function<void(CallMediaRoe)> on_done, int timeout_ms = 15000) override;
 
   CallMediaRoe Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    int timeout_ms = 15000) override;
+                       int timeout_ms = 15000) override;
 
   Roe<void> SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0) override;
   Roe<void> SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq, uint8_t mark = 0,

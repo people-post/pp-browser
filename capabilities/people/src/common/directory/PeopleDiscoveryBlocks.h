@@ -73,8 +73,7 @@ inline constexpr const char* kShowMoreRowsActionType = "show_more_rows";
 std::unordered_set<std::string> SelfIdentityValuesFromLocal(const LocalIdentity& identity);
 
 /** True when hit account/ids intersect `identities`. */
-bool DirectoryHitMatchesIdentities(const mesh::DirectoryHit& hit,
-                                   const std::unordered_set<std::string>& identities);
+bool DirectoryHitMatchesIdentities(const mesh::DirectoryHit& hit, const std::unordered_set<std::string>& identities);
 
 /** avatar_letter / avatar_tone of a person row, same as the rows of the builders below. */
 void SetPersonAvatarFields(pp::common::Object& item, const std::string& display_name, const std::string& stable_id);
@@ -91,11 +90,10 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>
 bool RevealMoreRows(::pp::common::Object& block, size_t step, const PeopleDiscoveryLabels& labels = {});
 
 /** RevealMoreRows on `blocks[block_index]` of a blocks JSON document: the updated document, or nullopt. */
-std::optional<std::string> RevealMoreRowsInBlocksJson(const std::string& blocks_json, size_t block_index,
-                                                      size_t step, const PeopleDiscoveryLabels& labels = {});
+std::optional<std::string> RevealMoreRowsInBlocksJson(const std::string& blocks_json, size_t block_index, size_t step,
+                                                      const PeopleDiscoveryLabels& labels = {});
 
 // If raw text is a directory-hits or contacts JSON array, build blocks JSON; otherwise empty.
-std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json,
-                                                 const PeopleDiscoveryLabels& labels = {});
+std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json, const PeopleDiscoveryLabels& labels = {});
 
 } // namespace pbr

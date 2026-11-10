@@ -15,7 +15,8 @@ namespace pbr {
 namespace {
 
 TextSpan Mention(const std::string& account, uint32_t start, uint32_t end) {
-  return TextSpan{.kind = static_cast<uint8_t>(TextSpanKind::Mention), .start = start, .end = end, .account_id = account};
+  return TextSpan{
+      .kind = static_cast<uint8_t>(TextSpanKind::Mention), .start = start, .end = end, .account_id = account};
 }
 
 TextSpan Everyone(uint32_t start, uint32_t end) {
@@ -26,12 +27,12 @@ TextSpan Everyone(uint32_t start, uint32_t end) {
 std::vector<uint8_t> RawSpansPayload(const std::string& text, const std::vector<TextSpan>& spans) {
   std::ostringstream oss;
   OutputArchive ar(oss);
-  ar & static_cast<uint8_t>(1);
-  ar & static_cast<uint8_t>(6);
+  ar& static_cast<uint8_t>(1);
+  ar& static_cast<uint8_t>(6);
   WireLenUtf8 body_text{text};
   ar & body_text;
-  ar & static_cast<uint8_t>(1);
-  ar & static_cast<uint8_t>(spans.size());
+  ar& static_cast<uint8_t>(1);
+  ar& static_cast<uint8_t>(spans.size());
   for (const TextSpan& span : spans) {
     ar & span.kind;
     ar & span.start;
@@ -43,7 +44,9 @@ std::vector<uint8_t> RawSpansPayload(const std::string& text, const std::vector<
   return std::vector<uint8_t>(bytes.begin(), bytes.end());
 }
 
-std::vector<TextSpan> SpansOf(const ThreadMessage& message) { return text_spans::FromPayloadJson(message.payload_json); }
+std::vector<TextSpan> SpansOf(const ThreadMessage& message) {
+  return text_spans::FromPayloadJson(message.payload_json);
+}
 
 TEST(TextSpansTest, MentionsRoundTripAndPlainTextStaysTypeZero) {
   const std::string text = "Hi @Li Wei and @Ana, @everyone";
@@ -56,8 +59,7 @@ TEST(TextSpansTest, MentionsRoundTripAndPlainTextStaysTypeZero) {
   EXPECT_EQ(message->content_type, ChatContentType::Text) << "every reader of text keeps working";
   EXPECT_EQ(message->text, text);
   EXPECT_EQ(SpansOf(*message), spans);
-  EXPECT_EQ(text_spans::MentionedAccounts(SpansOf(*message)),
-            (std::vector<std::string>{"account:li", "account:ana"}));
+  EXPECT_EQ(text_spans::MentionedAccounts(SpansOf(*message)), (std::vector<std::string>{"account:li", "account:ana"}));
   EXPECT_TRUE(text_spans::MentionsEveryone(SpansOf(*message)));
 
   // A stored message encodes back to the same bytes (history answer, resend).
@@ -105,20 +107,20 @@ TEST(TextSpansTest, StructureErrorsRejectTheMessage) {
   trailing.push_back(0x00);
   EXPECT_FALSE(ChatPayloadCodec::DecodeToMessageFields(trailing)) << "bytes after the last span";
   TextSpan everyone_with_body = Everyone(6, 15);
-  everyone_with_body.kind = 9;  // write a body, then claim it is an everyone span
+  everyone_with_body.kind = 9; // write a body, then claim it is an everyone span
   everyone_with_body.body = {0x01};
   auto bodied = RawSpansPayload(text, {everyone_with_body});
-  bodied[1 + 1 + 8 + text.size() + 1 + 1] = 2;  // the span's kind byte
+  bodied[1 + 1 + 8 + text.size() + 1 + 1] = 2; // the span's kind byte
   EXPECT_FALSE(ChatPayloadCodec::DecodeToMessageFields(bodied)) << "an everyone span with a body";
 }
 
 TEST(TextSpansTest, ABadRangeDropsOnlyItsSpan) {
-  const std::string text = "Hi @Zoë, hi @Bo";  // "ë" is two bytes: @Zoë is bytes 3..8
+  const std::string text = "Hi @Zoë, hi @Bo"; // "ë" is two bytes: @Zoë is bytes 3..8
   const std::vector<TextSpan> sent{
-      Mention("account:zoe", 3, 8),     // fine
-      Mention("account:bo", 13, 99),    // past the end
-      Mention("account:x", 7, 9),       // ends inside "ë", and does not start with @
-      Mention("account:y", 0, 2),       // "Hi": not an @
+      Mention("account:zoe", 3, 8),  // fine
+      Mention("account:bo", 13, 99), // past the end
+      Mention("account:x", 7, 9),    // ends inside "ë", and does not start with @
+      Mention("account:y", 0, 2),    // "Hi": not an @
   };
   auto message = ChatPayloadCodec::DecodeToMessageFields(RawSpansPayload(text, sent));
   ASSERT_TRUE(message) << "the text still shows";

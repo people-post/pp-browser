@@ -18,7 +18,7 @@ namespace pbr {
 inline logging::Logger& MetricsLog() {
   static logging::Logger log = [] {
     logging::Logger l = logging::getLogger("Metrics");
-    l.setLevel(logging::Level::INFO);  // always on, whatever the developer log level
+    l.setLevel(logging::Level::INFO); // always on, whatever the developer log level
     return l;
   }();
   return log;

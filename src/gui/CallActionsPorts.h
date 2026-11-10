@@ -37,8 +37,7 @@ struct CallActionsPorts {
   std::function<void(const std::vector<std::string>& identities)> invite_identities;
   /** V062 2: the add-people picker lists `identity` for the active call (a group's call: per the guest rule). */
   std::function<bool(const std::string& identity)> may_add_to_call;
-  std::function<bool(const std::string& thread_id, bool video_allowed,
-                     const std::vector<std::string>& identities)>
+  std::function<bool(const std::string& thread_id, bool video_allowed, const std::vector<std::string>& identities)>
       start_with_invitees;
 
   // Shell

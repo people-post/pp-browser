@@ -47,7 +47,7 @@ void CallUiBackend::SetOnRingChanged(std::function<void()> callback) {
 }
 
 void CallUiBackend::SetOnChromeRefresh(std::function<void()> callback) {
-  stack_.SetOnChromeRefresh(std::move(callback));  // delivered on UI after the calls change
+  stack_.SetOnChromeRefresh(std::move(callback)); // delivered on UI after the calls change
 }
 
 std::shared_ptr<const CallUiState> CallUiBackend::State() const {
@@ -119,7 +119,7 @@ std::optional<CallMediaError> CallUiBackend::TakeLastMediaError() {
     return std::nullopt;
   }
   if (taken_media_error_ == state->last_media_error) {
-    return std::nullopt;  // shown already; the owner's clear has not published yet
+    return std::nullopt; // shown already; the owner's clear has not published yet
   }
   taken_media_error_ = state->last_media_error;
   OnOwner([seen = *state->last_media_error](CallSessionManager& calls) { calls.ClearLastMediaErrorIf(seen); });
@@ -212,7 +212,7 @@ CallUiBackend::Surface CallUiBackend::Settle() {
     if (!same_call_active) {
       surface.invite = invite;
       if (ShouldSuppressRing(invite.call_id)) {
-        surface.kind = Surface::Kind::Answering;  // accept in flight (CALLS.md)
+        surface.kind = Surface::Kind::Answering; // accept in flight (CALLS.md)
         return surface;
       }
       if (Phase() == CallPhase::Idle) {

@@ -18,7 +18,9 @@ namespace {
 // One pass and one allocation for any multiple of 90 degrees clockwise (was one full-frame copy per turn).
 VideoFrameRgba Upright(VideoFrameRgba frame, int rotation) {
   const int turns = ((rotation % 360 + 360) % 360) / 90;
-  if (turns == 0) { return frame; }
+  if (turns == 0) {
+    return frame;
+  }
   if (frame.width <= 0 || frame.height <= 0 ||
       frame.rgba.size() < static_cast<size_t>(frame.width) * static_cast<size_t>(frame.height) * 4) {
     return {};
@@ -74,22 +76,27 @@ public:
   bool DecodeDue(ScanClock::time_point now) const { return now >= next_decode_; }
   // `zoom_state` must be sampled before `frame` was fetched: a frame captured mid-ramp judged
   // against the settled state would compound a second zoom on top of the first (Windows CI).
-  QrScanner::Update Process(VideoFrameRgba frame, ScanClock::time_point now,
-                            const CameraZoomState& zoom_state) {
+  QrScanner::Update Process(VideoFrameRgba frame, ScanClock::time_point now, const CameraZoomState& zoom_state) {
     const bool swap = ((rotation_ % 360 + 360) % 360) / 90 % 2 == 1;
     width = swap ? frame.height : frame.width;
     height = swap ? frame.width : frame.height;
-    if (width < 2 || height < 2) { return {}; }
+    if (width < 2 || height < 2) {
+      return {};
+    }
     decode_ms = 0;
     detected = false;
     if (now < next_decode_) {
       // Most frames only feed the preview: shrink to the preview size first, then rotate the small copy.
       auto preview = Upright(ScanPreview(std::move(frame), software_zoom_), rotation_);
-      if (preview.width < 2 || preview.height < 2) { return {}; }
+      if (preview.width < 2 || preview.height < 2) {
+        return {};
+      }
       return {std::move(preview), std::nullopt, {}};
     }
     frame = Upright(std::move(frame), rotation_);
-    if (frame.width < 2 || frame.height < 2) { return {}; }
+    if (frame.width < 2 || frame.height < 2) {
+      return {};
+    }
     std::optional<std::string> text;
     {
       const auto started = ScanClock::now();
@@ -101,8 +108,8 @@ public:
         last_region_ = now;
         const auto& region = *result.region;
         const float fraction = std::max(region.width, region.height);
-        if (!text && fraction > .02f && fraction < .45f &&
-            std::abs(region.center_x - .5f) < .25f && std::abs(region.center_y - .5f) < .25f) {
+        if (!text && fraction > .02f && fraction < .45f && std::abs(region.center_x - .5f) < .25f &&
+            std::abs(region.center_y - .5f) < .25f) {
           const auto& state = zoom_state;
           // Native zoom is centered: retain the whole candidate and its quiet-zone margin.
           const float extent = std::max(std::abs(region.center_x - .5f) + region.width * .7f,
@@ -132,13 +139,13 @@ public:
   int64_t decode_ms = 0;
   bool detected = false;
   float zoom = 1.f;
+
 private:
   // A code too far away yields no candidate at all (a capstone needs about three pixels per
   // module), so nothing would ever trigger the candidate zoom. Once the zoom has settled with
   // nothing in view for a while, step 1x -> 2x -> 3x -> 1x; a candidate then takes over.
   void Hunt(ScanClock::time_point now, const CameraZoomState& state) {
-    const bool settled = !state.supported || !native_zoom_ ||
-        (!state.ramping && std::abs(state.factor - zoom) < .05f);
+    const bool settled = !state.supported || !native_zoom_ || (!state.ramping && std::abs(state.factor - zoom) < .05f);
     if (!settled) {
       hunt_settled_ = {};
       return;
@@ -147,14 +154,20 @@ private:
       hunt_settled_ = now;
       return;
     }
-    if (now - hunt_settled_ < std::chrono::milliseconds(1500)) { return; }
+    if (now - hunt_settled_ < std::chrono::milliseconds(1500)) {
+      return;
+    }
     SetZoom(zoom < 1.5f ? 2.f : zoom < 2.5f ? 3.f : 1.f, true);
     hunt_settled_ = {};
   }
   void SetZoom(float target, bool hunt = false) {
     const auto state = camera_.ZoomState();
-    if (state.supported) { target = std::clamp(target, 1.f, state.maximum); }
-    if (std::abs(target - zoom) < .1f) { return; }
+    if (state.supported) {
+      target = std::clamp(target, 1.f, state.maximum);
+    }
+    if (std::abs(target - zoom) < .1f) {
+      return;
+    }
     const bool native = camera_.SetZoom(target);
     native_zoom_ = native;
     software_zoom_ = native ? 1.f : target;
@@ -184,18 +197,26 @@ struct ScanCaptureStats {
     candidates += processor.detected;
     decode_max_ms = std::max(decode_max_ms, processor.decode_ms);
     const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - report_at).count();
-    if (elapsed_ms < 1000) { return; }
-    MetricsLine("scan.capture").Add("frames", frames).Add("elapsed_ms", static_cast<int64_t>(elapsed_ms))
-        .Add("polls", polls).Add("capture_max_ms", capture_max_ms).Add("width", processor.width)
-        .Add("height", processor.height).Add("decode_max_ms", decode_max_ms).Add("candidates", candidates).Emit();
+    if (elapsed_ms < 1000) {
+      return;
+    }
+    MetricsLine("scan.capture")
+        .Add("frames", frames)
+        .Add("elapsed_ms", static_cast<int64_t>(elapsed_ms))
+        .Add("polls", polls)
+        .Add("capture_max_ms", capture_max_ms)
+        .Add("width", processor.width)
+        .Add("height", processor.height)
+        .Add("decode_max_ms", decode_max_ms)
+        .Add("candidates", candidates)
+        .Emit();
     *this = {};
   }
 };
 } // namespace
 
 struct QrScanner::State {
-  State(MediaDeviceArbiter& arbiter, std::chrono::milliseconds timeout)
-      : devices(arbiter), no_frame_timeout(timeout) {}
+  State(MediaDeviceArbiter& arbiter, std::chrono::milliseconds timeout) : devices(arbiter), no_frame_timeout(timeout) {}
   MediaDeviceArbiter& devices;
   const std::chrono::milliseconds no_frame_timeout;
   std::mutex mutex;
@@ -296,11 +317,10 @@ struct QrScanner::State {
       }
       std::unique_lock lock(mutex);
       // After a frame the next one is a full period away (less the time spent on this one).
-      const auto spent = std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now() - capture_started);
-      cv.wait_for(lock, std::max(std::chrono::milliseconds(1), idle_wait - spent), [&] {
-        return closing || !scanning || generation != epoch;
-      });
+      const auto spent =
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - capture_started);
+      cv.wait_for(lock, std::max(std::chrono::milliseconds(1), idle_wait - spent),
+                  [&] { return closing || !scanning || generation != epoch; });
     }
   }
 
@@ -323,7 +343,9 @@ QrScanner::QrScanner(MediaDeviceArbiter& devices, std::chrono::milliseconds no_f
     : state_(std::make_unique<State>(devices, no_frame_timeout)) {
   state_->worker = std::thread([this] { state_->Run(); });
 }
-QrScanner::~QrScanner() { Shutdown(); }
+QrScanner::~QrScanner() {
+  Shutdown();
+}
 
 void QrScanner::Start(int display_rotation_deg) {
   std::lock_guard lock(state_->mutex);

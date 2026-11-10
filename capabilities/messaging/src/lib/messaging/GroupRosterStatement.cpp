@@ -370,8 +370,8 @@ Roe<void> Verify(const GroupRosterStatement& statement, const std::string& known
       return Error("roster statement: owner chain epochs out of order");
     }
     last_epoch = t.roster_epoch;
-    if (auto ok = CheckSignature(t.from_identity, t.from_public_key_b64,
-                                 TransferSignBytes(statement.group_id, t), t.signature_b64);
+    if (auto ok = CheckSignature(t.from_identity, t.from_public_key_b64, TransferSignBytes(statement.group_id, t),
+                                 t.signature_b64);
         !ok) {
       return ok.error();
     }

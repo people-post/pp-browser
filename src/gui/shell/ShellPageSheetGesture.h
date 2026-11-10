@@ -12,7 +12,7 @@ class Context;
 class Element;
 class ElementDocument;
 class Event;
-}
+} // namespace ui
 
 namespace pbr {
 

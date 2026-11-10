@@ -89,10 +89,10 @@ struct CallChromeLayer {
   bool phone = false;
   std::string ring_phone_title;
   std::string ring_phone_subtitle;
-  std::string ring_avatar;  // group / photo / letter / tone in one key
+  std::string ring_avatar; // group / photo / letter / tone in one key
   std::string in_call_phone_title;
   bool in_call_video = false;
-  std::string in_call_avatars;  // the peer's and our own, as for ring_avatar
+  std::string in_call_avatars; // the peer's and our own, as for ring_avatar
   bool in_call_phone_failed = false;
   std::string in_call_failed_text;
   bool in_call_story_active = false;
@@ -118,9 +118,9 @@ struct CallChromeLayer {
 };
 
 enum class CallChromeUpdate {
-  None,      // idle poll / no visible change
-  DirtyOnly, // subtitle/labels while layer already shown
-  Remount,   // layer appear / disappear / switch call_id → RemountCallChrome mounts
+  None,       // idle poll / no visible change
+  DirtyOnly,  // subtitle/labels while layer already shown
+  Remount,    // layer appear / disappear / switch call_id → RemountCallChrome mounts
   LevelsOnly, // only the audio meters changed while they are on screen → dirty kCallLevelVariables
   /** Only bound parts changed (the call clock, the signal, the result line, the top pill, the quality chip): each
    * changed variable is dirtied on its own (CallChromeChangedVariables), never the whole call group (B146). */
@@ -140,7 +140,8 @@ inline constexpr std::array<const char*, 4> kCallLevelVariables = {
  * the meters, the call clock, the quality chip, the phone's result line, signal bar and top pill, and the roster arrays
  * whose speaking rings changed. LevelsOnly and PartsOnly dirty exactly these.
  */
-std::vector<const char*> CallChromeChangedVariables(const CallInProgressState& before, const CallInProgressState& after);
+std::vector<const char*> CallChromeChangedVariables(const CallInProgressState& before,
+                                                    const CallInProgressState& after);
 
 /** Pure gate: remount on layer identity / control presence / mode / status kind; Dirty for icon toggles;
  * meter-only changes are LevelsOnly while the meters are on screen (Expanded, no roster) and None otherwise. */

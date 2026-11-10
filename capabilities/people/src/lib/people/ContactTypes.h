@@ -101,4 +101,4 @@ inline std::string ContactEffectiveTitle(const Contact& contact) {
   return {};
 }
 
-}  // namespace pbr
+} // namespace pbr

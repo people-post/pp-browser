@@ -56,8 +56,8 @@ void ApplyMacWindowRoundedCorners(SDL_Window* window, bool square_corners) {
   layer.cornerRadius = radius;
   layer.masksToBounds = YES;
   if (@available(macOS 10.13, *)) {
-    layer.maskedCorners = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner | kCALayerMinXMaxYCorner |
-                          kCALayerMaxXMaxYCorner;
+    layer.maskedCorners =
+        kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner | kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner;
   }
   [nswindow invalidateShadow];
 }

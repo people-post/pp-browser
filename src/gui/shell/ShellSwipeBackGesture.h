@@ -15,7 +15,7 @@ namespace ui {
 class Context;
 class Event;
 class ElementDocument;
-}
+} // namespace ui
 
 namespace pbr {
 
@@ -44,8 +44,7 @@ public:
     ui::Element* content_root = nullptr;
   };
 
-  void Attach(ui::Element* listen_surface, ui::Context* context, AttachOptions options,
-              DismissCallback on_dismiss);
+  void Attach(ui::Element* listen_surface, ui::Context* context, AttachOptions options, DismissCallback on_dismiss);
   void Detach();
   void Abort();
 

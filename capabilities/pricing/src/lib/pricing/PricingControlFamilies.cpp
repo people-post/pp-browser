@@ -50,48 +50,48 @@ Roe<void> ApplyBilling(InitiationBillingStore& store, const std::function<int64_
     return Error("Initiation billing control missing detail");
   }
   switch (*type) {
-  case InitiationBillingControlType::ChargeRequired: {
-    auto charge = InitiationBillingCodec::DecodeChargeRequired(*detail);
-    if (!charge) {
-      return charge.error();
+    case InitiationBillingControlType::ChargeRequired: {
+      auto charge = InitiationBillingCodec::DecodeChargeRequired(*detail);
+      if (!charge) {
+        return charge.error();
+      }
+      auto peer = BillingPeer(charge->peer_identity, context);
+      if (!peer) {
+        return peer.error();
+      }
+      (void)store.SetFloor(*peer, charge->floor_minor);
+      (void)store.MarkClosed(*peer);
+      return {};
     }
-    auto peer = BillingPeer(charge->peer_identity, context);
-    if (!peer) {
-      return peer.error();
+    case InitiationBillingControlType::InitiationOffer: {
+      auto offer = InitiationBillingCodec::DecodeInitiationOffer(*detail);
+      if (!offer) {
+        return offer.error();
+      }
+      auto peer = BillingPeer(offer->peer_identity, context);
+      if (!peer) {
+        return peer.error();
+      }
+      const int64_t floor = local_floor ? local_floor() : 0;
+      if (floor > 0 && !InitiationPricing::CheckOfferAgainstFloor(offer->offer_minor, floor)) {
+        return {}; // Too low: dropped quietly, the sender sees no accept.
+      }
+      (void)store.MarkOffered(*peer, offer->offer_minor, floor > 0 ? floor : offer->floor_minor);
+      return {};
     }
-    (void)store.SetFloor(*peer, charge->floor_minor);
-    (void)store.MarkClosed(*peer);
-    return {};
-  }
-  case InitiationBillingControlType::InitiationOffer: {
-    auto offer = InitiationBillingCodec::DecodeInitiationOffer(*detail);
-    if (!offer) {
-      return offer.error();
+    case InitiationBillingControlType::InitiationAccept: {
+      auto accept = InitiationBillingCodec::DecodeInitiationAccept(*detail);
+      if (!accept) {
+        return accept.error();
+      }
+      auto peer = BillingPeer(accept->peer_identity, context);
+      if (!peer) {
+        return peer.error();
+      }
+      // Waive or take-all both open the relationship; settlement comes later.
+      (void)store.MarkOpen(*peer);
+      return {};
     }
-    auto peer = BillingPeer(offer->peer_identity, context);
-    if (!peer) {
-      return peer.error();
-    }
-    const int64_t floor = local_floor ? local_floor() : 0;
-    if (floor > 0 && !InitiationPricing::CheckOfferAgainstFloor(offer->offer_minor, floor)) {
-      return {}; // Too low: dropped quietly, the sender sees no accept.
-    }
-    (void)store.MarkOffered(*peer, offer->offer_minor, floor > 0 ? floor : offer->floor_minor);
-    return {};
-  }
-  case InitiationBillingControlType::InitiationAccept: {
-    auto accept = InitiationBillingCodec::DecodeInitiationAccept(*detail);
-    if (!accept) {
-      return accept.error();
-    }
-    auto peer = BillingPeer(accept->peer_identity, context);
-    if (!peer) {
-      return peer.error();
-    }
-    // Waive or take-all both open the relationship; settlement comes later.
-    (void)store.MarkOpen(*peer);
-    return {};
-  }
   }
   return {};
 }

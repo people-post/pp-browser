@@ -130,13 +130,12 @@ Roe<mesh::MeshHost*> ProductMesh::Start(StartRequest request) {
   mesh_cfg.on_reachability_updated = std::move(request.on_reachability_updated);
   mesh_cfg.mesh_enabled = product_mesh_cfg.mesh_enabled && mesh_cfg.host.device_ml_dsa_private_key &&
                           mesh_cfg.host.device_ml_dsa_public_key;
-  mesh_cfg.amp_udp_port =
-      product_mesh_cfg.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(product_mesh_cfg.amp_udp_port);
+  mesh_cfg.amp_udp_port = product_mesh_cfg.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(product_mesh_cfg.amp_udp_port);
   mesh_cfg.bootstrap_peers = product_mesh_cfg.bootstrap_peers;
 
   mesh_ = std::make_unique<mesh::MeshHost>(AppRuntimeMeshExecutors(), MetricsRegistry::Global());
   mesh_->SetStopping(request.stopping);
-  mesh_->SetAppProtocols(ProductMeshProtocols());  // advertised from the first advertisement on
+  mesh_->SetAppProtocols(ProductMeshProtocols()); // advertised from the first advertisement on
   mesh_->SetAddressDisclosure(request.address_disclosure);
   mesh_->SetOnUdpSocketCheck(std::move(request.on_udp_socket_check));
   if (auto started = mesh_->Start(mesh_cfg); !started) {
@@ -284,45 +283,48 @@ void ProductMesh::StartDirectoryCache(mesh::IDirectoryClient& directory, const s
     node_reputation_ = std::move(reputation);
   }
   mesh::IDirectoryClient* client = &directory;
-  directory_cache_ = std::make_unique<mesh::MeshDirectoryCache>([client]() -> Roe<std::vector<mesh::MeshDirectoryNode>> {
-    // Sync fetcher: HTTP INameDirectory (tests / async-unset path).
-    mesh::DirectoryClientNameDirectory names(*client);
-    auto records = names.ListService("mesh_node");
-    if (!records) {
-      return records.error();
-    }
-    return mesh::MeshDirectoryNodesFromNameRecords(*records);
-  }, AppRuntimeMeshExecutors().blocking);
-  directory_cache_->SetPersistPath(MeshDirectoryNodesPath(profile_data_dir));
-  directory_cache_->LoadPersisted();
-  // N029 nd4: the Amp directory twin first (no worker park), then HTTP on Normal.
-  directory_cache_->SetAsyncFetcher([this, client](std::function<void(Roe<std::vector<mesh::MeshDirectoryNode>>)> done) {
-    auto fetch_http = [client, done]() {
-      AppRuntime::PostWorkerNormal([client, done]() {
+  directory_cache_ = std::make_unique<mesh::MeshDirectoryCache>(
+      [client]() -> Roe<std::vector<mesh::MeshDirectoryNode>> {
+        // Sync fetcher: HTTP INameDirectory (tests / async-unset path).
         mesh::DirectoryClientNameDirectory names(*client);
         auto records = names.ListService("mesh_node");
         if (!records) {
-          done(records.error());
-          return;
+          return records.error();
         }
-        done(mesh::MeshDirectoryNodesFromNameRecords(*records));
-      });
-    };
-    if (mesh_ && mesh_->AmpDirectory() && mesh_->AmpDirectory()->IsStarted()) {
-      mesh_->AmpDirectory()->ListMeshNodesAsync([done, fetch_http](mesh::AmpDirectoryProtocol::ListRoe amp_nodes) {
-        if (amp_nodes) {
-          auto rows = mesh::MeshDirectoryNodesFromHits(*amp_nodes);
-          if (!rows.empty()) {
-            done(std::move(rows));
-            return;
-          }
+        return mesh::MeshDirectoryNodesFromNameRecords(*records);
+      },
+      AppRuntimeMeshExecutors().blocking);
+  directory_cache_->SetPersistPath(MeshDirectoryNodesPath(profile_data_dir));
+  directory_cache_->LoadPersisted();
+  // N029 nd4: the Amp directory twin first (no worker park), then HTTP on Normal.
+  directory_cache_->SetAsyncFetcher(
+      [this, client](std::function<void(Roe<std::vector<mesh::MeshDirectoryNode>>)> done) {
+        auto fetch_http = [client, done]() {
+          AppRuntime::PostWorkerNormal([client, done]() {
+            mesh::DirectoryClientNameDirectory names(*client);
+            auto records = names.ListService("mesh_node");
+            if (!records) {
+              done(records.error());
+              return;
+            }
+            done(mesh::MeshDirectoryNodesFromNameRecords(*records));
+          });
+        };
+        if (mesh_ && mesh_->AmpDirectory() && mesh_->AmpDirectory()->IsStarted()) {
+          mesh_->AmpDirectory()->ListMeshNodesAsync([done, fetch_http](mesh::AmpDirectoryProtocol::ListRoe amp_nodes) {
+            if (amp_nodes) {
+              auto rows = mesh::MeshDirectoryNodesFromHits(*amp_nodes);
+              if (!rows.empty()) {
+                done(std::move(rows));
+                return;
+              }
+            }
+            fetch_http();
+          });
+          return;
         }
         fetch_http();
       });
-      return;
-    }
-    fetch_http();
-  });
   directory_cache_->SetOnUpdated(std::move(on_updated));
   directory_cache_->RequestRefresh();
 }
@@ -362,7 +364,7 @@ void ProductMesh::SetMeshInputs(const MeshConnectivityWiringInputs& inputs) {
 }
 
 void ProductMesh::WireMeshObjects() {
-  hop_feed_->Start();  // the policy is in before connectivity wires
+  hop_feed_->Start(); // the policy is in before connectivity wires
   connectivity_->Wire();
   media_relay_->Wire();
 }
@@ -373,7 +375,7 @@ void ProductMesh::DetachMeshObjects() {
 }
 
 void ProductMesh::BeginMeshStop() {
-  hop_feed_->Stop();  // its inputs read the mesh
+  hop_feed_->Stop(); // its inputs read the mesh
   connectivity_->InvalidateAsyncOps();
 }
 
@@ -386,8 +388,8 @@ void ProductMesh::EndMeshStop() {
 }
 
 void ProductMesh::RefreshMeshView() {
-  connectivity_->RefreshLocalView();  // advertised addrs follow the probe (media consumers' view)
-  hop_feed_->PushSoon();              // seed reachability gates the rendezvous surface
+  connectivity_->RefreshLocalView(); // advertised addrs follow the probe (media consumers' view)
+  hop_feed_->PushSoon();             // seed reachability gates the rendezvous surface
 }
 
 void ProductMesh::PushHopPolicySoon() {

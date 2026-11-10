@@ -34,9 +34,8 @@ TEST(MeshRoleTest, NormalizeStripsRetiredBootstrapAndFillsDefaults) {
 // today's defaults instead of spending ~8 s on each dead door.
 TEST(MeshRoleTest, NormalizeDropsTheSeedsOfTheOldFleet) {
   pbr::MeshConfig config;
-  config.bootstrap_peers = {
-      "/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/QmbgShE3J3G6fvEHqwTS5ooQiFnYn46rzn6cTexUGWdWaj",
-      "/ip4/44.218.209.223/udp/443/adp/1.0.0/p2p/Qmd2m4skBPf7YjPaAKcnhPuhzRv6wEnsf9QheZRANYGuM7"};
+  config.bootstrap_peers = {"/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/QmbgShE3J3G6fvEHqwTS5ooQiFnYn46rzn6cTexUGWdWaj",
+                            "/ip4/44.218.209.223/udp/443/adp/1.0.0/p2p/Qmd2m4skBPf7YjPaAKcnhPuhzRv6wEnsf9QheZRANYGuM7"};
   pbr::NormalizeMeshConfig(config);
   ASSERT_EQ(config.bootstrap_peers.size(), pbr::kDefaultMeshBootstrapPeerCount);
   for (const std::string& peer : config.bootstrap_peers) {
@@ -90,7 +89,6 @@ TEST(MeshRoleTest, ResolveEffectiveFallsBackToHardcoded) {
 }
 
 TEST(MeshRoleTest, PeerIdFromMultiaddr) {
-  EXPECT_EQ(pbr::PeerIdFromMultiaddr(pbr::kDefaultMeshBootstrapPeer),
-            "QmZyhSEd95N31Az5Fvr9ZJ9Ugarzy5B1pbFfuUXtxEC9Cv");
+  EXPECT_EQ(pbr::PeerIdFromMultiaddr(pbr::kDefaultMeshBootstrapPeer), "QmZyhSEd95N31Az5Fvr9ZJ9Ugarzy5B1pbFfuUXtxEC9Cv");
   EXPECT_TRUE(pbr::PeerIdFromMultiaddr("/ip4/1.2.3.4/udp/443/adp/1.0.0").empty());
 }

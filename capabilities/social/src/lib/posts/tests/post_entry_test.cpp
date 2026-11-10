@@ -136,8 +136,13 @@ TEST_F(PostEntryTest, ThePostBodyCarriesWhatReadersNeedWithinLimits) {
   // S026: what a reader needs before the media arrives and for its filters, each field bounded.
   const PostRef ref{.author = mallory_.account_id, .lane = PostLane{4}, .seq = 3, .entry_hash = PostHash{5}};
   const PostBody full{.text = "hi @mallory see https://x.example #\xE4\xB8\xAD\xE6\x96\x87",
-                      .media = {{.content_id = PostHash{1}, .mime = "video/mp4", .size = 10, .alt = "a clip",
-                                 .width = 1920, .height = 1080, .duration_ms = 4000,
+                      .media = {{.content_id = PostHash{1},
+                                 .mime = "video/mp4",
+                                 .size = 10,
+                                 .alt = "a clip",
+                                 .width = 1920,
+                                 .height = 1080,
+                                 .duration_ms = 4000,
                                  .placeholder = ByteVector(kMaxPostPlaceholderBytes, 7)}},
                       .facets = {{.start = 3, .end = 11, .type = 1, .value = mallory_.account_id},
                                  {.start = 16, .end = 33, .type = 2, .value = "https://x.example"},
@@ -248,8 +253,13 @@ TEST_F(PostEntryTest, ALaneChainsAndAForkIsCaught) {
 TEST(PostBodiesTest, EveryKindRoundTrips) {
   const PostRef ref{.author = "account:a", .lane = PostLane{4}, .seq = 3, .entry_hash = PostHash{5}};
   const PostBody post{.text = "hi @a #tag",
-                      .media = {{.content_id = PostHash{1}, .mime = "image/png", .size = 42, .alt = "a cat",
-                                 .width = 640, .height = 480, .placeholder = ByteVector{1, 2, 3}}},
+                      .media = {{.content_id = PostHash{1},
+                                 .mime = "image/png",
+                                 .size = 42,
+                                 .alt = "a cat",
+                                 .width = 640,
+                                 .height = 480,
+                                 .placeholder = ByteVector{1, 2, 3}}},
                       .facets = {{.start = 3, .end = 5, .type = 1, .value = "account:a"},
                                  {.start = 6, .end = 10, .type = 3, .value = "tag"}},
                       .reply = PostReply{.root = ref, .parent = ref},
@@ -262,8 +272,8 @@ TEST(PostBodiesTest, EveryKindRoundTrips) {
   EXPECT_EQ(DecodeEditBody(EncodeEditBody(edit)).value(), edit);
   const ReactBody react{.target = ref, .reaction = "like"};
   EXPECT_EQ(DecodeReactBody(EncodeReactBody(react)).value(), react);
-  const ProfileBody profile{.display_name = "Alice", .bio = "hi", .avatar = PostHash{2},
-                            .services = {{.kind = "witness", .terms = "{}"}}};
+  const ProfileBody profile{
+      .display_name = "Alice", .bio = "hi", .avatar = PostHash{2}, .services = {{.kind = "witness", .terms = "{}"}}};
   EXPECT_EQ(DecodeProfileBody(EncodeProfileBody(profile)).value(), profile);
   const LaneCloseBody close{.lane = PostLane{6}, .last_seq = 9};
   EXPECT_EQ(DecodeLaneCloseBody(EncodeLaneCloseBody(close)).value(), close);
@@ -277,12 +287,12 @@ TEST(PostBodiesTest, EveryKindRoundTrips) {
 
 TEST(PostBodiesTest, Utf8MeansWellFormed) {
   EXPECT_TRUE(IsWellFormedUtf8("plain"));
-  EXPECT_TRUE(IsWellFormedUtf8("\xE4\xBD\xA0\xE5\xA5\xBD"));        // 你好
-  EXPECT_TRUE(IsWellFormedUtf8("\xF0\x9F\x91\x8D"));                // 👍
-  EXPECT_FALSE(IsWellFormedUtf8("\xC0\xAF"));                       // overlong
-  EXPECT_FALSE(IsWellFormedUtf8("\xED\xA0\x80"));                   // surrogate
-  EXPECT_FALSE(IsWellFormedUtf8("\xF4\x90\x80\x80"));               // past U+10FFFF
-  EXPECT_FALSE(IsWellFormedUtf8("\xE4\xBD"));                       // cut short
+  EXPECT_TRUE(IsWellFormedUtf8("\xE4\xBD\xA0\xE5\xA5\xBD")); // 你好
+  EXPECT_TRUE(IsWellFormedUtf8("\xF0\x9F\x91\x8D"));         // 👍
+  EXPECT_FALSE(IsWellFormedUtf8("\xC0\xAF"));                // overlong
+  EXPECT_FALSE(IsWellFormedUtf8("\xED\xA0\x80"));            // surrogate
+  EXPECT_FALSE(IsWellFormedUtf8("\xF4\x90\x80\x80"));        // past U+10FFFF
+  EXPECT_FALSE(IsWellFormedUtf8("\xE4\xBD"));                // cut short
 }
 
 TEST_F(PostEntryTest, AHeadNamesEveryLaneOnceInOrder) {
@@ -296,8 +306,9 @@ TEST_F(PostEntryTest, AHeadNamesEveryLaneOnceInOrder) {
   ASSERT_EQ(verified.value().lanes.size(), 2u);
   EXPECT_EQ(verified.value().lanes[0].lane, PostLane{3}) << "lanes are sorted when encoded";
   EXPECT_FALSE(VerifyPostHead(signed_head, mallory_.public_key, kNow));
-  EXPECT_FALSE(VerifyPostHead(SignPostHead({.author = alice_.account_id, .issued_at = kNow + 3'600'000}, alice_.Signer()).value(),
-                              alice_.public_key, kNow))
+  EXPECT_FALSE(VerifyPostHead(
+      SignPostHead({.author = alice_.account_id, .issued_at = kNow + 3'600'000}, alice_.Signer()).value(),
+      alice_.public_key, kNow))
       << "a head from the future";
 
   head.lanes.clear();
@@ -311,7 +322,8 @@ TEST_F(PostEntryTest, AHeadNamesEveryLaneOnceInOrder) {
   EXPECT_FALSE(SignPostHead(plain_http, alice_.Signer())) << "targets are https";
   EXPECT_FALSE(ParsePostHead(PostHeadCanonicalBytes(plain_http)));
 
-  PostHead repeated{.author = alice_.account_id, .issued_at = kNow,
+  PostHead repeated{.author = alice_.account_id,
+                    .issued_at = kNow,
                     .lanes = {{.lane = PostLane{1}, .seq = 1}, {.lane = PostLane{1}, .seq = 2}}};
   EXPECT_FALSE(ParsePostHead(PostHeadCanonicalBytes(repeated))) << "a lane named twice";
 }

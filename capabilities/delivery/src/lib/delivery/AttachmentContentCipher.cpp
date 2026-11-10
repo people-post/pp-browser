@@ -31,8 +31,7 @@ Roe<EncryptedBlob> AttachmentContentCipher::Encrypt(const ByteVector& content_ke
   return MessageCipher::Encrypt(content_key, plaintext, hash.value(), nonce.value());
 }
 
-Roe<EncryptedBlob> AttachmentContentCipher::EncryptWithNonce(const ByteVector& content_key,
-                                                             const ByteVector& plaintext,
+Roe<EncryptedBlob> AttachmentContentCipher::EncryptWithNonce(const ByteVector& content_key, const ByteVector& plaintext,
                                                              const ByteVector& nonce) {
   if (content_key.size() != kSessionKeySize) {
     return Error("Invalid attachment content key size");

@@ -45,20 +45,18 @@ TEST(CallHopPlanTest, SelectLinkPrefersLocalOnlyWhenLanConfirmed) {
   seed.dialable = true;
   ranked.push_back(seed);
 
-  auto no_lan = SelectCallMediaHop(ranked, CallHopScope::Link, "local", true,
-                                   "/ip4/10.0.0.1/tcp/1/p2p/local", false);
+  auto no_lan = SelectCallMediaHop(ranked, CallHopScope::Link, "local", true, "/ip4/10.0.0.1/tcp/1/p2p/local", false);
   ASSERT_FALSE(no_lan.empty());
   EXPECT_EQ(no_lan.front().peer_id, "seed");
 
-  auto with_lan = SelectCallMediaHop(std::move(ranked), CallHopScope::Link, "local", true,
-                                     "/ip4/10.0.0.1/tcp/1/p2p/local", true);
+  auto with_lan =
+      SelectCallMediaHop(std::move(ranked), CallHopScope::Link, "local", true, "/ip4/10.0.0.1/tcp/1/p2p/local", true);
   ASSERT_FALSE(with_lan.empty());
   EXPECT_EQ(with_lan.front().peer_id, "local");
 }
 
 TEST(CallHopPlanTest, SelectSiteNeverPreferLocal) {
-  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Site, true, "/ip4/10.0.0.1/tcp/1/p2p/local",
-                                          true));
+  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Site, true, "/ip4/10.0.0.1/tcp/1/p2p/local", true));
   std::vector<mesh::MeshHopCandidate> ranked;
   mesh::MeshHopCandidate seed;
   seed.peer_id = "seed";
@@ -66,8 +64,8 @@ TEST(CallHopPlanTest, SelectSiteNeverPreferLocal) {
   seed.affinity = mesh::MeshHopAffinity::OrgSeed;
   seed.dialable = true;
   ranked.push_back(seed);
-  auto out = SelectCallMediaHop(std::move(ranked), CallHopScope::Site, "local", true,
-                                "/ip4/10.0.0.1/tcp/1/p2p/local", true);
+  auto out =
+      SelectCallMediaHop(std::move(ranked), CallHopScope::Site, "local", true, "/ip4/10.0.0.1/tcp/1/p2p/local", true);
   ASSERT_FALSE(out.empty());
   EXPECT_EQ(out.front().peer_id, "seed");
 }
@@ -87,8 +85,7 @@ TEST(CallHopPlanTest, SelectWidePromotesPublicSeedNotPrivateLocal) {
   seed.dialable = true;
   ranked.push_back(seed);
 
-  auto out = SelectCallMediaHop(std::move(ranked), CallHopScope::Wide, "local", true,
-                                "/ip4/10.0.0.1/tcp/1/p2p/local");
+  auto out = SelectCallMediaHop(std::move(ranked), CallHopScope::Wide, "local", true, "/ip4/10.0.0.1/tcp/1/p2p/local");
   ASSERT_FALSE(out.empty());
   EXPECT_EQ(out.front().peer_id, "seed");
   for (const auto& hop : out) {
@@ -105,44 +102,32 @@ TEST(CallHopPlanTest, SelectWideAllowsPublicPreferLocal) {
   seed.dialable = true;
   ranked.push_back(seed);
 
-  auto out = SelectCallMediaHop(std::move(ranked), CallHopScope::Wide, "local", true,
-                                "/ip4/54.9.8.7/tcp/443/p2p/local");
+  auto out =
+      SelectCallMediaHop(std::move(ranked), CallHopScope::Wide, "local", true, "/ip4/54.9.8.7/tcp/443/p2p/local");
   ASSERT_FALSE(out.empty());
   EXPECT_EQ(out.front().peer_id, "local");
-  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true,
-                                          "/ip4/10.0.0.1/tcp/1/p2p/local"));
-  EXPECT_TRUE(PreferLocalAllowedForScope(CallHopScope::Wide, true,
-                                         "/ip4/54.9.8.7/tcp/443/p2p/local"));
+  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip4/10.0.0.1/tcp/1/p2p/local"));
+  EXPECT_TRUE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip4/54.9.8.7/tcp/443/p2p/local"));
 }
 
 TEST(CallHopPlanTest, GuestMayDialPrivateHopRejectsWhenLocalHasPublic) {
-  EXPECT_FALSE(GuestMayDialPrivateHopMa(
-      "/ip4/192.168.1.132/udp/1/p2p/hop",
-      {"/ip4/10.0.0.1/tcp/1/p2p/local", "/ip4/54.1.2.3/tcp/443/p2p/local"}));
-  EXPECT_TRUE(GuestMayDialPrivateHopMa(
-      "/ip4/10.0.0.5/tcp/1/p2p/hop", {"/ip4/10.0.0.1/tcp/1/p2p/local"}));
-  EXPECT_FALSE(GuestMayDialPrivateHopMa(
-      "/ip4/192.168.1.132/udp/1/p2p/hop", {"/ip4/10.0.0.1/tcp/1/p2p/local"}));
+  EXPECT_FALSE(GuestMayDialPrivateHopMa("/ip4/192.168.1.132/udp/1/p2p/hop",
+                                        {"/ip4/10.0.0.1/tcp/1/p2p/local", "/ip4/54.1.2.3/tcp/443/p2p/local"}));
+  EXPECT_TRUE(GuestMayDialPrivateHopMa("/ip4/10.0.0.5/tcp/1/p2p/hop", {"/ip4/10.0.0.1/tcp/1/p2p/local"}));
+  EXPECT_FALSE(GuestMayDialPrivateHopMa("/ip4/192.168.1.132/udp/1/p2p/hop", {"/ip4/10.0.0.1/tcp/1/p2p/local"}));
 }
 
-
 TEST(CallHopPlanTest, LocalAdvertiseHasPublicTreatsGlobalIpv6) {
-  EXPECT_TRUE(LocalAdvertiseHasPublicIpv4(
-      {"/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"}));
-  EXPECT_FALSE(LocalAdvertiseHasPublicIpv4(
-      {"/ip6/fe80::1/udp/19001/adp/1.0.0/p2p/local"}));
-  EXPECT_FALSE(GuestMayDialPrivateHopMa(
-      "/ip4/192.168.1.132/udp/1/p2p/hop",
-      {"/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"}));
-  EXPECT_TRUE(PreferLocalAllowedForScope(CallHopScope::Wide, true,
-                                         "/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"));
+  EXPECT_TRUE(LocalAdvertiseHasPublicIpv4({"/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"}));
+  EXPECT_FALSE(LocalAdvertiseHasPublicIpv4({"/ip6/fe80::1/udp/19001/adp/1.0.0/p2p/local"}));
+  EXPECT_FALSE(
+      GuestMayDialPrivateHopMa("/ip4/192.168.1.132/udp/1/p2p/hop", {"/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"}));
+  EXPECT_TRUE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"));
   // Link-local / loopback /ip6 must not count as publicly dialable PreferLocal.
-  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true,
-                                          "/ip6/fe80::1/udp/19001/adp/1.0.0/p2p/local"));
-  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true,
-                                          "/ip6/::1/udp/19001/adp/1.0.0/p2p/local"));
-  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Link, true,
-                                          "/ip6/fe80::1/udp/19001/adp/1.0.0/p2p/local", true));
+  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip6/fe80::1/udp/19001/adp/1.0.0/p2p/local"));
+  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip6/::1/udp/19001/adp/1.0.0/p2p/local"));
+  EXPECT_FALSE(
+      PreferLocalAllowedForScope(CallHopScope::Link, true, "/ip6/fe80::1/udp/19001/adp/1.0.0/p2p/local", true));
 }
 
 // --- V050 gt4: the hop a group forms on at the third join ---------------------------------------
@@ -161,7 +146,7 @@ TEST(GroupHopAtJoinTest, KeepsThePlannedHopUnlessSomeoneCannotReachIt) {
   in.planned_hop = "P";
   in.ranked_hops = {"X", "P", "Y"};
   in.reports["b"] = Report(true, {"P", "X"});
-  in.reports["c"] = Report(std::nullopt, {});  // old peer / probe not finished
+  in.reports["c"] = Report(std::nullopt, {}); // old peer / probe not finished
   const auto out = DecideGroupHopAtJoin(in);
   EXPECT_EQ(out.action, GroupHopAtJoin::UsePlanned);
   EXPECT_EQ(out.hop, "P");
@@ -172,7 +157,7 @@ TEST(GroupHopAtJoinTest, OneAdjustmentToTheFirstRankedHopEveryReporterReached) {
   in.planned_hop = "P";
   in.ranked_hops = {"P", "X", "Y"};
   in.reports["b"] = Report(true, {"P", "Y", "X"});
-  in.reports["c"] = Report(false, {"Y"});  // cannot reach P; reached only Y
+  in.reports["c"] = Report(false, {"Y"}); // cannot reach P; reached only Y
   const auto out = DecideGroupHopAtJoin(in);
   EXPECT_EQ(out.action, GroupHopAtJoin::UseAlternative);
   EXPECT_EQ(out.hop, "Y") << "X is ranked higher but C never reached it";
@@ -193,12 +178,12 @@ TEST(GroupHopAtJoinTest, NoSharedHopRefusesTheJoiner) {
   GroupHopJoinInput in;
   in.planned_hop = "P";
   in.ranked_hops = {"P", "X"};
-  in.reports["b"] = Report(true, {"P"}, {"X"});  // b tried X and failed
+  in.reports["b"] = Report(true, {"P"}, {"X"}); // b tried X and failed
   in.reports["c"] = Report(false, {"X"}, {"P"});
   EXPECT_EQ(DecideGroupHopAtJoin(in).action, GroupHopAtJoin::RefuseJoiner);
 
   in.reports["b"] = Report(true, {"P"});
-  in.reports["c"] = Report(false, {}, {"P"});  // c reached nothing: no evidence for any alternative
+  in.reports["c"] = Report(false, {}, {"P"}); // c reached nothing: no evidence for any alternative
   EXPECT_EQ(DecideGroupHopAtJoin(in).action, GroupHopAtJoin::RefuseJoiner);
 }
 
@@ -208,8 +193,8 @@ TEST(GroupHopAtJoinTest, AHopStillBeingProbedExcludesNothing) {
   GroupHopJoinInput in;
   in.planned_hop = "P";
   in.ranked_hops = {"P", "X"};
-  in.reports["b"] = Report(true, {"P"});           // X still probing when b accepted
-  in.reports["c"] = Report(false, {"X"}, {"P"});  // c cannot reach P, reached X
+  in.reports["b"] = Report(true, {"P"});         // X still probing when b accepted
+  in.reports["c"] = Report(false, {"X"}, {"P"}); // c cannot reach P, reached X
   const auto out = DecideGroupHopAtJoin(in);
   EXPECT_EQ(out.action, GroupHopAtJoin::UseAlternative);
   EXPECT_EQ(out.hop, "X");

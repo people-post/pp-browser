@@ -60,9 +60,7 @@ public:
   bool IsDialable(const std::string& peer_key) const override {
     return endpoints.count(peer_key) > 0 || connected.count(peer_key) > 0;
   }
-  bool IsConnected(const std::string& peer_key) const override {
-    return connected.count(peer_key) > 0;
-  }
+  bool IsConnected(const std::string& peer_key) const override { return connected.count(peer_key) > 0; }
   std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const override {
     const auto it = endpoints.find(peer_key);
     if (it != endpoints.end()) {
@@ -124,14 +122,12 @@ public:
     }
   }
   CallMediaRoe Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    int timeout_ms) override {
+                       int timeout_ms) override {
     CallMediaRoe out;
     ConnectAsync(params, std::move(callbacks), [&](CallMediaRoe r) { out = std::move(r); }, timeout_ms);
     return out;
   }
-  Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override {
-    return {};
-  }
+  Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override { return {}; }
   Roe<void> SendMedia(uint8_t /*channel*/, const std::vector<uint8_t>& /*payload*/, uint32_t /*seq*/, uint8_t /*mark*/,
                       uint64_t /*instance*/) override {
     return {};
@@ -184,7 +180,7 @@ struct StackSide {
   std::unique_ptr<InMemoryDeliveryStore> store;
   std::unique_ptr<ContactsStore> contacts;
   std::unique_ptr<IdentityStore> identity;
-  IPeerSessionStore* psk = nullptr;  // the store's peer sessions (one row with its threads, as in the app)
+  IPeerSessionStore* psk = nullptr; // the store's peer sessions (one row with its threads, as in the app)
   // Outlive the stack (connectivity first: the relay is built on it).
   std::unique_ptr<mesh::MeshConnectivity> connectivity = std::make_unique<mesh::MeshConnectivity>();
   std::unique_ptr<mesh::MeshMediaRelay> media_relay = std::make_unique<mesh::MeshMediaRelay>(*connectivity);

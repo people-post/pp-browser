@@ -45,18 +45,18 @@ inline bool DecodeUtf8(std::string_view s, size_t& i, uint32_t& cp) {
 /** Symbols that draw as emoji even without U+FE0F. */
 inline bool IsAlwaysEmojiSymbol(uint32_t cp) {
   switch (cp) {
-  case 0x2764: // heart
-  case 0x2728: // sparkles
-  case 0x2B50: // star
-  case 0x2600: // sun
-  case 0x2601: // cloud
-  case 0x260E: // telephone
-  case 0x26A1: // high voltage
-  case 0x26BD: // soccer ball
-  case 0x26C4: // snowman
-    return true;
-  default:
-    return false;
+    case 0x2764: // heart
+    case 0x2728: // sparkles
+    case 0x2B50: // star
+    case 0x2600: // sun
+    case 0x2601: // cloud
+    case 0x260E: // telephone
+    case 0x26A1: // high voltage
+    case 0x26BD: // soccer ball
+    case 0x26C4: // snowman
+      return true;
+    default:
+      return false;
   }
 }
 
@@ -78,11 +78,19 @@ inline bool IsPictographic(uint32_t cp, bool vs16) {
   return vs16 && IsTextDefaultSymbol(cp);
 }
 
-inline bool IsKeycapBase(uint32_t cp) { return (cp >= '0' && cp <= '9') || cp == '#' || cp == '*'; }
+inline bool IsKeycapBase(uint32_t cp) {
+  return (cp >= '0' && cp <= '9') || cp == '#' || cp == '*';
+}
 
-inline bool IsRegionalIndicator(uint32_t cp) { return cp >= 0x1F1E6 && cp <= 0x1F1FF; }
-inline bool IsSkinTone(uint32_t cp) { return cp >= 0x1F3FB && cp <= 0x1F3FF; }
-inline bool IsTag(uint32_t cp) { return cp >= 0xE0020 && cp <= 0xE007F; }
+inline bool IsRegionalIndicator(uint32_t cp) {
+  return cp >= 0x1F1E6 && cp <= 0x1F1FF;
+}
+inline bool IsSkinTone(uint32_t cp) {
+  return cp >= 0x1F3FB && cp <= 0x1F3FF;
+}
+inline bool IsTag(uint32_t cp) {
+  return cp >= 0xE0020 && cp <= 0xE007F;
+}
 
 } // namespace emoji_only_detail
 
@@ -95,9 +103,9 @@ inline bool IsTag(uint32_t cp) { return cp >= 0xE0020 && cp <= 0xE007F; }
 inline EmojiScale EmojiOnlyScale(std::string_view text) {
   using namespace emoji_only_detail;
   int count = 0;
-  bool open = false;           // inside a cluster that can still take joiners / modifiers
-  bool after_zwj = false;      // the next pictographic joins the previous cluster
-  int regional_pending = 0;    // 1 after a lone regional indicator
+  bool open = false;        // inside a cluster that can still take joiners / modifiers
+  bool after_zwj = false;   // the next pictographic joins the previous cluster
+  int regional_pending = 0; // 1 after a lone regional indicator
   size_t i = 0;
   while (i < text.size()) {
     uint32_t cp = 0;

@@ -24,7 +24,9 @@ struct MascotDayLook {
  * Date overrides (holiday looks, like a Google doodle): empty for now. Add `{month, first_day, last_day, look}` rows
  * here; `LookForDate` consults them before the weekday.
  */
-inline std::span<const MascotDayLook> HolidayLooks() { return {}; }
+inline std::span<const MascotDayLook> HolidayLooks() {
+  return {};
+}
 
 /**
  * The look for a date: a row of `overrides` that holds the day first, else the weekday's. `weekday` counts from Sunday
@@ -61,20 +63,20 @@ inline char PartsFor(const char look) {
 
 inline AiDotLook DotLookOf(const char parts) {
   switch (parts) {
-  case 'a':
-    return AiDotLook::OneEye;
-  case 'c':
-    return AiDotLook::Cool;
-  case 'd':
-    return AiDotLook::Plain;
-  case 'e':
-    return AiDotLook::Evening;
-  case 'f':
-    return AiDotLook::Outing;
-  case 'g':
-    return AiDotLook::Lazy;
-  default:
-    return AiDotLook::TwoEyes;
+    case 'a':
+      return AiDotLook::OneEye;
+    case 'c':
+      return AiDotLook::Cool;
+    case 'd':
+      return AiDotLook::Plain;
+    case 'e':
+      return AiDotLook::Evening;
+    case 'f':
+      return AiDotLook::Outing;
+    case 'g':
+      return AiDotLook::Lazy;
+    default:
+      return AiDotLook::TwoEyes;
   }
 }
 

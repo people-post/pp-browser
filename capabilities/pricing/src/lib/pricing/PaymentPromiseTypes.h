@@ -34,20 +34,20 @@ enum class PaymentPromiseReleaseRule : uint8_t {
 
 inline constexpr const char* PaymentPromiseStateToString(const PaymentPromiseState state) {
   switch (state) {
-  case PaymentPromiseState::Offered:
-    return "offered";
-  case PaymentPromiseState::Accepted:
-    return "accepted";
-  case PaymentPromiseState::Delivering:
-    return "delivering";
-  case PaymentPromiseState::Released:
-    return "released";
-  case PaymentPromiseState::Rejected:
-    return "rejected";
-  case PaymentPromiseState::Expired:
-    return "expired";
-  case PaymentPromiseState::Disputed:
-    return "disputed";
+    case PaymentPromiseState::Offered:
+      return "offered";
+    case PaymentPromiseState::Accepted:
+      return "accepted";
+    case PaymentPromiseState::Delivering:
+      return "delivering";
+    case PaymentPromiseState::Released:
+      return "released";
+    case PaymentPromiseState::Rejected:
+      return "rejected";
+    case PaymentPromiseState::Expired:
+      return "expired";
+    case PaymentPromiseState::Disputed:
+      return "disputed";
   }
   return "offered";
 }
@@ -76,13 +76,13 @@ inline PaymentPromiseState PaymentPromiseStateFromString(const std::string& valu
 
 inline constexpr const char* PaymentPromiseReleaseRuleToString(const PaymentPromiseReleaseRule rule) {
   switch (rule) {
-  case PaymentPromiseReleaseRule::DualAck:
-    return "dual_ack";
-  case PaymentPromiseReleaseRule::TimeoutAutoRelease:
-    return "timeout_auto_release";
-  case PaymentPromiseReleaseRule::PayerAck:
-  default:
-    return "payer_ack";
+    case PaymentPromiseReleaseRule::DualAck:
+      return "dual_ack";
+    case PaymentPromiseReleaseRule::TimeoutAutoRelease:
+      return "timeout_auto_release";
+    case PaymentPromiseReleaseRule::PayerAck:
+    default:
+      return "payer_ack";
   }
 }
 
@@ -98,15 +98,15 @@ inline PaymentPromiseReleaseRule PaymentPromiseReleaseRuleFromString(const std::
 
 inline constexpr bool PaymentPromiseStateIsTerminal(const PaymentPromiseState state) {
   switch (state) {
-  case PaymentPromiseState::Released:
-  case PaymentPromiseState::Rejected:
-  case PaymentPromiseState::Expired:
-  case PaymentPromiseState::Disputed:
-    return true;
-  case PaymentPromiseState::Offered:
-  case PaymentPromiseState::Accepted:
-  case PaymentPromiseState::Delivering:
-    return false;
+    case PaymentPromiseState::Released:
+    case PaymentPromiseState::Rejected:
+    case PaymentPromiseState::Expired:
+    case PaymentPromiseState::Disputed:
+      return true;
+    case PaymentPromiseState::Offered:
+    case PaymentPromiseState::Accepted:
+    case PaymentPromiseState::Delivering:
+      return false;
   }
   return false;
 }

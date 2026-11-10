@@ -47,9 +47,8 @@ public:
   Roe<void> FanOutToJoined(const std::string& call_id, CallControlType type, const std::string& detail_json,
                            const std::string& display, const std::string& skip_identity);
   /** Also to ringing / invited participants — ending a call so invitees clear their ring. */
-  Roe<void> FanOutToJoinedAndRinging(const std::string& call_id, CallControlType type,
-                                     const std::string& detail_json, const std::string& display,
-                                     const std::string& skip_identity);
+  Roe<void> FanOutToJoinedAndRinging(const std::string& call_id, CallControlType type, const std::string& detail_json,
+                                     const std::string& display, const std::string& skip_identity);
   /**
    * The call's media key to `peer_identity` (CallMediaKey): the key itself, its lane copies sealed per device of the
    * peer's (M024); its old form beside it, wrapped under the account pair's session, while kMediaKeyAccountWrapBridge.

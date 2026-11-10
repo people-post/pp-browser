@@ -103,8 +103,9 @@ TEST(VoiceRecorder, CancelLeavesNoFileAndFreesTheSource) {
   TempDir dir;
   RecorderProbe probe;
   std::atomic<bool> source_closed{false};
-  VoiceRecorder recorder([&source_closed]() { return std::make_unique<ScriptedSource>(Tone(4000), "", 0, &source_closed); },
-                         probe.Callbacks());
+  VoiceRecorder recorder(
+      [&source_closed]() { return std::make_unique<ScriptedSource>(Tone(4000), "", 0, &source_closed); },
+      probe.Callbacks());
   ASSERT_TRUE(recorder.Start(ConfigIn(dir)));
   ASSERT_TRUE(WaitFor([&] { return probe.last_progress_ms.load() >= 1500; }));
   recorder.Cancel();
@@ -173,7 +174,10 @@ TEST(VoiceRecorder, OpenFailuresAreTold) {
   {
     RecorderProbe probe;
     VoiceRecorder recorder(
-        []() { return std::make_unique<ScriptedSource>(std::vector<int16_t>{}, "mic held by call-9", IVoiceCaptureSource::kOpenBusy); },
+        []() {
+          return std::make_unique<ScriptedSource>(std::vector<int16_t>{}, "mic held by call-9",
+                                                  IVoiceCaptureSource::kOpenBusy);
+        },
         probe.Callbacks());
     ASSERT_TRUE(recorder.Start(ConfigIn(dir)));
     ASSERT_TRUE(WaitFor([&] { return probe.Done(); }));
@@ -183,7 +187,10 @@ TEST(VoiceRecorder, OpenFailuresAreTold) {
   {
     RecorderProbe probe;
     VoiceRecorder recorder(
-        []() { return std::make_unique<ScriptedSource>(std::vector<int16_t>{}, "no microphone", IVoiceCaptureSource::kOpenNoDevice); },
+        []() {
+          return std::make_unique<ScriptedSource>(std::vector<int16_t>{}, "no microphone",
+                                                  IVoiceCaptureSource::kOpenNoDevice);
+        },
         probe.Callbacks());
     ASSERT_TRUE(recorder.Start(ConfigIn(dir)));
     ASSERT_TRUE(WaitFor([&] { return probe.Done(); }));
@@ -267,7 +274,7 @@ TEST(VoiceRecorderArbiter, ARecordingHoldsTheMicrophoneAgainstACallUntilItEnds) 
   call.format = AudioDeviceFormat{48000, 1};
   EXPECT_FALSE(arbiter.AcquireAudio(call)); // exclusive: the call cannot take it from the recording
   source->Close();
-  EXPECT_TRUE(arbiter.AcquireAudio(call));  // freed at the end
+  EXPECT_TRUE(arbiter.AcquireAudio(call)); // freed at the end
 }
 
 TEST(VoiceRecorderArbiter, ARingingCallInterruptsButOurOwnPlayerDoesNot) {

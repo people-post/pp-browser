@@ -175,9 +175,8 @@ Error LlmClient::MapHttpError(long http_code, const std::string& response_body) 
     }
   }
 
-  const std::string detail = !api_message.empty()
-                                 ? ("LLM HTTP " + std::to_string(http_code) + ": " + api_message)
-                                 : ("LLM HTTP " + std::to_string(http_code));
+  const std::string detail = !api_message.empty() ? ("LLM HTTP " + std::to_string(http_code) + ": " + api_message)
+                                                  : ("LLM HTTP " + std::to_string(http_code));
 
   if (http_code == 429) {
     if (top_code == kServerBusyCode || api_code == kServerBusyCode) {
@@ -187,19 +186,19 @@ Error LlmClient::MapHttpError(long http_code, const std::string& response_body) 
     // The gateway's own text is English; the user reads our wording for the limit that was hit.
     // Other limits keep the catalog's "service is busy".
     switch (ClassifyLimit(api_message)) {
-    case LlmLimitKind::GuestDaily:
-      err.WithUser(Tr("errors.ai.limit_daily"));
-      break;
-    case LlmLimitKind::PerMinute:
-      err.WithUser(Tr("errors.ai.limit_minute"));
-      break;
-    case LlmLimitKind::Other:
-      // Another provider's own text says what to fix (quota, billing); the gateway's global / mint
-      // limits keep "busy".
-      if (!api_message.empty() && !IsBriefGatewayLimit(api_message)) {
-        err.WithUser(api_message);
-      }
-      break;
+      case LlmLimitKind::GuestDaily:
+        err.WithUser(Tr("errors.ai.limit_daily"));
+        break;
+      case LlmLimitKind::PerMinute:
+        err.WithUser(Tr("errors.ai.limit_minute"));
+        break;
+      case LlmLimitKind::Other:
+        // Another provider's own text says what to fix (quota, billing); the gateway's global / mint
+        // limits keep "busy".
+        if (!api_message.empty() && !IsBriefGatewayLimit(api_message)) {
+          err.WithUser(api_message);
+        }
+        break;
     }
     return err;
   }
@@ -211,7 +210,8 @@ Error LlmClient::MapHttpError(long http_code, const std::string& response_body) 
     return err;
   }
   if (!api_message.empty()) {
-    return AppError::Network(Err::Network::HttpError, detail).WithUser(Localized("errors.ai.api_error", {{"detail", api_message}}));
+    return AppError::Network(Err::Network::HttpError, detail)
+        .WithUser(Localized("errors.ai.api_error", {{"detail", api_message}}));
   }
   return AppError::Network(Err::Network::HttpError, detail);
 }
@@ -307,8 +307,7 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   }
   if (payload.size() > kMaxLlmRequestBytes) {
     return AppError::Network(Err::Network::HttpError,
-                             "LLM request body exceeds limit of " + std::to_string(kMaxLlmRequestBytes) +
-                                 " bytes");
+                             "LLM request body exceeds limit of " + std::to_string(kMaxLlmRequestBytes) + " bytes");
   }
 
   ResponseBuffer response;
@@ -344,8 +343,7 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
 
   if (response.limit_exceeded) {
     return AppError::Network(Err::Network::HttpError,
-                             "LLM response body exceeds limit of " + std::to_string(kMaxLlmResponseBytes) +
-                                 " bytes");
+                             "LLM response body exceeds limit of " + std::to_string(kMaxLlmResponseBytes) + " bytes");
   }
 
   if (code != CURLE_OK) {
@@ -354,8 +352,8 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   }
 
   if (http_code >= 400) {
-    log().error << "HTTP " << http_code << " (" << response.body.size() << " bytes) body="
-                << TruncateForLog(response.body, 500);
+    log().error << "HTTP " << http_code << " (" << response.body.size()
+                << " bytes) body=" << TruncateForLog(response.body, 500);
     return MapHttpError(http_code, response.body);
   }
 

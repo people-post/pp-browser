@@ -10,8 +10,8 @@ void SystemControlRegistry::Bind(SystemControlFamily family) {
   family.lane_max_age_ms = std::min(family.lane_max_age_ms, kControlLaneRelayTtlMs);
   std::lock_guard<std::mutex> lock(mutex_);
   auto next = std::make_shared<Families>(*families_);
-  auto same = std::find_if(next->begin(), next->end(),
-                           [&](const SystemControlFamily& f) { return f.name == family.name; });
+  auto same =
+      std::find_if(next->begin(), next->end(), [&](const SystemControlFamily& f) { return f.name == family.name; });
   if (same != next->end()) {
     *same = std::move(family);
   } else {

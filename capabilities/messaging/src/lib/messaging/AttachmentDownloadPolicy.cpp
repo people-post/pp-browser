@@ -7,13 +7,13 @@ namespace pbr {
 
 std::string AttachmentDownloadPolicyToString(const AttachmentDownloadPolicy policy) {
   switch (policy) {
-  case AttachmentDownloadPolicy::AlwaysAuto:
-    return "always_auto";
-  case AttachmentDownloadPolicy::OnDemand:
-    return "on_demand";
-  case AttachmentDownloadPolicy::Smart:
-  default:
-    return "smart";
+    case AttachmentDownloadPolicy::AlwaysAuto:
+      return "always_auto";
+    case AttachmentDownloadPolicy::OnDemand:
+      return "on_demand";
+    case AttachmentDownloadPolicy::Smart:
+    default:
+      return "smart";
   }
 }
 
@@ -30,13 +30,13 @@ AttachmentDownloadPolicy AttachmentDownloadPolicyFromString(const std::string& v
 bool ShouldAutoEnqueueAttachment(const AttachmentDownloadPolicy policy, const uint64_t byte_length,
                                  const uint64_t smart_max_bytes, const bool network_allows_all_auto) {
   switch (policy) {
-  case AttachmentDownloadPolicy::AlwaysAuto:
-    return network_allows_all_auto || byte_length <= smart_max_bytes;
-  case AttachmentDownloadPolicy::OnDemand:
-    return false;
-  case AttachmentDownloadPolicy::Smart:
-  default:
-    return byte_length <= smart_max_bytes;
+    case AttachmentDownloadPolicy::AlwaysAuto:
+      return network_allows_all_auto || byte_length <= smart_max_bytes;
+    case AttachmentDownloadPolicy::OnDemand:
+      return false;
+    case AttachmentDownloadPolicy::Smart:
+    default:
+      return byte_length <= smart_max_bytes;
   }
 }
 
@@ -63,13 +63,13 @@ AutoDownloadNetwork AutoDownloadNetworkOf(const NetworkState& state, const bool 
 
 bool AutoDownloadAllowedOn(const AutoDownloadNetwork network, const bool auto_on_wifi, const bool auto_on_cellular) {
   switch (network) {
-  case AutoDownloadNetwork::Wifi:
-    return auto_on_wifi;
-  case AutoDownloadNetwork::Mobile:
-    return auto_on_cellular;
-  case AutoDownloadNetwork::Unknown:
-  default:
-    return false;
+    case AutoDownloadNetwork::Wifi:
+      return auto_on_wifi;
+    case AutoDownloadNetwork::Mobile:
+      return auto_on_cellular;
+    case AutoDownloadNetwork::Unknown:
+    default:
+      return false;
   }
 }
 

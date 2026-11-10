@@ -68,8 +68,7 @@ std::vector<mesh::MeshHopCandidate> MergeAdvertisedMediaRelayHops(
   }
   // Prefer advertised call peers ahead of seeds/contacts so phone initiator picks the desktop
   // Node already on the call before an off-LAN seed.
-  injected.insert(injected.end(), std::make_move_iterator(ranked.begin()),
-                  std::make_move_iterator(ranked.end()));
+  injected.insert(injected.end(), std::make_move_iterator(ranked.begin()), std::make_move_iterator(ranked.end()));
   return injected;
 }
 
@@ -90,8 +89,7 @@ bool DirectoryNodeAdvertisesMediaRelay(const mesh::MeshDirectoryNode& node) {
   return node.media_relay && !node.peer_id.empty();
 }
 
-bool PeerHasMediaRelayInDirectory(const std::string& peer_id,
-                                  const std::vector<mesh::MeshDirectoryNode>& nodes) {
+bool PeerHasMediaRelayInDirectory(const std::string& peer_id, const std::vector<mesh::MeshDirectoryNode>& nodes) {
   if (peer_id.empty()) {
     return false;
   }
@@ -115,9 +113,9 @@ std::vector<std::string> MediaRelayPeerIdsFromDirectory(const std::vector<mesh::
   return out;
 }
 
-std::vector<std::string> MergeMediaRelayCapablePeerIds(
-    const std::vector<std::string>& from_call_caps, const std::vector<mesh::MeshDirectoryNode>& directory_nodes,
-    const std::vector<mesh::MeshDirectoryNode>& dht_nodes) {
+std::vector<std::string> MergeMediaRelayCapablePeerIds(const std::vector<std::string>& from_call_caps,
+                                                       const std::vector<mesh::MeshDirectoryNode>& directory_nodes,
+                                                       const std::vector<mesh::MeshDirectoryNode>& dht_nodes) {
   std::vector<std::string> out;
   std::unordered_set<std::string> seen;
   auto append = [&](const std::string& peer_id) {

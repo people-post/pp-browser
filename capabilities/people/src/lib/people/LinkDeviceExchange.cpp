@@ -37,7 +37,7 @@ Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identit
   bundle.relay_user_id = identity.relay_user_id;
   bundle.nickname = identity.nickname;
   if (!identity.recovery_seed_b64.empty()) {
-    bundle.recovery_seed_b64 = identity.recovery_seed_b64.Reveal();  // M023: the new device shows the same phrase
+    bundle.recovery_seed_b64 = identity.recovery_seed_b64.Reveal(); // M023: the new device shows the same phrase
   }
   bundle.created_at_ms = now_ms;
   bundle.expires_at_ms = now_ms + ttl_ms;

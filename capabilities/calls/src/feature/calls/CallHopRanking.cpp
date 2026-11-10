@@ -9,7 +9,8 @@
 
 namespace pbr {
 
-void CallHopRanking::FillDialInfo(std::vector<mesh::MeshHopCandidate>& ranked, const bool published_ma_is_dialable) const {
+void CallHopRanking::FillDialInfo(std::vector<mesh::MeshHopCandidate>& ranked,
+                                  const bool published_ma_is_dialable) const {
   if (!deps_->dial) {
     return;
   }
@@ -23,7 +24,8 @@ void CallHopRanking::FillDialInfo(std::vector<mesh::MeshHopCandidate>& ranked, c
     if (published_ma_is_dialable) {
       hop.dialable = hop.dialable || !hop.multiaddr.empty();
     } else if (!hop.dialable && !hop.multiaddr.empty() &&
-               (hop.affinity == mesh::MeshHopAffinity::OrgSeed || hop.affinity == mesh::MeshHopAffinity::DirectoryNode ||
+               (hop.affinity == mesh::MeshHopAffinity::OrgSeed ||
+                hop.affinity == mesh::MeshHopAffinity::DirectoryNode ||
                 hop.affinity == mesh::MeshHopAffinity::DhtDiscovered)) {
       // Directory / bootstrap seeds with a published MA are SoftMigrate candidates even before
       // Amp address-book learn (cross-net PreferLocal fallback).
@@ -49,7 +51,7 @@ std::vector<mesh::MeshHopCandidate> CallHopRanking::Ranked() const {
                                     deps_->prefer_contacts, include_seeds);
   if (deps_->reach_held_down) {
     for (mesh::MeshHopCandidate& hop : merged) {
-      hop.recently_failed = deps_->reach_held_down(hop.peer_id);  // ranking drops it
+      hop.recently_failed = deps_->reach_held_down(hop.peer_id); // ranking drops it
     }
   }
   if (deps_->hop_load) {
@@ -81,7 +83,7 @@ std::vector<mesh::MeshHopCandidate> CallHopRanking::Ranked() const {
       return mesh::ServiceLoadRefusesNew(deps_->hop_load(hop.peer_id));
     });
   }
-  if (deps_->trusted_relays_only) {  // privacy T4: a relay sees both ends' addresses
+  if (deps_->trusted_relays_only) { // privacy T4: a relay sees both ends' addresses
     ranked = KeepTrustedRelays(std::move(ranked), TrustedRelayPeerIds(contacts, deps_->bootstrap_peers));
   }
   // Only group calls take a media hop: durable relays first, whatever prefer_contacts says (#385).

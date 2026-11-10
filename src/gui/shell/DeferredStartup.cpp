@@ -136,7 +136,7 @@ void LoadCjkFaceFromCollection(int face_index, const char* phase_name) {
   // Empty family: FreeType fills family/style from the selected collection face.
   const bool ok =
       ui::LoadFontFace(ui::Span<const ui::byte>(bytes.data(), bytes.size()), "", ui::Style::FontStyle::Normal,
-                        ui::Style::FontWeight::Auto, true /*fallback_face*/, face_index);
+                       ui::Style::FontWeight::Auto, true /*fallback_face*/, face_index);
   if (!ok) {
     log().warning << "Deferred CJK face load failed: index=" << face_index;
   }

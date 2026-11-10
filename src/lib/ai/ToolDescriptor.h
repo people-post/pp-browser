@@ -39,9 +39,8 @@ struct ToolDescriptor {
  * designated-initializer brace list. MSVC misparses `.member` access inside
  * such lambdas (C3878: unexpected token '.').
  */
-inline ToolDescriptor MakeTool(
-    ToolDefinition definition, ToolMeta meta,
-    std::function<Roe<std::string>(const Object& arguments)> execute) {
+inline ToolDescriptor MakeTool(ToolDefinition definition, ToolMeta meta,
+                               std::function<Roe<std::string>(const Object& arguments)> execute) {
   ToolDescriptor tool;
   tool.definition = std::move(definition);
   tool.meta = std::move(meta);

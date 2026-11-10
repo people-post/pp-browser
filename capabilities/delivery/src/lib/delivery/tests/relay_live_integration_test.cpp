@@ -51,8 +51,8 @@ TEST(RelayLiveIntegrationTest, FetchChatHistoryAgainstLiveRelayWhenConfigured) {
     GTEST_SKIP() << "Set PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX (ML-DSA-65 secret key, hex)";
   }
   if (sign_key->size() != kMlDsa65SecretKeyBytes) {
-    GTEST_SKIP() << "PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX must be ML-DSA-65 secret ("
-                 << kMlDsa65SecretKeyBytes << " bytes)";
+    GTEST_SKIP() << "PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX must be ML-DSA-65 secret (" << kMlDsa65SecretKeyBytes
+                 << " bytes)";
   }
 
   HttpRelayClient relay(base_url);

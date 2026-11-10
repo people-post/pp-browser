@@ -74,22 +74,20 @@ Roe<BroadcastJoinTicket> DecodeBroadcastJoinTicketJson(std::string_view json);
  * Mint a signed ticket. If `viewer_pairwise_session_key` is non-null and non-empty,
  * wraps the media key (MediaKeyWrap, label `broadcast_media_key`). Otherwise fills `key_material_b64`.
  */
-Roe<BroadcastJoinTicket> MintBroadcastJoinTicket(BroadcastJoinTicketDraft draft,
-                                                 const ByteVector& media_key_bytes,
+Roe<BroadcastJoinTicket> MintBroadcastJoinTicket(BroadcastJoinTicketDraft draft, const ByteVector& media_key_bytes,
                                                  const ByteVector& publisher_mldsa_secret_key,
                                                  const ByteVector* viewer_pairwise_session_key = nullptr);
 
-Roe<void> VerifyBroadcastJoinTicket(const BroadcastJoinTicket& ticket,
-                                    const ByteVector& publisher_mldsa_public_key, int64_t now_ms,
-                                    std::string_view expected_viewer_peer_id = {});
+Roe<void> VerifyBroadcastJoinTicket(const BroadcastJoinTicket& ticket, const ByteVector& publisher_mldsa_public_key,
+                                    int64_t now_ms, std::string_view expected_viewer_peer_id = {});
 
 /**
  * Verify + extract plaintext media key bytes (unwrap or decode key_material).
  * Does not touch any key store.
  */
 Roe<BroadcastMediaKey> ExtractBroadcastMediaKey(const BroadcastJoinTicket& ticket,
-                                                const ByteVector& publisher_mldsa_public_key,
-                                                int64_t now_ms, std::string_view expected_viewer_peer_id,
+                                                const ByteVector& publisher_mldsa_public_key, int64_t now_ms,
+                                                std::string_view expected_viewer_peer_id,
                                                 const ByteVector* viewer_pairwise_session_key = nullptr);
 
 } // namespace pbr

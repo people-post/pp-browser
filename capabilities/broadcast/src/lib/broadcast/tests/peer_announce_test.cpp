@@ -246,7 +246,6 @@ TEST(PeerAnnounceKeyResolveTest, RejectsPeerIdBindMismatch) {
   EXPECT_FALSE(ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, Lookup(stored)));
 }
 
-
 TEST(AnnounceDmReplyTest, PrefersAccountThreadWhenContactKnown) {
   auto plan = PlanAnnounceDmReply("12D3KooWPublisher", "c1", "account:alice", "Alice");
   ASSERT_TRUE(plan) << plan.error().message;
@@ -269,9 +268,6 @@ TEST(AnnounceDmReplyTest, RejectsEmptyPeerId) {
   auto plan = PlanAnnounceDmReply("", "c1", "account:alice", "Alice");
   EXPECT_FALSE(plan);
 }
-
-
-
 
 TEST(PeerAnnounceHopPeerIdTest, JsonAndSignRoundTripWithHop) {
   auto keys = MlDsa::GenerateKeyPair();
@@ -363,8 +359,8 @@ TEST(PeerAnnounceFeedKindTest, LiveChatDoesNotClobberProgramLatest) {
 }
 
 TEST(AnnounceOverlayReplyTest, PlansEncodesAndBuildsLiveChatDraft) {
-  auto plan = PlanAnnounceOverlayReply("12D3KooWPublisher", "c1", "account:alice", "Alice", "session-1",
-                                       "hello", "vm-1");
+  auto plan =
+      PlanAnnounceOverlayReply("12D3KooWPublisher", "c1", "account:alice", "Alice", "session-1", "hello", "vm-1");
   ASSERT_TRUE(plan) << plan.error().message;
   EXPECT_EQ(plan->join_handle, "session-1");
   auto decoded = DecodeAnnounceOverlayReplyBody(plan->message_body);
@@ -374,8 +370,8 @@ TEST(AnnounceOverlayReplyTest, PlansEncodesAndBuildsLiveChatDraft) {
   EXPECT_TRUE(AnnounceOverlayViewerAllowed(0, 1000));
   EXPECT_FALSE(AnnounceOverlayViewerAllowed(1000, 1000 + kAnnounceOverlayViewerMinIntervalMs - 1));
   EXPECT_TRUE(AnnounceOverlayPublisherAllowed(0, 0, 1000));
-  EXPECT_FALSE(AnnounceOverlayPublisherAllowed(static_cast<int>(kAnnounceOverlayPublisherMaxPerMinute), 1000,
-                                               1000 + 10));
+  EXPECT_FALSE(
+      AnnounceOverlayPublisherAllowed(static_cast<int>(kAnnounceOverlayPublisherMaxPerMinute), 1000, 1000 + 10));
 
   auto draft = MakeLiveChatAnnounceDraft("topic", "show", "session-1", "viewer-peer", *decoded);
   ASSERT_TRUE(draft) << draft.error().message;
@@ -412,7 +408,6 @@ TEST(AnnounceNotificationInboxTest, UpsertsProgramTipsAndLiveBanner) {
   EXPECT_TRUE(inbox.ListLiveBanners().empty());
   EXPECT_FALSE(inbox.ListActive().empty());
 }
-
 
 TEST(PeerAnnounceL1HopPeerIdsTest, JsonAndSignRoundTripAdditive) {
   auto keys = MlDsa::GenerateKeyPair();

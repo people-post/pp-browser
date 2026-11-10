@@ -17,7 +17,7 @@ constexpr int kJpegQualities[] = {85, 70, 55, 40, 30};
 } // namespace
 
 Roe<EncodedProfileIcon> PrepareProfileIconFromFile(const std::string& path, const size_t max_bytes,
-                                                    const int max_dimension) {
+                                                   const int max_dimension) {
   if (path.empty()) {
     return Error("Image path is required");
   }

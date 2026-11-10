@@ -13,8 +13,8 @@ namespace pbr {
  * Softens conversations→ai: messaging must not include feature/ai/.
  */
 struct AgentInboundPorts {
-  std::function<void(const std::string& thread_id, const std::string& prompt,
-                     std::optional<std::string> user_payload, AtAiMode mode)>
+  std::function<void(const std::string& thread_id, const std::string& prompt, std::optional<std::string> user_payload,
+                     AtAiMode mode)>
       submit_scoped_assist;
   std::function<void(const std::string& thread_id, const std::string& user_text,
                      std::optional<std::string> user_payload)>
@@ -33,9 +33,7 @@ struct AgentInboundPorts {
    * sent to a peer), so the UI can queue it (B112). Optional. */
   std::function<bool(const std::string& thread_id)> is_busy;
 
-  bool IsBound() const {
-    return static_cast<bool>(submit_scoped_assist) && static_cast<bool>(submit_to_thread);
-  }
+  bool IsBound() const { return static_cast<bool>(submit_scoped_assist) && static_cast<bool>(submit_to_thread); }
 };
 
 } // namespace pbr

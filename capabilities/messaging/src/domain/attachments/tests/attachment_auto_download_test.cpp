@@ -142,7 +142,7 @@ protected:
   std::mutex mutex_;
   std::map<std::string, std::string> bodies_;
   std::map<std::string, std::shared_future<void>> holds_;
-  ScriptedHttpServer server_;  // after what its handler reads: stopped before those go
+  ScriptedHttpServer server_; // after what its handler reads: stopped before those go
   std::filesystem::path dir_;
   std::shared_ptr<CasStore> content_;
   LargeTransferLane lane_;
@@ -169,7 +169,7 @@ TEST_F(AutoDownloadByNetworkTest, ThirtyMegabytesComeByThemselvesOnWifiAndAreSto
   ChatAttachmentFields fields;
   const ThreadMessage message = Message("thirty", 30'000'000, &fields);
 
-  workflow_.EnqueueFromMessage("t1", message);  // what a new message does: no tap
+  workflow_.EnqueueFromMessage("t1", message); // what a new message does: no tap
   ASSERT_TRUE(Becomes(fields, State::Ready)) << "state " << static_cast<int>(StateOf(fields));
   EXPECT_TRUE(AttachmentBlobExists(*content_, fields.content_hash)) << "stored (encrypted)";
   EXPECT_EQ(Gets("thirty"), 1u);
@@ -194,10 +194,10 @@ TEST_F(AutoDownloadByNetworkTest, ANetworkChangeBeforeTheDrainStartsItHoldsTheFi
   ChatAttachmentFields fields;
   const ThreadMessage message = Message("large", kLarge, &fields);
 
-  AppRuntime::PauseWorkers();  // the drain is posted but does not run yet
+  AppRuntime::PauseWorkers(); // the drain is posted but does not run yet
   workflow_.EnqueueFromMessage("t1", message);
   EXPECT_EQ(StateOf(fields), State::Downloading) << "queued";
-  workflow_.SetAutoAllowedOnNetwork(false);  // e.g. Wi-Fi lost, cellular not ticked
+  workflow_.SetAutoAllowedOnNetwork(false); // e.g. Wi-Fi lost, cellular not ticked
   EXPECT_EQ(StateOf(fields), State::Downloading) << "still queued: judged when it starts";
   AppRuntime::ResumeWorkers();
 
@@ -259,24 +259,24 @@ TEST_F(AutoDownloadByNetworkTest, ARunningDownloadIsNotStoppedByANetworkChange) 
 
 TEST_F(AutoDownloadByNetworkTest, AFileHeldBackForTheNetworkComesByItselfWhenItIsAllowed) {
   workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::AlwaysAuto);
-  workflow_.SetAutoAllowedOnNetwork(false);  // on cellular, cellular not ticked
+  workflow_.SetAutoAllowedOnNetwork(false); // on cellular, cellular not ticked
   ChatAttachmentFields fields;
   const ThreadMessage message = Message("large", kLarge, &fields);
 
   workflow_.EnqueueFromMessage("t1", message);
   EXPECT_EQ(StateOf(fields), State::Pending);
-  workflow_.SetAutoAllowedOnNetwork(false);  // another disallowed report changes nothing
+  workflow_.SetAutoAllowedOnNetwork(false); // another disallowed report changes nothing
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   EXPECT_EQ(Gets("large"), 0u);
 
-  workflow_.SetAutoAllowedOnNetwork(true);  // back on Wi-Fi
+  workflow_.SetAutoAllowedOnNetwork(true); // back on Wi-Fi
   ASSERT_TRUE(Becomes(fields, State::Ready));
   EXPECT_EQ(Gets("large"), 1u);
 }
 
 TEST_F(AutoDownloadByNetworkTest, OnlyFilesHeldBackForTheNetworkComeBack) {
   AttachmentLimits limits = workflow_.Limits();
-  limits.auto_download_all_max_bytes_per_minute = 1'000'000;  // a large file is over the minute at once
+  limits.auto_download_all_max_bytes_per_minute = 1'000'000; // a large file is over the minute at once
   workflow_.SetLimits(limits);
   workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::AlwaysAuto);
 
@@ -313,7 +313,7 @@ TEST_F(AutoDownloadByNetworkTest, BeforeAnyNetworkIsKnownALargeFileWaitsQueuedTh
   EXPECT_EQ(StateOf(large), State::Downloading) << "queued, not a Download row";
   EXPECT_EQ(Gets("large"), 0u);
 
-  workflow_.SetAutoAllowedOnNetwork(true);  // the Wi-Fi baseline arrives
+  workflow_.SetAutoAllowedOnNetwork(true); // the Wi-Fi baseline arrives
   ASSERT_TRUE(Becomes(large, State::Ready));
 }
 
@@ -323,12 +323,12 @@ TEST_F(AutoDownloadByNetworkTest, BeforeAnyNetworkIsKnownALargeFileBecomesADownl
   workflow_.EnqueueFromMessage("t1", Message("large", kLarge, &large));
   EXPECT_EQ(StateOf(large), State::Downloading);
 
-  workflow_.SetAutoAllowedOnNetwork(false);  // the baseline is cellular, not ticked
+  workflow_.SetAutoAllowedOnNetwork(false); // the baseline is cellular, not ticked
   ASSERT_TRUE(Becomes(large, State::Pending));
   EXPECT_EQ(Gets("large"), 0u);
   EXPECT_TRUE(workflow_.TryAutoDownloadBudget("alice", 20'000'000)) << "it was never charged";
 
-  workflow_.SetAutoAllowedOnNetwork(true);  // then Wi-Fi
+  workflow_.SetAutoAllowedOnNetwork(true); // then Wi-Fi
   ASSERT_TRUE(Becomes(large, State::Ready));
 }
 
@@ -340,7 +340,7 @@ TEST_F(AutoDownloadByNetworkTest, ATapStartsALargeFileThatWaitsForTheNetworkToBe
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   EXPECT_EQ(Gets("large"), 0u);
 
-  workflow_.EnqueueFromMessage("t1", message, /*force=*/true);  // the person taps it
+  workflow_.EnqueueFromMessage("t1", message, /*force=*/true); // the person taps it
   ASSERT_TRUE(Becomes(large, State::Ready));
   EXPECT_EQ(Gets("large"), 1u);
 }
@@ -367,7 +367,7 @@ TEST_F(AutoDownloadByNetworkTest, ATapOnALargeFileWaitingInTheLaneDownloadsItOnA
   EXPECT_TRUE(Becomes(small, State::Ready)) << "so the large one was handed to the lane";
   EXPECT_EQ(StateOf(large), State::Downloading);
 
-  workflow_.SetAutoAllowedOnNetwork(false);                       // Wi-Fi lost, cellular not ticked
+  workflow_.SetAutoAllowedOnNetwork(false);                          // Wi-Fi lost, cellular not ticked
   workflow_.EnqueueFromMessage("t1", large_message, /*force=*/true); // the person taps Download meanwhile
   release.set_value();
   ASSERT_TRUE(Becomes(large, State::Ready)) << "state " << static_cast<int>(StateOf(large));
@@ -398,13 +398,13 @@ TEST_F(AutoDownloadByNetworkTest, ADownloadedLargePictureGetsItsThumbnailFromThe
   std::atomic<size_t> files_while_running{99};
   const auto view_root = std::filesystem::path(AttachmentViewRoot(dir_.string(), "t1"));
   const std::vector<uint8_t> plain = Plaintext("pic", kLarge);
-  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::vector<uint8_t>& bytes,
-                                                     int) -> Roe<std::vector<uint8_t>> {
-    ++calls;
-    same_bytes = bytes == plain;
-    files_while_running = FilesUnder(view_root).size();
-    return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
-  }});
+  SetAttachmentPlatform(
+      {.image_thumbnail_jpeg = [&](const std::vector<uint8_t>& bytes, int) -> Roe<std::vector<uint8_t>> {
+        ++calls;
+        same_bytes = bytes == plain;
+        files_while_running = FilesUnder(view_root).size();
+        return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
+      }});
   workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::AlwaysAuto);
   workflow_.SetAutoAllowedOnNetwork(true);
   ChatAttachmentFields fields;
@@ -438,14 +438,14 @@ TEST_F(AutoDownloadByNetworkTest, AWipedThumbnailIsMadeAgainOnceOnAWorkerAndNoti
   std::promise<void> release;
   auto released = release.get_future().share();
   const std::vector<uint8_t> plain = Plaintext("pic", kLarge);
-  SetAttachmentPlatform({.image_thumbnail_jpeg = [&, released](const std::vector<uint8_t>& bytes,
-                                                               int) -> Roe<std::vector<uint8_t>> {
-    ++calls;
-    same_bytes = bytes == plain;
-    on_caller_thread = std::this_thread::get_id() == caller;
-    released.wait();
-    return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
-  }});
+  SetAttachmentPlatform(
+      {.image_thumbnail_jpeg = [&, released](const std::vector<uint8_t>& bytes, int) -> Roe<std::vector<uint8_t>> {
+        ++calls;
+        same_bytes = bytes == plain;
+        on_caller_thread = std::this_thread::get_id() == caller;
+        released.wait();
+        return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
+      }});
 
   workflow_.RequestImageThumbnail("t1", fields);
   ASSERT_TRUE(WaitFor([&] { return calls.load() == 1; }));

@@ -12,9 +12,7 @@ ShellPinGatePorts MakeShellPinGatePorts(ShellHost& shell) {
     shell.State().unlock_in_progress = in_progress;
     shell.ReconcileStartupCover();
   };
-  ports.set_activity = [&shell](const bool visible, const ui::String& message) {
-    shell.SetActivity(visible, message);
-  };
+  ports.set_activity = [&shell](const bool visible, const ui::String& message) { shell.SetActivity(visible, message); };
   ports.dirty_pin_gate = [&shell]() { shell.DirtyPinGate(); };
   ports.remount_pin_gate = [&shell]() { shell.RemountPinGateChrome(); };
   ports.settle_startup_cover = [&shell]() { shell.SettleStartupCoverArm(); };

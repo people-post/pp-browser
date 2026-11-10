@@ -47,11 +47,15 @@ TEST(ToolPermissionPromptTest, BuildsChoiceWithApprovalId) {
 
 TEST(ToolPermissionPolicyTest, AllowAlwaysIsOnlyForOrdinaryWriteTools) {
   EXPECT_TRUE(pbr::ToolPermissionPolicy::AllowAlwaysEligible({.domain = "people", .risk = "write", .mutating = true}));
-  EXPECT_TRUE(pbr::ToolPermissionPolicy::AllowAlwaysEligible({.domain = "settings", .risk = "write", .mutating = true}));
+  EXPECT_TRUE(
+      pbr::ToolPermissionPolicy::AllowAlwaysEligible({.domain = "settings", .risk = "write", .mutating = true}));
   // Security and identity settings, and anything destructive, are confirmed every time.
-  EXPECT_FALSE(pbr::ToolPermissionPolicy::AllowAlwaysEligible({.domain = "security", .risk = "write", .mutating = true}));
-  EXPECT_FALSE(pbr::ToolPermissionPolicy::AllowAlwaysEligible({.domain = "identity", .risk = "write", .mutating = true}));
-  EXPECT_FALSE(pbr::ToolPermissionPolicy::AllowAlwaysEligible({.domain = "people", .risk = "destructive", .mutating = true}));
+  EXPECT_FALSE(
+      pbr::ToolPermissionPolicy::AllowAlwaysEligible({.domain = "security", .risk = "write", .mutating = true}));
+  EXPECT_FALSE(
+      pbr::ToolPermissionPolicy::AllowAlwaysEligible({.domain = "identity", .risk = "write", .mutating = true}));
+  EXPECT_FALSE(
+      pbr::ToolPermissionPolicy::AllowAlwaysEligible({.domain = "people", .risk = "destructive", .mutating = true}));
   EXPECT_FALSE(pbr::ToolPermissionPolicy::AllowAlwaysEligible({.domain = "people", .risk = "read", .mutating = false}));
   // An unknown tool (no descriptor) has an empty meta: never remembered.
   EXPECT_FALSE(pbr::ToolPermissionPolicy::AllowAlwaysEligible({}));

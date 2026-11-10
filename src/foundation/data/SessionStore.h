@@ -44,13 +44,11 @@ public:
   void AddProfilePrefsListener(std::function<void(const ProfilePreferences&)> listener);
   void AddAppearanceListener(std::function<void(const std::string& appearance)> listener);
   void AddLanguageListener(std::function<void(const std::string& language)> listener);
-  void AddChromeMaterialListener(
-      std::function<void(bool reduce_transparency, bool compact_chrome_frost)> listener);
+  void AddChromeMaterialListener(std::function<void(bool reduce_transparency, bool compact_chrome_frost)> listener);
 
   SessionStore() = default;
 
 private:
-
   void NotifyConfigListeners(const AppConfig& config);
   void NotifyProfilePrefsListeners(const ProfilePreferences& prefs);
   void NotifyAppearanceListeners(const std::string& appearance);

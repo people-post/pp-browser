@@ -142,8 +142,8 @@ size_t AgentSessions::MaxConcurrentTurns() const {
 }
 
 size_t AgentSessions::RunningThreadTurns() const {
-  return static_cast<size_t>(std::count_if(threads_.begin(), threads_.end(),
-                                            [](const auto& item) { return item.second.session->IsBusy(); }));
+  return static_cast<size_t>(
+      std::count_if(threads_.begin(), threads_.end(), [](const auto& item) { return item.second.session->IsBusy(); }));
 }
 
 TurnStart AgentSessions::CanStart(const std::string& thread_id) const {
@@ -167,7 +167,8 @@ AgentSession& AgentSessions::Open(const std::string& thread_id) {
     // or holds a card, open the new one anyway: the cap never makes a question wait.
     auto oldest = threads_.end();
     for (auto it = threads_.begin(); it != threads_.end(); ++it) {
-      if (it->second.session->CanClose() && (oldest == threads_.end() || it->second.last_active < oldest->second.last_active)) {
+      if (it->second.session->CanClose() &&
+          (oldest == threads_.end() || it->second.last_active < oldest->second.last_active)) {
         oldest = it;
       }
     }
@@ -191,13 +192,13 @@ SubmitOutcome AgentSessions::SubmitIn(const std::string& thread_id,
     return submit(*home_);
   }
   switch (CanStart(thread_id)) {
-  case TurnStart::BusyHere:
-    return SubmitOutcome::BusyHere;
-  case TurnStart::Full:
-    log().info << "AI question not started: " << RunningThreadTurns() << " thread turn(s) run, the most at once";
-    return SubmitOutcome::Full;
-  case TurnStart::Yes:
-    break;
+    case TurnStart::BusyHere:
+      return SubmitOutcome::BusyHere;
+    case TurnStart::Full:
+      log().info << "AI question not started: " << RunningThreadTurns() << " thread turn(s) run, the most at once";
+      return SubmitOutcome::Full;
+    case TurnStart::Yes:
+      break;
   }
   AgentSession& session = Open(thread_id);
   threads_[thread_id].last_active = Now();

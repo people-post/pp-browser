@@ -47,11 +47,10 @@ class VoiceUnit final : public IVoiceProcessing {
 public:
   ~VoiceUnit() override {
     const auto t0 = std::chrono::steady_clock::now();
-    io.Close();  // AudioOutputUnitStop waits for its callbacks
+    io.Close(); // AudioOutputUnitStop waits for its callbacks
     SDL_Log("MediaDeviceArbiter: vpio close_ms=%lld",
-            static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                       std::chrono::steady_clock::now() - t0)
-                                       .count()));
+            static_cast<long long>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count()));
   }
   size_t RenderChunkBytes() const override { return io.RenderChunkBytes(); }
   uint64_t PlayoutUnderruns() const override { return io.PlayoutUnderruns(); }
@@ -66,7 +65,8 @@ class VoiceMicEndpoint final : public IAudioEndpoint {
 public:
   explicit VoiceMicEndpoint(std::shared_ptr<VoiceUnit> unit) : unit_(std::move(unit)) {}
   int Read(void* dst, int bytes) override {
-    const size_t samples = unit_->io.ReadCapture(static_cast<int16_t*>(dst), static_cast<size_t>(bytes) / sizeof(int16_t));
+    const size_t samples =
+        unit_->io.ReadCapture(static_cast<int16_t*>(dst), static_cast<size_t>(bytes) / sizeof(int16_t));
     return static_cast<int>(samples * sizeof(int16_t));
   }
   bool Write(const void*, int) override { return false; }
@@ -151,8 +151,7 @@ bool ConvertCameraSurfaceToRgba(SDL_Surface* surface, VideoFrameRgba& out) {
       const size_t y_bytes = static_cast<size_t>(abs_pitch) * static_cast<size_t>(surface->h);
       const uint8_t* uv_src = y_top + y_bytes;
       uint8_t* uv_dst = dst_base + static_cast<size_t>(owned->pitch) * static_cast<size_t>(surface->h);
-      const int uv_rows = (surface->format == SDL_PIXELFORMAT_NV12 ||
-                           surface->format == SDL_PIXELFORMAT_NV21)
+      const int uv_rows = (surface->format == SDL_PIXELFORMAT_NV12 || surface->format == SDL_PIXELFORMAT_NV21)
                               ? (surface->h + 1) / 2
                               : surface->h / 2;
       for (int y = 0; y < uv_rows; ++y) {
@@ -166,8 +165,7 @@ bool ConvertCameraSurfaceToRgba(SDL_Surface* surface, VideoFrameRgba& out) {
       const int row_bytes = std::min(abs_pitch, owned->pitch);
       for (int y = 0; y < surface->h; ++y) {
         std::memcpy(dst_base + static_cast<size_t>(y) * static_cast<size_t>(owned->pitch),
-                    top + static_cast<size_t>(y) * static_cast<size_t>(abs_pitch),
-                    static_cast<size_t>(row_bytes));
+                    top + static_cast<size_t>(y) * static_cast<size_t>(abs_pitch), static_cast<size_t>(row_bytes));
       }
     }
     SDL_SetSurfaceColorspace(owned, SDL_GetSurfaceColorspace(surface));
@@ -178,8 +176,8 @@ bool ConvertCameraSurfaceToRgba(SDL_Surface* surface, VideoFrameRgba& out) {
   SDL_Surface* converted =
       SDL_ConvertSurfaceAndColorspace(src, SDL_PIXELFORMAT_RGBA32, nullptr, SDL_COLORSPACE_SRGB, 0);
   if (converted && converted->pixels) {
-    ok = CopyRgbToRgba(static_cast<const uint8_t*>(converted->pixels), converted->w, converted->h,
-                       converted->pitch, true, out);
+    ok = CopyRgbToRgba(static_cast<const uint8_t*>(converted->pixels), converted->w, converted->h, converted->pitch,
+                       true, out);
     SDL_DestroySurface(converted);
   }
 
@@ -194,8 +192,7 @@ bool ConvertCameraSurfaceToRgba(SDL_Surface* surface, VideoFrameRgba& out) {
                src->format == SDL_PIXELFORMAT_XBGR8888 || src->format == SDL_PIXELFORMAT_ABGR8888) {
       // Packed RGB with known channel layouts — try SDL again already failed; treat as byte RGB.
       const bool has_alpha = SDL_BYTESPERPIXEL(src->format) >= 4;
-      ok = CopyRgbToRgba(static_cast<const uint8_t*>(src->pixels), src->w, src->h, pitch, has_alpha,
-                         out);
+      ok = CopyRgbToRgba(static_cast<const uint8_t*>(src->pixels), src->w, src->h, pitch, has_alpha, out);
     }
   }
 
@@ -234,7 +231,9 @@ public:
 
   CameraZoomState ZoomState() const override {
     const auto props = SDL_GetCameraProperties(camera_);
-    if (!SDL_LockProperties(props)) { return {}; }
+    if (!SDL_LockProperties(props)) {
+      return {};
+    }
     const CameraZoomState state{SDL_GetBooleanProperty(props, "SDL.camera.coremedia.zoom_supported", false),
                                 SDL_GetFloatProperty(props, "SDL.camera.coremedia.zoom_current", 1.f),
                                 SDL_GetFloatProperty(props, "SDL.camera.coremedia.max_zoom", 1.f),
@@ -247,7 +246,7 @@ public:
     Uint64 timestamp_ns = 0;
     SDL_Surface* surface = SDL_AcquireCameraFrame(camera_, &timestamp_ns);
     if (!surface) {
-      return std::nullopt;  // none ready, or permission still pending
+      return std::nullopt; // none ready, or permission still pending
     }
     VideoFrameRgba rgba;
     const bool ok = ConvertCameraSurfaceToRgba(surface, rgba);
@@ -272,13 +271,13 @@ private:
 class SdlMediaDeviceBackend final : public IMediaDeviceBackend {
 public:
   std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind kind, const AudioDeviceFormat& format,
-                                       const std::function<bool()>& still_wanted, std::string* error) override {
+                                            const std::function<bool()>& still_wanted, std::string* error) override {
     std::string err;
     if (!EnsureSdlAudioSubsystem()) {
       err = std::string("SDL_InitSubSystem(AUDIO) failed: ") + SDL_GetError();
-    } else if (auto* stream = kind == MediaDeviceKind::Mic ? OpenMic(format, still_wanted, &err)
-                                                           : OpenResumed(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
-                                                                         ToSdlSpec(format), &err)) {
+    } else if (auto* stream = kind == MediaDeviceKind::Mic
+                                  ? OpenMic(format, still_wanted, &err)
+                                  : OpenResumed(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, ToSdlSpec(format), &err)) {
       return std::make_unique<SdlAudioEndpoint>(stream);
     }
     SDL_Log("MediaDeviceArbiter: %s %s", MediaDeviceKindName(kind), err.c_str());
@@ -335,8 +334,10 @@ public:
       // MJPG/NV12 on Windows); conversion happens per frame. Landscape sensor buffers; the holder
       // rotates / crops into the encode size.
       want.format = SDL_PIXELFORMAT_UNKNOWN;
-      want.width = format.capture_width > 0 ? format.capture_width : std::max(geometry.encode_width, geometry.encode_height);
-      want.height = format.capture_height > 0 ? format.capture_height : std::min(geometry.encode_width, geometry.encode_height);
+      want.width =
+          format.capture_width > 0 ? format.capture_width : std::max(geometry.encode_width, geometry.encode_height);
+      want.height =
+          format.capture_height > 0 ? format.capture_height : std::min(geometry.encode_width, geometry.encode_height);
       want.framerate_numerator = format.fps;
       want.framerate_denominator = 1;
       const auto open_t0 = std::chrono::steady_clock::now();
@@ -365,14 +366,13 @@ public:
                                                      .count()))
             .Add("cam_w", have_spec ? got.width : -1)
             .Add("cam_h", have_spec ? got.height : -1)
-            .Add("cam_fps", have_spec && got.framerate_denominator > 0
-                                ? got.framerate_numerator / got.framerate_denominator
-                                : -1)
+            .Add("cam_fps",
+                 have_spec && got.framerate_denominator > 0 ? got.framerate_numerator / got.framerate_denominator : -1)
             .Pick("cam_format", have_spec ? SDL_GetPixelFormatName(got.format) : "", kCameraFormats)
             .Add("native_min_frame_ns", static_cast<int64_t>(SDL_GetNumberProperty(
-                SDL_GetCameraProperties(camera), "SDL.camera.coremedia.min_frame_ns", 0)))
+                                            SDL_GetCameraProperties(camera), "SDL.camera.coremedia.min_frame_ns", 0)))
             .Add("native_max_frame_ns", static_cast<int64_t>(SDL_GetNumberProperty(
-                SDL_GetCameraProperties(camera), "SDL.camera.coremedia.max_frame_ns", 0)))
+                                            SDL_GetCameraProperties(camera), "SDL.camera.coremedia.max_frame_ns", 0)))
             .Add("encode_w", geometry.encode_width)
             .Add("encode_h", geometry.encode_height)
             .Emit();
@@ -407,7 +407,8 @@ public:
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
     if (!ok) {
       if (reason != "unsupported") {
-        SDL_Log("MediaDeviceArbiter: vpio open failed (%s) open_ms=%lld", reason.c_str(), static_cast<long long>(open_ms));
+        SDL_Log("MediaDeviceArbiter: vpio open failed (%s) open_ms=%lld", reason.c_str(),
+                static_cast<long long>(open_ms));
         // The reason (an OS status message) stays in the SDL log above: a shareable line takes no free text.
         MetricsLine("device.open")
             .Add("kind", "vpio")
@@ -421,7 +422,11 @@ public:
     }
     SDL_Log("MediaDeviceArbiter: vpio open (voice processing: echo cancellation on) open_ms=%lld",
             static_cast<long long>(open_ms));
-    MetricsLine("device.open").Add("kind", "vpio").Add("result", "ok").Add("open_ms", static_cast<int64_t>(open_ms)).Emit();
+    MetricsLine("device.open")
+        .Add("kind", "vpio")
+        .Add("result", "ok")
+        .Add("open_ms", static_cast<int64_t>(open_ms))
+        .Emit();
     VoiceDuplexEndpoints pair;
     pair.mic = std::make_unique<VoiceMicEndpoint>(unit);
     pair.speaker = std::make_unique<VoiceSpeakerEndpoint>(unit);

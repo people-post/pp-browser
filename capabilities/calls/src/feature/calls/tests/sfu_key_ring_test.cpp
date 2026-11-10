@@ -8,7 +8,9 @@
 namespace pbr {
 namespace {
 
-ByteVector KeyOf(uint8_t fill) { return ByteVector(32, fill); }
+ByteVector KeyOf(uint8_t fill) {
+  return ByteVector(32, fill);
+}
 
 TEST(SfuKeyRingTest, SealsWithTheNewestAndOpensThePreviousForAGrace) {
   SfuKeyRing ring;
@@ -33,8 +35,8 @@ TEST(SfuKeyRingTest, SealsWithTheNewestAndOpensThePreviousForAGrace) {
 TEST(SfuKeyRingTest, OnlyMovesForward) {
   SfuKeyRing ring;
   ring.Install(3, KeyOf(3), 0);
-  ring.Install(2, KeyOf(2), 10);  // a late CallMediaKey for an older epoch
-  ring.Install(3, KeyOf(9), 20);  // the same epoch again
+  ring.Install(2, KeyOf(2), 10); // a late CallMediaKey for an older epoch
+  ring.Install(3, KeyOf(9), 20); // the same epoch again
   EXPECT_EQ(ring.Current().epoch, 3u);
   EXPECT_EQ(ring.Current().key, KeyOf(3));
   EXPECT_EQ(ring.ForOpen(20).size(), 1u);

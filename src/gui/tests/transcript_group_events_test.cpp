@@ -51,9 +51,8 @@ protected:
 INSTANTIATE_TEST_SUITE_P(Locales, GroupEventLineTest, ::testing::Values("en", "zh-Hans"));
 
 TEST_P(GroupEventLineTest, AMemberJoinedNamesThem) {
-  const std::string rml =
-      Line(GroupMembershipControlType::MemberJoined,
-           GroupMembershipCodec::EncodeMemberJoined(kGroup, kAnn, MemberRole::Member, 2), kAnn);
+  const std::string rml = Line(GroupMembershipControlType::MemberJoined,
+                               GroupMembershipCodec::EncodeMemberJoined(kGroup, kAnn, MemberRole::Member, 2), kAnn);
   EXPECT_NE(rml.find(zh_ ? "Ann \xE5\x8A\xA0\xE5\x85\xA5\xE4\xBA\x86\xE7\xBE\xA4\xE8\x81\x8A" : "Ann joined the group"),
             std::string::npos)
       << rml;
@@ -76,8 +75,8 @@ TEST_P(GroupEventLineTest, YouJoinedAndYouCreatedReadAsYou) {
 }
 
 TEST_P(GroupEventLineTest, ARemovalAndALeaveNameThePerson) {
-  const std::string removed = Line(GroupMembershipControlType::MemberRemoved,
-                                   GroupMembershipCodec::EncodeMemberRemoved(kGroup, kAnn, 3), kMe);
+  const std::string removed =
+      Line(GroupMembershipControlType::MemberRemoved, GroupMembershipCodec::EncodeMemberRemoved(kGroup, kAnn, 3), kMe);
   EXPECT_NE(removed.find(zh_ ? "Ann \xE8\xA2\xAB\xE7\xA7\xBB\xE5\x87\xBA\xE4\xBA\x86\xE7\xBE\xA4\xE8\x81\x8A"
                              : "Ann was removed from the group"),
             std::string::npos)
@@ -87,11 +86,12 @@ TEST_P(GroupEventLineTest, ARemovalAndALeaveNameThePerson) {
   EXPECT_NE(left.find(zh_ ? "Ann \xE9\x80\x80\xE5\x87\xBA\xE4\xBA\x86\xE7\xBE\xA4\xE8\x81\x8A" : "Ann left the group"),
             std::string::npos)
       << left;
-  const std::string you_removed = Line(GroupMembershipControlType::MemberRemoved,
-                                       GroupMembershipCodec::EncodeMemberRemoved(kGroup, kMe, 3), kAnn);
-  EXPECT_NE(you_removed.find(zh_ ? "\xE4\xBD\xA0\xE8\xA2\xAB\xE7\xA7\xBB\xE5\x87\xBA\xE4\xBA\x86\xE7\xBE\xA4\xE8\x81\x8A"
-                                 : "You were removed from the group"),
-            std::string::npos)
+  const std::string you_removed =
+      Line(GroupMembershipControlType::MemberRemoved, GroupMembershipCodec::EncodeMemberRemoved(kGroup, kMe, 3), kAnn);
+  EXPECT_NE(
+      you_removed.find(zh_ ? "\xE4\xBD\xA0\xE8\xA2\xAB\xE7\xA7\xBB\xE5\x87\xBA\xE4\xBA\x86\xE7\xBE\xA4\xE8\x81\x8A"
+                           : "You were removed from the group"),
+      std::string::npos)
       << you_removed;
 }
 
@@ -120,9 +120,9 @@ TEST_P(GroupEventLineTest, AHostileNameAndTitleAreEscapedAndNeverFilledIntoEachO
       << "the name shows as typed, its {title} left alone: " << rml;
   EXPECT_NE(rml.find("&#123;name&#125;&lt;i&gt;t&lt;/i&gt;"), std::string::npos)
       << "the title shows as typed, its {name} left alone: " << rml;
-  const std::string joined = Line(GroupMembershipControlType::MemberJoined,
-                                  GroupMembershipCodec::EncodeMemberJoined(kGroup, kHostile, MemberRole::Member, 2),
-                                  kHostile);
+  const std::string joined =
+      Line(GroupMembershipControlType::MemberJoined,
+           GroupMembershipCodec::EncodeMemberJoined(kGroup, kHostile, MemberRole::Member, 2), kHostile);
   EXPECT_EQ(joined.find("<b>"), std::string::npos) << joined;
   EXPECT_NE(joined.find("&lt;b&gt;"), std::string::npos) << joined;
 }
@@ -207,9 +207,9 @@ TEST(GroupEventLineFallbackTest, ANameIsLookedUpOncePerBuild) {
   };
   std::vector<TranscriptRow> rows;
   for (int i = 0; i < 20; ++i) {
-    auto message = GroupMembershipCodec::BuildSystemMessage(
-        "t", GroupMembershipControlType::MemberLeft, "Member left",
-        *GroupMembershipCodec::EncodeMemberLeft(kGroup, kAnn, 3), kAnn);
+    auto message =
+        GroupMembershipCodec::BuildSystemMessage("t", GroupMembershipControlType::MemberLeft, "Member left",
+                                                 *GroupMembershipCodec::EncodeMemberLeft(kGroup, kAnn, 3), kAnn);
     ASSERT_TRUE(message);
     message->id = "m" + std::to_string(i);
     TranscriptRow row;
@@ -222,7 +222,7 @@ TEST(GroupEventLineFallbackTest, ANameIsLookedUpOncePerBuild) {
 
 TEST(GroupEventLineFallbackTest, WithoutNamesOrADecodableDetailTheStoredTextShows) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
-  TranscriptFacts bare;  // no member_name: an old caller
+  TranscriptFacts bare; // no member_name: an old caller
   EXPECT_NE(Line(GroupMembershipControlType::MemberJoined,
                  GroupMembershipCodec::EncodeMemberJoined(kGroup, kAnn, MemberRole::Member, 2), kAnn, bare)
                 .find("Stored English text"),

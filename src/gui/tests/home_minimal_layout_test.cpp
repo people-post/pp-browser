@@ -63,11 +63,13 @@ std::string CentreBlock(bool mascot = false) {
       "<span class=\"prompt-send-disc\"></span></button>"
       "<div class=\"prompt-composer-pill\"><textarea class=\"prompt-composer-input\"></textarea></div></div></div>";
   if (mascot) {
-    const std::string logo = "<div class=\"home-logo\" id=\"home-logo\"><img src=\"../branding/app-icon.png\" alt=\"\"/></div>";
+    const std::string logo =
+        "<div class=\"home-logo\" id=\"home-logo\"><img src=\"../branding/app-icon.png\" alt=\"\"/></div>";
     const size_t at_logo = block.find("<div class=\"home-logo\"");
     const size_t end_logo = block.find("</div>", at_logo) + 6;
     block.replace(at_logo, end_logo - at_logo,
-                  "<div class=\"home-logo home-logo--mascot\" id=\"home-logo\"><div class=\"home-mascot ai-dot\" id=\"stub-mascot\"></div></div>");
+                  "<div class=\"home-logo home-logo--mascot\" id=\"home-logo\"><div class=\"home-mascot ai-dot\" "
+                  "id=\"stub-mascot\"></div></div>");
     (void)logo;
   }
   const std::string mount = "id=\"home-composer-mount\">";
@@ -84,8 +86,12 @@ struct Box {
 class HomeMinimalLayoutTest : public testing::Test {
 protected:
   void TearDown() override {
-    if (context) { ui::RemoveContext("home-minimal-layout-test"); }
-    if (initialized) { ui::Shutdown(); }
+    if (context) {
+      ui::RemoveContext("home-minimal-layout-test");
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
 
@@ -100,7 +106,8 @@ protected:
     const int visible = screen_height - keyboard;
     const std::string rml =
         "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
-        Asset("themes/colors-light.rcss") + "</style></head><body style=\"padding: 0;\">"
+        Asset("themes/colors-light.rcss") +
+        "</style></head><body style=\"padding: 0;\">"
         "<div class=\"shell-layer-compact\" style=\"position: absolute; top: 0dp; left: 0dp; width: " +
         std::to_string(width) + "dp; height: " + std::to_string(visible) +
         "dp; display: flex; flex-direction: column;\">"
@@ -108,7 +115,8 @@ protected:
         "<div style=\"height: 90dp; flex: none;\"></div>"
         "<div class=\"home-landing home-landing--minimal\"" +
         // Docked: the landing keeps its undocked height (negative bottom margin = the keyboard's lift), as ShellHost does.
-        std::string(docked ? " style=\"margin-bottom: -" + std::to_string(keyboard) + "dp;\"" : "") + ">" + CentreBlock(mascot) + "</div></div></body></rml>";
+        std::string(docked ? " style=\"margin-bottom: -" + std::to_string(keyboard) + "dp;\"" : "") + ">" +
+        CentreBlock(mascot) + "</div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
     document->Show();
@@ -176,7 +184,8 @@ TEST_F(HomeMinimalLayoutTest, CardIsTheNarrow108dpB3WithACircleEmojiAndNoMic) {
   EXPECT_FLOAT_EQ(size.x, 44.f);
   EXPECT_FLOAT_EQ(size.y, 44.f);
   const float card_right = card->GetAbsoluteOffset(ui::BoxArea::Border).x + 310.f;
-  EXPECT_FLOAT_EQ(emoji->GetAbsoluteOffset(ui::BoxArea::Border).x - card->GetAbsoluteOffset(ui::BoxArea::Border).x, 43.f)
+  EXPECT_FLOAT_EQ(emoji->GetAbsoluteOffset(ui::BoxArea::Border).x - card->GetAbsoluteOffset(ui::BoxArea::Border).x,
+                  43.f)
       << "left, right after the plus (42dp + border): the tinted circle 12dp from the plus glyph";
   // Send is always at the right end: a 36dp disc (idle while empty), nothing swaps places.
   ui::Element* send = document->GetElementById("stub-send");
@@ -185,7 +194,8 @@ TEST_F(HomeMinimalLayoutTest, CardIsTheNarrow108dpB3WithACircleEmojiAndNoMic) {
   const ui::Vector2f send_size = send->GetBox().GetSize(ui::BoxArea::Border);
   EXPECT_FLOAT_EQ(send_size.x, 36.f);
   EXPECT_FLOAT_EQ(send_size.y, 36.f);
-  EXPECT_FLOAT_EQ(card_right - (send->GetAbsoluteOffset(ui::BoxArea::Border).x + send_size.x), 11.f) << "right end (10dp + border)";
+  EXPECT_FLOAT_EQ(card_right - (send->GetAbsoluteOffset(ui::BoxArea::Border).x + send_size.x), 11.f)
+      << "right end (10dp + border)";
   EXPECT_LT(emoji->GetAbsoluteOffset(ui::BoxArea::Border).x + size.x, send->GetAbsoluteOffset(ui::BoxArea::Border).x);
 }
 
@@ -193,7 +203,8 @@ TEST_F(HomeMinimalLayoutTest, KeyboardGoneCentresTheBlockAgain) {
   Load(390, 844, 0, false);
   const Box card = ById("stub-composer");
   const Box logo = First("home-logo");
-  std::printf("[844/0 centred] card top %.1f bottom %.1f logo h %.1f top %.1f\n", card.top, card.bottom(), logo.height, logo.top);
+  std::printf("[844/0 centred] card top %.1f bottom %.1f logo h %.1f top %.1f\n", card.top, card.bottom(), logo.height,
+              logo.top);
   EXPECT_FLOAT_EQ(logo.height, 100.f);
   EXPECT_LT(card.bottom(), visible_height - 60.f) << "not at the bottom any more";
   EXPECT_GT(logo.top, 90.f + 40.f) << "the block is centred, the logo not pinned to the top";
@@ -275,7 +286,8 @@ protected:
     bar = std::regex_replace(bar, std::regex("\\{\\{[^}]*\\}\\}"), "Chats");
     const std::string rml =
         "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
-        Asset("themes/colors-light.rcss") + "</style></head><body style=\"padding: 0;\">"
+        Asset("themes/colors-light.rcss") +
+        "</style></head><body style=\"padding: 0;\">"
         "<div class=\"shell-layer-compact\" style=\"position: absolute; left: 0dp; width: 390dp; height: 800dp; top: " +
         std::to_string(top_inset_dp) + "dp;\"><div class=\"sidebar-panel\">" + bar +
         "<div class=\"sidebar-sessions root-scroll\"><p class=\"large-title\">Chats</p>"
@@ -298,7 +310,8 @@ protected:
 TEST_F(ChatsHeaderTest, HasNoAvatarNameOrStatusLine) {
   const std::string rml = Asset("views/sidebar.rml");
   const std::string bar = rml.substr(0, rml.find("<div class=\"sidebar-header row\">"));
-  for (const char* gone : {"pane-nav-avatar", "shell-circle-avatar", "profile_nickname", "chats_link_state", "pane-nav-plus"}) {
+  for (const char* gone :
+       {"pane-nav-avatar", "shell-circle-avatar", "profile_nickname", "chats_link_state", "pane-nav-plus"}) {
     EXPECT_EQ(bar.find(gone), std::string::npos) << gone;
   }
   EXPECT_NE(bar.find("open_new_session_menu()"), std::string::npos);
@@ -339,7 +352,8 @@ TEST_F(ChatsHeaderTest, BarIs56dpAndTheLargeTitleThenTheSearchBoxScrollUnderIt) 
     EXPECT_GE(title->GetAbsoluteOffset(ui::BoxArea::Border).y, bar_bottom - 0.5f) << "the title starts below the bar";
     EXPECT_FLOAT_EQ(title->GetComputedValues().font_size(), 34.f);
     EXPECT_GE(search->GetAbsoluteOffset(ui::BoxArea::Border).y,
-              title->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(title).y - 0.5f) << "the search box is under the title";
+              title->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(title).y - 0.5f)
+        << "the search box is under the title";
     EXPECT_FLOAT_EQ(SizeOf(search).y, 36.f);
     EXPECT_FLOAT_EQ(search->GetAbsoluteOffset(ui::BoxArea::Border).x, 20.f);
   }

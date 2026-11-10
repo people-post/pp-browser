@@ -146,8 +146,9 @@ Roe<IPostStore::Added> SqlitePostStore::AddStub(const StoredPostEntry& row) {
     return db.error();
   }
   sqlite3* raw = db.value().get();
-  Stmt existing(raw, "SELECT entry_hash, stub, signed IS NULL FROM post_entries WHERE author = ? AND lane = ? AND "
-                     "seq = ?;");
+  Stmt existing(raw,
+                "SELECT entry_hash, stub, signed IS NULL FROM post_entries WHERE author = ? AND lane = ? AND "
+                "seq = ?;");
   if (!existing.ok()) {
     return Error("Failed to prepare post read");
   }
@@ -161,8 +162,9 @@ Roe<IPostStore::Added> SqlitePostStore::AddStub(const StoredPostEntry& row) {
     // Already here. An unkept stub gains the bytes; a deleted entry stays deleted.
     const bool held_as_stub = existing.ColInt(2) != 0;
     if (held_as_stub && row.signed_bytes && static_cast<PostStub>(existing.ColInt(1)) == PostStub::Unkept) {
-      Stmt fill(raw, "UPDATE post_entries SET signed = ?, stub = 0 WHERE author = ? AND lane = ? AND seq = ? AND "
-                     "entry_hash = ?;");
+      Stmt fill(raw,
+                "UPDATE post_entries SET signed = ?, stub = 0 WHERE author = ? AND lane = ? AND seq = ? AND "
+                "entry_hash = ?;");
       fill.Blob(1, *row.signed_bytes).Text(2, row.author).Blob(3, row.lane).Int(4, static_cast<int64_t>(row.seq));
       fill.Blob(5, row.entry_hash);
       if (!fill.ok() || !fill.Done()) {
@@ -171,8 +173,9 @@ Roe<IPostStore::Added> SqlitePostStore::AddStub(const StoredPostEntry& row) {
     }
     return Added::Duplicate;
   }
-  Stmt insert(raw, "INSERT INTO post_entries (author, lane, seq, entry_hash, kind, claimed_at, size, signed, stub) "
-                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);");
+  Stmt insert(raw,
+              "INSERT INTO post_entries (author, lane, seq, entry_hash, kind, claimed_at, size, signed, stub) "
+              "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);");
   if (!insert.ok()) {
     return Error("Failed to prepare post write");
   }
@@ -187,7 +190,7 @@ Roe<IPostStore::Added> SqlitePostStore::AddStub(const StoredPostEntry& row) {
 }
 
 Roe<void> SqlitePostStore::StubOut(const std::string& author, const PostLane& lane, const uint64_t seq,
-                             const PostHash& entry_hash, const PostStub why) {
+                                   const PostHash& entry_hash, const PostStub why) {
   std::lock_guard lock(mutex_);
   auto db = Open();
   if (!db) {
@@ -208,15 +211,15 @@ Roe<void> SqlitePostStore::StubOut(const std::string& author, const PostLane& la
 }
 
 Roe<std::vector<StoredPostEntry>> SqlitePostStore::At(const std::string& author, const PostLane& lane,
-                                                const uint64_t seq) const {
+                                                      const uint64_t seq) const {
   std::lock_guard lock(mutex_);
   auto db = Open();
   if (!db) {
     return db.error();
   }
-  const std::string sql =
-      std::string("SELECT ") + kEntryColumns + " FROM post_entries WHERE author = ? AND lane = ? AND seq = ? "
-                                               "ORDER BY entry_hash;";
+  const std::string sql = std::string("SELECT ") + kEntryColumns +
+                          " FROM post_entries WHERE author = ? AND lane = ? AND seq = ? "
+                          "ORDER BY entry_hash;";
   Stmt select(db.value().get(), sql.c_str());
   if (!select.ok()) {
     return Error("Failed to prepare post read");
@@ -230,7 +233,7 @@ Roe<std::vector<StoredPostEntry>> SqlitePostStore::At(const std::string& author,
 }
 
 Roe<std::vector<StoredPostEntry>> SqlitePostStore::Range(const std::string& author, const PostLane& lane,
-                                                   const uint64_t from_seq, const size_t limit) const {
+                                                         const uint64_t from_seq, const size_t limit) const {
   std::lock_guard lock(mutex_);
   auto db = Open();
   if (!db) {

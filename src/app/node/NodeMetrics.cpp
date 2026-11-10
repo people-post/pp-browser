@@ -69,8 +69,8 @@ void CollectChannels(MetricsRegistry& r, pp::amp::MeshRuntime& runtime) {
 
 void CollectMesh(MetricsRegistry& r, mesh::MeshHost& mesh) {
   const char* capability = "Services this node serves (1 = serving).";
-  const bool circuit = mesh.AmpCircuitServer() && mesh.AmpCircuitServer()->IsStarted() &&
-                       mesh.AmpCircuitServer()->ServeInbound();
+  const bool circuit =
+      mesh.AmpCircuitServer() && mesh.AmpCircuitServer()->IsStarted() && mesh.AmpCircuitServer()->ServeInbound();
   const bool media = mesh.AmpMediaRelayServer() && mesh.AmpMediaRelayServer()->IsStarted() &&
                      mesh.AmpMediaRelayServer()->ServeInbound();
   const bool dht = mesh.AmpDht() && mesh.AmpDht()->IsStarted();
@@ -80,10 +80,11 @@ void CollectMesh(MetricsRegistry& r, mesh::MeshHost& mesh) {
 
   const mesh::ReachabilitySnapshot reach = mesh.Reachability().Snapshot();
   const char* status = "Reachability verdict (1 = current).";
-  for (const mesh::ReachabilityStatus s : {mesh::ReachabilityStatus::Unknown, mesh::ReachabilityStatus::Checking,
-                                     mesh::ReachabilityStatus::Reachable, mesh::ReachabilityStatus::OutboundOnly,
-                                     mesh::ReachabilityStatus::Blocked}) {
-    r.Gauge("pp_reachability_status", status, {{"status", mesh::ReachabilityStatusKey(s)}}).Set(reach.status == s ? 1 : 0);
+  for (const mesh::ReachabilityStatus s :
+       {mesh::ReachabilityStatus::Unknown, mesh::ReachabilityStatus::Checking, mesh::ReachabilityStatus::Reachable,
+        mesh::ReachabilityStatus::OutboundOnly, mesh::ReachabilityStatus::Blocked}) {
+    r.Gauge("pp_reachability_status", status, {{"status", mesh::ReachabilityStatusKey(s)}})
+        .Set(reach.status == s ? 1 : 0);
   }
   const char* signal = "Reachability probe signals (1 = true).";
   const mesh::ReachabilitySignals& sig = reach.signals;
@@ -97,7 +98,7 @@ void CollectMesh(MetricsRegistry& r, mesh::MeshHost& mesh) {
     size_t links = 0;
     amp->Runtime().WithIoLock([&]() { links = amp->Runtime().Links().CountLinks(); });
     r.Gauge("pp_link_active", "Amp links in the link table.").Set(static_cast<double>(links));
-    const pp::adp::EndpointStats traffic = amp->Runtime().GetEndpoint().Stats();  // atomics: any thread
+    const pp::adp::EndpointStats traffic = amp->Runtime().GetEndpoint().Stats(); // atomics: any thread
     const char* datagrams = "Amp UDP datagrams, by direction.";
     const char* bytes = "Amp UDP datagram bytes, by direction.";
     const char* reliable = "Amp reliable packets: first sends, retransmits, and given up after the retry cap.";

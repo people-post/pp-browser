@@ -109,43 +109,45 @@ protected:
       }
     }
     // Stands in for an app-state tool (the real search_people is network-only; local actions only take this one).
-    registry.Register(MakeTool(ToolDefinition{"search_people", "search_people", Object{}},
-                               ToolMeta{.provider = "messaging", .domain = "people", .risk = "read", .app_state = true},
-                               [this](const Object& args) -> Roe<std::string> {
-                                 const int now_running = ++tools_running_;
-                                 int seen = max_tools_running_.load();
-                                 while (now_running > seen && !max_tools_running_.compare_exchange_weak(seen, now_running)) {
-                                 }
-                                 if (gate_tools_) {
-                                   // Held until both turns have asked for their tool; then a second one running at
-                                   // the same time would be inside here with this one.
-                                   const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-                                   while (!both_requested_.load() && std::chrono::steady_clock::now() < until) {
-                                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                                   }
-                                   const auto overlap = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
-                                   while (tools_running_.load() < 2 && std::chrono::steady_clock::now() < overlap) {
-                                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                                   }
-                                   int both = max_tools_running_.load();
-                                   const int running = tools_running_.load();
-                                   while (running > both && !max_tools_running_.compare_exchange_weak(both, running)) {
-                                   }
-                                 }
-                                 {
-                                   std::lock_guard lock(mu_);
-                                   tool_calls_.push_back(args.getString("query").value_or(""));
-                                 }
-                                 --tools_running_;
-                                 return std::string("[]");
-                               }));
-    ToolMeta on_ui{.provider = "messaging", .domain = "communications", .risk = "read", .app_state = true,
-                   .ui_thread = true};
+    registry.Register(
+        MakeTool(ToolDefinition{"search_people", "search_people", Object{}},
+                 ToolMeta{.provider = "messaging", .domain = "people", .risk = "read", .app_state = true},
+                 [this](const Object& args) -> Roe<std::string> {
+                   const int now_running = ++tools_running_;
+                   int seen = max_tools_running_.load();
+                   while (now_running > seen && !max_tools_running_.compare_exchange_weak(seen, now_running)) {
+                   }
+                   if (gate_tools_) {
+                     // Held until both turns have asked for their tool; then a second one running at
+                     // the same time would be inside here with this one.
+                     const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+                     while (!both_requested_.load() && std::chrono::steady_clock::now() < until) {
+                       std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                     }
+                     const auto overlap = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+                     while (tools_running_.load() < 2 && std::chrono::steady_clock::now() < overlap) {
+                       std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                     }
+                     int both = max_tools_running_.load();
+                     const int running = tools_running_.load();
+                     while (running > both && !max_tools_running_.compare_exchange_weak(both, running)) {
+                     }
+                   }
+                   {
+                     std::lock_guard lock(mu_);
+                     tool_calls_.push_back(args.getString("query").value_or(""));
+                   }
+                   --tools_running_;
+                   return std::string("[]");
+                 }));
+    ToolMeta on_ui{
+        .provider = "messaging", .domain = "communications", .risk = "read", .app_state = true, .ui_thread = true};
     registry.Register(MakeTool(ToolDefinition{"open_conversation", "open_conversation", Object{}}, on_ui,
                                [this](const Object& args) -> Roe<std::string> {
                                  const int now_running = ++tools_running_;
                                  int seen = max_tools_running_.load();
-                                 while (now_running > seen && !max_tools_running_.compare_exchange_weak(seen, now_running)) {
+                                 while (now_running > seen &&
+                                        !max_tools_running_.compare_exchange_weak(seen, now_running)) {
                                  }
                                  std::this_thread::sleep_for(std::chrono::milliseconds(30));
                                  {
@@ -156,13 +158,14 @@ protected:
                                  --tools_running_;
                                  return std::string(R"({"id":"x","title":"x"})");
                                }));
-    registry.Register(MakeTool(ToolDefinition{"set_notifications", "set_notifications", Object{}},
-                               ToolMeta{.provider = "settings", .domain = "settings", .risk = "write", .mutating = true},
-                               [this](const Object&) -> Roe<std::string> {
-                                 std::lock_guard lock(mu_);
-                                 tool_calls_.push_back("set_notifications");
-                                 return std::string(R"({"show_notifications":false})");
-                               }));
+    registry.Register(
+        MakeTool(ToolDefinition{"set_notifications", "set_notifications", Object{}},
+                 ToolMeta{.provider = "settings", .domain = "settings", .risk = "write", .mutating = true},
+                 [this](const Object&) -> Roe<std::string> {
+                   std::lock_guard lock(mu_);
+                   tool_calls_.push_back("set_notifications");
+                   return std::string(R"({"show_notifications":false})");
+                 }));
   }
 
   std::string RoleFor(const std::string& message) {
@@ -310,7 +313,8 @@ TEST_F(AgentSessionsTest, FourthThreadIsReportedFullNotDropped) {
   WaitEnded("t1");
   WaitEnded("t2");
   WaitEnded("t3");
-  EXPECT_EQ(sessions_->SubmitToThread("t4", "fourth"), SubmitOutcome::Started) << "free again: the UI hands it over now";
+  EXPECT_EQ(sessions_->SubmitToThread("t4", "fourth"), SubmitOutcome::Started)
+      << "free again: the UI hands it over now";
   WaitEnded("t4");
   EXPECT_EQ(Requests().size(), 4u);
 }

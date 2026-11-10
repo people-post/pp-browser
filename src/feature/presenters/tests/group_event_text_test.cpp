@@ -30,10 +30,11 @@ protected:
 };
 
 TEST_F(GroupEventTextTest, TheChatListPreviewAndTheTranscriptUseTheSameChineseWords) {
-  const auto text = GroupEventText(Event(GroupMembershipControlType::MemberJoined,
-                                         GroupMembershipCodec::EncodeMemberJoined("g", "acct-ann", MemberRole::Member, 2),
-                                         "Member joined the group", "acct-ann"),
-                                   kNames, "acct-me");
+  const auto text =
+      GroupEventText(Event(GroupMembershipControlType::MemberJoined,
+                           GroupMembershipCodec::EncodeMemberJoined("g", "acct-ann", MemberRole::Member, 2),
+                           "Member joined the group", "acct-ann"),
+                     kNames, "acct-me");
   ASSERT_TRUE(text);
   EXPECT_EQ(*text, "Ann \xE5\x8A\xA0\xE5\x85\xA5\xE4\xBA\x86\xE7\xBE\xA4\xE8\x81\x8A");
 }
@@ -65,14 +66,17 @@ TEST_F(GroupEventTextTest, ADissolvedGroupPreviewNamesTheOwnerOrYou) {
 }
 
 TEST_F(GroupEventTextTest, ForkedLinesTellTheTwoSidesApart) {
-  const auto source = GroupEventText(Event(GroupMembershipControlType::GroupForked,
-                                           Roe<std::string>(std::string("{}")), "Group forked", "acct-ann"),
-                                     kNames, "acct-me");
-  const auto fresh = GroupEventText(Event(GroupMembershipControlType::GroupForked,
-                                          Roe<std::string>(std::string("{}")), "Forked from group", "acct-ann"),
+  const auto source = GroupEventText(
+      Event(GroupMembershipControlType::GroupForked, Roe<std::string>(std::string("{}")), "Group forked", "acct-ann"),
+      kNames, "acct-me");
+  const auto fresh = GroupEventText(Event(GroupMembershipControlType::GroupForked, Roe<std::string>(std::string("{}")),
+                                          "Forked from group", "acct-ann"),
                                     kNames, "acct-me");
   ASSERT_TRUE(source && fresh);
-  EXPECT_EQ(*source, "Ann \xE4\xBB\x8E\xE6\x9C\xAC\xE7\xBE\xA4\xE5\x88\x9B\xE5\xBB\xBA\xE4\xBA\x86\xE6\x96\xB0\xE7\xBE\xA4\xE8\x81\x8A");
+  EXPECT_EQ(
+      *source,
+      "Ann "
+      "\xE4\xBB\x8E\xE6\x9C\xAC\xE7\xBE\xA4\xE5\x88\x9B\xE5\xBB\xBA\xE4\xBA\x86\xE6\x96\xB0\xE7\xBE\xA4\xE8\x81\x8A");
   EXPECT_NE(*source, *fresh);
 }
 

@@ -71,27 +71,27 @@ std::string JsArgInAttribute(const std::string& value) {
   out.reserve(value.size());
   for (const char ch : value) {
     switch (ch) {
-    case '\\':
-      out += "\\\\";
-      break;
-    case '\'':
-      out += "\\'";
-      break;
-    case '"':
-      out += "&quot;";
-      break;
-    case '<':
-      out += "&lt;";
-      break;
-    case '>':
-      out += "&gt;";
-      break;
-    case '&':
-      out += "&amp;";
-      break;
-    default:
-      out.push_back(ch);
-      break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\'':
+        out += "\\'";
+        break;
+      case '"':
+        out += "&quot;";
+        break;
+      case '<':
+        out += "&lt;";
+        break;
+      case '>':
+        out += "&gt;";
+        break;
+      case '&':
+        out += "&amp;";
+        break;
+      default:
+        out.push_back(ch);
+        break;
     }
   }
   return out;
@@ -132,7 +132,8 @@ std::optional<std::string> ReceiveFailureLine(const ThreadMessage& message) {
   if (!reason) {
     return std::nullopt;
   }
-  return ReceiveFailureText(*reason, detail->getString("sender").value_or(""), detail->getString("family").value_or(""));
+  return ReceiveFailureText(*reason, detail->getString("sender").value_or(""),
+                            detail->getString("family").value_or(""));
 }
 
 /** A local "this message did not go out" line under a message: worded from its payload, in the reader's language. */
@@ -157,27 +158,27 @@ std::string CallSummaryRowText(const CallSummaryRow& row) {
   using Outcome = CallSummaryRow::Outcome;
   std::string outcome;
   switch (row.outcome) {
-  case Outcome::Connected:
-    outcome = row.duration;
-    break;
-  case Outcome::NoAnswer:
-    outcome = Tr("call.row.no_answer");
-    break;
-  case Outcome::Missed:
-    outcome = Tr("call.row.missed");
-    break;
-  case Outcome::Cancelled:
-    outcome = Tr("call.row.cancelled");
-    break;
-  case Outcome::Declined:
-    outcome = Tr("call.row.declined");
-    break;
-  case Outcome::DeclinedByPeer:
-    outcome = Tr("call.row.declined_by_peer");
-    break;
-  case Outcome::Failed:
-    outcome = Tr("call.row.failed");
-    break;
+    case Outcome::Connected:
+      outcome = row.duration;
+      break;
+    case Outcome::NoAnswer:
+      outcome = Tr("call.row.no_answer");
+      break;
+    case Outcome::Missed:
+      outcome = Tr("call.row.missed");
+      break;
+    case Outcome::Cancelled:
+      outcome = Tr("call.row.cancelled");
+      break;
+    case Outcome::Declined:
+      outcome = Tr("call.row.declined");
+      break;
+    case Outcome::DeclinedByPeer:
+      outcome = Tr("call.row.declined_by_peer");
+      break;
+    case Outcome::Failed:
+      outcome = Tr("call.row.failed");
+      break;
   }
   return row.group ? Tr("call.row.group") + " · " + outcome : outcome;
 }
@@ -196,7 +197,8 @@ std::string CallRowRml(const CallSummaryRow& row, bool tappable) {
   }
   html += "\"><svg class=\"chat-call-row-icon\" src=\"";
   html += row.video ? "../icons/video.svg" : "../icons/phone.svg";
-  html += "\"></svg><span class=\"chat-call-row-text\">" + StructuredTextParser::EscapeText(CallSummaryRowText(row)) + "</span></div>";
+  html += "\"></svg><span class=\"chat-call-row-text\">" + StructuredTextParser::EscapeText(CallSummaryRowText(row)) +
+          "</span></div>";
   return html;
 }
 
@@ -227,10 +229,9 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
       }
       return SystemLineRml(StoredSystemText(message));
     }
-    const std::string title =
-        invite && !invite->group_title.empty()
-            ? invite->group_title
-            : (invite || message.text.empty() ? Tr("chat.group_invite.title") : message.text);
+    const std::string title = invite && !invite->group_title.empty()
+                                  ? invite->group_title
+                                  : (invite || message.text.empty() ? Tr("chat.group_invite.title") : message.text);
     std::string html = "<div class=\"chat-card chat-group-invite\"><h3 class=\"heading-3\">" +
                        StructuredTextParser::EscapeText(title) + "</h3>";
     // The stored text is English ("Group invitation: <title>") and the title is already the heading.
@@ -382,7 +383,8 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     AudioCardFace face;
     face.title = view.audio_title.empty() ? label : view.audio_title;
     const std::string size = fields->byte_length > 0 ? FormatAttachmentByteSize(fields->byte_length) : std::string();
-    face.subtitle = view.audio_artist.empty() ? size : (size.empty() ? view.audio_artist : view.audio_artist + " · " + size);
+    face.subtitle =
+        view.audio_artist.empty() ? size : (size.empty() ? view.audio_artist : view.audio_artist + " · " + size);
     face.cover_path = view.poster_path;
     face.duration_ms = view.audio_duration_ms;
     return AudioFileBubbleRml(message.id, JsArgInAttribute(message.id), face,
@@ -397,13 +399,15 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
       html += "<div class=\"chat-attachment-clip\" style=\"width:" + std::to_string(fit.width_dp) +
               "dp;height:" + std::to_string(fit.height_dp) + "dp\"";
     } else {
-      html += "<div class=\"chat-attachment-clip chat-attachment-clip--auto\"";  // unknown size: the stylesheet fills the box
+      html +=
+          "<div class=\"chat-attachment-clip chat-attachment-clip--auto\""; // unknown size: the stylesheet fills the box
     }
     html += "><img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"";
     if (fit.width_dp > 0) {
       html += " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.image_height_dp) + "\"";
       if (fit.image_offset_dp > 0) {
-        html += " style=\"margin-top:-" + std::to_string(fit.image_offset_dp) + "dp\"";  // a tall picture shows its middle
+        html +=
+            " style=\"margin-top:-" + std::to_string(fit.image_offset_dp) + "dp\""; // a tall picture shows its middle
       }
     }
     html += " data-event-click=\"open_picture('" + JsArgInAttribute(message.id) + "','" + JsArgInAttribute(local_path) +
@@ -440,23 +444,23 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
       html += "</div>";
     }
     if (fields->byte_length > 0) {
-      html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
-              "</p>";
+      html += "<p class=\"text muted\">" +
+              StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) + "</p>";
     }
     html += "</div>";
   } else if (ready && (!local_path.empty() || view.on_demand)) {
     html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
     if (fields->byte_length > 0) {
-      html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
-              "</p>";
+      html += "<p class=\"text muted\">" +
+              StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) + "</p>";
     }
     html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
             JsArgInAttribute(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
   } else {
     html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
     if (fields && fields->byte_length > 0) {
-      html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
-              "</p>";
+      html += "<p class=\"text muted\">" +
+              StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) + "</p>";
     }
     if (state == AttachmentFetchWorkflow::DownloadState::TooLarge) {
       html += "<p class=\"text muted\">" + Tr("chat.attachment.too_large_receive") + "</p>";
@@ -609,7 +613,8 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   if (message.content_type == ChatContentType::Unsupported) {
     return UnsupportedRml();
   }
-  const std::string bubble_class = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
+  const std::string bubble_class =
+      message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
   const std::string paragraph =
       message.sender_contact_id == kLocalSelfContactId ? "<p class=\"bubble-text\">" : "<p class=\"bubble-text-peer\">";
   std::string badges = SharedBadgeRml(message);
@@ -630,8 +635,8 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   std::string text_rml;
   if (const auto parts = SplitQuoteReply(message.text)) {
     text_rml = "<div class=\"chat-quote chat-quote--jump\" data-event-click=\"jump_to_quote('" + id_arg +
-               "')\"><p class=\"chat-quote-text\">" + StructuredTextParser::EscapeText(OneLine(parts->quote)) + "</p></div>" +
-               paragraph + LinkedTextRml(parts->reply, id_arg, mention_runs) + "</p>";
+               "')\"><p class=\"chat-quote-text\">" + StructuredTextParser::EscapeText(OneLine(parts->quote)) +
+               "</p></div>" + paragraph + LinkedTextRml(parts->reply, id_arg, mention_runs) + "</p>";
   } else {
     text_rml = paragraph + LinkedTextRml(message.text, id_arg, mention_runs) + "</p>";
   }
@@ -648,7 +653,8 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
       emoji_class = scale == EmojiScale::ExtraLarge ? " bubble-emoji bubble-emoji--xl" : " bubble-emoji";
     }
   }
-  std::string body = badges + "<div class=\"bubble " + bubble_class + emoji_class + "\" selectable=\"text\">" + text_rml + "</div>";
+  std::string body =
+      badges + "<div class=\"bubble " + bubble_class + emoji_class + "\" selectable=\"text\">" + text_rml + "</div>";
   body = HydrateChatActions(body, message.chat_actions);
   // __ENTRY__ is only ever introduced by HydrateChatActions' own template above; never treat a
   // literal "__ENTRY__" typed into message.text (peer-controlled) as a placeholder to fill in.
@@ -658,12 +664,12 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   return body;
 }
 
-
 // Reaction chips. `overlay`: the row sits inside the bubble / card, drawn as small pills over its bottom edge
 // (position: absolute, so the row's height is the bubble's and avatar, tail and bubble bottom line up). Otherwise
 // (no bubble or card to hang it on) it follows the content as a line of its own, which marks where the body ends.
 // Each chip is a 32dp-tall button whose pill is drawn smaller inside it.
-std::string ReactionsRml(const std::string& target_id, const std::vector<TranscriptReaction>& reactions, const bool overlay) {
+std::string ReactionsRml(const std::string& target_id, const std::vector<TranscriptReaction>& reactions,
+                         const bool overlay) {
   std::ostringstream rml;
   // menu-anchor-end: the message menu opens right under the bubble, over this row (ContextMenuHost).
   rml << (overlay ? "<div class=\"chat-reaction-row chat-reaction-row--overlay\">"
@@ -725,7 +731,8 @@ MessageDisplayRow OrphanAnnotationRow(const TranscriptRow& entry, const Transcri
 // sent: right) plus classes that square that corner. Bubbles without a background (deleted) get none.
 bool AddBubbleTail(std::string& content, bool ours) {
   size_t at = std::string::npos;
-  for (const char* opener : {"<div class=\"bubble ", "<div class=\"chat-card chat-attachment-card", "<div class=\"chat-card chat-voice-card"}) {
+  for (const char* opener : {"<div class=\"bubble ", "<div class=\"chat-card chat-attachment-card",
+                             "<div class=\"chat-card chat-voice-card"}) {
     const size_t found = content.find(opener);
     if (found != std::string::npos && found < at) {
       at = found;
@@ -736,8 +743,10 @@ bool AddBubbleTail(std::string& content, bool ours) {
     return false;
   }
   const char* host = ours ? " bubble-tail-host bubble-tail-host--out" : " bubble-tail-host bubble-tail-host--in";
-  const char* tail = ours ? "<svg class=\"bubble-tail bubble-tail-out\" src=\"../icons/v2/bubble-tail-right.svg\" width=\"16\" height=\"20\"></svg>"
-                          : "<svg class=\"bubble-tail bubble-tail-in\" src=\"../icons/v2/bubble-tail-left.svg\" width=\"16\" height=\"20\"></svg>";
+  const char* tail = ours ? "<svg class=\"bubble-tail bubble-tail-out\" src=\"../icons/v2/bubble-tail-right.svg\" "
+                            "width=\"16\" height=\"20\"></svg>"
+                          : "<svg class=\"bubble-tail bubble-tail-in\" src=\"../icons/v2/bubble-tail-left.svg\" "
+                            "width=\"16\" height=\"20\"></svg>";
   content.insert(tag_end + 1, tail);
   content.insert(content.find('"', at + std::string("<div class=\"").size()), host);
   return true;
@@ -787,9 +796,9 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
   const bool group_thread = mentions.has_value();
   const int64_t now_ms = util::NowUnixMs();
   int64_t prev_ms = 0;
-  std::string run_sender; // empty: no run open
+  std::string run_sender;       // empty: no run open
   std::vector<bool> plain_rows; // parallel to `rows`: a plain message (the only kind that has runs)
-  int64_t run_start_ms = 0; // time of the previous message of the open run
+  int64_t run_start_ms = 0;     // time of the previous message of the open run
   for (const TranscriptRow& entry : entries) {
     if (entry.orphan_annotation) {
       rows.push_back(OrphanAnnotationRow(entry, facts));

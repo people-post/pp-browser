@@ -23,7 +23,7 @@ using namespace voice_test;
 struct FakeFiles {
   std::vector<std::string> played;
   std::vector<std::string> calls; // "pause", "resume", "stop"
-  std::vector<double> seeks; // seconds
+  std::vector<double> seeks;      // seconds
   bool refuse = false;
   AudioFilePlayerCallbacks callbacks;
 };
@@ -106,7 +106,7 @@ TEST(VoicePlayback, ATapThatWasStoppedBeforeItsFileArrivedPlaysNothing) {
   env.playback->Toggle("m1");
   ASSERT_EQ(env.pending.size(), 1u);
   EXPECT_TRUE(env.playback->Active());
-  env.playback->Stop();                    // background, a recording, a call, another chat
+  env.playback->Stop(); // background, a recording, a call, another chat
   EXPECT_FALSE(env.playback->Active());
   env.pending[0](std::string("/nonexistent/voice-1000.ogg")); // the file arrives late
   env.Pump();

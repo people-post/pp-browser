@@ -52,13 +52,14 @@ TEST(RmlBindingGuardTest, DataRmlIsOnlyUsedForMarkupFields) {
     }
   }
   ASSERT_GT(files, 0u) << "no .rml files under " << PP_BROWSER_ASSETS_DIR;
-  EXPECT_TRUE(offenders.empty()) << "plain text must be bound as {{expr}}, not data-rml:\n" << [&] {
-    std::string joined;
-    for (const std::string& line : offenders) {
-      joined += "  " + line + "\n";
-    }
-    return joined;
-  }();
+  EXPECT_TRUE(offenders.empty()) << "plain text must be bound as {{expr}}, not data-rml:\n"
+                                 << [&] {
+                                      std::string joined;
+                                      for (const std::string& line : offenders) {
+                                        joined += "  " + line + "\n";
+                                      }
+                                      return joined;
+                                    }();
 }
 
 // The AI drawer's "you" row binds the avatar and name from the settings model (each element declares it) and the status
@@ -69,10 +70,11 @@ TEST(RmlBindingGuardTest, TheAiDrawerMeRowResolvesItsNamesAndTheLinkStatus) {
   ASSERT_NE(begin, std::string::npos);
   const std::string row = rml.substr(begin);
   EXPECT_NE(row.find("<div class=\"ai-drawer-me-avatar\" data-model=\"settings\""), std::string::npos);
-  EXPECT_NE(row.find("<p class=\"ai-drawer-me-name\" data-model=\"settings\">{{profile_nickname}}</p>"), std::string::npos);
+  EXPECT_NE(row.find("<p class=\"ai-drawer-me-name\" data-model=\"settings\">{{profile_nickname}}</p>"),
+            std::string::npos);
   const std::string settings = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/SettingsController.cpp");
-  for (const char* name : {"profile_has_icon", "profile_avatar_tone", "profile_icon_src", "profile_avatar_letter",
-                           "profile_nickname"}) {
+  for (const char* name :
+       {"profile_has_icon", "profile_avatar_tone", "profile_icon_src", "profile_avatar_letter", "profile_nickname"}) {
     EXPECT_NE(row.find(name), std::string::npos) << name << " used by the row";
     EXPECT_NE(settings.find(std::string("ctor.Bind(\"") + name + "\""), std::string::npos)
         << name << " is bound in the settings model";
@@ -171,7 +173,8 @@ TEST(RmlBindingGuardTest, TheChatHeaderShowsTheRowsGlyphForAnAiConversation) {
   const std::string avatar = rml.substr(start, rml.find("<div class=\"chat-header-text\">", start) - start);
   EXPECT_EQ(avatar.find("sparkle"), std::string::npos);
   EXPECT_EQ(avatar.find("!thread_is_ai && !thread_is_group && thread_avatar_tone"), std::string::npos);
-  EXPECT_NE(avatar.find("data-if=\"!thread_is_group && !thread_has_icon\">{{thread_avatar_letter}}"), std::string::npos);
+  EXPECT_NE(avatar.find("data-if=\"!thread_is_group && !thread_has_icon\">{{thread_avatar_letter}}"),
+            std::string::npos);
   const std::string chrome = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/chat/ChatThreadChrome.cpp");
   EXPECT_NE(chrome.find("MakeAvatarGlyph(label.title, label.stable_id)"), std::string::npos)
       << "the row's own inputs (ChatPresenter)";

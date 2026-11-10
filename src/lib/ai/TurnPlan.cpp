@@ -41,40 +41,40 @@ std::optional<Object> ExtractJsonObject(const std::string& text) {
 
 const char* TurnPlanSourceName(const TurnPlanSource source) {
   switch (source) {
-  case TurnPlanSource::Payload:
-    return "payload";
-  case TurnPlanSource::Planner:
-    return "planner";
+    case TurnPlanSource::Payload:
+      return "payload";
+    case TurnPlanSource::Planner:
+      return "planner";
   }
   return "planner";
 }
 
 const char* ResponseGoalName(const ResponseGoal goal) {
   switch (goal) {
-  case ResponseGoal::DisplayFeed:
-    return "display_feed";
-  case ResponseGoal::Summarize:
-    return "summarize";
-  case ResponseGoal::AnswerQuestion:
-    return "answer_question";
-  case ResponseGoal::Headlines:
-    return "headlines";
-  case ResponseGoal::PeopleDiscovery:
-    return "people_discovery";
-  case ResponseGoal::General:
-    return "general";
+    case ResponseGoal::DisplayFeed:
+      return "display_feed";
+    case ResponseGoal::Summarize:
+      return "summarize";
+    case ResponseGoal::AnswerQuestion:
+      return "answer_question";
+    case ResponseGoal::Headlines:
+      return "headlines";
+    case ResponseGoal::PeopleDiscovery:
+      return "people_discovery";
+    case ResponseGoal::General:
+      return "general";
   }
   return "general";
 }
 
 const char* RenderModeName(const RenderMode mode) {
   switch (mode) {
-  case RenderMode::Blocks:
-    return "blocks";
-  case RenderMode::PeopleList:
-    return "people_list";
-  case RenderMode::Markdown:
-    return "markdown";
+    case RenderMode::Blocks:
+      return "blocks";
+    case RenderMode::PeopleList:
+      return "people_list";
+    case RenderMode::Markdown:
+      return "markdown";
   }
   return "blocks";
 }
@@ -157,8 +157,8 @@ Roe<TurnPlan> ValidateTurnPlan(TurnPlan plan, const std::vector<std::string>& al
     }
   }
 
-  const bool people_only = !plan.tools.empty() &&
-      std::all_of(plan.tools.begin(), plan.tools.end(), [](const PlannedToolCall& call) {
+  const bool people_only =
+      !plan.tools.empty() && std::all_of(plan.tools.begin(), plan.tools.end(), [](const PlannedToolCall& call) {
         return call.name == "search_people" || call.name == "list_contacts";
       });
   // A General plan that only lists contacts may be a count or a yes/no question; the planner says so by

@@ -38,7 +38,7 @@ TEST(SecretTextTest, AMovedOrClearedSecretHoldsNothing) {
   SecretText from("the whole account");
   SecretText to(std::move(from));
   EXPECT_EQ(to.Reveal(), "the whole account");
-  EXPECT_TRUE(from.empty());  // NOLINT(bugprone-use-after-move): wiped on purpose
+  EXPECT_TRUE(from.empty()); // NOLINT(bugprone-use-after-move): wiped on purpose
   to.clear();
   EXPECT_TRUE(to.empty());
   SecretText replaced("old");

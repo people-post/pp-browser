@@ -113,8 +113,7 @@ bool AttachmentSuppressionStore::IsSuppressed(const std::string& thread_id,
   return thread_it->second.contains(HashKey(content_hash));
 }
 
-Roe<void> AttachmentSuppressionStore::Suppress(const std::string& thread_id,
-                                               const std::vector<uint8_t>& content_hash) {
+Roe<void> AttachmentSuppressionStore::Suppress(const std::string& thread_id, const std::vector<uint8_t>& content_hash) {
   if (thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return Error("Invalid attachment suppression target");
   }
@@ -127,7 +126,7 @@ Roe<void> AttachmentSuppressionStore::Suppress(const std::string& thread_id,
 }
 
 Roe<void> AttachmentSuppressionStore::ClearSuppression(const std::string& thread_id,
-                                                     const std::vector<uint8_t>& content_hash) {
+                                                       const std::vector<uint8_t>& content_hash) {
   if (thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return Error("Invalid attachment suppression target");
   }

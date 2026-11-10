@@ -84,8 +84,7 @@ using CallMediaInboundAnswer = std::function<void(CallMediaDirectConnectParams, 
  * at once and answers when it knows (e.g. once the media key is stored). A hello never answered is
  * left to Detach / ClearInboundHandler / the leg timeout.
  */
-using CallMediaInboundHandler =
-    std::function<void(CallMediaDirectConnectParams params, CallMediaInboundAnswer answer)>;
+using CallMediaInboundHandler = std::function<void(CallMediaDirectConnectParams params, CallMediaInboundAnswer answer)>;
 
 /** For handlers that decide on the spot (fakes, tools): run `decide`, then answer inline. */
 inline CallMediaInboundHandler AnswerInline(

@@ -32,8 +32,8 @@ public:
   ~GroupMembershipWorkflow();
 
   GroupMembershipWorkflow(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                         IGroupRosterStore& roster, GroupInviteGate& invite_gate, MeshDeliveryOrchestrator& mesh_messaging,
-                         AccountKeyResolver& account_keys);
+                          IGroupRosterStore& roster, GroupInviteGate& invite_gate,
+                          MeshDeliveryOrchestrator& mesh_messaging, AccountKeyResolver& account_keys);
 
   void SetInboundPolicy(GroupInvitePolicy policy);
 
@@ -68,8 +68,8 @@ public:
   /** Local leave used by session close — stops inbound group recreate without peer notify. */
   Roe<void> DismissLocalGroup(const std::string& group_id);
   /** Update the DM invite card after accept/decline/block. */
-  Roe<void> ResolveInviteCard(const std::string& inviter_identity, const std::string& invite_nonce,
-                              InviteStatus status, const std::string& status_text);
+  Roe<void> ResolveInviteCard(const std::string& inviter_identity, const std::string& invite_nonce, InviteStatus status,
+                              const std::string& status_text);
   Roe<void> RemoveMember(const std::string& group_id, const std::string& member_contact_id);
   /**
    * Remove by account (unreachable members may lack a contact row): the owner anyone, an admin members (G017, G020).

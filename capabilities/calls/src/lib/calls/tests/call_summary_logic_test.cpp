@@ -62,10 +62,10 @@ TEST(CallSummaryLogicTest, AGroupNotesTheCallAsItWentHere) {
 TEST(CallSummaryLogicTest, ACallAnsweredOnAnotherOfOurDevicesLeavesNoHistoryHere) {
   // M021 d5: the device that took it (and the caller) keep the history; a sibling that only rang writes no
   // "missed call" — in a group either.
-  EXPECT_FALSE(PlanCallSummary(Session("owner", true), {Joined("owner", 1'000)}, "me",
-                               LiveCallEndReason::AnsweredElsewhere, 0));
-  EXPECT_FALSE(PlanCallSummary(Session("me", false), {Joined("me", 1'000)}, "me", LiveCallEndReason::AnsweredElsewhere,
-                               0));
+  EXPECT_FALSE(
+      PlanCallSummary(Session("owner", true), {Joined("owner", 1'000)}, "me", LiveCallEndReason::AnsweredElsewhere, 0));
+  EXPECT_FALSE(
+      PlanCallSummary(Session("me", false), {Joined("me", 1'000)}, "me", LiveCallEndReason::AnsweredElsewhere, 0));
 }
 
 TEST(CallSummaryLogicTest, AGroupRecordHasOneFixedIdPerCall) {
@@ -83,8 +83,8 @@ CallSummaryDetail Stay(int64_t started_at, int64_t duration_ms) {
 } // namespace
 
 TEST(CallSummaryLogicTest, ALaterLeaveRunsFromTheFirstJoinToTheLastLeave) {
-  const CallSummaryDetail first = Stay(1'000, 4'000);   // 1s to 5s
-  const CallSummaryDetail second = Stay(8'000, 2'000);  // 8s to 10s, its own stamp
+  const CallSummaryDetail first = Stay(1'000, 4'000);  // 1s to 5s
+  const CallSummaryDetail second = Stay(8'000, 2'000); // 8s to 10s, its own stamp
   EXPECT_EQ(MergeGroupSummary(std::nullopt, first, SummaryWrite::Leave)->duration_ms, std::optional<int64_t>(4'000));
   const auto merged = MergeGroupSummary(first, second, SummaryWrite::Leave);
   ASSERT_TRUE(merged);
@@ -122,14 +122,14 @@ TEST(CallSummaryLogicTest, ARecordWithoutTalkTimeTakesTheLaterWrite) {
 TEST(CallSummaryLogicTest, TheEndOfACallThisDeviceLeftNeverReplacesItsRecord) {
   const CallSummaryDetail left = Stay(1'000, 4'000);
   CallSummaryDetail ended = left;
-  ended.duration_ms = 9'000;  // counted to the call's end, after this device left
+  ended.duration_ms = 9'000; // counted to the call's end, after this device left
   EXPECT_FALSE(MergeGroupSummary(left, ended, SummaryWrite::Final));
   EXPECT_TRUE(MergeGroupSummary(std::nullopt, ended, SummaryWrite::Final)) << "a call never left writes at its end";
 }
 
 TEST(CallSummaryLogicTest, TheEndOfACallThisDeviceWasBackInRunsToTheEnd) {
   const CallSummaryDetail left = Stay(1'000, 4'000);
-  const CallSummaryDetail ended = Stay(8'000, 3'000);  // back in after the leave, and in it when the call ended
+  const CallSummaryDetail ended = Stay(8'000, 3'000); // back in after the leave, and in it when the call ended
   EXPECT_EQ(MergeGroupSummary(left, ended, SummaryWrite::EndWhileIn)->duration_ms, std::optional<int64_t>(10'000));
   CallSummaryDetail no_talk = left;
   no_talk.duration_ms.reset();

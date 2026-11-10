@@ -68,9 +68,7 @@ public:
   bool IsDialable(const std::string& peer_key) const override {
     return endpoints.count(peer_key) > 0 || connected.count(peer_key) > 0;
   }
-  bool IsConnected(const std::string& peer_key) const override {
-    return connected.count(peer_key) > 0;
-  }
+  bool IsConnected(const std::string& peer_key) const override { return connected.count(peer_key) > 0; }
   std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const override {
     const auto it = endpoints.find(peer_key);
     if (it != endpoints.end()) {
@@ -116,14 +114,12 @@ public:
     }
   }
   CallMediaRoe Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    int timeout_ms) override {
+                       int timeout_ms) override {
     CallMediaRoe out;
     ConnectAsync(params, std::move(callbacks), [&](CallMediaRoe r) { out = std::move(r); }, timeout_ms);
     return out;
   }
-  Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override {
-    return {};
-  }
+  Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override { return {}; }
   Roe<void> SendMedia(uint8_t /*channel*/, const std::vector<uint8_t>& /*payload*/, uint32_t /*seq*/, uint8_t /*mark*/,
                       uint64_t /*instance*/) override {
     return {};
@@ -180,7 +176,6 @@ protected:
     auto loaded = identity_->LoadOrCreate();
     ASSERT_TRUE(loaded) << loaded.error().message;
     local_identity_ = loaded->account_id;
-
 
     mesh_config_ = MeshConfig{};
     listen_desires_ = 0;
@@ -289,8 +284,8 @@ protected:
     if (!detail) {
       return detail.error();
     }
-    auto msg = CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallInvite,
-                                                    "Incoming call", *detail, "account:peer");
+    auto msg = CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallInvite, "Incoming call",
+                                                    *detail, "account:peer");
     if (!msg) {
       return msg.error();
     }
@@ -299,7 +294,7 @@ protected:
       return Error("inbound not bound");
     }
     auto applied = family->apply(*msg, SystemControlContext{"account:peer", std::nullopt, std::nullopt});
-    AppRuntime::RunUIAndOwnerTasks();  // call control is applied on the calls owner (drained by the test)
+    AppRuntime::RunUIAndOwnerTasks(); // call control is applied on the calls owner (drained by the test)
     return applied;
   }
 
@@ -385,7 +380,8 @@ TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
   EXPECT_EQ((*pending)->call_id, call_id);
 
   ui_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
-  EXPECT_EQ(ui_->Phase(), CallPhase::Ringing) << "posted, not applied: the snapshot changes only after the owner's step";
+  EXPECT_EQ(ui_->Phase(), CallPhase::Ringing)
+      << "posted, not applied: the snapshot changes only after the owner's step";
 
   DrainUntil([&]() {
     return ui_->Phase() == CallPhase::JoinedLocal || ui_->Phase() == CallPhase::MediaPending ||
@@ -448,7 +444,8 @@ TEST_F(CallUiBackendStackTest, PinnedMobilityRidesTheAcceptAndSetsThePolicy) {
     std::lock_guard lock(sent_mu_);
     for (const auto& payload : sent_payloads_) {
       accept_says_mobile |= payload.find("call_accept") != std::string::npos &&
-                            payload.find("mobility") != std::string::npos && payload.find("mobile") != std::string::npos;
+                            payload.find("mobility") != std::string::npos &&
+                            payload.find("mobile") != std::string::npos;
     }
   }
   EXPECT_TRUE(accept_says_mobile) << "the accept advertises caps.mobility";
@@ -526,13 +523,12 @@ TEST_F(CallUiBackendStackTest, InviteAcceptMediaPathThroughBackend) {
   EXPECT_EQ(stack_->Engine()->ActiveSessionId(), call_id);
   // Peer reach settles on its lane, so the dial follows StartDuplex asynchronously.
   DrainUntil([&]() { return transport_->connect_async_calls >= 1 || ui_->Phase() == CallPhase::ConnectFailed; });
-  EXPECT_GE(transport_->connect_async_calls, 1) << "phase=" << CallPhaseName(ui_->Phase())
-                                                << " err=" << ui_->LastError();
+  EXPECT_GE(transport_->connect_async_calls, 1)
+      << "phase=" << CallPhaseName(ui_->Phase()) << " err=" << ui_->LastError();
   EXPECT_TRUE(transport_->active);
 
   DrainUntil([&]() {
-    return ui_->Phase() == CallPhase::InCall || ui_->Phase() == CallPhase::MediaConnecting ||
-           ui_->MediaChromeLive();
+    return ui_->Phase() == CallPhase::InCall || ui_->Phase() == CallPhase::MediaConnecting || ui_->MediaChromeLive();
   });
   EXPECT_TRUE(ui_->Phase() == CallPhase::InCall || ui_->Phase() == CallPhase::MediaConnecting ||
               ui_->Phase() == CallPhase::JoinedLocal)

@@ -8,7 +8,7 @@
 namespace ui {
 class Element;
 class Event;
-}
+} // namespace ui
 
 namespace pbr {
 

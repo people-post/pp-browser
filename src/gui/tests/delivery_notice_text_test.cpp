@@ -71,8 +71,9 @@ TEST_F(DeliveryNoticeTextTest, TheTranscriptWordsAStoredReceiveFailureLine) {
   row.message.payload_json = DumpJson(payload);
   auto rows = RenderTranscript({row}, TranscriptFacts{});
   ASSERT_EQ(rows.size(), 1u);
-  EXPECT_NE(std::string(rows[0].content_rml.c_str()).find("Couldn't read a message from account:lHaE… (bad signature)."),
-            std::string::npos)
+  EXPECT_NE(
+      std::string(rows[0].content_rml.c_str()).find("Couldn't read a message from account:lHaE… (bad signature)."),
+      std::string::npos)
       << rows[0].content_rml.c_str();
 }
 
@@ -85,8 +86,10 @@ RenderedRow SystemRowOf(const ThreadMessage& message) {
 }
 
 TEST_F(DeliveryNoticeTextTest, TheTranscriptWordsASendFailureLineUnderItsMessage) {
-  const ThreadMessage failed = MakeSendFailureRow("t1", "m1", SendFailureWord(SendFailure::RelayUnreachable).c_str(), 1);
-  EXPECT_NE(SystemRowOf(failed).rml.find("Couldn't reach the message server"), std::string::npos) << SystemRowOf(failed).rml;
+  const ThreadMessage failed =
+      MakeSendFailureRow("t1", "m1", SendFailureWord(SendFailure::RelayUnreachable).c_str(), 1);
+  EXPECT_NE(SystemRowOf(failed).rml.find("Couldn't reach the message server"), std::string::npos)
+      << SystemRowOf(failed).rml;
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
   const std::string zh = SystemRowOf(failed).rml;
   EXPECT_EQ(zh.find("Couldn't"), std::string::npos) << "in the reader's language: " << zh;

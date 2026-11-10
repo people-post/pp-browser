@@ -142,8 +142,7 @@ TEST_F(AttachmentCacheAtRestTest, MemoryCacheServesAfterCasRemovedAndClearsOnVie
   ASSERT_TRUE(WipeAllAttachmentViewCaches(profile_dir_));
   EXPECT_EQ(AttachmentPlaintextMemoryCache::Instance().EntryCountForTest(), 0u);
 
-  auto after_wipe =
-      LoadAttachmentPlaintext(*content_, *hash, dek);
+  auto after_wipe = LoadAttachmentPlaintext(*content_, *hash, dek);
   EXPECT_FALSE(static_cast<bool>(after_wipe));
 }
 
@@ -215,13 +214,13 @@ TEST_F(AttachmentCacheAtRestTest, LargeImageThumbnailIsMadeFromBytesInMemoryAndO
   int seen_dimension = 0;
   std::vector<std::filesystem::path> files_while_running{std::filesystem::path("not looked")};
   const auto view_root = std::filesystem::path(AttachmentViewRoot(profile_dir_, thread_id_));
-  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::vector<uint8_t>& bytes, int max_dimension)
-                                                     -> Roe<std::vector<uint8_t>> {
-    same_bytes = bytes == big;
-    seen_dimension = max_dimension;
-    files_while_running = FilesUnder(view_root); // no plaintext copy on disk while it runs
-    return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
-  }});
+  SetAttachmentPlatform(
+      {.image_thumbnail_jpeg = [&](const std::vector<uint8_t>& bytes, int max_dimension) -> Roe<std::vector<uint8_t>> {
+        same_bytes = bytes == big;
+        seen_dimension = max_dimension;
+        files_while_running = FilesUnder(view_root); // no plaintext copy on disk while it runs
+        return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
+      }});
   auto thumb = EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content_, thread_id_, *hash, "image/png", dek);
   ASSERT_TRUE(thumb) << thumb.error().message;
   EXPECT_EQ(*thumb, AttachmentPosterPath(profile_dir_, thread_id_, *hash));
@@ -312,8 +311,8 @@ TEST_F(AttachmentCacheAtRestTest, PendingCapBoundsOrphansOnly) {
   }
   EXPECT_FALSE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, PendingHash(200), blob)) << "orphan cap";
   const auto referenced = PendingHash(201);
-  EXPECT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, referenced, blob,
-                                              {AttachmentHashHex(referenced)}))
+  EXPECT_TRUE(
+      SavePendingAttachmentCiphertext(profile_dir_, thread_id_, referenced, blob, {AttachmentHashHex(referenced)}))
       << "a referenced attachment is accepted past the orphan cap";
 }
 
@@ -330,8 +329,8 @@ TEST_F(AttachmentCacheAtRestTest, PendingTtlPrunesOrphansNotReferencedBlobs) {
   std::filesystem::last_write_time(root / AttachmentHashHex(kept), two_days_ago);
 
   // The next push prunes, with `kept` named by a thread message.
-  ASSERT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, PendingHash(3), blob,
-                                              {AttachmentHashHex(kept)}));
+  ASSERT_TRUE(
+      SavePendingAttachmentCiphertext(profile_dir_, thread_id_, PendingHash(3), blob, {AttachmentHashHex(kept)}));
   EXPECT_FALSE(AttachmentPendingCiphertextExists(profile_dir_, thread_id_, orphan)) << "expired orphan pruned";
   EXPECT_TRUE(AttachmentPendingCiphertextExists(profile_dir_, thread_id_, kept)) << "referenced blob kept";
 }
@@ -358,8 +357,7 @@ TEST_F(AttachmentCacheAtRestTest, ContentMatchesMimeRejectsMzPolyglot) {
   ASSERT_TRUE(hash);
   const auto dek = MakeDek(0x88);
 
-  ASSERT_TRUE(
-      SaveAttachmentPlaintext(*content_, *hash, "video/mp4", polyglot, "clip.mp4", dek));
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "video/mp4", polyglot, "clip.mp4", dek));
   auto view = EnsureAttachmentView(profile_dir_, *content_, thread_id_, *hash, "video/mp4", "clip.mp4", dek);
   ASSERT_TRUE(view) << view.error().message;
 

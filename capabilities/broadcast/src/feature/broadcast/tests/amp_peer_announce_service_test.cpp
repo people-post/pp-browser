@@ -55,11 +55,11 @@ protected:
 
     AmpPeerAnnounceTransport::WorkerPost no_worker;
     a_svc_ = std::make_unique<AmpPeerAnnounceTransport>(
-        harness_->chat_a(), feed_a_, [this] { harness_->PumpBoth(); }, no_worker, resolve,
-        harness_->MakePostIoA(), harness_->MakePostAfterA());
+        harness_->chat_a(), feed_a_, [this] { harness_->PumpBoth(); }, no_worker, resolve, harness_->MakePostIoA(),
+        harness_->MakePostAfterA());
     b_svc_ = std::make_unique<AmpPeerAnnounceTransport>(
-        harness_->chat_b(), feed_b_, [this] { harness_->PumpBoth(); }, no_worker, resolve,
-        harness_->MakePostIoB(), harness_->MakePostAfterB());
+        harness_->chat_b(), feed_b_, [this] { harness_->PumpBoth(); }, no_worker, resolve, harness_->MakePostIoB(),
+        harness_->MakePostAfterB());
     a_svc_->Start();
     b_svc_->Start();
   }
@@ -144,14 +144,13 @@ TEST_F(AmpPeerAnnounceTransportTest, PushTipRoundTripWithStoreBackedResolver) {
   record.source = "test";
   store.Put(ContactIdKindToString(mesh::ContactIdKind::PeerId), *peer_id, record);
 
-  b_svc_->SetPublisherKeyResolver(
-      [&store](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {
-        return ResolvePeerAnnouncePublisherKey(
-            tip_peer_id, "", {}, [&store](const std::string& kind, const std::string& value) -> std::optional<std::string> {
-              auto stored = store.Get(kind, value);
-              return stored ? std::optional<std::string>(stored->signing_public_key_b64) : std::nullopt;
-            });
-      });
+  b_svc_->SetPublisherKeyResolver([&store](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {
+    return ResolvePeerAnnouncePublisherKey(
+        tip_peer_id, "", {}, [&store](const std::string& kind, const std::string& value) -> std::optional<std::string> {
+          auto stored = store.Get(kind, value);
+          return stored ? std::optional<std::string>(stored->signing_public_key_b64) : std::nullopt;
+        });
+  });
 
   auto topic = MakePeerAnnounceTopicId(*peer_id, "live");
   ASSERT_TRUE(topic);

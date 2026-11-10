@@ -201,14 +201,14 @@ void AppendResult(std::ostringstream& out) {
  */
 void AppendSteps(std::ostringstream& out, const int stage, const int count) {
   out << "<div class=\"call-phone-steps\">";
-  const char* vars[] = {"call_in_progress_story_step1", "call_in_progress_story_step2",
-                        "call_in_progress_story_step3", "call_in_progress_story_step4",
-                        "call_in_progress_story_step5"};
+  const char* vars[] = {"call_in_progress_story_step1", "call_in_progress_story_step2", "call_in_progress_story_step3",
+                        "call_in_progress_story_step4", "call_in_progress_story_step5"};
   for (int i = 0; i < count && i < 5; ++i) {
     const bool done = i < stage;
     const bool current = i == stage;
     out << "<div class=\"call-phone-step"
-        << (done ? " call-phone-step--done" : (current ? " call-phone-step--current" : "")) << "\"><div class=\"call-phone-step-dot\">";
+        << (done ? " call-phone-step--done" : (current ? " call-phone-step--current" : ""))
+        << "\"><div class=\"call-phone-step-dot\">";
     if (done) {
       out << "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg>";
     }
@@ -241,8 +241,7 @@ void AppendControl(std::ostringstream& out, const char* event, const char* on_va
   if (on_var) {
     out << " data-class-call-phone-control--on=\"" << on_var << "\"";
   }
-  out << "><span class=\"call-phone-control-circle\"><svg " << icon_attr
-      << " width=\"26\" height=\"26\"></svg></span>";
+  out << "><span class=\"call-phone-control-circle\"><svg " << icon_attr << " width=\"26\" height=\"26\"></svg></span>";
   out << "<span class=\"call-phone-control-label\">" << label << "</span></button>";
 }
 
@@ -252,8 +251,8 @@ void AppendControls(std::ostringstream& out, const CallInProgressState& call, co
   const auto flip = [&]() {
     if (call.show_flip) {
       // Lit while the front camera is in use, plain on the rear one (#83).
-      AppendControl(out, "call_flip_camera()", "call_in_progress_camera_front",
-                    "src=\"../icons/v2/camera-flip.svg\"", Tr("call.control.flip"));
+      AppendControl(out, "call_flip_camera()", "call_in_progress_camera_front", "src=\"../icons/v2/camera-flip.svg\"",
+                    Tr("call.control.flip"));
     }
   };
   const auto mute = [&]() {
@@ -294,12 +293,12 @@ void AppendControls(std::ostringstream& out, const CallInProgressState& call, co
     speaker();
     camera();
     if (call.show_roster) {
-      flip();  // the group page draws its own tiles (never the video layout) but flips the camera all the same
+      flip(); // the group page draws its own tiles (never the video layout) but flips the camera all the same
     }
   }
   // Still ringing the others: the red button cancels (Kenneth 2026-11-04: a group call he started rang everyone and
   // he saw no way to cancel it); in a group it leaves, else it ends.
-  const std::string end_label = call.calling      ? Tr("call.cancel_calling")
+  const std::string end_label = call.calling       ? Tr("call.cancel_calling")
                                 : call.show_roster ? Tr("call.control.leave")
                                                    : Tr("call.control.end");
   AppendControl(out, "call_leave()", nullptr, "src=\"../icons/v2/phone-hangup-fill.svg\"", end_label,
@@ -411,7 +410,8 @@ std::string CallRingPhoneRml(const ShellState& state) {
   out << "<button class=\"call-phone-pill-btn\" type=\"button\" "
          "data-attrif-disabled=\"!call_ring_accept_charge_enabled\" "
          "data-event-click=\"call_accept_charge()\">{{call_ring_accept_charge_label}}</button>";
-  out << "<p class=\"call-phone-hint\" data-if=\"!call_ring_accept_charge_enabled\">{{call_ring_accept_charge_hint}}</p>";
+  out << "<p class=\"call-phone-hint\" "
+         "data-if=\"!call_ring_accept_charge_enabled\">{{call_ring_accept_charge_hint}}</p>";
   out << "</div></div>";
   return out.str();
 }
@@ -470,7 +470,8 @@ std::string CallPhoneRml(const ShellState& state) {
          "<svg src=\"../icons/v2/chevron-down.svg\" width=\"26\" height=\"26\"></svg></button>";
   out << (wide_sides ? "</div>" : "");
   out << "<div class=\"call-phone-sealed\"><svg src=\"../icons/v2/lock.svg\" width=\"12\" height=\"12\"></svg>"
-         "<span class=\"call-phone-sealed-text\">" << Tr("call.top.e2e") << "</span></div>";
+         "<span class=\"call-phone-sealed-text\">"
+      << Tr("call.top.e2e") << "</span></div>";
   // With a spotlight, the grid button sits before add-people; the chevron's side widens to match, keeping the
   // middle centred.
   if (wide_sides) {
@@ -509,7 +510,8 @@ std::string CallPhoneRml(const ShellState& state) {
     out << "<div class=\"call-phone-failed-actions\">";
     if (call.show_retry) {
       out << "<button class=\"call-phone-pill-btn call-phone-pill-btn--primary\" type=\"button\" "
-             "data-event-click=\"call_retry()\">" << Tr("call.failed.retry") << "</button>";
+             "data-event-click=\"call_retry()\">"
+          << Tr("call.failed.retry") << "</button>";
     }
     out << "<button class=\"call-phone-pill-btn\" type=\"button\" data-event-click=\"call_leave()\">"
         << Tr("call.failed.close") << "</button>";
@@ -520,7 +522,8 @@ std::string CallPhoneRml(const ShellState& state) {
   if (group) {
     out << "<div class=\"call-phone-head\">";
     out << "<p class=\"call-phone-group-name\">{{call_in_progress_phone_title}}</p>";
-    out << "<div class=\"call-phone-sub-row\"><p class=\"call-phone-sub\" data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">{{call_in_progress_subtitle}}</p>";
+    out << "<div class=\"call-phone-sub-row\"><p class=\"call-phone-sub\" "
+           "data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">{{call_in_progress_subtitle}}</p>";
     AppendSignalSlot(out, "call-phone-signal--compact");
     out << "</div>";
     AppendHints(out);
@@ -542,7 +545,8 @@ std::string CallPhoneRml(const ShellState& state) {
       out << "</div>";
     }
     if (call.story_active) {
-      out << "<div class=\"call-phone-story call-phone-story--card call-phone-story--group\"><div class=\"call-phone-card\">";
+      out << "<div class=\"call-phone-story call-phone-story--card call-phone-story--group\"><div "
+             "class=\"call-phone-card\">";
       AppendSteps(out, call.story_stage, call.story_step_count);
       out << "</div></div>";
     }
@@ -558,7 +562,8 @@ std::string CallPhoneRml(const ShellState& state) {
     out << "<div class=\"call-phone-video-body\"><div class=\"call-phone-who\">";
     out << "<p class=\"call-phone-who-name\">{{call_in_progress_phone_title}}</p>";
     AppendHoldPill(out, "call_in_progress_on_hold", " call-hold-pill--who");
-    out << "<p class=\"call-phone-who-status\" data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">{{call_in_progress_subtitle}}</p>";
+    out << "<p class=\"call-phone-who-status\" "
+           "data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">{{call_in_progress_subtitle}}</p>";
     AppendResult(out);
     AppendSignalSlot(out, "call-phone-signal--compact");
     AppendHints(out);
@@ -746,7 +751,8 @@ std::string CallInProgressRml(const ShellState& state) {
            "data-event-click=\"call_flip_camera()\">";
     out << "<svg src=\"../icons/camera-flip.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
     out << "</button>";
-    out << "<button class=\"shell-call-leave\" type=\"button\" data-class-shell-call-leave--ringing=\"call_in_progress_calling\" "
+    out << "<button class=\"shell-call-leave\" type=\"button\" "
+           "data-class-shell-call-leave--ringing=\"call_in_progress_calling\" "
            "data-event-click=\"call_leave()\">";
     out << "<svg src=\"../icons/phone-hangup.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
     out << "</button>";
@@ -798,14 +804,15 @@ std::string CallInProgressRml(const ShellState& state) {
       } else {
         std::snprintf(style, sizeof(style), "right:%.0fdp;left:auto;%sbottom:auto;", edge_dp, top);
       }
-      out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row" << form_class << "\" style=\"" << style << "\">";
+      out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row" << form_class
+          << "\" style=\"" << style << "\">";
     }
     if (tucked) {
       // #189: the handle: a small coloured phone hanging on the edge, no text. A tap (or a pull away from the edge)
       // brings the full bar back (ShellCallChromeGesture).
       out << "<svg class=\"shell-call-minimized-icon\" src=\"../icons/v2/phone.svg\" width=\"22\" height=\"22\" "
              "crop-to-content=\"true\"></svg>";
-      out << "</div></div>";  // the handle, then shell-call-chrome-root
+      out << "</div></div>"; // the handle, then shell-call-chrome-root
       return out.str();
     }
     out << "<div class=\"shell-call-minimized-main\">";
@@ -928,22 +935,32 @@ std::string CallInProgressRml(const ShellState& state) {
   out << "<div class=\"shell-call-meter shell-call-meter--compact\">";
   out << "<span class=\"text-xs shell-call-meter-label\">" << Tr("call.label.you") << "</span>";
   out << "<div class=\"shell-call-meter-track row\">";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 1\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 2\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 3\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 4\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 5\"></div>";
+  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= "
+         "1\"></div>";
+  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= "
+         "2\"></div>";
+  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= "
+         "3\"></div>";
+  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= "
+         "4\"></div>";
+  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= "
+         "5\"></div>";
   out << "</div>";
   out << "<span class=\"text-xs shell-call-meter-hint\">{{call_in_progress_mic_hint}}</span>";
   out << "</div>";
   out << "<div class=\"shell-call-meter shell-call-meter--compact\">";
   out << "<span class=\"text-xs shell-call-meter-label\">{{call_in_progress_peer_label}}</span>";
   out << "<div class=\"shell-call-meter-track row\">";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 1\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 2\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 3\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 4\"></div>";
-  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 5\"></div>";
+  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= "
+         "1\"></div>";
+  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= "
+         "2\"></div>";
+  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= "
+         "3\"></div>";
+  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= "
+         "4\"></div>";
+  out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= "
+         "5\"></div>";
   out << "</div>";
   out << "<span class=\"text-xs shell-call-meter-hint\">{{call_in_progress_peer_hint}}</span>";
   out << "</div></div></div></div>";

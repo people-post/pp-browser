@@ -16,8 +16,8 @@ struct PostMedia {
   PostHash content_id{};
   std::string mime;
   uint64_t size = 0;
-  std::string alt;          // for screen readers; empty = none
-  uint32_t width = 0;       // pixels; 0 = unknown
+  std::string alt;    // for screen readers; empty = none
+  uint32_t width = 0; // pixels; 0 = unknown
   uint32_t height = 0;
   uint32_t duration_ms = 0; // 0 = a still image
   ByteVector placeholder;   // ThumbHash shown while the media loads; empty = none
@@ -26,9 +26,9 @@ struct PostMedia {
 };
 
 enum class PostFacetType : uint8_t {
-  Mention = 1,  // value: an account id
-  Link = 2,     // value: an https URL
-  Hashtag = 3,  // value: the tag without "#"
+  Mention = 1, // value: an account id
+  Link = 2,    // value: an https URL
+  Hashtag = 3, // value: the tag without "#"
 };
 
 /** A byte span [start, end) of the text and what it means; a reader shows an unknown type as plain text. */
@@ -53,12 +53,12 @@ struct PostReply {
 struct PostBody {
   std::string text;
   std::vector<PostMedia> media;
-  std::vector<PostFacet> facets;  // sorted by start, not overlapping
+  std::vector<PostFacet> facets; // sorted by start, not overlapping
   std::optional<PostReply> reply;
   std::optional<PostRef> quote;
-  std::string content_warning;    // empty = none
-  std::vector<std::string> labels;     // author self-labels: "sexual", "nudity", "graphic"
-  std::vector<std::string> languages;  // BCP 47 tags
+  std::string content_warning;        // empty = none
+  std::vector<std::string> labels;    // author self-labels: "sexual", "nudity", "graphic"
+  std::vector<std::string> languages; // BCP 47 tags
 
   bool operator==(const PostBody&) const = default;
 };
@@ -79,7 +79,7 @@ struct TargetBody {
 
 struct ReactBody {
   PostRef target;
-  std::string reaction;  // v1 UI: "like"
+  std::string reaction; // v1 UI: "like"
 
   bool operator==(const ReactBody&) const = default;
 };
@@ -87,7 +87,7 @@ struct ReactBody {
 /** A service an account offers (S013): its kind (post_relay, witness, anchor) and terms as the provider states them. */
 struct PostService {
   std::string kind;
-  std::string terms;  // JSON text, signed as given
+  std::string terms; // JSON text, signed as given
 
   bool operator==(const PostService&) const = default;
 };

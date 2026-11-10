@@ -65,14 +65,17 @@ protected:
     ASSERT_TRUE(ui::LoadFontFace(AssetPath("fonts/Inter-Regular.ttf"), /*fallback_face=*/true));
     context = ui::CreateContext("chat-picture-card-test", {kWidth, kHeight});
     ASSERT_NE(context, nullptr);
-    ASSERT_TRUE(DataModelHost::Instance().Register(context, "chat", [this](ui::DataModelConstructor& ctor) {
-      BindChatScreenState(ctor, state);
-    }));
+    ASSERT_TRUE(DataModelHost::Instance().Register(
+        context, "chat", [this](ui::DataModelConstructor& ctor) { BindChatScreenState(ctor, state); }));
   }
   void TearDown() override {
     DataModelHost::Instance().Clear();
-    if (context) { ui::RemoveContext("chat-picture-card-test"); }
-    if (initialized) { ui::Shutdown(); }
+    if (context) {
+      ui::RemoveContext("chat-picture-card-test");
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
     ui::SetRenderInterface(nullptr);
   }
   /** The phone chat overlay (as ShellLayoutRml lays it out) with `rows` in its transcript. */
@@ -81,16 +84,17 @@ protected:
     state.use_messages_layout = true;
     state.has_turns = true;
     const LocalizationService& i18n = LocalizationService::Instance();
-    const std::string rml =
-        "<rml><head><style>" + ReadAll(AssetPath("themes/components.rcss")) +
-        ReadAll(AssetPath("themes/colors-light.rcss")) +
-        "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
-        "<div style=\"position: absolute; top: 0; left: 0; width: " + std::to_string(kWidth) + "dp; height: " +
-        std::to_string(kHeight) + "dp;\">"
-        "<div class=\"shell-layer shell-layer-base shell-layer-compact\">"
-        "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">"
-        "<div class=\"shell-pane-body\" id=\"pane-body-chat\">" + i18n.LocalizeText(ReadAll(AssetPath("views/chat.rml"))) +
-        "</div></div></div></div></body></rml>";
+    const std::string rml = "<rml><head><style>" + ReadAll(AssetPath("themes/components.rcss")) +
+                            ReadAll(AssetPath("themes/colors-light.rcss")) +
+                            "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+                            "<div style=\"position: absolute; top: 0; left: 0; width: " +
+                            std::to_string(kWidth) + "dp; height: " + std::to_string(kHeight) +
+                            "dp;\">"
+                            "<div class=\"shell-layer shell-layer-base shell-layer-compact\">"
+                            "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">"
+                            "<div class=\"shell-pane-body\" id=\"pane-body-chat\">" +
+                            i18n.LocalizeText(ReadAll(AssetPath("views/chat.rml"))) +
+                            "</div></div></div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
     document->Show();
@@ -148,7 +152,7 @@ TranscriptRow PictureRow(const std::string& id) {
 
 struct Case {
   const char* name;
-  int w, h;  // the file's pixels; the header read gives 0 x 0 when `known` is false
+  int w, h; // the file's pixels; the header read gives 0 x 0 when `known` is false
   bool known;
 };
 
@@ -165,7 +169,8 @@ TEST_F(ChatPictureCardLayoutTest, ThePictureFillsItsCardWhateverTheFileSizeKnowl
     facts.attachment = [&](const ThreadMessage&) {
       TranscriptAttachmentView view;
       view.state = AttachmentFetchWorkflow::DownloadState::Ready;
-      view.local_path = std::string("/tmp/photo-") + c.name + ".jpg";  // one texture per case (the engine caches by source)
+      view.local_path =
+          std::string("/tmp/photo-") + c.name + ".jpg"; // one texture per case (the engine caches by source)
       view.inline_image_ok = true;
       view.image_width = c.known ? c.w : 0;
       view.image_height = c.known ? c.h : 0;
@@ -199,5 +204,5 @@ TEST_F(ChatPictureCardLayoutTest, ThePictureFillsItsCardWhateverTheFileSizeKnowl
   }
 }
 
-}  // namespace
-}  // namespace pbr
+} // namespace
+} // namespace pbr

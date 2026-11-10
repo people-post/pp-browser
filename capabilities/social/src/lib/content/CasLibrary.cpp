@@ -49,18 +49,18 @@ Roe<std::vector<CasLibraryRow>> ListCasLibrary(const CasStore& content, const Ca
   std::optional<CasRealm> realm;
   std::optional<bool> pinned;
   switch (filter) {
-  case CasLibraryFilter::All:
-    break;
-  case CasLibraryFilter::Private:
-    realm = CasRealm::Private;
-    break;
-  case CasLibraryFilter::Public:
-    realm = CasRealm::Public;
-    pinned = true;
-    break;
-  case CasLibraryFilter::Cache:
-    pinned = false;
-    break;
+    case CasLibraryFilter::All:
+      break;
+    case CasLibraryFilter::Private:
+      realm = CasRealm::Private;
+      break;
+    case CasLibraryFilter::Public:
+      realm = CasRealm::Public;
+      pinned = true;
+      break;
+    case CasLibraryFilter::Cache:
+      pinned = false;
+      break;
   }
   auto listed = content.Index().List(realm, pinned);
   if (!listed) {

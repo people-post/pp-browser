@@ -33,9 +33,9 @@ TEST(OsProcessTest, ChildInheritsNeitherOurFdsNorOurVariables) {
   ASSERT_EQ(dup2(spare, 9), 9);
 
   pbr::os::OsProcessPipe process;
-  ASSERT_TRUE(process.Start(
-      "/bin/sh", {"-c", "echo pin=${PP_BROWSER_PIN:-unset} keep=${PP_TEST_KEEP_ME:-unset}; "
-                        "if [ -e /dev/fd/9 ]; then echo fd9=open; else echo fd9=closed; fi"}));
+  ASSERT_TRUE(process.Start("/bin/sh", {"-c",
+                                        "echo pin=${PP_BROWSER_PIN:-unset} keep=${PP_TEST_KEEP_ME:-unset}; "
+                                        "if [ -e /dev/fd/9 ]; then echo fd9=open; else echo fd9=closed; fi"}));
   const std::string out = ReadAll(process);
   process.Stop();
   close(spare);

@@ -50,11 +50,11 @@ int CameraDisplayRotationDegrees() {
   static int last_valid_deg = 0;
   CMMotionManager* motion = OrientationMotion();
   if (motion.deviceMotionAvailable && !motion.deviceMotionActive) {
-    [motion startDeviceMotionUpdates];  // stopped again by StopCameraOrientationTracking
+    [motion startDeviceMotionUpdates]; // stopped again by StopCameraOrientationTracking
   }
   CMDeviceMotion* dm = motion.deviceMotion;
   if (dm == nil) {
-    return last_valid_deg;  // not started yet / unavailable (simulator)
+    return last_valid_deg; // not started yet / unavailable (simulator)
   }
   const double gx = dm.gravity.x;
   const double gy = dm.gravity.y;
@@ -72,8 +72,8 @@ int CameraDisplayRotationDegrees() {
     }
   }
   if (deg != last_valid_deg) {
-    NSLog(@"CameraOrientation: physical rotation %d -> %d (gravity x=%.2f y=%.2f z=%.2f)", last_valid_deg, deg,
-          gx, gy, gz);
+    NSLog(@"CameraOrientation: physical rotation %d -> %d (gravity x=%.2f y=%.2f z=%.2f)", last_valid_deg, deg, gx, gy,
+          gz);
     last_valid_deg = deg;
   }
   return last_valid_deg;
@@ -105,7 +105,7 @@ int CameraFrameRotateCw(const CameraCaptureTransform& opened, int current_displa
 }
 
 int CameraPreviewRotateCw(const CameraCaptureTransform& opened) {
-  return IosCameraRotateCw(opened.front_facing, 0);  // the UI never rotates: portrait is screen-up
+  return IosCameraRotateCw(opened.front_facing, 0); // the UI never rotates: portrait is screen-up
 }
 
 } // namespace pbr

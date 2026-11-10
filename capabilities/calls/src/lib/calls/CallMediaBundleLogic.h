@@ -262,7 +262,7 @@ public:
 private:
   bool have_ = false;
   uint32_t highest_ = 0;
-  std::bitset<kWindow> seen_;  // bit i = highest_ - i
+  std::bitset<kWindow> seen_; // bit i = highest_ - i
 };
 
 struct CallMediaRetiringInput {
