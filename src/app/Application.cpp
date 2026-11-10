@@ -602,10 +602,10 @@ Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
     StartupPhase phase("Shutdown::ConversationsHub");
     messaging_->Shutdown();
   }
+  // The data is gone (both variants): the new inbox starts empty and its first Refresh() sends the true value.
+  // Not in ShutdownMessaging: a normal quit keeps the icon number while the messages are still unread.
   if (badges_) {
-    badges_
-        ->ClearAppBadge(); // the data is gone (both variants): the new inbox starts empty, its first Refresh() sends the true value
-    // Not in ShutdownMessaging: a normal quit keeps the icon number while the messages are still unread.
+    badges_->ClearAppBadge();
   }
   AppRuntime::ReopenAfterTeardown();
   return {};
