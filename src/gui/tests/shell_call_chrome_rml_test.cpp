@@ -29,6 +29,28 @@ TEST(ShellCallChromeRmlTest, ARingingCallOffersItsAnswers) {
   EXPECT_TRUE(Has(rml, "data-model=\"window\""));
 }
 
+// Incoming call, connecting…: the phone ring page with its answers in place but dimmed and dead (no click events),
+// then the real ring's page with them live again.
+TEST(ShellCallChromeRmlTest, TheAwaitingRingPageDimsItsAnswersAndDropsTheirClicks) {
+  ShellState state;
+  state.layout_mode = LayoutMode::Compact;
+  state.call_ring.active = true;
+  state.call_ring.awaiting_invite = true;
+  const std::string waiting = CallRingRml(state);
+  EXPECT_TRUE(Has(waiting, "call-phone--ring"));
+  EXPECT_TRUE(Has(waiting, "{{call_ring_phone_title}}"));
+  EXPECT_TRUE(Has(waiting, "call-phone-answer--waiting"));
+  EXPECT_FALSE(Has(waiting, "call_accept()"));
+  EXPECT_FALSE(Has(waiting, "call_accept_voice()"));
+  EXPECT_FALSE(Has(waiting, "call_decline()"));
+
+  state.call_ring.awaiting_invite = false;
+  const std::string live = CallRingRml(state);
+  EXPECT_FALSE(Has(live, "call-phone-answer--waiting"));
+  EXPECT_TRUE(Has(live, "call_accept()"));
+  EXPECT_TRUE(Has(live, "call_decline()"));
+}
+
 TEST(ShellCallChromeRmlTest, MetersAreOnlyInTheExpandedBar) {
   // CallChromeSync treats a level change as invisible outside Expanded (B146): keep the markup honest.
   ShellState state;

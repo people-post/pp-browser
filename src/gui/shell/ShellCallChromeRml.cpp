@@ -392,19 +392,29 @@ std::string CallRingPhoneRml(const ShellState& state) {
   }
   out << "<p class=\"call-phone-hint\" data-if=\"call_ring_show_pricing\">{{call_ring_pricing_label}}</p>";
   out << "</div>";
+  // Awaiting the invite: the answers keep their place but are dimmed and carry no click event.
+  const bool waiting = ring.awaiting_invite;
+  const char* const action_class =
+      waiting ? "call-phone-answer-action call-phone-answer--waiting" : "call-phone-answer-action";
+  const auto click = [waiting](const char* handler) {
+    return waiting ? std::string() : std::string(" data-event-click=\"") + handler + "\"";
+  };
   out << "<div class=\"call-phone-answer\">";
-  out << "<div class=\"call-phone-answer-action\"><button class=\"call-phone-round call-phone-round--decline\" "
-         "type=\"button\" data-event-click=\"call_decline()\"><svg src=\"../icons/v2/phone-hangup-fill.svg\" "
-         "width=\"34\" height=\"34\"></svg></button>"
-         "<p class=\"call-phone-answer-label\">{{call_ring_decline_label}}</p></div>";
-  out << "<div class=\"call-phone-answer-action\" data-if=\"call_ring_video_allowed\"><button class=\"call-phone-round "
-         "call-phone-round--accept\" type=\"button\" data-event-click=\"call_accept_voice()\"><svg "
-         "src=\"../icons/v2/phone.svg\" width=\"30\" height=\"30\"></svg></button>"
-         "<p class=\"call-phone-answer-label\">{{call_ring_voice_answer_label}}</p></div>";
-  out << "<div class=\"call-phone-answer-action\"><button class=\"call-phone-round call-phone-round--accept\" "
-         "type=\"button\" data-event-click=\"call_accept()\"><svg width=\"30\" height=\"30\" "
+  out << "<div class=\"" << action_class
+      << "\"><button class=\"call-phone-round call-phone-round--decline\" type=\"button\"" << click("call_decline()")
+      << "><svg src=\"../icons/v2/phone-hangup-fill.svg\" width=\"34\" height=\"34\"></svg></button>"
+      << "<p class=\"call-phone-answer-label\">{{call_ring_decline_label}}</p></div>";
+  out << "<div class=\"" << action_class
+      << "\" data-if=\"call_ring_video_allowed\"><button class=\"call-phone-round call-phone-round--accept\" "
+         "type=\"button\""
+      << click("call_accept_voice()")
+      << "><svg src=\"../icons/v2/phone.svg\" width=\"30\" height=\"30\"></svg></button>"
+      << "<p class=\"call-phone-answer-label\">{{call_ring_voice_answer_label}}</p></div>";
+  out << "<div class=\"" << action_class
+      << "\"><button class=\"call-phone-round call-phone-round--accept\" type=\"button\"" << click("call_accept()")
+      << "><svg width=\"30\" height=\"30\" "
          "data-attr-src=\"call_ring_video_allowed ? '../icons/v2/video.svg' : '../icons/v2/phone.svg'\"></svg></button>"
-         "<p class=\"call-phone-answer-label\">{{call_ring_accept_label}}</p></div>";
+      << "<p class=\"call-phone-answer-label\">{{call_ring_accept_label}}</p></div>";
   out << "</div>";
   out << "<div class=\"call-phone-charge\" data-if=\"call_ring_show_pricing\">";
   out << "<button class=\"call-phone-pill-btn\" type=\"button\" "

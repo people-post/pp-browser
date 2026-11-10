@@ -180,6 +180,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_link_payload", &host.state_.pin_gate.link_payload);
     ctor.Bind("call_ring_active", &host.state_.call_ring.active);
     ctor.Bind("call_ring_pulse", &host.state_.call_ring.pulse);
+    ctor.Bind("call_ring_awaiting_invite", &host.state_.call_ring.awaiting_invite);
     ctor.Bind("call_ring_conflict", &host.state_.call_ring.conflict);
     ctor.Bind("call_ring_caller", &host.state_.call_ring.caller_label);
     ctor.Bind("call_ring_media", &host.state_.call_ring.media_label);
@@ -1428,6 +1429,7 @@ void ShellHost::SetSecretPage(std::function<bool()> showing) {
 void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_ring_active");
   DataModelHost::Instance().Dirty("window", "call_ring_pulse");
+  DataModelHost::Instance().Dirty("window", "call_ring_awaiting_invite");
   DataModelHost::Instance().Dirty("window", "call_ring_conflict");
   DataModelHost::Instance().Dirty("window", "call_ring_caller");
   DataModelHost::Instance().Dirty("window", "call_ring_media");
@@ -1505,6 +1507,7 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
           : std::vector<const char*>{};
   state_.call_ring = snapshot.ring;
   state_.call_in_progress = snapshot.in_progress;
+  ReconcileStartupCover(); // an active ring takes the logo cover away
   // A ring or the call screen covers the page: the drawer does not wait under it (the minimised call chip leaves it).
   if (snapshot.ring.active || (snapshot.in_progress.active && snapshot.in_progress.mode != CallChromeMode::Minimized)) {
     CloseAiDrawer();
@@ -1537,9 +1540,10 @@ void ShellHost::ReconcileStartupCover() {
   if (!startup_cover_armed_ && !state_.unlock_in_progress) {
     startup_cover_enabled_ = false;
   }
-  // PIN / identity chooser must be reachable; logo cover only masks silent prepare.
-  const bool show =
-      startup_cover_enabled_ && !state_.pin_gate.active && (startup_cover_armed_ || state_.unlock_in_progress);
+  // PIN / identity chooser must be reachable; logo cover only masks silent prepare. A ring page (the tapped call
+  // alert's placeholder included) is what the person came for: no logo over it.
+  const bool show = startup_cover_enabled_ && !state_.pin_gate.active && !state_.call_ring.active &&
+                    (startup_cover_armed_ || state_.unlock_in_progress);
   if (state_.startup_cover_visible == show) {
     return;
   }
@@ -3322,6 +3326,9 @@ void ShellHost::PinGateUsePinInstead() {
 }
 
 void ShellHost::CallAccept() {
+  if (state_.call_ring.awaiting_invite) {
+    return; // "Incoming call, connecting…": nothing to answer yet
+  }
   log().warning << "call_accept click";
   if (call_actions_.accept_incoming) {
     call_actions_.accept_incoming();
@@ -3329,6 +3336,9 @@ void ShellHost::CallAccept() {
 }
 
 void ShellHost::CallAcceptVoice() {
+  if (state_.call_ring.awaiting_invite) {
+    return;
+  }
   log().warning << "call_accept_voice click";
   if (call_actions_.accept_incoming_voice_only) {
     call_actions_.accept_incoming_voice_only();
@@ -3336,6 +3346,9 @@ void ShellHost::CallAcceptVoice() {
 }
 
 void ShellHost::CallAcceptCharge() {
+  if (state_.call_ring.awaiting_invite) {
+    return;
+  }
   log().warning << "call_accept_charge click";
   if (call_actions_.accept_incoming_with_charge) {
     call_actions_.accept_incoming_with_charge();
@@ -3343,6 +3356,9 @@ void ShellHost::CallAcceptCharge() {
 }
 
 void ShellHost::CallDecline() {
+  if (state_.call_ring.awaiting_invite) {
+    return;
+  }
   if (call_actions_.decline_incoming) {
     call_actions_.decline_incoming();
   }

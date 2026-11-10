@@ -6967,6 +6967,11 @@ call-video-tile {
   text-align: center;
 }
 
+/* "Incoming call, connecting...": the answers are in place but dimmed and dead until the invite arrives. */
+.call-phone-answer--waiting {
+  opacity: 0.4;
+}
+
 .call-phone-charge,
 .call-phone-failed-actions {
   position: relative;
@@ -7296,6 +7301,19 @@ input.checkbox {
   right: 0;
   bottom: 0;
   border-radius: 8dp;
+}
+
+/* Over the incoming-call placeholder page (phones only: it exists in the compact layout): no dimming behind the card
+   (the scrim stays, it still takes the taps) and the card sits on the bottom edge instead of the middle, so as little
+   as possible of the "Incoming call, connecting..." title is covered. The keypad is never shrunk. */
+.shell-pin-gate--over-call .shell-scrim {
+  background-color: transparent;
+}
+
+.shell-pin-gate--over-call .shell-dialog.shell-pin-gate {
+  top: auto;
+  bottom: 12dp;
+  transform: translate(-50%, 0);
 }
 
 .shell-pin-gate-chooser {
