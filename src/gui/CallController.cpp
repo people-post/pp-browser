@@ -1880,6 +1880,13 @@ bool CallController::RenderDemoScene(const int64_t now_ms) {
     }
     return true;
   }
+  if (f.awaiting_invite) {
+    if (!ring_.awaiting_invite) {
+      RenderAwaitingRing(); // built directly, as the tapped alert would, without PendingNotificationTap
+    }
+    ringtone_.Stop();
+    return true;
+  }
   switch (f.screen.kind) {
     case CallScreen::Kind::Ringing:
       RenderRing(f.screen, now_ms);
