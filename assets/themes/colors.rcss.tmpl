@@ -1144,6 +1144,10 @@ select selectbox option:hover {
   background-color: transparent;
 }
 
+.shell-dialog.shell-pin-gate--frost {
+  background-color: transparent;
+}
+
 .shell-dialog {
   background-color: {{bg-card}};
 }
@@ -3237,6 +3241,11 @@ input.checkbox:checked {
   color: {{x-call-ink-2}};
 }
 
+/* The other party's name stands out from "You" (both are .call-phone-pair-name). */
+.call-phone-pair-name.call-phone-pair-name--peer {
+  color: {{x-call-ink}};
+}
+
 .call-phone-sealed svg {
   image-color: {{x-call-ink-2}};
 }
@@ -3448,6 +3457,11 @@ input.checkbox:checked {
 
 .call-phone-avatar--group {
   background-color: {{avatar-2}};
+}
+
+/* The unknown caller: the blue of avatar-tone-0 (the class is on the element), a touch lighter at the top. */
+.call-phone-avatar--unknown {
+  decorator: linear-gradient(to bottom, {{x-call-unknown-top}}, {{x-call-unknown-bottom}});
 }
 
 .call-phone-sheet-lead,
