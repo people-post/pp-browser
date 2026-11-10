@@ -24,6 +24,22 @@ TwoFingerGesture::Finger* TwoFingerGesture::Find(const int64_t finger_id) {
   return nullptr;
 }
 
+TwoFingerGesture::Finger* TwoFingerGesture::FindExtra(const int64_t finger_id) {
+  for (int i = 0; i < extra_count_; ++i) {
+    if (extras_[i].id == finger_id) {
+      return &extras_[i];
+    }
+  }
+  return nullptr;
+}
+
+void TwoFingerGesture::DropExtra(const Finger* extra) {
+  for (int i = static_cast<int>(extra - extras_.data()); i + 1 < extra_count_; ++i) {
+    extras_[i] = extras_[i + 1];
+  }
+  --extra_count_;
+}
+
 int TwoFingerGesture::TrackedCount() const {
   int n = 0;
   for (const Finger& f : fingers_) {
@@ -34,6 +50,8 @@ int TwoFingerGesture::TrackedCount() const {
 
 void TwoFingerGesture::Reset() {
   fingers_ = {};
+  extras_ = {};
+  extra_count_ = 0;
 }
 
 FingerGestureDelta TwoFingerGesture::OnEvent(const int64_t finger_id, const double x_dp, const double y_dp,
@@ -49,11 +67,13 @@ FingerGestureDelta TwoFingerGesture::OnEvent(const int64_t finger_id, const doub
     return delta;
   }
   Finger* const finger = Find(finger_id);
+  Finger* const extra = finger ? nullptr : FindExtra(finger_id);
   switch (kind) {
     case FingerEventKind::Down:
-      if (finger) {
-        finger->x = x_dp;
-        finger->y = y_dp;
+      if (finger || extra) {
+        Finger* const known = finger ? finger : extra;
+        known->x = x_dp;
+        known->y = y_dp;
         return delta;
       }
       for (Finger& f : fingers_) {
@@ -62,16 +82,30 @@ FingerGestureDelta TwoFingerGesture::OnEvent(const int64_t finger_id, const doub
           return delta;
         }
       }
-      return delta; // a third finger
+      if (extra_count_ < kMaxExtraFingers) { // a third finger: remembered, not tracked
+        extras_[extra_count_++] = {true, finger_id, x_dp, y_dp};
+      }
+      return delta;
     case FingerEventKind::Up:
-      if (finger) {
-        finger->active = false;
+      if (extra) {
+        DropExtra(extra);
+      } else if (finger) {
+        *finger = {};
+        if (extra_count_ > 0) { // the oldest extra finger still down joins from where it was: no jump
+          *finger = extras_[0];
+          DropExtra(&extras_[0]);
+        }
       }
       return delta;
     case FingerEventKind::Move:
       break;
     case FingerEventKind::Cancel:
       return delta;
+  }
+  if (extra) {
+    extra->x = x_dp;
+    extra->y = y_dp;
+    return delta;
   }
   if (!finger) {
     return delta;

@@ -35,14 +35,18 @@ struct FingerGestureDelta {
  * - Two fingers: the midpoint's movement is a pan, the distance ratio a scale, the angle change a turn, about the
  *   midpoint. While the fingers are closer than kMinPinchDistanceDp (before or after the event) scale and turn hold
  *   (1 / 0) so a near-zero distance cannot blow the scale up; they resume once the fingers separate.
- * - A third and later finger is ignored (its moves too, even after one of the first two lifts).
- * - Lifting one of two fingers: the other carries on as a one-finger pan from where it is, without a jump.
+ * - A third and later finger does not move the picture, but its position is remembered (up to kMaxExtraFingers).
+ *   When a tracked finger lifts, the oldest such finger still down joins the gesture from its last position, without a
+ *   jump; one that lifts before that is forgotten.
+ * - Lifting one of two fingers with no other down: the other carries on as a one-finger pan from where it is, without
+ *   a jump.
  * - A Down for an id already tracked moves that finger without a delta; an Up / Move for an unknown id is ignored.
  * - Cancel (any id) or Reset(): every tracked finger is forgotten.
  */
 class TwoFingerGesture {
 public:
   static constexpr double kMinPinchDistanceDp = 8.0;
+  static constexpr int kMaxExtraFingers = 3;
 
   FingerGestureDelta OnEvent(int64_t finger_id, double x_dp, double y_dp, FingerEventKind kind);
   void Reset();
@@ -56,8 +60,13 @@ private:
     double y = 0.0;
   };
   Finger* Find(int64_t finger_id);
+  Finger* FindExtra(int64_t finger_id);
+  void DropExtra(const Finger* extra);
 
   std::array<Finger, 2> fingers_{};
+  /** Fingers down beyond the first two, oldest first; the first `extra_count_` are in use. */
+  std::array<Finger, kMaxExtraFingers> extras_{};
+  int extra_count_ = 0;
 };
 
 } // namespace pbr

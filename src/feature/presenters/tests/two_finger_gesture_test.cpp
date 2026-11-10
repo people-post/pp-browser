@@ -126,8 +126,40 @@ TEST(TwoFingerGestureTest, AThirdFingerIsIgnored) {
   const FingerGestureDelta move3 = g.OnEvent(3, 300, 300, K::Move);
   EXPECT_EQ(move3.pan_dx, 0.0);
   EXPECT_FALSE(move3.HasPinch());
+}
+
+// Fingers A (1) and B (2) down, then C (3); A lifts: B and C pinch, from where each is, with no jump at the promotion.
+TEST(TwoFingerGestureTest, AThirdFingerJoinsWhenATrackedFingerLifts) {
+  TwoFingerGesture g;
+  g.OnEvent(1, 0, 0, K::Down);
+  g.OnEvent(2, 100, 0, K::Down);
+  g.OnEvent(3, 50, 50, K::Down);
+  g.OnEvent(3, 100, 100, K::Move); // moves while untracked: remembered, no delta
+  const FingerGestureDelta up = g.OnEvent(1, 0, 0, K::Up);
+  EXPECT_EQ(up.pan_dx, 0.0);
+  EXPECT_FALSE(up.HasPinch());
+  EXPECT_EQ(g.TrackedCount(), 2);
+  // B (100, 0) and C (100, 100) are 100 apart; C moving to (100, 200) doubles the distance.
+  const FingerGestureDelta d = g.OnEvent(3, 100, 200, K::Move);
+  EXPECT_NEAR(d.scale, 2.0, 1e-12);
+  EXPECT_DOUBLE_EQ(d.pan_dx, 0.0);
+  EXPECT_DOUBLE_EQ(d.pan_dy, 50.0) << "the midpoint moves from (100, 50) to (100, 100)";
+}
+
+TEST(TwoFingerGestureTest, AThirdFingerThatLiftsFirstChangesNothing) {
+  TwoFingerGesture g;
+  g.OnEvent(1, 0, 0, K::Down);
+  g.OnEvent(2, 100, 0, K::Down);
+  g.OnEvent(3, 50, 50, K::Down);
+  const FingerGestureDelta up3 = g.OnEvent(3, 50, 50, K::Up);
+  EXPECT_EQ(up3.pan_dx, 0.0);
+  EXPECT_FALSE(up3.HasPinch());
+  EXPECT_EQ(g.TrackedCount(), 2);
   g.OnEvent(1, 0, 0, K::Up);
-  EXPECT_EQ(g.OnEvent(3, 310, 310, K::Move).pan_dx, 0.0) << "not promoted when a tracked finger lifts";
+  EXPECT_EQ(g.TrackedCount(), 1) << "nobody to promote";
+  const FingerGestureDelta d = g.OnEvent(2, 105, 0, K::Move);
+  EXPECT_DOUBLE_EQ(d.pan_dx, 5.0);
+  EXPECT_FALSE(d.HasPinch());
 }
 
 TEST(TwoFingerGestureTest, AReusedFingerIdStartsFresh) {
