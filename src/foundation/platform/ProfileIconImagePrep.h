@@ -53,7 +53,7 @@ Roe<ProfilePhotoPreview> DecodeProfilePhotoPreview(const std::string& path, int 
  * it is still too large after scaling.
  */
 Roe<EncodedProfileIcon> PrepareProfileIconFromFile(const std::string& path, size_t max_bytes = 512u * 1024u,
-                                                   int max_dimension = 256, std::optional<SDL_Rect> crop = std::nullopt,
+                                                   int max_dimension = 512, std::optional<SDL_Rect> crop = std::nullopt,
                                                    std::optional<ProfileIconCrop> affine_crop = std::nullopt);
 
 } // namespace pbr

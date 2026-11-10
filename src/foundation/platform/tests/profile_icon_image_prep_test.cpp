@@ -1,5 +1,5 @@
 // The profile photo that goes up: straightened by its EXIF tag, square (the middle, or the part the person framed),
-// 256 px, and either way words for the person when it cannot be done (PLAN-avatar-edit, phase one).
+// at most 512 px (never enlarged), and either way words for the person when it cannot be done (PLAN-avatar-edit, phase one).
 #include "foundation/platform/ProfileIconImagePrep.h"
 
 #include "foundation/i18n/LocalizationService.h"
@@ -145,10 +145,10 @@ TEST_F(ProfileIconImagePrepTest, AThreeByFourPictureComesOutSquareAndItIsTheMidd
   SDL_Surface* out = Decode(*icon);
   ASSERT_NE(out, nullptr);
   ASSERT_EQ(out->w, out->h);
-  EXPECT_EQ(out->w, 256);
-  ExpectNear(out, 128, 128, kGreen);
-  ExpectNear(out, 128, 3, kRed); // 50 of the top 100 rows are inside the square
-  ExpectNear(out, 128, 252, kBlue);
+  EXPECT_EQ(out->w, 300) << "the square is 300 px, under the 512 limit, so it is not enlarged";
+  ExpectNear(out, 150, 150, kGreen);
+  ExpectNear(out, 150, 3, kRed); // 50 of the top 100 rows are inside the square
+  ExpectNear(out, 150, 296, kBlue);
   SDL_DestroySurface(out);
 
   // Landscape 400 x 300, the same bands turned: columns 50..350 are kept.
@@ -162,11 +162,31 @@ TEST_F(ProfileIconImagePrepTest, AThreeByFourPictureComesOutSquareAndItIsTheMidd
   ASSERT_TRUE(icon) << icon.error().message;
   out = Decode(*icon);
   ASSERT_NE(out, nullptr);
+  EXPECT_EQ(out->w, 300);
+  EXPECT_EQ(out->h, 300);
+  ExpectNear(out, 150, 150, kGreen);
+  ExpectNear(out, 3, 150, kRed);
+  ExpectNear(out, 296, 150, kBlue);
+  SDL_DestroySurface(out);
+}
+
+TEST_F(ProfileIconImagePrepTest, ALargePictureIsScaledToTheDefaultLimitOf512) {
+  // The photo is viewed large on the profile page, so the stored side is 512 (it was 256); a given limit still wins.
+  SDL_Surface* s = Quadrants(1200, 900);
+  const std::string path = Write("big.png", PngBytes(s));
+  SDL_DestroySurface(s);
+  auto icon = PrepareProfileIconFromFile(path);
+  ASSERT_TRUE(icon) << icon.error().message;
+  SDL_Surface* out = Decode(*icon);
+  ASSERT_NE(out, nullptr);
+  EXPECT_EQ(out->w, 512);
+  EXPECT_EQ(out->h, 512);
+  SDL_DestroySurface(out);
+  icon = PrepareProfileIconFromFile(path, 512u * 1024u, 256);
+  ASSERT_TRUE(icon);
+  out = Decode(*icon);
+  ASSERT_NE(out, nullptr);
   EXPECT_EQ(out->w, 256);
-  EXPECT_EQ(out->h, 256);
-  ExpectNear(out, 128, 128, kGreen);
-  ExpectNear(out, 3, 128, kRed);
-  ExpectNear(out, 252, 128, kBlue);
   SDL_DestroySurface(out);
 }
 
