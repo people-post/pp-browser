@@ -86,6 +86,8 @@ private:
                         ui::Context*& context);
   SettingsToolPorts WireSettings(ui::Context* context);
   void WireShellPresenters(const SettingsToolPorts& settings_tool_ports);
+  /** One info line per new call-alert tap: when it was recorded against the first presented frame. Any thread. */
+  void LogCallTapTiming();
   void WireCalls();
   void WireUnlockPinAndFlow();
   void WireAgentAndConfig();
@@ -143,6 +145,11 @@ private:
   std::unique_ptr<ShellHost> shell_;
   std::unique_ptr<ChatController> chat_;
   std::atomic<bool> peer_icons_refresh_posted_{false}; // a peer-icon refresh is queued on the UI thread
+  /** Milliseconds from StartupEpoch to the first presented frame; -1 until it is up. */
+  std::atomic<int64_t> first_present_ms_{-1};
+  std::atomic<uint64_t> logged_call_tap_seq_{0};
+  /** PP_DEBUG_CALL_TAP: -1 off; 0 record a call tap before the first frame; N record it N ms after it. */
+  int64_t debug_call_tap_delay_ms_ = -1;
   std::unique_ptr<CallController> call_;
   std::unique_ptr<CallUiBackend> call_ui_;
   std::unique_ptr<SettingsController> settings_;

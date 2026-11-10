@@ -29,6 +29,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <cstdlib>
 #include <thread>
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
@@ -193,6 +194,27 @@ constexpr std::chrono::milliseconds kQuitMediaDevicesBudget{1000};
 constexpr std::chrono::milliseconds kProfileResetQuiesceBudget{10000};
 
 InputCoordinator* g_input_coordinator = nullptr;
+
+int64_t MsSinceStartup() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - StartupEpoch())
+      .count();
+}
+
+/** PP_DEBUG_CALL_TAP (a development aid, see CONFIGURATION.md): the delay in ms, or -1 when unset / not a number. */
+int64_t DebugCallTapDelayMs() {
+  const char* value = std::getenv("PP_DEBUG_CALL_TAP");
+  if (value == nullptr || value[0] == '\0') {
+    return -1;
+  }
+  char* end = nullptr;
+  const long long ms = std::strtoll(value, &end, 10);
+  return (end == value || *end != '\0' || ms < 0) ? -1 : static_cast<int64_t>(ms);
+}
+
+/** What a tapped call alert records, without a push: for the iPhone USB build, which gets no pushes. */
+void RecordDebugCallTap() {
+  PendingNotificationTap::Instance().Record({}, /*call_wake=*/true, {}, PendingNotificationTap::Clock::now());
+}
 
 void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, SettingsController& settings,
                                  ContactsController& contacts, ChatController& chat, UiPerfTestController* ui_perf) {
@@ -1201,6 +1223,20 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   return settings_tool_ports;
 }
 
+void Application::LogCallTapTiming() {
+  const uint64_t seq = PendingNotificationTap::Instance().CallTapSeq();
+  if (seq == logged_call_tap_seq_.exchange(seq)) {
+    return; // not a call tap
+  }
+  const int64_t now_ms = MsSinceStartup();
+  const int64_t first_ms = first_present_ms_.load();
+  if (first_ms < 0) {
+    log().info << "Call tap recorded before the first frame (" << now_ms << " ms after launch)";
+  } else {
+    log().info << "Call tap recorded " << (now_ms - first_ms) << " ms after the first frame";
+  }
+}
+
 void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_ports) {
   ConversationsHub& messaging = Conversations();
   ConversationsFacade& facade = *messaging_facade_;
@@ -1283,8 +1319,14 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
     }
   });
   // A tap arrives off the UI thread; the PIN screen words itself by it.
-  PendingNotificationTap::Instance().SetRecordedHandler(
-      [this]() { AppRuntime::PostUI([this]() { pin_gate_->RefreshCallHint(); }); });
+  PendingNotificationTap::Instance().SetRecordedHandler([this]() {
+    LogCallTapTiming();
+    AppRuntime::PostUI([this]() { pin_gate_->RefreshCallHint(); });
+  });
+  debug_call_tap_delay_ms_ = DebugCallTapDelayMs();
+  if (debug_call_tap_delay_ms_ == 0) {
+    RecordDebugCallTap(); // before the first frame
+  }
   flow_->BindShellNavigation(shell_navigation);
   people_picker_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
   MessagingPeoplePickerPorts picker_ports = product_->PeoplePickerPorts();
@@ -2532,6 +2574,13 @@ void Application::Run() {
                                                               .count()))
             .Emit();
         logged_first_present = true;
+        first_present_ms_.store(MsSinceStartup());
+        if (debug_call_tap_delay_ms_ > 0) {
+          std::thread([delay_ms = debug_call_tap_delay_ms_]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+            RecordDebugCallTap();
+          }).detach();
+        }
         if (ui_perf_ && UiPerfTestController::OpenAtStartupRequested()) {
           AppRuntime::PostUI([this]() { ui_perf_->Open(); }); // --ui-perf-test
         }
