@@ -8595,6 +8595,76 @@ input.checkbox {
   white-space: nowrap;
 }
 
+/* The camera badge: phones only (the desktop keeps the 64dp photo and its button). */
+.me-profile-avatar-badge {
+  display: none;
+}
+
+/* Phone profile page (Kenneth 2026-11-10): the photo is big enough to see, 112dp, centred at the top with the
+   "Change photo" button under it; a 32dp camera badge sits on its lower right with a 2dp ring in the card's colour.
+   The uploading cover follows the circle. Colours: colors.rcss.tmpl. */
+.shell-layer-compact .me-profile-avatar-row {
+  flex-direction: column;
+  align-items: center;
+  gap: 12dp;
+}
+
+.shell-layer-compact .me-profile-avatar-wrap {
+  width: 112dp;
+  height: 112dp;
+}
+
+.shell-layer-compact .me-profile-avatar-wrap .me-profile-avatar-frame {
+  width: 112dp;
+  height: 112dp;
+  border-radius: 56dp;
+}
+
+.shell-layer-compact .me-profile-avatar-wrap .me-profile-avatar-image {
+  width: 112dp;
+  height: 112dp;
+}
+
+.shell-layer-compact .me-profile-avatar-wrap .avatar-letter {
+  font-size: 44dp;
+}
+
+.shell-layer-compact .me-profile-avatar-uploading {
+  width: 112dp;
+  height: 112dp;
+  border-radius: 56dp;
+}
+
+.shell-layer-compact .me-profile-avatar-uploading-text {
+  font-size: 15dp;
+}
+
+.shell-layer-compact .me-profile-avatar-badge {
+  display: flex;
+  position: absolute;
+  right: -2dp;
+  bottom: -2dp;
+  width: 36dp;
+  height: 36dp;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border-width: 2dp;
+  border-radius: 18dp;
+  cursor: pointer;
+}
+
+.shell-layer-compact .me-profile-avatar-badge svg {
+  width: 16dp;
+  height: 16dp;
+}
+
+.shell-layer-compact .me-profile-avatar-badge:disabled {
+  opacity: 0.4;
+}
+
 .contacts-row-avatar-frame {
   width: 32dp;
   height: 32dp;
@@ -14506,4 +14576,149 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .ac-page .nc-bar-title {
   top: 0;
   opacity: 1;
+}
+
+/* Avatar crop page (PLAN-avatar-edit item 9): a dark page, the title on top, the photo under a round viewport
+   between the bars (the custom element draws the picture, the dim and the circle line), Cancel / Rotate / Done below.
+   Phones show it in the shell's full-screen layer (the black reaches every screen edge, the bars stay inside the safe
+   areas); the desktop panel is a 420dp-wide card with a tall enough stage. Colours (always dark, like the scanner):
+   colors.rcss.tmpl. */
+.avatar-crop {
+  display: flex;
+  flex-direction: column;
+  width: 420dp;
+  max-width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.shell-layer-compact .avatar-crop {
+  width: 100%;
+}
+
+.avatar-crop-bg {
+  display: none;
+}
+
+.shell-layer-compact .avatar-crop-bg {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.avatar-crop-bar {
+  flex-shrink: 0;
+  height: 48dp;
+}
+
+.avatar-crop-title {
+  margin: 0;
+  height: 48dp;
+  line-height: 48dp;
+  text-align: center;
+  font-size: 17dp;
+  font-weight: bold;
+}
+
+.avatar-crop-stage {
+  position: relative;
+  flex: 1;
+  min-height: 360dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .avatar-crop-stage {
+  min-height: 0;
+}
+
+.avatar-crop-surface {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.avatar-crop-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  text-align: center;
+  line-height: 360dp;
+  font-size: 40dp;
+}
+
+.avatar-crop-actions {
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  padding: 8dp 8dp;
+}
+
+.avatar-crop-btn {
+  flex: 1;
+  min-height: 50dp;
+  margin: 0 4dp;
+  padding: 0;
+  border-width: 0;
+  text-align: center;
+  font-size: 17dp;
+}
+
+.avatar-crop-btn--done {
+  font-weight: bold;
+}
+
+.avatar-crop-btn:disabled {
+  opacity: 0.4;
+}
+
+/* The profile photo viewer (a full-screen layer, like the scanner): the stored square centred, as wide as the screen up
+   to 512dp, the close button top left inside the safe area. Colours: colors.rcss.tmpl. */
+.avatar-view {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.avatar-view-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.avatar-view-close {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  align-self: flex-start;
+  width: 52dp;
+  height: 52dp;
+  margin: 0 0 0 12dp;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.avatar-view-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-view-image {
+  width: 100vw;
+  max-width: 512dp;
+  height: 100vw;
+  max-height: 512dp;
 }

@@ -4,6 +4,8 @@
 
 #include "foundation/diagnostics/DiagnosticsUploadResult.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/PickedFileLease.h"
+#include "foundation/platform/ProfileIconImagePrep.h"
 #include "lib/people/ProfileIdentityView.h"
 #include "foundation/data/SessionStore.h"
 #include "lib/net/BlobQuota.h"
@@ -13,6 +15,7 @@
 #include "feature/settings/StorageManagerPorts.h"
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -34,7 +37,18 @@ struct SettingsCommands {
   std::function<ProfileIdentityView()> load_profile_identity;
   std::function<Roe<void>(const std::string& nickname)> save_profile_nickname;
   std::function<void(std::function<void(std::vector<std::string> paths)> on_picked)> pick_profile_icon_image;
-  std::function<Roe<void>(const std::string& path)> upload_profile_icon_file;
+  /** Shows the profile photo (the file at `image_src`) large, full screen. */
+  std::function<void(const std::string& image_src)> open_avatar_viewer;
+  /** Prepares `path` (with the crop page's choice, or the centred square without) and uploads it. Worker thread. */
+  std::function<Roe<void>(const std::string& path, std::optional<ProfileIconCrop> crop)> upload_profile_icon_file;
+  /**
+   * Opens the crop page over `file`. The page holds the lease until it closes. "Done" locks the page and calls
+   * `commit(crop, finished)`; the caller answers `finished(true)` when the photo is up (the page closes) or
+   * `finished(false)` for any failure, a refused PIN included (the page unlocks and stays). Unset: no crop page.
+   */
+  std::function<void(std::shared_ptr<PickedFileLease> file,
+                     std::function<void(ProfileIconCrop crop, std::function<void(bool ok)> finished)> commit)>
+      open_avatar_crop;
   std::function<Roe<void>()> clear_profile_icon;
   std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_relay_quota_recovery;
   BlobQuotaFreeSlot delete_relay_file;

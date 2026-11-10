@@ -2,7 +2,7 @@
         <div class="group-card group-card--pad">
         <div class="me-profile-avatar-row row">
           <div class="me-profile-avatar-wrap">
-          <div class="me-profile-avatar-frame" data-event-click="pick_profile_icon()"
+          <div class="me-profile-avatar-frame" data-event-click="tap_profile_avatar()"
                data-class-me-profile-avatar-frame--disabled="profile_icon_uploading"
                data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
                data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
@@ -18,6 +18,11 @@
           <div class="me-profile-avatar-uploading" data-if="profile_icon_uploading">
             <p class="me-profile-avatar-uploading-text">{{i18n:settings.profile.photo_uploading}}</p>
           </div>
+          <!-- Phone only: the camera badge opens the same source menu as the button below. -->
+          <button class="me-profile-avatar-badge" type="button" data-event-click="pick_profile_icon()"
+                  data-attrif-disabled="profile_icon_uploading">
+            <svg src="../icons/v2/camera.svg" width="16" height="16"></svg>
+          </button>
           </div>
           <button class="btn btn-secondary me-profile-avatar-btn" type="button"
                   data-event-click="pick_profile_icon()"

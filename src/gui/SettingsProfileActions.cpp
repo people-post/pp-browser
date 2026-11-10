@@ -28,6 +28,24 @@
 
 namespace pbr {
 
+/** Answers the crop page once: `Answer(ok)`, or `false` when the last holder lets go unanswered (a PIN step that
+ *  dropped its closure), so the page can never stay locked. */
+struct AvatarCropFinish {
+  explicit AvatarCropFinish(std::function<void(bool)> fn) : finished(std::move(fn)) {}
+  ~AvatarCropFinish() { Answer(false); }
+  void Answer(const bool ok) {
+    if (answered) {
+      return;
+    }
+    answered = true;
+    if (finished) {
+      finished(ok);
+    }
+  }
+  std::function<void(bool)> finished;
+  bool answered = false;
+};
+
 SettingsProfileActions::SettingsProfileActions(SettingsHost& host, const SettingsCommands& commands,
                                                const UnlockEnsurePorts& unlock)
     : host_(host), commands_(commands), unlock_(unlock) {}
@@ -38,6 +56,7 @@ void SettingsProfileActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("register_profile", DataEvent<>([this]() { Register(); }));
   ctor.BindEventCallback("rotate_brief_llm_key", DataEvent<>([this]() { RotateBriefLlmKey(); }));
   ctor.BindEventCallback("copy_profile_id", DataEvent<>([this]() { CopyId(); }));
+  ctor.BindEventCallback("tap_profile_avatar", DataEventAt([this](ui::Event& ev) { TapAvatar(ev); }));
   ctor.BindEventCallback("pick_profile_icon", DataEventAt([this](ui::Event& ev) { PickIcon(ev); }));
   ctor.BindEventCallback("clear_profile_icon", DataEvent<>([this]() { ClearIcon(); }));
   ctor.BindEventCallback("share_profile", DataEventAt([this](ui::Event& ev) { Share(ShareAnchorFromEvent(ev)); }));
@@ -59,18 +78,26 @@ void SettingsProfileActions::ToggleQr() {
   DataModelHost::Instance().Dirty("settings", "profile_show_qr");
 }
 
-void SettingsProfileActions::Unlocked(const char* locked, std::function<void()> then) {
+void SettingsProfileActions::Unlocked(const char* locked, std::function<void()> then,
+                                      std::function<void()> not_unlocked) {
   if (!unlock_.ensure_unlocked) {
     host_.ReportFailure(AppError::Pin(Err::Pin::Required, locked));
+    if (not_unlocked) {
+      not_unlocked();
+    }
     return;
   }
-  unlock_.ensure_unlocked([this, locked, then = std::move(then)](const bool unlocked) {
-    if (!unlocked) {
-      host_.ReportFailure(AppError::Pin(Err::Pin::Required, locked));
-      return;
-    }
-    then();
-  });
+  unlock_.ensure_unlocked(
+      [this, locked, then = std::move(then), not_unlocked = std::move(not_unlocked)](const bool unlocked) {
+        if (!unlocked) {
+          host_.ReportFailure(AppError::Pin(Err::Pin::Required, locked));
+          if (not_unlocked) {
+            not_unlocked();
+          }
+          return;
+        }
+        then();
+      });
 }
 
 void SettingsProfileActions::Register() {
@@ -128,6 +155,20 @@ void SettingsProfileActions::CopyId() {
     system->SetClipboardText(peer_id.c_str());
   }
   UserFeedback::Ok(Tr("settings.profile.peer_id_copied"));
+}
+
+void SettingsProfileActions::TapAvatar(ui::Event& ev) {
+  if (host_.UiState().profile_icon_uploading) {
+    return;
+  }
+  const std::string& icon = host_.UiState().profile_icon_src;
+  if (PlanProfileAvatarTap(host_.UiState().profile_has_icon && !icon.empty(), Platform::IsMobile()) ==
+          ProfileAvatarTapAction::ViewPhoto &&
+      commands_.open_avatar_viewer) {
+    commands_.open_avatar_viewer(icon);
+    return;
+  }
+  PickIcon(ev);
 }
 
 void SettingsProfileActions::PickIcon(ui::Event& ev) {
@@ -210,7 +251,7 @@ void SettingsProfileActions::RunIconSource(const ProfileIconSourceAction action)
       UserFeedback::ConfirmDestructive(
           Tr("settings.profile.photo_remove_confirm"), "",
           [this](const bool confirmed) {
-            if (confirmed) {
+            if (confirmed && !host_.UiState().profile_icon_uploading) {
               ClearIcon();
             }
           },
@@ -223,20 +264,54 @@ void SettingsProfileActions::IconChosen(std::string path) {
   // From here the file is released by its lease: when the upload ends (either way), or when the PIN step lets go of
   // this closure unanswered, cancelled or failed.
   auto file = std::make_shared<PickedFileLease>(std::move(path));
-  Unlocked("PIN required to change profile icon", [this, file]() { UploadIcon(file); });
+  if (host_.UiState().profile_icon_uploading) {
+    // A pick that came back late, while a change is already in flight: drop it (the lease releases the file).
+    file->Release();
+    return;
+  }
+  if (!commands_.open_avatar_crop) {
+    Unlocked("PIN required to change profile icon", [this, file]() { UploadIcon(file, std::nullopt, nullptr); });
+    return;
+  }
+  // The crop page comes first, and it holds the file until it closes. "Done" is what asks for the PIN; a refused PIN
+  // or a failed upload leaves the page open (answered false), a finished upload closes it (answered true).
+  commands_.open_avatar_crop(file, [this, file](ProfileIconCrop crop, std::function<void(bool ok)> finished) {
+    auto answer = std::make_shared<AvatarCropFinish>(std::move(finished));
+    Unlocked(
+        "PIN required to change profile icon", [this, file, crop, answer]() { UploadIcon(file, crop, answer); },
+        [answer]() { answer->Answer(false); });
+  });
 }
 
-void SettingsProfileActions::UploadIcon(std::shared_ptr<PickedFileLease> file) {
+void SettingsProfileActions::UploadIcon(std::shared_ptr<PickedFileLease> file, std::optional<ProfileIconCrop> crop,
+                                        std::shared_ptr<AvatarCropFinish> crop_finished) {
+  if (host_.UiState().profile_icon_uploading) {
+    // The PIN step can answer after another change started; never run two at once.
+    if (crop_finished) {
+      crop_finished->Answer(false);
+    } else {
+      file->Release();
+    }
+    return;
+  }
   if (!commands_.plan_relay_quota_recovery || !commands_.delete_relay_file) {
     host_.ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
+    if (crop_finished) {
+      crop_finished->Answer(false);
+    }
     return;
   }
   host_.UiState().profile_icon_uploading = true;
   host_.PushToView(/*include_profile_nickname=*/false);
   BlobQuotaRecoveryFlow::RunVoidUpload(
-      [this, file]() { return commands_.upload_profile_icon_file(file->path()); },
-      [this, file](Roe<void> result) {
-        file->Release();
+      [this, file, crop]() { return commands_.upload_profile_icon_file(file->path(), crop); },
+      [this, file, crop_finished](Roe<void> result) {
+        if (crop_finished) {
+          // The crop page owns the file: it lets go when it closes, and stays (file kept) when this failed.
+          crop_finished->Answer(static_cast<bool>(result));
+        } else {
+          file->Release();
+        }
         AfterIconChange(result, Tr("settings.profile.photo_updated"));
       },
       [this](const Error& quota_error) { return commands_.plan_relay_quota_recovery(quota_error); },
@@ -252,6 +327,9 @@ void SettingsProfileActions::ClearIcon() {
     return;
   }
   Unlocked("PIN required to change profile icon", [this]() {
+    if (host_.UiState().profile_icon_uploading) {
+      return; // an upload started while the PIN was being entered
+    }
     host_.UiState().profile_icon_uploading = true;
     host_.PushToView(/*include_profile_nickname=*/false);
     AppRuntime::PostWorkerNormal([this]() {

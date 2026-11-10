@@ -4,6 +4,11 @@ include(PpBrowserFeature)
 
 pp_browser_add_feature_library(pp_gui
   SOURCES
+    avatar/AvatarCropController.cpp
+    avatar/AvatarCropMesh.cpp
+    avatar/AvatarCropTouch.cpp
+    avatar/AvatarViewController.cpp
+    avatar/ElementAvatarCrop.cpp
     BadgeAggregator.cpp
     CallChromeSync.cpp
     CallController.cpp

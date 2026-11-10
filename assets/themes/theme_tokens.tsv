@@ -65,6 +65,7 @@ x-float-shadow	#00000029	#00000099	extra: phone composer: shadow of the floating
 x-scan-dim	#00000080	#00000080	extra: phone scanner, the camera dimmed round the frame (black 50%)
 x-scan-ink	#ffffff	#ffffff	extra: phone scanner, corner marks, hint, back and button labels over the camera
 x-scan-tool	#ffffff33	#ffffff33	extra: phone scanner, round button and Try again fill (white 20%)
+x-crop-bg	#000000	#000000	extra: avatar crop page, the dark page behind the photo
 x-mascot-ink	#ffffff	#ffffff	extra: AI dot and assistant-look previews, full-colour mascot SVGs drawn untinted (image-color white)
 x-call-bg	#101214	#101214	extra: phone call page, always dark (mockups 06-Call*)
 x-call-ink	#ffffff	#ffffff	extra: phone call page text and icons

@@ -33,5 +33,13 @@ TEST(ProfileIconSourceTest, TheDesktopWithoutAPhotoGoesStraightToTheFileDialog) 
   EXPECT_TRUE(plan.run_directly);
 }
 
+TEST(ProfileIconSourceTest, TappingThePhotoViewsItOnAPhoneWhenThereIsOneAndOtherwiseOffersTheMenu) {
+  EXPECT_EQ(PlanProfileAvatarTap(/*has_icon=*/true, /*phone=*/true), ProfileAvatarTapAction::ViewPhoto);
+  EXPECT_EQ(PlanProfileAvatarTap(false, true), ProfileAvatarTapAction::ChoosePhoto)
+      << "a letter avatar: nothing to view";
+  EXPECT_EQ(PlanProfileAvatarTap(true, false), ProfileAvatarTapAction::ChoosePhoto) << "the desktop keeps its tap";
+  EXPECT_EQ(PlanProfileAvatarTap(false, false), ProfileAvatarTapAction::ChoosePhoto);
+}
+
 } // namespace
 } // namespace pbr

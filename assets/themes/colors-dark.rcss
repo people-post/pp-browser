@@ -3694,4 +3694,55 @@ input.checkbox:checked {
 .context-menu-layer--popover-left .context-menu-item-icon {
   background-color: #7878803d;
 }
+
+/* Avatar crop page: always dark, like the scanner. */
+.avatar-crop,
+.avatar-crop-bg,
+.avatar-crop-stage {
+  background-color: #000000;
+}
+
+.avatar-crop-title,
+.avatar-crop-loading,
+.avatar-crop-btn {
+  color: #ffffff;
+}
+
+.avatar-crop-btn {
+  background-color: transparent;
+}
+
+.avatar-crop-btn--done {
+  color: #0a84ff;
+}
+
+/* Profile page camera badge and the photo viewer. */
+.me-profile-avatar-badge {
+  background-color: #0a84ff;
+  border-color: #1c1c1e;
+}
+
+.me-profile-avatar-badge svg {
+  image-color: #ffffff;
+}
+
+.avatar-view-bg {
+  background-color: #000000;
+}
+
+.avatar-view-close,
+.avatar-view-close:active {
+  background-color: transparent;
+}
+
+.avatar-view-close .shell-circle-btn-face,
+.avatar-view-close:active .shell-circle-btn-face {
+  background-color: #00000099;
+  decorator: none;
+  box-shadow: none;
+}
+
+.avatar-view-close .shell-circle-btn-face svg {
+  image-color: #ffffff;
+}
 }

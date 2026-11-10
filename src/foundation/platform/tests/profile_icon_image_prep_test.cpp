@@ -1,5 +1,5 @@
 // The profile photo that goes up: straightened by its EXIF tag, square (the middle, or the part the person framed),
-// 256 px, and either way words for the person when it cannot be done (PLAN-avatar-edit, phase one).
+// at most 512 px (never enlarged), and either way words for the person when it cannot be done (PLAN-avatar-edit, phase one).
 #include "foundation/platform/ProfileIconImagePrep.h"
 
 #include "foundation/i18n/LocalizationService.h"
@@ -145,10 +145,10 @@ TEST_F(ProfileIconImagePrepTest, AThreeByFourPictureComesOutSquareAndItIsTheMidd
   SDL_Surface* out = Decode(*icon);
   ASSERT_NE(out, nullptr);
   ASSERT_EQ(out->w, out->h);
-  EXPECT_EQ(out->w, 256);
-  ExpectNear(out, 128, 128, kGreen);
-  ExpectNear(out, 128, 3, kRed); // 50 of the top 100 rows are inside the square
-  ExpectNear(out, 128, 252, kBlue);
+  EXPECT_EQ(out->w, 300) << "the square is 300 px, under the 512 limit, so it is not enlarged";
+  ExpectNear(out, 150, 150, kGreen);
+  ExpectNear(out, 150, 3, kRed); // 50 of the top 100 rows are inside the square
+  ExpectNear(out, 150, 296, kBlue);
   SDL_DestroySurface(out);
 
   // Landscape 400 x 300, the same bands turned: columns 50..350 are kept.
@@ -162,11 +162,31 @@ TEST_F(ProfileIconImagePrepTest, AThreeByFourPictureComesOutSquareAndItIsTheMidd
   ASSERT_TRUE(icon) << icon.error().message;
   out = Decode(*icon);
   ASSERT_NE(out, nullptr);
+  EXPECT_EQ(out->w, 300);
+  EXPECT_EQ(out->h, 300);
+  ExpectNear(out, 150, 150, kGreen);
+  ExpectNear(out, 3, 150, kRed);
+  ExpectNear(out, 296, 150, kBlue);
+  SDL_DestroySurface(out);
+}
+
+TEST_F(ProfileIconImagePrepTest, ALargePictureIsScaledToTheDefaultLimitOf512) {
+  // The photo is viewed large on the profile page, so the stored side is 512 (it was 256); a given limit still wins.
+  SDL_Surface* s = Quadrants(1200, 900);
+  const std::string path = Write("big.png", PngBytes(s));
+  SDL_DestroySurface(s);
+  auto icon = PrepareProfileIconFromFile(path);
+  ASSERT_TRUE(icon) << icon.error().message;
+  SDL_Surface* out = Decode(*icon);
+  ASSERT_NE(out, nullptr);
+  EXPECT_EQ(out->w, 512);
+  EXPECT_EQ(out->h, 512);
+  SDL_DestroySurface(out);
+  icon = PrepareProfileIconFromFile(path, 512u * 1024u, 256);
+  ASSERT_TRUE(icon);
+  out = Decode(*icon);
+  ASSERT_NE(out, nullptr);
   EXPECT_EQ(out->w, 256);
-  EXPECT_EQ(out->h, 256);
-  ExpectNear(out, 128, 128, kGreen);
-  ExpectNear(out, 3, 128, kRed);
-  ExpectNear(out, 252, 128, kBlue);
   SDL_DestroySurface(out);
 }
 
@@ -290,6 +310,78 @@ TEST_F(ProfileIconImagePrepTest, AFileThatIsNoPictureOrIsMissingSaysItCannotBeOp
   icon = PrepareProfileIconFromFile((dir_ / "missing.jpg").string());
   ASSERT_FALSE(icon);
   EXPECT_EQ(icon.error().user, Tr("settings.profile.photo_unreadable"));
+}
+
+// The crop page's choice (PLAN-avatar-edit items 10 and 11): decode upright -> SampleAffine -> scale -> encode.
+TEST_F(ProfileIconImagePrepTest, TheIdentityAffineIsTheCentredSquare) {
+  SDL_Surface* s = Quadrants(200, 100);
+  const std::string path = Write("quad.png", PngBytes(s));
+  SDL_DestroySurface(s);
+  ProfileIconCrop crop;
+  crop.side = 100;
+  crop.affine.x0 = 50.0; // the middle square: x 50..150, y 0..100
+  auto icon = PrepareProfileIconFromFile(path, 512u * 1024u, 256, std::nullopt, crop);
+  ASSERT_TRUE(icon) << icon.error().message;
+  SDL_Surface* got = Decode(icon.value());
+  ASSERT_NE(got, nullptr);
+  EXPECT_EQ(got->w, 100);
+  EXPECT_EQ(got->h, 100);
+  ExpectNear(got, 10, 10, kRed);
+  ExpectNear(got, 90, 10, kGreen);
+  ExpectNear(got, 10, 90, kBlue);
+  ExpectNear(got, 90, 90, kYellow);
+  SDL_DestroySurface(got);
+}
+
+TEST_F(ProfileIconImagePrepTest, ATurnedAffineMovesTheQuadrantsAQuarterTurnClockwise) {
+  SDL_Surface* s = Quadrants(200, 100);
+  const std::string path = Write("quad.png", PngBytes(s));
+  SDL_DestroySurface(s);
+  // The picture turned 90 degrees clockwise about its middle: output (u, v) reads the source at (v + 50, 100 - u).
+  ProfileIconCrop crop;
+  crop.side = 100;
+  crop.affine = {0.0, 1.0, 50.0, -1.0, 0.0, 100.0};
+  auto icon = PrepareProfileIconFromFile(path, 512u * 1024u, 256, std::nullopt, crop);
+  ASSERT_TRUE(icon) << icon.error().message;
+  SDL_Surface* got = Decode(icon.value());
+  ASSERT_NE(got, nullptr);
+  ExpectNear(got, 90, 10, kRed);    // red was top left, now top right
+  ExpectNear(got, 90, 90, kGreen);  // green was top right, now bottom right
+  ExpectNear(got, 10, 10, kBlue);   // blue was bottom left, now top left
+  ExpectNear(got, 10, 90, kYellow); // yellow was bottom right, now bottom left
+  SDL_DestroySurface(got);
+}
+
+TEST_F(ProfileIconImagePrepTest, AnAffineWithNoSidesAndAMissingFileAreErrors) {
+  SDL_Surface* s = Quadrants(64, 64);
+  const std::string path = Write("quad.png", PngBytes(s));
+  SDL_DestroySurface(s);
+  ProfileIconCrop empty;
+  empty.side = 0;
+  auto icon = PrepareProfileIconFromFile(path, 512u * 1024u, 256, std::nullopt, empty);
+  ASSERT_FALSE(icon);
+  EXPECT_EQ(icon.error().user, Tr("settings.profile.photo_unreadable"));
+  ProfileIconCrop one;
+  one.side = 10;
+  icon = PrepareProfileIconFromFile((dir_ / "missing.jpg").string(), 512u * 1024u, 256, std::nullopt, one);
+  ASSERT_FALSE(icon);
+}
+
+TEST_F(ProfileIconImagePrepTest, ThePreviewIsUprightLimitedAndKeepsTheRealSize) {
+  SDL_Surface* s = Quadrants(300, 100);
+  const std::string path = Write("quad.png", PngBytes(s));
+  SDL_DestroySurface(s);
+  auto preview = DecodeProfilePhotoPreview(path, 150);
+  ASSERT_TRUE(preview) << preview.error().message;
+  EXPECT_EQ(preview->full_width, 300);
+  EXPECT_EQ(preview->full_height, 100);
+  EXPECT_EQ(preview->width, 150);
+  EXPECT_EQ(preview->height, 50);
+  ASSERT_EQ(preview->rgba.size(), 150u * 50u * 4u);
+  // Top left pixel is red (RGBA order).
+  EXPECT_GT(preview->rgba[0], 200);
+  EXPECT_LT(preview->rgba[1], 60);
+  EXPECT_FALSE(DecodeProfilePhotoPreview(Write("junk.jpg", std::vector<uint8_t>(64, 0x5A))));
 }
 
 } // namespace
