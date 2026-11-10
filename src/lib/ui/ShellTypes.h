@@ -334,6 +334,8 @@ struct CallRingState {
   ui::String step3;
   bool step2_current = false;
   bool step3_done = false;
+  /** False on a short page that has to give the lines' room to the price / conflict / guest text (CallRingShowsSteps). */
+  bool show_steps = true;
   // Our own avatar on the 1:1 page's left (the same source as CallInProgressState::self_*); bound, so an unlock that
   // makes the photo readable is a dirty.
   bool self_has_avatar = false;
@@ -532,8 +534,8 @@ struct CallInProgressState {
   std::vector<std::string> story_lead;
   /** Rows the whole list is moved up so the current one stays in its clip (CallStepScrollRows); 0: not clipped. */
   int story_scroll_rows = 0;
-  /** Height of that clip in dp (CallStepAreaHeightDp); 0 or less: not clipped (page height unknown). */
-  int story_area_dp = 0;
+  /** Height of the clip in dp: exactly the rows that fit, set only when the list is moved up; 0: not clipped. */
+  int story_clip_dp = 0;
   /** Just connected (1:1): "Connected directly, 0.9 s" for 4 s, then it fades (bound). */
   ui::String result_text;
   bool result_fading = false;

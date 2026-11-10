@@ -15,6 +15,7 @@
 #include "feature/presenters/CallMediaFrame.h"
 #include "feature/presenters/CallPresenter.h"
 #include "feature/presenters/CallRingSteps.h"
+#include "feature/presenters/CallSelfAvatarWatch.h"
 #include "feature/presenters/CallSystemUiBridge.h"
 #include "gui/CallChromeSync.h"
 #include "gui/CallDemoScenes.h"
@@ -154,6 +155,8 @@ private:
   void FillRingSteps(bool awaiting_invite, const std::string& caller, CallRingMedia media);
   /** Our own avatar on the ring page's left: the photo / letter of the local identity, else "You" and a neutral tone. */
   void FillRingSelfAvatar();
+  /** The local identity ("" before the unlock). */
+  std::string LocalIdentity() const;
   void FillRingPhoneFields(const CallScreen& screen, const std::string& caller_label, int64_t now_ms);
   /** Mute, camera (its buttons, rotation), speaker and the hold, from the engine and the frame. */
   void ApplyLocalMedia(IMediaView& media, const CallMediaScreen& frame);
@@ -355,6 +358,8 @@ private:
   int64_t demo_started_ms_ = 0;
   bool demo_ended_ = false;
   /** The call the ring page last showed and whether it rang as video: the answering page words its lead rows by it. */
+  /** The identity the awaiting ring page drew our avatar with (CallSelfAvatarWatch). */
+  CallSelfAvatarWatch ring_self_watch_;
   std::string rung_call_id_;
   bool rung_video_ = false;
   bool demo_call_back_offered_ = false;

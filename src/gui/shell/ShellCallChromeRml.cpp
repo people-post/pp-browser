@@ -203,10 +203,14 @@ void AppendResult(std::ostringstream& out) {
   out << "<span class=\"call-phone-result-text\">{{call_in_progress_result_text}}</span></div>";
 }
 
-/** The line between the pair's avatars with the spark on it (RCSS keyframes; only while connecting). */
-void AppendPairPath(std::ostringstream& out, const bool inbound) {
-  out << "<div class=\"call-phone-pair-path" << (inbound ? " call-phone-pair-path--inbound" : "")
-      << "\"><div class=\"call-phone-pair-dots\">";
+/**
+ * The line between the pair's avatars with the spark on it (RCSS keyframes; only while connecting). `extra_class` and
+ * `extra_attrs` (attributes, with a leading space) are the ring page's: its spark settles once the caller is known.
+ */
+void AppendPairPath(std::ostringstream& out, const bool inbound, const char* extra_class = "",
+                    const char* extra_attrs = "") {
+  out << "<div class=\"call-phone-pair-path" << (inbound ? " call-phone-pair-path--inbound" : "") << extra_class << "\""
+      << extra_attrs << "><div class=\"call-phone-pair-dots\">";
   for (int i = 0; i < 9; ++i) {
     out << "<div class=\"call-phone-pair-dot\"></div>";
   }
@@ -274,7 +278,7 @@ void AppendSteps(std::ostringstream& out, const int stage, const int count, cons
  */
 void AppendRingSteps(std::ostringstream& out) {
   const char* const check = "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg>";
-  out << "<div class=\"call-phone-steps\">";
+  out << "<div class=\"call-phone-steps\" data-if=\"call_ring_show_steps\">";
   out << "<div class=\"call-phone-step call-phone-step--done\"><div class=\"call-phone-step-dot\">" << check
       << "</div><p class=\"call-phone-step-text\">{{call_ring_step1}}</p></div>";
   out << "<div class=\"call-phone-step\" data-class-call-phone-step--current=\"call_ring_step2_current\" "
@@ -478,7 +482,10 @@ std::string CallRingPhoneRml(const ShellState& state) {
     out << " data-class-avatar-tone-" << tone << "=\"call_ring_self_avatar_tone == " << tone << "\"";
   }
   out << "><p class=\"avatar-letter\">{{call_ring_self_avatar_letter}}</p></div>";
-  AppendPairPath(out, true);
+  // The spark runs endlessly only while the invite is awaited (a bound class); once the caller is known it plays a few
+  // cycles and stops, so a long ring idles instead of redrawing at the display rate.
+  AppendPairPath(out, true, " call-phone-pair-path--ring",
+                 " data-class-call-phone-pair-path--awaiting=\"call_ring_awaiting_invite\"");
   // Them, on the right: a silhouette while nobody is known (and for a stranger), then photo / letter.
   out << "<div class=\"call-phone-avatar call-phone-avatar--unknown avatar-tone-0 call-phone-avatar--pair\" "
          "data-if=\"call_ring_awaiting_invite || call_ring_caller_unknown\"><svg "
@@ -700,7 +707,7 @@ std::string CallPhoneRml(const ShellState& state) {
     out << (video_layout ? "<div class=\"call-phone-card\">" : "");
     AppendPair(out, call, call.story_inbound);
     AppendSteps(out, call.story_stage, call.story_step_count,
-                video_layout ? std::vector<std::string>{} : call.story_lead, call.story_area_dp,
+                video_layout ? std::vector<std::string>{} : call.story_lead, call.story_clip_dp,
                 call.story_scroll_rows);
     AppendHints(out);
     out << (video_layout ? "</div>" : "");

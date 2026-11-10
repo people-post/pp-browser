@@ -23,10 +23,42 @@ inline constexpr int kPeerNameLine = 22;
 inline constexpr int kStepsMarginTop = 22;
 /** Below the steps on the answering page: the button card (padding 12 + 52 circle + 4 + 13 label + 8) + margin 22. */
 inline constexpr int kControlsReserve = 12 + 52 + 4 + 13 + 8 + 22;
+/** A hint line under the list (`.call-phone-hint`: margin 8 + line 20) and the diagnostics line (6 + 16). */
+inline constexpr int kHintLine = 8 + 20;
+inline constexpr int kDebugLine = 6 + 16;
 /** From the top of the page (under the status bar) to the first step row. */
 inline constexpr int kStepsStart =
     kTopBar + kStoryPaddingTop + kPairRow + kNamesMarginTop + kPeerNameLine + kStepsMarginTop;
+/** The ring page (`.call-phone-hero--ring` for a group: 123 + 120 icon + name 20 + 34 + 4 + status 22 above the steps). */
+inline constexpr int kGroupHeroEnd = 123 + 120 + 20 + 34 + 4 + 22;
+/** Three rows of 22 and two gaps of 12. */
+inline constexpr int kRingStepsBlock = kStepsMarginTop + 3 * 22 + 2 * 12;
+/** Below the ring page's content: the answer bar (72 circle + 8 + label line(s) + margin 48), the paid ring's charge
+ *  block (50 button + 40 padding; its disabled hint 8 gap + 8 margin + 2 lines) and a hint (8 margin + 2 lines of 20). */
+inline constexpr int kAnswerBar = 72 + 8 + 48;
+inline constexpr int kAnswerLabelLine = 18;
+inline constexpr int kChargeBlock = 50 + 40;
+inline constexpr int kChargeHint = 8 + 8 + 2 * 20;
+inline constexpr int kRingHint = 8 + 2 * 20;
 } // namespace call_page_dp
+
+/** What is on the incoming-call page besides the pair / steps, for the rule below (all `false` / 0 for a plain ring). */
+struct CallRingLayoutInput {
+  /** Window height less the status bar and the bottom inset; 0: not known. */
+  int page_height_dp = 0;
+  bool group = false;
+  bool conflict = false;
+  bool guest = false;
+  bool pricing = false;
+  bool charge_enabled = false;
+};
+
+/**
+ * Whether the ring page has room for its three step lines. They are the first thing to give way when the page is short
+ * (an iPhone SE with a paid or conflict ring); the price, conflict and guest text never are. The estimate is
+ * conservative: every hint takes two lines, and the answer labels of a conflict or paid ring two. Unknown height: show.
+ */
+bool CallRingShowsSteps(const CallRingLayoutInput& in);
 
 /** Height of the step clip on the answering page; `page_height_dp` = window height less the status bar and bottom inset. */
 int CallStepAreaHeightDp(int page_height_dp);

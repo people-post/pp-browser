@@ -20,6 +20,7 @@ bool Has(const std::string& rml, const std::string& part) {
 
 size_t Count(const std::string& rml, const std::string& part);
 ShellState PhoneGroupCall();
+std::string ReadAll(const std::string& path);
 
 TEST(ShellCallChromeRmlTest, NothingIsMountedWhileNoCallIsUp) {
   const ShellState idle;
@@ -141,6 +142,37 @@ TEST(ShellCallChromeRmlTest, TheRingPairHasUsFirstThemSecondAndTheSparkComesTowa
   EXPECT_EQ(Count(row, "call-phone-pair-name--peer"), 1u) << "only the other party's name is the big one";
 }
 
+// A running animation makes the app redraw at the display rate: the ring page's spark is endless only while awaiting
+// (a bound class), otherwise it plays three cycles and rests invisible; the answering page's spark stays endless.
+TEST(ShellCallChromeRmlTest, TheRingSparkIsEndlessOnlyWhileAwaitingTheInvite) {
+  ShellState state;
+  state.layout_mode = LayoutMode::Compact;
+  state.call_ring.active = true;
+  const std::string rml = CallRingRml(state);
+  EXPECT_TRUE(Has(rml,
+                  "call-phone-pair-path call-phone-pair-path--inbound call-phone-pair-path--ring\" "
+                  "data-class-call-phone-pair-path--awaiting=\"call_ring_awaiting_invite\""));
+  const std::string rcss = ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss");
+  const auto rule = [&](const std::string& selector) {
+    const size_t at = rcss.find("\n" + selector + " {");
+    return at == std::string::npos ? std::string() : rcss.substr(at, rcss.find('}', at) - at);
+  };
+  const std::string resting = rule(".call-phone-pair-path--ring .call-phone-pair-spark");
+  EXPECT_TRUE(Has(resting, "linear-in-out 3 call-phone-spark-in"));
+  EXPECT_TRUE(Has(resting, "opacity: 0;")) << "a finished animation leaves the spark invisible";
+  EXPECT_FALSE(Has(resting, "infinite"));
+  const std::string awaiting =
+      rule(".call-phone-pair-path--ring.call-phone-pair-path--awaiting .call-phone-pair-spark");
+  EXPECT_TRUE(Has(awaiting, "infinite call-phone-spark-in"));
+  EXPECT_TRUE(Has(rule(".call-phone-pair-path--inbound .call-phone-pair-spark"), "infinite call-phone-spark-in"))
+      << "the answering page keeps its endless spark while connecting";
+  // The answering page's own path has no ring or awaiting class.
+  ShellState answer = PhoneGroupCall();
+  answer.call_in_progress.show_roster = false;
+  answer.call_in_progress.story_active = true;
+  EXPECT_FALSE(Has(CallInProgressRml(answer), "pair-path--ring"));
+}
+
 // Three fixed rows, every difference bound: the first is always done; the second turns from current to done; the
 // third from plain to done (check by data-if, text by value).
 TEST(ShellCallChromeRmlTest, TheRingPageHasThreeBoundStepRowsUnderThePair) {
@@ -149,7 +181,9 @@ TEST(ShellCallChromeRmlTest, TheRingPageHasThreeBoundStepRowsUnderThePair) {
   state.call_ring.active = true;
   const std::string rml = CallRingRml(state);
   EXPECT_EQ(Count(rml, "{{call_ring_step1}}"), 2u) << "the 1:1 block and the group block";
-  const size_t steps = rml.find("<div class=\"call-phone-steps\">");
+  EXPECT_TRUE(Has(rml, "<div class=\"call-phone-steps\" data-if=\"call_ring_show_steps\">"))
+      << "a short page can give the lines' room to the price / conflict text";
+  const size_t steps = rml.find("<div class=\"call-phone-steps\" data-if=\"call_ring_show_steps\">");
   ASSERT_NE(steps, std::string::npos);
   const std::string one_to_one = rml.substr(steps, rml.find("{{call_ring_step3}}", steps) - steps);
   EXPECT_EQ(Count(one_to_one, "<div class=\"call-phone-step-dot\">"), 3u);
@@ -197,7 +231,7 @@ TEST(ShellCallChromeRmlTest, TheRingAndAnsweringPagesShareTheirPairNamesAndSteps
   const std::string answer_rml = CallInProgressRml(answer);
   for (const char* shared : {"class=\"call-phone-pair\"", "call-phone-pair-path", "call-phone-avatar--pair",
                              "class=\"call-phone-pair-names\"", "call-phone-pair-name call-phone-pair-name--peer",
-                             "<div class=\"call-phone-steps\">", "call-phone-step-dot", "call-phone-step-text"}) {
+                             "<div class=\"call-phone-steps\"", "call-phone-step-dot", "call-phone-step-text"}) {
     EXPECT_TRUE(Has(ring_rml, shared)) << shared;
     EXPECT_TRUE(Has(answer_rml, shared)) << shared;
   }
@@ -230,6 +264,20 @@ TEST(ShellCallChromeRmlTest, TheStepScrollConstantsAreTheRcssNumbers) {
   EXPECT_EQ(RcssDp(rcss, ".call-phone-step-dot", "height"), 22);
   // kControlsReserve = card padding 12 + 52 circle + 4 gap + 13 label + 8, and its 22 bottom margin.
   EXPECT_TRUE(Has(rcss, "margin: 0 12dp 22dp 12dp;\n  padding: 12dp 4dp 8dp 4dp;"));
+  // The ring page's own numbers (CallRingShowsSteps): the group hero, the answer bar, the charge block, the hints.
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-hero--ring", "padding-top"), 123);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-avatar--big", "height"), 120);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-name", "line-height"), 34);
+  EXPECT_TRUE(Has(rcss, "margin: 20dp 0 4dp 0;\n  font-size: 28dp;"));
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-status", "line-height"), 22);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-round", "height"), 72);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-answer", "margin-bottom"), 48);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-answer-action", "gap"), 8);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-answer-label", "line-height"), kAnswerLabelLine);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-pill-btn", "height"), 50);
+  EXPECT_TRUE(Has(rcss, "gap: 8dp;\n  padding: 0 24dp 40dp 24dp;"));
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-hint", "line-height"), 20);
+  EXPECT_TRUE(Has(rcss, "margin: 8dp 0 0 0;\n  max-width: 300dp;"));
   EXPECT_EQ(RcssDp(rcss, ".call-phone-control-circle", "height"), 52);
   EXPECT_EQ(RcssDp(rcss, ".call-phone-control", "gap"), 4);
   EXPECT_EQ(RcssDp(rcss, ".call-phone-control-label", "line-height"), 13);
@@ -611,15 +659,16 @@ TEST(ShellCallChromeRmlTest, ALongListIsClippedAndMovedUpByTheGivenRows) {
   state.call_in_progress.story_active = true;
   state.call_in_progress.story_step_count = 4;
   state.call_in_progress.story_lead = {"a", "b", "c"};
-  state.call_in_progress.story_area_dp = 170;
+  state.call_in_progress.story_clip_dp = 158; // five rows: 5 * 34 - 12
   state.call_in_progress.story_scroll_rows = 2;
   const std::string rml = CallInProgressRml(state);
-  EXPECT_TRUE(Has(rml, "<div class=\"call-phone-steps-clip\" style=\"height: 170dp\">"));
+  EXPECT_TRUE(Has(rml, "<div class=\"call-phone-steps-clip\" style=\"height: 158dp\">"));
   EXPECT_TRUE(Has(rml, "<div class=\"call-phone-steps\" style=\"margin-top: -68dp\">"));
-  state.call_in_progress.story_area_dp = 0;
+  state.call_in_progress.story_clip_dp = 0;
   state.call_in_progress.story_scroll_rows = 0;
   const std::string free = CallInProgressRml(state);
-  EXPECT_TRUE(Has(free, "<div class=\"call-phone-steps-clip\">"));
+  EXPECT_TRUE(Has(free, "<div class=\"call-phone-steps-clip\">")) << "no fixed clip height while nothing moves";
+  EXPECT_FALSE(Has(free, "height:"));
   EXPECT_FALSE(Has(free, "margin-top: -"));
 }
 

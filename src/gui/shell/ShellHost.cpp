@@ -252,6 +252,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_ring_step3", &host.state_.call_ring.step3);
     ctor.Bind("call_ring_step2_current", &host.state_.call_ring.step2_current);
     ctor.Bind("call_ring_step3_done", &host.state_.call_ring.step3_done);
+    ctor.Bind("call_ring_show_steps", &host.state_.call_ring.show_steps);
     ctor.Bind("call_ring_self_has_avatar", &host.state_.call_ring.self_has_avatar);
     ctor.Bind("call_ring_self_avatar_src", &host.state_.call_ring.self_avatar_src);
     ctor.Bind("call_ring_self_avatar_letter", &host.state_.call_ring.self_avatar_letter);
@@ -1516,6 +1517,7 @@ void ShellHost::DirtyCallChrome() {
                            "call_ring_step3",
                            "call_ring_step2_current",
                            "call_ring_step3_done",
+                           "call_ring_show_steps",
                            "call_ring_self_has_avatar",
                            "call_ring_self_avatar_src",
                            "call_ring_self_avatar_letter",

@@ -6546,6 +6546,20 @@ call-video-tile {
   animation: 1.4s linear-in-out infinite call-phone-spark-in;
 }
 
+/*
+ * The incoming-call page: any running animation makes the app redraw at the display rate, so the spark runs endlessly
+ * only while the invite is awaited. Otherwise it plays three cycles and stops; its resting style is invisible. Changing
+ * the class changes `animation`, which RmlUi restarts, so the three cycles begin when the caller becomes known.
+ */
+.call-phone-pair-path--ring .call-phone-pair-spark {
+  opacity: 0;
+  animation: 1.4s linear-in-out 3 call-phone-spark-in;
+}
+
+.call-phone-pair-path--ring.call-phone-pair-path--awaiting .call-phone-pair-spark {
+  animation: 1.4s linear-in-out infinite call-phone-spark-in;
+}
+
 .call-phone-pair-names {
   display: flex;
   flex-direction: row;

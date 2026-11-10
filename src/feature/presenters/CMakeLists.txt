@@ -11,6 +11,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     CallReconnectCapsule.cpp
     CallRingSteps.cpp
     CallStepScroll.cpp
+    CallStoryList.cpp
     CallWakePlaceholder.cpp
     CallPresenter.cpp
     CallSystemUiBridge.cpp
