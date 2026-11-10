@@ -384,9 +384,9 @@ std::string CallRingPhoneRml(const ShellState& state) {
   out << "<div class=\"call-phone-hero call-phone-hero--ring\">";
   // The avatar variants are all in the markup and switched by bound values, so the caller replacing "Incoming call,
   // connecting…" is a dirty, not a remount: a silhouette while nobody is known, then group / photo / letter.
-  out << "<div class=\"call-phone-avatar call-phone-avatar--unknown call-phone-avatar--big\" "
-         "data-if=\"call_ring_awaiting_invite\"><svg src=\"../icons/v2/user.svg\" width=\"56\" "
-         "height=\"56\"></svg></div>";
+  out << "<div class=\"call-phone-avatar call-phone-avatar--unknown avatar-tone-0 call-phone-avatar--big\" "
+         "data-if=\"call_ring_awaiting_invite\"><svg src=\"../icons/v2/unknown-caller.svg\" width=\"120\" "
+         "height=\"120\"></svg></div>";
   out << "<div class=\"call-phone-avatar call-phone-avatar--group call-phone-avatar--big\" "
          "data-if=\"!call_ring_awaiting_invite && call_ring_group\"><svg src=\"../icons/v2/group.svg\" width=\"48\" "
          "height=\"48\"></svg></div>";

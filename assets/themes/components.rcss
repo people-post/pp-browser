@@ -6270,6 +6270,10 @@ call-video-tile {
   border-radius: 60dp;
 }
 
+.call-phone-avatar--unknown {
+  overflow: hidden;
+}
+
 .call-phone-avatar--big .avatar-letter {
   font-size: 48dp;
 }

@@ -64,8 +64,9 @@ TEST(ShellCallChromeRmlTest, TheRingAvatarIsASilhouetteWhileAwaitingThenGroupPho
   state.layout_mode = LayoutMode::Compact;
   state.call_ring.active = true;
   const std::string rml = CallRingRml(state);
-  EXPECT_TRUE(Has(rml, "call-phone-avatar--unknown call-phone-avatar--big\" data-if=\"call_ring_awaiting_invite\""));
-  EXPECT_TRUE(Has(rml, "icons/v2/user.svg"));
+  EXPECT_TRUE(Has(
+      rml, "call-phone-avatar--unknown avatar-tone-0 call-phone-avatar--big\" data-if=\"call_ring_awaiting_invite\""));
+  EXPECT_TRUE(Has(rml, "icons/v2/unknown-caller.svg"));
   EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_awaiting_invite && call_ring_group\""));
   EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_awaiting_invite && !call_ring_group && call_ring_has_avatar\""));
   EXPECT_TRUE(Has(rml, "data-attr-src=\"call_ring_avatar_src\""));

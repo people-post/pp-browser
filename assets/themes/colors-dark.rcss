@@ -3435,8 +3435,9 @@ input.checkbox:checked {
   background-color: #ff9500;
 }
 
+/* The unknown caller: the blue of avatar-tone-0 (the class is on the element), a touch lighter at the top. */
 .call-phone-avatar--unknown {
-  background-color: #ffffff33;
+  decorator: linear-gradient(to bottom, #2b90ff, #0066d9);
 }
 
 .call-phone-sheet-lead,
