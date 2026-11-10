@@ -442,9 +442,6 @@ void Application::ShutdownMessaging() {
     StartupPhase phase("Shutdown::ConversationsHub");
     messaging_->Shutdown();
   }
-  if (badges_) {
-    badges_->ClearAppBadge(); // the inbox is closed: no number on the icon until the next Refresh() finds one
-  }
   if (secrets_ && secrets_->IsInitialized()) {
     StartupPhase phase("Shutdown::ProfileSecrets");
     secrets_->Shutdown();
@@ -606,7 +603,9 @@ Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
     messaging_->Shutdown();
   }
   if (badges_) {
-    badges_->ClearAppBadge(); // reset: the new inbox starts empty; its first Refresh() sends what it finds
+    badges_
+        ->ClearAppBadge(); // the data is gone (both variants): the new inbox starts empty, its first Refresh() sends the true value
+    // Not in ShutdownMessaging: a normal quit keeps the icon number while the messages are still unread.
   }
   AppRuntime::ReopenAfterTeardown();
   return {};
