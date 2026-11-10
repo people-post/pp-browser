@@ -141,8 +141,12 @@ public:
   void MarkThreadRead(const std::string& thread_id);
   /** `even_if_active`: count it although it is the active thread (the user left its page, e.g. back to the list). */
   void IncrementUnread(const std::string& thread_id, int delta = 1, bool even_if_active = false);
-  void OnInboundMessagePersisted(const std::string& thread_id,
-                                 const std::optional<std::string>& preview = std::nullopt);
+  /**
+   * `attentive`: the user is looking at the app right now (AppLifecycle::IsUserAttentive(), taken by the caller). The
+   * open thread counts as unread when nobody is looking at it; no default, so a caller cannot forget to decide.
+   */
+  void OnInboundMessagePersisted(const std::string& thread_id, const std::optional<std::string>& preview,
+                                 bool attentive);
   int SumUnread() const;
   int SumUnreadForContact(const std::string& contact_id) const;
   /** `assistant_text`: an AI answer, shown as is (only the user's own text is checked for codes and pasted blobs). */

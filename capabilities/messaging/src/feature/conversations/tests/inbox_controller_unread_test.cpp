@@ -94,13 +94,46 @@ TEST(InboxControllerUnreadTest, ActiveThreadSkipsInboundUnread) {
   ASSERT_TRUE(env.store->UpsertThread(direct));
 
   ASSERT_TRUE(env.inbox->OpenThread(direct.id));
-  env.inbox->OnInboundMessagePersisted(direct.id, "hello");
+  env.inbox->OnInboundMessagePersisted(direct.id, "hello", true);
 
   auto loaded = env.store->GetThread(direct.id);
   ASSERT_TRUE(loaded);
   ASSERT_TRUE(*loaded);
   EXPECT_EQ((*loaded)->unread_count, 0);
   EXPECT_EQ(loaded->value().preview, "hello");
+}
+
+TEST(InboxControllerUnreadTest, InboundUnreadFollowsOpenThreadAndAttention) {
+  // The four combinations (open x looking): only "open and looking" is not unread.
+  struct Case {
+    bool open;
+    bool attentive;
+    int expected_unread;
+  };
+  const Case cases[] = {{true, true, 0}, {true, false, 1}, {false, true, 1}, {false, false, 1}};
+  int index = 0;
+  for (const Case& c : cases) {
+    InboxTestEnv env("unread_attention_matrix_" + std::to_string(index++));
+    ASSERT_TRUE(env.inbox->ListThreads());
+
+    Thread direct;
+    direct.id = "thread-direct-attention";
+    direct.kind = ThreadKind::Direct;
+    direct.title = "Peer";
+    direct.updated_at = 1;
+    ASSERT_TRUE(env.store->UpsertThread(direct));
+    if (c.open) {
+      ASSERT_TRUE(env.inbox->OpenThread(direct.id));
+    }
+
+    env.inbox->OnInboundMessagePersisted(direct.id, "hi", c.attentive);
+
+    auto loaded = env.store->GetThread(direct.id);
+    ASSERT_TRUE(loaded);
+    ASSERT_TRUE(*loaded);
+    EXPECT_EQ((*loaded)->unread_count, c.expected_unread) << "open=" << c.open << " attentive=" << c.attentive;
+    EXPECT_EQ(env.inbox->SumUnread(), c.expected_unread);
+  }
 }
 
 TEST(InboxControllerUnreadTest, AnAnswerToTheActiveThreadCountsWhenItsPageIsNotShown) {
@@ -156,7 +189,7 @@ TEST(InboxControllerUnreadTest, InactiveThreadIncrementsOnInbound) {
   direct.updated_at = 1;
   ASSERT_TRUE(env.store->UpsertThread(direct));
 
-  env.inbox->OnInboundMessagePersisted(direct.id, "ping");
+  env.inbox->OnInboundMessagePersisted(direct.id, "ping", true);
 
   auto loaded = env.store->GetThread(direct.id);
   ASSERT_TRUE(loaded);

@@ -419,8 +419,8 @@ void InboxController::IncrementUnread(const std::string& thread_id, const int de
   (void)store_.UpsertThread(updated);
 }
 
-void InboxController::OnInboundMessagePersisted(const std::string& thread_id,
-                                                const std::optional<std::string>& preview) {
+void InboxController::OnInboundMessagePersisted(const std::string& thread_id, const std::optional<std::string>& preview,
+                                                bool attentive) {
   if (thread_id.empty()) {
     return;
   }
@@ -435,7 +435,7 @@ void InboxController::OnInboundMessagePersisted(const std::string& thread_id,
     updated.preview = *preview;
     changed = true;
   }
-  if (thread_id != active_thread_id_) {
+  if (thread_id != active_thread_id_ || !attentive) {
     updated.unread_count += 1;
     changed = true;
   }
