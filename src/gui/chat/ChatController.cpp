@@ -48,6 +48,8 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/i18n/ScriptLanguageDetector.h"
 #include "foundation/runtime/AppLifecycle.h"
+#include "gui/chat/AgentBusyRules.h"
+#include "gui/chat/ReadWhenLooking.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/ILocalNotifier.h"
@@ -929,6 +931,34 @@ void ChatController::OnCompactChatShownAgain() {
   NotifySurfaceChanged();
 }
 
+void ChatController::OnAttentiveAgain() {
+  if (!messaging_ready_) {
+    return;
+  }
+  RefreshFromMessaging(); // re-checks the open chat first
+}
+
+void ChatController::MarkOpenChatReadIfLooking() {
+  if (reading_open_chat_ || !facade_) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId(); // a copy: MarkRead may reach the facade's own string
+  bool has_unread = false;
+  if (!thread_id.empty()) {
+    if (auto found = facade_->GetThread(thread_id); found && *found) {
+      has_unread = (*found)->unread_count > 0;
+    }
+  }
+  if (!ShouldMarkOpenChatRead(AppLifecycle::IsUserAttentive(), !thread_id.empty(),
+                              ChatPageShows(ChromeSnapshot(), thread_id, thread_id), has_unread)) {
+    return;
+  }
+  reading_open_chat_ = true; // MarkRead -> messages changed -> RefreshFromMessaging -> here: stops at this guard
+  presenter_.MarkRead(thread_id);
+  ILocalNotifier::Instance().ClearForThread(thread_id);
+  reading_open_chat_ = false;
+}
+
 void ChatController::OnSelectThread(std::string thread_id) { // by value: ShellSelectNavTab below rebuilds Home (B161)
   if (!messaging_ready_) {
     return;
@@ -1229,6 +1259,7 @@ void ChatController::OnForgetMemory() {
 }
 
 void ChatController::RefreshFromMessaging() {
+  MarkOpenChatReadIfLooking(); // first, so the rest of the refresh draws the read state
   const int prev_sessions = ChromeSnapshot().nav_badges.sessions_unread;
   const int prev_contacts = ChromeSnapshot().nav_badges.contacts_unread;
   SyncShellSessions();

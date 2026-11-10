@@ -80,6 +80,12 @@ public:
 
   static ListenerId AddBackgroundListener(std::function<void()> listener);
   static ListenerId AddForegroundListener(std::function<void()> listener);
+  /**
+   * The user may be looking at the app again: the phone came to the foreground, a desktop window was restored or
+   * got input focus back. Not a promise (IsUserAttentive() can still be false, e.g. restored but unfocused): the
+   * listener asks it. Called on the UI thread; removed with RemoveListener.
+   */
+  static ListenerId AddAttentiveListener(std::function<void()> listener);
   static void RemoveListener(ListenerId id);
 };
 

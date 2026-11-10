@@ -24,6 +24,7 @@ struct Listener {
 std::mutex g_listeners_mu;
 std::vector<Listener> g_background_listeners;
 std::vector<Listener> g_foreground_listeners;
+std::vector<Listener> g_attentive_listeners;
 struct StayConnectedListener {
   AppLifecycle::ListenerId id = 0;
   std::function<void(bool)> fn;
@@ -52,6 +53,13 @@ std::vector<std::function<void()>> Snapshot(const std::vector<Listener>& listene
     out.push_back(listener.fn);
   }
   return out;
+}
+
+/** Attention may be back: run the listeners (UI thread, outside the lock). */
+void NotifyAttentive() {
+  for (const auto& listener : Snapshot(g_attentive_listeners)) {
+    listener();
+  }
 }
 
 AppLifecycle::ListenerId Add(std::vector<Listener>& listeners, std::function<void()> fn) {
@@ -154,6 +162,9 @@ void AppLifecycle::SetDesktopInputFocused(bool focused) {
   const bool prev = g_desktop_input_focused.exchange(focused, std::memory_order_relaxed);
   if (prev != focused) {
     logger().info << "Desktop input focus=" << (focused ? "gained" : "lost");
+    if (focused) {
+      NotifyAttentive();
+    }
   }
 }
 
@@ -169,6 +180,7 @@ void AppLifecycle::OnDesktopMinimized() {
 
 void AppLifecycle::OnDesktopRestored() {
   SetDesktopMinimized(false);
+  NotifyAttentive();
 }
 
 void AppLifecycle::SetStayConnected(const bool on) {
@@ -272,6 +284,7 @@ void AppLifecycle::OnDidEnterForeground() {
     listener();
   }
   logger().info << "Entering foreground";
+  NotifyAttentive();
 }
 
 void AppLifecycle::OnLowMemory() {
@@ -286,12 +299,16 @@ AppLifecycle::ListenerId AppLifecycle::AddForegroundListener(std::function<void(
   return Add(g_foreground_listeners, std::move(listener));
 }
 
+AppLifecycle::ListenerId AppLifecycle::AddAttentiveListener(std::function<void()> listener) {
+  return Add(g_attentive_listeners, std::move(listener));
+}
+
 void AppLifecycle::RemoveListener(const ListenerId id) {
   if (id == 0) {
     return;
   }
   std::lock_guard lock(g_listeners_mu);
-  for (auto* listeners : {&g_background_listeners, &g_foreground_listeners}) {
+  for (auto* listeners : {&g_background_listeners, &g_foreground_listeners, &g_attentive_listeners}) {
     std::erase_if(*listeners, [id](const Listener& listener) { return listener.id == id; });
   }
   std::erase_if(g_stay_connected_listeners, [id](const StayConnectedListener& listener) { return listener.id == id; });

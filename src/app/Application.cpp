@@ -1686,6 +1686,11 @@ void Application::WireUnlockPinAndFlow() {
     TouchGrace(); // best effort: a phone already locked keeps the entry unreadable and the touch is skipped
     StopGraceTimer();
   });
+  attentive_listener_ = AppLifecycle::AddAttentiveListener([this]() {
+    if (chat_) {
+      chat_->OnAttentiveAgain();
+    }
+  });
 
   {
     OnboardingPorts onboarding_ports;
@@ -2662,8 +2667,10 @@ void Application::Shutdown() {
   StopGraceTimer();
   AppLifecycle::RemoveListener(grace_foreground_listener_);
   AppLifecycle::RemoveListener(grace_background_listener_);
+  AppLifecycle::RemoveListener(attentive_listener_);
   grace_foreground_listener_ = 0;
   grace_background_listener_ = 0;
+  attentive_listener_ = 0;
   AppRuntime::BeginShutdown();
   // Idempotent with Backend::RequestExit — ensures window is gone before joins even if
   // Shutdown is invoked without going through RequestExit (failed Initialize, tests).

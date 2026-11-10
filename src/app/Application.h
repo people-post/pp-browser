@@ -129,6 +129,8 @@ private:
   uint64_t grace_timer_ = 0;
   AppLifecycle::ListenerId grace_foreground_listener_ = 0;
   AppLifecycle::ListenerId grace_background_listener_ = 0;
+  /** Phone foreground / desktop restore or focus regained: the open chat is read, the icon number re-sent. */
+  AppLifecycle::ListenerId attentive_listener_ = 0;
   SessionStore store_;
   std::unique_ptr<ProfileSecretsEngine> secrets_;
   /** Typed API keys under the profile DEK (PB-034); registered with secrets_, serves store_. */

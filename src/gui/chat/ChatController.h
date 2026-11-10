@@ -183,6 +183,11 @@ public:
    * its newest message, as when it is opened.
    */
   void OnCompactChatShownAgain();
+  /**
+   * The user may be looking at the app again (phone foreground, desktop restored / focus regained; UI thread). A
+   * message that came in while nobody looked counted unread even in the open chat: it is read now.
+   */
+  void OnAttentiveAgain();
   void OnFindSomeone() override;
   /**
    * The phone "New chat" page's "AI chat": a new AI chat, opened. Being the newest, it is the one the ask-AI panel
@@ -581,6 +586,8 @@ private:
   bool MessagingInitialized() const override;
   bool MessagingReady() const override;
   const std::string& ActiveThreadId() const override;
+  /** Marks the open chat read (and clears its notification) when ShouldMarkOpenChatRead() says so. */
+  void MarkOpenChatReadIfLooking();
 
   ShellChromeSnapshot ChromeSnapshot() const override;
   ChatSurfaceSnapshot BuildSurfaceSnapshot() const;
@@ -615,6 +622,8 @@ private:
   ShellSetupPorts shell_setup_;
   SessionStore* session_store_ = nullptr;
   BadgeNotifyPorts badge_notify_;
+  /** MarkOpenChatReadIfLooking() is running: whatever MarkRead stirs up cannot start it again. */
+  bool reading_open_chat_ = false;
   InputCoordinator* input_ = nullptr;
   CallActionsPorts call_actions_;
   UnlockEnsurePorts unlock_ensure_;
