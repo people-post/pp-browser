@@ -13,6 +13,7 @@
 #include "gui/SettingsSecurityActions.h"
 #include "gui/StorageManagerController.h"
 #include "gui/shell/ShellFeedbackPorts.h"
+#include "foundation/platform/PlatformNotificationSettings.h"
 #include "foundation/platform/PlatformShare.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/PinPromptPorts.h"
@@ -40,6 +41,11 @@ class Context;
 
 namespace pbr {
 
+/** Me → Notifications shows the "set Banner Style to Persistent" row only for a banner that goes away by itself. */
+inline bool ShowCallBannerTip(BannerStyle style) {
+  return style == BannerStyle::Temporary;
+}
+
 class SettingsController : public Module, public SettingsHost {
 public:
   struct SectionListRow {
@@ -58,7 +64,7 @@ public:
   };
 
   SettingsController();
-  ~SettingsController() override = default;
+  ~SettingsController() override;
 
   /** App fills ports (session, messaging views, register, UPnP, …). Not a process singleton. */
   void BindCommands(SettingsCommands commands);
@@ -179,6 +185,8 @@ private:
     ui::String stay_connected = "off";
     /** The "Stay connected" row shows (Android: phones without a push service). */
     bool stay_connected_available = false;
+    /** The "banner style" tip row shows (iOS: PP's banner style is "Temporary", which cuts a call ringtone short). */
+    bool call_banner_tip_available = false;
     /** kDevToolsBuild: the About page shows the developer-only rows. */
     bool dev_tools_available = false;
     ui::String brief_llm_key_masked;
@@ -247,6 +255,8 @@ private:
   void ToggleShowNotifications();
   void ToggleShowNotificationPreview();
   void ToggleStayConnected();
+  /** Reads PP's notification banner style again (Me → Notifications entered, app back in the foreground). */
+  void RefreshBannerTip();
   /** Me → Appearance → Transparency: flips the reduce_transparency pref (the switch shows it inverted). */
   void ToggleTransparency();
   void ToggleCallDiagnostics();
@@ -380,6 +390,10 @@ private:
   /** Dirty sections whose next flush must not toast (switch toggles). */
   std::unordered_set<std::string> quiet_sections_;
   uint64_t debounce_deadline_ms_ = 0;
+  /** The app-foreground listener (AppLifecycle) that re-reads the banner style. */
+  uint64_t foreground_listener_ = 0;
+  /** Cleared when this controller goes: a banner-style answer still in flight then does nothing. */
+  std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
   std::optional<std::string> last_toast_section_;
   uint64_t last_toast_at_ms_ = 0;
   SettingsCommands commands_;

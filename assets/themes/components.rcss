@@ -12532,6 +12532,15 @@ input.checkbox {
   text-overflow: ellipsis;
 }
 
+/* A sentence in a row (the banner-style tip): wraps instead of being cut off. */
+.shell-layer-compact .group-row-text.settings-row-sentence {
+  white-space: normal;
+  overflow: visible;
+  padding: 10dp 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
 .shell-layer-compact .group-row-label .group-row-text {
   display: block;
 }

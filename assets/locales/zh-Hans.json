@@ -153,6 +153,8 @@
     "settings.notifications.preview": "通知里显示消息内容",
     "notification.hidden_body": "新消息",
     "settings.notifications.help": "关闭后不弹通知；来电仍会响铃。",
+    "settings.notifications.banner_tip": "来电铃声只响几秒？把 PP 通知的“横幅风格”改成“持续”，铃声就能响满。",
+    "settings.notifications.banner_tip.action": "去设置",
     "settings.stay_connected": "后台保持连接",
     "settings.stay_connected.help": "后台也能收到来电和消息，更耗电。",
     "settings.ai_dot.show": "显示 AI 小圆点",

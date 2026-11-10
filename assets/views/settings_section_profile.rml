@@ -103,6 +103,14 @@
           </div>
         </div>
         <p class="text muted settings-help group-foot">{{i18n:settings.notifications.help}}</p>
+        <div class="group-card" data-if="call_banner_tip_available">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label group-row-text settings-row-sentence">{{i18n:settings.notifications.banner_tip}}</span>
+              <button class="btn btn-secondary" type="button" data-event-click="open_notification_settings()">{{i18n:settings.notifications.banner_tip.action}}</button>
+            </span>
+          </div>
+        </div>
         <div class="group-card">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">

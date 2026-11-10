@@ -33,6 +33,7 @@
 #include "foundation/error/AppError.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformShare.h"
+#include "foundation/runtime/AppLifecycle.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "gui/AccountInvite.h"
 
@@ -140,6 +141,7 @@ ui::Vector2i ChoiceRowMenuPosition(ui::Event& ev) {
 
 SettingsController::SettingsController() {
   redirectLogger("SettingsController");
+  foreground_listener_ = AppLifecycle::AddForegroundListener([this]() { RefreshBannerTip(); });
   section_handlers_.push_back(std::make_unique<ProfileSettingsSection>());
   for (auto& section : CreateSettingsSections()) {
     section_handlers_.push_back(std::move(section));
@@ -150,6 +152,25 @@ SettingsController::SettingsController() {
   }
   // Section titles use Tr(); catalogs load later in Application::Initialize.
   // Application calls RefreshLocalizedChrome() after LoadFromAssets + BindCommands.
+}
+
+SettingsController::~SettingsController() {
+  *alive_ = false;
+  AppLifecycle::RemoveListener(foreground_listener_);
+}
+
+void SettingsController::RefreshBannerTip() {
+  QueryBannerStyle([this, alive = alive_](BannerStyle style) {
+    if (!*alive) {
+      return;
+    }
+    const bool show = ShowCallBannerTip(style);
+    if (show == bindings_.call_banner_tip_available) {
+      return;
+    }
+    bindings_.call_banner_tip_available = show;
+    DataModelHost::Instance().Dirty("settings", "call_banner_tip_available");
+  });
 }
 
 void SettingsController::BindCommands(SettingsCommands commands) {
@@ -605,6 +626,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("stay_connected", &controller.bindings_.stay_connected);
     controller.bindings_.stay_connected_available = Platform::Detect() == PlatformKind::Android;
     ctor.Bind("stay_connected_available", &controller.bindings_.stay_connected_available);
+    ctor.Bind("call_banner_tip_available", &controller.bindings_.call_banner_tip_available);
     controller.bindings_.dev_tools_available = kDevToolsBuild;
     ctor.Bind("dev_tools_available", &controller.bindings_.dev_tools_available);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
@@ -701,6 +723,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_show_notification_preview",
                            DataEvent<>([this]() { ToggleShowNotificationPreview(); }));
     ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
+    ctor.BindEventCallback("open_notification_settings", DataEvent<>([]() { OpenNotificationSettings(); }));
     ctor.BindEventCallback("toggle_transparency", DataEvent<>([this]() { ToggleTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
     ctor.BindEventCallback("toggle_home_show_dynamic", DataEvent<>([this]() { ToggleHomeShowDynamic(); }));
@@ -824,6 +847,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "show_notifications");
   host.Dirty("settings", "show_notification_preview");
   host.Dirty("settings", "stay_connected");
+  host.Dirty("settings", "call_banner_tip_available");
   host.Dirty("settings", "brief_llm_key_masked");
   host.Dirty("settings", "appearance");
   host.Dirty("settings", "appearance_label");
@@ -1253,6 +1277,9 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   }
   if (section_id == "security") {
     RefreshBlockedCount();
+  }
+  if (section_id == "profile") {
+    RefreshBannerTip();
   }
   storage_manager_.Reset();
   if (section_id == "storage") {
