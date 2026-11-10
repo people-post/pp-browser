@@ -104,3 +104,19 @@ TEST(CallerNameTest, TheGroupRingSubtitleNamesAStranger) {
   EXPECT_EQ(pbr::Tr("call.ring.phone.group_video", {{"name", pbr::MakeCallerName("").label}}), "陌生人 发起了视频通话");
   LoadLocales("en");
 }
+
+// One word for a peer in every sentence's {name} slot: a stranger is "Stranger", never blank; no identity: blank.
+TEST(CallConflictCopyTest, APeerWithoutANameIsAStrangerInEverySentenceAndNoIdentityIsBlank) {
+  LoadLocales();
+  EXPECT_EQ(pbr::PeerLabel("acct-1", "Bob"), "Bob");
+  EXPECT_EQ(pbr::PeerLabel("acct-1", ""), "Stranger");
+  EXPECT_EQ(pbr::PeerLabel("", ""), "");
+  EXPECT_EQ(pbr::PeerLabel("", "Bob"), "");
+
+  const std::string stranger = pbr::PeerLabel("acct-1", "");
+  const pbr::CallConflictCopy copy = pbr::MakeCallConflictCopy(true, Names(stranger, stranger, false, true));
+  EXPECT_EQ(copy.title, "Stranger is calling");
+  EXPECT_EQ(copy.hint, "Accepting ends your other call with Stranger.") << "same peer wording keeps the caller's word";
+  const pbr::CallConflictCopy other = pbr::MakeCallConflictCopy(true, Names("Carol", stranger));
+  EXPECT_EQ(other.hint, "Accepting ends your call with Stranger.");
+}

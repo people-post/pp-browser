@@ -974,6 +974,10 @@ CallerName CallController::CallerNameFor(const std::string& identity) const {
   return MakeCallerName(DisplayNameForIdentity(identity));
 }
 
+std::string CallController::PeerLabelFor(const std::string& identity) const {
+  return PeerLabel(identity, DisplayNameForIdentity(identity));
+}
+
 std::string CallController::FormatTimer(const int64_t since_ms, const int64_t now_ms) {
   if (since_ms <= 0) {
     return {};
@@ -1017,7 +1021,7 @@ void CallController::ShowNotice(const CallNotice& notice) {
     case CallNotice::Kind::PeerEnded:
     case CallNotice::Kind::PeerDeclined: {
       const bool declined = notice.kind == CallNotice::Kind::PeerDeclined;
-      const std::string name = DisplayNameForIdentity(notice.identity);
+      const std::string name = PeerLabelFor(notice.identity);
       const char* named = declined ? "call.status.declined_by_peer" : "call.status.ended_by_peer";
       const char* unknown = declined ? "call.status.declined_by_peer_unknown" : "call.status.ended_by_peer_unknown";
       UserFeedback::Ok(name.empty() ? Tr(unknown) : Tr(named, {{"name", name}}));
@@ -1040,8 +1044,8 @@ void CallController::ShowNotice(const CallNotice& notice) {
       const std::string caller = DisplayNameForIdentity(notice.identity);
       if (notice.conflict) {
         // V064: over a call, the alert says who is calling and which call answering ends, as the ring does.
-        const CallConflictCopy copy =
-            MakeCallConflictCopy(true, ConflictNames(caller, true, notice.ending, util::NowUnixMs()));
+        const CallConflictCopy copy = MakeCallConflictCopy(
+            true, ConflictNames(PeerLabelFor(notice.identity), true, notice.ending, util::NowUnixMs()));
         ILocalNotifier::Instance().NotifyIncoming(copy.title, copy.hint, "");
         return;
       }
@@ -1059,7 +1063,7 @@ void CallController::ShowNotice(const CallNotice& notice) {
 }
 
 void CallController::OfferCallBack(const CallScreen::EndingCall& ended) {
-  std::string name = DisplayNameForIdentity(ended.peer_identity);
+  std::string name = PeerLabelFor(ended.peer_identity);
   if (name.empty()) {
     name = Tr("call.label.them");
   }
@@ -1703,7 +1707,7 @@ std::string CallController::StatusLineText(const CallStatusLine& line, const Cal
       text = Tr(line.key, {{"count", std::to_string(line.count)}, {"elapsed", FormatTimer(line.since_ms, now_ms)}});
       break;
     case Kind::PeerOnHold: {
-      const std::string name = DisplayNameForIdentity(screen.peer_identity);
+      const std::string name = PeerLabelFor(screen.peer_identity);
       text = name.empty() ? Tr(line.fallback_key) : Tr(line.key, {{"name", name}});
       break;
     }
@@ -1987,7 +1991,7 @@ CallConflictNames CallController::ConflictNames(const std::string& caller_label,
   names.same_peer = ending.same_peer;
   names.ending_group = ending.group;
   // A group's call: the group's name; a 1:1 call: its peer's.
-  names.ending = ending.group ? GroupTitle(ending.thread_id, now_ms) : DisplayNameForIdentity(ending.peer_identity);
+  names.ending = ending.group ? GroupTitle(ending.thread_id, now_ms) : PeerLabelFor(ending.peer_identity);
   return names;
 }
 

@@ -49,4 +49,8 @@ CallerName MakeCallerName(const std::string& known_name) {
   return {.label = known_name, .unknown = false};
 }
 
+std::string PeerLabel(const std::string& identity, const std::string& known_name) {
+  return identity.empty() ? std::string() : MakeCallerName(known_name).label;
+}
+
 } // namespace pbr
