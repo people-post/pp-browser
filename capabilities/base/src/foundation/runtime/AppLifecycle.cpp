@@ -56,8 +56,18 @@ std::vector<std::function<void()>> Snapshot(const std::vector<Listener>& listene
   return out;
 }
 
-/** Attention may be back: run the listeners (UI thread, outside the lock). */
+/** Set whenever the user's attention goes (background, minimized, focus lost); cleared by the notice that it is back. */
+std::atomic<bool> g_attention_lost{false};
+
+/**
+ * Attention may be back: run the listeners (UI thread, outside the lock) — once per return. Only when the user is
+ * attentive now and attention was lost before, so a restore followed by a focus gain (two events for one return)
+ * and a focus event with nothing lost both stay quiet.
+ */
 void NotifyAttentive() {
+  if (!AppLifecycle::IsUserAttentive() || !g_attention_lost.exchange(false)) {
+    return;
+  }
   for (const auto& listener : Snapshot(g_attentive_listeners)) {
     listener();
   }
@@ -165,12 +175,17 @@ void AppLifecycle::SetDesktopInputFocused(bool focused) {
     logger().info << "Desktop input focus=" << (focused ? "gained" : "lost");
     if (focused) {
       NotifyAttentive();
+    } else {
+      g_attention_lost = true;
     }
   }
 }
 
 void AppLifecycle::SetDesktopMinimized(bool minimized) {
   g_desktop_minimized.store(minimized, std::memory_order_relaxed);
+  if (minimized) {
+    g_attention_lost = true;
+  }
 }
 
 void AppLifecycle::OnDesktopMinimized() {
@@ -255,6 +270,7 @@ void AppLifecycle::OnWillEnterBackground() {
     return;
   }
   g_state = AppLifecycleState::Background;
+  g_attention_lost = true;
   ReconcileWork();
   for (const auto& listener : Snapshot(g_background_listeners)) {
     listener();

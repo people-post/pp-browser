@@ -935,12 +935,15 @@ void ChatController::OnAttentiveAgain() {
   if (!messaging_ready_) {
     return;
   }
-  RefreshFromMessaging(); // re-checks the open chat first
+  // Refresh only when something was marked: a focus gain with nothing to read must stay cheap.
+  if (MarkOpenChatReadIfLooking()) {
+    RefreshFromMessaging();
+  }
 }
 
-void ChatController::MarkOpenChatReadIfLooking() {
+bool ChatController::MarkOpenChatReadIfLooking() {
   if (reading_open_chat_ || !facade_) {
-    return;
+    return false;
   }
   const std::string thread_id = ActiveThreadId(); // a copy: MarkRead may reach the facade's own string
   bool has_unread = false;
@@ -949,14 +952,22 @@ void ChatController::MarkOpenChatReadIfLooking() {
       has_unread = (*found)->unread_count > 0;
     }
   }
+  // A notification tap waiting to be routed (the app came to the front for it) opens another chat next: this one
+  // keeps its unread until it is shown again. Peeked, never taken.
+  PendingNotificationTap& tap = PendingNotificationTap::Instance();
+  const auto now = PendingNotificationTap::Clock::now();
+  const bool route_unknown_thread = !tap.FreshHint(now).empty() || tap.PeekCallRoute(now);
+  const bool tap_elsewhere = TapPendingElsewhere(tap.PeekThread(), route_unknown_thread, thread_id);
   if (!ShouldMarkOpenChatRead(AppLifecycle::IsUserAttentive(), !thread_id.empty(),
-                              ChatPageShows(ChromeSnapshot(), thread_id, thread_id), has_unread)) {
-    return;
+                              ChatTranscriptOnScreen(ChromeSnapshot(), thread_id, thread_id), has_unread,
+                              tap_elsewhere)) {
+    return false;
   }
   reading_open_chat_ = true; // MarkRead -> messages changed -> RefreshFromMessaging -> here: stops at this guard
   presenter_.MarkRead(thread_id);
   ILocalNotifier::Instance().ClearForThread(thread_id);
   reading_open_chat_ = false;
+  return true;
 }
 
 void ChatController::OnSelectThread(std::string thread_id) { // by value: ShellSelectNavTab below rebuilds Home (B161)

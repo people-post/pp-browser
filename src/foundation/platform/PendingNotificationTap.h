@@ -92,6 +92,15 @@ public:
     on_recorded_ = std::move(fn);
   }
 
+  /** The chat a banner tap asked for, without taking it. */
+  std::optional<std::string> PeekThread() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    if (thread_id_.empty()) {
+      return std::nullopt;
+    }
+    return thread_id_;
+  }
+
   /** The chat a banner tap asked for; taken once. */
   std::optional<std::string> TakeThread() {
     std::lock_guard<std::mutex> lock(mu_);

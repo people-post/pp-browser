@@ -185,7 +185,8 @@ public:
   void OnCompactChatShownAgain();
   /**
    * The user may be looking at the app again (phone foreground, desktop restored / focus regained; UI thread). A
-   * message that came in while nobody looked counted unread even in the open chat: it is read now.
+   * message that came in while nobody looked counted unread even in the open chat: it is read now (a refresh
+   * follows only when it was).
    */
   void OnAttentiveAgain();
   void OnFindSomeone() override;
@@ -587,7 +588,7 @@ private:
   bool MessagingReady() const override;
   const std::string& ActiveThreadId() const override;
   /** Marks the open chat read (and clears its notification) when ShouldMarkOpenChatRead() says so. */
-  void MarkOpenChatReadIfLooking();
+  bool MarkOpenChatReadIfLooking();
 
   ShellChromeSnapshot ChromeSnapshot() const override;
   ChatSurfaceSnapshot BuildSurfaceSnapshot() const;
