@@ -1,4 +1,4 @@
-# Fetch people-post/pp-cpp-crypto (sodium + ML-KEM/ML-DSA + pp_crypto).
+# Fetch people-post/pp-cpp-crypto (sodium + ML-KEM/ML-DSA + BoringSSL + pp_crypto).
 #
 # Pin a release tag from that repo's main line (PP_CPP_CRYPTO_GIT_TAG).
 # Do not track develop/main branch tips or auto-pick a sibling checkout.
@@ -8,7 +8,7 @@ include(PpFetchPin)
 
 set(PP_CPP_CRYPTO_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-crypto.git"
   CACHE STRING "Git remote for pp-cpp-crypto")
-pp_fetch_git_tag(PP_CPP_CRYPTO_GIT_TAG "v1.1.0"
+pp_fetch_git_tag(PP_CPP_CRYPTO_GIT_TAG "v1.2.0"
   "Release tag on pp-cpp-crypto main (not a branch name)")
 
 set(PP_CRYPTO_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-crypto tests" FORCE)

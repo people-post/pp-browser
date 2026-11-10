@@ -30,10 +30,10 @@ Asio (a standalone tree).
 
 | Directory | Upstream | Used by |
 |-----------|----------|---------|
-| `boringssl/` | [qdrvm/boringssl](https://github.com/qdrvm/boringssl) `qdrvm1` | curl's TLS on Linux, Android and iOS (Windows: Schannel; macOS: SecureTransport). Nothing else |
 | `zlib/` | qdrvm/zlib 1.3.0-p1 | curl; FreeType reuses it |
 | `asio/` | [chriskohlhoff/asio](https://github.com/chriskohlhoff/asio) 1.34.0 | pp-node's status HTTP server; test HTTP servers |
 | `googletest/` | google/googletest v1.14.0 | Unit tests (`PP_BROWSER_BUILD_TESTS`) |
 
-**Removed:** `lsquic/`, `c-ares/`, `tsl_hat_trie/` (A017: the libp2p host underlay); `yaml-cpp/`,
+**Removed:** `boringssl/` (moved to [pp-cpp-crypto](https://github.com/people-post/pp-cpp-crypto), which builds
+it for the link AEAD; curl's TLS takes its `crypto` / `ssl` targets); `lsquic/`, `c-ares/`, `tsl_hat_trie/` (A017: the libp2p host underlay); `yaml-cpp/`,
 `soralog/`, `qtils/`; `fmt/` and `outcome/` (nothing linked them).
