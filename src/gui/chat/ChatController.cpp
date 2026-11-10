@@ -4191,8 +4191,13 @@ void ChatController::WireMessagingBindings() {
     if (auto thread = facade_->GetThread(thread_id); thread && *thread) {
       bare_id = facade_->ResolveThreadLabel(**thread).trust == PeerLabelTrust::RawId;
     }
+    // The unread count now (the message that raised this notice is in it): Android's notification number.
+    const auto unread_of = [this](const std::string& id) {
+      auto thread = facade_->GetThread(id);
+      return thread && *thread ? (*thread)->unread_count : 0;
+    };
     if (!bare_id) {
-      ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id);
+      ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id, unread_of(thread_id));
       return;
     }
     AppRuntime::PostWorkerAndReplyOnUI<int>(
@@ -4201,7 +4206,7 @@ void ChatController::WireMessagingBindings() {
           std::this_thread::sleep_for(std::chrono::milliseconds(1500));
           return 0;
         },
-        [this, body, thread_id, title](int) {
+        [this, body, thread_id, title, unread_of](int) {
           std::string resolved = title;
           if (auto thread = facade_->GetThread(thread_id); thread && *thread) {
             const std::string now = facade_->ResolveThreadLabel(**thread).title;
@@ -4209,7 +4214,7 @@ void ChatController::WireMessagingBindings() {
               resolved = now;
             }
           }
-          ILocalNotifier::Instance().NotifyIncoming(resolved, body, thread_id);
+          ILocalNotifier::Instance().NotifyIncoming(resolved, body, thread_id, unread_of(thread_id));
         });
   });
   const auto activate = [this](std::string thread_id) {

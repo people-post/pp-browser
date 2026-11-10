@@ -13,7 +13,8 @@ class DesktopLocalNotifier final : public ILocalNotifier, public Module {
 public:
   DesktopLocalNotifier();
 
-  void NotifyIncoming(const std::string& title, const std::string& body, const std::string& thread_id = {}) override;
+  void NotifyIncoming(const std::string& title, const std::string& body, const std::string& thread_id = {},
+                      int thread_unread = 0) override;
   void ClearForThread(const std::string& thread_id) override;
   void SetActivationHandler(std::function<void(std::string thread_id)> handler) override;
   void Shutdown() override;

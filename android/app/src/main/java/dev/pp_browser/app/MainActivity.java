@@ -25,6 +25,7 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.provider.Settings;
@@ -1234,8 +1235,11 @@ public class MainActivity extends SDLActivity {
         }
     }
 
-    /** Called from native AndroidLocalNotifier. */
-    public void showLocalNotification(String title, String body, String threadId) {
+    /**
+     * Called from native AndroidLocalNotifier. {@code threadUnread}: the chat's unread count now; it is the
+     * notification's number (the launcher's icon number follows the notifications), at least 1.
+     */
+    public void showLocalNotification(String title, String body, String threadId, int threadUnread) {
         ensureNotificationChannel();
         Intent open = new Intent(this, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -1250,6 +1254,7 @@ public class MainActivity extends SDLActivity {
                 .setContentTitle(title != null ? title : "New message")
                 .setContentText(body != null ? body : "You have a new message")
                 .setContentIntent(pi)
+                .setNumber(Math.max(1, threadUnread))
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_HIGH);
         NotificationManagerCompat.from(this).notify(req == 0 ? 1 : req, builder.build());
@@ -1305,6 +1310,34 @@ public class MainActivity extends SDLActivity {
         // A running one takes the new title (and a refused update leaves it running: still owed a stop).
         if (PpCallService.start(getApplicationContext(), sOngoingCallTitle)) {
             sOngoingCallServiceStarted = true;
+        }
+    }
+
+    private static final String VIVO_BADGE_PROVIDER = "content://com.vivo.abe.provider.launcher.notification.num";
+
+    /**
+     * Called from native (PlatformAppBadge_Android, any thread): the total unread count for the launcher icon. Only
+     * the vivo launcher takes a number that does not come from a notification (its badge provider); on every other
+     * maker this does nothing, their icon numbers follow the notifications (setNumber). No fallback to the old
+     * broadcast. Whatever goes wrong is one log line and nothing else.
+     */
+    public void setUnreadBadgeCount(int total) {
+        if (!"vivo".equalsIgnoreCase(Build.MANUFACTURER)) {
+            return;
+        }
+        try {
+            Bundle extras = new Bundle();
+            extras.putString("package", getPackageName());
+            extras.putString("class", MainActivity.class.getName());
+            extras.putInt("badgenumber", Math.max(0, total));
+            getContentResolver().call(Uri.parse(VIVO_BADGE_PROVIDER), "change_badge", null, extras);
+            Log.i(TAG, "vivo badge: set " + total);
+        } catch (SecurityException e) {
+            Log.w(TAG, "vivo badge: refused " + e);
+        } catch (IllegalArgumentException e) {
+            Log.w(TAG, "vivo badge: provider not visible or missing " + e);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "vivo badge: failed " + e);
         }
     }
 
@@ -1401,6 +1434,7 @@ public class MainActivity extends SDLActivity {
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_MESSAGES, "Messages", NotificationManager.IMPORTANCE_HIGH);
         channel.setDescription("Incoming chat messages");
+        channel.setShowBadge(true);
         NotificationManager nm = c.getSystemService(NotificationManager.class);
         if (nm != null) {
             nm.createNotificationChannel(channel);

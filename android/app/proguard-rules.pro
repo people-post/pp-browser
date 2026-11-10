@@ -4,7 +4,8 @@
 # Keep MainActivity methods called by name from native JNI helpers.
 -keepclassmembers class dev.pp_browser.app.MainActivity {
     public void setAppAppearance(java.lang.String);
-    public void showLocalNotification(java.lang.String, java.lang.String, java.lang.String);
+    public void showLocalNotification(java.lang.String, java.lang.String, java.lang.String, int);
+    public void setUnreadBadgeCount(int);
     public void clearLocalNotification(java.lang.String);
     public java.lang.String getStableDeviceId();
     public java.lang.String getPreferredLanguageTags();
