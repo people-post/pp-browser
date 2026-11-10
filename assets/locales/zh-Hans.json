@@ -131,7 +131,6 @@
     "settings.home_logo.label": "首页动画 logo",
     "settings.home_logo.help": "闲着时会自己动一动，点它也会动；关掉就是普通的应用图标",
     "settings.nickname": "昵称",
-    "settings.profile.change_photo": "更换头像…",
     "settings.profile.remove_photo": "移除头像",
     "settings.profile.invite_copied": "邀请已复制",
     "settings.profile.invite_text": "我在 PP 上的账号：{name}（账号 ID {id}）。搜我的名字或输入这个 ID 就能加我。",
