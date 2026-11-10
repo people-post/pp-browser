@@ -327,6 +327,19 @@ struct CallRingState {
   ui::String avatar_src;
   ui::String avatar_letter = "?";
   int avatar_tone = 0;
+  // The three lines before the answer (CallRingSteps), all bound: the first is always done, the second is done unless
+  // `step2_current`, the third is plain until `step3_done`. Their words are decided by the presenter layer.
+  ui::String step1;
+  ui::String step2;
+  ui::String step3;
+  bool step2_current = false;
+  bool step3_done = false;
+  // Our own avatar on the 1:1 page's left (the same source as CallInProgressState::self_*); bound, so an unlock that
+  // makes the photo readable is a dirty.
+  bool self_has_avatar = false;
+  ui::String self_avatar_src;
+  ui::String self_avatar_letter = "?";
+  int self_avatar_tone = 0;
 };
 
 /** One line of the phone call's "how this call got through" sheet (CallConnectStory events, in words). */
@@ -513,6 +526,14 @@ struct CallInProgressState {
   ui::String story_step5;
   /** How many of the step lines show: 3 (group), 4 (this device answered), 5 (this device called; #172). */
   int story_step_count = 3;
+  /** This device is the callee (answered): the spark runs from them towards us. Written into the markup. */
+  bool story_inbound = false;
+  /** 1:1 answerer: the done lines the ring page showed (received, on the network, who), above the steps. Empty: none. */
+  std::vector<std::string> story_lead;
+  /** Rows the whole list is moved up so the current one stays in its clip (CallStepScrollRows); 0: not clipped. */
+  int story_scroll_rows = 0;
+  /** Height of that clip in dp (CallStepAreaHeightDp); 0 or less: not clipped (page height unknown). */
+  int story_area_dp = 0;
   /** Just connected (1:1): "Connected directly, 0.9 s" for 4 s, then it fades (bound). */
   ui::String result_text;
   bool result_fading = false;

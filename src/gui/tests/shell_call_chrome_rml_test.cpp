@@ -3,8 +3,12 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/ui/CallChipDock.h"
 
+#include "feature/presenters/CallStepScroll.h"
+
 #include <gtest/gtest.h>
 
+#include <fstream>
+#include <sstream>
 #include <string>
 
 namespace pbr {
@@ -13,6 +17,9 @@ namespace {
 bool Has(const std::string& rml, const std::string& part) {
   return rml.find(part) != std::string::npos;
 }
+
+size_t Count(const std::string& rml, const std::string& part);
+ShellState PhoneGroupCall();
 
 TEST(ShellCallChromeRmlTest, NothingIsMountedWhileNoCallIsUp) {
   const ShellState idle;
@@ -43,6 +50,15 @@ TEST(ShellCallChromeRmlTest, TheAwaitingAndTheRealRingShareOneMarkup) {
   state.call_ring.has_avatar = true;
   state.call_ring.avatar_src = "icons/bob.png";
   state.call_ring.avatar_letter = "B";
+  // The three lines, our own avatar and the name turning over are all bound values too.
+  state.call_ring.phone_title = "Bob";
+  state.call_ring.step2_current = true;
+  state.call_ring.step3_done = true;
+  state.call_ring.step3 = "Bob";
+  state.call_ring.self_has_avatar = true;
+  state.call_ring.self_avatar_src = "icons/me.png";
+  state.call_ring.self_avatar_letter = "M";
+  state.call_ring.self_avatar_tone = 5;
   EXPECT_EQ(waiting, CallRingRml(state));
 }
 
@@ -59,25 +75,25 @@ TEST(ShellCallChromeRmlTest, TheRingPageDimsItsAnswersByABoundClassAndKeepsTheir
   EXPECT_TRUE(Has(rml, "call_decline()"));
 }
 
-TEST(ShellCallChromeRmlTest, TheRingAvatarIsASilhouetteWhileAwaitingThenGroupPhotoOrLetterByBoundSwitches) {
+// The 1:1 ring page: us on the left, them on the right at the pair's size; their avatar is a silhouette while awaiting
+// (or for a stranger), then photo or letter, all by bound switches; a group's big icon is its own block.
+TEST(ShellCallChromeRmlTest, TheRingAvatarIsASilhouetteWhileAwaitingThenPhotoOrLetterByBoundSwitches) {
   ShellState state;
   state.layout_mode = LayoutMode::Compact;
   state.call_ring.active = true;
   const std::string rml = CallRingRml(state);
   EXPECT_TRUE(Has(rml,
-                  "call-phone-avatar--unknown avatar-tone-0 call-phone-avatar--big\" "
+                  "call-phone-avatar--unknown avatar-tone-0 call-phone-avatar--pair\" "
                   "data-if=\"call_ring_awaiting_invite || call_ring_caller_unknown\""));
   EXPECT_TRUE(Has(rml, "icons/v2/unknown-caller.svg"));
-  EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && call_ring_group\""));
-  EXPECT_TRUE(Has(rml,
-                  "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && !call_ring_group && "
-                  "call_ring_has_avatar\""));
+  EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && call_ring_has_avatar\""));
   EXPECT_TRUE(Has(rml, "data-attr-src=\"call_ring_avatar_src\""));
-  EXPECT_TRUE(Has(rml,
-                  "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && !call_ring_group && "
-                  "!call_ring_has_avatar\""));
+  EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && !call_ring_has_avatar\""));
   EXPECT_TRUE(Has(rml, "data-class-avatar-tone-7=\"call_ring_avatar_tone == 7\""));
   EXPECT_TRUE(Has(rml, "{{call_ring_avatar_letter}}"));
+  EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_group\"")) << "the 1:1 block";
+  EXPECT_TRUE(Has(rml, "call-phone-hero call-phone-hero--ring\" data-if=\"call_ring_group\"")) << "the group block";
+  EXPECT_TRUE(Has(rml, "call-phone-avatar--group call-phone-avatar--big"));
 }
 
 // A caller nobody knows by name (no contact, no photo) is "Stranger" with the silhouette on the ring page too, by the
@@ -89,12 +105,144 @@ TEST(ShellCallChromeRmlTest, TheRingPageShowsTheSilhouetteForAnUnknownCallerByTh
   state.call_ring.caller_unknown = true;
   const std::string rml = CallRingRml(state);
   EXPECT_TRUE(Has(rml, "data-if=\"call_ring_awaiting_invite || call_ring_caller_unknown\""));
-  EXPECT_TRUE(Has(rml,
-                  "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && "
-                  "!call_ring_group && !call_ring_has_avatar\""))
+  EXPECT_TRUE(Has(rml, "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && !call_ring_has_avatar\""))
       << "the letter variant steps aside for it";
   state.call_ring.caller_unknown = false;
   EXPECT_EQ(rml, CallRingRml(state)) << "bound: the markup is the same, no remount";
+}
+
+// Us on the left (photo or letter, bound: before the unlock there is no profile), them on the right, the spark running
+// from them to us; their name is the bold one, "You" the small one.
+TEST(ShellCallChromeRmlTest, TheRingPairHasUsFirstThemSecondAndTheSparkComesTowardsUs) {
+  ShellState state;
+  state.layout_mode = LayoutMode::Compact;
+  state.call_ring.active = true;
+  const std::string rml = CallRingRml(state);
+  const size_t pair = rml.find("class=\"call-phone-pair\"");
+  const size_t me = rml.find("data-attr-src=\"call_ring_self_avatar_src\"");
+  const size_t path = rml.find("call-phone-pair-path call-phone-pair-path--inbound");
+  const size_t them = rml.find("unknown-caller.svg");
+  const size_t names = rml.find("class=\"call-phone-pair-names\"");
+  ASSERT_NE(pair, std::string::npos);
+  ASSERT_NE(me, std::string::npos);
+  ASSERT_NE(path, std::string::npos);
+  ASSERT_NE(them, std::string::npos);
+  ASSERT_NE(names, std::string::npos);
+  EXPECT_LT(pair, me);
+  EXPECT_LT(me, path);
+  EXPECT_LT(path, them);
+  EXPECT_LT(them, names);
+  EXPECT_TRUE(Has(rml, "{{call_ring_self_avatar_letter}}"));
+  EXPECT_TRUE(Has(rml, "data-class-avatar-tone-3=\"call_ring_self_avatar_tone == 3\""));
+  const std::string row = rml.substr(names, rml.find("</div>", names) - names);
+  EXPECT_LT(row.find(Tr("call.label.you")), row.find("call-phone-pair-name call-phone-pair-name--peer"));
+  EXPECT_TRUE(Has(row, "call-phone-pair-name call-phone-pair-name--peer\">{{call_ring_phone_title}}"));
+  EXPECT_EQ(Count(row, "call-phone-pair-name--peer"), 1u) << "only the other party's name is the big one";
+}
+
+// Three fixed rows, every difference bound: the first is always done; the second turns from current to done; the
+// third from plain to done (check by data-if, text by value).
+TEST(ShellCallChromeRmlTest, TheRingPageHasThreeBoundStepRowsUnderThePair) {
+  ShellState state;
+  state.layout_mode = LayoutMode::Compact;
+  state.call_ring.active = true;
+  const std::string rml = CallRingRml(state);
+  EXPECT_EQ(Count(rml, "{{call_ring_step1}}"), 2u) << "the 1:1 block and the group block";
+  const size_t steps = rml.find("<div class=\"call-phone-steps\">");
+  ASSERT_NE(steps, std::string::npos);
+  const std::string one_to_one = rml.substr(steps, rml.find("{{call_ring_step3}}", steps) - steps);
+  EXPECT_EQ(Count(one_to_one, "<div class=\"call-phone-step-dot\">"), 3u);
+  EXPECT_TRUE(Has(one_to_one, "call-phone-step call-phone-step--done\"><div class=\"call-phone-step-dot\"><svg"));
+  EXPECT_TRUE(Has(one_to_one, "data-class-call-phone-step--current=\"call_ring_step2_current\""));
+  EXPECT_TRUE(Has(one_to_one, "data-class-call-phone-step--done=\"!call_ring_step2_current\""));
+  EXPECT_TRUE(Has(one_to_one, "data-if=\"!call_ring_step2_current\""));
+  EXPECT_TRUE(Has(rml, "data-class-call-phone-step--done=\"call_ring_step3_done\""));
+  EXPECT_TRUE(Has(rml, "data-if=\"call_ring_step3_done\""));
+  EXPECT_LT(rml.find("{{call_ring_step1}}"), rml.find("{{call_ring_step2}}"));
+  EXPECT_LT(rml.find("{{call_ring_step2}}"), rml.find("{{call_ring_step3}}"));
+}
+
+// The ring page and the answering page take the pair, the names and the steps from the same classes, and the ring page
+// pads for the 44dp bar it does not have: the numbers that put them level are asserted against the rcss.
+std::string ReadAll(const std::string& path) {
+  std::ifstream in(path);
+  std::ostringstream text;
+  text << in.rdbuf();
+  return text.str();
+}
+
+/** The dp value of `property` in the rule `selector { ... }` of the call page rcss (-1: not found). */
+int RcssDp(const std::string& rcss, const std::string& selector, const std::string& property) {
+  const size_t rule = rcss.find("\n" + selector + " {");
+  if (rule == std::string::npos) {
+    return -1;
+  }
+  const size_t end = rcss.find('}', rule);
+  const size_t at = rcss.find("\n  " + property + ":", rule);
+  if (at == std::string::npos || at > end) {
+    return -1;
+  }
+  return std::atoi(rcss.c_str() + at + property.size() + 4);
+}
+
+TEST(ShellCallChromeRmlTest, TheRingAndAnsweringPagesShareTheirPairNamesAndStepsClasses) {
+  ShellState ring;
+  ring.layout_mode = LayoutMode::Compact;
+  ring.call_ring.active = true;
+  const std::string ring_rml = CallRingRml(ring);
+  ShellState answer = PhoneGroupCall();
+  answer.call_in_progress.show_roster = false;
+  answer.call_in_progress.story_active = true;
+  const std::string answer_rml = CallInProgressRml(answer);
+  for (const char* shared : {"class=\"call-phone-pair\"", "call-phone-pair-path", "call-phone-avatar--pair",
+                             "class=\"call-phone-pair-names\"", "call-phone-pair-name call-phone-pair-name--peer",
+                             "<div class=\"call-phone-steps\">", "call-phone-step-dot", "call-phone-step-text"}) {
+    EXPECT_TRUE(Has(ring_rml, shared)) << shared;
+    EXPECT_TRUE(Has(answer_rml, shared)) << shared;
+  }
+  EXPECT_TRUE(Has(ring_rml, "call-phone-story call-phone-story--ring"));
+  EXPECT_FALSE(Has(answer_rml, "call-phone-story--ring"));
+}
+
+TEST(ShellCallChromeRmlTest, TheRingPagesStoryPaddingIsTheTopBarPlusTheAnsweringPagesStoryPadding) {
+  const std::string rcss = ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss");
+  const int bar = RcssDp(rcss, ".call-phone-top", "height");
+  const int story = RcssDp(rcss, ".call-phone-story", "padding");
+  ASSERT_EQ(bar, 44);
+  // `padding: 59dp 24dp 0 24dp;`: the first number is the top.
+  ASSERT_EQ(story, 59);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-story--ring", "padding-top"), bar + story);
+}
+
+// The scroll arithmetic's numbers (CallStepScroll.h) are the rcss's.
+TEST(ShellCallChromeRmlTest, TheStepScrollConstantsAreTheRcssNumbers) {
+  using namespace call_page_dp;
+  const std::string rcss = ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss");
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-top", "height"), kTopBar);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-story", "padding"), kStoryPaddingTop);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-pair", "height"), kPairRow);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-pair-names", "margin-top"), kNamesMarginTop);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-pair-name--peer", "line-height"), kPeerNameLine);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-steps", "margin-top"), kStepsMarginTop);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-steps-clip", "margin-top"), kStepsMarginTop);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-steps", "gap"), kStepRow - RcssDp(rcss, ".call-phone-step-dot", "height"));
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-step-dot", "height"), 22);
+  // kControlsReserve = card padding 12 + 52 circle + 4 gap + 13 label + 8, and its 22 bottom margin.
+  EXPECT_TRUE(Has(rcss, "margin: 0 12dp 22dp 12dp;\n  padding: 12dp 4dp 8dp 4dp;"));
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-control-circle", "height"), 52);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-control", "gap"), 4);
+  EXPECT_EQ(RcssDp(rcss, ".call-phone-control-label", "line-height"), 13);
+}
+
+// Every step line stays on one line, so a row is always kStepRow tall.
+TEST(ShellCallChromeRmlTest, AStepsTextIsOneLineWithAnEllipsis) {
+  const std::string rcss = ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss");
+  const size_t rule = rcss.find("\n.call-phone-step-text {");
+  ASSERT_NE(rule, std::string::npos);
+  const std::string body = rcss.substr(rule, rcss.find('}', rule) - rule);
+  EXPECT_TRUE(Has(body, "white-space: nowrap;"));
+  EXPECT_TRUE(Has(body, "overflow: hidden;"));
+  EXPECT_TRUE(Has(body, "text-overflow: ellipsis;"));
 }
 
 TEST(ShellCallChromeRmlTest, ThePhoneCallPageShowsTheSilhouetteOnlyForAnUnknownOneToOnePeerWithNoPhoto) {
@@ -388,6 +536,90 @@ TEST(ShellCallChromeRmlTest, PhoneStoryShowsAllStepsAndHighlightsTheReachedOnes)
   EXPECT_TRUE(Has(sheet, "You called"));
   EXPECT_TRUE(Has(sheet, "They answered"));
   EXPECT_TRUE(Has(sheet, "Connected directly"));
+}
+
+// The rows of the connecting list per kind of call: a 1:1 answerer's three lead rows (done, their words written in)
+// plus its four steps = 7; the caller's own five; a group's three; the video card's four, without the lead rows.
+TEST(ShellCallChromeRmlTest, PhoneStoryRowsPerKindOfCall) {
+  const auto rows = [](const ShellState& state) {
+    return Count(CallInProgressRml(state), "<div class=\"call-phone-step-dot\">");
+  };
+  ShellState answerer = PhoneGroupCall();
+  answerer.call_in_progress.show_roster = false;
+  answerer.call_in_progress.story_active = true;
+  answerer.call_in_progress.story_step_count = 4;
+  answerer.call_in_progress.story_lead = {"Call received", "On the encrypted network", "Wang"};
+  EXPECT_EQ(rows(answerer), 7u);
+  const std::string answerer_rml = CallInProgressRml(answerer);
+  EXPECT_LT(answerer_rml.find("Call received"), answerer_rml.find("On the encrypted network"));
+  EXPECT_LT(answerer_rml.find("Wang"), answerer_rml.find("{{call_in_progress_story_step1}}"));
+  for (const char* lead : {"Call received", "On the encrypted network", "Wang"}) {
+    EXPECT_TRUE(Has(answerer_rml, std::string("<div class=\"call-phone-step call-phone-step--done\"><div "
+                                              "class=\"call-phone-step-dot\"><svg src=\"../icons/v2/check.svg\" "
+                                              "width=\"12\" height=\"12\"></svg></div><p "
+                                              "class=\"call-phone-step-text\">") +
+                                      lead + "</p>"))
+        << lead << " is a done row";
+  }
+
+  ShellState caller = answerer;
+  caller.call_in_progress.story_lead.clear();
+  caller.call_in_progress.story_step_count = 5;
+  EXPECT_EQ(rows(caller), 5u);
+
+  ShellState group = answerer;
+  group.call_in_progress.show_roster = true;
+  group.call_in_progress.story_lead.clear();
+  group.call_in_progress.story_step_count = 3;
+  EXPECT_EQ(rows(group), 3u);
+
+  ShellState video = answerer; // the lead rows are not carried into the camera card
+  video.call_in_progress.stage_visible = true;
+  EXPECT_EQ(rows(video), 4u);
+  EXPECT_TRUE(Has(CallInProgressRml(video), "call-phone-story call-phone-story--card"));
+}
+
+// The callee's page (the answering page of an answered call, and the video card's pair): us first and them second as
+// always, the spark running towards us; the caller's page has no such class.
+TEST(ShellCallChromeRmlTest, ThePairKeepsUsFirstAndOnlyTheCalleesSparkRunsTowardsUs) {
+  for (const bool video_card : {false, true}) {
+    ShellState state = PhoneGroupCall();
+    state.call_in_progress.show_roster = false;
+    state.call_in_progress.story_active = true;
+    state.call_in_progress.stage_visible = video_card;
+    state.call_in_progress.self_avatar_letter = "S";
+    state.call_in_progress.peer_avatar_letter = "P";
+    state.call_in_progress.story_inbound = true;
+    const std::string callee = CallInProgressRml(state);
+    EXPECT_TRUE(Has(callee, "call-phone-pair-path call-phone-pair-path--inbound")) << video_card;
+    EXPECT_LT(callee.find("avatar-letter\">S"), callee.find("avatar-letter\">P")) << "us first, " << video_card;
+    state.call_in_progress.story_inbound = false;
+    const std::string caller = CallInProgressRml(state);
+    EXPECT_FALSE(Has(caller, "call-phone-pair-path--inbound")) << video_card;
+    EXPECT_TRUE(Has(caller, "class=\"call-phone-pair-path\"")) << video_card;
+    EXPECT_LT(caller.find("avatar-letter\">S"), caller.find("avatar-letter\">P")) << "us first, " << video_card;
+    EXPECT_TRUE(Has(caller, "call-phone-pair-name call-phone-pair-name--peer\">{{call_in_progress_phone_title}}"));
+  }
+}
+
+// A list that does not fit moves up inside a clip of fixed height: the clip's height and the list's negative margin
+// are written in; with the height unknown nothing is clipped or moved.
+TEST(ShellCallChromeRmlTest, ALongListIsClippedAndMovedUpByTheGivenRows) {
+  ShellState state = PhoneGroupCall();
+  state.call_in_progress.show_roster = false;
+  state.call_in_progress.story_active = true;
+  state.call_in_progress.story_step_count = 4;
+  state.call_in_progress.story_lead = {"a", "b", "c"};
+  state.call_in_progress.story_area_dp = 170;
+  state.call_in_progress.story_scroll_rows = 2;
+  const std::string rml = CallInProgressRml(state);
+  EXPECT_TRUE(Has(rml, "<div class=\"call-phone-steps-clip\" style=\"height: 170dp\">"));
+  EXPECT_TRUE(Has(rml, "<div class=\"call-phone-steps\" style=\"margin-top: -68dp\">"));
+  state.call_in_progress.story_area_dp = 0;
+  state.call_in_progress.story_scroll_rows = 0;
+  const std::string free = CallInProgressRml(state);
+  EXPECT_TRUE(Has(free, "<div class=\"call-phone-steps-clip\">"));
+  EXPECT_FALSE(Has(free, "margin-top: -"));
 }
 
 // V060: a person on hold has "On hold" on their tile (dimmed), and a paused camera says so — per row, bound.

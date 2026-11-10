@@ -25,6 +25,8 @@ struct ShellCallChromePorts {
   std::function<void(const CallChromeSnapshot& snapshot, CallChromeUpdate update)> apply_snapshot;
   /** The shell is in its phone layout (the full-screen call page, ShellCallChromeRml). Unset: false. */
   std::function<bool()> phone_layout;
+  /** Window height in dp less the status bar and the bottom inset: the height of the call page's content. 0: unknown. */
+  std::function<int()> call_page_height_dp;
 };
 
 class ShellHost;

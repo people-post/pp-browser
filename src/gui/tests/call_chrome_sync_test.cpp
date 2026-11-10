@@ -41,10 +41,15 @@ TEST(CallChromeSyncTest, AwaitingRingBecomesTheRealRingByDirtyOnly) {
   real.ring_phone_title = "Bob";
   real.ring_phone_subtitle = "PP voice call";
   real.ring_avatar = "photo|bob.png";
+  real.ring_steps = "Call received|On the encrypted network|Bob|-d|pme.png|3";
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, real), pbr::CallChromeUpdate::DirtyOnly);
   pbr::CallChromeLayer only_flag = awaiting;
   only_flag.ring_awaiting_invite = false;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, only_flag), pbr::CallChromeUpdate::DirtyOnly);
+  // The three lines and our own avatar turning over (the unlock making our photo readable) are dirties too.
+  pbr::CallChromeLayer lines = awaiting;
+  lines.ring_steps = "Call received|Joining…|Verifying|c-|p|0";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, lines), pbr::CallChromeUpdate::DirtyOnly);
   pbr::CallChromeLayer nothing;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(nothing, awaiting), pbr::CallChromeUpdate::Remount) << "appears from nothing";
   pbr::CallChromeLayer other = real;
@@ -54,6 +59,17 @@ TEST(CallChromeSyncTest, AwaitingRingBecomesTheRealRingByDirtyOnly) {
   pbr::CallChromeLayer paid = awaiting;
   paid.ring_show_pricing = true;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, paid), pbr::CallChromeUpdate::Remount) << "pricing is structure";
+}
+
+// The answering page writes its lead rows, the spark's side and the clip into its markup: a change remounts it (the
+// controller puts them in the steps key).
+TEST(CallChromeSyncTest, AnsweringPageStoryKeyChangeRemounts) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_story_steps = "a|b|c||d|4|in|x|y|z|0|0";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_story_steps = "a|b|c||d|4|in|x|y|z|2|170";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
 TEST(CallChromeSyncTest, RingDisappearRemounts) {

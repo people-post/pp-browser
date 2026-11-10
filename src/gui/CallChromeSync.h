@@ -94,6 +94,8 @@ struct CallChromeLayer {
   bool ring_awaiting_invite = false;
   /** Bound (the silhouette variant's data-if): a change dirties. */
   bool ring_caller_unknown = false;
+  /** Bound: the ring page's three lines (words + flags) and our own avatar on its left. Changes dirty. */
+  std::string ring_steps;
   std::string in_call_phone_title;
   bool in_call_video = false;
   std::string in_call_avatars; // the peer's and our own, as for ring_avatar

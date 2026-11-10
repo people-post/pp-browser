@@ -6463,6 +6463,15 @@ call-video-tile {
   padding-top: 0;
 }
 
+/*
+ * The incoming-call page has no 44dp top bar (.call-phone-top) but must put the pair, the names and the steps where the
+ * answering page does, so answering moves nothing above the buttons: this padding is that bar (44dp) plus the answering
+ * page's own .call-phone-story padding-top (59dp, above). Change the two together (a gui test asserts the sum).
+ */
+.call-phone-story--ring {
+  padding-top: 103dp;
+}
+
 .call-phone-story--group {
   position: absolute;
   top: 0;
@@ -6515,6 +6524,14 @@ call-video-tile {
   to { transform: translateX(126dp); opacity: 0; }
 }
 
+/* Being called: the spark runs from them (right) towards us (left): the same keyframes mirrored. */
+@keyframes call-phone-spark-in {
+  from { transform: translateX(126dp); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  to { transform: translateX(0dp); opacity: 0; }
+}
+
 .call-phone-pair-spark {
   position: absolute;
   top: 1dp;
@@ -6523,6 +6540,10 @@ call-video-tile {
   height: 10dp;
   border-radius: 5dp;
   animation: 1.4s linear-in-out infinite call-phone-spark;
+}
+
+.call-phone-pair-path--inbound .call-phone-pair-spark {
+  animation: 1.4s linear-in-out infinite call-phone-spark-in;
 }
 
 .call-phone-pair-names {
@@ -6542,6 +6563,25 @@ call-video-tile {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The other party's name: larger and bold, the line grows to 22dp (both pages use this rule, so they stay level). */
+.call-phone-pair-name--peer {
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+}
+
+/* The answering page's list in a clip of its own height (inline style); the list moves up inside it. */
+.call-phone-steps-clip {
+  flex-shrink: 0;
+  width: 300dp;
+  margin-top: 22dp;
+  overflow: hidden;
+}
+
+.call-phone-steps-clip .call-phone-steps {
+  margin-top: 0;
 }
 
 .call-phone-steps {
@@ -6596,8 +6636,12 @@ call-video-tile {
 
 .call-phone-step-text {
   margin: 0;
+  min-width: 0;
   font-size: 16dp;
   line-height: 22dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .call-phone-step--current .call-phone-step-text {

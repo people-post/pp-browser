@@ -28,6 +28,8 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/PendingNotificationTap.h"
 #include "gui/CallStatusHint.h"
+#include "feature/presenters/CallRingSteps.h"
+#include "feature/presenters/CallStepScroll.h"
 #include "lib/ui/ShellTypes.h"
 #include "feature/calls/CallFunctionalPorts.h"
 #include "lib/calls/CallLifecycleTypes.h"
@@ -207,6 +209,22 @@ std::string AvatarKey(const bool group, const bool has_avatar, const ui::String&
          std::to_string(tone);
 }
 
+/** The ring page's three bound lines and our own avatar: a change dirties them. */
+std::string RingStepsKey(const CallRingState& ring) {
+  return std::string(ring.step1.c_str()) + "|" + ring.step2.c_str() + "|" + ring.step3.c_str() + "|" +
+         (ring.step2_current ? "c" : "-") + (ring.step3_done ? "d" : "-") + "|" +
+         AvatarKey(false, ring.self_has_avatar, ring.self_avatar_src, ring.self_avatar_letter, ring.self_avatar_tone);
+}
+
+/** What the answering page's list writes into its markup besides the four steps: lead rows, spark side, clip. */
+std::string StoryLeadKey(const CallInProgressState& in_call) {
+  std::string key = in_call.story_inbound ? "in" : "out";
+  for (const std::string& line : in_call.story_lead) {
+    key += "|" + line;
+  }
+  return key + "|" + std::to_string(in_call.story_scroll_rows) + "|" + std::to_string(in_call.story_area_dp);
+}
+
 std::string RosterKey(const std::vector<CallRosterParticipantState>& roster) {
   std::string key;
   for (const CallRosterParticipantState& p : roster) {
@@ -312,6 +330,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_avatar = AvatarKey(ring.group, ring.has_avatar, ring.avatar_src, ring.avatar_letter, ring.avatar_tone),
       .ring_awaiting_invite = ring.awaiting_invite,
       .ring_caller_unknown = ring.caller_unknown,
+      .ring_steps = RingStepsKey(ring),
       .in_call_phone_title = in_call.phone_title.c_str(),
       .in_call_video = in_call.video,
       .in_call_avatars = AvatarKey(false, in_call.peer_has_avatar, in_call.peer_avatar_src, in_call.peer_avatar_letter,
@@ -325,7 +344,8 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_story_stage = in_call.story_stage,
       .in_call_story_steps = std::string(in_call.story_step1.c_str()) + "|" + in_call.story_step2.c_str() + "|" +
                              in_call.story_step3.c_str() + std::string("|") + in_call.story_step4.c_str() + "|" +
-                             in_call.story_step5.c_str() + "|" + std::to_string(in_call.story_step_count),
+                             in_call.story_step5.c_str() + "|" + std::to_string(in_call.story_step_count) + "|" +
+                             StoryLeadKey(in_call),
       .in_call_story_sheet_open = in_call.story_sheet_open,
       .in_call_story_lines = in_call.story_lines,
       .in_call_story_how = in_call.story_how.c_str(),
@@ -608,6 +628,14 @@ void CallController::StepWakePlaceholder() {
   if (step.ring == CallPresenter::WakeRing::Show) {
     if (!ring_.awaiting_invite) {
       RenderAwaitingRing();
+    } else {
+      // The page is up: once the vault unlocks our own photo can be read; it replaces the letter in place.
+      const ui::String shown = ring_.self_avatar_src;
+      const bool had = ring_.self_has_avatar;
+      FillRingSelfAvatar();
+      if (had != ring_.self_has_avatar || shown != ring_.self_avatar_src) {
+        SyncShellState();
+      }
     }
   } else if (step.ring == CallPresenter::WakeRing::Clear && ring_.awaiting_invite) {
     ClearRing();
@@ -627,8 +655,10 @@ void CallController::RenderAwaitingRing() {
   ring_.accept_label = copy.accept_label;
   ring_.decline_label = copy.decline_label;
   FillRingAnswerLabels(no_call);
-  ring_.phone_title = Tr("call.ring.awaiting.title").c_str();
+  ring_.phone_title = Tr("call.ring.awaiting.name").c_str();
   ring_.avatar_letter = ""; // the blank default avatar, no "?"
+  FillRingSteps(true, "");
+  FillRingSelfAvatar();
   SyncShellState();
   SyncRingtone();
 }
@@ -1973,6 +2003,8 @@ void CallController::FillRingPhoneFields(const CallScreen& screen, const std::st
     ring_.avatar_letter = "";
     ring_.avatar_tone = 2;
     ring_.caller_unknown = false;
+    FillRingSteps(false, ring_.phone_title.c_str());
+    FillRingSelfAvatar();
     return;
   }
   ring_.phone_title = caller_label.c_str();
@@ -1984,6 +2016,41 @@ void CallController::FillRingPhoneFields(const CallScreen& screen, const std::st
   ring_.has_avatar = !photo.empty();
   ring_.avatar_src = photo.c_str();
   ring_.caller_unknown = CallerNameFor(screen.caller_identity).unknown && photo.empty();
+  FillRingSteps(false, caller_label);
+  FillRingSelfAvatar();
+}
+
+namespace {
+
+/** Our avatar fields, the same names on the ring and the in-call state. */
+template <class State>
+void SetSelfAvatar(State& state, const AvatarGlyph& glyph, const std::string& photo) {
+  state.self_avatar_letter = glyph.letter.c_str();
+  state.self_avatar_tone = glyph.tone;
+  state.self_has_avatar = !photo.empty();
+  state.self_avatar_src = photo.c_str();
+}
+
+std::string RingStepText(const CallRingStep& step) {
+  return step.key.empty() ? step.text : Tr(step.key);
+}
+
+} // namespace
+
+void CallController::FillRingSteps(const bool awaiting_invite, const std::string& caller) {
+  const auto steps = CallRingSteps(awaiting_invite, caller);
+  ring_.step1 = RingStepText(steps[0]).c_str();
+  ring_.step2 = RingStepText(steps[1]).c_str();
+  ring_.step3 = RingStepText(steps[2]).c_str();
+  ring_.step2_current = steps[1].state == CallRingStep::State::Current;
+  ring_.step3_done = steps[2].state == CallRingStep::State::Done;
+}
+
+void CallController::FillRingSelfAvatar() {
+  // No local identity before the unlock: the letter of "You" and tone 0, replaced in place once it is readable.
+  const std::string self =
+      call_ports_.local_relay_identity ? call_ports_.local_relay_identity().value_or(std::string{}) : std::string{};
+  SetSelfAvatar(ring_, MakeAvatarGlyph(Tr("call.label.you"), self), IconPath(self));
 }
 
 void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t now_ms) {
@@ -2034,12 +2101,7 @@ void CallController::FillSelfAvatar(const CallScreen& screen) {
   if (self.empty() && call_ports_.local_relay_identity) {
     self = call_ports_.local_relay_identity().value_or(std::string{});
   }
-  const AvatarGlyph self_glyph = MakeAvatarGlyph(Tr("call.label.you"), self);
-  in_call_.self_avatar_letter = self_glyph.letter.c_str();
-  in_call_.self_avatar_tone = self_glyph.tone;
-  const std::string self_photo = IconPath(self);
-  in_call_.self_has_avatar = !self_photo.empty();
-  in_call_.self_avatar_src = self_photo.c_str();
+  SetSelfAvatar(in_call_, MakeAvatarGlyph(Tr("call.label.you"), self), IconPath(self));
 }
 
 void CallController::ApplyConnectStory(const CallMediaScreen& frame) {
@@ -2062,6 +2124,22 @@ void CallController::RenderStorySteps(const CallStoryView& v) {
   const CallStorySteps steps = CallStoryLines(v, in_call.show_roster);
   in_call.story_step_count = static_cast<int>(steps.keys.size());
   in_call.story_stage = steps.shown;
+  in_call.story_inbound = !v.outgoing;
+  // A 1:1 answerer's list starts with the three done lines the ring page showed (named by the answering page's own
+  // title: the ring page's state is gone by now). The video card does not carry them.
+  in_call.story_lead.clear();
+  in_call.story_scroll_rows = 0;
+  in_call.story_area_dp = 0;
+  if (!v.outgoing && !in_call.show_roster && !in_call.stage_visible) {
+    for (const CallRingStep& lead : CallRingSteps(false, name)) {
+      in_call.story_lead.push_back(RingStepText(lead));
+    }
+    const int rows = static_cast<int>(in_call.story_lead.size() + steps.keys.size());
+    const int reached = std::min(rows, static_cast<int>(in_call.story_lead.size()) + steps.shown + 1);
+    const int page_dp = shell_call_chrome_.call_page_height_dp ? shell_call_chrome_.call_page_height_dp() : 0;
+    in_call.story_area_dp = page_dp > 0 ? std::max(0, CallStepAreaHeightDp(page_dp)) : 0;
+    in_call.story_scroll_rows = CallStepScrollRows(reached, in_call.story_area_dp);
+  }
   ui::String* const shown[] = {&in_call.story_step1, &in_call.story_step2, &in_call.story_step3, &in_call.story_step4,
                                &in_call.story_step5};
   for (size_t i = 0; i < std::size(shown); ++i) {

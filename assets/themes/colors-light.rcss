@@ -3163,6 +3163,11 @@ input.checkbox:checked {
   color: #ffffffb3;
 }
 
+/* The other party's name stands out from "You" (both are .call-phone-pair-name). */
+.call-phone-pair-name.call-phone-pair-name--peer {
+  color: #ffffff;
+}
+
 .call-phone-sealed svg {
   image-color: #ffffffb3;
 }

@@ -129,8 +129,8 @@ private:
   void Render();
   void RenderRing(const CallScreen& screen, int64_t now_ms);
   /**
-   * A tapped call alert's page (phone layout): the ring page with "Incoming call, connecting…" in place of the
-   * caller. CallPresenter::StepWakePlaceholder decides; this only shows / clears ring_ and emits the metric.
+   * A tapped call alert's page (phone layout): the ring page with "Incoming call" and its three lines on their
+   * way in place of the caller. CallPresenter::StepWakePlaceholder decides; this only shows / clears ring_ and emits the metric.
    */
   void StepWakePlaceholder();
   void RenderAwaitingRing();
@@ -149,6 +149,10 @@ private:
   /** The phone call page's names, avatars and failure line (ShellCallChromeRml). */
   void FillPhoneCallFields(const CallScreen& screen, int64_t now_ms);
   void FillSelfAvatar(const CallScreen& screen);
+  /** The ring page's three lines (CallRingSteps) written into ring_; `caller` is the name or group title shown. */
+  void FillRingSteps(bool awaiting_invite, const std::string& caller);
+  /** Our own avatar on the ring page's left: the photo / letter of the local identity, else "You" and a neutral tone. */
+  void FillRingSelfAvatar();
   void FillRingPhoneFields(const CallScreen& screen, const std::string& caller_label, int64_t now_ms);
   /** Mute, camera (its buttons, rotation), speaker and the hold, from the engine and the frame. */
   void ApplyLocalMedia(IMediaView& media, const CallMediaScreen& frame);

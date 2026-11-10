@@ -247,6 +247,15 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_ring_avatar_src", &host.state_.call_ring.avatar_src);
     ctor.Bind("call_ring_avatar_letter", &host.state_.call_ring.avatar_letter);
     ctor.Bind("call_ring_avatar_tone", &host.state_.call_ring.avatar_tone);
+    ctor.Bind("call_ring_step1", &host.state_.call_ring.step1);
+    ctor.Bind("call_ring_step2", &host.state_.call_ring.step2);
+    ctor.Bind("call_ring_step3", &host.state_.call_ring.step3);
+    ctor.Bind("call_ring_step2_current", &host.state_.call_ring.step2_current);
+    ctor.Bind("call_ring_step3_done", &host.state_.call_ring.step3_done);
+    ctor.Bind("call_ring_self_has_avatar", &host.state_.call_ring.self_has_avatar);
+    ctor.Bind("call_ring_self_avatar_src", &host.state_.call_ring.self_avatar_src);
+    ctor.Bind("call_ring_self_avatar_letter", &host.state_.call_ring.self_avatar_letter);
+    ctor.Bind("call_ring_self_avatar_tone", &host.state_.call_ring.self_avatar_tone);
     ctor.Bind("call_in_progress_phone_title", &host.state_.call_in_progress.phone_title);
     ctor.Bind("call_in_progress_failed_text", &host.state_.call_in_progress.failed_text);
     ctor.Bind("call_in_progress_story_step1", &host.state_.call_in_progress.story_step1);
@@ -1502,6 +1511,15 @@ void ShellHost::DirtyCallChrome() {
                            "call_ring_avatar_src",
                            "call_ring_avatar_letter",
                            "call_ring_avatar_tone",
+                           "call_ring_step1",
+                           "call_ring_step2",
+                           "call_ring_step3",
+                           "call_ring_step2_current",
+                           "call_ring_step3_done",
+                           "call_ring_self_has_avatar",
+                           "call_ring_self_avatar_src",
+                           "call_ring_self_avatar_letter",
+                           "call_ring_self_avatar_tone",
                            "call_in_progress_phone_title",
                            "call_in_progress_failed_text",
                            "call_in_progress_story_step1",
@@ -1524,6 +1542,17 @@ void ShellHost::DirtyCallChrome() {
                            "call_in_progress_reconnect_dim"}) {
     DataModelHost::Instance().Dirty("window", name);
   }
+}
+
+int ShellHost::CallPageHeightDp() const {
+  if (!context_) {
+    return 0;
+  }
+  const float ratio = context_->GetDensityIndependentPixelRatio();
+  const float window_dp = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
+  // The page's own padding: ApplySafeAreaLayout gives it the status bar on top and the bottom inset below.
+  return std::max(0, static_cast<int>(std::lround(window_dp)) - std::max(0, state_.safe_area_top_dp) -
+                         std::max(0, state_.safe_area_bottom_dp));
 }
 
 void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, CallChromeUpdate update) {

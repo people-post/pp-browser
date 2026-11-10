@@ -216,6 +216,8 @@ public:
    * Classification (None / DirtyOnly / Remount) is owned by CallController.
    */
   void ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, CallChromeUpdate update);
+  /** The call page's content height in dp (window less the status bar and the bottom inset); 0 before a window exists. */
+  int CallPageHeightDp() const;
   /** Copy presenter PIN gate snapshot into State (binding target). */
   void ApplyPinGateState(const PinGateState& state);
   /**
