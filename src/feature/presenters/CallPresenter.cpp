@@ -73,6 +73,10 @@ void CallPresenter::BindToMessaging() {
   Refresh();
 }
 
+void CallPresenter::NoteMessagingReady() {
+  messaging_ready_ = true;
+}
+
 CallPresenter::WakeStep CallPresenter::StepWakePlaceholder(const bool phone_layout,
                                                            const PendingNotificationTap::Clock::time_point now) {
   WakeStep step;
@@ -94,9 +98,7 @@ CallPresenter::WakeStep CallPresenter::StepWakePlaceholder(const bool phone_layo
   }
   in.app_visible = AppLifecycle::IsVisible();
   in.screen_kind = screen_.kind;
-  // Ready = the ring callbacks are bound (messaging up, backend available): an invite can be delivered from here on.
-  const auto* backend = Backend();
-  in.messaging_ready = MessagingInitialized() && backend && backend->Available();
+  in.messaging_ready = messaging_ready_;
   in.now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
   const CallWakePlaceholder::View view = wake_placeholder_.Step(in);
   step.outcome = view.outcome;

@@ -127,6 +127,12 @@ public:
   void Refresh();
   /** The app was woken for a call: look for its ring now. */
   void OnCallWake();
+  /**
+   * The vault is unlocked and the messaging stack is up (ConversationsHub::EnsureMessagingReady finished): a woken
+   * app's inbox sync can run now. Only then does the placeholder's "no ring" clock start. Unlock happens once per run
+   * (the app never re-locks while running), so it is latched.
+   */
+  void NoteMessagingReady();
   /** What the GUI does with the "Incoming call, connecting…" ring page this step. */
   enum class WakeRing { Keep, Show, Clear };
   struct WakeStep {
@@ -139,7 +145,7 @@ public:
   };
   /**
    * The incoming-call placeholder (CallWakePlaceholder) for the latest call-alert tap (PendingNotificationTap) and the
-   * app's visibility. Works with no backend (a locked vault). "Messaging ready" = messaging up with a backend; "no
+   * app's visibility. Works with no backend (a locked vault). "Messaging ready" = NoteMessagingReady (after unlock); "no
    * call screen" = our own screen_. `phone_layout`: only phones have the page (anything else clears one that is up).
    */
   WakeStep StepWakePlaceholder(bool phone_layout,
@@ -258,6 +264,7 @@ private:
   CallWakePlaceholder wake_placeholder_;
   /** The last StepWakePlaceholder asked for the page to show (so it is asked to clear it once). */
   bool wake_ring_shown_ = false;
+  bool messaging_ready_ = false;
   NoMediaWatch no_media_watch_;
   int64_t no_media_checked_ms_ = 0;
   /** Last CallSessionManager identity the ring callbacks were installed on. */

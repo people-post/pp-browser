@@ -36,7 +36,7 @@ TEST(CallWakePlaceholderPresenterTest, ShowsBeforeAnyBackendExistsAndEndsOnTheCa
   EXPECT_EQ(presenter.StepWakePlaceholder(true, at + milliseconds(62'000)).ring, WakeRing::Keep) << "cleared once";
 }
 
-// "Ready" is messaging up AND a backend available; messaging up with no backend yet is not ready.
+// Messaging "up" (the stack exists) is not "ready": only NoteMessagingReady (the unlock finished) starts the clock.
 TEST(CallWakePlaceholderPresenterTest, MessagingUpWithoutABackendIsNotReady) {
   CallPresenter presenter;
   CallFunctionalPorts ports;
@@ -46,6 +46,23 @@ TEST(CallWakePlaceholderPresenterTest, MessagingUpWithoutABackendIsNotReady) {
   EXPECT_EQ(presenter.StepWakePlaceholder(true, at).ring, WakeRing::Show);
   EXPECT_EQ(presenter.StepWakePlaceholder(true, at + milliseconds(30'000)).ring, WakeRing::Show)
       << "not ready: no 10 s timeout";
+}
+
+// The no-ring clock starts when the unlock has finished (NoteMessagingReady), not before: the call stack objects exist
+// while the vault is still locked.
+TEST(CallWakePlaceholderPresenterTest, TheNoRingClockStartsOnlyOnceMessagingIsReady) {
+  CallPresenter presenter;
+  const Clock::time_point at = Tapped();
+  EXPECT_EQ(presenter.StepWakePlaceholder(true, at).ring, WakeRing::Show);
+  EXPECT_EQ(presenter.StepWakePlaceholder(true, at + milliseconds(30'000)).ring, WakeRing::Show)
+      << "locked for 30 s: no timeout";
+  presenter.NoteMessagingReady();
+  EXPECT_EQ(presenter.StepWakePlaceholder(true, at + milliseconds(30'000)).ring, WakeRing::Show);
+  EXPECT_EQ(presenter.StepWakePlaceholder(true, at + milliseconds(39'900)).ring, WakeRing::Show);
+  const auto end = presenter.StepWakePlaceholder(true, at + milliseconds(40'000));
+  EXPECT_EQ(end.ring, WakeRing::Clear);
+  EXPECT_EQ(end.outcome, Outcome::Timeout);
+  EXPECT_EQ(end.ready_ms, std::optional<int64_t>(30'000));
 }
 
 TEST(CallWakePlaceholderPresenterTest, TheCapCountsFromTheTapNotFromTheFirstStep) {

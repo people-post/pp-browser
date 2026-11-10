@@ -598,6 +598,7 @@ void CallController::OnCallWake() {
 
 void CallController::OnMessagingReady() {
   system_call_screen_.OnMessagingReady();
+  presenter_.NoteMessagingReady(); // the vault is unlocked: the connecting page's no-ring clock starts
 }
 
 void CallController::StepWakePlaceholder() {
