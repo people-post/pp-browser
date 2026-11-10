@@ -57,6 +57,8 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -1314,6 +1316,12 @@ public class MainActivity extends SDLActivity {
     }
 
     private static final String VIVO_BADGE_PROVIDER = "content://com.vivo.abe.provider.launcher.notification.num";
+    /** One thread, so the provider calls (a binder call into another app, which can block) stay ordered off the UI thread. */
+    private static final ExecutorService sBadgeExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "pp-browser-badge");
+        t.setDaemon(true);
+        return t;
+    });
 
     /**
      * Called from native (PlatformAppBadge_Android, any thread): the total unread count for the launcher icon. Only
@@ -1325,20 +1333,25 @@ public class MainActivity extends SDLActivity {
         if (!"vivo".equalsIgnoreCase(Build.MANUFACTURER)) {
             return;
         }
-        try {
-            Bundle extras = new Bundle();
-            extras.putString("package", getPackageName());
-            extras.putString("class", MainActivity.class.getName());
-            extras.putInt("badgenumber", Math.max(0, total));
-            getContentResolver().call(Uri.parse(VIVO_BADGE_PROVIDER), "change_badge", null, extras);
-            Log.i(TAG, "vivo badge: set " + total);
-        } catch (SecurityException e) {
-            Log.w(TAG, "vivo badge: refused " + e);
-        } catch (IllegalArgumentException e) {
-            Log.w(TAG, "vivo badge: provider not visible or missing " + e);
-        } catch (RuntimeException e) {
-            Log.w(TAG, "vivo badge: failed " + e);
-        }
+        final int count = Math.max(0, total);
+        final String pkg = getPackageName();
+        final android.content.ContentResolver resolver = getContentResolver();
+        sBadgeExecutor.execute(() -> {
+            try {
+                Bundle extras = new Bundle();
+                extras.putString("package", pkg);
+                extras.putString("class", MainActivity.class.getName());
+                extras.putInt("badgenumber", count);
+                resolver.call(Uri.parse(VIVO_BADGE_PROVIDER), "change_badge", null, extras);
+                Log.i(TAG, "vivo badge: set " + count);
+            } catch (SecurityException e) {
+                Log.w(TAG, "vivo badge: refused " + e);
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "vivo badge: provider not visible or missing " + e);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "vivo badge: failed " + e);
+            }
+        });
     }
 
     /** Called from native AndroidLocalNotifier when Me → Show notifications changes (any thread). */
