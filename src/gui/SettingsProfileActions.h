@@ -45,6 +45,8 @@ private:
   void CopyId();
   /** The photo menu (camera, library, remove); where it has one choice only, that choice at once. */
   void PickIcon(ui::Event& ev);
+  /** A tap on the photo: view it large when there is one (phone), else the same menu as "Change photo". */
+  void TapAvatar(ui::Event& ev);
   void RunIconSource(ProfileIconSourceAction action);
   /** A photo came from the camera or the library: unlock, then upload it. The file is released whichever way this ends. */
   void IconChosen(std::string path);

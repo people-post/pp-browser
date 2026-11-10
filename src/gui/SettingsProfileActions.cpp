@@ -56,6 +56,7 @@ void SettingsProfileActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("register_profile", DataEvent<>([this]() { Register(); }));
   ctor.BindEventCallback("rotate_brief_llm_key", DataEvent<>([this]() { RotateBriefLlmKey(); }));
   ctor.BindEventCallback("copy_profile_id", DataEvent<>([this]() { CopyId(); }));
+  ctor.BindEventCallback("tap_profile_avatar", DataEventAt([this](ui::Event& ev) { TapAvatar(ev); }));
   ctor.BindEventCallback("pick_profile_icon", DataEventAt([this](ui::Event& ev) { PickIcon(ev); }));
   ctor.BindEventCallback("clear_profile_icon", DataEvent<>([this]() { ClearIcon(); }));
   ctor.BindEventCallback("share_profile", DataEventAt([this](ui::Event& ev) { Share(ShareAnchorFromEvent(ev)); }));
@@ -154,6 +155,20 @@ void SettingsProfileActions::CopyId() {
     system->SetClipboardText(peer_id.c_str());
   }
   UserFeedback::Ok(Tr("settings.profile.peer_id_copied"));
+}
+
+void SettingsProfileActions::TapAvatar(ui::Event& ev) {
+  if (host_.UiState().profile_icon_uploading) {
+    return;
+  }
+  const std::string& icon = host_.UiState().profile_icon_src;
+  if (PlanProfileAvatarTap(host_.UiState().profile_has_icon && !icon.empty(), Platform::IsMobile()) ==
+          ProfileAvatarTapAction::ViewPhoto &&
+      commands_.open_avatar_viewer) {
+    commands_.open_avatar_viewer(icon);
+    return;
+  }
+  PickIcon(ev);
 }
 
 void SettingsProfileActions::PickIcon(ui::Event& ev) {

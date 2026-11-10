@@ -35,8 +35,7 @@ SDL_Event Finger(const Uint32 type, const uint64_t id, const float x_dp, const f
 class CropTouchRoutingTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    SdlAppEvents::SetFingerHandler(
-        [this](ui::Context*, const SDL_Event& e) { return touch.OnSdlEvent(e, Space()); });
+    SdlAppEvents::SetFingerHandler([this](ui::Context*, const SDL_Event& e) { return touch.OnSdlEvent(e, Space()); });
   }
   void TearDown() override { SdlAppEvents::SetFingerHandler({}); }
 

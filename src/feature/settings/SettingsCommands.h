@@ -37,6 +37,8 @@ struct SettingsCommands {
   std::function<ProfileIdentityView()> load_profile_identity;
   std::function<Roe<void>(const std::string& nickname)> save_profile_nickname;
   std::function<void(std::function<void(std::vector<std::string> paths)> on_picked)> pick_profile_icon_image;
+  /** Shows the profile photo (the file at `image_src`) large, full screen. */
+  std::function<void(const std::string& image_src)> open_avatar_viewer;
   /** Prepares `path` (with the crop page's choice, or the centred square without) and uploads it. Worker thread. */
   std::function<Roe<void>(const std::string& path, std::optional<ProfileIconCrop> crop)> upload_profile_icon_file;
   /**

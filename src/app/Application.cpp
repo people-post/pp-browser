@@ -95,6 +95,7 @@
 #include "app/PeoplePickerShellBridge.h"
 #include "gui/contacts/ContactsController.h"
 #include "gui/avatar/AvatarCropController.h"
+#include "gui/avatar/AvatarViewController.h"
 #include "gui/avatar/ElementAvatarCrop.h"
 #include "gui/scan/QrScanController.h"
 #include "gui/scan/ElementScanPreview.h"
@@ -389,6 +390,7 @@ Application::Application() {
   contacts_ = std::make_unique<ContactsController>();
   qr_scan_ = std::make_unique<QrScanController>(MediaDeviceArbiter::Default());
   avatar_crop_ = std::make_unique<AvatarCropController>();
+  avatar_view_ = std::make_unique<AvatarViewController>();
   ContactsController::InstallInstance(*contacts_);
   contacts_shell_bridge_ = std::make_unique<ContactsShellBridge>();
   chat_shell_bridge_ = std::make_unique<ChatShellBridge>();
@@ -581,6 +583,7 @@ Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
   }
   qr_scan_->Close();
   avatar_crop_->Close();
+  avatar_view_->Close();
   if (messaging_) {
     messaging_->RequestShutdown();
   }
@@ -823,10 +826,11 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.open_avatar_crop = [this](std::shared_ptr<PickedFileLease> file, AvatarCropCommit commit) {
     avatar_crop_->Open(std::move(file), std::move(commit));
   };
+  settings_commands.open_avatar_viewer = [this](const std::string& image_src) { avatar_view_->Open(image_src); };
   settings_commands.upload_profile_icon_file = [&facade](const std::string& path,
                                                          std::optional<ProfileIconCrop> crop) -> Roe<void> {
     // The image is the app's to decode and size; the hub uploads what comes out.
-    auto encoded = PrepareProfileIconFromFile(path, 512u * 1024u, 256, std::nullopt, crop);
+    auto encoded = PrepareProfileIconFromFile(path, 512u * 1024u, 512, std::nullopt, crop);
     if (!encoded) {
       return encoded.error();
     }
@@ -1262,6 +1266,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   contacts_->BindShellFeedback(shared_feedback);
   qr_scan_->BindShellNavigation(shell_navigation);
   avatar_crop_->BindShellNavigation(shell_navigation);
+  avatar_view_->BindShellNavigation(shell_navigation);
   qr_scan_->BindShowMyQr([this]() { contacts_->OpenMyQr(); });
   contacts_->BindScanPorts(ScanPorts{
       .scan_qr = [this](QrScanResultCallback done) { qr_scan_->Open(std::move(done)); },
@@ -1806,6 +1811,7 @@ void Application::WireUnlockPinAndFlow() {
     chat_->BindFlowCoordinator(flow_ports);
     qr_scan_->BindFlowCoordinator(flow_ports);
     avatar_crop_->BindFlowCoordinator(flow_ports);
+    avatar_view_->BindFlowCoordinator(flow_ports);
     emoji_picker_->BindFlowCoordinator(std::move(flow_ports));
   }
 }
@@ -1985,6 +1991,11 @@ bool Application::MountPresenters(ui::Context* context) {
 
   if (!avatar_crop_->RegisterModel(context)) {
     log().error << "AvatarCropController RegisterModel failed";
+    return false;
+  }
+
+  if (!avatar_view_->RegisterModel(context)) {
+    log().error << "AvatarViewController RegisterModel failed";
     return false;
   }
 
@@ -2659,6 +2670,11 @@ void Application::Shutdown() {
   Backend::HideWindow();
   StartupMark("shutdown_window_hidden");
   // Arm the product's exit deadline before joining an OS camera open (which may be in a driver).
+  if (avatar_view_) {
+    avatar_view_->Shutdown();
+    avatar_view_->BindShellNavigation({});
+    avatar_view_->BindFlowCoordinator({});
+  }
   if (avatar_crop_) {
     avatar_crop_->Shutdown();
     avatar_crop_->BindShellNavigation({});

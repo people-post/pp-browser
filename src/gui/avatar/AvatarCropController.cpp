@@ -66,7 +66,8 @@ bool AvatarCropController::RegisterModel(ui::Context* context) {
         Close();
       }
     });
-    ctor.BindEventCallback("crop_rotate", [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) { Rotate(); });
+    ctor.BindEventCallback("crop_rotate",
+                           [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) { Rotate(); });
     ctor.BindEventCallback("crop_done", [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) { Done(); });
   });
 }
@@ -217,7 +218,8 @@ void AvatarCropController::Tick() {
     return;
   }
   const ui::Vector2f box = surface->GetBox().GetSize(ui::BoxArea::Content);
-  const float ratio = context_->GetDensityIndependentPixelRatio() > 0.0f ? context_->GetDensityIndependentPixelRatio() : 1.0f;
+  const float ratio =
+      context_->GetDensityIndependentPixelRatio() > 0.0f ? context_->GetDensityIndependentPixelRatio() : 1.0f;
   const double diameter = AvatarCropViewportDiameter(box.x / ratio, box.y / ratio);
   if (diameter != frame_->viewport_diameter()) {
     frame_->SetViewportDiameter(diameter);
@@ -288,7 +290,8 @@ void AvatarCropController::ProcessEvent(ui::Event& event) {
   if (locked_ || loading_ || !frame_ || !context_) {
     return;
   }
-  const float ratio = context_->GetDensityIndependentPixelRatio() > 0.0f ? context_->GetDensityIndependentPixelRatio() : 1.0f;
+  const float ratio =
+      context_->GetDensityIndependentPixelRatio() > 0.0f ? context_->GetDensityIndependentPixelRatio() : 1.0f;
   const float x = event.GetParameter<float>("mouse_x", 0.0f);
   const float y = event.GetParameter<float>("mouse_y", 0.0f);
   switch (event.GetId()) {

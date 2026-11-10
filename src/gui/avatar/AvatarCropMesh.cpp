@@ -26,7 +26,8 @@ void Triangle(ui::Mesh& mesh, const int a, const int b, const int c) {
 }
 
 ui::Vector2f OnCircle(const ui::Vector2f centre, const float radius, const double angle) {
-  return {centre.x + radius * static_cast<float>(std::cos(angle)), centre.y + radius * static_cast<float>(std::sin(angle))};
+  return {centre.x + radius * static_cast<float>(std::cos(angle)),
+          centre.y + radius * static_cast<float>(std::sin(angle))};
 }
 
 // Where the ray from `centre` at `angle` leaves the rectangle (0,0)-(box).
@@ -77,8 +78,8 @@ ui::Mesh AvatarCropDimMesh(const ui::Vector2f box_px, const ui::Vector2f centre_
     ui::Vector2f at;
   };
   std::vector<Corner> corners;
-  for (const ui::Vector2f c : {ui::Vector2f(0, 0), ui::Vector2f(box_px.x, 0), ui::Vector2f(box_px.x, box_px.y),
-                               ui::Vector2f(0, box_px.y)}) {
+  for (const ui::Vector2f c :
+       {ui::Vector2f(0, 0), ui::Vector2f(box_px.x, 0), ui::Vector2f(box_px.x, box_px.y), ui::Vector2f(0, box_px.y)}) {
     corners.push_back({NormalisedAngle(std::atan2(c.y - centre_px.y, c.x - centre_px.x)), c});
   }
   std::sort(corners.begin(), corners.end(), [](const Corner& a, const Corner& b) { return a.angle < b.angle; });

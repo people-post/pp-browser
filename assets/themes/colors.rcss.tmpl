@@ -3720,4 +3720,34 @@ input.checkbox:checked {
 .avatar-crop-btn--done {
   color: {{accent}};
 }
+
+/* Profile page camera badge and the photo viewer. */
+.me-profile-avatar-badge {
+  background-color: {{accent}};
+  border-color: {{bg-card}};
+}
+
+.me-profile-avatar-badge svg {
+  image-color: {{label-on-accent}};
+}
+
+.avatar-view-bg {
+  background-color: {{x-crop-bg}};
+}
+
+.avatar-view-close,
+.avatar-view-close:active {
+  background-color: transparent;
+}
+
+.avatar-view-close .shell-circle-btn-face,
+.avatar-view-close:active .shell-circle-btn-face {
+  background-color: {{scrim}};
+  decorator: none;
+  box-shadow: none;
+}
+
+.avatar-view-close .shell-circle-btn-face svg {
+  image-color: {{x-scan-ink}};
+}
 }
