@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 
@@ -15,7 +16,10 @@ std::string ReadAsset(const std::string& relative) {
   std::ifstream in(std::string(PP_BROWSER_ASSETS_DIR) + "/" + relative, std::ios::binary);
   std::ostringstream out;
   out << in.rdbuf();
-  return out.str();
+  // A Windows checkout has CRLF line ends (core.autocrlf); the checks below match on "\n".
+  std::string text = out.str();
+  text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+  return text;
 }
 
 TEST(AvatarViewMarkupTest, TheViewerHasACloseButtonATapAnywhereCloseAndThePictureFromTheBinding) {

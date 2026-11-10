@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 
@@ -23,7 +24,10 @@ std::string ReadAll(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
   std::ostringstream out;
   out << in.rdbuf();
-  return out.str();
+  // A Windows checkout has CRLF line ends (core.autocrlf); the checks below match on "\n".
+  std::string text = out.str();
+  text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+  return text;
 }
 
 std::string ReadView() {
