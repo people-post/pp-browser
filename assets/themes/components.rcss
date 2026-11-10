@@ -7282,6 +7282,22 @@ input.checkbox {
   border-top-width: 1dp;
 }
 
+/* Frosted unlock card (Transparency on): the card itself is clear and its first child, .bar-material--frost, carries the
+   bar colour and the blur (the engine draws none on an element with a z-index and children). The card's own children
+   are positioned so they paint above it. */
+.shell-pin-gate--frost > * {
+  position: relative;
+}
+
+.shell-pin-gate--frost > .shell-pin-gate-material {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 8dp;
+}
+
 .shell-pin-gate-chooser {
   display: flex;
   flex-direction: column;

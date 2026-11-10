@@ -455,6 +455,23 @@ TEST(ShellLayoutRmlTest, ALongButtonLabelStacksTheDialogButtons) {
   EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").Dialog(), "shell-dialog-actions--stack"));
 }
 
+// The unlock card is frosted glass with Transparency on (material child first) and the plain solid card with it off.
+TEST(ShellLayoutRmlTest, ThePinGateCardIsFrostedOnlyWithTransparencyOn) {
+  ShellState state;
+  state.pin_gate.active = true;
+  state.pin_gate.unlock_mode = true;
+  state.compact_chrome_frost = true;
+  const std::string frosted = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_TRUE(Has(frosted, "shell-pin-gate shell-pin-gate--frost"));
+  EXPECT_EQ(Count(frosted, "bar-material--frost"), 1U);
+  EXPECT_LT(frosted.find("bar-material--frost"), frosted.find("shell-dialog-title")) << "the material is first";
+
+  state.reduce_transparency = true;
+  const std::string solid = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_FALSE(Has(solid, "shell-pin-gate--frost"));
+  EXPECT_FALSE(Has(solid, "bar-material"));
+}
+
 // DEV/PLAN-pin-gate-redesign.md B: the number pad has no input element (no system keyboard, the PIN bound nowhere);
 // the field mode keeps its field, which takes the focus as the gate comes up (Kenneth 2026-11-07).
 TEST(ShellLayoutRmlTest, ThePinPadHasNoFieldAndTheFieldModeFocusesItsField) {
