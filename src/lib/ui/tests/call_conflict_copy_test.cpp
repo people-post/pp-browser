@@ -85,6 +85,16 @@ TEST(CallerNameTest, ANameIsKeptAndNoNameIsAStrangerInBothLanguages) {
   LoadLocales("en");
 }
 
+// The incoming-call notification for a caller with no name (CallController picks the key: identity but no name).
+TEST(CallerNameTest, TheStrangerNotificationReadsNaturallyInBothLanguages) {
+  LoadLocales("en");
+  EXPECT_EQ(pbr::Tr("call.notify.body_stranger"), "Stranger is calling you");
+  LoadLocales("zh-Hans");
+  EXPECT_EQ(pbr::Tr("call.notify.body_stranger"), "陌生人正在呼叫你");
+  EXPECT_NE(pbr::Tr("call.notify.body_stranger"), pbr::Tr("call.notify.body_unknown"));
+  LoadLocales("en");
+}
+
 // A stranger starting a group call: the ring's subtitle names the Stranger, not the id.
 TEST(CallerNameTest, TheGroupRingSubtitleNamesAStranger) {
   LoadLocales("en");

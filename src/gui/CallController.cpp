@@ -1009,8 +1009,10 @@ void CallController::ShowNotice(const CallNotice& notice) {
         ILocalNotifier::Instance().NotifyIncoming(copy.title, copy.hint, "");
         return;
       }
-      const std::string body =
-          caller.empty() ? Tr("call.notify.body_unknown") : Tr("call.notify.body_named", {{"name", caller}});
+      // No contact name: "Stranger is calling you"; no identity at all: "Someone is calling you".
+      const std::string body = !caller.empty()            ? Tr("call.notify.body_named", {{"name", caller}})
+                               : !notice.identity.empty() ? Tr("call.notify.body_stranger")
+                                                          : Tr("call.notify.body_unknown");
       ILocalNotifier::Instance().NotifyIncoming(Tr("call.notify.title"), body, "");
       return;
     }

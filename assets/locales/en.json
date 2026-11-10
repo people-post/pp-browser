@@ -1480,6 +1480,7 @@
     "call.notify.title": "Incoming call",
     "call.notify.body_named": "{name} is calling",
     "call.notify.body_unknown": "Someone is calling you",
+    "call.notify.body_stranger": "Stranger is calling you",
     "call.placeholder.camera_off": "Camera off",
     "call.placeholder.camera_paused": "They left the app. Video paused.",
     "call.placeholder.on_hold": "Stepped away",

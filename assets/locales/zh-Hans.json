@@ -1440,6 +1440,7 @@
     "call.notify.title": "来电",
     "call.notify.body_named": "{name} 正在呼叫",
     "call.notify.body_unknown": "有人正在呼叫你",
+    "call.notify.body_stranger": "陌生人正在呼叫你",
     "call.placeholder.camera_off": "摄像头已关闭",
     "call.placeholder.camera_paused": "对方切到了后台，画面暂停",
     "call.placeholder.on_hold": "暂时离开",
