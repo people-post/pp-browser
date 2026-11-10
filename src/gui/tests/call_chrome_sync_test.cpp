@@ -28,6 +28,92 @@ TEST(CallChromeSyncTest, RingPricingPresenceRemounts) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
+// The awaiting page becomes the real ring in place: every difference between them is a bound value, so it is a dirty
+// and never a remount (a remount flashed the page); the ring appearing from nothing still mounts.
+TEST(CallChromeSyncTest, AwaitingRingBecomesTheRealRingByDirtyOnly) {
+  pbr::CallChromeLayer awaiting;
+  awaiting.ring_active = true;
+  awaiting.ring_awaiting_invite = true;
+  awaiting.ring_phone_title = "Incoming call, connecting…";
+  pbr::CallChromeLayer real = awaiting;
+  real.ring_awaiting_invite = false;
+  real.ring_call_id = "c1";
+  real.ring_phone_title = "Bob";
+  real.ring_phone_subtitle = "PP voice call";
+  real.ring_avatar = "photo|bob.png";
+  real.ring_steps = "Call received|On the encrypted network|Bob|-d|pme.png|3";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, real), pbr::CallChromeUpdate::DirtyOnly);
+  pbr::CallChromeLayer only_flag = awaiting;
+  only_flag.ring_awaiting_invite = false;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, only_flag), pbr::CallChromeUpdate::DirtyOnly);
+  // The three lines and our own avatar turning over (the unlock making our photo readable) are dirties too.
+  pbr::CallChromeLayer lines = awaiting;
+  lines.ring_steps = "Call received|Joining…|Verifying|c-|p|0";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, lines), pbr::CallChromeUpdate::DirtyOnly);
+  pbr::CallChromeLayer nothing;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(nothing, awaiting), pbr::CallChromeUpdate::Remount) << "appears from nothing";
+  pbr::CallChromeLayer other = real;
+  other.ring_call_id = "c2";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(real, other), pbr::CallChromeUpdate::Remount)
+      << "another call: still a remount";
+  pbr::CallChromeLayer paid = awaiting;
+  paid.ring_show_pricing = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, paid), pbr::CallChromeUpdate::Remount) << "pricing is structure";
+  pbr::CallChromeLayer charge = awaiting;
+  charge.ring_accept_charge_enabled = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, charge), pbr::CallChromeUpdate::Remount) << "the charge block";
+  pbr::CallChromeLayer guest = awaiting;
+  guest.ring_guest_hint = "Joining shows you to everyone";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, guest), pbr::CallChromeUpdate::Remount) << "the guest line";
+  // The group blocks and the voice-answer button are switched by bound flags: a change alone is a dirty.
+  pbr::CallChromeLayer group = awaiting;
+  group.ring_group = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, group), pbr::CallChromeUpdate::DirtyOnly) << "group";
+  pbr::CallChromeLayer video = awaiting;
+  video.ring_video_allowed = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(awaiting, video), pbr::CallChromeUpdate::DirtyOnly) << "video";
+}
+
+// The story page: a stage advance (the reached row, the step words, the scroll) is bound, so it only dirties and keeps
+// the pair's spark and the spinner running; a change of the list's shape (rows, lead rows, spark side) remounts.
+TEST(CallChromeSyncTest, AStoryStageAdvanceWithTheSameShapeIsDirtyOnlyAndAShapeChangeRemounts) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_story_active = true;
+  synced.in_call_story_shape = "4in|Call received|On the encrypted network|Wang";
+  synced.in_call_story_stage = 0;
+  synced.in_call_story_steps = "Answered|Finding the fastest line…|Opening your line to them…|Connected";
+  synced.in_call_story_scroll = "0dp|auto";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_story_stage = 1;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly) << "the reached row";
+  next.in_call_story_steps = "Answered|Found: direct line|Opening your line to them…|Connected";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly) << "the words swap";
+  next.in_call_story_scroll = "-34dp|170dp";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly) << "the scroll";
+  pbr::CallChromeLayer shape = synced;
+  shape.in_call_story_shape = "5out";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, shape), pbr::CallChromeUpdate::Remount) << "another list";
+  pbr::CallChromeLayer ended = synced;
+  ended.in_call_story_active = false;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, ended), pbr::CallChromeUpdate::Remount) << "the hero page takes over";
+}
+
+// The 1:1 story page shows no status line: the status word changing mid-story does not remount it (that restarted the
+// spark); the group card shows it and still does.
+TEST(CallChromeSyncTest, AStatusWordChangeDoesNotRemountTheOneToOneStoryPage) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_story_active = true;
+  synced.in_call_subtitle = "Calling…";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_subtitle = "Connecting…";
+  EXPECT_NE(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  synced.in_call_show_roster = true;
+  next.in_call_show_roster = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+}
+
 TEST(CallChromeSyncTest, RingDisappearRemounts) {
   pbr::CallChromeLayer synced;
   synced.ring_active = true;
@@ -334,7 +420,7 @@ TEST(CallChromeSyncTest, PhoneStoryPartsArePartsOnly) {
 }
 
 // What the phone page writes into its markup remounts it: the story's steps going, the failure page, the sheet.
-TEST(CallChromeSyncTest, PhoneMarkupChangesRemount) {
+TEST(CallChromeSyncTest, PhoneMarkupChangesRemountAndAStageAdvanceDirties) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
   synced.in_call_id = "c1";
@@ -344,7 +430,10 @@ TEST(CallChromeSyncTest, PhoneMarkupChangesRemount) {
   next.in_call_story_active = false;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
   next = synced;
-  next.in_call_story_stage = 1;
+  next.in_call_story_stage = 1; // bound: a stage advance only dirties
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+  next = synced;
+  next.in_call_story_shape = "5out";
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
   next = synced;
   next.in_call_phone_failed = true;

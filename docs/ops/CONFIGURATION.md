@@ -308,6 +308,7 @@ Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps
 | `PP_BROWSER_BRIEF_STREAM_URL` | Dev only: full URL that replaces the streamed-answer endpoint (`llm.base_url` + `/pp/chat/stream`), e.g. a local fake server |
 | `PP_BROWSER_LLM_MODEL` | Default Brief model when no config file |
 | `PP_BROWSER_STARTUP_TIMING` | Truthy: log `[startup]` timing marks during launch (same as `--startup-timing`) |
+| `PP_DEBUG_CALL_TAP` | Development aid, not for users: a non-negative number of milliseconds. The app records a call-alert tap as if the person had tapped an incoming-call notification: `0` before the first frame, `N` that many ms after the first frame. Lets a USB-installed iPhone build (which gets no pushes) show the incoming-call placeholder page; see `DEV/tools/iphone-call-tap.sh`. The log line `Call tap recorded …` gives the time against the first frame. Read in every build: the process environment is already trusted (`PP_BROWSER_PIN` is read the same way) and the variable gives no capability a tap does not |
 | `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |
 | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Linux path overrides |
 

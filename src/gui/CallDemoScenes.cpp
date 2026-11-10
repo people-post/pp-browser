@@ -75,6 +75,30 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
     f.screen.thread_id = group ? kGroupThread : "";
     return f;
   }
+  if (scene == "ring_awaiting" || scene == "answer_voice") {
+    // The page a tapped call alert opens, then (answer_voice) the same call ringing, answered and connecting: the
+    // incoming page and the answering page are meant to look like one page going on.
+    if (scene == "ring_awaiting" || t < 2'000) {
+      f.awaiting_invite = true;
+      return f;
+    }
+    if (t < 7'000) {
+      f.screen.kind = t < 5'000 ? CallScreen::Kind::Ringing : CallScreen::Kind::Answering;
+      f.screen.ring_call_id = "demo-voice-answer";
+      f.screen.caller_identity = kPeer;
+      f.screen.show_speaker = true;
+      return f;
+    }
+    f.screen = InCall("demo-voice-answer", false, false);
+    f.screen.placed_here = false; // this device answered
+    if (t < 10'000) {
+      f.screen.status = Status::Connecting;
+    } else {
+      Connected(f.screen, start + 10'000);
+      f.path_kind = "direct";
+    }
+    return f;
+  }
   if (scene == "voice" || scene == "video") {
     const bool video = scene == "video";
     f.screen = InCall(video ? "demo-video" : "demo-voice", video, false);

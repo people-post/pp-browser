@@ -412,9 +412,15 @@ std::string ShellLayoutRml::PinGate() const {
     return {};
   }
   std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
+  // Over the "Incoming call, connecting…" page: the scrim goes clear and the card steps below its title (rcss).
+  out << "<div class=\"shell-layer shell-layer-dialog"
+      << (state_.call_ring.awaiting_invite ? " shell-pin-gate--over-call" : "") << "\" data-model=\"window\">";
   out << "<div class=\"shell-scrim\"></div>";
-  out << "<div class=\"shell-dialog shell-pin-gate\">";
+  const bool frost = ChromeFrostEnabled();
+  out << "<div class=\"shell-dialog shell-pin-gate" << (frost ? " shell-pin-gate--frost" : "") << "\">";
+  if (frost) {
+    out << "<div class=\"bar-material bar-material--frost shell-pin-gate-material\"></div>";
+  }
   out << "<h2 class=\"heading-2 shell-dialog-title\">{{pin_gate_title}}</h2>";
   out << "<p class=\"text shell-dialog-message\">{{pin_gate_message}}</p>";
   out << "<p class=\"text shell-pin-gate-error\">{{pin_gate_error}}</p>";

@@ -90,14 +90,27 @@ struct CallChromeLayer {
   std::string ring_phone_title;
   std::string ring_phone_subtitle;
   std::string ring_avatar; // group / photo / letter / tone in one key
+  /** Written into the phone ring markup (dimmed, click-less answers): a change remounts. */
+  bool ring_awaiting_invite = false;
+  /** Bound (the silhouette variant's data-if): a change dirties. */
+  bool ring_caller_unknown = false;
+  /** Bound (the 1:1 and group blocks' data-if, the voice-answer button's data-if): a change dirties. */
+  bool ring_group = false;
+  bool ring_video_allowed = false;
+  /** Bound: the ring page's three lines (words + flags) and our own avatar on its left. Changes dirty. */
+  std::string ring_steps;
   std::string in_call_phone_title;
   bool in_call_video = false;
   std::string in_call_avatars; // the peer's and our own, as for ring_avatar
   bool in_call_phone_failed = false;
   std::string in_call_failed_text;
   bool in_call_story_active = false;
+  /** Bound (a stage advance, the step words and the list's scroll only dirty): the stage, the step words, the offset. */
   int in_call_story_stage = 0;
   std::string in_call_story_steps;
+  std::string in_call_story_scroll;
+  /** Written into the markup (a change remounts): the list's shape, i.e. row count, lead rows, spark side. */
+  std::string in_call_story_shape;
   bool in_call_story_sheet_open = false;
   std::vector<CallStoryLine> in_call_story_lines;
   std::string in_call_story_how;

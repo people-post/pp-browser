@@ -14,6 +14,8 @@
 #include "feature/calls/CallFunctionalPorts.h"
 #include "feature/presenters/CallMediaFrame.h"
 #include "feature/presenters/CallPresenter.h"
+#include "feature/presenters/CallRingSteps.h"
+#include "feature/presenters/CallSelfAvatarWatch.h"
 #include "feature/presenters/CallSystemUiBridge.h"
 #include "gui/CallChromeSync.h"
 #include "gui/CallDemoScenes.h"
@@ -128,6 +130,13 @@ private:
   // --- Rendering: the presenter's screen and media frame into the shell's ring / in-call state. ---------------------
   void Render();
   void RenderRing(const CallScreen& screen, int64_t now_ms);
+  /**
+   * A tapped call alert's page (phone layout): the ring page with "Incoming call" and its three lines on their
+   * way in place of the caller. CallPresenter::StepWakePlaceholder decides; this only shows / clears ring_ and emits the metric.
+   */
+  void StepWakePlaceholder();
+  void RenderAwaitingRing();
+  void EmitWakeRingMetric(const CallPresenter::WakeStep& view);
   /** The ring's answer buttons: video / voice, free / take-all (P001), the conflict's End & accept (V064). */
   void FillRingAnswerLabels(const CallScreen& screen);
   void FillRingPricing(const CallScreen& screen);
@@ -142,6 +151,14 @@ private:
   /** The phone call page's names, avatars and failure line (ShellCallChromeRml). */
   void FillPhoneCallFields(const CallScreen& screen, int64_t now_ms);
   void FillSelfAvatar(const CallScreen& screen);
+  /** The ring page's three lines (CallRingSteps) written into ring_; `caller` is the name or group title shown. */
+  void FillRingSteps(bool awaiting_invite, const std::string& caller, CallRingMedia media);
+  /** Our own avatar on the ring page's left: the photo / letter of the local identity, else "You" and a neutral tone. */
+  void FillRingSelfAvatar();
+  /** The local identity ("" before the unlock). */
+  std::string LocalIdentity() const;
+  /** Whether the ring page has room for its three lines (CallRingShowsSteps), from ring_ and the page height now. */
+  void FillRingShowSteps();
   void FillRingPhoneFields(const CallScreen& screen, const std::string& caller_label, int64_t now_ms);
   /** Mute, camera (its buttons, rotation), speaker and the hold, from the engine and the frame. */
   void ApplyLocalMedia(IMediaView& media, const CallMediaScreen& frame);
@@ -187,7 +204,12 @@ private:
   void HideInCallChrome();
 
   // --- Words: names, titles, notices. --------------------------------------------------------------------------------
+  /** The contact's name or nickname; EMPTY when none is known (never the account id). */
   std::string DisplayNameForIdentity(const std::string& identity) const;
+  /** What a call page calls `identity`: the name, or "Stranger" (+ `unknown`, for the silhouette avatar). */
+  CallerName CallerNameFor(const std::string& identity) const;
+  /** The word for a sentence's `{name}` slot: the name or "Stranger"; EMPTY only when there is no identity at all. */
+  std::string PeerLabelFor(const std::string& identity) const;
   std::string IconPath(const std::string& identity) const;
   /** A group's name for the phone page and a ring's words, re-read at most every kGroupTitleReadMs per thread. */
   std::string GroupTitle(const std::string& thread_id, int64_t now_ms);
@@ -339,6 +361,13 @@ private:
   CallMediaFrame demo_media_;
   int64_t demo_started_ms_ = 0;
   bool demo_ended_ = false;
+  /** The call the ring page last showed and whether it rang as video: the answering page words its lead rows by it. */
+  /** The identity the awaiting ring page drew our avatar with (CallSelfAvatarWatch). */
+  CallSelfAvatarWatch ring_self_watch_;
+  /** The page height FillRingShowSteps last used: Tick decides again only when it differs. */
+  int ring_page_height_dp_ = 0;
+  std::string rung_call_id_;
+  bool rung_video_ = false;
   bool demo_call_back_offered_ = false;
   /** When its stand-in camera pictures were last handed to the tiles. */
   int64_t demo_frames_ms_ = 0;

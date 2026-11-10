@@ -74,3 +74,4 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | file | 09-sheets-unify; phone small sheet (attach File) | drawn | - |
 | send | 09-sheets-unify; contact page "Group admin" card (Re-invite) | drawn | `send.svg` |
 | user-minus | 09-sheets-unify; contact page "Group admin" card (Remove from group) | drawn | - |
+| unknown-caller | incoming-call page before the caller is known: filled soft silhouette on the blue avatar circle (120x120, translucent white, clipped to the circle) | drawn | - |

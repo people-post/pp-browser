@@ -889,7 +889,8 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
     local.relay_visible = false;
     local.generation = "local";
     if (store_.AppendMessage(local)) {
-      inbox_.OnInboundMessagePersisted(*outcome.receive_failure_thread_id);
+      inbox_.OnInboundMessagePersisted(*outcome.receive_failure_thread_id, std::nullopt,
+                                       AppLifecycle::IsUserAttentive());
       notice.thread_id = *outcome.receive_failure_thread_id; // the line is stored: the presenter adds no toast
     }
   }
@@ -965,7 +966,7 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
         });
       }
     } else {
-      inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
+      inbox_.OnInboundMessagePersisted(outcome.thread_id, preview, AppLifecycle::IsUserAttentive());
       AppRuntime::PostUI([this, ids = NoteInbound(envelope.message_id, outcome), thread_id = outcome.thread_id]() {
         if (on_inbound_message_) {
           for (const auto& id : ids) {
@@ -2246,7 +2247,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
               if (outcome.persisted_message) {
                 preview = outcome.persisted_message->text;
               }
-              inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
+              inbox_.OnInboundMessagePersisted(resolved_thread_id, preview, AppLifecycle::IsUserAttentive());
               for (auto& id : NoteInbound(envelope.message_id, outcome)) {
                 inbound_messages.emplace_back(std::move(id), resolved_thread_id);
               }
@@ -2401,7 +2402,7 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
   const std::string text =
       Localized(outcome.about_us == RelayReceiveOutcome::AboutUs::Removed ? "chat.group_event.you_removed"
                                                                           : "chat.group_event.full");
-  inbox_.OnInboundMessagePersisted(outcome.about_us_group_thread_id, text);
+  inbox_.OnInboundMessagePersisted(outcome.about_us_group_thread_id, text, AppLifecycle::IsUserAttentive());
   if (AppLifecycle::IsUserAttentive()) {
     return std::nullopt;
   }
@@ -2451,7 +2452,7 @@ std::optional<MeshDeliveryOrchestrator::BackgroundNotice> MeshDeliveryOrchestrat
     const std::string& thread_id) {
   // In the reader's language: the preview is kept as written, the notice shown once.
   const std::string text = Localized("chat.group.dissolved_preview");
-  inbox_.OnInboundMessagePersisted(thread_id, text);
+  inbox_.OnInboundMessagePersisted(thread_id, text, AppLifecycle::IsUserAttentive());
   if (AppLifecycle::IsUserAttentive()) {
     return std::nullopt;
   }
@@ -2507,7 +2508,9 @@ void MeshDeliveryOrchestrator::NoteMention(const RelayReceiveOutcome& outcome, c
                                          .held_at_ms = util::NowUnixMs()});
     return;
   }
-  if (verdict == MentionVerdict::Us && mentions_ && inbox_.ActiveThreadId() != outcome.thread_id) {
+  // Same rule as the unread count: the open chat counts too when nobody is looking at it.
+  if (verdict == MentionVerdict::Us && mentions_ &&
+      CountsAsUnread(outcome.thread_id, inbox_.ActiveThreadId(), AppLifecycle::IsUserAttentive())) {
     if (auto marked = mentions_->Add(outcome.thread_id, message.id, message.timestamp); !marked) {
       log().warning << "mention not marked: " << marked.error().message;
     }

@@ -28,6 +28,9 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/PendingNotificationTap.h"
 #include "gui/CallStatusHint.h"
+#include "feature/presenters/CallRingSteps.h"
+#include "feature/presenters/CallStepScroll.h"
+#include "feature/presenters/CallStoryList.h"
 #include "lib/ui/ShellTypes.h"
 #include "feature/calls/CallFunctionalPorts.h"
 #include "lib/calls/CallLifecycleTypes.h"
@@ -71,7 +74,7 @@ CallController::CallController()
                                const bool voice_only) { (void)presenter_.Accept(voice_only, call_id); },
               .decline = [this]() { (void)presenter_.Decline(); },
               .leave = [this]() { (void)presenter_.Leave(); },
-              .display_name = [this](const std::string& identity) { return DisplayNameForIdentity(identity); },
+              .display_name = [this](const std::string& identity) { return CallerNameFor(identity).label; },
               .now_ms = {},
           }),
       local_hold_(LocalHoldPorts()) {
@@ -207,12 +210,29 @@ std::string AvatarKey(const bool group, const bool has_avatar, const ui::String&
          std::to_string(tone);
 }
 
+/** The ring page's three bound lines and our own avatar: a change dirties them. */
+std::string RingStepsKey(const CallRingState& ring) {
+  return std::string(ring.step1.c_str()) + "|" + ring.step2.c_str() + "|" + ring.step3.c_str() + "|" +
+         (ring.step2_current ? "c" : "-") + (ring.step3_done ? "d" : "-") + (ring.show_steps ? "s" : "-") + "|" +
+         AvatarKey(false, ring.self_has_avatar, ring.self_avatar_src, ring.self_avatar_letter, ring.self_avatar_tone);
+}
+
+/** What the story page writes into its markup: the row count, the lead rows and the spark's side (the list's shape).
+ *  Which row is reached, the words and the scroll are bound and not part of it. */
+std::string StoryShapeKey(const CallInProgressState& in_call) {
+  std::string key = std::to_string(in_call.story_step_count) + (in_call.story_inbound ? "in" : "out");
+  for (const std::string& line : in_call.story_lead) {
+    key += "|" + line;
+  }
+  return key;
+}
+
 std::string RosterKey(const std::vector<CallRosterParticipantState>& roster) {
   std::string key;
   for (const CallRosterParticipantState& p : roster) {
     key += std::string(p.name.c_str()) + "|" + p.stream_id.c_str() + "|" + (p.audio_muted ? "m" : "-") +
            (p.video_enabled ? "v" : "-") + (p.has_remote_video ? "r" : "-") + (p.on_hold ? "h" : "-") +
-           (p.video_paused ? "p" : "-") + (p.guest ? "g" : "-") +
+           (p.video_paused ? "p" : "-") + (p.guest ? "g" : "-") + (p.avatar_unknown ? "u" : "-") +
            AvatarKey(false, p.has_avatar, p.avatar_src, p.avatar_letter, p.avatar_tone) + ";";
   }
   return key;
@@ -310,10 +330,16 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_phone_title = ring.phone_title.c_str(),
       .ring_phone_subtitle = ring.phone_subtitle.c_str(),
       .ring_avatar = AvatarKey(ring.group, ring.has_avatar, ring.avatar_src, ring.avatar_letter, ring.avatar_tone),
+      .ring_awaiting_invite = ring.awaiting_invite,
+      .ring_caller_unknown = ring.caller_unknown,
+      .ring_group = ring.group,
+      .ring_video_allowed = ring.video_allowed,
+      .ring_steps = RingStepsKey(ring),
       .in_call_phone_title = in_call.phone_title.c_str(),
       .in_call_video = in_call.video,
       .in_call_avatars = AvatarKey(false, in_call.peer_has_avatar, in_call.peer_avatar_src, in_call.peer_avatar_letter,
                                    in_call.peer_avatar_tone) +
+                         (in_call.peer_unknown ? "u" : "-") +
                          AvatarKey(false, in_call.self_has_avatar, in_call.self_avatar_src, in_call.self_avatar_letter,
                                    in_call.self_avatar_tone),
       .in_call_phone_failed = in_call.phone_failed,
@@ -322,7 +348,9 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_story_stage = in_call.story_stage,
       .in_call_story_steps = std::string(in_call.story_step1.c_str()) + "|" + in_call.story_step2.c_str() + "|" +
                              in_call.story_step3.c_str() + std::string("|") + in_call.story_step4.c_str() + "|" +
-                             in_call.story_step5.c_str() + "|" + std::to_string(in_call.story_step_count),
+                             in_call.story_step5.c_str(),
+      .in_call_story_scroll = std::string(in_call.story_offset.c_str()) + "|" + in_call.story_clip.c_str(),
+      .in_call_story_shape = StoryShapeKey(in_call),
       .in_call_story_sheet_open = in_call.story_sheet_open,
       .in_call_story_lines = in_call.story_lines,
       .in_call_story_how = in_call.story_how.c_str(),
@@ -483,12 +511,25 @@ void CallController::Tick() {
       return; // the demo app's scripted call (PP_DEMO_CALL) stands in for the presenter
     }
   }
-  presenter_.Tick(); // expired rings; the in-call screen (Calling… / timer / levels) every frame
+  presenter_.Tick();     // expired rings; the in-call screen (Calling… / timer / levels) every frame
+  StepWakePlaceholder(); // before the ring's pulse / ringtone below: it may start or end the ring page
   const int64_t now = util::NowUnixMs();
-  if (ring_.active && !phone_layout_) { // the phone ring page has no pulse: no dirty, no forced frame
+  // The phone ring page has no pulse of its own (no dirty, no forced frame), but its pair's spark is an RCSS animation
+  // that runs continuously while the page is up, so the 1:1 phone ring page redraws at the display rate (at most the
+  // ring's 60 s; the owner accepted that cost).
+  if (ring_.active && !phone_layout_) {
     if (now - last_pulse_toggle_ms_ >= 600) {
       ring_.pulse = !ring_.pulse;
       last_pulse_toggle_ms_ = now;
+      SyncShellState();
+    }
+  }
+  if (ring_.active && shell_call_chrome_.call_page_height_dp &&
+      shell_call_chrome_.call_page_height_dp() != ring_page_height_dp_) {
+    // A rotation / resize / safe-area change: the room for the three lines is decided again (no work otherwise).
+    const bool before = ring_.show_steps;
+    FillRingShowSteps();
+    if (ring_.show_steps != before) {
       SyncShellState();
     }
   }
@@ -498,7 +539,7 @@ void CallController::Tick() {
   EndDisconnectedCall(now);
   if (metrics_.Tracking()) {
     auto* backend = Backend();
-    const bool call_live = ring_.active || !presenter_.ActiveCallId().empty() ||
+    const bool call_live = (ring_.active && !ring_.awaiting_invite) || !presenter_.ActiveCallId().empty() ||
                            (backend && backend->Available() && backend->Phase() != CallPhase::Idle);
     EmitMetrics(metrics_.Tick(call_live, now, Vitals(now)));
     EmitPerfThreads(now);
@@ -594,6 +635,70 @@ void CallController::OnCallWake() {
 
 void CallController::OnMessagingReady() {
   system_call_screen_.OnMessagingReady();
+  presenter_.NoteMessagingReady(); // the vault is unlocked: the connecting page's no-ring clock starts
+}
+
+void CallController::StepWakePlaceholder() {
+  // Read here (not the last Render's): before the vault is unlocked nothing has rendered yet.
+  phone_layout_ = shell_call_chrome_.phone_layout && shell_call_chrome_.phone_layout();
+  const CallPresenter::WakeStep step = presenter_.StepWakePlaceholder(phone_layout_);
+  if (step.ring == CallPresenter::WakeRing::Show) {
+    if (!ring_.awaiting_invite) {
+      RenderAwaitingRing();
+    } else {
+      // The page is up: once the vault unlocks our own avatar can be read; it replaces the letter in place. Only
+      // when the identity changed: reading the avatar is disk I/O, not for every frame.
+      if (ring_self_watch_.Changed(LocalIdentity())) {
+        FillRingSelfAvatar();
+        SyncShellState();
+      }
+    }
+  } else if (step.ring == CallPresenter::WakeRing::Clear && ring_.awaiting_invite) {
+    ClearRing();
+    SyncShellState();
+  }
+  if (step.outcome != CallWakePlaceholder::Outcome::None) {
+    EmitWakeRingMetric(step);
+  }
+}
+
+void CallController::RenderAwaitingRing() {
+  const CallScreen no_call; // no conflict, no price, voice: the plain Accept / Decline words
+  const CallConflictCopy copy = MakeCallConflictCopy(false, {});
+  ring_ = {};
+  ring_.active = true;
+  ring_.awaiting_invite = true;
+  ring_.accept_label = copy.accept_label;
+  ring_.decline_label = copy.decline_label;
+  FillRingAnswerLabels(no_call);
+  ring_.phone_title = Tr("call.ring.awaiting.name").c_str();
+  ring_.avatar_letter = ""; // the blank default avatar, no "?"
+  FillRingSteps(true, "", CallRingMedia::Unknown);
+  FillRingSelfAvatar();
+  FillRingShowSteps();
+  SyncShellState();
+  SyncRingtone();
+}
+
+void CallController::EmitWakeRingMetric(const CallPresenter::WakeStep& view) {
+  using Outcome = CallWakePlaceholder::Outcome;
+  MetricsLine line("call.wake_ring");
+  switch (view.outcome) {
+    case Outcome::Ring:
+      line.Add("outcome", "ring");
+      break;
+    case Outcome::Timeout:
+      line.Add("outcome", "timeout");
+      break;
+    default:
+      line.Add("outcome", "expired");
+      break;
+  }
+  line.Add("shown_ms", view.shown_ms);
+  if (view.ready_ms) {
+    line.Add("ready_ms", *view.ready_ms);
+  }
+  line.Emit();
 }
 
 void CallController::ClearRing() {
@@ -874,7 +979,15 @@ std::string CallController::DisplayNameForIdentity(const std::string& identity) 
       }
     }
   }
-  return identity;
+  return {}; // nothing known: the callers say "Stranger" (CallerNameFor), never the account id
+}
+
+CallerName CallController::CallerNameFor(const std::string& identity) const {
+  return MakeCallerName(DisplayNameForIdentity(identity));
+}
+
+std::string CallController::PeerLabelFor(const std::string& identity) const {
+  return PeerLabel(identity, DisplayNameForIdentity(identity));
 }
 
 std::string CallController::FormatTimer(const int64_t since_ms, const int64_t now_ms) {
@@ -920,27 +1033,20 @@ void CallController::ShowNotice(const CallNotice& notice) {
     case CallNotice::Kind::PeerEnded:
     case CallNotice::Kind::PeerDeclined: {
       const bool declined = notice.kind == CallNotice::Kind::PeerDeclined;
-      const std::string name = DisplayNameForIdentity(notice.identity);
+      const std::string name = PeerLabelFor(notice.identity);
       const char* named = declined ? "call.status.declined_by_peer" : "call.status.ended_by_peer";
       const char* unknown = declined ? "call.status.declined_by_peer_unknown" : "call.status.ended_by_peer_unknown";
       UserFeedback::Ok(name.empty() ? Tr(unknown) : Tr(named, {{"name", name}}));
       return;
     }
     case CallNotice::Kind::GuestJoined: {
-      std::string name = DisplayNameForIdentity(notice.identity);
-      if (name.empty()) {
-        name = notice.identity;
-      }
+      const std::string name = CallerNameFor(notice.identity).label;
       const std::string local = call_ports_.local_relay_identity ? call_ports_.local_relay_identity().value_or("") : "";
       if (!local.empty() && notice.brought_by == local) {
         UserFeedback::Ok(Tr("call.guest.joined_yours", {{"name", name}}));
         return;
       }
-      std::string bringer = DisplayNameForIdentity(notice.brought_by);
-      if (bringer.empty()) {
-        bringer = notice.brought_by;
-      }
-      UserFeedback::Ok(Tr("call.guest.joined", {{"name", name}, {"bringer", bringer}}));
+      UserFeedback::Ok(Tr("call.guest.joined", {{"name", name}, {"bringer", CallerNameFor(notice.brought_by).label}}));
       return;
     }
     case CallNotice::Kind::IncomingCall: {
@@ -950,13 +1056,15 @@ void CallController::ShowNotice(const CallNotice& notice) {
       const std::string caller = DisplayNameForIdentity(notice.identity);
       if (notice.conflict) {
         // V064: over a call, the alert says who is calling and which call answering ends, as the ring does.
-        const CallConflictCopy copy =
-            MakeCallConflictCopy(true, ConflictNames(caller, true, notice.ending, util::NowUnixMs()));
+        const CallConflictCopy copy = MakeCallConflictCopy(
+            true, ConflictNames(PeerLabelFor(notice.identity), true, notice.ending, util::NowUnixMs()));
         ILocalNotifier::Instance().NotifyIncoming(copy.title, copy.hint, "");
         return;
       }
-      const std::string body =
-          caller.empty() ? Tr("call.notify.body_unknown") : Tr("call.notify.body_named", {{"name", caller}});
+      // No contact name: "Stranger is calling you"; no identity at all: "Someone is calling you".
+      const std::string body = !caller.empty()            ? Tr("call.notify.body_named", {{"name", caller}})
+                               : !notice.identity.empty() ? Tr("call.notify.body_stranger")
+                                                          : Tr("call.notify.body_unknown");
       ILocalNotifier::Instance().NotifyIncoming(Tr("call.notify.title"), body, "");
       return;
     }
@@ -967,7 +1075,7 @@ void CallController::ShowNotice(const CallNotice& notice) {
 }
 
 void CallController::OfferCallBack(const CallScreen::EndingCall& ended) {
-  std::string name = DisplayNameForIdentity(ended.peer_identity);
+  std::string name = PeerLabelFor(ended.peer_identity);
   if (name.empty()) {
     name = Tr("call.label.them");
   }
@@ -1032,7 +1140,10 @@ void CallController::Render() {
         return;
       }
       ClearInCall();
-      ClearRing();
+      // "Incoming call, connecting…" has no call screen behind it: only StepWakePlaceholder takes it down.
+      if (!ring_.awaiting_invite) {
+        ClearRing();
+      }
       SyncShellState();
       return;
   }
@@ -1045,8 +1156,7 @@ void CallController::RenderAnswering(const CallScreen& screen, const CallMediaSc
   in_call_.call_id = screen.ring_call_id;
   in_call_.subtitle = Tr("call.status.connecting").c_str();
   in_call_.title = screen.ring_video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
-  const std::string caller = DisplayNameForIdentity(screen.caller_identity);
-  in_call_.peer_label = caller.empty() ? screen.caller_identity.c_str() : caller.c_str();
+  in_call_.peer_label = CallerNameFor(screen.caller_identity).label.c_str();
   // Answered with video: switch to the video stage right away (see CallMediaFrame::kVideoStartMs).
   in_call_.stage_visible = screen.answered_video;
   in_call_.remote_video = false;
@@ -1071,10 +1181,7 @@ void CallController::RenderAnswering(const CallScreen& screen, const CallMediaSc
 }
 
 void CallController::RenderRing(const CallScreen& screen, const int64_t now_ms) {
-  std::string caller_label = DisplayNameForIdentity(screen.caller_identity);
-  if (caller_label.empty()) {
-    caller_label = screen.caller_identity;
-  }
+  const std::string caller_label = CallerNameFor(screen.caller_identity).label;
   const CallConflictCopy copy =
       MakeCallConflictCopy(screen.conflict, ConflictNames(caller_label, screen.conflict, screen.ending, now_ms));
 
@@ -1082,6 +1189,7 @@ void CallController::RenderRing(const CallScreen& screen, const int64_t now_ms) 
   HideInCallChrome();
 
   ring_.active = true;
+  ring_.awaiting_invite = false; // the placeholder page, if it was up, is overwritten in place
   ring_.conflict = screen.conflict;
   ring_.call_id = screen.ring_call_id;
   ring_.caller_label = caller_label;
@@ -1103,8 +1211,21 @@ void CallController::RenderRing(const CallScreen& screen, const int64_t now_ms) 
   ring_.decline_label = copy.decline_label;
   FillRingAnswerLabels(screen);
   FillRingPhoneFields(screen, caller_label, now_ms);
+  FillRingShowSteps();
   SyncShellState();
   SyncRingtone();
+}
+
+void CallController::FillRingShowSteps() {
+  // The three lines give way first on a short page (never the price, conflict or guest text). Read from ring_ itself,
+  // so the awaiting page (nothing but the plain 1:1 blocks) and a real ring use one rule.
+  ring_page_height_dp_ = shell_call_chrome_.call_page_height_dp ? shell_call_chrome_.call_page_height_dp() : 0;
+  ring_.show_steps = CallRingShowsSteps({.page_height_dp = ring_page_height_dp_,
+                                         .group = ring_.group,
+                                         .conflict = ring_.conflict,
+                                         .guest = !ring_.guest_hint.empty(),
+                                         .pricing = ring_.show_pricing,
+                                         .charge_enabled = ring_.accept_charge_enabled});
 }
 
 void CallController::FillRingAnswerLabels(const CallScreen& screen) {
@@ -1201,7 +1322,7 @@ void CallController::FillInCallFromScreen(const CallScreen& screen, const int64_
   in_call.show_make_group = screen.show_make_group;
   in_call.group_invite_text =
       screen.group_invite
-          ? Tr("call.group_invite.banner", {{"name", DisplayNameForIdentity(screen.group_invite->maker_identity)},
+          ? Tr("call.group_invite.banner", {{"name", CallerNameFor(screen.group_invite->maker_identity).label},
                                             {"group", screen.group_invite->group_title}})
                 .c_str()
           : "";
@@ -1216,10 +1337,8 @@ void CallController::FillInCallFromScreen(const CallScreen& screen, const int64_
   } else {
     in_call.title = screen.video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
   }
-  std::string peer_label = Tr("call.label.them");
-  if (const std::string name = DisplayNameForIdentity(screen.peer_identity); !name.empty()) {
-    peer_label = name;
-  }
+  const std::string peer_label =
+      screen.peer_identity.empty() ? Tr("call.label.them") : CallerNameFor(screen.peer_identity).label;
   in_call.peer_label = in_call.show_roster ? Tr("call.label.others").c_str() : peer_label.c_str();
   in_call.show_retry = screen.show_retry;
   in_call.calling = ShowsCancelCall(screen);
@@ -1232,16 +1351,15 @@ void CallController::FillRoster(CallInProgressState& in_call, const CallScreen& 
   for (const CallScreen::Member& member : screen.members) {
     CallRosterParticipantState entry;
     entry.is_local = member.is_local;
-    std::string name = member.is_local ? Tr("call.label.you") : DisplayNameForIdentity(member.identity);
-    if (!member.is_local && name.empty()) {
-      name = member.identity;
-    }
+    const CallerName caller = member.is_local ? CallerName{} : CallerNameFor(member.identity);
+    const std::string name = member.is_local ? Tr("call.label.you") : caller.label;
     entry.name = name.c_str();
     entry.identity = member.identity.c_str();
     if (const std::string avatar_path = IconPath(member.identity); !avatar_path.empty()) {
       entry.has_avatar = true;
       entry.avatar_src = avatar_path.c_str();
     }
+    entry.avatar_unknown = caller.unknown && !entry.has_avatar;
     const AvatarGlyph glyph = MakeAvatarGlyph(name, member.identity);
     entry.avatar_letter = glyph.letter.c_str();
     entry.avatar_tone = glyph.tone;
@@ -1330,18 +1448,13 @@ void CallController::FillGuestActions(CallInProgressState& in_call, const CallSc
     if (!member.guest || (!member.can_remove && !member.can_add_to_group)) {
       continue;
     }
-    std::string name = DisplayNameForIdentity(member.identity);
-    if (name.empty()) {
-      name = member.identity;
-    }
+    const std::string name = CallerNameFor(member.identity).label;
     CallGuestActionState row;
     row.identity = member.identity.c_str();
     if (!local.empty() && member.brought_by == local) {
       row.line = Tr("call.guest.line_yours", {{"name", name}}).c_str();
     } else {
-      std::string bringer = DisplayNameForIdentity(member.brought_by);
-      row.line =
-          Tr("call.guest.line", {{"name", name}, {"bringer", bringer.empty() ? member.brought_by : bringer}}).c_str();
+      row.line = Tr("call.guest.line", {{"name", name}, {"bringer", CallerNameFor(member.brought_by).label}}).c_str();
     }
     if (member.can_add_to_group) {
       row.add_to_group_label = Tr("call.guest.add_to_group", {{"name", name}}).c_str();
@@ -1352,10 +1465,7 @@ void CallController::FillGuestActions(CallInProgressState& in_call, const CallSc
 }
 
 void CallController::RemoveGuestFromCall(const std::string& identity) {
-  std::string name = DisplayNameForIdentity(identity);
-  if (name.empty()) {
-    name = identity;
-  }
+  const std::string name = CallerNameFor(identity).label;
   UserFeedback::Confirm(
       Tr("call.guest.remove_title", {{"name", name}}), Tr("call.guest.remove_message"),
       [this, identity](const bool ok) {
@@ -1367,10 +1477,7 @@ void CallController::RemoveGuestFromCall(const std::string& identity) {
 }
 
 void CallController::AddGuestToGroup(const std::string& identity) {
-  std::string name = DisplayNameForIdentity(identity);
-  if (name.empty()) {
-    name = identity;
-  }
+  const std::string name = CallerNameFor(identity).label;
   presenter_.AddGuestToGroup(identity, [name](Roe<void> invited) {
     if (invited) {
       UserFeedback::Ok(Tr("call.guest.invited_to_group", {{"name", name}}));
@@ -1617,7 +1724,7 @@ std::string CallController::StatusLineText(const CallStatusLine& line, const Cal
       text = Tr(line.key, {{"count", std::to_string(line.count)}, {"elapsed", FormatTimer(line.since_ms, now_ms)}});
       break;
     case Kind::PeerOnHold: {
-      const std::string name = DisplayNameForIdentity(screen.peer_identity);
+      const std::string name = PeerLabelFor(screen.peer_identity);
       text = name.empty() ? Tr(line.fallback_key) : Tr(line.key, {{"name", name}});
       break;
     }
@@ -1671,7 +1778,10 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend& backend,
   const bool audio_fault = view.quality == CallPathQuality::NoAudio || view.asymmetry != CallAudioAsymmetry::None;
   if (audio_fault_gate_.Update(presenter_.ActiveCallId(), audio_fault, now_ms)) {
     if (!frame.hint_key.empty()) {
-      UserFeedback::Fail(Tr(frame.hint_key));
+      // The phone layout already shows this hint as the centered line; don't say it twice. The gate stays consumed.
+      if (CallAudioFaultToastGate::ShouldToastHint(frame.hint_shown, in_call.status_hint.empty())) {
+        UserFeedback::Fail(Tr(frame.hint_key));
+      }
     } else if (label_key && label_key[0]) {
       UserFeedback::Fail(Tr(label_key));
     }
@@ -1804,6 +1914,13 @@ bool CallController::RenderDemoScene(const int64_t now_ms) {
     }
     return true;
   }
+  if (f.awaiting_invite) {
+    if (!ring_.awaiting_invite) {
+      RenderAwaitingRing(); // built directly, as the tapped alert would, without PendingNotificationTap
+    }
+    ringtone_.Stop();
+    return true;
+  }
   switch (f.screen.kind) {
     case CallScreen::Kind::Ringing:
       RenderRing(f.screen, now_ms);
@@ -1891,7 +2008,7 @@ CallConflictNames CallController::ConflictNames(const std::string& caller_label,
   names.same_peer = ending.same_peer;
   names.ending_group = ending.group;
   // A group's call: the group's name; a 1:1 call: its peer's.
-  names.ending = ending.group ? GroupTitle(ending.thread_id, now_ms) : DisplayNameForIdentity(ending.peer_identity);
+  names.ending = ending.group ? GroupTitle(ending.thread_id, now_ms) : PeerLabelFor(ending.peer_identity);
   return names;
 }
 
@@ -1916,6 +2033,8 @@ std::string CallController::GroupTitle(const std::string& thread_id, const int64
 void CallController::FillRingPhoneFields(const CallScreen& screen, const std::string& caller_label,
                                          const int64_t now_ms) {
   ring_.group = screen.ring_group;
+  rung_call_id_ = screen.ring_call_id; // every ring shown, group or 1:1: RenderStorySteps reads this call's kind
+  rung_video_ = screen.ring_video;
   if (screen.ring_group) {
     std::string title = GroupTitle(screen.thread_id, now_ms);
     ring_.phone_title = (title.empty() ? caller_label : title).c_str();
@@ -1926,6 +2045,9 @@ void CallController::FillRingPhoneFields(const CallScreen& screen, const std::st
     ring_.avatar_src = "";
     ring_.avatar_letter = "";
     ring_.avatar_tone = 2;
+    ring_.caller_unknown = false;
+    FillRingSteps(false, ring_.phone_title.c_str(), CallRingMedia::Unknown); // a group keeps its subtitle
+    FillRingSelfAvatar();
     return;
   }
   ring_.phone_title = caller_label.c_str();
@@ -1936,6 +2058,46 @@ void CallController::FillRingPhoneFields(const CallScreen& screen, const std::st
   const std::string photo = IconPath(screen.caller_identity);
   ring_.has_avatar = !photo.empty();
   ring_.avatar_src = photo.c_str();
+  ring_.caller_unknown = CallerNameFor(screen.caller_identity).unknown && photo.empty();
+  FillRingSteps(false, caller_label, screen.ring_video ? CallRingMedia::Video : CallRingMedia::Voice);
+  FillRingSelfAvatar();
+}
+
+namespace {
+
+/** Our avatar fields, the same names on the ring and the in-call state. */
+template <class State>
+void SetSelfAvatar(State& state, const AvatarGlyph& glyph, const std::string& photo) {
+  state.self_avatar_letter = glyph.letter.c_str();
+  state.self_avatar_tone = glyph.tone;
+  state.self_has_avatar = !photo.empty();
+  state.self_avatar_src = photo.c_str();
+}
+
+std::string RingStepText(const CallRingStep& step) {
+  return step.key.empty() ? step.text : Tr(step.key);
+}
+
+} // namespace
+
+void CallController::FillRingSteps(const bool awaiting_invite, const std::string& caller, const CallRingMedia media) {
+  const auto steps = CallRingSteps(awaiting_invite, caller, media);
+  ring_.step1 = RingStepText(steps[0]).c_str();
+  ring_.step2 = RingStepText(steps[1]).c_str();
+  ring_.step3 = RingStepText(steps[2]).c_str();
+  ring_.step2_current = steps[1].state == CallRingStep::State::Current;
+  ring_.step3_done = steps[2].state == CallRingStep::State::Done;
+}
+
+std::string CallController::LocalIdentity() const {
+  return call_ports_.local_relay_identity ? call_ports_.local_relay_identity().value_or(std::string{}) : std::string{};
+}
+
+void CallController::FillRingSelfAvatar() {
+  // No local identity before the unlock: the letter of "You" and tone 0, replaced in place once it is readable.
+  const std::string self = LocalIdentity();
+  ring_self_watch_.Remember(self);
+  SetSelfAvatar(ring_, MakeAvatarGlyph(Tr("call.label.you"), self), IconPath(self));
 }
 
 void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t now_ms) {
@@ -1944,12 +2106,14 @@ void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t
   const bool group = answering ? screen.ring_group : screen.group;
   const std::string& peer = answering ? screen.caller_identity : screen.peer_identity;
   in_call.video = answering ? screen.answered_video : screen.video;
-  const std::string name = peer.empty() ? std::string() : DisplayNameForIdentity(peer);
+  const CallerName caller = peer.empty() ? CallerName{.label = {}, .unknown = false} : CallerNameFor(peer);
+  const std::string& name = caller.label;
   if (group) {
     const std::string title = GroupTitle(screen.thread_id, now_ms);
     in_call.phone_title = title.empty() ? in_call.title : title.c_str();
   } else {
-    in_call.phone_title = name.empty() ? Tr("call.label.them").c_str() : name.c_str();
+    in_call.phone_title =
+        name.empty() ? Tr("call.label.them").c_str() : name.c_str(); // a peer unknown by name reads "Stranger"
   }
   const AvatarGlyph peer_glyph = MakeAvatarGlyph(name, peer);
   in_call.peer_avatar_letter = peer_glyph.letter.c_str();
@@ -1957,6 +2121,7 @@ void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t
   const std::string peer_photo = IconPath(peer);
   in_call.peer_has_avatar = !peer_photo.empty();
   in_call.peer_avatar_src = peer_photo.c_str();
+  in_call.peer_unknown = !group && caller.unknown && peer_photo.empty();
   FillSelfAvatar(screen);
 
   // Couldn't connect / disconnected: the failure page says it plainly; why is in the log (#31 / #37).
@@ -1983,12 +2148,7 @@ void CallController::FillSelfAvatar(const CallScreen& screen) {
   if (self.empty() && call_ports_.local_relay_identity) {
     self = call_ports_.local_relay_identity().value_or(std::string{});
   }
-  const AvatarGlyph self_glyph = MakeAvatarGlyph(Tr("call.label.you"), self);
-  in_call_.self_avatar_letter = self_glyph.letter.c_str();
-  in_call_.self_avatar_tone = self_glyph.tone;
-  const std::string self_photo = IconPath(self);
-  in_call_.self_has_avatar = !self_photo.empty();
-  in_call_.self_avatar_src = self_photo.c_str();
+  SetSelfAvatar(in_call_, MakeAvatarGlyph(Tr("call.label.you"), self), IconPath(self));
 }
 
 void CallController::ApplyConnectStory(const CallMediaScreen& frame) {
@@ -2011,6 +2171,28 @@ void CallController::RenderStorySteps(const CallStoryView& v) {
   const CallStorySteps steps = CallStoryLines(v, in_call.show_roster);
   in_call.story_step_count = static_cast<int>(steps.keys.size());
   in_call.story_stage = steps.shown;
+  // Which lead rows, the spark's side and the scroll are the presenter's (PlanCallStoryList); this renders them.
+  // The kind the call rang with; the answering page only knows what was accepted for a ring this device did not see.
+  const bool video = std::string(in_call.call_id.c_str()) == rung_call_id_ ? rung_video_ : in_call.video;
+  const int page_dp = shell_call_chrome_.call_page_height_dp ? shell_call_chrome_.call_page_height_dp() : 0;
+  const CallStoryList plan =
+      PlanCallStoryList({.view = v,
+                         .story_active = in_call.story_active,
+                         .group = in_call.show_roster,
+                         .video_stage = in_call.stage_visible,
+                         .caller = name,
+                         .media = video ? CallRingMedia::Video : CallRingMedia::Voice,
+                         .page_height_dp = page_dp,
+                         .hint_shown = !in_call.status_hint.empty() || !in_call.quality_hint.empty(),
+                         .debug_shown = in_call.show_debug_subtitle});
+  in_call.story_inbound = plan.inbound;
+  in_call.story_lead.clear();
+  for (const CallRingStep& lead : plan.lead) {
+    in_call.story_lead.push_back(RingStepText(lead));
+  }
+  in_call.story_offset =
+      (plan.scroll_rows > 0 ? "-" + std::to_string(plan.scroll_rows * call_page_dp::kStepRow) + "dp" : "0dp").c_str();
+  in_call.story_clip = (plan.clip_dp > 0 ? std::to_string(plan.clip_dp) + "dp" : "auto").c_str();
   ui::String* const shown[] = {&in_call.story_step1, &in_call.story_step2, &in_call.story_step3, &in_call.story_step4,
                                &in_call.story_step5};
   for (size_t i = 0; i < std::size(shown); ++i) {

@@ -21,7 +21,8 @@ namespace pbr {
  *
  * Scenes: ring, ring_group, voice (calling → answered → relayed → a closer way at 25 s → slower at 35 s), reconnect
  * (down from 6 s, "They may be offline" from 26 s), reconnect_recovers (down 6-12 s, then "Restored"), video, failed,
- * answer_group (a group ring answered at 3 s), group_voice, group_video, V060's on hold: voice_hold / video_hold (the
+ * answer_group (a group ring answered at 3 s), answer_voice (a 1:1 call from a tapped alert: waiting for the invite
+ * 0-2 s, ringing 2-5 s, answered 5 s, connected at 10 s) and ring_awaiting (stays on the waiting page), group_voice, group_video, V060's on hold: voice_hold / video_hold (the
  * other side has the 1:1 call on hold), group_hold (one member on hold, another's camera paused), and V064's
  * ring_conflict (a call rings over the one this device is in) and call_back (the call taken ends at 8 s: "Call {name}
  * back?"). In the group scenes we speak from 5 s, the first member from 11 s and the second from 20 s (the speaking
@@ -29,6 +30,8 @@ namespace pbr {
  */
 struct DemoCallFrame {
   bool valid = false;
+  /** The tapped-alert page ("Incoming call", the three lines on their way): drawn by RenderAwaitingRing, no screen. */
+  bool awaiting_invite = false;
   CallScreen screen;
   std::string path_kind;
   CallPathQuality quality = CallPathQuality::Good;

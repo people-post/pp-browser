@@ -11,7 +11,7 @@
 namespace pbr {
 
 void AndroidLocalNotifier::NotifyIncoming(const std::string& title, const std::string& body,
-                                          const std::string& thread_id) {
+                                          const std::string& thread_id, const int thread_unread) {
   if (AppLifecycle::IsForeground()) {
     return;
   }
@@ -24,12 +24,12 @@ void AndroidLocalNotifier::NotifyIncoming(const std::string& title, const std::s
   // SDL hands out a new local reference each time; on SDL's native thread the JNI frame never pops.
   if (jclass cls = env->GetObjectClass(activity); cls != nullptr) {
     jmethodID mid =
-        env->GetMethodID(cls, "showLocalNotification", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+        env->GetMethodID(cls, "showLocalNotification", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V");
     if (mid != nullptr) {
       jstring j_title = env->NewStringUTF(title.empty() ? Tr("notification.new_message").c_str() : title.c_str());
       jstring j_body = env->NewStringUTF(body.empty() ? Tr("notification.new_message_body").c_str() : body.c_str());
       jstring j_thread = env->NewStringUTF(thread_id.c_str());
-      env->CallVoidMethod(activity, mid, j_title, j_body, j_thread);
+      env->CallVoidMethod(activity, mid, j_title, j_body, j_thread, static_cast<jint>(thread_unread));
       env->DeleteLocalRef(j_title);
       env->DeleteLocalRef(j_body);
       env->DeleteLocalRef(j_thread);
@@ -43,6 +43,7 @@ void AndroidLocalNotifier::NotifyIncoming(const std::string& title, const std::s
   (void)title;
   (void)body;
   (void)thread_id;
+  (void)thread_unread;
 #endif
 }
 

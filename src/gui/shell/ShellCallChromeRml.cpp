@@ -1,10 +1,12 @@
 #include "gui/shell/ShellCallChromeRml.h"
 
 #include "foundation/i18n/LocalizationService.h"
+#include "feature/presenters/CallStepScroll.h"
 #include "lib/ui/CallChipDock.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <sstream>
 
 namespace pbr {
@@ -127,7 +129,13 @@ void AppendGuestActions(std::ostringstream& out, const CallInProgressState& call
 
 /** A round avatar on the phone call pages: the group icon on the group colour, a photo, or the initial. */
 void AppendAvatar(std::ostringstream& out, const char* size_class, const bool group, const bool has_photo,
-                  const std::string& photo, const std::string& letter, const int tone) {
+                  const std::string& photo, const std::string& letter, const int tone, const bool unknown = false) {
+  if (unknown && !group && !has_photo) { // nobody known: the silhouette (its own circle clip), at the size class
+    const char* px = std::strstr(size_class, "--big") ? "120" : std::strstr(size_class, "--pair") ? "76" : "72";
+    out << "<div class=\"call-phone-avatar call-phone-avatar--unknown avatar-tone-0 " << size_class << "\">"
+        << "<svg src=\"../icons/v2/unknown-caller.svg\" width=\"" << px << "\" height=\"" << px << "\"></svg></div>";
+    return;
+  }
   if (group) {
     out << "<div class=\"call-phone-avatar call-phone-avatar--group " << size_class << "\">"
         << "<svg src=\"../icons/v2/group.svg\" width=\"48\" height=\"48\"></svg></div>";
@@ -195,43 +203,98 @@ void AppendResult(std::ostringstream& out) {
   out << "<span class=\"call-phone-result-text\">{{call_in_progress_result_text}}</span></div>";
 }
 
-/**
- * The connection steps before connect (3 for a group, up to 5 for a 1:1 call), all always shown: the ones passed as ✓ (done), the one in progress with
- * its moving dot (current), and the ones not reached yet as plain dots.
- */
-void AppendSteps(std::ostringstream& out, const int stage, const int count) {
-  out << "<div class=\"call-phone-steps\">";
-  const char* vars[] = {"call_in_progress_story_step1", "call_in_progress_story_step2", "call_in_progress_story_step3",
-                        "call_in_progress_story_step4", "call_in_progress_story_step5"};
-  for (int i = 0; i < count && i < 5; ++i) {
-    const bool done = i < stage;
-    const bool current = i == stage;
-    out << "<div class=\"call-phone-step"
-        << (done ? " call-phone-step--done" : (current ? " call-phone-step--current" : ""))
-        << "\"><div class=\"call-phone-step-dot\">";
-    if (done) {
-      out << "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg>";
-    }
-    out << "</div><p class=\"call-phone-step-text\">{{" << vars[i] << "}}</p></div>";
-  }
-  out << "</div>";
-}
-
-/** "You ↔ them" with the moving spark between them (RCSS keyframes; only while connecting). */
-void AppendPair(std::ostringstream& out, const CallInProgressState& call) {
-  out << "<div class=\"call-phone-pair\">";
-  AppendAvatar(out, "call-phone-avatar--pair", false, call.self_has_avatar, call.self_avatar_src.c_str(),
-               call.self_avatar_letter.c_str(), call.self_avatar_tone);
-  out << "<div class=\"call-phone-pair-path\"><div class=\"call-phone-pair-dots\">";
+/** The line between the pair's avatars with the spark on it (RCSS keyframes; only while connecting or ringing). */
+void AppendPairPath(std::ostringstream& out, const bool inbound) {
+  out << "<div class=\"call-phone-pair-path" << (inbound ? " call-phone-pair-path--inbound" : "")
+      << "\"><div class=\"call-phone-pair-dots\">";
   for (int i = 0; i < 9; ++i) {
     out << "<div class=\"call-phone-pair-dot\"></div>";
   }
   out << "</div><div class=\"call-phone-pair-spark\"></div></div>";
-  AppendAvatar(out, "call-phone-avatar--pair", false, call.peer_has_avatar, call.peer_avatar_src.c_str(),
-               call.peer_avatar_letter.c_str(), call.peer_avatar_tone);
-  out << "</div>";
+}
+
+/** Under the pair: "You" small, the other party (`them`: text or a data expression) bigger and bold. */
+void AppendPairNames(std::ostringstream& out, const char* them) {
   out << "<div class=\"call-phone-pair-names\"><p class=\"call-phone-pair-name\">" << Tr("call.label.you")
-      << "</p><p class=\"call-phone-pair-name\">{{call_in_progress_phone_title}}</p></div>";
+      << "</p><p class=\"call-phone-pair-name call-phone-pair-name--peer\">" << them << "</p></div>";
+}
+
+/** One done row (a ✓) with its words written into the markup. */
+void AppendDoneStep(std::ostringstream& out, const std::string& text) {
+  out << "<div class=\"call-phone-step call-phone-step--done\"><div class=\"call-phone-step-dot\">"
+         "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg></div>"
+         "<p class=\"call-phone-step-text\">"
+      << Plain(text) << "</p></div>";
+}
+
+/**
+ * The connection steps before connect (3 for a group, up to 5 for a 1:1 call), all always shown: the ones passed as ✓
+ * (done), the one in progress with its moving dot (current), and the ones not reached yet as plain dots. The rows are a
+ * fixed set for the list's shape; which is done / current, its check and its words are bound to the story's stage, so a
+ * stage advance is a dirty (the pair's spark and the spinner are not restarted by a remount). A 1:1 answerer's list opens
+ * with the `lead` rows the ring page showed (done), inside a clip whose height and list offset are bound too, so the list
+ * moves up as the current row reaches the clip's end.
+ */
+void AppendSteps(std::ostringstream& out, const int count, const std::vector<std::string>& lead = {}) {
+  const bool clipped = !lead.empty();
+  if (clipped) {
+    out << "<div class=\"call-phone-steps-clip\" data-style-height=\"call_in_progress_story_clip\">";
+  }
+  out << "<div class=\"call-phone-steps\"";
+  if (clipped) {
+    out << " data-style-margin-top=\"call_in_progress_story_offset\"";
+  }
+  out << ">";
+  for (const std::string& text : lead) {
+    AppendDoneStep(out, text);
+  }
+  const char* vars[] = {"call_in_progress_story_step1", "call_in_progress_story_step2", "call_in_progress_story_step3",
+                        "call_in_progress_story_step4", "call_in_progress_story_step5"};
+  for (int i = 0; i < count && i < 5; ++i) {
+    const std::string stage = "call_in_progress_story_stage";
+    out << "<div class=\"call-phone-step\" data-class-call-phone-step--done=\"" << stage << " > " << i
+        << "\" data-class-call-phone-step--current=\"" << stage << " == " << i
+        << "\"><div class=\"call-phone-step-dot\"><svg data-if=\"" << stage << " > " << i
+        << "\" src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg></div><p "
+           "class=\"call-phone-step-text\">{{"
+        << vars[i] << "}}</p></div>";
+  }
+  out << "</div>";
+  out << (clipped ? "</div>" : "");
+}
+
+/**
+ * The ring page's three lines, all bound (the invite arriving turns them over in place): received (always done),
+ * joining the network (current until the invite, then done), who is calling (plain until known, then the name).
+ */
+void AppendRingSteps(std::ostringstream& out) {
+  const char* const check = "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg>";
+  out << "<div class=\"call-phone-steps\" data-if=\"call_ring_show_steps\">";
+  out << "<div class=\"call-phone-step call-phone-step--done\"><div class=\"call-phone-step-dot\">" << check
+      << "</div><p class=\"call-phone-step-text\">{{call_ring_step1}}</p></div>";
+  out << "<div class=\"call-phone-step\" data-class-call-phone-step--current=\"call_ring_step2_current\" "
+         "data-class-call-phone-step--done=\"!call_ring_step2_current\"><div class=\"call-phone-step-dot\">"
+         "<svg data-if=\"!call_ring_step2_current\" src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg>"
+         "</div><p class=\"call-phone-step-text\">{{call_ring_step2}}</p></div>";
+  out << "<div class=\"call-phone-step\" data-class-call-phone-step--done=\"call_ring_step3_done\">"
+         "<div class=\"call-phone-step-dot\"><svg data-if=\"call_ring_step3_done\" src=\"../icons/v2/check.svg\" "
+         "width=\"12\" height=\"12\"></svg></div><p class=\"call-phone-step-text\">{{call_ring_step3}}</p></div>";
+  out << "</div>";
+}
+
+/**
+ * You on the left, them on the right, the moving spark between. The spark runs from the one who calls to the one who
+ * is called: left to right when this device placed the call, right to left (`inbound`) when it is being called.
+ */
+void AppendPair(std::ostringstream& out, const CallInProgressState& call, const bool inbound) {
+  out << "<div class=\"call-phone-pair\">";
+  AppendAvatar(out, "call-phone-avatar--pair", false, call.self_has_avatar, call.self_avatar_src.c_str(),
+               call.self_avatar_letter.c_str(), call.self_avatar_tone);
+  AppendPairPath(out, inbound);
+  AppendAvatar(out, "call-phone-avatar--pair", false, call.peer_has_avatar, call.peer_avatar_src.c_str(),
+               call.peer_avatar_letter.c_str(), call.peer_avatar_tone, call.peer_unknown);
+  out << "</div>";
+  AppendPairNames(out, "{{call_in_progress_phone_title}}");
 }
 
 void AppendControl(std::ostringstream& out, const char* event, const char* on_var, const std::string& icon_attr,
@@ -358,7 +421,11 @@ void AppendPhoneTiles(std::ostringstream& out, const char* rows, const char* ext
   out << "<call-video-tile class=\"call-phone-tile-video\" tile=\"peer\" data-attr-stream=\"p.stream_id\"" << fit
       << " data-if=\"!p.is_local && p.has_remote_video\"></call-video-tile>";
   const char* no_video = "((p.is_local && !call_in_progress_local_preview) || (!p.is_local && !p.has_remote_video))";
-  out << "<div class=\"call-phone-avatar call-phone-avatar--tile\" data-if=\"!p.has_avatar && " << no_video << "\"";
+  out << "<div class=\"call-phone-avatar call-phone-avatar--unknown avatar-tone-0 call-phone-avatar--tile\" "
+         "data-if=\"p.avatar_unknown && "
+      << no_video << "\"><svg src=\"../icons/v2/unknown-caller.svg\" width=\"72\" height=\"72\"></svg></div>";
+  out << "<div class=\"call-phone-avatar call-phone-avatar--tile\" data-if=\"!p.has_avatar && !p.avatar_unknown && "
+      << no_video << "\"";
   for (int tone = 0; tone < 8; ++tone) {
     out << " data-class-avatar-tone-" << tone << "=\"p.avatar_tone == " << tone << "\"";
   }
@@ -376,33 +443,82 @@ void AppendPhoneTiles(std::ostringstream& out, const char* rows, const char* ext
   out << "</div>";
 }
 
-/** The phone ring page (mockups 06-CallRing / 06-CallGroupRing): full screen, the caller big, three round answers. */
-std::string CallRingPhoneRml(const ShellState& state) {
-  const CallRingState& ring = state.call_ring;
-  std::ostringstream out;
-  out << "<div id=\"call-phone-ring\" class=\"shell-layer call-phone call-phone--ring\" data-model=\"window\">";
-  out << "<div class=\"call-phone-hero call-phone-hero--ring\">";
-  AppendAvatar(out, "call-phone-avatar--big", ring.group, ring.has_avatar, ring.avatar_src.c_str(),
-               ring.avatar_letter.c_str(), ring.avatar_tone);
-  out << "<p class=\"call-phone-name\">{{call_ring_phone_title}}</p>";
-  out << "<p class=\"call-phone-status\">{{call_ring_phone_subtitle}}</p>";
+/** The ring page's hint lines under the names / steps: a call to end first, a guest notice, the price. */
+void AppendRingHints(std::ostringstream& out, const CallRingState& ring) {
   out << "<p class=\"call-phone-hint\" data-if=\"call_ring_conflict\">{{call_ring_conflict_hint}}</p>";
   if (!ring.guest_hint.empty()) {
     out << "<p class=\"call-phone-hint\">" << Plain(ring.guest_hint.c_str()) << "</p>"; // V062 5
   }
   out << "<p class=\"call-phone-hint\" data-if=\"call_ring_show_pricing\">{{call_ring_pricing_label}}</p>";
+}
+
+/**
+ * The phone ring page: the call page's own layout from the first moment (mockup call-flow-1110) so answering changes
+ * nothing above the buttons. A 1:1 call: you and them joined by the spark (right to left: they call us), their name
+ * big, the three lines, the hints; a group call: the group big, its status, the three lines. Both blocks are always
+ * in the markup and switched by `call_ring_group`; every difference between the awaiting page and the real ring is a
+ * bound value, so the invite arriving is a dirty, not a remount.
+ */
+std::string CallRingPhoneRml(const ShellState& state) {
+  const CallRingState& ring = state.call_ring;
+  std::ostringstream out;
+  out << "<div id=\"call-phone-ring\" class=\"shell-layer call-phone call-phone--ring\" data-model=\"window\">";
+  out << "<div class=\"call-phone-story call-phone-story--ring\" data-if=\"!call_ring_group\">";
+  out << "<div class=\"call-phone-pair\">";
+  // Us, on the left: our photo, else the letter (before the unlock there is no profile: "You", a neutral tone).
+  out << "<img class=\"call-phone-avatar call-phone-avatar--pair\" data-if=\"call_ring_self_has_avatar\" "
+         "data-attr-src=\"call_ring_self_avatar_src\"/>";
+  out << "<div class=\"call-phone-avatar call-phone-avatar--pair\" data-if=\"!call_ring_self_has_avatar\"";
+  for (int tone = 0; tone < 8; ++tone) {
+    out << " data-class-avatar-tone-" << tone << "=\"call_ring_self_avatar_tone == " << tone << "\"";
+  }
+  out << "><p class=\"avatar-letter\">{{call_ring_self_avatar_letter}}</p></div>";
+  // The spark runs for as long as the page is up (the owner wants it to keep travelling; the ring lasts 60 s at most).
+  AppendPairPath(out, true);
+  // Them, on the right: a silhouette while nobody is known (and for a stranger), then photo / letter.
+  out << "<div class=\"call-phone-avatar call-phone-avatar--unknown avatar-tone-0 call-phone-avatar--pair\" "
+         "data-if=\"call_ring_awaiting_invite || call_ring_caller_unknown\"><svg "
+         "src=\"../icons/v2/unknown-caller.svg\" width=\"76\" height=\"76\"></svg></div>";
+  out << "<img class=\"call-phone-avatar call-phone-avatar--pair\" "
+         "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && call_ring_has_avatar\" "
+         "data-attr-src=\"call_ring_avatar_src\"/>";
+  out << "<div class=\"call-phone-avatar call-phone-avatar--pair\" "
+         "data-if=\"!call_ring_awaiting_invite && !call_ring_caller_unknown && !call_ring_has_avatar\"";
+  for (int tone = 0; tone < 8; ++tone) {
+    out << " data-class-avatar-tone-" << tone << "=\"call_ring_avatar_tone == " << tone << "\"";
+  }
+  out << "><p class=\"avatar-letter\">{{call_ring_avatar_letter}}</p></div>";
   out << "</div>";
+  AppendPairNames(out, "{{call_ring_phone_title}}");
+  AppendRingSteps(out);
+  AppendRingHints(out, ring);
+  out << "</div>";
+  out << "<div class=\"call-phone-hero call-phone-hero--ring\" data-if=\"call_ring_group\">";
+  out << "<div class=\"call-phone-avatar call-phone-avatar--group call-phone-avatar--big\"><svg "
+         "src=\"../icons/v2/group.svg\" width=\"48\" height=\"48\"></svg></div>";
+  out << "<p class=\"call-phone-name\">{{call_ring_phone_title}}</p>";
+  out << "<p class=\"call-phone-status\">{{call_ring_phone_subtitle}}</p>";
+  AppendRingSteps(out);
+  AppendRingHints(out, ring);
+  out << "</div>";
+  // Awaiting the invite the answers are dimmed (a bound class); their handlers are always there and ShellHost
+  // ignores them until the real ring.
+  const char* const action =
+      "call-phone-answer-action\" data-class-call-phone-answer--waiting=\"call_ring_awaiting_invite";
   out << "<div class=\"call-phone-answer\">";
-  out << "<div class=\"call-phone-answer-action\"><button class=\"call-phone-round call-phone-round--decline\" "
-         "type=\"button\" data-event-click=\"call_decline()\"><svg src=\"../icons/v2/phone-hangup-fill.svg\" "
-         "width=\"34\" height=\"34\"></svg></button>"
+  out << "<div class=\"" << action
+      << "\"><button class=\"call-phone-round call-phone-round--decline\" type=\"button\" "
+         "data-event-click=\"call_decline()\"><svg src=\"../icons/v2/phone-hangup-fill.svg\" width=\"34\" "
+         "height=\"34\"></svg></button>"
          "<p class=\"call-phone-answer-label\">{{call_ring_decline_label}}</p></div>";
-  out << "<div class=\"call-phone-answer-action\" data-if=\"call_ring_video_allowed\"><button class=\"call-phone-round "
-         "call-phone-round--accept\" type=\"button\" data-event-click=\"call_accept_voice()\"><svg "
-         "src=\"../icons/v2/phone.svg\" width=\"30\" height=\"30\"></svg></button>"
+  out << "<div class=\"" << action
+      << "\" data-if=\"call_ring_video_allowed\"><button class=\"call-phone-round call-phone-round--accept\" "
+         "type=\"button\" data-event-click=\"call_accept_voice()\"><svg src=\"../icons/v2/phone.svg\" width=\"30\" "
+         "height=\"30\"></svg></button>"
          "<p class=\"call-phone-answer-label\">{{call_ring_voice_answer_label}}</p></div>";
-  out << "<div class=\"call-phone-answer-action\"><button class=\"call-phone-round call-phone-round--accept\" "
-         "type=\"button\" data-event-click=\"call_accept()\"><svg width=\"30\" height=\"30\" "
+  out << "<div class=\"" << action
+      << "\"><button class=\"call-phone-round call-phone-round--accept\" type=\"button\" "
+         "data-event-click=\"call_accept()\"><svg width=\"30\" height=\"30\" "
          "data-attr-src=\"call_ring_video_allowed ? '../icons/v2/video.svg' : '../icons/v2/phone.svg'\"></svg></button>"
          "<p class=\"call-phone-answer-label\">{{call_ring_accept_label}}</p></div>";
   out << "</div>";
@@ -501,7 +617,7 @@ std::string CallPhoneRml(const ShellState& state) {
   if (call.phone_failed) {
     out << "<div class=\"call-phone-hero\">";
     AppendAvatar(out, "call-phone-avatar--big", group, !group && call.peer_has_avatar, call.peer_avatar_src.c_str(),
-                 call.peer_avatar_letter.c_str(), call.peer_avatar_tone);
+                 call.peer_avatar_letter.c_str(), call.peer_avatar_tone, !group && call.peer_unknown);
     out << "<p class=\"call-phone-name\">{{call_in_progress_phone_title}}</p>";
     out << "<p class=\"call-phone-status\">{{call_in_progress_failed_text}}</p>";
     out << "<p class=\"call-phone-hint\" data-if=\"call_in_progress_status_hint != ''\">"
@@ -547,7 +663,7 @@ std::string CallPhoneRml(const ShellState& state) {
     if (call.story_active) {
       out << "<div class=\"call-phone-story call-phone-story--card call-phone-story--group\"><div "
              "class=\"call-phone-card\">";
-      AppendSteps(out, call.story_stage, call.story_step_count);
+      AppendSteps(out, call.story_step_count);
       out << "</div></div>";
     }
     out << "</div>";
@@ -578,15 +694,15 @@ std::string CallPhoneRml(const ShellState& state) {
   } else if (call.story_active) {
     out << "<div class=\"call-phone-story" << (video_layout ? " call-phone-story--card" : "") << "\">";
     out << (video_layout ? "<div class=\"call-phone-card\">" : "");
-    AppendPair(out, call);
-    AppendSteps(out, call.story_stage, call.story_step_count);
+    AppendPair(out, call, call.story_inbound);
+    AppendSteps(out, call.story_step_count, video_layout ? std::vector<std::string>{} : call.story_lead);
     AppendHints(out);
     out << (video_layout ? "</div>" : "");
     out << "</div>";
   } else {
     out << "<div class=\"call-phone-hero\">";
     AppendAvatar(out, "call-phone-avatar--big", false, call.peer_has_avatar, call.peer_avatar_src.c_str(),
-                 call.peer_avatar_letter.c_str(), call.peer_avatar_tone);
+                 call.peer_avatar_letter.c_str(), call.peer_avatar_tone, call.peer_unknown);
     out << "<p class=\"call-phone-name\">{{call_in_progress_phone_title}}</p>";
     AppendHoldPill(out, "call_in_progress_on_hold", " call-hold-pill--hero");
     out << "<p class=\"call-phone-status\" data-class-call-phone-timer--dim=\"call_in_progress_reconnect_dim\">"

@@ -1,0 +1,11 @@
+<div class="avatar-view" data-model="avatar_view" data-event-click="avatar_view_close()">
+  <div class="avatar-view-bg"></div>
+  <button class="avatar-view-close shell-circle-btn" type="button" data-event-click="avatar_view_close()"
+          title="{{i18n:common.close}}">
+    <span class="shell-circle-btn-face"><svg src="../icons/v2/close.svg" width="24" height="24"></svg></span>
+  </button>
+  <!-- The photo as stored: the square, no circular mask, as wide as the screen up to 512dp. -->
+  <div class="avatar-view-stage">
+    <img class="avatar-view-image" data-attr-src="avatar_view_src"/>
+  </div>
+</div>

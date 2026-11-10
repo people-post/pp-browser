@@ -1144,6 +1144,10 @@ select selectbox option:hover {
   background-color: transparent;
 }
 
+.shell-dialog.shell-pin-gate--frost {
+  background-color: transparent;
+}
+
 .shell-dialog {
   background-color: {{bg-card}};
 }
@@ -3237,6 +3241,11 @@ input.checkbox:checked {
   color: {{x-call-ink-2}};
 }
 
+/* The other party's name stands out from "You" (both are .call-phone-pair-name). */
+.call-phone-pair-name.call-phone-pair-name--peer {
+  color: {{x-call-ink}};
+}
+
 .call-phone-sealed svg {
   image-color: {{x-call-ink-2}};
 }
@@ -3448,6 +3457,11 @@ input.checkbox:checked {
 
 .call-phone-avatar--group {
   background-color: {{avatar-2}};
+}
+
+/* The unknown caller: the blue of avatar-tone-0 (the class is on the element), a touch lighter at the top. */
+.call-phone-avatar--unknown {
+  decorator: linear-gradient(to bottom, {{x-call-unknown-top}}, {{x-call-unknown-bottom}});
 }
 
 .call-phone-sheet-lead,
@@ -3698,5 +3712,66 @@ input.checkbox:checked {
 
 .context-menu-layer--popover-left .context-menu-item-icon {
   background-color: {{fill-2}};
+}
+
+/* Avatar crop page: always dark, like the scanner. */
+.avatar-crop,
+.avatar-crop-bg,
+.avatar-crop-stage {
+  background-color: {{x-crop-bg}};
+}
+
+.avatar-crop-title,
+.avatar-crop-loading,
+.avatar-crop-btn {
+  color: {{x-scan-ink}};
+}
+
+.avatar-crop-btn {
+  background-color: transparent;
+}
+
+.avatar-crop-btn--done {
+  color: {{accent}};
+}
+
+.avatar-crop-pill {
+  background-color: {{x-scan-dim}};
+  color: {{x-scan-ink}};
+}
+
+/* Profile page camera badge and the photo viewer. */
+.me-profile-avatar-badge {
+  background-color: {{accent}};
+  border-color: {{bg-card}};
+}
+
+.me-profile-avatar-badge svg {
+  image-color: {{label-on-accent}};
+}
+
+.avatar-view-bg {
+  background-color: {{x-crop-bg}};
+}
+
+.avatar-view-close,
+.avatar-view-close:active,
+.avatar-crop-close,
+.avatar-crop-close:active {
+  background-color: transparent;
+}
+
+.avatar-view-close .shell-circle-btn-face,
+.avatar-view-close:active .shell-circle-btn-face,
+.avatar-crop-close .shell-circle-btn-face,
+.avatar-crop-close:active .shell-circle-btn-face {
+  background-color: {{scrim}};
+  decorator: none;
+  box-shadow: none;
+}
+
+.avatar-view-close .shell-circle-btn-face svg,
+.avatar-crop-close .shell-circle-btn-face svg {
+  image-color: {{x-scan-ink}};
 }
 }

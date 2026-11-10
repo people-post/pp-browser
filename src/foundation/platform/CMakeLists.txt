@@ -38,6 +38,7 @@ set(_pp_platform_gui_sources
   PlatformEarlyInit.cpp
   AiImagePrep.cpp
   ImageEncode.cpp
+  ImageSampleAffine.cpp
   ProfileIconImagePrep.cpp
   VideoPosterExtractor_Common.cpp
   PlatformLogSink.cpp
@@ -116,6 +117,8 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     NativeFileDialog_Default.cpp
     CameraCapture_Default.cpp
     PlatformOpenFile.cpp
+    PlatformNotificationSettings_Default.cpp
+    PlatformAppBadge_Default.cpp
   )
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
@@ -138,11 +141,13 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   )
   if(NOT PP_BROWSER_IS_IOS)
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm PlatformShare_Darwin.mm
-         NativeFileDialog_Default.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp)
+         NativeFileDialog_Default.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
+         PlatformNotificationSettings_Default.cpp PlatformAppBadge_Darwin.mm)
   else()
     # SDL3 has no iOS file dialog (its dummy backend answers "nothing picked" at once).
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp PlatformShare_Ios.mm
-         NativeFileDialog_Ios.mm CameraCapture_Ios.mm PlatformOpenFile_Ios.mm)
+         NativeFileDialog_Ios.mm CameraCapture_Ios.mm PlatformOpenFile_Ios.mm PlatformNotificationSettings_Ios.mm
+         PlatformAppBadge_Ios.mm)
   endif()
 else()
   list(APPEND _pp_platform_core_sources
@@ -165,10 +170,12 @@ else()
     list(APPEND _pp_platform_core_sources os/OsLocale_Posix.cpp)
   endif()
   if(NOT PP_BROWSER_IS_ANDROID)
-    list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp)
+    list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
+         PlatformNotificationSettings_Default.cpp PlatformAppBadge_Default.cpp)
   else()
     # A file:// address is refused by Android 7+ (FileUriExposedException): a FileProvider address instead.
-    list(APPEND _pp_platform_gui_sources CameraCapture_Android.cpp PlatformOpenFile_Android.cpp)
+    list(APPEND _pp_platform_gui_sources CameraCapture_Android.cpp PlatformOpenFile_Android.cpp
+         PlatformNotificationSettings_Default.cpp PlatformAppBadge_Android.cpp)
   endif()
 endif()
 
@@ -245,6 +252,7 @@ pp_browser_add_foundation_library(pp_foundation_platform
     ${_pp_platform_ui_sources}
   PUBLIC_LIBS
     pp_foundation_platform_core
+    pp_foundation_i18n
     pp_foundation_runtime
     pp_ui
     ui::core

@@ -61,7 +61,8 @@ std::string CentreBlock(bool mascot = false) {
       "<svg class=\"prompt-icon-home-emoji\"></svg></button>"
       "<button class=\"prompt-send-btn prompt-send-btn--idle\" id=\"stub-send\" disabled=\"disabled\">"
       "<span class=\"prompt-send-disc\"></span></button>"
-      "<div class=\"prompt-composer-pill\"><textarea class=\"prompt-composer-input\"></textarea></div></div></div>";
+      "<div class=\"prompt-composer-pill\"><textarea class=\"prompt-composer-input\"></textarea>"
+      "<button class=\"prompt-home-plus\" id=\"stub-plus\"></button></div></div></div>";
   if (mascot) {
     const std::string logo =
         "<div class=\"home-logo\" id=\"home-logo\"><img src=\"../branding/app-icon.png\" alt=\"\"/></div>";
@@ -184,9 +185,8 @@ TEST_F(HomeMinimalLayoutTest, CardIsTheNarrow108dpB3WithACircleEmojiAndNoMic) {
   EXPECT_FLOAT_EQ(size.x, 44.f);
   EXPECT_FLOAT_EQ(size.y, 44.f);
   const float card_right = card->GetAbsoluteOffset(ui::BoxArea::Border).x + 310.f;
-  EXPECT_FLOAT_EQ(emoji->GetAbsoluteOffset(ui::BoxArea::Border).x - card->GetAbsoluteOffset(ui::BoxArea::Border).x,
-                  43.f)
-      << "left, right after the plus (42dp + border): the tinted circle 12dp from the plus glyph";
+  const float emoji_right = card_right - (emoji->GetAbsoluteOffset(ui::BoxArea::Border).x + size.x);
+  EXPECT_FLOAT_EQ(emoji_right, 51.f) << "right: 50dp + border, the tinted circle 10dp before the Send disc";
   // Send is always at the right end: a 36dp disc (idle while empty), nothing swaps places.
   ui::Element* send = document->GetElementById("stub-send");
   ASSERT_NE(send, nullptr);
@@ -196,7 +196,15 @@ TEST_F(HomeMinimalLayoutTest, CardIsTheNarrow108dpB3WithACircleEmojiAndNoMic) {
   EXPECT_FLOAT_EQ(send_size.y, 36.f);
   EXPECT_FLOAT_EQ(card_right - (send->GetAbsoluteOffset(ui::BoxArea::Border).x + send_size.x), 11.f)
       << "right end (10dp + border)";
-  EXPECT_LT(emoji->GetAbsoluteOffset(ui::BoxArea::Border).x + size.x, send->GetAbsoluteOffset(ui::BoxArea::Border).x);
+  EXPECT_LT(emoji->GetAbsoluteOffset(ui::BoxArea::Border).x + size.x, send->GetAbsoluteOffset(ui::BoxArea::Border).x)
+      << "the emoji key is left of Send";
+  ui::Element* plus = document->GetElementById("stub-plus");
+  ASSERT_NE(plus, nullptr);
+  EXPECT_LT(plus->GetAbsoluteOffset(ui::BoxArea::Border).x + plus->GetBox().GetSize(ui::BoxArea::Border).x,
+            emoji->GetAbsoluteOffset(ui::BoxArea::Border).x)
+      << "the plus stays at the far left, before the emoji key";
+  EXPECT_FLOAT_EQ(plus->GetAbsoluteOffset(ui::BoxArea::Border).x - card->GetAbsoluteOffset(ui::BoxArea::Border).x, 5.f)
+      << "the plus keeps left: 4dp + border";
 }
 
 TEST_F(HomeMinimalLayoutTest, KeyboardGoneCentresTheBlockAgain) {

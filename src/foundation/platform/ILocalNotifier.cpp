@@ -6,8 +6,8 @@ namespace {
 
 class NullLocalNotifier final : public ILocalNotifier {
 public:
-  void NotifyIncoming(const std::string& /*title*/, const std::string& /*body*/,
-                      const std::string& /*thread_id*/) override {}
+  void NotifyIncoming(const std::string& /*title*/, const std::string& /*body*/, const std::string& /*thread_id*/,
+                      int /*thread_unread*/) override {}
   void ClearForThread(const std::string& /*thread_id*/) override {}
 };
 

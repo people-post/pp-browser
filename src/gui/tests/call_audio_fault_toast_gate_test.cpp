@@ -8,6 +8,13 @@ namespace {
 constexpr int64_t kT0 = 1'000'000;
 constexpr int64_t kHold = CallAudioFaultToastGate::kAudioFaultToastMs;
 
+TEST(CallAudioFaultToastGateTest, HintToastOnlyWhenNotAlreadyOnTheLine) {
+  EXPECT_FALSE(CallAudioFaultToastGate::ShouldToastHint(true, true));
+  EXPECT_TRUE(CallAudioFaultToastGate::ShouldToastHint(false, true));
+  EXPECT_TRUE(CallAudioFaultToastGate::ShouldToastHint(true, false));
+  EXPECT_TRUE(CallAudioFaultToastGate::ShouldToastHint(false, false));
+}
+
 TEST(CallAudioFaultToastGateTest, BriefFaultNeverToasts) {
   CallAudioFaultToastGate gate;
   EXPECT_FALSE(gate.Update("call:a", true, kT0));

@@ -14,7 +14,7 @@ DesktopLocalNotifier::DesktopLocalNotifier() {
 }
 
 void DesktopLocalNotifier::NotifyIncoming(const std::string& title, const std::string& body,
-                                          const std::string& thread_id) {
+                                          const std::string& thread_id, int /*thread_unread*/) {
   if (AppLifecycle::IsUserAttentive()) {
     return;
   }

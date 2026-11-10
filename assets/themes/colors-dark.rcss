@@ -1133,6 +1133,10 @@ select selectbox option:hover {
   background-color: transparent;
 }
 
+.shell-dialog.shell-pin-gate--frost {
+  background-color: transparent;
+}
+
 .shell-dialog {
   background-color: #1c1c1e;
 }
@@ -3218,6 +3222,11 @@ input.checkbox:checked {
   color: #ffffffb3;
 }
 
+/* The other party's name stands out from "You" (both are .call-phone-pair-name). */
+.call-phone-pair-name.call-phone-pair-name--peer {
+  color: #ffffff;
+}
+
 .call-phone-sealed svg {
   image-color: #ffffffb3;
 }
@@ -3429,6 +3438,11 @@ input.checkbox:checked {
 
 .call-phone-avatar--group {
   background-color: #ff9500;
+}
+
+/* The unknown caller: the blue of avatar-tone-0 (the class is on the element), a touch lighter at the top. */
+.call-phone-avatar--unknown {
+  decorator: linear-gradient(to bottom, #2b90ff, #0066d9);
 }
 
 .call-phone-sheet-lead,
@@ -3679,5 +3693,66 @@ input.checkbox:checked {
 
 .context-menu-layer--popover-left .context-menu-item-icon {
   background-color: #7878803d;
+}
+
+/* Avatar crop page: always dark, like the scanner. */
+.avatar-crop,
+.avatar-crop-bg,
+.avatar-crop-stage {
+  background-color: #000000;
+}
+
+.avatar-crop-title,
+.avatar-crop-loading,
+.avatar-crop-btn {
+  color: #ffffff;
+}
+
+.avatar-crop-btn {
+  background-color: transparent;
+}
+
+.avatar-crop-btn--done {
+  color: #0a84ff;
+}
+
+.avatar-crop-pill {
+  background-color: #00000080;
+  color: #ffffff;
+}
+
+/* Profile page camera badge and the photo viewer. */
+.me-profile-avatar-badge {
+  background-color: #0a84ff;
+  border-color: #1c1c1e;
+}
+
+.me-profile-avatar-badge svg {
+  image-color: #ffffff;
+}
+
+.avatar-view-bg {
+  background-color: #000000;
+}
+
+.avatar-view-close,
+.avatar-view-close:active,
+.avatar-crop-close,
+.avatar-crop-close:active {
+  background-color: transparent;
+}
+
+.avatar-view-close .shell-circle-btn-face,
+.avatar-view-close:active .shell-circle-btn-face,
+.avatar-crop-close .shell-circle-btn-face,
+.avatar-crop-close:active .shell-circle-btn-face {
+  background-color: #00000099;
+  decorator: none;
+  box-shadow: none;
+}
+
+.avatar-view-close .shell-circle-btn-face svg,
+.avatar-crop-close .shell-circle-btn-face svg {
+  image-color: #ffffff;
 }
 }

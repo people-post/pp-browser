@@ -177,7 +177,7 @@ protected:
   ChatScreenState state;
 };
 
-// Desktop layout (Kenneth 2026-10-31): [toggle] [emoji] [pill: input | clip | camera] [send, only with text]; voice
+// Desktop layout (Kenneth 2026-10-31, emoji moved right 2026-11-10): [toggle] [pill: input | clip | camera] [emoji] [send, only with text]; voice
 // mode [toggle] [bar]; a status row above the pill only when something needs saying. Phones: see ComposerPhoneRowTest.
 TEST_F(ComposerVoiceMarkupTest, TextModeWithoutADraftShowsTheToggleThePillAndNoSend) {
   state.show_voice = true;
@@ -488,7 +488,7 @@ TEST_F(ComposerVoiceMarkupTest, TheToggleKeepsItsSizeWhileTypingALongDraftAndAft
 }
 
 // Phones (Kenneth 2026-11-04, WhatsApp style, the same row as the ask-AI panel's; 2026-11-07 every key inside the
-// pill): DOM order [emoji] [pill: input | plus] [microphone], the microphone giving its place to Send once there is
+// pill): DOM order [pill: input | plus] [emoji] [microphone], the microphone giving its place to Send once there is
 // text; voice mode [bar] [keyboard].
 class ComposerPhoneRowTest : public ComposerVoiceMarkupTest {
 protected:
@@ -510,8 +510,8 @@ TEST_F(ComposerPhoneRowTest, WithoutTextTheMicrophoneEndsTheRow) {
   Apply();
   const std::vector<std::string> order = RowOrder();
   ASSERT_EQ(order.size(), 3u);
-  EXPECT_TRUE(Has(order[0], "prompt-emoji-btn"));
-  EXPECT_TRUE(Has(order[1], "prompt-composer-pill"));
+  EXPECT_TRUE(Has(order[0], "prompt-composer-pill"));
+  EXPECT_TRUE(Has(order[1], "prompt-emoji-btn"));
   EXPECT_TRUE(Has(order[2], "prompt-voice-toggle-btn--end")) << "the microphone is on the right";
   EXPECT_EQ(Shown("prompt-voice-toggle-btn--start"), 0) << "no microphone on the left";
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
@@ -546,7 +546,7 @@ TEST_F(ComposerPhoneRowTest, VoiceModeShowsTheBarAndTheKeyboardKeyAtTheEnd) {
 }
 
 // TODO #202 (Kenneth 2026-11-09, tweaked the same day): one composer on phones, a floating pill: 46dp high with the
-// accent emoji circle (32dp) 7dp inside its left end and no camera; the round 44dp plus 10dp left of it, the round
+// accent emoji circle (32dp) 7dp inside its right end and no camera; the round 44dp plus 10dp left of it, the round
 // 44dp microphone (Send once there is text) 10dp right of it; the row is exactly the pill.
 TEST_F(ComposerPhoneRowTest, ThePillFloatsBetweenTheRoundPlusAndTheRoundMicrophone) {
   state.show_voice = true;
@@ -580,15 +580,19 @@ TEST_F(ComposerPhoneRowTest, ThePillFloatsBetweenTheRoundPlusAndTheRoundMicropho
   EXPECT_NEAR(mic_min.x - pill_max.x, 10.f, 0.5f) << "10dp between the pill and the microphone";
   EXPECT_FLOAT_EQ(emoji_max.x - emoji_min.x, 32.f);
   EXPECT_FLOAT_EQ(emoji_max.y - emoji_min.y, 32.f);
-  EXPECT_GE(emoji_min.x, pill_min.x) << "the emoji key is inside the pill, at its left end";
+  EXPECT_GE(emoji_min.x, pill_min.x) << "the emoji key is inside the pill, at its right end";
   EXPECT_LE(emoji_max.x, pill_max.x);
-  EXPECT_NEAR(emoji_min.x - pill_min.x, 7.f, 0.5f) << "7dp inside the pill";
-  EXPECT_NEAR(document->GetElementById("draft-input")->GetAbsoluteOffset(ui::BoxArea::Content).x - emoji_max.x, 8.f,
-              1.5f)
-      << "8dp from the circle to the text";
+  EXPECT_NEAR(pill_max.x - emoji_max.x, 7.f, 0.5f) << "7dp inside the pill";
   ui::Element* input = document->GetElementById("draft-input");
   ASSERT_NE(input, nullptr);
-  EXPECT_GE(input->GetAbsoluteOffset(ui::BoxArea::Border).x, emoji_max.x) << "the text starts after the emoji key";
+  const ui::Vector2f input_at = input->GetAbsoluteOffset(ui::BoxArea::Border);
+  const float input_right = input_at.x + input->GetBox().GetSize(ui::BoxArea::Border).x;
+  EXPECT_LE(input_right, emoji_min.x) << "the text field ends before the emoji key (its width is reserved)";
+  EXPECT_LT(input_at.x, emoji_min.x) << "the text field is left of the emoji key";
+  EXPECT_NEAR(pill_max.y - emoji_max.y, 7.f, 0.5f) << "the emoji sits at the pill's bottom, by the last line";
+  EXPECT_NEAR((emoji_min.y + emoji_max.y) / 2, (pill_min.y + pill_max.y) / 2, 0.5f) << "centred on one line";
+  EXPECT_GT(emoji_min.x, plus_max.x) << "the plus stays at the far left";
+  EXPECT_LT(emoji_max.x, mic_min.x) << "the microphone stays at the far right, outside the pill";
   state.draft = "hello";
   Apply();
   const auto [send_min, send_max] = box("prompt-send-btn");

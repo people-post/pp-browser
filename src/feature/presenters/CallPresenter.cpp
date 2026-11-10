@@ -1,6 +1,7 @@
 #include "feature/presenters/CallPresenter.h"
 
 #include "feature/presenters/NewCallGuard.h"
+#include "foundation/runtime/AppLifecycle.h"
 #include "lib/calls/CallGuests.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallMediaErrorText.h"
@@ -14,6 +15,7 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <chrono>
 #include <map>
 #include <utility>
 #include "common/PbrCompat.h"
@@ -69,6 +71,48 @@ void CallPresenter::BindToMessaging() {
   bound_calls_ = identity;
   // Pick up post-restart abandon / pending ring after stack rebuild.
   Refresh();
+}
+
+void CallPresenter::NoteMessagingReady() {
+  messaging_ready_ = true;
+}
+
+CallPresenter::WakeStep CallPresenter::StepWakePlaceholder(const bool phone_layout,
+                                                           const PendingNotificationTap::Clock::time_point now) {
+  WakeStep step;
+  if (!phone_layout) {
+    if (std::exchange(wake_ring_shown_, false)) {
+      step.ring = WakeRing::Clear;
+    }
+    return step;
+  }
+  auto& tap = PendingNotificationTap::Instance();
+  CallWakePlaceholder::Input in;
+  in.tap_seq = tap.CallTapSeq();
+  in.tap_fresh = tap.PeekCallRoute(now);
+  if (const auto age = tap.CallTapNotificationAge()) {
+    in.tap_notification_age_ms = age->count();
+  }
+  if (const auto elapsed = tap.CallTapElapsed(now)) {
+    in.tap_elapsed_ms = elapsed->count();
+  }
+  in.app_visible = AppLifecycle::IsVisible();
+  in.screen_kind = screen_.kind;
+  in.messaging_ready = messaging_ready_;
+  in.now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+  const CallWakePlaceholder::View view = wake_placeholder_.Step(in);
+  step.outcome = view.outcome;
+  step.shown_ms = view.shown_ms;
+  step.ready_ms = view.ready_ms;
+  if (view.active) {
+    wake_ring_shown_ = screen_.kind == CallScreen::Kind::None;
+    step.ring = wake_ring_shown_ ? WakeRing::Show : WakeRing::Keep;
+  } else if (view.outcome != CallWakePlaceholder::Outcome::Ring && std::exchange(wake_ring_shown_, false)) {
+    step.ring = WakeRing::Clear; // over with no call: the page goes quietly (a real ring overwrote it in place: Keep)
+  } else {
+    wake_ring_shown_ = false;
+  }
+  return step;
 }
 
 void CallPresenter::Tick() {

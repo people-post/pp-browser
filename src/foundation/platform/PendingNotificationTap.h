@@ -3,6 +3,7 @@
 #include "common/Diag.h"
 
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -35,9 +36,11 @@ public:
 
   /**
    * A banner tap (`thread_id`), a call-alert tap (`call_wake`), or a message-alert tap (`wake_hint` only);
-   * replaces any earlier tap.
+   * replaces any earlier tap. `notification_age`: how long before the tap the tapped notification was delivered
+   * (kept for a call-alert tap only; nullopt = unknown).
    */
-  void Record(std::string thread_id, const bool call_wake, std::string wake_hint, const Clock::time_point now) {
+  void Record(std::string thread_id, const bool call_wake, std::string wake_hint, const Clock::time_point now,
+              const std::optional<std::chrono::milliseconds> notification_age = std::nullopt) {
     std::function<void()> changed;
     {
       std::lock_guard<std::mutex> lock(mu_);
@@ -48,6 +51,9 @@ public:
       miss_logged_ = false;
       Report("recorded", thread_id_.empty() ? (call_wake ? Kind::Call : Kind::Msg) : Kind::Thread);
       if (call_wake) {
+        ++call_tap_seq_;
+        call_tap_age_ = notification_age;
+        call_tapped_at_ = now;
         route_until_ = now + kCallRouteTtl;
       } else if (!hint_.empty()) {
         route_until_ = now + kMessageRouteTtl;
@@ -59,10 +65,40 @@ public:
     }
   }
 
+  /** Counts the call-alert taps ever recorded; never reset, so two taps are told apart even once one is taken. */
+  uint64_t CallTapSeq() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return call_tap_seq_;
+  }
+
+  /** How old the notification of the latest call-alert tap was when tapped; nullopt when unknown. */
+  std::optional<std::chrono::milliseconds> CallTapNotificationAge() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return call_tap_age_;
+  }
+
+  /** How long ago the latest call-alert tap was recorded; nullopt when there has been none. */
+  std::optional<std::chrono::milliseconds> CallTapElapsed(const Clock::time_point now) const {
+    std::lock_guard<std::mutex> lock(mu_);
+    if (!call_tapped_at_) {
+      return std::nullopt;
+    }
+    return std::chrono::duration_cast<std::chrono::milliseconds>(now - *call_tapped_at_);
+  }
+
   /** `fn` runs on the thread that records a tap (not necessarily the UI thread), after the tap is stored. */
   void SetRecordedHandler(std::function<void()> fn) {
     std::lock_guard<std::mutex> lock(mu_);
     on_recorded_ = std::move(fn);
+  }
+
+  /** The chat a banner tap asked for, without taking it. */
+  std::optional<std::string> PeekThread() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    if (thread_id_.empty()) {
+      return std::nullopt;
+    }
+    return thread_id_;
   }
 
   /** The chat a banner tap asked for; taken once. */
@@ -180,6 +216,9 @@ private:
   std::string hint_;
   std::optional<Clock::time_point> route_until_;
   bool miss_logged_ = false;
+  uint64_t call_tap_seq_ = 0;
+  std::optional<std::chrono::milliseconds> call_tap_age_;
+  std::optional<Clock::time_point> call_tapped_at_;
   std::function<void()> on_recorded_;
 };
 

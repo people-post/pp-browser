@@ -4613,8 +4613,8 @@ select selectbox option {
 
 .ai-drawer-me-name {
   margin: 0;
-  font-size: 17dp;
-  line-height: 22dp;
+  font-size: 24dp;
+  line-height: 30dp;
   font-weight: bold;
   white-space: nowrap;
   overflow: hidden;
@@ -4626,9 +4626,9 @@ select selectbox option {
   display: flex;
   flex-direction: row;
   align-items: center;
-  margin: 2dp 0 0 0;
+  margin: 6dp 0 0 0;
   height: 16dp;
-  font-size: 13dp;
+  font-size: 12dp;
   line-height: 16dp;
 }
 
@@ -6270,6 +6270,10 @@ call-video-tile {
   border-radius: 60dp;
 }
 
+.call-phone-avatar--unknown {
+  overflow: hidden;
+}
+
 .call-phone-avatar--big .avatar-letter {
   font-size: 48dp;
 }
@@ -6459,6 +6463,15 @@ call-video-tile {
   padding-top: 0;
 }
 
+/*
+ * The incoming-call page has no 44dp top bar (.call-phone-top) but must put the pair, the names and the steps where the
+ * answering page does, so answering moves nothing above the buttons: this padding is that bar (44dp) plus the answering
+ * page's own .call-phone-story padding-top (59dp, above). Change the two together (a gui test asserts the sum).
+ */
+.call-phone-story--ring {
+  padding-top: 103dp;
+}
+
 .call-phone-story--group {
   position: absolute;
   top: 0;
@@ -6511,6 +6524,14 @@ call-video-tile {
   to { transform: translateX(126dp); opacity: 0; }
 }
 
+/* Being called: the spark runs from them (right) towards us (left): the same keyframes mirrored. */
+@keyframes call-phone-spark-in {
+  from { transform: translateX(126dp); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  to { transform: translateX(0dp); opacity: 0; }
+}
+
 .call-phone-pair-spark {
   position: absolute;
   top: 1dp;
@@ -6519,6 +6540,10 @@ call-video-tile {
   height: 10dp;
   border-radius: 5dp;
   animation: 1.4s linear-in-out infinite call-phone-spark;
+}
+
+.call-phone-pair-path--inbound .call-phone-pair-spark {
+  animation: 1.4s linear-in-out infinite call-phone-spark-in;
 }
 
 .call-phone-pair-names {
@@ -6538,6 +6563,25 @@ call-video-tile {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The other party's name: larger and bold, the line grows to 22dp (both pages use this rule, so they stay level). */
+.call-phone-pair-name--peer {
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+}
+
+/* The answering page's list in a clip of its own height (inline style); the list moves up inside it. */
+.call-phone-steps-clip {
+  flex-shrink: 0;
+  width: 300dp;
+  margin-top: 22dp;
+  overflow: hidden;
+}
+
+.call-phone-steps-clip .call-phone-steps {
+  margin-top: 0;
 }
 
 .call-phone-steps {
@@ -6592,8 +6636,12 @@ call-video-tile {
 
 .call-phone-step-text {
   margin: 0;
+  min-width: 0;
   font-size: 16dp;
   line-height: 22dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .call-phone-step--current .call-phone-step-text {
@@ -6967,6 +7015,11 @@ call-video-tile {
   text-align: center;
 }
 
+/* "Incoming call, connecting...": the answers are in place but dimmed and dead until the invite arrives. */
+.call-phone-answer--waiting {
+  opacity: 0.4;
+}
+
 .call-phone-charge,
 .call-phone-failed-actions {
   position: relative;
@@ -7280,6 +7333,35 @@ input.checkbox {
 
 .shell-body--compact .shell-dialog--alert .shell-dialog-actions--stack .shell-dialog-cancel {
   border-top-width: 1dp;
+}
+
+/* Frosted unlock card (Transparency on): the card itself is clear and its first child, .bar-material--frost, carries the
+   bar colour and the blur (the engine draws none on an element with a z-index and children). The card's own children
+   are positioned so they paint above it. */
+.shell-pin-gate--frost > * {
+  position: relative;
+}
+
+.shell-pin-gate--frost > .shell-pin-gate-material {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 8dp;
+}
+
+/* Over the incoming-call placeholder page (phones only: it exists in the compact layout): no dimming behind the card
+   (the scrim stays, it still takes the taps) and the card sits on the bottom edge instead of the middle, so as little
+   as possible of the "Incoming call, connecting..." title is covered. The keypad is never shrunk. */
+.shell-pin-gate--over-call .shell-scrim {
+  background-color: transparent;
+}
+
+.shell-pin-gate--over-call .shell-dialog.shell-pin-gate {
+  top: auto;
+  bottom: 12dp;
+  transform: translate(-50%, 0);
 }
 
 .shell-pin-gate-chooser {
@@ -8432,6 +8514,37 @@ input.checkbox {
   margin-bottom: 8dp;
 }
 
+.me-profile-avatar-wrap {
+  position: relative;
+  width: 64dp;
+  height: 64dp;
+  flex-grow: 0;
+  flex-shrink: 0;
+}
+
+/* "Uploading…" over the photo while it goes up (the frame below is dimmed and inert meanwhile). */
+.me-profile-avatar-uploading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 64dp;
+  height: 64dp;
+  border-radius: 32dp;
+  background-color: rgba(0, 0, 0, 140);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.me-profile-avatar-uploading-text {
+  margin: 0;
+  font-size: 10dp;
+  color: #ffffff;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .me-profile-avatar-frame {
   width: 64dp;
   height: 64dp;
@@ -8475,13 +8588,81 @@ input.checkbox {
   font-size: 18dp;
 }
 
-.me-profile-avatar-btn {
-  flex-grow: 0;
-  flex-shrink: 0;
-  width: auto;
-  white-space: nowrap;
+/* The camera badge: the visible way to change the photo. 24dp on the desktop's 64dp photo, 36dp on the phone's 112dp one. */
+.me-profile-avatar-badge {
+  display: flex;
+  position: absolute;
+  right: -2dp;
+  bottom: -2dp;
+  width: 24dp;
+  height: 24dp;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border-width: 2dp;
+  border-radius: 12dp;
+  cursor: pointer;
 }
 
+.me-profile-avatar-badge svg {
+  width: 12dp;
+  height: 12dp;
+}
+
+.me-profile-avatar-badge:disabled {
+  opacity: 0.4;
+}
+
+/* Phone profile page (Kenneth 2026-11-10): the photo is big enough to see, 112dp, centred at the top; a 32dp camera badge sits on its lower right with a 2dp ring in the card's colour.
+   The uploading cover follows the circle. Colours: colors.rcss.tmpl. */
+.shell-layer-compact .me-profile-avatar-row {
+  flex-direction: column;
+  align-items: center;
+  gap: 12dp;
+}
+
+.shell-layer-compact .me-profile-avatar-wrap {
+  width: 112dp;
+  height: 112dp;
+}
+
+.shell-layer-compact .me-profile-avatar-wrap .me-profile-avatar-frame {
+  width: 112dp;
+  height: 112dp;
+  border-radius: 56dp;
+}
+
+.shell-layer-compact .me-profile-avatar-wrap .me-profile-avatar-image {
+  width: 112dp;
+  height: 112dp;
+}
+
+.shell-layer-compact .me-profile-avatar-wrap .avatar-letter {
+  font-size: 44dp;
+}
+
+.shell-layer-compact .me-profile-avatar-uploading {
+  width: 112dp;
+  height: 112dp;
+  border-radius: 56dp;
+}
+
+.shell-layer-compact .me-profile-avatar-uploading-text {
+  font-size: 15dp;
+}
+
+.shell-layer-compact .me-profile-avatar-badge {
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
+}
+
+.shell-layer-compact .me-profile-avatar-badge svg {
+  width: 16dp;
+  height: 16dp;
+}
 .contacts-row-avatar-frame {
   width: 32dp;
   height: 32dp;
@@ -11896,7 +12077,7 @@ input.checkbox {
 }
 
 /* Phone composer (TODO #202, Kenneth 2026-11-09; chat, AI thread and the ask-AI panel, one component): a floating pill for
-   the text (46dp high, the accent emoji circle at its left end, no camera: the plus card has it), a round 44dp plus outside it on
+   the text (46dp high, the accent emoji circle at its right end, no camera: the plus card has it), a round 44dp plus outside it on
    the left and a round 44dp accent button outside it on the right (the microphone, Send once there is text). 14dp
    from the screen edge to each button, 10dp between a button and the pill; the bar behind is clear, so the transcript scrolls under the floating parts. The
    row is the positioning box and is exactly the pill (which grows upward, up to five lines): the keys sit on its
@@ -11910,7 +12091,7 @@ input.checkbox {
 .ask-ai .prompt-composer-pill {
   min-height: 46dp;
   margin: 0 54dp;
-  padding: 0 16dp 0 46dp;
+  padding: 0 46dp 0 16dp;
   border-radius: 23dp;
 }
 
@@ -11933,7 +12114,7 @@ input.checkbox {
   display: block;
   position: absolute;
   top: 0;
-  left: 47dp;
+  left: 17dp;
   height: 44dp;
   margin: 0;
   font-size: 17dp;
@@ -11986,11 +12167,12 @@ input.checkbox {
   border-radius: 22dp;
 }
 
-/* The emoji key: the home card's accent-tinted 32dp circle, 7dp inside the pill's left end, centred on the one-line pill. */
+/* The emoji key: the home card's accent-tinted 32dp circle, 7dp inside the pill's right end (Kenneth 2026-11-10; the pill's
+   right padding keeps the text clear of it), centred on the one-line pill and on its last line when the text grows. */
 .shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
 .ask-ai .prompt-composer-row .prompt-emoji-btn {
   position: absolute;
-  left: 61dp;
+  right: 61dp;
   bottom: 7dp;
   z-index: 1;
   width: 32dp;
@@ -12074,10 +12256,6 @@ input.checkbox {
 /* The ask-AI panel's settings "?" (text only): no plus, so the pill starts at the left margin. */
 .ask-ai .ask-ai-input-row--text-only .prompt-composer-pill {
   margin-left: 0;
-}
-
-.ask-ai .ask-ai-input-row--text-only .prompt-emoji-btn {
-  left: 7dp;
 }
 
 /* Grouped lists on phones: the Me tab and the settings pages (DESIGN-pp-ui 8.7, 8.10). Same geometry as the .cd-*
@@ -12514,6 +12692,15 @@ input.checkbox {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* A sentence in a row (the banner-style tip): wraps instead of being cut off. */
+.shell-layer-compact .group-row-text.settings-row-sentence {
+  white-space: normal;
+  overflow: visible;
+  padding: 10dp 0;
+  font-size: 15dp;
+  line-height: 20dp;
 }
 
 .shell-layer-compact .group-row-label .group-row-text {
@@ -13597,8 +13784,8 @@ textarea:composing ~ .prompt-composer-label,
   display: none;
 }
 
-/* Home card B3 (Kenneth 2026-11-09): the plus (a 44dp target) at the bottom left, the emoji key (a 32dp tinted circle
-   in a 44dp target) right next to it (8dp gap), and Send (a 36dp disc) always at the right end: grey and not tappable
+/* Home card B3 (Kenneth 2026-11-09; emoji moved 2026-11-10): the plus (a 44dp target) at the bottom left, the emoji key (a 32dp
+   tinted circle in a 44dp target) right before Send (10dp gap), and Send (a 36dp disc) always at the right end: grey and not tappable
    while the field is empty (.prompt-send-btn--idle), accent with text. Nothing swaps places. */
 .shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-home-plus {
   display: flex;
@@ -13621,7 +13808,7 @@ textarea:composing ~ .prompt-composer-label,
    target (the circle's centre stays 32dp from the right edge and 28dp from the bottom). */
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {
   position: absolute;
-  left: 42dp; /* the tinted circle 12dp after the plus glyph (Kenneth 2026-11-09: closer) */
+  right: 50dp; /* the tinted circle 10dp before the Send disc (Kenneth 2026-11-10: emoji moved right, next to Send) */
   bottom: 6dp;
   z-index: 1;
   width: 44dp;
@@ -14384,4 +14571,233 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .ac-page .nc-bar-title {
   top: 0;
   opacity: 1;
+}
+
+/* Avatar crop page (PLAN-avatar-edit item 9): a dark page, the title on top, the photo under a round viewport
+   between the bars (the custom element draws the picture, the dim and the circle line), Cancel / Rotate / Done below.
+   Phones show it in the shell's full-screen layer (the black reaches every screen edge, the bars stay inside the safe
+   areas); the desktop panel is a 420dp-wide card with a tall enough stage. Colours (always dark, like the scanner):
+   colors.rcss.tmpl. */
+.avatar-crop {
+  display: flex;
+  flex-direction: column;
+  width: 420dp;
+  max-width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.shell-layer-compact .avatar-crop {
+  width: 100%;
+}
+
+.avatar-crop-bg {
+  display: none;
+}
+
+.shell-layer-compact .avatar-crop-bg {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.avatar-crop-bar,
+.avatar-crop-stage,
+.avatar-crop-actions {
+  /* Positioned and above the phone's absolute black layer behind them: an in-flow block paints under a positioned
+     sibling (and the sibling takes its taps), which hid the whole bottom row on the phone. */
+  position: relative;
+  z-index: 1;
+}
+
+.avatar-crop-bar {
+  flex-shrink: 0;
+  height: 52dp;
+}
+
+/* Phones: a round close at the top left, the way out that does not depend on the bottom row. */
+.avatar-crop-close {
+  display: none;
+}
+
+.shell-layer-compact .avatar-crop-close {
+  display: flex;
+  position: absolute;
+  top: 0;
+  left: 12dp;
+  z-index: 2;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 52dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.avatar-crop-title {
+  margin: 0;
+  height: 52dp;
+  line-height: 52dp;
+  text-align: center;
+  font-size: 17dp;
+  font-weight: bold;
+}
+
+.avatar-crop-stage {
+  flex: 1;
+  min-height: 360dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .avatar-crop-stage {
+  min-height: 0;
+}
+
+.avatar-crop-surface {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.avatar-crop-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  text-align: center;
+  line-height: 360dp;
+  font-size: 40dp;
+}
+
+.avatar-crop-actions {
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  padding: 8dp 8dp;
+}
+
+.avatar-crop-btn {
+  flex: 1;
+  min-height: 50dp;
+  margin: 0 4dp;
+  padding: 0;
+  border-width: 0;
+  text-align: center;
+  font-size: 19dp;
+}
+
+.avatar-crop-btn--done {
+  font-weight: bold;
+}
+
+/* Phones: two fingers turn and zoom, so there is no Rotate button; Cancel sits left and Done right. */
+.shell-layer-compact .avatar-crop-btn--rotate {
+  display: none;
+}
+
+.shell-layer-compact .avatar-crop-actions {
+  justify-content: space-between;
+  padding: 8dp 16dp;
+}
+
+.shell-layer-compact .avatar-crop-btn {
+  flex: none;
+  min-width: 96dp;
+  margin: 0;
+}
+
+.avatar-crop-btn:disabled,
+.avatar-crop-btn--disabled,
+.avatar-crop-close--disabled {
+  opacity: 0.4;
+}
+
+/* Pressed: the same dimming the disabled look uses, a little stronger, while a finger is down (the button comes back
+   at full strength on release). A disabled button stays at the disabled look. */
+.avatar-crop-btn:active,
+.avatar-crop-close:active {
+  opacity: 0.55;
+}
+
+.avatar-crop-btn--disabled:active,
+.avatar-crop-close--disabled:active {
+  opacity: 0.4;
+}
+
+/* "Uploading…" over the picture: out of the flow and above the stage's picture and dim (positioned, z-index), taps pass
+   through to the buttons below. Colours: colors.rcss.tmpl. */
+.avatar-crop-pill-host {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.avatar-crop-pill {
+  margin: 0;
+  padding: 12dp 24dp;
+  border-radius: 24dp;
+  font-size: 16dp;
+  white-space: nowrap;
+}
+
+/* The profile photo viewer (a full-screen layer, like the scanner): the stored square centred, as wide as the screen up
+   to 512dp, the close button top left inside the safe area. Colours: colors.rcss.tmpl. */
+.avatar-view {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.avatar-view-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.avatar-view-close {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  align-self: flex-start;
+  width: 52dp;
+  height: 52dp;
+  margin: 0 0 0 12dp;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.avatar-view-stage {
+  position: relative;
+  z-index: 1; /* above the absolute black behind it, which would otherwise cover the picture */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-view-image {
+  width: 100vw;
+  max-width: 512dp;
+  height: 100vw;
+  max-height: 512dp;
 }

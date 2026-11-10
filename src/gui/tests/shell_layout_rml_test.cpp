@@ -455,6 +455,41 @@ TEST(ShellLayoutRmlTest, ALongButtonLabelStacksTheDialogButtons) {
   EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").Dialog(), "shell-dialog-actions--stack"));
 }
 
+// The unlock card is frosted glass with Transparency on (material child first) and the plain solid card with it off.
+TEST(ShellLayoutRmlTest, ThePinGateCardIsFrostedOnlyWithTransparencyOn) {
+  ShellState state;
+  state.pin_gate.active = true;
+  state.pin_gate.unlock_mode = true;
+  state.compact_chrome_frost = true;
+  const std::string frosted = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_TRUE(Has(frosted, "shell-pin-gate shell-pin-gate--frost"));
+  EXPECT_EQ(Count(frosted, "bar-material--frost"), 1U);
+  EXPECT_LT(frosted.find("bar-material--frost"), frosted.find("shell-dialog-title")) << "the material is first";
+
+  state.reduce_transparency = true;
+  const std::string solid = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_FALSE(Has(solid, "shell-pin-gate--frost"));
+  EXPECT_FALSE(Has(solid, "bar-material"));
+}
+
+// Over the "Incoming call, connecting…" page the unlock layer is marked so its scrim goes clear and the card steps aside.
+TEST(ShellLayoutRmlTest, ThePinGateOverTheAwaitingCallPageCarriesTheOverCallClass) {
+  ShellState state;
+  state.pin_gate.active = true;
+  state.pin_gate.unlock_mode = true;
+  state.compact_chrome_frost = true;
+  EXPECT_FALSE(Has(ShellLayoutRml(state, false, "").PinGate(), "shell-pin-gate--over-call"));
+  state.call_ring.active = true;
+  state.call_ring.awaiting_invite = true;
+  const std::string over = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_TRUE(Has(over, "shell-layer shell-layer-dialog shell-pin-gate--over-call\""));
+  EXPECT_LT(over.find("shell-pin-gate--over-call"), over.find("shell-scrim")) << "on the layer, above the scrim";
+  EXPECT_TRUE(Has(over, "shell-pin-gate shell-pin-gate--frost")) << "the frosted card is unchanged";
+  state.call_ring.awaiting_invite = false;
+  EXPECT_FALSE(Has(ShellLayoutRml(state, false, "").PinGate(), "shell-pin-gate--over-call"))
+      << "a real ring: as before";
+}
+
 // DEV/PLAN-pin-gate-redesign.md B: the number pad has no input element (no system keyboard, the PIN bound nowhere);
 // the field mode keeps its field, which takes the focus as the gate comes up (Kenneth 2026-11-07).
 TEST(ShellLayoutRmlTest, ThePinPadHasNoFieldAndTheFieldModeFocusesItsField) {

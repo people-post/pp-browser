@@ -13,6 +13,7 @@
 #include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/ProfileIconImagePrep.h"
+#include "foundation/platform/PlatformAppBadge.h"
 #include "foundation/platform/PlatformUserHints.h"
 #include "common/Localized.h"
 #include "lib/net/BriefGuestLlmClient.h"
@@ -29,6 +30,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <cstdlib>
 #include <thread>
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
@@ -93,6 +95,9 @@
 #include "app/ContactsShellBridge.h"
 #include "app/PeoplePickerShellBridge.h"
 #include "gui/contacts/ContactsController.h"
+#include "gui/avatar/AvatarCropController.h"
+#include "gui/avatar/AvatarViewController.h"
+#include "gui/avatar/ElementAvatarCrop.h"
 #include "gui/scan/QrScanController.h"
 #include "gui/scan/ElementScanPreview.h"
 #include "gui/contacts/ContactsNotifyPorts.h"
@@ -193,6 +198,27 @@ constexpr std::chrono::milliseconds kQuitMediaDevicesBudget{1000};
 constexpr std::chrono::milliseconds kProfileResetQuiesceBudget{10000};
 
 InputCoordinator* g_input_coordinator = nullptr;
+
+int64_t MsSinceStartup() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - StartupEpoch())
+      .count();
+}
+
+/** PP_DEBUG_CALL_TAP (a development aid, see CONFIGURATION.md): the delay in ms, or -1 when unset / not a number. */
+int64_t DebugCallTapDelayMs() {
+  const char* value = std::getenv("PP_DEBUG_CALL_TAP");
+  if (value == nullptr || value[0] == '\0') {
+    return -1;
+  }
+  char* end = nullptr;
+  const long long ms = std::strtoll(value, &end, 10);
+  return (end == value || *end != '\0' || ms < 0) ? -1 : static_cast<int64_t>(ms);
+}
+
+/** What a tapped call alert records, without a push: for the iPhone USB build, which gets no pushes. */
+void RecordDebugCallTap() {
+  PendingNotificationTap::Instance().Record({}, /*call_wake=*/true, {}, PendingNotificationTap::Clock::now());
+}
 
 void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, SettingsController& settings,
                                  ContactsController& contacts, ChatController& chat, UiPerfTestController* ui_perf) {
@@ -364,6 +390,8 @@ Application::Application() {
   settings_ = std::make_unique<SettingsController>();
   contacts_ = std::make_unique<ContactsController>();
   qr_scan_ = std::make_unique<QrScanController>(MediaDeviceArbiter::Default());
+  avatar_crop_ = std::make_unique<AvatarCropController>();
+  avatar_view_ = std::make_unique<AvatarViewController>();
   ContactsController::InstallInstance(*contacts_);
   contacts_shell_bridge_ = std::make_unique<ContactsShellBridge>();
   chat_shell_bridge_ = std::make_unique<ChatShellBridge>();
@@ -555,6 +583,8 @@ Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
     return AppError::Storage(Err::Storage::Unavailable, "Background work is still running — try again");
   }
   qr_scan_->Close();
+  avatar_crop_->Close();
+  avatar_view_->Close();
   if (messaging_) {
     messaging_->RequestShutdown();
   }
@@ -571,6 +601,11 @@ Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
   } else if (messaging_ && messaging_->IsInitialized()) {
     StartupPhase phase("Shutdown::ConversationsHub");
     messaging_->Shutdown();
+  }
+  // The data is gone (both variants): the new inbox starts empty and its first Refresh() sends the true value.
+  // Not in ShutdownMessaging: a normal quit keeps the icon number while the messages are still unread.
+  if (badges_) {
+    badges_->ClearAppBadge();
   }
   AppRuntime::ReopenAfterTeardown();
   return {};
@@ -717,6 +752,7 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
   }
   RegisterCallVideoTileElement();
   RegisterScanPreviewElement();
+  RegisterAvatarCropElement();
 
 #ifdef PPBROWSER_ENABLE_DEBUGGER
   ui::Debugger::Initialise(ui::CreateContext("debugger", ui::Vector2i(0, 0)));
@@ -793,9 +829,14 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
           [on_picked = std::move(on_picked), paths = std::move(paths)]() mutable { on_picked(std::move(paths)); });
     });
   };
-  settings_commands.upload_profile_icon_file = [&facade](const std::string& path) -> Roe<void> {
+  settings_commands.open_avatar_crop = [this](std::shared_ptr<PickedFileLease> file, AvatarCropCommit commit) {
+    avatar_crop_->Open(std::move(file), std::move(commit));
+  };
+  settings_commands.open_avatar_viewer = [this](const std::string& image_src) { avatar_view_->Open(image_src); };
+  settings_commands.upload_profile_icon_file = [&facade](const std::string& path,
+                                                         std::optional<ProfileIconCrop> crop) -> Roe<void> {
     // The image is the app's to decode and size; the hub uploads what comes out.
-    auto encoded = PrepareProfileIconFromFile(path);
+    auto encoded = PrepareProfileIconFromFile(path, 512u * 1024u, 512, std::nullopt, crop);
     if (!encoded) {
       return encoded.error();
     }
@@ -1201,6 +1242,20 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   return settings_tool_ports;
 }
 
+void Application::LogCallTapTiming() {
+  const uint64_t seq = PendingNotificationTap::Instance().CallTapSeq();
+  if (seq == logged_call_tap_seq_.exchange(seq)) {
+    return; // not a call tap
+  }
+  const int64_t now_ms = MsSinceStartup();
+  const int64_t first_ms = first_present_ms_.load();
+  if (first_ms < 0) {
+    log().info << "Call tap recorded before the first frame (" << now_ms << " ms after launch)";
+  } else {
+    log().info << "Call tap recorded " << (now_ms - first_ms) << " ms after the first frame";
+  }
+}
+
 void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_ports) {
   ConversationsHub& messaging = Conversations();
   ConversationsFacade& facade = *messaging_facade_;
@@ -1216,6 +1271,8 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   contacts_->BindShellNavigation(shell_navigation);
   contacts_->BindShellFeedback(shared_feedback);
   qr_scan_->BindShellNavigation(shell_navigation);
+  avatar_crop_->BindShellNavigation(shell_navigation);
+  avatar_view_->BindShellNavigation(shell_navigation);
   qr_scan_->BindShowMyQr([this]() { contacts_->OpenMyQr(); });
   contacts_->BindScanPorts(ScanPorts{
       .scan_qr = [this](QrScanResultCallback done) { qr_scan_->Open(std::move(done)); },
@@ -1283,8 +1340,14 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
     }
   });
   // A tap arrives off the UI thread; the PIN screen words itself by it.
-  PendingNotificationTap::Instance().SetRecordedHandler(
-      [this]() { AppRuntime::PostUI([this]() { pin_gate_->RefreshCallHint(); }); });
+  PendingNotificationTap::Instance().SetRecordedHandler([this]() {
+    LogCallTapTiming();
+    AppRuntime::PostUI([this]() { pin_gate_->RefreshCallHint(); });
+  });
+  debug_call_tap_delay_ms_ = DebugCallTapDelayMs();
+  if (debug_call_tap_delay_ms_ == 0) {
+    RecordDebugCallTap(); // before the first frame
+  }
   flow_->BindShellNavigation(shell_navigation);
   people_picker_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
   MessagingPeoplePickerPorts picker_ports = product_->PeoplePickerPorts();
@@ -1327,33 +1390,36 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
           },
   });
   badges_->BindShellNavigation(shell_navigation);
+  badges_->BindAppBadge([](const int count) { SetAppBadgeCount(count); });
   badges_->BindSource([this, &facade, &shell]() {
-    BadgeUnreadInputs inputs;
-    if (!facade.IsInitialized()) {
-      return inputs;
+    BadgeSourceFacts facts;
+    facts.messaging_initialized = facade.IsInitialized();
+    if (!facts.messaging_initialized) {
+      return ComputeBadgeInputs(facts);
     }
-    const int total = facade.SumUnread();
-    int deduction = 0;
-    if (shell.State().nav_tab == NavTab::Sessions) {
+    facts.unread_total = facade.SumUnreadIfKnown();
+    // Muted chats count in the icon for now; to leave them out, set count_muted_in_icon = false and fill
+    // muted_unread with the unread of the chats whose local prefs say ThreadIsMuted(muted_until, now).
+    facts.sessions_tab_active = shell.State().nav_tab == NavTab::Sessions;
+    if (facts.sessions_tab_active) {
       const std::string& active_id = facade.ActiveThreadId();
       if (!active_id.empty()) {
         auto thread = facade.GetThread(active_id);
         if (thread && *thread) {
-          deduction = (*thread)->unread_count;
+          facts.open_chat_unread = (*thread)->unread_count;
         }
       }
     }
-    inputs.sessions_unread = std::max(0, total - deduction);
     if (contacts_shell_bridge_) {
-      inputs.contacts_unread = std::max(0, contacts_shell_bridge_->LastSurface().contacts_unread);
+      facts.contacts_unread = contacts_shell_bridge_->LastSurface().contacts_unread;
     }
     if (Platform::IsDesktop() && store_.Snapshot().config.mesh.node_enabled) {
       const mesh::ReachabilitySnapshot snap = facade.Reachability();
       const std::string status_key = mesh::ReachabilityStatusKey(snap.status);
-      inputs.me_attention =
+      facts.me_attention =
           ReachabilityNudgeActive(true, status_key, store_.Snapshot().profile_prefs.reachability_nudge_acked_status);
     }
-    return inputs;
+    return ComputeBadgeInputs(facts);
   });
   {
     BadgeNotifyPorts badge_notify;
@@ -1628,6 +1694,26 @@ void Application::WireUnlockPinAndFlow() {
   grace_background_listener_ = AppLifecycle::AddBackgroundListener([this]() {
     TouchGrace(); // best effort: a phone already locked keeps the entry unreadable and the touch is skipped
     StopGraceTimer();
+    if (badges_) {
+      badges_->Refresh();
+    }
+  });
+  attentive_listener_ = AppLifecycle::AddAttentiveListener([this]() {
+    if (badges_) {
+      badges_->InvalidateAppBadge(); // the badge permission may have been granted since: send the number again
+    }
+    if (chat_) {
+      chat_->OnAttentiveAgain();
+    }
+    if (badges_) {
+      badges_->Refresh(); // chat_ not ready (locked, no chat): the number is still sent
+    }
+  });
+  remote_notification_listener_ = AppLifecycle::AddRemoteNotificationListener([this]() {
+    if (badges_) {
+      badges_->InvalidateAppBadge(); // a push may have written its own number on the icon
+      badges_->Refresh();
+    }
   });
 
   {
@@ -1753,6 +1839,8 @@ void Application::WireUnlockPinAndFlow() {
     contacts_->BindFlowCoordinator(flow_ports);
     chat_->BindFlowCoordinator(flow_ports);
     qr_scan_->BindFlowCoordinator(flow_ports);
+    avatar_crop_->BindFlowCoordinator(flow_ports);
+    avatar_view_->BindFlowCoordinator(flow_ports);
     emoji_picker_->BindFlowCoordinator(std::move(flow_ports));
   }
 }
@@ -1927,6 +2015,16 @@ bool Application::MountPresenters(ui::Context* context) {
 
   if (!qr_scan_->RegisterModel(context)) {
     log().error << "QrScanController RegisterModel failed";
+    return false;
+  }
+
+  if (!avatar_crop_->RegisterModel(context)) {
+    log().error << "AvatarCropController RegisterModel failed";
+    return false;
+  }
+
+  if (!avatar_view_->RegisterModel(context)) {
+    log().error << "AvatarViewController RegisterModel failed";
     return false;
   }
 
@@ -2501,6 +2599,7 @@ void Application::Run() {
     }
     call_->Tick();
     qr_scan_->Tick();
+    avatar_crop_->Tick();
     chat_->Update();
     ContextMenuHost::Instance().Update();
     shell_->Update(context);
@@ -2510,6 +2609,7 @@ void Application::Run() {
     // After Context::Update (which resets next_update_timeout): arm power-save for shell timers.
     shell_->NotifyFrameEnd(context);
     qr_scan_->NotifyFrameEnd();
+    avatar_crop_->NotifyFrameEnd();
     // A phone in the background: events and posted tasks run above, nothing draws (B127).
     const bool draw_frame = ShouldDrawFrame(Platform::IsMobile(), AppLifecycle::IsForeground());
     // Skip Clear/Present when the Android EGL surface is gone or size is not ready yet.
@@ -2532,6 +2632,13 @@ void Application::Run() {
                                                               .count()))
             .Emit();
         logged_first_present = true;
+        first_present_ms_.store(MsSinceStartup());
+        if (debug_call_tap_delay_ms_ > 0) {
+          // The timer fires on the coordinator; the tap is recorded on the UI thread (nothing captured: it only touches
+          // the process-wide PendingNotificationTap, and a post after teardown is dropped).
+          AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(debug_call_tap_delay_ms_),
+                                                 []() { AppRuntime::PostUI([]() { RecordDebugCallTap(); }); });
+        }
         if (ui_perf_ && UiPerfTestController::OpenAtStartupRequested()) {
           AppRuntime::PostUI([this]() { ui_perf_->Open(); }); // --ui-perf-test
         }
@@ -2584,14 +2691,28 @@ void Application::Shutdown() {
   StopGraceTimer();
   AppLifecycle::RemoveListener(grace_foreground_listener_);
   AppLifecycle::RemoveListener(grace_background_listener_);
+  AppLifecycle::RemoveListener(attentive_listener_);
+  AppLifecycle::RemoveListener(remote_notification_listener_);
+  remote_notification_listener_ = 0;
   grace_foreground_listener_ = 0;
   grace_background_listener_ = 0;
+  attentive_listener_ = 0;
   AppRuntime::BeginShutdown();
   // Idempotent with Backend::RequestExit — ensures window is gone before joins even if
   // Shutdown is invoked without going through RequestExit (failed Initialize, tests).
   Backend::HideWindow();
   StartupMark("shutdown_window_hidden");
   // Arm the product's exit deadline before joining an OS camera open (which may be in a driver).
+  if (avatar_view_) {
+    avatar_view_->Shutdown();
+    avatar_view_->BindShellNavigation({});
+    avatar_view_->BindFlowCoordinator({});
+  }
+  if (avatar_crop_) {
+    avatar_crop_->Shutdown();
+    avatar_crop_->BindShellNavigation({});
+    avatar_crop_->BindFlowCoordinator({});
+  }
   if (qr_scan_) {
     qr_scan_->Shutdown();
     qr_scan_->BindShellNavigation({});

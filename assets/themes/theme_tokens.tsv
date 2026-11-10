@@ -65,6 +65,7 @@ x-float-shadow	#00000029	#00000099	extra: phone composer: shadow of the floating
 x-scan-dim	#00000080	#00000080	extra: phone scanner, the camera dimmed round the frame (black 50%)
 x-scan-ink	#ffffff	#ffffff	extra: phone scanner, corner marks, hint, back and button labels over the camera
 x-scan-tool	#ffffff33	#ffffff33	extra: phone scanner, round button and Try again fill (white 20%)
+x-crop-bg	#000000	#000000	extra: avatar crop page, the dark page behind the photo
 x-mascot-ink	#ffffff	#ffffff	extra: AI dot and assistant-look previews, full-colour mascot SVGs drawn untinted (image-color white)
 x-call-bg	#101214	#101214	extra: phone call page, always dark (mockups 06-Call*)
 x-call-ink	#ffffff	#ffffff	extra: phone call page text and icons
@@ -118,3 +119,5 @@ x-circle-top	#ffffff	#3c3c40	extra: phone top-bar circle, top of its gradient
 x-circle-bottom	#e2e2e9	#2a2a2d	extra: phone top-bar circle, bottom of its gradient
 x-home-emoji-fill	#007aff1f	#0a84ff33	extra: phone Home card emoji button circle (translucent accent)
 x-send-disabled	#c7c7cc	#48484a	extra: phone composer: the round Send button while an AI field is empty (disabled)
+x-call-unknown-top	#2b90ff	#2b90ff	extra: phone call page, unknown caller avatar, top of its blue gradient (a touch lighter than avatar-0)
+x-call-unknown-bottom	#0066d9	#0066d9	extra: phone call page, unknown caller avatar, bottom of its blue gradient
