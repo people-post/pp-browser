@@ -1,12 +1,16 @@
 #pragma once
 
 #include "feature/settings/SettingsCommands.h"
+#include "foundation/platform/PickedFileLease.h"
 #include "foundation/platform/PlatformShare.h"
+#include "gui/ProfileIconSource.h"
 #include "gui/SettingsHost.h"
 #include "gui/UnlockEnsurePorts.h"
 
 #include <ui/base/Types.h>
+#include <ui/dom/Event.h>
 
+#include <memory>
 #include <string>
 #include "common/PbrCompat.h"
 
@@ -36,8 +40,12 @@ private:
   void Register();
   void RotateBriefLlmKey();
   void CopyId();
-  void PickIcon();
-  void UploadIcon(const std::string& path);
+  /** The photo menu (camera, library, remove); where it has one choice only, that choice at once. */
+  void PickIcon(ui::Event& ev);
+  void RunIconSource(ProfileIconSourceAction action);
+  /** A photo came from the camera or the library: unlock, then upload it. The file is released whichever way this ends. */
+  void IconChosen(std::string path);
+  void UploadIcon(std::shared_ptr<PickedFileLease> file);
   void ClearIcon();
   void Share(ShareAnchor anchor);
   void ToggleQr();

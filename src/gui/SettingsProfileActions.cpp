@@ -2,7 +2,9 @@
 
 #include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/CameraCapture.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/Platform.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Logger.h"
@@ -11,6 +13,7 @@
 #include "gui/BlobQuotaRecoveryFlow.h"
 #include "gui/UserFeedback.h"
 #include "gui/shell/DataModelHost.h"
+#include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/DataEvent.h"
 #include "lib/ui/QrSvg.h"
 #include "lib/ui/UiEditSession.h"
@@ -19,6 +22,7 @@
 #include <ui/data/DataModelHandle.h>
 #include <SDL3/SDL.h>
 
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -34,7 +38,7 @@ void SettingsProfileActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("register_profile", DataEvent<>([this]() { Register(); }));
   ctor.BindEventCallback("rotate_brief_llm_key", DataEvent<>([this]() { RotateBriefLlmKey(); }));
   ctor.BindEventCallback("copy_profile_id", DataEvent<>([this]() { CopyId(); }));
-  ctor.BindEventCallback("pick_profile_icon", DataEvent<>([this]() { PickIcon(); }));
+  ctor.BindEventCallback("pick_profile_icon", DataEventAt([this](ui::Event& ev) { PickIcon(ev); }));
   ctor.BindEventCallback("clear_profile_icon", DataEvent<>([this]() { ClearIcon(); }));
   ctor.BindEventCallback("share_profile", DataEventAt([this](ui::Event& ev) { Share(ShareAnchorFromEvent(ev)); }));
   ctor.BindEventCallback("toggle_profile_qr", DataEvent<>([this]() { ToggleQr(); }));
@@ -126,7 +130,7 @@ void SettingsProfileActions::CopyId() {
   UserFeedback::Ok(Tr("settings.profile.peer_id_copied"));
 }
 
-void SettingsProfileActions::PickIcon() {
+void SettingsProfileActions::PickIcon(ui::Event& ev) {
   if (host_.UiState().profile_icon_uploading) {
     return;
   }
@@ -134,24 +138,95 @@ void SettingsProfileActions::PickIcon() {
     host_.ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
     return;
   }
-  // The native picker opens at once (as chat's attach_file); the vault is asked for only after a
-  // file is chosen, so the PIN prompt cannot keep the dialog from appearing.
-  commands_.pick_profile_icon_image([this](std::vector<std::string> paths) {
-    AppRuntime::PostUI([this, paths = std::move(paths)]() {
-      if (paths.empty()) {
-        if (const char* err = SDL_GetError(); err != nullptr && err[0] != '\0') {
-          host_.ReportFailure(Error(err).WithUser(Tr("settings.profile.picker_failed")));
-          SDL_ClearError();
-        }
-        return;
-      }
-      const std::string path = paths.front();
-      Unlocked("PIN required to change profile icon", [this, path]() { UploadIcon(path); });
-    });
-  });
+  const ProfileIconSourcePlan plan =
+      PlanProfileIconSources(Platform::IsMobile(), host_.UiState().profile_show_clear_icon);
+  if (plan.run_directly) {
+    RunIconSource(plan.actions.front());
+    return;
+  }
+  std::vector<ContextMenuAction> actions;
+  for (const ProfileIconSourceAction action : plan.actions) {
+    ContextMenuAction item;
+    item.run = [this, action]() { RunIconSource(action); };
+    switch (action) {
+      case ProfileIconSourceAction::Camera:
+        item.id = "profile_photo_camera";
+        item.label = Tr("chat.attach.capture_photo");
+        item.icon = "../icons/v2/camera.svg";
+        break;
+      case ProfileIconSourceAction::Library:
+        item.id = "profile_photo_library";
+        item.label = Tr("settings.profile.photo_from_library");
+        item.icon = "../icons/v2/photo.svg";
+        break;
+      case ProfileIconSourceAction::Remove:
+        item.id = "profile_photo_remove";
+        item.label = Tr("settings.profile.remove_photo");
+        item.icon = "../icons/v2/trash.svg";
+        item.danger = true;
+        break;
+    }
+    actions.push_back(std::move(item));
+  }
+  ContextMenuAction cancel{"profile_photo_cancel", Tr("common.cancel"), nullptr, []() {}};
+  cancel.cancel = true;
+  actions.push_back(std::move(cancel));
+  ContextMenuHost::Instance().ShowActions(MenuPositionBelowEvent(ev), std::move(actions));
 }
 
-void SettingsProfileActions::UploadIcon(const std::string& path) {
+void SettingsProfileActions::RunIconSource(const ProfileIconSourceAction action) {
+  switch (action) {
+    case ProfileIconSourceAction::Camera:
+      ShowCameraCapture(Backend::GetWindow(), CameraCaptureKind::Photo, 0, 0,
+                        [this](const CameraCaptureOutcome outcome, std::vector<std::string> paths) {
+                          AppRuntime::PostUI([this, outcome, paths = std::move(paths)]() mutable {
+                            if (outcome == CameraCaptureOutcome::Picked && !paths.empty()) {
+                              IconChosen(std::move(paths.front()));
+                            } else if (outcome == CameraCaptureOutcome::Unavailable ||
+                                       outcome == CameraCaptureOutcome::Unprocessable) {
+                              UserFeedback::Fail(Tr("chat.attach.camera_unavailable"));
+                            }
+                          });
+                        });
+      break;
+    case ProfileIconSourceAction::Library:
+      // The native picker opens at once (as chat's attach_file); the vault is asked for only after a
+      // file is chosen, so the PIN prompt cannot keep the dialog from appearing.
+      commands_.pick_profile_icon_image([this](std::vector<std::string> paths) {
+        AppRuntime::PostUI([this, paths = std::move(paths)]() {
+          if (paths.empty()) {
+            if (const char* err = SDL_GetError(); err != nullptr && err[0] != '\0') {
+              host_.ReportFailure(Error(err).WithUser(Tr("settings.profile.picker_failed")));
+              SDL_ClearError();
+            }
+            return;
+          }
+          IconChosen(paths.front());
+        });
+      });
+      break;
+    case ProfileIconSourceAction::Remove:
+      // Next to the change-photo rows a tap lands here too easily, so ask once.
+      UserFeedback::ConfirmDestructive(
+          Tr("settings.profile.photo_remove_confirm"), "",
+          [this](const bool confirmed) {
+            if (confirmed) {
+              ClearIcon();
+            }
+          },
+          Tr("common.remove"));
+      break;
+  }
+}
+
+void SettingsProfileActions::IconChosen(std::string path) {
+  // From here the file is released by its lease: when the upload ends (either way), or when the PIN step lets go of
+  // this closure unanswered, cancelled or failed.
+  auto file = std::make_shared<PickedFileLease>(std::move(path));
+  Unlocked("PIN required to change profile icon", [this, file]() { UploadIcon(file); });
+}
+
+void SettingsProfileActions::UploadIcon(std::shared_ptr<PickedFileLease> file) {
   if (!commands_.plan_relay_quota_recovery || !commands_.delete_relay_file) {
     host_.ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
     return;
@@ -159,9 +234,9 @@ void SettingsProfileActions::UploadIcon(const std::string& path) {
   host_.UiState().profile_icon_uploading = true;
   host_.PushToView(/*include_profile_nickname=*/false);
   BlobQuotaRecoveryFlow::RunVoidUpload(
-      [this, path]() { return commands_.upload_profile_icon_file(path); },
-      [this, path](Roe<void> result) {
-        ReleasePickedFile(path);
+      [this, file]() { return commands_.upload_profile_icon_file(file->path()); },
+      [this, file](Roe<void> result) {
+        file->Release();
         AfterIconChange(result, Tr("settings.profile.photo_updated"));
       },
       [this](const Error& quota_error) { return commands_.plan_relay_quota_recovery(quota_error); },
