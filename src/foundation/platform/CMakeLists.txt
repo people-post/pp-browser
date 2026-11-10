@@ -38,6 +38,7 @@ set(_pp_platform_gui_sources
   PlatformEarlyInit.cpp
   AiImagePrep.cpp
   ImageEncode.cpp
+  ImageSampleAffine.cpp
   ProfileIconImagePrep.cpp
   VideoPosterExtractor_Common.cpp
   PlatformLogSink.cpp
