@@ -218,15 +218,34 @@ TEST(CallWakePlaceholderTest, NotReadyStaysUpFor59Seconds) {
   EXPECT_TRUE(p.Step(Tap(1, 59'000, 59'000)).active);
 }
 
-TEST(CallWakePlaceholderTest, AHiddenAppNeverStartsAndTheSameTapDoesNotRestartWhenItIsVisibleAgain) {
+TEST(CallWakePlaceholderTest, ATapRecordedWhileTheAppIsHiddenWaitsAndStartsOnceItIsVisible) {
+  CallWakePlaceholder p;
+  Input in = Tap(1, 0);
+  in.app_visible = false;
+  auto v = p.Step(in);
+  EXPECT_FALSE(v.active);
+  EXPECT_EQ(v.outcome, Outcome::None);
+  in.now_ms = 300;
+  in.tap_elapsed_ms = 300;
+  EXPECT_FALSE(p.Step(in).active) << "still hidden";
+  in.app_visible = true;
+  in.now_ms = 600;
+  in.tap_elapsed_ms = 600;
+  EXPECT_TRUE(p.Step(in).active) << "the same fresh tap starts as soon as the app shows";
+}
+
+TEST(CallWakePlaceholderTest, ATapThatStaysHiddenPastTheCapNeverStarts) {
   CallWakePlaceholder p;
   Input in = Tap(1, 0);
   in.app_visible = false;
   EXPECT_FALSE(p.Step(in).active);
+  in.now_ms = 61'000;
+  in.tap_elapsed_ms = 61'000;
+  EXPECT_FALSE(p.Step(in).active);
   in.app_visible = true;
-  in.now_ms = 500;
-  EXPECT_FALSE(p.Step(in).active) << "that tap was handled while hidden";
-  EXPECT_TRUE(p.Step(Tap(2, 1'000)).active) << "a new tap starts";
+  in.now_ms = 62'000;
+  in.tap_elapsed_ms = 62'000;
+  EXPECT_FALSE(p.Step(in).active) << "the caller has hung up by the time it shows";
 }
 
 TEST(CallWakePlaceholderTest, GoingHiddenWhileShownEndsItExpiredAndItDoesNotComeBack) {

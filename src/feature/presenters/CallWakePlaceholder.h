@@ -17,8 +17,8 @@ namespace pbr {
  * Ends, quietly, when the ring shows (Ring), the tap goes stale or the caller cannot still be ringing (Expired), or
  * messaging has been ready for kNoRingAfterReadyMs without a ring (Timeout). The caller rings for at most
  * kDefaultCallInviteTtlMs, so the alert's age (at the tap, plus since the tap) past that ends it even if messaging
- * never became ready (a locked phone nobody unlocks). It does not start, and ends (Expired), while the app is not
- * visible. Every end marks the tap handled: the same tap never shows it again, a new tap
+ * never became ready (a locked phone nobody unlocks). It waits (not handled) while the app is not visible, and ends
+ * (Expired, handled) if the app goes hidden while it is shown. Every end marks the tap handled: the same tap never shows it again, a new tap
  * does. A ring that arrives after the end is the ordinary ring; nothing is reported for it.
  */
 class CallWakePlaceholder {

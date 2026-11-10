@@ -12,7 +12,10 @@ CallWakePlaceholder::View CallWakePlaceholder::Step(const Input& in) {
     if (!in.tap_fresh || in.tap_seq == handled_seq_) {
       return {};
     }
-    if (in.screen_kind != CallScreen::Kind::None || AlertTooOld(in) || !in.app_visible) {
+    if (!in.app_visible) {
+      return {}; // the tap may arrive before the app is shown again: it waits, not handled
+    }
+    if (in.screen_kind != CallScreen::Kind::None || AlertTooOld(in)) {
       handled_seq_ = in.tap_seq;
       return {};
     }
