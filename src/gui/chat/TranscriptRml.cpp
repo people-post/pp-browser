@@ -357,6 +357,34 @@ std::string CryptoTxRml(const ThreadMessage& message) {
   return html;
 }
 
+/**
+ * A picture fitted into its bubble: a clip box with the fitted size and rounded corners (the engine does not round an
+ * <img>), the picture in it (a tall one cropped to its middle), then `overlay`. `src` empty: the box alone (a grey
+ * placeholder by its class). `fit` unknown ({0, 0}): the stylesheet fills the box. `img_attrs` go on the <img>.
+ */
+std::string PictureClipRml(const PictureBubbleSize& fit, const std::string& src, const std::string& clip_class,
+                           const std::string& img_attrs, const std::string& overlay = {}) {
+  std::string html = "<div class=\"chat-attachment-clip" + clip_class;
+  if (fit.width_dp > 0) {
+    html += "\" style=\"width:" + std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp\"";
+  } else {
+    html += " chat-attachment-clip--auto\""; // unknown size: the stylesheet fills the box
+  }
+  html += ">";
+  if (!src.empty()) {
+    html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(src) + "\"";
+    if (fit.width_dp > 0) {
+      html += " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.image_height_dp) + "\"";
+      if (fit.image_offset_dp > 0) {
+        html +=
+            " style=\"margin-top:-" + std::to_string(fit.image_offset_dp) + "dp\""; // a tall picture shows its middle
+      }
+    }
+    html += img_attrs + "/>";
+  }
+  return html + overlay + "</div>";
+}
+
 std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& facts) {
   auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
   const std::string label = fields && !fields->filename.empty()
@@ -412,23 +440,9 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     // its size is given, so the frame round it is laid out for that size and never for the file's own.
     // The engine does not round an <img>, so a clip box with the same size and rounded corners holds it.
     const PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height);
-    if (fit.width_dp > 0) {
-      html += "<div class=\"chat-attachment-clip\" style=\"width:" + std::to_string(fit.width_dp) +
-              "dp;height:" + std::to_string(fit.height_dp) + "dp\"";
-    } else {
-      html +=
-          "<div class=\"chat-attachment-clip chat-attachment-clip--auto\""; // unknown size: the stylesheet fills the box
-    }
-    html += "><img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"";
-    if (fit.width_dp > 0) {
-      html += " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.image_height_dp) + "\"";
-      if (fit.image_offset_dp > 0) {
-        html +=
-            " style=\"margin-top:-" + std::to_string(fit.image_offset_dp) + "dp\""; // a tall picture shows its middle
-      }
-    }
-    html += " data-event-click=\"open_picture('" + JsArgInAttribute(message.id) + "','" + JsArgInAttribute(local_path) +
-            "')\"/></div>";
+    html += PictureClipRml(fit, local_path, "",
+                           " data-event-click=\"open_picture('" + JsArgInAttribute(message.id) + "','" +
+                               JsArgInAttribute(local_path) + "')\"");
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {
     // The whole frame is the tap target (the system player opens directly); the play disc is drawn over the poster
     // and takes no taps. The frame is clipped to the same size picture bubbles use, so nothing can exceed the bubble.
@@ -816,6 +830,71 @@ PictureBubbleSize FitPictureInBubble(const int width_px, const int height_px) {
   out.height_dp = std::min(out.image_height_dp, kPictureBubbleMaxHeightDp);
   out.image_offset_dp = (out.image_height_dp - out.height_dp) / 2;
   return out;
+}
+
+std::string PendingRingDecorator(int percent) {
+  percent = std::clamp(percent, 0, 100);
+  if (percent == 0) {
+    return "none";
+  }
+  if (percent == 100) {
+    return "conic-gradient(white 0%, white 100%)";
+  }
+  const std::string at = std::to_string(percent) + "%";
+  return "conic-gradient(white 0%, white " + at + ", transparent " + at + ")";
+}
+
+std::string PendingPercentText(const int percent) {
+  return std::to_string(std::clamp(percent, 0, 100)) + "%";
+}
+
+std::string PendingPictureRml(const PendingPictureUpload& upload) {
+  const bool failed = upload.state == PendingPictureState::Failed;
+  const bool cancelling = upload.state == PendingPictureState::Cancelling;
+  // The disc: the whole 48dp is the target (uploading: cancel; failed: retry; cancelling: nothing to tap).
+  std::string disc = "<button class=\"chat-pending-disc";
+  if (cancelling) {
+    disc += " chat-pending-disc--busy\" type=\"button\">";
+  } else if (failed) {
+    disc += "\" type=\"button\" title=\"" + StructuredTextParser::EscapeText(Tr("chat.attachment.retry")) +
+            "\" data-event-click=\"retry_attachment_send()\">";
+  } else {
+    disc += "\" type=\"button\" title=\"" + StructuredTextParser::EscapeText(Tr("chat.attachment.cancel_send")) +
+            "\" data-event-click=\"cancel_attachment_send()\">";
+  }
+  if (!failed) {
+    disc += "<div id=\"" + std::string(kPendingRingElementId) + "\" class=\"chat-pending-ring";
+    if (kPendingProgressRing && !cancelling) {
+      disc += "\" style=\"decorator: " + PendingRingDecorator(upload.percent) + "\"></div>";
+    } else {
+      disc += " chat-pending-ring--spin\"></div>";
+    }
+  }
+  disc += "<div class=\"chat-pending-core\">";
+  if (failed) {
+    disc += "<svg class=\"chat-pending-icon\" src=\"../icons/v2/retry.svg\" width=\"20\" height=\"20\"></svg>";
+  } else if (!cancelling) {
+    disc += "<svg class=\"chat-pending-icon\" src=\"../icons/v2/close.svg\" width=\"18\" height=\"18\"></svg>";
+  }
+  disc += "</div></button>";
+  std::string overlay = "<div class=\"chat-pending-center\">" + disc;
+  if (!failed) {
+    overlay += "<p id=\"" + std::string(kPendingPercentElementId) + "\" class=\"chat-pending-percent\">" +
+               PendingPercentText(upload.percent) + "</p>";
+  }
+  overlay += "</div>";
+  if (failed) {
+    overlay += "<button class=\"chat-pending-discard\" type=\"button\" title=\"" +
+               StructuredTextParser::EscapeText(Tr("common.cancel")) +
+               "\" data-event-click=\"discard_attachment_send()\"><div class=\"chat-pending-discard-disc\">"
+               "<svg class=\"chat-pending-icon\" src=\"../icons/v2/close.svg\" width=\"20\" height=\"20\"></svg>"
+               "</div></button>";
+  }
+  const PictureBubbleSize fit = FitPictureInBubble(upload.pixels.width, upload.pixels.height);
+  return "<div class=\"chat-card chat-attachment-card chat-attachment-card--image chat-pending-picture\">" +
+         PictureClipRml(fit, upload.thumb_path, " chat-pending-picture-clip",
+                        " id=\"" + std::string(kPendingThumbElementId) + "\"", overlay) +
+         "</div>";
 }
 
 std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,
