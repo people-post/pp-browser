@@ -30,6 +30,16 @@ verify_gradle_wrapper() {
   fi
 }
 
+# Gradle reads PP_RELAY_CONTENT_SHA256 from the environment; reject anything but ON/OFF here.
+check_relay_content_sha256() {
+  local v
+  v="$(printf '%s' "${PP_RELAY_CONTENT_SHA256:-OFF}" | tr '[:lower:]' '[:upper:]')"
+  if [[ "${v}" != "ON" && "${v}" != "OFF" ]]; then
+    echo "error: PP_RELAY_CONTENT_SHA256 must be ON or OFF (got '${PP_RELAY_CONTENT_SHA256}')" >&2
+    exit 1
+  fi
+}
+
 run_gradlew() {
   local task="$1"
   local -a version_args=()
@@ -39,6 +49,7 @@ run_gradlew() {
   if [[ -n "${PP_BROWSER_RELEASE_VERSION:-}" ]]; then
     version_args+=("-PppBrowserReleaseVersion=${PP_BROWSER_RELEASE_VERSION}")
   fi
+  check_relay_content_sha256
   verify_gradle_wrapper
   # ${arr[@]+"${arr[@]}"}: an empty array trips `set -u` on bash 3.2 (macOS /bin/bash).
   ./gradlew "$task" ${version_args[@]+"${version_args[@]}"}
@@ -60,6 +71,7 @@ Optional environment variables:
   PP_BROWSER_RELEASE_VERSION  Full release version (e.g. 0.1.0-rc1)
   PP_API_URL_PROD             Prod backend origin compiled into the app (read by Gradle; empty = none)
   PP_API_URL_QA               QA backend origin compiled into the app (empty = QA option hidden)
+  PP_RELAY_CONTENT_SHA256     ON/OFF: default of relay.content_sha256 (x-amz-content-sha256 on relay POST/PUT); empty = OFF
 
 Requires:
   ANDROID_SDK_ROOT (or ANDROID_HOME)
@@ -86,6 +98,7 @@ case "${cmd}" in
     require_env ANDROID_SDK_ROOT
     require_env ANDROID_NDK_HOME
     cd "${ANDROID_DIR}"
+    check_relay_content_sha256
     verify_gradle_wrapper
     if [[ -n "${ANDROID_SERIAL:-}" ]]; then
       ./gradlew installDebug -Pandroid.injected.invoked.from.ide=true \

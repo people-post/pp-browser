@@ -370,7 +370,8 @@ jobs:
         run: |
           cmake -B build -S . -DCMAKE_BUILD_TYPE=Release \
             -DPP_BROWSER_COMPILER_CACHE=ON \
-            -DPP_BROWSER_PACKAGED_BUILD=ON
+            -DPP_BROWSER_PACKAGED_BUILD=ON \
+            -DPP_RELAY_CONTENT_SHA256=${{ vars.PP_RELAY_CONTENT_SHA256 || 'OFF' }}
 
       - name: Build
         run: cmake --build build --target pp-browser -j 4

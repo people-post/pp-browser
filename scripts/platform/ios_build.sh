@@ -54,6 +54,7 @@ Environment:
   PP_BROWSER_RELEASE_VERSION  Fallback build string if BUILD_NUMBER unset
   PP_API_URL_PROD             Prod backend origin compiled into the app (empty = none)
   PP_API_URL_QA               QA backend origin compiled into the app (empty = QA option hidden)
+  PP_RELAY_CONTENT_SHA256     ON/OFF: default of relay.content_sha256 (x-amz-content-sha256 on relay POST/PUT); empty = OFF
   IOS_CMAKE_GENERATOR       Ninja (default) or Xcode
   IOS_SIMULATOR_UDID        Target a specific simulator (optional; otherwise newest iPhone)
   IOS_DEVICE_UDID           Target a specific physical device (optional; otherwise first paired iPhone)
@@ -137,6 +138,13 @@ common_cmake_args() {
   if [[ -n "${PP_API_URL_QA:-}" ]]; then
     args+=(-DPP_API_URL_QA="${PP_API_URL_QA}")
   fi
+  local relay_sha="${PP_RELAY_CONTENT_SHA256:-OFF}"
+  relay_sha="$(printf '%s' "${relay_sha}" | tr '[:lower:]' '[:upper:]')"
+  if [[ "${relay_sha}" != "ON" && "${relay_sha}" != "OFF" ]]; then
+    echo "error: PP_RELAY_CONTENT_SHA256 must be ON or OFF (got '${PP_RELAY_CONTENT_SHA256}')" >&2
+    exit 1
+  fi
+  args+=(-DPP_RELAY_CONTENT_SHA256="${relay_sha}")
   if [[ -n "${PP_BROWSER_RELEASE_VERSION:-}" ]]; then
     args+=(-DPP_BROWSER_RELEASE_VERSION="${PP_BROWSER_RELEASE_VERSION}")
   fi
