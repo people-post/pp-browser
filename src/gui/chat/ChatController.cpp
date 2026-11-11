@@ -2580,7 +2580,13 @@ CaptureFlowPorts ChatController::MakeCaptureFlowPorts(const uint64_t pick_serial
 std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgress() {
   const uint64_t stay_hint_bytes = facade_ ? facade_->CurrentAttachmentLimits().stay_hint_bytes : 0;
   auto last_percent = std::make_shared<std::atomic<int>>(-1);
-  return [this, last_percent, stay_hint_bytes](const uint64_t done, const uint64_t total) {
+  ConversationsFacade* const facade = facade_;
+  return [this, last_percent, stay_hint_bytes, facade](const uint64_t done, const uint64_t total) {
+    // Known offline (no link under any tunnel): the transfer stops at its next tick instead of waiting out the
+    // network timeout (30 s on the iPhone). The staged copy stays, so the bubble turns to Retry at once.
+    if (facade && facade->DeviceOffline()) {
+      return false;
+    }
     if (total == 0) {
       return true;
     }
@@ -2716,6 +2722,10 @@ void ChatController::OnCancelAttachmentSend(const std::string& item_id) {
     if (!item || item->state != PendingUploadState::Uploading) {
       return;
     }
+    if (std::chrono::steady_clock::now() < bubble_tap_guard_until_) {
+      // The tap that started or retried this item, landing again on the cancel disc drawn in the same place.
+      return;
+    }
   }
   if (!chat_.attachment_uploading || !send_cancel_ || send_cancel_->exchange(true)) {
     return;
@@ -2785,6 +2795,7 @@ void ChatController::OnRetryAttachmentSend(const std::string& item_id) {
   // A failed picture's bubble uploads again from 0% (the staged ciphertext is what goes; the thumbnail stays).
   const bool picture = item != nullptr;
   if (picture) {
+    bubble_tap_guard_until_ = std::chrono::steady_clock::now() + kBubbleTapGuard;
     pending_uploads_.Apply(item_id, OnUploadRetryTapped);
     RefreshAttachmentInTranscript();
     SyncDisplayFromThread();
@@ -2808,18 +2819,17 @@ void ChatController::OnRetryAttachmentSend(const std::string& item_id) {
         const bool stale_chip =
             !sent && sent.error().category == 0 && sent.error().code == OutgoingAttachmentStore::kWrongThread;
         if (picture) {
+          // A resume never deletes the staged copy: while it is there the bubble stays Failed (also after a cancel of
+          // the retry), with the same record; only a copy that is really gone removes it.
           bool staged = false;
-          if (!sent && !cancel->load() && !stale_chip) {
+          if (!sent && !stale_chip) {
             for (const auto& record : facade_->PendingOutgoingAttachments(thread_id)) {
               staged = staged || record.id == record_id;
             }
           }
-          const UploadSendOutcome outcome = sent             ? UploadSendOutcome::Sent
-                                            : cancel->load() ? UploadSendOutcome::Cancelled
-                                            : staged         ? UploadSendOutcome::FailedStaged
-                                                             : UploadSendOutcome::FailedNotStaged;
-          pending_uploads_.Apply(item_id,
-                                 [outcome](const PendingUpload& now) { return OnUploadSendFinished(now, outcome); });
+          pending_uploads_.Apply(item_id, [sent = static_cast<bool>(sent), staged](const PendingUpload& now) {
+            return OnUploadResumeFinished(now, sent, staged);
+          });
           RefreshAttachmentInTranscript();
           if (!sent && thread_id == ActiveThreadId()) {
             SyncDisplayFromThread(); // sent: the display sync below brings the real row in this same task
@@ -2827,7 +2837,7 @@ void ChatController::OnRetryAttachmentSend(const std::string& item_id) {
           }
         }
         if (!sent && !stale_chip && !cancel->load()) {
-          UserFeedback::Fail(UserFeedback::UserMessage(sent.error(), facade_ && facade_->DeviceOffline()));
+          UserFeedback::Fail(UserFeedback::AttachmentFailureMessage(sent.error(), facade_ && facade_->DeviceOffline()));
         } else if (sent && cancel->load()) {
           UserFeedback::Fail(Tr("chat.attachment.already_sent")); // the cancel came after it reached the contact
         }
@@ -2913,12 +2923,14 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
     if (const auto header = ReadImageHeader(path)) {
       upright = UprightPixels(header->width, header->height, header->exif_orientation);
     }
+    bubble_tap_guard_until_ = std::chrono::steady_clock::now() + kBubbleTapGuard;
     ApplyPendingUpload({StartPendingUpload(++pending_upload_serial_, thread_id, upright), {}});
     scroller_.RequestScrollToLatest(); // as a text send does
   } else if (with_bubble && *bubble == PendingUploadKind::File) {
     // The file's bubble at once: its name now, its size once the preparation has read it.
     PendingUpload file = StartPendingUpload(++pending_upload_serial_, thread_id, std::nullopt, PendingUploadKind::File);
     file.title = chat_.attachment_draft_name.c_str();
+    bubble_tap_guard_until_ = std::chrono::steady_clock::now() + kBubbleTapGuard;
     ApplyPendingUpload({std::move(file), {}});
     scroller_.RequestScrollToLatest();
   } else if (video) {
@@ -2993,6 +3005,7 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
         } else {
           item.thumb_path = poster.path;
         }
+        bubble_tap_guard_until_ = std::chrono::steady_clock::now() + kBubbleTapGuard;
         ApplyPendingUpload({std::move(item), {}});
         if (thread_id == ActiveThreadId()) {
           scroller_.RequestScrollToLatest();
@@ -3133,7 +3146,8 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
             }
             if (!sent) {
               if (!cancelled) {
-                UserFeedback::Fail(UserFeedback::UserMessage(sent.error(), facade_ && facade_->DeviceOffline()));
+                UserFeedback::Fail(
+                    UserFeedback::AttachmentFailureMessage(sent.error(), facade_ && facade_->DeviceOffline()));
               }
               RefreshPendingAttachmentChip(/*force=*/true); // a kept ciphertext shows Retry
               return;

@@ -605,6 +605,29 @@ TEST(PendingPictureSourcePinTest, PickEndsEndPreparingStalePostersBuildNothingRe
   EXPECT_NE(retry.find("const std::string record_id = item ? item->record_id : failed_record_id_;"), std::string::npos);
 }
 
+// Offline retries (iPhone 2026-11-11, source-order pins): a retry's end goes through OnUploadResumeFinished (the bubble
+// stays Failed while its staged copy is there, cancel included); a known-offline device stops the transfer at its next
+// progress tick instead of the 30 s timeout; a cancel tap right after the retry / start tap is ignored; the pill says
+// "no connection" for an unanswered failure while offline.
+TEST(PendingPictureSourcePinTest, OfflineRetriesStayFailedFailFastAndSayNoConnection) {
+  const std::string source = Controller();
+  const std::string retry = Body(source, "void ChatController::OnRetryAttachmentSend(");
+  EXPECT_NE(retry.find("OnUploadResumeFinished(now, sent, staged)"), std::string::npos);
+  EXPECT_NE(retry.find("if (!sent && !stale_chip) {"), std::string::npos)
+      << "the copy is looked for after a cancel too";
+  EXPECT_NE(retry.find("bubble_tap_guard_until_ ="), std::string::npos);
+  EXPECT_NE(retry.find("UserFeedback::AttachmentFailureMessage("), std::string::npos);
+  const std::string progress =
+      Body(source, "std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgress(");
+  const size_t offline = progress.find("if (facade && facade->DeviceOffline()) {");
+  ASSERT_NE(offline, std::string::npos);
+  EXPECT_LT(offline, progress.find("return false;", offline) + 1);
+  const std::string cancel = Body(source, "void ChatController::OnCancelAttachmentSend(");
+  EXPECT_NE(cancel.find("std::chrono::steady_clock::now() < bubble_tap_guard_until_"), std::string::npos);
+  EXPECT_NE(Body(source, "void ChatController::StartAttachmentUpload(").find("UserFeedback::AttachmentFailureMessage("),
+            std::string::npos);
+}
+
 // Plan step 0 entry list: every way a row's id reaches the store or a request ignores the picture being sent.
 TEST(PendingPictureSourcePinTest, EveryRowEventIgnoresThePictureBeingSent) {
   const std::string source = Controller();

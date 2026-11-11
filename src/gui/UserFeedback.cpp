@@ -26,6 +26,16 @@ std::string UserFeedback::UserMessage(const Error& err, const bool device_offlin
   return UserMessage(err);
 }
 
+std::string UserFeedback::AttachmentFailureMessage(const Error& err, const bool device_offline) {
+  const ErrorCategory category = AppError::CategoryOf(err);
+  const bool unanswered = category == ErrorCategory::Unknown ||
+                          (category == ErrorCategory::Blob && err.code == static_cast<int32_t>(Err::Blob::Generic));
+  if (device_offline && err.user.empty() && unanswered) {
+    return Tr("errors.network.offline");
+  }
+  return UserMessage(err, device_offline);
+}
+
 void UserFeedback::Ok(const std::string& message) {
   if (ports_.show_toast) {
     ports_.show_toast(message, ToastDuration::Short);

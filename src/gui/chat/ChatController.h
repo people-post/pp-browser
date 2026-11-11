@@ -466,6 +466,12 @@ private:
   PendingUploadRows pending_uploads_;
   uint64_t pending_upload_serial_ = 0;
   AttachmentPicks picks_;
+  /**
+   * A bubble's disc ignores a cancel tap this long after the tap that started or retried it: the retry disc and the
+   * cancel disc sit in the same place, and a tap delivered twice (touch and the mouse made from it) must not cancel.
+   */
+  static constexpr std::chrono::milliseconds kBubbleTapGuard{600};
+  std::chrono::steady_clock::time_point bubble_tap_guard_until_{};
   /** The chat whose video bubble waits for its poster (the card stays hidden there); empty when none. */
   std::string video_bubble_thread_;
   /** Set by Cancel on the chip while a send is in flight; a new one for each send. */

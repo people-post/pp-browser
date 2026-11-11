@@ -92,6 +92,26 @@ TEST_F(AppErrorTest, OfflineNamesItselfOnlyForUnansweredNetworkFailures) {
   EXPECT_EQ(UserFeedback::UserMessage(blob, true), AppError::Display(blob));
 }
 
+// An attachment that failed while offline (iPhone 2026-11-11: airplane mode, the upload timed out after 30 s and the
+// pill named a generic network problem): no connection, said plainly — unless the error has its own words.
+TEST_F(AppErrorTest, AnAttachmentFailingOfflineSaysThereIsNoConnection) {
+  using namespace pbr;
+  const std::string offline = "No network connection. Check your network and try again.";
+  EXPECT_EQ(UserFeedback::AttachmentFailureMessage(Error("transfer stopped"), true), offline);
+  EXPECT_EQ(UserFeedback::AttachmentFailureMessage(AppError::Blob(Err::Blob::Generic, "upload failed"), true), offline);
+  EXPECT_EQ(UserFeedback::AttachmentFailureMessage(AppError::Network(Err::Network::Timeout, "curl 28"), true), offline);
+  const Error too_large = AppError::Blob(Err::Blob::TooLarge, "413");
+  EXPECT_EQ(UserFeedback::AttachmentFailureMessage(too_large, true), AppError::Display(too_large));
+  const Error limited = AppError::Blob(Err::Blob::RateLimited, "own limit");
+  EXPECT_EQ(UserFeedback::AttachmentFailureMessage(limited, true), AppError::Display(limited));
+  Error pick_again = Error("gone");
+  pick_again.WithUser("Pick the file again.");
+  EXPECT_EQ(UserFeedback::AttachmentFailureMessage(pick_again, true), "Pick the file again.");
+  const Error stopped("transfer stopped");
+  EXPECT_EQ(UserFeedback::AttachmentFailureMessage(stopped, false), UserFeedback::UserMessage(stopped))
+      << "online: the error's own text";
+}
+
 // One plain line per row of the attachments plan's status table (no status codes, no protocol words).
 TEST_F(AppErrorTest, BlobStatusRowsShowPlainText) {
   using namespace pbr;
