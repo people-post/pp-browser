@@ -238,6 +238,11 @@ public:
    * engine's audio rebuild has to bring the mic back (Android merge check).
    */
   void SetDevRouteReorderSkip(std::function<bool()> skip);
+  /**
+   * Developer builds only (debug.pp.detach_call_ui): true makes each refresh end with the call id dropped while the
+   * engine keeps the call — what CallUiAttachGuard is there for (tried on a device).
+   */
+  void SetDevDetachUi(std::function<bool()> detach);
   /** The camera did not come on (or went off): tell the user in plain words; the detail is logged only. */
   void ReportCameraFailure(const CameraFailure& failure);
 
@@ -256,6 +261,8 @@ private:
   /** True when the peer's end of a call was announced. */
   bool TakeStackNotices(CallUiBackend& backend);
   void FillInCall(CallScreen& s, CallUiBackend& backend, const std::string& call_id, bool video, bool group_call);
+  /** The store shows no call while the engine has one open: `next` keeps (or takes) the engine's call. */
+  void KeepEngineCall(CallScreen& next, CallUiBackend& backend);
   void MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s);
   /** B97: a live group call where nothing arrives from anyone for 30 s is left (once told). */
   void WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, int64_t now);
@@ -285,6 +292,11 @@ private:
   /** The last speaker tap handed to the media engine as a route change (CallSpeakerButtonOn). */
   std::optional<CallSpeakerTap> speaker_tap_;
   std::function<bool()> dev_route_reorder_skip_;
+  std::function<bool()> dev_detach_ui_;
+  /** The call debug.pp.detach_call_ui last dropped (logged once per call). */
+  std::string dev_detached_call_id_;
+  /** The call KeepEngineCall last logged (once per call). */
+  std::string kept_call_logged_;
   Callbacks callbacks_;
   CallScreen screen_;
   CallWakePlaceholder wake_placeholder_;

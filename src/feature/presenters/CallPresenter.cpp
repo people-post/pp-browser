@@ -1,5 +1,6 @@
 #include "feature/presenters/CallPresenter.h"
 
+#include "feature/presenters/CallUiAttachGuard.h"
 #include "feature/presenters/NewCallGuard.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "lib/calls/CallGuests.h"
@@ -209,7 +210,9 @@ void CallPresenter::Tick() {
     return;
   }
   backend->SweepExpiredInvites();
-  if (!active_call_id_.empty() && backend->Available()) {
+  // Also while the engine has a call this screen lost: the refresh takes it back (DEV/PLAN-call-ui-never-detached.md 3).
+  if (backend->Available() &&
+      (!active_call_id_.empty() || EngineHasOpenCall(true, backend->ActiveCallId(), backend->Phase()))) {
     Refresh(); // Calling… / the timer / levels stay fresh, before media starts too
   }
 }
@@ -379,6 +382,10 @@ void CallPresenter::Refresh() {
     AnnounceGuests(next);
     FillGroupInvite(next, util::NowUnixMs());
     MaybeAutoCamera(*backend, next);
+  } else if (EngineHasOpenCall(true, backend->ActiveCallId(), backend->Phase())) {
+    // The store shows no call (a failed read) while the engine is still in one: the mic may be open, so its screen
+    // stays — and with it the "in a call" notification and Hang up (DEV/PLAN-call-ui-never-detached.md 2).
+    KeepEngineCall(next, *backend);
   } else {
     active_call_id_.clear();
     active_group_id_.clear();
@@ -414,7 +421,43 @@ void CallPresenter::Refresh() {
     AudioSession::ForgetSpeakerChoice();
   }
   screen_ = std::move(next);
+  if (dev_detach_ui_ && !active_call_id_.empty() && dev_detach_ui_()) {
+    if (std::exchange(dev_detached_call_id_, active_call_id_) != active_call_id_) {
+      log().warning << "call screen let go of its call on purpose (debug.pp.detach_call_ui) call_id="
+                    << active_call_id_;
+    }
+    active_call_id_.clear(); // the screen stays; only the id goes, as if something else had dropped it
+  }
   Changed();
+}
+
+void CallPresenter::KeepEngineCall(CallScreen& next, CallUiBackend& backend) {
+  const std::string call_id = backend.ActiveCallId();
+  if (kept_call_logged_ != call_id) {
+    kept_call_logged_ = call_id;
+    // Read once more for the log only (once per call): was it a failed read, or no row?
+    auto read = backend.ActiveLocalCall();
+    log().warning << "call kept on screen: the store shows none while the engine is in it phase="
+                  << CallPhaseName(backend.Phase()) << " read="
+                  << (!read               ? "error"
+                      : read->has_value() ? "found"
+                                          : "none")
+                  << (read ? std::string() : " err=" + read.error().message)
+                  << " had_call=" << (active_call_id_ == call_id ? 1 : 0) << " call_id=" << call_id;
+  }
+  if (active_call_id_ == call_id && screen_.kind == CallScreen::Kind::InCall && screen_.call_id == call_id) {
+    next = screen_; // the screen as it was
+  } else {
+    // What the engine alone can say (the store's names and roster may be unreadable): a plain in-call screen with End.
+    FillInCall(next, backend, call_id, /*video=*/false, /*group_call=*/false);
+  }
+  active_call_id_ = call_id;
+  ringing_call_id_.clear();
+  ring_shown_ = false;
+}
+
+void CallPresenter::SetDevDetachUi(std::function<bool()> detach) {
+  dev_detach_ui_ = std::move(detach);
 }
 
 void CallPresenter::FillEndingCall(CallScreen& s, CallUiBackend& backend, const CallSession& active) {

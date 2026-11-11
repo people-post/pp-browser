@@ -16,6 +16,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     CallWakePlaceholder.cpp
     CallPresenter.cpp
     CallSystemUiBridge.cpp
+    CallUiAttachGuard.cpp
     ChatPresenter.cpp
     CropFingerOwnership.cpp
     CropGestureAccumulator.cpp
