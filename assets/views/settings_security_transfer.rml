@@ -3,13 +3,17 @@
 <div class="stack settings-actions settings-transfer">
   <p class="text group-head settings-desktop-only">{{i18n:settings.security.link_device}}</p>
   <!-- An own PIN: the PIN first, on the PIN gate (plan #21 ⑧; its number pad for a digit PIN, B2). -->
-  <div class="group-card" data-if="security_can_export_link && !own_devices_not_main">
+  <div class="group-card settings-phone-only" data-if="security_can_export_link && !own_devices_not_main">
     <button class="group-row" type="button" data-event-click="export_link_device()">
       <span class="group-row-body">
         <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.link_device.export}}</span></span>
       </span>
     </button>
   </div>
+  <button class="btn settings-desktop-only" type="button" data-if="security_can_export_link && !own_devices_not_main"
+          data-event-click="export_link_device()">
+    {{i18n:settings.security.link_device.export}}
+  </button>
   <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.help}}</p>
   <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.send_hint}}</p>
   <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.reset_hint}}</p>

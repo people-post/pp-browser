@@ -54,17 +54,13 @@ TEST(SettingsGatingTest, TheAiCredentialRowLivesOnlyOnTheAdvancedPage) {
   EXPECT_EQ(CountOf(advanced, "data-if=\"advanced && profile_show_rotate\""), 1u) << "the gate moved unchanged";
 }
 
-// Phase 7 (Security, mockup layout only): the page's events are exactly the ones it had, and the recovery phrase is
-// bound once, inside the block that only exists while the phrase is shown (the PIN gate is in show_recovery_phrase()).
-TEST(SettingsGatingTest, TheSecurityPageHasTheSameEventsAndTheRecoveryPhraseOnlyInItsShownBlock) {
+// Phases 7 and 8 (Security, Devices and transfer; mockup layout only). Which element carries which event under which
+// gate and in which layout is pinned row by row in SettingsSensitiveActionsTest (settings_row_checklist_test.cpp);
+// here: the recovery phrase is bound once, only inside the block that exists while it is shown (the PIN gate is in
+// show_recovery_phrase()), and neither page nor the transfer block binds a code, phrase or key anywhere else.
+TEST(SettingsGatingTest, TheRecoveryPhraseIsBoundOnlyInItsShownBlock) {
   const std::string rml = ReadAsset("views/settings_section_security.rml");
   ASSERT_FALSE(rml.empty());
-  EXPECT_EQ(CountOf(rml, "data-event-click=\""), 6u);
-  for (const char* event : {"toggle_biometric()", "open_security_page('change_pin')", "on_choose_unlock_grace()",
-                            "ask_setting_help('settings.security.recovery')", "show_recovery_phrase()",
-                            "hide_recovery_phrase()"}) {
-    EXPECT_EQ(CountOf(rml, std::string("data-event-click=\"") + event + "\""), 1u) << event;
-  }
   ASSERT_EQ(CountOf(rml, "{{recovery_phrase}}"), 1u);
   const size_t phrase = rml.find("{{recovery_phrase}}");
   const size_t block = rml.rfind("data-if=\"recovery_phrase != ''\"", phrase);
@@ -72,40 +68,21 @@ TEST(SettingsGatingTest, TheSecurityPageHasTheSameEventsAndTheRecoveryPhraseOnly
   const std::string between = rml.substr(block + 10, phrase - block - 10);
   EXPECT_EQ(between.find("data-if="), std::string::npos) << "no other condition between the gate and the phrase";
   EXPECT_LT(rml.rfind("data-if=\"security_has_recovery_phrase\"", block), block) << "and that block is inside the has-phrase gate";
-  // The "show" row sits in the not-shown block, so the button never renders the phrase itself.
-  const size_t show = rml.find("show_recovery_phrase()");
-  EXPECT_NE(rml.rfind("data-if=\"recovery_phrase == ''\"", show), std::string::npos);
-  EXPECT_LT(show, phrase);
 }
 
-// Phase 8 (Devices and transfer, mockup layout only): the same events as before, and nothing on the page or in the
-// transfer block binds a secret; the code is only ever copied by export_link_device() after its PIN gate.
-TEST(SettingsGatingTest, TheDevicesPageAndTheTransferBlockKeepTheirEventsAndBindNoSecret) {
+TEST(SettingsGatingTest, NoViewOfTheTwoPagesBindsACodeAPhraseOrAKeyOutsideTheShownBlock) {
   const std::string devices = ReadAsset("views/settings_section_devices.rml");
   const std::string transfer = ReadAsset("views/settings_security_transfer.rml");
-  ASSERT_FALSE(devices.empty());
-  ASSERT_FALSE(transfer.empty());
-  EXPECT_EQ(CountOf(devices, "data-event-click=\""), 6u);
-  for (const char* event : {"open_security_page('transfer')", "ask_setting_help('settings.security.transfer_row')",
-                            "make_main_device(device_index)", "remove_own_device(device_index)",
-                            "save_account_copy()", "ask_setting_help('settings.help.topic.account_copy')"}) {
-    EXPECT_EQ(CountOf(devices, std::string("data-event-click=\"") + event + "\""), 1u) << event;
-  }
-  EXPECT_EQ(CountOf(transfer, "data-event-click=\""), 1u);
-  EXPECT_EQ(CountOf(transfer, "data-event-click=\"export_link_device()\""), 1u);
-  // The export row keeps its one gate; the three notes come after it.
-  const size_t gate = transfer.find("data-if=\"security_can_export_link && !own_devices_not_main\"");
-  const size_t export_event = transfer.find("export_link_device()");
-  ASSERT_NE(gate, std::string::npos);
-  EXPECT_LT(gate, export_event);
-  // No binding that would render a code, a phrase or a key on either view.
-  for (const std::string& view : {devices, transfer}) {
-    for (const char* secret : {"{{recovery_phrase", "{{transfer", "{{link_code", "{{export_code", "{{pin", "{{brief_llm_key}}"}) {
+  const std::string security = ReadAsset("views/settings_section_security.rml");
+  const std::string pin = ReadAsset("views/settings_security_pin.rml");
+  for (const std::string& view : {devices, transfer, pin}) {
+    ASSERT_FALSE(view.empty());
+    for (const char* secret : {"{{recovery_phrase", "{{transfer", "{{link_code", "{{export_code", "{{pin_value", "{{brief_llm_key}}"}) {
       EXPECT_EQ(view.find(secret), std::string::npos) << secret;
     }
   }
-  // Removing a device and saving a copy are buttons that call the gated handlers; nothing renders them already done.
-  EXPECT_EQ(devices.find("remove_own_device(0)"), std::string::npos);
+  EXPECT_EQ(security.find("{{transfer"), std::string::npos);
+  EXPECT_EQ(security.find("{{brief_llm_key}}"), std::string::npos);
 }
 
 TEST(SettingsGatingTest, HomeAndTheDesktopListNameNoPageDirectly) {

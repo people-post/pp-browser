@@ -62,24 +62,30 @@
         <div class="stack settings-actions" data-if="security_has_recovery_phrase">
           <div class="stack" data-if="recovery_phrase == ''">
             <!-- The PIN on the PIN gate first (its number pad for a digit PIN, B2). -->
-            <div class="group-card">
+            <div class="group-card settings-phone-only">
               <button class="group-row" type="button" data-event-click="show_recovery_phrase()">
                 <span class="group-row-body">
                   <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.recovery.show}}</span></span>
                 </span>
               </button>
             </div>
+            <button class="btn settings-desktop-only" type="button" data-event-click="show_recovery_phrase()">
+              {{i18n:settings.security.recovery.show}}
+            </button>
           </div>
           <div class="stack" data-if="recovery_phrase != ''">
             <p class="text group-card group-card--pad" selectable="text">{{recovery_phrase}}</p>
             <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.shown_hint}}</p>
-            <div class="group-card">
+            <div class="group-card settings-phone-only">
               <button class="group-row" type="button" data-event-click="hide_recovery_phrase()">
                 <span class="group-row-body">
                   <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.recovery.hide}}</span></span>
                 </span>
               </button>
             </div>
+            <button class="btn settings-desktop-only" type="button" data-event-click="hide_recovery_phrase()">
+              {{i18n:settings.security.recovery.hide}}
+            </button>
           </div>
           <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.help}}</p>
         </div>
