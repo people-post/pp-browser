@@ -188,8 +188,9 @@ SUMMED = ["started", "linked", "link_fail", "relinked", "skipped_full", "parked"
 
 def merge(records):
     out = {k: sum(r.get(k, 0) for r in records) for k in SUMMED}
-    out["lat_p95_ms"] = max((r.get("lat_p95_ms", 0) for r in records), default=0)
-    out["lat_p50_ms"] = max((r.get("lat_p50_ms", 0) for r in records), default=0)
+    # The worst load process's percentile: an upper bound on the merged one.
+    for k in ("lat_p50_ms", "lat_p95_ms", "lat_p99_ms", "lat_max_ms"):
+        out[k] = max((r.get(k, 0) for r in records), default=0)
     refused = {}
     for r in records:
         for k, v in r.get("refused", {}).items():
