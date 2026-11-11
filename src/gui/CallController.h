@@ -234,11 +234,13 @@ private:
   void SyncRingtone();
   /**
    * The 300 ms ring timer (DEV/PLAN-android-incoming-call-screen.md): runs while the phone's call screen rings for us
-   * (is the ring where the user can see it?) or the app rings (has the user left it?). Started / stopped
+   * (is the ring where the user can see it?) or the app rings (the phone's ringer is read again). Started / stopped
    * from SyncRingtone.
    */
   void SyncRingTimer();
   void OnRingTimer();
+  /** How the incoming ringtone follows the phone's ringer now (asked afresh; one log line per change). */
+  CallRingtone::Output ReadRingOutput();
   /**
    * Stop ringback_ if playing and, unless media is already active (the engine then owns
    * the session), release the phone audio session. Shared by SyncRingtone's own
@@ -355,6 +357,8 @@ private:
   static constexpr std::chrono::milliseconds kRingTimerInterval{300};
   /** The ring timer's coordinator id (0: not running). */
   uint64_t ring_timer_ = 0;
+  /** The phone ringer's last logged reading. */
+  std::string ringer_logged_;
   std::function<bool()> pin_locked_;
   /** V060: the call on hold while the OS has its audio, and the camera's rest (hold, background). */
   CallLocalHold local_hold_;

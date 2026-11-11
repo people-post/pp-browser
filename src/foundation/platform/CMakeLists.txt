@@ -127,6 +127,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     PlatformNotificationSettings_Default.cpp
     PlatformAppBadge_Default.cpp
     DeviceScreenState_Default.cpp
+    DeviceRinger_Default.cpp
   )
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
@@ -150,12 +151,13 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   if(NOT PP_BROWSER_IS_IOS)
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm PlatformShare_Darwin.mm
          NativeFileDialog_Default.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
-         PlatformNotificationSettings_Default.cpp PlatformAppBadge_Darwin.mm DeviceScreenState_Default.cpp)
+         PlatformNotificationSettings_Default.cpp PlatformAppBadge_Darwin.mm DeviceScreenState_Default.cpp
+         DeviceRinger_Default.cpp)
   else()
     # SDL3 has no iOS file dialog (its dummy backend answers "nothing picked" at once).
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp PlatformShare_Ios.mm
          NativeFileDialog_Ios.mm CameraCapture_Ios.mm PlatformOpenFile_Ios.mm PlatformNotificationSettings_Ios.mm
-         PlatformAppBadge_Ios.mm DeviceScreenState_Default.cpp)
+         PlatformAppBadge_Ios.mm DeviceScreenState_Default.cpp DeviceRinger_Default.cpp)
   endif()
 else()
   list(APPEND _pp_platform_core_sources
@@ -179,11 +181,13 @@ else()
   endif()
   if(NOT PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
-         PlatformNotificationSettings_Default.cpp PlatformAppBadge_Default.cpp DeviceScreenState_Default.cpp)
+         PlatformNotificationSettings_Default.cpp PlatformAppBadge_Default.cpp DeviceScreenState_Default.cpp
+         DeviceRinger_Default.cpp)
   else()
     # A file:// address is refused by Android 7+ (FileUriExposedException): a FileProvider address instead.
     list(APPEND _pp_platform_gui_sources CameraCapture_Android.cpp PlatformOpenFile_Android.cpp
-         PlatformNotificationSettings_Android.cpp PlatformAppBadge_Android.cpp DeviceScreenState_Android.cpp)
+         PlatformNotificationSettings_Android.cpp PlatformAppBadge_Android.cpp DeviceScreenState_Android.cpp
+         DeviceRinger_Android.cpp)
   endif()
 endif()
 

@@ -22,6 +22,7 @@
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
+#include "foundation/platform/DeviceRinger.h"
 #include "foundation/platform/DeviceScreenState.h"
 #include "foundation/platform/IAssetLocator.h"
 #include "foundation/platform/OngoingCallService.h"
@@ -30,6 +31,7 @@
 #include "foundation/platform/PendingNotificationTap.h"
 #include "gui/CallStatusHint.h"
 #include "feature/presenters/CallRingSteps.h"
+#include "feature/presenters/CallRingerOutput.h"
 #include "feature/presenters/CallStepScroll.h"
 #include "feature/presenters/CallStoryList.h"
 #include "lib/ui/ShellTypes.h"
@@ -85,6 +87,9 @@ CallController::CallController()
       local_hold_(LocalHoldPorts()) {
   redirectLogger("CallController");
   CallRingtone::SetRingSoundPath(IAssetLocator::Instance().Resolve("sounds/call_ring.wav"));
+  // The incoming ringtone follows the phone's ringer (silent, vibrate, Do Not Disturb, volume 0); the ringback does not.
+  ringtone_.SetOutputPorts(
+      {.read = [this]() { return ReadRingOutput(); }, .vibrate = [](const bool on) { SetDeviceRingVibration(on); }});
   CallPresenter::Callbacks callbacks;
   callbacks.on_changed = [this]() { Render(); };
   callbacks.notify = [this](const CallNotice& notice) { ShowNotice(notice); };
@@ -959,6 +964,7 @@ void CallController::SyncRingtone() {
   // The phone's own call screen rings it: the app's stays quiet.
   const bool should_ring = ring_.active && !system_call_screen_.SystemRings(presenter_.Screen().ring_call_id);
   if (should_ring && !ringtone_.IsPlaying()) {
+    ringer_logged_.clear(); // each ring logs the phone's ringer once
     ringtone_.Start();
   } else if (!should_ring && ringtone_.IsPlaying()) {
     ringtone_.Stop();
@@ -993,7 +999,23 @@ void CallController::OnRingTimer() {
     return; // stopped after this tick was posted
   }
   system_call_screen_.Reevaluate(AppLifecycle::IsVisible()); // may redraw (Render): the ring moved
+  ringtone_.Refresh();
   SyncRingTimer();
+}
+
+CallRingtone::Output CallController::ReadRingOutput() {
+  const std::optional<DeviceRingerReading> reading = ReadDeviceRinger();
+  std::string seen = "unread";
+  if (reading) {
+    seen = "mode=" + std::to_string(reading->ringer_mode) + " filter=" + std::to_string(reading->interruption_filter) +
+           " ring_volume=" + std::to_string(reading->ring_volume);
+  }
+  if (seen != ringer_logged_) {
+    ringer_logged_ = seen;
+    log().info << "phone ringer " << seen;
+  }
+  const CallRingerOutput out = CallRingerOutputFor(reading);
+  return {.sound = out.sound, .vibrate = out.vibrate};
 }
 
 void CallController::StopRingback(CallUiBackend* backend) {

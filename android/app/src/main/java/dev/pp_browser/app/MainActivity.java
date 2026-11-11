@@ -1414,6 +1414,55 @@ public class MainActivity extends SDLActivity {
         }
     }
 
+    /**
+     * For native DeviceRinger_Android (the app's own incoming ringtone follows the phone, read every 300 ms while it
+     * rings): {AudioManager ringer mode, NotificationManager interruption filter, STREAM_RING volume}; null when it
+     * cannot be asked (native then rings silently).
+     */
+    public int[] getRingerState() {
+        try {
+            final AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            final NotificationManager nm = getSystemService(NotificationManager.class);
+            if (am == null || nm == null) {
+                return null;
+            }
+            return new int[] {am.getRingerMode(), nm.getCurrentInterruptionFilter(),
+                    am.getStreamVolume(AudioManager.STREAM_RING)};
+        } catch (RuntimeException e) {
+            Log.w(TAG, "ringer state: " + e);
+            return null;
+        }
+    }
+
+    /** The incoming-call vibration (the call notification's pattern, repeating) while the app's own ring vibrates. */
+    public void setRingVibration(boolean on) {
+        try {
+            final android.os.Vibrator vibrator = getSystemService(android.os.Vibrator.class);
+            if (vibrator == null) {
+                return;
+            }
+            if (!on) {
+                vibrator.cancel();
+                return;
+            }
+            if (!vibrator.hasVibrator()) {
+                return;
+            }
+            final long[] pattern = {0, 800, 800};
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                final AudioAttributes attributes = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build();
+                vibrator.vibrate(android.os.VibrationEffect.createWaveform(pattern, 0), attributes);
+            } else {
+                vibrator.vibrate(pattern, 0);
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "ring vibration: " + e);
+        }
+    }
+
     public void clearLocalNotification(String threadId) {
         int req = threadId == null || threadId.isEmpty() ? 1 : threadId.hashCode();
         NotificationManagerCompat.from(this).cancel(req);
