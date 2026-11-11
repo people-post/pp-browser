@@ -824,10 +824,25 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return facade.SaveProfileNickname(nickname);
   };
   settings_commands.pick_profile_icon_image = [](std::function<void(std::vector<std::string> paths)> on_picked) {
-    ShowOpenImageFileDialog(Backend::GetWindow(), [on_picked = std::move(on_picked)](std::vector<std::string> paths) {
-      AppRuntime::PostUI(
-          [on_picked = std::move(on_picked), paths = std::move(paths)]() mutable { on_picked(std::move(paths)); });
-    });
+    // iOS: a large photo takes seconds to copy out of the library; the pill says so until the crop page is opened
+    // (on_picked opens it), and is taken down first so it never sits over that page. Cancelled: no pill, nothing to take down.
+    auto preparing_shown = std::make_shared<bool>(false);
+    ShowOpenImageFileDialog(
+        Backend::GetWindow(),
+        [on_picked = std::move(on_picked), preparing_shown](std::vector<std::string> paths) {
+          AppRuntime::PostUI([on_picked = std::move(on_picked), preparing_shown, paths = std::move(paths)]() mutable {
+            if (*preparing_shown) {
+              UserFeedback::DismissToast();
+            }
+            on_picked(std::move(paths));
+          });
+        },
+        /*include_heic=*/false, [preparing_shown](const std::string&) {
+          AppRuntime::PostUI([preparing_shown]() {
+            *preparing_shown = true;
+            UserFeedback::Note(Tr("settings.profile.photo_preparing"));
+          });
+        });
   };
   settings_commands.open_avatar_crop = [this](std::shared_ptr<PickedFileLease> file, AvatarCropCommit commit) {
     avatar_crop_->Open(std::move(file), std::move(commit));

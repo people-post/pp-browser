@@ -696,8 +696,8 @@ std::string ReactionsRml(const std::string& target_id, const std::vector<Transcr
     if (chip.mine) {
       rml << " chat-reaction-chip--mine";
     }
-    rml << "\" type=\"button\" data-event-click=\"toggle_reaction('" << JsArgInAttribute(target_id) << "', '"
-        << JsArgInAttribute(chip.emoji) << "')\"><span class=\"chat-reaction-pill\">"
+    rml << "\" type=\"button\" data-event-click=\"open_reactors('" << JsArgInAttribute(target_id)
+        << "')\"><span class=\"chat-reaction-pill\">"
         << StructuredTextParser::EscapeText(chip.emoji);
     if (chip.count > 1) {
       rml << "<span class=\"chat-reaction-count\">" << chip.count << "</span>";

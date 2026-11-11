@@ -22,6 +22,8 @@ struct UserFeedback {
   static void Fail(const std::string& message);
   /** A note the user should have time to read (the long pill, as failures get): not a result, not an error. */
   static void Note(const std::string& message);
+  /** Takes the bottom pill down at once (for a Note that said "Preparing…" and whose work is done). */
+  static void DismissToast();
   /** Toast AppError::Display; returns that string for status_ binding. */
   static std::string FailFrom(const Error& err);
   /** Banner. Gone after 5 s unless `sticky` (something the user must act on). */

@@ -1772,6 +1772,43 @@ void ChatController::OpenHomeEdit() {
   }
 }
 
+void ChatController::OpenReactors(const std::string& message_id) {
+  if (!messaging_ready_ || reactors_layer_ >= 0 || !shell_navigation_.push_layer) {
+    return;
+  }
+  const std::vector<ReactorRow> reactors = presenter_.ReactorsOf(message_id);
+  if (reactors.empty()) {
+    return;
+  }
+  chat_.reactor_rows.clear();
+  for (const ReactorRow& reactor : reactors) {
+    ReactorDisplayRow row;
+    row.emoji = reactor.emoji.c_str();
+    row.title = reactor.title.c_str();
+    const AvatarGlyph glyph = MakeAvatarGlyph(reactor.title, reactor.stable_id);
+    row.avatar_letter = glyph.letter.c_str();
+    row.avatar_tone = glyph.tone;
+    row.has_icon = !reactor.icon_path.empty();
+    row.icon_src = reactor.icon_path.c_str();
+    row.is_self = reactor.is_self;
+    chat_.reactor_rows.push_back(std::move(row));
+  }
+  reactors_message_id_ = message_id;
+  DataModelHost::Instance().Dirty("chat", "reactor_rows");
+  PaneSpec spec;
+  spec.key = "reactors_sheet";
+  spec.page_sheet = true;
+  reactors_layer_ = shell_navigation_.push_layer(spec);
+  if (reactors_layer_ >= 0 && flow_coordinator_.begin_modal) {
+    flow_coordinator_.begin_modal(reactors_layer_, {}, [this]() {
+      reactors_layer_ = -1;
+      reactors_message_id_.clear();
+      chat_.reactor_rows.clear();
+      DataModelHost::Instance().Dirty("chat", "reactor_rows");
+    });
+  }
+}
+
 void ChatController::SaveHomeLayout(const HomeWidgetLayout& layout) {
   if (!session_store_ || layout == HomeLayout()) {
     return;
@@ -4456,6 +4493,18 @@ bool ChatController::Setup(ui::Context* context) {
                                                       [this](const std::string& message_id, const std::string& emoji) {
                                                         ToggleReaction(message_id, emoji);
                                                       }));
+        ctor.BindEventCallback("open_reactors", DataEvent<std::string>([this](const std::string& message_id) {
+                                 OpenReactors(message_id);
+                               }));
+        ctor.BindEventCallback("reactor_remove", DataEvent<std::string>([this](const std::string& emoji) {
+                                 const std::string message_id = reactors_message_id_;
+                                 if (presenter_.MyReactionOn(message_id, emoji)) {
+                                   ToggleReaction(message_id, emoji);
+                                 }
+                                 if (reactors_layer_ >= 0 && shell_navigation_.close_layer) {
+                                   shell_navigation_.close_layer(reactors_layer_); // the coordinator clears the rows
+                                 }
+                               }));
         ctor.BindEventCallback("open_emoji_insert",
                                DataEventAt([this](ui::Event& ev) { menus_.OpenEmojiInsert(&ev); }));
         ctor.BindEventCallback("attach_file", DataEventAt([this](ui::Event& ev) { OnAttachFile(&ev); }));

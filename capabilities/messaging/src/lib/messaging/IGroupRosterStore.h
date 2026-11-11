@@ -102,6 +102,9 @@ public:
   virtual Roe<size_t> CountPendingInvitesSince(int64_t since_ms) const = 0;
   /** Marks this group's live outbound invites to one identity expired (it was removed). */
   virtual Roe<void> ExpireOutboundInvitesTo(const std::string& group_id, const std::string& invitee_identity) const = 0;
+  /** Marks this group's pending invites received from one inviter expired (a newer one came); returns them. */
+  virtual Roe<std::vector<PendingGroupInvite>> ExpireInboundInvitesFrom(const std::string& group_id,
+                                                                        const std::string& inviter_identity) const = 0;
   /** Voids every pending invite to or from this group (it was dissolved, G016); returns the ones voided. */
   virtual Roe<std::vector<PendingGroupInvite>> ExpirePendingInvitesOf(const std::string& group_id) const = 0;
   /**

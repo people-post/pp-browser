@@ -3,6 +3,7 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/UserPreferences.h"
+#include "foundation/platform/ILocalNotifier.h"
 
 #include <string>
 #include "common/PbrCompat.h"
@@ -23,5 +24,7 @@ ConversationsHub::NetworkConfig ProjectNetwork(const AppConfig& config);
 HubPolicyPrefs ProjectPolicy(const ProfilePreferences& prefs);
 /** Banners and staying connected (P011) from the profile's preferences. */
 ConversationsHub::NotificationPrefs ProjectNotifications(const ProfilePreferences& prefs);
+/** Hands Show notifications to the platform notifier (Android keeps it for pushes that wake a stopped app). */
+void ApplyMessageBanners(ILocalNotifier& notifier, const ConversationsHub::NotificationPrefs& prefs);
 
 } // namespace pbr

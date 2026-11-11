@@ -135,6 +135,8 @@ struct RelayReceiveOutcome {
   std::optional<std::string> dissolved_group_thread_id;
   /** G016: invites to the dissolved group, now void: (inviter, nonce) — the invite cards in the DMs to close. */
   std::vector<std::pair<std::string, std::string>> voided_invite_cards;
+  /** A newer invite from the same inviter to the same group replaced these: (inviter, nonce), their cards to close. */
+  std::vector<std::pair<std::string, std::string>> superseded_invite_cards;
   /** G013: a group message arrived while our check went unanswered — ask again (its sender is online). */
   std::optional<std::string> restart_roster_check_group_id;
   /**

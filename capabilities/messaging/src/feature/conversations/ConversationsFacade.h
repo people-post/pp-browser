@@ -147,6 +147,8 @@ public:
   void NotifyThreadChanged();
   void SetOnThreadChanged(std::function<void()> callback);
   PeerDisplayLabel ResolveThreadLabel(const Thread& thread);
+  /** The name a message's sender (a contact id, or a group member's account id) shows; `trust` says how sure it is. */
+  PeerDisplayLabel ResolveSenderLabel(const std::string& sender_contact_id);
   /**
    * Local file of a saved contact's cached profile photo, empty when none is cached yet (the letter avatar shows).
    * Starts the photo fetch when the contact has one that is not cached, like the Contacts list does.

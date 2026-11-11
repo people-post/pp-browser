@@ -62,11 +62,12 @@ TEST(PeoplePickerLogicTest, AddMemberCandidatesLeaveOutTheRosterAndSelf) {
   EXPECT_EQ(ids, (std::vector<std::string>{"c1", "c5"}));
 }
 
-TEST(PeoplePickerLogicTest, AddMemberCandidatesLeaveOutPeopleAlreadyInvited) {
+TEST(PeoplePickerLogicTest, AddMemberCandidatesKeepPeopleAlreadyInvited) {
   using pbr::AddMemberCandidate;
+  // The list takes no "invited" input: someone invited and not yet answered is a candidate like anyone else.
   const std::vector<AddMemberCandidate> contacts = {{"c1", "acct:alice"}, {"c2", "acct:bob"}};
-  const std::vector<std::string> ids = pbr::AddMemberCandidateIds(contacts, {}, "acct:me", {"acct:alice"});
-  EXPECT_EQ(ids, (std::vector<std::string>{"c2"}));
+  const std::vector<std::string> ids = pbr::AddMemberCandidateIds(contacts, {}, "acct:me");
+  EXPECT_EQ(ids, (std::vector<std::string>{"c1", "c2"}));
 }
 
 TEST(PeoplePickerLogicTest, InviteNeedsContactHintShowsWhenTheButtonCreatesOrInvites) {

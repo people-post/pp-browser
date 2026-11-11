@@ -298,6 +298,8 @@ private:
   std::string logged_subtitle_;
   /** Lasting audio faults toast once per call (see CallAudioFaultToastGate). */
   CallAudioFaultToastGate audio_fault_gate_;
+  /** The story notice of the last sync: the "line got slower" pill fires on the edge into Slow. */
+  CallStoryNotice last_story_notice_ = CallStoryNotice::None;
   bool story_sheet_open_ = false;
   /** V031: the chrome mode, the one to restore when leaving Minimized (Expanded or Immersive), and the call they were
    * chosen for (defaults reset on a switch). */

@@ -1,0 +1,54 @@
+<!-- Who reacted to a message (a tap on its emoji, like WhatsApp): a page sheet, the people grouped by emoji. This
+     device's own row says "Tap to remove" and takes the reaction back; the others are only listed. Following a
+     reaction is the long-press menu's emoji row. -->
+<div class="ac-page" data-model="chat">
+  <div class="sheet-header">
+    <p class="sheet-title">{{i18n:chat.reactions.title}}</p>
+  </div>
+  <div class="ac-scroll contact-detail-panel">
+    <div class="cd-phone">
+      <div class="cd-card">
+        <div data-for="row : reactor_rows">
+          <button class="cd-row cd-row--member" type="button" data-if="row.is_self"
+                  data-event-click="reactor_remove(row.emoji)">
+            <span class="cd-row-avatar cd-row-avatar--photo"
+                  data-class-avatar-tone-0="!row.has_icon && row.avatar_tone == 0"
+                  data-class-avatar-tone-1="!row.has_icon && row.avatar_tone == 1"
+                  data-class-avatar-tone-2="!row.has_icon && row.avatar_tone == 2"
+                  data-class-avatar-tone-3="!row.has_icon && row.avatar_tone == 3"
+                  data-class-avatar-tone-4="!row.has_icon && row.avatar_tone == 4"
+                  data-class-avatar-tone-5="!row.has_icon && row.avatar_tone == 5"
+                  data-class-avatar-tone-6="!row.has_icon && row.avatar_tone == 6"
+                  data-class-avatar-tone-7="!row.has_icon && row.avatar_tone == 7">
+              <img class="cd-row-avatar-image" data-if="row.has_icon" data-attr-src="row.icon_src"/>
+              <span class="avatar-letter" data-if="!row.has_icon">{{row.avatar_letter}}</span>
+            </span>
+            <span class="cd-row-body">
+              <span class="cd-row-text">{{row.title}}</span>
+              <span class="cd-row-value">{{i18n:chat.reactions.tap_to_remove}}</span>
+              <span class="reactor-emoji">{{row.emoji}}</span>
+            </span>
+          </button>
+          <div class="cd-row cd-row--member cd-row--static" data-if="!row.is_self">
+            <span class="cd-row-avatar cd-row-avatar--photo"
+                  data-class-avatar-tone-0="!row.has_icon && row.avatar_tone == 0"
+                  data-class-avatar-tone-1="!row.has_icon && row.avatar_tone == 1"
+                  data-class-avatar-tone-2="!row.has_icon && row.avatar_tone == 2"
+                  data-class-avatar-tone-3="!row.has_icon && row.avatar_tone == 3"
+                  data-class-avatar-tone-4="!row.has_icon && row.avatar_tone == 4"
+                  data-class-avatar-tone-5="!row.has_icon && row.avatar_tone == 5"
+                  data-class-avatar-tone-6="!row.has_icon && row.avatar_tone == 6"
+                  data-class-avatar-tone-7="!row.has_icon && row.avatar_tone == 7">
+              <img class="cd-row-avatar-image" data-if="row.has_icon" data-attr-src="row.icon_src"/>
+              <span class="avatar-letter" data-if="!row.has_icon">{{row.avatar_letter}}</span>
+            </span>
+            <span class="cd-row-body">
+              <span class="cd-row-text">{{row.title}}</span>
+              <span class="reactor-emoji">{{row.emoji}}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -51,6 +51,8 @@ public:
   Roe<void> UpdateInviteStatus(const std::string& invite_nonce, InviteStatus status) const override;
   Roe<size_t> CountPendingInvitesSince(int64_t since_ms) const override;
   Roe<void> ExpireOutboundInvitesTo(const std::string& group_id, const std::string& invitee_identity) const override;
+  Roe<std::vector<PendingGroupInvite>> ExpireInboundInvitesFrom(const std::string& group_id,
+                                                                const std::string& inviter_identity) const override;
   Roe<std::vector<PendingGroupInvite>> ExpirePendingInvitesOf(const std::string& group_id) const override;
   Roe<std::optional<std::vector<PendingGroupInvite>>> EndGroup(const std::string& group_id,
                                                                const GroupEnding& ending) const override;
