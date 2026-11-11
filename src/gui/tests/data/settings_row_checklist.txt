@@ -146,14 +146,17 @@ data-event-click="toggle_transparency()"	1	appearance	appearance	-	appearance
 {{i18n:settings.ai_dot.size}}	1	-	appearance	-	llm	
 {{i18n:settings.home_dynamic.help}}	1	-	appearance	-	appearance	
 {{i18n:settings.home_dynamic.label}}	1	-	appearance	-	appearance	
+{{i18n:settings.widgets.title}}	1	-	appearance	-	appearance	
 {{i18n:settings.home_logo.help}}	1	-	appearance	-	llm	
 {{i18n:settings.home_logo.label}}	1	-	appearance	-	llm	
 {{i18n:settings.home_widgets.label}}	1	-	appearance	-	appearance	
+{{i18n:settings.home_widgets.help}}	1	-	appearance	-	appearance	
 {{i18n:settings.language.help}}	1	-	appearance	-	appearance	
 {{i18n:settings.language.label}}	1	-	appearance	-	appearance	
 {{i18n:settings.theme.help}}	1	-	appearance	-	appearance	
 {{i18n:settings.theme.label}}	1	-	appearance	-	appearance	
 {{i18n:settings.transparency.help}}	1	-	appearance	-	appearance	
+{{i18n:settings.appearance.reset_help}}	1	-	appearance	-	appearance	
 {{i18n:settings.transparency.label}}	1	-	appearance	-	appearance	
 {{language_label}}	1	-	appearance	-	appearance	
 data-class-settings-switch--on="attachment_auto_on_cellular == 'on'"	1	-	storage	storage_page == 'main';;attachment_auto_toggles_visible	storage	

@@ -12989,6 +12989,11 @@ textarea:composing ~ .prompt-composer-label,
   margin-top: 2dp;
 }
 
+.shell-layer-compact .settings-mock .group-row--dim {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 .shell-layer-compact .settings-mock .group-foot {
   margin: 8dp 32dp 0 32dp;
 }
