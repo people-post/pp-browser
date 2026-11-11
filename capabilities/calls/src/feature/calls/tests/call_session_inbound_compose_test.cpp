@@ -1,3 +1,5 @@
+#include "lib/calls/CallSessionLogic.h"
+#include "lib/calls/testing/FailingCallSessionStore.h"
 #include "lib/calls/testing/InMemoryCallStores.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "feature/calls/tests/calls_loopback_outbox.h"
@@ -204,7 +206,7 @@ protected:
 
     store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->ListThreads());
-    sessions_ = std::make_unique<InMemoryCallSessionStore>();
+    sessions_ = std::make_unique<FailingCallSessionStore>();
     keys_ = std::make_unique<InMemoryCallMediaKeyStore>();
     ASSERT_TRUE(keys_->SetDek(TestDek()));
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
@@ -238,6 +240,8 @@ protected:
         } else if (type == "call_invite") {
           invite_urgent_.push_back(urgent);
           last_sent_invite_payload_ = msg.payload_json;
+        } else if (type == "call_ended") {
+          ++sent_ended_;
         }
       }
       return {};
@@ -384,6 +388,39 @@ protected:
     });
   }
 
+  /** A connected call with the peer seeded in the store and the live calls (`group`: a group's call). */
+  void SeedConnectedCall(const std::string& call_id, const bool group) {
+    CallSession session;
+    session.call_id = call_id;
+    session.origin_thread_id = "thread:1";
+    if (group) {
+      session.origin_group_id = "group:1";
+    }
+    session.media_mode = CallMediaMode::Voice;
+    session.state = CallSessionState::Active;
+    session.created_at = util::NowUnixMs();
+    session.media_epoch = 1;
+    session.media_key_id = "mk:1";
+    ASSERT_TRUE(sessions_->UpsertSession(session));
+    for (const std::string& who : {local_identity_, std::string("account:peer")}) {
+      CallParticipant row;
+      row.call_id = call_id;
+      row.identity = who;
+      row.state = CallParticipantState::Joined;
+      row.joined_at = session.created_at;
+      ASSERT_TRUE(sessions_->UpsertParticipant(row));
+    }
+    device_->LiveCallsForTest().AdmitPlaced(call_id, {"account:peer"}); // as StartCall does
+    OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(call_id); });
+    OnCallsOwner([&] { device_->LiveCallsForTest().NoteMediaConnected(call_id); });
+    ASSERT_EQ(device_->Live().Phase(), CallPhase::InCall);
+  }
+
+  CallSessionState SessionState(const std::string& call_id) {
+    auto loaded = sessions_->LoadSession(call_id);
+    return loaded && loaded->has_value() ? (*loaded)->state : CallSessionState::Ended;
+  }
+
   /** The call the device shows (active, else the ring); empty when idle. */
   std::string ShownCallId() const {
     const LiveCall* shown = device_->Live().Shown();
@@ -418,7 +455,8 @@ protected:
 
   std::filesystem::path data_dir_;
   std::unique_ptr<InMemoryDeliveryStore> store_;
-  std::unique_ptr<InMemoryCallSessionStore> sessions_;
+  /** The in-memory rows; their reads can be made to fail (DEV/PLAN-call-ui-never-detached.md). */
+  std::unique_ptr<FailingCallSessionStore> sessions_;
   std::unique_ptr<InMemoryCallMediaKeyStore> keys_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
@@ -446,6 +484,8 @@ protected:
   /** The last CallAccept on the wire (the answerer start may send more after it). */
   std::string last_sent_accept_payload_;
   int sent_rosters_ = 0;
+  /** CallEnded put on the wire. */
+  int sent_ended_ = 0;
   /** `urgent` of every CallInvite put on the wire, in order. */
   std::vector<bool> invite_urgent_;
   std::string last_sent_invite_payload_;
@@ -2131,6 +2171,83 @@ TEST_F(CallGuestComposeTest, RemovingFromHereNeedsOwnerOrAdminAndAGuest) {
   EXPECT_FALSE(OnCallsOwner([&] { return csm_->RemoveFromCall(call_id, "account:bob"); })) << "a member";
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->RemoveFromCall(call_id, "account:erin"); }));
   EXPECT_EQ(StateOf(call_id, "account:erin"), CallParticipantState::Left);
+}
+
+// DEV/PLAN-call-ui-never-detached.md review 3 (B199): a read of the call's people that fails is "unknown", never
+// "nobody" — no call is ended on it for someone else's event; the next event decides.
+TEST_F(CallSessionInboundComposeTest, APeerLeaveWhoseRosterCannotBeReadEndsNothing) {
+  const std::string call_id = "call:leave-unread";
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/false));
+  CallLeaveDetail leave;
+  leave.call_id = call_id;
+  leave.identity = "account:peer";
+  auto detail = CallControlCodec::EncodeLeave(leave);
+  ASSERT_TRUE(detail);
+  auto msg =
+      CallControlCodec::BuildSystemMessage("thread:1", CallControlType::CallLeave, "Left", *detail, "account:peer");
+  ASSERT_TRUE(msg);
+  sessions_->fail_participant_lists = true; // the sender check reads; the roster read fails
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall) << "ended on a failed read";
+  EXPECT_EQ(SessionState(call_id), CallSessionState::Active);
+  EXPECT_EQ(sessions_->FindParticipant(call_id, "account:peer")->value().state, CallParticipantState::Left)
+      << "their leave is still recorded";
+}
+
+TEST_F(CallSessionInboundComposeTest, ADeclineWhoseRosterCannotBeReadEndsNothing) {
+  const std::string call_id = "call:decline-unread";
+  SeedOffererRingingCall(call_id);
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(call_id); });
+  ASSERT_EQ(device_->Live().Phase(), CallPhase::OutboundCalling);
+  CallDeclineDetail decline;
+  decline.call_id = call_id;
+  decline.identity = "account:peer";
+  auto detail = CallControlCodec::EncodeDecline(decline);
+  ASSERT_TRUE(detail);
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallDecline, "Declined", *detail,
+                                                  "account:peer");
+  ASSERT_TRUE(msg);
+  sessions_->fail_participant_lists = true; // the sender check reads; the roster read fails
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::OutboundCalling) << "ended on a failed read";
+  EXPECT_NE(SessionState(call_id), CallSessionState::Ended);
+}
+
+TEST_F(CallSessionInboundComposeTest, AloneInAGroupCallWithAnUnreadableRosterIsAskedAgainNotLeft) {
+  const std::string call_id = "call:alone-unread";
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/true));
+  CallParticipant gone;
+  gone.call_id = call_id;
+  gone.identity = "account:peer";
+  gone.state = CallParticipantState::Left;
+  ASSERT_TRUE(sessions_->UpsertParticipant(gone)); // nobody else is in it: the wait would end the call
+  const int64_t long_ago = util::NowUnixMs() - CallSessionLogic::kAloneInGroupCallMs - 1'000;
+  OnCallsOwner([&] { device_->Workflow().SetAloneSinceForTest(call_id, long_ago); });
+  sessions_->fail_participants = true;
+  OnCallsOwner([&] { csm_->SweepExpiredInvites(); });
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall) << "left on a failed read";
+  EXPECT_GT(device_->AloneUntilMs(call_id), 0) << "still waited on: asked again";
+
+  sessions_->fail_participants = false;
+  OnCallsOwner([&] { device_->Workflow().SetAloneSinceForTest(call_id, long_ago); });
+  OnCallsOwner([&] { csm_->SweepExpiredInvites(); });
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle) << "readable again: alone, so it is left as before";
+}
+
+TEST_F(CallSessionInboundComposeTest, OurOwnLeaveCompletesWhenTheRosterCannotBeReadButEndsItForNoOne) {
+  const std::string call_id = "call:own-leave-unread";
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/false));
+  sessions_->fail_participants = true;
+  const int ended_before = sent_ended_;
+  (void)OnCallsOwner([&] { return csm_->LeaveCall(call_id, LiveCallEndReason::LocalLeave); });
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle) << "this device is out whatever the read said";
+  EXPECT_FALSE(media_->IsActive());
+  EXPECT_EQ(sent_ended_, ended_before) << "no call_ended on a failed read";
+  EXPECT_EQ(SessionState(call_id), CallSessionState::Active) << "not ended for the others";
+  sessions_->fail_participants = false;
+  auto me = sessions_->FindParticipant(call_id, local_identity_);
+  ASSERT_TRUE(me && me->has_value());
+  EXPECT_EQ((*me)->state, CallParticipantState::Left);
 }
 
 } // namespace

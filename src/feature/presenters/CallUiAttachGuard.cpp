@@ -24,6 +24,14 @@ bool EngineHasOpenCall(const bool available, const std::string& active_call_id, 
   return false;
 }
 
+EngineCall EngineCallOf(const CallUiState& state) {
+  EngineCall call;
+  call.call_id = state.active_call_id;
+  call.phase = state.phase;
+  call.open = EngineHasOpenCall(state.available, state.active_call_id, state.phase);
+  return call;
+}
+
 bool OngoingCallWanted(const bool presenter_has_call, const bool engine_open) {
   return presenter_has_call || engine_open;
 }
@@ -51,6 +59,14 @@ CallUiAttachGuard::Step CallUiAttachGuard::Feed(const Input& in) {
       }
       return step; // never hung up twice
     }
+  }
+  if (in.engine_open && !in.leaving_call_id.empty() && in.engine_call_id == in.leaving_call_id) {
+    // The user hung it up: the screen let go on purpose. Only its media is stopped again if the engine keeps it.
+    hung_up_call_id_ = in.engine_call_id;
+    last_stop_ms_ = in.steady_ms;
+    stop_retries_ = 0;
+    ResetLost();
+    return step;
   }
 
   const bool lost = in.engine_open && in.ui_call_id != in.engine_call_id;

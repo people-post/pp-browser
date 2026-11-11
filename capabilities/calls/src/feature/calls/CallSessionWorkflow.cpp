@@ -21,6 +21,9 @@
 namespace pbr {
 namespace {
 
+/** The alone-in-a-group-call check whose read of the call's people failed is made again this much later. */
+constexpr int64_t kAloneUnreadRetryMs = 1'000;
+
 /** A pending peer bye's key (K014): the call and the peer who said it. */
 std::string PeerByeKey(const std::string& call_id, const std::string& peer) {
   return call_id + '\n' + peer;
@@ -1087,11 +1090,20 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveC
     (void)host_.wire.fan_out_joined(call_id, CallControlType::CallLeave, *detail, "Left the call", *local);
   }
 
-  auto joined = sessions_.CountJoined(call_id);
-  const size_t remaining = joined ? *joined : 0;
-  const bool group = IsGroupCall(**session);
   alone_since_ms_.erase(call_id);
   media_key_resends_.erase(call_id);
+  auto rows = sessions_.ListParticipants(call_id);
+  if (!rows) {
+    // This device is out (the call closed, its media stopped, its leave sent): whether the call ends for the others
+    // is not known, so it is not ended for them on a read that failed (DEV/PLAN-call-ui-never-detached.md).
+    log().warning << "LeaveCall: the call's people could not be read; left, the call not ended for the others call_id="
+                  << call_id << " err=" << rows.error().message;
+    reports_.Emit(workflow_report::Changed{});
+    return {};
+  }
+  const size_t remaining = static_cast<size_t>(std::count_if(
+      rows->begin(), rows->end(), [](const CallParticipant& p) { return p.state == CallParticipantState::Joined; }));
+  const bool group = CallSessionLogic::IsGroupCall(**session, rows->size());
   const CallSessionState next = CallSessionLogic::TransitionOnLeave((*session)->state, remaining, group);
   if (next == CallSessionState::Ended) {
     std::optional<int64_t> duration;
@@ -1674,16 +1686,23 @@ Roe<void> CallSessionWorkflow::HandleInboundDecline(const std::string& detail_js
   auto session = sessions_.LoadSession(decline->call_id);
   if (local && session && session->has_value() && (*session)->state != CallSessionState::Ended) {
     bool remote_interest = false;
-    if (auto parts = sessions_.ListParticipants(decline->call_id); parts) {
-      for (const CallParticipant& row : *parts) {
-        if (row.identity == *local) {
-          continue;
-        }
-        if (row.state == CallParticipantState::Joined || row.state == CallParticipantState::Ringing ||
-            row.state == CallParticipantState::Invited) {
-          remote_interest = true;
-          break;
-        }
+    auto parts = sessions_.ListParticipants(decline->call_id);
+    if (!parts) {
+      // Who else is still in or ringing is unknown: the call is not ended on a read that failed; the next event (a
+      // leave, the unanswered timeout) decides (DEV/PLAN-call-ui-never-detached.md).
+      log().warning << "CallDecline: the call's people could not be read; the call goes on call_id=" << decline->call_id
+                    << " from=" << identity << " err=" << parts.error().message;
+      reports_.Emit(workflow_report::Changed{});
+      return {};
+    }
+    for (const CallParticipant& row : *parts) {
+      if (row.identity == *local) {
+        continue;
+      }
+      if (row.state == CallParticipantState::Joined || row.state == CallParticipantState::Ringing ||
+          row.state == CallParticipantState::Invited) {
+        remote_interest = true;
+        break;
       }
     }
     if (!remote_interest) {
@@ -1718,7 +1737,6 @@ Roe<void> CallSessionWorkflow::ParticipantGone(const std::string& call_id, const
   participant.state = CallParticipantState::Left;
   participant.left_at = util::NowUnixMs();
   (void)sessions_.UpsertParticipant(participant);
-  auto joined = sessions_.CountJoined(call_id);
   auto session = sessions_.LoadSession(call_id);
   // B24: relay inbox replays old call-control; an ended call's Leave must not re-run EndCallLocal
   // (which stops whatever media a newer call is using).
@@ -1743,8 +1761,18 @@ Roe<void> CallSessionWorkflow::ParticipantGone(const std::string& call_id, const
     return {};
   }
   if (session && session->has_value()) {
-    const size_t remaining = joined ? *joined : 0;
-    const bool group = IsGroupCall(**session);
+    auto rows = sessions_.ListParticipants(call_id);
+    if (!rows) {
+      // Who is left is unknown: a failed read is not "nobody", so the call is not ended on it; the next event or the
+      // connection's own health decides (DEV/PLAN-call-ui-never-detached.md, B199).
+      log().warning << "a participant left but the call's people could not be read; the call goes on call_id="
+                    << call_id << " who=" << identity << " err=" << rows.error().message;
+      reports_.Emit(workflow_report::Changed{});
+      return {};
+    }
+    const size_t remaining = static_cast<size_t>(std::count_if(
+        rows->begin(), rows->end(), [](const CallParticipant& p) { return p.state == CallParticipantState::Joined; }));
+    const bool group = CallSessionLogic::IsGroupCall(**session, rows->size());
     const CallSessionState next = CallSessionLogic::TransitionOnLeave((*session)->state, remaining, group);
     if (group && next != CallSessionState::Ended && remaining == 1 &&
         call_queries::JoinedRemoteIdentities(sessions_, call_id, local_identity).empty()) {
@@ -2263,8 +2291,20 @@ void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_ident
       continue;
     }
     const std::string call_id = it->first;
+    auto joined = call_queries::JoinedParticipants(sessions_, call_id);
+    if (!joined) {
+      // A failed read is not "nobody else": looked at again in a second (DEV/PLAN-call-ui-never-detached.md, B199).
+      log().warning << "Alone in group call: the call's people could not be read; asking again call_id=" << call_id
+                    << " err=" << joined.error().message;
+      it->second = now - CallSessionLogic::kAloneInGroupCallMs + kAloneUnreadRetryMs;
+      ++it;
+      continue;
+    }
     it = alone_since_ms_.erase(it);
-    if (call_queries::JoinedRemoteIdentities(sessions_, call_id, local_identity).empty()) {
+    const bool others = std::any_of(joined->begin(), joined->end(), [&](const CallParticipant& p) {
+      return !p.identity.empty() && p.identity != local_identity;
+    });
+    if (!others) {
       log().info << "Alone in group call for " << CallSessionLogic::kAloneInGroupCallMs / 1000
                  << " s — leaving call_id=" << call_id;
       (void)LeaveCall(call_id, LiveCallEndReason::LocalLeave);

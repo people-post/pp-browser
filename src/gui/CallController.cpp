@@ -125,7 +125,7 @@ CallController::CallController()
   foreground_listener_ = AppLifecycle::AddForegroundListener([this]() { OnAppForeground(); });
   OngoingCallService::SetHangUpHandler([this]() {
     // The screen's call, or the engine's call the screen lost: Leave takes the engine's id when it has none.
-    if (OngoingCallWanted(!presenter_.ActiveCallId().empty(), EngineHasOpenCallNow())) {
+    if (OngoingCallWanted(!presenter_.ActiveCallId().empty(), EngineCallNotLeft().open)) {
       log().info << "hang up from the ongoing-call notification";
       (void)presenter_.Leave();
     }
@@ -138,14 +138,22 @@ CallController::~CallController() {
   AppLifecycle::RemoveListener(foreground_listener_);
 }
 
-bool CallController::EngineHasOpenCallNow() {
+EngineCall CallController::EngineCallNow() {
   auto* backend = Backend();
-  return backend && EngineHasOpenCall(backend->Available(), backend->ActiveCallId(), backend->Phase());
+  return backend ? EngineCallOf(*backend->State()) : EngineCall{};
+}
+
+EngineCall CallController::EngineCallNotLeft() {
+  EngineCall engine = EngineCallNow();
+  if (engine.open && engine.call_id == presenter_.LeavingCallId()) {
+    engine.open = false; // hung up here: its media is being stopped (the guard retries if it stays open)
+  }
+  return engine;
 }
 
 void CallController::SyncOngoingCall() {
   const bool screen_call = !presenter_.ActiveCallId().empty();
-  const bool engine_call = EngineHasOpenCallNow();
+  const bool engine_call = EngineCallNotLeft().open;
   const bool on = OngoingCallWanted(screen_call, engine_call);
   const std::string title = on ? std::string(in_call_.phone_title.c_str()) : std::string();
   if (on == ongoing_call_on_ && title == ongoing_call_title_) {
@@ -1594,10 +1602,12 @@ void EmitUiDetached(const char* phase, const ShareWord result) {
 
 void CallController::GuardCallUiAttach() {
   auto* backend = Backend();
+  const EngineCall engine = EngineCallNow(); // one snapshot
   CallUiAttachGuard::Input in;
-  in.engine_open = EngineHasOpenCallNow();
-  in.engine_call_id = in.engine_open ? backend->ActiveCallId() : std::string();
+  in.engine_open = engine.open;
+  in.engine_call_id = engine.open ? engine.call_id : std::string();
   in.ui_call_id = presenter_.ActiveCallId();
+  in.leaving_call_id = presenter_.LeavingCallId();
   in.steady_ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
           .count();
@@ -1605,7 +1615,7 @@ void CallController::GuardCallUiAttach() {
   if (!step.report_detached && !step.hang_up && !step.stop_again) {
     return;
   }
-  const char* phase = backend ? CallPhaseName(backend->Phase()) : "none";
+  const char* phase = CallPhaseName(engine.phase);
   if (step.report_detached) {
     log().warning << "call screen lost the engine's call phase=" << phase << " screen_call=" << in.ui_call_id
                   << " call_id=" << step.call_id;
@@ -1615,7 +1625,8 @@ void CallController::GuardCallUiAttach() {
     if constexpr (kCallUiDetachedHangsUp) {
       log().error << "call screen could not take the call back: hanging up so no mic stays open unseen phase=" << phase
                   << " call_id=" << step.call_id;
-      (void)presenter_.Leave(); // StopCallMedia first (no store), then LeaveClicked (the engine goes Idle)
+      // The engine's call by its id (the screen may hold another): StopCallMedia first (no store), then LeaveClicked.
+      presenter_.HangUpEngineCall(step.call_id);
       UserFeedback::Note(Tr("call.ended_safety"));
     } else {
       log().error << "call screen could not take the call back (log only, not hung up) phase=" << phase

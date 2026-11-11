@@ -190,3 +190,35 @@ TEST(CallUiAttachGuardTest, NoOpenCallNeverTriggers) {
     EXPECT_FALSE(step.report_detached || step.hang_up || step.stop_again) << t;
   }
 }
+
+// Review 1: the call the user hung up is not lost — never reported, never hung up again (no privacy pill); while the
+// engine keeps it open only its media is stopped again, every 2 s, at most 3 times.
+TEST(CallUiAttachGuardTest, ACallTheUserHungUpIsOnlyStoppedAgain) {
+  CallUiAttachGuard guard;
+  std::vector<int64_t> stops;
+  for (int64_t t = 0; t <= 20'000; t += 500) {
+    const auto step = guard.Feed({.engine_open = true,
+                                  .engine_call_id = "call:a",
+                                  .ui_call_id = "",
+                                  .leaving_call_id = "call:a",
+                                  .steady_ms = t});
+    EXPECT_FALSE(step.report_detached || step.hang_up) << t;
+    if (step.stop_again) {
+      stops.push_back(t);
+    }
+  }
+  EXPECT_EQ(stops, (std::vector<int64_t>{2'000, 4'000, 6'000}));
+  EXPECT_FALSE(guard.Feed(Closed(20'500)).stop_again);
+  const auto next = guard.Feed(Lost(21'000, "call:b"));
+  EXPECT_TRUE(next.report_detached) << "another call lost later is the guard's again";
+}
+
+TEST(CallUiAttachGuardTest, AHangUpThatClosesAtOnceNeedsNothing) {
+  CallUiAttachGuard guard;
+  (void)guard.Feed(
+      {.engine_open = true, .engine_call_id = "call:a", .ui_call_id = "", .leaving_call_id = "call:a", .steady_ms = 0});
+  for (int64_t t = 500; t <= 10'000; t += 500) {
+    const auto step = guard.Feed(Closed(t));
+    EXPECT_FALSE(step.report_detached || step.hang_up || step.stop_again) << t;
+  }
+}

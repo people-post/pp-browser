@@ -1,5 +1,6 @@
 #pragma once
 
+#include "feature/calls/CallUiState.h"
 #include "lib/calls/CallLifecycleTypes.h"
 
 #include <cstdint>
@@ -18,7 +19,20 @@ namespace pbr {
  */
 bool EngineHasOpenCall(bool available, const std::string& active_call_id, CallPhase phase);
 
-/** The ongoing-call service (Android's "in a call" notification and its Hang up) is on: the screen or the engine has a call. */
+/** The engine's call as one snapshot shows it (read CallUiBackend::State() once and decide from this). */
+struct EngineCall {
+  /** EngineHasOpenCall. */
+  bool open = false;
+  std::string call_id;
+  CallPhase phase = CallPhase::Idle;
+};
+EngineCall EngineCallOf(const CallUiState& state);
+
+/**
+ * The ongoing-call service (Android's "in a call" notification and its Hang up) is on: the screen has a call, or the
+ * engine has an open call the user has not hung up (`engine_open` excludes the call being left: once the user ends a
+ * call the service goes, as it always did, while its media is being stopped).
+ */
 bool OngoingCallWanted(bool presenter_has_call, bool engine_open);
 
 /**
@@ -36,6 +50,9 @@ inline constexpr bool kCallUiDetachedHangsUp = true;
  * kHangUpTicks lost frames in a row that span kHangUpMs; a gap longer than kMaxGapMs between two frames (the app was
  * paused) adds no time and starts the count again. Once hung up, while the engine still has that call: its media is
  * stopped again every kStopRetryMs, at most kMaxStopRetries times.
+ *
+ * A call the user hung up (the presenter's LeavingCallId) is never lost, never hung up again and never reported: while
+ * the engine still has it open, only its media is stopped again on the same schedule.
  */
 class CallUiAttachGuard {
 public:
@@ -51,6 +68,8 @@ public:
     std::string engine_call_id;
     /** The presenter's ActiveCallId, after its refresh. */
     std::string ui_call_id;
+    /** The presenter's LeavingCallId: the call the user hung up, until the engine lets go of it. */
+    std::string leaving_call_id;
     /** std::chrono::steady_clock, in ms. */
     int64_t steady_ms = 0;
   };

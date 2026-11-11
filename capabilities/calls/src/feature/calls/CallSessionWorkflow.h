@@ -153,6 +153,8 @@ public:
   void NotePeerEndedCall(const std::string& call_id, const std::string& peer);
   /** Test seam: the wait for call_leave after a peer's bye (production kPeerByeLeaveGrace). */
   void SetPeerByeLeaveGraceForTest(std::chrono::milliseconds grace) { peer_bye_leave_grace_ = grace; }
+  /** Calls owner: start `call_id`'s alone-in-a-group-call wait at `since_ms` (wall clock), as a peer leaving would. */
+  void SetAloneSinceForTest(const std::string& call_id, int64_t since_ms) { alone_since_ms_[call_id] = since_ms; }
   /** Test seam: the number of the last peer bye noted (NotePeerEndedCall). */
   uint64_t LastPeerByeForTest() const { return last_peer_bye_; }
   /**
