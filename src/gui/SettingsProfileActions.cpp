@@ -154,13 +154,14 @@ void SettingsProfileActions::RotateBriefLlmKey() {
 
 void SettingsProfileActions::CopyId() {
   host_.PullFromView();
-  const std::string& peer_id = host_.UiState().profile_peer_id;
-  if (peer_id.empty()) {
+  // The account ID: what the row shows, what Share sends and what a friend types into Add contact.
+  const std::string& account_id = host_.UiState().profile_relay_id;
+  if (account_id.empty()) {
     UserFeedback::Fail(Tr("settings.profile.no_peer_id"));
     return;
   }
   if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-    system->SetClipboardText(peer_id.c_str());
+    system->SetClipboardText(account_id.c_str());
   }
   UserFeedback::Ok(Tr("settings.profile.peer_id_copied"));
 }
