@@ -248,5 +248,19 @@ TEST_F(StorageTileLayoutTest, TheCategoryTabsHaveTextAVisibleBoxAndAFilledSelect
   }
 }
 
+
+// The label is the button's bare text; in a display:flex button that text gets a 0x0 box and nothing is painted (the
+// phone showed a white pill and an empty bar), so the tab is a block whose line box is the tab's height.
+TEST(StorageSegmentRuleTest, TheTabIsABlockWithALineBoxNotAFlexButton) {
+  const std::string css = Asset("themes/components.rcss");
+  const size_t rule = css.find(".storage-seg .storage-seg-tab {");
+  ASSERT_NE(rule, std::string::npos);
+  const std::string body = css.substr(rule, css.find('}', rule) - rule);
+  EXPECT_EQ(body.find("\n  display: flex"), std::string::npos);
+  EXPECT_NE(body.find("display: block;"), std::string::npos);
+  EXPECT_NE(body.find("line-height: 40dp;"), std::string::npos);
+  EXPECT_NE(body.find("text-align: center;"), std::string::npos);
+}
+
 } // namespace
 } // namespace pbr

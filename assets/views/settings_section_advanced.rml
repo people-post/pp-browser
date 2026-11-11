@@ -198,6 +198,10 @@
             {{i18n:settings.llm.brief_key_auto}}
           </p>
         </div>
+        <div class="settings-actions stack">
+          <button class="btn btn-secondary settings-action-bar" type="button" data-if="advanced && profile_show_rotate"
+                  data-event-click="rotate_brief_llm_key()">{{i18n:settings.llm.rotate_brief_key}}</button>
+        </div>
         <div class="group-card" data-if="llm_preset != 'brief'">
           <label class="settings-field group-row group-row--field" >
             <span class="group-row-body group-row-body--field">

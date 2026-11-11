@@ -28,7 +28,7 @@ struct SettingsPage {
   /** 0: no list entry (reached from the profile card); 1..3: the Home list group. */
   int home_group;
   /** Handler ids the rows on the page save through (nullptr ends the list). */
-  const char* handler_ids[5];
+  const char* handler_ids[6];
   unsigned actions;
   /** Listed on Home (and the desktop list) only while "show advanced settings" is on (five taps on the version). */
   bool advanced_only;

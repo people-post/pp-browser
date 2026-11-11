@@ -3533,7 +3533,7 @@ input.checkbox:checked {
 }
 
 .storage-seg .storage-seg-tab--on {
-  background-color: #1c1c1e;
+  background-color: #3a3a3c;
 }
 
 .storage-tile-frame {

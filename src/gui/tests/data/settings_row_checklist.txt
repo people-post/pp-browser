@@ -6,7 +6,7 @@ data-event-blur="on_profile_nickname_commit()"	1	profile	profile	-	profile
 data-event-click="copy_profile_id()"	2	-	profile	-	profile	
 data-event-click="pick_profile_icon()"	1	-	profile	-	profile	
 data-event-click="register_profile()"	1	profile	profile	profile_show_register	profile	
-data-event-click="rotate_brief_llm_key()"	1	profile	profile	advanced && profile_show_rotate	profile	10
+data-event-click="rotate_brief_llm_key()"	1	profile	advanced	advanced;;advanced;;advanced && profile_show_rotate	profile	10
 data-event-click="share_profile()"	2	-	profile	-	profile	
 data-event-click="tap_profile_avatar()"	1	-	profile	-	profile	
 data-event-click="toggle_auto_renew_registration()"	1	profile	profile	advanced	profile	10
@@ -15,7 +15,7 @@ data-value="profile_nickname"	1	profile	profile	-	profile
 {{i18n:common.share}}	1	-	profile	-	profile	
 {{i18n:contacts.copy_id}}	1	-	profile	-	profile	
 {{i18n:settings.auto_renew}}	1	-	profile	advanced	profile	10
-{{i18n:settings.llm.rotate_brief_key}}	1	-	profile	advanced && profile_show_rotate	profile	10
+{{i18n:settings.llm.rotate_brief_key}}	1	-	advanced	advanced;;advanced;;advanced && profile_show_rotate	profile	10
 {{i18n:settings.nickname}}	1	-	profile	-	profile	
 {{i18n:settings.profile.nickname_placeholder}}	1	-	profile	-	profile	
 {{i18n:settings.profile.nickname_placeholder}}	1	-	profile	profile_nickname == ''	profile	

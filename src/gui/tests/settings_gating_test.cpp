@@ -45,6 +45,15 @@ TEST(SettingsGatingTest, TheRootOfAdvancedAndTestOptionsIsGatedOnTheFlag) {
   }
 }
 
+TEST(SettingsGatingTest, TheAiCredentialRowLivesOnlyOnTheAdvancedPage) {
+  const std::string profile = ReadAsset("views/settings_section_profile.rml");
+  EXPECT_EQ(profile.find("rotate_brief_llm_key"), std::string::npos);
+  EXPECT_EQ(profile.find("settings.llm.rotate_brief_key"), std::string::npos);
+  const std::string advanced = ReadAsset("views/settings_section_advanced.rml");
+  EXPECT_EQ(CountOf(advanced, "data-event-click=\"rotate_brief_llm_key()\""), 1u);
+  EXPECT_EQ(CountOf(advanced, "data-if=\"advanced && profile_show_rotate\""), 1u) << "the gate moved unchanged";
+}
+
 TEST(SettingsGatingTest, HomeAndTheDesktopListNameNoPageDirectly) {
   const std::string home = ReadAsset("views/settings.rml");
   // Both lists loop over `sections`, which leaves Advanced and Test options out while the flag is off.
