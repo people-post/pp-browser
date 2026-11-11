@@ -439,6 +439,16 @@ TEST_F(CallUiBackendStackTest, OtherCallControlDroppedFromAStrangerIsNotABlocked
   EXPECT_TRUE(blocked_.empty());
 }
 
+TEST_F(CallUiBackendStackTest, AnInviteFromOurOwnAccountIsNeverToldAsBlocked) {
+  ListenForBlocked();
+  stack_->SetInboundCallAudience(mesh::InboundAudience::Nobody);
+  CallInviteDetail invite = StrangerInvite("call:sibling");
+  invite.inviter_identity = local_identity_;
+  ASSERT_TRUE(IngestInviteDetail(invite, local_identity_));
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_TRUE(blocked_.empty());
+}
+
 TEST_F(CallUiBackendStackTest, ADroppedGroupCallInviteSaysItIsAGroups) {
   ListenForBlocked();
   stack_->SetInboundCallAudience(mesh::InboundAudience::ContactsOnly);
