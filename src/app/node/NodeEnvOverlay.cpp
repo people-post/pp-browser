@@ -154,6 +154,11 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
   if (const char* registration = EnvOrNull("PP_NODE_REGISTRATION_BASE_URL")) {
     config.registration.base_url = registration;
   }
+  if (const char* content_sha256 = EnvOrNull("PP_NODE_RELAY_CONTENT_SHA256")) {
+    if (auto parsed = ParsePpNodeBoolEnv(content_sha256)) {
+      config.relay_content_sha256 = *parsed;
+    }
+  }
 }
 
 } // namespace pbr

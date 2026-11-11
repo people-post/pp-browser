@@ -56,6 +56,12 @@ struct AppConfig {
   std::string theme = "themes/base.rcss";
   std::string data_dir;
   ServiceEndpointConfig relay;
+  /**
+   * `relay.content_sha256`: send `x-amz-content-sha256` on relay POST/PUT (needed behind CloudFront origin access
+   * control). Deploy-provided, no settings UI; written to the file only when true so a build-time default of true
+   * is not shadowed by a saved false.
+   */
+  bool relay_content_sha256 = false;
   DirectoryConfig directory;
   ServiceEndpointConfig registration;
   MeshConfig mesh;

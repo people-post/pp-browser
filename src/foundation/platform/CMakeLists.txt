@@ -230,6 +230,13 @@ if(NOT PP_API_URL_QA STREQUAL "")
     PP_API_URL_QA="${PP_API_URL_QA}")
 endif()
 
+# Compile-time default of `relay.content_sha256`: send x-amz-content-sha256 on relay POST/PUT. Off unless the
+# deployment's relay API sits behind CloudFront origin access control; config.json / PP_NODE_RELAY_CONTENT_SHA256 override.
+option(PP_RELAY_CONTENT_SHA256 "Default relay.content_sha256 to true in this build" OFF)
+if(PP_RELAY_CONTENT_SHA256)
+  target_compile_definitions(pp_foundation_platform_core PRIVATE PP_RELAY_CONTENT_SHA256=1)
+endif()
+
 if(PP_BROWSER_HEADLESS)
   return()
 endif()

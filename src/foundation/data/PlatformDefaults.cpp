@@ -31,6 +31,7 @@ AppConfig BriefDefaults(const std::string& origin) {
   config.relay.base_url = relay_base;
   config.directory.base_url = relay_base;
   config.registration.base_url = relay_base;
+  config.relay_content_sha256 = CompiledRelayContentSha256();
   return config;
 }
 

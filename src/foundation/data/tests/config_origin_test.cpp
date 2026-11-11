@@ -150,6 +150,48 @@ TEST(ConfigBackendTest, ProdIgnoresSavedUrlsButKeepsThemForSave) {
   pbr::ResetActiveBackendForTest();
 }
 
+TEST(ConfigRelayContentSha256Test, DefaultsToTheBuildDefaultAndTheFileOverridesIt) {
+  pbr::ResetActiveBackendForTest();
+  ScopedOrigin origin(nullptr);
+  EXPECT_EQ(pbr::Config::DefaultAppConfig().relay_content_sha256, pbr::CompiledRelayContentSha256());
+
+  const std::string path =
+      WriteConfig("pp_browser_config_sha_on.json", R"({"config_version": 1, "relay": {"content_sha256": true}})");
+  auto on = pbr::Config::LoadFromFile(path);
+  ASSERT_TRUE(static_cast<bool>(on));
+  EXPECT_TRUE(on->relay_content_sha256);
+
+  const std::string off_path =
+      WriteConfig("pp_browser_config_sha_off.json", R"({"config_version": 1, "relay": {"content_sha256": false}})");
+  auto off = pbr::Config::LoadFromFile(off_path);
+  ASSERT_TRUE(static_cast<bool>(off));
+  EXPECT_FALSE(off->relay_content_sha256);
+  std::filesystem::remove(path);
+  std::filesystem::remove(off_path);
+  pbr::ResetActiveBackendForTest();
+}
+
+TEST(ConfigRelayContentSha256Test, IsWrittenOnlyWhenOn) {
+  pbr::ResetActiveBackendForTest();
+  ScopedOrigin origin(nullptr);
+  const std::string out = (std::filesystem::temp_directory_path() / "pp_browser_config_sha_out.json").string();
+  pbr::AppConfig config = pbr::Config::DefaultAppConfig();
+  const auto saved_text = [&] {
+    EXPECT_TRUE(static_cast<bool>(pbr::Config::SaveToFile(out, config)));
+    std::ifstream in(out);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  };
+  config.relay_content_sha256 = false;
+  EXPECT_EQ(saved_text().find("content_sha256"), std::string::npos);
+  config.relay_content_sha256 = true;
+  EXPECT_NE(saved_text().find("content_sha256"), std::string::npos);
+  auto reloaded = pbr::Config::LoadFromFile(out);
+  ASSERT_TRUE(static_cast<bool>(reloaded));
+  EXPECT_TRUE(reloaded->relay_content_sha256);
+  std::filesystem::remove(out);
+  pbr::ResetActiveBackendForTest();
+}
+
 TEST(ConfigBackendTest, CustomUsesSavedUrls) {
   pbr::ResetActiveBackendForTest();
   ScopedOrigin origin(nullptr);

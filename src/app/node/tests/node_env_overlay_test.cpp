@@ -117,6 +117,23 @@ TEST(NodeEnvOverlayTest, TheHeartbeatIsTheOperatorsChoice) {
   EXPECT_TRUE(config.mesh.mesh_heartbeat);
 }
 
+// relay.content_sha256 is off unless config or the environment turns it on; an unparsable value keeps the config's.
+TEST(NodeEnvOverlayTest, RelayContentSha256ComesFromTheEnvironment) {
+  EnvGuard guard("PP_NODE_RELAY_CONTENT_SHA256");
+  pbr::AppConfig config;
+  pbr::ApplyPpNodeConfigEnvOverlays(config);
+  EXPECT_FALSE(config.relay_content_sha256);
+  SetEnv("PP_NODE_RELAY_CONTENT_SHA256", "true");
+  pbr::ApplyPpNodeConfigEnvOverlays(config);
+  EXPECT_TRUE(config.relay_content_sha256);
+  SetEnv("PP_NODE_RELAY_CONTENT_SHA256", "maybe");
+  pbr::ApplyPpNodeConfigEnvOverlays(config);
+  EXPECT_TRUE(config.relay_content_sha256);
+  SetEnv("PP_NODE_RELAY_CONTENT_SHA256", "0");
+  pbr::ApplyPpNodeConfigEnvOverlays(config);
+  EXPECT_FALSE(config.relay_content_sha256);
+}
+
 // mesh.capacity from the environment: a positive count, anything else keeps what the config said.
 TEST(NodeEnvOverlayTest, CapacitiesComeFromTheEnvironment) {
   EnvGuard links("PP_NODE_CAPACITY_LINKS");

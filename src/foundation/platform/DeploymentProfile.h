@@ -67,6 +67,8 @@ inline bool ChangePinVisible(bool ui_demo) {
 const char* CompiledDefaultOrigin();
 /** The compile-time QA origin ("" unless configured); empty hides the QA option. */
 const char* CompiledQaOrigin();
+/** The compile-time default of `relay.content_sha256` (CMake PP_RELAY_CONTENT_SHA256; false unless set). */
+bool CompiledRelayContentSha256();
 inline bool QaBackendAvailable() {
   return *CompiledQaOrigin() != '\0';
 }

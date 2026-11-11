@@ -4,6 +4,7 @@
 #include "common/Metrics.h"
 #include "foundation/error/AppError.h"
 #include "foundation/crypto/Sha256Hex.h"
+#include "foundation/tls/ContentSha256Policy.h"
 #include "foundation/error/CurlNetworkError.h"
 #include "foundation/tls/CurlSsl.h"
 
@@ -192,7 +193,8 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, timeout.connect_s);
   }
 
-  const auto sent_headers = add_content_sha256 ? HttpClient::WithContentSha256(method, body, headers) : headers;
+  const auto sent_headers =
+      add_content_sha256 && SendContentSha256() ? HttpClient::WithContentSha256(method, body, headers) : headers;
   struct curl_slist* header_list = nullptr;
   for (const auto& [key, value] : sent_headers) {
     header_list = curl_slist_append(header_list, (key + ": " + value).c_str());
