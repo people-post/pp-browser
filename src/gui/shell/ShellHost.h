@@ -101,6 +101,8 @@ public:
   ShellHost();
 
   void BindShellMessaging(MessagingShellPorts ports);
+  /** Advanced settings shown or not (the status popover's network-settings link follows it). */
+  void SetShowAdvancedSettings(bool shown);
   void BindPinGateActions(PinGateActionPorts ports);
   void BindFlowCoordinator(FlowCoordinatorPorts ports);
   void BindCallActions(CallActionsPorts ports);

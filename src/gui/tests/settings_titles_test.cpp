@@ -134,6 +134,23 @@ TEST(SettingsTitlesTest, TheProfilePageIsCalledMyProfile) {
   EXPECT_EQ(Tr("settings.profile.title"), "My profile");
 }
 
+TEST(SettingsTitlesTest, PrivacyFollowsTheMockupOrderAndWords) {
+  const std::string rml = ReadAsset("views/settings_section_privacy.rml");
+  const size_t calls = rml.find("on_choose_call_invite_policy()");
+  const size_t invites = rml.find("on_choose_group_invite_policy()");
+  const size_t blocked = rml.find("open_blocked_people()");
+  ASSERT_NE(calls, std::string::npos);
+  EXPECT_LT(calls, invites) << "who can call me, then who can add me to groups";
+  EXPECT_LT(invites, blocked) << "then blocked people";
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("settings.security.group_invites"), "谁可以拉我进群");
+  EXPECT_EQ(Tr("settings.profile.peer_id_copied"), "账号 ID 已复制") << "names what the user copied";
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  EXPECT_EQ(Tr("settings.security.group_invites"), "Who can add me to groups");
+  EXPECT_EQ(Tr("settings.profile.peer_id_copied"), "Account ID copied");
+}
+
 TEST(SettingsTitlesTest, HomeTitleIsMe) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");

@@ -2001,8 +2001,11 @@ void Application::WireAgentAndConfig() {
     });
   }
   contacts_->SetShowAdvanced(store_.Snapshot().profile_prefs.show_advanced_settings);
-  store_.AddProfilePrefsListener(
-      [this](const ProfilePreferences& prefs) { contacts_->SetShowAdvanced(prefs.show_advanced_settings); });
+  shell_->SetShowAdvancedSettings(store_.Snapshot().profile_prefs.show_advanced_settings);
+  store_.AddProfilePrefsListener([this](const ProfilePreferences& prefs) {
+    contacts_->SetShowAdvanced(prefs.show_advanced_settings);
+    shell_->SetShowAdvancedSettings(prefs.show_advanced_settings);
+  });
   // A contact starred or unstarred (on their page), the recovery phrase opened, or the 动态 section toggled: Home follows.
   store_.AddProfilePrefsListener(
       [this, starred = store_.Snapshot().profile_prefs.starred_contacts,

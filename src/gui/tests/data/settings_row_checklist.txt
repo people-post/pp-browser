@@ -42,7 +42,6 @@ data-event-click="open_blocked_people()"	1	-	privacy	-	security
 {{i18n:contacts.blocked.title}}	1	-	privacy	-	security	
 {{i18n:settings.security.calls.help}}	1	-	privacy	-	security	
 {{i18n:settings.security.calls}}	1	-	privacy	-	security	
-{{i18n:settings.security.group_invites.help}}	1	-	privacy	-	security	
 {{i18n:settings.security.group_invites}}	1	-	privacy	-	security	
 data-class-settings-switch--on="security_biometric_on"	1	-	security	security_biometric_shown	security	
 data-event-click="ask_setting_help('settings.security.recovery')"	1	-	security	security_has_recovery_phrase	security	
@@ -319,7 +318,7 @@ data-value="server.url"	1	integrations	advanced	advanced;;advanced	integrations
 {{i18n:common.not_now}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	
 {{i18n:common.remove}}	1	-	advanced	advanced;;advanced	integrations	
 {{i18n:common.reset_defaults}}	2	-	advanced	advanced;;advanced	appearance,integrations,llm,network	
-{{i18n:settings.assistant.title}}	1	-	advanced	advanced	-	
+{{i18n:settings.advanced.group.ai}}	1	-	advanced	advanced	-	
 {{i18n:settings.integrations.add_mcp}}	1	-	advanced	advanced;;advanced	integrations	
 {{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced	advanced;;advanced	integrations	
 {{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced	advanced;;advanced;;server.args_text == ''	integrations	
@@ -377,7 +376,7 @@ data-value="server.url"	1	integrations	advanced	advanced;;advanced	integrations
 {{i18n:settings.network.prefer_contacts}}	1	-	advanced	advanced;;advanced && show_prefer_contacts_toggle	network	
 {{i18n:settings.network.reachable_without_relay.help}}	1	-	advanced	advanced;;show_node_toggle	network	
 {{i18n:settings.network.reachable_without_relay}}	1	-	advanced	advanced;;show_node_toggle	network	
-{{i18n:settings.network.title}}	1	-	advanced	advanced	-	
+{{i18n:settings.advanced.group.connection}}	1	-	advanced	advanced	-	
 {{i18n:settings.network.trusted_relays.help}}	1	-	advanced	advanced	network	
 {{i18n:settings.network.trusted_relays}}	1	-	advanced	advanced	network	
 {{i18n:settings.security.tool_permissions.help}}	1	-	advanced	advanced;;advanced	security	
@@ -465,3 +464,6 @@ data-event-click="export_link_device()"	2	-	devices	security_can_export_link && 
 {{i18n:settings.security.link_device.reset_hint}}	1	-	devices	-	devices	
 {{i18n:settings.security.link_device.send_hint}}	1	-	devices	-	devices	
 {{i18n:settings.security.link_device}}	1	-	devices	-	devices	
+{{i18n:settings.advanced.intro}}	1	-	advanced	advanced	-	
+{{i18n:settings.privacy.blocked_help}}	1	-	privacy	-	security	
+{{i18n:settings.tester.banner}}	1	-	tester	advanced	-	

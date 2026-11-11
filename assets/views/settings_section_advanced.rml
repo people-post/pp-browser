@@ -1,5 +1,6 @@
       <div class="settings-section settings-section--grouped stack" data-if="advanced">
-        <p class="text group-head">{{i18n:settings.network.title}}</p>
+        <p class="text muted settings-help group-foot">{{i18n:settings.advanced.intro}}</p>
+        <p class="text group-head">{{i18n:settings.advanced.group.connection}}</p>
         <div class="group-card" data-if="advanced && show_node_toggle">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">
@@ -158,7 +159,7 @@
         </div>
         <p class="text muted settings-help group-foot" data-if="mesh_status_message != ''">{{mesh_status_message}}</p>
         </div>
-        <p class="text group-head">{{i18n:settings.assistant.title}}</p>
+        <p class="text group-head">{{i18n:settings.advanced.group.ai}}</p>
         <p class="text group-foot group-foot--lead" data-if="!advanced">{{i18n:settings.llm.summary}}</p>
         <div class="stack" data-if="advanced">
         <div class="group-card">

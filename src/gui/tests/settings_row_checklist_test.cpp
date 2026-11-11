@@ -356,7 +356,6 @@ TEST(SettingsRowChecklistTest, WhatMovedOutOfAViewIsGoneFromIt) {
   EXPECT_FALSE(std::filesystem::exists(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "holding"));
 }
 
-
 // The sensitive actions of Security and Devices, row by row: each event is carried by exactly one element per layout
 // (phone / desktop), under exactly the gate chain it had before the mockup rebuild (90a581e9b). The PIN gate itself
 // lives in the action handlers; this pins that no other event, copy or gate reached them.

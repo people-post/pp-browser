@@ -67,7 +67,8 @@ TEST(SettingsGatingTest, TheRecoveryPhraseIsBoundOnlyInItsShownBlock) {
   ASSERT_NE(block, std::string::npos);
   const std::string between = rml.substr(block + 10, phrase - block - 10);
   EXPECT_EQ(between.find("data-if="), std::string::npos) << "no other condition between the gate and the phrase";
-  EXPECT_LT(rml.rfind("data-if=\"security_has_recovery_phrase\"", block), block) << "and that block is inside the has-phrase gate";
+  EXPECT_LT(rml.rfind("data-if=\"security_has_recovery_phrase\"", block), block)
+      << "and that block is inside the has-phrase gate";
 }
 
 TEST(SettingsGatingTest, NoViewOfTheTwoPagesBindsACodeAPhraseOrAKeyOutsideTheShownBlock) {
@@ -77,7 +78,8 @@ TEST(SettingsGatingTest, NoViewOfTheTwoPagesBindsACodeAPhraseOrAKeyOutsideTheSho
   const std::string pin = ReadAsset("views/settings_security_pin.rml");
   for (const std::string& view : {devices, transfer, pin}) {
     ASSERT_FALSE(view.empty());
-    for (const char* secret : {"{{recovery_phrase", "{{transfer", "{{link_code", "{{export_code", "{{pin_value", "{{brief_llm_key}}"}) {
+    for (const char* secret :
+         {"{{recovery_phrase", "{{transfer", "{{link_code", "{{export_code", "{{pin_value", "{{brief_llm_key}}"}) {
       EXPECT_EQ(view.find(secret), std::string::npos) << secret;
     }
   }

@@ -101,12 +101,12 @@ TEST_F(SettingsHelpQuestionTest, PhonesShowCrashReportsAndProblemLogsInHelpImpro
   EXPECT_NE(about.find("<div class=\"group-card settings-desktop-only\">"), std::string::npos);
   EXPECT_NE(about.find("group-actions settings-desktop-only\" data-if=\"show_diagnostics_send\""), std::string::npos);
   EXPECT_EQ(Tr("settings.about.improve.title"), "Help improve PP");
-  EXPECT_EQ(Tr("settings.security.diagnostics.send"), "Send problem logs");
+  EXPECT_EQ(Tr("settings.security.diagnostics.send"), "Send diagnostics");
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
   EXPECT_EQ(Tr("settings.about.improve.title"), "帮我们改进 PP");
   EXPECT_EQ(Tr("settings.security.crash_reports.label"), "闪退时自动发送报告");
   EXPECT_EQ(Tr("settings.security.crash_reports.help"), "只在闪退时发送，不含聊天内容。");
-  EXPECT_EQ(Tr("settings.security.diagnostics.send"), "把问题记录发给我们");
+  EXPECT_EQ(Tr("settings.security.diagnostics.send"), "发送诊断");
   EXPECT_EQ(Tr("settings.security.diagnostics.help"), "遇到问题、客服请你发时用。");
 }
 

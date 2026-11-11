@@ -663,6 +663,8 @@ struct ShellState {
   ui::String statusbar_cluster_title;
   /** Hybrid status popover (network-status-chrome s2). */
   bool statusbar_popover_open = false;
+  /** The popover's "Open network settings" link: only while Advanced settings are shown (the rows live on that page). */
+  bool statusbar_popover_advanced = false;
   ui::String statusbar_popover_brief_label;
   ui::String statusbar_popover_direct_label;
   ui::String statusbar_popover_reach_label;
