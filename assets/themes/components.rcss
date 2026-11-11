@@ -8558,7 +8558,7 @@ input.checkbox {
   margin-top: 0;
   margin-bottom: 0;
   font-size: 12dp;
-  word-break: break-word;
+  word-break: break-all;
 }
 
 .me-profile-actions {
@@ -9431,7 +9431,7 @@ input.checkbox {
 
 .settings-path {
   font-size: 12dp;
-  word-break: break-word;
+  word-break: break-all;
 }
 
 .settings-actions {
@@ -12293,13 +12293,21 @@ input.checkbox {
 .shell-chat-overlay .chat-file-card {
   min-width: 220dp;
   max-width: 292dp;
-  padding: 8dp;
+  padding: 0;
 }
 
+/* The row fills the card (the card's padding is the row's): the whole card is the tap that opens the file, while
+   reaction chips on the card sit beside the row and keep their own tap. */
 .chat-file-row {
   display: flex;
   flex-direction: row;
   align-items: center;
+  padding: 8dp;
+}
+
+/* Reactions hang over the card's bottom edge: the row grows by their overlap, so they sit under the size line. */
+.shell-chat-overlay .chat-file-card.chat-reaction-host .chat-file-row {
+  padding-bottom: 24dp;
 }
 
 .chat-file-tile {

@@ -436,12 +436,13 @@ std::string FileTileFaceRml(const std::string& name) {
 /**
  * A file card, sent or being sent (one generator, so a bubble and the sent card it turns into have the same size): a
  * 72dp type tile on the left (`tile_inner` drawn over it: the upload disc), the name (two lines at most) and the size
- * line on the right, `after` last. `card_attrs` go on the card (the sent card's tap opens the file).
+ * line on the right, `after` last. `row_attrs` go on the row that fills the card (the sent card's tap opens the file),
+ * not on the card: reaction chips hung on the card are its siblings, so a tap on one never opens the file.
  */
-std::string FileCardRml(const std::string& name, const std::string& size_text, const std::string& card_attrs,
+std::string FileCardRml(const std::string& name, const std::string& size_text, const std::string& row_attrs,
                         const std::string& tile_inner, const std::string& after) {
-  return "<div class=\"chat-card chat-attachment-card chat-file-card\"" + card_attrs +
-         "><div class=\"chat-file-row\"><div class=\"chat-file-tile\">" + FileTileFaceRml(name) + tile_inner +
+  return "<div class=\"chat-card chat-attachment-card chat-file-card\"><div class=\"chat-file-row\"" + row_attrs +
+         "><div class=\"chat-file-tile\">" + FileTileFaceRml(name) + tile_inner +
          "</div><div class=\"chat-file-text\"><p class=\"chat-file-name\">" + StructuredTextParser::EscapeText(name) +
          "</p><p class=\"chat-file-size\">" + StructuredTextParser::EscapeText(size_text) + "</p></div></div>" + after +
          "</div>";
