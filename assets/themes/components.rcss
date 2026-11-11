@@ -14083,12 +14083,14 @@ textarea:composing ~ .prompt-composer-label,
 
 .storage-seg .storage-seg-tab {
   flex: 1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  /* Not display: flex: the label is the button's bare text, and a flex button gives that text a 0x0 box (nothing is
+     painted); a block with a line box the height of the tab centres it instead. */
+  display: block;
   min-height: 40dp;
+  line-height: 40dp;
+  text-align: center;
   margin: 0;
-  padding: 6dp 0;
+  padding: 0;
   border-width: 0;
   border-radius: 7dp;
   background-color: transparent;
