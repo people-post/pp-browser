@@ -2632,7 +2632,8 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, scratch_dir, finish_uploading, voice_file,
                                 staged_before, cancel]() {
     auto prepared = PrepareOutgoingAttachment(path, limits, source, scratch_dir);
-    std::string thumb = prepared && !voice_file ? WriteUploadThumbnail(path, *prepared, scratch_dir) : std::string();
+    std::string thumb =
+        prepared && !voice_file ? WriteUploadThumbnail(path, *prepared, scratch_dir).path : std::string();
     release_pick_(path); // read by now (and kept as a CAS copy once sent)
     AppRuntime::PostUI([this, thread_id, path, finish_uploading, voice_file, staged_before, cancel, thumb,
                         prepared = std::move(prepared)]() mutable {

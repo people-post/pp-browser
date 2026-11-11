@@ -44,12 +44,33 @@ inline constexpr int kShrunkImageLongEdge = 2048;
 Roe<OutgoingAttachment> PrepareOutgoingAttachment(const std::string& path, const AttachmentLimits& limits,
                                                   OutgoingPickSource source, const std::string& scratch_dir = {});
 
+/** A thumbnail written for a send: its file (empty: none) and its pixel size (upright: it carries no EXIF). */
+struct UploadThumbnail {
+  std::string path;
+  int width = 0;
+  int height = 0;
+};
+
+/** The upload card's small picture: 48dp at 3x. */
+inline constexpr int kUploadCardThumbPx = 144;
+/** The picture bubble shown while a picture uploads: its long edge (DEV/PLAN-picture-upload-bubble.md). */
+inline constexpr int kPendingPictureThumbPx = 600;
+
 /**
  * The upload card's small picture: a JPEG thumbnail of a picture (from the prepared bytes) or a video's first frame
- * (from `picked_path`), written into `scratch_dir`; empty when there is none (other files, or this platform cannot
- * make one). The caller deletes it when the send ends.
+ * (from `picked_path`), its long edge at most `long_edge_px`, written into `scratch_dir`; no path when there is none
+ * (other files, or this platform cannot make one). The caller deletes it when the send ends.
  */
-std::string WriteUploadThumbnail(const std::string& picked_path, const OutgoingAttachment& prepared,
-                                 const std::string& scratch_dir);
+UploadThumbnail WriteUploadThumbnail(const std::string& picked_path, const OutgoingAttachment& prepared,
+                                     const std::string& scratch_dir, int long_edge_px = kUploadCardThumbPx);
+
+/**
+ * The picture bubble's thumbnail of a picked picture, made before the picture is prepared so the bubble shows it at
+ * once: read from `picked_path` (an Android content:// URI too; at most `max_bytes`), turned upright by its EXIF
+ * orientation, long edge at most `long_edge_px`, written into `scratch_dir` as JPEG. No path when the file cannot be
+ * read or decoded (a HEIC on a platform without a decoder, for one). The caller deletes it.
+ */
+UploadThumbnail WritePickedPictureThumbnail(const std::string& picked_path, const std::string& scratch_dir,
+                                            uint64_t max_bytes, int long_edge_px = kPendingPictureThumbPx);
 
 } // namespace pbr
