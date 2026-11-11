@@ -62,6 +62,32 @@ std::vector<mesh::MeshHopCandidate> ComposeRendezvousSurface(
   return ApplyRelaySetRules(AnchorLed(std::move(rendezvous), context), context);
 }
 
+/**
+ * K015: the last good relays the park may lead with — only those the policy still lists as a park target (a
+ * seed or a rendezvous relay, so trusted-only and an unreachable seed probe hold), and none this profile
+ * demotes (N032), node or operator: they would otherwise jump ahead of the anchors the surface leads with.
+ */
+std::vector<std::string> ParkableLastGoodRelays(const MeshConnectivityWiringInputs& in,
+                                                const mesh::MeshHopPolicy& policy,
+                                                const std::vector<mesh::MeshDirectoryNode>& directory_nodes) {
+  std::vector<std::string> last_good = in.last_good_relays ? in.last_good_relays() : std::vector<std::string>{};
+  const std::shared_ptr<MeshNodeReputation> reputation = in.node_reputation ? in.node_reputation() : nullptr;
+  const int64_t now = MeshNodeReputation::NowMs();
+  const auto operator_of = [&directory_nodes](const std::string& peer_id) {
+    const auto row = std::find_if(directory_nodes.begin(), directory_nodes.end(),
+                                  [&peer_id](const mesh::MeshDirectoryNode& node) { return node.peer_id == peer_id; });
+    return row == directory_nodes.end() ? std::string{} : row->account_id;
+  };
+  std::erase_if(last_good, [&](const std::string& peer_id) {
+    const auto hop = std::find_if(policy.candidates.begin(), policy.candidates.end(),
+                                  [&peer_id](const mesh::MeshHopCandidate& c) { return c.peer_id == peer_id; });
+    const bool parkable =
+        hop != policy.candidates.end() && (hop->roles & (mesh::kReachRoleRendezvous | mesh::kReachRoleSeed)) != 0;
+    return !parkable || (reputation && reputation->IsDemoted(peer_id, operator_of(peer_id), now));
+  });
+  return last_good;
+}
+
 } // namespace
 
 mesh::MeshConnectivityDeps MakeMeshConnectivityDeps(const MeshConnectivityWiringInputs& in) {
@@ -134,6 +160,7 @@ mesh::MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in)
   for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {
     grant(hop, mesh::kReachRoleIntroducer);
   }
+  policy.last_good_relays = ParkableLastGoodRelays(in, policy, directory_nodes);
   return policy;
 }
 

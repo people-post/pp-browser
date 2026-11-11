@@ -95,6 +95,13 @@ struct CallStackDeps {
    */
   mesh::MeshConnectivity* connectivity = nullptr;
   mesh::MeshMediaRelay* media_relay = nullptr;
+  /**
+   * Where calls hear which relay circuit reach chose (H011: announced to the call peer). Connectivity has one
+   * such slot; when its owner keeps it (the app's mesh also remembers the relay, call-path-resilience K015) it
+   * forwards each choice, on connectivity's lane, to the hook set here — empty stops it. None: calls take
+   * connectivity's slot themselves (a bench, the call probe).
+   */
+  std::function<void(std::function<void(const std::string& relay_peer_id)> hook)> set_on_relay_chosen;
   /** Who may learn our address (projects/privacy T1; hub-owned, outlives the stack). Null = anyone. */
   const mesh::AddressDisclosureGate* address_disclosure = nullptr;
 };
@@ -240,6 +247,8 @@ private:
   void SyncMediaPlaneDeps();
   /** The device's 1:1 deps (on the plane's transport) + its topology relay deps. */
   void BindMediaProducts();
+  /** Hear (or, empty, stop hearing) which relay circuit reach chose: through the owner when it keeps the slot. */
+  void SetRelayChosenHook(std::function<void(const std::string& relay_peer_id)> hook);
   /** Calls' hooks on the shared connectivity (announce chosen R1, signaling punch). */
   void BindMeshMediaHooks();
   mesh::MeshConnectivity* connectivity() const { return deps_.connectivity; }

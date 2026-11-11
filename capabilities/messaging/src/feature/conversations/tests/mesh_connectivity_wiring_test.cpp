@@ -188,6 +188,27 @@ TEST_F(MeshConnectivityWiringTest, TheRendezvousSurfaceDemotesLiarsSpreadsOperat
   EXPECT_FALSE(reputation->IsDemoted("12D3KooWHonest", "account:honest", MeshNodeReputation::NowMs()));
 }
 
+// K015 (#577): the relays that last carried a circuit go to the park first after a start — those it may still
+// park on; one no longer listed, or one this profile distrusts, does not jump ahead of the anchors.
+TEST_F(MeshConnectivityWiringTest, TheLastGoodRelaysTheParkMayUseLeadTheHopPolicy) {
+  MeshConnectivityWiringInputs in = Inputs(false);
+  EXPECT_TRUE(ComputeMeshHopPolicy(in).last_good_relays.empty()) << "none kept: the policy's order";
+
+  in.last_good_relays = []() { return std::vector<std::string>{kVolunteer, "12D3KooWGoneRelay", kSeedB, kPlain}; };
+  EXPECT_EQ(ComputeMeshHopPolicy(in).last_good_relays, (std::vector<std::string>{kVolunteer, kSeedB}))
+      << "in their order; a relay no longer listed and a contact that is no relay are dropped";
+
+  MeshConnectivityWiringInputs trusted = Inputs(true);
+  trusted.last_good_relays = in.last_good_relays;
+  EXPECT_EQ(ComputeMeshHopPolicy(trusted).last_good_relays, std::vector<std::string>{kSeedB})
+      << "trusted relays only: the directory's volunteer is no park target";
+
+  auto reputation = std::make_shared<MeshNodeReputation>();
+  reputation->NoteContradiction(kVolunteer, "", MeshNodeReputation::NowMs());
+  in.node_reputation = [reputation]() { return reputation; };
+  EXPECT_EQ(ComputeMeshHopPolicy(in).last_good_relays, std::vector<std::string>{kSeedB}) << "a demoted node";
+}
+
 // THREADING.md § Mesh threads, rule 1: the app pushes the policy; the mesh never computes it. Start
 // pushes on the caller (the policy is in before connectivity wires), changes push from a worker, and
 // nothing is pushed between Stop and the next Start (the inputs read a mesh that may be going).

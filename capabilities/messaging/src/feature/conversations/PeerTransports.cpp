@@ -13,6 +13,15 @@
 
 namespace pbr {
 
+namespace {
+
+int64_t SteadyNowMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
+} // namespace
+
 PeerTransports::PeerTransports(IThreadStore& store, IdentityStore& identity,
                                IPeerSigningKeyResolver& signing_key_resolver, IPeerSessionStore& psk_store)
     : store_(store), identity_(identity), signing_key_resolver_(signing_key_resolver), psk_store_(psk_store) {
@@ -56,6 +65,7 @@ bool PeerTransports::Attach(mesh::IChatPeerLinks* links, std::function<void()> i
   }
   Detach();
   links_ = links;
+  BindWarmMarks();
   if (address_disclosure_) {
     people_links_ = std::make_unique<mesh::DisclosureGatedPeerLinks>(*links_, *address_disclosure_);
   }
@@ -102,6 +112,7 @@ void PeerTransports::Detach() {
   blob_.reset();
   account_card_.reset();
   people_links_.reset(); // after the transports that hold it
+  warm_marks_.Reset();
   links_ = nullptr;
 }
 
@@ -186,10 +197,30 @@ void PeerTransports::WarmByKey(const std::string& peer_key) {
   if (!links_ || peer_key.empty()) {
     return;
   }
-  links_->MarkWarm(peer_key);
+  warm_marks_.Warm(peer_key, SteadyNowMs());
   if (links_->GetLinkSnapshot(peer_key).has_endpoint) {
     links_->EnsureAssociation(peer_key, [](mesh::IChatPeerLinks::LinkRoe) {});
   }
+}
+
+void PeerTransports::SetClearWarm(PeerWarmMarks::PeerFn clear_warm) {
+  clear_warm_ = std::move(clear_warm);
+  if (links_) {
+    BindWarmMarks();
+  }
+}
+
+void PeerTransports::BindWarmMarks() {
+  mesh::IChatPeerLinks* links = links_;
+  warm_marks_.Bind([links](const std::string& peer_key) { links->MarkWarm(peer_key); }, clear_warm_);
+}
+
+void PeerTransports::NotePeerActivity(const std::string& peer_key) {
+  warm_marks_.Touch(peer_key, SteadyNowMs());
+}
+
+void PeerTransports::TickWarmth() {
+  warm_marks_.Tick(SteadyNowMs());
 }
 
 } // namespace pbr

@@ -91,9 +91,12 @@ ProductMesh::ProductMesh()
       media_relay_(std::make_unique<mesh::MeshMediaRelay>(*connectivity_)),
       hop_feed_(std::make_unique<MeshHopPolicyFeed>(*connectivity_)) {
   redirectLogger("ProductMesh");
+  // The one slot, for the owner's lifetime (connectivity keeps it across mesh restarts).
+  connectivity_->SetOnRelayChosen([this](const std::string& relay_peer_id) { OnRelayChosen(relay_peer_id); });
 }
 
 ProductMesh::~ProductMesh() {
+  connectivity_->SetOnRelayChosen({});
   StayReachable(false);
   StopDirectoryCache();
   StopLanDiscovery();
@@ -112,6 +115,7 @@ Roe<mesh::MeshHost*> ProductMesh::Start(StartRequest request) {
   MeshConfig product_mesh_cfg = request.mesh;
   NormalizeMeshConfig(product_mesh_cfg);
   const bool node = ResolveMeshRole(product_mesh_cfg) == MeshRole::Node;
+  LoadLastGoodRelays(request.profile_data_dir); // the hop policy hands them to the park from its first push
 
   mesh::MeshHostConfig mesh_cfg;
   if (auto priv = request.identity->GetDeviceMlDsaPrivateKey()) {
@@ -267,6 +271,46 @@ std::string MeshNodeReputationPath(const std::string& profile_data_dir) {
   return (std::filesystem::path(profile_data_dir) / "mesh_node_reputation.json").string();
 }
 
+std::string MeshLastGoodRelaysPath(const std::string& profile_data_dir) {
+  return (std::filesystem::path(profile_data_dir) / "mesh_last_good_relays.json").string();
+}
+
+void ProductMesh::LoadLastGoodRelays(const std::string& profile_data_dir) {
+  const std::string path = profile_data_dir.empty() ? std::string{} : MeshLastGoodRelaysPath(profile_data_dir);
+  {
+    std::lock_guard lock(relay_memory_mu_);
+    if (last_good_relays_->Path() == path) {
+      return; // a mesh restart in one profile: what this run noted (a save may still be queued) stands
+    }
+  }
+  auto store = std::make_shared<LastGoodRelayStore>(path);
+  store->Load();
+  log().info << "last good relays loaded count=" << store->Relays().size();
+  std::lock_guard lock(relay_memory_mu_);
+  last_good_relays_ = std::move(store);
+}
+
+std::vector<std::string> ProductMesh::LastGoodRelays() const {
+  std::lock_guard lock(relay_memory_mu_);
+  return last_good_relays_->Relays();
+}
+
+void ProductMesh::SetOnRelayChosen(std::function<void(const std::string& relay_peer_id)> hook) {
+  std::lock_guard lock(relay_memory_mu_);
+  on_relay_chosen_ = std::move(hook);
+}
+
+void ProductMesh::OnRelayChosen(const std::string& relay_peer_id) {
+  std::lock_guard lock(relay_memory_mu_);
+  if (last_good_relays_->Note(relay_peer_id)) {
+    // A file write: never on connectivity's lane.
+    AppRuntime::PostWorkerNormal([store = last_good_relays_]() { store->Save(); });
+  }
+  if (on_relay_chosen_) {
+    on_relay_chosen_(relay_peer_id); // under the lock: a hook replaced or cleared never runs after
+  }
+}
+
 std::shared_ptr<MeshNodeReputation> ProductMesh::NodeReputation() const {
   std::lock_guard lock(reputation_mu_);
   return node_reputation_;
@@ -360,7 +404,9 @@ void ProductMesh::StopLanDiscovery() {
 
 void ProductMesh::SetMeshInputs(const MeshConnectivityWiringInputs& inputs) {
   connectivity_->SetDeps(MakeMeshConnectivityDeps(inputs));
-  hop_feed_->SetInputs(inputs);
+  MeshConnectivityWiringInputs with_memory = inputs;
+  with_memory.last_good_relays = [this]() { return LastGoodRelays(); }; // K015: the park's first dials
+  hop_feed_->SetInputs(std::move(with_memory));
 }
 
 void ProductMesh::WireMeshObjects() {

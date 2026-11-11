@@ -33,6 +33,11 @@ struct MeshConnectivityWiringInputs {
   std::function<std::shared_ptr<MeshNodeReputation>()> node_reputation;
   /** N032: what was seen of a node itself (its channel-0 extension, a dial that met another wire version). */
   std::function<ObservedNode(const std::string& peer_id)> observe_node;
+  /**
+   * K015: the relays that last carried this device's circuits, most recent first (the mesh owner's
+   * `LastGoodRelayStore`, kept across restarts). The park dials those it may park on first. None: none.
+   */
+  std::function<std::vector<std::string>()> last_good_relays;
   std::function<void(const std::string& peer_id)> note_lan_peer_id;
   std::function<void(const std::string& key, const std::string& multiaddr)> register_direct_endpoint;
 };
@@ -43,7 +48,8 @@ mesh::MeshConnectivityDeps MakeMeshConnectivityDeps(const MeshConnectivityWiring
 /**
  * The candidate policy as of now: rendezvous surface = contacts ∪ directory ∪ DHT ∪ effective seeds;
  * bootstrap seeds = configured ∪ directory; punch introducers = contacts, then configured seeds;
- * trusted relays only narrows all three (privacy T4). Reads the contacts store, so never on the
+ * trusted relays only narrows all three (privacy T4). The last good relays (K015) only reorder the
+ * park: those still a park target and not demoted (N032). Reads the contacts store, so never on the
  * mesh's threads.
  */
 mesh::MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in);
