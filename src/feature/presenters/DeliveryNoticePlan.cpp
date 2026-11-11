@@ -34,21 +34,14 @@ DeliveryNoticePlan PlanDeliveryNotice(const DeliveryNotice& notice, const int64_
   return plan;
 }
 
-NoticeTell ApplyDeliveryNoticeTo(IThreadStore* store, const DeliveryNotice& notice, const int64_t now_ms,
-                                 ResentMessages& resent) {
+NoticeTell ApplyDeliveryNoticeTo(IThreadStore* store, const DeliveryNotice& notice, const int64_t now_ms) {
   const bool send_notice =
       notice.kind == DeliveryNotice::Kind::SendFailed || notice.kind == DeliveryNotice::Kind::GroupMembersMissed;
-  bool resent_failed = false;
   if (send_notice && store && !notice.thread_id.empty() && !notice.message_id.empty()) {
     if (auto present = store->HasMessageId(notice.thread_id, notice.message_id); present && !*present) {
       return NoticeTell::Nothing; // the row was taken away (sent again as a new message): its old request ended late
     }
-    if (resent.erase(notice.message_id) != 0) {
-      auto row = store->GetMessage(notice.thread_id, notice.message_id);
-      resent_failed = !(row && *row && (*row)->delivery == MessageDelivery::Relayed);
-    }
   }
-  const NoticeTell quiet = resent_failed ? NoticeTell::ResentFailed : NoticeTell::Nothing;
   const DeliveryNoticePlan plan = PlanDeliveryNotice(notice, now_ms);
   switch (plan.action) {
     case DeliveryNoticePlan::Action::Nothing:
@@ -63,9 +56,19 @@ NoticeTell ApplyDeliveryNoticeTo(IThreadStore* store, const DeliveryNotice& noti
   }
   // The same failure reported twice (each group member that missed, a retry) is one line.
   if (auto present = store->HasMessageId(plan.row->thread_id, plan.row->id); present && *present) {
-    return quiet;
+    return NoticeTell::Nothing;
   }
-  return store->AppendMessage(*plan.row) ? quiet : NoticeTell::Toast;
+  return store->AppendMessage(*plan.row) ? NoticeTell::Nothing : NoticeTell::Toast;
+}
+
+std::optional<std::string> FirstResentTurnedRed(const ResentMessages& resent, const std::string& thread_id,
+                                                const std::vector<std::string>& red_ids) {
+  for (const std::string& id : red_ids) {
+    if (const auto it = resent.find(id); it != resent.end() && it->second == thread_id) {
+      return id;
+    }
+  }
+  return std::nullopt;
 }
 
 void ForgetDeliveredResends(IThreadStore* store, ResentMessages& resent) {

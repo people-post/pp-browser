@@ -2745,16 +2745,33 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   facts.audio_files_play = voice_playback_->PlaysFiles();
   const int64_t now_ms = util::NowUnixMs();
   std::optional<int64_t> next_mark_change;
+  std::vector<std::string> red_ids;
   const std::optional<std::vector<int64_t>> group_others = presenter_.GroupOthersJoinedAt(thread_id);
-  facts.send_mark = [this, now_ms, &next_mark_change, &group_others](const ThreadMessage& message) {
-    return presenter_.SendMarkOf(message, now_ms, next_mark_change, group_others);
+  facts.send_mark = [this, now_ms, &next_mark_change, &group_others, &red_ids](const ThreadMessage& message) {
+    const SendMark mark = presenter_.SendMarkOf(message, now_ms, next_mark_change, group_others);
+    if (mark == SendMark::Failed) {
+      red_ids.push_back(message.id);
+    }
+    return mark;
   };
   std::vector<MessageDisplayRow> rows =
       RenderTranscript(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
                        presenter_.MentionRosterOf(thread_id));
   agent_.DecorateAiImageRows(rows, thread_id);
   ArmSendMarkRedraw(next_mark_change);
+  TellResentTurnedRed(thread_id, red_ids);
   return rows;
+}
+
+void ChatController::TellResentTurnedRed(const std::string& thread_id, const std::vector<std::string>& red_ids) {
+  // Hooked to the drawing that turns a clock red (a final failure, or ArmSendMarkRedraw at the clock's limit), so a
+  // message sent again by a tap and red again says why once — in its own chat, while it is looked at; else it waits.
+  const std::optional<std::string> resent = presenter_.ResentTurnedRed(thread_id, red_ids);
+  if (!resent || !ShowsResentFailurePill(thread_id, ActiveThreadId(), AppLifecycle::IsUserAttentive())) {
+    return;
+  }
+  presenter_.ForgetResent(*resent);
+  ShowToast(SendFailureReasonText(presenter_.SendFailureReasonOf(thread_id, *resent)));
 }
 
 void ChatController::ArmSendMarkRedraw(const std::optional<int64_t> at_ms) {
@@ -4288,13 +4305,6 @@ void ChatController::WireMessagingBindings() {
         break;
       case NoticeTell::Toast:
         ShowToast(DeliveryNoticeText(notice));
-        break;
-      case NoticeTell::ResentFailed:
-        // A message sent again by a tap failed: said in its own chat only, while it is looked at; elsewhere its red
-        // mark tells it.
-        if (ShowsResentFailurePill(notice.thread_id, ActiveThreadId(), AppLifecycle::IsUserAttentive())) {
-          ShowToast(DeliveryNoticeText(notice));
-        }
         break;
     }
     RefreshFromMessaging();

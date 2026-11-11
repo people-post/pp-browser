@@ -662,6 +662,8 @@ private:
   uint64_t send_mark_redraw_turn_ = 0;
   std::shared_ptr<int> send_mark_alive_ = std::make_shared<int>(0);
   void ArmSendMarkRedraw(std::optional<int64_t> at_ms);
+  /** A message sent again by a tap is drawn red again: the pill says why, once (ChatPresenter::ResentTurnedRed). */
+  void TellResentTurnedRed(const std::string& thread_id, const std::vector<std::string>& red_ids);
   /** The open chat's rows again (their send marks recomputed), nothing else refreshed. */
   void RedrawSendMarks();
   /**
