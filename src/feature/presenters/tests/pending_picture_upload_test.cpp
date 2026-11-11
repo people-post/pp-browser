@@ -55,9 +55,28 @@ TEST(PendingPictureUploadTest, TheWorkersSizeReplacesThePlaceholderOnlyWhenTheHe
   EXPECT_EQ(sized.next.pixels.width, 900);
   EXPECT_EQ(sized.next.pixels.height, 1600);
 
-  const PendingPictureStep kept = OnPictureSizeRead(Uploading(), {900, 1600});
+  const PendingPictureStep kept = OnPictureSizeRead(Uploading(), {600, 451}); // 4000 x 3000 within rounding
   EXPECT_EQ(kept.next.pixels.width, 4000); // the head's size stays: the bubble does not change size
   EXPECT_EQ(kept.next.pixels.height, 3000);
+}
+
+// The head and the thumbnail disagree on the orientation: the thumbnail (what is drawn) wins, nothing is stretched.
+TEST(PendingPictureUploadTest, AThumbnailWhoseProportionsDifferFromTheHeadWins) {
+  const PendingPictureStep turned = OnPictureSizeRead(Uploading(), {450, 600});
+  EXPECT_EQ(turned.next.pixels.width, 450);
+  EXPECT_EQ(turned.next.pixels.height, 600);
+  EXPECT_TRUE(turned.next.size_known);
+  const PendingPictureStep other = OnPictureSizeRead(Uploading(), {600, 600});
+  EXPECT_EQ(other.next.pixels.width, 600);
+}
+
+// A failed voice recording of another chat must not take the open chat's Retry / Discard (the picture bubble's).
+TEST(PendingPictureUploadTest, AFailedVoiceTakesRetryAndDiscardOnlyInItsOwnChatWithoutABubble) {
+  EXPECT_TRUE(FailedVoiceTakesTheTap(true, "a", "a", /*picture_bubble_here=*/false));
+  EXPECT_FALSE(FailedVoiceTakesTheTap(true, "a", "b", false)) << "another chat's recording";
+  EXPECT_FALSE(FailedVoiceTakesTheTap(true, "a", "a", /*picture_bubble_here=*/true)) << "the bubble wins";
+  EXPECT_FALSE(FailedVoiceTakesTheTap(false, "", "a", false));
+  EXPECT_FALSE(FailedVoiceTakesTheTap(true, "", "", false));
 }
 
 // Uploading + thumbnail written → Uploading with the thumbnail.

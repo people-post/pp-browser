@@ -32,8 +32,18 @@ public:
   explicit PendingPictureRows(RemoveFile remove_file = {});
 
   const PendingPictureUpload& Upload() const { return upload_; }
-  /** Takes an event's result: keeps its value and deletes its file. True when the row as drawn changes. */
+  /**
+   * Takes an event's result: keeps its value and deletes its file. True when the row as drawn changes. A thumbnail
+   * taken away (the lock) is taken out of the kept row too, so putting it back never points at the deleted file.
+   */
   bool Apply(PendingPictureStep step);
+  /** The bubble goes without a send ending (profile reset, shutdown): its thumbnail is deleted, the state cleared. */
+  void Drop();
+  /**
+   * The kept row's markup copied into the row of it at the end of `messages` (after Apply changed it without a
+   * redraw). True when that row was there and changed.
+   */
+  bool RefreshTail(std::vector<MessageDisplayRow>& messages) const;
 
   /**
    * `entries` (oldest first) drawn as RenderTranscript draws them, with the picture being sent after them as our

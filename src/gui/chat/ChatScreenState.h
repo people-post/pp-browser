@@ -56,6 +56,8 @@ struct ChatScreenState {
   bool thread_has_icon = false;
   bool compose_disabled = false;
   bool composer_input_disabled = false;
+  /** The plus, the camera and the microphone are off: the input is, or an attachment is in flight / failed here. */
+  bool attach_disabled = false;
   bool show_attach_button = false;
   bool attachment_uploading = false;
   ui::String attachment_draft_name;

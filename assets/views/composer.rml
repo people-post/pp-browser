@@ -67,7 +67,7 @@
   <div class="prompt-composer-row">
     <button class="prompt-voice-toggle-btn prompt-voice-toggle-btn--start" type="button"
             data-if="show_voice && !voice_mode && !voice_recording"
-            data-event-click="voice_mode_toggle()" data-attrif-disabled="composer_input_disabled"
+            data-event-click="voice_mode_toggle()" data-attrif-disabled="attach_disabled"
             title="{{i18n:chat.voice.mode_voice}}">
       <svg class="prompt-icon-classic" src="../icons/mic.svg" width="18" height="18" crop-to-content="true"></svg>
     </button>
@@ -93,7 +93,7 @@
       <p class="prompt-composer-label" data-if="draft == '' && !thread_is_ai">{{i18n:chat.composer.placeholder}}</p>
       <!-- A phone shows the bold plus here (its floating Camera / Photos / File card: the chat's, or the AI's). -->
       <button class="prompt-attach-btn" type="button" data-if="show_attach_button"
-              data-event-click="attach_file()" data-attrif-disabled="composer_input_disabled"
+              data-event-click="attach_file()" data-attrif-disabled="attach_disabled"
               title="{{i18n:chat.attach_file}}">
         <svg class="prompt-icon-classic" src="../icons/attach.svg" width="18" height="18" crop-to-content="true"></svg>
         <svg class="prompt-icon-v2" src="../icons/v2/paperclip.svg" width="20" height="20"></svg>
@@ -102,12 +102,12 @@
       <!-- The Home-root field only (hidden elsewhere by CSS): a bold plus inside the box that opens a floating menu with
            Camera and Photos. -->
       <button class="prompt-home-plus" type="button" data-if="show_attach_button"
-              data-event-click="home_attach_menu()" data-attrif-disabled="composer_input_disabled"
+              data-event-click="home_attach_menu()" data-attrif-disabled="attach_disabled"
               title="{{i18n:chat.attach_file}}">
         <svg class="prompt-icon-home" src="../icons/v2/plus-bold.svg" width="26" height="26"></svg>
       </button>
       <button class="prompt-capture-btn" type="button" data-if="show_capture && !voice_mode && !voice_recording"
-              data-event-click="attach_capture()" data-attrif-disabled="composer_input_disabled"
+              data-event-click="attach_capture()" data-attrif-disabled="attach_disabled"
               title="{{i18n:chat.attach.capture}}">
         <svg class="prompt-icon-classic" src="../icons/camera.svg" width="18" height="18" crop-to-content="true"></svg>
         <svg class="prompt-icon-v2" src="../icons/v2/camera.svg" width="20" height="20"></svg>
@@ -159,7 +159,7 @@
          text; in voice mode the keyboard key takes it. Same buttons and handlers as the desktop's leading pair. -->
     <button class="prompt-voice-toggle-btn prompt-voice-toggle-btn--end prompt-mic-btn" type="button"
             data-if="show_voice && !voice_mode && !voice_recording && draft == ''"
-            data-event-click="voice_mode_toggle()" data-attrif-disabled="composer_input_disabled"
+            data-event-click="voice_mode_toggle()" data-attrif-disabled="attach_disabled"
             title="{{i18n:chat.voice.mode_voice}}">
       <svg class="prompt-icon-v2" src="../icons/v2/mic.svg" width="20" height="20"></svg>
     </button>
