@@ -19,6 +19,11 @@ public:
   std::atomic<bool> hide_active{false};
   /** ListParticipants, FindParticipant and CountJoined fail. Any thread. */
   std::atomic<bool> fail_participants{false};
+  /**
+   * ListParticipants and CountJoined fail, FindParticipant still reads: a later read failing after an earlier one
+   * (a message's sender check) succeeded. Any thread.
+   */
+  std::atomic<bool> fail_participant_lists{false};
 
   Roe<void> UpsertSession(const CallSession& session) const override { return rows_.UpsertSession(session); }
   Roe<std::optional<CallSession>> LoadSession(const std::string& call_id) const override {
@@ -44,7 +49,7 @@ public:
     return rows_.UpsertParticipant(participant);
   }
   Roe<std::vector<CallParticipant>> ListParticipants(const std::string& call_id) const override {
-    if (fail_participants.load()) {
+    if (fail_participants.load() || fail_participant_lists.load()) {
       return Error("ListParticipants: failed on purpose (test)");
     }
     return rows_.ListParticipants(call_id);
@@ -57,7 +62,7 @@ public:
     return rows_.FindParticipant(call_id, identity);
   }
   Roe<size_t> CountJoined(const std::string& call_id) const override {
-    if (fail_participants.load()) {
+    if (fail_participants.load() || fail_participant_lists.load()) {
       return Error("ListParticipants: failed on purpose (test)");
     }
     return rows_.CountJoined(call_id);
