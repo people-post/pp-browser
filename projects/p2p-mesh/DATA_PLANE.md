@@ -1,6 +1,6 @@
 # Data plane: crypto, I/O, real-time lanes, shards
 
-**Status:** Proposed (2026-11-10), for review. P1 built (2026-11-10, #574; § P1 results); P2 done differently (2026-11-11, § P2); P3–P4 not started. Accepted parts become N-decisions in [DECISIONS.md](DECISIONS.md); shipped behavior moves to `docs/` ([THREADING.md](../../docs/architecture/THREADING.md), [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)).
+**Status:** Proposed (2026-11-10), for review. P1 built (2026-11-10, #574; § P1 results); P2 done differently (2026-11-11, § P2); P3 step 1 done (2026-11-11); P4 not started. Accepted parts become N-decisions in [DECISIONS.md](DECISIONS.md); shipped behavior moves to `docs/` ([THREADING.md](../../docs/architecture/THREADING.md), [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)).
 
 **Scope:** what a node and a client do with every datagram once a link exists: receive, open (the link's AEAD), demux, the L4 work (a hop's fan-out, a bridge's splice, media to the app), seal, send. It excludes dialing, handshakes, control protocols and E2E media keys, and keeps the wire unchanged until a phase says otherwise.
 
@@ -106,6 +106,20 @@ Delivery rose with it, from 81.9% to 83.4% and from 62.9% to 71.6%. The losses t
 - **Batching:** `recvmmsg` / `sendmmsg` on Linux and Android; a fan-out's copies go out in one syscall. Where the OS lacks them (Apple platforms, Windows), the same interface loops over `sendto`.
 - **Buffers:** pooled send buffers, no allocation per copy.
 - **Target:** kernel plus libc ≤ 20 % of the pump in the calls profile.
+
+**Step 1 done (2026-11-11):**
+- pp-cpp-amp v5.7.0 reads up to 32 datagrams per `recvmmsg` into reused buffers (`DatagramIo::RecvBatch`). It also adds `WaitReadable` / `WakeWaiter`: a poll on the socket plus a wake pipe, or a loopback socket on Windows.
+- pp-cpp-mesh v6.9.0's idle pump waits on that socket, not a blind 5 ms. The blind wait was the drops: 5 ms of a busy node's arrivals overflowed a 208 KiB buffer.
+- Batched receive alone made the drops worse (24.3k → 26.4k/s): the pump emptied the socket sooner and so slept blind more often.
+- Together (100 calls at 1500 kbps): kernel drops 24.6k/s → 0, delivered 69.8 → 100 %, p95 5.8 → 1.2 ms, CPU per datagram −6 %. See [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md) limit 1.
+
+**Not now: io_uring.**
+- It fails with EPERM under Docker's default seccomp profile (tested 2026-11-11, Docker 29), which the seeds run in.
+- Android blocks it for apps.
+- In the profile, syscall entry is ~1–2 %; the per-packet IP and netfilter path is the kernel's cost, and io_uring does not shorten it.
+- Revisit as an optional Linux backend once sends are batched.
+
+**Next:** `sendmmsg`, and UDP GSO for a frame's packets to one member.
 
 ### P4 — Shards (nodes only by default)
 

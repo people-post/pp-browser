@@ -75,11 +75,26 @@ std::optional<CallSession> JoinableGroupCall(const ICallSessionReader& sessions,
                                              const std::string& local_identity, int64_t now_ms);
 
 /**
+ * Calling each other at once, after the merge: a 1:1 call this device placed to `peer` (not `except_call_id`, not a
+ * group's) that `peer` has answered and nobody else is in — `peer`'s own call lost and gave way to it, and that call's
+ * invite may still reach us after.
+ */
+std::optional<CallSession> OurAnsweredCallTo(const ICallSessionReader& sessions, const std::string& peer,
+                                             const std::string& local_identity, const std::string& except_call_id);
+
+/**
  * Calling each other at once: a 1:1 call this device placed to `peer` (not `except_call_id`, not a
  * group's) that `peer` has not answered yet and nobody else is in.
  */
 std::optional<CallSession> OurUnansweredCallTo(const ICallSessionReader& sessions, const std::string& peer,
                                                const std::string& local_identity, const std::string& except_call_id);
+
+/**
+ * V053 after the merge: a call of `group_id` this device placed (not `except_call_id`) that someone has joined — a
+ * crossing call of the group gave way to it, and that call's invite may still reach us after.
+ */
+std::optional<CallSession> OurAnsweredGroupCall(const ICallSessionReader& sessions, const std::string& group_id,
+                                                const std::string& local_identity, const std::string& except_call_id);
 
 /**
  * V053: two of a group calling it at once — a call of `group_id` this device placed (not
