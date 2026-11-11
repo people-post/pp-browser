@@ -35,8 +35,13 @@ public:
 
   /** This device's account id. */
   Roe<std::string> LocalIdentity() const;
-  /** The call this device is joined in, if any. */
+  /** The call this device is joined in, if any; a read that failed (any of its rows) is an error, never "none". */
   Roe<std::optional<CallSession>> ActiveLocalCall() const;
+  /**
+   * Developer builds only (debug.pp.fail_call_read, set before the reads are shared): true makes ActiveLocalCall
+   * fail, as a damaged profile.db read would.
+   */
+  void SetDevFailActiveRead(std::function<bool()> fail);
   /** The newest invite still to answer (expired ones skipped — the owner sweeps them). */
   Roe<std::optional<PendingCallInvite>> TopPendingInvite() const;
   /** V053: the group call this device may join from `thread_id` (a group's thread), if any. */
@@ -69,6 +74,7 @@ private:
   GroupMembersFn group_members_;
   const IInitiationBillingBook* billing_;
   CallGroupStandingFn group_standing_;
+  std::function<bool()> dev_fail_active_read_;
 };
 
 } // namespace pbr

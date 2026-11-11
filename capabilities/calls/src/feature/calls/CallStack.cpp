@@ -168,6 +168,11 @@ void CallStack::SetInboundCallAudience(const mesh::InboundAudience audience) {
   });
 }
 
+void CallStack::SetDevFailCallRead(std::function<bool()> fail) {
+  std::lock_guard lock(dev_fail_call_read_mu_);
+  dev_fail_call_read_ = std::move(fail);
+}
+
 void CallStack::SetOnInviteBlocked(std::function<void(const BlockedCallInvite&)> callback) {
   executor_.RunAndWait([this, &callback]() {
     on_invite_blocked_ = std::move(callback);
@@ -410,6 +415,12 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
   reads_ =
       std::make_unique<CallReads>(*call_session_store_, *deps_.account, *deps_.threads, deps_.delivery.group_members,
                                   deps_.initiation_billing, deps_.delivery.group_standing);
+  {
+    std::lock_guard lock(dev_fail_call_read_mu_);
+    if (dev_fail_call_read_) {
+      reads_->SetDevFailActiveRead(dev_fail_call_read_); // before the reads are shared with any other thread
+    }
+  }
   call_device_ = std::make_unique<CallDevice>(*deps_.threads, *deps_.transcript, *deps_.contacts, *deps_.account,
                                               *call_session_store_, *reads_, *call_media_keys_, deps_.delivery,
                                               *call_media_engine_);

@@ -36,6 +36,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -153,6 +154,11 @@ public:
   void SetInboundCallAudience(mesh::InboundAudience audience);
   /** CallSessionManager::SetOnInviteBlocked, kept here so a rebuilt session manager has it too. */
   void SetOnInviteBlocked(std::function<void(const BlockedCallInvite&)> callback);
+  /**
+   * Developer builds only (any thread, before or after BuildSessions): CallReads::SetDevFailActiveRead for the reads
+   * built from now on (debug.pp.fail_call_read).
+   */
+  void SetDevFailCallRead(std::function<bool()> fail);
   /** Mobility policy, restricted to the relay when the call's peer may not learn our address. */
   CallPathPolicy PathPolicyFor(const std::string& call_id) const;
   /** Before the owner replaces / drops mesh media objects: topology + bridge let go of them. */
@@ -268,6 +274,9 @@ private:
   std::atomic<mesh::InboundAudience> inbound_call_audience_{mesh::InboundAudience::Everyone};
   /** The GUI's listener for dropped invites (owner thread). */
   std::function<void(const BlockedCallInvite&)> on_invite_blocked_;
+  /** Set by the app (UI thread), read when the reads are built (owner). */
+  std::mutex dev_fail_call_read_mu_;
+  std::function<bool()> dev_fail_call_read_;
   std::unique_ptr<ICallSessionStore> call_session_store_;
   std::unique_ptr<ICallMediaKeyStore> call_media_keys_;
   std::vector<IDekConsumer*> at_rest_;

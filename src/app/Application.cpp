@@ -398,6 +398,11 @@ Application::Application() {
       }
       return std::exchange(*armed, false);
     });
+    // DEV/PLAN-call-ui-never-detached.md 6 (Android): `adb shell setprop debug.pp.fail_call_read 1` makes reading this
+    // device's call from profile.db fail (the call screen must stay); `debug.pp.detach_call_ui 1` makes the screen drop
+    // its call id after each refresh (the guard must hang the call up). Set back to 0 after.
+    product_->Calls().Stack().SetDevFailCallRead([]() { return os::DebugFlagSet("debug.pp.fail_call_read"); });
+    call_->SetDevDetachUi([]() { return os::DebugFlagSet("debug.pp.detach_call_ui"); });
   }
   call_ui_ = std::make_unique<CallUiBackend>(product_->Calls().Stack());
   settings_ = std::make_unique<SettingsController>();
