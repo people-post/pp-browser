@@ -117,7 +117,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("sync_in_progress", &state.sync_in_progress);
   ctor.Bind("show_older_history_hint", &state.show_older_history_hint);
   ctor.Bind("show_jump_to_latest", &state.show_jump_to_latest);
-  ctor.Bind("jump_to_latest_label", &state.jump_to_latest_label);
+  ctor.Bind("jump_to_latest_count", &state.jump_to_latest_count);
 }
 
 void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
@@ -301,7 +301,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "psk_import_text");
   DataModelHost::Instance().Dirty("chat", "show_older_history_hint");
   DataModelHost::Instance().Dirty("chat", "show_jump_to_latest");
-  DataModelHost::Instance().Dirty("chat", "jump_to_latest_label");
+  DataModelHost::Instance().Dirty("chat", "jump_to_latest_count");
 }
 
 void DirtyChat() {

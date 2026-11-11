@@ -5,6 +5,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "common/chat/MessagingLimits.h"
 #include "gui/shell/DataModelHost.h"
+#include "lib/ui/NavBadgeFormat.h"
 
 #include <ui/dom/Context.h>
 #include <ui/dom/Element.h>
@@ -67,7 +68,7 @@ void ChatTranscriptScroller::Reset() {
   pending_jump_id_.clear();
   flash_id_.clear(); // the rows it named are gone
   view_.show_jump_to_latest = false;
-  view_.jump_to_latest_label = "";
+  view_.jump_to_latest_count = "";
 }
 
 ui::Element* ChatTranscriptScroller::FindMessagesScrollElement() const {
@@ -77,13 +78,8 @@ ui::Element* ChatTranscriptScroller::FindMessagesScrollElement() const {
   return context_->GetDocument(0)->GetElementById("chat-messages");
 }
 
-void ChatTranscriptScroller::UpdateJumpToLatestLabel() {
-  if (unread_while_scrolled_ > 0) {
-    view_.jump_to_latest_label =
-        Tr("chat.new_while_scrolled", {{"count", std::to_string(unread_while_scrolled_)}}).c_str();
-  } else {
-    view_.jump_to_latest_label = Tr("chat.jump_to_latest").c_str();
-  }
+void ChatTranscriptScroller::UpdateJumpToLatestCount() {
+  view_.jump_to_latest_count = unread_while_scrolled_ > 0 ? FormatBadgeCount(unread_while_scrolled_).c_str() : "";
 }
 
 void ChatTranscriptScroller::SetShowJumpToLatest(bool show) {
@@ -92,13 +88,13 @@ void ChatTranscriptScroller::SetShowJumpToLatest(bool show) {
   }
   view_.show_jump_to_latest = show;
   if (show) {
-    UpdateJumpToLatestLabel();
+    UpdateJumpToLatestCount();
   } else {
     unread_while_scrolled_ = 0;
-    view_.jump_to_latest_label = "";
+    view_.jump_to_latest_count = "";
   }
   DataModelHost::Instance().Dirty("chat", "show_jump_to_latest");
-  DataModelHost::Instance().Dirty("chat", "jump_to_latest_label");
+  DataModelHost::Instance().Dirty("chat", "jump_to_latest_count");
 }
 
 void ChatTranscriptScroller::RequestScrollToLatest() {
