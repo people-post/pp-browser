@@ -57,6 +57,8 @@ const char* AudioResetResultName(AudioResetResult result) {
       return "busy";
     case AudioResetResult::Timeout:
       return "timeout";
+    case AudioResetResult::Stuck:
+      return "stuck";
     case AudioResetResult::Failed:
       return "failed";
     case AudioResetResult::Unsupported:
@@ -875,8 +877,10 @@ AudioResetResult MediaDeviceArbiter::ResetAudio(std::chrono::milliseconds budget
                               });
   std::lock_guard lock(outcome->mu);
   if (!done) {
-    why = "audio devices busy past the budget";
-    return AudioResetResult::Timeout;
+    // The task holds the device thread past its budget (a rebuild still running, or queued behind something stuck):
+    // whatever it is, it may still touch the audio stack, so the caller must not reopen now.
+    why = "the rebuild still holds the audio devices";
+    return AudioResetResult::Stuck;
   }
   why = outcome->error;
   return outcome->result;

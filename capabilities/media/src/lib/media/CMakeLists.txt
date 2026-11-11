@@ -3,6 +3,7 @@
 pp_browser_add_lib_library(pp_lib_media
   SOURCES
     AudioFocusInterruption.cpp
+    AudioResetHandoff.cpp
     AudioSessionHolds.cpp
     AudioSessionInterruptions.cpp
     DecodeStallPolicy.h

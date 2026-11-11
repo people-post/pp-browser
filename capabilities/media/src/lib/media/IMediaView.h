@@ -122,6 +122,8 @@ public:
     RequestAudioDeviceReopen();
   }
   virtual AudioRouteChange AudioRouteChangeState() const { return AudioRouteChange::None; }
+  /** The capture worker is reopening or rebuilding the audio devices right now (a queued route change waits). */
+  virtual bool AudioDevicesReopening() const { return false; }
 };
 
 } // namespace pbr

@@ -105,6 +105,8 @@ constexpr auto kAudioResetBudget = std::chrono::milliseconds(1500);
  * starve window (2 s) while the main thread is held up.
  */
 constexpr int64_t kAudioResetRetryAfterMissMs = 10000;
+/** Rebuilds that did not run (main thread late, a device held) per call: then the mic counts as lost. */
+constexpr int kMaxAudioResetMisses = 2;
 /** A call's end waits at most this long for its audio closes before the OS route goes back (Android). */
 constexpr auto kEndDrainBudget = std::chrono::milliseconds(1000);
 /** CameraFailure details (the log's words; the screen words the failure from its kind). */
@@ -142,6 +144,8 @@ ShareWord AudioResetWord(AudioResetResult result) {
       return "busy";
     case AudioResetResult::Timeout:
       return "timeout";
+    case AudioResetResult::Stuck:
+      return "stuck";
     case AudioResetResult::Failed:
       return "failed";
     case AudioResetResult::Unsupported:
@@ -542,6 +546,18 @@ struct MediaEngine::Impl {
   std::atomic<int> route_state{static_cast<int>(IMediaView::AudioRouteChange::None)};
   /** Capture is gone even after a reopen and an audio rebuild (MediaEngineHealth::capture_lost). */
   std::atomic<bool> capture_lost{false};
+  /** The capture thread is reopening / rebuilding the audio devices (IMediaView::AudioDevicesReopening). */
+  std::atomic<bool> audio_reopening{false};
+  /** Capture thread: audio_reopening for a scope. */
+  struct ReopeningScope {
+    explicit ReopeningScope(std::atomic<bool>& flag) : flag_(flag) { flag_.store(true, std::memory_order_release); }
+    ~ReopeningScope() { flag_.store(false, std::memory_order_release); }
+    ReopeningScope(const ReopeningScope&) = delete;
+    ReopeningScope& operator=(const ReopeningScope&) = delete;
+
+  private:
+    std::atomic<bool>& flag_;
+  };
   /**
    * Set with audio_reopen_requested when the OS gave the session back (interruption end): that reopen tries the
    * voice-processing pair again even when separate leases are held — a reopen that ran during the interruption fell
@@ -1257,7 +1273,18 @@ struct MediaEngine::Impl {
     const int64_t ms = MsSince(from);
     EngineLog().warning << "audio reset: no capture after a reopen — rebuilt the audio devices result="
                         << AudioResetResultName(result) << " ms=" << ms << (why.empty() ? "" : " why=") << why;
-    MetricsLine("device.audio_reset").Add("result", AudioResetWord(result)).Add("ms", ms).Emit();
+    MetricsLine("device.audio_reset")
+        .Add("result", AudioResetWord(result))
+        .Add("ms", ms)
+        .Add("still_running", result == AudioResetResult::Stuck)
+        .Emit();
+    if (result == AudioResetResult::Stuck) {
+      // The rebuild may still be tearing the audio stack down: no open now (it would queue behind it). The waiting
+      // path takes the devices again once the arbiter answers (CanAcquire), without blocking this thread.
+      std::lock_guard lock(mutex);
+      audio_waiting.store(true, std::memory_order_release);
+      return result;
+    }
     if (auto audio = EnsureAudioLeases(/*reopen=*/false); !audio) {
       SDL_Log("MediaEngine: audio devices after the rebuild: %s", audio.error().message.c_str());
     }
@@ -1375,6 +1402,9 @@ struct MediaEngine::Impl {
       bool reset_wanted = false;
       // When a rebuild last did not run (main thread late, a device held): the next try waits.
       int64_t last_reset_miss_ms = 0;
+      // Rebuilds that did not run this call; at kMaxAudioResetMisses (or one stuck) no more are tried.
+      int reset_misses = 0;
+      bool reset_disabled = false;
       // When the last rebuild ran, until PCM comes back (the recovery metric).
       int64_t reset_ok_ms = 0;
       while (capture_running.load()) {
@@ -1396,6 +1426,7 @@ struct MediaEngine::Impl {
             pending.clear();
             SDL_Log("MediaEngine: audio devices free again — taking them");
             capture_stage.Set(MediaThreadStage::OpenDevices);
+            const ReopeningScope reopening(audio_reopening);
             {
               std::lock_guard lock(mutex);
               CloseAudioDevicesLocked();
@@ -1423,10 +1454,19 @@ struct MediaEngine::Impl {
           reset_wanted = false;
           pending.clear();
           capture_stage.Set(MediaThreadStage::OpenDevices);
-          // Only a rebuild that ran counts against the one per stretch without PCM.
-          if (ResetAudioAndReacquire() == AudioResetResult::Ok) {
+          // Only a rebuild that ran counts against the one per stretch without PCM; ones that did not run are capped.
+          const ReopeningScope reopening(audio_reopening);
+          const AudioResetResult result = ResetAudioAndReacquire();
+          if (result == AudioResetResult::Ok) {
             reset_ran = true;
             reset_ok_ms = util::NowUnixMs();
+          } else if (result == AudioResetResult::Stuck || result == AudioResetResult::Unsupported ||
+                     ++reset_misses >= kMaxAudioResetMisses) {
+            // Never again in this call (a stuck rebuild: never again in this process, SdlAudioResetSupported).
+            reset_disabled = true;
+            capture_lost.store(true, std::memory_order_release);
+            EngineLog().warning << "capture lost: no audio rebuild left to try (" << AudioResetResultName(result)
+                                << ")";
           } else {
             last_reset_miss_ms = util::NowUnixMs();
           }
@@ -1442,6 +1482,7 @@ struct MediaEngine::Impl {
           pending.clear();
           SDL_Log("MediaEngine: reopening audio devices (speaker route / SoftMigrate)");
           capture_stage.Set(MediaThreadStage::OpenDevices);
+          const ReopeningScope reopening(audio_reopening);
           const bool retry_voice = audio_reopen_retry_voice.exchange(false, std::memory_order_acq_rel);
           if (auto audio = EnsureAudioLeases(/*reopen=*/true, retry_voice); !audio) {
             SDL_Log("MediaEngine: audio reopen failed: %s", audio.error().message.c_str());
@@ -1540,7 +1581,7 @@ struct MediaEngine::Impl {
                   EngineLog().warning << "capture lost: nothing even after the audio rebuild";
                   MetricsLine("device.audio_reset").Add("result", "no_capture").Emit();
                 }
-                if (reopen_gave_nothing && !reset_ran && DeviceArbiter().CanResetAudio() &&
+                if (reopen_gave_nothing && !reset_ran && !reset_disabled && DeviceArbiter().CanResetAudio() &&
                     (last_reset_miss_ms == 0 || now - last_reset_miss_ms >= kAudioResetRetryAfterMissMs)) {
                   EngineLog().info << "capture starved " << (now - last_capture_pcm_ms)
                                    << "ms after a reopen — rebuilding the audio devices";
@@ -2675,6 +2716,10 @@ void MediaEngine::RequestAudioRouteChange(std::function<void()> apply) {
     }
   }
   apply(); // nothing captures: no recording stream for the OS to take
+}
+
+bool MediaEngine::AudioDevicesReopening() const {
+  return Session()->audio_reopening.load(std::memory_order_acquire);
 }
 
 IMediaView::AudioRouteChange MediaEngine::AudioRouteChangeState() const {

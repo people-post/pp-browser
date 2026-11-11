@@ -122,6 +122,7 @@ public:
   /** IMediaView: close the mic, run `apply` (the route change), reopen — on the capture worker. */
   void RequestAudioRouteChange(std::function<void()> apply) override;
   AudioRouteChange AudioRouteChangeState() const override;
+  bool AudioDevicesReopening() const override;
 
   /** What to send at, from the feature's adaptation policy (calls: V024): the camera gate and bitrates. */
   void ApplyTargets(const MediaTargets& targets);

@@ -259,6 +259,41 @@ TEST(AudioRouteRecoveryTest, ARebuildThatDidNotRunIsTriedAgain) {
   EXPECT_FALSE(call.engine.HealthSnapshot().capture_lost);
 }
 
+// Rebuilds that cannot run (SDL's main thread never gets to them) are tried twice per call, then the screen is told
+// the mic is lost — no endless retries every 10 s.
+TEST(AudioRouteRecoveryTest, RebuildsThatCannotRunAreCappedAtTwo) {
+  Rig rig;
+  rig.dead.store(true);
+  rig.reset_results = {AudioResetResult::Timeout};
+  Call call(rig);
+  call.Start();
+  ASSERT_TRUE(WaitFor([&] { return rig.resets.load() == 2; }, 16s)) << "the missed rebuild was not retried once";
+  EXPECT_TRUE(WaitFor([&] { return call.engine.HealthSnapshot().capture_lost; }, 2s));
+  std::this_thread::sleep_for(11s);
+  EXPECT_EQ(rig.resets.load(), 2) << "tried again past the cap";
+}
+
+// A rebuild that started and outlived its budget (an SDL quit that blocks): the media thread stops waiting at the
+// budget, tells the screen the mic is lost, never tries another, and opens nothing while it may still run — the
+// devices come back by themselves once it returns.
+TEST(AudioRouteRecoveryTest, AStuckRebuildIsNotWaitedForNorRepeated) {
+  Rig rig;
+  rig.dead.store(true);
+  rig.reset_takes = 3000ms; // past the 1.5 s budget and the arbiter's margin
+  Call call(rig);
+  call.Start();
+  ASSERT_TRUE(WaitFor([&] { return rig.Count("reset begin") == 1; }, 8s));
+  ASSERT_TRUE(WaitFor([&] { return call.engine.HealthSnapshot().capture_lost; }, 2500ms))
+      << "the media thread waited for the stuck rebuild";
+  EXPECT_EQ(rig.Find("mic opened", rig.Find("reset begin")), std::string::npos) << "a mic opened mid-rebuild";
+  ASSERT_TRUE(WaitFor([&] { return rig.Count("reset ok") == 1; }, 3s));
+  EXPECT_TRUE(call.HeardAgain(5, 5s)) << "the devices did not come back once the rebuild returned";
+  EXPECT_FALSE(call.engine.HealthSnapshot().capture_lost);
+  rig.dead.store(true);
+  std::this_thread::sleep_for(6s);
+  EXPECT_EQ(rig.resets.load(), 1) << "rebuilt again after a stuck rebuild";
+}
+
 // A tap while a rebuild runs is not lost: it runs once the rebuild is done, around the fresh mic.
 TEST(AudioRouteRecoveryTest, ATapDuringARebuildRunsAfterIt) {
   Rig rig;
@@ -267,6 +302,7 @@ TEST(AudioRouteRecoveryTest, ATapDuringARebuildRunsAfterIt) {
   Call call(rig);
   call.Start();
   ASSERT_TRUE(WaitFor([&] { return rig.Count("reset begin") == 1; }, 8s));
+  EXPECT_TRUE(call.engine.AudioDevicesReopening()) << "the screen cannot tell a rebuild is running";
   call.engine.RequestAudioRouteChange([&rig] { rig.Route("route during rebuild"); });
   ASSERT_TRUE(WaitFor([&] { return rig.Count("route during rebuild") == 1; }, 3s)) << "the tap was dropped";
   EXPECT_LT(rig.Find("reset ok"), rig.Find("route during rebuild"));

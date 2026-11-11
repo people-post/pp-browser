@@ -21,7 +21,9 @@ bool SdlAudioResetSupported();
  * Rebuild SDL audio on SDL's main thread (SDL_QuitAudio frees the lock the main thread's event pump reads), waiting
  * at most `budget` for the main thread to get to it. `safe_now` runs on the main thread right before the rebuild:
  * false (an SDL audio stream is open) refuses it (Busy). Timeout when the main thread did not start it in time: it
- * then never runs. Called on the audio device thread with no endpoint open.
+ * then never runs. Stuck when it started and ran past `budget`: this thread then stays until it returns (nothing may
+ * touch SDL audio meanwhile), and no rebuild is tried again in this process (SdlAudioResetSupported turns false).
+ * Called on the audio device thread with no endpoint open (AudioResetHandoff holds the rules).
  */
 AudioResetResult ResetSdlAudioOnMainThread(std::chrono::milliseconds budget, std::function<bool()> safe_now,
                                            std::string* error);

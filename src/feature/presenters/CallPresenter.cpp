@@ -408,8 +408,10 @@ void CallPresenter::Refresh() {
     speaker_tap_.reset(); // the engine dropped a route change not yet run with the call's media
   }
   if (next.kind == CallScreen::Kind::None && !surface.active && AudioSession::IsSpeakerphoneOn()) {
-    // No call left: the speaker choice was that call's (AudioSession keeps it across a media rebuild).
-    AudioSession::SetSpeakerphoneOn(false);
+    // No call left: the speaker choice was that call's (AudioSession keeps it across a media rebuild). Forgotten, not
+    // routed from here: on Android the call's mic may still be open (its engine closes it on its own thread), and a
+    // route change under an open recording stream loses the mic for the process; its Deactivate routes back after.
+    AudioSession::ForgetSpeakerChoice();
   }
   screen_ = std::move(next);
   Changed();
@@ -1357,28 +1359,30 @@ void CallPresenter::ToggleSpeaker() {
   // the route changes, it reopens — or the OS disconnects the open recording stream and SDL never gives it back.
   const bool reopen =
       AudioSession::SpeakerToggleNeedsDeviceReopen() && backend && backend->Available() && backend->Media().IsActive();
-  const bool old_order = reopen && dev_route_reorder_skip_ && dev_route_reorder_skip_();
-  if (reopen && !old_order) {
+  const CallSpeakerTapPlan plan =
+      PlanCallSpeakerTap(reopen, reopen && dev_route_reorder_skip_ && dev_route_reorder_skip_());
+  if (plan.around_the_mic) {
     speaker_tap_ = CallSpeakerTap{.on = on, .at_ms = util::NowUnixMs()};
     backend->Media().RequestAudioRouteChange([on]() { AudioSession::SetSpeakerphoneOn(on); });
   } else {
     speaker_tap_.reset();
     AudioSession::SetSpeakerphoneOn(on);
-    if (reopen) {
+    if (plan.reopen_after) {
       backend->Media().RequestAudioDeviceReopen();
     }
   }
   log().info << "ToggleSpeaker speaker_on=" << (on ? 1 : 0) << " reopen=" << (reopen ? 1 : 0)
-             << " mic_first=" << (reopen && !old_order ? 1 : 0);
+             << " mic_first=" << (plan.around_the_mic ? 1 : 0);
   Refresh();
 }
 
 bool CallPresenter::SpeakerShownOn() const {
   auto* backend = Backend();
-  const IMediaView::AudioRouteChange state = speaker_tap_ && backend && backend->Available()
-                                                 ? backend->Media().AudioRouteChangeState()
-                                                 : IMediaView::AudioRouteChange::None;
-  return CallSpeakerButtonOn(speaker_tap_, state, util::NowUnixMs(), AudioSession::IsSpeakerphoneOn());
+  const bool engine = speaker_tap_ && backend && backend->Available();
+  const IMediaView::AudioRouteChange state =
+      engine ? backend->Media().AudioRouteChangeState() : IMediaView::AudioRouteChange::None;
+  const bool reopening = engine && backend->Media().AudioDevicesReopening();
+  return CallSpeakerButtonOn(speaker_tap_, state, reopening, util::NowUnixMs(), AudioSession::IsSpeakerphoneOn());
 }
 
 void CallPresenter::SetDevRouteReorderSkip(std::function<bool()> skip) {
