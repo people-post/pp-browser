@@ -1,4 +1,4 @@
-      <div class="settings-section settings-section--grouped stack">
+      <div class="settings-section settings-section--grouped settings-mock stack">
         <div class="group-card">
           <button class="settings-toggle-row settings-choice-row row group-row" type="button"
                   data-event-click="on_choose_theme()">
@@ -25,33 +25,6 @@
           </button>
         </div>
         <p class="text muted settings-help group-foot">{{i18n:settings.language.help}}</p>
-        <!-- Phones: the Edit Home sheet Home's "Edit" opens (the desktop's Home has no widgets). -->
-        <div class="group-card settings-phone-only">
-          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
-                  data-event-click="open_home_edit()">
-            <span class="group-row-body">
-              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.home_widgets.label}}</span>
-              <span class="settings-choice-value row">
-                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
-              </span>
-            </span>
-          </button>
-        </div>
-        <!-- Show Activity on Home (Kenneth 2026-11-05): phones only. Off (default) is the minimal AI-first Home; on
-             brings back the 动态 widgets section (calls, mentions, new people…). -->
-        <div class="group-card settings-phone-only">
-          <div class="settings-toggle-row row group-row">
-            <span class="group-row-body">
-              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.home_dynamic.label}}</span>
-              <button class="settings-switch" type="button"
-                      data-class-settings-switch--on="home_show_dynamic == 'on'"
-                      data-event-click="toggle_home_show_dynamic()">
-                <div class="settings-switch-knob"></div>
-              </button>
-            </span>
-          </div>
-        </div>
-        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.home_dynamic.help}}</p>
         <!-- Transparency (Kenneth 2026-11-04): on, the phone's bars are frosted and the page shows through them; off,
              they are solid (the reduce_transparency pref, which the AI assistant's set_reduce_transparency also sets). -->
         <div class="group-card">
@@ -67,6 +40,35 @@
           </div>
         </div>
         <p class="text muted settings-help group-foot">{{i18n:settings.transparency.help}}</p>
+        <!-- Widgets (Kenneth 2026-11-05, phones only): "Show widgets page" is the old "Show Activity on Home" switch (off, the
+             default, is the minimal AI-first Home; on brings back the 动态 widgets section); "Choose widgets" opens the
+             Edit Home sheet and is greyed out while the first is off. -->
+        <p class="text group-head settings-phone-only">{{i18n:settings.widgets.title}}</p>
+        <div class="group-card settings-phone-only">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="settings-label group-row-text">{{i18n:settings.home_dynamic.label}}</span>
+                <span class="group-row-sub">{{i18n:settings.home_dynamic.help}}</span>
+              </span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="home_show_dynamic == 'on'"
+                      data-event-click="toggle_home_show_dynamic()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+          <button class="group-row" type="button" data-class-group-row--dim="home_show_dynamic != 'on'"
+                  data-event-click="open_home_edit()">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">{{i18n:settings.home_widgets.label}}</span>
+                <span class="group-row-sub">{{i18n:settings.home_widgets.help}}</span>
+              </span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
         <div class="group-card settings-phone-only">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">
@@ -78,10 +80,8 @@
               </button>
             </span>
           </div>
-        </div>
         <!-- Animated home logo (Kenneth 2026-11-09; moved here 2026-11-09): phones only. On (default) the AI Home's logo is
              the mascot in the look picked below, and a tap (or a while alone) makes it move; off keeps the static app icon. -->
-        <div class="group-card settings-phone-only">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">
               <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.home_logo.label}}</span>
@@ -154,4 +154,5 @@
           <button class="btn btn-secondary settings-action-bar" type="button"
                   data-event-click="reset_section('appearance')">{{i18n:common.reset_defaults}}</button>
         </div>
+        <p class="text muted settings-help group-foot">{{i18n:settings.appearance.reset_help}}</p>
       </div>

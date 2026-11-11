@@ -13027,25 +13027,111 @@ textarea:composing ~ .prompt-composer-label,
   text-overflow: ellipsis;
 }
 
-/* The phone Me home follows the agreed mockup (logs/mockups/settings-reorg-1110.html, CSS px = dp): text-only rows of
-   at least 52dp, cards with 16dp sides and 12dp corners, 24dp between groups, an 88dp profile card, a centred version
-   line at the end. Scoped to .me-home so no other settings page changes. */
+/* The phone Me home and the pages rebuilt from the agreed mockup (logs/mockups/settings-reorg-1110.html, CSS px = dp)
+   share one set of metrics: text rows of at least 52dp, cards with 16dp sides and 12dp corners, 24dp between groups,
+   13/18 helper lines 8dp under their card. .me-home is the home's phone block; .settings-mock is the root of a page
+   (通知 / 外观 / 存储 / 我的资料) so no other settings page changes. */
+.shell-layer-compact .me-home .group-card,
+.shell-layer-compact .settings-mock .group-card {
+  margin: 24dp 16dp 0 16dp;
+  border-radius: 12dp;
+}
+
+.shell-layer-compact .settings-mock .group-card:first-child {
+  margin-top: 16dp;
+}
+
+.shell-layer-compact .settings-mock .group-row-sub {
+  white-space: normal;
+  overflow: visible;
+  margin-top: 2dp;
+}
+
+.shell-layer-compact .settings-mock .group-row--dim {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.shell-layer-compact .settings-mock .group-row--indent {
+  padding-left: 36dp;
+}
+
+/* .settings-phone-only sets its own display; the QR box must stay a centred column on the profile page. */
+.shell-layer-compact .settings-mock .me-invite-qr.settings-phone-only {
+  display: flex;
+}
+
+.shell-layer-compact .settings-mock .me-profile-head {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  margin: 8dp 16dp 0 16dp;
+}
+
+/* The nickname row: label at the left, the field at the right (the mockup's edit row). */
+.shell-layer-compact .settings-mock .group-row--field .group-row-body--field {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-height: 52dp;
+  padding: 0 16dp 0 0;
+}
+
+.shell-layer-compact .settings-mock .group-row--field .group-row-text {
+  flex: 0 0 auto;
+  margin: 0 12dp 0 0;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-layer-compact .settings-mock .group-row--field .field {
+  flex: 1;
+  width: auto;
+  height: 52dp;
+  min-height: 52dp;
+  max-height: 52dp;
+  margin: 0;
+  padding: 15dp 0;
+  background-color: transparent;
+  text-align: right;
+}
+
+.shell-layer-compact .settings-mock .group-row--field .group-field-hint {
+  left: auto;
+  right: 0;
+  top: 0;
+  bottom: auto;
+  height: 52dp;
+  line-height: 52dp;
+}
+
+.shell-layer-compact .settings-mock .group-foot {
+  margin: 8dp 32dp 0 32dp;
+}
+
+.shell-layer-compact .settings-mock .group-head {
+  margin: 24dp 32dp 8dp 32dp;
+}
+
+.shell-layer-compact .settings-mock .group-head + .group-card {
+  margin-top: 0;
+}
+
+.shell-layer-compact .me-home .group-row,
+.shell-layer-compact .me-home .group-row-body,
+.shell-layer-compact .settings-mock .group-row,
+.shell-layer-compact .settings-mock .group-row-body {
+  min-height: 52dp;
+}
+
 /* The engine keeps 16dp for an (undrawn) scrollbar once the page overflows; Me scrolls by touch, so the cards keep
    their 16dp margins on both sides. */
 .shell-layer-compact .settings-list-view scrollbarvertical {
   width: 0dp;
 }
 
-.shell-layer-compact .me-home .group-card {
-  margin: 24dp 16dp 0 16dp;
-  border-radius: 12dp;
-}
-
-.shell-layer-compact .me-home .group-row,
-.shell-layer-compact .me-home .group-row-body {
-  min-height: 52dp;
-}
-
+/* The profile card and the version line of the home. */
 .shell-layer-compact .me-home .me-card-row {
   min-height: 88dp;
   padding-right: 0;

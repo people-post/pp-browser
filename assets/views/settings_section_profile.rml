@@ -1,5 +1,5 @@
-      <div class="settings-section settings-section--grouped stack">
-        <div class="group-card group-card--pad">
+      <div class="settings-section settings-section--grouped settings-mock stack">
+        <div class="me-profile-head">
         <div class="me-profile-avatar-row row">
           <div class="me-profile-avatar-wrap">
           <div class="me-profile-avatar-frame" data-event-click="tap_profile_avatar()"
@@ -38,29 +38,67 @@
           </label>
         </div>
         <div class="group-card settings-phone-only">
-          <div class="group-row group-id-row">
+          <div class="group-row group-row--static">
             <span class="group-row-body">
-              <span class="group-id-text" data-if="profile_relay_id != ''">
-                <span class="group-id-label">{{i18n:settings.profile.relay_id_label}}</span>
-                <span class="group-id-value">{{profile_relay_id}}</span>
-              </span>
-              <span class="group-id-text" data-if="profile_relay_id == ''">
-                <span class="group-id-value">{{i18n:settings.profile.relay_id_none}}</span>
-              </span>
-              <button class="group-id-btn" type="button" data-event-click="copy_profile_id()">
-                <svg class="cd-icon" src="../icons/v2/copy.svg" width="22" height="22"></svg>
-              </button>
-              <button class="group-id-btn" type="button" data-event-click="share_profile()">
-                <svg class="cd-icon" src="../icons/v2/share.svg" width="22" height="22"></svg>
-              </button>
-              <button class="group-id-btn" type="button" data-if="profile_qr_svg_rml != ''"
-                      data-event-click="toggle_profile_qr()">
-                <svg class="cd-icon" src="../icons/v2/qr-code.svg" width="22" height="22"></svg>
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.profile.id_row}}</span></span>
+              <span class="group-row-value" data-if="profile_relay_id != ''">{{profile_relay_id}}</span>
+              <span class="group-row-value" data-if="profile_relay_id == ''">{{i18n:settings.profile.id_none}}</span>
+            </span>
+          </div>
+          <button class="group-row" type="button" data-event-click="copy_profile_id()">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:contacts.copy_id}}</span></span>
+            </span>
+          </button>
+          <button class="group-row" type="button" data-event-click="share_profile()">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:common.share}}</span></span>
+            </span>
+          </button>
+          <button class="group-row" type="button" data-if="profile_qr_svg_rml != ''" data-event-click="toggle_profile_qr()">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.profile.show_qr}}</span></span>
+            </span>
+          </button>
+          <div class="group-row group-row--static" data-if="advanced && profile_peer_id != ''">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.profile.node_id_row}}</span></span>
+              <span class="group-row-value">{{profile_peer_id}}</span>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.profile.id_help}}</p>
+        <div class="me-invite-qr settings-phone-only" data-if="profile_show_qr && profile_qr_svg_rml != ''">
+          <svg class="me-invite-qr-code" viewBox="0 0 100 100" width="200" height="200"
+               data-rml="profile_qr_svg_rml"></svg>
+          <p class="text muted settings-help group-foot">{{i18n:settings.profile.qr_help}}</p>
+        </div>
+        <p class="text group-head settings-phone-only">{{i18n:settings.profile.account_group}}</p>
+        <div class="group-card settings-phone-only">
+          <div class="group-row group-row--static">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.profile.registration_row}}</span></span>
+              <span class="group-row-value">{{profile_registration_status}}</span>
+            </span>
+          </div>
+          <div class="group-row group-row--static" data-if="advanced && profile_registration_expires != ''">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.profile.expires_row}}</span></span>
+              <span class="group-row-value">{{profile_registration_expires}}</span>
+            </span>
+          </div>
+          <div class="settings-toggle-row row group-row" data-if="advanced">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.auto_renew}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="auto_renew_registration == 'auto'"
+                      data-event-click="toggle_auto_renew_registration()">
+                <div class="settings-switch-knob"></div>
               </button>
             </span>
           </div>
         </div>
-        <div class="group-card group-card--pad">
+        <div class="group-card group-card--pad settings-desktop-only">
         <p class="text muted me-profile-meta group-note" data-if="advanced && profile_peer_id != ''">
           {{i18n:settings.profile.peer_id_label}} <span>{{profile_peer_id}}</span>
         </p>
@@ -77,7 +115,7 @@
           {{i18n:settings.registration.expires}} <span>{{profile_registration_expires}}</span>
         </p>
         </div>
-        <div class="group-card" data-if="advanced">
+        <div class="group-card settings-desktop-only" data-if="advanced">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">
               <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.auto_renew}}</span>
@@ -104,7 +142,7 @@
           <button class="btn btn-primary" type="button" data-if="profile_show_register"
                   data-event-click="register_profile()"><span>{{profile_register_label}}</span></button>
         </div>
-        <div class="me-invite-qr" data-if="profile_show_qr && profile_qr_svg_rml != ''">
+        <div class="me-invite-qr settings-desktop-only" data-if="profile_show_qr && profile_qr_svg_rml != ''">
           <svg class="me-invite-qr-code" viewBox="0 0 100 100" width="200" height="200"
                data-rml="profile_qr_svg_rml"></svg>
           <p class="text muted settings-help group-foot">{{i18n:settings.profile.qr_help}}</p>

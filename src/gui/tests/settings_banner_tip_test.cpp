@@ -32,8 +32,13 @@ TEST(SettingsBannerTipTest, TheRowIsGatedByTheBindingAndOpensTheSystemPage) {
   ASSERT_NE(gate, std::string::npos);
   const size_t button = view.find("open_notification_settings()", gate);
   ASSERT_NE(button, std::string::npos);
-  EXPECT_LT(button - gate, 700u); // inside that card, not a later one
+  EXPECT_LT(button - gate, 300u); // inside that card, not a later one
   EXPECT_NE(view.find("settings.notifications.banner_tip.action", gate), std::string::npos);
+  // One row like the others: a title, the sentence as its small line, "go to settings" and a chevron on the right.
+  EXPECT_NE(view.find("settings.notifications.banner_tip.title", gate), std::string::npos);
+  EXPECT_NE(view.find("class=\"group-row-sub\">{{i18n:settings.notifications.banner_tip}}", gate), std::string::npos);
+  EXPECT_NE(view.find("group-chevron", gate), std::string::npos);
+  EXPECT_EQ(view.find("btn btn-secondary", gate), std::string::npos) << "no pill button any more";
 }
 
 TEST(SettingsBannerTipTest, TheTextExistsInBothLanguages) {
@@ -42,6 +47,7 @@ TEST(SettingsBannerTipTest, TheTextExistsInBothLanguages) {
     LocalizationService::Instance().SetPreferredLanguage(language);
     EXPECT_NE(Tr("settings.notifications.banner_tip"), "settings.notifications.banner_tip") << language;
     EXPECT_NE(Tr("settings.notifications.banner_tip.action"), "settings.notifications.banner_tip.action") << language;
+    EXPECT_NE(Tr("settings.notifications.banner_tip.title"), "settings.notifications.banner_tip.title") << language;
   }
   LocalizationService::Instance().SetPreferredLanguage("en");
 }
