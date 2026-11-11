@@ -10,8 +10,10 @@ CallPathPolicy DecideCallPathPolicy(const MobilityClass local, const MobilityCla
   const bool any_unknown = local == MobilityClass::Unknown || remote == MobilityClass::Unknown;
   if (any_mobile) {
     // A mobile end rebinds: a punched path dies with the next NAT mapping. The relay carries the
-    // call; direct dialing still goes first (a reachable peer needs no punch).
+    // call; direct dialing still runs (a reachable peer needs no punch), but the circuit the call
+    // anchors on is built beside it, not after the dial's budget (#577).
     policy.punch_at_start = false;
+    policy.race_circuit_at_start = true;
     policy.upgrade_to_direct = false;
     policy.relay_role = CallRelayRole::Anchor;
     policy.standby_priority = CallStandbyPriority::High;
@@ -48,6 +50,7 @@ const char* CallStandbyPriorityName(const CallStandbyPriority priority) {
 CallPathPolicy RelayOnlyPolicy(CallPathPolicy policy) {
   policy.relay_only = true;
   policy.punch_at_start = false;
+  policy.race_circuit_at_start = false; // no direct dial to race: the circuit is the only reach
   policy.upgrade_to_direct = false;
   policy.relay_role = CallRelayRole::Anchor;
   policy.want_relay_standby = false; // the relay is the primary, not a standby

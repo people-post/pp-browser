@@ -141,8 +141,11 @@ void CallMediaConnectCoordinator::Start(CallMediaConnectRequest request, CallMed
   // V049 / B31: simultaneous open — both roles dial immediately. Carrier / home NAT only pass
   // flows the inside host started. Amp A026 elects one PeerLink; the transport claims one stream.
   reach_.AbandonDial(request_.params.peer_key);
+  // The reach the call's path policy asked for (CallDirectPath::ApplyReachPolicy).
   log().info << "Connect start call_id=" << request_.params.call_id << " peer=" << request_.params.peer_key
-             << " role=" << Role();
+             << " role=" << Role() << " exclude_direct=" << (request_.reach.exclude_direct ? 1 : 0)
+             << " allow_punch=" << (request_.reach.allow_punch ? 1 : 0)
+             << " race_circuit=" << (request_.reach.race_circuit ? 1 : 0);
   diag_started_ = std::chrono::steady_clock::now();
   diag_attempts_ = 0;
   diag_kind_ = mesh::PeerLinkKind::Unknown;
