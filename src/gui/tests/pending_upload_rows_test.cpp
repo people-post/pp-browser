@@ -13,6 +13,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -405,7 +406,10 @@ std::string ReadAll(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
   std::ostringstream out;
   out << in.rdbuf();
-  return out.str();
+  std::string text = out.str();
+  // A Windows checkout has CRLF line ends; Body() looks for "\n}\n".
+  text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+  return text;
 }
 
 std::string Controller() {
