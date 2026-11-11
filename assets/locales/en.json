@@ -1536,6 +1536,7 @@
     "call.quality.hint.connecting_video": "Connecting video…",
     "call.quality.hint.retrying_voice": "Voice not through yet, retrying…",
     "call.quality.hint.retrying_video": "Video not through yet, retrying…",
+    "call.quality.hint.mic_lost": "They can't hear you. Restart PP, then call again.",
     "call.quality.hint.receiving_only": "Your mic isn't sending",
     "call.details.title": "Call details",
     "call.details.copy": "Copy diagnostics",

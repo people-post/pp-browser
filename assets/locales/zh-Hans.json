@@ -1496,6 +1496,7 @@
     "call.quality.hint.connecting_video": "正在连通视频…",
     "call.quality.hint.retrying_voice": "语音暂未接通，正在重试…",
     "call.quality.hint.retrying_video": "视频暂未接通，正在重试…",
+    "call.quality.hint.mic_lost": "对方听不到你。请重启 PP 后再打。",
     "call.quality.hint.receiving_only": "你的麦克风未发送",
     "call.details.title": "通话详情",
     "call.details.copy": "复制诊断信息",

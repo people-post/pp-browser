@@ -98,6 +98,15 @@ constexpr auto kEncodeInterval = std::chrono::milliseconds(1000 / kVideoFps - 8)
 constexpr auto kDeviceRetryPoll = std::chrono::milliseconds(100);
 /** A new session's first mic open waits this long for the previous session to let the mic go. */
 constexpr auto kMicHandoverWait = std::chrono::milliseconds(1500);
+/** An audio rebuild waits at most this long for SDL's main thread to run it (it is then not run). */
+constexpr auto kAudioResetBudget = std::chrono::milliseconds(1500);
+/**
+ * After a rebuild that did not run (main thread late, a device held), the next try waits this long — not every
+ * starve window (2 s) while the main thread is held up.
+ */
+constexpr int64_t kAudioResetRetryAfterMissMs = 10000;
+/** A call's end waits at most this long for its audio closes before the OS route goes back (Android). */
+constexpr auto kEndDrainBudget = std::chrono::milliseconds(1000);
 /** CameraFailure details (the log's words; the screen words the failure from its kind). */
 constexpr const char* kCameraBusyMessage = "Camera is busy — video turns on when it's free";
 constexpr const char* kCameraStuckMessage = "Camera isn't responding — restart the app to use it";
@@ -122,6 +131,23 @@ logging::Logger& EngineLog() {
 
 int64_t MsSince(std::chrono::steady_clock::time_point since) {
   return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - since).count();
+}
+
+/** `device.audio_reset` result word. */
+ShareWord AudioResetWord(AudioResetResult result) {
+  switch (result) {
+    case AudioResetResult::Ok:
+      return "ok";
+    case AudioResetResult::Busy:
+      return "busy";
+    case AudioResetResult::Timeout:
+      return "timeout";
+    case AudioResetResult::Failed:
+      return "failed";
+    case AudioResetResult::Unsupported:
+      return "unsupported";
+  }
+  return "failed";
 }
 
 int64_t SteadyNowMs() {
@@ -266,6 +292,8 @@ struct MediaEngine::Shared {
   std::unique_ptr<MediaDeviceArbiter> test_devices;
   /** Test fixtures: skip SDL mic/camera open (silence TX only). */
   std::atomic<bool> skip_device_open_for_test{false};
+  /** Tests: -1 the platform decides whether a route change closes the mic first; 0 / 1 forced. */
+  std::atomic<int> capture_closes_before_route_for_test{-1};
   /** Under `mu`; a session takes a copy when it starts. Test-only: sees each outgoing audio frame before encode. */
   std::function<void(const int16_t*, size_t)> encode_input_for_test;
   /** Under `mu`; a session takes a copy when it starts. */
@@ -506,6 +534,15 @@ struct MediaEngine::Impl {
   /** Capture worker closes+reopens SDL devices (speaker route / SoftMigrate). */
   std::atomic<bool> audio_reopen_requested{false};
   /**
+   * The latest route change asked for (RequestAudioRouteChange), not yet run; under `route_mu`. Only the capture
+   * thread runs it; the stop path (ReleaseAudioLocked) and the next StartCaptureLoop drop it.
+   */
+  std::mutex route_mu;
+  std::function<void()> pending_route;
+  std::atomic<int> route_state{static_cast<int>(IMediaView::AudioRouteChange::None)};
+  /** Capture is gone even after a reopen and an audio rebuild (MediaEngineHealth::capture_lost). */
+  std::atomic<bool> capture_lost{false};
+  /**
    * Set with audio_reopen_requested when the OS gave the session back (interruption end): that reopen tries the
    * voice-processing pair again even when separate leases are held — a reopen that ran during the interruption fell
    * back to them, and nothing else ever went back (B174).
@@ -714,6 +751,7 @@ struct MediaEngine::Impl {
     capture_running = false;
     playout_running = false;
     audio_reopen_requested.store(false, std::memory_order_relaxed);
+    DropPendingRoute(); // a route change not yet run never runs after the session (nor after Deactivate)
     RequestCameraOffLocked();
     CloseAudioDevicesLocked();
     if (encoder) {
@@ -735,6 +773,40 @@ struct MediaEngine::Impl {
     vpio_underruns_closed = 0;
     last_rx_audio_ms.store(0, std::memory_order_relaxed);
     last_tx_audio_ms.store(0, std::memory_order_relaxed);
+  }
+
+  /**
+   * Retire thread: on Android the OS route goes back (Deactivate) only after this session's mic is closed — else the
+   * OS disconnects the still-open recording stream and SDL never gives the mic back (the next call is silent). At
+   * most kEndDrainBudget: then the route goes back anyway and the next call's rebuild recovers the mic.
+   */
+  void DrainAudioBeforeRouteReset() {
+    if (!devices || !CaptureClosesBeforeRouteChange()) {
+      return;
+    }
+    const auto from = std::chrono::steady_clock::now();
+    if (!DeviceArbiter().DrainAudio(kEndDrainBudget)) {
+      const int64_t ms = MsSince(from);
+      EngineLog().warning << "media stop: audio closes still running after " << ms
+                          << "ms — the route goes back anyway; the next call may need an audio rebuild";
+      MetricsLine("device.audio_drain").Add("result", "timeout").Add("ms", ms).Emit();
+    }
+  }
+
+  /** A route change waiting for the capture thread is dropped (stop path, a new capture loop). */
+  void DropPendingRoute() {
+    std::lock_guard lock(route_mu);
+    pending_route = nullptr;
+    route_state.store(static_cast<int>(IMediaView::AudioRouteChange::None), std::memory_order_release);
+  }
+
+  /**
+   * The mic closes before an OS route change and a call's end waits for its audio closes before the route goes back:
+   * Android only (the OS disconnects an open recording stream on a route change, and SDL then never gives it back).
+   */
+  bool CaptureClosesBeforeRouteChange() const {
+    const int forced = shared->capture_closes_before_route_for_test.load(std::memory_order_relaxed);
+    return forced >= 0 ? forced != 0 : AudioSession::SpeakerToggleNeedsDeviceReopen();
   }
 
   /** OS audio session ownership (g_audio_session_gen): never under `mutex`. */
@@ -1070,6 +1142,10 @@ struct MediaEngine::Impl {
       if (!capture_running.load(std::memory_order_acquire)) {
         return Error("media session stopped");
       }
+      if (reopen) {
+        // Activating may touch the OS route (communication mode): the mic goes first (Android).
+        CloseMicBeforeRoute(mic.get());
+      }
       AudioSession::ApplyCaptureAudioHints();
       ActivateAudioSession();
     }
@@ -1115,6 +1191,77 @@ struct MediaEngine::Impl {
     denoise.Reset();
 #endif
     return {};
+  }
+
+  /** Android: close the separate mic (kept leased; the next Reopen opens it) and wait, before an OS route change. */
+  void CloseMicBeforeRoute(AudioDeviceLease* mic) {
+    if (!mic || mic->IsVoiceDuplex() || !CaptureClosesBeforeRouteChange()) {
+      return;
+    }
+    if (auto closed = mic->CloseEndpoint(); !closed) {
+      EngineLog().warning << "mic close before the route change failed: " << closed.error().message;
+    }
+  }
+
+  /**
+   * Capture thread: the queued route change, around the devices — mic closed, `apply` (the OS route), then the
+   * leases reopened. True when one ran.
+   */
+  bool RunPendingRouteChange() {
+    std::function<void()> apply;
+    {
+      std::lock_guard lock(route_mu);
+      if (!pending_route) {
+        return false;
+      }
+      apply = std::move(pending_route);
+      pending_route = nullptr;
+      route_state.store(static_cast<int>(IMediaView::AudioRouteChange::Running), std::memory_order_release);
+    }
+    EngineLog().info << "audio route change: mic closed first";
+    {
+      std::lock_guard lock(mutex);
+      capture_available = false;
+    }
+    CloseMicBeforeRoute(mic_lease.get());
+    // Runs even while the OS has the session: on Android the tap is what asks for the call's audio focus again.
+    apply();
+    if (AudioSession::IsInterrupted()) {
+      // Every open fails while the OS has the session (B174): the interruption's end reopens.
+      audio_reopen_requested.store(true, std::memory_order_release);
+    } else {
+      audio_reopen_requested.store(false, std::memory_order_release); // this reopen covers one asked for
+      if (auto audio = EnsureAudioLeases(/*reopen=*/true); !audio) {
+        SDL_Log("MediaEngine: audio reopen after the route change failed: %s", audio.error().message.c_str());
+      }
+    }
+    std::lock_guard lock(route_mu);
+    route_state.store(
+        static_cast<int>(pending_route ? IMediaView::AudioRouteChange::Queued : IMediaView::AudioRouteChange::None),
+        std::memory_order_release);
+    return true;
+  }
+
+  /**
+   * Capture thread: release this session's audio devices, rebuild the backend's audio stack (Android: a fresh SDL
+   * default recording device), take the devices again. The engine lock covers only the release.
+   */
+  AudioResetResult ResetAudioAndReacquire() {
+    {
+      std::lock_guard lock(mutex);
+      CloseAudioDevicesLocked();
+    }
+    const auto from = std::chrono::steady_clock::now();
+    std::string why;
+    const AudioResetResult result = DeviceArbiter().ResetAudio(kAudioResetBudget, &why);
+    const int64_t ms = MsSince(from);
+    EngineLog().warning << "audio reset: no capture after a reopen — rebuilt the audio devices result="
+                        << AudioResetResultName(result) << " ms=" << ms << (why.empty() ? "" : " why=") << why;
+    MetricsLine("device.audio_reset").Add("result", AudioResetWord(result)).Add("ms", ms).Emit();
+    if (auto audio = EnsureAudioLeases(/*reopen=*/false); !audio) {
+      SDL_Log("MediaEngine: audio devices after the rebuild: %s", audio.error().message.c_str());
+    }
+    return result;
   }
 
   /**
@@ -1177,6 +1324,8 @@ struct MediaEngine::Impl {
 
   void StartCaptureLoop() {
     // Precondition: capture_thread not joinable (JoinCaptureThread outside media mutex).
+    DropPendingRoute();
+    capture_lost.store(false, std::memory_order_relaxed);
     capture_running = true;
     audio_reopen_requested.store(false, std::memory_order_relaxed);
     audio_reopen_retry_voice.store(false, std::memory_order_relaxed);
@@ -1216,6 +1365,18 @@ struct MediaEngine::Impl {
       int64_t last_audio_retry_ms = 0;
       bool reopen_deferred_logged = false;      // once per interruption
       bool interruption_silence_logged = false; // once per interruption: a stuck flag shows in the log
+      // A reopen that brings nothing back escalates to an audio rebuild (Android: SDL's default recording device
+      // died). PCM arrived since the devices were last (re)opened:
+      bool pcm_since_open = false;
+      // Starvation reopens since PCM last arrived (the rebuild's own open counts as one).
+      int reopens_without_pcm = 0;
+      // A rebuild ran and no PCM came since: no second one until PCM comes back.
+      bool reset_ran = false;
+      bool reset_wanted = false;
+      // When a rebuild last did not run (main thread late, a device held): the next try waits.
+      int64_t last_reset_miss_ms = 0;
+      // When the last rebuild ran, until PCM comes back (the recovery metric).
+      int64_t reset_ok_ms = 0;
       while (capture_running.load()) {
         // While the OS has the session (a phone call, or a route change that interrupted it) every open fails and
         // drops what is held: nothing opens until the interruption's end, whose handler asks for the reopen (B174).
@@ -1244,9 +1405,36 @@ struct MediaEngine::Impl {
             }
             last_capture_pcm_ms = util::NowUnixMs();
             capture_opened_ms = last_capture_pcm_ms;
+            pcm_since_open = false;
           } else if (now - last_audio_retry_ms >= kDeviceRetryPoll.count()) {
             last_audio_retry_ms = now;
           }
+        }
+        if (route_state.load(std::memory_order_acquire) == static_cast<int>(IMediaView::AudioRouteChange::Queued)) {
+          pending.clear();
+          capture_stage.Set(MediaThreadStage::OpenDevices);
+          if (RunPendingRouteChange()) {
+            last_capture_pcm_ms = util::NowUnixMs();
+            capture_opened_ms = last_capture_pcm_ms;
+            pcm_since_open = false;
+          }
+        }
+        if (!os_has_session && reset_wanted) {
+          reset_wanted = false;
+          pending.clear();
+          capture_stage.Set(MediaThreadStage::OpenDevices);
+          // Only a rebuild that ran counts against the one per stretch without PCM.
+          if (ResetAudioAndReacquire() == AudioResetResult::Ok) {
+            reset_ran = true;
+            reset_ok_ms = util::NowUnixMs();
+          } else {
+            last_reset_miss_ms = util::NowUnixMs();
+          }
+          audio_reopen_requested.store(false, std::memory_order_release);
+          last_capture_pcm_ms = util::NowUnixMs();
+          capture_opened_ms = last_capture_pcm_ms;
+          pcm_since_open = false;
+          reopens_without_pcm = 1;
         }
         if (!os_has_session && audio_reopen_requested.exchange(false, std::memory_order_acq_rel)) {
           // Android speakerphone / SoftMigrate can leave AudioRecord feeding zeros until reopen.
@@ -1267,6 +1455,7 @@ struct MediaEngine::Impl {
           }
           last_capture_pcm_ms = util::NowUnixMs();
           capture_opened_ms = last_capture_pcm_ms;
+          pcm_since_open = false;
         }
         // The capture thread is mic_lease's only writer while it runs: read it without `mutex`.
         bool device_changed = false;
@@ -1309,6 +1498,18 @@ struct MediaEngine::Impl {
             const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
             pending.insert(pending.end(), chunk, chunk + samples);
             last_capture_pcm_ms = util::NowUnixMs();
+            if (!pcm_since_open) {
+              pcm_since_open = true;
+              if (reset_ok_ms > 0) {
+                const int64_t ms = last_capture_pcm_ms - reset_ok_ms;
+                EngineLog().warning << "audio reset: capture back ms=" << ms;
+                MetricsLine("device.audio_reset").Add("result", "recovered").Add("ms", ms).Emit();
+                reset_ok_ms = 0;
+              }
+              reopens_without_pcm = 0;
+              reset_ran = false;
+              capture_lost.store(false, std::memory_order_release);
+            }
             // Not on the first PCM after a reopen: a unit that starts and stalls again is still
             // starving "in a row" — otherwise the SDL fallback below never triggered (B56).
             if (vpio_on && CaptureStarvePolicy::HealthyAfterOpen(last_capture_pcm_ms - capture_opened_ms)) {
@@ -1332,13 +1533,28 @@ struct MediaEngine::Impl {
               } else if (now - last_capture_pcm_ms >= reopen_after_ms &&
                          now - last_capture_starve_reopen_ms > CaptureStarvePolicy::kReopenMinGapMs) {
                 last_capture_starve_reopen_ms = now;
-                EngineLog().info << "capture starved " << (now - last_capture_pcm_ms) << "ms — requesting reopen";
-                audio_reopen_requested.store(true, std::memory_order_release);
-                // I3: persistent voice-processing capture starvation (not just a starved SDL
-                // device) falls back to SDL for the rest of this call after 3 reopens in a row.
-                if (vpio_on && ++vpio_starve_reopens >= CaptureStarvePolicy::kVoiceMaxReopens) {
-                  vpio_disabled_for_session.store(true, std::memory_order_release);
-                  EngineLog().info << "vpio capture starved 3x — using SDL for this call";
+                // The last (re)open gave nothing at all.
+                const bool reopen_gave_nothing = !pcm_since_open && reopens_without_pcm > 0;
+                if (reopen_gave_nothing && reset_ran && !capture_lost.load(std::memory_order_acquire)) {
+                  capture_lost.store(true, std::memory_order_release);
+                  EngineLog().warning << "capture lost: nothing even after the audio rebuild";
+                  MetricsLine("device.audio_reset").Add("result", "no_capture").Emit();
+                }
+                if (reopen_gave_nothing && !reset_ran && DeviceArbiter().CanResetAudio() &&
+                    (last_reset_miss_ms == 0 || now - last_reset_miss_ms >= kAudioResetRetryAfterMissMs)) {
+                  EngineLog().info << "capture starved " << (now - last_capture_pcm_ms)
+                                   << "ms after a reopen — rebuilding the audio devices";
+                  reset_wanted = true;
+                } else {
+                  EngineLog().info << "capture starved " << (now - last_capture_pcm_ms) << "ms — requesting reopen";
+                  audio_reopen_requested.store(true, std::memory_order_release);
+                  ++reopens_without_pcm;
+                  // I3: persistent voice-processing capture starvation (not just a starved SDL
+                  // device) falls back to SDL for the rest of this call after 3 reopens in a row.
+                  if (vpio_on && ++vpio_starve_reopens >= CaptureStarvePolicy::kVoiceMaxReopens) {
+                    vpio_disabled_for_session.store(true, std::memory_order_release);
+                    EngineLog().info << "vpio capture starved 3x — using SDL for this call";
+                  }
                 }
               }
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
@@ -2060,6 +2276,7 @@ struct MediaEngine::Impl {
         std::lock_guard lock(mutex);
         ReleaseAudioLocked();
       }
+      DrainAudioBeforeRouteReset();
       ReleaseAudioSessionIfUnchanged(audio_session_seen);
     });
     timed_step("join_video", [&] { JoinVideoThread("media stop"); });
@@ -2397,6 +2614,7 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
     h.stream_count = impl->audio_tracks.size();
     h.packet_mode = impl->packet_mode;
     h.capture_available = impl->capture_available;
+    h.capture_lost = impl->capture_lost.load(std::memory_order_acquire);
     for (const auto& [id, stats] : impl->video_arrivals) {
       h.video_arrivals.push_back(VideoStreamArrival{.stream_id = id, .arrival = stats.Summary()});
     }
@@ -2439,6 +2657,32 @@ void MediaEngine::SetMuted(bool muted) {
 bool MediaEngine::IsMuted() const {
   const std::shared_ptr<Impl> impl = Session();
   return impl->muted.load(std::memory_order_relaxed);
+}
+
+void MediaEngine::RequestAudioRouteChange(std::function<void()> apply) {
+  if (!apply) {
+    return;
+  }
+  const std::shared_ptr<Impl> impl = Session();
+  {
+    std::lock_guard lock(impl->route_mu);
+    if (impl->capture_running.load(std::memory_order_acquire)) {
+      impl->pending_route = std::move(apply); // only the latest intent
+      int idle = static_cast<int>(AudioRouteChange::None);
+      (void)impl->route_state.compare_exchange_strong(idle, static_cast<int>(AudioRouteChange::Queued),
+                                                      std::memory_order_acq_rel);
+      return;
+    }
+  }
+  apply(); // nothing captures: no recording stream for the OS to take
+}
+
+IMediaView::AudioRouteChange MediaEngine::AudioRouteChangeState() const {
+  return static_cast<AudioRouteChange>(Session()->route_state.load(std::memory_order_acquire));
+}
+
+void MediaEngine::SetCaptureClosesBeforeRouteChangeForTest(const bool closes) {
+  shared_->capture_closes_before_route_for_test.store(closes ? 1 : 0, std::memory_order_relaxed);
 }
 
 void MediaEngine::RequestAudioDeviceReopen() {

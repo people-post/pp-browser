@@ -119,6 +119,9 @@ public:
    * Safe while media is active; no-op if capture is not running.
    */
   void RequestAudioDeviceReopen() override;
+  /** IMediaView: close the mic, run `apply` (the route change), reopen — on the capture worker. */
+  void RequestAudioRouteChange(std::function<void()> apply) override;
+  AudioRouteChange AudioRouteChangeState() const override;
 
   /** What to send at, from the feature's adaptation policy (calls: V024): the camera gate and bitrates. */
   void ApplyTargets(const MediaTargets& targets);
@@ -200,6 +203,11 @@ public:
    * Call before Start.
    */
   void SetSkipDeviceOpenForTest(bool skip);
+  /**
+   * Tests: whether a route change closes the mic first and a call's end waits for its closes (else the platform
+   * decides: AudioSession::SpeakerToggleNeedsDeviceReopen, Android only).
+   */
+  void SetCaptureClosesBeforeRouteChangeForTest(bool closes);
   /** Test-only: codecs for the local encoder / remote decoders (default: platform HW). Before Start. */
   void SetVideoCodecFactoryForTest(std::function<std::unique_ptr<IVideoCodec>()> make);
   /** Test-only: called on the capture thread with each outgoing audio frame's PCM, just before encode. Before Start. */
