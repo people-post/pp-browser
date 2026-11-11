@@ -47,6 +47,30 @@ inline bool ShowCallBannerTip(BannerStyle style) {
   return style == BannerStyle::Temporary;
 }
 
+/** Which tips Me → Notifications shows on Android, and which sentence sits under "Stay connected". */
+struct NotificationTips {
+  bool notifications_blocked = false;
+  bool silenced = false;
+  bool battery = false;
+  bool autostart = false;
+  PushGap stay_help = PushGap::None;
+};
+
+/**
+ * What the Android tips show. A row appears only for what the system said is wrong (a default NotificationHealth shows
+ * nothing); the exception is auto-start, which cannot be read: it shows on the makers that have the switch, and only
+ * while "Stay connected" is on. Battery follows the same switch. With notifications off, total silence adds nothing.
+ */
+inline NotificationTips ComputeNotificationTips(const NotificationHealth& health, bool stay_connected_on) {
+  NotificationTips tips;
+  tips.notifications_blocked = health.notifications_blocked;
+  tips.silenced = health.silenced && !health.notifications_blocked;
+  tips.battery = stay_connected_on && health.battery_restricted;
+  tips.autostart = stay_connected_on && health.autostart_vendor;
+  tips.stay_help = health.push_gap;
+  return tips;
+}
+
 class SettingsController : public Module, public SettingsHost {
 public:
   struct SectionListRow {
@@ -190,6 +214,15 @@ private:
     bool stay_connected_available = false;
     /** The "banner style" tip row shows (iOS: PP's banner style is "Temporary", which cuts a call ringtone short). */
     bool call_banner_tip_available = false;
+    /** The Android tips on Me → Notifications (ComputeNotificationTips). */
+    bool tip_notifications_blocked = false;
+    bool tip_silenced = false;
+    bool tip_battery = false;
+    bool tip_autostart = false;
+    /** The sentence under "Stay connected": the plain one, or the one that says why the phone needs the switch. */
+    bool stay_help_plain = true;
+    bool stay_help_build = false;
+    bool stay_help_no_google = false;
     /** kDevToolsBuild: the About page shows the developer-only rows. */
     bool dev_tools_available = false;
     ui::String brief_llm_key_masked;
@@ -260,6 +293,10 @@ private:
   void ToggleStayConnected();
   /** Reads PP's notification banner style again (Me → Notifications entered, app back in the foreground). */
   void RefreshBannerTip();
+  /** Reads the phone's notification settings again (Android); the page opened, the app back in the foreground. */
+  void RefreshNotificationTips();
+  /** Shows the tips for `last_health_` (the "Stay connected" switch changes two of them without a new read). */
+  void ApplyNotificationTips();
   /** Me → Appearance → Transparency: flips the reduce_transparency pref (the switch shows it inverted). */
   void ToggleTransparency();
   void ToggleCallDiagnostics();
@@ -398,6 +435,7 @@ private:
   uint64_t debounce_deadline_ms_ = 0;
   /** The app-foreground listener (AppLifecycle) that re-reads the banner style. */
   uint64_t foreground_listener_ = 0;
+  NotificationHealth last_health_;
   /** Cleared when this controller goes: a banner-style answer still in flight then does nothing. */
   std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
   std::optional<std::string> last_toast_section_;

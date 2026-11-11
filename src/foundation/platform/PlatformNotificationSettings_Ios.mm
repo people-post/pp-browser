@@ -71,4 +71,16 @@ bool OpenNotificationSettings() {
   return opened;
 }
 
+// The Android notification tips: nothing to say on iOS (its one tip is the banner style above).
+void QueryNotificationHealth(std::function<void(NotificationHealth)> done) {
+  if (!done) {
+    return;
+  }
+  AppRuntime::PostUI([done = std::move(done)]() { done(NotificationHealth{}); });
+}
+
+bool OpenNotificationFix(NotificationFix) {
+  return false;
+}
+
 } // namespace pbr

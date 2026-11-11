@@ -142,7 +142,10 @@ ui::Vector2i ChoiceRowMenuPosition(ui::Event& ev) {
 
 SettingsController::SettingsController() {
   redirectLogger("SettingsController");
-  foreground_listener_ = AppLifecycle::AddForegroundListener([this]() { RefreshBannerTip(); });
+  foreground_listener_ = AppLifecycle::AddForegroundListener([this]() {
+    RefreshBannerTip();
+    RefreshNotificationTips();
+  });
   section_handlers_.push_back(std::make_unique<ProfileSettingsSection>());
   for (auto& section : CreateSettingsSections()) {
     section_handlers_.push_back(std::move(section));
@@ -172,6 +175,33 @@ void SettingsController::RefreshBannerTip() {
     bindings_.call_banner_tip_available = show;
     DataModelHost::Instance().Dirty("settings", "call_banner_tip_available");
   });
+}
+
+void SettingsController::RefreshNotificationTips() {
+  QueryNotificationHealth([this, alive = alive_](NotificationHealth health) {
+    if (!*alive) {
+      return;
+    }
+    last_health_ = health;
+    ApplyNotificationTips();
+  });
+}
+
+void SettingsController::ApplyNotificationTips() {
+  const NotificationTips tips = ComputeNotificationTips(last_health_, bindings_.stay_connected == "on");
+  auto set = [](bool& slot, bool value, const char* name) {
+    if (slot != value) {
+      slot = value;
+      DataModelHost::Instance().Dirty("settings", name);
+    }
+  };
+  set(bindings_.tip_notifications_blocked, tips.notifications_blocked, "tip_notifications_blocked");
+  set(bindings_.tip_silenced, tips.silenced, "tip_silenced");
+  set(bindings_.tip_battery, tips.battery, "tip_battery");
+  set(bindings_.tip_autostart, tips.autostart, "tip_autostart");
+  set(bindings_.stay_help_plain, tips.stay_help == PushGap::None, "stay_help_plain");
+  set(bindings_.stay_help_build, tips.stay_help == PushGap::BuildHasNone, "stay_help_build");
+  set(bindings_.stay_help_no_google, tips.stay_help == PushGap::NoGoogleServices, "stay_help_no_google");
 }
 
 void SettingsController::BindCommands(SettingsCommands commands) {
@@ -630,6 +660,13 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     controller.bindings_.stay_connected_available = Platform::Detect() == PlatformKind::Android;
     ctor.Bind("stay_connected_available", &controller.bindings_.stay_connected_available);
     ctor.Bind("call_banner_tip_available", &controller.bindings_.call_banner_tip_available);
+    ctor.Bind("tip_notifications_blocked", &controller.bindings_.tip_notifications_blocked);
+    ctor.Bind("tip_silenced", &controller.bindings_.tip_silenced);
+    ctor.Bind("tip_battery", &controller.bindings_.tip_battery);
+    ctor.Bind("tip_autostart", &controller.bindings_.tip_autostart);
+    ctor.Bind("stay_help_plain", &controller.bindings_.stay_help_plain);
+    ctor.Bind("stay_help_build", &controller.bindings_.stay_help_build);
+    ctor.Bind("stay_help_no_google", &controller.bindings_.stay_help_no_google);
     controller.bindings_.dev_tools_available = kDevToolsBuild;
     ctor.Bind("dev_tools_available", &controller.bindings_.dev_tools_available);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
@@ -727,6 +764,17 @@ bool SettingsController::RegisterModel(ui::Context* context) {
                            DataEvent<>([this]() { ToggleShowNotificationPreview(); }));
     ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
     ctor.BindEventCallback("open_notification_settings", DataEvent<>([]() { OpenNotificationSettings(); }));
+    ctor.BindEventCallback("open_notification_fix", DataEvent<std::string>([](const std::string& fix) {
+                             if (fix == "notifications") {
+                               OpenNotificationFix(NotificationFix::AppNotifications);
+                             } else if (fix == "silenced") {
+                               OpenNotificationFix(NotificationFix::DoNotDisturb);
+                             } else if (fix == "battery") {
+                               OpenNotificationFix(NotificationFix::Battery);
+                             } else if (fix == "autostart") {
+                               OpenNotificationFix(NotificationFix::Autostart);
+                             }
+                           }));
     ctor.BindEventCallback("toggle_transparency", DataEvent<>([this]() { ToggleTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
     ctor.BindEventCallback("toggle_home_show_dynamic", DataEvent<>([this]() { ToggleHomeShowDynamic(); }));
@@ -854,6 +902,13 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "show_notification_preview");
   host.Dirty("settings", "stay_connected");
   host.Dirty("settings", "call_banner_tip_available");
+  host.Dirty("settings", "tip_notifications_blocked");
+  host.Dirty("settings", "tip_silenced");
+  host.Dirty("settings", "tip_battery");
+  host.Dirty("settings", "tip_autostart");
+  host.Dirty("settings", "stay_help_plain");
+  host.Dirty("settings", "stay_help_build");
+  host.Dirty("settings", "stay_help_no_google");
   host.Dirty("settings", "brief_llm_key_masked");
   host.Dirty("settings", "appearance");
   host.Dirty("settings", "appearance_label");
@@ -1292,6 +1347,7 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   }
   if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshBannerTip)) {
     RefreshBannerTip();
+    RefreshNotificationTips();
   }
   storage_manager_.Reset();
   if (opened && SettingsPageHas(*opened, SettingsPageAction::EnterStorage)) {
@@ -2108,6 +2164,7 @@ void SettingsController::ToggleShowNotificationPreview() {
 
 void SettingsController::ToggleStayConnected() {
   bindings_.stay_connected = bindings_.stay_connected == "on" ? "off" : "on";
+  ApplyNotificationTips(); // the auto-start and battery rows follow this switch
   PullBindingsToUiState();
   MarkSectionDirty("profile", /*show_toast=*/false);
   DirtyAll();

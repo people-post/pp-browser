@@ -175,7 +175,7 @@ else()
   else()
     # A file:// address is refused by Android 7+ (FileUriExposedException): a FileProvider address instead.
     list(APPEND _pp_platform_gui_sources CameraCapture_Android.cpp PlatformOpenFile_Android.cpp
-         PlatformNotificationSettings_Default.cpp PlatformAppBadge_Android.cpp)
+         PlatformNotificationSettings_Android.cpp PlatformAppBadge_Android.cpp)
   endif()
 endif()
 
