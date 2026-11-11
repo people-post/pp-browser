@@ -1,8 +1,22 @@
-      <div class="settings-section settings-section--grouped stack">
-        <p class="text group-head">{{i18n:settings.security.group.unlock}}</p>
-        <!-- Face / fingerprint unlock (A014): a device with the sensor and an own PIN; on asks for the PIN first. -->
-        <div class="group-card" data-if="security_biometric_shown">
-          <div class="settings-toggle-row row group-row">
+      <div class="settings-section settings-section--grouped settings-mock stack">
+        <!-- Phones: a short list; Change PIN is a page of its own (Kenneth 2026-11-04). One card with the PIN row and,
+             on a device with the sensor and an own PIN, the face / fingerprint switch (A014; on asks for the PIN first). -->
+        <div class="group-card">
+          <button class="group-row settings-phone-only" type="button" data-if="show_change_pin"
+                  data-event-click="open_security_page('change_pin')">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.change_pin}}</span></span>
+              <span class="group-row-value">{{pin_protection_status}}</span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+          <div class="group-row group-row--static settings-phone-only" data-if="!show_change_pin">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.protection_title}}</span></span>
+              <span class="group-row-value">{{pin_protection_status}}</span>
+            </span>
+          </div>
+          <div class="settings-toggle-row row group-row" data-if="security_biometric_shown">
             <span class="group-row-body">
               <span class="settings-label settings-toggle-label group-row-text">{{security_biometric_label}}</span>
               <button class="settings-switch" type="button"
@@ -16,23 +30,6 @@
         <p class="text muted settings-help group-foot" data-if="security_biometric_shown">{{i18n:settings.security.biometric.help}}</p>
         <div class="group-card group-card--pad settings-desktop-only">
           <p class="text muted group-note">{{i18n:settings.security.protection}} <span>{{pin_protection_status}}</span></p>
-        </div>
-        <!-- Phones: a short list; Change PIN is a page of its own (Kenneth 2026-11-04). -->
-        <div class="group-card settings-phone-only">
-          <button class="group-row" type="button" data-if="show_change_pin"
-                  data-event-click="open_security_page('change_pin')">
-            <span class="group-row-body">
-              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.change_pin}}</span></span>
-              <span class="settings-choice-value-text">{{pin_protection_status}}</span>
-              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
-            </span>
-          </button>
-          <div class="group-row group-row--static" data-if="!show_change_pin">
-            <span class="group-row-body">
-              <span class="group-row-text">{{i18n:settings.security.protection_title}}</span>
-              <span class="settings-choice-value-text">{{pin_protection_status}}</span>
-            </span>
-          </div>
         </div>
         <!-- PIN grace window (#21): under the PIN; only with an own PIN on a platform with a secure store. -->
         <div class="group-card" data-if="security_grace_shown">
@@ -57,25 +54,33 @@
         <div class="settings-desktop-only">
 {{include:settings_security_pin}}
         </div>
-        <p class="text group-head" data-if="!security_has_recovery_phrase">{{i18n:settings.security.group.recovery}}</p>
-        <div class="settings-q-head row" data-if="security_has_recovery_phrase"><p class="text group-head">{{i18n:settings.security.group.recovery}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.recovery')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
+        <p class="text group-head" data-if="!security_has_recovery_phrase">{{i18n:settings.security.recovery}}</p>
+        <div class="settings-q-head row" data-if="security_has_recovery_phrase"><p class="text group-head">{{i18n:settings.security.recovery}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.recovery')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
         <div class="stack settings-actions" data-if="!security_has_recovery_phrase && security_can_export_link">
           <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.none}}</p>
         </div>
         <div class="stack settings-actions" data-if="security_has_recovery_phrase">
-          <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.help}}</p>
           <div class="stack" data-if="recovery_phrase == ''">
             <!-- The PIN on the PIN gate first (its number pad for a digit PIN, B2). -->
-            <button class="btn" type="button" data-event-click="show_recovery_phrase()">
-              {{i18n:settings.security.recovery.show}}
-            </button>
+            <div class="group-card">
+              <button class="group-row" type="button" data-event-click="show_recovery_phrase()">
+                <span class="group-row-body">
+                  <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.recovery.show}}</span></span>
+                </span>
+              </button>
+            </div>
           </div>
           <div class="stack" data-if="recovery_phrase != ''">
             <p class="text group-card group-card--pad" selectable="text">{{recovery_phrase}}</p>
             <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.shown_hint}}</p>
-            <button class="btn" type="button" data-event-click="hide_recovery_phrase()">
-              {{i18n:settings.security.recovery.hide}}
-            </button>
+            <div class="group-card">
+              <button class="group-row" type="button" data-event-click="hide_recovery_phrase()">
+                <span class="group-row-body">
+                  <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.recovery.hide}}</span></span>
+                </span>
+              </button>
+            </div>
           </div>
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.help}}</p>
         </div>
       </div>

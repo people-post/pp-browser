@@ -56,9 +56,8 @@ data-event-click="toggle_biometric()"	1	security	security	security_biometric_sho
 {{i18n:settings.security.default_hint}}	1	-	security	pin_protection_is_default	security	
 {{i18n:settings.security.grace.help}}	1	-	security	security_grace_shown	security	
 {{i18n:settings.security.grace.title}}	1	-	security	security_grace_shown	security	
-{{i18n:settings.security.group.recovery}}	1	-	security	!security_has_recovery_phrase	security	
-{{i18n:settings.security.group.recovery}}	1	-	security	security_has_recovery_phrase	security	
-{{i18n:settings.security.group.unlock}}	1	-	security	-	security	
+{{i18n:settings.security.recovery}}	1	-	security	!security_has_recovery_phrase	security	
+{{i18n:settings.security.recovery}}	1	-	security	security_has_recovery_phrase	security	
 {{i18n:settings.security.not_setup_hint}}	1	-	security	pin_protection_not_setup	security	
 {{i18n:settings.security.protection_title}}	1	-	security	!show_change_pin	security	
 {{i18n:settings.security.protection}}	1	-	security	-	security	

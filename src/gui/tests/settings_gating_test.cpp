@@ -54,6 +54,30 @@ TEST(SettingsGatingTest, TheAiCredentialRowLivesOnlyOnTheAdvancedPage) {
   EXPECT_EQ(CountOf(advanced, "data-if=\"advanced && profile_show_rotate\""), 1u) << "the gate moved unchanged";
 }
 
+// Phase 7 (Security, mockup layout only): the page's events are exactly the ones it had, and the recovery phrase is
+// bound once, inside the block that only exists while the phrase is shown (the PIN gate is in show_recovery_phrase()).
+TEST(SettingsGatingTest, TheSecurityPageHasTheSameEventsAndTheRecoveryPhraseOnlyInItsShownBlock) {
+  const std::string rml = ReadAsset("views/settings_section_security.rml");
+  ASSERT_FALSE(rml.empty());
+  EXPECT_EQ(CountOf(rml, "data-event-click=\""), 6u);
+  for (const char* event : {"toggle_biometric()", "open_security_page('change_pin')", "on_choose_unlock_grace()",
+                            "ask_setting_help('settings.security.recovery')", "show_recovery_phrase()",
+                            "hide_recovery_phrase()"}) {
+    EXPECT_EQ(CountOf(rml, std::string("data-event-click=\"") + event + "\""), 1u) << event;
+  }
+  ASSERT_EQ(CountOf(rml, "{{recovery_phrase}}"), 1u);
+  const size_t phrase = rml.find("{{recovery_phrase}}");
+  const size_t block = rml.rfind("data-if=\"recovery_phrase != ''\"", phrase);
+  ASSERT_NE(block, std::string::npos);
+  const std::string between = rml.substr(block + 10, phrase - block - 10);
+  EXPECT_EQ(between.find("data-if="), std::string::npos) << "no other condition between the gate and the phrase";
+  EXPECT_LT(rml.rfind("data-if=\"security_has_recovery_phrase\"", block), block) << "and that block is inside the has-phrase gate";
+  // The "show" row sits in the not-shown block, so the button never renders the phrase itself.
+  const size_t show = rml.find("show_recovery_phrase()");
+  EXPECT_NE(rml.rfind("data-if=\"recovery_phrase == ''\"", show), std::string::npos);
+  EXPECT_LT(show, phrase);
+}
+
 TEST(SettingsGatingTest, HomeAndTheDesktopListNameNoPageDirectly) {
   const std::string home = ReadAsset("views/settings.rml");
   // Both lists loop over `sections`, which leaves Advanced and Test options out while the flag is off.
