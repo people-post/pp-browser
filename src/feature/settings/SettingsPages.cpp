@@ -48,7 +48,7 @@ const std::vector<SettingsPage>& SettingsPages() {
        "settings_section_advanced",
        "settings.advanced.title",
        3,
-       {"network", "llm", "integrations", "security", nullptr},
+       {"network", "llm", "integrations", "security", "profile", nullptr},
        0,
        true},
       {"tester",
