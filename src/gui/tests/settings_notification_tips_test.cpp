@@ -117,7 +117,7 @@ TEST(NotificationTipsViewTest, TheTextExistsInBothLanguagesAndUsesPlainWords) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   const char* keys[] = {"settings.notifications.tip.blocked.title",   "settings.notifications.tip.blocked.body",
                         "settings.notifications.tip.silenced.title",  "settings.notifications.tip.silenced.body",
-                                                "settings.notifications.tip.autostart.title", "settings.notifications.tip.autostart.body",
+                        "settings.notifications.tip.autostart.title", "settings.notifications.tip.autostart.body",
                         "settings.stay_connected.help.build",         "settings.stay_connected.help.no_google"};
   for (const char* language : {"en", "zh-Hans"}) {
     LocalizationService::Instance().SetPreferredLanguage(language);
