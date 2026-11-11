@@ -17,6 +17,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   RetiredKeychainBackup.cpp
   MeshHopPolicy.cpp
   MeshNodeReputation.cpp
+  LastGoodRelayStore.cpp
   RelaySetRules.cpp
   PeerAccountBook.cpp
   PeopleLookupFailure.cpp

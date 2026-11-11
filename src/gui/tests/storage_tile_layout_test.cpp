@@ -248,7 +248,6 @@ TEST_F(StorageTileLayoutTest, TheCategoryTabsHaveTextAVisibleBoxAndAFilledSelect
   }
 }
 
-
 // The label is the button's bare text; in a display:flex button that text gets a 0x0 box and nothing is painted (the
 // phone showed a white pill and an empty bar), so the tab is a block whose line box is the tab's height.
 TEST(StorageSegmentRuleTest, TheTabIsABlockWithALineBoxNotAFlexButton) {

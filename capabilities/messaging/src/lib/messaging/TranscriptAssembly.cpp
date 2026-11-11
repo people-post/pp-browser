@@ -176,6 +176,8 @@ std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& 
 
   // Count per (target, emoji key), in the order the keys sort.
   std::map<std::string, std::vector<std::pair<std::string, TranscriptReaction>>> by_target;
+  // Who reacted with what, with when, so each chip lists them in the order they reacted.
+  std::map<std::string, std::vector<std::pair<int64_t, std::string>>> reacted_at;
   for (const auto& [key, slot] : latest) {
     if (slot.emoji.empty()) {
       continue; // cleared
@@ -189,11 +191,17 @@ std::vector<TranscriptRow> AssembleTranscript(const std::vector<ThreadMessage>& 
       chip = std::prev(chips.end());
     }
     ++chip->second.count;
+    reacted_at[target_id + "|" + emoji_key].push_back({slot.display_order, slot.sender});
     chip->second.mine = chip->second.mine || slot.sender == kLocalSelfContactId;
   }
   for (auto& [target_id, chips] : by_target) {
     auto& reactions = entries[entry_by_id.at(target_id)].reactions;
     for (auto& [emoji_key, chip] : chips) {
+      auto& who = reacted_at[target_id + "|" + emoji_key];
+      std::stable_sort(who.begin(), who.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+      for (auto& entry : who) {
+        chip.senders.push_back(std::move(entry.second));
+      }
       reactions.push_back(std::move(chip));
     }
   }

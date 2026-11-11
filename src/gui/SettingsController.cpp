@@ -2209,8 +2209,8 @@ void SettingsController::OnTapVersion() {
     ToggleShowAdvancedSettings();
     UserFeedback::Ok(Tr(was_on ? "settings.help.tester_off" : "settings.help.tester_on"));
   } else if (tap.action == VersionTapCounter::Action::Hint) {
-    UserFeedback::Ok(Tr(was_on ? "settings.help.tap_close" : "settings.help.tap_open",
-                        {{"n", std::to_string(tap.taps_left)}}));
+    UserFeedback::Ok(
+        Tr(was_on ? "settings.help.tap_close" : "settings.help.tap_open", {{"n", std::to_string(tap.taps_left)}}));
   }
 }
 

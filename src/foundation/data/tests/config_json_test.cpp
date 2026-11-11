@@ -215,8 +215,8 @@ TEST(ConfigJsonTest, ProfilePrefsInvitePoliciesDefaultToEveryoneAndResetOnceBelo
   EXPECT_EQ(parse(R"({ "schema_version": 15 })").group_invite_policy, "everyone");
 
   // From schema 16 the stored value stands; a missing key reads as everyone.
-  const auto kept = parse(
-      R"({ "schema_version": 16, "call_invite_policy": "contacts_only", "group_invite_policy": "nobody" })");
+  const auto kept =
+      parse(R"({ "schema_version": 16, "call_invite_policy": "contacts_only", "group_invite_policy": "nobody" })");
   EXPECT_EQ(kept.call_invite_policy, "contacts_only");
   EXPECT_EQ(kept.group_invite_policy, "nobody");
   const auto nobody = parse(R"({ "schema_version": 16, "call_invite_policy": "nobody" })");

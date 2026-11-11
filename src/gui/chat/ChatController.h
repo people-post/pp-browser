@@ -174,6 +174,8 @@ public:
   void OnHomeTabActivated();
   /** Edit Home (DESIGN-pp-ui 8.16): the Home widgets on and off Home; Home's "Edit" and Me → Appearance. */
   void OpenHomeEdit();
+  /** A tap on a message's emoji: the sheet that lists who reacted (grouped by emoji). */
+  void OpenReactors(const std::string& message_id);
   /** The profile preferences changed (a contact starred, Edit Home): Home's widgets are drawn again. */
   void OnHomePrefsChanged();
   void OnSessionsTabActivated();
@@ -712,6 +714,8 @@ private:
   std::string home_brief_dir_; // the profile directory the cache was read from
   bool home_brief_fetching_ = false;
   int64_t home_brief_failed_ms_ = 0;    // the last fetch that failed; 0 none
+  int reactors_layer_ = -1;             // the reactions sheet while it is open
+  std::string reactors_message_id_;     // the message it lists
   int home_edit_layer_ = -1;            // the Edit Home sheet while it is open
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;

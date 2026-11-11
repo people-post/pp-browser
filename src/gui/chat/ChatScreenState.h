@@ -10,6 +10,18 @@
 
 namespace pbr {
 
+/** One person on a message's reactions sheet: the emoji they reacted with, their name and avatar. */
+struct ReactorDisplayRow {
+  ui::String emoji;
+  ui::String title;
+  ui::String avatar_letter;
+  int avatar_tone = 0;
+  bool has_icon = false;
+  ui::String icon_src;
+  /** This device's own reaction: its row says "Tap to remove" and takes the reaction back. */
+  bool is_self = false;
+};
+
 /** The chat screen's data model ("chat"): what the GUI binds; ChatController and its parts write it. */
 struct ChatScreenState {
   ui::String draft;
@@ -125,9 +137,12 @@ struct ChatScreenState {
   bool sync_in_progress = false;
   bool show_older_history_hint = false;
   bool show_jump_to_latest = false;
-  ui::String jump_to_latest_label;
+  /** Messages that arrived while scrolled up ("99+" capped); empty when none. */
+  ui::String jump_to_latest_count;
   std::vector<TranscriptDisplayRow> turns;
   std::vector<MessageDisplayRow> messages;
+  /** The reactions sheet (a tap on a message's emoji): who reacted, grouped by emoji. */
+  std::vector<ReactorDisplayRow> reactor_rows;
   bool use_messages_layout = true;
   bool loading = false; // a turn runs in THIS thread (thinking + stop key); other threads keep sending (B112)
   bool has_turns = false;

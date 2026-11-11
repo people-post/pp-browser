@@ -148,7 +148,6 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
       synced.in_call_signal_tone != next.in_call_signal_tone ||
       synced.in_call_signal_word != next.in_call_signal_word ||
       synced.in_call_notice_text != next.in_call_notice_text ||
-      synced.in_call_notice_warn != next.in_call_notice_warn ||
       synced.in_call_notice_fading != next.in_call_notice_fading ||
       synced.in_call_reconnect_text != next.in_call_reconnect_text ||
       synced.in_call_reconnect_ok != next.in_call_reconnect_ok ||
@@ -200,7 +199,6 @@ std::vector<const char*> CallChromeChangedVariables(const CallInProgressState& b
   add(before.signal_tone != after.signal_tone, "call_in_progress_signal_tone");
   add(before.signal_word != after.signal_word, "call_in_progress_signal_word");
   add(before.notice_text != after.notice_text, "call_in_progress_notice_text");
-  add(before.notice_warn != after.notice_warn, "call_in_progress_notice_warn");
   add(before.notice_fading != after.notice_fading, "call_in_progress_notice_fading");
   add(before.reconnect_text != after.reconnect_text, "call_in_progress_reconnect_text");
   add(before.reconnect_ok != after.reconnect_ok, "call_in_progress_reconnect_ok");

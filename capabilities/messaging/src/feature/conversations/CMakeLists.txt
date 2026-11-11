@@ -19,6 +19,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     MessagingCompatPorts.cpp
     MeshDeliveryOrchestrator.cpp
     PeerTransports.cpp
+    PeerWarmMarks.cpp
     AmpChatHistoryTransport.cpp
     MeshConnectivityWiring.cpp
     PushDeviceCoordinator.cpp

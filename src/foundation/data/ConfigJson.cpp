@@ -900,7 +900,8 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   // Product decision (Kenneth, 2026-11-11): both policies default to everyone. A file saved before schema 16 is reset
   // to everyone once, whatever it holds; the next save writes schema 16, so a later choice is kept.
   const bool reset_invite_policies = file_schema_version < 16;
-  if (auto group_invite_policy = object.getString("group_invite_policy"); group_invite_policy && !reset_invite_policies) {
+  if (auto group_invite_policy = object.getString("group_invite_policy");
+      group_invite_policy && !reset_invite_policies) {
     prefs.group_invite_policy = *group_invite_policy;
   } else {
     prefs.group_invite_policy = "everyone";

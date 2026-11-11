@@ -19,6 +19,17 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("queued_note", &state.queued_note);
   ctor.Bind("has_turns", &state.has_turns);
   ctor.Bind("turns", &state.turns);
+  if (auto reactor_handle = ctor.RegisterStruct<ReactorDisplayRow>()) {
+    reactor_handle.RegisterMember("emoji", &ReactorDisplayRow::emoji);
+    reactor_handle.RegisterMember("title", &ReactorDisplayRow::title);
+    reactor_handle.RegisterMember("avatar_letter", &ReactorDisplayRow::avatar_letter);
+    reactor_handle.RegisterMember("avatar_tone", &ReactorDisplayRow::avatar_tone);
+    reactor_handle.RegisterMember("has_icon", &ReactorDisplayRow::has_icon);
+    reactor_handle.RegisterMember("icon_src", &ReactorDisplayRow::icon_src);
+    reactor_handle.RegisterMember("is_self", &ReactorDisplayRow::is_self);
+  }
+  ctor.RegisterArray<std::vector<ReactorDisplayRow>>();
+  ctor.Bind("reactor_rows", &state.reactor_rows);
   ctor.Bind("messages", &state.messages);
   ctor.Bind("use_messages_layout", &state.use_messages_layout);
   ctor.Bind("thread_title", &state.thread_title);
@@ -106,7 +117,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("sync_in_progress", &state.sync_in_progress);
   ctor.Bind("show_older_history_hint", &state.show_older_history_hint);
   ctor.Bind("show_jump_to_latest", &state.show_jump_to_latest);
-  ctor.Bind("jump_to_latest_label", &state.jump_to_latest_label);
+  ctor.Bind("jump_to_latest_count", &state.jump_to_latest_count);
 }
 
 void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
@@ -290,7 +301,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "psk_import_text");
   DataModelHost::Instance().Dirty("chat", "show_older_history_hint");
   DataModelHost::Instance().Dirty("chat", "show_jump_to_latest");
-  DataModelHost::Instance().Dirty("chat", "jump_to_latest_label");
+  DataModelHost::Instance().Dirty("chat", "jump_to_latest_count");
 }
 
 void DirtyChat() {

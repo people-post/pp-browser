@@ -366,13 +366,17 @@ select selectbox option:hover {
   color: {{label}};
 }
 
-.chat-jump-latest {
-  background-color: {{bg-card}};
-  color: {{accent}};
+.chat-jump-latest-face {
+  background-color: {{x-jump-glass}};
+  box-shadow: 0 2dp 8dp {{x-float-shadow}};
 }
 
-.chat-jump-latest:hover {
-  background-color: {{bg-card-2}};
+.chat-jump-latest:active .chat-jump-latest-face {
+  background-color: {{fill-2}};
+}
+
+.chat-jump-latest-face svg {
+  image-color: {{label-2}};
 }
 
 .chat-form {
@@ -427,6 +431,11 @@ select selectbox option:hover {
 
 .chat-quote {
   border-left: 3dp {{quote-bar}};
+}
+
+/* The reply preview above the composer: the secondary grey set outright (no inherited colour, no opacity). */
+.prompt-quote-text {
+  color: {{label-2}};
 }
 
 .chat-long-list-scroll {
@@ -1981,6 +1990,7 @@ input.checkbox:checked {
 /* Sheets laid out like the contact page (grouped cards on the grouped background). */
 .shell-page-sheet.shell-page-sheet--group_info,
 .shell-page-sheet.shell-page-sheet--group_leave,
+.shell-page-sheet.shell-page-sheet--reactors_sheet,
 .shell-page-sheet.shell-page-sheet--home_edit,
 .shell-page-sheet.shell-page-sheet--contact_detail {
   background-color: {{bg-grouped}};
@@ -1991,16 +2001,19 @@ input.checkbox:checked {
    iOS does for sheets: the sheet takes the card colour, its cards the next one up, the fields in them one more. */
 .shell-page-sheet.shell-page-sheet--group_info,
 .shell-page-sheet.shell-page-sheet--group_leave,
+.shell-page-sheet.shell-page-sheet--reactors_sheet,
 .shell-page-sheet.shell-page-sheet--home_edit,
 .shell-page-sheet.shell-page-sheet--contact_detail,
 .shell-page-sheet.shell-page-sheet--group_info .contact-detail-panel,
 .shell-page-sheet.shell-page-sheet--group_leave .contact-detail-panel,
+.shell-page-sheet.shell-page-sheet--reactors_sheet .contact-detail-panel,
 .shell-page-sheet.shell-page-sheet--contact_detail .contact-detail-panel {
   background-color: {{bg-card}};
 }
 
 .shell-page-sheet.shell-page-sheet--group_info .cd-card,
 .shell-page-sheet.shell-page-sheet--group_leave .cd-card,
+.shell-page-sheet.shell-page-sheet--reactors_sheet .cd-card,
 .shell-page-sheet.shell-page-sheet--contact_detail .cd-card,
 .shell-page-sheet.shell-page-sheet--group_info .group-card,
 .shell-page-sheet.shell-page-sheet--group_leave .group-card,
@@ -3268,10 +3281,6 @@ input.checkbox:checked {
 
 .call-phone-notice {
   background-color: {{x-call-notice}};
-}
-
-.call-phone-notice--warn {
-  background-color: {{x-call-notice-warn}};
 }
 
 .call-hold-pill {

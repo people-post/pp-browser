@@ -129,6 +129,10 @@ public:
   void EnsureAssociation(const std::string& peer_key, mesh::IChatPeerLinks::LinkCb on_done) override {
     ++ensure_association_calls;
     last_ensure_peer = peer_key;
+    if (hang_dial) {
+      held_dials.push_back(std::move(on_done)); // a handshake that never answers (#577)
+      return;
+    }
     if (on_done) {
       if (ensure_result) {
         on_done({});
@@ -184,6 +188,9 @@ public:
   std::string last_drop_link_peer;
   bool ensure_result = true;
   std::string ensure_error = "ensure association not available";
+  /** EnsureAssociation never finishes (its callbacks are held, never run). */
+  bool hang_dial = false;
+  std::vector<mesh::IChatPeerLinks::LinkCb> held_dials;
 };
 
 class FakeCircuitHopReach final : public mesh::ICircuitHopReach {
@@ -241,6 +248,13 @@ public:
     }
     TryEnsurePeerReachableAsync(peer_key, std::move(on_done), allow_circuit);
   }
+  /** A circuit built beside the reach's own direct dial (PeerReachRequest::race_circuit). */
+  void TryEnsureCircuitOnlyAsync(const std::string& peer_key, mesh::CircuitReachDone on_done,
+                                 std::vector<std::string> advertised_relays) override {
+    ++circuit_only_calls;
+    TryEnsurePeerReachableViaAsync(peer_key, std::move(on_done), /*allow_circuit=*/true, std::move(advertised_relays));
+  }
+  std::atomic<int> circuit_only_calls{0};
   /** exclude_direct reaches (a relay-only pair, TX-only escalation, a standby). */
   void TryEnsureRelayedAsync(const std::string& peer_key, mesh::CircuitReachDone on_done,
                              mesh::CircuitStandbyPriority /*priority*/) override {
@@ -1304,6 +1318,36 @@ TEST_F(CallDirectPathTest, AReanchorReachesThePeerTheWayTheFirstConnectDid) {
   OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
+// K015: an anchor pair's re-anchor races the circuit beside its dial, as its first connect did — the
+// call is silent until it lands.
+TEST_F(CallDirectPathTest, AnAnchorPairsReanchorRacesTheCircuit) {
+  const std::string call_id = "call:reanchor-race";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWReanchorRace";
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  bridge_->SetReanchorRetryMsForTest(20);
+  bridge_->SetPathPolicyProvider(
+      [](const std::string&) { return DecideCallPathPolicy(MobilityClass::Mobile, MobilityClass::Mobile); });
+  ASSERT_NO_FATAL_FAILURE(ConnectOfferer(call_id));
+
+  circuit_->ClearReachLog();
+  circuit_->circuit_only_calls = 0;
+  dial_->endpoints["12D3KooWReanchorRace"] = "/ip4/203.0.113.10/udp/4001/adp/2/p2p/12D3KooWReanchorRace";
+  dial_->hang_dial = true; // the lost path's peer does not answer a direct dial
+  dial_->connected["12D3KooWReanchorRace"] = false;
+  dial_->circuit_hops["12D3KooWReanchorRace"] = false;
+  ASSERT_TRUE(transport_->last_callbacks.on_path_lost);
+  transport_->last_callbacks.on_path_lost();
+  for (int i = 0; i < 400 && transport_->migrate_calls.load() < 1; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_GE(transport_->migrate_calls.load(), 1);
+  EXPECT_GE(circuit_->circuit_only_calls.load(), 1) << "the circuit beside the dial, not after its budget";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
 TEST_F(CallDirectPathTest, ARelayOnlyCallReanchorsOnlyOverARelay) {
   const std::string call_id = "call:reanchor-relay-only";
   SeedActiveCall(call_id);
@@ -1473,6 +1517,78 @@ TEST_F(CallDirectPathTest, MobilePairStaysOnTheRelayUntilThePolicyAllowsAnUpgrad
   }
   EXPECT_GE(circuit_->upgrade_calls.load(), 1) << "both stationary: punch for a direct path";
   EXPECT_TRUE(transport_->auto_migrate_to_direct.load());
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// K015 (#577): the offerer of a pair whose relay is the anchor builds the circuit beside its direct
+// dial — a dial that never answers no longer holds the call for the dial's 12 s budget.
+TEST_F(CallDirectPathTest, AnAnchorPairsOffererRacesTheCircuitBesideItsDial) {
+  const std::string call_id = "call:anchor-race";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWAnchorRace";
+  dial_->endpoints["12D3KooWAnchorRace"] = "/ip4/203.0.113.7/udp/4001/adp/2/p2p/12D3KooWAnchorRace"; // public
+  dial_->hang_dial = true;
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  bridge_->SetPathPolicyProvider(
+      [](const std::string&) { return DecideCallPathPolicy(MobilityClass::Mobile, MobilityClass::Stationary); });
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  for (int i = 0; i < 200 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_GE(dial_->ensure_association_calls, 1) << "the direct dial still runs";
+  EXPECT_GE(circuit_->circuit_only_calls.load(), 1) << "the circuit started beside it";
+  EXPECT_GT(transport_->connect_async_calls, 0) << "the call connected over the circuit, well inside the 12 s budget";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// K015: a pair that keeps a direct path dials first; the circuit waits for the dial's budget.
+TEST_F(CallDirectPathTest, AStationaryPairsOffererDialsBeforeTheCircuit) {
+  const std::string call_id = "call:stationary-no-race";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWStationaryDial";
+  dial_->endpoints["12D3KooWStationaryDial"] = "/ip4/203.0.113.8/udp/4001/adp/2/p2p/12D3KooWStationaryDial";
+  dial_->hang_dial = true;
+  bridge_->SetPathPolicyProvider(
+      [](const std::string&) { return DecideCallPathPolicy(MobilityClass::Stationary, MobilityClass::Stationary); });
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  for (int i = 0; i < 50; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_GE(dial_->ensure_association_calls, 1);
+  EXPECT_EQ(circuit_->circuit_only_calls.load(), 0) << "no circuit beside the dial";
+  EXPECT_EQ(circuit_->call_media_ensure_calls.load(), 0) << "the circuit waits for the dial's budget";
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// K015 with projects/privacy T1: a relay-only pair has no direct dial to race — only the relay.
+TEST_F(CallDirectPathTest, ARelayOnlyPairsOffererNeverDials) {
+  const std::string call_id = "call:relay-only-no-race";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWRelayOnlyStart";
+  dial_->endpoints["12D3KooWRelayOnlyStart"] = "/ip4/203.0.113.9/udp/4001/adp/2/p2p/12D3KooWRelayOnlyStart";
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  bridge_->SetPathPolicyProvider([](const std::string&) {
+    return RelayOnlyPolicy(DecideCallPathPolicy(MobilityClass::Mobile, MobilityClass::Stationary));
+  });
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  for (int i = 0; i < 200 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(dial_->ensure_association_calls, 0) << "the peer may not learn our address";
+  EXPECT_EQ(circuit_->circuit_only_calls.load(), 0) << "nothing to race";
+  EXPECT_GE(circuit_->relayed_calls.load(), 1);
   OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 

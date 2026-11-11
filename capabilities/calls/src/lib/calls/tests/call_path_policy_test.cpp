@@ -159,6 +159,7 @@ TEST(CallPathPolicyTest, BothEndsAgree) {
       const auto ab = DecideCallPathPolicy(a, b);
       const auto ba = DecideCallPathPolicy(b, a);
       EXPECT_EQ(ab.punch_at_start, ba.punch_at_start);
+      EXPECT_EQ(ab.race_circuit_at_start, ba.race_circuit_at_start);
       EXPECT_EQ(ab.upgrade_to_direct, ba.upgrade_to_direct);
       EXPECT_EQ(ab.relay_role, ba.relay_role);
       EXPECT_EQ(ab.standby_priority, ba.standby_priority);
@@ -190,6 +191,24 @@ TEST(CallPathPolicyTest, PairTable) {
   EXPECT_TRUE(us.want_relay_standby);
 }
 
+// #577 (K015): a pair whose relay is the anchor builds the circuit beside the direct dial; a pair
+// that keeps a direct path dials first and builds the circuit only after the dial's budget.
+TEST(CallPathPolicyTest, OnlyAnAnchorPairRacesTheCircuitAtStart) {
+  const MobilityClass all[] = {MobilityClass::Unknown, MobilityClass::Stationary, MobilityClass::Mobile};
+  for (auto a : all) {
+    for (auto b : all) {
+      const auto policy = DecideCallPathPolicy(a, b);
+      EXPECT_EQ(policy.race_circuit_at_start, policy.relay_role == CallRelayRole::Anchor)
+          << MobilityClassWire(a) << "/" << MobilityClassWire(b);
+    }
+  }
+  const auto ms = DecideCallPathPolicy(MobilityClass::Mobile, MobilityClass::Stationary);
+  EXPECT_TRUE(ms.race_circuit_at_start);
+  EXPECT_FALSE(ms.relay_only) << "the direct dial still runs beside the circuit";
+  EXPECT_FALSE(DecideCallPathPolicy(MobilityClass::Stationary, MobilityClass::Stationary).race_circuit_at_start);
+  EXPECT_FALSE(DecideCallPathPolicy(MobilityClass::Unknown, MobilityClass::Stationary).race_circuit_at_start);
+}
+
 // projects/privacy T1: relay only, whatever the mobility pair would allow.
 TEST(CallPathPolicyTest, RelayOnlyDropsEveryDirectStep) {
   const CallPathPolicy base = DecideCallPathPolicy(MobilityClass::Stationary, MobilityClass::Stationary);
@@ -197,6 +216,7 @@ TEST(CallPathPolicyTest, RelayOnlyDropsEveryDirectStep) {
   const CallPathPolicy relay = RelayOnlyPolicy(base);
   EXPECT_TRUE(relay.relay_only);
   EXPECT_FALSE(relay.punch_at_start);
+  EXPECT_FALSE(relay.race_circuit_at_start) << "no direct dial to race";
   EXPECT_FALSE(relay.upgrade_to_direct);
   EXPECT_EQ(relay.relay_role, CallRelayRole::Anchor);
   EXPECT_FALSE(relay.want_relay_standby);

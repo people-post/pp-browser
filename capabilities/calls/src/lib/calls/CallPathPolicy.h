@@ -27,6 +27,13 @@ enum class CallStandbyPriority {
 struct CallPathPolicy {
   /** Try a punch while reaching the peer at call start (else: direct dial, then the relay). */
   bool punch_at_start = true;
+  /**
+   * The offerer's reach builds the relay circuit at once, beside its direct dial, and takes whichever
+   * link lands first (`PeerReachRequest::race_circuit`) — for a pair whose relay is the anchor anyway:
+   * a peer the dial cannot reach then costs the circuit's time, not the dial's 12 s budget first
+   * (#577). A direct link that lands first still carries the call. Else: dial, then the relay.
+   */
+  bool race_circuit_at_start = false;
   /** A relayed call punches for a direct path later and moves onto it (k3 upgrade). */
   bool upgrade_to_direct = true;
   CallRelayRole relay_role = CallRelayRole::Standby;

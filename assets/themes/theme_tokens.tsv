@@ -62,6 +62,7 @@ x-bar	#f2f2f7	#1a1a1c	extra: phone bars (top bars, tab bar, composer), solid: Tr
 x-bar-blur	#f2f2f7c7	#1a1a1cc7	extra: phone bars frosted (78%, with blur 20): Transparency on
 x-bar-fade	#f2f2f700	#1a1a1c00	extra: the bar colour at 0%, where a bar's fade ends
 x-float-shadow	#00000029	#00000099	extra: phone composer: shadow of the floating pill and the round mic / Send button
+x-jump-glass	#ffffffb8	#2c2c2eb8	extra: phone chat: the round jump-to-latest disc, a translucent glass over the transcript (72%, no blur of its own)
 x-scan-dim	#00000080	#00000080	extra: phone scanner, the camera dimmed round the frame (black 50%)
 x-scan-ink	#ffffff	#ffffff	extra: phone scanner, corner marks, hint, back and button labels over the camera
 x-scan-tool	#ffffff33	#ffffff33	extra: phone scanner, round button and Try again fill (white 20%)

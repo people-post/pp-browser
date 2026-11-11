@@ -96,6 +96,45 @@ TEST_F(ProductMeshTest, ANodeServesWhatItsCapabilitiesSay) {
   EXPECT_FALSE(mesh->AmpCircuitServer()->ServeInbound()) << "the capability turned off: no new circuits";
 }
 
+// K015 (#577): the relays the last run's circuits used are read at the mesh's start, from the profile, and the hop
+// policy hands them to the park from its first push — those it may still park on.
+TEST_F(ProductMeshTest, TheLastRunsGoodRelaysReachTheParkFromTheStart) {
+  constexpr const char* kSeed = "12D3KooWLastGoodSeed";
+  {
+    LastGoodRelayStore last_run(MeshLastGoodRelaysPath(dir_.string()));
+    last_run.Note("12D3KooWNoLongerListed");
+    last_run.Note(kSeed);
+    last_run.Save();
+  }
+  HubMeshOwner::StartRequest request;
+  request.mesh.mesh_enabled = true;
+  request.mesh.amp_udp_port = 0;
+  request.identity = identity_.get();
+  request.profile_data_dir = dir_.string();
+  request.address_disclosure = &disclosure_;
+  auto started = mesh_.Start(std::move(request));
+  ASSERT_TRUE(started) << started.error().message;
+  EXPECT_EQ(mesh_.LastGoodRelays(), (std::vector<std::string>{kSeed, "12D3KooWNoLongerListed"}));
+
+  MeshConfig cfg;
+  cfg.bootstrap_peers = {std::string("/ip4/203.0.113.1/udp/443/adp/1.0.0/p2p/") + kSeed};
+  MeshConnectivityWiringInputs inputs;
+  inputs.mesh = [mesh = *started]() { return mesh; };
+  inputs.mesh_config = [cfg]() { return std::make_shared<const MeshConfig>(cfg); };
+  mesh_.SetMeshInputs(inputs);
+  mesh_.WireMeshObjects(); // pushes the policy on this thread, before connectivity wires
+  EXPECT_EQ(mesh_.Connectivity().HopPolicy()->last_good_relays, std::vector<std::string>{kSeed});
+  mesh_.BeginMeshStop();
+  mesh_.ClearMeshObjects();
+}
+
+// The relay memory lives in the profile, like the directory nodes: one backend's relays never lead another's park.
+TEST(ProductMeshPathTest, LastGoodRelaysFileIsPerProfile) {
+  const std::filesystem::path a = MeshLastGoodRelaysPath("data/profiles/prod");
+  EXPECT_EQ(a.filename(), "mesh_last_good_relays.json");
+  EXPECT_EQ(a.parent_path(), std::filesystem::path("data/profiles/prod"));
+}
+
 TEST_F(ProductMeshTest, OneMeshAtATimeAndAStopFreesItForTheNext) {
   ASSERT_NE(Start(false), nullptr);
   HubMeshOwner::StartRequest again;

@@ -389,14 +389,42 @@ select selectbox option {
   right: 16dp;
   bottom: 16dp;
   z-index: 5;
-  width: auto;
-  font-family: LatoLatin;
-  font-size: 13dp;
-  padding: 8dp 14dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  padding: 0;
   border: 0;
-  border-radius: 16dp;
+  background-color: transparent;
+  box-sizing: border-box;
   cursor: pointer;
   focus: none;
+}
+
+/* The disc the eye sees: smaller than the 44dp tap box, a translucent glass with a thin chevron. No backdrop blur
+   of its own: the chat view already spends its two (header + composer, see Floating Chrome above). */
+.chat-jump-latest-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36dp;
+  height: 36dp;
+  box-sizing: border-box;
+  border-radius: 18dp;
+}
+
+.chat-jump-latest-face svg {
+  flex-shrink: 0;
+  width: 24dp;
+  height: 24dp;
+}
+
+/* Sits on the button's top edge, over its right half. */
+.chat-jump-latest .chat-jump-latest-badge {
+  top: -8dp;
+  right: 0;
 }
 
 .message-group {
@@ -473,6 +501,12 @@ select selectbox option {
   font-size: 13dp;
   line-height: 18dp;
   opacity: 0.6;
+}
+
+/* In our own (blue) bubble the quote is bright white at full strength: dimmed white on blue read as grey. */
+.bubble-user .chat-quote-text {
+  color: #ffffff;
+  opacity: 1;
 }
 
 .chat-quote--jump {
@@ -712,7 +746,6 @@ select selectbox option {
   word-break: break-word;
   font-size: 13dp;
   line-height: 18dp;
-  opacity: 0.8;
 }
 
 .prompt-attachment-chip {
@@ -3996,6 +4029,14 @@ select selectbox option {
   display: none;
 }
 
+/* The tap box around the avatar: 44dp, the negative margin keeps the avatar where it was. */
+.shell-chat-overlay .chat-header-avatar-hit {
+  display: block;
+  flex-shrink: 0;
+  padding: 2dp;
+  margin: 0 -2dp;
+}
+
 .shell-chat-overlay .chat-header-avatar {
   display: flex;
   flex-shrink: 0;
@@ -4079,6 +4120,7 @@ select selectbox option {
   border-radius: 16dp;
 }
 
+.chat-header-avatar-hit,
 .chat-header-avatar,
 .chat-header-phone-subtitle {
   display: none;
@@ -5312,6 +5354,7 @@ select selectbox option {
 .shell-page-sheet.shell-page-sheet--new_chat,
 .shell-page-sheet.shell-page-sheet--group_info,
 .shell-page-sheet.shell-page-sheet--group_leave,
+.shell-page-sheet.shell-page-sheet--reactors_sheet,
 .shell-page-sheet.shell-page-sheet--contact_detail {
   padding-left: 0;
   padding-right: 0;
@@ -11604,6 +11647,21 @@ input.checkbox {
 
 .cd-row-avatar .avatar-letter {
   font-size: 18dp;
+}
+
+/* The reactions sheet: a person's cached photo fills the round avatar; the emoji they used ends the row. */
+.cd-row-avatar--photo {
+  overflow: hidden;
+}
+
+.cd-row-avatar-image {
+  width: 44dp;
+  height: 44dp;
+}
+
+.reactor-emoji {
+  flex-shrink: 0;
+  font-size: 22dp;
 }
 
 /* A small label after a name in a row ("Owner", "Can't reach"). */

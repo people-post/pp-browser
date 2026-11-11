@@ -556,8 +556,9 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   }
   // V057 4: who may send this type (CallControlGate); anyone else is dropped silently.
   if (!SenderMaySend(*type, detail_json, sender_identity)) {
-    if (*type == CallControlType::CallInvite && sender_identity != *local) {
-      // Only "who can call me" drops an invite (anyone may send one): this device is told, the caller is not.
+    if (*type == CallControlType::CallInvite && sender_identity != *local && !AllowsInboundCall(sender_identity)) {
+      // "Who can call me" drops an invite (anyone may send one): this device is told, the caller is not. Asked
+      // again here so another gate that drops an invite never shows up as "declined by your settings".
       // Our own account (a sibling's lane notice) is not a caller to tell of.
       ReportBlockedInvite(detail_json, sender_identity, message, relay_created_at_ms, relay_server_time_ms);
     }

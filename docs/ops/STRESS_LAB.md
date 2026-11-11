@@ -18,7 +18,7 @@ scripts/test/pp_node_stress.py bridges --build build-pp-node --pairs 100 --durat
   - `park`: associate, reserve, renew every `--renew` s (10: a call's cadence);
   - `calls`: `--calls` group calls of `--members` on the node's media_relay, each member sending audio (40 ms frames) and video (`--video-kbps` 500, `--fps` 15, ~1100 B packets) and subscribing to the others;
   - `bridges`: relayed 1:1 pairs — a parked target, a dialer bridged to it by PeerId, the same media both ways. The pairs' channel is the probe's reliable one, not a call's best-effort carrier: its numbers are a worst case for real relayed calls.
-- **Out:** a line a second (node CPU, RSS, links, its three levels; the clients' parked / attached / bridged, frames, refusals by level, latency p95), a summary, and `--out` JSON with the node's watched metrics each second.
+- **Out:** a line a second (node CPU, RSS, links, its three levels; the clients' parked / attached / bridged, frames, refusals by level, latency p95), a summary, and `--out` JSON with the node's watched metrics each second. Every received frame is timed (send to receive, one host's clock); the summary's latency (p50 / p95 / p99 / max) is the whole run's, the worst load process's.
 - **Buffers:** the lab host's `net.core.rmem_max` caps what the node's socket gets ([BUILD.md § pp-node](BUILD.md#headless-mesh-node-pp-node)); `pp_udp_receive_buffer_bytes` shows it.
 
 ## Measured (Release, two cores, 208 KiB socket buffers; parked 2026-11-08 with pp-cpp-amp v5.1.0, the rest 2026-11-07)
@@ -29,6 +29,15 @@ scripts/test/pp_node_stress.py bridges --build build-pp-node --pairs 100 --durat
 | Group calls, 4 members, 500 kbps video + 32 kbps audio | 50 calls (200 members): ~100 % delivered, 23 % CPU, pump 34 % busy, level open | 100 calls: kernel drops begin (the socket buffer, not the CPU: pump 40 % busy), 98 % delivered, level busy → full. 150: 88 %, new attaches refused `full` |
 | Relayed pairs (reliable channel) | 100 pairs (105 Mbps): 100 %, 25 % CPU, level open | 200 pairs: kernel drops, 92 %, level full. 300: 28 % (the probe's channel resends into the drops) |
 
+**Since data plane P1** (2026-11-10: pp-cpp-crypto v1.3.1, pp-cpp-amp v5.4.0; [p2p-mesh](../../projects/p2p-mesh/)), the link AEAD and the ack HMAC run on BoringSSL. On a RelWithDebInfo node:
+
+| Load | Node CPU before | Node CPU after | Crypto share of the pump before | Crypto share after |
+|------|-----------------|----------------|----------------------------------|---------------------|
+| 120 four-member calls | 47% | 34% | 39% | 18% |
+| 250 relayed pairs | 28% | 15–20% | 42% | 19% |
+
+The capacities above were not re-measured.
+
 The node says `busy` / `full` before its members feel it, and new work goes elsewhere ([TEST_STRATEGY § A full seed](TEST_STRATEGY.md)). On these loads a Release node is limited by its socket buffers, not its CPU: run it on a host with `99-pp-node-udp.conf` before calling a number a seed's.
 
 **Earlier figures** (2026-11-06, in this file until 2026-11-07) were measured on a Debug build, several times slower: ~2000 parked, 50 calls 79 % → 100 % after the pump fix, 100 pairs 23 % → 100 %. The pump fix (pp-cpp-mesh v6.2.0) stands; the capacities do not. `pp_node_stress.py` now refuses a non-Release build.
@@ -36,7 +45,7 @@ The node says `busy` / `full` before its members feel it, and new work goes else
 ## What limits a node
 
 1. **Socket buffers** — on Release the first limit for media: the OS default (208 KiB) overflows in bursts while the pump has room. Kernel drops are `pp_udp_receive_drops` and a pressure. Hosts should raise the cap (`packaging/pp-node/99-pp-node-udp.conf`).
-2. **One pump thread does the data plane**, sealing every fan-out copy per recipient (XChaCha20-Poly1305), and walking the link table on its 50 ms cadence: past ~23k parked links it saturates one core while the worker pool idles. Its busy share is `pp_io_busy_fraction` and a pressure on every level.
+2. **One pump thread does the data plane**, sealing every fan-out copy per recipient (XChaCha20-Poly1305 on BoringSSL: still the largest share in calls), and walking the link table on its 50 ms cadence: past ~23k parked links it saturates one core while the worker pool idles. Its busy share is `pp_io_busy_fraction` and a pressure on every level.
 3. **Media waits without an age limit.** Call media is best effort on every normal path ([V063](../../projects/p2p-av-calls/DECISIONS.md#v063--call-audio-is-best-effort-the-codec-recovers-losses)), but a frame can wait in a link's send queue (the mux holds up to 32 MiB) for seconds; under overload media arrives late instead of being dropped.
 4. **New links cost a handshake** (ML-DSA): ~300–400 new clients a second on two cores. While the pump is saturated, a node refuses new inbound links before their handshake (`pp_link_inbound_refused_busy`), so the CPU stays with the links it has.
 5. **An overloaded node can lose parked clients**: once the pump saturates, renewals and keepalives run late, links time out, and their clients redial into the same overload (32k offered with capacities raised to 40k: ~23k parked, then ~2k). The defaults (8192 parks) keep a node below that; clients that ignore "full" are what the handshake gate (4) is for.

@@ -99,8 +99,7 @@ TEST_F(SettingsHelpQuestionTest, PhonesShowCrashReportsAndProblemLogsInHelpImpro
     EXPECT_NE(about.find(piece, card), std::string::npos) << piece;
   }
   EXPECT_NE(about.find("<div class=\"group-card settings-desktop-only\">"), std::string::npos);
-  EXPECT_NE(about.find("group-actions settings-desktop-only\" data-if=\"show_diagnostics_send\""),
-            std::string::npos);
+  EXPECT_NE(about.find("group-actions settings-desktop-only\" data-if=\"show_diagnostics_send\""), std::string::npos);
   EXPECT_EQ(Tr("settings.about.improve.title"), "Help improve PP");
   EXPECT_EQ(Tr("settings.security.diagnostics.send"), "Send problem logs");
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");

@@ -106,13 +106,41 @@ struct Stats {
   std::array<std::atomic<int>, pp::mesh::kMeshServiceCount> last_level{};
 
   std::mutex latency_mu;
-  std::vector<double> latency_ms; // this second's receive latencies
+  std::vector<double> latency_ms; // this second's receive latencies (a sample of at most kSecondSamples)
+  /** The whole run's latencies, for the summary line: 0.1 ms buckets up to kRunHistogramMs, then one overflow. */
+  static constexpr size_t kSecondSamples = 20000;
+  static constexpr int kRunHistogramMs = 60000;
+  std::vector<uint64_t> run_histogram = std::vector<uint64_t>(kRunHistogramMs * 10 + 1);
+  double run_max_ms = 0;
 
   void NoteLatency(const double ms) {
     std::lock_guard lock(latency_mu);
-    if (latency_ms.size() < 20000) {
+    if (latency_ms.size() < kSecondSamples) {
       latency_ms.push_back(ms);
     }
+    const auto bucket = static_cast<size_t>(std::clamp(ms * 10.0, 0.0, static_cast<double>(kRunHistogramMs * 10)));
+    ++run_histogram[bucket];
+    run_max_ms = std::max(run_max_ms, ms);
+  }
+  /** The run's p-th latency (ms, to 0.1 ms) and its sample count. */
+  std::pair<double, uint64_t> RunPercentile(const double p) {
+    std::lock_guard lock(latency_mu);
+    uint64_t total = 0;
+    for (const uint64_t n : run_histogram) {
+      total += n;
+    }
+    if (total == 0) {
+      return {0.0, 0};
+    }
+    const auto rank = static_cast<uint64_t>(p * static_cast<double>(total - 1));
+    uint64_t seen = 0;
+    for (size_t b = 0; b < run_histogram.size(); ++b) {
+      seen += run_histogram[b];
+      if (seen > rank) {
+        return {static_cast<double>(b) / 10.0, total};
+      }
+    }
+    return {static_cast<double>(kRunHistogramMs), total};
   }
   std::vector<double> TakeLatencies() {
     std::lock_guard lock(latency_mu);
@@ -659,13 +687,23 @@ std::string LevelName(const int level) {
   return *word ? word : "unknown";
 }
 
-/** One JSON line: what the clients saw in the last second (and totals). */
+/**
+ * One JSON line: what the clients saw in the last second (and totals). The summary's latencies are the whole run's,
+ * not its last partial second's.
+ */
 void Report(const double elapsed_s, const bool summary) {
   std::vector<double> lat = g_stats.TakeLatencies();
   std::sort(lat.begin(), lat.end());
-  const auto pct = [&lat](const double p) {
+  const auto second_pct = [&lat](const double p) {
     return lat.empty() ? 0.0 : lat[static_cast<size_t>(p * static_cast<double>(lat.size() - 1))];
   };
+  const auto pct = [&](const double p) { return summary ? g_stats.RunPercentile(p).first : second_pct(p); };
+  const uint64_t lat_n = summary ? g_stats.RunPercentile(0.5).second : lat.size();
+  double lat_max = lat.empty() ? 0.0 : lat.back();
+  if (summary) {
+    std::lock_guard lock(g_stats.latency_mu);
+    lat_max = g_stats.run_max_ms;
+  }
   std::ostringstream out;
   out << "{\"t\":" << static_cast<int64_t>(elapsed_s) << (summary ? ",\"summary\":true" : "")
       << ",\"started\":" << g_stats.started << ",\"linked\":" << g_stats.linked
@@ -676,8 +714,8 @@ void Report(const double elapsed_s, const bool summary) {
       << ",\"bridged\":" << g_stats.bridged << ",\"bridge_fail\":" << g_stats.bridge_fail
       << ",\"tx_frames\":" << g_stats.tx_frames << ",\"tx_bytes\":" << g_stats.tx_bytes
       << ",\"rx_frames\":" << g_stats.rx_frames << ",\"rx_bytes\":" << g_stats.rx_bytes
-      << ",\"lat_p50_ms\":" << pct(0.5) << ",\"lat_p95_ms\":" << pct(0.95) << ",\"lat_n\":" << lat.size()
-      << ",\"refused\":{";
+      << ",\"lat_p50_ms\":" << pct(0.5) << ",\"lat_p95_ms\":" << pct(0.95) << ",\"lat_p99_ms\":" << pct(0.99)
+      << ",\"lat_max_ms\":" << lat_max << ",\"lat_n\":" << lat_n << ",\"refused\":{";
   for (int level = 0; level < 5; ++level) {
     out << (level ? "," : "") << "\"" << LevelName(level) << "\":" << g_stats.refused_by_level[level];
   }

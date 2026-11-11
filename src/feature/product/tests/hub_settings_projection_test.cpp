@@ -4,8 +4,11 @@
 #include "lib/messaging/AttachmentDownloadPolicy.h"
 #include "feature/product/HubSettingsProjection.h"
 #include "foundation/data/ConfigJson.h"
+#include "foundation/platform/ILocalNotifier.h"
 
 #include <gtest/gtest.h>
+
+#include <vector>
 
 TEST(HubSettingsProjectionTest, ProjectsNetworkSliceFromAppConfig) {
   pbr::AppConfig config = pbr::Config::DefaultAppConfig();
@@ -80,6 +83,29 @@ TEST(HubSettingsProjectionTest, ProjectsPolicyAndNotificationPrefs) {
   EXPECT_NE(pbr::ProjectPolicy(other), policy);
   other.show_notifications = true;
   EXPECT_NE(pbr::ProjectNotifications(other), notifications);
+}
+
+namespace {
+class RecordingNotifier final : public pbr::ILocalNotifier {
+public:
+  void NotifyIncoming(const std::string&, const std::string&, const std::string&, int) override {}
+  void ClearForThread(const std::string&) override {}
+  void SetMessageBannersOn(bool on) override { calls.push_back(on); }
+  std::vector<bool> calls;
+};
+} // namespace
+
+// Startup hands the saved Show notifications to the platform notifier, as a later change does.
+TEST(HubSettingsProjectionTest, SavedShowNotificationsReachTheNotifier) {
+  RecordingNotifier notifier;
+  pbr::ILocalNotifier::SetInstance(&notifier);
+  for (const bool saved : {false, true}) {
+    pbr::ProfilePreferences prefs;
+    prefs.show_notifications = saved;
+    pbr::ApplyMessageBanners(pbr::ILocalNotifier::Instance(), pbr::ProjectNotifications(prefs));
+  }
+  pbr::ILocalNotifier::SetInstance(nullptr);
+  EXPECT_EQ(notifier.calls, (std::vector<bool>{false, true}));
 }
 
 // The hub's settings are values the app projects (capability-repos CR015): its config's slices and the profile's

@@ -713,6 +713,15 @@ protected:
   }
 
   /**
+   * The call under way a moment: each end has heard the other's heartbeats, so silence on the path means it died
+   * (K008) — the path is judged by them, not by the liveness window of the link under it, which a call keeps hot
+   * (relay links too: they carry the call's hot nested link, pp-cpp-amp docs/KEEPALIVE.md).
+   */
+  void HearEachOther() {
+    PumpVirtualUntil([] { return false; }, std::chrono::milliseconds(2 * kCallMediaActiveHeartbeatMs));
+  }
+
+  /**
    * B's mux sends A a CLOSE for its media channel on the direct link, behind B's leg's back: A sees the peer
    * close that channel while its control channel stays up, and no `bye` follows.
    */
@@ -977,6 +986,7 @@ TEST_F(CallPathMigrationTest, QuietButAliveDirectPathStays) {
 // call (reconnecting, no failure) and say so, until the offerer migrates it onto a new direct link.
 TEST_F(CallPathMigrationTest, CallWithNoPathLeftReconnectsOntoANewLink) {
   LiveRelayedCallWithDirectLink(/*with_direct=*/false);
+  HearEachOther();
   harness_->io_r->SetDropRate(1.0);
   for (int i = 0;
        i < 60 && !(a_call_->PathState(leg_).reconnecting && b_call_->PathState(b_call_->PrimaryLegId()).reconnecting);
@@ -1041,6 +1051,7 @@ TEST_F(CallPathMigrationTest, CallWithNoPathLeftReconnectsOntoANewLink) {
 // for the same call. The reconnecting end takes it instead of refusing it as busy.
 TEST_F(CallPathMigrationTest, FreshHelloFromARedialingPeerReplacesAReconnectingCall) {
   LiveRelayedCallWithDirectLink(/*with_direct=*/false);
+  HearEachOther();
   harness_->io_r->SetDropRate(1.0);
   for (int i = 0; i < 60 && !b_call_->PathState(b_call_->PrimaryLegId()).reconnecting; ++i) {
     harness_->clock->Advance(250);
@@ -1076,6 +1087,7 @@ TEST_F(CallPathMigrationTest, NoNewPathWithinTheWindowFailsTheCall) {
   LiveRelayedCallWithDirectLink(/*with_direct=*/false);
   a_call_->SetReconnectWindowForTest(std::chrono::milliseconds(300));
   b_call_->SetReconnectWindowForTest(std::chrono::milliseconds(300));
+  HearEachOther();
   harness_->io_r->SetDropRate(1.0);
   for (int i = 0; i < 60 && !a_call_->PathState(leg_).reconnecting; ++i) {
     harness_->clock->Advance(250);
@@ -1174,8 +1186,9 @@ TEST_F(CallPathMigrationTest, APathClosedWithoutByeIsLostAtBothEndsAndTheCallCom
 // the call there at once and neither end reports a loss ("Reconnecting…" never shows).
 TEST_F(CallPathMigrationTest, LostLinkWithAnotherLinkToThePeerRebindsQuietly) {
   LiveRelayedCallWithDirectLink();
+  HearEachOther();
   harness_->io_r->SetDropRate(1.0);
-  // Coarse steps until the relay link's liveness runs out and the call loses that path ...
+  // Coarse steps until the call hears nothing on the relayed path and loses it ...
   for (int i = 0; i < 60 && a_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed &&
                   b_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed;
        ++i) {

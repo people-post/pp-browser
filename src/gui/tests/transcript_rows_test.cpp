@@ -158,7 +158,7 @@ TEST(TranscriptRmlTest, ClickArgumentsStayInsideTheirAttribute) {
   const std::string rml = rows[0].content_rml.c_str();
   EXPECT_EQ(rml.find("<b>"), std::string::npos) << rml;
   EXPECT_EQ(rml.find("<x>"), std::string::npos) << rml;
-  EXPECT_NE(rml.find("toggle_reaction('m\\'&quot;&lt;x&gt;', '&quot;&gt;&lt;b&gt;')"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("open_reactors('m\\'&quot;&lt;x&gt;')"), std::string::npos) << rml;
   EXPECT_NE(rml.find("send_chat_action('m\\'&quot;&lt;x&gt;', 0)"), std::string::npos) << rml;
   EXPECT_NE(rml.find("&quot;&gt;&lt;b&gt;<span class=\"chat-reaction-count\">2</span>"), std::string::npos)
       << "count shown, text escaped";
@@ -194,7 +194,8 @@ TEST(TranscriptRmlTest, ReactionsHangInsideTheBubbleAndFlagTheRow) {
   EXPECT_GT(chips_at, bubble_at);
   EXPECT_EQ(rml.find("menu-anchor-end"), std::string::npos) << "the row's own bottom is the body's end now";
   EXPECT_NE(rml.find("chat-reaction-chip chat-reaction-chip--mine"), std::string::npos);
-  EXPECT_NE(rml.find("toggle_reaction('m1', '\xF0\x9F\x8E\x89')"), std::string::npos) << "a tap still toggles";
+  EXPECT_NE(rml.find("open_reactors('m1')"), std::string::npos) << "a tap lists who reacted";
+  EXPECT_EQ(rml.find("toggle_reaction"), std::string::npos) << "following a reaction is the long-press menu's";
   EXPECT_NE(rml.find("<span class=\"chat-reaction-count\">3</span>"), std::string::npos);
   EXPECT_EQ(rml.find("<span class=\"chat-reaction-count\">1</span>"), std::string::npos) << "no count for one";
 }

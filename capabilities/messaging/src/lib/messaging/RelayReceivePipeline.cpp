@@ -965,6 +965,20 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   pending.created_at = util::NowUnixMs();
   pending.outbound = false;
   pending.owner_identity = invite->Owner();
+  // One live card per inviter and group: an earlier one still waiting is replaced (it stops counting against
+  // the daily cap, and its card in the chat closes). A re-delivery of this very invite is not "an earlier one".
+  // Only an invite we have not stored yet can replace one: a resent one (membership controls are applied even
+  // when the classifier drops the seq) would otherwise expire the live card, and the store keeps a stored nonce.
+  auto stored = group_roster_.LoadPendingInvite(pending.invite_nonce);
+  if (!(stored && stored->has_value())) {
+    if (auto replaced = group_roster_.ExpireInboundInvitesFrom(invite->group_id, invite->inviter_identity); replaced) {
+      for (const PendingGroupInvite& old : *replaced) {
+        if (outcome) {
+          outcome->superseded_invite_cards.emplace_back(old.inviter_identity, old.invite_nonce);
+        }
+      }
+    }
+  }
   if (auto recorded = group_roster_.UpsertPendingInvite(pending); !recorded) {
     return recorded.error();
   }

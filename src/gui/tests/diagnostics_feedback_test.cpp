@@ -99,8 +99,7 @@ TEST(DiagnosticsLocaleTest, EveryDiagnosticsKeyExistsInBothLocales) {
 }
 
 TEST(DiagnosticsViewTest, HelpSectionHasBothButtonsTheLastIdLineAndTheSendingGuard) {
-  const std::string rml =
-      ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "settings_section_help.rml");
+  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "settings_section_help.rml");
   EXPECT_NE(rml.find("data-event-click=\"send_diagnostics()\""), std::string::npos);
   EXPECT_NE(rml.find("data-attrif-disabled=\"diagnostics_sending\""), std::string::npos)
       << "no second send while sending";
