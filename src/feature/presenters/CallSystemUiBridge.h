@@ -2,9 +2,12 @@
 
 #include "lib/calls/CallScreen.h"
 #include "foundation/platform/CallSystemUi.h"
+#include "foundation/platform/DeviceScreenState.h"
+#include "feature/presenters/CallRingHandBack.h"
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include "common/PbrCompat.h"
 
@@ -14,8 +17,14 @@ namespace pbr {
  * Keeps the phone's own call screen (ICallSystemUi: Android's incoming-call notification) in step with CallPresenter's screen, and turns what the user does there into the presenter's
  * buttons (P014).
  *
- * - A ring goes to the system screen when the app is not in the foreground, or when a call push
- *   already put "Incoming call" there (the push's call is filled in with the ring's caller).
+ * - A ring goes to the system screen when the user cannot see the app (not in the foreground, the screen dark, the
+ *   phone locked, PP behind its PIN, or the platform could not say), or when a call push already put "Incoming call"
+ *   there (the push's call is filled in with the ring's caller).
+ * - Rung there, it comes back to the app's own ring page once the user can see the app again for
+ *   kCallRingHandBackSettleMs (Reevaluate, every 300 ms while the system screen rings for us): the app's page and
+ *   ringtone first, then the notification goes (never a decline). If the user leaves the app while it still rings, it
+ *   goes to the system screen again — without raising the app this time (only a call's first notification does).
+ *   DEV/PLAN-android-incoming-call-screen.md.
  * - Answered there, the call stays there until it ends; answered in the app, the system screen lets
  *   it go (the app's own call screen shows it).
  * - Answered or declined on the system screen before the ring was known (the push's call; the app
@@ -39,6 +48,15 @@ public:
     std::function<std::string(const std::string& identity)> display_name;
     /** Unix ms (tests set it). */
     std::function<int64_t()> now_ms;
+    /**
+     * Where the ring shows changed outside a frame (Reevaluate): redraw now. On a hand-back it runs before the
+     * notification goes, with SystemRings already false, so the app's ring page and ringtone come up first.
+     */
+    std::function<void()> ring_moved;
+    /** The screen on / phone locked, asked each time; nothing: could not ask (not seen). Unset: on, unlocked. */
+    std::function<std::optional<DeviceScreenState>()> screen_state;
+    /** PP's PIN gate is up. Unset: never. */
+    std::function<bool()> pin_locked;
   };
   static constexpr int64_t kPendingChoiceMs = 60'000;
   static constexpr int64_t kPendingMaxMs = 180'000;
@@ -54,8 +72,16 @@ public:
   CallSystemUiBridge(const CallSystemUiBridge&) = delete;
   CallSystemUiBridge& operator=(const CallSystemUiBridge&) = delete;
 
-  /** After every change of the presenter's screen. */
+  /** After every change of the presenter's screen. `app_foreground`: the app's screen is up (AppLifecycle::IsVisible). */
   void Sync(const CallScreen& screen, const std::string& active_call_id, bool app_foreground);
+  /**
+   * Is the ring where the user can see it? Called every 300 ms while WantsReevaluation(), and on foreground: a ring the
+   * system screen rings for us goes back to the app once the user has seen the app for kCallRingHandBackSettleMs; a
+   * ring the app rings goes to the system screen once they cannot see it. Redraws through Actions::ring_moved.
+   */
+  void Reevaluate(bool app_foreground);
+  /** The system screen rings a call for us: the 300 ms re-evaluation runs (it stops once the ring is over or back). */
+  bool WantsReevaluation() const;
   /** The system screen rings `call_id` (its own ringtone): the app's stays quiet. */
   bool SystemRings(const std::string& call_id) const;
   /**
@@ -93,6 +119,14 @@ private:
   void AcceptShown(bool voice_only);
   /** A frame without the shown call: it is over, unless the app is still taking a call answered there. */
   bool StillTaking() const;
+  /** What the user can see now: the platform asked afresh (only when the app is in front). */
+  CallRingUi UiNow(bool app_foreground) const;
+  /** The user can see the app's ring page now (CallRingUiVisible of UiNow). */
+  bool UiVisible(bool app_foreground) const;
+  /** Puts `screen`'s ring on the system screen (or declines it: declined there before it showed). True: it rings there. */
+  bool TakeRing(const CallScreen& screen);
+  /** The app's ring page and ringtone first (ring_moved), then the notification goes. */
+  void HandBack();
 
   ICallSystemUi& ui_;
   Actions actions_;
@@ -112,6 +146,12 @@ private:
   std::string rechecked_ring_call_id_;
   /** Messaging came up at this time (0: not seen). */
   int64_t ready_at_ms_ = 0;
+  /** Inside HandBack's redraw: SystemRings is false while the notification is still up. */
+  bool handing_back_ = false;
+  /** Since when the hand-back's conditions have held (Reevaluate's samples); nothing: they do not now. */
+  std::optional<int64_t> visible_since_ms_;
+  /** The call whose notification was posted with the full-screen intent: later ones for it are plain. */
+  std::string full_screen_call_id_;
 };
 
 } // namespace pbr

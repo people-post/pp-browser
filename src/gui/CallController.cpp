@@ -22,6 +22,7 @@
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
+#include "foundation/platform/DeviceScreenState.h"
 #include "foundation/platform/IAssetLocator.h"
 #include "foundation/platform/OngoingCallService.h"
 #include "foundation/platform/Platform.h"
@@ -76,6 +77,10 @@ CallController::CallController()
               .leave = [this]() { (void)presenter_.Leave(); },
               .display_name = [this](const std::string& identity) { return CallerNameFor(identity).label; },
               .now_ms = {},
+              // The ring came back from the phone's call screen, or went to it: draw it where it is now.
+              .ring_moved = [this]() { Render(); },
+              .screen_state = []() { return ReadDeviceScreenState(); },
+              .pin_locked = [this]() { return pin_locked_ && pin_locked_(); },
           }),
       local_hold_(LocalHoldPorts()) {
   redirectLogger("CallController");
@@ -133,6 +138,7 @@ CallController::CallController()
 }
 
 CallController::~CallController() {
+  AppRuntime::CancelCoordinatorTimer(ring_timer_);
   OngoingCallService::SetHangUpHandler({});
   AppLifecycle::RemoveListener(background_listener_);
   AppLifecycle::RemoveListener(foreground_listener_);
@@ -219,6 +225,8 @@ void CallController::OnAppBackground() {
 
 void CallController::OnAppForeground() {
   local_hold_.OnAppForeground();
+  // Back in front with the phone's call screen ringing for us: its settle time counts from now (the timer hands over).
+  system_call_screen_.Reevaluate(AppLifecycle::IsVisible());
 }
 
 namespace {
@@ -512,6 +520,10 @@ void CallController::BindOpenThread(std::function<void(const std::string& thread
   open_thread_ = std::move(callback);
 }
 
+void CallController::BindPinLocked(std::function<bool()> pin_locked) {
+  pin_locked_ = std::move(pin_locked);
+}
+
 void CallController::BindPeoplePickerNotify(PeoplePickerNotifyPorts ports) {
   people_picker_notify_ = std::move(ports);
 }
@@ -721,6 +733,8 @@ void CallController::PrepareForShutdown() {
   }
   ring_ = {};
   ui_probe_.Stop();
+  AppRuntime::CancelCoordinatorTimer(ring_timer_);
+  ring_timer_ = 0;
   // Budgeted join before SDL_Quit — do not hang product quit on SDL device close.
   if (!ringtone_.StopAndJoin(CallRingtone::kDefaultShutdownJoinBudget)) {
     log().warning << "PrepareForShutdown: ringtone join budget exceeded — detached";
@@ -960,6 +974,26 @@ void CallController::SyncRingtone() {
   } else if (!should_ringback && ringback_.IsPlaying()) {
     StopRingback(backend);
   }
+  SyncRingTimer();
+}
+
+void CallController::SyncRingTimer() {
+  const bool wanted = system_call_screen_.WantsReevaluation() || ringtone_.IsPlaying();
+  if (wanted && ring_timer_ == 0) {
+    ring_timer_ = AppRuntime::ScheduleCoordinatorRepeating(
+        kRingTimerInterval, [this]() { AppRuntime::PostUI([this]() { OnRingTimer(); }); });
+  } else if (!wanted && ring_timer_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(ring_timer_);
+    ring_timer_ = 0;
+  }
+}
+
+void CallController::OnRingTimer() {
+  if (ring_timer_ == 0) {
+    return; // stopped after this tick was posted
+  }
+  system_call_screen_.Reevaluate(AppLifecycle::IsVisible()); // may redraw (Render): the ring moved
+  SyncRingTimer();
 }
 
 void CallController::StopRingback(CallUiBackend* backend) {

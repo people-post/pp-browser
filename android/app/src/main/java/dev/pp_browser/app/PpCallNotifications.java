@@ -22,7 +22,8 @@ import androidx.core.app.Person;
 /**
  * The phone's own call screen on Android (native AndroidCallSystemUi, ICallSystemUi): an incoming-call
  * notification that rings (the calls channel's ringtone, until answered), goes full screen on a locked phone and
- * answers or declines from the notification.
+ * answers or declines from the notification. Only a call's first notification carries the full-screen intent (it
+ * raises the app: MIUI does so even unlocked); posted again after the app gave the ring back, it rings without it.
  *
  * It also holds the push's call: a call push that reached the phone before the app found the ring it announced.
  * The push can come with the app not running at all (the process started for it), so its "Incoming call" rings
@@ -117,7 +118,7 @@ final class PpCallNotifications {
         sPendingAnswered = false;
         sPendingSinceMs = SystemClock.elapsedRealtime();
         Log.i(TAG, sAppReady ? "push call" : "push call, app locked or not running");
-        post("", null, false, PENDING_MAX_MS);
+        post("", null, false, true, PENDING_MAX_MS);
         rearmPending();
         pendingChanged();
     }
@@ -140,8 +141,11 @@ final class PpCallNotifications {
         }
     }
 
-    /** Ring `callId` here; the push's call becomes it (named now), or the answered push's call is it. */
-    static synchronized void showIncoming(String callId, String callerName, boolean video) {
+    /**
+     * Ring `callId` here; the push's call becomes it (named now), or the answered push's call is it. `fullScreen`: the
+     * notification may raise the app (false: posted again after the app gave the ring back).
+     */
+    static synchronized void showIncoming(String callId, String callerName, boolean video, boolean fullScreen) {
         if (sContext == null || callId == null || callId.isEmpty()) {
             return;
         }
@@ -157,9 +161,10 @@ final class PpCallNotifications {
             }
         }
         sShownCallId = callId;
-        post(callId, callerName, video, RING_TIMEOUT_MS);
+        post(callId, callerName, video, fullScreen, RING_TIMEOUT_MS);
     }
 
+    /** The app took the ring (or it is over): only the notification goes, nothing is told back to native. */
     static synchronized void endIncoming(String callId) {
         if (callId == null || callId.isEmpty() || !callId.equals(sShownCallId)) {
             return;
@@ -219,10 +224,18 @@ final class PpCallNotifications {
         toNative(() -> nativeOnEnd(id));
     }
 
-    /** An activity intent from a call notification: the answer it carries. */
+    /**
+     * An activity intent from a call notification: the answer it carries, or the tap on its body (OPEN_CALL: starting
+     * the activity already brought the app to the front; the app gives itself the ring page once it is seen).
+     */
     static void onActivityIntent(Intent intent) {
-        if (intent != null && ACTION_ANSWER.equals(intent.getAction())) {
+        if (intent == null) {
+            return;
+        }
+        if (ACTION_ANSWER.equals(intent.getAction())) {
             onAnswer(intent.getStringExtra(EXTRA_CALL_ID));
+        } else if (ACTION_OPEN.equals(intent.getAction())) {
+            Log.i(TAG, "call notification opened the app (no answer)");
         }
     }
 
@@ -279,7 +292,7 @@ final class PpCallNotifications {
     }
 
     /** `callId` empty: the push's call (no caller known: the app's name). */
-    private static void post(String callId, String callerName, boolean video, long timeoutMs) {
+    private static void post(String callId, String callerName, boolean video, boolean fullScreen, long timeoutMs) {
         final Context c = sContext;
         if (c == null) {
             return;
@@ -293,7 +306,6 @@ final class PpCallNotifications {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(c, CHANNEL_CALLS)
                 .setSmallIcon(android.R.drawable.sym_call_incoming)
                 .setContentIntent(open)
-                .setFullScreenIntent(open, true)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -303,6 +315,9 @@ final class PpCallNotifications {
                 // Before Android 8 (no channels) the notification carries its own ring.
                 .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), AudioManager.STREAM_RING)
                 .setVibrate(VIBRATION);
+        if (fullScreen) {
+            builder.setFullScreenIntent(open, true);
+        }
         try {
             notify(c, builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, decline, answer)
                     .setIsVideo(video)));

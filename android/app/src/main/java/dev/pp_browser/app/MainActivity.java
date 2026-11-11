@@ -1386,12 +1386,32 @@ public class MainActivity extends SDLActivity {
         PpCallNotifications.endPendingPushCall();
     }
 
-    public void showIncomingCall(String callId, String callerName, boolean video) {
-        PpCallNotifications.showIncoming(callId, callerName, video);
+    public void showIncomingCall(String callId, String callerName, boolean video, boolean fullScreen) {
+        PpCallNotifications.showIncoming(callId, callerName, video, fullScreen);
     }
 
     public void endIncomingCall(String callId) {
         PpCallNotifications.endIncoming(callId);
+    }
+
+    /**
+     * For native DeviceScreenState_Android (the ring hand-back, asked every 300 ms while a call notification rings):
+     * bit 0 the screen is on (PowerManager.isInteractive), bit 1 the phone is locked (KeyguardManager.isKeyguardLocked);
+     * -1 when either cannot be asked (native then treats the app as not seen).
+     */
+    public int getCallScreenState() {
+        try {
+            final android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            final android.app.KeyguardManager km =
+                    (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+            if (pm == null || km == null) {
+                return -1;
+            }
+            return (pm.isInteractive() ? 1 : 0) | (km.isKeyguardLocked() ? 2 : 0);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "screen state: " + e);
+            return -1;
+        }
     }
 
     public void clearLocalNotification(String threadId) {
