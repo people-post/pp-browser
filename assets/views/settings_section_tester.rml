@@ -1,4 +1,4 @@
-      <div class="settings-section settings-section--grouped stack">
+      <div class="settings-section settings-section--grouped stack" data-if="advanced">
         <div class="group-card" data-if="show_backend_switch">
           <button class="settings-toggle-row settings-choice-row row group-row" type="button"
                   data-event-click="on_choose_backend()">

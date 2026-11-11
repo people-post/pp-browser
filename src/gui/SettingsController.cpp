@@ -249,11 +249,12 @@ const SettingsSectionHandler* SettingsController::FindHandler(const std::string&
 
 void SettingsController::InitSections() {
   sections_.clear();
-  for (const SettingsPage& page : SettingsPages()) {
-    sections_.push_back({.id = page.id,
-                         .title = Tr(page.title_key).c_str(),
+  // Advanced and Test options are listed (and so reachable) only while the flag is on: five taps on the version.
+  for (const SettingsPage* page : ListedSettingsPages(ui_state_.show_advanced_settings == "on")) {
+    sections_.push_back({.id = page->id,
+                         .title = Tr(page->title_key).c_str(),
                          .subtitle = "",
-                         .group = page.home_group,
+                         .group = page->home_group,
                          .attention = false});
   }
   ApplySectionAttention();
@@ -752,7 +753,10 @@ bool SettingsController::RegisterModel(ui::Context* context) {
                                open_home_edit_();
                              }
                            }));
-    ctor.BindEventCallback("toggle_show_advanced_settings", DataEvent<>([this]() { ToggleShowAdvancedSettings(); }));
+    ctor.BindEventCallback("tap_version", DataEvent<>([this]() { OnTapVersion(); }));
+    ctor.BindEventCallback("open_terms", DataEvent<>([]() { UserFeedback::Ok(Tr("settings.help.coming_soon")); }));
+    ctor.BindEventCallback("open_privacy_policy",
+                           DataEvent<>([]() { UserFeedback::Ok(Tr("settings.help.coming_soon")); }));
     ctor.BindEventCallback("toggle_ai_dot", DataEvent<>([this]() { ToggleAiDot(); }));
     ctor.BindEventCallback("set_ai_dot_look",
                            DataEvent<std::string>([this](const std::string& look) { SetAiDotLook(look); }));
@@ -2196,6 +2200,18 @@ void SettingsController::SaveAiDot(const bool shown, const std::string& look, co
   DataModelHost::Instance().Dirty("settings", "ai_dot_shown");
   DataModelHost::Instance().Dirty("settings", "ai_dot_look");
   DataModelHost::Instance().Dirty("settings", "ai_dot_size_label");
+}
+
+void SettingsController::OnTapVersion() {
+  const bool was_on = bindings_.show_advanced_settings == "on";
+  const VersionTapCounter::Result tap = version_taps_.Tap(SDL_GetTicks());
+  if (tap.action == VersionTapCounter::Action::Toggle) {
+    ToggleShowAdvancedSettings();
+    UserFeedback::Ok(Tr(was_on ? "settings.help.tester_off" : "settings.help.tester_on"));
+  } else if (tap.action == VersionTapCounter::Action::Hint) {
+    UserFeedback::Ok(Tr(was_on ? "settings.help.tap_close" : "settings.help.tap_open",
+                        {{"n", std::to_string(tap.taps_left)}}));
+  }
 }
 
 void SettingsController::ToggleShowAdvancedSettings() {

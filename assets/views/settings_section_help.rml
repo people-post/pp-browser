@@ -68,27 +68,28 @@
                 data-event-click="copy_diagnostics_id()">
           {{diagnostics_last_label}}
         </button>
+        <div class="group-card">
+          <button class="group-row" type="button" data-event-click="open_terms()">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.help.terms}}</span></span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+          <button class="group-row" type="button" data-event-click="open_privacy_policy()">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.help.privacy_policy}}</span></span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
         <p class="heading-2 group-title">{{app_name}}</p>
         <div class="group-card settings-phone-only">
-          <div class="group-row">
+          <div class="group-row" data-event-click="tap_version()">
             <span class="group-row-body">
               <span class="group-row-text">{{i18n:settings.about.version}}</span>
               <span class="group-row-value">{{app_version}}</span>
             </span>
           </div>
         </div>
-        <p class="text muted group-foot settings-desktop-only">{{i18n:settings.about.version}}: <span>{{app_version}}</span></p>
-        <div class="group-card">
-          <div class="settings-toggle-row row group-row">
-            <span class="group-row-body">
-              <span class="settings-q-label"><span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.about.advanced.label}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.about.advanced.label')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
-              <button class="settings-switch" type="button"
-                      data-class-settings-switch--on="show_advanced_settings == 'on'"
-                      data-event-click="toggle_show_advanced_settings()">
-                <div class="settings-switch-knob"></div>
-              </button>
-            </span>
-          </div>
-        </div>
-        <p class="text muted settings-help group-foot">{{i18n:settings.about.advanced.help}}</p>
+        <p class="text muted group-foot settings-desktop-only" data-event-click="tap_version()">{{i18n:settings.about.version}}: <span>{{app_version}}</span></p>
       </div>

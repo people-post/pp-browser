@@ -23,7 +23,7 @@
 namespace pbr {
 namespace {
 
-constexpr int kPhase = 0;
+constexpr int kPhase = 2;
 
 std::string ReadFile(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);

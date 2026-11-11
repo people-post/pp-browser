@@ -1,4 +1,4 @@
-      <div class="settings-section settings-section--grouped stack">
+      <div class="settings-section settings-section--grouped stack" data-if="advanced">
         <p class="text group-head">{{i18n:settings.network.title}}</p>
         <div class="group-card" data-if="advanced && show_node_toggle">
           <div class="settings-toggle-row row group-row">

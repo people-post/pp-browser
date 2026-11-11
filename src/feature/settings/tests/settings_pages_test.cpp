@@ -102,4 +102,27 @@ TEST(SettingsPagesTest, EveryChecklistRowSavesThroughAHandlerItsPageOwns) {
   EXPECT_GT(checked, 40u);
 }
 
+// Phase 2: Advanced and Test options are listed only while the advanced flag is on; a page that is not listed cannot be
+// opened (SettingsController::OnSelectSection finds pages in the listed rows only).
+TEST(SettingsPagesTest, AdvancedAndTestOptionsAreListedOnlyWhileTheFlagIsOn) {
+  std::vector<std::string> off;
+  for (const SettingsPage* page : ListedSettingsPages(false)) {
+    off.push_back(page->id);
+  }
+  const std::vector<std::string> expected_off = {"profile",       "privacy",    "security", "devices",
+                                                 "notifications", "appearance", "storage",  "help"};
+  EXPECT_EQ(off, expected_off);
+
+  std::vector<std::string> on;
+  for (const SettingsPage* page : ListedSettingsPages(true)) {
+    on.push_back(page->id);
+  }
+  ASSERT_EQ(on.size(), 10u);
+  EXPECT_EQ(on[8], "advanced");
+  EXPECT_EQ(on[9], "tester");
+  EXPECT_TRUE(Page("advanced").advanced_only);
+  EXPECT_TRUE(Page("tester").advanced_only);
+  EXPECT_FALSE(Page("help").advanced_only);
+}
+
 } // namespace pbr

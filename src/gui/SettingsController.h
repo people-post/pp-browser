@@ -5,6 +5,7 @@
 #include "feature/settings/SettingsSectionHandler.h"
 #include "feature/settings/SettingsSections.h"
 #include "feature/settings/SettingsUiState.h"
+#include "feature/settings/VersionTapCounter.h"
 #include "gui/SettingsCasLibrary.h"
 #include "gui/SettingsChoicePage.h"
 #include "gui/SettingsHost.h"
@@ -264,6 +265,7 @@ private:
   void ToggleCallDiagnostics();
   void ToggleHomeShowDynamic();
   void ToggleShowAdvancedSettings();
+  void OnTapVersion();
   /** Me → AI assistant: the AI dot's switch, look (`a`–`d`) and size (`s` / `m` / `l`), saved to the profile prefs at once. */
   void ToggleHomeAnimatedLogo();
   void ToggleAiDot();
@@ -360,6 +362,8 @@ private:
   std::vector<std::unique_ptr<SettingsSectionHandler>> section_handlers_;
   std::unordered_map<std::string, SettingsSectionHandler*> section_handlers_by_id_;
   std::vector<SectionListRow> sections_;
+  /** Five quick taps on Help's version row toggle the advanced flag. */
+  VersionTapCounter version_taps_;
   ui::String selected_id_;
   ui::String selected_title_;
   bool show_detail_ = false;
