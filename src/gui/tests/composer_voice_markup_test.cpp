@@ -91,6 +91,7 @@ protected:
                             "attachment_uploading",
                             "attachment_failed",
                             "attachment_here",
+                            "attachment_in_transcript",
                             "attachment_draft_name",
                             "attachment_status",
                             "attachment_progress_width",
@@ -372,6 +373,46 @@ TEST_F(ComposerVoiceMarkupTest, TheStatusRowTextIsRenderedNotJustBound) {
   document->GetElementsByClassName(timer, "prompt-voice-timer");
   ASSERT_GE(timer.size(), 1u);
   EXPECT_EQ(timer[0]->GetInnerRML(), "0:07");
+}
+
+// A picture being sent shows as a bubble in the transcript (DEV/PLAN-picture-upload-bubble.md): no card above the
+// composer while it uploads, and no failure chip when it did not go out — the bubble has its own retry and ✕.
+TEST_F(ComposerVoiceMarkupTest, APictureBubbleInTheTranscriptHidesTheCardAndTheChip) {
+  state.attachment_here = true;
+  state.attachment_in_transcript = true;
+  state.attachment_uploading = true;
+  state.attachment_draft_name = "photo.jpg";
+  Apply();
+  EXPECT_EQ(Shown("prompt-upload-card"), 0);
+  EXPECT_EQ(Shown("prompt-attachment-chip"), 0);
+  EXPECT_EQ(Shown("prompt-composer-status"), 0);
+  state.attachment_uploading = false;
+  state.attachment_failed = true;
+  state.attachment_status = "Not sent";
+  Apply();
+  EXPECT_EQ(Shown("prompt-attachment-chip"), 0);
+  EXPECT_EQ(Shown("prompt-attachment-chip-action"), 0);
+  EXPECT_EQ(Shown("prompt-composer-status"), 0);
+}
+
+// Files, voice, video — and a failed picture after a restart (no bubble then) — keep the card and the chip.
+TEST_F(ComposerVoiceMarkupTest, WithoutAPictureBubbleTheCardAndTheChipStayAsTheyWere) {
+  state.attachment_here = true;
+  state.attachment_in_transcript = false;
+  for (const char* name : {"report.pdf", "voice-4200.ogg", "clip.mp4"}) {
+    SCOPED_TRACE(name);
+    state.attachment_uploading = true;
+    state.attachment_failed = false;
+    state.attachment_draft_name = name;
+    Apply();
+    EXPECT_EQ(Shown("prompt-upload-card"), 1);
+  }
+  state.attachment_uploading = false;
+  state.attachment_failed = true;
+  state.attachment_draft_name = "photo.jpg"; // a picture that failed before the app was restarted
+  Apply();
+  EXPECT_EQ(Shown("prompt-attachment-chip"), 1);
+  EXPECT_EQ(Shown("prompt-attachment-chip-action"), 2);
 }
 
 // An upload in chat A: its card shows there only; switching to chat B hides it, back to A shows it again.
