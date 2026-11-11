@@ -1,7 +1,7 @@
-      <div class="settings-section stack storage-section">
-        <!-- Me → Storage: usage, "Manage storage", auto-download (DEV/PLAN-storage-manager.md ①) -->
-        <div class="stack" data-if="storage_page == 'main'">
-          <div class="settings-row storage-card stack">
+      <div class="stack">
+        <!-- Me → Storage (phone page follows the mockup): usage, "Manage storage", auto-download in three tiers, reset. -->
+        <div class="settings-section settings-section--grouped settings-mock stack storage-section" data-if="storage_page == 'main'">
+          <div class="group-card group-card--pad stack">
             <p class="storage-usage-line" data-if="storage_ready"><span class="storage-usage-big">{{storage_total_label}}</span> {{i18n:settings.storage.manage.used}}</p>
             <p class="settings-choice-value-text" data-if="!storage_ready">{{i18n:settings.storage.manage.counting}}</p>
             <div class="storage-bar row" data-if="storage_ready">
@@ -25,73 +25,83 @@
             </div>
           </div>
 
-          <p class="storage-group-head settings-choice-value-text">{{i18n:settings.storage.manage.group}}</p>
-          <div class="settings-row storage-group stack">
-            <button class="settings-choice-row storage-row row" type="button" data-event-click="storage_open_manage()">
-              <span class="settings-toggle-label storage-row-label">{{i18n:settings.storage.manage.row}}</span>
-              <span class="settings-choice-value-text" data-if="storage_ready">{{storage_manage_label}}</span>
-              <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+          <div class="group-card">
+            <button class="group-row" type="button" data-event-click="storage_open_manage()">
+              <span class="group-row-body">
+                <span class="group-row-label"><span class="group-row-text">{{i18n:settings.storage.manage.row}}</span></span>
+                <span class="group-row-value" data-if="storage_ready">{{storage_manage_label}}</span>
+                <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+              </span>
             </button>
           </div>
-          <p class="storage-group-foot settings-choice-value-text">{{i18n:settings.storage.manage.foot}}</p>
+          <p class="text muted settings-help group-foot">{{i18n:settings.storage.manage.foot}}</p>
 
-          <p class="storage-group-head settings-choice-value-text">{{i18n:settings.storage.attachment_policy.label}}</p>
-          <div class="settings-row storage-group stack">
-            <button class="settings-choice-row settings-radio-row storage-row row" type="button"
+          <p class="text group-head">{{i18n:settings.storage.attachment_policy.label}}</p>
+          <div class="group-card">
+            <button class="group-row settings-choice-option" type="button"
                     data-event-click="choose_attachment_download_policy('smart')">
-              <span class="settings-toggle-label storage-row-label">{{i18n:settings.storage.attachment_policy.smart}}</span>
-              <svg class="settings-radio-check" src="../icons/check.svg" width="16" height="16"
-                   data-if="attachment_download_policy == 'smart'"></svg>
+              <span class="group-row-body">
+                <span class="group-row-text">{{i18n:settings.storage.attachment_policy.smart}}</span>
+                <svg class="settings-choice-check" data-if="attachment_download_policy == 'smart'" src="../icons/v2/check.svg" width="20" height="20"></svg>
+              </span>
             </button>
-            <button class="settings-choice-row settings-radio-row storage-row row" type="button"
+            <button class="group-row settings-choice-option" type="button"
                     data-event-click="choose_attachment_download_policy('always_auto')">
-              <span class="settings-toggle-label storage-row-label">{{i18n:settings.storage.attachment_policy.always_auto}}</span>
-              <svg class="settings-radio-check" src="../icons/check.svg" width="16" height="16"
-                   data-if="attachment_download_policy == 'always_auto'"></svg>
+              <span class="group-row-body">
+                <span class="group-row-text">{{i18n:settings.storage.attachment_policy.always_auto}}</span>
+                <svg class="settings-choice-check" data-if="attachment_download_policy == 'always_auto'" src="../icons/v2/check.svg" width="20" height="20"></svg>
+              </span>
             </button>
-            <div class="settings-toggle-row storage-row storage-row--indent row" data-if="attachment_auto_toggles_visible">
-              <span class="settings-label settings-toggle-label">{{i18n:settings.storage.attachment_policy.on_wifi}}</span>
-              <button class="settings-switch" type="button"
-                      data-class-settings-switch--on="attachment_auto_on_wifi == 'on'"
-                      data-event-click="toggle_attachment_auto_wifi()">
-                <div class="settings-switch-knob"></div>
-              </button>
+            <div class="settings-toggle-row row group-row group-row--indent" data-if="attachment_auto_toggles_visible">
+              <span class="group-row-body">
+                <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.storage.attachment_policy.on_wifi}}</span>
+                <button class="settings-switch" type="button"
+                        data-class-settings-switch--on="attachment_auto_on_wifi == 'on'"
+                        data-event-click="toggle_attachment_auto_wifi()">
+                  <div class="settings-switch-knob"></div>
+                </button>
+              </span>
             </div>
-            <div class="settings-toggle-row storage-row storage-row--indent row" data-if="attachment_auto_toggles_visible">
-              <span class="settings-label settings-toggle-label">{{i18n:settings.storage.attachment_policy.on_cellular}}</span>
-              <button class="settings-switch" type="button"
-                      data-class-settings-switch--on="attachment_auto_on_cellular == 'on'"
-                      data-event-click="toggle_attachment_auto_cellular()">
-                <div class="settings-switch-knob"></div>
-              </button>
+            <div class="settings-toggle-row row group-row group-row--indent" data-if="attachment_auto_toggles_visible">
+              <span class="group-row-body">
+                <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.storage.attachment_policy.on_cellular}}</span>
+                <button class="settings-switch" type="button"
+                        data-class-settings-switch--on="attachment_auto_on_cellular == 'on'"
+                        data-event-click="toggle_attachment_auto_cellular()">
+                  <div class="settings-switch-knob"></div>
+                </button>
+              </span>
             </div>
-            <button class="settings-choice-row settings-radio-row storage-row row" type="button"
+            <button class="group-row settings-choice-option" type="button"
                     data-event-click="choose_attachment_download_policy('on_demand')">
-              <span class="settings-toggle-label storage-row-label">{{i18n:settings.storage.attachment_policy.on_demand}}</span>
-              <svg class="settings-radio-check" src="../icons/check.svg" width="16" height="16"
-                   data-if="attachment_download_policy == 'on_demand'"></svg>
+              <span class="group-row-body">
+                <span class="group-row-text">{{i18n:settings.storage.attachment_policy.on_demand}}</span>
+                <svg class="settings-choice-check" data-if="attachment_download_policy == 'on_demand'" src="../icons/v2/check.svg" width="20" height="20"></svg>
+              </span>
             </button>
           </div>
-          <p class="storage-group-foot settings-choice-value-text" data-if="attachment_download_policy == 'smart'">{{i18n:settings.storage.manage.policy_foot.smart}}</p>
-          <p class="storage-group-foot settings-choice-value-text" data-if="attachment_download_policy == 'always_auto' && attachment_auto_toggles_visible">{{i18n:settings.storage.manage.policy_foot.always_auto}}</p>
-          <p class="storage-group-foot settings-choice-value-text" data-if="attachment_download_policy == 'always_auto' && !attachment_auto_toggles_visible">{{i18n:settings.storage.manage.policy_foot.always_auto_desktop}}</p>
-          <p class="storage-group-foot settings-choice-value-text" data-if="attachment_download_policy == 'on_demand'">{{i18n:settings.storage.manage.policy_foot.on_demand}}</p>
+          <p class="text muted settings-help group-foot" data-if="attachment_download_policy == 'smart'">{{i18n:settings.storage.manage.policy_foot.smart}}</p>
+          <p class="text muted settings-help group-foot" data-if="attachment_download_policy == 'always_auto' && attachment_auto_toggles_visible">{{i18n:settings.storage.manage.policy_foot.always_auto}}</p>
+          <p class="text muted settings-help group-foot" data-if="attachment_download_policy == 'always_auto' && !attachment_auto_toggles_visible">{{i18n:settings.storage.manage.policy_foot.always_auto_desktop}}</p>
+          <p class="text muted settings-help group-foot" data-if="attachment_download_policy == 'on_demand'">{{i18n:settings.storage.manage.policy_foot.on_demand}}</p>
 
-          <div class="settings-danger-zone stack">
-            <p class="text muted">
-              {{i18n:settings.storage.reset_warning}}
-            </p>
-            <div class="settings-actions stack">
-              <button class="btn btn-danger-soft settings-action-bar" type="button"
-                      data-event-click="reset_chats()">{{i18n:settings.storage.reset_chats}}</button>
-              <button class="btn btn-danger-soft settings-action-bar" type="button"
-                      data-event-click="reset_profile()">{{i18n:settings.storage.reset_profile}}</button>
-            </div>
+          <div class="group-card">
+            <button class="group-row group-row--danger" type="button" data-event-click="reset_chats()">
+              <span class="group-row-body">
+                <span class="group-row-label"><span class="group-row-text">{{i18n:settings.storage.reset_chats}}</span></span>
+              </span>
+            </button>
+            <button class="group-row group-row--danger" type="button" data-event-click="reset_profile()">
+              <span class="group-row-body">
+                <span class="group-row-label"><span class="group-row-text">{{i18n:settings.storage.reset_profile}}</span></span>
+              </span>
+            </button>
           </div>
+          <p class="text muted settings-help group-foot">{{i18n:settings.storage.reset_warning}}</p>
         </div>
 
         <!-- Manage storage: files over 5 MB, chats by size (②) -->
-        <div class="stack" data-if="storage_page == 'manage'">
+        <div class="settings-section stack storage-section" data-if="storage_page == 'manage'">
           <div class="storage-nav row">
             <button class="storage-nav-back row" type="button" data-if="!show_detail" data-event-click="storage_back()">
               <svg class="storage-nav-back-icon" src="../icons/back.svg" width="14" height="14"></svg>
@@ -146,7 +156,7 @@
         </div>
 
         <!-- One chat's (or the large files') photos / videos / files (③) -->
-        <div class="stack" data-if="storage_page == 'items'">
+        <div class="settings-section stack storage-section" data-if="storage_page == 'items'">
           <div class="storage-nav row">
             <button class="storage-nav-back row" type="button" data-if="!show_detail" data-event-click="storage_back()">
               <svg class="storage-nav-back-icon" src="../icons/back.svg" width="14" height="14"></svg>

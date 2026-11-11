@@ -211,7 +211,6 @@ data-event-click="toggle_attachment_auto_wifi()"	1	storage	storage	storage_page 
 {{i18n:settings.storage.manage.delete}}	1	-	storage	storage_page == 'items';;storage_selecting && show_detail	storage	
 {{i18n:settings.storage.manage.empty}}	1	-	storage	storage_page == 'manage';;storage_ready && storage_media_empty	storage	
 {{i18n:settings.storage.manage.foot}}	1	-	storage	storage_page == 'main'	storage	
-{{i18n:settings.storage.manage.group}}	1	-	storage	storage_page == 'main'	storage	
 {{i18n:settings.storage.manage.large}}	1	-	storage	storage_page == 'manage';;storage_large_visible	storage	
 {{i18n:settings.storage.manage.media_total}}	1	-	storage	storage_page == 'manage';;storage_ready	storage	
 {{i18n:settings.storage.manage.nothing}}	1	-	storage	storage_page == 'items';;storage_list_empty	storage	

@@ -12994,6 +12994,10 @@ textarea:composing ~ .prompt-composer-label,
   pointer-events: none;
 }
 
+.shell-layer-compact .settings-mock .group-row--indent {
+  padding-left: 36dp;
+}
+
 .shell-layer-compact .settings-mock .group-foot {
   margin: 8dp 32dp 0 32dp;
 }

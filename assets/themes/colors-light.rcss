@@ -169,6 +169,10 @@ selection {
   background-color: #ff3b30;
 }
 
+.shell-layer-compact .group-row--danger .group-row-text {
+  color: #ff3b30;
+}
+
 .btn-danger-soft {
   background-color: #7878801f;
   color: #ff3b30;
