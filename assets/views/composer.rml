@@ -7,6 +7,7 @@
 </div>
 <div class="prompt-composer" keep-focus="" data-model="chat"
      data-class-prompt-composer--e2e="thread_is_private"
+     data-class-prompt-composer--picture-bubble="attachment_in_transcript"
      data-class-prompt-composer--disabled="composer_input_disabled">
   <!-- Status row above the input, only when something needs saying: an attachment uploading (the card below) /
        preparing / failed (Retry, Cancel), the AI picture, the AI answer's stop key. A picture being sent shows as a
@@ -66,7 +67,7 @@
   <!-- Desktop: the microphone / keyboard toggle leads the row (the --end copies are the phone's, components.rcss). -->
   <div class="prompt-composer-row">
     <button class="prompt-voice-toggle-btn prompt-voice-toggle-btn--start" type="button"
-            data-if="show_voice && !voice_mode && !voice_recording"
+            data-if="(show_voice || voice_entry_off) && !voice_mode && !voice_recording"
             data-event-click="voice_mode_toggle()" data-attrif-disabled="attach_disabled"
             title="{{i18n:chat.voice.mode_voice}}">
       <svg class="prompt-icon-classic" src="../icons/mic.svg" width="18" height="18" crop-to-content="true"></svg>
@@ -158,7 +159,7 @@
     <!-- Phones (WhatsApp, Kenneth 2026-11-04): the microphone ends the row and gives its place to Send once there is
          text; in voice mode the keyboard key takes it. Same buttons and handlers as the desktop's leading pair. -->
     <button class="prompt-voice-toggle-btn prompt-voice-toggle-btn--end prompt-mic-btn" type="button"
-            data-if="show_voice && !voice_mode && !voice_recording && draft == ''"
+            data-if="(show_voice || voice_entry_off) && !voice_mode && !voice_recording && draft == ''"
             data-event-click="voice_mode_toggle()" data-attrif-disabled="attach_disabled"
             title="{{i18n:chat.voice.mode_voice}}">
       <svg class="prompt-icon-v2" src="../icons/v2/mic.svg" width="20" height="20"></svg>
