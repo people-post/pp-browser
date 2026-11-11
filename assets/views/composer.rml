@@ -12,8 +12,9 @@
        preparing / failed (Retry, Cancel), the AI picture, the AI answer's stop key. A picture being sent shows as a
        bubble in the transcript instead (attachment_in_transcript): then no card and no chip here. -->
   <div class="prompt-composer-status"
-       data-if="!voice_recording && ((attachment_here && !attachment_in_transcript) || image_chip || loading)">
-    <div class="prompt-attachment-chip" data-if="attachment_here && !attachment_in_transcript && !attachment_uploading">
+       data-if="!voice_recording && ((attachment_here && !attachment_in_transcript && !picking_busy) || image_chip || loading)">
+    <div class="prompt-attachment-chip"
+         data-if="attachment_here && !attachment_in_transcript && !attachment_uploading && !picking_busy">
       <span class="prompt-attachment-chip-name">{{attachment_draft_name}}</span>
       <span class="prompt-attachment-chip-status">{{attachment_status}}</span>
       <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"

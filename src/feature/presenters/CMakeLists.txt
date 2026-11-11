@@ -3,6 +3,7 @@
 # Capabilities expose facades; another app brings its own presenters.
 pp_browser_add_feature_library(pp_feature_presenters
   SOURCES
+    AttachmentPicks.cpp
     AvatarCropFrame.cpp
     CallBackOffer.cpp
     CallConnectStory.cpp

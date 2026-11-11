@@ -535,6 +535,26 @@ TEST(PendingPictureSourcePinTest, VideoPosterFirstLatePosterDeletedVoiceWithoutB
   EXPECT_NE(body.find("OnUploadDetails(pending_uploads_.Upload(), prepared->filename"), std::string::npos);
 }
 
+// Step 3 wiring (source-order pins only): every picker result is checked against its pick serial before anything is
+// done with it; the picture choice, the lock and a refused pick end the pick; a refused pick says why.
+TEST(PendingPictureSourcePinTest, PickResultsCarryTheirSerialAndEveryEndClosesTheOverlay) {
+  const std::string source = Controller();
+  const std::string attach = Body(source, "void ChatController::OnAttachFile(");
+  size_t taken = 0;
+  for (size_t at = attach.find("if (!TakePickResult(serial, paths))"); at != std::string::npos;
+       at = attach.find("if (!TakePickResult(serial, paths))", at + 1)) {
+    ++taken;
+  }
+  EXPECT_EQ(taken, 2u) << "the file picker's and the library's results";
+  EXPECT_NE(Body(source, "void ChatController::OpenCameraCapture(").find("if (!TakePickResult(serial, paths))"),
+            std::string::npos);
+  EXPECT_NE(Body(source, "void ChatController::ShowPictureSendChoice(").find("picks_.EndCurrent();"),
+            std::string::npos);
+  const std::string start = Body(source, "void ChatController::StartAttachmentUpload(");
+  EXPECT_NE(start.find("UserFeedback::Fail(Tr(\"chat.attach.previous_still_sending\"))"), std::string::npos);
+  EXPECT_NE(Body(source, "void ChatController::Update(").find("picks_.EndCurrent(); // locked"), std::string::npos);
+}
+
 // Plan step 0 entry list: every way a row's id reaches the store or a request ignores the picture being sent.
 TEST(PendingPictureSourcePinTest, EveryRowEventIgnoresThePictureBeingSent) {
   const std::string source = Controller();

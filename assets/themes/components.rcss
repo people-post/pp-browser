@@ -12344,6 +12344,66 @@ input.checkbox {
   right: -22dp;
 }
 
+/* Between a pick and its send choice / bubble: a small translucent box in the middle of the transcript, the upload
+   card's spinner, "Preparing…" (a second line after 5 s) and Cancel. Same translucent black and white on both themes. */
+.chat-picking-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.chat-picking-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 140dp;
+  max-width: 220dp;
+  padding: 18dp 16dp 6dp 16dp;
+  border-radius: 16dp;
+  background-color: rgba(0, 0, 0, 170);
+  color: #ffffff;
+}
+
+.prompt-upload-cancel-spin.chat-picking-spin {
+  width: 22dp;
+  height: 22dp;
+  border-width: 3dp;
+  border-radius: 14dp;
+}
+
+.chat-picking-line {
+  margin: 10dp 0 0 0;
+  font-size: 14dp;
+  line-height: 18dp;
+  text-align: center;
+  color: #ffffff;
+}
+
+.chat-picking-line--slow {
+  margin-top: 4dp;
+  font-size: 12dp;
+  line-height: 16dp;
+  opacity: 0.85;
+}
+
+.chat-picking-cancel {
+  min-width: 88dp;
+  height: 44dp;
+  margin: 6dp 0 0 0;
+  padding: 0 12dp;
+  border: 0;
+  background-color: transparent;
+  color: #ffffff;
+  font-size: 15dp;
+  cursor: pointer;
+}
+
 /* The plus, the camera and the microphone while an attachment is preparing or uploading (attach_disabled): in place,
    greyed. A class bound to attach_disabled, not :disabled: this engine's <button> is a plain element, so the disabled
    attribute never sets the :disabled pseudo-class (the iPhone showed the microphone at full strength). */

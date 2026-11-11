@@ -158,7 +158,8 @@ protected:
     ASSERT_NE(context, nullptr);
     ASSERT_TRUE(DataModelHost::Instance().Register(context, "chat", [this](ui::DataModelConstructor& ctor) {
       BindChatScreenState(ctor, state);
-      for (const char* name : {"cancel_attachment_send", "retry_attachment_send", "discard_attachment_send"}) {
+      for (const char* name :
+           {"cancel_attachment_send", "retry_attachment_send", "discard_attachment_send", "cancel_picking"}) {
         ctor.BindEventCallback(name, [](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {});
       }
     }));
@@ -508,6 +509,31 @@ TEST_F(PendingPictureLayoutTest, AVideoBubbleHasTheSentVideosSizeAndKeepsItWhenI
   Show({Row("pending-upload-2", PendingUploadRml(bare))});
   EXPECT_NEAR(Size(First("chat-attachment-video-frame--bare")).x, sent_bare.x, 0.5f);
   EXPECT_NEAR(Size(First("chat-attachment-video-frame--bare")).y, sent_bare.y, 0.5f);
+}
+
+// Step 3: the centred "Preparing…" overlay: one line, a second after 5 s, and Cancel.
+TEST_F(PendingPictureLayoutTest, ThePreparingOverlayHasItsLinesAndCancel) {
+  const auto shown = [this](const char* cls) {
+    ui::Element* element = First(cls);
+    return element && element->IsVisible(true);
+  };
+  Show({});
+  EXPECT_FALSE(shown("chat-picking-overlay"));
+  state.picking_busy = true;
+  DataModelHost::Instance().Dirty("chat", "picking_busy");
+  context->Update();
+  EXPECT_TRUE(shown("chat-picking-overlay"));
+  EXPECT_TRUE(shown("chat-picking-spin"));
+  EXPECT_FALSE(shown("chat-picking-line--slow"));
+  ui::Element* cancel = First("chat-picking-cancel");
+  ASSERT_NE(cancel, nullptr);
+  EXPECT_NE(std::string(cancel->GetAttribute<ui::String>("data-event-click", "").c_str()).find("cancel_picking"),
+            std::string::npos);
+  EXPECT_GE(Size(cancel).y, 44.f);
+  state.picking_busy_slow = true;
+  DataModelHost::Instance().Dirty("chat", "picking_busy_slow");
+  context->Update();
+  EXPECT_TRUE(shown("chat-picking-line--slow"));
 }
 
 } // namespace

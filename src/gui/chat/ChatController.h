@@ -17,6 +17,7 @@
 #include "gui/chat/CameraCaptureFlow.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
 #include "gui/chat/PendingUploadRows.h"
+#include "feature/presenters/AttachmentPicks.h"
 #include "gui/chat/PhotoPreview.h"
 #include "gui/chat/VoiceComposer.h"
 #include "gui/chat/VoicePlayback.h"
@@ -334,7 +335,8 @@ private:
   /** The camera icon: iOS opens the system camera at once; Android first asks "Take a photo / Record a video". */
   void OnAttachCapture(ui::Event* ev = nullptr);
   void OpenCameraCapture(CameraCaptureKind kind);
-  CaptureFlowPorts MakeCaptureFlowPorts();
+  /** `pick_serial`: the camera's pick (a video sent from it carries it on until its bubble). */
+  CaptureFlowPorts MakeCaptureFlowPorts(uint64_t pick_serial);
   /** Recompute `show_capture` (call, upload, chat kind); dirty only on a change. */
   void RefreshShowCapture();
   /** After a picture is picked: "Send" (shrunk), "Send original", Cancel. */
@@ -355,7 +357,18 @@ private:
    */
   void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool voice_file = false,
                              const std::string& voice_thread_id = {},
-                             std::optional<PendingUploadKind> bubble = std::nullopt);
+                             std::optional<PendingUploadKind> bubble = std::nullopt, uint64_t pick_serial = 0);
+  // The wait between a pick and its choice / bubble (DEV/PLAN-attachment-bubbles-multi-pick.md step 3): a pick serial
+  // per picker opening, the centred overlay while it is prepared, its late results dropped once it is over.
+  uint64_t ArmPick();
+  void ShowPick(uint64_t serial);
+  void EndPick(uint64_t serial);
+  /** A late result of pick `serial`: true when it is current; otherwise its files are released. */
+  bool TakePickResult(uint64_t serial, const std::vector<std::string>& files);
+  /** chat_.picking_busy / picking_busy_slow from the pick and the open chat (PickOverlayOf). */
+  void RefreshPickOverlay();
+  /** The overlay's Cancel: the pick ends; a video waiting for its poster stops sending. */
+  void OnCancelPicking();
   /**
    * The picture being sent shows as a bubble at the end of its chat (`picture` above; DEV/PLAN-picture-upload-bubble.md):
    * an event's result is taken, and the transcript drawn again when the row changed and its chat is open (`redraw`:
@@ -446,6 +459,7 @@ private:
   /** The picture being sent, as a temporary bubble at the end of its chat; one at a time. */
   PendingUploadRows pending_uploads_;
   uint64_t pending_upload_serial_ = 0;
+  AttachmentPicks picks_;
   /** The chat whose video bubble waits for its poster (the card stays hidden there); empty when none. */
   std::string video_bubble_thread_;
   /** Set by Cancel on the chip while a send is in flight; a new one for each send. */

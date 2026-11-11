@@ -89,6 +89,9 @@ struct ChatScreenState {
   bool attachment_here = false;
   /** The picture being sent shows as a bubble in the open chat's transcript: the upload card and chip stay hidden. */
   bool attachment_in_transcript = false;
+  /** The centred "Preparing…" overlay between a pick and its choice / bubble (AttachmentPicks), and its second line. */
+  bool picking_busy = false;
+  bool picking_busy_slow = false;
   /** Voice mode (WeChat style): a "hold to talk" bar replaces the text input. Per app session; off whenever show_voice is. */
   bool voice_mode = false;
   /** Desktop: a click starts, and Send / Cancel buttons end it. Phones: hold, release sends, slide up cancels. */

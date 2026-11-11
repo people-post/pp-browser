@@ -96,8 +96,10 @@ protected:
                             "composer_input_disabled",
                             "attach_disabled",
                             "voice_entry_off",
+                            "picking_busy",
                             "attachment_draft_name",
                             "attachment_status",
+                            "attachment_preparing",
                             "attachment_progress_width",
                             "attachment_thumb",
                             "attachment_type_label",
@@ -453,6 +455,19 @@ TEST_F(ComposerVoiceMarkupTest, APictureBubbleKeepsTheTextInputOnAndTheAttachEnt
   EXPECT_TRUE(document->GetElementById("draft-input")->HasAttribute("disabled"));
   EXPECT_TRUE(disabled("prompt-emoji-btn"));
   EXPECT_TRUE(disabled("prompt-attach-btn"));
+}
+
+// While the centred "Preparing…" overlay shows, the small "Sending…" chip above the input does not.
+TEST_F(ComposerVoiceMarkupTest, ThePreparingOverlayHidesTheSendingChip) {
+  state.attachment_here = true;
+  state.attachment_preparing = true;
+  state.attachment_status = "Sending…";
+  Apply();
+  EXPECT_EQ(Shown("prompt-attachment-chip"), 1) << "without the overlay the chip says it";
+  state.picking_busy = true;
+  Apply();
+  EXPECT_EQ(Shown("prompt-attachment-chip"), 0);
+  EXPECT_EQ(Shown("prompt-composer-status"), 0);
 }
 
 // Files, voice, video — and a failed picture after a restart (no bubble then) — keep the card and the chip.
@@ -839,8 +854,9 @@ TEST(ComposerCaptureSourceTest, StartAttachmentUploadReleasesTheFileOnEveryExit)
   };
   EXPECT_EQ(count("release_pick_(path);"), 3u) << "two early returns and the worker's own release";
   // The early returns release before they return.
-  EXPECT_NE(body.find("chat_.attachment_preparing) {\n    release_pick_(path);\n    return;"), std::string::npos);
-  EXPECT_NE(body.find("thread_id.empty()) {\n    release_pick_(path);\n    return;"), std::string::npos);
+  EXPECT_NE(body.find("!picks_.Accept(pick_serial, busy)) {\n    release_pick_(path);"), std::string::npos);
+  EXPECT_NE(body.find("thread_id.empty()) {\n    release_pick_(path);\n    EndPick(pick_serial);\n    return;"),
+            std::string::npos);
 }
 
 } // namespace
