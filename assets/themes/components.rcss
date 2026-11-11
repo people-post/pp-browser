@@ -12969,25 +12969,52 @@ textarea:composing ~ .prompt-composer-label,
   text-overflow: ellipsis;
 }
 
-/* The phone Me home follows the agreed mockup (logs/mockups/settings-reorg-1110.html, CSS px = dp): text-only rows of
-   at least 52dp, cards with 16dp sides and 12dp corners, 24dp between groups, an 88dp profile card, a centred version
-   line at the end. Scoped to .me-home so no other settings page changes. */
+/* The phone Me home and the pages rebuilt from the agreed mockup (logs/mockups/settings-reorg-1110.html, CSS px = dp)
+   share one set of metrics: text rows of at least 52dp, cards with 16dp sides and 12dp corners, 24dp between groups,
+   13/18 helper lines 8dp under their card. .me-home is the home's phone block; .settings-mock is the root of a page
+   (通知 / 外观 / 存储 / 我的资料) so no other settings page changes. */
+.shell-layer-compact .me-home .group-card,
+.shell-layer-compact .settings-mock .group-card {
+  margin: 24dp 16dp 0 16dp;
+  border-radius: 12dp;
+}
+
+.shell-layer-compact .settings-mock .group-card:first-child {
+  margin-top: 16dp;
+}
+
+.shell-layer-compact .settings-mock .group-row-sub {
+  white-space: normal;
+  overflow: visible;
+  margin-top: 2dp;
+}
+
+.shell-layer-compact .settings-mock .group-foot {
+  margin: 8dp 32dp 0 32dp;
+}
+
+.shell-layer-compact .settings-mock .group-head {
+  margin: 24dp 32dp 8dp 32dp;
+}
+
+.shell-layer-compact .settings-mock .group-head + .group-card {
+  margin-top: 0;
+}
+
+.shell-layer-compact .me-home .group-row,
+.shell-layer-compact .me-home .group-row-body,
+.shell-layer-compact .settings-mock .group-row,
+.shell-layer-compact .settings-mock .group-row-body {
+  min-height: 52dp;
+}
+
 /* The engine keeps 16dp for an (undrawn) scrollbar once the page overflows; Me scrolls by touch, so the cards keep
    their 16dp margins on both sides. */
 .shell-layer-compact .settings-list-view scrollbarvertical {
   width: 0dp;
 }
 
-.shell-layer-compact .me-home .group-card {
-  margin: 24dp 16dp 0 16dp;
-  border-radius: 12dp;
-}
-
-.shell-layer-compact .me-home .group-row,
-.shell-layer-compact .me-home .group-row-body {
-  min-height: 52dp;
-}
-
+/* The profile card and the version line of the home. */
 .shell-layer-compact .me-home .me-card-row {
   min-height: 88dp;
   padding-right: 0;

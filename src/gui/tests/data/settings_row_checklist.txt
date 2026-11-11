@@ -101,6 +101,7 @@ data-event-click="toggle_show_notification_preview()"	1	profile	notifications	-	
 data-event-click="toggle_show_notifications()"	1	profile	notifications	-	profile	
 data-event-click="toggle_stay_connected()"	1	profile	notifications	stay_connected_available	profile	
 {{i18n:settings.notifications.banner_tip.action}}	1	-	notifications	call_banner_tip_available	profile	
+{{i18n:settings.notifications.banner_tip.title}}	1	-	notifications	call_banner_tip_available	profile	
 {{i18n:settings.notifications.banner_tip}}	1	-	notifications	call_banner_tip_available	profile	
 {{i18n:settings.notifications.help}}	1	-	notifications	-	profile	
 {{i18n:settings.notifications.preview}}	1	-	notifications	-	profile	

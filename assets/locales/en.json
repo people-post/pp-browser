@@ -175,6 +175,7 @@
     "notification.hidden_body": "New message",
     "settings.notifications.help": "Off hides notifications. Calls still ring.",
     "settings.notifications.banner_tip": "Call ringtone stops after a few seconds? Set PP's notification \"Banner Style\" to \"Persistent\" and it rings in full.",
+    "settings.notifications.banner_tip.title": "Call ringtone tip",
     "settings.notifications.banner_tip.action": "Open Settings",
     "settings.stay_connected": "Stay connected in the background",
     "settings.stay_connected.help": "Get calls in the background. Uses more battery.",

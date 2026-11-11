@@ -93,10 +93,10 @@ TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheAccountId) {
   EXPECT_NE(home.find("<p class=\"group-foot me-home-ver\">{{app_name}} {{app_version}}</p>"), std::string::npos);
   EXPECT_EQ(home.find("tap_version"), std::string::npos);
   const std::string css = ReadAsset("themes/components.rcss");
-  EXPECT_NE(css.find(".shell-layer-compact .me-home .group-card {\n  margin: 24dp 16dp 0 16dp;\n  border-radius: 12dp;"),
+  EXPECT_NE(css.find(".shell-layer-compact .me-home .group-card,\n.shell-layer-compact .settings-mock .group-card {\n"
+                     "  margin: 24dp 16dp 0 16dp;\n  border-radius: 12dp;"),
             std::string::npos);
-  EXPECT_NE(css.find(".shell-layer-compact .me-home .group-row,\n.shell-layer-compact .me-home .group-row-body {\n  min-height: 52dp;"),
-            std::string::npos);
+  EXPECT_NE(css.find(".shell-layer-compact .settings-mock .group-row-body {\n  min-height: 52dp;"), std::string::npos);
 }
 
 TEST(SettingsTitlesTest, HomeTitleIsMe) {
