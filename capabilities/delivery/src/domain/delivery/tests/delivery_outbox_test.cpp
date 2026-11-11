@@ -4,6 +4,8 @@
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "common/runtime/AppRuntime.h"
+#include "common/chat/MessagingLimits.h"
+#include "foundation/error/AppError.h"
 #include "lib/net/OrgBackendClients.h"
 #include "common/Utilities.h"
 
@@ -14,24 +16,40 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <thread>
 #include <vector>
 
 namespace pbr {
 namespace {
 
-/** A relay that refuses the first `failures` sends. */
+/**
+ * A relay that refuses the first `failures` sends (with `failure`: by default one that is retried), and every send to
+ * a recipient in `down` (RecipientDown).
+ */
 class FakeRelay final : public IRelayClient {
 public:
-  explicit FakeRelay(int failures) : failures_(failures) {}
+  explicit FakeRelay(int failures, Error failure = Error("relay unreachable"))
+      : failure_(std::move(failure)), failures_(failures) {}
   Roe<void> Send(const RelayEnvelope& envelope) override {
     std::lock_guard lock(mu_);
     sent.push_back(envelope.message_id);
+    if (envelope.recipient_contact_id && down_.count(*envelope.recipient_contact_id) != 0) {
+      return failure_;
+    }
     if (failures_ > 0) {
       --failures_;
-      return Error("relay unreachable");
+      return failure_;
     }
     return {};
+  }
+  void RecipientDown(const std::string& recipient, const bool down) {
+    std::lock_guard lock(mu_);
+    if (down) {
+      down_.insert(recipient);
+    } else {
+      down_.erase(recipient);
+    }
   }
   size_t SentCount() {
     std::lock_guard lock(mu_);
@@ -46,7 +64,9 @@ public:
 
 private:
   std::mutex mu_;
+  Error failure_;
   int failures_;
+  std::set<std::string> down_;
 };
 
 /** A direct-chat transport with a live link (or not) to the peer; records what it carried. */
@@ -255,6 +275,173 @@ TEST_F(DeliveryOutboxTest, NoRouteAndNoDirectTransportFailsAsNoAddress) {
   EXPECT_FALSE(Outcomes()[0].ok);
   EXPECT_EQ(Outcomes()[0].failure, SendFailure::NoAddress);
   EXPECT_TRUE(relay.sent.empty());
+}
+
+// #210: while a row's send is under way (first try or a queued retry) the outbox says since when, so the chat shows a
+// clock; once its last request ends — however it ends — it says nothing, so the chat shows the red mark or nothing.
+// What is reported and when it is retried stays as above.
+
+TEST_F(DeliveryOutboxTest, AFailedFirstSendStaysActiveUntilItsRetriesAreUsedUp) {
+  FakeRelay relay(100);
+  auto outbox = MakeOutbox(relay);
+  const int64_t before = util::NowUnixMs();
+  outbox->Send(ToRelay("t1", "m1"));
+  const std::optional<int64_t> started = outbox->SendStartedMs("m1");
+  ASSERT_TRUE(started) << "active from the Send call itself";
+  EXPECT_GE(*started, before);
+  EXPECT_LE(*started, util::NowUnixMs());
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 1u);
+  EXPECT_FALSE(Outcomes()[0].ok);
+  EXPECT_EQ(outbox->SendStartedMs("m1"), started) << "queued for a retry: still under way";
+  for (int retry = 1; retry < kMaxOutboxRetryAttempts; ++retry) {
+    outbox->Retry();
+    Drain();
+    EXPECT_EQ(outbox->SendStartedMs("m1"), started) << "retry " << retry << ": the first start stands";
+  }
+  EXPECT_EQ(Outcomes().size(), 1u) << "a retry queued again reports nothing (as before)";
+  outbox->Retry();
+  Drain();
+  EXPECT_FALSE(outbox->SendStartedMs("m1")) << "the retries are used up";
+  ASSERT_EQ(Outcomes().size(), 2u);
+  EXPECT_FALSE(Outcomes()[1].ok);
+  EXPECT_EQ(relay.SentCount(), static_cast<size_t>(1 + kMaxOutboxRetryAttempts));
+  outbox->Retry();
+  Drain();
+  EXPECT_EQ(relay.SentCount(), static_cast<size_t>(1 + kMaxOutboxRetryAttempts)) << "nothing left to retry";
+}
+
+TEST_F(DeliveryOutboxTest, ASuccessfulRetryEndsTheActiveSend) {
+  FakeRelay relay(1);
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(ToRelay("t1", "m1"));
+  Drain();
+  EXPECT_TRUE(outbox->SendStartedMs("m1"));
+  outbox->Retry();
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 2u);
+  EXPECT_TRUE(Outcomes()[1].ok);
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
+}
+
+TEST_F(DeliveryOutboxTest, ARefusedSendEndsItAtOnce) {
+  FakeRelay relay(1, AppError::Network(Err::Network::HttpRejected, "400"));
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(ToRelay("t1", "m1"));
+  Drain();
+  ASSERT_EQ(Outcomes().size(), 1u);
+  EXPECT_FALSE(Outcomes()[0].ok);
+  EXPECT_FALSE(outbox->SendStartedMs("m1")) << "not queued: nothing is under way";
+  outbox->Retry();
+  Drain();
+  EXPECT_EQ(relay.SentCount(), 1u);
+}
+
+TEST_F(DeliveryOutboxTest, ASendThatEndsAtOnceLeavesNothingActive) {
+  FakeRelay relay(0);
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(ToRelay("t1", "delivered"));
+  DeliveryRequest no_route = ToRelay("t1", "no-route");
+  no_route.relay_route.reset();
+  outbox->Send(std::move(no_route));
+  Drain();
+  EXPECT_FALSE(outbox->SendStartedMs("delivered"));
+  EXPECT_FALSE(outbox->SendStartedMs("no-route"));
+
+  DeliveryOutbox no_relay([]() -> IDirectMessageClient* { return nullptr; });
+  no_relay.Send(ToRelay("t1", "no-relay"));
+  Drain();
+  EXPECT_FALSE(no_relay.SendStartedMs("no-relay"));
+}
+
+TEST_F(DeliveryOutboxTest, ADirectDeliveryEndsTheActiveSend) {
+  FakeRelay relay(0);
+  FakeDirect direct(false);
+  DeliveryOutbox outbox([&direct]() -> IDirectMessageClient* { return &direct; });
+  outbox.SetRelayClient(&relay);
+  DeliveryRequest request = ToRelay("t1", "m1");
+  request.amp_peer_key = "account:bob";
+  outbox.Send(std::move(request));
+  ASSERT_TRUE(
+      WaitFor([&] { return direct.Sent().size() == 1u && !outbox.SendStartedMs("m1"); }, std::chrono::seconds(5)));
+  EXPECT_TRUE(relay.sent.empty()) << "it went over the link";
+}
+
+TEST_F(DeliveryOutboxTest, CancelAndPurgeEndTheActiveSend) {
+  FakeRelay relay(2);
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(ToRelay("t1", "m1"));
+  outbox->Send(ToRelay("t2", "m2"));
+  Drain();
+  EXPECT_TRUE(outbox->SendStartedMs("m1"));
+  EXPECT_TRUE(outbox->SendStartedMs("m2"));
+  outbox->Cancel("m1");
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
+  EXPECT_TRUE(outbox->SendStartedMs("m2"));
+  outbox->PurgeThread("t2");
+  EXPECT_FALSE(outbox->SendStartedMs("m2"));
+}
+
+TEST_F(DeliveryOutboxTest, APausedThreadsRetriesEndTheActiveSend) {
+  // Dropped when the retry starts.
+  {
+    FakeRelay relay(1);
+    auto outbox = MakeOutbox(relay);
+    outbox->SetThreadPaused([](const std::string& thread_id) { return thread_id == "t1"; });
+    outbox->Send(ToRelay("t1", "m1"));
+    Drain();
+    EXPECT_TRUE(outbox->SendStartedMs("m1"));
+    outbox->Retry();
+    Drain();
+    EXPECT_FALSE(outbox->SendStartedMs("m1"));
+  }
+  // Paused while its retry was on the way (the worker drops it).
+  {
+    FakeRelay relay(1);
+    auto outbox = MakeOutbox(relay);
+    auto asked = std::make_shared<std::atomic<int>>(0);
+    outbox->SetThreadPaused([asked](const std::string&) { return asked->fetch_add(1) > 0; });
+    outbox->Send(ToRelay("t1", "m1"));
+    Drain();
+    EXPECT_TRUE(outbox->SendStartedMs("m1"));
+    outbox->Retry();
+    Drain();
+    EXPECT_GE(asked->load(), 2) << "asked when the retry started and again on the worker";
+    EXPECT_FALSE(outbox->SendStartedMs("m1"));
+    EXPECT_EQ(relay.SentCount(), 1u);
+  }
+}
+
+TEST_F(DeliveryOutboxTest, AGroupMessageIsActiveUntilItsLastMemberRequestEnds) {
+  FakeRelay relay(0);
+  relay.RecipientDown("carol", true);
+  auto outbox = MakeOutbox(relay);
+  auto member = [](const std::string& who) {
+    DeliveryRequest request = ToRelay("group-thread", "m1");
+    request.group_member = "account:" + who;
+    request.envelope.recipient_contact_id = who;
+    return request;
+  };
+  outbox->Send(member("bob"));
+  const std::optional<int64_t> started = outbox->SendStartedMs("m1");
+  ASSERT_TRUE(started);
+  outbox->Send(member("carol"));
+  Drain();
+  EXPECT_EQ(outbox->SendStartedMs("m1"), started) << "bob's copy is out, carol's is queued: still under way";
+  relay.RecipientDown("carol", false);
+  outbox->Retry();
+  Drain();
+  EXPECT_FALSE(outbox->SendStartedMs("m1")) << "the last member's request ended";
+  ASSERT_EQ(Outcomes().size(), 3u);
+}
+
+TEST_F(DeliveryOutboxTest, TheControlLaneIsNotTracked) {
+  FakeRelay relay(0);
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(Control("ctl-1"));
+  EXPECT_FALSE(outbox->SendStartedMs("ctl-1"));
+  ASSERT_TRUE(WaitFor([&] { return Outcomes().size() == 1u; }, std::chrono::seconds(5)));
+  EXPECT_FALSE(outbox->SendStartedMs("ctl-1"));
 }
 
 } // namespace

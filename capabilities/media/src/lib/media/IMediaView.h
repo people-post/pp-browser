@@ -107,6 +107,23 @@ public:
   // --- The audio route ---
   /** Reopen capture / playback on the capture worker (speaker route change); no-op when not capturing. */
   virtual void RequestAudioDeviceReopen() = 0;
+  /** Where a RequestAudioRouteChange stands. */
+  enum class AudioRouteChange { None, Queued, Running };
+  /**
+   * Change the OS audio route by running `apply`, around the capture devices: the engine closes the mic, runs
+   * `apply`, then reopens — on Android the OS otherwise disconnects the open recording stream and SDL never gives
+   * the mic back. Only the latest request is kept; stopping the session drops one not yet run. Runs `apply` at once
+   * when nothing captures. Default: run it now and ask for a reopen (the order before this existed).
+   */
+  virtual void RequestAudioRouteChange(std::function<void()> apply) {
+    if (apply) {
+      apply();
+    }
+    RequestAudioDeviceReopen();
+  }
+  virtual AudioRouteChange AudioRouteChangeState() const { return AudioRouteChange::None; }
+  /** The capture worker is reopening or rebuilding the audio devices right now (a queued route change waits). */
+  virtual bool AudioDevicesReopening() const { return false; }
 };
 
 } // namespace pbr

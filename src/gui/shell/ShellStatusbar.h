@@ -33,6 +33,8 @@ public:
   void ClosePopover();
   void TogglePopover();
   void RefreshCluster();
+  /** The popover offers "Open network settings" only while Advanced settings are shown. */
+  void SetAdvanced(bool advanced);
 
 private:
   void DirtyPopover();

@@ -3,12 +3,14 @@
 pp_browser_add_lib_library(pp_lib_media
   SOURCES
     AudioFocusInterruption.cpp
+    AudioResetHandoff.cpp
     AudioSessionHolds.cpp
     AudioSessionInterruptions.cpp
     DecodeStallPolicy.h
     GuardedVideoCodec.cpp
     MediaDeviceArbiter.cpp
     MediaEngine.cpp
+    MicEndpoints.cpp
     NoiseSuppressor.cpp
     SdlMediaDeviceBackend.cpp
     SyntheticVideo.cpp
@@ -35,6 +37,7 @@ if(WIN32)
     AudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
     SdlAudioBootstrap_Default.cpp
+    SdlAudioReset_Default.cpp
     MicPermission_Default.cpp
     VoiceProcessingIo_Stub.cpp)
   target_link_libraries(pp_lib_media PRIVATE mfplat mf mfuuid)
@@ -53,6 +56,7 @@ elseif(APPLE)
       CameraCandidates_Default.cpp
       CameraCaptureOrientation_Ios.mm
       SdlAudioBootstrap_Default.cpp
+      SdlAudioReset_Default.cpp
       VoiceProcessingIo_Apple.cpp)
     target_link_libraries(pp_lib_media PRIVATE "-framework AVFoundation" "-framework UIKit" "-framework AudioToolbox" "-framework CoreMotion")
   else()
@@ -61,6 +65,7 @@ elseif(APPLE)
       CameraCandidates_Darwin.mm
       CameraCaptureOrientation_Default.cpp
       SdlAudioBootstrap_Default.cpp
+      SdlAudioReset_Default.cpp
         VoiceProcessingIo_Apple.cpp)
     target_link_libraries(pp_lib_media PRIVATE "-framework AudioToolbox" "-framework CoreAudio" "-framework AVFoundation")
   endif()
@@ -74,6 +79,7 @@ elseif(ANDROID)
     AudioSession_Android.cpp
     CameraCaptureOrientation_Android.cpp
     SdlAudioBootstrap_Default.cpp
+    SdlAudioReset_Android.cpp
     MicPermission_Android.cpp
     VoiceProcessingIo_Stub.cpp)
   target_link_libraries(pp_lib_media PRIVATE mediandk camera2ndk)
@@ -87,6 +93,7 @@ else()
     AudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
     SdlAudioBootstrap_Linux.cpp
+    SdlAudioReset_Default.cpp
     MicPermission_Default.cpp
     VoiceProcessingIo_Stub.cpp)
   # Linux VA-API (libva + DRM render node) — soft dep; stub builds without it.

@@ -23,6 +23,29 @@ enum class MediaDeviceOp : uint8_t { Open, Close, Reopen };
 
 const char* MediaDeviceKindName(MediaDeviceKind kind);
 
+/** How a rebuild of the audio stack went (IMediaDeviceBackend::ResetAudio, MediaDeviceArbiter::ResetAudio). */
+enum class AudioResetResult : uint8_t {
+  /** It ran: the next open gets a fresh device. */
+  Ok,
+  /** Not run: someone else holds an audio device (or a stream is still open), or the devices are stuck. */
+  Busy,
+  /** Not run: the thread it must run on did not get to it in time (it never will). */
+  Timeout,
+  /**
+   * Not finished in time: the rebuild started and is still running (the audio stack may be mid-rebuild), or its task
+   * never started because it is queued behind another stuck audio device task (the error text says which; the
+   * `device.audio_reset` metric's still_running=1 covers both). Either way it may still run: nothing reopens now (the
+   * audio devices count as not responding until it returns), and no rebuild is tried again in this call.
+   */
+  Stuck,
+  /** Not run: it could not be scheduled. */
+  Failed,
+  /** This platform has nothing to rebuild. */
+  Unsupported,
+};
+
+const char* AudioResetResultName(AudioResetResult result);
+
 /** Signed 16-bit PCM at `freq` Hz, `channels` interleaved. */
 struct AudioDeviceFormat {
   int freq = 48000;
@@ -149,6 +172,20 @@ public:
   }
   /** Pause between closing and reopening `kind` (Android OEM route settle). */
   virtual std::chrono::milliseconds ReopenSettle(MediaDeviceKind /*kind*/) const { return {}; }
+  /** ResetAudio can do something here (Android's SDL backend only). */
+  virtual bool SupportsAudioReset() const { return false; }
+  /**
+   * Rebuild the audio stack so the next open gets a fresh default device, waiting at most `budget`. Device thread
+   * only, and only with no audio endpoint open. Android: when the OS disconnects the recording stream first, SDL
+   * marks its only default recording device dead and every later open of it is a silent no-op until SDL audio is
+   * initialised again.
+   */
+  virtual AudioResetResult ResetAudio(std::chrono::milliseconds /*budget*/, std::string* error) {
+    if (error) {
+      *error = "unsupported";
+    }
+    return AudioResetResult::Unsupported;
+  }
 };
 
 /** Backend with no devices: audio leases without endpoints, cameras refused (tests, headless tools). */
@@ -216,6 +253,12 @@ public:
    * half refuses (its unit serves both halves): release the pair and acquire it again.
    */
   Roe<void> Reopen();
+  /**
+   * Close the endpoint on the device thread and wait until it is closed (at most the close budget); the lease is
+   * kept and a later Reopen opens again. Android: the mic goes before a route change, so the OS has no recording
+   * stream to disconnect. A voice-duplex half refuses, like Reopen.
+   */
+  Roe<void> CloseEndpoint();
   /** Half of a voice-processing duplex (AcquireVoiceDuplex). */
   bool IsVoiceDuplex() const;
   /** Run `fn` on the endpoint's voice processing, if any, under the I/O lock; false when none. */
@@ -325,6 +368,21 @@ public:
   /** An acquire of `kind` would not be refused now: responsive, and free when exclusive. */
   bool CanAcquire(MediaDeviceKind kind) const;
   MediaDeviceHealth Health(MediaDeviceKind kind) const;
+
+  /**
+   * Wait until the audio device thread has run everything queued before this call (released leases' closes), at
+   * most `budget`; false when it ran out. Android: the OS route goes back to normal at a call's end only after its
+   * mic is closed.
+   */
+  bool DrainAudio(std::chrono::milliseconds budget);
+  /** The backend can rebuild its audio stack (ResetAudio does something). */
+  bool CanResetAudio() const;
+  /**
+   * Rebuild the backend's audio stack, as a task on the audio device thread: every open queued after it waits for
+   * it. Refused (Busy) while any mic or speaker is held — the caller releases its own leases first. Blocks the
+   * caller at most `budget` plus a margin; never on the UI thread.
+   */
+  AudioResetResult ResetAudio(std::chrono::milliseconds budget, std::string* error);
 
   /**
    * Run queued closes (released leases) and stop the device threads; wait at most `budget`.

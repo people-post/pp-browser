@@ -90,6 +90,13 @@ else()
   list(APPEND _pp_platform_core_sources os/OsAppState_Default.cpp)
 endif()
 
+# Developer builds' switches set from a computer (OsDebugFlag): Android system properties; false elsewhere.
+if(PP_BROWSER_IS_ANDROID)
+  list(APPEND _pp_platform_core_sources os/OsDebugFlag_Android.cpp)
+else()
+  list(APPEND _pp_platform_core_sources os/OsDebugFlag_Default.cpp)
+endif()
+
 # Which face / finger sensor the biometric unlock switch names (at-rest A014): iOS LocalAuthentication; else None.
 if(PP_BROWSER_IS_IOS)
   list(APPEND _pp_platform_core_sources os/OsBiometry_Ios.mm)
@@ -175,7 +182,7 @@ else()
   else()
     # A file:// address is refused by Android 7+ (FileUriExposedException): a FileProvider address instead.
     list(APPEND _pp_platform_gui_sources CameraCapture_Android.cpp PlatformOpenFile_Android.cpp
-         PlatformNotificationSettings_Default.cpp PlatformAppBadge_Android.cpp)
+         PlatformNotificationSettings_Android.cpp PlatformAppBadge_Android.cpp)
   endif()
 endif()
 

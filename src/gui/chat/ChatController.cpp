@@ -2733,7 +2733,7 @@ void ChatController::ShowAttachChoice(std::function<void()> photo, std::function
 
 std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::string& thread_id,
                                                                 std::optional<int64_t> oldest_inclusive,
-                                                                std::optional<int64_t> newest_inclusive) const {
+                                                                std::optional<int64_t> newest_inclusive) {
   if (!facade_) {
     return {};
   }
@@ -2743,11 +2743,98 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   facts.voice_max_seconds = facade_->CurrentAttachmentLimits().voice_max_seconds;
   facts.voice_state = [this](const std::string& message_id) { return voice_playback_->State(message_id); };
   facts.audio_files_play = voice_playback_->PlaysFiles();
+  const int64_t now_ms = util::NowUnixMs();
+  std::optional<int64_t> next_mark_change;
+  std::vector<std::string> red_ids;
+  const std::optional<std::vector<int64_t>> group_others = presenter_.GroupOthersJoinedAt(thread_id);
+  facts.send_mark = [this, now_ms, &next_mark_change, &group_others, &red_ids](const ThreadMessage& message) {
+    const SendMark mark = presenter_.SendMarkOf(message, now_ms, next_mark_change, group_others);
+    if (mark == SendMark::Failed) {
+      red_ids.push_back(message.id);
+    }
+    return mark;
+  };
   std::vector<MessageDisplayRow> rows =
       RenderTranscript(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
                        presenter_.MentionRosterOf(thread_id));
   agent_.DecorateAiImageRows(rows, thread_id);
+  ArmSendMarkRedraw(next_mark_change);
+  TellResentTurnedRed(thread_id, red_ids);
   return rows;
+}
+
+void ChatController::TellResentTurnedRed(const std::string& thread_id, const std::vector<std::string>& red_ids) {
+  // Hooked to the drawing that turns a clock red (a final failure, or ArmSendMarkRedraw at the clock's limit), so a
+  // message sent again by a tap and red again says why once — in its own chat, while it is looked at; else it waits.
+  const std::optional<std::string> resent = presenter_.ResentTurnedRed(thread_id, red_ids);
+  if (!resent || !ShowsResentFailurePill(thread_id, ActiveThreadId(), AppLifecycle::IsUserAttentive())) {
+    return;
+  }
+  presenter_.ForgetResent(*resent);
+  ShowToast(SendFailureReasonText(presenter_.SendFailureReasonOf(thread_id, *resent)));
+}
+
+void ChatController::ArmSendMarkRedraw(const std::optional<int64_t> at_ms) {
+  if (!at_ms || (send_mark_timer_ != 0 && send_mark_redraw_at_ <= *at_ms)) {
+    return; // nothing to wait for, or a redraw at least as soon is armed
+  }
+  if (send_mark_timer_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(send_mark_timer_);
+  }
+  const uint64_t turn = ++send_mark_redraw_turn_;
+  send_mark_redraw_at_ = *at_ms;
+  const auto delay = std::chrono::milliseconds(std::max<int64_t>(0, *at_ms - util::NowUnixMs()));
+  send_mark_timer_ =
+      AppRuntime::ScheduleCoordinatorOneShot(delay, [this, turn, alive = std::weak_ptr<int>(send_mark_alive_)]() {
+        AppRuntime::PostUI([this, turn, alive]() {
+          if (!alive.lock() || turn != send_mark_redraw_turn_) {
+            return;
+          }
+          send_mark_timer_ = 0;
+          send_mark_redraw_at_ = 0;
+          RedrawSendMarks();
+        });
+      });
+}
+
+void ChatController::RedrawSendMarks() {
+  if (!messaging_ready_) {
+    return;
+  }
+  SyncDisplayFromThread();
+  DirtyChat();
+  NotifySurfaceChanged();
+}
+
+void ChatController::OnSendMarkTapped(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  const SendMarkTap tap = presenter_.TapSendMark(thread_id, message_id);
+  switch (tap.kind) {
+    case SendMarkTap::Kind::Nothing:
+      return;
+    case SendMarkTap::Kind::StillTrying:
+      ShowToast(Tr("chat.send.still_trying"));
+      return;
+    case SendMarkTap::Kind::ReasonOnly:
+      ShowToast(SendFailureReasonText(presenter_.SendFailureReasonOf(thread_id, message_id), tap.refusal));
+      return;
+    case SendMarkTap::Kind::RemovalFailed:
+      // Its new copy already went out on an earlier tap; nothing is sent a third time.
+      ShowToast(Tr("chat.send.not_sent"));
+      return;
+    case SendMarkTap::Kind::SendFailed:
+      // As the composer says it; the old bubble stays as it was.
+      UserFeedback::Fail(PaymentErrorUserMessage(tap.error.value_or(Error("Send failed"))));
+      return;
+    case SendMarkTap::Kind::Resent:
+      // The new message is at the bottom (the draft untouched); the old row is gone unless it was delivered meanwhile.
+      scroller_.RequestScrollToLatest();
+      RefreshFromMessaging();
+      return;
+  }
 }
 
 void ChatController::OpenGroupSender(const std::string& message_id) {
@@ -4204,6 +4291,7 @@ void ChatController::WireMessagingBindings() {
   chat_.compose_disabled = false;
   DirtyChatChrome();
   facade_->SetOnMessagesChanged([this]() {
+    presenter_.ForgetDeliveredResends(); // a message sent again by a tap and delivered: no failure pill to keep for it
     RefreshFromMessaging();
     if (contacts_notify_.refresh) {
       contacts_notify_.refresh();
@@ -4212,8 +4300,12 @@ void ChatController::WireMessagingBindings() {
   facade_->SetOnDeliveryNotice([this](const DeliveryNotice& notice) {
     // A send that did not go out is told in its chat, as a line under the message; a toast only when that has no
     // place (no chat, or the cause is unknown). An unreadable inbound message has its line already.
-    if (presenter_.ApplyDeliveryNotice(notice)) {
-      ShowToast(DeliveryNoticeText(notice));
+    switch (presenter_.ApplyDeliveryNotice(notice)) {
+      case NoticeTell::Nothing:
+        break;
+      case NoticeTell::Toast:
+        ShowToast(DeliveryNoticeText(notice));
+        break;
     }
     RefreshFromMessaging();
     NotifySurfaceChanged();
@@ -4395,6 +4487,15 @@ bool ChatController::Setup(ui::Context* context) {
   context_ = context;
   // The mesh's own background / foreground reactions are the hub's (ConversationsHub::OnAppBackground).
   lifecycle_background_id_ = AppLifecycle::AddBackgroundListener([this]() { OnApplicationPause(); });
+  // Timers may not have run while the app was suspended: no clock may stay past its time (#210).
+  lifecycle_foreground_id_ =
+      AppLifecycle::AddForegroundListener([this, alive = std::weak_ptr<int>(send_mark_alive_)]() {
+        AppRuntime::PostUI([this, alive]() {
+          if (alive.lock()) {
+            RedrawSendMarks();
+          }
+        });
+      });
   const AppConfig& config = Store().Snapshot().config;
   widgets_.ClearAll();
   chat_ = {};
@@ -4534,6 +4635,9 @@ bool ChatController::Setup(ui::Context* context) {
                                }));
         ctor.BindEventCallback("audio_seek_press",
                                DataEventAt([this](ui::Event& ev) { voice_playback_->SeekPress(ev); }));
+        ctor.BindEventCallback("show_send_failure", DataEvent<std::string>([this](const std::string& message_id) {
+                                 OnSendMarkTapped(message_id);
+                               }));
         ctor.BindEventCallback("retry_attachment_send", DataEvent([this] { OnRetryAttachmentSend(); }));
         ctor.BindEventCallback("discard_attachment_send", DataEvent([this] { OnDiscardAttachmentSend(); }));
         ctor.BindEventCallback("cancel_attachment_send", DataEvent([this] { OnCancelAttachmentSend(); }));
@@ -4921,6 +5025,13 @@ void ChatController::Shutdown() {
   voice_playback_->Shutdown();
   AppLifecycle::RemoveListener(lifecycle_background_id_);
   lifecycle_background_id_ = 0;
+  AppLifecycle::RemoveListener(lifecycle_foreground_id_);
+  lifecycle_foreground_id_ = 0;
+  if (send_mark_timer_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(send_mark_timer_);
+    send_mark_timer_ = 0;
+  }
+  ++send_mark_redraw_turn_; // a firing already posted does nothing
   IPushDeviceRegistrar::SetTokenChangedHandler(nullptr);
   // MessagingReady / ReachabilityUpdated are owned by Application.
   if (MessagingInitialized() && facade_) {

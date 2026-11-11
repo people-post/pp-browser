@@ -468,6 +468,37 @@ select selectbox option {
   font-size: 12dp;
 }
 
+/* Our message's send mark (TODO 210), inline just left of its bubble, at its bottom: a small clock while the send is under
+   way; the red mark when it did not go out, a 44dp button (the icon 20dp in it) whose tap says why. Not the AI page's
+   .bubble-queued. Tints: colors-*.rcss. */
+.send-mark {
+  display: inline-block;
+  vertical-align: bottom;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.send-mark--queued {
+  width: 24dp;
+  height: 24dp;
+  padding: 4dp;
+  margin: 0 2dp 6dp 0;
+}
+
+.send-mark--failed {
+  width: 44dp;
+  height: 44dp;
+  padding: 12dp;
+  margin: 0 -6dp 0 0;
+  border-width: 0;
+  background-color: transparent;
+  focus: none;
+}
+
+.send-mark-icon {
+  display: block;
+}
+
 .queued-cancel {
   text-decoration: underline;
   cursor: pointer;
@@ -13050,6 +13081,41 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .settings-mock .group-row--dim {
   opacity: 0.4;
   pointer-events: none;
+}
+
+.shell-layer-compact .settings-mock .group-row--q {
+  position: relative;
+}
+
+.shell-layer-compact .settings-mock .group-row--q .group-row-tap {
+  justify-content: space-between;
+  padding-right: 12dp;
+}
+
+/* The "?" sits over the right end of the row, left of the chevron, as its own button (not inside the row's button). */
+.shell-layer-compact .settings-mock .group-row--q .group-row-q {
+  position: absolute;
+  right: 36dp;
+  top: 16dp;
+}
+
+.shell-layer-compact .settings-mock .settings-device-row {
+  padding: 0;
+  gap: 0;
+}
+
+.shell-layer-compact .settings-mock .group-row-tap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 52dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  text-align: left;
+  cursor: pointer;
 }
 
 .shell-layer-compact .settings-mock .group-row--indent {

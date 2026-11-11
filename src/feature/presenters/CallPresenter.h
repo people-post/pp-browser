@@ -8,6 +8,7 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/presenters/CallBackOffer.h"
 #include "feature/presenters/CallMediaFrame.h"
+#include "feature/presenters/CallSpeakerButton.h"
 #include "feature/presenters/CallWakePlaceholder.h"
 #include "foundation/platform/PendingNotificationTap.h"
 
@@ -229,6 +230,14 @@ public:
   /** Phones: front / rear camera while it is on. */
   void FlipCamera();
   void ToggleSpeaker();
+  /** What the speaker button shows (CallSpeakerButtonOn): a tap being applied, else the OS route. */
+  bool SpeakerShownOn() const;
+  /**
+   * Developer builds only (the app layer sets it under kDevToolsBuild; empty otherwise): true makes the next speaker
+   * tap change the route the old way — before the mic closes — so the OS takes the recording stream and the media
+   * engine's audio rebuild has to bring the mic back (Android merge check).
+   */
+  void SetDevRouteReorderSkip(std::function<bool()> skip);
   /** The camera did not come on (or went off): tell the user in plain words; the detail is logged only. */
   void ReportCameraFailure(const CameraFailure& failure);
 
@@ -273,6 +282,9 @@ private:
   bool MessagingInitialized() const;
 
   CallFunctionalPorts ports_;
+  /** The last speaker tap handed to the media engine as a route change (CallSpeakerButtonOn). */
+  std::optional<CallSpeakerTap> speaker_tap_;
+  std::function<bool()> dev_route_reorder_skip_;
   Callbacks callbacks_;
   CallScreen screen_;
   CallWakePlaceholder wake_placeholder_;

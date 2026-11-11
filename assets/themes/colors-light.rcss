@@ -2643,6 +2643,15 @@ input.checkbox:checked {
   image-color: #2e8dff;
 }
 
+/* Our message's send mark (#210, components.rcss): the clock quiet, the not-sent mark red. */
+.send-mark--queued .send-mark-icon {
+  image-color: #8e8e93;
+}
+
+.send-mark--failed .send-mark-icon {
+  image-color: #ff3b30;
+}
+
 /* The voice message bubble (components.rcss): received = the accent on the received bubble, own = white on the own one. */
 .chat-voice-card {
   background-color: #ffffff;

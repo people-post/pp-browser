@@ -20,7 +20,7 @@ void ActivateForVoip();
 /**
  * Releases the session and puts the OS route back on the earpiece. The speaker choice survives: a media
  * rebuild mid-session (failover, retry) activates again with it. Whoever ends the live session clears the
- * choice (SetSpeakerphoneOn(false)).
+ * choice (ForgetSpeakerChoice).
  */
 void Deactivate();
 /**
@@ -81,6 +81,13 @@ bool IsSpeakerphoneOn();
  * ActivateForVoip next takes it — so it may be set before live media starts (a call ringing out).
  */
 void SetSpeakerphoneOn(bool on);
+/**
+ * The call ended: its speaker choice is forgotten (whoever ends the live session calls this). iOS routes back now, as
+ * SetSpeakerphoneOn(false). Android does not route here: the call's mic may still be open (its engine closes it on
+ * its own thread), and a route change under an open recording stream loses the mic for the process — Deactivate,
+ * which runs after the call's mic has closed, routes back, or the next activation does (SpeakerRouteRules.h).
+ */
+void ForgetSpeakerChoice();
 /** True when a speaker-route change needs the SDL devices closed and reopened (Android AudioRecord goes silent otherwise). */
 bool SpeakerToggleNeedsDeviceReopen();
 

@@ -99,6 +99,10 @@ void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
   shell_messaging_ports_ = std::move(ports);
 }
 
+void ShellHost::SetShowAdvancedSettings(bool shown) {
+  statusbar_.SetAdvanced(shown);
+}
+
 void ShellHost::BindPinGateActions(PinGateActionPorts ports) {
   pin_gate_actions_ = std::move(ports);
 }

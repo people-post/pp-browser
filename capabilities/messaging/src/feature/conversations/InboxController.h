@@ -60,6 +60,12 @@ struct VoiceBubbleState {
   int64_t duration_ms = 0;
 };
 
+/**
+ * The mark beside a message of ours (#210): a clock while a send of it is under way, the red mark when it did not go
+ * out, nothing once it is out. The presenter decides it; the transcript draws it.
+ */
+enum class SendMark { None, Queued, Failed };
+
 /** What drawing a transcript needs besides its entries: names, control lines, attachment state. */
 struct TranscriptFacts {
   std::function<std::string(const std::string& contact_id)> sender_label;
@@ -85,6 +91,8 @@ struct TranscriptFacts {
   bool audio_files_play = false;
   /** The open chat is a group (or a broadcast / AI thread, not a 1:1): its call records are not tappable. The GUI sets this. */
   bool thread_is_group = false;
+  /** The send mark on a message (none when unset). The GUI sets this. */
+  std::function<SendMark(const ThreadMessage&)> send_mark;
 };
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */

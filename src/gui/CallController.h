@@ -109,6 +109,8 @@ public:
   void ToggleCamera();
   void FlipCamera();
   void ToggleSpeaker();
+  /** Developer builds only: CallPresenter::SetDevRouteReorderSkip. */
+  void SetDevRouteReorderSkip(std::function<bool()> skip);
 
   /** V031 mode controls — remount call chrome mount only. */
   void SetChromeMode(CallChromeMode mode);

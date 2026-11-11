@@ -45,6 +45,11 @@ struct MediaEngineHealth {
   bool muted = false;
   /** False when mic open failed / absent — silence may still be sent; not a TX fault. */
   bool capture_available = true;
+  /**
+   * The mic gives nothing even after a reopen and an audio rebuild (Android: the OS took the recording stream):
+   * the other side hears silence until captured audio comes back, which clears it.
+   */
+  bool capture_lost = false;
   double path_pressure = 0.0;
   int64_t opus_target_bps = 0;
   uint64_t outbound_drops = 0;

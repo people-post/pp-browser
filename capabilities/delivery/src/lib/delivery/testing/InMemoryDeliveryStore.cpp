@@ -1,6 +1,7 @@
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 
 #include "common/Utilities.h"
+#include "lib/delivery/DeliveryNotice.h"
 #include "common/thread/ThreadChannel.h"
 
 #include <algorithm>
@@ -467,6 +468,28 @@ Roe<void> InMemoryDeliveryStore::SetPeerSyncState(const std::string& thread_id, 
 Roe<void> InMemoryDeliveryStore::CancelOldEpochPending(const std::string& /*thread_id*/,
                                                        uint32_t /*old_session_epoch*/) {
   return {}; // no outbox here
+}
+
+Roe<bool> InMemoryDeliveryStore::RemoveUnsentMessage(const std::string& thread_id, const std::string& message_id) {
+  std::lock_guard lock(mutex_);
+  auto rows = messages_.find(thread_id);
+  if (rows == messages_.end()) {
+    return false;
+  }
+  const auto unsent = std::find_if(rows->second.begin(), rows->second.end(), [&](const ThreadMessage& row) {
+    return row.id == message_id && row.sender_contact_id == kLocalSelfContactId && row.relay_visible &&
+           (row.delivery == MessageDelivery::Pending || row.delivery == MessageDelivery::Failed);
+  });
+  if (unsent == rows->second.end()) {
+    return false;
+  }
+  const std::string notice = SendFailureRowId(message_id, "");
+  const std::string group_notice = SendFailureRowId(message_id, kGroupMembersMissedWire);
+  std::erase_if(rows->second, [&](const ThreadMessage& row) {
+    return row.id == message_id || row.id == notice || row.id == group_notice;
+  });
+  std::erase_if(outbox_, [&](const auto& entry) { return entry.first == message_id; });
+  return true;
 }
 
 Roe<void> InMemoryDeliveryStore::AdoptChatTargetEpoch(const std::string& thread_id, uint32_t new_session_epoch) {
