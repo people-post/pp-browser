@@ -27,6 +27,11 @@ CallUiAttachGuard::Input Shown(const int64_t at_ms, const std::string& call = "c
   return {.engine_open = true, .engine_call_id = call, .ui_call_id = call, .steady_ms = at_ms};
 }
 
+/** After a hang-up (the guard's or the user's) the presenter keeps the call as "leaving": its screen holds none. */
+CallUiAttachGuard::Input Leaving(const int64_t at_ms, const std::string& call = "call:a") {
+  return {.engine_open = true, .engine_call_id = call, .ui_call_id = "", .leaving_call_id = call, .steady_ms = at_ms};
+}
+
 CallUiAttachGuard::Input Closed(const int64_t at_ms) {
   return {.engine_open = false, .engine_call_id = "", .ui_call_id = "", .steady_ms = at_ms};
 }
@@ -90,7 +95,7 @@ TEST(CallUiAttachGuardTest, ThreeLostFramesOverFiveSecondsHangUpOnce) {
   EXPECT_TRUE(step.hang_up);
   EXPECT_EQ(step.call_id, "call:a");
   for (int64_t t = 5'500; t <= 30'000; t += 500) {
-    EXPECT_FALSE(guard.Feed(Lost(t)).hang_up) << "hung up twice at " << t;
+    EXPECT_FALSE(guard.Feed(Leaving(t)).hang_up) << "hung up twice at " << t;
   }
 }
 
@@ -154,8 +159,8 @@ TEST(CallUiAttachGuardTest, AHungUpCallStillOpenIsStoppedAgainEveryTwoSecondsThr
   ASSERT_TRUE(guard.Feed(Lost(5'000)).hang_up);
   std::vector<int64_t> stops;
   for (int64_t t = 5'500; t <= 20'000; t += 500) {
-    // Leave clears the screen's id; the presenter takes the engine's call back — both read "still open".
-    const auto step = guard.Feed(t % 1'000 == 0 ? Shown(t) : Lost(t));
+    // HangUpEngineCall cleared the screen's id and keeps the call as leaving (never taken back meanwhile).
+    const auto step = guard.Feed(Leaving(t));
     EXPECT_FALSE(step.hang_up);
     EXPECT_FALSE(step.report_detached);
     if (step.stop_again) {
@@ -221,4 +226,29 @@ TEST(CallUiAttachGuardTest, AHangUpThatClosesAtOnceNeedsNothing) {
     const auto step = guard.Feed(Closed(t));
     EXPECT_FALSE(step.report_detached || step.hang_up || step.stop_again) << t;
   }
+}
+
+// Review 4: the same call joined again (the presenter dropped its latch at Accept / Start) is never stopped from here.
+TEST(CallUiAttachGuardTest, ACallJoinedAgainUnderTheSameIdIsNeverStopped) {
+  CallUiAttachGuard guard;
+  for (int64_t t = 0; t <= 1'500; t += 500) {
+    EXPECT_FALSE(guard.Feed(Leaving(t)).stop_again); // hung up; the engine has not let go yet
+  }
+  for (int64_t t = 2'000; t <= 20'000; t += 500) { // joined again: on screen, nothing left
+    const auto step = guard.Feed(Shown(t));
+    EXPECT_FALSE(step.stop_again || step.hang_up || step.report_detached) << t;
+  }
+}
+
+// The latch ran out (15 s) with the engine still holding the call: it is the guard's again, as any lost call.
+TEST(CallUiAttachGuardTest, ALatchThatRanOutHandsAStillOpenCallBackToTheLostCount) {
+  CallUiAttachGuard guard;
+  for (int64_t t = 0; t <= 15'000; t += 500) {
+    (void)guard.Feed(Leaving(t));
+  }
+  bool hung_up = false;
+  for (int64_t t = 15'500; t <= 22'000 && !hung_up; t += 500) {
+    hung_up = guard.Feed(Lost(t)).hang_up;
+  }
+  EXPECT_TRUE(hung_up) << "an open call nobody shows is hung up again";
 }

@@ -481,7 +481,30 @@ void CallPresenter::ForgetLeavingOnceLetGo(const CallUiState& state) {
   if (!state.available || state.phase == CallPhase::Idle || state.active_call_id != leaving_call_id_) {
     log().info << "hung-up call let go by the engine call_id=" << leaving_call_id_;
     leaving_call_id_.clear();
+    return;
   }
+  if (steady_ms_() - leaving_since_ms_ >= kLeavingLatchMs) {
+    // Never forever: the guard takes a call still open after this as lost again.
+    log().warning << "hung-up call still open in the engine after " << kLeavingLatchMs / 1000
+                  << " s; no longer kept off screen call_id=" << leaving_call_id_;
+    leaving_call_id_.clear();
+  }
+}
+
+void CallPresenter::StartLeaving(const std::string& call_id) {
+  leaving_call_id_ = call_id;
+  leaving_since_ms_ = steady_ms_();
+}
+
+void CallPresenter::StopLeaving(const char* why) {
+  if (!leaving_call_id_.empty()) {
+    log().info << "hung-up call no longer kept off screen (" << why << ") call_id=" << leaving_call_id_;
+    leaving_call_id_.clear();
+  }
+}
+
+void CallPresenter::SetSteadyClockForTest(std::function<int64_t()> now_ms) {
+  steady_ms_ = std::move(now_ms);
 }
 
 void CallPresenter::SetDevDetachUi(std::function<bool()> detach) {
@@ -902,6 +925,7 @@ bool CallPresenter::StartCallWithInvitees(const std::string& thread_id, const bo
 
 void CallPresenter::RequestStart(const std::string& thread_id, const bool video,
                                  const std::vector<std::string>& invitees, StartDone done) {
+  StopLeaving("a call started or joined"); // joining the group's call just left gets it back on screen
   // No invitees: joining the group's call that goes on (not an outbound call).
   const bool joining = invitees.empty();
   // The calls owner starts it and reports back on UI.
@@ -1216,6 +1240,7 @@ std::string CallPresenter::Accept(const bool voice_only, const std::string& answ
     log().warning << "Accept ignored (no call_id)";
     return {};
   }
+  StopLeaving("a call answered");
   backend->SetPendingAcceptChargeDecision(InitiationChargeDecision::Waive);
   backend->SetPendingAcceptVoiceOnly(voice_only);
   if (callbacks_.on_accept) {
@@ -1257,6 +1282,7 @@ std::string CallPresenter::AcceptWithCharge() {
     log().warning << "AcceptWithCharge ignored (no call_id)";
     return {};
   }
+  StopLeaving("a call answered");
   backend->SetPendingAcceptChargeDecision(InitiationChargeDecision::TakeAll);
   if (callbacks_.on_accept) {
     callbacks_.on_accept(call_id, false);
@@ -1315,7 +1341,7 @@ std::string CallPresenter::Leave() {
     // BlockingWrite.
     backend->StopCallMedia(call_id);
     // Until the owner ran the leave, the engine (and the row) still read open: never taken back meanwhile.
-    leaving_call_id_ = call_id;
+    StartLeaving(call_id);
   }
   // No call: a stale End button after Idle — the screen still clears, so nothing looks hung.
   active_call_id_.clear();
@@ -1336,7 +1362,7 @@ void CallPresenter::HangUpEngineCall(const std::string& call_id) {
     return;
   }
   backend->StopCallMedia(call_id); // the engine's call by its id, whatever this screen holds
-  leaving_call_id_ = call_id;
+  StartLeaving(call_id);
   if (active_call_id_.empty() || active_call_id_ == call_id) {
     active_call_id_.clear();
     ringing_call_id_.clear();

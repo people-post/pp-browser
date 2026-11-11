@@ -634,5 +634,40 @@ TEST_F(CallUiNeverDetachedTest, TheServiceGoesOffOnceAtEndAndStaysOff) {
   EXPECT_EQ(on, (std::vector<bool>{true, true, true, false, false, false, false, false, false, false}));
 }
 
+// Review 4: the call left and joined again under the same id before any tick (the latch is dropped where a call is
+// answered, started or joined): it shows, the service is on, the guard does nothing.
+TEST_F(CallUiNeverDetachedTest, ACallLeftAndJoinedAgainBeforeAnyTickShows) {
+  ASSERT_NO_FATAL_FAILURE(InCall("call:again"));
+  (void)presenter_->Leave();
+  ASSERT_EQ(presenter_->LeavingCallId(), "call:again");
+  // Joined again at once (the answer of its new ring), the owner not drained: the engine still has it open.
+  (void)presenter_->Accept(/*voice_only=*/true, "call:again");
+  EXPECT_TRUE(presenter_->LeavingCallId().empty()) << "answering a call drops the latch";
+  for (int i = 0; i < 6; ++i) {
+    const auto step = Frame();
+    EXPECT_FALSE(step.report_detached || step.hang_up || step.stop_again) << "frame " << i;
+  }
+  EXPECT_EQ(presenter_->ActiveCallId(), "call:again");
+  EXPECT_EQ(presenter_->Screen().kind, CallScreen::Kind::InCall);
+  EXPECT_TRUE(ServiceOn());
+}
+
+// The latch never lasts: 15 s on the steady clock, then a call the engine still holds is shown again (its mic open).
+TEST_F(CallUiNeverDetachedTest, TheLeavingLatchRunsOutAfterFifteenSeconds) {
+  int64_t now_ms = 1'000'000;
+  presenter_->SetSteadyClockForTest([&now_ms]() { return now_ms; });
+  ASSERT_NO_FATAL_FAILURE(InCall("call:stuck-open"));
+  (void)presenter_->Leave();
+  now_ms += CallPresenter::kLeavingLatchMs - 1;
+  presenter_->Tick(); // the owner never runs the leave
+  EXPECT_EQ(presenter_->LeavingCallId(), "call:stuck-open");
+  EXPECT_TRUE(presenter_->ActiveCallId().empty());
+  now_ms += 1;
+  presenter_->Tick();
+  EXPECT_TRUE(presenter_->LeavingCallId().empty()) << "dropped after 15 s";
+  presenter_->Tick();
+  EXPECT_EQ(presenter_->ActiveCallId(), "call:stuck-open") << "still open in the engine: on screen again";
+}
+
 } // namespace
 } // namespace pbr

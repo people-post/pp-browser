@@ -52,7 +52,8 @@ inline constexpr bool kCallUiDetachedHangsUp = true;
  * stopped again every kStopRetryMs, at most kMaxStopRetries times.
  *
  * A call the user hung up (the presenter's LeavingCallId) is never lost, never hung up again and never reported: while
- * the engine still has it open, only its media is stopped again on the same schedule.
+ * the engine still has it open, only its media is stopped again on the same schedule. Both hang-ups (the user's and
+ * the guard's) set that latch; once the presenter drops it (the call joined again, or its time ran out) the stops end.
  */
 class CallUiAttachGuard {
 public:

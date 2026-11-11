@@ -155,6 +155,8 @@ public:
   void SetPeerByeLeaveGraceForTest(std::chrono::milliseconds grace) { peer_bye_leave_grace_ = grace; }
   /** Calls owner: start `call_id`'s alone-in-a-group-call wait at `since_ms` (wall clock), as a peer leaving would. */
   void SetAloneSinceForTest(const std::string& call_id, int64_t since_ms) { alone_since_ms_[call_id] = since_ms; }
+  /** Calls owner: how soon a decision put off by an unreadable roster is tried again (1 s). */
+  void SetUnreadRosterRetryForTest(int64_t ms) { unread_roster_retry_ms_ = ms; }
   /** Test seam: the number of the last peer bye noted (NotePeerEndedCall). */
   uint64_t LastPeerByeForTest() const { return last_peer_bye_; }
   /**
@@ -188,6 +190,12 @@ public:
   /** Every end of a call on this device funnels here; `reason` is what ended it (LiveCall). */
   Roe<void> EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms, LiveCallEndReason reason);
   Roe<void> MaybeRotateMediaKey(const std::string& call_id, const std::string& leaver_identity);
+  /** The key rotation among `remaining` (joined, this device included): only their coordinator rotates and sends it. */
+  Roe<void> RotateMediaKeyAmong(const std::string& call_id, const std::vector<std::string>& remaining);
+  /** A group call `identity` left (or declined) while its people could not be read: decided on a later sweep. */
+  void DecideLaterUnread(const std::string& call_id, const std::string& identity, bool decline);
+  /** The decisions DecideLaterUnread put off: made once readable, or from the live call after a few failed reads. */
+  void ResolveUnreadRosters(const std::string& local_identity, int64_t now);
   /**
    * The call's media key moved (ours rotated, or a peer's taken in): epochs only move forward — a newer
    * one is recorded on the session — and the call's media installs it (the current one again too).
@@ -426,6 +434,21 @@ private:
   std::unordered_set<std::string> join_any_retry_sent_;
   /** V053: group calls this device is alone in → since when. */
   std::unordered_map<std::string, int64_t> alone_since_ms_;
+  /**
+   * A group call someone left or declined while its people could not be read: the decision still to make (who is
+   * left: the alone wait, the media key; for a decline, whether anyone is left to call). Tried again on the sweep.
+   */
+  struct UnreadRosterDecision {
+    std::vector<std::string> leavers;
+    bool left = false;
+    bool decline = false;
+    int failed_reads = 1;
+    int64_t next_try_ms = 0;
+  };
+  std::unordered_map<std::string, UnreadRosterDecision> unread_roster_;
+  /** The alone check's failed reads of a call's people, in a row. */
+  std::unordered_map<std::string, int> alone_unread_reads_;
+  int64_t unread_roster_retry_ms_ = 1'000;
   /** The last sweep: a long gap means the app slept, and the alone waits start over. */
   int64_t last_alone_sweep_ms_ = 0;
   /** #381: an epoch this device rotated to, resent to the members a few times (no ack on the wire). */
