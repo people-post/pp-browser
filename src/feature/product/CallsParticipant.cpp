@@ -169,6 +169,9 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
   deps.sync_mobile_ephemeral_listen = [&hub]() { hub.SyncMobileEphemeralListen(); };
   deps.connectivity = &mesh.Connectivity();
   deps.media_relay = &mesh.MediaRelay();
+  deps.set_on_relay_chosen = [&mesh](std::function<void(const std::string&)> hook) {
+    mesh.SetOnRelayChosen(std::move(hook)); // the app's mesh keeps the slot (it remembers the relay, K015)
+  };
   return deps;
 }
 

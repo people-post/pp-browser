@@ -919,6 +919,7 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
   const RelayReceiveOutcome outcome =
       receive_pipeline_->ProcessEnvelope(envelope, identity->account_id, false, MessageTransport::Direct);
   routes_.RememberFromEnvelope(envelope, outcome.sender_verified);
+  NoteMessageActivity(outcome.thread_id, from_peer_id);
   // A verified message over a link with a device its account's card does not list yet: ask that device
   // for the card (it proves the device is the account's; the envelope signature alone does not).
   if (outcome.sender_verified) {
@@ -1004,7 +1005,9 @@ bool MeshDeliveryOrchestrator::AmpReaches(const std::string& peer_key) const {
 }
 
 void MeshDeliveryOrchestrator::TickMesh() {
-  // Amp mesh pump is MeshHost::Tick via ConversationsHub; no PeerSessionManager.
+  // Amp mesh pump is MeshHost::Tick via ConversationsHub; no PeerSessionManager. Peers quiet past
+  // kRecentPeerWarmMs lose their warm mark.
+  transports_.TickWarmth();
 }
 
 void MeshDeliveryOrchestrator::WarmPeerForThread(const std::string& thread_id) {
@@ -1024,6 +1027,17 @@ void MeshDeliveryOrchestrator::WarmPeerForThread(const std::string& thread_id) {
 
 void MeshDeliveryOrchestrator::WarmPeerByKey(const std::string& peer_key) {
   transports_.WarmByKey(peer_key);
+}
+
+void MeshDeliveryOrchestrator::NoteMessageActivity(const std::string& thread_id, const std::string& device_peer_id) {
+  // The mark sits on whichever key warmed it: the thread's peer (chat) or the device's PeerId (a call).
+  transports_.NotePeerActivity(device_peer_id);
+  if (thread_id.empty()) {
+    return;
+  }
+  if (auto thread = store_.GetThread(thread_id); thread && *thread && (*thread)->kind == ThreadKind::Direct) {
+    transports_.NotePeerActivity((*thread)->peer_identity_value);
+  }
 }
 
 Roe<ByteVector> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(const std::string& peer_identity) {
@@ -1658,6 +1672,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
         relay_copies.push_back(std::move(sealed_copy));
         continue;
       }
+      NoteMessageActivity((*thread)->id, device.peer_id);
       RelayEnvelope envelope = BuildDirectEnvelope(wire, *sender, (*thread)->channel, route_party,
                                                    {std::move(sealed_copy)}, NextRelayOrderKey());
       if (auto signed_ok = SignEnvelope(envelope); !signed_ok) {

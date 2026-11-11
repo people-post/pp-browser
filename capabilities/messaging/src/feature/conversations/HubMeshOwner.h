@@ -38,6 +38,8 @@ public:
     MeshConfig mesh;
     /** The device's keys (the mesh's identity). */
     IdentityStore* identity = nullptr;
+    /** The profile's data dir: where the owner keeps what the mesh learned across runs (its last good relays). */
+    std::string profile_data_dir;
     /** Who may learn our address; outlives the mesh. */
     mesh::AddressDisclosureGate* address_disclosure = nullptr;
     /** Shutdown was requested: start stopping, skip the blocking probe. */

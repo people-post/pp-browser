@@ -730,7 +730,8 @@ void CallDirectPath::OnPathPolicyChanged(const std::string& call_id) {
   }
   const CallPathPolicy policy = PathPolicyFor(call_id);
   log().info << "path policy call_id=" << call_id << " upgrade=" << (policy.upgrade_to_direct ? 1 : 0)
-             << " relay=" << CallRelayRoleName(policy.relay_role) << " relay_only=" << (policy.relay_only ? 1 : 0);
+             << " relay=" << CallRelayRoleName(policy.relay_role) << " relay_only=" << (policy.relay_only ? 1 : 0)
+             << " race_circuit=" << (policy.race_circuit_at_start ? 1 : 0);
   ApplyPathPolicyToTransport(call_id);
   if (!policy.upgrade_to_direct) {
     CancelDirectUpgrade();
@@ -793,7 +794,8 @@ void CallDirectPath::Reanchor(const std::string& call_id) {
   ApplyReachPolicy(request, call_id, /*offerer=*/true);
   log().info << "reconnect: reaching the peer again call_id=" << call_id << " peer=" << peer_id
              << " advertised_relays=" << request.advertised_relays.size()
-             << " exclude_direct=" << (request.exclude_direct ? 1 : 0);
+             << " exclude_direct=" << (request.exclude_direct ? 1 : 0)
+             << " race_circuit=" << (request.race_circuit ? 1 : 0);
   const auto retry = [this, call_id]() {
     if (direct_planner_phase_ == CallDirectPlannerPhase::Reconnecting && reanchor_armed_ && call_id == call_id_) {
       ScheduleReanchor(call_id, std::chrono::milliseconds(reanchor_retry_ms_));
@@ -1270,6 +1272,9 @@ void CallDirectPath::ApplyReachPolicy(mesh::PeerReachRequest& request, const std
   const CallPathPolicy policy = PathPolicyFor(call_id);
   request.exclude_direct = policy.relay_only;
   request.allow_punch = policy.punch_at_start;
+  // An anchor pair's offerer builds the circuit beside its dial (#577); a re-anchor too — the call is
+  // silent meanwhile. Await has no dial to race.
+  request.race_circuit = policy.race_circuit_at_start && request.mode == mesh::PeerReachMode::Reach;
   if (offerer && advertised_relays_) {
     // H013: the answerer said where it is parked; its relays go first.
     request.advertised_relays = advertised_relays_(call_id);

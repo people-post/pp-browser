@@ -142,7 +142,9 @@ Local store is written **before** send. Server rejections do not delete history.
 
 Outbound `SendUserMessage` tries libp2p direct first when the peer has a registered dialable multiaddr (`Contact.multiaddrs` / `RegisterPeerDirectEndpoint`); on failure falls back to `IRelayClient::Send`. Inbound direct envelopes use the same `RelayEnvelope` shape and `RelayReceivePipeline` with `MessageTransport::Direct`.
 
-**Session policy** (`PeerSessionManager`): on-demand dial, reuse existing connections, warm the open-thread peer, idle disconnect, global connection caps. No separate app connection pool.
+**Session policy** (Amp `PeerLinkManager`, through `PeerTransports`): on-demand dial, reuse existing links, global link caps. No separate app connection pool.
+
+**Warm peers** (`PeerWarmMarks`, timing in `lib/messaging/RecentPeerWarmth.h`): a call (invite / accept prefetch), opening a chat, the app coming to the foreground on an open chat, or a retried dial marks the peer's link **warm** (Amp `MarkWarm`: a 25 s keepalive); a direct message to or from a warm peer keeps it warm. After `kRecentPeerWarmMs` (10 min) with neither, the hub's 1 s tick takes the mark off (Amp `ClearWarm`) and the link is cold again (5 s of silence ends it). Through a relay the mark keeps the relay link under the carrier up too (Amp's carried tier, [MESH.md](MESH.md)), so a call minutes after the last one reuses the carrier; held forever it would cost every peer ever called a keepalive and a relay splice (#577). A message alone never warms a cold peer.
 
 Per-message **Direct / Relay / Local** badges read the persisted `transport` column (post-v6d).
 

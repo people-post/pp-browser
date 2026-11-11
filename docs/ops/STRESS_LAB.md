@@ -18,7 +18,7 @@ scripts/test/pp_node_stress.py bridges --build build-pp-node --pairs 100 --durat
   - `park`: associate, reserve, renew every `--renew` s (10: a call's cadence);
   - `calls`: `--calls` group calls of `--members` on the node's media_relay, each member sending audio (40 ms frames) and video (`--video-kbps` 500, `--fps` 15, ~1100 B packets) and subscribing to the others;
   - `bridges`: relayed 1:1 pairs — a parked target, a dialer bridged to it by PeerId, the same media both ways. The pairs' channel is the probe's reliable one, not a call's best-effort carrier: its numbers are a worst case for real relayed calls.
-- **Out:** a line a second (node CPU, RSS, links, its three levels; the clients' parked / attached / bridged, frames, refusals by level, latency p95), a summary, and `--out` JSON with the node's watched metrics each second.
+- **Out:** a line a second (node CPU, RSS, links, its three levels; the clients' parked / attached / bridged, frames, refusals by level, latency p95), a summary, and `--out` JSON with the node's watched metrics each second. Every received frame is timed (send to receive, one host's clock); the summary's latency (p50 / p95 / p99 / max) is the whole run's, the worst load process's.
 - **Buffers:** the lab host's `net.core.rmem_max` caps what the node's socket gets ([BUILD.md § pp-node](BUILD.md#headless-mesh-node-pp-node)); `pp_udp_receive_buffer_bytes` shows it.
 
 ## Measured (Release, two cores, 208 KiB socket buffers; parked 2026-11-08 with pp-cpp-amp v5.1.0, the rest 2026-11-07)

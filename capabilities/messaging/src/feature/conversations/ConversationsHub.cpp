@@ -276,6 +276,7 @@ Roe<void> ConversationsHub::StartMesh(const HubSettings& settings) {
   HubMeshOwner::StartRequest request;
   request.mesh = settings.mesh;
   request.identity = identity_.get();
+  request.profile_data_dir = data_dir_;
   request.address_disclosure = &address_disclosure_;
   request.stopping = shutdown_requested_.load(std::memory_order_acquire);
   // Runs on the mesh's io lane (ReachabilityEngine): the hub's work is ours — hop to UI.
@@ -1244,6 +1245,13 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
     return {};
   }
 
+  // A peer quiet for kRecentPeerWarmMs loses chat's / the call's warm mark (#577): the chat links port can mark,
+  // not clear, so the clear goes to Amp, as MeshPorts' MarkWarm does.
+  mesh_messaging_->SetClearPeerWarm([this](const std::string& peer_key) {
+    if (pp::amp::AmpStack* amp = mesh_ ? mesh_->Amp() : nullptr) {
+      amp->Runtime().WithIoLock([&] { amp->Links().ClearWarm(peer_key); });
+    }
+  });
   // Keep the same MeshDeliveryOrchestrator instance — timers / SyncInbox workers may already
   // hold `this`. Recreating here caused "mutex lock failed: Invalid argument" + segfault.
   mesh_messaging_->AttachAmpTransports(amp_links, std::move(amp_pump), std::move(amp_worker), std::move(amp_post_io),

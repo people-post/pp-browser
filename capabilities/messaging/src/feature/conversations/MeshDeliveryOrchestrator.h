@@ -305,6 +305,10 @@ public:
   void WarmPeerForThread(const std::string& thread_id);
   /** Warm Amp association by PeerId / dial key (call prefetch shares this with chat). */
   void WarmPeerByKey(const std::string& peer_key);
+  /** How a peer's warm mark comes off once it lapses (Amp ClearWarm). Set before AttachAmpTransports. */
+  void SetClearPeerWarm(std::function<void(const std::string& peer_key)> clear) {
+    transports_.SetClearWarm(std::move(clear));
+  }
   /**
    * The account pair's e2e_public session key with the peer (AutoKey if missing): a call media key's old form is
    * wrapped under it (M024 bridge). An opener it made rides the lane's account copies to the peer until confirmed.
@@ -335,6 +339,8 @@ public:
   void RetryPeerDial(const std::string& thread_id);
 
 private:
+  /** A message to or from a peer over its link: its warm mark lasts (PeerWarmMarks::Touch). */
+  void NoteMessageActivity(const std::string& thread_id, const std::string& device_peer_id);
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
   /** The direct-chat transport is attached and reaches `peer_key` now. */
   bool AmpReaches(const std::string& peer_key) const;
