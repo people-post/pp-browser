@@ -359,11 +359,16 @@ select selectbox option:hover {
 
 .chat-jump-latest {
   background-color: #ffffff;
-  color: #007aff;
+  border: 1dp #3c3c434a;
+  box-shadow: 0 2dp 8dp #00000026;
 }
 
 .chat-jump-latest:hover {
   background-color: #f2f2f7;
+}
+
+.chat-jump-latest svg {
+  image-color: #007aff;
 }
 
 .chat-form {
@@ -418,6 +423,11 @@ select selectbox option:hover {
 
 .chat-quote {
   border-left: 3dp #007aff;
+}
+
+/* The reply preview above the composer: the secondary grey set outright (no inherited colour, no opacity). */
+.prompt-quote-text {
+  color: #3c3c4399;
 }
 
 .chat-long-list-scroll {
@@ -1949,6 +1959,7 @@ input.checkbox:checked {
 /* Sheets laid out like the contact page (grouped cards on the grouped background). */
 .shell-page-sheet.shell-page-sheet--group_info,
 .shell-page-sheet.shell-page-sheet--group_leave,
+.shell-page-sheet.shell-page-sheet--reactors_sheet,
 .shell-page-sheet.shell-page-sheet--home_edit,
 .shell-page-sheet.shell-page-sheet--contact_detail {
   background-color: #f2f2f7;

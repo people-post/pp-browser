@@ -24,7 +24,7 @@ class ChatTranscriptScroller {
 public:
   struct View {
     bool& show_jump_to_latest;
-    ui::String& jump_to_latest_label;
+    ui::String& jump_to_latest_count;
     std::vector<MessageDisplayRow>& messages;
     bool& has_turns;
   };
@@ -103,7 +103,7 @@ public:
 
 private:
   ui::Element* FindMessagesScrollElement() const;
-  void UpdateJumpToLatestLabel();
+  void UpdateJumpToLatestCount();
   void SetShowJumpToLatest(bool show);
   void ScrollMessagesToBottom();
   void MaybeLoadOlderLocalHistory();

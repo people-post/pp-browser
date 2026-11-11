@@ -311,7 +311,7 @@ ChatController::ChatController()
     : scroller_(context_,
                 ChatTranscriptScroller::View{
                     .show_jump_to_latest = chat_.show_jump_to_latest,
-                    .jump_to_latest_label = chat_.jump_to_latest_label,
+                    .jump_to_latest_count = chat_.jump_to_latest_count,
                     .messages = chat_.messages,
                     .has_turns = chat_.has_turns,
                 },

@@ -137,7 +137,8 @@ struct ChatScreenState {
   bool sync_in_progress = false;
   bool show_older_history_hint = false;
   bool show_jump_to_latest = false;
-  ui::String jump_to_latest_label;
+  /** Messages that arrived while scrolled up ("99+" capped); empty when none. */
+  ui::String jump_to_latest_count;
   std::vector<TranscriptDisplayRow> turns;
   std::vector<MessageDisplayRow> messages;
   /** The reactions sheet (a tap on a message's emoji): who reacted, grouped by emoji. */
