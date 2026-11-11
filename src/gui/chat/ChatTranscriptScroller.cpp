@@ -63,6 +63,8 @@ void ChatTranscriptScroller::Reset() {
   loaded_max_display_order_.reset();
   pending_scroll_height_before_.reset();
   pending_scroll_top_before_.reset();
+  reading_scroll_top_.reset();
+  restore_scroll_top_.reset();
   last_messages_scroll_height_ = 0.f;
   unread_while_scrolled_ = 0;
   pending_jump_id_.clear();
@@ -99,6 +101,8 @@ void ChatTranscriptScroller::SetShowJumpToLatest(bool show) {
 
 void ChatTranscriptScroller::RequestScrollToLatest() {
   pending_jump_id_.clear();
+  reading_scroll_top_.reset();
+  restore_scroll_top_.reset();
   pinned_to_bottom_ = true;
   pending_scroll_to_bottom_ = true;
   pending_scroll_settle_frames_ = 0;
@@ -137,6 +141,27 @@ void ChatTranscriptScroller::ApplyPolicy() {
   ui::Element* el = FindMessagesScrollElement();
   if (!el) {
     return;
+  }
+
+  if (restore_scroll_top_.has_value()) {
+    // After a remount the rows are laid out a frame or two later, and an offset past the content is clamped away:
+    // set it each frame until the content reaches it.
+    const float client = el->GetClientHeight();
+    const float max_top = std::max(0.f, el->GetScrollHeight() - client);
+    suppress_scroll_handler_ = true;
+    el->SetScrollTop(std::min(*restore_scroll_top_, max_top));
+    suppress_scroll_handler_ = false;
+    if (client > 0.f) {
+      last_client_height_ = client;
+    }
+    last_messages_scroll_height_ = el->GetScrollHeight();
+    if ((client > 0.f && max_top >= *restore_scroll_top_ - 0.5f) || ++restore_scroll_frames_ > 30) {
+      restore_scroll_top_.reset();
+    }
+    return;
+  }
+  if (!pinned_to_bottom_ && el->GetClientHeight() > 0.f) {
+    reading_scroll_top_ = el->GetScrollTop(); // what OnShellRemounted puts back
   }
 
   if (pending_scroll_height_before_.has_value() && pending_scroll_top_before_.has_value()) {
@@ -470,6 +495,11 @@ void ChatTranscriptScroller::OnShellRemounted() {
     pending_scroll_attempts_ = 0;
     settle_scroll_height_ = -1.f;
     last_messages_scroll_height_ = 0.f;
+  } else if (reading_scroll_top_.value_or(0.f) > 0.f) {
+    // Reading older messages: the new DOM starts at the top (MountInner restores the offset before the rows exist).
+    restore_scroll_top_ = reading_scroll_top_;
+    restore_scroll_frames_ = 0;
+    last_client_height_ = 0.f; // the first reading of the new element is not a viewport resize
   }
   ApplyPolicy();
 }
