@@ -1,19 +1,5 @@
-      <div class="settings-section settings-section--grouped stack">
-        <div class="group-card" data-if="show_backend_switch">
-          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
-                  data-event-click="on_choose_backend()">
-            <span class="group-row-body">
-              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.network.backend}}</span>
-              <span class="settings-choice-value row">
-                <span class="settings-choice-value-text">{{backend_label}}</span>
-                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
-              </span>
-            </span>
-          </button>
-        </div>
-        <p class="text muted settings-help group-foot" data-if="show_backend_switch">{{i18n:settings.network.backend.help}}</p>
-        <p class="text settings-help group-foot" data-if="show_backend_switch && backend_restart_pending">{{i18n:settings.network.backend.restart}}</p>
-
+      <div class="settings-section settings-section--grouped stack" data-if="advanced">
+        <p class="text group-head">{{i18n:settings.network.title}}</p>
         <div class="group-card" data-if="advanced && show_node_toggle">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">
@@ -171,34 +157,136 @@
         </label>
         </div>
         <p class="text muted settings-help group-foot" data-if="mesh_status_message != ''">{{mesh_status_message}}</p>
-        <div class="group-card" data-if="backend_is_custom">
+        </div>
+        <p class="text group-head">{{i18n:settings.assistant.title}}</p>
+        <p class="text group-foot group-foot--lead" data-if="!advanced">{{i18n:settings.llm.summary}}</p>
+        <div class="stack" data-if="advanced">
+        <div class="group-card">
           <label class="settings-field group-row group-row--field">
             <span class="group-row-body group-row-body--field">
-              <span class="settings-label group-row-text">{{i18n:settings.network.relay}}</span>
-              <input class="field" type="text" data-value="relay_base_url" data-event-change="on_network_field_changed()"/>
+              <span class="settings-label group-row-text">{{i18n:settings.llm.preset}}</span>
+              <select class="field" data-value="llm_preset" data-event-change="on_llm_preset_changed()">
+                <option value="brief">{{i18n:settings.llm.preset_brief}}</option>
+                <option value="cloud">{{i18n:settings.llm.preset_cloud}}</option>
+                <option value="ollama">{{i18n:settings.llm.preset_ollama}}</option>
+                <option value="custom">{{i18n:settings.llm.preset_custom}}</option>
+              </select>
             </span>
           </label>
         </div>
-        <div class="group-card" data-if="backend_is_custom">
+        <p class="text muted group-foot">{{i18n:settings.llm.preset_help}}</p>
+        <div class="group-card">
           <label class="settings-field group-row group-row--field">
             <span class="group-row-body group-row-body--field">
-              <span class="settings-label group-row-text">{{i18n:settings.network.directory}}</span>
-              <input class="field" type="text" data-value="directory_base_url" data-event-change="on_network_field_changed()"/>
+              <span class="settings-label group-row-text">{{i18n:settings.llm.base_url}}</span>
+              <input class="field" type="text" data-value="llm_base_url" data-event-change="on_llm_field_changed()"/>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.llm.model}}</span>
+              <input class="field" type="text" data-value="llm_model" data-event-change="on_llm_field_changed()"/>
             </span>
           </label>
         </div>
-        <div class="group-card" data-if="backend_is_custom">
-          <label class="settings-field group-row group-row--field">
+        <div class="settings-field stack" data-if="llm_preset == 'brief'">
+          <span class="settings-label group-head">{{i18n:settings.llm.brief_key}}</span>
+          <p class="text muted group-foot" data-if="brief_llm_key_masked != ''">
+            <span>{{brief_llm_key_masked}}</span> {{i18n:settings.llm.brief_key_rotate_hint}}
+          </p>
+          <p class="text muted group-foot" data-if="brief_llm_key_masked == ''">
+            {{i18n:settings.llm.brief_key_auto}}
+          </p>
+        </div>
+        <div class="settings-actions stack">
+          <button class="btn btn-secondary settings-action-bar" type="button" data-if="advanced && profile_show_rotate"
+                  data-event-click="rotate_brief_llm_key()">{{i18n:settings.llm.rotate_brief_key}}</button>
+        </div>
+        <div class="group-card" data-if="llm_preset != 'brief'">
+          <label class="settings-field group-row group-row--field" >
             <span class="group-row-body group-row-body--field">
-              <span class="settings-label group-row-text">{{i18n:settings.network.registration}}</span>
-              <input class="field" type="text" data-value="registration_base_url" data-event-change="on_network_field_changed()"/>
+              <span class="settings-label group-row-text">{{i18n:settings.llm.api_key}}</span>
+              <input class="field" type="password" data-value="llm_api_key" data-event-change="on_llm_field_changed()" placeholder="{{i18n:settings.llm.api_key_placeholder}}"/>
+              <span class="group-field-hint" data-if="llm_api_key == ''">{{i18n:settings.llm.api_key_placeholder}}</span>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field" >
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.llm.api_key_env}}</span>
+              <input class="field" type="text" data-value="llm_api_key_env" data-event-change="on_llm_field_changed()" placeholder="{{i18n:settings.llm.api_key_env_placeholder}}"/>
+              <span class="group-field-hint" data-if="llm_api_key_env == ''">{{i18n:settings.llm.api_key_env_placeholder}}</span>
             </span>
           </label>
         </div>
         <div class="settings-actions stack">
           <button class="btn btn-secondary settings-action-bar" type="button"
-                  data-event-click="reset_section('network')">{{i18n:common.reset_defaults}}</button>
+                  data-event-click="reset_section('llm')">{{i18n:common.reset_defaults}}</button>
+        </div>
+        </div>
+        <div class="stack settings-actions" data-if="advanced">
+          <p class="text group-head">{{i18n:settings.security.tool_permissions}}: <span>{{tool_permissions_summary}}</span></p>
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.tool_permissions.help}}</p>
+          <button class="btn" type="button" data-if="tool_permissions_has_saved"
+                  data-event-click="reset_tool_permissions()">
+            {{i18n:settings.security.tool_permissions.reset}}
+          </button>
+        </div>
+        <div class="stack" data-if="advanced">
+          <p class="text group-head">{{i18n:settings.integrations.title}}</p>
+        <div class="group-card">
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.integrations.promoted_mcp}}</span>
+              <input class="field" type="text" data-value="promoted_mcp_url" data-event-change="on_integrations_field_changed()" placeholder="{{i18n:settings.integrations.promoted_mcp_placeholder}}"/>
+              <span class="group-field-hint" data-if="promoted_mcp_url == ''">{{i18n:settings.integrations.promoted_mcp_placeholder}}</span>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.integrations.search}}</span>
+              <input class="field" type="text" data-value="search_provider" data-event-change="on_integrations_field_changed()"/>
+            </span>
+          </label>
+        </div>
+        <div class="settings-q-head row"><p class="text muted group-foot">{{i18n:settings.integrations.mcp_help}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.mcp')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
+        <div data-for="server, server_index : mcp_servers" class="settings-subsection stack">
+          <div class="group-card">
+            <label class="settings-field group-row group-row--field">
+              <span class="group-row-body group-row-body--field">
+                <span class="settings-label group-row-text">{{i18n:settings.integrations.server_id}}</span>
+                <input class="field" type="text" data-value="server.id" data-event-change="on_integrations_field_changed()"/>
+              </span>
+            </label>
+            <label class="settings-field group-row group-row--field">
+              <span class="group-row-body group-row-body--field">
+                <span class="settings-label group-row-text">{{i18n:settings.integrations.server_url}}</span>
+                <input class="field" type="text" data-value="server.url" data-event-change="on_integrations_field_changed()"/>
+              </span>
+            </label>
+            <label class="settings-field group-row group-row--field">
+              <span class="group-row-body group-row-body--field">
+                <span class="settings-label group-row-text">{{i18n:settings.integrations.mcp_command}}</span>
+                <input class="field" type="text" data-value="server.command" data-event-change="on_integrations_field_changed()"/>
+              </span>
+            </label>
+            <label class="settings-field group-row group-row--field">
+              <span class="group-row-body group-row-body--field">
+                <span class="settings-label group-row-text">{{i18n:settings.integrations.mcp_args}}</span>
+                <input class="field" type="text" data-value="server.args_text" data-event-change="on_integrations_field_changed()" placeholder="{{i18n:settings.integrations.mcp_args_placeholder}}"/>
+                <span class="group-field-hint" data-if="server.args_text == ''">{{i18n:settings.integrations.mcp_args_placeholder}}</span>
+              </span>
+            </label>
+          </div>
+          <div class="settings-actions row">
+            <button class="btn btn-secondary" type="button" data-event-click="remove_mcp_server(server_index)">{{i18n:common.remove}}</button>
+          </div>
+        </div>
+        <div class="settings-actions row">
+          <button class="btn btn-secondary" type="button" data-event-click="add_mcp_server()">{{i18n:settings.integrations.add_mcp}}</button>
+        </div>
+        <div class="settings-actions stack">
+          <button class="btn btn-secondary settings-action-bar" type="button"
+                  data-event-click="reset_section('integrations')">{{i18n:common.reset_defaults}}</button>
         </div>
         </div>
       </div>
-

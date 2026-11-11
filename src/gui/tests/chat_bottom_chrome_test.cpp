@@ -292,9 +292,9 @@ TEST_F(ChatBottomChromeTest, TheLatestMessageEndsAboveTheComposer) {
 // The "new messages" pill sits above the floating composer, not under it.
 TEST_F(ChatBottomChromeTest, TheNewMessagesPillSitsAboveTheComposer) {
   state.show_jump_to_latest = true;
-  state.jump_to_latest_label = "New messages";
+  state.jump_to_latest_count = "New messages";
   DataModelHost::Instance().Dirty("chat", "show_jump_to_latest");
-  DataModelHost::Instance().Dirty("chat", "jump_to_latest_label");
+  DataModelHost::Instance().Dirty("chat", "jump_to_latest_count");
   context->Update();
   ChatController::KeepClearOfComposer(document->GetElementById("shell-chat-overlay"));
   context->Update();

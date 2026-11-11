@@ -891,8 +891,13 @@ void PeoplePickerController::SyncGroupAddRows() {
         {contact.id, DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic).peer_identity_value});
     selectable.push_back(contact);
   }
-  const std::vector<std::string> ids =
-      AddMemberCandidateIds(candidates, roster_identities, local_identity, invited_identities);
+  const std::vector<std::string> ids = AddMemberCandidateIds(candidates, roster_identities, local_identity);
+  std::unordered_set<std::string> invited_contact_ids; // invited, no answer yet: still pickable, marked
+  for (const AddMemberCandidate& candidate : candidates) {
+    if (invited_identities.count(candidate.identity) > 0) {
+      invited_contact_ids.insert(candidate.contact_id);
+    }
+  }
   std::vector<Contact> shown;
   for (const Contact& contact : selectable) {
     if (std::find(ids.begin(), ids.end(), contact.id) != ids.end()) {
@@ -909,7 +914,8 @@ void PeoplePickerController::SyncGroupAddRows() {
     if (row.title.empty()) {
       row.title = Tr("people_picker.unnamed").c_str();
     }
-    row.subtitle = ContactSubtitle(contact).c_str();
+    row.subtitle = invited_contact_ids.count(contact.id) > 0 ? Tr("people_picker.already_invited").c_str()
+                                                             : ContactSubtitle(contact).c_str();
     row.selected = selected_ids_.count(contact.id) > 0;
     rows_.push_back(std::move(row));
   }

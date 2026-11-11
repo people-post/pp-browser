@@ -1,0 +1,50 @@
+      <div class="settings-section settings-section--grouped settings-mock stack">
+        <div class="group-card">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.notifications}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="show_notifications == 'on'"
+                      data-event-click="toggle_show_notifications()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.notifications.preview}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="show_notification_preview == 'on'"
+                      data-event-click="toggle_show_notification_preview()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot">{{i18n:settings.notifications.help}}</p>
+        <div class="group-card" data-if="call_banner_tip_available">
+          <button class="group-row" type="button" data-event-click="open_notification_settings()">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">{{i18n:settings.notifications.banner_tip.title}}</span>
+                <span class="group-row-sub">{{i18n:settings.notifications.banner_tip}}</span>
+              </span>
+              <span class="group-row-value">{{i18n:settings.notifications.banner_tip.action}}</span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
+        <div class="group-card" data-if="stay_connected_available">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-q-label"><span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.stay_connected}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.stay_connected')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="stay_connected == 'on'"
+                      data-event-click="toggle_stay_connected()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="stay_connected_available">{{i18n:settings.stay_connected.help}}</p>
+      </div>

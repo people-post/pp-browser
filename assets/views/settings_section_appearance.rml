@@ -1,4 +1,4 @@
-      <div class="settings-section settings-section--grouped stack">
+      <div class="settings-section settings-section--grouped settings-mock stack">
         <div class="group-card">
           <button class="settings-toggle-row settings-choice-row row group-row" type="button"
                   data-event-click="on_choose_theme()">
@@ -25,33 +25,6 @@
           </button>
         </div>
         <p class="text muted settings-help group-foot">{{i18n:settings.language.help}}</p>
-        <!-- Phones: the Edit Home sheet Home's "Edit" opens (the desktop's Home has no widgets). -->
-        <div class="group-card settings-phone-only">
-          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
-                  data-event-click="open_home_edit()">
-            <span class="group-row-body">
-              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.home_widgets.label}}</span>
-              <span class="settings-choice-value row">
-                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
-              </span>
-            </span>
-          </button>
-        </div>
-        <!-- Show Activity on Home (Kenneth 2026-11-05): phones only. Off (default) is the minimal AI-first Home; on
-             brings back the 动态 widgets section (calls, mentions, new people…). -->
-        <div class="group-card settings-phone-only">
-          <div class="settings-toggle-row row group-row">
-            <span class="group-row-body">
-              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.home_dynamic.label}}</span>
-              <button class="settings-switch" type="button"
-                      data-class-settings-switch--on="home_show_dynamic == 'on'"
-                      data-event-click="toggle_home_show_dynamic()">
-                <div class="settings-switch-knob"></div>
-              </button>
-            </span>
-          </div>
-        </div>
-        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.home_dynamic.help}}</p>
         <!-- Transparency (Kenneth 2026-11-04): on, the phone's bars are frosted and the page shows through them; off,
              they are solid (the reduce_transparency pref, which the AI assistant's set_reduce_transparency also sets). -->
         <div class="group-card">
@@ -67,21 +40,119 @@
           </div>
         </div>
         <p class="text muted settings-help group-foot">{{i18n:settings.transparency.help}}</p>
-        <div class="group-card">
+        <!-- Widgets (Kenneth 2026-11-05, phones only): "Show widgets page" is the old "Show Activity on Home" switch (off, the
+             default, is the minimal AI-first Home; on brings back the 动态 widgets section); "Choose widgets" opens the
+             Edit Home sheet and is greyed out while the first is off. -->
+        <p class="text group-head settings-phone-only">{{i18n:settings.widgets.title}}</p>
+        <div class="group-card settings-phone-only">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">
-              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.call_diagnostics.label}}</span>
+              <span class="group-row-label">
+                <span class="settings-label group-row-text">{{i18n:settings.home_dynamic.label}}</span>
+                <span class="group-row-sub">{{i18n:settings.home_dynamic.help}}</span>
+              </span>
               <button class="settings-switch" type="button"
-                      data-class-settings-switch--on="call_diagnostics == 'on'"
-                      data-event-click="toggle_call_diagnostics()">
+                      data-class-settings-switch--on="home_show_dynamic == 'on'"
+                      data-event-click="toggle_home_show_dynamic()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+          <button class="group-row" type="button" data-class-group-row--dim="home_show_dynamic != 'on'"
+                  data-event-click="open_home_edit()">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">{{i18n:settings.home_widgets.label}}</span>
+                <span class="group-row-sub">{{i18n:settings.home_widgets.help}}</span>
+              </span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
+        <div class="group-card settings-phone-only">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.ai_dot.show}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="ai_dot_shown"
+                      data-event-click="toggle_ai_dot()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        <!-- Animated home logo (Kenneth 2026-11-09; moved here 2026-11-09): phones only. On (default) the AI Home's logo is
+             the mascot in the look picked below, and a tap (or a while alone) makes it move; off keeps the static app icon. -->
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.home_logo.label}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="home_animated_logo == 'on'"
+                      data-event-click="toggle_home_animated_logo()">
                 <div class="settings-switch-knob"></div>
               </button>
             </span>
           </div>
         </div>
-        <p class="text muted settings-help group-foot">{{i18n:settings.call_diagnostics.help}}</p>
+        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.home_logo.help}}</p>
+        <p class="text group-head settings-phone-only">{{i18n:settings.ai_dot.look}}</p>
+        <div class="group-card ai-look-picker settings-phone-only">
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'auto'"
+                  data-event-click="set_ai_dot_look('auto')">
+            <span class="ai-look-art ai-look-art--auto"><svg src="../icons/v2/sparkle.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_auto}}</span>
+          </button>
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'a'"
+                  data-event-click="set_ai_dot_look('a')">
+            <span class="ai-look-art"><svg src="../icons/mascot/a.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_a}}</span>
+          </button>
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'b'"
+                  data-event-click="set_ai_dot_look('b')">
+            <span class="ai-look-art"><svg src="../icons/mascot/b.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_b}}</span>
+          </button>
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'c'"
+                  data-event-click="set_ai_dot_look('c')">
+            <span class="ai-look-art"><svg src="../icons/mascot/c.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_c}}</span>
+          </button>
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'd'"
+                  data-event-click="set_ai_dot_look('d')">
+            <span class="ai-look-art"><svg src="../icons/mascot/d.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_d}}</span>
+          </button>
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'e'"
+                  data-event-click="set_ai_dot_look('e')">
+            <span class="ai-look-art"><svg src="../icons/mascot/e.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_e}}</span>
+          </button>
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'f'"
+                  data-event-click="set_ai_dot_look('f')">
+            <span class="ai-look-art"><svg src="../icons/mascot/f.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_f}}</span>
+          </button>
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'g'"
+                  data-event-click="set_ai_dot_look('g')">
+            <span class="ai-look-art"><svg src="../icons/mascot/g.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_g}}</span>
+          </button>
+        </div>
+        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.ai_dot.look_auto_help}}</p>
+        <div class="group-card settings-phone-only">
+          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
+                  data-event-click="on_choose_ai_dot_size()">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.ai_dot.size}}</span>
+              <span class="settings-choice-value row">
+                <span class="settings-choice-value-text">{{ai_dot_size_label}}</span>
+                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+              </span>
+            </span>
+          </button>
+        </div>
         <div class="settings-actions stack">
           <button class="btn btn-secondary settings-action-bar" type="button"
                   data-event-click="reset_section('appearance')">{{i18n:common.reset_defaults}}</button>
         </div>
+        <p class="text muted settings-help group-foot">{{i18n:settings.appearance.reset_help}}</p>
       </div>

@@ -151,6 +151,8 @@ public:
   /** k6: the path policy of a call (calls owner). */
   /** projects/privacy T3: who may call us (applied on the calls owner). */
   void SetInboundCallAudience(mesh::InboundAudience audience);
+  /** CallSessionManager::SetOnInviteBlocked, kept here so a rebuilt session manager has it too. */
+  void SetOnInviteBlocked(std::function<void(const BlockedCallInvite&)> callback);
   /** Mobility policy, restricted to the relay when the call's peer may not learn our address. */
   CallPathPolicy PathPolicyFor(const std::string& call_id) const;
   /** Before the owner replaces / drops mesh media objects: topology + bridge let go of them. */
@@ -264,6 +266,8 @@ private:
   CallStackDeps deps_;
   /** Written by the owner of the settings (UI), read when the calls owner rebuilds its session manager. */
   std::atomic<mesh::InboundAudience> inbound_call_audience_{mesh::InboundAudience::Everyone};
+  /** The GUI's listener for dropped invites (owner thread). */
+  std::function<void(const BlockedCallInvite&)> on_invite_blocked_;
   std::unique_ptr<ICallSessionStore> call_session_store_;
   std::unique_ptr<ICallMediaKeyStore> call_media_keys_;
   std::vector<IDekConsumer*> at_rest_;

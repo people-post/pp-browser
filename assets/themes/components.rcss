@@ -389,14 +389,42 @@ select selectbox option {
   right: 16dp;
   bottom: 16dp;
   z-index: 5;
-  width: auto;
-  font-family: LatoLatin;
-  font-size: 13dp;
-  padding: 8dp 14dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  padding: 0;
   border: 0;
-  border-radius: 16dp;
+  background-color: transparent;
+  box-sizing: border-box;
   cursor: pointer;
   focus: none;
+}
+
+/* The disc the eye sees: smaller than the 44dp tap box, a translucent glass with a thin chevron. No backdrop blur
+   of its own: the chat view already spends its two (header + composer, see Floating Chrome above). */
+.chat-jump-latest-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36dp;
+  height: 36dp;
+  box-sizing: border-box;
+  border-radius: 18dp;
+}
+
+.chat-jump-latest-face svg {
+  flex-shrink: 0;
+  width: 24dp;
+  height: 24dp;
+}
+
+/* Sits on the button's top edge, over its right half. */
+.chat-jump-latest .chat-jump-latest-badge {
+  top: -8dp;
+  right: 0;
 }
 
 .message-group {
@@ -473,6 +501,12 @@ select selectbox option {
   font-size: 13dp;
   line-height: 18dp;
   opacity: 0.6;
+}
+
+/* In our own (blue) bubble the quote is bright white at full strength: dimmed white on blue read as grey. */
+.bubble-user .chat-quote-text {
+  color: #ffffff;
+  opacity: 1;
 }
 
 .chat-quote--jump {
@@ -712,7 +746,6 @@ select selectbox option {
   word-break: break-word;
   font-size: 13dp;
   line-height: 18dp;
-  opacity: 0.8;
 }
 
 .prompt-attachment-chip {
@@ -3996,6 +4029,14 @@ select selectbox option {
   display: none;
 }
 
+/* The tap box around the avatar: 44dp, the negative margin keeps the avatar where it was. */
+.shell-chat-overlay .chat-header-avatar-hit {
+  display: block;
+  flex-shrink: 0;
+  padding: 2dp;
+  margin: 0 -2dp;
+}
+
 .shell-chat-overlay .chat-header-avatar {
   display: flex;
   flex-shrink: 0;
@@ -4079,6 +4120,7 @@ select selectbox option {
   border-radius: 16dp;
 }
 
+.chat-header-avatar-hit,
 .chat-header-avatar,
 .chat-header-phone-subtitle {
   display: none;
@@ -5312,6 +5354,7 @@ select selectbox option {
 .shell-page-sheet.shell-page-sheet--new_chat,
 .shell-page-sheet.shell-page-sheet--group_info,
 .shell-page-sheet.shell-page-sheet--group_leave,
+.shell-page-sheet.shell-page-sheet--reactors_sheet,
 .shell-page-sheet.shell-page-sheet--contact_detail {
   padding-left: 0;
   padding-right: 0;
@@ -8500,6 +8543,19 @@ input.checkbox {
   margin-top: 12dp;
 }
 
+/* Phone: the code sits in the middle of the page with the cards' 16dp sides and 20dp spacing, and keeps 20dp of blank
+   below it so the end of the page is not tucked under the tab bar. */
+.shell-layer-compact .me-invite-qr {
+  display: flex;
+  align-items: center;
+  margin: 20dp 16dp 20dp 16dp;
+}
+
+.shell-layer-compact .me-invite-qr .group-foot {
+  margin: 0;
+  text-align: center;
+}
+
 .me-invite-qr-code {
   width: 200dp;
   height: 200dp;
@@ -11593,6 +11649,21 @@ input.checkbox {
   font-size: 18dp;
 }
 
+/* The reactions sheet: a person's cached photo fills the round avatar; the emoji they used ends the row. */
+.cd-row-avatar--photo {
+  overflow: hidden;
+}
+
+.cd-row-avatar-image {
+  width: 44dp;
+  height: 44dp;
+}
+
+.reactor-emoji {
+  flex-shrink: 0;
+  font-size: 22dp;
+}
+
 /* A small label after a name in a row ("Owner", "Can't reach"). */
 .cd-tag {
   flex-shrink: 0;
@@ -12491,11 +12562,6 @@ input.checkbox {
   padding-top: 48dp;
 }
 
-/* No small title in a pushed page's bar: the large one is in the page. */
-.shell-layer-compact .nav-bar-host .settings-header-title {
-  display: none;
-}
-
 .shell-layer-compact .nav-bar-host .settings-detail-header .bar-fade,
 .shell-layer-transient.nav-bar-host .shell-transient-chrome .bar-fade {
   opacity: 0;
@@ -12959,6 +13025,146 @@ textarea:composing ~ .prompt-composer-label,
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The phone Me home and the pages rebuilt from the agreed mockup (logs/mockups/settings-reorg-1110.html, CSS px = dp)
+   share one set of metrics: text rows of at least 52dp, cards with 16dp sides and 12dp corners, 24dp between groups,
+   13/18 helper lines 8dp under their card. .me-home is the home's phone block; .settings-mock is the root of a page
+   (通知 / 外观 / 存储 / 我的资料) so no other settings page changes. */
+.shell-layer-compact .me-home .group-card,
+.shell-layer-compact .settings-mock .group-card {
+  margin: 24dp 16dp 0 16dp;
+  border-radius: 12dp;
+}
+
+.shell-layer-compact .settings-mock .group-card:first-child {
+  margin-top: 16dp;
+}
+
+.shell-layer-compact .settings-mock .group-row-sub {
+  white-space: normal;
+  overflow: visible;
+  margin-top: 2dp;
+}
+
+.shell-layer-compact .settings-mock .group-row--dim {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.shell-layer-compact .settings-mock .group-row--indent {
+  padding-left: 36dp;
+}
+
+/* .settings-phone-only sets its own display; the QR box must stay a centred column on the profile page. */
+.shell-layer-compact .settings-mock .me-invite-qr.settings-phone-only {
+  display: flex;
+}
+
+.shell-layer-compact .settings-mock .me-profile-head {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  margin: 8dp 16dp 0 16dp;
+}
+
+/* The nickname row: label at the left, the field at the right (the mockup's edit row). */
+.shell-layer-compact .settings-mock .group-row--field .group-row-body--field {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-height: 52dp;
+  padding: 0 16dp 0 0;
+}
+
+.shell-layer-compact .settings-mock .group-row--field .group-row-text {
+  flex: 0 0 auto;
+  margin: 0 12dp 0 0;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-layer-compact .settings-mock .group-row--field .field {
+  flex: 1;
+  width: auto;
+  height: 52dp;
+  min-height: 52dp;
+  max-height: 52dp;
+  margin: 0;
+  padding: 15dp 0;
+  background-color: transparent;
+  text-align: right;
+}
+
+.shell-layer-compact .settings-mock .group-row--field .group-field-hint {
+  left: auto;
+  right: 0;
+  top: 0;
+  bottom: auto;
+  height: 52dp;
+  line-height: 52dp;
+}
+
+.shell-layer-compact .settings-mock .group-foot {
+  margin: 8dp 32dp 0 32dp;
+}
+
+.shell-layer-compact .settings-mock .group-head {
+  margin: 24dp 32dp 8dp 32dp;
+}
+
+.shell-layer-compact .settings-mock .group-head + .group-card {
+  margin-top: 0;
+}
+
+.shell-layer-compact .me-home .group-row,
+.shell-layer-compact .me-home .group-row-body,
+.shell-layer-compact .settings-mock .group-row,
+.shell-layer-compact .settings-mock .group-row-body {
+  min-height: 52dp;
+}
+
+/* The engine keeps 16dp for an (undrawn) scrollbar once the page overflows; Me scrolls by touch, so the cards keep
+   their 16dp margins on both sides. */
+.shell-layer-compact .settings-list-view scrollbarvertical {
+  width: 0dp;
+}
+
+/* The profile card and the version line of the home. */
+.shell-layer-compact .me-home .me-card-row {
+  min-height: 88dp;
+  padding-right: 0;
+}
+
+.shell-layer-compact .me-home .me-card-main {
+  padding: 12dp 4dp 12dp 16dp;
+}
+
+.shell-layer-compact .me-home .me-card-avatar,
+.shell-layer-compact .me-home .me-card-avatar-image {
+  width: 64dp;
+  height: 64dp;
+  border-radius: 32dp;
+}
+
+.shell-layer-compact .me-home .me-card-avatar .avatar-letter {
+  font-size: 26dp;
+}
+
+.shell-layer-compact .me-home .me-card-name {
+  font-size: 20dp;
+  line-height: 26dp;
+}
+
+.shell-layer-compact .me-home .cd-icon-btn {
+  width: 44dp;
+  height: 44dp;
+}
+
+.shell-layer-compact .me-home .me-home-ver {
+  margin: 32dp 32dp 0 32dp;
+  text-align: center;
 }
 
 /* Buttons on settings pages (DESIGN-pp-ui 8.10): 50dp pill, full width. Inside a card they shrink to 36dp pills. */
@@ -14075,12 +14281,14 @@ textarea:composing ~ .prompt-composer-label,
 
 .storage-seg .storage-seg-tab {
   flex: 1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  /* Not display: flex: the label is the button's bare text, and a flex button gives that text a 0x0 box (nothing is
+     painted); a block with a line box the height of the tab centres it instead. */
+  display: block;
   min-height: 40dp;
+  line-height: 40dp;
+  text-align: center;
   margin: 0;
-  padding: 6dp 0;
+  padding: 0;
   border-width: 0;
   border-radius: 7dp;
   background-color: transparent;
@@ -14353,7 +14561,22 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 .shell-layer-compact .settings-detail-body {
-  padding-top: 56dp;
+  padding-top: 64dp;
+}
+
+/* A settings page's one title is centred in its bar (phase 1 of the settings reorganisation); the bar is 56dp. */
+.shell-layer-compact .settings-header-title {
+  height: 56dp;
+  line-height: 56dp;
+}
+
+/* Bold bar titles: LatoLatin (the app's default family) is loaded in one weight, so font-weight: bold changes nothing
+   in it, and Chinese follows the weight of the face its primary family resolves to. Inter is loaded in four weights
+   (Application.cpp), so with it the bold reaches Latin (Inter Bold) and Chinese (Noto Sans SC Bold) alike. */
+.shell-layer-compact .settings-header-title,
+.shell-layer-compact .settings-panel .pane-nav-title {
+  font-family: Inter;
+  font-weight: bold;
 }
 
 .shell-layer-compact .contacts-index {

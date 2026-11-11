@@ -168,6 +168,15 @@ void CallStack::SetInboundCallAudience(const mesh::InboundAudience audience) {
   });
 }
 
+void CallStack::SetOnInviteBlocked(std::function<void(const BlockedCallInvite&)> callback) {
+  executor_.RunAndWait([this, &callback]() {
+    on_invite_blocked_ = std::move(callback);
+    if (call_sessions_) {
+      call_sessions_->SetOnInviteBlocked(on_invite_blocked_);
+    }
+  });
+}
+
 CallPathPolicy CallStack::PathPolicyFor(const std::string& call_id) const {
   const CallPathPolicy policy = mobility_.PolicyFor(call_id);
   if (!deps_.address_disclosure) {
@@ -414,6 +423,9 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
   call_device_->SetMeshGlue(MakeMeshGlue());
   call_sessions_->SetInboundCallAudience(
       inbound_call_audience_.load(std::memory_order_relaxed)); // a rebuilt session manager keeps the choice
+  if (on_invite_blocked_) {
+    call_sessions_->SetOnInviteBlocked(on_invite_blocked_); // and the GUI's listener
+  }
   BindSessionMeshReach();
   BindCallState();
   RebindMeshMedia();

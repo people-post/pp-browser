@@ -24,7 +24,7 @@ class ChatTranscriptScroller {
 public:
   struct View {
     bool& show_jump_to_latest;
-    ui::String& jump_to_latest_label;
+    ui::String& jump_to_latest_count;
     std::vector<MessageDisplayRow>& messages;
     bool& has_turns;
   };
@@ -70,7 +70,7 @@ public:
     std::optional<int64_t> loaded_max;
   };
   static JumpWindow WindowForJump(int64_t order, std::optional<int64_t> loaded_min, std::optional<int64_t> loaded_max);
-  /** SyncLayout remounts DOM — re-arm follow-tail when still pinned. */
+  /** SyncLayout remounts DOM — re-arm follow-tail when still pinned, else put the reading position back. */
   void OnShellRemounted();
 
   const std::optional<int64_t>& LoadedMinDisplayOrder() const { return loaded_min_display_order_; }
@@ -103,7 +103,7 @@ public:
 
 private:
   ui::Element* FindMessagesScrollElement() const;
-  void UpdateJumpToLatestLabel();
+  void UpdateJumpToLatestCount();
   void SetShowJumpToLatest(bool show);
   void ScrollMessagesToBottom();
   void MaybeLoadOlderLocalHistory();
@@ -130,6 +130,11 @@ private:
   std::optional<int64_t> loaded_max_display_order_;
   std::optional<float> pending_scroll_height_before_;
   std::optional<float> pending_scroll_top_before_;
+  /** Where the person is reading (not pinned to the bottom), kept every frame so a remount can put it back. */
+  std::optional<float> reading_scroll_top_;
+  /** A remount's target offset, set each frame until the new rows are laid out and reach it. */
+  std::optional<float> restore_scroll_top_;
+  int restore_scroll_frames_ = 0;
   float last_messages_scroll_height_ = 0.f;
   float last_client_height_ = 0.f;
   int unread_while_scrolled_ = 0;

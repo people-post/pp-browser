@@ -20,6 +20,7 @@
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/StorageSettingsSection.h"
+#include "feature/settings/SettingsPages.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/MascotLook.h"
@@ -248,14 +249,13 @@ const SettingsSectionHandler* SettingsController::FindHandler(const std::string&
 
 void SettingsController::InitSections() {
   sections_.clear();
-  const bool advanced = ui_state_.show_advanced_settings == "on";
-  for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
-    const SettingsSectionListItem item = handler->ListItem();
-    if (item.advanced_only && !advanced) {
-      continue;
-    }
-    sections_.push_back(
-        {.id = item.id.c_str(), .title = item.title.c_str(), .subtitle = item.subtitle.c_str(), .attention = false});
+  // Advanced and Test options are listed (and so reachable) only while the flag is on: five taps on the version.
+  for (const SettingsPage* page : ListedSettingsPages(ui_state_.show_advanced_settings == "on")) {
+    sections_.push_back({.id = page->id,
+                         .title = Tr(page->title_key).c_str(),
+                         .subtitle = "",
+                         .group = page->home_group,
+                         .attention = false});
   }
   ApplySectionAttention();
 }
@@ -467,11 +467,13 @@ void SettingsController::PushUiStateToBindings() {
 }
 
 void SettingsController::SyncBindingsFromSession() {
-  if (selected_id_ == "storage") {
-    cas_library_.Refresh();
-  }
-  if (selected_id_ == "security") {
-    own_devices_.Refresh();
+  if (const SettingsPage* page = FindSettingsPage(selected_id_.c_str())) {
+    if (SettingsPageHas(*page, SettingsPageAction::RefreshCasLibrary)) {
+      cas_library_.Refresh();
+    }
+    if (SettingsPageHas(*page, SettingsPageAction::RefreshDevices)) {
+      own_devices_.Refresh();
+    }
   }
 
   const BootstrapResult& bootstrap = Store().Snapshot();
@@ -540,6 +542,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
       section_handle.RegisterMember("id", &SectionListRow::id);
       section_handle.RegisterMember("title", &SectionListRow::title);
       section_handle.RegisterMember("subtitle", &SectionListRow::subtitle);
+      section_handle.RegisterMember("group", &SectionListRow::group);
       section_handle.RegisterMember("attention", &SectionListRow::attention);
     }
     if (auto mcp_handle = ctor.RegisterStruct<McpServerRow>()) {
@@ -750,7 +753,10 @@ bool SettingsController::RegisterModel(ui::Context* context) {
                                open_home_edit_();
                              }
                            }));
-    ctor.BindEventCallback("toggle_show_advanced_settings", DataEvent<>([this]() { ToggleShowAdvancedSettings(); }));
+    ctor.BindEventCallback("tap_version", DataEvent<>([this]() { OnTapVersion(); }));
+    ctor.BindEventCallback("open_terms", DataEvent<>([]() { UserFeedback::Ok(Tr("settings.help.coming_soon")); }));
+    ctor.BindEventCallback("open_privacy_policy",
+                           DataEvent<>([]() { UserFeedback::Ok(Tr("settings.help.coming_soon")); }));
     ctor.BindEventCallback("toggle_ai_dot", DataEvent<>([this]() { ToggleAiDot(); }));
     ctor.BindEventCallback("set_ai_dot_look",
                            DataEvent<std::string>([this](const std::string& look) { SetAiDotLook(look); }));
@@ -954,7 +960,12 @@ void SettingsController::MountSelectedSettingsSection() {
     RmlMount::MountInner(mount, {});
     return;
   }
-  const std::string key = "settings_section_" + std::string(selected_id_.c_str());
+  const SettingsPage* page = FindSettingsPage(selected_id_.c_str());
+  if (!page) {
+    log().error << "No settings page '" << selected_id_.c_str() << "'";
+    return;
+  }
+  const std::string key = page->view_key;
   const std::string body = ViewCatalog::LoadBody(key);
   if (body.empty()) {
     log().error << "Failed to load settings section body for '" << key << "'";
@@ -1271,18 +1282,19 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   }
 
   status_ = "";
-  // Send problem logs is on Security (desktop) and in About (phones): either page reads its label again.
-  if (section_id == "security" || section_id == "about") {
+  const SettingsPage* opened = FindSettingsPage(section_id);
+  // Send problem logs is on the Help page: it reads its label again.
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshDiagnostics)) {
     security_actions_.RefreshDiagnostics();
   }
-  if (section_id == "security") {
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshBlockedCount)) {
     RefreshBlockedCount();
   }
-  if (section_id == "profile") {
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshBannerTip)) {
     RefreshBannerTip();
   }
   storage_manager_.Reset();
-  if (section_id == "storage") {
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::EnterStorage)) {
     storage_manager_.Enter();
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
@@ -1419,7 +1431,7 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
     OpenChangePin(); // B2: the PIN gate's three steps, not a page of fields
     return;
   }
-  if (selected_id_ != "security" || !show_detail_) {
+  if (selected_id_ != "devices" || !show_detail_) {
     return; // phones only: desktop shows both inline
   }
   if (page == "transfer") {
@@ -1701,7 +1713,7 @@ void SettingsController::ApplyDirectConnectionsChoice(const std::string& audienc
 
 void SettingsController::OnChooseCallInvitePolicy(ui::Event& ev) {
   const std::string current =
-      bindings_.call_invite_policy.empty() ? "contacts_only" : std::string(bindings_.call_invite_policy.c_str());
+      bindings_.call_invite_policy.empty() ? "everyone" : std::string(bindings_.call_invite_policy.c_str());
   std::vector<SettingsChoicePage::Option> options;
   for (const char* id : {"everyone", "contacts_only", "nobody"}) {
     options.push_back({id, CallInvitePolicyDisplayLabel(id).c_str(), current == id});
@@ -1751,7 +1763,7 @@ void SettingsController::ApplyUnlockGraceChoice(const std::string& minutes_id) {
 
 void SettingsController::OnChooseGroupInvitePolicy(ui::Event& ev) {
   const std::string current =
-      bindings_.group_invite_policy.empty() ? "contacts_only" : std::string(bindings_.group_invite_policy.c_str());
+      bindings_.group_invite_policy.empty() ? "everyone" : std::string(bindings_.group_invite_policy.c_str());
   std::vector<SettingsChoicePage::Option> options;
   for (const char* id : {"everyone", "contacts_only", "nobody"}) {
     options.push_back({id, GroupInvitePolicyDisplayLabel(id).c_str(), current == id});
@@ -1802,8 +1814,8 @@ void SettingsController::RefreshLocalizedChrome() {
   InitSections(); // after the sync: the advanced flag comes from the profile prefs
   ApplySupportDiscovery();
   if (!selected_id_.empty()) {
-    if (const SettingsSectionHandler* handler = FindHandler(selected_id_.c_str())) {
-      selected_title_ = handler->ListItem().title.c_str();
+    if (const SettingsPage* page = FindSettingsPage(selected_id_.c_str())) {
+      selected_title_ = Tr(page->title_key).c_str();
     }
   }
   DirtyAll();
@@ -1875,7 +1887,7 @@ void SettingsController::OnAskSettingHelp(const std::string& label_key) {
 }
 
 void SettingsController::OpenNetworkSettings() {
-  OpenSection("network");
+  OpenSection("advanced");
 }
 
 void SettingsController::OpenSection(const std::string& section_id) {
@@ -1949,7 +1961,7 @@ bool SettingsController::ComputeNetworkAttention() const {
 void SettingsController::ApplySectionAttention() {
   const bool network_attention = ComputeNetworkAttention();
   for (SectionListRow& section : sections_) {
-    section.attention = section.id == "network" && network_attention;
+    section.attention = section.id == "advanced" && network_attention;
   }
 }
 
@@ -2188,6 +2200,18 @@ void SettingsController::SaveAiDot(const bool shown, const std::string& look, co
   DataModelHost::Instance().Dirty("settings", "ai_dot_shown");
   DataModelHost::Instance().Dirty("settings", "ai_dot_look");
   DataModelHost::Instance().Dirty("settings", "ai_dot_size_label");
+}
+
+void SettingsController::OnTapVersion() {
+  const bool was_on = bindings_.show_advanced_settings == "on";
+  const VersionTapCounter::Result tap = version_taps_.Tap(SDL_GetTicks());
+  if (tap.action == VersionTapCounter::Action::Toggle) {
+    ToggleShowAdvancedSettings();
+    UserFeedback::Ok(Tr(was_on ? "settings.help.tester_off" : "settings.help.tester_on"));
+  } else if (tap.action == VersionTapCounter::Action::Hint) {
+    UserFeedback::Ok(
+        Tr(was_on ? "settings.help.tap_close" : "settings.help.tap_open", {{"n", std::to_string(tap.taps_left)}}));
+  }
 }
 
 void SettingsController::ToggleShowAdvancedSettings() {

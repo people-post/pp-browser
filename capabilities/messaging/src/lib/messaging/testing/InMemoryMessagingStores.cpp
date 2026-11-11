@@ -151,6 +151,20 @@ Roe<void> InMemoryGroupRosterStore::ExpireOutboundInvitesTo(const std::string& g
   return {};
 }
 
+Roe<std::vector<PendingGroupInvite>> InMemoryGroupRosterStore::ExpireInboundInvitesFrom(
+    const std::string& group_id, const std::string& inviter_identity) const {
+  std::lock_guard lock(mutex_);
+  std::vector<PendingGroupInvite> expired;
+  for (auto& [nonce, invite] : invites_) {
+    if (invite.group_id == group_id && invite.inviter_identity == inviter_identity && !invite.outbound &&
+        invite.status == InviteStatus::Pending) {
+      expired.push_back(invite);
+      invite.status = InviteStatus::Expired;
+    }
+  }
+  return expired;
+}
+
 std::vector<PendingGroupInvite> InMemoryGroupRosterStore::VoidPendingInvitesLocked(const std::string& group_id) const {
   std::vector<PendingGroupInvite> voided;
   for (auto& [nonce, invite] : invites_) {

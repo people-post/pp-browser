@@ -3,8 +3,12 @@
 #include "foundation/data/UserPreferences.h"
 #include "lib/messaging/AttachmentDownloadPolicy.h"
 #include "feature/product/HubSettingsProjection.h"
+#include "foundation/data/ConfigJson.h"
+#include "foundation/platform/ILocalNotifier.h"
 
 #include <gtest/gtest.h>
+
+#include <vector>
 
 TEST(HubSettingsProjectionTest, ProjectsNetworkSliceFromAppConfig) {
   pbr::AppConfig config = pbr::Config::DefaultAppConfig();
@@ -81,6 +85,29 @@ TEST(HubSettingsProjectionTest, ProjectsPolicyAndNotificationPrefs) {
   EXPECT_NE(pbr::ProjectNotifications(other), notifications);
 }
 
+namespace {
+class RecordingNotifier final : public pbr::ILocalNotifier {
+public:
+  void NotifyIncoming(const std::string&, const std::string&, const std::string&, int) override {}
+  void ClearForThread(const std::string&) override {}
+  void SetMessageBannersOn(bool on) override { calls.push_back(on); }
+  std::vector<bool> calls;
+};
+} // namespace
+
+// Startup hands the saved Show notifications to the platform notifier, as a later change does.
+TEST(HubSettingsProjectionTest, SavedShowNotificationsReachTheNotifier) {
+  RecordingNotifier notifier;
+  pbr::ILocalNotifier::SetInstance(&notifier);
+  for (const bool saved : {false, true}) {
+    pbr::ProfilePreferences prefs;
+    prefs.show_notifications = saved;
+    pbr::ApplyMessageBanners(pbr::ILocalNotifier::Instance(), pbr::ProjectNotifications(prefs));
+  }
+  pbr::ILocalNotifier::SetInstance(nullptr);
+  EXPECT_EQ(notifier.calls, (std::vector<bool>{false, true}));
+}
+
 // The hub's settings are values the app projects (capability-repos CR015): its config's slices and the profile's
 // policies, nothing the hub reads itself.
 TEST(HubSettingsProjectionTest, TheHubsSettingsCarryTheConfigsSlicesAndTheProfilesPolicies) {
@@ -96,4 +123,17 @@ TEST(HubSettingsProjectionTest, TheHubsSettingsCarryTheConfigsSlicesAndTheProfil
   EXPECT_EQ(settings.initiation_floor, 7);
   EXPECT_FALSE(settings.app_data_dir.empty());
   EXPECT_EQ(settings.policy, pbr::ProjectPolicy(prefs));
+}
+
+TEST(HubSettingsProjectionTest, UnrecognisedGroupInviteValueStaysContactsOnly) {
+  // A schema 16 file with a value this build does not know is kept as written and projected strictly.
+  auto object = pbr::TryParseObject(R"({ "schema_version": 16, "group_invite_policy": "someone-new" })");
+  ASSERT_TRUE(object.has_value());
+  pbr::ProfilePreferences prefs;
+  pbr::ProfilePrefsFromObject(*object, prefs);
+  EXPECT_EQ(pbr::ProjectPolicy(prefs).group_invite_policy, pbr::GroupInvitePolicy::ContactsOnly);
+
+  // No stored value is the default: everyone.
+  EXPECT_EQ(pbr::ProjectPolicy(pbr::UserPreferences::DefaultProfile()).group_invite_policy,
+            pbr::GroupInvitePolicy::Everyone);
 }

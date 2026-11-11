@@ -50,6 +50,21 @@ void CallUiBackend::SetOnChromeRefresh(std::function<void()> callback) {
   stack_.SetOnChromeRefresh(std::move(callback)); // delivered on UI after the calls change
 }
 
+void CallUiBackend::SetOnInviteBlocked(std::function<void(const BlockedCallInvite&)> callback) {
+  // Told on the calls owner (inbound call control); the GUI hears it on UI, as it hears rings. Set on the stack,
+  // so a session manager built later (after unlock, a reset) has it from its first invite.
+  stack_.SetOnInviteBlocked([callback = std::move(callback)](const BlockedCallInvite& blocked) {
+    if (!callback) {
+      return;
+    }
+    if (AppRuntime::CurrentlyOnUI()) {
+      callback(blocked);
+    } else {
+      AppRuntime::PostUI([callback, blocked]() { callback(blocked); });
+    }
+  });
+}
+
 std::shared_ptr<const CallUiState> CallUiBackend::State() const {
   return stack_.UiState();
 }

@@ -32,6 +32,9 @@ void ConfigApplyBridge::InstallListeners() {
   last_policy_ = ProjectPolicy(snap.profile_prefs);
   last_notifications_ = ProjectNotifications(snap.profile_prefs);
   messaging_->Apply(*last_notifications_); // stay connected (P011) holds from unlock
+  // The platform notifier (installed by PlatformHooks::Register, long before this) starts at its own default;
+  // a saved "off" must reach it now, not only on the next change.
+  ApplyMessageBanners(ILocalNotifier::Instance(), *last_notifications_);
   last_chrome_ = ShellHost::ProjectChrome(snap.profile_prefs);
   last_locale_ = LocalizationService::Prefs{.language = snap.profile_prefs.language};
   last_agent_ = ChatController::ProjectAgent(snap.config);
@@ -74,7 +77,7 @@ void ConfigApplyBridge::OnProfilePrefs(const ProfilePreferences& prefs) {
   if (!last_notifications_ || notifications != *last_notifications_) {
     last_notifications_ = notifications;
     messaging_->Apply(notifications);
-    ILocalNotifier::Instance().SetMessageBannersOn(notifications.show_notifications);
+    ApplyMessageBanners(ILocalNotifier::Instance(), notifications);
   }
 
   const ShellHost::ChromePrefs chrome = ShellHost::ProjectChrome(prefs);

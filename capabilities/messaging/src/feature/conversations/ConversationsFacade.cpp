@@ -338,6 +338,10 @@ PeerDisplayLabel ConversationsFacade::ResolveThreadLabel(const Thread& thread) {
   return hub_.Inbox().ResolveThreadLabel(thread);
 }
 
+PeerDisplayLabel ConversationsFacade::ResolveSenderLabel(const std::string& sender_contact_id) {
+  return hub_.Inbox().Labels().ResolveSender(sender_contact_id);
+}
+
 std::string ConversationsFacade::ContactIconPath(const std::string& contact_id) {
   if (contact_id.empty()) {
     return {};

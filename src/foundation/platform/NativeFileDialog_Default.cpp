@@ -38,7 +38,8 @@ void OnDialogComplete(void* userdata, const char* const* filelist, int /*filter*
 
 } // namespace
 
-void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callback, const bool include_heic) {
+void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callback, const bool include_heic,
+                             std::function<void(const std::string& name)> /*on_preparing*/) {
   if (!callback) {
     return;
   }

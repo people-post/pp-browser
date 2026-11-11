@@ -8,6 +8,8 @@
 #include "lib/delivery/DeliveryNotice.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
+#include "lib/messaging/TranscriptAssembly.h"
+#include "lib/people/PeerDisplayLabel.h"
 #include "lib/people/ContactTypes.h"
 
 #include <cstdint>
@@ -201,6 +203,31 @@ struct GroupMemberRow {
  */
 GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::optional<Contact>& contact,
                                    bool unreachable, const std::string& card_nickname = {});
+/** One person on a message's reactions sheet: who reacted with which emoji. */
+struct ReactorRow {
+  std::string emoji;
+  /** The sender's id (a contact id, or a group member's account id); never shown. */
+  std::string identity;
+  /** The name shown: the contact's, the directory's nickname, "you", or `unknown_title` when only a raw id is known. */
+  std::string title;
+  /** Seed for the letter-avatar colour. */
+  std::string stable_id;
+  /** Local file of the person's cached photo; empty when none. */
+  std::string icon_path;
+  bool is_self = false;
+  bool operator==(const ReactorRow&) const = default;
+};
+
+/**
+ * The rows of a message's reactions sheet, grouped by emoji in the chips' order: in each group this device's own
+ * reaction first, then the others in the order they reacted. `resolve` names a sender, `icon_of` finds the photo;
+ * a sender known only by a raw id shows `unknown_title`, never the id.
+ */
+std::vector<ReactorRow> BuildReactorRows(const std::vector<TranscriptReaction>& reactions,
+                                         const std::function<PeerDisplayLabel(const std::string& sender)>& resolve,
+                                         const std::function<std::string(const std::string& sender)>& icon_of,
+                                         const std::string& unknown_title);
+
 /** An invite waiting longer than this shows the "not joined yet" hint (it expires at kGroupInviteTtlMs). */
 inline constexpr int64_t kInviteStaleAfterMs = 60LL * 60 * 1000;
 
@@ -465,6 +492,10 @@ public:
   Roe<void> ShareContact(const std::string& thread_id, const std::string& contact_id);
   /** React with `emoji` on a message of the open chat, or take this device's reaction back. */
   Roe<void> ToggleReaction(const std::string& message_id, const std::string& emoji);
+  /** Who reacted to a message of the open chat (BuildReactorRows); empty when the message is gone. */
+  std::vector<ReactorRow> ReactorsOf(const std::string& message_id);
+  /** This device has reacted to the message with `emoji` (the sheet's "tap to remove" row is live). */
+  bool MyReactionOn(const std::string& message_id, const std::string& emoji);
   Roe<void> DeleteForMe(const std::string& message_id);
   /** "Delete for everyone" is offered: our own message, in a chat with people (not the agent). */
   bool CanDeleteForEveryone(const std::string& message_id);

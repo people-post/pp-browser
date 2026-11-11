@@ -2,6 +2,7 @@
 
 #include "common/thread/ThreadTypes.h"
 #include "lib/calls/CallScreen.h"
+#include "lib/calls/CallTypes.h"
 #include "lib/people/ContactTypes.h"
 #include "common/Error.h"
 
@@ -43,6 +44,11 @@ struct CallFunctionalPorts {
   std::function<void(const std::string& group_id, const std::string& identity, const std::string& call_id,
                      std::function<void(Roe<void>)> done)>
       invite_guest_to_group;
+  /**
+   * A 1:1 invite "who can call me" dropped: the grey local line in the chat with its caller (one per caller,
+   * counted per call id; no unread, no sound). UI thread. Unset: nothing recorded.
+   */
+  std::function<void(const BlockedCallInvite& blocked)> record_blocked_call;
 };
 
 } // namespace pbr

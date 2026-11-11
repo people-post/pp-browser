@@ -13,6 +13,8 @@ namespace pbr {
  */
 struct ShellFeedbackPorts {
   std::function<void(const std::string& message, ToastDuration duration)> show_toast;
+  /** Takes the pill down now (a "Preparing…" note whose work has finished). */
+  std::function<void()> dismiss_toast;
   /** `sticky`: stays until dismissed; otherwise gone after ShellFeedback::kBannerTtlMs. */
   std::function<void(const std::string& message, bool sticky)> show_banner;
   std::function<void()> dismiss_banner;

@@ -5,6 +5,7 @@
 #include "feature/settings/SettingsSectionHandler.h"
 #include "feature/settings/SettingsSections.h"
 #include "feature/settings/SettingsUiState.h"
+#include "feature/settings/VersionTapCounter.h"
 #include "gui/SettingsCasLibrary.h"
 #include "gui/SettingsChoicePage.h"
 #include "gui/SettingsHost.h"
@@ -52,6 +53,8 @@ public:
     ui::String id;
     ui::String title;
     ui::String subtitle;
+    /** The Home list group (SettingsPage::home_group). */
+    int group = 0;
     bool attention = false;
   };
 
@@ -226,10 +229,10 @@ private:
     bool security_biometric_shown = false;
     bool security_biometric_on = false;
     ui::String security_biometric_label;
-    ui::String group_invite_policy = "contacts_only";
-    ui::String group_invite_policy_label = "Contacts only";
-    ui::String call_invite_policy = "contacts_only";
-    ui::String call_invite_policy_label = "Contacts only";
+    ui::String group_invite_policy = "everyone";
+    ui::String group_invite_policy_label = "Everyone";
+    ui::String call_invite_policy = "everyone";
+    ui::String call_invite_policy_label = "Everyone";
     ui::String tool_permissions_summary = "None saved";
     bool tool_permissions_has_saved = false;
     ui::String app_name;
@@ -262,6 +265,7 @@ private:
   void ToggleCallDiagnostics();
   void ToggleHomeShowDynamic();
   void ToggleShowAdvancedSettings();
+  void OnTapVersion();
   /** Me → AI assistant: the AI dot's switch, look (`a`–`d`) and size (`s` / `m` / `l`), saved to the profile prefs at once. */
   void ToggleHomeAnimatedLogo();
   void ToggleAiDot();
@@ -358,6 +362,8 @@ private:
   std::vector<std::unique_ptr<SettingsSectionHandler>> section_handlers_;
   std::unordered_map<std::string, SettingsSectionHandler*> section_handlers_by_id_;
   std::vector<SectionListRow> sections_;
+  /** Five quick taps on Help's version row toggle the advanced flag. */
+  VersionTapCounter version_taps_;
   ui::String selected_id_;
   ui::String selected_title_;
   bool show_detail_ = false;

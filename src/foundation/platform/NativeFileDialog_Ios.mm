@@ -24,6 +24,7 @@
 @public
   pbr::NativeFileDialogCallback callback;
   std::function<void(const std::string& name)> preparing; // a video was chosen and is being copied (may be empty)
+  bool preparing_for_images; // also call `preparing` for a photo (ShowOpenImageFileDialog's caller asked for it)
 }
 @end
 
@@ -129,6 +130,7 @@ void Finish(PPPickDelegate* delegate, std::vector<std::string> paths) {
   pbr::NativeFileDialogCallback callback = std::move(delegate->callback);
   delegate->callback = nullptr;
   delegate->preparing = nullptr;
+  delegate->preparing_for_images = false;
   if (ActivePicker() == delegate) {
     SetActivePicker(nil);
     [delegate release];
@@ -174,10 +176,16 @@ PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback call
       // The copy below can take a while: the caller says "Sending…" (with the name) meanwhile.
       preparing(name != nil ? std::string(name.UTF8String) : std::string());
     }
-  } else if ([provider hasItemConformingToTypeIdentifier:UTTypeJPEG.identifier]) {
-    type = UTTypeJPEG.identifier;
-  } else if ([provider hasItemConformingToTypeIdentifier:UTTypePNG.identifier]) {
-    type = UTTypePNG.identifier;
+  } else {
+    if ([provider hasItemConformingToTypeIdentifier:UTTypeJPEG.identifier]) {
+      type = UTTypeJPEG.identifier;
+    } else if ([provider hasItemConformingToTypeIdentifier:UTTypePNG.identifier]) {
+      type = UTTypePNG.identifier;
+    }
+    if (preparing && preparing_for_images) {
+      // A large photo takes seconds to copy / convert: the caller says "Preparing…" meanwhile.
+      preparing(name != nil ? std::string(name.UTF8String) : std::string());
+    }
   }
   const auto started = std::chrono::steady_clock::now();
   [self retain]; // until the file has been copied
@@ -272,7 +280,8 @@ void FinishExport(PPExportDelegate* delegate, const bool saved) {
 
 namespace pbr {
 
-void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callback, const bool include_heic) {
+void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callback, const bool include_heic,
+                             std::function<void(const std::string& name)> on_preparing) {
   if (!callback) {
     return;
   }
@@ -283,6 +292,8 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
       return;
     }
     (void)include_heic; // the compatible representation is always JPEG / PNG
+    delegate->preparing = std::move(on_preparing);
+    delegate->preparing_for_images = true;
     PHPickerConfiguration* config = [[[PHPickerConfiguration alloc] init] autorelease];
     config.filter = [PHPickerFilter imagesFilter];
     config.selectionLimit = 1;

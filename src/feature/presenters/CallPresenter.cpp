@@ -27,6 +27,19 @@ namespace {
 /** Remote frames this fresh mean the peer's camera is on, whatever its roster row says (B58). */
 constexpr int64_t kPeerVideoLiveMs = 500;
 
+int64_t SteadyMs(const PendingNotificationTap::Clock::time_point at) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(at.time_since_epoch()).count();
+}
+
+/**
+ * Whether a tapped call alert can be for the call `call_id`: its hint names that call, or names none — as a ring
+ * routes a tap with no hint (PendingNotificationTap::TakeCallRoute). A call id never fits a push hint today
+ * (SanitizeWakeHint drops its ':'), so in practice every call tap has none.
+ */
+bool TapMayBeFor(const std::string& hint, const std::string& call_id) {
+  return hint.empty() || hint == call_id;
+}
+
 } // namespace
 
 CallPresenter::CallPresenter() {
@@ -68,6 +81,7 @@ void CallPresenter::BindToMessaging() {
   // Ingest may run on IO; the screen is decided on UI.
   backend->SetOnRingChanged([this]() { AppRuntime::PostUI([this]() { Refresh(); }); });
   backend->SetOnChromeRefresh([this]() { Refresh(); });
+  backend->SetOnInviteBlocked([this](const BlockedCallInvite& blocked) { OnInviteBlocked(blocked); });
   bound_calls_ = identity;
   // Pick up post-restart abandon / pending ring after stack rebuild.
   Refresh();
@@ -100,7 +114,25 @@ CallPresenter::WakeStep CallPresenter::StepWakePlaceholder(const bool phone_layo
   in.screen_kind = screen_.kind;
   in.messaging_ready = messaging_ready_;
   in.now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+  PruneBlocked(in.now_ms);
+  std::optional<BlockedCallInvite> blocked_tap;
+  if (in.tap_fresh && !wake_blocks_.empty()) {
+    const std::string hint = tap.FreshHint(now);
+    for (const auto& [call_id, blocked] : wake_blocks_) {
+      if (TapMayBeFor(hint, call_id)) {
+        blocked_tap = blocked;
+        break;
+      }
+    }
+  }
+  in.blocked = blocked_tap.has_value();
   const CallWakePlaceholder::View view = wake_placeholder_.Step(in);
+  if (view.outcome == CallWakePlaceholder::Outcome::Blocked && blocked_tap) {
+    // The page closes (or never shows) for a call that will not ring: it never goes without a word.
+    wake_blocks_.erase(blocked_tap->call_id);
+    blocked_pill_at_[blocked_tap->sender_identity] = in.now_ms;
+    NotifyBlocked(*blocked_tap);
+  }
   step.outcome = view.outcome;
   step.shown_ms = view.shown_ms;
   step.ready_ms = view.ready_ms;
@@ -113,6 +145,61 @@ CallPresenter::WakeStep CallPresenter::StepWakePlaceholder(const bool phone_layo
     wake_ring_shown_ = false;
   }
   return step;
+}
+
+void CallPresenter::PruneBlocked(const int64_t now_ms) {
+  std::erase_if(blocked_calls_, [now_ms](const auto& seen) { return now_ms - seen.second > kDefaultCallInviteTtlMs; });
+  std::erase_if(wake_blocks_, [this](const auto& wake) { return !blocked_calls_.contains(wake.first); });
+  std::erase_if(blocked_pill_at_,
+                [now_ms](const auto& pill) { return now_ms - pill.second >= kBlockedPillPerCallerMs; });
+}
+
+void CallPresenter::OnInviteBlocked(const BlockedCallInvite& blocked,
+                                    const PendingNotificationTap::Clock::time_point now) {
+  // Someone the user blocked (their texts are dropped unread too), or our own account: nothing at all.
+  if (ports_.local_relay_identity && ports_.local_relay_identity() == blocked.sender_identity) {
+    return;
+  }
+  if (ports_.find_contact_by_identity) {
+    const auto contact = ports_.find_contact_by_identity(blocked.sender_identity, mesh::ContactIdKind::Account);
+    if (contact && *contact &&
+        ((*contact)->local.trust == TrustLevel::Blocked || (*contact)->trust == TrustLevel::Blocked)) {
+      return;
+    }
+  }
+  const int64_t now_ms = SteadyMs(now);
+  PruneBlocked(now_ms);
+  if (!blocked_calls_.emplace(blocked.call_id, now_ms).second) {
+    return; // the same invite again (two paths, a redelivery)
+  }
+  if (blocked.from_group) {
+    return; // a group's call: nothing shown, nothing recorded (as before)
+  }
+  log().info << "call blocked by who-can-call-me call_id=" << blocked.call_id << " expired=" << blocked.expired;
+  if (ports_.record_blocked_call) {
+    ports_.record_blocked_call(blocked);
+  }
+  if (blocked.expired) {
+    return; // long over: the chat's line is all
+  }
+  wake_blocks_[blocked.call_id] = blocked;
+  if (wake_ring_shown_ && TapMayBeFor(PendingNotificationTap::Instance().FreshHint(now), blocked.call_id)) {
+    return; // the connecting page waiting for it closes on the next step, with the pill
+  }
+  if (!AppLifecycle::IsUserAttentive() || blocked_pill_at_.contains(blocked.sender_identity)) {
+    return;
+  }
+  blocked_pill_at_[blocked.sender_identity] = now_ms;
+  NotifyBlocked(blocked);
+}
+
+void CallPresenter::NotifyBlocked(const BlockedCallInvite& blocked) {
+  CallNotice notice;
+  notice.kind = CallNotice::Kind::CallBlocked;
+  notice.identity = blocked.sender_identity;
+  notice.key = blocked.audience == mesh::InboundAudience::Nobody ? "call.blocked.pill.nobody"
+                                                                 : "call.blocked.pill.contacts_only";
+  Notify(notice);
 }
 
 void CallPresenter::Tick() {
