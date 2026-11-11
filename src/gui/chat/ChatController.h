@@ -336,11 +336,11 @@ private:
   void OnAttachCapture(ui::Event* ev = nullptr);
   void OpenCameraCapture(CameraCaptureKind kind);
   /** `pick_serial`: the camera's pick (a video sent from it carries it on until its bubble). */
-  CaptureFlowPorts MakeCaptureFlowPorts(uint64_t pick_serial);
+  CaptureFlowPorts MakeCaptureFlowPorts(uint64_t pick_serial, const std::string& thread_id);
   /** Recompute `show_capture` (call, upload, chat kind); dirty only on a change. */
   void RefreshShowCapture();
   /** After a picture is picked: "Send" (shrunk), "Send original", Cancel. */
-  void ShowPictureSendChoice(std::string path);
+  void ShowPictureSendChoice(std::string path, const std::string& thread_id);
   void ToggleVoiceMode();
   /** A video was accepted and is being copied out by the system (iOS): the chip says "Sending…" until it arrives. */
   void BeginAttachmentPreparing(const std::string& name);
@@ -351,20 +351,26 @@ private:
   /** chat_.attachment_here: an attachment is in flight (or failed) in the chat that is open now. */
   void RefreshAttachmentHere();
   /**
-   * `voice_file`: the file is a voice recording of ours, to `voice_thread_id` (not whatever chat is open when it
-   * is done). It is deleted once the send succeeded or is staged for a retry; otherwise it is kept and the chip
-   * offers Retry / Discard.
+   * Sends `path` to `to_thread` and only there: the chat a pick was armed in, a recording's own (never whatever
+   * chat is open when this runs; empty: nothing is sent). `voice_file`: a voice recording of ours; it is deleted once
+   * the send succeeded or is staged for a retry, otherwise it is kept and the chip offers Retry / Discard (also when
+   * the send is refused because another one runs).
    */
-  void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool voice_file = false,
-                             const std::string& voice_thread_id = {},
-                             std::optional<PendingUploadKind> bubble = std::nullopt, uint64_t pick_serial = 0);
+  void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool voice_file,
+                             const std::string& to_thread, std::optional<PendingUploadKind> bubble = std::nullopt,
+                             uint64_t pick_serial = 0);
   // The wait between a pick and its choice / bubble (DEV/PLAN-attachment-bubbles-multi-pick.md step 3): a pick serial
   // per picker opening, the centred overlay while it is prepared, its late results dropped once it is over.
   uint64_t ArmPick();
   void ShowPick(uint64_t serial);
   void EndPick(uint64_t serial);
-  /** A late result of pick `serial`: true when it is current; otherwise its files are released. */
-  bool TakePickResult(uint64_t serial, const std::vector<std::string>& files);
+  /**
+   * A late result of pick `serial`: the chat it was armed in when it is current and that chat is still open (the only
+   * chat it may go to); otherwise none, and its files are released.
+   */
+  std::optional<std::string> TakePickResult(uint64_t serial, const std::vector<std::string>& files);
+  /** The current pick ends now (lock, sign-out, chat deleted, Cancel): preparing ends too, the entries come back. */
+  void AbandonPick();
   /** chat_.picking_busy / picking_busy_slow from the pick and the open chat (PickOverlayOf). */
   void RefreshPickOverlay();
   /** The overlay's Cancel: the pick ends; a video waiting for its poster stops sending. */

@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -113,12 +114,14 @@ TEST(AttachmentPicksTest, ALateResultOfACancelledPickIsDroppedAndItsFilesRelease
   picks.Show(second, kT0 + 50);
   std::vector<std::string> released;
   const auto release = [&released](const std::string& path) { released.push_back(path); };
-  EXPECT_FALSE(picks.TakeResult(first, {"/tmp/pp-picks/old.jpg"}, release)) << "the copy of the old pick";
-  EXPECT_FALSE(picks.TakeResult(first, {"/picked/upload-thumb-3.jpg"}, release)) << "its video's poster";
+  EXPECT_FALSE(picks.TakeResult(first, "a", {"/tmp/pp-picks/old.jpg"}, release).has_value())
+      << "the copy of the old pick";
+  EXPECT_FALSE(picks.TakeResult(first, "a", {"/picked/upload-thumb-3.jpg"}, release).has_value())
+      << "its video's poster";
   EXPECT_EQ(released, (std::vector<std::string>{"/tmp/pp-picks/old.jpg", "/picked/upload-thumb-3.jpg"}));
   EXPECT_TRUE(picks.IsCurrent(second));
   EXPECT_EQ(Overlay(picks, "a", false, false, kT0 + 60), PickOverlay::OneLine);
-  EXPECT_TRUE(picks.TakeResult(second, {"/tmp/pp-picks/new.jpg"}, release));
+  EXPECT_EQ(picks.TakeResult(second, "a", {"/tmp/pp-picks/new.jpg"}, release), std::optional<std::string>("a"));
   EXPECT_EQ(released.size(), 2u) << "the current pick's file is kept";
 }
 
@@ -132,8 +135,10 @@ TEST(AttachmentPicksTest, APickWhileAnotherIsSendingLeavesNoOverlay) {
   EXPECT_FALSE(picks.IsCurrent(serial));
   EXPECT_EQ(Overlay(picks), PickOverlay::Hidden);
   std::vector<std::string> released;
-  EXPECT_FALSE(picks.TakeResult(serial, {"/tmp/pp-picks/x.mov"},
-                                [&released](const std::string& path) { released.push_back(path); }));
+  EXPECT_FALSE(picks
+                   .TakeResult(serial, "a", {"/tmp/pp-picks/x.mov"},
+                               [&released](const std::string& path) { released.push_back(path); })
+                   .has_value());
   EXPECT_EQ(released, (std::vector<std::string>{"/tmp/pp-picks/x.mov"}));
 }
 
@@ -147,6 +152,34 @@ TEST(AttachmentPicksTest, ANewPickReplacesAnOlderOne) {
   EXPECT_FALSE(picks.State().showing);
   picks.End(first); // ending the old one leaves the new one
   EXPECT_TRUE(picks.IsCurrent(second));
+}
+
+// B1: a pick's result goes only to the chat it was armed in, and only while that chat is open.
+TEST(AttachmentPicksTest, AResultArrivingWhileAnotherChatIsOpenIsDroppedAndReleased) {
+  AttachmentPicks picks;
+  const uint64_t serial = picks.Arm("a");
+  picks.Show(serial, kT0);
+  std::vector<std::string> released;
+  const auto release = [&released](const std::string& path) { released.push_back(path); };
+  EXPECT_FALSE(picks.TakeResult(serial, "b", {"/tmp/pp-picks/report.pdf"}, release).has_value())
+      << "never sent to the chat open now, nor in the background to its own";
+  EXPECT_EQ(released, (std::vector<std::string>{"/tmp/pp-picks/report.pdf"}));
+  EXPECT_FALSE(picks.IsCurrent(serial)) << "the pick is over";
+  EXPECT_EQ(Overlay(picks, "a"), PickOverlay::Hidden);
+}
+
+TEST(AttachmentPicksTest, AResultArrivingInTheOriginatingChatGoesToThatThread) {
+  AttachmentPicks picks;
+  const uint64_t serial = picks.Arm("a");
+  std::vector<std::string> released;
+  const auto taken = picks.TakeResult(serial, "a", {"/tmp/pp-picks/report.pdf"},
+                                      [&released](const std::string& path) { released.push_back(path); });
+  ASSERT_TRUE(taken.has_value());
+  EXPECT_EQ(*taken, "a");
+  EXPECT_TRUE(released.empty());
+  AttachmentPicks nowhere;
+  const uint64_t no_chat = nowhere.Arm("");
+  EXPECT_FALSE(nowhere.TakeResult(no_chat, "", {}, nullptr).has_value()) << "armed with no chat: nowhere to send";
 }
 
 } // namespace

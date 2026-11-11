@@ -31,17 +31,21 @@ void AttachmentPicks::EndCurrent() {
   state_ = PickState{};
 }
 
-bool AttachmentPicks::TakeResult(const uint64_t serial, const std::vector<std::string>& files,
-                                 const std::function<void(const std::string& path)>& release) const {
+std::optional<std::string> AttachmentPicks::TakeResult(const uint64_t serial, const std::string& open_thread,
+                                                       const std::vector<std::string>& files,
+                                                       const std::function<void(const std::string& path)>& release) {
+  if (IsCurrent(serial) && !state_.thread_id.empty() && state_.thread_id == open_thread) {
+    return state_.thread_id;
+  }
   if (IsCurrent(serial)) {
-    return true;
+    state_ = PickState{}; // its chat was left: the pick is over
   }
   for (const std::string& file : files) {
     if (!file.empty() && release) {
       release(file);
     }
   }
-  return false;
+  return std::nullopt;
 }
 
 bool AttachmentPicks::Accept(const uint64_t serial, const bool busy) {
