@@ -95,6 +95,7 @@ protected:
                             "attachment_in_transcript",
                             "composer_input_disabled",
                             "attach_disabled",
+                            "voice_entry_off",
                             "attachment_draft_name",
                             "attachment_status",
                             "attachment_progress_width",
@@ -602,6 +603,63 @@ TEST_F(ComposerPhoneRowTest, WithoutTextTheMicrophoneEndsTheRow) {
   EXPECT_EQ(Shown("prompt-voice-toggle-btn--start"), 0) << "no microphone on the left";
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
   EXPECT_EQ(Shown("prompt-send-btn"), 0);
+}
+
+// A picture uploading as a bubble (device report 2026-11-11: the right end was empty, as if nothing could be sent):
+// the send hides the microphone (show_voice off), but beside the bubble it stays in its place greyed
+// (voice_entry_off); once text is typed Send takes the spot, enabled.
+TEST_F(ComposerPhoneRowTest, BesideAPictureBubbleTheMicrophoneStaysGreyedAndTextBringsAWorkingSend) {
+  state.thread_is_private = true;
+  state.show_attach_button = true;
+  state.attachment_here = true;
+  state.attachment_uploading = true;
+  state.attachment_in_transcript = true;
+  state.show_voice = false; // VoiceComposer: not while a send is in flight
+  state.voice_entry_off = true;
+  const ComposerLocks locks = ComposerLocksOf(false, true, true, false, false);
+  state.composer_input_disabled = locks.input;
+  state.attach_disabled = locks.attach;
+  Apply();
+  std::vector<std::string> order = RowOrder();
+  ASSERT_EQ(order.size(), 3u);
+  EXPECT_TRUE(Has(order[2], "prompt-voice-toggle-btn--end")) << "the microphone keeps its place";
+  ui::ElementList mics;
+  document->GetElementsByClassName(mics, "prompt-voice-toggle-btn--end");
+  ASSERT_FALSE(mics.empty());
+  EXPECT_TRUE(mics[0]->HasAttribute("disabled")) << "greyed: no voice message while the picture goes";
+  EXPECT_EQ(Shown("prompt-send-btn"), 0);
+  ui::ElementList composers;
+  document->GetElementsByClassName(composers, "prompt-composer");
+  ASSERT_FALSE(composers.empty());
+  EXPECT_TRUE(composers[0]->IsClassSet("prompt-composer--picture-bubble"));
+
+  state.draft = "running late";
+  Apply();
+  order = RowOrder();
+  ASSERT_EQ(order.size(), 3u);
+  EXPECT_TRUE(Has(order[2], "prompt-send-btn")) << "Send in the microphone's spot";
+  ui::ElementList sends;
+  document->GetElementsByClassName(sends, "prompt-send-btn");
+  bool enabled_send = false;
+  for (ui::Element* send : sends) {
+    enabled_send = enabled_send || (send->IsVisible(true) && !send->HasAttribute("disabled"));
+  }
+  EXPECT_TRUE(enabled_send);
+  EXPECT_FALSE(document->GetElementById("draft-input")->HasAttribute("disabled"));
+}
+
+// A file upload (its card above the input) keeps today's composer: the microphone simply hidden.
+TEST_F(ComposerPhoneRowTest, AFileUploadStillHidesTheMicrophone) {
+  state.thread_is_private = true;
+  state.show_attach_button = true;
+  state.attachment_here = true;
+  state.attachment_uploading = true;
+  state.show_voice = false;
+  state.voice_entry_off = false;
+  state.composer_input_disabled = true;
+  state.attach_disabled = true;
+  Apply();
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 0);
 }
 
 TEST_F(ComposerPhoneRowTest, TextTurnsTheMicrophoneIntoSendInTheSameSpot) {

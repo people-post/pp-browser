@@ -459,6 +459,15 @@ TEST(PendingPictureSourcePinTest, RetryAndDiscardAskWhoseTapItIs) {
   }
 }
 
+TEST(PendingPictureSourcePinTest, BesideABubbleTheMicrophoneIsGreyedNotHidden) {
+  const std::string body = Body(Controller(), "void ChatController::SyncComposerInputState(");
+  const size_t refresh = body.find("voice_->Refresh()");
+  const size_t off = body.find("chat_.attachment_in_transcript && !chat_.show_voice");
+  ASSERT_NE(off, std::string::npos);
+  EXPECT_LT(refresh, off) << "decided after VoiceComposer has hidden the microphone";
+  EXPECT_NE(body.find("chat_.voice_entry_off = voice_off"), std::string::npos);
+}
+
 // Plan step 0 entry list: every way a row's id reaches the store or a request ignores the picture being sent.
 TEST(PendingPictureSourcePinTest, EveryRowEventIgnoresThePictureBeingSent) {
   const std::string source = Controller();

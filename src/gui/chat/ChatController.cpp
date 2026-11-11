@@ -2243,6 +2243,13 @@ void ChatController::SyncComposerInputState() {
   if (voice_) {
     voice_->Refresh();
   }
+  // The send in flight hides the microphone (VoiceComposer eligible); beside a picture bubble it stays, greyed.
+  const bool voice_off = chat_.attachment_in_transcript && !chat_.show_voice && VoiceMessagesSupported() &&
+                         chat_.show_attach_button && !InAiComposerContext();
+  if (chat_.voice_entry_off != voice_off) {
+    chat_.voice_entry_off = voice_off;
+    DataModelHost::Instance().Dirty("chat", "voice_entry_off");
+  }
   RefreshShowCapture();
 }
 

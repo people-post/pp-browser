@@ -12268,6 +12268,14 @@ input.checkbox {
   background-color: rgba(0, 0, 0, 128);
 }
 
+/* Beside a picture bubble the composer keeps its look: text and send work, the plus, the camera and the microphone
+   stay in place greyed until the picture's send ends (a file / voice / video send keeps today's look). */
+.prompt-composer--picture-bubble .prompt-attach-btn:disabled,
+.prompt-composer--picture-bubble .prompt-capture-btn:disabled,
+.prompt-composer--picture-bubble .prompt-voice-toggle-btn:disabled {
+  opacity: 0.4;
+}
+
 /* Speech-bubble tail on the last bubble of a run: a 10x12dp shape half outside the bubble's bottom corner (received:
    left, sent: right); that corner is squared off so the tail grows out of it. Tint: colors-*.rcss. */
 .shell-chat-overlay .bubble-tail-host {

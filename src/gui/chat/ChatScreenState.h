@@ -75,6 +75,9 @@ struct ChatScreenState {
   bool show_capture = false;
   /** The microphone button: this chat can take a voice message (peer or group chat, voice supported here). */
   bool show_voice = false;
+  /** A picture bubble is in this chat's transcript: the microphone stays in its place, greyed (not hidden), so the
+   *  composer still looks like one; voice waits until the picture's send ends. */
+  bool voice_entry_off = false;
   /** A call (or ringing) has the microphone: the button is grey and its tooltip says why. */
   bool voice_blocked = false;
   bool voice_recording = false;
