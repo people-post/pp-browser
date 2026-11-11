@@ -99,6 +99,39 @@ TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheAccountId) {
   EXPECT_NE(css.find(".shell-layer-compact .settings-mock .group-row-body {\n  min-height: 52dp;"), std::string::npos);
 }
 
+TEST(SettingsTitlesTest, TheProfilePageFollowsTheMockupAndKeepsItsAccountGates) {
+  const std::string rml = ReadAsset("views/settings_section_profile.rml");
+  EXPECT_NE(rml.find("settings-section--grouped settings-mock stack"), std::string::npos);
+  // The id group: the id, then Copy, Share and QR rows (the icon buttons are gone), the id help under it.
+  const size_t id = rml.find("{{i18n:settings.profile.id_row}}");
+  const size_t copy = rml.find("copy_profile_id()", id);
+  const size_t share = rml.find("share_profile()", copy);
+  const size_t qr = rml.find("toggle_profile_qr()", share);
+  ASSERT_NE(id, std::string::npos);
+  EXPECT_LT(id, copy);
+  EXPECT_LT(copy, share);
+  EXPECT_LT(share, qr);
+  EXPECT_EQ(rml.find("group-id-btn"), std::string::npos);
+  EXPECT_NE(rml.find("{{i18n:settings.profile.id_help}}"), std::string::npos);
+  // The account group keeps today's gates: status for everyone, expiry and auto-renew behind the advanced flag,
+  // the register button behind its own binding; nothing was un-gated.
+  EXPECT_NE(rml.find("data-if=\"advanced && profile_registration_expires != ''\""), std::string::npos);
+  EXPECT_NE(rml.find("<div class=\"settings-toggle-row row group-row\" data-if=\"advanced\">"), std::string::npos);
+  EXPECT_NE(rml.find("data-if=\"profile_show_register\""), std::string::npos);
+  // Not here any more / not shown: the AI credential row, delete account, switch account.
+  EXPECT_EQ(rml.find("rotate_brief_llm_key"), std::string::npos);
+  EXPECT_EQ(rml.find("delete_account"), std::string::npos);
+  EXPECT_EQ(rml.find("switch_account"), std::string::npos);
+}
+
+TEST(SettingsTitlesTest, TheProfilePageIsCalledMyProfile) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("settings.profile.title"), "我的资料");
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  EXPECT_EQ(Tr("settings.profile.title"), "My profile");
+}
+
 TEST(SettingsTitlesTest, HomeTitleIsMe) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");

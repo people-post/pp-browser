@@ -12998,6 +12998,56 @@ textarea:composing ~ .prompt-composer-label,
   padding-left: 36dp;
 }
 
+/* .settings-phone-only sets its own display; the QR box must stay a centred column on the profile page. */
+.shell-layer-compact .settings-mock .me-invite-qr.settings-phone-only {
+  display: flex;
+}
+
+.shell-layer-compact .settings-mock .me-profile-head {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  margin: 8dp 16dp 0 16dp;
+}
+
+/* The nickname row: label at the left, the field at the right (the mockup's edit row). */
+.shell-layer-compact .settings-mock .group-row--field .group-row-body--field {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-height: 52dp;
+  padding: 0 16dp 0 0;
+}
+
+.shell-layer-compact .settings-mock .group-row--field .group-row-text {
+  flex: 0 0 auto;
+  margin: 0 12dp 0 0;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-layer-compact .settings-mock .group-row--field .field {
+  flex: 1;
+  width: auto;
+  height: 52dp;
+  min-height: 52dp;
+  max-height: 52dp;
+  margin: 0;
+  padding: 15dp 0;
+  background-color: transparent;
+  text-align: right;
+}
+
+.shell-layer-compact .settings-mock .group-row--field .group-field-hint {
+  left: auto;
+  right: 0;
+  top: 0;
+  bottom: auto;
+  height: 52dp;
+  line-height: 52dp;
+}
+
 .shell-layer-compact .settings-mock .group-foot {
   margin: 8dp 32dp 0 32dp;
 }
