@@ -276,6 +276,7 @@ Roe<void> ConversationsHub::StartMesh(const HubSettings& settings) {
   HubMeshOwner::StartRequest request;
   request.mesh = settings.mesh;
   request.identity = identity_.get();
+  request.profile_data_dir = data_dir_;
   request.address_disclosure = &address_disclosure_;
   request.stopping = shutdown_requested_.load(std::memory_order_acquire);
   // Runs on the mesh's io lane (ReachabilityEngine): the hub's work is ours — hop to UI.

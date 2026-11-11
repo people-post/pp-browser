@@ -313,7 +313,7 @@ void CallStack::BindMeshMediaHooks() {
   // Connectivity runs these on its owner / Amp IO: hop to the calls owner.
   // H011: the rendezvous R1 our circuit reach chose is announced to the call peer.
   // The hooks hold the loop's ref, not the stack: connectivity outlives it.
-  shared->SetOnRelayChosen(
+  SetRelayChosenHook(
       [loop = loop_.Share()](const std::string& circuit_r1) { loop.Enqueue(calls_event::RelayChosen{circuit_r1}); });
   // H012: when Amp introducers are exhausted, exchange punch candidates over call-control.
   shared->SetSignalingPunch([loop = loop_.Share()](const std::string& target_peer_id,
@@ -321,6 +321,14 @@ void CallStack::BindMeshMediaHooks() {
                                                    std::function<void(Roe<void>)> on_done) {
     loop.Enqueue(calls_event::SignalingPunchRequested{target_peer_id, my_addrs, std::move(on_done)});
   });
+}
+
+void CallStack::SetRelayChosenHook(std::function<void(const std::string& relay_peer_id)> hook) {
+  if (deps_.set_on_relay_chosen) {
+    deps_.set_on_relay_chosen(std::move(hook));
+  } else if (mesh::MeshConnectivity* shared = connectivity()) {
+    shared->SetOnRelayChosen(std::move(hook));
+  }
 }
 
 void CallStack::DetachMeshMediaOnOwner() {
@@ -770,8 +778,8 @@ void CallStack::ReleaseOnOwner() {
   PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   mobility_wake_.Disarm();
   DetachMeshMedia();
+  SetRelayChosenHook({});
   if (mesh::MeshConnectivity* shared = connectivity()) {
-    shared->SetOnRelayChosen({});
     shared->SetSignalingPunch({});
   }
   // Capture / receive threads call into the bridge (send callback): stop them before it goes.
