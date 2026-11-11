@@ -496,7 +496,10 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
   const bool ready = fields && state == AttachmentFetchWorkflow::DownloadState::Ready;
   const bool inline_image = ready && IsAttachmentImageMime(fields->mime) && !local_path.empty() && view.inline_image_ok;
   // A picture card is a thin frame around the picture on phones (its own modifier); files and videos are compact cards.
+  // A video card is a frame round its poster like a picture's (--video: up to the picture's width, not the file 240dp).
+  const bool video_card = ready && !inline_image && IsAttachmentVideoMime(fields->mime);
   std::string html = inline_image ? "<div class=\"chat-card chat-attachment-card chat-attachment-card--image\">"
+                     : video_card ? "<div class=\"chat-card chat-attachment-card chat-attachment-card--video\">"
                                   : "<div class=\"chat-card chat-attachment-card\">";
   // A voice message (audio/ogg named voice-<ms>.ogg, at most 1 MB declared) is a bubble; any other audio is a file row.
   // Only the declared values decide here: the file itself is not looked at until the person taps play.
@@ -949,7 +952,7 @@ std::string PendingPictureRml(const PendingUpload& upload) {
   if (upload.kind == PendingUploadKind::Video) {
     // The sent video's card and frame (VideoBodyRml): the poster, or the bare frame when there is none; no play key
     // while it uploads. Built once the poster is known, so its size never changes.
-    return "<div class=\"chat-card chat-attachment-card chat-pending-video\">" +
+    return "<div class=\"chat-card chat-attachment-card chat-attachment-card--video chat-pending-video\">" +
            VideoBodyRml(upload.size_known, upload.thumb_path, upload.pixels.width, upload.pixels.height, "", overlay,
                         upload.title, upload.size_text.empty() ? std::string("…") : upload.size_text,
                         " id=\"" + PendingThumbElementId(upload.row_id) + "\"") +

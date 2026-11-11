@@ -8558,7 +8558,7 @@ input.checkbox {
   margin-top: 0;
   margin-bottom: 0;
   font-size: 12dp;
-  word-break: break-all;
+  word-break: break-word;
 }
 
 .me-profile-actions {
@@ -9431,7 +9431,7 @@ input.checkbox {
 
 .settings-path {
   font-size: 12dp;
-  word-break: break-all;
+  word-break: break-word;
 }
 
 .settings-actions {
@@ -12071,6 +12071,23 @@ input.checkbox {
   margin-bottom: 6dp;
 }
 
+/* A video card (sent or being sent) is a 3dp frame round its poster like a picture card: as wide as the poster (up to
+   292dp), not held to the file card's 240dp (the poster ran past the card's right edge). */
+.shell-chat-overlay .chat-attachment-card--video {
+  min-width: 0;
+  max-width: 298dp;
+  padding: 3dp 3dp 0 3dp;
+  border-radius: 12dp;
+}
+
+.shell-chat-overlay .chat-attachment-card--video .chat-attachment-video-frame {
+  border-radius: 9dp;
+}
+
+.shell-chat-overlay .chat-attachment-card--video .muted {
+  padding: 0 9dp;
+}
+
 /* The music card is one width on the phone, inside the 240dp card limit, with room under its controls. */
 .shell-chat-overlay .chat-audio-card {
   width: 240dp;
@@ -12321,7 +12338,7 @@ input.checkbox {
   line-height: 20dp;
   max-height: 40dp;
   overflow: hidden;
-  word-break: break-all;
+  word-break: break-word;
 }
 
 .chat-file-size,
@@ -12393,10 +12410,13 @@ input.checkbox {
 }
 
 .chat-picking-cancel {
+  display: block;
   min-width: 88dp;
   height: 44dp;
   margin: 6dp 0 0 0;
   padding: 0 12dp;
+  text-align: center;
+  line-height: 44dp;
   border: 0;
   background-color: transparent;
   color: #ffffff;

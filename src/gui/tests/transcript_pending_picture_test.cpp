@@ -491,6 +491,9 @@ TEST_F(PendingPictureLayoutTest, AVideoBubbleHasTheSentVideosSizeAndKeepsItWhenI
   ui::Element* sent = First("chat-attachment-card");
   ASSERT_NE(sent, nullptr);
   const ui::Vector2f sent_size = Size(sent);
+  ui::Element* frame = First("chat-attachment-video-frame");
+  ASSERT_NE(frame, nullptr);
+  EXPECT_LE(Size(frame).x, sent_size.x) << "the poster stays inside its card (it ran past a 240dp card)";
   PendingUpload video = StartPendingUpload(1, "t", PicturePixels{1080, 1920}, PendingUploadKind::Video);
   video.thumb_path = "/p/poster.jpg";
   Show({Row("pending-upload-1", PendingUploadRml(video))});
