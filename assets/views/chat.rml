@@ -229,5 +229,15 @@
   </button>
   <!-- Phones: the transcript fades into the composer (no hairline). -->
   <div class="bar-fade bar-fade--up chat-composer-fade"></div>
+  <!-- Between a pick and its send choice / bubble (DEV/PLAN-attachment-bubbles-multi-pick.md step 3): a small box in the
+       middle, a spinner, "Preparing…", after 5 s a second line, and Cancel. Only in the chat the pick started in. -->
+  <div class="chat-picking-overlay" data-if="picking_busy">
+    <div class="chat-picking-box">
+      <div class="prompt-upload-cancel-spin chat-picking-spin"></div>
+      <p class="chat-picking-line">{{i18n:chat.attach.preparing}}</p>
+      <p class="chat-picking-line chat-picking-line--slow" data-if="picking_busy_slow">{{i18n:chat.attach.preparing_slow}}</p>
+      <button class="chat-picking-cancel" type="button" data-event-click="cancel_picking()">{{i18n:common.cancel}}</button>
+    </div>
+  </div>
   </div>
 </div>

@@ -65,6 +65,14 @@ UploadThumbnail WriteUploadThumbnail(const std::string& picked_path, const Outgo
                                      const std::string& scratch_dir, int long_edge_px = kUploadCardThumbPx);
 
 /**
+ * The video bubble's poster: an early frame of the picked video (`picked_path`), long edge at most `long_edge_px`,
+ * written into `scratch_dir` as JPEG. No path when no frame could be taken (the extractor's dark placeholder does not
+ * count: the bubble then draws its own bare frame). The caller deletes it.
+ */
+UploadThumbnail WriteVideoPosterThumbnail(const std::string& picked_path, const std::string& scratch_dir,
+                                          int long_edge_px = kPendingPictureThumbPx);
+
+/**
  * The picture bubble's thumbnail of a picked picture, made before the picture is prepared so the bubble shows it at
  * once: read from `picked_path` (an Android content:// URI too; at most `max_bytes`), turned upright by its EXIF
  * orientation, long edge at most `long_edge_px`, written into `scratch_dir` as JPEG. No path when the file cannot be

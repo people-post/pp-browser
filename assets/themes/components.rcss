@@ -8558,7 +8558,7 @@ input.checkbox {
   margin-top: 0;
   margin-bottom: 0;
   font-size: 12dp;
-  word-break: break-all;
+  word-break: break-word;
 }
 
 .me-profile-actions {
@@ -9431,7 +9431,7 @@ input.checkbox {
 
 .settings-path {
   font-size: 12dp;
-  word-break: break-all;
+  word-break: break-word;
 }
 
 .settings-actions {
@@ -12071,6 +12071,23 @@ input.checkbox {
   margin-bottom: 6dp;
 }
 
+/* A video card (sent or being sent) is a 3dp frame round its poster like a picture card: as wide as the poster (up to
+   292dp), not held to the file card's 240dp (the poster ran past the card's right edge). */
+.shell-chat-overlay .chat-attachment-card--video {
+  min-width: 0;
+  max-width: 298dp;
+  padding: 3dp 3dp 0 3dp;
+  border-radius: 12dp;
+}
+
+.shell-chat-overlay .chat-attachment-card--video .chat-attachment-video-frame {
+  border-radius: 9dp;
+}
+
+.shell-chat-overlay .chat-attachment-card--video .muted {
+  padding: 0 9dp;
+}
+
 /* The music card is one width on the phone, inside the 240dp card limit, with room under its controls. */
 .shell-chat-overlay .chat-audio-card {
   width: 240dp;
@@ -12268,11 +12285,150 @@ input.checkbox {
   background-color: rgba(0, 0, 0, 128);
 }
 
-/* Beside a picture bubble the composer keeps its look: text and send work, the plus, the camera and the microphone
-   stay in place greyed until the picture's send ends (a file / voice / video send keeps today's look). */
-.prompt-composer--picture-bubble .prompt-attach-btn:disabled,
-.prompt-composer--picture-bubble .prompt-capture-btn:disabled,
-.prompt-composer--picture-bubble .prompt-voice-toggle-btn:disabled {
+/* A file card, sent or being sent (DEV/PLAN-attachment-bubbles-multi-pick.md): a 72dp type tile on the left, the name
+   (two lines at most) and the size on the right, 220-292dp wide (292 as a picture bubble). The whole sent card opens
+   the file. While it uploads the disc sits on the tile, the percent in its middle; after a failure the ✕ sits at the
+   tile's top-right corner. One generator draws both, so the bubble and the card it turns into have the same size. */
+.chat-file-card,
+.shell-chat-overlay .chat-file-card {
+  min-width: 220dp;
+  max-width: 292dp;
+  padding: 8dp;
+}
+
+.chat-file-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.chat-file-tile {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72dp;
+  height: 72dp;
+  border-radius: 14dp;
+  background-color: rgba(128, 128, 128, 56);
+}
+
+.chat-file-tile-label {
+  font-size: 17dp;
+  font-weight: bold;
+  line-height: 22dp;
+}
+
+.chat-file-tile-icon {
+  width: 30dp;
+  height: 30dp;
+}
+
+.chat-file-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 10dp;
+}
+
+.chat-file-name,
+.shell-chat-overlay .chat-file-card .chat-file-name {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  max-height: 40dp;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.chat-file-size,
+.shell-chat-overlay .chat-file-card .chat-file-size {
+  margin: 2dp 0 0 0;
+  font-size: 12dp;
+  line-height: 16dp;
+  opacity: 0.8;
+}
+
+.chat-file-percent {
+  color: #ffffff;
+  font-size: 12dp;
+  font-weight: bold;
+  line-height: 16dp;
+}
+
+.chat-pending-discard.chat-file-discard {
+  top: -22dp;
+  right: -22dp;
+}
+
+/* Between a pick and its send choice / bubble: a small translucent box in the middle of the transcript, the upload
+   card's spinner, "Preparing…" (a second line after 5 s) and Cancel. Same translucent black and white on both themes. */
+.chat-picking-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.chat-picking-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 140dp;
+  max-width: 220dp;
+  padding: 18dp 16dp 6dp 16dp;
+  border-radius: 16dp;
+  background-color: rgba(0, 0, 0, 170);
+  color: #ffffff;
+}
+
+.prompt-upload-cancel-spin.chat-picking-spin {
+  width: 22dp;
+  height: 22dp;
+  border-width: 3dp;
+  border-radius: 14dp;
+}
+
+.chat-picking-line {
+  margin: 10dp 0 0 0;
+  font-size: 14dp;
+  line-height: 18dp;
+  text-align: center;
+  color: #ffffff;
+}
+
+.chat-picking-line--slow {
+  margin-top: 4dp;
+  font-size: 12dp;
+  line-height: 16dp;
+  opacity: 0.85;
+}
+
+.chat-picking-cancel {
+  display: block;
+  min-width: 88dp;
+  height: 44dp;
+  margin: 6dp 0 0 0;
+  padding: 0 12dp;
+  text-align: center;
+  line-height: 44dp;
+  border: 0;
+  background-color: transparent;
+  color: #ffffff;
+  font-size: 15dp;
+  cursor: pointer;
+}
+
+/* The plus, the camera and the microphone while an attachment is preparing or uploading (attach_disabled): in place,
+   greyed. A class bound to attach_disabled, not :disabled: this engine's <button> is a plain element, so the disabled
+   attribute never sets the :disabled pseudo-class (the iPhone showed the microphone at full strength). */
+.prompt-entry-off,
+.shell-chat-overlay .prompt-entry-off {
   opacity: 0.4;
 }
 

@@ -213,6 +213,18 @@ UploadThumbnail WriteUploadThumbnail(const std::string& picked_path, const Outgo
   return WriteThumbnailFile(std::move(jpeg), scratch_dir);
 }
 
+UploadThumbnail WriteVideoPosterThumbnail(const std::string& picked_path, const std::string& scratch_dir,
+                                          const int long_edge_px) {
+  Roe<std::vector<uint8_t>> jpeg = ExtractVideoPosterJpeg(picked_path, long_edge_px);
+  if (!jpeg) {
+    return {};
+  }
+  if (auto placeholder = SoftVideoPosterJpeg(long_edge_px); placeholder && *placeholder == *jpeg) {
+    return {}; // no frame: the extractor's fallback, not this video
+  }
+  return WriteThumbnailFile(std::move(jpeg), scratch_dir);
+}
+
 UploadThumbnail WritePickedPictureThumbnail(const std::string& picked_path, const std::string& scratch_dir,
                                             const uint64_t max_bytes, const int long_edge_px) {
   const std::optional<std::string> bytes = ReadPickedFile(picked_path, static_cast<size_t>(max_bytes));
