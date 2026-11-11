@@ -4,6 +4,7 @@
 #include "lib/content/CasStore.h"
 #include "lib/delivery/RelayClients.h"
 #include "domain/delivery/AmpAccountCardTransport.h"
+#include "feature/conversations/PeerWarmMarks.h"
 #include "common/Module.h"
 #include "common/chat/IDirectMessageClient.h"
 #include "common/chat/RelayEnvelope.h"
@@ -82,10 +83,21 @@ public:
   void RegisterEndpoints(const std::string& peer_key, const std::vector<std::string>& multiaddrs);
   /** Everything a contact says about where it listens, ranked for this device. */
   void RegisterContactEndpoints(const Contact& contact);
-  /** Warm the association with a peer (a call prefetch shares this with chat). */
+  /**
+   * Warm the association with a peer (a call prefetch shares this with chat): its link keeps the warm cadence for
+   * kRecentPeerWarmMs after the last call or message with it (PeerWarmMarks).
+   */
   void WarmByKey(const std::string& peer_key);
+  /** A message to or from `peer_key` (a device, or the thread's peer): a warm peer stays warm. */
+  void NotePeerActivity(const std::string& peer_key);
+  /** Clear the warm marks whose spell ran out (the hub's 1 s tick). */
+  void TickWarmth();
+  /** How a lapsed mark comes off the link (Amp ClearWarm; the chat links port has no such call). */
+  void SetClearWarm(PeerWarmMarks::PeerFn clear_warm);
 
 private:
+  void BindWarmMarks();
+
   IThreadStore& store_;
   IdentityStore& identity_;
   IPeerSigningKeyResolver& signing_key_resolver_;
@@ -102,6 +114,8 @@ private:
   std::unique_ptr<IChatHistoryPeerClient> history_;
   std::unique_ptr<AmpChatBlobTransport> blob_;
   std::unique_ptr<IDirectMessageClient> direct_chat_;
+  PeerWarmMarks::PeerFn clear_warm_;
+  PeerWarmMarks warm_marks_;
 };
 
 } // namespace pbr
