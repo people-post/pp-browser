@@ -312,6 +312,9 @@ void ActivateForVoip() {
     g_session_gen.fetch_add(1);
     [session setActive:YES error:&error];
     g_session_active.store(true);
+    // The call has the session: a voice message that was playing was cut off without ReleaseVoice (a call holds the
+    // devices then), and its flag would label every later route change as voice playback.
+    g_voice_playback.store(false);
   }
   ApplyRoute(g_speakerphone.load());
   LogRoute("ActivateForVoip");
