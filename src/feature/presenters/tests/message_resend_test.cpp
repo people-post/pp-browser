@@ -3,6 +3,7 @@
 // (DEV/PLAN-message-resend.md). The ports run on the in-memory store, as the facade's run on the app's.
 #include "feature/presenters/DeliveryNoticePlan.h"
 #include "feature/presenters/MessageResend.h"
+#include "feature/presenters/SendMark.h"
 #include "lib/delivery/DeliveryNotice.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 
@@ -275,10 +276,9 @@ TEST_F(MessageResendTest, ALateFailureOfARemovedRowWritesNothing) {
   Add(Unsent("m1"));
   const SendMarkTap tap = Tap("m1");
   ASSERT_TRUE(tap.old_removed);
-  ResentMessages resent;
   const size_t before = Count();
-  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, Failed("m1"), kNow, resent), NoticeTell::Nothing);
-  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, Failed("m1", DeliveryNotice::Kind::GroupMembersMissed), kNow, resent),
+  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, Failed("m1"), kNow), NoticeTell::Nothing);
+  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, Failed("m1", DeliveryNotice::Kind::GroupMembersMissed), kNow),
             NoticeTell::Nothing);
   EXPECT_EQ(Count(), before) << "no orphan line";
   EXPECT_FALSE(Row(SendFailureRowId("m1", "")));
@@ -286,27 +286,35 @@ TEST_F(MessageResendTest, ALateFailureOfARemovedRowWritesNothing) {
   EXPECT_FALSE(Row("m1")) << "and the row is not brought back";
 }
 
-TEST_F(MessageResendTest, TheFirstFailureOfAResentMessageIsToldOnce) {
+// A re-sent message is told once when it is drawn red again — whatever turned it: a failure notice may never come
+// (a copy to a peer's device reports none), the clock's limit turns it red all the same.
+TEST_F(MessageResendTest, AResentMessageIsToldWhenItTurnsRedAgain) {
   Add(Unsent("m1"));
   const SendMarkTap tap = Tap("m1");
   ResentMessages resent{{tap.new_id, "t1"}};
-  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, Failed(tap.new_id), kNow, resent), NoticeTell::ResentFailed)
-      << "the pill says why, once";
-  EXPECT_TRUE(Row(SendFailureRowId(tap.new_id, ""))) << "its line is stored, for a later tap";
-  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, Failed(tap.new_id), kNow, resent), NoticeTell::Nothing);
-  EXPECT_TRUE(resent.empty());
+  EXPECT_FALSE(FirstResentTurnedRed(resent, "t1", {})) << "still a clock, or delivered: nothing red";
+  EXPECT_FALSE(FirstResentTurnedRed(resent, "t1", {"other"})) << "another red row is not a re-sent one";
+  EXPECT_FALSE(FirstResentTurnedRed(resent, "t2", {tap.new_id})) << "drawn in another chat";
+  EXPECT_EQ(FirstResentTurnedRed(resent, "t1", {"other", tap.new_id}), tap.new_id);
+  resent.erase(tap.new_id); // what ChatPresenter::ForgetResent does once it is told
+  EXPECT_FALSE(FirstResentTurnedRed(resent, "t1", {tap.new_id})) << "once";
 }
 
-TEST_F(MessageResendTest, AResentMessageAlreadyDeliveredIsNotTold) {
+// The red mark at the clock's limit, with no failure reported, is red for the drawing that tells it.
+TEST_F(MessageResendTest, TheClocksLimitTurnsAResentMessageRedWithoutAFailure) {
   Add(Unsent("m1"));
   const SendMarkTap tap = Tap("m1");
   ThreadMessage fresh = *Row(tap.new_id);
-  fresh.delivery = MessageDelivery::Relayed;
-  ASSERT_TRUE(store_.UpdateMessage(fresh));
-  ResentMessages resent{{tap.new_id, "t1"}};
-  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, Failed(tap.new_id, DeliveryNotice::Kind::GroupMembersMissed), kNow, resent),
-            NoticeTell::Nothing);
-  EXPECT_TRUE(resent.empty());
+  ASSERT_EQ(fresh.delivery, MessageDelivery::Pending) << "no outcome ever came";
+  EXPECT_EQ(MarkOf(fresh, kNow, kNow + 60'000), SendMark::Queued);
+  EXPECT_EQ(MarkOf(fresh, kNow, kNow + 60'001), SendMark::Failed);
+}
+
+TEST_F(MessageResendTest, AFailureNoticeOfAResentMessageIsAppliedAsAnyOther) {
+  Add(Unsent("m1"));
+  const SendMarkTap tap = Tap("m1");
+  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, Failed(tap.new_id), kNow), NoticeTell::Nothing) << "its line, no toast";
+  EXPECT_TRUE(Row(SendFailureRowId(tap.new_id, ""))) << "stored: the reason the pill tells when it turns red";
 }
 
 // The set of re-sent messages does not grow for the session: one delivered without any failure is forgotten too.
@@ -330,15 +338,14 @@ TEST_F(MessageResendTest, AResentMessageIsForgottenOnceDelivered) {
 
 TEST_F(MessageResendTest, AnOrdinaryFailureIsAppliedAsBefore) {
   Add(Unsent("m1"));
-  ResentMessages resent;
-  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, Failed("m1"), kNow, resent), NoticeTell::Nothing)
+  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, Failed("m1"), kNow), NoticeTell::Nothing)
       << "a line in the chat, not a toast";
   EXPECT_TRUE(Row(SendFailureRowId("m1", "")));
-  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, Failed("m1"), kNow, resent), NoticeTell::Nothing) << "once";
+  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, Failed("m1"), kNow), NoticeTell::Nothing) << "once";
   DeliveryNotice unknown = Failed("m1");
   unknown.send = SendFailure::Unknown;
-  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, unknown, kNow, resent), NoticeTell::Toast) << "an unknown cause is a toast";
-  EXPECT_EQ(ApplyDeliveryNoticeTo(nullptr, Failed("m1"), kNow, resent), NoticeTell::Toast) << "no store: a toast";
+  EXPECT_EQ(ApplyDeliveryNoticeTo(&store_, unknown, kNow), NoticeTell::Toast) << "an unknown cause is a toast";
+  EXPECT_EQ(ApplyDeliveryNoticeTo(nullptr, Failed("m1"), kNow), NoticeTell::Toast) << "no store: a toast";
 }
 
 // The pill for a failed re-sent message belongs to the chat on screen.

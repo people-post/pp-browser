@@ -521,7 +521,12 @@ void ChatPresenter::ToggleArchived() {
 }
 
 NoticeTell ChatPresenter::ApplyDeliveryNotice(const DeliveryNotice& notice) {
-  return ApplyDeliveryNoticeTo(facade_ ? facade_->ThreadStore() : nullptr, notice, util::NowUnixMs(), resent_ids_);
+  return ApplyDeliveryNoticeTo(facade_ ? facade_->ThreadStore() : nullptr, notice, util::NowUnixMs());
+}
+
+std::optional<std::string> ChatPresenter::ResentTurnedRed(const std::string& thread_id,
+                                                          const std::vector<std::string>& red_ids) const {
+  return FirstResentTurnedRed(resent_ids_, thread_id, red_ids);
 }
 
 void ChatPresenter::ForgetDeliveredResends() {
@@ -577,7 +582,7 @@ SendMarkTap ChatPresenter::TapSendMark(const std::string& thread_id, const std::
   };
   SendMarkTap tap = ResendAfterTap(facts, ports);
   if (tap.kind == SendMarkTap::Kind::Resent && !tap.new_id.empty()) {
-    resent_ids_[tap.new_id] = thread_id; // its first failure is told once (ApplyDeliveryNoticeTo)
+    resent_ids_[tap.new_id] = thread_id; // told once when it turns red again (ResentTurnedRed)
   }
   if (tap.removal_error) {
     log().warning << "resend: the unsent row was not removed message_id=" << message_id;
