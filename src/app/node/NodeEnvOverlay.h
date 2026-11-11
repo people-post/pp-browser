@@ -30,6 +30,7 @@ std::vector<std::string> ParsePpNodeBootstrapPeersCsv(std::string_view csv);
  *   PP_NODE_ADVERTISE_MULTIADDRS
  *   PP_NODE_MESH_PUBLISH
  *   PP_NODE_REGISTRATION_BASE_URL
+ *   PP_NODE_RELAY_CONTENT_SHA256   (relay.content_sha256: send x-amz-content-sha256 on relay POST/PUT)
  *   (PP_NODE_IDENTITY_SEED is applied in NodeBootstrap, not here)
  */
 void ApplyPpNodeConfigEnvOverlays(AppConfig& config);

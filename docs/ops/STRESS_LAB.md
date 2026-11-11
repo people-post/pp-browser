@@ -38,13 +38,18 @@ scripts/test/pp_node_stress.py bridges --build build-pp-node --pairs 100 --durat
 
 The capacities above were not re-measured.
 
-The node says `busy` / `full` before its members feel it, and new work goes elsewhere ([TEST_STRATEGY § A full seed](TEST_STRATEGY.md)). On these loads a Release node is limited by its socket buffers, not its CPU: run it on a host with `99-pp-node-udp.conf` before calling a number a seed's.
+The node says `busy` / `full` before its members feel it, and new work goes elsewhere ([TEST_STRATEGY § A full seed](TEST_STRATEGY.md)). On these loads a Release node was limited by its socket buffers, not its CPU, until pp-cpp-mesh v6.9.0 (limit 1).
 
 **Earlier figures** (2026-11-06, in this file until 2026-11-07) were measured on a Debug build, several times slower: ~2000 parked, 50 calls 79 % → 100 % after the pump fix, 100 pairs 23 % → 100 %. The pump fix (pp-cpp-mesh v6.2.0) stands; the capacities do not. `pp_node_stress.py` now refuses a non-Release build.
 
 ## What limits a node
 
-1. **Socket buffers** — on Release the first limit for media: the OS default (208 KiB) overflows in bursts while the pump has room. Kernel drops are `pp_udp_receive_drops` and a pressure. Hosts should raise the cap (`packaging/pp-node/99-pp-node-udp.conf`).
+1. **Socket buffers.** Until pp-cpp-mesh v6.9.0, this was the first limit for media: an idle pump slept a blind 5 ms, and at 66 MB/s that is 330 KB against the OS default (208 KiB) buffer. Since v6.9.0 an idle pump waits on the socket and wakes as a datagram arrives, and reads up to 32 per `recvmmsg` (pp-cpp-amp v5.7.0). Measured 2026-11-11 (Release, two cores, 208 KiB, members admitted at 400/s, three runs each):
+   - 100 four-member calls at 1500 kbps: kernel drops 24.6k/s → 0, delivered 69.8 → 100 %, latency p50 1.9 → 0.8 ms and p95 5.8 → 1.2 ms. The node's CPU rose 51 → 68 %: it now carries the third it used to drop.
+   - 150 calls at 500 kbps: delivered 83.4 → 100 %.
+   - CPU per datagram fell 6 %, and a node with 20 parked clients fell 0.17 → 0.08 %.
+
+   Kernel drops are still `pp_udp_receive_drops` and a pressure, and hosts should still raise the cap (`packaging/pp-node/99-pp-node-udp.conf`) for bursts.
 2. **One pump thread does the data plane**, sealing every fan-out copy per recipient (XChaCha20-Poly1305 on BoringSSL: still the largest share in calls), and walking the link table on its 50 ms cadence: past ~23k parked links it saturates one core while the worker pool idles. Its busy share is `pp_io_busy_fraction` and a pressure on every level.
 3. **Past capacity, media is lost, not late.** Call media is best effort ([V063](../../projects/p2p-av-calls/DECISIONS.md#v063--call-audio-is-best-effort-the-codec-recovers-losses)). Since pp-cpp-mesh v6.8.0 it never waits on a reliable channel while the hop serves lanes, and the reliable fallback drops past 150 / 300 ms ([MEDIA_CHANNELS § Channel type](../contracts/MEDIA_CHANNELS.md#channel-type-relay-qos)). Members admitted faster than the node's pressure rises (`--ramp 400`) give these figures, each the worst frame of the run: 150 calls at 500 kbps, 40.6 s → 7 ms, delivered 81.9 → 83.4 %; 100 calls at 1500 kbps, 61.8 s → 7 ms, delivered 62.9 → 71.6 %. What is lost is the kernel's drops at the socket buffer (1).
 4. **New links cost a handshake** (ML-DSA): ~300–400 new clients a second on two cores. While the pump is saturated, a node refuses new inbound links before their handshake (`pp_link_inbound_refused_busy`), so the CPU stays with the links it has.

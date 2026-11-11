@@ -119,7 +119,10 @@ public:
    */
   static std::map<std::string, std::string> WithContentSha256(const std::string& method, const std::string& body,
                                                               const std::map<std::string, std::string>& headers);
-  /** POST/PUT carry `x-amz-content-sha256` (see WithContentSha256); `add_content_sha256` false for presigned URLs. */
+  /**
+   * With the process-wide SendContentSha256() switch on (default off), POST/PUT carry `x-amz-content-sha256` (see
+   * WithContentSha256); `add_content_sha256` false opts a call out (presigned URLs).
+   */
   static Roe<HttpResponse> Post(const std::string& url, const std::string& body,
                                 const std::map<std::string, std::string>& headers = {},
                                 std::optional<size_t> max_response_bytes = kMaxHttpClientBodyBytes,

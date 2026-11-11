@@ -12,6 +12,7 @@
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/ProfileRegistry.h"
 #include "foundation/data/ProfileManifest.h"
+#include "foundation/tls/ContentSha256Policy.h"
 #include "domain/node/NodeMeshServices.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/runtime/AppRuntime.h"
@@ -34,6 +35,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   }
 
   ApplyPpNodeConfigEnvOverlays(*config);
+  SetSendContentSha256(config->relay_content_sha256);
   config->mesh.node_enabled = true;
   NormalizeMeshConfig(config->mesh);
 

@@ -27,7 +27,7 @@ Fixed **roles** with a **coordinator mailbox**, **MeshHost-owned Amp pump**, **o
 ```mermaid
 flowchart TB
   UI["1 · UI thread<br/>SDL · RmlUi · controllers"]
-  Pump["2 · Amp MeshPump<br/>MeshHost-owned · Drive ~5ms"]
+  Pump["2 · Amp MeshPump<br/>MeshHost-owned · Drive on readiness, ≤5ms"]
   Coord["3 · Coordinator<br/>mailbox · timer wheel · policy"]
   Pool["5 · Worker pool 2–4<br/>Critical · Normal · Background"]
   Plat["6 · Platform I/O optional<br/>Linux D-Bus notifier"]
@@ -54,7 +54,7 @@ Contain unbounded item fan-out with **internal queues** on the shared pool (e.g.
 | # | Role | Owner | Blocking? | Responsibility |
 |---|------|-------|-----------|----------------|
 | **1** | **UI thread** | `Application` main loop | No | SDL events, RmlUi, controllers; drain UI mailbox via `RunUITasks()` |
-| **2** | **Amp MeshPump** | `MeshHost` (`MeshPumpThread`) | No — short `Drive` | `MeshRuntime::Drive()` ~5ms, the runtime's only driver (`ClaimDriver`: a drive from another thread is refused); the mesh's io lane — L4 engines and mesh control; Amp has no async reactor / no libp2p `io_context` |
+| **2** | **Amp MeshPump** | `MeshHost` (`MeshPumpThread`) | No — short `Drive` | `MeshRuntime::Drive()` as datagrams arrive (idle, it waits on the socket, at most 5 ms for timers; a full drain drives again at once), the runtime's only driver (`ClaimDriver`: a drive from another thread is refused); the mesh's io lane — L4 engines and mesh control; Amp has no async reactor / no libp2p `io_context` |
 | **3** | **Coordinator** | `CoordinatorThread` | No — dispatcher only | Priority mailbox; timer wheel; relay poll + hub policy (~1s); posts blocking work to pool |
 | **4** | **Worker pool** | `WorkerPool` (2–4 threads) | Yes — only here for product HTTP/LLM/disk | libcurl HTTP, UPnP, Argon2, SQLite writes, LLM HTTP, attachment drain, L4 inbound handlers (chat / history / blob / announce / broadcast / DHT / directory) under MeshPump |
 | **5** | **Platform I/O** | `ILocalNotifier` impls | Platform-specific | Linux: D-Bus watch thread. Android: JNI → coordinator wake |

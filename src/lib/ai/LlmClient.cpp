@@ -8,6 +8,7 @@
 #include "foundation/error/AppError.h"
 #include "foundation/error/CurlNetworkError.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/tls/ContentSha256Policy.h"
 #include "foundation/tls/CurlSsl.h"
 
 #include <curl/curl.h>
@@ -329,8 +330,11 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
     bearer_header = "Authorization: Bearer " + config_.api_key.Reveal();
     headers = curl_slist_append(headers, bearer_header.c_str());
   }
-  const std::string sha_header = "x-amz-content-sha256: " + Sha256Hex(payload);
-  headers = curl_slist_append(headers, sha_header.c_str());
+  std::string sha_header;
+  if (SendContentSha256()) {
+    sha_header = "x-amz-content-sha256: " + Sha256Hex(payload);
+    headers = curl_slist_append(headers, sha_header.c_str());
+  }
 
   const std::string url = config_.base_url + "/chat/completions";
   log().debug << "POST " << url << " model=" << config_.model;

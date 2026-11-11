@@ -29,7 +29,8 @@
     "url": "https://backend.example.test/mcp"
   },
   "relay": {
-    "base_url": "https://backend.example.test/api/relay"
+    "base_url": "https://backend.example.test/api/relay",
+    "content_sha256": false
   },
   "directory": {
     "base_url": "https://backend.example.test/api/relay"

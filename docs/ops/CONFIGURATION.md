@@ -41,6 +41,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_MESH_PUBLISH` | `libp2p.mesh_publish` | Register/renew as `entity_kind=mesh_node` (N027). Default on when advertise list is non-empty |
 | `PP_NODE_MESH_HEARTBEAT` | `libp2p.mesh_heartbeat` | Signed liveness heartbeat to the directory every 5 min (needs mesh publish). Default **off**: opt-in for org seeds (privacy P011) |
 | `PP_NODE_REGISTRATION_BASE_URL` | `registration.base_url` | Mesh directory register/renew HTTP base (e.g. `https://backend.example.test/api/relay`) |
+| `PP_NODE_RELAY_CONTENT_SHA256` | `relay.content_sha256` | Same bool forms; send `x-amz-content-sha256` on relay POST/PUT (default off) |
 | `PP_NODE_IDENTITY_SEED` | deterministic identity | ≥32-byte hex master seed; HKDF `pp-node-identity-v1` → device ML-DSA + account ML-DSA + account ML-KEM. Empty volume mints stably; existing `identity.enc` **fail-closed** on mismatch |
 | `PP_NODE_PROFILE` | active profile id | Or `--profile` |
 | `PP_NODE_STATUS_ADDR` | status HTTP bind | Default `127.0.0.1:18518`; empty disables. Set `0.0.0.0:18518` (or a host IP) to expose for console/probes — ADDR alone is enough |

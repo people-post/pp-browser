@@ -16,6 +16,7 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "foundation/platform/PlatformLogSink.h"
 #include "foundation/platform/PlatformHooks.h"
+#include "foundation/tls/ContentSha256Policy.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -38,6 +39,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   if (!config) {
     return config.error();
   }
+  SetSendContentSha256(config->relay_content_sha256);
   AppPaths::DataDir(config->data_dir);
 
   auto registry = ProfileRegistry::Load(AppPaths::DataDir());
