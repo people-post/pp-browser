@@ -42,56 +42,53 @@ data-event-click="open_blocked_people()"	1	-	privacy	-	security
 {{i18n:contacts.blocked.title}}	1	-	privacy	-	security	
 {{i18n:settings.security.calls.help}}	1	-	privacy	-	security	
 {{i18n:settings.security.calls}}	1	-	privacy	-	security	
-{{i18n:settings.security.group_invites.help}}	1	-	privacy	-	security	
 {{i18n:settings.security.group_invites}}	1	-	privacy	-	security	
 data-class-settings-switch--on="security_biometric_on"	1	-	security	security_biometric_shown	security	
 data-event-click="ask_setting_help('settings.security.recovery')"	1	-	security	security_has_recovery_phrase	security	
-data-event-click="hide_recovery_phrase()"	1	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
+data-event-click="hide_recovery_phrase()"	2	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
 data-event-click="on_choose_unlock_grace()"	1	security	security	security_grace_shown	security	
 data-event-click="open_security_page('change_pin')"	1	-	security	show_change_pin	security	
-data-event-click="show_recovery_phrase()"	1	-	security	security_has_recovery_phrase;;recovery_phrase == ''	security	
+data-event-click="show_recovery_phrase()"	2	-	security	security_has_recovery_phrase;;recovery_phrase == ''	security	
 data-event-click="toggle_biometric()"	1	security	security	security_biometric_shown	security	
 {{i18n:settings.security.biometric.help}}	1	-	security	security_biometric_shown	security	
 {{i18n:settings.security.change_pin}}	1	-	security	show_change_pin	security	
 {{i18n:settings.security.default_hint}}	1	-	security	pin_protection_is_default	security	
 {{i18n:settings.security.grace.help}}	1	-	security	security_grace_shown	security	
 {{i18n:settings.security.grace.title}}	1	-	security	security_grace_shown	security	
-{{i18n:settings.security.group.recovery}}	1	-	security	!security_has_recovery_phrase	security	
-{{i18n:settings.security.group.recovery}}	1	-	security	security_has_recovery_phrase	security	
-{{i18n:settings.security.group.unlock}}	1	-	security	-	security	
+{{i18n:settings.security.recovery}}	1	-	security	!security_has_recovery_phrase	security	
+{{i18n:settings.security.recovery}}	1	-	security	security_has_recovery_phrase	security	
 {{i18n:settings.security.not_setup_hint}}	1	-	security	pin_protection_not_setup	security	
 {{i18n:settings.security.protection_title}}	1	-	security	!show_change_pin	security	
 {{i18n:settings.security.protection}}	1	-	security	-	security	
 {{i18n:settings.security.recovery.help}}	1	-	security	security_has_recovery_phrase	security	
-{{i18n:settings.security.recovery.hide}}	1	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
+{{i18n:settings.security.recovery.hide}}	2	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
 {{i18n:settings.security.recovery.none}}	1	-	security	!security_has_recovery_phrase && security_can_export_link	security	
 {{i18n:settings.security.recovery.shown_hint}}	1	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
-{{i18n:settings.security.recovery.show}}	1	-	security	security_has_recovery_phrase;;recovery_phrase == ''	security	
-{{include:settings_security_pin}}	1	-	security	-	security	
+{{i18n:settings.security.recovery.show}}	2	-	security	security_has_recovery_phrase;;recovery_phrase == ''	security	
 {{pin_protection_status}}	1	-	security	!show_change_pin	security	
 {{pin_protection_status}}	1	-	security	-	security	
 {{pin_protection_status}}	1	-	security	show_change_pin	security	
 {{recovery_phrase}}	1	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
 {{security_biometric_label}}	1	-	security	security_biometric_shown	security	
 {{unlock_grace_label}}	1	-	security	security_grace_shown	security	
-data-event-click="ask_setting_help('settings.help.topic.account_copy')"	1	-	devices	security_has_recovery_phrase	security	
+{{i18n:settings.devices.transfer_help}}	1	-	devices	-	devices	
+data-event-click="ask_setting_help('settings.help.topic.account_copy')"	2	-	devices	security_has_recovery_phrase	security	
 data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	-	security	
-data-event-click="make_main_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	
+data-event-click="make_main_device(device_index)"	2	-	devices	own_devices_shown;;device.can_manage	security	
 data-event-click="open_security_page('transfer')"	1	-	devices	-	security	
-data-event-click="remove_own_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	
-data-event-click="save_account_copy()"	1	-	devices	security_has_recovery_phrase	security	
-{{device.label}}	1	-	devices	own_devices_shown	security	
+data-event-click="remove_own_device(device_index)"	2	-	devices	own_devices_shown;;device.can_manage	security	
+data-event-click="save_account_copy()"	2	-	devices	security_has_recovery_phrase	security	
+{{device.label}}	2	-	devices	own_devices_shown	security	
 {{i18n:settings.security.copy.help}}	1	-	devices	security_has_recovery_phrase	security	
-{{i18n:settings.security.copy.save}}	1	-	devices	security_has_recovery_phrase	security	
+{{i18n:settings.security.copy.save}}	2	-	devices	security_has_recovery_phrase	security	
 {{i18n:settings.security.devices.help}}	1	-	devices	own_devices_shown	security	
-{{i18n:settings.security.devices.main}}	1	-	devices	own_devices_shown;;device.is_main	security	
-{{i18n:settings.security.devices.make_main}}	1	-	devices	own_devices_shown;;device.can_manage	security	
+{{i18n:settings.security.devices.main}}	2	-	devices	own_devices_shown;;device.is_main	security	
+{{i18n:settings.security.devices.make_main}}	2	-	devices	own_devices_shown;;device.can_manage	security	
 {{i18n:settings.security.devices.not_main}}	1	-	devices	own_devices_shown;;own_devices_not_main && !own_devices_signed_out	security	
-{{i18n:settings.security.devices.remove}}	1	-	devices	own_devices_shown;;device.can_manage	security	
+{{i18n:settings.security.devices.remove}}	2	-	devices	own_devices_shown;;device.can_manage	security	
 {{i18n:settings.security.devices.signed_out}}	1	-	devices	own_devices_shown;;own_devices_signed_out	security	
 {{i18n:settings.security.devices}}	1	-	devices	own_devices_shown	security	
 {{i18n:settings.security.transfer_row}}	1	-	devices	-	security	
-{{include:settings_security_transfer}}	1	-	devices	-	security	
 data-class-settings-switch--on="show_notification_preview == 'on'"	1	-	notifications	-	profile	
 data-class-settings-switch--on="show_notifications == 'on'"	1	-	notifications	-	profile	
 data-class-settings-switch--on="stay_connected == 'on'"	1	-	notifications	stay_connected_available	profile	
@@ -321,7 +318,7 @@ data-value="server.url"	1	integrations	advanced	advanced;;advanced	integrations
 {{i18n:common.not_now}}	1	-	advanced	advanced;;show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	
 {{i18n:common.remove}}	1	-	advanced	advanced;;advanced	integrations	
 {{i18n:common.reset_defaults}}	2	-	advanced	advanced;;advanced	appearance,integrations,llm,network	
-{{i18n:settings.assistant.title}}	1	-	advanced	advanced	-	
+{{i18n:settings.advanced.group.ai}}	1	-	advanced	advanced	-	
 {{i18n:settings.integrations.add_mcp}}	1	-	advanced	advanced;;advanced	integrations	
 {{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced	advanced;;advanced	integrations	
 {{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced	advanced;;advanced;;server.args_text == ''	integrations	
@@ -379,7 +376,7 @@ data-value="server.url"	1	integrations	advanced	advanced;;advanced	integrations
 {{i18n:settings.network.prefer_contacts}}	1	-	advanced	advanced;;advanced && show_prefer_contacts_toggle	network	
 {{i18n:settings.network.reachable_without_relay.help}}	1	-	advanced	advanced;;show_node_toggle	network	
 {{i18n:settings.network.reachable_without_relay}}	1	-	advanced	advanced;;show_node_toggle	network	
-{{i18n:settings.network.title}}	1	-	advanced	advanced	-	
+{{i18n:settings.advanced.group.connection}}	1	-	advanced	advanced	-	
 {{i18n:settings.network.trusted_relays.help}}	1	-	advanced	advanced	network	
 {{i18n:settings.network.trusted_relays}}	1	-	advanced	advanced	network	
 {{i18n:settings.security.tool_permissions.help}}	1	-	advanced	advanced;;advanced	security	
@@ -450,7 +447,6 @@ data-value="relay_base_url"	1	network	tester	advanced;;advanced;;backend_is_cust
 {{item.title}}	1	-	tester	advanced;;advanced	storage	
 {{profile_dir}}	1	-	tester	advanced;;advanced	storage	
 {{profile_label}}	1	-	tester	advanced;;advanced	storage	
-
 {{i18n:settings.profile.id_row}}	1	-	profile	-	profile	
 {{i18n:settings.profile.id_none}}	1	-	profile	profile_relay_id == ''	profile	
 {{i18n:settings.profile.id_help}}	1	-	profile	-	profile	
@@ -458,3 +454,16 @@ data-value="relay_base_url"	1	network	tester	advanced;;advanced;;backend_is_cust
 {{i18n:settings.profile.registration_row}}	1	-	profile	-	profile	
 {{i18n:settings.profile.expires_row}}	1	-	profile	advanced && profile_registration_expires != ''	profile	
 {{i18n:settings.profile.node_id_row}}	1	-	profile	advanced && profile_peer_id != ''	profile	
+data-event-click="change_pin()"	1	-	security	show_change_pin && security_can_change_pin	security	
+{{i18n:pin.forget_warning}}	1	-	security	show_change_pin && security_can_change_pin	security	
+{{i18n:settings.security.change_pin}}	1	-	security	show_change_pin && security_can_change_pin	security	
+{{i18n:settings.security.unlock_to_change}}	1	-	security	show_change_pin && !security_can_change_pin && !pin_protection_not_setup	security	
+data-event-click="export_link_device()"	2	-	devices	security_can_export_link && !own_devices_not_main	devices	
+{{i18n:settings.security.link_device.export}}	2	-	devices	security_can_export_link && !own_devices_not_main	devices	
+{{i18n:settings.security.link_device.help}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.reset_hint}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device.send_hint}}	1	-	devices	-	devices	
+{{i18n:settings.security.link_device}}	1	-	devices	-	devices	
+{{i18n:settings.advanced.intro}}	1	-	advanced	advanced	-	
+{{i18n:settings.privacy.blocked_help}}	1	-	privacy	-	security	
+{{i18n:settings.tester.banner}}	1	-	tester	advanced	-	

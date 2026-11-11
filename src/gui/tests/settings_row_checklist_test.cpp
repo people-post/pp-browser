@@ -42,8 +42,17 @@ std::string ReadSource(const std::string& relative) {
   return ReadFile(std::filesystem::path(PP_SOURCE_DIR) / relative);
 }
 
+// A page view with its {{include:x}} sub-views spelled out in place (the desktop PIN and the transfer block live in
+// their own files), so the checks below see everything the page can show.
 std::string View(const std::string& id) {
-  return ReadAsset("views/settings_section_" + id + ".rml");
+  std::string text = ReadAsset("views/settings_section_" + id + ".rml");
+  const std::string marker = "{{include:";
+  for (size_t at = text.find(marker); at != std::string::npos; at = text.find(marker)) {
+    const size_t end = text.find("}}", at);
+    const std::string name = text.substr(at + marker.size(), end - at - marker.size());
+    text.replace(at, end + 2 - at, ReadAsset("views/" + name + ".rml"));
+  }
+  return text;
 }
 
 std::string StripComments(const std::string& text) {
@@ -67,7 +76,8 @@ std::string StripComments(const std::string& text) {
 
 struct Occurrence {
   std::string token;
-  std::string gates; // enclosing data-if expressions, outermost first, joined by ";;"; "-" for none
+  std::string gates;   // enclosing data-if expressions, outermost first, joined by ";;"; "-" for none
+  std::string layouts; // where it can show, from the settings-phone-only / settings-desktop-only classes around it
 };
 
 std::string JoinGates(const std::vector<std::string>& gates) {
@@ -83,7 +93,22 @@ std::string JoinGates(const std::vector<std::string>& gates) {
 
 struct Open {
   std::string data_if;
+  bool phone_only = false;   // class settings-phone-only: hidden on desktop
+  bool desktop_only = false; // class settings-desktop-only: hidden on phones
 };
+
+std::string LayoutsOf(const std::vector<Open>& stack, const Open* self) {
+  bool phone_only = self && self->phone_only;
+  bool desktop_only = self && self->desktop_only;
+  for (const Open& open : stack) {
+    phone_only = phone_only || open.phone_only;
+    desktop_only = desktop_only || open.desktop_only;
+  }
+  if (phone_only && desktop_only) {
+    return "none";
+  }
+  return phone_only ? "phone" : desktop_only ? "desktop" : "both";
+}
 
 std::vector<std::string> StackGates(const std::vector<Open>& stack) {
   std::vector<std::string> gates;
@@ -95,6 +120,16 @@ std::vector<std::string> StackGates(const std::vector<Open>& stack) {
   return gates;
 }
 
+bool HasClass(const std::string& tag, const std::string& cls) {
+  const size_t at = tag.find("class=\"");
+  if (at == std::string::npos) {
+    return false;
+  }
+  const size_t start = at + 7;
+  const std::string value = " " + tag.substr(start, tag.find('"', start) - start) + " ";
+  return value.find(" " + cls + " ") != std::string::npos;
+}
+
 // Every token (see the regex) with the data-if chain around it. Mirrors the script that wrote the checklist.
 std::vector<Occurrence> Scan(const std::string& raw) {
   static const std::regex token_re(
@@ -102,9 +137,10 @@ std::vector<Occurrence> Scan(const std::string& raw) {
   const std::string text = StripComments(raw);
   std::vector<Occurrence> found;
   std::vector<Open> stack;
-  const auto add_tokens = [&](const std::string& segment, const std::vector<std::string>& gates) {
+  const auto add_tokens = [&](const std::string& segment, const std::vector<std::string>& gates,
+                              const std::string& layouts) {
     for (std::sregex_iterator it(segment.begin(), segment.end(), token_re), end; it != end; ++it) {
-      found.push_back({(*it)[1].str(), JoinGates(gates)});
+      found.push_back({(*it)[1].str(), JoinGates(gates), layouts});
     }
   };
   size_t cur = 0;
@@ -126,7 +162,7 @@ std::vector<Occurrence> Scan(const std::string& raw) {
       ++end;
     }
     ++end;
-    add_tokens(text.substr(cur, at - cur), StackGates(stack));
+    add_tokens(text.substr(cur, at - cur), StackGates(stack), LayoutsOf(stack, nullptr));
     const std::string tag = text.substr(at, end - at);
     if (tag.compare(0, 2, "</") == 0) {
       if (!stack.empty()) {
@@ -145,7 +181,9 @@ std::vector<Occurrence> Scan(const std::string& raw) {
       if (!open.data_if.empty()) {
         gates.push_back(open.data_if);
       }
-      add_tokens(tag, gates);
+      open.phone_only = HasClass(tag, "settings-phone-only");
+      open.desktop_only = HasClass(tag, "settings-desktop-only");
+      add_tokens(tag, gates, LayoutsOf(stack, &open));
       if (tag.size() < 2 || tag.compare(tag.size() - 2, 2, "/>") != 0) {
         stack.push_back(open);
       }
@@ -153,7 +191,7 @@ std::vector<Occurrence> Scan(const std::string& raw) {
     cur = end;
     at = end;
   }
-  add_tokens(text.substr(cur), StackGates(stack));
+  add_tokens(text.substr(cur), StackGates(stack), LayoutsOf(stack, nullptr));
   EXPECT_TRUE(stack.empty()) << "unbalanced tags";
   return found;
 }
@@ -316,6 +354,83 @@ TEST(SettingsRowChecklistTest, WhatMovedOutOfAViewIsGoneFromIt) {
         << id;
   }
   EXPECT_FALSE(std::filesystem::exists(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "holding"));
+}
+
+// The sensitive actions of Security and Devices, row by row: each event is carried by exactly one element per layout
+// (phone / desktop), under exactly the gate chain it had before the mockup rebuild (90a581e9b). The PIN gate itself
+// lives in the action handlers; this pins that no other event, copy or gate reached them.
+TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOldGates) {
+  struct Expect {
+    const char* page;
+    const char* event;
+    const char* gates;
+    size_t phone;   // visible on a phone
+    size_t desktop; // visible on the desktop
+  };
+  const Expect expected[] = {
+      {"security", "open_security_page('change_pin')", "show_change_pin", 1, 0},
+      {"security", "change_pin()", "show_change_pin && security_can_change_pin", 0, 1},
+      {"security", "toggle_biometric()", "security_biometric_shown", 1, 1},
+      {"security", "on_choose_unlock_grace()", "security_grace_shown", 1, 1},
+      {"security", "show_recovery_phrase()", "security_has_recovery_phrase;;recovery_phrase == ''", 1, 1},
+      {"security", "hide_recovery_phrase()", "security_has_recovery_phrase;;recovery_phrase != ''", 1, 1},
+      {"security", "ask_setting_help('settings.security.recovery')", "security_has_recovery_phrase", 1, 1},
+      // Devices: the transfer block is the desktop's inline copy here; phones open it as its own page.
+      {"devices", "open_security_page('transfer')", "-", 1, 0},
+      {"devices", "ask_setting_help('settings.security.transfer_row')", "-", 1, 0},
+      {"devices", "export_link_device()", "security_can_export_link && !own_devices_not_main", 0, 1},
+      {"devices", "make_main_device(device_index)", "own_devices_shown;;device.can_manage", 1, 1},
+      {"devices", "remove_own_device(device_index)", "own_devices_shown;;device.can_manage", 1, 1},
+      {"devices", "save_account_copy()", "security_has_recovery_phrase", 1, 1},
+      {"devices", "ask_setting_help('settings.help.topic.account_copy')", "security_has_recovery_phrase", 1, 1},
+  };
+  for (const Expect& e : expected) {
+    const std::string token = std::string("data-event-click=\"") + e.event + "\"";
+    size_t phone = 0;
+    size_t desktop = 0;
+    for (const Occurrence& o : Scan(View(e.page))) {
+      if (o.token != token) {
+        continue;
+      }
+      EXPECT_EQ(o.gates, e.gates) << e.page << ": " << e.event;
+      phone += (o.layouts == "phone" || o.layouts == "both") ? 1 : 0;
+      desktop += (o.layouts == "desktop" || o.layouts == "both") ? 1 : 0;
+    }
+    EXPECT_EQ(phone, e.phone) << e.page << " (phone): " << e.event;
+    EXPECT_EQ(desktop, e.desktop) << e.page << " (desktop): " << e.event;
+  }
+}
+
+TEST(SettingsSensitiveActionsTest, TheTransferBlockOnItsOwnPageShowsOneExportRowPerLayout) {
+  // settings.rml includes the same file for the phone's own transfer page: there the phone row is the one that shows.
+  const std::string rml = ReadAsset("views/settings_security_transfer.rml");
+  size_t phone = 0;
+  size_t desktop = 0;
+  for (const Occurrence& o : Scan(rml)) {
+    if (o.token == "data-event-click=\"export_link_device()\"") {
+      EXPECT_EQ(o.gates, "security_can_export_link && !own_devices_not_main");
+      phone += (o.layouts == "phone" || o.layouts == "both") ? 1 : 0;
+      desktop += (o.layouts == "desktop" || o.layouts == "both") ? 1 : 0;
+    }
+  }
+  EXPECT_EQ(phone, 1u);
+  EXPECT_EQ(desktop, 1u);
+}
+
+TEST(SettingsSensitiveActionsTest, NoHelpButtonSitsInsideAnotherButton) {
+  // Two nested buttons fire both events on one tap; the "?" must be a sibling of the row's own button.
+  for (const char* page : {"security", "devices"}) {
+    const std::string text = StripComments(View(page));
+    int depth = 0;
+    for (size_t at = text.find('<'); at != std::string::npos; at = text.find('<', at + 1)) {
+      if (text.compare(at, 7, "<button") == 0) {
+        ++depth;
+        EXPECT_LE(depth, 1) << page << ": a button inside a button";
+      } else if (text.compare(at, 9, "</button>") == 0) {
+        --depth;
+      }
+    }
+  }
 }
 
 } // namespace pbr

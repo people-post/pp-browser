@@ -13052,6 +13052,41 @@ textarea:composing ~ .prompt-composer-label,
   pointer-events: none;
 }
 
+.shell-layer-compact .settings-mock .group-row--q {
+  position: relative;
+}
+
+.shell-layer-compact .settings-mock .group-row--q .group-row-tap {
+  justify-content: space-between;
+  padding-right: 12dp;
+}
+
+/* The "?" sits over the right end of the row, left of the chevron, as its own button (not inside the row's button). */
+.shell-layer-compact .settings-mock .group-row--q .group-row-q {
+  position: absolute;
+  right: 36dp;
+  top: 16dp;
+}
+
+.shell-layer-compact .settings-mock .settings-device-row {
+  padding: 0;
+  gap: 0;
+}
+
+.shell-layer-compact .settings-mock .group-row-tap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 52dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
 .shell-layer-compact .settings-mock .group-row--indent {
   padding-left: 36dp;
 }

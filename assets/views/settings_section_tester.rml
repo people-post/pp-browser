@@ -1,5 +1,6 @@
       <div class="stack" data-if="advanced">
       <div class="settings-section settings-section--grouped stack">
+        <p class="text muted settings-help group-foot">{{i18n:settings.tester.banner}}</p>
         <div class="group-card" data-if="show_backend_switch">
           <button class="settings-toggle-row settings-choice-row row group-row" type="button"
                   data-event-click="on_choose_backend()">

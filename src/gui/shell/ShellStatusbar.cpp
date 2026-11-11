@@ -52,6 +52,7 @@ void ShellStatusbar::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("statusbar_inbound_title", &state_.statusbar_inbound_title);
   ctor.Bind("statusbar_cluster_title", &state_.statusbar_cluster_title);
   ctor.Bind("statusbar_popover_open", &state_.statusbar_popover_open);
+  ctor.Bind("statusbar_popover_advanced", &state_.statusbar_popover_advanced);
   ctor.Bind("statusbar_popover_brief_label", &state_.statusbar_popover_brief_label);
   ctor.Bind("statusbar_popover_direct_label", &state_.statusbar_popover_direct_label);
   ctor.Bind("statusbar_popover_reach_label", &state_.statusbar_popover_reach_label);
@@ -118,6 +119,7 @@ void ShellStatusbar::Dirty() {
 
 void ShellStatusbar::DirtyPopover() {
   DataModelHost::Instance().Dirty("window", "statusbar_popover_open");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_advanced");
   DataModelHost::Instance().Dirty("window", "statusbar_popover_brief_label");
   DataModelHost::Instance().Dirty("window", "statusbar_popover_direct_label");
   DataModelHost::Instance().Dirty("window", "statusbar_popover_reach_label");
@@ -473,6 +475,14 @@ void ShellStatusbar::RetestReachability() {
   }
   RefreshPopover();
   RefreshCluster();
+}
+
+void ShellStatusbar::SetAdvanced(bool advanced) {
+  if (state_.statusbar_popover_advanced == advanced) {
+    return;
+  }
+  state_.statusbar_popover_advanced = advanced;
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_advanced");
 }
 
 void ShellStatusbar::OpenNetworkSettings() {

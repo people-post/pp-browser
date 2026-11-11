@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <set>
@@ -123,6 +124,25 @@ TEST(SettingsPagesTest, AdvancedAndTestOptionsAreListedOnlyWhileTheFlagIsOn) {
   EXPECT_TRUE(Page("advanced").advanced_only);
   EXPECT_TRUE(Page("tester").advanced_only);
   EXPECT_FALSE(Page("help").advanced_only);
+}
+
+// The Test options entry (the last row of Home's third group) selects page "tester": with the advanced flag on the
+// page is listed and its view is the one registered for it; with the flag off nothing lists it, so selecting it opens
+// nothing (SettingsController::OnSelectSection returns when the id is not among the listed rows).
+TEST(SettingsPagesTest, SelectingTheTesterEntryOpensItsViewOnlyWhileTheFlagIsOn) {
+  const std::vector<const SettingsPage*> on = ListedSettingsPages(true);
+  ASSERT_FALSE(on.empty());
+  EXPECT_STREQ(on.back()->id, "tester") << "last row of the list, so last in the third group";
+  EXPECT_EQ(on.back()->home_group, 3);
+  EXPECT_EQ(on[on.size() - 2]->home_group, 3) << "after Help and Advanced";
+  const SettingsPage* page = FindSettingsPage("tester");
+  ASSERT_NE(page, nullptr);
+  EXPECT_STREQ(page->view_key, "settings_section_tester");
+  EXPECT_TRUE(std::filesystem::exists(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" /
+                                      (std::string(page->view_key) + ".rml")));
+  for (const SettingsPage* listed : ListedSettingsPages(false)) {
+    EXPECT_STRNE(listed->id, "tester");
+  }
 }
 
 } // namespace pbr
