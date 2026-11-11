@@ -41,7 +41,7 @@ License: **MIT** (`LICENSE`). Source is intended to be **publicly available** op
 
 | Role | Algorithm | Key / size | Library / API |
 |------|-----------|------------|---------------|
-| Message body AEAD | XChaCha20-Poly1305 (IETF) | 256-bit key; 24-byte nonce | libsodium `crypto_aead_xchacha20poly1305_ietf_*` |
+| Message body AEAD | XChaCha20-Poly1305 (IETF) | 256-bit key; 24-byte nonce | `pp-cpp-crypto` `XChaCha20Poly1305` (BoringSSL; libsodium `crypto_aead_xchacha20poly1305_ietf_*` bytes) |
 | Session key derivation | HKDF-SHA256 | 256-bit output | libsodium |
 | Master PSK | CSPRNG | 32 bytes | libsodium `randombytes_buf` |
 | PSK fingerprint | BLAKE2b-256 | 32-byte digest | libsodium |
@@ -65,8 +65,8 @@ Normative detail: [AT_REST_ENCRYPTION.md](../contracts/AT_REST_ENCRYPTION.md).
 
 | Role | Typical algorithms | Notes |
 |------|--------------------|--------|
-| HTTPS / TLS (curl) | Standard TLS cipher suites | Vendored BoringSSL on Linux, Android and iOS; OS TLS on Windows (Schannel) and macOS (SecureTransport) |
-| Mesh transport (Amp, [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp)) | ML-KEM-768 + ML-DSA-65 handshake; HKDF-SHA256 session keys; XChaCha20-Poly1305 AEAD; HMAC-SHA256; SHA-256 | libsodium + `pp-cpp-crypto` (`mlkem-native`, `mldsa-native`) |
+| HTTPS / TLS (curl) | Standard TLS cipher suites | BoringSSL (vendored in `pp-cpp-crypto`) on Linux, Android and iOS; OS TLS on Windows (Schannel) and macOS (SecureTransport) |
+| Mesh transport (Amp, [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp)) | ML-KEM-768 + ML-DSA-65 handshake; HKDF-SHA256 session keys; XChaCha20-Poly1305 AEAD; HMAC-SHA256; SHA-256 | libsodium + `pp-cpp-crypto` (`mlkem-native`, `mldsa-native`; the AEAD on BoringSSL) |
 
 These are still **industry-standard** crypto outside (or in addition to) Apple’s OS APIs — keep **“Apple OS only?” = No**.
 
@@ -132,7 +132,7 @@ Algorithms (industry standard / NIST):
   - HKDF-SHA256, HMAC-SHA256, SHA-256, BLAKE2b-256, Argon2id
   - ML-DSA-65 (FIPS 204); ML-KEM-768 (FIPS 203)
   - TLS (HTTPS)
-Libraries: libsodium; mlkem-native; mldsa-native; BoringSSL (curl's TLS only)
+Libraries: libsodium; mlkem-native; mldsa-native; BoringSSL (TLS and the XChaCha20-Poly1305 AEAD)
 Primary uses: E2E P2P messaging; PIN/DEK vault; PQ account keys; mesh transport; HTTPS
 Proprietary unpublished ciphers: No
 France App Store: [Yes → French declaration | No → N/A]

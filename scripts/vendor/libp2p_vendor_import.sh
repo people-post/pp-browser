@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Refresh the shared vendored trees in third_party/ (named after the retired libp2p fork, A017):
-# BoringSSL (curl's TLS), zlib, googletest. Asio is a standalone tree; curl, SQLite and Opus come
-# from vendor_import.sh. Safe to re-run when bumping versions.
+# zlib, googletest. Asio is a standalone tree; curl, SQLite and Opus come from vendor_import.sh;
+# BoringSSL is pp-cpp-crypto's. Safe to re-run when bumping versions.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -10,7 +10,6 @@ TMP="${ROOT}/.libp2p_vendor_import_tmp"
 
 # name|url|archive_type (git or tarball)
 declare -A LIBP2P_REPOS=(
-  [boringssl]="https://github.com/qdrvm/boringssl/archive/refs/tags/qdrvm1.zip|tarball"
   [zlib]="https://github.com/qdrvm/zlib/archive/refs/tags/v1.3.0-p1.tar.gz|tarball"
   [googletest]="https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz|tarball"
 )

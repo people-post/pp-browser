@@ -12,7 +12,7 @@ endfunction()
 
 # Always required for pp-node and the GUI app.
 # JSON document tree comes from FetchContent pp-cpp-common (Value/Object).
-# libsodium + ML-KEM/ML-DSA come from FetchContent pp-cpp-crypto (pinned tag).
+# libsodium + ML-KEM/ML-DSA + BoringSSL come from FetchContent pp-cpp-crypto (pinned tag).
 
 # GUI / AI / messaging / A-V — not needed for headless pp-node.
 # FreeType / HarfBuzz / LunaSVG / SDL3 / SDL3_image come from pp-cpp-ui.
@@ -23,7 +23,7 @@ if(NOT PP_BROWSER_HEADLESS)
   pp_require_vendored(opus)
 endif()
 
-# libp2p deps (BoringSSL must be available before curl TLS on Linux)
+# libp2p deps (zlib, Asio; aliases pp-cpp-crypto's BoringSSL for curl's TLS)
 include(libp2p_dependencies)
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)

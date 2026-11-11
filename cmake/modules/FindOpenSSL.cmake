@@ -1,8 +1,8 @@
-# Route curl's FindOpenSSL to in-tree BoringSSL targets (vendored libp2p build).
+# Route curl's FindOpenSSL to the BoringSSL targets pp-cpp-crypto builds.
 if(TARGET OpenSSL::Crypto AND TARGET OpenSSL::SSL)
   set(OpenSSL_FOUND TRUE)
   set(OPENSSL_FOUND TRUE)
-  set(OPENSSL_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/third_party/boringssl/include")
+  set(OPENSSL_INCLUDE_DIR "${PP_CRYPTO_BORINGSSL_INCLUDE_DIR}")
   set(OPENSSL_SSL_LIBRARY OpenSSL::SSL)
   set(OPENSSL_CRYPTO_LIBRARY OpenSSL::Crypto)
   set(OPENSSL_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
@@ -23,7 +23,7 @@ if(TARGET ssl AND TARGET crypto)
 
   set(OpenSSL_FOUND TRUE)
   set(OPENSSL_FOUND TRUE)
-  set(OPENSSL_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/third_party/boringssl/include")
+  set(OPENSSL_INCLUDE_DIR "${PP_CRYPTO_BORINGSSL_INCLUDE_DIR}")
   set(OPENSSL_SSL_LIBRARY ssl)
   set(OPENSSL_CRYPTO_LIBRARY crypto)
   set(OPENSSL_LIBRARIES ssl crypto)
