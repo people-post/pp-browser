@@ -338,6 +338,7 @@
     "settings.security.link_device.export_done": "Transfer code copied",
     "settings.security.link_device.not_ready": "Unlock first, then move your account.",
     "settings.security.transfer_row": "Move to a new device",
+    "settings.devices.transfer_help": "Getting a new phone? Move your account to it.",
     "settings.security.group.unlock": "Unlock",
     "settings.security.group.recovery": "Recovery & transfer",
     "settings.security.group.privacy": "Privacy",

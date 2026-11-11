@@ -335,6 +335,7 @@
     "settings.security.link_device.export_done": "转移码已复制",
     "settings.security.link_device.not_ready": "先解锁，再搬账号。",
     "settings.security.transfer_row": "转移到新设备",
+    "settings.devices.transfer_help": "换手机时，把账号搬到新设备上。",
     "settings.security.group.unlock": "解锁",
     "settings.security.group.recovery": "恢复与转移",
     "settings.security.group.privacy": "隐私",

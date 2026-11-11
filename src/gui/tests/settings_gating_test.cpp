@@ -78,6 +78,36 @@ TEST(SettingsGatingTest, TheSecurityPageHasTheSameEventsAndTheRecoveryPhraseOnly
   EXPECT_LT(show, phrase);
 }
 
+// Phase 8 (Devices and transfer, mockup layout only): the same events as before, and nothing on the page or in the
+// transfer block binds a secret; the code is only ever copied by export_link_device() after its PIN gate.
+TEST(SettingsGatingTest, TheDevicesPageAndTheTransferBlockKeepTheirEventsAndBindNoSecret) {
+  const std::string devices = ReadAsset("views/settings_section_devices.rml");
+  const std::string transfer = ReadAsset("views/settings_security_transfer.rml");
+  ASSERT_FALSE(devices.empty());
+  ASSERT_FALSE(transfer.empty());
+  EXPECT_EQ(CountOf(devices, "data-event-click=\""), 6u);
+  for (const char* event : {"open_security_page('transfer')", "ask_setting_help('settings.security.transfer_row')",
+                            "make_main_device(device_index)", "remove_own_device(device_index)",
+                            "save_account_copy()", "ask_setting_help('settings.help.topic.account_copy')"}) {
+    EXPECT_EQ(CountOf(devices, std::string("data-event-click=\"") + event + "\""), 1u) << event;
+  }
+  EXPECT_EQ(CountOf(transfer, "data-event-click=\""), 1u);
+  EXPECT_EQ(CountOf(transfer, "data-event-click=\"export_link_device()\""), 1u);
+  // The export row keeps its one gate; the three notes come after it.
+  const size_t gate = transfer.find("data-if=\"security_can_export_link && !own_devices_not_main\"");
+  const size_t export_event = transfer.find("export_link_device()");
+  ASSERT_NE(gate, std::string::npos);
+  EXPECT_LT(gate, export_event);
+  // No binding that would render a code, a phrase or a key on either view.
+  for (const std::string& view : {devices, transfer}) {
+    for (const char* secret : {"{{recovery_phrase", "{{transfer", "{{link_code", "{{export_code", "{{pin", "{{brief_llm_key}}"}) {
+      EXPECT_EQ(view.find(secret), std::string::npos) << secret;
+    }
+  }
+  // Removing a device and saving a copy are buttons that call the gated handlers; nothing renders them already done.
+  EXPECT_EQ(devices.find("remove_own_device(0)"), std::string::npos);
+}
+
 TEST(SettingsGatingTest, HomeAndTheDesktopListNameNoPageDirectly) {
   const std::string home = ReadAsset("views/settings.rml");
   // Both lists loop over `sections`, which leaves Advanced and Test options out while the flag is off.

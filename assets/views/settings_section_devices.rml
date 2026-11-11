@@ -1,4 +1,4 @@
-      <div class="settings-section settings-section--grouped stack">
+      <div class="settings-section settings-section--grouped settings-mock stack">
         <div class="group-card settings-phone-only">
           <button class="group-row" type="button" data-event-click="open_security_page('transfer')">
             <span class="group-row-body">
@@ -7,36 +7,51 @@
             </span>
           </button>
         </div>
+        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.devices.transfer_help}}</p>
         <div class="settings-desktop-only">
 {{include:settings_security_transfer}}
         </div>
         <div class="stack settings-actions" data-if="own_devices_shown">
           <p class="text group-head">{{i18n:settings.security.devices}}</p>
-          <p class="text muted settings-help group-foot">{{i18n:settings.security.devices.help}}</p>
-          <p class="text error group-foot" data-if="own_devices_signed_out">{{i18n:settings.security.devices.signed_out}}</p>
-          <div data-for="device, device_index : own_device_rows" class="settings-device-row stack group-card group-card--pad">
-            <div class="row settings-device-title">
-              <p class="text">{{device.label}}</p>
-              <span class="settings-device-badge" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
+          <div data-for="device, device_index : own_device_rows" class="settings-device-row group-card">
+            <div class="group-row group-row--static">
+              <span class="group-row-body">
+                <span class="group-row-label"><span class="group-row-text">{{device.label}}</span></span>
+                <span class="group-row-value" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
+              </span>
             </div>
-            <div class="settings-device-actions row" data-if="device.can_manage">
-              <button class="btn btn-secondary" type="button"
-                      data-event-click="make_main_device(device_index)">{{i18n:settings.security.devices.make_main}}</button>
-              <button class="btn btn-secondary" type="button"
-                      data-event-click="remove_own_device(device_index)">{{i18n:settings.security.devices.remove}}</button>
+            <div data-if="device.can_manage">
+              <button class="group-row" type="button"
+                      data-event-click="make_main_device(device_index)">
+                <span class="group-row-body">
+                  <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.make_main}}</span></span>
+                </span>
+              </button>
+              <button class="group-row group-row--danger" type="button"
+                      data-event-click="remove_own_device(device_index)">
+                <span class="group-row-body">
+                  <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.devices.remove}}</span></span>
+                </span>
+              </button>
             </div>
           </div>
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.devices.help}}</p>
+          <p class="text error group-foot" data-if="own_devices_signed_out">{{i18n:settings.security.devices.signed_out}}</p>
           <p class="text muted settings-help group-foot" data-if="own_devices_not_main && !own_devices_signed_out">
             {{i18n:settings.security.devices.not_main}}
           </p>
         </div>
         <div class="stack settings-actions" data-if="security_has_recovery_phrase">
-          <p class="text muted settings-help group-foot">{{i18n:settings.security.copy.help}}</p>
-          <div class="settings-toggle-row row group-actions">
-            <button class="btn" type="button" data-event-click="save_account_copy()">
-              {{i18n:settings.security.copy.save}}
-            </button>
-            <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.account_copy')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+          <div class="group-card">
+            <div class="group-row">
+              <span class="group-row-body">
+                <button class="group-row-tap" type="button" data-event-click="save_account_copy()">
+                  <span class="group-row-text">{{i18n:settings.security.copy.save}}</span>
+                </button>
+                <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.account_copy')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+              </span>
+            </div>
           </div>
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.copy.help}}</p>
         </div>
       </div>

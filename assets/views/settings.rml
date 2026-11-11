@@ -180,7 +180,7 @@
     </div>
 
     <div class="settings-detail-body nav-bar-scroll stack">
-      <div class="settings-section settings-section--grouped stack" data-if="security_page == 'transfer'">
+      <div class="settings-section settings-section--grouped settings-mock stack" data-if="security_page == 'transfer'">
 {{include:settings_security_transfer}}
       </div>
       <!-- Pick one value (theme, language, who can call...): one row each, the current one checked; a tap applies it

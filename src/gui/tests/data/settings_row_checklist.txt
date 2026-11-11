@@ -73,6 +73,7 @@ data-event-click="toggle_biometric()"	1	security	security	security_biometric_sho
 {{recovery_phrase}}	1	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
 {{security_biometric_label}}	1	-	security	security_biometric_shown	security	
 {{unlock_grace_label}}	1	-	security	security_grace_shown	security	
+{{i18n:settings.devices.transfer_help}}	1	-	devices	-	devices	
 data-event-click="ask_setting_help('settings.help.topic.account_copy')"	1	-	devices	security_has_recovery_phrase	security	
 data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	-	security	
 data-event-click="make_main_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	

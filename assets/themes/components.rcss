@@ -12994,6 +12994,25 @@ textarea:composing ~ .prompt-composer-label,
   pointer-events: none;
 }
 
+.shell-layer-compact .settings-mock .settings-device-row {
+  padding: 0;
+  gap: 0;
+}
+
+.shell-layer-compact .settings-mock .group-row-tap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 52dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
 .shell-layer-compact .settings-mock .group-row--indent {
   padding-left: 36dp;
 }
