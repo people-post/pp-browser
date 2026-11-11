@@ -12491,11 +12491,6 @@ input.checkbox {
   padding-top: 48dp;
 }
 
-/* No small title in a pushed page's bar: the large one is in the page. */
-.shell-layer-compact .nav-bar-host .settings-header-title {
-  display: none;
-}
-
 .shell-layer-compact .nav-bar-host .settings-detail-header .bar-fade,
 .shell-layer-transient.nav-bar-host .shell-transient-chrome .bar-fade {
   opacity: 0;
@@ -14353,7 +14348,13 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 .shell-layer-compact .settings-detail-body {
-  padding-top: 56dp;
+  padding-top: 64dp;
+}
+
+/* A settings page's one title is centred in its bar (phase 1 of the settings reorganisation); the bar is 56dp. */
+.shell-layer-compact .settings-header-title {
+  height: 56dp;
+  line-height: 56dp;
 }
 
 .shell-layer-compact .contacts-index {
