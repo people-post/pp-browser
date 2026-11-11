@@ -837,7 +837,8 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
             on_picked(std::move(paths));
           });
         },
-        /*include_heic=*/false, [preparing_shown](const std::string&) {
+        /*include_heic=*/false,
+        [preparing_shown](const std::string&) {
           AppRuntime::PostUI([preparing_shown]() {
             *preparing_shown = true;
             UserFeedback::Note(Tr("settings.profile.photo_preparing"));

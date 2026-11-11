@@ -43,8 +43,9 @@ TranscriptReaction Chip(const std::string& emoji, std::vector<std::string> sende
 } // namespace
 
 TEST(ReactorRowsTest, OwnReactionComesFirstInItsGroupAndGroupsKeepTheirOrder) {
-  const auto rows = BuildReactorRows({Chip("A", {"account:amy", kLocalSelfContactId, "account:nick"}), Chip("B", {"account:amy"})},
-                                     Resolve, NoIcon, "Group member");
+  const auto rows =
+      BuildReactorRows({Chip("A", {"account:amy", kLocalSelfContactId, "account:nick"}), Chip("B", {"account:amy"})},
+                       Resolve, NoIcon, "Group member");
   ASSERT_EQ(rows.size(), 4u);
   EXPECT_EQ(rows[0].emoji, "A");
   EXPECT_TRUE(rows[0].is_self);

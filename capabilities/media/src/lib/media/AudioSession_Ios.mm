@@ -394,7 +394,8 @@ void ActivateVoice(AVAudioSessionCategory category, AVAudioSessionCategoryOption
     g_voice_playback.store(true);
     // What iOS ended up with, and where it sends the sound: silence on a car stereo or headphones is read from this.
     SessionLog().info << "AudioSession voice playback activated: category=" << Utf8(session.category)
-                      << " mode=" << Utf8(session.mode) << " options=" << static_cast<unsigned long>(session.categoryOptions)
+                      << " mode=" << Utf8(session.mode)
+                      << " options=" << static_cast<unsigned long>(session.categoryOptions)
                       << " set_category=" << category_result << " set_active=" << Outcome(active_ok, error)
                       << " outputs=" << OutputsForLog();
   }

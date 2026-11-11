@@ -915,7 +915,7 @@ void PeoplePickerController::SyncGroupAddRows() {
       row.title = Tr("people_picker.unnamed").c_str();
     }
     row.subtitle = invited_contact_ids.count(contact.id) > 0 ? Tr("people_picker.already_invited").c_str()
-                                                              : ContactSubtitle(contact).c_str();
+                                                             : ContactSubtitle(contact).c_str();
     row.selected = selected_ids_.count(contact.id) > 0;
     rows_.push_back(std::move(row));
   }

@@ -971,8 +971,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   // when the classifier drops the seq) would otherwise expire the live card, and the store keeps a stored nonce.
   auto stored = group_roster_.LoadPendingInvite(pending.invite_nonce);
   if (!(stored && stored->has_value())) {
-    if (auto replaced = group_roster_.ExpireInboundInvitesFrom(invite->group_id, invite->inviter_identity);
-        replaced) {
+    if (auto replaced = group_roster_.ExpireInboundInvitesFrom(invite->group_id, invite->inviter_identity); replaced) {
       for (const PendingGroupInvite& old : *replaced) {
         if (outcome) {
           outcome->superseded_invite_cards.emplace_back(old.inviter_identity, old.invite_nonce);

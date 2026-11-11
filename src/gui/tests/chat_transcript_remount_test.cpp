@@ -56,16 +56,15 @@ protected:
     ASSERT_TRUE(initialized);
     context = ui::CreateContext("chat-transcript-remount-test", {kWidth, kHeight});
     ASSERT_NE(context, nullptr);
-    ASSERT_TRUE(DataModelHost::Instance().Register(
-        context, "chat", [this](ui::DataModelConstructor& ctor) {
-          BindChatScreenState(ctor, state);
-          // The scroll event, as ChatController binds it.
-          ctor.BindEventCallback("messages_scroll", [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
-            if (scroller) {
-              scroller->OnMessagesScroll();
-            }
-          });
-        }));
+    ASSERT_TRUE(DataModelHost::Instance().Register(context, "chat", [this](ui::DataModelConstructor& ctor) {
+      BindChatScreenState(ctor, state);
+      // The scroll event, as ChatController binds it.
+      ctor.BindEventCallback("messages_scroll", [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
+        if (scroller) {
+          scroller->OnMessagesScroll();
+        }
+      });
+    }));
     for (int i = 0; i < 80; ++i) {
       MessageDisplayRow row;
       row.message_id = ("m" + std::to_string(i)).c_str();
@@ -114,8 +113,9 @@ protected:
   }
   void MakeScroller() {
     scroller = std::make_unique<ChatTranscriptScroller>(
-        context, ChatTranscriptScroller::View{state.show_jump_to_latest, state.jump_to_latest_count, state.messages,
-                                              state.has_turns},
+        context,
+        ChatTranscriptScroller::View{state.show_jump_to_latest, state.jump_to_latest_count, state.messages,
+                                     state.has_turns},
         messaging_ready);
   }
   NullRender renderer;
