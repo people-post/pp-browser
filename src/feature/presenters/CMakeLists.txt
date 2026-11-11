@@ -26,6 +26,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     HomeToday.cpp
     NewCallGuard.cpp
     QuickReactions.cpp
+    SendMark.cpp
     ThreadSearch.cpp
     ThreadSearchSession.cpp
     TwoFingerGesture.cpp

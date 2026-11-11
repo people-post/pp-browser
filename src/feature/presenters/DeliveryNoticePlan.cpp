@@ -17,6 +17,8 @@ DeliveryNoticePlan PlanDeliveryNotice(const DeliveryNotice& notice, const int64_
         plan.action = DeliveryNoticePlan::Action::Toast;
         return plan;
       }
+      // The line is not drawn any more (#210), but it stays the stored reason a tap on the message's red mark tells
+      // (SendFailureReason): keep writing it.
       plan.action = DeliveryNoticePlan::Action::TranscriptRow;
       plan.row = MakeSendFailureRow(notice.thread_id, notice.message_id, SendFailureWord(notice.send).c_str(), now_ms);
       return plan;

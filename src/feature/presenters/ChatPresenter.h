@@ -4,6 +4,7 @@
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/conversations/GroupMentions.h"
+#include "feature/presenters/SendMark.h"
 #include "feature/presenters/SessionMenu.h"
 #include "lib/delivery/DeliveryNotice.h"
 #include "lib/messaging/GroupTypes.h"
@@ -409,6 +410,20 @@ public:
    * put it in, or the cause is unknown). False: it is told, or already was.
    */
   bool ApplyDeliveryNotice(const DeliveryNotice& notice);
+  /**
+   * The send mark on `message` at `now_ms` (MarkOf, with the send still under way the outbox knows of); `next_change`
+   * keeps the soonest time a mark shown now changes on its own (NoteMarkChange). `group_others`: in a group chat, the
+   * join times of its other members (GroupOthersJoinedAt; none for other chats). Reads only.
+   */
+  SendMark SendMarkOf(const ThreadMessage& message, int64_t now_ms, std::optional<int64_t>& next_change,
+                      const std::optional<std::vector<int64_t>>& group_others = std::nullopt) const;
+  /** A group chat's other members' roster join times (not ours), read now; none for a chat that is not a group. */
+  std::optional<std::vector<int64_t>> GroupOthersJoinedAt(const std::string& thread_id) const;
+  /**
+   * A tap on the red mark of our message `message_id` in `thread_id`: why it did not go out (SendFailureReason); none:
+   * the generic sentence. Reads only: nothing is sent again.
+   */
+  std::optional<SendFailure> SendFailureReasonOf(const std::string& thread_id, const std::string& message_id);
   /** Back to the chats list (the Home tab): no chat is open, so new messages count as unread. */
   void ShowHome();
   /** The archived list's entry / back button. */

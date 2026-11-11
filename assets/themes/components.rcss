@@ -468,6 +468,37 @@ select selectbox option {
   font-size: 12dp;
 }
 
+/* Our message's send mark (TODO 210), inline just left of its bubble, at its bottom: a small clock while the send is under
+   way; the red mark when it did not go out, a 44dp button (the icon 20dp in it) whose tap says why. Not the AI page's
+   .bubble-queued. Tints: colors-*.rcss. */
+.send-mark {
+  display: inline-block;
+  vertical-align: bottom;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.send-mark--queued {
+  width: 24dp;
+  height: 24dp;
+  padding: 4dp;
+  margin: 0 2dp 6dp 0;
+}
+
+.send-mark--failed {
+  width: 44dp;
+  height: 44dp;
+  padding: 12dp;
+  margin: 0 -6dp 0 0;
+  border-width: 0;
+  background-color: transparent;
+  focus: none;
+}
+
+.send-mark-icon {
+  display: block;
+}
+
 .queued-cancel {
   text-decoration: underline;
   cursor: pointer;

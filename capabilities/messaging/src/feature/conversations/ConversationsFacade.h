@@ -217,6 +217,8 @@ public:
   /** The chat a recent inbound message (or, by call id, a call summary) was stored in. */
   std::optional<std::string> ThreadOfInbound(const std::string& id) const;
   void SyncInboxFromWake(bool force);
+  /** When the send of our message `message_id` still under way started; none when nothing of it is under way (#210). */
+  std::optional<int64_t> SendStartedMs(const std::string& message_id);
   void TailSyncActiveE2eThread();
   void WarmPeerForThread(const std::string& thread_id);
   ThreadPeerLinkView GetThreadPeerLink(const std::string& thread_id);

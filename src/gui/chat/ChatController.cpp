@@ -2733,7 +2733,7 @@ void ChatController::ShowAttachChoice(std::function<void()> photo, std::function
 
 std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::string& thread_id,
                                                                 std::optional<int64_t> oldest_inclusive,
-                                                                std::optional<int64_t> newest_inclusive) const {
+                                                                std::optional<int64_t> newest_inclusive) {
   if (!facade_) {
     return {};
   }
@@ -2743,11 +2743,57 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   facts.voice_max_seconds = facade_->CurrentAttachmentLimits().voice_max_seconds;
   facts.voice_state = [this](const std::string& message_id) { return voice_playback_->State(message_id); };
   facts.audio_files_play = voice_playback_->PlaysFiles();
+  const int64_t now_ms = util::NowUnixMs();
+  std::optional<int64_t> next_mark_change;
+  const std::optional<std::vector<int64_t>> group_others = presenter_.GroupOthersJoinedAt(thread_id);
+  facts.send_mark = [this, now_ms, &next_mark_change, &group_others](const ThreadMessage& message) {
+    return presenter_.SendMarkOf(message, now_ms, next_mark_change, group_others);
+  };
   std::vector<MessageDisplayRow> rows =
       RenderTranscript(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
                        presenter_.MentionRosterOf(thread_id));
   agent_.DecorateAiImageRows(rows, thread_id);
+  ArmSendMarkRedraw(next_mark_change);
   return rows;
+}
+
+void ChatController::ArmSendMarkRedraw(const std::optional<int64_t> at_ms) {
+  if (!at_ms || (send_mark_timer_ != 0 && send_mark_redraw_at_ <= *at_ms)) {
+    return; // nothing to wait for, or a redraw at least as soon is armed
+  }
+  if (send_mark_timer_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(send_mark_timer_);
+  }
+  const uint64_t turn = ++send_mark_redraw_turn_;
+  send_mark_redraw_at_ = *at_ms;
+  const auto delay = std::chrono::milliseconds(std::max<int64_t>(0, *at_ms - util::NowUnixMs()));
+  send_mark_timer_ =
+      AppRuntime::ScheduleCoordinatorOneShot(delay, [this, turn, alive = std::weak_ptr<int>(send_mark_alive_)]() {
+        AppRuntime::PostUI([this, turn, alive]() {
+          if (!alive.lock() || turn != send_mark_redraw_turn_) {
+            return;
+          }
+          send_mark_timer_ = 0;
+          send_mark_redraw_at_ = 0;
+          RedrawSendMarks();
+        });
+      });
+}
+
+void ChatController::RedrawSendMarks() {
+  if (!messaging_ready_) {
+    return;
+  }
+  SyncDisplayFromThread();
+  DirtyChat();
+  NotifySurfaceChanged();
+}
+
+void ChatController::OnSendMarkTapped(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  ShowToast(SendFailureReasonText(presenter_.SendFailureReasonOf(ActiveThreadId(), message_id)));
 }
 
 void ChatController::OpenGroupSender(const std::string& message_id) {
@@ -4395,6 +4441,15 @@ bool ChatController::Setup(ui::Context* context) {
   context_ = context;
   // The mesh's own background / foreground reactions are the hub's (ConversationsHub::OnAppBackground).
   lifecycle_background_id_ = AppLifecycle::AddBackgroundListener([this]() { OnApplicationPause(); });
+  // Timers may not have run while the app was suspended: no clock may stay past its time (#210).
+  lifecycle_foreground_id_ =
+      AppLifecycle::AddForegroundListener([this, alive = std::weak_ptr<int>(send_mark_alive_)]() {
+        AppRuntime::PostUI([this, alive]() {
+          if (alive.lock()) {
+            RedrawSendMarks();
+          }
+        });
+      });
   const AppConfig& config = Store().Snapshot().config;
   widgets_.ClearAll();
   chat_ = {};
@@ -4534,6 +4589,9 @@ bool ChatController::Setup(ui::Context* context) {
                                }));
         ctor.BindEventCallback("audio_seek_press",
                                DataEventAt([this](ui::Event& ev) { voice_playback_->SeekPress(ev); }));
+        ctor.BindEventCallback("show_send_failure", DataEvent<std::string>([this](const std::string& message_id) {
+                                 OnSendMarkTapped(message_id);
+                               }));
         ctor.BindEventCallback("retry_attachment_send", DataEvent([this] { OnRetryAttachmentSend(); }));
         ctor.BindEventCallback("discard_attachment_send", DataEvent([this] { OnDiscardAttachmentSend(); }));
         ctor.BindEventCallback("cancel_attachment_send", DataEvent([this] { OnCancelAttachmentSend(); }));
@@ -4921,6 +4979,13 @@ void ChatController::Shutdown() {
   voice_playback_->Shutdown();
   AppLifecycle::RemoveListener(lifecycle_background_id_);
   lifecycle_background_id_ = 0;
+  AppLifecycle::RemoveListener(lifecycle_foreground_id_);
+  lifecycle_foreground_id_ = 0;
+  if (send_mark_timer_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(send_mark_timer_);
+    send_mark_timer_ = 0;
+  }
+  ++send_mark_redraw_turn_; // a firing already posted does nothing
   IPushDeviceRegistrar::SetTokenChangedHandler(nullptr);
   // MessagingReady / ReachabilityUpdated are owned by Application.
   if (MessagingInitialized() && facade_) {

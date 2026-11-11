@@ -56,6 +56,10 @@ std::string SendFailureText(const SendFailure failure) {
   return Tr(SendKey(failure));
 }
 
+std::string SendFailureReasonText(const std::optional<SendFailure>& reason) {
+  return reason ? SendFailureText(*reason) : Tr("chat.send.not_sent");
+}
+
 std::string GroupMembersMissedText() {
   return Tr("chat.notice.group_members_missed");
 }

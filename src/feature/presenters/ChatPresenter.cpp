@@ -539,6 +539,29 @@ bool ChatPresenter::ApplyDeliveryNotice(const DeliveryNotice& notice) {
   return !store->AppendMessage(*plan.row);
 }
 
+SendMark ChatPresenter::SendMarkOf(const ThreadMessage& message, const int64_t now_ms,
+                                   std::optional<int64_t>& next_change,
+                                   const std::optional<std::vector<int64_t>>& group_others) const {
+  if (!facade_ || !MayShowSendMark(message)) {
+    return SendMark::None;
+  }
+  const bool no_recipients = group_others && !GroupRowHadRecipients(*group_others, message.timestamp);
+  const std::optional<int64_t> started = facade_->SendStartedMs(message.id);
+  NoteMarkChange(next_change, message, started, now_ms, no_recipients);
+  return MarkOf(message, started, now_ms, no_recipients);
+}
+
+std::optional<SendFailure> ChatPresenter::SendFailureReasonOf(const std::string& thread_id,
+                                                              const std::string& message_id) {
+  if (!facade_ || thread_id.empty() || message_id.empty()) {
+    return std::nullopt;
+  }
+  auto thread = facade_->GetThread(thread_id);
+  const bool group_thread = thread && *thread && (*thread)->kind == ThreadKind::Group;
+  auto row = facade_->GetMessage(thread_id, SendFailureRowId(message_id, ""));
+  return SendFailureReason(row ? *row : std::nullopt, group_thread);
+}
+
 std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::string& local_account) {
   // The latest row is a system line stored in English (a joined invitation, a blocked inviter, a rotate notice):
   // the same words as its transcript line, in the UI language. Only a System row: a person may type these words.
@@ -1115,6 +1138,23 @@ Roe<void> ChatPresenter::SendWithMentions(const std::string& thread_id, const st
 
 std::optional<MentionRoster> ChatPresenter::MentionRosterOf(const std::string& thread_id) const {
   return RosterOfGroupThread(facade_, thread_id);
+}
+
+std::optional<std::vector<int64_t>> ChatPresenter::GroupOthersJoinedAt(const std::string& thread_id) const {
+  const std::optional<std::string> group_id = GroupIdOf(facade_, thread_id);
+  if (!group_id) {
+    return std::nullopt;
+  }
+  const auto identity = facade_->GetIdentity();
+  std::vector<int64_t> joined;
+  if (auto members = facade_->ListGroupRoster(*group_id)) {
+    for (const GroupRosterMember& member : *members) {
+      if (!identity || member.member_identity != identity->account_id) {
+        joined.push_back(member.joined_at);
+      }
+    }
+  }
+  return joined;
 }
 
 std::vector<TextSpan> ChatPresenter::SpansOnRoster(const std::string& thread_id, std::vector<TextSpan> spans) const {

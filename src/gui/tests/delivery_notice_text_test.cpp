@@ -113,8 +113,7 @@ TEST_F(DeliveryNoticeTextTest, TheTranscriptWordsABlockedCallsLine) {
 TEST_F(DeliveryNoticeTextTest, TheTranscriptWordsASendFailureLineUnderItsMessage) {
   const ThreadMessage failed =
       MakeSendFailureRow("t1", "m1", SendFailureWord(SendFailure::RelayUnreachable).c_str(), 1);
-  EXPECT_NE(SystemRowOf(failed).rml.find("Couldn't reach the message server"), std::string::npos)
-      << SystemRowOf(failed).rml;
+  EXPECT_NE(SystemRowOf(failed).rml.find("Couldn't reach the server"), std::string::npos) << SystemRowOf(failed).rml;
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
   const std::string zh = SystemRowOf(failed).rml;
   EXPECT_EQ(zh.find("Couldn't"), std::string::npos) << "in the reader's language: " << zh;

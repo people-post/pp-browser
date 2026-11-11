@@ -564,6 +564,10 @@ void ConversationsFacade::SyncInboxFromWake(const bool force) {
   hub_.MeshMessaging().SyncInboxFromWake(force);
 }
 
+std::optional<int64_t> ConversationsFacade::SendStartedMs(const std::string& message_id) {
+  return hub_.MeshMessaging().SendStartedMs(message_id);
+}
+
 void ConversationsFacade::TailSyncActiveE2eThread() {
   hub_.MeshMessaging().TailSyncActiveE2eThread();
 }
