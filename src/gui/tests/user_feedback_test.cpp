@@ -1,7 +1,9 @@
+#include "gui/UserFeedback.h"
 #include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace {
@@ -57,6 +59,37 @@ TEST_F(AppErrorTest, NetworkDisplayNamesTheCause) {
   EXPECT_EQ(AppError::Display(AppError::Blob(Err::Blob::UploadNotConfiguredNoDirect, "detail")),
             "No direct link to this contact right now, and the attachment server is not enabled yet, so this cannot be "
             "sent.");
+}
+
+// Offline wins over the classified cause, but only for failures that never got an answer from the server.
+TEST_F(AppErrorTest, OfflineNamesItselfOnlyForUnansweredNetworkFailures) {
+  using namespace pbr;
+  const std::string offline = "No network connection. Check your network and try again.";
+  const auto net = [](Err::Network code) { return AppError::Network(code, "curl failed"); };
+  struct Row {
+    Err::Network code;
+    bool device_offline;
+    std::string expected;
+  };
+  const std::vector<Row> rows = {
+      {Err::Network::Unreachable, true, offline}, // generic curl 35 / 56 while offline
+      {Err::Network::TlsFailed, true, offline},   // whatever the code, offline wins
+      {Err::Network::Timeout, true, offline},
+      {Err::Network::DnsFailed, true, offline},
+      {Err::Network::ConnectFailed, true, offline},
+      {Err::Network::Unreachable, false, "Can't reach the server."},
+      {Err::Network::TlsFailed, false, "Can't set up a secure connection — the network may be going through a proxy."},
+      {Err::Network::Timeout, false,
+       "The server took too long to respond — the network is slow or the server isn't answering."},
+      {Err::Network::HttpError, true, AppError::Display(net(Err::Network::HttpError))},
+      {Err::Network::HttpRejected, true, AppError::Display(net(Err::Network::HttpRejected))},
+  };
+  for (const Row& row : rows) {
+    EXPECT_EQ(UserFeedback::UserMessage(net(row.code), row.device_offline), row.expected)
+        << "code " << static_cast<int>(row.code) << " offline " << row.device_offline;
+  }
+  const Error blob = AppError::Blob(Err::Blob::UploadNotConfigured, "x");
+  EXPECT_EQ(UserFeedback::UserMessage(blob, true), AppError::Display(blob));
 }
 
 // One plain line per row of the attachments plan's status table (no status codes, no protocol words).

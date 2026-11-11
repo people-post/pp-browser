@@ -1602,6 +1602,7 @@
     "errors.network.dns": "找不到服务器地址 — 网络可能没有连上。",
     "errors.network.connect": "连不上服务器 — 服务器可能暂时不可用，或被防火墙挡住。",
     "errors.network.timeout": "服务器响应超时 — 网络很慢，或服务器没有响应。",
+    "errors.network.offline": "网络没有连接，请检查网络后再试。",
     "errors.network.tls": "无法建立安全连接 — 网络可能经过了代理。",
     "errors.network.http": "请求失败 — 请重试，或检查“我 → 高级”。",
     "errors.pin.unlock": "请解锁个人资料 PIN 以继续。",

@@ -1651,6 +1651,7 @@
     "errors.network.connect": "Can't connect to the server — it may be down, or a firewall is blocking it.",
     "errors.network.timeout":
         "The server took too long to respond — the network is slow or the server isn't answering.",
+    "errors.network.offline": "No network connection. Check your network and try again.",
     "errors.network.tls": "Can't set up a secure connection — the network may be going through a proxy.",
     "errors.network.http": "Request failed — try again, or check Me → Advanced.",
     "errors.pin.unlock": "Unlock your profile PIN to continue.",

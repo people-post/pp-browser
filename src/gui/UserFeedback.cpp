@@ -1,6 +1,7 @@
 #include "gui/UserFeedback.h"
 
 #include "foundation/error/AppError.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "gui/shell/ShellFeedback.h"
 #include "common/PbrCompat.h"
 
@@ -14,6 +15,15 @@ void UserFeedback::BindPorts(ShellFeedbackPorts ports) {
 
 std::string UserFeedback::UserMessage(const Error& err) {
   return AppError::Display(err);
+}
+
+std::string UserFeedback::UserMessage(const Error& err, const bool device_offline) {
+  if (device_offline && AppError::CategoryOf(err) == ErrorCategory::Network &&
+      err.code != static_cast<int32_t>(Err::Network::HttpError) &&
+      err.code != static_cast<int32_t>(Err::Network::HttpRejected)) {
+    return Tr("errors.network.offline");
+  }
+  return UserMessage(err);
 }
 
 void UserFeedback::Ok(const std::string& message) {
