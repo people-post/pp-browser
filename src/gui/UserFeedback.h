@@ -14,6 +14,11 @@ namespace pbr {
 struct UserFeedback {
   /** Resolve display text via AppError::Display. */
   static std::string UserMessage(const Error& err);
+  /**
+   * `UserMessage`, except that while the device is offline a failure that never got an answer from the server
+   * (a Network error that is not an HTTP response) says so plainly instead of naming a guessed cause.
+   */
+  static std::string UserMessage(const Error& err, bool device_offline);
 
   /** App fills toast/banner ports from ShellHost. Clear via BindPorts({}). */
   static void BindPorts(ShellFeedbackPorts ports);

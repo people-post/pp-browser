@@ -52,6 +52,10 @@ bool ConversationsFacade::IsMeshReady() {
   return hub_.IsMeshReady();
 }
 
+bool ConversationsFacade::DeviceOffline() {
+  return hub_.NetworkOnline() == 0;
+}
+
 IThreadStore* ConversationsFacade::ThreadStore() {
   return &hub_.Store();
 }

@@ -70,6 +70,8 @@ public:
   bool IsInitialized();
   bool IsMessagingReady();
   bool IsMeshReady();
+  /** The OS reports no usable network right now (airplane mode, no route); false while unknown. */
+  bool DeviceOffline();
   IThreadStore* ThreadStore();
   void BindAgentInbound(AgentInboundPorts ports);
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);

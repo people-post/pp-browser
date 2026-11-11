@@ -2564,7 +2564,7 @@ void ChatController::OnRetryAttachmentSend() {
         const bool stale_chip =
             !sent && sent.error().category == 0 && sent.error().code == OutgoingAttachmentStore::kWrongThread;
         if (!sent && !stale_chip && !cancel->load()) {
-          UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+          UserFeedback::Fail(UserFeedback::UserMessage(sent.error(), facade_ && facade_->DeviceOffline()));
         } else if (sent && cancel->load()) {
           UserFeedback::Fail(Tr("chat.attachment.already_sent")); // the cancel came after it reached the contact
         }
@@ -2691,7 +2691,7 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
             }
             if (!sent) {
               if (!cancelled) {
-                UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+                UserFeedback::Fail(UserFeedback::UserMessage(sent.error(), facade_ && facade_->DeviceOffline()));
               }
               RefreshPendingAttachmentChip(/*force=*/true); // a kept ciphertext shows Retry
               return;

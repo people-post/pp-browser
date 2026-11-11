@@ -43,8 +43,6 @@ enum class Network : int32_t {
   TlsFailed = 6,
   /** The server refused the request itself (HTTP 4xx but 408 / 429): sending it again will not help. */
   HttpRejected = 7,
-  /** The connection could not even start: no route, or the link dropped inside the TLS connect phase. */
-  Offline = 8,
 };
 
 enum class Pin : int32_t {

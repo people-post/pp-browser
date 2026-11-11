@@ -86,8 +86,6 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
           return Localized("errors.network.connect");
         case Err::Network::TlsFailed:
           return Localized("errors.network.tls");
-        case Err::Network::Offline:
-          return Localized("errors.network.offline");
         case Err::Network::HttpError:
         case Err::Network::HttpRejected:
           return Localized("errors.network.http");
