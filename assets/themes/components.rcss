@@ -14357,6 +14357,15 @@ textarea:composing ~ .prompt-composer-label,
   line-height: 56dp;
 }
 
+/* Bold bar titles: LatoLatin (the app's default family) is loaded in one weight, so font-weight: bold changes nothing
+   in it, and Chinese follows the weight of the face its primary family resolves to. Inter is loaded in four weights
+   (Application.cpp), so with it the bold reaches Latin (Inter Bold) and Chinese (Noto Sans SC Bold) alike. */
+.shell-layer-compact .settings-header-title,
+.shell-layer-compact .settings-panel .pane-nav-title {
+  font-family: Inter;
+  font-weight: bold;
+}
+
 .shell-layer-compact .contacts-index {
   top: 56dp;
 }

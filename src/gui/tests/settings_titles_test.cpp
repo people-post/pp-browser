@@ -44,6 +44,18 @@ TEST(SettingsTitlesTest, TheBarTitleIsNotHiddenAnyMore) {
   EXPECT_LT(css.find("}", plain), css.find("display: none", plain));
 }
 
+TEST(SettingsTitlesTest, PhoneBarTitlesAreBoldInAFamilyThatHasABoldFace) {
+  // The default family (LatoLatin) is loaded in one weight, so `bold` alone changes nothing in it; Inter has four
+  // weights, so the phone's bar titles name it (Application.cpp loads it) and ask for bold.
+  const std::string css = ReadAsset("themes/components.rcss");
+  const size_t rule =
+      css.find(".shell-layer-compact .settings-header-title,\n.shell-layer-compact .settings-panel .pane-nav-title {");
+  ASSERT_NE(rule, std::string::npos);
+  const std::string body = css.substr(rule, css.find('}', rule) - rule);
+  EXPECT_NE(body.find("font-family: Inter;"), std::string::npos);
+  EXPECT_NE(body.find("font-weight: bold;"), std::string::npos);
+}
+
 TEST(SettingsTitlesTest, HomeTitleIsMe) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");
