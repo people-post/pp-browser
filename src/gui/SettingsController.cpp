@@ -1701,7 +1701,7 @@ void SettingsController::ApplyDirectConnectionsChoice(const std::string& audienc
 
 void SettingsController::OnChooseCallInvitePolicy(ui::Event& ev) {
   const std::string current =
-      bindings_.call_invite_policy.empty() ? "contacts_only" : std::string(bindings_.call_invite_policy.c_str());
+      bindings_.call_invite_policy.empty() ? "everyone" : std::string(bindings_.call_invite_policy.c_str());
   std::vector<SettingsChoicePage::Option> options;
   for (const char* id : {"everyone", "contacts_only", "nobody"}) {
     options.push_back({id, CallInvitePolicyDisplayLabel(id).c_str(), current == id});
@@ -1751,7 +1751,7 @@ void SettingsController::ApplyUnlockGraceChoice(const std::string& minutes_id) {
 
 void SettingsController::OnChooseGroupInvitePolicy(ui::Event& ev) {
   const std::string current =
-      bindings_.group_invite_policy.empty() ? "contacts_only" : std::string(bindings_.group_invite_policy.c_str());
+      bindings_.group_invite_policy.empty() ? "everyone" : std::string(bindings_.group_invite_policy.c_str());
   std::vector<SettingsChoicePage::Option> options;
   for (const char* id : {"everyone", "contacts_only", "nobody"}) {
     options.push_back({id, GroupInvitePolicyDisplayLabel(id).c_str(), current == id});

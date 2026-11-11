@@ -3,6 +3,7 @@
 #include "foundation/data/UserPreferences.h"
 #include "lib/messaging/AttachmentDownloadPolicy.h"
 #include "feature/product/HubSettingsProjection.h"
+#include "foundation/data/ConfigJson.h"
 
 #include <gtest/gtest.h>
 
@@ -96,4 +97,17 @@ TEST(HubSettingsProjectionTest, TheHubsSettingsCarryTheConfigsSlicesAndTheProfil
   EXPECT_EQ(settings.initiation_floor, 7);
   EXPECT_FALSE(settings.app_data_dir.empty());
   EXPECT_EQ(settings.policy, pbr::ProjectPolicy(prefs));
+}
+
+TEST(HubSettingsProjectionTest, UnrecognisedGroupInviteValueStaysContactsOnly) {
+  // A schema 16 file with a value this build does not know is kept as written and projected strictly.
+  auto object = pbr::TryParseObject(R"({ "schema_version": 16, "group_invite_policy": "someone-new" })");
+  ASSERT_TRUE(object.has_value());
+  pbr::ProfilePreferences prefs;
+  pbr::ProfilePrefsFromObject(*object, prefs);
+  EXPECT_EQ(pbr::ProjectPolicy(prefs).group_invite_policy, pbr::GroupInvitePolicy::ContactsOnly);
+
+  // No stored value is the default: everyone.
+  EXPECT_EQ(pbr::ProjectPolicy(pbr::UserPreferences::DefaultProfile()).group_invite_policy,
+            pbr::GroupInvitePolicy::Everyone);
 }

@@ -163,8 +163,8 @@ v1: `history_mode` is always `"fresh"`. v1.1: `"copy_to_fork_point"` with non-nu
 
 | Value | Behavior |
 |-------|----------|
-| `everyone` | Accept invites from any verified sender |
-| `contacts_only` | Reject if inviter not in local contacts (default) |
+| `everyone` | Accept invites from any verified sender (default since 2026-11-11) |
+| `contacts_only` | Reject if inviter not in local contacts |
 | `nobody` | Reject all inbound group invites |
 
 Stored in `ProfilePreferences` (profile `prefs.json`).

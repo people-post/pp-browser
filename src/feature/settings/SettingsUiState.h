@@ -137,12 +137,12 @@ struct SettingsUiState {
   bool security_biometric_on = false;
   std::string security_biometric_label;
   /** G007 — everyone | contacts_only | nobody */
-  std::string group_invite_policy = "contacts_only";
+  std::string group_invite_policy = "everyone";
   /** Display label for the group-invite picker value. */
-  std::string group_invite_policy_label = "Contacts only";
+  std::string group_invite_policy_label = "Everyone";
   /** projects/privacy T3 — who may call: everyone | contacts_only | nobody */
-  std::string call_invite_policy = "contacts_only";
-  std::string call_invite_policy_label = "Contacts only";
+  std::string call_invite_policy = "everyone";
+  std::string call_invite_policy_label = "Everyone";
   /** Summary of remembered agent tool allow/deny decisions. */
   std::string tool_permissions_summary = "None saved";
   bool tool_permissions_has_saved = false;

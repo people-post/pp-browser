@@ -226,10 +226,10 @@ private:
     bool security_biometric_shown = false;
     bool security_biometric_on = false;
     ui::String security_biometric_label;
-    ui::String group_invite_policy = "contacts_only";
-    ui::String group_invite_policy_label = "Contacts only";
-    ui::String call_invite_policy = "contacts_only";
-    ui::String call_invite_policy_label = "Contacts only";
+    ui::String group_invite_policy = "everyone";
+    ui::String group_invite_policy_label = "Everyone";
+    ui::String call_invite_policy = "everyone";
+    ui::String call_invite_policy_label = "Everyone";
     ui::String tool_permissions_summary = "None saved";
     bool tool_permissions_has_saved = false;
     ui::String app_name;
