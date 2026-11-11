@@ -78,6 +78,27 @@ TEST(SettingsTitlesTest, TheTesterPagesStorageLibraryIsNotInsideTheGroupedSectio
   EXPECT_NE(grouped_close, std::string::npos) << "the grouped section closes before the library section opens";
 }
 
+TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheAccountId) {
+  // Follows logs/mockups/settings-reorg-1110.html: no icon tiles on the entry rows, the id under the name, the app
+  // version at the end (not tappable here: the five taps stay on the help page's version row).
+  const std::string rml = ReadAsset("views/settings.rml");
+  const size_t phone = rml.find("<div class=\"settings-phone-only me-home\">");
+  ASSERT_NE(phone, std::string::npos);
+  const size_t phone_end = rml.find("settings-desktop-only", phone);
+  ASSERT_NE(phone_end, std::string::npos);
+  const std::string home = rml.substr(phone, phone_end - phone);
+  EXPECT_EQ(home.find("group-icon"), std::string::npos);
+  EXPECT_NE(home.find("<p class=\"me-card-meta\" data-if=\"profile_relay_id != ''\">{{profile_relay_id}}</p>"),
+            std::string::npos);
+  EXPECT_NE(home.find("<p class=\"group-foot me-home-ver\">{{app_name}} {{app_version}}</p>"), std::string::npos);
+  EXPECT_EQ(home.find("tap_version"), std::string::npos);
+  const std::string css = ReadAsset("themes/components.rcss");
+  EXPECT_NE(css.find(".shell-layer-compact .me-home .group-card {\n  margin: 24dp 16dp 0 16dp;\n  border-radius: 12dp;"),
+            std::string::npos);
+  EXPECT_NE(css.find(".shell-layer-compact .me-home .group-row,\n.shell-layer-compact .me-home .group-row-body {\n  min-height: 52dp;"),
+            std::string::npos);
+}
+
 TEST(SettingsTitlesTest, HomeTitleIsMe) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");
