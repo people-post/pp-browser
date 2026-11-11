@@ -72,13 +72,13 @@ std::string WriteRingWav() {
   out << "RIFF";
   PutLe(out, 36 + data_bytes, 4);
   out << "WAVEfmt ";
-  PutLe(out, 16, 4);          // fmt chunk size
-  PutLe(out, 1, 2);           // PCM
-  PutLe(out, 1, 2);           // mono
-  PutLe(out, rate, 4);        // sample rate
-  PutLe(out, rate * 2, 4);    // byte rate
-  PutLe(out, 2, 2);           // block align
-  PutLe(out, 16, 2);          // bits per sample
+  PutLe(out, 16, 4);       // fmt chunk size
+  PutLe(out, 1, 2);        // PCM
+  PutLe(out, 1, 2);        // mono
+  PutLe(out, rate, 4);     // sample rate
+  PutLe(out, rate * 2, 4); // byte rate
+  PutLe(out, 2, 2);        // block align
+  PutLe(out, 16, 2);       // bits per sample
   out << "data";
   PutLe(out, data_bytes, 4);
   for (uint32_t i = 0; i < data_bytes; ++i) {
@@ -106,8 +106,12 @@ protected:
     CallRingtone::SetRingSoundPath({});
   }
 
-  bool SpeakerOpen() { return WaitFor([this] { return speakers_.live.load() == 1; }); }
-  bool SpeakerClosed() { return WaitFor([this] { return speakers_.live.load() == 0; }); }
+  bool SpeakerOpen() {
+    return WaitFor([this] { return speakers_.live.load() == 1; });
+  }
+  bool SpeakerClosed() {
+    return WaitFor([this] { return speakers_.live.load() == 0; });
+  }
 
   static constexpr CallRingtone::Output kNormal{.sound = true, .vibrate = false};
   static constexpr CallRingtone::Output kVibrate{.sound = false, .vibrate = true};
