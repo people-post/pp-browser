@@ -803,6 +803,10 @@ void FollowUpMembershipAfterIngest(GroupMembershipWorkflow* groups, const RelayR
   for (const auto& [inviter, nonce] : outcome.voided_invite_cards) {
     (void)groups->ResolveInviteCard(inviter, nonce, InviteStatus::Expired, "This group was dissolved");
   }
+  // A newer invite from the same person to the same group replaced these.
+  for (const auto& [inviter, nonce] : outcome.superseded_invite_cards) {
+    (void)groups->ResolveInviteCard(inviter, nonce, InviteStatus::Expired, "Replaced by a newer invitation");
+  }
 }
 
 } // namespace

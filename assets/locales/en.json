@@ -695,6 +695,7 @@
     "people_picker.cta_invite": "Invite ({count})",
     "people_picker.cta_inviting": "Inviting…",
     "people_picker.invite_partial": "Invite sent to {ok}, {failed} not sent: {names}",
+    "people_picker.already_invited": "Invited",
     "people_picker.group_full": "Group is full ({max})",
     "people_picker.reinvite": "Re-invite",
     "people_picker.added_by": "Added by {name}",

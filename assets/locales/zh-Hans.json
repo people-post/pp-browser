@@ -682,6 +682,7 @@
     "people_picker.cta_invite": "邀请（{count}）",
     "people_picker.cta_inviting": "邀请中…",
     "people_picker.invite_partial": "邀请已发出 {ok} 人，{failed} 人没发出去：{names}",
+    "people_picker.already_invited": "已邀请",
     "people_picker.group_full": "群已满 {max} 人",
     "people_picker.reinvite": "重新邀请",
     "people_picker.added_by": "由 {name} 添加",
