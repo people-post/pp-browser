@@ -20,12 +20,12 @@ struct UserFeedback {
    */
   static std::string UserMessage(const Error& err, bool device_offline);
   /**
-   * An attachment send that failed: `UserMessage(err, device_offline)`, except that while the device is offline an
-   * upload that died without a server answer — an unclassified error or a generic file-relay one (a timeout, a
-   * transfer stopped because the link is gone) — also says plainly that there is no connection. An error carrying its
-   * own words (pick the file again, too large, the space is full, the send limit) keeps them.
+   * An attachment send that failed. `offline_stop`: the app itself stopped the transfer because the device had been
+   * offline for a while (its progress answered "stop", which the HTTP layer reports as a cancelled request): "No
+   * network connection…". Otherwise `UserMessage(err, device_offline)` — only network-shaped failures say "offline";
+   * local ones (storage, shutting down) and errors with their own words keep them.
    */
-  static std::string AttachmentFailureMessage(const Error& err, bool device_offline);
+  static std::string AttachmentFailureMessage(const Error& err, bool device_offline, bool offline_stop);
 
   /** App fills toast/banner ports from ShellHost. Clear via BindPorts({}). */
   static void BindPorts(ShellFeedbackPorts ports);

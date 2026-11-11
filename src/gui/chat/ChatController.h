@@ -399,7 +399,12 @@ private:
   void RefreshPendingAttachmentChip(bool force);
   void ShowFailedAttachment(const std::string& record_id, const std::string& name);
   /** Progress for the chip: the percent line, with a "please stay in PP" hint for a large file. */
-  std::function<bool(uint64_t done, uint64_t total)> MakeSendProgress();
+  /**
+   * `offline_stop`: set when the progress stopped the transfer because the device stayed offline (OfflineHold); the
+   * result handler then says "no connection" (the HTTP layer reports a cancelled request).
+   */
+  std::function<bool(uint64_t done, uint64_t total)> MakeSendProgress(
+      std::shared_ptr<std::atomic<bool>> offline_stop = nullptr);
   /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
   bool InAiComposerContext() const override;
   /** Phones: "Photo / File / Cancel" before a picker (both composers). */

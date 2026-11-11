@@ -182,5 +182,30 @@ TEST(AttachmentPicksTest, AResultArrivingInTheOriginatingChatGoesToThatThread) {
   EXPECT_FALSE(nowhere.TakeResult(no_chat, "", {}, nullptr).has_value()) << "armed with no chat: nowhere to send";
 }
 
+// Re-review item 1: a one-second blip (a handover) never stops an upload; offline held for 3 s does; online in between
+// starts the count again.
+TEST(OfflineHoldTest, OnlyOfflineHeldForThreeSecondsStops) {
+  OfflineHold hold;
+  EXPECT_FALSE(hold.Update(false, 0));
+  EXPECT_FALSE(hold.Update(true, 1000));
+  EXPECT_FALSE(hold.Update(true, 2000)) << "a 1 s blip";
+  EXPECT_FALSE(hold.Update(false, 2100)) << "back online: the count starts again";
+  EXPECT_FALSE(hold.Update(true, 3000));
+  EXPECT_FALSE(hold.Update(true, 5999));
+  EXPECT_TRUE(hold.Update(true, 6000)) << "3 s without a break";
+  EXPECT_TRUE(hold.Update(true, 9000));
+  EXPECT_FALSE(hold.Update(false, 9100));
+}
+
+// Re-review item 4: a result dropped because its chat was left is said (when it brought a file); a stale one is not.
+TEST(AttachmentPicksTest, LeavingTheChatIsReportedOnlyForTheCurrentPick) {
+  AttachmentPicks picks;
+  const uint64_t serial = picks.Arm("a");
+  EXPECT_FALSE(picks.LeftChat(serial, "a"));
+  EXPECT_TRUE(picks.LeftChat(serial, "b"));
+  picks.EndCurrent();
+  EXPECT_FALSE(picks.LeftChat(serial, "b")) << "an ended pick's result is dropped silently (it was cancelled)";
+}
+
 } // namespace
 } // namespace pbr
