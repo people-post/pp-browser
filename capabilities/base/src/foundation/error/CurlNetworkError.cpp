@@ -13,6 +13,9 @@ Err::Network NetworkCodeFromCurl(int curl_code) {
     case CURLE_OPERATION_TIMEDOUT:
       return Err::Network::Timeout;
     case CURLE_SSL_CONNECT_ERROR:
+      // libcurl reports this when the TCP connect inside the TLS phase fails (no route, airplane mode) as well as
+      // for a handshake failure; with no verification failure to point at, it is not evidence of a proxy.
+      return Err::Network::Offline;
     case CURLE_PEER_FAILED_VERIFICATION:
     case CURLE_SSL_CERTPROBLEM:
     case CURLE_SSL_ISSUER_ERROR:

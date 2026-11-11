@@ -163,6 +163,7 @@ bool FetchFailureReachedTheServer(const Error& error) {
     case Err::Network::DnsFailed:
     case Err::Network::ConnectFailed:
     case Err::Network::TlsFailed:
+    case Err::Network::Offline:
     case Err::Network::Timeout:
       return false; // HttpClient reports a failure after a followed redirect as HttpError
     default:
