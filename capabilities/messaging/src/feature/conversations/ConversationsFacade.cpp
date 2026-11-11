@@ -275,6 +275,11 @@ Roe<void> ConversationsFacade::DeleteMessageForMe(const std::string& thread_id, 
   return hub_.Inbox().DeleteMessageForMe(thread_id, message_id);
 }
 
+Roe<bool> ConversationsFacade::RemoveUnsentMessage(const std::string& thread_id, const std::string& message_id) {
+  hub_.MeshMessaging().CancelPendingSend(message_id);
+  return hub_.Store().RemoveUnsentMessage(thread_id, message_id);
+}
+
 Roe<std::optional<ThreadMessage>> ConversationsFacade::GetMessage(const std::string& thread_id,
                                                                   const std::string& message_id) {
   return hub_.Store().GetMessage(thread_id, message_id);

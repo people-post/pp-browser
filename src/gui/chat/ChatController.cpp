@@ -2793,7 +2793,31 @@ void ChatController::OnSendMarkTapped(const std::string& message_id) {
   if (!messaging_ready_ || !facade_ || message_id.empty()) {
     return;
   }
-  ShowToast(SendFailureReasonText(presenter_.SendFailureReasonOf(ActiveThreadId(), message_id)));
+  const std::string thread_id = ActiveThreadId();
+  const SendMarkTap tap = presenter_.TapSendMark(thread_id, message_id);
+  switch (tap.kind) {
+    case SendMarkTap::Kind::Nothing:
+      return;
+    case SendMarkTap::Kind::StillTrying:
+      ShowToast(Tr("chat.send.still_trying"));
+      return;
+    case SendMarkTap::Kind::ReasonOnly:
+      ShowToast(SendFailureReasonText(presenter_.SendFailureReasonOf(thread_id, message_id), tap.refusal));
+      return;
+    case SendMarkTap::Kind::RemovalFailed:
+      // Its new copy already went out on an earlier tap; nothing is sent a third time.
+      ShowToast(Tr("chat.send.not_sent"));
+      return;
+    case SendMarkTap::Kind::SendFailed:
+      // As the composer says it; the old bubble stays as it was.
+      UserFeedback::Fail(PaymentErrorUserMessage(tap.error.value_or(Error("Send failed"))));
+      return;
+    case SendMarkTap::Kind::Resent:
+      // The new message is at the bottom (the draft untouched); the old row is gone unless it was delivered meanwhile.
+      scroller_.RequestScrollToLatest();
+      RefreshFromMessaging();
+      return;
+  }
 }
 
 void ChatController::OpenGroupSender(const std::string& message_id) {
@@ -4250,6 +4274,7 @@ void ChatController::WireMessagingBindings() {
   chat_.compose_disabled = false;
   DirtyChatChrome();
   facade_->SetOnMessagesChanged([this]() {
+    presenter_.ForgetDeliveredResends(); // a message sent again by a tap and delivered: no failure pill to keep for it
     RefreshFromMessaging();
     if (contacts_notify_.refresh) {
       contacts_notify_.refresh();
@@ -4258,8 +4283,19 @@ void ChatController::WireMessagingBindings() {
   facade_->SetOnDeliveryNotice([this](const DeliveryNotice& notice) {
     // A send that did not go out is told in its chat, as a line under the message; a toast only when that has no
     // place (no chat, or the cause is unknown). An unreadable inbound message has its line already.
-    if (presenter_.ApplyDeliveryNotice(notice)) {
-      ShowToast(DeliveryNoticeText(notice));
+    switch (presenter_.ApplyDeliveryNotice(notice)) {
+      case NoticeTell::Nothing:
+        break;
+      case NoticeTell::Toast:
+        ShowToast(DeliveryNoticeText(notice));
+        break;
+      case NoticeTell::ResentFailed:
+        // A message sent again by a tap failed: said in its own chat only, while it is looked at; elsewhere its red
+        // mark tells it.
+        if (ShowsResentFailurePill(notice.thread_id, ActiveThreadId(), AppLifecycle::IsUserAttentive())) {
+          ShowToast(DeliveryNoticeText(notice));
+        }
+        break;
     }
     RefreshFromMessaging();
     NotifySurfaceChanged();

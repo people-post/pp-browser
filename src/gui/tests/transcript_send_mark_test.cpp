@@ -177,6 +177,40 @@ TEST_F(TranscriptSendMarkTest, NoReasonPromisesARetryAnyMore) {
   }
 }
 
+// #210 step 2: what a tap that does not send again says.
+TEST_F(TranscriptSendMarkTest, ThePillsWhenATapDoesNotSendAgain) {
+  using Refusal = SendMarkTap::Refusal;
+  EXPECT_EQ(SendFailureReasonText(std::nullopt, Refusal::NotText),
+            "This message wasn't sent. Pictures, files, voice messages and cards can't be re-sent with a tap yet. "
+            "Please send it again.");
+  EXPECT_EQ(SendFailureReasonText(SendFailure::RelayBusy, Refusal::NotText), SendFailureText(SendFailure::RelayBusy));
+  EXPECT_EQ(SendFailureReasonText(std::nullopt, Refusal::ThisKind),
+            "This message can't be re-sent with a tap. Please send it again.");
+  EXPECT_EQ(
+      SendFailureReasonText(SendFailure::RelayBusy, Refusal::ThisKind),
+      SendFailureText(SendFailure::RelayBusy) + " This message can't be re-sent with a tap. Please send it again.");
+  EXPECT_EQ(LocalizationService::Instance().Tr("chat.send.still_trying"), "Still trying to send. Please wait.");
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(SendFailureReasonText(std::nullopt, Refusal::ThisKind), "这条消息这次不能点一下重发，请重新发送。");
+  EXPECT_EQ(SendFailureReasonText(SendFailure::RelayBusy, Refusal::ThisKind),
+            SendFailureText(SendFailure::RelayBusy) + "这条消息这次不能点一下重发，请重新发送。");
+  EXPECT_EQ(SendFailureReasonText(std::nullopt, Refusal::NotText),
+            "这条消息没有发出去。图片、文件、语音和名片暂时不能点一下重发，请重新发送。");
+  EXPECT_EQ(LocalizationService::Instance().Tr("chat.send.still_trying"), "还在尝试发送，请稍等。");
+  for (const char* language : {"en", "zh-Hans"}) {
+    LocalizationService::Instance().SetPreferredLanguage(language);
+    for (const char* key : {"chat.send.still_trying", "chat.send.not_resendable", "chat.send.not_sent_other"}) {
+      std::string text = LocalizationService::Instance().Tr(key);
+      for (char& c : text) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      }
+      for (const char* term : {"中继", "relay", "peer", "节点", "签名"}) {
+        EXPECT_EQ(text.find(term), std::string::npos) << language << " " << key << ": " << text;
+      }
+    }
+  }
+}
+
 // A 1:1 "did not go out" line goes only when its message shows the red mark (or is sent: TranscriptAssembly);
 // otherwise it is the only sign of the failure and stays.
 TEST_F(TranscriptSendMarkTest, AFailureLineGoesOnlyWhenItsMessageShowsTheRedMark) {

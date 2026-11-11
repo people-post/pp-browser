@@ -1688,6 +1688,59 @@ Roe<void> SqliteThreadStore::CancelOldEpochPending(const std::string& thread_id,
   return CancelOldEpochPendingUnlocked(*thread_db, thread_id, old_session_epoch);
 }
 
+Roe<bool> SqliteThreadStore::RemoveUnsentMessage(const std::string& thread_id, const std::string& message_id) {
+  if (auto init = db_.EnsureInitialized(); !init) {
+    return init.error();
+  }
+  std::lock_guard profile_lock(db_.profile_mutex());
+  auto thread_db = db_.OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  // As CancelOldEpochPendingUnlocked, for one row: ours, meant for the wire, not delivered.
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*thread_db,
+                         "DELETE FROM messages WHERE id = ? AND sender_contact_id = ? AND relay_visible = 1 AND "
+                         "delivery IN ('pending', 'failed');",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare unsent message delete");
+  }
+  sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, kLocalSelfContactId, -1, SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return Error("Failed to delete unsent message");
+  }
+  sqlite3_finalize(stmt);
+  if (sqlite3_changes(*thread_db) == 0) {
+    return false;
+  }
+  // Its "did not go out" lines go with it. A failure here leaves an orphan, not a wrong state: logged, not returned.
+  bool notices_gone = false;
+  if (sqlite3_prepare_v2(*thread_db, "DELETE FROM messages WHERE id IN (?, ?);", -1, &stmt, nullptr) == SQLITE_OK) {
+    const std::string notice = SendFailureRowId(message_id, "");
+    const std::string group_notice = SendFailureRowId(message_id, kGroupMembersMissedWire);
+    sqlite3_bind_text(stmt, 1, notice.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, group_notice.c_str(), -1, SQLITE_TRANSIENT);
+    notices_gone = sqlite3_step(stmt) == SQLITE_DONE;
+    sqlite3_finalize(stmt);
+  }
+  if (!notices_gone) {
+    log().warning << "RemoveUnsentMessage: its notice rows were not deleted message_id=" << message_id;
+  }
+  bool outbox_gone = false;
+  if (sqlite3_prepare_v2(db_.profile_db(), "DELETE FROM outbox WHERE message_id = ?;", -1, &stmt, nullptr) ==
+      SQLITE_OK) {
+    sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    outbox_gone = sqlite3_step(stmt) == SQLITE_DONE;
+    sqlite3_finalize(stmt);
+  }
+  if (!outbox_gone) {
+    log().warning << "RemoveUnsentMessage: its outbox record was not deleted message_id=" << message_id;
+  }
+  return true;
+}
+
 Roe<void> SqliteThreadStore::AdoptChatTargetEpoch(const std::string& thread_id, const uint32_t new_session_epoch) {
   if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();

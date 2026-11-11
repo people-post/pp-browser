@@ -664,7 +664,10 @@ private:
   void ArmSendMarkRedraw(std::optional<int64_t> at_ms);
   /** The open chat's rows again (their send marks recomputed), nothing else refreshed. */
   void RedrawSendMarks();
-  /** A tap on a message's red mark: the bottom pill says why it did not go out. Nothing is sent. */
+  /**
+   * A tap on a message's red mark (ChatPresenter::TapSendMark): our text sent again as a new message once its
+   * automatic sending has stopped, else the bottom pill says why (still trying, or why it did not go out).
+   */
   void OnSendMarkTapped(const std::string& message_id);
   bool mesh_ready_ = false;
   ChatTranscriptScroller scroller_;

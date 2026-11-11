@@ -131,6 +131,11 @@ public:
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview, bool assistant_text = false);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
+  /**
+   * A message of ours that never went out, sent again as a new one (#210): what is still queued of it is dropped, then
+   * its row goes (IThreadSync::RemoveUnsentMessage). false: not such a row (it was delivered meanwhile), kept.
+   */
+  Roe<bool> RemoveUnsentMessage(const std::string& thread_id, const std::string& message_id);
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id);
   /** Our own message, for everyone in the chat / group. Blocking (network): call off the UI thread. */
   Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);

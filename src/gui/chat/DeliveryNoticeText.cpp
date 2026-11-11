@@ -56,7 +56,17 @@ std::string SendFailureText(const SendFailure failure) {
   return Tr(SendKey(failure));
 }
 
-std::string SendFailureReasonText(const std::optional<SendFailure>& reason) {
+std::string SendFailureReasonText(const std::optional<SendFailure>& reason, const SendMarkTap::Refusal refusal) {
+  switch (refusal) {
+    case SendMarkTap::Refusal::None:
+      break;
+    case SendMarkTap::Refusal::NotText:
+      return reason ? SendFailureText(*reason) : Tr("chat.send.not_sent_other");
+    case SendMarkTap::Refusal::ThisKind:
+      return reason ? Tr("chat.send.reason_then",
+                         {{"reason", SendFailureText(*reason)}, {"then", Tr("chat.send.not_resendable")}})
+                    : Tr("chat.send.not_resendable");
+  }
   return reason ? SendFailureText(*reason) : Tr("chat.send.not_sent");
 }
 

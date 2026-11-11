@@ -284,6 +284,8 @@ void ChatPresenter::ResetForNewProfile() {
   prefs_.reset();
   showing_archived_ = false;
   showing_archived_ai_ = false;
+  resent_ids_.clear();
+  resent_unremoved_.clear();
 }
 
 const std::unordered_map<std::string, ThreadLocalPrefs>& ChatPresenter::AllPrefs() {
@@ -518,25 +520,14 @@ void ChatPresenter::ToggleArchived() {
   Refresh();
 }
 
-bool ChatPresenter::ApplyDeliveryNotice(const DeliveryNotice& notice) {
-  const DeliveryNoticePlan plan = PlanDeliveryNotice(notice, util::NowUnixMs());
-  switch (plan.action) {
-    case DeliveryNoticePlan::Action::Nothing:
-      return false;
-    case DeliveryNoticePlan::Action::Toast:
-      return true;
-    case DeliveryNoticePlan::Action::TranscriptRow:
-      break;
+NoticeTell ChatPresenter::ApplyDeliveryNotice(const DeliveryNotice& notice) {
+  return ApplyDeliveryNoticeTo(facade_ ? facade_->ThreadStore() : nullptr, notice, util::NowUnixMs(), resent_ids_);
+}
+
+void ChatPresenter::ForgetDeliveredResends() {
+  if (!resent_ids_.empty()) {
+    pbr::ForgetDeliveredResends(facade_ ? facade_->ThreadStore() : nullptr, resent_ids_);
   }
-  IThreadStore* store = facade_ ? facade_->ThreadStore() : nullptr;
-  if (!store || !plan.row) {
-    return true;
-  }
-  // The same failure reported twice (each group member that missed, a retry) is one line.
-  if (auto present = store->HasMessageId(plan.row->thread_id, plan.row->id); present && *present) {
-    return false;
-  }
-  return !store->AppendMessage(*plan.row);
 }
 
 SendMark ChatPresenter::SendMarkOf(const ThreadMessage& message, const int64_t now_ms,
@@ -549,6 +540,52 @@ SendMark ChatPresenter::SendMarkOf(const ThreadMessage& message, const int64_t n
   const std::optional<int64_t> started = facade_->SendStartedMs(message.id);
   NoteMarkChange(next_change, message, started, now_ms, no_recipients);
   return MarkOf(message, started, now_ms, no_recipients);
+}
+
+SendMarkTap ChatPresenter::TapSendMark(const std::string& thread_id, const std::string& message_id) {
+  if (!facade_ || thread_id.empty() || message_id.empty()) {
+    return {};
+  }
+  SendMarkTapFacts facts;
+  if (auto row = facade_->GetMessage(thread_id, message_id); row && *row) {
+    facts.row = **row;
+  }
+  if (auto thread = facade_->GetThread(thread_id); thread && *thread) {
+    facts.thread = **thread;
+  }
+  if (!facts.row || !facts.thread) {
+    return {}; // gone: a second tap after the row was taken away
+  }
+  facts.started_ms = facade_->SendStartedMs(message_id);
+  facts.already_resent = resent_unremoved_.count(message_id) != 0;
+  facts.now_ms = util::NowUnixMs();
+  if (const auto others = GroupOthersJoinedAt(thread_id)) {
+    facts.no_recipients = !GroupRowHadRecipients(*others, facts.row->timestamp);
+  }
+  ResendPorts ports;
+  ports.spans_on_roster = [this, thread_id](std::vector<TextSpan> spans) {
+    return SpansOnRoster(thread_id, std::move(spans));
+  };
+  ports.send_direct = [this, thread_id](const std::string& text) {
+    return facade_->SendUserMessage(thread_id, text, SendRelayOptions{});
+  };
+  ports.send_group = [this, thread_id](const std::string& text, std::vector<TextSpan> spans) {
+    return facade_->SendGroupText(thread_id, text, std::move(spans));
+  };
+  ports.remove_unsent = [this, thread_id](const std::string& id) {
+    return facade_->RemoveUnsentMessage(thread_id, id);
+  };
+  SendMarkTap tap = ResendAfterTap(facts, ports);
+  if (tap.kind == SendMarkTap::Kind::Resent && !tap.new_id.empty()) {
+    resent_ids_[tap.new_id] = thread_id; // its first failure is told once (ApplyDeliveryNoticeTo)
+  }
+  if (tap.removal_error) {
+    log().warning << "resend: the unsent row was not removed message_id=" << message_id;
+    resent_unremoved_.insert(message_id); // never sent a third time
+  } else if (tap.old_removed) {
+    resent_unremoved_.erase(message_id);
+  }
+  return tap;
 }
 
 std::optional<SendFailure> ChatPresenter::SendFailureReasonOf(const std::string& thread_id,

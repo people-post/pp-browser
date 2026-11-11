@@ -33,6 +33,13 @@ public:
   virtual Roe<uint32_t> BumpLocalChatTargetEpoch(const std::string& thread_id) = 0;
   virtual Roe<void> ReconcileOutbox() = 0;
   virtual Roe<std::vector<std::pair<std::string, std::string>>> ListPendingOutbox() const = 0;
+  /**
+   * Takes away a message of ours that never went out, when the user sends it again as a new one (#210): only a row
+   * this device sent (`kLocalSelfContactId`), meant for the wire, still pending or failed — with its "did not go out"
+   * lines (`send-failure-<id>`, `-group`) and its outbox record. Nothing is left in its place and nothing is sent.
+   * false, and nothing removed, for any other row (delivered, received, someone else's, unknown).
+   */
+  virtual Roe<bool> RemoveUnsentMessage(const std::string& thread_id, const std::string& message_id) = 0;
 };
 
 } // namespace pbr

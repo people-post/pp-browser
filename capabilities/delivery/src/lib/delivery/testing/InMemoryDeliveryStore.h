@@ -92,6 +92,7 @@ public:
   Roe<void> SetPeerSyncState(const std::string& thread_id, uint32_t session_epoch, const PeerSyncState& state,
                              const std::string& sender_device = {}) override;
   Roe<void> CancelOldEpochPending(const std::string& thread_id, uint32_t old_session_epoch) override;
+  Roe<bool> RemoveUnsentMessage(const std::string& thread_id, const std::string& message_id) override;
   Roe<void> AdoptChatTargetEpoch(const std::string& thread_id, uint32_t new_session_epoch) override;
   Roe<ThreadMessage> AppendMessageWithPassiveEpochAdopt(const ThreadMessage& message, uint32_t old_session_epoch,
                                                         uint32_t new_session_epoch,
