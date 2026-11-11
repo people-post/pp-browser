@@ -44,6 +44,8 @@
         </intent>
         <!-- vivo's badge provider (package visibility on Android 11+). -->
         <provider android:authorities="com.vivo.abe.provider.launcher.notification.num" />
+        <!-- Google Play services: Me → Notifications asks whether the phone has them (PpNotificationHealth). -->
+        <package android:name="com.google.android.gms" />
     </queries>
 
     <application

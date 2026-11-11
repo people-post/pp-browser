@@ -34,6 +34,30 @@
             </span>
           </button>
         </div>
+        <div class="group-card" data-if="tip_notifications_blocked">
+          <button class="group-row" type="button" data-event-click="open_notification_fix('notifications')">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">{{i18n:settings.notifications.tip.blocked.title}}</span>
+                <span class="group-row-sub">{{i18n:settings.notifications.tip.blocked.body}}</span>
+              </span>
+              <span class="group-row-value">{{i18n:settings.notifications.banner_tip.action}}</span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
+        <div class="group-card" data-if="tip_silenced">
+          <button class="group-row" type="button" data-event-click="open_notification_fix('silenced')">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">{{i18n:settings.notifications.tip.silenced.title}}</span>
+                <span class="group-row-sub">{{i18n:settings.notifications.tip.silenced.body}}</span>
+              </span>
+              <span class="group-row-value">{{i18n:settings.notifications.banner_tip.action}}</span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
         <div class="group-card" data-if="stay_connected_available">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">
@@ -46,5 +70,20 @@
             </span>
           </div>
         </div>
-        <p class="text muted settings-help group-foot" data-if="stay_connected_available">{{i18n:settings.stay_connected.help}}</p>
+        <p class="text muted settings-help group-foot" data-if="stay_connected_available && stay_help_plain">{{i18n:settings.stay_connected.help}}</p>
+        <p class="text muted settings-help group-foot" data-if="stay_help_build">{{i18n:settings.stay_connected.help.build}}</p>
+        <p class="text muted settings-help group-foot" data-if="stay_help_no_google">{{i18n:settings.stay_connected.help.no_google}}</p>
+        <!-- No battery row yet: it ships only once MIUI "no limits" is seen to read as exempt (DEV/PLAN-android-notification-guide.md). -->
+        <div class="group-card" data-if="tip_autostart">
+          <button class="group-row" type="button" data-event-click="open_notification_fix('autostart')">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="group-row-text">{{i18n:settings.notifications.tip.autostart.title}}</span>
+                <span class="group-row-sub">{{i18n:settings.notifications.tip.autostart.body}}</span>
+              </span>
+              <span class="group-row-value">{{i18n:settings.notifications.banner_tip.action}}</span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
       </div>

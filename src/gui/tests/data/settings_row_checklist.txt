@@ -106,8 +106,22 @@ data-event-click="toggle_stay_connected()"	1	profile	notifications	stay_connecte
 {{i18n:settings.notifications.help}}	1	-	notifications	-	profile	
 {{i18n:settings.notifications.preview}}	1	-	notifications	-	profile	
 {{i18n:settings.notifications}}	1	-	notifications	-	profile	
-{{i18n:settings.stay_connected.help}}	1	-	notifications	stay_connected_available	profile	
+{{i18n:settings.stay_connected.help}}	1	-	notifications	stay_connected_available && stay_help_plain	profile	
 {{i18n:settings.stay_connected}}	1	-	notifications	stay_connected_available	profile	
+data-event-click="open_notification_fix('notifications')"	1	-	notifications	tip_notifications_blocked	profile	
+{{i18n:settings.notifications.banner_tip.action}}	1	-	notifications	tip_notifications_blocked	profile	
+{{i18n:settings.notifications.tip.blocked.title}}	1	-	notifications	tip_notifications_blocked	profile	
+{{i18n:settings.notifications.tip.blocked.body}}	1	-	notifications	tip_notifications_blocked	profile	
+data-event-click="open_notification_fix('silenced')"	1	-	notifications	tip_silenced	profile	
+{{i18n:settings.notifications.banner_tip.action}}	1	-	notifications	tip_silenced	profile	
+{{i18n:settings.notifications.tip.silenced.title}}	1	-	notifications	tip_silenced	profile	
+{{i18n:settings.notifications.tip.silenced.body}}	1	-	notifications	tip_silenced	profile	
+data-event-click="open_notification_fix('autostart')"	1	-	notifications	tip_autostart	profile	
+{{i18n:settings.notifications.banner_tip.action}}	1	-	notifications	tip_autostart	profile	
+{{i18n:settings.notifications.tip.autostart.title}}	1	-	notifications	tip_autostart	profile	
+{{i18n:settings.notifications.tip.autostart.body}}	1	-	notifications	tip_autostart	profile	
+{{i18n:settings.stay_connected.help.build}}	1	-	notifications	stay_help_build	profile	
+{{i18n:settings.stay_connected.help.no_google}}	1	-	notifications	stay_help_no_google	profile	
 data-class-settings-switch--on="ai_dot_shown"	1	-	appearance	-	llm	
 data-class-settings-switch--on="home_animated_logo == 'on'"	1	-	appearance	-	llm	
 data-class-settings-switch--on="home_show_dynamic == 'on'"	1	-	appearance	-	appearance	

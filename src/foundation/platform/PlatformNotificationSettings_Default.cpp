@@ -1,4 +1,5 @@
-// Platforms without a notification banner style to read (everything but iOS): Unknown, nothing to open.
+// Platforms without a notification banner style to read (everything but iOS): Unknown, nothing to open. Also the
+// notification health: no tips anywhere but Android.
 #include "foundation/platform/PlatformNotificationSettings.h"
 
 #include "common/PbrCompat.h"
@@ -16,6 +17,17 @@ void QueryBannerStyle(std::function<void(BannerStyle)> done) {
 }
 
 bool OpenNotificationSettings() {
+  return false;
+}
+
+void QueryNotificationHealth(std::function<void(NotificationHealth)> done) {
+  if (!done) {
+    return;
+  }
+  AppRuntime::PostUI([done = std::move(done)]() { done(NotificationHealth{}); });
+}
+
+bool OpenNotificationFix(NotificationFix) {
   return false;
 }
 
