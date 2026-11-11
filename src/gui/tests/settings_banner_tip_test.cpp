@@ -27,7 +27,7 @@ TEST(SettingsBannerTipTest, OnlyATemporaryBannerShowsTheRow) {
 }
 
 TEST(SettingsBannerTipTest, TheRowIsGatedByTheBindingAndOpensTheSystemPage) {
-  const std::string view = ReadAsset("views/settings_section_profile.rml");
+  const std::string view = ReadAsset("views/settings_section_notifications.rml");
   const size_t gate = view.find("data-if=\"call_banner_tip_available\"");
   ASSERT_NE(gate, std::string::npos);
   const size_t button = view.find("open_notification_settings()", gate);

@@ -9,6 +9,7 @@ pp_browser_add_feature_library(pp_feature_settings
     OwnDevices.cpp
     ReachabilityNudge.cpp
     SettingsLogic.cpp
+    SettingsPages.cpp
     SettingsSections.cpp
     SettingsTools.cpp
     StorageManagerModel.cpp

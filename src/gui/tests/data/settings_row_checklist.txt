@@ -1,0 +1,449 @@
+# Settings row checklist (DEV/PLAN-settings-reorg.md, test (a)).
+# Columns (tab separated): token, count, original handler id ("-" none), page id (file settings_section_<id>.rml), enclosing data-if chain outermost first (";;" between, "-" none), view(s) the token came from, phase N that may change the gate ("" none).
+# One row per (view, token, gates); regenerate from the old views before each "delete the old block" commit.
+data-class-settings-switch--on="auto_renew_registration == 'auto'"	1	-	profile	advanced	profile	10
+data-event-blur="on_profile_nickname_commit()"	1	profile	profile	-	profile	
+data-event-click="copy_profile_id()"	2	-	profile	-	profile	
+data-event-click="pick_profile_icon()"	1	-	profile	-	profile	
+data-event-click="register_profile()"	1	profile	profile	profile_show_register	profile	
+data-event-click="rotate_brief_llm_key()"	1	profile	profile	advanced && profile_show_rotate	profile	10
+data-event-click="share_profile()"	2	-	profile	-	profile	
+data-event-click="tap_profile_avatar()"	1	-	profile	-	profile	
+data-event-click="toggle_auto_renew_registration()"	1	profile	profile	advanced	profile	10
+data-event-click="toggle_profile_qr()"	2	-	profile	profile_qr_svg_rml != ''	profile	
+data-value="profile_nickname"	1	profile	profile	-	profile	
+{{i18n:common.share}}	1	-	profile	-	profile	
+{{i18n:contacts.copy_id}}	1	-	profile	-	profile	
+{{i18n:settings.auto_renew}}	1	-	profile	advanced	profile	10
+{{i18n:settings.llm.rotate_brief_key}}	1	-	profile	advanced && profile_show_rotate	profile	10
+{{i18n:settings.nickname}}	1	-	profile	-	profile	
+{{i18n:settings.profile.nickname_placeholder}}	1	-	profile	-	profile	
+{{i18n:settings.profile.nickname_placeholder}}	1	-	profile	profile_nickname == ''	profile	
+{{i18n:settings.profile.peer_id_label}}	1	-	profile	advanced && profile_peer_id != ''	profile	
+{{i18n:settings.profile.photo_uploading}}	1	-	profile	profile_icon_uploading	profile	
+{{i18n:settings.profile.qr_help}}	1	-	profile	profile_show_qr && profile_qr_svg_rml != ''	profile	
+{{i18n:settings.profile.relay_id_label}}	2	-	profile	profile_relay_id != ''	profile	
+{{i18n:settings.profile.relay_id_none}}	2	-	profile	profile_relay_id == ''	profile	
+{{i18n:settings.profile.show_qr}}	1	-	profile	profile_qr_svg_rml != ''	profile	
+{{i18n:settings.registration.expires}}	1	-	profile	advanced && profile_registration_expires != ''	profile	10
+{{i18n:settings.registration.label}}	1	-	profile	-	profile	
+{{profile_avatar_letter}}	1	-	profile	!profile_has_icon	profile	
+{{profile_peer_id}}	1	-	profile	advanced && profile_peer_id != ''	profile	
+{{profile_register_label}}	1	-	profile	profile_show_register	profile	
+{{profile_registration_expires}}	1	-	profile	advanced && profile_registration_expires != ''	profile	
+{{profile_registration_status}}	1	-	profile	-	profile	
+{{profile_relay_id}}	2	-	profile	profile_relay_id != ''	profile	
+data-event-click="on_choose_call_invite_policy()"	1	security	privacy	-	security	
+data-event-click="on_choose_group_invite_policy()"	1	security	privacy	-	security	
+data-event-click="open_blocked_people()"	1	-	privacy	-	security	
+{{blocked_count}}	1	-	privacy	blocked_count > 0	security	
+{{call_invite_policy_label}}	1	-	privacy	-	security	
+{{group_invite_policy_label}}	1	-	privacy	-	security	
+{{i18n:contacts.blocked.title}}	1	-	privacy	-	security	
+{{i18n:settings.security.calls.help}}	1	-	privacy	-	security	
+{{i18n:settings.security.calls}}	1	-	privacy	-	security	
+{{i18n:settings.security.group_invites.help}}	1	-	privacy	-	security	
+{{i18n:settings.security.group_invites}}	1	-	privacy	-	security	
+data-class-settings-switch--on="security_biometric_on"	1	-	security	security_biometric_shown	security	
+data-event-click="ask_setting_help('settings.security.recovery')"	1	-	security	security_has_recovery_phrase	security	
+data-event-click="hide_recovery_phrase()"	1	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
+data-event-click="on_choose_unlock_grace()"	1	security	security	security_grace_shown	security	
+data-event-click="open_security_page('change_pin')"	1	-	security	show_change_pin	security	
+data-event-click="show_recovery_phrase()"	1	-	security	security_has_recovery_phrase;;recovery_phrase == ''	security	
+data-event-click="toggle_biometric()"	1	security	security	security_biometric_shown	security	
+{{i18n:settings.security.biometric.help}}	1	-	security	security_biometric_shown	security	
+{{i18n:settings.security.change_pin}}	1	-	security	show_change_pin	security	
+{{i18n:settings.security.default_hint}}	1	-	security	pin_protection_is_default	security	
+{{i18n:settings.security.grace.help}}	1	-	security	security_grace_shown	security	
+{{i18n:settings.security.grace.title}}	1	-	security	security_grace_shown	security	
+{{i18n:settings.security.group.recovery}}	1	-	security	!security_has_recovery_phrase	security	
+{{i18n:settings.security.group.recovery}}	1	-	security	security_has_recovery_phrase	security	
+{{i18n:settings.security.group.unlock}}	1	-	security	-	security	
+{{i18n:settings.security.not_setup_hint}}	1	-	security	pin_protection_not_setup	security	
+{{i18n:settings.security.protection_title}}	1	-	security	!show_change_pin	security	
+{{i18n:settings.security.protection}}	1	-	security	-	security	
+{{i18n:settings.security.recovery.help}}	1	-	security	security_has_recovery_phrase	security	
+{{i18n:settings.security.recovery.hide}}	1	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
+{{i18n:settings.security.recovery.none}}	1	-	security	!security_has_recovery_phrase && security_can_export_link	security	
+{{i18n:settings.security.recovery.shown_hint}}	1	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
+{{i18n:settings.security.recovery.show}}	1	-	security	security_has_recovery_phrase;;recovery_phrase == ''	security	
+{{include:settings_security_pin}}	1	-	security	-	security	
+{{pin_protection_status}}	1	-	security	-	security	
+{{pin_protection_status}}	1	-	security	!show_change_pin	security	
+{{pin_protection_status}}	1	-	security	show_change_pin	security	
+{{recovery_phrase}}	1	-	security	security_has_recovery_phrase;;recovery_phrase != ''	security	
+{{security_biometric_label}}	1	-	security	security_biometric_shown	security	
+{{unlock_grace_label}}	1	-	security	security_grace_shown	security	
+data-event-click="ask_setting_help('settings.help.topic.account_copy')"	1	-	devices	security_has_recovery_phrase	security	
+data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	-	security	
+data-event-click="make_main_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	
+data-event-click="open_security_page('transfer')"	1	-	devices	-	security	
+data-event-click="remove_own_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	
+data-event-click="save_account_copy()"	1	-	devices	security_has_recovery_phrase	security	
+{{device.label}}	1	-	devices	own_devices_shown	security	
+{{i18n:settings.security.copy.help}}	1	-	devices	security_has_recovery_phrase	security	
+{{i18n:settings.security.copy.save}}	1	-	devices	security_has_recovery_phrase	security	
+{{i18n:settings.security.devices.help}}	1	-	devices	own_devices_shown	security	
+{{i18n:settings.security.devices.main}}	1	-	devices	own_devices_shown;;device.is_main	security	
+{{i18n:settings.security.devices.make_main}}	1	-	devices	own_devices_shown;;device.can_manage	security	
+{{i18n:settings.security.devices.not_main}}	1	-	devices	own_devices_shown;;own_devices_not_main && !own_devices_signed_out	security	
+{{i18n:settings.security.devices.remove}}	1	-	devices	own_devices_shown;;device.can_manage	security	
+{{i18n:settings.security.devices.signed_out}}	1	-	devices	own_devices_shown;;own_devices_signed_out	security	
+{{i18n:settings.security.devices}}	1	-	devices	own_devices_shown	security	
+{{i18n:settings.security.transfer_row}}	1	-	devices	-	security	
+{{include:settings_security_transfer}}	1	-	devices	-	security	
+data-class-settings-switch--on="show_notification_preview == 'on'"	1	-	notifications	-	profile	
+data-class-settings-switch--on="show_notifications == 'on'"	1	-	notifications	-	profile	
+data-class-settings-switch--on="stay_connected == 'on'"	1	-	notifications	stay_connected_available	profile	
+data-event-click="ask_setting_help('settings.stay_connected')"	1	-	notifications	stay_connected_available	profile	
+data-event-click="open_notification_settings()"	1	-	notifications	call_banner_tip_available	profile	
+data-event-click="toggle_show_notification_preview()"	1	profile	notifications	-	profile	
+data-event-click="toggle_show_notifications()"	1	profile	notifications	-	profile	
+data-event-click="toggle_stay_connected()"	1	profile	notifications	stay_connected_available	profile	
+{{i18n:settings.notifications.banner_tip.action}}	1	-	notifications	call_banner_tip_available	profile	
+{{i18n:settings.notifications.banner_tip}}	1	-	notifications	call_banner_tip_available	profile	
+{{i18n:settings.notifications.help}}	1	-	notifications	-	profile	
+{{i18n:settings.notifications.preview}}	1	-	notifications	-	profile	
+{{i18n:settings.notifications}}	1	-	notifications	-	profile	
+{{i18n:settings.stay_connected.help}}	1	-	notifications	stay_connected_available	profile	
+{{i18n:settings.stay_connected}}	1	-	notifications	stay_connected_available	profile	
+data-class-settings-switch--on="ai_dot_shown"	1	-	appearance	-	llm	
+data-class-settings-switch--on="home_animated_logo == 'on'"	1	-	appearance	-	llm	
+data-class-settings-switch--on="home_show_dynamic == 'on'"	1	-	appearance	-	appearance	
+data-class-settings-switch--on="reduce_transparency != 'on'"	1	-	appearance	-	appearance	
+data-event-click="on_choose_ai_dot_size()"	1	-	appearance	-	llm	
+data-event-click="on_choose_language()"	1	appearance	appearance	-	appearance	
+data-event-click="on_choose_theme()"	1	appearance	appearance	-	appearance	
+data-event-click="open_home_edit()"	1	-	appearance	-	appearance	
+data-event-click="reset_section('appearance')"	1	appearance	appearance	-	appearance	
+data-event-click="set_ai_dot_look('a')"	1	-	appearance	-	llm	
+data-event-click="set_ai_dot_look('auto')"	1	-	appearance	-	llm	
+data-event-click="set_ai_dot_look('b')"	1	-	appearance	-	llm	
+data-event-click="set_ai_dot_look('c')"	1	-	appearance	-	llm	
+data-event-click="set_ai_dot_look('d')"	1	-	appearance	-	llm	
+data-event-click="set_ai_dot_look('e')"	1	-	appearance	-	llm	
+data-event-click="set_ai_dot_look('f')"	1	-	appearance	-	llm	
+data-event-click="set_ai_dot_look('g')"	1	-	appearance	-	llm	
+data-event-click="toggle_ai_dot()"	1	-	appearance	-	llm	
+data-event-click="toggle_home_animated_logo()"	1	-	appearance	-	llm	
+data-event-click="toggle_home_show_dynamic()"	1	appearance	appearance	-	appearance	
+data-event-click="toggle_transparency()"	1	appearance	appearance	-	appearance	
+{{ai_dot_size_label}}	1	-	appearance	-	llm	
+{{appearance_label}}	1	-	appearance	-	appearance	
+{{i18n:common.reset_defaults}}	1	-	appearance	-	appearance,integrations,llm,network	
+{{i18n:settings.ai_dot.look_auto_help}}	1	-	appearance	-	llm	
+{{i18n:settings.ai_dot.look_auto}}	1	-	appearance	-	llm	
+{{i18n:settings.ai_dot.look_a}}	1	-	appearance	-	llm	
+{{i18n:settings.ai_dot.look_b}}	1	-	appearance	-	llm	
+{{i18n:settings.ai_dot.look_c}}	1	-	appearance	-	llm	
+{{i18n:settings.ai_dot.look_d}}	1	-	appearance	-	llm	
+{{i18n:settings.ai_dot.look_e}}	1	-	appearance	-	llm	
+{{i18n:settings.ai_dot.look_f}}	1	-	appearance	-	llm	
+{{i18n:settings.ai_dot.look_g}}	1	-	appearance	-	llm	
+{{i18n:settings.ai_dot.look}}	1	-	appearance	-	llm	
+{{i18n:settings.ai_dot.show}}	1	-	appearance	-	llm	
+{{i18n:settings.ai_dot.size}}	1	-	appearance	-	llm	
+{{i18n:settings.home_dynamic.help}}	1	-	appearance	-	appearance	
+{{i18n:settings.home_dynamic.label}}	1	-	appearance	-	appearance	
+{{i18n:settings.home_logo.help}}	1	-	appearance	-	llm	
+{{i18n:settings.home_logo.label}}	1	-	appearance	-	llm	
+{{i18n:settings.home_widgets.label}}	1	-	appearance	-	appearance	
+{{i18n:settings.language.help}}	1	-	appearance	-	appearance	
+{{i18n:settings.language.label}}	1	-	appearance	-	appearance	
+{{i18n:settings.theme.help}}	1	-	appearance	-	appearance	
+{{i18n:settings.theme.label}}	1	-	appearance	-	appearance	
+{{i18n:settings.transparency.help}}	1	-	appearance	-	appearance	
+{{i18n:settings.transparency.label}}	1	-	appearance	-	appearance	
+{{language_label}}	1	-	appearance	-	appearance	
+data-class-settings-switch--on="attachment_auto_on_cellular == 'on'"	1	-	storage	storage_page == 'main';;attachment_auto_toggles_visible	storage	
+data-class-settings-switch--on="attachment_auto_on_wifi == 'on'"	1	-	storage	storage_page == 'main';;attachment_auto_toggles_visible	storage	
+data-event-click="choose_attachment_download_policy('always_auto')"	1	storage	storage	storage_page == 'main'	storage	
+data-event-click="choose_attachment_download_policy('on_demand')"	1	storage	storage	storage_page == 'main'	storage	
+data-event-click="choose_attachment_download_policy('smart')"	1	storage	storage	storage_page == 'main'	storage	
+data-event-click="reset_chats()"	1	-	storage	storage_page == 'main'	storage	
+data-event-click="reset_profile()"	1	-	storage	storage_page == 'main'	storage	
+data-event-click="storage_back()"	1	-	storage	storage_page == 'items';;!show_detail	storage	
+data-event-click="storage_back()"	1	-	storage	storage_page == 'manage';;!show_detail	storage	
+data-event-click="storage_delete()"	1	-	storage	storage_page == 'items';;storage_selecting && !show_detail	storage	
+data-event-click="storage_delete()"	1	-	storage	storage_page == 'items';;storage_selecting && show_detail	storage	
+data-event-click="storage_load_more()"	1	-	storage	storage_page == 'items';;storage_has_more	storage	
+data-event-click="storage_open_chat(chat_index)"	1	-	storage	storage_page == 'manage';;storage_chats.size > 0	storage	
+data-event-click="storage_open_large()"	1	-	storage	storage_page == 'manage';;storage_large_visible	storage	
+data-event-click="storage_open_manage()"	1	-	storage	storage_page == 'main'	storage	
+data-event-click="storage_set_tab('all')"	1	-	storage	storage_page == 'items'	storage	
+data-event-click="storage_set_tab('file')"	1	-	storage	storage_page == 'items'	storage	
+data-event-click="storage_set_tab('picture')"	1	-	storage	storage_page == 'items'	storage	
+data-event-click="storage_set_tab('video')"	1	-	storage	storage_page == 'items'	storage	
+data-event-click="storage_tap_cell(cell_index)"	1	-	storage	storage_page == 'items';;storage_cells.size > 0 || (storage_tab == 'all' && storage_files.size > 0)	storage	
+data-event-click="storage_tap_file(file_index)"	1	-	storage	storage_page == 'items';;storage_cells.size > 0 || (storage_tab == 'all' && storage_files.size > 0);;storage_tab == 'all'	storage	
+data-event-click="storage_tap_file(file_index)"	1	-	storage	storage_page == 'items';;storage_files.size > 0 && storage_tab != 'all'	storage	
+data-event-click="storage_toggle_select()"	1	-	storage	storage_page == 'items';;!storage_selecting && !storage_list_empty	storage	
+data-event-click="storage_toggle_select()"	1	-	storage	storage_page == 'items';;storage_selecting	storage	
+data-event-click="toggle_attachment_auto_cellular()"	1	storage	storage	storage_page == 'main';;attachment_auto_toggles_visible	storage	
+data-event-click="toggle_attachment_auto_wifi()"	1	storage	storage	storage_page == 'main';;attachment_auto_toggles_visible	storage	
+{{cell.size}}	1	-	storage	storage_page == 'items';;storage_cells.size > 0 || (storage_tab == 'all' && storage_files.size > 0)	storage	
+{{chat.letter}}	1	-	storage	storage_page == 'manage';;storage_chats.size > 0	storage	
+{{chat.name}}	1	-	storage	storage_page == 'manage';;storage_chats.size > 0	storage	
+{{chat.size}}	1	-	storage	storage_page == 'manage';;storage_chats.size > 0	storage	
+{{chat.summary}}	1	-	storage	storage_page == 'manage';;storage_chats.size > 0	storage	
+{{file.detail}}	1	-	storage	storage_page == 'items';;storage_files.size > 0 && storage_tab != 'all'	storage	
+{{file.ext}}	1	-	storage	storage_page == 'items';;storage_files.size > 0 && storage_tab != 'all';;!file.audio	storage	
+{{file.name}}	1	-	storage	storage_page == 'items';;storage_files.size > 0 && storage_tab != 'all'	storage	
+{{file.size}}	1	-	storage	storage_page == 'items';;storage_cells.size > 0 || (storage_tab == 'all' && storage_files.size > 0);;storage_tab == 'all'	storage	
+{{file.size}}	1	-	storage	storage_page == 'items';;storage_files.size > 0 && storage_tab != 'all'	storage	
+{{file.tile_name}}	1	-	storage	storage_page == 'items';;storage_cells.size > 0 || (storage_tab == 'all' && storage_files.size > 0);;storage_tab == 'all'	storage	
+{{i18n:common.cancel}}	1	-	storage	storage_page == 'items';;storage_selecting	storage	
+{{i18n:settings.storage.attachment_policy.always_auto}}	1	-	storage	storage_page == 'main'	storage	
+{{i18n:settings.storage.attachment_policy.label}}	1	-	storage	storage_page == 'main'	storage	
+{{i18n:settings.storage.attachment_policy.on_cellular}}	1	-	storage	storage_page == 'main';;attachment_auto_toggles_visible	storage	
+{{i18n:settings.storage.attachment_policy.on_demand}}	1	-	storage	storage_page == 'main'	storage	
+{{i18n:settings.storage.attachment_policy.on_wifi}}	1	-	storage	storage_page == 'main';;attachment_auto_toggles_visible	storage	
+{{i18n:settings.storage.attachment_policy.smart}}	1	-	storage	storage_page == 'main'	storage	
+{{i18n:settings.storage.manage.back}}	1	-	storage	storage_page == 'items';;!show_detail	storage	
+{{i18n:settings.storage.manage.chats_head}}	1	-	storage	storage_page == 'manage';;storage_chats.size > 0	storage	
+{{i18n:settings.storage.manage.counting}}	1	-	storage	storage_page == 'main';;!storage_ready	storage	
+{{i18n:settings.storage.manage.counting}}	1	-	storage	storage_page == 'manage';;!storage_ready	storage	
+{{i18n:settings.storage.manage.delete}}	1	-	storage	storage_page == 'items';;storage_selecting && !show_detail	storage	
+{{i18n:settings.storage.manage.delete}}	1	-	storage	storage_page == 'items';;storage_selecting && show_detail	storage	
+{{i18n:settings.storage.manage.empty}}	1	-	storage	storage_page == 'manage';;storage_ready && storage_media_empty	storage	
+{{i18n:settings.storage.manage.foot}}	1	-	storage	storage_page == 'main'	storage	
+{{i18n:settings.storage.manage.group}}	1	-	storage	storage_page == 'main'	storage	
+{{i18n:settings.storage.manage.large}}	1	-	storage	storage_page == 'manage';;storage_large_visible	storage	
+{{i18n:settings.storage.manage.media_total}}	1	-	storage	storage_page == 'manage';;storage_ready	storage	
+{{i18n:settings.storage.manage.nothing}}	1	-	storage	storage_page == 'items';;storage_list_empty	storage	
+{{i18n:settings.storage.manage.policy_foot.always_auto_desktop}}	1	-	storage	storage_page == 'main';;attachment_download_policy == 'always_auto' && !attachment_auto_toggles_visible	storage	
+{{i18n:settings.storage.manage.policy_foot.always_auto}}	1	-	storage	storage_page == 'main';;attachment_download_policy == 'always_auto' && attachment_auto_toggles_visible	storage	
+{{i18n:settings.storage.manage.policy_foot.on_demand}}	1	-	storage	storage_page == 'main';;attachment_download_policy == 'on_demand'	storage	
+{{i18n:settings.storage.manage.policy_foot.smart}}	1	-	storage	storage_page == 'main';;attachment_download_policy == 'smart'	storage	
+{{i18n:settings.storage.manage.row}}	1	-	storage	storage_page == 'main'	storage	
+{{i18n:settings.storage.manage.row}}	1	-	storage	storage_page == 'manage'	storage	
+{{i18n:settings.storage.manage.select}}	1	-	storage	storage_page == 'items';;!storage_selecting && !storage_list_empty	storage	
+{{i18n:settings.storage.manage.show_more}}	1	-	storage	storage_page == 'items';;storage_has_more	storage	
+{{i18n:settings.storage.manage.used}}	1	-	storage	storage_page == 'main';;storage_ready	storage	
+{{i18n:settings.storage.reset_chats}}	1	-	storage	storage_page == 'main'	storage	
+{{i18n:settings.storage.reset_profile}}	1	-	storage	storage_page == 'main'	storage	
+{{i18n:settings.storage.reset_warning}}	1	-	storage	storage_page == 'main'	storage	
+{{i18n:settings.storage.title}}	1	-	storage	storage_page == 'manage';;!show_detail	storage	
+{{seg.label}}	1	-	storage	storage_page == 'main';;storage_ready	storage	
+{{storage_items_title}}	1	-	storage	storage_page == 'items'	storage	
+{{storage_large_count_label}}	1	-	storage	storage_page == 'manage';;storage_large_visible	storage	
+{{storage_large_size_label}}	1	-	storage	storage_page == 'manage';;storage_large_visible	storage	
+{{storage_manage_label}}	1	-	storage	storage_page == 'main';;storage_ready	storage	
+{{storage_manage_label}}	1	-	storage	storage_page == 'manage';;storage_ready	storage	
+{{storage_selection_label}}	1	-	storage	storage_page == 'items';;storage_selecting && !show_detail	storage	
+{{storage_selection_label}}	1	-	storage	storage_page == 'items';;storage_selecting && show_detail	storage	
+{{storage_tab_all_label}}	1	-	storage	storage_page == 'items'	storage	
+{{storage_tab_file_label}}	1	-	storage	storage_page == 'items'	storage	
+{{storage_tab_picture_label}}	1	-	storage	storage_page == 'items'	storage	
+{{storage_tab_video_label}}	1	-	storage	storage_page == 'items'	storage	
+{{storage_total_label}}	1	-	storage	storage_page == 'main';;storage_ready	storage	
+data-class-settings-switch--on="crash_reports_enabled == 'on'"	2	-	help	-	about,security	
+data-class-settings-switch--on="show_advanced_settings == 'on'"	1	-	help	-	about	
+data-event-click="ask_setting_help('settings.about.advanced.label')"	1	-	help	-	about	2
+data-event-click="ask_setting_help('settings.security.crash_reports.label')"	2	-	help	-	about,security	
+data-event-click="copy_diagnostics_id()"	2	-	help	diagnostics_last_id != ''	about,security	
+data-event-click="open_diagnostics_help()"	2	-	help	show_diagnostics_send	about,security	
+data-event-click="open_support_chat()"	1	-	help	support_visible	-	
+data-event-click="send_diagnostics()"	2	-	help	show_diagnostics_send	about,security	
+data-event-click="toggle_crash_reports()"	2	security	help	-	about,security	
+data-event-click="toggle_show_advanced_settings()"	1	about	help	-	about	2
+data-help-key="troubleshooting/send-diagnostics"	2	-	help	show_diagnostics_send	about,security	
+{{app_name}}	1	-	help	-	about	
+{{app_version}}	2	-	help	-	about	
+{{diagnostics_last_label}}	2	-	help	diagnostics_last_id != ''	about,security	
+{{diagnostics_send_label}}	2	-	help	show_diagnostics_send	about,security	
+{{i18n:settings.about.advanced.help}}	1	-	help	-	about	2
+{{i18n:settings.about.advanced.label}}	1	-	help	-	about	2
+{{i18n:settings.about.improve.title}}	1	-	help	-	about	
+{{i18n:settings.about.version}}	2	-	help	-	about	
+{{i18n:settings.security.crash_reports.help}}	2	-	help	-	about,security	
+{{i18n:settings.security.crash_reports.label}}	2	-	help	-	about,security	
+{{i18n:settings.security.diagnostics.help}}	2	-	help	show_diagnostics_send	about,security	
+{{i18n:settings.security.group.diagnostics}}	1	-	help	-	security	
+{{support_display_name}}	1	-	help	support_visible	-	
+{{support_subtitle}}	1	-	help	support_visible	-	
+data-class-settings-switch--on="circuit_relay_enabled == 'on'"	1	-	advanced	advanced && show_circuit_relay_toggle	network	2
+data-class-settings-switch--on="dht_enabled == 'on'"	1	-	advanced	advanced && show_dht_toggle	network	2
+data-class-settings-switch--on="media_relay_enabled == 'on'"	1	-	advanced	advanced && show_media_relay_toggle	network	2
+data-class-settings-switch--on="node_enabled == 'on'"	1	-	advanced	advanced && show_node_toggle	network	2
+data-class-settings-switch--on="prefer_contacts_for_routing == 'on'"	1	-	advanced	advanced && show_prefer_contacts_toggle	network	2
+data-class-settings-switch--on="reachable_without_relay == 'on'"	1	-	advanced	show_node_toggle	network	2
+data-class-settings-switch--on="trusted_relays_only == 'on'"	1	-	advanced	-	network	2
+data-event-change="on_integrations_field_changed()"	6	integrations	advanced	advanced	integrations	2
+data-event-change="on_llm_field_changed()"	2	llm	advanced	advanced	llm	2
+data-event-change="on_llm_field_changed()"	2	llm	advanced	advanced;;llm_preset != 'brief'	llm	2
+data-event-change="on_llm_preset_changed()"	1	llm	advanced	advanced	llm	2
+data-event-click="add_mcp_server()"	1	integrations	advanced	advanced	integrations	2
+data-event-click="ask_setting_help('settings.help.topic.mcp')"	1	-	advanced	advanced	integrations	2
+data-event-click="ask_setting_help('settings.network.circuit_relay')"	1	-	advanced	advanced && show_circuit_relay_toggle	network	2
+data-event-click="ask_setting_help('settings.network.dht')"	1	-	advanced	advanced && show_dht_toggle	network	2
+data-event-click="ask_setting_help('settings.network.direct_connections')"	1	-	advanced	-	network	2
+data-event-click="ask_setting_help('settings.network.help_network')"	1	-	advanced	advanced && show_node_toggle	network	2
+data-event-click="ask_setting_help('settings.network.media_relay')"	1	-	advanced	advanced && show_media_relay_toggle	network	2
+data-event-click="ask_setting_help('settings.network.prefer_contacts')"	1	-	advanced	advanced && show_prefer_contacts_toggle	network	2
+data-event-click="ask_setting_help('settings.network.reachable_without_relay')"	1	-	advanced	show_node_toggle	network	2
+data-event-click="ask_setting_help('settings.network.trusted_relays')"	1	-	advanced	-	network	2
+data-event-click="dismiss_reachability_help()"	1	-	advanced	show_connection_card;;show_reachability_help && reachability_help_kind == 'blocked'	network	2
+data-event-click="dismiss_reachability_help()"	1	-	advanced	show_connection_card;;show_reachability_help && reachability_help_kind == 'outbound_only'	network	2
+data-event-click="dismiss_reachability_help()"	1	-	advanced	show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	2
+data-event-click="on_choose_direct_connections()"	1	network	advanced	-	network	2
+data-event-click="remove_mcp_server(server_index)"	1	integrations	advanced	advanced	integrations	2
+data-event-click="reset_section('integrations')"	1	integrations	advanced	advanced	integrations	2
+data-event-click="reset_section('llm')"	1	llm	advanced	advanced	llm	2
+data-event-click="reset_tool_permissions()"	1	security	advanced	advanced;;tool_permissions_has_saved	security	2
+data-event-click="retest_reachability()"	1	-	advanced	show_connection_card	network	2
+data-event-click="show_reachability_help()"	1	-	advanced	show_connection_card	network	2
+data-event-click="toggle_circuit_relay()"	1	network	advanced	advanced && show_circuit_relay_toggle	network	2
+data-event-click="toggle_dht()"	1	network	advanced	advanced && show_dht_toggle	network	2
+data-event-click="toggle_media_relay()"	1	network	advanced	advanced && show_media_relay_toggle	network	2
+data-event-click="toggle_node_enabled()"	1	network	advanced	advanced && show_node_toggle	network	2
+data-event-click="toggle_prefer_contacts()"	1	network	advanced	advanced && show_prefer_contacts_toggle	network	2
+data-event-click="toggle_reachable_without_relay()"	1	network	advanced	show_node_toggle	network	2
+data-event-click="toggle_trusted_relays()"	1	network	advanced	-	network	2
+data-event-click="try_upnp_port()"	1	-	advanced	show_connection_card	network	2
+data-value="llm_api_key"	1	llm	advanced	advanced;;llm_preset != 'brief'	llm	2
+data-value="llm_api_key_env"	1	llm	advanced	advanced;;llm_preset != 'brief'	llm	2
+data-value="llm_base_url"	1	llm	advanced	advanced	llm	2
+data-value="llm_model"	1	llm	advanced	advanced	llm	2
+data-value="llm_preset"	1	llm	advanced	advanced	llm	2
+data-value="promoted_mcp_url"	1	integrations	advanced	advanced	integrations	2
+data-value="search_provider"	1	integrations	advanced	advanced	integrations	2
+data-value="server.args_text"	1	integrations	advanced	advanced	integrations	2
+data-value="server.command"	1	integrations	advanced	advanced	integrations	2
+data-value="server.id"	1	integrations	advanced	advanced	integrations	2
+data-value="server.url"	1	integrations	advanced	advanced	integrations	2
+{{amp_listen_multiaddr}}	1	-	advanced	advanced;;show_node_toggle && node_enabled == 'on'	network	2
+{{brief_llm_key_masked}}	1	-	advanced	advanced;;llm_preset == 'brief';;brief_llm_key_masked != ''	llm	2
+{{direct_connections_label}}	1	-	advanced	-	network	2
+{{i18n:common.not_now}}	1	-	advanced	show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	2
+{{i18n:common.remove}}	1	-	advanced	advanced	integrations	2
+{{i18n:common.reset_defaults}}	2	-	advanced	advanced	appearance,integrations,llm,network	2
+{{i18n:settings.assistant.title}}	1	-	advanced	-	-	2
+{{i18n:settings.integrations.add_mcp}}	1	-	advanced	advanced	integrations	2
+{{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced	advanced	integrations	2
+{{i18n:settings.integrations.mcp_args_placeholder}}	1	-	advanced	advanced;;server.args_text == ''	integrations	2
+{{i18n:settings.integrations.mcp_args}}	1	-	advanced	advanced	integrations	2
+{{i18n:settings.integrations.mcp_command}}	1	-	advanced	advanced	integrations	2
+{{i18n:settings.integrations.mcp_help}}	1	-	advanced	advanced	integrations	2
+{{i18n:settings.integrations.promoted_mcp_placeholder}}	1	-	advanced	advanced	integrations	2
+{{i18n:settings.integrations.promoted_mcp_placeholder}}	1	-	advanced	advanced;;promoted_mcp_url == ''	integrations	2
+{{i18n:settings.integrations.promoted_mcp}}	1	-	advanced	advanced	integrations	2
+{{i18n:settings.integrations.search}}	1	-	advanced	advanced	integrations	2
+{{i18n:settings.integrations.server_id}}	1	-	advanced	advanced	integrations	2
+{{i18n:settings.integrations.server_url}}	1	-	advanced	advanced	integrations	2
+{{i18n:settings.integrations.title}}	1	-	advanced	advanced	-	2
+{{i18n:settings.llm.api_key_env_placeholder}}	1	-	advanced	advanced;;llm_preset != 'brief'	llm	2
+{{i18n:settings.llm.api_key_env_placeholder}}	1	-	advanced	advanced;;llm_preset != 'brief';;llm_api_key_env == ''	llm	2
+{{i18n:settings.llm.api_key_env}}	1	-	advanced	advanced;;llm_preset != 'brief'	llm	2
+{{i18n:settings.llm.api_key_placeholder}}	1	-	advanced	advanced;;llm_preset != 'brief'	llm	2
+{{i18n:settings.llm.api_key_placeholder}}	1	-	advanced	advanced;;llm_preset != 'brief';;llm_api_key == ''	llm	2
+{{i18n:settings.llm.api_key}}	1	-	advanced	advanced;;llm_preset != 'brief'	llm	2
+{{i18n:settings.llm.base_url}}	1	-	advanced	advanced	llm	2
+{{i18n:settings.llm.brief_key_auto}}	1	-	advanced	advanced;;llm_preset == 'brief';;brief_llm_key_masked == ''	llm	2
+{{i18n:settings.llm.brief_key_rotate_hint}}	1	-	advanced	advanced;;llm_preset == 'brief';;brief_llm_key_masked != ''	llm	2
+{{i18n:settings.llm.brief_key}}	1	-	advanced	advanced;;llm_preset == 'brief'	llm	2
+{{i18n:settings.llm.model}}	1	-	advanced	advanced	llm	2
+{{i18n:settings.llm.preset_brief}}	1	-	advanced	advanced	llm	2
+{{i18n:settings.llm.preset_cloud}}	1	-	advanced	advanced	llm	2
+{{i18n:settings.llm.preset_custom}}	1	-	advanced	advanced	llm	2
+{{i18n:settings.llm.preset_help}}	1	-	advanced	advanced	llm	2
+{{i18n:settings.llm.preset_ollama}}	1	-	advanced	advanced	llm	2
+{{i18n:settings.llm.preset}}	1	-	advanced	advanced	llm	2
+{{i18n:settings.llm.summary}}	1	-	advanced	!advanced	llm	2
+{{i18n:settings.network.circuit_relay_hint}}	1	-	advanced	advanced && show_circuit_relay_toggle	network	2
+{{i18n:settings.network.circuit_relay}}	1	-	advanced	advanced && show_circuit_relay_toggle	network	2
+{{i18n:settings.network.connection.learn}}	1	-	advanced	show_connection_card	network	2
+{{i18n:settings.network.connection.retest}}	1	-	advanced	show_connection_card	network	2
+{{i18n:settings.network.connection.title}}	1	-	advanced	show_connection_card	network	2
+{{i18n:settings.network.connection.try_upnp}}	1	-	advanced	show_connection_card	network	2
+{{i18n:settings.network.dht_hint}}	1	-	advanced	advanced && show_dht_toggle	network	2
+{{i18n:settings.network.dht}}	1	-	advanced	advanced && show_dht_toggle	network	2
+{{i18n:settings.network.direct_connections.help}}	1	-	advanced	-	network	2
+{{i18n:settings.network.direct_connections}}	1	-	advanced	-	network	2
+{{i18n:settings.network.help.ack_relay}}	1	-	advanced	show_connection_card;;show_reachability_help && reachability_help_kind == 'blocked'	network	2
+{{i18n:settings.network.help.ack_relay}}	1	-	advanced	show_connection_card;;show_reachability_help && reachability_help_kind == 'outbound_only'	network	2
+{{i18n:settings.network.help.blocked}}	1	-	advanced	show_connection_card;;show_reachability_help && reachability_help_kind == 'blocked'	network	2
+{{i18n:settings.network.help.outbound_only}}	1	-	advanced	show_connection_card;;show_reachability_help && reachability_help_kind == 'outbound_only'	network	2
+{{i18n:settings.network.help.reachable}}	1	-	advanced	show_connection_card;;show_reachability_help && reachability_help_kind == 'reachable'	network	2
+{{i18n:settings.network.help.skip_relay}}	1	-	advanced	show_connection_card;;show_reachability_help && reachability_help_kind == 'blocked'	network	2
+{{i18n:settings.network.help.skip_relay}}	1	-	advanced	show_connection_card;;show_reachability_help && reachability_help_kind == 'outbound_only'	network	2
+{{i18n:settings.network.help_network_hint}}	1	-	advanced	advanced && show_node_toggle	network	2
+{{i18n:settings.network.help_network}}	1	-	advanced	advanced && show_node_toggle	network	2
+{{i18n:settings.network.listen}}	1	-	advanced	advanced;;show_node_toggle && node_enabled == 'on'	network	2
+{{i18n:settings.network.media_relay_hint}}	1	-	advanced	advanced && show_media_relay_toggle	network	2
+{{i18n:settings.network.media_relay}}	1	-	advanced	advanced && show_media_relay_toggle	network	2
+{{i18n:settings.network.prefer_contacts_hint}}	1	-	advanced	advanced && show_prefer_contacts_toggle	network	2
+{{i18n:settings.network.prefer_contacts}}	1	-	advanced	advanced && show_prefer_contacts_toggle	network	2
+{{i18n:settings.network.reachable_without_relay.help}}	1	-	advanced	show_node_toggle	network	2
+{{i18n:settings.network.reachable_without_relay}}	1	-	advanced	show_node_toggle	network	2
+{{i18n:settings.network.title}}	1	-	advanced	-	-	2
+{{i18n:settings.network.trusted_relays.help}}	1	-	advanced	-	network	2
+{{i18n:settings.network.trusted_relays}}	1	-	advanced	-	network	2
+{{i18n:settings.security.tool_permissions.help}}	1	-	advanced	advanced	security	2
+{{i18n:settings.security.tool_permissions.reset}}	1	-	advanced	advanced;;tool_permissions_has_saved	security	2
+{{i18n:settings.security.tool_permissions}}	1	-	advanced	advanced	security	2
+{{mesh_status_message}}	1	-	advanced	advanced;;mesh_status_message != ''	network	2
+{{reachability_status_label}}	1	-	advanced	show_connection_card	network	2
+{{reachability_summary}}	1	-	advanced	show_connection_card	network	2
+{{tool_permissions_summary}}	1	-	advanced	advanced	security	2
+data-class-settings-switch--on="call_diagnostics == 'on'"	1	-	tester	-	appearance	2
+data-event-change="on_network_field_changed()"	3	network	tester	advanced;;backend_is_custom	network	2
+data-event-click="clear_undelivered_older_than()"	1	security	tester	advanced	security	2
+data-event-click="copy_cas_tip(item_index)"	1	storage	tester	advanced;;item.can_copy_tip	storage	2
+data-event-click="fetch_cas_tip()"	1	storage	tester	advanced	storage	2
+data-event-click="on_choose_backend()"	1	network	tester	show_backend_switch	network	2
+data-event-click="open_ui_perf_test()"	1	-	tester	dev_tools_available	about	2
+data-event-click="reset_section('network')"	1	network	tester	advanced	network	2
+data-event-click="set_cas_library_filter('all')"	1	storage	tester	advanced	storage	2
+data-event-click="set_cas_library_filter('cache')"	1	storage	tester	advanced	storage	2
+data-event-click="set_cas_library_filter('private')"	1	storage	tester	advanced	storage	2
+data-event-click="set_cas_library_filter('public')"	1	storage	tester	advanced	storage	2
+data-event-click="share_cas_publicly(item_index)"	1	storage	tester	advanced;;item.can_share_publicly	storage	2
+data-event-click="simulate_chats_link_connecting()"	1	-	tester	dev_tools_available	about	2
+data-event-click="simulate_chats_link_offline()"	1	-	tester	dev_tools_available	about	2
+data-event-click="simulate_chats_link_online()"	1	-	tester	dev_tools_available	about	2
+data-event-click="toggle_call_diagnostics()"	1	appearance	tester	-	appearance	2
+data-event-click="unpublish_cas(item_index)"	1	storage	tester	advanced;;item.can_unpublish	storage	2
+data-value="directory_base_url"	1	network	tester	advanced;;backend_is_custom	network	2
+data-value="registration_base_url"	1	network	tester	advanced;;backend_is_custom	network	2
+data-value="relay_base_url"	1	network	tester	advanced;;backend_is_custom	network	2
+{{backend_label}}	1	-	tester	show_backend_switch	network	2
+{{cas_library_empty_label}}	1	-	tester	advanced;;cas_library_rows.size == 0	storage	2
+{{config_dir}}	1	-	tester	advanced	storage	2
+{{data_dir}}	1	-	tester	advanced	storage	2
+{{i18n:common.reset_defaults}}	1	-	tester	advanced	appearance,integrations,llm,network	2
+{{i18n:dev.link.sim_connecting}}	1	-	tester	dev_tools_available	about	2
+{{i18n:dev.link.sim_offline}}	1	-	tester	dev_tools_available	about	2
+{{i18n:dev.link.sim_online}}	1	-	tester	dev_tools_available	about	2
+{{i18n:dev.perf.row}}	1	-	tester	dev_tools_available	about	2
+{{i18n:settings.call_diagnostics.help}}	1	-	tester	-	appearance	2
+{{i18n:settings.call_diagnostics.label}}	1	-	tester	-	appearance	2
+{{i18n:settings.network.backend.help}}	1	-	tester	show_backend_switch	network	2
+{{i18n:settings.network.backend.restart}}	1	-	tester	show_backend_switch && backend_restart_pending	network	2
+{{i18n:settings.network.backend}}	1	-	tester	show_backend_switch	network	2
+{{i18n:settings.network.directory}}	1	-	tester	advanced;;backend_is_custom	network	2
+{{i18n:settings.network.registration}}	1	-	tester	advanced;;backend_is_custom	network	2
+{{i18n:settings.network.relay}}	1	-	tester	advanced;;backend_is_custom	network	2
+{{i18n:settings.security.clear_undelivered.help}}	1	-	tester	advanced	security	2
+{{i18n:settings.security.clear_undelivered}}	1	-	tester	advanced	security	2
+{{i18n:settings.security.group.diagnostics}}	1	-	tester	advanced	security	2
+{{i18n:settings.storage.config_label}}	1	-	tester	advanced	storage	2
+{{i18n:settings.storage.data_label}}	1	-	tester	advanced	storage	2
+{{i18n:settings.storage.library.copy_tip}}	1	-	tester	advanced;;item.can_copy_tip	storage	2
+{{i18n:settings.storage.library.fetch_tip}}	1	-	tester	advanced	storage	2
+{{i18n:settings.storage.library.filter_all}}	1	-	tester	advanced	storage	2
+{{i18n:settings.storage.library.filter_cache}}	1	-	tester	advanced	storage	2
+{{i18n:settings.storage.library.filter_private}}	1	-	tester	advanced	storage	2
+{{i18n:settings.storage.library.filter_public}}	1	-	tester	advanced	storage	2
+{{i18n:settings.storage.library.help}}	1	-	tester	advanced	storage	2
+{{i18n:settings.storage.library.share_publicly}}	1	-	tester	advanced;;item.can_share_publicly	storage	2
+{{i18n:settings.storage.library.title}}	1	-	tester	advanced	storage	2
+{{i18n:settings.storage.library.unpublish}}	1	-	tester	advanced;;item.can_unpublish	storage	2
+{{i18n:settings.storage.profile_data_label}}	1	-	tester	advanced	storage	2
+{{i18n:settings.storage.profile_label}}	1	-	tester	advanced	storage	2
+{{item.detail}}	1	-	tester	advanced	storage	2
+{{item.pin_label}}	1	-	tester	advanced	storage	2
+{{item.realm_label}}	1	-	tester	advanced	storage	2
+{{item.title}}	1	-	tester	advanced	storage	2
+{{profile_dir}}	1	-	tester	advanced	storage	2
+{{profile_label}}	1	-	tester	advanced	storage	2

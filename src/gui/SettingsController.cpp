@@ -20,6 +20,7 @@
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/StorageSettingsSection.h"
+#include "feature/settings/SettingsPages.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/MascotLook.h"
@@ -248,14 +249,12 @@ const SettingsSectionHandler* SettingsController::FindHandler(const std::string&
 
 void SettingsController::InitSections() {
   sections_.clear();
-  const bool advanced = ui_state_.show_advanced_settings == "on";
-  for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
-    const SettingsSectionListItem item = handler->ListItem();
-    if (item.advanced_only && !advanced) {
-      continue;
-    }
-    sections_.push_back(
-        {.id = item.id.c_str(), .title = item.title.c_str(), .subtitle = item.subtitle.c_str(), .attention = false});
+  for (const SettingsPage& page : SettingsPages()) {
+    sections_.push_back({.id = page.id,
+                         .title = Tr(page.title_key).c_str(),
+                         .subtitle = "",
+                         .group = page.home_group,
+                         .attention = false});
   }
   ApplySectionAttention();
 }
@@ -467,11 +466,13 @@ void SettingsController::PushUiStateToBindings() {
 }
 
 void SettingsController::SyncBindingsFromSession() {
-  if (selected_id_ == "storage") {
-    cas_library_.Refresh();
-  }
-  if (selected_id_ == "security") {
-    own_devices_.Refresh();
+  if (const SettingsPage* page = FindSettingsPage(selected_id_.c_str())) {
+    if (SettingsPageHas(*page, SettingsPageAction::RefreshCasLibrary)) {
+      cas_library_.Refresh();
+    }
+    if (SettingsPageHas(*page, SettingsPageAction::RefreshDevices)) {
+      own_devices_.Refresh();
+    }
   }
 
   const BootstrapResult& bootstrap = Store().Snapshot();
@@ -540,6 +541,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
       section_handle.RegisterMember("id", &SectionListRow::id);
       section_handle.RegisterMember("title", &SectionListRow::title);
       section_handle.RegisterMember("subtitle", &SectionListRow::subtitle);
+      section_handle.RegisterMember("group", &SectionListRow::group);
       section_handle.RegisterMember("attention", &SectionListRow::attention);
     }
     if (auto mcp_handle = ctor.RegisterStruct<McpServerRow>()) {
@@ -954,7 +956,12 @@ void SettingsController::MountSelectedSettingsSection() {
     RmlMount::MountInner(mount, {});
     return;
   }
-  const std::string key = "settings_section_" + std::string(selected_id_.c_str());
+  const SettingsPage* page = FindSettingsPage(selected_id_.c_str());
+  if (!page) {
+    log().error << "No settings page '" << selected_id_.c_str() << "'";
+    return;
+  }
+  const std::string key = page->view_key;
   const std::string body = ViewCatalog::LoadBody(key);
   if (body.empty()) {
     log().error << "Failed to load settings section body for '" << key << "'";
@@ -1271,18 +1278,19 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   }
 
   status_ = "";
-  // Send problem logs is on Security (desktop) and in About (phones): either page reads its label again.
-  if (section_id == "security" || section_id == "about") {
+  const SettingsPage* opened = FindSettingsPage(section_id);
+  // Send problem logs is on the Help page: it reads its label again.
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshDiagnostics)) {
     security_actions_.RefreshDiagnostics();
   }
-  if (section_id == "security") {
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshBlockedCount)) {
     RefreshBlockedCount();
   }
-  if (section_id == "profile") {
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshBannerTip)) {
     RefreshBannerTip();
   }
   storage_manager_.Reset();
-  if (section_id == "storage") {
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::EnterStorage)) {
     storage_manager_.Enter();
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
@@ -1419,7 +1427,7 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
     OpenChangePin(); // B2: the PIN gate's three steps, not a page of fields
     return;
   }
-  if (selected_id_ != "security" || !show_detail_) {
+  if (selected_id_ != "devices" || !show_detail_) {
     return; // phones only: desktop shows both inline
   }
   if (page == "transfer") {
@@ -1802,8 +1810,8 @@ void SettingsController::RefreshLocalizedChrome() {
   InitSections(); // after the sync: the advanced flag comes from the profile prefs
   ApplySupportDiscovery();
   if (!selected_id_.empty()) {
-    if (const SettingsSectionHandler* handler = FindHandler(selected_id_.c_str())) {
-      selected_title_ = handler->ListItem().title.c_str();
+    if (const SettingsPage* page = FindSettingsPage(selected_id_.c_str())) {
+      selected_title_ = Tr(page->title_key).c_str();
     }
   }
   DirtyAll();
@@ -1875,7 +1883,7 @@ void SettingsController::OnAskSettingHelp(const std::string& label_key) {
 }
 
 void SettingsController::OpenNetworkSettings() {
-  OpenSection("network");
+  OpenSection("advanced");
 }
 
 void SettingsController::OpenSection(const std::string& section_id) {
@@ -1949,7 +1957,7 @@ bool SettingsController::ComputeNetworkAttention() const {
 void SettingsController::ApplySectionAttention() {
   const bool network_attention = ComputeNetworkAttention();
   for (SectionListRow& section : sections_) {
-    section.attention = section.id == "network" && network_attention;
+    section.attention = section.id == "advanced" && network_attention;
   }
 }
 

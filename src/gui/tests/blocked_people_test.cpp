@@ -62,8 +62,8 @@ TEST(BlockedPeopleTest, EachRowUnblocksInPlaceAndOpensThePersonOnTap) {
   EXPECT_LT(rml.find("</p>", name), unblock);
 }
 
-TEST(BlockedPeopleTest, SecurityHasARowThatOpensTheList) {
-  const std::string rml = ReadAsset("views/settings_section_security.rml");
+TEST(BlockedPeopleTest, PrivacyHasARowThatOpensTheList) {
+  const std::string rml = ReadAsset("views/settings_section_privacy.rml");
   const size_t row = rml.find("data-event-click=\"open_blocked_people()\"");
   ASSERT_NE(row, std::string::npos);
   EXPECT_NE(rml.find("{{i18n:contacts.blocked.title}}", row), std::string::npos);

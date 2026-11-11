@@ -52,6 +52,8 @@ public:
     ui::String id;
     ui::String title;
     ui::String subtitle;
+    /** The Home list group (SettingsPage::home_group). */
+    int group = 0;
     bool attention = false;
   };
 

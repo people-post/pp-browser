@@ -1,0 +1,118 @@
+        <div class="group-card settings-phone-only">
+          <button class="group-row" type="button" data-event-click="open_security_page('transfer')">
+            <span class="group-row-body">
+              <span class="group-row-label settings-q-label"><span class="group-row-text">{{i18n:settings.security.transfer_row}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
+        <div class="settings-desktop-only">
+{{include:settings_security_transfer}}
+        </div>
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.copy.help}}</p>
+          <div class="settings-toggle-row row group-actions">
+            <button class="btn" type="button" data-event-click="save_account_copy()">
+              {{i18n:settings.security.copy.save}}
+            </button>
+            <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.account_copy')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+          </div>
+        <div class="stack settings-actions" data-if="own_devices_shown">
+          <p class="text group-head">{{i18n:settings.security.devices}}</p>
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.devices.help}}</p>
+          <p class="text error group-foot" data-if="own_devices_signed_out">{{i18n:settings.security.devices.signed_out}}</p>
+          <div data-for="device, device_index : own_device_rows" class="settings-device-row stack group-card group-card--pad">
+            <div class="row settings-device-title">
+              <p class="text">{{device.label}}</p>
+              <span class="settings-device-badge" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
+            </div>
+            <div class="settings-device-actions row" data-if="device.can_manage">
+              <button class="btn btn-secondary" type="button"
+                      data-event-click="make_main_device(device_index)">{{i18n:settings.security.devices.make_main}}</button>
+              <button class="btn btn-secondary" type="button"
+                      data-event-click="remove_own_device(device_index)">{{i18n:settings.security.devices.remove}}</button>
+            </div>
+          </div>
+          <p class="text muted settings-help group-foot" data-if="own_devices_not_main && !own_devices_signed_out">
+            {{i18n:settings.security.devices.not_main}}
+          </p>
+        </div>
+        <p class="text group-head">{{i18n:settings.security.group.privacy}}</p>
+        <div class="group-card settings-phone-only">
+          <!-- Blocked people, findable again to unblock (Kenneth 2026-11-04). -->
+          <button class="group-row" type="button" data-event-click="open_blocked_people()">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:contacts.blocked.title}}</span></span>
+              <span class="settings-choice-value-text" data-if="blocked_count > 0">{{blocked_count}}</span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
+        <div class="group-card">
+          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
+                  data-event-click="on_choose_group_invite_policy()">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.security.group_invites}}</span>
+              <span class="settings-choice-value row">
+                <span class="settings-choice-value-text">{{group_invite_policy_label}}</span>
+                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+              </span>
+            </span>
+          </button>
+        </div>
+        <p class="text muted settings-help group-foot">{{i18n:settings.security.group_invites.help}}</p>
+        <div class="group-card">
+          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
+                  data-event-click="on_choose_call_invite_policy()">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.security.calls}}</span>
+              <span class="settings-choice-value row">
+                <span class="settings-choice-value-text">{{call_invite_policy_label}}</span>
+                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+              </span>
+            </span>
+          </button>
+        </div>
+        <p class="text muted settings-help group-foot">{{i18n:settings.security.calls.help}}</p>
+        <div class="stack settings-actions" data-if="advanced">
+          <p class="text group-head">{{i18n:settings.security.tool_permissions}}: <span>{{tool_permissions_summary}}</span></p>
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.tool_permissions.help}}</p>
+          <button class="btn" type="button" data-if="tool_permissions_has_saved"
+                  data-event-click="reset_tool_permissions()">
+            {{i18n:settings.security.tool_permissions.reset}}
+          </button>
+        </div>
+        <p class="text group-head settings-desktop-only">{{i18n:settings.security.group.diagnostics}}</p>
+        <p class="text group-head settings-phone-only" data-if="advanced">{{i18n:settings.security.group.diagnostics}}</p>
+        <div class="stack settings-actions" data-if="advanced">
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.clear_undelivered.help}}</p>
+          <button class="btn" type="button" data-event-click="clear_undelivered_older_than()">
+            {{i18n:settings.security.clear_undelivered}}
+          </button>
+        </div>
+        <!-- Phones show these two in About > Help improve PP. -->
+        <div class="group-card settings-desktop-only">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-q-label"><span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.security.crash_reports.label}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.crash_reports.label')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="crash_reports_enabled == 'on'"
+                      data-event-click="toggle_crash_reports()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot settings-desktop-only">{{i18n:settings.security.crash_reports.help}}</p>
+        <div class="settings-toggle-row row group-actions settings-desktop-only" data-if="show_diagnostics_send">
+          <button class="btn" type="button" data-attrif-disabled="diagnostics_sending"
+                  data-event-click="send_diagnostics()">
+            {{diagnostics_send_label}}
+          </button>
+          <button class="settings-q-btn" type="button" data-help-key="troubleshooting/send-diagnostics"
+                  data-event-click="open_diagnostics_help()"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+        </div>
+        <p class="text muted settings-help group-foot settings-desktop-only" data-if="show_diagnostics_send">{{i18n:settings.security.diagnostics.help}}</p>
+        <button class="btn settings-desktop-only" type="button" data-if="diagnostics_last_id != ''"
+                data-event-click="copy_diagnostics_id()">
+          {{diagnostics_last_label}}
+        </button>

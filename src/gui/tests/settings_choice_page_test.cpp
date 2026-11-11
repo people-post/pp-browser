@@ -102,7 +102,7 @@ TEST(SettingsChoicePageTest, ThePushedPageHasTheRowsTheCheckTheFootAndTheHelp) {
   // Every row that picks one value still has its handler (the controller decides menu or page). Storage picks its
   // download policy with ticked rows in the page itself (choose_attachment_download_policy), not a choice page.
   for (const char* view : {"views/settings_section_appearance.rml", "views/settings_section_security.rml",
-                           "views/settings_section_network.rml"}) {
+                           "views/settings_section_advanced.rml"}) {
     EXPECT_NE(ReadAsset(view).find("data-event-click=\"on_choose_"), std::string::npos) << view;
   }
 }
@@ -117,7 +117,8 @@ TEST(SettingsAppearancePageTest, HasTheTransparencySwitchOnByDefault) {
   EXPECT_NE(rml.find("data-event-click=\"toggle_transparency()\""), std::string::npos);
   EXPECT_NE(rml.find("{{i18n:settings.transparency.help}}"), std::string::npos);
   EXPECT_NE(rml.find("on_choose_theme()"), std::string::npos);
-  EXPECT_NE(rml.find("toggle_call_diagnostics()"), std::string::npos);
+  EXPECT_NE(ReadAsset("views/settings_section_tester.rml").find("toggle_call_diagnostics()"), std::string::npos)
+      << "call diagnostics moved to the test options page";
 
   const std::string controller = ReadFile(std::string(PP_SOURCE_DIR) + "/src/gui/SettingsController.cpp");
   EXPECT_NE(controller.find("BindEventCallback(\"toggle_transparency\""), std::string::npos);

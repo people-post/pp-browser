@@ -1,0 +1,13 @@
+        <div class="group-card">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.call_diagnostics.label}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="call_diagnostics == 'on'"
+                      data-event-click="toggle_call_diagnostics()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot">{{i18n:settings.call_diagnostics.help}}</p>
