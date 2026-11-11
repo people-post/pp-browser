@@ -273,6 +273,43 @@ TEST(GroupInviteIngestTest, ANewerInviteFromTheSamePersonToTheSameGroupReplacesT
   EXPECT_EQ(*cap, 2u) << "the replaced card no longer counts against the daily cap";
 }
 
+// A re-delivery of an invite already stored (the classifier drops a resent seq, but membership controls are still
+// applied) must not touch the live card: not expire the live invite, and not stand in for a newer one.
+TEST(GroupInviteIngestTest, AReDeliveredInviteLeavesTheLiveInviteAlone) {
+  PartyHarness invitee("redeliver", "account:bob", "account:alice");
+  const auto make_invite = [&](const std::string& nonce, const uint64_t seq) {
+    GroupInvitePayload invite;
+    invite.group_id = "group:hike";
+    invite.group_title = "Weekend hike";
+    invite.inviter_identity = "account:alice";
+    invite.invitee_identity = "account:bob";
+    invite.invite_nonce = nonce;
+    invite.roster_epoch = 1;
+    invite.expires_at = util::NowUnixMs() + 86400000;
+    auto detail = GroupMembershipCodec::EncodeInvite(invite);
+    EXPECT_TRUE(detail);
+    return invitee.MakeSystemEnvelope("group_invite", *detail, "Group invitation: Weekend hike", seq);
+  };
+  const auto status_of = [&](const std::string& nonce) {
+    auto pending = invitee.roster.LoadPendingInvite(nonce);
+    EXPECT_TRUE(pending && pending->has_value()) << nonce;
+    return pending && pending->has_value() ? (*pending)->status : InviteStatus::Blocked;
+  };
+  const RelayEnvelope first = make_invite("nonce-first", 1);
+  const RelayEnvelope second = make_invite("nonce-second", 2);
+  (void)invitee.pipeline.ProcessEnvelope(first, "account:bob");
+  (void)invitee.pipeline.ProcessEnvelope(second, "account:bob");
+  ASSERT_EQ(status_of("nonce-second"), InviteStatus::Pending);
+
+  const RelayReceiveOutcome again_first = invitee.pipeline.ProcessEnvelope(first, "account:bob");
+  EXPECT_EQ(status_of("nonce-second"), InviteStatus::Pending) << "an older invite resent must not expire the live one";
+  EXPECT_TRUE(again_first.superseded_invite_cards.empty());
+
+  const RelayReceiveOutcome again_second = invitee.pipeline.ProcessEnvelope(second, "account:bob");
+  EXPECT_EQ(status_of("nonce-second"), InviteStatus::Pending) << "the live invite resent must not expire itself";
+  EXPECT_TRUE(again_second.superseded_invite_cards.empty());
+}
+
 // G022: someone met in a call (not a contact) invites us from it: kept, and shown in that call, only while we are
 // in the call with them; it stays the ordinary invite (Accept / Decline / Block on the card).
 TEST(GroupInviteIngestTest, AStrangersInviteFromOurLiveCallIsKeptAndShownInTheCall) {
