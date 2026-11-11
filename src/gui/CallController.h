@@ -249,8 +249,10 @@ private:
    * call, or the engine's open call the screen lost (DEV/PLAN-call-ui-never-detached.md 4).
    */
   void SyncOngoingCall();
-  /** EngineHasOpenCall on the backend now. */
-  bool EngineHasOpenCallNow();
+  /** The engine's call, from one snapshot of the backend's state. */
+  EngineCall EngineCallNow();
+  /** EngineCallNow, not counted open while it is the call the user hung up (CallPresenter::LeavingCallId). */
+  EngineCall EngineCallNotLeft();
   /** After the presenter's refresh: CallUiAttachGuard, and what it asks (report, hang up, stop again). */
   void GuardCallUiAttach();
   /** Device vitals, re-read at most every 2 s. */

@@ -9,6 +9,7 @@
 #include "feature/presenters/CallBackOffer.h"
 #include "feature/presenters/CallMediaFrame.h"
 #include "feature/presenters/CallSpeakerButton.h"
+#include "feature/presenters/CallUiAttachGuard.h"
 #include "feature/presenters/CallWakePlaceholder.h"
 #include "foundation/platform/PendingNotificationTap.h"
 
@@ -224,6 +225,13 @@ public:
   std::string Decline();
   /** End. Returns the call left (empty: none — a stale button only clears the screen). */
   std::string Leave();
+  /**
+   * CallUiAttachGuard's hang-up: the engine's call `call_id` is stopped and left by its id (not this screen's call,
+   * which may be another); this screen clears if it showed that call or none, else it is decided again.
+   */
+  void HangUpEngineCall(const std::string& call_id);
+  /** The call the user (or the guard) hung up, until the engine lets go of it (empty: none). Never taken back. */
+  const std::string& LeavingCallId() const { return leaving_call_id_; }
   void Retry();
   void ToggleMute();
   void ToggleCamera();
@@ -262,7 +270,11 @@ private:
   bool TakeStackNotices(CallUiBackend& backend);
   void FillInCall(CallScreen& s, CallUiBackend& backend, const std::string& call_id, bool video, bool group_call);
   /** The store shows no call while the engine has one open: `next` keeps (or takes) the engine's call. */
-  void KeepEngineCall(CallScreen& next, CallUiBackend& backend);
+  void KeepEngineCall(CallScreen& next, CallUiBackend& backend, const EngineCall& engine);
+  /** `call_id` is the call being left (LeavingCallId). */
+  bool Leaving(const std::string& call_id) const;
+  /** The call being left is forgotten once the engine let go of it (Idle, another call, or no calls). */
+  void ForgetLeavingOnceLetGo(const CallUiState& state);
   void MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s);
   /** B97: a live group call where nothing arrives from anyone for 30 s is left (once told). */
   void WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, int64_t now);
@@ -297,6 +309,8 @@ private:
   std::string dev_detached_call_id_;
   /** The call KeepEngineCall last logged (once per call). */
   std::string kept_call_logged_;
+  /** LeavingCallId. */
+  std::string leaving_call_id_;
   Callbacks callbacks_;
   CallScreen screen_;
   CallWakePlaceholder wake_placeholder_;

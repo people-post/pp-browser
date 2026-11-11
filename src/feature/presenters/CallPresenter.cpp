@@ -210,9 +210,12 @@ void CallPresenter::Tick() {
     return;
   }
   backend->SweepExpiredInvites();
-  // Also while the engine has a call this screen lost: the refresh takes it back (DEV/PLAN-call-ui-never-detached.md 3).
-  if (backend->Available() &&
-      (!active_call_id_.empty() || EngineHasOpenCall(true, backend->ActiveCallId(), backend->Phase()))) {
+  const auto state = backend->State(); // one snapshot for this tick's decision
+  ForgetLeavingOnceLetGo(*state);
+  const EngineCall engine = EngineCallOf(*state);
+  // Also while the engine has a call this screen lost — never the one the user just hung up: the refresh takes it back
+  // (DEV/PLAN-call-ui-never-detached.md 3).
+  if (state->available && (!active_call_id_.empty() || (engine.open && !Leaving(engine.call_id)))) {
     Refresh(); // Calling… / the timer / levels stay fresh, before media starts too
   }
 }
@@ -299,8 +302,18 @@ void CallPresenter::Refresh() {
 
   // Attach-wait / connect health are SM-owned timers (V039 pm3); the state steps a refresh owes
   // the owner (invite seen / cleared, orphan leave) happen in Settle.
-  const CallUiBackend::Surface surface = backend->Settle();
+  const auto state = backend->State();
+  ForgetLeavingOnceLetGo(*state);
+  CallUiBackend::Surface surface = backend->Settle();
   using SurfaceKind = CallUiBackend::Surface::Kind;
+  if (surface.active && Leaving(surface.active->call_id)) {
+    // Hung up here, its leave still on the owner's queue (the row still reads joined): it never comes back on screen.
+    surface.active.reset();
+    if (surface.kind == SurfaceKind::InCall) {
+      surface.kind = SurfaceKind::None;
+    }
+  }
+  const EngineCall engine = EngineCallOf(*state);
   CallScreen next;
   // A click the stack has not taken yet: its ring stays answered / declined meanwhile.
   const std::string ringing_id = surface.kind == SurfaceKind::Ringing ? surface.invite->call_id : std::string();
@@ -382,10 +395,10 @@ void CallPresenter::Refresh() {
     AnnounceGuests(next);
     FillGroupInvite(next, util::NowUnixMs());
     MaybeAutoCamera(*backend, next);
-  } else if (EngineHasOpenCall(true, backend->ActiveCallId(), backend->Phase())) {
+  } else if (engine.open && !Leaving(engine.call_id)) {
     // The store shows no call (a failed read) while the engine is still in one: the mic may be open, so its screen
     // stays — and with it the "in a call" notification and Hang up (DEV/PLAN-call-ui-never-detached.md 2).
-    KeepEngineCall(next, *backend);
+    KeepEngineCall(next, *backend, engine);
   } else {
     active_call_id_.clear();
     active_group_id_.clear();
@@ -431,14 +444,14 @@ void CallPresenter::Refresh() {
   Changed();
 }
 
-void CallPresenter::KeepEngineCall(CallScreen& next, CallUiBackend& backend) {
-  const std::string call_id = backend.ActiveCallId();
+void CallPresenter::KeepEngineCall(CallScreen& next, CallUiBackend& backend, const EngineCall& engine) {
+  const std::string& call_id = engine.call_id;
   if (kept_call_logged_ != call_id) {
     kept_call_logged_ = call_id;
     // Read once more for the log only (once per call): was it a failed read, or no row?
     auto read = backend.ActiveLocalCall();
     log().warning << "call kept on screen: the store shows none while the engine is in it phase="
-                  << CallPhaseName(backend.Phase()) << " read="
+                  << CallPhaseName(engine.phase) << " read="
                   << (!read               ? "error"
                       : read->has_value() ? "found"
                                           : "none")
@@ -454,6 +467,21 @@ void CallPresenter::KeepEngineCall(CallScreen& next, CallUiBackend& backend) {
   active_call_id_ = call_id;
   ringing_call_id_.clear();
   ring_shown_ = false;
+}
+
+bool CallPresenter::Leaving(const std::string& call_id) const {
+  return !call_id.empty() && call_id == leaving_call_id_;
+}
+
+void CallPresenter::ForgetLeavingOnceLetGo(const CallUiState& state) {
+  if (leaving_call_id_.empty()) {
+    return;
+  }
+  // Let go: its leave ran (Idle), or the engine shows another call, or the calls are gone.
+  if (!state.available || state.phase == CallPhase::Idle || state.active_call_id != leaving_call_id_) {
+    log().info << "hung-up call let go by the engine call_id=" << leaving_call_id_;
+    leaving_call_id_.clear();
+  }
 }
 
 void CallPresenter::SetDevDetachUi(std::function<bool()> detach) {
@@ -1286,6 +1314,8 @@ std::string CallPresenter::Leave() {
     // off-UI), and before the End button goes. Media().Stop alone deadlocks if capture is in
     // BlockingWrite.
     backend->StopCallMedia(call_id);
+    // Until the owner ran the leave, the engine (and the row) still read open: never taken back meanwhile.
+    leaving_call_id_ = call_id;
   }
   // No call: a stale End button after Idle — the screen still clears, so nothing looks hung.
   active_call_id_.clear();
@@ -1297,6 +1327,27 @@ std::string CallPresenter::Leave() {
     backend->Apply(CallLifecycleEvent::LeaveClicked, call_id);
   }
   return call_id;
+}
+
+void CallPresenter::HangUpEngineCall(const std::string& call_id) {
+  BindToMessaging();
+  auto* backend = Backend();
+  if (call_id.empty() || !backend || !backend->Available()) {
+    return;
+  }
+  backend->StopCallMedia(call_id); // the engine's call by its id, whatever this screen holds
+  leaving_call_id_ = call_id;
+  if (active_call_id_.empty() || active_call_id_ == call_id) {
+    active_call_id_.clear();
+    ringing_call_id_.clear();
+    ring_shown_ = false;
+    screen_ = {};
+    Changed();
+  }
+  backend->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  if (!active_call_id_.empty()) {
+    Refresh(); // this screen held another call: what it shows is decided again
+  }
 }
 
 void CallPresenter::Retry() {

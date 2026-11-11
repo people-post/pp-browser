@@ -241,20 +241,38 @@ protected:
    * presenter's tick, then the guard. Fails on any guard action, and (when `service_as_before`) on an ongoing-call
    * service that differs from the screen's own call (the rule before this change).
    */
+  /** The service decision CallController makes now (OngoingCallWanted, the call being left not counted). */
+  bool ServiceOn() const {
+    const EngineCall engine = EngineCallOf(*ui_->State());
+    const bool engine_call = engine.open && engine.call_id != presenter_->LeavingCallId();
+    return OngoingCallWanted(!presenter_->ActiveCallId().empty(), engine_call);
+  }
+
+  /** One frame of CallController's: the presenter's tick, then the guard (a second later on its clock). */
+  CallUiAttachGuard::Step Frame() {
+    presenter_->Tick();
+    guard_ms_ += 1000;
+    const EngineCall engine = EngineCallOf(*ui_->State());
+    return guard_.Feed({.engine_open = engine.open,
+                        .engine_call_id = engine.open ? engine.call_id : std::string(),
+                        .ui_call_id = presenter_->ActiveCallId(),
+                        .leaving_call_id = presenter_->LeavingCallId(),
+                        .steady_ms = guard_ms_});
+  }
+
+  /**
+   * `frames` frames as CallController runs them, the owner's queued work drained before each. Fails on any guard
+   * action, and (when `service_as_before`) on an ongoing-call service that differs from the screen's own call (the rule
+   * before this change).
+   */
   void Frames(int frames, bool service_as_before = true) {
     for (int i = 0; i < frames; ++i) {
       AppRuntime::RunUIAndOwnerTasks();
-      presenter_->Tick();
-      guard_ms_ += 1000;
-      const auto step = guard_.Feed({.engine_open = EngineOpen(),
-                                     .engine_call_id = ui_->ActiveCallId(),
-                                     .ui_call_id = presenter_->ActiveCallId(),
-                                     .steady_ms = guard_ms_});
+      const auto step = Frame();
       EXPECT_FALSE(step.report_detached || step.hang_up || step.stop_again)
           << "guard fired phase=" << CallPhaseName(ui_->Phase()) << " screen_call=" << presenter_->ActiveCallId();
       if (service_as_before) {
-        const bool screen_call = !presenter_->ActiveCallId().empty();
-        EXPECT_EQ(OngoingCallWanted(screen_call, EngineOpen()), screen_call) << "phase=" << CallPhaseName(ui_->Phase());
+        EXPECT_EQ(ServiceOn(), !presenter_->ActiveCallId().empty()) << "phase=" << CallPhaseName(ui_->Phase());
       }
     }
   }
@@ -499,6 +517,121 @@ TEST_F(CallUiNeverDetachedTest, CouldNotConnectNeverTriggersTheGuard) {
   Frames(8);
   EXPECT_EQ(presenter_->ActiveCallId(), "call:failed") << "the couldn't-connect screen as before";
   EXPECT_EQ(presenter_->Screen().kind, CallScreen::Kind::InCall);
+}
+
+// Review 1: End posts the stop and the leave to the calls owner; until it ran them the engine and the row still read
+// "in the call". Meanwhile the screen never takes the call back, the guard does nothing, the service is off.
+TEST_F(CallUiNeverDetachedTest, AHungUpCallIsNeverTakenBackBeforeTheOwnerRanTheLeave) {
+  ASSERT_NO_FATAL_FAILURE(InCall("call:hung-up"));
+  ASSERT_TRUE(ServiceOn());
+  notices_.clear(); // the ring's own notice
+  EXPECT_EQ(presenter_->Leave(), "call:hung-up");
+  ASSERT_TRUE(EngineOpen()) << "the owner has not run the leave yet";
+  EXPECT_EQ(presenter_->LeavingCallId(), "call:hung-up");
+  for (int i = 0; i < 8; ++i) { // eight seconds of frames, the owner never drained
+    const auto step = Frame();
+    EXPECT_FALSE(step.report_detached || step.hang_up) << "frame " << i;
+    EXPECT_TRUE(presenter_->ActiveCallId().empty()) << "taken back at frame " << i;
+    EXPECT_EQ(presenter_->Screen().kind, CallScreen::Kind::None) << "frame " << i;
+    EXPECT_FALSE(ServiceOn()) << "the service came back at frame " << i;
+  }
+  EXPECT_TRUE(notices_.empty()) << "a notice after End (\"couldn't connect\", \"call ended\"…)";
+
+  DrainUntil([&]() { return ui_->Phase() == CallPhase::Idle && !stack_->Engine()->IsActive(); });
+  ASSERT_EQ(ui_->Phase(), CallPhase::Idle);
+  EXPECT_FALSE(stack_->Engine()->IsActive());
+  Frames(2);
+  EXPECT_TRUE(presenter_->LeavingCallId().empty()) << "let go by the engine: forgotten";
+
+  ASSERT_NO_FATAL_FAILURE(InCall("call:next")); // the next call works as ever
+  Frames(3);
+}
+
+// The engine keeps a hung-up call open (its stop did not take): only its media is stopped again, every 2 s, 3 times.
+TEST_F(CallUiNeverDetachedTest, AHungUpCallTheEngineKeepsOpenIsOnlyStoppedAgain) {
+  ASSERT_NO_FATAL_FAILURE(InCall("call:stuck"));
+  (void)presenter_->Leave();
+  int stops = 0;
+  for (int i = 0; i < 12; ++i) { // the owner never runs the leave
+    const auto step = Frame();
+    EXPECT_FALSE(step.report_detached || step.hang_up) << "frame " << i;
+    if (step.stop_again) {
+      EXPECT_EQ(step.call_id, "call:stuck");
+      ++stops;
+    }
+  }
+  EXPECT_EQ(stops, CallUiAttachGuard::kMaxStopRetries);
+  EXPECT_TRUE(presenter_->ActiveCallId().empty());
+}
+
+TEST_F(CallUiNeverDetachedTest, HangingUpWhileTheStoreKeepsFailingStillEndsTheCall) {
+  ASSERT_NO_FATAL_FAILURE(InCall("call:end-unread"));
+  sessions_->fail_active = true;
+  sessions_->fail_participants = true;
+  (void)presenter_->Leave();
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_FALSE(Frame().hang_up);
+    EXPECT_TRUE(presenter_->ActiveCallId().empty());
+  }
+  DrainUntil([&]() { return ui_->Phase() == CallPhase::Idle && !stack_->Engine()->IsActive(); });
+  EXPECT_EQ(ui_->Phase(), CallPhase::Idle);
+  EXPECT_FALSE(stack_->Engine()->IsActive()) << "the media stopped";
+  Frames(3);
+  EXPECT_EQ(presenter_->Screen().kind, CallScreen::Kind::None);
+}
+
+// Review 2: the guard ends the engine's call by its id — not whatever call the screen holds.
+TEST_F(CallUiNeverDetachedTest, TheGuardEndsTheEnginesCallByItsId) {
+  ASSERT_NO_FATAL_FAILURE(InCall("call:engine"));
+  presenter_->SetDevDetachUi([]() { return true; }); // the screen drops its id after every refresh
+  std::optional<CallUiAttachGuard::Step> hang_up;
+  for (int i = 0; i < 10 && !hang_up; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    const auto step = Frame();
+    if (step.hang_up) {
+      hang_up = step;
+    }
+  }
+  ASSERT_TRUE(hang_up) << "the guard never hung up";
+  EXPECT_EQ(hang_up->call_id, "call:engine");
+  presenter_->HangUpEngineCall(hang_up->call_id); // what CallController does with it
+  presenter_->SetDevDetachUi({});
+  DrainUntil([&]() { return ui_->Phase() == CallPhase::Idle && !stack_->Engine()->IsActive(); });
+  EXPECT_EQ(ui_->Phase(), CallPhase::Idle);
+  EXPECT_FALSE(stack_->Engine()->IsActive());
+  Frames(3);
+}
+
+TEST_F(CallUiNeverDetachedTest, HangingUpAnotherIdLeavesTheScreensCallAlone) {
+  ASSERT_NO_FATAL_FAILURE(InCall("call:kept"));
+  presenter_->HangUpEngineCall("call:not-this-one");
+  DrainUntil([&]() { return false; }, 200);
+  EXPECT_TRUE(EngineOpen()) << "the call on screen was ended for another id";
+  EXPECT_EQ(ui_->ActiveCallId(), "call:kept");
+  presenter_->Tick();
+  EXPECT_EQ(presenter_->ActiveCallId(), "call:kept");
+}
+
+// No flap: on while in the call, off from the frame End is pressed, never back on.
+TEST_F(CallUiNeverDetachedTest, TheServiceGoesOffOnceAtEndAndStaysOff) {
+  ASSERT_NO_FATAL_FAILURE(InCall("call:service"));
+  std::vector<bool> on;
+  for (int i = 0; i < 3; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    (void)Frame();
+    on.push_back(ServiceOn());
+  }
+  (void)presenter_->Leave();
+  for (int i = 0; i < 3; ++i) { // before the owner ran the leave
+    (void)Frame();
+    on.push_back(ServiceOn());
+  }
+  for (int i = 0; i < 4; ++i) { // and after
+    AppRuntime::RunUIAndOwnerTasks();
+    (void)Frame();
+    on.push_back(ServiceOn());
+  }
+  EXPECT_EQ(on, (std::vector<bool>{true, true, true, false, false, false, false, false, false, false}));
 }
 
 } // namespace
