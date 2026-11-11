@@ -32,9 +32,9 @@ TEST(LlmLimitKindTest, ClassifiesTheNeutralGatewayMessages) {
   EXPECT_EQ(LlmClient::ClassifyLimit("Guest LLM rate limit exceeded"), LlmLimitKind::PerMinute);
   EXPECT_EQ(LlmClient::ClassifyLimit("Global LLM rate limit exceeded"), LlmLimitKind::Other);
   EXPECT_EQ(LlmClient::ClassifyLimit("Global LLM guest rate limit exceeded"), LlmLimitKind::Other);
-  for (const char* text : {"Per-user LLM rate limit exceeded", "Per-user LLM daily limit exceeded",
-                           "Guest LLM rate limit exceeded", "Global LLM rate limit exceeded",
-                           "Global LLM guest rate limit exceeded"}) {
+  for (const char* text :
+       {"Per-user LLM rate limit exceeded", "Per-user LLM daily limit exceeded", "Guest LLM rate limit exceeded",
+        "Global LLM rate limit exceeded", "Global LLM guest rate limit exceeded"}) {
     EXPECT_TRUE(LlmClient::IsBriefGatewayLimit(text)) << text;
   }
 }
