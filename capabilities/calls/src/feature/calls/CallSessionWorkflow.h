@@ -342,9 +342,10 @@ private:
   std::optional<CallSession> CrossedCall(const CallInviteDetail& invite, const std::string& peer,
                                          const std::string& local_identity) const;
   /**
-   * The invite crossed a call of ours that `peer` already answered: both called at once, `peer`'s call lost (ours has
-   * the lower id) and gave way to ours, and its invite reached us late (a relay). Within kCrossedInviteAfterMs of our
-   * call's start: past it, an invite from the same peer is a call of its own.
+   * The invite crossed a call of ours that `peer` already answered (for a group's invite: our call of that group
+   * someone joined, V053): both called at once, `peer`'s call lost (ours has the lower id) and gave way to ours, and
+   * its invite reached us late (a relay). Within kCrossedInviteAfterMs of our call's start: past it, an invite from
+   * the same peer is a call of its own.
    */
   std::optional<CallSession> CrossedAnsweredCall(const CallInviteDetail& invite, const std::string& peer,
                                                  const std::string& local_identity) const;

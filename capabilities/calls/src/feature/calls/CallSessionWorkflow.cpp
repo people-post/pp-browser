@@ -1317,15 +1317,18 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(
 std::optional<CallSession> CallSessionWorkflow::CrossedAnsweredCall(const CallInviteDetail& invite,
                                                                     const std::string& peer,
                                                                     const std::string& local_identity) const {
+  std::optional<CallSession> ours;
   if (invite.origin_group_id && !invite.origin_group_id->empty()) {
-    return std::nullopt; // a group's call: V053 merges by group
-  }
-  for (const CallRosterEntry& entry : invite.participants) {
-    if (entry.identity != peer && entry.identity != local_identity) {
-      return std::nullopt; // more than the two of us
+    // V053: one call per group — the same rule as two people calling each other.
+    ours = call_queries::OurAnsweredGroupCall(sessions_, *invite.origin_group_id, local_identity, invite.call_id);
+  } else {
+    for (const CallRosterEntry& entry : invite.participants) {
+      if (entry.identity != peer && entry.identity != local_identity) {
+        return std::nullopt; // more than the two of us
+      }
     }
+    ours = call_queries::OurAnsweredCallTo(sessions_, peer, local_identity, invite.call_id);
   }
-  auto ours = call_queries::OurAnsweredCallTo(sessions_, peer, local_identity, invite.call_id);
   if (!ours || !(ours->call_id < invite.call_id)) {
     return std::nullopt; // theirs would have won: not a merge into ours
   }

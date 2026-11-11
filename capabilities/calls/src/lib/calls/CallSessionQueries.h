@@ -90,6 +90,13 @@ std::optional<CallSession> OurUnansweredCallTo(const ICallSessionReader& session
                                                const std::string& local_identity, const std::string& except_call_id);
 
 /**
+ * V053 after the merge: a call of `group_id` this device placed (not `except_call_id`) that someone has joined — a
+ * crossing call of the group gave way to it, and that call's invite may still reach us after.
+ */
+std::optional<CallSession> OurAnsweredGroupCall(const ICallSessionReader& sessions, const std::string& group_id,
+                                                const std::string& local_identity, const std::string& except_call_id);
+
+/**
  * V053: two of a group calling it at once — a call of `group_id` this device placed (not
  * `except_call_id`) that nobody else has joined yet.
  */

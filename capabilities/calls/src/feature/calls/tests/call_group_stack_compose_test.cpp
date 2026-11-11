@@ -397,6 +397,10 @@ protected:
           batch.swap(inboxes_[to]);
         }
         for (Envelope& env : batch) {
+          if (hold_ && hold_(to, env)) {
+            held_.push_back({to, std::move(env)}); // a relay that has not delivered it yet
+            continue;
+          }
           ASSERT_TRUE(sides_[to].Deliver(env.msg, env.sender));
           moved = true;
         }
@@ -630,6 +634,9 @@ protected:
   StackSide sides_[kSides];
   std::mutex wire_mu_;
   std::deque<Envelope> inboxes_[kSides];
+  /** Messages PumpWire holds back (to, envelope) while `hold_` says so. */
+  std::function<bool(size_t to, const Envelope&)> hold_;
+  std::vector<std::pair<size_t, Envelope>> held_;
 };
 
 // CALLS.md § Topology rules: N≥3 → SFU via media_relay; the sticky initiator picks the hop and
@@ -1571,6 +1578,55 @@ TEST_F(CallGroupStackComposeTest, TwoCallingTheGroupAtOnceEndUpInOneCall) {
   }
   EXPECT_TRUE(ringing(kC, winner)) << "C does not ring for the call that goes on:" << Describe(winner);
   EXPECT_FALSE(ringing(kC, loser)) << "C still rings for the call that gave way";
+}
+
+// V053 after the merge: the losing call's invite reaches the winner's side only after its caller gave way (a relay
+// delivering it late). It must not ring over the call of the group the winner is in (app lab group_calling_at_once,
+// 2026-11-11).
+TEST_F(CallGroupStackComposeTest, TheLosingGroupInviteThatLandsAfterTheMergeDoesNotRing) {
+  group_id_ = "group-1";
+  Thread thread;
+  thread.id = "thread-group-call-late";
+  thread.kind = ThreadKind::Group;
+  thread.title = "Group";
+  thread.group_id = *group_id_;
+  thread.updated_at = util::NowUnixMs();
+  for (size_t i : {kA, kB, kC}) {
+    ASSERT_TRUE(sides_[i].store->UpsertThread(thread));
+  }
+  auto a = StartCallNow(*sides_[kA].ui, thread.id, false, {sides_[kB].local_identity, sides_[kC].local_identity});
+  auto b = StartCallNow(*sides_[kB].ui, thread.id, false, {sides_[kA].local_identity, sides_[kC].local_identity});
+  ASSERT_TRUE(a && b);
+  const bool a_wins = a->call_id < b->call_id;
+  const size_t winning = a_wins ? kA : kB;
+  const size_t losing = a_wins ? kB : kA;
+  const std::string winner = a_wins ? a->call_id : b->call_id;
+  const std::string loser = a_wins ? b->call_id : a->call_id;
+  const std::string losing_identity = sides_[losing].local_identity;
+  hold_ = [&](const size_t to, const Envelope& env) {
+    return to == winning && env.sender == losing_identity &&
+           env.msg.payload_json.find("call_invite") != std::string::npos &&
+           env.msg.payload_json.find(loser) != std::string::npos;
+  };
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kA].ui->Phase() == CallPhase::InCall && sides_[kB].ui->Phase() == CallPhase::InCall;
+  });
+  ASSERT_EQ(sides_[winning].ui->ActiveCallId(), winner);
+  ASSERT_FALSE(held_.empty()) << "the losing invite was held";
+
+  hold_ = nullptr;
+  for (auto& [to, env] : held_) {
+    ASSERT_TRUE(sides_[to].Deliver(env.msg, env.sender));
+  }
+  held_.clear();
+  PumpWire();
+
+  auto row = sides_[winning].stack->Sessions()->FindParticipant(loser, sides_[winning].local_identity);
+  EXPECT_FALSE(row && row->has_value() && (*row)->state == CallParticipantState::Ringing)
+      << "the call that gave way rings over the group's call:" << Describe(loser);
+  EXPECT_EQ(sides_[winning].ui->Phase(), CallPhase::InCall);
+  EXPECT_EQ(sides_[winning].ui->ActiveCallId(), winner);
 }
 
 } // namespace
