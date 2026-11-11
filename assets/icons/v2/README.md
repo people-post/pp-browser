@@ -75,3 +75,5 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | send | 09-sheets-unify; contact page "Group admin" card (Re-invite) | drawn | `send.svg` |
 | user-minus | 09-sheets-unify; contact page "Group admin" card (Remove from group) | drawn | - |
 | unknown-caller | incoming-call page before the caller is known: filled soft silhouette on the blue avatar circle (120x120, translucent white, clipped to the circle) | drawn | - |
+| clock | phone chat window, beside our message while it is being sent (DEV/PLAN-message-send-status.md) | drawn | - |
+| alert-circle | phone chat window, beside our message that did not go out (tap: why) (DEV/PLAN-message-send-status.md) | drawn | - |

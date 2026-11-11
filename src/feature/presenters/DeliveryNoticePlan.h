@@ -1,10 +1,13 @@
 #pragma once
 
+#include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/delivery/DeliveryNotice.h"
 
 #include <cstdint>
 #include <optional>
+#include <string>
+#include <unordered_map>
 
 namespace pbr {
 
@@ -22,5 +25,32 @@ struct DeliveryNoticePlan {
 };
 
 DeliveryNoticePlan PlanDeliveryNotice(const DeliveryNotice& notice, int64_t now_ms);
+
+/** Messages sent again by a tap (#210 step 2) whose first failure is not told yet: message id -> its thread. */
+using ResentMessages = std::unordered_map<std::string, std::string>;
+
+/** What the user is told of a delivery notice besides its line. */
+enum class NoticeTell {
+  Nothing,
+  /** A toast, wherever the user is (no chat to put it in, or an unknown cause). */
+  Toast,
+  /** The first failure of a message sent again by a tap: told only in its chat (ShowsResentFailurePill). */
+  ResentFailed,
+};
+
+/**
+ * Applies `notice` to `store` (none: messaging not ready) as PlanDeliveryNotice says: its line is written once per
+ * message. #210 step 2: a send notice for a message no longer in its chat (an unsent row taken away when it was sent
+ * again, its old request ending late) writes nothing and is not told; the first failure notice of a message in
+ * `resent` is ResentFailed — unless the message is delivered by now — and it leaves `resent`.
+ */
+NoticeTell ApplyDeliveryNoticeTo(IThreadStore* store, const DeliveryNotice& notice, int64_t now_ms,
+                                 ResentMessages& resent);
+
+/** Drops from `resent` the messages delivered by now (their first outcome was not a failure). */
+void ForgetDeliveredResends(IThreadStore* store, ResentMessages& resent);
+
+/** The pill for a failed re-sent message shows only in its own chat, open, while the user is looking. */
+bool ShowsResentFailurePill(const std::string& notice_thread_id, const std::string& open_thread_id, bool attentive);
 
 } // namespace pbr

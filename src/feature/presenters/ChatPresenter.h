@@ -1,9 +1,12 @@
 #pragma once
 
+#include "feature/presenters/DeliveryNoticePlan.h"
 #include "feature/presenters/GroupLinkText.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/conversations/GroupMentions.h"
+#include "feature/presenters/MessageResend.h"
+#include "feature/presenters/SendMark.h"
 #include "feature/presenters/SessionMenu.h"
 #include "lib/delivery/DeliveryNotice.h"
 #include "lib/messaging/GroupTypes.h"
@@ -408,7 +411,29 @@ public:
    * (PlanDeliveryNotice), once per message. True: the caller tells the user with a toast instead (no chat to
    * put it in, or the cause is unknown). False: it is told, or already was.
    */
-  bool ApplyDeliveryNotice(const DeliveryNotice& notice);
+  NoticeTell ApplyDeliveryNotice(const DeliveryNotice& notice);
+  /** Messages changed: re-sent messages delivered by now are forgotten (ForgetDeliveredResends). */
+  void ForgetDeliveredResends();
+  /**
+   * The send mark on `message` at `now_ms` (MarkOf, with the send still under way the outbox knows of); `next_change`
+   * keeps the soonest time a mark shown now changes on its own (NoteMarkChange). `group_others`: in a group chat, the
+   * join times of its other members (GroupOthersJoinedAt; none for other chats). Reads only.
+   */
+  SendMark SendMarkOf(const ThreadMessage& message, int64_t now_ms, std::optional<int64_t>& next_change,
+                      const std::optional<std::vector<int64_t>>& group_others = std::nullopt) const;
+  /** A group chat's other members' roster join times (not ours), read now; none for a chat that is not a group. */
+  std::optional<std::vector<int64_t>> GroupOthersJoinedAt(const std::string& thread_id) const;
+  /**
+   * A tap on the red mark of our message `message_id` in `thread_id`: why it did not go out (SendFailureReason); none:
+   * the generic sentence. Reads only: nothing is sent again.
+   */
+  std::optional<SendFailure> SendFailureReasonOf(const std::string& thread_id, const std::string& message_id);
+  /**
+   * A tap on the red mark of our message `message_id` in `thread_id` (#210 step 2): an own text in a public chat whose
+   * automatic sending has stopped is sent again as a new message and the unsent row goes (ResendAfterTap); otherwise
+   * nothing is sent and the result says what to tell. The composer's draft is not touched.
+   */
+  SendMarkTap TapSendMark(const std::string& thread_id, const std::string& message_id);
   /** Back to the chats list (the Home tab): no chat is open, so new messages count as unread. */
   void ShowHome();
   /** The archived list's entry / back button. */
@@ -571,6 +596,10 @@ private:
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);
   std::string quote_source_;
   std::optional<std::string> opened_at_mention_;
+  /** Messages sent again by a tap whose first failure is not told yet, until it fails or is delivered (in memory). */
+  ResentMessages resent_ids_;
+  /** Unsent rows already sent again whose removal failed: a later tap retries the removal only (in memory). */
+  std::unordered_set<std::string> resent_unremoved_;
 };
 
 } // namespace pbr

@@ -1043,21 +1043,36 @@
     "chat.link.banner.no_address":
         "This contact has no usable connection details. Ask them to share their contact again.",
     "chat.link.retry": "Retry now",
-    "chat.notice.send.mesh_off": "Direct messaging is off. You can turn it on in Me → Advanced.",
+    "chat.notice.send.mesh_off":
+        "Direct messaging is off, so this message wasn't sent. Turn it on in Me → Advanced, then send it again.",
     "chat.notice.send.no_address":
-        "This contact has no usable connection details. Ask them to share their contact again.",
-    "chat.notice.send.backing_off": "Waiting a moment before trying to reach them again.",
-    "chat.notice.send.dial_busy": "Busy connecting to others — try again shortly.",
-    "chat.notice.send.no_answer": "They didn't answer — they may be offline.",
-    "chat.notice.send.handshake_failed": "Reached them, but the chat connection didn't open.",
+        "This contact has no usable connection details, so this message wasn't sent. Ask them to share their contact again.",
+    "chat.notice.send.backing_off":
+        "Couldn't reach them just now. This message wasn't sent — please send it again later.",
+    "chat.notice.send.dial_busy": "Busy connecting to others. This message wasn't sent — please send it again later.",
+    "chat.notice.send.no_answer":
+        "They didn't answer — they may be offline. This message wasn't sent — please send it again later.",
+    "chat.notice.send.handshake_failed":
+        "Reached them, but the chat connection didn't open. This message wasn't sent — please send it again later.",
     "chat.notice.send.direct_unconfirmed":
-        "Couldn't confirm it reached them directly — PP will try to deliver it through the message server.",
-    "chat.notice.send.relay_not_configured": "Couldn't deliver — no message server is set up.",
-    "chat.notice.send.relay_busy": "The message server is busy. PP will try again shortly.",
-    "chat.notice.send.relay_rate_limited": "Message server limit reached — slow down messages to new contacts.",
-    "chat.notice.send.relay_unreachable": "Couldn't reach the message server — check your connection. PP will try again.",
-    "chat.notice.send.relay_rejected": "The message server didn't accept this message.",
-    "chat.notice.send.unknown": "Couldn't send this message.",
+        "Couldn't confirm they got it. This message wasn't sent — please send it again later.",
+    "chat.notice.send.relay_not_configured": "No message server is set up, so this message wasn't sent.",
+    "chat.notice.send.relay_busy":
+        "The server is busy right now. This message wasn't sent — please send it again later.",
+    "chat.notice.send.relay_rate_limited":
+        "Too many messages to new contacts. This message wasn't sent — wait a little, then send it again.",
+    "chat.notice.send.relay_unreachable":
+        "Couldn't reach the server. This message wasn't sent — check your connection, then send it again.",
+    "chat.notice.send.relay_rejected": "The server didn't accept this message, so it wasn't sent.",
+    "chat.notice.send.unknown": "This message wasn't sent.",
+    "chat.send.not_sent": "This message wasn't sent. Please send it again.",
+    "chat.send.mark.queued": "Sending",
+    "chat.send.mark.failed": "Not sent",
+    "chat.send.still_trying": "Still trying to send. Please wait.",
+    "chat.send.not_resendable": "This message can't be re-sent with a tap. Please send it again.",
+    "chat.send.not_sent_other":
+        "This message wasn't sent. Pictures, files, voice messages and cards can't be re-sent with a tap yet. Please send it again.",
+    "chat.send.reason_then": "{reason} {then}",
     "chat.notice.group_members_missed": "Some group members couldn't receive this message.",
     "chat.notice.receive_failed": "Couldn't read a message from {peer} ({reason}).",
     "chat.notice.receive.a_peer": "a contact",

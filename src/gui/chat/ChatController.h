@@ -372,9 +372,12 @@ private:
   bool InAiComposerContext() const override;
   /** Phones: "Photo / File / Cancel" before a picker (both composers). */
   void ShowAttachChoice(std::function<void()> photo, std::function<void()> file) override;
-  /** A thread's transcript window drawn as bound rows, AI question images decorated. */
+  /**
+   * A thread's transcript window drawn as bound rows, AI question images decorated. Our messages carry their send mark
+   * (#210); when a clock shown now turns red on its own, the chat is redrawn then (ArmSendMarkRedraw).
+   */
   std::vector<MessageDisplayRow> BuildMessageRows(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
-                                                  std::optional<int64_t> newest_inclusive) const;
+                                                  std::optional<int64_t> newest_inclusive);
   void OpenAttachment(const std::string& message_id);
   /** A tap on a picture: full-screen preview with a spinner now, the viewer when the file is ready. */
   void OpenPicture(const std::string& message_id, const std::string& local_path);
@@ -647,6 +650,25 @@ private:
   void MakeReadyTasks();
   /** Its AppLifecycle background listener (removed at Shutdown). */
   uint64_t lifecycle_background_id_ = 0;
+  /** Its AppLifecycle foreground listener: the send marks are worked out again (a clock may be over). */
+  uint64_t lifecycle_foreground_id_ = 0;
+  /**
+   * #210: one coordinator timer redraws the open chat when its soonest clock turns red (`send_mark_redraw_at_`, Unix
+   * ms; 0: none armed). `send_mark_redraw_turn_` tells a stale firing from the armed one; `send_mark_alive_` keeps a
+   * firing from reaching a destroyed controller.
+   */
+  uint64_t send_mark_timer_ = 0;
+  int64_t send_mark_redraw_at_ = 0;
+  uint64_t send_mark_redraw_turn_ = 0;
+  std::shared_ptr<int> send_mark_alive_ = std::make_shared<int>(0);
+  void ArmSendMarkRedraw(std::optional<int64_t> at_ms);
+  /** The open chat's rows again (their send marks recomputed), nothing else refreshed. */
+  void RedrawSendMarks();
+  /**
+   * A tap on a message's red mark (ChatPresenter::TapSendMark): our text sent again as a new message once its
+   * automatic sending has stopped, else the bottom pill says why (still trying, or why it did not go out).
+   */
+  void OnSendMarkTapped(const std::string& message_id);
   bool mesh_ready_ = false;
   ChatTranscriptScroller scroller_;
   WorkingSetController working_set_;

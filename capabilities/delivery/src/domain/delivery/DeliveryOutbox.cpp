@@ -38,6 +38,45 @@ void DeliveryOutbox::Report(DeliveryOutcome outcome) {
   }
 }
 
+void DeliveryOutbox::Finish(DeliveryOutcome outcome) {
+  if (!outcome.thread_id.empty()) {
+    std::lock_guard lock(mutex_);
+    EndActiveLocked(outcome.message_id);
+  }
+  Report(std::move(outcome));
+}
+
+void DeliveryOutbox::BeginActive(const std::string& thread_id, const std::string& message_id) {
+  if (thread_id.empty() || message_id.empty()) {
+    return;
+  }
+  std::lock_guard lock(mutex_);
+  ActiveSend& active = active_[message_id];
+  if (active.requests == 0) {
+    active.started_ms = util::NowUnixMs();
+  }
+  ++active.requests;
+}
+
+void DeliveryOutbox::EndActiveLocked(const std::string& message_id) {
+  const auto it = active_.find(message_id);
+  if (it == active_.end()) {
+    return;
+  }
+  if (--it->second.requests <= 0) {
+    active_.erase(it);
+  }
+}
+
+std::optional<int64_t> DeliveryOutbox::SendStartedMs(const std::string& message_id) const {
+  std::lock_guard lock(mutex_);
+  const auto it = active_.find(message_id);
+  if (it == active_.end()) {
+    return std::nullopt;
+  }
+  return it->second.started_ms;
+}
+
 void DeliveryOutbox::Enqueue(Pending pending) {
   std::lock_guard lock(mutex_);
   queue_.push_back(std::move(pending));
@@ -45,6 +84,7 @@ void DeliveryOutbox::Enqueue(Pending pending) {
 
 void DeliveryOutbox::Send(DeliveryRequest request) {
   const bool critical = request.critical_lane;
+  BeginActive(request.thread_id, request.message_id);
   auto work = [this, request = std::move(request)]() mutable {
     auto post_continue = [critical = request.critical_lane](std::function<void()> fn) {
       if (critical) {
@@ -63,14 +103,14 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
       if (!request.relay_route) {
         outcome.failure = direct ? SendFailureFromDirect(direct->GetCode()) : SendFailure::NoAddress;
         outcome.detail = direct ? direct->message : "Direct thread missing peer relay id";
-        Report(std::move(outcome));
+        Finish(std::move(outcome));
         return;
       }
       IRelayClient* relay = relay_;
       if (!relay) {
         outcome.failure = direct ? SendFailureFromDirect(direct->GetCode()) : SendFailure::RelayNotConfigured;
         outcome.detail = direct ? direct->message : "Relay client not configured";
-        Report(std::move(outcome));
+        Finish(std::move(outcome));
         return;
       }
       if (auto sent = relay->Send(request.envelope); !sent) {
@@ -95,12 +135,17 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
                                          : " (queued for retry)");
         outcome.failure = SendFailureFromRelay(sent.error());
         outcome.detail = sent.error().message;
-        Report(std::move(outcome));
+        // Queued for a retry: the send goes on, so the failure is reported without ending it.
+        if (again) {
+          Report(std::move(outcome));
+        } else {
+          Finish(std::move(outcome));
+        }
         return;
       }
       outcome.ok = true;
       outcome.transport = MessageTransport::Relay;
-      Report(std::move(outcome));
+      Finish(std::move(outcome));
     };
 
     IDirectMessageClient* chat = direct_chat_ ? direct_chat_() : nullptr;
@@ -132,7 +177,7 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
         [this, request, post_continue, finish_relay = std::move(finish_relay)](DirectSendRoe direct) mutable {
           post_continue([this, request, direct = std::move(direct), finish_relay = std::move(finish_relay)]() mutable {
             if (direct) {
-              Report(DeliveryOutcome{.thread_id = request.thread_id,
+              Finish(DeliveryOutcome{.thread_id = request.thread_id,
                                      .message_id = request.message_id,
                                      .ok = true,
                                      .transport = MessageTransport::Direct,
@@ -215,7 +260,15 @@ void DeliveryOutbox::Cancel(const std::string& message_id) {
   std::vector<uint64_t> timers;
   {
     std::lock_guard lock(mutex_);
-    std::erase_if(queue_, [&](const Pending& pending) { return pending.message_id == message_id; });
+    std::erase_if(queue_, [&](const Pending& pending) {
+      if (pending.message_id != message_id) {
+        return false;
+      }
+      if (!pending.thread_id.empty()) {
+        EndActiveLocked(pending.message_id);
+      }
+      return true;
+    });
     std::erase_if(control_retries_, [&](const auto& entry) {
       if (entry.second.message_id != message_id) {
         return false;
@@ -231,7 +284,15 @@ void DeliveryOutbox::Cancel(const std::string& message_id) {
 
 void DeliveryOutbox::PurgeThread(const std::string& thread_id) {
   std::lock_guard lock(mutex_);
-  std::erase_if(queue_, [&](const Pending& pending) { return pending.thread_id == thread_id; });
+  std::erase_if(queue_, [&](const Pending& pending) {
+    if (pending.thread_id != thread_id) {
+      return false;
+    }
+    if (!pending.thread_id.empty()) {
+      EndActiveLocked(pending.message_id);
+    }
+    return true;
+  });
 }
 
 void DeliveryOutbox::Retry() {
@@ -241,10 +302,23 @@ void DeliveryOutbox::Retry() {
     pending.swap(queue_);
   }
   const int64_t now_ms = util::NowUnixMs();
-  std::erase_if(pending, [this, now_ms](const Pending& item) {
+  std::vector<std::string> dropped; // rows whose request ends here (not sent again)
+  std::erase_if(pending, [this, now_ms, &dropped](const Pending& item) {
     const bool control_lane = item.thread_id.empty();
-    return !OutboxSendStillWanted(control_lane, now_ms - item.envelope.timestamp, Paused(item.thread_id));
+    if (OutboxSendStillWanted(control_lane, now_ms - item.envelope.timestamp, Paused(item.thread_id))) {
+      return false;
+    }
+    if (!control_lane) {
+      dropped.push_back(item.message_id);
+    }
+    return true;
   });
+  if (!dropped.empty()) {
+    std::lock_guard lock(mutex_);
+    for (const std::string& message_id : dropped) {
+      EndActiveLocked(message_id);
+    }
+  }
   if (pending.empty()) {
     return;
   }
@@ -267,6 +341,10 @@ void DeliveryOutbox::Retry() {
       }
       Pending item = std::move(pending[index]);
       if (Paused(item.thread_id)) {
+        {
+          std::lock_guard lock(mutex_); // dropped, not queued again: its request ends
+          EndActiveLocked(item.message_id);
+        }
         (*process)(index + 1);
         return;
       }
@@ -274,7 +352,7 @@ void DeliveryOutbox::Retry() {
         IRelayClient* relay = relay_;
         auto result = relay ? relay->Send(item.envelope) : Roe<void>(Error("Relay client not configured"));
         if (result) {
-          Report(DeliveryOutcome{.thread_id = item.thread_id,
+          Finish(DeliveryOutcome{.thread_id = item.thread_id,
                                  .message_id = item.message_id,
                                  .ok = true,
                                  .transport = MessageTransport::Relay,
@@ -284,7 +362,7 @@ void DeliveryOutbox::Retry() {
           item.attempt_count += 1;
           still_pending->push_back(std::move(item));
         } else {
-          Report(DeliveryOutcome{.thread_id = item.thread_id,
+          Finish(DeliveryOutcome{.thread_id = item.thread_id,
                                  .message_id = item.message_id,
                                  .failure = SendFailureFromRelay(result.error()),
                                  .detail = result.error().message,
@@ -305,7 +383,7 @@ void DeliveryOutbox::Retry() {
               AppRuntime::PostWorkerNormal([this, process, index, item = std::move(item),
                                             try_relay = std::move(try_relay), direct = std::move(direct)]() mutable {
                 if (direct) {
-                  Report(DeliveryOutcome{.thread_id = item.thread_id,
+                  Finish(DeliveryOutcome{.thread_id = item.thread_id,
                                          .message_id = item.message_id,
                                          .ok = true,
                                          .transport = MessageTransport::Direct,

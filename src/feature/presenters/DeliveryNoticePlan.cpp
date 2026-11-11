@@ -17,6 +17,8 @@ DeliveryNoticePlan PlanDeliveryNotice(const DeliveryNotice& notice, const int64_
         plan.action = DeliveryNoticePlan::Action::Toast;
         return plan;
       }
+      // The line is not drawn any more (#210), but it stays the stored reason a tap on the message's red mark tells
+      // (SendFailureReason): keep writing it.
       plan.action = DeliveryNoticePlan::Action::TranscriptRow;
       plan.row = MakeSendFailureRow(notice.thread_id, notice.message_id, SendFailureWord(notice.send).c_str(), now_ms);
       return plan;
@@ -30,6 +32,55 @@ DeliveryNoticePlan PlanDeliveryNotice(const DeliveryNotice& notice, const int64_
       return plan;
   }
   return plan;
+}
+
+NoticeTell ApplyDeliveryNoticeTo(IThreadStore* store, const DeliveryNotice& notice, const int64_t now_ms,
+                                 ResentMessages& resent) {
+  const bool send_notice =
+      notice.kind == DeliveryNotice::Kind::SendFailed || notice.kind == DeliveryNotice::Kind::GroupMembersMissed;
+  bool resent_failed = false;
+  if (send_notice && store && !notice.thread_id.empty() && !notice.message_id.empty()) {
+    if (auto present = store->HasMessageId(notice.thread_id, notice.message_id); present && !*present) {
+      return NoticeTell::Nothing; // the row was taken away (sent again as a new message): its old request ended late
+    }
+    if (resent.erase(notice.message_id) != 0) {
+      auto row = store->GetMessage(notice.thread_id, notice.message_id);
+      resent_failed = !(row && *row && (*row)->delivery == MessageDelivery::Relayed);
+    }
+  }
+  const NoticeTell quiet = resent_failed ? NoticeTell::ResentFailed : NoticeTell::Nothing;
+  const DeliveryNoticePlan plan = PlanDeliveryNotice(notice, now_ms);
+  switch (plan.action) {
+    case DeliveryNoticePlan::Action::Nothing:
+      return NoticeTell::Nothing;
+    case DeliveryNoticePlan::Action::Toast:
+      return NoticeTell::Toast;
+    case DeliveryNoticePlan::Action::TranscriptRow:
+      break;
+  }
+  if (!store || !plan.row) {
+    return NoticeTell::Toast;
+  }
+  // The same failure reported twice (each group member that missed, a retry) is one line.
+  if (auto present = store->HasMessageId(plan.row->thread_id, plan.row->id); present && *present) {
+    return quiet;
+  }
+  return store->AppendMessage(*plan.row) ? quiet : NoticeTell::Toast;
+}
+
+void ForgetDeliveredResends(IThreadStore* store, ResentMessages& resent) {
+  if (!store) {
+    return;
+  }
+  std::erase_if(resent, [store](const auto& entry) {
+    auto row = store->GetMessage(entry.second, entry.first);
+    return row && *row && (*row)->delivery == MessageDelivery::Relayed;
+  });
+}
+
+bool ShowsResentFailurePill(const std::string& notice_thread_id, const std::string& open_thread_id,
+                            const bool attentive) {
+  return attentive && !notice_thread_id.empty() && notice_thread_id == open_thread_id;
 }
 
 } // namespace pbr

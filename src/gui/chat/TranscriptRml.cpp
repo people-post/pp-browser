@@ -768,6 +768,35 @@ bool AddBubbleTail(std::string& content, bool ours) {
   return true;
 }
 
+// #210: our message's send mark, just left of its bubble or card (inline before it, so the row's right alignment keeps
+// it beside the bubble's bottom). A clock while the send is under way (not tappable); the red mark when it did not go
+// out, a 44dp button whose tap says why (show_send_failure, ChatController). Nothing for SendMark::None.
+void AddSendMark(std::string& content, const SendMark mark, const std::string& message_id) {
+  if (mark == SendMark::None) {
+    return;
+  }
+  std::string rml;
+  if (mark == SendMark::Queued) {
+    rml = "<div class=\"send-mark send-mark--queued\" title=\"" +
+          StructuredTextParser::EscapeText(Tr("chat.send.mark.queued")) +
+          "\"><svg class=\"send-mark-icon\" src=\"../icons/v2/clock.svg\" width=\"16\" height=\"16\"></svg></div>";
+  } else {
+    rml = "<button class=\"send-mark send-mark--failed\" type=\"button\" title=\"" +
+          StructuredTextParser::EscapeText(Tr("chat.send.mark.failed")) + "\" data-event-click=\"show_send_failure('" +
+          JsArgInAttribute(message_id) +
+          "')\"><svg class=\"send-mark-icon\" src=\"../icons/v2/alert-circle.svg\" width=\"20\" "
+          "height=\"20\"></svg></button>";
+  }
+  size_t at = std::string::npos;
+  for (const char* opener : {"<div class=\"bubble ", "<div class=\"chat-card"}) {
+    const size_t found = content.find(opener);
+    if (found != std::string::npos && found < at) {
+      at = found;
+    }
+  }
+  content.insert(at == std::string::npos ? 0 : at, rml);
+}
+
 } // namespace
 
 PictureBubbleSize FitPictureInBubble(const int width_px, const int height_px) {
@@ -815,7 +844,26 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
   std::string run_sender;       // empty: no run open
   std::vector<bool> plain_rows; // parallel to `rows`: a plain message (the only kind that has runs)
   int64_t run_start_ms = 0;     // time of the previous message of the open run
+  // #210: each message's send mark, asked once. A 1:1 "did not go out" line goes when its message shows the red mark
+  // (the mark tells it, and a tap reads the line's reason); otherwise — a reaction, a deleted or local row, a clock,
+  // no mark port — the line is the only sign and stays.
+  std::unordered_map<std::string, SendMark> marks;
+  if (facts.send_mark) {
+    for (const TranscriptRow& entry : entries) {
+      if (!entry.orphan_annotation && !entry.control) {
+        marks[entry.message.id] = facts.send_mark(entry.message);
+      }
+    }
+  }
+  const std::string failure_prefix = SendFailureRowId("", "");
   for (const TranscriptRow& entry : entries) {
+    if (const auto reason = SendFailureRowReason(entry.message);
+        reason && *reason != kGroupMembersMissedWire && entry.message.id.rfind(failure_prefix, 0) == 0) {
+      const auto marked = marks.find(entry.message.id.substr(failure_prefix.size()));
+      if (marked != marks.end() && marked->second == SendMark::Failed) {
+        continue;
+      }
+    }
     if (entry.orphan_annotation) {
       rows.push_back(OrphanAnnotationRow(entry, facts));
       plain_rows.push_back(false);
@@ -899,6 +947,12 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
           row.group_name_in_bubble = true;
         }
       }
+    }
+    if (const auto found = marks.find(message.id); found != marks.end() && found->second != SendMark::None) {
+      row.send_mark = found->second == SendMark::Queued ? 1 : 2;
+      std::string marked = row.content_rml.c_str();
+      AddSendMark(marked, found->second, message.id);
+      row.content_rml = marked.c_str();
     }
     row.has_content = true;
     rows.push_back(std::move(row));
