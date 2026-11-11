@@ -1,4 +1,4 @@
-#include "feature/presenters/PendingPictureUpload.h"
+#include "feature/presenters/PendingUpload.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -8,14 +8,14 @@ namespace pbr {
 
 namespace {
 
-using State = PendingPictureState;
+using State = PendingUploadState;
 
 /** The row goes: its thumbnail with it. */
-PendingPictureStep Removed(const PendingPictureUpload& now) {
-  return {PendingPictureUpload{}, now.thumb_path};
+PendingUploadStep Removed(const PendingUpload& now) {
+  return {PendingUpload{}, now.thumb_path};
 }
 
-PendingPictureStep Unchanged(const PendingPictureUpload& now) {
+PendingUploadStep Unchanged(const PendingUpload& now) {
   return {now, {}};
 }
 
@@ -32,10 +32,11 @@ PicturePixels UprightPixels(const int width, const int height, const int exif_or
   return {width, height};
 }
 
-PendingPictureUpload StartPendingPicture(const uint64_t serial, const std::string& thread_id,
-                                         const std::optional<PicturePixels> upright) {
-  PendingPictureUpload upload;
+PendingUpload StartPendingUpload(const uint64_t serial, const std::string& thread_id,
+                                 const std::optional<PicturePixels> upright, const PendingUploadKind kind) {
+  PendingUpload upload;
   upload.state = State::Uploading;
+  upload.kind = kind;
   upload.row_id = std::string(kPendingUploadRowPrefix) + std::to_string(serial);
   upload.thread_id = thread_id;
   if (upright && upright->width > 0 && upright->height > 0) {
@@ -45,7 +46,7 @@ PendingPictureUpload StartPendingPicture(const uint64_t serial, const std::strin
   return upload;
 }
 
-PendingPictureStep OnPictureSizeRead(const PendingPictureUpload& now, const PicturePixels upright) {
+PendingUploadStep OnUploadSizeRead(const PendingUpload& now, const PicturePixels upright) {
   if (now.state != State::Uploading || upright.width <= 0 || upright.height <= 0) {
     return Unchanged(now);
   }
@@ -57,44 +58,44 @@ PendingPictureStep OnPictureSizeRead(const PendingPictureUpload& now, const Pict
       return Unchanged(now);
     }
   }
-  PendingPictureUpload next = now;
+  PendingUpload next = now;
   next.pixels = upright;
   next.size_known = true;
   return {std::move(next), {}};
 }
 
-PendingPictureStep OnPictureThumbnail(const PendingPictureUpload& now, const std::string& path, const bool locked) {
+PendingUploadStep OnUploadThumbnail(const PendingUpload& now, const std::string& path, const bool locked) {
   if (now.state != State::Uploading || locked) {
     return {now, path};
   }
-  PendingPictureUpload next = now;
+  PendingUpload next = now;
   std::string old = std::exchange(next.thumb_path, path);
   return {std::move(next), old == path ? std::string() : old};
 }
 
-PendingPictureStep OnPictureProgress(const PendingPictureUpload& now, const int percent) {
+PendingUploadStep OnUploadProgress(const PendingUpload& now, const int percent) {
   if (now.state != State::Uploading) {
     return Unchanged(now);
   }
-  PendingPictureUpload next = now;
+  PendingUpload next = now;
   next.percent = std::clamp(std::max(now.percent, percent), 0, 100);
   return {std::move(next), {}};
 }
 
-PendingPictureStep OnPictureCancelTapped(const PendingPictureUpload& now) {
+PendingUploadStep OnUploadCancelTapped(const PendingUpload& now) {
   if (now.state != State::Uploading) {
     return Unchanged(now);
   }
-  PendingPictureUpload next = now;
+  PendingUpload next = now;
   next.state = State::Cancelling;
   return {std::move(next), {}};
 }
 
-PendingPictureStep OnPictureSendFinished(const PendingPictureUpload& now, const PictureSendOutcome outcome) {
+PendingUploadStep OnUploadSendFinished(const PendingUpload& now, const UploadSendOutcome outcome) {
   switch (now.state) {
     case State::Uploading:
-      if (outcome == PictureSendOutcome::FailedStaged) {
-        PendingPictureUpload next = now;
+      if (outcome == UploadSendOutcome::FailedStaged) {
+        PendingUpload next = now;
         next.state = State::Failed;
         return {std::move(next), {}};
       }
@@ -108,26 +109,26 @@ PendingPictureStep OnPictureSendFinished(const PendingPictureUpload& now, const 
   return Unchanged(now);
 }
 
-PendingPictureStep OnPictureRetryTapped(const PendingPictureUpload& now) {
+PendingUploadStep OnUploadRetryTapped(const PendingUpload& now) {
   if (now.state != State::Failed) {
     return Unchanged(now);
   }
-  PendingPictureUpload next = now;
+  PendingUpload next = now;
   next.state = State::Uploading;
   next.percent = 0;
   return {std::move(next), {}};
 }
 
-PendingPictureStep OnPictureDiscardTapped(const PendingPictureUpload& now) {
+PendingUploadStep OnUploadDiscardTapped(const PendingUpload& now) {
   return now.state == State::Failed ? Removed(now) : Unchanged(now);
 }
 
-PendingPictureStep OnOtherAttachmentStarted(const PendingPictureUpload& now) {
+PendingUploadStep OnOtherAttachmentStarted(const PendingUpload& now) {
   return now.state == State::Failed ? Removed(now) : Unchanged(now);
 }
 
-PendingPictureStep OnAppLocked(const PendingPictureUpload& now) {
-  PendingPictureUpload next = now;
+PendingUploadStep OnAppLocked(const PendingUpload& now) {
+  PendingUpload next = now;
   std::string old = std::exchange(next.thumb_path, std::string());
   return {std::move(next), std::move(old)};
 }
@@ -139,6 +140,50 @@ bool FailedVoiceTakesTheTap(const bool voice_failed, const std::string& voice_th
 
 bool PendingProgressDue(const int drawn, const int percent) {
   return percent > drawn && (percent >= drawn + kPendingProgressStep || percent >= 100);
+}
+
+const PendingUpload* PendingUploadQueue::Find(const std::string& id) const {
+  for (const PendingUpload& item : items_) {
+    if (item.row_id == id) {
+      return &item;
+    }
+  }
+  return nullptr;
+}
+
+const PendingUpload* PendingUploadQueue::InFlightIn(const std::string& thread_id) const {
+  for (const PendingUpload& item : items_) {
+    if (item.ShowsIn(thread_id) && (item.state == State::Uploading || item.state == State::Cancelling)) {
+      return &item;
+    }
+  }
+  return nullptr;
+}
+
+bool PendingUploadQueue::ShowsIn(const std::string& thread_id) const {
+  for (const PendingUpload& item : items_) {
+    if (item.ShowsIn(thread_id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void PendingUploadQueue::Add(PendingUpload item) {
+  if (item.Shows()) {
+    items_.push_back(std::move(item));
+  }
+}
+
+std::vector<std::string> PendingUploadQueue::Clear() {
+  std::vector<std::string> files;
+  for (const PendingUpload& item : items_) {
+    if (!item.thumb_path.empty()) {
+      files.push_back(item.thumb_path);
+    }
+  }
+  items_.clear();
+  return files;
 }
 
 } // namespace pbr

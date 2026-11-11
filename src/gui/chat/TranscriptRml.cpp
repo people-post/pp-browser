@@ -844,26 +844,38 @@ std::string PendingRingDecorator(int percent) {
   return "conic-gradient(white 0%, white " + at + ", transparent " + at + ")";
 }
 
+std::string PendingRingElementId(const std::string& row_id) {
+  return row_id + "-ring";
+}
+
+std::string PendingPercentElementId(const std::string& row_id) {
+  return row_id + "-percent";
+}
+
+std::string PendingThumbElementId(const std::string& row_id) {
+  return row_id + "-thumb";
+}
+
 std::string PendingPercentText(const int percent) {
   return std::to_string(std::clamp(percent, 0, 100)) + "%";
 }
 
-std::string PendingPictureRml(const PendingPictureUpload& upload) {
-  const bool failed = upload.state == PendingPictureState::Failed;
-  const bool cancelling = upload.state == PendingPictureState::Cancelling;
+std::string PendingPictureRml(const PendingUpload& upload) {
+  const bool failed = upload.state == PendingUploadState::Failed;
+  const bool cancelling = upload.state == PendingUploadState::Cancelling;
   // The disc: the whole 48dp is the target (uploading: cancel; failed: retry; cancelling: nothing to tap).
   std::string disc = "<button class=\"chat-pending-disc";
   if (cancelling) {
     disc += " chat-pending-disc--busy\" type=\"button\">";
   } else if (failed) {
     disc += "\" type=\"button\" title=\"" + StructuredTextParser::EscapeText(Tr("chat.attachment.retry")) +
-            "\" data-event-click=\"retry_attachment_send()\">";
+            "\" data-event-click=\"retry_attachment_send('" + JsArgInAttribute(upload.row_id) + "')\">";
   } else {
     disc += "\" type=\"button\" title=\"" + StructuredTextParser::EscapeText(Tr("chat.attachment.cancel_send")) +
-            "\" data-event-click=\"cancel_attachment_send()\">";
+            "\" data-event-click=\"cancel_attachment_send('" + JsArgInAttribute(upload.row_id) + "')\">";
   }
   if (!failed) {
-    disc += "<div id=\"" + std::string(kPendingRingElementId) + "\" class=\"chat-pending-ring";
+    disc += "<div id=\"" + PendingRingElementId(upload.row_id) + "\" class=\"chat-pending-ring";
     if (kPendingProgressRing && !cancelling) {
       disc += "\" style=\"decorator: " + PendingRingDecorator(upload.percent) + "\"></div>";
     } else {
@@ -879,21 +891,22 @@ std::string PendingPictureRml(const PendingPictureUpload& upload) {
   disc += "</div></button>";
   std::string overlay = "<div class=\"chat-pending-center\">" + disc;
   if (!failed) {
-    overlay += "<p id=\"" + std::string(kPendingPercentElementId) + "\" class=\"chat-pending-percent\">" +
+    overlay += "<p id=\"" + PendingPercentElementId(upload.row_id) + "\" class=\"chat-pending-percent\">" +
                PendingPercentText(upload.percent) + "</p>";
   }
   overlay += "</div>";
   if (failed) {
     overlay += "<button class=\"chat-pending-discard\" type=\"button\" title=\"" +
                StructuredTextParser::EscapeText(Tr("common.cancel")) +
-               "\" data-event-click=\"discard_attachment_send()\"><div class=\"chat-pending-discard-disc\">"
+               "\" data-event-click=\"discard_attachment_send('" + JsArgInAttribute(upload.row_id) +
+               "')\"><div class=\"chat-pending-discard-disc\">"
                "<svg class=\"chat-pending-icon\" src=\"../icons/v2/close.svg\" width=\"20\" height=\"20\"></svg>"
                "</div></button>";
   }
   const PictureBubbleSize fit = FitPictureInBubble(upload.pixels.width, upload.pixels.height);
   return "<div class=\"chat-card chat-attachment-card chat-attachment-card--image chat-pending-picture\">" +
          PictureClipRml(fit, upload.thumb_path, " chat-pending-picture-clip",
-                        " id=\"" + std::string(kPendingThumbElementId) + "\"", overlay) +
+                        " id=\"" + PendingThumbElementId(upload.row_id) + "\"", overlay) +
          "</div>";
 }
 

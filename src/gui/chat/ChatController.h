@@ -16,7 +16,7 @@
 #include "gui/chat/AttachmentPreparing.h"
 #include "gui/chat/CameraCaptureFlow.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
-#include "gui/chat/PendingPictureRows.h"
+#include "gui/chat/PendingUploadRows.h"
 #include "gui/chat/PhotoPreview.h"
 #include "gui/chat/VoiceComposer.h"
 #include "gui/chat/VoicePlayback.h"
@@ -360,16 +360,19 @@ private:
    * an event's result is taken, and the transcript drawn again when the row changed and its chat is open (`redraw`:
    * false when the caller draws it right after, in the same UI task).
    */
-  void ApplyPendingPicture(PendingPictureStep step, bool redraw = true);
+  void ApplyPendingUpload(PendingUploadStep step, bool redraw = true);
   /** chat_.attachment_in_transcript: the open chat shows that bubble, so the composer's upload card / chip stay hidden. */
   void RefreshAttachmentInTranscript();
   /** A voice recording that could not be sent and was not staged: the chip offers Retry / Discard for the file. */
   void KeepVoiceForRetry(const std::string& path, const std::string& thread_id);
-  /** Retry / discard the failed send the chip shows; the staged ciphertext is what a retry sends again. */
-  void OnRetryAttachmentSend();
-  void OnDiscardAttachmentSend();
-  /** Cancel the send in flight: its upload stops, its staged copy goes, and nothing is sent. */
-  void OnCancelAttachmentSend();
+  /**
+   * Retry / discard the failed send: a bubble's carries its item id (that item and its own staged copy); the chip's
+   * none (the send it shows). The staged ciphertext is what a retry sends again.
+   */
+  void OnRetryAttachmentSend(const std::string& item_id = {});
+  void OnDiscardAttachmentSend(const std::string& item_id = {});
+  /** Cancel the send in flight (a bubble's disc carries its id): its upload stops, its staged copy goes, nothing is sent. */
+  void OnCancelAttachmentSend(const std::string& item_id = {});
   /** The upload card for a send starting (`name`: the file's name) or ended (empty): bar, badge, picture, ✕. */
   void ResetUploadCard(const std::string& name);
   /** Show the chip for a staged send of the open thread that did not finish (also after the app was killed). */
@@ -440,8 +443,8 @@ private:
   void ResetChatPanelState();
   std::string failed_record_id_;
   /** The picture being sent, as a temporary bubble at the end of its chat; one at a time. */
-  PendingPictureRows pending_picture_;
-  uint64_t pending_picture_serial_ = 0;
+  PendingUploadRows pending_uploads_;
+  uint64_t pending_upload_serial_ = 0;
   /** Set by Cancel on the chip while a send is in flight; a new one for each send. */
   std::shared_ptr<std::atomic<bool>> send_cancel_;
   /** A voice recording waiting for Retry / Discard (nothing was staged), and the chat it is for. */

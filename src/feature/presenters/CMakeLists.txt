@@ -27,7 +27,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     HomeToday.cpp
     MessageResend.cpp
     NewCallGuard.cpp
-    PendingPictureUpload.cpp
+    PendingUpload.cpp
     QuickReactions.cpp
     SendMark.cpp
     ThreadSearch.cpp

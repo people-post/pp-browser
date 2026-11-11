@@ -420,7 +420,7 @@ TEST_F(ComposerVoiceMarkupTest, APictureBubbleKeepsTheTextInputOnAndTheAttachEnt
   state.attachment_here = true;
   state.attachment_in_transcript = true;
   state.attachment_uploading = true;
-  const ComposerLocks bubble = ComposerLocksOf(false, true, true, false, false);
+  const ComposerLocks bubble = ComposerLocksOf(false, true, true, /*attachment_busy=*/true, false, false);
   state.composer_input_disabled = bubble.input;
   state.attach_disabled = bubble.attach;
   Apply();
@@ -430,9 +430,23 @@ TEST_F(ComposerVoiceMarkupTest, APictureBubbleKeepsTheTextInputOnAndTheAttachEnt
   EXPECT_FALSE(disabled("prompt-send-btn"));
   EXPECT_TRUE(disabled("prompt-attach-btn"));
   EXPECT_TRUE(disabled("prompt-capture-btn"));
+  // Visibly greyed (the iPhone showed them at full strength while a :disabled rule never matched), emoji not.
+  const auto opacity = [this](const char* cls) {
+    ui::ElementList found;
+    document->GetElementsByClassName(found, cls);
+    for (ui::Element* element : found) {
+      if (element->IsVisible(true)) {
+        return element->GetComputedValues().opacity();
+      }
+    }
+    return -1.f;
+  };
+  EXPECT_LT(opacity("prompt-attach-btn"), 0.5f);
+  EXPECT_LT(opacity("prompt-capture-btn"), 0.5f);
+  EXPECT_FLOAT_EQ(opacity("prompt-emoji-btn"), 1.f);
 
   state.attachment_in_transcript = false; // a file: its card above the input, the whole composer off
-  const ComposerLocks card = ComposerLocksOf(false, true, false, false, false);
+  const ComposerLocks card = ComposerLocksOf(false, true, false, /*attachment_busy=*/true, false, false);
   state.composer_input_disabled = card.input;
   state.attach_disabled = card.attach;
   Apply();
@@ -616,7 +630,7 @@ TEST_F(ComposerPhoneRowTest, BesideAPictureBubbleTheMicrophoneStaysGreyedAndText
   state.attachment_in_transcript = true;
   state.show_voice = false; // VoiceComposer: not while a send is in flight
   state.voice_entry_off = true;
-  const ComposerLocks locks = ComposerLocksOf(false, true, true, false, false);
+  const ComposerLocks locks = ComposerLocksOf(false, true, true, /*attachment_busy=*/true, false, false);
   state.composer_input_disabled = locks.input;
   state.attach_disabled = locks.attach;
   Apply();
@@ -631,7 +645,8 @@ TEST_F(ComposerPhoneRowTest, BesideAPictureBubbleTheMicrophoneStaysGreyedAndText
   ui::ElementList composers;
   document->GetElementsByClassName(composers, "prompt-composer");
   ASSERT_FALSE(composers.empty());
-  EXPECT_TRUE(composers[0]->IsClassSet("prompt-composer--picture-bubble"));
+  EXPECT_TRUE(mics[0]->IsClassSet("prompt-entry-off")) << "greyed by a class (the engine's <button> has no :disabled)";
+  EXPECT_LT(mics[0]->GetComputedValues().opacity(), 0.5f);
 
   state.draft = "running late";
   Apply();

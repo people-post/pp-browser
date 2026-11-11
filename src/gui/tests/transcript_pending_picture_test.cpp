@@ -3,7 +3,7 @@
 // bubble the size of the sent picture, the 44dp corner target, and the progress written into the mounted bubble
 // without drawing the row again.
 #include "gui/chat/ChatDataModel.h"
-#include "gui/chat/PendingPictureRows.h"
+#include "gui/chat/PendingUploadRows.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -32,9 +32,9 @@ size_t Count(const std::string& text, const std::string& needle) {
   return n;
 }
 
-PendingPictureUpload Upload(const PendingPictureState state, const int percent, const std::string& thumb,
-                            const int w = 4032, const int h = 3024) {
-  PendingPictureUpload upload = StartPendingPicture(1, "t", PicturePixels{w, h});
+PendingUpload Upload(const PendingUploadState state, const int percent, const std::string& thumb, const int w = 4032,
+                     const int h = 3024) {
+  PendingUpload upload = StartPendingUpload(1, "t", PicturePixels{w, h});
   upload.state = state;
   upload.percent = percent;
   upload.thumb_path = thumb;
@@ -42,14 +42,14 @@ PendingPictureUpload Upload(const PendingPictureState state, const int percent, 
 }
 
 TEST(TranscriptPendingPictureTest, UploadingCancelsShowsThePercentAndCarriesTheFixedIds) {
-  const std::string rml = PendingPictureRml(Upload(PendingPictureState::Uploading, 67, "/p/thumb.jpg"));
-  EXPECT_EQ(Count(rml, "data-event-click=\"cancel_attachment_send()\""), 1u);
+  const std::string rml = PendingPictureRml(Upload(PendingUploadState::Uploading, 67, "/p/thumb.jpg"));
+  EXPECT_EQ(Count(rml, "data-event-click=\"cancel_attachment_send('pending-upload-1')\""), 1u);
   EXPECT_EQ(rml.find("retry_attachment_send"), std::string::npos);
   EXPECT_EQ(rml.find("discard_attachment_send"), std::string::npos);
   EXPECT_NE(rml.find(">67%</p>"), std::string::npos);
-  EXPECT_NE(rml.find("id=\"" + std::string(kPendingRingElementId) + "\""), std::string::npos);
-  EXPECT_NE(rml.find("id=\"" + std::string(kPendingPercentElementId) + "\""), std::string::npos);
-  EXPECT_NE(rml.find("id=\"" + std::string(kPendingThumbElementId) + "\""), std::string::npos);
+  EXPECT_NE(rml.find("id=\"" + PendingRingElementId("pending-upload-1") + "\""), std::string::npos);
+  EXPECT_NE(rml.find("id=\"" + PendingPercentElementId("pending-upload-1") + "\""), std::string::npos);
+  EXPECT_NE(rml.find("id=\"" + PendingThumbElementId("pending-upload-1") + "\""), std::string::npos);
   EXPECT_NE(rml.find("src=\"/p/thumb.jpg\""), std::string::npos);
   if (kPendingProgressRing) {
     EXPECT_NE(rml.find("decorator: " + PendingRingDecorator(67)), std::string::npos);
@@ -57,23 +57,23 @@ TEST(TranscriptPendingPictureTest, UploadingCancelsShowsThePercentAndCarriesTheF
 }
 
 TEST(TranscriptPendingPictureTest, CancellingOnlySpinsWithNothingToTap) {
-  const std::string rml = PendingPictureRml(Upload(PendingPictureState::Cancelling, 40, "/p/thumb.jpg"));
+  const std::string rml = PendingPictureRml(Upload(PendingUploadState::Cancelling, 40, "/p/thumb.jpg"));
   EXPECT_EQ(rml.find("data-event-click"), std::string::npos);
   EXPECT_NE(rml.find("chat-pending-ring--spin"), std::string::npos);
 }
 
 TEST(TranscriptPendingPictureTest, FailedRetriesAndOffersTheCornerDiscard) {
-  const std::string rml = PendingPictureRml(Upload(PendingPictureState::Failed, 40, "/p/thumb.jpg"));
-  EXPECT_EQ(Count(rml, "data-event-click=\"retry_attachment_send()\""), 1u);
-  EXPECT_EQ(Count(rml, "data-event-click=\"discard_attachment_send()\""), 1u);
+  const std::string rml = PendingPictureRml(Upload(PendingUploadState::Failed, 40, "/p/thumb.jpg"));
+  EXPECT_EQ(Count(rml, "data-event-click=\"retry_attachment_send('pending-upload-1')\""), 1u);
+  EXPECT_EQ(Count(rml, "data-event-click=\"discard_attachment_send('pending-upload-1')\""), 1u);
   EXPECT_EQ(rml.find("cancel_attachment_send"), std::string::npos);
   EXPECT_NE(rml.find("../icons/v2/retry.svg"), std::string::npos);
-  EXPECT_EQ(rml.find(kPendingPercentElementId), std::string::npos) << "no percent after a failure";
+  EXPECT_EQ(rml.find(PendingPercentElementId("pending-upload-1")), std::string::npos) << "no percent after a failure";
 }
 
 TEST(TranscriptPendingPictureTest, ThePlaceholderHasTheSizeOfTheThumbnailBubble) {
-  const std::string with = PendingPictureRml(Upload(PendingPictureState::Uploading, 0, "/p/thumb.jpg"));
-  const std::string without = PendingPictureRml(Upload(PendingPictureState::Uploading, 0, ""));
+  const std::string with = PendingPictureRml(Upload(PendingUploadState::Uploading, 0, "/p/thumb.jpg"));
+  const std::string without = PendingPictureRml(Upload(PendingUploadState::Uploading, 0, ""));
   EXPECT_EQ(without.find("<img"), std::string::npos);
   const PictureBubbleSize fit = FitPictureInBubble(4032, 3024);
   const std::string size =
@@ -83,7 +83,7 @@ TEST(TranscriptPendingPictureTest, ThePlaceholderHasTheSizeOfTheThumbnailBubble)
 }
 
 TEST(TranscriptPendingPictureTest, ATallPictureIsSizedAndCroppedAsTheSentOne) {
-  const std::string rml = PendingPictureRml(Upload(PendingPictureState::Uploading, 0, "/p/t.jpg", 1170, 2532));
+  const std::string rml = PendingPictureRml(Upload(PendingUploadState::Uploading, 0, "/p/t.jpg", 1170, 2532));
   const PictureBubbleSize fit = FitPictureInBubble(1170, 2532);
   ASSERT_GT(fit.image_offset_dp, 0);
   EXPECT_NE(rml.find("height=\"" + std::to_string(fit.image_height_dp) + "\""), std::string::npos);
@@ -99,8 +99,8 @@ TEST(TranscriptPendingPictureTest, TheRingIsEmptyAtZeroWholeAtHundredAndCutAtThe
 }
 
 TEST(TranscriptPendingPictureTest, ThePendingRowCarriesNoSendMark) {
-  PendingPictureRows rows([](const std::string&) {});
-  rows.Apply({StartPendingPicture(1, "t", PicturePixels{800, 600}), {}});
+  PendingUploadRows rows([](const std::string&) {});
+  rows.Apply({StartPendingUpload(1, "t", PicturePixels{800, 600}), {}});
   TranscriptFacts facts;
   int asked = 0;
   facts.send_mark = [&asked](const ThreadMessage&) {
@@ -249,7 +249,7 @@ TEST_F(PendingPictureLayoutTest, TheBubbleHasTheSentPicturesSizeWithOrWithoutIts
 
   for (const char* thumb : {"/x/thumb.jpg", ""}) {
     SCOPED_TRACE(thumb);
-    Show({Row("pending-upload-1", PendingPictureRml(Upload(PendingPictureState::Uploading, 30, thumb)))});
+    Show({Row("pending-upload-1", PendingPictureRml(Upload(PendingUploadState::Uploading, 30, thumb)))});
     ui::Element* card = First("chat-pending-picture");
     ASSERT_NE(card, nullptr);
     EXPECT_NEAR(Size(card).x, sent_size.x, 0.5f);
@@ -262,7 +262,7 @@ TEST_F(PendingPictureLayoutTest, TheBubbleHasTheSentPicturesSizeWithOrWithoutIts
 }
 
 TEST_F(PendingPictureLayoutTest, TheCornerDiscardIsAFortyFourDpTargetInTheTopRightCorner) {
-  Show({Row("pending-upload-1", PendingPictureRml(Upload(PendingPictureState::Failed, 30, "/x/thumb.jpg")))});
+  Show({Row("pending-upload-1", PendingPictureRml(Upload(PendingUploadState::Failed, 30, "/x/thumb.jpg")))});
   ui::Element* discard = First("chat-pending-discard");
   ui::Element* clip = First("chat-pending-picture-clip");
   ASSERT_NE(discard, nullptr);
@@ -276,35 +276,35 @@ TEST_F(PendingPictureLayoutTest, TheCornerDiscardIsAFortyFourDpTargetInTheTopRig
 }
 
 TEST_F(PendingPictureLayoutTest, ProgressIsWrittenIntoTheMountedBubbleWithoutDrawingTheRowAgain) {
-  Show({Row("pending-upload-1", PendingPictureRml(Upload(PendingPictureState::Uploading, 0, "/x/thumb.jpg")))});
-  ui::Element* thumb = document->GetElementById(kPendingThumbElementId);
-  ui::Element* percent = document->GetElementById(kPendingPercentElementId);
+  Show({Row("pending-upload-1", PendingPictureRml(Upload(PendingUploadState::Uploading, 0, "/x/thumb.jpg")))});
+  ui::Element* thumb = document->GetElementById(PendingThumbElementId("pending-upload-1"));
+  ui::Element* percent = document->GetElementById(PendingPercentElementId("pending-upload-1"));
   ASSERT_NE(thumb, nullptr);
   ASSERT_NE(percent, nullptr);
-  ASSERT_TRUE(PendingPictureRows::DrawProgress(document, 45));
+  ASSERT_TRUE(PendingUploadRows::DrawProgress(document, "pending-upload-1", 45));
   DataModelHost::Instance().Dirty("chat", "messages"); // something else redraws the transcript meanwhile
   context->Update();
   // The same elements (the row was not parsed again, so the picture does not reload), the new values in them.
-  EXPECT_EQ(document->GetElementById(kPendingThumbElementId), thumb);
-  EXPECT_EQ(document->GetElementById(kPendingPercentElementId), percent);
+  EXPECT_EQ(document->GetElementById(PendingThumbElementId("pending-upload-1")), thumb);
+  EXPECT_EQ(document->GetElementById(PendingPercentElementId("pending-upload-1")), percent);
   EXPECT_EQ(std::string(percent->GetInnerRML().c_str()), "45%");
   if (kPendingProgressRing) {
-    ui::Element* ring = document->GetElementById(kPendingRingElementId);
+    ui::Element* ring = document->GetElementById(PendingRingElementId("pending-upload-1"));
     ASSERT_NE(ring, nullptr);
     EXPECT_NE(std::string(ring->GetProperty("decorator")->ToString().c_str()).find("conic-gradient"),
               std::string::npos);
   }
-  EXPECT_FALSE(PendingPictureRows::DrawProgress(nullptr, 50));
+  EXPECT_FALSE(PendingUploadRows::DrawProgress(nullptr, "pending-upload-1", 50));
 }
 
 TEST_F(PendingPictureLayoutTest, LockingTakesTheThumbnailOutOfTheMountedBubble) {
-  Show({Row("pending-upload-1", PendingPictureRml(Upload(PendingPictureState::Uploading, 10, "/x/thumb.jpg")))});
+  Show({Row("pending-upload-1", PendingPictureRml(Upload(PendingUploadState::Uploading, 10, "/x/thumb.jpg")))});
   ui::Element* clip = First("chat-pending-picture-clip");
   ASSERT_NE(clip, nullptr);
   const ui::Vector2f before = Size(clip);
-  PendingPictureRows::DropThumbnail(document);
+  PendingUploadRows::DropThumbnail(document, "pending-upload-1");
   context->Update();
-  EXPECT_EQ(document->GetElementById(kPendingThumbElementId), nullptr);
+  EXPECT_EQ(document->GetElementById(PendingThumbElementId("pending-upload-1")), nullptr);
   EXPECT_NEAR(Size(First("chat-pending-picture-clip")).y, before.y, 0.5f) << "the bubble keeps its size";
 }
 

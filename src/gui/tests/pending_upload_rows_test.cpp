@@ -1,6 +1,6 @@
 // The transcript's side of the picture being sent (DEV/PLAN-picture-upload-bubble.md, step 6). A ChatController cannot
 // be built in a unit test (it needs a live ConversationsFacade / hub; see composer_voice_markup_test.cpp), so the
-// behaviour tests here drive what it delegates to — PendingPictureRows with the real RenderTranscript and the real
+// behaviour tests here drive what it delegates to — PendingUploadRows with the real RenderTranscript and the real
 // ChatTranscriptScroller — in the order ChatController::SyncDisplayFromThread runs them. The PendingPictureSourcePin
 // tests at the end only read ChatController's source to pin that order and its wiring; they run none of it, so the
 // controller's own callbacks (a real send ending, cancel then success, the lock in a running app) stay device checks.
@@ -8,7 +8,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatTranscriptScroller.h"
-#include "gui/chat/PendingPictureRows.h"
+#include "gui/chat/PendingUploadRows.h"
 #include "gui/chat/TranscriptRml.h"
 
 #include <gtest/gtest.h>
@@ -50,7 +50,7 @@ struct Transcript {
   bool ready = true;
   ChatScreenState chat;
   std::vector<std::string> removed;
-  PendingPictureRows pending{[this](const std::string& path) { removed.push_back(path); }};
+  PendingUploadRows pending{[this](const std::string& path) { removed.push_back(path); }};
   ChatTranscriptScroller scroller{
       context, {chat.show_jump_to_latest, chat.jump_to_latest_count, chat.messages, chat.has_turns}, ready};
   std::vector<TranscriptRow> store;
@@ -75,7 +75,7 @@ struct Transcript {
   /** ChatController::SyncDisplayFromThread's row steps, in its order. */
   void Sync() {
     const bool thread_changed = scroller.BeginDisplaySync(open);
-    const auto [prev_tail_id, prev_count] = PendingPictureRows::RealTail(chat.messages);
+    const auto [prev_tail_id, prev_count] = PendingUploadRows::RealTail(chat.messages);
     chat.messages = scroller.Rows(open, scroller.LoadedMinDisplayOrder(), scroller.LoadedMaxDisplayOrder());
     chat.has_turns = !chat.messages.empty();
     scroller.EndDisplaySync(thread_changed, prev_tail_id, prev_count);
@@ -84,7 +84,7 @@ struct Transcript {
     }
   }
 
-  void StartPicture() { pending.Apply({StartPendingPicture(1, "t", PicturePixels{4000, 3000}), {}}); }
+  void StartPicture() { pending.Apply({StartPendingUpload(1, "t", PicturePixels{4000, 3000}), {}}); }
 
   std::vector<std::string> Ids() const {
     std::vector<std::string> ids;
@@ -103,7 +103,7 @@ struct Transcript {
   }
 };
 
-TEST(PendingPictureRowsTest, TheRowStaysAtTheEndThroughEveryRebuild) {
+TEST(PendingUploadRowsTest, TheRowStaysAtTheEndThroughEveryRebuild) {
   Transcript t;
   t.store = {Text("a", "contact-1", util::NowUnixMs() - 3 * kMinute, 1)};
   t.StartPicture();
@@ -120,7 +120,7 @@ TEST(PendingPictureRowsTest, TheRowStaysAtTheEndThroughEveryRebuild) {
   EXPECT_TRUE(t.chat.has_turns);
 }
 
-TEST(PendingPictureRowsTest, SentLeavesOnlyTheRealRowInTheSameRebuild) {
+TEST(PendingUploadRowsTest, SentLeavesOnlyTheRealRowInTheSameRebuild) {
   Transcript t;
   t.store = {Text("a", "contact-1", util::NowUnixMs() - 3 * kMinute, 1)};
   t.StartPicture();
@@ -130,7 +130,7 @@ TEST(PendingPictureRowsTest, SentLeavesOnlyTheRealRowInTheSameRebuild) {
   // redraw, then the one display sync of that task.
   t.store.push_back(SentPicture(2));
   const bool changed =
-      t.pending.Apply(OnPictureSendFinished(t.pending.Upload(), PictureSendOutcome::Sent)); // redraw=false there
+      t.pending.Apply(OnUploadSendFinished(t.pending.Upload(), UploadSendOutcome::Sent)); // redraw=false there
   EXPECT_TRUE(changed);
   ASSERT_NE(t.Find("pending-upload-1"), nullptr) << "nothing redrawn between the two steps";
   t.Sync();
@@ -140,7 +140,7 @@ TEST(PendingPictureRowsTest, SentLeavesOnlyTheRealRowInTheSameRebuild) {
 
 // Text typed and sent while the picture uploads (the input stays on with a bubble): it lands above the bubble, which
 // stays last until its own send ends.
-TEST(PendingPictureRowsTest, TextSentWhileThePictureUploadsLandsAboveTheBubble) {
+TEST(PendingUploadRowsTest, TextSentWhileThePictureUploadsLandsAboveTheBubble) {
   Transcript t;
   t.store = {Text("a", "contact-1", util::NowUnixMs() - 3 * kMinute, 1)};
   t.StartPicture();
@@ -149,17 +149,17 @@ TEST(PendingPictureRowsTest, TextSentWhileThePictureUploadsLandsAboveTheBubble) 
   t.Sync();
   EXPECT_EQ(t.Ids(), (std::vector<std::string>{"a", "typed", "pending-upload-1"}));
   t.store.push_back(SentPicture(3));
-  t.pending.Apply(OnPictureSendFinished(t.pending.Upload(), PictureSendOutcome::Sent));
+  t.pending.Apply(OnUploadSendFinished(t.pending.Upload(), UploadSendOutcome::Sent));
   t.Sync();
   EXPECT_EQ(t.Ids(), (std::vector<std::string>{"a", "typed", "sent-1"}));
 }
 
 // The lock deletes the thumbnail: the kept row loses its picture too, so a rebuild that puts it back (paging, a jump)
 // shows the grey placeholder, never the deleted file.
-TEST(PendingPictureRowsTest, AfterTheLockTheKeptRowNoLongerPointsAtTheDeletedThumbnail) {
+TEST(PendingUploadRowsTest, AfterTheLockTheKeptRowNoLongerPointsAtTheDeletedThumbnail) {
   Transcript t;
   t.StartPicture();
-  t.pending.Apply(OnPictureThumbnail(t.pending.Upload(), "/p/upload-thumb-9.jpg", /*locked=*/false));
+  t.pending.Apply(OnUploadThumbnail(t.pending.Upload(), "/p/upload-thumb-9.jpg", /*locked=*/false));
   t.Sync();
   ASSERT_NE(std::string(t.Find("pending-upload-1")->content_rml.c_str()).find("upload-thumb-9"), std::string::npos);
   t.pending.Apply(OnAppLocked(t.pending.Upload())); // as ChatController::Update does, without a redraw
@@ -180,7 +180,7 @@ TEST(PendingPictureRowsTest, AfterTheLockTheKeptRowNoLongerPointsAtTheDeletedThu
   EXPECT_EQ(std::string(t.Find("pending-upload-1")->content_rml.c_str()), kept);
 }
 
-TEST(PendingPictureRowsTest, TheFirstPictureOfTheDayHasItsDateStripAndTheRowsAroundItAsTheRealOneWill) {
+TEST(PendingUploadRowsTest, TheFirstPictureOfTheDayHasItsDateStripAndTheRowsAroundItAsTheRealOneWill) {
   Transcript t;
   const int64_t now = util::NowUnixMs();
   t.store = {Text("old", kLocalSelfContactId, now - 2 * kDay, 1)};
@@ -193,7 +193,7 @@ TEST(PendingPictureRowsTest, TheFirstPictureOfTheDayHasItsDateStripAndTheRowsAro
   const MessageDisplayRow before_with_pending = *t.Find("old");
 
   t.store.push_back(SentPicture(2));
-  t.pending.Apply(OnPictureSendFinished(t.pending.Upload(), PictureSendOutcome::Sent));
+  t.pending.Apply(OnUploadSendFinished(t.pending.Upload(), UploadSendOutcome::Sent));
   t.Sync();
   const MessageDisplayRow* real = t.Find("sent-1");
   ASSERT_NE(real, nullptr);
@@ -206,7 +206,7 @@ TEST(PendingPictureRowsTest, TheFirstPictureOfTheDayHasItsDateStripAndTheRowsAro
   EXPECT_EQ(std::string(before->content_rml.c_str()), std::string(before_with_pending.content_rml.c_str()));
 }
 
-TEST(PendingPictureRowsTest, TheRowBeforeInTheSameRunLosesItsTailAsItWillForTheRealRow) {
+TEST(PendingUploadRowsTest, TheRowBeforeInTheSameRunLosesItsTailAsItWillForTheRealRow) {
   Transcript t;
   t.store = {Text("mine", kLocalSelfContactId, util::NowUnixMs() - kMinute, 1)};
   t.StartPicture();
@@ -220,7 +220,7 @@ TEST(PendingPictureRowsTest, TheRowBeforeInTheSameRunLosesItsTailAsItWillForTheR
   EXPECT_NE(std::string(pending->content_rml.c_str()).find("bubble-tail"), std::string::npos);
 }
 
-TEST(PendingPictureRowsTest, ItShowsOnlyInItsOwnChatAndIsThereAgainOnReturn) {
+TEST(PendingUploadRowsTest, ItShowsOnlyInItsOwnChatAndIsThereAgainOnReturn) {
   Transcript t;
   t.store = {Text("a", "contact-1", util::NowUnixMs() - kMinute, 1)};
   t.StartPicture();
@@ -235,7 +235,7 @@ TEST(PendingPictureRowsTest, ItShowsOnlyInItsOwnChatAndIsThereAgainOnReturn) {
   EXPECT_EQ(t.Ids(), (std::vector<std::string>{"a", "pending-upload-1"}));
 }
 
-TEST(PendingPictureRowsTest, CountsTailAndWindowAreTheSameWithAndWithoutIt) {
+TEST(PendingUploadRowsTest, CountsTailAndWindowAreTheSameWithAndWithoutIt) {
   // Over the DOM window: the trim and the window bounds must not count the picture being sent.
   std::vector<TranscriptRow> many;
   const int64_t now = util::NowUnixMs();
@@ -263,7 +263,7 @@ TEST(PendingPictureRowsTest, CountsTailAndWindowAreTheSameWithAndWithoutIt) {
   EXPECT_EQ(std::string(with.chat.jump_to_latest_count.c_str()),
             std::string(without.chat.jump_to_latest_count.c_str()));
   // The tail and count the display sync compares (new messages while scrolled up, search) skip it.
-  const auto [tail, count] = PendingPictureRows::RealTail(with.chat.messages);
+  const auto [tail, count] = PendingUploadRows::RealTail(with.chat.messages);
   EXPECT_EQ(tail, "late");
   EXPECT_EQ(count, without.chat.messages.size());
   // Paging reads the first row's order: the picture being sent is never first unless alone, and then has order 0
@@ -273,10 +273,10 @@ TEST(PendingPictureRowsTest, CountsTailAndWindowAreTheSameWithAndWithoutIt) {
   alone.Sync();
   ASSERT_EQ(alone.Ids(), (std::vector<std::string>{"pending-upload-1"}));
   EXPECT_EQ(alone.chat.messages.front().display_order, 0);
-  EXPECT_EQ(PendingPictureRows::RealTail(alone.chat.messages).second, 0u);
+  EXPECT_EQ(PendingUploadRows::RealTail(alone.chat.messages).second, 0u);
 }
 
-TEST(PendingPictureRowsTest, OlderHistoryShownDoesNotDrawItAtTheEnd) {
+TEST(PendingUploadRowsTest, OlderHistoryShownDoesNotDrawItAtTheEnd) {
   Transcript t;
   t.store = {Text("a", "contact-1", util::NowUnixMs() - kMinute, 1)};
   t.StartPicture();
@@ -286,6 +286,37 @@ TEST(PendingPictureRowsTest, OlderHistoryShownDoesNotDrawItAtTheEnd) {
   EXPECT_FALSE(t.pending.Row());
   std::vector<MessageDisplayRow> shown = rows;
   EXPECT_FALSE(t.pending.KeepAtTail(shown, "t", /*at_tip=*/false));
+}
+
+// Two items (the queue's shape; one at a time is still all the controller adds today): each row has its own element
+// ids, and progress written for one leaves the other's markup as it was.
+TEST(PendingUploadRowsTest, TwoItemsHaveTheirOwnIdsAndProgressOfOneLeavesTheOther) {
+  Transcript t;
+  t.StartPicture();
+  PendingUpload second = StartPendingUpload(2, "t", PicturePixels{600, 800});
+  second.state = PendingUploadState::Failed;
+  t.pending.Apply({second, {}});
+  t.Sync();
+  ASSERT_EQ(t.Ids(), (std::vector<std::string>{"pending-upload-1", "pending-upload-2"}));
+  const std::string first_rml = t.Find("pending-upload-1")->content_rml.c_str();
+  const std::string second_rml = t.Find("pending-upload-2")->content_rml.c_str();
+  EXPECT_NE(first_rml.find(PendingRingElementId("pending-upload-1")), std::string::npos);
+  EXPECT_EQ(first_rml.find("pending-upload-2"), std::string::npos);
+  EXPECT_NE(second_rml.find("retry_attachment_send('pending-upload-2')"), std::string::npos);
+  EXPECT_NE(PendingRingElementId("pending-upload-1"), PendingRingElementId("pending-upload-2"));
+
+  const std::optional<std::string> due = t.pending.Progress(40);
+  ASSERT_TRUE(due);
+  EXPECT_EQ(*due, "pending-upload-1") << "the uploading one";
+  EXPECT_EQ(t.pending.Queue().Find("pending-upload-1")->percent, 40);
+  EXPECT_EQ(t.pending.Queue().Find("pending-upload-2")->percent, 0);
+  t.Sync();
+  EXPECT_EQ(std::string(t.Find("pending-upload-2")->content_rml.c_str()), second_rml);
+  // An event by id reaches only that item; RealTail skips both.
+  EXPECT_TRUE(t.pending.Apply("pending-upload-2", OnUploadDiscardTapped));
+  t.Sync();
+  EXPECT_EQ(t.Ids(), (std::vector<std::string>{"pending-upload-1"}));
+  EXPECT_FALSE(t.pending.Apply("pending-upload-2", OnUploadRetryTapped)) << "gone: nothing";
 }
 
 class PendingPictureFilesTest : public testing::Test {
@@ -305,43 +336,43 @@ protected:
     return path;
   }
   std::filesystem::path dir_;
-  PendingPictureRows rows_; // deletes files for real
+  PendingUploadRows rows_; // deletes files for real
 };
 
 TEST_F(PendingPictureFilesTest, LockingDeletesTheThumbnailFromDisk) {
-  rows_.Apply({StartPendingPicture(1, "t", PicturePixels{800, 600}), {}});
+  rows_.Apply({StartPendingUpload(1, "t", PicturePixels{800, 600}), {}});
   const std::string thumb = Thumb("upload-thumb-1.jpg");
-  rows_.Apply(OnPictureThumbnail(rows_.Upload(), thumb, /*locked=*/false));
+  rows_.Apply(OnUploadThumbnail(rows_.Upload(), thumb, /*locked=*/false));
   ASSERT_EQ(rows_.Upload().thumb_path, thumb);
   EXPECT_TRUE(rows_.Apply(OnAppLocked(rows_.Upload())));
   EXPECT_FALSE(std::filesystem::exists(thumb));
   EXPECT_TRUE(rows_.Upload().thumb_path.empty());
-  EXPECT_EQ(rows_.Upload().state, PendingPictureState::Uploading);
+  EXPECT_EQ(rows_.Upload().state, PendingUploadState::Uploading);
 }
 
 TEST_F(PendingPictureFilesTest, AThumbnailFinishedUnderTheLockIsDeletedAndNotShown) {
-  rows_.Apply({StartPendingPicture(1, "t", PicturePixels{800, 600}), {}});
+  rows_.Apply({StartPendingUpload(1, "t", PicturePixels{800, 600}), {}});
   const std::string thumb = Thumb("upload-thumb-2.jpg");
-  rows_.Apply(OnPictureThumbnail(rows_.Upload(), thumb, /*locked=*/true));
+  rows_.Apply(OnUploadThumbnail(rows_.Upload(), thumb, /*locked=*/true));
   EXPECT_FALSE(std::filesystem::exists(thumb));
   EXPECT_TRUE(rows_.Upload().thumb_path.empty());
 }
 
 TEST_F(PendingPictureFilesTest, CancelWhilePreparingRemovesTheRowAndALateThumbnailIsDeleted) {
-  rows_.Apply({StartPendingPicture(1, "t", std::nullopt), {}});
-  rows_.Apply(OnPictureCancelTapped(rows_.Upload()));
-  rows_.Apply(OnPictureSendFinished(rows_.Upload(), PictureSendOutcome::Cancelled)); // the send calls back
+  rows_.Apply({StartPendingUpload(1, "t", std::nullopt), {}});
+  rows_.Apply(OnUploadCancelTapped(rows_.Upload()));
+  rows_.Apply(OnUploadSendFinished(rows_.Upload(), UploadSendOutcome::Cancelled)); // the send calls back
   EXPECT_FALSE(rows_.Upload().Shows());
   const std::string late = Thumb("upload-thumb-3.jpg");
-  rows_.Apply(OnPictureThumbnail(rows_.Upload(), late, /*locked=*/false));
+  rows_.Apply(OnUploadThumbnail(rows_.Upload(), late, /*locked=*/false));
   EXPECT_FALSE(std::filesystem::exists(late));
 }
 
 // Profile reset and shutdown tear messaging down without the lock check seeing it: Drop deletes the plaintext.
 TEST_F(PendingPictureFilesTest, DroppingTheBubbleDeletesTheThumbnailAndClearsTheState) {
-  rows_.Apply({StartPendingPicture(1, "t", PicturePixels{800, 600}), {}});
+  rows_.Apply({StartPendingUpload(1, "t", PicturePixels{800, 600}), {}});
   const std::string thumb = Thumb("upload-thumb-drop.jpg");
-  rows_.Apply(OnPictureThumbnail(rows_.Upload(), thumb, false));
+  rows_.Apply(OnUploadThumbnail(rows_.Upload(), thumb, false));
   rows_.Drop();
   EXPECT_FALSE(std::filesystem::exists(thumb));
   EXPECT_FALSE(rows_.Upload().Shows());
@@ -349,26 +380,26 @@ TEST_F(PendingPictureFilesTest, DroppingTheBubbleDeletesTheThumbnailAndClearsThe
 }
 
 TEST_F(PendingPictureFilesTest, EverySendEndDeletesTheThumbnail) {
-  for (const PictureSendOutcome outcome :
-       {PictureSendOutcome::Sent, PictureSendOutcome::Cancelled, PictureSendOutcome::FailedNotStaged}) {
-    rows_.Apply({StartPendingPicture(1, "t", PicturePixels{800, 600}), {}});
+  for (const UploadSendOutcome outcome :
+       {UploadSendOutcome::Sent, UploadSendOutcome::Cancelled, UploadSendOutcome::FailedNotStaged}) {
+    rows_.Apply({StartPendingUpload(1, "t", PicturePixels{800, 600}), {}});
     const std::string thumb = Thumb("upload-thumb-end.jpg");
-    rows_.Apply(OnPictureThumbnail(rows_.Upload(), thumb, false));
-    rows_.Apply(OnPictureSendFinished(rows_.Upload(), outcome));
+    rows_.Apply(OnUploadThumbnail(rows_.Upload(), thumb, false));
+    rows_.Apply(OnUploadSendFinished(rows_.Upload(), outcome));
     EXPECT_FALSE(std::filesystem::exists(thumb)) << static_cast<int>(outcome);
   }
   // Failed with a staged copy keeps it for the bubble; giving it up deletes it.
-  rows_.Apply({StartPendingPicture(2, "t", PicturePixels{800, 600}), {}});
+  rows_.Apply({StartPendingUpload(2, "t", PicturePixels{800, 600}), {}});
   const std::string thumb = Thumb("upload-thumb-failed.jpg");
-  rows_.Apply(OnPictureThumbnail(rows_.Upload(), thumb, false));
-  rows_.Apply(OnPictureSendFinished(rows_.Upload(), PictureSendOutcome::FailedStaged));
+  rows_.Apply(OnUploadThumbnail(rows_.Upload(), thumb, false));
+  rows_.Apply(OnUploadSendFinished(rows_.Upload(), UploadSendOutcome::FailedStaged));
   EXPECT_TRUE(std::filesystem::exists(thumb));
-  rows_.Apply(OnPictureDiscardTapped(rows_.Upload()));
+  rows_.Apply(OnUploadDiscardTapped(rows_.Upload()));
   EXPECT_FALSE(std::filesystem::exists(thumb));
 }
 
 // --- Source-order pins: ChatController's wiring read from its source (it cannot be built here). These check that the
-// calls are there and in this order, not that they behave; the behaviour is covered above on PendingPictureRows. ---
+// calls are there and in this order, not that they behave; the behaviour is covered above on PendingUploadRows. ---
 
 std::string ReadAll(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
@@ -394,11 +425,11 @@ std::string Body(const std::string& source, const std::string& signature) {
 TEST(PendingPictureSourcePinTest, TheDisplaySyncCountsRealRowsAndPutsThePictureBackLast) {
   const std::string body = Body(Controller(), "void ChatController::SyncDisplayFromThread(");
   ASSERT_FALSE(body.empty());
-  const size_t real_tail = body.find("PendingPictureRows::RealTail(chat_.messages)");
+  const size_t real_tail = body.find("PendingUploadRows::RealTail(chat_.messages)");
   const size_t rows = body.find("chat_.messages = scroller_.Rows(");
   const size_t end_sync = body.find("scroller_.EndDisplaySync(");
   const size_t search = body.find("OnSearchMessagesChanged()");
-  const size_t keep = body.find("pending_picture_.KeepAtTail(");
+  const size_t keep = body.find("pending_uploads_.KeepAtTail(");
   ASSERT_NE(real_tail, std::string::npos);
   ASSERT_NE(keep, std::string::npos);
   EXPECT_LT(real_tail, rows);
@@ -408,43 +439,43 @@ TEST(PendingPictureSourcePinTest, TheDisplaySyncCountsRealRowsAndPutsThePictureB
 
 TEST(PendingPictureSourcePinTest, RowsAreBuiltThroughThePendingRowsAtTheTip) {
   const std::string body = Body(Controller(), "std::vector<MessageDisplayRow> ChatController::BuildMessageRows(");
-  EXPECT_NE(body.find("pending_picture_.Render("), std::string::npos);
+  EXPECT_NE(body.find("pending_uploads_.Render("), std::string::npos);
   EXPECT_NE(body.find("!newest_inclusive.has_value()"), std::string::npos);
 }
 
 TEST(PendingPictureSourcePinTest, ASentPictureIsTakenBackWithoutARedrawThenTheOneSyncDrawsTheRealRow) {
   const std::string body = Body(Controller(), "void ChatController::StartAttachmentUpload(");
   ASSERT_FALSE(body.empty());
-  const size_t finished = body.find("OnPictureSendFinished(pending_picture_.Upload(), outcome)");
+  const size_t finished = body.find("OnUploadSendFinished(pending_uploads_.Upload(), outcome)");
   ASSERT_NE(finished, std::string::npos);
   EXPECT_NE(body.find("/*redraw=*/!sent", finished), std::string::npos);
   const size_t sync = body.find("SyncDisplayFromThread();", finished);
   EXPECT_NE(sync, std::string::npos) << "the real row comes with the display sync in the same callback";
   // A failure while preparing removes the bubble and says why, unless it was cancelled.
-  EXPECT_NE(body.find("PictureSendOutcome::FailedNotStaged"), std::string::npos);
+  EXPECT_NE(body.find("UploadSendOutcome::FailedNotStaged"), std::string::npos);
   EXPECT_NE(body.find("if (!(picture && cancel->load()))"), std::string::npos);
 }
 
 TEST(PendingPictureSourcePinTest, TheLockDeletesTheThumbnailOnTheExistingLockCheck) {
   const std::string body = Body(Controller(), "void ChatController::Update(");
-  const size_t lock = body.find("OnAppLocked(pending_picture_.Upload())");
+  const size_t lock = body.find("pending_uploads_.Apply(item.row_id, OnAppLocked)");
   ASSERT_NE(lock, std::string::npos);
   EXPECT_NE(body.rfind("messaging_ready_ && !MessagingReady()", lock), std::string::npos);
   EXPECT_NE(body.find("DropThumbnail(", lock), std::string::npos);
-  EXPECT_NE(body.find("pending_picture_.RefreshTail(chat_.messages)", lock), std::string::npos);
+  EXPECT_NE(body.find("pending_uploads_.RefreshTail(chat_.messages)", lock), std::string::npos);
 }
 
 TEST(PendingPictureSourcePinTest, AJumpJudgesTheTailByTheRealRows) {
   const std::string scroller = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatTranscriptScroller.cpp");
   const std::string body = Body(scroller, "ChatTranscriptScroller::JumpResult ChatTranscriptScroller::JumpToMessage(");
-  EXPECT_NE(body.find("PendingPictureRows::RealTail(view_.messages).first == message_id"), std::string::npos);
+  EXPECT_NE(body.find("PendingUploadRows::RealTail(view_.messages).first == message_id"), std::string::npos);
 }
 
 TEST(PendingPictureSourcePinTest, ProfileResetAndShutdownDropTheBubble) {
   const std::string source = Controller();
-  EXPECT_NE(Body(source, "void ChatController::OnProfileDataReset(").find("pending_picture_.Drop()"),
+  EXPECT_NE(Body(source, "void ChatController::OnProfileDataReset(").find("pending_uploads_.Drop()"),
             std::string::npos);
-  EXPECT_NE(Body(source, "void ChatController::Shutdown(").find("pending_picture_.Drop()"), std::string::npos);
+  EXPECT_NE(Body(source, "void ChatController::Shutdown(").find("pending_uploads_.Drop()"), std::string::npos);
 }
 
 TEST(PendingPictureSourcePinTest, RetryAndDiscardAskWhoseTapItIs) {
@@ -462,10 +493,30 @@ TEST(PendingPictureSourcePinTest, RetryAndDiscardAskWhoseTapItIs) {
 TEST(PendingPictureSourcePinTest, BesideABubbleTheMicrophoneIsGreyedNotHidden) {
   const std::string body = Body(Controller(), "void ChatController::SyncComposerInputState(");
   const size_t refresh = body.find("voice_->Refresh()");
-  const size_t off = body.find("chat_.attachment_in_transcript && !chat_.show_voice");
+  const size_t off = body.find("(chat_.attachment_uploading || chat_.attachment_preparing) && !chat_.show_voice");
   ASSERT_NE(off, std::string::npos);
   EXPECT_LT(refresh, off) << "decided after VoiceComposer has hidden the microphone";
   EXPECT_NE(body.find("chat_.voice_entry_off = voice_off"), std::string::npos);
+}
+
+// Plan step 1 item 2a: the chip's Retry / Discard carry no id and never touch a bubble; a bubble's carry its id.
+TEST(PendingPictureSourcePinTest, ChipEventsHaveNoIdAndBubbleEventsCarryOne) {
+  const std::string source = Controller();
+  for (const char* handler : {"void ChatController::OnRetryAttachmentSend(const std::string& item_id)",
+                              "void ChatController::OnDiscardAttachmentSend(const std::string& item_id)",
+                              "void ChatController::OnCancelAttachmentSend(const std::string& item_id)"}) {
+    SCOPED_TRACE(handler);
+    const std::string body = Body(source, handler);
+    ASSERT_FALSE(body.empty());
+    EXPECT_NE(body.find("pending_uploads_.Queue().Find(item_id)"), std::string::npos);
+    EXPECT_EQ(body.find("pending_uploads_.Upload()"), std::string::npos) << "never the current item by default";
+  }
+  for (const char* event : {"retry_attachment_send", "discard_attachment_send", "cancel_attachment_send"}) {
+    EXPECT_NE(source.find(std::string("ctor.BindEventCallback(\"") + event +
+                          "\",\n                               with_item_id("),
+              std::string::npos)
+        << event << " reads its optional id";
+  }
 }
 
 // Plan step 0 entry list: every way a row's id reaches the store or a request ignores the picture being sent.

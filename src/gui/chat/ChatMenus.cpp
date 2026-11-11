@@ -2,7 +2,7 @@
 
 #include "common/Utilities.h"
 #include "common/thread/ThreadTypes.h"
-#include "feature/presenters/PendingPictureUpload.h"
+#include "feature/presenters/PendingUpload.h"
 #include "feature/presenters/QuickReactions.h"
 #include "feature/presenters/SessionMenu.h"
 #include "foundation/i18n/LocalizationService.h"

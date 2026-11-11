@@ -4,7 +4,7 @@
 #include "lib/ui/ChatWidgetTypes.h"
 #include "feature/conversations/GroupMentions.h"
 #include "feature/conversations/InboxController.h"
-#include "feature/presenters/PendingPictureUpload.h"
+#include "feature/presenters/PendingUpload.h"
 
 #include <optional>
 #include <vector>
@@ -51,13 +51,15 @@ PictureBubbleSize FitPictureInBubble(int width_px, int height_px);
  * (retry_attachment_send) and a ✕ in the top-right corner (a 44dp target) gives the picture up
  * (discard_attachment_send). No send mark, no other row event.
  */
-std::string PendingPictureRml(const PendingPictureUpload& upload);
+std::string PendingPictureRml(const PendingUpload& upload);
 
-/** The ring's element and the percent's: the progress refresh writes into these two only (one bubble at a time). */
-inline constexpr const char* kPendingRingElementId = "pending-upload-ring";
-inline constexpr const char* kPendingPercentElementId = "pending-upload-percent";
-/** The thumbnail's element: taken out of the mounted bubble when the app locks (its file is deleted then). */
-inline constexpr const char* kPendingThumbElementId = "pending-upload-thumb";
+/**
+ * The ring's, the percent's and the thumbnail's elements of item `row_id` ("<row id>-ring" …): the progress refresh
+ * writes into the first two only, the lock takes the third out. Each bubble has its own.
+ */
+std::string PendingRingElementId(const std::string& row_id);
+std::string PendingPercentElementId(const std::string& row_id);
+std::string PendingThumbElementId(const std::string& row_id);
 /**
  * The one switch between the two ways of showing progress: true, the ring filled clockwise from 12 o'clock by the
  * percent (a conic-gradient decorator); false, the fallback — the ring spins (no amount) and the percent says it.
