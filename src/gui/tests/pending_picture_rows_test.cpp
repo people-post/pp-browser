@@ -1,8 +1,9 @@
 // The transcript's side of the picture being sent (DEV/PLAN-picture-upload-bubble.md, step 6). A ChatController cannot
-// be built in a unit test (it needs a live ConversationsFacade / hub; see composer_voice_markup_test.cpp), so these
-// drive what it delegates to — PendingPictureRows with the real RenderTranscript and the real ChatTranscriptScroller —
-// in the order ChatController::SyncDisplayFromThread runs them (the source checks at the end pin that order and the
-// controller's wiring to the code).
+// be built in a unit test (it needs a live ConversationsFacade / hub; see composer_voice_markup_test.cpp), so the
+// behaviour tests here drive what it delegates to — PendingPictureRows with the real RenderTranscript and the real
+// ChatTranscriptScroller — in the order ChatController::SyncDisplayFromThread runs them. The PendingPictureSourcePin
+// tests at the end only read ChatController's source to pin that order and its wiring; they run none of it, so the
+// controller's own callbacks (a real send ending, cancel then success, the lock in a running app) stay device checks.
 #include "common/Utilities.h"
 #include "common/chat/MessagingLimits.h"
 #include "gui/chat/ChatScreenState.h"
@@ -135,6 +136,48 @@ TEST(PendingPictureRowsTest, SentLeavesOnlyTheRealRowInTheSameRebuild) {
   t.Sync();
   EXPECT_EQ(t.Ids(), (std::vector<std::string>{"a", "sent-1"}));
   EXPECT_FALSE(t.pending.Row());
+}
+
+// Text typed and sent while the picture uploads (the input stays on with a bubble): it lands above the bubble, which
+// stays last until its own send ends.
+TEST(PendingPictureRowsTest, TextSentWhileThePictureUploadsLandsAboveTheBubble) {
+  Transcript t;
+  t.store = {Text("a", "contact-1", util::NowUnixMs() - 3 * kMinute, 1)};
+  t.StartPicture();
+  t.Sync();
+  t.store.push_back(Text("typed", kLocalSelfContactId, util::NowUnixMs(), 2));
+  t.Sync();
+  EXPECT_EQ(t.Ids(), (std::vector<std::string>{"a", "typed", "pending-upload-1"}));
+  t.store.push_back(SentPicture(3));
+  t.pending.Apply(OnPictureSendFinished(t.pending.Upload(), PictureSendOutcome::Sent));
+  t.Sync();
+  EXPECT_EQ(t.Ids(), (std::vector<std::string>{"a", "typed", "sent-1"}));
+}
+
+// The lock deletes the thumbnail: the kept row loses its picture too, so a rebuild that puts it back (paging, a jump)
+// shows the grey placeholder, never the deleted file.
+TEST(PendingPictureRowsTest, AfterTheLockTheKeptRowNoLongerPointsAtTheDeletedThumbnail) {
+  Transcript t;
+  t.StartPicture();
+  t.pending.Apply(OnPictureThumbnail(t.pending.Upload(), "/p/upload-thumb-9.jpg", /*locked=*/false));
+  t.Sync();
+  ASSERT_NE(std::string(t.Find("pending-upload-1")->content_rml.c_str()).find("upload-thumb-9"), std::string::npos);
+  t.pending.Apply(OnAppLocked(t.pending.Upload())); // as ChatController::Update does, without a redraw
+  EXPECT_EQ(t.removed, (std::vector<std::string>{"/p/upload-thumb-9.jpg"}));
+  ASSERT_TRUE(t.pending.Row());
+  const std::string kept = t.pending.Row()->content_rml.c_str();
+  EXPECT_EQ(kept.find("upload-thumb-9"), std::string::npos);
+  EXPECT_EQ(kept.find("<img"), std::string::npos);
+  EXPECT_NE(kept.find("chat-pending-disc"), std::string::npos) << "the disc stays";
+  // The row shown is updated in place, and a rebuild that does not draw again puts back the clean row.
+  EXPECT_TRUE(t.pending.RefreshTail(t.chat.messages));
+  EXPECT_EQ(std::string(t.chat.messages.back().content_rml.c_str()), kept);
+  t.chat.messages.pop_back();
+  ASSERT_TRUE(t.pending.KeepAtTail(t.chat.messages, "t", true));
+  EXPECT_EQ(std::string(t.chat.messages.back().content_rml.c_str()).find("upload-thumb-9"), std::string::npos);
+  // And drawn again from scratch it is the same placeholder markup.
+  t.Sync();
+  EXPECT_EQ(std::string(t.Find("pending-upload-1")->content_rml.c_str()), kept);
 }
 
 TEST(PendingPictureRowsTest, TheFirstPictureOfTheDayHasItsDateStripAndTheRowsAroundItAsTheRealOneWill) {
@@ -294,6 +337,17 @@ TEST_F(PendingPictureFilesTest, CancelWhilePreparingRemovesTheRowAndALateThumbna
   EXPECT_FALSE(std::filesystem::exists(late));
 }
 
+// Profile reset and shutdown tear messaging down without the lock check seeing it: Drop deletes the plaintext.
+TEST_F(PendingPictureFilesTest, DroppingTheBubbleDeletesTheThumbnailAndClearsTheState) {
+  rows_.Apply({StartPendingPicture(1, "t", PicturePixels{800, 600}), {}});
+  const std::string thumb = Thumb("upload-thumb-drop.jpg");
+  rows_.Apply(OnPictureThumbnail(rows_.Upload(), thumb, false));
+  rows_.Drop();
+  EXPECT_FALSE(std::filesystem::exists(thumb));
+  EXPECT_FALSE(rows_.Upload().Shows());
+  EXPECT_FALSE(rows_.Row());
+}
+
 TEST_F(PendingPictureFilesTest, EverySendEndDeletesTheThumbnail) {
   for (const PictureSendOutcome outcome :
        {PictureSendOutcome::Sent, PictureSendOutcome::Cancelled, PictureSendOutcome::FailedNotStaged}) {
@@ -313,7 +367,8 @@ TEST_F(PendingPictureFilesTest, EverySendEndDeletesTheThumbnail) {
   EXPECT_FALSE(std::filesystem::exists(thumb));
 }
 
-// --- The controller's wiring, read from its source (it cannot be built here). ---
+// --- Source-order pins: ChatController's wiring read from its source (it cannot be built here). These check that the
+// calls are there and in this order, not that they behave; the behaviour is covered above on PendingPictureRows. ---
 
 std::string ReadAll(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
@@ -336,7 +391,7 @@ std::string Body(const std::string& source, const std::string& signature) {
   return source.substr(start, end == std::string::npos ? std::string::npos : end - start);
 }
 
-TEST(PendingPictureControllerSourceTest, TheDisplaySyncCountsRealRowsAndPutsThePictureBackLast) {
+TEST(PendingPictureSourcePinTest, TheDisplaySyncCountsRealRowsAndPutsThePictureBackLast) {
   const std::string body = Body(Controller(), "void ChatController::SyncDisplayFromThread(");
   ASSERT_FALSE(body.empty());
   const size_t real_tail = body.find("PendingPictureRows::RealTail(chat_.messages)");
@@ -351,13 +406,13 @@ TEST(PendingPictureControllerSourceTest, TheDisplaySyncCountsRealRowsAndPutsTheP
   EXPECT_LT(search, keep);
 }
 
-TEST(PendingPictureControllerSourceTest, RowsAreBuiltThroughThePendingRowsAtTheTip) {
+TEST(PendingPictureSourcePinTest, RowsAreBuiltThroughThePendingRowsAtTheTip) {
   const std::string body = Body(Controller(), "std::vector<MessageDisplayRow> ChatController::BuildMessageRows(");
   EXPECT_NE(body.find("pending_picture_.Render("), std::string::npos);
   EXPECT_NE(body.find("!newest_inclusive.has_value()"), std::string::npos);
 }
 
-TEST(PendingPictureControllerSourceTest, ASentPictureIsTakenBackWithoutARedrawThenTheOneSyncDrawsTheRealRow) {
+TEST(PendingPictureSourcePinTest, ASentPictureIsTakenBackWithoutARedrawThenTheOneSyncDrawsTheRealRow) {
   const std::string body = Body(Controller(), "void ChatController::StartAttachmentUpload(");
   ASSERT_FALSE(body.empty());
   const size_t finished = body.find("OnPictureSendFinished(pending_picture_.Upload(), outcome)");
@@ -370,22 +425,42 @@ TEST(PendingPictureControllerSourceTest, ASentPictureIsTakenBackWithoutARedrawTh
   EXPECT_NE(body.find("if (!(picture && cancel->load()))"), std::string::npos);
 }
 
-TEST(PendingPictureControllerSourceTest, TheLockDeletesTheThumbnailOnTheExistingLockCheck) {
+TEST(PendingPictureSourcePinTest, TheLockDeletesTheThumbnailOnTheExistingLockCheck) {
   const std::string body = Body(Controller(), "void ChatController::Update(");
   const size_t lock = body.find("OnAppLocked(pending_picture_.Upload())");
   ASSERT_NE(lock, std::string::npos);
   EXPECT_NE(body.rfind("messaging_ready_ && !MessagingReady()", lock), std::string::npos);
   EXPECT_NE(body.find("DropThumbnail(", lock), std::string::npos);
+  EXPECT_NE(body.find("pending_picture_.RefreshTail(chat_.messages)", lock), std::string::npos);
 }
 
-TEST(PendingPictureControllerSourceTest, AJumpJudgesTheTailByTheRealRows) {
+TEST(PendingPictureSourcePinTest, AJumpJudgesTheTailByTheRealRows) {
   const std::string scroller = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatTranscriptScroller.cpp");
   const std::string body = Body(scroller, "ChatTranscriptScroller::JumpResult ChatTranscriptScroller::JumpToMessage(");
   EXPECT_NE(body.find("PendingPictureRows::RealTail(view_.messages).first == message_id"), std::string::npos);
 }
 
+TEST(PendingPictureSourcePinTest, ProfileResetAndShutdownDropTheBubble) {
+  const std::string source = Controller();
+  EXPECT_NE(Body(source, "void ChatController::OnProfileDataReset(").find("pending_picture_.Drop()"),
+            std::string::npos);
+  EXPECT_NE(Body(source, "void ChatController::Shutdown(").find("pending_picture_.Drop()"), std::string::npos);
+}
+
+TEST(PendingPictureSourcePinTest, RetryAndDiscardAskWhoseTapItIs) {
+  const std::string source = Controller();
+  for (const char* handler :
+       {"void ChatController::OnRetryAttachmentSend(", "void ChatController::OnDiscardAttachmentSend("}) {
+    SCOPED_TRACE(handler);
+    const std::string body = Body(source, handler);
+    const size_t decide = body.find("FailedVoiceTakesTheTap(");
+    ASSERT_NE(decide, std::string::npos);
+    EXPECT_LT(decide, body.find("failed_voice_path_;")) << "decided before the voice branch reads the recording";
+  }
+}
+
 // Plan step 0 entry list: every way a row's id reaches the store or a request ignores the picture being sent.
-TEST(PendingPictureControllerSourceTest, EveryRowEventIgnoresThePictureBeingSent) {
+TEST(PendingPictureSourcePinTest, EveryRowEventIgnoresThePictureBeingSent) {
   const std::string source = Controller();
   for (const char* event : {"toggle_reaction", "open_reactors", "play_voice", "play_audio_file", "show_send_failure",
                             "jump_to_quote", "open_message_link", "open_mention", "open_sender", "open_attachment",
@@ -400,7 +475,7 @@ TEST(PendingPictureControllerSourceTest, EveryRowEventIgnoresThePictureBeingSent
   }
 }
 
-TEST(PendingPictureControllerSourceTest, TheLongPressMenuOffersNothingOnThePictureBeingSent) {
+TEST(PendingPictureSourcePinTest, TheLongPressMenuOffersNothingOnThePictureBeingSent) {
   const std::string menus = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatMenus.cpp");
   const std::string actions = Body(menus, "std::vector<ContextMenuAction> ChatMenus::ForRequest(");
   EXPECT_NE(actions.find("IsPendingUploadRowId(message_id)"), std::string::npos);

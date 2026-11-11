@@ -66,7 +66,11 @@ enum class PictureSendOutcome { Sent, Cancelled, FailedStaged, FailedNotStaged }
 /** A picture was chosen: Uploading at 0%, sized from its head (`upright`, already turned), else 4:3. */
 PendingPictureUpload StartPendingPicture(uint64_t serial, const std::string& thread_id,
                                          std::optional<PicturePixels> upright);
-/** The worker read the real (upright) size: taken only while uploading with no size from the head. */
+/**
+ * The worker's thumbnail gives the real (upright) size: taken while uploading when the head gave none, or when its
+ * proportions differ from the head's (they disagree on the orientation): the picture is never drawn stretched.
+ * A difference within rounding (a 600px thumbnail of an odd size) keeps the head's size, so the bubble does not move.
+ */
 PendingPictureStep OnPictureSizeRead(const PendingPictureUpload& now, PicturePixels upright);
 /**
  * The thumbnail was written. Shown while uploading; deleted at once when the row is gone, the send is no longer
@@ -87,6 +91,13 @@ PendingPictureStep OnPictureDiscardTapped(const PendingPictureUpload& now);
 PendingPictureStep OnOtherAttachmentStarted(const PendingPictureUpload& now);
 /** The app locked: the thumbnail is deleted and forgotten, the rest stays (the row shows the grey placeholder). */
 PendingPictureStep OnAppLocked(const PendingPictureUpload& now);
+
+/**
+ * Retry / Discard on the open chat (`active_thread`): a failed voice recording takes the tap only when it is this
+ * chat's and no picture bubble shows here; otherwise the tap is the staged send's (the picture bubble's).
+ */
+bool FailedVoiceTakesTheTap(bool voice_failed, const std::string& voice_thread, const std::string& active_thread,
+                            bool picture_bubble_here);
 
 /** The progress the bubble shows is redrawn in steps of this many percent (and at 100). */
 inline constexpr int kPendingProgressStep = 5;

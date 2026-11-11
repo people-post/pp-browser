@@ -1314,7 +1314,8 @@ void ChatController::OnPeerIconsChanged() {
 }
 
 void ChatController::OnProfileDataReset() {
-  CloseSearch(); // nothing decrypted from the old profile stays in memory
+  CloseSearch();           // nothing decrypted from the old profile stays in memory
+  pending_picture_.Drop(); // the lock check never sees this teardown: the plaintext thumbnail goes here
   messaging_ready_ = false;
   ++messaging_session_; // a task result of the old profile never reaches the new one
   if (ready_tasks_) {
@@ -2217,7 +2218,7 @@ void ChatController::ApplyPendingPicture(PendingPictureStep step, const bool red
   const std::string thread_id =
       !step.next.thread_id.empty() ? step.next.thread_id : pending_picture_.Upload().thread_id;
   const bool changed = pending_picture_.Apply(std::move(step));
-  RefreshAttachmentInTranscript();
+  SyncComposerInputState(); // the bubble decides whether the input stays typeable (attachment_in_transcript)
   if (changed && redraw && messaging_ready_ && !thread_id.empty() && thread_id == ActiveThreadId()) {
     SyncDisplayFromThread(); // the row drawn again (or gone) with the transcript's own rules
     DirtyChatTurns();
@@ -2226,9 +2227,17 @@ void ChatController::ApplyPendingPicture(PendingPictureStep step, const bool red
 
 void ChatController::SyncComposerInputState() {
   RefreshAttachmentHere();
-  // The chip and the locked input belong to the chat the file is being sent in; the other chats stay typeable.
-  chat_.composer_input_disabled =
-      chat_.compose_disabled || chat_.attachment_here || chat_.image_preparing || chat_.voice_recording;
+  // The chip and the locked input belong to the chat the file is being sent in; the other chats stay typeable. With a
+  // picture bubble in the transcript text stays typeable; only another attachment waits (ComposerLocksOf).
+  const ComposerLocks locks =
+      ComposerLocksOf(chat_.compose_disabled, chat_.attachment_here, chat_.attachment_in_transcript,
+                      chat_.image_preparing, chat_.voice_recording);
+  if (chat_.composer_input_disabled != locks.input || chat_.attach_disabled != locks.attach) {
+    chat_.composer_input_disabled = locks.input;
+    chat_.attach_disabled = locks.attach;
+    DataModelHost::Instance().Dirty("chat", "composer_input_disabled");
+    DataModelHost::Instance().Dirty("chat", "attach_disabled");
+  }
   // Whether a voice message can be sent depends on the same upload state: a toggle that went away while a file
   // was being sent must come back when the upload ends, not at the next chrome update.
   if (voice_) {
@@ -2241,8 +2250,10 @@ void ChatController::OnAttachFile(ui::Event* ev) {
   if (!messaging_ready_ || !facade_) {
     return;
   }
-  if (chat_.composer_input_disabled || chat_.attachment_uploading || chat_.attachment_preparing ||
-      !chat_.show_attach_button) {
+  // attachment_here: one attachment at a time per chat, a failed one included (a second pick would leave its staged copy
+  // for a Retry that sends the older file).
+  if (chat_.composer_input_disabled || chat_.attachment_here || chat_.attachment_uploading ||
+      chat_.attachment_preparing || !chat_.show_attach_button) {
     return;
   }
   // B90: the menu opens at the attach button, not at a fixed corner (which was behind the keyboard on a phone).
@@ -2353,7 +2364,7 @@ void ChatController::ShowPictureSendChoice(std::string path) {
 }
 
 void ChatController::OnAttachCapture(ui::Event* ev) {
-  if (!messaging_ready_ || !facade_ || !chat_.show_capture || chat_.composer_input_disabled ||
+  if (!messaging_ready_ || !facade_ || !chat_.show_capture || chat_.composer_input_disabled || chat_.attachment_here ||
       chat_.attachment_uploading || chat_.attachment_preparing || InAiComposerContext() || ActiveThreadId().empty()) {
     return;
   }
@@ -2511,7 +2522,8 @@ void ChatController::KeepVoiceForRetry(const std::string& path, const std::strin
 }
 
 void ChatController::OnDiscardAttachmentSend() {
-  if (!failed_voice_path_.empty()) {
+  if (FailedVoiceTakesTheTap(!failed_voice_path_.empty(), failed_voice_thread_, ActiveThreadId(),
+                             pending_picture_.Upload().ShowsIn(ActiveThreadId()))) {
     std::error_code ec;
     std::filesystem::remove(failed_voice_path_, ec);
     failed_voice_path_.clear();
@@ -2561,7 +2573,8 @@ void ChatController::ResetUploadCard(const std::string& name) {
 }
 
 void ChatController::OnRetryAttachmentSend() {
-  if (!failed_voice_path_.empty()) {
+  if (FailedVoiceTakesTheTap(!failed_voice_path_.empty(), failed_voice_thread_, ActiveThreadId(),
+                             pending_picture_.Upload().ShowsIn(ActiveThreadId()))) {
     if (facade_ && !chat_.attachment_uploading) {
       const std::string path = failed_voice_path_;
       const std::string thread_id = failed_voice_thread_;
@@ -5111,6 +5124,9 @@ void ChatController::Update() {
   // shows the grey placeholder once drawn again; a retry reads the staged ciphertext, not the thumbnail).
   if (!pending_picture_.Upload().thumb_path.empty() && messaging_ready_ && !MessagingReady()) {
     ApplyPendingPicture(OnAppLocked(pending_picture_.Upload()), /*redraw=*/false);
+    if (pending_picture_.RefreshTail(chat_.messages)) {
+      DirtyChatTurns(); // the placeholder in the row shown too, so no later drawing points at the deleted file
+    }
     if (context_ && context_->GetDocument(0)) {
       PendingPictureRows::DropThumbnail(context_->GetDocument(0)); // not drawn again under the lock: the picture out
     }
@@ -5225,6 +5241,7 @@ void ChatController::Shutdown() {
     }
   }
   // Hub + ProfileSecrets lifetime is owned by Application::ShutdownMessaging.
+  pending_picture_.Drop(); // the lock check never sees this teardown: the plaintext thumbnail goes here
   messaging_ready_ = false;
   ++messaging_session_; // a task result still on its way is dropped
   if (ready_tasks_) {

@@ -1,6 +1,7 @@
 #include "feature/presenters/PendingPictureUpload.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <utility>
 
 namespace pbr {
@@ -45,8 +46,16 @@ PendingPictureUpload StartPendingPicture(const uint64_t serial, const std::strin
 }
 
 PendingPictureStep OnPictureSizeRead(const PendingPictureUpload& now, const PicturePixels upright) {
-  if (now.state != State::Uploading || now.size_known || upright.width <= 0 || upright.height <= 0) {
+  if (now.state != State::Uploading || upright.width <= 0 || upright.height <= 0) {
     return Unchanged(now);
+  }
+  if (now.size_known) {
+    // Same proportions within 2% (the thumbnail's sides are rounded): the head's size stays.
+    const int64_t head = static_cast<int64_t>(now.pixels.width) * upright.height;
+    const int64_t thumb = static_cast<int64_t>(upright.width) * now.pixels.height;
+    if (std::llabs(head - thumb) * 50 <= std::max(head, thumb)) {
+      return Unchanged(now);
+    }
   }
   PendingPictureUpload next = now;
   next.pixels = upright;
@@ -121,6 +130,11 @@ PendingPictureStep OnAppLocked(const PendingPictureUpload& now) {
   PendingPictureUpload next = now;
   std::string old = std::exchange(next.thumb_path, std::string());
   return {std::move(next), std::move(old)};
+}
+
+bool FailedVoiceTakesTheTap(const bool voice_failed, const std::string& voice_thread, const std::string& active_thread,
+                            const bool picture_bubble_here) {
+  return voice_failed && !active_thread.empty() && voice_thread == active_thread && !picture_bubble_here;
 }
 
 bool PendingProgressDue(const int drawn, const int percent) {

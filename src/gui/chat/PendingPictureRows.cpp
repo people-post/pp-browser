@@ -30,9 +30,22 @@ bool PendingPictureRows::Apply(PendingPictureStep step) {
   const bool changed = next.state != upload_.state || next.row_id != upload_.row_id ||
                        next.thumb_path != upload_.thumb_path || next.pixels.width != upload_.pixels.width ||
                        next.pixels.height != upload_.pixels.height;
+  const bool thumb_taken = !upload_.thumb_path.empty() && next.thumb_path.empty();
   upload_ = std::move(step.next);
   if (!upload_.Shows()) {
     row_.reset();
+  } else if (thumb_taken && row_) {
+    // The picture out of the kept row (PictureClipRml writes no <img> without a thumbnail): the grey placeholder.
+    std::string rml = row_->content_rml.c_str();
+    const size_t id_at = rml.find("id=\"" + std::string(kPendingThumbElementId) + "\"");
+    const size_t start = id_at == std::string::npos ? id_at : rml.rfind("<img ", id_at);
+    const size_t end = start == std::string::npos ? start : rml.find("/>", id_at);
+    if (end != std::string::npos) {
+      rml.erase(start, end + 2 - start);
+      row_->content_rml = rml.c_str();
+    } else {
+      row_.reset(); // not found: never put back a stale picture; the next drawing makes the row again
+    }
   }
   if (changed) {
     drawn_percent_ = upload_.percent; // drawn with the row again
@@ -69,6 +82,19 @@ std::vector<MessageDisplayRow> PendingPictureRows::Render(std::vector<Transcript
     row_.reset(); // not drawn in this window of its chat (older history shown): nothing to put back
   }
   return rows;
+}
+
+void PendingPictureRows::Drop() {
+  Apply({PendingPictureUpload{}, upload_.thumb_path});
+}
+
+bool PendingPictureRows::RefreshTail(std::vector<MessageDisplayRow>& messages) const {
+  if (!row_ || messages.empty() || messages.back().message_id != row_->message_id ||
+      messages.back().content_rml == row_->content_rml) {
+    return false;
+  }
+  messages.back().content_rml = row_->content_rml;
+  return true;
 }
 
 bool PendingPictureRows::KeepAtTail(std::vector<MessageDisplayRow>& messages, const std::string& thread_id,

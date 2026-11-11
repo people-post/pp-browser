@@ -1,3 +1,4 @@
+#include "gui/chat/AttachMenuRules.h"
 #include "gui/chat/AttachmentPreparing.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/shell/DataModelHost.h"
@@ -92,6 +93,8 @@ protected:
                             "attachment_failed",
                             "attachment_here",
                             "attachment_in_transcript",
+                            "composer_input_disabled",
+                            "attach_disabled",
                             "attachment_draft_name",
                             "attachment_status",
                             "attachment_progress_width",
@@ -393,6 +396,48 @@ TEST_F(ComposerVoiceMarkupTest, APictureBubbleInTheTranscriptHidesTheCardAndTheC
   EXPECT_EQ(Shown("prompt-attachment-chip"), 0);
   EXPECT_EQ(Shown("prompt-attachment-chip-action"), 0);
   EXPECT_EQ(Shown("prompt-composer-status"), 0);
+}
+
+// With the picture bubble (uploading or failed) the text input, emoji and send stay on; the plus, the camera and the
+// microphone are off, so no second attachment starts in that chat. A card send keeps everything off.
+TEST_F(ComposerVoiceMarkupTest, APictureBubbleKeepsTheTextInputOnAndTheAttachEntriesOff) {
+  state.show_voice = true;
+  state.show_attach_button = true;
+  state.show_capture = true;
+  state.draft = "on my way";
+  const auto disabled = [this](const char* cls) {
+    ui::ElementList found;
+    document->GetElementsByClassName(found, cls);
+    for (ui::Element* element : found) {
+      if (element->IsVisible(true)) {
+        return element->HasAttribute("disabled");
+      }
+    }
+    ADD_FAILURE() << cls << " not shown";
+    return false;
+  };
+  state.attachment_here = true;
+  state.attachment_in_transcript = true;
+  state.attachment_uploading = true;
+  const ComposerLocks bubble = ComposerLocksOf(false, true, true, false, false);
+  state.composer_input_disabled = bubble.input;
+  state.attach_disabled = bubble.attach;
+  Apply();
+  ASSERT_TRUE(InputShown());
+  EXPECT_FALSE(document->GetElementById("draft-input")->HasAttribute("disabled"));
+  EXPECT_FALSE(disabled("prompt-emoji-btn"));
+  EXPECT_FALSE(disabled("prompt-send-btn"));
+  EXPECT_TRUE(disabled("prompt-attach-btn"));
+  EXPECT_TRUE(disabled("prompt-capture-btn"));
+
+  state.attachment_in_transcript = false; // a file: its card above the input, the whole composer off
+  const ComposerLocks card = ComposerLocksOf(false, true, false, false, false);
+  state.composer_input_disabled = card.input;
+  state.attach_disabled = card.attach;
+  Apply();
+  EXPECT_TRUE(document->GetElementById("draft-input")->HasAttribute("disabled"));
+  EXPECT_TRUE(disabled("prompt-emoji-btn"));
+  EXPECT_TRUE(disabled("prompt-attach-btn"));
 }
 
 // Files, voice, video — and a failed picture after a restart (no bubble then) — keep the card and the chip.
