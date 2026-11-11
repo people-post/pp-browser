@@ -49,13 +49,15 @@ const std::vector<SettingsPage>& SettingsPages() {
        "settings.advanced.title",
        3,
        {"network", "llm", "integrations", "security", nullptr},
-       0},
+       0,
+       true},
       {"tester",
        "settings_section_tester",
        "settings.tester.title",
        3,
        {"network", "appearance", "security", "storage", nullptr},
-       Bit(SettingsPageAction::RefreshCasLibrary)},
+       Bit(SettingsPageAction::RefreshCasLibrary),
+       true},
   };
   return pages;
 }
@@ -71,6 +73,16 @@ const SettingsPage* FindSettingsPage(const std::string_view id) {
 
 bool SettingsPageHas(const SettingsPage& page, const SettingsPageAction action) {
   return (page.actions & Bit(action)) != 0;
+}
+
+std::vector<const SettingsPage*> ListedSettingsPages(const bool advanced) {
+  std::vector<const SettingsPage*> listed;
+  for (const SettingsPage& page : SettingsPages()) {
+    if (advanced || !page.advanced_only) {
+      listed.push_back(&page);
+    }
+  }
+  return listed;
 }
 
 } // namespace pbr

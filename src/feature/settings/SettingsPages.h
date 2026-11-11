@@ -30,6 +30,8 @@ struct SettingsPage {
   /** Handler ids the rows on the page save through (nullptr ends the list). */
   const char* handler_ids[5];
   unsigned actions;
+  /** Listed on Home (and the desktop list) only while "show advanced settings" is on (five taps on the version). */
+  bool advanced_only;
 };
 
 /** All pages in list order (the desktop list reads it as is). */
@@ -38,5 +40,8 @@ const std::vector<SettingsPage>& SettingsPages();
 const SettingsPage* FindSettingsPage(std::string_view id);
 
 bool SettingsPageHas(const SettingsPage& page, SettingsPageAction action);
+
+/** The pages Home lists: all of them, or all but the advanced-only ones. A page that is not listed cannot be opened. */
+std::vector<const SettingsPage*> ListedSettingsPages(bool advanced);
 
 } // namespace pbr

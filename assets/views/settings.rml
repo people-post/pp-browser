@@ -9,7 +9,6 @@
     <p class="pane-nav-title">{{i18n:settings.title}}</p>
   </div>
   <div class="settings-list-view root-scroll" data-if="!show_detail">
-    <p class="large-title">{{i18n:nav.me}}</p>
     <div class="settings-header row">
       <h2 class="heading-2">{{i18n:nav.me}}</h2>
     </div>
@@ -166,7 +165,6 @@
     </div>
 
     <div class="settings-detail-body nav-bar-scroll stack">
-      <p class="page-large-title">{{selected_title}}</p>
       <div id="settings-section-mount-sheet"></div>
       <p class="text muted group-foot" data-if="status != ''">{{status}}</p>
     </div>
@@ -188,7 +186,6 @@
     </div>
 
     <div class="settings-detail-body nav-bar-scroll stack">
-      <p class="page-large-title">{{security_page_title}}</p>
       <div class="settings-section settings-section--grouped stack" data-if="security_page == 'transfer'">
 {{include:settings_security_transfer}}
       </div>

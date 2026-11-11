@@ -14,6 +14,7 @@ pp_browser_add_feature_library(pp_feature_settings
     SettingsTools.cpp
     StorageManagerModel.cpp
     StorageSettingsSection.cpp
+    VersionTapCounter.cpp
   PUBLIC_LIBS
     pp_domain_attachments
     pp_lib_messaging
