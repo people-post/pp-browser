@@ -12158,7 +12158,7 @@ input.checkbox {
   vertical-align: top;
   overflow: hidden;
   border-radius: 9dp;
-  background-color: rgba(128, 128, 128, 0.25);
+  background-color: #c7c7cc; /* opaque: a translucent grey reads as blue on our own bubble */
 }
 
 .chat-pending-picture-clip .chat-attachment-image {
@@ -12188,7 +12188,7 @@ input.checkbox {
   padding: 0;
   border: 0;
   border-radius: 24dp;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 128); /* the engine reads alpha as 0..255 */
   cursor: pointer;
 }
 
@@ -12204,7 +12204,7 @@ input.checkbox {
   width: 40dp;
   height: 40dp;
   border-radius: 20dp;
-  background-color: rgba(255, 255, 255, 0.3);
+  background-color: rgba(255, 255, 255, 77);
 }
 
 /* The fallback (kPendingProgressRing false) and the cancelling disc: the ring spins, no amount shown. */
@@ -12235,7 +12235,7 @@ input.checkbox {
   margin: 6dp 0 0 0;
   padding: 1dp 6dp;
   border-radius: 8dp;
-  background-color: rgba(0, 0, 0, 0.45);
+  background-color: rgba(0, 0, 0, 115);
   color: #ffffff;
   font-size: 12dp;
   line-height: 16dp;
@@ -12265,7 +12265,7 @@ input.checkbox {
   width: 28dp;
   height: 28dp;
   border-radius: 14dp;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 128);
 }
 
 /* Speech-bubble tail on the last bubble of a run: a 10x12dp shape half outside the bubble's bottom corner (received:
