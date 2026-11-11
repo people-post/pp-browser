@@ -1,6 +1,6 @@
 # Data plane: crypto, I/O, real-time lanes, shards
 
-**Status:** Proposed (2026-11-10), for review. P1 built (2026-11-10, #574; § P1 results); P2 done differently (2026-11-11, § P2); P3 step 1 done (2026-11-11); P4 not started. Accepted parts become N-decisions in [DECISIONS.md](DECISIONS.md); shipped behavior moves to `docs/` ([THREADING.md](../../docs/architecture/THREADING.md), [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)).
+**Status:** Proposed (2026-11-10), for review. P1 built (2026-11-10, #574; § P1 results); P2 done differently (2026-11-11, § P2); P3 steps 1–2 done (2026-11-11); P4 not started. Accepted parts become N-decisions in [DECISIONS.md](DECISIONS.md); shipped behavior moves to `docs/` ([THREADING.md](../../docs/architecture/THREADING.md), [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)).
 
 **Scope:** what a node and a client do with every datagram once a link exists: receive, open (the link's AEAD), demux, the L4 work (a hop's fan-out, a bridge's splice, media to the app), seal, send. It excludes dialing, handshakes, control protocols and E2E media keys, and keeps the wire unchanged until a phase says otherwise.
 
@@ -119,7 +119,14 @@ Delivery rose with it, from 81.9% to 83.4% and from 62.9% to 71.6%. The losses t
 - In the profile, syscall entry is ~1–2 %; the per-packet IP and netfilter path is the kernel's cost, and io_uring does not shorten it.
 - Revisit as an optional Linux backend once sends are batched.
 
-**Next:** `sendmmsg`, and UDP GSO for a frame's packets to one member.
+**Step 2 done (2026-11-11), pp-cpp-amp v5.8.0: batched sends.**
+- The kernel was ~46 % of the pump after step 1: per packet, not per syscall. The firewall (netfilter / conntrack) took 9.6 %, an LSM string copy 4.3 %, and syscall entry only ~1 %. So `sendmmsg`, which saves only the entry, was skipped.
+- UDP GSO instead. `MeshRuntime::Drive` corks each round; `Endpoint::FlushSends` groups the round's association sends by peer into runs of one size; `OsUdpDatagramIo::SendSegments` sends each run in one `sendmsg` with `UDP_SEGMENT`.
+- A send with no association (a probe) is not corked. A queued send that finds no route marks its connection at the flush.
+- The app lab's NAT suite found what deferring the error broke: a dial whose hello found no route was evicted without finishing, leaking its slot. After a few handovers every dial was "too many concurrent dials" (`group_call_on_the_road`, 4 of 4). Such a dial now fails through its handshake (`PeerLink::FailUnreachable`), and an Amp test guards it.
+- Measured: ~7 datagrams per GSO send. Node CPU 67.8 → 54.2 % (100 calls at 1500 kbps) and 46.8 → 42.3 % (150 at 500 kbps), at 100 % delivered and p95 1.2 ms.
+
+**Not done:** receive-side GRO (`UDP_GRO`, to batch what arrives) and pooled send buffers.
 
 ### P4 — Shards (nodes only by default)
 
