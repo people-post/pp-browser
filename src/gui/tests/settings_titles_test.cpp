@@ -56,6 +56,16 @@ TEST(SettingsTitlesTest, PhoneBarTitlesAreBoldInAFamilyThatHasABoldFace) {
   EXPECT_NE(body.find("font-weight: bold;"), std::string::npos);
 }
 
+TEST(SettingsTitlesTest, PhoneProfileQrIsCentredWithSpaceBelow) {
+  const std::string css = ReadAsset("themes/components.rcss");
+  const size_t rule = css.find(".shell-layer-compact .me-invite-qr {");
+  ASSERT_NE(rule, std::string::npos);
+  const std::string body = css.substr(rule, css.find('}', rule) - rule);
+  EXPECT_NE(body.find("display: flex;"), std::string::npos) << "align-items only works on a flex box";
+  EXPECT_NE(body.find("align-items: center;"), std::string::npos);
+  EXPECT_NE(body.find("margin: 20dp 16dp 20dp 16dp;"), std::string::npos);
+}
+
 TEST(SettingsTitlesTest, HomeTitleIsMe) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");

@@ -8500,6 +8500,19 @@ input.checkbox {
   margin-top: 12dp;
 }
 
+/* Phone: the code sits in the middle of the page with the cards' 16dp sides and 20dp spacing, and keeps 20dp of blank
+   below it so the end of the page is not tucked under the tab bar. */
+.shell-layer-compact .me-invite-qr {
+  display: flex;
+  align-items: center;
+  margin: 20dp 16dp 20dp 16dp;
+}
+
+.shell-layer-compact .me-invite-qr .group-foot {
+  margin: 0;
+  text-align: center;
+}
+
 .me-invite-qr-code {
   width: 200dp;
   height: 200dp;
