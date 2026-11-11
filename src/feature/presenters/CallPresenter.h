@@ -13,6 +13,7 @@
 #include "feature/presenters/CallWakePlaceholder.h"
 #include "foundation/platform/PendingNotificationTap.h"
 
+#include <chrono>
 #include <functional>
 #include <map>
 #include <memory>
@@ -230,8 +231,15 @@ public:
    * which may be another); this screen clears if it showed that call or none, else it is decided again.
    */
   void HangUpEngineCall(const std::string& call_id);
-  /** The call the user (or the guard) hung up, until the engine lets go of it (empty: none). Never taken back. */
+  /**
+   * The call the user (or the guard) hung up, until the engine lets go of it (empty: none). Never taken back meanwhile.
+   * Dropped too when a call is started, joined or answered (the same call joined again shows), and after
+   * kLeavingLatchMs at most.
+   */
   const std::string& LeavingCallId() const { return leaving_call_id_; }
+  static constexpr int64_t kLeavingLatchMs = 15'000;
+  /** Tests: the steady clock (ms) the latch's time limit reads. */
+  void SetSteadyClockForTest(std::function<int64_t()> now_ms);
   void Retry();
   void ToggleMute();
   void ToggleCamera();
@@ -273,8 +281,11 @@ private:
   void KeepEngineCall(CallScreen& next, CallUiBackend& backend, const EngineCall& engine);
   /** `call_id` is the call being left (LeavingCallId). */
   bool Leaving(const std::string& call_id) const;
-  /** The call being left is forgotten once the engine let go of it (Idle, another call, or no calls). */
+  /** The call being left is forgotten once the engine let go of it (Idle, another call, or no calls), or in time. */
   void ForgetLeavingOnceLetGo(const CallUiState& state);
+  void StartLeaving(const std::string& call_id);
+  /** A call starts, is joined or answered here: nothing is kept off screen any more. */
+  void StopLeaving(const char* why);
   void MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s);
   /** B97: a live group call where nothing arrives from anyone for 30 s is left (once told). */
   void WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, int64_t now);
@@ -309,8 +320,13 @@ private:
   std::string dev_detached_call_id_;
   /** The call KeepEngineCall last logged (once per call). */
   std::string kept_call_logged_;
-  /** LeavingCallId. */
+  /** LeavingCallId, and when it was set (steady_ms_). */
   std::string leaving_call_id_;
+  int64_t leaving_since_ms_ = 0;
+  std::function<int64_t()> steady_ms_ = []() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+  };
   Callbacks callbacks_;
   CallScreen screen_;
   CallWakePlaceholder wake_placeholder_;

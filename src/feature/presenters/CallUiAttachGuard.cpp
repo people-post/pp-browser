@@ -47,7 +47,9 @@ CallUiAttachGuard::Step CallUiAttachGuard::Feed(const Input& in) {
   Step step;
   // A call hung up here: until the engine lets go of it, its media is stopped again now and then.
   if (!hung_up_call_id_.empty()) {
-    if (!in.engine_open || in.engine_call_id != hung_up_call_id_) {
+    // Let go: the engine closed it or moved on — or the presenter no longer leaves it (the user joined that call
+    // again, or the latch ran out): a call shown again is never stopped from here.
+    if (!in.engine_open || in.engine_call_id != hung_up_call_id_ || in.leaving_call_id != hung_up_call_id_) {
       hung_up_call_id_.clear();
       stop_retries_ = 0;
     } else {
