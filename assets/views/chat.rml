@@ -224,7 +224,7 @@
   <!-- A round down-arrow button; the badge on its top edge counts the messages that came in while scrolled up. -->
   <button class="chat-jump-latest" type="button" data-if="show_jump_to_latest"
           data-event-click="jump_to_latest()">
-    <svg src="../icons/chevron-down.svg" width="20" height="20" crop-to-content="true"></svg>
+    <div class="chat-jump-latest-face"><svg src="../icons/v2/chevron-down-thin.svg" width="24" height="24"></svg></div>
     <span class="badge-count badge-count--nav chat-jump-latest-badge" data-if="jump_to_latest_count != ''">{{jump_to_latest_count}}</span>
   </button>
   <!-- Phones: the transcript fades into the composer (no hairline). -->
