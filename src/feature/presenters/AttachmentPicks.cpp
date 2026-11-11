@@ -48,6 +48,21 @@ std::optional<std::string> AttachmentPicks::TakeResult(const uint64_t serial, co
   return std::nullopt;
 }
 
+bool AttachmentPicks::LeftChat(const uint64_t serial, const std::string& open_thread) const {
+  return IsCurrent(serial) && state_.thread_id != open_thread;
+}
+
+bool OfflineHold::Update(const bool offline, const int64_t now_ms) {
+  if (!offline) {
+    offline_since_ms_ = -1;
+    return false;
+  }
+  if (offline_since_ms_ < 0) {
+    offline_since_ms_ = now_ms;
+  }
+  return now_ms - offline_since_ms_ >= kOfflineStopMs;
+}
+
 bool AttachmentPicks::Accept(const uint64_t serial, const bool busy) {
   if (!busy) {
     return true;

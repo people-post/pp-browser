@@ -951,6 +951,7 @@
     "chat.attach.picture": "图片",
     "chat.attach.send_compressed": "发送",
     "chat.attach.send_original": "发原图",
+    "chat.attach.not_sent_left_chat": "你离开了这个聊天，刚才选的内容没有发送。",
     "chat.attach.preparing": "正在准备…",
     "chat.attach.preparing_slow": "文件较大，请稍等",
     "chat.attach.previous_still_sending": "上一个附件还在发送，请稍后再试。",

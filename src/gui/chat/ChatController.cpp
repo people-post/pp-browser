@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <mutex>
 #include <thread>
 #include <stdexcept>
 #include <filesystem>
@@ -2295,8 +2296,15 @@ void ChatController::EndPick(const uint64_t serial) {
 std::optional<std::string> ChatController::TakePickResult(const uint64_t serial,
                                                           const std::vector<std::string>& files) {
   // Only to the chat the pick was armed in, and only while it is open (never ActiveThreadId() of later).
+  const bool left_chat = picks_.LeftChat(serial, ActiveThreadId());
   std::optional<std::string> thread =
       picks_.TakeResult(serial, ActiveThreadId(), files, [this](const std::string& path) { release_pick_(path); });
+  if (!thread && left_chat &&
+      std::any_of(files.begin(), files.end(), [](const std::string& f) { return !f.empty(); })) {
+    // Never dropped without a word. A camera shot is only our temp copy (iOS tmp/pp-picks, Android cache/capture):
+    // it was deleted with the rest, so no plaintext stays behind.
+    UserFeedback::Fail(Tr("chat.attach.not_sent_left_chat"));
+  }
   if (!thread && picks_.State().serial == 0) {
     EndAttachmentPreparing(); // no pick is waiting any more: the entries come back
     RefreshPickOverlay();
@@ -2478,6 +2486,7 @@ void ChatController::ShowPictureSendChoice(std::string path, const std::string& 
       [this, thread_id](const std::string& picture, const bool original) {
         if (thread_id.empty() || thread_id != ActiveThreadId()) {
           release_pick_(picture); // its chat is no longer the open one: nothing is sent
+          UserFeedback::Fail(Tr("chat.attach.not_sent_left_chat"));
           return;
         }
         StartAttachmentUpload(picture, original ? OutgoingPickSource::Original : OutgoingPickSource::Photo,
@@ -2577,15 +2586,32 @@ CaptureFlowPorts ChatController::MakeCaptureFlowPorts(const uint64_t pick_serial
   return ports;
 }
 
-std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgress() {
+std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgress(
+    std::shared_ptr<std::atomic<bool>> offline_stop) {
   const uint64_t stay_hint_bytes = facade_ ? facade_->CurrentAttachmentLimits().stay_hint_bytes : 0;
   auto last_percent = std::make_shared<std::atomic<int>>(-1);
   ConversationsFacade* const facade = facade_;
-  return [this, last_percent, stay_hint_bytes, facade](const uint64_t done, const uint64_t total) {
-    // Known offline (no link under any tunnel): the transfer stops at its next tick instead of waiting out the
-    // network timeout (30 s on the iPhone). The staged copy stays, so the bubble turns to Retry at once.
-    if (facade && facade->DeviceOffline()) {
-      return false;
+  struct Held {
+    std::mutex mutex;
+    OfflineHold hold;
+  };
+  auto held = std::make_shared<Held>();
+  return [this, last_percent, stay_hint_bytes, facade, held, offline_stop](const uint64_t done, const uint64_t total) {
+    // Offline for kOfflineStopMs without a break (no link under any tunnel): the transfer stops at its next tick
+    // instead of waiting out the network timeout (30 s on the iPhone); the staged copy stays, so the bubble turns to
+    // Retry. A short drop (a Wi-Fi / cellular handover) never stops it: the transfer's own retries carry on.
+    if (facade) {
+      bool stop = false;
+      {
+        const std::lock_guard<std::mutex> lock(held->mutex);
+        stop = held->hold.Update(facade->DeviceOffline(), SteadyNowMs());
+      }
+      if (stop) {
+        if (offline_stop) {
+          offline_stop->store(true); // the result says "no connection" (the HTTP layer calls it a cancel)
+        }
+        return false;
+      }
     }
     if (total == 0) {
       return true;
@@ -2664,6 +2690,9 @@ void ChatController::KeepVoiceForRetry(const std::string& path, const std::strin
   std::error_code ec;
   if (path.empty() || !std::filesystem::exists(path, ec)) {
     return; // already gone (the recordings are wiped at start and on lock): nothing to retry
+  }
+  if (!failed_voice_path_.empty() && failed_voice_path_ != path) {
+    std::filesystem::remove(failed_voice_path_, ec); // only one kept recording: the older one goes, not left behind
   }
   failed_voice_path_ = path;
   failed_voice_thread_ = thread_id;
@@ -2805,11 +2834,12 @@ void ChatController::OnRetryAttachmentSend(const std::string& item_id) {
   DirtyChatChrome();
   DirtyChatHeader();
   // Same dialog as a first send when the space is full: free the oldest file, then send the staged ciphertext again.
+  auto offline_stop = std::make_shared<std::atomic<bool>>(false);
   BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
-      [this, thread_id, record_id, cancel](std::function<void(Roe<ThreadMessage>)> done) {
-        facade_->ResumeAttachmentAsync(thread_id, record_id, std::move(done), MakeSendProgress(), cancel);
+      [this, thread_id, record_id, cancel, offline_stop](std::function<void(Roe<ThreadMessage>)> done) {
+        facade_->ResumeAttachmentAsync(thread_id, record_id, std::move(done), MakeSendProgress(offline_stop), cancel);
       },
-      [this, cancel, thread_id, record_id, picture, item_id](Roe<ThreadMessage> sent) {
+      [this, cancel, thread_id, record_id, picture, item_id, offline_stop](Roe<ThreadMessage> sent) {
         chat_.attachment_uploading = false;
         ResetUploadCard(std::string());
         chat_.attachment_status = "";
@@ -2837,7 +2867,8 @@ void ChatController::OnRetryAttachmentSend(const std::string& item_id) {
           }
         }
         if (!sent && !stale_chip && !cancel->load()) {
-          UserFeedback::Fail(UserFeedback::AttachmentFailureMessage(sent.error(), facade_ && facade_->DeviceOffline()));
+          UserFeedback::Fail(UserFeedback::AttachmentFailureMessage(sent.error(), facade_ && facade_->DeviceOffline(),
+                                                                    offline_stop->load()));
         } else if (sent && cancel->load()) {
           UserFeedback::Fail(Tr("chat.attachment.already_sent")); // the cancel came after it reached the contact
         }
@@ -3082,12 +3113,13 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
       // retry sends the staged ciphertext (resume), so nothing is kept here after the first attempt.
       auto attachment = std::make_shared<OutgoingAttachment>(std::move(*prepared));
       auto attempts = std::make_shared<int>(0);
+      auto offline_stop = std::make_shared<std::atomic<bool>>(false); // set when the progress stopped it for offline
       BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
-          [this, thread_id, attachment, attempts, cancel,
-           staged_ids_before](std::function<void(Roe<ThreadMessage>)> done) {
+          [this, thread_id, attachment, attempts, cancel, staged_ids_before,
+           offline_stop](std::function<void(Roe<ThreadMessage>)> done) {
             if ((*attempts)++ == 0) {
-              facade_->SendAttachmentAsync(thread_id, std::move(*attachment), std::move(done), MakeSendProgress(),
-                                           cancel);
+              facade_->SendAttachmentAsync(thread_id, std::move(*attachment), std::move(done),
+                                           MakeSendProgress(offline_stop), cancel);
               return;
             }
             // This send's own staged copy (not one left by an earlier send in this chat).
@@ -3101,10 +3133,10 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
               done(Error("The attachment is no longer staged").WithUser(Tr("chat.attachment.pick_again")));
               return;
             }
-            facade_->ResumeAttachmentAsync(thread_id, own, std::move(done), MakeSendProgress(), cancel);
+            facade_->ResumeAttachmentAsync(thread_id, own, std::move(done), MakeSendProgress(offline_stop), cancel);
           },
-          [this, thread_id, path, finish_uploading, voice_file, staged_before, staged_ids_before, cancel,
-           with_bubble](Roe<ThreadMessage> sent) {
+          [this, thread_id, path, finish_uploading, voice_file, staged_before, staged_ids_before, cancel, with_bubble,
+           offline_stop](Roe<ThreadMessage> sent) {
             if (send_cancel_ != cancel && !voice_file) {
               return; // let go by the overlay's Cancel: another send may own the screen now
             }
@@ -3146,8 +3178,8 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
             }
             if (!sent) {
               if (!cancelled) {
-                UserFeedback::Fail(
-                    UserFeedback::AttachmentFailureMessage(sent.error(), facade_ && facade_->DeviceOffline()));
+                UserFeedback::Fail(UserFeedback::AttachmentFailureMessage(
+                    sent.error(), facade_ && facade_->DeviceOffline(), offline_stop->load()));
               }
               RefreshPendingAttachmentChip(/*force=*/true); // a kept ciphertext shows Retry
               return;
@@ -3450,10 +3482,6 @@ void ChatController::UpdatePeerLinkChrome() {
 }
 
 void ChatController::ResetChatPanelState() {
-  picks_.EndCurrent(); // no pick, preparing or waiting video survives the panel's reset
-  EndAttachmentPreparing();
-  video_bubble_thread_.clear();
-  RefreshPickOverlay();
   attachment_thread_.clear();
   chat_.attachment_uploading = false;
   chat_.attachment_failed = false;

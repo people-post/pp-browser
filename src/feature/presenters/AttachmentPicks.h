@@ -49,6 +49,11 @@ public:
                                         const std::vector<std::string>& files,
                                         const std::function<void(const std::string& path)>& release);
   /**
+   * The result of pick `serial` would be dropped because its chat is no longer the open one (`open_thread`): the pick
+   * is current but was armed elsewhere. The caller says so when the result brought a file (nothing is sent silently).
+   */
+  bool LeftChat(uint64_t serial, const std::string& open_thread) const;
+  /**
    * The send flow for pick `serial` is about to start: refused when another attachment is preparing or uploading
    * (`busy`) — the pick ends, the caller says why and releases the file. True when it may go on.
    */
@@ -57,6 +62,20 @@ public:
 private:
   uint64_t next_ = 0;
   PickState state_;
+};
+
+/**
+ * "Offline" that has held for a while: a link that drops for a moment (a Wi-Fi to cellular handover) must not stop an
+ * upload that would carry on; only one that stays down for kOfflineStopMs does. Feed it each observation with the time.
+ */
+inline constexpr int64_t kOfflineStopMs = 3000;
+class OfflineHold {
+public:
+  /** `offline` seen at `now_ms`: true once it has been offline without a break for kOfflineStopMs. */
+  bool Update(bool offline, int64_t now_ms);
+
+private:
+  int64_t offline_since_ms_ = -1;
 };
 
 enum class PickOverlay { Hidden, OneLine, TwoLines };

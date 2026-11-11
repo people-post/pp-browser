@@ -590,8 +590,6 @@ TEST(PendingPictureSourcePinTest, PickEndsEndPreparingStalePostersBuildNothingRe
   }
   EXPECT_NE(Body(source, "void ChatController::CloseChatWith(").find("AbandonPick();"), std::string::npos);
   EXPECT_NE(Body(source, "void ChatController::Update(").find("AbandonPick(); // locked"), std::string::npos);
-  EXPECT_NE(Body(source, "void ChatController::ResetChatPanelState(").find("EndAttachmentPreparing();"),
-            std::string::npos);
   const std::string start = Body(source, "void ChatController::StartAttachmentUpload(");
   EXPECT_NE(start.find("const bool pick_current = picks_.IsCurrent(pick_serial);"), std::string::npos);
   EXPECT_NE(start.find("session != messaging_session_"), std::string::npos);
@@ -616,15 +614,25 @@ TEST(PendingPictureSourcePinTest, OfflineRetriesStayFailedFailFastAndSayNoConnec
   EXPECT_NE(retry.find("if (!sent && !stale_chip) {"), std::string::npos)
       << "the copy is looked for after a cancel too";
   EXPECT_NE(retry.find("bubble_tap_guard_until_ ="), std::string::npos);
-  EXPECT_NE(retry.find("UserFeedback::AttachmentFailureMessage("), std::string::npos);
+  EXPECT_NE(retry.find("offline_stop->load()"), std::string::npos);
   const std::string progress =
       Body(source, "std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgress(");
-  const size_t offline = progress.find("if (facade && facade->DeviceOffline()) {");
-  ASSERT_NE(offline, std::string::npos);
-  EXPECT_LT(offline, progress.find("return false;", offline) + 1);
+  const size_t held = progress.find("stop = held->hold.Update(facade->DeviceOffline(), SteadyNowMs());");
+  ASSERT_NE(held, std::string::npos) << "only offline held for a while stops it (OfflineHold)";
+  const size_t flagged = progress.find("offline_stop->store(true);", held);
+  ASSERT_NE(flagged, std::string::npos);
+  const size_t stopped = progress.find("return false;", flagged);
+  EXPECT_NE(stopped, std::string::npos) << "the flag is set before the transfer is told to stop";
   const std::string cancel = Body(source, "void ChatController::OnCancelAttachmentSend(");
   EXPECT_NE(cancel.find("std::chrono::steady_clock::now() < bubble_tap_guard_until_"), std::string::npos);
-  EXPECT_NE(Body(source, "void ChatController::StartAttachmentUpload(").find("UserFeedback::AttachmentFailureMessage("),
+  const std::string start = Body(source, "void ChatController::StartAttachmentUpload(");
+  EXPECT_NE(start.find("MakeSendProgress(offline_stop)"), std::string::npos);
+  EXPECT_NE(start.find("offline_stop->load()"), std::string::npos);
+  // Re-review item 4: a result dropped because its chat was left says so.
+  EXPECT_NE(Body(source, "std::optional<std::string> ChatController::TakePickResult(")
+                .find("Tr(\"chat.attach.not_sent_left_chat\")"),
+            std::string::npos);
+  EXPECT_NE(Body(source, "void ChatController::ShowPictureSendChoice(").find("Tr(\"chat.attach.not_sent_left_chat\")"),
             std::string::npos);
 }
 

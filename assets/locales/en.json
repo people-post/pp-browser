@@ -973,6 +973,7 @@
     "chat.attach.picture": "Picture",
     "chat.attach.send_compressed": "Send",
     "chat.attach.send_original": "Send original",
+    "chat.attach.not_sent_left_chat": "You left this chat, so the item you picked was not sent.",
     "chat.attach.preparing": "Preparing…",
     "chat.attach.preparing_slow": "This is a large file, please wait",
     "chat.attach.previous_still_sending": "The previous attachment is still being sent. Please try again in a moment.",
