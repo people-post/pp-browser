@@ -56,6 +56,8 @@ struct ChatScreenState {
   bool thread_has_icon = false;
   bool compose_disabled = false;
   bool composer_input_disabled = false;
+  /** The plus, the camera and the microphone are off: the input is, or an attachment is in flight / failed here. */
+  bool attach_disabled = false;
   bool show_attach_button = false;
   bool attachment_uploading = false;
   ui::String attachment_draft_name;
@@ -73,6 +75,9 @@ struct ChatScreenState {
   bool show_capture = false;
   /** The microphone button: this chat can take a voice message (peer or group chat, voice supported here). */
   bool show_voice = false;
+  /** A picture bubble is in this chat's transcript: the microphone stays in its place, greyed (not hidden), so the
+   *  composer still looks like one; voice waits until the picture's send ends. */
+  bool voice_entry_off = false;
   /** A call (or ringing) has the microphone: the button is grey and its tooltip says why. */
   bool voice_blocked = false;
   bool voice_recording = false;
@@ -82,6 +87,11 @@ struct ChatScreenState {
   bool attachment_preparing = false;
   /** The chip's condition: an attachment is preparing / uploading / failed in the chat open now (not in another one). */
   bool attachment_here = false;
+  /** The picture being sent shows as a bubble in the open chat's transcript: the upload card and chip stay hidden. */
+  bool attachment_in_transcript = false;
+  /** The centred "Preparing…" overlay between a pick and its choice / bubble (AttachmentPicks), and its second line. */
+  bool picking_busy = false;
+  bool picking_busy_slow = false;
   /** Voice mode (WeChat style): a "hold to talk" bar replaces the text input. Per app session; off whenever show_voice is. */
   bool voice_mode = false;
   /** Desktop: a click starts, and Send / Cancel buttons end it. Phones: hold, release sends, slide up cancels. */

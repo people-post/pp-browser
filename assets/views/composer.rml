@@ -9,10 +9,12 @@
      data-class-prompt-composer--e2e="thread_is_private"
      data-class-prompt-composer--disabled="composer_input_disabled">
   <!-- Status row above the input, only when something needs saying: an attachment uploading (the card below) /
-       preparing / failed (Retry, Cancel), the AI picture, the AI answer's stop key. -->
+       preparing / failed (Retry, Cancel), the AI picture, the AI answer's stop key. A picture being sent shows as a
+       bubble in the transcript instead (attachment_in_transcript): then no card and no chip here. -->
   <div class="prompt-composer-status"
-       data-if="!voice_recording && (attachment_here || image_chip || loading)">
-    <div class="prompt-attachment-chip" data-if="attachment_here && !attachment_uploading">
+       data-if="!voice_recording && ((attachment_here && !attachment_in_transcript && !picking_busy) || image_chip || loading)">
+    <div class="prompt-attachment-chip"
+         data-if="attachment_here && !attachment_in_transcript && !attachment_uploading && !picking_busy">
       <span class="prompt-attachment-chip-name">{{attachment_draft_name}}</span>
       <span class="prompt-attachment-chip-status">{{attachment_status}}</span>
       <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
@@ -22,7 +24,7 @@
     </div>
     <!-- Sending: what goes (picture, or the type badge of the storage page), its name, a bar with the real progress
          (it breathes while the bytes move and stops once cancelled), and a red ✕ that cancels the send. -->
-    <div class="prompt-upload-card" data-if="attachment_here && attachment_uploading">
+    <div class="prompt-upload-card" data-if="attachment_here && !attachment_in_transcript && attachment_uploading">
       <img class="prompt-upload-thumb" data-if="attachment_thumb != ''" data-attr-src="attachment_thumb"/>
       <div class="storage-file-type prompt-upload-type" data-if="attachment_thumb == ''">
         <span class="storage-file-type-text">{{attachment_type_label}}</span>
@@ -65,8 +67,8 @@
   <!-- Desktop: the microphone / keyboard toggle leads the row (the --end copies are the phone's, components.rcss). -->
   <div class="prompt-composer-row">
     <button class="prompt-voice-toggle-btn prompt-voice-toggle-btn--start" type="button"
-            data-if="show_voice && !voice_mode && !voice_recording"
-            data-event-click="voice_mode_toggle()" data-attrif-disabled="composer_input_disabled"
+            data-if="(show_voice || voice_entry_off) && !voice_mode && !voice_recording"
+            data-event-click="voice_mode_toggle()" data-attrif-disabled="attach_disabled" data-class-prompt-entry-off="attach_disabled"
             title="{{i18n:chat.voice.mode_voice}}">
       <svg class="prompt-icon-classic" src="../icons/mic.svg" width="18" height="18" crop-to-content="true"></svg>
     </button>
@@ -92,7 +94,7 @@
       <p class="prompt-composer-label" data-if="draft == '' && !thread_is_ai">{{i18n:chat.composer.placeholder}}</p>
       <!-- A phone shows the bold plus here (its floating Camera / Photos / File card: the chat's, or the AI's). -->
       <button class="prompt-attach-btn" type="button" data-if="show_attach_button"
-              data-event-click="attach_file()" data-attrif-disabled="composer_input_disabled"
+              data-event-click="attach_file()" data-attrif-disabled="attach_disabled" data-class-prompt-entry-off="attach_disabled"
               title="{{i18n:chat.attach_file}}">
         <svg class="prompt-icon-classic" src="../icons/attach.svg" width="18" height="18" crop-to-content="true"></svg>
         <svg class="prompt-icon-v2" src="../icons/v2/paperclip.svg" width="20" height="20"></svg>
@@ -101,12 +103,12 @@
       <!-- The Home-root field only (hidden elsewhere by CSS): a bold plus inside the box that opens a floating menu with
            Camera and Photos. -->
       <button class="prompt-home-plus" type="button" data-if="show_attach_button"
-              data-event-click="home_attach_menu()" data-attrif-disabled="composer_input_disabled"
+              data-event-click="home_attach_menu()" data-attrif-disabled="attach_disabled" data-class-prompt-entry-off="attach_disabled"
               title="{{i18n:chat.attach_file}}">
         <svg class="prompt-icon-home" src="../icons/v2/plus-bold.svg" width="26" height="26"></svg>
       </button>
       <button class="prompt-capture-btn" type="button" data-if="show_capture && !voice_mode && !voice_recording"
-              data-event-click="attach_capture()" data-attrif-disabled="composer_input_disabled"
+              data-event-click="attach_capture()" data-attrif-disabled="attach_disabled" data-class-prompt-entry-off="attach_disabled"
               title="{{i18n:chat.attach.capture}}">
         <svg class="prompt-icon-classic" src="../icons/camera.svg" width="18" height="18" crop-to-content="true"></svg>
         <svg class="prompt-icon-v2" src="../icons/v2/camera.svg" width="20" height="20"></svg>
@@ -157,8 +159,8 @@
     <!-- Phones (WhatsApp, Kenneth 2026-11-04): the microphone ends the row and gives its place to Send once there is
          text; in voice mode the keyboard key takes it. Same buttons and handlers as the desktop's leading pair. -->
     <button class="prompt-voice-toggle-btn prompt-voice-toggle-btn--end prompt-mic-btn" type="button"
-            data-if="show_voice && !voice_mode && !voice_recording && draft == ''"
-            data-event-click="voice_mode_toggle()" data-attrif-disabled="composer_input_disabled"
+            data-if="(show_voice || voice_entry_off) && !voice_mode && !voice_recording && draft == ''"
+            data-event-click="voice_mode_toggle()" data-attrif-disabled="attach_disabled" data-class-prompt-entry-off="attach_disabled"
             title="{{i18n:chat.voice.mode_voice}}">
       <svg class="prompt-icon-v2" src="../icons/v2/mic.svg" width="20" height="20"></svg>
     </button>

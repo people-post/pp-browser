@@ -27,6 +27,9 @@ Roe<std::string> CallReads::LocalIdentity() const {
 }
 
 Roe<std::optional<CallSession>> CallReads::ActiveLocalCall() const {
+  if (dev_fail_active_read_ && dev_fail_active_read_()) {
+    return Error("ActiveLocalCall: failed on purpose (debug.pp.fail_call_read)");
+  }
   auto local = LocalIdentity();
   if (!local) {
     return local.error();
@@ -37,11 +40,18 @@ Roe<std::optional<CallSession>> CallReads::ActiveLocalCall() const {
   }
   for (const CallSession& session : *active) {
     auto participant = sessions_.FindParticipant(session.call_id, *local);
-    if (participant && participant->has_value() && (*participant)->state == CallParticipantState::Joined) {
+    if (!participant) {
+      return participant.error(); // unread is not "not joined": the screen would drop a call still going on
+    }
+    if (participant->has_value() && (*participant)->state == CallParticipantState::Joined) {
       return std::optional<CallSession>{session};
     }
   }
   return std::optional<CallSession>{};
+}
+
+void CallReads::SetDevFailActiveRead(std::function<bool()> fail) {
+  dev_fail_active_read_ = std::move(fail);
 }
 
 Roe<std::optional<PendingCallInvite>> CallReads::TopPendingInvite() const {

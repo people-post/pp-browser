@@ -28,6 +28,7 @@ pp_browser_add_feature_library(pp_gui
     chat/MessageTimeLabel.cpp
     chat/MessagingReadyTasks.cpp
     chat/OutgoingAttachmentPrep.cpp
+    chat/PendingUploadRows.cpp
     chat/TranscriptRml.cpp
     chat/VoiceBubble.cpp
     chat/VoiceComposer.cpp

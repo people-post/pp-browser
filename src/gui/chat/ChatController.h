@@ -16,6 +16,8 @@
 #include "gui/chat/AttachmentPreparing.h"
 #include "gui/chat/CameraCaptureFlow.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
+#include "gui/chat/PendingUploadRows.h"
+#include "feature/presenters/AttachmentPicks.h"
 #include "gui/chat/PhotoPreview.h"
 #include "gui/chat/VoiceComposer.h"
 #include "gui/chat/VoicePlayback.h"
@@ -333,11 +335,12 @@ private:
   /** The camera icon: iOS opens the system camera at once; Android first asks "Take a photo / Record a video". */
   void OnAttachCapture(ui::Event* ev = nullptr);
   void OpenCameraCapture(CameraCaptureKind kind);
-  CaptureFlowPorts MakeCaptureFlowPorts();
+  /** `pick_serial`: the camera's pick (a video sent from it carries it on until its bubble). */
+  CaptureFlowPorts MakeCaptureFlowPorts(uint64_t pick_serial, const std::string& thread_id);
   /** Recompute `show_capture` (call, upload, chat kind); dirty only on a change. */
   void RefreshShowCapture();
   /** After a picture is picked: "Send" (shrunk), "Send original", Cancel. */
-  void ShowPictureSendChoice(std::string path);
+  void ShowPictureSendChoice(std::string path, const std::string& thread_id);
   void ToggleVoiceMode();
   /** A video was accepted and is being copied out by the system (iOS): the chip says "Sending…" until it arrives. */
   void BeginAttachmentPreparing(const std::string& name);
@@ -348,26 +351,60 @@ private:
   /** chat_.attachment_here: an attachment is in flight (or failed) in the chat that is open now. */
   void RefreshAttachmentHere();
   /**
-   * `voice_file`: the file is a voice recording of ours, to `voice_thread_id` (not whatever chat is open when it
-   * is done). It is deleted once the send succeeded or is staged for a retry; otherwise it is kept and the chip
-   * offers Retry / Discard.
+   * Sends `path` to `to_thread` and only there: the chat a pick was armed in, a recording's own (never whatever
+   * chat is open when this runs; empty: nothing is sent). `voice_file`: a voice recording of ours; it is deleted once
+   * the send succeeded or is staged for a retry, otherwise it is kept and the chip offers Retry / Discard (also when
+   * the send is refused because another one runs).
    */
-  void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool voice_file = false,
-                             const std::string& voice_thread_id = {});
+  void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool voice_file,
+                             const std::string& to_thread, std::optional<PendingUploadKind> bubble = std::nullopt,
+                             uint64_t pick_serial = 0);
+  // The wait between a pick and its choice / bubble (DEV/PLAN-attachment-bubbles-multi-pick.md step 3): a pick serial
+  // per picker opening, the centred overlay while it is prepared, its late results dropped once it is over.
+  uint64_t ArmPick();
+  void ShowPick(uint64_t serial);
+  void EndPick(uint64_t serial);
+  /**
+   * A late result of pick `serial`: the chat it was armed in when it is current and that chat is still open (the only
+   * chat it may go to); otherwise none, and its files are released.
+   */
+  std::optional<std::string> TakePickResult(uint64_t serial, const std::vector<std::string>& files);
+  /** The current pick ends now (lock, sign-out, chat deleted, Cancel): preparing ends too, the entries come back. */
+  void AbandonPick();
+  /** chat_.picking_busy / picking_busy_slow from the pick and the open chat (PickOverlayOf). */
+  void RefreshPickOverlay();
+  /** The overlay's Cancel: the pick ends; a video waiting for its poster stops sending. */
+  void OnCancelPicking();
+  /**
+   * The picture being sent shows as a bubble at the end of its chat (`picture` above; DEV/PLAN-picture-upload-bubble.md):
+   * an event's result is taken, and the transcript drawn again when the row changed and its chat is open (`redraw`:
+   * false when the caller draws it right after, in the same UI task).
+   */
+  void ApplyPendingUpload(PendingUploadStep step, bool redraw = true);
+  /** chat_.attachment_in_transcript: the open chat shows that bubble, so the composer's upload card / chip stay hidden. */
+  void RefreshAttachmentInTranscript();
   /** A voice recording that could not be sent and was not staged: the chip offers Retry / Discard for the file. */
   void KeepVoiceForRetry(const std::string& path, const std::string& thread_id);
-  /** Retry / discard the failed send the chip shows; the staged ciphertext is what a retry sends again. */
-  void OnRetryAttachmentSend();
-  void OnDiscardAttachmentSend();
-  /** Cancel the send in flight: its upload stops, its staged copy goes, and nothing is sent. */
-  void OnCancelAttachmentSend();
+  /**
+   * Retry / discard the failed send: a bubble's carries its item id (that item and its own staged copy); the chip's
+   * none (the send it shows). The staged ciphertext is what a retry sends again.
+   */
+  void OnRetryAttachmentSend(const std::string& item_id = {});
+  void OnDiscardAttachmentSend(const std::string& item_id = {});
+  /** Cancel the send in flight (a bubble's disc carries its id): its upload stops, its staged copy goes, nothing is sent. */
+  void OnCancelAttachmentSend(const std::string& item_id = {});
   /** The upload card for a send starting (`name`: the file's name) or ended (empty): bar, badge, picture, ✕. */
   void ResetUploadCard(const std::string& name);
   /** Show the chip for a staged send of the open thread that did not finish (also after the app was killed). */
   void RefreshPendingAttachmentChip(bool force);
   void ShowFailedAttachment(const std::string& record_id, const std::string& name);
   /** Progress for the chip: the percent line, with a "please stay in PP" hint for a large file. */
-  std::function<bool(uint64_t done, uint64_t total)> MakeSendProgress();
+  /**
+   * `offline_stop`: set when the progress stopped the transfer because the device stayed offline (OfflineHold); the
+   * result handler then says "no connection" (the HTTP layer reports a cancelled request).
+   */
+  std::function<bool(uint64_t done, uint64_t total)> MakeSendProgress(
+      std::shared_ptr<std::atomic<bool>> offline_stop = nullptr);
   /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
   bool InAiComposerContext() const override;
   /** Phones: "Photo / File / Cancel" before a picker (both composers). */
@@ -430,6 +467,18 @@ private:
   void UpdateThreadChrome();
   void ResetChatPanelState();
   std::string failed_record_id_;
+  /** The picture being sent, as a temporary bubble at the end of its chat; one at a time. */
+  PendingUploadRows pending_uploads_;
+  uint64_t pending_upload_serial_ = 0;
+  AttachmentPicks picks_;
+  /**
+   * A bubble's disc ignores a cancel tap this long after the tap that started or retried it: the retry disc and the
+   * cancel disc sit in the same place, and a tap delivered twice (touch and the mouse made from it) must not cancel.
+   */
+  static constexpr std::chrono::milliseconds kBubbleTapGuard{600};
+  std::chrono::steady_clock::time_point bubble_tap_guard_until_{};
+  /** The chat whose video bubble waits for its poster (the card stays hidden there); empty when none. */
+  std::string video_bubble_thread_;
   /** Set by Cancel on the chip while a send is in flight; a new one for each send. */
   std::shared_ptr<std::atomic<bool>> send_cancel_;
   /** A voice recording waiting for Retry / Discard (nothing was staged), and the chat it is for. */

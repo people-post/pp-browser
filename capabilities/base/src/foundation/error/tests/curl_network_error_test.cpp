@@ -10,8 +10,15 @@ TEST(CurlNetworkErrorTest, NamesTheCause) {
   EXPECT_EQ(NetworkCodeFromCurl(CURLE_COULDNT_RESOLVE_HOST), Err::Network::DnsFailed);
   EXPECT_EQ(NetworkCodeFromCurl(CURLE_COULDNT_CONNECT), Err::Network::ConnectFailed);
   EXPECT_EQ(NetworkCodeFromCurl(CURLE_OPERATION_TIMEDOUT), Err::Network::Timeout);
-  EXPECT_EQ(NetworkCodeFromCurl(CURLE_SSL_CONNECT_ERROR), Err::Network::TlsFailed);
   EXPECT_EQ(NetworkCodeFromCurl(CURLE_PEER_FAILED_VERIFICATION), Err::Network::TlsFailed);
+}
+
+TEST(CurlNetworkErrorTest, OnlyVerificationFailuresAreTls) {
+  EXPECT_EQ(NetworkCodeFromCurl(CURLE_SSL_CONNECT_ERROR), Err::Network::Unreachable);
+  for (CURLcode code : {CURLE_PEER_FAILED_VERIFICATION, CURLE_SSL_CERTPROBLEM, CURLE_SSL_ISSUER_ERROR,
+                        CURLE_SSL_PINNEDPUBKEYNOTMATCH, CURLE_SSL_INVALIDCERTSTATUS}) {
+    EXPECT_EQ(NetworkCodeFromCurl(code), Err::Network::TlsFailed) << code;
+  }
 }
 
 TEST(CurlNetworkErrorTest, UnknownCausesStayUnreachable) {

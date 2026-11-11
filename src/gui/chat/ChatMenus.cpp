@@ -2,6 +2,7 @@
 
 #include "common/Utilities.h"
 #include "common/thread/ThreadTypes.h"
+#include "feature/presenters/PendingUpload.h"
 #include "feature/presenters/QuickReactions.h"
 #include "feature/presenters/SessionMenu.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -145,8 +146,8 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   }
 
   const std::string message_id = FindAttributeUp(request.target, "message-id");
-  if (message_id.empty() || host_.IsDeletedMessage(message_id)) {
-    return actions; // a deleted message takes no reaction, reply, copy or second delete
+  if (message_id.empty() || IsPendingUploadRowId(message_id) || host_.IsDeletedMessage(message_id)) {
+    return actions; // a deleted message takes no reaction, reply, copy or second delete; a picture being sent is none
   }
   // Reactions sit in the row above the message, the rest in the list below it: the user's last-used first.
   for (const std::string& emoji : QuickReactions(host_.RecentEmojis())) {
@@ -218,7 +219,8 @@ std::string ChatMenus::MenuTitleFor(const ContextMenuRequest& request) {
   if (const std::string session_id = FindAttributeUp(request.target, "session-id"); !session_id.empty()) {
     return SessionTitle(session_id);
   }
-  if (!FindAttributeUp(request.target, "message-id").empty()) {
+  if (const std::string message_id = FindAttributeUp(request.target, "message-id");
+      !message_id.empty() && !IsPendingUploadRowId(message_id)) {
     return Tr("chat.menu.message_title");
   }
   return {};

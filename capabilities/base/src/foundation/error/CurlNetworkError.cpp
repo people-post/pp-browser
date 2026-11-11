@@ -12,7 +12,6 @@ Err::Network NetworkCodeFromCurl(int curl_code) {
       return Err::Network::ConnectFailed;
     case CURLE_OPERATION_TIMEDOUT:
       return Err::Network::Timeout;
-    case CURLE_SSL_CONNECT_ERROR:
     case CURLE_PEER_FAILED_VERIFICATION:
     case CURLE_SSL_CERTPROBLEM:
     case CURLE_SSL_ISSUER_ERROR:
@@ -20,6 +19,8 @@ Err::Network NetworkCodeFromCurl(int curl_code) {
     case CURLE_SSL_INVALIDCERTSTATUS:
       return Err::Network::TlsFailed;
     default:
+      // Includes CURLE_SSL_CONNECT_ERROR: it is also what a reset handshake behind a firewall or a failed connect
+      // inside the TLS phase looks like, so it is not evidence of a proxy (or of being offline).
       // Includes local-configuration failures (bad CA file, proxy not resolvable, bad URL) that no
       // network hint would describe correctly.
       return Err::Network::Unreachable;

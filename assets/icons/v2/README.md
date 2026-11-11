@@ -67,6 +67,7 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | more | phone Chats list swipe action (More) | drawn | - |
 | pin | phone context menus (chat row Pin / Unpin) | drawn | `pin.svg` |
 | reply | phone context menus (message Reply) | drawn | - |
+| retry | chat picture bubble while it uploads: the disc after a failed send (DEV/PLAN-picture-upload-bubble.md) | drawn | - |
 | share | phone context menus (shared item Share) | drawn | `share.svg` |
 | trash | phone context menus (Delete) | drawn | `trash.svg` |
 | arrow-up-right | phone sheet headers (ask-AI "Open in AI chat") | drawn | - |

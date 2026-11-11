@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include "gui/chat/ChatTranscriptScroller.h"
+#include "gui/chat/PendingUploadRows.h"
 #include "gui/chat/ChatSearchRows.h"
 
 #include "foundation/i18n/LocalizationService.h"
@@ -419,7 +420,8 @@ ChatTranscriptScroller::JumpResult ChatTranscriptScroller::JumpToMessage(const s
   pending_jump_frames_ = 0;
   pending_jump_stable_frames_ = 0;
   pending_jump_last_top_ = -1.f;
-  const bool is_tail = !view_.messages.empty() && view_.messages.back().message_id == message_id.c_str();
+  // The picture being sent at the end is not a message: the newest real row counts as the tail.
+  const bool is_tail = PendingUploadRows::RealTail(view_.messages).first == message_id;
   SetShowJumpToLatest(!is_tail || loaded_max_display_order_.has_value());
   return JumpResult::Jumped;
 }

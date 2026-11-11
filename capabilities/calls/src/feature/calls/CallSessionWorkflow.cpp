@@ -21,6 +21,26 @@
 namespace pbr {
 namespace {
 
+/**
+ * A decision about a group call whose people could not be read (a leave, a decline, the alone check) is tried again
+ * unread_roster_retry_ms_ later (1 s), at most kUnreadRosterMaxReads reads in all; then it is made from the live call's own peers
+ * (DEV/PLAN-call-ui-never-detached.md, B199).
+ */
+constexpr int kUnreadRosterMaxReads = 5;
+
+/**
+ * Whether a call is a group's without reading its people: a group's call, or a live call with more than one peer
+ * (read before anyone is removed from it). A 1:1 call needs no count to end: its one peer gone is the end.
+ */
+bool GroupCallWithoutRoster(const CallSession& session, const size_t live_peers) {
+  return (session.origin_group_id && !session.origin_group_id->empty()) || live_peers > 1;
+}
+
+size_t LivePeerCount(const LiveCalls& live, const std::string& call_id) {
+  const LiveCall* call = live.Find(call_id);
+  return call ? call->Peers().size() : 0;
+}
+
 /** A pending peer bye's key (K014): the call and the peer who said it. */
 std::string PeerByeKey(const std::string& call_id, const std::string& peer) {
   return call_id + '\n' + peer;
@@ -834,6 +854,15 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
       remaining.push_back(row.identity);
     }
   }
+  return RotateMediaKeyAmong(call_id, remaining);
+}
+
+Roe<void> CallSessionWorkflow::RotateMediaKeyAmong(const std::string& call_id,
+                                                   const std::vector<std::string>& remaining) {
+  auto local = host_.wire.local_relay_identity();
+  if (!local) {
+    return local.error();
+  }
   if (remaining.empty()) {
     return {};
   }
@@ -848,21 +877,25 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
   }
   AdoptMediaEpoch(call_id, key->epoch, key->key_id);
 
-  auto roster = host_.wire.build_roster_detail(call_id);
-  if (!roster) {
-    return roster.error();
-  }
-  roster->media_epoch = key->epoch;
-  auto roster_json = CallControlCodec::EncodeRoster(*roster);
-  if (!roster_json) {
-    return roster_json.error();
+  // The roster goes with the key when it can be read; the key goes either way (a member who left must not keep one).
+  std::optional<std::string> roster_json;
+  if (auto roster = host_.wire.build_roster_detail(call_id); roster) {
+    roster->media_epoch = key->epoch;
+    if (auto encoded = CallControlCodec::EncodeRoster(*roster); encoded) {
+      roster_json = *encoded;
+    }
+  } else {
+    log().warning << "media key rotated without a roster (unreadable) call_id=" << call_id
+                  << " err=" << roster.error().message;
   }
   for (const std::string& peer : remaining) {
     if (peer == *local) {
       continue;
     }
     (void)key_exchange_.Send(call_id, peer, *key);
-    (void)host_.wire.send_direct(peer, CallControlType::CallRoster, *roster_json, "Call roster", true);
+    if (roster_json) {
+      (void)host_.wire.send_direct(peer, CallControlType::CallRoster, *roster_json, "Call roster", true);
+    }
   }
   media_key_resends_[call_id] = MediaKeyResend{key->epoch, util::NowUnixMs(), 0};
   return {};
@@ -1031,6 +1064,7 @@ bool CallSessionWorkflow::StillInCall(const std::string& call_id) const {
 }
 
 Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveCallEndReason reason) {
+  const size_t live_peers = LivePeerCount(live_calls_, call_id); // before the close: a 1:1 or a group's, unread
   // This device leaves the call whether or not it ends for the others (group).
   live_calls_.Close(call_id, reason);
   if (pending_answerer_kick_call_id_ == call_id) {
@@ -1087,11 +1121,30 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveC
     (void)host_.wire.fan_out_joined(call_id, CallControlType::CallLeave, *detail, "Left the call", *local);
   }
 
-  auto joined = sessions_.CountJoined(call_id);
-  const size_t remaining = joined ? *joined : 0;
-  const bool group = IsGroupCall(**session);
   alone_since_ms_.erase(call_id);
   media_key_resends_.erase(call_id);
+  unread_roster_.erase(call_id);
+  alone_unread_reads_.erase(call_id);
+  auto rows = sessions_.ListParticipants(call_id);
+  size_t remaining = 0;
+  bool group = false;
+  if (rows) {
+    remaining = static_cast<size_t>(std::count_if(
+        rows->begin(), rows->end(), [](const CallParticipant& p) { return p.state == CallParticipantState::Joined; }));
+    group = CallSessionLogic::IsGroupCall(**session, rows->size());
+  } else {
+    group = GroupCallWithoutRoster(**session, live_peers);
+    log().warning << "LeaveCall: the call's people could not be read call_id=" << call_id
+                  << (group ? " (a group's: left, the call not ended for the others)" : " (1:1: ended)")
+                  << " err=" << rows.error().message;
+    if (group) {
+      // This device is out (the call closed, its media stopped, its leave and history line sent); whether the call
+      // ends for the others is not known (DEV/PLAN-call-ui-never-detached.md).
+      reports_.Emit(workflow_report::Changed{});
+      return {};
+    }
+    // 1:1: this device leaving is the end, whatever the count (remaining 0).
+  }
   const CallSessionState next = CallSessionLogic::TransitionOnLeave((*session)->state, remaining, group);
   if (next == CallSessionState::Ended) {
     std::optional<int64_t> duration;
@@ -1674,16 +1727,34 @@ Roe<void> CallSessionWorkflow::HandleInboundDecline(const std::string& detail_js
   auto session = sessions_.LoadSession(decline->call_id);
   if (local && session && session->has_value() && (*session)->state != CallSessionState::Ended) {
     bool remote_interest = false;
-    if (auto parts = sessions_.ListParticipants(decline->call_id); parts) {
-      for (const CallParticipant& row : *parts) {
-        if (row.identity == *local) {
-          continue;
+    auto parts = sessions_.ListParticipants(decline->call_id);
+    if (!parts) {
+      const bool group = GroupCallWithoutRoster(**session, LivePeerCount(live_calls_, decline->call_id));
+      log().warning << "CallDecline: the call's people could not be read call_id=" << decline->call_id
+                    << " from=" << identity << (group ? " (a group's: decided later)" : " (1:1: ended)")
+                    << " err=" << parts.error().message;
+      if (!group) {
+        // The only one asked said no: the end, no count needed.
+        std::optional<int64_t> duration;
+        if ((*session)->created_at > 0) {
+          duration = util::NowUnixMs() - (*session)->created_at;
         }
-        if (row.state == CallParticipantState::Joined || row.state == CallParticipantState::Ringing ||
-            row.state == CallParticipantState::Invited) {
-          remote_interest = true;
-          break;
-        }
+        return EndCallLocal(**session, duration, LiveCallEndReason::DeclinedByPeer);
+      }
+      // A group's: they are out of the live call now; whether anyone is left to call is decided once readable.
+      live_calls_.RemovePeer(decline->call_id, identity);
+      DecideLaterUnread(decline->call_id, identity, /*decline=*/true);
+      reports_.Emit(workflow_report::Changed{});
+      return {};
+    }
+    for (const CallParticipant& row : *parts) {
+      if (row.identity == *local) {
+        continue;
+      }
+      if (row.state == CallParticipantState::Joined || row.state == CallParticipantState::Ringing ||
+          row.state == CallParticipantState::Invited) {
+        remote_interest = true;
+        break;
       }
     }
     if (!remote_interest) {
@@ -1718,7 +1789,6 @@ Roe<void> CallSessionWorkflow::ParticipantGone(const std::string& call_id, const
   participant.state = CallParticipantState::Left;
   participant.left_at = util::NowUnixMs();
   (void)sessions_.UpsertParticipant(participant);
-  auto joined = sessions_.CountJoined(call_id);
   auto session = sessions_.LoadSession(call_id);
   // B24: relay inbox replays old call-control; an ended call's Leave must not re-run EndCallLocal
   // (which stops whatever media a newer call is using).
@@ -1743,8 +1813,30 @@ Roe<void> CallSessionWorkflow::ParticipantGone(const std::string& call_id, const
     return {};
   }
   if (session && session->has_value()) {
-    const size_t remaining = joined ? *joined : 0;
-    const bool group = IsGroupCall(**session);
+    auto rows = sessions_.ListParticipants(call_id);
+    if (!rows) {
+      const bool group = GroupCallWithoutRoster(**session, LivePeerCount(live_calls_, call_id));
+      log().warning << "a participant left but the call's people could not be read call_id=" << call_id
+                    << " who=" << identity << (group ? " (a group's: decided later)" : " (1:1: ended)")
+                    << " err=" << rows.error().message;
+      if (!group) {
+        // 1:1: its one peer is gone — the end, as ever; no count needed.
+        std::optional<int64_t> duration;
+        if ((*session)->created_at > 0) {
+          duration = util::NowUnixMs() - (*session)->created_at;
+        }
+        return EndCallLocal(**session, duration, LiveCallEndReason::RemoteEnded);
+      }
+      // A group's call goes on without them now (a group call never ends on a peer's leave while this device is in
+      // it); who is left — the alone wait, the media key's rotation — is decided once readable, or from the live call.
+      live_calls_.RemovePeer(call_id, identity);
+      DecideLaterUnread(call_id, identity, /*decline=*/false);
+      reports_.Emit(workflow_report::Changed{});
+      return {};
+    }
+    const size_t remaining = static_cast<size_t>(std::count_if(
+        rows->begin(), rows->end(), [](const CallParticipant& p) { return p.state == CallParticipantState::Joined; }));
+    const bool group = CallSessionLogic::IsGroupCall(**session, rows->size());
     const CallSessionState next = CallSessionLogic::TransitionOnLeave((*session)->state, remaining, group);
     if (group && next != CallSessionState::Ended && remaining == 1 &&
         call_queries::JoinedRemoteIdentities(sessions_, call_id, local_identity).empty()) {
@@ -2224,8 +2316,97 @@ int64_t CallSessionWorkflow::AloneUntilMs(const std::string& call_id) const {
   return it == alone_since_ms_.end() ? 0 : it->second + CallSessionLogic::kAloneInGroupCallMs;
 }
 
+void CallSessionWorkflow::DecideLaterUnread(const std::string& call_id, const std::string& identity,
+                                            const bool decline) {
+  UnreadRosterDecision& pending = unread_roster_[call_id];
+  pending.leavers.push_back(identity);
+  pending.decline = pending.decline || decline;
+  pending.left = pending.left || !decline;
+  pending.next_try_ms = util::NowUnixMs() + unread_roster_retry_ms_;
+}
+
+void CallSessionWorkflow::ResolveUnreadRosters(const std::string& local_identity, const int64_t now) {
+  std::vector<std::pair<std::string, UnreadRosterDecision>> due;
+  for (auto it = unread_roster_.begin(); it != unread_roster_.end();) {
+    if (now < it->second.next_try_ms) {
+      ++it;
+      continue;
+    }
+    due.emplace_back(it->first, it->second);
+    it = unread_roster_.erase(it);
+  }
+  for (auto& [call_id, pending] : due) {
+    auto session = sessions_.LoadSession(call_id);
+    const LiveCall* live = live_calls_.Find(call_id);
+    if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended || !live || !live->IsOpen()) {
+      continue; // over some other way
+    }
+    auto rows = sessions_.ListParticipants(call_id);
+    std::vector<std::string> remaining; // joined, this device included
+    bool remote_interest = false;       // a remote joined, ringing or invited (what a decline asks)
+    if (rows) {
+      for (const CallParticipant& row : *rows) {
+        if (row.state == CallParticipantState::Joined) {
+          remaining.push_back(row.identity);
+        }
+        if (row.identity != local_identity &&
+            (row.state == CallParticipantState::Joined || row.state == CallParticipantState::Ringing ||
+             row.state == CallParticipantState::Invited)) {
+          remote_interest = true;
+        }
+      }
+    } else if (++pending.failed_reads < kUnreadRosterMaxReads) {
+      log().warning << "group call's people still unreadable; asking again call_id=" << call_id
+                    << " reads=" << pending.failed_reads << " err=" << rows.error().message;
+      pending.next_try_ms = now + unread_roster_retry_ms_;
+      unread_roster_[call_id] = std::move(pending);
+      continue;
+    } else {
+      // Unreadable for good: the live call's peers (each leave and decline took its peer out) and this device.
+      remaining = live->Peers();
+      remaining.push_back(local_identity);
+      remote_interest = !live->Peers().empty();
+      log().warning << "group call's people unreadable after " << pending.failed_reads
+                    << " reads; deciding from the live call's " << live->Peers().size()
+                    << " peer(s) call_id=" << call_id << " err=" << rows.error().message;
+    }
+    const bool remote_joined = std::any_of(remaining.begin(), remaining.end(), [&](const std::string& who) {
+      return !who.empty() && who != local_identity;
+    });
+    if (pending.decline && !pending.left && !remote_interest) {
+      std::optional<int64_t> duration;
+      if ((*session)->created_at > 0) {
+        duration = now - (*session)->created_at;
+      }
+      (void)EndCallLocal(**session, duration, LiveCallEndReason::DeclinedByPeer); // nobody left to call
+      continue;
+    }
+    if (pending.left) {
+      const CallSessionState next = CallSessionLogic::TransitionOnLeave((*session)->state, remaining.size(), true);
+      if (next == CallSessionState::Ended) {
+        std::optional<int64_t> duration;
+        if ((*session)->created_at > 0) {
+          duration = now - (*session)->created_at;
+        }
+        (void)EndCallLocal(**session, duration, LiveCallEndReason::RemoteEnded);
+        continue;
+      }
+      if (!remote_joined && !alone_since_ms_.contains(call_id)) {
+        alone_since_ms_[call_id] = now; // V053: waiting for others, for a while
+        log().info << "Alone in group call call_id=" << call_id;
+      }
+      (*session)->state = next;
+      (void)sessions_.UpsertSession(**session);
+      // A member who left must not keep a working key: the coordinator among those left rotates it.
+      (void)RotateMediaKeyAmong(call_id, remaining);
+    }
+    reports_.Emit(workflow_report::Changed{});
+  }
+}
+
 void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_identity, const int64_t now) {
   ResendRotatedMediaKeys(local_identity, now);
+  ResolveUnreadRosters(local_identity, now);
   for (auto it = join_requested_until_ms_.begin(); it != join_requested_until_ms_.end();) {
     if (now < it->second) {
       // Halfway with no answer (our view of who joined first may be stale): anyone in it may answer.
@@ -2263,8 +2444,30 @@ void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_ident
       continue;
     }
     const std::string call_id = it->first;
+    auto joined = call_queries::JoinedParticipants(sessions_, call_id);
+    bool others = false;
+    if (joined) {
+      alone_unread_reads_.erase(call_id);
+      others = std::any_of(joined->begin(), joined->end(), [&](const CallParticipant& p) {
+        return !p.identity.empty() && p.identity != local_identity;
+      });
+    } else if (++alone_unread_reads_[call_id] < kUnreadRosterMaxReads) {
+      // A failed read is not "nobody else": looked at again in a second (DEV/PLAN-call-ui-never-detached.md, B199).
+      log().warning << "Alone in group call: the call's people could not be read; asking again call_id=" << call_id
+                    << " err=" << joined.error().message;
+      it->second = now - CallSessionLogic::kAloneInGroupCallMs + unread_roster_retry_ms_;
+      ++it;
+      continue;
+    } else {
+      // Still unreadable: the live call's own peers decide (each leave and decline took its peer out of it).
+      alone_unread_reads_.erase(call_id);
+      others = LivePeerCount(live_calls_, call_id) > 0;
+      log().warning << "Alone in group call: the call's people still unreadable; the live call has "
+                    << LivePeerCount(live_calls_, call_id) << " peer(s) call_id=" << call_id
+                    << " err=" << joined.error().message;
+    }
     it = alone_since_ms_.erase(it);
-    if (call_queries::JoinedRemoteIdentities(sessions_, call_id, local_identity).empty()) {
+    if (!others) {
       log().info << "Alone in group call for " << CallSessionLogic::kAloneInGroupCallMs / 1000
                  << " s — leaving call_id=" << call_id;
       (void)LeaveCall(call_id, LiveCallEndReason::LocalLeave);
