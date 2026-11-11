@@ -12,6 +12,7 @@
 #include "foundation/platform/PendingNotificationTap.h"
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -37,6 +38,8 @@ struct CallNotice {
     GuestJoined,
     /** V064: the 1:1 call End & accept ended (`ending`) can be called back now that the call taken is over. */
     CallBack,
+    /** "Who can call me" dropped a call from `identity`: `key` (an i18n key) says which setting did (the pill). */
+    CallBlocked,
   };
   Kind kind = Kind::Error;
   std::string key;
@@ -150,6 +153,17 @@ public:
    */
   WakeStep StepWakePlaceholder(bool phone_layout,
                                PendingNotificationTap::Clock::time_point now = PendingNotificationTap::Clock::now());
+  /**
+   * "Who can call me" dropped an invite (DEV/PLAN-call-stranger-declined.md); each call id once. A 1:1 call is
+   * recorded in the chat with its caller (ports' record_blocked_call); unless it was too old to ring, the
+   * connecting page waiting for it closes (StepWakePlaceholder: Blocked, with the pill), else the pill shows to a
+   * user looking at the app, once a minute per caller. A group's call, a caller the user blocked, our own account:
+   * nothing. A ring on screen is never touched.
+   */
+  void OnInviteBlocked(const BlockedCallInvite& blocked,
+                       PendingNotificationTap::Clock::time_point now = PendingNotificationTap::Clock::now());
+  /** One pill per caller in this long, except the one that explains a closed (or never shown) connecting page. */
+  static constexpr int64_t kBlockedPillPerCallerMs = 60'000;
 
   const CallScreen& Screen() const { return screen_; }
   /**
@@ -264,6 +278,16 @@ private:
   CallWakePlaceholder wake_placeholder_;
   /** The last StepWakePlaceholder asked for the page to show (so it is asked to clear it once). */
   bool wake_ring_shown_ = false;
+  /** OnInviteBlocked: call ids already handled, and when (steady ms; kept an invite's lifetime). */
+  std::map<std::string, int64_t> blocked_calls_;
+  /** Dropped 1:1 calls that may still be a tapped alert's: the connecting page for one closes (taken once). */
+  std::map<std::string, BlockedCallInvite> wake_blocks_;
+  /** The last pill per caller (steady ms). */
+  std::map<std::string, int64_t> blocked_pill_at_;
+  /** The pill saying which setting dropped a call from `blocked`'s caller. */
+  void NotifyBlocked(const BlockedCallInvite& blocked);
+  /** Forget handled calls past an invite's lifetime, and per-caller pills past their minute. */
+  void PruneBlocked(int64_t now_ms);
   bool messaging_ready_ = false;
   NoMediaWatch no_media_watch_;
   int64_t no_media_checked_ms_ = 0;

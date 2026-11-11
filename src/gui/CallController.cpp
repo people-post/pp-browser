@@ -681,19 +681,8 @@ void CallController::RenderAwaitingRing() {
 }
 
 void CallController::EmitWakeRingMetric(const CallPresenter::WakeStep& view) {
-  using Outcome = CallWakePlaceholder::Outcome;
   MetricsLine line("call.wake_ring");
-  switch (view.outcome) {
-    case Outcome::Ring:
-      line.Add("outcome", "ring");
-      break;
-    case Outcome::Timeout:
-      line.Add("outcome", "timeout");
-      break;
-    default:
-      line.Add("outcome", "expired");
-      break;
-  }
+  line.Add("outcome", CallWakePlaceholder::OutcomeWord(view.outcome));
   line.Add("shown_ms", view.shown_ms);
   if (view.ready_ms) {
     line.Add("ready_ms", *view.ready_ms);
@@ -1070,6 +1059,9 @@ void CallController::ShowNotice(const CallNotice& notice) {
     }
     case CallNotice::Kind::CallBack:
       OfferCallBack(notice.ending);
+      return;
+    case CallNotice::Kind::CallBlocked:
+      UserFeedback::Note(Tr(notice.key));
       return;
   }
 }

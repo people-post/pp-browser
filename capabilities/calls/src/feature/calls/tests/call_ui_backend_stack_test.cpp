@@ -231,6 +231,7 @@ protected:
     everyone.audience = mesh::DirectAudience::Everyone;
     disclosure_.Publish(everyone);
     deps.address_disclosure = &disclosure_;
+    deps_ = deps;
     stack_->BuildSessions(deps);
     ASSERT_TRUE(ui_->Available());
     ASSERT_TRUE(controls_.Find(CallControlProbeMessage())) << "the call family is bound";
@@ -280,12 +281,16 @@ protected:
     invite.media_epoch = 1;
     invite.media_key_id = "mk:1";
     invite.expires_at = util::NowUnixMs() + kDefaultCallInviteTtlMs;
+    return IngestInviteDetail(invite);
+  }
+
+  Roe<void> IngestInviteDetail(const CallInviteDetail& invite, const std::string& sender = "account:peer") {
     auto detail = CallControlCodec::EncodeInvite(invite);
     if (!detail) {
       return detail.error();
     }
     auto msg = CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallInvite, "Incoming call",
-                                                    *detail, "account:peer");
+                                                    *detail, sender);
     if (!msg) {
       return msg.error();
     }
@@ -293,7 +298,7 @@ protected:
     if (!family || !family->apply) {
       return Error("inbound not bound");
     }
-    auto applied = family->apply(*msg, SystemControlContext{"account:peer", std::nullopt, std::nullopt});
+    auto applied = family->apply(*msg, SystemControlContext{sender, std::nullopt, std::nullopt});
     AppRuntime::RunUIAndOwnerTasks(); // call control is applied on the calls owner (drained by the test)
     return applied;
   }
@@ -325,6 +330,28 @@ protected:
   std::atomic<int> ring_changes_{0};
   // Fixture-owned: chrome refreshes posted after the test body still fire during TearDown's drain.
   std::atomic<int> chrome_refreshes_{0};
+  CallStackDeps deps_;
+  /** Invites "who can call me" dropped, as the GUI hears them (on UI). */
+  std::vector<BlockedCallInvite> blocked_;
+
+  void ListenForBlocked() {
+    ui_->SetOnInviteBlocked([this](const BlockedCallInvite& blocked) {
+      EXPECT_TRUE(AppRuntime::CurrentlyOnUI());
+      blocked_.push_back(blocked);
+    });
+    AppRuntime::RunUIAndOwnerTasks();
+  }
+
+  CallInviteDetail StrangerInvite(const std::string& call_id) {
+    CallInviteDetail invite;
+    invite.call_id = call_id;
+    invite.inviter_identity = "account:peer";
+    invite.invitee_identity = local_identity_;
+    invite.media_epoch = 1;
+    invite.media_key_id = "mk:1";
+    invite.expires_at = util::NowUnixMs() + kDefaultCallInviteTtlMs;
+    return invite;
+  }
 };
 
 TEST_F(CallUiBackendStackTest, AvailableAndSessionsIdentityStable) {
@@ -356,6 +383,118 @@ TEST_F(CallUiBackendStackTest, ContactsOnlyCallAudienceDropsAStrangersInvite) {
   AppRuntime::RunUIAndOwnerTasks();
   EXPECT_EQ(ui_->Phase(), CallPhase::Ringing);
   EXPECT_EQ(ui_->LastRingCallId(), "call:contact");
+}
+
+// DEV/PLAN-call-stranger-declined.md (a): the dropped invite is told to this device's UI — once, with its call id
+// and the setting — and still nothing goes back to the caller.
+TEST_F(CallUiBackendStackTest, AnInviteTheAudienceDropsIsToldToTheUiOnce) {
+  ListenForBlocked();
+  stack_->SetInboundCallAudience(mesh::InboundAudience::ContactsOnly);
+  const int sent_before = sent_control_;
+  ASSERT_TRUE(IngestInvite("call:stranger"));
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(blocked_.size(), 1u);
+  EXPECT_EQ(blocked_[0].call_id, "call:stranger");
+  EXPECT_EQ(blocked_[0].sender_identity, "account:peer");
+  EXPECT_EQ(blocked_[0].audience, mesh::InboundAudience::ContactsOnly);
+  EXPECT_FALSE(blocked_[0].from_group);
+  EXPECT_FALSE(blocked_[0].expired);
+  EXPECT_EQ(sent_control_, sent_before) << "the caller was told";
+}
+
+TEST_F(CallUiBackendStackTest, NobodyDropsAContactsInviteAndSaysSo) {
+  ListenForBlocked();
+  mesh::AddressDisclosurePolicy with_peer;
+  with_peer.audience = mesh::DirectAudience::Everyone;
+  with_peer.contacts.insert("account:peer");
+  disclosure_.Publish(with_peer);
+  stack_->SetInboundCallAudience(mesh::InboundAudience::Nobody);
+  ASSERT_TRUE(IngestInvite("call:contact"));
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(blocked_.size(), 1u);
+  EXPECT_EQ(blocked_[0].call_id, "call:contact");
+  EXPECT_EQ(blocked_[0].audience, mesh::InboundAudience::Nobody);
+}
+
+TEST_F(CallUiBackendStackTest, EveryoneDropsNothingAndTellsNothing) {
+  ListenForBlocked();
+  stack_->SetInboundCallAudience(mesh::InboundAudience::Everyone);
+  ASSERT_TRUE(IngestInvite("call:anyone"));
+  ui_->Apply(CallLifecycleEvent::InviteSeen, "call:anyone");
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_TRUE(blocked_.empty());
+  EXPECT_EQ(ui_->Phase(), CallPhase::Ringing);
+}
+
+TEST_F(CallUiBackendStackTest, OtherCallControlDroppedFromAStrangerIsNotABlockedCall) {
+  ListenForBlocked();
+  stack_->SetInboundCallAudience(mesh::InboundAudience::ContactsOnly);
+  auto ended = CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallEnded, "Call ended",
+                                                    R"({"call_id":"call:nobody-has"})", "account:peer");
+  ASSERT_TRUE(ended);
+  const auto family = controls_.Find(*ended);
+  ASSERT_TRUE(family && family->apply);
+  ASSERT_TRUE(family->apply(*ended, SystemControlContext{"account:peer", std::nullopt, std::nullopt}));
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_TRUE(blocked_.empty());
+}
+
+TEST_F(CallUiBackendStackTest, ADroppedGroupCallInviteSaysItIsAGroups) {
+  ListenForBlocked();
+  stack_->SetInboundCallAudience(mesh::InboundAudience::ContactsOnly);
+  CallInviteDetail invite = StrangerInvite("call:group");
+  invite.origin_group_id = "group:g1";
+  ASSERT_TRUE(IngestInviteDetail(invite));
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(blocked_.size(), 1u);
+  EXPECT_TRUE(blocked_[0].from_group);
+}
+
+TEST_F(CallUiBackendStackTest, ADroppedInviteTooOldToRingIsMarkedExpired) {
+  ListenForBlocked();
+  stack_->SetInboundCallAudience(mesh::InboundAudience::ContactsOnly);
+  CallInviteDetail invite = StrangerInvite("call:old");
+  invite.expires_at = util::NowUnixMs() - kCallInviteWireSkewSlackMs - 60'000; // the workflow would not ring it
+  ASSERT_TRUE(IngestInviteDetail(invite));
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(blocked_.size(), 1u);
+  EXPECT_TRUE(blocked_[0].expired);
+}
+
+// A cold start from the call's alert: the invite may be fetched and dropped before the GUI listens.
+TEST_F(CallUiBackendStackTest, AnInviteDroppedBeforeAnyoneListensIsToldOnceWhenTheyDo) {
+  stack_->SetInboundCallAudience(mesh::InboundAudience::ContactsOnly);
+  ASSERT_TRUE(IngestInvite("call:early"));
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_TRUE(blocked_.empty());
+  ListenForBlocked();
+  ASSERT_EQ(blocked_.size(), 1u);
+  EXPECT_EQ(blocked_[0].call_id, "call:early");
+  ListenForBlocked();
+  EXPECT_EQ(blocked_.size(), 1u) << "told twice";
+}
+
+TEST_F(CallUiBackendStackTest, ARebuiltSessionManagerStillTellsTheListener) {
+  ListenForBlocked();
+  stack_->SetInboundCallAudience(mesh::InboundAudience::ContactsOnly);
+  stack_->ResetSessions();
+  stack_->BuildSessions(deps_);
+  ASSERT_TRUE(ui_->Available());
+  ASSERT_NE(ui_->SessionsIdentity(), nullptr);
+  ASSERT_TRUE(IngestInvite("call:after-rebuild"));
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(blocked_.size(), 1u);
+  EXPECT_EQ(blocked_[0].call_id, "call:after-rebuild");
+}
+
+TEST_F(CallUiBackendStackTest, AnInviteFromOurOwnAccountIsNotReported) {
+  ListenForBlocked();
+  stack_->SetInboundCallAudience(mesh::InboundAudience::ContactsOnly);
+  CallInviteDetail invite = StrangerInvite("call:own");
+  invite.inviter_identity = local_identity_;
+  ASSERT_TRUE(IngestInviteDetail(invite, local_identity_));
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_TRUE(blocked_.empty());
 }
 
 TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {

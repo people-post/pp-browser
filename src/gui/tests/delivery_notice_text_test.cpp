@@ -85,6 +85,31 @@ RenderedRow SystemRowOf(const ThreadMessage& message) {
   return RenderedRow{rows.empty() ? std::string() : std::string(rows[0].content_rml.c_str())};
 }
 
+// DEV/PLAN-call-stranger-declined.md (c): the dropped calls' line, a grey system line worded from its count.
+TEST_F(DeliveryNoticeTextTest, TheTranscriptWordsABlockedCallsLine) {
+  Object detail;
+  detail.set("count", static_cast<int64_t>(1));
+  detail.set("setting", "contacts_only");
+  Object payload;
+  payload.set("control_type", "call_blocked");
+  payload.set("detail", DumpJson(detail));
+  ThreadMessage line;
+  line.id = "call-blocked:account:stranger";
+  line.sender_contact_id = kLocalSelfContactId;
+  line.content_type = ChatContentType::System;
+  line.payload_json = DumpJson(payload);
+  const std::string one = SystemRowOf(line).rml;
+  EXPECT_NE(one.find("chat-system-line muted"), std::string::npos) << one;
+  EXPECT_NE(one.find("Missed call (declined by your settings)"), std::string::npos) << one;
+
+  detail.set("count", static_cast<int64_t>(3));
+  payload.set("detail", DumpJson(detail));
+  line.payload_json = DumpJson(payload);
+  EXPECT_NE(SystemRowOf(line).rml.find("3 missed calls (declined by your settings)"), std::string::npos);
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_NE(SystemRowOf(line).rml.find("3 次未接来电（已按你的设置拒接）"), std::string::npos) << SystemRowOf(line).rml;
+}
+
 TEST_F(DeliveryNoticeTextTest, TheTranscriptWordsASendFailureLineUnderItsMessage) {
   const ThreadMessage failed =
       MakeSendFailureRow("t1", "m1", SendFailureWord(SendFailure::RelayUnreachable).c_str(), 1);

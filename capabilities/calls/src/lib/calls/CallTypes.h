@@ -2,6 +2,8 @@
 
 #include "lib/calls/CallMobility.h"
 #include "lib/pricing/PricingTypes.h"
+#include "mesh/types/AddressDisclosure.h"
+#include "common/MeshAlias.h"
 
 #include <cstdint>
 #include <optional>
@@ -265,6 +267,23 @@ struct CallInviteDetail {
   /** Peer's advertised floor used when preparing the offer (informational). */
   int64_t floor_minor = 0;
   std::string currency = kPricingCurrencyId;
+};
+
+/**
+ * A call invite "who can call me" dropped (CallSessionManager): told to this device's UI only, never to the
+ * caller (DEV/PLAN-call-stranger-declined.md). The UI decides what, if anything, to show and record.
+ */
+struct BlockedCallInvite {
+  std::string call_id;
+  std::string sender_identity;
+  /** The setting that dropped it: ContactsOnly or Nobody. */
+  mesh::InboundAudience audience = mesh::InboundAudience::ContactsOnly;
+  /** The invite names a group (origin_group_id): a group's call. */
+  bool from_group = false;
+  /** Too old to ring had it been allowed (the stale-invite rule the workflow applies). */
+  bool expired = false;
+  /** When the invite was sent (relay time, else the message's), if known. */
+  std::optional<int64_t> created_at_ms;
 };
 
 /**

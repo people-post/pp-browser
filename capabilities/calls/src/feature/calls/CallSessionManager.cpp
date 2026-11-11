@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 #include "common/ValueJson.h"
@@ -492,6 +493,50 @@ bool CallSessionManager::SenderMaySend(const CallControlType type, const std::st
   return false;
 }
 
+void CallSessionManager::SetOnInviteBlocked(std::function<void(const BlockedCallInvite&)> callback) {
+  on_invite_blocked_ = std::move(callback);
+  if (!on_invite_blocked_) {
+    return;
+  }
+  // Dropped before anyone listened (a cold start from the call's alert): each told once, oldest first.
+  std::deque<BlockedCallInvite> unclaimed = std::exchange(unclaimed_blocked_, {});
+  for (const BlockedCallInvite& blocked : unclaimed) {
+    on_invite_blocked_(blocked);
+  }
+}
+
+void CallSessionManager::ReportBlockedInvite(const std::string& detail_json, const std::string& sender_identity,
+                                             const ThreadMessage& message,
+                                             const std::optional<int64_t> relay_created_at_ms,
+                                             const std::optional<int64_t> relay_server_time_ms) {
+  auto invite = CallControlCodec::DecodeInvite(detail_json);
+  if (!invite) {
+    log().info << "dropped call invite not reported (unreadable): " << invite.error().message;
+    return;
+  }
+  BlockedCallInvite blocked;
+  blocked.call_id = invite->call_id;
+  blocked.sender_identity = sender_identity;
+  blocked.audience = inbound_call_audience_;
+  blocked.from_group = invite->origin_group_id && !invite->origin_group_id->empty();
+  // The workflow's own rule for an invite too old to ring (ShouldIgnoreInvite).
+  blocked.expired =
+      CallSessionLogic::ShouldDropStaleInvite(*invite, util::NowUnixMs(), relay_created_at_ms, relay_server_time_ms);
+  if (relay_created_at_ms && *relay_created_at_ms > 0) {
+    blocked.created_at_ms = *relay_created_at_ms;
+  } else if (message.timestamp > 0) {
+    blocked.created_at_ms = message.timestamp;
+  }
+  if (!on_invite_blocked_) {
+    unclaimed_blocked_.push_back(std::move(blocked));
+    if (unclaimed_blocked_.size() > kUnclaimedBlockedKept) {
+      unclaimed_blocked_.pop_front();
+    }
+    return;
+  }
+  on_invite_blocked_(blocked);
+}
+
 Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity,
                                                   const std::optional<int64_t> relay_created_at_ms,
                                                   const std::optional<int64_t> relay_server_time_ms) {
@@ -511,6 +556,11 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   }
   // V057 4: who may send this type (CallControlGate); anyone else is dropped silently.
   if (!SenderMaySend(*type, detail_json, sender_identity)) {
+    if (*type == CallControlType::CallInvite && sender_identity != *local) {
+      // Only "who can call me" drops an invite (anyone may send one): this device is told, the caller is not.
+      // Our own account (a sibling's lane notice) is not a caller to tell of.
+      ReportBlockedInvite(detail_json, sender_identity, message, relay_created_at_ms, relay_server_time_ms);
+    }
     return {};
   }
   switch (*type) {

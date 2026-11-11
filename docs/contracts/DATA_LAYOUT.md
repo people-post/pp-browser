@@ -108,6 +108,10 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # `send_failure` (#182): a message of ours did not go out, one row per message, id "send-failure-<message_id>"
                             # (+ "-group" for a partial group send); detail {reason, message_id}, reason = a SendFailureWord
                             # (mesh_off, no_address, ..., relay_rejected) or "group_members_missed". It does not touch the thread's preview/order.
+                            # `call_blocked`: 1:1 calls "who can call me" dropped, one row per caller in the DM, id "call-blocked:<caller>",
+                            # rewritten in place per call (its time never moves back); detail {count, setting ("contacts_only"|"nobody"),
+                            # call_ids (last 20 counted)}; text = the words at write time, a preview stand-in (the transcript words the payload);
+                            # generation "local_action" (never model context); no unread (DEV/PLAN-call-stranger-declined.md).
 ```
 
 ### Content CAS (planned)

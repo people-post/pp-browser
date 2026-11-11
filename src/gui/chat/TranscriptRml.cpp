@@ -136,6 +136,20 @@ std::optional<std::string> ReceiveFailureLine(const ThreadMessage& message) {
                             detail->getString("family").value_or(""));
 }
 
+/** A local "missed call (declined by your settings)" line: worded from its payload's count, in the reader's language. */
+std::optional<std::string> CallBlockedLine(const ThreadMessage& message) {
+  if (message.sender_contact_id != kLocalSelfContactId) {
+    return std::nullopt;
+  }
+  auto payload = TryParseObject(message.payload_json);
+  if (!payload || payload->getString("control_type").value_or("") != "call_blocked") {
+    return std::nullopt;
+  }
+  auto detail = TryParseObject(payload->getString("detail").value_or(""));
+  const uint64_t count = detail ? detail->getNonNegInt("count").value_or(1) : 1;
+  return count <= 1 ? Tr("call.blocked.row.one") : Tr("call.blocked.row.many", {{"n", std::to_string(count)}});
+}
+
 /** A local "this message did not go out" line under a message: worded from its payload, in the reader's language. */
 std::optional<std::string> SendFailureLine(const ThreadMessage& message) {
   const auto reason = SendFailureRowReason(message);
@@ -286,6 +300,9 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   }
   if (auto failure = ReceiveFailureLine(message)) {
     return SystemLineRml(*failure);
+  }
+  if (auto blocked = CallBlockedLine(message)) {
+    return SystemLineRml(*blocked);
   }
   if (PskRotateCodec::IsPskRotateMessage(message) && message.sender_contact_id != kLocalSelfContactId) {
     return SystemLineRml(Tr("chat.psk_rotate_notice"));
