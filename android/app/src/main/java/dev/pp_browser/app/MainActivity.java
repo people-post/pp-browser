@@ -244,6 +244,7 @@ public class MainActivity extends SDLActivity {
         PpCameraCapture.clearScratch(this);
         clearOpenDir(this);
         PpCallNotifications.init(this);
+        PpConnectionService.logLastKeepAlive(this);  // once per process: was it frozen or killed since?
         if (savedInstanceState == null) {
             PpCallNotifications.onActivityIntent(getIntent());  // Answer on a call notification started the app
         }

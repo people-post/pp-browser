@@ -1,5 +1,6 @@
 package dev.pp_browser.app;
 
+import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -12,6 +13,7 @@ import android.media.RingtoneManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
 
@@ -137,7 +139,7 @@ final class PpCallNotifications {
         sAppReady = false;
         if (!sShownCallId.isEmpty()) {
             sShownCallId = "";
-            cancel();
+            cancel("app gone");
         }
     }
 
@@ -170,7 +172,7 @@ final class PpCallNotifications {
             return;
         }
         sShownCallId = "";
-        cancel();
+        cancel("ended or taken by the app");
     }
 
     /** The app joined a call no ring announced: no ring will match the push's call. */
@@ -178,7 +180,7 @@ final class PpCallNotifications {
         if (!sPending) {
             return;
         }
-        cancel();
+        cancel("push call ended by the app");
         clearPending();
     }
 
@@ -191,7 +193,7 @@ final class PpCallNotifications {
             if (!sPending) {
                 return;
             }
-            cancel();
+            cancel("push call answered");
             sPendingAnswered = true;
             rearmPending();
             toNative(() -> nativeOnAnswer(""));
@@ -200,7 +202,7 @@ final class PpCallNotifications {
         if (!id.equals(sShownCallId)) {
             return;
         }
-        cancel();  // the app's call screen shows the call; endIncoming comes when it is over
+        cancel("answered");  // the app's call screen shows the call; endIncoming comes when it is over
         toNative(() -> nativeOnAnswer(id));
     }
 
@@ -211,7 +213,7 @@ final class PpCallNotifications {
             if (!sPending) {
                 return;
             }
-            cancel();
+            cancel("push call declined");
             clearPending();  // gone first, then the decline: the app declines the ring once it shows
             toNative(() -> nativeOnEnd(""));
             return;
@@ -220,7 +222,7 @@ final class PpCallNotifications {
             return;
         }
         sShownCallId = "";
-        cancel();
+        cancel("declined");
         toNative(() -> nativeOnEnd(id));
     }
 
@@ -267,7 +269,7 @@ final class PpCallNotifications {
             return;
         }
         Log.i(TAG, "the push's call found no ring");
-        cancel();
+        cancel("push call found no ring");
         clearPending();
     }
 
@@ -285,10 +287,30 @@ final class PpCallNotifications {
         }
     }
 
-    private static void cancel() {
+    private static void cancel(String reason) {
         if (sContext != null) {
+            Log.i(TAG, "call notification removed: " + reason);
             NotificationManagerCompat.from(sContext).cancel(NOTIFICATION_ID);
         }
+    }
+
+    /**
+     * Diagnostics (no call id, no name): what the phone will do with the call notification just posted — whether it
+     * may show, how loud its channel is, and whether the screen is on / locked.
+     */
+    private static void logPosted(Context c, boolean fullScreen) {
+        int importance = -1;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            final NotificationChannel channel = NotificationManagerCompat.from(c).getNotificationChannel(CHANNEL_CALLS);
+            importance = channel == null ? -1 : channel.getImportance();
+        }
+        final PowerManager pm = c.getSystemService(PowerManager.class);
+        final KeyguardManager km = c.getSystemService(KeyguardManager.class);
+        Log.i(TAG, "call notification posted channel=" + CHANNEL_CALLS + " full_screen=" + fullScreen
+                + " enabled=" + NotificationManagerCompat.from(c).areNotificationsEnabled()
+                + " importance=" + importance
+                + " interactive=" + (pm == null ? "?" : String.valueOf(pm.isInteractive()))
+                + " keyguard_locked=" + (km == null ? "?" : String.valueOf(km.isKeyguardLocked())));
     }
 
     /** `callId` empty: the push's call (no caller known: the app's name). */
@@ -330,6 +352,7 @@ final class PpCallNotifications {
                     .addAction(0, c.getString(R.string.call_decline), decline)
                     .addAction(0, c.getString(R.string.call_answer), answer));
         }
+        logPosted(c, fullScreen);
     }
 
     private static void notify(Context c, NotificationCompat.Builder builder) {
