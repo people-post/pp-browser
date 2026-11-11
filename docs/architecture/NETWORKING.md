@@ -12,6 +12,8 @@ pp-browser uses **HTTP** plus a **peer mesh**. Product peer mesh is **AMP** (UDP
 | **HTTP** | Contact **org backends** when reachable: Brief APIs, relay store/history, client-compat, quotes/billing UX, settlement orchestration |
 | **Peer mesh (AMP)** | **Peer data exchange** when `mesh.mesh_enabled` (default true): messaging, call signaling, **call media**, mesh capabilities (`media_relay`, circuit, …). Amp bind failure **fails mesh start** (D10 — no TCP underlay fallback). `mesh_enabled=false` leaves peer mesh off |
 
+**Relay request hashing:** relay API requests sit behind CloudFront origin access control, which requires `x-amz-content-sha256` (hex SHA-256 of the exact body, empty body included) on every POST/PUT. `HttpClient::Post`/`Put`, `LlmClient` and `SseClient` add it; presigned storage URLs (`HttpClient::Put` with `add_content_sha256=false`, `PutFile*`) do not.
+
 ## Settlement (pricing)
 
 | Path | When |

@@ -3,6 +3,7 @@
 #include "common/Diag.h"
 #include "common/Metrics.h"
 #include "foundation/error/AppError.h"
+#include "foundation/crypto/Sha256Hex.h"
 #include "foundation/error/CurlNetworkError.h"
 #include "foundation/tls/CurlSsl.h"
 
@@ -14,6 +15,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -22,10 +24,13 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string_view>
 
 namespace pbr {
 
 namespace {
+
+constexpr std::string_view kContentSha256Header = "x-amz-content-sha256";
 
 struct ResponseBuffer {
   std::string body;
@@ -159,7 +164,8 @@ Error TransferFailure(const CURLcode code, const long redirect_count) {
 
 Roe<HttpResponse> Perform(const std::string& url, const char* method, const std::string& body,
                           const std::map<std::string, std::string>& headers, std::optional<size_t> max_response_bytes,
-                          HttpTimeout timeout, bool restrict_to_public_https, bool follow_redirects = false) {
+                          HttpTimeout timeout, bool restrict_to_public_https, bool follow_redirects = false,
+                          bool add_content_sha256 = false) {
   CURL* curl = curl_easy_init();
   if (!curl) {
     return AppError::Internal("Failed to init curl");
@@ -186,8 +192,9 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, timeout.connect_s);
   }
 
+  const auto sent_headers = add_content_sha256 ? HttpClient::WithContentSha256(method, body, headers) : headers;
   struct curl_slist* header_list = nullptr;
-  for (const auto& [key, value] : headers) {
+  for (const auto& [key, value] : sent_headers) {
     header_list = curl_slist_append(header_list, (key + ": " + value).c_str());
   }
   if (header_list) {
@@ -544,17 +551,36 @@ Roe<HttpResponse> HttpClient::Get(const std::string& url, const std::map<std::st
 Roe<HttpResponse> HttpClient::Post(const std::string& url, const std::string& body,
                                    const std::map<std::string, std::string>& headers,
                                    std::optional<size_t> max_response_bytes, HttpTimeout timeout,
-                                   bool restrict_to_public_https) {
+                                   bool restrict_to_public_https, const bool add_content_sha256) {
   const UiBlockWatch watch(url);
-  return Perform(url, "POST", body, headers, max_response_bytes, timeout, restrict_to_public_https);
+  return Perform(url, "POST", body, headers, max_response_bytes, timeout, restrict_to_public_https, false,
+                 add_content_sha256);
 }
 
 Roe<HttpResponse> HttpClient::Put(const std::string& url, const std::string& body,
                                   const std::map<std::string, std::string>& headers,
                                   std::optional<size_t> max_response_bytes, HttpTimeout timeout,
-                                  bool restrict_to_public_https) {
+                                  bool restrict_to_public_https, const bool add_content_sha256) {
   const UiBlockWatch watch(url);
-  return Perform(url, "PUT", body, headers, max_response_bytes, timeout, restrict_to_public_https);
+  return Perform(url, "PUT", body, headers, max_response_bytes, timeout, restrict_to_public_https, false,
+                 add_content_sha256);
+}
+
+std::map<std::string, std::string> HttpClient::WithContentSha256(const std::string& method, const std::string& body,
+                                                                 const std::map<std::string, std::string>& headers) {
+  auto out = headers;
+  if (method != "POST" && method != "PUT") {
+    return out;
+  }
+  const bool present = std::any_of(out.begin(), out.end(), [](const auto& kv) {
+    return kv.first.size() == kContentSha256Header.size() &&
+           std::equal(kv.first.begin(), kv.first.end(), kContentSha256Header.begin(),
+                      [](const char a, const char b) { return std::tolower(static_cast<unsigned char>(a)) == b; });
+  });
+  if (!present) {
+    out.emplace(std::string(kContentSha256Header), Sha256Hex(body));
+  }
+  return out;
 }
 
 } // namespace pbr

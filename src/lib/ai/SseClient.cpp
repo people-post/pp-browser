@@ -2,6 +2,7 @@
 
 #include "common/PlatformLimits.h"
 #include "lib/ai/LlmClient.h"
+#include "foundation/crypto/Sha256Hex.h"
 #include "foundation/error/AppError.h"
 #include "foundation/error/CurlNetworkError.h"
 #include "foundation/tls/CurlSsl.h"
@@ -131,6 +132,8 @@ Roe<SseOutcome> SseClient::Post(const SseRequest& request, const std::function<v
     bearer_header = "Authorization: Bearer " + request.bearer_token;
     headers = curl_slist_append(headers, bearer_header.c_str());
   }
+  const std::string sha_header = "x-amz-content-sha256: " + Sha256Hex(request.json_body);
+  headers = curl_slist_append(headers, sha_header.c_str());
 
   log().debug << "POST " << request.url;
   curl_easy_setopt(curl, CURLOPT_URL, request.url.c_str());

@@ -113,14 +113,23 @@ public:
                                std::optional<size_t> max_response_bytes = kMaxHttpClientBodyBytes,
                                HttpTimeout timeout = {}, bool restrict_to_public_https = false,
                                bool follow_redirects = false);
+  /**
+   * `headers` plus, for POST and PUT, `x-amz-content-sha256` (hex SHA-256 of `body`, also when empty) unless the
+   * caller already set it in any letter case. CloudFront origin access control rejects a POST/PUT without it.
+   */
+  static std::map<std::string, std::string> WithContentSha256(const std::string& method, const std::string& body,
+                                                             const std::map<std::string, std::string>& headers);
+  /** POST/PUT carry `x-amz-content-sha256` (see WithContentSha256); `add_content_sha256` false for presigned URLs. */
   static Roe<HttpResponse> Post(const std::string& url, const std::string& body,
                                 const std::map<std::string, std::string>& headers = {},
                                 std::optional<size_t> max_response_bytes = kMaxHttpClientBodyBytes,
-                                HttpTimeout timeout = {}, bool restrict_to_public_https = false);
+                                HttpTimeout timeout = {}, bool restrict_to_public_https = false,
+                                bool add_content_sha256 = true);
   static Roe<HttpResponse> Put(const std::string& url, const std::string& body,
                                const std::map<std::string, std::string>& headers = {},
                                std::optional<size_t> max_response_bytes = kMaxHttpClientBodyBytes,
-                               HttpTimeout timeout = {}, bool restrict_to_public_https = false);
+                               HttpTimeout timeout = {}, bool restrict_to_public_https = false,
+                               bool add_content_sha256 = true);
 };
 
 } // namespace pbr
