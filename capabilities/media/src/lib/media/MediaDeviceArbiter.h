@@ -32,9 +32,10 @@ enum class AudioResetResult : uint8_t {
   /** Not run: the thread it must run on did not get to it in time (it never will). */
   Timeout,
   /**
-   * Started but not finished in time, or its task still holds the audio device thread: the audio stack may be
-   * mid-rebuild. Nothing reopens now (the audio devices count as not responding until it returns), and no rebuild is
-   * tried again in this process.
+   * Not finished in time: the rebuild started and is still running (the audio stack may be mid-rebuild), or its task
+   * never started because it is queued behind another stuck audio device task (the error text says which; the
+   * `device.audio_reset` metric's still_running=1 covers both). Either way it may still run: nothing reopens now (the
+   * audio devices count as not responding until it returns), and no rebuild is tried again in this call.
    */
   Stuck,
   /** Not run: it could not be scheduled. */

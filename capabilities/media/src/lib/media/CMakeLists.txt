@@ -10,6 +10,7 @@ pp_browser_add_lib_library(pp_lib_media
     GuardedVideoCodec.cpp
     MediaDeviceArbiter.cpp
     MediaEngine.cpp
+    MicEndpoints.cpp
     NoiseSuppressor.cpp
     SdlMediaDeviceBackend.cpp
     SyntheticVideo.cpp

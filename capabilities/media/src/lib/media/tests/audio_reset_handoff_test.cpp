@@ -84,8 +84,18 @@ TEST(SpeakerRouteRulesTest, AnActivationRoutesOnlyWhenNeeded) {
   EXPECT_TRUE(PushSpeakerRouteOnActivate(false, RoutedSpeaker::On, true));
   EXPECT_FALSE(PushSpeakerRouteOnActivate(true, RoutedSpeaker::On, true)) << "a reopen re-pushed the same route";
   EXPECT_FALSE(PushSpeakerRouteOnActivate(true, RoutedSpeaker::Off, false));
-  EXPECT_TRUE(PushSpeakerRouteOnActivate(true, RoutedSpeaker::On, false)) << "hung up on speaker, next call stayed on it";
+  EXPECT_TRUE(PushSpeakerRouteOnActivate(true, RoutedSpeaker::On, false))
+      << "hung up on speaker, next call stayed on it";
   EXPECT_TRUE(PushSpeakerRouteOnActivate(true, RoutedSpeaker::Unknown, false));
+}
+
+// A call ended: back to the earpiece at once only when the session is still up and no mic is open (a ringback put on
+// the speaker, the call gone before media); with a mic open it waits for Deactivate after that mic closed.
+TEST(SpeakerRouteRulesTest, AForgottenChoiceRoutesBackOnlyWithNoMicOpen) {
+  EXPECT_TRUE(RouteBackWhenChoiceForgotten(/*session_active=*/true, /*mic_open=*/false));
+  EXPECT_FALSE(RouteBackWhenChoiceForgotten(true, true)) << "routed under an open recording stream";
+  EXPECT_FALSE(RouteBackWhenChoiceForgotten(false, false)) << "Deactivate already routed back";
+  EXPECT_FALSE(RouteBackWhenChoiceForgotten(false, true));
 }
 
 } // namespace

@@ -1,6 +1,7 @@
 #include "lib/media/AudioSession.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/media/MediaEngine.h"
+#include "lib/media/MicEndpoints.h"
 
 #include <gtest/gtest.h>
 
@@ -452,6 +453,30 @@ TEST(AudioRouteRecoveryTest, NoRebuildWhereTheBackendHasNone) {
   EXPECT_FALSE(devices.CanResetAudio());
   std::string why;
   EXPECT_EQ(devices.ResetAudio(100ms, &why), AudioResetResult::Unsupported);
+}
+
+// AudioSession's "is a mic open" (MicEndpoints) follows the real stream: true from the open until the close has run
+// on the device thread, not merely until the lease is released.
+TEST(AudioRouteRecoveryTest, AnOpenMicIsCountedUntilItsStreamCloses) {
+  Rig rig;
+  rig.mic_close_takes = 200ms;
+  MediaDeviceArbiter devices(std::make_unique<RigBackend>(rig));
+  ASSERT_FALSE(AnyMicEndpointOpen());
+  AudioLeaseRequest request;
+  request.kind = MediaDeviceKind::Speaker;
+  request.holder = "ringback";
+  auto speaker = devices.AcquireAudio(request);
+  ASSERT_TRUE(speaker);
+  EXPECT_FALSE(AnyMicEndpointOpen()) << "a speaker is not a mic";
+  request.kind = MediaDeviceKind::Mic;
+  request.holder = "call";
+  auto mic = devices.AcquireAudio(request);
+  ASSERT_TRUE(mic);
+  EXPECT_TRUE(AnyMicEndpointOpen());
+  mic->reset(); // released: the close is still queued / running
+  EXPECT_TRUE(AnyMicEndpointOpen()) << "counted closed before its stream closed";
+  ASSERT_TRUE(devices.DrainAudio(2s));
+  EXPECT_FALSE(AnyMicEndpointOpen());
 }
 
 } // namespace

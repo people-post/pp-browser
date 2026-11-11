@@ -18,4 +18,16 @@ inline bool PushSpeakerRouteOnActivate(const bool was_active, const RoutedSpeake
   return routed != (wanted ? RoutedSpeaker::On : RoutedSpeaker::Off);
 }
 
+/**
+ * A call ended (ForgetSpeakerChoice): whether the session routes back to the earpiece right away (Android). Only
+ * while the session is still active (else Deactivate already did) and no mic is open — a route change under an open
+ * recording stream loses the mic for the process. With a mic open it is left to Deactivate, which runs after that
+ * mic has closed, or to the next activation (PushSpeakerRouteOnActivate). Right away matters when no engine ever
+ * took the session over: a ringback the user put on the speaker, the call gone before media — nothing else would
+ * route back, and the next ring or voice clip would play on the loudspeaker.
+ */
+inline bool RouteBackWhenChoiceForgotten(const bool session_active, const bool mic_open) {
+  return session_active && !mic_open;
+}
+
 } // namespace pbr

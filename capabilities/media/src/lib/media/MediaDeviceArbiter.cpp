@@ -1,5 +1,6 @@
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/media/MediaThreadName.h"
+#include "lib/media/MicEndpoints.h"
 
 #include "common/Diag.h"
 #include "common/Logger.h"
@@ -117,6 +118,21 @@ ShareWord OpWord(MediaDeviceOp op) {
   }
   return "other";
 }
+
+/** A separate mic endpoint, counted while its OS stream is open (MicEndpoints: AudioSession's route rule). */
+class CountedMicEndpoint final : public IAudioEndpoint {
+public:
+  explicit CountedMicEndpoint(std::unique_ptr<IAudioEndpoint> inner) : inner_(std::move(inner)) {}
+  int Read(void* dst, int bytes) override { return inner_->Read(dst, bytes); }
+  bool Write(const void* src, int bytes) override { return inner_->Write(src, bytes); }
+  int Queued() const override { return inner_->Queued(); }
+  void Clear() override { inner_->Clear(); }
+  IVoiceProcessing* VoiceProcessing() override { return inner_->VoiceProcessing(); }
+
+private:
+  MicEndpointCount count_; // declared first: destroyed after `inner_` has closed the stream
+  std::unique_ptr<IAudioEndpoint> inner_;
+};
 
 /** ResetAudio waits for its task this much longer than the backend may take (queue + the task's own checks). */
 constexpr std::chrono::milliseconds kAudioResetMargin{500};
@@ -449,6 +465,8 @@ struct AudioDeviceLease::State : LeaseSlot<IAudioEndpoint> {
     auto opened = backend.OpenAudio(kind, format, wanted, &error);
     if (!opened) {
       ArbiterLog().info << MediaDeviceKindName(kind) << " open for " << holder << " gave no device: " << error;
+    } else if (kind == MediaDeviceKind::Mic) {
+      opened = std::make_unique<CountedMicEndpoint>(std::move(opened));
     }
     Install(std::move(opened), error);
   }
@@ -854,6 +872,7 @@ AudioResetResult MediaDeviceArbiter::ResetAudio(std::chrono::milliseconds budget
   }
   struct Outcome {
     std::mutex mu;
+    bool started = false;
     AudioResetResult result = AudioResetResult::Timeout;
     std::string error;
   };
@@ -864,6 +883,10 @@ AudioResetResult MediaDeviceArbiter::ResetAudio(std::chrono::milliseconds budget
   const bool done =
       core_->audio.RunAndWait("reset audio", budget + kAudioResetMargin, MediaDeviceKind::Mic, MediaDeviceOp::Reopen,
                               [core, budget, outcome]() {
+                                {
+                                  std::lock_guard lock(outcome->mu);
+                                  outcome->started = true;
+                                }
                                 std::string task_error;
                                 AudioResetResult result = AudioResetResult::Busy;
                                 if (core->Held(MediaDeviceKind::Mic) || core->Held(MediaDeviceKind::Speaker)) {
@@ -877,9 +900,11 @@ AudioResetResult MediaDeviceArbiter::ResetAudio(std::chrono::milliseconds budget
                               });
   std::lock_guard lock(outcome->mu);
   if (!done) {
-    // The task holds the device thread past its budget (a rebuild still running, or queued behind something stuck):
-    // whatever it is, it may still touch the audio stack, so the caller must not reopen now.
-    why = "the rebuild still holds the audio devices";
+    // Not finished in time: either the rebuild is still running, or its task never started — queued behind another
+    // device task that is stuck. Either way it may still touch the audio stack later, so the caller must not reopen
+    // now; `why` tells the two apart (the metric's still_running=1 covers both).
+    why = outcome->started ? "the rebuild is still running"
+                           : "queued behind another stuck audio device task (the rebuild has not started)";
     return AudioResetResult::Stuck;
   }
   why = outcome->error;
