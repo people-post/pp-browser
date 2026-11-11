@@ -3,6 +3,8 @@
 #include "lib/media/AudioSession.h"
 
 #include "lib/media/AudioFocusInterruption.h"
+#include "lib/media/MicEndpoints.h"
+#include "lib/media/SpeakerRouteRules.h"
 
 #include <atomic>
 #include <mutex>
@@ -18,6 +20,16 @@ namespace {
 /** The call's speaker choice: default earpiece; kept across Deactivate (a media rebuild), cleared when the call ends. */
 std::atomic<bool> g_speakerphone{false};
 std::atomic<bool> g_session_active{false};
+/**
+ * The speaker route: every setVoipSpeakerphoneOn call and `g_routed` under one lock, from the engine's capture
+ * thread (ActivateForVoip, under MediaEngine's g_audio_session_mu), the ringback thread, the UI thread and the main
+ * thread (focus back, under g_focus_mu). Lock order: g_audio_session_mu, then g_focus_mu, then g_route_mu; nothing
+ * but the JNI call runs under it (Java posts focus changes to the main looper, never calls back into it synchronously).
+ */
+std::mutex g_route_mu;
+/** What the route was last set to here (RoutedSpeaker), under g_route_mu; set only when the Java call went through.
+ *  The next activation routes again when it differs from the choice. */
+RoutedSpeaker g_routed = RoutedSpeaker::Unknown;
 
 /**
  * MainActivity, for one call into it. The activity's local reference and its class's go when it does: the media
@@ -48,11 +60,14 @@ public:
   ActivityCall(const ActivityCall&) = delete;
   ActivityCall& operator=(const ActivityCall&) = delete;
 
-  void Void(const char* method, const bool arg) {
-    if (jmethodID mid = Method(method, "(Z)V"); mid != nullptr) {
-      env_->CallVoidMethod(activity_, mid, arg ? JNI_TRUE : JNI_FALSE);
-      ClearedException();
+  /** False when Java could not be asked (no activity yet, no such method) or it threw. */
+  bool Void(const char* method, const bool arg) {
+    jmethodID mid = Method(method, "(Z)V");
+    if (mid == nullptr) {
+      return false;
     }
+    env_->CallVoidMethod(activity_, mid, arg ? JNI_TRUE : JNI_FALSE);
+    return !ClearedException();
   }
 
   /** Nothing: Java could not be asked (no activity yet, no such method, it threw). */
@@ -93,8 +108,16 @@ private:
   jclass cls_ = nullptr;
 };
 
+/** Under g_route_mu. */
+void RouteSpeakerLocked(bool on, JNIEnv* env = nullptr) {
+  if (ActivityCall(env).Void("setVoipSpeakerphoneOn", on)) {
+    g_routed = on ? RoutedSpeaker::On : RoutedSpeaker::Off;
+  }
+}
+
 void ApplySpeakerphoneLocked(bool on, JNIEnv* env = nullptr) {
-  ActivityCall(env).Void("setVoipSpeakerphoneOn", on);
+  std::lock_guard lock(g_route_mu);
+  RouteSpeakerLocked(on, env);
 }
 
 void ApplyVoipModeLocked(bool active, JNIEnv* env = nullptr) {
@@ -175,15 +198,16 @@ bool QueryHasEarpieceRoute() {
 void ActivateForVoip() {
   const bool was_active = g_session_active.exchange(true);
   ApplyVoipModeLocked(true);
-  // Re-applying speaker on every SDL reopen races OEM route changes (Moto) and can
-  // kill AAudio capture mid-open. Only push the route when entering a call session.
-  if (!was_active) {
-    // Tablets with no earpiece: only loudspeaker exists — start on speaker so we don't
-    // sit on FORCE_NONE with the same device and a quieter comms gain curve.
-    if (!QueryHasEarpieceRoute()) {
-      g_speakerphone.store(true);
-    }
-    ApplySpeakerphoneLocked(g_speakerphone.load());
+  // Tablets with no earpiece: only loudspeaker exists — start on speaker so we don't
+  // sit on FORCE_NONE with the same device and a quieter comms gain curve.
+  if (!was_active && !QueryHasEarpieceRoute()) {
+    g_speakerphone.store(true);
+  }
+  // Only when entering a call session, or when the route is not the choice (a call that ended forgot its choice
+  // without routing): re-applying it on every reopen races OEM route changes (Moto) and can kill AAudio capture.
+  std::lock_guard lock(g_route_mu);
+  if (PushSpeakerRouteOnActivate(was_active, g_routed, g_speakerphone.load())) {
+    RouteSpeakerLocked(g_speakerphone.load());
   }
 }
 
@@ -216,6 +240,16 @@ void SetSpeakerphoneOn(bool on) {
   if (g_session_active.load()) {
     RetakeFocusIfLost("speaker"); // the user is back at the call: a focus lost for good is asked for again
     ApplySpeakerphoneLocked(on);
+  }
+}
+
+void ForgetSpeakerChoice() {
+  g_speakerphone.store(false);
+  // Back to the earpiece now only when no mic is open (RouteBackWhenChoiceForgotten). With the call's mic still open
+  // (its engine closes it on the retire thread) Deactivate routes back after that close, or the next activation does.
+  std::lock_guard lock(g_route_mu);
+  if (RouteBackWhenChoiceForgotten(g_session_active.load(), AnyMicEndpointOpen())) {
+    RouteSpeakerLocked(false);
   }
 }
 

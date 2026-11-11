@@ -255,7 +255,9 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
   view_.health = health;
   hint_clock_.Update(facts.call_id, health.asymmetry == CallAudioAsymmetry::SendingOnly, facts.now_ms);
   const char* hint_key = hint_clock_.KeyFor(health.asymmetry, screen.video);
-  view_.hint_key = hint_key ? hint_key : "";
+  // The engine could not get the mic back even by rebuilding its audio devices: the other side hears silence until
+  // captured audio returns (which clears it). Before any other hint: none of them is the cause then.
+  view_.hint_key = facts.engine.capture_lost ? "call.quality.hint.mic_lost" : (hint_key ? hint_key : "");
   view_.line = DecideStatusLine(screen, facts, d, health, view_.hint_key, view_.timer_since_ms);
   // On hold the silence is by design: no "no audio" hint (unless the path is lost).
   view_.hint_shown = !view_.hint_key.empty() && !(d.on_hold && !d.couldnt_connect && !d.path_lost);

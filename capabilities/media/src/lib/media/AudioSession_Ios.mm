@@ -450,6 +450,10 @@ void SetSpeakerphoneOn(bool on) {
   (void)error;
 }
 
+void ForgetSpeakerChoice() {
+  SetSpeakerphoneOn(false);
+}
+
 bool SpeakerToggleNeedsDeviceReopen() {
   return false;
 }

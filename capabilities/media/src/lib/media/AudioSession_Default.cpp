@@ -22,6 +22,8 @@ bool IsSpeakerphoneOn() {
 
 void SetSpeakerphoneOn(bool /*on*/) {}
 
+void ForgetSpeakerChoice() {}
+
 bool SpeakerToggleNeedsDeviceReopen() {
   return false;
 }

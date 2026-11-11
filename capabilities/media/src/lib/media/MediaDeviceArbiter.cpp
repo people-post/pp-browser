@@ -1,5 +1,6 @@
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/media/MediaThreadName.h"
+#include "lib/media/MicEndpoints.h"
 
 #include "common/Diag.h"
 #include "common/Logger.h"
@@ -47,6 +48,24 @@ const char* MediaDeviceKindName(MediaDeviceKind kind) {
       return "camera";
   }
   return "device";
+}
+
+const char* AudioResetResultName(AudioResetResult result) {
+  switch (result) {
+    case AudioResetResult::Ok:
+      return "ok";
+    case AudioResetResult::Busy:
+      return "busy";
+    case AudioResetResult::Timeout:
+      return "timeout";
+    case AudioResetResult::Stuck:
+      return "stuck";
+    case AudioResetResult::Failed:
+      return "failed";
+    case AudioResetResult::Unsupported:
+      return "unsupported";
+  }
+  return "failed";
 }
 
 bool MediaDeviceSharePolicy::Exclusive(MediaDeviceKind kind) const {
@@ -99,6 +118,24 @@ ShareWord OpWord(MediaDeviceOp op) {
   }
   return "other";
 }
+
+/** A separate mic endpoint, counted while its OS stream is open (MicEndpoints: AudioSession's route rule). */
+class CountedMicEndpoint final : public IAudioEndpoint {
+public:
+  explicit CountedMicEndpoint(std::unique_ptr<IAudioEndpoint> inner) : inner_(std::move(inner)) {}
+  int Read(void* dst, int bytes) override { return inner_->Read(dst, bytes); }
+  bool Write(const void* src, int bytes) override { return inner_->Write(src, bytes); }
+  int Queued() const override { return inner_->Queued(); }
+  void Clear() override { inner_->Clear(); }
+  IVoiceProcessing* VoiceProcessing() override { return inner_->VoiceProcessing(); }
+
+private:
+  MicEndpointCount count_; // declared first: destroyed after `inner_` has closed the stream
+  std::unique_ptr<IAudioEndpoint> inner_;
+};
+
+/** ResetAudio waits for its task this much longer than the backend may take (queue + the task's own checks). */
+constexpr std::chrono::milliseconds kAudioResetMargin{500};
 
 } // namespace
 
@@ -428,6 +465,8 @@ struct AudioDeviceLease::State : LeaseSlot<IAudioEndpoint> {
     auto opened = backend.OpenAudio(kind, format, wanted, &error);
     if (!opened) {
       ArbiterLog().info << MediaDeviceKindName(kind) << " open for " << holder << " gave no device: " << error;
+    } else if (kind == MediaDeviceKind::Mic) {
+      opened = std::make_unique<CountedMicEndpoint>(std::move(opened));
     }
     Install(std::move(opened), error);
   }
@@ -520,6 +559,28 @@ Roe<void> AudioDeviceLease::Reopen() {
         }
         state->OpenOnDevice(*core->backend);
       });
+  if (!done) {
+    return Error(std::string(MediaDeviceKindName(state->kind)) + " not responding (" + what + ")");
+  }
+  return {};
+}
+
+Roe<void> AudioDeviceLease::CloseEndpoint() {
+  if (state_->voice_duplex) {
+    return Error("voice duplex half: release the pair and acquire it again");
+  }
+  auto core = state_->core.lock();
+  if (!core) {
+    return Error("media device arbiter gone");
+  }
+  if (auto responsive = core->Responsive(state_->kind); !responsive) {
+    return responsive.error();
+  }
+  auto state = state_;
+  const std::string what = std::string("close ") + MediaDeviceKindName(state->kind) + " for " + state->holder;
+  // Destroyed here, on the device thread: readers / writers see no device from now until a Reopen installs one.
+  const bool done = core->audio.RunAndWait(what, core->budgets.close, state->kind, MediaDeviceOp::Close,
+                                           [state]() { state->TakeEndpoint().reset(); });
   if (!done) {
     return Error(std::string(MediaDeviceKindName(state->kind)) + " not responding (" + what + ")");
   }
@@ -787,6 +848,67 @@ std::vector<std::string> MediaDeviceArbiter::Holders(MediaDeviceKind kind) const
     }
   }
   return out;
+}
+
+bool MediaDeviceArbiter::DrainAudio(std::chrono::milliseconds budget) {
+  // FIFO: when this no-op runs, every close queued before it has run.
+  return core_->audio.RunAndWait("drain audio", budget, MediaDeviceKind::Mic, MediaDeviceOp::Close, []() {});
+}
+
+bool MediaDeviceArbiter::CanResetAudio() const {
+  return core_->backend->SupportsAudioReset();
+}
+
+AudioResetResult MediaDeviceArbiter::ResetAudio(std::chrono::milliseconds budget, std::string* error) {
+  std::string scratch;
+  std::string& why = error ? *error : scratch;
+  if (!core_->backend->SupportsAudioReset()) {
+    why = "unsupported";
+    return AudioResetResult::Unsupported;
+  }
+  if (auto responsive = core_->Responsive(MediaDeviceKind::Mic); !responsive) {
+    why = responsive.error().message;
+    return AudioResetResult::Busy;
+  }
+  struct Outcome {
+    std::mutex mu;
+    bool started = false;
+    AudioResetResult result = AudioResetResult::Timeout;
+    std::string error;
+  };
+  auto outcome = std::make_shared<Outcome>();
+  auto core = core_;
+  // The task holds the device thread while it runs: opens queued meanwhile wait for it (FIFO). Run late (the
+  // waiter gave up), it re-checks the holders, so a lease taken meanwhile is never pulled from under its holder.
+  const bool done =
+      core_->audio.RunAndWait("reset audio", budget + kAudioResetMargin, MediaDeviceKind::Mic, MediaDeviceOp::Reopen,
+                              [core, budget, outcome]() {
+                                {
+                                  std::lock_guard lock(outcome->mu);
+                                  outcome->started = true;
+                                }
+                                std::string task_error;
+                                AudioResetResult result = AudioResetResult::Busy;
+                                if (core->Held(MediaDeviceKind::Mic) || core->Held(MediaDeviceKind::Speaker)) {
+                                  task_error = "an audio device is held";
+                                } else {
+                                  result = core->backend->ResetAudio(budget, &task_error);
+                                }
+                                std::lock_guard lock(outcome->mu);
+                                outcome->result = result;
+                                outcome->error = task_error;
+                              });
+  std::lock_guard lock(outcome->mu);
+  if (!done) {
+    // Not finished in time: either the rebuild is still running, or its task never started — queued behind another
+    // device task that is stuck. Either way it may still touch the audio stack later, so the caller must not reopen
+    // now; `why` tells the two apart (the metric's still_running=1 covers both).
+    why = outcome->started ? "the rebuild is still running"
+                           : "queued behind another stuck audio device task (the rebuild has not started)";
+    return AudioResetResult::Stuck;
+  }
+  why = outcome->error;
+  return outcome->result;
 }
 
 bool MediaDeviceArbiter::CanAcquire(MediaDeviceKind kind) const {

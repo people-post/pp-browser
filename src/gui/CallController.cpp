@@ -1556,6 +1556,10 @@ void CallController::ToggleSpeaker() {
   presenter_.ToggleSpeaker();
 }
 
+void CallController::SetDevRouteReorderSkip(std::function<bool()> skip) {
+  presenter_.SetDevRouteReorderSkip(std::move(skip));
+}
+
 void CallController::ApplyLocalMedia(IMediaView& media, const CallMediaScreen& frame) {
   auto& in_call = in_call_;
   in_call.muted = media.IsMuted();
@@ -1565,7 +1569,7 @@ void CallController::ApplyLocalMedia(IMediaView& media, const CallMediaScreen& f
   in_call.camera_front = in_call.camera_on && media.CameraFrontFacing();
   SyncCameraRotation(media);
   in_call.show_speaker = AudioSession::SupportsSpeakerToggle();
-  in_call.speaker_on = AudioSession::IsSpeakerphoneOn();
+  in_call.speaker_on = presenter_.SpeakerShownOn();
   in_call.show_camera = frame.media.show_camera;
   in_call.show_flip = ShowsCameraFlip(Platform::IsMobile(), in_call.show_camera, in_call.camera_on);
   in_call.on_hold = frame.media.on_hold;
