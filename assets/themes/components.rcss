@@ -395,16 +395,30 @@ select selectbox option {
   width: 44dp;
   height: 44dp;
   padding: 0;
+  border: 0;
+  background-color: transparent;
   box-sizing: border-box;
-  border-radius: 22dp;
   cursor: pointer;
   focus: none;
 }
 
-.chat-jump-latest svg {
+/* The disc the eye sees: smaller than the 44dp tap box, a translucent glass with a thin chevron. No backdrop blur
+   of its own: the chat view already spends its two (header + composer, see Floating Chrome above). */
+.chat-jump-latest-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  width: 20dp;
-  height: 20dp;
+  width: 36dp;
+  height: 36dp;
+  box-sizing: border-box;
+  border-radius: 18dp;
+}
+
+.chat-jump-latest-face svg {
+  flex-shrink: 0;
+  width: 24dp;
+  height: 24dp;
 }
 
 /* Sits on the button's top edge, over its right half. */

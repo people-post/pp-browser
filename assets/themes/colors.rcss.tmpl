@@ -362,18 +362,17 @@ select selectbox option:hover {
   color: {{label}};
 }
 
-.chat-jump-latest {
-  background-color: {{bg-card}};
-  border: 1dp {{separator}};
-  box-shadow: 0 2dp 8dp {{shadow}};
+.chat-jump-latest-face {
+  background-color: {{x-jump-glass}};
+  box-shadow: 0 2dp 8dp {{x-float-shadow}};
 }
 
-.chat-jump-latest:hover {
-  background-color: {{bg-card-2}};
+.chat-jump-latest:active .chat-jump-latest-face {
+  background-color: {{fill-2}};
 }
 
-.chat-jump-latest svg {
-  image-color: {{accent}};
+.chat-jump-latest-face svg {
+  image-color: {{label-2}};
 }
 
 .chat-form {

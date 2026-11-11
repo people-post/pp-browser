@@ -353,18 +353,17 @@ select selectbox option:hover {
   color: #ffffff;
 }
 
-.chat-jump-latest {
-  background-color: #1c1c1e;
-  border: 1dp #54545899;
-  box-shadow: 0 2dp 8dp #00000026;
+.chat-jump-latest-face {
+  background-color: #2c2c2eb8;
+  box-shadow: 0 2dp 8dp #00000099;
 }
 
-.chat-jump-latest:hover {
-  background-color: #2c2c2e;
+.chat-jump-latest:active .chat-jump-latest-face {
+  background-color: #7878803d;
 }
 
-.chat-jump-latest svg {
-  image-color: #0a84ff;
+.chat-jump-latest-face svg {
+  image-color: #ebebf599;
 }
 
 .chat-form {
