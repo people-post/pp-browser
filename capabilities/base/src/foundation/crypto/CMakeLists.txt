@@ -11,6 +11,7 @@ pp_browser_add_foundation_library(pp_foundation_crypto
     RecoveryPhrase.cpp
     RecoverySeed.cpp
     SealedDek.cpp
+    Sha256Hex.cpp
     KemKeyBinding.cpp
     MlDsa.cpp
     MessageCipher.cpp

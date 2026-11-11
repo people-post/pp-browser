@@ -474,7 +474,8 @@ Roe<void> HttpBlobClient::PutUpload(const std::string& upload_url, const std::st
   if (upload_url.empty()) {
     return Error("upload_url is required");
   }
-  const auto response = HttpClient::Put(upload_url, body, {{"Content-Type", content_type}});
+  const auto response = HttpClient::Put(upload_url, body, {{"Content-Type", content_type}}, kMaxHttpClientBodyBytes, {},
+                                        /*restrict_to_public_https=*/false, /*add_content_sha256=*/false);
   if (!response) {
     return response.error();
   }

@@ -4,6 +4,7 @@
 #include "lib/ai/BearerUrlPolicy.h"
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
+#include "foundation/crypto/Sha256Hex.h"
 #include "foundation/error/AppError.h"
 #include "foundation/error/CurlNetworkError.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -132,13 +133,15 @@ LlmClient::LlmClient(const LlmClient& other) : Module(), config_(other.config_) 
 }
 
 bool LlmClient::IsBriefGatewayLimit(const std::string& api_message) {
-  return api_message.find("Brief LLM") != std::string::npos || api_message.find("Guest LLM") != std::string::npos;
+  return api_message.find("Brief LLM") != std::string::npos || api_message.find("Guest LLM") != std::string::npos ||
+         api_message.find("Per-user LLM") != std::string::npos || api_message.find("Global LLM") != std::string::npos;
 }
 
 LlmLimitKind LlmClient::ClassifyLimit(const std::string& api_message) {
   // The gateway sends one `rate_limit_error` code for every limit; only its message tells them apart
-  // (app-static-api r_llm.ts: "Guest Brief LLM daily limit exceeded", "Per-user Brief LLM rate limit
-  // exceeded", "Guest Brief LLM rate limit exceeded"; the global and mint limits stay "busy").
+  // ("Guest Brief LLM daily limit exceeded", "Per-user Brief LLM rate limit exceeded", "Guest Brief LLM rate
+  // limit exceeded", and the neutral "<Per-user|Guest|Global> LLM ..." wording; the global and mint limits stay
+  // "busy").
   std::string text = api_message;
   for (char& c : text) {
     c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -146,7 +149,8 @@ LlmLimitKind LlmClient::ClassifyLimit(const std::string& api_message) {
   if (text.find("daily limit") != std::string::npos) {
     return LlmLimitKind::GuestDaily;
   }
-  if (text.rfind("per-user ", 0) == 0 || text.rfind("guest brief llm rate limit", 0) == 0) {
+  if (text.rfind("per-user ", 0) == 0 || text.rfind("guest brief llm rate limit", 0) == 0 ||
+      text.rfind("guest llm rate limit", 0) == 0) {
     return LlmLimitKind::PerMinute;
   }
   return LlmLimitKind::Other;
@@ -325,6 +329,8 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
     bearer_header = "Authorization: Bearer " + config_.api_key.Reveal();
     headers = curl_slist_append(headers, bearer_header.c_str());
   }
+  const std::string sha_header = "x-amz-content-sha256: " + Sha256Hex(payload);
+  headers = curl_slist_append(headers, sha_header.c_str());
 
   const std::string url = config_.base_url + "/chat/completions";
   log().debug << "POST " << url << " model=" << config_.model;

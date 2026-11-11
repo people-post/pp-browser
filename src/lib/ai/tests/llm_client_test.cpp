@@ -24,6 +24,21 @@ TEST(LlmLimitKindTest, ClassifiesTheGatewayMessages) {
   EXPECT_EQ(LlmClient::ClassifyLimit(""), LlmLimitKind::Other);
 }
 
+TEST(LlmLimitKindTest, ClassifiesTheNeutralGatewayMessages) {
+  using pbr::LlmClient;
+  using pbr::LlmLimitKind;
+  EXPECT_EQ(LlmClient::ClassifyLimit("Per-user LLM rate limit exceeded"), LlmLimitKind::PerMinute);
+  EXPECT_EQ(LlmClient::ClassifyLimit("Per-user LLM daily limit exceeded"), LlmLimitKind::GuestDaily);
+  EXPECT_EQ(LlmClient::ClassifyLimit("Guest LLM rate limit exceeded"), LlmLimitKind::PerMinute);
+  EXPECT_EQ(LlmClient::ClassifyLimit("Global LLM rate limit exceeded"), LlmLimitKind::Other);
+  EXPECT_EQ(LlmClient::ClassifyLimit("Global LLM guest rate limit exceeded"), LlmLimitKind::Other);
+  for (const char* text :
+       {"Per-user LLM rate limit exceeded", "Per-user LLM daily limit exceeded", "Guest LLM rate limit exceeded",
+        "Global LLM rate limit exceeded", "Global LLM guest rate limit exceeded"}) {
+    EXPECT_TRUE(LlmClient::IsBriefGatewayLimit(text)) << text;
+  }
+}
+
 TEST(LlmLimitKindTest, OtherProvidersKeepTheirOwnText) {
   const pbr::Error gateway = pbr::LlmClient::MapHttpError(
       429, R"({"error":{"message":"Global Brief LLM rate limit exceeded","code":"rate_limit_error"}})");
