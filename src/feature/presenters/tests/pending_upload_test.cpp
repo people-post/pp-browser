@@ -343,5 +343,36 @@ TEST(PendingUploadQueueTest, ThePreparationNamesTheFileAndItsSize) {
   EXPECT_FALSE(OnUploadDetails(PendingUpload{}, "x", "1 KB").next.Shows());
 }
 
+// A retry that fails while the staged copy is still there (offline, small or large file alike: the resume never
+// deletes it) keeps the bubble Failed with the same record, and a later retry can still succeed. Cancelling a retry
+// (a tap reaching the disc) also leaves it Failed. Only a copy that is gone removes it.
+TEST(PendingUploadQueueTest, AFailedRetryKeepsTheBubbleFailedWhileItsCopyIsStaged) {
+  PendingUpload failed = StartPendingUpload(1, "t", PicturePixels{800, 600}, PendingUploadKind::File);
+  failed.state = PendingUploadState::Failed;
+  failed.record_id = "rec-1";
+  failed.thumb_path = "/p/t.jpg";
+  PendingUpload retrying = OnUploadRetryTapped(failed).next;
+  ASSERT_EQ(retrying.state, PendingUploadState::Uploading);
+  EXPECT_EQ(retrying.record_id, "rec-1") << "a retry keeps its staged copy";
+  PendingUploadStep again = OnUploadResumeFinished(retrying, /*sent=*/false, /*still_staged=*/true);
+  EXPECT_EQ(again.next.state, PendingUploadState::Failed);
+  EXPECT_EQ(again.next.record_id, "rec-1");
+  EXPECT_TRUE(again.delete_file.empty());
+  // Retry once more, and this time it goes.
+  const PendingUploadStep sent = OnUploadResumeFinished(OnUploadRetryTapped(again.next).next, true, true);
+  EXPECT_FALSE(sent.next.Shows());
+  EXPECT_EQ(sent.delete_file, "/p/t.jpg");
+  // A cancel during the retry: the copy stays, so does the failed bubble.
+  const PendingUpload cancelling = OnUploadCancelTapped(retrying).next;
+  EXPECT_EQ(OnUploadResumeFinished(cancelling, false, true).next.state, PendingUploadState::Failed);
+}
+
+TEST(PendingUploadQueueTest, AFailedRetryWhoseCopyIsGoneRemovesTheBubble) {
+  PendingUpload retrying = StartPendingUpload(1, "t", std::nullopt, PendingUploadKind::File);
+  retrying.record_id = "rec-1";
+  const PendingUploadStep gone = OnUploadResumeFinished(retrying, /*sent=*/false, /*still_staged=*/false);
+  EXPECT_FALSE(gone.next.Shows());
+}
+
 } // namespace
 } // namespace pbr

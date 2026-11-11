@@ -19,6 +19,13 @@ struct UserFeedback {
    * (a Network error that is not an HTTP response) says so plainly instead of naming a guessed cause.
    */
   static std::string UserMessage(const Error& err, bool device_offline);
+  /**
+   * An attachment send that failed: `UserMessage(err, device_offline)`, except that while the device is offline an
+   * upload that died without a server answer — an unclassified error or a generic file-relay one (a timeout, a
+   * transfer stopped because the link is gone) — also says plainly that there is no connection. An error carrying its
+   * own words (pick the file again, too large, the space is full, the send limit) keeps them.
+   */
+  static std::string AttachmentFailureMessage(const Error& err, bool device_offline);
 
   /** App fills toast/banner ports from ShellHost. Clear via BindPorts({}). */
   static void BindPorts(ShellFeedbackPorts ports);

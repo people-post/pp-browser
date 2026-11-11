@@ -404,11 +404,14 @@ TEST(TranscriptPendingFileTest, TheSentFileCardHasTheTileAndOpensFromTheWholeCar
   const auto rows = RenderTranscript({SentAttachment("f1", "report.pdf", "application/pdf", 2'400'000)}, ReadyFacts());
   ASSERT_EQ(rows.size(), 1u);
   const std::string rml = rows[0].content_rml.c_str();
+  const size_t row = rml.find("class=\"chat-file-row\"");
+  ASSERT_NE(row, std::string::npos) << rml;
+  const size_t row_end = rml.find('>', row);
+  EXPECT_NE(rml.substr(row, row_end - row).find("data-event-click=\"open_attachment('f1')\""), std::string::npos)
+      << "the row filling the card opens the file";
   const size_t card = rml.find("chat-file-card");
-  ASSERT_NE(card, std::string::npos) << rml;
-  const size_t card_end = rml.find('>', card);
-  EXPECT_NE(rml.substr(card, card_end - card).find("data-event-click=\"open_attachment('f1')\""), std::string::npos)
-      << "the card itself opens the file";
+  EXPECT_EQ(rml.substr(card, rml.find('>', card) - card).find("data-event-click"), std::string::npos)
+      << "not the card: its reaction chips must not open the file";
   EXPECT_NE(rml.find(">PDF</span>"), std::string::npos);
   EXPECT_EQ(rml.find("chat-suggestion"), std::string::npos) << "no separate Open button";
 }
@@ -537,6 +540,31 @@ TEST_F(PendingPictureLayoutTest, ThePreparingOverlayHasItsLinesAndCancel) {
   DataModelHost::Instance().Dirty("chat", "picking_busy_slow");
   context->Update();
   EXPECT_TRUE(shown("chat-picking-line--slow"));
+}
+
+// S2 / S3: reaction chips on a sent file card are not inside the row that opens the file, and the card grows so the
+// chips hang under the size line (own and incoming cards).
+TEST_F(PendingPictureLayoutTest, ReactionsOnAFileCardKeepTheirOwnTapAndClearTheSizeLine) {
+  for (const char* sender : {kLocalSelfContactId, "contact-1"}) {
+    SCOPED_TRACE(sender);
+    TranscriptRow plain = SentAttachment("f1", "report.pdf", "application/pdf", 2'400'000);
+    plain.message.sender_contact_id = sender;
+    Show(RenderTranscript({plain}, ReadyFacts()));
+    const float plain_height = Size(First("chat-file-card")).y;
+    TranscriptRow reacted = plain;
+    reacted.reactions.push_back({"👍", 2, false, {"a", "b"}});
+    Show(RenderTranscript({reacted}, ReadyFacts()));
+    ui::Element* card = First("chat-file-card");
+    ui::Element* row = First("chat-file-row");
+    ui::Element* chip = First("chat-reaction-chip");
+    ASSERT_NE(card, nullptr);
+    ASSERT_NE(row, nullptr);
+    ASSERT_NE(chip, nullptr);
+    for (ui::Element* up = chip->GetParentNode(); up; up = up->GetParentNode()) {
+      EXPECT_NE(up, row) << "a chip inside the row would open the file too";
+    }
+    EXPECT_NEAR(Size(card).y, plain_height + 16.f, 0.5f) << "room under the size line for the chips";
+  }
 }
 
 } // namespace

@@ -852,11 +852,10 @@ TEST(ComposerCaptureSourceTest, StartAttachmentUploadReleasesTheFileOnEveryExit)
     }
     return n;
   };
-  EXPECT_EQ(count("release_pick_(path);"), 3u) << "two early returns and the worker's own release";
-  // The early returns release before they return.
-  EXPECT_NE(body.find("!picks_.Accept(pick_serial, busy)) {\n    release_pick_(path);"), std::string::npos);
-  EXPECT_NE(body.find("thread_id.empty()) {\n    release_pick_(path);\n    EndPick(pick_serial);\n    return;"),
-            std::string::npos);
+  EXPECT_EQ(count("release_pick_(path);"), 2u) << "the refusal and the worker's own release";
+  // A refused send releases a picked file before it returns; a refused voice recording is kept for Retry instead.
+  EXPECT_NE(body.find("    release_pick_(path);\n    if (busy) {"), std::string::npos);
+  EXPECT_NE(body.find("KeepVoiceForRetry(path, thread_id);"), std::string::npos);
 }
 
 } // namespace

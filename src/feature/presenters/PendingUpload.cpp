@@ -121,6 +121,18 @@ PendingUploadStep OnUploadSendFinished(const PendingUpload& now, const UploadSen
   return Unchanged(now);
 }
 
+PendingUploadStep OnUploadResumeFinished(const PendingUpload& now, const bool sent, const bool still_staged) {
+  if (now.state != State::Uploading && now.state != State::Cancelling) {
+    return Unchanged(now);
+  }
+  if (sent || !still_staged) {
+    return Removed(now);
+  }
+  PendingUpload next = now;
+  next.state = State::Failed;
+  return {std::move(next), {}};
+}
+
 PendingUploadStep OnUploadRetryTapped(const PendingUpload& now) {
   if (now.state != State::Failed) {
     return Unchanged(now);

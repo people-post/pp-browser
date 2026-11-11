@@ -97,6 +97,12 @@ PendingUploadStep OnUploadProgress(const PendingUpload& now, int percent);
 PendingUploadStep OnUploadCancelTapped(const PendingUpload& now);
 /** The send's callback. A failure after a cancel removes the row too (nothing is said). */
 PendingUploadStep OnUploadSendFinished(const PendingUpload& now, UploadSendOutcome outcome);
+/**
+ * A retry's callback (a resume of the item's staged copy). Sent: the row goes. Otherwise — failed, or cancelled by a
+ * tap on the disc — the row stays Failed (retry and ✕ again) while that staged copy is still there (`still_staged`):
+ * a resume never deletes it. Only when the copy is gone does the row go (the caller says "pick it again").
+ */
+PendingUploadStep OnUploadResumeFinished(const PendingUpload& now, bool sent, bool still_staged);
 /** The disc after a failure: uploading again from 0%. */
 PendingUploadStep OnUploadRetryTapped(const PendingUpload& now);
 /** The corner ✕ after a failure: the row goes. */

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -39,11 +40,14 @@ public:
   void EndCurrent();
   const PickState& State() const { return state_; }
   /**
-   * A late result of pick `serial` with the files it brought: true when the pick is current (the caller goes on);
-   * otherwise each file is released once and false.
+   * A late result of pick `serial` with the files it brought, while `open_thread` is the chat shown now. The chat the
+   * pick was armed in when it is current and still open: the caller sends there, and only there. Otherwise nothing:
+   * each file is released once, and a current pick whose chat was left meanwhile ends (nothing is sent in the
+   * background, and never to the chat open now).
    */
-  bool TakeResult(uint64_t serial, const std::vector<std::string>& files,
-                  const std::function<void(const std::string& path)>& release) const;
+  std::optional<std::string> TakeResult(uint64_t serial, const std::string& open_thread,
+                                        const std::vector<std::string>& files,
+                                        const std::function<void(const std::string& path)>& release);
   /**
    * The send flow for pick `serial` is about to start: refused when another attachment is preparing or uploading
    * (`busy`) — the pick ends, the caller says why and releases the file. True when it may go on.
