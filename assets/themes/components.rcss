@@ -475,6 +475,12 @@ select selectbox option {
   opacity: 0.6;
 }
 
+/* In our own (blue) bubble the quote is bright white at full strength: dimmed white on blue read as grey. */
+.bubble-user .chat-quote-text {
+  color: #ffffff;
+  opacity: 1;
+}
+
 .chat-quote--jump {
   cursor: pointer;
 }
@@ -3996,6 +4002,14 @@ select selectbox option {
   display: none;
 }
 
+/* The tap box around the avatar: 44dp, the negative margin keeps the avatar where it was. */
+.shell-chat-overlay .chat-header-avatar-hit {
+  display: block;
+  flex-shrink: 0;
+  padding: 2dp;
+  margin: 0 -2dp;
+}
+
 .shell-chat-overlay .chat-header-avatar {
   display: flex;
   flex-shrink: 0;
@@ -4079,6 +4093,7 @@ select selectbox option {
   border-radius: 16dp;
 }
 
+.chat-header-avatar-hit,
 .chat-header-avatar,
 .chat-header-phone-subtitle {
   display: none;

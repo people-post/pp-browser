@@ -122,7 +122,6 @@ struct CallChromeLayer {
   int in_call_signal_tone = 0;
   std::string in_call_signal_word;
   std::string in_call_notice_text;
-  bool in_call_notice_warn = false;
   bool in_call_notice_fading = false;
   std::string in_call_reconnect_text;
   bool in_call_reconnect_ok = false;

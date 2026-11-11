@@ -25,6 +25,8 @@
     <div class="chat-header-main" data-if="!search_open">
       <!-- Phones only (hidden on desktop): the avatar of the chat list row, in the nav bar. -->
       <!-- An AI conversation shows its list row's letter and colour, not a fixed star (Kenneth 2026-11-07). -->
+      <!-- A tap on the avatar does what a tap on the title does (open_peer_sheet ignores the tap when show_peer_sheet is false); the hit box is 44dp, the avatar 40dp. -->
+      <div class="chat-header-avatar-hit" data-event-click="open_peer_sheet()">
       <div class="chat-header-avatar"
            data-class-chat-row-avatar--group="thread_is_group"
            data-class-avatar-tone-0="!thread_is_group && thread_avatar_tone == 0"
@@ -38,6 +40,7 @@
         <img class="avatar-photo" data-if="!thread_is_ai && !thread_is_group && thread_has_icon" data-attr-src="thread_icon_src"/>
         <p class="chat-row-avatar-letter" data-if="!thread_is_group && !thread_has_icon">{{thread_avatar_letter}}</p>
         <svg class="chat-row-avatar-icon" src="../icons/v2/group.svg" width="20" height="20" data-if="thread_is_group"></svg>
+      </div>
       </div>
       <div class="chat-header-text">
       <div class="chat-header-title-row">

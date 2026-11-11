@@ -547,7 +547,6 @@ struct CallInProgressState {
   ui::String signal_word;
   /** The top pill (DESIGN-pp-ui 8.11): slower line, reconnecting, closer way (bound). */
   ui::String notice_text;
-  bool notice_warn = false;
   bool notice_fading = false;
   /** The reconnect capsule above the button bar (#171; empty text: hidden). Bound. */
   ui::String reconnect_text;

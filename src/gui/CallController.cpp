@@ -361,7 +361,6 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_signal_tone = in_call.signal_tone,
       .in_call_signal_word = in_call.signal_word.c_str(),
       .in_call_notice_text = in_call.notice_text.c_str(),
-      .in_call_notice_warn = in_call.notice_warn,
       .in_call_notice_fading = in_call.notice_fading,
       .in_call_reconnect_text = in_call.reconnect_text.c_str(),
       .in_call_reconnect_ok = in_call.reconnect_ok,
@@ -731,6 +730,7 @@ void CallController::ClearInCall() {
   last_media_health_log_ms_ = 0;
   last_debug_subtitle_ = {};
   audio_fault_gate_.Reset();
+  last_story_notice_ = CallStoryNotice::None;
   story_sheet_open_ = false;
   group_titles_.clear();
   in_call_ = {};
@@ -2212,9 +2212,15 @@ void CallController::RenderStorySignal(const CallStoryView& v) {
   in_call.signal_tone = v.signal_tone == CallSignalTone::Good ? 0 : (v.signal_tone == CallSignalTone::Fair ? 1 : 2);
   const char* word = CallSignalWordKey(v.signal_quality);
   in_call.signal_word = word[0] ? Tr(word).c_str() : "";
-  const char* notice = CallStoryNoticeKey(v.notice);
+  // "The line got slower" goes to the standard bottom pill, once each time the story raises it (the throttle in
+  // CallConnectStory keeps raises >= 30 s apart, so the None gap between two raises is always seen); other notices
+  // stay in the top strip.
+  if (v.notice == CallStoryNotice::Slow && last_story_notice_ != CallStoryNotice::Slow) {
+    UserFeedback::Note(Tr(CallStoryNoticeKey(CallStoryNotice::Slow)));
+  }
+  last_story_notice_ = v.notice;
+  const char* notice = v.notice == CallStoryNotice::Slow ? "" : CallStoryNoticeKey(v.notice);
   in_call.notice_text = notice[0] ? Tr(notice).c_str() : "";
-  in_call.notice_warn = v.notice == CallStoryNotice::Slow;
   in_call.notice_fading = v.notice_fading;
 }
 

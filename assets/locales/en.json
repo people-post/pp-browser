@@ -147,6 +147,7 @@
     "settings.profile.picker_failed": "Could not open file picker",
     "settings.profile.photo_uploading": "Uploading…",
     "settings.profile.photo_from_library": "Choose from library",
+    "settings.profile.photo_preparing": "Preparing photo…",
     "settings.profile.photo_remove_confirm": "Remove your photo?",
     "settings.profile.photo_unreadable": "This picture can't be opened. Try another one.",
     "settings.profile.photo_too_large": "This picture is too large. Try a smaller one.",

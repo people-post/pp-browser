@@ -320,6 +320,10 @@ void ChatTranscriptScroller::OnMessagesScroll() {
     SetShowJumpToLatest(false);
   } else {
     pinned_to_bottom_ = false;
+    // Scrolled more than half a screen up: offer the way back to the newest message.
+    if (!view_.show_jump_to_latest && (max_top - top) > el->GetClientHeight() * 0.5f) {
+      SetShowJumpToLatest(true);
+    }
   }
   MaybeLoadOlderLocalHistory();
 }
