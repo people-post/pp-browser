@@ -82,6 +82,8 @@ struct ChatScreenState {
   bool attachment_preparing = false;
   /** The chip's condition: an attachment is preparing / uploading / failed in the chat open now (not in another one). */
   bool attachment_here = false;
+  /** The picture being sent shows as a bubble in the open chat's transcript: the upload card and chip stay hidden. */
+  bool attachment_in_transcript = false;
   /** Voice mode (WeChat style): a "hold to talk" bar replaces the text input. Per app session; off whenever show_voice is. */
   bool voice_mode = false;
   /** Desktop: a click starts, and Send / Cancel buttons end it. Phones: hold, release sends, slide up cancels. */

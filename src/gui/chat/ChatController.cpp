@@ -14,6 +14,7 @@
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
+#include "common/ImageMetadata.h"
 #include "gui/AttachmentTypeLabel.h"
 #include "gui/chat/VoiceBubble.h"
 #include "gui/chat/VoiceSendPolicy.h"
@@ -469,7 +470,13 @@ ChatController::ChatController()
       .prefs_failed = []() { UserFeedback::Fail(Tr("sidebar.error.prefs_failed")); },
       .prose = [](const std::string& text) { return StructuredTextParser::PlainText(text); },
   });
-  scroller_.SetDirtyTurns([]() { DirtyChatTurns(); });
+  scroller_.SetDirtyTurns([this]() {
+    // Paging and jumps rebuild the rows: the picture being sent goes back at the end (when the rows reach it).
+    if (pending_picture_.KeepAtTail(chat_.messages, ActiveThreadId(), !scroller_.LoadedMaxDisplayOrder())) {
+      chat_.has_turns = true;
+    }
+    DirtyChatTurns();
+  });
   working_set_.SetWidgetLookup(
       [this](const std::string& entry_id) -> const TurnWidgetState* { return widgets_.Find(entry_id); });
   working_set_.SetEntryLoader([this](const std::string& entry_id) -> std::optional<WorkingSetController::StoredEntry> {
@@ -2195,6 +2202,26 @@ void ChatController::RefreshAttachmentHere() {
     chat_.attachment_here = here;
     DataModelHost::Instance().Dirty("chat", "attachment_here");
   }
+  RefreshAttachmentInTranscript();
+}
+
+void ChatController::RefreshAttachmentInTranscript() {
+  const bool shown = pending_picture_.Upload().ShowsIn(ActiveThreadId());
+  if (chat_.attachment_in_transcript != shown) {
+    chat_.attachment_in_transcript = shown;
+    DataModelHost::Instance().Dirty("chat", "attachment_in_transcript");
+  }
+}
+
+void ChatController::ApplyPendingPicture(PendingPictureStep step, const bool redraw) {
+  const std::string thread_id =
+      !step.next.thread_id.empty() ? step.next.thread_id : pending_picture_.Upload().thread_id;
+  const bool changed = pending_picture_.Apply(std::move(step));
+  RefreshAttachmentInTranscript();
+  if (changed && redraw && messaging_ready_ && !thread_id.empty() && thread_id == ActiveThreadId()) {
+    SyncDisplayFromThread(); // the row drawn again (or gone) with the transcript's own rules
+    DirtyChatTurns();
+  }
 }
 
 void ChatController::SyncComposerInputState() {
@@ -2316,7 +2343,8 @@ void ChatController::ShowPictureSendChoice(std::string path) {
   auto actions = PictureChoiceActions(
       path,
       [this](const std::string& picture, const bool original) {
-        StartAttachmentUpload(picture, original ? OutgoingPickSource::Original : OutgoingPickSource::Photo);
+        StartAttachmentUpload(picture, original ? OutgoingPickSource::Original : OutgoingPickSource::Photo,
+                              /*voice_file=*/false, {}, /*picture=*/true);
       },
       release, Tr("chat.attach.send_compressed"), Tr("chat.attach.send_original"), Tr("common.cancel"));
   ContextMenuHost::Instance().ShowActionsAbove(
@@ -2415,6 +2443,11 @@ std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgr
       chat_.attachment_progress_width = (std::to_string(percent) + "%").c_str();
       DataModelHost::Instance().Dirty("chat", "attachment_status");
       DataModelHost::Instance().Dirty("chat", "attachment_progress_width");
+      // The picture bubble: only its ring and its percent line change (every 5%), the row is not drawn again.
+      if (pending_picture_.Progress(percent) && pending_picture_.Upload().ShowsIn(ActiveThreadId()) && context_ &&
+          context_->GetDocument(0)) {
+        (void)PendingPictureRows::DrawProgress(context_->GetDocument(0), pending_picture_.Upload().percent);
+      }
     });
     return true;
   };
@@ -2497,6 +2530,9 @@ void ChatController::OnDiscardAttachmentSend() {
     return;
   }
   facade_->DiscardOutgoingAttachment(failed_record_id_);
+  if (pending_picture_.Upload().ShowsIn(ActiveThreadId())) {
+    ApplyPendingPicture(OnPictureDiscardTapped(pending_picture_.Upload())); // the failed picture's bubble goes
+  }
   RefreshPendingAttachmentChip(/*force=*/true);
 }
 
@@ -2504,7 +2540,9 @@ void ChatController::OnCancelAttachmentSend() {
   if (!chat_.attachment_uploading || !send_cancel_ || send_cancel_->exchange(true)) {
     return;
   }
-  // The card goes when the send stops (the upload at its next step; a direct push when it answers).
+  // The card goes when the send stops (the upload at its next step; a direct push when it answers). The picture
+  // bubble's disc only spins until then.
+  ApplyPendingPicture(OnPictureCancelTapped(pending_picture_.Upload()));
   chat_.attachment_status = Tr("chat.attachment.cancelling").c_str();
   chat_.attachment_cancelling = true;
   DataModelHost::Instance().Dirty("chat", "attachment_status");
@@ -2546,6 +2584,11 @@ void ChatController::OnRetryAttachmentSend() {
   const auto cancel = send_cancel_;
   ResetUploadCard(chat_.attachment_draft_name.c_str());
   chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
+  // A failed picture's bubble uploads again from 0% (the staged ciphertext is what goes; the thumbnail stays).
+  const bool picture = pending_picture_.Upload().ShowsIn(thread_id);
+  if (picture) {
+    ApplyPendingPicture(OnPictureRetryTapped(pending_picture_.Upload()));
+  }
   SyncComposerInputState();
   DirtyChatChrome();
   DirtyChatHeader();
@@ -2554,7 +2597,7 @@ void ChatController::OnRetryAttachmentSend() {
       [this, thread_id, record_id, cancel](std::function<void(Roe<ThreadMessage>)> done) {
         facade_->ResumeAttachmentAsync(thread_id, record_id, std::move(done), MakeSendProgress(), cancel);
       },
-      [this, cancel](Roe<ThreadMessage> sent) {
+      [this, cancel, thread_id, record_id, picture](Roe<ThreadMessage> sent) {
         chat_.attachment_uploading = false;
         ResetUploadCard(std::string());
         chat_.attachment_status = "";
@@ -2563,6 +2606,19 @@ void ChatController::OnRetryAttachmentSend() {
         SyncComposerInputState();
         const bool stale_chip =
             !sent && sent.error().category == 0 && sent.error().code == OutgoingAttachmentStore::kWrongThread;
+        if (picture) {
+          bool staged = false;
+          if (!sent && !cancel->load() && !stale_chip) {
+            for (const auto& record : facade_->PendingOutgoingAttachments(thread_id)) {
+              staged = staged || record.id == record_id;
+            }
+          }
+          const PictureSendOutcome outcome = sent             ? PictureSendOutcome::Sent
+                                             : cancel->load() ? PictureSendOutcome::Cancelled
+                                             : staged         ? PictureSendOutcome::FailedStaged
+                                                              : PictureSendOutcome::FailedNotStaged;
+          ApplyPendingPicture(OnPictureSendFinished(pending_picture_.Upload(), outcome), /*redraw=*/!sent);
+        }
         if (!sent && !stale_chip && !cancel->load()) {
           UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
         } else if (sent && cancel->load()) {
@@ -2571,6 +2627,7 @@ void ChatController::OnRetryAttachmentSend() {
         RefreshPendingAttachmentChip(/*force=*/true); // still staged: Retry again; gone or sent: nothing shown
         if (sent) {
           SyncDisplayFromThread();
+          DirtyChatTurns();
           scroller_.RequestScrollToLatest();
           UpdateSidebarPreview(sent->text);
         }
@@ -2582,7 +2639,8 @@ void ChatController::OnRetryAttachmentSend() {
 }
 
 void ChatController::StartAttachmentUpload(const std::string& path, const OutgoingPickSource source,
-                                           const bool voice_file, const std::string& voice_thread_id) {
+                                           const bool voice_file, const std::string& voice_thread_id,
+                                           const bool picture) {
   if (!facade_ || chat_.attachment_uploading || chat_.attachment_preparing) {
     release_pick_(path);
     return;
@@ -2597,7 +2655,9 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
     failed_voice_path_.clear(); // this attempt is the retry
     failed_voice_thread_.clear();
   }
-  const size_t staged_before = voice_file ? facade_->PendingOutgoingAttachments(thread_id).size() : 0;
+  // A failed picture still shown in its chat gives way to this send (its staged copy stays, as the chip's did).
+  ApplyPendingPicture(OnOtherAttachmentStarted(pending_picture_.Upload()));
+  const size_t staged_before = voice_file || picture ? facade_->PendingOutgoingAttachments(thread_id).size() : 0;
 
   chat_.attachment_uploading = true;
   chat_.attachment_failed = false;
@@ -2611,6 +2671,16 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   ResetUploadCard(chat_.attachment_draft_name.c_str());
   chat_.status = Tr("chat.attachment.uploading").c_str();
   chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
+  if (picture) {
+    // The bubble at once, sized from the file's head (only the head is read here); a head that cannot be read here
+    // (an Android content:// pick) gives 4:3 until the worker has the real size.
+    std::optional<PicturePixels> upright;
+    if (const auto header = ReadImageHeader(path)) {
+      upright = UprightPixels(header->width, header->height, header->exif_orientation);
+    }
+    ApplyPendingPicture({StartPendingPicture(++pending_picture_serial_, thread_id, upright), {}});
+    scroller_.RequestScrollToLatest(); // as a text send does
+  }
   SyncComposerInputState();
   DirtyChatChrome();
   DirtyChatHeader();
@@ -2629,12 +2699,36 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   // Reading, decoding and shrinking a photo is blocking work: off the UI thread, reply on it.
   const AttachmentLimits limits = facade_->CurrentAttachmentLimits();
   const std::string scratch_dir = (std::filesystem::path(facade_->ProfileDataDir()) / "picked").string();
+  const std::string row_id = picture ? pending_picture_.Upload().row_id : std::string();
   AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, scratch_dir, finish_uploading, voice_file,
-                                staged_before, cancel]() {
+                                staged_before, cancel, picture, row_id]() {
+    if (picture) {
+      // The bubble's thumbnail first, before the picture is prepared, so it replaces the grey placeholder early.
+      const UploadThumbnail bubble = WritePickedPictureThumbnail(path, scratch_dir, limits.max_original_image_bytes);
+      AppRuntime::PostUI([this, row_id, bubble]() {
+        if (pending_picture_.Upload().row_id != row_id) {
+          if (!bubble.path.empty()) {
+            std::error_code ec;
+            std::filesystem::remove(bubble.path, ec); // its row is gone (another send since)
+          }
+          return;
+        }
+        if (bubble.width > 0 && bubble.height > 0) {
+          ApplyPendingPicture(OnPictureSizeRead(pending_picture_.Upload(), {bubble.width, bubble.height}));
+        }
+        if (!bubble.path.empty()) {
+          // The app locked meanwhile: the plaintext goes at once and the placeholder stays.
+          const bool locked = messaging_ready_ && !MessagingReady();
+          ApplyPendingPicture(OnPictureThumbnail(pending_picture_.Upload(), bubble.path, locked));
+        }
+      });
+    }
     auto prepared = PrepareOutgoingAttachment(path, limits, source, scratch_dir);
-    std::string thumb = prepared && !voice_file ? WriteUploadThumbnail(path, *prepared, scratch_dir) : std::string();
+    // The card's small picture: not for a picture, whose bubble is in the transcript.
+    std::string thumb =
+        prepared && !voice_file && !picture ? WriteUploadThumbnail(path, *prepared, scratch_dir).path : std::string();
     release_pick_(path); // read by now (and kept as a CAS copy once sent)
-    AppRuntime::PostUI([this, thread_id, path, finish_uploading, voice_file, staged_before, cancel, thumb,
+    AppRuntime::PostUI([this, thread_id, path, finish_uploading, voice_file, staged_before, cancel, thumb, picture,
                         prepared = std::move(prepared)]() mutable {
       if (chat_.attachment_uploading && send_cancel_ == cancel && prepared) {
         chat_.attachment_thumb = thumb.c_str(); // the card shows it; ResetUploadCard deletes it
@@ -2647,7 +2741,13 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
       }
       if (!prepared) {
         finish_uploading();
-        UserFeedback::Fail(UserFeedback::UserMessage(prepared.error()));
+        if (picture) {
+          // Nothing was staged: the bubble goes; the pill says why unless the person had cancelled.
+          ApplyPendingPicture(OnPictureSendFinished(pending_picture_.Upload(), PictureSendOutcome::FailedNotStaged));
+        }
+        if (!(picture && cancel->load())) {
+          UserFeedback::Fail(UserFeedback::UserMessage(prepared.error()));
+        }
         if (voice_file) {
           KeepVoiceForRetry(path, thread_id); // not read: the recording is the only copy
           RefreshPendingAttachmentChip(/*force=*/true);
@@ -2672,9 +2772,20 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
             }
             facade_->ResumeAttachmentAsync(thread_id, staged.back().id, std::move(done), MakeSendProgress(), cancel);
           },
-          [this, thread_id, path, finish_uploading, voice_file, staged_before, cancel](Roe<ThreadMessage> sent) {
+          [this, thread_id, path, finish_uploading, voice_file, staged_before, cancel,
+           picture](Roe<ThreadMessage> sent) {
             finish_uploading();
             const bool cancelled = !sent && cancel->load(); // nothing was sent and nothing is kept: no message
+            if (picture) {
+              // Sent: the bubble goes here and the real row comes with the display sync below, in this same task.
+              const PictureSendOutcome outcome = sent        ? PictureSendOutcome::Sent
+                                                 : cancelled ? PictureSendOutcome::Cancelled
+                                                 : facade_->PendingOutgoingAttachments(thread_id).size() > staged_before
+                                                     ? PictureSendOutcome::FailedStaged
+                                                     : PictureSendOutcome::FailedNotStaged;
+              ApplyPendingPicture(OnPictureSendFinished(pending_picture_.Upload(), outcome),
+                                  /*redraw=*/!sent);
+            }
             if (voice_file && cancelled) {
               std::error_code ec;
               std::filesystem::remove(path, ec);
@@ -2700,6 +2811,9 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
               UserFeedback::Fail(Tr("chat.attachment.already_sent")); // the cancel came after it reached the contact
             }
             SyncDisplayFromThread();
+            if (picture) {
+              DirtyChatTurns();
+            }
             if (thread_id == ActiveThreadId()) {
               scroller_.RequestScrollToLatest();
               UpdateSidebarPreview(sent->text);
@@ -2754,9 +2868,10 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
     }
     return mark;
   };
+  // The picture being sent is drawn after the newest message as our own (kept aside, put back by the display sync).
   std::vector<MessageDisplayRow> rows =
-      RenderTranscript(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
-                       presenter_.MentionRosterOf(thread_id));
+      pending_picture_.Render(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
+                              presenter_.MentionRosterOf(thread_id), thread_id, !newest_inclusive.has_value());
   agent_.DecorateAiImageRows(rows, thread_id);
   ArmSendMarkRedraw(next_mark_change);
   TellResentTurnedRed(thread_id, red_ids);
@@ -3033,9 +3148,8 @@ void ChatController::SyncDisplayFromThread() {
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - sync_started).count();
   }
 
-  const std::string prev_tail_id =
-      chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
-  const size_t prev_count = chat_.messages.size();
+  // The real rows only: the picture being sent at the end is not a message (the counts and the tail stay as without it).
+  const auto [prev_tail_id, prev_count] = PendingPictureRows::RealTail(chat_.messages);
 
   chat_.messages = scroller_.Rows(thread_id, scroller_.LoadedMinDisplayOrder(), scroller_.LoadedMaxDisplayOrder());
   chat_.turns.clear();
@@ -3065,6 +3179,10 @@ void ChatController::SyncDisplayFromThread() {
         OnSearchMessagesChanged();
       }
     }
+  }
+  // Last, after everything that counts rows or reads the tail: the picture being sent, at the end of its chat.
+  if (pending_picture_.KeepAtTail(chat_.messages, thread_id, !scroller_.LoadedMaxDisplayOrder())) {
+    chat_.has_turns = true;
   }
   agent_.RefreshBusyForActiveThread(); // "thinking", the stop key and a queued bubble follow the open thread
   SyncDraftOwner();                    // so does the unsent text
@@ -4590,11 +4708,18 @@ bool ChatController::Setup(ui::Context* context) {
                                    [this](const std::string& entry_id, int link) { OpenChatLink(entry_id, link); }));
         ctor.BindEventCallback("stop_turn", DataEvent([this] { agent_.OnStopTurn(); }));
         ctor.BindEventCallback("cancel_queued", DataEvent([this] { CancelQueuedHere(); }));
+        // The row of a picture being sent (pending-upload-…) is no message: none of the row events below acts on it.
         ctor.BindEventCallback("toggle_reaction", DataEvent<std::string, std::string>(
                                                       [this](const std::string& message_id, const std::string& emoji) {
+                                                        if (IsPendingUploadRowId(message_id)) {
+                                                          return;
+                                                        }
                                                         ToggleReaction(message_id, emoji);
                                                       }));
         ctor.BindEventCallback("open_reactors", DataEvent<std::string>([this](const std::string& message_id) {
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
+                                 }
                                  OpenReactors(message_id);
                                }));
         ctor.BindEventCallback("reactor_remove", DataEvent<std::string>([this](const std::string& emoji) {
@@ -4628,14 +4753,23 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("voice_send", DataEvent([this] { voice_->OnSendButton(); }));
         ctor.BindEventCallback("voice_cancel", DataEvent([this] { voice_->OnCancelButton(); }));
         ctor.BindEventCallback("play_voice", DataEvent<std::string>([this](const std::string& message_id) {
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
+                                 }
                                  voice_playback_->Toggle(message_id);
                                }));
         ctor.BindEventCallback("play_audio_file", DataEvent<std::string>([this](const std::string& message_id) {
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
+                                 }
                                  voice_playback_->ToggleFile(message_id);
                                }));
         ctor.BindEventCallback("audio_seek_press",
                                DataEventAt([this](ui::Event& ev) { voice_playback_->SeekPress(ev); }));
         ctor.BindEventCallback("show_send_failure", DataEvent<std::string>([this](const std::string& message_id) {
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
+                                 }
                                  OnSendMarkTapped(message_id);
                                }));
         ctor.BindEventCallback("retry_attachment_send", DataEvent([this] { OnRetryAttachmentSend(); }));
@@ -4644,15 +4778,24 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("remove_image", DataEvent([this] { agent_.DiscardPendingAiImage(); }));
         ctor.BindEventCallback("cancel_quote_reply", DataEvent([this] { CancelQuoteReply(); }));
         ctor.BindEventCallback("jump_to_quote", DataEvent<std::string>([this](const std::string& reply_id) {
+                                 if (IsPendingUploadRowId(reply_id)) {
+                                   return;
+                                 }
                                  JumpToQuotedMessage(reply_id);
                                }));
         ctor.BindEventCallback("open_message_link",
                                DataEvent<std::string, int>([this](const std::string& message_id, int link) {
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
+                                 }
                                  OpenMessageLink(message_id, link);
                                }));
         ctor.BindEventCallback("draft_changed", DataEvent([this] { mentions_.OnDraftChanged(); }));
         ctor.BindEventCallback(
             "open_mention", DataEvent<std::string, int>([this](const std::string& message_id, int run) {
+              if (IsPendingUploadRowId(message_id)) {
+                return;
+              }
               // A highlighted mention: the member's contact page; nothing for someone who is not a contact.
               const auto contact =
                   run < 0 ? std::nullopt : presenter_.MentionedContact(message_id, static_cast<size_t>(run));
@@ -4661,20 +4804,35 @@ bool ChatController::Setup(ui::Context* context) {
               }
             }));
         ctor.BindEventCallback("open_sender", DataEvent<std::string>([this](const std::string& message_id) {
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
+                                 }
                                  OpenGroupSender(message_id);
                                }));
         ctor.BindEventCallback("open_attachment", DataEvent<std::string>([this](const std::string& message_id) {
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
+                                 }
                                  OpenAttachment(message_id);
                                }));
         ctor.BindEventCallback(
             "open_picture",
             DataEvent<std::string, std::string>([this](const std::string& message_id, const std::string& local_path) {
+              if (IsPendingUploadRowId(message_id)) {
+                return;
+              }
               OpenPicture(message_id, local_path);
             }));
         ctor.BindEventCallback("download_attachment", DataEvent<std::string>([this](const std::string& message_id) {
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
+                                 }
                                  DownloadAttachment(message_id);
                                }));
         ctor.BindEventCallback("retry_attachment", DataEvent<std::string>([this](const std::string& message_id) {
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
+                                 }
                                  RetryAttachmentDownload(message_id);
                                }));
         ctor.BindEventCallback("clear_history", DataEvent([this] { OnClearHistory(); }));
@@ -4948,6 +5106,14 @@ void ChatController::Update() {
   }
   if ((voice_->Active() || voice_playback_->Active()) && messaging_ready_ && !MessagingReady()) {
     CancelVoice();
+  }
+  // The vault locked under the picture being sent: its plaintext thumbnail goes now (the bubble keeps its place and
+  // shows the grey placeholder once drawn again; a retry reads the staged ciphertext, not the thumbnail).
+  if (!pending_picture_.Upload().thumb_path.empty() && messaging_ready_ && !MessagingReady()) {
+    ApplyPendingPicture(OnAppLocked(pending_picture_.Upload()), /*redraw=*/false);
+    if (context_ && context_->GetDocument(0)) {
+      PendingPictureRows::DropThumbnail(context_->GetDocument(0)); // not drawn again under the lock: the picture out
+    }
   }
   if (voice_playback_->Active() && now - last_voice_call_check_ >= std::chrono::milliseconds(250)) {
     last_voice_call_check_ = now;

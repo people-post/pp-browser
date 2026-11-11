@@ -12148,6 +12148,126 @@ input.checkbox {
   z-index: -1;
 }
 
+/* The picture being sent (DEV/PLAN-picture-upload-bubble.md): the sent picture's card and clip box, a grey placeholder
+   until the thumbnail is there, and over it a 48dp dark disc (the tap target) whose ring fills with the upload percent
+   (the ring's decorator is set inline: a conic-gradient from 12 o'clock), the percent under it, and after a failure a
+   44dp ✕ in the top-right corner. The same translucent black and white on both themes (no colour tokens). */
+.chat-pending-picture-clip {
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
+  overflow: hidden;
+  border-radius: 9dp;
+  background-color: #c7c7cc; /* opaque: a translucent grey reads as blue on our own bubble */
+}
+
+.chat-pending-picture-clip .chat-attachment-image {
+  cursor: default;
+}
+
+.chat-pending-center {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-pending-disc {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48dp;
+  height: 48dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 24dp;
+  background-color: rgba(0, 0, 0, 128); /* the engine reads alpha as 0..255 */
+  cursor: pointer;
+}
+
+.chat-pending-disc--busy {
+  cursor: default;
+}
+
+/* The ring: a 40dp circle (its unfilled track a faint white) under the 32dp core, so 4dp of it shows round the core. */
+.chat-pending-ring {
+  position: absolute;
+  top: 4dp;
+  left: 4dp;
+  width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+  background-color: rgba(255, 255, 255, 77);
+}
+
+/* The fallback (kPendingProgressRing false) and the cancelling disc: the ring spins, no amount shown. */
+.chat-pending-ring--spin {
+  box-sizing: border-box;
+  background-color: transparent;
+  border-width: 3dp;
+  border-color: #ffffff #ffffff #ffffff transparent;
+  animation: 0.9s linear infinite prompt-upload-spin;
+}
+
+.chat-pending-core {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
+  background-color: #262626;
+}
+
+.chat-pending-icon {
+  image-color: #ffffff; /* the theme tints svg icons with the text colour */
+}
+
+.chat-pending-percent {
+  margin: 6dp 0 0 0;
+  padding: 1dp 6dp;
+  border-radius: 8dp;
+  background-color: rgba(0, 0, 0, 115);
+  color: #ffffff;
+  font-size: 12dp;
+  line-height: 16dp;
+}
+
+/* After a failure: give the picture up. A 44dp target in the corner, a 28dp dark disc with the 20dp ✕ inside it. */
+.chat-pending-discard {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.chat-pending-discard-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28dp;
+  height: 28dp;
+  border-radius: 14dp;
+  background-color: rgba(0, 0, 0, 128);
+}
+
 /* Speech-bubble tail on the last bubble of a run: a 10x12dp shape half outside the bubble's bottom corner (received:
    left, sent: right); that corner is squared off so the tail grows out of it. Tint: colors-*.rcss. */
 .shell-chat-overlay .bubble-tail-host {

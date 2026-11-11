@@ -4,6 +4,7 @@
 #include "lib/ui/ChatWidgetTypes.h"
 #include "feature/conversations/GroupMentions.h"
 #include "feature/conversations/InboxController.h"
+#include "feature/presenters/PendingPictureUpload.h"
 
 #include <optional>
 #include <vector>
@@ -41,5 +42,30 @@ inline constexpr int kPictureBubbleMinShortSideDp = 120;
  * drawn `image_offset_dp` above the clip). {0, 0} when the size is unknown.
  */
 PictureBubbleSize FitPictureInBubble(int width_px, int height_px);
+
+/**
+ * The picture being sent, drawn as our picture bubble while it uploads (DEV/PLAN-picture-upload-bubble.md): the same
+ * card and clip box as the sent picture (FitPictureInBubble of `upload.pixels`), its thumbnail or a grey placeholder of
+ * that size, and a 48dp dark disc in the middle — uploading: the ring fills with the percent, a ✕ cancels
+ * (cancel_attachment_send), the percent under it; cancelling: it only spins; failed: it retries
+ * (retry_attachment_send) and a ✕ in the top-right corner (a 44dp target) gives the picture up
+ * (discard_attachment_send). No send mark, no other row event.
+ */
+std::string PendingPictureRml(const PendingPictureUpload& upload);
+
+/** The ring's element and the percent's: the progress refresh writes into these two only (one bubble at a time). */
+inline constexpr const char* kPendingRingElementId = "pending-upload-ring";
+inline constexpr const char* kPendingPercentElementId = "pending-upload-percent";
+/** The thumbnail's element: taken out of the mounted bubble when the app locks (its file is deleted then). */
+inline constexpr const char* kPendingThumbElementId = "pending-upload-thumb";
+/**
+ * The one switch between the two ways of showing progress: true, the ring filled clockwise from 12 o'clock by the
+ * percent (a conic-gradient decorator); false, the fallback — the ring spins (no amount) and the percent says it.
+ */
+inline constexpr bool kPendingProgressRing = true;
+/** The ring's `decorator` value at `percent`: none at 0 (no sliver at the seam), a whole circle at 100. */
+std::string PendingRingDecorator(int percent);
+/** The line under the disc: "67%". */
+std::string PendingPercentText(int percent);
 
 } // namespace pbr
