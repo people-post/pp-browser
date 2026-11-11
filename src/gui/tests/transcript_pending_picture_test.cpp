@@ -8,6 +8,7 @@
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/messaging/AttachmentCache.h"
 
 #include <ui/core/Core.h>
 #include <ui/dom/Context.h>
@@ -306,6 +307,207 @@ TEST_F(PendingPictureLayoutTest, LockingTakesTheThumbnailOutOfTheMountedBubble) 
   context->Update();
   EXPECT_EQ(document->GetElementById(PendingThumbElementId("pending-upload-1")), nullptr);
   EXPECT_NEAR(Size(First("chat-pending-picture-clip")).y, before.y, 0.5f) << "the bubble keeps its size";
+}
+
+// --- Step 2 of DEV/PLAN-attachment-bubbles-multi-pick.md: file and video bubbles. ---
+
+TranscriptRow SentAttachment(const std::string& id, const std::string& name, const std::string& mime,
+                             const uint64_t bytes) {
+  ChatAttachmentFields fields;
+  fields.mime = mime;
+  fields.filename = name;
+  fields.byte_length = bytes;
+  fields.url = "https://example.invalid/blob";
+  fields.content_hash.assign(32, 1);
+  fields.content_key.assign(32, 2);
+  fields.blob_nonce.assign(24, 3);
+  TranscriptRow sent;
+  sent.message.id = id;
+  sent.message.sender_contact_id = kLocalSelfContactId;
+  sent.message.content_type = ChatContentType::Attachment;
+  sent.message.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(fields);
+  sent.message.timestamp = 1;
+  return sent;
+}
+
+TranscriptFacts ReadyFacts(const std::string& poster = {}, const int w = 0, const int h = 0) {
+  TranscriptFacts facts;
+  facts.attachment = [poster, w, h](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.local_path = "/x/file.bin";
+    view.poster_path = poster;
+    view.image_width = w;
+    view.image_height = h;
+    return view;
+  };
+  return facts;
+}
+
+PendingUpload FileItem(const PendingUploadState state, const std::string& title, const std::string& size_text,
+                       const int percent = 0) {
+  PendingUpload item = StartPendingUpload(1, "t", std::nullopt, PendingUploadKind::File);
+  item.state = state;
+  item.title = title;
+  item.size_text = size_text;
+  item.percent = percent;
+  return item;
+}
+
+TEST(TranscriptPendingFileTest, TheTypeTileShowsTheExtensionInCapitalsUpToFourLetters) {
+  EXPECT_EQ(FileTypeTileLabel("report.pdf"), "PDF");
+  EXPECT_EQ(FileTypeTileLabel("archive.tar.gz"), "GZ");
+  EXPECT_EQ(FileTypeTileLabel("slides.Pptx"), "PPTX");
+  EXPECT_EQ(FileTypeTileLabel("data.parquet"), "") << "longer than 4: the generic icon";
+  EXPECT_EQ(FileTypeTileLabel("README"), "");
+  EXPECT_EQ(FileTypeTileLabel(".bashrc"), "");
+  EXPECT_EQ(FileTypeTileLabel("a.b-c"), "");
+  const std::string generic = PendingFileRml(FileItem(PendingUploadState::Uploading, "README", ""));
+  EXPECT_NE(generic.find("../icons/v2/file.svg"), std::string::npos);
+  EXPECT_NE(PendingFileRml(FileItem(PendingUploadState::Uploading, "a.zip", "")).find(">ZIP</span>"),
+            std::string::npos);
+}
+
+TEST(TranscriptPendingFileTest, TheNameIsEscapedAndTheSizeWaitsWithAnEllipsis) {
+  const std::string rml = PendingFileRml(FileItem(PendingUploadState::Uploading, "a \"b\" <c> & d.txt", ""));
+  EXPECT_NE(rml.find("a &quot;b&quot; &lt;c&gt; &amp; d.txt"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("<c>"), std::string::npos);
+  EXPECT_NE(rml.find(">…</p>"), std::string::npos);
+  EXPECT_NE(PendingFileRml(FileItem(PendingUploadState::Uploading, "x.txt", "2.4 MB")).find(">2.4 MB</p>"),
+            std::string::npos);
+}
+
+TEST(TranscriptPendingFileTest, UploadingPutsThePercentInTheDiscOnTheTileAndCancels) {
+  const std::string rml = PendingFileRml(FileItem(PendingUploadState::Uploading, "r.pdf", "1 MB", 67));
+  const size_t tile = rml.find("class=\"chat-file-tile\"");
+  const size_t disc = rml.find("class=\"chat-pending-disc", tile);
+  const size_t percent = rml.find("id=\"" + PendingPercentElementId("pending-upload-1") + "\"", disc);
+  const size_t text = rml.find("class=\"chat-file-text\"");
+  ASSERT_NE(tile, std::string::npos);
+  ASSERT_NE(disc, std::string::npos);
+  ASSERT_NE(percent, std::string::npos);
+  EXPECT_LT(percent, text) << "the percent is inside the disc on the tile";
+  EXPECT_NE(rml.find(">67%</span>"), std::string::npos);
+  EXPECT_NE(rml.find("cancel_attachment_send('pending-upload-1')"), std::string::npos);
+  EXPECT_EQ(rml.find("close.svg"), std::string::npos) << "no cross: the percent is in the middle";
+}
+
+TEST(TranscriptPendingFileTest, FailedRetriesAndOffersTheDiscard) {
+  const std::string rml = PendingFileRml(FileItem(PendingUploadState::Failed, "r.pdf", "1 MB"));
+  EXPECT_NE(rml.find("retry_attachment_send('pending-upload-1')"), std::string::npos);
+  EXPECT_NE(rml.find("discard_attachment_send('pending-upload-1')"), std::string::npos);
+  EXPECT_EQ(rml.find("cancel_attachment_send"), std::string::npos);
+}
+
+TEST(TranscriptPendingFileTest, TheSentFileCardHasTheTileAndOpensFromTheWholeCard) {
+  const auto rows = RenderTranscript({SentAttachment("f1", "report.pdf", "application/pdf", 2'400'000)}, ReadyFacts());
+  ASSERT_EQ(rows.size(), 1u);
+  const std::string rml = rows[0].content_rml.c_str();
+  const size_t card = rml.find("chat-file-card");
+  ASSERT_NE(card, std::string::npos) << rml;
+  const size_t card_end = rml.find('>', card);
+  EXPECT_NE(rml.substr(card, card_end - card).find("data-event-click=\"open_attachment('f1')\""), std::string::npos)
+      << "the card itself opens the file";
+  EXPECT_NE(rml.find(">PDF</span>"), std::string::npos);
+  EXPECT_EQ(rml.find("chat-suggestion"), std::string::npos) << "no separate Open button";
+}
+
+TEST(TranscriptPendingVideoTest, NoPlayKeyWhileItUploadsAndTheBareFrameWithoutAPoster) {
+  PendingUpload framed = StartPendingUpload(1, "t", PicturePixels{1080, 1920}, PendingUploadKind::Video);
+  framed.thumb_path = "/p/poster.jpg";
+  const std::string rml = PendingUploadRml(framed);
+  EXPECT_EQ(rml.find("chat-attachment-video-play"), std::string::npos);
+  EXPECT_NE(rml.find("cancel_attachment_send('pending-upload-1')"), std::string::npos);
+  EXPECT_NE(rml.find("src=\"/p/poster.jpg\""), std::string::npos);
+  const PictureBubbleSize fit = FitPictureInBubble(1080, 1920);
+  EXPECT_NE(rml.find("width:" + std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp"),
+            std::string::npos)
+      << "a portrait video is a portrait frame from the start";
+  PendingUpload bare = StartPendingUpload(2, "t", std::nullopt, PendingUploadKind::Video);
+  bare.title = "clip.mov";
+  EXPECT_NE(PendingUploadRml(bare).find("chat-attachment-video-frame--bare"), std::string::npos);
+}
+
+TEST_F(PendingPictureLayoutTest, AFileBubbleAndTheSentCardItTurnsIntoHaveTheSameSize) {
+  for (const char* name : {"report.pdf", "a-rather-long-file-name-of-forty-chars.zip", "README"}) {
+    SCOPED_TRACE(name);
+    Show(RenderTranscript({SentAttachment("f1", name, "application/octet-stream", 2'400'000)}, ReadyFacts()));
+    ui::Element* sent = First("chat-file-card");
+    ASSERT_NE(sent, nullptr);
+    const ui::Vector2f sent_size = Size(sent);
+    Show({Row("pending-upload-1",
+              PendingFileRml(FileItem(PendingUploadState::Uploading, name, FormatAttachmentByteSize(2'400'000), 30)))});
+    ui::Element* pending = First("chat-file-card");
+    ASSERT_NE(pending, nullptr);
+    EXPECT_NEAR(Size(pending).x, sent_size.x, 0.5f);
+    EXPECT_NEAR(Size(pending).y, sent_size.y, 0.5f);
+    EXPECT_GE(Size(pending).x, 219.5f);
+    EXPECT_LE(Size(pending).x, 292.5f);
+  }
+}
+
+TEST_F(PendingPictureLayoutTest, TheDiscAndItsPercentSitInsideTheTypeTile) {
+  Show({Row("pending-upload-1", PendingFileRml(FileItem(PendingUploadState::Uploading, "r.pdf", "1 MB", 40)))});
+  ui::Element* tile = First("chat-file-tile");
+  ui::Element* disc = First("chat-pending-disc");
+  ui::Element* percent = document->GetElementById(PendingPercentElementId("pending-upload-1"));
+  ASSERT_NE(tile, nullptr);
+  ASSERT_NE(disc, nullptr);
+  ASSERT_NE(percent, nullptr);
+  EXPECT_NEAR(Size(tile).x, 72.f, 0.5f);
+  const auto inside = [](ui::Element* inner, ui::Element* outer) {
+    const ui::Vector2f a = inner->GetAbsoluteOffset(ui::BoxArea::Border);
+    const ui::Vector2f b = outer->GetAbsoluteOffset(ui::BoxArea::Border);
+    const ui::Vector2f as = Size(inner);
+    const ui::Vector2f bs = Size(outer);
+    return a.x >= b.x - 0.5f && a.y >= b.y - 0.5f && a.x + as.x <= b.x + bs.x + 0.5f && a.y + as.y <= b.y + bs.y + 0.5f;
+  };
+  EXPECT_TRUE(inside(disc, tile));
+  EXPECT_TRUE(inside(percent, disc));
+}
+
+TEST_F(PendingPictureLayoutTest, TheFileDiscardIsAFortyFourDpTarget) {
+  Show({Row("pending-upload-1", PendingFileRml(FileItem(PendingUploadState::Failed, "r.pdf", "1 MB")))});
+  ui::Element* discard = First("chat-file-discard");
+  ASSERT_NE(discard, nullptr);
+  EXPECT_NEAR(Size(discard).x, 44.f, 0.5f);
+  EXPECT_NEAR(Size(discard).y, 44.f, 0.5f);
+}
+
+TEST_F(PendingPictureLayoutTest, AFortyCharacterNameKeepsRoomForTwelveCharactersAtTheNarrowestCard) {
+  Show({Row("pending-upload-1", PendingFileRml(FileItem(PendingUploadState::Uploading,
+                                                        "abcdefghijabcdefghijabcdefghijabcdefghij", "1 MB")))});
+  ui::Element* name = First("chat-file-name");
+  ASSERT_NE(name, nullptr);
+  // 12 characters of 15dp Inter take about 90dp.
+  EXPECT_GE(Size(name).x, 90.f);
+  EXPECT_GT(Size(name).y, 15.f);
+}
+
+TEST_F(PendingPictureLayoutTest, AVideoBubbleHasTheSentVideosSizeAndKeepsItWhenItsSizeLineArrives) {
+  Show(RenderTranscript({SentAttachment("v1", "clip.mov", "video/quicktime", 12'000'000)},
+                        ReadyFacts("/x/poster.jpg", 1080, 1920)));
+  ui::Element* sent = First("chat-attachment-card");
+  ASSERT_NE(sent, nullptr);
+  const ui::Vector2f sent_size = Size(sent);
+  PendingUpload video = StartPendingUpload(1, "t", PicturePixels{1080, 1920}, PendingUploadKind::Video);
+  video.thumb_path = "/p/poster.jpg";
+  Show({Row("pending-upload-1", PendingUploadRml(video))});
+  const ui::Vector2f before = Size(First("chat-attachment-card"));
+  video = OnUploadDetails(video, "clip.mov", FormatAttachmentByteSize(12'000'000)).next;
+  Show({Row("pending-upload-1", PendingUploadRml(video))});
+  const ui::Vector2f after = Size(First("chat-attachment-card"));
+  EXPECT_NEAR(after.y, before.y, 0.5f) << "the size line arriving does not move it";
+  EXPECT_NEAR(after.x, sent_size.x, 0.5f);
+  EXPECT_NEAR(after.y, sent_size.y, 0.5f);
+  // No poster: the sent card's bare frame.
+  Show(RenderTranscript({SentAttachment("v2", "clip.mov", "video/quicktime", 12'000'000)}, ReadyFacts()));
+  const ui::Vector2f sent_bare = Size(First("chat-attachment-video-frame--bare"));
+  PendingUpload bare = StartPendingUpload(2, "t", std::nullopt, PendingUploadKind::Video);
+  bare.title = "clip.mov";
+  Show({Row("pending-upload-2", PendingUploadRml(bare))});
+  EXPECT_NEAR(Size(First("chat-attachment-video-frame--bare")).x, sent_bare.x, 0.5f);
+  EXPECT_NEAR(Size(First("chat-attachment-video-frame--bare")).y, sent_bare.y, 0.5f);
 }
 
 } // namespace

@@ -333,5 +333,15 @@ TEST(PendingUploadQueueTest, AnItemKnowsItsKind) {
   EXPECT_EQ(StartPendingUpload(1, "t", std::nullopt, PendingUploadKind::File).kind, PendingUploadKind::File);
 }
 
+TEST(PendingUploadQueueTest, ThePreparationNamesTheFileAndItsSize) {
+  PendingUpload file = StartPendingUpload(1, "t", std::nullopt, PendingUploadKind::File);
+  file.title = "picked name";
+  const PendingUploadStep step = OnUploadDetails(file, "report.pdf", "2.4 MB");
+  EXPECT_EQ(step.next.title, "report.pdf");
+  EXPECT_EQ(step.next.size_text, "2.4 MB");
+  EXPECT_EQ(OnUploadDetails(file, "", "1 KB").next.title, "picked name") << "no name given: the old one stays";
+  EXPECT_FALSE(OnUploadDetails(PendingUpload{}, "x", "1 KB").next.Shows());
+}
+
 } // namespace
 } // namespace pbr

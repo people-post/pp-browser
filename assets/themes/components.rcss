@@ -12268,6 +12268,82 @@ input.checkbox {
   background-color: rgba(0, 0, 0, 128);
 }
 
+/* A file card, sent or being sent (DEV/PLAN-attachment-bubbles-multi-pick.md): a 72dp type tile on the left, the name
+   (two lines at most) and the size on the right, 220-292dp wide (292 as a picture bubble). The whole sent card opens
+   the file. While it uploads the disc sits on the tile, the percent in its middle; after a failure the ✕ sits at the
+   tile's top-right corner. One generator draws both, so the bubble and the card it turns into have the same size. */
+.chat-file-card,
+.shell-chat-overlay .chat-file-card {
+  min-width: 220dp;
+  max-width: 292dp;
+  padding: 8dp;
+}
+
+.chat-file-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.chat-file-tile {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72dp;
+  height: 72dp;
+  border-radius: 14dp;
+  background-color: rgba(128, 128, 128, 56);
+}
+
+.chat-file-tile-label {
+  font-size: 17dp;
+  font-weight: bold;
+  line-height: 22dp;
+}
+
+.chat-file-tile-icon {
+  width: 30dp;
+  height: 30dp;
+}
+
+.chat-file-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 10dp;
+}
+
+.chat-file-name,
+.shell-chat-overlay .chat-file-card .chat-file-name {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  max-height: 40dp;
+  overflow: hidden;
+  word-break: break-all;
+}
+
+.chat-file-size,
+.shell-chat-overlay .chat-file-card .chat-file-size {
+  margin: 2dp 0 0 0;
+  font-size: 12dp;
+  line-height: 16dp;
+  opacity: 0.8;
+}
+
+.chat-file-percent {
+  color: #ffffff;
+  font-size: 12dp;
+  font-weight: bold;
+  line-height: 16dp;
+}
+
+.chat-pending-discard.chat-file-discard {
+  top: -22dp;
+  right: -22dp;
+}
+
 /* The plus, the camera and the microphone while an attachment is preparing or uploading (attach_disabled): in place,
    greyed. A class bound to attach_disabled, not :disabled: this engine's <button> is a plain element, so the disabled
    attribute never sets the :disabled pseudo-class (the iPhone showed the microphone at full strength). */

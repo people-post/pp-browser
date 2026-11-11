@@ -385,6 +385,103 @@ std::string PictureClipRml(const PictureBubbleSize& fit, const std::string& src,
   return html + overlay + "</div>";
 }
 
+/**
+ * A video card's body, sent or being sent: the poster in its clip box (`poster_frame`: FitPictureInBubble; 216 x 122
+ * when its size is unknown; the box empty when the poster file is gone), or the bare dark frame naming the file; `inner` over it (the play disc, or the
+ * upload disc); the size line under it when there is one. `frame_attrs` go on the frame (the tap).
+ */
+std::string VideoBodyRml(const bool poster_frame, const std::string& poster_path, const int width, const int height,
+                         const std::string& frame_attrs, const std::string& inner, const std::string& label,
+                         const std::string& size_text, const std::string& poster_attrs = {}) {
+  std::string html = "<div class=\"chat-attachment-video\">";
+  if (poster_frame) {
+    PictureBubbleSize fit = FitPictureInBubble(width, height);
+    if (fit.width_dp <= 0) {
+      fit = {216, 122, 122, 0};
+    }
+    html += "<div class=\"chat-attachment-clip chat-attachment-video-frame\" style=\"width:" +
+            std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp\"" + frame_attrs + ">";
+    if (!poster_path.empty()) {
+      html += "<img class=\"chat-attachment-video-poster\" src=\"" + StructuredTextParser::EscapeText(poster_path) +
+              "\" width=\"" + std::to_string(fit.width_dp) + "\" height=\"" +
+              std::to_string(fit.image_height_dp > 0 ? fit.image_height_dp : fit.height_dp) + "\"" +
+              (fit.image_offset_dp > 0 ? " style=\"margin-top:-" + std::to_string(fit.image_offset_dp) + "dp\"" : "") +
+              poster_attrs + "/>";
+    }
+    html += inner;
+    html += "</div>";
+  } else {
+    html += "<div class=\"chat-attachment-video-frame chat-attachment-video-frame--bare\"" + frame_attrs + ">";
+    html += "<div class=\"chat-attachment-video-badge\">" +
+            StructuredTextParser::EscapeText(Tr("chat.card.video_badge")) + "</div>";
+    html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
+    html += inner;
+    html += "</div>";
+  }
+  if (!size_text.empty()) {
+    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(size_text) + "</p>";
+  }
+  return html + "</div>";
+}
+
+/** The file type tile's face: the name's extension in capitals (at most 4 letters), else the generic file icon. */
+std::string FileTileFaceRml(const std::string& name) {
+  const std::string label = FileTypeTileLabel(name);
+  if (label.empty()) {
+    return "<svg class=\"chat-file-tile-icon\" src=\"../icons/v2/file.svg\" width=\"30\" height=\"30\"></svg>";
+  }
+  return "<span class=\"chat-file-tile-label\">" + StructuredTextParser::EscapeText(label) + "</span>";
+}
+
+/**
+ * A file card, sent or being sent (one generator, so a bubble and the sent card it turns into have the same size): a
+ * 72dp type tile on the left (`tile_inner` drawn over it: the upload disc), the name (two lines at most) and the size
+ * line on the right, `after` last. `card_attrs` go on the card (the sent card's tap opens the file).
+ */
+std::string FileCardRml(const std::string& name, const std::string& size_text, const std::string& card_attrs,
+                        const std::string& tile_inner, const std::string& after) {
+  return "<div class=\"chat-card chat-attachment-card chat-file-card\"" + card_attrs +
+         "><div class=\"chat-file-row\"><div class=\"chat-file-tile\">" + FileTileFaceRml(name) + tile_inner +
+         "</div><div class=\"chat-file-text\"><p class=\"chat-file-name\">" + StructuredTextParser::EscapeText(name) +
+         "</p><p class=\"chat-file-size\">" + StructuredTextParser::EscapeText(size_text) + "</p></div></div>" + after +
+         "</div>";
+}
+
+/** The upload disc of item `upload`: the ring (the percent) and `core` in its middle; uploading: cancel, failed: retry. */
+std::string PendingDiscRml(const PendingUpload& upload, const std::string& core) {
+  const bool failed = upload.state == PendingUploadState::Failed;
+  const bool cancelling = upload.state == PendingUploadState::Cancelling;
+  std::string disc = "<button class=\"chat-pending-disc";
+  if (cancelling) {
+    disc += " chat-pending-disc--busy\" type=\"button\">";
+  } else if (failed) {
+    disc += "\" type=\"button\" title=\"" + StructuredTextParser::EscapeText(Tr("chat.attachment.retry")) +
+            "\" data-event-click=\"retry_attachment_send('" + JsArgInAttribute(upload.row_id) + "')\">";
+  } else {
+    disc += "\" type=\"button\" title=\"" + StructuredTextParser::EscapeText(Tr("chat.attachment.cancel_send")) +
+            "\" data-event-click=\"cancel_attachment_send('" + JsArgInAttribute(upload.row_id) + "')\">";
+  }
+  if (!failed) {
+    disc += "<div id=\"" + PendingRingElementId(upload.row_id) + "\" class=\"chat-pending-ring";
+    if (kPendingProgressRing && !cancelling) {
+      disc += "\" style=\"decorator: " + PendingRingDecorator(upload.percent) + "\"></div>";
+    } else {
+      disc += " chat-pending-ring--spin\"></div>";
+    }
+  }
+  return disc + "<div class=\"chat-pending-core\">" + core + "</div></button>";
+}
+
+/** The corner ✕ that gives a failed item up (a 44dp target). */
+std::string PendingDiscardRml(const PendingUpload& upload, const char* extra_class) {
+  return std::string("<button class=\"chat-pending-discard") + extra_class + "\" type=\"button\" title=\"" +
+         StructuredTextParser::EscapeText(Tr("common.cancel")) + "\" data-event-click=\"discard_attachment_send('" +
+         JsArgInAttribute(upload.row_id) +
+         "')\"><div class=\"chat-pending-discard-disc\">"
+         "<svg class=\"chat-pending-icon\" src=\"../icons/v2/close.svg\" width=\"20\" height=\"20\"></svg>"
+         "</div></button>";
+}
+
 std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& facts) {
   auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
   const std::string label = fields && !fields->filename.empty()
@@ -446,47 +543,17 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {
     // The whole frame is the tap target (the system player opens directly); the play disc is drawn over the poster
     // and takes no taps. The frame is clipped to the same size picture bubbles use, so nothing can exceed the bubble.
-    html += "<div class=\"chat-attachment-video\">";
-    const std::string& poster_path = view.poster_path;
-    const std::string open_click = "data-event-click=\"open_attachment('" + JsArgInAttribute(message.id) + "')\"";
     const char* play_disc =
         "<div class=\"chat-attachment-video-play\"><svg class=\"chat-attachment-video-play-icon\" "
         "src=\"../icons/play.svg\" width=\"22\" height=\"22\"></svg></div>";
-    if (!poster_path.empty()) {
-      PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height);
-      if (fit.width_dp <= 0) {
-        fit = {216, 122, 122, 0};
-      }
-      html += "<div class=\"chat-attachment-clip chat-attachment-video-frame\" style=\"width:" +
-              std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp\" " + open_click + ">";
-      html += "<img class=\"chat-attachment-video-poster\" src=\"" + StructuredTextParser::EscapeText(poster_path) +
-              "\" width=\"" + std::to_string(fit.width_dp) + "\" height=\"" +
-              std::to_string(fit.image_height_dp > 0 ? fit.image_height_dp : fit.height_dp) + "\"" +
-              (fit.image_offset_dp > 0 ? " style=\"margin-top:-" + std::to_string(fit.image_offset_dp) + "dp\"" : "") +
-              "/>";
-      html += play_disc;
-      html += "</div>";
-    } else {
-      html += "<div class=\"chat-attachment-video-frame chat-attachment-video-frame--bare\" " + open_click + ">";
-      html += "<div class=\"chat-attachment-video-badge\">" +
-              StructuredTextParser::EscapeText(Tr("chat.card.video_badge")) + "</div>";
-      html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
-      html += play_disc;
-      html += "</div>";
-    }
-    if (fields->byte_length > 0) {
-      html += "<p class=\"text muted\">" +
-              StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) + "</p>";
-    }
-    html += "</div>";
+    html +=
+        VideoBodyRml(!view.poster_path.empty(), view.poster_path, view.image_width, view.image_height,
+                     " data-event-click=\"open_attachment('" + JsArgInAttribute(message.id) + "')\"", play_disc, label,
+                     fields->byte_length > 0 ? FormatAttachmentByteSize(fields->byte_length) : std::string());
   } else if (ready && (!local_path.empty() || view.on_demand)) {
-    html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
-    if (fields->byte_length > 0) {
-      html += "<p class=\"text muted\">" +
-              StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) + "</p>";
-    }
-    html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
-            JsArgInAttribute(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
+    // The whole card opens the file (DEV/PLAN-attachment-bubbles-multi-pick.md): its type tile, name and size.
+    return FileCardRml(label, fields->byte_length > 0 ? FormatAttachmentByteSize(fields->byte_length) : std::string(),
+                       " data-event-click=\"open_attachment('" + JsArgInAttribute(message.id) + "')\"", {}, {});
   } else {
     html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
     if (fields && fields->byte_length > 0) {
@@ -864,50 +931,71 @@ std::string PendingPictureRml(const PendingUpload& upload) {
   const bool failed = upload.state == PendingUploadState::Failed;
   const bool cancelling = upload.state == PendingUploadState::Cancelling;
   // The disc: the whole 48dp is the target (uploading: cancel; failed: retry; cancelling: nothing to tap).
-  std::string disc = "<button class=\"chat-pending-disc";
-  if (cancelling) {
-    disc += " chat-pending-disc--busy\" type=\"button\">";
-  } else if (failed) {
-    disc += "\" type=\"button\" title=\"" + StructuredTextParser::EscapeText(Tr("chat.attachment.retry")) +
-            "\" data-event-click=\"retry_attachment_send('" + JsArgInAttribute(upload.row_id) + "')\">";
-  } else {
-    disc += "\" type=\"button\" title=\"" + StructuredTextParser::EscapeText(Tr("chat.attachment.cancel_send")) +
-            "\" data-event-click=\"cancel_attachment_send('" + JsArgInAttribute(upload.row_id) + "')\">";
-  }
-  if (!failed) {
-    disc += "<div id=\"" + PendingRingElementId(upload.row_id) + "\" class=\"chat-pending-ring";
-    if (kPendingProgressRing && !cancelling) {
-      disc += "\" style=\"decorator: " + PendingRingDecorator(upload.percent) + "\"></div>";
-    } else {
-      disc += " chat-pending-ring--spin\"></div>";
-    }
-  }
-  disc += "<div class=\"chat-pending-core\">";
+  std::string core;
   if (failed) {
-    disc += "<svg class=\"chat-pending-icon\" src=\"../icons/v2/retry.svg\" width=\"20\" height=\"20\"></svg>";
+    core = "<svg class=\"chat-pending-icon\" src=\"../icons/v2/retry.svg\" width=\"20\" height=\"20\"></svg>";
   } else if (!cancelling) {
-    disc += "<svg class=\"chat-pending-icon\" src=\"../icons/v2/close.svg\" width=\"18\" height=\"18\"></svg>";
+    core = "<svg class=\"chat-pending-icon\" src=\"../icons/v2/close.svg\" width=\"18\" height=\"18\"></svg>";
   }
-  disc += "</div></button>";
-  std::string overlay = "<div class=\"chat-pending-center\">" + disc;
+  std::string overlay = "<div class=\"chat-pending-center\">" + PendingDiscRml(upload, core);
   if (!failed) {
     overlay += "<p id=\"" + PendingPercentElementId(upload.row_id) + "\" class=\"chat-pending-percent\">" +
                PendingPercentText(upload.percent) + "</p>";
   }
   overlay += "</div>";
   if (failed) {
-    overlay += "<button class=\"chat-pending-discard\" type=\"button\" title=\"" +
-               StructuredTextParser::EscapeText(Tr("common.cancel")) +
-               "\" data-event-click=\"discard_attachment_send('" + JsArgInAttribute(upload.row_id) +
-               "')\"><div class=\"chat-pending-discard-disc\">"
-               "<svg class=\"chat-pending-icon\" src=\"../icons/v2/close.svg\" width=\"20\" height=\"20\"></svg>"
-               "</div></button>";
+    overlay += PendingDiscardRml(upload, "");
+  }
+  if (upload.kind == PendingUploadKind::Video) {
+    // The sent video's card and frame (VideoBodyRml): the poster, or the bare frame when there is none; no play key
+    // while it uploads. Built once the poster is known, so its size never changes.
+    return "<div class=\"chat-card chat-attachment-card chat-pending-video\">" +
+           VideoBodyRml(upload.size_known, upload.thumb_path, upload.pixels.width, upload.pixels.height, "", overlay,
+                        upload.title, upload.size_text.empty() ? std::string("…") : upload.size_text,
+                        " id=\"" + PendingThumbElementId(upload.row_id) + "\"") +
+           "</div>";
   }
   const PictureBubbleSize fit = FitPictureInBubble(upload.pixels.width, upload.pixels.height);
   return "<div class=\"chat-card chat-attachment-card chat-attachment-card--image chat-pending-picture\">" +
          PictureClipRml(fit, upload.thumb_path, " chat-pending-picture-clip",
                         " id=\"" + PendingThumbElementId(upload.row_id) + "\"", overlay) +
          "</div>";
+}
+
+std::string PendingFileRml(const PendingUpload& upload) {
+  const bool failed = upload.state == PendingUploadState::Failed;
+  // The percent sits in the disc's middle (no cross: the disc itself is the cancel target).
+  const std::string core =
+      failed ? "<svg class=\"chat-pending-icon\" src=\"../icons/v2/retry.svg\" width=\"20\" height=\"20\"></svg>"
+             : "<span id=\"" + PendingPercentElementId(upload.row_id) + "\" class=\"chat-file-percent\">" +
+                   PendingPercentText(upload.percent) + "</span>";
+  std::string tile_inner = "<div class=\"chat-pending-center\">" + PendingDiscRml(upload, core) + "</div>";
+  if (failed) {
+    tile_inner += PendingDiscardRml(upload, " chat-file-discard");
+  }
+  return FileCardRml(upload.title, upload.size_text.empty() ? std::string("…") : upload.size_text, "", tile_inner, {});
+}
+
+std::string PendingUploadRml(const PendingUpload& upload) {
+  return upload.kind == PendingUploadKind::File ? PendingFileRml(upload) : PendingPictureRml(upload);
+}
+
+std::string FileTypeTileLabel(const std::string& name) {
+  const size_t dot = name.rfind('.');
+  if (dot == std::string::npos || dot == 0 || dot + 1 >= name.size()) {
+    return {};
+  }
+  std::string ext = name.substr(dot + 1);
+  if (ext.size() > 4) {
+    return {};
+  }
+  for (char& ch : ext) {
+    if (!std::isalnum(static_cast<unsigned char>(ch))) {
+      return {};
+    }
+    ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+  }
+  return ext;
 }
 
 std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,

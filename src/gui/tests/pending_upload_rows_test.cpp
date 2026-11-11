@@ -453,7 +453,7 @@ TEST(PendingPictureSourcePinTest, ASentPictureIsTakenBackWithoutARedrawThenTheOn
   EXPECT_NE(sync, std::string::npos) << "the real row comes with the display sync in the same callback";
   // A failure while preparing removes the bubble and says why, unless it was cancelled.
   EXPECT_NE(body.find("UploadSendOutcome::FailedNotStaged"), std::string::npos);
-  EXPECT_NE(body.find("if (!(picture && cancel->load()))"), std::string::npos);
+  EXPECT_NE(body.find("if (!(with_bubble && cancel->load()))"), std::string::npos);
 }
 
 TEST(PendingPictureSourcePinTest, TheLockDeletesTheThumbnailOnTheExistingLockCheck) {
@@ -517,6 +517,22 @@ TEST(PendingPictureSourcePinTest, ChipEventsHaveNoIdAndBubbleEventsCarryOne) {
               std::string::npos)
         << event << " reads its optional id";
   }
+}
+
+// Step 2: a video's bubble waits for its poster and a poster that comes after a cancel is deleted; a voice recording
+// never gets a bubble; a file / video bubble learns its name and size from the preparation.
+TEST(PendingPictureSourcePinTest, VideoPosterFirstLatePosterDeletedVoiceWithoutBubble) {
+  const std::string body = Body(Controller(), "void ChatController::StartAttachmentUpload(");
+  ASSERT_FALSE(body.empty());
+  EXPECT_NE(body.find("const bool with_bubble = bubble.has_value() && !voice_file;"), std::string::npos);
+  const size_t poster = body.find("WriteVideoPosterThumbnail(path, scratch_dir)");
+  const size_t prepare = body.find("PrepareOutgoingAttachment(path, limits, source, scratch_dir)");
+  ASSERT_NE(poster, std::string::npos);
+  EXPECT_LT(poster, prepare) << "the poster before the preparation";
+  const size_t cancelled = body.find("if (send_cancel_ != cancel || cancel->load()) {", poster);
+  ASSERT_NE(cancelled, std::string::npos);
+  EXPECT_LT(body.find("remove_poster();", cancelled), body.find("StartPendingUpload(", cancelled));
+  EXPECT_NE(body.find("OnUploadDetails(pending_uploads_.Upload(), prepared->filename"), std::string::npos);
 }
 
 // Plan step 0 entry list: every way a row's id reaches the store or a request ignores the picture being sent.

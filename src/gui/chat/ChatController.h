@@ -354,7 +354,8 @@ private:
    * offers Retry / Discard.
    */
   void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool voice_file = false,
-                             const std::string& voice_thread_id = {}, bool picture = false);
+                             const std::string& voice_thread_id = {},
+                             std::optional<PendingUploadKind> bubble = std::nullopt);
   /**
    * The picture being sent shows as a bubble at the end of its chat (`picture` above; DEV/PLAN-picture-upload-bubble.md):
    * an event's result is taken, and the transcript drawn again when the row changed and its chat is open (`redraw`:
@@ -445,6 +446,8 @@ private:
   /** The picture being sent, as a temporary bubble at the end of its chat; one at a time. */
   PendingUploadRows pending_uploads_;
   uint64_t pending_upload_serial_ = 0;
+  /** The chat whose video bubble waits for its poster (the card stays hidden there); empty when none. */
+  std::string video_bubble_thread_;
   /** Set by Cancel on the chip while a send is in flight; a new one for each send. */
   std::shared_ptr<std::atomic<bool>> send_cancel_;
   /** A voice recording waiting for Retry / Discard (nothing was staged), and the chat it is for. */

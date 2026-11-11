@@ -89,6 +89,8 @@ PendingUploadStep OnUploadSizeRead(const PendingUpload& now, PicturePixels uprig
  * uploading, or the app is `locked` (the plaintext does not stay).
  */
 PendingUploadStep OnUploadThumbnail(const PendingUpload& now, const std::string& path, bool locked);
+/** The preparation named the file it sends and its size line: a file / video bubble shows them (any shown state). */
+PendingUploadStep OnUploadDetails(const PendingUpload& now, const std::string& title, const std::string& size_text);
 /** Upload progress: the percent never goes back. */
 PendingUploadStep OnUploadProgress(const PendingUpload& now, int percent);
 /** The disc while uploading (preparing included: the send then stops when its upload starts and calls back). */

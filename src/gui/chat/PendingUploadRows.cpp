@@ -112,7 +112,7 @@ std::vector<MessageDisplayRow> PendingUploadRows::Render(std::vector<TranscriptR
       pending.message.sender_contact_id = kLocalSelfContactId;
       pending.message.content_type = ChatContentType::Attachment;
       pending.message.timestamp = util::NowUnixMs();
-      pending.message.content_rml = PendingPictureRml(item);
+      pending.message.content_rml = PendingUploadRml(item);
       entries.push_back(std::move(pending));
       drawn_ids.push_back(item.row_id);
     }

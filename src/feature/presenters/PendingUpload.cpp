@@ -73,6 +73,18 @@ PendingUploadStep OnUploadThumbnail(const PendingUpload& now, const std::string&
   return {std::move(next), old == path ? std::string() : old};
 }
 
+PendingUploadStep OnUploadDetails(const PendingUpload& now, const std::string& title, const std::string& size_text) {
+  if (!now.Shows()) {
+    return Unchanged(now);
+  }
+  PendingUpload next = now;
+  if (!title.empty()) {
+    next.title = title;
+  }
+  next.size_text = size_text;
+  return {std::move(next), {}};
+}
+
 PendingUploadStep OnUploadProgress(const PendingUpload& now, const int percent) {
   if (now.state != State::Uploading) {
     return Unchanged(now);
