@@ -1,4 +1,5 @@
-      <div class="settings-section settings-section--grouped stack" data-if="advanced">
+      <div class="stack" data-if="advanced">
+      <div class="settings-section settings-section--grouped stack">
         <div class="group-card" data-if="show_backend_switch">
           <button class="settings-toggle-row settings-choice-row row group-row" type="button"
                   data-event-click="on_choose_backend()">
@@ -63,7 +64,16 @@
             {{i18n:settings.security.clear_undelivered}}
           </button>
         </div>
-          <div class="stack" data-if="advanced">
+        <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
+                data-event-click="open_ui_perf_test()">{{i18n:dev.perf.row}}</button>
+        <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
+                data-event-click="simulate_chats_link_offline()">{{i18n:dev.link.sim_offline}}</button>
+        <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
+                data-event-click="simulate_chats_link_connecting()">{{i18n:dev.link.sim_connecting}}</button>
+        <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
+                data-event-click="simulate_chats_link_online()">{{i18n:dev.link.sim_online}}</button>
+      </div>
+      <div class="settings-section stack storage-section" data-if="advanced">
             <p class="text muted">{{i18n:settings.storage.profile_label}} <span>{{profile_label}}</span></p>
             <p class="text">{{i18n:settings.storage.library.title}}</p>
             <p class="text muted">{{i18n:settings.storage.library.help}}</p>
@@ -103,13 +113,5 @@
             <p class="text muted settings-path">{{i18n:settings.storage.config_label}} <span>{{config_dir}}</span></p>
             <p class="text muted settings-path">{{i18n:settings.storage.data_label}} <span>{{data_dir}}</span></p>
             <p class="text muted settings-path">{{i18n:settings.storage.profile_data_label}} <span>{{profile_dir}}</span></p>
-          </div>
-        <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
-                data-event-click="open_ui_perf_test()">{{i18n:dev.perf.row}}</button>
-        <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
-                data-event-click="simulate_chats_link_offline()">{{i18n:dev.link.sim_offline}}</button>
-        <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
-                data-event-click="simulate_chats_link_connecting()">{{i18n:dev.link.sim_connecting}}</button>
-        <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
-                data-event-click="simulate_chats_link_online()">{{i18n:dev.link.sim_online}}</button>
+      </div>
       </div>

@@ -66,6 +66,18 @@ TEST(SettingsTitlesTest, PhoneProfileQrIsCentredWithSpaceBelow) {
   EXPECT_NE(body.find("margin: 20dp 16dp 20dp 16dp;"), std::string::npos);
 }
 
+TEST(SettingsTitlesTest, TheTesterPagesStorageLibraryIsNotInsideTheGroupedSection) {
+  // The grouped section strips its side padding and restyles every .btn inside it; the library list was written for a
+  // plain .settings-section (16dp sides, ordinary buttons), so it must sit in its own one.
+  const std::string rml = ReadAsset("views/settings_section_tester.rml");
+  const size_t library = rml.find("{{i18n:settings.storage.library.title}}");
+  ASSERT_NE(library, std::string::npos);
+  const size_t own_section = rml.rfind("<div class=\"settings-section stack storage-section\" data-if=\"advanced\">", library);
+  ASSERT_NE(own_section, std::string::npos);
+  const size_t grouped_close = rml.rfind("</div>\n      <div class=\"settings-section stack storage-section\" data-if=\"advanced\">", library);
+  EXPECT_NE(grouped_close, std::string::npos) << "the grouped section closes before the library section opens";
+}
+
 TEST(SettingsTitlesTest, HomeTitleIsMe) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");
