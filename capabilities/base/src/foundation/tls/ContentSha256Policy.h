@@ -12,7 +12,9 @@ bool SendContentSha256();
 /** Tests: the switch for this scope; the previous value comes back after it. */
 class ScopedSendContentSha256ForTest {
 public:
-  explicit ScopedSendContentSha256ForTest(bool enabled) : previous_(SendContentSha256()) { SetSendContentSha256(enabled); }
+  explicit ScopedSendContentSha256ForTest(bool enabled) : previous_(SendContentSha256()) {
+    SetSendContentSha256(enabled);
+  }
   ~ScopedSendContentSha256ForTest() { SetSendContentSha256(previous_); }
   ScopedSendContentSha256ForTest(const ScopedSendContentSha256ForTest&) = delete;
   ScopedSendContentSha256ForTest& operator=(const ScopedSendContentSha256ForTest&) = delete;
