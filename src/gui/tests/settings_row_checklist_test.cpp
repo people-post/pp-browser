@@ -1,7 +1,7 @@
 // The settings reorganisation moves rows between pages without changing any of them (DEV/PLAN-settings-reorg.md).
 // This test keeps that promise honest: data/settings_row_checklist.txt lists, per page view, every event, binding,
 // switch expression and label key with how often it appears and under which `data-if` chain; the views must match it
-// exactly, and what moved out of a view that is edited in place must be gone from it (and be in holding/).
+// exactly, and what moved out of a view that is edited in place must be gone from it.
 //
 // Phases: a row tagged "N" in the last column may change its gate from phase N on (the plan's phase table);
 // kPhase is the phase the tree is at.
@@ -290,7 +290,7 @@ TEST(SettingsRowChecklistTest, EveryRowOfEveryPageIsOnTheChecklistWithItsGates) 
   }
 }
 
-TEST(SettingsRowChecklistTest, WhatMovedOutOfAViewIsGoneFromItAndKeptInTheHoldingFile) {
+TEST(SettingsRowChecklistTest, WhatMovedOutOfAViewIsGoneFromIt) {
   const std::vector<Row> rows = LoadChecklist();
   std::map<std::pair<std::string, std::string>, size_t> stays; // (view, token) -> how often the checklist keeps it
   for (const Row& row : rows) {
@@ -305,20 +305,17 @@ TEST(SettingsRowChecklistTest, WhatMovedOutOfAViewIsGoneFromItAndKeptInTheHoldin
       const size_t kept = stays[{from, row.token}];
       EXPECT_EQ(CountOf(StripComments(View(from)), row.token), kept)
           << row.token << " must not be left in " << from << " (it moved to " << row.view << ")";
-      if (kept == 0) {
-        EXPECT_NE(ReadAsset("views/holding/settings_section_" + from + "_moved.rml.txt").find(row.token),
-                  std::string::npos)
-            << row.token << " is missing from the holding file of " << from;
-      }
       ++checked;
     }
   }
   EXPECT_GT(checked, 50u);
-  for (const std::string& from : InPlaceViews()) {
-    // The holding file is never a registered view and never rendered.
-    EXPECT_EQ(ReadSource("src/lib/ui/ViewCatalog.cpp").find("holding/"), std::string::npos);
-    EXPECT_FALSE(ReadAsset("views/holding/settings_section_" + from + "_moved.rml.txt").empty()) << from;
+  // The old views and the holding files of phase 0a are deleted.
+  for (const std::string& id : RetiredViews()) {
+    EXPECT_FALSE(std::filesystem::exists(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" /
+                                         ("settings_section_" + id + ".rml")))
+        << id;
   }
+  EXPECT_FALSE(std::filesystem::exists(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "holding"));
 }
 
 } // namespace pbr
