@@ -91,7 +91,7 @@ Accepted 2026-11-05 (Hongwei), revised the same day after review (statement plus
 **o3 — Make a group during a call (G022)**
 - [x] "Make a group…" on a call with no group and 3+ people (`OffersMakeGroup`, desktop bar and phone call page); picker prefilled with the participants, a default name from their names (`CallMakeGroupPick`, `DefaultCallGroupTitle`); `CreateGroupFromCall` invites by account (people met in the call need not be contacts)
 - [x] The invite with `context: call` and `call_id` (additive) shown as a banner in that call (Join / Not now, `PickGroupInviteBanner`); the live call stays as it is; the group's first line "Group made during a call"
-- [x] Consent amendment (G022): `contacts_only` lets in an invite from someone this device is in that live call with (`GroupInviteGate::InLiveCallFn`, filled by `CallsParticipant::InLiveCallWith`); blocked and `nobody` still refuse
+- [x] Consent amendment (G022; the group-invite default became `everyone` on 2026-11-11): `contacts_only` lets in an invite from someone this device is in that live call with (`GroupInviteGate::InLiveCallFn`, filled by `CallsParticipant::InLiveCallWith`); blocked and `nobody` still refuse
 - [x] gtests (`GroupInviteGateInCallTest`, `GroupInviteIngestTest.AStrangersInviteFromOurLiveCallIsKeptAndShownInTheCall`, the invite codec, `CallScreenTest`, `InLiveCallWith`, the picker logic, `CallGroupOfferTest`, the first line); probe `make_group_from_call`, `call_group_invite`, `call_group_invite_join`, `call_group_invite_not_now`
 - [ ] Lab `call_grows_into_a_group` (a 1:1 call grows to three, one makes a group, one joins from the banner, one says not now and stays in the call): written, not yet run
 

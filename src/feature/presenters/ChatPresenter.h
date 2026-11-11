@@ -1,13 +1,18 @@
 #pragma once
 
+#include "feature/presenters/DeliveryNoticePlan.h"
 #include "feature/presenters/GroupLinkText.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/conversations/GroupMentions.h"
+#include "feature/presenters/MessageResend.h"
+#include "feature/presenters/SendMark.h"
 #include "feature/presenters/SessionMenu.h"
 #include "lib/delivery/DeliveryNotice.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
+#include "lib/messaging/TranscriptAssembly.h"
+#include "lib/people/PeerDisplayLabel.h"
 #include "lib/people/ContactTypes.h"
 
 #include <cstdint>
@@ -201,6 +206,31 @@ struct GroupMemberRow {
  */
 GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::optional<Contact>& contact,
                                    bool unreachable, const std::string& card_nickname = {});
+/** One person on a message's reactions sheet: who reacted with which emoji. */
+struct ReactorRow {
+  std::string emoji;
+  /** The sender's id (a contact id, or a group member's account id); never shown. */
+  std::string identity;
+  /** The name shown: the contact's, the directory's nickname, "you", or `unknown_title` when only a raw id is known. */
+  std::string title;
+  /** Seed for the letter-avatar colour. */
+  std::string stable_id;
+  /** Local file of the person's cached photo; empty when none. */
+  std::string icon_path;
+  bool is_self = false;
+  bool operator==(const ReactorRow&) const = default;
+};
+
+/**
+ * The rows of a message's reactions sheet, grouped by emoji in the chips' order: in each group this device's own
+ * reaction first, then the others in the order they reacted. `resolve` names a sender, `icon_of` finds the photo;
+ * a sender known only by a raw id shows `unknown_title`, never the id.
+ */
+std::vector<ReactorRow> BuildReactorRows(const std::vector<TranscriptReaction>& reactions,
+                                         const std::function<PeerDisplayLabel(const std::string& sender)>& resolve,
+                                         const std::function<std::string(const std::string& sender)>& icon_of,
+                                         const std::string& unknown_title);
+
 /** An invite waiting longer than this shows the "not joined yet" hint (it expires at kGroupInviteTtlMs). */
 inline constexpr int64_t kInviteStaleAfterMs = 60LL * 60 * 1000;
 
@@ -381,7 +411,36 @@ public:
    * (PlanDeliveryNotice), once per message. True: the caller tells the user with a toast instead (no chat to
    * put it in, or the cause is unknown). False: it is told, or already was.
    */
-  bool ApplyDeliveryNotice(const DeliveryNotice& notice);
+  NoticeTell ApplyDeliveryNotice(const DeliveryNotice& notice);
+  /** Messages changed: re-sent messages delivered by now are forgotten (ForgetDeliveredResends). */
+  void ForgetDeliveredResends();
+  /**
+   * The open chat was drawn with `red_ids` red: a message sent again by a tap among them, to be told once
+   * (FirstResentTurnedRed). ForgetResent once it is told.
+   */
+  std::optional<std::string> ResentTurnedRed(const std::string& thread_id,
+                                             const std::vector<std::string>& red_ids) const;
+  void ForgetResent(const std::string& message_id) { resent_ids_.erase(message_id); }
+  /**
+   * The send mark on `message` at `now_ms` (MarkOf, with the send still under way the outbox knows of); `next_change`
+   * keeps the soonest time a mark shown now changes on its own (NoteMarkChange). `group_others`: in a group chat, the
+   * join times of its other members (GroupOthersJoinedAt; none for other chats). Reads only.
+   */
+  SendMark SendMarkOf(const ThreadMessage& message, int64_t now_ms, std::optional<int64_t>& next_change,
+                      const std::optional<std::vector<int64_t>>& group_others = std::nullopt) const;
+  /** A group chat's other members' roster join times (not ours), read now; none for a chat that is not a group. */
+  std::optional<std::vector<int64_t>> GroupOthersJoinedAt(const std::string& thread_id) const;
+  /**
+   * A tap on the red mark of our message `message_id` in `thread_id`: why it did not go out (SendFailureReason); none:
+   * the generic sentence. Reads only: nothing is sent again.
+   */
+  std::optional<SendFailure> SendFailureReasonOf(const std::string& thread_id, const std::string& message_id);
+  /**
+   * A tap on the red mark of our message `message_id` in `thread_id` (#210 step 2): an own text in a public chat whose
+   * automatic sending has stopped is sent again as a new message and the unsent row goes (ResendAfterTap); otherwise
+   * nothing is sent and the result says what to tell. The composer's draft is not touched.
+   */
+  SendMarkTap TapSendMark(const std::string& thread_id, const std::string& message_id);
   /** Back to the chats list (the Home tab): no chat is open, so new messages count as unread. */
   void ShowHome();
   /** The archived list's entry / back button. */
@@ -465,6 +524,10 @@ public:
   Roe<void> ShareContact(const std::string& thread_id, const std::string& contact_id);
   /** React with `emoji` on a message of the open chat, or take this device's reaction back. */
   Roe<void> ToggleReaction(const std::string& message_id, const std::string& emoji);
+  /** Who reacted to a message of the open chat (BuildReactorRows); empty when the message is gone. */
+  std::vector<ReactorRow> ReactorsOf(const std::string& message_id);
+  /** This device has reacted to the message with `emoji` (the sheet's "tap to remove" row is live). */
+  bool MyReactionOn(const std::string& message_id, const std::string& emoji);
   Roe<void> DeleteForMe(const std::string& message_id);
   /** "Delete for everyone" is offered: our own message, in a chat with people (not the agent). */
   bool CanDeleteForEveryone(const std::string& message_id);
@@ -540,6 +603,10 @@ private:
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);
   std::string quote_source_;
   std::optional<std::string> opened_at_mention_;
+  /** Messages sent again by a tap not yet told as red again, until told or delivered (in memory). */
+  ResentMessages resent_ids_;
+  /** Unsent rows already sent again whose removal failed: a later tap retries the removal only (in memory). */
+  std::unordered_set<std::string> resent_unremoved_;
 };
 
 } // namespace pbr

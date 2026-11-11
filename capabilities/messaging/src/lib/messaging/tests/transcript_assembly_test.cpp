@@ -70,7 +70,21 @@ TEST(TranscriptAssemblyTest, ReactionsFoldOntoTheirTarget) {
   EXPECT_EQ(rows[0].reactions[0].emoji, thumbs);
   EXPECT_EQ(rows[0].reactions[0].count, 2u) << "each person's latest; a cleared one is gone";
   EXPECT_TRUE(rows[0].reactions[0].mine);
+  EXPECT_EQ(rows[0].reactions[0].senders, (std::vector<std::string>{"account:p", kLocalSelfContactId}))
+      << "who reacted, in the order they did; q cleared theirs";
   EXPECT_TRUE(rows[1].orphan_annotation) << "unlinked, in its place in time";
+}
+
+TEST(TranscriptAssemblyTest, ASenderWhoChangesEmojiIsListedOnlyUnderTheNewOne) {
+  const std::string thumbs = "\xF0\x9F\x91\x8D";
+  const std::string heart = "\xE2\x9D\xA4";
+  const auto rows = AssembleTranscript({Msg("m1", "account:p", "hi", 1), Reaction("r1", "account:q", "m1", thumbs, 2),
+                                        Reaction("r2", "account:q", "m1", thumbs, 3, kAnnotationTypeReactionClear),
+                                        Reaction("r3", "account:q", "m1", heart, 4)},
+                                       nullptr);
+  ASSERT_EQ(rows[0].reactions.size(), 1u);
+  EXPECT_EQ(rows[0].reactions[0].emoji, heart);
+  EXPECT_EQ(rows[0].reactions[0].senders, (std::vector<std::string>{"account:q"}));
 }
 
 TEST(TranscriptAssemblyTest, WhatNeverShows) {

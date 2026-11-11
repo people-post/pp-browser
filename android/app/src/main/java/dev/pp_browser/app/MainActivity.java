@@ -493,6 +493,16 @@ public class MainActivity extends SDLActivity {
         return PpSecureBlob.deviceLocked(blobContext());
     }
 
+    /** Called from native (PlatformNotificationSettings_Android.cpp, UI thread): see PpNotificationHealth. */
+    public static int notificationHealth() {
+        return PpNotificationHealth.health(blobContext());
+    }
+
+    /** Called from native (PlatformNotificationSettings_Android.cpp, UI thread): opens a notification tip's screen. */
+    public static boolean openNotificationFix(final int target) {
+        return PpNotificationHealth.open(blobContext(), target);
+    }
+
     /** Called from native (OsProtectedData_Android.cpp): Settings.Global.BOOT_COUNT, -1 when it cannot be read. */
     public static int bootCount() {
         final Context context = blobContext();

@@ -53,4 +53,8 @@ ConversationsHub::NotificationPrefs ProjectNotifications(const ProfilePreference
   return {.show_notifications = prefs.show_notifications, .stay_connected = prefs.stay_connected};
 }
 
+void ApplyMessageBanners(ILocalNotifier& notifier, const ConversationsHub::NotificationPrefs& prefs) {
+  notifier.SetMessageBannersOn(prefs.show_notifications);
+}
+
 } // namespace pbr

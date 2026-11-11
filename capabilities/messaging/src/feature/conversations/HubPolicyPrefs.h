@@ -10,7 +10,7 @@ namespace pbr {
 
 /** Inbound group-invite + attachment download policy projected from ProfilePreferences. */
 struct HubPolicyPrefs {
-  GroupInvitePolicy group_invite_policy = GroupInvitePolicy::ContactsOnly;
+  GroupInvitePolicy group_invite_policy = GroupInvitePolicy::Everyone;
   AttachmentDownloadPolicy attachment_download_policy = AttachmentDownloadPolicy::Smart;
   /** "Download everything" (AlwaysAuto) on Wi-Fi / on the mobile network; neither ticked: Smart. */
   bool attachment_auto_on_wifi = true;

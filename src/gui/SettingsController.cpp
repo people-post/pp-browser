@@ -20,6 +20,7 @@
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/StorageSettingsSection.h"
+#include "feature/settings/SettingsPages.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/MascotLook.h"
@@ -141,7 +142,10 @@ ui::Vector2i ChoiceRowMenuPosition(ui::Event& ev) {
 
 SettingsController::SettingsController() {
   redirectLogger("SettingsController");
-  foreground_listener_ = AppLifecycle::AddForegroundListener([this]() { RefreshBannerTip(); });
+  foreground_listener_ = AppLifecycle::AddForegroundListener([this]() {
+    RefreshBannerTip();
+    RefreshNotificationTips();
+  });
   section_handlers_.push_back(std::make_unique<ProfileSettingsSection>());
   for (auto& section : CreateSettingsSections()) {
     section_handlers_.push_back(std::move(section));
@@ -171,6 +175,33 @@ void SettingsController::RefreshBannerTip() {
     bindings_.call_banner_tip_available = show;
     DataModelHost::Instance().Dirty("settings", "call_banner_tip_available");
   });
+}
+
+void SettingsController::RefreshNotificationTips() {
+  QueryNotificationHealth([this, alive = alive_](NotificationHealth health) {
+    if (!*alive) {
+      return;
+    }
+    last_health_ = health;
+    ApplyNotificationTips();
+  });
+}
+
+void SettingsController::ApplyNotificationTips() {
+  const NotificationTips tips = ComputeNotificationTips(last_health_, bindings_.stay_connected == "on");
+  auto set = [](bool& slot, bool value, const char* name) {
+    if (slot != value) {
+      slot = value;
+      DataModelHost::Instance().Dirty("settings", name);
+    }
+  };
+  set(bindings_.tip_notifications_blocked, tips.notifications_blocked, "tip_notifications_blocked");
+  set(bindings_.tip_silenced, tips.silenced, "tip_silenced");
+  set(bindings_.tip_battery, tips.battery, "tip_battery");
+  set(bindings_.tip_autostart, tips.autostart, "tip_autostart");
+  set(bindings_.stay_help_plain, tips.stay_help == PushGap::None, "stay_help_plain");
+  set(bindings_.stay_help_build, tips.stay_help == PushGap::BuildHasNone, "stay_help_build");
+  set(bindings_.stay_help_no_google, tips.stay_help == PushGap::NoGoogleServices, "stay_help_no_google");
 }
 
 void SettingsController::BindCommands(SettingsCommands commands) {
@@ -248,14 +279,13 @@ const SettingsSectionHandler* SettingsController::FindHandler(const std::string&
 
 void SettingsController::InitSections() {
   sections_.clear();
-  const bool advanced = ui_state_.show_advanced_settings == "on";
-  for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
-    const SettingsSectionListItem item = handler->ListItem();
-    if (item.advanced_only && !advanced) {
-      continue;
-    }
-    sections_.push_back(
-        {.id = item.id.c_str(), .title = item.title.c_str(), .subtitle = item.subtitle.c_str(), .attention = false});
+  // Advanced and Test options are listed (and so reachable) only while the flag is on: five taps on the version.
+  for (const SettingsPage* page : ListedSettingsPages(ui_state_.show_advanced_settings == "on")) {
+    sections_.push_back({.id = page->id,
+                         .title = Tr(page->title_key).c_str(),
+                         .subtitle = "",
+                         .group = page->home_group,
+                         .attention = false});
   }
   ApplySectionAttention();
 }
@@ -467,11 +497,13 @@ void SettingsController::PushUiStateToBindings() {
 }
 
 void SettingsController::SyncBindingsFromSession() {
-  if (selected_id_ == "storage") {
-    cas_library_.Refresh();
-  }
-  if (selected_id_ == "security") {
-    own_devices_.Refresh();
+  if (const SettingsPage* page = FindSettingsPage(selected_id_.c_str())) {
+    if (SettingsPageHas(*page, SettingsPageAction::RefreshCasLibrary)) {
+      cas_library_.Refresh();
+    }
+    if (SettingsPageHas(*page, SettingsPageAction::RefreshDevices)) {
+      own_devices_.Refresh();
+    }
   }
 
   const BootstrapResult& bootstrap = Store().Snapshot();
@@ -540,6 +572,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
       section_handle.RegisterMember("id", &SectionListRow::id);
       section_handle.RegisterMember("title", &SectionListRow::title);
       section_handle.RegisterMember("subtitle", &SectionListRow::subtitle);
+      section_handle.RegisterMember("group", &SectionListRow::group);
       section_handle.RegisterMember("attention", &SectionListRow::attention);
     }
     if (auto mcp_handle = ctor.RegisterStruct<McpServerRow>()) {
@@ -627,6 +660,13 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     controller.bindings_.stay_connected_available = Platform::Detect() == PlatformKind::Android;
     ctor.Bind("stay_connected_available", &controller.bindings_.stay_connected_available);
     ctor.Bind("call_banner_tip_available", &controller.bindings_.call_banner_tip_available);
+    ctor.Bind("tip_notifications_blocked", &controller.bindings_.tip_notifications_blocked);
+    ctor.Bind("tip_silenced", &controller.bindings_.tip_silenced);
+    ctor.Bind("tip_battery", &controller.bindings_.tip_battery);
+    ctor.Bind("tip_autostart", &controller.bindings_.tip_autostart);
+    ctor.Bind("stay_help_plain", &controller.bindings_.stay_help_plain);
+    ctor.Bind("stay_help_build", &controller.bindings_.stay_help_build);
+    ctor.Bind("stay_help_no_google", &controller.bindings_.stay_help_no_google);
     controller.bindings_.dev_tools_available = kDevToolsBuild;
     ctor.Bind("dev_tools_available", &controller.bindings_.dev_tools_available);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
@@ -724,6 +764,17 @@ bool SettingsController::RegisterModel(ui::Context* context) {
                            DataEvent<>([this]() { ToggleShowNotificationPreview(); }));
     ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
     ctor.BindEventCallback("open_notification_settings", DataEvent<>([]() { OpenNotificationSettings(); }));
+    ctor.BindEventCallback("open_notification_fix", DataEvent<std::string>([](const std::string& fix) {
+                             if (fix == "notifications") {
+                               OpenNotificationFix(NotificationFix::AppNotifications);
+                             } else if (fix == "silenced") {
+                               OpenNotificationFix(NotificationFix::DoNotDisturb);
+                             } else if (fix == "battery") {
+                               OpenNotificationFix(NotificationFix::Battery);
+                             } else if (fix == "autostart") {
+                               OpenNotificationFix(NotificationFix::Autostart);
+                             }
+                           }));
     ctor.BindEventCallback("toggle_transparency", DataEvent<>([this]() { ToggleTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
     ctor.BindEventCallback("toggle_home_show_dynamic", DataEvent<>([this]() { ToggleHomeShowDynamic(); }));
@@ -750,7 +801,10 @@ bool SettingsController::RegisterModel(ui::Context* context) {
                                open_home_edit_();
                              }
                            }));
-    ctor.BindEventCallback("toggle_show_advanced_settings", DataEvent<>([this]() { ToggleShowAdvancedSettings(); }));
+    ctor.BindEventCallback("tap_version", DataEvent<>([this]() { OnTapVersion(); }));
+    ctor.BindEventCallback("open_terms", DataEvent<>([]() { UserFeedback::Ok(Tr("settings.help.coming_soon")); }));
+    ctor.BindEventCallback("open_privacy_policy",
+                           DataEvent<>([]() { UserFeedback::Ok(Tr("settings.help.coming_soon")); }));
     ctor.BindEventCallback("toggle_ai_dot", DataEvent<>([this]() { ToggleAiDot(); }));
     ctor.BindEventCallback("set_ai_dot_look",
                            DataEvent<std::string>([this](const std::string& look) { SetAiDotLook(look); }));
@@ -848,6 +902,13 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "show_notification_preview");
   host.Dirty("settings", "stay_connected");
   host.Dirty("settings", "call_banner_tip_available");
+  host.Dirty("settings", "tip_notifications_blocked");
+  host.Dirty("settings", "tip_silenced");
+  host.Dirty("settings", "tip_battery");
+  host.Dirty("settings", "tip_autostart");
+  host.Dirty("settings", "stay_help_plain");
+  host.Dirty("settings", "stay_help_build");
+  host.Dirty("settings", "stay_help_no_google");
   host.Dirty("settings", "brief_llm_key_masked");
   host.Dirty("settings", "appearance");
   host.Dirty("settings", "appearance_label");
@@ -954,7 +1015,12 @@ void SettingsController::MountSelectedSettingsSection() {
     RmlMount::MountInner(mount, {});
     return;
   }
-  const std::string key = "settings_section_" + std::string(selected_id_.c_str());
+  const SettingsPage* page = FindSettingsPage(selected_id_.c_str());
+  if (!page) {
+    log().error << "No settings page '" << selected_id_.c_str() << "'";
+    return;
+  }
+  const std::string key = page->view_key;
   const std::string body = ViewCatalog::LoadBody(key);
   if (body.empty()) {
     log().error << "Failed to load settings section body for '" << key << "'";
@@ -1271,18 +1337,20 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   }
 
   status_ = "";
-  // Send problem logs is on Security (desktop) and in About (phones): either page reads its label again.
-  if (section_id == "security" || section_id == "about") {
+  const SettingsPage* opened = FindSettingsPage(section_id);
+  // Send problem logs is on the Help page: it reads its label again.
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshDiagnostics)) {
     security_actions_.RefreshDiagnostics();
   }
-  if (section_id == "security") {
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshBlockedCount)) {
     RefreshBlockedCount();
   }
-  if (section_id == "profile") {
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::RefreshBannerTip)) {
     RefreshBannerTip();
+    RefreshNotificationTips();
   }
   storage_manager_.Reset();
-  if (section_id == "storage") {
+  if (opened && SettingsPageHas(*opened, SettingsPageAction::EnterStorage)) {
     storage_manager_.Enter();
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
@@ -1419,7 +1487,7 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
     OpenChangePin(); // B2: the PIN gate's three steps, not a page of fields
     return;
   }
-  if (selected_id_ != "security" || !show_detail_) {
+  if (selected_id_ != "devices" || !show_detail_) {
     return; // phones only: desktop shows both inline
   }
   if (page == "transfer") {
@@ -1701,7 +1769,7 @@ void SettingsController::ApplyDirectConnectionsChoice(const std::string& audienc
 
 void SettingsController::OnChooseCallInvitePolicy(ui::Event& ev) {
   const std::string current =
-      bindings_.call_invite_policy.empty() ? "contacts_only" : std::string(bindings_.call_invite_policy.c_str());
+      bindings_.call_invite_policy.empty() ? "everyone" : std::string(bindings_.call_invite_policy.c_str());
   std::vector<SettingsChoicePage::Option> options;
   for (const char* id : {"everyone", "contacts_only", "nobody"}) {
     options.push_back({id, CallInvitePolicyDisplayLabel(id).c_str(), current == id});
@@ -1751,7 +1819,7 @@ void SettingsController::ApplyUnlockGraceChoice(const std::string& minutes_id) {
 
 void SettingsController::OnChooseGroupInvitePolicy(ui::Event& ev) {
   const std::string current =
-      bindings_.group_invite_policy.empty() ? "contacts_only" : std::string(bindings_.group_invite_policy.c_str());
+      bindings_.group_invite_policy.empty() ? "everyone" : std::string(bindings_.group_invite_policy.c_str());
   std::vector<SettingsChoicePage::Option> options;
   for (const char* id : {"everyone", "contacts_only", "nobody"}) {
     options.push_back({id, GroupInvitePolicyDisplayLabel(id).c_str(), current == id});
@@ -1802,8 +1870,8 @@ void SettingsController::RefreshLocalizedChrome() {
   InitSections(); // after the sync: the advanced flag comes from the profile prefs
   ApplySupportDiscovery();
   if (!selected_id_.empty()) {
-    if (const SettingsSectionHandler* handler = FindHandler(selected_id_.c_str())) {
-      selected_title_ = handler->ListItem().title.c_str();
+    if (const SettingsPage* page = FindSettingsPage(selected_id_.c_str())) {
+      selected_title_ = Tr(page->title_key).c_str();
     }
   }
   DirtyAll();
@@ -1875,7 +1943,7 @@ void SettingsController::OnAskSettingHelp(const std::string& label_key) {
 }
 
 void SettingsController::OpenNetworkSettings() {
-  OpenSection("network");
+  OpenSection("advanced");
 }
 
 void SettingsController::OpenSection(const std::string& section_id) {
@@ -1949,7 +2017,7 @@ bool SettingsController::ComputeNetworkAttention() const {
 void SettingsController::ApplySectionAttention() {
   const bool network_attention = ComputeNetworkAttention();
   for (SectionListRow& section : sections_) {
-    section.attention = section.id == "network" && network_attention;
+    section.attention = section.id == "advanced" && network_attention;
   }
 }
 
@@ -2096,6 +2164,7 @@ void SettingsController::ToggleShowNotificationPreview() {
 
 void SettingsController::ToggleStayConnected() {
   bindings_.stay_connected = bindings_.stay_connected == "on" ? "off" : "on";
+  ApplyNotificationTips(); // the auto-start and battery rows follow this switch
   PullBindingsToUiState();
   MarkSectionDirty("profile", /*show_toast=*/false);
   DirtyAll();
@@ -2188,6 +2257,18 @@ void SettingsController::SaveAiDot(const bool shown, const std::string& look, co
   DataModelHost::Instance().Dirty("settings", "ai_dot_shown");
   DataModelHost::Instance().Dirty("settings", "ai_dot_look");
   DataModelHost::Instance().Dirty("settings", "ai_dot_size_label");
+}
+
+void SettingsController::OnTapVersion() {
+  const bool was_on = bindings_.show_advanced_settings == "on";
+  const VersionTapCounter::Result tap = version_taps_.Tap(SDL_GetTicks());
+  if (tap.action == VersionTapCounter::Action::Toggle) {
+    ToggleShowAdvancedSettings();
+    UserFeedback::Ok(Tr(was_on ? "settings.help.tester_off" : "settings.help.tester_on"));
+  } else if (tap.action == VersionTapCounter::Action::Hint) {
+    UserFeedback::Ok(
+        Tr(was_on ? "settings.help.tap_close" : "settings.help.tap_open", {{"n", std::to_string(tap.taps_left)}}));
+  }
 }
 
 void SettingsController::ToggleShowAdvancedSettings() {

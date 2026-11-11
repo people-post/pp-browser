@@ -17,6 +17,7 @@
 #include "feature/presenters/CallRingSteps.h"
 #include "feature/presenters/CallSelfAvatarWatch.h"
 #include "feature/presenters/CallSystemUiBridge.h"
+#include "feature/presenters/CallUiAttachGuard.h"
 #include "gui/CallChromeSync.h"
 #include "gui/CallDemoScenes.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
@@ -109,6 +110,10 @@ public:
   void ToggleCamera();
   void FlipCamera();
   void ToggleSpeaker();
+  /** Developer builds only: CallPresenter::SetDevRouteReorderSkip. */
+  void SetDevRouteReorderSkip(std::function<bool()> skip);
+  /** Developer builds only: CallPresenter::SetDevDetachUi. */
+  void SetDevDetachUi(std::function<bool()> detach);
 
   /** V031 mode controls — remount call chrome mount only. */
   void SetChromeMode(CallChromeMode mode);
@@ -239,8 +244,17 @@ private:
   void SyncLocalHold();
   void OnAppBackground();
   void OnAppForeground();
-  /** The call this device is in, as last told to the OS (OngoingCallService: Android's call service). */
+  /**
+   * The call this device is in, as last told to the OS (OngoingCallService: Android's call service): the screen's
+   * call, or the engine's open call the screen lost (DEV/PLAN-call-ui-never-detached.md 4).
+   */
   void SyncOngoingCall();
+  /** The engine's call, from one snapshot of the backend's state. */
+  EngineCall EngineCallNow();
+  /** EngineCallNow, not counted open while it is the call the user hung up (CallPresenter::LeavingCallId). */
+  EngineCall EngineCallNotLeft();
+  /** After the presenter's refresh: CallUiAttachGuard, and what it asks (report, hang up, stop again). */
+  void GuardCallUiAttach();
   /** Device vitals, re-read at most every 2 s. */
   const DeviceVitals& Vitals(int64_t now_ms);
   void EmitMetrics(const std::vector<ShareableLine>& lines);
@@ -298,6 +312,8 @@ private:
   std::string logged_subtitle_;
   /** Lasting audio faults toast once per call (see CallAudioFaultToastGate). */
   CallAudioFaultToastGate audio_fault_gate_;
+  /** The story notice of the last sync: the "line got slower" pill fires on the edge into Slow. */
+  CallStoryNotice last_story_notice_ = CallStoryNotice::None;
   bool story_sheet_open_ = false;
   /** V031: the chrome mode, the one to restore when leaving Minimized (Expanded or Immersive), and the call they were
    * chosen for (defaults reset on a switch). */
@@ -333,6 +349,7 @@ private:
   uint64_t foreground_listener_ = 0;
   bool ongoing_call_on_ = false;
   std::string ongoing_call_title_;
+  CallUiAttachGuard ui_attach_guard_;
   /** Display rotation last pushed to the engine while the camera is on (-1: none). */
   int pushed_camera_rotation_ = -1;
   /** The media view whose frames wake the loop (BindVideoFrameWake). */

@@ -53,6 +53,23 @@ CallMediaHealthView Health(const char* path = "direct", const CallPathQuality qu
   return h;
 }
 
+// The mic is gone even after the engine's audio rebuild: the hint line says the other side cannot hear, and it goes
+// by itself once captured audio is back.
+TEST(CallMediaFrameTest, ALostMicIsShownUntilCapturedAudioIsBack) {
+  CallMediaFrame frame;
+  CallMediaFacts facts = LiveFacts(160'000);
+  facts.engine.capture_lost = true;
+  const CallMediaScreen& lost = frame.Step(InCallScreen(), facts, Health());
+  EXPECT_EQ(lost.hint_key, "call.quality.hint.mic_lost");
+  EXPECT_TRUE(lost.hint_shown);
+
+  facts.now_ms = 161'000;
+  facts.engine.capture_lost = false;
+  const CallMediaScreen& back = frame.Step(InCallScreen(), facts, Health());
+  EXPECT_TRUE(back.hint_key.empty());
+  EXPECT_FALSE(back.hint_shown);
+}
+
 TEST(CallMediaFrameTest, ALiveCallShowsItsTimerWithThePathWord) {
   CallMediaFrame frame;
   const CallMediaScreen& v = frame.Step(InCallScreen(), LiveFacts(160'000), Health("circuit"));

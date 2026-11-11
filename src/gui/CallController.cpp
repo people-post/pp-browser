@@ -124,7 +124,8 @@ CallController::CallController()
   background_listener_ = AppLifecycle::AddBackgroundListener([this]() { OnAppBackground(); });
   foreground_listener_ = AppLifecycle::AddForegroundListener([this]() { OnAppForeground(); });
   OngoingCallService::SetHangUpHandler([this]() {
-    if (!presenter_.ActiveCallId().empty()) {
+    // The screen's call, or the engine's call the screen lost: Leave takes the engine's id when it has none.
+    if (OngoingCallWanted(!presenter_.ActiveCallId().empty(), EngineCallNotLeft().open)) {
       log().info << "hang up from the ongoing-call notification";
       (void)presenter_.Leave();
     }
@@ -137,11 +138,30 @@ CallController::~CallController() {
   AppLifecycle::RemoveListener(foreground_listener_);
 }
 
+EngineCall CallController::EngineCallNow() {
+  auto* backend = Backend();
+  return backend ? EngineCallOf(*backend->State()) : EngineCall{};
+}
+
+EngineCall CallController::EngineCallNotLeft() {
+  EngineCall engine = EngineCallNow();
+  if (engine.open && engine.call_id == presenter_.LeavingCallId()) {
+    engine.open = false; // hung up here: its media is being stopped (the guard retries if it stays open)
+  }
+  return engine;
+}
+
 void CallController::SyncOngoingCall() {
-  const bool on = !presenter_.ActiveCallId().empty();
+  const bool screen_call = !presenter_.ActiveCallId().empty();
+  const bool engine_call = EngineCallNotLeft().open;
+  const bool on = OngoingCallWanted(screen_call, engine_call);
   const std::string title = on ? std::string(in_call_.phone_title.c_str()) : std::string();
   if (on == ongoing_call_on_ && title == ongoing_call_title_) {
     return;
+  }
+  if (on != ongoing_call_on_) {
+    log().info << "ongoing call " << (on ? "on" : "off") << " screen_call=" << (screen_call ? 1 : 0)
+               << " engine_call=" << (engine_call ? 1 : 0);
   }
   ongoing_call_on_ = on;
   ongoing_call_title_ = title;
@@ -361,7 +381,6 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_signal_tone = in_call.signal_tone,
       .in_call_signal_word = in_call.signal_word.c_str(),
       .in_call_notice_text = in_call.notice_text.c_str(),
-      .in_call_notice_warn = in_call.notice_warn,
       .in_call_notice_fading = in_call.notice_fading,
       .in_call_reconnect_text = in_call.reconnect_text.c_str(),
       .in_call_reconnect_ok = in_call.reconnect_ok,
@@ -512,6 +531,7 @@ void CallController::Tick() {
     }
   }
   presenter_.Tick();     // expired rings; the in-call screen (Calling… / timer / levels) every frame
+  GuardCallUiAttach();   // after the refresh: a call the screen still lost is the guard's
   StepWakePlaceholder(); // before the ring's pulse / ringtone below: it may start or end the ring page
   const int64_t now = util::NowUnixMs();
   // The phone ring page has no pulse of its own (no dirty, no forced frame), but its pair's spark is an RCSS animation
@@ -681,19 +701,8 @@ void CallController::RenderAwaitingRing() {
 }
 
 void CallController::EmitWakeRingMetric(const CallPresenter::WakeStep& view) {
-  using Outcome = CallWakePlaceholder::Outcome;
   MetricsLine line("call.wake_ring");
-  switch (view.outcome) {
-    case Outcome::Ring:
-      line.Add("outcome", "ring");
-      break;
-    case Outcome::Timeout:
-      line.Add("outcome", "timeout");
-      break;
-    default:
-      line.Add("outcome", "expired");
-      break;
-  }
+  line.Add("outcome", CallWakePlaceholder::OutcomeWord(view.outcome));
   line.Add("shown_ms", view.shown_ms);
   if (view.ready_ms) {
     line.Add("ready_ms", *view.ready_ms);
@@ -731,6 +740,7 @@ void CallController::ClearInCall() {
   last_media_health_log_ms_ = 0;
   last_debug_subtitle_ = {};
   audio_fault_gate_.Reset();
+  last_story_notice_ = CallStoryNotice::None;
   story_sheet_open_ = false;
   group_titles_.clear();
   in_call_ = {};
@@ -1070,6 +1080,9 @@ void CallController::ShowNotice(const CallNotice& notice) {
     }
     case CallNotice::Kind::CallBack:
       OfferCallBack(notice.ending);
+      return;
+    case CallNotice::Kind::CallBlocked:
+      UserFeedback::Note(Tr(notice.key));
       return;
   }
 }
@@ -1564,6 +1577,72 @@ void CallController::ToggleSpeaker() {
   presenter_.ToggleSpeaker();
 }
 
+void CallController::SetDevRouteReorderSkip(std::function<bool()> skip) {
+  presenter_.SetDevRouteReorderSkip(std::move(skip));
+}
+
+void CallController::SetDevDetachUi(std::function<bool()> detach) {
+  presenter_.SetDevDetachUi(std::move(detach));
+}
+
+namespace {
+
+/** call.ui_detached (DEV/PLAN-client-metrics.md): the phase and what happened, never an id. */
+void EmitUiDetached(const char* phase, const ShareWord result) {
+  static constexpr ShareWord kPhases[] = {"Idle",         "Ringing",      "Accepting",       "OutboundCalling",
+                                          "JoinedLocal",  "MediaPending", "MediaConnecting", "InCall",
+                                          "ConnectFailed"};
+  MetricsLine line("call.ui_detached");
+  line.Pick("phase", phase, kPhases);
+  line.Add("result", result);
+  line.Emit();
+}
+
+} // namespace
+
+void CallController::GuardCallUiAttach() {
+  auto* backend = Backend();
+  const EngineCall engine = EngineCallNow(); // one snapshot
+  CallUiAttachGuard::Input in;
+  in.engine_open = engine.open;
+  in.engine_call_id = engine.open ? engine.call_id : std::string();
+  in.ui_call_id = presenter_.ActiveCallId();
+  in.leaving_call_id = presenter_.LeavingCallId();
+  in.steady_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+          .count();
+  const CallUiAttachGuard::Step step = ui_attach_guard_.Feed(in);
+  if (!step.report_detached && !step.hang_up && !step.stop_again) {
+    return;
+  }
+  const char* phase = CallPhaseName(engine.phase);
+  if (step.report_detached) {
+    log().warning << "call screen lost the engine's call phase=" << phase << " screen_call=" << in.ui_call_id
+                  << " call_id=" << step.call_id;
+    EmitUiDetached(phase, "detached");
+  }
+  if (step.hang_up) {
+    if constexpr (kCallUiDetachedHangsUp) {
+      log().error << "call screen could not take the call back: hanging up so no mic stays open unseen phase=" << phase
+                  << " call_id=" << step.call_id;
+      // The engine's call by its id (the screen may hold another): StopCallMedia first (no store), then LeaveClicked.
+      presenter_.HangUpEngineCall(step.call_id);
+      UserFeedback::Note(Tr("call.ended_safety"));
+    } else {
+      log().error << "call screen could not take the call back (log only, not hung up) phase=" << phase
+                  << " call_id=" << step.call_id;
+    }
+  }
+  if (step.stop_again && kCallUiDetachedHangsUp) {
+    log().error << "hung-up call still open in the engine: stopping its media again phase=" << phase
+                << " call_id=" << step.call_id;
+    EmitUiDetached(phase, "stop_failed");
+    if (backend && backend->Available()) {
+      backend->StopCallMedia(step.call_id);
+    }
+  }
+}
+
 void CallController::ApplyLocalMedia(IMediaView& media, const CallMediaScreen& frame) {
   auto& in_call = in_call_;
   in_call.muted = media.IsMuted();
@@ -1573,7 +1652,7 @@ void CallController::ApplyLocalMedia(IMediaView& media, const CallMediaScreen& f
   in_call.camera_front = in_call.camera_on && media.CameraFrontFacing();
   SyncCameraRotation(media);
   in_call.show_speaker = AudioSession::SupportsSpeakerToggle();
-  in_call.speaker_on = AudioSession::IsSpeakerphoneOn();
+  in_call.speaker_on = presenter_.SpeakerShownOn();
   in_call.show_camera = frame.media.show_camera;
   in_call.show_flip = ShowsCameraFlip(Platform::IsMobile(), in_call.show_camera, in_call.camera_on);
   in_call.on_hold = frame.media.on_hold;
@@ -2212,9 +2291,15 @@ void CallController::RenderStorySignal(const CallStoryView& v) {
   in_call.signal_tone = v.signal_tone == CallSignalTone::Good ? 0 : (v.signal_tone == CallSignalTone::Fair ? 1 : 2);
   const char* word = CallSignalWordKey(v.signal_quality);
   in_call.signal_word = word[0] ? Tr(word).c_str() : "";
-  const char* notice = CallStoryNoticeKey(v.notice);
+  // "The line got slower" goes to the standard bottom pill, once each time the story raises it (the throttle in
+  // CallConnectStory keeps raises >= 30 s apart, so the None gap between two raises is always seen); other notices
+  // stay in the top strip.
+  if (v.notice == CallStoryNotice::Slow && last_story_notice_ != CallStoryNotice::Slow) {
+    UserFeedback::Note(Tr(CallStoryNoticeKey(CallStoryNotice::Slow)));
+  }
+  last_story_notice_ = v.notice;
+  const char* notice = v.notice == CallStoryNotice::Slow ? "" : CallStoryNoticeKey(v.notice);
   in_call.notice_text = notice[0] ? Tr(notice).c_str() : "";
-  in_call.notice_warn = v.notice == CallStoryNotice::Slow;
   in_call.notice_fading = v.notice_fading;
 }
 

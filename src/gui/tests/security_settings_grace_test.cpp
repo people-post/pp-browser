@@ -170,11 +170,11 @@ TEST_F(SecuritySettingsGraceTest, ThePageHasTheRowItsHelpAndBothLanguages) {
   EXPECT_NE(rml.find("data-event-click=\"on_choose_unlock_grace()\""), std::string::npos);
   EXPECT_NE(rml.find("{{unlock_grace_label}}"), std::string::npos);
   EXPECT_NE(rml.find("{{i18n:settings.security.grace.help}}"), std::string::npos);
-  EXPECT_LT(rml.find("on_choose_unlock_grace"), rml.find("on_choose_group_invite_policy")) << "under the PIN";
+  EXPECT_LT(rml.find("open_security_page('change_pin')"), rml.find("on_choose_unlock_grace")) << "under the PIN";
 
   // B2: no PIN field of their own any more; the PIN gate asks (its number pad for a digit PIN).
   for (const char* view : {"views/settings_security_transfer.rml", "views/settings_security_pin.rml",
-                           "views/settings_section_security.rml"}) {
+                           "views/settings_section_security.rml", "views/settings_section_devices.rml"}) {
     EXPECT_EQ(ReadAsset(view).find("type=\"password\""), std::string::npos) << view;
   }
 

@@ -116,6 +116,10 @@ public:
   std::chrono::milliseconds ReopenSettle(const MediaDeviceKind kind) const override {
     return inner_->ReopenSettle(kind);
   }
+  bool SupportsAudioReset() const override { return inner_->SupportsAudioReset(); }
+  AudioResetResult ResetAudio(const std::chrono::milliseconds budget, std::string* error) override {
+    return inner_->ResetAudio(budget, error);
+  }
 
 private:
   std::unique_ptr<IMediaDeviceBackend> inner_;

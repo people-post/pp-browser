@@ -102,9 +102,30 @@ TEST(SettingsChoicePageTest, ThePushedPageHasTheRowsTheCheckTheFootAndTheHelp) {
   // Every row that picks one value still has its handler (the controller decides menu or page). Storage picks its
   // download policy with ticked rows in the page itself (choose_attachment_download_policy), not a choice page.
   for (const char* view : {"views/settings_section_appearance.rml", "views/settings_section_security.rml",
-                           "views/settings_section_network.rml"}) {
+                           "views/settings_section_advanced.rml"}) {
     EXPECT_NE(ReadAsset(view).find("data-event-click=\"on_choose_"), std::string::npos) << view;
   }
+}
+
+TEST(SettingsAppearancePageTest, FollowsTheMockupWidgetsGroupWithTheSecondRowGreyedOutWhileTheFirstIsOff) {
+  const std::string rml = ReadAsset("views/settings_section_appearance.rml");
+  EXPECT_NE(rml.find("settings-section--grouped settings-mock stack"), std::string::npos);
+  const size_t head = rml.find("{{i18n:settings.widgets.title}}");
+  ASSERT_NE(head, std::string::npos);
+  const size_t toggle = rml.find("toggle_home_show_dynamic()", head);
+  const size_t dim = rml.find("data-class-group-row--dim=\"home_show_dynamic != 'on'\"", head);
+  const size_t choose = rml.find("open_home_edit()", head);
+  ASSERT_NE(toggle, std::string::npos);
+  ASSERT_NE(dim, std::string::npos);
+  ASSERT_NE(choose, std::string::npos);
+  EXPECT_LT(toggle, dim) << "the switch comes first, the greyed row second, in one card";
+  EXPECT_LT(dim, choose);
+  const std::string css = ReadAsset("themes/components.rcss");
+  EXPECT_NE(css.find(".shell-layer-compact .settings-mock .group-row--dim {\n  opacity: 0.4;\n  pointer-events: none;"),
+            std::string::npos);
+  // The reset button keeps its place; a line under it says what it resets (the call diagnostics switch included).
+  EXPECT_NE(rml.find("reset_section('appearance')"), std::string::npos);
+  EXPECT_NE(rml.find("{{i18n:settings.appearance.reset_help}}"), std::string::npos);
 }
 
 TEST(SettingsAppearancePageTest, HasTheTransparencySwitchOnByDefault) {
@@ -117,7 +138,8 @@ TEST(SettingsAppearancePageTest, HasTheTransparencySwitchOnByDefault) {
   EXPECT_NE(rml.find("data-event-click=\"toggle_transparency()\""), std::string::npos);
   EXPECT_NE(rml.find("{{i18n:settings.transparency.help}}"), std::string::npos);
   EXPECT_NE(rml.find("on_choose_theme()"), std::string::npos);
-  EXPECT_NE(rml.find("toggle_call_diagnostics()"), std::string::npos);
+  EXPECT_NE(ReadAsset("views/settings_section_tester.rml").find("toggle_call_diagnostics()"), std::string::npos)
+      << "call diagnostics moved to the test options page";
 
   const std::string controller = ReadFile(std::string(PP_SOURCE_DIR) + "/src/gui/SettingsController.cpp");
   EXPECT_NE(controller.find("BindEventCallback(\"toggle_transparency\""), std::string::npos);

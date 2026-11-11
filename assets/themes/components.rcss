@@ -389,14 +389,42 @@ select selectbox option {
   right: 16dp;
   bottom: 16dp;
   z-index: 5;
-  width: auto;
-  font-family: LatoLatin;
-  font-size: 13dp;
-  padding: 8dp 14dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  padding: 0;
   border: 0;
-  border-radius: 16dp;
+  background-color: transparent;
+  box-sizing: border-box;
   cursor: pointer;
   focus: none;
+}
+
+/* The disc the eye sees: smaller than the 44dp tap box, a translucent glass with a thin chevron. No backdrop blur
+   of its own: the chat view already spends its two (header + composer, see Floating Chrome above). */
+.chat-jump-latest-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36dp;
+  height: 36dp;
+  box-sizing: border-box;
+  border-radius: 18dp;
+}
+
+.chat-jump-latest-face svg {
+  flex-shrink: 0;
+  width: 24dp;
+  height: 24dp;
+}
+
+/* Sits on the button's top edge, over its right half. */
+.chat-jump-latest .chat-jump-latest-badge {
+  top: -8dp;
+  right: 0;
 }
 
 .message-group {
@@ -440,6 +468,37 @@ select selectbox option {
   font-size: 12dp;
 }
 
+/* Our message's send mark (TODO 210), inline just left of its bubble, at its bottom: a small clock while the send is under
+   way; the red mark when it did not go out, a 44dp button (the icon 20dp in it) whose tap says why. Not the AI page's
+   .bubble-queued. Tints: colors-*.rcss. */
+.send-mark {
+  display: inline-block;
+  vertical-align: bottom;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.send-mark--queued {
+  width: 24dp;
+  height: 24dp;
+  padding: 4dp;
+  margin: 0 2dp 6dp 0;
+}
+
+.send-mark--failed {
+  width: 44dp;
+  height: 44dp;
+  padding: 12dp;
+  margin: 0 -6dp 0 0;
+  border-width: 0;
+  background-color: transparent;
+  focus: none;
+}
+
+.send-mark-icon {
+  display: block;
+}
+
 .queued-cancel {
   text-decoration: underline;
   cursor: pointer;
@@ -473,6 +532,12 @@ select selectbox option {
   font-size: 13dp;
   line-height: 18dp;
   opacity: 0.6;
+}
+
+/* In our own (blue) bubble the quote is bright white at full strength: dimmed white on blue read as grey. */
+.bubble-user .chat-quote-text {
+  color: #ffffff;
+  opacity: 1;
 }
 
 .chat-quote--jump {
@@ -712,7 +777,6 @@ select selectbox option {
   word-break: break-word;
   font-size: 13dp;
   line-height: 18dp;
-  opacity: 0.8;
 }
 
 .prompt-attachment-chip {
@@ -3996,6 +4060,14 @@ select selectbox option {
   display: none;
 }
 
+/* The tap box around the avatar: 44dp, the negative margin keeps the avatar where it was. */
+.shell-chat-overlay .chat-header-avatar-hit {
+  display: block;
+  flex-shrink: 0;
+  padding: 2dp;
+  margin: 0 -2dp;
+}
+
 .shell-chat-overlay .chat-header-avatar {
   display: flex;
   flex-shrink: 0;
@@ -4079,6 +4151,7 @@ select selectbox option {
   border-radius: 16dp;
 }
 
+.chat-header-avatar-hit,
 .chat-header-avatar,
 .chat-header-phone-subtitle {
   display: none;
@@ -5312,6 +5385,7 @@ select selectbox option {
 .shell-page-sheet.shell-page-sheet--new_chat,
 .shell-page-sheet.shell-page-sheet--group_info,
 .shell-page-sheet.shell-page-sheet--group_leave,
+.shell-page-sheet.shell-page-sheet--reactors_sheet,
 .shell-page-sheet.shell-page-sheet--contact_detail {
   padding-left: 0;
   padding-right: 0;
@@ -8500,6 +8574,19 @@ input.checkbox {
   margin-top: 12dp;
 }
 
+/* Phone: the code sits in the middle of the page with the cards' 16dp sides and 20dp spacing, and keeps 20dp of blank
+   below it so the end of the page is not tucked under the tab bar. */
+.shell-layer-compact .me-invite-qr {
+  display: flex;
+  align-items: center;
+  margin: 20dp 16dp 20dp 16dp;
+}
+
+.shell-layer-compact .me-invite-qr .group-foot {
+  margin: 0;
+  text-align: center;
+}
+
 .me-invite-qr-code {
   width: 200dp;
   height: 200dp;
@@ -11593,6 +11680,21 @@ input.checkbox {
   font-size: 18dp;
 }
 
+/* The reactions sheet: a person's cached photo fills the round avatar; the emoji they used ends the row. */
+.cd-row-avatar--photo {
+  overflow: hidden;
+}
+
+.cd-row-avatar-image {
+  width: 44dp;
+  height: 44dp;
+}
+
+.reactor-emoji {
+  flex-shrink: 0;
+  font-size: 22dp;
+}
+
 /* A small label after a name in a row ("Owner", "Can't reach"). */
 .cd-tag {
   flex-shrink: 0;
@@ -11969,6 +12071,23 @@ input.checkbox {
   margin-bottom: 6dp;
 }
 
+/* A video card (sent or being sent) is a 3dp frame round its poster like a picture card: as wide as the poster (up to
+   292dp), not held to the file card's 240dp (the poster ran past the card's right edge). */
+.shell-chat-overlay .chat-attachment-card--video {
+  min-width: 0;
+  max-width: 298dp;
+  padding: 3dp 3dp 0 3dp;
+  border-radius: 12dp;
+}
+
+.shell-chat-overlay .chat-attachment-card--video .chat-attachment-video-frame {
+  border-radius: 9dp;
+}
+
+.shell-chat-overlay .chat-attachment-card--video .muted {
+  padding: 0 9dp;
+}
+
 /* The music card is one width on the phone, inside the 240dp card limit, with room under its controls. */
 .shell-chat-overlay .chat-audio-card {
   width: 240dp;
@@ -12044,6 +12163,281 @@ input.checkbox {
    outside the card still shows. */
 .shell-chat-overlay .chat-attachment-card--image .bubble-tail {
   z-index: -1;
+}
+
+/* The picture being sent (DEV/PLAN-picture-upload-bubble.md): the sent picture's card and clip box, a grey placeholder
+   until the thumbnail is there, and over it a 48dp dark disc (the tap target) whose ring fills with the upload percent
+   (the ring's decorator is set inline: a conic-gradient from 12 o'clock), the percent under it, and after a failure a
+   44dp ✕ in the top-right corner. The same translucent black and white on both themes (no colour tokens). */
+.chat-pending-picture-clip {
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
+  overflow: hidden;
+  border-radius: 9dp;
+  background-color: #c7c7cc; /* opaque: a translucent grey reads as blue on our own bubble */
+}
+
+.chat-pending-picture-clip .chat-attachment-image {
+  cursor: default;
+}
+
+.chat-pending-center {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-pending-disc {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48dp;
+  height: 48dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 24dp;
+  background-color: rgba(0, 0, 0, 128); /* the engine reads alpha as 0..255 */
+  cursor: pointer;
+}
+
+.chat-pending-disc--busy {
+  cursor: default;
+}
+
+/* The ring: a 40dp circle (its unfilled track a faint white) under the 32dp core, so 4dp of it shows round the core. */
+.chat-pending-ring {
+  position: absolute;
+  top: 4dp;
+  left: 4dp;
+  width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+  background-color: rgba(255, 255, 255, 77);
+}
+
+/* The fallback (kPendingProgressRing false) and the cancelling disc: the ring spins, no amount shown. */
+.chat-pending-ring--spin {
+  box-sizing: border-box;
+  background-color: transparent;
+  border-width: 3dp;
+  border-color: #ffffff #ffffff #ffffff transparent;
+  animation: 0.9s linear infinite prompt-upload-spin;
+}
+
+.chat-pending-core {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
+  background-color: #262626;
+}
+
+.chat-pending-icon {
+  image-color: #ffffff; /* the theme tints svg icons with the text colour */
+}
+
+.chat-pending-percent {
+  margin: 6dp 0 0 0;
+  padding: 1dp 6dp;
+  border-radius: 8dp;
+  background-color: rgba(0, 0, 0, 115);
+  color: #ffffff;
+  font-size: 12dp;
+  line-height: 16dp;
+}
+
+/* After a failure: give the picture up. A 44dp target in the corner, a 28dp dark disc with the 20dp ✕ inside it. */
+.chat-pending-discard {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.chat-pending-discard-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28dp;
+  height: 28dp;
+  border-radius: 14dp;
+  background-color: rgba(0, 0, 0, 128);
+}
+
+/* A file card, sent or being sent (DEV/PLAN-attachment-bubbles-multi-pick.md): a 72dp type tile on the left, the name
+   (two lines at most) and the size on the right, 220-292dp wide (292 as a picture bubble). The whole sent card opens
+   the file. While it uploads the disc sits on the tile, the percent in its middle; after a failure the ✕ sits at the
+   tile's top-right corner. One generator draws both, so the bubble and the card it turns into have the same size. */
+.chat-file-card,
+.shell-chat-overlay .chat-file-card {
+  min-width: 220dp;
+  max-width: 292dp;
+  padding: 0;
+}
+
+/* The row fills the card (the card's padding is the row's): the whole card is the tap that opens the file, while
+   reaction chips on the card sit beside the row and keep their own tap. */
+.chat-file-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 8dp;
+}
+
+/* Reactions hang over the card's bottom edge: the row grows by their overlap, so they sit under the size line. */
+.shell-chat-overlay .chat-file-card.chat-reaction-host .chat-file-row {
+  padding-bottom: 24dp;
+}
+
+.chat-file-tile {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72dp;
+  height: 72dp;
+  border-radius: 14dp;
+  background-color: rgba(128, 128, 128, 56);
+}
+
+.chat-file-tile-label {
+  font-size: 17dp;
+  font-weight: bold;
+  line-height: 22dp;
+}
+
+.chat-file-tile-icon {
+  width: 30dp;
+  height: 30dp;
+}
+
+.chat-file-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 10dp;
+}
+
+.chat-file-name,
+.shell-chat-overlay .chat-file-card .chat-file-name {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  max-height: 40dp;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.chat-file-size,
+.shell-chat-overlay .chat-file-card .chat-file-size {
+  margin: 2dp 0 0 0;
+  font-size: 12dp;
+  line-height: 16dp;
+  opacity: 0.8;
+}
+
+.chat-file-percent {
+  color: #ffffff;
+  font-size: 12dp;
+  font-weight: bold;
+  line-height: 16dp;
+}
+
+.chat-pending-discard.chat-file-discard {
+  top: -22dp;
+  right: -22dp;
+}
+
+/* Between a pick and its send choice / bubble: a small translucent box in the middle of the transcript, the upload
+   card's spinner, "Preparing…" (a second line after 5 s) and Cancel. Same translucent black and white on both themes. */
+.chat-picking-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.chat-picking-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 140dp;
+  max-width: 220dp;
+  padding: 18dp 16dp 6dp 16dp;
+  border-radius: 16dp;
+  background-color: rgba(0, 0, 0, 170);
+  color: #ffffff;
+}
+
+.prompt-upload-cancel-spin.chat-picking-spin {
+  width: 22dp;
+  height: 22dp;
+  border-width: 3dp;
+  border-radius: 14dp;
+}
+
+.chat-picking-line {
+  margin: 10dp 0 0 0;
+  font-size: 14dp;
+  line-height: 18dp;
+  text-align: center;
+  color: #ffffff;
+}
+
+.chat-picking-line--slow {
+  margin-top: 4dp;
+  font-size: 12dp;
+  line-height: 16dp;
+  opacity: 0.85;
+}
+
+.chat-picking-cancel {
+  display: block;
+  min-width: 88dp;
+  height: 44dp;
+  margin: 6dp 0 0 0;
+  padding: 0 12dp;
+  text-align: center;
+  line-height: 44dp;
+  border: 0;
+  background-color: transparent;
+  color: #ffffff;
+  font-size: 15dp;
+  cursor: pointer;
+}
+
+/* The plus, the camera and the microphone while an attachment is preparing or uploading (attach_disabled): in place,
+   greyed. A class bound to attach_disabled, not :disabled: this engine's <button> is a plain element, so the disabled
+   attribute never sets the :disabled pseudo-class (the iPhone showed the microphone at full strength). */
+.prompt-entry-off,
+.shell-chat-overlay .prompt-entry-off {
+  opacity: 0.4;
 }
 
 /* Speech-bubble tail on the last bubble of a run: a 10x12dp shape half outside the bubble's bottom corner (received:
@@ -12489,11 +12883,6 @@ input.checkbox {
 /* The pushed contact page starts under its 48dp bar like the blocked list (the phone rule above zeroed its top). */
 .shell-layer-transient.shell-layer-compact .contact-detail-panel {
   padding-top: 48dp;
-}
-
-/* No small title in a pushed page's bar: the large one is in the page. */
-.shell-layer-compact .nav-bar-host .settings-header-title {
-  display: none;
 }
 
 .shell-layer-compact .nav-bar-host .settings-detail-header .bar-fade,
@@ -12959,6 +13348,181 @@ textarea:composing ~ .prompt-composer-label,
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The phone Me home and the pages rebuilt from the agreed mockup (logs/mockups/settings-reorg-1110.html, CSS px = dp)
+   share one set of metrics: text rows of at least 52dp, cards with 16dp sides and 12dp corners, 24dp between groups,
+   13/18 helper lines 8dp under their card. .me-home is the home's phone block; .settings-mock is the root of a page
+   (通知 / 外观 / 存储 / 我的资料) so no other settings page changes. */
+.shell-layer-compact .me-home .group-card,
+.shell-layer-compact .settings-mock .group-card {
+  margin: 24dp 16dp 0 16dp;
+  border-radius: 12dp;
+}
+
+.shell-layer-compact .settings-mock .group-card:first-child {
+  margin-top: 16dp;
+}
+
+.shell-layer-compact .settings-mock .group-row-sub {
+  white-space: normal;
+  overflow: visible;
+  margin-top: 2dp;
+}
+
+.shell-layer-compact .settings-mock .group-row--dim {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.shell-layer-compact .settings-mock .group-row--q {
+  position: relative;
+}
+
+.shell-layer-compact .settings-mock .group-row--q .group-row-tap {
+  justify-content: space-between;
+  padding-right: 12dp;
+}
+
+/* The "?" sits over the right end of the row, left of the chevron, as its own button (not inside the row's button). */
+.shell-layer-compact .settings-mock .group-row--q .group-row-q {
+  position: absolute;
+  right: 36dp;
+  top: 16dp;
+}
+
+.shell-layer-compact .settings-mock .settings-device-row {
+  padding: 0;
+  gap: 0;
+}
+
+.shell-layer-compact .settings-mock .group-row-tap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 52dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-layer-compact .settings-mock .group-row--indent {
+  padding-left: 36dp;
+}
+
+/* .settings-phone-only sets its own display; the QR box must stay a centred column on the profile page. */
+.shell-layer-compact .settings-mock .me-invite-qr.settings-phone-only {
+  display: flex;
+}
+
+.shell-layer-compact .settings-mock .me-profile-head {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  margin: 8dp 16dp 0 16dp;
+}
+
+/* The nickname row: label at the left, the field at the right (the mockup's edit row). */
+.shell-layer-compact .settings-mock .group-row--field .group-row-body--field {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-height: 52dp;
+  padding: 0 16dp 0 0;
+}
+
+.shell-layer-compact .settings-mock .group-row--field .group-row-text {
+  flex: 0 0 auto;
+  margin: 0 12dp 0 0;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-layer-compact .settings-mock .group-row--field .field {
+  flex: 1;
+  width: auto;
+  height: 52dp;
+  min-height: 52dp;
+  max-height: 52dp;
+  margin: 0;
+  padding: 15dp 0;
+  background-color: transparent;
+  text-align: right;
+}
+
+.shell-layer-compact .settings-mock .group-row--field .group-field-hint {
+  left: auto;
+  right: 0;
+  top: 0;
+  bottom: auto;
+  height: 52dp;
+  line-height: 52dp;
+}
+
+.shell-layer-compact .settings-mock .group-foot {
+  margin: 8dp 32dp 0 32dp;
+}
+
+.shell-layer-compact .settings-mock .group-head {
+  margin: 24dp 32dp 8dp 32dp;
+}
+
+.shell-layer-compact .settings-mock .group-head + .group-card {
+  margin-top: 0;
+}
+
+.shell-layer-compact .me-home .group-row,
+.shell-layer-compact .me-home .group-row-body,
+.shell-layer-compact .settings-mock .group-row,
+.shell-layer-compact .settings-mock .group-row-body {
+  min-height: 52dp;
+}
+
+/* The engine keeps 16dp for an (undrawn) scrollbar once the page overflows; Me scrolls by touch, so the cards keep
+   their 16dp margins on both sides. */
+.shell-layer-compact .settings-list-view scrollbarvertical {
+  width: 0dp;
+}
+
+/* The profile card and the version line of the home. */
+.shell-layer-compact .me-home .me-card-row {
+  min-height: 88dp;
+  padding-right: 0;
+}
+
+.shell-layer-compact .me-home .me-card-main {
+  padding: 12dp 4dp 12dp 16dp;
+}
+
+.shell-layer-compact .me-home .me-card-avatar,
+.shell-layer-compact .me-home .me-card-avatar-image {
+  width: 64dp;
+  height: 64dp;
+  border-radius: 32dp;
+}
+
+.shell-layer-compact .me-home .me-card-avatar .avatar-letter {
+  font-size: 26dp;
+}
+
+.shell-layer-compact .me-home .me-card-name {
+  font-size: 20dp;
+  line-height: 26dp;
+}
+
+.shell-layer-compact .me-home .cd-icon-btn {
+  width: 44dp;
+  height: 44dp;
+}
+
+.shell-layer-compact .me-home .me-home-ver {
+  margin: 32dp 32dp 0 32dp;
+  text-align: center;
 }
 
 /* Buttons on settings pages (DESIGN-pp-ui 8.10): 50dp pill, full width. Inside a card they shrink to 36dp pills. */
@@ -14075,12 +14639,14 @@ textarea:composing ~ .prompt-composer-label,
 
 .storage-seg .storage-seg-tab {
   flex: 1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  /* Not display: flex: the label is the button's bare text, and a flex button gives that text a 0x0 box (nothing is
+     painted); a block with a line box the height of the tab centres it instead. */
+  display: block;
   min-height: 40dp;
+  line-height: 40dp;
+  text-align: center;
   margin: 0;
-  padding: 6dp 0;
+  padding: 0;
   border-width: 0;
   border-radius: 7dp;
   background-color: transparent;
@@ -14353,7 +14919,22 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 .shell-layer-compact .settings-detail-body {
-  padding-top: 56dp;
+  padding-top: 64dp;
+}
+
+/* A settings page's one title is centred in its bar (phase 1 of the settings reorganisation); the bar is 56dp. */
+.shell-layer-compact .settings-header-title {
+  height: 56dp;
+  line-height: 56dp;
+}
+
+/* Bold bar titles: LatoLatin (the app's default family) is loaded in one weight, so font-weight: bold changes nothing
+   in it, and Chinese follows the weight of the face its primary family resolves to. Inter is loaded in four weights
+   (Application.cpp), so with it the bold reaches Latin (Inter Bold) and Chinese (Noto Sans SC Bold) alike. */
+.shell-layer-compact .settings-header-title,
+.shell-layer-compact .settings-panel .pane-nav-title {
+  font-family: Inter;
+  font-weight: bold;
 }
 
 .shell-layer-compact .contacts-index {

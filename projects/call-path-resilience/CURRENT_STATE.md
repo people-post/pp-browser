@@ -1,6 +1,6 @@
 # Call path resilience — current state
 
-**Last updated:** 2026-11-07 (K014: hangup `bye`, peer close = lost path, dropped ≠ connect timeout, re-anchor reach policy; 2026-09-28 k6: mobility + pair policy + relay standby; k5: network monitor + Amp network-change probing + lab FLIP; k7: punchable lab NAT, upgrade / failover / punch lab phases, quiet rebind; earlier: B30, B44, seed-park grace, dual-stack bind, k1 Amp hygiene v2.4.0, nested reliable lane v2.5.0, k3, k4)
+**Last updated:** 2026-11-10 (K015: an anchor pair races the circuit beside the direct dial, the app remembers its last good relays — #577; 2026-11-07 K014: hangup `bye`, peer close = lost path, dropped ≠ connect timeout, re-anchor reach policy; 2026-09-28 k6: mobility + pair policy + relay standby; k5: network monitor + Amp network-change probing + lab FLIP; k7: punchable lab NAT, upgrade / failover / punch lab phases, quiet rebind; earlier: B30, B44, seed-park grace, dual-stack bind, k1 Amp hygiene v2.4.0, nested reliable lane v2.5.0, k3, k4)
 
 > **Code moved since 2026-09-25.** Calls run on the media-sessions owner (`CallsThread`), reach / rendezvous / mesh media plane / reachability on the Connectivity owner, MeshControl is gone (mesh waits are completions), the inbound call-media hello is asynchronous, and pp-cpp-amp is pinned at **v2.6.0**. Mentions of MeshControl, "UI thread" bridge state, or amp v2.2.x below are history. Product hot keepalive is **10 s** (K008 amendment), not 2 s.
 
@@ -75,6 +75,14 @@
 | **Dropped, not timed out** | A connected leg's end is reported (`CallMediaErr::Dropped`); the health tick's backstop says dropped after 2 s, never connect timeout; no more 75 s `InCall` with no media. UI "Call dropped" / "通话掉线了"; past the transport decided by code, not text (`CallDirectPath::SurfaceDropped`, `CallMediaErrorKind::Dropped`, 2026-11-09) |
 | **Re-anchor reach** | Same pair policy and H013 advertised relays as the first connect (a relay-only pair re-anchors over relays only). Diag finding 1 (no redial in the window) is expected to be covered by this plus the 2 s re-anchor retry — **device / lab check pending** |
 | pp-call-probe | Its calls end with `HangUp` (bye), so its peer does not hold the last cycle as a lost path |
+
+## Landed 2026-11-10 (K015, #577)
+
+| Item | State |
+|------|-------|
+| **Race the circuit** ([K015](DECISIONS.md)) | `CallPathPolicy::race_circuit_at_start` (any Mobile end; never relay-only) → the offerer's and the re-anchor's `PeerReachRequest::race_circuit`: the circuit starts with the direct dial, first link wins. gtests `OnlyAnAnchorPairRacesTheCircuitAtStart`, `AnAnchorPairsOffererRacesTheCircuitBesideItsDial`, `AStationaryPairsOffererDialsBeforeTheCircuit`, `ARelayOnlyPairsOffererNeverDials`, `AnAnchorPairsReanchorRacesTheCircuit` |
+| **Last good relays** | `ProductMesh` keeps the relay-chosen slot (calls hear through `CallStackDeps::set_on_relay_chosen`), `LastGoodRelayStore` keeps ≤3 in `mesh_last_good_relays.json`, the hop policy hands them to the park (`MeshHopPolicy::last_good_relays`) |
+| Needs | pp-cpp-mesh `feat/faster-first-call` released and pinned in `cmake/PpCppMesh.cmake` (built here against the local checkout); **device / lab check pending** — #577's cellular ↔ Wi-Fi first call |
 
 ## Still open (as of 2026-09-24/25 — see the note above)
 

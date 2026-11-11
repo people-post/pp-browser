@@ -366,6 +366,53 @@ TEST_F(OutgoingAttachmentPrepTest, AHugePictureIsRefusedBeforeDecoding) {
   EXPECT_EQ(out.error().code, static_cast<int32_t>(OutgoingAttachmentError::ImageFailed));
 }
 
+// The picture bubble's thumbnail (DEV/PLAN-picture-upload-bubble.md step 2): long edge 600, the size it returns is
+// the file's own, and a photo whose EXIF says "turned" comes out standing, as the bubble is laid out.
+TEST_F(OutgoingAttachmentPrepTest, ThePictureBubbleThumbnailOfALandscapePhotoIsSixHundredWide) {
+  const std::string path = SaveJpeg(Noisy(2400, 1600), "wide.jpg");
+  const UploadThumbnail thumb = WritePickedPictureThumbnail(path, (dir_ / "picked").string(), 50'000'000);
+  ASSERT_FALSE(thumb.path.empty());
+  EXPECT_EQ(thumb.width, 600);
+  EXPECT_EQ(thumb.height, 400);
+  const auto info = ReadImageHeader(thumb.path);
+  ASSERT_TRUE(info);
+  EXPECT_EQ(info->width, thumb.width);
+  EXPECT_EQ(info->height, thumb.height);
+}
+
+TEST_F(OutgoingAttachmentPrepTest, ThePictureBubbleThumbnailOfAPortraitPhotoIsSixHundredTall) {
+  const std::string path = SaveJpeg(Noisy(1200, 1800), "tall.jpg");
+  const UploadThumbnail thumb = WritePickedPictureThumbnail(path, (dir_ / "picked").string(), 50'000'000);
+  ASSERT_FALSE(thumb.path.empty());
+  EXPECT_EQ(thumb.width, 400);
+  EXPECT_EQ(thumb.height, 600);
+}
+
+TEST_F(OutgoingAttachmentPrepTest, ThePictureBubbleThumbnailOfATurnedPhotoStandsUp) {
+  const std::string path = SaveJpeg(Noisy(1800, 1200), "turned.jpg", /*orientation=*/6);
+  const UploadThumbnail thumb = WritePickedPictureThumbnail(path, (dir_ / "picked").string(), 50'000'000);
+  ASSERT_FALSE(thumb.path.empty());
+  EXPECT_EQ(thumb.width, 400);
+  EXPECT_EQ(thumb.height, 600);
+}
+
+TEST_F(OutgoingAttachmentPrepTest, AFileThatIsNoPictureGetsNoBubbleThumbnail) {
+  const std::string path = (dir_ / "notes.txt").string();
+  WriteFile(path, {'h', 'e', 'l', 'l', 'o'});
+  EXPECT_TRUE(WritePickedPictureThumbnail(path, (dir_ / "picked").string(), 50'000'000).path.empty());
+}
+
+TEST_F(OutgoingAttachmentPrepTest, TheUploadCardThumbnailTakesTheLongEdgeAskedFor) {
+  const std::string path = SaveJpeg(Noisy(1600, 1200), "card.jpg");
+  auto prepared = PrepareOutgoingAttachment(path, limits_, OutgoingPickSource::Photo);
+  ASSERT_TRUE(prepared) << prepared.error().message;
+  const UploadThumbnail small = WriteUploadThumbnail(path, *prepared, (dir_ / "picked").string());
+  EXPECT_EQ(std::max(small.width, small.height), kUploadCardThumbPx);
+  const UploadThumbnail big = WriteUploadThumbnail(path, *prepared, (dir_ / "picked").string(), 600);
+  EXPECT_EQ(big.width, 600);
+  EXPECT_EQ(big.height, 450);
+}
+
 // A voice recording goes as a plain attachment: the name and the type are the whole wire convention.
 TEST_F(OutgoingAttachmentPrepTest, ARecordedVoiceMessageIsAudioOggNamedByItsLength) {
   const std::vector<uint8_t> ogg = {'O', 'g', 'g', 'S', 0, 2, 1, 2, 3, 4, 5, 6, 7, 8};

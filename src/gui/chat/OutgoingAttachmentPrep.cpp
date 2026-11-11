@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <utility>
 
 namespace pbr {
 
@@ -172,15 +173,10 @@ Roe<OutgoingAttachment> PrepareOutgoingAttachment(const std::string& path, const
   return result;
 }
 
-std::string WriteUploadThumbnail(const std::string& picked_path, const OutgoingAttachment& prepared,
-                                 const std::string& scratch_dir) {
-  constexpr int kThumbPx = 144; // 48dp at 3x
-  Roe<std::vector<uint8_t>> jpeg = Error("No thumbnail for this kind of file");
-  if (IsAttachmentImageMime(prepared.mime)) {
-    jpeg = MakeImageThumbnailJpeg(prepared.bytes, kThumbPx);
-  } else if (IsAttachmentVideoMime(prepared.mime)) {
-    jpeg = ExtractVideoPosterJpeg(picked_path, kThumbPx);
-  }
+namespace {
+
+/** Writes `jpeg` into `scratch_dir` under a fresh name; its size is read back from the JPEG's own head. */
+UploadThumbnail WriteThumbnailFile(Roe<std::vector<uint8_t>> jpeg, const std::string& scratch_dir) {
   if (!jpeg || jpeg->empty() || scratch_dir.empty()) {
     return {};
   }
@@ -195,7 +191,48 @@ std::string WriteUploadThumbnail(const std::string& picked_path, const OutgoingA
     std::filesystem::remove(path, ec);
     return {};
   }
-  return path.string();
+  UploadThumbnail thumb;
+  thumb.path = path.string();
+  if (const auto header = ReadImageHeaderBytes(*jpeg)) {
+    thumb.width = header->width;
+    thumb.height = header->height;
+  }
+  return thumb;
+}
+
+} // namespace
+
+UploadThumbnail WriteUploadThumbnail(const std::string& picked_path, const OutgoingAttachment& prepared,
+                                     const std::string& scratch_dir, const int long_edge_px) {
+  Roe<std::vector<uint8_t>> jpeg = Error("No thumbnail for this kind of file");
+  if (IsAttachmentImageMime(prepared.mime)) {
+    jpeg = MakeImageThumbnailJpeg(prepared.bytes, long_edge_px);
+  } else if (IsAttachmentVideoMime(prepared.mime)) {
+    jpeg = ExtractVideoPosterJpeg(picked_path, long_edge_px);
+  }
+  return WriteThumbnailFile(std::move(jpeg), scratch_dir);
+}
+
+UploadThumbnail WriteVideoPosterThumbnail(const std::string& picked_path, const std::string& scratch_dir,
+                                          const int long_edge_px) {
+  Roe<std::vector<uint8_t>> jpeg = ExtractVideoPosterJpeg(picked_path, long_edge_px);
+  if (!jpeg) {
+    return {};
+  }
+  if (auto placeholder = SoftVideoPosterJpeg(long_edge_px); placeholder && *placeholder == *jpeg) {
+    return {}; // no frame: the extractor's fallback, not this video
+  }
+  return WriteThumbnailFile(std::move(jpeg), scratch_dir);
+}
+
+UploadThumbnail WritePickedPictureThumbnail(const std::string& picked_path, const std::string& scratch_dir,
+                                            const uint64_t max_bytes, const int long_edge_px) {
+  const std::optional<std::string> bytes = ReadPickedFile(picked_path, static_cast<size_t>(max_bytes));
+  if (!bytes || bytes->empty()) {
+    return {};
+  }
+  return WriteThumbnailFile(MakeImageThumbnailJpeg(std::vector<uint8_t>(bytes->begin(), bytes->end()), long_edge_px),
+                            scratch_dir);
 }
 
 } // namespace pbr

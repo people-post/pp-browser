@@ -32,6 +32,7 @@
 #include <optional>
 #include <cstdlib>
 #include <thread>
+#include <utility>
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/crypto/PinRules.h"
@@ -39,6 +40,7 @@
 #include "foundation/data/ProfileManifest.h"
 #include "foundation/platform/OsSecureBlobStore.h"
 #include "foundation/platform/os/OsProtectedData.h"
+#include "foundation/platform/os/OsDebugFlag.h"
 #include "foundation/platform/os/OsAppState.h"
 #include "foundation/crypto/GraceUnlock.h"
 #include "foundation/crypto/BiometricUnlock.h"
@@ -386,6 +388,22 @@ Application::Application() {
   flow_ = std::make_unique<FlowCoordinator>();
   shell_ = std::make_unique<ShellHost>();
   call_ = std::make_unique<CallController>();
+  if constexpr (kDevToolsBuild) {
+    // Android merge check for the mic rebuild: `adb shell setprop debug.pp.skip_route_reorder 1` makes the next
+    // speaker tap change the route the old way (before the mic closes); set it back to 0 before arming it again.
+    call_->SetDevRouteReorderSkip([armed = std::make_shared<bool>(true)]() {
+      if (!os::DebugFlagSet("debug.pp.skip_route_reorder")) {
+        *armed = true;
+        return false;
+      }
+      return std::exchange(*armed, false);
+    });
+    // DEV/PLAN-call-ui-never-detached.md 6 (Android): `adb shell setprop debug.pp.fail_call_read 1` makes reading this
+    // device's call from profile.db fail (the call screen must stay); `debug.pp.detach_call_ui 1` makes the screen drop
+    // its call id after each refresh (the guard must hang the call up). Set back to 0 after.
+    product_->Calls().Stack().SetDevFailCallRead([]() { return os::DebugFlagSet("debug.pp.fail_call_read"); });
+    call_->SetDevDetachUi([]() { return os::DebugFlagSet("debug.pp.detach_call_ui"); });
+  }
   call_ui_ = std::make_unique<CallUiBackend>(product_->Calls().Stack());
   settings_ = std::make_unique<SettingsController>();
   contacts_ = std::make_unique<ContactsController>();
@@ -824,10 +842,26 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return facade.SaveProfileNickname(nickname);
   };
   settings_commands.pick_profile_icon_image = [](std::function<void(std::vector<std::string> paths)> on_picked) {
-    ShowOpenImageFileDialog(Backend::GetWindow(), [on_picked = std::move(on_picked)](std::vector<std::string> paths) {
-      AppRuntime::PostUI(
-          [on_picked = std::move(on_picked), paths = std::move(paths)]() mutable { on_picked(std::move(paths)); });
-    });
+    // iOS: a large photo takes seconds to copy out of the library; the pill says so until the crop page is opened
+    // (on_picked opens it), and is taken down first so it never sits over that page. Cancelled: no pill, nothing to take down.
+    auto preparing_shown = std::make_shared<bool>(false);
+    ShowOpenImageFileDialog(
+        Backend::GetWindow(),
+        [on_picked = std::move(on_picked), preparing_shown](std::vector<std::string> paths) {
+          AppRuntime::PostUI([on_picked = std::move(on_picked), preparing_shown, paths = std::move(paths)]() mutable {
+            if (*preparing_shown) {
+              UserFeedback::DismissToast();
+            }
+            on_picked(std::move(paths));
+          });
+        },
+        /*include_heic=*/false,
+        [preparing_shown](const std::string&) {
+          AppRuntime::PostUI([preparing_shown]() {
+            *preparing_shown = true;
+            UserFeedback::Note(Tr("settings.profile.photo_preparing"));
+          });
+        });
   };
   settings_commands.open_avatar_crop = [this](std::shared_ptr<PickedFileLease> file, AvatarCropCommit commit) {
     avatar_crop_->Open(std::move(file), std::move(commit));
@@ -1985,8 +2019,11 @@ void Application::WireAgentAndConfig() {
     });
   }
   contacts_->SetShowAdvanced(store_.Snapshot().profile_prefs.show_advanced_settings);
-  store_.AddProfilePrefsListener(
-      [this](const ProfilePreferences& prefs) { contacts_->SetShowAdvanced(prefs.show_advanced_settings); });
+  shell_->SetShowAdvancedSettings(store_.Snapshot().profile_prefs.show_advanced_settings);
+  store_.AddProfilePrefsListener([this](const ProfilePreferences& prefs) {
+    contacts_->SetShowAdvanced(prefs.show_advanced_settings);
+    shell_->SetShowAdvancedSettings(prefs.show_advanced_settings);
+  });
   // A contact starred or unstarred (on their page), the recovery phrase opened, or the 动态 section toggled: Home follows.
   store_.AddProfilePrefsListener(
       [this, starred = store_.Snapshot().profile_prefs.starred_contacts,

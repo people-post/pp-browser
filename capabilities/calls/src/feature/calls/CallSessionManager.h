@@ -9,6 +9,8 @@
 #include "common/thread/ThreadRecordTypes.h"
 
 #include <cstdint>
+#include <deque>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -81,6 +83,12 @@ public:
                                 std::optional<int64_t> relay_server_time_ms = std::nullopt);
   /** projects/privacy T3: who may call us; an invite from outside is dropped silently. */
   void SetInboundCallAudience(mesh::InboundAudience audience) { inbound_call_audience_ = audience; }
+  /**
+   * An invite the audience dropped, told to this device (on the calls owner); nothing goes to the caller. Ones
+   * dropped while no callback is set (the newest kUnclaimedBlockedKept) are handed to the callback when it is set.
+   */
+  void SetOnInviteBlocked(std::function<void(const BlockedCallInvite&)> callback);
+  static constexpr size_t kUnclaimedBlockedKept = 8;
   /** Whether an invite from `caller` may ring (the audience; contacts from the disclosure gate). */
   bool AllowsInboundCall(const std::string& caller) const;
 
@@ -94,6 +102,10 @@ private:
 
   /** The inbound gate (V057 4): `sender_identity` may send `type` about the detail's call. */
   bool SenderMaySend(CallControlType type, const std::string& detail_json, const std::string& sender_identity) const;
+  /** The audience dropped this invite: tell on_invite_blocked_ (an invite that does not decode is only logged). */
+  void ReportBlockedInvite(const std::string& detail_json, const std::string& sender_identity,
+                           const ThreadMessage& message, std::optional<int64_t> relay_created_at_ms,
+                           std::optional<int64_t> relay_server_time_ms);
   /** The control's call (its detail's call_id) has `sender_identity` as initiator or current participant. */
   bool SenderIsInCall(const std::string& detail_json, const std::string& sender_identity) const;
   /** V053: the call was offered to the sender (a group call): it may ask to join, or say it ended. */
@@ -131,6 +143,9 @@ private:
   CallMediaKeyExchange& key_exchange_;
   CallReachSignals& reach_signals_;
   mesh::InboundAudience inbound_call_audience_ = mesh::InboundAudience::Everyone;
+  std::function<void(const BlockedCallInvite&)> on_invite_blocked_;
+  /** Dropped while on_invite_blocked_ was unset, oldest first (at most kUnclaimedBlockedKept). */
+  std::deque<BlockedCallInvite> unclaimed_blocked_;
   /** The call whose camera SetLocalVideoPaused turned off (empty: none): it turns it back on. */
   std::string video_paused_call_id_;
 };

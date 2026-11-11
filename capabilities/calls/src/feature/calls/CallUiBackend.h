@@ -48,6 +48,8 @@ public:
   /** GUI callbacks — always invoked on UI. */
   void SetOnRingChanged(std::function<void()> callback);
   void SetOnChromeRefresh(std::function<void()> callback);
+  /** An invite "who can call me" dropped (CallSessionManager::SetOnInviteBlocked), heard on UI. */
+  void SetOnInviteBlocked(std::function<void(const BlockedCallInvite&)> callback);
 
   // --- Intents (posted to the calls owner) -----------------------------------------------------
   void SweepExpiredInvites();

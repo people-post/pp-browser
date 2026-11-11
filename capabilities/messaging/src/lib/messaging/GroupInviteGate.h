@@ -70,7 +70,7 @@ public:
 private:
   StandingFn standing_;
   IGroupRosterStore& roster_;
-  GroupInvitePolicy inbound_policy_ = GroupInvitePolicy::ContactsOnly;
+  GroupInvitePolicy inbound_policy_ = GroupInvitePolicy::Everyone;
   InLiveCallFn in_live_call_;
   /** In memory: a call does not outlive the app, and the invite card in the DM stays either way. */
   mutable std::mutex in_call_mutex_;

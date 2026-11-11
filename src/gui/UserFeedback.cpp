@@ -1,6 +1,7 @@
 #include "gui/UserFeedback.h"
 
 #include "foundation/error/AppError.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "gui/shell/ShellFeedback.h"
 #include "common/PbrCompat.h"
 
@@ -16,6 +17,23 @@ std::string UserFeedback::UserMessage(const Error& err) {
   return AppError::Display(err);
 }
 
+std::string UserFeedback::UserMessage(const Error& err, const bool device_offline) {
+  if (device_offline && AppError::CategoryOf(err) == ErrorCategory::Network &&
+      err.code != static_cast<int32_t>(Err::Network::HttpError) &&
+      err.code != static_cast<int32_t>(Err::Network::HttpRejected)) {
+    return Tr("errors.network.offline");
+  }
+  return UserMessage(err);
+}
+
+std::string UserFeedback::AttachmentFailureMessage(const Error& err, const bool device_offline,
+                                                   const bool offline_stop) {
+  if (offline_stop) {
+    return Tr("errors.network.offline");
+  }
+  return UserMessage(err, device_offline);
+}
+
 void UserFeedback::Ok(const std::string& message) {
   if (ports_.show_toast) {
     ports_.show_toast(message, ToastDuration::Short);
@@ -25,6 +43,12 @@ void UserFeedback::Ok(const std::string& message) {
 void UserFeedback::Note(const std::string& message) {
   if (ports_.show_toast) {
     ports_.show_toast(message, ToastDuration::Long);
+  }
+}
+
+void UserFeedback::DismissToast() {
+  if (ports_.dismiss_toast) {
+    ports_.dismiss_toast();
   }
 }
 

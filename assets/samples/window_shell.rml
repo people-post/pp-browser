@@ -321,7 +321,7 @@
               data-event-click="retest_statusbar_reachability()">
         {{i18n:settings.network.connection.retest}}
       </button>
-      <button class="btn btn-secondary" type="button"
+      <button class="btn btn-secondary" type="button" data-if="statusbar_popover_advanced"
               data-event-click="open_network_settings()">
         {{i18n:shell.statusbar.open_network_settings}}
       </button>

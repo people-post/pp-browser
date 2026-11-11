@@ -10,6 +10,18 @@
 
 namespace pbr {
 
+/** One person on a message's reactions sheet: the emoji they reacted with, their name and avatar. */
+struct ReactorDisplayRow {
+  ui::String emoji;
+  ui::String title;
+  ui::String avatar_letter;
+  int avatar_tone = 0;
+  bool has_icon = false;
+  ui::String icon_src;
+  /** This device's own reaction: its row says "Tap to remove" and takes the reaction back. */
+  bool is_self = false;
+};
+
 /** The chat screen's data model ("chat"): what the GUI binds; ChatController and its parts write it. */
 struct ChatScreenState {
   ui::String draft;
@@ -44,6 +56,8 @@ struct ChatScreenState {
   bool thread_has_icon = false;
   bool compose_disabled = false;
   bool composer_input_disabled = false;
+  /** The plus, the camera and the microphone are off: the input is, or an attachment is in flight / failed here. */
+  bool attach_disabled = false;
   bool show_attach_button = false;
   bool attachment_uploading = false;
   ui::String attachment_draft_name;
@@ -61,6 +75,9 @@ struct ChatScreenState {
   bool show_capture = false;
   /** The microphone button: this chat can take a voice message (peer or group chat, voice supported here). */
   bool show_voice = false;
+  /** A picture bubble is in this chat's transcript: the microphone stays in its place, greyed (not hidden), so the
+   *  composer still looks like one; voice waits until the picture's send ends. */
+  bool voice_entry_off = false;
   /** A call (or ringing) has the microphone: the button is grey and its tooltip says why. */
   bool voice_blocked = false;
   bool voice_recording = false;
@@ -70,6 +87,11 @@ struct ChatScreenState {
   bool attachment_preparing = false;
   /** The chip's condition: an attachment is preparing / uploading / failed in the chat open now (not in another one). */
   bool attachment_here = false;
+  /** The picture being sent shows as a bubble in the open chat's transcript: the upload card and chip stay hidden. */
+  bool attachment_in_transcript = false;
+  /** The centred "Preparing…" overlay between a pick and its choice / bubble (AttachmentPicks), and its second line. */
+  bool picking_busy = false;
+  bool picking_busy_slow = false;
   /** Voice mode (WeChat style): a "hold to talk" bar replaces the text input. Per app session; off whenever show_voice is. */
   bool voice_mode = false;
   /** Desktop: a click starts, and Send / Cancel buttons end it. Phones: hold, release sends, slide up cancels. */
@@ -125,9 +147,12 @@ struct ChatScreenState {
   bool sync_in_progress = false;
   bool show_older_history_hint = false;
   bool show_jump_to_latest = false;
-  ui::String jump_to_latest_label;
+  /** Messages that arrived while scrolled up ("99+" capped); empty when none. */
+  ui::String jump_to_latest_count;
   std::vector<TranscriptDisplayRow> turns;
   std::vector<MessageDisplayRow> messages;
+  /** The reactions sheet (a tap on a message's emoji): who reacted, grouped by emoji. */
+  std::vector<ReactorDisplayRow> reactor_rows;
   bool use_messages_layout = true;
   bool loading = false; // a turn runs in THIS thread (thinking + stop key); other threads keep sending (B112)
   bool has_turns = false;

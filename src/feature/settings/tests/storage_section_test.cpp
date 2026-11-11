@@ -43,7 +43,7 @@ TEST(StorageSectionTest, AutoDownloadIsThreeRowsInPlaceAndTheBulkButtonsAreGone)
     const std::string check = std::string("attachment_download_policy == '") + policy + "'";
     EXPECT_GE(CountOf(rml, check), 2u) << "a check on the chosen row and its own footer: " << check;
   }
-  EXPECT_EQ(CountOf(rml, "../icons/check.svg\" width=\"16\""), 3u);
+  EXPECT_EQ(CountOf(rml, "../icons/v2/check.svg\" width=\"20\""), 3u);
   EXPECT_EQ(rml.find("on_choose_attachment_download_policy"), std::string::npos) << "no popup menu any more";
   EXPECT_EQ(rml.find("drain_pending_attachment_media"), std::string::npos);
   EXPECT_EQ(rml.find("clear_downloaded_attachments"), std::string::npos);
@@ -55,6 +55,26 @@ TEST(StorageSectionTest, AutoDownloadIsThreeRowsInPlaceAndTheBulkButtonsAreGone)
   for (const char* page : {"storage_page == 'main'", "storage_page == 'manage'", "storage_page == 'items'"}) {
     EXPECT_EQ(CountOf(rml, page), 1u) << page;
   }
+}
+
+TEST(StorageSectionTest, TheMainPageFollowsTheMockupGroups) {
+  const std::string rml = ReadView("settings_section_storage.rml");
+  // Wi-Fi and mobile data are two independent switches, one level in, inside the auto-download card.
+  EXPECT_EQ(CountOf(rml, "group-row--indent"), 2u);
+  const size_t all = rml.find("choose_attachment_download_policy('always_auto')");
+  const size_t wifi = rml.find("toggle_attachment_auto_wifi()");
+  const size_t cell = rml.find("toggle_attachment_auto_cellular()");
+  const size_t manual = rml.find("choose_attachment_download_policy('on_demand')");
+  ASSERT_NE(all, std::string::npos);
+  EXPECT_LT(all, wifi);
+  EXPECT_LT(wifi, cell);
+  EXPECT_LT(cell, manual);
+  // The two reset rows are red rows of one card, with the warning line under it.
+  EXPECT_EQ(CountOf(rml, "group-row group-row--danger"), 2u);
+  EXPECT_NE(rml.find("settings.storage.reset_warning"), std::string::npos);
+  const std::string main_page = rml.substr(0, rml.find("storage_page == 'manage'"));
+  EXPECT_EQ(main_page.find("btn-danger-soft"), std::string::npos);
+  EXPECT_EQ(main_page.find("settings-danger-zone"), std::string::npos);
 }
 
 TEST(StorageSectionTest, TheChosenRowIsStored) {

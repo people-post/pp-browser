@@ -3,6 +3,7 @@
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/media/SdlAudioBootstrap.h"
+#include "lib/media/SdlAudioReset.h"
 #include "lib/media/VideoYuv.h"
 #include "lib/media/VoiceProcessingIo.h"
 #include "common/Metrics.h"
@@ -10,6 +11,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <memory>
@@ -27,11 +29,16 @@ constexpr ShareWord kCameraFormats[] = {
 
 class SdlAudioEndpoint final : public IAudioEndpoint {
 public:
-  explicit SdlAudioEndpoint(SDL_AudioStream* stream) : stream_(stream) {}
+  /** `live` counts the backend's open SDL audio streams (an audio rebuild needs none open). */
+  SdlAudioEndpoint(SDL_AudioStream* stream, std::shared_ptr<std::atomic<int>> live)
+      : stream_(stream), live_(std::move(live)) {
+    live_->fetch_add(1, std::memory_order_acq_rel);
+  }
   ~SdlAudioEndpoint() override {
     // A stream from SDL_OpenAudioDeviceStream owns its device: destroying it closes the device.
     // Never SDL_CloseAudioDevice afterwards (double-free / tcache abort on Linux, quit hang on Android).
     SDL_DestroyAudioStream(stream_);
+    live_->fetch_sub(1, std::memory_order_acq_rel);
   }
   int Read(void* dst, int bytes) override { return SDL_GetAudioStreamData(stream_, dst, bytes); }
   bool Write(const void* src, int bytes) override { return SDL_PutAudioStreamData(stream_, src, bytes); }
@@ -40,6 +47,7 @@ public:
 
 private:
   SDL_AudioStream* stream_;
+  std::shared_ptr<std::atomic<int>> live_;
 };
 
 /** One OS voice-processing unit shared by its mic and speaker halves; closes with the last half. */
@@ -278,7 +286,7 @@ public:
     } else if (auto* stream = kind == MediaDeviceKind::Mic
                                   ? OpenMic(format, still_wanted, &err)
                                   : OpenResumed(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, ToSdlSpec(format), &err)) {
-      return std::make_unique<SdlAudioEndpoint>(stream);
+      return std::make_unique<SdlAudioEndpoint>(stream, live_audio_streams_);
     }
     SDL_Log("MediaDeviceArbiter: %s %s", MediaDeviceKindName(kind), err.c_str());
     if (error) {
@@ -439,7 +447,19 @@ public:
                                         : std::chrono::milliseconds(0);
   }
 
+  bool SupportsAudioReset() const override { return SdlAudioResetSupported(); }
+
+  AudioResetResult ResetAudio(std::chrono::milliseconds budget, std::string* error) override {
+    // Every SDL audio stream is made and destroyed on the audio device thread (this one), which this rebuild holds:
+    // none can open while it waits. Checked again on the main thread right before SDL_QuitAudio, which would destroy
+    // a stream still open under its endpoint.
+    return ResetSdlAudioOnMainThread(
+        budget, [live = live_audio_streams_]() { return live->load(std::memory_order_acquire) == 0; }, error);
+  }
+
 private:
+  std::shared_ptr<std::atomic<int>> live_audio_streams_ = std::make_shared<std::atomic<int>>(0);
+
   /** DEFAULT_RECORDING with platform retries — OEM speaker route (Moto) races AAudio open. */
   static SDL_AudioStream* OpenMic(const AudioDeviceFormat& format, const std::function<bool()>& still_wanted,
                                   std::string* error) {

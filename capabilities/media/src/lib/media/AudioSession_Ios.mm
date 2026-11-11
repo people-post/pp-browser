@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <string>
 
 // Enum cases are not preprocessor macros — do not use #if !defined(...).
 // SDK 26+: AllowBluetoothHFP; older SDKs: AllowBluetooth (same bit).
@@ -26,6 +27,10 @@ namespace {
 /** The call's speaker choice: default earpiece; kept across Deactivate (a media rebuild), cleared when the call ends. */
 std::atomic<bool> g_speakerphone{false};
 std::atomic<bool> g_session_active{false};
+/** Voice messages hold the session (recording or playback); cleared by ReleaseVoice. */
+std::atomic<bool> g_voice_active{false};
+/** The voice session is for playing a voice message (set by ActivateForVoicePlayback, cleared by ReleaseVoice). */
+std::atomic<bool> g_voice_playback{false};
 /** Bumped by every ActivateForVoip; a delayed Deactivate retry gives up once it changed. */
 std::atomic<uint64_t> g_session_gen{0};
 /** Makes "still ours?" + setActive:NO atomic against a new activation / CancelPendingDeactivate. */
@@ -84,10 +89,8 @@ ShareWord RouteChangeReasonWord(AVAudioSessionRouteChangeReason reason) {
   }
 }
 
-/** The current output's port type (never its name: that can be a person's "AirPods of …"). */
-ShareWord OutputPortWord() {
-  AVAudioSessionRouteDescription* route = [AVAudioSession sharedInstance].currentRoute;
-  NSString* port = route.outputs.count > 0 ? route.outputs.firstObject.portType : nil;
+/** A port type as a word (never a port name: that can be a person's "AirPods of …"). */
+ShareWord PortWord(NSString* port) {
   if (port == nil)
     return "none";
   if ([port isEqualToString:AVAudioSessionPortBuiltInReceiver])
@@ -113,6 +116,28 @@ ShareWord OutputPortWord() {
   if ([port isEqualToString:AVAudioSessionPortCarAudio])
     return "CarAudio";
   return "other";
+}
+
+/** The current output's port type. */
+ShareWord OutputPortWord() {
+  AVAudioSessionRouteDescription* route = [AVAudioSession sharedInstance].currentRoute;
+  return PortWord(route.outputs.count > 0 ? route.outputs.firstObject.portType : nil);
+}
+
+/** Every current output as `Type:Name,…` for the developer log only (the name stays out of metrics). */
+std::string OutputsForLog() {
+  AVAudioSessionRouteDescription* route = [AVAudioSession sharedInstance].currentRoute;
+  if (route.outputs.count == 0) {
+    return "none";
+  }
+  std::string text;
+  for (AVAudioSessionPortDescription* output in route.outputs) {
+    if (!text.empty()) {
+      text += ",";
+    }
+    text += std::string(PortWord(output.portType).view()) + ":" + Utf8(output.portName);
+  }
+  return text;
 }
 
 /**
@@ -165,17 +190,24 @@ void InstallInterruptionObservers() {
                         object:nil
                          queue:nil
                     usingBlock:^(NSNotification* note) {
-                      if (!g_session_active.load()) {
-                        return; // a call's route only (B178)
+                      const bool call = g_session_active.load();
+                      if (!call && !g_voice_playback.load()) {
+                        return; // a call's route (B178), or a voice message being played
                       }
                       const auto reason = static_cast<AVAudioSessionRouteChangeReason>(
                           [note.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue]);
                       const ShareWord reason_word = RouteChangeReasonWord(reason);
                       const ShareWord output = OutputPortWord();
                       SessionLog().info << "AudioSession route change reason=" << reason_word.view()
-                                        << " output=" << output.view() << " interrupted=" << (IsInterrupted() ? 1 : 0);
-                      MetricsLine("audio.route").Add("reason", reason_word).Add("output", output).Emit();
-                      if (reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable && IsInterrupted()) {
+                                        << " output=" << output.view() << " interrupted=" << (IsInterrupted() ? 1 : 0)
+                                        << " use=" << (call ? "call" : "voice_playback")
+                                        << " outputs=" << OutputsForLog();
+                      MetricsLine("audio.route")
+                          .Add("reason", reason_word)
+                          .Add("output", output)
+                          .Add("use", call ? ShareWord("call") : ShareWord("voice_playback"))
+                          .Emit();
+                      if (call && reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable && IsInterrupted()) {
                         ResumeSoonIfSessionFree();
                       }
                     }];
@@ -280,6 +312,9 @@ void ActivateForVoip() {
     g_session_gen.fetch_add(1);
     [session setActive:YES error:&error];
     g_session_active.store(true);
+    // The call has the session: a voice message that was playing was cut off without ReleaseVoice (a call holds the
+    // devices then), and its flag would label every later route change as voice playback.
+    g_voice_playback.store(false);
   }
   ApplyRoute(g_speakerphone.load());
   LogRoute("ActivateForVoip");
@@ -330,10 +365,13 @@ void ResumeIfSessionFree() {
 
 namespace {
 
-std::atomic<bool> g_voice_active{false};
+/** "ok", or "failed(<NSError code>)" for the log. */
+std::string Outcome(const BOOL ok, NSError* error) {
+  return ok ? "ok" : "failed(" + std::to_string(error != nil ? static_cast<long>(error.code) : 0L) + ")";
+}
 
 /** Voice message audio. Not while a call (or ringback) holds the session; cancels a call's pending delayed Deactivate. */
-void ActivateVoice(AVAudioSessionCategory category, AVAudioSessionCategoryOptions options) {
+void ActivateVoice(AVAudioSessionCategory category, AVAudioSessionCategoryOptions options, const bool playback) {
   AVAudioSession* session = [AVAudioSession sharedInstance];
   NSError* error = nil;
   std::lock_guard<std::mutex> lock(g_session_mu);
@@ -341,29 +379,43 @@ void ActivateVoice(AVAudioSessionCategory category, AVAudioSessionCategoryOption
     return;
   }
   g_session_gen.fetch_add(1);
-  if (![session setCategory:category mode:AVAudioSessionModeDefault options:options error:&error]) {
+  const BOOL category_ok = [session setCategory:category mode:AVAudioSessionModeDefault options:options error:&error];
+  const std::string category_result = Outcome(category_ok, error);
+  if (!category_ok) {
     NSLog(@"AudioSession voice: setCategory failed: %@", error);
     error = nil;
   }
-  if (![session setActive:YES error:&error]) {
+  const BOOL active_ok = [session setActive:YES error:&error];
+  if (!active_ok) {
     NSLog(@"AudioSession voice: setActive failed: %@", error);
   }
   g_voice_active.store(true);
+  if (playback) {
+    g_voice_playback.store(true);
+    // What iOS ended up with, and where it sends the sound: silence on a car stereo or headphones is read from this.
+    SessionLog().info << "AudioSession voice playback activated: category=" << Utf8(session.category)
+                      << " mode=" << Utf8(session.mode)
+                      << " options=" << static_cast<unsigned long>(session.categoryOptions)
+                      << " set_category=" << category_result << " set_active=" << Outcome(active_ok, error)
+                      << " outputs=" << OutputsForLog();
+  }
 }
 
 } // namespace
 
 // `playback` ignores the ring/silent switch and uses the loudspeaker when nothing else is plugged in.
 void ActivateForVoicePlayback() {
-  ActivateVoice(AVAudioSessionCategoryPlayback, 0);
+  ActivateVoice(AVAudioSessionCategoryPlayback, 0, /*playback=*/true);
 }
 
 void ActivateForVoiceRecording() {
   ActivateVoice(AVAudioSessionCategoryPlayAndRecord,
-                AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetoothA2DP);
+                AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetoothA2DP,
+                /*playback=*/false);
 }
 
 void ReleaseVoice() {
+  g_voice_playback.store(false);
   if (!g_voice_active.exchange(false)) {
     return;
   }
@@ -396,6 +448,10 @@ void SetSpeakerphoneOn(bool on) {
   ApplyRoute(on);
   LogRoute("SetSpeakerphoneOn");
   (void)error;
+}
+
+void ForgetSpeakerChoice() {
+  SetSpeakerphoneOn(false);
 }
 
 bool SpeakerToggleNeedsDeviceReopen() {

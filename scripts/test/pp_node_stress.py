@@ -43,7 +43,7 @@ WATCHED = [
     "pp_process_resident_memory_bytes", "pp_runtime_queue_depth", "pp_amp_rejected_datagrams_total",
     "pp_link_drops_total", "pp_io_busy_fraction", "pp_udp_receive", "pp_link_connects_total", "pp_amp_datagrams_total",
     "pp_amp_reliable_packets_total", "pp_circuit_relay_requests_total", "pp_amp_channels_open",
-    "pp_link_inbound_refused_busy",
+    "pp_link_inbound_refused_busy", "pp_media_relay_lane_frames_total",
 ]
 METRIC_LINE = re.compile(r'^([a-z_]+)(\{[^}]*\})?\s+([-0-9.eE+]+)$')
 
@@ -188,8 +188,9 @@ SUMMED = ["started", "linked", "link_fail", "relinked", "skipped_full", "parked"
 
 def merge(records):
     out = {k: sum(r.get(k, 0) for r in records) for k in SUMMED}
-    out["lat_p95_ms"] = max((r.get("lat_p95_ms", 0) for r in records), default=0)
-    out["lat_p50_ms"] = max((r.get("lat_p50_ms", 0) for r in records), default=0)
+    # The worst load process's percentile: an upper bound on the merged one.
+    for k in ("lat_p50_ms", "lat_p95_ms", "lat_p99_ms", "lat_max_ms"):
+        out[k] = max((r.get(k, 0) for r in records), default=0)
     refused = {}
     for r in records:
         for k, v in r.get("refused", {}).items():

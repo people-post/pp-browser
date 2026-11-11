@@ -41,7 +41,8 @@
 
 **Date:** 2026-09-30
 **Decision:** `call_invite_policy` (preferences: `contacts_only` default for new profiles | `everyone` | `nobody`; Me → Security) drops invites from outside the audience silently — no decline, the caller learns nothing. Messages from strangers are not restricted yet.
-**Amended 2026-11-08:** the default is `contacts_only` for new profiles. Preferences saved before schema 15 that lack the key keep `everyone`; a saved value is never changed.
+**Amended 2026-11-08:** the default is `contacts_only` for new profiles. Preferences saved before schema 15 that lack the key keep `everyone`; a saved value is never changed.  
+**Amended 2026-11-11:** the default is `everyone` for both `call_invite_policy` and `group_invite_policy`, for new and existing profiles. Preferences files saved before schema 16 are reset to `everyone` once (schema 16 is saved back, so a later choice is kept); an unrecognised stored group value still reads as `contacts_only`. A product decision by Kenneth.
 **Rationale:** Calls from strangers already run relay-only (T1); the setting is for users who want a different audience. Restricting stranger messages without a "message requests" inbox would silently lose first contacts (directory discovery depends on them) — that needs UI, and is left open.
 
 ## P008 — Trusted relays: org seeds and Friendly contacts' nodes

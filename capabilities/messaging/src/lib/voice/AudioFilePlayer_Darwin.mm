@@ -59,7 +59,8 @@ std::string DescribeForLog(NSURL* url) {
 @implementation PPAudioFileDelegate
 - (void)audioPlayerDidFinishPlaying:(AVAudioPlayer*)player successfully:(BOOL)flag {
   Log().info << "sound file ended " << (flag ? "at its end" : "undecodable")
-             << " at_ms=" << static_cast<int64_t>(player.currentTime * 1000);
+             << " at_ms=" << static_cast<int64_t>(player.currentTime * 1000)
+             << " duration_ms=" << static_cast<int64_t>(player.duration * 1000);
   if (ended) {
     auto call = std::move(ended);
     ended = nullptr;
@@ -148,8 +149,8 @@ public:
         [delegate release];
         return false;
       }
-      Log().info << "sound file playing duration_ms=" << static_cast<int64_t>(player.duration * 1000) << " "
-                 << DescribeForLog(url);
+      Log().info << "sound file playing duration_ms=" << static_cast<int64_t>(player.duration * 1000)
+                 << " sample_rate=" << static_cast<int>(player.format.sampleRate) << " " << DescribeForLog(url);
       player_ = player;
       delegate_ = delegate;
       StartTimer(std::move(callbacks.on_progress));

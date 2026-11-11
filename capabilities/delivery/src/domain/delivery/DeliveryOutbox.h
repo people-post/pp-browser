@@ -85,6 +85,13 @@ public:
   void Cancel(const std::string& message_id);
   /** Drop a thread's queued sends (synchronously: before its next send). */
   void PurgeThread(const std::string& thread_id);
+  /**
+   * When the send of transcript row `message_id` that is still under way started: from its first request's Send
+   * until its last request ends (delivered, failed and not queued again, dropped, cancelled), counting each of a
+   * group's members and each copy. None when nothing of it is in flight or queued. In memory only (none after a
+   * restart); the control lane is not tracked. It changes nothing that is reported or retried. Any thread.
+   */
+  std::optional<int64_t> SendStartedMs(const std::string& message_id) const;
 
 private:
   struct Pending {
@@ -104,7 +111,14 @@ private:
     std::string message_id;
   };
 
+  /** An outcome after which the request goes on (failed, queued for a retry). */
   void Report(DeliveryOutcome outcome);
+  /** A request's last outcome: it leaves `active_` first, then is reported as Report does. */
+  void Finish(DeliveryOutcome outcome);
+  /** A transcript row's request starts (Send); the control lane (no thread) is not tracked. */
+  void BeginActive(const std::string& thread_id, const std::string& message_id);
+  /** One request of `message_id` ended. Holds `mutex_`. */
+  void EndActiveLocked(const std::string& message_id);
   void Enqueue(Pending pending);
   /** Schedule the control-lane send again after `failure` (ControlRetryAfter); false: given up. */
   bool RetryControlLater(Pending item, const Error& failure);
@@ -116,8 +130,16 @@ private:
   IRelayClient* relay_ = nullptr;
   std::function<void(const DeliveryOutcome&)> on_outcome_;
   std::function<bool(const std::string&)> paused_;
+  /** A row's sends under way: when the first started, and how many requests have not ended. */
+  struct ActiveSend {
+    int64_t started_ms = 0;
+    int requests = 0;
+  };
+
   mutable std::mutex mutex_;
   std::vector<Pending> queue_;
+  /** By message id (SendStartedMs). */
+  std::unordered_map<std::string, ActiveSend> active_;
   /** By a sequence number of ours: the timer's id is not known until it is scheduled. */
   std::unordered_map<uint64_t, ControlRetry> control_retries_;
   uint64_t next_control_retry_ = 0;

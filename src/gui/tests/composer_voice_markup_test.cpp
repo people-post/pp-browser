@@ -1,3 +1,4 @@
+#include "gui/chat/AttachMenuRules.h"
 #include "gui/chat/AttachmentPreparing.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/shell/DataModelHost.h"
@@ -91,8 +92,14 @@ protected:
                             "attachment_uploading",
                             "attachment_failed",
                             "attachment_here",
+                            "attachment_in_transcript",
+                            "composer_input_disabled",
+                            "attach_disabled",
+                            "voice_entry_off",
+                            "picking_busy",
                             "attachment_draft_name",
                             "attachment_status",
+                            "attachment_preparing",
                             "attachment_progress_width",
                             "attachment_thumb",
                             "attachment_type_label",
@@ -374,6 +381,115 @@ TEST_F(ComposerVoiceMarkupTest, TheStatusRowTextIsRenderedNotJustBound) {
   EXPECT_EQ(timer[0]->GetInnerRML(), "0:07");
 }
 
+// A picture being sent shows as a bubble in the transcript (DEV/PLAN-picture-upload-bubble.md): no card above the
+// composer while it uploads, and no failure chip when it did not go out — the bubble has its own retry and ✕.
+TEST_F(ComposerVoiceMarkupTest, APictureBubbleInTheTranscriptHidesTheCardAndTheChip) {
+  state.attachment_here = true;
+  state.attachment_in_transcript = true;
+  state.attachment_uploading = true;
+  state.attachment_draft_name = "photo.jpg";
+  Apply();
+  EXPECT_EQ(Shown("prompt-upload-card"), 0);
+  EXPECT_EQ(Shown("prompt-attachment-chip"), 0);
+  EXPECT_EQ(Shown("prompt-composer-status"), 0);
+  state.attachment_uploading = false;
+  state.attachment_failed = true;
+  state.attachment_status = "Not sent";
+  Apply();
+  EXPECT_EQ(Shown("prompt-attachment-chip"), 0);
+  EXPECT_EQ(Shown("prompt-attachment-chip-action"), 0);
+  EXPECT_EQ(Shown("prompt-composer-status"), 0);
+}
+
+// With the picture bubble (uploading or failed) the text input, emoji and send stay on; the plus, the camera and the
+// microphone are off, so no second attachment starts in that chat. A card send keeps everything off.
+TEST_F(ComposerVoiceMarkupTest, APictureBubbleKeepsTheTextInputOnAndTheAttachEntriesOff) {
+  state.show_voice = true;
+  state.show_attach_button = true;
+  state.show_capture = true;
+  state.draft = "on my way";
+  const auto disabled = [this](const char* cls) {
+    ui::ElementList found;
+    document->GetElementsByClassName(found, cls);
+    for (ui::Element* element : found) {
+      if (element->IsVisible(true)) {
+        return element->HasAttribute("disabled");
+      }
+    }
+    ADD_FAILURE() << cls << " not shown";
+    return false;
+  };
+  state.attachment_here = true;
+  state.attachment_in_transcript = true;
+  state.attachment_uploading = true;
+  const ComposerLocks bubble = ComposerLocksOf(false, true, true, /*attachment_busy=*/true, false, false);
+  state.composer_input_disabled = bubble.input;
+  state.attach_disabled = bubble.attach;
+  Apply();
+  ASSERT_TRUE(InputShown());
+  EXPECT_FALSE(document->GetElementById("draft-input")->HasAttribute("disabled"));
+  EXPECT_FALSE(disabled("prompt-emoji-btn"));
+  EXPECT_FALSE(disabled("prompt-send-btn"));
+  EXPECT_TRUE(disabled("prompt-attach-btn"));
+  EXPECT_TRUE(disabled("prompt-capture-btn"));
+  // Visibly greyed (the iPhone showed them at full strength while a :disabled rule never matched), emoji not.
+  const auto opacity = [this](const char* cls) {
+    ui::ElementList found;
+    document->GetElementsByClassName(found, cls);
+    for (ui::Element* element : found) {
+      if (element->IsVisible(true)) {
+        return element->GetComputedValues().opacity();
+      }
+    }
+    return -1.f;
+  };
+  EXPECT_LT(opacity("prompt-attach-btn"), 0.5f);
+  EXPECT_LT(opacity("prompt-capture-btn"), 0.5f);
+  EXPECT_FLOAT_EQ(opacity("prompt-emoji-btn"), 1.f);
+
+  state.attachment_in_transcript = false; // a file: its card above the input, the whole composer off
+  const ComposerLocks card = ComposerLocksOf(false, true, false, /*attachment_busy=*/true, false, false);
+  state.composer_input_disabled = card.input;
+  state.attach_disabled = card.attach;
+  Apply();
+  EXPECT_TRUE(document->GetElementById("draft-input")->HasAttribute("disabled"));
+  EXPECT_TRUE(disabled("prompt-emoji-btn"));
+  EXPECT_TRUE(disabled("prompt-attach-btn"));
+}
+
+// While the centred "Preparing…" overlay shows, the small "Sending…" chip above the input does not.
+TEST_F(ComposerVoiceMarkupTest, ThePreparingOverlayHidesTheSendingChip) {
+  state.attachment_here = true;
+  state.attachment_preparing = true;
+  state.attachment_status = "Sending…";
+  Apply();
+  EXPECT_EQ(Shown("prompt-attachment-chip"), 1) << "without the overlay the chip says it";
+  state.picking_busy = true;
+  Apply();
+  EXPECT_EQ(Shown("prompt-attachment-chip"), 0);
+  EXPECT_EQ(Shown("prompt-composer-status"), 0);
+}
+
+// Files, voice, video — and a failed picture after a restart (no bubble then) — keep the card and the chip.
+TEST_F(ComposerVoiceMarkupTest, WithoutAPictureBubbleTheCardAndTheChipStayAsTheyWere) {
+  state.attachment_here = true;
+  state.attachment_in_transcript = false;
+  for (const char* name : {"report.pdf", "voice-4200.ogg", "clip.mp4"}) {
+    SCOPED_TRACE(name);
+    state.attachment_uploading = true;
+    state.attachment_failed = false;
+    state.attachment_draft_name = name;
+    Apply();
+    EXPECT_EQ(Shown("prompt-upload-card"), 1);
+  }
+  state.attachment_uploading = false;
+  state.attachment_failed = true;
+  state.attachment_draft_name = "photo.jpg"; // a picture that failed before the app was restarted
+  Apply();
+  EXPECT_EQ(Shown("prompt-attachment-chip"), 1);
+  EXPECT_EQ(Shown("prompt-attachment-chip-action"), 2);
+}
+
 // An upload in chat A: its card shows there only; switching to chat B hides it, back to A shows it again.
 TEST_F(ComposerVoiceMarkupTest, TheUploadChipFollowsTheChatItBelongsTo) {
   state.attachment_uploading = true;
@@ -516,6 +632,64 @@ TEST_F(ComposerPhoneRowTest, WithoutTextTheMicrophoneEndsTheRow) {
   EXPECT_EQ(Shown("prompt-voice-toggle-btn--start"), 0) << "no microphone on the left";
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
   EXPECT_EQ(Shown("prompt-send-btn"), 0);
+}
+
+// A picture uploading as a bubble (device report 2026-11-11: the right end was empty, as if nothing could be sent):
+// the send hides the microphone (show_voice off), but beside the bubble it stays in its place greyed
+// (voice_entry_off); once text is typed Send takes the spot, enabled.
+TEST_F(ComposerPhoneRowTest, BesideAPictureBubbleTheMicrophoneStaysGreyedAndTextBringsAWorkingSend) {
+  state.thread_is_private = true;
+  state.show_attach_button = true;
+  state.attachment_here = true;
+  state.attachment_uploading = true;
+  state.attachment_in_transcript = true;
+  state.show_voice = false; // VoiceComposer: not while a send is in flight
+  state.voice_entry_off = true;
+  const ComposerLocks locks = ComposerLocksOf(false, true, true, /*attachment_busy=*/true, false, false);
+  state.composer_input_disabled = locks.input;
+  state.attach_disabled = locks.attach;
+  Apply();
+  std::vector<std::string> order = RowOrder();
+  ASSERT_EQ(order.size(), 3u);
+  EXPECT_TRUE(Has(order[2], "prompt-voice-toggle-btn--end")) << "the microphone keeps its place";
+  ui::ElementList mics;
+  document->GetElementsByClassName(mics, "prompt-voice-toggle-btn--end");
+  ASSERT_FALSE(mics.empty());
+  EXPECT_TRUE(mics[0]->HasAttribute("disabled")) << "greyed: no voice message while the picture goes";
+  EXPECT_EQ(Shown("prompt-send-btn"), 0);
+  ui::ElementList composers;
+  document->GetElementsByClassName(composers, "prompt-composer");
+  ASSERT_FALSE(composers.empty());
+  EXPECT_TRUE(mics[0]->IsClassSet("prompt-entry-off")) << "greyed by a class (the engine's <button> has no :disabled)";
+  EXPECT_LT(mics[0]->GetComputedValues().opacity(), 0.5f);
+
+  state.draft = "running late";
+  Apply();
+  order = RowOrder();
+  ASSERT_EQ(order.size(), 3u);
+  EXPECT_TRUE(Has(order[2], "prompt-send-btn")) << "Send in the microphone's spot";
+  ui::ElementList sends;
+  document->GetElementsByClassName(sends, "prompt-send-btn");
+  bool enabled_send = false;
+  for (ui::Element* send : sends) {
+    enabled_send = enabled_send || (send->IsVisible(true) && !send->HasAttribute("disabled"));
+  }
+  EXPECT_TRUE(enabled_send);
+  EXPECT_FALSE(document->GetElementById("draft-input")->HasAttribute("disabled"));
+}
+
+// A file upload (its card above the input) keeps today's composer: the microphone simply hidden.
+TEST_F(ComposerPhoneRowTest, AFileUploadStillHidesTheMicrophone) {
+  state.thread_is_private = true;
+  state.show_attach_button = true;
+  state.attachment_here = true;
+  state.attachment_uploading = true;
+  state.show_voice = false;
+  state.voice_entry_off = false;
+  state.composer_input_disabled = true;
+  state.attach_disabled = true;
+  Apply();
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 0);
 }
 
 TEST_F(ComposerPhoneRowTest, TextTurnsTheMicrophoneIntoSendInTheSameSpot) {
@@ -678,10 +852,10 @@ TEST(ComposerCaptureSourceTest, StartAttachmentUploadReleasesTheFileOnEveryExit)
     }
     return n;
   };
-  EXPECT_EQ(count("release_pick_(path);"), 3u) << "two early returns and the worker's own release";
-  // The early returns release before they return.
-  EXPECT_NE(body.find("chat_.attachment_preparing) {\n    release_pick_(path);\n    return;"), std::string::npos);
-  EXPECT_NE(body.find("thread_id.empty()) {\n    release_pick_(path);\n    return;"), std::string::npos);
+  EXPECT_EQ(count("release_pick_(path);"), 2u) << "the refusal and the worker's own release";
+  // A refused send releases a picked file before it returns; a refused voice recording is kept for Retry instead.
+  EXPECT_NE(body.find("    release_pick_(path);\n    if (busy) {"), std::string::npos);
+  EXPECT_NE(body.find("KeepVoiceForRetry(path, thread_id);"), std::string::npos);
 }
 
 } // namespace

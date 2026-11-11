@@ -168,6 +168,20 @@ void CallStack::SetInboundCallAudience(const mesh::InboundAudience audience) {
   });
 }
 
+void CallStack::SetDevFailCallRead(std::function<bool()> fail) {
+  std::lock_guard lock(dev_fail_call_read_mu_);
+  dev_fail_call_read_ = std::move(fail);
+}
+
+void CallStack::SetOnInviteBlocked(std::function<void(const BlockedCallInvite&)> callback) {
+  executor_.RunAndWait([this, &callback]() {
+    on_invite_blocked_ = std::move(callback);
+    if (call_sessions_) {
+      call_sessions_->SetOnInviteBlocked(on_invite_blocked_);
+    }
+  });
+}
+
 CallPathPolicy CallStack::PathPolicyFor(const std::string& call_id) const {
   const CallPathPolicy policy = mobility_.PolicyFor(call_id);
   if (!deps_.address_disclosure) {
@@ -313,7 +327,7 @@ void CallStack::BindMeshMediaHooks() {
   // Connectivity runs these on its owner / Amp IO: hop to the calls owner.
   // H011: the rendezvous R1 our circuit reach chose is announced to the call peer.
   // The hooks hold the loop's ref, not the stack: connectivity outlives it.
-  shared->SetOnRelayChosen(
+  SetRelayChosenHook(
       [loop = loop_.Share()](const std::string& circuit_r1) { loop.Enqueue(calls_event::RelayChosen{circuit_r1}); });
   // H012: when Amp introducers are exhausted, exchange punch candidates over call-control.
   shared->SetSignalingPunch([loop = loop_.Share()](const std::string& target_peer_id,
@@ -321,6 +335,14 @@ void CallStack::BindMeshMediaHooks() {
                                                    std::function<void(Roe<void>)> on_done) {
     loop.Enqueue(calls_event::SignalingPunchRequested{target_peer_id, my_addrs, std::move(on_done)});
   });
+}
+
+void CallStack::SetRelayChosenHook(std::function<void(const std::string& relay_peer_id)> hook) {
+  if (deps_.set_on_relay_chosen) {
+    deps_.set_on_relay_chosen(std::move(hook));
+  } else if (mesh::MeshConnectivity* shared = connectivity()) {
+    shared->SetOnRelayChosen(std::move(hook));
+  }
 }
 
 void CallStack::DetachMeshMediaOnOwner() {
@@ -393,6 +415,12 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
   reads_ =
       std::make_unique<CallReads>(*call_session_store_, *deps_.account, *deps_.threads, deps_.delivery.group_members,
                                   deps_.initiation_billing, deps_.delivery.group_standing);
+  {
+    std::lock_guard lock(dev_fail_call_read_mu_);
+    if (dev_fail_call_read_) {
+      reads_->SetDevFailActiveRead(dev_fail_call_read_); // before the reads are shared with any other thread
+    }
+  }
   call_device_ = std::make_unique<CallDevice>(*deps_.threads, *deps_.transcript, *deps_.contacts, *deps_.account,
                                               *call_session_store_, *reads_, *call_media_keys_, deps_.delivery,
                                               *call_media_engine_);
@@ -406,6 +434,9 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
   call_device_->SetMeshGlue(MakeMeshGlue());
   call_sessions_->SetInboundCallAudience(
       inbound_call_audience_.load(std::memory_order_relaxed)); // a rebuilt session manager keeps the choice
+  if (on_invite_blocked_) {
+    call_sessions_->SetOnInviteBlocked(on_invite_blocked_); // and the GUI's listener
+  }
   BindSessionMeshReach();
   BindCallState();
   RebindMeshMedia();
@@ -770,8 +801,8 @@ void CallStack::ReleaseOnOwner() {
   PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   mobility_wake_.Disarm();
   DetachMeshMedia();
+  SetRelayChosenHook({});
   if (mesh::MeshConnectivity* shared = connectivity()) {
-    shared->SetOnRelayChosen({});
     shared->SetSignalingPunch({});
   }
   // Capture / receive threads call into the bridge (send callback): stop them before it goes.

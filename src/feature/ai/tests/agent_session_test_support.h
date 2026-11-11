@@ -159,6 +159,7 @@ public:
     return {};
   }
   Roe<void> CancelOldEpochPending(const std::string&, uint32_t) override { return {}; }
+  Roe<bool> RemoveUnsentMessage(const std::string&, const std::string&) override { return false; }
   Roe<void> AdoptChatTargetEpoch(const std::string&, uint32_t) override { return {}; }
   Roe<ThreadMessage> AppendMessageWithPassiveEpochAdopt(const ThreadMessage& message, uint32_t, uint32_t,
                                                         const PeerSyncState&) override {

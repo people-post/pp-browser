@@ -606,9 +606,8 @@ std::string CallPhoneRml(const ShellState& state) {
   if (wide_sides) {
     out << "</div>";
   }
-  // The top pill (DESIGN-pp-ui 8.11) hangs under this row: a slower line, a reconnect, a closer way; gone after 3 s.
+  // The top pill (DESIGN-pp-ui 8.11) hangs under this row: a closer way (the slower-line hint is a bottom pill); gone after 3 s.
   out << "<div class=\"call-phone-notice\" data-if=\"call_in_progress_notice_text != ''\" "
-         "data-class-call-phone-notice--warn=\"call_in_progress_notice_warn\" "
          "data-class-call-phone-notice--fading=\"call_in_progress_notice_fading\">";
   out << "<span class=\"call-phone-notice-icon\"><svg src=\"../icons/v2/info.svg\" width=\"16\" height=\"16\">"
          "</svg></span><p class=\"call-phone-notice-text\">{{call_in_progress_notice_text}}</p></div>";

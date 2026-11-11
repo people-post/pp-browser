@@ -8,10 +8,14 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/presenters/CallBackOffer.h"
 #include "feature/presenters/CallMediaFrame.h"
+#include "feature/presenters/CallSpeakerButton.h"
+#include "feature/presenters/CallUiAttachGuard.h"
 #include "feature/presenters/CallWakePlaceholder.h"
 #include "foundation/platform/PendingNotificationTap.h"
 
+#include <chrono>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -37,6 +41,8 @@ struct CallNotice {
     GuestJoined,
     /** V064: the 1:1 call End & accept ended (`ending`) can be called back now that the call taken is over. */
     CallBack,
+    /** "Who can call me" dropped a call from `identity`: `key` (an i18n key) says which setting did (the pill). */
+    CallBlocked,
   };
   Kind kind = Kind::Error;
   std::string key;
@@ -150,6 +156,17 @@ public:
    */
   WakeStep StepWakePlaceholder(bool phone_layout,
                                PendingNotificationTap::Clock::time_point now = PendingNotificationTap::Clock::now());
+  /**
+   * "Who can call me" dropped an invite (DEV/PLAN-call-stranger-declined.md); each call id once. A 1:1 call is
+   * recorded in the chat with its caller (ports' record_blocked_call); unless it was too old to ring, the
+   * connecting page waiting for it closes (StepWakePlaceholder: Blocked, with the pill), else the pill shows to a
+   * user looking at the app, once a minute per caller. A group's call, a caller the user blocked, our own account:
+   * nothing. A ring on screen is never touched.
+   */
+  void OnInviteBlocked(const BlockedCallInvite& blocked,
+                       PendingNotificationTap::Clock::time_point now = PendingNotificationTap::Clock::now());
+  /** One pill per caller in this long, except the one that explains a closed (or never shown) connecting page. */
+  static constexpr int64_t kBlockedPillPerCallerMs = 60'000;
 
   const CallScreen& Screen() const { return screen_; }
   /**
@@ -209,12 +226,39 @@ public:
   std::string Decline();
   /** End. Returns the call left (empty: none — a stale button only clears the screen). */
   std::string Leave();
+  /**
+   * CallUiAttachGuard's hang-up: the engine's call `call_id` is stopped and left by its id (not this screen's call,
+   * which may be another); this screen clears if it showed that call or none, else it is decided again.
+   */
+  void HangUpEngineCall(const std::string& call_id);
+  /**
+   * The call the user (or the guard) hung up, until the engine lets go of it (empty: none). Never taken back meanwhile.
+   * Dropped too when a call is started, joined or answered (the same call joined again shows), and after
+   * kLeavingLatchMs at most.
+   */
+  const std::string& LeavingCallId() const { return leaving_call_id_; }
+  static constexpr int64_t kLeavingLatchMs = 15'000;
+  /** Tests: the steady clock (ms) the latch's time limit reads. */
+  void SetSteadyClockForTest(std::function<int64_t()> now_ms);
   void Retry();
   void ToggleMute();
   void ToggleCamera();
   /** Phones: front / rear camera while it is on. */
   void FlipCamera();
   void ToggleSpeaker();
+  /** What the speaker button shows (CallSpeakerButtonOn): a tap being applied, else the OS route. */
+  bool SpeakerShownOn() const;
+  /**
+   * Developer builds only (the app layer sets it under kDevToolsBuild; empty otherwise): true makes the next speaker
+   * tap change the route the old way — before the mic closes — so the OS takes the recording stream and the media
+   * engine's audio rebuild has to bring the mic back (Android merge check).
+   */
+  void SetDevRouteReorderSkip(std::function<bool()> skip);
+  /**
+   * Developer builds only (debug.pp.detach_call_ui): true makes each refresh end with the call id dropped while the
+   * engine keeps the call — what CallUiAttachGuard is there for (tried on a device).
+   */
+  void SetDevDetachUi(std::function<bool()> detach);
   /** The camera did not come on (or went off): tell the user in plain words; the detail is logged only. */
   void ReportCameraFailure(const CameraFailure& failure);
 
@@ -233,6 +277,15 @@ private:
   /** True when the peer's end of a call was announced. */
   bool TakeStackNotices(CallUiBackend& backend);
   void FillInCall(CallScreen& s, CallUiBackend& backend, const std::string& call_id, bool video, bool group_call);
+  /** The store shows no call while the engine has one open: `next` keeps (or takes) the engine's call. */
+  void KeepEngineCall(CallScreen& next, CallUiBackend& backend, const EngineCall& engine);
+  /** `call_id` is the call being left (LeavingCallId). */
+  bool Leaving(const std::string& call_id) const;
+  /** The call being left is forgotten once the engine let go of it (Idle, another call, or no calls), or in time. */
+  void ForgetLeavingOnceLetGo(const CallUiState& state);
+  void StartLeaving(const std::string& call_id);
+  /** A call starts, is joined or answered here: nothing is kept off screen any more. */
+  void StopLeaving(const char* why);
   void MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s);
   /** B97: a live group call where nothing arrives from anyone for 30 s is left (once told). */
   void WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, int64_t now);
@@ -259,11 +312,36 @@ private:
   bool MessagingInitialized() const;
 
   CallFunctionalPorts ports_;
+  /** The last speaker tap handed to the media engine as a route change (CallSpeakerButtonOn). */
+  std::optional<CallSpeakerTap> speaker_tap_;
+  std::function<bool()> dev_route_reorder_skip_;
+  std::function<bool()> dev_detach_ui_;
+  /** The call debug.pp.detach_call_ui last dropped (logged once per call). */
+  std::string dev_detached_call_id_;
+  /** The call KeepEngineCall last logged (once per call). */
+  std::string kept_call_logged_;
+  /** LeavingCallId, and when it was set (steady_ms_). */
+  std::string leaving_call_id_;
+  int64_t leaving_since_ms_ = 0;
+  std::function<int64_t()> steady_ms_ = []() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+  };
   Callbacks callbacks_;
   CallScreen screen_;
   CallWakePlaceholder wake_placeholder_;
   /** The last StepWakePlaceholder asked for the page to show (so it is asked to clear it once). */
   bool wake_ring_shown_ = false;
+  /** OnInviteBlocked: call ids already handled, and when (steady ms; kept an invite's lifetime). */
+  std::map<std::string, int64_t> blocked_calls_;
+  /** Dropped 1:1 calls that may still be a tapped alert's: the connecting page for one closes (taken once). */
+  std::map<std::string, BlockedCallInvite> wake_blocks_;
+  /** The last pill per caller (steady ms). */
+  std::map<std::string, int64_t> blocked_pill_at_;
+  /** The pill saying which setting dropped a call from `blocked`'s caller. */
+  void NotifyBlocked(const BlockedCallInvite& blocked);
+  /** Forget handled calls past an invite's lifetime, and per-caller pills past their minute. */
+  void PruneBlocked(int64_t now_ms);
   bool messaging_ready_ = false;
   NoMediaWatch no_media_watch_;
   int64_t no_media_checked_ms_ = 0;

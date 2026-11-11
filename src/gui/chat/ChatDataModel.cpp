@@ -19,6 +19,17 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("queued_note", &state.queued_note);
   ctor.Bind("has_turns", &state.has_turns);
   ctor.Bind("turns", &state.turns);
+  if (auto reactor_handle = ctor.RegisterStruct<ReactorDisplayRow>()) {
+    reactor_handle.RegisterMember("emoji", &ReactorDisplayRow::emoji);
+    reactor_handle.RegisterMember("title", &ReactorDisplayRow::title);
+    reactor_handle.RegisterMember("avatar_letter", &ReactorDisplayRow::avatar_letter);
+    reactor_handle.RegisterMember("avatar_tone", &ReactorDisplayRow::avatar_tone);
+    reactor_handle.RegisterMember("has_icon", &ReactorDisplayRow::has_icon);
+    reactor_handle.RegisterMember("icon_src", &ReactorDisplayRow::icon_src);
+    reactor_handle.RegisterMember("is_self", &ReactorDisplayRow::is_self);
+  }
+  ctor.RegisterArray<std::vector<ReactorDisplayRow>>();
+  ctor.Bind("reactor_rows", &state.reactor_rows);
   ctor.Bind("messages", &state.messages);
   ctor.Bind("use_messages_layout", &state.use_messages_layout);
   ctor.Bind("thread_title", &state.thread_title);
@@ -47,6 +58,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("thread_has_icon", &state.thread_has_icon);
   ctor.Bind("compose_disabled", &state.compose_disabled);
   ctor.Bind("composer_input_disabled", &state.composer_input_disabled);
+  ctor.Bind("attach_disabled", &state.attach_disabled);
   ctor.Bind("show_attach_button", &state.show_attach_button);
   ctor.Bind("show_capture", &state.show_capture);
   ctor.Bind("image_chip", &state.image_chip);
@@ -65,11 +77,15 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("attachment_type_label", &state.attachment_type_label);
   ctor.Bind("attachment_cancelling", &state.attachment_cancelling);
   ctor.Bind("show_voice", &state.show_voice);
+  ctor.Bind("voice_entry_off", &state.voice_entry_off);
   ctor.Bind("voice_blocked", &state.voice_blocked);
   ctor.Bind("voice_recording", &state.voice_recording);
   ctor.Bind("voice_finishing", &state.voice_finishing);
   ctor.Bind("attachment_preparing", &state.attachment_preparing);
   ctor.Bind("attachment_here", &state.attachment_here);
+  ctor.Bind("attachment_in_transcript", &state.attachment_in_transcript);
+  ctor.Bind("picking_busy", &state.picking_busy);
+  ctor.Bind("picking_busy_slow", &state.picking_busy_slow);
   ctor.Bind("voice_mode", &state.voice_mode);
   ctor.Bind("voice_click_mode", &state.voice_click_mode);
   ctor.Bind("voice_cancel_zone", &state.voice_cancel_zone);
@@ -106,7 +122,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("sync_in_progress", &state.sync_in_progress);
   ctor.Bind("show_older_history_hint", &state.show_older_history_hint);
   ctor.Bind("show_jump_to_latest", &state.show_jump_to_latest);
-  ctor.Bind("jump_to_latest_label", &state.jump_to_latest_label);
+  ctor.Bind("jump_to_latest_count", &state.jump_to_latest_count);
 }
 
 void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
@@ -242,6 +258,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "thread_has_icon");
   DataModelHost::Instance().Dirty("chat", "compose_disabled");
   DataModelHost::Instance().Dirty("chat", "composer_input_disabled");
+  DataModelHost::Instance().Dirty("chat", "attach_disabled");
   DataModelHost::Instance().Dirty("chat", "show_attach_button");
   DataModelHost::Instance().Dirty("chat", "show_capture");
   DataModelHost::Instance().Dirty("chat", "attachment_uploading");
@@ -253,11 +270,15 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "attachment_type_label");
   DataModelHost::Instance().Dirty("chat", "attachment_cancelling");
   DataModelHost::Instance().Dirty("chat", "show_voice");
+  DataModelHost::Instance().Dirty("chat", "voice_entry_off");
   DataModelHost::Instance().Dirty("chat", "voice_blocked");
   DataModelHost::Instance().Dirty("chat", "voice_recording");
   DataModelHost::Instance().Dirty("chat", "voice_finishing");
   DataModelHost::Instance().Dirty("chat", "attachment_preparing");
   DataModelHost::Instance().Dirty("chat", "attachment_here");
+  DataModelHost::Instance().Dirty("chat", "attachment_in_transcript");
+  DataModelHost::Instance().Dirty("chat", "picking_busy");
+  DataModelHost::Instance().Dirty("chat", "picking_busy_slow");
   DataModelHost::Instance().Dirty("chat", "voice_mode");
   DataModelHost::Instance().Dirty("chat", "voice_click_mode");
   DataModelHost::Instance().Dirty("chat", "voice_cancel_zone");
@@ -290,7 +311,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "psk_import_text");
   DataModelHost::Instance().Dirty("chat", "show_older_history_hint");
   DataModelHost::Instance().Dirty("chat", "show_jump_to_latest");
-  DataModelHost::Instance().Dirty("chat", "jump_to_latest_label");
+  DataModelHost::Instance().Dirty("chat", "jump_to_latest_count");
 }
 
 void DirtyChat() {

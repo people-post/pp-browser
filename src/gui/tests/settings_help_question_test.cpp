@@ -57,21 +57,20 @@ TEST_F(SettingsHelpQuestionTest, TheHardSettingsHaveOneBesideThem) {
     const char* view;
     const char* key;
   } expected[] = {
-      {"settings_section_security.rml", "settings.security.crash_reports.label"},
+      {"settings_section_help.rml", "settings.security.crash_reports.label"},
       {"settings_section_security.rml", "settings.security.recovery"},
-      {"settings_section_security.rml", "settings.security.transfer_row"},
-      {"settings_section_security.rml", "settings.help.topic.account_copy"},
-      {"settings_section_network.rml", "settings.network.help_network"},
-      {"settings_section_network.rml", "settings.network.circuit_relay"},
-      {"settings_section_network.rml", "settings.network.media_relay"},
-      {"settings_section_network.rml", "settings.network.dht"},
-      {"settings_section_network.rml", "settings.network.prefer_contacts"},
-      {"settings_section_network.rml", "settings.network.trusted_relays"},
-      {"settings_section_network.rml", "settings.network.direct_connections"},
-      {"settings_section_network.rml", "settings.network.reachable_without_relay"},
-      {"settings_section_profile.rml", "settings.stay_connected"},
-      {"settings_section_integrations.rml", "settings.help.topic.mcp"},
-      {"settings_section_about.rml", "settings.about.advanced.label"},
+      {"settings_section_devices.rml", "settings.security.transfer_row"},
+      {"settings_section_devices.rml", "settings.help.topic.account_copy"},
+      {"settings_section_advanced.rml", "settings.network.help_network"},
+      {"settings_section_advanced.rml", "settings.network.circuit_relay"},
+      {"settings_section_advanced.rml", "settings.network.media_relay"},
+      {"settings_section_advanced.rml", "settings.network.dht"},
+      {"settings_section_advanced.rml", "settings.network.prefer_contacts"},
+      {"settings_section_advanced.rml", "settings.network.trusted_relays"},
+      {"settings_section_advanced.rml", "settings.network.direct_connections"},
+      {"settings_section_advanced.rml", "settings.network.reachable_without_relay"},
+      {"settings_section_notifications.rml", "settings.stay_connected"},
+      {"settings_section_advanced.rml", "settings.help.topic.mcp"},
   };
   for (const auto& item : expected) {
     const std::string rml = ReadAsset(std::string("views/") + item.view);
@@ -80,13 +79,13 @@ TEST_F(SettingsHelpQuestionTest, TheHardSettingsHaveOneBesideThem) {
     EXPECT_FALSE(SettingHelpQuestion(item.key).empty()) << item.key;
   }
   // Send diagnostics keeps its own "?" (its question names the support article).
-  EXPECT_NE(ReadAsset("views/settings_section_security.rml").find("open_diagnostics_help()"), std::string::npos);
+  EXPECT_NE(ReadAsset("views/settings_section_help.rml").find("open_diagnostics_help()"), std::string::npos);
 }
 
-// Phones: the crash-report switch and Send problem logs sit in About, in one "Help improve PP" card, each with its
-// "?" and a line under it; desktop keeps them on the Security page (hidden there on phones).
-TEST_F(SettingsHelpQuestionTest, PhonesShowCrashReportsAndProblemLogsInAboutHelpImprovePp) {
-  const std::string about = ReadAsset("views/settings_section_about.rml");
+// Phones: the crash-report switch and Send problem logs sit on the Help page, in one "Help improve PP" card, each
+// with its "?" and a line under it; the desktop has its own copies of the two (hidden on phones) on the same page.
+TEST_F(SettingsHelpQuestionTest, PhonesShowCrashReportsAndProblemLogsInHelpImprovePp) {
+  const std::string about = ReadAsset("views/settings_section_help.rml");
   const size_t card = about.find("{{i18n:settings.about.improve.title}}");
   ASSERT_NE(card, std::string::npos);
   // The title and the card are phone-only, and every piece follows the title.
@@ -99,17 +98,15 @@ TEST_F(SettingsHelpQuestionTest, PhonesShowCrashReportsAndProblemLogsInAboutHelp
         "{{i18n:settings.security.diagnostics.help}}", "copy_diagnostics_id()"}) {
     EXPECT_NE(about.find(piece, card), std::string::npos) << piece;
   }
-  const std::string security = ReadAsset("views/settings_section_security.rml");
-  EXPECT_NE(security.find("<div class=\"group-card settings-desktop-only\">"), std::string::npos);
-  EXPECT_NE(security.find("group-actions settings-desktop-only\" data-if=\"show_diagnostics_send\""),
-            std::string::npos);
+  EXPECT_NE(about.find("<div class=\"group-card settings-desktop-only\">"), std::string::npos);
+  EXPECT_NE(about.find("group-actions settings-desktop-only\" data-if=\"show_diagnostics_send\""), std::string::npos);
   EXPECT_EQ(Tr("settings.about.improve.title"), "Help improve PP");
-  EXPECT_EQ(Tr("settings.security.diagnostics.send"), "Send problem logs");
+  EXPECT_EQ(Tr("settings.security.diagnostics.send"), "Send diagnostics");
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
   EXPECT_EQ(Tr("settings.about.improve.title"), "帮我们改进 PP");
   EXPECT_EQ(Tr("settings.security.crash_reports.label"), "闪退时自动发送报告");
   EXPECT_EQ(Tr("settings.security.crash_reports.help"), "只在闪退时发送，不含聊天内容。");
-  EXPECT_EQ(Tr("settings.security.diagnostics.send"), "把问题记录发给我们");
+  EXPECT_EQ(Tr("settings.security.diagnostics.send"), "发送诊断");
   EXPECT_EQ(Tr("settings.security.diagnostics.help"), "遇到问题、客服请你发时用。");
 }
 

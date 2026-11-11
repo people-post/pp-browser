@@ -15,6 +15,8 @@ struct TranscriptReaction {
   std::string emoji;
   size_t count = 0;
   bool mine = false;
+  /** Who reacted (account ids, in the order they reacted); the names are the presenter's to resolve. */
+  std::vector<std::string> senders;
 };
 
 /** One transcript row, before it is drawn. */

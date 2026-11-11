@@ -1,0 +1,36 @@
+      <div class="settings-section settings-section--grouped settings-mock stack">
+        <div class="group-card">
+          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
+                  data-event-click="on_choose_call_invite_policy()">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.security.calls}}</span>
+              <span class="settings-choice-value row">
+                <span class="settings-choice-value-text">{{call_invite_policy_label}}</span>
+                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+              </span>
+            </span>
+          </button>
+          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
+                  data-event-click="on_choose_group_invite_policy()">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.security.group_invites}}</span>
+              <span class="settings-choice-value row">
+                <span class="settings-choice-value-text">{{group_invite_policy_label}}</span>
+                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+              </span>
+            </span>
+          </button>
+        </div>
+        <p class="text muted settings-help group-foot">{{i18n:settings.security.calls.help}}</p>
+        <div class="group-card settings-phone-only">
+          <!-- Blocked people, findable again to unblock (Kenneth 2026-11-04). -->
+          <button class="group-row" type="button" data-event-click="open_blocked_people()">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:contacts.blocked.title}}</span></span>
+              <span class="settings-choice-value-text" data-if="blocked_count > 0">{{blocked_count}}</span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
+        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.privacy.blocked_help}}</p>
+      </div>

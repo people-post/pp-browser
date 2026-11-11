@@ -1,8 +1,10 @@
 {{include:settings_section_profile}}
-{{include:settings_section_llm}}
-{{include:settings_section_integrations}}
-{{include:settings_section_network}}
-{{include:settings_section_appearance}}
+{{include:settings_section_privacy}}
 {{include:settings_section_security}}
+{{include:settings_section_devices}}
+{{include:settings_section_notifications}}
+{{include:settings_section_appearance}}
 {{include:settings_section_storage}}
-{{include:settings_section_about}}
+{{include:settings_section_help}}
+{{include:settings_section_advanced}}
+{{include:settings_section_tester}}

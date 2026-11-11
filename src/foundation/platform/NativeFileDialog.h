@@ -16,8 +16,11 @@ using NativeFileDialogCallback = std::function<void(std::vector<std::string> pat
  * Async native open dialog for a single image file. Empty paths = cancel. `include_heic` adds heic/heif to the
  * filter. The callback may run on any thread. On iOS the photo picker is used and the path is a private copy
  * under tmp/pp-picks/ (leftovers are cleared once per run; the consumer deletes its own copy, see ReleasePickedFile).
+ * `on_preparing` (iOS only, main thread; other platforms never call it) fires when a photo was chosen, before it is
+ * copied out of the library (`name` may be empty): the caller can say "Preparing…" while the callback is still to come.
  */
-void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callback, bool include_heic = false);
+void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callback, bool include_heic = false,
+                             std::function<void(const std::string& name)> on_preparing = nullptr);
 void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback);
 /**
  * The "Photo" entry of a chat: a picture or a video from the phone's library. iOS: PHPicker offering images and

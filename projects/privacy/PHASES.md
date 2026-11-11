@@ -20,7 +20,7 @@
 ## Y3 — Inbound control (T3)
 
 - [x] Blocked enforced inbound: direct messages and call control discarded, links dropped on connect ([P006](DECISIONS.md#p006--blocked-means-no-contact-at-all))
-- [x] Who can call me: `call_invite_policy` (contacts_only default / everyone / nobody), silent drop ([P007](DECISIONS.md#p007--who-can-call-me-strangers-messages-stay-open-for-now)); who can add me = the existing group-invite policy
+- [x] Who can call me: `call_invite_policy` (everyone default since 2026-11-11 / contacts_only / nobody), silent drop ([P007](DECISIONS.md#p007--who-can-call-me-strangers-messages-stay-open-for-now)); who can add me = the existing group-invite policy
 - [ ] Group messages from a Blocked member
 - [ ] Message requests: strangers' first messages held for the user to accept
 

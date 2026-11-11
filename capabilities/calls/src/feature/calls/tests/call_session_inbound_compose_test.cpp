@@ -1,3 +1,6 @@
+#include "lib/calls/CallSessionLogic.h"
+#include "lib/calls/CallSummaryLogic.h"
+#include "lib/calls/testing/FailingCallSessionStore.h"
 #include "lib/calls/testing/InMemoryCallStores.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "feature/calls/tests/calls_loopback_outbox.h"
@@ -204,7 +207,7 @@ protected:
 
     store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->ListThreads());
-    sessions_ = std::make_unique<InMemoryCallSessionStore>();
+    sessions_ = std::make_unique<FailingCallSessionStore>();
     keys_ = std::make_unique<InMemoryCallMediaKeyStore>();
     ASSERT_TRUE(keys_->SetDek(TestDek()));
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
@@ -238,6 +241,8 @@ protected:
         } else if (type == "call_invite") {
           invite_urgent_.push_back(urgent);
           last_sent_invite_payload_ = msg.payload_json;
+        } else if (type == "call_ended") {
+          ++sent_ended_;
         }
       }
       return {};
@@ -384,6 +389,74 @@ protected:
     });
   }
 
+  /** A connected call with the peer seeded in the store and the live calls (`group`: a group's call). */
+  void SeedConnectedCall(const std::string& call_id, const bool group,
+                         const std::vector<std::string>& peers = {"account:peer"}) {
+    CallSession session;
+    session.call_id = call_id;
+    session.origin_thread_id = "thread:1";
+    if (group) {
+      session.origin_group_id = "group:1";
+    }
+    session.media_mode = CallMediaMode::Voice;
+    session.state = CallSessionState::Active;
+    session.created_at = util::NowUnixMs();
+    session.media_epoch = 1;
+    session.media_key_id = "mk:1";
+    session.initiator_identity = local_identity_; // placed here (AdmitPlaced below)
+    ASSERT_TRUE(sessions_->UpsertSession(session));
+    std::vector<std::string> everyone = peers;
+    everyone.push_back(local_identity_);
+    for (const std::string& who : everyone) {
+      CallParticipant row;
+      row.call_id = call_id;
+      row.identity = who;
+      row.state = CallParticipantState::Joined;
+      row.joined_at = session.created_at;
+      ASSERT_TRUE(sessions_->UpsertParticipant(row));
+    }
+    ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+    device_->LiveCallsForTest().AdmitPlaced(call_id, peers); // as StartCall does
+    OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(call_id); });
+    OnCallsOwner([&] { device_->LiveCallsForTest().NoteMediaConnected(call_id); });
+    ASSERT_EQ(device_->Live().Phase(), CallPhase::InCall);
+  }
+
+  Roe<void> PeerLeaves(const std::string& call_id, const std::string& who) {
+    CallLeaveDetail leave;
+    leave.call_id = call_id;
+    leave.identity = who;
+    auto detail = CallControlCodec::EncodeLeave(leave);
+    if (!detail) {
+      return detail.error();
+    }
+    auto msg = CallControlCodec::BuildSystemMessage("thread:1", CallControlType::CallLeave, "Left", *detail, who);
+    if (!msg) {
+      return msg.error();
+    }
+    return OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, who); });
+  }
+
+  /** The live call's peers (empty: no live call). */
+  std::vector<std::string> LivePeers(const std::string& call_id) {
+    const LiveCall* call = device_->Live().Find(call_id);
+    return call ? call->Peers() : std::vector<std::string>{};
+  }
+
+  uint32_t MediaEpoch(const std::string& call_id) {
+    auto loaded = sessions_->LoadSession(call_id);
+    return loaded && loaded->has_value() ? (*loaded)->media_epoch : 0;
+  }
+
+  void Sweep() {
+    OnCallsOwner([&] { csm_->SweepExpiredInvites(); });
+  }
+
+  CallSessionState SessionState(const std::string& call_id) {
+    auto loaded = sessions_->LoadSession(call_id);
+    return loaded && loaded->has_value() ? (*loaded)->state : CallSessionState::Ended;
+  }
+
   /** The call the device shows (active, else the ring); empty when idle. */
   std::string ShownCallId() const {
     const LiveCall* shown = device_->Live().Shown();
@@ -418,7 +491,8 @@ protected:
 
   std::filesystem::path data_dir_;
   std::unique_ptr<InMemoryDeliveryStore> store_;
-  std::unique_ptr<InMemoryCallSessionStore> sessions_;
+  /** The in-memory rows; their reads can be made to fail (DEV/PLAN-call-ui-never-detached.md). */
+  std::unique_ptr<FailingCallSessionStore> sessions_;
   std::unique_ptr<InMemoryCallMediaKeyStore> keys_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
@@ -446,6 +520,8 @@ protected:
   /** The last CallAccept on the wire (the answerer start may send more after it). */
   std::string last_sent_accept_payload_;
   int sent_rosters_ = 0;
+  /** CallEnded put on the wire. */
+  int sent_ended_ = 0;
   /** `urgent` of every CallInvite put on the wire, in order. */
   std::vector<bool> invite_urgent_;
   std::string last_sent_invite_payload_;
@@ -2131,6 +2207,138 @@ TEST_F(CallGuestComposeTest, RemovingFromHereNeedsOwnerOrAdminAndAGuest) {
   EXPECT_FALSE(OnCallsOwner([&] { return csm_->RemoveFromCall(call_id, "account:bob"); })) << "a member";
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->RemoveFromCall(call_id, "account:erin"); }));
   EXPECT_EQ(StateOf(call_id, "account:erin"), CallParticipantState::Left);
+}
+
+// DEV/PLAN-call-ui-never-detached.md reviews 3 and 4 (B199): a read of the call's people that fails never ends a call
+// that may go on, and never keeps one that is certainly over. A 1:1 call needs no count: its one peer leaving or
+// declining, or this device leaving, is the end. A group's call does what it can now and decides "is anyone left" once
+// readable — or from the live call after a few failed reads.
+TEST_F(CallSessionInboundComposeTest, AOneToOnePeerLeavingEndsTheCallWhenTheRosterCannotBeRead) {
+  const std::string call_id = "call:leave-unread";
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/false));
+  const size_t summaries_before = summaries_.size();
+  sessions_->fail_participant_lists = true; // the sender check reads; the roster read fails
+  ASSERT_TRUE(PeerLeaves(call_id, "account:peer"));
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle) << "a 1:1 call stayed open after its peer left";
+  EXPECT_EQ(SessionState(call_id), CallSessionState::Ended);
+  EXPECT_FALSE(media_->IsActive());
+  EXPECT_GT(summaries_.size(), summaries_before) << "the call's line in the chat";
+}
+
+TEST_F(CallSessionInboundComposeTest, AOneToOneDeclineEndsTheCallWhenTheRosterCannotBeRead) {
+  const std::string call_id = "call:decline-unread";
+  SeedOffererRingingCall(call_id);
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(call_id); });
+  ASSERT_EQ(device_->Live().Phase(), CallPhase::OutboundCalling);
+  CallDeclineDetail decline;
+  decline.call_id = call_id;
+  decline.identity = "account:peer";
+  auto detail = CallControlCodec::EncodeDecline(decline);
+  ASSERT_TRUE(detail);
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallDecline, "Declined", *detail,
+                                                  "account:peer");
+  ASSERT_TRUE(msg);
+  sessions_->fail_participant_lists = true;
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle) << "the only one asked said no";
+  EXPECT_EQ(SessionState(call_id), CallSessionState::Ended);
+}
+
+TEST_F(CallSessionInboundComposeTest, OurOwnOneToOneLeaveEndsTheCallWhenTheRosterCannotBeRead) {
+  const std::string call_id = "call:own-leave-unread";
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/false));
+  const size_t summaries_before = summaries_.size();
+  sessions_->fail_participants = true;
+  (void)OnCallsOwner([&] { return csm_->LeaveCall(call_id, LiveCallEndReason::LocalLeave); });
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle);
+  EXPECT_FALSE(media_->IsActive());
+  EXPECT_EQ(SessionState(call_id), CallSessionState::Ended) << "a 1:1 call ends when this device leaves";
+  EXPECT_GT(summaries_.size(), summaries_before) << "the final line in the chat";
+}
+
+TEST_F(CallSessionInboundComposeTest, OurOwnGroupLeaveCompletesButEndsItForNoOneWhenTheRosterCannotBeRead) {
+  const std::string call_id = "call:own-group-leave-unread";
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/true, {"account:peer", "account:peer2"}));
+  sessions_->fail_participants = true;
+  const int ended_before = sent_ended_;
+  (void)OnCallsOwner([&] { return csm_->LeaveCall(call_id, LiveCallEndReason::LocalLeave); });
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle) << "this device is out whatever the read said";
+  EXPECT_FALSE(media_->IsActive());
+  EXPECT_EQ(sent_ended_, ended_before) << "no call_ended on a failed read";
+  EXPECT_EQ(SessionState(call_id), CallSessionState::Active) << "a group's call goes on for the others";
+  auto line = store_->GetMessage("thread:1", GroupCallSummaryMessageId(call_id));
+  EXPECT_TRUE(line && line->has_value()) << "this device's line, as on any group leave";
+  sessions_->fail_participants = false;
+  auto me = sessions_->FindParticipant(call_id, local_identity_);
+  ASSERT_TRUE(me && me->has_value());
+  EXPECT_EQ((*me)->state, CallParticipantState::Left);
+}
+
+TEST_F(CallSessionInboundComposeTest, AGroupPeerLeavingWithAnUnreadableRosterIsDecidedOnceReadable) {
+  const std::string call_id = "call:group-leave-unread";
+  // Ids that sort after this device's: it is the key's coordinator (the lowest id among those left).
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/true, {"account:~leaver", "account:~stays"}));
+  OnCallsOwner([&] { device_->Workflow().SetUnreadRosterRetryForTest(0); });
+  sessions_->fail_participant_lists = true;
+  ASSERT_TRUE(PeerLeaves(call_id, "account:~leaver"));
+  EXPECT_EQ(LivePeers(call_id), std::vector<std::string>{"account:~stays"}) << "out of the live call at once";
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall) << "a group's call goes on";
+  EXPECT_EQ(SessionState(call_id), CallSessionState::Active);
+
+  sessions_->fail_participant_lists = false; // readable again: the next sweep decides
+  ASSERT_LT(local_identity_, std::string("account:~stays")) << "this device coordinates the key in this test";
+  Sweep();
+  EXPECT_EQ(MediaEpoch(call_id), 2u) << "the one who left keeps no working key";
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall) << "~stays is still in it";
+  EXPECT_EQ(device_->AloneUntilMs(call_id), 0) << "not alone";
+}
+
+TEST_F(CallSessionInboundComposeTest, AGroupEveryoneLeftWithARosterReadableAgainWaitsAloneThenLeaves) {
+  const std::string call_id = "call:group-all-left";
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/true));
+  OnCallsOwner([&] { device_->Workflow().SetUnreadRosterRetryForTest(0); });
+  sessions_->fail_participant_lists = true;
+  ASSERT_TRUE(PeerLeaves(call_id, "account:peer"));
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall);
+  sessions_->fail_participant_lists = false;
+  Sweep();
+  EXPECT_GT(device_->AloneUntilMs(call_id), 0) << "nobody else: the alone wait (V053) starts";
+  OnCallsOwner([&] {
+    device_->Workflow().SetAloneSinceForTest(call_id, util::NowUnixMs() - CallSessionLogic::kAloneInGroupCallMs);
+  });
+  Sweep();
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle) << "alone for the whole wait: left";
+}
+
+TEST_F(CallSessionInboundComposeTest, AGroupEveryoneLeftWithARosterThatNeverReadsEndsFromTheLiveCall) {
+  const std::string call_id = "call:group-never-reads";
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/true));
+  OnCallsOwner([&] { device_->Workflow().SetUnreadRosterRetryForTest(0); });
+  sessions_->fail_participant_lists = true;
+  ASSERT_TRUE(PeerLeaves(call_id, "account:peer"));
+  for (int i = 0; i < 6; ++i) { // past the bounded reads: decided from the live call (no peers left in it)
+    Sweep();
+  }
+  EXPECT_GT(device_->AloneUntilMs(call_id), 0) << "the live call has nobody else: the alone wait starts";
+  OnCallsOwner([&] {
+    device_->Workflow().SetAloneSinceForTest(call_id, util::NowUnixMs() - CallSessionLogic::kAloneInGroupCallMs);
+  });
+  for (int i = 0; i < 6 && device_->Live().Phase() != CallPhase::Idle; ++i) {
+    Sweep();
+  }
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle) << "never readable: left once the live call had nobody";
+  EXPECT_FALSE(media_->IsActive());
+}
+
+TEST_F(CallSessionInboundComposeTest, AloneInAGroupCallWithAnUnreadableRosterIsAskedAgainNotLeft) {
+  const std::string call_id = "call:alone-unread";
+  ASSERT_NO_FATAL_FAILURE(SeedConnectedCall(call_id, /*group=*/true));
+  const int64_t long_ago = util::NowUnixMs() - CallSessionLogic::kAloneInGroupCallMs - 1'000;
+  OnCallsOwner([&] { device_->Workflow().SetAloneSinceForTest(call_id, long_ago); });
+  sessions_->fail_participants = true;
+  Sweep();
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall) << "left on one failed read (the live call still has the peer)";
+  EXPECT_GT(device_->AloneUntilMs(call_id), 0) << "still waited on: asked again";
 }
 
 } // namespace

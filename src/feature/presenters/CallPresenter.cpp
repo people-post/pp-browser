@@ -1,5 +1,6 @@
 #include "feature/presenters/CallPresenter.h"
 
+#include "feature/presenters/CallUiAttachGuard.h"
 #include "feature/presenters/NewCallGuard.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "lib/calls/CallGuests.h"
@@ -26,6 +27,19 @@ namespace {
 
 /** Remote frames this fresh mean the peer's camera is on, whatever its roster row says (B58). */
 constexpr int64_t kPeerVideoLiveMs = 500;
+
+int64_t SteadyMs(const PendingNotificationTap::Clock::time_point at) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(at.time_since_epoch()).count();
+}
+
+/**
+ * Whether a tapped call alert can be for the call `call_id`: its hint names that call, or names none — as a ring
+ * routes a tap with no hint (PendingNotificationTap::TakeCallRoute). A call id never fits a push hint today
+ * (SanitizeWakeHint drops its ':'), so in practice every call tap has none.
+ */
+bool TapMayBeFor(const std::string& hint, const std::string& call_id) {
+  return hint.empty() || hint == call_id;
+}
 
 } // namespace
 
@@ -68,6 +82,7 @@ void CallPresenter::BindToMessaging() {
   // Ingest may run on IO; the screen is decided on UI.
   backend->SetOnRingChanged([this]() { AppRuntime::PostUI([this]() { Refresh(); }); });
   backend->SetOnChromeRefresh([this]() { Refresh(); });
+  backend->SetOnInviteBlocked([this](const BlockedCallInvite& blocked) { OnInviteBlocked(blocked); });
   bound_calls_ = identity;
   // Pick up post-restart abandon / pending ring after stack rebuild.
   Refresh();
@@ -100,7 +115,25 @@ CallPresenter::WakeStep CallPresenter::StepWakePlaceholder(const bool phone_layo
   in.screen_kind = screen_.kind;
   in.messaging_ready = messaging_ready_;
   in.now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+  PruneBlocked(in.now_ms);
+  std::optional<BlockedCallInvite> blocked_tap;
+  if (in.tap_fresh && !wake_blocks_.empty()) {
+    const std::string hint = tap.FreshHint(now);
+    for (const auto& [call_id, blocked] : wake_blocks_) {
+      if (TapMayBeFor(hint, call_id)) {
+        blocked_tap = blocked;
+        break;
+      }
+    }
+  }
+  in.blocked = blocked_tap.has_value();
   const CallWakePlaceholder::View view = wake_placeholder_.Step(in);
+  if (view.outcome == CallWakePlaceholder::Outcome::Blocked && blocked_tap) {
+    // The page closes (or never shows) for a call that will not ring: it never goes without a word.
+    wake_blocks_.erase(blocked_tap->call_id);
+    blocked_pill_at_[blocked_tap->sender_identity] = in.now_ms;
+    NotifyBlocked(*blocked_tap);
+  }
   step.outcome = view.outcome;
   step.shown_ms = view.shown_ms;
   step.ready_ms = view.ready_ms;
@@ -115,6 +148,61 @@ CallPresenter::WakeStep CallPresenter::StepWakePlaceholder(const bool phone_layo
   return step;
 }
 
+void CallPresenter::PruneBlocked(const int64_t now_ms) {
+  std::erase_if(blocked_calls_, [now_ms](const auto& seen) { return now_ms - seen.second > kDefaultCallInviteTtlMs; });
+  std::erase_if(wake_blocks_, [this](const auto& wake) { return !blocked_calls_.contains(wake.first); });
+  std::erase_if(blocked_pill_at_,
+                [now_ms](const auto& pill) { return now_ms - pill.second >= kBlockedPillPerCallerMs; });
+}
+
+void CallPresenter::OnInviteBlocked(const BlockedCallInvite& blocked,
+                                    const PendingNotificationTap::Clock::time_point now) {
+  // Someone the user blocked (their texts are dropped unread too), or our own account: nothing at all.
+  if (ports_.local_relay_identity && ports_.local_relay_identity() == blocked.sender_identity) {
+    return;
+  }
+  if (ports_.find_contact_by_identity) {
+    const auto contact = ports_.find_contact_by_identity(blocked.sender_identity, mesh::ContactIdKind::Account);
+    if (contact && *contact &&
+        ((*contact)->local.trust == TrustLevel::Blocked || (*contact)->trust == TrustLevel::Blocked)) {
+      return;
+    }
+  }
+  const int64_t now_ms = SteadyMs(now);
+  PruneBlocked(now_ms);
+  if (!blocked_calls_.emplace(blocked.call_id, now_ms).second) {
+    return; // the same invite again (two paths, a redelivery)
+  }
+  if (blocked.from_group) {
+    return; // a group's call: nothing shown, nothing recorded (as before)
+  }
+  log().info << "call blocked by who-can-call-me call_id=" << blocked.call_id << " expired=" << blocked.expired;
+  if (ports_.record_blocked_call) {
+    ports_.record_blocked_call(blocked);
+  }
+  if (blocked.expired) {
+    return; // long over: the chat's line is all
+  }
+  wake_blocks_[blocked.call_id] = blocked;
+  if (wake_ring_shown_ && TapMayBeFor(PendingNotificationTap::Instance().FreshHint(now), blocked.call_id)) {
+    return; // the connecting page waiting for it closes on the next step, with the pill
+  }
+  if (!AppLifecycle::IsUserAttentive() || blocked_pill_at_.contains(blocked.sender_identity)) {
+    return;
+  }
+  blocked_pill_at_[blocked.sender_identity] = now_ms;
+  NotifyBlocked(blocked);
+}
+
+void CallPresenter::NotifyBlocked(const BlockedCallInvite& blocked) {
+  CallNotice notice;
+  notice.kind = CallNotice::Kind::CallBlocked;
+  notice.identity = blocked.sender_identity;
+  notice.key = blocked.audience == mesh::InboundAudience::Nobody ? "call.blocked.pill.nobody"
+                                                                 : "call.blocked.pill.contacts_only";
+  Notify(notice);
+}
+
 void CallPresenter::Tick() {
   BindToMessaging();
   auto* backend = Backend();
@@ -122,7 +210,12 @@ void CallPresenter::Tick() {
     return;
   }
   backend->SweepExpiredInvites();
-  if (!active_call_id_.empty() && backend->Available()) {
+  const auto state = backend->State(); // one snapshot for this tick's decision
+  ForgetLeavingOnceLetGo(*state);
+  const EngineCall engine = EngineCallOf(*state);
+  // Also while the engine has a call this screen lost — never the one the user just hung up: the refresh takes it back
+  // (DEV/PLAN-call-ui-never-detached.md 3).
+  if (state->available && (!active_call_id_.empty() || (engine.open && !Leaving(engine.call_id)))) {
     Refresh(); // Calling… / the timer / levels stay fresh, before media starts too
   }
 }
@@ -209,8 +302,18 @@ void CallPresenter::Refresh() {
 
   // Attach-wait / connect health are SM-owned timers (V039 pm3); the state steps a refresh owes
   // the owner (invite seen / cleared, orphan leave) happen in Settle.
-  const CallUiBackend::Surface surface = backend->Settle();
+  const auto state = backend->State();
+  ForgetLeavingOnceLetGo(*state);
+  CallUiBackend::Surface surface = backend->Settle();
   using SurfaceKind = CallUiBackend::Surface::Kind;
+  if (surface.active && Leaving(surface.active->call_id)) {
+    // Hung up here, its leave still on the owner's queue (the row still reads joined): it never comes back on screen.
+    surface.active.reset();
+    if (surface.kind == SurfaceKind::InCall) {
+      surface.kind = SurfaceKind::None;
+    }
+  }
+  const EngineCall engine = EngineCallOf(*state);
   CallScreen next;
   // A click the stack has not taken yet: its ring stays answered / declined meanwhile.
   const std::string ringing_id = surface.kind == SurfaceKind::Ringing ? surface.invite->call_id : std::string();
@@ -241,7 +344,7 @@ void CallPresenter::Refresh() {
     next.thread_id = top.origin_thread_id.value_or(std::string{});
     // The Connecting bar has the speaker button too: the choice may be made before media opens.
     next.show_speaker = AudioSession::SupportsSpeakerToggle();
-    next.speaker_on = AudioSession::IsSpeakerphoneOn();
+    next.speaker_on = SpeakerShownOn();
   } else if (surface.kind == SurfaceKind::Ringing) {
     const PendingCallInvite& top = *surface.invite;
     ringing_call_id_ = top.call_id;
@@ -292,6 +395,10 @@ void CallPresenter::Refresh() {
     AnnounceGuests(next);
     FillGroupInvite(next, util::NowUnixMs());
     MaybeAutoCamera(*backend, next);
+  } else if (engine.open && !Leaving(engine.call_id)) {
+    // The store shows no call (a failed read) while the engine is still in one: the mic may be open, so its screen
+    // stays — and with it the "in a call" notification and Hang up (DEV/PLAN-call-ui-never-detached.md 2).
+    KeepEngineCall(next, *backend, engine);
   } else {
     active_call_id_.clear();
     active_group_id_.clear();
@@ -317,12 +424,91 @@ void CallPresenter::Refresh() {
   WatchForNoMedia(*backend, next, now);
   OfferCallBack(next, surface);
   StepMedia(*backend, next, now);
+  if (next.kind == CallScreen::Kind::None && !surface.active) {
+    speaker_tap_.reset(); // the engine dropped a route change not yet run with the call's media
+  }
   if (next.kind == CallScreen::Kind::None && !surface.active && AudioSession::IsSpeakerphoneOn()) {
-    // No call left: the speaker choice was that call's (AudioSession keeps it across a media rebuild).
-    AudioSession::SetSpeakerphoneOn(false);
+    // No call left: the speaker choice was that call's (AudioSession keeps it across a media rebuild). Forgotten, not
+    // routed from here: on Android the call's mic may still be open (its engine closes it on its own thread), and a
+    // route change under an open recording stream loses the mic for the process; its Deactivate routes back after.
+    AudioSession::ForgetSpeakerChoice();
   }
   screen_ = std::move(next);
+  if (dev_detach_ui_ && !active_call_id_.empty() && dev_detach_ui_()) {
+    if (std::exchange(dev_detached_call_id_, active_call_id_) != active_call_id_) {
+      log().warning << "call screen let go of its call on purpose (debug.pp.detach_call_ui) call_id="
+                    << active_call_id_;
+    }
+    active_call_id_.clear(); // the screen stays; only the id goes, as if something else had dropped it
+  }
   Changed();
+}
+
+void CallPresenter::KeepEngineCall(CallScreen& next, CallUiBackend& backend, const EngineCall& engine) {
+  const std::string& call_id = engine.call_id;
+  if (kept_call_logged_ != call_id) {
+    kept_call_logged_ = call_id;
+    // Read once more for the log only (once per call): was it a failed read, or no row?
+    auto read = backend.ActiveLocalCall();
+    log().warning << "call kept on screen: the store shows none while the engine is in it phase="
+                  << CallPhaseName(engine.phase) << " read="
+                  << (!read               ? "error"
+                      : read->has_value() ? "found"
+                                          : "none")
+                  << (read ? std::string() : " err=" + read.error().message)
+                  << " had_call=" << (active_call_id_ == call_id ? 1 : 0) << " call_id=" << call_id;
+  }
+  if (active_call_id_ == call_id && screen_.kind == CallScreen::Kind::InCall && screen_.call_id == call_id) {
+    next = screen_; // the screen as it was
+  } else {
+    // What the engine alone can say (the store's names and roster may be unreadable): a plain in-call screen with End.
+    FillInCall(next, backend, call_id, /*video=*/false, /*group_call=*/false);
+  }
+  active_call_id_ = call_id;
+  ringing_call_id_.clear();
+  ring_shown_ = false;
+}
+
+bool CallPresenter::Leaving(const std::string& call_id) const {
+  return !call_id.empty() && call_id == leaving_call_id_;
+}
+
+void CallPresenter::ForgetLeavingOnceLetGo(const CallUiState& state) {
+  if (leaving_call_id_.empty()) {
+    return;
+  }
+  // Let go: its leave ran (Idle), or the engine shows another call, or the calls are gone.
+  if (!state.available || state.phase == CallPhase::Idle || state.active_call_id != leaving_call_id_) {
+    log().info << "hung-up call let go by the engine call_id=" << leaving_call_id_;
+    leaving_call_id_.clear();
+    return;
+  }
+  if (steady_ms_() - leaving_since_ms_ >= kLeavingLatchMs) {
+    // Never forever: the guard takes a call still open after this as lost again.
+    log().warning << "hung-up call still open in the engine after " << kLeavingLatchMs / 1000
+                  << " s; no longer kept off screen call_id=" << leaving_call_id_;
+    leaving_call_id_.clear();
+  }
+}
+
+void CallPresenter::StartLeaving(const std::string& call_id) {
+  leaving_call_id_ = call_id;
+  leaving_since_ms_ = steady_ms_();
+}
+
+void CallPresenter::StopLeaving(const char* why) {
+  if (!leaving_call_id_.empty()) {
+    log().info << "hung-up call no longer kept off screen (" << why << ") call_id=" << leaving_call_id_;
+    leaving_call_id_.clear();
+  }
+}
+
+void CallPresenter::SetSteadyClockForTest(std::function<int64_t()> now_ms) {
+  steady_ms_ = std::move(now_ms);
+}
+
+void CallPresenter::SetDevDetachUi(std::function<bool()> detach) {
+  dev_detach_ui_ = std::move(detach);
 }
 
 void CallPresenter::FillEndingCall(CallScreen& s, CallUiBackend& backend, const CallSession& active) {
@@ -357,7 +543,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   s.video = video;
   s.muted = backend.Media().IsMuted();
   s.show_speaker = AudioSession::SupportsSpeakerToggle();
-  s.speaker_on = AudioSession::IsSpeakerphoneOn();
+  s.speaker_on = SpeakerShownOn();
   std::string local_identity;
   if (ports_.local_relay_identity) {
     local_identity = ports_.local_relay_identity().value_or(std::string{});
@@ -739,6 +925,7 @@ bool CallPresenter::StartCallWithInvitees(const std::string& thread_id, const bo
 
 void CallPresenter::RequestStart(const std::string& thread_id, const bool video,
                                  const std::vector<std::string>& invitees, StartDone done) {
+  StopLeaving("a call started or joined"); // joining the group's call just left gets it back on screen
   // No invitees: joining the group's call that goes on (not an outbound call).
   const bool joining = invitees.empty();
   // The calls owner starts it and reports back on UI.
@@ -1026,7 +1213,7 @@ CallScreen AnsweringFrom(const CallScreen& ring, const std::string& call_id) {
     next.thread_id = ring.thread_id;
   }
   next.show_speaker = AudioSession::SupportsSpeakerToggle();
-  next.speaker_on = AudioSession::IsSpeakerphoneOn();
+  next.speaker_on = AudioSession::IsSpeakerphoneOn(); // answering: media is not up, no route change can be waiting
   return next;
 }
 
@@ -1053,6 +1240,7 @@ std::string CallPresenter::Accept(const bool voice_only, const std::string& answ
     log().warning << "Accept ignored (no call_id)";
     return {};
   }
+  StopLeaving("a call answered");
   backend->SetPendingAcceptChargeDecision(InitiationChargeDecision::Waive);
   backend->SetPendingAcceptVoiceOnly(voice_only);
   if (callbacks_.on_accept) {
@@ -1094,6 +1282,7 @@ std::string CallPresenter::AcceptWithCharge() {
     log().warning << "AcceptWithCharge ignored (no call_id)";
     return {};
   }
+  StopLeaving("a call answered");
   backend->SetPendingAcceptChargeDecision(InitiationChargeDecision::TakeAll);
   if (callbacks_.on_accept) {
     callbacks_.on_accept(call_id, false);
@@ -1151,6 +1340,8 @@ std::string CallPresenter::Leave() {
     // off-UI), and before the End button goes. Media().Stop alone deadlocks if capture is in
     // BlockingWrite.
     backend->StopCallMedia(call_id);
+    // Until the owner ran the leave, the engine (and the row) still read open: never taken back meanwhile.
+    StartLeaving(call_id);
   }
   // No call: a stale End button after Idle — the screen still clears, so nothing looks hung.
   active_call_id_.clear();
@@ -1162,6 +1353,27 @@ std::string CallPresenter::Leave() {
     backend->Apply(CallLifecycleEvent::LeaveClicked, call_id);
   }
   return call_id;
+}
+
+void CallPresenter::HangUpEngineCall(const std::string& call_id) {
+  BindToMessaging();
+  auto* backend = Backend();
+  if (call_id.empty() || !backend || !backend->Available()) {
+    return;
+  }
+  backend->StopCallMedia(call_id); // the engine's call by its id, whatever this screen holds
+  StartLeaving(call_id);
+  if (active_call_id_.empty() || active_call_id_ == call_id) {
+    active_call_id_.clear();
+    ringing_call_id_.clear();
+    ring_shown_ = false;
+    screen_ = {};
+    Changed();
+  }
+  backend->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  if (!active_call_id_.empty()) {
+    Refresh(); // this screen held another call: what it shows is decided again
+  }
 }
 
 void CallPresenter::Retry() {
@@ -1262,16 +1474,39 @@ void CallPresenter::ToggleSpeaker() {
   }
   BindToMessaging();
   auto* backend = Backend();
-  const bool before = AudioSession::IsSpeakerphoneOn();
-  AudioSession::SetSpeakerphoneOn(!before);
-  // Speaker = route only (not mute). Android AudioRecord often goes silent until SDL reopen; no media, no devices.
+  const bool on = !SpeakerShownOn();
+  // Speaker = route only (not mute). Android: with media up the route changes around the mic — the engine closes it,
+  // the route changes, it reopens — or the OS disconnects the open recording stream and SDL never gives it back.
   const bool reopen =
       AudioSession::SpeakerToggleNeedsDeviceReopen() && backend && backend->Available() && backend->Media().IsActive();
-  if (reopen) {
-    backend->Media().RequestAudioDeviceReopen();
+  const CallSpeakerTapPlan plan =
+      PlanCallSpeakerTap(reopen, reopen && dev_route_reorder_skip_ && dev_route_reorder_skip_());
+  if (plan.around_the_mic) {
+    speaker_tap_ = CallSpeakerTap{.on = on, .at_ms = util::NowUnixMs()};
+    backend->Media().RequestAudioRouteChange([on]() { AudioSession::SetSpeakerphoneOn(on); });
+  } else {
+    speaker_tap_.reset();
+    AudioSession::SetSpeakerphoneOn(on);
+    if (plan.reopen_after) {
+      backend->Media().RequestAudioDeviceReopen();
+    }
   }
-  log().info << "ToggleSpeaker speaker_on=" << (!before ? 1 : 0) << " reopen=" << (reopen ? 1 : 0);
+  log().info << "ToggleSpeaker speaker_on=" << (on ? 1 : 0) << " reopen=" << (reopen ? 1 : 0)
+             << " mic_first=" << (plan.around_the_mic ? 1 : 0);
   Refresh();
+}
+
+bool CallPresenter::SpeakerShownOn() const {
+  auto* backend = Backend();
+  const bool engine = speaker_tap_ && backend && backend->Available();
+  const IMediaView::AudioRouteChange state =
+      engine ? backend->Media().AudioRouteChangeState() : IMediaView::AudioRouteChange::None;
+  const bool reopening = engine && backend->Media().AudioDevicesReopening();
+  return CallSpeakerButtonOn(speaker_tap_, state, reopening, util::NowUnixMs(), AudioSession::IsSpeakerphoneOn());
+}
+
+void CallPresenter::SetDevRouteReorderSkip(std::function<bool()> skip) {
+  dev_route_reorder_skip_ = std::move(skip);
 }
 
 } // namespace pbr

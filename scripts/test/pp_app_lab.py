@@ -1323,7 +1323,108 @@ def scenario_seed_dies_in_use(lab):
     return {"inside_link_window": inside, "after_link_gone": after}
 
 
-# --- a full seed (p2p-mesh N033) ------------------------------------------------------------------
+# --- calling again after a quiet spell (#577) -----------------------------------------------------
+# A VPN (Clash TUN) or a carrier NAT forgets a UDP flow after a quiet minute or so. PP_APP_LAB_NAT_UDP_TIMEOUT
+# sets the gateways' conntrack timeouts (s) for the scenario; PP_APP_LAB_IDLE_S how long the pair stays quiet.
+
+CONNTRACK_UDP = ("nf_conntrack_udp_timeout", "nf_conntrack_udp_timeout_stream")
+
+
+def gateway_of(container):
+    return container.replace("-user-", "-gw-")
+
+
+def set_nat_udp_timeout(containers, seconds):
+    """Every gateway's UDP conntrack timeouts (a flow with no packet for that long is forgotten; unreplied,
+    replied); returns what they were, per gateway. A gateway's /proc/sys is read-only, so a privileged
+    container in its network namespace writes them."""
+    before = {}
+    for gw in sorted({gateway_of(c) for c in containers}):
+        values = seconds if isinstance(seconds, list) else [seconds, seconds]
+        script = "cd /proc/sys/net/netfilter && cat %s && " % " ".join(CONNTRACK_UDP) + " && ".join(
+            "echo %d > %s" % (v, k) for k, v in zip(CONNTRACK_UDP, values))
+        out = subprocess.run(["docker", "run", "--rm", "--privileged", "--network", "container:" + gw,
+                              "--entrypoint", "sh", "pp-hard-gw:local", "-c", script], check=True,
+                             capture_output=True, text=True).stdout.split()
+        before[gw] = [int(v) for v in out]
+    return before
+
+
+def log_mark(u):
+    path = os.path.join(u.dir, "probe-%d.log" % u.runs)
+    return path, os.path.getsize(path) if os.path.exists(path) else 0
+
+
+def log_since(mark, pattern):
+    path, offset = mark
+    with open(path, "rb") as f:
+        f.seek(offset)
+        text = f.read().decode("utf-8", "replace")
+    return [line for line in text.splitlines() if re.search(pattern, line)]
+
+
+DROP = re.compile(r"\] link dropped key=(\S+) .*?path=(\S+) .*?reason=(\S+) was_connected=1(?: last_rx_age_ms=(\d+))?"
+                  r"(?: keepalive_ms=(\d+))?")
+
+
+def drops_since(mark):
+    return ["%s %s %s rx_age=%s ka=%s" % (m.group(1)[:10], m.group(2), m.group(3), m.group(4), m.group(5) or 0)
+            for m in (DROP.search(line) for line in log_since(mark, r"\] link dropped .*was_connected=1")) if m]
+
+
+def reach_since(mark):
+    return [line.split("call.reach ", 1)[1] for line in log_since(mark, r"call\.reach ")]
+
+
+def scenario_call_again_after_quiet(lab):
+    """#577: Alice and Bob talk, hang up, say nothing for a few minutes, and Alice calls again. Each sits
+    behind a NAT that forgets quiet UDP flows (a VPN, a carrier). Says which links the quiet spell cost
+    and what the second call's reach paid."""
+    idle_s = float(os.environ.get("PP_APP_LAB_IDLE_S", "180"))
+    nat_timeout = int(os.environ.get("PP_APP_LAB_NAT_UDP_TIMEOUT", "60"))
+    reachable = os.environ.get("PP_APP_LAB_REACHABLE", "1") == "1"
+    # PP_APP_LAB_SEEDS: "both" (each knows both seeds), "split" (Alice knows the first, Bob the second: her call
+    # goes through a relay she is not parked on, as the phone's in #577), "one" (the first only).
+    seeds = os.environ.get("PP_APP_LAB_SEEDS", "both")
+    a_seeds, b_seeds = {"both": ([lab.hop, lab.hop2], [lab.hop, lab.hop2]), "split": ([lab.hop], [lab.hop2]),
+                        "one": (None, None)}[seeds]
+    before = set_nat_udp_timeout(lab.containers, nat_timeout) if lab.containers else {}
+    try:
+        a = lab.user("alice", reachable=reachable, seeds=a_seeds)
+        b = lab.user("bob", reachable=reachable, seeds=b_seeds)
+        a.wait_mesh()
+        b.wait_mesh()
+        set_call_invite_policy(b, "everyone")
+        a_thread = a.cmd("open_chat", account=b.account)["thread"]
+        b.cmd("open_chat", account=a.account)
+        marks = [log_mark(a), log_mark(b)]
+        started = time.time()
+        _, first = connect(a, a_thread, b, timeout=60)
+        first["connect_s"] = round(time.time() - started, 2)
+        first["reach"] = reach_since(marks[0])
+        a.cmd("leave")
+        assert_idle(a, b)
+        quiet = [log_mark(a), log_mark(b)]
+        time.sleep(idle_s)
+        out = {"nat_udp_timeout_s": nat_timeout, "idle_s": idle_s, "seeds": seeds, "reachable": reachable,
+               "first": first,
+               "quiet_drops": {"alice": drops_since(quiet[0]), "bob": drops_since(quiet[1])}}
+        again = [log_mark(a), log_mark(b)]
+        started = time.time()
+        _, second = connect(a, a_thread, b, timeout=60)
+        second["connect_s"] = round(time.time() - started, 2)
+        second["reach"] = reach_since(again[0])
+        out["second"] = second
+        a.cmd("leave")
+        assert_idle(a, b)
+        print("  %s" % json.dumps(out))
+        return out
+    finally:
+        for gw, values in before.items():
+            set_nat_udp_timeout([gw.replace("-gw-", "-user-")], values)
+
+
+# --- a full seed (p2p-mesh N033)------------------------------------------------------------------
 # The lab's first hop is sized small (docker-compose.app-lab.yml: PP_APP_LAB_HOP_RESERVATIONS,
 # PP_APP_LAB_HOP_GROUP_CALLS), so pp-node-load fills it with strangers' parks or calls. The users know
 # both seeds, as every phone knows every org seed; the nodes' own metrics say where each one went.
@@ -3908,6 +4009,7 @@ SCENARIOS = [
     ("group_member_network_drops", scenario_group_member_network_drops),
     ("seed_down", scenario_seed_down),
     ("seed_dies_in_use", scenario_seed_dies_in_use),
+    ("call_again_after_quiet", scenario_call_again_after_quiet),
     ("full_seed_parks_elsewhere", scenario_full_seed_parks_elsewhere),
     ("full_hop_hosts_the_call_elsewhere", scenario_full_hop_hosts_the_call_elsewhere),
     ("full_hop_known_before_the_call", scenario_full_hop_known_before_the_call),
@@ -3946,7 +4048,7 @@ SCENARIOS = [
 # Scenarios run only when named (--only).
 # The call-path matrix runs only when named, but for its two rows that guard #502's fixes on every --nat run.
 CALL_PATH_GUARDS = {"call_path_far_mid", "call_path_far_start"}
-OPT_IN = {name for name, _ in VIDEO_MEASUREMENTS + CALL_PATH_MATRIX} - CALL_PATH_GUARDS
+OPT_IN = ({name for name, _ in VIDEO_MEASUREMENTS + CALL_PATH_MATRIX} - CALL_PATH_GUARDS) | {"call_again_after_quiet"}
 
 # Scenarios that take the hop away: behind NATs there is then no path between users at all, so with
 # --nat they run only when named.

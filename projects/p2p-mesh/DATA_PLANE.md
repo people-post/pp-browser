@@ -1,6 +1,6 @@
 # Data plane: crypto, I/O, real-time lanes, shards
 
-**Status:** Proposed (2026-11-10), for review. P1 built (2026-11-10, #574; § P1 results); P2–P4 not started. Accepted parts become N-decisions in [DECISIONS.md](DECISIONS.md); shipped behavior moves to `docs/` ([THREADING.md](../../docs/architecture/THREADING.md), [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)).
+**Status:** Proposed (2026-11-10), for review. P1 built (2026-11-10, #574; § P1 results); P2 done differently (2026-11-11, § P2); P3–P4 not started. Accepted parts become N-decisions in [DECISIONS.md](DECISIONS.md); shipped behavior moves to `docs/` ([THREADING.md](../../docs/architecture/THREADING.md), [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)).
 
 **Scope:** what a node and a client do with every datagram once a link exists: receive, open (the link's AEAD), demux, the L4 work (a hop's fan-out, a bridge's splice, media to the app), seal, send. It excludes dialing, handshakes, control protocols and E2E media keys, and keeps the wire unchanged until a phase says otherwise.
 
@@ -20,7 +20,7 @@ One pump thread per `MeshHost` drives Amp and does all of it, under the runtime'
 1. **The crypto is the slow, portable implementation.** pp-cpp-crypto builds libsodium without its SIMD paths: the AVX2 / SSSE3 ChaCha20 and SSE2 Poly1305 objects compile empty (the feature defines and per-file flags are set only for clang-cl). A 1100 B XChaCha20-Poly1305 seal takes 1.43 µs; BoringSSL, already vendored for curl, takes 0.47 µs on the same core. libsodium has no NEON ChaCha20 / Poly1305, so phones run portable C too; BoringSSL has AArch64 assembly.
 2. **Every fan-out copy is a seal and a syscall.** A group-call frame reaching three members costs three link seals and three `sendto`; the E2E payload is sealed once by its sender, the link seal is per recipient. Seals are 3× the opens in the calls profile.
 3. **Acks cost an HMAC-SHA256 each, sent and checked.** About 8 % of a bridge node, with its memzero: reliable traffic acks each packet, and ack packets are HMAC'd rather than sealed.
-4. **Queues are bounded by bytes, not time.** A link's mux holds up to 32 MiB. Under overload, media waits seconds instead of being dropped: at 100 calls, the members already in a call got 60 % of their frames at a p95 of 27 s.
+4. **Queues are bounded by bytes, not time.** A link's mux holds up to 32 MiB. Under overload, media waits seconds instead of being dropped: at 100 calls, the members already in a call got 60 % of their frames at a p95 of 27 s. *Cause found and fixed (2026-11-11, pp-cpp-mesh v6.8.0):* not the best-effort path. A member whose data lane open was slow or ended sent its media on the reliable control channel for the rest of the call, resent under loss a little later every second. It shows only past capacity (members admitted faster than pressure rises, `--ramp 400`), not at 100–200 calls at the default ramp (p95 6 ms). See § P2.
 5. **On a host left at the OS socket buffers (208 KiB), the kernel drops first.** At 120 calls the pump is 44 % busy while the kernel drops 2.4k datagrams a second: bursts outrun the buffer between rounds. `99-pp-node-udp.conf` fixes the host; the pump's turnaround still matters.
 
 ## Requirements
@@ -76,10 +76,30 @@ One pump thread per `MeshHost` drives Amp and does all of it, under the runtime'
 
 ### P2 — Real-time lanes (pp-cpp-amp mux, pp-cpp-mesh hop)
 
-- **Stamped queues:** each queued frame carries its enqueue time. A best-effort media frame older than its deadline is dropped at dequeue. Defaults: audio 150 ms, video 300 ms; a keyframe (the `mark` bit the hop already reads) keeps its slot over a delta.
-- **Age-bounded classes:** a link's queue has classes (reliable control, audio, video) bounded by age, and the 32 MiB byte cap stays only as a memory backstop.
-- **Metrics:** queue age p95, deadline drops per class.
-- **Target:** at 2× a node's capacity, the members already in calls see p95 latency within the deadline and a bounded loss, never seconds of delay (today 27 s).
+**Status:** done differently than planned (2026-11-11).
+
+**What the overload runs showed:**
+- Best-effort media never waits in Amp: the mux queues only reliable frames, and a best-effort frame goes to the socket or is dropped.
+- The seconds of delay (finding 4) came from media on the reliable control channel, after a member's lane open failed for good.
+
+**What shipped instead of stamped queues:**
+- **pp-cpp-mesh v6.8.0:** while a hop serves lanes, media never rides the reliable channel. The lane is retried (1, 2, 4, 8, then every 10 s), and frames are dropped while it is not open.
+- **The reliable fallback,** for a hop that refuses the lane and for a hop behind a circuit, drops a frame once the channel's oldest queued frame is past 150 ms (audio) or 300 ms (video). This uses pp-cpp-amp v5.6.0's `ChannelMux::BacklogOf`.
+- **Rule:** [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos).
+
+**Measured** (Release, two cores, `--ramp 400`; worst frame of the whole run):
+
+| Load | Before | After |
+|---|---|---|
+| 150 four-member calls at 500 kbps | 40.6 s | 7 ms |
+| 100 calls at 1500 kbps | 61.8 s | 7 ms |
+
+Delivery rose with it, from 81.9% to 83.4% and from 62.9% to 71.6%. The losses that remain are kernel drops at the node's 208 KiB socket buffer (P3, and the host sysctl).
+
+**Not built** (nothing waits long enough to need them):
+- Per-class queues in the mux.
+- A keyframe priority.
+- Queue-age metrics.
 
 ### P3 — Batched I/O
 

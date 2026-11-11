@@ -100,6 +100,11 @@ struct MessageDisplayRow {
   /** The sender's own cached profile photo (local file) in the avatar column; empty: the letter shows. */
   ui::String group_avatar_src;
   bool group_has_icon = false;
+  /**
+   * The send mark drawn in content_rml left of our bubble (#210): 0 none, 1 clock, 2 red mark (a button:
+   * show_send_failure) — not bound to RML.
+   */
+  int send_mark = 0;
   /** Store cursor for local scroll-up paging (D031) — not bound to RML. */
   int64_t display_order = 0;
   /** `ThreadMessage::ai_image_json` of an AI question that carried an image — not bound to RML. */

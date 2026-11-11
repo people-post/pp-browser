@@ -36,6 +36,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -95,6 +96,13 @@ struct CallStackDeps {
    */
   mesh::MeshConnectivity* connectivity = nullptr;
   mesh::MeshMediaRelay* media_relay = nullptr;
+  /**
+   * Where calls hear which relay circuit reach chose (H011: announced to the call peer). Connectivity has one
+   * such slot; when its owner keeps it (the app's mesh also remembers the relay, call-path-resilience K015) it
+   * forwards each choice, on connectivity's lane, to the hook set here — empty stops it. None: calls take
+   * connectivity's slot themselves (a bench, the call probe).
+   */
+  std::function<void(std::function<void(const std::string& relay_peer_id)> hook)> set_on_relay_chosen;
   /** Who may learn our address (projects/privacy T1; hub-owned, outlives the stack). Null = anyone. */
   const mesh::AddressDisclosureGate* address_disclosure = nullptr;
 };
@@ -144,6 +152,13 @@ public:
   /** k6: the path policy of a call (calls owner). */
   /** projects/privacy T3: who may call us (applied on the calls owner). */
   void SetInboundCallAudience(mesh::InboundAudience audience);
+  /** CallSessionManager::SetOnInviteBlocked, kept here so a rebuilt session manager has it too. */
+  void SetOnInviteBlocked(std::function<void(const BlockedCallInvite&)> callback);
+  /**
+   * Developer builds only (any thread, before or after BuildSessions): CallReads::SetDevFailActiveRead for the reads
+   * built from now on (debug.pp.fail_call_read).
+   */
+  void SetDevFailCallRead(std::function<bool()> fail);
   /** Mobility policy, restricted to the relay when the call's peer may not learn our address. */
   CallPathPolicy PathPolicyFor(const std::string& call_id) const;
   /** Before the owner replaces / drops mesh media objects: topology + bridge let go of them. */
@@ -240,6 +255,8 @@ private:
   void SyncMediaPlaneDeps();
   /** The device's 1:1 deps (on the plane's transport) + its topology relay deps. */
   void BindMediaProducts();
+  /** Hear (or, empty, stop hearing) which relay circuit reach chose: through the owner when it keeps the slot. */
+  void SetRelayChosenHook(std::function<void(const std::string& relay_peer_id)> hook);
   /** Calls' hooks on the shared connectivity (announce chosen R1, signaling punch). */
   void BindMeshMediaHooks();
   mesh::MeshConnectivity* connectivity() const { return deps_.connectivity; }
@@ -255,6 +272,11 @@ private:
   CallStackDeps deps_;
   /** Written by the owner of the settings (UI), read when the calls owner rebuilds its session manager. */
   std::atomic<mesh::InboundAudience> inbound_call_audience_{mesh::InboundAudience::Everyone};
+  /** The GUI's listener for dropped invites (owner thread). */
+  std::function<void(const BlockedCallInvite&)> on_invite_blocked_;
+  /** Set by the app (UI thread), read when the reads are built (owner). */
+  std::mutex dev_fail_call_read_mu_;
+  std::function<bool()> dev_fail_call_read_;
   std::unique_ptr<ICallSessionStore> call_session_store_;
   std::unique_ptr<ICallMediaKeyStore> call_media_keys_;
   std::vector<IDekConsumer*> at_rest_;

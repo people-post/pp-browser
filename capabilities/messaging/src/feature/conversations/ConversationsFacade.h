@@ -70,6 +70,8 @@ public:
   bool IsInitialized();
   bool IsMessagingReady();
   bool IsMeshReady();
+  /** The OS reports no usable network right now (airplane mode, no route); false while unknown. */
+  bool DeviceOffline();
   IThreadStore* ThreadStore();
   void BindAgentInbound(AgentInboundPorts ports);
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);
@@ -131,6 +133,11 @@ public:
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview, bool assistant_text = false);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
+  /**
+   * A message of ours that never went out, sent again as a new one (#210): what is still queued of it is dropped, then
+   * its row goes (IThreadSync::RemoveUnsentMessage). false: not such a row (it was delivered meanwhile), kept.
+   */
+  Roe<bool> RemoveUnsentMessage(const std::string& thread_id, const std::string& message_id);
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id);
   /** Our own message, for everyone in the chat / group. Blocking (network): call off the UI thread. */
   Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
@@ -147,6 +154,8 @@ public:
   void NotifyThreadChanged();
   void SetOnThreadChanged(std::function<void()> callback);
   PeerDisplayLabel ResolveThreadLabel(const Thread& thread);
+  /** The name a message's sender (a contact id, or a group member's account id) shows; `trust` says how sure it is. */
+  PeerDisplayLabel ResolveSenderLabel(const std::string& sender_contact_id);
   /**
    * Local file of a saved contact's cached profile photo, empty when none is cached yet (the letter avatar shows).
    * Starts the photo fetch when the contact has one that is not cached, like the Contacts list does.
@@ -215,6 +224,8 @@ public:
   /** The chat a recent inbound message (or, by call id, a call summary) was stored in. */
   std::optional<std::string> ThreadOfInbound(const std::string& id) const;
   void SyncInboxFromWake(bool force);
+  /** When the send of our message `message_id` still under way started; none when nothing of it is under way (#210). */
+  std::optional<int64_t> SendStartedMs(const std::string& message_id);
   void TailSyncActiveE2eThread();
   void WarmPeerForThread(const std::string& thread_id);
   ThreadPeerLinkView GetThreadPeerLink(const std::string& thread_id);

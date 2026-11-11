@@ -3,6 +3,7 @@
 # Capabilities expose facades; another app brings its own presenters.
 pp_browser_add_feature_library(pp_feature_presenters
   SOURCES
+    AttachmentPicks.cpp
     AvatarCropFrame.cpp
     CallBackOffer.cpp
     CallConnectStory.cpp
@@ -16,6 +17,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     CallWakePlaceholder.cpp
     CallPresenter.cpp
     CallSystemUiBridge.cpp
+    CallUiAttachGuard.cpp
     ChatPresenter.cpp
     CropFingerOwnership.cpp
     CropGestureAccumulator.cpp
@@ -24,8 +26,11 @@ pp_browser_add_feature_library(pp_feature_presenters
     GroupLinkText.cpp
     HomeBrief.cpp
     HomeToday.cpp
+    MessageResend.cpp
     NewCallGuard.cpp
+    PendingUpload.cpp
     QuickReactions.cpp
+    SendMark.cpp
     ThreadSearch.cpp
     ThreadSearchSession.cpp
     TwoFingerGesture.cpp

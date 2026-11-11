@@ -1,10 +1,12 @@
 #include <stdexcept>
 #include "gui/chat/ChatTranscriptScroller.h"
+#include "gui/chat/PendingUploadRows.h"
 #include "gui/chat/ChatSearchRows.h"
 
 #include "foundation/i18n/LocalizationService.h"
 #include "common/chat/MessagingLimits.h"
 #include "gui/shell/DataModelHost.h"
+#include "lib/ui/NavBadgeFormat.h"
 
 #include <ui/dom/Context.h>
 #include <ui/dom/Element.h>
@@ -62,12 +64,14 @@ void ChatTranscriptScroller::Reset() {
   loaded_max_display_order_.reset();
   pending_scroll_height_before_.reset();
   pending_scroll_top_before_.reset();
+  reading_scroll_top_.reset();
+  restore_scroll_top_.reset();
   last_messages_scroll_height_ = 0.f;
   unread_while_scrolled_ = 0;
   pending_jump_id_.clear();
   flash_id_.clear(); // the rows it named are gone
   view_.show_jump_to_latest = false;
-  view_.jump_to_latest_label = "";
+  view_.jump_to_latest_count = "";
 }
 
 ui::Element* ChatTranscriptScroller::FindMessagesScrollElement() const {
@@ -77,13 +81,8 @@ ui::Element* ChatTranscriptScroller::FindMessagesScrollElement() const {
   return context_->GetDocument(0)->GetElementById("chat-messages");
 }
 
-void ChatTranscriptScroller::UpdateJumpToLatestLabel() {
-  if (unread_while_scrolled_ > 0) {
-    view_.jump_to_latest_label =
-        Tr("chat.new_while_scrolled", {{"count", std::to_string(unread_while_scrolled_)}}).c_str();
-  } else {
-    view_.jump_to_latest_label = Tr("chat.jump_to_latest").c_str();
-  }
+void ChatTranscriptScroller::UpdateJumpToLatestCount() {
+  view_.jump_to_latest_count = unread_while_scrolled_ > 0 ? FormatBadgeCount(unread_while_scrolled_).c_str() : "";
 }
 
 void ChatTranscriptScroller::SetShowJumpToLatest(bool show) {
@@ -92,17 +91,19 @@ void ChatTranscriptScroller::SetShowJumpToLatest(bool show) {
   }
   view_.show_jump_to_latest = show;
   if (show) {
-    UpdateJumpToLatestLabel();
+    UpdateJumpToLatestCount();
   } else {
     unread_while_scrolled_ = 0;
-    view_.jump_to_latest_label = "";
+    view_.jump_to_latest_count = "";
   }
   DataModelHost::Instance().Dirty("chat", "show_jump_to_latest");
-  DataModelHost::Instance().Dirty("chat", "jump_to_latest_label");
+  DataModelHost::Instance().Dirty("chat", "jump_to_latest_count");
 }
 
 void ChatTranscriptScroller::RequestScrollToLatest() {
   pending_jump_id_.clear();
+  reading_scroll_top_.reset();
+  restore_scroll_top_.reset();
   pinned_to_bottom_ = true;
   pending_scroll_to_bottom_ = true;
   pending_scroll_settle_frames_ = 0;
@@ -141,6 +142,27 @@ void ChatTranscriptScroller::ApplyPolicy() {
   ui::Element* el = FindMessagesScrollElement();
   if (!el) {
     return;
+  }
+
+  if (restore_scroll_top_.has_value()) {
+    // After a remount the rows are laid out a frame or two later, and an offset past the content is clamped away:
+    // set it each frame until the content reaches it.
+    const float client = el->GetClientHeight();
+    const float max_top = std::max(0.f, el->GetScrollHeight() - client);
+    suppress_scroll_handler_ = true;
+    el->SetScrollTop(std::min(*restore_scroll_top_, max_top));
+    suppress_scroll_handler_ = false;
+    if (client > 0.f) {
+      last_client_height_ = client;
+    }
+    last_messages_scroll_height_ = el->GetScrollHeight();
+    if ((client > 0.f && max_top >= *restore_scroll_top_ - 0.5f) || ++restore_scroll_frames_ > 30) {
+      restore_scroll_top_.reset();
+    }
+    return;
+  }
+  if (!pinned_to_bottom_ && el->GetClientHeight() > 0.f) {
+    reading_scroll_top_ = el->GetScrollTop(); // what OnShellRemounted puts back
   }
 
   if (pending_scroll_height_before_.has_value() && pending_scroll_top_before_.has_value()) {
@@ -320,6 +342,10 @@ void ChatTranscriptScroller::OnMessagesScroll() {
     SetShowJumpToLatest(false);
   } else {
     pinned_to_bottom_ = false;
+    // Scrolled more than half a screen up: offer the way back to the newest message.
+    if (!view_.show_jump_to_latest && (max_top - top) > el->GetClientHeight() * 0.5f) {
+      SetShowJumpToLatest(true);
+    }
   }
   MaybeLoadOlderLocalHistory();
 }
@@ -394,7 +420,8 @@ ChatTranscriptScroller::JumpResult ChatTranscriptScroller::JumpToMessage(const s
   pending_jump_frames_ = 0;
   pending_jump_stable_frames_ = 0;
   pending_jump_last_top_ = -1.f;
-  const bool is_tail = !view_.messages.empty() && view_.messages.back().message_id == message_id.c_str();
+  // The picture being sent at the end is not a message: the newest real row counts as the tail.
+  const bool is_tail = PendingUploadRows::RealTail(view_.messages).first == message_id;
   SetShowJumpToLatest(!is_tail || loaded_max_display_order_.has_value());
   return JumpResult::Jumped;
 }
@@ -470,6 +497,11 @@ void ChatTranscriptScroller::OnShellRemounted() {
     pending_scroll_attempts_ = 0;
     settle_scroll_height_ = -1.f;
     last_messages_scroll_height_ = 0.f;
+  } else if (reading_scroll_top_.value_or(0.f) > 0.f) {
+    // Reading older messages: the new DOM starts at the top (MountInner restores the offset before the rows exist).
+    restore_scroll_top_ = reading_scroll_top_;
+    restore_scroll_frames_ = 0;
+    last_client_height_ = 0.f; // the first reading of the new element is not a viewport resize
   }
   ApplyPolicy();
 }

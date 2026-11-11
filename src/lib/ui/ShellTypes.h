@@ -547,7 +547,6 @@ struct CallInProgressState {
   ui::String signal_word;
   /** The top pill (DESIGN-pp-ui 8.11): slower line, reconnecting, closer way (bound). */
   ui::String notice_text;
-  bool notice_warn = false;
   bool notice_fading = false;
   /** The reconnect capsule above the button bar (#171; empty text: hidden). Bound. */
   ui::String reconnect_text;
@@ -664,6 +663,8 @@ struct ShellState {
   ui::String statusbar_cluster_title;
   /** Hybrid status popover (network-status-chrome s2). */
   bool statusbar_popover_open = false;
+  /** The popover's "Open network settings" link: only while Advanced settings are shown (the rows live on that page). */
+  bool statusbar_popover_advanced = false;
   ui::String statusbar_popover_brief_label;
   ui::String statusbar_popover_direct_label;
   ui::String statusbar_popover_reach_label;

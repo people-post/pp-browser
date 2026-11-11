@@ -19,6 +19,12 @@ CallWakePlaceholder::View CallWakePlaceholder::Step(const Input& in) {
       handled_seq_ = in.tap_seq;
       return {};
     }
+    if (in.blocked) {
+      handled_seq_ = in.tap_seq; // the call was dropped before the tap: no page for it
+      View view;
+      view.outcome = Outcome::Blocked;
+      return view;
+    }
     active_ = true;
     active_seq_ = in.tap_seq;
     start_ms_ = in.now_ms;
@@ -33,6 +39,9 @@ CallWakePlaceholder::View CallWakePlaceholder::Step(const Input& in) {
   if (in.screen_kind != CallScreen::Kind::None) {
     return End(in, Outcome::Ring);
   }
+  if (in.blocked) {
+    return End(in, Outcome::Blocked);
+  }
   if (!in.tap_fresh || AlertTooOld(in) || !in.app_visible) {
     return End(in, Outcome::Expired);
   }
@@ -45,6 +54,19 @@ CallWakePlaceholder::View CallWakePlaceholder::Step(const Input& in) {
   View view;
   view.active = true;
   return view;
+}
+
+ShareWord CallWakePlaceholder::OutcomeWord(const Outcome outcome) {
+  switch (outcome) {
+    case Outcome::Ring:
+      return "ring";
+    case Outcome::Timeout:
+      return "timeout";
+    case Outcome::Blocked:
+      return "blocked";
+    default:
+      return "expired";
+  }
 }
 
 CallWakePlaceholder::View CallWakePlaceholder::End(const Input& in, const Outcome outcome) {

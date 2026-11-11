@@ -39,6 +39,8 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   manifest.json             # schema_version; backend = the backend key the profile belongs to (see Per-backend profiles)
   mesh_directory_nodes.json # last-good GET /v1/mesh/nodes (N027 cold start; schema_version 1; optional amp_wire / node_version / features, N032); per profile, so per backend
   mesh_node_reputation.json # mesh nodes and operators this profile demoted for a contradicted claim (N032; schema_version 1; demoted_until_ms / last_strike_ms / strikes); local only, never sent
+  mesh_last_good_relays.json # relays that last carried this device's circuits (call-path-resilience K015; schema_version 1; relays: ≤3 PeerIds, most recent first);
+                            # plaintext like the directory cache — read at mesh start, before any PIN unlock; local only, never sent; optional
   preferences.json
   relay_inbox_cursor.json   # poll watermark {relay_user_id, cursor}; delivery-queue ack progress
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
@@ -108,6 +110,10 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # `send_failure` (#182): a message of ours did not go out, one row per message, id "send-failure-<message_id>"
                             # (+ "-group" for a partial group send); detail {reason, message_id}, reason = a SendFailureWord
                             # (mesh_off, no_address, ..., relay_rejected) or "group_members_missed". It does not touch the thread's preview/order.
+                            # `call_blocked`: 1:1 calls "who can call me" dropped, one row per caller in the DM, id "call-blocked:<caller>",
+                            # rewritten in place per call (its time never moves back); detail {count, setting ("contacts_only"|"nobody"),
+                            # call_ids (last 20 counted)}; text = the words at write time, a preview stand-in (the transcript words the payload);
+                            # generation "local_action" (never model context); no unread (DEV/PLAN-call-stranger-declined.md).
 ```
 
 ### Content CAS (planned)
@@ -227,7 +233,7 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `attachment_auto_on_wifi` | `preferences.json` | boolean, optional; default true. With `always_auto`: download everything on Wi-Fi |
 | `attachment_auto_on_cellular` | `preferences.json` | boolean, optional; default false. With `always_auto`: download everything on the mobile network (phones only) |
 | `crash_reports_enabled` | `preferences.json` | boolean, schema v14 — opt-in upload of compact crash envelopes to `{relay}/v1/crash-reports` |
-| `call_invite_policy` | `preferences.json` | string, `contacts_only` \| `everyone` \| `nobody`; default `contacts_only` (schema v15). A file below schema v15 without the key reads as `everyone`, so existing profiles keep their behaviour. Who may call this profile |
+| `call_invite_policy` | `preferences.json` | string, `contacts_only` \| `everyone` \| `nobody`; default `everyone`. Schema v16 is a one-time reset: a file below schema v16 reads as `everyone` whatever it holds, and is saved back as v16, so a later choice is kept (Kenneth, 2026-11-11). Who may call this profile |
 | `ai_dot_shown` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default true. Me → AI assistant → Show AI dot (phones) |
 | `ai_dot_look` | `preferences.json` | string `a` (one eye) \| `b` (two eyes, default) \| `c` (cool) \| `d` (plain); anything else reads back as `b` |
 | `ai_dot_size` | `preferences.json` | string `s` (52dp) \| `m` (64dp, default) \| `l` (76dp); anything else reads back as `m`. Me → AI assistant → Assistant size (phones) |

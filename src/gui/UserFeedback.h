@@ -14,6 +14,18 @@ namespace pbr {
 struct UserFeedback {
   /** Resolve display text via AppError::Display. */
   static std::string UserMessage(const Error& err);
+  /**
+   * `UserMessage`, except that while the device is offline a failure that never got an answer from the server
+   * (a Network error that is not an HTTP response) says so plainly instead of naming a guessed cause.
+   */
+  static std::string UserMessage(const Error& err, bool device_offline);
+  /**
+   * An attachment send that failed. `offline_stop`: the app itself stopped the transfer because the device had been
+   * offline for a while (its progress answered "stop", which the HTTP layer reports as a cancelled request): "No
+   * network connection…". Otherwise `UserMessage(err, device_offline)` — only network-shaped failures say "offline";
+   * local ones (storage, shutting down) and errors with their own words keep them.
+   */
+  static std::string AttachmentFailureMessage(const Error& err, bool device_offline, bool offline_stop);
 
   /** App fills toast/banner ports from ShellHost. Clear via BindPorts({}). */
   static void BindPorts(ShellFeedbackPorts ports);
@@ -22,6 +34,8 @@ struct UserFeedback {
   static void Fail(const std::string& message);
   /** A note the user should have time to read (the long pill, as failures get): not a result, not an error. */
   static void Note(const std::string& message);
+  /** Takes the bottom pill down at once (for a Note that said "Preparing…" and whose work is done). */
+  static void DismissToast();
   /** Toast AppError::Display; returns that string for status_ binding. */
   static std::string FailFrom(const Error& err);
   /** Banner. Gone after 5 s unless `sticky` (something the user must act on). */

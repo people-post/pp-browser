@@ -655,6 +655,48 @@ bool RunBound(sqlite3* db, const char* sql, const std::vector<std::string>& text
 
 } // namespace
 
+Roe<std::vector<PendingGroupInvite>> SqliteGroupRosterStore::ExpireInboundInvitesFrom(
+    const std::string& group_id, const std::string& inviter_identity) const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db,
+                         "SELECT invite_nonce, group_title, invitee_identity, roster_epoch FROM pending_group_invites "
+                         "WHERE group_id = ? AND inviter_identity = ? AND outbound = 0 AND status = 'pending';",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare inbound invite list");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, inviter_identity.c_str(), -1, SQLITE_TRANSIENT);
+  std::vector<PendingGroupInvite> expired;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    PendingGroupInvite invite;
+    invite.group_id = group_id;
+    invite.inviter_identity = inviter_identity;
+    invite.invite_nonce = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (sqlite3_column_text(stmt, 1)) {
+      invite.group_title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    }
+    invite.invitee_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+    invite.roster_epoch = static_cast<uint64_t>(sqlite3_column_int64(stmt, 3));
+    expired.push_back(std::move(invite));
+  }
+  sqlite3_finalize(stmt);
+  if (!RunBound(db,
+                "UPDATE pending_group_invites SET status = 'expired' WHERE group_id = ? AND inviter_identity = ? AND "
+                "outbound = 0 AND status = 'pending';",
+                {group_id, inviter_identity})) {
+    sqlite3_close(db);
+    return Error("Failed to expire inbound invites");
+  }
+  sqlite3_close(db);
+  return expired;
+}
+
 Roe<std::vector<PendingGroupInvite>> SqliteGroupRosterStore::ExpirePendingInvitesOf(const std::string& group_id) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {

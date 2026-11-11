@@ -113,11 +113,11 @@ TEST(SettingsSectionsTest, AutoDownloadChoicesTicksAndFallback) {
   pbr::StorageSettingsSection section;
   section.SyncFromSession(bootstrap, state);
   EXPECT_EQ(state.attachment_download_policy, "smart");
-  EXPECT_EQ(state.attachment_download_policy_label, "Up to 4 MB (default)");
+  EXPECT_EQ(state.attachment_download_policy_label, "Auto-download small files (under 4 MB)");
   EXPECT_FALSE(pbr::AttachmentAutoTogglesVisible(state, pbr::PlatformKind::IOS));
 
   pbr::ChooseAttachmentDownloadPolicy(state, "on_demand");
-  EXPECT_EQ(state.attachment_download_policy_label, "Nothing (saves data)");
+  EXPECT_EQ(state.attachment_download_policy_label, "Download manually");
   EXPECT_FALSE(pbr::AttachmentAutoTogglesVisible(state, pbr::PlatformKind::Android));
 
   pbr::ChooseAttachmentDownloadPolicy(state, "always_auto");
@@ -136,7 +136,7 @@ TEST(SettingsSectionsTest, AutoDownloadChoicesTicksAndFallback) {
   EXPECT_EQ(state.attachment_auto_on_wifi, "off");
   pbr::ToggleAttachmentAutoNetwork(state, /*cellular=*/true);
   EXPECT_EQ(state.attachment_download_policy, "smart") << "the last tick off returns to the default";
-  EXPECT_EQ(state.attachment_download_policy_label, "Up to 4 MB (default)");
+  EXPECT_EQ(state.attachment_download_policy_label, "Auto-download small files (under 4 MB)");
   EXPECT_FALSE(pbr::AttachmentAutoTogglesVisible(state, pbr::PlatformKind::IOS));
   EXPECT_TRUE(section.IsPersisted(state, bootstrap));
 

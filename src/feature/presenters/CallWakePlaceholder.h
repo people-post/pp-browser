@@ -2,6 +2,7 @@
 
 #include "lib/calls/CallScreen.h"
 #include "lib/calls/CallTypes.h"
+#include "common/ShareableLine.h"
 
 #include <cstdint>
 #include <optional>
@@ -20,10 +21,14 @@ namespace pbr {
  * never became ready (a locked phone nobody unlocks). It waits (not handled) while the app is not visible, and ends
  * (Expired, handled) if the app goes hidden while it is shown. Every end marks the tap handled: the same tap never shows it again, a new tap
  * does. A ring that arrives after the end is the ordinary ring; nothing is reported for it.
+ *
+ * A call "who can call me" dropped (`blocked`, DEV/PLAN-call-stranger-declined.md) will never ring: a page up for it
+ * ends at once (Blocked), and a tap for it never puts the page up (Blocked, handled, shown_ms 0). A ring on screen
+ * comes first: it is never ended for someone else's dropped call.
  */
 class CallWakePlaceholder {
 public:
-  enum class Outcome { None, Ring, Timeout, Expired };
+  enum class Outcome { None, Ring, Timeout, Expired, Blocked };
 
   /** Messaging ready this long without a ring: the call is not coming. */
   static constexpr int64_t kNoRingAfterReadyMs = 10'000;
@@ -42,6 +47,8 @@ public:
     bool app_visible = true;
     CallScreen::Kind screen_kind = CallScreen::Kind::None;
     bool messaging_ready = false;
+    /** A call dropped by "who can call me" is the tapped one (its id is the tap's hint, or the tap has none). */
+    bool blocked = false;
     int64_t now_ms = 0;
   };
 
@@ -56,6 +63,8 @@ public:
   };
 
   View Step(const Input& in);
+  /** `call.wake_ring`'s outcome word (ring / timeout / blocked / expired). */
+  static ShareWord OutcomeWord(Outcome outcome);
 
 private:
   /** The alert was delivered more than the caller rings for before now. */
