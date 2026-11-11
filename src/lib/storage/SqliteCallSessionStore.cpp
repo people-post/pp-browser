@@ -1,5 +1,7 @@
 #include "lib/storage/SqliteCallSessionStore.h"
 
+#include "common/Logger.h"
+
 #include <sqlite3.h>
 #include "common/PbrCompat.h"
 
@@ -89,6 +91,24 @@ std::optional<std::string> ColumnOptText(sqlite3_stmt* stmt, int index) {
 std::string ColumnText(sqlite3_stmt* stmt, int index) {
   const unsigned char* text = sqlite3_column_text(stmt, index);
   return text ? std::string(reinterpret_cast<const char*>(text)) : std::string{};
+}
+
+logging::Logger& StoreLog() {
+  static logging::Logger logger = logging::getLogger("SqliteCallSessionStore");
+  return logger;
+}
+
+/** A step that ended a read with neither a row nor the end: which read, SQLite's result code and its words. */
+std::string StepFailure(const char* read, sqlite3* db, const int rc) {
+  return std::string(read) + ": sqlite step failed rc=" + std::to_string(rc) + " (" + sqlite3_errstr(rc) + ": " +
+         sqlite3_errmsg(db) + ")";
+}
+
+/** The reads that still take a failed step as the end of their rows (or as "not found"): the failure is logged. */
+void WarnIfStepFailed(const char* read, sqlite3* db, const int rc) {
+  if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
+    StoreLog().warning << StepFailure(read, db, rc);
+  }
 }
 
 std::optional<int64_t> ColumnOptInt64(sqlite3_stmt* stmt, int index) {
@@ -250,9 +270,11 @@ Roe<std::optional<CallSession>> SqliteCallSessionStore::LoadSession(const std::s
   }
   sqlite3_bind_text(stmt, 1, call_id.c_str(), -1, SQLITE_TRANSIENT);
   std::optional<CallSession> result;
-  if (sqlite3_step(stmt) == SQLITE_ROW) {
+  const int rc = sqlite3_step(stmt);
+  if (rc == SQLITE_ROW) {
     result = SessionFromStmt(stmt);
   }
+  WarnIfStepFailed("LoadSession", *db, rc);
   sqlite3_finalize(stmt);
   sqlite3_close(*db);
   return result;
@@ -274,8 +296,16 @@ Roe<std::vector<CallSession>> SqliteCallSessionStore::ListActiveSessions() const
     return Error("Failed to prepare active call list");
   }
   std::vector<CallSession> rows;
-  while (sqlite3_step(stmt) == SQLITE_ROW) {
+  int rc = SQLITE_ROW;
+  while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     rows.push_back(SessionFromStmt(stmt));
+  }
+  if (rc != SQLITE_DONE) {
+    // The rows read so far are not the active calls: a failed read is not "no call" (the call screen trusts it).
+    std::string failure = StepFailure("ListActiveSessions", *db, rc);
+    sqlite3_finalize(stmt);
+    sqlite3_close(*db);
+    return Error(std::move(failure));
   }
   sqlite3_finalize(stmt);
   sqlite3_close(*db);
@@ -301,9 +331,11 @@ Roe<std::vector<CallSession>> SqliteCallSessionStore::ListSessionsForGroup(const
   sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int64(stmt, 2, static_cast<sqlite3_int64>(limit));
   std::vector<CallSession> rows;
-  while (sqlite3_step(stmt) == SQLITE_ROW) {
+  int rc = SQLITE_ROW;
+  while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     rows.push_back(SessionFromStmt(stmt));
   }
+  WarnIfStepFailed("ListSessionsForGroup", *db, rc);
   sqlite3_finalize(stmt);
   sqlite3_close(*db);
   return rows;
@@ -325,9 +357,11 @@ Roe<std::vector<CallSession>> SqliteCallSessionStore::ListRecentSessions(const s
   }
   sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(limit));
   std::vector<CallSession> rows;
-  while (sqlite3_step(stmt) == SQLITE_ROW) {
+  int rc = SQLITE_ROW;
+  while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     rows.push_back(SessionFromStmt(stmt));
   }
+  WarnIfStepFailed("ListRecentSessions", *db, rc);
   sqlite3_finalize(stmt);
   sqlite3_close(*db);
   return rows;
@@ -400,7 +434,8 @@ Roe<std::vector<CallParticipant>> SqliteCallSessionStore::ListParticipants(const
   }
   sqlite3_bind_text(stmt, 1, call_id.c_str(), -1, SQLITE_TRANSIENT);
   std::vector<CallParticipant> rows;
-  while (sqlite3_step(stmt) == SQLITE_ROW) {
+  int rc = SQLITE_ROW;
+  while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     CallParticipant row;
     row.call_id = call_id;
     row.identity = ColumnText(stmt, 0);
@@ -413,6 +448,13 @@ Roe<std::vector<CallParticipant>> SqliteCallSessionStore::ListParticipants(const
     row.media.video_paused = sqlite3_column_int(stmt, 7) != 0;
     row.brought_by = ColumnText(stmt, 8);
     rows.push_back(std::move(row));
+  }
+  if (rc != SQLITE_DONE) {
+    // Part of a call's people is not its people: FindParticipant / CountJoined answer from these rows.
+    std::string failure = StepFailure("ListParticipants", *db, rc);
+    sqlite3_finalize(stmt);
+    sqlite3_close(*db);
+    return Error(std::move(failure));
   }
   sqlite3_finalize(stmt);
   sqlite3_close(*db);
@@ -511,7 +553,8 @@ Roe<std::optional<PendingCallInvite>> SqliteCallSessionStore::LoadPendingInvite(
   sqlite3_bind_text(stmt, 1, call_id.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, 2, invitee_identity.c_str(), -1, SQLITE_TRANSIENT);
   std::optional<PendingCallInvite> result;
-  if (sqlite3_step(stmt) == SQLITE_ROW) {
+  const int rc = sqlite3_step(stmt);
+  if (rc == SQLITE_ROW) {
     PendingCallInvite invite;
     invite.call_id = ColumnText(stmt, 0);
     invite.invitee_identity = ColumnText(stmt, 1);
@@ -527,6 +570,7 @@ Roe<std::optional<PendingCallInvite>> SqliteCallSessionStore::LoadPendingInvite(
     invite.session_kind = CallSessionKindFromString(ColumnText(stmt, 11));
     result = std::move(invite);
   }
+  WarnIfStepFailed("LoadPendingInvite", *db, rc);
   sqlite3_finalize(stmt);
   sqlite3_close(*db);
   return result;
@@ -551,7 +595,8 @@ Roe<std::vector<PendingCallInvite>> SqliteCallSessionStore::ListPendingInvitesFo
   }
   sqlite3_bind_text(stmt, 1, invitee_identity.c_str(), -1, SQLITE_TRANSIENT);
   std::vector<PendingCallInvite> rows;
-  while (sqlite3_step(stmt) == SQLITE_ROW) {
+  int rc = SQLITE_ROW;
+  while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     PendingCallInvite invite;
     invite.call_id = ColumnText(stmt, 0);
     invite.invitee_identity = ColumnText(stmt, 1);
@@ -567,6 +612,7 @@ Roe<std::vector<PendingCallInvite>> SqliteCallSessionStore::ListPendingInvitesFo
     invite.session_kind = CallSessionKindFromString(ColumnText(stmt, 11));
     rows.push_back(std::move(invite));
   }
+  WarnIfStepFailed("ListPendingInvitesForInvitee", *db, rc);
   sqlite3_finalize(stmt);
   sqlite3_close(*db);
   return rows;
