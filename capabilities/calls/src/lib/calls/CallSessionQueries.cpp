@@ -224,8 +224,13 @@ bool GroupCall(const CallSession& session) {
 
 } // namespace
 
-std::optional<CallSession> OurUnansweredCallTo(const ICallSessionReader& sessions, const std::string& peer,
-                                               const std::string& local_identity, const std::string& except_call_id) {
+namespace {
+
+/** Our 1:1 call to `peer` (nobody else in it) whose `peer` participant is in a state `want` accepts. */
+template <typename Want>
+std::optional<CallSession> OurOneToOneCallTo(const ICallSessionReader& sessions, const std::string& peer,
+                                             const std::string& local_identity, const std::string& except_call_id,
+                                             const Want& want) {
   auto active = sessions.ListActiveSessions();
   if (!active) {
     return std::nullopt;
@@ -238,20 +243,33 @@ std::optional<CallSession> OurUnansweredCallTo(const ICallSessionReader& session
     if (!participants) {
       continue;
     }
-    bool peer_unanswered = false;
+    bool peer_matches = false;
     bool others = false;
     for (const CallParticipant& participant : *participants) {
       if (participant.identity == peer) {
-        peer_unanswered = Unanswered(participant.state);
+        peer_matches = want(participant.state);
       } else if (participant.identity != local_identity) {
         others = true;
       }
     }
-    if (peer_unanswered && !others) {
+    if (peer_matches && !others) {
       return session;
     }
   }
   return std::nullopt;
+}
+
+} // namespace
+
+std::optional<CallSession> OurUnansweredCallTo(const ICallSessionReader& sessions, const std::string& peer,
+                                               const std::string& local_identity, const std::string& except_call_id) {
+  return OurOneToOneCallTo(sessions, peer, local_identity, except_call_id, Unanswered);
+}
+
+std::optional<CallSession> OurAnsweredCallTo(const ICallSessionReader& sessions, const std::string& peer,
+                                             const std::string& local_identity, const std::string& except_call_id) {
+  return OurOneToOneCallTo(sessions, peer, local_identity, except_call_id,
+                           [](const CallParticipantState state) { return state == CallParticipantState::Joined; });
 }
 
 std::optional<CallSession> OurUnansweredGroupCall(const ICallSessionReader& sessions, const std::string& group_id,

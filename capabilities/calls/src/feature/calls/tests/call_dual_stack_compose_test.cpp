@@ -84,12 +84,20 @@ protected:
       while (!answer_inbox_.empty()) {
         ThreadMessage msg = answer_inbox_.front();
         answer_inbox_.pop_front();
+        if (hold_invites_to_answer_ && msg.payload_json.find("call_invite") != std::string::npos) {
+          held_invites_to_answer_.push_back(std::move(msg)); // a relay that has not delivered it yet
+          continue;
+        }
         ASSERT_TRUE(answer_.Deliver(msg, offer_.local_identity));
         moved = true;
       }
       while (!offer_inbox_.empty()) {
         ThreadMessage msg = offer_inbox_.front();
         offer_inbox_.pop_front();
+        if (hold_invites_to_offer_ && msg.payload_json.find("call_invite") != std::string::npos) {
+          held_invites_to_offer_.push_back(std::move(msg));
+          continue;
+        }
         if (hold_accepts_to_offer_ && msg.payload_json.find("call_accept") != std::string::npos) {
           held_to_offer_.push_back(std::move(msg)); // a relay that has not delivered it yet
           continue;
@@ -195,6 +203,10 @@ protected:
   /** B30: hold CallAccepts on their way to the offerer (late relay). */
   bool hold_accepts_to_offer_ = false;
   std::deque<ThreadMessage> held_to_offer_;
+  bool hold_invites_to_offer_ = false;
+  bool hold_invites_to_answer_ = false;
+  std::deque<ThreadMessage> held_invites_to_offer_;
+  std::deque<ThreadMessage> held_invites_to_answer_;
 };
 
 TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
@@ -361,6 +373,50 @@ TEST_F(CallDualStackComposeTest, CallingEachOtherAtOnceMergesIntoOneCall) {
     auto pending = side->ui->TopPendingInvite();
     EXPECT_TRUE(pending && !pending->has_value()) << "nothing rings";
   }
+}
+
+// Both press Call; the winner's invite lands first, so the loser answers it and drops its own call (Merged). The
+// loser's invite reaches the winner only after — a relay that delivers late. It must not ring over the merged call:
+// answering it ended the call both were in and joined one the loser had already left (app lab
+// calling_each_other_at_once, 2026-11-11).
+TEST_F(CallDualStackComposeTest, TheLosingInviteThatLandsAfterTheMergeDoesNotRing) {
+  const Thread offer_thread = DmOn(offer_, "thread-dual-glare-late-a");
+  const Thread answer_thread = DmOn(answer_, "thread-dual-glare-late-b");
+  auto from_offer = StartCallNow(*offer_.ui, offer_thread.id, false, {answer_.local_identity});
+  auto from_answer = StartCallNow(*answer_.ui, answer_thread.id, false, {offer_.local_identity});
+  ASSERT_TRUE(from_offer && from_answer);
+  for (const auto& [call, from, to] :
+       {std::tuple{from_offer->call_id, &offer_, &answer_}, std::tuple{from_answer->call_id, &answer_, &offer_}}) {
+    auto key = from->stack->MediaKeys()->LoadEpochKey(call, 1);
+    ASSERT_TRUE(key && key->has_value());
+    ASSERT_TRUE(to->stack->MediaKeys()->PutEpochKey(call, 1, **key));
+  }
+  const bool offer_wins = from_offer->call_id < from_answer->call_id;
+  const std::string winner = offer_wins ? from_offer->call_id : from_answer->call_id;
+  StackSide& winning = offer_wins ? offer_ : answer_;
+  // The loser's invite to the winner waits.
+  (offer_wins ? hold_invites_to_offer_ : hold_invites_to_answer_) = true;
+  DrainUntil([&]() {
+    PumpWire();
+    return answer_.ui->Phase() == CallPhase::InCall && offer_.ui->Phase() == CallPhase::InCall;
+  });
+  ASSERT_EQ(offer_.ui->ActiveCallId(), winner);
+  ASSERT_EQ(answer_.ui->ActiveCallId(), winner);
+
+  auto& held = offer_wins ? held_invites_to_offer_ : held_invites_to_answer_;
+  ASSERT_FALSE(held.empty()) << "the losing invite was held";
+  (offer_wins ? hold_invites_to_offer_ : hold_invites_to_answer_) = false;
+  StackSide& losing = offer_wins ? answer_ : offer_;
+  for (auto& msg : held) {
+    ASSERT_TRUE(winning.Deliver(msg, losing.local_identity));
+  }
+  held.clear();
+  PumpWire();
+
+  auto pending = winning.ui->TopPendingInvite();
+  EXPECT_TRUE(pending && !pending->has_value()) << "the merged-away call does not ring";
+  EXPECT_EQ(winning.ui->Phase(), CallPhase::InCall);
+  EXPECT_EQ(winning.ui->ActiveCallId(), winner) << "still in the call both joined";
 }
 
 TEST_F(CallDualStackComposeTest, CallingBackWhileTheirCallRingsAnswersIt) {

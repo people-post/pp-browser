@@ -1259,6 +1259,15 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(
     SwallowCrossedInvite(*invite, inviter);
     return Answer{};
   }
+  if (!crossed) {
+    if (auto merged = CrossedAnsweredCall(*invite, inviter, local_identity)) {
+      // Ringing it over the call both are in, answered, ended that call and joined one the inviter had left.
+      log().info << "Calling each other: call_id=" << invite->call_id << " from " << inviter
+                 << " crossed our call_id=" << merged->call_id << ", which they answered — dropped";
+      SwallowCrossedInvite(*invite, inviter);
+      return Answer{};
+    }
+  }
   auto session = StoreRingingInvite(*invite, inviter, message, local_identity);
   if (!session) {
     return session.error();
@@ -1303,6 +1312,27 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(
   }
   reports_.Emit(workflow_report::Changed{});
   return Answer{};
+}
+
+std::optional<CallSession> CallSessionWorkflow::CrossedAnsweredCall(const CallInviteDetail& invite,
+                                                                    const std::string& peer,
+                                                                    const std::string& local_identity) const {
+  if (invite.origin_group_id && !invite.origin_group_id->empty()) {
+    return std::nullopt; // a group's call: V053 merges by group
+  }
+  for (const CallRosterEntry& entry : invite.participants) {
+    if (entry.identity != peer && entry.identity != local_identity) {
+      return std::nullopt; // more than the two of us
+    }
+  }
+  auto ours = call_queries::OurAnsweredCallTo(sessions_, peer, local_identity, invite.call_id);
+  if (!ours || !(ours->call_id < invite.call_id)) {
+    return std::nullopt; // theirs would have won: not a merge into ours
+  }
+  if (util::NowUnixMs() - ours->created_at > kCrossedInviteAfterMs) {
+    return std::nullopt;
+  }
+  return ours;
 }
 
 std::optional<CallSession> CallSessionWorkflow::CrossedCall(const CallInviteDetail& invite, const std::string& peer,
