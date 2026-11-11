@@ -919,6 +919,63 @@ Roe<void> ChatPresenter::ToggleReaction(const std::string& message_id, const std
   return {};
 }
 
+std::vector<ReactorRow> BuildReactorRows(const std::vector<TranscriptReaction>& reactions,
+                                         const std::function<PeerDisplayLabel(const std::string& sender)>& resolve,
+                                         const std::function<std::string(const std::string& sender)>& icon_of,
+                                         const std::string& unknown_title) {
+  std::vector<ReactorRow> rows;
+  for (const TranscriptReaction& chip : reactions) {
+    std::vector<ReactorRow> group;
+    for (const std::string& sender : chip.senders) {
+      ReactorRow row;
+      row.emoji = chip.emoji;
+      row.identity = sender;
+      row.is_self = sender == kLocalSelfContactId;
+      const PeerDisplayLabel label = resolve(sender);
+      row.title = label.trust == PeerLabelTrust::RawId ? unknown_title : label.title;
+      row.stable_id = label.stable_id.empty() ? sender : label.stable_id;
+      row.icon_path = icon_of(sender);
+      group.push_back(std::move(row));
+    }
+    std::stable_partition(group.begin(), group.end(), [](const ReactorRow& row) { return row.is_self; });
+    rows.insert(rows.end(), std::make_move_iterator(group.begin()), std::make_move_iterator(group.end()));
+  }
+  return rows;
+}
+
+std::vector<ReactorRow> ChatPresenter::ReactorsOf(const std::string& message_id) {
+  const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string();
+  if (thread_id.empty() || message_id.empty()) {
+    return {};
+  }
+  auto message = facade_->GetMessage(thread_id, message_id);
+  if (!message || !*message) {
+    return {};
+  }
+  // Reactions come after their message: the transcript from it onward carries them all.
+  for (const TranscriptRow& row : facade_->BuildTranscript(thread_id, (*message)->display_order)) {
+    if (row.message.id != message_id) {
+      continue;
+    }
+    const TranscriptFacts facts = facade_->TranscriptFactsFor();
+    return BuildReactorRows(
+        row.reactions, [this](const std::string& sender) { return facade_->ResolveSenderLabel(sender); },
+        [&facts](const std::string& sender) { return facts.sender_icon ? facts.sender_icon(sender) : std::string(); },
+        Tr("chat.reactions.unknown_member"));
+  }
+  return {};
+}
+
+bool ChatPresenter::MyReactionOn(const std::string& message_id, const std::string& emoji) {
+  const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string();
+  const std::string key = NormalizeEmojiKey(emoji);
+  if (thread_id.empty() || message_id.empty() || key.empty()) {
+    return false;
+  }
+  auto page = facade_->GetMessagesPage(thread_id, std::nullopt, 500);
+  return page && MyReactionActive(*page, message_id, key);
+}
+
 Roe<void> ChatPresenter::DeleteForMe(const std::string& message_id) {
   const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string();
   if (thread_id.empty() || message_id.empty()) {

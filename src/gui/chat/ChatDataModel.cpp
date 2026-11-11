@@ -19,6 +19,17 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("queued_note", &state.queued_note);
   ctor.Bind("has_turns", &state.has_turns);
   ctor.Bind("turns", &state.turns);
+  if (auto reactor_handle = ctor.RegisterStruct<ReactorDisplayRow>()) {
+    reactor_handle.RegisterMember("emoji", &ReactorDisplayRow::emoji);
+    reactor_handle.RegisterMember("title", &ReactorDisplayRow::title);
+    reactor_handle.RegisterMember("avatar_letter", &ReactorDisplayRow::avatar_letter);
+    reactor_handle.RegisterMember("avatar_tone", &ReactorDisplayRow::avatar_tone);
+    reactor_handle.RegisterMember("has_icon", &ReactorDisplayRow::has_icon);
+    reactor_handle.RegisterMember("icon_src", &ReactorDisplayRow::icon_src);
+    reactor_handle.RegisterMember("is_self", &ReactorDisplayRow::is_self);
+  }
+  ctor.RegisterArray<std::vector<ReactorDisplayRow>>();
+  ctor.Bind("reactor_rows", &state.reactor_rows);
   ctor.Bind("messages", &state.messages);
   ctor.Bind("use_messages_layout", &state.use_messages_layout);
   ctor.Bind("thread_title", &state.thread_title);

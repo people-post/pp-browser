@@ -11608,6 +11608,21 @@ input.checkbox {
   font-size: 18dp;
 }
 
+/* The reactions sheet: a person's cached photo fills the round avatar; the emoji they used ends the row. */
+.cd-row-avatar--photo {
+  overflow: hidden;
+}
+
+.cd-row-avatar-image {
+  width: 44dp;
+  height: 44dp;
+}
+
+.reactor-emoji {
+  flex-shrink: 0;
+  font-size: 22dp;
+}
+
 /* A small label after a name in a row ("Owner", "Can't reach"). */
 .cd-tag {
   flex-shrink: 0;
