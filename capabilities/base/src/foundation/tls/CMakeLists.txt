@@ -1,7 +1,7 @@
 # The platform's TLS trust for curl (CR015: a mechanism capabilities need, in the base): iOS verifies the peer
 # chain with Security.framework (SecTrust, BoringSSL has no store), Android points curl at the system CA directory,
 # desktop keeps curl's own. Net's HTTP client and the app's AI clients use it.
-set(_pp_tls_sources CurlSsl.cpp)
+set(_pp_tls_sources CurlSsl.cpp ContentSha256Policy.cpp)
 if(PP_BROWSER_IS_ANDROID)
   list(APPEND _pp_tls_sources OsTlsPlatformCurl_Android.cpp OsTlsCaPath_Android.cpp)
 elseif(PP_BROWSER_IS_IOS)

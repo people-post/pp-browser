@@ -666,7 +666,11 @@ Object AppConfigToObject(const AppConfig& config) {
   backend.set("env", config.backend.env);
   object.set("backend", backend);
   const bool saved = config.backend.has_saved_urls;
-  object.set("relay", ServiceEndpointToObject(saved ? config.backend.saved_relay : config.relay));
+  Object relay = ServiceEndpointToObject(saved ? config.backend.saved_relay : config.relay);
+  if (config.relay_content_sha256) {
+    relay.set("content_sha256", true);
+  }
+  object.set("relay", relay);
   object.set("directory", DirectoryConfigToObject(saved ? config.backend.saved_directory : config.directory));
   object.set("registration", ServiceEndpointToObject(saved ? config.backend.saved_registration : config.registration));
   object.set("mesh", MeshConfigToObject(config.mesh));
@@ -734,6 +738,9 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
   }
   if (const Object* relay = object.getObject("relay")) {
     ServiceEndpointFromObject(*relay, config.relay);
+    if (auto content_sha256 = relay->getIf<bool>("content_sha256")) {
+      config.relay_content_sha256 = *content_sha256;
+    }
   }
   if (const Object* directory = object.getObject("directory")) {
     DirectoryConfigFromObject(*directory, config.directory);

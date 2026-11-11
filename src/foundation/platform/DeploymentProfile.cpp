@@ -5,6 +5,10 @@
 #include <cstdlib>
 #include <optional>
 
+#ifndef PP_RELAY_CONTENT_SHA256
+#define PP_RELAY_CONTENT_SHA256 0
+#endif
+
 #ifndef PP_API_URL_PROD
 #define PP_API_URL_PROD ""
 #endif
@@ -34,6 +38,10 @@ const char* CompiledDefaultOrigin() {
 
 const char* CompiledQaOrigin() {
   return PP_API_URL_QA;
+}
+
+bool CompiledRelayContentSha256() {
+  return PP_RELAY_CONTENT_SHA256 != 0;
 }
 
 CompiledOrigins BuildCompiledOrigins() {

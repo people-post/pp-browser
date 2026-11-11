@@ -36,6 +36,8 @@ public:
     std::string body;
     /** The request's Content-Length header (0 when absent). */
     uint64_t content_length = 0;
+    /** The raw request line and headers, up to the blank line. */
+    std::string head;
   };
   struct Reply {
     int status = 200;
@@ -118,6 +120,7 @@ private:
     if (method_end == std::string::npos || target_end == std::string::npos) {
       return;
     }
+    request.head = head;
     request.method = head.substr(0, method_end);
     request.target = head.substr(method_end + 1, target_end - method_end - 1);
     const std::string length_text = HeaderValue(head, "Content-Length");
