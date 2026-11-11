@@ -1366,6 +1366,7 @@
     "call.status.couldnt_connect": "Couldn't connect",
     "call.status.ended_couldnt_connect": "Couldn't connect to the call, hung up automatically",
     "call.status.ended_alone": "Everyone else left, so the call ended",
+    "call.ended_safety": "The call screen ran into a problem, so the call was ended to protect your privacy.",
     "call.status.ended_no_media": "Nothing was heard from anyone, so the call ended",
     "call.status.waiting_for_others": "Waiting for others… {time}",
     "call.status.disconnected": "Call dropped",
