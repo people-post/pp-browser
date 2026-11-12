@@ -571,7 +571,7 @@ void ChatController::MakeReadyTasks() {
       log().info << "Network registration auto-renewed";
     } else {
       const std::optional<LocalIdentity> identity = facade_ ? facade_->GetIdentity() : std::nullopt;
-      if (identity && ShouldRenewRegistration(*identity) && !auto_renew) {
+      if (identity && ShouldRenewRegistration(*identity, 0, facade_->RegistrationBackendUrl()) && !auto_renew) {
         UserFeedback::NeedsSetup(Tr("chat.hint.registration_expires"));
       }
     }

@@ -43,6 +43,8 @@ enum class Network : int32_t {
   TlsFailed = 6,
   /** The server refused the request itself (HTTP 4xx but 408 / 429): sending it again will not help. */
   HttpRejected = 7,
+  /** A relay send answered 404: the registry the route points at does not know the recipient. Final, like HttpRejected. */
+  HttpNotFound = 8,
 };
 
 enum class Pin : int32_t {

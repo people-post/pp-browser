@@ -74,6 +74,8 @@ public:
   bool DeviceOffline();
   IThreadStore* ThreadStore();
   void BindAgentInbound(AgentInboundPorts ports);
+  /** The registration base URL in use (empty when none is configured): what a registration is bound to. */
+  std::string RegistrationBackendUrl();
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);
   /**
    * MaybeAutoRenewRegistration in two halves, so the network half can run off the UI thread: nullopt when nothing is

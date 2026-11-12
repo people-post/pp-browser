@@ -111,8 +111,8 @@ std::string FormatExpiresDisplay(const std::string& iso) {
   return iso;
 }
 
-void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& identity) {
-  const RegistrationStatus status = ClassifyRegistration(identity);
+void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& identity, const std::string& backend_url) {
+  const RegistrationStatus status = ClassifyRegistration(identity, 0, backend_url);
   view.registered = identity.registered ? "yes" : "no";
   view.registration_status = RegistrationStatusLabel(status);
   view.registration_expires =
@@ -1137,6 +1137,7 @@ void ConversationsHub::BuildMessagingObjects() {
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), &directory_);
+  ForgetPeerRoutesOnBackendChange();
   WireAttachmentDownloads();
   CleanStaleAttachmentFiles(); // once per start: staged sends older than a day, half-finished downloads
   group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
@@ -1804,7 +1805,7 @@ ProfileIdentityView ConversationsHub::LoadProfileIdentityView() {
   view.account_id = identity->account_id;
   view.contact_locator = OwnContactLocator().valueOr("");
   view.public_key_b64 = identity->account_signing_public_key_b64;
-  FillRegistrationFields(view, *identity);
+  FillRegistrationFields(view, *identity, config_.registration.base_url);
   view.profile_icon_path = ProfileIconLocalPath(data_dir_);
   view.profile_has_icon = !view.profile_icon_path.empty();
   return view;
@@ -3197,6 +3198,16 @@ void ConversationsHub::RefreshMeshCapabilities(const MeshConfig& mesh) {
   SyncMobileEphemeralListen();
 }
 
+void ConversationsHub::ForgetPeerRoutesOnBackendChange() {
+  if (!mesh_messaging_ || !identity_) {
+    return;
+  }
+  const auto identity = identity_->Get();
+  if (identity && identity->registered && !RegisteredAtBackend(*identity, config_.registration.base_url)) {
+    mesh_messaging_->ForgetPeerRoutes();
+  }
+}
+
 void ConversationsHub::Apply(const NetworkConfig& next) {
   if (!initialized_) {
     return;
@@ -3235,6 +3246,7 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
     if (actions_) {
       actions_->SetRegistrationClient(registration_);
     }
+    ForgetPeerRoutesOnBackendChange();
   }
   if (mesh_changed && messaging_ready_) {
     RefreshMeshCapabilities(next.mesh);

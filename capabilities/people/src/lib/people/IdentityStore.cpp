@@ -208,6 +208,9 @@ LocalIdentity IdentityFromJson(const Object& root) {
   if (auto v = root.getString("registration_expires_at")) {
     identity.registration_expires_at = *v;
   }
+  if (auto v = root.getString("registered_backend_url")) {
+    identity.registered_backend_url = *v;
+  }
   if (auto v = root.getString("kem_public_key_b64")) {
     identity.kem_public_key_b64 = *v;
   }
@@ -259,6 +262,7 @@ Object IdentityToJson(const LocalIdentity& identity) {
   root.set("brief_llm_guest_api_key", identity.brief_llm_guest_api_key.Reveal());
   root.set("registered", identity.registered);
   root.set("registration_expires_at", identity.registration_expires_at);
+  root.set("registered_backend_url", identity.registered_backend_url);
   root.set("initiation_floor", identity.initiation_floor);
   root.set("kem_binding_published", identity.kem_binding_published);
   return root;
@@ -373,6 +377,7 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     identity_.brief_llm_guest_api_key.clear();
     identity_.registered = false;
     identity_.registration_expires_at.clear();
+    identity_.registered_backend_url.clear();
     if (auto peer = DerivePeerId(identity_); !peer) {
       return peer.error();
     }

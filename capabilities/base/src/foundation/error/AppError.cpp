@@ -88,6 +88,7 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
           return Localized("errors.network.tls");
         case Err::Network::HttpError:
         case Err::Network::HttpRejected:
+        case Err::Network::HttpNotFound:
           return Localized("errors.network.http");
         case Err::Network::Unreachable:
         case Err::Network::Generic:
