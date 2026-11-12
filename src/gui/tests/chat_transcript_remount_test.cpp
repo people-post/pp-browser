@@ -7,6 +7,7 @@
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/RmlMount.h"
+#include "gui/shell/ShellBaseHide.h"
 #include "foundation/i18n/LocalizationService.h"
 
 #include <ui/core/Core.h>
@@ -80,7 +81,7 @@ protected:
                             "<div style=\"position: absolute; top: 0; left: 0; width: " +
                             std::to_string(kWidth) + "dp; height: " + std::to_string(kHeight) +
                             "dp;\">"
-                            "<div class=\"shell-layer shell-layer-base shell-layer-compact\">"
+                            "<div class=\"shell-layer shell-layer-base shell-layer-compact\" id=\"shell-base-layer\">"
                             "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">"
                             "<div class=\"shell-pane-body\" id=\"pane-body-chat\">" +
                             chat_body + "</div></div></div></div></body></rml>";
@@ -110,6 +111,18 @@ protected:
       context->Update();
       scroller->ApplyPolicy();
     }
+  }
+  /** Frames go by: a layout pass, then the scroll policy (ChatController::AfterLayout). */
+  void Frames(const int n) {
+    for (int frame = 0; frame < n; ++frame) {
+      context->Update();
+      scroller->ApplyPolicy();
+    }
+  }
+  /** A full-screen call page over the chat hides the base layer (ShellBaseHide), or shows it again. */
+  void HideBase(const bool hide) {
+    ShellBaseHide::Apply(context, document, hide);
+    context->Update();
   }
   void MakeScroller() {
     scroller = std::make_unique<ChatTranscriptScroller>(
@@ -160,6 +173,48 @@ TEST_F(ChatTranscriptRemountTest, ATranscriptPinnedToTheBottomStaysPinnedAfterAR
   Remount();
   const float max_top = Messages()->GetScrollHeight() - Messages()->GetClientHeight();
   EXPECT_NEAR(Messages()->GetScrollTop(), max_top, 1.f);
+}
+
+// DEV/PLAN-call-frame-cost.md step 4: the shell rebuilt during a full-screen call (a turn, a layout change) remounts
+// the chat inside the hidden base layer, where nothing is laid out. Its restore must wait for the call to end, not
+// spend its frames on a transcript of height 0 and leave the chat at the top after the hang-up.
+TEST_F(ChatTranscriptRemountTest, AShellRebuiltDuringAFullScreenCallLeavesTheTranscriptWhereItWas) {
+  MakeScroller();
+  Messages()->SetScrollTop(900.f);
+  context->Update();
+  scroller->OnMessagesScroll();
+  scroller->ApplyPolicy();
+  ASSERT_FLOAT_EQ(Messages()->GetScrollTop(), 900.f);
+
+  HideBase(true);
+  Frames(3);
+  ASSERT_TRUE(RmlMount::MountInner(document->GetElementById("pane-body-chat"), chat_body_rml));
+  scroller->OnShellRemounted();
+  Frames(45); // longer than the restore's 30-frame budget
+  HideBase(false); // hung up
+  Frames(6);
+  ASSERT_NE(Messages(), nullptr);
+  EXPECT_NEAR(Messages()->GetScrollTop(), 900.f, 1.f);
+  ShellBaseHide::Apply(context, document, false);
+}
+
+TEST_F(ChatTranscriptRemountTest, AScrollToTheLatestQueuedWhileHiddenReachesTheBottomOnceShown) {
+  MakeScroller();
+  Messages()->SetScrollTop(300.f);
+  context->Update();
+  scroller->OnMessagesScroll();
+  scroller->ApplyPolicy();
+
+  HideBase(true);
+  Frames(2);
+  scroller->RequestScrollToLatest(); // a message sent / arrived while the call page covers the chat
+  Frames(80);                        // longer than the 60 attempts it may spend
+  HideBase(false);
+  Frames(6);
+  const float max_top = Messages()->GetScrollHeight() - Messages()->GetClientHeight();
+  EXPECT_GT(max_top, 2000.f);
+  EXPECT_NEAR(Messages()->GetScrollTop(), max_top, 1.f);
+  ShellBaseHide::Apply(context, document, false);
 }
 
 } // namespace

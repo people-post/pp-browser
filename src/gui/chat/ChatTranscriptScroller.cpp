@@ -143,6 +143,11 @@ void ChatTranscriptScroller::ApplyPolicy() {
   if (!el) {
     return;
   }
+  // Hidden (a full-screen call page covers the chat, ShellBaseHide): nothing in it is laid out, so every reading is 0.
+  // Wait — no restore frame or scroll attempt is spent on it — and carry on once it shows again.
+  if (!el->IsVisible(true)) {
+    return;
+  }
 
   if (restore_scroll_top_.has_value()) {
     // After a remount the rows are laid out a frame or two later, and an offset past the content is clamped away:
