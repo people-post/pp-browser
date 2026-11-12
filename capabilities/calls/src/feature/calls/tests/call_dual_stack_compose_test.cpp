@@ -88,6 +88,10 @@ protected:
           held_invites_to_answer_.push_back(std::move(msg)); // a relay that has not delivered it yet
           continue;
         }
+        if (hold_to_answer_ && hold_to_answer_(msg)) {
+          held_to_answer_any_.push_back(std::move(msg));
+          continue;
+        }
         ASSERT_TRUE(answer_.Deliver(msg, offer_.local_identity));
         moved = true;
       }
@@ -100,6 +104,10 @@ protected:
         }
         if (hold_accepts_to_offer_ && msg.payload_json.find("call_accept") != std::string::npos) {
           held_to_offer_.push_back(std::move(msg)); // a relay that has not delivered it yet
+          continue;
+        }
+        if (hold_to_offer_ && hold_to_offer_(msg)) {
+          held_to_offer_any_.push_back(std::move(msg));
           continue;
         }
         ASSERT_TRUE(offer_.Deliver(msg, answer_.local_identity));
@@ -207,6 +215,92 @@ protected:
   bool hold_invites_to_answer_ = false;
   std::deque<ThreadMessage> held_invites_to_offer_;
   std::deque<ThreadMessage> held_invites_to_answer_;
+  /** Any message to that side the predicate picks waits (a relay delivering out of order) until Released. */
+  std::function<bool(const ThreadMessage&)> hold_to_offer_;
+  std::function<bool(const ThreadMessage&)> hold_to_answer_;
+  std::deque<ThreadMessage> held_to_offer_any_;
+  std::deque<ThreadMessage> held_to_answer_any_;
+
+  /** What was held goes on its way now, ahead of anything queued since, in the order it was sent. */
+  void ReleaseHeld() {
+    hold_to_offer_ = {};
+    hold_to_answer_ = {};
+    offer_inbox_.insert(offer_inbox_.begin(), held_to_offer_any_.begin(), held_to_offer_any_.end());
+    answer_inbox_.insert(answer_inbox_.begin(), held_to_answer_any_.begin(), held_to_answer_any_.end());
+    held_to_offer_any_.clear();
+    held_to_answer_any_.clear();
+  }
+
+  static bool IsCallEnd(const ThreadMessage& msg) {
+    return msg.payload_json.find("call_leave") != std::string::npos ||
+           msg.payload_json.find("call_ended") != std::string::npos;
+  }
+
+  /** The other side's key for `call_id` (the tests' stand-in for the wrapped key). */
+  static void ShareKey(StackSide& from, StackSide& to, const std::string& call_id) {
+    auto key = from.stack->MediaKeys()->LoadEpochKey(call_id, 1);
+    ASSERT_TRUE(key && key->has_value());
+    ASSERT_TRUE(to.stack->MediaKeys()->PutEpochKey(call_id, 1, **key));
+  }
+
+  /**
+   * DEV/PLAN-call-failed-redial.md 3: a 1:1 call the offerer placed and the answerer answered, that could not connect
+   * on either side (the media path never came up): both ConnectFailed, the call still open on both.
+   */
+  std::string BothFailed(const std::string& thread_id) {
+    offer_.transport->fail_connects = true;
+    answer_.transport->fail_connects = true;
+    auto started = StartCallNow(*offer_.ui, thread_id, false, {answer_.local_identity});
+    EXPECT_TRUE(started) << (started ? "" : started.error().message);
+    if (!started) {
+      return {};
+    }
+    const std::string call_id = started->call_id;
+    ShareKey(offer_, answer_, call_id);
+    PumpWire();
+    answer_.ui->Apply(CallLifecycleEvent::InviteSeen, call_id);
+    answer_.ui->Apply(CallLifecycleEvent::AcceptClicked, call_id);
+    DrainUntil([&]() {
+      PumpWire();
+      return offer_.ui->Phase() != CallPhase::OutboundCalling && answer_.ui->Phase() != CallPhase::Accepting &&
+             answer_.ui->Phase() != CallPhase::Ringing;
+    });
+    for (StackSide* side : {&offer_, &answer_}) {
+      side->stack->RunOnOwner([call_id](CallDevice& calls) { calls.LiveCallsForTest().NoteMediaFailed(call_id); });
+    }
+    DrainUntil([&]() {
+      PumpWire();
+      return offer_.ui->Phase() == CallPhase::ConnectFailed && answer_.ui->Phase() == CallPhase::ConnectFailed;
+    });
+    EXPECT_EQ(offer_.ui->Phase(), CallPhase::ConnectFailed);
+    EXPECT_EQ(answer_.ui->Phase(), CallPhase::ConnectFailed);
+    offer_.transport->fail_connects = false;
+    answer_.transport->fail_connects = false;
+    return call_id;
+  }
+
+  /** "Call again" on `side`'s failed page: the failed call left, then the same person called (one owner queue). */
+  std::string CallAgain(StackSide& side, StackSide& peer, const std::string& thread_id, const std::string& failed) {
+    side.ui->Apply(CallLifecycleEvent::LeaveClicked, failed);
+    auto started = StartCallNow(*side.ui, thread_id, false, {peer.local_identity});
+    EXPECT_TRUE(started) << (started ? "" : started.error().message);
+    if (!started) {
+      return {};
+    }
+    ShareKey(side, peer, started->call_id);
+    return started->call_id;
+  }
+
+  /** `side` answers the ring `call_id` (with a failed call still open, its presenter first ends that one). */
+  void Answer(StackSide& side, const std::string& call_id) {
+    side.ui->Apply(CallLifecycleEvent::InviteSeen, call_id);
+    side.ui->Apply(CallLifecycleEvent::AcceptClicked, call_id);
+  }
+
+  bool BothIn(const std::string& call_id) {
+    return offer_.ui->Phase() == CallPhase::InCall && answer_.ui->Phase() == CallPhase::InCall &&
+           offer_.ui->ActiveCallId() == call_id && answer_.ui->ActiveCallId() == call_id;
+  }
 };
 
 TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
@@ -872,6 +966,169 @@ TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   ExpectLive(offer_, call_b, LiveCallState::Joined, LiveCallEndReason::None, "offer B");
 
   FinishAnswerLeaveExpectBothIdle(call_b);
+}
+
+// --- DEV/PLAN-call-failed-redial.md 3: "Call again" on a 1:1 call that could not connect ---------------------------
+// The call stack as it is (no change for this): "Call again" is the failed call's leave, then a new call, on one owner
+// queue; the failed page's "Try later" is the leave alone; when the new invite reaches a side whose failed call is
+// still open, its presenter ends that call first (EndsFailedCallForRing), which the test does by hand here.
+
+TEST_F(CallDualStackComposeTest, CallAgainFromOneFailedSideEndsTheOtherSidesFailedCallAndRingsIt) {
+  const Thread thread = DmOn(offer_, "thread-redial-one");
+  const std::string failed = BothFailed(thread.id);
+  ASSERT_FALSE(failed.empty());
+  const std::string again = CallAgain(offer_, answer_, thread.id, failed);
+  PumpWire();
+  ExpectLive(answer_, failed, LiveCallState::Ended, LiveCallEndReason::RemoteEnded, "answer's failed call");
+  auto pending = answer_.ui->TopPendingInvite();
+  ASSERT_TRUE(pending && pending->has_value()) << "the new call rings";
+  EXPECT_EQ((*pending)->call_id, again);
+  Answer(answer_, again);
+  DrainUntil([&]() {
+    PumpWire();
+    return BothIn(again);
+  });
+  EXPECT_TRUE(BothIn(again)) << "connected";
+}
+
+// The new invite overtakes the failed call's leave; the leave lands right after the ring (before the answer).
+TEST_F(CallDualStackComposeTest, CallAgainWhoseInviteOvertakesTheLeaveEndsInOneCall) {
+  const Thread thread = DmOn(offer_, "thread-redial-overtake");
+  const std::string failed = BothFailed(thread.id);
+  hold_to_answer_ = IsCallEnd;
+  const std::string again = CallAgain(offer_, answer_, thread.id, failed);
+  PumpWire();
+  ASSERT_FALSE(held_to_answer_any_.empty()) << "the leave was held";
+  auto pending = answer_.ui->TopPendingInvite();
+  ASSERT_TRUE(pending && pending->has_value());
+  EXPECT_EQ((*pending)->call_id, again) << "rings over the failed call still open";
+  answer_.ui->Apply(CallLifecycleEvent::LeaveClicked, failed); // its presenter ends the failed call first
+  ReleaseHeld();
+  PumpWire();
+  Answer(answer_, again);
+  DrainUntil([&]() {
+    PumpWire();
+    return BothIn(again);
+  });
+  EXPECT_TRUE(BothIn(again)) << "exactly the new call, both in it";
+  ExpectLive(answer_, failed, LiveCallState::Ended, LiveCallEndReason::LocalLeave, "the leave ended only the old call");
+  ExpectLive(answer_, again, LiveCallState::Joined, LiveCallEndReason::None, "answer's new call");
+}
+
+// The failed call's leave arrives only after the new call is up.
+TEST_F(CallDualStackComposeTest, CallAgainWhoseLeaveLandsAfterTheNewCallConnectedLeavesItUp) {
+  const Thread thread = DmOn(offer_, "thread-redial-late-leave");
+  const std::string failed = BothFailed(thread.id);
+  hold_to_answer_ = IsCallEnd;
+  const std::string again = CallAgain(offer_, answer_, thread.id, failed);
+  PumpWire();
+  answer_.ui->Apply(CallLifecycleEvent::LeaveClicked, failed);
+  Answer(answer_, again);
+  DrainUntil([&]() {
+    PumpWire();
+    return BothIn(again);
+  });
+  ASSERT_TRUE(BothIn(again));
+  ASSERT_FALSE(held_to_answer_any_.empty());
+  ReleaseHeld();
+  PumpWire();
+  EXPECT_TRUE(BothIn(again)) << "the old call's leave ends nothing of the new one";
+  ExpectLive(answer_, again, LiveCallState::Joined, LiveCallEndReason::None, "answer's new call");
+  ExpectLive(offer_, again, LiveCallState::Joined, LiveCallEndReason::None, "offer's new call");
+}
+
+TEST_F(CallDualStackComposeTest, BothPressingCallAgainAtOnceEndInOneCall) {
+  const Thread offer_thread = DmOn(offer_, "thread-redial-both-a");
+  const Thread answer_thread = DmOn(answer_, "dm:" + offer_.local_identity);
+  const std::string failed = BothFailed(offer_thread.id);
+  const std::string from_offer = CallAgain(offer_, answer_, offer_thread.id, failed);
+  const std::string from_answer = CallAgain(answer_, offer_, answer_thread.id, failed);
+  const std::string winner = std::min(from_offer, from_answer);
+  DrainUntil([&]() {
+    PumpWire();
+    return BothIn(winner);
+  });
+  EXPECT_TRUE(BothIn(winner)) << "one call, both in it";
+  for (StackSide* side : {&offer_, &answer_}) {
+    auto pending = side->ui->TopPendingInvite();
+    EXPECT_TRUE(pending && !pending->has_value()) << "nothing left ringing";
+  }
+}
+
+// Both invites cross ahead of both leaves; the leaves land right after the invites.
+TEST_F(CallDualStackComposeTest, BothCallAgainWithTheInvitesAheadOfTheLeavesEndInOneCall) {
+  const Thread offer_thread = DmOn(offer_, "thread-redial-both-overtake-a");
+  const Thread answer_thread = DmOn(answer_, "dm:" + offer_.local_identity);
+  const std::string failed = BothFailed(offer_thread.id);
+  hold_to_offer_ = IsCallEnd;
+  hold_to_answer_ = IsCallEnd;
+  const std::string from_offer = CallAgain(offer_, answer_, offer_thread.id, failed);
+  const std::string from_answer = CallAgain(answer_, offer_, answer_thread.id, failed);
+  const std::string winner = std::min(from_offer, from_answer);
+  PumpWire(1); // the invites cross
+  ASSERT_FALSE(held_to_offer_any_.empty());
+  ASSERT_FALSE(held_to_answer_any_.empty());
+  ReleaseHeld();
+  DrainUntil([&]() {
+    PumpWire();
+    return BothIn(winner);
+  });
+  EXPECT_TRUE(BothIn(winner)) << "one call, both in it";
+}
+
+// Both leaves land only after the merged call is up.
+TEST_F(CallDualStackComposeTest, BothCallAgainWithTheLeavesAfterTheCallConnectedLeaveItUp) {
+  const Thread offer_thread = DmOn(offer_, "thread-redial-both-late-a");
+  const Thread answer_thread = DmOn(answer_, "dm:" + offer_.local_identity);
+  const std::string failed = BothFailed(offer_thread.id);
+  hold_to_offer_ = IsCallEnd;
+  hold_to_answer_ = IsCallEnd;
+  const std::string from_offer = CallAgain(offer_, answer_, offer_thread.id, failed);
+  const std::string from_answer = CallAgain(answer_, offer_, answer_thread.id, failed);
+  const std::string winner = std::min(from_offer, from_answer);
+  DrainUntil([&]() {
+    PumpWire();
+    return BothIn(winner);
+  });
+  ASSERT_TRUE(BothIn(winner));
+  ReleaseHeld();
+  PumpWire();
+  EXPECT_TRUE(BothIn(winner)) << "the old call's leaves end nothing of the new one";
+  ExpectLive(offer_, winner, LiveCallState::Joined, LiveCallEndReason::None, "offer");
+  ExpectLive(answer_, winner, LiveCallState::Joined, LiveCallEndReason::None, "answer");
+}
+
+// One side calls again; the other pressed "Try later" before the new invite reached it. Its late leave of the old call
+// reaches the new caller's calling page and changes nothing there.
+TEST_F(CallDualStackComposeTest, CallAgainReachesASideThatAlreadyPressedTryLater) {
+  const Thread thread = DmOn(offer_, "thread-redial-try-later");
+  const std::string failed = BothFailed(thread.id);
+  hold_invites_to_answer_ = true;
+  hold_to_offer_ = IsCallEnd;
+  const std::string again = CallAgain(offer_, answer_, thread.id, failed);
+  answer_.ui->Apply(CallLifecycleEvent::LeaveClicked, failed); // Try later
+  PumpWire();
+  ASSERT_EQ(offer_.ui->Phase(), CallPhase::OutboundCalling);
+  ReleaseHeld(); // the answerer's leave of the old call reaches the calling side
+  PumpWire();
+  EXPECT_EQ(offer_.ui->Phase(), CallPhase::OutboundCalling) << "still calling";
+  EXPECT_EQ(offer_.ui->ActiveCallId(), again);
+  EXPECT_FALSE(offer_.ui->TakeRemoteEnd().has_value()) << "nothing to tell about the old call";
+  hold_invites_to_answer_ = false;
+  for (auto& msg : held_invites_to_answer_) {
+    answer_inbox_.push_back(std::move(msg));
+  }
+  held_invites_to_answer_.clear();
+  PumpWire();
+  auto pending = answer_.ui->TopPendingInvite();
+  ASSERT_TRUE(pending && pending->has_value()) << "it rings as a plain call";
+  EXPECT_EQ((*pending)->call_id, again);
+  Answer(answer_, again);
+  DrainUntil([&]() {
+    PumpWire();
+    return BothIn(again);
+  });
+  EXPECT_TRUE(BothIn(again));
 }
 
 } // namespace
