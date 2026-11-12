@@ -497,5 +497,30 @@ TEST_F(InboxPicturePreviewTest, NoFileIsNamedThatIsNotThereOrUnderTheLock) {
   EXPECT_EQ(Draw(video).poster_path, PreviewOf("v3"));
 }
 
+// What a tap opens (ConversationsFacade::AttachmentLocalPathForMessage starts from AttachmentLocalPath) is the
+// picture's own full view whatever its bubble shows: the placeholder, the preview, or a file card.
+TEST_F(InboxPicturePreviewTest, TheOpenPathIsTheFullPictureWhateverTheBubbleShows) {
+  const ThreadMessage message = Stored("m1", PngHeader(1000, 800));
+  const auto open_path = [&](const std::string& id) {
+    return AttachmentLocalPath(data_dir_.string(), "t1", hashes_.at(id), "image/png", "pic.png");
+  };
+  ASSERT_TRUE(Draw(message).picture_placeholder);
+  const std::string full = open_path("m1");
+  EXPECT_FALSE(full.empty());
+  EXPECT_NE(full, PreviewOf("m1"));
+  ASSERT_TRUE(Settled([&] { return made_.load() == 1; }));
+  ASSERT_EQ(Draw(message).local_path, PreviewOf("m1")) << "the bubble shows the preview";
+  EXPECT_EQ(open_path("m1"), full) << "the open is still the full picture";
+
+  fail_ = true;
+  const ThreadMessage card = Stored("m2", PngHeader(1200, 900));
+  (void)Draw(card);
+  ASSERT_TRUE(Settled([&] { return failed_.load() == 1; }));
+  const auto view = Draw(card);
+  ASSERT_FALSE(view.inline_image_ok) << "a file card";
+  EXPECT_EQ(view.local_path, open_path("m2"));
+  EXPECT_NE(open_path("m2"), PreviewOf("m2"));
+}
+
 } // namespace
 } // namespace pbr
