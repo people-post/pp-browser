@@ -344,7 +344,15 @@ void ChatTranscriptScroller::MaybeLoadOlderLocalHistory() {
   if (max_top <= 1.f || el->GetScrollTop() > 72.f) {
     return;
   }
-  LoadOlderLocalHistory();
+  // A page of rows that do not show (reactions, edits) adds nothing and leaves the offset where it was: at the very top
+  // no further scroll event would come. Read on at once, three pages at most; then the next gesture goes on.
+  constexpr int kMaxPagesPerScroll = 3;
+  for (int page = 0; page < kMaxPagesPerScroll; ++page) {
+    const size_t rows_before = view_.messages.size();
+    if (!LoadOlderLocalHistory() || view_.messages.size() > rows_before || !has_more_local_history_) {
+      return;
+    }
+  }
 }
 
 bool ChatTranscriptScroller::LoadOlderLocalHistory(const bool fill) {
@@ -356,7 +364,12 @@ bool ChatTranscriptScroller::LoadOlderLocalHistory(const bool fill) {
     return false;
   }
 
-  const int64_t oldest = view_.messages.front().display_order;
+  // From the window's lower bound when a page of rows that do not show moved it past the first row shown (else that
+  // page would be read again each time and the history never passed).
+  int64_t oldest = view_.messages.front().display_order;
+  if (loaded_min_display_order_ && *loaded_min_display_order_ < oldest) {
+    oldest = *loaded_min_display_order_;
+  }
   if (!HasMessagesBefore(thread_id, oldest)) {
     has_more_local_history_ = false;
     return false;
@@ -370,7 +383,9 @@ bool ChatTranscriptScroller::LoadOlderLocalHistory(const bool fill) {
 
   loading_older_local_ = true;
   const size_t rows_before = view_.messages.size();
-  auto older = MessagesPage(thread_id, oldest, kDefaultMessagesPageSize);
+  // A scroll to the top loads a short page (its frame is the one people feel); a fill keeps its 100-row arithmetic.
+  const size_t page_size = fill ? kDefaultMessagesPageSize : kChatOlderPageMessages;
+  auto older = MessagesPage(thread_id, oldest, static_cast<int>(page_size));
   if (!older || older->empty()) {
     has_more_local_history_ = false;
     loading_older_local_ = false;

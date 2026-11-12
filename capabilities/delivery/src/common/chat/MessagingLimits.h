@@ -29,6 +29,11 @@ inline constexpr size_t kDefaultMessagesPageSize = 100;
  */
 inline constexpr size_t kChatFirstScreenMessagesDirect = 30;
 inline constexpr size_t kChatFirstScreenMessagesGroup = 50;
+/**
+ * Stored rows a scroll to the top of the chat loads at a time (the fill of a screen the rows do not fill still loads
+ * kDefaultMessagesPageSize). Device data 2026-11-12: a page of 95 rows cost a 203 ms frame.
+ */
+inline constexpr size_t kChatOlderPageMessages = 40;
 /** Cap on chat transcript rows kept in the Rml `messages` data-for window. */
 inline constexpr size_t kMaxMessagesDomWindow = 200;
 /**

@@ -360,7 +360,7 @@ TEST_F(ChatFirstScreenTest, AGroupOpensWithItsNewest50) {
   EXPECT_TRUE(scroller->HasMoreLocalHistory());
 }
 
-TEST_F(ChatFirstScreenTest, ScrollingToTheTopOfTheFirstScreenLoadsTheNext100InPlace) {
+TEST_F(ChatFirstScreenTest, ScrollingToTheTopOfTheFirstScreenLoadsTheNext40InPlace) {
   SetVisibleHeight(600.f); // client height 600
   AddTexts("dm", 1, 300);
   Sync("dm", kDirect);
@@ -371,8 +371,9 @@ TEST_F(ChatFirstScreenTest, ScrollingToTheTopOfTheFirstScreenLoadsTheNext100InPl
   const float before = RowTopOnScreen("m271"); // still the old layout
   Frames(1); // the rows laid out, then the position fix
   context->Update();
-  EXPECT_EQ(state.messages.size(), 130u) << "not stuck on the first 30";
-  EXPECT_EQ(FrontId(), "m171");
+  EXPECT_EQ(state.messages.size(), 70u) << "not stuck on the first 30: 40 more";
+  EXPECT_EQ(FrontId(), "m231");
+  EXPECT_EQ(store.page_limits.back(), static_cast<int>(kChatOlderPageMessages));
   EXPECT_NEAR(RowTopOnScreen("m271"), before, 1.f) << "the message looked at stays where it was";
   EXPECT_TRUE(scroller->HasMoreLocalHistory());
 }
@@ -624,6 +625,7 @@ TEST_F(ChatFirstScreenTest, ATallScreenFillsOnceAndStaysAtTheBottom) {
   Frames(1); // the check after the settle: one page
   EXPECT_EQ(state.messages.size(), 130u);
   EXPECT_EQ(older_loaded, 1);
+  EXPECT_EQ(store.page_limits.back(), 100) << "a fill still loads 100";
   Settle();
   Frames(1);
   EXPECT_GT(MaxTop(), 72.f);
@@ -770,10 +772,10 @@ TEST_F(ChatFirstScreenTest, PagesWithNothingToShowStopAfterThree) {
   const int reads = store.Reads();
   Frames(30);
   EXPECT_EQ(store.Reads(), reads) << "no read each frame";
-  // The person scrolls up: the scroll path still loads.
+  // The person scrolls up: the scroll path still loads (three pages of 40 edits in a row, then it waits again).
   ScrollTo(0.f);
-  EXPECT_EQ(older_loaded, 4);
-  EXPECT_EQ(store.page_reads - page_reads, 4);
+  EXPECT_EQ(older_loaded, 6);
+  EXPECT_EQ(store.page_reads - page_reads, 6);
   EXPECT_TRUE(NeverTrimmed());
 }
 
@@ -794,7 +796,7 @@ TEST_F(ChatFirstScreenTest, AScrolledPageLeavesOneReadingWithNoFrameBeforeTheFix
   EXPECT_EQ(older_loaded, 1);
   const std::optional<ChatPageReading> page = scroller->TakePageReading();
   ASSERT_TRUE(page.has_value());
-  EXPECT_EQ(page->added, 100);
+  EXPECT_EQ(page->added, 40);
   EXPECT_FALSE(page->fill);
   EXPECT_EQ(page->frames_before_fix, std::optional<int64_t>(0));
   EXPECT_FALSE(scroller->TakePageReading().has_value()) << "taken once";
@@ -992,6 +994,88 @@ TEST_F(ChatFirstScreenTest, AJumpInsideTheOldPageButOutsideTheFirstScreenRedraws
   EXPECT_EQ(BackId(), "m300");
   EXPECT_FALSE(scroller->LoadedMaxDisplayOrder().has_value());
   EXPECT_TRUE(AtBottom());
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Scrolling up loads kChatOlderPageMessages (40) stored rows at a time (device data 2026-11-12: a 95-row page cost a
+// 203 ms frame).
+
+TEST_F(ChatFirstScreenTest, FourScrolledPagesThenTheFifthTrimsAsBefore) {
+  SetClientHeight(600.f); // client height 600
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(2);
+  for (int page = 1; page <= 4; ++page) {
+    ScrollTo(40.f);
+    ASSERT_EQ(older_loaded, page);
+    Frames(2);
+    EXPECT_EQ(state.messages.size(), 30u + 40u * page);
+  }
+  EXPECT_EQ(FrontId(), "m111");
+  EXPECT_EQ(scroller->LoadedMinDisplayOrder(), std::optional<int64_t>(111));
+  EXPECT_FALSE(scroller->LoadedMaxDisplayOrder().has_value());
+  EXPECT_TRUE(scroller->HasMoreLocalHistory());
+  // The fifth goes over 200: the newest rows are dropped, as with any page.
+  ScrollTo(40.f);
+  Frames(2);
+  EXPECT_EQ(state.messages.size(), kMaxMessagesDomWindow);
+  EXPECT_EQ(FrontId(), "m71");
+  EXPECT_EQ(BackId(), "m270");
+  EXPECT_EQ(scroller->LoadedMaxDisplayOrder(), std::optional<int64_t>(270));
+  EXPECT_TRUE(state.show_jump_to_latest);
+}
+
+TEST_F(ChatFirstScreenTest, AScrolledPageOfOnlyHiddenRowsReadsTheNextAtOnce) {
+  SetClientHeight(600.f); // client height 600
+  // 1..190 messages, 191..230 edits (a page of 40 that shows nothing), 231..300 messages.
+  AddTexts("dm", 1, 190);
+  for (int64_t order = 191; order <= 230; ++order) {
+    store.threads["dm"].push_back(Annotation("dm", order, "m1", kAnnotationTypeEdit));
+  }
+  AddTexts("dm", 231, 70);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(2);
+  ScrollTo(40.f); // 231..270
+  Frames(2);
+  ASSERT_EQ(state.messages.size(), 70u);
+  const int page_reads = store.page_reads;
+  ScrollTo(40.f); // 191..230 shows nothing: 151..190 read at once, no second gesture needed
+  const float top = Messages()->GetScrollTop();
+  Frames(2);
+  EXPECT_EQ(store.page_reads - page_reads, 2);
+  EXPECT_EQ(state.messages.size(), 110u);
+  EXPECT_EQ(FrontId(), "m151");
+  EXPECT_GT(Messages()->GetScrollTop(), top + 100.f) << "the old rows moved down by the new ones' height";
+}
+
+TEST_F(ChatFirstScreenTest, ThreeScrolledPagesOfHiddenRowsWaitForTheNextGesture) {
+  SetClientHeight(600.f); // client height 600
+  // 1..100 messages, 101..230 edits (more than three pages of 40), 231..300 messages.
+  AddTexts("dm", 1, 100);
+  for (int64_t order = 101; order <= 230; ++order) {
+    store.threads["dm"].push_back(Annotation("dm", order, "m1", kAnnotationTypeEdit));
+  }
+  AddTexts("dm", 231, 70);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(2);
+  ScrollTo(40.f); // 231..270
+  Frames(2);
+  ASSERT_EQ(state.messages.size(), 70u);
+  int page_reads = store.page_reads;
+  ScrollTo(30.f); // 191..230, 151..190, 111..150: nothing shown, it stops at three
+  Frames(2);
+  EXPECT_EQ(store.page_reads - page_reads, 3);
+  EXPECT_EQ(state.messages.size(), 70u);
+  EXPECT_TRUE(scroller->HasMoreLocalHistory());
+  page_reads = store.page_reads;
+  ScrollTo(20.f); // the next gesture near the top: 101..110 edits and 71..100 messages
+  Frames(2);
+  EXPECT_EQ(store.page_reads - page_reads, 1);
+  EXPECT_EQ(state.messages.size(), 100u);
+  EXPECT_EQ(FrontId(), "m71");
 }
 
 TEST(ChatFirstScreenCountTest, FirstScreenMessagesByKind) {

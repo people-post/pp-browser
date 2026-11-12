@@ -155,7 +155,10 @@ private:
   void SetShowJumpToLatest(bool show);
   void ScrollMessagesToBottom();
   void MaybeLoadOlderLocalHistory();
-  /** `fill`: loaded by MaybeFillScreen (else the scroll reached the top); said in the page's reading. */
+  /**
+   * `fill`: loaded by MaybeFillScreen, kDefaultMessagesPageSize rows (else the scroll reached the top:
+   * kChatOlderPageMessages); said in the page's reading.
+   */
   /** True when a page was loaded (false: nothing older, not ready, or the store failed). */
   bool LoadOlderLocalHistory(bool fill = false);
   /** After the scroll to the bottom settled: rows that do not fill the screen get the page above. True if loaded. */
