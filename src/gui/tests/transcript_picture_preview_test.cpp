@@ -180,6 +180,70 @@ TEST(TranscriptPicturePreviewTest, APlaceholderNamesNoFile) {
   EXPECT_EQ(rml.find("poster"), std::string::npos) << rml;
 }
 
+// RedrawPreviews' rows step: only the rows showing a ready preview's placeholder change, and only their clip.
+TEST(TranscriptPicturePreviewTest, ReadyPreviewsReplaceOnlyTheRowsThatShowTheirPlaceholder) {
+  TranscriptFacts facts;
+  facts.attachment = [](const ThreadMessage&) { return PlaceholderView(); };
+  auto rows = RenderTranscript({PictureRow("m1", 1), PictureRow("m2", 2), PictureRow("m3", 3)}, facts);
+  ASSERT_EQ(rows.size(), 3u);
+  const std::string hex1 = AttachmentHashHex(std::vector<uint8_t>(32, 1));
+  const std::string hex3 = AttachmentHashHex(std::vector<uint8_t>(32, 3));
+  const std::string m2_before = rows[1].content_rml.c_str();
+  std::vector<std::string> asked;
+  const ReadyPreviews result =
+      ApplyReadyPreviews(rows, {hex1, hex3}, {}, [&asked](const std::string& message_id) {
+        asked.push_back(message_id);
+        return std::optional<TranscriptAttachmentView>(PreviewView("/views/" + message_id + ".poster.jpg"));
+      });
+  EXPECT_TRUE(result.changed);
+  EXPECT_FALSE(result.redraw_all);
+  EXPECT_EQ(asked, (std::vector<std::string>{"m1", "m3"})) << "only the rows that show one are looked up";
+  EXPECT_NE(std::string(rows[0].content_rml.c_str()).find("src=\"/views/m1.poster.jpg\""), std::string::npos);
+  EXPECT_NE(std::string(rows[2].content_rml.c_str()).find("src=\"/views/m3.poster.jpg\""), std::string::npos);
+  EXPECT_EQ(std::string(rows[1].content_rml.c_str()), m2_before) << "a row not ready is not touched";
+
+  // Nothing ready for these rows any more: nothing changes.
+  EXPECT_FALSE(ApplyReadyPreviews(rows, {hex1}, {}, [](const std::string&) {
+                 return std::optional<TranscriptAttachmentView>(PreviewView());
+               }).changed);
+}
+
+// A preview that cannot be made: its row is built again (as a file card), its clip is not replaced; a placeholder
+// again (a lock meanwhile) is left; a message not found asks for the rows again.
+TEST(TranscriptPicturePreviewTest, AFailedPreviewRedrawsItsRowAsAFileCard) {
+  TranscriptFacts facts;
+  facts.attachment = [](const ThreadMessage&) { return PlaceholderView(); };
+  auto rows = RenderTranscript({PictureRow("m1", 1)}, facts);
+  ASSERT_EQ(rows.size(), 1u);
+  const std::string hex1 = AttachmentHashHex(std::vector<uint8_t>(32, 1));
+  const std::string before = rows[0].content_rml.c_str();
+  bool asked = false;
+  const ReadyPreviews failed = ApplyReadyPreviews(rows, {hex1}, {hex1}, [&asked](const std::string&) {
+    asked = true;
+    return std::optional<TranscriptAttachmentView>(PreviewView());
+  });
+  EXPECT_TRUE(failed.redraw_all);
+  EXPECT_FALSE(failed.changed);
+  EXPECT_FALSE(asked);
+  EXPECT_EQ(std::string(rows[0].content_rml.c_str()), before);
+
+  // Built again, its view says "no inline picture": a file card that opens the picture, no clip, no <img>.
+  TranscriptAttachmentView card = ReadyView();
+  card.local_path = "/views/aa.jpg";
+  card.inline_image_ok = false;
+  const std::string rebuilt = RenderOne(card);
+  EXPECT_NE(rebuilt.find("chat-file-card"), std::string::npos) << rebuilt;
+  EXPECT_EQ(rebuilt.find("<img"), std::string::npos);
+
+  const ReadyPreviews again = ApplyReadyPreviews(
+      rows, {hex1}, {}, [](const std::string&) { return std::optional<TranscriptAttachmentView>(PlaceholderView()); });
+  EXPECT_FALSE(again.changed);
+  EXPECT_FALSE(again.redraw_all);
+  EXPECT_TRUE(ApplyReadyPreviews(rows, {hex1}, {}, [](const std::string&) {
+                return std::optional<TranscriptAttachmentView>();
+              }).redraw_all);
+}
+
 TEST(TranscriptPicturePreviewTest, RedrawsAreAtMostOneEvery250Ms) {
   using Clock = PreviewRedrawBatcher::Clock;
   PreviewRedrawBatcher batcher;

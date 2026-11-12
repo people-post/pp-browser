@@ -5600,6 +5600,7 @@ void ChatController::PollChatShowing() {
   chat_showing_ = showing;
   if (!showing) {
     FinishPreviewsProbe();
+    preview_batcher_.Clear(); // a redraw already scheduled finds nothing for rows no longer shown
     if (facade_) {
       facade_->CancelChatPreviews(); // only the chat's requests not started; the storage grid's stay
     }
@@ -5660,8 +5661,10 @@ void ChatController::ReleaseQueuedTextures() {
 
 void ChatController::OnChatPreviewDone(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                                        const bool made) {
-  if (!messaging_ready_ || thread_id != ActiveThreadId()) {
-    return; // another chat's: its rows ask again when drawn
+  if (!messaging_ready_ || thread_id != ActiveThreadId() || !ChatShowing()) {
+    // Another chat's, or this chat left (its textures already went): nothing is drawn into rows not shown and nothing
+    // is counted; the preview file stays and the next drawing of the rows shows it.
+    return;
   }
   const std::string hex = AttachmentHashHex(content_hash);
   if (!made) {
@@ -5686,46 +5689,23 @@ void ChatController::OnChatPreviewDone(const std::string& thread_id, const std::
 void ChatController::RedrawPreviews() {
   const auto now = std::chrono::steady_clock::now();
   const std::vector<std::string> ready = preview_batcher_.Take(now);
-  if (ready.empty() || !messaging_ready_ || !facade_ || ActiveThreadId().empty()) {
-    previews_failed_.clear();
+  if (ready.empty() || !messaging_ready_ || !facade_ || ActiveThreadId().empty() || !ChatShowing()) {
+    previews_failed_.clear(); // left meanwhile: the rows are drawn afresh when shown again
     return;
   }
   const std::string thread_id = ActiveThreadId();
-  bool whole = false;
-  bool changed = false;
   const TranscriptFacts facts = facade_->TranscriptFactsFor();
-  for (MessageDisplayRow& row : chat_.messages) {
-    for (const std::string& hex : ready) {
-      if (!RowShowsPicturePlaceholder(row, hex)) {
-        continue;
-      }
-      if (previews_failed_.contains(hex)) {
-        whole = true; // its card becomes a file card
-        continue;
-      }
-      const std::string message_id = row.message_id.c_str();
-      auto message = facade_->GetMessage(thread_id, message_id);
-      if (!message || !*message || !facts.attachment) {
-        whole = true;
-        continue;
-      }
-      const TranscriptAttachmentView view = facts.attachment(**message);
-      if (view.picture_placeholder) {
-        continue; // gone again meanwhile (a lock): asked again, it comes later
-      }
-      if (view.local_path.empty() || !view.inline_image_ok) {
-        whole = true;
-        continue;
-      }
-      // Only this picture's clip: the row's element and the other rows stay as they are (data-rml resets this row's
-      // content only, as its RML is the only one that changed).
-      std::string rml = row.content_rml.c_str();
-      if (ReplacePictureClip(rml, message_id, PictureBubbleClipRml(message_id, hex, view))) {
-        row.content_rml = rml.c_str();
-        changed = true;
-      }
-    }
-  }
+  const ReadyPreviews applied = ApplyReadyPreviews(
+      chat_.messages, ready, previews_failed_,
+      [&](const std::string& message_id) -> std::optional<TranscriptAttachmentView> {
+        auto message = facade_->GetMessage(thread_id, message_id);
+        if (!message || !*message || !facts.attachment) {
+          return std::nullopt;
+        }
+        return facts.attachment(**message);
+      });
+  const bool whole = applied.redraw_all;
+  const bool changed = applied.changed;
   bool last = false;
   for (const std::string& hex : ready) {
     last = previews_probe_.Done(hex, previews_failed_.contains(hex), now) || last;

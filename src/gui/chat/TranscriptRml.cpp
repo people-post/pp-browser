@@ -446,6 +446,45 @@ bool RowShowsPicturePlaceholder(const MessageDisplayRow& row, const std::string&
   return false;
 }
 
+ReadyPreviews ApplyReadyPreviews(
+    std::vector<MessageDisplayRow>& rows, const std::vector<std::string>& ready,
+    const std::unordered_set<std::string>& failed,
+    const std::function<std::optional<TranscriptAttachmentView>(const std::string& message_id)>& view_of) {
+  ReadyPreviews out;
+  for (MessageDisplayRow& row : rows) {
+    for (const std::string& hex : ready) {
+      if (!RowShowsPicturePlaceholder(row, hex)) {
+        continue;
+      }
+      if (failed.contains(hex)) {
+        out.redraw_all = true; // its card becomes a file card
+        continue;
+      }
+      const std::string message_id = row.message_id.c_str();
+      const std::optional<TranscriptAttachmentView> view = view_of(message_id);
+      if (!view) {
+        out.redraw_all = true;
+        continue;
+      }
+      if (view->picture_placeholder) {
+        continue; // gone again meanwhile (a lock): asked again, it comes later
+      }
+      if (view->local_path.empty() || !view->inline_image_ok) {
+        out.redraw_all = true;
+        continue;
+      }
+      // Only this picture's clip: the row's element and the other rows stay as they are (data-rml resets this row's
+      // content only, as its RML is the only one that changed).
+      std::string rml = row.content_rml.c_str();
+      if (ReplacePictureClip(rml, message_id, PictureBubbleClipRml(message_id, hex, *view))) {
+        row.content_rml = rml.c_str();
+        out.changed = true;
+      }
+    }
+  }
+  return out;
+}
+
 bool DropPictureImages(std::string& rml) {
   bool changed = false;
   static const std::string kClip = "<div class=\"chat-attachment-clip";

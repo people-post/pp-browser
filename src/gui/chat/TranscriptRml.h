@@ -6,7 +6,9 @@
 #include "feature/conversations/InboxController.h"
 #include "feature/presenters/PendingUpload.h"
 
+#include <functional>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 
 namespace pbr {
@@ -56,6 +58,20 @@ std::string PictureBubbleClipRml(const std::string& message_id, const std::strin
 bool ReplacePictureClip(std::string& rml, const std::string& message_id, const std::string& clip_rml);
 /** The row shows the placeholder of the picture with these bytes (hex). */
 bool RowShowsPicturePlaceholder(const MessageDisplayRow& row, const std::string& hash_hex);
+struct ReadyPreviews {
+  bool changed = false;    // some picture clips were replaced in their rows
+  bool redraw_all = false; // a row must be built again (its card changes: a file card now)
+};
+/**
+ * Previews made (or that cannot be made: `failed`) for the bytes `ready` (hex): each row showing one's placeholder
+ * gets only its picture clip replaced (ReplacePictureClip) with what `view_of(message id)` says now; a failed one, a
+ * message not found (nullopt) or a view with no picture asks for `redraw_all`; a view that is a placeholder again (a
+ * lock meanwhile) is left as it is. Other rows are not touched.
+ */
+ReadyPreviews ApplyReadyPreviews(
+    std::vector<MessageDisplayRow>& rows, const std::vector<std::string>& ready,
+    const std::unordered_set<std::string>& failed,
+    const std::function<std::optional<TranscriptAttachmentView>(const std::string& message_id)>& view_of);
 /**
  * Every chat picture in a row's RML becomes its placeholder (its <img> taken out), a video's poster leaves its frame
  * empty and a sound file's cover becomes the music note: the lock wipes the files they show, and a drawing must not
