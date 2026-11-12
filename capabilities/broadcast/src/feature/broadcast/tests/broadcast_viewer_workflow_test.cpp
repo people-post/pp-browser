@@ -159,7 +159,7 @@ protected:
     mesh::MediaDataFrame f;
     f.stream_id = stream;
     f.channel_id = 0;
-    f.channel_type = mesh::MediaChannelType::ReliableOrdered;
+    f.channel_type = mesh::MediaChannelType::Forward;
     f.seq = seq;
     f.instance = 0x5eed;
     EXPECT_TRUE(mesh::SealMediaFrame(media_key_, context, 1, f, opus_));

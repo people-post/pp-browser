@@ -121,7 +121,7 @@ Dimensions below describe **conversation behavior** on the OPEN, not delivery pa
 | **Send size** | small JSON envelope | small JSON request | **large** ciphertext | tiny control + continuous media | opaque datagrams |
 | **Send pattern** | push event | pull query | fetch or push by hash | continuous while call up | continuous / fan-out |
 | **Delivery guarantee** | reliable (AMP); app may retry | reliable query; paginate on fail | reliable transfer or fail | media **lossy OK**; control reliable | media lossy OK; hop may drop |
-| **Latest-wins / drop** | no (do not drop chat) | no | no (`ChatBlob` drop never) | media: **drop oldest** (e.g. queue 64) | media: aggressive drop (queue ~2) |
+| **Latest-wins / drop** | no (do not drop chat) | no | no (`ChatBlob` drop never) | media: best effort, never queued (lost where the bytes wait) | media: best effort, never queued; stale video dropped |
 | **Broadcast / fan-out** | 1:1 peer (group = many 1:1 or later relay role) | 1:1 pull | 1:1 (CDN secondary) | 1:1 E2E | **multi-receiver hop** |
 | **Return size** | tiny ack `{"ok":true}` | **medium** message batch | large bytes or error JSON | hello_ack + ongoing media | hop control acks + media |
 | **Return order** | ack only | batch ordered by seq/cursor | stream/object completeness | media not strictly app-ordered | hop does not reorder for meaning |

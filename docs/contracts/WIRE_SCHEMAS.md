@@ -545,7 +545,7 @@ JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies ca
 | `attach` | client → relay | `session_token`, `call_id`, `auth` |
 | `subscribe`, `unsubscribe`, `detach` | client → relay | stream / channel selection |
 
-**Data frames** (not JSON): the [media frame](#media-frames) below. They travel on the participant's **data lane** (`/pp-mesh/media-relay-data/1.0.0`, opened by the client on the same link once attached; BestEffort, the oldest dropped). The relay binds the lane to the participant by the link's peer and fans out on it. A loss costs one frame, never a stall, and there are no acknowledgements. Without a lane (a hop reached through a circuit, or one older than pp-cpp-mesh v3.1.0) the control channel carries them, and the relay still accepts them there. `channel_id` follows [MEDIA_CHANNELS](MEDIA_CHANNELS.md); a relay that negotiated levels with a participant drops, at ingest, any of its frames on a channel other than audio and the carried video levels.
+**Data frames** (not JSON): the [media frame](#media-frames) below. They travel only on the participant's **data lane** (`/pp-mesh/media-relay-data/1.0.0`, opened by the client on the same link once attached — direct, or nested through a circuit relay; BestEffort). The attach completes once the lane is open; a hop that does not serve it fails the attach. The relay binds the lane to the participant by the link's peer and fans out on it. A loss costs one frame, never a stall, and there are no acknowledgements. Media on the control channel is dropped. `channel_id` follows [MEDIA_CHANNELS](MEDIA_CHANNELS.md); a relay that negotiated levels with a participant drops, at ingest, any of its frames on a channel other than audio and the carried video levels.
 
 **Call-media** (`/pp/realtime/1.0.0`, a 1:1 call) sends the same media frame, one per L3 message (no length prefix).
 
@@ -555,7 +555,7 @@ One frame for every path a call's or broadcast's media takes: through a hop's fa
 
 | Bytes | Field |
 |-------|-------|
-| 1 | version `3` (high nibble), `channel_type` << 2 (`0` ReliableOrdered: audio — a label, never resent; `1` LatestLossy: video, a hop drops it stale; `2` BestEffort), `mark` (bit 0: a keyframe) |
+| 1 | version `3` (high nibble), `channel_type` << 2 (`0` Forward: audio, forwarded as it came; `1` LatestLossy: video, a hop drops it stale; other values refused — [MEDIA_CHANNELS § Channel type](MEDIA_CHANNELS.md#channel-type-relay-qos)), `mark` (bit 0: a keyframe) |
 | 1 | `channel` ([MEDIA_CHANNELS](MEDIA_CHANNELS.md): audio `0x00`, video `0x10 \| level`) |
 | 4 | `stream_id`: the sender's (`PublisherStreamIdForIdentity`; `0` on a 1:1 call) |
 | 4 | `seq`: per sender instance and channel, from 1, only increasing |

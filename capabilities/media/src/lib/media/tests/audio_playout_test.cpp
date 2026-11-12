@@ -100,12 +100,12 @@ TEST(AudioJitterBufferTest, DropsLatePacket) {
   EXPECT_EQ(buf.PopForPlayout().seq, 4u);
 }
 
-TEST(AudioJitterBufferTest, DropsOverflowOldest) {
+TEST(AudioJitterBufferTest, PushDropsTheOldestOnlyPastTheHardBound) {
   AudioJitterBuffer buf;
-  for (uint32_t i = 1; i <= AudioJitterBuffer::kMaxFrames + 3; ++i) {
+  for (uint32_t i = 1; i <= AudioJitterBuffer::kHardMaxFrames + 3; ++i) {
     buf.Push(Pkt(i));
   }
-  EXPECT_EQ(buf.size(), AudioJitterBuffer::kMaxFrames);
+  EXPECT_EQ(buf.size(), AudioJitterBuffer::kHardMaxFrames);
   EXPECT_EQ(buf.drops_overflow(), 3u);
   EXPECT_EQ(buf.PopForPlayout().seq, 4u); // oldest three dropped, playout resumes at 4
 }
@@ -142,21 +142,18 @@ TEST(AudioJitterBufferTest, PrimedOverflowResumesOnRealPackets) {
   AudioJitterBuffer buf;
   uint32_t seq = RunSteady(buf, 1, 20);
   // Device pause: packets keep arriving but nothing is popped.
-  for (size_t i = 0; i < AudioJitterBuffer::kMaxFrames + 5; ++i) {
+  for (size_t i = 0; i < AudioJitterBuffer::kHardMaxFrames + 5; ++i) {
     buf.Push(Pkt(seq++));
   }
-  EXPECT_EQ(buf.size(), AudioJitterBuffer::kMaxFrames);
-  // Every pop after the pause is a real packet (no Gap for the overflow-dropped seqs), and the
-  // surplus depth is drained within one full drain window (≤ 2 windows: the pause can land
-  // mid-window, whose minimum still includes pre-pause depth).
-  const int budget = static_cast<int>(2 * AudioJitterBuffer::kDrainWindowPops);
-  for (int i = 0; i < budget + 50; ++i) {
+  EXPECT_EQ(buf.size(), AudioJitterBuffer::kHardMaxFrames);
+  // Every pop after the pause is a real packet (no Gap for the dropped seqs), and playout holds at most the cap from
+  // the first slot (the engine cuts to it after each pop, once no silence is left to skip).
+  for (int i = 0; i < 50; ++i) {
     buf.Push(Pkt(seq++));
     const auto p = buf.PopForPlayout();
     ASSERT_EQ(p.kind, Kind::Packet) << "pop " << i;
-    if (i >= budget) {
-      EXPECT_LE(buf.size(), kTarget + 1) << "pop " << i;
-    }
+    buf.CutToCap();
+    EXPECT_LE(buf.size(), AudioJitterBuffer::kMaxFrames) << "pop " << i;
   }
   EXPECT_EQ(buf.gaps(), 0u);
 }
@@ -213,7 +210,9 @@ TEST(AudioJitterBufferTest, DelayedBurstRecovers) {
     buf.Push(Pkt(seq++));
     kinds.push_back(buf.PopForPlayout().kind);
   }
-  EXPECT_LE(buf.size(), kTarget + 1);
+  // The burst stays queued (within the cap): the engine skips it in the next silence, never as a cut.
+  EXPECT_LE(buf.size(), AudioJitterBuffer::kMaxFrames);
+  EXPECT_EQ(buf.speech_drops(), 0u);
   for (size_t i = kinds.size() - 50; i < kinds.size(); ++i) {
     EXPECT_EQ(kinds[i], Kind::Packet) << "slot " << i;
   }
@@ -228,6 +227,7 @@ TEST(AudioJitterBufferTest, SlightlyFastSenderNeverLatchesGaps) {
       buf.Push(Pkt(seq++));
     }
     const auto p = buf.PopForPlayout();
+    buf.CutToCap(); // as the engine does after a pop with no silence to skip
     if (slot >= static_cast<int>(kTarget)) {
       ASSERT_EQ(p.kind, Kind::Packet) << "slot " << slot;
     }
@@ -440,14 +440,17 @@ TEST(AudioArrivalJitterTest, ResetForgetsHistory) {
   EXPECT_EQ(j.TargetFrames(), 3u);
 }
 
-TEST(AudioArrivalJitterTest, HugeLatenessUsesOverflowBucket) {
+TEST(AudioArrivalJitterTest, PacketsLaterThanAnyTargetCouldHoldAreAnOutageNotJitter) {
   AudioArrivalJitter j;
   // Prime with 300 steady packets to establish baseline.
   FeedArrivals(j, 1, 1000, 300, [](int) { return 0; });
-  // Every 10th packet arrives 2000 ms late; enough to exceed kMaxTargetFrames in raw form.
+  // Every 10th packet arrives 2000 ms late: past the target's top, they could never play in time.
   FeedArrivals(j, 301, 1000 + 300 * 20, 100, [](int i) { return (i % 10 == 0) ? 2000 : 0; });
-  // Overflow bucket clamp ensures target is clamped to kMaxTargetFrames (20), no crash.
-  EXPECT_EQ(j.TargetFrames(), AudioArrivalJitter::kMaxTargetFrames);
+  EXPECT_EQ(j.TargetFrames(), 3u) << "they would pin the target at its top";
+  EXPECT_EQ(j.OutageArrivals(), 10u);
+  // Lateness within the top still counts (a stall the target can absorb).
+  FeedArrivals(j, 401, 1000 + 400 * 20, 100, [](int i) { return (i % 10 == 0) ? 200 : 0; });
+  EXPECT_GE(j.TargetFrames(), 10u);
 }
 
 // Push with realistic recv_ms so the estimator sees the network.
@@ -490,12 +493,12 @@ TEST(AudioJitterBufferTest, RestartResetsJitterTarget) {
 }
 
 // M3: priming must not wait for the adaptive target — a single early outlier (tiny sample count,
-// so it dominates the histogram) must not delay first audio to 400 ms.
+// so it dominates the histogram) must not delay first audio to the target's top.
 TEST(AudioJitterBufferTest, PrimesAtSixtyMsEvenAfterEarlyOutlier) {
   AudioJitterBuffer buf;
   buf.Push(PktAt(1, 1000));
   buf.Push(PktAt(2, 1020));
-  buf.Push(PktAt(3, 1540));           // 500 ms late outlier: skews the (tiny-sample) adaptive target way up
+  buf.Push(PktAt(3, 1320));           // 280 ms late outlier (within the top): skews the tiny-sample target way up
   ASSERT_GE(buf.TargetFrames(), 10u); // sanity: the outlier really did skew the adaptive target
   auto p = buf.PopForPlayout();
   EXPECT_EQ(p.kind, Kind::Packet); // primes at kTargetFrames (3), not the skewed adaptive target
@@ -553,25 +556,40 @@ TEST(CatchUpSilenceTest, OnlyFirstSamplesCount) {
   EXPECT_TRUE(IsCatchUpSilence(pcm, 480)); // only the decoded part is inspected
 }
 
-TEST(AudioJitterBufferTest, SustainedSurplusIsTrimmedAsSpeech) {
+// V065: a surplus within the cap is never cut — it was trimmed after 500 ms whatever it held, speech too. The engine
+// sheds it by skipping silence.
+TEST(AudioJitterBufferTest, ASurplusWithinTheCapIsKept) {
   AudioJitterBuffer buf;
   uint32_t seq = 1;
   for (int i = 0; i < 12; ++i)
-    buf.Push(Pkt(seq++));        // 12 queued, target 3 → surplus 9 > 5
-  for (int i = 0; i < 30; ++i) { // steady 1-in-1-out for > one 25-pop window
+    buf.Push(Pkt(seq++));         // 12 queued, target 3
+  for (int i = 0; i < 100; ++i) { // steady 1-in-1-out, two seconds
     buf.Push(Pkt(seq++));
     (void)buf.PopForPlayout();
+    buf.CutToCap();
   }
-  EXPECT_GT(buf.speech_drops(), 0u);
-  EXPECT_LE(buf.size(), buf.TargetFrames() + 2);
+  EXPECT_EQ(buf.speech_drops(), 0u);
+  EXPECT_EQ(buf.size(), 12u);
+  EXPECT_TRUE(buf.OverTarget()) << "the engine skips silence while it is";
 }
 
-TEST(AudioJitterBufferTest, HardCapIsFortyFrames) {
+// The cap is 400 ms (20 packets of 20 ms), with room above the target's 300 ms top. Past it, what is left after the
+// engine skipped silence is cut to it, oldest first; Push alone cuts only past the hard bound (800 ms).
+TEST(AudioJitterBufferTest, TheCapIsFourHundredMsWithRoomAboveTheTarget) {
+  EXPECT_EQ(AudioJitterBuffer::kMaxDelayMs, 400);
+  EXPECT_EQ(AudioJitterBuffer::kMaxFrames, 20u);
+  EXPECT_EQ(AudioArrivalJitter::kMaxTargetFrames, 15u);
   AudioJitterBuffer buf;
   for (uint32_t s = 1; s <= 60; ++s)
     buf.Push(Pkt(s));
-  EXPECT_LE(buf.size(), 40u);
+  EXPECT_EQ(buf.size(), AudioJitterBuffer::kHardMaxFrames);
   EXPECT_EQ(buf.speech_drops(), 20u);
+  EXPECT_EQ(buf.ExcessOverCap(), 20u);
+  buf.CutToCap();
+  EXPECT_EQ(buf.size(), 20u);
+  EXPECT_EQ(buf.ExcessOverCap(), 0u);
+  EXPECT_EQ(buf.speech_drops(), 40u);
+  EXPECT_EQ(buf.PopForPlayout().seq, 41u) << "the oldest went";
 }
 
 TEST(AudioJitterBufferTest, PressureStillSignalsAtTwoHundredMs) {
@@ -606,6 +624,58 @@ TEST(AudioJitterBufferTest, PressureStaysLowAtElevatedTargetWhenHeldNearTarget) 
   EXPECT_LT(buf.Pressure(0), 0.75);
 }
 
+// #593 (a relayed call): steady 20 ms arrivals, then nothing for 1.2 s, then the backlog — 60 frames in 200 ms — and
+// steady again. An outage is not jitter: the target stays where it was (it pinned at its 400 ms top for the rest of
+// that call), the frames whose slot passed beyond the wait are late drops (concealed, never waited for), and what is
+// left fits under the cap: no speech is cut, the surplus goes in the next silences.
+TEST(AudioJitterBufferTest, AnOutageThenItsBacklogIsNotJitter) {
+  AudioJitterBuffer buf;
+  uint32_t seq = 1;
+  int64_t now = 1000;
+  const auto slot = [&](std::vector<uint32_t> arrivals) {
+    for (const uint32_t s : arrivals) {
+      buf.Push(PktAt(s, now));
+    }
+    (void)buf.PopForPlayout();
+    buf.CutToCap(); // as the engine does after a pop, once no silence is left to skip
+    now += 20;
+  };
+  for (int i = 0; i < 500; ++i) { // 10 s steady
+    slot({seq++});
+  }
+  const size_t target_before = buf.TargetFrames();
+  ASSERT_EQ(target_before, 3u);
+  const uint32_t held_from = seq;
+  for (int i = 0; i < 60; ++i) { // 1.2 s: the sender goes on, nothing arrives
+    ++seq;
+    slot({});
+  }
+  std::vector<uint32_t> backlog;
+  for (uint32_t s = held_from; s < seq; ++s) {
+    backlog.push_back(s);
+  }
+  size_t max_depth = 0;
+  for (int i = 0; i < 10; ++i) { // 200 ms: the 60 held, then the 10 sent meanwhile, in order (7 a slot)
+    backlog.push_back(seq++);
+  }
+  for (int i = 0; i < 10; ++i) {
+    slot(std::vector<uint32_t>(backlog.begin() + i * 7, backlog.begin() + i * 7 + 7));
+    max_depth = std::max(max_depth, buf.size());
+  }
+  EXPECT_LE(buf.TargetFrames(), target_before + 1) << "the backlog raised the target";
+  EXPECT_LE(max_depth, AudioJitterBuffer::kMaxFrames);
+  EXPECT_EQ(buf.speech_drops(), 0u) << "nothing past the cap: no speech cut";
+  // The wait held its first slots (up to the target's top: 240 ms here, 12 frames); the rest of the gap was concealed
+  // and its frames came too late to play.
+  EXPECT_GT(buf.drops_late(), 40u);
+  EXPECT_LE(buf.drops_late(), 60u - 12u + 7u) << "the wait kept the first ones";
+  for (int i = 0; i < 500; ++i) { // 10 s steady again
+    slot({seq++});
+  }
+  EXPECT_LE(buf.TargetFrames(), target_before + 1) << "and stays";
+  EXPECT_EQ(buf.speech_drops(), 0u);
+}
+
 // A029: a publisher sending 40 ms packets gets the same delays, counted in its packets.
 AudioPacket Pkt40(uint32_t seq, int64_t recv_ms = 0) {
   AudioPacket p = PktAt(seq, recv_ms);
@@ -625,12 +695,15 @@ TEST(AudioJitterBuffer40MsTest, PrimesAtEightyMsInTwoPackets) {
   EXPECT_EQ(pop.seq, 1u);
 }
 
-TEST(AudioJitterBuffer40MsTest, HardCapIsStillEightHundredMs) {
+TEST(AudioJitterBuffer40MsTest, TheCapIsStillFourHundredMs) {
   AudioJitterBuffer buf;
   for (uint32_t s = 1; s <= 30; ++s)
     buf.Push(Pkt40(s));
-  EXPECT_EQ(buf.size(), 20u);
+  EXPECT_EQ(buf.size(), 20u) << "the hard bound, 800 ms";
   EXPECT_EQ(buf.speech_drops(), 10u);
+  EXPECT_EQ(buf.CapFrames(), 10u);
+  buf.CutToCap();
+  EXPECT_EQ(buf.size(), 10u);
 }
 
 TEST(AudioJitterBuffer40MsTest, PeriodicStallsRaiseTargetInMs) {

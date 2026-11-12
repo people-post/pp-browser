@@ -412,6 +412,17 @@ public:
       out.set("media_active", media.IsActive());
       out.set("rx_audio_frames", static_cast<uint64_t>(health.rx_audio_frames));
       out.set("tx_audio_frames", static_cast<uint64_t>(health.tx_audio_frames));
+      // What this user heard (all remote streams): concealed time, speech cut to catch up, late packets, underruns.
+      Object heard;
+      heard.set("concealed_ms", static_cast<uint64_t>(health.concealed_ms));
+      heard.set("plc_frames", static_cast<uint64_t>(health.plc_frames));
+      heard.set("fec_frames", static_cast<uint64_t>(health.fec_frames));
+      heard.set("speech_drops", static_cast<uint64_t>(health.jitter_speech_drops));
+      heard.set("silence_drops", static_cast<uint64_t>(health.jitter_silence_drops));
+      heard.set("late_drops", static_cast<uint64_t>(health.jitter_late_drops));
+      heard.set("underruns", static_cast<uint64_t>(health.playout_underruns));
+      heard.set("jitter_target_ms", health.jitter_target_ms);
+      out.set("audio_heard", ObjectValue(std::move(heard)));
       out.set("sfu_mode", health.packet_mode);
       out.set("path", CallMediaPathName(calls_->MediaPath()));
       std::vector<Value> streams;
@@ -436,6 +447,9 @@ public:
         row.set("gap_max_ms", a.gap_max_ms);
         row.set("stalls", static_cast<uint64_t>(a.stalls));
         row.set("bunched", static_cast<uint64_t>(a.bunched));
+        row.set("keyframes", static_cast<uint64_t>(a.keyframes));
+        row.set("keyframe_gap_total_ms", a.keyframe_gap_total_ms);
+        row.set("keyframe_gap_max_ms", a.keyframe_gap_max_ms);
         video.push_back(ObjectValue(std::move(row)));
       }
       out.set("video_arrivals", ArrayValue(std::move(video)));
