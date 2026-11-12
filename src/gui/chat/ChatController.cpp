@@ -3531,11 +3531,16 @@ namespace {
 constexpr int64_t kSlowDisplaySyncMs = 8; // half a 60 Hz frame
 } // namespace
 
+size_t ChatController::FirstScreenMessages(const ThreadKind kind) {
+  return kind == ThreadKind::Group ? kChatFirstScreenMessagesGroup : kChatFirstScreenMessagesDirect;
+}
+
 void ChatController::SyncDisplayFromThread() {
   if (!messaging_ready_) {
     return;
   }
-  if (!facade_ || !facade_->GetActiveThread()) {
+  Roe<Thread> active = facade_ ? facade_->GetActiveThread() : Roe<Thread>::error(Error("no chat port"));
+  if (!active) {
     CloseSearch(); // no chat open (Home, or the chat was closed)
     chrome_.ResetPanelState();
     agent_.RefreshBusyForActiveThread();
@@ -3544,7 +3549,7 @@ void ChatController::SyncDisplayFromThread() {
   }
   const auto sync_started = std::chrono::steady_clock::now();
   const std::string thread_id = ActiveThreadId();
-  const bool thread_changed = scroller_.BeginDisplaySync(thread_id);
+  const bool thread_changed = scroller_.BeginDisplaySync(thread_id, FirstScreenMessages(active->kind));
   if (thread_changed) {
     SyncComposerInputState(); // the upload chip and the locked input stay with the chat they belong to
   }
@@ -3609,6 +3614,7 @@ void ChatController::SyncDisplayFromThread() {
     open_probe_.pictures = static_cast<int64_t>(CountPictureBubbleRows(chat_.messages));
     open_probe_.placeholders = static_cast<int64_t>(CountPicturePlaceholderRows(chat_.messages));
     open_probe_.build_ms = sync_ms; // the same stretch chat.sync_slow measures
+    open_probe_.first_screen = scroller_.FirstScreenResult();
     open_probe_.built_at = std::chrono::steady_clock::now();
     // chat.previews: from the open (the sync started then) until the placeholders drawn now have their previews.
     previews_probe_.Start(PicturePlaceholderHashes(chat_.messages), sync_started, UiFrameStats::SlowFrames());
@@ -5923,12 +5929,7 @@ void ChatController::ScheduleChatWindowMetric(const std::chrono::milliseconds de
         return; // left and came back (or paged and left): the reading would not say what it is named for
       }
       const CurrentMemoryMb memory = ReadCurrentMemoryMb();
-      MetricsLine line("chat.window");
-      line.Add("rows", exited ? int64_t{0} : static_cast<int64_t>(chat_.messages.size()));
-      if (!exited) {
-        line.Add("pictures", static_cast<int64_t>(CountPictureBubbleRows(chat_.messages)));
-      }
-      line.Add("footprint_mb", memory.footprint_mb).Add("rss_mb", memory.rss_mb).Emit();
+      ChatWindowLine(chat_.messages, exited, exited ? std::nullopt : scroller_.TakePageReading(), memory).Emit();
     });
   });
 }
@@ -5949,6 +5950,7 @@ void ChatController::OnSyncLayoutMeasured(const int64_t ms) {
       .Add("placeholders", open_probe_.placeholders)
       .Add("build_ms", open_probe_.build_ms)
       .Add("layout_ms", ms)
+      .Add("first_screen", ChatTranscriptScroller::FirstScreenWord(open_probe_.first_screen))
       .Add("footprint_mb", memory.footprint_mb)
       .Add("rss_mb", memory.rss_mb)
       .Emit();

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Metrics.h"
+#include "foundation/diagnostics/OsCurrentMemory.h"
 #include "lib/ui/ChatWidgetTypes.h"
 
 #include <algorithm>
@@ -33,6 +35,40 @@ inline size_t CountPictureBubbleRows(const std::vector<MessageDisplayRow>& rows)
     }
   }
   return count;
+}
+
+/** A page of older rows loaded into the open chat (ChatTranscriptScroller), for its chat.window line. */
+struct ChatPageReading {
+  /** Rows the page added to the window. */
+  int64_t added = 0;
+  /** Loaded because the rows did not fill the transcript (else: scrolled to the top). */
+  bool fill = false;
+  /**
+   * A scrolled page: 1 when a frame was drawn after the rows changed and before the scroll position was fixed (the
+   * jump the person can see), else 0; unknown until the fix ran. A fill lands on the bottom instead: never set.
+   */
+  std::optional<int64_t> frames_before_fix;
+};
+
+/**
+ * chat.window: the rows on the page and the memory, a second after a page of older rows (`page`: a local page's
+ * reading, empty for a peer's older history), or after the chat was left (`exited`: rows=0, no page fields).
+ */
+inline MetricsLine ChatWindowLine(const std::vector<MessageDisplayRow>& rows, const bool exited,
+                                  const std::optional<ChatPageReading>& page, const CurrentMemoryMb& memory) {
+  MetricsLine line("chat.window");
+  line.Add("rows", exited ? int64_t{0} : static_cast<int64_t>(rows.size()));
+  if (!exited) {
+    line.Add("pictures", static_cast<int64_t>(CountPictureBubbleRows(rows)));
+  }
+  line.Add("footprint_mb", memory.footprint_mb).Add("rss_mb", memory.rss_mb);
+  if (!exited && page) {
+    line.Add("added", page->added).Add("cause", page->fill ? ShareWord("fill") : ShareWord("scroll"));
+    if (page->frames_before_fix) {
+      line.Add("frames_before_fix", *page->frames_before_fix);
+    }
+  }
+  return line;
 }
 
 /** A chat picture still waiting for its preview (B203): its clip is the placeholder. */

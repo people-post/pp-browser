@@ -149,6 +149,7 @@ class UiFrameStats {
 public:
   static void AddFrame(const int64_t layout_us, const int64_t render_us) {
     Frames().fetch_add(1, std::memory_order_relaxed);
+    DrawnFrameCount().fetch_add(1, std::memory_order_relaxed);
     LayoutUs().fetch_add(layout_us, std::memory_order_relaxed);
     RenderUs().fetch_add(render_us, std::memory_order_relaxed);
   }
@@ -157,6 +158,8 @@ public:
   static void AddSlowFrame() { SlowFrameCount().fetch_add(1, std::memory_order_relaxed); }
   /** Slow frames since the start (never reset: a reader takes the difference, as chat.previews does). */
   static int64_t SlowFrames() { return SlowFrameCount().load(std::memory_order_relaxed); }
+  /** Frames drawn since the start (never reset: a reader takes the difference, as chat.window's frames_before_fix). */
+  static int64_t DrawnFrames() { return DrawnFrameCount().load(std::memory_order_relaxed); }
 
   static UiFrameTotals TakeAndReset() {
     return {Frames().exchange(0, std::memory_order_relaxed), LayoutUs().exchange(0, std::memory_order_relaxed),
@@ -173,6 +176,10 @@ private:
     return v;
   }
   static std::atomic<int64_t>& SlowFrameCount() {
+    static std::atomic<int64_t> v{0};
+    return v;
+  }
+  static std::atomic<int64_t>& DrawnFrameCount() {
     static std::atomic<int64_t> v{0};
     return v;
   }

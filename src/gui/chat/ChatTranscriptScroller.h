@@ -1,7 +1,9 @@
 #pragma once
 
+#include "gui/chat/ChatOpenMetrics.h"
 #include "lib/ui/ChatWidgetTypes.h"
 #include "feature/conversations/ConversationsFacade.h"
+#include "common/ShareableLine.h"
 
 #include <ui/base/Types.h>
 
@@ -10,6 +12,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ui {
@@ -30,7 +33,18 @@ public:
   };
 
   ChatTranscriptScroller(ui::Context*& context, View view, bool& messaging_ready);
+  /** The store reads the window makes: the conversations facade's in the app (BindConversationsFacade), a test's own. */
+  struct StoreReads {
+    std::function<std::string()> active_thread_id;
+    std::function<Roe<std::vector<ThreadMessage>>(const std::string& thread_id, std::optional<int64_t> before,
+                                                  int limit)>
+        messages_page;
+    std::function<bool(const std::string& thread_id, int64_t before_display_order)> has_messages_before;
+    std::function<Roe<std::optional<ThreadMessage>>(const std::string& thread_id, const std::string& message_id)>
+        message;
+  };
   void BindConversationsFacade(ConversationsFacade* facade);
+  void BindStoreReads(StoreReads reads) { reads_ = std::move(reads); }
 
   void SetDirtyTurns(std::function<void()> dirty_turns) { dirty_turns_ = std::move(dirty_turns); }
   /**
@@ -83,6 +97,29 @@ public:
 
   const std::optional<int64_t>& LoadedMinDisplayOrder() const { return loaded_min_display_order_; }
   const std::optional<int64_t>& LoadedMaxDisplayOrder() const { return loaded_max_display_order_; }
+  /** The last page of older rows loaded (chat.window), once: empty after a take, a peer's page or a chat switch. */
+  std::optional<ChatPageReading> TakePageReading() { return std::exchange(page_reading_, std::nullopt); }
+  /** The store holds messages older than the window's first row (scrolling up loads them). */
+  bool HasMoreLocalHistory() const { return has_more_local_history_; }
+
+  /**
+   * The open chat's first screen (BeginDisplaySync): Ok — the window starts at its first_screen_messages-th newest shown
+   * message; Short — the chat has fewer (or its newest three pages do), the old first page shown; Miss — the store was not read (yet), the whole first page shown.
+   */
+  enum class FirstScreen { Ok, Short, Miss };
+  FirstScreen FirstScreenResult() const { return first_screen_; }
+  /** chat.open's `first_screen` value. */
+  static constexpr ShareWord FirstScreenWord(const FirstScreen result) {
+    switch (result) {
+      case FirstScreen::Ok:
+        return "ok";
+      case FirstScreen::Short:
+        return "short";
+      case FirstScreen::Miss:
+        break;
+    }
+    return "miss";
+  }
 
   /**
    * Cap `messages` to kMaxMessagesDomWindow. When pinned, drop the oldest down to a batch below the cap
@@ -100,8 +137,11 @@ public:
   static float ScrollTopAfterViewportResize(float top, float old_client_height, float new_client_height,
                                             float scroll_height, bool pinned_to_bottom);
 
-  /** Call at start of SyncDisplayFromThread; returns true if active thread id changed. */
-  bool BeginDisplaySync(const std::string& thread_id);
+  /**
+   * Call at start of SyncDisplayFromThread; returns true if active thread id changed. `first_screen_messages`: how many
+   * shown messages a chat switched to opens with (0: the whole first page).
+   */
+  bool BeginDisplaySync(const std::string& thread_id, size_t first_screen_messages);
   /** After rebuilding messages; updates watermarks and pin / jump-FAB. */
   void EndDisplaySync(bool thread_changed, const std::string& prev_tail_id, size_t prev_count);
 
@@ -115,7 +155,19 @@ private:
   void SetShowJumpToLatest(bool show);
   void ScrollMessagesToBottom();
   void MaybeLoadOlderLocalHistory();
-  void LoadOlderLocalHistory();
+  /** `fill`: loaded by MaybeFillScreen (else the scroll reached the top); said in the page's reading. */
+  /** True when a page was loaded (false: nothing older, not ready, or the store failed). */
+  bool LoadOlderLocalHistory(bool fill = false);
+  /** After the scroll to the bottom settled: rows that do not fill the screen get the page above. True if loaded. */
+  bool MaybeFillScreen(float client_height, float scroll_height, float max_top);
+  /**
+   * The first screen's oldest row: `shown` messages back from the newest, counting the rows that show on their own (not
+   * the annotations): `shown` rows first, then pages of 100, three reads at most; set in `oldest` for Ok (fewer in those
+   * reads: Short, no bound).
+   */
+  FirstScreen FirstScreenBound(const std::string& thread_id, size_t shown, std::optional<int64_t>& oldest) const;
+  /** The transcript sits exactly on its bottom (not the 64 px that count as pinned); true when not laid out or shown. */
+  bool ViewOnTheBottom() const;
   /** A pending JumpToMessage: scroll its row into view until the layout settles. True while it runs. */
   bool ApplyPendingJump(ui::Element* el);
 
@@ -133,6 +185,16 @@ private:
   bool suppress_scroll_handler_ = false;
   bool loading_older_local_ = false;
   bool has_more_local_history_ = false;
+  /** The chat switched to has not had its first screen decided (read failed, or not ready): tried on the next sync. */
+  bool first_screen_pending_ = false;
+  FirstScreen first_screen_ = FirstScreen::Miss;
+  /** First-screen reads tried again after the switch's failed (at most five). */
+  int first_screen_retries_ = 0;
+  /** The last local page's chat.window reading, and the frames drawn when it was loaded (UiFrameStats::DrawnFrames). */
+  std::optional<ChatPageReading> page_reading_;
+  int64_t page_frames_at_load_ = 0;
+  /** Pages loaded in a row to fill the screen that added no row (MaybeFillScreen). */
+  int fill_pages_without_rows_ = 0;
   std::string scroll_thread_id_;
   std::optional<int64_t> loaded_min_display_order_;
   /** When set, transcript window excludes tip rows newer than this (after history trim). */
@@ -157,7 +219,11 @@ private:
   std::chrono::steady_clock::time_point flash_until_{};
   void KeepJumpFlash();
   void ClearJumpFlash();
-  ConversationsFacade* facade_ = nullptr;
+  std::string ActiveThreadId() const;
+  bool HasMessagesBefore(const std::string& thread_id, int64_t before_display_order) const;
+  Roe<std::vector<ThreadMessage>> MessagesPage(const std::string& thread_id, std::optional<int64_t> before,
+                                               int limit) const;
+  StoreReads reads_;
   RowBuilder rows_;
   RowDecorator decorator_;
 };
