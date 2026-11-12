@@ -185,6 +185,7 @@ public:
     }
     lock_ = std::unique_lock<std::mutex>(connection_->statement_mutex);
     if (sqlite3_prepare_v2(connection_->db, sql, -1, &stmt_, nullptr) != SQLITE_OK) {
+      prepare_error_ = sqlite3_errmsg(connection_->db); // under the statement lock: this read's own message
       sqlite3_finalize(stmt_);
       stmt_ = nullptr;
     }
@@ -197,9 +198,12 @@ public:
   explicit operator bool() const { return stmt_ != nullptr; }
   sqlite3_stmt* Stmt() const { return stmt_; }
   sqlite3* Db() const { return connection_->db; }
+  /** SQLite's words for why the statement did not prepare (SQL text and table names only, no row data). */
+  const std::string& PrepareError() const { return prepare_error_; }
 
 private:
   std::shared_ptr<ReadConnection> connection_;
+  std::string prepare_error_;
   std::unique_lock<std::mutex> lock_;
   sqlite3_stmt* stmt_ = nullptr;
 };
@@ -367,7 +371,7 @@ Roe<std::optional<CallSession>> SqliteCallSessionStore::LoadSession(const std::s
                            "planned_hop_ma, initiator_identity FROM call_sessions WHERE "
                            "call_id = ? LIMIT 1;");
   if (!read) {
-    return Error("Failed to prepare call session load");
+    return Error("Failed to prepare call session load: " + read.PrepareError());
   }
   sqlite3_stmt* stmt = read.Stmt();
   sqlite3_bind_text(stmt, 1, call_id.c_str(), -1, SQLITE_TRANSIENT);
@@ -391,7 +395,7 @@ Roe<std::vector<CallSession>> SqliteCallSessionStore::ListActiveSessions() const
                            "planned_hop_ma, initiator_identity FROM call_sessions WHERE state "
                            "!= 'ended' ORDER BY created_at DESC;");
   if (!read) {
-    return Error("Failed to prepare active call list");
+    return Error("Failed to prepare active call list: " + read.PrepareError());
   }
   sqlite3_stmt* stmt = read.Stmt();
   std::vector<CallSession> rows;
@@ -418,7 +422,7 @@ Roe<std::vector<CallSession>> SqliteCallSessionStore::ListSessionsForGroup(const
                            "planned_hop_ma, initiator_identity FROM call_sessions WHERE origin_group_id = ? "
                            "ORDER BY created_at DESC LIMIT ?;");
   if (!read) {
-    return Error("Failed to prepare group call list");
+    return Error("Failed to prepare group call list: " + read.PrepareError());
   }
   sqlite3_stmt* stmt = read.Stmt();
   sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
@@ -442,7 +446,7 @@ Roe<std::vector<CallSession>> SqliteCallSessionStore::ListRecentSessions(const s
                            "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind, planned_hop, "
                            "planned_hop_ma, initiator_identity FROM call_sessions ORDER BY created_at DESC LIMIT ?;");
   if (!read) {
-    return Error("Failed to prepare recent call list");
+    return Error("Failed to prepare recent call list: " + read.PrepareError());
   }
   sqlite3_stmt* stmt = read.Stmt();
   sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(limit));
@@ -516,7 +520,7 @@ Roe<std::vector<CallParticipant>> SqliteCallSessionStore::ListParticipants(const
       "SELECT identity, state, audio_muted, video_enabled, joined_at, left_at, on_hold, video_paused, brought_by "
       "FROM call_participants WHERE call_id = ? ORDER BY identity ASC;");
   if (!read) {
-    return Error("Failed to prepare call participant list");
+    return Error("Failed to prepare call participant list: " + read.PrepareError());
   }
   sqlite3_stmt* stmt = read.Stmt();
   sqlite3_bind_text(stmt, 1, call_id.c_str(), -1, SQLITE_TRANSIENT);
@@ -628,7 +632,7 @@ Roe<std::optional<PendingCallInvite>> SqliteCallSessionStore::LoadPendingInvite(
                            "FROM "
                            "pending_call_invites WHERE call_id = ? AND invitee_identity = ? LIMIT 1;");
   if (!read) {
-    return Error("Failed to prepare pending call invite load");
+    return Error("Failed to prepare pending call invite load: " + read.PrepareError());
   }
   sqlite3_stmt* stmt = read.Stmt();
   sqlite3_bind_text(stmt, 1, call_id.c_str(), -1, SQLITE_TRANSIENT);
@@ -668,7 +672,7 @@ Roe<std::vector<PendingCallInvite>> SqliteCallSessionStore::ListPendingInvitesFo
                            "pending_call_invites WHERE invitee_identity = ? AND status = 'pending' ORDER BY "
                            "created_at DESC;");
   if (!read) {
-    return Error("Failed to prepare pending call invite list");
+    return Error("Failed to prepare pending call invite list: " + read.PrepareError());
   }
   sqlite3_stmt* stmt = read.Stmt();
   sqlite3_bind_text(stmt, 1, invitee_identity.c_str(), -1, SQLITE_TRANSIENT);
