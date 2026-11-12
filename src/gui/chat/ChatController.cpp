@@ -1511,7 +1511,9 @@ void ChatController::ApplyHomeToday(const ChatListScreen& list) {
                                    : (home_summary_.mentions.title + " · " + home_summary_.mentions.preview).c_str();
   shell_.home_new_people = home_summary_.new_contacts;
   shell_.home_security_ok = session_store_ && Store().Snapshot().profile_prefs.recovery_phrase_seen;
-  shell_.home_show_dynamic = session_store_ && Store().Snapshot().profile_prefs.home_show_dynamic;
+  // The widgets page is off until it gets its own page: the stored preference is kept but never read here.
+  constexpr bool kWidgetsPageOnHome = false;
+  shell_.home_show_dynamic = kWidgetsPageOnHome && session_store_ && Store().Snapshot().profile_prefs.home_show_dynamic;
   if (layout.Kept(kHomeWidgetFavorites)) {
     ApplyHomeFavorites(list.rows);
   } else {

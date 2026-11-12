@@ -43,8 +43,9 @@
         <!-- Widgets (Kenneth 2026-11-05, phones only): "Show widgets page" is the old "Show Activity on Home" switch (off, the
              default, is the minimal AI-first Home; on brings back the 动态 widgets section); "Choose widgets" opens the
              Edit Home sheet and is greyed out while the first is off. -->
-        <p class="text group-head settings-phone-only">{{i18n:settings.widgets.title}}</p>
-        <div class="group-card settings-phone-only">
+        <!-- Hidden: the widgets page is off on Home until it gets its own page (see ChatController kWidgetsPageOnHome). -->
+        <p class="text group-head settings-phone-only" style="display: none;">{{i18n:settings.widgets.title}}</p>
+        <div class="group-card settings-phone-only" style="display: none;">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">
               <span class="group-row-label">
