@@ -15,7 +15,8 @@ Object MustParseObject(const std::string& json_utf8) {
   return parsed.value_or(Object{});
 }
 
-TEST(ContactJsonCompat, ParsesLegacyFlatContactFields) {
+// The flat row from before the local/remote split is not read: pre-release, no leftover contact is carried over.
+TEST(ContactJsonCompat, AFlatRowFromBeforeTheSplitIsNotRead) {
   const Object json = MustParseObject(R"({
     "id": "c1",
     "display_name": "Alice",
@@ -28,21 +29,11 @@ TEST(ContactJsonCompat, ParsesLegacyFlatContactFields) {
 
   const Contact contact = ContactFromJson(json);
   EXPECT_EQ(contact.id, "c1");
-  EXPECT_EQ(contact.display_name, "Alice");
-  EXPECT_EQ(contact.local.display_name, "Alice");
-  EXPECT_EQ(contact.server_nickname, "alice");
-  EXPECT_EQ(contact.remote.nickname, "alice");
-  EXPECT_EQ(contact.trust, TrustLevel::Friendly);
-  EXPECT_EQ(contact.local.trust, TrustLevel::Friendly);
-  ASSERT_EQ(contact.ids.size(), 2u);
-  EXPECT_EQ(contact.ids[0].kind, mesh::ContactIdKind::RelayUser);
-  EXPECT_EQ(contact.ids[0].value, "relay:alice123");
-  EXPECT_TRUE(contact.ids[0].primary);
-  EXPECT_EQ(contact.ids[1].kind, mesh::ContactIdKind::PeerId);
-  EXPECT_EQ(contact.ids[1].value, "12D3KooWPeer");
-  ASSERT_EQ(contact.multiaddrs.size(), 1u);
-  EXPECT_EQ(contact.multiaddrs[0], "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWPeer");
-  EXPECT_EQ(contact.remote.fetched_at, 0);
+  EXPECT_TRUE(contact.local.display_name.empty());
+  EXPECT_TRUE(contact.remote.nickname.empty());
+  EXPECT_EQ(contact.local.trust, TrustLevel::Unknown);
+  EXPECT_TRUE(contact.ids.empty());
+  EXPECT_TRUE(contact.multiaddrs.empty());
 }
 
 TEST(ContactJsonCompat, NestedRoundTripPreservesLocalRemote) {

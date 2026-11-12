@@ -1,5 +1,6 @@
-// A thread's local title survives a reopen (the store migrates its column).
+// A thread's local title survives a reopen.
 #include "lib/storage/SqliteThreadStore.h"
+#include "UnlockedThreadStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -15,6 +16,7 @@ TEST(SqliteThreadStoreLocalTitleTest, MigratesAndPersistsLocalTitle) {
 
   {
     SqliteThreadStore store(data_dir.string());
+    ASSERT_TRUE(store.SetDek(test::TestStoreDek()));
     ASSERT_TRUE(store.ListThreads());
     Thread thread;
     thread.id = "t1";
@@ -28,6 +30,7 @@ TEST(SqliteThreadStoreLocalTitleTest, MigratesAndPersistsLocalTitle) {
   {
     // See "Temp-dir cleanup pattern" above — reloaded must close before remove_all.
     SqliteThreadStore reloaded(data_dir.string());
+    ASSERT_TRUE(reloaded.SetDek(test::TestStoreDek()));
     auto loaded = reloaded.GetThread("t1");
     ASSERT_TRUE(loaded);
     ASSERT_TRUE(*loaded);

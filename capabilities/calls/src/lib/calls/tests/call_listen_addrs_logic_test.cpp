@@ -9,7 +9,7 @@ namespace {
 
 TEST(CallListenAddrsLogicTest, FillFromAmpLanMasWithoutMeshPeerIdCallback) {
   // D3: mDNS miss OK when invite embeds Amp LAN MAs (no separate PeerId provider).
-  const std::vector<std::string> mas = {"/ip4/192.168.1.10/udp/19001/adp/1.0.0/p2p/12D3KooWAliceLan"};
+  const std::vector<std::string> mas = {"/ip4/192.168.1.10/udp/19001/adp/2/p2p/12D3KooWAliceLan"};
   std::string peer_id;
   std::vector<std::string> out;
   FillCallListenFields(mas, peer_id, out);
@@ -37,7 +37,7 @@ TEST(CallListenAddrsLogicTest, InviteEncodeRoundTripKeepsListenMas) {
   invite.media_mode = CallMediaMode::Voice;
   invite.expires_at = 1;
   std::string peer_id;
-  FillCallListenFields({"/ip4/10.0.0.3/udp/9/adp/1.0.0/p2p/12D3KooWBob"}, peer_id, invite.listen_multiaddrs);
+  FillCallListenFields({"/ip4/10.0.0.3/udp/9/adp/2/p2p/12D3KooWBob"}, peer_id, invite.listen_multiaddrs);
   invite.libp2p_peer_id = peer_id;
   auto enc = CallControlCodec::EncodeInvite(invite);
   ASSERT_TRUE(enc);
@@ -51,7 +51,7 @@ TEST(CallListenAddrsLogicTest, InviteEncodeRoundTripKeepsListenMas) {
 TEST(CallListenAddrsLogicTest, Ipv6ListenAddrsSufficientForDirectDial) {
   std::string peer_id;
   std::vector<std::string> out;
-  FillCallListenFields({"/ip6/2001:db8::9/udp/19001/adp/1.0.0/p2p/12D3KooWIpv6"}, peer_id, out);
+  FillCallListenFields({"/ip6/2001:db8::9/udp/19001/adp/2/p2p/12D3KooWIpv6"}, peer_id, out);
   ASSERT_EQ(out.size(), 1u);
   EXPECT_EQ(peer_id, "12D3KooWIpv6");
   EXPECT_TRUE(InviteListenAddrsSufficientForDirectDial(out));

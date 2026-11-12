@@ -16,6 +16,7 @@
 #include "mesh/l4/circuit/client/CircuitClientCoordinator.h"
 #include "domain/call_media/ICallMediaTransport.h"
 #include "mesh/host/MeshPorts.h"
+#include "mesh/shared/AmpParkUntil.h"
 #include "lib/calls/CallTypes.h"
 #include "amp/link/PeerId.h"
 #include "crypto/PeerId.h"
@@ -34,6 +35,7 @@
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -377,8 +379,20 @@ pbr::RelayEnvelope MakeProbeChatEnvelope(const int cycle) {
   return env;
 }
 
-bool SendProbeChat(pbr::AmpDirectChatTransport& chat, const std::string& peer_key, const int cycle) {
-  auto sent = chat.SendEnvelope(peer_key, MakeProbeChatEnvelope(cycle));
+/** One chat envelope, waited for while `pump` drives the probe's io (the product sends asynchronously). */
+bool SendProbeChat(pbr::AmpDirectChatTransport& chat, const std::string& peer_key, const int cycle,
+                   const std::function<void()>& pump) {
+  auto done = std::make_shared<std::promise<pbr::DirectSendRoe>>();
+  auto outcome = done->get_future();
+  chat.SendEnvelopeAsync(peer_key, MakeProbeChatEnvelope(cycle),
+                         [done](pbr::DirectSendRoe value) { done->set_value(std::move(value)); });
+  const auto ready = [&outcome] { return outcome.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; };
+  pp::mesh::AmpParkUntil(ready, std::chrono::steady_clock::now() + std::chrono::seconds(5), pump);
+  if (!ready()) {
+    std::cerr << "error: chat send: no answer in time\n";
+    return false;
+  }
+  auto sent = outcome.get();
   if (!sent) {
     std::cerr << "error: chat send: " << sent.error().message << "\n";
     return false;
@@ -1204,7 +1218,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     }
 
     if (with_chat && chat) {
-      if (!SendProbeChat(*chat, peer_key, cycle)) {
+      if (!SendProbeChat(*chat, peer_key, cycle, pump)) {
         std::cerr << "error: chat during call cycle " << cycle << "\n";
         return 1;
       }
@@ -1247,7 +1261,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
           return 1;
         }
       }
-      if (!SendProbeChat(*chat, peer_key, cycle + 100)) {
+      if (!SendProbeChat(*chat, peer_key, cycle + 100, pump)) {
         std::cerr << "error: chat after leave cycle " << cycle << "\n";
         return 1;
       }

@@ -214,8 +214,8 @@ enum class CallMediaActiveCloseAction {
 
 /**
  * K014: a close the peer did not announce with `bye` is a lost path — never the call's end (that
- * comes with `bye`, or with call_leave from an older peer): the path falls back, fails over, or
- * waits for a new one exactly as for a dead link.
+ * comes with `bye`, or with the peer's call_leave on the control lane): the path falls back, fails
+ * over, or waits for a new one exactly as for a dead link.
  */
 CallMediaActiveCloseAction DecideCallMediaActiveClose(const CallMediaActiveCloseInput& in);
 

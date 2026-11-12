@@ -548,8 +548,6 @@ private:
   Roe<void> BuildLocalMessagingStack();
   /** Attach Amp links from a running mesh_ to the orchestrator. */
   Roe<void> AttachAmpMessagingStack();
-  /** @deprecated Prefer BuildLocalMessagingStack + ScheduleMeshBringUp. Sync local+mesh. */
-  Roe<void> BuildMessagingStack();
   void ScheduleMeshBringUp();
   void NotifyMessagingReady();
   void NotifyMeshReady();
@@ -733,6 +731,8 @@ private:
   std::function<void()> on_mesh_ready_;
   std::function<void()> on_call_wake_;
   bool initialized_ = false;
+  /** The kept account cards are read once, after unlock (they live in the chat store). */
+  bool kept_cards_loaded_ = false;
   bool messaging_ready_ = false;
   /** AppLifecycle listeners (OnAppBackground / OnAppForeground), removed at Shutdown. */
   uint64_t lifecycle_background_id_ = 0;

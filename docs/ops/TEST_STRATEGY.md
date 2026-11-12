@@ -55,7 +55,7 @@ Linux often masks the bug; **CI on Windows will fail**.
 | Pattern | File |
 |---------|------|
 | Store + schema helper | [`src/lib/storage/tests/sqlite_call_session_store_test.cpp`](../../src/lib/storage/tests/sqlite_call_session_store_test.cpp) |
-| Store + feature store on same `profile.db` | [`capabilities/calls/src/lib/calls/tests/call_media_key_wrap_test.cpp`](../../capabilities/calls/src/lib/calls/tests/call_media_key_wrap_test.cpp) (`CallMediaKeyStoreEpochTest`) |
+| Two stores on the same `profile.db` | [`src/lib/storage/tests/call_store_contract_test.cpp`](../../src/lib/storage/tests/call_store_contract_test.cpp) (`CallStoreContractTest`) |
 
 Minimal fixture skeleton:
 

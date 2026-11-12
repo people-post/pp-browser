@@ -28,8 +28,6 @@ CallControlSender WhoMaySend(const CallControlType type) {
     case CallControlType::CallRemove:
       return CallControlSender::InCall;
     case CallControlType::CallSummary:
-    case CallControlType::CallSdp:
-    case CallControlType::CallIce:
       return CallControlSender::Nobody;
   }
   return CallControlSender::Nobody; // an unknown value: drop it

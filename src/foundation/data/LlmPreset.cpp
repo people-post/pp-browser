@@ -1,8 +1,6 @@
 #include "foundation/data/LlmPreset.h"
 
-#include "foundation/data/PlatformDefaults.h"
 #include "foundation/platform/DeploymentProfile.h"
-#include "foundation/platform/Platform.h"
 
 #include <cstring>
 
@@ -52,27 +50,11 @@ bool IsKnownPresetId(const std::string& value) {
   return FindPreset(value) != nullptr;
 }
 
-std::string InferLegacyPreset(const AppConfig& config) {
-  if (config.llm.base_url.find("11434") != std::string::npos) {
-    return "ollama";
-  }
-  if (config.llm.base_url == kCloudBaseUrl) {
-    return "cloud";
-  }
-  if (config.llm.base_url == BriefLlmBaseUrl() ||
-      config.llm.base_url == PlatformDefaults::For(Platform::Detect()).llm.base_url) {
-    return "brief";
-  }
-  return "custom";
-}
-
 } // namespace
 
 std::string ResolvePreset(const AppConfig& config) {
-  if (!config.llm.preset.empty()) {
-    return config.llm.preset;
-  }
-  return InferLegacyPreset(config);
+  // Every config names its preset ("brief" by default); one that names none points at a URL of its own.
+  return config.llm.preset.empty() ? std::string("custom") : config.llm.preset;
 }
 
 std::string DefaultModelForPreset(const std::string& preset_id) {

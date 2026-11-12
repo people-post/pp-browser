@@ -42,10 +42,10 @@ using test::StartCallNow;
 
 // Not a built-in or retired org seed (NormalizeMeshConfig would swap those for the defaults).
 constexpr char kHopPeerId[] = "12D3KooWGroupCallComposeMediaRelayHop";
-constexpr char kHopMultiaddr[] = "/ip4/1.2.3.4/udp/443/adp/1.0.0/p2p/12D3KooWGroupCallComposeMediaRelayHop";
+constexpr char kHopMultiaddr[] = "/ip4/1.2.3.4/udp/443/adp/2/p2p/12D3KooWGroupCallComposeMediaRelayHop";
 // A second reachable hop (gt3): ranks first on A after StartCall; the planned hop must still win.
 constexpr char kOtherHopPeerId[] = "12D3KooWGroupCallComposeOtherHop";
-constexpr char kOtherHopMultiaddr[] = "/ip4/1.2.3.5/udp/443/adp/1.0.0/p2p/12D3KooWGroupCallComposeOtherHop";
+constexpr char kOtherHopMultiaddr[] = "/ip4/1.2.3.5/udp/443/adp/2/p2p/12D3KooWGroupCallComposeOtherHop";
 /** Audio packets (40 ms) each side must decode from each other publisher. */
 constexpr uint64_t kMinRxFrames = 25;
 
@@ -292,44 +292,12 @@ protected:
         }
         sides_[i].dial->connected[sides_[j].local_identity] = true;
         sides_[i].dial->endpoints[sides_[j].local_identity] =
-            "/ip4/127.0.0.1/udp/" + std::to_string(47200 + j) + "/adp/1.0.0/p2p/" + MeshPeerIdOf(j);
+            "/ip4/127.0.0.1/udp/" + std::to_string(47200 + j) + "/adp/2/p2p/" + MeshPeerIdOf(j);
       }
       // A 1:1 call-media dial lands on the dialed side's inbound handler.
       sides_[i].transport->peer_inbound = [this, i](CallMediaDirectConnectParams params) {
         DeliverDirectHello(i, std::move(params));
       };
-    }
-    SeedPairwisePsks();
-  }
-
-  /**
-   * Every pair shares a direct-chat PSK, as paired contacts do — so CallMediaKey travels the wire.
-   * An eject rotates the media key; without this only the out-of-band epoch-1 key ever arrived
-   * and members failed to re-attach after a rotation (CI: they ejected each other).
-   */
-  void SeedPairwisePsks() {
-    for (size_t i = 0; i < kSides; ++i) {
-      for (size_t j = i + 1; j < kSides; ++j) {
-        auto master = sides_[i].psk->GenerateMasterPsk();
-        ASSERT_TRUE(master) << master.error().message;
-        const std::string master_b64 = Base64Encode(*master);
-        for (auto [self, peer] : {std::pair{i, j}, std::pair{j, i}}) {
-          // The row belongs to the pair's direct thread (the call-control thread); the PSK save updates it.
-          DirectChatTarget target;
-          target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
-          target.peer_identity_value = sides_[peer].local_identity;
-          target.channel = ThreadChannel::E2ePublic;
-          auto thread = sides_[self].store->FindOrCreateDirectThread(target, "", sides_[peer].local_identity);
-          ASSERT_TRUE(thread) << thread.error().message;
-          PeerSessionRecord record;
-          record.key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
-          record.key.peer_identity_value = sides_[peer].local_identity;
-          record.key.channel = CryptoChannel::E2ePublic;
-          record.master_psk_b64 = master_b64;
-          auto saved = sides_[self].psk->Save(record);
-          ASSERT_TRUE(saved) << saved.error().message;
-        }
-      }
     }
   }
 

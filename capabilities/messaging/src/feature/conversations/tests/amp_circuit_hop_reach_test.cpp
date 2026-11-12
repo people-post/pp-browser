@@ -233,7 +233,7 @@ protected:
 TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSkipsEnsureAssociationAndPreferredMultiaddr) {
   WarmAnswererAndOfferer("relay");
 
-  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/2/p2p/" + harness_->peer_id_b;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_b, private_ma)));
   ASSERT_TRUE(recording_->GetLinkSnapshot(harness_->peer_id_b).has_endpoint);
   ASSERT_FALSE(recording_->IsConnected(harness_->peer_id_b));
@@ -270,7 +270,7 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
   // still reach Connected via nested circuit and must not call EnsureAssociation (hard-w5 Phase-2).
   WarmAnswererAndOfferer("relay");
 
-  const std::string private_ma = "/ip4/10.255.255.9/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  const std::string private_ma = "/ip4/10.255.255.9/udp/9/adp/2/p2p/" + harness_->peer_id_b;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_b, private_ma)));
   ASSERT_TRUE(recording_->GetLinkSnapshot(harness_->peer_id_b).has_endpoint);
   ASSERT_FALSE(recording_->IsConnected(harness_->peer_id_b));
@@ -423,8 +423,8 @@ TEST_F(AmpCircuitHopReachTest, PrivateHopMaDoesNotPoisonPublicPreferred) {
   WarmAnswererAndOfferer(harness_->peer_id_r);
   ASSERT_TRUE(recording_->GetLinkSnapshot(harness_->peer_id_r).has_endpoint);
 
-  const std::string public_ma = "/ip4/203.0.113.50/udp/4001/adp/1.0.0/p2p/" + harness_->peer_id_r;
-  const std::string private_hop_ma = "/ip4/10.255.255.7/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_r;
+  const std::string public_ma = "/ip4/203.0.113.50/udp/4001/adp/2/p2p/" + harness_->peer_id_r;
+  const std::string private_hop_ma = "/ip4/10.255.255.7/udp/9/adp/2/p2p/" + harness_->peer_id_r;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_r, public_ma)));
   ASSERT_EQ(recording_->PreferredMultiaddr(harness_->peer_id_r).value_or(""), public_ma);
   EXPECT_FALSE(mesh::CircuitHopDialBookAllowsRegister(private_hop_ma));
@@ -466,7 +466,7 @@ TEST_F(AmpCircuitHopReachTest, SkipsWildcardPreferredRelayThenUsesDialable) {
   // Dogfood 084055: capability ingest left Preferred=/ip4/0.0.0.0 on seed; StartBridge sendto
   // then AV on next relay. Skip undialable Preferred and advance to a dialable hop.
   WarmAnswererAndOfferer(harness_->peer_id_r);
-  const std::string wildcard_ma = "/ip4/0.0.0.0/udp/53523/adp/1.0.0/p2p/" + harness_->peer_id_r;
+  const std::string wildcard_ma = "/ip4/0.0.0.0/udp/53523/adp/2/p2p/" + harness_->peer_id_r;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_r, wildcard_ma)));
   ASSERT_EQ(recording_->PreferredMultiaddr(harness_->peer_id_r).value_or(""), wildcard_ma);
   EXPECT_FALSE(mesh::CircuitHopMultiaddrIsUdpDialable(wildcard_ma));

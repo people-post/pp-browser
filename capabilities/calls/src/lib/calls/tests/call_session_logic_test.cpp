@@ -102,17 +102,16 @@ TEST(CallSessionLogicTest, HonorInboundVideoRefreshOnlyJoinedOnActiveCall) {
 
 TEST(CallControlTypeTest, WireRoundTrip) {
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallInvite), "call_invite");
-  EXPECT_EQ(CallControlTypeFromWire("call_join"), CallControlType::CallAccept);
+  EXPECT_EQ(CallControlTypeFromWire("call_accept"), CallControlType::CallAccept);
   EXPECT_EQ(CallControlTypeFromWire("call_summary"), CallControlType::CallSummary);
   EXPECT_FALSE(CallControlTypeFromWire("call_started").has_value()) << "history is a summary now";
   EXPECT_FALSE(CallControlTypeFromWire("member_joined").has_value());
 }
 
-TEST(CallControlTypeTest, WireRoundTripSdpAndIce) {
-  EXPECT_EQ(CallControlTypeToWire(CallControlType::CallSdp), "call_sdp");
-  EXPECT_EQ(CallControlTypeToWire(CallControlType::CallIce), "call_ice");
-  EXPECT_EQ(CallControlTypeFromWire("call_sdp"), CallControlType::CallSdp);
-  EXPECT_EQ(CallControlTypeFromWire("call_ice"), CallControlType::CallIce);
+TEST(CallControlTypeTest, WireRoundTripReachAndHop) {
+  EXPECT_FALSE(CallControlTypeFromWire("call_join").has_value()) << "an accept is call_accept";
+  EXPECT_FALSE(CallControlTypeFromWire("call_sdp").has_value()) << "no SDP / ICE signaling";
+  EXPECT_FALSE(CallControlTypeFromWire("call_ice").has_value());
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallSfuAttach), "call_sfu_attach");
   EXPECT_EQ(CallControlTypeFromWire("call_sfu_attach"), CallControlType::CallSfuAttach);
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallSfuAttachFailed), "call_sfu_attach_failed");
@@ -131,25 +130,6 @@ TEST(CallControlTypeTest, WireRoundTripSdpAndIce) {
   EXPECT_EQ(CallControlTypeFromWire("call_punch_answer"), CallControlType::CallPunchAnswer);
 }
 
-TEST(CallControlCodecTest, SdpDetailRoundTrip) {
-  CallSdpDetail detail;
-  detail.call_id = "call:abc";
-  detail.identity = "account:alice";
-  detail.sdp_type = "offer";
-  detail.sdp = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\n";
-
-  auto encoded = CallControlCodec::EncodeSdp(detail);
-  ASSERT_TRUE(encoded);
-  auto decoded = CallControlCodec::DecodeSdp(*encoded);
-  ASSERT_TRUE(decoded);
-  EXPECT_EQ(decoded->call_id, detail.call_id);
-  EXPECT_EQ(decoded->identity, detail.identity);
-  EXPECT_EQ(decoded->sdp_type, detail.sdp_type);
-  EXPECT_EQ(decoded->sdp, detail.sdp);
-
-  EXPECT_FALSE(CallControlCodec::DecodeSdp(R"({"call_id":"call:abc"})"));
-}
-
 // K005: mobility rides caps without a `v` bump; old caps (no key) and newer values read Unknown.
 TEST(CallControlCodecTest, CapsMobilityRoundTripsWithoutAVersionBump) {
   CallInviteDetail invite;
@@ -161,7 +141,7 @@ TEST(CallControlCodecTest, CapsMobilityRoundTripsWithoutAVersionBump) {
   auto encoded = CallControlCodec::EncodeInvite(invite);
   ASSERT_TRUE(encoded);
   EXPECT_NE(encoded->find("\"mobility\":\"mobile\""), std::string::npos);
-  EXPECT_NE(encoded->find("\"v\":1"), std::string::npos) << "no caps.v bump (old peers zero caps on a newer v)";
+  EXPECT_NE(encoded->find("\"v\":1"), std::string::npos) << "no caps.v bump (a newer v zeroes the caps)";
   auto decoded = CallControlCodec::DecodeInvite(*encoded);
   ASSERT_TRUE(decoded);
   EXPECT_EQ(decoded->caps.mobility, MobilityClass::Mobile);
@@ -246,18 +226,14 @@ TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
   EXPECT_TRUE(decoded_accept->caps.present);
   EXPECT_FALSE(decoded_accept->caps.media_relay);
 
-  auto old_invite = CallControlCodec::DecodeInvite(
-      R"({"call_id":"call:x","inviter_identity":"a","invitee_identity":"b","media_mode":"voice"})");
-  ASSERT_TRUE(old_invite);
-  EXPECT_FALSE(old_invite->caps.present);
-  EXPECT_FALSE(old_invite->caps.media_relay);
-  EXPECT_EQ(old_invite->offer_amount_minor, 0);
-  EXPECT_FALSE(old_invite->video_allowed);
-
-  auto legacy_video = CallControlCodec::DecodeInvite(
-      R"({"call_id":"call:y","inviter_identity":"a","invitee_identity":"b","media_mode":"video"})");
-  ASSERT_TRUE(legacy_video);
-  EXPECT_TRUE(legacy_video->video_allowed);
+  // Optional fields absent: no caps, no offer, and video only when the invite says so.
+  auto bare_invite = CallControlCodec::DecodeInvite(
+      R"({"call_id":"call:x","inviter_identity":"a","invitee_identity":"b","media_mode":"video"})");
+  ASSERT_TRUE(bare_invite);
+  EXPECT_FALSE(bare_invite->caps.present);
+  EXPECT_FALSE(bare_invite->caps.media_relay);
+  EXPECT_EQ(bare_invite->offer_amount_minor, 0);
+  EXPECT_FALSE(bare_invite->video_allowed) << "media_mode is how the call started, not whether video is allowed";
 
   CallInviteDetail invite_video;
   invite_video.call_id = "call:z";
@@ -291,7 +267,7 @@ TEST(CallControlCodecTest, AcceptWithoutVideoAllowedDecodesAsUnset) {
   auto json = CallControlCodec::EncodeAccept(d);
   ASSERT_TRUE(json);
   EXPECT_EQ(json->find("video_allowed"), std::string::npos);                            // not written when unset
-  auto back = CallControlCodec::DecodeAccept(R"({"call_id":"call:1","identity":"x"})"); // old peer
+  auto back = CallControlCodec::DecodeAccept(R"({"call_id":"call:1","identity":"x"})"); // a plain answer
   ASSERT_TRUE(back);
   EXPECT_FALSE(back->video_allowed.has_value());
 }
@@ -325,21 +301,21 @@ TEST(CallControlCodecTest, InviteOfferAmountRoundTrip) {
   EXPECT_EQ(decoded_accept->offer_amount_minor, 25);
 }
 
-// V050: planned_hop is additive — round-trips with its multiaddr, absent stays absent (old peers),
+// V050: planned_hop is additive — round-trips with its multiaddr, absent stays absent,
 // and never aliases sfu_hint (the hop the call is on).
 TEST(CallControlCodecTest, InvitePlannedHopRoundTrip) {
   CallInviteDetail invite;
   invite.call_id = "call:group";
   invite.inviter_identity = "account:a";
   invite.invitee_identity = "account:b";
-  invite.planned_hop = CallPlannedHop{"12D3KooWHop", "/ip4/198.18.117.2/udp/443/adp/1.0.0/p2p/12D3KooWHop"};
+  invite.planned_hop = CallPlannedHop{"12D3KooWHop", "/ip4/198.18.117.2/udp/443/adp/2/p2p/12D3KooWHop"};
   auto encoded = CallControlCodec::EncodeInvite(invite);
   ASSERT_TRUE(encoded);
   auto decoded = CallControlCodec::DecodeInvite(*encoded);
   ASSERT_TRUE(decoded);
   ASSERT_TRUE(decoded->planned_hop);
   EXPECT_EQ(decoded->planned_hop->peer_id, "12D3KooWHop");
-  EXPECT_EQ(decoded->planned_hop->multiaddr, "/ip4/198.18.117.2/udp/443/adp/1.0.0/p2p/12D3KooWHop");
+  EXPECT_EQ(decoded->planned_hop->multiaddr, "/ip4/198.18.117.2/udp/443/adp/2/p2p/12D3KooWHop");
   EXPECT_FALSE(decoded->sfu_hint);
 
   invite.planned_hop.reset();
@@ -348,7 +324,7 @@ TEST(CallControlCodecTest, InvitePlannedHopRoundTrip) {
   EXPECT_FALSE(plain->planned_hop);
 }
 
-// V050 gt4: the accept's hop report is additive — absent stays unknown (old peers).
+// V050 gt4: the accept's hop report is optional — absent stays unknown.
 TEST(CallControlCodecTest, AcceptHopReportRoundTrip) {
   CallAcceptDetail accept;
   accept.call_id = "call:group";
@@ -415,7 +391,7 @@ TEST(CallControlCodecTest, AcceptCarriesTheParkedRelays) {
   plain.call_id = "call:plain";
   auto plain_json = CallControlCodec::EncodeAccept(plain);
   ASSERT_TRUE(plain_json);
-  EXPECT_EQ(plain_json->find("circuit_parked"), std::string::npos) << "absent when not parked (old peers unchanged)";
+  EXPECT_EQ(plain_json->find("circuit_parked"), std::string::npos) << "absent when not parked";
   EXPECT_TRUE(CallControlCodec::DecodeAccept(*plain_json)->circuit_parked.empty());
 }
 
@@ -439,7 +415,7 @@ TEST(CallControlTypeTest, PunchWireRoundTrip) {
   detail.epoch_id = "ep-1";
   detail.window_ms = 1500;
   detail.peer_id = "QmPunchPeer";
-  detail.addrs = {"/ip4/1.2.3.4/udp/1/adp/1.0.0/p2p/QmPunchPeer"};
+  detail.addrs = {"/ip4/1.2.3.4/udp/1/adp/2/p2p/QmPunchPeer"};
   auto encoded = CallControlCodec::EncodePunch(detail);
   ASSERT_TRUE(static_cast<bool>(encoded));
   auto decoded = CallControlCodec::DecodePunch(*encoded);
@@ -508,18 +484,6 @@ TEST(CallSessionLogicTest, VoiceAnswerNarrowsOnlyDirectOriginCalls) {
   EXPECT_FALSE(CallSessionLogic::VoiceAnswerNarrowsCall(group));
   group.origin_group_id = "";
   EXPECT_TRUE(CallSessionLogic::VoiceAnswerNarrowsCall(group));
-}
-
-TEST(CallSessionLogicTest, VideoAllowedFromInvite) {
-  CallInviteDetail voice;
-  voice.media_mode = CallMediaMode::Voice;
-  voice.video_allowed = false;
-  EXPECT_FALSE(CallSessionLogic::VideoAllowedFromInvite(voice));
-
-  CallInviteDetail allowed;
-  allowed.media_mode = CallMediaMode::Voice;
-  allowed.video_allowed = true;
-  EXPECT_TRUE(CallSessionLogic::VideoAllowedFromInvite(allowed));
 }
 
 TEST(CallSessionLogicTest, FanoutSelectJoinedOnly) {

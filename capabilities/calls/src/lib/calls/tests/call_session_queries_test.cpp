@@ -271,18 +271,9 @@ TEST(RecentCallsTest, NewestFirstAndAnIncomingCallNeverAnsweredIsMissed) {
   add("mine", 40, "account:me", CallSessionState::Ended, CallParticipantState::Left);
   add("group-missed", 50, "account:bob", CallSessionState::Ended, CallParticipantState::Missed, false, true);
   add("ringing-now", 60, "account:ann", CallSessionState::Ringing, CallParticipantState::Ringing);
-  {
-    CallSession live;
-    live.call_id = "broadcast";
-    live.initiator_identity = "account:ann";
-    live.state = CallSessionState::Ended;
-    live.created_at = 70;
-    live.session_kind = CallSessionKind::Broadcast;
-    ASSERT_TRUE(calls.UpsertSession(live));
-  }
 
   const std::vector<call_queries::RecentCall> recent = call_queries::RecentCalls(calls, "account:me", 20);
-  ASSERT_EQ(recent.size(), 6u) << "a live broadcast is no call";
+  ASSERT_EQ(recent.size(), 6u);
   EXPECT_EQ(recent[0].call_id, "ringing-now");
   EXPECT_FALSE(recent[0].missed) << "still ringing: not missed yet";
   EXPECT_EQ(recent[1].call_id, "group-missed");
@@ -296,8 +287,7 @@ TEST(RecentCallsTest, NewestFirstAndAnIncomingCallNeverAnsweredIsMissed) {
   EXPECT_TRUE(recent[5].missed);
   EXPECT_TRUE(recent[5].video);
   EXPECT_EQ(recent[5].thread_id, "thread-rang-out");
-  EXPECT_EQ(call_queries::RecentCalls(calls, "account:me", 3).size(), 2u)
-      << "`limit` rows read, the broadcast among them";
+  EXPECT_EQ(call_queries::RecentCalls(calls, "account:me", 3).size(), 3u) << "`limit` rows read";
 }
 
 // G022: what lets someone met in a call invite us to the group they made there — both of us in it, now.

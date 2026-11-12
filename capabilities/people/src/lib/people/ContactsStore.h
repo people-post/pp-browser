@@ -19,8 +19,8 @@ namespace pbr {
 class ContactsStore : public Module, public IContactBook, public IContactTrustAccess {
 public:
   /**
-   * Nested local/remote contact rows (+ empty overrides). Unversioned files migrate on load.
-   * v2: remarks that merely copied the nickname (seeded by older builds) are cleared once on load.
+   * Nested local/remote contact rows (+ empty overrides). A file of another version (older, newer or none) is
+   * refused: pre-release, no leftover contacts file is carried over (COMPATIBILITY.md § On-disk).
    */
   static constexpr int kSchemaVersion = 2;
 

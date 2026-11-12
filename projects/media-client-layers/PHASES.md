@@ -116,7 +116,7 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 ## l6 — Remove broadcast from calls (done)
 
 - [x] Deleted `BroadcastSessionCoordinator`, `CallTopologyController::OnAnnounceViewerJoined`, `ArmJoinFromLiveAnnounce` / `AcceptLiveAnnounceJoin` (CSM, `CallUiBackend`), the facade / orchestrator `Plan*` / `Arm*` / `JoinLiveAnnounceFromTip` entry points, `AnnounceLiveJoin.*` and `ApplyBroadcastJoinTicket`; SoftMigrate has no `is_broadcast` input. The only watch entry is `WatchLiveAnnounce` → `BroadcastHub`
-- [x] `CallSessionKind::Broadcast` stays a parsed legacy value only: nothing creates it, and `AcceptInvite` refuses such rows (older builds may have persisted them)
+- [x] `CallSessionKind::Broadcast` stays a parsed legacy value only: nothing creates it, and `AcceptInvite` refuses such rows (older builds may have persisted them) — the kind itself removed 2026-11-12 (no bridges pre-release)
 - [x] peer-scoped-broadcast CURRENT_STATE / PHASES point at `feature/broadcast`
 
 **Exit (l6):** calls hold no broadcast code; `check_feature_includes.sh` bans the edge both ways. **Met.**

@@ -200,4 +200,4 @@ Horizon **N-HARD-MULTI-HOP-MEDIA** remains **off** for group calls. For broadcas
 
 ## Implementation note (code split)
 
-Viewer and broadcaster live in `feature/broadcast` (`BroadcastHub`, `BroadcastViewerWorkflow`, `BroadcasterWorkflow`), a sibling of calls — no call session, SoftMigrate or roster. `AcceptInvite` refuses legacy Broadcast rows from older builds.
+Viewer and broadcaster live in `feature/broadcast` (`BroadcastHub`, `BroadcastViewerWorkflow`, `BroadcasterWorkflow`), a sibling of calls — no call session, SoftMigrate or roster. A call row has no kind (the legacy `Broadcast` kind went 2026-11-12, no bridges pre-release).

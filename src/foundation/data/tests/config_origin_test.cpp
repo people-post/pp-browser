@@ -47,6 +47,7 @@ std::string WriteConfig(const char* name, const std::string& body) {
 
 constexpr const char* kSavedConfig = R"({
   "config_version": 1,
+  "backend": { "env": "custom" },
   "llm": { "preset": "brief", "base_url": "https://saved.example.test/api/llm/v1", "model": "xai" },
   "relay": { "base_url": "https://saved.example.test/api/relay" },
   "directory": { "base_url": "https://saved.example.test/api/relay" },
@@ -216,18 +217,6 @@ TEST(ConfigBackendTest, EnvOriginBeatsCustomBackend) {
   ASSERT_TRUE(static_cast<bool>(loaded));
   EXPECT_EQ(loaded->relay.base_url, "https://backend.example.test/api/relay");
   EXPECT_EQ(loaded->backend.saved_relay.base_url, "https://custom.example.test/api/relay");
-  std::filesystem::remove(path);
-  pbr::ResetActiveBackendForTest();
-}
-
-TEST(ConfigBackendTest, FileWithoutBackendKeyAndOwnUrlsIsAdoptedAsCustom) {
-  pbr::ResetActiveBackendForTest();
-  ScopedOrigin origin(nullptr);
-  const std::string path = WriteConfig("pp_browser_config_backend_legacy.json", kSavedConfig);
-  auto loaded = pbr::Config::LoadFromFile(path);
-  ASSERT_TRUE(static_cast<bool>(loaded));
-  EXPECT_EQ(loaded->backend.env, "custom");
-  EXPECT_EQ(loaded->relay.base_url, "https://saved.example.test/api/relay");
   std::filesystem::remove(path);
   pbr::ResetActiveBackendForTest();
 }

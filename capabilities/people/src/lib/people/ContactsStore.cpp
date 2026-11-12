@@ -49,7 +49,6 @@ Roe<void> ContactsStore::EnsureLoaded() const {
   std::filesystem::create_directories(data_dir_, ec);
 
   contacts_.clear();
-  bool needs_rewrite = false;
   {
     // Close the read handle before Save() — Windows cannot rename over an open file.
     std::ifstream in(StorePath(), std::ios::binary);
@@ -83,22 +82,18 @@ Roe<void> ContactsStore::EnsureLoaded() const {
         return Error("Invalid contacts.json");
       }
 
-      int version = 0;
-      if (root->contains("schema_version")) {
-        auto version_opt = root->getIf<int64_t>("schema_version");
-        if (!version_opt) {
-          if (auto as_u = root->getNonNegInt("schema_version")) {
-            version_opt = static_cast<int64_t>(*as_u);
-          }
+      auto version = root->getIf<int64_t>("schema_version");
+      if (!version) {
+        if (auto as_u = root->getNonNegInt("schema_version")) {
+          version = static_cast<int64_t>(*as_u);
         }
-        if (!version_opt) {
-          return Error("Invalid schema_version in contacts.json");
-        }
-        version = static_cast<int>(*version_opt);
-        if (version > kSchemaVersion) {
-          return Error("Unsupported schema version " + std::to_string(version) +
-                       " in contacts.json; delete the data directory and restart");
-        }
+      }
+      if (!version) {
+        return Error("Missing or invalid schema_version in contacts.json; delete the data directory and restart");
+      }
+      if (*version != kSchemaVersion) {
+        return Error("Unsupported schema version " + std::to_string(*version) +
+                     " in contacts.json; delete the data directory and restart");
       }
 
       if (const Array* contacts = root->getArray("contacts")) {
@@ -110,30 +105,10 @@ Roe<void> ContactsStore::EnsureLoaded() const {
           contacts_.push_back(ContactFromJson(*item));
         }
       }
-
-      if (version < kSchemaVersion) {
-        needs_rewrite = true;
-      }
-      if (version < 2) {
-        // v2: the remark is only what the user wrote. Older builds copied the nickname into it on add.
-        for (Contact& contact : contacts_) {
-          if (!contact.local.display_name.empty() && contact.local.display_name == contact.remote.nickname) {
-            contact.local.display_name.clear();
-            SyncContactMirrors(contact);
-          }
-        }
-      }
     }
   }
 
   loaded_ = true;
-  if (needs_rewrite) {
-    dirty_ = true;
-    if (auto saved = Save(); !saved) {
-      return saved.error();
-    }
-    dirty_ = false;
-  }
   return {};
 }
 

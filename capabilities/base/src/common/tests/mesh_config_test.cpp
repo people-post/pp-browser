@@ -24,14 +24,13 @@ TEST(MeshConfigTest, APhoneIsAlwaysAClient) {
 // N027: the directory's mesh nodes first, then the config's seeds, one address per PeerId.
 TEST(MeshConfigTest, SeedsAreTheDirectorysNodesThenTheConfigs) {
   MeshConfig config;
-  config.bootstrap_peers = {"/ip4/203.0.113.1/udp/443/adp/1.0.0/p2p/SeedA",
-                            "/ip4/203.0.113.9/udp/443/adp/1.0.0/p2p/NodeB"};
+  config.bootstrap_peers = {"/ip4/203.0.113.1/udp/443/adp/2/p2p/SeedA", "/ip4/203.0.113.9/udp/443/adp/2/p2p/NodeB"};
   mesh::MeshDirectoryNode node;
   node.peer_id = "NodeB";
-  node.multiaddrs = {"/ip4/198.51.100.2/udp/443/adp/1.0.0/p2p/NodeB"};
+  node.multiaddrs = {"/ip4/198.51.100.2/udp/443/adp/2/p2p/NodeB"};
   EXPECT_EQ(EffectiveBootstrapPeers(config, {node}),
-            (std::vector<std::string>{"/ip4/198.51.100.2/udp/443/adp/1.0.0/p2p/NodeB",
-                                      "/ip4/203.0.113.1/udp/443/adp/1.0.0/p2p/SeedA"}));
+            (std::vector<std::string>{"/ip4/198.51.100.2/udp/443/adp/2/p2p/NodeB",
+                                      "/ip4/203.0.113.1/udp/443/adp/2/p2p/SeedA"}));
   EXPECT_EQ(EffectiveBootstrapPeers(config), config.bootstrap_peers) << "no directory: the config's, in order";
 }
 

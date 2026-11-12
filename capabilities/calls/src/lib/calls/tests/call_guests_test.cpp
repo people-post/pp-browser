@@ -116,7 +116,7 @@ TEST(CallGuestsTest, GroupInviteOfferedToThoseWhoMayInvite) {
   EXPECT_FALSE(OffersGroupInvite(true, kNoRoster, kNoRoster));
 }
 
-// V062 1: `guest` and `brought_by` ride the invite and the roster, both or neither; older peers send neither.
+// V062 1: `guest` and `brought_by` ride the invite and the roster, both or neither; an invite of no guest carries neither.
 TEST(CallGuestsTest, InviteAndRosterCarryWhoBroughtAGuest) {
   CallInviteDetail invite;
   invite.call_id = "call:1";

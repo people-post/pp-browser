@@ -1,4 +1,5 @@
 #include "lib/storage/SqliteGroupInviteLinkStore.h"
+#include "lib/storage/SqliteChatStoreGate.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/FileCipher.h"
@@ -62,6 +63,9 @@ void SqliteGroupInviteLinkStore::ClearDek() {
 }
 
 Roe<sqlite3*> SqliteGroupInviteLinkStore::OpenDb() const {
+  if (auto gate = chat_store_gate::RequireOpen(profile_db_path_); !gate) {
+    return gate.error();
+  }
   sqlite3* db = nullptr;
   if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
     sqlite3_close(db);
