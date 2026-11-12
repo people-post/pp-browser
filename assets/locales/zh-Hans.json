@@ -407,6 +407,7 @@
     "settings.security.pin_status.not_setup": "未设置",
     "settings.security.pin_updated": "PIN 已更新",
     "settings.security.unlock_to_change": "先解锁，再改 PIN 码。",
+    "settings.storage.chats_reset_too_old": "这些数据来自过旧的版本，无法升级：你的聊天已被重置。",
     "settings.storage.reset_chats": "重置聊天…",
     "settings.storage.reset_chats_confirm_title": "重置聊天？",
     "settings.storage.reset_chats_confirm_message":

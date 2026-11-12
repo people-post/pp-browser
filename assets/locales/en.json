@@ -412,6 +412,7 @@
     "settings.security.pin_status.not_setup": "Not set up",
     "settings.security.pin_updated": "PIN updated",
     "settings.security.unlock_to_change": "Unlock first to change the PIN.",
+    "settings.storage.chats_reset_too_old": "This data was from a version too old to upgrade: your chats were reset.",
     "settings.storage.reset_chats": "Reset chats…",
     "settings.storage.reset_chats_confirm_title": "Reset chats?",
     "settings.storage.reset_chats_confirm_message":

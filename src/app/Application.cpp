@@ -54,6 +54,7 @@
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/delivery/ChatPayloadValidator.h"
 #include "lib/storage/SqliteCallSessionStore.h"
+#include "lib/storage/SqliteChatDbLadders.h"
 #include "lib/storage/SqliteThreadSchema.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/AppLifecycle.h"
@@ -2341,6 +2342,10 @@ void Application::WireHubCallbacks() {
       call_->OnMessagingReady();
     }
     contacts_->Refresh();
+    // A chat database too old to upgrade was reset when it opened (D105): say so once.
+    if (TakeChatStoreResetNotice(store_.Snapshot().profile_data_dir)) {
+      UserFeedback::Note(Tr("settings.storage.chats_reset_too_old"));
+    }
     if (messaging_facade_ && support_discovery_ && support_discovery_->enabled) {
       messaging_facade_->SetSupportAccountId(support_discovery_->account_id);
     }
