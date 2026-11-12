@@ -109,7 +109,7 @@
       <p class="cd-footnote" data-if="selected.trust_key == 'blocked'">{{i18n:contacts.blocked_hint}}</p>
 
       <div class="cd-card">
-        <button class="cd-row" type="button" data-if="advanced && selected.has_relay_id" data-event-click="sync_contact_remote()">
+        <button class="cd-row" type="button" data-if="advanced && selected.can_refresh" data-event-click="sync_contact_remote()">
           <span class="cd-row-body">
             <span class="cd-row-text">{{i18n:contacts.sync_directory}}</span>
             <svg class="cd-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
@@ -241,7 +241,7 @@
       </p>
       <p class="text muted me-profile-meta" data-if="advanced">{{selected.remote_updated}}</p>
       <div class="me-profile-actions row">
-        <div data-if="advanced && selected.has_relay_id">
+        <div data-if="advanced && selected.can_refresh">
           <button class="btn btn-secondary btn-icon" type="button" data-event-click="sync_contact_remote()">
             <svg src="../icons/sync.svg" width="14" height="14" crop-to-content="true"></svg>
             {{i18n:contacts.sync_directory}}

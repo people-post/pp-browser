@@ -669,6 +669,7 @@
     "contacts.err.trust": "Could not update trust",
     "contacts.err.no_relay_id": "No account ID to refresh",
     "contacts.err.sync": "Could not sync contact",
+    "contacts.err.account_mismatch": "This info belongs to a different account. Nothing was changed.",
     "contacts.err.missing_account_id": "This search result has no account ID",
     "contacts.err.save_synced": "Could not save synced contact",
     "contacts.err.remove": "Could not remove contact",

@@ -313,7 +313,8 @@ Roe<Contact> ContactsStore::AddFromDirectoryHitUnnotified(const mesh::DirectoryH
 }
 
 Roe<Contact> ContactsStore::ApplyRemoteSnapshotUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
-                                                          const int64_t fetched_at_ms) {
+                                                          const int64_t fetched_at_ms,
+                                                          const std::optional<std::string>& requested_account_id) {
   auto loaded = Get(contact_id);
   if (!loaded) {
     return loaded.error();
@@ -322,10 +323,49 @@ Roe<Contact> ContactsStore::ApplyRemoteSnapshotUnnotified(const std::string& con
     return Error("Contact not found");
   }
   Contact contact = **loaded;
-  contact.remote.nickname = hit.nickname;
+  const auto known = ContactAccountId(contact);
+  if (known) {
+    // A by-account lookup is for that account even when the answer does not name it; a by-relay one must say so.
+    auto offered = PrimaryAccountIdFromHit(hit);
+    if (!offered) {
+      offered = requested_account_id;
+    }
+    if (!offered || *offered != *known) {
+      return Error("Directory hit is for another account");
+    }
+  }
+  const std::vector<mesh::ContactId> old_ids = contact.remote.ids;
+  const bool hit_has_relay = PrimaryRelayIdFromHit(hit).has_value();
+  const bool hit_has_device = !hit.endpoints.empty() || !hit.multiaddrs.empty() ||
+                              std::any_of(hit.ids.begin(), hit.ids.end(), [](const mesh::ContactId& id) {
+                                return id.kind == mesh::ContactIdKind::PeerId;
+                              });
   contact.remote.ids = hit.ids;
-  contact.remote.endpoints = hit.endpoints;
-  contact.remote.multiaddrs = hit.multiaddrs;
+  if (known) {
+    // What the answer leaves out is kept: the route, and the devices as one group with their addresses.
+    for (const mesh::ContactId& id : old_ids) {
+      const bool keep = (id.kind == mesh::ContactIdKind::RelayUser && !hit_has_relay) ||
+                        (id.kind == mesh::ContactIdKind::PeerId && !hit_has_device);
+      if (keep) {
+        mesh::ContactId kept = id;
+        kept.primary = false;
+        contact.remote.ids.push_back(std::move(kept));
+      }
+    }
+    const bool has_account = std::any_of(
+        contact.remote.ids.begin(), contact.remote.ids.end(),
+        [&known](const mesh::ContactId& id) { return id.kind == mesh::ContactIdKind::Account && id.value == *known; });
+    if (!has_account) {
+      contact.remote.ids.insert(contact.remote.ids.begin(), {mesh::ContactIdKind::Account, *known, true});
+    }
+  }
+  if (!known || hit_has_device) {
+    contact.remote.endpoints = hit.endpoints;
+    contact.remote.multiaddrs = hit.multiaddrs;
+  }
+  if (!known || !hit.nickname.empty()) {
+    contact.remote.nickname = hit.nickname;
+  }
   contact.remote.icon = hit.icon;
   contact.remote.fetched_at = fetched_at_ms > 0 ? fetched_at_ms : util::NowUnixMs();
   SyncContactMirrors(contact);
@@ -432,8 +472,9 @@ Roe<Contact> ContactsStore::AddFromDirectoryHit(const mesh::DirectoryHit& hit) {
 }
 
 Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, const mesh::DirectoryHit& hit,
-                                                const int64_t fetched_at_ms) {
-  auto result = ApplyRemoteSnapshotUnnotified(contact_id, hit, fetched_at_ms);
+                                                const int64_t fetched_at_ms,
+                                                const std::optional<std::string>& requested_account_id) {
+  auto result = ApplyRemoteSnapshotUnnotified(contact_id, hit, fetched_at_ms, requested_account_id);
   if (result) {
     NotifyChanged();
   }

@@ -33,7 +33,9 @@ struct MessagingContactsPorts {
   std::function<Roe<std::vector<mesh::DirectoryHit>>(const std::string& query)> search_people;
   std::function<Roe<Contact>(const mesh::DirectoryHit& hit)> add_contact_from_directory_hit;
   std::function<Roe<bool>(const std::string& contact_id)> remove_contact;
-  std::function<Roe<Contact>(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms)>
+  /** `requested_account_id`: the account a by-account lookup asked for (ContactsStore::ApplyRemoteSnapshot). */
+  std::function<Roe<Contact>(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms,
+                             const std::optional<std::string>& requested_account_id)>
       apply_remote_snapshot;
 
   std::function<Roe<std::vector<Thread>>()> list_threads;
@@ -46,6 +48,7 @@ struct MessagingContactsPorts {
       get_signing_key;
 
   std::function<Roe<mesh::DirectoryHit>(const std::string& relay_user_id)> lookup_relay_user;
+  std::function<Roe<mesh::DirectoryHit>(const std::string& account_id)> lookup_account;
 
   std::function<std::string(const Contact& contact)> contact_icon_local_path;
   std::function<void(const Contact& contact)> ensure_contact_icon_cached;

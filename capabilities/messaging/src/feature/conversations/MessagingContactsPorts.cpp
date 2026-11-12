@@ -35,14 +35,16 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
   ports.lookup_relay_user = [&hub](const std::string& relay_user_id) {
     return hub.Directory().LookupRelayUser(relay_user_id);
   };
+  ports.lookup_account = [&hub](const std::string& account_id) { return hub.Directory().LookupByAccount(account_id); };
   ports.contact_icon_local_path = [&hub](const Contact& contact) { return hub.ContactIconLocalPath(contact); };
   ports.ensure_contact_icon_cached = [&hub](const Contact& contact) { hub.EnsureContactIconCached(contact); };
   ports.ensure_directory_hit_icon_cached = [&hub](const mesh::DirectoryHit& hit) {
     hub.EnsureDirectoryHitIconCached(hit);
   };
   ports.apply_remote_snapshot = [&hub](const std::string& contact_id, const mesh::DirectoryHit& hit,
-                                       const int64_t fetched_at_ms) {
-    auto result = hub.Contacts().ApplyRemoteSnapshot(contact_id, hit, fetched_at_ms);
+                                       const int64_t fetched_at_ms,
+                                       const std::optional<std::string>& requested_account_id) {
+    auto result = hub.Contacts().ApplyRemoteSnapshot(contact_id, hit, fetched_at_ms, requested_account_id);
     if (result) {
       hub.EnsureContactIconCached(*result);
     }
@@ -68,11 +70,13 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
       done(locator.error());
       return;
     }
-    hub.ContactCards().AddFromLocator(*locator, [done](Roe<ContactCardExchange::LocatorAdded> added) {
+    hub.ContactCards().AddFromLocator(*locator, [&hub, done](Roe<ContactCardExchange::LocatorAdded> added) {
       if (!added) {
         done(added.error());
         return;
       }
+      // The invite carries no relay id: ask the directory for it now (on a worker, never on this thread).
+      hub.RefreshContactProfileIfStale(added.value().contact.id);
       done(std::make_pair(added.value().contact.id, added.value().keys_known));
     });
   };

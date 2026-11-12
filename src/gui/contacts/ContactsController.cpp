@@ -255,6 +255,8 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   detail.relay_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser).c_str();
   detail.peer_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId).c_str();
   detail.has_relay_id = !detail.relay_id.empty();
+  detail.account_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account).c_str();
+  detail.can_refresh = detail.has_relay_id || !detail.account_id.empty();
   if (!detail.relay_id.empty()) {
     detail.subtitle = ShortRelayId(detail.relay_id.c_str()).c_str();
   } else if (!detail.peer_id.empty()) {
@@ -600,6 +602,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
           detail_handle.RegisterMember("can_message", &ContactDetail::can_message);
           detail_handle.RegisterMember("name_placeholder", &ContactDetail::name_placeholder);
           detail_handle.RegisterMember("has_relay_id", &ContactDetail::has_relay_id);
+          detail_handle.RegisterMember("can_refresh", &ContactDetail::can_refresh);
           detail_handle.RegisterMember("has_icon", &ContactDetail::has_icon);
           detail_handle.RegisterMember("icon_src", &ContactDetail::icon_src);
           detail_handle.RegisterMember("avatar_letter", &ContactDetail::avatar_letter);
@@ -2319,19 +2322,30 @@ void ContactsController::OnOpenBlockedContact(const std::string& contact_id) {
 
 void ContactsController::OnSyncRemote() {
   if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || selected_.id.empty() ||
-      !contacts_ports_.lookup_relay_user || !contacts_ports_.apply_remote_snapshot) {
+      !contacts_ports_.lookup_relay_user || !contacts_ports_.lookup_account || !contacts_ports_.apply_remote_snapshot) {
     return;
   }
   FlushPending();
   const std::string relay_id = selected_.relay_id.c_str();
-  if (relay_id.empty()) {
+  const std::string account_id = selected_.account_id.c_str();
+  if (relay_id.empty() && account_id.empty()) {
     UserFeedback::Fail(Tr("contacts.err.no_relay_id"));
     return;
   }
-  auto hit = contacts_ports_.lookup_relay_user(relay_id);
+  // The Account ID is what a person keeps across servers: look it up by that when the contact has one.
+  auto hit =
+      account_id.empty() ? contacts_ports_.lookup_relay_user(relay_id) : contacts_ports_.lookup_account(account_id);
   if (!hit) {
     UserFeedback::Fail(hit.error().message.empty() ? Tr("contacts.err.sync") : hit.error().message);
     return;
+  }
+  // Before any key is taken from the answer: it must be for the person this contact is.
+  if (!account_id.empty()) {
+    const auto offered = PrimaryAccountIdFromHit(*hit);
+    if (!offered || *offered != account_id) {
+      UserFeedback::Fail(Tr("contacts.err.account_mismatch"));
+      return;
+    }
   }
   const bool carries_keys = (hit->signing_public_key_b64 && !hit->signing_public_key_b64->empty()) ||
                             (hit->kem_public_key_b64 && !hit->kem_public_key_b64->empty());
@@ -2342,7 +2356,9 @@ void ContactsController::OnSyncRemote() {
   if (contacts_ports_.register_peer_keys_from_directory) {
     contacts_ports_.register_peer_keys_from_directory(*hit);
   }
-  auto applied = contacts_ports_.apply_remote_snapshot(selected_.id.c_str(), *hit, util::NowUnixMs());
+  auto applied =
+      contacts_ports_.apply_remote_snapshot(selected_.id.c_str(), *hit, util::NowUnixMs(),
+                                            account_id.empty() ? std::nullopt : std::optional<std::string>(account_id));
   if (!applied) {
     UserFeedback::Fail(applied.error().message.empty() ? Tr("contacts.err.save_synced") : applied.error().message);
     return;

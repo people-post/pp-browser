@@ -163,6 +163,10 @@ public:
     std::vector<ContactThreadRow> threads;
     bool can_message = false;
     bool has_relay_id = false;
+    /** Refreshing the contact's info can be tried: it has an Account ID or a relay id. */
+    bool can_refresh = false;
+    /** The contact's Account ID (what a refresh looks up first); empty when it has none. */
+    ui::String account_id;
     bool has_icon = false;
     ui::String icon_src;
     ui::String avatar_letter = "?";
@@ -185,6 +189,8 @@ public:
   void Tick();
   void FlushPending();
   void OnSelectContact(const std::string& contact_id);
+  /** "Refresh account info…" on the open contact: looks it up by Account ID (else relay id) and applies the answer. */
+  void OnSyncRemote();
   /** A group member who is not a contact: their page in its member state, pushed like a contact's page. */
   void OnShowMember(const std::string& account_id, const std::string& name, const std::string& icon_src);
   /**
@@ -380,7 +386,6 @@ private:
   void OnContactFieldLeft();
   /** The edit is over (field left, page gone, typing paused): "Note saved" once if a save changed the remark. */
   void AnnounceRemarkSaved();
-  void OnSyncRemote();
   bool FlushSelectedContact();
   void UpdateMessagingEligibility(const Contact& contact);
   void DirtyAll();
