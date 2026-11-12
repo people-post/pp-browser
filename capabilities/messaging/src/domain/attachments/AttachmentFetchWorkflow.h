@@ -186,7 +186,8 @@ public:
   /**
    * Best-effort preview (kImagePreviewMaxSide) of a picture longer than that on its long side, or of any picture above
    * kMaxDirectAttachmentBytes (its size is not read without the plaintext): the chat bubble shows it, a tap opens the
-   * original. Made from `plaintext` already in hand: call on a worker, not under a lock.
+   * original. Made from `plaintext` already in hand: call on a worker, not under a lock. A lock (or another unlock) or
+   * a delete of the bytes while it is written takes it back, as RunGridThumbnails does.
    */
   void MaybeBuildImageThumbnail(const std::string& thread_id, const ChatAttachmentFields& fields,
                                 const ByteVector& plaintext);

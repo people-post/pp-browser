@@ -457,6 +457,57 @@ TEST_F(ChatPreviewTest, ALockWhileMakingLeavesNoPreviewAndNoPlaintextInMemory) {
   EXPECT_EQ(FailedCount(), 0u);
 }
 
+// The same for the preview made from the bytes in hand after a download or a send (MaybeBuildImageThumbnail, every
+// picture longer than 640 px): a lock while it is written leaves nothing in the view cache.
+TEST_F(ChatPreviewTest, ALockWhileMakingFromTheBytesInHandLeavesNoPreview) {
+  const ByteVector bytes = PngOf(1000, 800, 10'000, 52);
+  const ChatAttachmentFields fields = Store(bytes);
+  hold_gate();
+  std::thread maker([&] { workflow_.MaybeBuildImageThumbnail("t1", fields, bytes); });
+  const bool started = WaitUntil([&] { return Started().size() == 1; });
+  workflow_.ClearDek(); // the view cache is wiped now, before the preview is written
+  open_gate();
+  maker.join();
+  ASSERT_TRUE(started);
+  EXPECT_FALSE(PreviewExists(fields)) << "written after the wipe: taken back";
+
+  // Unlocked again while it was written (another key generation): taken back too, made at the next drawing.
+  ASSERT_TRUE(workflow_.SetDek(TestDek()));
+  hold_gate();
+  std::thread again([&] { workflow_.MaybeBuildImageThumbnail("t1", fields, bytes); });
+  const bool started_again = WaitUntil([&] { return Started().size() == 2; });
+  workflow_.ClearDek();
+  EXPECT_TRUE(workflow_.SetDek(TestDek()));
+  open_gate();
+  again.join();
+  ASSERT_TRUE(started_again);
+  EXPECT_FALSE(PreviewExists(fields));
+
+  workflow_.MaybeBuildImageThumbnail("t1", fields, bytes); // nothing in between: kept
+  EXPECT_TRUE(PreviewExists(fields));
+}
+
+// Each page's cancel takes only its own requests: the chat leaving keeps the storage grid's, and the grid's page
+// cancelled keeps the chat's.
+TEST_F(ChatPreviewTest, TheGridsCancelAndTheChatsCancelEachTakeOnlyTheirOwn) {
+  const ChatAttachmentFields chat_a = Store(PngOf(2000, 1500, 10'000, 80));
+  const ChatAttachmentFields grid_a = Store(PngOf(2000, 1500, 10'000, 81));
+  const ChatAttachmentFields grid_b = Store(PngOf(2000, 1500, 10'000, 82));
+  workflow_.ClearDek();
+  workflow_.RequestGridThumbnail("t1", grid_a.content_hash, grid_a.mime, 7);
+  workflow_.RequestChatPreview("t1", chat_a);
+  workflow_.CancelChatPreviews();     // the chat left
+  workflow_.RequestChatPreview("t1", chat_a); // and opened again
+  workflow_.RequestGridThumbnail("t1", grid_b.content_hash, grid_b.mime, 7);
+  workflow_.CancelGridThumbnails(7); // the grid page closed
+  ASSERT_TRUE(workflow_.SetDek(TestDek()));
+  ASSERT_TRUE(WaitUntil([&] { return PreviewExists(chat_a) && MadeCount() == 1; })) << "the chat's request stays";
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_FALSE(PreviewExists(grid_a));
+  EXPECT_FALSE(PreviewExists(grid_b));
+  EXPECT_EQ(Started().size(), 1u);
+}
+
 // Bytes the platform cannot make a preview from: remembered (its row is a file card), not tried again, said once.
 TEST_F(ChatPreviewTest, APreviewThatCannotBeMadeIsRememberedAndNotTriedAgain) {
   const ChatAttachmentFields fields = Store(PngOf(2000, 1500, 10'000, 60));

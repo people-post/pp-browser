@@ -1151,10 +1151,29 @@ void AttachmentFetchWorkflow::MaybeBuildImageThumbnail(const std::string& thread
       return;
     }
   }
-  if (!HasDek()) {
-    return; // locked: nothing derived from the plaintext is kept on disk
+  const std::string hex = AttachmentHashHex(fields.content_hash);
+  uint64_t dek_generation = 0;
+  {
+    std::lock_guard lock(mutex_);
+    if (dek_.empty() || deleting_.contains(hex)) {
+      return; // locked: nothing derived from the plaintext is kept on disk
+    }
+    ++thumbnails_in_progress_[hex]; // a delete of these bytes waits for it
+    dek_generation = dek_generation_;
   }
-  (void)EnsureAttachmentImageThumbnail(profile_dir_, thread_id, fields.content_hash, fields.mime, plaintext);
+  auto made = EnsureAttachmentImageThumbnail(profile_dir_, thread_id, fields.content_hash, fields.mime, plaintext);
+  {
+    std::lock_guard lock(mutex_);
+    // Locked (its view cache wiped) or unlocked again, or the message deleted, while it was written: taken back.
+    if (made && (dek_.empty() || dek_generation_ != dek_generation || deleting_.contains(hex))) {
+      std::error_code ec;
+      std::filesystem::remove(*made, ec);
+    }
+    if (--thumbnails_in_progress_[hex] <= 0) {
+      thumbnails_in_progress_.erase(hex);
+    }
+  }
+  delete_cv_.notify_all();
 }
 
 void AttachmentFetchWorkflow::RequestChatPreview(const std::string& thread_id, const ChatAttachmentFields& fields) {
