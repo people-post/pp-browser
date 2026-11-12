@@ -734,7 +734,14 @@ void Backend::WakeEventLoop() {
   }
 }
 
+static std::atomic<long long> g_force_frame_requests{0};
+
+long long Backend::TakeForceFrameRequests() {
+  return g_force_frame_requests.exchange(0, std::memory_order_relaxed);
+}
+
 void Backend::RequestForceFrame() {
+  g_force_frame_requests.fetch_add(1, std::memory_order_relaxed);
   if (!data)
     return;
   data->force_next_frame.store(true, std::memory_order_release);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gui/CallChromeSync.h"
+
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -26,6 +28,13 @@ struct UiCostTotals {
   int64_t frame_copies = 0;
   int64_t frame_copies_stale = 0; // copies whose sequence number was the one shown last time
   int64_t video_wakes = 0;
+  // ApplyCallChromeSnapshot's closing RequestForceFrame, by the kind of update it pushed.
+  int64_t chrome_force_frames_remount = 0;
+  int64_t chrome_force_frames_dirty = 0;
+  int64_t chrome_force_frames_parts = 0;
+  int64_t chrome_force_frames_levels = 0;
+  int64_t ui_tasks = 0; // main-loop turns that had posted UI tasks to run (RunUITasks reports no count)
+  int64_t loops = 0;    // main-loop turns (frames counts the drawn ones)
 };
 
 /**
@@ -50,6 +59,26 @@ public:
     }
   }
   void AddVideoWake() { video_wakes_.fetch_add(1, std::memory_order_relaxed); }
+  void AddChromeForceFrame(const CallChromeUpdate update) {
+    switch (update) {
+      case CallChromeUpdate::Remount:
+        chrome_force_frames_remount_.fetch_add(1, std::memory_order_relaxed);
+        break;
+      case CallChromeUpdate::DirtyOnly:
+        chrome_force_frames_dirty_.fetch_add(1, std::memory_order_relaxed);
+        break;
+      case CallChromeUpdate::PartsOnly:
+        chrome_force_frames_parts_.fetch_add(1, std::memory_order_relaxed);
+        break;
+      case CallChromeUpdate::LevelsOnly:
+        chrome_force_frames_levels_.fetch_add(1, std::memory_order_relaxed);
+        break;
+      case CallChromeUpdate::None:
+        break; // never pushed (CallController drops it before the shell)
+    }
+  }
+  void AddUiTaskTurn() { ui_tasks_.fetch_add(1, std::memory_order_relaxed); }
+  void AddLoop() { loops_.fetch_add(1, std::memory_order_relaxed); }
 
   UiCostTotals TakeAndReset() {
     UiCostTotals t;
@@ -64,6 +93,12 @@ public:
     t.frame_copies = frame_copies_.exchange(0, std::memory_order_relaxed);
     t.frame_copies_stale = frame_copies_stale_.exchange(0, std::memory_order_relaxed);
     t.video_wakes = video_wakes_.exchange(0, std::memory_order_relaxed);
+    t.chrome_force_frames_remount = chrome_force_frames_remount_.exchange(0, std::memory_order_relaxed);
+    t.chrome_force_frames_dirty = chrome_force_frames_dirty_.exchange(0, std::memory_order_relaxed);
+    t.chrome_force_frames_parts = chrome_force_frames_parts_.exchange(0, std::memory_order_relaxed);
+    t.chrome_force_frames_levels = chrome_force_frames_levels_.exchange(0, std::memory_order_relaxed);
+    t.ui_tasks = ui_tasks_.exchange(0, std::memory_order_relaxed);
+    t.loops = loops_.exchange(0, std::memory_order_relaxed);
     return t;
   }
 
@@ -84,6 +119,12 @@ private:
   std::atomic<int64_t> frame_copies_{0};
   std::atomic<int64_t> frame_copies_stale_{0};
   std::atomic<int64_t> video_wakes_{0};
+  std::atomic<int64_t> chrome_force_frames_remount_{0};
+  std::atomic<int64_t> chrome_force_frames_dirty_{0};
+  std::atomic<int64_t> chrome_force_frames_parts_{0};
+  std::atomic<int64_t> chrome_force_frames_levels_{0};
+  std::atomic<int64_t> ui_tasks_{0};
+  std::atomic<int64_t> loops_{0};
 };
 
 /** Adds the microseconds between construction and destruction to one counter (an Add...Us member). */

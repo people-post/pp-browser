@@ -56,6 +56,8 @@ void WakeEventLoop();
 // Thread-safe UI delivery: skip the next power-save idle wait + WakeEventLoop.
 // AppRuntime::PostUI should call this (via SetUIWakeCallback), not WakeEventLoop alone.
 void RequestForceFrame();
+// perf.threads: RequestForceFrame calls (from any thread) since the last take; the take starts again from zero.
+long long TakeForceFrameRequests();
 
 void BeginFrame();
 void PresentFrame();

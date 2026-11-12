@@ -2623,9 +2623,13 @@ void Application::Run() {
     if (!Backend::ProcessEvents(context, ProcessKeyDown, true)) {
       break;
     }
+    UiCostCounters::Instance().AddLoop();
     // The frame's work starts with the posted UI tasks: that is where a new message's display sync runs.
     const auto frame_started = std::chrono::steady_clock::now();
     const bool count_slow_frame = logged_first_present; // false for the first presented frame (startup)
+    if (AppRuntime::HasPendingUITasks()) {
+      UiCostCounters::Instance().AddUiTaskTurn(); // RunUITasks does not say how many it ran
+    }
     AppRuntime::RunUITasks();
     const auto tasks_done = std::chrono::steady_clock::now();
 

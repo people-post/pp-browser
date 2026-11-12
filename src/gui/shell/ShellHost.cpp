@@ -30,6 +30,7 @@
 #include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/ShellBaseHide.h"
+#include "gui/UiFrameStats.h"
 #include "gui/shell/ShellCallChromeRml.h"
 #include "gui/shell/ShellFeedback.h"
 #include "lib/ui/ShellInterruption.h"
@@ -1597,6 +1598,7 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
     }
   }
   // Force Present so ring/accept chrome is not held behind idle wait (THREADING.md UI delivery).
+  UiCostCounters::Instance().AddChromeForceFrame(update);
   Backend::RequestForceFrame();
 }
 

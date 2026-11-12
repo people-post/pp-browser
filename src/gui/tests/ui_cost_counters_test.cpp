@@ -2,6 +2,8 @@
 // over and starts from zero, and the video-wake counter (a decoder's thread) loses nothing across threads.
 #include "gui/UiFrameStats.h"
 
+#include "foundation/platform/ui/RmlUi_Backend.h"
+
 #include <gtest/gtest.h>
 
 #include <thread>
@@ -74,6 +76,66 @@ TEST(UiCostCountersTest, VideoWakesFromManyThreadsAreAllCounted) {
   }
   seen += counters.TakeAndReset().video_wakes;
   EXPECT_EQ(seen, static_cast<int64_t>(kThreads) * kPerThread);
+}
+
+// Step 3a: who asks for the frames — the call chrome's forced frame by kind, the turns with UI tasks, every turn.
+TEST(UiCostCountersTest, ForcedChromeFramesTaskTurnsAndLoopsAddUpAndClearOnTake) {
+  UiCostCounters counters;
+  counters.AddChromeForceFrame(CallChromeUpdate::Remount);
+  counters.AddChromeForceFrame(CallChromeUpdate::DirtyOnly);
+  counters.AddChromeForceFrame(CallChromeUpdate::DirtyOnly);
+  counters.AddChromeForceFrame(CallChromeUpdate::PartsOnly);
+  counters.AddChromeForceFrame(CallChromeUpdate::PartsOnly);
+  counters.AddChromeForceFrame(CallChromeUpdate::PartsOnly);
+  counters.AddChromeForceFrame(CallChromeUpdate::LevelsOnly);
+  counters.AddChromeForceFrame(CallChromeUpdate::None);
+  counters.AddUiTaskTurn();
+  counters.AddUiTaskTurn();
+  for (int i = 0; i < 5; ++i) {
+    counters.AddLoop();
+  }
+
+  const UiCostTotals first = counters.TakeAndReset();
+  EXPECT_EQ(first.chrome_force_frames_remount, 1);
+  EXPECT_EQ(first.chrome_force_frames_dirty, 2);
+  EXPECT_EQ(first.chrome_force_frames_parts, 3);
+  EXPECT_EQ(first.chrome_force_frames_levels, 1) << "None is never pushed and counts nowhere";
+  EXPECT_EQ(first.ui_tasks, 2);
+  EXPECT_EQ(first.loops, 5);
+  EXPECT_EQ(first.video_wakes, 0) << "a separate counter";
+
+  const UiCostTotals second = counters.TakeAndReset();
+  EXPECT_EQ(second.chrome_force_frames_remount, 0);
+  EXPECT_EQ(second.chrome_force_frames_dirty, 0);
+  EXPECT_EQ(second.chrome_force_frames_parts, 0);
+  EXPECT_EQ(second.chrome_force_frames_levels, 0);
+  EXPECT_EQ(second.ui_tasks, 0);
+  EXPECT_EQ(second.loops, 0);
+}
+
+// Every RequestForceFrame call counts, from any thread, even before the window exists (the backend is not up here).
+TEST(UiCostCountersTest, ForceFrameRequestsFromManyThreadsAreAllCountedAndClearOnTake) {
+  (void)Backend::TakeForceFrameRequests();
+  constexpr int kThreads = 4;
+  constexpr int kPerThread = 5000;
+  std::vector<std::thread> threads;
+  for (int i = 0; i < kThreads; ++i) {
+    threads.emplace_back([]() {
+      for (int n = 0; n < kPerThread; ++n) {
+        Backend::RequestForceFrame();
+      }
+    });
+  }
+  long long seen = 0;
+  for (int i = 0; i < 20; ++i) {
+    seen += Backend::TakeForceFrameRequests();
+  }
+  for (std::thread& t : threads) {
+    t.join();
+  }
+  seen += Backend::TakeForceFrameRequests();
+  EXPECT_EQ(seen, static_cast<long long>(kThreads) * kPerThread);
+  EXPECT_EQ(Backend::TakeForceFrameRequests(), 0);
 }
 
 TEST(UiCostCountersTest, TimerAddsTheElapsedMicrosecondsToItsCounter) {

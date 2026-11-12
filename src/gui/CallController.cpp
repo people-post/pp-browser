@@ -615,6 +615,7 @@ void CallController::EmitPerfThreads(const int64_t now_ms) {
   perf_sample_ms_ = now_ms;
   const UiFrameTotals frames = UiFrameStats::TakeAndReset();
   const UiCostTotals cost = UiCostCounters::Instance().TakeAndReset();
+  const long long force_frame_requests = Backend::TakeForceFrameRequests();
   if (prev_sample_ms == 0) {
     return; // the first sample only sets the baseline
   }
@@ -643,6 +644,13 @@ void CallController::EmitPerfThreads(const int64_t now_ms) {
       .Add("frame_copies", cost.frame_copies)
       .Add("frame_copies_stale", cost.frame_copies_stale)
       .Add("video_wakes", cost.video_wakes)
+      .Add("chrome_force_frames_remount", cost.chrome_force_frames_remount)
+      .Add("chrome_force_frames_dirty", cost.chrome_force_frames_dirty)
+      .Add("chrome_force_frames_parts", cost.chrome_force_frames_parts)
+      .Add("chrome_force_frames_levels", cost.chrome_force_frames_levels)
+      .Add("ui_tasks", cost.ui_tasks)
+      .Add("loops", cost.loops)
+      .Add("force_frame_requests", static_cast<int64_t>(force_frame_requests))
       .Add("base_hidden", ShellBaseHide::Hidden());
   for (size_t i = 0; i < top.size(); ++i) {
     line.Pick(kKeys[i], top[i].name, kKnownThreadNames).Add(kMsKeys[i], top[i].ms);
