@@ -548,7 +548,7 @@ TEST_F(ChatPreviewTest, TheGridsOrderIsKeptWhileTheChatAsks) {
     workflow_.RequestGridThumbnail("t1", fields.content_hash, fields.mime, 1);
   }
   workflow_.CancelChatPreviews(); // the chat left: nothing of the grid goes
-  hold_gate();                    // the first two taken stay in the hook: the second pair cannot be recorded before them
+  hold_gate(); // the first two taken stay in the hook: the second pair cannot be recorded before them
   ASSERT_TRUE(workflow_.SetDek(TestDek()));
   ASSERT_TRUE(WaitUntil([&] { return Started().size() == 2; }));
   std::vector<uint8_t> first = Started();
