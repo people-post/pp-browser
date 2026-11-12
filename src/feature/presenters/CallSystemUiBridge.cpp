@@ -111,25 +111,122 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
 
   // A ring for the system screen.
   if (ring && TakesRing(app_foreground, screen.conflict)) {
-    const bool declined = ChoiceLive(decline_pending_at_ms_);
-    const bool answered = ChoiceLive(answer_pending_at_ms_);
+    (void)TakeRing(screen);
+  } else if (ring && shown_.empty()) {
+    seen_ring_call_id_ = screen.ring_call_id; // the app rings it where the user sees it
+  }
+}
+
+bool CallSystemUiBridge::TakeRing(const CallScreen& screen) {
+  const bool declined = ChoiceLive(decline_pending_at_ms_);
+  const bool answered = ChoiceLive(answer_pending_at_ms_);
+  // Only a call the user has not seen yet raises the app: once the app has rung it in front (from the start, or after
+  // a hand-back) and the user left, it rings without pulling the app back up.
+  const bool full_screen = screen.ring_call_id != seen_ring_call_id_;
+  if (full_screen) {
     Note("ring_found");
-    ClearChoice();
-    if (declined) {
-      // The user declined the push's call: the ring it announced goes too.
-      ApplyDecline();
+  } else {
+    Note("ring_to_system_again");
+  }
+  ClearChoice();
+  if (declined) {
+    // The user declined the push's call: the ring it announced goes too.
+    ApplyDecline();
+    return false;
+  }
+  const std::string name = actions_.display_name ? actions_.display_name(screen.caller_identity) : std::string();
+  ui_.ReportIncoming(screen.ring_call_id, name, screen.ring_video, full_screen);
+  seen_ring_call_id_ = screen.ring_call_id;
+  shown_ = screen.ring_call_id;
+  shown_answered_ = false;
+  shown_taken_ = false;
+  visible_since_ms_.reset();
+  if (answered) {
+    Note("accept_applied");
+    AcceptShown(!screen.ring_video);
+  }
+  return true;
+}
+
+void CallSystemUiBridge::Reevaluate(const bool app_foreground) {
+  if (!ui_.Available()) {
+    return;
+  }
+  if (!shown_.empty()) {
+    CallRingHandBackInput in;
+    in.system_rings = Ringing(shown_);
+    in.answered_on_system = shown_answered_;
+    in.pending_push_call = ui_.HasPendingPushCall();
+    if (in.system_rings && !in.answered_on_system && !in.pending_push_call) {
+      in.ui = UiNow(app_foreground); // the platform is asked only when the rest holds
+    }
+    if (!CallRingHandBackConditions(in)) {
+      visible_since_ms_.reset();
       return;
     }
-    const std::string name = actions_.display_name ? actions_.display_name(screen.caller_identity) : std::string();
-    ui_.ReportIncoming(screen.ring_call_id, name, screen.ring_video);
-    shown_ = screen.ring_call_id;
-    shown_answered_ = false;
-    shown_taken_ = false;
-    if (answered) {
-      Note("accept_applied");
-      AcceptShown(!screen.ring_video);
+    const int64_t now = Now();
+    if (!visible_since_ms_) {
+      visible_since_ms_ = now;
     }
+    if (CallRingHandBack(in, now - *visible_since_ms_)) {
+      HandBack();
+    }
+    return;
   }
+  visible_since_ms_.reset();
+  // The app rings it (given back, or never taken) and the user left the app: the system screen rings it again.
+  const bool ring = screen_.kind == CallScreen::Kind::Ringing && !screen_.ring_call_id.empty();
+  if (ring && TakesRing(app_foreground, screen_.conflict) && TakeRing(screen_) && actions_.ring_moved) {
+    actions_.ring_moved();
+  }
+}
+
+bool CallSystemUiBridge::WantsReevaluation() const {
+  return !shown_.empty() && !shown_answered_;
+}
+
+void CallSystemUiBridge::HandBack() {
+  const std::string call_id = shown_;
+  Note("ring_handed_back");
+  // The app's ring page and ringtone come up first (SystemRings is false while handing_back_), so there is no silent
+  // gap; the notification goes after.
+  handing_back_ = true;
+  if (actions_.ring_moved) {
+    actions_.ring_moved();
+  }
+  handing_back_ = false;
+  if (shown_ != call_id) {
+    return; // the redraw's frame already let it go (the ring ended meanwhile)
+  }
+  shown_.clear();
+  visible_since_ms_.reset();
+  ui_.ReportEnded(call_id); // only the notification goes: it tells the call nothing (not a decline, not an end)
+}
+
+bool CallSystemUiBridge::UiVisible(const bool app_foreground) const {
+  return CallRingUiVisible(UiNow(app_foreground));
+}
+
+CallRingUi CallSystemUiBridge::UiNow(const bool app_foreground) const {
+  CallRingUi ui;
+  ui.app_foreground = app_foreground;
+  if (!app_foreground) {
+    return ui; // not seen whatever the screen says: not asked
+  }
+  if (actions_.screen_state) {
+    const std::optional<DeviceScreenState> screen = actions_.screen_state();
+    ui.screen_known = screen.has_value();
+    if (screen) {
+      ui.screen_interactive = screen->interactive;
+      ui.keyguard_locked = screen->keyguard_locked;
+    }
+  } else {
+    ui.screen_known = true;
+    ui.screen_interactive = true;
+    ui.keyguard_locked = false;
+  }
+  ui.pin_locked = actions_.pin_locked && actions_.pin_locked();
+  return ui;
 }
 
 void CallSystemUiBridge::RecheckOnNewRing(const CallScreen& screen) {
@@ -173,11 +270,11 @@ bool CallSystemUiBridge::StillTaking() const {
 }
 
 bool CallSystemUiBridge::TakesRing(const bool app_foreground, const bool over_call) const {
-  return ui_.Available() && shown_.empty() && !over_call && (!app_foreground || ui_.HasPendingPushCall());
+  return ui_.Available() && shown_.empty() && !over_call && (ui_.HasPendingPushCall() || !UiVisible(app_foreground));
 }
 
 bool CallSystemUiBridge::SystemRings(const std::string& call_id) const {
-  return !call_id.empty() && shown_ == call_id && !shown_answered_;
+  return !call_id.empty() && shown_ == call_id && !shown_answered_ && !handing_back_;
 }
 
 void CallSystemUiBridge::OnMessagingReady() {

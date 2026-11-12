@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -26,12 +27,29 @@ namespace pbr {
  * flag and a "previous worker done" signal, so a fast cancel-then-redial (Start() launching a new
  * worker before the old one has finished tearing down) can never cross-wire generations — see
  * RunLoop for the ordering rules.
+ *
+ * Tone::IncomingRing follows the phone's ringer (DEV/PLAN-android-incoming-call-screen.md step 4): the app passes in
+ * how it wants a ring now (SetOutputPorts; this capability asks no platform), at Start() and at each Refresh(), and the
+ * ring sounds, vibrates (through the app's port), both or neither; a change while ringing switches at the next
+ * Refresh(). The outgoing ringback is never affected.
  */
 class CallRingtone {
 public:
   static constexpr std::chrono::milliseconds kDefaultShutdownJoinBudget{500};
 
   enum class Tone { IncomingRing, OutgoingRingback };
+
+  /** How the phone wants an incoming ring now (the app reads its ringer mode). */
+  struct Output {
+    bool sound = true;
+    bool vibrate = false;
+  };
+  struct OutputPorts {
+    /** Asked at Start() and each Refresh() (UI thread). Unset: sound, no vibration. */
+    std::function<Output()> read;
+    /** The phone's ring vibration on / off (UI thread). */
+    std::function<void(bool on)> vibrate;
+  };
 
   /** The incoming ring's WAV file (the app resolves its asset); none: the incoming ring is silent. */
   static void SetRingSoundPath(std::string path);
@@ -43,8 +61,14 @@ public:
   CallRingtone(const CallRingtone&) = delete;
   CallRingtone& operator=(const CallRingtone&) = delete;
 
+  /** Tone::IncomingRing only: how the ring follows the phone. Before the first Start(). */
+  void SetOutputPorts(OutputPorts ports);
+
+  /** Tone::IncomingRing: rings as OutputPorts::read says now (perhaps silently: the ring page alone). */
   void Start();
-  /** Async (safe from UI/Accept). Does not join — use StopAndJoin before SDL_Quit. */
+  /** Tone::IncomingRing, while ringing: asks OutputPorts::read again and switches sound / vibration to it. */
+  void Refresh();
+  /** Async (safe from UI/Accept). Does not join — use StopAndJoin before SDL_Quit. Ends the vibration too. */
   void Stop();
   /**
    * Signal stop and join playback + any async joiner (unlimited).
@@ -56,7 +80,12 @@ public:
    * On timeout detaches with a loud log. Returns false if detach occurred.
    */
   bool StopAndJoin(std::chrono::milliseconds budget);
-  bool IsPlaying() const { return playing_.load(); }
+  /** Tone::IncomingRing: ringing (Start()ed, not stopped), even when the phone wants it silent. Ringback: playing. */
+  bool IsPlaying() const { return tone_ == Tone::IncomingRing ? ringing_.load() : playing_.load(); }
+  /** The tone itself is playing (Tone::IncomingRing: false while the phone wants it silent). */
+  bool IsSounding() const { return playing_.load(); }
+  /** Tone::IncomingRing: the phone's ring vibration is on. */
+  bool IsVibrating() const { return vibrating_; }
   /**
    * Tone::OutgoingRingback only: whether the CURRENT (most recently Start()'d) worker should
    * release the phone audio session (AudioSession::Deactivate()) when it stops, having
@@ -75,6 +104,12 @@ public:
   static bool RingbackSessionHeld() { return AudioSession::ToneHoldsSession(); }
 
 private:
+  /** The tone's worker (the old Start()). */
+  void StartTone();
+  /** Tone::IncomingRing: sound and vibration as `out` says. */
+  void Apply(Output out);
+  /** Tone::IncomingRing: not ringing any more, and the vibration off. */
+  void EndRing();
   void RequestStop(bool wait);
   /**
    * `previous_done`: the prior generation's completion signal (null on the first Start()).
@@ -93,6 +128,12 @@ private:
   /** Joins prior playback workers after async Stop/Start so Accept never blocks on a device close. */
   std::thread joiner_;
   Tone tone_ = Tone::IncomingRing;
+  /** Tone::IncomingRing (UI thread): Start()ed and not stopped; whether the vibration is on; the app's ports. */
+  std::atomic<bool> ringing_{false};
+  bool vibrating_ = false;
+  OutputPorts output_;
+  /** The last output applied, for one log line per change. */
+  bool last_sound_ = false;
   /**
    * Guarded by mutex_: the stop signal, release flag and completion signal for the CURRENT (most
    * recently Start()'d) generation. RequestStop sets current_stop_ (a worker only ever reads its

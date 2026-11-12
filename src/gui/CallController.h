@@ -62,6 +62,8 @@ public:
   void BindPeerLinkRefresh(std::function<void()> callback);
   /** Opens a chat; used to land on the ringing call's thread after a call-alert tap. */
   void BindOpenThread(std::function<void(const std::string& thread_id)> callback);
+  /** PP's PIN gate is up (its vault is not open): a ring the phone's call screen rings stays there meanwhile. */
+  void BindPinLocked(std::function<bool()> pin_locked);
 
   void BindToMessaging();
   void Tick();
@@ -234,6 +236,15 @@ private:
   // --- Devices: ringtones, the video wake, the hold, the ongoing-call service, metrics. -----------------------------
   void SyncRingtone();
   /**
+   * The 300 ms ring timer (DEV/PLAN-android-incoming-call-screen.md): runs while the phone's call screen rings for us
+   * (is the ring where the user can see it?) or the app rings (the phone's ringer is read again). Started / stopped
+   * from SyncRingtone.
+   */
+  void SyncRingTimer();
+  void OnRingTimer();
+  /** How the incoming ringtone follows the phone's ringer now (asked afresh; one log line per change). */
+  CallRingtone::Output ReadRingOutput();
+  /**
    * Stop ringback_ if playing and, unless media is already active (the engine then owns
    * the session), release the phone audio session. Shared by SyncRingtone's own
    * playing->stopped transition and LeaveActive's immediate stop, so a hang-up during
@@ -346,6 +357,12 @@ private:
   // --- Devices.
   CallRingtone ringtone_;
   CallRingtone ringback_{CallRingtone::Tone::OutgoingRingback};
+  static constexpr std::chrono::milliseconds kRingTimerInterval{300};
+  /** The ring timer's coordinator id (0: not running). */
+  uint64_t ring_timer_ = 0;
+  /** The phone ringer's last logged reading. */
+  std::string ringer_logged_;
+  std::function<bool()> pin_locked_;
   /** V060: the call on hold while the OS has its audio, and the camera's rest (hold, background). */
   CallLocalHold local_hold_;
   uint64_t background_listener_ = 0;

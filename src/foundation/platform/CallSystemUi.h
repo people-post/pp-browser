@@ -57,13 +57,22 @@ public:
    * keeps HasPendingPushCall() current by the same news, so reading it costs nothing.
    */
   virtual void SetPendingChangedHandler(std::function<void()> fn) { (void)fn; }
-  /** Ring `call_id` on the system screen. It fills in the push's pending call when there is one. */
-  virtual void ReportIncoming(const std::string& call_id, const std::string& caller_name, bool video) {
+  /**
+   * Ring `call_id` on the system screen. It fills in the push's pending call when there is one. `full_screen`: the
+   * notification may raise the app (Android's full-screen intent) — only a call's first; posted again after the app
+   * gave the ring back (the user left the app while it rang), it rings without raising the app.
+   */
+  virtual void ReportIncoming(const std::string& call_id, const std::string& caller_name, bool video,
+                              bool full_screen) {
     (void)call_id;
     (void)caller_name;
     (void)video;
+    (void)full_screen;
   }
-  /** `call_id` is over (or the app took it): take it off the system screen. */
+  /**
+   * `call_id` is over, or the app took it (answered there, or its own ring page rings it now): take it off the system
+   * screen. Never reported back as the user's decline or end.
+   */
   virtual void ReportEnded(const std::string& call_id) { (void)call_id; }
 
   static ICallSystemUi& Instance();
