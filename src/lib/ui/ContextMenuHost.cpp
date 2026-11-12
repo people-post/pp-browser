@@ -644,16 +644,45 @@ void ContextMenuHost::LayoutAnchored(ui::Vector2i touch) {
   };
 
   // Quick row above the item, list below it; a message taller than the view keeps both on screen.
-  float list_min_top = kViewportMarginPx;
-  if (ui::Element* quick = layer_->GetElementById("context-menu-quick")) {
-    const float quick_height = quick->GetBox().GetSize(ui::BoxArea::Border).y;
-    const float quick_top = std::max(kViewportMarginPx, anchor_top - gap - quick_height);
-    place(quick, quick_top);
-    list_min_top = quick_top + quick_height + gap;
+  ui::Element* quick = layer_->GetElementById("context-menu-quick");
+  const float quick_height = quick ? quick->GetBox().GetSize(ui::BoxArea::Border).y : 0.f;
+  const float quick_space = quick ? quick_height + gap : 0.f;
+  float list_height = panel_->GetBox().GetSize(ui::BoxArea::Border).y;
+  const float quick_top_normal = std::max(kViewportMarginPx, anchor_top - gap - quick_height);
+  const float list_min_top = quick ? quick_top_normal + quick_height + gap : kViewportMarginPx;
+  const float below_top = std::max(list_min_top, anchor_bottom + gap);
+  if (below_top + list_height <= view_bottom) {
+    // Room under the item: the quick row above it, the list below it (the measured heights, not an estimate).
+    if (quick) {
+      place(quick, quick_top_normal);
+    }
+    place(panel_, below_top);
+    return;
   }
-  const float list_height = panel_->GetBox().GetSize(ui::BoxArea::Border).y;
-  const float list_top = std::max(list_min_top, std::min(anchor_bottom + gap, view_bottom - list_height));
-  place(panel_, list_top);
+  // The item sits near the bottom edge: the list goes above it, the quick row above the list, when that fits.
+  const float above_top = anchor_top - gap - list_height;
+  if (above_top - quick_space >= kViewportMarginPx) {
+    if (quick) {
+      place(quick, above_top - quick_space);
+    }
+    place(panel_, above_top);
+    return;
+  }
+  // Neither side has room: the whole stack against the lower edge of the view (over the item), and the list scrolls
+  // inside when even that is too tall.
+  const float available = view_bottom - kViewportMarginPx;
+  if (quick_space + list_height > available) {
+    list_height = std::max(2.f * 50.f * dp, available - quick_space);
+    char max_buf[32];
+    std::snprintf(max_buf, sizeof(max_buf), "%.0fpx", list_height);
+    panel_->SetProperty("max-height", max_buf);
+    panel_->SetProperty("overflow-y", "auto");
+  }
+  const float stack_top = std::max(kViewportMarginPx, view_bottom - quick_space - list_height);
+  if (quick) {
+    place(quick, stack_top);
+  }
+  place(panel_, stack_top + quick_space);
 }
 
 void ContextMenuHost::LayoutActionSheet() {

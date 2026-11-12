@@ -683,6 +683,9 @@ std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)>* g_mess
 
 constexpr int kKeyboardDp = 300;
 
+// The desktop message menu's actions (DesktopMessageMenuTest; the host keeps its providers for the whole process).
+std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)>* g_desktop_actions = nullptr;
+
 } // namespace
 
 class ContextMenuKeyboardTest : public testing::Test {
@@ -1020,6 +1023,190 @@ TEST_F(ContextMenuKeyboardTest, AnEmptyMenuLongPressWhileTypingLeavesTheKeyboard
   Frame();
   EXPECT_EQ(keyboard_.deactivations, 1);
   EXPECT_NE(context_->GetFocusElement(), draft_);
+}
+
+// Kenneth 2026-11-12 (Mac): a right click on a message near the window's bottom edge opened the list below the message
+// and the window cut off its last items (Delete among them). The list now stays inside the window: above the message
+// when there is no room below, and in the measured height, not an estimate.
+class DesktopMessageMenuTest : public testing::Test {
+protected:
+  static constexpr float kW = 600.f;
+  static constexpr float kH = 500.f;
+
+  void SetUp() override {
+    ui::SetRenderInterface(&renderer_);
+    initialized_ = ui::Initialise();
+    ASSERT_TRUE(initialized_);
+    context_ = ui::CreateContext("desktop-message-menu-test", {600, 500});
+    ASSERT_NE(context_, nullptr);
+    document_ = context_->LoadDocumentFromMemory(
+        "<rml><head><style>body { display: block; width: 600px; height: 500px; margin: 0; } div { display: block; } "
+        ".row { position: absolute; width: 200px; height: 40px; } "
+        "#mid { top: 230px; left: 100px; } #bottom { top: 455px; left: 100px; } "
+        "#corner { top: 455px; left: 400px; } #topmost { top: 2px; left: 100px; } "
+        ".context-menu-layer { position: fixed; top: 0; left: 0; right: 0; bottom: 0; } "
+        ".context-menu-scrim { position: absolute; top: 0; left: 0; right: 0; bottom: 0; } "
+        ".context-menu-panel { position: absolute; min-width: 150px; padding: 4px; box-sizing: border-box; } "
+        ".context-menu-quick { display: flex; flex-direction: row; } "
+        ".context-menu-quick .context-menu-item { width: 36px; height: 36px; } "
+        ".context-menu-item { display: block; width: 150px; height: 36px; }</style></head>"
+        "<body><div class='row' id='mid' message-id='m1'>a</div><div class='row' id='bottom' message-id='m2'>b</div>"
+        "<div class='row' id='corner' message-id='m3'>c</div><div class='row' id='topmost' message-id='m4'>d</div>"
+        "</body></rml>");
+    ASSERT_NE(document_, nullptr);
+    document_->Show();
+    context_->Update();
+    ContextMenuHost& host = ContextMenuHost::Instance();
+    host.Install(context_);
+    host.SetCompactLayout(false);
+    host.SetAnchorResolver([](ui::Element* target) -> ui::Element* {
+      for (ui::Element* cur = target; cur; cur = cur->GetParentNode()) {
+        if (cur->HasAttribute("message-id")) {
+          return cur;
+        }
+      }
+      return nullptr;
+    });
+    static const bool registered = [] {
+      ContextMenuHost::Instance().RegisterProvider([](const ContextMenuRequest& request) {
+        return g_desktop_actions ? (*g_desktop_actions)(request) : std::vector<ContextMenuAction>{};
+      });
+      return true;
+    }();
+    (void)registered;
+    ItemCount(5);
+    g_desktop_actions = &actions_;
+  }
+
+  void TearDown() override {
+    g_desktop_actions = nullptr;
+    ContextMenuHost::Instance().Dismiss();
+    ContextMenuHost::Instance().SetAnchorResolver(nullptr);
+    ContextMenuHost::Instance().Install(nullptr);
+    if (context_) {
+      ui::RemoveContext("desktop-message-menu-test");
+    }
+    if (initialized_) {
+      ui::Shutdown();
+    }
+    ui::SetRenderInterface(nullptr);
+  }
+
+  /** Three quick emoji and `list` rows ending in Delete, as a message menu has them. */
+  void ItemCount(const int list) {
+    actions_ = [list](const ContextMenuRequest&) {
+      std::vector<ContextMenuAction> actions;
+      for (const char* emoji : {"1", "2", "+"}) {
+        ContextMenuAction react{std::string("react_") + emoji, emoji, nullptr, [] {}};
+        react.quick = true;
+        actions.push_back(std::move(react));
+      }
+      for (int i = 0; i + 1 < list; ++i) {
+        actions.push_back({"item" + std::to_string(i), "Item", nullptr, [] {}});
+      }
+      ContextMenuAction remove{"delete_message", "Delete", nullptr, [] {}};
+      remove.danger = true;
+      actions.push_back(std::move(remove));
+      return actions;
+    };
+  }
+
+  /** A right click at (x, y); the layout is the real one, measured after the menu is laid out. */
+  void RightClick(const int x, const int y) {
+    ASSERT_TRUE(ContextMenuHost::Instance().OnContextPointer(context_, x, y));
+    context_->Update();
+    ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  }
+
+  struct Box {
+    float left, top, right, bottom;
+  };
+  Box BoxOf(ui::Element* element) {
+    const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Border);
+    const ui::Vector2f size = element->GetBox().GetSize(ui::BoxArea::Border);
+    return {at.x, at.y, at.x + size.x, at.y + size.y};
+  }
+  void ExpectInside(const Box& box, const char* what) {
+    EXPECT_GE(box.left, 0.f) << what;
+    EXPECT_GE(box.top, 0.f) << what;
+    EXPECT_LE(box.right, kW) << what;
+    EXPECT_LE(box.bottom, kH) << what;
+  }
+  /** The whole menu (quick row and list) is inside the window and Delete is a clickable box inside it. */
+  void ExpectMenuVisible() {
+    ui::Element* panel = document_->GetElementById("context-menu-panel");
+    ui::Element* quick = document_->GetElementById("context-menu-quick");
+    ASSERT_NE(panel, nullptr);
+    ASSERT_NE(quick, nullptr);
+    ExpectInside(BoxOf(panel), "list");
+    ExpectInside(BoxOf(quick), "quick row");
+    ui::ElementList rows;
+    panel->GetElementsByClassName(rows, "context-menu-item");
+    ASSERT_FALSE(rows.empty());
+    ui::Element* last = rows.back();
+    EXPECT_NE(last->GetInnerRML().find("Delete"), std::string::npos);
+    const Box del = BoxOf(last);
+    ExpectInside(del, "Delete");
+    EXPECT_GT(del.bottom - del.top, 0.f);
+    // Clickable: the point at its centre hits Delete, not the window's edge or another layer.
+    const ui::Vector2f centre((del.left + del.right) / 2.f, (del.top + del.bottom) / 2.f);
+    ui::Element* hit = context_->GetElementAtPoint(centre);
+    ASSERT_NE(hit, nullptr);
+    bool inside_delete = false;
+    for (ui::Element* node = hit; node; node = node->GetParentNode()) {
+      inside_delete = inside_delete || node == last;
+    }
+    EXPECT_TRUE(inside_delete) << "Delete is not what is under its own centre";
+  }
+
+  std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)> actions_;
+  NullRender renderer_;
+  bool initialized_ = false;
+  ui::Context* context_ = nullptr;
+  ui::ElementDocument* document_ = nullptr;
+};
+
+TEST_F(DesktopMessageMenuTest, ASixItemMenuStaysInsideTheWindowNearTheBottomEdge) {
+  ItemCount(5); // quick row + four items + Delete
+  RightClick(150, 475);
+  ExpectMenuVisible();
+}
+
+TEST_F(DesktopMessageMenuTest, ASixItemMenuStaysInsideTheWindowInTheBottomRightCorner) {
+  RightClick(580, 490);
+  ExpectMenuVisible();
+}
+
+TEST_F(DesktopMessageMenuTest, ASixItemMenuStaysInsideTheWindowNearTheTopEdge) {
+  RightClick(150, 20);
+  ExpectMenuVisible();
+}
+
+TEST_F(DesktopMessageMenuTest, ASixItemMenuStaysInsideTheWindowInTheMiddle) {
+  RightClick(150, 250);
+  ExpectMenuVisible();
+}
+
+TEST_F(DesktopMessageMenuTest, AMenuTallerThanTheWindowScrollsInsideItAndKeepsDeleteReachable) {
+  ItemCount(14); // 14 rows of 36 px cannot fit in 500 px
+  RightClick(150, 475);
+  ui::Element* panel = document_->GetElementById("context-menu-panel");
+  ASSERT_NE(panel, nullptr);
+  ExpectInside(BoxOf(panel), "list");
+  ExpectInside(BoxOf(document_->GetElementById("context-menu-quick")), "quick row");
+}
+
+// Where there was always room the menu is where it was: the quick row above the message, the list under it.
+TEST_F(DesktopMessageMenuTest, InTheMiddleTheListStillOpensUnderTheMessage) {
+  RightClick(150, 250);
+  ui::Element* panel = document_->GetElementById("context-menu-panel");
+  ui::Element* quick = document_->GetElementById("context-menu-quick");
+  ASSERT_NE(panel, nullptr);
+  ASSERT_NE(quick, nullptr);
+  const Box anchor = BoxOf(document_->GetElementById("mid"));
+  EXPECT_GE(BoxOf(panel).top, anchor.bottom) << "the list is under the message";
+  EXPECT_LE(BoxOf(quick).bottom, anchor.top) << "the quick row is above the message";
+  EXPECT_NEAR(BoxOf(panel).top, anchor.bottom + 6.f, 1.f) << "the usual gap";
 }
 
 } // namespace pbr
