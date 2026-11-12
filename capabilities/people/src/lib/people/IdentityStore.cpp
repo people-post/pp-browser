@@ -32,9 +32,8 @@ Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag, const B
     if (pk && sk && pk->size() == kHybridKemPublicKeyBytes && sk->size() == kHybridKemPrivateKeyBytes) {
       return {};
     }
-    // Pre-release: drop legacy X25519+Kyber-draft blobs and mint ML-KEM-768.
   }
-  // First create (or size mismatch): mint account KEM. Link-device Import replaces these
+  // First create: mint account KEM. Link-device Import replaces these
   // with the shared account secret (M015) after LoadOrCreate.
   Roe<HybridKemKeyPair> generated =
       seeded_coins ? HybridKem::GenerateKeyPairFromSeed(*seeded_coins) : HybridKem::GenerateKeyPair();
@@ -95,6 +94,34 @@ Roe<void> EnsureAccountMlDsaKeys(LocalIdentity& identity, bool& dirty_flag, cons
   }
   identity.account_id = *account_id;
   dirty_flag = true;
+  return {};
+}
+
+bool DecodesToSize(const std::string& b64, const size_t bytes) {
+  auto decoded = Base64Decode(b64);
+  return decoded && decoded->size() == bytes;
+}
+
+/**
+ * A stored identity's account and device keys: present, of their sizes, and the Account ID its account key's. A
+ * file without them is refused, never repaired (pre-release: no leftover profile is carried over).
+ */
+Roe<void> CheckStoredKeys(const LocalIdentity& identity) {
+  if (!DecodesToSize(identity.kem_public_key_b64, kHybridKemPublicKeyBytes) ||
+      !DecodesToSize(identity.kem_private_key_b64.Reveal(), kHybridKemPrivateKeyBytes) ||
+      !DecodesToSize(identity.device_kem_public_key_b64, kHybridKemPublicKeyBytes) ||
+      !DecodesToSize(identity.device_kem_private_key_b64.Reveal(), kHybridKemPrivateKeyBytes)) {
+    return Error("identity.enc has no ML-KEM-768 account and device keys; wipe profile data and recreate");
+  }
+  auto account_pk = Base64Decode(identity.account_signing_public_key_b64);
+  if (!account_pk || account_pk->size() != kMlDsa65PublicKeyBytes ||
+      !DecodesToSize(identity.account_signing_private_key_b64.Reveal(), kMlDsa65SecretKeyBytes)) {
+    return Error("identity.enc has no ML-DSA-65 account key; wipe profile data and recreate");
+  }
+  auto account_id = AccountIdFromMlDsaPublicKey(*account_pk);
+  if (!account_id || *account_id != identity.account_id) {
+    return Error("identity.enc's Account ID is not its account key's; wipe profile data and recreate");
+  }
   return {};
 }
 
@@ -450,13 +477,9 @@ Roe<void> IdentityStore::EnsureLoaded() const {
   if (auto peer = DerivePeerId(identity_); !peer) {
     return peer.error();
   }
-  if (auto kem = EnsureHybridKemKeys(identity_, dirty_); !kem) {
-    return kem.error();
+  if (auto keys = CheckStoredKeys(identity_); !keys) {
+    return keys.error();
   }
-  if (auto account = EnsureAccountMlDsaKeys(identity_, dirty_); !account) {
-    return account.error();
-  }
-  std::optional<DerivedNodeIdentitySeeds> seeds;
   if (!identity_seed_.empty()) {
     auto derived = DeriveNodeIdentitySeeds(identity_seed_);
     if (!derived) {
@@ -465,12 +488,6 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     if (auto matched = FailClosedIfSeedMismatch(identity_, *derived); !matched) {
       return matched.error();
     }
-    seeds = std::move(*derived);
-  }
-  // A profile from before M021 mints its device KEM here (from the seed on a node, so it stays stable).
-  if (auto device_kem = EnsureDeviceKemKeys(identity_, dirty_, seeds ? &seeds->device_ml_kem_coins : nullptr);
-      !device_kem) {
-    return device_kem.error();
   }
   loaded_ = true;
   return {};
