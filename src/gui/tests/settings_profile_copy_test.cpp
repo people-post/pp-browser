@@ -47,14 +47,16 @@ public:
   void ShowStatus(const std::string&) override {}
   void Resync(bool) override {}
   SettingsUiState& UiState() override { return state; }
-  void PullFromView() override {}
+  void PullFromView() override { ++pulls; }
   void PushToView(bool) override {}
-  void SaveProfileNickname() override {}
+  void SaveProfileNickname() override { ++saves; }
   void RequestSyncLayout(const char*) override {}
   Roe<void> ForgetToolPermissions() override { return {}; }
   void OpenChangePin() override {}
   SessionStore store;
   SettingsUiState state;
+  int saves = 0;
+  int pulls = 0;
 };
 
 constexpr const char* kContext = "settings-profile-copy-test";
@@ -126,6 +128,41 @@ TEST_F(SettingsProfileCopyTest, WithoutAnAccountNothingIsCopiedAndTheUserIsToldT
   EXPECT_EQ(system.clipboard, "") << "the node ID is never put on the clipboard in its place";
   ASSERT_EQ(toasts.size(), 1u);
   EXPECT_EQ(toasts[0], "还没有账号，先开通账号。");
+}
+
+// B216: the reconnect never reads the settings page. Its fields may be empty (page never opened) or stale.
+TEST_F(SettingsProfileCopyTest, ReconnectRegistersWithTheStoredNicknameAndLeavesTheSettingsViewAlone) {
+  host.state.profile_nickname = "";
+  unlock.ensure_unlocked = [](std::function<void(bool)> then) { then(true); };
+  std::vector<std::string> registered_with;
+  commands.register_identity = [&](const RegisterIdentityArgs& args) -> Roe<void> {
+    registered_with.push_back(args.nickname);
+    return {};
+  };
+  commands.load_profile_identity = []() {
+    ProfileIdentityView view;
+    view.ready = true;
+    view.nickname = "Stored Name";
+    return view;
+  };
+  actions->Register(/*quiet_success=*/true);
+  EXPECT_EQ(registered_with, (std::vector<std::string>{"Stored Name"}));
+  EXPECT_EQ(host.saves, 0) << "the page's nickname is not committed";
+  EXPECT_EQ(host.pulls, 0) << "the page's fields are not read";
+}
+
+TEST_F(SettingsProfileCopyTest, TheSettingsButtonStillCommitsAndSendsThePagesNickname) {
+  host.state.profile_nickname = "Typed";
+  unlock.ensure_unlocked = [](std::function<void(bool)> then) { then(true); };
+  std::vector<std::string> registered_with;
+  commands.register_identity = [&](const RegisterIdentityArgs& args) -> Roe<void> {
+    registered_with.push_back(args.nickname);
+    return {};
+  };
+  actions->Register();
+  EXPECT_EQ(registered_with, (std::vector<std::string>{"Typed"}));
+  EXPECT_EQ(host.saves, 1);
+  EXPECT_EQ(host.pulls, 1);
 }
 
 } // namespace

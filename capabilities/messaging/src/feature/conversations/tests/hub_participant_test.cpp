@@ -216,5 +216,23 @@ TEST(HubParticipantTest, ThePollTurningOkIsPostedToTheUiAsPollOk) {
   EXPECT_EQ(signals.size(), 1u) << "cleared: nothing more";
 }
 
+// A signal of a session that ended before the posted task ran never reaches the UI's callback.
+TEST(HubParticipantTest, ARegistrationSignalOfAnEndedSessionIsDropped) {
+  LinkFixture f;
+  AppRuntime::RunUITasks();
+  std::vector<RelayRegistrationSignal> signals;
+  f.hub.SetOnRelayRegistrationSignal([&signals](RelayRegistrationSignal signal) { signals.push_back(signal); });
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  f.hub.InvalidateRelayRegistrationSignals(); // teardown / a new session before the posted task ran
+  AppRuntime::RunUITasks();
+  EXPECT_TRUE(signals.empty());
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Failed);
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(signals, (std::vector<RelayRegistrationSignal>{RelayRegistrationSignal::PollOk}))
+      << "the new session's own";
+  f.hub.SetOnRelayRegistrationSignal(nullptr);
+}
+
 } // namespace
 } // namespace pbr

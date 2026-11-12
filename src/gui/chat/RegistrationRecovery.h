@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include "common/PbrCompat.h"
 
@@ -70,5 +71,30 @@ private:
   bool alert_shown_ = false; // a live call holds it back until a later signal
   bool auto_toast_shown_ = false;
 };
+
+/** What the owner does for each action (ChatController); every hook is optional in tests. */
+struct RecoveryHooks {
+  /** The row at the top of the chats list: set to `visible` (called after every input; the owner skips no-ops). */
+  std::function<void(bool visible)> sync_banner;
+  /** The recovery just started needing the user (log, metric). */
+  std::function<void()> needs_user;
+  /** Marks the stored registration expired. False: it could not be stored, no renewal then. */
+  std::function<bool()> mark_expired;
+  /** Runs the renewal task (the expired mark is stored by then). */
+  std::function<void()> run_renewal;
+  std::function<void()> show_alert;
+  std::function<void()> toast_reconnected;
+};
+
+/** Carries out `actions` in a fixed order: needs-user note, banner, renewal (mark first, then run), alert, toast. */
+void ApplyRecoveryActions(const RecoveryActions& actions, const RegistrationRecovery& recovery,
+                          const RecoveryHooks& hooks);
+
+/**
+ * A poll was answered "Relay user not registered": asks `recovery` and carries the answer out. While `locked` nothing
+ * is marked and no renewal runs.
+ */
+void HandleNotRegisteredSignal(RegistrationRecovery& recovery, bool locked, bool auto_renew, bool call_live,
+                               int64_t now_ms, const RecoveryHooks& hooks);
 
 } // namespace pbr

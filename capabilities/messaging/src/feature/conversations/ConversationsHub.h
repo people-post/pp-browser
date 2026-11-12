@@ -379,6 +379,8 @@ public:
   void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
   /** Called on the UI thread with what the relay's polls say about this account's registration (B216). */
   void SetOnRelayRegistrationSignal(std::function<void(RelayRegistrationSignal)> callback);
+  /** The messaging session ended or a new one starts: a registration signal already posted is dropped on the UI thread. */
+  void InvalidateRelayRegistrationSignals();
   AttachmentFetchWorkflow& Attachments();
   /** Our uploaded relay copy of an attachment message, if any (DeleteUploadedAttachmentCopy); a failure is logged. */
   void DeleteUploadedCopy(const ThreadMessage& message);
@@ -677,6 +679,12 @@ private:
   std::function<void(RelayRegistrationSignal)> on_relay_registration_signal_;
   /** A NotRegistered signal waits on the UI thread: the next poll's is dropped (one per frame, not one per poll). */
   std::shared_ptr<std::atomic<bool>> relay_not_registered_posted_ = std::make_shared<std::atomic<bool>>(false);
+  /**
+   * The messaging session a posted registration signal belongs to: bumped at every setup and teardown. The signal
+   * carries the value read when it was posted; on the UI thread a stale one is dropped (a new session must not act
+   * on the old one's "not registered").
+   */
+  std::shared_ptr<std::atomic<uint64_t>> relay_registration_session_ = std::make_shared<std::atomic<uint64_t>>(0);
   void PostRelayRegistrationSignal(RelayRegistrationSignal signal);
   void CheckBlobSpace(bool after_quota_error);
   struct AttachmentSendJob {

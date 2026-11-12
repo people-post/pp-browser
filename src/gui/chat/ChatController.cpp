@@ -647,7 +647,7 @@ void ChatController::OnRelayRegistrationSignal(const RelayRegistrationSignal sig
       const int64_t now_ms =
           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
               .count();
-      ApplyRecovery(recovery_.OnNotRegistered(locked, auto_renew, call_live, now_ms));
+      HandleNotRegisteredSignal(recovery_, locked, auto_renew, call_live, now_ms, MakeRecoveryHooks());
       break;
     }
     case RelayRegistrationSignal::PollOk: {
@@ -699,19 +699,36 @@ void ChatController::OnRecoveryRenewal(const RenewResult& result, const bool aut
   ApplyRecovery(recovery_.OnRenewal(outcome, auto_renew, facade_ && facade_->AnyCallLive()));
 }
 
-void ChatController::ApplyRecovery(const RecoveryActions& actions) {
-  if (actions.needs_user_now) {
+RecoveryHooks ChatController::MakeRecoveryHooks() {
+  RecoveryHooks hooks;
+  hooks.needs_user = [this]() {
     log().info << "registration recovery: needs the user";
     MetricsLine("registration.reregister").Add("result", "needs_user").Emit();
-  }
-  if (shell_.show_reconnect_banner != recovery_.BannerVisible()) {
-    shell_.show_reconnect_banner = recovery_.BannerVisible();
-    DataModelHost::Instance().Dirty("shell", "show_reconnect_banner");
-  }
-  if (actions.request_renewal) {
-    RequestRecoveryRenewal();
-  }
-  if (actions.show_alert) {
+  };
+  hooks.sync_banner = [this](const bool visible) {
+    if (shell_.show_reconnect_banner != visible) {
+      shell_.show_reconnect_banner = visible;
+      DataModelHost::Instance().Dirty("shell", "show_reconnect_banner");
+    }
+  };
+  hooks.mark_expired = [this]() {
+    if (!facade_ || !ready_tasks_) {
+      return false;
+    }
+    log().info << "registration recovery: the relay does not know this account; registering again";
+    // What a 403 from the key rotation does too: the renewal then finds the registration due and registers.
+    auto marked = facade_->ModifyLocalIdentity([](LocalIdentity& identity) {
+      MarkRegistrationExpired(identity);
+      return true;
+    });
+    if (!marked) {
+      log().warning << "registration recovery: could not mark the registration expired: " << marked.error().message;
+      return false;
+    }
+    return true;
+  };
+  hooks.run_renewal = [this]() { ready_tasks_->RenewRegistration(); };
+  hooks.show_alert = [this]() {
     UserFeedback::Confirm(
         Tr("chat.reconnect.alert_title"), Tr("chat.reconnect.alert_body"),
         [this](const bool ok) {
@@ -720,27 +737,13 @@ void ChatController::ApplyRecovery(const RecoveryActions& actions) {
           }
         },
         Tr("chat.reconnect.alert_ok"));
-  }
-  if (actions.toast_reconnected) {
-    ShowToast(Tr("chat.reconnect.done"));
-  }
+  };
+  hooks.toast_reconnected = [this]() { ShowToast(Tr("chat.reconnect.done")); };
+  return hooks;
 }
 
-void ChatController::RequestRecoveryRenewal() {
-  if (!facade_ || !ready_tasks_) {
-    return;
-  }
-  log().info << "registration recovery: the relay does not know this account; registering again";
-  // What a 403 from the key rotation does too: the renewal then finds the registration due and registers.
-  auto marked = facade_->ModifyLocalIdentity([](LocalIdentity& identity) {
-    MarkRegistrationExpired(identity);
-    return true;
-  });
-  if (!marked) {
-    log().warning << "registration recovery: could not mark the registration expired: " << marked.error().message;
-    return;
-  }
-  ready_tasks_->RenewRegistration();
+void ChatController::ApplyRecovery(const RecoveryActions& actions) {
+  ApplyRecoveryActions(actions, recovery_, MakeRecoveryHooks());
 }
 
 void ChatController::OnReconnectTapped() {

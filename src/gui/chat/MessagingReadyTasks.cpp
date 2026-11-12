@@ -194,11 +194,10 @@ void RenewRegistrationOn(const std::shared_ptr<State>& state) {
           }
         };
         if (!live) {
-          log().info << "registration renewal result dropped: the messaging session changed";
-          if (waiting.empty()) {
-            return {};
-          }
-          return [waiting = std::move(waiting), run_waiting]() mutable { run_waiting(waiting); };
+          // A waiting registration was asked for in the old session: it does not run in a new one.
+          log().info << "registration renewal result dropped: the messaging session changed; waiting registrations "
+                     << waiting.size() << " dropped";
+          return {};
         }
         RenewResult result = box.value ? std::move(*box.value) : RenewResult{.error = Error("renewal threw")};
         bool stored = false;

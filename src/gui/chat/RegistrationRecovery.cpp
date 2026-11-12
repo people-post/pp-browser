@@ -93,4 +93,31 @@ void RegistrationRecovery::ResetSession() {
   manual_in_progress_ = false;
 }
 
+void ApplyRecoveryActions(const RecoveryActions& actions, const RegistrationRecovery& recovery,
+                          const RecoveryHooks& hooks) {
+  if (actions.needs_user_now && hooks.needs_user) {
+    hooks.needs_user();
+  }
+  if (hooks.sync_banner) {
+    hooks.sync_banner(recovery.BannerVisible());
+  }
+  if (actions.request_renewal) {
+    // The renewal finds the registration due only when the expired mark is stored first.
+    if (hooks.mark_expired && hooks.mark_expired() && hooks.run_renewal) {
+      hooks.run_renewal();
+    }
+  }
+  if (actions.show_alert && hooks.show_alert) {
+    hooks.show_alert();
+  }
+  if (actions.toast_reconnected && hooks.toast_reconnected) {
+    hooks.toast_reconnected();
+  }
+}
+
+void HandleNotRegisteredSignal(RegistrationRecovery& recovery, const bool locked, const bool auto_renew,
+                               const bool call_live, const int64_t now_ms, const RecoveryHooks& hooks) {
+  ApplyRecoveryActions(recovery.OnNotRegistered(locked, auto_renew, call_live, now_ms), recovery, hooks);
+}
+
 } // namespace pbr

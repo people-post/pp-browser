@@ -452,21 +452,27 @@ TEST_F(MessagingReadyTasksTest, AfterRenewalWaitsForTheRenewalInFlightThenRunsBe
   EXPECT_EQ(order.size(), 1u) << "run once";
 }
 
-TEST_F(MessagingReadyTasksTest, AfterRenewalRunsEvenWhenTheRenewalIsStaleOrFails) {
+TEST_F(MessagingReadyTasksTest, AfterRenewalDoesNotRunWhenTheSessionChangedBeforeTheRenewalEnded) {
   int ran = 0;
   tasks_->RenewRegistration();
   tasks_->AfterRenewal([&] { ++ran; });
   RunWorkerPart();
   ++session_;
   RunUiPart();
-  EXPECT_EQ(ran, 1) << "a stale renewal still ends";
+  EXPECT_EQ(ran, 0) << "asked for in the old session: dropped, not run in the new one";
   EXPECT_TRUE(hints_.empty());
+  EXPECT_FALSE(tasks_->RenewInFlight());
+  tasks_->AfterRenewal([&] { ++ran; });
+  EXPECT_EQ(ran, 1) << "a later request is not blocked";
+}
 
+TEST_F(MessagingReadyTasksTest, AfterRenewalRunsWhenTheRenewalFails) {
+  int ran = 0;
   renew_fails_ = true;
   tasks_->RenewRegistration();
   tasks_->AfterRenewal([&] { ++ran; });
   RunAll();
-  EXPECT_EQ(ran, 2) << "a failed renewal ends too";
+  EXPECT_EQ(ran, 1) << "a failed renewal ends too";
 }
 
 TEST_F(MessagingReadyTasksTest, ATeardownDropsWhatWaitsForTheRenewal) {

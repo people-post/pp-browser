@@ -736,8 +736,8 @@ private:
   /** A renewal ended (MessagingReadyTasks' renew_hint): tells the recovery how. */
   void OnRecoveryRenewal(const RenewResult& result, bool auto_renew);
   void ApplyRecovery(const RecoveryActions& actions);
-  /** Marks the registration expired (stored) and runs the existing renewal task. */
-  void RequestRecoveryRenewal();
+  /** What each recovery action does here (the renewal: mark the registration expired, stored, then run the task). */
+  RecoveryHooks MakeRecoveryHooks();
   void OnReconnectTapped();
   /** After messaging went away: the recovery starts over (the row goes). */
   void ResetRecovery();

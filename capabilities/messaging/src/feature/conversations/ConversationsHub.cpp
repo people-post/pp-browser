@@ -693,6 +693,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
   if (mesh_messaging_) {
     mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
     mesh_messaging_->SetOnRelayNotRegistered(nullptr);
+    InvalidateRelayRegistrationSignals();
     mesh_messaging_->SetOnMessagesChanged(nullptr);
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
@@ -1111,6 +1112,7 @@ void ConversationsHub::BuildMessagingObjects() {
       [this](const MeshDeliveryOrchestrator::BriefRelayHealthState health) { OnBriefRelayHealthChanged(health); });
   // The relay does not know this account (B216): the UI decides whether to register again or to ask.
   relay_not_registered_posted_->store(false); // a post a teardown dropped must not hold the next session's back
+  InvalidateRelayRegistrationSignals();
   mesh_messaging_->SetOnRelayNotRegistered(
       [this]() { PostRelayRegistrationSignal(RelayRegistrationSignal::NotRegistered); });
   {
@@ -2288,6 +2290,10 @@ void ConversationsHub::SetOnRelayRegistrationSignal(std::function<void(RelayRegi
   on_relay_registration_signal_ = std::move(callback);
 }
 
+void ConversationsHub::InvalidateRelayRegistrationSignals() {
+  relay_registration_session_->fetch_add(1);
+}
+
 void ConversationsHub::PostRelayRegistrationSignal(const RelayRegistrationSignal signal) {
   std::function<void(RelayRegistrationSignal)> callback;
   {
@@ -2297,16 +2303,26 @@ void ConversationsHub::PostRelayRegistrationSignal(const RelayRegistrationSignal
   if (!callback) {
     return;
   }
+  const uint64_t session = relay_registration_session_->load();
   if (signal == RelayRegistrationSignal::PollOk) {
-    AppRuntime::PostUI([callback = std::move(callback)]() { callback(RelayRegistrationSignal::PollOk); });
+    AppRuntime::PostUI([callback = std::move(callback), session, current = relay_registration_session_]() {
+      if (current->load() != session) {
+        return; // a poll of a session that is gone
+      }
+      callback(RelayRegistrationSignal::PollOk);
+    });
     return;
   }
   // Every poll (~2 s) says it again: one waiting on the UI thread is enough. PostUI keeps the order of the two.
   if (relay_not_registered_posted_->exchange(true)) {
     return;
   }
-  AppRuntime::PostUI([callback = std::move(callback), posted = relay_not_registered_posted_]() {
-    posted->store(false);
+  AppRuntime::PostUI([callback = std::move(callback), posted = relay_not_registered_posted_, session,
+                      current = relay_registration_session_]() {
+    posted->store(false); // cleared when the task starts, stale or not
+    if (current->load() != session) {
+      return; // a poll of a session that is gone: the new session decides for itself
+    }
     callback(RelayRegistrationSignal::NotRegistered);
   });
 }
@@ -3381,6 +3397,7 @@ void ConversationsHub::Shutdown() {
   if (mesh_messaging_) {
     mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
     mesh_messaging_->SetOnRelayNotRegistered(nullptr);
+    InvalidateRelayRegistrationSignals();
     mesh_messaging_->SetOnMessagesChanged(nullptr);
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);

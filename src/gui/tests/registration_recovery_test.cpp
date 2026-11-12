@@ -4,6 +4,9 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+#include <vector>
+
 namespace pbr {
 namespace {
 
@@ -225,6 +228,49 @@ TEST(RegistrationRecoveryTest, RenewalResultsWhileOkAreIgnored) {
       EXPECT_EQ(recovery.CurrentState(), State::Ok);
     }
   }
+}
+
+// The glue ChatController runs for a "not registered" poll: while locked nothing is marked or renewed; the expired mark
+// is stored before the renewal runs.
+TEST(RegistrationRecoveryGlueTest, LockedMarksNothingAndRequestsNoRenewal) {
+  RegistrationRecovery recovery;
+  std::vector<std::string> calls;
+  RecoveryHooks hooks;
+  hooks.mark_expired = [&] {
+    calls.push_back("mark");
+    return true;
+  };
+  hooks.run_renewal = [&] { calls.push_back("renew"); };
+  hooks.show_alert = [&] { calls.push_back("alert"); };
+  HandleNotRegisteredSignal(recovery, /*locked=*/true, /*auto_renew=*/true, false, kT0, hooks);
+  HandleNotRegisteredSignal(recovery, /*locked=*/true, /*auto_renew=*/false, false, kT0, hooks);
+  EXPECT_TRUE(calls.empty());
+}
+
+TEST(RegistrationRecoveryGlueTest, TheExpiredMarkIsStoredBeforeTheRenewalRuns) {
+  RegistrationRecovery recovery;
+  std::vector<std::string> calls;
+  RecoveryHooks hooks;
+  hooks.mark_expired = [&] {
+    calls.push_back("mark");
+    return true;
+  };
+  hooks.run_renewal = [&] { calls.push_back("renew"); };
+  HandleNotRegisteredSignal(recovery, false, /*auto_renew=*/true, false, kT0, hooks);
+  EXPECT_EQ(calls, (std::vector<std::string>{"mark", "renew"}));
+}
+
+TEST(RegistrationRecoveryGlueTest, NoRenewalWhenTheMarkCannotBeStored) {
+  RegistrationRecovery recovery;
+  std::vector<std::string> calls;
+  RecoveryHooks hooks;
+  hooks.mark_expired = [&] {
+    calls.push_back("mark");
+    return false;
+  };
+  hooks.run_renewal = [&] { calls.push_back("renew"); };
+  HandleNotRegisteredSignal(recovery, false, true, false, kT0, hooks);
+  EXPECT_EQ(calls, (std::vector<std::string>{"mark"}));
 }
 
 } // namespace
