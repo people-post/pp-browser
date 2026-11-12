@@ -358,6 +358,13 @@ std::string CryptoTxRml(const ThreadMessage& message) {
 }
 
 /**
+ * The photo icon in the middle of a placeholder (static: no animation, the page would redraw every frame). An <svg> and
+ * no <div>: the clip's own end is found as the first "</div>" after its marks (PictureClipSpan, DropPictureImages).
+ */
+constexpr const char* kPicturePlaceholderIconRml =
+    "<svg class=\"chat-picture-placeholder-icon\" src=\"../icons/v2/photo.svg\" width=\"28\" height=\"28\"></svg>";
+
+/**
  * A picture fitted into its bubble: a clip box with the fitted size and rounded corners (the engine does not round an
  * <img>), the picture in it (a tall one cropped to its middle), then `overlay`. `src` empty: the box alone (a grey
  * placeholder by its class). `fit` unknown ({0, 0}): the stylesheet fills the box. `img_attrs` go on the <img>.
@@ -398,7 +405,8 @@ std::string PictureBubbleClipRml(const std::string& message_id, const std::strin
   const std::string marks = " pic-id=\"" + StructuredTextParser::EscapeText(message_id) + "\" pic-hash=\"" +
                             StructuredTextParser::EscapeText(hash_hex) + "\"";
   if (view.picture_placeholder || view.local_path.empty()) {
-    return PictureClipRml(fit, std::string(), " chat-picture-placeholder", std::string(), std::string(), marks + tap);
+    return PictureClipRml(fit, std::string(), " chat-picture-placeholder", std::string(), kPicturePlaceholderIconRml,
+                          marks + tap);
   }
   return PictureClipRml(fit, view.local_path, std::string(), tap, std::string(), marks);
 }
@@ -502,6 +510,7 @@ bool DropPictureImages(std::string& rml) {
       break;
     }
     rml.erase(open_end + 1, close - open_end - 1); // the <img .../> goes: nothing points at the wiped file
+    rml.insert(open_end + 1, kPicturePlaceholderIconRml);
     rml.insert(begin + kClip.size(), " chat-picture-placeholder");
     changed = true;
   }

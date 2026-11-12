@@ -87,6 +87,9 @@ TEST(TranscriptPicturePreviewTest, ThePlaceholderIsTheSizeOfThePictureThatReplac
   const std::string preview = RenderOne(PreviewView());
   EXPECT_NE(placeholder.find("chat-picture-placeholder"), std::string::npos) << placeholder;
   EXPECT_EQ(placeholder.find("<img"), std::string::npos) << "nothing to decode yet";
+  EXPECT_NE(placeholder.find("<svg class=\"chat-picture-placeholder-icon\" src=\"../icons/v2/photo.svg\""),
+            std::string::npos)
+      << "a picture icon says the picture is on its way: " << placeholder;
   EXPECT_FALSE(ClipStyle(placeholder).empty());
   EXPECT_EQ(ClipStyle(placeholder), ClipStyle(preview)) << "nothing moves when the preview comes";
 }
@@ -143,6 +146,7 @@ TEST(TranscriptPicturePreviewTest, TheLockTurnsEveryChatPictureIntoItsPlaceholde
   ASSERT_TRUE(DropPictureImages(rml));
   EXPECT_EQ(rml.find("<img"), std::string::npos) << rml;
   EXPECT_NE(rml.find("chat-attachment-clip chat-picture-placeholder\""), std::string::npos) << rml;
+  EXPECT_NE(rml.find("chat-picture-placeholder-icon"), std::string::npos) << "the lock's placeholder has the icon too";
   EXPECT_FALSE(DropPictureImages(rml)) << "nothing left to take";
   std::string text = "<p class=\"text\">hello</p>";
   EXPECT_FALSE(DropPictureImages(text));
@@ -364,6 +368,27 @@ TEST_F(TranscriptPicturePreviewDomTest, ThePlaceholderBoxIsLaidOutAsThePictureWi
   EXPECT_GT(Size(placeholder).x, 100.f);
   EXPECT_NEAR(Size(placeholder).x, Size(clip_of_picture).x, 0.5f);
   EXPECT_NEAR(Size(placeholder).y, Size(clip_of_picture).y, 0.5f);
+}
+
+TEST_F(TranscriptPicturePreviewDomTest, ThePlaceholderIconIsInTheMiddleOfTheBoxAndNeverAnimated) {
+  TranscriptFacts facts;
+  facts.attachment = [](const ThreadMessage&) { return PlaceholderView(); };
+  Show(RenderTranscript({PictureRow("m1", 1)}, facts));
+  ui::Element* placeholder = Nth("chat-picture-placeholder", 0);
+  ui::Element* icon = Nth("chat-picture-placeholder-icon", 0);
+  ASSERT_NE(placeholder, nullptr);
+  ASSERT_NE(icon, nullptr);
+  EXPECT_GT(Size(icon).x, 10.f);
+  const ui::Vector2f box = placeholder->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f at = icon->GetAbsoluteOffset(ui::BoxArea::Border);
+  EXPECT_NEAR(at.x + Size(icon).x / 2.f, box.x + Size(placeholder).x / 2.f, 1.f);
+  EXPECT_NEAR(at.y + Size(icon).y / 2.f, box.y + Size(placeholder).y / 2.f, 1.f);
+  const std::string css = ReadAll(AssetPath("themes/components.rcss"));
+  const size_t rule = css.find(".chat-picture-placeholder .chat-picture-placeholder-icon");
+  ASSERT_NE(rule, std::string::npos);
+  const std::string body = css.substr(rule, css.find('}', rule) - rule);
+  EXPECT_EQ(body.find("animation"), std::string::npos) << "an endless animation redraws the page every frame";
+  EXPECT_EQ(body.find("transition"), std::string::npos);
 }
 
 TEST_F(TranscriptPicturePreviewDomTest, APreviewRedrawKeepsTheRowElementsAndTheOtherRowsContent) {

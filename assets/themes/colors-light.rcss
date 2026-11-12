@@ -2586,6 +2586,10 @@ input.checkbox:checked {
   background-color: #d1d1d6;
 }
 
+.chat-picture-placeholder .chat-picture-placeholder-icon {
+  image-color: #aeaeb2;
+}
+
 .shell-chat-overlay .message-row-user .chat-attachment-card,
 .shell-chat-overlay .message-row-user .chat-voice-card {
   background-color: #2e8dff;
