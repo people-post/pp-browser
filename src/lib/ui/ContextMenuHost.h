@@ -74,7 +74,8 @@ public:
   /// Compact layout uses the small bottom sheet for ShowActions and for long-press item menus; floats stay clamped.
   void SetCompactLayout(bool compact);
   /// Height at the bottom of the window that is covered (on-screen keyboard, bottom chrome); menus stay above it.
-  void SetBottomInsetDp(int inset_dp) { bottom_inset_dp_ = inset_dp; }
+  /// An open bottom sheet is placed again when the value changes (the keyboard hides while it is up).
+  void SetBottomInsetDp(int inset_dp);
   /// The home-indicator strip at the bottom of a phone screen (0 while the keyboard is up): the sheet's rows stay above it.
   void SetHomeIndicatorDp(int inset_dp) { home_indicator_dp_ = inset_dp; }
   /// The title of the phone sheet a long press opens (a chat message, a chat row), "" for none.

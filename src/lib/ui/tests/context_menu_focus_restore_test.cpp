@@ -37,7 +37,9 @@ protected:
     context_ = ui::CreateContext("context-menu-focus-test", {400, 400});
     ASSERT_NE(context_, nullptr);
     document_ = context_->LoadDocumentFromMemory(
-        "<rml><head><style>body { width: 400px; height: 400px; } input { width: 200px; height: 20px; }</style></head>"
+        "<rml><head><style>body { width: 400px; height: 400px; } input { width: 200px; height: 20px; } "
+        ".context-menu-layer { position: fixed; top: 0; left: 0; right: 0; bottom: 0; } "
+        ".context-menu-sheet { position: absolute; }</style></head>"
         "<body><div id='pane'><input id='field' type='text'/></div><div id='other'/></body></rml>");
     ASSERT_NE(document_, nullptr);
     document_->Show();
@@ -505,4 +507,75 @@ TEST_F(ContextMenuPopoverTest, ARowWithADetailShowsItUnderItsTitleAndTheCurrentO
 }
 
 } // namespace
+
+// The keyboard can hide (or show) while the bottom sheet is open: the sheet's `bottom` is a pixel value written when it
+// opened, so it must be written again when the inset changes (iPhone, 2026-11-12: the sheet hung one keyboard height
+// above the screen bottom after the keyboard went away).
+using ContextMenuBottomInsetTest = ContextMenuFocusRestoreTest;
+
+namespace {
+
+std::string PanelBottom(ui::ElementDocument* document) {
+  ui::Element* panel = document->GetElementById("context-menu-panel");
+  const ui::Property* bottom = panel ? panel->GetProperty("bottom") : nullptr;
+  return bottom ? bottom->ToString() : std::string();
+}
+
+} // namespace
+
+TEST_F(ContextMenuBottomInsetTest, TheSheetDropsWhenTheKeyboardHidesWhileItIsOpen) {
+  ContextMenuHost::Instance().SetCompactLayout(true);
+  ContextMenuHost::Instance().SetBottomInsetDp(300);
+  ContextMenuHost::Instance().ShowActions({10, 10}, OneAction());
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  const std::string raised = PanelBottom(document_);
+  ASSERT_FALSE(raised.empty());
+
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  const std::string lowered = PanelBottom(document_);
+  EXPECT_NE(lowered, raised);
+  EXPECT_EQ(lowered, "0px");
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
+TEST_F(ContextMenuBottomInsetTest, TheSheetRisesWhenTheKeyboardShowsWhileItIsOpen) {
+  ContextMenuHost::Instance().SetCompactLayout(true);
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  ContextMenuHost::Instance().ShowActions({10, 10}, OneAction());
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  ASSERT_EQ(PanelBottom(document_), "0px");
+
+  ContextMenuHost::Instance().SetBottomInsetDp(300);
+  EXPECT_NE(PanelBottom(document_), "0px");
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
+TEST_F(ContextMenuBottomInsetTest, ASameValueDoesNotLayTheSheetOutAgain) {
+  ContextMenuHost::Instance().SetCompactLayout(true);
+  ContextMenuHost::Instance().SetBottomInsetDp(300);
+  ContextMenuHost::Instance().ShowActions({10, 10}, OneAction());
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  ui::Element* panel = document_->GetElementById("context-menu-panel");
+  ASSERT_NE(panel, nullptr);
+
+  // Overwrite the value by hand: a repeated call with the same inset must leave it alone.
+  panel->SetProperty("bottom", "7px");
+  ContextMenuHost::Instance().SetBottomInsetDp(300);
+  EXPECT_EQ(PanelBottom(document_), "7px");
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
+TEST_F(ContextMenuBottomInsetTest, ChangingTheInsetWithoutAnOpenMenuIsHarmless) {
+  ASSERT_FALSE(ContextMenuHost::Instance().IsOpen());
+  ContextMenuHost::Instance().SetBottomInsetDp(300);
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+}
+
 } // namespace pbr

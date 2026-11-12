@@ -418,6 +418,17 @@ std::vector<ContextMenuAction> ContextMenuHost::CollectActions(const ContextMenu
   return actions;
 }
 
+void ContextMenuHost::SetBottomInsetDp(const int inset_dp) {
+  if (inset_dp == bottom_inset_dp_) {
+    return;
+  }
+  bottom_inset_dp_ = inset_dp;
+  // The sheet's `bottom` is a pixel value written at open time: write it again, or it hangs where the keyboard was.
+  if (layer_ && presentation_ == Presentation::ActionSheet) {
+    LayoutActionSheet();
+  }
+}
+
 float ContextMenuHost::BottomInsetPx() const {
   if (!context_) {
     return 0.f;
