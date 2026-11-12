@@ -8017,6 +8017,26 @@ input.checkbox {
   font-size: 13dp;
 }
 
+/* B216: the relay does not know this account and only the user can fix it: a tap reconnects. A big target. */
+.sidebar-reconnect-entry {
+  align-items: center;
+  gap: 10dp;
+  min-height: 44dp;
+  margin-bottom: 4dp;
+  padding: 8dp 12dp;
+  border-radius: 10dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.sidebar-reconnect-label {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 15dp;
+}
+
 .sidebar-unread {
   flex-shrink: 0;
 }
@@ -8153,8 +8173,13 @@ input.checkbox {
   pointer-events: none;
 }
 
-.shell-layer-compact .sidebar-archived-entry {
+.shell-layer-compact .sidebar-archived-entry,
+.shell-layer-compact .sidebar-reconnect-entry {
   margin: 0 16dp 4dp 16dp;
+}
+
+.shell-layer-compact .sidebar-reconnect-entry {
+  min-height: 50dp;
 }
 
 .shell-layer-compact .sidebar-sessions .text {

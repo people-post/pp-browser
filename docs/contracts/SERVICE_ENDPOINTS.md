@@ -66,6 +66,8 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 
 `blob_b64` is **not** included in transport auth (E014 envelope signature covers message integrity inside the blob).
 
+A poll from a user the relay has no registration for is answered **403** `{"error":"Relay user not registered"}` (observed on the 2026-11 production server for accounts registered on the old one). The client types exactly that answer as `Err::Auth::NotRegistered` (`IsRelayUserNotRegistered`), marks its registration expired and registers again with the same account key (same Account ID; the relay may give a new `relay_user_id`), at most every 5 minutes, when "renew automatically" is on; otherwise it asks the user (B216). Any other 403 stays `HttpRejected`.
+
 Inbox is a **delivery queue**: poll advances a **per-device** local cursor; `ack` is **soft** (M013 — validate only; no shared delete). `clear` deletes recipient rows older than a timestamp (recovery; account-wide). Messenger also applies a **90-day TTL** on `created_at` (startup rewrites the TTL index only if needed) and a **soft per-recipient FIFO cap** (trim toward **2000** when a mailbox exceeds **~2400**, M022). A record sent with `ttl_s` ([WIRE_SCHEMAS § RelayWireRecord](WIRE_SCHEMAS.md#relaywirerecord-http-relay--opaque-store-and-forward)) gets its own expiry instead, and the cap neither counts nor trims it: the control lane's records leave after an hour rather than 90 days, and a burst of them cannot push chat out. Messenger stores the blob as bytes (a third smaller than its base64). Chat history remains local + stream/P2P sync — not the inbox.
 
 Poll response extras (unix ms, relay clock):

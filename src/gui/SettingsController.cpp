@@ -225,6 +225,14 @@ void SettingsController::BindOpenHomeEdit(std::function<void()> open) {
   open_home_edit_ = std::move(open);
 }
 
+void SettingsController::ReconnectAccount() {
+  profile_actions_.Register(/*quiet_success=*/true);
+}
+
+void SettingsController::BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run) {
+  profile_actions_.BindRunWhenRegistrationIdle(std::move(run));
+}
+
 void SettingsController::BindOpenUiPerfTest(std::function<void()> open) {
   open_ui_perf_test_ = std::move(open);
 }

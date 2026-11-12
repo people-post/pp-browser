@@ -209,6 +209,8 @@ struct ChatShellState {
   bool showing_archived_ai = false;
   ui::String archived_entry_label_ai;
   ui::String archived_entry_label;
+  /** B216: the relay does not know this account and only the user can fix it: the "tap to reconnect" row. */
+  bool show_reconnect_banner = false;
   /** Rows remain beyond the window the sidebar draws (the "Loading…" line). */
   bool sessions_more = false;
   /** The search box above the list: rows are kept when their title or preview contains it. */

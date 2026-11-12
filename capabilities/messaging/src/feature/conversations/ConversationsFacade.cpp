@@ -1255,6 +1255,14 @@ void ConversationsFacade::SetOnBlobSpaceWarning(std::function<void(int percent)>
   hub_.SetOnBlobSpaceWarning(std::move(callback));
 }
 
+void ConversationsFacade::SetOnRelayRegistrationSignal(std::function<void(RelayRegistrationSignal)> callback) {
+  hub_.SetOnRelayRegistrationSignal(std::move(callback));
+}
+
+void ConversationsFacade::PublishAccountLockerSoon() {
+  hub_.PublishAccountLockerSoon();
+}
+
 void ConversationsFacade::EnsureThreadAttachments(const std::string& thread_id) {
   hub_.Attachments().EnsureThreadQueued(thread_id, hub_.Store());
 }

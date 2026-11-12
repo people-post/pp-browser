@@ -1,5 +1,7 @@
 #include "feature/conversations/ConversationsHub.h"
 
+#include "common/runtime/AppRuntime.h"
+
 #include <gtest/gtest.h>
 #include <chrono>
 #include <functional>
@@ -192,6 +194,26 @@ TEST(HubParticipantTest, TheWayDownRunsInReverseAndClearedParticipantsHearNothin
   hub.ClearParticipants();
   hub.AbortParticipantsForShutdown();
   EXPECT_TRUE(log.empty());
+}
+
+// B216: the relay answering again is the UI's "reconnected" signal; it arrives on the UI thread (posted), and only
+// when the health turns Ok.
+TEST(HubParticipantTest, ThePollTurningOkIsPostedToTheUiAsPollOk) {
+  LinkFixture f;
+  AppRuntime::RunUITasks(); // nothing of an earlier test left
+  std::vector<RelayRegistrationSignal> signals;
+  f.hub.SetOnRelayRegistrationSignal([&signals](RelayRegistrationSignal signal) { signals.push_back(signal); });
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Failed);
+  AppRuntime::RunUITasks();
+  EXPECT_TRUE(signals.empty()) << "a failed poll alone says nothing about the registration";
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  EXPECT_TRUE(signals.empty()) << "posted, not called on the poll worker";
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(signals, (std::vector<RelayRegistrationSignal>{RelayRegistrationSignal::PollOk}));
+  f.hub.SetOnRelayRegistrationSignal(nullptr);
+  f.hub.OnBriefRelayHealthChanged(LinkFixture::Health::Ok);
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(signals.size(), 1u) << "cleared: nothing more";
 }
 
 } // namespace

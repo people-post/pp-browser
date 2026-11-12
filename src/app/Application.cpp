@@ -1352,6 +1352,11 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   chat_->BindShellFeedback(shared_feedback);
   settings_->BindOpenHomeEdit([this]() { chat_->OpenHomeEdit(); });
   chat_->BindOpenSettingsSection([this](const std::string& section_id) { settings_->OpenSection(section_id); });
+  // B216: the chats list's reconnect row and alert register through Me → Profile's action; a registration the user
+  // asks for never overlaps the automatic renewal (it waits for the one in flight).
+  chat_->BindReconnectAccount([this]() { settings_->ReconnectAccount(); });
+  settings_->BindRunWhenRegistrationIdle(
+      [this](std::function<void()> run) { chat_->RunWhenRegistrationIdle(std::move(run)); });
   chat_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "chat_chrome"));
   chat_->BindSurfaceNotify(ChatSurfaceNotifyPorts{
       .push_surface = [this](const ChatSurfaceSnapshot& snap) { chat_shell_bridge_->OnSurface(snap); },

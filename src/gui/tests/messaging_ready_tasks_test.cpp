@@ -424,6 +424,64 @@ TEST_F(MessagingReadyTasksTest, ResultsCarryTheAccountTheyRanFor) {
   EXPECT_EQ(persisted_, (std::vector<std::string>{"renew:relay:u1"}));
 }
 
+// B216: a registration the user asked for never overlaps the automatic renewal; it runs once that one ends.
+TEST_F(MessagingReadyTasksTest, AfterRenewalRunsAtOnceWhenNoRenewalIsOut) {
+  int ran = 0;
+  tasks_->AfterRenewal([&] { ++ran; });
+  EXPECT_EQ(ran, 1);
+  EXPECT_TRUE(jobs_.empty());
+}
+
+TEST_F(MessagingReadyTasksTest, AfterRenewalWaitsForTheRenewalInFlightThenRunsBeforeTheNextOne) {
+  std::vector<std::string> order;
+  tasks_->RenewRegistration();
+  tasks_->AfterRenewal([&] {
+    EXPECT_FALSE(tasks_->RenewInFlight()) << "the renewal is over when the waiting one runs";
+    EXPECT_EQ(hints_.size(), 1u) << "after the renewal's hint";
+    order.push_back("manual");
+  });
+  tasks_->RenewRegistration(); // asked again meanwhile (the recovery's trigger)
+  EXPECT_TRUE(order.empty()) << "not beside the running renewal";
+  RunWorkerPart();
+  EXPECT_TRUE(order.empty());
+  RunUiPart();
+  EXPECT_EQ(order, (std::vector<std::string>{"manual"}));
+  ASSERT_EQ(jobs_.size(), 1u) << "the renewal asked for meanwhile starts after it";
+  RunAll();
+  EXPECT_EQ(renew_calls_, 2);
+  EXPECT_EQ(order.size(), 1u) << "run once";
+}
+
+TEST_F(MessagingReadyTasksTest, AfterRenewalRunsEvenWhenTheRenewalIsStaleOrFails) {
+  int ran = 0;
+  tasks_->RenewRegistration();
+  tasks_->AfterRenewal([&] { ++ran; });
+  RunWorkerPart();
+  ++session_;
+  RunUiPart();
+  EXPECT_EQ(ran, 1) << "a stale renewal still ends";
+  EXPECT_TRUE(hints_.empty());
+
+  renew_fails_ = true;
+  tasks_->RenewRegistration();
+  tasks_->AfterRenewal([&] { ++ran; });
+  RunAll();
+  EXPECT_EQ(ran, 2) << "a failed renewal ends too";
+}
+
+TEST_F(MessagingReadyTasksTest, ATeardownDropsWhatWaitsForTheRenewal) {
+  int ran = 0;
+  tasks_->RenewRegistration();
+  tasks_->AfterRenewal([&] { ++ran; });
+  jobs_.clear(); // the teardown dropped the renewal's work
+  ++session_;
+  tasks_->OnMessagingTornDown();
+  EXPECT_EQ(ran, 0);
+  tasks_->RenewRegistration();
+  RunAll();
+  EXPECT_EQ(ran, 0) << "dropped, not run by the next session's renewal";
+}
+
 TEST(CoalescedRunTest, AStaleTicketChangesNothing) {
   CoalescedRun run;
   auto first = run.TryStart();

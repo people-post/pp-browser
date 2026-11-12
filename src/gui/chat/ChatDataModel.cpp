@@ -206,6 +206,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   ctor.Bind("showing_archived_ai", &state.showing_archived_ai);
   ctor.Bind("archived_entry_label_ai", &state.archived_entry_label_ai);
   ctor.Bind("archived_entry_label", &state.archived_entry_label);
+  ctor.Bind("show_reconnect_banner", &state.show_reconnect_banner);
   ctor.Bind("sessions_more", &state.sessions_more);
   ctor.Bind("sessions_query", &state.sessions_query);
   ctor.Bind("ai_sessions_query", &state.ai_sessions_query);
@@ -337,6 +338,7 @@ void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "showing_archived_ai");
   DataModelHost::Instance().Dirty("shell", "archived_entry_label_ai");
   DataModelHost::Instance().Dirty("shell", "archived_entry_label");
+  DataModelHost::Instance().Dirty("shell", "show_reconnect_banner");
   DataModelHost::Instance().Dirty("shell", "sessions_more");
   DataModelHost::Instance().Dirty("shell", "working_set_active");
   DataModelHost::Instance().Dirty("shell", "working_set_title");

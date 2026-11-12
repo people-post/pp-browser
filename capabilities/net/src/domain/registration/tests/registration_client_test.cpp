@@ -6,8 +6,11 @@
 #include "lib/people/IdentityStore.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/KemKeyBinding.h"
+#include "foundation/error/AppError.h"
+#include "lib/net/OrgBackendClientsImpl.h"
 
 #include <filesystem>
+#include <optional>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -352,6 +355,161 @@ TEST_F(KemBindingPublishTest, PersistRenewalRefusesAnotherAccount) {
   ExpectSameRegistrationFields(before, identity_->Get().value());
   EXPECT_TRUE(static_cast<bool>(PersistRenewal(*identity_, *result, before.account_id)));
   EXPECT_TRUE(identity_->Get().value().kem_binding_published);
+}
+
+// B216: the server's refusal of a registration is told apart from a failure that may pass (the recovery asks the user
+// after a refusal, and only waits after the rest).
+TEST(RegistrationErrorTest, A4xxButTimeoutAndRateLimitIsARefusal) {
+  for (const long status : {400L, 401L, 403L, 404L, 409L, 422L}) {
+    EXPECT_TRUE(IsRegistrationRefused(RegistrationHttpStatusError("finish", status))) << status;
+  }
+  for (const long status : {408L, 429L, 500L, 502L, 503L}) {
+    EXPECT_FALSE(IsRegistrationRefused(RegistrationHttpStatusError("start", status))) << status;
+    EXPECT_EQ(AppError::CategoryOf(RegistrationHttpStatusError("start", status)), ErrorCategory::Network) << status;
+  }
+  EXPECT_EQ(RegistrationHttpStatusError("start", 403).message, "Registration start failed with status 403")
+      << "the log keeps its words";
+  EXPECT_FALSE(IsRegistrationRefused(AppError::Network(Err::Network::Timeout, "timed out")));
+  EXPECT_FALSE(IsRegistrationRefused(AppError::Network(Err::Network::ConnectFailed, "connect failed")));
+  EXPECT_FALSE(IsRegistrationRefused(Error("Registration finish failed with status 403"))) << "untyped: not a refusal";
+}
+
+// Counts both halves of a registration; fails either with `fail_with` when set.
+class CountingRegistrationClient : public MockRegistrationClient {
+public:
+  Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
+                                                 const std::string& signature_alg,
+                                                 const std::string& kem_public_key_b64, const std::string& peer_id,
+                                                 const std::vector<std::string>& multiaddrs,
+                                                 const RegistrationPublishOpts& publish) override {
+    ++start_calls;
+    if (fail_start_with) {
+      return *fail_start_with;
+    }
+    return MockRegistrationClient::StartRegistration(public_key_b64, nickname, signature_alg, kem_public_key_b64,
+                                                     peer_id, multiaddrs, publish);
+  }
+  Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
+                                             const std::string& nickname, const std::string& signature,
+                                             int64_t timestamp, const std::string& signature_alg,
+                                             const std::string& kem_public_key_b64,
+                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
+                                             const std::vector<std::string>& multiaddrs, int64_t initiation_floor,
+                                             const RegistrationPublishOpts& publish) override {
+    ++finish_calls;
+    if (fail_finish_with) {
+      return *fail_finish_with;
+    }
+    return MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signature, timestamp,
+                                                      signature_alg, kem_public_key_b64, kem_binding_signature_b64,
+                                                      peer_id, multiaddrs, initiation_floor, publish);
+  }
+  int start_calls = 0;
+  int finish_calls = 0;
+  std::optional<Error> fail_start_with;
+  std::optional<Error> fail_finish_with;
+};
+
+// B216 as it happened: the identity says "registered, not expired" (the old server's answer, binding published), the
+// new server does not know the account. Marking the registration expired (what the app does when the relay answers a
+// poll "Relay user not registered") makes the existing automatic renewal register again: same account, new route.
+class ServerForgotTheAccountTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    dir_ = std::filesystem::temp_directory_path() /
+           ("pp_server_forgot_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    std::filesystem::remove_all(dir_);
+    std::filesystem::create_directories(dir_);
+    identity_ = std::make_unique<IdentityStore>(dir_.string(), "test-profile");
+    ASSERT_TRUE(static_cast<bool>(identity_->SetDek(ByteVector(kDataEncryptionKeySize, 7))));
+    auto created = identity_->LoadOrCreate();
+    ASSERT_TRUE(static_cast<bool>(created)) << created.error().message;
+    LocalIdentity identity = *created;
+    identity.registered = true;
+    identity.relay_user_id = "relay:old-server";
+    identity.registration_expires_at = "2099-01-01T00:00:00.000Z";
+    identity.kem_binding_published = true;
+    ASSERT_TRUE(static_cast<bool>(identity_->Update(identity)));
+  }
+  void TearDown() override {
+    identity_.reset();
+    std::filesystem::remove_all(dir_);
+  }
+  /** What ChatController does on the "not registered" signal: one modify of the expiry, stored. */
+  void MarkExpiredAndStore() {
+    ASSERT_TRUE(static_cast<bool>(identity_->Modify([](LocalIdentity& identity) {
+      MarkRegistrationExpired(identity);
+      return true;
+    })));
+  }
+  std::filesystem::path dir_;
+  std::unique_ptr<IdentityStore> identity_;
+  CountingRegistrationClient client_;
+};
+
+TEST_F(ServerForgotTheAccountTest, NothingIsDueUntilTheRegistrationIsMarkedExpired) {
+  auto before = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_TRUE(static_cast<bool>(before)) << before.error().message;
+  EXPECT_FALSE(before->has_value()) << "the stored answer says active: the renewal alone never fixes B216";
+  EXPECT_EQ(client_.start_calls + client_.finish_calls, 0);
+}
+
+TEST_F(ServerForgotTheAccountTest, MarkedExpiredTheAutomaticRenewalRegistersAgainUnderTheSameAccount) {
+  const LocalIdentity before = identity_->Get().value();
+  MarkExpiredAndStore();
+  EXPECT_TRUE(ShouldRenewRegistration(identity_->Get().value())) << "the mark is stored";
+
+  auto renewed = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_TRUE(static_cast<bool>(renewed)) << renewed.error().message;
+  ASSERT_TRUE(renewed->has_value());
+  EXPECT_EQ(client_.start_calls, 1);
+  EXPECT_EQ(client_.finish_calls, 1);
+  ASSERT_TRUE(static_cast<bool>(PersistRenewal(*identity_, **renewed, before.account_id)));
+
+  const LocalIdentity after = identity_->Get().value();
+  EXPECT_EQ(after.account_id, before.account_id) << "the same account key: the same Account ID";
+  EXPECT_NE(after.relay_user_id, "relay:old-server") << "the new server's route is stored";
+  EXPECT_FALSE(after.relay_user_id.empty());
+  EXPECT_TRUE(after.registered);
+  EXPECT_FALSE(ShouldRenewRegistration(after)) << "the new expiry replaces the mark";
+
+  auto again = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_TRUE(static_cast<bool>(again));
+  EXPECT_FALSE(again->has_value()) << "a second trigger right after registers nothing";
+  EXPECT_EQ(client_.finish_calls, 1);
+}
+
+TEST_F(ServerForgotTheAccountTest, WithAutoRenewOffNothingIsSent) {
+  MarkExpiredAndStore();
+  auto renewed = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/false);
+  ASSERT_TRUE(static_cast<bool>(renewed)) << renewed.error().message;
+  EXPECT_FALSE(renewed->has_value()) << "auto-renew off: nothing due (the app asks the user)";
+  EXPECT_EQ(client_.start_calls + client_.finish_calls, 0);
+}
+
+TEST_F(ServerForgotTheAccountTest, ARefusedOrTransientRegistrationKeepsItsTypeAndStoresNothing) {
+  MarkExpiredAndStore();
+  const LocalIdentity marked = identity_->Get().value();
+
+  client_.fail_finish_with = RegistrationHttpStatusError("finish", 403);
+  auto refused = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_FALSE(static_cast<bool>(refused));
+  EXPECT_TRUE(IsRegistrationRefused(refused.error()));
+
+  client_.fail_finish_with.reset();
+  client_.fail_start_with = RegistrationHttpStatusError("start", 503);
+  auto transient = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_FALSE(static_cast<bool>(transient));
+  EXPECT_FALSE(IsRegistrationRefused(transient.error()));
+
+  client_.fail_start_with = AppError::Network(Err::Network::Timeout, "timed out");
+  auto timed_out = MaybeAutoRenewNetworkOnly(client_, *identity_, /*auto_renew_enabled=*/true);
+  ASSERT_FALSE(static_cast<bool>(timed_out));
+  EXPECT_FALSE(IsRegistrationRefused(timed_out.error()));
+
+  const LocalIdentity after = identity_->Get().value();
+  EXPECT_EQ(after.relay_user_id, marked.relay_user_id) << "a failed registration stores nothing";
+  EXPECT_TRUE(ShouldRenewRegistration(after)) << "still marked: the next try renews";
 }
 
 } // namespace

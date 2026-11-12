@@ -9,6 +9,13 @@
 
 namespace pbr {
 
+/**
+ * The error for a relay poll answered with a non-2xx `status_code`: a 4xx (but 408 / 429) is HttpRejected, the rest
+ * HttpError; a 403 whose JSON `error` is exactly "Relay user not registered" is Auth NotRegistered instead
+ * (IsRelayUserNotRegistered).
+ */
+Error RelayPollHttpError(long status_code, const std::string& body);
+
 /** The Brief relay's message API over HTTP: send, inbox poll / ack / clear, stream history (signed per call). */
 class HttpRelayClient : public IRelayClient {
 public:

@@ -146,6 +146,13 @@ public:
   void OpenNetworkSettings();
   /** Me → `section_id` from elsewhere in the app (Home's Security widget opens "security"). */
   void OpenSection(const std::string& section_id);
+  /**
+   * The chats list's "reconnect" row or alert (B216): register again, as Me → Profile's button does, without its
+   * "renewed" line ("Reconnected" comes when a poll gets through).
+   */
+  void ReconnectAccount();
+  /** A registration waits for the automatic renewal in flight (ChatController::RunWhenRegistrationIdle). */
+  void BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run);
   /** Refresh reachability Connection card via SettingsCommands ports. */
   void SyncReachability();
   /** Persist skip/ack for the Me → Network reachability nudge (condition-keyed). */

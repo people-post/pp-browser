@@ -22,6 +22,7 @@
 #include "gui/chat/ChatOpenMetrics.h"
 #include "gui/chat/ChatPictureTextures.h"
 #include "gui/chat/PreviewRedrawBatcher.h"
+#include "gui/chat/RegistrationRecovery.h"
 #include "gui/chat/VoiceComposer.h"
 #include "gui/chat/VoicePlayback.h"
 #include "gui/chat/ChatMentionPicker.h"
@@ -216,6 +217,13 @@ public:
   void BindOpenSettingsSection(std::function<void(const std::string& section_id)> open) {
     open_settings_section_ = std::move(open);
   }
+  /** The reconnect row and alert register again through Me → Profile's action (SettingsController::ReconnectAccount). */
+  void BindReconnectAccount(std::function<void()> reconnect) { reconnect_account_ = std::move(reconnect); }
+  /**
+   * Runs `run` (a registration the user asked for) now, or, while the automatic renewal is out, once it ends
+   * ("Reconnecting, please wait."), so the two never overlap. UI thread.
+   */
+  void RunWhenRegistrationIdle(std::function<void()> run);
   /** The panel's sheet is a modal layer: the coordinator says when the shell closed it. */
   void BindFlowCoordinator(FlowCoordinatorPorts ports) { flow_coordinator_ = std::move(ports); }
   // By value, not by reference: Home callers pass a reference into home_favorites_ / home_summary_, and selecting
@@ -721,6 +729,18 @@ private:
   /** Push binding, registration renewal and the Brief key mint off the UI thread. Made in BindConversationsFacade. */
   std::unique_ptr<MessagingReadyTasks> ready_tasks_;
   void MakeReadyTasks();
+  /** B216: the relay does not know this account; register again, or ask the user (RegistrationRecovery). */
+  RegistrationRecovery recovery_;
+  std::function<void()> reconnect_account_;
+  void OnRelayRegistrationSignal(RelayRegistrationSignal signal);
+  /** A renewal ended (MessagingReadyTasks' renew_hint): tells the recovery how. */
+  void OnRecoveryRenewal(const RenewResult& result, bool auto_renew);
+  void ApplyRecovery(const RecoveryActions& actions);
+  /** Marks the registration expired (stored) and runs the existing renewal task. */
+  void RequestRecoveryRenewal();
+  void OnReconnectTapped();
+  /** After messaging went away: the recovery starts over (the row goes). */
+  void ResetRecovery();
   /** Its AppLifecycle background listener (removed at Shutdown). */
   uint64_t lifecycle_background_id_ = 0;
   /** Its AppLifecycle foreground listener: the send marks are worked out again (a clock may be over). */

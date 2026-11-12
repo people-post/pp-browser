@@ -1606,6 +1606,18 @@ input.checkbox:checked {
   background-color: #7878801f;
 }
 
+.sidebar-reconnect-entry {
+  background-color: #7878801f;
+}
+
+.sidebar-reconnect-entry svg {
+  image-color: #ff3b30;
+}
+
+.sidebar-reconnect-label {
+  color: #ff3b30;
+}
+
 .sidebar-session-mention {
   color: #5856d6;
 }

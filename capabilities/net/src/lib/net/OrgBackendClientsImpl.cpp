@@ -373,6 +373,12 @@ Roe<std::vector<mesh::MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
   return MeshNodeHitsFromDirectoryJson(response.value().body);
 }
 
+Error RegistrationHttpStatusError(const std::string& step, const long status_code) {
+  const bool refused = status_code >= 400 && status_code < 500 && status_code != 408 && status_code != 429;
+  return AppError::Network(refused ? Err::Network::HttpRejected : Err::Network::HttpError,
+                           "Registration " + step + " failed with status " + std::to_string(status_code));
+}
+
 HttpRegistrationClient::HttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}
 
 Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(
@@ -408,7 +414,7 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Registration start failed with status " + std::to_string(response.value().status_code));
+    return RegistrationHttpStatusError("start", response.value().status_code);
   }
 
   auto root = TryParseObject(response.value().body);
@@ -471,7 +477,7 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Registration finish failed with status " + std::to_string(response.value().status_code));
+    return RegistrationHttpStatusError("finish", response.value().status_code);
   }
 
   auto root = TryParseObject(response.value().body);

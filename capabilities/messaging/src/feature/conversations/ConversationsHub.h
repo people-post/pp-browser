@@ -47,6 +47,7 @@
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "feature/conversations/RelayRegistrationSignal.h"
 #include "lib/net/BlobClient.h"
 #include "lib/net/BlobQuota.h"
 #include "lib/net/HttpBlobClient.h"
@@ -298,6 +299,8 @@ public:
   void ExpectDeviceJoin(int64_t until_ms);
   /** The account locker (M023 s3): publish this account's state; fetch a seed's. Null until messaging is built. */
   AccountLockerWorkflow* AccountLocker() { return account_locker_.get(); }
+  /** Publish the account locker (M023) once a burst of changes settles; no-op before messaging or without a seed. */
+  void PublishAccountLockerSoon();
   Roe<void> RegisterIdentity(const std::string& nickname);
   /** Uploads an icon the app prepared (decoded, sized, encoded: PrepareProfileIconFromFile). */
   Roe<void> UploadProfileIcon(const PreparedProfileIcon& icon);
@@ -374,6 +377,8 @@ public:
   AttachmentLimits CurrentAttachmentLimits() const;
   /** Called (on the UI thread) with the level reached (80 / 90) when the server space is filling up. */
   void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
+  /** Called on the UI thread with what the relay's polls say about this account's registration (B216). */
+  void SetOnRelayRegistrationSignal(std::function<void(RelayRegistrationSignal)> callback);
   AttachmentFetchWorkflow& Attachments();
   /** Our uploaded relay copy of an attachment message, if any (DeleteUploadedAttachmentCopy); a failure is logged. */
   void DeleteUploadedCopy(const ThreadMessage& message);
@@ -668,6 +673,11 @@ private:
   std::unordered_set<std::string> icon_fetch_inflight_;
   std::unordered_map<std::string, std::chrono::steady_clock::time_point> icon_fetch_failed_at_;
   std::function<void(int percent)> on_blob_space_warning_;
+  std::mutex relay_registration_mu_;
+  std::function<void(RelayRegistrationSignal)> on_relay_registration_signal_;
+  /** A NotRegistered signal waits on the UI thread: the next poll's is dropped (one per frame, not one per poll). */
+  std::shared_ptr<std::atomic<bool>> relay_not_registered_posted_ = std::make_shared<std::atomic<bool>>(false);
+  void PostRelayRegistrationSignal(RelayRegistrationSignal signal);
   void CheckBlobSpace(bool after_quota_error);
   struct AttachmentSendJob {
     std::string thread_id;
@@ -773,8 +783,6 @@ private:
   PendingRestore restored_;
   /** What a restore brought back beyond the account: applied now, or once messaging is up. */
   void QueueRestoredState(AccountStateExtras extras);
-  /** Publish the account locker (M023) once a burst of changes settles; no-op before messaging or without a seed. */
-  void PublishAccountLockerSoon();
   static constexpr int64_t kLockerPublishDelayMs = 5 * 1000;
   /** How often the locker is synced while running (another device's contact edits arrive this way). */
   static constexpr int64_t kLockerSyncIntervalMs = 10 * 60 * 1000;

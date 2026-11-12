@@ -145,6 +145,13 @@ public:
 
   bool PushInFlight() const;
   bool RenewInFlight() const;
+  /**
+   * Runs `then` now when no renewal is in flight; otherwise once the running one ends, whichever way (stored, failed,
+   * stale), after its hint and before a run asked for meanwhile starts. For a registration that must not overlap the
+   * renewal (Me → Profile's register, the reconnect row). A teardown (OnMessagingTornDown) or the owner going drops
+   * what still waits. UI thread.
+   */
+  void AfterRenewal(std::function<void()> then);
 
   struct State;
 

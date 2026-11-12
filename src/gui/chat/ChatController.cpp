@@ -565,13 +565,15 @@ void ChatController::MakeReadyTasks() {
     return {};
   };
   ports.renew_hint = [this](const RenewResult& result, const bool auto_renew) {
+    OnRecoveryRenewal(result, auto_renew);
     if (result.error) {
       log().warning << "Auto-renew registration failed: " << result.error->message;
     } else if (result.registration) {
       log().info << "Network registration auto-renewed";
     } else {
       const std::optional<LocalIdentity> identity = facade_ ? facade_->GetIdentity() : std::nullopt;
-      if (identity && ShouldRenewRegistration(*identity) && !auto_renew) {
+      // The reconnect row says it already when the relay does not know the account (B216).
+      if (identity && ShouldRenewRegistration(*identity) && !auto_renew && !recovery_.BannerVisible()) {
         UserFeedback::NeedsSetup(Tr("chat.hint.registration_expires"));
       }
     }
@@ -623,6 +625,142 @@ void ChatController::MakeReadyTasks() {
   ready_tasks_ = std::make_unique<MessagingReadyTasks>(std::move(ports), agent_.BriefKeyRun());
 }
 
+void ChatController::RunWhenRegistrationIdle(std::function<void()> run) {
+  if (!run) {
+    return;
+  }
+  if (ready_tasks_ && ready_tasks_->RenewInFlight()) {
+    log().info << "registration waits for the automatic renewal in flight";
+    UserFeedback::Note(Tr("chat.reconnect.please_wait"));
+    ready_tasks_->AfterRenewal(std::move(run));
+    return;
+  }
+  run();
+}
+
+void ChatController::OnRelayRegistrationSignal(const RelayRegistrationSignal signal) {
+  const bool call_live = facade_ && facade_->AnyCallLive();
+  switch (signal) {
+    case RelayRegistrationSignal::NotRegistered: {
+      const bool locked = !MessagingReady();
+      const bool auto_renew = Store().Snapshot().profile_prefs.auto_renew_registration;
+      const int64_t now_ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+              .count();
+      ApplyRecovery(recovery_.OnNotRegistered(locked, auto_renew, call_live, now_ms));
+      break;
+    }
+    case RelayRegistrationSignal::PollOk: {
+      const bool recovering = recovery_.CurrentState() != RegistrationRecovery::State::Ok;
+      const RecoveryActions actions = recovery_.OnPollOk();
+      if (recovering) {
+        log().info << "registration recovery: the relay answers again";
+        // The push binding sent at unlock went to a relay that did not know us: bind again, or the phone is not
+        // woken for messages and calls until the next start.
+        SyncPushDevices();
+      }
+      ApplyRecovery(actions);
+      break;
+    }
+  }
+}
+
+void ChatController::OnRecoveryRenewal(const RenewResult& result, const bool auto_renew) {
+  if (recovery_.CurrentState() == RegistrationRecovery::State::Ok) {
+    return; // the routine renewal after unlock: not the recovery's
+  }
+  RenewalOutcome outcome = RenewalOutcome::NothingDue;
+  const char* result_name = "nothing_due";
+  if (result.error) {
+    const bool refused = IsRegistrationRefused(*result.error);
+    outcome = refused ? RenewalOutcome::Refused : RenewalOutcome::Transient;
+    result_name = refused ? "refused" : "transient";
+  } else if (result.registration) {
+    outcome = RenewalOutcome::Renewed;
+    result_name = "ok";
+  }
+  log().info << "registration recovery: renewal result=" << result_name;
+  switch (outcome) { // the metric takes words fixed at compile time only
+    case RenewalOutcome::Renewed:
+      MetricsLine("registration.reregister").Add("result", "ok").Emit();
+      break;
+    case RenewalOutcome::Refused:
+      MetricsLine("registration.reregister").Add("result", "refused").Emit();
+      break;
+    case RenewalOutcome::Transient:
+      MetricsLine("registration.reregister").Add("result", "transient").Emit();
+      break;
+    case RenewalOutcome::NothingDue:
+      break;
+  }
+  if (outcome == RenewalOutcome::Renewed && facade_) {
+    facade_->PublishAccountLockerSoon(); // as Me → Profile's register does: the locker keeps the relay binding
+  }
+  ApplyRecovery(recovery_.OnRenewal(outcome, auto_renew, facade_ && facade_->AnyCallLive()));
+}
+
+void ChatController::ApplyRecovery(const RecoveryActions& actions) {
+  if (actions.needs_user_now) {
+    log().info << "registration recovery: needs the user";
+    MetricsLine("registration.reregister").Add("result", "needs_user").Emit();
+  }
+  if (shell_.show_reconnect_banner != recovery_.BannerVisible()) {
+    shell_.show_reconnect_banner = recovery_.BannerVisible();
+    DataModelHost::Instance().Dirty("shell", "show_reconnect_banner");
+  }
+  if (actions.request_renewal) {
+    RequestRecoveryRenewal();
+  }
+  if (actions.show_alert) {
+    UserFeedback::Confirm(
+        Tr("chat.reconnect.alert_title"), Tr("chat.reconnect.alert_body"),
+        [this](const bool ok) {
+          if (ok) {
+            OnReconnectTapped();
+          }
+        },
+        Tr("chat.reconnect.alert_ok"));
+  }
+  if (actions.toast_reconnected) {
+    ShowToast(Tr("chat.reconnect.done"));
+  }
+}
+
+void ChatController::RequestRecoveryRenewal() {
+  if (!facade_ || !ready_tasks_) {
+    return;
+  }
+  log().info << "registration recovery: the relay does not know this account; registering again";
+  // What a 403 from the key rotation does too: the renewal then finds the registration due and registers.
+  auto marked = facade_->ModifyLocalIdentity([](LocalIdentity& identity) {
+    MarkRegistrationExpired(identity);
+    return true;
+  });
+  if (!marked) {
+    log().warning << "registration recovery: could not mark the registration expired: " << marked.error().message;
+    return;
+  }
+  ready_tasks_->RenewRegistration();
+}
+
+void ChatController::OnReconnectTapped() {
+  if (!recovery_.OnUserTap()) {
+    return; // connected again meanwhile
+  }
+  log().info << "registration recovery: the user asked to reconnect";
+  if (reconnect_account_) {
+    reconnect_account_();
+  }
+}
+
+void ChatController::ResetRecovery() {
+  recovery_.ResetSession();
+  if (shell_.show_reconnect_banner) {
+    shell_.show_reconnect_banner = false;
+    DataModelHost::Instance().Dirty("shell", "show_reconnect_banner");
+  }
+}
+
 void ChatController::SyncPushDevices() {
   if (ready_tasks_) {
     ready_tasks_->SyncPushDevices();
@@ -643,6 +781,9 @@ void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
     facade_->SetOnBlobSpaceWarning([this](const int percent) {
       ShowToast(Tr("chat.attachment.space_warning", {{"percent", std::to_string(percent)}}));
     });
+    // The relay does not know this account (B216): register again, or ask (RegistrationRecovery).
+    facade_->SetOnRelayRegistrationSignal(
+        [this](const RelayRegistrationSignal signal) { OnRelayRegistrationSignal(signal); });
     // A picture's preview came (or cannot come): only the rows showing its placeholder are redrawn (B203).
     facade_->SetOnChatPreviewDone([this, alive = std::weak_ptr<int>(chat_window_alive_)](
                                       const std::string& thread_id, const std::vector<uint8_t>& hash, const bool made) {
@@ -1357,6 +1498,7 @@ void ChatController::OnProfileDataReset() {
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown(); // the teardown dropped work still queued: free its runs
   }
+  ResetRecovery();
   mesh_ready_ = false;
   // profile.db is recreated: nothing read from the old one may be written back into the new one.
   presenter_.ResetForNewProfile();
@@ -5468,6 +5610,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("ai_sessions_search",
                                DataEventAt([this](ui::Event& ev) { OnAiSessionsSearch(ev, /*submit=*/true); }));
         ctor.BindEventCallback("toggle_archived", DataEvent([this] { OnToggleArchived(); }));
+        ctor.BindEventCallback("reconnect_account", DataEvent([this] { OnReconnectTapped(); }));
         ctor.BindEventCallback("toggle_archived_ai", DataEvent([this] { OnToggleArchivedAi(); }));
         ctor.BindEventCallback("sessions_scroll", DataEvent([this] { OnSessionsScroll(); }));
         ctor.BindEventCallback("ai_sessions_scroll", DataEvent([this] { OnAiSessionsScroll(); }));
@@ -6072,6 +6215,7 @@ void ChatController::Shutdown() {
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown();
   }
+  ResetRecovery();
   mesh_ready_ = false;
   pending_reply_.reset();
   agent_.Reset();

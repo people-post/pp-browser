@@ -54,6 +54,13 @@ private:
   std::vector<std::unique_ptr<mesh::IDirectoryClient>> backends_;
 };
 
+/**
+ * The error for a register/start or register/finish answered `status_code` (not 2xx): a 4xx but 408 / 429 is the
+ * server refusing the registration (Network HttpRejected: sending it again will not help), anything else HttpError.
+ * `step` is "start" or "finish"; the message keeps its old words.
+ */
+Error RegistrationHttpStatusError(const std::string& step, long status_code);
+
 class HttpRegistrationClient : public IRegistrationClient {
 public:
   explicit HttpRegistrationClient(std::string base_url);

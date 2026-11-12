@@ -46,7 +46,28 @@ Error RelayHttpStatusError(const ShareWord action, long status_code, const std::
   return AppError::Network(refused ? Err::Network::HttpRejected : Err::Network::HttpError, detail);
 }
 
+/** The relay's answer for a signed call from a user it has no registration for (B216). */
+constexpr const char* kRelayUserNotRegistered = "Relay user not registered";
+
 } // namespace
+
+Error RelayPollHttpError(const long status_code, const std::string& body) {
+  Error error = RelayHttpStatusError("poll", status_code, body);
+  if (status_code != 403) {
+    return error;
+  }
+  const auto json = TryParseObject(body);
+  const auto api_error = json ? json->getString("error") : std::nullopt;
+  if (api_error && *api_error == kRelayUserNotRegistered) {
+    return AppError::Auth(Err::Auth::NotRegistered, error.message);
+  }
+  return error;
+}
+
+bool IsRelayUserNotRegistered(const Error& error) {
+  return AppError::CategoryOf(error) == ErrorCategory::Auth &&
+         error.code == static_cast<int32_t>(Err::Auth::NotRegistered);
+}
 
 Roe<std::string> HttpRelayClient::SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const {
   if (!auth_signer_) {
@@ -128,7 +149,7 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
     return response.error();
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return RelayHttpStatusError("poll", response.value().status_code, response.value().body);
+    return RelayPollHttpError(response.value().status_code, response.value().body);
   }
 
   auto root = TryParseObject(response.value().body);

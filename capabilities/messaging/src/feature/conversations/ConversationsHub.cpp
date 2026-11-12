@@ -692,6 +692,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
   }
   if (mesh_messaging_) {
     mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
+    mesh_messaging_->SetOnRelayNotRegistered(nullptr);
     mesh_messaging_->SetOnMessagesChanged(nullptr);
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
@@ -1108,6 +1109,10 @@ void ConversationsHub::BuildMessagingObjects() {
   // The relay's poll results feed the status line (#175); a fresh orchestrator starts with no result.
   mesh_messaging_->SetOnBriefRelayHealthChanged(
       [this](const MeshDeliveryOrchestrator::BriefRelayHealthState health) { OnBriefRelayHealthChanged(health); });
+  // The relay does not know this account (B216): the UI decides whether to register again or to ask.
+  relay_not_registered_posted_->store(false); // a post a teardown dropped must not hold the next session's back
+  mesh_messaging_->SetOnRelayNotRegistered(
+      [this]() { PostRelayRegistrationSignal(RelayRegistrationSignal::NotRegistered); });
   {
     std::unique_lock lock(link_mu_);
     ResetLinkHealthLocked();
@@ -1545,6 +1550,9 @@ void ConversationsHub::OnLinkNetwork(const bool linked) {
 }
 
 void ConversationsHub::OnBriefRelayHealthChanged(const MeshDeliveryOrchestrator::BriefRelayHealthState health) {
+  if (health == MeshDeliveryOrchestrator::BriefRelayHealthState::Ok) {
+    PostRelayRegistrationSignal(RelayRegistrationSignal::PollOk); // the relay knows us (again)
+  }
   std::unique_lock lock(link_mu_);
   link_health_ = health;
   if (health != MeshDeliveryOrchestrator::BriefRelayHealthState::Unknown) {
@@ -2273,6 +2281,34 @@ AttachmentLimits ConversationsHub::CurrentAttachmentLimits() const {
 void ConversationsHub::SetOnBlobSpaceWarning(std::function<void(int percent)> callback) {
   std::lock_guard lock(blob_space_mutex_);
   on_blob_space_warning_ = std::move(callback);
+}
+
+void ConversationsHub::SetOnRelayRegistrationSignal(std::function<void(RelayRegistrationSignal)> callback) {
+  std::lock_guard lock(relay_registration_mu_);
+  on_relay_registration_signal_ = std::move(callback);
+}
+
+void ConversationsHub::PostRelayRegistrationSignal(const RelayRegistrationSignal signal) {
+  std::function<void(RelayRegistrationSignal)> callback;
+  {
+    std::lock_guard lock(relay_registration_mu_); // the poll worker vs. the UI binding it
+    callback = on_relay_registration_signal_;
+  }
+  if (!callback) {
+    return;
+  }
+  if (signal == RelayRegistrationSignal::PollOk) {
+    AppRuntime::PostUI([callback = std::move(callback)]() { callback(RelayRegistrationSignal::PollOk); });
+    return;
+  }
+  // Every poll (~2 s) says it again: one waiting on the UI thread is enough. PostUI keeps the order of the two.
+  if (relay_not_registered_posted_->exchange(true)) {
+    return;
+  }
+  AppRuntime::PostUI([callback = std::move(callback), posted = relay_not_registered_posted_]() {
+    posted->store(false);
+    callback(RelayRegistrationSignal::NotRegistered);
+  });
 }
 
 void ConversationsHub::CheckBlobSpace(const bool after_quota_error) {
@@ -3344,6 +3380,7 @@ void ConversationsHub::Shutdown() {
   }
   if (mesh_messaging_) {
     mesh_messaging_->SetOnBriefRelayHealthChanged(nullptr);
+    mesh_messaging_->SetOnRelayNotRegistered(nullptr);
     mesh_messaging_->SetOnMessagesChanged(nullptr);
     mesh_messaging_->SetOnDeliveryNotice(nullptr);
     mesh_messaging_->SetOnBackgroundUnread(nullptr);
