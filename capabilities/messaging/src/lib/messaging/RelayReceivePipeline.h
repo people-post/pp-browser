@@ -293,12 +293,20 @@ private:
   void ApplyInboundRetract(const ThreadMessage& persisted, RelayReceiveOutcome& outcome);
   /** A message whose retract arrived first is stored as a tombstone straight away. */
   void TombstoneIfRetractedBeforeArrival(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
+  /** The edit rows a message found waiting when it arrived, and the one applied to it ("" none). */
+  struct WaitingEdits {
+    std::vector<ThreadMessage> rows;
+    std::string applied_id;
+  };
   /**
    * Before a row is stored (EditMessage.h). An edit: quiet (no unread, preview or notice); refused at once when its
    * message is here and it does not pass — stored blanked, its text never written. A message: the newest stored edit
-   * of it that passes is applied to it as it is stored; every other edit row aimed at it is blanked.
+   * of it that passes is applied to it as it is stored; the rows it found are returned, for SettleEdits once it is
+   * stored (none changes before: a message not stored leaves its edits waiting as they were).
    */
-  void PrepareEdits(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
+  std::optional<WaitingEdits> PrepareEdits(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
+  /** After the message PrepareEdits saw was stored: every edit row it found but the applied one is blanked. */
+  void SettleEdits(const std::string& thread_id, const std::optional<WaitingEdits>& waiting);
   /** After an edit is stored: applied to its message when that is here and it passes; refused ones are blanked. */
   void ApplyInboundEdit(const ThreadMessage& persisted, RelayReceiveOutcome& outcome);
   std::function<void(const std::string&, const ThreadMessage&)> on_message_retracted_;

@@ -1616,7 +1616,7 @@ void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelop
   message.relay_visible = true;
   // As a peer's message is taken: one we deleted before its copy came stays deleted; reactions are capped.
   TombstoneIfRetractedBeforeArrival(message, outcome);
-  PrepareEdits(message, outcome);
+  const std::optional<WaitingEdits> waiting_edits = PrepareEdits(message, outcome);
   if (auto cap = RejectIfAnnotationCapExceeded(store_, message); !cap) {
     return;
   }
@@ -1625,6 +1625,7 @@ void RelayReceivePipeline::FileSentCopy(const SentCopy& copy, const RelayEnvelop
     log().warning << "sibling's sent copy not stored: " << stored.error().message;
     return;
   }
+  SettleEdits(message.thread_id, waiting_edits);
   ApplyInboundRetract(*stored, outcome); // our delete for everyone, made on another device
   ApplyInboundEdit(*stored, outcome);    // our edit, made on another device
   outcome.decision = IngestDecision::AcceptControl;
@@ -2050,7 +2051,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   MaybeSuppressInboxChrome(outcome, persisted);
 
   TombstoneIfRetractedBeforeArrival(persisted, outcome);
-  PrepareEdits(persisted, outcome);
+  const std::optional<WaitingEdits> waiting_edits = PrepareEdits(persisted, outcome);
   if (auto cap = RejectIfAnnotationCapExceeded(store_, persisted); !cap) {
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::ReactionRejected, cap.error().message,
@@ -2072,6 +2073,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     outcome.persisted_message = persisted;
     outcome.thread_changed = true;
     outcome.thread_id = resolved_thread_id;
+    SettleEdits(persisted.thread_id, waiting_edits);
     ApplyInboundRetract(persisted, outcome);
     ApplyInboundEdit(persisted, outcome);
     if (auto rotate = ApplyInboundPskRotate(resolved_thread_id, envelope, persisted); !rotate) {
@@ -2093,6 +2095,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   outcome.persisted_message = persisted;
   outcome.thread_changed = true;
   outcome.thread_id = resolved_thread_id;
+  SettleEdits(persisted.thread_id, waiting_edits);
   ApplyInboundRetract(persisted, outcome);
   ApplyInboundEdit(persisted, outcome);
   if (auto rotate = ApplyInboundPskRotate(resolved_thread_id, envelope, persisted); !rotate) {
@@ -2312,7 +2315,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
 
   MaybeSuppressInboxChrome(outcome, persisted); // a family's quiet line (a group call summary)
   TombstoneIfRetractedBeforeArrival(persisted, outcome);
-  PrepareEdits(persisted, outcome);
+  const std::optional<WaitingEdits> waiting_edits = PrepareEdits(persisted, outcome);
   if (auto cap = RejectIfAnnotationCapExceeded(store_, persisted); !cap) {
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::ReactionRejected, cap.error().message,
@@ -2329,6 +2332,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   outcome.persisted_message = persisted;
   outcome.thread_changed = true;
   outcome.thread_id = resolved_thread_id;
+  SettleEdits(persisted.thread_id, waiting_edits);
   ApplyInboundRetract(persisted, outcome);
   ApplyInboundEdit(persisted, outcome);
   return outcome;
@@ -2388,35 +2392,36 @@ void RelayReceivePipeline::ApplyInboundRetract(const ThreadMessage& persisted, R
   }
 }
 
-void RelayReceivePipeline::PrepareEdits(ThreadMessage& persisted, RelayReceiveOutcome& outcome) {
+std::optional<RelayReceivePipeline::WaitingEdits> RelayReceivePipeline::PrepareEdits(ThreadMessage& persisted,
+                                                                                     RelayReceiveOutcome& outcome) {
   if (persisted.content_type == ChatContentType::Annotation) {
     if (!IsEditAnnotation(persisted) || !persisted.target_message_id) {
-      return;
+      return std::nullopt;
     }
     outcome.suppress_inbox_chrome = true; // an edit is no news: no unread count, preview or notice
     if (EditTextOf(persisted).value_or("").empty()) {
-      return; // blanked already (a superseded edit served by history)
+      return std::nullopt; // blanked already (a superseded edit served by history)
     }
     auto found = store_.GetMessage(persisted.thread_id, *persisted.target_message_id);
     if (!found || !found->has_value()) {
-      return; // its message is not here yet: judged when it arrives
+      return std::nullopt; // its message is not here yet: judged when it arrives
     }
     if (const EditRefusal refusal = CheckEdit(persisted, **found); refusal != EditRefusal::None) {
       log().info << "edit ignored: " << EditRefusalName(refusal);
       persisted = BlankedEdit(std::move(persisted)); // kept for its id and seq; the words are not stored
     }
-    return;
+    return std::nullopt;
   }
   if (persisted.content_type == ChatContentType::System) {
-    return; // never a target; checked often (calls), so not even counted
+    return std::nullopt; // never a target; checked often (calls), so not even counted
   }
   auto count = store_.CountAnnotationsForTarget(persisted.thread_id, persisted.id); // cheap, no decrypt
   if (!count || *count == 0) {
-    return;
+    return std::nullopt;
   }
   auto annotations = store_.GetAnnotationsForTarget(persisted.thread_id, persisted.id);
   if (!annotations) {
-    return;
+    return std::nullopt;
   }
   // An edit can overtake its message: judged now against it, each one; the newest that passes is applied.
   const std::optional<ThreadMessage> newest = persisted.content_type == ChatContentType::Deleted
@@ -2425,9 +2430,14 @@ void RelayReceivePipeline::PrepareEdits(ThreadMessage& persisted, RelayReceiveOu
   if (newest) {
     persisted = WithEdit(std::move(persisted), *newest);
   }
-  // Every other edit row read above goes blank (the one full read of them, once per message).
-  (void)BlankEditRows(store_, persisted.thread_id, *annotations, newest ? newest->id : std::string(),
-                      cancel_pending_send_);
+  return WaitingEdits{.rows = std::move(*annotations), .applied_id = newest ? newest->id : std::string()};
+}
+
+void RelayReceivePipeline::SettleEdits(const std::string& thread_id, const std::optional<WaitingEdits>& waiting) {
+  if (waiting) {
+    // Every other edit row read by PrepareEdits goes blank (the one full read of them, once per message).
+    (void)BlankEditRows(store_, thread_id, waiting->rows, waiting->applied_id, cancel_pending_send_);
+  }
 }
 
 void RelayReceivePipeline::ApplyInboundEdit(const ThreadMessage& persisted, RelayReceiveOutcome& outcome) {

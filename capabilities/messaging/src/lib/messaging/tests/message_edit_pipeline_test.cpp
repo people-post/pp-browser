@@ -954,5 +954,23 @@ TEST_F(EditCostTest, OurOwnEditsReadNotAllTheEditRows) {
   EXPECT_EQ(EditMarkOf(alice.Row(chat.id, "mine-1").value()).value_or(EditMark{}).edited_by, "own-10");
 }
 
+// The message's first arrival is not stored (the disk fails once): the edits waiting for it are left as they were, and
+// when it comes again it is stored with the newest of them applied.
+TEST_F(EditCostTest, AMessageNotStoredOnItsFirstArrivalLeavesItsWaitingEditsAndTakesTheNewestWhenItComesAgain) {
+  ASSERT_TRUE(bob_->Receive(DaveEdits("edit-1", "see you at 9", sent_ + kMin)).persisted);
+  ASSERT_TRUE(bob_->Receive(DaveEdits("edit-2", "see you at 10", sent_ + 2 * kMin)).persisted);
+  const RelayEnvelope message = dave_->SendGroup(kGroup, *bob_, Text("dave-1", "see you at 8", sent_));
+  bob_->probe->fail_append_once = "dave-1";
+  EXPECT_FALSE(bob_->Receive(message).persisted);
+  EXPECT_FALSE(bob_->Row(bob_->group_thread, "dave-1"));
+  EXPECT_EQ(bob_->EditRowsWithText(bob_->group_thread, "dave-1"), 2u) << "no edit row changed";
+
+  ASSERT_TRUE(bob_->Receive(message).persisted);
+  const ThreadMessage dave = bob_->Row(bob_->group_thread, "dave-1").value();
+  EXPECT_EQ(dave.text, "see you at 10");
+  EXPECT_EQ(EditMarkOf(dave).value_or(EditMark{}).edited_by, "edit-2");
+  EXPECT_EQ(bob_->EditRowsWithText(bob_->group_thread, "dave-1"), 1u);
+}
+
 } // namespace
 } // namespace pbr
