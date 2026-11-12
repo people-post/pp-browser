@@ -2,6 +2,7 @@
 #include "lib/messaging/TranscriptBodyCodec.h"
 #include "lib/messaging/TranscriptCipher.h"
 #include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/messaging/EditMessage.h"
 
 #include <gtest/gtest.h>
 
@@ -124,6 +125,36 @@ TEST(TranscriptCipherTest, MemoryRoundTrip) {
   auto plain = TranscriptCipher::DecryptMemoryValue(dek, "profile-a", "thread-1", "summary", *cipher);
   ASSERT_TRUE(plain);
   EXPECT_EQ(*plain, "facts");
+}
+
+// An edited text keeps its mark when read back (the row alone rebuilds a text's payload from its words).
+TEST(TranscriptBodyCodecTest, AnEditedTextKeepsItsMarkWhenReadBack) {
+  ThreadMessage message;
+  message.id = "m1";
+  message.thread_id = "t";
+  message.content_type = ChatContentType::Text;
+  message.text = "see you at eight";
+  ThreadMessage edit;
+  edit.id = "e1";
+  edit.content_type = ChatContentType::Annotation;
+  edit.target_message_id = "m1";
+  edit.payload_json = BuildEditPayloadJson("m1", "see you at nine");
+  edit.timestamp = 1500;
+  const ThreadMessage edited = WithEdit(message, edit);
+
+  auto body = TranscriptBodyCodec::FromMessage(edited);
+  ASSERT_TRUE(body);
+  auto decoded = TranscriptBodyCodec::Decode(*TranscriptBodyCodec::Encode(*body));
+  ASSERT_TRUE(decoded);
+  ThreadMessage read;
+  read.id = "m1";
+  read.thread_id = "t";
+  ASSERT_TRUE(TranscriptBodyCodec::ApplyToMessage(*decoded, read));
+  EXPECT_EQ(read.text, "see you at nine");
+  EXPECT_EQ(read.content_type, ChatContentType::Text);
+  ASSERT_TRUE(EditMarkOf(read).has_value());
+  EXPECT_EQ(EditMarkOf(read)->edited_at, 1500);
+  EXPECT_EQ(EditMarkOf(read)->edited_by, "e1");
 }
 
 } // namespace
