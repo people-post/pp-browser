@@ -253,6 +253,15 @@ public:
       std::function<void(const std::string& thread_id, const ThreadMessage& original)> callback) {
     on_message_retracted_ = std::move(callback);
   }
+  /**
+   * Called after a sender's edit rewrote one of their messages here (`before` / `after` = the row before and after;
+   * DEV/PLAN-message-edit.md). Not called for a message that arrives with its edit already applied.
+   */
+  void SetOnMessageEdited(
+      std::function<void(const std::string& thread_id, const ThreadMessage& before, const ThreadMessage& after)>
+          callback) {
+    on_message_edited_ = std::move(callback);
+  }
 
   RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                       bool authorized_older_backfill = false,
@@ -277,7 +286,16 @@ private:
   void ApplyInboundRetract(const ThreadMessage& persisted, RelayReceiveOutcome& outcome);
   /** A message whose retract arrived first is stored as a tombstone straight away. */
   void TombstoneIfRetractedBeforeArrival(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
+  /**
+   * Before a row is stored (EditMessage.h). An edit: quiet (no unread, preview or notice); refused at once when its
+   * message is here and it does not pass — stored blanked, its text never written. A message: the newest stored edit
+   * of it that passes is applied to it as it is stored; every other edit row aimed at it is blanked.
+   */
+  void PrepareEdits(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
+  /** After an edit is stored: applied to its message when that is here and it passes; refused ones are blanked. */
+  void ApplyInboundEdit(const ThreadMessage& persisted, RelayReceiveOutcome& outcome);
   std::function<void(const std::string&, const ThreadMessage&)> on_message_retracted_;
+  std::function<void(const std::string&, const ThreadMessage&, const ThreadMessage&)> on_message_edited_;
   std::function<void(const AccountCard&)> on_sender_card_;
   std::function<void(const std::string&, const std::string&, int64_t)> on_sender_card_version_;
   std::function<void(const std::string&, const std::string&, int64_t)> on_unknown_sender_device_;

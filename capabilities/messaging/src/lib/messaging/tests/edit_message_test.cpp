@@ -151,6 +151,16 @@ TEST(CheckEditTest, ANewerEditByItsOwnTimeThenByIdWins) {
   EXPECT_EQ(CheckEdit(Edit("e5", "nine", kSentAt + 2 * kMinute), first), EditRefusal::NotNewer);
 }
 
+// A device that was reinstalled numbers from 1 again: the seq plays no part, only the send time.
+TEST(CheckEditTest, TheSeqPlaysNoPart) {
+  ThreadMessage applied = Edit("e5", "nine", kSentAt + 2 * kMinute);
+  applied.sender_seq = 900;
+  const ThreadMessage first = WithEdit(Received(), applied);
+  ThreadMessage after_reinstall = Edit("e1", "ten", kSentAt + 3 * kMinute);
+  after_reinstall.sender_seq = 1;
+  EXPECT_EQ(CheckEdit(after_reinstall, first), EditRefusal::None);
+}
+
 TEST(EditSendTimeTest, NeverBeforeTheEditThisDeviceAlreadyHas) {
   EXPECT_EQ(EditSendTime(kSentAt + kMinute, Sent()), kSentAt + kMinute);
   // A slow clock here: the edit still goes after the one we received from our other device.

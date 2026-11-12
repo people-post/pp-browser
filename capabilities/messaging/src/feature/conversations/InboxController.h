@@ -166,6 +166,12 @@ public:
    * summary that folded it in, and stop the list preview from showing its text.
    */
   void AfterMessageDeleted(const std::string& thread_id, const ThreadMessage& original);
+  /**
+   * After a message's text was replaced by an edit (its sender's, or ours — DEV/PLAN-message-edit.md): its mention
+   * marker goes (the edited text is plain), a summary that folded it in is forgotten, and the list preview shows the
+   * new text when it is the newest message. The chat does not move up the list.
+   */
+  void AfterMessageEdited(const std::string& thread_id, const ThreadMessage& before, const ThreadMessage& after);
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
 
   void MarkThreadRead(const std::string& thread_id);

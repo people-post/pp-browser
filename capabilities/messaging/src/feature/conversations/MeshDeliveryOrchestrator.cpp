@@ -198,6 +198,11 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
   receive_pipeline_->SetOnMessageRetracted([this](const std::string& thread_id, const ThreadMessage& original) {
     inbox_.AfterMessageDeleted(thread_id, original);
   });
+  // A peer (or another of our devices) edited a message we hold: its preview, mention marker and summary follow.
+  receive_pipeline_->SetOnMessageEdited(
+      [this](const std::string& thread_id, const ThreadMessage& before, const ThreadMessage& after) {
+        inbox_.AfterMessageEdited(thread_id, before, after);
+      });
   transports_.SetInboundHandler([this](RelayEnvelope envelope, std::string from_peer_id) {
     HandleDirectInbound(std::move(envelope), from_peer_id);
   });
