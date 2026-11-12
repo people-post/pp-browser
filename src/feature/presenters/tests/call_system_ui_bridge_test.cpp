@@ -692,5 +692,15 @@ TEST_F(CallSystemUiBridgeTest, TheRingTimerRunsWhileTheAppRingsOrTheSystemScreen
   EXPECT_TRUE(bridge_.WantsRingTimer(false)) << "the system screen rings: it is re-evaluated";
 }
 
+// A ring over the call the user is in (never taken) must not count as "seen": when the call is no longer a conflict
+// and the user is still away, the ring is new to them and raises the screen.
+TEST_F(CallSystemUiBridgeTest, ARingOverACallInTheBackgroundIsNotMarkedSeen) {
+  bridge_.Sync(InCall("c1"), "c1", false);
+  bridge_.Sync(RingOver("c2", "c1"), "c1", false);
+  EXPECT_TRUE(ui_.log.empty());
+  bridge_.Sync(Ring("c2"), "", false); // the call ended; the ring stays
+  EXPECT_EQ(ui_.log.back(), "incoming c2 name-of-alice") << "full-screen: the user never saw it";
+}
+
 } // namespace
 } // namespace pbr
