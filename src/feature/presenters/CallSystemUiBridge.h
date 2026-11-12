@@ -82,6 +82,11 @@ public:
   void Reevaluate(bool app_foreground);
   /** The system screen rings a call for us: the 300 ms re-evaluation runs (it stops once the ring is over or back). */
   bool WantsReevaluation() const;
+  /**
+   * The 300 ms ring timer runs: the phone's call screen exists here (Available) and either rings for us or the app
+   * rings (`app_rings`: the phone's ringer is read again). Without that screen (iOS, desktop) it only wakes the loop.
+   */
+  bool WantsRingTimer(bool app_rings) const;
   /** The system screen rings `call_id` (its own ringtone): the app's stays quiet. */
   bool SystemRings(const std::string& call_id) const;
   /**

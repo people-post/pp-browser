@@ -185,6 +185,10 @@ bool CallSystemUiBridge::WantsReevaluation() const {
   return !shown_.empty() && !shown_answered_;
 }
 
+bool CallSystemUiBridge::WantsRingTimer(const bool app_rings) const {
+  return ui_.Available() && (WantsReevaluation() || app_rings);
+}
+
 void CallSystemUiBridge::HandBack() {
   const std::string call_id = shown_;
   Note("ring_handed_back");

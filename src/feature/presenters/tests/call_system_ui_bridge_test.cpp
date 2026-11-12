@@ -675,5 +675,22 @@ TEST_F(CallSystemUiBridgeTest, TheRingEndingClearsTheStateAndStopsTheReevaluatio
   EXPECT_TRUE(did.empty());
 }
 
+// The 300 ms ring timer wakes the main loop: where the phone has no call screen (iOS, desktop) it has nothing to do.
+TEST_F(CallSystemUiBridgeTest, TheRingTimerDoesNotRunWhereTheSystemCallScreenIsUnavailable) {
+  ui_.available = false;
+  ui_.available_when_asked_again = false; // a new ring asks the OS again: it still says no
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_FALSE(bridge_.WantsRingTimer(/*app_rings=*/true)) << "the app rings: nothing to re-evaluate, no wake-ups";
+  EXPECT_FALSE(bridge_.WantsRingTimer(/*app_rings=*/false));
+}
+
+TEST_F(CallSystemUiBridgeTest, TheRingTimerRunsWhileTheAppRingsOrTheSystemScreenRings) {
+  EXPECT_FALSE(bridge_.WantsRingTimer(false)) << "nothing rings";
+  EXPECT_TRUE(bridge_.WantsRingTimer(true)) << "the app rings: the phone's ringer is read again";
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_TRUE(bridge_.WantsReevaluation());
+  EXPECT_TRUE(bridge_.WantsRingTimer(false)) << "the system screen rings: it is re-evaluated";
+}
+
 } // namespace
 } // namespace pbr

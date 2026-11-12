@@ -1013,7 +1013,7 @@ void CallController::SyncRingtone() {
 }
 
 void CallController::SyncRingTimer() {
-  const bool wanted = system_call_screen_.WantsReevaluation() || ringtone_.IsPlaying();
+  const bool wanted = system_call_screen_.WantsRingTimer(ringtone_.IsPlaying());
   if (wanted && ring_timer_ == 0) {
     ring_timer_ = AppRuntime::ScheduleCoordinatorRepeating(
         kRingTimerInterval, [this]() { AppRuntime::PostUI([this]() { OnRingTimer(); }); });
