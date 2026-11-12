@@ -3696,7 +3696,9 @@ def link_report(before, after, seconds):
 
 def video_report(before, after, seconds):
     """How each one's frames reached each other one between two snapshots (before decoding): a 20 fps sender
-    spaces them ~50 ms; a reliable lane stalls on a loss, then lets frames go together (bunched). The counters are
+    spaces them ~50 ms; a reliable lane stalls on a loss, then lets frames go together (bunched). key_gap is the mean gap
+    that ended with a keyframe (how long a keyframe took after the frame before it: paced, or queued), key_gap_max
+    the call's longest. The counters are
     the window's; the gap percentiles and the max are the whole call's. heard_<name> is what that one heard of all
     the others: audio concealed (lost or late: PLC and FEC; % of the audio it played), speech cut to catch up,
     packets that came too late, slots with nothing to play (underruns), and the jitter target at the end."""
@@ -3719,9 +3721,13 @@ def video_report(before, after, seconds):
         was = before.get(key, {})
         frames = row["frames"] - was.get("frames", 0)
         bunched = row["bunched"] - was.get("bunched", 0)
-        report["%s<-%s" % key] = "fps=%.1f stalls=%d bunched=%d%% lost=%d gap_max=%d (call p50=%d p95=%d)" % (
+        keyframes = row.get("keyframes", 0) - was.get("keyframes", 0)
+        key_gap = row.get("keyframe_gap_total_ms", 0) - was.get("keyframe_gap_total_ms", 0)
+        report["%s<-%s" % key] = ("fps=%.1f stalls=%d bunched=%d%% lost=%d gap_max=%d key_gap=%d key_gap_max=%d "
+                                  "(call p50=%d p95=%d)") % (
             frames / seconds, row["stalls"] - was.get("stalls", 0), round(100 * bunched / max(frames, 1)),
-            row["lost"] - was.get("lost", 0), row["gap_max_ms"], row["gap_p50_ms"], row["gap_p95_ms"])
+            row["lost"] - was.get("lost", 0), row["gap_max_ms"], key_gap / max(keyframes, 1),
+            row.get("keyframe_gap_max_ms", 0), row["gap_p50_ms"], row["gap_p95_ms"])
     return report
 
 

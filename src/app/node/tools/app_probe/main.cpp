@@ -447,6 +447,9 @@ public:
         row.set("gap_max_ms", a.gap_max_ms);
         row.set("stalls", static_cast<uint64_t>(a.stalls));
         row.set("bunched", static_cast<uint64_t>(a.bunched));
+        row.set("keyframes", static_cast<uint64_t>(a.keyframes));
+        row.set("keyframe_gap_total_ms", a.keyframe_gap_total_ms);
+        row.set("keyframe_gap_max_ms", a.keyframe_gap_max_ms);
         video.push_back(ObjectValue(std::move(row)));
       }
       out.set("video_arrivals", ArrayValue(std::move(video)));

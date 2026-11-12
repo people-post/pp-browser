@@ -2582,9 +2582,11 @@ void MediaEngine::OnInboundPacket(const MediaPacket& packet) {
       impl->OnRemoteOpusFrame(packet.stream_id, packet.seq, reinterpret_cast<const std::byte*>(packet.payload.data()),
                               packet.payload.size());
     } else if (mesh::IsVideoChannel(packet.channel_id)) {
-      impl->video_arrivals[packet.stream_id].Note(packet.seq, std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                                  std::chrono::steady_clock::now().time_since_epoch())
-                                                                  .count());
+      impl->video_arrivals[packet.stream_id].Note(
+          packet.seq,
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+              .count(),
+          packet.mark != 0);
       video_decoder = impl->RemoteDecoderLocked(packet.stream_id);
     }
   }

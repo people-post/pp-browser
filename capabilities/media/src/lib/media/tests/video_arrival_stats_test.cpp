@@ -53,5 +53,19 @@ TEST(VideoArrivalStatsTest, GapsInTheSendersNumberingAreLost) {
   EXPECT_EQ(stats.Summary().frames, 5u);
 }
 
+// A keyframe's gap — how long it took after the frame before it — tells what pacing or queueing costs a keyframe.
+TEST(VideoArrivalStatsTest, TheGapBeforeAKeyframeIsKeptApart) {
+  VideoArrivalStats stats;
+  stats.Note(1, 0, /*keyframe=*/true); // the first: no gap before it
+  stats.Note(2, 66);
+  stats.Note(3, 300, /*keyframe=*/true); // 234 ms after the frame before it
+  stats.Note(4, 366);
+  stats.Note(5, 500, /*keyframe=*/true);
+  const auto s = stats.Summary();
+  EXPECT_EQ(s.keyframes, 2u);
+  EXPECT_EQ(s.keyframe_gap_total_ms, 234 + 134);
+  EXPECT_EQ(s.keyframe_gap_max_ms, 234);
+}
+
 } // namespace
 } // namespace pbr

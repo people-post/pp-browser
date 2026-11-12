@@ -24,6 +24,13 @@ struct VideoArrivalSummary {
   uint64_t stalls = 0;
   /** Frames that came within VideoArrivalStats::kBunchedMs of the one before: held back, then let go together. */
   uint64_t bunched = 0;
+  /**
+   * Keyframes, and the gaps that ended with one (sum and longest): how long a keyframe took to arrive after the
+   * frame before it — near the frame period when it comes whole at once, longer when it is paced or queued.
+   */
+  uint64_t keyframes = 0;
+  int64_t keyframe_gap_total_ms = 0;
+  int64_t keyframe_gap_max_ms = 0;
 };
 
 struct VideoStreamArrival {
