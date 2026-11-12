@@ -64,6 +64,54 @@ TEST(EnvelopeSignerTest, SignBytesMatchFrozenHash) {
   EXPECT_EQ(BytesToHex(Blake2b256(*bytes)), "13290d86c3bcec43b3f5ceeff4f34a23b4c2c7ee55088391f7be5ccaf429f2fa");
 }
 
+// The control lane's signed bytes, frozen for the support service's own implementation (its interop test cites
+// these two hashes). Same envelope-level fields as above; the route kind is control.
+TEST(EnvelopeSignerTest, ControlRouteSignBytesMatchFrozenHash) {
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = "8d7f6e5c-4b3a-4291-8f0e-1d2c3b4a5968";
+  envelope.sender_relay_id = "relay:alice123";
+  envelope.sender_contact_id = "account:alice";
+  envelope.sender_device = "QmAliceDevice";
+  envelope.route.kind = kRelayRouteControl;
+  envelope.route.channel = ThreadChannel::E2ePublic;
+  envelope.timestamp = 1762646400123;
+  envelope.body.e2e.copies = {
+      RelayCopy{.recipient_device = "QmBobPhone",
+                .session_epoch = 3,
+                .sender_seq = 0,
+                .key_init_b64 = "AAECAwQFBgcICQoLDA0ODw==",
+                .payload_b64 = "EBESExQVFhcYGRobHB0eHw=="},
+      RelayCopy{.recipient_device = "QmBobLaptop", .session_epoch = 1, .sender_seq = 0, .payload_b64 = "ICEiIyQlJico"},
+  };
+  auto bytes = EnvelopeSigner::BuildSignBytes(envelope);
+  ASSERT_TRUE(bytes) << bytes.error().message;
+  EXPECT_EQ(BytesToHex(Blake2b256(*bytes)), "4986211ac64043d8c45b9b00d4ee3d065aa8f384c999a7f84bb5cbced82f4db8");
+}
+
+// The control lane's account copy: one copy, no recipient device, with a key_init.
+TEST(EnvelopeSignerTest, ControlRouteAccountCopyWithKeyInitMatchesFrozenHash) {
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = "8d7f6e5c-4b3a-4291-8f0e-1d2c3b4a5968";
+  envelope.sender_relay_id = "relay:alice123";
+  envelope.sender_contact_id = "account:alice";
+  envelope.sender_device = "QmAliceDevice";
+  envelope.route.kind = kRelayRouteControl;
+  envelope.route.channel = ThreadChannel::E2ePublic;
+  envelope.timestamp = 1762646400123;
+  envelope.body.e2e.copies = {
+      RelayCopy{.recipient_device = "",
+                .session_epoch = 1,
+                .sender_seq = 0,
+                .key_init_b64 = "AAECAwQFBgcICQoLDA0ODw==",
+                .payload_b64 = "EBESExQVFhcYGRobHB0eHw=="},
+  };
+  auto bytes = EnvelopeSigner::BuildSignBytes(envelope);
+  ASSERT_TRUE(bytes) << bytes.error().message;
+  EXPECT_EQ(BytesToHex(Blake2b256(*bytes)), "486426fa5dd466e3eb7cdf464698a045471777c3315e7428812c2d2bf048a483");
+}
+
 TEST(EnvelopeSignerTest, BuildSignBytesUsesE2eChannelZero) {
   const RelayEnvelope envelope = MakeE2eVectorEnvelope();
   auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
