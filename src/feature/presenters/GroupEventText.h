@@ -22,12 +22,12 @@ std::optional<std::string> GroupEventText(const ThreadMessage& message,
                                           const std::string& local_account);
 
 /**
- * The words of a system line stored in English before (a joined / declined invitation, a blocked inviter, the
- * owner-unreachable note, the sender's own rotate notice), in the reader's
- * language; the stored row is not rewritten. None: not such a line — show the stored text. Only for a System row:
- * the same words typed by a person are their message.
+ * The words of a system line its writer stores in English (a joined / declined invitation, a blocked inviter, the
+ * owner-unreachable note, the sender's own rotate notice), in the reader's language; the stored row is not
+ * rewritten. None: not such a line — show the stored text. Only for a System row: the same words typed by a person
+ * are their message. (The stored text is also the chat's preview and a notice's text.)
  */
-std::optional<std::string> LegacySystemLineText(const std::string& stored);
+std::optional<std::string> StoredSystemLineText(const std::string& stored);
 
 /** Whether `preview` (a thread's stored preview) is the stored English text of a membership line. */
 bool IsStoredGroupEventText(const std::string& preview);
