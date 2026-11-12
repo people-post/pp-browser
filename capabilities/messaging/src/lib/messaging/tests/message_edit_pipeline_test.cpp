@@ -234,7 +234,7 @@ struct Device {
       GroupRosterMember member;
       member.member_identity = m->account;
       member.contact_id = m->account;
-      member.role = m == members.front() ? MemberRole::Owner
+      member.role = m == members.front()                                         ? MemberRole::Owner
                     : std::find(admins.begin(), admins.end(), m) != admins.end() ? MemberRole::Admin
                                                                                  : MemberRole::Member;
       member.joined_at = 1;
@@ -384,9 +384,8 @@ TEST_F(GroupEditPipelineTest, AMembersEditOfAnotherMembersMessageChangesNothing)
 
 TEST_F(GroupEditPipelineTest, NeitherTheAdminNorTheOwnerEditsAnotherMembersMessage) {
   DaveSays(*bob_);
-  EXPECT_TRUE(
-      bob_->Receive(carol_->SendGroup(kGroup, *bob_, Edit("carol-edit", "dave-1", "admin words", sent_ + kMin)))
-          .persisted)
+  EXPECT_TRUE(bob_->Receive(carol_->SendGroup(kGroup, *bob_, Edit("carol-edit", "dave-1", "admin words", sent_ + kMin)))
+                  .persisted)
       << "taken in (and refused as an edit)";
   EXPECT_TRUE(
       bob_->Receive(alice_->SendGroup(kGroup, *bob_, Edit("alice-edit", "dave-1", "owner words", sent_ + 2 * kMin)))
@@ -414,9 +413,8 @@ TEST_F(GroupEditPipelineTest, TheAuthorsEditAppliesForEveryMember) {
 
 // The edit overtakes its message, and it is not the author's: when the message comes it is judged, and refused.
 TEST_F(GroupEditPipelineTest, AnEditFromAnotherMemberThatArrivesFirstIsNotAppliedWhenTheMessageComes) {
-  ASSERT_TRUE(
-      bob_->Receive(erin_->SendGroup(kGroup, *bob_, Edit("erin-edit", "dave-1", "forged words", sent_ + kMin)))
-          .persisted);
+  ASSERT_TRUE(bob_->Receive(erin_->SendGroup(kGroup, *bob_, Edit("erin-edit", "dave-1", "forged words", sent_ + kMin)))
+                  .persisted);
   DaveSays(*bob_);
   const ThreadMessage dave = bob_->Row(bob_->group_thread, "dave-1").value();
   EXPECT_EQ(dave.text, "see you at 8");
@@ -430,10 +428,10 @@ class SentCopyEditPipelineTest : public ::testing::Test {
 protected:
   void SetUp() override {
     EnsureSodiumInit();
-    phone_ = std::make_unique<Device>("me", 0x10);                    // this device
-    mac_ = std::make_unique<Device>("me-mac", 0x20, phone_.get());    // our other device
-    bob_ = std::make_unique<Device>("bob", 0x30);                     // the peer
-    mallory_ = std::make_unique<Device>("mallory", 0x40);             // someone else
+    phone_ = std::make_unique<Device>("me", 0x10);                 // this device
+    mac_ = std::make_unique<Device>("me-mac", 0x20, phone_.get()); // our other device
+    bob_ = std::make_unique<Device>("bob", 0x30);                  // the peer
+    mallory_ = std::make_unique<Device>("mallory", 0x40);          // someone else
     phone_->KnowOwnDevices({phone_.get(), mac_.get()});
     phone_->Know(*mallory_);
     chat_ = phone_->DirectThreadTo(*bob_, ThreadChannel::E2ePublic);
@@ -594,8 +592,8 @@ TEST_F(PublicEditPipelineTest, AnEditFromSomeoneButTheAuthorIsRefused) {
 // one edit row holding them, whichever id sorts higher.
 TEST_F(PublicEditPipelineTest, AResentEditReplacesTheUnsentOneAndThePeerEndsWithOneCopyOfTheWords) {
   // The new id sorting below the old one, then above it.
-  for (const auto& [old_id, new_id] : std::vector<std::pair<std::string, std::string>>{{"edit-1a", "edit-0a"},
-                                                                                        {"edit-1b", "edit-2b"}}) {
+  for (const auto& [old_id, new_id] :
+       std::vector<std::pair<std::string, std::string>>{{"edit-1a", "edit-0a"}, {"edit-1b", "edit-2b"}}) {
     SCOPED_TRACE(new_id);
     const ThreadMessage said = AliceSays("see you at 8");
     const int64_t tapped_at = said.timestamp + kMin;

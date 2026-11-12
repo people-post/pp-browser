@@ -134,8 +134,8 @@ EditRefusal CheckEdit(const ThreadMessage& edit, const ThreadMessage& target) {
     return EditRefusal::TooEarly;
   }
   if (const std::optional<EditMark> current = EditMarkOf(target)) {
-    const bool newer = edit.timestamp > current->edited_at ||
-                       (edit.timestamp == current->edited_at && edit.id > current->edited_by);
+    const bool newer =
+        edit.timestamp > current->edited_at || (edit.timestamp == current->edited_at && edit.id > current->edited_by);
     if (!newer) {
       return EditRefusal::NotNewer;
     }

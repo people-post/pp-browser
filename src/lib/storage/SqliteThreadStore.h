@@ -52,9 +52,8 @@ public:
   Roe<ThreadMessage> UpsertMessage(const ThreadMessage& message) override;
   Roe<bool> UpdateMessage(const ThreadMessage& message) override;
   /** One statement on the two columns: the row's content is neither read nor written. */
-  Roe<bool> UpdateMessageDelivery(const std::string& thread_id, const std::string& message_id,
-                                  MessageDelivery delivery, std::optional<MessageTransport> transport,
-                                  bool unless_delivered) override;
+  Roe<bool> UpdateMessageDelivery(const std::string& thread_id, const std::string& message_id, MessageDelivery delivery,
+                                  std::optional<MessageTransport> transport, bool unless_delivered) override;
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id,
                                                const std::string& message_id) const override;
   Roe<std::vector<ThreadMessage>> GetAnnotationsForTarget(const std::string& thread_id,

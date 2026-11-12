@@ -21,16 +21,18 @@ struct FakeDirectory {
   std::map<std::string, int> photo_reads;
 
   CallRosterCache::Lookups Lookups() {
-    return {.name = [this](const std::string& id) {
-              ++name_reads[id];
-              auto it = names.find(id);
-              return MakeCallerName(it == names.end() ? std::string() : it->second);
-            },
-            .icon = [this](const std::string& id) {
-              ++photo_reads[id];
-              auto it = photos.find(id);
-              return it == photos.end() ? std::string() : it->second;
-            }};
+    return {.name =
+                [this](const std::string& id) {
+                  ++name_reads[id];
+                  auto it = names.find(id);
+                  return MakeCallerName(it == names.end() ? std::string() : it->second);
+                },
+            .icon =
+                [this](const std::string& id) {
+                  ++photo_reads[id];
+                  auto it = photos.find(id);
+                  return it == photos.end() ? std::string() : it->second;
+                }};
   }
   int PhotoReads() const {
     int n = 0;

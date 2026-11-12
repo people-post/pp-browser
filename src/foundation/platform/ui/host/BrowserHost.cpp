@@ -97,7 +97,8 @@ public:
     if (!surface)
       return {};
     const auto decode_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_started).count();
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_started)
+            .count();
 
     texture_dimensions = {surface->w, surface->h};
 
@@ -128,10 +129,11 @@ public:
     // Pictures only (interface icons come through here too): size, file bytes and the time it took. No path or name.
     if (texture_dimensions.x >= 400 || texture_dimensions.y >= 400) {
       const auto total_ms =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - load_started).count();
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - load_started)
+              .count();
       ::pp::logging::getLogger("Texture").info << "texture loaded w=" << texture_dimensions.x
-                                              << " h=" << texture_dimensions.y << " file_bytes=" << buffer_size
-                                              << " decode_ms=" << decode_ms << " total_ms=" << total_ms;
+                                               << " h=" << texture_dimensions.y << " file_bytes=" << buffer_size
+                                               << " decode_ms=" << decode_ms << " total_ms=" << total_ms;
     }
 
     return texture_handle;

@@ -845,9 +845,8 @@ void AttachmentFetchWorkflow::NotifyChatPreviewDone(const std::string& thread_id
   if (!callback) {
     return;
   }
-  AppRuntime::PostUI([callback = std::move(callback), thread_id, content_hash, made]() {
-    callback(thread_id, content_hash, made);
-  });
+  AppRuntime::PostUI(
+      [callback = std::move(callback), thread_id, content_hash, made]() { callback(thread_id, content_hash, made); });
 }
 
 AttachmentFetchWorkflow::DownloadState AttachmentFetchWorkflow::StateFor(const std::string& thread_id,
@@ -1216,7 +1215,8 @@ void AttachmentFetchWorkflow::RequestChatPreview(const std::string& thread_id, c
     if (!chat_preview_keys_.insert(key).second) {
       return; // being made
     }
-    chat_queue_.push_back(GridThumbnailJob{.thread_id = thread_id, .content_hash = fields.content_hash, .mime = fields.mime});
+    chat_queue_.push_back(
+        GridThumbnailJob{.thread_id = thread_id, .content_hash = fields.content_hash, .mime = fields.mime});
     workers = ClaimGridWorkersLocked(); // none while locked: the job waits for SetDek
   }
   PostGridWorkers(workers);
@@ -1731,7 +1731,7 @@ void AttachmentFetchWorkflow::RunGridThumbnails() {
       std::lock_guard lock(mutex_);
       if ((grid_queue_.empty() && chat_queue_.empty()) || dek_.empty() || previews_stopped_ ||
           !AppRuntime::IsRunning()) {
-        --grid_running_; // locked or quitting: the jobs left wait in the queues for SetDek
+        --grid_running_;         // locked or quitting: the jobs left wait in the queues for SetDek
         delete_cv_.notify_all(); // under the lock: the destructor waits for this, then goes on to free the workflow
         return;
       }

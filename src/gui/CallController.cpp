@@ -596,15 +596,15 @@ void CallController::BindVideoFrameWake(IMediaView& media) {
   // Any thread (the camera's, a decoder's): a new frame to draw. Nothing else wakes the frame loop for it. At most
   // one wake per frame at 15 fps; a frame held back in a window is woken for when it ends (a coordinator one-shot
   // that holds only the gate, never this controller).
-  auto gate = CallVideoFrameWake::Create(
-      [] { return CallVideoFrameWake::SteadyNowMs(); },
-      [](const int64_t delay_ms, std::function<void()> fire) {
-        AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(delay_ms), std::move(fire));
-      },
-      [] {
-        UiCostCounters::Instance().AddVideoWake();
-        Backend::RequestForceFrame();
-      });
+  auto gate = CallVideoFrameWake::Create([] { return CallVideoFrameWake::SteadyNowMs(); },
+                                         [](const int64_t delay_ms, std::function<void()> fire) {
+                                           AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(delay_ms),
+                                                                                  std::move(fire));
+                                         },
+                                         [] {
+                                           UiCostCounters::Instance().AddVideoWake();
+                                           Backend::RequestForceFrame();
+                                         });
   media.SetOnVideoFrame([gate = std::move(gate)]() { gate->OnFrame(); });
 }
 
@@ -1826,7 +1826,8 @@ void CallController::ApplyVideo(IMediaView& media, CallUiBackend& backend, const
 void CallController::SubmitVideoTiles(IMediaView& media, const int64_t now_ms) {
   auto& in_call = in_call_;
   // Copied only when the tile does not already hold the frame (CallVideoTiles.h): most frames find nothing new.
-  const CallVideoTilesShown shown = SubmitCallVideoTiles(media, CallVideoTileRenderer::Instance(), in_call.remote_video);
+  const CallVideoTilesShown shown =
+      SubmitCallVideoTiles(media, CallVideoTileRenderer::Instance(), in_call.remote_video);
   in_call.local_preview = shown.local_preview;
   metrics_.NoteVideoFrame(in_call.local_preview, shown.self_new, in_call.remote_video, shown.peer_new, now_ms);
 }
@@ -2343,7 +2344,8 @@ void CallController::FillSelfAvatar(const CallScreen& screen, const int64_t now_
   if (self.empty() && call_ports_.local_relay_identity) {
     self = call_ports_.local_relay_identity().value_or(std::string{});
   }
-  SetSelfAvatar(in_call_, MakeAvatarGlyph(Tr("call.label.you"), self), roster_cache_.Icon(self, now_ms, RosterLookups()));
+  SetSelfAvatar(in_call_, MakeAvatarGlyph(Tr("call.label.you"), self),
+                roster_cache_.Icon(self, now_ms, RosterLookups()));
 }
 
 void CallController::ApplyConnectStory(const CallMediaScreen& frame) {

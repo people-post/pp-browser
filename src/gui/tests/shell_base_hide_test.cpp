@@ -183,7 +183,8 @@ ChatProbe AddChat(ui::ElementDocument* document) {
   }
   ui::ElementPtr transcript = document->CreateElement("div");
   transcript->SetId("probe-transcript");
-  transcript->SetAttribute("style", "position: absolute; top: 0; left: 0; width: 390px; height: 600px; overflow-y: auto;");
+  transcript->SetAttribute("style",
+                           "position: absolute; top: 0; left: 0; width: 390px; height: 600px; overflow-y: auto;");
   transcript->SetInnerRML("<div style=\"height: 3000px;\"></div>");
   chat.transcript = base->AppendChild(std::move(transcript));
   ui::ElementPtr composer = document->CreateElement("input");

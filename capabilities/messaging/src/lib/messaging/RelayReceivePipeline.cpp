@@ -2424,9 +2424,8 @@ std::optional<RelayReceivePipeline::WaitingEdits> RelayReceivePipeline::PrepareE
     return std::nullopt;
   }
   // An edit can overtake its message: judged now against it, each one; the newest that passes is applied.
-  const std::optional<ThreadMessage> newest = persisted.content_type == ChatContentType::Deleted
-                                                  ? std::nullopt
-                                                  : NewestPassingEdit(*annotations, persisted);
+  const std::optional<ThreadMessage> newest =
+      persisted.content_type == ChatContentType::Deleted ? std::nullopt : NewestPassingEdit(*annotations, persisted);
   if (newest) {
     persisted = WithEdit(std::move(persisted), *newest);
   }

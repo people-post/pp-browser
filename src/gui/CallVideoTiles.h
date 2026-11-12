@@ -58,8 +58,8 @@ CallVideoTilesShown SubmitCallVideoTiles(Media& media, CallVideoTileRenderer& ti
       break;
   }
   IMediaView::VideoTileFrame remote;
-  if (remote_video && media.CopyRemoteVideoFrameIfNew(tiles.HeldSeq(CallVideoTileKind::Remote), remote) ==
-                          IMediaView::FrameRead::New) {
+  if (remote_video &&
+      media.CopyRemoteVideoFrameIfNew(tiles.HeldSeq(CallVideoTileKind::Remote), remote) == IMediaView::FrameRead::New) {
     shown.peer_new = true;
     UiCostCounters::Instance().AddFrameCopy(false);
     tiles.SubmitRemoteFrame(TileFrame(std::move(remote)));

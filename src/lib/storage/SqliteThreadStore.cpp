@@ -908,16 +908,17 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
 }
 
 Roe<bool> SqliteThreadStore::UpdateMessageDelivery(const std::string& thread_id, const std::string& message_id,
-                                                  const MessageDelivery delivery,
-                                                  const std::optional<MessageTransport> transport,
-                                                  const bool unless_delivered) {
+                                                   const MessageDelivery delivery,
+                                                   const std::optional<MessageTransport> transport,
+                                                   const bool unless_delivered) {
   auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
   sqlite3_stmt* stmt = nullptr;
-  const char* sql = "UPDATE messages SET delivery = ?, transport = COALESCE(?, transport) WHERE id = ? "
-                    "AND (? = 0 OR delivery != ?);";
+  const char* sql =
+      "UPDATE messages SET delivery = ?, transport = COALESCE(?, transport) WHERE id = ? "
+      "AND (? = 0 OR delivery != ?);";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare delivery update");
   }

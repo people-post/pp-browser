@@ -77,7 +77,8 @@ SDL_Surface* FlattenOntoWhite(SDL_Surface* source) {
   }
   SDL_Surface* out = SDL_CreateSurface(source->w, source->h, SDL_PIXELFORMAT_XRGB8888);
   const bool ok = out && SDL_FillSurfaceRect(out, nullptr, SDL_MapSurfaceRGB(out, 255, 255, 255)) &&
-                  SDL_SetSurfaceBlendMode(source, SDL_BLENDMODE_BLEND) && SDL_BlitSurface(source, nullptr, out, nullptr);
+                  SDL_SetSurfaceBlendMode(source, SDL_BLENDMODE_BLEND) &&
+                  SDL_BlitSurface(source, nullptr, out, nullptr);
   SDL_DestroySurface(source);
   if (!ok) {
     SDL_DestroySurface(out);

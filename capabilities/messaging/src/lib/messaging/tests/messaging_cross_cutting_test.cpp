@@ -1110,14 +1110,14 @@ TEST(MessagingCrossCuttingTest, AWaitingEditOfAPictureIsNotApplied) {
 TEST(MessagingCrossCuttingTest, TheLaterSentEditWinsWhicheverArrivesLast) {
   PipelineHarness harness("edit_order", ThreadChannel::E2e);
   ReceiveOriginal(harness);
-  ASSERT_TRUE(harness.pipeline
-                  .ProcessEnvelope(harness.MakeEdit("edit-b", 2, "peer-1", "ten", kSent + 3 * kMin),
-                                   harness.local_account_id)
-                  .persisted);
-  ASSERT_TRUE(harness.pipeline
-                  .ProcessEnvelope(harness.MakeEdit("edit-a", 3, "peer-1", "nine", kSent + 2 * kMin),
-                                   harness.local_account_id)
-                  .persisted);
+  ASSERT_TRUE(
+      harness.pipeline
+          .ProcessEnvelope(harness.MakeEdit("edit-b", 2, "peer-1", "ten", kSent + 3 * kMin), harness.local_account_id)
+          .persisted);
+  ASSERT_TRUE(
+      harness.pipeline
+          .ProcessEnvelope(harness.MakeEdit("edit-a", 3, "peer-1", "nine", kSent + 2 * kMin), harness.local_account_id)
+          .persisted);
   EXPECT_EQ(harness.Stored("peer-1")->text, "ten");
   EXPECT_EQ(harness.RowsHolding("nine"), 0u);
   EXPECT_EQ(harness.EditRowsWithText("peer-1"), 1u);
@@ -1142,14 +1142,14 @@ TEST(MessagingCrossCuttingTest, AnEditFromAnotherDeviceWithASmallerSeqButLaterTi
 TEST(MessagingCrossCuttingTest, AtTheSameSendTimeTheLargerIdWins) {
   PipelineHarness harness("edit_tie", ThreadChannel::E2e);
   ReceiveOriginal(harness);
-  ASSERT_TRUE(harness.pipeline
-                  .ProcessEnvelope(harness.MakeEdit("edit-z", 2, "peer-1", "zed", kSent + kMin),
-                                   harness.local_account_id)
-                  .persisted);
-  ASSERT_TRUE(harness.pipeline
-                  .ProcessEnvelope(harness.MakeEdit("edit-a", 3, "peer-1", "ay", kSent + kMin),
-                                   harness.local_account_id)
-                  .persisted);
+  ASSERT_TRUE(
+      harness.pipeline
+          .ProcessEnvelope(harness.MakeEdit("edit-z", 2, "peer-1", "zed", kSent + kMin), harness.local_account_id)
+          .persisted);
+  ASSERT_TRUE(
+      harness.pipeline
+          .ProcessEnvelope(harness.MakeEdit("edit-a", 3, "peer-1", "ay", kSent + kMin), harness.local_account_id)
+          .persisted);
   EXPECT_EQ(harness.Stored("peer-1")->text, "zed");
 }
 
@@ -1173,10 +1173,10 @@ TEST(MessagingCrossCuttingTest, TheLaterEditWinsWhateverTheSecondDevicesClockSay
                     .persisted);
     on_b = WithEdit(on_b, edit_a); // B received A's edit
     const int64_t b_sends_at = EditSendTime(kSent + 5 * kMin + skew, on_b);
-    ASSERT_TRUE(harness.pipeline
-                    .ProcessEnvelope(harness.MakeEdit("edit-0", 3, "peer-1", "from B", b_sends_at),
-                                     harness.local_account_id)
-                    .persisted);
+    ASSERT_TRUE(
+        harness.pipeline
+            .ProcessEnvelope(harness.MakeEdit("edit-0", 3, "peer-1", "from B", b_sends_at), harness.local_account_id)
+            .persisted);
     EXPECT_EQ(harness.Stored("peer-1")->text, "from B") << "skew " << skew;
   }
 }
@@ -1250,13 +1250,12 @@ TEST(MessagingCrossCuttingTest, AnEditOfAPictureOrADeletedMessageIsIgnored) {
 TEST(MessagingCrossCuttingTest, OnlyTheAppliedEditKeepsItsWords) {
   PipelineHarness harness("edit_one_row", ThreadChannel::E2e);
   ReceiveOriginal(harness);
-  for (const auto& [id, seq, text, minute] :
-       std::vector<std::tuple<std::string, uint64_t, std::string, int64_t>>{
+  for (const auto& [id, seq, text, minute] : std::vector<std::tuple<std::string, uint64_t, std::string, int64_t>>{
            {"edit-1", 2, "first try", 1}, {"edit-2", 3, "second try", 2}, {"edit-3", 4, "third try", 3}}) {
-    ASSERT_TRUE(harness.pipeline
-                    .ProcessEnvelope(harness.MakeEdit(id, seq, "peer-1", text, kSent + minute * kMin),
-                                     harness.local_account_id)
-                    .persisted);
+    ASSERT_TRUE(
+        harness.pipeline
+            .ProcessEnvelope(harness.MakeEdit(id, seq, "peer-1", text, kSent + minute * kMin), harness.local_account_id)
+            .persisted);
   }
   EXPECT_EQ(harness.Stored("peer-1")->text, "third try");
   EXPECT_EQ(harness.EditRowsWithText("peer-1"), 1u);
@@ -1268,10 +1267,10 @@ TEST(MessagingCrossCuttingTest, OnlyTheAppliedEditKeepsItsWords) {
 TEST(MessagingCrossCuttingTest, AnEditedMessageDeletedForEveryoneLeavesNoEditedWords) {
   PipelineHarness harness("edit_then_delete", ThreadChannel::E2e);
   ReceiveOriginal(harness);
-  ASSERT_TRUE(harness.pipeline
-                  .ProcessEnvelope(harness.MakeEdit("edit-1", 2, "peer-1", "first try", kSent + kMin),
-                                   harness.local_account_id)
-                  .persisted);
+  ASSERT_TRUE(
+      harness.pipeline
+          .ProcessEnvelope(harness.MakeEdit("edit-1", 2, "peer-1", "first try", kSent + kMin), harness.local_account_id)
+          .persisted);
   ASSERT_TRUE(harness.pipeline
                   .ProcessEnvelope(harness.MakeEdit("edit-2", 3, "peer-1", "second try", kSent + 2 * kMin),
                                    harness.local_account_id)
@@ -1292,7 +1291,8 @@ TEST(MessagingCrossCuttingTest, AnEditRowIsNeverAChatRow) {
                   .ProcessEnvelope(harness.MakeEdit("edit-1", 2, "peer-1", "see you at 9", kSent + kMin),
                                    harness.local_account_id)
                   .persisted);
-  const auto rows = AssembleTranscript(harness.store.GetMessages(harness.thread.id).value(), nullptr, ThreadKind::Direct);
+  const auto rows =
+      AssembleTranscript(harness.store.GetMessages(harness.thread.id).value(), nullptr, ThreadKind::Direct);
   ASSERT_EQ(rows.size(), 1u);
   EXPECT_EQ(rows[0].message.id, "peer-1");
   EXPECT_EQ(rows[0].message.text, "see you at 9");

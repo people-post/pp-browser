@@ -113,16 +113,17 @@ struct TestStore {
   bool varied_heights = false;
   std::set<std::string> tall_ids; ///< rows drawn 2000 dp tall
   int page_reads = 0;
-  std::vector<int> page_limits;     ///< the row count each page read asked for
+  std::vector<int> page_limits;                     ///< the row count each page read asked for
   std::vector<std::optional<int64_t>> page_befores; ///< where each page read started (exclusive)
-  size_t page_rows_read = 0;        ///< rows the page reads returned, all together
+  size_t page_rows_read = 0;                        ///< rows the page reads returned, all together
   int before_reads = 0;
   int row_builds = 0;
   std::vector<std::optional<int64_t>> row_bounds; ///< the oldest bound of each Rows call
 
   int Reads() const { return page_reads + before_reads + row_builds; }
 
-  Roe<std::vector<ThreadMessage>> Page(const std::string& thread, const std::optional<int64_t> before, const int limit) {
+  Roe<std::vector<ThreadMessage>> Page(const std::string& thread, const std::optional<int64_t> before,
+                                       const int limit) {
     ++page_reads;
     page_limits.push_back(limit);
     page_befores.push_back(before);
@@ -345,8 +346,12 @@ protected:
       store.threads[thread].push_back(Text(thread, first + i));
     }
   }
-  std::string FrontId() const { return state.messages.empty() ? std::string() : state.messages.front().message_id.c_str(); }
-  std::string BackId() const { return state.messages.empty() ? std::string() : state.messages.back().message_id.c_str(); }
+  std::string FrontId() const {
+    return state.messages.empty() ? std::string() : state.messages.front().message_id.c_str();
+  }
+  std::string BackId() const {
+    return state.messages.empty() ? std::string() : state.messages.back().message_id.c_str();
+  }
   bool AtBottom() { return std::abs(Messages()->GetScrollTop() - MaxTop()) <= 1.f; }
 
   NullRender renderer;
@@ -404,7 +409,7 @@ TEST_F(ChatFirstScreenTest, ScrollingToTheTopOfTheFirstScreenLoadsTheNext40InPla
   ScrollTo(40.f); // within the 72 px of the top: the scroll event loads the page (the rows drawn next frame)
   ASSERT_EQ(older_loaded, 1);
   const float before = RowTopOnScreen("m271"); // still the old layout
-  Frames(1); // the rows laid out, then the position fix
+  Frames(1);                                   // the rows laid out, then the position fix
   context->Update();
   EXPECT_EQ(state.messages.size(), 70u) << "not stuck on the first 30: 40 more";
   EXPECT_EQ(FrontId(), "m231");
@@ -508,7 +513,8 @@ TEST_F(ChatFirstScreenTest, ThreePagesWithOnly10MessagesKeepTheOldPage) {
   // 1..200 messages; the newest 300 rows (201..500) hold 10 messages (every 30th) among edits.
   AddTexts("dm", 1, 200);
   for (int64_t order = 201; order <= 500; ++order) {
-    store.threads["dm"].push_back(order % 30 == 0 ? Text("dm", order) : Annotation("dm", order, "m1", kAnnotationTypeEdit));
+    store.threads["dm"].push_back(order % 30 == 0 ? Text("dm", order)
+                                                  : Annotation("dm", order, "m1", kAnnotationTypeEdit));
   }
   Sync("dm", kDirect);
   EXPECT_EQ(store.page_reads, 3);
@@ -744,7 +750,8 @@ TEST_F(ChatFirstScreenTest, RaisedAgainItFillsAgainWhileAtMost100Rows) {
   // Newest 30 messages (171..200); the page before them holds 10 messages among 90 edits (71..170); 1..70 messages.
   AddTexts("dm", 1, 70);
   for (int64_t order = 71; order <= 170; ++order) {
-    store.threads["dm"].push_back(order % 10 == 0 ? Text("dm", order) : Annotation("dm", order, "m1", kAnnotationTypeEdit));
+    store.threads["dm"].push_back(order % 10 == 0 ? Text("dm", order)
+                                                  : Annotation("dm", order, "m1", kAnnotationTypeEdit));
   }
   AddTexts("dm", 171, 30);
   SetClientHeight(400.f); // client height 400: 30 rows overfill it
@@ -883,7 +890,8 @@ TEST_F(ChatFirstScreenTest, ASwitchDropsTheLastChatsReading) {
 
 TEST(ChatWindowLineTest, APageLineKeepsTheOldFieldsAndAddsThePagesOnes) {
   std::vector<MessageDisplayRow> rows(3);
-  rows[1].content_rml = "<div class=\"chat-attachment-clip\"><img class=\"chat-attachment-image\" src=\"/a.jpg\"/></div>";
+  rows[1].content_rml =
+      "<div class=\"chat-attachment-clip\"><img class=\"chat-attachment-image\" src=\"/a.jpg\"/></div>";
   const CurrentMemoryMb memory{.footprint_mb = 210, .rss_mb = 180};
   EXPECT_EQ(ChatWindowLine(rows, /*exited=*/false, ChatPageReading{.added = 100, .fill = false, .frames_before_fix = 1},
                            memory)

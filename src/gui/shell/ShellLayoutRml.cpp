@@ -120,7 +120,8 @@ std::string ShellLayoutRml::CompactBase() const {
   const bool frost_enabled = ChromeFrostEnabled();
   const bool solid = state_.reduce_transparency;
   std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-base shell-layer-compact\" id=\"shell-base-layer\" data-model=\"window\">";
+  out << "<div class=\"shell-layer shell-layer-base shell-layer-compact\" id=\"shell-base-layer\" "
+         "data-model=\"window\">";
 
   // A hidden tab's page (Me, Contacts: DEV/PLAN-minimal-nav.md A) is drawn instead of a chat overlay left open under
   // it; the overlay is drawn again on the way back.

@@ -185,7 +185,8 @@ TEST(EditSendMarkTest, ATapOnTheRedMarkSendsTheEditAgainInPublicChats) {
   EXPECT_EQ(DecideEditResendTap(failed, Chat(ThreadKind::Group, ThreadChannel::None), std::nullopt, kAt).kind,
             SendMarkTap::Kind::Resent);
   EXPECT_EQ(DecideEditResendTap(failed, Chat(), kAt, kAt + 10'000).kind, SendMarkTap::Kind::StillTrying);
-  const SendMarkTap secure = DecideEditResendTap(failed, Chat(ThreadKind::Direct, ThreadChannel::E2e), std::nullopt, kAt);
+  const SendMarkTap secure =
+      DecideEditResendTap(failed, Chat(ThreadKind::Direct, ThreadChannel::E2e), std::nullopt, kAt);
   EXPECT_EQ(secure.kind, SendMarkTap::Kind::ReasonOnly);
   EXPECT_EQ(secure.refusal, SendMarkTap::Refusal::ThisKind);
   const auto out = std::optional<ThreadMessage>(EditRow(MessageDelivery::Relayed));

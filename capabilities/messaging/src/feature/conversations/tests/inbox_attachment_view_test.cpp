@@ -262,7 +262,6 @@ TEST_F(InboxAttachmentViewTest, AStoredLargePictureWithoutItsThumbnailGetsItMade
   inbox_->SetAttachmentDownloads(nullptr);
 }
 
-
 // --- B203: the bubble shows a preview or a placeholder, never the full picture --------------------------------------
 
 /** Pictures stored in a real workflow (encrypted store, DEK, workers), so drawing a card can ask for its preview. */
@@ -276,17 +275,16 @@ protected:
     downloads_->SetProfileDataDir(data_dir_.string());
     downloads_->SetContent(content_);
     ASSERT_TRUE(downloads_->SetDek(TestDek()));
-    downloads_->SetOnChatPreviewDone([this](const std::string&, const std::vector<uint8_t>&, const bool made) {
-      (made ? made_ : failed_)++;
-    });
-    SetAttachmentPlatform({.image_thumbnail_jpeg = [this](const std::vector<uint8_t>&,
-                                                          int) -> Roe<std::vector<uint8_t>> {
-      ++calls_;
-      if (fail_) {
-        return Error("cannot decode");
-      }
-      return PngHeader(640, 512);
-    }});
+    downloads_->SetOnChatPreviewDone(
+        [this](const std::string&, const std::vector<uint8_t>&, const bool made) { (made ? made_ : failed_)++; });
+    SetAttachmentPlatform(
+        {.image_thumbnail_jpeg = [this](const std::vector<uint8_t>&, int) -> Roe<std::vector<uint8_t>> {
+          ++calls_;
+          if (fail_) {
+            return Error("cannot decode");
+          }
+          return PngHeader(640, 512);
+        }});
     inbox_->SetAttachmentDownloads(downloads_.get());
   }
   void TearDown() override {
@@ -335,8 +333,19 @@ protected:
     return done();
   }
   static std::vector<uint8_t> GifHeader(const uint16_t w, const uint16_t h) {
-    return {'G', 'I', 'F', '8', '9', 'a', static_cast<uint8_t>(w), static_cast<uint8_t>(w >> 8),
-            static_cast<uint8_t>(h), static_cast<uint8_t>(h >> 8), 0, 0, 0};
+    return {'G',
+            'I',
+            'F',
+            '8',
+            '9',
+            'a',
+            static_cast<uint8_t>(w),
+            static_cast<uint8_t>(w >> 8),
+            static_cast<uint8_t>(h),
+            static_cast<uint8_t>(h >> 8),
+            0,
+            0,
+            0};
   }
 
   std::shared_ptr<CasStore> content_;

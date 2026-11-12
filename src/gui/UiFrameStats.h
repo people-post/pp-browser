@@ -135,8 +135,8 @@ public:
   UiCostTimer(const UiCostTimer&) = delete;
   UiCostTimer& operator=(const UiCostTimer&) = delete;
   ~UiCostTimer() {
-    (UiCostCounters::Instance().*add_)(
-        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start_).count());
+    (UiCostCounters::Instance().*
+     add_)(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start_).count());
   }
 
 private:

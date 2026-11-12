@@ -75,7 +75,8 @@ SDL_Surface* HalfTransparent(const int w, const int h) {
   return s;
 }
 
-void ExpectPixelNear(SDL_Surface* s, const int x, const int y, const int r, const int g, const int b, const char* what) {
+void ExpectPixelNear(SDL_Surface* s, const int x, const int y, const int r, const int g, const int b,
+                     const char* what) {
   Uint8 pr = 0;
   Uint8 pg = 0;
   Uint8 pb = 0;

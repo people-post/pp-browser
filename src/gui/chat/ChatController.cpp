@@ -477,8 +477,7 @@ ChatController::ChatController()
       .prose = [](const std::string& text) { return StructuredTextParser::PlainText(text); },
   });
   // Measurement (chat.window): a page of older rows loaded; read the memory a second later, once they are drawn.
-  scroller_.SetOnOlderLoaded(
-      [this]() { ScheduleChatWindowMetric(std::chrono::seconds(1), /*exited=*/false); });
+  scroller_.SetOnOlderLoaded([this]() { ScheduleChatWindowMetric(std::chrono::seconds(1), /*exited=*/false); });
   scroller_.SetDirtyTurns([this]() {
     // Paging and jumps rebuild the rows: the picture being sent goes back at the end (when the rows reach it).
     if (pending_uploads_.KeepAtTail(chat_.messages, ActiveThreadId(), !scroller_.LoadedMaxDisplayOrder())) {
@@ -1345,7 +1344,7 @@ void ChatController::OnPeerIconsChanged() {
 }
 
 void ChatController::OnProfileDataReset() {
-  CloseSearch();           // nothing decrypted from the old profile stays in memory
+  CloseSearch();                                       // nothing decrypted from the old profile stays in memory
   QueueTextureRelease(picture_textures_.UnmountAll()); // the old profile's pictures leave video memory
   vault_locked_seen_ = false;
   preview_batcher_.Clear();
@@ -2268,10 +2267,10 @@ void ChatController::SyncComposerInputState() {
   RefreshAttachmentHere();
   // The chip and the locked input belong to the chat the file is being sent in; the other chats stay typeable. With a
   // picture bubble in the transcript text stays typeable; only another attachment waits (ComposerLocksOf).
-  const ComposerLocks locks = ComposerLocksOf(
-      chat_.compose_disabled, chat_.attachment_here, chat_.attachment_in_transcript,
-      chat_.attachment_uploading || chat_.attachment_preparing, chat_.image_preparing, chat_.voice_recording,
-      chat_.editing_message);
+  const ComposerLocks locks =
+      ComposerLocksOf(chat_.compose_disabled, chat_.attachment_here, chat_.attachment_in_transcript,
+                      chat_.attachment_uploading || chat_.attachment_preparing, chat_.image_preparing,
+                      chat_.voice_recording, chat_.editing_message);
   if (chat_.composer_input_disabled != locks.input || chat_.attach_disabled != locks.attach) {
     chat_.composer_input_disabled = locks.input;
     chat_.attach_disabled = locks.attach;
@@ -5760,15 +5759,15 @@ void ChatController::PollChatShowing() {
     // The chat's picture textures go once it is off screen (after the page's slide-out: a texture taken while its row
     // is still drawn is loaded again at once). Coming back first (FinalizeThreadDisplay) voids it.
     const uint64_t turn = chat_exit_turn_;
-    AppRuntime::ScheduleCoordinatorOneShot(
-        std::chrono::seconds(1), [this, turn, alive = std::weak_ptr<int>(chat_window_alive_)]() {
-          AppRuntime::PostUI([this, turn, alive]() {
-            if (!alive.lock() || turn != chat_exit_turn_ || ChatShowing()) {
-              return;
-            }
-            QueueTextureRelease(picture_textures_.UnmountAll());
-          });
-        });
+    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::seconds(1),
+                                           [this, turn, alive = std::weak_ptr<int>(chat_window_alive_)]() {
+                                             AppRuntime::PostUI([this, turn, alive]() {
+                                               if (!alive.lock() || turn != chat_exit_turn_ || ChatShowing()) {
+                                                 return;
+                                               }
+                                               QueueTextureRelease(picture_textures_.UnmountAll());
+                                             });
+                                           });
   }
 }
 
@@ -5847,15 +5846,15 @@ void ChatController::RedrawPreviews() {
   }
   const std::string thread_id = ActiveThreadId();
   const TranscriptFacts facts = facade_->TranscriptFactsFor();
-  const ReadyPreviews applied = ApplyReadyPreviews(
-      chat_.messages, ready, previews_failed_,
-      [&](const std::string& message_id) -> std::optional<TranscriptAttachmentView> {
-        auto message = facade_->GetMessage(thread_id, message_id);
-        if (!message || !*message || !facts.attachment) {
-          return std::nullopt;
-        }
-        return facts.attachment(**message);
-      });
+  const ReadyPreviews applied =
+      ApplyReadyPreviews(chat_.messages, ready, previews_failed_,
+                         [&](const std::string& message_id) -> std::optional<TranscriptAttachmentView> {
+                           auto message = facade_->GetMessage(thread_id, message_id);
+                           if (!message || !*message || !facts.attachment) {
+                             return std::nullopt;
+                           }
+                           return facts.attachment(**message);
+                         });
   const bool whole = applied.redraw_all;
   const bool changed = applied.changed;
   bool last = false;
