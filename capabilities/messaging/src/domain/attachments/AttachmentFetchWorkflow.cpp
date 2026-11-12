@@ -43,6 +43,23 @@ void DeleteFetchedBytes(const std::string& profile_dir, CasStore& content, const
 
 namespace pbr {
 
+AttachmentFetchWorkflow::~AttachmentFetchWorkflow() {
+  std::unique_ptr<WorkerPool> pool;
+  {
+    std::unique_lock lock(mutex_);
+    previews_stopped_ = true; // a worker's loop ends before its next job; nothing more is claimed
+    grid_queue_.clear();
+    chat_queue_.clear();
+    // The jobs being made finish (each a decrypt and a downscale, nothing waits on this thread); a worker claimed but
+    // not started yet still starts and ends at once. Only the workers' own threads touch this workflow from here.
+    delete_cv_.wait(lock, [this] { return grid_running_ == 0; });
+    pool = std::move(preview_pool_);
+  }
+  if (pool) {
+    pool->Shutdown(); // every task has returned: the idle threads are joined
+  }
+}
+
 void AttachmentFetchWorkflow::SetProfileDataDir(std::string profile_dir) {
   profile_dir_ = std::move(profile_dir);
 }
@@ -258,9 +275,7 @@ Roe<void> AttachmentFetchWorkflow::SetDek(ByteVector dek) {
     grid_failed_.clear(); // a picture that failed may thumbnail now (another key, another hook state)
     grid_workers = ClaimGridWorkersLocked(); // the grid's jobs that waited while locked
   }
-  for (size_t i = 0; i < grid_workers; ++i) {
-    AppRuntime::PostWorkerBackground([this]() { RunGridThumbnails(); });
-  }
+  PostGridWorkers(grid_workers);
   return {};
 }
 
@@ -1204,9 +1219,7 @@ void AttachmentFetchWorkflow::RequestChatPreview(const std::string& thread_id, c
     chat_queue_.push_back(GridThumbnailJob{.thread_id = thread_id, .content_hash = fields.content_hash, .mime = fields.mime});
     workers = ClaimGridWorkersLocked(); // none while locked: the job waits for SetDek
   }
-  for (size_t i = 0; i < workers; ++i) {
-    AppRuntime::PostWorkerBackground([this]() { RunGridThumbnails(); });
-  }
+  PostGridWorkers(workers);
 }
 
 void AttachmentFetchWorkflow::CancelChatPreviews() {
@@ -1671,19 +1684,27 @@ void AttachmentFetchWorkflow::RequestGridThumbnail(const std::string& thread_id,
         .thread_id = thread_id, .content_hash = content_hash, .mime = mime, .generation = page_generation});
     workers = ClaimGridWorkersLocked(); // none while locked: the job waits for SetDek
   }
-  for (size_t i = 0; i < workers; ++i) {
-    AppRuntime::PostWorkerBackground([this]() { RunGridThumbnails(); });
-  }
+  PostGridWorkers(workers);
 }
 
 size_t AttachmentFetchWorkflow::ClaimGridWorkersLocked() {
-  if (dek_.empty() || !AppRuntime::IsRunning()) {
+  if (previews_stopped_ || dek_.empty() || !AppRuntime::IsRunning()) {
     return 0;
   }
   const size_t free = grid_running_ < kMaxGridThumbnailJobs ? kMaxGridThumbnailJobs - grid_running_ : 0;
   const size_t claimed = std::min(free, grid_queue_.size() + chat_queue_.size());
+  if (claimed > 0 && !preview_pool_) {
+    preview_pool_ = std::make_unique<WorkerPool>(kMaxGridThumbnailJobs);
+  }
   grid_running_ += claimed;
   return claimed;
+}
+
+void AttachmentFetchWorkflow::PostGridWorkers(const size_t count) {
+  // preview_pool_ was set under mutex_ by the claim this follows and is only taken away by the destructor.
+  for (size_t i = 0; i < count; ++i) {
+    preview_pool_->Post(WorkerLane::Normal, [this]() { RunGridThumbnails(); });
+  }
 }
 
 void AttachmentFetchWorkflow::CancelGridThumbnails(const uint64_t page_generation) {
@@ -1708,8 +1729,10 @@ void AttachmentFetchWorkflow::RunGridThumbnails() {
     uint64_t dek_generation = 0;
     {
       std::lock_guard lock(mutex_);
-      if ((grid_queue_.empty() && chat_queue_.empty()) || dek_.empty()) {
-        --grid_running_; // locked: the jobs left wait in the queues for SetDek
+      if ((grid_queue_.empty() && chat_queue_.empty()) || dek_.empty() || previews_stopped_ ||
+          !AppRuntime::IsRunning()) {
+        --grid_running_; // locked or quitting: the jobs left wait in the queues for SetDek
+        delete_cv_.notify_all(); // under the lock: the destructor waits for this, then goes on to free the workflow
         return;
       }
       if (!chat_queue_.empty()) {

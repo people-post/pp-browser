@@ -16,6 +16,7 @@
 #include "lib/people/IdentityStore.h"
 
 #include "common/Error.h"
+#include "common/WorkerPool.h"
 
 #include <condition_variable>
 #include <deque>
@@ -43,6 +44,12 @@ public:
   /** A chat picture's preview (RequestChatPreview) is done: `made` true when it exists, false when it cannot be made. */
   using ChatPreviewCallback =
       std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made)>;
+
+  AttachmentFetchWorkflow() = default;
+  /** Drops the previews and grid thumbnails not started, waits for those being made and joins their threads. */
+  ~AttachmentFetchWorkflow() override;
+  AttachmentFetchWorkflow(const AttachmentFetchWorkflow&) = delete;
+  AttachmentFetchWorkflow& operator=(const AttachmentFetchWorkflow&) = delete;
 
   void SetProfileDataDir(std::string profile_dir);
   /** The profile's content store (the hub's); none: nothing is stored or found. */
@@ -135,9 +142,9 @@ public:
   void ReleaseBytesForSend(const std::vector<uint8_t>& content_hash);
 
   /**
-   * A thumbnail for a cell of the storage grid: an image of any size, decrypted into memory on a background worker
-   * and made by the platform's thumbnail hook (the chat's large-image thumbnail, same file). At most two at once;
-   * a video without a poster is not decrypted (nothing is made). Calls the grid-thumbnail callback when one is
+   * A thumbnail for a cell of the storage grid: an image of any size, decrypted into memory on the previews' own
+   * threads (not the shared worker pool) and made by the platform's thumbnail hook (the chat's large-image thumbnail,
+   * same file). At most two at once; a video without a poster is not decrypted (nothing is made). Calls the grid-thumbnail callback when one is
    * made. Returns at once. While locked the jobs wait and start at the next unlock; a picture the hook cannot
    * thumbnail is not tried again until then. `page_generation` names the page that asked: CancelGridThumbnails
    * drops its jobs not started yet.
@@ -193,9 +200,9 @@ public:
                                 const ByteVector& plaintext);
   /**
    * The chat shows a picture's placeholder (its preview is not there: the view cache is wiped at every start and lock):
-   * the preview is made on a background worker (decrypted once into memory), at most two at once together with the
-   * storage grid's thumbnails, the latest request first (the rows are drawn oldest first: the last ones asked for are
-   * on screen). Returns at once; asked again while queued, it moves to the front. The chat-preview callback says
+   * the preview is made on the previews' own threads (decrypted once into memory), at most two at once together with
+   * the storage grid's thumbnails, the latest request first (the rows are drawn oldest first: the last ones asked for
+   * are on screen). Returns at once; asked again while queued, it moves to the front. The chat-preview callback says
    * when it is done. While locked the requests wait for the next unlock. One the platform cannot make from valid
    * bytes is not tried again this run (ChatPreviewFailed); one stopped by a lock, a delete or CancelChatPreviews is
    * asked again when its row shows again.
@@ -280,8 +287,13 @@ private:
   void NotifyChanged();
   void NotifyGridThumbnailReady(const std::string& thread_id, const std::vector<uint8_t>& content_hash);
   void NotifyChatPreviewDone(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made);
-  /** Under mutex_: claims workers for queued grid and chat jobs (at most two run); the caller posts that many. */
+  /**
+   * Under mutex_: claims workers for queued grid and chat jobs (at most two run), starting the previews' own threads
+   * at the first claim; the caller then posts that many (PostGridWorkers).
+   */
   size_t ClaimGridWorkersLocked();
+  /** `count` workers just claimed, each a RunGridThumbnails on the previews' own threads. */
+  void PostGridWorkers(size_t count);
   /** `all_auto_pace`: "download everything" on an allowed network (the wider per-minute byte limit). */
   bool AdmitByBudget(AutoDownloadBudget& budget, const std::string& sender, uint64_t byte_length, bool all_auto_pace);
   ByteVector CopyDekUnlocked() const;
@@ -373,6 +385,14 @@ private:
   std::deque<GridThumbnailJob> grid_queue_;
   /** Workers running grid and chat jobs (one limit, kMaxGridThumbnailJobs, for both). */
   size_t grid_running_ = 0;
+  /**
+   * Under mutex_: the threads grid and chat jobs run on (kMaxGridThumbnailJobs of them), not the shared worker pool:
+   * there slow work (a session's configure) held the previews back for seconds. Started by the first claim; idle,
+   * they block in the pool's wait. Joined by the destructor, after its jobs are done.
+   */
+  std::unique_ptr<WorkerPool> preview_pool_;
+  /** Under mutex_: the destructor began; no job starts and no worker is claimed. */
+  bool previews_stopped_ = false;
   std::unordered_set<std::string> grid_failed_;
   /**
    * Under mutex_: the chat's preview requests not started yet (the back is the newest, taken first), the job keys

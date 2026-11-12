@@ -323,7 +323,6 @@ protected:
 
   std::filesystem::path data_dir_;
   std::shared_ptr<CasStore> content_;
-  AttachmentFetchWorkflow workflow_;
   std::promise<void> release_;
   std::shared_future<void> gate_;
   std::atomic<int> running_{0};
@@ -334,6 +333,44 @@ protected:
   std::vector<int> sizes_;
   std::vector<std::string> made_;
   std::vector<std::string> failed_;
+  // Last: destroyed first, its preview threads joined while the hook's state above still exists.
+  AttachmentFetchWorkflow workflow_;
+};
+
+/**
+ * Holds every thread of the runtime's shared worker pool (at most WorkerPool::kMaxThreadCount) on Normal tasks until
+ * Release() or destruction — the pool busy with slow work (a session's configure), as when a chat opens.
+ */
+class SharedPoolHog {
+public:
+  SharedPoolHog() {
+    for (size_t i = 0; i < WorkerPool::kMaxThreadCount; ++i) {
+      AppRuntime::PostWorkerNormal([this] {
+        ++held_;
+        gate_.wait();
+        ++finished_;
+      });
+    }
+  }
+  ~SharedPoolHog() {
+    Release();
+    // Every task, the queued ones too, has run before it goes.
+    WaitUntil([this] { return finished_.load() == static_cast<int>(WorkerPool::kMaxThreadCount); });
+  }
+  /** Every thread of the default-sized pool is held. */
+  bool AllHeld() { return WaitUntil([this] { return held_.load() >= static_cast<int>(WorkerPool::kDefaultThreadCount); }); }
+  void Release() {
+    try {
+      release_.set_value();
+    } catch (const std::future_error&) {
+    }
+  }
+
+private:
+  std::promise<void> release_;
+  std::shared_future<void> gate_ = release_.get_future().share();
+  std::atomic<int> held_{0};
+  std::atomic<int> finished_{0};
 };
 
 // A picture gets a preview when its long side is above kImagePreviewMaxSide (640), whatever its file size; a picture
@@ -383,6 +420,69 @@ TEST_F(ChatPreviewTest, AtMostTwoAtOnceAndTheNewestRequestFirst) {
   ASSERT_TRUE(WaitUntil([&] { return MadeCount() == 6; }));
   EXPECT_EQ(max_running_.load(), 2);
   EXPECT_EQ(Started().back(), 10) << "the oldest last";
+}
+
+// The shared worker pool busy with slow work (opening a chat: the sessions' configures held it for seconds) does not
+// hold the previews back: they run on threads of their own.
+TEST_F(ChatPreviewTest, APreviewIsMadeWhileTheSharedPoolIsBusy) {
+  const ChatAttachmentFields fields = Store(PngOf(2000, 1500, 10'000, 90));
+  SharedPoolHog hog;
+  ASSERT_TRUE(hog.AllHeld());
+  workflow_.RequestChatPreview("t1", fields);
+  const bool made = WaitUntil([&] { return PreviewExists(fields) && MadeCount() == 1; }, std::chrono::seconds(3));
+  hog.Release();
+  EXPECT_TRUE(made) << "made before the shared pool was free";
+}
+
+// Two previews are made at once when two or more wait (each thread takes its own), never more than two.
+TEST_F(ChatPreviewTest, TwoPreviewsAreMadeAtOnceWhileTheSharedPoolIsBusy) {
+  std::vector<ChatAttachmentFields> pictures;
+  for (uint8_t i = 0; i < 5; ++i) {
+    pictures.push_back(Store(PngOf(2000, 1500, 10'000, static_cast<uint8_t>(100 + i))));
+  }
+  SharedPoolHog hog;
+  ASSERT_TRUE(hog.AllHeld());
+  hold_gate();
+  for (const ChatAttachmentFields& fields : pictures) {
+    workflow_.RequestChatPreview("t1", fields);
+  }
+  const bool two_at_once = WaitUntil([&] { return running_.load() == 2; }, std::chrono::seconds(3));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  const size_t started_while_held = Started().size();
+  open_gate();
+  const bool all_made = WaitUntil([&] { return MadeCount() == pictures.size(); }, std::chrono::seconds(3));
+  hog.Release();
+  EXPECT_TRUE(two_at_once);
+  EXPECT_EQ(started_while_held, 2u) << "no third while two run";
+  EXPECT_TRUE(all_made);
+  EXPECT_EQ(max_running_.load(), 2);
+}
+
+// The workflow destroyed with previews queued and two being made: the two finish (it waits for them), the queued ones
+// are dropped, nothing hangs and nothing runs after it is gone.
+TEST_F(ChatPreviewTest, DestroyingTheWorkflowWithPreviewsQueuedAndRunningWaitsForTheRunningOnly) {
+  auto workflow = std::make_unique<AttachmentFetchWorkflow>();
+  workflow->SetProfileDataDir(data_dir_.string());
+  workflow->SetContent(content_);
+  ASSERT_TRUE(workflow->SetDek(TestDek()));
+  std::vector<ChatAttachmentFields> pictures;
+  for (uint8_t i = 0; i < 6; ++i) {
+    pictures.push_back(Store(PngOf(2000, 1500, 10'000, static_cast<uint8_t>(110 + i))));
+  }
+  hold_gate();
+  for (const ChatAttachmentFields& fields : pictures) {
+    workflow->RequestChatPreview("t1", fields);
+  }
+  ASSERT_TRUE(WaitUntil([&] { return running_.load() == 2; }));
+  auto destroyed = std::async(std::launch::async, [&workflow] { workflow.reset(); });
+  const bool waited = destroyed.wait_for(std::chrono::milliseconds(50)) == std::future_status::timeout;
+  open_gate();
+  const bool finished = destroyed.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+  EXPECT_TRUE(waited) << "the previews being made are waited for";
+  ASSERT_TRUE(finished) << "the destructor returned";
+  std::this_thread::sleep_for(std::chrono::milliseconds(30));
+  EXPECT_EQ(running_.load(), 0);
+  EXPECT_EQ(Started().size(), 2u) << "the queued ones are dropped";
 }
 
 // Leaving the chat drops its requests not started; the storage grid's queue and cancel are its own.
