@@ -39,16 +39,6 @@ void ApplyBackendOverride(AppConfig& config) {
   config.registration.base_url = BriefRelayBaseUrl();
 }
 
-// A file written before `backend.env` existed whose saved URLs differ from the defaults was pointing at its own backend.
-bool HasLegacyCustomUrls(const AppConfig& config, const AppConfig& defaults) {
-  const auto differs = [](const std::string& saved, const std::string& fallback) {
-    return !saved.empty() && saved != fallback;
-  };
-  return differs(config.relay.base_url, defaults.relay.base_url) ||
-         differs(config.directory.base_url, defaults.directory.base_url) ||
-         differs(config.registration.base_url, defaults.registration.base_url);
-}
-
 } // namespace
 
 McpConfig ResolvePromotedMcp(const AppConfig& config, const AppConfig& defaults) {
@@ -151,9 +141,6 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path, const bool ui_demo)
   }
 
   AppConfig config = MergeConfig(DefaultAppConfig(ui_demo), *root);
-  if (root->getObject("backend") == nullptr && HasLegacyCustomUrls(config, DefaultAppConfig(ui_demo))) {
-    config.backend.env = BackendEnvName(BackendEnv::Custom);
-  }
   if (ParseBackendEnv(config.backend.env) == BackendEnv::Qa && !QaBackendAvailable()) {
     config.backend.env = BackendEnvName(BackendEnv::Prod);
   }

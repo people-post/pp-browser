@@ -6,18 +6,22 @@
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"
 
-TEST(ConfigJsonTest, ParsesLegacyAndModernFields) {
-  auto legacy = pbr::TryParseObject(R"({
-    "mcp": { "url": "https://legacy.example/mcp" },
+// Keys from before a rename (`mcp`, `libp2p`) are not read: pre-release, no leftover config is carried over.
+TEST(ConfigJsonTest, ParsesTheCurrentKeysOnly) {
+  auto old_keys = pbr::TryParseObject(R"({
+    "mcp": { "url": "https://old.example/mcp" },
+    "libp2p": { "mesh_publish": true },
     "mcp_servers": [
       { "id": "custom-a", "url": "https://custom.example/mcp" }
     ]
   })");
-  ASSERT_TRUE(legacy.has_value());
+  ASSERT_TRUE(old_keys.has_value());
 
   pbr::AppConfig config;
-  pbr::AppConfigFromObject(*legacy, config);
-  EXPECT_EQ(config.promoted_mcp.url, "https://legacy.example/mcp");
+  const pbr::AppConfig untouched = config;
+  pbr::AppConfigFromObject(*old_keys, config);
+  EXPECT_EQ(config.promoted_mcp.url, untouched.promoted_mcp.url);
+  EXPECT_EQ(config.mesh.mesh_publish, untouched.mesh.mesh_publish);
   ASSERT_EQ(config.mcp_servers.size(), 1u);
   EXPECT_EQ(config.mcp_servers[0].id, "custom-a");
 
