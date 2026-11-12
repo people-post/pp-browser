@@ -152,6 +152,8 @@ private:
   void ScrollMessagesToBottom();
   void MaybeLoadOlderLocalHistory();
   void LoadOlderLocalHistory();
+  /** After the scroll to the bottom settled: rows that do not fill the screen get the page above. True if loaded. */
+  bool MaybeFillScreen(float client_height, float scroll_height, float max_top);
   /**
    * The first screen's oldest row: `shown` messages back from the newest, counting the rows that show on their own (not
    * the annotations), over at most three pages; set in `oldest` for Ok.
@@ -177,6 +179,8 @@ private:
   /** The chat switched to has not had its first screen decided (read failed, or not ready): tried on the next sync. */
   bool first_screen_pending_ = false;
   FirstScreen first_screen_ = FirstScreen::Miss;
+  /** Pages loaded in a row to fill the screen that added no row (MaybeFillScreen). */
+  int fill_pages_without_rows_ = 0;
   std::string scroll_thread_id_;
   std::optional<int64_t> loaded_min_display_order_;
   /** When set, transcript window excludes tip rows newer than this (after history trim). */

@@ -267,6 +267,10 @@ void ChatTranscriptScroller::ApplyPolicy() {
 
   pending_scroll_attempts_ = 0;
 
+  if (MaybeFillScreen(client_height, scroll_height, max_top)) {
+    return;
+  }
+
   if (pinned_to_bottom_) {
     if (scroll_height > last_messages_scroll_height_ + 0.5f) {
       ScrollMessagesToBottom();
@@ -291,6 +295,33 @@ void ChatTranscriptScroller::ApplyPolicy() {
     }
   }
   last_messages_scroll_height_ = scroll_height;
+}
+
+bool ChatTranscriptScroller::MaybeFillScreen(const float client_height, const float scroll_height,
+                                             const float max_top) {
+  // The rows end less than the top's paging threshold above the screen (a tall window, a tablet, short rows): no scroll
+  // would ever reach the page above, so it is loaded now. At most 100 rows, so the page never makes the window trim.
+  constexpr float kTopPagingPx = 72.f; // MaybeLoadOlderLocalHistory's
+  constexpr int kMaxPagesWithoutRows = 3;
+  if (client_height <= 0.f || scroll_height <= 0.f || max_top > kTopPagingPx || !has_more_local_history_ ||
+      loading_older_local_ || !messaging_ready_ || !pending_jump_id_.empty() || restore_scroll_top_ ||
+      pending_scroll_height_before_ || pending_scroll_top_before_ || !pinned_to_bottom_ ||
+      view_.messages.size() > kMaxMessagesDomWindow - kDefaultMessagesPageSize ||
+      fill_pages_without_rows_ >= kMaxPagesWithoutRows) {
+    return false;
+  }
+  const size_t rows_before = view_.messages.size();
+  LoadOlderLocalHistory();
+  // Back to the newest message the way an open lands there, not by the scroll-up position fix.
+  pending_scroll_height_before_.reset();
+  pending_scroll_top_before_.reset();
+  // Pages of reactions and edits only add no row: after three in a row it waits for the person to scroll (a page that
+  // adds rows, by either path, starts the count again: LoadOlderLocalHistory).
+  if (view_.messages.size() <= rows_before) {
+    ++fill_pages_without_rows_;
+  }
+  RequestScrollToLatest();
+  return true;
 }
 
 void ChatTranscriptScroller::MaybeLoadOlderLocalHistory() {
@@ -331,6 +362,7 @@ void ChatTranscriptScroller::LoadOlderLocalHistory() {
   }
 
   loading_older_local_ = true;
+  const size_t rows_before = view_.messages.size();
   auto older = MessagesPage(thread_id, oldest, kDefaultMessagesPageSize);
   if (!older || older->empty()) {
     has_more_local_history_ = false;
@@ -352,6 +384,9 @@ void ChatTranscriptScroller::LoadOlderLocalHistory() {
     view_.messages = Rows(thread_id, loaded_min_display_order_, loaded_max_display_order_);
   }
   view_.has_turns = !view_.messages.empty();
+  if (view_.messages.size() > rows_before) {
+    fill_pages_without_rows_ = 0;
+  }
   if (dirty_turns_) {
     dirty_turns_();
   }
@@ -552,6 +587,7 @@ bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id, cons
     unread_while_scrolled_ = 0;
     first_screen_ = FirstScreen::Miss;
     first_screen_pending_ = first_screen_messages > 0;
+    fill_pages_without_rows_ = 0;
     RequestScrollToLatest();
   }
   // The first screen starts at the first_screen_messages-th newest message, decided once for the chat switched to. A

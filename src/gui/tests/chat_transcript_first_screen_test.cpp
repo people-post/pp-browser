@@ -239,6 +239,21 @@ protected:
     Messages()->SetProperty("height", std::to_string(height) + "dp");
   }
   float ClientHeight() { return Messages()->GetClientHeight(); }
+  /** The visible height set so the client height is `client` (whatever padding the stylesheet gives the element). */
+  void SetClientHeight(const float client) {
+    SetVisibleHeight(client);
+    context->Update();
+    SetVisibleHeight(client + (client - ClientHeight()));
+    context->Update();
+    ASSERT_NEAR(ClientHeight(), client, 0.5f);
+  }
+  /** Drains the frames until the scroll to the bottom has settled. */
+  void Settle() {
+    for (int frame = 0; frame < 80 && !scroller->Settled(); ++frame) {
+      Frames(1);
+    }
+  }
+  bool NeverTrimmed() { return state.messages.size() <= kMaxMessagesDomWindow && !scroller->LoadedMaxDisplayOrder(); }
   float MaxTop() { return std::max(0.f, Messages()->GetScrollHeight() - Messages()->GetClientHeight()); }
   /** ChatController::SyncDisplayFromThread's row steps, in its order, for the chat `thread`. */
   void Sync(const std::string& thread, const size_t first_screen) {
@@ -496,6 +511,214 @@ TEST_F(ChatFirstScreenTest, ReopenJumpAndBackToLatestKeepTheirWindows) {
   EXPECT_EQ(BackId(), "m300");
   EXPECT_FALSE(scroller->LoadedMaxDisplayOrder().has_value());
   EXPECT_TRUE(AtBottom());
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Step 2: a first screen that does not fill the transcript loads a page once the scroll to the bottom has settled.
+
+TEST_F(ChatFirstScreenTest, NoFillWhileNotLaidOut) {
+  SetVisibleHeight(0.f); // client height 0: as before the first layout
+  Messages()->SetProperty("padding", "0px");
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  const int reads = store.Reads();
+  Frames(40);
+  EXPECT_EQ(ClientHeight(), 0.f);
+  EXPECT_EQ(store.Reads(), reads);
+  EXPECT_EQ(state.messages.size(), 30u);
+}
+
+TEST_F(ChatFirstScreenTest, NoFillWhileHidden) {
+  SetClientHeight(4000.f); // client height 4000: 30 rows do not fill it
+  AddTexts("dm", 1, 300);
+  ShellBaseHide::Apply(context, document, true); // a full-screen call page over the chat
+  Sync("dm", kDirect);
+  const int reads = store.Reads();
+  Frames(40);
+  EXPECT_EQ(store.Reads(), reads);
+  EXPECT_EQ(state.messages.size(), 30u);
+  ShellBaseHide::Apply(context, document, false);
+  Settle();
+  Frames(2);
+  EXPECT_EQ(state.messages.size(), 130u) << "shown again: filled";
+}
+
+TEST_F(ChatFirstScreenTest, NoFillWhileTheScrollToTheBottomSettles) {
+  SetClientHeight(4000.f); // client height 4000
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  const int reads = store.Reads();
+  int unsettled_frames = 0;
+  while (!scroller->Settled() && unsettled_frames < 80) {
+    Frames(1); // the frame that settles it included
+    ++unsettled_frames;
+    EXPECT_EQ(store.Reads(), reads) << "read during the settle, frame " << unsettled_frames;
+  }
+  EXPECT_GT(unsettled_frames, 1);
+  EXPECT_EQ(state.messages.size(), 30u);
+}
+
+TEST_F(ChatFirstScreenTest, ATallScreenFillsOnceAndStaysAtTheBottom) {
+  SetClientHeight(4000.f); // client height 4000
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  Settle();
+  ASSERT_EQ(state.messages.size(), 30u);
+  ASSERT_LE(MaxTop(), 72.f) << "30 rows do not fill 4000";
+  Frames(1); // the check after the settle: one page
+  EXPECT_EQ(state.messages.size(), 130u);
+  EXPECT_EQ(older_loaded, 1);
+  Settle();
+  Frames(1);
+  EXPECT_GT(MaxTop(), 72.f);
+  EXPECT_TRUE(AtBottom()) << "back on the newest message";
+  const int reads = store.Reads();
+  Frames(30);
+  EXPECT_EQ(store.Reads(), reads) << "over 100 rows: no more";
+  EXPECT_EQ(state.messages.size(), 130u);
+  EXPECT_TRUE(NeverTrimmed());
+}
+
+TEST_F(ChatFirstScreenTest, ContentJust50PxTallerThanTheScreenFillsToo) {
+  SetClientHeight(400.f); // client height 400: 30 rows overfill it
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(3);
+  ASSERT_EQ(state.messages.size(), 30u);
+  const float content = Messages()->GetScrollHeight();
+  SetClientHeight(content - 50.f); // client height = content - 50
+  ASSERT_NEAR(MaxTop(), 50.f, 0.5f);
+  Frames(1);
+  EXPECT_EQ(state.messages.size(), 130u);
+  Settle();
+  Frames(1);
+  EXPECT_TRUE(AtBottom());
+  EXPECT_TRUE(NeverTrimmed());
+}
+
+TEST_F(ChatFirstScreenTest, Content500PxTallerThanTheScreenDoesNotFill) {
+  SetClientHeight(400.f); // client height 400
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(3);
+  const float content = Messages()->GetScrollHeight();
+  SetClientHeight(content - 500.f); // client height = content - 500
+  ASSERT_NEAR(MaxTop(), 500.f, 0.5f);
+  const int reads = store.Reads();
+  Frames(30);
+  EXPECT_EQ(store.Reads(), reads);
+  EXPECT_EQ(state.messages.size(), 30u);
+}
+
+TEST_F(ChatFirstScreenTest, AChatThatCannotFillLoadsOnceThenStops) {
+  SetClientHeight(4000.f); // client height 4000
+  AddTexts("dm", 1, 40);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(1);
+  EXPECT_EQ(state.messages.size(), 40u);
+  EXPECT_FALSE(scroller->HasMoreLocalHistory());
+  Settle();
+  const int reads = store.Reads();
+  Frames(30);
+  EXPECT_EQ(store.Reads(), reads) << "nothing older: no read each frame";
+}
+
+TEST_F(ChatFirstScreenTest, NoFillWhenScrolledUp) {
+  SetClientHeight(400.f); // client height 400
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(3);
+  const float content = Messages()->GetScrollHeight();
+  SetClientHeight(content - 300.f); // client height = content - 300
+  Frames(3);
+  ScrollTo(150.f); // reading up: not near the bottom, not near the top
+  Frames(2);
+  ASSERT_EQ(older_loaded, 0);
+  SetClientHeight(content - 70.f); // client height = content - 70: the window raised, 70 px left to scroll
+  const int reads = store.Reads();
+  Frames(30);
+  ASSERT_LE(MaxTop(), 72.f);
+  EXPECT_GT(MaxTop() - Messages()->GetScrollTop(), 64.f) << "still not at the bottom";
+  EXPECT_EQ(store.Reads(), reads);
+  EXPECT_EQ(state.messages.size(), 30u);
+}
+
+TEST_F(ChatFirstScreenTest, RaisedAgainItFillsAgainWhileAtMost100Rows) {
+  // Newest 30 messages (171..200); the page before them holds 10 messages among 90 edits (71..170); 1..70 messages.
+  AddTexts("dm", 1, 70);
+  for (int64_t order = 71; order <= 170; ++order) {
+    store.threads["dm"].push_back(order % 10 == 0 ? Text("dm", order) : Annotation("dm", order, "m1", kAnnotationTypeEdit));
+  }
+  AddTexts("dm", 171, 30);
+  SetClientHeight(400.f); // client height 400: 30 rows overfill it
+  Sync("dm", kDirect);
+  Settle();
+  Frames(3);
+  ASSERT_EQ(state.messages.size(), 30u);
+  SetClientHeight(Messages()->GetScrollHeight() + 20.f); // client height = 30 rows + 20: not filled
+  Settle();
+  Frames(1);
+  ASSERT_EQ(state.messages.size(), 40u) << "the page added 10 messages";
+  Settle();
+  Frames(3);
+  ASSERT_GT(MaxTop(), 72.f) << "40 rows fill it";
+  ASSERT_EQ(older_loaded, 1);
+  SetClientHeight(Messages()->GetScrollHeight() + 20.f); // client height = 40 rows + 20: not filled, 40 <= 100 rows
+  Settle();
+  Frames(1);
+  EXPECT_EQ(older_loaded, 2);
+  EXPECT_EQ(state.messages.size(), 110u);
+  EXPECT_TRUE(NeverTrimmed());
+}
+
+TEST_F(ChatFirstScreenTest, RaisedAgainItDoesNotFillOver100Rows) {
+  SetClientHeight(4000.f); // client height 4000
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(1);
+  Settle();
+  ASSERT_EQ(state.messages.size(), 130u);
+  SetClientHeight(Messages()->GetScrollHeight() + 200.f); // client height = 130 rows + 200: not filled, 130 rows
+  const int reads = store.Reads();
+  Frames(30);
+  EXPECT_EQ(store.Reads(), reads);
+  EXPECT_EQ(state.messages.size(), 130u);
+  EXPECT_TRUE(NeverTrimmed());
+}
+
+TEST_F(ChatFirstScreenTest, PagesWithNothingToShowStopAfterThree) {
+  // Newest 30 messages (601..630); before them 5 pages of edits (101..600); then messages 1..100.
+  AddTexts("dm", 1, 100);
+  for (int64_t order = 101; order <= 600; ++order) {
+    store.threads["dm"].push_back(Annotation("dm", order, "m1", kAnnotationTypeEdit));
+  }
+  AddTexts("dm", 601, 30);
+  SetClientHeight(400.f); // client height 400
+  Sync("dm", kDirect);
+  Settle();
+  Frames(3);
+  ASSERT_EQ(state.messages.size(), 30u);
+  SetClientHeight(Messages()->GetScrollHeight() - 50.f); // client height = 30 rows - 50: 50 px to scroll
+  const int page_reads = store.page_reads;
+  for (int frame = 0; frame < 60; ++frame) {
+    Frames(1);
+  }
+  EXPECT_EQ(store.page_reads - page_reads, 3) << "three pages that added nothing, then it stops";
+  EXPECT_EQ(older_loaded, 3);
+  EXPECT_EQ(state.messages.size(), 30u);
+  const int reads = store.Reads();
+  Frames(30);
+  EXPECT_EQ(store.Reads(), reads) << "no read each frame";
+  // The person scrolls up: the scroll path still loads.
+  ScrollTo(0.f);
+  EXPECT_EQ(older_loaded, 4);
+  EXPECT_EQ(store.page_reads - page_reads, 4);
+  EXPECT_TRUE(NeverTrimmed());
 }
 
 TEST(ChatFirstScreenCountTest, TheControllerPassesThirtyForDirectAndAiAndFiftyForAGroup) {
