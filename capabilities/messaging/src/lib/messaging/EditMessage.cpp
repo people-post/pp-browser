@@ -202,8 +202,13 @@ size_t BlankEditRowsFor(IThreadTranscript& store, const std::string& thread_id, 
   if (!annotations) {
     return 0;
   }
+  return BlankEditRows(store, thread_id, *annotations, keep_id, cancel_send);
+}
+
+size_t BlankEditRows(IThreadTranscript& store, const std::string& thread_id, const std::vector<ThreadMessage>& rows,
+                     const std::string& keep_id, const CancelEditSendFn& cancel_send) {
   size_t blanked = 0;
-  for (const ThreadMessage& annotation : *annotations) {
+  for (const ThreadMessage& annotation : rows) {
     if (annotation.id == keep_id) {
       continue;
     }
@@ -216,6 +221,20 @@ size_t BlankEditRowsFor(IThreadTranscript& store, const std::string& thread_id, 
     }
   }
   return blanked;
+}
+
+bool BlankReplacedEdit(IThreadTranscript& store, const std::string& thread_id, const ThreadMessage& before,
+                       const std::string& applied_id, const CancelEditSendFn& cancel_send) {
+  const std::optional<EditMark> replaced = EditMarkOf(before);
+  if (!replaced || replaced->edited_by == applied_id) {
+    return false;
+  }
+  auto found = store.GetMessage(thread_id, replaced->edited_by);
+  if (!found || !found->has_value() || (*found)->target_message_id != before.id ||
+      EditTextOf(**found).value_or("").empty()) {
+    return false;
+  }
+  return BlankEditRow(store, thread_id, **found, cancel_send);
 }
 
 SendRelayOptions EditSendOptions(const std::string& target_message_id, const std::string& text,
@@ -234,13 +253,14 @@ Roe<ThreadMessage> ApplyOwnEdit(IThreadTranscript& store, const ThreadMessage& t
   ThreadMessage edited = WithEdit(target, edit_row);
   edited.thread_id = target.thread_id;
   auto updated = store.UpdateMessage(edited);
-  if (!updated) {
-    return updated.error();
-  }
-  if (!*updated) {
+  if (!updated || !*updated) {
+    (void)BlankEditRow(store, target.thread_id, edit_row, cancel_send); // not applied here: not sent either
+    if (!updated) {
+      return updated.error();
+    }
     return Error("The message to edit is gone");
   }
-  (void)BlankEditRowsFor(store, target.thread_id, target.id, edit_row.id, cancel_send);
+  (void)BlankReplacedEdit(store, target.thread_id, target, edit_row.id, cancel_send);
   return edited;
 }
 

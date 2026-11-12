@@ -25,8 +25,10 @@
 
 #include <algorithm>
 #include <map>
+#include <random>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -108,16 +110,54 @@ struct FakeOutbox {
   std::vector<RelayEnvelope> sent;
 };
 
-/** One device: its keys, stores and receive pipeline. With `linked_to`: another device of that one's account. */
+/**
+ * The in-memory store, counting the full reads of a message's annotation rows (GetAnnotationsForTarget: each row
+ * decrypted, in the app's store) and failing the append of message `fail_append_once` once.
+ */
+class ProbedStore final : public InMemoryDeliveryStore {
+public:
+  Roe<std::vector<ThreadMessage>> GetAnnotationsForTarget(const std::string& thread_id,
+                                                          const std::string& target_id) const override {
+    ++annotation_reads;
+    return IThreadTranscript::GetAnnotationsForTarget(thread_id, target_id);
+  }
+  /** A count, not a read of the rows (the app's store counts them without decrypting). */
+  Roe<int64_t> CountAnnotationsForTarget(const std::string& thread_id, const std::string& target_id) const override {
+    auto rows = IThreadTranscript::GetAnnotationsForTarget(thread_id, target_id);
+    return rows ? Roe<int64_t>(static_cast<int64_t>(rows->size())) : Roe<int64_t>(rows.error());
+  }
+  Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) override {
+    if (!fail_append_once.empty() && message.id == fail_append_once) {
+      fail_append_once.clear();
+      return Error("disk full");
+    }
+    return InMemoryDeliveryStore::AppendMessage(message);
+  }
+
+  mutable size_t annotation_reads = 0;
+  std::string fail_append_once;
+};
+
+/**
+ * One device: its keys, stores and receive pipeline. With `linked_to`: another device of that one's account. With
+ * `probed`: its store is a ProbedStore.
+ */
 struct Device {
-  Device(const std::string& tag, const uint8_t seed, const Device* linked_to = nullptr) : tag(tag) {
+  Device(const std::string& tag, const uint8_t seed, const Device* linked_to = nullptr, const bool probed = false)
+      : tag(tag) {
     keys = linked_to ? linked_to->keys : test::TestAccount::Make();
     if (linked_to) {
       keys.device = test::TestDevice::Make();
       keys.device_public = keys.device.signing_public;
     }
     account = keys.account_id;
-    store = std::make_unique<InMemoryDeliveryStore>();
+    if (probed) {
+      auto made = std::make_unique<ProbedStore>();
+      probe = made.get();
+      store = std::move(made);
+    } else {
+      store = std::make_unique<InMemoryDeliveryStore>();
+    }
     EXPECT_TRUE(store->SetDek(TestDek(seed)) && store->ListThreads());
     roster = std::make_unique<InMemoryGroupRosterStore>(*store);
     psk = std::make_unique<InMemoryPeerSessions>(*store);
@@ -294,6 +334,7 @@ struct Device {
   std::string account;
   std::map<std::string, AccountCard> cards;
   std::unique_ptr<InMemoryDeliveryStore> store;
+  ProbedStore* probe = nullptr;
   std::unique_ptr<InMemoryGroupRosterStore> roster;
   std::unique_ptr<InMemoryPeerSessions> psk;
   std::unique_ptr<RelayReceivePipeline> pipeline;
@@ -774,6 +815,143 @@ TEST_F(SentCopyUnsentEditTest, ANewerEditFromTheOtherDeviceCancelsIt) {
   outbox_.Retry();
   EXPECT_TRUE(outbox_.sent.empty()) << "the replaced edit is not sent (the other device sends its own)";
   EXPECT_EQ(phone_->RowsHolding(chat_.id, "secret words"), 0u);
+}
+
+// ---- one edit row keeps its words, and an applied edit costs a few row reads, not a read of all of them -------------
+
+class EditCostTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    EnsureSodiumInit();
+    dave_ = std::make_unique<Device>("dave", 0x30); // writes the message, and edits it
+    erin_ = std::make_unique<Device>("erin", 0x40); // another member
+    bob_ = std::make_unique<Device>("bob", 0x50, nullptr, /*probed=*/true);
+    bob_->JoinGroup(kGroup, {dave_.get(), erin_.get(), bob_.get()});
+    sent_ = util::NowUnixMs();
+  }
+
+  RelayEnvelope DaveEdits(const std::string& id, const std::string& text, const int64_t at) {
+    return dave_->SendGroup(kGroup, *bob_, Edit(id, "dave-1", text, at));
+  }
+
+  std::unique_ptr<Device> dave_, erin_, bob_;
+  int64_t sent_ = 0;
+};
+
+// 200 edits of one message in a random order (the message itself somewhere among them), mixing the author's edits in
+// and out of the 16 minutes (some at the same time), another member's, and envelopes delivered twice. At the end
+// exactly one edit row has words: the one the message names (edited_by), the newest of the author's edits in time,
+// whose words the message shows.
+TEST_F(EditCostTest, TwoHundredEditsInAnyOrderLeaveOneEditRowWithWordsTheOneApplied) {
+  for (const unsigned seed : {1u, 2u, 3u}) {
+    SCOPED_TRACE(seed);
+    SetUp(); // fresh devices per round
+    std::mt19937 random(seed);
+    struct Sent {
+      RelayEnvelope envelope;
+      std::string id;
+      std::string text;
+      int64_t at = 0;
+      bool by_author = false;
+    };
+    std::vector<Sent> edits;
+    for (int i = 0; i < 180; ++i) {
+      const std::string id = "edit-" + std::to_string(1000 + i);
+      const std::string text = "words " + std::to_string(i);
+      const int kind = static_cast<int>(random() % 6); // 0..3 author in time, 4 author late, 5 another member
+      const int64_t at = kind <= 3   ? sent_ + 1 + static_cast<int64_t>(random() % (16 * 60)) * 1000 // ties happen
+                         : kind == 4 ? sent_ + 17 * kMin + static_cast<int64_t>(random() % (10 * 60)) * 1000
+                                     : sent_ + static_cast<int64_t>(random() % (10 * 60)) * 1000;
+      Device& from = kind == 5 ? *erin_ : *dave_;
+      edits.push_back(Sent{from.SendGroup(kGroup, *bob_, Edit(id, "dave-1", text, at)), id, text, at, kind != 5});
+    }
+    std::vector<const RelayEnvelope*> deliveries;
+    for (const Sent& edit : edits) {
+      deliveries.push_back(&edit.envelope);
+    }
+    for (int i = 0; i < 20; ++i) {
+      deliveries.push_back(&edits[random() % edits.size()].envelope); // delivered twice
+    }
+    const RelayEnvelope message = dave_->SendGroup(kGroup, *bob_, Text("dave-1", "see you at 8", sent_));
+    deliveries.push_back(&message);
+    std::shuffle(deliveries.begin(), deliveries.end(), random);
+
+    std::set<std::string> stored;
+    for (const RelayEnvelope* envelope : deliveries) {
+      if (bob_->Receive(*envelope).persisted) {
+        stored.insert(envelope->message_id);
+      }
+    }
+    ASSERT_TRUE(stored.count("dave-1")) << "the message is stored";
+    const Sent* newest = nullptr;
+    for (const Sent& edit : edits) {
+      if (stored.count(edit.id) && edit.by_author && edit.at - sent_ <= kEditWindowMs + kEditArrivalSlackMs &&
+          (!newest || edit.at > newest->at || (edit.at == newest->at && edit.id > newest->id))) {
+        newest = &edit;
+      }
+    }
+    ASSERT_NE(newest, nullptr);
+
+    const ThreadMessage dave = bob_->Row(bob_->group_thread, "dave-1").value();
+    const std::optional<EditMark> mark = EditMarkOf(dave);
+    ASSERT_TRUE(mark);
+    EXPECT_EQ(mark->edited_by, newest->id);
+    EXPECT_EQ(dave.text, newest->text);
+    std::vector<std::string> with_words;
+    const std::vector<ThreadMessage> rows = bob_->store->GetAnnotationsForTarget(bob_->group_thread, "dave-1").value();
+    for (const ThreadMessage& row : rows) {
+      if (IsEditAnnotation(row) && !EditTextOf(row).value_or("").empty()) {
+        with_words.push_back(row.id);
+      }
+    }
+    EXPECT_EQ(with_words, std::vector<std::string>{mark->edited_by});
+  }
+}
+
+// The message is here: each new edit of it that applies, or that is refused, reads no list of its annotation rows.
+TEST_F(EditCostTest, AnEditOfAMessageThatIsHereReadsNotAllItsEditRows) {
+  ASSERT_TRUE(bob_->Receive(dave_->SendGroup(kGroup, *bob_, Text("dave-1", "see you at 8", sent_))).persisted);
+  for (int i = 1; i <= 20; ++i) {
+    const size_t before = bob_->probe->annotation_reads;
+    ASSERT_TRUE(
+        bob_->Receive(DaveEdits("edit-" + std::to_string(100 + i), "words " + std::to_string(i), sent_ + i * 1000))
+            .persisted);
+    EXPECT_EQ(bob_->probe->annotation_reads, before) << "applied edit " << i;
+  }
+  const size_t before = bob_->probe->annotation_reads;
+  ASSERT_TRUE(bob_->Receive(DaveEdits("edit-old", "old words", sent_ + 500)).persisted); // older than the applied one
+  ASSERT_TRUE(
+      bob_->Receive(erin_->SendGroup(kGroup, *bob_, Edit("erin-edit", "dave-1", "forged", sent_ + kMin))).persisted);
+  EXPECT_EQ(bob_->probe->annotation_reads, before) << "refused edits";
+  EXPECT_EQ(bob_->Row(bob_->group_thread, "dave-1").value().text, "words 20");
+  EXPECT_EQ(bob_->EditRowsWithText(bob_->group_thread, "dave-1"), 1u);
+}
+
+// Our own edits, one after another, the same.
+TEST_F(EditCostTest, OurOwnEditsReadNotAllTheEditRows) {
+  Device alice("alice", 0x10, nullptr, /*probed=*/true);
+  const Thread chat = alice.DirectThreadTo(*bob_, ThreadChannel::E2ePublic);
+  ThreadMessage mine = Text("mine-1", "see you at 8", sent_);
+  mine.thread_id = chat.id;
+  mine.sender_contact_id = kLocalSelfContactId;
+  mine.delivery = MessageDelivery::Relayed;
+  mine.relay_visible = true;
+  ASSERT_TRUE(alice.store->AppendMessage(mine));
+  for (int i = 1; i <= 10; ++i) {
+    const ThreadMessage target = alice.Row(chat.id, "mine-1").value();
+    const size_t before = alice.probe->annotation_reads;
+    auto edited = EditOwnMessage(*alice.store, target, ThreadKind::Direct, "words " + std::to_string(i),
+                                 sent_ + i * 1000, "own-" + std::to_string(i),
+                                 [&](const std::string& id, const std::string& text, const int64_t at) {
+                                   EXPECT_TRUE(alice.Send(chat, *bob_, text, EditSendOptions(target.id, text, id, at)));
+                                   return Roe<ThreadMessage>(alice.Row(chat.id, id).value());
+                                 },
+                                 {});
+    ASSERT_TRUE(edited) << edited.error().message;
+    EXPECT_EQ(alice.probe->annotation_reads, before) << "edit " << i;
+  }
+  EXPECT_EQ(alice.EditRowsWithText(chat.id, "mine-1"), 1u);
+  EXPECT_EQ(EditMarkOf(alice.Row(chat.id, "mine-1").value()).value_or(EditMark{}).edited_by, "own-10");
 }
 
 } // namespace

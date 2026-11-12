@@ -2425,8 +2425,9 @@ void RelayReceivePipeline::PrepareEdits(ThreadMessage& persisted, RelayReceiveOu
   if (newest) {
     persisted = WithEdit(std::move(persisted), *newest);
   }
-  (void)BlankEditRowsFor(store_, persisted.thread_id, persisted.id, newest ? newest->id : std::string(),
-                         cancel_pending_send_);
+  // Every other edit row read above goes blank (the one full read of them, once per message).
+  (void)BlankEditRows(store_, persisted.thread_id, *annotations, newest ? newest->id : std::string(),
+                      cancel_pending_send_);
 }
 
 void RelayReceivePipeline::ApplyInboundEdit(const ThreadMessage& persisted, RelayReceiveOutcome& outcome) {
@@ -2453,9 +2454,11 @@ void RelayReceivePipeline::ApplyInboundEdit(const ThreadMessage& persisted, Rela
   auto updated = store_.UpdateMessage(edited);
   if (!updated || !*updated) {
     log().warning << "edit not applied: the message row was not updated";
+    (void)store_.UpdateMessage(BlankedEdit(persisted)); // only the applied edit row keeps its words
     return;
   }
-  (void)BlankEditRowsFor(store_, persisted.thread_id, target.id, persisted.id, cancel_pending_send_);
+  // Only the edit the message carried had words left: blanking it is all (no read of every edit row).
+  (void)BlankReplacedEdit(store_, persisted.thread_id, target, persisted.id, cancel_pending_send_);
   if (on_message_edited_) {
     on_message_edited_(persisted.thread_id, target, edited);
   }

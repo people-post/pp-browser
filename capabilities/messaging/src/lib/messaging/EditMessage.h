@@ -136,6 +136,19 @@ using CancelEditSendFn = std::function<void(const std::string& edit_id)>;
 size_t BlankEditRowsFor(IThreadTranscript& store, const std::string& thread_id, const std::string& target_id,
                         const std::string& keep_id = {}, const CancelEditSendFn& cancel_send = {});
 
+/** BlankEditRowsFor on `rows`, a message's annotation rows already read (the read is the costly part). */
+size_t BlankEditRows(IThreadTranscript& store, const std::string& thread_id, const std::vector<ThreadMessage>& rows,
+                     const std::string& keep_id, const CancelEditSendFn& cancel_send);
+
+/**
+ * After edit `applied_id` was applied to a message that was `before` it: the edit `before` carried (its `edited_by`),
+ * blanked as BlankEditRowsFor does (ours cancelled). Only the applied edit row of a message keeps its words, so this
+ * one row is all there is to blank: a few row reads, not a read of every annotation row of the message. Returns whether
+ * a row was blanked.
+ */
+bool BlankReplacedEdit(IThreadTranscript& store, const std::string& thread_id, const ThreadMessage& before,
+                       const std::string& applied_id, const CancelEditSendFn& cancel_send);
+
 /**
  * How our edit of `target_message_id` goes out: an `edit` annotation carrying `text`, with the id and send time fixed
  * before the send (`message_id`, `sent_at_ms`) and no preview change. The send itself is the ordinary one: numbered,
@@ -146,8 +159,9 @@ SendRelayOptions EditSendOptions(const std::string& target_message_id, const std
 
 /**
  * Our edit `edit_row` (as stored by the send) applied to our message `target` here at once: the row rewritten
- * (WithEdit) and every other edit row of it blanked; an earlier edit of ours not sent yet is cancelled
- * (`cancel_send`). Returns the rewritten row.
+ * (WithEdit) and the edit it replaces blanked (BlankReplacedEdit); an earlier edit of ours not sent yet is cancelled
+ * (`cancel_send`). Not applied (the row was not rewritten: the message deleted meanwhile, or the write failed), the
+ * edit itself is blanked and cancelled, so nothing of it goes out. Returns the rewritten row.
  */
 Roe<ThreadMessage> ApplyOwnEdit(IThreadTranscript& store, const ThreadMessage& target, const ThreadMessage& edit_row,
                                 const CancelEditSendFn& cancel_send);
