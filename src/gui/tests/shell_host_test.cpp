@@ -707,6 +707,56 @@ TEST(ShellHostCallRingTest, ThePinLayerClassFollowsTheAwaitingFlag) {
   EXPECT_FALSE(PinLayerHasOverCall(host)) << "the page ended while the card was up";
 }
 
+/** A 1:1 call's failure page: kept with no call behind it (`kept`), or the failed call still open. */
+CallChromeSnapshot FailedPage(const bool kept) {
+  CallChromeSnapshot snapshot;
+  snapshot.in_progress.active = true;
+  snapshot.in_progress.phone_failed = true;
+  snapshot.in_progress.offer_redial = true;
+  snapshot.in_progress.show_retry = true;
+  snapshot.in_progress.failed_kept = kept;
+  return snapshot;
+}
+
+// DEV/PLAN-call-failed-redial.md 6: the kept failed page is a page, not a call going on: back / Escape is its Try later.
+TEST(ShellHostFailedPageTest, BackOnTheKeptFailedPageIsTryLater) {
+  for (const bool phone : {true, false}) {
+    ShellHost& host = phone ? PhoneHost(NavTab::Home) : KeptHost();
+    int leaves = 0;
+    CallActionsPorts ports;
+    ports.leave_active = [&]() { ++leaves; };
+    host.BindCallActions(std::move(ports));
+    host.ApplyCallChromeSnapshot(FailedPage(/*kept=*/true), CallChromeUpdate::Remount);
+    EXPECT_NE(ShellInterruption::Top(host.State()), InterruptionKind::LiveSessionOn) << "no call going on";
+    EXPECT_TRUE(host.HandleDismiss()) << (phone ? "phone back" : "desktop Escape");
+    EXPECT_EQ(leaves, 1) << (phone ? "phone" : "desktop");
+    host.BindCallActions({});
+  }
+}
+
+// The failed call still open: back stays what it was (the shell does not take it: the phone minimises the app).
+TEST(ShellHostFailedPageTest, BackOnAFailedCallStillOpenIsAsBefore) {
+  ShellHost& host = PhoneHost(NavTab::Home);
+  int leaves = 0;
+  CallActionsPorts ports;
+  ports.leave_active = [&]() { ++leaves; };
+  host.BindCallActions(std::move(ports));
+  host.ApplyCallChromeSnapshot(FailedPage(/*kept=*/false), CallChromeUpdate::Remount);
+  EXPECT_EQ(ShellInterruption::Top(host.State()), InterruptionKind::LiveSessionOn);
+  EXPECT_FALSE(host.HandleDismiss());
+  EXPECT_EQ(leaves, 0);
+  host.BindCallActions({});
+}
+
+TEST(ShellHostFailedPageTest, UnderTheKeptPageALayerIsTheTopNotACall) {
+  ShellState state;
+  state.call_in_progress = FailedPage(/*kept=*/true).in_progress;
+  state.overlay_stack.push_back({1, OverlayKind::Generic, "dialog", "views/dialog.rml", {}});
+  EXPECT_EQ(ShellInterruption::Top(state), InterruptionKind::OverlayLayer);
+  state.call_in_progress.failed_kept = false;
+  EXPECT_EQ(ShellInterruption::Top(state), InterruptionKind::LiveSessionOn) << "a call going on, as before";
+}
+
 TEST(ShellHostCallRingTest, TheAnswersDoNothingWhileAwaitingTheInviteAndActOtherwise) {
   ShellHost& host = PhoneHost(NavTab::Home);
   int accepts = 0;

@@ -1229,6 +1229,13 @@ bool ShellHost::HandleDismiss() {
     // Unlock: consume Escape without dismissing or quitting.
     return true;
   }
+  if (state_.call_in_progress.active && state_.call_in_progress.failed_kept) {
+    // DEV/PLAN-call-failed-redial.md 6: the failure page kept with no call behind it — back / Escape is its Try later.
+    if (call_actions_.leave_active) {
+      call_actions_.leave_active();
+    }
+    return true;
+  }
   // Phone back order (Android system back, Escape; DEV/PLAN-minimal-nav.md A / C): what is drawn over the drawer
   // (a menu, a dialog, the PIN gate) closes first; then (1) the AI drawer, and nothing else with it.
   if (state_.ai_drawer_open) {
