@@ -419,7 +419,11 @@ TEST_F(ChatPreviewTest, AtMostTwoAtOnceAndTheNewestRequestFirst) {
   open_gate();
   ASSERT_TRUE(WaitUntil([&] { return MadeCount() == 6; }));
   EXPECT_EQ(max_running_.load(), 2);
-  EXPECT_EQ(Started().back(), 10) << "the oldest last";
+  // The hook records a start after the worker took the job, so under load the second thread's record can land after
+  // the first thread's next one: only the oldest being among the last two taken is certain, not the exact order.
+  const std::vector<uint8_t> all = Started();
+  ASSERT_EQ(all.size(), 6u);
+  EXPECT_GE(std::find(all.begin(), all.end(), 10) - all.begin(), 4) << "the oldest last";
 }
 
 // The shared worker pool busy with slow work (opening a chat: the sessions' configures held it for seconds) does not
@@ -518,11 +522,18 @@ TEST_F(ChatPreviewTest, TheGridsOrderIsKeptWhileTheChatAsks) {
     workflow_.RequestGridThumbnail("t1", fields.content_hash, fields.mime, 1);
   }
   workflow_.CancelChatPreviews(); // the chat left: nothing of the grid goes
+  hold_gate();                    // the first two taken stay in the hook: the second pair cannot be recorded before them
   ASSERT_TRUE(workflow_.SetDek(TestDek()));
+  ASSERT_TRUE(WaitUntil([&] { return Started().size() == 2; }));
+  std::vector<uint8_t> first = Started();
+  std::sort(first.begin(), first.end());
+  EXPECT_EQ(first, (std::vector<uint8_t>{30, 31})) << "the grid goes in order";
+  open_gate();
   ASSERT_TRUE(WaitUntil([&] { return Started().size() == 4; }));
-  const std::vector<uint8_t> order = Started();
-  EXPECT_EQ(std::min(order[0], order[1]), 30);
-  EXPECT_EQ(std::max(order[2], order[3]), 33) << "the grid still goes in order";
+  const std::vector<uint8_t> all = Started();
+  std::vector<uint8_t> second(all.begin() + 2, all.end());
+  std::sort(second.begin(), second.end());
+  EXPECT_EQ(second, (std::vector<uint8_t>{32, 33}));
 }
 
 TEST_F(ChatPreviewTest, NothingIsMadeWhileLockedAndItIsMadeAfterTheUnlock) {
