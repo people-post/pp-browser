@@ -98,6 +98,7 @@ void ChatTranscriptScroller::Reset() {
   restore_scroll_top_.reset();
   last_messages_scroll_height_ = 0.f;
   unread_while_scrolled_ = 0;
+  first_screen_on_return_ = false;
   pending_jump_id_.clear();
   flash_id_.clear(); // the rows it named are gone
   view_.show_jump_to_latest = false;
@@ -636,8 +637,24 @@ void ChatTranscriptScroller::OnShellRemounted() {
   ApplyPolicy();
 }
 
+void ChatTranscriptScroller::OnChatLeft() {
+  first_screen_on_return_ = pinned_to_bottom_ && !loaded_max_display_order_ && pending_jump_id_.empty();
+}
+
 bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id, const size_t first_screen_messages) {
   const bool thread_changed = thread_id != scroll_thread_id_;
+  // The same chat opened again after it was left on its newest messages: its window goes back to the first screen
+  // (only the window and the first-screen state; for everything else it is the same chat).
+  const bool reopened = !thread_changed && first_screen_on_return_;
+  first_screen_on_return_ = false;
+  if (reopened) {
+    loaded_min_display_order_.reset();
+    first_screen_ = FirstScreen::Miss;
+    first_screen_pending_ = first_screen_messages > 0;
+    first_screen_retries_ = 0;
+    fill_pages_without_rows_ = 0;
+    RequestScrollToLatest();
+  }
   if (thread_changed) {
     pending_jump_id_.clear();
     flash_id_.clear(); // another chat's rows
@@ -658,7 +675,7 @@ bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id, cons
   // a jump or a remount restore pending, would move what they look at. Otherwise the first screen is given up (miss);
   // a jump, back to the latest or a page loaded also ends the wait.
   constexpr int kMaxFirstScreenRetries = 5;
-  if (first_screen_pending_ && !thread_changed) {
+  if (first_screen_pending_ && !thread_changed && !reopened) {
     if (first_screen_retries_ >= kMaxFirstScreenRetries || !pinned_to_bottom_ || loaded_max_display_order_ ||
         restore_scroll_top_ || !pending_jump_id_.empty() || !ViewOnTheBottom()) {
       first_screen_pending_ = false;

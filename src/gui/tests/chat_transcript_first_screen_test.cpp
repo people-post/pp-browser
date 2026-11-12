@@ -12,6 +12,7 @@
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/shell/DataModelHost.h"
+#include "gui/shell/RmlMount.h"
 #include "gui/shell/ShellBaseHide.h"
 #include "foundation/diagnostics/OsCurrentMemory.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -244,6 +245,7 @@ protected:
                             "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">"
                             "<div class=\"shell-pane-body\" id=\"pane-body-chat\">" +
                             chat_body + "</div></div></div></div></body></rml>";
+    chat_body_rml = chat_body;
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
     document->Show();
@@ -356,6 +358,7 @@ protected:
   bool messaging_ready = true;
   TestStore store;
   int older_loaded = 0;
+  std::string chat_body_rml;
 };
 
 using FirstScreen = ChatTranscriptScroller::FirstScreen;
@@ -1245,6 +1248,100 @@ TEST_F(ChatFirstScreenTest, AOneRowWindowPagesWithItsOnlyRowInPlace) {
   context->Update();
   EXPECT_EQ(state.messages.size(), 41u);
   EXPECT_NEAR(RowTopOnScreen("m300"), only, 1.f);
+}
+
+// Opening the same chat again (back to the list, then the chat): left on the newest messages it starts from the first
+// screen again (a window paged up to 180 rows made every later open slow, 1087 ms on a phone); left reading older
+// messages it comes back where it was. A shell rebuild, a call page over the chat or the background is not leaving.
+class ChatReopenTest : public ChatFirstScreenTest {
+protected:
+  /** The chat open with 300 messages, paged up twice (110 rows). */
+  void OpenAndPageUpTwice() {
+    SetClientHeight(600.f); // client height 600
+    AddTexts("dm", 1, 300);
+    Sync("dm", kDirect);
+    Settle();
+    Frames(2);
+    ScrollTo(40.f);
+    Frames(2);
+    ScrollTo(40.f);
+    Frames(2);
+    ASSERT_EQ(state.messages.size(), 110u);
+  }
+  void BackToTheBottom() {
+    ScrollTo(MaxTop());
+    Frames(3);
+    ASSERT_TRUE(AtBottom());
+  }
+};
+
+TEST_F(ChatReopenTest, LeftOnTheNewestItOpensAgainWithTheFirstScreen) {
+  OpenAndPageUpTwice();
+  BackToTheBottom();
+  scroller->OnChatLeft(); // ChatController::PollChatShowing: the chat page is gone
+  Frames(3);
+  Sync("dm", kDirect); // opened again: FinalizeThreadDisplay's display sync
+  scroller->RequestScrollToLatest();
+  Settle();
+  Frames(2);
+  EXPECT_EQ(state.messages.size(), 30u);
+  EXPECT_EQ(FrontId(), "m271");
+  EXPECT_TRUE(AtBottom());
+  EXPECT_EQ(scroller->FirstScreenResult(), FirstScreen::Ok);
+  // Once: the syncs after it keep the window.
+  ScrollTo(40.f);
+  Frames(2);
+  Sync("dm", kDirect);
+  EXPECT_EQ(state.messages.size(), 70u);
+}
+
+TEST_F(ChatReopenTest, LeftReadingOlderMessagesItComesBackWhereItWas) {
+  OpenAndPageUpTwice();
+  ScrollTo(MaxTop() / 2.f);
+  Frames(3);
+  const float top = Messages()->GetScrollTop();
+  scroller->OnChatLeft();
+  Frames(3);
+  Sync("dm", kDirect);
+  Frames(5);
+  EXPECT_EQ(state.messages.size(), 110u);
+  EXPECT_NEAR(Messages()->GetScrollTop(), top, 1.f);
+}
+
+TEST_F(ChatReopenTest, AShellRebuildKeepsTheWindow) {
+  OpenAndPageUpTwice();
+  BackToTheBottom();
+  ASSERT_TRUE(RmlMount::MountInner(document->GetElementById("pane-body-chat"), chat_body_rml)); // a turn, a sheet
+  scroller->OnShellRemounted();
+  Frames(6);
+  Sync("dm", kDirect);
+  Frames(3);
+  EXPECT_EQ(state.messages.size(), 110u);
+  EXPECT_TRUE(AtBottom());
+}
+
+TEST_F(ChatReopenTest, ACallPageOverTheChatKeepsTheWindow) {
+  OpenAndPageUpTwice();
+  BackToTheBottom();
+  ShellBaseHide::Apply(context, document, true);
+  Frames(5);
+  Sync("dm", kDirect);
+  ShellBaseHide::Apply(context, document, false);
+  Frames(5);
+  Sync("dm", kDirect);
+  EXPECT_EQ(state.messages.size(), 110u);
+}
+
+TEST(ChatReopenSourceTest, OnlyLeavingTheChatPageMarksIt) {
+  // ChatController cannot be built in a unit test: where it tells the scroller is read from the source.
+  const std::string poll = Body("src/gui/chat/ChatController.cpp", "void ChatController::PollChatShowing(");
+  EXPECT_NE(poll.find("scroller_.OnChatLeft()"), std::string::npos);
+  // Not the background (the chat page stays the chat page), not the shell rebuild, not the vault lock.
+  const std::string showing = Body("src/gui/chat/ChatController.cpp", "bool ChatController::ChatShowing(");
+  EXPECT_EQ(showing.find("Foreground"), std::string::npos);
+  const std::string pause = Body("src/gui/chat/ChatController.cpp", "void ChatController::OnApplicationPause(");
+  EXPECT_EQ(pause.find("OnChatLeft"), std::string::npos);
+  EXPECT_NE(poll.find("MessagingReady()"), std::string::npos) << "a lock is not leaving";
 }
 
 TEST(ChatFirstScreenCountTest, FirstScreenMessagesByKind) {

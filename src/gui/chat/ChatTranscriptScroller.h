@@ -89,6 +89,12 @@ public:
     std::optional<int64_t> loaded_max;
   };
   static JumpWindow WindowForJump(int64_t order, std::optional<int64_t> loaded_min, std::optional<int64_t> loaded_max);
+  /**
+   * The chat page was left (back to the list, another tab). Left on the newest messages, the same chat opened again
+   * starts from its first screen (the next display sync draws it as for a chat switched to); left reading older
+   * messages, it comes back where it was.
+   */
+  void OnChatLeft();
   /** SyncLayout remounts DOM — re-arm follow-tail when still pinned, else put the reading position back. */
   void OnShellRemounted();
 
@@ -193,6 +199,8 @@ private:
   /** The chat switched to has not had its first screen decided (read failed, or not ready): tried on the next sync. */
   bool first_screen_pending_ = false;
   FirstScreen first_screen_ = FirstScreen::Miss;
+  /** The chat page was left on the newest messages: the next display sync starts from the first screen (OnChatLeft). */
+  bool first_screen_on_return_ = false;
   /** First-screen reads tried again after the switch's failed (at most five). */
   int first_screen_retries_ = 0;
   /** The last local page's chat.window reading, and the frames drawn when it was loaded (UiFrameStats::DrawnFrames). */
