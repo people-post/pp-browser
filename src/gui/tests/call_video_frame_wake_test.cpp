@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -144,6 +145,32 @@ TEST(CallVideoFrameWakeTest, ACatchUpFiringAfterTheOwnerIsGoneIsHarmless) {
   ASSERT_EQ(timers.size(), 1u);
   timers[0]();
   EXPECT_EQ(wakes, 2) << "the timer owns what it touches: one last wake, no dangling access";
+}
+
+TEST(CallVideoFrameWakeTest, TheAppClockIsTheMonotonicOne) {
+  // The window is timed on the steady clock (the tests above inject their own): a wall-clock time sync cannot move it.
+  const int64_t before = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::steady_clock::now().time_since_epoch())
+                             .count();
+  const int64_t now = CallVideoFrameWake::SteadyNowMs();
+  const int64_t after = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+  EXPECT_GE(now, before);
+  EXPECT_LE(now, after);
+}
+
+TEST(CallVideoFrameWakeTest, AClockThatStepsBackDoesNotHoldFramesForever) {
+  Harness h;
+  h.gate->OnFrame();
+  h.now = kT0 - 60'000; // an injected clock set back a minute
+  h.gate->OnFrame();
+  EXPECT_EQ(h.wakes, 2) << "a new window starts; frames are not held until the clock catches up";
+  h.now = kT0 - 60'000 + 10;
+  h.gate->OnFrame();
+  EXPECT_EQ(h.wakes, 2) << "and is paced as usual from there";
+  ASSERT_EQ(h.timers.size(), 1u);
+  EXPECT_EQ(h.timers[0].delay_ms, kWindow - 10);
 }
 
 } // namespace

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -30,6 +31,12 @@ public:
   using Schedule = std::function<void(int64_t delay_ms, std::function<void()> fire)>;
   using Wake = std::function<void()>;
 
+  /** The app's clock for the window: monotonic, so a wall-clock time sync never moves it. */
+  static int64_t SteadyNowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+  }
+
   static std::shared_ptr<CallVideoFrameWake> Create(Now now, Schedule schedule, Wake wake) {
     return std::shared_ptr<CallVideoFrameWake>(
         new CallVideoFrameWake(std::move(now), std::move(schedule), std::move(wake)));
@@ -39,7 +46,8 @@ public:
   void OnFrame() {
     const int64_t now = now_();
     int64_t last = last_wake_ms_.load();
-    while (now - last >= kCallVideoWakeMinIntervalMs) {
+    // A clock that stepped back (an injected one; the app's is monotonic) starts a new window rather than holding frames.
+    while (now - last >= kCallVideoWakeMinIntervalMs || now < last) {
       if (last_wake_ms_.compare_exchange_weak(last, now)) {
         held_.store(false); // this wake draws whatever was held back too
         wake_();

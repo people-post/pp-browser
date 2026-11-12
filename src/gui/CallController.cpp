@@ -574,7 +574,7 @@ void CallController::BindVideoFrameWake(IMediaView& media) {
   // one wake per frame at 15 fps; a frame held back in a window is woken for when it ends (a coordinator one-shot
   // that holds only the gate, never this controller).
   auto gate = CallVideoFrameWake::Create(
-      [] { return util::NowUnixMs(); },
+      [] { return CallVideoFrameWake::SteadyNowMs(); },
       [](const int64_t delay_ms, std::function<void()> fire) {
         AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(delay_ms), std::move(fire));
       },
