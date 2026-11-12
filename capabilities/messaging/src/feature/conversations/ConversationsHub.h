@@ -324,12 +324,30 @@ public:
   /** Me → Storage: the thumbnail of a grid cell (RequestGridThumbnail) was made. Called on the UI thread. */
   void SetOnGridThumbnailReady(
       std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback);
+  /** The chat: a picture's preview was made (`made`) or cannot be made. Called on the UI thread. */
+  void SetOnChatPreviewDone(
+      std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made)> callback);
+  /** The chat page was left: its preview requests not started yet go (AttachmentFetchWorkflow::CancelChatPreviews). */
+  void CancelChatPreviews();
   /**
    * "Delete for everyone": only our own message in a chat or group. Sends the retract, then deletes the
    * message here like "delete for me", then (best effort) the uploaded copy on the relay. Blocking: call
    * off the UI thread.
    */
   Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
+  /**
+   * Edit our message `message_id` to `new_text` (DEV/PLAN-message-edit.md), as tapped at `tapped_at_ms`: checked
+   * (CanEditMessage at that time), sent as an `edit` annotation stamped no earlier than the tap (EditSendTime), then
+   * applied here at once. Unchanged text sends nothing. Returns the message as it is now. The edit's row stays, marked
+   * failed, when its send fails after it was stored (the message shows the red mark; ResendEdit sends it again).
+   */
+  Roe<ThreadMessage> EditMessage(const std::string& thread_id, const std::string& message_id,
+                                 const std::string& new_text, int64_t tapped_at_ms);
+  /**
+   * The red mark on an edited message of ours, tapped: its edit that did not go out (the one it carries) is sent again
+   * as a new edit with the same words and the same send time, and the unsent one goes. Returns the new edit's row.
+   */
+  Roe<ThreadMessage> ResendEdit(const std::string& thread_id, const std::string& message_id);
   /**
    * Send prepared bytes. Checked here, before anything is encrypted: the size against CurrentAttachmentLimits(),
    * and the send pace (AttachmentLimits::send_max_per_minute).
@@ -725,6 +743,8 @@ private:
   std::mutex storage_callbacks_mu_;
   std::function<void()> on_stored_attachments_changed_;
   std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> on_grid_thumbnail_ready_;
+  std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made)>
+      on_chat_preview_done_;
   /** Guards the workflow's change reports and their UI posts: invalidated at Shutdown and when the hub goes. */
   pp::Lifetime storage_callbacks_lifetime_;
   std::function<void()> on_messaging_ready_;

@@ -6,6 +6,7 @@
 #include "feature/conversations/AmpChatHistoryTransport.h"
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "lib/messaging/EditMessage.h"
 
 #include "common/Localized.h"
 
@@ -198,6 +199,13 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
   receive_pipeline_->SetOnMessageRetracted([this](const std::string& thread_id, const ThreadMessage& original) {
     inbox_.AfterMessageDeleted(thread_id, original);
   });
+  // Our other device deleted or edited again a message whose edit is still queued here: that edit is not sent.
+  receive_pipeline_->SetCancelPendingSend([this](const std::string& message_id) { outbox_.Cancel(message_id); });
+  // A peer (or another of our devices) edited a message we hold: its preview, mention marker and summary follow.
+  receive_pipeline_->SetOnMessageEdited(
+      [this](const std::string& thread_id, const ThreadMessage& before, const ThreadMessage& after) {
+        inbox_.AfterMessageEdited(thread_id, before, after);
+      });
   transports_.SetInboundHandler([this](RelayEnvelope envelope, std::string from_peer_id) {
     HandleDirectInbound(std::move(envelope), from_peer_id);
   });
@@ -1465,24 +1473,14 @@ bool MeshDeliveryOrchestrator::MarkDelivery(const std::string& thread_id, const 
   if (thread_id.empty()) {
     return false; // a control-lane send: no transcript row to update
   }
-  auto messages = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
-  if (!messages) {
+  // The delivery state only: a whole row read earlier would write back words blanked since (a voided edit of ours).
+  auto marked = store_.UpdateMessageDelivery(
+      thread_id, message_id, success ? MessageDelivery::Relayed : MessageDelivery::Failed,
+      success ? std::optional<MessageTransport>(transport) : std::nullopt, unless_delivered);
+  if (!marked) {
     return false;
   }
-  for (ThreadMessage& existing : *messages) {
-    if (existing.id == message_id) {
-      if (unless_delivered && existing.delivery == MessageDelivery::Relayed) {
-        return false;
-      }
-      existing.delivery = success ? MessageDelivery::Relayed : MessageDelivery::Failed;
-      if (success) {
-        existing.transport = transport;
-      }
-      (void)store_.UpdateMessage(existing);
-      break;
-    }
-  }
-  return true;
+  return *marked || !unless_delivered;
 }
 
 void MeshDeliveryOrchestrator::ApplySendSucceeded(const std::string& thread_id, const std::string& message_id,
@@ -2079,6 +2077,26 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::ClearReaction(const std::string& th
 Roe<ThreadMessage> MeshDeliveryOrchestrator::SendRetract(const std::string& thread_id,
                                                          const std::string& target_message_id) {
   return SendAnnotationReaction(*this, store_, thread_id, target_message_id, std::string(), kAnnotationTypeRetract);
+}
+
+Roe<ThreadMessage> MeshDeliveryOrchestrator::SendEdit(const std::string& thread_id,
+                                                      const std::string& target_message_id, const std::string& text,
+                                                      const std::string& message_id, const int64_t sent_at_ms) {
+  if (target_message_id.empty() || text.empty()) {
+    return Error("Nothing to edit");
+  }
+  auto thread = store_.GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  const SendRelayOptions options = EditSendOptions(target_message_id, text, message_id, sent_at_ms);
+  if ((*thread)->kind == ThreadKind::Group) {
+    return SendGroupMessage(thread_id, text, options);
+  }
+  return SendUserMessage(thread_id, text, options);
 }
 
 void MeshDeliveryOrchestrator::CancelPendingSend(const std::string& message_id) {

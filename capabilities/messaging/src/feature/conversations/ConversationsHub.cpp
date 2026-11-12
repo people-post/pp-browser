@@ -8,6 +8,7 @@
 #include "domain/attachments/AttachmentMetrics.h"
 #include "lib/delivery/AttachmentContentCipher.h"
 #include "lib/messaging/DeleteForEveryone.h"
+#include "lib/messaging/EditMessage.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 
 #include "lib/people/RecoveryBundle.h"
@@ -702,6 +703,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
     inbox_->SetAttachmentDownloads(nullptr);
+    inbox_->SetCancelPendingSend(nullptr);
   }
   system_controls_.Unbind(kGroupRosterSyncFamily);
   system_controls_.Unbind(kCopyAskFamily);
@@ -1141,6 +1143,12 @@ void ConversationsHub::BuildMessagingObjects() {
                                                                 *group_invite_gate_, *mesh_messaging_, *account_keys_);
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
+  // A message deleted here takes an unsent edit of ours with it (wired with each orchestrator, cleared with it).
+  inbox_->SetCancelPendingSend([this](const std::string& message_id) {
+    if (mesh_messaging_) {
+      mesh_messaging_->CancelPendingSend(message_id);
+    }
+  });
   BindGroupRosterSyncFamily();
   BindCopyAskFamily();
   BindCardAskFamily();
@@ -1601,6 +1609,12 @@ void ConversationsHub::SetOnGridThumbnailReady(
     std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback) {
   std::lock_guard lock(storage_callbacks_mu_);
   on_grid_thumbnail_ready_ = std::move(callback);
+}
+
+void ConversationsHub::SetOnChatPreviewDone(
+    std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made)> callback) {
+  std::lock_guard lock(storage_callbacks_mu_);
+  on_chat_preview_done_ = std::move(callback);
 }
 
 void ConversationsHub::SetOnPeerIconsChanged(std::function<void()> callback) {
@@ -2149,6 +2163,69 @@ Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_i
   return {};
 }
 
+Roe<ThreadMessage> ConversationsHub::EditMessage(const std::string& thread_id, const std::string& message_id,
+                                                 const std::string& new_text, const int64_t tapped_at_ms) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  auto thread = Store().GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  auto found = Store().GetMessage(thread_id, message_id);
+  if (!found) {
+    return found.error();
+  }
+  if (!found->has_value()) {
+    return Error("Message not found");
+  }
+  ThreadMessage target = **found;
+  target.thread_id = thread_id;
+  // Checked (an edit too long for one payload is refused here, before anything is stored), sent, applied here.
+  auto edited = EditOwnMessage(
+      Store(), target, (*thread)->kind, new_text, tapped_at_ms, util::GenerateUuid(),
+      [this, &thread_id, &target](const std::string& edit_id, const std::string& text, const int64_t sent_at_ms) {
+        return MeshMessaging().SendEdit(thread_id, target.id, text, edit_id, sent_at_ms);
+      },
+      [this](const std::string& unsent_id) { MeshMessaging().CancelPendingSend(unsent_id); });
+  if (!edited) {
+    return edited.error();
+  }
+  if (edited->unchanged) {
+    return edited->row;
+  }
+  if (edited->stored_unsent) {
+    log().warning << "edit stored but not sent (the message shows the red mark)";
+  }
+  Inbox().AfterMessageEdited(thread_id, target, edited->row);
+  return edited->row;
+}
+
+Roe<ThreadMessage> ConversationsHub::ResendEdit(const std::string& thread_id, const std::string& message_id) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  auto resent = ResendOwnEdit(
+      Store(), thread_id, message_id, util::GenerateUuid(),
+      [this, &thread_id, &message_id](const std::string& edit_id, const std::string& text, const int64_t sent_at_ms) {
+        return MeshMessaging().SendEdit(thread_id, message_id, text, edit_id, sent_at_ms);
+      },
+      [this](const std::string& unsent_id) { MeshMessaging().CancelPendingSend(unsent_id); });
+  if (!resent) {
+    return resent.error();
+  }
+  if (resent->stored_unsent) {
+    log().warning << "resent edit stored but not sent";
+  }
+  if (!resent->unsent_removed) {
+    log().warning << "resent edit: the unsent edit row was not removed";
+  }
+  return resent->edit_row;
+}
+
 void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {
   if (message.content_type != ChatContentType::Attachment || !blob_) {
     return;
@@ -2625,6 +2702,18 @@ void ConversationsHub::WireAttachmentDownloads() {
           callback(thread_id, content_hash);
         }
       }));
+  // A chat picture's preview: only the rows showing it are redrawn (no whole-chat re-render).
+  attachment_downloads_->SetOnChatPreviewDone(storage_callbacks_lifetime_.Bind(
+      [this](const std::string& thread_id, const std::vector<uint8_t>& content_hash, const bool made) {
+        std::function<void(const std::string&, const std::vector<uint8_t>&, bool)> callback;
+        {
+          std::lock_guard lock(storage_callbacks_mu_);
+          callback = on_chat_preview_done_;
+        }
+        if (callback) {
+          callback(thread_id, content_hash, made);
+        }
+      }));
   if (inbox_) {
     inbox_->SetProfileDataDir(data_dir_);
     inbox_->SetAttachmentDownloads(attachment_downloads_.get());
@@ -2699,6 +2788,12 @@ void ConversationsHub::RequestGridThumbnail(const std::string& thread_id, const 
 void ConversationsHub::CancelGridThumbnails(const uint64_t page_generation) {
   if (attachment_downloads_) {
     attachment_downloads_->CancelGridThumbnails(page_generation);
+  }
+}
+
+void ConversationsHub::CancelChatPreviews() {
+  if (attachment_downloads_) {
+    attachment_downloads_->CancelChatPreviews();
   }
 }
 
@@ -3256,6 +3351,7 @@ void ConversationsHub::Shutdown() {
   }
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
+    inbox_->SetCancelPendingSend(nullptr);
   }
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnTeardownStarting();

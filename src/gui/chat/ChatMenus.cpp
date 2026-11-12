@@ -96,6 +96,21 @@ ChatMenus::ChatMenus(ChatMenusHost& host, ChatPresenter& presenter, const ChatSc
       shell_feedback_(shell_feedback),
       call_actions_(call_actions) {}
 
+void InsertEditAction(std::vector<ContextMenuAction>& actions, std::function<void()> start_edit) {
+  ContextMenuAction edit{"edit_message", Tr("chat.menu.edit"), nullptr, std::move(start_edit),
+                         "../icons/v2/pencil.svg"};
+  const auto copy = std::find_if(actions.begin(), actions.end(),
+                                 [](const ContextMenuAction& action) { return action.id == "copy_message"; });
+  actions.insert(copy == actions.end() ? actions.end() : std::next(copy), std::move(edit));
+}
+
+void RemoveActionsWhileEditing(std::vector<ContextMenuAction>& actions) {
+  std::erase_if(actions, [](const ContextMenuAction& action) {
+    return action.id == "edit_message" || action.id == "reply_message" || action.id == "ask_ai_message" ||
+           action.id == "ask_ai_item";
+  });
+}
+
 std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& request) {
   std::vector<ContextMenuAction> actions;
   ConversationsFacade* facade = host_.Facade();
@@ -142,12 +157,18 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
                          AppRuntime::PostUI([this, shared, position]() { OpenShareTargets(shared, position); });
                        },
                        "../icons/v2/share.svg"});
+    if (chat_.editing_message) {
+      RemoveActionsWhileEditing(actions);
+    }
     return actions;
   }
 
   const std::string message_id = FindAttributeUp(request.target, "message-id");
   if (message_id.empty() || IsPendingUploadRowId(message_id) || host_.IsDeletedMessage(message_id)) {
     return actions; // a deleted message takes no reaction, reply, copy or second delete; a picture being sent is none
+  }
+  if (host_.IsCallRecord(message_id)) {
+    return actions; // a call record is one tap (call back) and no menu (Kenneth 2026-11-12)
   }
   // Reactions sit in the row above the message, the rest in the list below it: the user's last-used first.
   for (const std::string& emoji : QuickReactions(host_.RecentEmojis())) {
@@ -191,6 +212,13 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
       actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr,
                          [this, text]() { host_.StartQuoteReply(text, "@ai "); }, "../icons/v2/sparkle.svg"});
     }
+  }
+  // Edit: our own text, within its 15 minutes (DEV/PLAN-message-edit.md); right under Copy. While the chat is editing a
+  // message, nothing that would start another edit or a reply (the words being edited stay as typed).
+  if (chat_.editing_message) {
+    RemoveActionsWhileEditing(actions);
+  } else if (host_.CanEditMessage(message_id)) {
+    InsertEditAction(actions, [this, message_id]() { host_.StartEditMessage(message_id); });
   }
   ContextMenuAction remove{
       "delete_message", Tr("common.delete"), nullptr,

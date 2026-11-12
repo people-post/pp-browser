@@ -67,7 +67,7 @@ const ToolDescriptor* FindTool(const ToolRegistry& tools, const std::string& nam
 
 } // namespace
 
-TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& tools,
+TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, const ToolRegistry& tools,
                                           const ToolActivityCallback& on_activity,
                                           const TurnExecutionOptions& options) {
   TurnExecutionResult result;

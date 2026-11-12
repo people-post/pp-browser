@@ -141,6 +141,11 @@ public:
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id);
   /** Our own message, for everyone in the chat / group. Blocking (network): call off the UI thread. */
   Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
+  /** Edit our message (ConversationsHub::EditMessage); `tapped_at_ms`: when Send was tapped. */
+  Roe<ThreadMessage> EditMessage(const std::string& thread_id, const std::string& message_id,
+                                 const std::string& new_text, int64_t tapped_at_ms);
+  /** Send again the edit of our message that did not go out (ConversationsHub::ResendEdit). */
+  Roe<ThreadMessage> ResendEdit(const std::string& thread_id, const std::string& message_id);
   void MarkThreadRead(const std::string& thread_id);
   /** Per-thread local settings (pin / mute / archive); rows that differ from the defaults. */
   Roe<std::vector<ThreadLocalPrefs>> ListThreadLocalPrefs();
@@ -397,6 +402,14 @@ public:
   /** Called on the UI thread when a storage-grid cell's thumbnail (RequestGridThumbnail) is made. */
   void SetOnGridThumbnailReady(
       std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback);
+  /**
+   * Called on the UI thread when a chat picture's preview (asked for by drawing its placeholder) is made (`made`) or
+   * cannot be made (its row is then a file card).
+   */
+  void SetOnChatPreviewDone(
+      std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made)> callback);
+  /** The chat page was left: its preview requests not started yet are dropped. */
+  void CancelChatPreviews();
   /** Send bytes the picker already prepared (a shrunk picture, an original with its location removed). */
   void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                            std::function<void(Roe<ThreadMessage>)> on_done,

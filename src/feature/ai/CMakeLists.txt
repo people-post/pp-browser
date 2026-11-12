@@ -5,6 +5,7 @@ pp_browser_add_feature_library(pp_feature_ai
     AgentUiPorts.cpp
     AiTurnPool.cpp
     ArticleFeedFetch.cpp
+    SharedMcpTools.cpp
     TurnExecutor.cpp
   PUBLIC_LIBS
     pp_lib_ai_tools

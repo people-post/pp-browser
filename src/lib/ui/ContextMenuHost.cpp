@@ -308,6 +308,74 @@ void ContextMenuHost::OnLongPress(ui::Vector2i position, ui::Element* target) {
   request.context = context_;
   request.touch = true;
   ShowAt(request);
+  HoldTypingFocus(target);
+  if (!IsOpen() && target && anchor_resolver_ && anchor_resolver_(target)) {
+    SwallowEmptyLongPressRelease(target);
+  }
+}
+
+void ContextMenuHost::SwallowEmptyLongPressRelease(ui::Element* target) {
+  // An item with no menu (a call record row): the finger's lift after the long press is no tap. Its click must not
+  // reach the row (it would call back), and the lift must not move the focus off a field being typed in (the
+  // keyboard would drop).
+  ReleaseGuardEnd();
+  ui::ElementDocument* document = target->GetOwnerDocument();
+  if (!document) {
+    return;
+  }
+  release_guard_document_ = document->GetObserverPtr();
+  document->AddEventListener(ui::EventId::Mousedown, this, true);
+  document->AddEventListener(ui::EventId::Mouseup, this, true);
+  document->AddEventListener(ui::EventId::Click, this, true);
+  release_guard_swallow_click_ = true;
+  HoldFocusFrom(target);
+}
+
+void ContextMenuHost::ReleaseGuardEnd() {
+  release_guard_swallow_click_ = false;
+  release_guard_done_ = false;
+  if (ui::Element* taker = held_focus_taker_.get()) {
+    taker->RemoveProperty("focus");
+  }
+  held_focus_taker_ = nullptr;
+  if (ui::Element* document = release_guard_document_.get()) {
+    document->RemoveEventListener(ui::EventId::Mousedown, this, true);
+    document->RemoveEventListener(ui::EventId::Mouseup, this, true);
+    document->RemoveEventListener(ui::EventId::Click, this, true);
+  }
+  release_guard_document_ = nullptr;
+}
+
+void ContextMenuHost::HoldTypingFocus(ui::Element* target) {
+  // Only the phone's item sheet over a field being typed in: the desktop's menus and the keyboard-less case are as before.
+  if (!IsOpen() || presentation_ != Presentation::ActionSheet || !menu_anchor_) {
+    return;
+  }
+  HoldFocusFrom(target);
+}
+
+void ContextMenuHost::HoldFocusFrom(ui::Element* target) {
+  if (!context_) {
+    return;
+  }
+  ui::Element* focus = context_->GetFocusElement();
+  if (!FindTextEditor(focus)) {
+    return;
+  }
+  // The press on the item held the focus back from the field until the finger lifts (a touch that turns into a
+  // scroll keeps the keyboard), and the lift still moves it after a long press: the field lost the focus, the
+  // keyboard closed under the open sheet and the sheet fell with it (iPhone, 2026-11-12). The element that would take
+  // it is the one Context focuses on a press: the nearest from the target up that takes focus. It takes none while
+  // the sheet is open; the field keeps typing, the keyboard stays where it is.
+  ui::Element* taker = target;
+  while (taker && taker->GetComputedValues().focus() == ui::Style::Focus::None) {
+    taker = taker->GetParentNode();
+  }
+  if (!taker || taker == focus) {
+    return;
+  }
+  taker->SetProperty("focus", "none");
+  held_focus_taker_ = taker->GetObserverPtr();
 }
 
 bool ContextMenuHost::OnContextPointer(ui::Context* context, int x, int y) {
@@ -416,6 +484,20 @@ std::vector<ContextMenuAction> ContextMenuHost::CollectActions(const ContextMenu
     actions.insert(actions.end(), provided.begin(), provided.end());
   }
   return actions;
+}
+
+void ContextMenuHost::SetBottomInsetDp(const int inset_dp) {
+  if (inset_dp == bottom_inset_dp_) {
+    return;
+  }
+  bottom_inset_dp_ = inset_dp;
+  // The sheet's `bottom` is a pixel value written at open time: write it again, or it hangs where the keyboard was.
+  if (layer_ && presentation_ == Presentation::ActionSheet) {
+    LayoutActionSheet();
+    if (sheet_expanded_) {
+      ApplyExpandedSheetHeight(); // the grown sheet's pixel height also took the keyboard off once
+    }
+  }
 }
 
 float ContextMenuHost::BottomInsetPx() const {
@@ -562,16 +644,45 @@ void ContextMenuHost::LayoutAnchored(ui::Vector2i touch) {
   };
 
   // Quick row above the item, list below it; a message taller than the view keeps both on screen.
-  float list_min_top = kViewportMarginPx;
-  if (ui::Element* quick = layer_->GetElementById("context-menu-quick")) {
-    const float quick_height = quick->GetBox().GetSize(ui::BoxArea::Border).y;
-    const float quick_top = std::max(kViewportMarginPx, anchor_top - gap - quick_height);
-    place(quick, quick_top);
-    list_min_top = quick_top + quick_height + gap;
+  ui::Element* quick = layer_->GetElementById("context-menu-quick");
+  const float quick_height = quick ? quick->GetBox().GetSize(ui::BoxArea::Border).y : 0.f;
+  const float quick_space = quick ? quick_height + gap : 0.f;
+  float list_height = panel_->GetBox().GetSize(ui::BoxArea::Border).y;
+  const float quick_top_normal = std::max(kViewportMarginPx, anchor_top - gap - quick_height);
+  const float list_min_top = quick ? quick_top_normal + quick_height + gap : kViewportMarginPx;
+  const float below_top = std::max(list_min_top, anchor_bottom + gap);
+  if (below_top + list_height <= view_bottom) {
+    // Room under the item: the quick row above it, the list below it (the measured heights, not an estimate).
+    if (quick) {
+      place(quick, quick_top_normal);
+    }
+    place(panel_, below_top);
+    return;
   }
-  const float list_height = panel_->GetBox().GetSize(ui::BoxArea::Border).y;
-  const float list_top = std::max(list_min_top, std::min(anchor_bottom + gap, view_bottom - list_height));
-  place(panel_, list_top);
+  // The item sits near the bottom edge: the list goes above it, the quick row above the list, when that fits.
+  const float above_top = anchor_top - gap - list_height;
+  if (above_top - quick_space >= kViewportMarginPx) {
+    if (quick) {
+      place(quick, above_top - quick_space);
+    }
+    place(panel_, above_top);
+    return;
+  }
+  // Neither side has room: the whole stack against the lower edge of the view (over the item), and the list scrolls
+  // inside when even that is too tall.
+  const float available = view_bottom - kViewportMarginPx;
+  if (quick_space + list_height > available) {
+    list_height = std::max(2.f * 50.f * dp, available - quick_space);
+    char max_buf[32];
+    std::snprintf(max_buf, sizeof(max_buf), "%.0fpx", list_height);
+    panel_->SetProperty("max-height", max_buf);
+    panel_->SetProperty("overflow-y", "auto");
+  }
+  const float stack_top = std::max(kViewportMarginPx, view_bottom - quick_space - list_height);
+  if (quick) {
+    place(quick, stack_top);
+  }
+  place(panel_, stack_top + quick_space);
 }
 
 void ContextMenuHost::LayoutActionSheet() {
@@ -906,6 +1017,10 @@ void ContextMenuHost::Dismiss() {
   menu_editor_ = nullptr;
   menu_anchor_ = nullptr;
   copy_snapshot_.clear();
+  if (ui::Element* taker = held_focus_taker_.get()) {
+    taker->RemoveProperty("focus"); // a tap on the item puts the keyboard away again
+  }
+  held_focus_taker_ = nullptr;
   // Resolved only now: removing the layer above can destroy it, and so can a
   // remount that happened while the menu was open.
   if (ui::Element* element = restore.get()) {
@@ -926,6 +1041,9 @@ void ContextMenuHost::RequestDismiss(bool restore_focus) {
 }
 
 void ContextMenuHost::Update() {
+  if (release_guard_done_) {
+    ReleaseGuardEnd();
+  }
   if (dismiss_pending_) {
     Dismiss();
   }
@@ -998,6 +1116,16 @@ void ContextMenuHost::HandleMenuAction(int index) {
   }
 }
 
+void ContextMenuHost::ApplyExpandedSheetHeight() {
+  if (!panel_ || !context_) {
+    return;
+  }
+  const ui::Vector2i dims = context_->GetDimensions();
+  char height_buf[32];
+  std::snprintf(height_buf, sizeof(height_buf), "%.0fpx", std::max(0.f, dims.y * kSheetLargeShare - BottomInsetPx()));
+  panel_->SetProperty("height", height_buf);
+}
+
 void ContextMenuHost::ExpandSheet(const int index) {
   if (index < 0 || index >= static_cast<int>(active_actions_.size()) || !panel_ || !context_ || sheet_expanded_) {
     return;
@@ -1011,10 +1139,7 @@ void ContextMenuHost::ExpandSheet(const int index) {
   // The rows and the reactions give way to the action's body; the sheet stands at the large stop, its top edge where
   // a page sheet's is.
   panel_->SetClass("context-menu-sheet--expanded", true);
-  const ui::Vector2i dims = context_->GetDimensions();
-  char height_buf[32];
-  std::snprintf(height_buf, sizeof(height_buf), "%.0fpx", std::max(0.f, dims.y * kSheetLargeShare - BottomInsetPx()));
-  panel_->SetProperty("height", height_buf);
+  ApplyExpandedSheetHeight();
   expand(mount, [this]() {
     on_dismissed_ = nullptr; // chosen, not dismissed
     RequestDismiss();
@@ -1166,6 +1291,31 @@ bool ContextMenuHost::HandleSheetEvent(ui::Event& event) {
 }
 
 void ContextMenuHost::ProcessEvent(ui::Event& event) {
+  if (release_guard_document_) {
+    switch (event.GetId()) {
+      case ui::EventId::Mousedown:
+        // A new press: the long press's finger is gone already (cancelled), nothing left to swallow.
+        release_guard_swallow_click_ = false;
+        release_guard_done_ = true;
+        if (ui::Element* taker = held_focus_taker_.get()) {
+          taker->RemoveProperty("focus"); // this press picks its focus as ever
+        }
+        held_focus_taker_ = nullptr;
+        return;
+      case ui::EventId::Mouseup:
+        release_guard_done_ = true; // the click of this lift follows at once; Update() ends the guard after it
+        return;
+      case ui::EventId::Click:
+        if (release_guard_swallow_click_) {
+          release_guard_swallow_click_ = false;
+          event.StopPropagation();
+          return;
+        }
+        break;
+      default:
+        break;
+    }
+  }
   if (!layer_ || dismiss_pending_) {
     return;
   }

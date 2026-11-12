@@ -47,6 +47,8 @@ struct CallActionsPorts {
   std::function<void()> decline_incoming;
   std::function<void()> leave_active;
   std::function<void()> retry_connect;
+  /** A 1:1 failed page's "Call again". */
+  std::function<void()> redial;
   std::function<void()> toggle_mute;
   std::function<void()> toggle_camera;
   std::function<void()> flip_camera;

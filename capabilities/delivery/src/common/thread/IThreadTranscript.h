@@ -46,6 +46,30 @@ public:
     }
     return AppendMessage(message);
   }
+  /**
+   * A send's outcome on one row: its delivery state, and its transport when one is given — nothing else, so a mark
+   * that lands after the row was rewritten (an edit of ours blanked) never brings its old words back.
+   * `unless_delivered`: left alone when the row already shows delivered. false when nothing changed (unknown id, or
+   * delivered under `unless_delivered`). Default (test doubles): GetMessage, then UpdateMessage.
+   */
+  virtual Roe<bool> UpdateMessageDelivery(const std::string& thread_id, const std::string& message_id,
+                                          MessageDelivery delivery, std::optional<MessageTransport> transport,
+                                          bool unless_delivered) {
+    auto found = GetMessage(thread_id, message_id);
+    if (!found) {
+      return found.error();
+    }
+    if (!found->has_value() || (unless_delivered && (*found)->delivery == MessageDelivery::Relayed)) {
+      return false;
+    }
+    ThreadMessage row = **found;
+    row.thread_id = thread_id;
+    row.delivery = delivery;
+    if (transport) {
+      row.transport = transport;
+    }
+    return UpdateMessage(row);
+  }
   /** One message by id (nullopt when unknown). Default: scan the newest page (test doubles). */
   virtual Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id,
                                                        const std::string& message_id) const {

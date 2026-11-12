@@ -8,12 +8,16 @@
 #include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "gui/chat/TranscriptRml.h"
+#include "gui/chat/ChatMenus.h"
+#include "lib/messaging/EditMessage.h"
 #include "feature/conversations/PeerDisplaySources.h"
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <memory>
+#include <sstream>
 
 namespace pbr {
 namespace {
@@ -361,6 +365,105 @@ TEST(TranscriptRmlTest, TheTimeSitsInsideTheBubble) {
   EXPECT_LT(bubble, time);
   EXPECT_LT(time, rml.rfind("</div>"));
   EXPECT_EQ(rml.find("bubble-time\">", time) + 13 + 5, rml.find("</div>", time)) << "HH:MM";
+}
+
+// An edited message says "Edited" beside its time: inside the bubble (phones) and on the meta line (desktop).
+TEST(TranscriptRmlTest, AnEditedMessageSaysEditedBesideItsTime) {
+  using namespace phone_rows;
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  TranscriptRow edited = TextRow("1", "account:a", kNoon);
+  ThreadMessage edit;
+  edit.id = "e1";
+  edit.content_type = ChatContentType::Annotation;
+  edit.target_message_id = "1";
+  edit.payload_json = BuildEditPayloadJson("1", "hi again");
+  edit.timestamp = kNoon + kMinute;
+  edited.message = WithEdit(edited.message, edit);
+  const TranscriptRow plain = TextRow("2", "account:a", kNoon + 2 * kMinute);
+  const auto rows = RenderTranscript({edited, plain}, NamedFacts());
+  ASSERT_EQ(rows.size(), 2u);
+  const std::string rml = rows[0].content_rml.c_str();
+  EXPECT_NE(rml.find("<div class=\"bubble-time\">Edited "), std::string::npos) << rml;
+  EXPECT_NE(rml.find("hi again"), std::string::npos);
+  EXPECT_EQ(std::string(rows[0].time_label.c_str()).rfind("Edited ", 0), 0u) << rows[0].time_label.c_str();
+  EXPECT_EQ(std::string(rows[1].content_rml.c_str()).find("Edited"), std::string::npos);
+  EXPECT_EQ(std::string(rows[1].time_label.c_str()).find("Edited"), std::string::npos);
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(EditedTimeLabel(edited.message, "12:00"), "已编辑 12:00");
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
+// The message menu: "Edit" sits right under "Copy" when the message may be edited.
+TEST(ChatMenusEditTest, EditSitsRightUnderCopy) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  std::vector<ContextMenuAction> actions;
+  for (const char* id : {"react_x", "reply_message", "copy_message", "ask_ai_message", "delete_message"}) {
+    actions.push_back({id, id, nullptr, nullptr});
+  }
+  bool started = false;
+  InsertEditAction(actions, [&started]() { started = true; });
+  std::vector<std::string> ids;
+  for (const ContextMenuAction& action : actions) {
+    ids.push_back(action.id);
+  }
+  EXPECT_EQ(ids, (std::vector<std::string>{"react_x", "reply_message", "copy_message", "edit_message", "ask_ai_message",
+                                           "delete_message"}));
+  EXPECT_EQ(actions[3].label, "Edit");
+  actions[3].run();
+  EXPECT_TRUE(started);
+  std::vector<ContextMenuAction> no_copy{{"delete_message", "Delete", nullptr, nullptr}};
+  InsertEditAction(no_copy, nullptr);
+  EXPECT_EQ(no_copy.back().id, "edit_message");
+}
+
+// While the chat is editing a message, its menu offers nothing that would start another edit or a reply (each replaced
+// the words being edited, or did nothing): reactions, Copy and Delete stay.
+TEST(ChatMenusEditTest, WhileEditingTheMenuHasNoEditReplyOrAskAi) {
+  std::vector<ContextMenuAction> actions;
+  for (const char* id :
+       {"react_x", "react_more", "reply_message", "copy_message", "edit_message", "ask_ai_message", "delete_message"}) {
+    actions.push_back({id, id, nullptr, nullptr});
+  }
+  RemoveActionsWhileEditing(actions);
+  std::vector<std::string> ids;
+  for (const ContextMenuAction& action : actions) {
+    ids.push_back(action.id);
+  }
+  EXPECT_EQ(ids, (std::vector<std::string>{"react_x", "react_more", "copy_message", "delete_message"}));
+  std::vector<ContextMenuAction> item{
+      {"ask_ai_item", "", nullptr, nullptr}, {"copy_item", "", nullptr, nullptr}, {"share_item", "", nullptr, nullptr}};
+  RemoveActionsWhileEditing(item);
+  ASSERT_EQ(item.size(), 2u);
+  EXPECT_EQ(item[0].id, "copy_item");
+
+  // ChatMenus::ForRequest applies it to both menus while editing (it needs a live facade, so its source is read), and
+  // the controller's "Edit" entry refuses while an edit is open.
+  const auto read = [](const std::string& path) {
+    std::ifstream in(std::string(PP_SOURCE_DIR) + path, std::ios::binary);
+    std::ostringstream text;
+    text << in.rdbuf();
+    std::string source = text.str();
+    std::erase(source, '\r'); // a Windows checkout has CRLF line ends
+    return source;
+  };
+  const std::string menus = read("/src/gui/chat/ChatMenus.cpp");
+  const size_t for_request = menus.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
+  ASSERT_NE(for_request, std::string::npos);
+  const std::string body = menus.substr(for_request, menus.find("\n}\n", for_request) - for_request);
+  const std::string editing = "if (chat_.editing_message) {\n";
+  size_t uses = 0;
+  for (size_t at = body.find(editing); at != std::string::npos; at = body.find(editing, at + 1)) {
+    const size_t next = at + editing.size();
+    uses += body.find("RemoveActionsWhileEditing(actions);", next) == body.find_first_not_of(' ', next) ? 1 : 0;
+  }
+  EXPECT_EQ(uses, 2u) << "the item menu and the message menu";
+  const std::string controller = read("/src/gui/chat/ChatController.cpp");
+  const size_t start = controller.find("void ChatController::StartEditMessage(");
+  ASSERT_NE(start, std::string::npos);
+  const size_t guard = controller.find("if (presenter_.EditingIn(thread_id)) {\n    return;", start);
+  EXPECT_LT(guard, controller.find("presenter_.BeginEdit(", start)) << "checked before anything is begun";
 }
 
 // G016: the group's own chat says who ended it; the owner's device says "You".

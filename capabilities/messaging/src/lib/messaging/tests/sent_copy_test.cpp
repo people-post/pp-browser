@@ -1,6 +1,7 @@
 #include "lib/messaging/SentCopy.h"
 
 #include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/messaging/EditMessage.h"
 
 #include "common/ValueJson.h"
 
@@ -63,6 +64,25 @@ TEST(SentCopyTest, ControlsAreNotCopiedReactionsAndDeletesAre) {
   EXPECT_TRUE(sent_copy::Mirrored(SentText("hello")));
   EXPECT_FALSE(sent_copy::BuildNotice(SentText("x"), SentCopyTarget{}));
   EXPECT_FALSE(sent_copy::BuildNotice(SentText("x"), SentCopyTarget{.peer_account = "a", .group_id = "g"}));
+}
+
+// An edit we made goes to our other devices as a copy, carrying its own send time (the time judged where it arrives).
+TEST(SentCopyTest, AnEditIsCopiedWithItsTargetTextAndSendTime) {
+  ThreadMessage edit = SentText("see you at 9");
+  edit.id = "edit-1";
+  edit.content_type = ChatContentType::Annotation;
+  edit.target_message_id = "m-1";
+  edit.payload_json = BuildEditPayloadJson("m-1", "see you at 9");
+  ASSERT_TRUE(sent_copy::Mirrored(edit));
+  auto notice = sent_copy::BuildNotice(edit, SentCopyTarget{.peer_account = "account:bob"});
+  ASSERT_TRUE(notice);
+  auto copy = sent_copy::Parse(OverTheWire(*notice));
+  ASSERT_TRUE(copy && copy->has_value());
+  const ThreadMessage& read = (*copy)->message;
+  EXPECT_TRUE(IsEditAnnotation(read));
+  EXPECT_EQ(read.target_message_id, std::optional<std::string>("m-1"));
+  EXPECT_EQ(EditTextOf(read), std::optional<std::string>("see you at 9"));
+  EXPECT_EQ(read.timestamp, 1'761'235'200'000);
 }
 
 TEST(SentCopyTest, OtherSystemMessagesAreNotCopiesAndBrokenOnesAreRefused) {

@@ -421,8 +421,8 @@ TEST_F(AutoDownloadByNetworkTest, ADownloadedLargePictureGetsItsThumbnailFromThe
   EXPECT_EQ(files[0].string(), AttachmentPosterPath(dir_.string(), "t1", fields.content_hash));
 }
 
-// After a restart (the view cache wiped) the transcript asks again: made once on a worker however often it asks,
-// from the store into memory, and the change is notified.
+// After a restart (the view cache wiped) the chat asks again: made once on a worker however often it asks, from the
+// store into memory, and the chat is told (its own callback, not a whole-chat change).
 TEST_F(AutoDownloadByNetworkTest, AWipedThumbnailIsMadeAgainOnceOnAWorkerAndNotified) {
   ChatAttachmentFields fields;
   StorePicture("pic", &fields); // stored earlier; its thumbnail went with the view cache at the restart
@@ -430,7 +430,8 @@ TEST_F(AutoDownloadByNetworkTest, AWipedThumbnailIsMadeAgainOnceOnAWorkerAndNoti
   ASSERT_FALSE(AttachmentPosterExists(dir_.string(), "t1", fields.content_hash));
 
   std::atomic<int> changed{0};
-  workflow_.SetOnChanged([&changed]() { ++changed; });
+  workflow_.SetOnChatPreviewDone(
+      [&changed](const std::string&, const std::vector<uint8_t>&, const bool made) { changed += made ? 1 : 0; });
   std::atomic<int> calls{0};
   std::atomic<bool> same_bytes{false};
   std::atomic<bool> on_caller_thread{true};
@@ -447,10 +448,10 @@ TEST_F(AutoDownloadByNetworkTest, AWipedThumbnailIsMadeAgainOnceOnAWorkerAndNoti
         return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
       }});
 
-  workflow_.RequestImageThumbnail("t1", fields);
+  workflow_.RequestChatPreview("t1", fields);
   ASSERT_TRUE(WaitFor([&] { return calls.load() == 1; }));
-  workflow_.RequestImageThumbnail("t1", fields); // a re-render while it is being made
-  workflow_.RequestImageThumbnail("t1", fields);
+  workflow_.RequestChatPreview("t1", fields); // a re-render while it is being made
+  workflow_.RequestChatPreview("t1", fields);
   release.set_value();
   ASSERT_TRUE(WaitFor([&] {
     AppRuntime::RunUITasks();
@@ -472,13 +473,14 @@ TEST_F(AutoDownloadByNetworkTest, AThumbnailThatCannotBeMadeIsNotTriedAgainThisS
     ++calls;
     return Error("too many pixels");
   }});
-  workflow_.RequestImageThumbnail("t1", fields);
+  workflow_.RequestChatPreview("t1", fields);
   ASSERT_TRUE(WaitFor([&] { return calls.load() == 1; }));
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  workflow_.RequestImageThumbnail("t1", fields);
+  workflow_.RequestChatPreview("t1", fields);
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   EXPECT_EQ(calls.load(), 1);
   EXPECT_FALSE(AttachmentPosterExists(dir_.string(), "t1", fields.content_hash));
+  EXPECT_TRUE(workflow_.ChatPreviewFailed("t1", fields.content_hash)) << "its row is a file card";
 }
 
 // Kenneth 2026-11-06: a sound file's music card reads the file's own tags once, on a worker, and draws them after the

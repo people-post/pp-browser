@@ -2581,6 +2581,15 @@ input.checkbox:checked {
   background-color: #ffffff;
 }
 
+/* A chat picture whose preview is being made (B203): a box of the picture's own size, so nothing moves when it comes. */
+.chat-picture-placeholder {
+  background-color: #d1d1d6;
+}
+
+.chat-picture-placeholder .chat-picture-placeholder-icon {
+  image-color: #aeaeb2;
+}
+
 .shell-chat-overlay .message-row-user .chat-attachment-card,
 .shell-chat-overlay .message-row-user .chat-voice-card {
   background-color: #2e8dff;

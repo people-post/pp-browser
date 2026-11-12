@@ -111,6 +111,8 @@ struct ChatScreenState {
   ui::String image_draft_name;
   /** A reply is being written to a quoted message: the bar above the composer input. */
   bool quote_reply = false;
+  /** The open chat is editing one of our messages (the "Edit message" bar; attach / voice off). */
+  bool editing_message = false;
   ui::String quote_reply_text;
   bool show_thread_actions = false;
   bool show_peer_sheet = false;

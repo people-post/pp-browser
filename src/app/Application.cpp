@@ -274,6 +274,8 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     chat.OnShellLayoutSynced();
   });
 
+  shell.SetOnSyncLayoutMeasured([&chat](int64_t ms) { chat.OnSyncLayoutMeasured(ms); });
+
   shell.SetOnSessionSwipeAction([&chat](const std::string& thread_id, SessionSwipeAction action) {
     chat.OnSessionSwipeAction(thread_id, action);
   });
@@ -391,6 +393,8 @@ Application::Application() {
   flow_ = std::make_unique<FlowCoordinator>();
   shell_ = std::make_unique<ShellHost>();
   call_ = std::make_unique<CallController>();
+  // PIN locked = the vault is not open (the PIN gate is up): a ring on the phone's call screen stays there meanwhile.
+  call_->BindPinLocked([this]() { return !secrets_ || !secrets_->IsUnlocked(); });
   if constexpr (kDevToolsBuild) {
     // Android merge check for the mic rebuild: `adb shell setprop debug.pp.skip_route_reorder 1` makes the next
     // speaker tap change the route the old way (before the mic closes); set it back to 0 before arming it again.
@@ -1531,6 +1535,7 @@ void Application::WireCalls() {
     call_actions.decline_incoming = [this]() { call_->DeclineIncoming(); };
     call_actions.leave_active = [this]() { call_->LeaveActive(); };
     call_actions.retry_connect = [this]() { call_->RetryConnect(); };
+    call_actions.redial = [this]() { call_->RedialCall(); };
     call_actions.toggle_mute = [this]() { call_->ToggleMute(); };
     call_actions.toggle_camera = [this]() { call_->ToggleCamera(); };
     call_actions.flip_camera = [this]() { call_->FlipCamera(); };
@@ -2662,9 +2667,13 @@ void Application::Run() {
     if (!Backend::ProcessEvents(context, ProcessKeyDown, true)) {
       break;
     }
+    UiCostCounters::Instance().AddLoop();
     // The frame's work starts with the posted UI tasks: that is where a new message's display sync runs.
     const auto frame_started = std::chrono::steady_clock::now();
     const bool count_slow_frame = logged_first_present; // false for the first presented frame (startup)
+    if (AppRuntime::HasPendingUITasks()) {
+      UiCostCounters::Instance().AddUiTaskTurn(); // RunUITasks does not say how many it ran
+    }
     AppRuntime::RunUITasks();
     const auto tasks_done = std::chrono::steady_clock::now();
 
@@ -2675,13 +2684,25 @@ void Application::Run() {
     if (shell_->State().nav_tab == NavTab::Contacts || contacts_->DetailSheetOpen()) {
       contacts_->Tick();
     }
-    call_->Tick();
+    {
+      UiCostTimer timer(&UiCostCounters::AddCallTickUs);
+      call_->Tick();
+    }
     qr_scan_->Tick();
     avatar_crop_->Tick();
-    chat_->Update();
+    {
+      UiCostTimer timer(&UiCostCounters::AddChatUpdateUs);
+      chat_->Update();
+    }
     ContextMenuHost::Instance().Update();
-    shell_->Update(context);
-    context->Update();
+    {
+      UiCostTimer timer(&UiCostCounters::AddShellUpdateUs);
+      shell_->Update(context);
+    }
+    {
+      UiCostTimer timer(&UiCostCounters::AddCtxUpdateUs);
+      context->Update();
+    }
     const auto layout_done = std::chrono::steady_clock::now();
     chat_->AfterLayout();
     // After Context::Update (which resets next_update_timeout): arm power-save for shell timers.
@@ -2733,6 +2754,7 @@ void Application::Run() {
                              std::chrono::duration_cast<std::chrono::microseconds>(draw_done - draw_started).count());
       const auto frame_ms = std::chrono::duration_cast<std::chrono::milliseconds>(draw_done - frame_started).count();
       if (count_slow_frame && frame_ms >= kSlowFrameMs) {
+        UiFrameStats::AddSlowFrame();
         if (frame_done - last_slow_frame_line >= std::chrono::seconds(1)) {
           MetricsLine("ui.slow_frame")
               .Add("ms", static_cast<int64_t>(frame_ms))
@@ -2875,6 +2897,7 @@ void Application::Shutdown() {
     call_->BindShellCallChrome({});
     call_->BindPeerLinkRefresh(nullptr);
     call_->BindPeoplePickerNotify({});
+    call_->BindPinLocked({});
   }
   if (chat_) {
     chat_->BindCallActions({});

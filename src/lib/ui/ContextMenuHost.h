@@ -74,7 +74,8 @@ public:
   /// Compact layout uses the small bottom sheet for ShowActions and for long-press item menus; floats stay clamped.
   void SetCompactLayout(bool compact);
   /// Height at the bottom of the window that is covered (on-screen keyboard, bottom chrome); menus stay above it.
-  void SetBottomInsetDp(int inset_dp) { bottom_inset_dp_ = inset_dp; }
+  /// An open bottom sheet is placed again when the value changes (the keyboard hides while it is up).
+  void SetBottomInsetDp(int inset_dp);
   /// The home-indicator strip at the bottom of a phone screen (0 while the keyboard is up): the sheet's rows stay above it.
   void SetHomeIndicatorDp(int inset_dp) { home_indicator_dp_ = inset_dp; }
   /// The title of the phone sheet a long press opens (a chat message, a chat row), "" for none.
@@ -141,7 +142,17 @@ private:
   void HandleMenuAction(int index);
   /// The phone sheet grows for its `expand` action at `index` (see ContextMenuAction::expand).
   void ExpandSheet(int index);
+  /// Writes the grown sheet's height (the large stop minus the keyboard); on expanding and when the inset changes.
+  void ApplyExpandedSheetHeight();
   void RequestDismiss(bool restore_focus = false);
+  /// A long press opened the phone's item sheet while a text field has the focus: the finger's lift must not move the
+  /// focus to the pressed item (the keyboard would close under the sheet). Undone in Dismiss().
+  void HoldTypingFocus(ui::Element* target);
+  /// The part both share: while a text field has the focus, the item `target` would take it from the lift is held.
+  void HoldFocusFrom(ui::Element* target);
+  /// A long press on an item that has no menu: the lift is no tap (no click, no focus move). Ended in Update().
+  void SwallowEmptyLongPressRelease(ui::Element* target);
+  void ReleaseGuardEnd();
 
   ui::Context* context_ = nullptr;
   ui::Context* menu_context_ = nullptr;
@@ -158,6 +169,12 @@ private:
   // Observer, not a raw pointer: the focused element can be destroyed (pane remount)
   // while the menu is open, and Dismiss() must not focus a freed element.
   ui::ObserverPtr<ui::Element> focus_restore_;
+  /// The pressed item held from taking the focus while the sheet is open (HoldTypingFocus).
+  ui::ObserverPtr<ui::Element> held_focus_taker_;
+  /// SwallowEmptyLongPressRelease: the document the guard listens on, and where it stands.
+  ui::ObserverPtr<ui::Element> release_guard_document_;
+  bool release_guard_swallow_click_ = false;
+  bool release_guard_done_ = false;
   ui::Element* layer_ = nullptr;
   ui::Element* panel_ = nullptr;
   bool dismiss_pending_ = false;

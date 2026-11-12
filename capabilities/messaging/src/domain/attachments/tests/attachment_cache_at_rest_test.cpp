@@ -226,7 +226,7 @@ TEST_F(AttachmentCacheAtRestTest, LargeImageThumbnailIsMadeFromBytesInMemoryAndO
   EXPECT_EQ(*thumb, AttachmentPosterPath(profile_dir_, thread_id_, *hash));
   EXPECT_TRUE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
   EXPECT_TRUE(same_bytes) << "the hook gets the decrypted picture itself";
-  EXPECT_EQ(seen_dimension, 480);
+  EXPECT_EQ(seen_dimension, kImagePreviewMaxSide); // the chat bubble's preview size (B203)
   EXPECT_TRUE(files_while_running.empty()) << "nothing was written for the hook";
   EXPECT_TRUE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "image/png", "pic.png").empty())
       << "no plaintext view is left behind";

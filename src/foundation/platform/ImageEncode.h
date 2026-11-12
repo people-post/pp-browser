@@ -15,6 +15,10 @@ namespace pbr {
 bool SurfaceHasAlpha(SDL_Surface* surface);
 Roe<std::vector<uint8_t>> EncodeJpegBytes(SDL_Surface* surface, int quality);
 Roe<std::vector<uint8_t>> EncodePngBytes(SDL_Surface* surface);
+/** `source` laid on white, without alpha (a JPEG has none: what was transparent would come out as whatever colour
+ *  lies under the alpha, often black). Consumes `source`; returns it unchanged when it has no alpha or colour key,
+ *  nullptr when the copy cannot be made. */
+SDL_Surface* FlattenOntoWhite(SDL_Surface* source);
 // Returns a new surface whose long edge is <= max_dimension (a copy when already small; never upscales).
 // Caller owns the result; nullptr on failure.
 SDL_Surface* ScaleToMaxDimension(SDL_Surface* source, int max_dimension);

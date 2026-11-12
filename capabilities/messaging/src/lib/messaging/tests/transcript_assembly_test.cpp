@@ -123,5 +123,15 @@ TEST(TranscriptAssemblyTest, AnAiAnswerCarriesTheQuestion) {
   EXPECT_FALSE(rows[2].asked_question) << "once";
 }
 
+// An edit row is never shown: not as a row of its own, not as a badge on its message, not when its message is missing.
+TEST(TranscriptAssemblyTest, AnEditRowIsNeverShown) {
+  const ThreadMessage said = Msg("m1", "account:peer", "see you at 9", 1);
+  ThreadMessage edit = Reaction("e1", "account:peer", "m1", "see you at 9", 2, kAnnotationTypeEdit);
+  ThreadMessage waiting = Reaction("e2", "account:peer", "m-missing", "for a message not here", 3, kAnnotationTypeEdit);
+  const auto rows = AssembleTranscript({said, edit, waiting}, nullptr);
+  EXPECT_EQ(Ids(rows), (std::vector<std::string>{"m1"}));
+  EXPECT_TRUE(rows[0].annotation_badges.empty());
+}
+
 } // namespace
 } // namespace pbr

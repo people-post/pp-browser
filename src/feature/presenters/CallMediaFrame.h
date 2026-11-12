@@ -8,6 +8,7 @@
 #include "lib/calls/CallScreen.h"
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 
@@ -57,6 +58,8 @@ struct CallMediaFacts {
 
   /** V060: the OS has this device's call audio (CallLocalHold). */
   bool local_on_hold = false;
+  /** The microphone looks blocked (the failed page's hints.mic_blocked: CallUiBackend::DirectConnectMissingMic). */
+  bool mic_blocked = false;
 
   // --- What the media health is evaluated from (EvaluateCallMediaHealth).
   MediaEngineHealth engine;
@@ -137,6 +140,52 @@ struct CallStatusLine {
   bool operator==(const CallStatusLine&) const = default;
 };
 
+/**
+ * DEV/PLAN-call-failed-redial.md 9-10: what one tick of a call says about one-way audio and a lost microphone. A 1:1
+ * call says nothing in the middle of its page: while its connecting steps are up, the steps say it all; after connect,
+ * a bottom pill. A group call keeps its hint line (and the GUI's old audio-fault toast).
+ */
+struct CallHintPromptInput {
+  bool group = false;
+  bool video = false;
+  /** The connecting steps are on screen (a 1:1 call's finished list held after connect included). */
+  bool steps_shown = false;
+  /** The hint as decided before (CallMediaHintClock, a lost mic) and whether the hint line would show it. */
+  std::string hint_key;
+  bool hint_shown = false;
+  CallAudioAsymmetry asymmetry = CallAudioAsymmetry::None;
+  bool capture_lost = false;
+  /** How long this device has sent without hearing back, counted from when the steps went (0: not so now). */
+  int64_t one_way_ms = 0;
+  /** The same for hearing them while sending nothing (a mic still opening, a route change: said after 4 s). */
+  int64_t not_sending_ms = 0;
+  /** The call could not connect, or reconnects: its page says so itself, no pill over it. */
+  bool quiet = false;
+  bool mic_blocked = false;
+  /** On hold here or there: the silence is by design. */
+  bool on_hold = false;
+  int64_t now_ms = 0;
+};
+
+struct CallHintPrompt {
+  /** The hint line in the middle of the page (a locale key; "" none). */
+  std::string center_key;
+  /** A bottom pill to show now (a locale key; "" none), in the error style when `pill_alarm` (the user must act). */
+  std::string pill_key;
+  bool pill_alarm = false;
+};
+
+/**
+ * One-way audio (either way) this long after the steps went is said: the first packets of a call often take a moment,
+ * and a mic opening or a route change (Bluetooth) leaves a short gap in sending.
+ */
+inline constexpr int64_t kOneWayPillAfterMs = 4'000;
+/** The same pill at most this often in one call; still so after it, it is said again. */
+inline constexpr int64_t kHintPillEveryMs = 30'000;
+
+/** Pure: the tick's prompt; `last_pill_ms` is when each pill (by key) was last shown in this call. */
+CallHintPrompt DecideCallHintPrompt(const CallHintPromptInput& in, const std::map<std::string, int64_t>& last_pill_ms);
+
 /** One tick of the call on screen's media, as the GUI renders it and pp-app-probe reads it. */
 struct CallMediaScreen {
   std::string call_id;
@@ -151,6 +200,12 @@ struct CallMediaScreen {
   /** The one-way-audio hint (CallMediaHintClock; "" none), and whether the hint line shows it (not on hold). */
   std::string hint_key;
   bool hint_shown = false;
+  /** What the page shows of it (DecideCallHintPrompt): the middle line ("" none), and this tick's pill ("" none). */
+  std::string center_hint_key;
+  std::string pill_key;
+  bool pill_alarm = false;
+  /** The hint's sentences are this frame's pills (a 1:1 call): the GUI's old audio-fault toast does not say them too. */
+  bool hint_pilled = false;
   CallStoryView story;
   CallReconnectView reconnect;
 };
@@ -199,6 +254,11 @@ private:
   CallLinkHealth link_health_;
   int64_t link_sampled_ms_ = 0;
   CallMediaHintClock hint_clock_;
+  /** The hint's pills (DecideCallHintPrompt): when the steps went and one-way audio began (0: not), the last of each. */
+  int64_t steps_gone_ms_ = 0;
+  int64_t one_way_since_ms_ = 0;
+  int64_t not_sending_since_ms_ = 0;
+  std::map<std::string, int64_t> last_pill_ms_;
   CallConnectStory story_;
   CallReconnectCapsule reconnect_;
 };

@@ -19,6 +19,9 @@
 #include "gui/chat/PendingUploadRows.h"
 #include "feature/presenters/AttachmentPicks.h"
 #include "gui/chat/PhotoPreview.h"
+#include "gui/chat/ChatOpenMetrics.h"
+#include "gui/chat/ChatPictureTextures.h"
+#include "gui/chat/PreviewRedrawBatcher.h"
 #include "gui/chat/VoiceComposer.h"
 #include "gui/chat/VoicePlayback.h"
 #include "gui/chat/ChatMentionPicker.h"
@@ -130,6 +133,8 @@ public:
   bool Setup(ui::Context* context);
   /** Non-owning; pass nullptr to clear. Rebinds sub-presenters (scroller/chrome). */
   void BindConversationsFacade(ConversationsFacade* facade);
+  /** Shown messages a chat of `kind` opens with (the scroller's first screen): a group more than a direct or AI chat. */
+  static size_t FirstScreenMessages(ThreadKind kind);
   /**
    * G021: `text` holds an invite link (`pp://join/…`, opened, pasted or scanned): asks to join by it — the preview,
    * then the group's chat — and returns true. False: not one (the caller tries a contact locator).
@@ -164,6 +169,8 @@ public:
   void Update();
   /** Call after ui::Context::Update so follow-tail uses fresh layout heights. */
   void AfterLayout();
+  /** A shell SyncLayout finished in `ms`: the one after a chat was opened completes its chat.open metric. */
+  void OnSyncLayoutMeasured(int64_t ms);
   void Shutdown();
   void OnApplicationPause();
   /** The vault locked, or another tab was opened: a recording is thrown away and a clip stops. */
@@ -416,8 +423,11 @@ private:
   std::vector<MessageDisplayRow> BuildMessageRows(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
                                                   std::optional<int64_t> newest_inclusive);
   void OpenAttachment(const std::string& message_id);
-  /** A tap on a picture: full-screen preview with a spinner now, the viewer when the file is ready. */
-  void OpenPicture(const std::string& message_id, const std::string& local_path);
+  /**
+   * A tap on a picture (or its placeholder): a spinner now, then the system viewer with the full picture (found from
+   * the message, never the bubble's preview); its own share / save are the way out.
+   */
+  void OpenPicture(const std::string& message_id);
   /** Group chats: a tap on a member's avatar or name opens their page over the chat (contact or not). */
   void OpenGroupSender(const std::string& message_id);
   void DownloadAttachment(const std::string& message_id);
@@ -429,6 +439,7 @@ private:
   /** What the user reads in a message of the active thread ("" when not found). */
   std::string MessagePlainText(const std::string& message_id) const override;
   bool IsContactCard(const std::string& message_id) const override;
+  bool IsCallRecord(const std::string& message_id) const override;
   void AddContactFromCard(const std::string& message_id) override;
   /**
    * Reply / Ask AI: shows `text` as the quote bar above the composer; the next send carries it as a quote.
@@ -436,6 +447,19 @@ private:
    */
   void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {}) override;
   void CancelQuoteReply();
+  /** Editing a sent message (DEV/PLAN-message-edit.md): ChatMenusHost's "Edit", and the bar's × while editing. */
+  bool CanEditMessage(const std::string& message_id) override;
+  void StartEditMessage(const std::string& message_id) override;
+  void CancelEditMessage();
+  /** Send while editing: unchanged → just ends; too late → a pill, still editing; sent → ends, the draft comes back. */
+  void SendEditedMessage();
+  /**
+   * The edited message was deleted meanwhile (another device): editing ends with a pill (in the open chat). The edit bar
+   * then follows the chat shown.
+   */
+  void EndEditIfTargetGone();
+  /** The edit bar and the attach / voice lock follow the open chat's edit state. */
+  void SyncEditingState();
   /** A tap on the quote of reply `reply_message_id`: scrolls to the message it quotes, if it is on screen. */
   void JumpToQuotedMessage(const std::string& reply_message_id);
   /** A tap on link `link_index` of a plain-text message: confirms the host, then opens it. */
@@ -720,6 +744,55 @@ private:
    * automatic sending has stopped, else the bottom pill says why (still trying, or why it did not go out).
    */
   void OnSendMarkTapped(const std::string& message_id);
+  /**
+   * Step 0 of DEV/PLAN-chat-picture-previews.md, measurement only. Opening a chat (FinalizeThreadDisplay) arms
+   * `armed`; the next display sync records its rows, pictures and build time and sets `layout_pending`; the next
+   * ShellHost::SyncLayout to end (OnSyncLayoutMeasured) adds its own time and emits chat.open.
+   */
+  struct ChatOpenProbe {
+    bool armed = false;
+    bool layout_pending = false;
+    int64_t rows = 0;
+    int64_t pictures = 0;
+    int64_t placeholders = 0;
+    int64_t build_ms = 0;
+    /** The open's first screen (DEV/PLAN-chat-first-screen-rows.md): ok / short / miss. */
+    ChatTranscriptScroller::FirstScreen first_screen = ChatTranscriptScroller::FirstScreen::Miss;
+    std::chrono::steady_clock::time_point built_at{};
+  };
+  ChatOpenProbe open_probe_;
+  /** The chat page was on screen at the last Update; leaving it (Back, another tab, no thread) starts the 5 s wait. */
+  bool chat_showing_ = false;
+  /** `*_turn` tells a stale timer firing from the armed one; `chat_window_alive_` keeps one from a destroyed controller. */
+  uint64_t chat_exit_turn_ = 0;
+  uint64_t chat_paged_turn_ = 0;
+  std::shared_ptr<int> chat_window_alive_ = std::make_shared<int>(0);
+  bool ChatShowing() const;
+  void PollChatShowing();
+  /**
+   * B203: the chat pictures the page shows, counted per file. A file no row shows any more (trimmed, deleted, another
+   * chat; the chat left, the vault locked) is queued, and its texture is released (ui::ReleaseTexture) two frames
+   * later, once the page no longer has it.
+   */
+  ChatPictureTextures picture_textures_;
+  std::vector<std::string> textures_release_queued_;
+  std::vector<std::string> textures_release_ready_;
+  void SyncPictureTextures();
+  void QueueTextureRelease(std::vector<std::string> srcs);
+  void ReleaseQueuedTextures();
+  /** The vault was seen locked (the chat's pictures were turned into placeholders); unlocked, the rows are redrawn. */
+  bool vault_locked_seen_ = false;
+  /** B203: previews arriving are drawn into their rows at most every 250 ms, only the picture clips replaced. */
+  PreviewRedrawBatcher preview_batcher_;
+  std::unordered_set<std::string> previews_failed_;
+  void OnChatPreviewDone(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made);
+  void RedrawPreviews();
+  /** chat.previews: the open's placeholders until their previews are drawn (or the chat is left). */
+  ChatPreviewsProbe previews_probe_;
+  void FinishPreviewsProbe();
+  /** Once the open's layout has settled: which placeholders are on screen (chat.previews' visible_ms). */
+  void MeasureVisiblePreviews();
+  void ScheduleChatWindowMetric(std::chrono::milliseconds delay, bool exited);
   bool mesh_ready_ = false;
   ChatTranscriptScroller scroller_;
   WorkingSetController working_set_;

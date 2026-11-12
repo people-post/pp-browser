@@ -11,6 +11,8 @@ pp_browser_add_feature_library(pp_feature_presenters
     CallMediaFrame.cpp
     CallMediaHintClock.cpp
     CallReconnectCapsule.cpp
+    CallRingerOutput.cpp
+    CallRingHandBack.cpp
     CallRingSteps.cpp
     CallStepScroll.cpp
     CallStoryList.cpp
@@ -26,6 +28,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     GroupLinkText.cpp
     HomeBrief.cpp
     HomeToday.cpp
+    MessageEdit.cpp
     MessageResend.cpp
     NewCallGuard.cpp
     PendingUpload.cpp

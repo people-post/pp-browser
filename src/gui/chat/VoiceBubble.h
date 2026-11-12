@@ -56,6 +56,10 @@ struct AudioCardFace {
   int64_t duration_ms = 0; // its length from its tags (0: unknown, the time stays empty until it plays)
 };
 
+/** The music card's cover without a picture (also what a cover becomes under the PIN lock: DropPictureImages). */
+inline constexpr const char* kAudioCoverNoteRml =
+    "<svg class=\"chat-audio-cover-note\" src=\"../icons/v2/music.svg\" width=\"24\" height=\"24\"></svg>";
+
 /**
  * A sound file sent as an attachment (an MP3), played in place: a small music card. The cover on the left, the title
  * and subtitle (one line each, ellipsised) on the right; under them the play / pause button, a bar that takes the

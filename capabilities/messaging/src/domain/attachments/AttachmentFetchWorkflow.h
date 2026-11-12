@@ -16,6 +16,7 @@
 #include "lib/people/IdentityStore.h"
 
 #include "common/Error.h"
+#include "common/WorkerPool.h"
 
 #include <condition_variable>
 #include <deque>
@@ -40,6 +41,15 @@ public:
   using ChangedCallback = std::function<void()>;
   using GridThumbnailCallback =
       std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)>;
+  /** A chat picture's preview (RequestChatPreview) is done: `made` true when it exists, false when it cannot be made. */
+  using ChatPreviewCallback =
+      std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made)>;
+
+  AttachmentFetchWorkflow() = default;
+  /** Drops the previews and grid thumbnails not started, waits for those being made and joins their threads. */
+  ~AttachmentFetchWorkflow() override;
+  AttachmentFetchWorkflow(const AttachmentFetchWorkflow&) = delete;
+  AttachmentFetchWorkflow& operator=(const AttachmentFetchWorkflow&) = delete;
 
   void SetProfileDataDir(std::string profile_dir);
   /** The profile's content store (the hub's); none: nothing is stored or found. */
@@ -81,6 +91,8 @@ public:
   void SetOnChanged(ChangedCallback callback);
   /** A storage-grid thumbnail (RequestGridThumbnail) was made; called on the UI thread instead of SetOnChanged's. */
   void SetOnGridThumbnailReady(GridThumbnailCallback callback);
+  /** A chat preview (RequestChatPreview) was made or failed; called on the UI thread instead of SetOnChanged's. */
+  void SetOnChatPreviewDone(ChatPreviewCallback callback);
 
   Roe<void> SetDek(ByteVector dek) override;
   void ClearDek() override;
@@ -130,9 +142,9 @@ public:
   void ReleaseBytesForSend(const std::vector<uint8_t>& content_hash);
 
   /**
-   * A thumbnail for a cell of the storage grid: an image of any size, decrypted into memory on a background worker
-   * and made by the platform's thumbnail hook (the chat's large-image thumbnail, same file). At most two at once;
-   * a video without a poster is not decrypted (nothing is made). Calls the grid-thumbnail callback when one is
+   * A thumbnail for a cell of the storage grid: an image of any size, decrypted into memory on the previews' own
+   * threads (not the shared worker pool) and made by the platform's thumbnail hook (the chat's large-image thumbnail,
+   * same file). At most two at once; a video without a poster is not decrypted (nothing is made). Calls the grid-thumbnail callback when one is
    * made. Returns at once. While locked the jobs wait and start at the next unlock; a picture the hook cannot
    * thumbnail is not tried again until then. `page_generation` names the page that asked: CancelGridThumbnails
    * drops its jobs not started yet.
@@ -179,17 +191,27 @@ public:
   void MaybeBuildPoster(const std::string& thread_id, const ChatAttachmentFields& fields, bool after_open = false);
 
   /**
-   * Best-effort low-res thumbnail of an image above kMaxDirectAttachmentBytes (the chat shows it in place of a file
-   * card; a tap opens the original), made from `plaintext` already in hand: call on a worker, not under a lock.
+   * Best-effort preview (kImagePreviewMaxSide) of a picture longer than that on its long side, or of any picture above
+   * kMaxDirectAttachmentBytes (its size is not read without the plaintext): the chat bubble shows it, a tap opens the
+   * original. Made from `plaintext` already in hand: call on a worker, not under a lock. A lock (or another unlock) or
+   * a delete of the bytes while it is written takes it back, as RunGridThumbnails does.
    */
   void MaybeBuildImageThumbnail(const std::string& thread_id, const ChatAttachmentFields& fields,
                                 const ByteVector& plaintext);
   /**
-   * The transcript found a stored large image without its thumbnail (the view cache is wiped at every start): makes
-   * it on a background worker (decrypted once into memory) and notifies the change when it exists. Returns at once;
-   * one build per attachment at a time, and one that failed is not tried again this session.
+   * The chat shows a picture's placeholder (its preview is not there: the view cache is wiped at every start and lock):
+   * the preview is made on the previews' own threads (decrypted once into memory), at most two at once together with
+   * the storage grid's thumbnails, the latest request first (the rows are drawn oldest first: the last ones asked for
+   * are on screen). Returns at once; asked again while queued, it moves to the front. The chat-preview callback says
+   * when it is done. While locked the requests wait for the next unlock. One the platform cannot make from valid
+   * bytes is not tried again this run (ChatPreviewFailed); one stopped by a lock, a delete or CancelChatPreviews is
+   * asked again when its row shows again.
    */
-  void RequestImageThumbnail(const std::string& thread_id, const ChatAttachmentFields& fields);
+  void RequestChatPreview(const std::string& thread_id, const ChatAttachmentFields& fields);
+  /** The chat page was left: its preview requests not started yet are dropped (the storage grid's stay). */
+  void CancelChatPreviews();
+  /** Whether this picture's preview could not be made from its bytes this run (its row is a file card). */
+  bool ChatPreviewFailed(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const;
 
   /** What a sound file's card shows from its own tags (empty strings / 0 when the file names none). */
   struct AudioCardTags {
@@ -264,8 +286,14 @@ private:
   void MarkPending(const std::string& key);
   void NotifyChanged();
   void NotifyGridThumbnailReady(const std::string& thread_id, const std::vector<uint8_t>& content_hash);
-  /** Under mutex_: claims grid workers for queued jobs (at most two run); the caller posts that many. */
+  void NotifyChatPreviewDone(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made);
+  /**
+   * Under mutex_: claims workers for queued grid and chat jobs (at most two run), starting the previews' own threads
+   * at the first claim; the caller then posts that many (PostGridWorkers).
+   */
   size_t ClaimGridWorkersLocked();
+  /** `count` workers just claimed, each a RunGridThumbnails on the previews' own threads. */
+  void PostGridWorkers(size_t count);
   /** `all_auto_pace`: "download everything" on an allowed network (the wider per-minute byte limit). */
   bool AdmitByBudget(AutoDownloadBudget& budget, const std::string& sender, uint64_t byte_length, bool all_auto_pace);
   ByteVector CopyDekUnlocked() const;
@@ -275,6 +303,7 @@ private:
     std::string mime;
     uint64_t generation = 0;
   };
+  /** A worker's loop: the chat's previews (newest first), then the grid's thumbnails (in order), until none is left. */
   void RunGridThumbnails();
   /** Hex of the hashes in `targets` that something other than `items` uses (messages, sends in flight). */
   std::unordered_set<std::string> HashesUsedElsewhere(IThreadStore& store, const std::unordered_set<std::string>& items,
@@ -297,6 +326,8 @@ private:
   ChangedCallback on_changed_;
   /** Under mutex_. */
   GridThumbnailCallback on_grid_thumbnail_ready_;
+  /** Under mutex_. */
+  ChatPreviewCallback on_chat_preview_done_;
   /** Under mutex_: bumped by SetDek / ClearDek (a grid job tells a lock or a new key during its run). */
   uint64_t dek_generation_ = 0;
   mutable std::mutex mutex_;
@@ -310,8 +341,6 @@ private:
   std::unordered_map<std::string, Job> waiting_for_network_;
   /** Jobs a tap asked for (queued, in the lane or running): started whatever the network; gone when they finish. */
   std::unordered_set<std::string> forced_;
-  /** Thumbnails being made by RequestImageThumbnail, or that failed this session (not tried again). */
-  std::unordered_set<std::string> thumbnails_requested_;
   std::unordered_map<std::string, int> progress_;
   LargeTransferLane* lane_ = nullptr;
   bool allow_local_cdn_for_test_ = false;
@@ -354,8 +383,24 @@ private:
    * the hook could not thumbnail (valid bytes; forgotten at the next unlock).
    */
   std::deque<GridThumbnailJob> grid_queue_;
+  /** Workers running grid and chat jobs (one limit, kMaxGridThumbnailJobs, for both). */
   size_t grid_running_ = 0;
+  /**
+   * Under mutex_: the threads grid and chat jobs run on (kMaxGridThumbnailJobs of them), not the shared worker pool:
+   * there slow work (a session's configure) held the previews back for seconds. Started by the first claim; idle,
+   * they block in the pool's wait. Joined by the destructor, after its jobs are done.
+   */
+  std::unique_ptr<WorkerPool> preview_pool_;
+  /** Under mutex_: the destructor began; no job starts and no worker is claimed. */
+  bool previews_stopped_ = false;
   std::unordered_set<std::string> grid_failed_;
+  /**
+   * Under mutex_: the chat's preview requests not started yet (the back is the newest, taken first), the job keys
+   * queued or being made, and those the platform could not make from valid bytes (not tried again this run).
+   */
+  std::vector<GridThumbnailJob> chat_queue_;
+  std::unordered_set<std::string> chat_preview_keys_;
+  std::unordered_set<std::string> chat_preview_failed_;
 };
 
 } // namespace pbr

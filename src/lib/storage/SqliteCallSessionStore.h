@@ -4,6 +4,8 @@
 
 #include "common/Error.h"
 
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -14,7 +16,10 @@ struct sqlite3;
 
 namespace pbr {
 
-/** ICallSessionStore on profile.db (V011). */
+/**
+ * ICallSessionStore on profile.db (V011). The reads share one read-only connection, opened on the first read and kept
+ * until the store goes (a call reads several times every frame); each write opens its own connection and closes it.
+ */
 class SqliteCallSessionStore : public ICallSessionStore {
 public:
   explicit SqliteCallSessionStore(std::string profile_db_path);
@@ -41,13 +46,30 @@ public:
   Roe<void> UpdateInviteStatus(const std::string& call_id, const std::string& invitee_identity,
                                const std::string& status) const override;
 
+  /** Tests: how many times the shared read connection has been opened. */
+  size_t ReadConnectionOpensForTest() const;
+  /** Tests: runs `sql` on the shared read connection (opening it first); a write there must fail. */
+  Roe<void> ExecOnReadConnectionForTest(const std::string& sql) const;
+  /** Tests: runs on the reading thread once a read holds the read connection, before its statement. */
+  static void SetReadHookForTest(std::function<void()> hook);
+
 private:
+  struct ReadConnection;
+  class ReadStatement;
+
   Roe<sqlite3*> OpenDb() const;
+  /** The shared read connection, opened (after OpenDb has made the tables) on first use; the caller holds a reference. */
+  Roe<std::shared_ptr<ReadConnection>> ReadDb() const;
 
   std::string profile_db_path_;
   /** The schema runs once per store, not on every short-lived connection. */
   mutable std::mutex schema_mutex_;
   mutable bool schema_ready_ = false;
+  /** Guards read_db_ and read_opens_ only; a read runs its statement after letting go. */
+  mutable std::mutex read_mutex_;
+  /** A read in flight keeps its own reference: the connection closes when the store and the last read let go. */
+  mutable std::shared_ptr<ReadConnection> read_db_;
+  mutable size_t read_opens_ = 0;
 };
 
 } // namespace pbr

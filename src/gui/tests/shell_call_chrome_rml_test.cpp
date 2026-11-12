@@ -965,5 +965,112 @@ TEST(ShellCallChromeRmlTest, FromTheAwaitingPageEveryKindOfRingEndsUpAsAFreshMou
   }
 }
 
+// --- DEV/PLAN-call-failed-redial.md 1: Call again / Try later --------------------------------------------------------
+
+ShellState FailedCallPage(const bool phone, const bool group) {
+  ShellState state;
+  state.layout_mode = phone ? LayoutMode::Compact : LayoutMode::Expanded;
+  state.call_in_progress.active = true;
+  state.call_in_progress.phone_failed = true;
+  state.call_in_progress.show_retry = true;
+  state.call_in_progress.show_roster = group;
+  state.call_in_progress.offer_redial = !group; // OffersRedial: 1:1 only
+  return state;
+}
+
+TEST(ShellCallChromeRmlTest, AOneToOneFailedPageOffersCallAgainAndTryLaterOnly) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  const std::string rml = CallInProgressRml(FailedCallPage(/*phone=*/true, /*group=*/false));
+  EXPECT_EQ(Tr("call.failed.redial"), "重新呼叫");
+  EXPECT_EQ(Tr("call.failed.later"), "稍后再试");
+  EXPECT_TRUE(Has(rml, "data-event-click=\"call_redial()\">" + Tr("call.failed.redial") + "<"));
+  EXPECT_TRUE(Has(rml, "data-event-click=\"call_leave()\">" + Tr("call.failed.later") + "<")) << "the old Close's End";
+  EXPECT_FALSE(Has(rml, "call_retry()"));
+  EXPECT_FALSE(Has(rml, Tr("call.failed.retry")));
+  EXPECT_FALSE(Has(rml, Tr("call.failed.close")));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  EXPECT_EQ(Tr("call.failed.redial"), "Call again");
+  EXPECT_EQ(Tr("call.failed.later"), "Try later");
+}
+
+TEST(ShellCallChromeRmlTest, AGroupsFailedPageKeepsTryAgainAndClose) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  const std::string rml = CallInProgressRml(FailedCallPage(/*phone=*/true, /*group=*/true));
+  EXPECT_TRUE(Has(rml, "data-event-click=\"call_retry()\">" + Tr("call.failed.retry") + "<"));
+  EXPECT_TRUE(Has(rml, "data-event-click=\"call_leave()\">" + Tr("call.failed.close") + "<"));
+  EXPECT_FALSE(Has(rml, "call_redial()"));
+  EXPECT_FALSE(Has(rml, Tr("call.failed.later")));
+}
+
+TEST(ShellCallChromeRmlTest, TheBarsRetryIconCallsAgainInAOneToOneCallAndRetriesAGroups) {
+  for (const bool group : {false, true}) {
+    for (const CallChromeMode mode : {CallChromeMode::Expanded, CallChromeMode::Immersive}) {
+      ShellState state = FailedCallPage(/*phone=*/false, group);
+      state.call_in_progress.mode = mode;
+      const std::string rml = CallInProgressRml(state);
+      EXPECT_EQ(Has(rml, "data-if=\"call_in_progress_show_retry\" data-event-click=\"call_redial()\""), !group)
+          << CallChromeModeName(mode);
+      EXPECT_EQ(Has(rml, "data-if=\"call_in_progress_show_retry\" data-event-click=\"call_retry()\""), group)
+          << CallChromeModeName(mode);
+    }
+  }
+}
+
+// DEV/PLAN-call-failed-redial.md 6: the failed page kept with no call behind it is a page, not a call: it cannot shrink
+// to the call chip, and the desktop bar has nothing to mute.
+TEST(ShellCallChromeRmlTest, TheKeptFailedPageCannotShrinkToTheCallChip) {
+  ShellState live = FailedCallPage(/*phone=*/true, /*group=*/false);
+  EXPECT_TRUE(Has(CallInProgressRml(live), "call_minimize()")) << "the live failed call can shrink as before";
+  ShellState kept = live;
+  kept.call_in_progress.failed_kept = true;
+  const std::string rml = CallInProgressRml(kept);
+  EXPECT_FALSE(Has(rml, "call_minimize()"));
+  EXPECT_TRUE(Has(rml, "call_redial()"));
+  EXPECT_TRUE(Has(rml, "call_leave()"));
+}
+
+TEST(ShellCallChromeRmlTest, TheKeptFailedPageOnTheDesktopBarOnlyCallsAgainOrCloses) {
+  ShellState kept = FailedCallPage(/*phone=*/false, /*group=*/false);
+  kept.call_in_progress.failed_kept = true;
+  const std::string rml = CallInProgressRml(kept);
+  EXPECT_TRUE(Has(rml, "call_redial()"));
+  EXPECT_TRUE(Has(rml, "call_leave()"));
+  EXPECT_FALSE(Has(rml, "call_mute()"));
+  EXPECT_FALSE(Has(rml, "call_details()"));
+  EXPECT_FALSE(Has(rml, "call_minimize()"));
+  EXPECT_TRUE(Has(CallInProgressRml(FailedCallPage(false, false)), "call_mute()")) << "a live call keeps its buttons";
+}
+
+TEST(ShellCallChromeRmlTest, OnlyALiveCallOrARingAsksForLiveFrames) {
+  ShellState kept = FailedCallPage(true, false);
+  EXPECT_TRUE(CallChromeWantsLiveFrames(kept)) << "a live call's meters and pulses";
+  kept.call_in_progress.failed_kept = true;
+  EXPECT_FALSE(CallChromeWantsLiveFrames(kept)) << "the kept page does not move";
+  kept.call_ring.active = true;
+  EXPECT_TRUE(CallChromeWantsLiveFrames(kept)) << "a ring over it";
+  EXPECT_FALSE(CallChromeWantsLiveFrames(ShellState{}));
+}
+
+TEST(ShellCallChromeRmlTest, KeepingTheFailedPageRemountsIt) {
+  CallChromeSyncGate gate;
+  const auto now = std::chrono::steady_clock::now();
+  (void)gate.Decide(CallChromeLayer{.in_call_active = true, .in_call_failed_kept = false}, now);
+  EXPECT_EQ(gate.Decide(CallChromeLayer{.in_call_active = true, .in_call_failed_kept = true}, now),
+            CallChromeUpdate::Remount);
+}
+
+// Whether the page offers Call again is written into the markup: a change mounts it again.
+TEST(ShellCallChromeRmlTest, OfferingCallAgainRemountsThePage) {
+  ShellState before = FailedCallPage(true, false);
+  ShellState after = before;
+  after.call_in_progress.offer_redial = false;
+  CallChromeSyncGate gate;
+  const auto now = std::chrono::steady_clock::now();
+  (void)gate.Decide(CallChromeLayer{.in_call_active = true, .in_call_offer_redial = true}, now);
+  EXPECT_EQ(gate.Decide(CallChromeLayer{.in_call_active = true, .in_call_offer_redial = false}, now),
+            CallChromeUpdate::Remount);
+}
+
 } // namespace
 } // namespace pbr

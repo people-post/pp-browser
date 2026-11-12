@@ -10,6 +10,11 @@ inline constexpr const char* kAnnotationTypeReaction = "reaction";
 inline constexpr const char* kAnnotationTypeReactionClear = "reaction_clear";
 /** "Delete for everyone": the sender withdraws their own message (target); receivers tombstone it. */
 inline constexpr const char* kAnnotationTypeRetract = "retract";
+/**
+ * Edit: the sender replaces the text of their own message (target) with `value`, the whole new text. Receivers check it
+ * (lib/messaging/EditMessage.h) and rewrite the target row in place; the edit row itself is never shown.
+ */
+inline constexpr const char* kAnnotationTypeEdit = "edit";
 
 inline std::string BuildReactionPayloadJson(const std::string& annotation_type, const std::string& target_message_id,
                                             const std::string& emoji) {

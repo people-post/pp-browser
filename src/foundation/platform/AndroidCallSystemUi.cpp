@@ -77,11 +77,13 @@ public:
     }
   }
 
-  void CallVoid(const char* method, const std::string& call_id, const std::string& name, const bool video) {
-    if (jmethodID mid = Method(method, "(Ljava/lang/String;Ljava/lang/String;Z)V"); mid != nullptr) {
+  void CallVoid(const char* method, const std::string& call_id, const std::string& name, const bool video,
+                const bool full_screen) {
+    if (jmethodID mid = Method(method, "(Ljava/lang/String;Ljava/lang/String;ZZ)V"); mid != nullptr) {
       jstring j_id = env_->NewStringUTF(call_id.c_str());
       jstring j_name = env_->NewStringUTF(name.c_str());
-      env_->CallVoidMethod(activity_, mid, j_id, j_name, static_cast<jboolean>(video ? JNI_TRUE : JNI_FALSE));
+      env_->CallVoidMethod(activity_, mid, j_id, j_name, static_cast<jboolean>(video ? JNI_TRUE : JNI_FALSE),
+                           static_cast<jboolean>(full_screen ? JNI_TRUE : JNI_FALSE));
       ClearedException();
       env_->DeleteLocalRef(j_name);
       env_->DeleteLocalRef(j_id);
@@ -183,8 +185,9 @@ public:
   void EndPendingPushCall() override { Activity().CallVoid("endPendingPushCall"); }
   void SetPendingChangedHandler(std::function<void()> fn) override { pending_changed_ = std::move(fn); }
 
-  void ReportIncoming(const std::string& call_id, const std::string& caller_name, const bool video) override {
-    Activity().CallVoid("showIncomingCall", call_id, caller_name, video);
+  void ReportIncoming(const std::string& call_id, const std::string& caller_name, const bool video,
+                      const bool full_screen) override {
+    Activity().CallVoid("showIncomingCall", call_id, caller_name, video, full_screen);
   }
 
   void ReportEnded(const std::string& call_id) override { Activity().CallVoid("endIncomingCall", call_id); }

@@ -122,3 +122,5 @@ x-home-emoji-fill	#007aff1f	#0a84ff33	extra: phone Home card emoji button circle
 x-send-disabled	#c7c7cc	#48484a	extra: phone composer: the round Send button while an AI field is empty (disabled)
 x-call-unknown-top	#2b90ff	#2b90ff	extra: phone call page, unknown caller avatar, top of its blue gradient (a touch lighter than avatar-0)
 x-call-unknown-bottom	#0066d9	#0066d9	extra: phone call page, unknown caller avatar, bottom of its blue gradient
+x-picture-placeholder	#d1d1d6	#3a3a3c	extra: chat picture bubble while its preview is being made (B203; opaque: a translucent grey reads as blue on our own bubble)
+x-picture-placeholder-icon	#aeaeb2	#262628	extra: the photo icon on that placeholder, a touch darker than it (static; no animation)

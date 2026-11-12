@@ -24,6 +24,10 @@
 #include "lib/voice/VoiceSupport.h"
 #include "foundation/platform/PickedFileName.h"
 #include "gui/chat/AttachmentBackfillPolicy.h"
+#include "gui/chat/ChatOpenMetrics.h"
+#include "gui/chat/ChatPictureTextures.h"
+#include "gui/UiFrameStats.h"
+#include "foundation/diagnostics/OsCurrentMemory.h"
 #include "common/Diag.h"
 #include "common/Metrics.h"
 #include "feature/conversations/ConversationsFacade.h"
@@ -59,6 +63,7 @@
 #include "foundation/platform/Platform.h"
 #include "common/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "lib/calls/CallControlFamily.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "lib/messaging/MentionAlert.h"
 #include "lib/messaging/AttachmentCache.h"
@@ -471,12 +476,15 @@ ChatController::ChatController()
       .prefs_failed = []() { UserFeedback::Fail(Tr("sidebar.error.prefs_failed")); },
       .prose = [](const std::string& text) { return StructuredTextParser::PlainText(text); },
   });
+  // Measurement (chat.window): a page of older rows loaded; read the memory a second later, once they are drawn.
+  scroller_.SetOnOlderLoaded([this]() { ScheduleChatWindowMetric(std::chrono::seconds(1), /*exited=*/false); });
   scroller_.SetDirtyTurns([this]() {
     // Paging and jumps rebuild the rows: the picture being sent goes back at the end (when the rows reach it).
     if (pending_uploads_.KeepAtTail(chat_.messages, ActiveThreadId(), !scroller_.LoadedMaxDisplayOrder())) {
       chat_.has_turns = true;
     }
     DirtyChatTurns();
+    SyncPictureTextures(); // rows trimmed off the page: their pictures' textures go
   });
   working_set_.SetWidgetLookup(
       [this](const std::string& entry_id) -> const TurnWidgetState* { return widgets_.Find(entry_id); });
@@ -634,6 +642,13 @@ void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
     // The server space is filling up: a plain line, said once per level (the hub counts).
     facade_->SetOnBlobSpaceWarning([this](const int percent) {
       ShowToast(Tr("chat.attachment.space_warning", {{"percent", std::to_string(percent)}}));
+    });
+    // A picture's preview came (or cannot come): only the rows showing its placeholder are redrawn (B203).
+    facade_->SetOnChatPreviewDone([this, alive = std::weak_ptr<int>(chat_window_alive_)](
+                                      const std::string& thread_id, const std::vector<uint8_t>& hash, const bool made) {
+      if (alive.lock()) {
+        OnChatPreviewDone(thread_id, hash, made);
+      }
     });
   }
   presenter_.BindFacade(facade);
@@ -891,6 +906,17 @@ void ChatController::SendSuggestionAction(const std::string& id) {
 }
 
 void ChatController::FinalizeThreadDisplay() {
+  // The chat before (or this one, opened again): its preview requests not started go; this open asks for its own.
+  FinishPreviewsProbe();
+  preview_batcher_.Clear();
+  if (facade_) {
+    facade_->CancelChatPreviews();
+  }
+  // Measurement (chat.open): this open's display sync and the SyncLayout after it are the ones timed.
+  open_probe_ = ChatOpenProbe{};
+  open_probe_.armed = true;
+  ++chat_exit_turn_; // back in a chat: a pending "left the chat" reading is void
+  chat_showing_ = true;
   working_set_.ClearAll();
   RefreshFromMessaging();
   RestoreWorkingSetsFromActiveThread();
@@ -1318,7 +1344,11 @@ void ChatController::OnPeerIconsChanged() {
 }
 
 void ChatController::OnProfileDataReset() {
-  CloseSearch();           // nothing decrypted from the old profile stays in memory
+  CloseSearch();                                       // nothing decrypted from the old profile stays in memory
+  QueueTextureRelease(picture_textures_.UnmountAll()); // the old profile's pictures leave video memory
+  vault_locked_seen_ = false;
+  preview_batcher_.Clear();
+  previews_probe_ = ChatPreviewsProbe{};
   pending_uploads_.Drop(); // the lock check never sees this teardown: the plaintext thumbnail goes here
   AbandonPick();
   video_bubble_thread_.clear();
@@ -2150,7 +2180,7 @@ void ChatController::RefreshShowCapture() {
 }
 
 void ChatController::ToggleVoiceMode() {
-  if (chat_.voice_recording || (!chat_.voice_mode && !chat_.show_voice)) {
+  if (chat_.voice_recording || (!chat_.voice_mode && (!chat_.show_voice || chat_.editing_message))) {
     return;
   }
   chat_.voice_mode = !chat_.voice_mode;
@@ -2237,9 +2267,10 @@ void ChatController::SyncComposerInputState() {
   RefreshAttachmentHere();
   // The chip and the locked input belong to the chat the file is being sent in; the other chats stay typeable. With a
   // picture bubble in the transcript text stays typeable; only another attachment waits (ComposerLocksOf).
-  const ComposerLocks locks = ComposerLocksOf(
-      chat_.compose_disabled, chat_.attachment_here, chat_.attachment_in_transcript,
-      chat_.attachment_uploading || chat_.attachment_preparing, chat_.image_preparing, chat_.voice_recording);
+  const ComposerLocks locks =
+      ComposerLocksOf(chat_.compose_disabled, chat_.attachment_here, chat_.attachment_in_transcript,
+                      chat_.attachment_uploading || chat_.attachment_preparing, chat_.image_preparing,
+                      chat_.voice_recording, chat_.editing_message);
   if (chat_.composer_input_disabled != locks.input || chat_.attach_disabled != locks.attach) {
     chat_.composer_input_disabled = locks.input;
     chat_.attach_disabled = locks.attach;
@@ -2360,7 +2391,7 @@ void ChatController::OnAttachFile(ui::Event* ev) {
   // One attachment at a time; beside a failed bubble a new one may start (the bubble gives way, its staged copy stays
   // for the chip; the bubble kept its own record id, so no Retry sends the wrong file).
   if (chat_.composer_input_disabled || chat_.attachment_uploading || chat_.attachment_preparing ||
-      !chat_.show_attach_button) {
+      !chat_.show_attach_button || chat_.editing_message) {
     return;
   }
   // B90: the menu opens at the attach button, not at a fixed corner (which was behind the keyboard on a phone).
@@ -2500,7 +2531,8 @@ void ChatController::ShowPictureSendChoice(std::string path, const std::string& 
 
 void ChatController::OnAttachCapture(ui::Event* ev) {
   if (!messaging_ready_ || !facade_ || !chat_.show_capture || chat_.composer_input_disabled ||
-      chat_.attachment_uploading || chat_.attachment_preparing || InAiComposerContext() || ActiveThreadId().empty()) {
+      chat_.attachment_uploading || chat_.attachment_preparing || InAiComposerContext() || ActiveThreadId().empty() ||
+      chat_.editing_message) {
     return;
   }
   if (ev) {
@@ -3364,13 +3396,14 @@ void ChatController::OpenGroupSender(const std::string& message_id) {
   }
 }
 
-void ChatController::OpenPicture(const std::string& message_id, const std::string& local_path) {
+void ChatController::OpenPicture(const std::string& message_id) {
   if (!messaging_ready_ || !facade_ || message_id.empty() || opening_message_ids_.count(message_id) != 0) {
     return;
   }
-  // The picture the bubble shows, full screen with a spinner, in this frame; the viewer opens over it.
-  if (!local_path.empty() && shell_feedback_.mount_photo_preview && photo_preview_.Begin(message_id)) {
-    shell_feedback_.mount_photo_preview(PhotoPreviewRml(local_path));
+  // A spinner in this frame (B203: no picture under it, the bubble only has the small preview); the system viewer
+  // opens over it with the full picture, which OpenAttachment finds from the message.
+  if (shell_feedback_.mount_photo_preview && photo_preview_.Begin(message_id)) {
+    shell_feedback_.mount_photo_preview(PhotoPreviewRml());
   }
   OpenAttachment(message_id);
 }
@@ -3497,11 +3530,16 @@ namespace {
 constexpr int64_t kSlowDisplaySyncMs = 8; // half a 60 Hz frame
 } // namespace
 
+size_t ChatController::FirstScreenMessages(const ThreadKind kind) {
+  return kind == ThreadKind::Group ? kChatFirstScreenMessagesGroup : kChatFirstScreenMessagesDirect;
+}
+
 void ChatController::SyncDisplayFromThread() {
   if (!messaging_ready_) {
     return;
   }
-  if (!facade_ || !facade_->GetActiveThread()) {
+  Roe<Thread> active = facade_ ? facade_->GetActiveThread() : Roe<Thread>::error(Error("no chat port"));
+  if (!active) {
     CloseSearch(); // no chat open (Home, or the chat was closed)
     chrome_.ResetPanelState();
     agent_.RefreshBusyForActiveThread();
@@ -3510,7 +3548,7 @@ void ChatController::SyncDisplayFromThread() {
   }
   const auto sync_started = std::chrono::steady_clock::now();
   const std::string thread_id = ActiveThreadId();
-  const bool thread_changed = scroller_.BeginDisplaySync(thread_id);
+  const bool thread_changed = scroller_.BeginDisplaySync(thread_id, FirstScreenMessages(active->kind));
   if (thread_changed) {
     SyncComposerInputState(); // the upload chip and the locked input stay with the chat they belong to
   }
@@ -3563,10 +3601,24 @@ void ChatController::SyncDisplayFromThread() {
   }
   agent_.RefreshBusyForActiveThread(); // "thinking", the stop key and a queued bubble follow the open thread
   SyncDraftOwner();                    // so does the unsent text
+  EndEditIfTargetGone();               // the message being edited was deleted on another device
 
   // Runs on the UI thread for every message, reaction and AI reply: report the slow ones.
   const auto sync_ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - sync_started).count();
+  if (open_probe_.armed) {
+    open_probe_.armed = false;
+    open_probe_.layout_pending = true;
+    open_probe_.rows = static_cast<int64_t>(chat_.messages.size());
+    open_probe_.pictures = static_cast<int64_t>(CountPictureBubbleRows(chat_.messages));
+    open_probe_.placeholders = static_cast<int64_t>(CountPicturePlaceholderRows(chat_.messages));
+    open_probe_.build_ms = sync_ms; // the same stretch chat.sync_slow measures
+    open_probe_.first_screen = scroller_.FirstScreenResult();
+    open_probe_.built_at = std::chrono::steady_clock::now();
+    // chat.previews: from the open (the sync started then) until the placeholders drawn now have their previews.
+    previews_probe_.Start(PicturePlaceholderHashes(chat_.messages), sync_started, UiFrameStats::SlowFrames());
+  }
+  SyncPictureTextures(); // rows gone (deleted, another chat, trimmed): their pictures' textures go
   if (sync_ms >= kSlowDisplaySyncMs) {
     MetricsLine("chat.sync_slow")
         .Add("ms", static_cast<int64_t>(sync_ms))
@@ -3808,6 +3860,10 @@ void ChatController::OnSendMessage() {
   if (chat_.compose_disabled || chat_.image_preparing) {
     return;
   }
+  if (presenter_.EditingIn(CurrentDraftKey())) {
+    SendEditedMessage();
+    return;
+  }
 
   const std::string text = util::Trim(chat_.draft.c_str());
   const bool with_image = agent_.HasPendingImage() && InAiComposerContext();
@@ -4010,6 +4066,14 @@ bool ChatController::IsContactCard(const std::string& message_id) const {
   return found && found->has_value() && (*found)->content_type == ChatContentType::ContactCard;
 }
 
+bool ChatController::IsCallRecord(const std::string& message_id) const {
+  if (!facade_ || message_id.empty()) {
+    return false;
+  }
+  auto found = facade_->GetMessage(ActiveThreadId(), message_id);
+  return found && found->has_value() && CallSummaryRowOf(**found).has_value();
+}
+
 void ChatController::AddContactFromCard(const std::string& message_id) {
   auto added = presenter_.AddContactFromCard(message_id);
   if (!added) {
@@ -4054,8 +4118,8 @@ std::string ChatController::MessagePlainText(const std::string& message_id) cons
 }
 
 void ChatController::StartQuoteReply(const std::string& text, const std::string& draft_prefix) {
-  if (chat_.compose_disabled || text.empty()) {
-    return;
+  if (chat_.compose_disabled || text.empty() || chat_.editing_message) {
+    return; // editing a message is not replying: the edit's words stay as typed
   }
   presenter_.StartQuoteReply(text);
   // One line in the bar, however long or multi-line the message is.
@@ -4093,6 +4157,124 @@ void ChatController::CancelQuoteReply() {
   chat_.quote_reply_text = "";
   DataModelHost::Instance().Dirty("chat", "quote_reply");
   DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+}
+
+bool ChatController::CanEditMessage(const std::string& message_id) {
+  return messaging_ready_ && presenter_.CanEditMessage(message_id);
+}
+
+void ChatController::StartEditMessage(const std::string& message_id) {
+  const std::string thread_id = CurrentDraftKey(); // the chat on screen: its composer is the one shown
+  if (chat_.compose_disabled || thread_id.empty() || thread_id != ActiveThreadId()) {
+    return;
+  }
+  if (presenter_.EditingIn(thread_id)) {
+    return; // one edit at a time: the words being edited stay as typed (the menu offers no "Edit" meanwhile)
+  }
+  const auto text = presenter_.BeginEdit(thread_id, message_id, chat_.draft.c_str());
+  if (!text) {
+    ShowToast(Tr("chat.edit.too_late"));
+    return;
+  }
+  CancelQuoteReply(); // editing and replying do not mix
+  if (chat_.voice_mode) {
+    ToggleVoiceMode(); // back to the keyboard: the words are edited there
+  }
+  chat_.draft = text->c_str();
+  DataModelHost::Instance().Dirty("chat", "draft");
+  SyncEditingState();
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  auto* draft =
+      ui_dynamic_cast<ui::ElementFormControlTextArea*>(context_->GetDocument(0)->GetElementById("draft-input"));
+  if (!draft) {
+    return;
+  }
+  draft->SetValue(text->c_str());
+  draft->Focus(); // the keyboard comes up, the caret at the end
+  const ui::String current = draft->GetValue();
+  const int end = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(current, static_cast<int>(current.size()));
+  draft->SetSelectionRange(end, end);
+}
+
+void ChatController::CancelEditMessage() {
+  const std::string thread_id = CurrentDraftKey();
+  if (!presenter_.EditingIn(thread_id)) {
+    return;
+  }
+  chat_.draft = presenter_.CancelEdit(thread_id).c_str(); // the draft from before; the edited words go (their choice)
+  DataModelHost::Instance().Dirty("chat", "draft");
+  SyncEditingState();
+}
+
+void ChatController::SendEditedMessage() {
+  const std::string thread_id = CurrentDraftKey();
+  const std::string typed = util::Trim(chat_.draft.c_str());
+  if (typed.empty()) {
+    return; // an empty edit is not sent (deleting is how a message goes away)
+  }
+  if (auto valid = ChatPresenter::ValidateDraft(typed); !valid) {
+    ShowToast(Tr(valid.error().message));
+    return;
+  }
+  // The edit's send time is now, the tap (DEV/PLAN-message-edit.md): its receivers judge the 15 minutes by it.
+  const ChatPresenter::EditSendResult result = presenter_.SendEdit(thread_id, chat_.draft.c_str(), util::NowUnixMs());
+  using Kind = ChatPresenter::EditSendResult::Kind;
+  switch (result.kind) {
+    case Kind::None:
+      return;
+    case Kind::TooLate:
+      ShowToast(Tr("chat.edit.too_late")); // still editing: the words stay in the input
+      return;
+    case Kind::TooLong:
+      ShowToast(Tr("chat.error.message_too_long")); // as a message too long to send; still editing, words kept
+      return;
+    case Kind::Failed:
+      UserFeedback::Fail(PaymentErrorUserMessage(result.error.value_or(Error("Send failed"))));
+      return;
+    case Kind::TargetGone:
+      ShowToast(Tr("chat.edit.target_deleted"));
+      break;
+    case Kind::Unchanged:
+    case Kind::Sent:
+      break;
+  }
+  chat_.draft = result.composer.c_str();
+  DataModelHost::Instance().Dirty("chat", "draft");
+  SyncEditingState();
+  SyncDisplayFromThread(); // the bubble shows the new words and "Edited"
+  DirtyChatTurns();
+  NotifySurfaceChanged();
+}
+
+void ChatController::EndEditIfTargetGone() {
+  const std::string thread_id = CurrentDraftKey();
+  if (!thread_id.empty() && presenter_.EditingIn(thread_id)) {
+    if (const auto composer = presenter_.EndEditIfTargetGone(thread_id, chat_.draft.c_str())) {
+      ShowToast(Tr("chat.edit.target_deleted"));
+      chat_.draft = composer->c_str();
+      DataModelHost::Instance().Dirty("chat", "draft");
+    }
+  }
+  // Also when the chat shown changed without a draft hand-over (a new chat): the bar follows the chat shown.
+  if (chat_.editing_message != (presenter_.EditingIn(CurrentDraftKey()) != nullptr)) {
+    SyncEditingState();
+  }
+}
+
+void ChatController::SyncEditingState() {
+  const bool editing = presenter_.EditingIn(CurrentDraftKey()) != nullptr; // Home's composer never edits
+  if (chat_.editing_message != editing) {
+    chat_.editing_message = editing;
+    DataModelHost::Instance().Dirty("chat", "editing_message");
+    // The reply bar's line says "Edit message" meanwhile (a reply and an edit never show together).
+    if (editing || !chat_.quote_reply) {
+      chat_.quote_reply_text = editing ? StructuredTextParser::EscapeText(Tr("chat.edit.bar")).c_str() : "";
+      DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+    }
+  }
+  SyncComposerInputState(); // the plus and the microphone grey out while editing
 }
 
 void ChatController::JumpToQuotedMessage(const std::string& reply_message_id) {
@@ -4562,11 +4744,13 @@ void ChatController::RestoreComposerExtras(const std::string& key) {
     quotes_.erase(it);
   }
   agent_.RestorePendingImage(key);
+  SyncEditingState(); // an edit waits in its own chat (its words came back with the draft)
 }
 
 void ChatController::ForgetComposerExtras(const std::string& key) {
   drafts_.Forget(key);
   quotes_.erase(key);
+  presenter_.ForgetEdit(key);
   mentions_.ForgetThread(key);
   agent_.ForgetPendingImage(key);
   if (agent_.Ports().forget_thread) {
@@ -5163,7 +5347,13 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("cancel_attachment_send",
                                with_item_id([this](const std::string& id) { OnCancelAttachmentSend(id); }));
         ctor.BindEventCallback("remove_image", DataEvent([this] { agent_.DiscardPendingAiImage(); }));
-        ctor.BindEventCallback("cancel_quote_reply", DataEvent([this] { CancelQuoteReply(); }));
+        ctor.BindEventCallback("cancel_quote_reply", DataEvent([this] {
+                                 if (chat_.editing_message) {
+                                   CancelEditMessage(); // the same bar says "Edit message" then
+                                 } else {
+                                   CancelQuoteReply();
+                                 }
+                               }));
         ctor.BindEventCallback("jump_to_quote", DataEvent<std::string>([this](const std::string& reply_id) {
                                  if (IsPendingUploadRowId(reply_id)) {
                                    return;
@@ -5202,14 +5392,12 @@ bool ChatController::Setup(ui::Context* context) {
                                  }
                                  OpenAttachment(message_id);
                                }));
-        ctor.BindEventCallback(
-            "open_picture",
-            DataEvent<std::string, std::string>([this](const std::string& message_id, const std::string& local_path) {
-              if (IsPendingUploadRowId(message_id)) {
-                return;
-              }
-              OpenPicture(message_id, local_path);
-            }));
+        ctor.BindEventCallback("open_picture", DataEvent<std::string>([this](const std::string& message_id) {
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
+                                 }
+                                 OpenPicture(message_id);
+                               }));
         ctor.BindEventCallback("download_attachment", DataEvent<std::string>([this](const std::string& message_id) {
                                  if (IsPendingUploadRowId(message_id)) {
                                    return;
@@ -5448,6 +5636,28 @@ void ChatController::OnApplicationPause() {
 }
 
 void ChatController::Update() {
+  PollChatShowing();
+  ReleaseQueuedTextures();
+  // The vault locked: the view cache (previews, pictures, posters, covers) is wiped. Every chat picture becomes its
+  // placeholder first (a poster its empty frame, a cover the music note), so no drawing asks for a wiped file (the
+  // library would remember that load as failed), then their textures go: the decrypted pixels do not stay in video
+  // memory under the PIN page. Unlocked: the rows are drawn again.
+  if (messaging_ready_ && !MessagingReady()) {
+    if (!vault_locked_seen_) {
+      vault_locked_seen_ = true;
+      ChatPictureTextures::Locked locked = picture_textures_.DropAllForLock(chat_.messages);
+      if (locked.rows_changed) {
+        DirtyChatTurns();
+      }
+      FinishPreviewsProbe();
+      preview_batcher_.Clear();
+      QueueTextureRelease(std::move(locked.gone));
+    }
+  } else if (vault_locked_seen_ && messaging_ready_) {
+    vault_locked_seen_ = false;
+    SyncDisplayFromThread();
+    DirtyChatTurns();
+  }
   if (pending_reply_) {
     PendingReply reply = std::move(*pending_reply_);
     pending_reply_.reset();
@@ -5521,6 +5731,234 @@ void ChatController::Update() {
   }
 }
 
+bool ChatController::ChatShowing() const {
+  if (!messaging_ready_ || ActiveThreadId().empty()) {
+    return false;
+  }
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  return chrome.primary_pane_key == "chat" && (chrome.layout_mode != LayoutMode::Compact || chrome.compact_chat_open);
+}
+
+void ChatController::PollChatShowing() {
+  const bool showing = ChatShowing();
+  if (showing == chat_showing_) {
+    return;
+  }
+  chat_showing_ = showing;
+  if (!showing) {
+    FinishPreviewsProbe();
+    preview_batcher_.Clear(); // a redraw already scheduled finds nothing for rows no longer shown
+    if (facade_) {
+      facade_->CancelChatPreviews(); // only the chat's requests not started; the storage grid's stay
+    }
+    ScheduleChatWindowMetric(std::chrono::seconds(5), /*exited=*/true);
+    // Left on its newest messages, the chat opens again from its first screen (not a vault lock: the PIN page over it).
+    if (MessagingReady()) {
+      scroller_.OnChatLeft();
+    }
+    // The chat's picture textures go once it is off screen (after the page's slide-out: a texture taken while its row
+    // is still drawn is loaded again at once). Coming back first (FinalizeThreadDisplay) voids it.
+    const uint64_t turn = chat_exit_turn_;
+    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::seconds(1),
+                                           [this, turn, alive = std::weak_ptr<int>(chat_window_alive_)]() {
+                                             AppRuntime::PostUI([this, turn, alive]() {
+                                               if (!alive.lock() || turn != chat_exit_turn_ || ChatShowing()) {
+                                                 return;
+                                               }
+                                               QueueTextureRelease(picture_textures_.UnmountAll());
+                                             });
+                                           });
+  }
+}
+
+void ChatController::SyncPictureTextures() {
+  QueueTextureRelease(picture_textures_.Mount(chat_.messages));
+}
+
+void ChatController::QueueTextureRelease(std::vector<std::string> srcs) {
+  if (srcs.empty()) {
+    return;
+  }
+  textures_release_queued_.insert(textures_release_queued_.end(), std::make_move_iterator(srcs.begin()),
+                                  std::make_move_iterator(srcs.end()));
+  if (context_) {
+    context_->RequestNextUpdate(0.0); // released two frames on, also in an idle chat
+  }
+}
+
+void ChatController::ReleaseQueuedTextures() {
+  // Queued in an earlier frame, so the page has been updated since (Context::Update applied the rows): no element
+  // shows these files any more, and a texture taken from a drawn element would only be loaded again.
+  if (!textures_release_ready_.empty()) {
+    size_t called = 0;
+    size_t hit = 0;
+    for (const std::string& src : textures_release_ready_) {
+      if (picture_textures_.Count(src) > 0) {
+        continue; // back on the page meanwhile
+      }
+      ++called;
+      hit += ui::ReleaseTexture(TextureKeyForImageSrc(src)) ? 1 : 0;
+    }
+    if (called > 0) {
+      // No path: how many were asked and how many were loaded (a texture never drawn is not one).
+      log().info << "chat picture textures released: called=" << called << " hit=" << hit;
+    }
+  }
+  textures_release_ready_ = std::exchange(textures_release_queued_, {});
+  if (!textures_release_ready_.empty() && context_) {
+    context_->RequestNextUpdate(0.0);
+  }
+}
+
+void ChatController::OnChatPreviewDone(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                                       const bool made) {
+  if (!messaging_ready_ || thread_id != ActiveThreadId() || !ChatShowing()) {
+    // Another chat's, or this chat left (its textures already went): nothing is drawn into rows not shown and nothing
+    // is counted; the preview file stays and the next drawing of the rows shows it.
+    return;
+  }
+  const std::string hex = AttachmentHashHex(content_hash);
+  if (!made) {
+    previews_failed_.insert(hex); // a file card now: the card changes, not only its picture
+  }
+  const auto delay = preview_batcher_.Add(hex, std::chrono::steady_clock::now());
+  if (!delay) {
+    return; // a redraw is coming
+  }
+  auto redraw = [this, alive = std::weak_ptr<int>(chat_window_alive_)]() {
+    if (alive.lock()) {
+      RedrawPreviews();
+    }
+  };
+  if (delay->count() == 0) {
+    AppRuntime::PostUI(std::move(redraw));
+  } else {
+    AppRuntime::ScheduleCoordinatorOneShot(*delay, [redraw = std::move(redraw)]() { AppRuntime::PostUI(redraw); });
+  }
+}
+
+void ChatController::RedrawPreviews() {
+  const auto now = std::chrono::steady_clock::now();
+  const std::vector<std::string> ready = preview_batcher_.Take(now);
+  if (ready.empty() || !messaging_ready_ || !facade_ || ActiveThreadId().empty() || !ChatShowing()) {
+    previews_failed_.clear(); // left meanwhile: the rows are drawn afresh when shown again
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  const TranscriptFacts facts = facade_->TranscriptFactsFor();
+  const ReadyPreviews applied =
+      ApplyReadyPreviews(chat_.messages, ready, previews_failed_,
+                         [&](const std::string& message_id) -> std::optional<TranscriptAttachmentView> {
+                           auto message = facade_->GetMessage(thread_id, message_id);
+                           if (!message || !*message || !facts.attachment) {
+                             return std::nullopt;
+                           }
+                           return facts.attachment(**message);
+                         });
+  const bool whole = applied.redraw_all;
+  const bool changed = applied.changed;
+  bool last = false;
+  for (const std::string& hex : ready) {
+    last = previews_probe_.Done(hex, previews_failed_.contains(hex), now) || last;
+  }
+  previews_failed_.clear();
+  if (whole) {
+    SyncDisplayFromThread(); // rare (a preview that cannot be made): the rows drawn again, data-rml resets the changed
+  } else if (changed) {
+    SyncPictureTextures();
+  }
+  if (whole || changed) {
+    DirtyChatTurns();
+  }
+  if (last) {
+    FinishPreviewsProbe();
+  }
+}
+
+void ChatController::FinishPreviewsProbe() {
+  if (!previews_probe_.Active()) {
+    return;
+  }
+  const ChatPreviewsProbe::Report report =
+      previews_probe_.Finish(std::chrono::steady_clock::now(), UiFrameStats::SlowFrames());
+  const CurrentMemoryMb memory = ReadCurrentMemoryMb();
+  MetricsLine("chat.previews")
+      .Add("count", report.count)
+      .Add("failed", report.failed)
+      .Add("ms", report.ms)
+      .Add("visible_ms", report.visible_ms)
+      .Add("slow_frames", report.slow_frames)
+      .Add("complete", report.complete)
+      .Add("footprint_mb", memory.footprint_mb)
+      .Add("rss_mb", memory.rss_mb)
+      .Emit();
+}
+
+void ChatController::MeasureVisiblePreviews() {
+  if (!previews_probe_.Active() || previews_probe_.VisibleKnown() || !scroller_.Settled() || !context_ ||
+      context_->GetNumDocuments() == 0) {
+    return;
+  }
+  ui::ElementDocument* document = context_->GetDocument(0);
+  ui::Element* scroll = document->GetElementById("chat-messages");
+  if (!scroll || scroll->GetClientHeight() <= 0.f) {
+    return;
+  }
+  const float top = scroll->GetAbsoluteOffset(ui::BoxArea::Padding).y;
+  const float bottom = top + scroll->GetClientHeight();
+  ui::ElementList placeholders;
+  document->GetElementsByClassName(placeholders, "chat-picture-placeholder");
+  std::vector<std::string> on_screen;
+  for (ui::Element* element : placeholders) {
+    const float y = element->GetAbsoluteOffset(ui::BoxArea::Border).y;
+    const float h = element->GetBox().GetSize(ui::BoxArea::Border).y;
+    if (y < bottom && y + h > top) {
+      on_screen.push_back(element->GetAttribute<ui::String>("pic-hash", ""));
+    }
+  }
+  previews_probe_.SetVisible(on_screen, std::chrono::steady_clock::now());
+}
+
+void ChatController::ScheduleChatWindowMetric(const std::chrono::milliseconds delay, const bool exited) {
+  uint64_t& counter = exited ? chat_exit_turn_ : chat_paged_turn_;
+  const uint64_t turn = ++counter;
+  AppRuntime::ScheduleCoordinatorOneShot(delay, [this, turn, exited, alive = std::weak_ptr<int>(chat_window_alive_)]() {
+    AppRuntime::PostUI([this, turn, exited, alive]() {
+      if (!alive.lock() || turn != (exited ? chat_exit_turn_ : chat_paged_turn_)) {
+        return;
+      }
+      const bool showing = ChatShowing();
+      if (showing == exited) {
+        return; // left and came back (or paged and left): the reading would not say what it is named for
+      }
+      const CurrentMemoryMb memory = ReadCurrentMemoryMb();
+      ChatWindowLine(chat_.messages, exited, exited ? std::nullopt : scroller_.TakePageReading(), memory).Emit();
+    });
+  });
+}
+
+void ChatController::OnSyncLayoutMeasured(const int64_t ms) {
+  if (!open_probe_.layout_pending) {
+    return;
+  }
+  open_probe_.layout_pending = false;
+  const auto started = std::chrono::steady_clock::now() - std::chrono::milliseconds(ms);
+  if (started - open_probe_.built_at > std::chrono::seconds(2)) {
+    return; // not the layout that followed this open
+  }
+  const CurrentMemoryMb memory = ReadCurrentMemoryMb();
+  MetricsLine("chat.open")
+      .Add("rows", open_probe_.rows)
+      .Add("pictures", open_probe_.pictures)
+      .Add("placeholders", open_probe_.placeholders)
+      .Add("build_ms", open_probe_.build_ms)
+      .Add("layout_ms", ms)
+      .Add("first_screen", ChatTranscriptScroller::FirstScreenWord(open_probe_.first_screen))
+      .Add("footprint_mb", memory.footprint_mb)
+      .Add("rss_mb", memory.rss_mb)
+      .Emit();
+}
+
 void ChatController::AfterLayout() {
   if (search_focus_ != SearchFocus::None && context_ && context_->GetNumDocuments() > 0) {
     const char* id = search_focus_ == SearchFocus::Input ? "search-input" : "draft-input";
@@ -5531,6 +5969,7 @@ void ChatController::AfterLayout() {
   }
   SyncComposerOverlay();
   scroller_.ApplyPolicy();
+  MeasureVisiblePreviews();
   FillSessionListAfterLayout();
 }
 
