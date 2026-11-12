@@ -141,12 +141,38 @@ bool IsBriefKeyRejected(const Error& error) {
          (message.size() == kPrefix.size() || message[kPrefix.size()] == ':');
 }
 
+/** A new registry with `from`'s tools, to change and swap in (AgentSession::Impl::PublishTools). */
+std::shared_ptr<ToolRegistry> CopyRegistry(const ToolRegistry& from) {
+  auto copy = std::make_shared<ToolRegistry>();
+  for (const ToolDescriptor& tool : from.Tools()) {
+    copy->Register(tool);
+  }
+  return copy;
+}
+
 } // namespace
 
 struct AgentSession::Impl : public Module {
   Impl() { redirectLogger("AgentSession"); }
 
   logging::Logger& Log() const { return log(); }
+
+  /**
+   * The registry now. A turn step reads through its own snapshot: a rebuild (configure, MCP tools attached, a
+   * re-list) builds a new registry and swaps it in, so a stopped turn still running a tool keeps the one it had.
+   */
+  std::shared_ptr<const ToolRegistry> Tools() const {
+    std::lock_guard lock(tools_mutex);
+    return tools;
+  }
+  void PublishTools(std::shared_ptr<const ToolRegistry> next) {
+    std::lock_guard lock(tools_mutex);
+    tools = std::move(next);
+  }
+  AppConfig ConfigCopy() const {
+    std::lock_guard lock(config_mutex);
+    return config;
+  }
 
   /** The event queue and the last-role memory; shared with the other sessions of an AgentSessions. */
   std::shared_ptr<AgentSessionShared> shared;
@@ -176,6 +202,8 @@ struct AgentSession::Impl : public Module {
   std::chrono::milliseconds missing_tool_wait{10'000};
   std::chrono::milliseconds missing_tool_poll{500};
 
+  /** Written by Configure on the UI thread under config_mutex; ConfigCopy() for a copy on another thread. */
+  mutable std::mutex config_mutex;
   AppConfig config;
   std::unique_ptr<LlmClient> llm;
   BriefAiStreamFn brief_stream;          // built in ConfigureOnIO
@@ -190,7 +218,8 @@ struct AgentSession::Impl : public Module {
   bool mcp_attached = false;
   /** Raised by every ConfigureOnIO. Guarded by configure_work_mutex. */
   uint64_t configure_generation = 0;
-  ToolRegistry tools;
+  mutable std::mutex tools_mutex;
+  std::shared_ptr<const ToolRegistry> tools = std::make_shared<ToolRegistry>(); // Tools() / PublishTools()
   Conversation conversation;
   TurnCoordinator coordinator;
   std::vector<ChatMessage> turn_scratch;
@@ -253,7 +282,8 @@ struct AgentSession::Impl : public Module {
 
 /** The registry's metadata for a tool; empty (never "Always", treated as read elsewhere) when unknown. */
 ToolMeta AgentSession::MetaForTool(const std::shared_ptr<Impl>& state, const std::string& name) {
-  for (const ToolDescriptor& tool : state->tools.Tools()) {
+  const std::shared_ptr<const ToolRegistry> tools = state->Tools();
+  for (const ToolDescriptor& tool : tools->Tools()) {
     if (tool.definition.name == name) {
       return tool.meta;
     }
@@ -605,7 +635,7 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
   }
   options.session_grants = std::move(session_grants);
 
-  TurnExecutionResult execution = TurnExecutor::Execute(park.plan, state->tools, on_activity, options);
+  TurnExecutionResult execution = TurnExecutor::Execute(park.plan, *state->Tools(), on_activity, options);
   if (StaleStep(state, "tools")) {
     return; // before the reset below: the parked approval may be the newer turn's by now
   }
@@ -643,8 +673,9 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
 
 std::vector<std::string> AgentSession::AllowedToolNames(const std::shared_ptr<Impl>& state) {
   std::vector<std::string> names;
-  names.reserve(state->tools.Tools().size());
-  for (const ToolDescriptor& tool : state->tools.Tools()) {
+  const std::shared_ptr<const ToolRegistry> tools = state->Tools();
+  names.reserve(tools->Tools().size());
+  for (const ToolDescriptor& tool : tools->Tools()) {
     names.push_back(tool.definition.name);
   }
   return names;
@@ -823,7 +854,7 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
         continue;
       }
 
-      auto result = state->tools.Execute(call.name, call.arguments, &state->cancelled);
+      auto result = state->Tools()->Execute(call.name, call.arguments, &state->cancelled);
       if (AgentSession::StaleStep(state, "refinement tools")) {
         return; // stopped and replaced while the tool ran: the scratch and trace are the newer turn's
       }
@@ -909,7 +940,7 @@ void AgentSession::RunSynthesisStep(const std::shared_ptr<Impl>& state) {
 
   ChatCompletionRequest request;
   request.messages = state->turn_scratch;
-  request.tools = state->tools.Definitions();
+  request.tools = state->Tools()->Definitions();
 
   auto result = state->llm->Complete(request);
   if (!result) {
@@ -984,7 +1015,7 @@ Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state, 
   }
 
   state->planner_started = std::chrono::steady_clock::now();
-  auto plan = TurnPlanner::Plan(*state->llm, state->turn_scratch, state->tools.SummaryForPrompt(),
+  auto plan = TurnPlanner::Plan(*state->llm, state->turn_scratch, state->Tools()->SummaryForPrompt(),
                                 AllowedToolNames(state), state->pending_user_text);
   if (plan) {
     state->turn_trace.planner_ms = ElapsedMs(state->planner_started);
@@ -1046,11 +1077,13 @@ AgentSession::FeedRelist AgentSession::RelistMissingFeedTools(const std::shared_
         first = false;
       }
       // A turn that replaced this one after Cancel() may already read the registry: register nothing then.
-      const bool answered = RegisterPromotedMcpTools(state->tools, *promoted, kRelistTimeoutS, cancel.get());
+      const std::shared_ptr<ToolRegistry> next = CopyRegistry(*state->Tools());
+      const bool answered = RegisterPromotedMcpTools(*next, *promoted, kRelistTimeoutS, cancel.get());
       if (cancel->load()) {
         state->Log().info << "Turn stopped while re-listing the promoted MCP tools";
         return FeedRelist::Cancelled;
       }
+      state->PublishTools(next);
       const std::string still = missing();
       if (still.empty()) {
         state->Log().info << "Promoted MCP tools listed after " << ElapsedMs(started) << " ms";
@@ -1218,7 +1251,7 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
   // The tools run on this turn's own copy of the plan: a Stop frees the session at once, and the next turn
   // replaces state->turn_plan while these tools may still be running.
   const TurnPlan running_plan = state->turn_plan;
-  TurnExecutionResult execution = TurnExecutor::Execute(running_plan, state->tools, on_activity, options);
+  TurnExecutionResult execution = TurnExecutor::Execute(running_plan, *state->Tools(), on_activity, options);
   if (StaleStep(state, "tools")) {
     return; // the tools returned after the turn was stopped and replaced
   }
@@ -1278,7 +1311,8 @@ bool ToolIsSettingsRead(const std::string& tool) {
 
 std::vector<std::string> AgentSession::AppActionCapabilities(const std::shared_ptr<Impl>& state) {
   std::vector<std::string> names;
-  for (const ToolDescriptor& tool : state->tools.Tools()) {
+  const std::shared_ptr<const ToolRegistry> tools = state->Tools();
+  for (const ToolDescriptor& tool : tools->Tools()) {
     if (tool.meta.provider == "messaging" || tool.meta.provider == "settings") {
       names.push_back(tool.definition.name);
     }
@@ -1504,7 +1538,7 @@ LocalPlanContext AgentSession::BuildLocalPlanContext(const std::shared_ptr<Impl>
   }
   if (tool == "set_language") {
     // The shipped locales, as the settings tool lists them (no I/O).
-    if (auto listed = state->tools.Execute("list_locales", Object{}, &state->cancelled)) {
+    if (auto listed = state->Tools()->Execute("list_locales", Object{}, &state->cancelled)) {
       if (const auto doc = TryParseObject(*listed)) {
         if (const Array* locales = doc->getArray("locales")) {
           for (const Value& entry : locales->elements) {
@@ -1992,7 +2026,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
 
     ThreadContextPolicy policy(state->config.context);
     const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(
-        state->tools.SummaryForPrompt(), ResolvePreset(state->config) == "brief");
+        state->Tools()->SummaryForPrompt(), ResolvePreset(state->config) == "brief");
     const ContextBuildResult built =
         policy.Build(*messages, system_prompt, state->pending_user_text, state->pending_user_payload, summary);
     state->turn_scratch = built.messages;
@@ -2041,7 +2075,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     state->turn_scratch = policy.BuildAssistContext(state->pending_user_text);
     if (!state->turn_scratch.empty() && state->turn_scratch.front().role == "system") {
       state->turn_scratch.front().content = PromptBuilder::BuildScopedAssistSystemPrompt(
-          state->tools.SummaryForPrompt(), ResolvePreset(state->config) == "brief");
+          state->Tools()->SummaryForPrompt(), ResolvePreset(state->config) == "brief");
     }
     // With the brief preset an "@ai" in a chat is a brief_AI question like any other, so it gets the
     // current date, retrieval and sources (the bare model answered from its training data: wrong year,
@@ -2078,7 +2112,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
   TranscriptEntry& entry = state->conversation.AppendUser(state->pending_user_text, state->pending_user_payload);
   state->pending_entry_id = entry.id;
 
-  const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->tools.SummaryForPrompt(),
+  const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->Tools()->SummaryForPrompt(),
                                                                               ResolvePreset(state->config) == "brief");
   const TurnSnapshot snapshot =
       state->coordinator.BeginTurn(state->conversation, system_prompt, entry, state->config.context);
@@ -2138,8 +2172,9 @@ void AgentSession::EnsureMcpTools(const std::shared_ptr<Impl>& state) {
     }
     generation = state->configure_generation;
   }
-  // The question already shows and the turn is "thinking" (PushLoading) while this connects.
-  std::shared_ptr<McpConnection> connection = state->shared->mcp_tools.Acquire(state->config, &state->cancelled);
+  // A copy: Configure may replace the session's config on the UI thread while this connects.
+  const AppConfig config = state->ConfigCopy();
+  std::shared_ptr<McpConnection> connection = state->shared->mcp_tools.Acquire(config, &state->cancelled);
   if (!connection) {
     return; // stopped while another turn connected
   }
@@ -2148,21 +2183,24 @@ void AgentSession::EnsureMcpTools(const std::shared_ptr<Impl>& state) {
   if (state->cancelled || StaleStep(state, "mcp attach")) {
     return;
   }
-  // The order a configure with MCP had: web_search, the MCP tools, then the app's own tools (the hook's).
-  std::vector<ToolDescriptor> app_tools;
-  for (const ToolDescriptor& tool : state->tools.Tools()) {
-    if (tool.meta.provider.rfind("mcp:", 0) != 0) {
-      app_tools.push_back(tool);
-    }
+  const bool current = generation == state->configure_generation;
+  if (connection == state->mcp_connection) {
+    // Already attached: no rebuild.
+    state->mcp_attached = connection->complete && current;
+    return;
   }
-  BuildToolRegistryFromConfig(state->tools, state->config, nullptr);
-  const auto add_new = [state](const ToolDescriptor& tool) {
-    for (const ToolDescriptor& existing : state->tools.Tools()) {
+  // Built aside, then swapped in whole. The order a configure with MCP had: web_search, the MCP tools, then the
+  // app's own tools (the hook's).
+  const std::shared_ptr<const ToolRegistry> before = state->Tools();
+  const auto next = std::make_shared<ToolRegistry>();
+  BuildToolRegistryFromConfig(*next, config, nullptr);
+  const auto add_new = [&next](const ToolDescriptor& tool) {
+    for (const ToolDescriptor& existing : next->Tools()) {
       if (existing.definition.name == tool.definition.name) {
         return;
       }
     }
-    state->tools.Register(tool);
+    next->Register(tool);
   };
   for (const ToolDescriptor& tool : connection->tools.Tools()) {
     // Each tool keeps its connection alive: a stopped turn's call may still run after the next attach replaced it.
@@ -2170,12 +2208,15 @@ void AgentSession::EnsureMcpTools(const std::shared_ptr<Impl>& state) {
     held.execute = [connection, execute = tool.execute](const Object& arguments) { return execute(arguments); };
     add_new(held);
   }
-  for (const ToolDescriptor& tool : app_tools) {
-    add_new(tool);
+  for (const ToolDescriptor& tool : before->Tools()) {
+    if (tool.meta.provider.rfind("mcp:", 0) != 0) {
+      add_new(tool);
+    }
   }
+  state->PublishTools(next);
   state->mcp_connection = std::move(connection);
   // A Configure that ran meanwhile rebuilt the registry for another configuration: the next turn attaches again.
-  state->mcp_attached = state->mcp_connection->complete && generation == state->configure_generation;
+  state->mcp_attached = state->mcp_connection->complete && current;
 }
 
 void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
@@ -2217,15 +2258,17 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     WireMcpHttpPost();
     ++state->configure_generation;
     state->mcp_attached = false;
-    BuildToolRegistryFromConfig(state->tools, state->config, nullptr);
+    const auto tools = std::make_shared<ToolRegistry>();
+    BuildToolRegistryFromConfig(*tools, state->config, nullptr);
     ToolRegistrationHook hook;
     {
       std::lock_guard hook_lock(state->hook_mutex);
       hook = state->tool_registration_hook;
     }
     if (hook) {
-      hook(state->tools);
+      hook(*tools);
     }
+    state->PublishTools(tools);
     state->configured = true;
     RefreshCompactionService(state);
     {
@@ -2234,15 +2277,15 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
       state->app_action_tools = AppActionCapabilities(state);
     }
 
-    state->Log().info << "Agent configured with " << state->tools.Tools().size() << " tool(s)";
-    for (const ToolDescriptor& tool : state->tools.Tools()) {
+    state->Log().info << "Agent configured with " << tools->Tools().size() << " tool(s)";
+    for (const ToolDescriptor& tool : tools->Tools()) {
       state->Log().info << "  - " << tool.definition.name;
     }
   } catch (const std::exception& e) {
     state->configured = false;
     state->configure_failed = true;
     state->llm.reset();
-    state->tools.Clear();
+    state->PublishTools(std::make_shared<ToolRegistry>());
     RefreshCompactionService(state);
     state->Log().error << "Agent configure failed: " << e.what();
     PushError(state, std::string("Agent configure failed: ") + e.what());
@@ -2252,7 +2295,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     state->configured = false;
     state->configure_failed = true;
     state->llm.reset();
-    state->tools.Clear();
+    state->PublishTools(std::make_shared<ToolRegistry>());
     RefreshCompactionService(state);
     state->Log().error << "Agent configure failed: unknown exception";
     PushError(state, "Agent configure failed");
@@ -2296,7 +2339,10 @@ void AgentSession::Configure(const AppConfig& config) {
   if (!impl_->shared->own_threads) {
     impl_->shared->mcp_tools.Invalidate(); // a lone session's connection is its own; AgentSessions drops its shared one
   }
-  impl_->config = config;
+  {
+    std::lock_guard lock(impl_->config_mutex);
+    impl_->config = config;
+  }
   impl_->configured = false;
   impl_->cancelled = false;
 

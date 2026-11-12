@@ -54,7 +54,7 @@ class TurnExecutor {
 public:
   using ToolActivityCallback = std::function<void(const std::string& tool_name, const std::string& status)>;
 
-  static TurnExecutionResult Execute(const TurnPlan& plan, ToolRegistry& tools,
+  static TurnExecutionResult Execute(const TurnPlan& plan, const ToolRegistry& tools,
                                      const ToolActivityCallback& on_activity = {},
                                      const TurnExecutionOptions& options = {});
 };
