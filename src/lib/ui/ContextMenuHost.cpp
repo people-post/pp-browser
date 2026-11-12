@@ -308,6 +308,32 @@ void ContextMenuHost::OnLongPress(ui::Vector2i position, ui::Element* target) {
   request.context = context_;
   request.touch = true;
   ShowAt(request);
+  HoldTypingFocus(target);
+}
+
+void ContextMenuHost::HoldTypingFocus(ui::Element* target) {
+  // Only the phone's item sheet over a field being typed in: the desktop's menus and the keyboard-less case are as before.
+  if (!IsOpen() || presentation_ != Presentation::ActionSheet || !menu_anchor_ || !context_) {
+    return;
+  }
+  ui::Element* focus = context_->GetFocusElement();
+  if (!FindTextEditor(focus)) {
+    return;
+  }
+  // The press on the item held the focus back from the field until the finger lifts (a touch that turns into a
+  // scroll keeps the keyboard), and the lift still moves it after a long press: the field lost the focus, the
+  // keyboard closed under the open sheet and the sheet fell with it (iPhone, 2026-11-12). The element that would take
+  // it is the one Context focuses on a press: the nearest from the target up that takes focus. It takes none while
+  // the sheet is open; the field keeps typing, the keyboard stays where it is.
+  ui::Element* taker = target;
+  while (taker && taker->GetComputedValues().focus() == ui::Style::Focus::None) {
+    taker = taker->GetParentNode();
+  }
+  if (!taker || taker == focus) {
+    return;
+  }
+  taker->SetProperty("focus", "none");
+  held_focus_taker_ = taker->GetObserverPtr();
 }
 
 bool ContextMenuHost::OnContextPointer(ui::Context* context, int x, int y) {
@@ -920,6 +946,10 @@ void ContextMenuHost::Dismiss() {
   menu_editor_ = nullptr;
   menu_anchor_ = nullptr;
   copy_snapshot_.clear();
+  if (ui::Element* taker = held_focus_taker_.get()) {
+    taker->RemoveProperty("focus"); // a tap on the item puts the keyboard away again
+  }
+  held_focus_taker_ = nullptr;
   // Resolved only now: removing the layer above can destroy it, and so can a
   // remount that happened while the menu was open.
   if (ui::Element* element = restore.get()) {

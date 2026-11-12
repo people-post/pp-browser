@@ -145,6 +145,9 @@ private:
   /// Writes the grown sheet's height (the large stop minus the keyboard); on expanding and when the inset changes.
   void ApplyExpandedSheetHeight();
   void RequestDismiss(bool restore_focus = false);
+  /// A long press opened the phone's item sheet while a text field has the focus: the finger's lift must not move the
+  /// focus to the pressed item (the keyboard would close under the sheet). Undone in Dismiss().
+  void HoldTypingFocus(ui::Element* target);
 
   ui::Context* context_ = nullptr;
   ui::Context* menu_context_ = nullptr;
@@ -161,6 +164,8 @@ private:
   // Observer, not a raw pointer: the focused element can be destroyed (pane remount)
   // while the menu is open, and Dismiss() must not focus a freed element.
   ui::ObserverPtr<ui::Element> focus_restore_;
+  /// The pressed item held from taking the focus while the sheet is open (HoldTypingFocus).
+  ui::ObserverPtr<ui::Element> held_focus_taker_;
   ui::Element* layer_ = nullptr;
   ui::Element* panel_ = nullptr;
   bool dismiss_pending_ = false;
