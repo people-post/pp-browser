@@ -45,4 +45,7 @@ bool SwallowIfWake(const SDL_Event& ev);
 // perf.threads: the counts since the last take; the take starts again from zero.
 Counts TakeCounts();
 
+// Tests only: called in TakeFirstEvent between the wait's final flag clear and the drop of the queued wake events.
+void SetBeforeFinalDropForTest(void (*hook)());
+
 } // namespace EventLoopWake

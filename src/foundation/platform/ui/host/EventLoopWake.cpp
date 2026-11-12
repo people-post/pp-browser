@@ -20,6 +20,8 @@ std::atomic<bool> g_flag{false};
 std::mutex g_idle_wait_mu;
 std::condition_variable g_idle_wait_cv;
 
+std::atomic<void (*)()> g_before_final_drop{nullptr}; // tests only
+
 std::atomic<long long> g_flag_count{0};
 std::atomic<long long> g_event_first{0};
 std::atomic<long long> g_event_waited{0};
@@ -81,16 +83,18 @@ void MarkFrame() {
 }
 
 void Request() {
-  const Uint32 type = g_wake_event_type.load(std::memory_order_relaxed);
-  if (type == 0) {
-    return;
-  }
-  // The flag first, then the event: whoever takes the event finds the flag already set (or already taken).
+  // The flag first, then the event: whoever takes the event finds the flag already set (or already taken). The flag
+  // and the notify do not need the wake event: with no type (SDL_RegisterEvents failed, or after Stop — Start clears
+  // the flag) the next wait still ends at once, as the force flag always did.
   g_flag.store(true, std::memory_order_release);
   {
     std::lock_guard lock(g_idle_wait_mu); // a waiter between its check and its sleep sees the flag
   }
   g_idle_wait_cv.notify_one();
+  const Uint32 type = g_wake_event_type.load(std::memory_order_relaxed);
+  if (type == 0) {
+    return;
+  }
   // Always push a wake event: coalescing on a "pending" flag once dropped wakes, leaving UI tasks
   // (SyncLayout, call ring) queued until the next real input.
   SDL_Event ev{};
@@ -149,6 +153,9 @@ bool TakeFirstEvent(SDL_Event* ev, bool power_save, int timeout_ms) {
   // The wait ended on a real event or at the deadline: this turn serves the flag and the wake events queued so
   // far. A wake after this line keeps its flag set.
   g_flag.exchange(false, std::memory_order_acq_rel);
+  if (void (*hook)() = g_before_final_drop.load(std::memory_order_relaxed)) {
+    hook();
+  }
   DropQueuedWakeEvents();
   return has_event;
 }
@@ -160,6 +167,10 @@ bool SwallowIfWake(const SDL_Event& ev) {
   }
   Count(g_wake_swallowed);
   return true;
+}
+
+void SetBeforeFinalDropForTest(void (*hook)()) {
+  g_before_final_drop.store(hook, std::memory_order_relaxed);
 }
 
 Counts TakeCounts() {
