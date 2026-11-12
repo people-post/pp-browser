@@ -53,7 +53,7 @@ CallChromeSnapshot InCall(const CallChromeMode mode) {
   CallChromeSnapshot snapshot;
   snapshot.in_progress.active = true;
   snapshot.in_progress.mode = mode;
-  snapshot.in_progress.mode_str = mode == CallChromeMode::Minimized ? "minimized"
+  snapshot.in_progress.mode_str = mode == CallChromeMode::Minimized   ? "minimized"
                                   : mode == CallChromeMode::Immersive ? "immersive"
                                                                       : "expanded";
   return snapshot;

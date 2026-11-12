@@ -155,7 +155,8 @@ TEST(TranscriptPicturePreviewTest, TheLockTurnsEveryChatPictureIntoItsPlaceholde
 // A video or sound file whose cover is not there (AttachmentView gives no path for a missing file or under the lock)
 // draws no <img>: the video's frame without a poster, the music note.
 TEST(TranscriptPicturePreviewTest, NoCoverPathNoImg) {
-  for (const auto& [mime, name] : {std::pair<std::string, std::string>{"video/mp4", "a.mp4"}, {"audio/mpeg", "a.mp3"}}) {
+  for (const auto& [mime, name] :
+       {std::pair<std::string, std::string>{"video/mp4", "a.mp4"}, {"audio/mpeg", "a.mp3"}}) {
     TranscriptRow row = PictureRow("m1");
     auto fields = ChatPayloadCodec::DecodeAttachmentJson(row.message.payload_json);
     ASSERT_TRUE(fields);
@@ -194,11 +195,10 @@ TEST(TranscriptPicturePreviewTest, ReadyPreviewsReplaceOnlyTheRowsThatShowTheirP
   const std::string hex3 = AttachmentHashHex(std::vector<uint8_t>(32, 3));
   const std::string m2_before = rows[1].content_rml.c_str();
   std::vector<std::string> asked;
-  const ReadyPreviews result =
-      ApplyReadyPreviews(rows, {hex1, hex3}, {}, [&asked](const std::string& message_id) {
-        asked.push_back(message_id);
-        return std::optional<TranscriptAttachmentView>(PreviewView("/views/" + message_id + ".poster.jpg"));
-      });
+  const ReadyPreviews result = ApplyReadyPreviews(rows, {hex1, hex3}, {}, [&asked](const std::string& message_id) {
+    asked.push_back(message_id);
+    return std::optional<TranscriptAttachmentView>(PreviewView("/views/" + message_id + ".poster.jpg"));
+  });
   EXPECT_TRUE(result.changed);
   EXPECT_FALSE(result.redraw_all);
   EXPECT_EQ(asked, (std::vector<std::string>{"m1", "m3"})) << "only the rows that show one are looked up";

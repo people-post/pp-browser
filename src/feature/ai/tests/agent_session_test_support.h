@@ -178,13 +178,13 @@ struct FakeMcpServer {
   std::atomic<int> list_calls{0};
   std::atomic<int> failing_lists{0}; // tools/list fails this many times, then answers; < 0: always fails
   std::atomic<long> last_list_timeout_s{-1};
-  std::string tool_name = "blog_articles"; // what tools/list offers
-  std::atomic<int> list_status{200};       // non-200: the server is up but answers tools/list with this status
-  std::atomic<bool> hold_list{false};      // tools/list waits (up to 2 s) until this is cleared
-  std::atomic<int> hold_from{0};           // ...from this call on (earlier ones answer at once)
-  std::atomic<int> init_calls{0};          // initialize requests: one per connection
-  std::atomic<int> fail_from{-1};          // >= 0: tools/list fails from this call on
-  std::string first_list_tool;             // set: the first tools/list offers this tool instead of tool_name
+  std::string tool_name = "blog_articles";      // what tools/list offers
+  std::atomic<int> list_status{200};            // non-200: the server is up but answers tools/list with this status
+  std::atomic<bool> hold_list{false};           // tools/list waits (up to 2 s) until this is cleared
+  std::atomic<int> hold_from{0};                // ...from this call on (earlier ones answer at once)
+  std::atomic<int> init_calls{0};               // initialize requests: one per connection
+  std::atomic<int> fail_from{-1};               // >= 0: tools/list fails from this call on
+  std::string first_list_tool;                  // set: the first tools/list offers this tool instead of tool_name
   std::atomic<bool> throw_on_initialize{false}; // initialize throws (a bug in the transport)
   std::atomic<bool> hold_init{false};           // initialize waits (up to 2 s) until this is cleared
 };
@@ -207,8 +207,8 @@ inline HttpPostFn FakeMcpPost(std::shared_ptr<FakeMcpServer> server) {
           (server->fail_from >= 0 && call >= server->fail_from)) {
         return Error("connection refused");
       }
-      const std::string& offered = call == 0 && !server->first_list_tool.empty() ? server->first_list_tool
-                                                                                  : server->tool_name;
+      const std::string& offered =
+          call == 0 && !server->first_list_tool.empty() ? server->first_list_tool : server->tool_name;
       return HttpResponse{
           .status_code = 200,
           .body =

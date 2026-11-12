@@ -190,7 +190,7 @@ TEST_F(ChatTranscriptRemountTest, AShellRebuiltDuringAFullScreenCallLeavesTheTra
   Frames(3);
   ASSERT_TRUE(RmlMount::MountInner(document->GetElementById("pane-body-chat"), chat_body_rml));
   scroller->OnShellRemounted();
-  Frames(45); // longer than the restore's 30-frame budget
+  Frames(45);      // longer than the restore's 30-frame budget
   HideBase(false); // hung up
   Frames(6);
   ASSERT_NE(Messages(), nullptr);

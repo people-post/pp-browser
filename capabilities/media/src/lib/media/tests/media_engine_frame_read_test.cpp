@@ -122,7 +122,8 @@ void ExpectUntouched(const IMediaView::VideoTileFrame& out) {
 class RemoteFrameReadTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    engine_.SetVideoCodecFactoryForTest([]() -> std::unique_ptr<IVideoCodec> { return std::make_unique<FrameDecoder>(); });
+    engine_.SetVideoCodecFactoryForTest(
+        []() -> std::unique_ptr<IVideoCodec> { return std::make_unique<FrameDecoder>(); });
     auto started = engine_.StartDuplex("frame-read-call", [](const MediaEngine::MediaPacket&) {});
     ASSERT_TRUE(started) << (started ? "" : started.error().message);
   }

@@ -1482,10 +1482,9 @@ bool MeshDeliveryOrchestrator::MarkDelivery(const std::string& thread_id, const 
     return false; // a control-lane send: no transcript row to update
   }
   // The delivery state only: a whole row read earlier would write back words blanked since (a voided edit of ours).
-  auto marked = store_.UpdateMessageDelivery(thread_id, message_id,
-                                             success ? MessageDelivery::Relayed : MessageDelivery::Failed,
-                                             success ? std::optional<MessageTransport>(transport) : std::nullopt,
-                                             unless_delivered);
+  auto marked = store_.UpdateMessageDelivery(
+      thread_id, message_id, success ? MessageDelivery::Relayed : MessageDelivery::Failed,
+      success ? std::optional<MessageTransport>(transport) : std::nullopt, unless_delivered);
   if (!marked) {
     return false;
   }

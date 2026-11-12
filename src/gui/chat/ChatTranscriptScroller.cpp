@@ -634,7 +634,7 @@ void ChatTranscriptScroller::OnShellRemounted() {
     restore_scroll_top_ = reading_scroll_top_;
     restore_scroll_frames_ = 0;
     first_screen_on_return_ = false; // the offset is put back, not the first screen
-    last_client_height_ = 0.f; // the first reading of the new element is not a viewport resize
+    last_client_height_ = 0.f;       // the first reading of the new element is not a viewport resize
   }
   ApplyPolicy();
 }
@@ -649,8 +649,8 @@ bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id, cons
   // (only the window and the first-screen state; for everything else it is the same chat).
   // Not when a jump, a restored offset, a position off the bottom or a window short of the newest message came
   // after the mark: that state is what the user asked for.
-  const bool moved_on = !pending_jump_id_.empty() || restore_scroll_top_ || !pinned_to_bottom_ ||
-                        loaded_max_display_order_.has_value();
+  const bool moved_on =
+      !pending_jump_id_.empty() || restore_scroll_top_ || !pinned_to_bottom_ || loaded_max_display_order_.has_value();
   const bool reopened = !thread_changed && first_screen_on_return_ && !moved_on;
   first_screen_on_return_ = false;
   if (reopened) {
@@ -712,8 +712,8 @@ bool ChatTranscriptScroller::ViewOnTheBottom() const {
 }
 
 ChatTranscriptScroller::FirstScreen ChatTranscriptScroller::FirstScreenBound(const std::string& thread_id,
-                                                                            const size_t shown,
-                                                                            std::optional<int64_t>& oldest) const {
+                                                                             const size_t shown,
+                                                                             std::optional<int64_t>& oldest) const {
   if (!messaging_ready_) {
     return FirstScreen::Miss;
   }

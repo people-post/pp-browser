@@ -716,8 +716,8 @@ Roe<std::string> EnsureAttachmentImageThumbnail(const std::string& profile_dir, 
   }();
   const auto source = ReadImageHeaderBytes(image_bytes);
   logging::getLogger("AttachmentCache").info
-      << "image thumbnail source_bytes=" << image_bytes.size() << " source_px="
-      << (source ? static_cast<int64_t>(source->width) * source->height : 0) << " ms="
+      << "image thumbnail source_bytes=" << image_bytes.size()
+      << " source_px=" << (source ? static_cast<int64_t>(source->width) * source->height : 0) << " ms="
       << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count()
       << " ok=" << (made ? 1 : 0);
   return made;

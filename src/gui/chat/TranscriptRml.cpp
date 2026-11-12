@@ -511,7 +511,8 @@ bool DropPictureImages(std::string& rml) {
       break;
     }
     const std::string open_tag = rml.substr(begin, open_end - begin);
-    if (open_tag.find(" pic-id=\"") == std::string::npos || open_tag.find("chat-picture-placeholder") != std::string::npos) {
+    if (open_tag.find(" pic-id=\"") == std::string::npos ||
+        open_tag.find("chat-picture-placeholder") != std::string::npos) {
       continue; // not a chat picture's clip (the marks are only on those), or already its placeholder
     }
     const size_t close = rml.find("</div>", open_end);

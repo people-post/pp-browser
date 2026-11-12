@@ -185,8 +185,8 @@ TEST_F(OutboundMessageTest, TheRowAndTheReactionCap) {
   retract.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, "msg-1", "");
   EXPECT_TRUE(AppendOutboundMessage(*alice_->store, NewOutboundMessage(thread.id, "", retract, "del", 1)))
       << "the cap never stops a delete";
-  EXPECT_TRUE(AppendOutboundMessage(*alice_->store,
-                                    NewOutboundMessage(thread.id, "x", EditSendOptions("msg-1", "x", "ed", 7), "id", 1)))
+  EXPECT_TRUE(AppendOutboundMessage(
+      *alice_->store, NewOutboundMessage(thread.id, "x", EditSendOptions("msg-1", "x", "ed", 7), "id", 1)))
       << "nor an edit";
 }
 
@@ -205,8 +205,8 @@ TEST_F(OutboundMessageTest, AnEditGoesOutAsAnEditAnnotationStampedAtTheTap) {
   const int64_t tapped_at = target.timestamp + 14 * 60'000;
   ASSERT_TRUE(CanEditMessage(target, ThreadKind::Direct, tapped_at));
   const int64_t sent_at = EditSendTime(tapped_at, target);
-  auto edit = alice_->Send(thread, *bob_, "see you at 9",
-                           EditSendOptions(target.id, "see you at 9", "edit-1", sent_at));
+  auto edit =
+      alice_->Send(thread, *bob_, "see you at 9", EditSendOptions(target.id, "see you at 9", "edit-1", sent_at));
   ASSERT_TRUE(edit) << edit.error().message;
   EXPECT_EQ(edit->message_id, "edit-1");
   EXPECT_EQ(edit->timestamp, sent_at) << "stamped at the tap, whenever it is delivered";

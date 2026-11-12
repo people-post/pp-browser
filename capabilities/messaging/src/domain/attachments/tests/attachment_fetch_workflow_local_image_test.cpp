@@ -203,7 +203,6 @@ TEST(AttachmentFetchWorkflowLocalImageTest, DeleteThreadMediaRemovesCasObjectsAn
   }
 }
 
-
 // --- Chat picture previews (B203, DEV/PLAN-chat-picture-previews.md) ---------------------------------------------
 
 bool WaitUntil(const std::function<bool()>& done, const std::chrono::milliseconds budget = std::chrono::seconds(10)) {
@@ -220,10 +219,35 @@ bool WaitUntil(const std::function<bool()>& done, const std::chrono::millisecond
 
 /** A PNG's first bytes declaring `w` x `h`, then filler up to `size` bytes; `tag` makes the bytes (and hash) unique. */
 ByteVector PngOf(const uint32_t w, const uint32_t h, const size_t size, const uint8_t tag) {
-  ByteVector bytes = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 'I', 'H', 'D', 'R',
-                      static_cast<uint8_t>(w >> 24), static_cast<uint8_t>(w >> 16), static_cast<uint8_t>(w >> 8),
-                      static_cast<uint8_t>(w), static_cast<uint8_t>(h >> 24), static_cast<uint8_t>(h >> 16),
-                      static_cast<uint8_t>(h >> 8), static_cast<uint8_t>(h), 8, 2, 0, 0, 0};
+  ByteVector bytes = {0x89,
+                      'P',
+                      'N',
+                      'G',
+                      0x0D,
+                      0x0A,
+                      0x1A,
+                      0x0A,
+                      0,
+                      0,
+                      0,
+                      13,
+                      'I',
+                      'H',
+                      'D',
+                      'R',
+                      static_cast<uint8_t>(w >> 24),
+                      static_cast<uint8_t>(w >> 16),
+                      static_cast<uint8_t>(w >> 8),
+                      static_cast<uint8_t>(w),
+                      static_cast<uint8_t>(h >> 24),
+                      static_cast<uint8_t>(h >> 16),
+                      static_cast<uint8_t>(h >> 8),
+                      static_cast<uint8_t>(h),
+                      8,
+                      2,
+                      0,
+                      0,
+                      0};
   bytes.resize(std::max(size, bytes.size()), tag);
   bytes.push_back(tag);
   return bytes;
@@ -358,7 +382,9 @@ public:
     WaitUntil([this] { return finished_.load() == static_cast<int>(WorkerPool::kMaxThreadCount); });
   }
   /** Every thread of the default-sized pool is held. */
-  bool AllHeld() { return WaitUntil([this] { return held_.load() >= static_cast<int>(WorkerPool::kDefaultThreadCount); }); }
+  bool AllHeld() {
+    return WaitUntil([this] { return held_.load() >= static_cast<int>(WorkerPool::kDefaultThreadCount); });
+  }
   void Release() {
     try {
       release_.set_value();
@@ -607,7 +633,7 @@ TEST_F(ChatPreviewTest, TheGridsCancelAndTheChatsCancelEachTakeOnlyTheirOwn) {
   workflow_.ClearDek();
   workflow_.RequestGridThumbnail("t1", grid_a.content_hash, grid_a.mime, 7);
   workflow_.RequestChatPreview("t1", chat_a);
-  workflow_.CancelChatPreviews();     // the chat left
+  workflow_.CancelChatPreviews();             // the chat left
   workflow_.RequestChatPreview("t1", chat_a); // and opened again
   workflow_.RequestGridThumbnail("t1", grid_b.content_hash, grid_b.mime, 7);
   workflow_.CancelGridThumbnails(7); // the grid page closed

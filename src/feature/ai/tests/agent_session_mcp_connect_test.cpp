@@ -127,8 +127,8 @@ protected:
   }
 
   static size_t Count(const std::vector<AgentEvent>& events, const AgentEventType type) {
-    return static_cast<size_t>(std::count_if(events.begin(), events.end(),
-                                             [type](const AgentEvent& event) { return event.type == type; }));
+    return static_cast<size_t>(
+        std::count_if(events.begin(), events.end(), [type](const AgentEvent& event) { return event.type == type; }));
   }
 
   static bool ShowedTheFeed(const std::vector<AgentEvent>& events) {

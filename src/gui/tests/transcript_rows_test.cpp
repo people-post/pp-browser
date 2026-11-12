@@ -408,8 +408,8 @@ TEST(ChatMenusEditTest, EditSitsRightUnderCopy) {
   for (const ContextMenuAction& action : actions) {
     ids.push_back(action.id);
   }
-  EXPECT_EQ(ids, (std::vector<std::string>{"react_x", "reply_message", "copy_message", "edit_message",
-                                           "ask_ai_message", "delete_message"}));
+  EXPECT_EQ(ids, (std::vector<std::string>{"react_x", "reply_message", "copy_message", "edit_message", "ask_ai_message",
+                                           "delete_message"}));
   EXPECT_EQ(actions[3].label, "Edit");
   actions[3].run();
   EXPECT_TRUE(started);
@@ -422,8 +422,8 @@ TEST(ChatMenusEditTest, EditSitsRightUnderCopy) {
 // the words being edited, or did nothing): reactions, Copy and Delete stay.
 TEST(ChatMenusEditTest, WhileEditingTheMenuHasNoEditReplyOrAskAi) {
   std::vector<ContextMenuAction> actions;
-  for (const char* id : {"react_x", "react_more", "reply_message", "copy_message", "edit_message", "ask_ai_message",
-                         "delete_message"}) {
+  for (const char* id :
+       {"react_x", "react_more", "reply_message", "copy_message", "edit_message", "ask_ai_message", "delete_message"}) {
     actions.push_back({id, id, nullptr, nullptr});
   }
   RemoveActionsWhileEditing(actions);
@@ -432,9 +432,8 @@ TEST(ChatMenusEditTest, WhileEditingTheMenuHasNoEditReplyOrAskAi) {
     ids.push_back(action.id);
   }
   EXPECT_EQ(ids, (std::vector<std::string>{"react_x", "react_more", "copy_message", "delete_message"}));
-  std::vector<ContextMenuAction> item{{"ask_ai_item", "", nullptr, nullptr},
-                                      {"copy_item", "", nullptr, nullptr},
-                                      {"share_item", "", nullptr, nullptr}};
+  std::vector<ContextMenuAction> item{
+      {"ask_ai_item", "", nullptr, nullptr}, {"copy_item", "", nullptr, nullptr}, {"share_item", "", nullptr, nullptr}};
   RemoveActionsWhileEditing(item);
   ASSERT_EQ(item.size(), 2u);
   EXPECT_EQ(item[0].id, "copy_item");

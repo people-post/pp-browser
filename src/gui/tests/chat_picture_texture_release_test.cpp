@@ -57,7 +57,8 @@ TEST(ChatPictureTexturesTest, PictureSourcesAreUnescapedInRowOrder) {
       Row("2", "<p>no picture</p>"),
       Row("3", "<img class=\"chat-attachment-image\" src=\"/x&amp;y.jpg\"/>"),
       Row("4", "<img class=\"chat-attachment-video-poster\" src=\"/poster.jpg\" width=\"216\"/>"),
-      Row("5", "<div class=\"chat-audio-cover\"><img class=\"chat-audio-cover-image\" src=\"/cover.poster.jpg\"/></div>"),
+      Row("5",
+          "<div class=\"chat-audio-cover\"><img class=\"chat-audio-cover-image\" src=\"/cover.poster.jpg\"/></div>"),
       Row("6", "<img class=\"avatar-photo chat-voice-avatar-photo\" src=\"/icons/peer.png\"/>"),
   };
   // Pictures, video posters and sound covers come from the view cache; a sender's photo does not.
@@ -139,7 +140,8 @@ TEST(ChatPictureTexturesTest, RowsTrimmedOffThePageReleaseTheirPictures) {
   ChatPictureTextures textures;
   EXPECT_TRUE(textures.Mount({Picture("1", "/v/a.jpg"), Picture("2", "/v/b.jpg"), Picture("3", "/v/c.jpg")}).empty());
   // The window keeps the newest two (TrimDomWindow drops the oldest).
-  EXPECT_EQ(textures.Mount({Picture("2", "/v/b.jpg"), Picture("3", "/v/c.jpg")}), (std::vector<std::string>{"/v/a.jpg"}));
+  EXPECT_EQ(textures.Mount({Picture("2", "/v/b.jpg"), Picture("3", "/v/c.jpg")}),
+            (std::vector<std::string>{"/v/a.jpg"}));
   EXPECT_EQ(textures.Count("/v/a.jpg"), 0u);
   EXPECT_EQ(textures.Count("/v/b.jpg"), 1u);
 }

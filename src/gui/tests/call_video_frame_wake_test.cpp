@@ -23,9 +23,8 @@ struct Harness {
   };
   std::vector<Timer> timers;
   std::shared_ptr<CallVideoFrameWake> gate = CallVideoFrameWake::Create(
-      [this] { return now; }, [this](int64_t delay_ms, std::function<void()> fire) {
-        timers.push_back({delay_ms, std::move(fire)});
-      },
+      [this] { return now; },
+      [this](int64_t delay_ms, std::function<void()> fire) { timers.push_back({delay_ms, std::move(fire)}); },
       [this] { ++wakes; });
 
   void FireTimers() {
@@ -136,8 +135,8 @@ TEST(CallVideoFrameWakeTest, ACatchUpFiringAfterTheOwnerIsGoneIsHarmless) {
   int64_t now = kT0;
   {
     auto gate = CallVideoFrameWake::Create(
-        [&now] { return now; },
-        [&timers](int64_t, std::function<void()> fire) { timers.push_back(std::move(fire)); }, [&wakes] { ++wakes; });
+        [&now] { return now; }, [&timers](int64_t, std::function<void()> fire) { timers.push_back(std::move(fire)); },
+        [&wakes] { ++wakes; });
     gate->OnFrame();
     now += 10;
     gate->OnFrame();
@@ -149,13 +148,13 @@ TEST(CallVideoFrameWakeTest, ACatchUpFiringAfterTheOwnerIsGoneIsHarmless) {
 
 TEST(CallVideoFrameWakeTest, TheAppClockIsTheMonotonicOne) {
   // The window is timed on the steady clock (the tests above inject their own): a wall-clock time sync cannot move it.
-  const int64_t before = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             std::chrono::steady_clock::now().time_since_epoch())
-                             .count();
+  const int64_t before =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+          .count();
   const int64_t now = CallVideoFrameWake::SteadyNowMs();
-  const int64_t after = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::steady_clock::now().time_since_epoch())
-                            .count();
+  const int64_t after =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+          .count();
   EXPECT_GE(now, before);
   EXPECT_LE(now, after);
 }

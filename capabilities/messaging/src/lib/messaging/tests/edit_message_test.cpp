@@ -45,9 +45,9 @@ TEST(CanEditMessageTest, SomeoneElsesMessageIsNot) {
 }
 
 TEST(CanEditMessageTest, OnlyText) {
-  for (const ChatContentType type : {ChatContentType::Attachment, ChatContentType::ContactCard,
-                                     ChatContentType::CryptoTx, ChatContentType::System, ChatContentType::Annotation,
-                                     ChatContentType::Deleted, ChatContentType::Unsupported}) {
+  for (const ChatContentType type :
+       {ChatContentType::Attachment, ChatContentType::ContactCard, ChatContentType::CryptoTx, ChatContentType::System,
+        ChatContentType::Annotation, ChatContentType::Deleted, ChatContentType::Unsupported}) {
     ThreadMessage other = Sent();
     other.content_type = type;
     EXPECT_FALSE(CanEditMessage(other, ThreadKind::Direct, kSentAt)) << static_cast<int>(type);
@@ -144,8 +144,7 @@ TEST(CheckEditTest, OnlyALiveTextMessage) {
 
 TEST(CheckEditTest, TheTextMustBeThereAndNotTooLong) {
   EXPECT_EQ(CheckEdit(Edit("e1", "", kSentAt), Received()), EditRefusal::EmptyText);
-  EXPECT_EQ(CheckEdit(Edit("e1", std::string(kMaxEditTextBytes + 1, 'a'), kSentAt), Received()),
-            EditRefusal::TooLong);
+  EXPECT_EQ(CheckEdit(Edit("e1", std::string(kMaxEditTextBytes + 1, 'a'), kSentAt), Received()), EditRefusal::TooLong);
   EXPECT_EQ(CheckEdit(Edit("e1", std::string(kMaxEditTextBytes, 'a'), kSentAt), Received()), EditRefusal::None);
 }
 
