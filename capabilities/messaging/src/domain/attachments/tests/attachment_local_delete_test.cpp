@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <future>
 #include <iostream>
@@ -759,6 +760,14 @@ TEST_F(AttachmentLocalDeleteTest, TheListReadsEveryMessageOfALongChatAndSkipsWha
   EXPECT_FALSE(by_message["direct"].has_server_copy);
 }
 
+// The storage screen lists on open: 200 ms in an optimized build, as CI's. A Debug build takes ~1.3x as long here
+// (~265 ms), so it gets twice the bound instead of failing every local run.
+#ifdef NDEBUG
+constexpr int64_t kListBoundMs = 200;
+#else
+constexpr int64_t kListBoundMs = 400;
+#endif
+
 TEST_F(AttachmentLocalDeleteTest, ListingThreeThousandItemsInFiftyChatsIsQuick) {
   for (int chat = 0; chat < 50; ++chat) {
     Thread thread;
@@ -783,7 +792,7 @@ TEST_F(AttachmentLocalDeleteTest, ListingThreeThousandItemsInFiftyChatsIsQuick) 
   const auto took =
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
   EXPECT_EQ(items.size(), 3000u);
-  EXPECT_LT(took, 200) << "listing took " << took << " ms";
+  EXPECT_LT(took, kListBoundMs) << "listing took " << took << " ms";
   std::cout << "[ list ] 3000 items / 50 chats in " << took << " ms\n";
 }
 
