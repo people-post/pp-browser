@@ -5753,6 +5753,10 @@ void ChatController::PollChatShowing() {
       facade_->CancelChatPreviews(); // only the chat's requests not started; the storage grid's stay
     }
     ScheduleChatWindowMetric(std::chrono::seconds(5), /*exited=*/true);
+    // Left on its newest messages, the chat opens again from its first screen (not a vault lock: the PIN page over it).
+    if (MessagingReady()) {
+      scroller_.OnChatLeft();
+    }
     // The chat's picture textures go once it is off screen (after the page's slide-out: a texture taken while its row
     // is still drawn is loaded again at once). Coming back first (FinalizeThreadDisplay) voids it.
     const uint64_t turn = chat_exit_turn_;
