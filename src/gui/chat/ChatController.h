@@ -133,6 +133,8 @@ public:
   bool Setup(ui::Context* context);
   /** Non-owning; pass nullptr to clear. Rebinds sub-presenters (scroller/chrome). */
   void BindConversationsFacade(ConversationsFacade* facade);
+  /** Shown messages a chat of `kind` opens with (the scroller's first screen): a group more than a direct or AI chat. */
+  static size_t FirstScreenMessages(ThreadKind kind);
   /**
    * G021: `text` holds an invite link (`pp://join/…`, opened, pasted or scanned): asks to join by it — the preview,
    * then the group's chat — and returns true. False: not one (the caller tries a contact locator).
@@ -754,6 +756,8 @@ private:
     int64_t pictures = 0;
     int64_t placeholders = 0;
     int64_t build_ms = 0;
+    /** The open's first screen (DEV/PLAN-chat-first-screen-rows.md): ok / short / miss. */
+    ChatTranscriptScroller::FirstScreen first_screen = ChatTranscriptScroller::FirstScreen::Miss;
     std::chrono::steady_clock::time_point built_at{};
   };
   ChatOpenProbe open_probe_;

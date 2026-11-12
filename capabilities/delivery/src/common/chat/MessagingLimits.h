@@ -23,6 +23,12 @@ inline constexpr size_t kDefaultTailSyncLimit = 50;
 /** D059 — one older-history page per user-initiated sync. */
 inline constexpr size_t kUserSyncOlderHistoryLimit = 25;
 inline constexpr size_t kDefaultMessagesPageSize = 100;
+/**
+ * Shown messages a chat opens with when switched to (DEV/PLAN-chat-first-screen-rows.md): a direct or AI chat, a group.
+ * Older ones come a page (kDefaultMessagesPageSize) at a time when scrolled up, or when the screen is not filled.
+ */
+inline constexpr size_t kChatFirstScreenMessagesDirect = 30;
+inline constexpr size_t kChatFirstScreenMessagesGroup = 50;
 /** Cap on chat transcript rows kept in the Rml `messages` data-for window. */
 inline constexpr size_t kMaxMessagesDomWindow = 200;
 /**
