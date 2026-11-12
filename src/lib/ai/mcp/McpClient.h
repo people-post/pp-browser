@@ -6,8 +6,10 @@
 #include "common/net/HttpTransport.h"
 #include "common/PbrCompat.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -35,6 +37,11 @@ struct McpTool {
   McpToolAnnotations annotations;
 };
 
+/**
+ * One MCP server. Start* and Stop belong to the owner (before the client is shared, and when it is dropped); requests
+ * may come from several threads at once (AI sessions share one connection, SharedMcpTools): an HTTP server takes them
+ * in parallel, a stdio server one exchange at a time.
+ */
 class McpClient : public Module {
 public:
   McpClient();
@@ -57,8 +64,11 @@ public:
 
   /** Feature/app wires HttpClient::Post so mcp does not include base/net. */
   static void SetHttpPost(HttpPostFn post);
+  /** SetHttpPost unless a transport is set already (a test's fake stays while sessions wire the real one). */
+  static void SetHttpPostIfUnset(HttpPostFn post);
 
-  Roe<void> Initialize();
+  /** `timeout_s`: an HTTP server's request bound (0 = the transport's default). */
+  Roe<void> Initialize(long timeout_s = 0);
   /** `timeout_s`: an HTTP server's request bound (0 = the transport's default); stdio keeps kMcpReadTimeoutMs. */
   Roe<std::vector<McpTool>> ListTools(long timeout_s = 0);
   Roe<Object> CallTool(const std::string& name, const Object& arguments);
@@ -74,10 +84,12 @@ public:
 private:
   Roe<Object> Request(const std::string& method, const Object& params, long timeout_s = 0);
 
-  bool running_ = false;
+  std::atomic<bool> running_{false};
   bool http_ = false;
-  bool answered_ = false;
+  std::atomic<bool> answered_{false};
   std::string http_url_;
+  /** Guards request_id_, and a stdio exchange (write + read of one response) as a whole. */
+  std::mutex request_mutex_;
   int request_id_ = 1;
   os::OsProcessPipe process_;
   std::string stdio_carry_;

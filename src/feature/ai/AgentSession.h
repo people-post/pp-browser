@@ -14,6 +14,7 @@
 #include "common/Error.h"
 #include "lib/ai/BriefTurnRunner.h"
 #include "lib/ai/ParkedApproval.h"
+#include "feature/ai/SharedMcpTools.h"
 #include "feature/ai/TurnExecutor.h"
 
 #include <atomic>
@@ -137,6 +138,11 @@ struct AgentSessionShared {
   std::unordered_map<std::string, std::string> last_role_by_thread;
   /** A 401 renewed the brief key (BriefKeyPorts) and no turn has been answered since: no second mint (B183). */
   std::atomic<bool> brief_key_renewed{false};
+  /**
+   * The MCP connection, made by the first turn that needs MCP tools and reused by the next ones (B210). Configure
+   * connects nothing. AgentSessions::Configure invalidates it; a lone session's Configure does.
+   */
+  SharedMcpTools mcp_tools;
 };
 
 class AgentSession {
@@ -257,6 +263,16 @@ private:
   /** Runs a step of a turn where turns run (AgentSessionShared::turn_pool). */
   static void PostTurnTask(const std::shared_ptr<Impl>& state, std::function<void()> task);
   static void ConfigureOnIO(const std::shared_ptr<Impl>& state);
+  /**
+   * The turn needs MCP tools (a payload plan, the model pipeline): attaches the shared connection's tools to this
+   * session's registry, connecting first when no connection is kept. Turn thread; blocks while it connects.
+   */
+  static void EnsureMcpTools(const std::shared_ptr<Impl>& state);
+  /**
+   * StartTurn, once the question is stored: EnsureMcpTools when this turn reads MCP tools (not a streamed brief turn,
+   * not an app-action button). False: the turn was stopped (ended here) or replaced meanwhile; nothing more to do.
+   */
+  static bool PrepareMcpTools(const std::shared_ptr<Impl>& state);
   /** Submit worker: true to start the turn now; false when ConfigureOnIO will start it, or (configure failed) it ended. */
   static bool StartNowOrWhenConfigured(const std::shared_ptr<Impl>& state);
   static void StartTurn(const std::shared_ptr<Impl>& state);

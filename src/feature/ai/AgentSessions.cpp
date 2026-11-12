@@ -93,6 +93,7 @@ void AgentSessions::WarmSpare() {
 
 void AgentSessions::Configure(const AppConfig& config) {
   config_ = config;
+  shared_->mcp_tools.Invalidate(); // the next turn that needs MCP tools connects with this configuration
   ForEach([&](AgentSession& session) { session.Configure(config); });
   WarmSpare();
 }

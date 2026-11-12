@@ -11,7 +11,7 @@
 namespace pbr {
 
 void WireMcpHttpPost() {
-  McpClient::SetHttpPost([](const std::string& url, const std::string& body,
+  McpClient::SetHttpPostIfUnset([](const std::string& url, const std::string& body,
                             const std::map<std::string, std::string>& headers, const long timeout_s) {
     HttpTimeout timeout;
     if (timeout_s > 0) {

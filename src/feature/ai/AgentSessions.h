@@ -60,8 +60,9 @@ enum class TurnStart {
  * turns always run in its own session, so its permission card, a question the app asked back and its events stay
  * with it. How many thread turns run at once is decided here and only here (`Submit*` answer Full).
  *
- * One spare session is kept configured and idle, so a thread's first question does not wait for a whole configure
- * (MCP start included): a new thread takes it and the next spare starts configuring at once.
+ * One spare session is kept configured and idle, so a thread's first question does not wait for a configure: a new
+ * thread takes it and the next spare starts configuring at once. A configure connects to no MCP server: the first
+ * turn that needs MCP tools connects once for every session (AgentSessionShared::mcp_tools, B210).
  *
  * Settings (configuration, tool hook, permissions, thread store, ...) reach every live session and every one made
  * later. The events of all sessions come out of one queue (PollEvents) in the order they were posted; each carries
