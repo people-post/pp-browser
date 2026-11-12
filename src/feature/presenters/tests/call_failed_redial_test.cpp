@@ -384,15 +384,27 @@ TEST_F(CallFailedRedialTest, CallAgainOnAFailedVoiceCallEndsItThenCallsTheSamePe
   EXPECT_FALSE(a_.Screen().video) << "voice, as before";
 }
 
-TEST_F(CallFailedRedialTest, CallAgainOnAFailedVideoCallCallsByVideoWhenThisDeviceSendsVideo) {
+TEST_F(CallFailedRedialTest, CallAgainOnAFailedVideoCallCallsByVideo) {
+  a_.presenter->SetVideoAvailableForTest([]() { return true; });
   const std::string failed = FailedCall(a_, b_, /*video=*/true);
   ASSERT_TRUE(a_.Screen().video);
   a_.presenter->Redial();
-  PumpUntil([&]() { return !a_.presenter->ActiveCallId().empty() && a_.presenter->ActiveCallId() != failed; });
+  PumpUntil([&]() { return b_.Screen().kind == CallScreen::Kind::Ringing; });
   ASSERT_NE(a_.presenter->ActiveCallId(), failed);
   // The page's own kind (never the chat's "a call goes on here" rule, which would read the failed call).
-  EXPECT_EQ(a_.Screen().video, a_.presenter->VideoCallAvailable());
-  EXPECT_EQ(a_.presenter->VideoIntentCallId() == a_.presenter->ActiveCallId(), a_.presenter->VideoCallAvailable());
+  EXPECT_TRUE(a_.Screen().video) << "a video call again";
+  EXPECT_EQ(a_.presenter->VideoIntentCallId(), a_.presenter->ActiveCallId()) << "its camera comes on once connected";
+  EXPECT_TRUE(b_.Screen().ring_video) << "it rings as a video call";
+}
+
+TEST_F(CallFailedRedialTest, CallAgainOnAFailedVideoCallGoesVoiceWithoutVideo) {
+  const std::string failed = FailedCall(a_, b_, /*video=*/true);
+  a_.presenter->SetVideoAvailableForTest([]() { return false; });
+  a_.presenter->Redial();
+  PumpUntil([&]() { return b_.Screen().kind == CallScreen::Kind::Ringing; });
+  ASSERT_NE(a_.presenter->ActiveCallId(), failed);
+  EXPECT_FALSE(a_.Screen().video);
+  EXPECT_FALSE(b_.Screen().ring_video);
 }
 
 TEST_F(CallFailedRedialTest, TheCalleesCallAgainCallsTheCaller) {
@@ -787,15 +799,30 @@ TEST_F(CallFailedRedialTest, TheSamePersonCallingOverACallStillConnectingRingsAs
 }
 
 TEST_F(CallFailedRedialTest, BothPressingCallAgainEndInOneCall) {
-  (void)FailedCall(a_, b_);
+  const std::string failed = FailedCall(a_, b_);
   a_.presenter->Redial();
   b_.presenter->Redial();
   EXPECT_TRUE(a_.presenter->RedialPending());
   EXPECT_TRUE(b_.presenter->RedialPending());
+  const size_t a_sent = sent_by_a_.size();
+  const size_t b_sent = sent_by_b_.size();
   PumpUntil([&]() {
+    for (Phone* phone : {&a_, &b_}) {
+      // Each one's Call again is on its way when the other's invite lands: no ring over it, no leave from here.
+      EXPECT_FALSE(phone->Screen().kind == CallScreen::Kind::Ringing && phone->Screen().conflict);
+      EXPECT_FALSE(OffersRedial(phone->Screen())) << "never the failed page again";
+    }
     return a_.side.ui->Phase() == CallPhase::InCall && b_.side.ui->Phase() == CallPhase::InCall &&
            a_.side.ui->ActiveCallId() == b_.side.ui->ActiveCallId();
   });
+  const std::string merged = a_.side.ui->ActiveCallId();
+  for (auto [sent, from] : {std::pair{&sent_by_a_, a_sent}, std::pair{&sent_by_b_, b_sent}}) {
+    for (size_t i = from; i < sent->size(); ++i) {
+      if (IsCallEnd((*sent)[i])) {
+        EXPECT_EQ((*sent)[i].payload_json.find(merged), std::string::npos) << "nobody leaves the call both are in";
+      }
+    }
+  }
   EXPECT_EQ(a_.side.ui->ActiveCallId(), b_.side.ui->ActiveCallId()) << "one call, both in it";
   EXPECT_EQ(a_.Screen().kind, CallScreen::Kind::InCall);
   EXPECT_EQ(b_.Screen().kind, CallScreen::Kind::InCall);
@@ -895,6 +922,108 @@ TEST_F(CallFailedRedialTest, AfterAPendingRedialClearsCallAgainWorksAgain) {
   a_.presenter->Redial();
   PumpUntil([&]() { return !a_.presenter->ActiveCallId().empty() && a_.presenter->ActiveCallId() != second; });
   EXPECT_EQ(InvitesSent(sent_by_a_, sent).size(), 1u);
+}
+
+// --- Review round: the moments between "Call again" and the new call's page ------------------------------------
+
+// The failed call's leave is still queued when the screen refreshes: the failed page never comes back meanwhile, and
+// a stale "Try later" there does nothing (the new call is on its way).
+TEST_F(CallFailedRedialTest, AfterCallAgainTheFailedPageNeverComesBackBeforeTheNewCallShows) {
+  const std::string failed = FailedCall(a_, b_);
+  a_.presenter->Redial();
+  for (int i = 0; i < 5; ++i) {
+    a_.presenter->Tick();
+    a_.presenter->Refresh();
+    EXPECT_FALSE(OffersRedial(a_.Screen())) << "frame " << i;
+    EXPECT_NE(a_.Screen().call_id, failed) << "frame " << i;
+  }
+  EXPECT_EQ(a_.presenter->Leave(), "") << "a stale Try later";
+  PumpUntil([&]() { return !a_.presenter->ActiveCallId().empty() && a_.presenter->ActiveCallId() != failed; });
+  EXPECT_EQ(a_.Screen().kind, CallScreen::Kind::InCall);
+  EXPECT_TRUE(a_.Screen().placed_here) << "the new call went out all the same";
+  EXPECT_NE(Live(a_, a_.presenter->ActiveCallId())->State(), LiveCallState::Ended);
+}
+
+/** The messages waiting for `phone` reach its call stack, its screen not refreshed (the next frame has not run). */
+void DeliverUnseen(Phone& phone, const std::string& from) {
+  while (!phone.inbox.empty()) {
+    ASSERT_TRUE(phone.side.Deliver(phone.inbox.front(), from));
+    phone.inbox.pop_front();
+  }
+}
+
+// Their Call again (the failed call's end and the new invite) reached this phone's stack; the page was not redrawn
+// yet when its own Call again was tapped. Calling someone whose call rings here answers it: one call, and neither a
+// "they ended the call" nor an error pill.
+TEST_F(CallFailedRedialTest, CallAgainTappedAsTheirCallAgainArrivesAnswersItWithNoPill) {
+  const std::string failed = FailedCall(a_, b_);
+  b_.presenter->Redial();
+  for (int i = 0; i < 50 && b_.presenter->ActiveCallId().empty(); ++i) {
+    AppRuntime::RunUIAndOwnerTasks(); // B's leave and new invite go out, on their way to A
+  }
+  ShareKeys();
+  ASSERT_FALSE(InvitesSent(sent_by_b_).empty());
+  ASSERT_TRUE(OffersRedial(a_.Screen())) << "A's page not redrawn yet";
+  a_.notices.clear();
+  DeliverUnseen(a_, b_.side.local_identity);
+  a_.presenter->Redial();
+  PumpUntil([&]() {
+    return a_.side.ui->Phase() == CallPhase::InCall && b_.side.ui->Phase() == CallPhase::InCall &&
+           a_.side.ui->ActiveCallId() == b_.side.ui->ActiveCallId();
+  });
+  EXPECT_EQ(a_.side.ui->ActiveCallId(), b_.side.ui->ActiveCallId()) << "one call";
+  EXPECT_NE(a_.side.ui->ActiveCallId(), failed);
+  EXPECT_FALSE(a_.Told(CallNotice::Kind::PeerEnded));
+  EXPECT_FALSE(a_.Told(CallNotice::Kind::Error));
+}
+
+// Their Try later reached this phone's stack; the page was not redrawn yet when Call again was tapped (its screen
+// already cleared for the new call): no "they ended the call" on the calling page.
+TEST_F(CallFailedRedialTest, CallAgainTappedAsTheirTryLaterArrivesSaysNothingOfTheEnd) {
+  const std::string failed = FailedCall(a_, b_);
+  (void)b_.presenter->Leave();
+  for (int i = 0; i < 50 && a_.inbox.empty(); ++i) {
+    AppRuntime::RunUIAndOwnerTasks(); // B's leave goes out, on its way to A
+  }
+  ASSERT_FALSE(a_.inbox.empty());
+  a_.notices.clear();
+  DeliverUnseen(a_, b_.side.local_identity); // A's stack takes it ahead of A's own leave; A's screen not refreshed
+  ASSERT_TRUE(OffersRedial(a_.Screen()));
+  a_.presenter->Redial();
+  PumpUntil([&]() { return !a_.presenter->ActiveCallId().empty() && a_.presenter->ActiveCallId() != failed; });
+  EXPECT_EQ(a_.Screen().kind, CallScreen::Kind::InCall);
+  EXPECT_FALSE(a_.Told(CallNotice::Kind::PeerEnded));
+  EXPECT_FALSE(a_.presenter->FailedPage().has_value());
+}
+
+// The same person's group call rings in the stack (not on screen yet) when Call again is tapped: the stack refuses the
+// new call; the ring is what the user gets, with no error pill over it.
+TEST_F(CallFailedRedialTest, ACallAgainRefusedForTheSamePersonsRingSaysNothing) {
+  (void)FailedCall(a_, b_);
+  Thread group;
+  group.id = "thread-group-2";
+  group.kind = ThreadKind::Group;
+  group.group_id = "group-2";
+  group.title = "Group";
+  group.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(a_.side.store->UpsertThread(group));
+  a_.notices.clear();
+  ASSERT_TRUE(InviteFrom(a_, b_.side.local_identity, "call:group-2", std::string("group-2")));
+  a_.presenter->Redial();
+  PumpUntil([&]() { return a_.Screen().kind == CallScreen::Kind::Ringing && !a_.presenter->RedialPending(); });
+  EXPECT_EQ(a_.Screen().kind, CallScreen::Kind::Ringing);
+  for (const CallNotice& n : a_.notices) {
+    EXPECT_NE(n.kind, CallNotice::Kind::Error) << "no error pill over their ring: " << n.key << n.text;
+  }
+}
+
+TEST_F(CallFailedRedialTest, ACallAgainRefusedForSomeoneElsesRingSaysSo) {
+  (void)FailedCall(a_, b_);
+  a_.notices.clear();
+  ASSERT_TRUE(InviteFrom(a_, "account:carol", "call:carol-3"));
+  a_.presenter->Redial();
+  PumpUntil([&]() { return !a_.presenter->RedialPending(); });
+  EXPECT_TRUE(a_.Told(CallNotice::Kind::Error)) << "the call did not go out: said, as before";
 }
 
 } // namespace

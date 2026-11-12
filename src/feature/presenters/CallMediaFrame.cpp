@@ -150,7 +150,7 @@ CallHintPrompt DecideCallHintPrompt(const CallHintPromptInput& in, const std::ma
   }
   // A 1:1 call: the steps say how the connecting goes (what "Connecting voice…" repeated); a lost or silent mic means
   // something only once connected. On hold the silence is by design.
-  if (in.steps_shown || in.on_hold) {
+  if (in.steps_shown || in.on_hold || in.quiet) {
     return prompt;
   }
   std::string key;
@@ -158,7 +158,7 @@ CallHintPrompt DecideCallHintPrompt(const CallHintPromptInput& in, const std::ma
   if (in.capture_lost) {
     key = "call.quality.hint.mic_lost"; // the engine could not get the mic back: they hear nothing until a restart
     alarm = true;
-  } else if (in.asymmetry == CallAudioAsymmetry::ReceivingOnly) {
+  } else if (in.asymmetry == CallAudioAsymmetry::ReceivingOnly && in.not_sending_ms >= kOneWayPillAfterMs) {
     // Why this device sends nothing, when it is known; else the same advice as a lost mic.
     key = in.mic_blocked ? "hints.mic_blocked" : "call.quality.hint.not_sending_restart";
     alarm = true;
@@ -207,6 +207,7 @@ CallMediaDecision CallMediaFrame::Decide(const CallScreen& screen, const CallMed
     link_sampled_ms_ = 0;
     steps_gone_ms_ = 0;
     one_way_since_ms_ = 0;
+    not_sending_since_ms_ = 0;
     last_pill_ms_.clear();
   }
   CallMediaDecision d;
@@ -332,6 +333,12 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
   } else if (one_way_since_ms_ == 0) {
     one_way_since_ms_ = now;
   }
+  const bool not_sending = health.asymmetry == CallAudioAsymmetry::ReceivingOnly;
+  if (!not_sending) {
+    not_sending_since_ms_ = 0;
+  } else if (not_sending_since_ms_ == 0) {
+    not_sending_since_ms_ = now;
+  }
   CallHintPromptInput hint;
   hint.group = screen.group;
   hint.video = screen.video;
@@ -341,6 +348,9 @@ const CallMediaScreen& CallMediaFrame::Finish(const CallScreen& screen, const Ca
   hint.asymmetry = health.asymmetry;
   hint.capture_lost = facts.engine.capture_lost;
   hint.one_way_ms = sending_only && !steps ? now - std::max(one_way_since_ms_, steps_gone_ms_) : 0;
+  hint.not_sending_ms = not_sending && !steps ? now - std::max(not_sending_since_ms_, steps_gone_ms_) : 0;
+  hint.quiet = d.couldnt_connect || d.reconnect || screen.status == Status::CouldntConnect ||
+               screen.status == Status::Disconnected || screen.status == Status::Reconnecting;
   hint.mic_blocked = facts.mic_blocked;
   hint.on_hold = held;
   hint.now_ms = now;

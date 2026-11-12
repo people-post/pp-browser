@@ -272,6 +272,8 @@ public:
   /** G022: the banner's Not now: it goes away in this call; the invite stays waiting (its card in the chat stays). */
   void PutOffGroupInvite();
   bool VideoCallAvailable();
+  /** Tests: whether this device sends video (in place of the engine's encoder). */
+  void SetVideoAvailableForTest(std::function<bool()> available) { video_available_for_test_ = std::move(available); }
   /** The ring's answer buttons. Return the call answered (empty: nothing ringing). */
   /**
    * Answer the ring: `call_id`, the one the phone's call screen answered, else the ring on screen. The click frame
@@ -379,6 +381,7 @@ private:
   std::optional<CallSpeakerTap> speaker_tap_;
   std::function<bool()> dev_route_reorder_skip_;
   std::function<bool()> dev_detach_ui_;
+  std::function<bool()> video_available_for_test_;
   /** The call debug.pp.detach_call_ui last dropped (logged once per call). */
   std::string dev_detached_call_id_;
   /** The call KeepEngineCall last logged (once per call). */
@@ -413,6 +416,12 @@ private:
   /** RedialPending: when "Call again" was pressed (steady_ms_; 0: none), and the failed call it ended. */
   int64_t redial_pending_since_ms_ = 0;
   std::string redial_from_call_id_;
+  /** Whom Call again calls, until its start answers (refused for their own ring here, it says nothing). */
+  std::string redial_peer_;
+  /** A ring from `identity` is pending in the call stack (on screen or not yet). */
+  bool RingingFrom(const std::string& identity) const;
+  /** The last 1:1 call shown that this device was in and that had not connected (KeepsFailedPage's kind). */
+  std::string unconnected_call_id_;
   NoMediaWatch no_media_watch_;
   int64_t no_media_checked_ms_ = 0;
   /** Last CallSessionManager identity the ring callbacks were installed on. */
