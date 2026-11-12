@@ -105,12 +105,17 @@ protected:
   }
 
   void TearDown() override {
-    a_.presenter.reset();
-    b_.presenter.reset();
+    // As the app ends (the call stack goes before CallController) and as the other real-stack presenter tests do: the
+    // stacks stop first — their shutdown still rings and refreshes, posted to UI and drained inside Shutdown, and the
+    // presenters those reach must be alive (with no backend left, they only clear) — then the runtime, then the
+    // presenters. Presenters gone first was a use-after-free in CallStack::Shutdown (Windows: SEH 0xc0000005).
+    a_backend_ = nullptr;
     SoftStopStackSide(a_.side);
     SoftStopStackSide(b_.side);
     AppRuntime::ShutdownUI();
     AppRuntime::Shutdown();
+    a_.presenter.reset();
+    b_.presenter.reset();
     DestroyStackSide(a_.side);
     DestroyStackSide(b_.side);
   }
