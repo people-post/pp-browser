@@ -171,7 +171,7 @@ struct AgentSession::Impl : public Module {
   std::mutex configure_mutex;
   std::condition_variable configure_cv;
   int configure_inflight = 0;
-  /** Serialize ConfigureOnIO body — concurrent Configure() raced mcp.Start/Stop (UAF → SEGV in logger). */
+  /** Serialize ConfigureOnIO body (and attaching MCP tools): it rebuilds the registry. */
   std::mutex configure_work_mutex;
   std::chrono::milliseconds missing_tool_wait{10'000};
   std::chrono::milliseconds missing_tool_poll{500};
@@ -181,7 +181,15 @@ struct AgentSession::Impl : public Module {
   BriefAiStreamFn brief_stream;          // built in ConfigureOnIO
   BriefAiStreamFn brief_stream_override; // SetBriefAiStream; wins over brief_stream
   BriefKeyPorts brief_key;               // SetBriefKeyPorts; a 401 of the brief stream (B183)
-  McpRuntime mcp;
+  /**
+   * The MCP connection whose tools the registry holds (SharedMcpTools); kept until the next one is attached, as the
+   * registered tools call into its clients.
+   */
+  std::shared_ptr<McpConnection> mcp_connection;
+  /** A complete connection's tools are attached for the current configure. Guarded by configure_work_mutex. */
+  bool mcp_attached = false;
+  /** Raised by every ConfigureOnIO. Guarded by configure_work_mutex. */
+  uint64_t configure_generation = 0;
   ToolRegistry tools;
   Conversation conversation;
   TurnCoordinator coordinator;
@@ -545,6 +553,9 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
     return;
   }
 
+  if (!park.plan.local) {
+    EnsureMcpTools(state); // a Configure since the card was parked dropped the MCP tools it offers
+  }
   PushApprovalClosed(state, park,
                      decision == "allow_always" ? ApprovalOutcome::AllowAlways : ApprovalOutcome::AllowOnce);
 
@@ -1015,13 +1026,13 @@ AgentSession::FeedRelist AgentSession::RelistMissingFeedTools(const std::shared_
       return FeedRelist::Cancelled;
     }
     {
-      // A concurrent Configure() stops and replaces the MCP clients and rebuilds the registry.
+      // A concurrent Configure() rebuilds the registry (without MCP tools until a turn attaches them again).
       std::lock_guard work_lock(state->configure_work_mutex);
       const std::string wanted = missing();
       if (wanted.empty()) {
         return FeedRelist::Listed; // a Configure() that ran meanwhile listed them
       }
-      McpClient* promoted = state->mcp.PromotedPtr();
+      McpClient* promoted = state->mcp_connection ? state->mcp_connection->runtime.PromotedPtr() : nullptr;
       if (!promoted || !promoted->IsRunning()) {
         return FeedRelist::Unavailable; // disabled or not configured: nothing to wait for
       }
@@ -1914,6 +1925,23 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     return;
   }
 
+  const bool local_action_payload = state->pending_user_payload && [&] {
+    const auto doc = TryParseObject(*state->pending_user_payload);
+    return doc && doc->getString("type").value_or("") == "local_action";
+  }();
+  if (!BriefStreamAvailable(state) && !local_action_payload) {
+    // A payload plan or the model pipeline reads the MCP tools; a streamed brief turn and an app action do not, so
+    // they never wait for a connection (B210).
+    EnsureMcpTools(state);
+    if (StaleStep(state, "mcp")) {
+      return;
+    }
+    if (state->cancelled) {
+      FinishTurn(state);
+      return;
+    }
+  }
+
   if (state->turn_mode == AgentTurnMode::Thread) {
     if (!state->thread_store) {
       PushError(state, "Thread store not configured");
@@ -2101,6 +2129,55 @@ bool AgentSession::StartNowOrWhenConfigured(const std::shared_ptr<Impl>& state) 
   return false;
 }
 
+void AgentSession::EnsureMcpTools(const std::shared_ptr<Impl>& state) {
+  uint64_t generation = 0;
+  {
+    std::lock_guard work_lock(state->configure_work_mutex);
+    if (state->mcp_attached) {
+      return;
+    }
+    generation = state->configure_generation;
+  }
+  // The question already shows and the turn is "thinking" (PushLoading) while this connects.
+  std::shared_ptr<McpConnection> connection = state->shared->mcp_tools.Acquire(state->config, &state->cancelled);
+  if (!connection) {
+    return; // stopped while another turn connected
+  }
+  std::lock_guard work_lock(state->configure_work_mutex);
+  // A stopped turn writes nothing: the turn that replaced it may already read the registry.
+  if (state->cancelled || StaleStep(state, "mcp attach")) {
+    return;
+  }
+  // The order a configure with MCP had: web_search, the MCP tools, then the app's own tools (the hook's).
+  std::vector<ToolDescriptor> app_tools;
+  for (const ToolDescriptor& tool : state->tools.Tools()) {
+    if (tool.meta.provider.rfind("mcp:", 0) != 0) {
+      app_tools.push_back(tool);
+    }
+  }
+  BuildToolRegistryFromConfig(state->tools, state->config, nullptr);
+  const auto add_new = [state](const ToolDescriptor& tool) {
+    for (const ToolDescriptor& existing : state->tools.Tools()) {
+      if (existing.definition.name == tool.definition.name) {
+        return;
+      }
+    }
+    state->tools.Register(tool);
+  };
+  for (const ToolDescriptor& tool : connection->tools.Tools()) {
+    // Each tool keeps its connection alive: a stopped turn's call may still run after the next attach replaced it.
+    ToolDescriptor held = tool;
+    held.execute = [connection, execute = tool.execute](const Object& arguments) { return execute(arguments); };
+    add_new(held);
+  }
+  for (const ToolDescriptor& tool : app_tools) {
+    add_new(tool);
+  }
+  state->mcp_connection = std::move(connection);
+  // A Configure that ran meanwhile rebuilt the registry for another configuration: the next turn attaches again.
+  state->mcp_attached = state->mcp_connection->complete && generation == state->configure_generation;
+}
+
 void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   // Configure() counted this run and releases it when the posted closure is destroyed.
   // Serialize ConfigureOnIO body — concurrent Configure() raced mcp.Start/Stop (UAF → SEGV in logger).
@@ -2135,18 +2212,12 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
                          const std::atomic<bool>& cancel) { return brief_client->Stream(request, on_event, cancel); };
     }
 
-    const AppConfig defaults = Config::DefaultAppConfig();
+    // No MCP connection here (B210): the first turn that needs MCP tools makes it (EnsureMcpTools), shared by
+    // every session. Opening a chat, unlocking or a change of key connects nothing and holds no worker.
     WireMcpHttpPost();
-    state->mcp.Start(state->config, defaults);
-
-    std::vector<std::string> custom_prefixes;
-    custom_prefixes.reserve(state->config.mcp_servers.size());
-    for (const McpConfig& entry : state->config.mcp_servers) {
-      custom_prefixes.push_back(entry.id);
-    }
-
-    BuildToolRegistryFromConfig(state->tools, state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
-                                custom_prefixes);
+    ++state->configure_generation;
+    state->mcp_attached = false;
+    BuildToolRegistryFromConfig(state->tools, state->config, nullptr);
     ToolRegistrationHook hook;
     {
       std::lock_guard hook_lock(state->hook_mutex);
@@ -2170,7 +2241,6 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   } catch (const std::exception& e) {
     state->configured = false;
     state->configure_failed = true;
-    state->mcp.Stop();
     state->llm.reset();
     state->tools.Clear();
     RefreshCompactionService(state);
@@ -2181,7 +2251,6 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   } catch (...) {
     state->configured = false;
     state->configure_failed = true;
-    state->mcp.Stop();
     state->llm.reset();
     state->tools.Clear();
     RefreshCompactionService(state);
@@ -2224,6 +2293,9 @@ AgentSession::~AgentSession() {
 }
 
 void AgentSession::Configure(const AppConfig& config) {
+  if (!impl_->shared->own_threads) {
+    impl_->shared->mcp_tools.Invalidate(); // a lone session's connection is its own; AgentSessions drops its shared one
+  }
   impl_->config = config;
   impl_->configured = false;
   impl_->cancelled = false;
