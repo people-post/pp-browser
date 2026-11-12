@@ -56,12 +56,16 @@ TEST(ChatEditsTest, AnotherChatDoesNotEndTheEditOrTouchItsState) {
   EXPECT_EQ(back->draft_before, "a's draft");
 }
 
-TEST(ChatEditsTest, EditingAnotherMessageOfTheSameChatKeepsTheFirstDraft) {
+// Editing A, then "edit B" (however it was reached): refused; A's half-edited words and the draft before stay.
+TEST(ChatEditsTest, WhileEditingAMessageAnotherOneIsNotStarted) {
   ChatEdits edits;
   edits.Begin("chat-a", "m1", "first", "the real draft");
-  EXPECT_EQ(edits.Begin("chat-a", "m2", "second", "first, half edited"), "second");
-  EXPECT_EQ(edits.In("chat-a")->message_id, "m2");
+  EXPECT_EQ(edits.Begin("chat-a", "m2", "second", "first, half edited"), std::nullopt)
+      << "no text for the composer: it keeps the words being edited";
+  EXPECT_EQ(edits.In("chat-a")->message_id, "m1");
+  EXPECT_EQ(edits.In("chat-a")->original, "first");
   EXPECT_EQ(edits.End("chat-a"), "the real draft");
+  EXPECT_EQ(edits.Begin("chat-a", "m2", "second", "the real draft"), "second") << "once it ended, another may start";
 }
 
 // The message went away while edited: with no draft before, the typed words stay; with one, it comes back.

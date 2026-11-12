@@ -104,6 +104,13 @@ void InsertEditAction(std::vector<ContextMenuAction>& actions, std::function<voi
   actions.insert(copy == actions.end() ? actions.end() : std::next(copy), std::move(edit));
 }
 
+void RemoveActionsWhileEditing(std::vector<ContextMenuAction>& actions) {
+  std::erase_if(actions, [](const ContextMenuAction& action) {
+    return action.id == "edit_message" || action.id == "reply_message" || action.id == "ask_ai_message" ||
+           action.id == "ask_ai_item";
+  });
+}
+
 std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& request) {
   std::vector<ContextMenuAction> actions;
   ConversationsFacade* facade = host_.Facade();
@@ -150,6 +157,9 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
                          AppRuntime::PostUI([this, shared, position]() { OpenShareTargets(shared, position); });
                        },
                        "../icons/v2/share.svg"});
+    if (chat_.editing_message) {
+      RemoveActionsWhileEditing(actions);
+    }
     return actions;
   }
 
@@ -200,8 +210,11 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
                          [this, text]() { host_.StartQuoteReply(text, "@ai "); }, "../icons/v2/sparkle.svg"});
     }
   }
-  // Edit: our own text, within its 15 minutes (DEV/PLAN-message-edit.md); right under Copy.
-  if (host_.CanEditMessage(message_id)) {
+  // Edit: our own text, within its 15 minutes (DEV/PLAN-message-edit.md); right under Copy. While the chat is editing a
+  // message, nothing that would start another edit or a reply (the words being edited stay as typed).
+  if (chat_.editing_message) {
+    RemoveActionsWhileEditing(actions);
+  } else if (host_.CanEditMessage(message_id)) {
     InsertEditAction(actions, [this, message_id]() { host_.StartEditMessage(message_id); });
   }
   ContextMenuAction remove{

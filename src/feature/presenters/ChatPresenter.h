@@ -541,7 +541,8 @@ public:
   bool CanEditMessage(const std::string& message_id);
   /**
    * Starts editing `message_id` in `thread_id`, the composer holding `composer_text`: returns the text the composer
-   * takes (the message's words), none when it cannot be edited. A quote reply being written is the controller's to end.
+   * takes (the message's words), none when it cannot be edited or `thread_id` is already editing a message (ChatEdits::
+   * Begin). A quote reply being written is the controller's to end.
    */
   std::optional<std::string> BeginEdit(const std::string& thread_id, const std::string& message_id,
                                        const std::string& composer_text);

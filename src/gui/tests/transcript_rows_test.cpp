@@ -14,8 +14,10 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <memory>
+#include <sstream>
 
 namespace pbr {
 namespace {
@@ -414,6 +416,55 @@ TEST(ChatMenusEditTest, EditSitsRightUnderCopy) {
   std::vector<ContextMenuAction> no_copy{{"delete_message", "Delete", nullptr, nullptr}};
   InsertEditAction(no_copy, nullptr);
   EXPECT_EQ(no_copy.back().id, "edit_message");
+}
+
+// While the chat is editing a message, its menu offers nothing that would start another edit or a reply (each replaced
+// the words being edited, or did nothing): reactions, Copy and Delete stay.
+TEST(ChatMenusEditTest, WhileEditingTheMenuHasNoEditReplyOrAskAi) {
+  std::vector<ContextMenuAction> actions;
+  for (const char* id : {"react_x", "react_more", "reply_message", "copy_message", "edit_message", "ask_ai_message",
+                         "delete_message"}) {
+    actions.push_back({id, id, nullptr, nullptr});
+  }
+  RemoveActionsWhileEditing(actions);
+  std::vector<std::string> ids;
+  for (const ContextMenuAction& action : actions) {
+    ids.push_back(action.id);
+  }
+  EXPECT_EQ(ids, (std::vector<std::string>{"react_x", "react_more", "copy_message", "delete_message"}));
+  std::vector<ContextMenuAction> item{{"ask_ai_item", "", nullptr, nullptr},
+                                      {"copy_item", "", nullptr, nullptr},
+                                      {"share_item", "", nullptr, nullptr}};
+  RemoveActionsWhileEditing(item);
+  ASSERT_EQ(item.size(), 2u);
+  EXPECT_EQ(item[0].id, "copy_item");
+
+  // ChatMenus::ForRequest applies it to both menus while editing (it needs a live facade, so its source is read), and
+  // the controller's "Edit" entry refuses while an edit is open.
+  const auto read = [](const std::string& path) {
+    std::ifstream in(std::string(PP_SOURCE_DIR) + path, std::ios::binary);
+    std::ostringstream text;
+    text << in.rdbuf();
+    std::string source = text.str();
+    std::erase(source, '\r'); // a Windows checkout has CRLF line ends
+    return source;
+  };
+  const std::string menus = read("/src/gui/chat/ChatMenus.cpp");
+  const size_t for_request = menus.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
+  ASSERT_NE(for_request, std::string::npos);
+  const std::string body = menus.substr(for_request, menus.find("\n}\n", for_request) - for_request);
+  const std::string editing = "if (chat_.editing_message) {\n";
+  size_t uses = 0;
+  for (size_t at = body.find(editing); at != std::string::npos; at = body.find(editing, at + 1)) {
+    const size_t next = at + editing.size();
+    uses += body.find("RemoveActionsWhileEditing(actions);", next) == body.find_first_not_of(' ', next) ? 1 : 0;
+  }
+  EXPECT_EQ(uses, 2u) << "the item menu and the message menu";
+  const std::string controller = read("/src/gui/chat/ChatController.cpp");
+  const size_t start = controller.find("void ChatController::StartEditMessage(");
+  ASSERT_NE(start, std::string::npos);
+  const size_t guard = controller.find("if (presenter_.EditingIn(thread_id)) {\n    return;", start);
+  EXPECT_LT(guard, controller.find("presenter_.BeginEdit(", start)) << "checked before anything is begun";
 }
 
 // G016: the group's own chat says who ended it; the owner's device says "You".

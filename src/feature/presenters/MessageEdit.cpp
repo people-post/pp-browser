@@ -5,8 +5,11 @@
 
 namespace pbr {
 
-std::string ChatEdits::Begin(const std::string& thread_id, const std::string& message_id,
-                             const std::string& message_text, const std::string& composer_text) {
+std::optional<std::string> ChatEdits::Begin(const std::string& thread_id, const std::string& message_id,
+                                            const std::string& message_text, const std::string& composer_text) {
+  if (edits_.count(thread_id) != 0) {
+    return std::nullopt; // already editing here: nothing typed is overwritten
+  }
   EditingMessage editing;
   editing.message_id = message_id;
   editing.original = message_text;
@@ -15,8 +18,7 @@ std::string ChatEdits::Begin(const std::string& thread_id, const std::string& me
     editing.original = message_text.substr(0, split);
     editing.quote_suffix = message_text.substr(split);
   }
-  const auto open = edits_.find(thread_id);
-  editing.draft_before = open != edits_.end() ? open->second.draft_before : composer_text;
+  editing.draft_before = composer_text;
   const std::string composer = editing.original;
   edits_[thread_id] = std::move(editing);
   return composer;

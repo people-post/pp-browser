@@ -84,6 +84,12 @@ public:
 void InsertEditAction(std::vector<ContextMenuAction>& actions, std::function<void()> start_edit);
 
 /**
+ * While the open chat is editing a message: takes out "Edit", "Reply" and "Ask AI" (each would replace the words being
+ * edited, or do nothing); reactions, Copy and Delete stay.
+ */
+void RemoveActionsWhileEditing(std::vector<ContextMenuAction>& actions);
+
+/**
  * The chat screen's menus: the long-press / right-click menu (a chats-list row, a message, an item
  * the user can pass on), the header's "new", thread-actions and call menus, the emoji and reaction
  * pickers' fallbacks, mute durations, share targets and the delete choice. Each item calls back into

@@ -4154,6 +4154,9 @@ void ChatController::StartEditMessage(const std::string& message_id) {
   if (chat_.compose_disabled || thread_id.empty() || thread_id != ActiveThreadId()) {
     return;
   }
+  if (presenter_.EditingIn(thread_id)) {
+    return; // one edit at a time: the words being edited stay as typed (the menu offers no "Edit" meanwhile)
+  }
   const auto text = presenter_.BeginEdit(thread_id, message_id, chat_.draft.c_str());
   if (!text) {
     ShowToast(Tr("chat.edit.too_late"));

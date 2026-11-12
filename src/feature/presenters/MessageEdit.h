@@ -34,10 +34,11 @@ class ChatEdits {
 public:
   /**
    * Starts editing `message_id` (its text `message_text`) in `thread_id`, the composer holding `composer_text`; returns
-   * the text the composer takes. Editing another message of the same chat keeps the draft from before the first.
+   * the text the composer takes. None while that chat is already editing a message: its half-edited words and its draft
+   * from before stay (one edit at a time; the user ends it first).
    */
-  std::string Begin(const std::string& thread_id, const std::string& message_id, const std::string& message_text,
-                    const std::string& composer_text);
+  std::optional<std::string> Begin(const std::string& thread_id, const std::string& message_id,
+                                   const std::string& message_text, const std::string& composer_text);
 
   /** The edit open in `thread_id`, if any. */
   const EditingMessage* In(const std::string& thread_id) const;
