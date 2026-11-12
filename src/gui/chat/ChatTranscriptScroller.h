@@ -33,7 +33,10 @@ public:
   void BindConversationsFacade(ConversationsFacade* facade);
 
   void SetDirtyTurns(std::function<void()> dirty_turns) { dirty_turns_ = std::move(dirty_turns); }
-  /** Called when a page of older rows has been loaded into the window (measurement only). */
+  /**
+   * Called when a page of older rows has been loaded into the window (measurement only): scrolled up into the local
+   * history, or older history fetched from the peer (ExpandLoadedMinFromOlderPage).
+   */
   void SetOnOlderLoaded(std::function<void()> on_loaded) { on_older_loaded_ = std::move(on_loaded); }
   /** Draws a thread's transcript window as bound rows (the chat controller renders and decorates). */
   using RowBuilder = std::function<std::vector<MessageDisplayRow>(
@@ -74,6 +77,9 @@ public:
   static JumpWindow WindowForJump(int64_t order, std::optional<int64_t> loaded_min, std::optional<int64_t> loaded_max);
   /** SyncLayout remounts DOM — re-arm follow-tail when still pinned, else put the reading position back. */
   void OnShellRemounted();
+
+  /** No scroll to the bottom, jump or remount restore is still being settled (the rows on screen are where they stay). */
+  bool Settled() const { return !pending_scroll_to_bottom_ && pending_jump_id_.empty() && !restore_scroll_top_; }
 
   const std::optional<int64_t>& LoadedMinDisplayOrder() const { return loaded_min_display_order_; }
   const std::optional<int64_t>& LoadedMaxDisplayOrder() const { return loaded_max_display_order_; }

@@ -21,6 +21,11 @@ public:
     RenderUs().fetch_add(render_us, std::memory_order_relaxed);
   }
 
+  /** A frame of 50 ms or more (the main loop's ui.slow_frame threshold), each one, the throttled lines' skipped too. */
+  static void AddSlowFrame() { SlowFrameCount().fetch_add(1, std::memory_order_relaxed); }
+  /** Slow frames since the start (never reset: a reader takes the difference, as chat.previews does). */
+  static int64_t SlowFrames() { return SlowFrameCount().load(std::memory_order_relaxed); }
+
   static UiFrameTotals TakeAndReset() {
     return {Frames().exchange(0, std::memory_order_relaxed), LayoutUs().exchange(0, std::memory_order_relaxed),
             RenderUs().exchange(0, std::memory_order_relaxed)};
@@ -32,6 +37,10 @@ private:
     return v;
   }
   static std::atomic<int64_t>& LayoutUs() {
+    static std::atomic<int64_t> v{0};
+    return v;
+  }
+  static std::atomic<int64_t>& SlowFrameCount() {
     static std::atomic<int64_t> v{0};
     return v;
   }

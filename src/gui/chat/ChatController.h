@@ -19,6 +19,7 @@
 #include "gui/chat/PendingUploadRows.h"
 #include "feature/presenters/AttachmentPicks.h"
 #include "gui/chat/PhotoPreview.h"
+#include "gui/chat/ChatOpenMetrics.h"
 #include "gui/chat/ChatPictureTextures.h"
 #include "gui/chat/PreviewRedrawBatcher.h"
 #include "gui/chat/VoiceComposer.h"
@@ -737,6 +738,7 @@ private:
     bool layout_pending = false;
     int64_t rows = 0;
     int64_t pictures = 0;
+    int64_t placeholders = 0;
     int64_t build_ms = 0;
     std::chrono::steady_clock::time_point built_at{};
   };
@@ -767,7 +769,11 @@ private:
   std::unordered_set<std::string> previews_failed_;
   void OnChatPreviewDone(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made);
   void RedrawPreviews();
-
+  /** chat.previews: the open's placeholders until their previews are drawn (or the chat is left). */
+  ChatPreviewsProbe previews_probe_;
+  void FinishPreviewsProbe();
+  /** Once the open's layout has settled: which placeholders are on screen (chat.previews' visible_ms). */
+  void MeasureVisiblePreviews();
   void ScheduleChatWindowMetric(std::chrono::milliseconds delay, bool exited);
   bool mesh_ready_ = false;
   ChatTranscriptScroller scroller_;

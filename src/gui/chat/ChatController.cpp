@@ -26,6 +26,7 @@
 #include "gui/chat/AttachmentBackfillPolicy.h"
 #include "gui/chat/ChatOpenMetrics.h"
 #include "gui/chat/ChatPictureTextures.h"
+#include "gui/UiFrameStats.h"
 #include "foundation/diagnostics/OsCurrentMemory.h"
 #include "common/Diag.h"
 #include "common/Metrics.h"
@@ -906,6 +907,7 @@ void ChatController::SendSuggestionAction(const std::string& id) {
 
 void ChatController::FinalizeThreadDisplay() {
   // The chat before (or this one, opened again): its preview requests not started go; this open asks for its own.
+  FinishPreviewsProbe();
   preview_batcher_.Clear();
   if (facade_) {
     facade_->CancelChatPreviews();
@@ -1346,6 +1348,7 @@ void ChatController::OnProfileDataReset() {
   QueueTextureRelease(picture_textures_.UnmountAll()); // the old profile's pictures leave video memory
   vault_locked_seen_ = false;
   preview_batcher_.Clear();
+  previews_probe_ = ChatPreviewsProbe{};
   pending_uploads_.Drop(); // the lock check never sees this teardown: the plaintext thumbnail goes here
   AbandonPick();
   video_bubble_thread_.clear();
@@ -3600,8 +3603,11 @@ void ChatController::SyncDisplayFromThread() {
     open_probe_.layout_pending = true;
     open_probe_.rows = static_cast<int64_t>(chat_.messages.size());
     open_probe_.pictures = static_cast<int64_t>(CountPictureBubbleRows(chat_.messages));
+    open_probe_.placeholders = static_cast<int64_t>(CountPicturePlaceholderRows(chat_.messages));
     open_probe_.build_ms = sync_ms; // the same stretch chat.sync_slow measures
     open_probe_.built_at = std::chrono::steady_clock::now();
+    // chat.previews: from the open (the sync started then) until the placeholders drawn now have their previews.
+    previews_probe_.Start(PicturePlaceholderHashes(chat_.messages), sync_started, UiFrameStats::SlowFrames());
   }
   SyncPictureTextures(); // rows gone (deleted, another chat, trimmed): their pictures' textures go
   if (sync_ms >= kSlowDisplaySyncMs) {
@@ -5502,6 +5508,7 @@ void ChatController::Update() {
       if (dropped) {
         DirtyChatTurns();
       }
+      FinishPreviewsProbe();
       preview_batcher_.Clear();
       QueueTextureRelease(picture_textures_.UnmountAll());
     }
@@ -5598,6 +5605,7 @@ void ChatController::PollChatShowing() {
   }
   chat_showing_ = showing;
   if (!showing) {
+    FinishPreviewsProbe();
     if (facade_) {
       facade_->CancelChatPreviews(); // only the chat's requests not started; the storage grid's stay
     }
@@ -5724,6 +5732,10 @@ void ChatController::RedrawPreviews() {
       }
     }
   }
+  bool last = false;
+  for (const std::string& hex : ready) {
+    last = previews_probe_.Done(hex, previews_failed_.contains(hex), now) || last;
+  }
   previews_failed_.clear();
   if (whole) {
     SyncDisplayFromThread(); // rare (a preview that cannot be made): the rows drawn again, data-rml resets the changed
@@ -5733,6 +5745,53 @@ void ChatController::RedrawPreviews() {
   if (whole || changed) {
     DirtyChatTurns();
   }
+  if (last) {
+    FinishPreviewsProbe();
+  }
+}
+
+void ChatController::FinishPreviewsProbe() {
+  if (!previews_probe_.Active()) {
+    return;
+  }
+  const ChatPreviewsProbe::Report report =
+      previews_probe_.Finish(std::chrono::steady_clock::now(), UiFrameStats::SlowFrames());
+  const CurrentMemoryMb memory = ReadCurrentMemoryMb();
+  MetricsLine("chat.previews")
+      .Add("count", report.count)
+      .Add("failed", report.failed)
+      .Add("ms", report.ms)
+      .Add("visible_ms", report.visible_ms)
+      .Add("slow_frames", report.slow_frames)
+      .Add("complete", report.complete)
+      .Add("footprint_mb", memory.footprint_mb)
+      .Add("rss_mb", memory.rss_mb)
+      .Emit();
+}
+
+void ChatController::MeasureVisiblePreviews() {
+  if (!previews_probe_.Active() || previews_probe_.VisibleKnown() || !scroller_.Settled() || !context_ ||
+      context_->GetNumDocuments() == 0) {
+    return;
+  }
+  ui::ElementDocument* document = context_->GetDocument(0);
+  ui::Element* scroll = document->GetElementById("chat-messages");
+  if (!scroll || scroll->GetClientHeight() <= 0.f) {
+    return;
+  }
+  const float top = scroll->GetAbsoluteOffset(ui::BoxArea::Padding).y;
+  const float bottom = top + scroll->GetClientHeight();
+  ui::ElementList placeholders;
+  document->GetElementsByClassName(placeholders, "chat-picture-placeholder");
+  std::vector<std::string> on_screen;
+  for (ui::Element* element : placeholders) {
+    const float y = element->GetAbsoluteOffset(ui::BoxArea::Border).y;
+    const float h = element->GetBox().GetSize(ui::BoxArea::Border).y;
+    if (y < bottom && y + h > top) {
+      on_screen.push_back(element->GetAttribute<ui::String>("pic-hash", ""));
+    }
+  }
+  previews_probe_.SetVisible(on_screen, std::chrono::steady_clock::now());
 }
 
 void ChatController::ScheduleChatWindowMetric(const std::chrono::milliseconds delay, const bool exited) {
@@ -5771,6 +5830,7 @@ void ChatController::OnSyncLayoutMeasured(const int64_t ms) {
   MetricsLine("chat.open")
       .Add("rows", open_probe_.rows)
       .Add("pictures", open_probe_.pictures)
+      .Add("placeholders", open_probe_.placeholders)
       .Add("build_ms", open_probe_.build_ms)
       .Add("layout_ms", ms)
       .Add("footprint_mb", memory.footprint_mb)
@@ -5788,6 +5848,7 @@ void ChatController::AfterLayout() {
   }
   SyncComposerOverlay();
   scroller_.ApplyPolicy();
+  MeasureVisiblePreviews();
   FillSessionListAfterLayout();
 }
 

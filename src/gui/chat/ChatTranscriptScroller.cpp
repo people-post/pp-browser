@@ -597,6 +597,9 @@ void ChatTranscriptScroller::ExpandLoadedMinFromOlderPage(const std::string& thr
                        : Roe<std::vector<ThreadMessage>>::error(Error("chat port unavailable"));
   if (older && !older->empty()) {
     loaded_min_display_order_ = older->front().display_order;
+    if (on_older_loaded_) {
+      on_older_loaded_(); // the chat redraws its rows with them next (the caller's refresh)
+    }
   }
 }
 

@@ -2694,6 +2694,7 @@ void Application::Run() {
                              std::chrono::duration_cast<std::chrono::microseconds>(draw_done - draw_started).count());
       const auto frame_ms = std::chrono::duration_cast<std::chrono::milliseconds>(draw_done - frame_started).count();
       if (count_slow_frame && frame_ms >= kSlowFrameMs) {
+        UiFrameStats::AddSlowFrame();
         if (frame_done - last_slow_frame_line >= std::chrono::seconds(1)) {
           MetricsLine("ui.slow_frame")
               .Add("ms", static_cast<int64_t>(frame_ms))
