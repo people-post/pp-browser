@@ -548,8 +548,6 @@ private:
   Roe<void> BuildLocalMessagingStack();
   /** Attach Amp links from a running mesh_ to the orchestrator. */
   Roe<void> AttachAmpMessagingStack();
-  /** @deprecated Prefer BuildLocalMessagingStack + ScheduleMeshBringUp. Sync local+mesh. */
-  Roe<void> BuildMessagingStack();
   void ScheduleMeshBringUp();
   void NotifyMessagingReady();
   void NotifyMeshReady();

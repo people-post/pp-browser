@@ -1,4 +1,5 @@
 #include "domain/delivery/AmpDirectChatTransport.h"
+#include "DirectSendWait.h"
 
 #include "common/chat/MessagingJson.h"
 #include "lib/delivery/RelayWirePayload.h"
@@ -78,7 +79,8 @@ TEST_F(AmpDirectChatTransportTest, SendEnvelopeRoundTrip) {
     cv.notify_one();
   });
 
-  const auto sent = a_chat_->SendEnvelope("b", MakeTestEnvelope("msg-1", "hello direct"));
+  const auto sent =
+      test::SendAndWait(*a_chat_, "b", MakeTestEnvelope("msg-1", "hello direct"), [this] { harness_->PumpBoth(); });
   ASSERT_TRUE(sent) << sent.error().message;
 
   {
@@ -105,7 +107,8 @@ TEST_F(AmpDirectChatTransportTest, AnAccountIsReachedThroughItsKnownDevices) {
     return key == "account:bob" ? std::vector<std::string>{"b"} : std::vector<std::string>{};
   });
   EXPECT_EQ(a_chat_->ReachableKey("account:bob"), "b");
-  const auto sent = a_chat_->SendEnvelope("account:bob", MakeTestEnvelope("msg-3", "via a device"));
+  const auto sent = test::SendAndWait(*a_chat_, "account:bob", MakeTestEnvelope("msg-3", "via a device"),
+                                      [this] { harness_->PumpBoth(); });
   ASSERT_TRUE(sent) << sent.error().message;
   {
     std::unique_lock lock(mu);
@@ -116,11 +119,13 @@ TEST_F(AmpDirectChatTransportTest, AnAccountIsReachedThroughItsKnownDevices) {
 
 // A send to a peer with no address, or with the transport stopped, says so by its code.
 TEST_F(AmpDirectChatTransportTest, FailuresCarryTheirCode) {
-  const auto unknown = a_chat_->SendEnvelope("nobody-registered", MakeTestEnvelope("msg-2", "x"));
+  const auto unknown = test::SendAndWait(*a_chat_, "nobody-registered", MakeTestEnvelope("msg-2", "x"),
+                                         [this] { harness_->PumpBoth(); });
   ASSERT_FALSE(unknown);
   EXPECT_EQ(unknown.error().GetCode(), DirectSendErr::NoAddress);
   a_chat_->Stop();
-  const auto stopped = a_chat_->SendEnvelope("b", MakeTestEnvelope("msg-3", "x"));
+  const auto stopped =
+      test::SendAndWait(*a_chat_, "b", MakeTestEnvelope("msg-3", "x"), [this] { harness_->PumpBoth(); });
   ASSERT_FALSE(stopped);
   EXPECT_EQ(stopped.error().GetCode(), DirectSendErr::NotStarted);
 }

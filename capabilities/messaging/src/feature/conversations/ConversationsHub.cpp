@@ -1268,25 +1268,6 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
   return {};
 }
 
-Roe<void> ConversationsHub::BuildMessagingStack() {
-  // Legacy sync path (tests / callers that still want local+mesh together).
-  if (auto local = BuildLocalMessagingStack(); !local) {
-    return local.error();
-  }
-  if (auto mesh_start = StartMesh(config_); !mesh_start) {
-    if (shutdown_requested_.load(std::memory_order_acquire)) {
-      return mesh_start.error();
-    }
-    log().warning << "mesh host start failed: " << mesh_start.error().message
-                  << " (direct P2P unavailable; relay messaging may still work)";
-  }
-  if (shutdown_requested_.load(std::memory_order_acquire)) {
-    DiscardMessagingBringUp();
-    return Error("shutdown in progress");
-  }
-  return AttachAmpMessagingStack();
-}
-
 void ConversationsHub::ScheduleMeshBringUp() {
   if (mesh_bringup_scheduled_.exchange(true, std::memory_order_acq_rel)) {
     return;

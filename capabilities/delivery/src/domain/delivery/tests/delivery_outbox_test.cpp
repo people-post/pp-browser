@@ -75,10 +75,15 @@ public:
   explicit FakeDirect(bool connected) : connected_(connected) {}
   bool IsPeerReachable(const std::string&) const override { return true; }
   bool IsPeerConnected(const std::string&) const override { return connected_; }
-  DirectSendRoe SendEnvelope(const std::string&, const RelayEnvelope& envelope) override {
-    std::lock_guard lock(mu_);
-    sent.push_back(envelope.message_id);
-    return {};
+  void SendEnvelopeAsync(const std::string&, const RelayEnvelope& envelope,
+                         std::function<void(DirectSendRoe)> on_done) override {
+    {
+      std::lock_guard lock(mu_);
+      sent.push_back(envelope.message_id);
+    }
+    if (on_done) {
+      on_done(DirectSendRoe());
+    }
   }
   std::vector<std::string> Sent() {
     std::lock_guard lock(mu_);
