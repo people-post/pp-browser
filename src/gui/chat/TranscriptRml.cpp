@@ -14,6 +14,7 @@
 #include "lib/ai/StructuredTextParser.h"
 #include "lib/calls/CallControlFamily.h"
 #include "lib/messaging/AttachmentCache.h"
+#include "lib/messaging/EditMessage.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/PlainTextLinks.h"
@@ -394,6 +395,14 @@ std::string PictureClipRml(const PictureBubbleSize& fit, const std::string& src,
 }
 
 } // namespace
+
+std::string EditedTimeLabel(const ThreadMessage& message, const std::string& time_label) {
+  if (message.content_type != ChatContentType::Text || !EditMarkOf(message)) {
+    return time_label;
+  }
+  const std::string edited = Tr("chat.message.edited");
+  return time_label.empty() ? edited : edited + " " + time_label;
+}
 
 std::string PictureBubbleClipRml(const std::string& message_id, const std::string& hash_hex,
                                  const TranscriptAttachmentView& view) {
@@ -888,8 +897,9 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   } else {
     text_rml = paragraph + LinkedTextRml(message.text, id_arg, mention_runs) + "</p>";
   }
-  // The time sits at the bottom right inside the bubble (phones; hidden on the desktop, which has the meta line).
-  const std::string clock = MessageClockLabel(message.timestamp);
+  // The time sits at the bottom right inside the bubble (phones; hidden on the desktop, which has the meta line). An
+  // edited message says so before it, in the same size and colour (DEV/PLAN-message-edit.md).
+  const std::string clock = EditedTimeLabel(message, MessageClockLabel(message.timestamp));
   if (!clock.empty()) {
     text_rml += "<div class=\"bubble-time\">" + clock + "</div>";
   }
@@ -1231,7 +1241,7 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     row.mentions_me = mentions_me;
     row.has_reactions = !entry.reactions.empty();
     if (!entry.control) {
-      row.time_label = MessageTimeLabel(message.timestamp, now_ms).c_str();
+      row.time_label = EditedTimeLabel(message, MessageTimeLabel(message.timestamp, now_ms)).c_str();
     }
     const bool new_day = message.timestamp > 0 && !SameLocalDay(prev_ms, message.timestamp);
     if (new_day) {

@@ -444,6 +444,16 @@ private:
    */
   void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {}) override;
   void CancelQuoteReply();
+  /** Editing a sent message (DEV/PLAN-message-edit.md): ChatMenusHost's "Edit", and the bar's × while editing. */
+  bool CanEditMessage(const std::string& message_id) override;
+  void StartEditMessage(const std::string& message_id) override;
+  void CancelEditMessage();
+  /** Send while editing: unchanged → just ends; too late → a pill, still editing; sent → ends, the draft comes back. */
+  void SendEditedMessage();
+  /** The edited message was deleted meanwhile (another device): editing ends with a pill (in the open chat). */
+  void EndEditIfTargetGone();
+  /** The edit bar and the attach / voice lock follow the open chat's edit state. */
+  void SyncEditingState();
   /** A tap on the quote of reply `reply_message_id`: scrolls to the message it quotes, if it is on screen. */
   void JumpToQuotedMessage(const std::string& reply_message_id);
   /** A tap on link `link_index` of a plain-text message: confirms the host, then opens it. */

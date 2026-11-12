@@ -14,6 +14,7 @@
 #include "lib/messaging/AtAiParser.h"
 #include "lib/messaging/QuoteReply.h"
 #include "lib/messaging/DeleteForEveryone.h"
+#include "lib/messaging/EditMessage.h"
 #include "lib/delivery/ReactionTypes.h"
 #include "common/EmojiKey.h"
 #include "feature/presenters/SessionListText.h"
@@ -544,7 +545,21 @@ SendMark ChatPresenter::SendMarkOf(const ThreadMessage& message, const int64_t n
   const bool no_recipients = group_others && !GroupRowHadRecipients(*group_others, message.timestamp);
   const std::optional<int64_t> started = facade_->SendStartedMs(message.id);
   NoteMarkChange(next_change, message, started, now_ms, no_recipients);
-  return MarkOf(message, started, now_ms, no_recipients);
+  const SendMark own = MarkOf(message, started, now_ms, no_recipients);
+  if (own != SendMark::None) {
+    return own;
+  }
+  // An edited message of ours shows its edit's send (DEV/PLAN-message-edit.md 9a): a clock while it is being sent, the
+  // red mark when it did not go out (a tap sends the edit again).
+  if (const std::optional<std::string> edit_id = EditRowIdOf(message)) {
+    auto edit_row = facade_->GetMessage(message.thread_id, *edit_id);
+    if (edit_row && *edit_row) {
+      const std::optional<int64_t> edit_started = facade_->SendStartedMs(*edit_id);
+      NoteEditMarkChange(next_change, **edit_row, edit_started, now_ms);
+      return EditSendMark(**edit_row, edit_started, now_ms);
+    }
+  }
+  return SendMark::None;
 }
 
 SendMarkTap ChatPresenter::TapSendMark(const std::string& thread_id, const std::string& message_id) {
@@ -560,6 +575,26 @@ SendMarkTap ChatPresenter::TapSendMark(const std::string& thread_id, const std::
   }
   if (!facts.row || !facts.thread) {
     return {}; // gone: a second tap after the row was taken away
+  }
+  // The mark of an edited message of ours is its edit's: a tap sends that edit again (same words, same send time).
+  if (const std::optional<std::string> edit_id = EditRowIdOf(*facts.row);
+      edit_id && MarkOf(*facts.row, facade_->SendStartedMs(message_id), util::NowUnixMs()) == SendMark::None) {
+    std::optional<ThreadMessage> edit_row;
+    if (auto row = facade_->GetMessage(thread_id, *edit_id); row && *row) {
+      edit_row = **row;
+    }
+    SendMarkTap tap = DecideEditResendTap(edit_row, *facts.thread, facade_->SendStartedMs(*edit_id), util::NowUnixMs());
+    if (tap.kind == SendMarkTap::Kind::Resent) {
+      auto resent = facade_->ResendEdit(thread_id, message_id);
+      if (!resent) {
+        tap.kind = SendMarkTap::Kind::SendFailed;
+        tap.error = resent.error();
+      } else {
+        tap.new_id = resent->id;
+        tap.old_removed = true;
+      }
+    }
+    return tap;
   }
   facts.started_ms = facade_->SendStartedMs(message_id);
   facts.already_resent = resent_unremoved_.count(message_id) != 0;
@@ -1079,6 +1114,85 @@ void ChatPresenter::DeleteForEveryone(const std::string& message_id, std::functi
           done(std::move(result));
         }
       });
+}
+
+bool ChatPresenter::CanEditMessage(const std::string& message_id) {
+  if (!facade_ || message_id.empty()) {
+    return false;
+  }
+  auto thread = facade_->GetActiveThread();
+  if (!thread) {
+    return false;
+  }
+  auto found = facade_->GetMessage(thread->id, message_id);
+  return found && found->has_value() && pbr::CanEditMessage(**found, thread->kind, util::NowUnixMs());
+}
+
+std::optional<std::string> ChatPresenter::BeginEdit(const std::string& thread_id, const std::string& message_id,
+                                                    const std::string& composer_text) {
+  if (!facade_ || thread_id.empty() || message_id.empty()) {
+    return std::nullopt;
+  }
+  auto thread = facade_->GetThread(thread_id);
+  auto found = facade_->GetMessage(thread_id, message_id);
+  if (!thread || !*thread || !found || !found->has_value() ||
+      !pbr::CanEditMessage(**found, (*thread)->kind, util::NowUnixMs())) {
+    return std::nullopt;
+  }
+  return edits_.Begin(thread_id, message_id, (*found)->text, composer_text);
+}
+
+ChatPresenter::EditSendResult ChatPresenter::SendEdit(const std::string& thread_id, const std::string& composer_text,
+                                                      const int64_t now_ms) {
+  EditSendResult result;
+  const EditingMessage* editing = edits_.In(thread_id);
+  if (!editing || !facade_) {
+    return result;
+  }
+  const ChatEdits::Submit submit = edits_.Prepare(thread_id, composer_text);
+  if (submit.unchanged) {
+    result.kind = EditSendResult::Kind::Unchanged;
+    result.composer = edits_.End(thread_id);
+    return result;
+  }
+  const std::string message_id = editing->message_id;
+  auto thread = facade_->GetThread(thread_id);
+  auto found = facade_->GetMessage(thread_id, message_id);
+  if (!found || !found->has_value() || (*found)->content_type == ChatContentType::Deleted) {
+    result.kind = EditSendResult::Kind::TargetGone;
+    result.composer = edits_.EndTargetGone(thread_id, composer_text);
+    return result;
+  }
+  // Checked again now: the 15 minutes may have run out while the user typed.
+  if (!thread || !*thread || !pbr::CanEditMessage(**found, (*thread)->kind, now_ms)) {
+    result.kind = EditSendResult::Kind::TooLate;
+    return result;
+  }
+  auto edited = facade_->EditMessage(thread_id, message_id, submit.text, now_ms);
+  if (!edited) {
+    result.kind = EditSendResult::Kind::Failed;
+    result.error = edited.error();
+    return result;
+  }
+  result.kind = EditSendResult::Kind::Sent;
+  result.composer = edits_.End(thread_id);
+  return result;
+}
+
+std::optional<std::string> ChatPresenter::EndEditIfTargetGone(const std::string& thread_id,
+                                                              const std::string& composer_text) {
+  const EditingMessage* editing = edits_.In(thread_id);
+  if (!editing || !facade_) {
+    return std::nullopt;
+  }
+  auto found = facade_->GetMessage(thread_id, editing->message_id);
+  if (!found) {
+    return std::nullopt; // not readable now: not taken as deleted
+  }
+  if (found->has_value() && (*found)->content_type != ChatContentType::Deleted) {
+    return std::nullopt;
+  }
+  return edits_.EndTargetGone(thread_id, composer_text);
 }
 
 void ChatPresenter::StartQuoteReply(const std::string& quoted) {

@@ -74,5 +74,13 @@ TEST(ComposerLocksTest, TheAttachEntriesAreGreyedOnlyWhileAnAttachmentPreparesOr
   }
 }
 
+// Editing a sent message (DEV/PLAN-message-edit.md): the words stay typeable; the plus and the microphone grey out.
+TEST(ComposerLocksTest, EditingAMessageGreysTheAttachEntriesAndKeepsTheInput) {
+  const ComposerLocks locks = ComposerLocksOf(false, false, false, false, false, false, /*editing_message=*/true);
+  EXPECT_FALSE(locks.input);
+  EXPECT_TRUE(locks.attach);
+  EXPECT_FALSE(ComposerLocksOf(false, false, false, false, false, false, false).attach);
+}
+
 } // namespace
 } // namespace pbr

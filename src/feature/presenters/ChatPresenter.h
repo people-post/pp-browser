@@ -5,6 +5,7 @@
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/conversations/GroupMentions.h"
+#include "feature/presenters/MessageEdit.h"
 #include "feature/presenters/MessageResend.h"
 #include "feature/presenters/SendMark.h"
 #include "feature/presenters/SessionMenu.h"
@@ -534,6 +535,50 @@ public:
   /** Sends the delete (network: on a worker); `done` on the UI thread unless the presenter is gone. */
   void DeleteForEveryone(const std::string& message_id, std::function<void(Roe<void>)> done);
 
+  // --- editing a sent message (DEV/PLAN-message-edit.md) --------------------------------------
+
+  /** "Edit" is offered for `message_id` of the open chat now (CanEditMessage). */
+  bool CanEditMessage(const std::string& message_id);
+  /**
+   * Starts editing `message_id` in `thread_id`, the composer holding `composer_text`: returns the text the composer
+   * takes (the message's words), none when it cannot be edited. A quote reply being written is the controller's to end.
+   */
+  std::optional<std::string> BeginEdit(const std::string& thread_id, const std::string& message_id,
+                                       const std::string& composer_text);
+  /** The edit open in `thread_id` (it stays while the user is in another chat). */
+  const EditingMessage* EditingIn(const std::string& thread_id) const { return edits_.In(thread_id); }
+  /** What Send did while editing in `thread_id`. */
+  struct EditSendResult {
+    enum class Kind {
+      /** Not editing there. */
+      None,
+      /** Text unchanged: nothing sent, editing ended (`composer`: the draft from before). */
+      Unchanged,
+      /** Sent and applied here; editing ended (`composer`: the draft from before). */
+      Sent,
+      /** Past the 15 minutes: nothing sent; still editing, the composer untouched. */
+      TooLate,
+      /** The message is gone: editing ended (`composer`: EndTargetGone's text). */
+      TargetGone,
+      /** Refused before anything was stored (`error`); still editing, the composer untouched. */
+      Failed,
+    };
+    Kind kind = Kind::None;
+    std::string composer;
+    std::optional<Error> error;
+  };
+  /** Send tapped while editing in `thread_id` with `composer_text`, at `now_ms` (the edit's send time comes from it). */
+  EditSendResult SendEdit(const std::string& thread_id, const std::string& composer_text, int64_t now_ms);
+  /** The user's ×: editing ends; returns the draft from before (the typed words are dropped, by their choice). */
+  std::string CancelEdit(const std::string& thread_id) { return edits_.End(thread_id); }
+  /**
+   * The edited message of `thread_id` was deleted meanwhile (on another device): editing ends and the text the composer
+   * takes is returned (EndTargetGone); none while it is still there (or nothing is being edited).
+   */
+  std::optional<std::string> EndEditIfTargetGone(const std::string& thread_id, const std::string& composer_text);
+  /** The chat was closed or cleared: its edit goes. */
+  void ForgetEdit(const std::string& thread_id) { edits_.Forget(thread_id); }
+
   // --- the composer (the open chat) -----------------------------------------------------------
 
   /** Reply quoting `quoted` (a message's text): the next send carries it under the reply. */
@@ -602,6 +647,7 @@ private:
   std::optional<std::unordered_map<std::string, ThreadLocalPrefs>> prefs_;
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);
   std::string quote_source_;
+  ChatEdits edits_;
   std::optional<std::string> opened_at_mention_;
   /** Messages sent again by a tap not yet told as red again, until told or delivered (in memory). */
   ResentMessages resent_ids_;

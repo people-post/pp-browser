@@ -38,6 +38,12 @@ inline constexpr int kPictureBubbleMaxHeightDp = 360;
 inline constexpr int kPictureBubbleMinShortSideDp = 120;
 
 /**
+ * A message's time as a bubble or the meta line shows it, with "Edited" before it when the message was edited
+ * (DEV/PLAN-message-edit.md); `time_label` alone otherwise ("" stays "" unless edited).
+ */
+std::string EditedTimeLabel(const ThreadMessage& message, const std::string& time_label);
+
+/**
  * A `width_px` x `height_px` picture laid out for the bubble: scaled to the box width (never enlarged past what its
  * short side needs to reach kPictureBubbleMinShortSideDp; at least 1dp a side). A picture taller than the box keeps
  * the full width and is cropped to the box height, its middle showing (`image_height_dp` > `height_dp`, the picture

@@ -8,6 +8,8 @@
 #include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "gui/chat/TranscriptRml.h"
+#include "gui/chat/ChatMenus.h"
+#include "lib/messaging/EditMessage.h"
 #include "feature/conversations/PeerDisplaySources.h"
 
 #include <algorithm>
@@ -361,6 +363,57 @@ TEST(TranscriptRmlTest, TheTimeSitsInsideTheBubble) {
   EXPECT_LT(bubble, time);
   EXPECT_LT(time, rml.rfind("</div>"));
   EXPECT_EQ(rml.find("bubble-time\">", time) + 13 + 5, rml.find("</div>", time)) << "HH:MM";
+}
+
+// An edited message says "Edited" beside its time: inside the bubble (phones) and on the meta line (desktop).
+TEST(TranscriptRmlTest, AnEditedMessageSaysEditedBesideItsTime) {
+  using namespace phone_rows;
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  TranscriptRow edited = TextRow("1", "account:a", kNoon);
+  ThreadMessage edit;
+  edit.id = "e1";
+  edit.content_type = ChatContentType::Annotation;
+  edit.target_message_id = "1";
+  edit.payload_json = BuildEditPayloadJson("1", "hi again");
+  edit.timestamp = kNoon + kMinute;
+  edited.message = WithEdit(edited.message, edit);
+  const TranscriptRow plain = TextRow("2", "account:a", kNoon + 2 * kMinute);
+  const auto rows = RenderTranscript({edited, plain}, NamedFacts());
+  ASSERT_EQ(rows.size(), 2u);
+  const std::string rml = rows[0].content_rml.c_str();
+  EXPECT_NE(rml.find("<div class=\"bubble-time\">Edited "), std::string::npos) << rml;
+  EXPECT_NE(rml.find("hi again"), std::string::npos);
+  EXPECT_EQ(std::string(rows[0].time_label.c_str()).rfind("Edited ", 0), 0u) << rows[0].time_label.c_str();
+  EXPECT_EQ(std::string(rows[1].content_rml.c_str()).find("Edited"), std::string::npos);
+  EXPECT_EQ(std::string(rows[1].time_label.c_str()).find("Edited"), std::string::npos);
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(EditedTimeLabel(edited.message, "12:00"), "已编辑 12:00");
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
+// The message menu: "Edit" sits right under "Copy" when the message may be edited.
+TEST(ChatMenusEditTest, EditSitsRightUnderCopy) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  std::vector<ContextMenuAction> actions;
+  for (const char* id : {"react_x", "reply_message", "copy_message", "ask_ai_message", "delete_message"}) {
+    actions.push_back({id, id, nullptr, nullptr});
+  }
+  bool started = false;
+  InsertEditAction(actions, [&started]() { started = true; });
+  std::vector<std::string> ids;
+  for (const ContextMenuAction& action : actions) {
+    ids.push_back(action.id);
+  }
+  EXPECT_EQ(ids, (std::vector<std::string>{"react_x", "reply_message", "copy_message", "edit_message",
+                                           "ask_ai_message", "delete_message"}));
+  EXPECT_EQ(actions[3].label, "Edit");
+  actions[3].run();
+  EXPECT_TRUE(started);
+  std::vector<ContextMenuAction> no_copy{{"delete_message", "Delete", nullptr, nullptr}};
+  InsertEditAction(no_copy, nullptr);
+  EXPECT_EQ(no_copy.back().id, "edit_message");
 }
 
 // G016: the group's own chat says who ended it; the owner's device says "You".

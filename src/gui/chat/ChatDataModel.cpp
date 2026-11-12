@@ -67,6 +67,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("image_thumb_src", &state.image_thumb_src);
   ctor.Bind("image_draft_name", &state.image_draft_name);
   ctor.Bind("quote_reply", &state.quote_reply);
+  ctor.Bind("editing_message", &state.editing_message);
   ctor.Bind("quote_reply_text", &state.quote_reply_text);
   ctor.Bind("attachment_uploading", &state.attachment_uploading);
   ctor.Bind("attachment_draft_name", &state.attachment_draft_name);

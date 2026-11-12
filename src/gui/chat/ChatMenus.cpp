@@ -96,6 +96,14 @@ ChatMenus::ChatMenus(ChatMenusHost& host, ChatPresenter& presenter, const ChatSc
       shell_feedback_(shell_feedback),
       call_actions_(call_actions) {}
 
+void InsertEditAction(std::vector<ContextMenuAction>& actions, std::function<void()> start_edit) {
+  ContextMenuAction edit{"edit_message", Tr("chat.menu.edit"), nullptr, std::move(start_edit),
+                         "../icons/v2/pencil.svg"};
+  const auto copy = std::find_if(actions.begin(), actions.end(),
+                                 [](const ContextMenuAction& action) { return action.id == "copy_message"; });
+  actions.insert(copy == actions.end() ? actions.end() : std::next(copy), std::move(edit));
+}
+
 std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& request) {
   std::vector<ContextMenuAction> actions;
   ConversationsFacade* facade = host_.Facade();
@@ -191,6 +199,10 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
       actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr,
                          [this, text]() { host_.StartQuoteReply(text, "@ai "); }, "../icons/v2/sparkle.svg"});
     }
+  }
+  // Edit: our own text, within its 15 minutes (DEV/PLAN-message-edit.md); right under Copy.
+  if (host_.CanEditMessage(message_id)) {
+    InsertEditAction(actions, [this, message_id]() { host_.StartEditMessage(message_id); });
   }
   ContextMenuAction remove{
       "delete_message", Tr("common.delete"), nullptr,
