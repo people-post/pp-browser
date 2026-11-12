@@ -15,6 +15,12 @@ void BuildToolRegistryFromConfig(ToolRegistry& registry, const AppConfig& config
                                  const std::vector<McpClient*>& custom_mcps = {},
                                  const std::vector<std::string>& custom_prefixes = {});
 
+// Adds the tools of the running MCP servers: the promoted one, then the custom ones (`custom_prefixes[i]` + "__"
+// before each name when set); a name already in the registry is skipped. `list_timeout_s` bounds each tools/list
+// (0 = the transport's default). True when every server given listed at least one tool.
+bool RegisterMcpServerTools(ToolRegistry& registry, McpClient* promoted_mcp, const std::vector<McpClient*>& custom_mcps,
+                            const std::vector<std::string>& custom_prefixes, long list_timeout_s = 0);
+
 // Adds the promoted MCP server's tools (the feeds); a name already in the registry is skipped.
 // `list_timeout_s` bounds the tools/list request (0 = the transport's default). True when tools/list answered.
 // `cancel`: when set by the time tools/list returns, nothing is registered.
