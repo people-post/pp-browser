@@ -1,6 +1,6 @@
 # Data plane: crypto, I/O, real-time lanes, shards
 
-**Status:** Proposed (2026-11-10), for review. P1 built (2026-11-10, #574; § P1 results); P2 done differently (2026-11-11, § P2); P3 steps 1–2 done (2026-11-11); P4 not started. Accepted parts become N-decisions in [DECISIONS.md](DECISIONS.md); shipped behavior moves to `docs/` ([THREADING.md](../../docs/architecture/THREADING.md), [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)).
+**Status:** Proposed (2026-11-10), for review. P1 built (2026-11-10, #574; § P1 results); P2 done differently (2026-11-11, § P2); P3 done (2026-11-11; steps 1–3, target not met — § P3 where it ends); P4 not started. Accepted parts become N-decisions in [DECISIONS.md](DECISIONS.md); shipped behavior moves to `docs/` ([THREADING.md](../../docs/architecture/THREADING.md), [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)).
 
 **Scope:** what a node and a client do with every datagram once a link exists: receive, open (the link's AEAD), demux, the L4 work (a hop's fan-out, a bridge's splice, media to the app), seal, send. It excludes dialing, handshakes, control protocols and E2E media keys, and keeps the wire unchanged until a phase says otherwise.
 
@@ -126,7 +126,18 @@ Delivery rose with it, from 81.9% to 83.4% and from 62.9% to 71.6%. The losses t
 - The app lab's NAT suite found what deferring the error broke: a dial whose hello found no route was evicted without finishing, leaking its slot. After a few handovers every dial was "too many concurrent dials" (`group_call_on_the_road`, 4 of 4). Such a dial now fails through its handshake (`PeerLink::FailUnreachable`), and an Amp test guards it.
 - Measured: ~7 datagrams per GSO send. Node CPU 67.8 → 54.2 % (100 calls at 1500 kbps) and 46.8 → 42.3 % (150 at 500 kbps), at 100 % delivered and p95 1.2 ms.
 
-**Not done:** receive-side GRO (`UDP_GRO`, to batch what arrives) and pooled send buffers.
+**Step 3 done (2026-11-11), pp-cpp-amp v5.9.0 / pp-cpp-mesh v6.10.0: fewer copies.**
+- A single-frame message is encoded straight from the sender's bytes (`ChannelMux::SendData`, `ChannelSession::EnqueueOutbound` take a span), so a hop fanning one frame out no longer copies the body per member first. The hop reads a frame's header without copying its payload (`DecodeMediaDataFrameHeader`).
+- Corked sends own their datagram (no arena copy), and data handlers are shared, not copied per frame.
+- Measured: node CPU 54.2 → 52.9 % (100 calls at 1500 kbps, three runs), still 100 % delivered, p95 1.1 ms.
+- Validating it under AddressSanitizer found older bugs, fixed in the same releases: a handshake that failed on a peer's message wrote into the freed handshake (any peer could reach it), and self-owning closures leaked every burst dial and every punch's channel wait. Both libraries' CI now runs the suite under ASan, LeakSanitizer and UBSan.
+
+**Where it ends.** The target (kernel plus libc ≤ 20 % of the pump) is not met: at v5.8.0 the kernel was 30.6 % and libc 19.1 % of the node (AEAD 26.2 %, our code 16.7 %). What remains is per packet, not per call:
+- **Kernel:** the IP and netfilter path for each datagram that arrives. GSO already batches what we send. Receive GRO (`UDP_GRO`) would batch what arrives, but only from senders that send runs (nodes, not phones' paced media), and loopback cannot measure it. Not now.
+- **Firewall:** conntrack is a host choice. A seed can exempt its UDP port (a `NOTRACK` rule in the raw table); that belongs in the pp-node packaging when a seed's profile shows it.
+- **libc:** what is left is the receive copy (a frame's payload into its own buffer, for handlers that take a vector) and allocation per datagram. Removing it changes every data handler's signature; P4's shards change those paths anyway, so it waits for them.
+
+P3 stops here: the rest is P4's (more cores), not fewer instructions per packet.
 
 ### P4 — Shards (nodes only by default)
 
