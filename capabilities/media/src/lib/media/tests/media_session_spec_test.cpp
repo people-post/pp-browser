@@ -160,15 +160,19 @@ TEST_F(MediaSessionSpecTest, ConcealedTimeAndLatePacketsAreCounted) {
   for (const uint32_t seq : {1u, 2u, 3u, 5u}) { // 4 is lost
     Deliver(42, seq);
   }
+  // The lost packet's slot is concealed, and so is each underrun's. The playout thread counts an underrun just
+  // before its concealment, so one snapshot can read one ahead (Windows CI: 2 underruns, 2 concealed): wait for a
+  // snapshot that shows it, and fail only if none does.
   MediaEngineHealth h;
   EXPECT_TRUE(WaitFor(
       [&] {
         h = engine_.HealthSnapshot();
-        return h.playout_underruns >= 2 && h.concealed_ms == 20 * (h.plc_frames + h.fec_frames);
+        return h.playout_underruns >= 2 && h.concealed_ms == 20 * (h.plc_frames + h.fec_frames) &&
+               h.plc_frames + h.fec_frames >= h.playout_underruns + 1;
       },
       std::chrono::seconds(3)))
-      << "concealed_ms=" << h.concealed_ms << " plc=" << h.plc_frames << " fec=" << h.fec_frames;
-  EXPECT_GE(h.plc_frames + h.fec_frames, h.playout_underruns + 1) << "the lost packet's slot, and each underrun's";
+      << "concealed_ms=" << h.concealed_ms << " plc=" << h.plc_frames << " fec=" << h.fec_frames
+      << " underruns=" << h.playout_underruns;
   EXPECT_EQ(h.jitter_late_drops, 0u);
 
   Deliver(42, 2); // long played
