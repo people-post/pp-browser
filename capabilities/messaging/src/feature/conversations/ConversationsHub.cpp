@@ -156,7 +156,7 @@ MeshConnectivityWiringInputs ConversationsHub::MeshInputs() {
   reach.observe_node = [this](const std::string& peer_id) {
     ObservedNode seen;
     if (mesh_ && mesh_->Amp()) {
-      if (auto told = mesh_->Amp()->Links().RemoteCapabilityExtension(peer_id)) {
+      if (auto told = mesh_->Amp()->Links().RemoteCapability(peer_id)) {
         seen.told = true;
         seen.amp_wire = told->amp_wire;
         seen.node_version = told->node_version;
@@ -559,7 +559,6 @@ void ConversationsHub::ApplyMeshAdmissionPolicies() {
 
   if (mesh_ && mesh_->AmpCircuitServer()) {
     mesh::CircuitRelayAdmissionPolicy policy;
-    policy.prefer_contacts_only = limit_strangers;
     policy.serve_scope_mask = serve_mask;
     policy.contact_peer_ids = contact_ids;
     mesh_->AmpCircuitServer()->SetAdmissionPolicy(std::move(policy));
