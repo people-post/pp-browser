@@ -743,6 +743,9 @@ private:
   uint64_t chat_paged_turn_ = 0;
   std::shared_ptr<int> chat_window_alive_ = std::make_shared<int>(0);
   bool ChatShowing() const;
+  /** PROBE: the picture files of the rows of a chat just left, released once the shell has been laid out again. */
+  std::vector<std::string> probe_release_paths_;
+  std::string probe_thread_;
   void PollChatShowing();
   void ScheduleChatWindowMetric(std::chrono::milliseconds delay, bool exited);
   bool mesh_ready_ = false;

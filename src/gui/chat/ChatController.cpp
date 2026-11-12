@@ -897,6 +897,10 @@ void ChatController::SendSuggestionAction(const std::string& id) {
 
 void ChatController::FinalizeThreadDisplay() {
   // Measurement (chat.open): this open's display sync and the SyncLayout after it are the ones timed.
+  if (chat_showing_ && !probe_thread_.empty() && probe_thread_ != ActiveThreadId()) {
+    probe_release_paths_ = PictureBubbleSources(chat_.messages); // PROBE: still the rows of the chat being left
+  }
+  probe_thread_ = ActiveThreadId();
   open_probe_ = ChatOpenProbe{};
   open_probe_.armed = true;
   ++chat_exit_turn_; // back in a chat: a pending "left the chat" reading is void
@@ -5555,6 +5559,7 @@ void ChatController::PollChatShowing() {
   }
   chat_showing_ = showing;
   if (!showing) {
+    probe_release_paths_ = PictureBubbleSources(chat_.messages); // PROBE
     ScheduleChatWindowMetric(std::chrono::seconds(5), /*exited=*/true);
   }
 }
@@ -5583,6 +5588,21 @@ void ChatController::ScheduleChatWindowMetric(const std::chrono::milliseconds de
 }
 
 void ChatController::OnSyncLayoutMeasured(const int64_t ms) {
+  if (!probe_release_paths_.empty()) {
+    // PROBE: the left chat's rows are out of the page now; release their textures and see what the memory does.
+    const std::vector<std::string> paths = std::exchange(probe_release_paths_, {});
+    const CurrentMemoryMb before = ReadCurrentMemoryMb();
+    size_t released = 0;
+    size_t absolute = 0;
+    for (const std::string& path : paths) {
+      absolute += !path.empty() && path.front() == '/' ? 1 : 0;
+      released += ui::ReleaseTexture(path.c_str()) ? 1 : 0;
+    }
+    const CurrentMemoryMb after = ReadCurrentMemoryMb();
+    log().info << "probe: ReleaseTexture called=" << paths.size() << " true=" << released << " absolute=" << absolute
+               << " footprint_mb " << before.footprint_mb << "->" << after.footprint_mb << " rss_mb " << before.rss_mb
+               << "->" << after.rss_mb;
+  }
   if (!open_probe_.layout_pending) {
     return;
   }
