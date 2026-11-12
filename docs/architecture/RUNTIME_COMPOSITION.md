@@ -259,7 +259,7 @@ flowchart TB
   end
 
   subgraph mesh_host["MeshHost-owned"]
-    Pump["MeshPumpThread<br/><small>Drive ~5ms</small>"]
+    Pump["MeshPumpThread<br/><small>Drive on datagram / deadline</small>"]
     Amp["AmpStack / MeshRuntime"]
     Pump --> Amp
   end
@@ -284,7 +284,7 @@ flowchart TB
 | **Coordinator** | `CoordinatorThread` | pp-cpp-common `common/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
 | **Worker pool** | `WorkerPool` via `AppRuntime` | pp-cpp-common `common/` · `common/runtime/` | HTTP, relay sync/send |
 | **AI turn pool** | `AiTurnPool` (owned by `AgentSessions`) | `feature/ai/` | AI turns (LLM / tools); a streamed turn holds its thread, so they stay off the worker pool |
-| **Amp MeshPump** | `MeshHost` | pp-cpp-mesh `host/` | `MeshRuntime::Drive` ~5ms (no libp2p `io_context`) |
+| **Amp MeshPump** | `MeshHost` | pp-cpp-mesh `host/` | `MeshRuntime::Drive` as datagrams arrive and when its next deadline comes (no libp2p `io_context`) |
 | **Media capture / video** | `MediaEngine` | `lib/media/` | Dedicated capture + video encode loops |
 | **Media devices** | `MediaDeviceArbiter` | `lib/media/` | Device thread: every audio / camera open / close / reopen; per-kind leases (mic + camera exclusive, speaker shared) |
 | **Ringtone** | `CallRingtone` | `lib/media/` | Playback loop thread (speaker lease) |

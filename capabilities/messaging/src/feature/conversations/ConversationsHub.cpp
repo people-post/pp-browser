@@ -1433,7 +1433,7 @@ void ConversationsHub::TickMesh() {
   if (!messaging_ready_) {
     return;
   }
-  // Mesh UDP drain is MeshHost MeshPumpThread (~5ms). Policy stays on the 1s timer.
+  // Mesh UDP drain is MeshHost's MeshPumpThread (on datagrams and the mesh's own deadlines). Policy stays on the 1s timer.
   if (mesh_messaging_) {
     mesh_messaging_->TickMesh();
   }

@@ -2298,10 +2298,16 @@ void CallMediaLegCoordinator::Start() {
   impl_->runtime = &runtime_;
   impl_->clock = &timer_clock_;
   impl_->stopped.store(false, std::memory_order_release);
-  impl_->io_tick_id = runtime_.AddIoTick([weak = std::weak_ptr(impl_)] {
-    if (auto impl = weak.lock()) {
-      impl->TickDeadlines();
+  // At the runtime's cadence while a call holds a bundle (its deadlines and path checks); idle without one, so an
+  // idle app's pump is not woken for it.
+  impl_->io_tick_id = runtime_.AddIoDueTick([weak = std::weak_ptr(impl_)]() -> std::chrono::milliseconds {
+    auto impl = weak.lock();
+    if (!impl) {
+      return pp::amp::MeshRuntime::kIoTickIdle;
     }
+    impl->TickDeadlines();
+    std::lock_guard lock(impl->mu);
+    return impl->bundles.empty() ? pp::amp::MeshRuntime::kIoTickIdle : std::chrono::milliseconds(0);
   });
   runtime_.Links().SetProtocolHandler(
       kCallMediaDirectProtocolId,
