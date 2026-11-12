@@ -58,6 +58,8 @@ private:
   Roe<void> OpenProfileDb() const;
   Roe<void> OpenProfileDbUnguarded() const;
   Roe<void> EnsureThreadDirectory(const std::string& thread_id) const;
+  /** A chat's thread.db, opened and brought through its ladder (a file below the floor is reset first). */
+  Roe<sqlite3*> OpenThreadDbFile(const std::string& thread_id) const;
   Roe<void> RepairOrphanThreadDirs() const;
   void TouchThreadLru(const std::string& thread_id) const;
   void EvictThreadDbsIfNeeded() const;

@@ -1,0 +1,345 @@
+#include "lib/storage/SqliteCallSessionStore.h"
+#include "lib/storage/SqliteChatDbLadders.h"
+#include "lib/storage/SqliteMigrations.h"
+#include "lib/storage/SqliteThreadSchema.h"
+#include "lib/storage/SqliteThreadStore.h"
+
+#include <filesystem>
+#include <gtest/gtest.h>
+#include <memory>
+#include <sqlite3.h>
+#include <string>
+#include <utility>
+#include <vector>
+
+// D105 (DATA_LAYOUT § Schema versions): each chat database moves up a ladder of versions, from a floor; the step
+// into today's schema keeps a tester's chats whatever columns the per-open ALTERs of before had added.
+
+namespace pbr {
+namespace {
+
+ByteVector TestDek() {
+  ByteVector dek(32);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0x30 + i);
+  }
+  return dek;
+}
+
+/** The columns the per-open ALTERs added to profile.db before the ladder (table, column). */
+const std::vector<std::pair<std::string, std::string>>& ProfileAlterColumns() {
+  static const std::vector<std::pair<std::string, std::string>> columns = {
+      {"threads", "listed"},
+      {"chat_targets", "auto_key_session_id"},
+      {"chat_targets", "auto_key_init_pending"},
+      {"chat_targets", "auto_key_peer_heard_ms"},
+      {"chat_targets", "restart_pending"},
+      {"pending_group_invites", "group_title"},
+      {"pending_group_invites", "roster_epoch"},
+      {"pending_group_invites", "outbound"},
+      {"pending_group_invites", "owner_identity"},
+      {"group_metadata", "title_version"},
+      {"group_metadata", "roster_statement_json"},
+      {"group_metadata", "sync_state"},
+      {"group_metadata", "sync_request_id"},
+      {"group_metadata", "sync_requested_at"},
+      {"group_rosters", "added_by"},
+      {"thread_local_prefs", "mute_mentions"},
+      {"thread_local_prefs", "share_ai_confirmed"},
+      {"call_sessions", "video_allowed"},
+      {"call_sessions", "planned_hop"},
+      {"call_sessions", "planned_hop_ma"},
+      {"call_sessions", "initiator_identity"},
+      {"pending_call_invites", "video_allowed"},
+      {"call_participants", "on_hold"},
+      {"call_participants", "video_paused"},
+      {"call_participants", "brought_by"},
+  };
+  return columns;
+}
+
+class SqliteMigrationsTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    data_dir_ = std::filesystem::temp_directory_path() /
+                ("pp_browser_sqlite_migrations_" + std::string(::testing::UnitTest::GetInstance()->current_test_info()->name()));
+    std::filesystem::remove_all(data_dir_);
+    std::filesystem::create_directories(data_dir_);
+  }
+
+  void TearDown() override {
+    store_.reset();
+    CloseDb();
+    std::filesystem::remove_all(data_dir_);
+  }
+
+  std::string ProfileDb() const { return SqliteThreadProfileDbFile(data_dir_.string()); }
+
+  /** A store on the profile, unlocked. */
+  SqliteThreadStore& OpenStore() {
+    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    EXPECT_TRUE(store_->SetDek(TestDek()));
+    return *store_;
+  }
+
+  void CloseStore() {
+    if (store_) {
+      store_->Flush();
+      store_.reset();
+    }
+  }
+
+  /** A profile whose catalog holds one AI chat with one message, written at today's schema. */
+  void WriteProfileWithAChat() {
+    SqliteThreadStore& store = OpenStore();
+    Thread thread;
+    thread.id = "thread-kept";
+    thread.kind = ThreadKind::Ai;
+    thread.title = "Kept";
+    thread.updated_at = 7;
+    ASSERT_TRUE(store.UpsertThread(thread));
+    ThreadMessage message;
+    message.id = "msg-kept";
+    message.thread_id = thread.id;
+    message.sender_contact_id = kLocalSelfContactId;
+    message.text = "still here";
+    message.timestamp = 7;
+    ASSERT_TRUE(store.AppendMessage(message));
+    CloseStore();
+  }
+
+  sqlite3* Db(const std::string& path) {
+    CloseDb();
+    EXPECT_EQ(sqlite3_open(path.c_str(), &db_), SQLITE_OK);
+    return db_;
+  }
+  void CloseDb() {
+    if (db_) {
+      sqlite3_close(db_);
+      db_ = nullptr;
+    }
+  }
+  void Exec(sqlite3* db, const std::string& sql) {
+    char* err = nullptr;
+    ASSERT_EQ(sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &err), SQLITE_OK) << sql << ": " << (err ? err : "");
+    sqlite3_free(err);
+  }
+  int Version(const std::string& path) {
+    auto version = SqliteUserVersion(Db(path));
+    CloseDb();
+    return version ? *version : -1;
+  }
+  bool HasColumn(const std::string& path, const std::string& table, const std::string& column) {
+    auto has = SqliteColumnExists(Db(path), table, column);
+    CloseDb();
+    return has && *has;
+  }
+
+  /** The tester's profile.db: today's tables at schema 4, as the stores left it before the ALTERs ran on it. */
+  void MakeTesterProfileDbWithoutTheAlteredColumns() {
+    sqlite3* db = Db(ProfileDb());
+    for (const auto& [table, column] : ProfileAlterColumns()) {
+      Exec(db, "ALTER TABLE " + table + " DROP COLUMN " + column + ";");
+    }
+    Exec(db, "ALTER TABLE call_sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'group';");
+    Exec(db, "ALTER TABLE pending_call_invites ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'group';");
+    Exec(db, "PRAGMA user_version = 4;");
+    CloseDb();
+  }
+
+  void ExpectTheChatIsKept() {
+    SqliteThreadStore& store = OpenStore();
+    auto threads = store.ListThreads();
+    ASSERT_TRUE(threads) << threads.error().message;
+    ASSERT_EQ(threads->size(), 1u);
+    EXPECT_EQ(threads->front().id, "thread-kept");
+    auto page = store.GetMessagesPage("thread-kept", std::nullopt, 10);
+    ASSERT_TRUE(page) << page.error().message;
+    ASSERT_EQ(page->size(), 1u);
+    EXPECT_EQ(page->front().text, "still here");
+    CloseStore();
+  }
+
+  std::filesystem::path data_dir_;
+  std::unique_ptr<SqliteThreadStore> store_;
+  sqlite3* db_ = nullptr;
+};
+
+TEST_F(SqliteMigrationsTest, AFreshInstallGetsTheCurrentSchema) {
+  SqliteThreadStore& store = OpenStore();
+  ASSERT_TRUE(store.ListThreads());
+  CloseStore();
+  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
+  for (const auto& [table, column] : ProfileAlterColumns()) {
+    EXPECT_TRUE(HasColumn(ProfileDb(), table, column)) << table << "." << column << " is in the created schema";
+  }
+  EXPECT_FALSE(HasColumn(ProfileDb(), "call_sessions", "session_kind"));
+  EXPECT_FALSE(TakeChatStoreResetNotice(data_dir_.string())) << "nothing was reset";
+}
+
+TEST_F(SqliteMigrationsTest, ATesterDatabaseWithoutTheAlteredColumnsMigratesAndKeepsItsRows) {
+  WriteProfileWithAChat();
+  MakeTesterProfileDbWithoutTheAlteredColumns();
+  ASSERT_FALSE(HasColumn(ProfileDb(), "threads", "listed"));
+
+  ExpectTheChatIsKept();
+
+  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
+  for (const auto& [table, column] : ProfileAlterColumns()) {
+    EXPECT_TRUE(HasColumn(ProfileDb(), table, column)) << table << "." << column;
+  }
+  EXPECT_FALSE(HasColumn(ProfileDb(), "call_sessions", "session_kind")) << "the legacy row kind is dropped";
+  EXPECT_FALSE(HasColumn(ProfileDb(), "pending_call_invites", "session_kind"));
+  EXPECT_FALSE(std::filesystem::exists(ProfileDb() + ".pre-migration")) << "the backup copy is gone";
+  // Its calls store reads and writes its rows (the columns it names are there).
+  SqliteCallSessionStore calls(ProfileDb());
+  EXPECT_TRUE(calls.ListRecentSessions(5)) << "call rows read at the baseline";
+}
+
+TEST_F(SqliteMigrationsTest, ATesterDatabaseThatAlreadyHasTheColumnsMigratesToo) {
+  WriteProfileWithAChat();
+  Exec(Db(ProfileDb()), "PRAGMA user_version = 4;");
+  CloseDb();
+
+  ExpectTheChatIsKept();
+  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
+}
+
+TEST_F(SqliteMigrationsTest, RunningTheLadderTwiceIsANoOp) {
+  WriteProfileWithAChat();
+  Exec(Db(ProfileDb()), "PRAGMA user_version = 4;");
+  CloseDb();
+  sqlite3* db = Db(ProfileDb());
+  auto first = RunSqliteLadder(db, ProfileDb(), ProfileDbLadder());
+  ASSERT_TRUE(first) << first.error().message;
+  EXPECT_EQ(*first, SqliteLadderOutcome::Migrated);
+  auto second = RunSqliteLadder(db, ProfileDb(), ProfileDbLadder());
+  ASSERT_TRUE(second) << second.error().message;
+  EXPECT_EQ(*second, SqliteLadderOutcome::Current);
+  CloseDb();
+  ExpectTheChatIsKept();
+}
+
+TEST_F(SqliteMigrationsTest, BelowTheFloorTheChatStoreIsResetAndSaysSoOnce) {
+  WriteProfileWithAChat();
+  Exec(Db(ProfileDb()), "PRAGMA user_version = " + std::to_string(kSqliteThreadProfileFloorVersion - 1) + ";");
+  CloseDb();
+
+  SqliteThreadStore& store = OpenStore();
+  auto threads = store.ListThreads();
+  ASSERT_TRUE(threads) << threads.error().message;
+  EXPECT_TRUE(threads->empty()) << "too old to upgrade: the chats were reset";
+  CloseStore();
+  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion);
+  EXPECT_FALSE(std::filesystem::exists(SqliteThreadDbFile(data_dir_.string(), "thread-kept")));
+  EXPECT_TRUE(TakeChatStoreResetNotice(data_dir_.string()));
+  EXPECT_FALSE(TakeChatStoreResetNotice(data_dir_.string())) << "once";
+}
+
+TEST_F(SqliteMigrationsTest, ANewerDatabaseIsRefusedAndLeftAlone) {
+  WriteProfileWithAChat();
+  Exec(Db(ProfileDb()), "PRAGMA user_version = " + std::to_string(kSqliteThreadProfileUserVersion + 1) + ";");
+  CloseDb();
+
+  SqliteThreadStore& store = OpenStore();
+  auto threads = store.ListThreads();
+  ASSERT_FALSE(threads);
+  EXPECT_NE(threads.error().message.find("Incompatible profile.db"), std::string::npos) << threads.error().message;
+  CloseStore();
+  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion + 1);
+  EXPECT_TRUE(std::filesystem::exists(SqliteThreadDbFile(data_dir_.string(), "thread-kept"))) << "nothing reset";
+}
+
+TEST_F(SqliteMigrationsTest, AThreadDbWithoutSenderDeviceMigratesAndKeepsItsMessages) {
+  WriteProfileWithAChat();
+  const std::string thread_db = SqliteThreadDbFile(data_dir_.string(), "thread-kept");
+  sqlite3* db = Db(thread_db);
+  Exec(db, "ALTER TABLE messages DROP COLUMN sender_device;");
+  Exec(db, "PRAGMA user_version = 2;");
+  CloseDb();
+
+  ExpectTheChatIsKept();
+  EXPECT_EQ(Version(thread_db), kSqliteThreadUserVersion);
+  EXPECT_TRUE(HasColumn(thread_db, "messages", "sender_device"));
+}
+
+TEST_F(SqliteMigrationsTest, AThreadDbBelowItsFloorLosesItsMessagesNotItsChat) {
+  WriteProfileWithAChat();
+  const std::string thread_db = SqliteThreadDbFile(data_dir_.string(), "thread-kept");
+  Exec(Db(thread_db), "PRAGMA user_version = " + std::to_string(kSqliteThreadFloorVersion - 1) + ";");
+  CloseDb();
+
+  SqliteThreadStore& store = OpenStore();
+  auto page = store.GetMessagesPage("thread-kept", std::nullopt, 10);
+  ASSERT_TRUE(page) << page.error().message;
+  EXPECT_TRUE(page->empty());
+  auto threads = store.ListThreads();
+  ASSERT_TRUE(threads);
+  EXPECT_EQ(threads->size(), 1u) << "the chat stays in the catalog";
+  CloseStore();
+  EXPECT_EQ(Version(thread_db), kSqliteThreadUserVersion);
+  EXPECT_TRUE(TakeChatStoreResetNotice(data_dir_.string()));
+}
+
+// The runner itself, on a ladder of its own: a step that fails leaves the database as it was — the steps before it
+// undone too, at its old version — and the backup copy gone.
+TEST_F(SqliteMigrationsTest, AFailedStepRestoresTheBackupAtTheOldVersion) {
+  const std::string path = (data_dir_ / "ladder.db").string();
+  sqlite3* db = Db(path);
+  Exec(db, "PRAGMA journal_mode=WAL;");
+  Exec(db, "CREATE TABLE kept (v TEXT); INSERT INTO kept VALUES ('row'); PRAGMA user_version = 1;");
+  int ran = 0;
+  SqliteSchemaLadder ladder{
+      "ladder.db",
+      1,
+      3,
+      [](sqlite3*) { return Roe<void>(); },
+      {
+          {1,
+           [&ran](sqlite3* d) -> Roe<void> {
+             ++ran;
+             return sqlite3_exec(d, "CREATE TABLE added (v TEXT); DELETE FROM kept;", nullptr, nullptr, nullptr) ==
+                            SQLITE_OK
+                        ? Roe<void>()
+                        : Roe<void>(Error("step 1"));
+           }},
+          {2, [](sqlite3*) -> Roe<void> { return Error("step 2 fails"); }},
+      },
+  };
+  auto outcome = RunSqliteLadder(db, path, ladder);
+  ASSERT_FALSE(outcome);
+  EXPECT_NE(outcome.error().message.find("left at schema 1"), std::string::npos) << outcome.error().message;
+  EXPECT_EQ(ran, 1);
+  auto version = SqliteUserVersion(db);
+  ASSERT_TRUE(version);
+  EXPECT_EQ(*version, 1);
+  EXPECT_FALSE(*SqliteTableExists(db, "added")) << "the first step's change is undone with it";
+  sqlite3_stmt* stmt = nullptr;
+  ASSERT_EQ(sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM kept;", -1, &stmt, nullptr), SQLITE_OK);
+  ASSERT_EQ(sqlite3_step(stmt), SQLITE_ROW);
+  EXPECT_EQ(sqlite3_column_int(stmt, 0), 1) << "the row the first step deleted is back";
+  sqlite3_finalize(stmt);
+  EXPECT_FALSE(std::filesystem::exists(path + ".pre-migration"));
+
+  // The same ladder with its second step fixed runs both once, and again nothing.
+  ladder.steps[1].apply = [](sqlite3*) { return Roe<void>(); };
+  auto fixed = RunSqliteLadder(db, path, ladder);
+  ASSERT_TRUE(fixed) << fixed.error().message;
+  EXPECT_EQ(*fixed, SqliteLadderOutcome::Migrated);
+  auto again = RunSqliteLadder(db, path, ladder);
+  ASSERT_TRUE(again);
+  EXPECT_EQ(*again, SqliteLadderOutcome::Current);
+  EXPECT_EQ(ran, 2);
+  CloseDb();
+}
+
+TEST_F(SqliteMigrationsTest, ALadderWithAMissingStepIsRefused) {
+  sqlite3* db = Db((data_dir_ / "gap.db").string());
+  SqliteSchemaLadder ladder{"gap.db", 1, 3, [](sqlite3*) { return Roe<void>(); },
+                            {{1, [](sqlite3*) { return Roe<void>(); }}}};
+  EXPECT_FALSE(RunSqliteLadder(db, (data_dir_ / "gap.db").string(), ladder));
+  CloseDb();
+}
+
+} // namespace
+} // namespace pbr

@@ -20,7 +20,10 @@ CREATE TABLE IF NOT EXISTS call_sessions (
   ended_at INTEGER,
   media_epoch INTEGER NOT NULL DEFAULT 1,
   media_key_id TEXT NOT NULL DEFAULT '',
-  sfu_hint TEXT
+  sfu_hint TEXT,
+  planned_hop TEXT,
+  planned_hop_ma TEXT,
+  initiator_identity TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_call_sessions_state ON call_sessions(state);
 
@@ -170,27 +173,6 @@ Roe<void> SqliteCallSessionStore::EnsureSchema(sqlite3* profile_db) {
     sqlite3_free(err);
     return Error(message);
   }
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN video_allowed INTEGER NOT NULL DEFAULT 0;",
-                     nullptr, nullptr, nullptr);
-  (void)sqlite3_exec(profile_db,
-                     "ALTER TABLE pending_call_invites ADD COLUMN video_allowed INTEGER NOT NULL DEFAULT 0;", nullptr,
-                     nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'group';",
-                     nullptr, nullptr, nullptr);
-  (void)sqlite3_exec(profile_db,
-                     "ALTER TABLE pending_call_invites ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'group';", nullptr,
-                     nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN planned_hop TEXT;", nullptr, nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN planned_hop_ma TEXT;", nullptr, nullptr,
-                     nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN initiator_identity TEXT NOT NULL DEFAULT '';",
-                     nullptr, nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_participants ADD COLUMN on_hold INTEGER NOT NULL DEFAULT 0;",
-                     nullptr, nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_participants ADD COLUMN video_paused INTEGER NOT NULL DEFAULT 0;",
-                     nullptr, nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_participants ADD COLUMN brought_by TEXT NOT NULL DEFAULT '';",
-                     nullptr, nullptr, nullptr);
   return {};
 }
 

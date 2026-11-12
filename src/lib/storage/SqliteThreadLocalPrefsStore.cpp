@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS thread_local_prefs (
   pinned_at INTEGER NOT NULL DEFAULT 0,
   muted_until INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,
-  marked_unread INTEGER NOT NULL DEFAULT 0
+  marked_unread INTEGER NOT NULL DEFAULT 0,
+  mute_mentions INTEGER NOT NULL DEFAULT 0,
+  share_ai_confirmed INTEGER NOT NULL DEFAULT 0
 );
 )sql";
 
@@ -22,13 +24,6 @@ CREATE TABLE IF NOT EXISTS thread_local_prefs (
 constexpr const char* kSelectPrefsSql =
     "SELECT thread_id, pinned_at, muted_until, archived, marked_unread, mute_mentions, "
     "share_ai_confirmed FROM thread_local_prefs";
-
-/** G015: added to tables made before it, on open (additive; no user_version bump). */
-constexpr const char* kAddMuteMentionsSql =
-    "ALTER TABLE thread_local_prefs ADD COLUMN mute_mentions INTEGER NOT NULL DEFAULT 0;";
-/** Added the same way as mute_mentions. */
-constexpr const char* kAddShareAiConfirmedSql =
-    "ALTER TABLE thread_local_prefs ADD COLUMN share_ai_confirmed INTEGER NOT NULL DEFAULT 0;";
 
 ThreadLocalPrefs PrefsFromStmt(sqlite3_stmt* stmt) {
   ThreadLocalPrefs prefs;
@@ -62,36 +57,10 @@ Roe<sqlite3*> SqliteThreadLocalPrefsStore::OpenDb() const {
   return db;
 }
 
-Roe<void> SqliteThreadLocalPrefsStore::EnsureSchema(sqlite3* profile_db) const {
+Roe<void> SqliteThreadLocalPrefsStore::EnsureSchema(sqlite3* profile_db) {
   char* err = nullptr;
   if (sqlite3_exec(profile_db, kThreadLocalPrefsSchemaSql, nullptr, nullptr, &err) != SQLITE_OK) {
     const std::string message = err ? err : "thread prefs schema failed";
-    sqlite3_free(err);
-    return Error(message);
-  }
-  bool has_mute_mentions = false;
-  bool has_share_ai_confirmed = false;
-  sqlite3_stmt* columns = nullptr;
-  if (sqlite3_prepare_v2(profile_db, "PRAGMA table_info(thread_local_prefs);", -1, &columns, nullptr) == SQLITE_OK) {
-    while (sqlite3_step(columns) == SQLITE_ROW) {
-      const unsigned char* name = sqlite3_column_text(columns, 1);
-      if (name && std::string(reinterpret_cast<const char*>(name)) == "mute_mentions") {
-        has_mute_mentions = true;
-      }
-      if (name && std::string(reinterpret_cast<const char*>(name)) == "share_ai_confirmed") {
-        has_share_ai_confirmed = true;
-      }
-    }
-  }
-  sqlite3_finalize(columns);
-  if (!has_mute_mentions && sqlite3_exec(profile_db, kAddMuteMentionsSql, nullptr, nullptr, &err) != SQLITE_OK) {
-    const std::string message = err ? err : "thread prefs: mute_mentions not added";
-    sqlite3_free(err);
-    return Error(message);
-  }
-  if (!has_share_ai_confirmed &&
-      sqlite3_exec(profile_db, kAddShareAiConfirmedSql, nullptr, nullptr, &err) != SQLITE_OK) {
-    const std::string message = err ? err : "thread prefs: share_ai_confirmed not added";
     sqlite3_free(err);
     return Error(message);
   }

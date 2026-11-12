@@ -17,7 +17,8 @@ class SqliteThreadLocalPrefsStore : public IThreadLocalPrefsStore {
 public:
   explicit SqliteThreadLocalPrefsStore(std::string profile_db_path);
 
-  Roe<void> EnsureSchema(sqlite3* profile_db) const;
+  /** Its table at the current shape, where missing (a change to it is a ladder step: SqliteChatDbLadders.h). */
+  static Roe<void> EnsureSchema(sqlite3* profile_db);
 
   Roe<std::vector<ThreadLocalPrefs>> List() const override;
   Roe<ThreadLocalPrefs> Get(const std::string& thread_id) const override;

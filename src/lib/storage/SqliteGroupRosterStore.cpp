@@ -127,37 +127,13 @@ InviteStatus InviteStatusFromString(const std::string& value) {
 SqliteGroupRosterStore::SqliteGroupRosterStore(std::string profile_db_path)
     : profile_db_path_(std::move(profile_db_path)) {}
 
-Roe<void> SqliteGroupRosterStore::EnsureSchema(sqlite3* profile_db) const {
+Roe<void> SqliteGroupRosterStore::EnsureSchema(sqlite3* profile_db) {
   char* err = nullptr;
   if (sqlite3_exec(profile_db, kGroupSchemaSql, nullptr, nullptr, &err) != SQLITE_OK) {
     const std::string message = err ? err : "group schema failed";
     sqlite3_free(err);
     return Error(message);
   }
-  // Legacy profile.db may lack snapshot columns on pending_group_invites.
-  (void)sqlite3_exec(profile_db, "ALTER TABLE pending_group_invites ADD COLUMN group_title TEXT NOT NULL DEFAULT '';",
-                     nullptr, nullptr, nullptr);
-  (void)sqlite3_exec(profile_db,
-                     "ALTER TABLE pending_group_invites ADD COLUMN roster_epoch INTEGER NOT NULL DEFAULT 1;", nullptr,
-                     nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE pending_group_invites ADD COLUMN outbound INTEGER NOT NULL DEFAULT 0;",
-                     nullptr, nullptr, nullptr);
-  // G019: a member's invite names the group's owner.
-  (void)sqlite3_exec(profile_db,
-                     "ALTER TABLE pending_group_invites ADD COLUMN owner_identity TEXT NOT NULL DEFAULT '';", nullptr,
-                     nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE group_metadata ADD COLUMN title_version INTEGER NOT NULL DEFAULT 0;",
-                     nullptr, nullptr, nullptr);
-  // G012 / G013: the owner-signed roster we hold, and a restored group's member check.
-  for (const char* column :
-       {"roster_statement_json TEXT NOT NULL DEFAULT ''", "sync_state TEXT NOT NULL DEFAULT 'active'",
-        "sync_request_id TEXT NOT NULL DEFAULT ''", "sync_requested_at INTEGER NOT NULL DEFAULT 0"}) {
-    const std::string sql = std::string("ALTER TABLE group_metadata ADD COLUMN ") + column + ";";
-    (void)sqlite3_exec(profile_db, sql.c_str(), nullptr, nullptr, nullptr);
-  }
-  // G019: who brought each member in.
-  (void)sqlite3_exec(profile_db, "ALTER TABLE group_rosters ADD COLUMN added_by TEXT NOT NULL DEFAULT '';", nullptr,
-                     nullptr, nullptr);
   return {};
 }
 
