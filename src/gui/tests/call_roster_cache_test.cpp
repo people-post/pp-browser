@@ -1,6 +1,6 @@
 // DEV/PLAN-call-frame-cost.md step 1: the in-call roster no longer reads every member's name and avatar from disk on
-// every frame. Names and avatar paths are kept for the call and read again every 5 s; an empty result (no photo
-// file yet, the "Stranger" placeholder) is read again next frame; the call state fields are the screen's, every frame.
+// every frame. Names and avatar paths — found or not (no photo file yet, the "Stranger" placeholder) — are kept for
+// the call and read again every 5 s; the call state fields are the screen's, every frame.
 #include "gui/CallRosterCache.h"
 
 #include <gtest/gtest.h>
@@ -120,7 +120,7 @@ TEST(CallRosterCacheTest, EveryoneIsReadAgainAfterFiveSecondsNotBefore) {
   EXPECT_EQ(f.dir.PhotoReads(), 2) << "and kept again from there";
 }
 
-TEST(CallRosterCacheTest, AnEmptyPhotoOrAPlaceholderNameIsReadAgainNextFrame) {
+TEST(CallRosterCacheTest, AnEmptyPhotoOrAPlaceholderNameIsKeptForFiveSecondsToo) {
   Fixture f;
   f.dir.photos.erase("bob");     // his photo file is not downloaded yet
   f.dir.names.erase("stranger"); // nobody we know
@@ -131,20 +131,20 @@ TEST(CallRosterCacheTest, AnEmptyPhotoOrAPlaceholderNameIsReadAgainNextFrame) {
   EXPECT_EQ(f.roster[2].name, MakeCallerName("").label);
   f.dir.photo_reads.clear();
   f.dir.name_reads.clear();
-  f.Fill(members, kT0 + 16);
-  EXPECT_EQ(f.dir.photo_reads, (std::map<std::string, int>{{"bob", 1}, {"stranger", 1}}));
-  EXPECT_EQ(f.dir.name_reads, (std::map<std::string, int>{{"stranger", 1}})) << "Bob's name was found: kept";
-  f.dir.photos["bob"] = "/p/bob.jpg"; // downloaded
-  f.dir.names["stranger"] = "Dave";   // saved as a contact
-  f.Fill(members, kT0 + 32);
-  EXPECT_EQ(f.roster[1].avatar_src, "/p/bob.jpg");
+  f.dir.photos["bob"] = "/p/bob.jpg"; // downloaded meanwhile
+  f.dir.names["stranger"] = "Dave";   // saved as a contact meanwhile
+  for (int64_t t = 16; t < 5000; t += 16) {
+    f.Fill(members, kT0 + t);
+  }
+  EXPECT_EQ(f.dir.PhotoReads(), 0) << "nothing found is not read from disk every frame either";
+  EXPECT_EQ(f.dir.NameReads(), 0);
+  EXPECT_FALSE(f.roster[1].has_avatar);
+  f.Fill(members, kT0 + 5000);
+  EXPECT_EQ(f.dir.photo_reads, (std::map<std::string, int>{{"me", 1}, {"bob", 1}, {"stranger", 1}}));
+  EXPECT_EQ(f.dir.name_reads, (std::map<std::string, int>{{"bob", 1}, {"stranger", 1}}));
+  EXPECT_EQ(f.roster[1].avatar_src, "/p/bob.jpg") << "found at the 5 s re-read";
   EXPECT_EQ(f.roster[2].name, "Dave");
   EXPECT_FALSE(f.roster[2].avatar_unknown);
-  f.dir.photo_reads.clear();
-  f.dir.name_reads.clear();
-  f.Fill(members, kT0 + 48);
-  EXPECT_EQ(f.dir.photo_reads, (std::map<std::string, int>{{"stranger", 1}})) << "Dave has no photo yet";
-  EXPECT_EQ(f.dir.NameReads(), 0);
 }
 
 TEST(CallRosterCacheTest, TheCallStateFieldsAreTheScreensEveryFrame) {

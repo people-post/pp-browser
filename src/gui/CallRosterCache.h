@@ -20,9 +20,9 @@ namespace pbr {
  * The call members' names and avatar paths, kept for one call (DEV/PLAN-call-frame-cost.md step 1). The in-call page is
  * rebuilt every frame, and each avatar path is a contact lookup, file checks and a JSON read (ProfileIconCache): on an
  * iPhone 11 the roster cost 216 ms of UI thread per 10 s in a 1:1 video call. A value is read again every kRecheckMs (no
- * notice of "contact renamed" / "photo downloaded" reaches the call screen); an empty one (no photo file yet, the
- * "Stranger" placeholder) is not kept and is read again next time. The members' call state (muted, video, on hold,
- * paused) is never kept here: FillCallRoster takes it from the screen every time.
+ * notice of "contact renamed" / "photo downloaded" reaches the call screen), an empty one too (no photo file yet, the
+ * "Stranger" placeholder: a member without a photo would otherwise be read from disk every frame). The members' call
+ * state (muted, video, on hold, paused) is never kept here: FillCallRoster takes it from the screen every time.
  */
 class CallRosterCache {
 public:
@@ -54,11 +54,9 @@ public:
     Entry& e = entries_[identity];
     if (!e.name_at || now_ms - *e.name_at >= kRecheckMs) {
       e.name = lookups.name(identity);
-      e.name_at = e.name.unknown ? std::nullopt : std::optional<int64_t>(now_ms);
+      e.name_at = now_ms;
     }
-    const CallerName name = e.name;
-    Forget(identity);
-    return name;
+    return e.name;
   }
 
   std::string Icon(const std::string& identity, const int64_t now_ms, const Lookups& lookups) {
@@ -68,28 +66,18 @@ public:
     Entry& e = entries_[identity];
     if (!e.icon_at || now_ms - *e.icon_at >= kRecheckMs) {
       e.icon = lookups.icon(identity);
-      e.icon_at = e.icon.empty() ? std::nullopt : std::optional<int64_t>(now_ms);
+      e.icon_at = now_ms;
     }
-    const std::string icon = e.icon;
-    Forget(identity);
-    return icon;
+    return e.icon;
   }
 
 private:
   struct Entry {
     CallerName name;
-    std::optional<int64_t> name_at; // kept since (unset: not kept)
+    std::optional<int64_t> name_at; // read at (unset: not read yet)
     std::string icon;
     std::optional<int64_t> icon_at;
   };
-
-  // An identity with nothing kept leaves no entry behind.
-  void Forget(const std::string& identity) {
-    auto it = entries_.find(identity);
-    if (it != entries_.end() && !it->second.name_at && !it->second.icon_at) {
-      entries_.erase(it);
-    }
-  }
 
   std::string call_id_;
   std::unordered_map<std::string, Entry> entries_;
