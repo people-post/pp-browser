@@ -248,6 +248,121 @@ TEST(SqliteThreadStoreTest, AnEditedMessageReadsBackAfterARestart) {
   std::filesystem::remove_all(data_dir);
 }
 
+/** Blanks the edit row right after the next read of it (`blank_next_`): a void between a read and a write. */
+class BlankAfterReadStore final : public SqliteThreadStore {
+public:
+  using SqliteThreadStore::SqliteThreadStore;
+  Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id,
+                                               const std::string& message_id) const override {
+    auto found = SqliteThreadStore::GetMessage(thread_id, message_id);
+    if (blank_next_ && found && found->has_value()) {
+      blank_next_ = false;
+      ThreadMessage blanked = BlankedEdit(**found);
+      blanked.thread_id = thread_id;
+      (void)const_cast<BlankAfterReadStore*>(this)->UpdateMessage(blanked);
+    }
+    return found;
+  }
+  mutable bool blank_next_ = false;
+};
+
+TEST(SqliteThreadStoreTest, ADeliveryMarkNeverWritesBackWordsBlankedWhileItRan) {
+  const std::filesystem::path data_dir =
+      std::filesystem::temp_directory_path() / "pp_browser_sqlite_thread_store_delivery_race_test";
+  std::filesystem::remove_all(data_dir);
+  BlankAfterReadStore store(data_dir.string());
+  AssertStoreUnlocked(store);
+  Thread thread;
+  thread.id = "thread-direct-race";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Bob";
+  ASSERT_TRUE(store.UpsertThread(thread));
+  ThreadMessage edit;
+  edit.id = "edit-1";
+  edit.thread_id = thread.id;
+  edit.sender_contact_id = kLocalSelfContactId;
+  edit.content_type = ChatContentType::Annotation;
+  edit.target_message_id = "msg-1";
+  edit.text = "words since deleted";
+  edit.payload_json = BuildEditPayloadJson("msg-1", "words since deleted");
+  edit.timestamp = 1500;
+  edit.relay_visible = true;
+  ASSERT_TRUE(store.AppendMessage(edit));
+  store.blank_next_ = true;
+  ASSERT_TRUE(store.UpdateMessageDelivery(thread.id, "edit-1", MessageDelivery::Relayed, MessageTransport::Relay,
+                                          /*unless_delivered=*/false));
+  if (store.blank_next_) { // the mark read nothing: the void lands just after it instead
+    store.blank_next_ = false;
+    ThreadMessage blanked = BlankedEdit(*store.GetMessage(thread.id, "edit-1").value());
+    blanked.thread_id = thread.id;
+    ASSERT_TRUE(store.UpdateMessage(blanked));
+  }
+  const ThreadMessage row = *store.GetMessage(thread.id, "edit-1").value();
+  EXPECT_TRUE(row.text.empty()) << "the blanked words stay gone";
+  EXPECT_EQ(EditTextOf(row), std::optional<std::string>(""));
+  EXPECT_EQ(row.delivery, MessageDelivery::Relayed);
+  store.Flush();
+  std::filesystem::remove_all(data_dir);
+}
+
+// A send's outcome writes the row's delivery state and nothing else: an edit of ours blanked (voided) while its send
+// was on the way stays blank when the "delivered" mark lands after it.
+TEST(SqliteThreadStoreTest, ADeliveryMarkChangesOnlyTheDeliveryState) {
+  const std::filesystem::path data_dir =
+      std::filesystem::temp_directory_path() / "pp_browser_sqlite_thread_store_delivery_mark_test";
+  std::filesystem::remove_all(data_dir);
+  SqliteThreadStore store(data_dir.string());
+  AssertStoreUnlocked(store);
+  Thread thread;
+  thread.id = "thread-direct-mark";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Bob";
+  ASSERT_TRUE(store.UpsertThread(thread));
+  ThreadMessage edit;
+  edit.id = "edit-1";
+  edit.thread_id = thread.id;
+  edit.sender_contact_id = kLocalSelfContactId;
+  edit.content_type = ChatContentType::Annotation;
+  edit.target_message_id = "msg-1";
+  edit.text = "words since deleted";
+  edit.payload_json = BuildEditPayloadJson("msg-1", "words since deleted");
+  edit.timestamp = 1500;
+  edit.relay_visible = true;
+  edit.delivery = MessageDelivery::Pending;
+  ASSERT_TRUE(store.AppendMessage(edit));
+  ThreadMessage blanked = BlankedEdit(*store.GetMessage(thread.id, "edit-1").value());
+  blanked.thread_id = thread.id;
+  ASSERT_TRUE(store.UpdateMessage(blanked));
+
+  auto marked = store.UpdateMessageDelivery(thread.id, "edit-1", MessageDelivery::Relayed, MessageTransport::Relay,
+                                            /*unless_delivered=*/false);
+  ASSERT_TRUE(marked);
+  EXPECT_TRUE(*marked);
+  const ThreadMessage row = *store.GetMessage(thread.id, "edit-1").value();
+  EXPECT_TRUE(row.text.empty()) << "the blanked words stay gone";
+  EXPECT_EQ(EditTextOf(row), std::optional<std::string>(""));
+  EXPECT_EQ(row.content_type, ChatContentType::Annotation);
+  EXPECT_EQ(row.delivery, MessageDelivery::Relayed);
+  EXPECT_EQ(row.transport, std::optional<MessageTransport>(MessageTransport::Relay));
+
+  // A failed copy (unless_delivered) leaves a delivered row alone; a missing transport keeps the stored one.
+  marked = store.UpdateMessageDelivery(thread.id, "edit-1", MessageDelivery::Failed, std::nullopt, true);
+  ASSERT_TRUE(marked);
+  EXPECT_FALSE(*marked);
+  EXPECT_EQ(store.GetMessage(thread.id, "edit-1").value()->delivery, MessageDelivery::Relayed);
+  marked = store.UpdateMessageDelivery(thread.id, "edit-1", MessageDelivery::Failed, std::nullopt, false);
+  ASSERT_TRUE(marked);
+  EXPECT_TRUE(*marked);
+  EXPECT_EQ(store.GetMessage(thread.id, "edit-1").value()->delivery, MessageDelivery::Failed);
+  EXPECT_EQ(store.GetMessage(thread.id, "edit-1").value()->transport,
+            std::optional<MessageTransport>(MessageTransport::Relay));
+  marked = store.UpdateMessageDelivery(thread.id, "unknown", MessageDelivery::Relayed, std::nullopt, false);
+  ASSERT_TRUE(marked);
+  EXPECT_FALSE(*marked);
+  store.Flush();
+  std::filesystem::remove_all(data_dir);
+}
+
 TEST(SqliteThreadStoreTest, ThreadMemoryRoundTripAndForgetOnClear) {
   const std::filesystem::path data_dir =
       std::filesystem::temp_directory_path() / "pp_browser_sqlite_thread_memory_test";
