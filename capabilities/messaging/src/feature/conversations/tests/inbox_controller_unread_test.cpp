@@ -5,6 +5,7 @@
 #include "lib/people/ContactsStore.h"
 #include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
+#include "lib/messaging/EditMessage.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "common/Utilities.h"
 #include "lib/people/ProfileIconCache.h"
@@ -510,6 +511,148 @@ TEST(InboxControllerUnreadTest, SenderIconResolvesANonContactAccountThroughTheId
   const TranscriptFacts facts = env.inbox->Facts();
   EXPECT_EQ(facts.sender_icon("account:stranger"), expected);
   EXPECT_TRUE(facts.sender_icon("account:nobody").empty());
+}
+
+// ---- Editing a sent message (DEV/PLAN-message-edit.md): what follows on this device ----
+
+namespace {
+
+Thread EditChat(InboxTestEnv& env, const std::string& id, ThreadKind kind = ThreadKind::Direct) {
+  Thread thread;
+  thread.id = id;
+  thread.kind = kind;
+  thread.title = "Bob";
+  thread.updated_at = 1;
+  EXPECT_TRUE(env.store->UpsertThread(thread));
+  return thread;
+}
+
+ThreadMessage EditText(const std::string& thread_id, const std::string& id, const std::string& text, int64_t at) {
+  ThreadMessage message;
+  message.id = id;
+  message.thread_id = thread_id;
+  message.sender_contact_id = "account:bob";
+  message.text = text;
+  message.timestamp = at;
+  return message;
+}
+
+ThreadMessage EditOf(const ThreadMessage& target, const std::string& id, const std::string& text, int64_t at) {
+  ThreadMessage edit;
+  edit.id = id;
+  edit.thread_id = target.thread_id;
+  edit.sender_contact_id = target.sender_contact_id;
+  edit.content_type = ChatContentType::Annotation;
+  edit.target_message_id = target.id;
+  edit.text = text;
+  edit.payload_json = BuildEditPayloadJson(target.id, text);
+  edit.timestamp = at;
+  return edit;
+}
+
+} // namespace
+
+TEST(InboxMessageEditTest, AnEditOfTheNewestMessageIsThePreviewAndTheChatDoesNotMove) {
+  InboxTestEnv env("edit_preview");
+  const Thread chat = EditChat(env, "thread-edit-1");
+  ASSERT_TRUE(env.store->AppendMessage(EditText(chat.id, "m1", "older", 1000)));
+  const ThreadMessage newest = *env.store->AppendMessage(EditText(chat.id, "m2", "see you at 8", 2000));
+  const int64_t moved_at = env.store->GetThread(chat.id).value().value().updated_at;
+  const ThreadMessage edit = *env.store->AppendMessage(EditOf(newest, "e1", "see you at 9", 2500));
+  const ThreadMessage after = WithEdit(newest, edit);
+  ASSERT_TRUE(env.store->UpdateMessage(after));
+
+  env.inbox->AfterMessageEdited(chat.id, newest, after);
+  const Thread loaded = env.store->GetThread(chat.id).value().value();
+  EXPECT_EQ(loaded.preview, "see you at 9");
+  EXPECT_EQ(loaded.updated_at, moved_at) << "an edit does not move the chat up the list";
+  EXPECT_EQ(loaded.unread_count, 0);
+}
+
+TEST(InboxMessageEditTest, AnEditOfAnOlderMessageLeavesThePreview) {
+  InboxTestEnv env("edit_preview_older");
+  const Thread chat = EditChat(env, "thread-edit-2");
+  const ThreadMessage older = *env.store->AppendMessage(EditText(chat.id, "m1", "older", 1000));
+  ASSERT_TRUE(env.store->AppendMessage(EditText(chat.id, "m2", "newest", 2000)));
+  const ThreadMessage edit = *env.store->AppendMessage(EditOf(older, "e1", "older, edited", 1500));
+  const ThreadMessage after = WithEdit(older, edit);
+  ASSERT_TRUE(env.store->UpdateMessage(after));
+  const std::string preview_before = env.store->GetThread(chat.id).value().value().preview;
+
+  env.inbox->AfterMessageEdited(chat.id, older, after);
+  EXPECT_EQ(env.store->GetThread(chat.id).value().value().preview, preview_before);
+}
+
+// The edited text is plain: "you were mentioned" for it goes.
+TEST(InboxMessageEditTest, AnEditDropsTheMessagesMentionMarker) {
+  InboxTestEnv env("edit_mention");
+  InMemoryThreadMentionsStore mentions;
+  env.inbox->SetThreadMentions(&mentions);
+  const Thread group = EditChat(env, "thread-edit-group", ThreadKind::Group);
+  const ThreadMessage said = *env.store->AppendMessage(EditText(group.id, "m1", "@Me look", 1000));
+  ASSERT_TRUE(mentions.Add(group.id, "m1", 1000));
+  ASSERT_EQ(*mentions.Threads(), (std::set<std::string>{group.id}));
+  const ThreadMessage edit = *env.store->AppendMessage(EditOf(said, "e1", "@Me look again", 1500));
+
+  env.inbox->AfterMessageEdited(group.id, said, WithEdit(said, edit));
+  EXPECT_TRUE(mentions.Threads()->empty());
+}
+
+// A summary that folded the message in still has the old words: it is forgotten.
+TEST(InboxMessageEditTest, AnEditOfASummarisedMessageForgetsTheSummary) {
+  InboxTestEnv env("edit_memory");
+  const Thread chat = EditChat(env, "thread-edit-memory");
+  const ThreadMessage said = *env.store->AppendMessage(EditText(chat.id, "m1", "old words", 1000));
+  ASSERT_TRUE(env.store->AppendMessage(EditText(chat.id, "m2", "later", 2000)));
+  ConversationSummary summary;
+  summary.text = "they said old words";
+  summary.compacted_through_display_order = said.display_order;
+  ASSERT_TRUE(env.store->SetThreadMemory(chat.id, summary));
+  const ThreadMessage edit = *env.store->AppendMessage(EditOf(said, "e1", "new words", 1500));
+
+  env.inbox->AfterMessageEdited(chat.id, said, WithEdit(said, edit));
+  EXPECT_FALSE(env.store->GetThreadMemory(chat.id).value().has_value());
+}
+
+// Deleted for me: the message's edit rows lose their words too.
+TEST(InboxMessageEditTest, DeletingAnEditedMessageForMeBlanksItsEditRows) {
+  InboxTestEnv env("edit_delete_for_me");
+  const Thread chat = EditChat(env, "thread-edit-delete");
+  const ThreadMessage said = *env.store->AppendMessage(EditText(chat.id, "m1", "see you at 8", 1000));
+  const ThreadMessage edit = *env.store->AppendMessage(EditOf(said, "e1", "see you at 9", 1500));
+  ASSERT_TRUE(env.store->UpdateMessage(WithEdit(said, edit)));
+
+  ASSERT_TRUE(env.inbox->DeleteMessageForMe(chat.id, "m1"));
+  const std::vector<ThreadMessage> rows = env.store->GetMessages(chat.id).value();
+  for (const ThreadMessage& row : rows) {
+    EXPECT_EQ(row.text.find("see you"), std::string::npos) << row.id;
+    EXPECT_EQ(row.payload_json.find("see you"), std::string::npos) << row.id;
+  }
+}
+
+// Deleted here (for me, or for everyone — which deletes it here too): an edit of ours still queued is not sent, and
+// an edit someone else made is only blanked (nothing of theirs is in our queue).
+TEST(InboxMessageEditTest, DeletingOurEditedMessageCancelsItsUnsentEdit) {
+  InboxTestEnv env("edit_delete_cancels");
+  std::vector<std::string> cancelled;
+  env.inbox->SetCancelPendingSend([&](const std::string& id) { cancelled.push_back(id); });
+  const Thread chat = EditChat(env, "thread-edit-cancel");
+  ThreadMessage ours = EditText(chat.id, "m1", "see you at 8", 1000);
+  ours.sender_contact_id = kLocalSelfContactId;
+  const ThreadMessage said = *env.store->AppendMessage(ours);
+  ThreadMessage unsent = EditOf(said, "e1", "see you at 9", 1500);
+  unsent.delivery = MessageDelivery::Pending;
+  ASSERT_TRUE(env.store->AppendMessage(unsent));
+  ASSERT_TRUE(env.store->UpdateMessage(WithEdit(said, unsent)));
+  const ThreadMessage theirs = *env.store->AppendMessage(EditText(chat.id, "m2", "later", 2000));
+  const ThreadMessage their_edit = *env.store->AppendMessage(EditOf(theirs, "e2", "later, edited", 2500));
+  ASSERT_TRUE(env.store->UpdateMessage(WithEdit(theirs, their_edit)));
+
+  ASSERT_TRUE(env.inbox->DeleteMessageForMe(chat.id, "m1"));
+  EXPECT_EQ(cancelled, std::vector<std::string>{"e1"});
+  ASSERT_TRUE(env.inbox->DeleteMessageForMe(chat.id, "m2"));
+  EXPECT_EQ(cancelled, std::vector<std::string>{"e1"}) << "not ours: nothing to cancel";
+  EXPECT_TRUE(EditTextOf(env.store->GetMessage(chat.id, "e1").value().value()).value().empty());
 }
 
 } // namespace

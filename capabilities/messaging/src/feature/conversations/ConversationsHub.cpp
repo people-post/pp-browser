@@ -8,6 +8,7 @@
 #include "domain/attachments/AttachmentMetrics.h"
 #include "lib/delivery/AttachmentContentCipher.h"
 #include "lib/messaging/DeleteForEveryone.h"
+#include "lib/messaging/EditMessage.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 
 #include "lib/people/RecoveryBundle.h"
@@ -959,6 +960,12 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   peer_labels_ = std::make_unique<PeerDisplayResolver>(
       *contacts_, PeerDisplaySourcesFrom(*directory_shadows_, group_roster_.get()));
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());
+  // A message deleted here takes an unsent edit of ours with it (the orchestrator is rebuilt on each unlock).
+  inbox_->SetCancelPendingSend([this](const std::string& message_id) {
+    if (mesh_messaging_) {
+      mesh_messaging_->CancelPendingSend(message_id);
+    }
+  });
   inbox_->SetSystemControls(&system_controls_);
   inbox_->SetThreadMentions(thread_mentions_.get());
   directory_shadows_->SetOnUpdated([this]() {
@@ -2165,6 +2172,69 @@ Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_i
   // Done for everyone once retracted and deleted here; the server copy is a separate, best-effort step.
   DeleteUploadedCopy(original);
   return {};
+}
+
+Roe<ThreadMessage> ConversationsHub::EditMessage(const std::string& thread_id, const std::string& message_id,
+                                                 const std::string& new_text, const int64_t tapped_at_ms) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  auto thread = Store().GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  auto found = Store().GetMessage(thread_id, message_id);
+  if (!found) {
+    return found.error();
+  }
+  if (!found->has_value()) {
+    return Error("Message not found");
+  }
+  ThreadMessage target = **found;
+  target.thread_id = thread_id;
+  // Checked (an edit too long for one payload is refused here, before anything is stored), sent, applied here.
+  auto edited = EditOwnMessage(
+      Store(), target, (*thread)->kind, new_text, tapped_at_ms, util::GenerateUuid(),
+      [this, &thread_id, &target](const std::string& edit_id, const std::string& text, const int64_t sent_at_ms) {
+        return MeshMessaging().SendEdit(thread_id, target.id, text, edit_id, sent_at_ms);
+      },
+      [this](const std::string& unsent_id) { MeshMessaging().CancelPendingSend(unsent_id); });
+  if (!edited) {
+    return edited.error();
+  }
+  if (edited->unchanged) {
+    return edited->row;
+  }
+  if (edited->stored_unsent) {
+    log().warning << "edit stored but not sent (the message shows the red mark)";
+  }
+  Inbox().AfterMessageEdited(thread_id, target, edited->row);
+  return edited->row;
+}
+
+Roe<ThreadMessage> ConversationsHub::ResendEdit(const std::string& thread_id, const std::string& message_id) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  auto resent = ResendOwnEdit(
+      Store(), thread_id, message_id, util::GenerateUuid(),
+      [this, &thread_id, &message_id](const std::string& edit_id, const std::string& text, const int64_t sent_at_ms) {
+        return MeshMessaging().SendEdit(thread_id, message_id, text, edit_id, sent_at_ms);
+      },
+      [this](const std::string& unsent_id) { MeshMessaging().CancelPendingSend(unsent_id); });
+  if (!resent) {
+    return resent.error();
+  }
+  if (resent->stored_unsent) {
+    log().warning << "resent edit stored but not sent";
+  }
+  if (!resent->unsent_removed) {
+    log().warning << "resent edit: the unsent edit row was not removed";
+  }
+  return resent->edit_row;
 }
 
 void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {

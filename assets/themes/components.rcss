@@ -768,6 +768,19 @@ select selectbox option {
   background-color: rgba(128, 128, 128, 0.14);
 }
 
+/* Editing a sent message: a pencil before "Edit message", in the bar's accent (shown only in that state). */
+.prompt-edit-bar-icon {
+  display: none;
+  flex-shrink: 0;
+  width: 16dp;
+  height: 16dp;
+  decorator: svg(../icons/v2/pencil-accent.svg); /* drawn in the accent: decorators are not tinted by the theme */
+}
+
+.prompt-quote--edit .prompt-edit-bar-icon {
+  display: block;
+}
+
 .prompt-quote-text {
   flex: 1;
   min-width: 0;

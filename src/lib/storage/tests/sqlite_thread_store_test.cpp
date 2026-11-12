@@ -1,5 +1,6 @@
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/messaging/ConversationSummaryCodec.h"
+#include "lib/messaging/EditMessage.h"
 #include "lib/storage/SqliteThreadStore.h"
 
 #include <filesystem>
@@ -168,6 +169,80 @@ TEST(SqliteThreadStoreTest, DeleteMessageContentKeepsAnIdOnlyTombstone) {
     auto bounded = store.ExportMessagesUpTo(thread.id, std::string("msg-1")); // the bound is the deleted one
     ASSERT_TRUE(bounded);
     EXPECT_TRUE(bounded->empty());
+    store.Flush();
+  }
+  std::filesystem::remove_all(data_dir);
+}
+
+// An edit rewrites the row in place (DEV/PLAN-message-edit.md): after a restart the row reads the new text and its edit
+// mark, in the same place; nothing new in the table layout (the mark is in the encrypted payload_json).
+TEST(SqliteThreadStoreTest, AnEditedMessageReadsBackAfterARestart) {
+  const std::filesystem::path data_dir =
+      std::filesystem::temp_directory_path() / "pp_browser_sqlite_thread_store_edit_test";
+  std::filesystem::remove_all(data_dir);
+  Thread thread;
+  thread.id = "thread-direct-edit";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Bob";
+  ThreadMessage original;
+  {
+    SqliteThreadStore store(data_dir.string());
+    AssertStoreUnlocked(store);
+    ASSERT_TRUE(store.UpsertThread(thread));
+    ThreadMessage message;
+    message.id = "msg-1";
+    message.thread_id = thread.id;
+    message.sender_contact_id = "account:bob";
+    message.text = "see you at eight";
+    message.timestamp = 1000;
+    message.sender_seq = 3;
+    message.session_epoch = 1;
+    message.delivery = MessageDelivery::Relayed;
+    original = *store.AppendMessage(message);
+    ThreadMessage later = message;
+    later.id = "msg-2";
+    later.text = "bring snacks";
+    later.timestamp = 2000;
+    later.sender_seq = 4;
+    ASSERT_TRUE(store.AppendMessage(later));
+    ThreadMessage edit;
+    edit.id = "edit-1";
+    edit.thread_id = thread.id;
+    edit.sender_contact_id = "account:bob";
+    edit.content_type = ChatContentType::Annotation;
+    edit.target_message_id = "msg-1";
+    edit.text = "see you at nine";
+    edit.payload_json = BuildEditPayloadJson("msg-1", "see you at nine");
+    edit.timestamp = 1500;
+    const Thread before_edit = store.GetThread(thread.id).value().value();
+    ASSERT_TRUE(store.AppendMessage(edit));
+    const Thread after_edit = store.GetThread(thread.id).value().value();
+    EXPECT_EQ(after_edit.updated_at, before_edit.updated_at) << "an edit row does not move the chat";
+    EXPECT_EQ(after_edit.preview, "bring snacks") << "nor become its preview";
+    auto updated = store.UpdateMessage(WithEdit(*store.GetMessage(thread.id, "msg-1").value(), edit));
+    ASSERT_TRUE(updated);
+    ASSERT_TRUE(*updated);
+    store.Flush();
+  }
+  {
+    SqliteThreadStore store(data_dir.string());
+    AssertStoreUnlocked(store);
+    auto found = store.GetMessage(thread.id, "msg-1");
+    ASSERT_TRUE(found);
+    ASSERT_TRUE(found->has_value());
+    const ThreadMessage& row = **found;
+    EXPECT_EQ(row.text, "see you at nine");
+    EXPECT_EQ(row.content_type, ChatContentType::Text);
+    ASSERT_TRUE(EditMarkOf(row).has_value());
+    EXPECT_EQ(EditMarkOf(row)->edited_at, 1500);
+    EXPECT_EQ(EditMarkOf(row)->edited_by, "edit-1");
+    EXPECT_EQ(row.display_order, original.display_order);
+    EXPECT_EQ(row.timestamp, 1000);
+    EXPECT_EQ(row.sender_seq, std::optional<uint64_t>(3));
+    auto page = store.GetMessagesPage(thread.id, std::nullopt, 100);
+    ASSERT_TRUE(page);
+    ASSERT_FALSE(page->empty());
+    EXPECT_EQ(page->front().id, "msg-1") << "it keeps its place";
     store.Flush();
   }
   std::filesystem::remove_all(data_dir);

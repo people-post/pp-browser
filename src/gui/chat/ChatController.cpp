@@ -2180,7 +2180,7 @@ void ChatController::RefreshShowCapture() {
 }
 
 void ChatController::ToggleVoiceMode() {
-  if (chat_.voice_recording || (!chat_.voice_mode && !chat_.show_voice)) {
+  if (chat_.voice_recording || (!chat_.voice_mode && (!chat_.show_voice || chat_.editing_message))) {
     return;
   }
   chat_.voice_mode = !chat_.voice_mode;
@@ -2269,7 +2269,8 @@ void ChatController::SyncComposerInputState() {
   // picture bubble in the transcript text stays typeable; only another attachment waits (ComposerLocksOf).
   const ComposerLocks locks = ComposerLocksOf(
       chat_.compose_disabled, chat_.attachment_here, chat_.attachment_in_transcript,
-      chat_.attachment_uploading || chat_.attachment_preparing, chat_.image_preparing, chat_.voice_recording);
+      chat_.attachment_uploading || chat_.attachment_preparing, chat_.image_preparing, chat_.voice_recording,
+      chat_.editing_message);
   if (chat_.composer_input_disabled != locks.input || chat_.attach_disabled != locks.attach) {
     chat_.composer_input_disabled = locks.input;
     chat_.attach_disabled = locks.attach;
@@ -2390,7 +2391,7 @@ void ChatController::OnAttachFile(ui::Event* ev) {
   // One attachment at a time; beside a failed bubble a new one may start (the bubble gives way, its staged copy stays
   // for the chip; the bubble kept its own record id, so no Retry sends the wrong file).
   if (chat_.composer_input_disabled || chat_.attachment_uploading || chat_.attachment_preparing ||
-      !chat_.show_attach_button) {
+      !chat_.show_attach_button || chat_.editing_message) {
     return;
   }
   // B90: the menu opens at the attach button, not at a fixed corner (which was behind the keyboard on a phone).
@@ -2530,7 +2531,8 @@ void ChatController::ShowPictureSendChoice(std::string path, const std::string& 
 
 void ChatController::OnAttachCapture(ui::Event* ev) {
   if (!messaging_ready_ || !facade_ || !chat_.show_capture || chat_.composer_input_disabled ||
-      chat_.attachment_uploading || chat_.attachment_preparing || InAiComposerContext() || ActiveThreadId().empty()) {
+      chat_.attachment_uploading || chat_.attachment_preparing || InAiComposerContext() || ActiveThreadId().empty() ||
+      chat_.editing_message) {
     return;
   }
   if (ev) {
@@ -3594,6 +3596,7 @@ void ChatController::SyncDisplayFromThread() {
   }
   agent_.RefreshBusyForActiveThread(); // "thinking", the stop key and a queued bubble follow the open thread
   SyncDraftOwner();                    // so does the unsent text
+  EndEditIfTargetGone();               // the message being edited was deleted on another device
 
   // Runs on the UI thread for every message, reaction and AI reply: report the slow ones.
   const auto sync_ms =
@@ -3851,6 +3854,10 @@ void ChatController::OnSendMessage() {
   if (chat_.compose_disabled || chat_.image_preparing) {
     return;
   }
+  if (presenter_.EditingIn(CurrentDraftKey())) {
+    SendEditedMessage();
+    return;
+  }
 
   const std::string text = util::Trim(chat_.draft.c_str());
   const bool with_image = agent_.HasPendingImage() && InAiComposerContext();
@@ -4097,8 +4104,8 @@ std::string ChatController::MessagePlainText(const std::string& message_id) cons
 }
 
 void ChatController::StartQuoteReply(const std::string& text, const std::string& draft_prefix) {
-  if (chat_.compose_disabled || text.empty()) {
-    return;
+  if (chat_.compose_disabled || text.empty() || chat_.editing_message) {
+    return; // editing a message is not replying: the edit's words stay as typed
   }
   presenter_.StartQuoteReply(text);
   // One line in the bar, however long or multi-line the message is.
@@ -4136,6 +4143,124 @@ void ChatController::CancelQuoteReply() {
   chat_.quote_reply_text = "";
   DataModelHost::Instance().Dirty("chat", "quote_reply");
   DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+}
+
+bool ChatController::CanEditMessage(const std::string& message_id) {
+  return messaging_ready_ && presenter_.CanEditMessage(message_id);
+}
+
+void ChatController::StartEditMessage(const std::string& message_id) {
+  const std::string thread_id = CurrentDraftKey(); // the chat on screen: its composer is the one shown
+  if (chat_.compose_disabled || thread_id.empty() || thread_id != ActiveThreadId()) {
+    return;
+  }
+  if (presenter_.EditingIn(thread_id)) {
+    return; // one edit at a time: the words being edited stay as typed (the menu offers no "Edit" meanwhile)
+  }
+  const auto text = presenter_.BeginEdit(thread_id, message_id, chat_.draft.c_str());
+  if (!text) {
+    ShowToast(Tr("chat.edit.too_late"));
+    return;
+  }
+  CancelQuoteReply(); // editing and replying do not mix
+  if (chat_.voice_mode) {
+    ToggleVoiceMode(); // back to the keyboard: the words are edited there
+  }
+  chat_.draft = text->c_str();
+  DataModelHost::Instance().Dirty("chat", "draft");
+  SyncEditingState();
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  auto* draft =
+      ui_dynamic_cast<ui::ElementFormControlTextArea*>(context_->GetDocument(0)->GetElementById("draft-input"));
+  if (!draft) {
+    return;
+  }
+  draft->SetValue(text->c_str());
+  draft->Focus(); // the keyboard comes up, the caret at the end
+  const ui::String current = draft->GetValue();
+  const int end = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(current, static_cast<int>(current.size()));
+  draft->SetSelectionRange(end, end);
+}
+
+void ChatController::CancelEditMessage() {
+  const std::string thread_id = CurrentDraftKey();
+  if (!presenter_.EditingIn(thread_id)) {
+    return;
+  }
+  chat_.draft = presenter_.CancelEdit(thread_id).c_str(); // the draft from before; the edited words go (their choice)
+  DataModelHost::Instance().Dirty("chat", "draft");
+  SyncEditingState();
+}
+
+void ChatController::SendEditedMessage() {
+  const std::string thread_id = CurrentDraftKey();
+  const std::string typed = util::Trim(chat_.draft.c_str());
+  if (typed.empty()) {
+    return; // an empty edit is not sent (deleting is how a message goes away)
+  }
+  if (auto valid = ChatPresenter::ValidateDraft(typed); !valid) {
+    ShowToast(Tr(valid.error().message));
+    return;
+  }
+  // The edit's send time is now, the tap (DEV/PLAN-message-edit.md): its receivers judge the 15 minutes by it.
+  const ChatPresenter::EditSendResult result = presenter_.SendEdit(thread_id, chat_.draft.c_str(), util::NowUnixMs());
+  using Kind = ChatPresenter::EditSendResult::Kind;
+  switch (result.kind) {
+    case Kind::None:
+      return;
+    case Kind::TooLate:
+      ShowToast(Tr("chat.edit.too_late")); // still editing: the words stay in the input
+      return;
+    case Kind::TooLong:
+      ShowToast(Tr("chat.error.message_too_long")); // as a message too long to send; still editing, words kept
+      return;
+    case Kind::Failed:
+      UserFeedback::Fail(PaymentErrorUserMessage(result.error.value_or(Error("Send failed"))));
+      return;
+    case Kind::TargetGone:
+      ShowToast(Tr("chat.edit.target_deleted"));
+      break;
+    case Kind::Unchanged:
+    case Kind::Sent:
+      break;
+  }
+  chat_.draft = result.composer.c_str();
+  DataModelHost::Instance().Dirty("chat", "draft");
+  SyncEditingState();
+  SyncDisplayFromThread(); // the bubble shows the new words and "Edited"
+  DirtyChatTurns();
+  NotifySurfaceChanged();
+}
+
+void ChatController::EndEditIfTargetGone() {
+  const std::string thread_id = CurrentDraftKey();
+  if (!thread_id.empty() && presenter_.EditingIn(thread_id)) {
+    if (const auto composer = presenter_.EndEditIfTargetGone(thread_id, chat_.draft.c_str())) {
+      ShowToast(Tr("chat.edit.target_deleted"));
+      chat_.draft = composer->c_str();
+      DataModelHost::Instance().Dirty("chat", "draft");
+    }
+  }
+  // Also when the chat shown changed without a draft hand-over (a new chat): the bar follows the chat shown.
+  if (chat_.editing_message != (presenter_.EditingIn(CurrentDraftKey()) != nullptr)) {
+    SyncEditingState();
+  }
+}
+
+void ChatController::SyncEditingState() {
+  const bool editing = presenter_.EditingIn(CurrentDraftKey()) != nullptr; // Home's composer never edits
+  if (chat_.editing_message != editing) {
+    chat_.editing_message = editing;
+    DataModelHost::Instance().Dirty("chat", "editing_message");
+    // The reply bar's line says "Edit message" meanwhile (a reply and an edit never show together).
+    if (editing || !chat_.quote_reply) {
+      chat_.quote_reply_text = editing ? StructuredTextParser::EscapeText(Tr("chat.edit.bar")).c_str() : "";
+      DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+    }
+  }
+  SyncComposerInputState(); // the plus and the microphone grey out while editing
 }
 
 void ChatController::JumpToQuotedMessage(const std::string& reply_message_id) {
@@ -4605,11 +4730,13 @@ void ChatController::RestoreComposerExtras(const std::string& key) {
     quotes_.erase(it);
   }
   agent_.RestorePendingImage(key);
+  SyncEditingState(); // an edit waits in its own chat (its words came back with the draft)
 }
 
 void ChatController::ForgetComposerExtras(const std::string& key) {
   drafts_.Forget(key);
   quotes_.erase(key);
+  presenter_.ForgetEdit(key);
   mentions_.ForgetThread(key);
   agent_.ForgetPendingImage(key);
   if (agent_.Ports().forget_thread) {
@@ -5206,7 +5333,13 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("cancel_attachment_send",
                                with_item_id([this](const std::string& id) { OnCancelAttachmentSend(id); }));
         ctor.BindEventCallback("remove_image", DataEvent([this] { agent_.DiscardPendingAiImage(); }));
-        ctor.BindEventCallback("cancel_quote_reply", DataEvent([this] { CancelQuoteReply(); }));
+        ctor.BindEventCallback("cancel_quote_reply", DataEvent([this] {
+                                 if (chat_.editing_message) {
+                                   CancelEditMessage(); // the same bar says "Edit message" then
+                                 } else {
+                                   CancelQuoteReply();
+                                 }
+                               }));
         ctor.BindEventCallback("jump_to_quote", DataEvent<std::string>([this](const std::string& reply_id) {
                                  if (IsPendingUploadRowId(reply_id)) {
                                    return;

@@ -1,7 +1,9 @@
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 
 #include "common/Utilities.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/DeliveryNotice.h"
+#include "lib/delivery/ReactionTypes.h"
 #include "common/thread/ThreadChannel.h"
 
 #include <algorithm>
@@ -110,7 +112,13 @@ Roe<ThreadMessage> InMemoryDeliveryStore::AppendMessageLocked(const ThreadMessag
   // The thread's catalog row, as SQLite's: it moves up, shows this message, and is listed — unless the message is
   // not one to read in a direct chat.
   if (auto thread = threads_.find(stored.thread_id); thread != threads_.end()) {
-    const bool hidden = thread->second.kind == ThreadKind::Direct && hidden_in_direct_ && hidden_in_direct_(stored);
+    // An edit is not a new message either (SQLite's skips it the same way).
+    auto annotation = stored.content_type == ChatContentType::Annotation
+                          ? ChatPayloadCodec::DecodeAnnotationJson(stored.payload_json)
+                          : Roe<ChatAnnotationFields>(Error("not an annotation"));
+    const bool edit = annotation && annotation->annotation_type == kAnnotationTypeEdit;
+    const bool hidden =
+        edit || (thread->second.kind == ThreadKind::Direct && hidden_in_direct_ && hidden_in_direct_(stored));
     if (!hidden) {
       thread->second.updated_at = stored.timestamp;
       thread->second.preview = stored.text;

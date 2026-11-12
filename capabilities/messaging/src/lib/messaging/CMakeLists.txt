@@ -36,6 +36,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     IGroupRosterStore.cpp
     GroupTypes.cpp
     SentCopy.cpp
+    EditMessage.cpp
     CopyAsk.cpp
     CardAsk.cpp
     CardAskGate.cpp

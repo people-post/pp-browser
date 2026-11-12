@@ -293,6 +293,15 @@ Roe<void> ConversationsFacade::DeleteMessageForEveryone(const std::string& threa
   return hub_.DeleteMessageForEveryone(thread_id, message_id);
 }
 
+Roe<ThreadMessage> ConversationsFacade::EditMessage(const std::string& thread_id, const std::string& message_id,
+                                                    const std::string& new_text, const int64_t tapped_at_ms) {
+  return hub_.EditMessage(thread_id, message_id, new_text, tapped_at_ms);
+}
+
+Roe<ThreadMessage> ConversationsFacade::ResendEdit(const std::string& thread_id, const std::string& message_id) {
+  return hub_.ResendEdit(thread_id, message_id);
+}
+
 Roe<void> ConversationsFacade::ClearThreadHistory(const std::string& thread_id, const bool forget_memory) {
   if (auto cleared = hub_.Inbox().ClearThreadHistory(thread_id, forget_memory); !cleared) {
     return cleared.error();

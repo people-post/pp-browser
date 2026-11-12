@@ -1,5 +1,6 @@
 #include "feature/presenters/ThreadSearch.h"
 
+#include "lib/messaging/EditMessage.h"
 #include "lib/messaging/QuoteReply.h"
 
 #include <gtest/gtest.h>
@@ -104,4 +105,16 @@ TEST(ThreadSearchTest, RealignGoesToNewestWhenTheMessageIsGone) {
   const std::vector<ThreadSearchHit> after = {{"c", 3}, {"a", 1}};
   EXPECT_EQ(RealignCurrent(before, 1, after), 0U);
   EXPECT_EQ(RealignCurrent({}, 0, after), 0U);
+}
+
+// An edited message is found by its new words, never by its old ones; the edit row itself is not searched.
+TEST(ThreadSearchTest, AnEditedMessageIsFoundByItsNewWordsOnly) {
+  const ThreadMessage original = Text("m1", 1, "see you at eight");
+  ThreadMessage edit = Text("e1", 2, "see you at nine", ChatContentType::Annotation);
+  edit.target_message_id = "m1";
+  edit.payload_json = BuildEditPayloadJson("m1", "see you at nine");
+  edit.timestamp = 5;
+  const ThreadMessage edited = WithEdit(original, edit);
+  EXPECT_EQ(Search({edited, edit}, "nine"), (std::vector<std::string>{"m1"}));
+  EXPECT_TRUE(Search({edited, edit}, "eight").empty());
 }

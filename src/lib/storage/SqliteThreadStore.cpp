@@ -7,6 +7,7 @@
 #include "lib/delivery/DeliveryNotice.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "lib/messaging/ConversationSummaryCodec.h"
+#include "lib/messaging/EditMessage.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/storage/SqliteGroupRosterStore.h"
 #include "common/chat/MessagingJson.h"
@@ -324,6 +325,11 @@ Roe<void> SqliteThreadStore::UpdateThreadCatalogFromMessage(const ThreadMessage&
   // A local "this message did not go out" line is a note under the message, not a new message: the chat's
   // preview and place in the list stay as the failed message left them.
   if (SendFailureRowReason(message)) {
+    return {};
+  }
+  // An edit is not a new message (DEV/PLAN-message-edit.md): the chat keeps its place, and its preview changes only
+  // when the edited message is the newest (InboxController::AfterMessageEdited).
+  if (IsEditAnnotation(message)) {
     return {};
   }
   std::lock_guard lock(db_.profile_mutex());

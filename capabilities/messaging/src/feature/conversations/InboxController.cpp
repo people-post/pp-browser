@@ -9,6 +9,7 @@
 #include "common/ImageMetadata.h"
 #include "lib/messaging/AiThreadTitle.h"
 #include "lib/messaging/AttachmentCache.h"
+#include "lib/messaging/EditMessage.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"
 #include "lib/messaging/GroupMembershipCodec.h"
@@ -197,8 +198,60 @@ Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, cons
   if (!*deleted) {
     return Error("Message not found");
   }
+  // Its edit rows go blank too, and an edit of ours still queued is not sent: no edited words outlive the message
+  // (DEV/PLAN-message-edit.md).
+  (void)BlankEditRowsFor(store_, thread_id, message_id, {}, cancel_pending_send_);
   AfterMessageDeleted(thread_id, original);
   return {};
+}
+
+void InboxController::AfterMessageEdited(const std::string& thread_id, const ThreadMessage& before,
+                                         const ThreadMessage& after) {
+  if (mentions_) {
+    (void)mentions_->DropMessage(thread_id, before.id); // the edited text is plain: no "you were mentioned" left
+  }
+  if (auto memory = store_.GetThreadMemory(thread_id);
+      memory && *memory && (*memory)->compacted_through_display_order &&
+      before.display_order <= *(*memory)->compacted_through_display_order) {
+    (void)store_.ClearThreadMemory(thread_id); // its summary still carries the old words
+  }
+  auto page = store_.GetMessagesPage(thread_id, std::nullopt, 100);
+  if (!page) {
+    return;
+  }
+  const auto holder = store_.GetThread(thread_id);
+  const bool direct_thread = holder && *holder && (*holder)->kind == ThreadKind::Direct;
+  const ThreadMessage* newest = nullptr;
+  for (const ThreadMessage& message : *page) {
+    if (message.content_type != ChatContentType::Annotation &&
+        !(direct_thread && GroupMembershipCodec::IsHiddenInDirectThread(message))) {
+      newest = &message;
+    }
+  }
+  if (!newest || newest->id != before.id) {
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(thread_row_mu_);
+    auto thread = store_.GetThread(thread_id);
+    if (!thread || !*thread) {
+      return;
+    }
+    Thread updated = **thread;
+    updated.preview = after.text;
+    (void)store_.UpsertThread(updated); // updated_at untouched: an edit does not move the chat up the list
+  }
+  if (on_thread_changed_) {
+    if (AppRuntime::IsRunning()) {
+      AppRuntime::PostUI([this]() {
+        if (on_thread_changed_) {
+          on_thread_changed_();
+        }
+      });
+    } else {
+      on_thread_changed_();
+    }
+  }
 }
 
 void InboxController::AfterMessageDeleted(const std::string& thread_id, const ThreadMessage& original) {

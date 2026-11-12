@@ -2,6 +2,7 @@
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/messaging/EditMessage.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 
@@ -149,6 +150,19 @@ Roe<void> TranscriptBodyCodec::ApplyToMessage(const TranscriptBodyPlaintext& bod
     if (resolution && rebuilt) {
       rebuilt->set("resolution", *resolution);
       message.payload_json = DumpJson(*rebuilt);
+    }
+  }
+  // Likewise an edited text's mark (edited_at / edited_by, DEV/PLAN-message-edit.md): the row rebuilds a text's
+  // payload from its words and spans only.
+  if (message.content_type == ChatContentType::Text) {
+    const auto stored = TryParseObject(body.payload_json);
+    const auto edited_at = stored ? stored->getIf<int64_t>(kEditedAtKey) : std::nullopt;
+    const auto edited_by = stored ? stored->getString(kEditedByKey) : std::nullopt;
+    if (edited_at && edited_by) {
+      Object rebuilt = TryParseObject(message.payload_json).value_or(Object{});
+      rebuilt.set(kEditedAtKey, *edited_at);
+      rebuilt.set(kEditedByKey, *edited_by);
+      message.payload_json = DumpJson(rebuilt);
     }
   }
   return {};

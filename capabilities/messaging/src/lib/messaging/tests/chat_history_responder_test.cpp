@@ -2,6 +2,9 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/messaging/ChatHistoryResponder.h"
+#include "lib/messaging/EditMessage.h"
+#include "lib/messaging/RelayReceivePipeline.h"
+#include "lib/messaging/testing/InMemoryMessagingStores.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/delivery/EnvelopeSigner.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
@@ -209,4 +212,174 @@ TEST(ChatHistoryResponderTest, ServesOnlyASignedRequestOnItsOwnLink) {
 
   const ChatHistoryRequest old = harness.SignedRequest(util::NowUnixMs() - 2 * PeerRequestAuth::kMaxSkewMs);
   EXPECT_FALSE(harness.Serve(old, old.requester_peer_id)) << "stale";
+}
+
+// ---- Editing a sent message (DEV/PLAN-message-edit.md): what history serves of an edited message ----
+
+namespace {
+
+constexpr int64_t kSentAt = 1'000'000;
+constexpr int64_t kMinute = 60'000;
+
+/** Our row at `seq`, sent at `at`. */
+ThreadMessage OurRow(const Thread& thread, uint64_t seq, int64_t at) {
+  ThreadMessage message;
+  message.id = "out-" + std::to_string(seq);
+  message.thread_id = thread.id;
+  message.sender_contact_id = kLocalSelfContactId;
+  message.timestamp = at;
+  message.delivery = MessageDelivery::Relayed;
+  message.relay_visible = true;
+  message.transport = MessageTransport::Local;
+  message.sender_seq = seq;
+  message.session_epoch = 1;
+  return message;
+}
+
+/** Our edit row of `target` at `seq`, as SendEdit stores it. */
+ThreadMessage OurEdit(const Thread& thread, uint64_t seq, const std::string& target, const std::string& text,
+                      int64_t at) {
+  ThreadMessage edit = OurRow(thread, seq, at);
+  edit.content_type = ChatContentType::Annotation;
+  edit.target_message_id = target;
+  edit.text = text;
+  edit.payload_json = BuildEditPayloadJson(target, text);
+  return edit;
+}
+
+/** The requester's device: it takes the served envelopes through its own receive pipeline. */
+struct Requester {
+  explicit Requester(ResponderHarness& h) : roster(store), psk(store) {
+    EXPECT_TRUE(psk.SetDek(TestDek()) && store.SetDek(TestDek()));
+    DirectChatTarget target;
+    target.peer_identity_kind = "account";
+    target.peer_identity_value = h.local.account_id;
+    target.channel = ThreadChannel::E2e;
+    thread = *store.FindOrCreateDirectThread(target, "", "Responder");
+    PeerSessionRecord record;
+    record.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
+    record.session_epoch = 1;
+    record.master_psk_b64 =
+        Base64Encode(*HexToBytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"));
+    record.psk_verified_at = 1;
+    EXPECT_TRUE(psk.Save(record));
+    pipeline = std::make_unique<RelayReceivePipeline>(store, test::CardsOf({&h.local}), psk,
+                                                      test::ReceiveKeysOf(h.requester), roster);
+    account = h.requester.account_id;
+  }
+
+  void Take(const ChatHistoryResponse& response) {
+    for (const RelayEnvelope& envelope : response.messages) {
+      EXPECT_TRUE(pipeline->ProcessEnvelope(envelope, account, /*authorized_older_backfill=*/true).persisted)
+          << envelope.message_id;
+    }
+  }
+
+  std::vector<ThreadMessage> Rows() { return store.GetMessages(thread.id).value(); }
+
+  std::optional<ThreadMessage> Row(const std::string& id) {
+    auto found = store.GetMessage(thread.id, id);
+    return found && *found ? std::optional<ThreadMessage>(**found) : std::nullopt;
+  }
+
+  size_t RowsHolding(const std::string& words) {
+    size_t n = 0;
+    const std::vector<ThreadMessage> rows = Rows();
+    for (const ThreadMessage& m : rows) {
+      n += m.text.find(words) != std::string::npos || m.payload_json.find(words) != std::string::npos ? 1 : 0;
+    }
+    return n;
+  }
+
+  size_t EditRowsWithText() {
+    size_t n = 0;
+    const std::vector<ThreadMessage> rows = Rows();
+    for (const ThreadMessage& m : rows) {
+      n += IsEditAnnotation(m) && !EditTextOf(m).value_or("").empty() ? 1 : 0;
+    }
+    return n;
+  }
+
+  InMemoryDeliveryStore store;
+  InMemoryGroupRosterStore roster;
+  InMemoryPeerSessions psk;
+  std::unique_ptr<RelayReceivePipeline> pipeline;
+  Thread thread;
+  std::string account;
+};
+
+} // namespace
+
+// An edited message is served as its current text plus the edit row as it was sent (its own id and send time), so the
+// requester applies it — however long after the edit the history is fetched — and shows "Edited".
+TEST(ChatHistoryResponderTest, AnEditedMessageServesItsTextAndTheEditAsSent) {
+  ResponderHarness harness("edited");
+  ThreadMessage said = OurRow(harness.thread, 1, kSentAt);
+  said.text = "see you at 8";
+  ASSERT_TRUE(harness.store.AppendMessage(said));
+  const ThreadMessage edit = OurEdit(harness.thread, 2, "out-1", "see you at 9", kSentAt + 3 * kMinute);
+  ASSERT_TRUE(harness.store.AppendMessage(edit));
+  ASSERT_TRUE(harness.store.UpdateMessage(WithEdit(said, edit)));
+
+  const ChatHistoryRequest request = harness.SignedRequest(); // now: long past the edit's 16 minutes
+  auto response = harness.Serve(request, request.requester_peer_id);
+  ASSERT_TRUE(response) << response.error().message;
+  ASSERT_EQ(response->messages.size(), 2u);
+  EXPECT_EQ(response->messages[1].message_id, "out-2");
+  EXPECT_EQ(response->messages[1].timestamp, kSentAt + 3 * kMinute) << "never re-stamped";
+
+  Requester requester(harness);
+  requester.Take(*response);
+  const auto row = requester.Row("out-1");
+  ASSERT_TRUE(row);
+  EXPECT_EQ(row->text, "see you at 9");
+  ASSERT_TRUE(EditMarkOf(*row).has_value());
+  EXPECT_EQ(EditMarkOf(*row)->edited_by, "out-2");
+}
+
+// Edited twice: only the current version's words go out (the earlier edit row is served blank, for its seq).
+TEST(ChatHistoryResponderTest, AMessageEditedTwiceServesOnlyItsCurrentWords) {
+  ResponderHarness harness("edited_twice");
+  ThreadMessage said = OurRow(harness.thread, 1, kSentAt);
+  said.text = "see you at 8";
+  ASSERT_TRUE(harness.store.AppendMessage(said));
+  const ThreadMessage first = OurEdit(harness.thread, 2, "out-1", "first try", kSentAt + kMinute);
+  const ThreadMessage second = OurEdit(harness.thread, 3, "out-1", "second try", kSentAt + 2 * kMinute);
+  ASSERT_TRUE(harness.store.AppendMessage(first));
+  ASSERT_TRUE(harness.store.AppendMessage(second));
+  ASSERT_TRUE(harness.store.UpdateMessage(WithEdit(said, second)));
+  ASSERT_EQ(BlankEditRowsFor(harness.store, harness.thread.id, "out-1", "out-3"), 1u);
+
+  const ChatHistoryRequest request = harness.SignedRequest();
+  auto response = harness.Serve(request, request.requester_peer_id);
+  ASSERT_TRUE(response) << response.error().message;
+  ASSERT_EQ(response->messages.size(), 3u) << "every seq filled";
+
+  Requester requester(harness);
+  requester.Take(*response);
+  EXPECT_EQ(requester.Row("out-1")->text, "second try");
+  EXPECT_EQ(requester.EditRowsWithText(), 1u);
+  EXPECT_EQ(requester.RowsHolding("first try"), 0u);
+}
+
+// Edited, then deleted here: nothing of the edited words is served.
+TEST(ChatHistoryResponderTest, AnEditedThenDeletedMessageServesNoEditedWords) {
+  ResponderHarness harness("edited_deleted");
+  ThreadMessage said = OurRow(harness.thread, 1, kSentAt);
+  said.text = "see you at 8";
+  ASSERT_TRUE(harness.store.AppendMessage(said));
+  const ThreadMessage edit = OurEdit(harness.thread, 2, "out-1", "see you at 9", kSentAt + kMinute);
+  ASSERT_TRUE(harness.store.AppendMessage(edit));
+  ASSERT_TRUE(harness.store.UpdateMessage(WithEdit(said, edit)));
+  ASSERT_TRUE(harness.store.DeleteMessageContent(harness.thread.id, "out-1"));
+  (void)BlankEditRowsFor(harness.store, harness.thread.id, "out-1"); // as InboxController::DeleteMessageForMe does
+
+  const ChatHistoryRequest request = harness.SignedRequest();
+  auto response = harness.Serve(request, request.requester_peer_id);
+  ASSERT_TRUE(response) << response.error().message;
+
+  Requester requester(harness);
+  requester.Take(*response);
+  EXPECT_EQ(requester.Row("out-1")->content_type, ChatContentType::Deleted);
+  EXPECT_EQ(requester.RowsHolding("see you"), 0u);
 }
