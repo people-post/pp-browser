@@ -557,11 +557,6 @@ Roe<PendingCallInvite> CallSessionWorkflow::LoadAcceptableInvite(const std::stri
     reports_.Emit(workflow_report::Changed{});
     return Error("Call invite expired");
   }
-  if (IsBroadcastSession((*pending)->session_kind)) {
-    // Legacy rows only (pre-feature/broadcast builds): a live broadcast is watched from its
-    // announce through BroadcastHub, never accepted as a call.
-    return Error("Live broadcasts are watched from the announce, not accepted as calls");
-  }
   return **pending;
 }
 

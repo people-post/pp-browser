@@ -384,7 +384,7 @@ private:
   void StartMediaAfterRemoteAccept(const CallAcceptDetail& accept, const std::string& identity,
                                    const std::string& local_identity, bool implicit);
   // --- CommitAccept steps ---
-  /** The pending invite this device may accept (not expired, not a legacy broadcast row). */
+  /** The pending invite this device may accept (not expired). */
   Roe<PendingCallInvite> LoadAcceptableInvite(const std::string& call_id, const std::string& local_identity);
   /** The stored session, or one built from the invite. */
   CallSession SessionRowForAccept(const PendingCallInvite& pending);
