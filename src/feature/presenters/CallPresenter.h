@@ -43,6 +43,11 @@ struct CallNotice {
     CallBack,
     /** "Who can call me" dropped a call from `identity`: `key` (an i18n key) says which setting did (the pill). */
     CallBlocked,
+    /**
+     * The call on screen: one-way audio or a lost mic, said as a bottom pill (`key`, an i18n key; CallHintPrompt), in
+     * the error style when `alarm` (the user must act).
+     */
+    Hint,
   };
   Kind kind = Kind::Error;
   std::string key;
@@ -52,6 +57,7 @@ struct CallNotice {
   /** IncomingCall: it rings over a call this device is in, and answering ends `ending` (V064). CallBack: the call. */
   bool conflict = false;
   CallScreen::EndingCall ending;
+  bool alarm = false;
 };
 
 /** What pressing a call button led to. */
@@ -84,6 +90,50 @@ CallJoinBar MakeCallJoinBar(const std::optional<CallUiBackend::JoinableCallInfo>
  * joined as it is (no voice / video choice); video this device cannot send goes voice; else as asked.
  */
 bool ChatCallAsksVideo(bool call_joinable, bool want_video, bool video_available);
+
+/**
+ * DEV/PLAN-call-failed-redial.md 1: the page offers "Call again" / "Try later" (in place of "Try again" / "Close"): a
+ * 1:1 call on screen that could not connect. A group's failed page and a dropped call ("Call dropped") keep theirs.
+ */
+bool OffersRedial(const CallScreen& screen);
+
+/**
+ * DEV/PLAN-call-failed-redial.md 6: a 1:1 "Couldn't reach them" page left on this device after its call ended — the
+ * other side ended the call before it ever connected. Only this device's page: no call behind it (nothing open, no
+ * ring, no audio); it goes when the user taps, when another call or a ring takes the screen, on a lock or another
+ * account. Kept in memory only.
+ */
+struct CallFailedPage {
+  /** The call that ended (a later read of it never replaces the page with it). */
+  std::string call_id;
+  std::string thread_id;
+  std::string peer_identity;
+  bool video = false;
+  /** What this device found about why it failed (the page's hint line, as on the live failed page). */
+  bool hint_missing_mic = false;
+  bool hint_seed_unreachable = false;
+
+  bool operator==(const CallFailedPage&) const = default;
+};
+
+/**
+ * DEV/PLAN-call-failed-redial.md 6: the other side ended `ended_call_id` (not a decline) while `shown` showed it as a
+ * 1:1 call this device was in that never connected — couldn't connect, or answered (here or there) with the steps still
+ * going: its failed page stays (CallFailedPage) instead of "{name} ended the call". A ring not answered, a call still
+ * ringing the other side, a call that connected, a group's call: as before.
+ */
+bool KeepsFailedPage(const CallScreen& shown, const std::string& ended_call_id, bool declined);
+/** The page KeepsFailedPage keeps, from what `shown` showed. */
+CallFailedPage FailedPageOf(const CallScreen& shown);
+
+/**
+ * DEV/PLAN-call-failed-redial.md 7: a ring over this device's 1:1 call that could not connect (`shown` its page,
+ * `active_call_id` the call) is that call's own peer calling again (Call again on their side, its leave not here yet):
+ * the failed call ends here first, so the ring is a plain one. Only a 1:1 invite from `failed_peer` in the same chat,
+ * another call than the failed one, and not while this device's own Call again is on its way.
+ */
+bool EndsFailedCallForRing(const CallScreen& shown, const std::string& active_call_id, const PendingCallInvite& invite,
+                           const std::string& failed_peer, bool redial_pending);
 
 /**
  * The call surface's decisions and the call buttons, without a GUI: which call shows (ring,
@@ -176,6 +226,12 @@ public:
   const CallMediaScreen& MediaScreen() const { return media_frame_.View(); }
   /** The call this device is in (empty: none). */
   const std::string& ActiveCallId() const { return active_call_id_; }
+  /** The failed page kept with no call behind it (CallFailedPage); shown only while Screen() shows nothing. */
+  const std::optional<CallFailedPage>& FailedPage() const { return failed_page_; }
+  /** "Call again" was pressed and its new call has not shown (nor failed) yet. */
+  bool RedialPending() const { return redial_pending_since_ms_ != 0; }
+  /** A redial that neither showed its call nor failed is forgotten after this long. */
+  static constexpr int64_t kRedialPendingMs = 10'000;
   /** The call placed or answered with video (its camera comes on once connected; "Starting video…"). */
   const std::string& VideoIntentCallId() const { return auto_camera_call_id_; }
   CallUiBackend* Backend() const;
@@ -240,7 +296,14 @@ public:
   static constexpr int64_t kLeavingLatchMs = 15'000;
   /** Tests: the steady clock (ms) the latch's time limit reads. */
   void SetSteadyClockForTest(std::function<int64_t()> now_ms);
+  /** A group's failed call: the call stack connects the same call again ("Try again"). */
   void Retry();
+  /**
+   * "Call again" (OffersRedial, or the kept CallFailedPage): the failed call is ended (CallFromChat's Leave) and the
+   * same person is called again, voice or video as before (voice when this device cannot send video). Anything else on
+   * screen: nothing. Pressed again before the new call shows: nothing.
+   */
+  void Redial();
   void ToggleMute();
   void ToggleCamera();
   /** Phones: front / rear camera while it is on. */
@@ -343,6 +406,13 @@ private:
   /** Forget handled calls past an invite's lifetime, and per-caller pills past their minute. */
   void PruneBlocked(int64_t now_ms);
   bool messaging_ready_ = false;
+  /** The kept failed page and a pending redial are dropped (a lock, another account): never brought back. */
+  void ForgetFailedPage(const char* why);
+  /** FailedPage. */
+  std::optional<CallFailedPage> failed_page_;
+  /** RedialPending: when "Call again" was pressed (steady_ms_; 0: none), and the failed call it ended. */
+  int64_t redial_pending_since_ms_ = 0;
+  std::string redial_from_call_id_;
   NoMediaWatch no_media_watch_;
   int64_t no_media_checked_ms_ = 0;
   /** Last CallSessionManager identity the ring callbacks were installed on. */

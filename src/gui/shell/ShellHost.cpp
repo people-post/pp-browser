@@ -422,6 +422,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("call_decline", DataEvent<>([this]() { CallDecline(); }));
     ctor.BindEventCallback("call_leave", DataEvent<>([this]() { CallLeave(); }));
     ctor.BindEventCallback("call_retry", DataEvent<>([this]() { CallRetry(); }));
+    ctor.BindEventCallback("call_redial", DataEvent<>([this]() { CallRedial(); }));
     ctor.BindEventCallback("call_mute", DataEvent<>([this]() { CallMute(); }));
     ctor.BindEventCallback("call_camera", DataEvent<>([this]() { CallCamera(); }));
     ctor.BindEventCallback("call_flip_camera", DataEvent<>([this]() { CallFlipCamera(); }));
@@ -3275,7 +3276,7 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   }
 
   // Call ring pulse / in-call meters need sub-second frames while overlays are active.
-  if (state_.call_ring.active || state_.call_in_progress.active) {
+  if (CallChromeWantsLiveFrames(state_)) {
     delay_sec = std::min(delay_sec, kLiveChromeFrameIntervalSec);
   }
 
@@ -3466,6 +3467,12 @@ void ShellHost::CallLeave() {
 void ShellHost::CallRetry() {
   if (call_actions_.retry_connect) {
     call_actions_.retry_connect();
+  }
+}
+
+void ShellHost::CallRedial() {
+  if (call_actions_.redial) {
+    call_actions_.redial();
   }
 }
 

@@ -384,6 +384,8 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
                                    in_call.self_avatar_tone),
       .in_call_phone_failed = in_call.phone_failed,
       .in_call_failed_text = in_call.failed_text.c_str(),
+      .in_call_offer_redial = in_call.offer_redial,
+      .in_call_failed_kept = in_call.failed_kept,
       .in_call_story_active = in_call.story_active,
       .in_call_story_stage = in_call.story_stage,
       .in_call_story_steps = std::string(in_call.story_step1.c_str()) + "|" + in_call.story_step2.c_str() + "|" +
@@ -813,6 +815,9 @@ void CallController::SetChromeMode(CallChromeMode mode) {
     AppRuntime::PostUI([this, mode]() { SetChromeMode(mode); });
     return;
   }
+  if (in_call_.failed_kept) {
+    return; // the kept failed page has no call to shrink to the chip (the page's pull-down lands here too)
+  }
   if (mode == CallChromeMode::Minimized) {
     if (chrome_mode_ != CallChromeMode::Minimized) {
       restore_mode_ = chrome_mode_ == CallChromeMode::Immersive ? CallChromeMode::Immersive : CallChromeMode::Expanded;
@@ -1169,6 +1174,13 @@ void CallController::ShowNotice(const CallNotice& notice) {
     case CallNotice::Kind::CallBlocked:
       UserFeedback::Note(Tr(notice.key));
       return;
+    case CallNotice::Kind::Hint:
+      if (notice.alarm) {
+        UserFeedback::Fail(Tr(notice.key));
+      } else {
+        UserFeedback::Note(Tr(notice.key));
+      }
+      return;
   }
 }
 
@@ -1204,6 +1216,9 @@ void CallController::Render() {
       peer_link_refresh_();
     }
   }
+  if (in_call_.failed_kept && screen.kind != CallScreen::Kind::None) {
+    ClearInCall(); // a call or a ring takes the kept failed page's place: nothing of that page carries over
+  }
   switch (screen.kind) {
     case CallScreen::Kind::Answering:
       RenderAnswering(screen, presenter_.MediaScreen(), now_ms);
@@ -1237,6 +1252,10 @@ void CallController::Render() {
         SyncShellState();
         return;
       }
+      if (const std::optional<CallFailedPage>& page = presenter_.FailedPage()) {
+        RenderFailedPage(*page, now_ms);
+        return;
+      }
       ClearInCall();
       // "Incoming call, connecting…" has no call screen behind it: only StepWakePlaceholder takes it down.
       if (!ring_.awaiting_invite) {
@@ -1245,6 +1264,44 @@ void CallController::Render() {
       SyncShellState();
       return;
   }
+}
+
+void CallController::RenderFailedPage(const CallFailedPage& page, const int64_t now_ms) {
+  if (!in_call_.failed_kept) {
+    ClearInCall(); // the call's chrome (its mode, the chip's place, the tiles) went with the call
+  }
+  if (!ring_.awaiting_invite) {
+    ClearRing();
+  }
+  // The live failed page's words and buttons, drawn from the kept page: a page, not a call (no media, no meters).
+  CallScreen shown;
+  shown.kind = CallScreen::Kind::InCall;
+  shown.status = CallScreen::Status::CouldntConnect;
+  shown.call_id = page.call_id;
+  shown.peer_identity = page.peer_identity;
+  shown.thread_id = page.thread_id;
+  shown.video = page.video;
+  shown.hint = CallScreen::Hint::DirectConnect;
+  shown.hint_missing_mic = page.hint_missing_mic;
+  shown.hint_seed_unreachable = page.hint_seed_unreachable;
+  auto& in_call = in_call_;
+  in_call.active = true;
+  in_call.failed_kept = true;
+  in_call.call_id = "";
+  in_call.title = page.video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
+  in_call.peer_label = CallerNameFor(page.peer_identity).label.c_str();
+  in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
+  in_call.status_hint = StatusHintText(shown.hint, shown).c_str();
+  in_call.quality_hint = "";
+  in_call.show_retry = true; // the desktop bar's icon: Call again
+  in_call.show_invite = false;
+  in_call.show_speaker = false;
+  in_call.show_camera = false;
+  in_call.show_flip = false;
+  in_call.calling = false;
+  ApplyChromeModeToState(in_call);
+  FillPhoneCallFields(shown, now_ms);
+  SyncShellState();
 }
 
 void CallController::RenderAnswering(const CallScreen& screen, const CallMediaScreen& frame, const int64_t now_ms) {
@@ -1625,6 +1682,10 @@ void CallController::RetryConnect() {
   presenter_.Retry();
 }
 
+void CallController::RedialCall() {
+  presenter_.Redial();
+}
+
 // On hold (another call has the audio) PP muted the mic and paused the camera itself; a tap on those buttons meanwhile
 // hands the choice to the user (the end of the hold then changes nothing) — never a locked button (Kenneth 2026-11-06:
 // if the OS never says the hold ended, the user must be able to unmute by hand).
@@ -1823,7 +1884,8 @@ void CallController::ApplyStatusLine(const CallScreen& screen, const CallMediaSc
   in_call.elapsed = FormatTimer(frame.timer_since_ms, now_ms).c_str();
   in_call.subtitle = StatusLineText(frame.line, screen, now_ms).c_str();
   in_call.status_hint = StatusHintText(frame.line.hint, screen).c_str();
-  in_call.quality_hint = frame.hint_shown ? Tr(frame.hint_key).c_str() : "";
+  // The middle line as the presenter decided (a 1:1 call: never; the pills say it — DEV/PLAN-call-failed-redial.md 9).
+  in_call.quality_hint = frame.center_hint_key.empty() ? "" : Tr(frame.center_hint_key).c_str();
 }
 
 std::string CallController::StatusLineText(const CallStatusLine& line, const CallScreen& screen,
@@ -1904,8 +1966,10 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend& backend,
   const bool audio_fault = view.quality == CallPathQuality::NoAudio || view.asymmetry != CallAudioAsymmetry::None;
   if (audio_fault_gate_.Update(presenter_.ActiveCallId(), audio_fault, now_ms)) {
     if (!frame.hint_key.empty()) {
-      // The phone layout already shows this hint as the centered line; don't say it twice. The gate stays consumed.
-      if (CallAudioFaultToastGate::ShouldToastHint(frame.hint_shown, in_call.status_hint.empty())) {
+      // A 1:1 call's hint is the presenter's pill (hint_pilled). A group's: the phone layout already shows it as the
+      // centered line; don't say it twice. The gate stays consumed.
+      if (!frame.hint_pilled &&
+          CallAudioFaultToastGate::ShouldToastHint(frame.hint_shown, in_call.status_hint.empty())) {
         UserFeedback::Fail(Tr(frame.hint_key));
       }
     } else if (label_key && label_key[0]) {
@@ -2258,6 +2322,7 @@ void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t
   using Status = CallScreen::Status;
   in_call.phone_failed =
       !answering && (screen.status == Status::CouldntConnect || screen.status == Status::Disconnected);
+  in_call.offer_redial = !answering && OffersRedial(screen);
   if (screen.status == Status::Disconnected) {
     in_call.failed_text = Tr("call.status.disconnected").c_str();
   } else if (group || screen.hint_missing_mic) {

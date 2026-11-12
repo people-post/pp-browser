@@ -341,10 +341,14 @@ void AppendControls(std::ostringstream& out, const CallInProgressState& call, co
                         "</span>");
     }
   };
-  // 1:1 couldn't connect but the page stays (the path may still move): Try again sits with the buttons, as on the
-  // old bar.
+  // Couldn't connect but the page stays (the path may still move): Try again sits with the buttons, as on the old bar;
+  // a 1:1 call calls again (DEV/PLAN-call-failed-redial.md 4).
   if (call.show_retry) {
-    AppendControl(out, "call_retry()", nullptr, "src=\"../icons/sync.svg\"", Tr("call.failed.retry"));
+    if (call.offer_redial) {
+      AppendControl(out, "call_redial()", nullptr, "src=\"../icons/sync.svg\"", Tr("call.failed.redial"));
+    } else {
+      AppendControl(out, "call_retry()", nullptr, "src=\"../icons/sync.svg\"", Tr("call.failed.retry"));
+    }
   }
   if (video_layout) {
     flip();
@@ -582,8 +586,12 @@ std::string CallPhoneRml(const ShellState& state) {
   const bool invite = call.show_invite && !call.phone_failed;
   const bool wide_sides = spotlit && invite;
   out << (wide_sides ? "<div class=\"call-phone-top-side\">" : "");
-  out << "<button class=\"call-phone-top-btn\" type=\"button\" data-event-click=\"call_minimize()\">"
-         "<svg src=\"../icons/v2/chevron-down.svg\" width=\"26\" height=\"26\"></svg></button>";
+  if (call.failed_kept) {
+    out << "<div class=\"call-phone-top-spacer\"></div>"; // no call to shrink to the chip: a page, closed by its buttons
+  } else {
+    out << "<button class=\"call-phone-top-btn\" type=\"button\" data-event-click=\"call_minimize()\">"
+           "<svg src=\"../icons/v2/chevron-down.svg\" width=\"26\" height=\"26\"></svg></button>";
+  }
   out << (wide_sides ? "</div>" : "");
   out << "<div class=\"call-phone-sealed\"><svg src=\"../icons/v2/lock.svg\" width=\"12\" height=\"12\"></svg>"
          "<span class=\"call-phone-sealed-text\">"
@@ -623,13 +631,22 @@ std::string CallPhoneRml(const ShellState& state) {
            "{{call_in_progress_status_hint}}</p>";
     out << "</div>";
     out << "<div class=\"call-phone-failed-actions\">";
-    if (call.show_retry) {
+    if (call.offer_redial) {
+      // A 1:1 call: call them again, or end it for now (DEV/PLAN-call-failed-redial.md 1); "Try later" is Close's End.
       out << "<button class=\"call-phone-pill-btn call-phone-pill-btn--primary\" type=\"button\" "
-             "data-event-click=\"call_retry()\">"
-          << Tr("call.failed.retry") << "</button>";
+             "data-event-click=\"call_redial()\">"
+          << Tr("call.failed.redial") << "</button>";
+      out << "<button class=\"call-phone-pill-btn\" type=\"button\" data-event-click=\"call_leave()\">"
+          << Tr("call.failed.later") << "</button>";
+    } else {
+      if (call.show_retry) {
+        out << "<button class=\"call-phone-pill-btn call-phone-pill-btn--primary\" type=\"button\" "
+               "data-event-click=\"call_retry()\">"
+            << Tr("call.failed.retry") << "</button>";
+      }
+      out << "<button class=\"call-phone-pill-btn\" type=\"button\" data-event-click=\"call_leave()\">"
+          << Tr("call.failed.close") << "</button>";
     }
-    out << "<button class=\"call-phone-pill-btn\" type=\"button\" data-event-click=\"call_leave()\">"
-        << Tr("call.failed.close") << "</button>";
     out << "</div></div></div>";
     return out.str();
   }
@@ -810,6 +827,10 @@ float MinimizedChipTopDp(const ShellState& state) {
   return -1.f;
 }
 
+bool CallChromeWantsLiveFrames(const ShellState& state) {
+  return state.call_ring.active || (state.call_in_progress.active && !state.call_in_progress.failed_kept);
+}
+
 std::string CallInProgressRml(const ShellState& state) {
   // V031 modes: Expanded (top bar), Immersive (people grid), Minimized (corner chip).
   // Mounted into #shell-call-in-progress-mount when active; video tiles still DirtyCallChrome-only.
@@ -837,35 +858,39 @@ std::string CallInProgressRml(const ShellState& state) {
     out << "</button>";
   };
 
-  auto append_core_actions = [](std::ostringstream& out) {
+  // The retry icon: a 1:1 call that could not connect calls again; a group's call connects again.
+  auto append_core_actions = [](std::ostringstream& out, const CallInProgressState& call) {
     out << "<button class=\"shell-call-retry\" type=\"button\" data-if=\"call_in_progress_show_retry\" "
-           "data-event-click=\"call_retry()\">";
+           "data-event-click=\""
+        << (call.offer_redial ? "call_redial()" : "call_retry()") << "\">";
     out << "<svg src=\"../icons/sync.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
     out << "</button>";
-    out << "<button class=\"shell-call-invite\" type=\"button\" data-if=\"call_in_progress_show_invite\" "
-           "data-event-click=\"call_invite()\">";
-    out << "<svg src=\"../icons/plus.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
-    out << "</button>";
-    out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute\" type=\"button\" "
-           "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
-    out << "<svg id=\"shell-call-mute-icon\" width=\"18\" height=\"18\" crop-to-content=\"true\" "
-           "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
-    out << "</button>";
-    out << "<button id=\"shell-call-speaker-btn\" class=\"shell-call-speaker\" type=\"button\" "
-           "data-if=\"call_in_progress_show_speaker\" "
-           "data-class-shell-call-speaker--on=\"call_in_progress_speaker_on\" data-event-click=\"call_speaker()\">";
-    out << "<svg id=\"shell-call-speaker-icon\" src=\"../icons/speaker.svg\" width=\"18\" height=\"18\" "
-           "crop-to-content=\"true\"></svg>";
-    out << "</button>";
-    out << "<button class=\"shell-call-camera\" type=\"button\" data-if=\"call_in_progress_show_camera\" "
-           "data-class-shell-call-camera--on=\"call_in_progress_camera_on\" data-event-click=\"call_camera()\">";
-    out << "<svg width=\"18\" height=\"18\" crop-to-content=\"true\" "
-           "data-attr-src=\"call_in_progress_camera_on ? '../icons/video.svg' : '../icons/video-off.svg'\"></svg>";
-    out << "</button>";
-    out << "<button class=\"shell-call-flip\" type=\"button\" data-if=\"call_in_progress_show_flip\" "
-           "data-event-click=\"call_flip_camera()\">";
-    out << "<svg src=\"../icons/camera-flip.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
-    out << "</button>";
+    if (!call.failed_kept) { // the kept failed page has no call: Call again and Close only
+      out << "<button class=\"shell-call-invite\" type=\"button\" data-if=\"call_in_progress_show_invite\" "
+             "data-event-click=\"call_invite()\">";
+      out << "<svg src=\"../icons/plus.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+      out << "</button>";
+      out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute\" type=\"button\" "
+             "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
+      out << "<svg id=\"shell-call-mute-icon\" width=\"18\" height=\"18\" crop-to-content=\"true\" "
+             "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
+      out << "</button>";
+      out << "<button id=\"shell-call-speaker-btn\" class=\"shell-call-speaker\" type=\"button\" "
+             "data-if=\"call_in_progress_show_speaker\" "
+             "data-class-shell-call-speaker--on=\"call_in_progress_speaker_on\" data-event-click=\"call_speaker()\">";
+      out << "<svg id=\"shell-call-speaker-icon\" src=\"../icons/speaker.svg\" width=\"18\" height=\"18\" "
+             "crop-to-content=\"true\"></svg>";
+      out << "</button>";
+      out << "<button class=\"shell-call-camera\" type=\"button\" data-if=\"call_in_progress_show_camera\" "
+             "data-class-shell-call-camera--on=\"call_in_progress_camera_on\" data-event-click=\"call_camera()\">";
+      out << "<svg width=\"18\" height=\"18\" crop-to-content=\"true\" "
+             "data-attr-src=\"call_in_progress_camera_on ? '../icons/video.svg' : '../icons/video-off.svg'\"></svg>";
+      out << "</button>";
+      out << "<button class=\"shell-call-flip\" type=\"button\" data-if=\"call_in_progress_show_flip\" "
+             "data-event-click=\"call_flip_camera()\">";
+      out << "<svg src=\"../icons/camera-flip.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+      out << "</button>";
+    }
     out << "<button class=\"shell-call-leave\" type=\"button\" "
            "data-class-shell-call-leave--ringing=\"call_in_progress_calling\" "
            "data-event-click=\"call_leave()\">";
@@ -999,7 +1024,7 @@ std::string CallInProgressRml(const ShellState& state) {
     AppendGroupOffer(out, call, false);
     AppendGuestActions(out, call, false);
     out << "<div class=\"shell-call-bar-actions row\">";
-    append_core_actions(out);
+    append_core_actions(out, call);
     out << "</div>";
     append_cancel(out);
     out << "</div></div></div>";
@@ -1028,9 +1053,11 @@ std::string CallInProgressRml(const ShellState& state) {
   out << "<p class=\"text-xs shell-call-bar-hint\" data-if=\"call_in_progress_show_retry\" "
          ">{{call_in_progress_status_hint}}</p>";
   out << "</div>";
-  append_quality_chip(out, "");
+  if (!call.failed_kept) {
+    append_quality_chip(out, "");
+  }
   out << "<div class=\"shell-call-bar-actions row\">";
-  append_core_actions(out);
+  append_core_actions(out, call);
   out << "</div></div>";
   AppendGroupOffer(out, call, false);
   AppendGuestActions(out, call, false);

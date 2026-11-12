@@ -109,6 +109,8 @@ public:
   void EndDisconnectedCall(int64_t now_ms);
   std::string NoticeUserText(const CallNotice& notice) const;
   void RetryConnect();
+  /** A 1:1 failed page's "Call again" (CallPresenter::Redial). */
+  void RedialCall();
   void ToggleMute();
   void ToggleCamera();
   void FlipCamera();
@@ -148,6 +150,8 @@ private:
   /** The ring's answer buttons: video / voice, free / take-all (P001), the conflict's End & accept (V064). */
   void FillRingAnswerLabels(const CallScreen& screen);
   void FillRingPricing(const CallScreen& screen);
+  /** DEV/PLAN-call-failed-redial.md 6: the failed page kept with no call behind it (CallPresenter::FailedPage). */
+  void RenderFailedPage(const CallFailedPage& page, int64_t now_ms);
   /** Accept in flight: the ring is gone, a Connecting page / bar shows. */
   void RenderAnswering(const CallScreen& screen, const CallMediaScreen& frame, int64_t now_ms);
   void RenderInCall(const CallScreen& screen, const CallMediaScreen& frame, CallUiBackend& backend, int64_t now_ms);
