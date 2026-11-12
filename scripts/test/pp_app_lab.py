@@ -1193,9 +1193,12 @@ class Road:
 
     def __enter__(self):
         print("road seed=%d (%s)" % (self.seed, ", ".join(u.name for u in self.users)), flush=True)
+        # A PHONE_* profile is a dict too (string keys): only a dict keyed by users is one profile per user. Told apart
+        # by isinstance(dict) alone, every single-profile road (#502 to V065) ran on clean links.
+        per_user = isinstance(self.profile, dict) and not any(isinstance(k, str) for k in self.profile)
         for u in self.users:
             clear_link(u)
-            profile = self.profile.get(u) if isinstance(self.profile, dict) else self.profile
+            profile = self.profile.get(u) if per_user else self.profile
             if profile:
                 phone_link(u, profile)
         if self.handover_s:
