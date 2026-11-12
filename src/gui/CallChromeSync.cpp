@@ -87,6 +87,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
       synced.in_call_phone_failed != next.in_call_phone_failed ||
       synced.in_call_failed_text != next.in_call_failed_text ||
       synced.in_call_offer_redial != next.in_call_offer_redial ||
+      synced.in_call_failed_kept != next.in_call_failed_kept ||
       synced.in_call_story_active != next.in_call_story_active ||
       synced.in_call_story_shape != next.in_call_story_shape ||
       synced.in_call_story_sheet_open != next.in_call_story_sheet_open ||

@@ -111,6 +111,25 @@ struct CallFailedPage {
 };
 
 /**
+ * DEV/PLAN-call-failed-redial.md 6: the other side ended `ended_call_id` (not a decline) while `shown` showed it as a
+ * 1:1 call this device was in that never connected — couldn't connect, or answered (here or there) with the steps still
+ * going: its failed page stays (CallFailedPage) instead of "{name} ended the call". A ring not answered, a call still
+ * ringing the other side, a call that connected, a group's call: as before.
+ */
+bool KeepsFailedPage(const CallScreen& shown, const std::string& ended_call_id, bool declined);
+/** The page KeepsFailedPage keeps, from what `shown` showed. */
+CallFailedPage FailedPageOf(const CallScreen& shown);
+
+/**
+ * DEV/PLAN-call-failed-redial.md 7: a ring over this device's 1:1 call that could not connect (`shown` its page,
+ * `active_call_id` the call) is that call's own peer calling again (Call again on their side, its leave not here yet):
+ * the failed call ends here first, so the ring is a plain one. Only a 1:1 invite from `failed_peer` in the same chat,
+ * another call than the failed one, and not while this device's own Call again is on its way.
+ */
+bool EndsFailedCallForRing(const CallScreen& shown, const std::string& active_call_id, const PendingCallInvite& invite,
+                           const std::string& failed_peer, bool redial_pending);
+
+/**
  * The call surface's decisions and the call buttons, without a GUI: which call shows (ring,
  * answering, in call, nothing), what its status line says, which buttons it offers, and what each
  * button does. CallController renders the screen (words, avatars, video, ringtone); pp-app-probe

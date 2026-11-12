@@ -3276,7 +3276,7 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   }
 
   // Call ring pulse / in-call meters need sub-second frames while overlays are active.
-  if (state_.call_ring.active || state_.call_in_progress.active) {
+  if (CallChromeWantsLiveFrames(state_)) {
     delay_sec = std::min(delay_sec, kLiveChromeFrameIntervalSec);
   }
 

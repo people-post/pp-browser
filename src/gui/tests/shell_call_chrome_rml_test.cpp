@@ -1017,6 +1017,49 @@ TEST(ShellCallChromeRmlTest, TheBarsRetryIconCallsAgainInAOneToOneCallAndRetries
   }
 }
 
+// DEV/PLAN-call-failed-redial.md 6: the failed page kept with no call behind it is a page, not a call: it cannot shrink
+// to the call chip, and the desktop bar has nothing to mute.
+TEST(ShellCallChromeRmlTest, TheKeptFailedPageCannotShrinkToTheCallChip) {
+  ShellState live = FailedCallPage(/*phone=*/true, /*group=*/false);
+  EXPECT_TRUE(Has(CallInProgressRml(live), "call_minimize()")) << "the live failed call can shrink as before";
+  ShellState kept = live;
+  kept.call_in_progress.failed_kept = true;
+  const std::string rml = CallInProgressRml(kept);
+  EXPECT_FALSE(Has(rml, "call_minimize()"));
+  EXPECT_TRUE(Has(rml, "call_redial()"));
+  EXPECT_TRUE(Has(rml, "call_leave()"));
+}
+
+TEST(ShellCallChromeRmlTest, TheKeptFailedPageOnTheDesktopBarOnlyCallsAgainOrCloses) {
+  ShellState kept = FailedCallPage(/*phone=*/false, /*group=*/false);
+  kept.call_in_progress.failed_kept = true;
+  const std::string rml = CallInProgressRml(kept);
+  EXPECT_TRUE(Has(rml, "call_redial()"));
+  EXPECT_TRUE(Has(rml, "call_leave()"));
+  EXPECT_FALSE(Has(rml, "call_mute()"));
+  EXPECT_FALSE(Has(rml, "call_details()"));
+  EXPECT_FALSE(Has(rml, "call_minimize()"));
+  EXPECT_TRUE(Has(CallInProgressRml(FailedCallPage(false, false)), "call_mute()")) << "a live call keeps its buttons";
+}
+
+TEST(ShellCallChromeRmlTest, OnlyALiveCallOrARingAsksForLiveFrames) {
+  ShellState kept = FailedCallPage(true, false);
+  EXPECT_TRUE(CallChromeWantsLiveFrames(kept)) << "a live call's meters and pulses";
+  kept.call_in_progress.failed_kept = true;
+  EXPECT_FALSE(CallChromeWantsLiveFrames(kept)) << "the kept page does not move";
+  kept.call_ring.active = true;
+  EXPECT_TRUE(CallChromeWantsLiveFrames(kept)) << "a ring over it";
+  EXPECT_FALSE(CallChromeWantsLiveFrames(ShellState{}));
+}
+
+TEST(ShellCallChromeRmlTest, KeepingTheFailedPageRemountsIt) {
+  CallChromeSyncGate gate;
+  const auto now = std::chrono::steady_clock::now();
+  (void)gate.Decide(CallChromeLayer{.in_call_active = true, .in_call_failed_kept = false}, now);
+  EXPECT_EQ(gate.Decide(CallChromeLayer{.in_call_active = true, .in_call_failed_kept = true}, now),
+            CallChromeUpdate::Remount);
+}
+
 // Whether the page offers Call again is written into the markup: a change mounts it again.
 TEST(ShellCallChromeRmlTest, OfferingCallAgainRemountsThePage) {
   ShellState before = FailedCallPage(true, false);

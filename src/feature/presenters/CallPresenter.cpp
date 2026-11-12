@@ -295,6 +295,14 @@ bool CallPresenter::TakeStackNotices(CallUiBackend& backend) {
   // The peer ended a call we were in (also a failed one — failed is not closed): the panel is
   // about to go, so say why instead of letting the call silently vanish.
   if (auto ended = backend.TakeRemoteEnd(); ended) {
+    if (KeepsFailedPage(screen_, ended->call_id, ended->declined)) {
+      // A call that never connected, ended over there (their Try later, or the first step of their Call again): this
+      // device's page stays as it was, with no call behind it, until the user taps (DEV/PLAN-call-failed-redial.md 6).
+      failed_page_ = FailedPageOf(screen_);
+      log().info << "the other side ended a call that never connected; its failed page stays call_id="
+                 << ended->call_id;
+      return true;
+    }
     CallNotice notice;
     notice.kind = ended->declined ? CallNotice::Kind::PeerDeclined : CallNotice::Kind::PeerEnded;
     if (auto peer = backend.PeerIdentityForCall(ended->call_id); peer && peer->has_value()) {
@@ -329,6 +337,20 @@ void CallPresenter::Refresh() {
     surface.active.reset();
     if (surface.kind == SurfaceKind::InCall) {
       surface.kind = SurfaceKind::None;
+    }
+  }
+  if (surface.kind == SurfaceKind::Ringing && surface.active && surface.invite) {
+    std::string failed_peer;
+    if (auto peer = backend->PeerIdentityForCall(surface.active->call_id); peer && peer->has_value()) {
+      failed_peer = **peer;
+    }
+    if (EndsFailedCallForRing(screen_, surface.active->call_id, *surface.invite, failed_peer, RedialPending())) {
+      // Their Call again overtook the failed call's leave: the failed call ends here, the ring is a plain one.
+      log().info << "the failed call's peer calls again: ending call_id=" << surface.active->call_id
+                 << " for call_id=" << surface.invite->call_id;
+      (void)Leave();
+      Refresh(); // the failed call is being left now: the ring shows on its own
+      return;
     }
   }
   const EngineCall engine = EngineCallOf(*state);
@@ -438,6 +460,12 @@ void CallPresenter::Refresh() {
     notice.kind = CallNotice::Kind::Error;
     notice.key = "call.status.ended_alone";
     Notify(notice);
+  }
+  if (failed_page_ && next.kind != CallScreen::Kind::None &&
+      !(next.kind == CallScreen::Kind::InCall && next.call_id == failed_page_->call_id)) {
+    log().info << "kept failed page replaced by " << CallScreenKindName(next.kind)
+               << " call_id=" << failed_page_->call_id;
+    failed_page_.reset(); // another call, or a ring, takes the screen
   }
   if (RedialPending() && next.kind != CallScreen::Kind::None &&
       (next.kind != CallScreen::Kind::InCall || next.call_id != redial_from_call_id_)) {
@@ -1417,6 +1445,47 @@ void CallPresenter::Retry() {
 bool OffersRedial(const CallScreen& screen) {
   return screen.kind == CallScreen::Kind::InCall && screen.status == CallScreen::Status::CouldntConnect &&
          !screen.group;
+}
+
+bool KeepsFailedPage(const CallScreen& shown, const std::string& ended_call_id, const bool declined) {
+  if (declined || ended_call_id.empty() || shown.thread_id.empty()) {
+    return false;
+  }
+  if (shown.kind == CallScreen::Kind::Answering) {
+    // Answered here, the steps still going (not in the call yet).
+    return shown.ring_call_id == ended_call_id && !shown.ring_group && !shown.caller_identity.empty();
+  }
+  using Status = CallScreen::Status;
+  const bool ringing_them = shown.placed_here && shown.status == Status::Calling; // they never answered
+  return shown.kind == CallScreen::Kind::InCall && shown.call_id == ended_call_id && !shown.group &&
+         !shown.was_connected && shown.status != Status::Disconnected && !ringing_them && !shown.peer_identity.empty();
+}
+
+CallFailedPage FailedPageOf(const CallScreen& shown) {
+  CallFailedPage page;
+  page.thread_id = shown.thread_id;
+  if (shown.kind == CallScreen::Kind::Answering) {
+    page.call_id = shown.ring_call_id;
+    page.peer_identity = shown.caller_identity;
+    page.video = shown.answered_video; // as answered: a video call answered by voice calls back by voice
+    return page;
+  }
+  page.call_id = shown.call_id;
+  page.peer_identity = shown.peer_identity;
+  page.video = shown.video;
+  page.hint_missing_mic = shown.hint_missing_mic;
+  page.hint_seed_unreachable = shown.hint_seed_unreachable;
+  return page;
+}
+
+bool EndsFailedCallForRing(const CallScreen& shown, const std::string& active_call_id, const PendingCallInvite& invite,
+                           const std::string& failed_peer, const bool redial_pending) {
+  if (redial_pending || !OffersRedial(shown) || shown.call_id != active_call_id || failed_peer.empty()) {
+    return false;
+  }
+  const bool same_chat = invite.origin_thread_id.value_or(std::string{}) == shown.thread_id;
+  return !invite.origin_group_id.has_value() && invite.call_id != active_call_id &&
+         invite.inviter_identity == failed_peer && same_chat;
 }
 
 void CallPresenter::Redial() {

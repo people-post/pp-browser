@@ -520,6 +520,11 @@ struct CallInProgressState {
   ui::String failed_text;
   /** A 1:1 call that could not connect (OffersRedial): Call again / Try later, and the bar's retry icon calls again. */
   bool offer_redial = false;
+  /**
+   * DEV/PLAN-call-failed-redial.md 6: the failure page kept with no call behind it (the other side ended a call that
+   * never connected): full page only (never the chip), nothing to mute, no live frames.
+   */
+  bool failed_kept = false;
   /** Before connect: the moving line, the steps (0: calling, 1: answered) and the rotating tips (RCSS only). */
   bool story_active = false;
   int story_stage = 0;

@@ -59,6 +59,18 @@ TEST(ShellBaseHideTest, HidesOnlyWhileThePhoneCallPageIsFullScreen) {
   EXPECT_FALSE(ShellBaseHide::ShouldHide(desktop)) << "desktop / tablet: the call bar covers nothing";
 }
 
+// DEV/PLAN-call-failed-redial.md 6: the failed page kept with no call behind it covers the screen as the call page did,
+// and the pages under it show as soon as it is closed.
+TEST(ShellBaseHideTest, TheKeptFailedPageHidesWhatItCoversUntilItCloses) {
+  ShellState kept = PhoneStateWithCall(CallChromeMode::Expanded);
+  kept.call_in_progress.phone_failed = true;
+  kept.call_in_progress.failed_kept = true;
+  EXPECT_TRUE(ShellBaseHide::ShouldHide(kept));
+  ShellState closed = kept;
+  closed.call_in_progress = {};
+  EXPECT_FALSE(ShellBaseHide::ShouldHide(closed));
+}
+
 TEST(ShellBaseHideTest, WhatShowsAboveTheCallPageDoesNotChangeIt) {
   ShellState ring_only;
   ring_only.layout_mode = LayoutMode::Compact;

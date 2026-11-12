@@ -385,6 +385,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_phone_failed = in_call.phone_failed,
       .in_call_failed_text = in_call.failed_text.c_str(),
       .in_call_offer_redial = in_call.offer_redial,
+      .in_call_failed_kept = in_call.failed_kept,
       .in_call_story_active = in_call.story_active,
       .in_call_story_stage = in_call.story_stage,
       .in_call_story_steps = std::string(in_call.story_step1.c_str()) + "|" + in_call.story_step2.c_str() + "|" +
@@ -814,6 +815,9 @@ void CallController::SetChromeMode(CallChromeMode mode) {
     AppRuntime::PostUI([this, mode]() { SetChromeMode(mode); });
     return;
   }
+  if (in_call_.failed_kept) {
+    return; // the kept failed page has no call to shrink to the chip (the page's pull-down lands here too)
+  }
   if (mode == CallChromeMode::Minimized) {
     if (chrome_mode_ != CallChromeMode::Minimized) {
       restore_mode_ = chrome_mode_ == CallChromeMode::Immersive ? CallChromeMode::Immersive : CallChromeMode::Expanded;
@@ -1205,6 +1209,9 @@ void CallController::Render() {
       peer_link_refresh_();
     }
   }
+  if (in_call_.failed_kept && screen.kind != CallScreen::Kind::None) {
+    ClearInCall(); // a call or a ring takes the kept failed page's place: nothing of that page carries over
+  }
   switch (screen.kind) {
     case CallScreen::Kind::Answering:
       RenderAnswering(screen, presenter_.MediaScreen(), now_ms);
@@ -1238,6 +1245,10 @@ void CallController::Render() {
         SyncShellState();
         return;
       }
+      if (const std::optional<CallFailedPage>& page = presenter_.FailedPage()) {
+        RenderFailedPage(*page, now_ms);
+        return;
+      }
       ClearInCall();
       // "Incoming call, connecting…" has no call screen behind it: only StepWakePlaceholder takes it down.
       if (!ring_.awaiting_invite) {
@@ -1246,6 +1257,44 @@ void CallController::Render() {
       SyncShellState();
       return;
   }
+}
+
+void CallController::RenderFailedPage(const CallFailedPage& page, const int64_t now_ms) {
+  if (!in_call_.failed_kept) {
+    ClearInCall(); // the call's chrome (its mode, the chip's place, the tiles) went with the call
+  }
+  if (!ring_.awaiting_invite) {
+    ClearRing();
+  }
+  // The live failed page's words and buttons, drawn from the kept page: a page, not a call (no media, no meters).
+  CallScreen shown;
+  shown.kind = CallScreen::Kind::InCall;
+  shown.status = CallScreen::Status::CouldntConnect;
+  shown.call_id = page.call_id;
+  shown.peer_identity = page.peer_identity;
+  shown.thread_id = page.thread_id;
+  shown.video = page.video;
+  shown.hint = CallScreen::Hint::DirectConnect;
+  shown.hint_missing_mic = page.hint_missing_mic;
+  shown.hint_seed_unreachable = page.hint_seed_unreachable;
+  auto& in_call = in_call_;
+  in_call.active = true;
+  in_call.failed_kept = true;
+  in_call.call_id = "";
+  in_call.title = page.video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
+  in_call.peer_label = CallerNameFor(page.peer_identity).label.c_str();
+  in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
+  in_call.status_hint = StatusHintText(shown.hint, shown).c_str();
+  in_call.quality_hint = "";
+  in_call.show_retry = true; // the desktop bar's icon: Call again
+  in_call.show_invite = false;
+  in_call.show_speaker = false;
+  in_call.show_camera = false;
+  in_call.show_flip = false;
+  in_call.calling = false;
+  ApplyChromeModeToState(in_call);
+  FillPhoneCallFields(shown, now_ms);
+  SyncShellState();
 }
 
 void CallController::RenderAnswering(const CallScreen& screen, const CallMediaScreen& frame, const int64_t now_ms) {
