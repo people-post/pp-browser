@@ -3202,7 +3202,7 @@ void ConversationsHub::ForgetPeerRoutesOnBackendChange() {
   if (!mesh_messaging_ || !identity_) {
     return;
   }
-  const auto identity = identity_->Get();
+  auto identity = identity_->Get();
   if (identity && identity->registered && !RegisteredAtBackend(*identity, config_.registration.base_url)) {
     mesh_messaging_->ForgetPeerRoutes();
   }
