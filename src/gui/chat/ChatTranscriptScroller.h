@@ -33,6 +33,8 @@ public:
   void BindConversationsFacade(ConversationsFacade* facade);
 
   void SetDirtyTurns(std::function<void()> dirty_turns) { dirty_turns_ = std::move(dirty_turns); }
+  /** Called when a page of older rows has been loaded into the window (measurement only). */
+  void SetOnOlderLoaded(std::function<void()> on_loaded) { on_older_loaded_ = std::move(on_loaded); }
   /** Draws a thread's transcript window as bound rows (the chat controller renders and decorates). */
   using RowBuilder = std::function<std::vector<MessageDisplayRow>(
       const std::string& thread_id, std::optional<int64_t> oldest_inclusive, std::optional<int64_t> newest_inclusive)>;
@@ -115,6 +117,7 @@ private:
   View view_;
   bool& messaging_ready_;
   std::function<void()> dirty_turns_;
+  std::function<void()> on_older_loaded_;
 
   bool pinned_to_bottom_ = true;
   bool pending_scroll_to_bottom_ = false;

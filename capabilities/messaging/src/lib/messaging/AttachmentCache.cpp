@@ -697,18 +697,27 @@ Roe<std::string> EnsureAttachmentImageThumbnail(const std::string& profile_dir, 
   if (std::filesystem::is_regular_file(thumb_path, ec) && !ec) {
     return thumb_path;
   }
-  auto jpeg = ImageThumbnail(image_bytes); // from memory: the plaintext is never written out for it
-  if (!jpeg) {
-    return jpeg.error();
-  }
-  if (jpeg->empty()) {
-    return Error("Image thumbnail JPEG empty");
-  }
-  const ByteVector bytes(jpeg->begin(), jpeg->end());
-  if (auto written = WriteBytesAtomic(std::filesystem::path(thumb_path), bytes); !written) {
-    return written.error();
-  }
-  return thumb_path;
+  // One line per picture made, to size the previews' cost: the source's bytes, the time, whether it worked.
+  const auto started = std::chrono::steady_clock::now();
+  const auto made = [&]() -> Roe<std::string> {
+    auto jpeg = ImageThumbnail(image_bytes); // from memory: the plaintext is never written out for it
+    if (!jpeg) {
+      return jpeg.error();
+    }
+    if (jpeg->empty()) {
+      return Error("Image thumbnail JPEG empty");
+    }
+    const ByteVector bytes(jpeg->begin(), jpeg->end());
+    if (auto written = WriteBytesAtomic(std::filesystem::path(thumb_path), bytes); !written) {
+      return written.error();
+    }
+    return thumb_path;
+  }();
+  logging::getLogger("AttachmentCache").info
+      << "image thumbnail source_bytes=" << image_bytes.size() << " ms="
+      << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count()
+      << " ok=" << (made ? 1 : 0);
+  return made;
 }
 
 Roe<std::string> EnsureAttachmentAudioCover(const std::string& profile_dir, const std::string& thread_id,

@@ -4,6 +4,7 @@
 #include "common/PbrCompat.h"
 #include "foundation/runtime/FramePacing.h"
 #include "foundation/platform/ImageEncode.h"
+#include "common/Logger.h"
 #include <ui/platform/Platform_SDL.h>
 #include <ui/render/Renderer_GL3.h>
 #include "TextLoupeRenderer.h"
@@ -53,6 +54,7 @@ public:
   RenderInterface_GL3_SDL() {}
 
   ui::TextureHandle LoadTexture(ui::Vector2i& texture_dimensions, const ui::String& source) override {
+    const auto load_started = std::chrono::steady_clock::now();
     ui::FileInterface* file_interface = ui::GetFileInterface();
     ui::FileHandle file_handle = file_interface->Open(source);
     if (!file_handle)
@@ -91,9 +93,12 @@ public:
     auto DestroySurface = [](SDL_Surface* surface) { SDL_FreeSurface(surface); };
 #endif
 
+    const auto decode_started = std::chrono::steady_clock::now();
     SDL_Surface* surface = CreateSurface();
     if (!surface)
       return {};
+    const auto decode_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_started).count();
 
     texture_dimensions = {surface->w, surface->h};
 
@@ -120,6 +125,15 @@ public:
         RenderInterface_GL3::GenerateTexture({pixels, pixels_byte_size}, texture_dimensions);
 
     DestroySurface(surface);
+
+    // Pictures only (interface icons come through here too): size, file bytes and the time it took. No path or name.
+    if (texture_dimensions.x >= 400 || texture_dimensions.y >= 400) {
+      const auto total_ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - load_started).count();
+      ::pp::logging::getLogger("Texture").info << "texture loaded w=" << texture_dimensions.x
+                                              << " h=" << texture_dimensions.y << " file_bytes=" << buffer_size
+                                              << " decode_ms=" << decode_ms << " total_ms=" << total_ms;
+    }
 
     return texture_handle;
   }

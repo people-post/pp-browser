@@ -323,6 +323,9 @@ void ChatTranscriptScroller::LoadOlderLocalHistory() {
     dirty_turns_();
   }
   loading_older_local_ = false;
+  if (on_older_loaded_) {
+    on_older_loaded_();
+  }
 }
 
 void ChatTranscriptScroller::OnMessagesScroll() {

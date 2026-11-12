@@ -24,6 +24,8 @@
 #include "lib/voice/VoiceSupport.h"
 #include "foundation/platform/PickedFileName.h"
 #include "gui/chat/AttachmentBackfillPolicy.h"
+#include "gui/chat/ChatOpenMetrics.h"
+#include "foundation/diagnostics/OsCurrentMemory.h"
 #include "common/Diag.h"
 #include "common/Metrics.h"
 #include "feature/conversations/ConversationsFacade.h"
@@ -471,6 +473,9 @@ ChatController::ChatController()
       .prefs_failed = []() { UserFeedback::Fail(Tr("sidebar.error.prefs_failed")); },
       .prose = [](const std::string& text) { return StructuredTextParser::PlainText(text); },
   });
+  // Measurement (chat.window): a page of older rows loaded; read the memory a second later, once they are drawn.
+  scroller_.SetOnOlderLoaded(
+      [this]() { ScheduleChatWindowMetric(std::chrono::seconds(1), /*exited=*/false); });
   scroller_.SetDirtyTurns([this]() {
     // Paging and jumps rebuild the rows: the picture being sent goes back at the end (when the rows reach it).
     if (pending_uploads_.KeepAtTail(chat_.messages, ActiveThreadId(), !scroller_.LoadedMaxDisplayOrder())) {
@@ -891,6 +896,11 @@ void ChatController::SendSuggestionAction(const std::string& id) {
 }
 
 void ChatController::FinalizeThreadDisplay() {
+  // Measurement (chat.open): this open's display sync and the SyncLayout after it are the ones timed.
+  open_probe_ = ChatOpenProbe{};
+  open_probe_.armed = true;
+  ++chat_exit_turn_; // back in a chat: a pending "left the chat" reading is void
+  chat_showing_ = true;
   working_set_.ClearAll();
   RefreshFromMessaging();
   RestoreWorkingSetsFromActiveThread();
@@ -3567,6 +3577,14 @@ void ChatController::SyncDisplayFromThread() {
   // Runs on the UI thread for every message, reaction and AI reply: report the slow ones.
   const auto sync_ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - sync_started).count();
+  if (open_probe_.armed) {
+    open_probe_.armed = false;
+    open_probe_.layout_pending = true;
+    open_probe_.rows = static_cast<int64_t>(chat_.messages.size());
+    open_probe_.pictures = static_cast<int64_t>(CountPictureBubbleRows(chat_.messages));
+    open_probe_.build_ms = sync_ms; // the same stretch chat.sync_slow measures
+    open_probe_.built_at = std::chrono::steady_clock::now();
+  }
   if (sync_ms >= kSlowDisplaySyncMs) {
     MetricsLine("chat.sync_slow")
         .Add("ms", static_cast<int64_t>(sync_ms))
@@ -5448,6 +5466,7 @@ void ChatController::OnApplicationPause() {
 }
 
 void ChatController::Update() {
+  PollChatShowing();
   if (pending_reply_) {
     PendingReply reply = std::move(*pending_reply_);
     pending_reply_.reset();
@@ -5519,6 +5538,68 @@ void ChatController::Update() {
       voice_playback_->OnCallLive();
     }
   }
+}
+
+bool ChatController::ChatShowing() const {
+  if (!messaging_ready_ || ActiveThreadId().empty()) {
+    return false;
+  }
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  return chrome.primary_pane_key == "chat" && (chrome.layout_mode != LayoutMode::Compact || chrome.compact_chat_open);
+}
+
+void ChatController::PollChatShowing() {
+  const bool showing = ChatShowing();
+  if (showing == chat_showing_) {
+    return;
+  }
+  chat_showing_ = showing;
+  if (!showing) {
+    ScheduleChatWindowMetric(std::chrono::seconds(5), /*exited=*/true);
+  }
+}
+
+void ChatController::ScheduleChatWindowMetric(const std::chrono::milliseconds delay, const bool exited) {
+  uint64_t& counter = exited ? chat_exit_turn_ : chat_paged_turn_;
+  const uint64_t turn = ++counter;
+  AppRuntime::ScheduleCoordinatorOneShot(delay, [this, turn, exited, alive = std::weak_ptr<int>(chat_window_alive_)]() {
+    AppRuntime::PostUI([this, turn, exited, alive]() {
+      if (!alive.lock() || turn != (exited ? chat_exit_turn_ : chat_paged_turn_)) {
+        return;
+      }
+      const bool showing = ChatShowing();
+      if (showing == exited) {
+        return; // left and came back (or paged and left): the reading would not say what it is named for
+      }
+      const CurrentMemoryMb memory = ReadCurrentMemoryMb();
+      MetricsLine line("chat.window");
+      line.Add("rows", exited ? int64_t{0} : static_cast<int64_t>(chat_.messages.size()));
+      if (!exited) {
+        line.Add("pictures", static_cast<int64_t>(CountPictureBubbleRows(chat_.messages)));
+      }
+      line.Add("footprint_mb", memory.footprint_mb).Add("rss_mb", memory.rss_mb).Emit();
+    });
+  });
+}
+
+void ChatController::OnSyncLayoutMeasured(const int64_t ms) {
+  if (!open_probe_.layout_pending) {
+    return;
+  }
+  open_probe_.layout_pending = false;
+  const auto started = std::chrono::steady_clock::now() - std::chrono::milliseconds(ms);
+  if (started - open_probe_.built_at > std::chrono::seconds(2)) {
+    return; // not the layout that followed this open
+  }
+  const CurrentMemoryMb memory = ReadCurrentMemoryMb();
+  MetricsLine("chat.open")
+      .Add("rows", open_probe_.rows)
+      .Add("pictures", open_probe_.pictures)
+      .Add("build_ms", open_probe_.build_ms)
+      .Add("layout_ms", ms)
+      .Add("footprint_mb", memory.footprint_mb)
+      .Add("rss_mb", memory.rss_mb)
+      .Emit();
 }
 
 void ChatController::AfterLayout() {

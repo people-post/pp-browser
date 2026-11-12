@@ -164,6 +164,8 @@ public:
   void Update();
   /** Call after ui::Context::Update so follow-tail uses fresh layout heights. */
   void AfterLayout();
+  /** A shell SyncLayout finished in `ms`: the one after a chat was opened completes its chat.open metric. */
+  void OnSyncLayoutMeasured(int64_t ms);
   void Shutdown();
   void OnApplicationPause();
   /** The vault locked, or another tab was opened: a recording is thrown away and a clip stops. */
@@ -720,6 +722,29 @@ private:
    * automatic sending has stopped, else the bottom pill says why (still trying, or why it did not go out).
    */
   void OnSendMarkTapped(const std::string& message_id);
+  /**
+   * Step 0 of DEV/PLAN-chat-picture-previews.md, measurement only. Opening a chat (FinalizeThreadDisplay) arms
+   * `armed`; the next display sync records its rows, pictures and build time and sets `layout_pending`; the next
+   * ShellHost::SyncLayout to end (OnSyncLayoutMeasured) adds its own time and emits chat.open.
+   */
+  struct ChatOpenProbe {
+    bool armed = false;
+    bool layout_pending = false;
+    int64_t rows = 0;
+    int64_t pictures = 0;
+    int64_t build_ms = 0;
+    std::chrono::steady_clock::time_point built_at{};
+  };
+  ChatOpenProbe open_probe_;
+  /** The chat page was on screen at the last Update; leaving it (Back, another tab, no thread) starts the 5 s wait. */
+  bool chat_showing_ = false;
+  /** `*_turn` tells a stale timer firing from the armed one; `chat_window_alive_` keeps one from a destroyed controller. */
+  uint64_t chat_exit_turn_ = 0;
+  uint64_t chat_paged_turn_ = 0;
+  std::shared_ptr<int> chat_window_alive_ = std::make_shared<int>(0);
+  bool ChatShowing() const;
+  void PollChatShowing();
+  void ScheduleChatWindowMetric(std::chrono::milliseconds delay, bool exited);
   bool mesh_ready_ = false;
   ChatTranscriptScroller scroller_;
   WorkingSetController working_set_;

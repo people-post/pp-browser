@@ -1756,6 +1756,10 @@ void ShellHost::SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> call
   on_layout_mode_changed_ = std::move(callback);
 }
 
+void ShellHost::SetOnSyncLayoutMeasured(std::function<void(int64_t ms)> callback) {
+  on_sync_layout_measured_ = std::move(callback);
+}
+
 void ShellHost::SetOnLayoutSynced(std::function<void()> callback) {
   on_layout_synced_ = std::move(callback);
 }
@@ -2649,11 +2653,15 @@ void ShellHost::SyncLayout() {
     const std::string& reason;
     int requests;
     logging::Logger& log;
+    const std::function<void(int64_t ms)>& measured;
     ~Report() {
       // Also runs while a failed rebuild unwinds: diagnostics must never turn that into a terminate.
       try {
         const auto ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+        if (measured) {
+          measured(static_cast<int64_t>(ms));
+        }
         if (ms >= kSlowSyncLayoutMs) {
           // Who asked is a call site or a reason key: the developer log's, not the shareable metric's.
           log.info << "slow SyncLayout ms=" << ms << " reason=" << reason << " requests=" << requests;
@@ -2665,7 +2673,7 @@ void ShellHost::SyncLayout() {
       } catch (...) {
       }
     }
-  } report{started, reason, requests, log()};
+  } report{started, reason, requests, log(), on_sync_layout_measured_};
   // Nestable remount gate: field blur/change commits must not run until settle.
   UiEditSession::Instance().BeginRemount();
   const LayoutMode mode = state_.layout_mode;
