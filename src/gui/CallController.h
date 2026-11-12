@@ -19,6 +19,7 @@
 #include "feature/presenters/CallSystemUiBridge.h"
 #include "feature/presenters/CallUiAttachGuard.h"
 #include "gui/CallChromeSync.h"
+#include "gui/CallRosterCache.h"
 #include "gui/CallDemoScenes.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
@@ -150,12 +151,14 @@ private:
   void RenderInCall(const CallScreen& screen, const CallMediaScreen& frame, CallUiBackend& backend, int64_t now_ms);
   /** The in-call state from the presenter's screen (names, roster, buttons, chrome mode, phone page fields). */
   void FillInCallFromScreen(const CallScreen& screen, int64_t now_ms);
-  void FillRoster(CallInProgressState& in_call, const CallScreen& screen);
+  void FillRoster(CallInProgressState& in_call, const CallScreen& screen, int64_t now_ms);
+  /** Where the roster cache reads a name / an avatar path when it has none kept. */
+  CallRosterCache::Lookups RosterLookups() const;
   /** V062: the guests this device may remove or invite to the group, worded for the call chrome. */
   void FillGuestActions(CallInProgressState& in_call, const CallScreen& screen);
   /** The phone call page's names, avatars and failure line (ShellCallChromeRml). */
   void FillPhoneCallFields(const CallScreen& screen, int64_t now_ms);
-  void FillSelfAvatar(const CallScreen& screen);
+  void FillSelfAvatar(const CallScreen& screen, int64_t now_ms);
   /** The ring page's three lines (CallRingSteps) written into ring_; `caller` is the name or group title shown. */
   void FillRingSteps(bool awaiting_invite, const std::string& caller, CallRingMedia media);
   /** Our own avatar on the ring page's left: the photo / letter of the local identity, else "You" and a neutral tone. */
@@ -354,6 +357,8 @@ private:
   int pushed_camera_rotation_ = -1;
   /** The media view whose frames wake the loop (BindVideoFrameWake). */
   IMediaView* video_wake_bound_ = nullptr;
+  /** The call members' names and avatar paths, kept for the call (read again every 5 s; cleared in ClearInCall). */
+  CallRosterCache roster_cache_;
   int64_t last_video_refresh_ms_ = 0;
   /** The last self-view / peer frame sent to the screen (call.summary shown_*_fps counts new ones). */
   uint64_t last_shown_self_seq_ = 0;

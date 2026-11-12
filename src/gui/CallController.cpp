@@ -20,6 +20,7 @@
 #include "lib/people/ContactTypes.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "gui/CallVideoFrameWake.h"
+#include "gui/CallRosterCache.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
@@ -779,6 +780,7 @@ void CallController::ClearInCall() {
   last_story_notice_ = CallStoryNotice::None;
   story_sheet_open_ = false;
   group_titles_.clear();
+  roster_cache_.Clear();
   in_call_ = {};
   CallVideoTileRenderer::Instance().Clear();
 }
@@ -1376,7 +1378,7 @@ void CallController::FillInCallFromScreen(const CallScreen& screen, const int64_
                 .c_str()
           : "";
   FillGuestActions(in_call, screen);
-  FillRoster(in_call, screen);
+  FillRoster(in_call, screen, now_ms);
   ResetChromeForCall(screen.call_id, in_call.show_roster || phone_layout_); // phones: the full call page
   ApplyChromeModeToState(in_call);
   ApplySpotlightToState(in_call);
@@ -1386,42 +1388,25 @@ void CallController::FillInCallFromScreen(const CallScreen& screen, const int64_
   } else {
     in_call.title = screen.video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
   }
-  const std::string peer_label =
-      screen.peer_identity.empty() ? Tr("call.label.them") : CallerNameFor(screen.peer_identity).label;
+  const std::string peer_label = screen.peer_identity.empty()
+                                     ? Tr("call.label.them")
+                                     : roster_cache_.Name(screen.peer_identity, now_ms, RosterLookups()).label;
   in_call.peer_label = in_call.show_roster ? Tr("call.label.others").c_str() : peer_label.c_str();
   in_call.show_retry = screen.show_retry;
   in_call.calling = ShowsCancelCall(screen);
   FillPhoneCallFields(screen, now_ms);
 }
 
-void CallController::FillRoster(CallInProgressState& in_call, const CallScreen& screen) {
+void CallController::FillRoster(CallInProgressState& in_call, const CallScreen& screen, const int64_t now_ms) {
   UiCostTimer cost_timer(&UiCostCounters::AddRosterUs);
   UiCostCounters::Instance().AddRosterBuild();
-  in_call.roster.clear();
-  in_call.roster.reserve(screen.members.size());
-  for (const CallScreen::Member& member : screen.members) {
-    CallRosterParticipantState entry;
-    entry.is_local = member.is_local;
-    const CallerName caller = member.is_local ? CallerName{} : CallerNameFor(member.identity);
-    const std::string name = member.is_local ? Tr("call.label.you") : caller.label;
-    entry.name = name.c_str();
-    entry.identity = member.identity.c_str();
-    if (const std::string avatar_path = IconPath(member.identity); !avatar_path.empty()) {
-      entry.has_avatar = true;
-      entry.avatar_src = avatar_path.c_str();
-    }
-    entry.avatar_unknown = caller.unknown && !entry.has_avatar;
-    const AvatarGlyph glyph = MakeAvatarGlyph(name, member.identity);
-    entry.avatar_letter = glyph.letter.c_str();
-    entry.avatar_tone = glyph.tone;
-    entry.stream_id = std::to_string(PublisherStreamIdForIdentity(member.identity)).c_str();
-    entry.audio_muted = member.audio_muted;
-    entry.video_enabled = member.video_enabled;
-    entry.on_hold = member.on_hold;
-    entry.video_paused = member.video_paused;
-    entry.guest = member.guest;
-    in_call.roster.push_back(std::move(entry));
-  }
+  roster_cache_.ForCall(screen.call_id);
+  FillCallRoster(in_call.roster, screen.members, Tr("call.label.you"), roster_cache_, now_ms, RosterLookups());
+}
+
+CallRosterCache::Lookups CallController::RosterLookups() const {
+  return {.name = [this](const std::string& identity) { return CallerNameFor(identity); },
+          .icon = [this](const std::string& identity) { return IconPath(identity); }};
 }
 
 void CallController::ResetChromeForCall(const std::string& call_id, const bool full_page) {
@@ -2236,7 +2221,11 @@ void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t
   const bool group = answering ? screen.ring_group : screen.group;
   const std::string& peer = answering ? screen.caller_identity : screen.peer_identity;
   in_call.video = answering ? screen.answered_video : screen.video;
-  const CallerName caller = peer.empty() ? CallerName{.label = {}, .unknown = false} : CallerNameFor(peer);
+  // Every frame: names and photos come from the call's cache (CallRosterCache), not from disk each time.
+  roster_cache_.ForCall(screen.call_id);
+  const CallRosterCache::Lookups lookups = RosterLookups();
+  const CallerName caller =
+      peer.empty() ? CallerName{.label = {}, .unknown = false} : roster_cache_.Name(peer, now_ms, lookups);
   const std::string& name = caller.label;
   if (group) {
     const std::string title = GroupTitle(screen.thread_id, now_ms);
@@ -2248,11 +2237,11 @@ void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t
   const AvatarGlyph peer_glyph = MakeAvatarGlyph(name, peer);
   in_call.peer_avatar_letter = peer_glyph.letter.c_str();
   in_call.peer_avatar_tone = peer_glyph.tone;
-  const std::string peer_photo = IconPath(peer);
+  const std::string peer_photo = roster_cache_.Icon(peer, now_ms, lookups);
   in_call.peer_has_avatar = !peer_photo.empty();
   in_call.peer_avatar_src = peer_photo.c_str();
   in_call.peer_unknown = !group && caller.unknown && peer_photo.empty();
-  FillSelfAvatar(screen);
+  FillSelfAvatar(screen, now_ms);
 
   // Couldn't connect / disconnected: the failure page says it plainly; why is in the log (#31 / #37).
   using Status = CallScreen::Status;
@@ -2268,7 +2257,7 @@ void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t
   in_call.story_sheet_open = story_sheet_open_ && !in_call.phone_failed;
 }
 
-void CallController::FillSelfAvatar(const CallScreen& screen) {
+void CallController::FillSelfAvatar(const CallScreen& screen, const int64_t now_ms) {
   std::string self;
   for (const CallScreen::Member& member : screen.members) {
     if (member.is_local) {
@@ -2278,7 +2267,7 @@ void CallController::FillSelfAvatar(const CallScreen& screen) {
   if (self.empty() && call_ports_.local_relay_identity) {
     self = call_ports_.local_relay_identity().value_or(std::string{});
   }
-  SetSelfAvatar(in_call_, MakeAvatarGlyph(Tr("call.label.you"), self), IconPath(self));
+  SetSelfAvatar(in_call_, MakeAvatarGlyph(Tr("call.label.you"), self), roster_cache_.Icon(self, now_ms, RosterLookups()));
 }
 
 void CallController::ApplyConnectStory(const CallMediaScreen& frame) {
