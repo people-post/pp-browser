@@ -43,12 +43,6 @@ public:
   static Roe<std::string> EncodeSummary(const CallSummaryDetail& detail);
   static Roe<CallSummaryDetail> DecodeSummary(const std::string& detail_json);
 
-  static Roe<std::string> EncodeSdp(const CallSdpDetail& detail);
-  static Roe<CallSdpDetail> DecodeSdp(const std::string& detail_json);
-
-  static Roe<std::string> EncodeIce(const CallIceDetail& detail);
-  static Roe<CallIceDetail> DecodeIce(const std::string& detail_json);
-
   static Roe<std::string> EncodeSfuAttach(const CallSfuAttachDetail& detail);
   static Roe<CallSfuAttachDetail> DecodeSfuAttach(const std::string& detail_json);
 

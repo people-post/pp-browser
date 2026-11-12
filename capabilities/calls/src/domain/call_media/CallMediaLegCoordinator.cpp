@@ -223,7 +223,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     std::unique_lock<std::mutex> lock_;
   };
   InboundHandler inbound;
-  /** k3 test seams: a peer from before migration (ignores `migrate`), and a short migrate timeout. */
+  /** k3 test seams: a peer that does not answer `migrate` (lost, or gone silent), and a short migrate timeout. */
   std::atomic<bool> ignore_migrate_for_test{false};
   /** k4 test seam: this side sends nothing (media, heartbeats) on paths of this kind — a path gone quiet. */
   std::atomic<CallMediaLinkKind> silenced_kind_for_test{CallMediaLinkKind::Unknown};

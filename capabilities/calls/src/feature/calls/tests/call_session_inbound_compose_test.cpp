@@ -1499,17 +1499,19 @@ TEST_F(CallSessionInboundComposeTest, InboundHopRefuseEndsBoundCall) {
   EXPECT_EQ(err->message, "No shared hop");
 }
 
-TEST_F(CallSessionInboundComposeTest, LegacySdpAndIceIgnored) {
-  auto sdp = CallControlCodec::BuildSystemMessage("thread:1", CallControlType::CallSdp, "sdp",
-                                                  R"({"call_id":"call:x","sdp":"v=0","type":"offer"})", "account:peer");
-  ASSERT_TRUE(sdp);
-  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*sdp, "account:peer"); }));
-
-  auto ice = CallControlCodec::BuildSystemMessage(
-      "thread:1", CallControlType::CallIce, "ice",
-      R"({"call_id":"call:x","candidate":"a","sdp_mid":"0","sdp_mline_index":0})", "account:peer");
-  ASSERT_TRUE(ice);
-  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*ice, "account:peer"); }));
+// A control type this build does not know (removed, or from a newer peer) is ignored cleanly: no error, no call.
+TEST_F(CallSessionInboundComposeTest, AnUnknownControlTypeIsIgnored) {
+  auto known = CallControlCodec::BuildSystemMessage("thread:1", CallControlType::CallInvite, "x",
+                                                    R"({"call_id":"call:x"})", "account:peer");
+  ASSERT_TRUE(known);
+  for (const char* type : {"call_sdp", "call_ice", "call_join", "call_from_the_future"}) {
+    ThreadMessage unknown = *known;
+    Object payload;
+    payload.set("control_type", type);
+    payload.set("detail", R"({"call_id":"call:x"})");
+    unknown.payload_json = DumpJson(payload);
+    EXPECT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(unknown, "account:peer"); })) << type;
+  }
 
   auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending);

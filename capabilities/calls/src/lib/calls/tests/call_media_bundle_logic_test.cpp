@@ -227,7 +227,7 @@ TEST(CallMediaFailoverTest, ASilentPathWithNoStandbyIsLost) {
 }
 
 // k4: fail over only onto a live standby, on a lost active link or 1.5 s of silence from a peer that
-// heartbeats (older peers never trip the silence rule).
+// heartbeats (silence before its first heartbeat decides nothing).
 TEST(CallMediaFailoverTest, SwitchesOnlyToALiveStandbyForALostOrSilentActive) {
   CallMediaFailoverInput in;
   in.have_standby = true;

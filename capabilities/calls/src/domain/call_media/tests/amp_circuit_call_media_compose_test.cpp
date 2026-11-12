@@ -1326,8 +1326,9 @@ TEST_F(CallPathMigrationTest, AStandbyKeepsItsLinkHotOnlyWhileTheCallHoldsIt) {
   EXPECT_EQ(tiers().second, pp::amp::KeepaliveTier::None) << "the far end held it for the call only";
 }
 
-// A peer from before k6 does not know `path_add`: the add times out and the call is unharmed.
-TEST_F(CallPathMigrationTest, OlderPeerLeavesTheCallWithoutAStandby) {
+// A `path_add` the peer never answers (lost, or the peer stopped answering): the add times out and the call is
+// unharmed.
+TEST_F(CallPathMigrationTest, AnUnansweredStandbyAddLeavesTheCallWithoutAStandby) {
   LiveRelayedCallWithDirectLink();
   a_call_->SetMigrateTimeoutForTest(std::chrono::milliseconds(300));
   b_call_->SetIgnoreMigrateForTest(true);
@@ -1519,9 +1520,9 @@ TEST_F(CallPathMigrationTest, LostCandidateLeavesTheCallOnItsPath) {
   EXPECT_FALSE(b_failed_.load());
 }
 
-// A peer from before k3 never answers `migrate`: the driver gives up at its timeout and the call
-// stays on its path, unharmed.
-TEST_F(CallPathMigrationTest, OlderPeerLeavesTheCallOnItsPath) {
+// A `migrate` the peer never answers (lost, or the peer stopped answering): the driver gives up at its timeout and
+// the call stays on its path, unharmed.
+TEST_F(CallPathMigrationTest, AnUnansweredMigrateLeavesTheCallOnItsPath) {
   LiveRelayedCallWithDirectLink();
   b_call_->SetIgnoreMigrateForTest(true);
   a_call_->SetMigrateTimeoutForTest(std::chrono::milliseconds(200));

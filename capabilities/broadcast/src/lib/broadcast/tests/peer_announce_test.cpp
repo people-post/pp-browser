@@ -286,7 +286,7 @@ TEST(PeerAnnounceHopPeerIdTest, JsonAndSignRoundTripWithHop) {
   ASSERT_TRUE(VerifyPeerAnnounceTip(*decoded, keys->public_key));
 }
 
-TEST(PeerAnnounceHopPeerIdTest, EmptyHopKeepsLegacyCanonical) {
+TEST(PeerAnnounceHopPeerIdTest, AnEmptyHopStaysOutOfTheSignedBytes) {
   auto tip = SampleTip("topic-hop");
   tip.hop_peer_id.clear();
   const std::string with_empty = PeerAnnounceCanonicalSignBytes(tip);
@@ -316,7 +316,7 @@ TEST(PeerAnnounceKindTest, LiveChatJsonAndSignRoundTripAdditive) {
   ASSERT_TRUE(VerifyPeerAnnounceTip(*decoded, keys->public_key));
 }
 
-TEST(PeerAnnounceKindTest, EmptyKindKeepsLegacyCanonical) {
+TEST(PeerAnnounceKindTest, AnEmptyKindStaysOutOfTheSignedBytes) {
   auto tip = SampleTip("topic");
   tip.kind.clear();
   tip.viewer_peer_id.clear();

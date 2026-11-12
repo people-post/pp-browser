@@ -2,7 +2,7 @@
 
 **Tier:** architecture
 
-**Product north star:** [NETWORKING.md](NETWORKING.md) — **HTTP + peer mesh**. Call media → **AMP** ([projects/adp](../../projects/adp/) D10 hard-require); libp2p retained for PeerId/crypto only. Wire-compat `call_sdp` / `call_ice` are ignored inbound; product does not send them.
+**Product north star:** [NETWORKING.md](NETWORKING.md) — **HTTP + peer mesh**. Call media → **AMP** ([projects/adp](../../projects/adp/) D10 hard-require); libp2p retained for PeerId/crypto only. There is no SDP / ICE signaling: a control type a build does not know is ignored.
 
 **The designed call domain** — planes, layer ownership, topology rules, who owns a call's state. History (what landed when, extraction steps, device findings) lives in [`projects/p2p-av-calls/`](../../projects/p2p-av-calls/).
 
@@ -157,7 +157,7 @@ An iPhone has no PushKit and no CallKit ([P019](../../projects/push-notification
 
 | Plane | Carrier | Job |
 |-------|---------|-----|
-| **Signaling** | Direct E2E system `ChatPayload` (`call_invite`, `call_accept`, `call_sfu_attach`, …; wire-compat `call_sdp` / `call_ice` ignored) | Roster, invite/accept/leave, media-key epochs, SFU attach hints |
+| **Signaling** | Direct E2E system `ChatPayload` (`call_invite`, `call_accept`, `call_sfu_attach`, …; an unknown `control_type` is ignored) | Roster, invite/accept/leave, media-key epochs, SFU attach hints |
 | **Media** | libp2p direct and/or blind `media_relay` | Opus + H264 **video_lo** (V034); app E2E under **one shared call media key** (V004 — encrypt once, hop fans out); SDL I/O |
 
 Signaling rides the same P2P/messaging stack as chat. Media never goes through the chat relay as RTP; the SFU is a **blind forwarder** (no call media keys). Group video is **not** encrypted per subscriber: the publisher seals each AU once under the epoch key; the hop copies ciphertext.
@@ -225,7 +225,7 @@ A 1:1 call's media rides a **path**: control + media channels bound on one link 
 | Active silent 3 s from a heartbeating peer, no standby | Lost (the row below): the peer's app died or its network went. The link under the path can stay Connected for most of a minute (its liveness window follows the keepalive cadence) | `ShouldEnterPathLost` |
 | Active lost, no standby, peer still Connected on another link (dual-dial election after a simultaneous punch) | Quiet rebind: the offerer migrates there; nothing is reported unless it has not landed in 1 s (K011) | `EnterPathLost` |
 | No path at all | `Reconnecting…` (planner `Reconnecting`, lifecycle `CallMediaStatus::Reconnecting`, timer runs on) for 30 s (`kCallMediaReconnectWindowMs`) while the offerer re-anchors (reach + migrate, the same reach request as the first connect: pair policy — a relay-only pair stays on relays — and the answerer's advertised relays, H013; retried every 2 s); then the call **dropped** (`CallMediaErr::Dropped`, "Call dropped") | `CallDirectPath::Reanchor`, `ApplyReachPolicy` |
-| The peer closes the active path without `bye` (it lost the path to silence; a peer from before K014 hanging up) | A lost path, as the rows above — never the call's end; a closed media channel first waits 1.5 s for its control channel's `bye` / close (K014) | `DecideCallMediaActiveClose` |
+| The peer closes the active path without `bye` (it lost the path to silence; its `bye` lost) | A lost path, as the rows above — never the call's end; a closed media channel first waits 1.5 s for its control channel's `bye` / close (K014) | `DecideCallMediaActiveClose` |
 | The peer hangs up | Its `bye` ends the leg at once (`on_remote_ended`); the call stays as it is until the peer's `call_leave` ends it (`RemoteEnded`) — or, none within **5 s** (`kPeerByeLeaveGrace`), the bye stands in for it (`ParticipantGone`). The bye stands for the peer's join it ended: the peer's leave or a join of its own (`CommitRemoteJoin`) within the grace settles it, so a member who left and rejoined is not ended by it. Never a failure, never `Reconnecting…` | `HandleBye`, `CallSessionWorkflow::NotePeerEndedCall` |
 | This end hangs up (its call closed, then the media stops) | `bye` on the call's active path, then the channels close (`ICallMediaTransport::HangUp(call_id)`); a stop of a call still open (a failed connect, a restart) closes without `bye`. Both name the call: the device's one transport serves its calls in turn, so a late stop of an ended call reaches no other call's leg | `CallDirectPath::StopMeshMedia` |
 | The device's network changed (k5) | Amp probes every link and drops the dead ones within 2 s (so the rows above fire at once); a reconnecting call re-anchors once links settled; a relayed call's upgrade punches start over ([MESH.md § Local network change](MESH.md#local-network-change-call-path-resilience-k5)) | `CallDirectPath::OnLocalNetworkChanged` |
@@ -568,13 +568,13 @@ ApplyInboundControl(type)                     (CallSessionManager, calls owner)
   the sender gate (`WhoMaySend`, lib/calls/CallControlGate — V057): an invite from anyone the audience
                           lets through; CallAnsweredElsewhere from our own account; JoinRequest / Ended from
                           someone in the call or offered it (V053); everything else from someone in the call;
-                          the summary and SDP / ICE are not signaling here → anyone else dropped, silently
+                          the summary is not signaling here → anyone else dropped, silently
   CallInvite / Accept / JoinRequest / Decline / Leave / Roster / Ended / SfuAttach* / HopRefuse / Remove
                           → CallSessionWorkflow::HandleInbound* (store rows, LiveCalls, then the paths:
                             Topology.OnRemoteAcceptJoined / OnInboundSfuAttach, media stop on end)
   CallMediaKey            → CallMediaKeyExchange (the key taken) → CallSessionWorkflow::AdoptMediaEpoch
   CallCircuitR1 / CapsUpdate / PunchOffer / PunchAnswer → the reach signals
-  CallSdp / CallIce / CallSummary → ignored (wire compat; the summary is chat history)
+  CallSummary             → ignored (the summary is chat history); an unknown control_type → ignored
 ```
 
 ---

@@ -126,8 +126,7 @@ TEST(CallHopPlanTest, LocalAdvertiseHasPublicTreatsGlobalIpv6) {
   // Link-local / loopback /ip6 must not count as publicly dialable PreferLocal.
   EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip6/fe80::1/udp/19001/adp/2/p2p/local"));
   EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip6/::1/udp/19001/adp/2/p2p/local"));
-  EXPECT_FALSE(
-      PreferLocalAllowedForScope(CallHopScope::Link, true, "/ip6/fe80::1/udp/19001/adp/2/p2p/local", true));
+  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Link, true, "/ip6/fe80::1/udp/19001/adp/2/p2p/local", true));
 }
 
 // --- V050 gt4: the hop a group forms on at the third join ---------------------------------------
@@ -146,7 +145,7 @@ TEST(GroupHopAtJoinTest, KeepsThePlannedHopUnlessSomeoneCannotReachIt) {
   in.planned_hop = "P";
   in.ranked_hops = {"X", "P", "Y"};
   in.reports["b"] = Report(true, {"P", "X"});
-  in.reports["c"] = Report(std::nullopt, {}); // old peer / probe not finished
+  in.reports["c"] = Report(std::nullopt, {}); // probe not finished
   const auto out = DecideGroupHopAtJoin(in);
   EXPECT_EQ(out.action, GroupHopAtJoin::UsePlanned);
   EXPECT_EQ(out.hop, "P");
