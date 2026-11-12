@@ -201,8 +201,9 @@ void ChatTranscriptScroller::ApplyPolicy() {
   }
 
   if (pending_scroll_height_before_.has_value() && pending_scroll_top_before_.has_value()) {
-    // The row that was first stays where it was on screen. The height change says the same only when nothing left the
-    // window: a full window trims as many of its newest rows as the page added, and the content keeps its height.
+    // The anchor row (LoadOlderLocalHistory) stays where it was on screen. The height change says the same only when
+    // nothing left the window: a full window trims as many of its newest rows as the page added, and the content keeps
+    // its height.
     float target = *pending_scroll_top_before_ + (el->GetScrollHeight() - *pending_scroll_height_before_);
     if (const float offset = RowContentOffset(el, pending_anchor_id_); offset >= 0.f) {
       target = *pending_scroll_top_before_ + (offset - pending_anchor_offset_);
@@ -402,9 +403,13 @@ bool ChatTranscriptScroller::LoadOlderLocalHistory(const bool fill) {
   if (el) {
     pending_scroll_height_before_ = el->GetScrollHeight();
     pending_scroll_top_before_ = el->GetScrollTop();
-    const std::string first_id(view_.messages.front().message_id.c_str());
-    if (const float offset = RowContentOffset(el, first_id); offset >= 0.f) {
-      pending_anchor_id_ = first_id;
+    // The second row: the first one changes shape once older rows of its day and sender come in (its date strip, the
+    // sender's name and the run's top margin go), the second only depends on the first, which stays. On a page that
+    // showed nothing the rows are unchanged, so a second page in the same gesture records the same row and offset.
+    const MessageDisplayRow& anchor = view_.messages.size() >= 2 ? view_.messages[1] : view_.messages.front();
+    const std::string anchor_id(anchor.message_id.c_str());
+    if (const float offset = RowContentOffset(el, anchor_id); offset >= 0.f) {
+      pending_anchor_id_ = anchor_id;
       pending_anchor_offset_ = offset;
     }
   }

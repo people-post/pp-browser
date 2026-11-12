@@ -206,7 +206,7 @@ private:
   std::optional<int64_t> loaded_max_display_order_;
   std::optional<float> pending_scroll_height_before_;
   std::optional<float> pending_scroll_top_before_;
-  /** The page's anchor: the row first before it was loaded, and where it sat in the content then (RowContentOffset). */
+  /** The page's anchor: the window's second row (its first when alone) before the page, and its content offset then. */
   std::string pending_anchor_id_;
   float pending_anchor_offset_ = 0.f;
   /** Where the person is reading (not pinned to the bottom), kept every frame so a remount can put it back. */

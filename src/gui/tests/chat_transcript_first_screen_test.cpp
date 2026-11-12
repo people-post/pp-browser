@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <fstream>
 #include <map>
+#include <set>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -104,6 +105,12 @@ struct TestStore {
   std::map<std::string, std::vector<ThreadMessage>> threads;
   std::string active;
   bool fail = false;
+  /** As TranscriptRml draws a phone chat of one day (and, for a group, one sender): the first row alone carries the date
+   * strip (and the sender's name, the run's top); rows of unequal heights. */
+  bool same_day_strip = false;
+  bool group_run = false;
+  bool varied_heights = false;
+  std::set<std::string> tall_ids; ///< rows drawn 2000 dp tall
   int page_reads = 0;
   std::vector<int> page_limits;     ///< the row count each page read asked for
   std::vector<std::optional<int64_t>> page_befores; ///< where each page read started (exclusive)
@@ -178,8 +185,31 @@ struct TestStore {
       row.display_order = entry.message.display_order;
       row.row_class = entry.orphan_annotation ? "message-row-annotation-orphan" : "message-row-peer";
       row.content_rml = "<div class=\"bubble\"><p>a message that takes some room</p></div>";
+      if (varied_heights) {
+        std::string rml = "<div class=\"bubble\">";
+        for (int64_t line = 0; line <= entry.message.display_order % 3; ++line) {
+          rml += "<p>a line of the message</p>";
+        }
+        row.content_rml = (rml + "</div>").c_str();
+      }
+      if (tall_ids.count(entry.message.id) != 0) {
+        row.content_rml = "<div style=\"height: 2000dp;\"></div>";
+      }
       row.has_content = true;
+      if (group_run) {
+        row.group_column = true;
+        row.run_start = false;
+      }
       rows.push_back(std::move(row));
+    }
+    if (!rows.empty() && same_day_strip) {
+      rows.front().date_label = "Today";
+    }
+    if (!rows.empty() && group_run) {
+      rows.front().group_name = "Alice";
+      rows.front().run_start = true;
+      rows.back().group_avatar = true;
+      rows.back().group_avatar_letter = "A";
     }
     return rows;
   }
@@ -1157,6 +1187,64 @@ TEST_F(ChatFirstScreenTest, ASyncKeepsTheBoundPastHiddenRows) {
     Frames(2);
   }
   EXPECT_EQ(FrontId(), "m91");
+}
+
+// The row first before a page loses what only a run's or a day's first row shows (the date strip, the sender's name)
+// once older rows of that day and sender come in: the fix keeps the second row where it was, not the first's top.
+TEST_F(ChatFirstScreenTest, ThePageKeepsTheSecondRowInPlaceWhenTheFirstLosesItsDateStrip) {
+  SetClientHeight(600.f); // client height 600
+  store.same_day_strip = true;
+  store.varied_heights = true;
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(2);
+  ASSERT_EQ(state.messages.front().date_label, "Today");
+  ScrollTo(40.f);
+  const float second = RowTopOnScreen("m272");
+  const float third = RowTopOnScreen("m273");
+  Frames(1);
+  context->Update();
+  ASSERT_EQ(FrontId(), "m231");
+  EXPECT_EQ(std::string(state.messages[40].date_label.c_str()), "") << "m271 lost its strip";
+  EXPECT_NEAR(RowTopOnScreen("m272"), second, 1.f);
+  EXPECT_NEAR(RowTopOnScreen("m273"), third, 1.f);
+}
+
+TEST_F(ChatFirstScreenTest, ThePageKeepsTheSecondRowInPlaceWhenTheFirstLosesTheSendersName) {
+  SetClientHeight(600.f); // client height 600
+  store.group_run = true;
+  store.varied_heights = true;
+  AddTexts("group", 1, 300);
+  Sync("group", kGroup);
+  Settle();
+  Frames(2);
+  ASSERT_EQ(std::string(state.messages.front().group_name.c_str()), "Alice");
+  ScrollTo(40.f);
+  const float second = RowTopOnScreen("m252");
+  const float third = RowTopOnScreen("m253");
+  Frames(1);
+  context->Update();
+  ASSERT_EQ(FrontId(), "m211");
+  EXPECT_NEAR(RowTopOnScreen("m252"), second, 1.f);
+  EXPECT_NEAR(RowTopOnScreen("m253"), third, 1.f);
+}
+
+TEST_F(ChatFirstScreenTest, AOneRowWindowPagesWithItsOnlyRowInPlace) {
+  SetClientHeight(600.f); // client height 600
+  AddTexts("dm", 1, 300);
+  store.tall_ids.insert("m300"); // one row taller than the screen, so it scrolls
+  Sync("dm", /*first_screen=*/1);
+  Settle();
+  Frames(2);
+  ASSERT_EQ(state.messages.size(), 1u);
+  ASSERT_GT(MaxTop(), 72.f);
+  ScrollTo(40.f);
+  const float only = RowTopOnScreen("m300");
+  Frames(1);
+  context->Update();
+  EXPECT_EQ(state.messages.size(), 41u);
+  EXPECT_NEAR(RowTopOnScreen("m300"), only, 1.f);
 }
 
 TEST(ChatFirstScreenCountTest, FirstScreenMessagesByKind) {
