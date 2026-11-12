@@ -48,6 +48,7 @@ ResumeRetryChain::TryOutcome ResumeRetryChain::OnTryResult(const TryResult resul
       outcome.stop = StopReason::Resumed;
       outcome.tries = tries_;
       outcome.waited = SinceBegan(now);
+      began_ = false;
       break;
     case TryResult::Failed:
       ++failures_;

@@ -63,7 +63,9 @@ public:
   TryOutcome OnTryResult(TryResult result, TimePoint now);
 
   bool Running() const { return running_; }
-  /** Since the latest interruption began (0 before any): `waited_ms` for a resume another way. */
+  /** Forget when the interruption began (a resume or the session's end): SinceBegan is 0 until the next OnBegan. */
+  void ClearBegan() { began_ = false; }
+  /** Since the latest interruption began (0 when none is recorded): `waited_ms` for a resume another way. */
   std::chrono::milliseconds SinceBegan(TimePoint now) const;
 
   /** The 1st, 11th, 21st … of something (counted from 1) is logged. */

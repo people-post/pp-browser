@@ -35,6 +35,11 @@ std::atomic<bool> g_voice_active{false};
 std::atomic<bool> g_voice_playback{false};
 /** Bumped by every ActivateForVoip; a delayed Deactivate retry gives up once it changed. */
 std::atomic<uint64_t> g_session_gen{0};
+/**
+ * An interruption began while the session was not (yet) marked in use: set by the observer, cleared by ActivateForVoip
+ * before its setActive:YES and read right after it marks the session in use (an interruption in that window is real).
+ */
+std::atomic<bool> g_began_before_marked{false};
 /** Makes "still ours?" + setActive:NO atomic against a new activation / CancelPendingDeactivate. */
 std::mutex g_session_mu;
 constexpr int kDeactivateRetries = 5;
@@ -70,6 +75,24 @@ dispatch_queue_t ResumeQueue() {
 void RunResume(ResumeBy by, bool reapply);
 /** On ResumeQueue: an interruption began at `began_at`; starts the retry chain unless one runs. */
 void BeginRetryChain(std::chrono::steady_clock::time_point began_at);
+/** On ResumeQueue: forget when the last interruption began (the next resume's waited_ms is then 0). */
+void ForgetBegan();
+
+/**
+ * An interruption of the session activated as `gen` began at `began_at`: on the resume queue, so it is ordered with
+ * the resume attempts (an attempt that is between its setActive:YES and its NotifyInterruptionEnded finishes first,
+ * then this marks the session interrupted again — never the other way round, which would lose it), mark it
+ * interrupted and start the retry chain. Dropped when the call ended or a newer activation took the session by then.
+ */
+void PostInterruptionBegan(const std::chrono::steady_clock::time_point began_at, const uint64_t gen) {
+  dispatch_async(ResumeQueue(), ^{
+    if (!g_session_active.load() || g_session_gen.load() != gen) {
+      return;
+    }
+    NotifyInterruptionBegan();
+    BeginRetryChain(began_at);
+  });
+}
 
 void PostResume(const ResumeBy by, const bool reapply) {
   dispatch_async(ResumeQueue(), ^{
@@ -223,17 +246,22 @@ void InstallInterruptionObservers() {
                         } else {
                           PostResume(ResumeBy::Ended, /*reapply=*/false);
                         }
-                      } else if (type == AVAudioSessionInterruptionTypeBegan && g_session_active.load()) {
+                      } else if (type == AVAudioSessionInterruptionTypeBegan) {
                         const auto began_at = std::chrono::steady_clock::now();
+                        if (!g_session_active.load()) {
+                          // Maybe ActivateForVoip is between its setActive:YES and marking the session in use: leave a
+                          // note for it. Look again afterwards, in case it marked the session in use meanwhile.
+                          g_began_before_marked.store(true);
+                          if (!g_session_active.load()) {
+                            return;
+                          }
+                        }
                         NSNumber* reason_value = note.userInfo[AVAudioSessionInterruptionReasonKey];
                         const ShareWord reason = reason_value
                                                      ? InterruptionReasonWord(reason_value.unsignedIntegerValue)
                                                      : ShareWord("none");
                         SessionLog().info << "AudioSession interruption began reason=" << reason.view();
-                        NotifyInterruptionBegan();
-                        dispatch_async(ResumeQueue(), ^{
-                          BeginRetryChain(began_at);
-                        });
+                        PostInterruptionBegan(began_at, g_session_gen.load());
                         if (reason_value && reason_value.unsignedIntegerValue == 4) { // route_disconnected
                           ResumeSoonIfSessionFree();
                         }
@@ -395,9 +423,11 @@ void ActivateForVoip() {
   ConfigureVoipSession(session);
   NSError* error = nil;
   BOOL active_ok = NO;
+  uint64_t gen = 0;
   {
     std::lock_guard<std::mutex> lock(g_session_mu);
-    g_session_gen.fetch_add(1);
+    gen = g_session_gen.fetch_add(1) + 1;
+    g_began_before_marked.store(false);
     active_ok = [session setActive:YES error:&error];
     g_session_active.store(true);
     // The call has the session: a voice message that was playing was cut off without ReleaseVoice (a call holds the
@@ -408,6 +438,11 @@ void ActivateForVoip() {
     SessionLog().warning << "AudioSession ActivateForVoip: setActive failed code="
                          << (error != nil ? static_cast<long>(error.code) : 0L)
                          << " interrupted=" << (IsInterrupted() ? 1 : 0);
+  }
+  // The OS holds the session already (Siri, a phone call, another app: no "began" will come, it happened before the
+  // session was marked in use), or took it between setActive:YES and the mark: either way the call starts interrupted.
+  if (!active_ok || g_began_before_marked.exchange(false)) {
+    PostInterruptionBegan(std::chrono::steady_clock::now(), gen);
   }
   ApplyRoute(g_speakerphone.load());
   LogRoute("ActivateForVoip");
@@ -421,6 +456,9 @@ void Deactivate() {
     MetricsLine("call.audio_resume").Add("result", "ended_interrupted").Emit();
   }
   ClearInterruption();
+  dispatch_async(ResumeQueue(), ^{
+    ForgetBegan();
+  });
   AVAudioSession* session = [AVAudioSession sharedInstance];
   NSError* error = nil;
   [session overrideOutputAudioPort:AVAudioSessionPortOverrideNone error:&error];
@@ -504,14 +542,18 @@ void LogAttempt(const ResumeBy by, const ResumeAttempt& attempt, const int failu
  * media reopen (NotifyInterruptionEnded). On ResumeQueue only. Takes no lock and does not call ActivateForVoip (its
  * flag write and gen bump could re-mark an ended call's session as live). `reapply` (a media-services reset: the
  * session's settings are gone, and it needs the reopen whether or not an interruption was seen) sets the category and
- * mode again and skips the "still interrupted?" checks.
+ * mode again and skips the "still interrupted?" checks. Every attempt sets the category, mode, preferred sample rate and
+ * IO buffer again before setActive:YES (as ActivateForVoip did before the queue): the OS may have reset them. Not under
+ * g_session_mu (SetSpeakerphoneOn does the same without it).
  *
  * Invariant: once Deactivate has returned, no path leaves the session active. Deactivate clears g_session_active
  * before its setActive:NO (DeactivateAttempt), and this checks the flag after its own setActive:YES — before the gen,
  * because a newer activation followed by a hang-up changes the gen too. Still set: Deactivate's setActive:NO comes
  * after this setActive:YES (it cannot have started yet), so it wins. Already clear: this undoes its own activation
  * (DeactivateAttempt, which stands back if anything activated since — that one owns the session now). A voice clip
- * that took the session after the hang-up is left alone: its ReleaseVoice ends it. Nothing waits on this queue, and
+ * that took the session after the hang-up is left alone: its ReleaseVoice ends it. The undo uses the gen read at the
+ * START of the attempt (Deactivate does not bump it; every newer activation does, under the lock), so an activation
+ * between our setActive:YES and the undo makes DeactivateAttempt stand down. Nothing waits on this queue, and
  * no path takes g_session_mu twice, so none of this can deadlock.
  *
  * Every setActive:YES result is logged here, except a retry's failure: the chain logs those (1st, then every 10th).
@@ -525,9 +567,7 @@ ResumeAttempt TryResume(const ResumeBy by, const bool reapply) {
     return attempt;
   }
   AVAudioSession* session = [AVAudioSession sharedInstance];
-  if (reapply) {
-    ConfigureVoipSession(session);
-  }
+  ConfigureVoipSession(session);
   NSError* error = nil;
   attempt.tried = true;
   attempt.active_ok = [session setActive:YES error:&error];
@@ -538,7 +578,7 @@ ResumeAttempt TryResume(const ResumeBy by, const bool reapply) {
     attempt.result = TryResult::Failed;
   } else if (!g_session_active.load()) {
     if (!g_voice_active.load()) {
-      DeactivateAttempt(g_session_gen.load(), kDeactivateRetries);
+      DeactivateAttempt(attempt.gen, kDeactivateRetries);
     }
     attempt.result = TryResult::Gone;
   } else if (g_session_gen.load() != attempt.gen) {
@@ -614,6 +654,10 @@ void RunTick() {
   }
 }
 
+void ForgetBegan() {
+  RetryChain().ClearBegan();
+}
+
 void BeginRetryChain(const Clock::time_point began_at) {
   if (RetryChain().OnBegan(began_at)) {
     SessionLog().info << "AudioSession retry chain started";
@@ -625,6 +669,7 @@ void RunResume(const ResumeBy by, const bool reapply) {
   const ResumeAttempt attempt = TryResume(by, reapply);
   if (attempt.result == TryResult::Ok) {
     EmitResumed(by, 0, RetryChain().SinceBegan(Clock::now()));
+    ForgetBegan();
   } else if (!attempt.tried && g_session_active.load()) {
     SessionLog().info << "AudioSession resume by=" << ByWord(by).view() << ": not interrupted, nothing to do";
   }

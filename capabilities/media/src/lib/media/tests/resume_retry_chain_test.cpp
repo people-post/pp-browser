@@ -153,5 +153,37 @@ TEST(ResumeRetryChainTest, SinceBeganIsZeroBeforeAnyInterruption) {
   EXPECT_EQ(chain.SinceBegan(kT0 + 800ms), 800ms);
 }
 
+// A resume with no interruption recorded (a media-services reset) reports no wait, not a stale one.
+TEST(ResumeRetryChainTest, SinceBeganIsZeroAfterClearBegan) {
+  Chain chain;
+  ASSERT_TRUE(chain.OnBegan(kT0));
+  chain.ClearBegan();
+  EXPECT_EQ(chain.SinceBegan(kT0 + 800ms), 0ms);
+  EXPECT_TRUE(chain.Running()) << "only the time is forgotten";
+}
+
+TEST(ResumeRetryChainTest, OkForgetsWhenTheInterruptionBegan) {
+  Chain chain;
+  ASSERT_TRUE(chain.OnBegan(kT0));
+  ASSERT_EQ(chain.OnTick(true, true, AppState::Active).action, Action::Try);
+  ASSERT_EQ(chain.OnTryResult(TryResult::Ok, kT0 + 1500ms).waited, 1500ms);
+  EXPECT_EQ(chain.SinceBegan(kT0 + 60s), 0ms);
+  ASSERT_TRUE(chain.OnBegan(kT0 + 70s));
+  EXPECT_EQ(chain.SinceBegan(kT0 + 71s), 1s) << "a new interruption records its own time";
+}
+
+// A "began" while a chain runs (the OS took the audio again): same chain, counters and wait start again.
+TEST(ResumeRetryChainTest, ABeganWhileRunningRestartsTheCounters) {
+  Chain chain;
+  ASSERT_TRUE(chain.OnBegan(kT0));
+  ASSERT_EQ(chain.OnTick(true, true, AppState::Active).action, Action::Try);
+  ASSERT_EQ(chain.OnTryResult(TryResult::Failed, kT0 + 1500ms).failures, 1);
+  EXPECT_FALSE(chain.OnBegan(kT0 + 2s));
+  ASSERT_EQ(chain.OnTick(true, true, AppState::Active).action, Action::Try);
+  const auto outcome = chain.OnTryResult(TryResult::Ok, kT0 + 3500ms);
+  EXPECT_EQ(outcome.tries, 1);
+  EXPECT_EQ(outcome.waited, 1500ms);
+}
+
 } // namespace
 } // namespace pbr
