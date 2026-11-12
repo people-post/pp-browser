@@ -7,6 +7,7 @@ pp_browser_add_lib_library(pp_lib_storage
     SqliteCallMediaKeyStore.cpp
     SqliteCallSessionStore.cpp
     SqliteChatDbLadders.cpp
+    SqliteChatStoreGate.cpp
     SqliteControlLaneSeenStore.cpp
     SqliteGroupInviteLinkStore.cpp
     SqliteGroupRosterStore.cpp

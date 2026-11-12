@@ -1,4 +1,5 @@
 #include "lib/storage/SqliteGroupRosterStore.h"
+#include "lib/storage/SqliteChatStoreGate.h"
 
 #include "lib/messaging/GroupMembershipCodec.h"
 
@@ -148,6 +149,9 @@ void SqliteGroupRosterStore::NotifyChanged(GroupRosterChange change) const {
 }
 
 bool SqliteGroupRosterStore::OpenDb(sqlite3** db) const {
+  if (!chat_store_gate::RequireOpen(profile_db_path_)) {
+    return false; // the chat store opens after unlock
+  }
   if (sqlite3_open(profile_db_path_.c_str(), db) != SQLITE_OK) {
     return false;
   }

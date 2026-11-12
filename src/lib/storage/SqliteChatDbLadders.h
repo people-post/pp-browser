@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/storage/SqliteChatStoreGate.h"
 #include "lib/storage/SqliteMigrations.h"
 
 #include <string>
@@ -16,6 +17,13 @@ namespace pbr {
  */
 const SqliteSchemaLadder& ProfileDbLadder();
 const SqliteSchemaLadder& ThreadDbLadder();
+
+/**
+ * What a profile.db ladder outcome leaves the chat store with: nothing to recover from (created, current, migrated,
+ * or reset below the floor — the app says that once), Newer (a downgrade), or NotUpgraded (a step failed and was
+ * rolled back, or the file could not be read).
+ */
+std::optional<ChatStoreProblem> ChatStoreProblemFor(const Roe<SqliteLadderOutcome>& outcome);
 
 /**
  * A chat database older than its floor is reset (profile.db: the whole chat store; thread.db: that chat's

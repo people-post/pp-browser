@@ -1,5 +1,7 @@
 #include "lib/storage/SqliteCallSessionStore.h"
 #include "lib/storage/SqliteChatDbLadders.h"
+#include "lib/storage/SqliteChatStoreGate.h"
+#include "lib/storage/SqliteThreadLocalPrefsStore.h"
 #include "lib/storage/SqliteMigrations.h"
 #include "lib/storage/SqliteThreadSchema.h"
 #include "lib/storage/SqliteThreadStore.h"
@@ -62,7 +64,8 @@ class SqliteMigrationsTest : public ::testing::Test {
 protected:
   void SetUp() override {
     data_dir_ = std::filesystem::temp_directory_path() /
-                ("pp_browser_sqlite_migrations_" + std::string(::testing::UnitTest::GetInstance()->current_test_info()->name()));
+                ("pp_browser_sqlite_migrations_" +
+                 std::string(::testing::UnitTest::GetInstance()->current_test_info()->name()));
     std::filesystem::remove_all(data_dir_);
     std::filesystem::create_directories(data_dir_);
   }
@@ -281,6 +284,81 @@ TEST_F(SqliteMigrationsTest, AThreadDbBelowItsFloorLosesItsMessagesNotItsChat) {
   EXPECT_TRUE(TakeChatStoreResetNotice(data_dir_.string()));
 }
 
+// Nothing opens, creates or migrates the chat store before the PIN is entered: the thread store holds profile.db
+// shut until it gets the data key, and the stores sharing the file are refused meanwhile.
+TEST_F(SqliteMigrationsTest, NothingIsOpenedOrMigratedBeforeUnlock) {
+  WriteProfileWithAChat();
+  Exec(Db(ProfileDb()), "PRAGMA user_version = 4;");
+  CloseDb();
+
+  store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+  auto locked = store_->ListThreads();
+  ASSERT_FALSE(locked);
+  SqliteThreadLocalPrefsStore prefs(ProfileDb());
+  EXPECT_FALSE(prefs.List()) << "a store on the same file waits for the unlock too";
+  EXPECT_EQ(Version(ProfileDb()), 4) << "not migrated before unlock";
+
+  ASSERT_TRUE(store_->SetDek(TestDek())) << "the unlock opens the store";
+  EXPECT_EQ(Version(ProfileDb()), kSqliteThreadProfileUserVersion) << "migrated at unlock";
+  EXPECT_TRUE(prefs.List()) << "open once the chat store is";
+  CloseStore();
+  ExpectTheChatIsKept();
+}
+
+TEST_F(SqliteMigrationsTest, AFreshProfileCreatesNothingBeforeUnlock) {
+  store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+  EXPECT_FALSE(store_->ListThreads());
+  EXPECT_FALSE(std::filesystem::exists(ProfileDb())) << "no file before unlock";
+  ASSERT_TRUE(store_->SetDek(TestDek()));
+  EXPECT_TRUE(std::filesystem::exists(ProfileDb()));
+  EXPECT_TRUE(store_->ListThreads());
+}
+
+// A chat store newer than this build does not fail the unlock: it stays shut and says why, so the app can offer a
+// recovery; a reset (the chat store removed, a new store opened) continues as on a fresh profile.
+TEST_F(SqliteMigrationsTest, ANewerStoreStaysShutAndSaysWhyThenAResetOpensAFreshOne) {
+  WriteProfileWithAChat();
+  Exec(Db(ProfileDb()), "PRAGMA user_version = " + std::to_string(kSqliteThreadProfileUserVersion + 1) + ";");
+  CloseDb();
+
+  store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+  ASSERT_TRUE(store_->SetDek(TestDek())) << "the unlock itself goes through";
+  auto failure = chat_store_gate::OpenFailure(ProfileDb());
+  ASSERT_TRUE(failure.has_value());
+  EXPECT_EQ(failure->problem, ChatStoreProblem::Newer);
+  EXPECT_FALSE(store_->ListThreads());
+  SqliteThreadLocalPrefsStore prefs(ProfileDb());
+  EXPECT_FALSE(prefs.List()) << "the stores sharing the file are refused too";
+
+  // Reset chats: the hub's stores go, the chat store is removed, new stores open at the unlock.
+  store_.reset();
+  std::filesystem::remove_all(SqliteThreadsRoot(data_dir_.string()));
+  SqliteThreadStore& fresh = OpenStore();
+  EXPECT_FALSE(chat_store_gate::OpenFailure(ProfileDb()).has_value());
+  auto threads = fresh.ListThreads();
+  ASSERT_TRUE(threads) << threads.error().message;
+  EXPECT_TRUE(threads->empty());
+  EXPECT_TRUE(prefs.List());
+}
+
+TEST_F(SqliteMigrationsTest, AFailedUpgradeStaysShutAsNotUpgradedAtItsOldVersion) {
+  WriteProfileWithAChat();
+  sqlite3* db = Db(ProfileDb());
+  // A tester's file the baseline cannot finish: session_kind is indexed, so dropping it fails.
+  Exec(db, "ALTER TABLE call_sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'group';");
+  Exec(db, "CREATE INDEX idx_kind ON call_sessions(session_kind); PRAGMA user_version = 4;");
+  CloseDb();
+
+  SqliteThreadStore& store = OpenStore();
+  auto failure = chat_store_gate::OpenFailure(ProfileDb());
+  ASSERT_TRUE(failure.has_value());
+  EXPECT_EQ(failure->problem, ChatStoreProblem::NotUpgraded) << failure->message;
+  EXPECT_FALSE(store.ListThreads());
+  CloseStore();
+  EXPECT_EQ(Version(ProfileDb()), 4) << "rolled back to the version it had";
+  EXPECT_TRUE(std::filesystem::exists(SqliteThreadDbFile(data_dir_.string(), "thread-kept"))) << "nothing reset";
+}
+
 // The runner itself, on a ladder of its own: a step that fails leaves the database as it was — the steps before it
 // undone too, at its old version — and the backup copy gone.
 TEST_F(SqliteMigrationsTest, AFailedStepRestoresTheBackupAtTheOldVersion) {
@@ -289,25 +367,29 @@ TEST_F(SqliteMigrationsTest, AFailedStepRestoresTheBackupAtTheOldVersion) {
   Exec(db, "PRAGMA journal_mode=WAL;");
   Exec(db, "CREATE TABLE kept (v TEXT); INSERT INTO kept VALUES ('row'); PRAGMA user_version = 1;");
   int ran = 0;
+  const ByteVector* seen_dek = nullptr;
+  const ByteVector dek = TestDek();
   SqliteSchemaLadder ladder{
       "ladder.db",
       1,
       3,
-      [](sqlite3*) { return Roe<void>(); },
+      [](const SqliteMigrationContext&) { return Roe<void>(); },
       {
           {1,
-           [&ran](sqlite3* d) -> Roe<void> {
+           [&ran, &seen_dek](const SqliteMigrationContext& c) -> Roe<void> {
              ++ran;
-             return sqlite3_exec(d, "CREATE TABLE added (v TEXT); DELETE FROM kept;", nullptr, nullptr, nullptr) ==
+             seen_dek = c.dek;
+             return sqlite3_exec(c.db, "CREATE TABLE added (v TEXT); DELETE FROM kept;", nullptr, nullptr, nullptr) ==
                             SQLITE_OK
                         ? Roe<void>()
                         : Roe<void>(Error("step 1"));
            }},
-          {2, [](sqlite3*) -> Roe<void> { return Error("step 2 fails"); }},
+          {2, [](const SqliteMigrationContext&) -> Roe<void> { return Error("step 2 fails"); }},
       },
   };
-  auto outcome = RunSqliteLadder(db, path, ladder);
+  auto outcome = RunSqliteLadder(db, path, ladder, &dek);
   ASSERT_FALSE(outcome);
+  EXPECT_EQ(seen_dek, &dek) << "a step gets the profile's data key (it runs after unlock)";
   EXPECT_NE(outcome.error().message.find("left at schema 1"), std::string::npos) << outcome.error().message;
   EXPECT_EQ(ran, 1);
   auto version = SqliteUserVersion(db);
@@ -322,7 +404,7 @@ TEST_F(SqliteMigrationsTest, AFailedStepRestoresTheBackupAtTheOldVersion) {
   EXPECT_FALSE(std::filesystem::exists(path + ".pre-migration"));
 
   // The same ladder with its second step fixed runs both once, and again nothing.
-  ladder.steps[1].apply = [](sqlite3*) { return Roe<void>(); };
+  ladder.steps[1].apply = [](const SqliteMigrationContext&) { return Roe<void>(); };
   auto fixed = RunSqliteLadder(db, path, ladder);
   ASSERT_TRUE(fixed) << fixed.error().message;
   EXPECT_EQ(*fixed, SqliteLadderOutcome::Migrated);
@@ -335,10 +417,24 @@ TEST_F(SqliteMigrationsTest, AFailedStepRestoresTheBackupAtTheOldVersion) {
 
 TEST_F(SqliteMigrationsTest, ALadderWithAMissingStepIsRefused) {
   sqlite3* db = Db((data_dir_ / "gap.db").string());
-  SqliteSchemaLadder ladder{"gap.db", 1, 3, [](sqlite3*) { return Roe<void>(); },
-                            {{1, [](sqlite3*) { return Roe<void>(); }}}};
+  SqliteSchemaLadder ladder{"gap.db",
+                            1,
+                            3,
+                            [](const SqliteMigrationContext&) { return Roe<void>(); },
+                            {{1, [](const SqliteMigrationContext&) { return Roe<void>(); }}}};
   EXPECT_FALSE(RunSqliteLadder(db, (data_dir_ / "gap.db").string(), ladder));
   CloseDb();
+}
+
+// Which ladder outcomes leave the chat store needing a recovery (the app's start-up screen): only Newer and a failed
+// migration; created, current, migrated and a reset below the floor open it.
+TEST(ChatStoreProblemTest, OnlyANewerStoreOrAFailedUpgradeNeedsARecovery) {
+  for (const SqliteLadderOutcome opened : {SqliteLadderOutcome::Created, SqliteLadderOutcome::Current,
+                                           SqliteLadderOutcome::Migrated, SqliteLadderOutcome::BelowFloor}) {
+    EXPECT_FALSE(ChatStoreProblemFor(opened).has_value()) << static_cast<int>(opened);
+  }
+  EXPECT_EQ(ChatStoreProblemFor(SqliteLadderOutcome::Newer), ChatStoreProblem::Newer);
+  EXPECT_EQ(ChatStoreProblemFor(Roe<SqliteLadderOutcome>(Error("step failed"))), ChatStoreProblem::NotUpgraded);
 }
 
 } // namespace

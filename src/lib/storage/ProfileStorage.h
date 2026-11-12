@@ -11,9 +11,10 @@
 namespace pbr {
 
 /**
- * The app's storage (CR024): a profile's stores on its database, profile.db and the per-thread files. The
- * database is opened first — created, or an older one brought to the current schema — so no store meets an old
- * one. The app hands this to the hub (`ConversationsHub::SetStorage`).
+ * The app's storage (CR024): a profile's stores on its database, profile.db and the per-thread files. Nothing is
+ * opened here: the database opens when the profile is unlocked (the thread store gets the data key, D105) —
+ * created, or an older one brought to the current schema — before any other store may touch it, so none meets an
+ * old one. The app hands this to the hub (`ConversationsHub::SetStorage`).
  */
 Roe<ProfileStores> OpenSqliteProfileStores(const std::string& profile_data_dir, const std::string& profile_id);
 

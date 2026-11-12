@@ -129,12 +129,13 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   std::filesystem::remove_all(data_dir_, ec);
   std::filesystem::create_directories(data_dir_, ec);
 
+  // As the app does: the chat store opens with its data key (D105), then is read.
   store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
-  if (auto listed = store_->ListThreads(); !listed) {
-    return listed.error();
-  }
   if (auto store_dek = store_->SetDek(ProbeDek()); !store_dek) {
     return store_dek.error();
+  }
+  if (auto listed = store_->ListThreads(); !listed) {
+    return listed.error();
   }
   contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
   contacts_->SetOnChanged([this]() { PublishAddressDisclosure(); });

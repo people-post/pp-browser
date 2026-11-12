@@ -2,6 +2,7 @@
 
 #include "common/Utilities.h"
 #include "lib/storage/SqliteThreadStore.h"
+#include "UnlockedThreadStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -15,7 +16,7 @@ protected:
   void SetUp() override {
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_thread_prefs_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
-    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    store_ = test::MakeUnlockedThreadStore(data_dir_.string());
     ASSERT_TRUE(store_->ListThreads());
     prefs_ = std::make_unique<SqliteThreadLocalPrefsStore>(store_->ProfileDbPath());
   }
@@ -130,7 +131,7 @@ TEST_F(ThreadLocalPrefsStoreTest, MuteMentionsIsStoredAndAddedByTheBaselineToAnO
                    nullptr, nullptr, nullptr),
       SQLITE_OK);
   sqlite3_close(db);
-  store_ = std::make_unique<SqliteThreadStore>(data_dir_.string()); // the app opens profile.db first: the ladder
+  store_ = test::MakeUnlockedThreadStore(data_dir_.string()); // the app opens profile.db first: the ladder
   ASSERT_TRUE(store_->ListThreads());
   prefs_ = std::make_unique<SqliteThreadLocalPrefsStore>(db_path);
   auto old = prefs_->Get("g");
@@ -164,7 +165,7 @@ TEST_F(ThreadLocalPrefsStoreTest, ShareAiConfirmedIsStoredAndAddedByTheBaselineT
                    nullptr, nullptr, nullptr),
       SQLITE_OK);
   sqlite3_close(db);
-  store_ = std::make_unique<SqliteThreadStore>(data_dir_.string()); // the app opens profile.db first: the ladder
+  store_ = test::MakeUnlockedThreadStore(data_dir_.string()); // the app opens profile.db first: the ladder
   ASSERT_TRUE(store_->ListThreads());
   prefs_ = std::make_unique<SqliteThreadLocalPrefsStore>(db_path);
   auto old = prefs_->Get("g");
@@ -209,7 +210,7 @@ TEST_F(ThreadLocalPrefsStoreTest, TableIsAddedToAnExistingProfileDbWithoutTouchi
   sqlite3_finalize(stmt);
   sqlite3_close(db);
 
-  store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+  store_ = test::MakeUnlockedThreadStore(data_dir_.string());
   auto threads = store_->ListThreads();
   ASSERT_TRUE(threads);
   ASSERT_EQ(threads->size(), 1u);

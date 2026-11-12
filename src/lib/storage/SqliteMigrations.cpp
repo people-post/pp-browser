@@ -88,11 +88,12 @@ Roe<void> CheckLadder(const SqliteSchemaLadder& ladder) {
 }
 
 /** One step, in its own transaction ending at its target version. Rolled back on failure. */
-Roe<void> RunStep(sqlite3* db, const SqliteMigrationStep& step) {
+Roe<void> RunStep(const SqliteMigrationContext& context, const SqliteMigrationStep& step) {
+  sqlite3* db = context.db;
   if (auto begun = Exec(db, "BEGIN IMMEDIATE;"); !begun) {
     return begun.error();
   }
-  auto applied = step.apply(db);
+  auto applied = step.apply(context);
   if (applied) {
     applied = Exec(db, "PRAGMA user_version = " + std::to_string(step.from + 1) + ";");
   }
@@ -105,11 +106,12 @@ Roe<void> RunStep(sqlite3* db, const SqliteMigrationStep& step) {
   return applied;
 }
 
-Roe<void> Create(sqlite3* db, const SqliteSchemaLadder& ladder) {
+Roe<void> Create(const SqliteMigrationContext& context, const SqliteSchemaLadder& ladder) {
+  sqlite3* db = context.db;
   if (auto begun = Exec(db, "BEGIN IMMEDIATE;"); !begun) {
     return begun.error();
   }
-  auto created = ladder.create(db);
+  auto created = ladder.create(context);
   if (created) {
     created = Exec(db, "PRAGMA user_version = " + std::to_string(ladder.current) + ";");
   }
@@ -123,14 +125,16 @@ Roe<void> Create(sqlite3* db, const SqliteSchemaLadder& ladder) {
   return {};
 }
 
-Roe<void> Migrate(sqlite3* db, const std::string& db_path, const SqliteSchemaLadder& ladder, const int from) {
+Roe<void> Migrate(const SqliteMigrationContext& context, const std::string& db_path, const SqliteSchemaLadder& ladder,
+                  const int from) {
+  sqlite3* db = context.db;
   const std::string copy_path = db_path + ".pre-migration";
   if (auto copied = WriteCopy(db, copy_path); !copied) {
     return Error(ladder.name + ": not migrated (no backup copy): " + copied.error().message);
   }
   for (int version = from; version < ladder.current; ++version) {
     const SqliteMigrationStep& step = ladder.steps[static_cast<size_t>(version - ladder.floor)];
-    if (auto stepped = RunStep(db, step); !stepped) {
+    if (auto stepped = RunStep(context, step); !stepped) {
       std::string message = ladder.name + ": migration from schema " + std::to_string(version) + " failed (" +
                             stepped.error().message + ")";
       if (auto restored = RestoreCopy(db, copy_path); !restored) {
@@ -161,7 +165,9 @@ Roe<int> SqliteUserVersion(sqlite3* db) {
   return version;
 }
 
-Roe<SqliteLadderOutcome> RunSqliteLadder(sqlite3* db, const std::string& db_path, const SqliteSchemaLadder& ladder) {
+Roe<SqliteLadderOutcome> RunSqliteLadder(sqlite3* db, const std::string& db_path, const SqliteSchemaLadder& ladder,
+                                         const ByteVector* dek) {
+  const SqliteMigrationContext context{db, dek};
   if (auto checked = CheckLadder(ladder); !checked) {
     return checked.error();
   }
@@ -173,19 +179,18 @@ Roe<SqliteLadderOutcome> RunSqliteLadder(sqlite3* db, const std::string& db_path
     return SqliteLadderOutcome::Current;
   }
   if (*version == 0) {
-    if (auto created = Create(db, ladder); !created) {
+    if (auto created = Create(context, ladder); !created) {
       return created.error();
     }
     return SqliteLadderOutcome::Created;
   }
   if (*version > ladder.current) {
-    return Error("Incompatible " + ladder.name + " (schema " + std::to_string(*version) + ", newer than this build's " +
-                 std::to_string(ladder.current) + ") — update the app, or reset chats in Me → Storage");
+    return SqliteLadderOutcome::Newer;
   }
   if (*version < ladder.floor) {
     return SqliteLadderOutcome::BelowFloor;
   }
-  if (auto migrated = Migrate(db, db_path, ladder, *version); !migrated) {
+  if (auto migrated = Migrate(context, db_path, ladder, *version); !migrated) {
     return migrated.error();
   }
   return SqliteLadderOutcome::Migrated;

@@ -1,4 +1,5 @@
 #include "lib/storage/SqliteThreadLocalPrefsStore.h"
+#include "lib/storage/SqliteChatStoreGate.h"
 
 #include <sqlite3.h>
 
@@ -44,6 +45,9 @@ SqliteThreadLocalPrefsStore::SqliteThreadLocalPrefsStore(std::string profile_db_
     : profile_db_path_(std::move(profile_db_path)) {}
 
 Roe<sqlite3*> SqliteThreadLocalPrefsStore::OpenDb() const {
+  if (auto gate = chat_store_gate::RequireOpen(profile_db_path_); !gate) {
+    return gate.error();
+  }
   sqlite3* db = nullptr;
   if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
     return Error("Failed to open profile.db for thread prefs");

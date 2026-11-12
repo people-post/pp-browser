@@ -1,6 +1,7 @@
 #include "lib/storage/SqliteThreadDb.h"
 
 #include "lib/storage/SqliteChatDbLadders.h"
+#include "lib/storage/SqliteChatStoreGate.h"
 #include "lib/storage/SqliteMigrations.h"
 #include "lib/storage/SqliteThreadSchema.h"
 #include "foundation/error/AppError.h"
@@ -22,9 +23,11 @@ SqliteThreadDb::SqliteThreadDb(std::string data_dir) : data_dir_(std::move(data_
   if (profile_id_.empty()) {
     profile_id_ = "default";
   }
+  chat_store_gate::Hold(ProfileDbPath());
 }
 
 SqliteThreadDb::~SqliteThreadDb() {
+  chat_store_gate::Release(ProfileDbPath());
   ClearDek();
   std::lock_guard profile_lock(profile_mutex_);
   for (auto& [thread_id, handle] : thread_dbs_) {
@@ -44,11 +47,18 @@ Roe<void> SqliteThreadDb::SetDek(ByteVector dek) {
   if (dek.size() != 32u) {
     return Error("Invalid DEK size");
   }
-  std::lock_guard lock(dek_mutex_);
-  if (!dek_.empty()) {
-    sodium_memzero(dek_.data(), dek_.size());
+  {
+    std::lock_guard lock(dek_mutex_);
+    if (!dek_.empty()) {
+      sodium_memzero(dek_.data(), dek_.size());
+    }
+    dek_ = std::move(dek);
   }
-  dek_ = std::move(dek);
+  // The key is in: the chat store opens now, its ladder with it. A store that cannot be opened (newer than this
+  // build, or a failed upgrade) does not fail the unlock — it stays shut, and says why (chat_store_gate::OpenFailure).
+  if (auto opened = EnsureInitialized(); !opened) {
+    log().error << "Chat store not opened after unlock: " << opened.error().message;
+  }
   return {};
 }
 
@@ -78,12 +88,20 @@ std::string SqliteThreadDb::ProfileDbPath() const {
 }
 
 Roe<void> SqliteThreadDb::EnsureProfileOpen() const {
-  return OpenProfileDb();
+  return EnsureInitialized();
 }
 
 Roe<void> SqliteThreadDb::EnsureInitialized() const {
+  std::lock_guard lock(init_mutex_);
   if (initialized_) {
     return {};
+  }
+  if (open_failure_) {
+    return *open_failure_;
+  }
+  // Nothing is opened, created or migrated before the profile is unlocked (D105).
+  if (auto dek = RequireDek(); !dek) {
+    return dek.error();
   }
   std::error_code ec;
   std::filesystem::create_directories(SqliteThreadsRoot(data_dir_), ec);
@@ -94,6 +112,7 @@ Roe<void> SqliteThreadDb::EnsureInitialized() const {
     return repair.error();
   }
   initialized_ = true;
+  chat_store_gate::MarkOpen(ProfileDbPath());
   return {};
 }
 
@@ -114,6 +133,14 @@ Roe<void> SqliteThreadDb::OpenProfileDb() const {
   return opened;
 }
 
+Error SqliteThreadDb::RecordOpenFailure(const ChatStoreProblem problem, std::string message) const {
+  log().error << message;
+  Error error = AppError::Storage(Err::Storage::Unavailable, message);
+  open_failure_ = error;
+  chat_store_gate::MarkFailed(ProfileDbPath(), ChatStoreOpenFailure{problem, std::move(message)});
+  return error;
+}
+
 Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
   const std::string path = SqliteThreadProfileDbFile(data_dir_);
   if (sqlite3_open(path.c_str(), &profile_db_) != SQLITE_OK) {
@@ -122,9 +149,14 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
   if (auto cfg = SqliteThreadConfigureDb(profile_db_); !cfg) {
     return cfg.error();
   }
-  auto outcome = RunSqliteLadder(profile_db_, path, ProfileDbLadder());
-  if (!outcome) {
-    return outcome.error();
+  const ByteVector dek = CopyDek();
+  auto outcome = RunSqliteLadder(profile_db_, path, ProfileDbLadder(), &dek);
+  if (const auto problem = ChatStoreProblemFor(outcome)) {
+    return RecordOpenFailure(*problem, *problem == ChatStoreProblem::Newer
+                                           ? "Incompatible profile.db: it is from a newer version of the app "
+                                             "(newer than schema " +
+                                                 std::to_string(kSqliteThreadProfileUserVersion) + ")"
+                                           : "Your chats could not be upgraded: " + outcome.error().message);
   }
   if (*outcome == SqliteLadderOutcome::Migrated) {
     log().info << "profile.db migrated to schema " << kSqliteThreadProfileUserVersion;
@@ -199,10 +231,13 @@ Roe<sqlite3*> SqliteThreadDb::OpenThreadDbFile(const std::string& thread_id) con
     sqlite3_close(db);
     return cfg.error();
   }
-  auto outcome = RunSqliteLadder(db, path, ThreadDbLadder());
-  if (!outcome) {
+  const ByteVector dek = CopyDek();
+  auto outcome = RunSqliteLadder(db, path, ThreadDbLadder(), &dek);
+  if (!outcome || *outcome == SqliteLadderOutcome::Newer) {
     sqlite3_close(db);
-    return Error(outcome.error().message + " (thread " + thread_id + ")");
+    return Error((outcome ? std::string("Incompatible thread.db: it is from a newer version of the app")
+                          : outcome.error().message) +
+                 " (thread " + thread_id + ")");
   }
   if (*outcome == SqliteLadderOutcome::Migrated) {
     log().info << "thread.db of " << thread_id << " migrated to schema " << kSqliteThreadUserVersion;

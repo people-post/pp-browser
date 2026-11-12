@@ -3,10 +3,12 @@
 #include "foundation/crypto/CryptoTypes.h"
 
 #include "common/Error.h"
+#include "lib/storage/SqliteChatStoreGate.h"
 #include "common/Module.h"
 
 #include <list>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -35,6 +37,10 @@ public:
   const std::string& profile_id() const { return profile_id_; }
   std::string ProfileDbPath() const;
 
+  /**
+   * Open profile.db (its ladder run with the data key) if not yet: refused before SetDek (the chat store opens only
+   * after unlock, D105), and after a failed open (newer, or not upgraded) until the store is reset.
+   */
   Roe<void> EnsureInitialized() const;
   Roe<sqlite3*> OpenThreadDb(const std::string& thread_id) const;
   void CloseThreadDb(const std::string& thread_id) const;
@@ -56,6 +62,8 @@ private:
   };
 
   Roe<void> OpenProfileDb() const;
+  /** Keeps the chat store shut after a failed open (until it is reset): logged, the gate told, every call refused. */
+  Error RecordOpenFailure(ChatStoreProblem problem, std::string message) const;
   Roe<void> OpenProfileDbUnguarded() const;
   Roe<void> EnsureThreadDirectory(const std::string& thread_id) const;
   /** A chat's thread.db, opened and brought through its ladder (a file below the floor is reset first). */
@@ -74,6 +82,8 @@ private:
   mutable std::unordered_map<std::string, ThreadDbHandle> thread_dbs_;
   mutable std::list<std::string> thread_lru_;
   mutable bool initialized_ = false;
+  mutable std::mutex init_mutex_;
+  mutable std::optional<Error> open_failure_;
 };
 
 } // namespace pbr

@@ -1,4 +1,5 @@
 #include "lib/storage/SqliteCallMediaKeyStore.h"
+#include "lib/storage/SqliteChatStoreGate.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -51,6 +52,9 @@ Roe<void> SqliteCallMediaKeyStore::RequireDek() const {
 }
 
 Roe<sqlite3*> SqliteCallMediaKeyStore::OpenDb() const {
+  if (auto gate = chat_store_gate::RequireOpen(profile_db_path_); !gate) {
+    return gate.error();
+  }
   sqlite3* db = nullptr;
   if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
     return Error("Failed to open profile.db for call media keys");
