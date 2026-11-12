@@ -24,6 +24,7 @@
 #include "lib/delivery/E2ePublicSessionLogic.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/delivery/EnvelopeSigner.h"
+#include "lib/delivery/OutboundMessage.h"
 #include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupRosterVersion.h"
@@ -64,11 +65,11 @@ Roe<void> RejectIfAnnotationCapExceeded(IThreadStore& store, const ThreadMessage
       fields && (fields->annotation_type == kAnnotationTypeRetract || fields->annotation_type == kAnnotationTypeEdit)) {
     return {}; // the cap guards against reaction floods; it must never stop a delete or an edit (only one is kept)
   }
-  auto count = store.CountAnnotationsForTarget(persisted.thread_id, target_id);
-  if (!count) {
-    return count.error();
+  auto reached = AnnotationCapReached(store, persisted.thread_id, target_id); // deletes and edits do not count
+  if (!reached) {
+    return reached.error();
   }
-  if (static_cast<size_t>(*count) >= kMaxAnnotationsPerTarget) {
+  if (*reached) {
     return Error("Annotation cap exceeded for target");
   }
   return {};

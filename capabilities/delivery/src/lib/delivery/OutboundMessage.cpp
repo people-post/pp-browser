@@ -57,14 +57,36 @@ Roe<void> CheckAnnotationCap(const IThreadStore& store, const std::string& threa
       fields && (fields->annotation_type == kAnnotationTypeRetract || fields->annotation_type == kAnnotationTypeEdit)) {
     return {}; // the cap guards against reaction floods; it must never stop a delete or an edit (only one is kept)
   }
-  auto count = store.CountAnnotationsForTarget(thread_id, target_id);
-  if (!count) {
-    return count.error();
+  auto reached = AnnotationCapReached(store, thread_id, target_id);
+  if (!reached) {
+    return reached.error();
   }
-  if (static_cast<size_t>(*count) >= kMaxAnnotationsPerTarget) {
+  if (*reached) {
     return Error("Too many reactions on this message");
   }
   return {};
+}
+
+Roe<bool> AnnotationCapReached(const IThreadStore& store, const std::string& thread_id, const std::string& target_id) {
+  auto rows = store.CountAnnotationsForTarget(thread_id, target_id); // every annotation row: cheap, no decrypt
+  if (!rows) {
+    return rows.error();
+  }
+  if (static_cast<size_t>(*rows) < kMaxAnnotationsPerTarget) {
+    return false;
+  }
+  // As many rows as the cap: only those it is for count. A delete or an edit is exempt from it, so it does not use it up
+  // either (each edit keeps a row, blanked once superseded: a message edited often still takes reactions).
+  auto annotations = store.GetAnnotationsForTarget(thread_id, target_id);
+  if (!annotations) {
+    return annotations.error();
+  }
+  const auto counted = std::count_if(annotations->begin(), annotations->end(), [](const ThreadMessage& annotation) {
+    auto fields = ChatPayloadCodec::DecodeAnnotationJson(annotation.payload_json);
+    return !fields ||
+           (fields->annotation_type != kAnnotationTypeRetract && fields->annotation_type != kAnnotationTypeEdit);
+  });
+  return static_cast<size_t>(counted) >= kMaxAnnotationsPerTarget;
 }
 
 Roe<ThreadMessage> AppendOutboundMessage(IThreadStore& store, ThreadMessage message) {

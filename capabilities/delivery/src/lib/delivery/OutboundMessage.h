@@ -37,6 +37,13 @@ ThreadMessage NewOutboundMessage(const std::string& thread_id, const std::string
 /** The per-target reaction cap; never stops a delete. */
 Roe<void> CheckAnnotationCap(const IThreadStore& store, const std::string& thread_id, const ThreadMessage& message);
 
+/**
+ * Whether `target_id` already carries kMaxAnnotationsPerTarget annotations the cap counts: reactions (and types this
+ * build does not know), never deletes or edits. CountAnnotationsForTarget, which counts every annotation row, stays as
+ * it is (the "anything aimed at it?" check on ingest).
+ */
+Roe<bool> AnnotationCapReached(const IThreadStore& store, const std::string& thread_id, const std::string& target_id);
+
 /** Number `message` on its thread (sender seq, session epoch), check the reaction cap and append it. */
 Roe<ThreadMessage> AppendOutboundMessage(IThreadStore& store, ThreadMessage message);
 

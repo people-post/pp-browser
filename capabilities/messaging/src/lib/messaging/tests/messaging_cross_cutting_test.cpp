@@ -2,6 +2,7 @@
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/delivery/EnvelopeSigner.h"
+#include "lib/delivery/OutboundMessage.h"
 #include "common/chat/MessagingLimits.h"
 #include "lib/delivery/AutoKeyEstablishment.h"
 #include "foundation/crypto/MlDsa.h"
@@ -1284,4 +1285,55 @@ TEST(MessagingCrossCuttingTest, AnEditRowIsNeverAChatRow) {
   EXPECT_EQ(rows[0].message.id, "peer-1");
   EXPECT_EQ(rows[0].message.text, "see you at 9");
   EXPECT_TRUE(rows[0].annotation_badges.empty());
+}
+
+// The reaction cap counts reactions: a message edited 40 times (40 edit rows, all but one blanked) still takes ours and
+// the peer's, and 32 reactions still fill it.
+TEST(MessagingCrossCuttingTest, AMessageEditedFortyTimesStillTakesReactions) {
+  PipelineHarness harness("edit_reaction_cap", ThreadChannel::E2e);
+  ReceiveOriginal(harness);
+  for (int i = 1; i <= 40; ++i) {
+    ASSERT_TRUE(harness.pipeline
+                    .ProcessEnvelope(harness.MakeEdit("edit-" + std::to_string(i), 1 + i, "peer-1",
+                                                      "try " + std::to_string(i), kSent + i * 10'000),
+                                     harness.local_account_id)
+                    .persisted);
+  }
+  ASSERT_EQ(harness.Stored("peer-1")->text, "try 40");
+  ASSERT_GE(harness.store.CountAnnotationsForTarget(harness.thread.id, "peer-1").value(), 40);
+
+  SendRelayOptions ours;
+  ours.content_type = ChatContentType::Annotation;
+  ours.payload_json = BuildReactionPayloadJson(kAnnotationTypeReaction, "peer-1", "x");
+  EXPECT_TRUE(
+      AppendOutboundMessage(harness.store, NewOutboundMessage(harness.thread.id, "x", ours, "mine-react", kSent)))
+      << "our reaction is not refused as too many";
+
+  ThreadMessage reaction;
+  reaction.content_type = ChatContentType::Annotation;
+  reaction.target_message_id = "peer-1";
+  reaction.text = "y";
+  reaction.payload_json = BuildReactionPayloadJson(kAnnotationTypeReaction, "peer-1", "y");
+  const RelayReceiveOutcome theirs = harness.pipeline.ProcessEnvelope(
+      harness.MakeSignedPayloadEnvelope("peer-react", 42, reaction), harness.local_account_id);
+  EXPECT_TRUE(theirs.persisted);
+  EXPECT_FALSE(theirs.receive_failure.has_value()) << "the peer's reaction is not rejected";
+
+  // Reactions alone still fill it: 30 more (32 with the two above), then the next one is refused, ours and theirs.
+  for (int i = 0; i < 30; ++i) {
+    ThreadMessage filler = reaction;
+    filler.id = "fill-" + std::to_string(i);
+    filler.thread_id = harness.thread.id;
+    filler.sender_contact_id = "account:peer";
+    filler.timestamp = kSent;
+    ASSERT_TRUE(harness.store.AppendMessage(filler));
+  }
+  auto over = AppendOutboundMessage(harness.store, NewOutboundMessage(harness.thread.id, "x", ours, "over", kSent));
+  ASSERT_FALSE(over);
+  EXPECT_EQ(over.error().message, "Too many reactions on this message");
+  const RelayReceiveOutcome flood = harness.pipeline.ProcessEnvelope(
+      harness.MakeSignedPayloadEnvelope("peer-react-over", 43, reaction), harness.local_account_id);
+  EXPECT_FALSE(flood.persisted);
+  ASSERT_TRUE(flood.receive_failure.has_value());
+  EXPECT_EQ(*flood.receive_failure, ReceiveFailure::ReactionRejected);
 }
