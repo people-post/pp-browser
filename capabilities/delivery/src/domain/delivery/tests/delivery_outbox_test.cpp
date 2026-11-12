@@ -441,7 +441,7 @@ TEST_F(DeliveryOutboxTest, AnUnknownRecipientIsRetriedOnlyOncePerAttemptAndNotQu
 }
 
 TEST_F(DeliveryOutboxTest, AnUnknownRecipientWithTheSameRouteOrNoneIsNotSentAgain) {
-  for (const std::optional<std::string> fresh :
+  for (const std::optional<std::string>& fresh :
        {std::optional<std::string>("relay:old"), std::optional<std::string>()}) {
     FakeRelay relay(0, AppError::Network(Err::Network::HttpNotFound, "404"));
     relay.RecipientDown("relay:old", true);
