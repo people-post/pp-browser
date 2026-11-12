@@ -18,7 +18,7 @@ namespace pbr {
  */
 inline constexpr const char* kDefaultMeshBootstrapPeers[] = {
     // The org relays the directory listed on 2026-10-31 (after the 2026-10-30 fleet move, #416), on wire v2 (N032
-    // item 3: an address says its wire version; a config's legacy /adp/1.0.0/ form still dials).
+    // item 3: an address says its wire version).
     "/ip4/34.233.23.235/udp/443/adp/2/p2p/QmZyhSEd95N31Az5Fvr9ZJ9Ugarzy5B1pbFfuUXtxEC9Cv",
     "/ip4/50.18.237.202/udp/443/adp/2/p2p/QmdyKbzCcjUe89Go4oB8nb2gRFCjDCP3bZCRTLkMUdkFkw",
     "/ip4/54.217.120.211/udp/443/adp/2/p2p/QmRmTERfW4NbMf8Seu6WyNg68j6sfXWtsKoDdLHVoMVhnv",

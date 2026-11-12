@@ -11,9 +11,15 @@ struct sqlite3;
 
 namespace pbr {
 
-/** profile.db / thread.db user_version — bump with incompatible layout (D102). */
-inline constexpr int kSqliteThreadProfileUserVersion = 4;
-inline constexpr int kSqliteThreadUserVersion = 2;
+/**
+ * profile.db / thread.db `user_version`: this build's schema, and the floor — the oldest still migrated (D102,
+ * D104; DATA_LAYOUT § Schema versions). A change to a table's shape is a step of the ladder
+ * (SqliteChatDbLadders.h): bump the version, add the step, keep the floor unless a milestone moves it.
+ */
+inline constexpr int kSqliteThreadProfileUserVersion = 5;
+inline constexpr int kSqliteThreadProfileFloorVersion = 4;
+inline constexpr int kSqliteThreadUserVersion = 3;
+inline constexpr int kSqliteThreadFloorVersion = 2;
 
 inline constexpr const char* kSqliteThreadMessageSelectColumns =
     "id, display_order, sender_contact_id, content_enc, content_type, control_type, timestamp, relay_visible, "
@@ -71,6 +77,7 @@ CREATE TABLE IF NOT EXISTS chat_targets (
   auto_key_session_id TEXT,
   auto_key_init_pending TEXT,
   auto_key_peer_heard_ms INTEGER,
+  restart_pending INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (peer_identity_kind, peer_identity_value, channel)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_targets_local_thread ON chat_targets(local_thread_id);

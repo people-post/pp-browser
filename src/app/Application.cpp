@@ -54,6 +54,9 @@
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/delivery/ChatPayloadValidator.h"
 #include "lib/storage/SqliteCallSessionStore.h"
+#include "gui/ChatStoreRecovery.h"
+#include "lib/storage/SqliteChatDbLadders.h"
+#include "lib/storage/SqliteChatStoreGate.h"
 #include "lib/storage/SqliteThreadSchema.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/AppLifecycle.h"
@@ -593,6 +596,27 @@ Roe<void> Application::ResetChatData() {
     }
   });
   return {};
+}
+
+void Application::OfferChatStoreRecovery(const ChatStoreRecoveryPrompt& prompt) {
+  if (chat_store_recovery_up_) {
+    return; // already asking
+  }
+  chat_store_recovery_up_ = true;
+  log().warning << "Chat store needs recovery: " << prompt.title_key;
+  ShowChatStoreRecovery(
+      prompt,
+      [this]() {
+        chat_store_recovery_up_ = false;
+        // Reset chats as Me → Storage does; start-up then goes on (the hub comes back with a fresh chat store).
+        if (auto reset = ResetChatData(); !reset) {
+          UserFeedback::Fail(UserFeedback::FailFrom(reset.error()));
+          return;
+        }
+        UserFeedback::Ok(Tr("settings.storage.chats_reset"));
+      },
+      // Declined: the next unlock attempt (any send or open of a chat) asks again.
+      [this]() { chat_store_recovery_up_ = false; });
 }
 
 Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
@@ -1581,7 +1605,20 @@ void Application::WireUnlockPinAndFlow() {
   ProfileUnlockPorts unlock_ports;
   unlock_ports.messaging_initialized = [&messaging]() { return messaging.IsInitialized(); };
   unlock_ports.messaging_ready = [&messaging]() { return messaging.IsMessagingReady(); };
-  unlock_ports.ensure_messaging_ready = [&messaging]() { return messaging.EnsureMessagingReady(); };
+  unlock_ports.ensure_messaging_ready = [this, &messaging]() -> Roe<void> {
+    auto ready = messaging.EnsureMessagingReady();
+    if (ready) {
+      return ready;
+    }
+    // The PIN was right and the vault is open, but the chat store did not open after it (newer than this build, or
+    // an upgrade that failed, D105): leave the PIN screen and offer the recovery, rather than a PIN error.
+    const auto failure = chat_store_gate::OpenFailure(messaging.ProfileDbPath());
+    if (auto prompt = ChatStoreRecoveryFor(failure ? std::optional(failure->problem) : std::nullopt)) {
+      AppRuntime::PostUI([this, prompt = *prompt]() { OfferChatStoreRecovery(prompt); });
+      return {};
+    }
+    return ready;
+  };
   unlock_ports.pin_is_default = [this]() {
     return store_.IsInitialized() && store_.Snapshot().profile_prefs.pin_is_default;
   };
@@ -2341,6 +2378,10 @@ void Application::WireHubCallbacks() {
       call_->OnMessagingReady();
     }
     contacts_->Refresh();
+    // A chat database too old to upgrade was reset when it opened (D105): say so once.
+    if (TakeChatStoreResetNotice(store_.Snapshot().profile_data_dir)) {
+      UserFeedback::Note(Tr("settings.storage.chats_reset_too_old"));
+    }
     if (messaging_facade_ && support_discovery_ && support_discovery_->enabled) {
       messaging_facade_->SetSupportAccountId(support_discovery_->account_id);
     }

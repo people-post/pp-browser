@@ -98,14 +98,14 @@ Opened immediately after Session `Established`.
 
 **Dialer (outbound link) opens channel 0** and sends a capability payload; **responder OpenAcks and replies** with its own payload on the same channel ([A016](../../projects/adp/DECISIONS.md#a016--channel-0--capability--identify-plane)). Wired from `PeerLinkManager::OnLinkEstablished`.
 
-**Payload (Transactional / Control DATA):**
+**Payload (Transactional / Control DATA)**, leading byte `4` (`2` is session control; `1`, the payload before it said what the node runs, and `3`, that alone, are retired and refused):
 
 - `local_peer_id`
 - `listen_multiaddrs[]`
 - `protocols[]` supported (includes circuit / media-relay protocol ids when hosted)
-- `capabilities` object (circuit_relay, media_relay, … — mirrors today’s Identify extensions; v1 binary codec carries flags via `protocols[]` until an explicit flags field is added)
+- what the node runs ([N032](../../projects/p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes)): `amp_wire` (u8), `node_version` (len-prefixed UTF-8), `features[]` (string list). pp-node (and a desktop in the node role) fills `node_version` with its build's version; an app in the client role sends it empty. `RemoteCapability(peer_id)` reads a connected peer's.
 
-**Extension** ([N032](../../projects/p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes), pp-cpp-amp v4.1.0): after the payload above (the dialer on the responder's reply, the responder right after its reply), each side sends one more message on channel 0. Leading byte `3` (`1` is the payload above, `2` session control): `amp_wire` (u8), `node_version` (len-prefixed UTF-8), `features[]` (string list). A peer before it refuses it as an unknown payload version and drops it, after the exchange above has completed; a decoder ignores bytes past the fields it knows. pp-node (and a desktop in the node role) fills `node_version` with its build's version; an app in the client role sends it empty. `RemoteCapabilityExtension(peer_id)` reads a connected peer's.
+A decoder ignores bytes past the fields it knows (a later version's). Until 2026-11-12 the node's claims went as a second message (leading byte `3`) so a peer before them could drop it; with no bridges pre-release they ride the payload.
 
 Channel 0 may stay open (long-lived control) or close after exchange — implementation policy; default **long-lived, Reliable Control**.
 
@@ -138,17 +138,19 @@ Max reassembled size defaults match today’s stream caps:
 
 Core factories: pp-cpp-amp `amp/L3/ChannelPolicy.h` (Amp owns Bulk class + size). Product L4 factories: pp-cpp-mesh `mesh/l4/shared/ProductChannelPolicies.h` (product-only extras + `read_once` / timeouts). See [pp-cpp-amp OWNERSHIP](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/OWNERSHIP.md).
 
-| Factory | Class | `max_outbound` | Drop | `read_once` | Read timeout | Home |
-|---------|-------|----------------|------|-------------|--------------|------|
-| `CallMediaChannelPolicy` | Realtime | 64 | Oldest | no | off | core |
-| `CallMediaControlChannelPolicy` | RealtimeControl | 1 | Never | no | off | product |
-| `MediaRelayHopChannelPolicy` | Realtime | 2 | Oldest | no | off | product |
-| `MediaRelayClientChannelPolicy` | RealtimeControl | 6 | Never | no | off | product |
-| `CircuitTunnelChannelPolicy` | Control | 1 | Never | no | off | product |
-| `CircuitCarrierChannelPolicy` | Realtime | 64 | Oldest | no | off | core |
-| `ControlJsonChannelPolicy` | Control | 1 | Never | yes | 8 s (callers pass their deadline) | core |
-| `MakeBulkChannelPolicy` / `BulkChannelPolicy()` | Bulk | 1 | Never | no | off | **core** |
-| `BulkChannelPolicy(bool)` (wrap + timeout) | Bulk | 1 | Never | configurable | 8 s (client: remaining operation time; inbound: 15 s) | product |
+| Factory | Class | `read_once` | Read timeout | Home |
+|---------|-------|-------------|--------------|------|
+| `CallMediaChannelPolicy` | Realtime | no | off | core |
+| `CallMediaControlChannelPolicy` | RealtimeControl | no | off | product |
+| `MediaRelayDataChannelPolicy` | Realtime | no | off | product |
+| `MediaRelayClientChannelPolicy` | RealtimeControl | no | off | product |
+| `CircuitTunnelChannelPolicy` | Control | no | off | product |
+| `CircuitCarrierChannelPolicy` | Realtime | no | off | core |
+| `ControlJsonChannelPolicy` | Control | yes | 8 s (callers pass their deadline) | core |
+| `MakeBulkChannelPolicy` / `BulkChannelPolicy()` | Bulk | no | off | **core** |
+| `BulkChannelPolicy(bool)` (wrap + timeout) | Bulk | configurable | 8 s (client: remaining operation time; inbound: 15 s) | product |
+
+No policy queues or drops outbound (pp-cpp-amp v6.0.0): a session sends each payload to its mux at once; a reliable frame waits there for window space, a best-effort one goes to the link. The drop-oldest caps (64 call-media, 2 hop, 6 client, 1 control) never filled and are gone.
 
 **Read timeout is enforced** (pp-cpp-amp v2.15.0+): a channel with nothing *inbound*
 for that long is reset (`read-timeout` to the local side, RESET to the peer); the clock
@@ -220,7 +222,7 @@ A live call can move to another Connected link to the same peer (e.g. a punched 
 | 4 | new control (driver → peer) | `{"v":1,"type":"path_release","path_gen":n}` once media arrived on the new path and ≥ 1 s passed (≤ 5 s) |
 | 5 | same | `{"v":1,"type":"path_release_ack","path_gen":n}` — both close the old path's channels; closes on a released / retiring path are never failures |
 
-The call stays on its path when the candidate fails before step 3: `migrate_ack` refusal, the candidate link or channel lost, or **no answer in 5 s** (`kCallMediaMigrateTimeoutMs`) — a peer from before k3 ignores the unknown `type`. If the new path dies **after** step 3 but before step 5 (a punched link lost to the dual-dial election a moment after the switch), both ends go back onto the retiring path — it is still bound and alive — and report the change like any failover. A lost candidate link, or such a fall-back, lets the driver's automatic relayed → direct move try another direct link at once (the lost one cannot be retried; an unused cold link lives only ~5 s). `path_gen` counts paths within the call (0 = the one it started on).
+The call stays on its path when the candidate fails before step 3: `migrate_ack` refusal, the candidate link or channel lost, or **no answer in 5 s** (`kCallMediaMigrateTimeoutMs`: the `migrate` or its ack lost, or the peer gone). If the new path dies **after** step 3 but before step 5 (a punched link lost to the dual-dial election a moment after the switch), both ends go back onto the retiring path — it is still bound and alive — and report the change like any failover. A lost candidate link, or such a fall-back, lets the driver's automatic relayed → direct move try another direct link at once (the lost one cannot be retried; an unused cold link lives only ~5 s). `path_gen` counts paths within the call (0 = the one it started on).
 
 ### Path liveness and failover (call-path-resilience k4)
 
@@ -230,7 +232,7 @@ The call stays on its path when the candidate fails before step 3: `migrate_ack`
 - **Follow:** an `active:true` heartbeat arriving on this end's standby means the peer moved there — this end switches too.
 - **No path left** (active link lost, no standby): the call is kept — MediaReady on a dead path — for a **30 s reconnect window** (`kCallMediaReconnectWindowMs`). A `migrate` onto any new link to the peer (the offerer reaches it again) brings it back; the window running out drops the call: the leg reports `CallMediaErr::Dropped` (K014 — a call that was connected, never a connect failure), as it does for any end of a MediaReady leg under the call but the peer's `bye`. A fresh `hello` for the same call (a peer from before k4 re-dialing) replaces the reconnecting bundle.
 - **Quiet rebind** (k7): when the path is lost while the peer is still Connected on another link (typically a simultaneous punch: both ends' associations came up and the dual-dial election dropped the one the call had bound), the glare winner migrates onto that link at once and the loss is not reported. The product hears of it (`on_path_lost` → `Reconnecting…`) only if the call is still without a path **1 s** later. The lost path leaves nothing behind: no retiring or standby entry.
-- **Standby add** (k6, K003): `{"v":1,"type":"path_add","call_id","media_epoch","path_gen"}` runs the migration handshake (`migrate_ack`, media channel) but the new path becomes the call's **standby** — TX stays on the active path, nothing is released. Refused (`migrate_ack` `ok:false`, `standby present`) when the call has a standby already; a peer without k6 ignores the unknown type, the add times out (5 s) and the call is unchanged. The offerer adds a relayed standby to a call Live on a direct / punched path (5 / 20 / 60 s attempts).
+- **Standby add** (k6, K003): `{"v":1,"type":"path_add","call_id","media_epoch","path_gen"}` runs the migration handshake (`migrate_ack`, media channel) but the new path becomes the call's **standby** — TX stays on the active path, nothing is released. Refused (`migrate_ack` `ok:false`, `standby present`) when the call has a standby already; unanswered, the add times out (5 s) and the call is unchanged. The offerer adds a relayed standby to a call Live on a direct / punched path (5 / 20 / 60 s attempts).
 - **Roles:** the glare winner is the offerer. A bundle created from the peer's `hello` takes the complementary role, and a local leg that joins it (the offerer's media started after the answerer's hello arrived) sets its own role, so exactly one end drives.
 
 ### Ending a call (call-path-resilience K014)
@@ -290,20 +292,20 @@ For Amp **call-media** over circuit, the bridged channel is **not** the product 
 
 1. A and B run **inner MSH** over the carrier (`PeerLink` carrier mode; non-chunked `AmpAdpCarrier` MSH/sealed frames as ChannelSession DATA).
 2. Inner `Session` + `ChannelMux` becomes a normal PeerLink; `OpenChannel` opens A021 control+media on that mux.
-3. Outer policy: `CircuitCarrierChannelPolicy` (BestEffort Realtime, large outbound queue) so media FRAG bursts are not stalled by ADP `reliable_window`.
+3. Outer policy: `CircuitCarrierChannelPolicy` (BestEffort Realtime) so media FRAG bursts are not stalled by ADP `reliable_window`.
 
 **Carrier payloads** (one per carrier DATA message, first byte the kind):
 
 | Kind | Layout | Use |
 |------|--------|-----|
-| `0` Msh / `2` MshChunk | `[kind][msh type][body]` | inner handshake |
+| `0` Msh / `2` MshChunk | `[kind][msh type][body]` | inner handshake: a message that fits one frame as `Msh`, a larger one as `MshChunk` pieces (first send and resends alike) |
 | `1` Sealed / `5` SealedReliable | `[kind][number u32 LE][frame ciphertext][tag 16]` | inner data, sealed by the inner session ([AMP-SESSION.md § Sealing packets](AMP-SESSION.md#sealing-packets)): spaces CarrierBestEffort / CarrierReliable, `[kind][number]` the associated data |
 | `3` LaneData | `[kind][lane seq u32 LE][inner payload]` | the reliable lane around a SealedReliable packet |
-| `4` LaneAck | `[kind][cumulative u32][selective u64]` | lane acks; cumulative 0 + no bits = the lane probe |
+| `4` LaneAck | `[kind][cumulative u32][selective u64]` | lane acks (every nested link speaks the lane: no probe, no negotiation) |
 
 Each inner space keeps a replay window (best effort 128, reliable 1024): a relay between the ends could replay an inner packet, and the window turns it away. An inner frame is at most the nested link's budget (§ Fragmentation), so a sealed inner packet rides one outer DATA frame whole.
 
-Media-relay SoftMigrate continues to adopt one opaque channel (5c); nested Session is call-media only. See [CALL_MEDIA_CIRCUIT.md](../../projects/adp/CALL_MEDIA_CIRCUIT.md).
+A media-relay hop reachable only through a circuit is reached the same way: a nested Session, on which the hop's control channel and its data lane open as on a direct link (pp-cpp-mesh v7.0.0; the single adopted tunnel channel of D9 5c is gone). See [CALL_MEDIA_CIRCUIT.md](../../projects/adp/CALL_MEDIA_CIRCUIT.md).
 
 ## Three objects (do not collapse)
 
@@ -351,7 +353,7 @@ PeerLinkManager                 // owns PeerLink by key; elects/drops links (A02
 | QoS map | Reliable channel never sends BE ADP |
 | Fragmentation | loss, reorder, dup, timeout |
 | ch0 | capability round-trip |
-| Policy | drop oldest, read_once, 8 s timeout |
+| Policy | read_once, 8 s timeout; a best-effort session sends at once (no queue) |
 | Isolate | RESET does not kill sibling channel |
 | Ownership canaries | DualDial call-media (`CallMediaLeg*`); media-relay adopt + `Subscribe` after attach (`LocalHopFanoutRoundTrip`) |
 

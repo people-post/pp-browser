@@ -49,7 +49,7 @@
 | Tip L1 hints | `PeerAnnounceTip::l1_hop_peer_ids` (codec omit-empty) |
 
 | Broadcast RPC codec | `BroadcastRpcCodec.*` — ticket_request/response, viewer_attach(_result), relay_slot_win(_result); `/pp/rpc/broadcast/1.0.0` |
-| Session shape | None — watching is not a call session. `CallSessionKind::Broadcast` is a legacy parsed value only; `AcceptInvite` refuses it |
+| Session shape | None — watching is not a call session. `CallSessionKind` is gone (2026-11-12, no bridges pre-release): a call row has no kind |
 
 | Amp broadcast RPC | `feature/broadcast/AmpBroadcastTransport.*` — ticket mint, viewer_attach, relay_slot_win over `/pp/rpc/broadcast/1.0.0` |
 | Mesh advertise + wire | `MeshHost` advertises broadcast protocol; `MeshDeliveryOrchestrator` starts service + device key resolvers |

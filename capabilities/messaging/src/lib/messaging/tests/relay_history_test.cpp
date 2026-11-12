@@ -17,7 +17,7 @@ TEST(RelayHistoryTest, HistoryRequestBuildsQueryString) {
   request.limit = 50;
   request.order = "asc";
 
-  const std::string query = ChatHistoryRequestToQueryString(request);
+  const std::string query = StreamHistoryRequestToQueryString(request);
   EXPECT_NE(query.find("sender_contact_id=relay:peer"), std::string::npos);
   EXPECT_NE(query.find("stream_id="), std::string::npos);
   EXPECT_NE(query.find("min_index_key=10"), std::string::npos);

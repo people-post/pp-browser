@@ -102,9 +102,6 @@ public:
   /** `--config`, else PP_BROWSER_CONFIG, else `fallback`; empty: no file. */
   static std::string DiscoverConfigPath(int argc, char** argv, Fallback fallback = Fallback::AppConfigFile);
 
-  // Backward-compatible alias used by Application.h default arg.
-  static AppConfig DefaultOllama() { return DefaultAppConfig(); }
-
 private:
   Config();
 };

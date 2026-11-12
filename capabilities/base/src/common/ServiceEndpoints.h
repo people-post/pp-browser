@@ -20,9 +20,8 @@ struct ServiceEndpointConfig {
 };
 
 /**
- * Directory / phone-book endpoints (N029 nd3).
- * Legacy: `base_url` (+ optional `transport`).
- * Preferred: ordered `providers[]` with failover; empty providers → synthesize from base_url.
+ * Directory / phone-book endpoints (N029 nd3): one provider, `base_url` (+ `transport`), as the defaults and the
+ * backend choice set it; or an ordered `providers[]` with failover, whose first base_url mirrors.
  */
 struct DirectoryConfig {
   std::string base_url;

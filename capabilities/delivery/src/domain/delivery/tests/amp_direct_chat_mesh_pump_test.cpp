@@ -1,4 +1,5 @@
 #include "domain/delivery/AmpDirectChatTransport.h"
+#include "DirectSendWait.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 
 #include "amp/L1/Clock.h"
@@ -129,7 +130,7 @@ TEST(AmpDirectChatMeshPumpTest, SyncSendFromNonDriveThreadIsAcked) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   ASSERT_TRUE(a->host->Amp()->Links().IsConnected(b->peer_id)) << "associated_cb=" << associated.load();
-  auto sent = a_chat->SendEnvelope(b->peer_id, MakeEnvelope());
+  auto sent = test::SendAndWait(*a_chat, b->peer_id, MakeEnvelope(), {});
   EXPECT_TRUE(static_cast<bool>(sent)) << sent.error().message;
 
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);

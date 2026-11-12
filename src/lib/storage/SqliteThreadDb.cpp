@@ -1,8 +1,9 @@
 #include "lib/storage/SqliteThreadDb.h"
 
+#include "lib/storage/SqliteChatDbLadders.h"
+#include "lib/storage/SqliteChatStoreGate.h"
+#include "lib/storage/SqliteMigrations.h"
 #include "lib/storage/SqliteThreadSchema.h"
-#include "lib/storage/SqliteGroupRosterStore.h"
-#include "lib/storage/SqliteThreadLocalPrefsStore.h"
 #include "foundation/error/AppError.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
@@ -22,9 +23,11 @@ SqliteThreadDb::SqliteThreadDb(std::string data_dir) : data_dir_(std::move(data_
   if (profile_id_.empty()) {
     profile_id_ = "default";
   }
+  chat_store_gate::Hold(ProfileDbPath());
 }
 
 SqliteThreadDb::~SqliteThreadDb() {
+  chat_store_gate::Release(ProfileDbPath());
   ClearDek();
   std::lock_guard profile_lock(profile_mutex_);
   for (auto& [thread_id, handle] : thread_dbs_) {
@@ -44,11 +47,18 @@ Roe<void> SqliteThreadDb::SetDek(ByteVector dek) {
   if (dek.size() != 32u) {
     return Error("Invalid DEK size");
   }
-  std::lock_guard lock(dek_mutex_);
-  if (!dek_.empty()) {
-    sodium_memzero(dek_.data(), dek_.size());
+  {
+    std::lock_guard lock(dek_mutex_);
+    if (!dek_.empty()) {
+      sodium_memzero(dek_.data(), dek_.size());
+    }
+    dek_ = std::move(dek);
   }
-  dek_ = std::move(dek);
+  // The key is in: the chat store opens now, its ladder with it. A store that cannot be opened (newer than this
+  // build, or a failed upgrade) does not fail the unlock — it stays shut, and says why (chat_store_gate::OpenFailure).
+  if (auto opened = EnsureInitialized(); !opened) {
+    log().error << "Chat store not opened after unlock: " << opened.error().message;
+  }
   return {};
 }
 
@@ -78,18 +88,23 @@ std::string SqliteThreadDb::ProfileDbPath() const {
 }
 
 Roe<void> SqliteThreadDb::EnsureProfileOpen() const {
-  return OpenProfileDb();
+  return EnsureInitialized();
 }
 
 Roe<void> SqliteThreadDb::EnsureInitialized() const {
+  std::lock_guard lock(init_mutex_);
   if (initialized_) {
     return {};
   }
+  if (open_failure_) {
+    return *open_failure_;
+  }
+  // Nothing is opened, created or migrated before the profile is unlocked (D105).
+  if (auto dek = RequireDek(); !dek) {
+    return dek.error();
+  }
   std::error_code ec;
   std::filesystem::create_directories(SqliteThreadsRoot(data_dir_), ec);
-  if (auto wipe = WipeLegacyJsonIfPresent(); !wipe) {
-    return wipe.error();
-  }
   if (auto open = OpenProfileDb(); !open) {
     return open.error();
   }
@@ -97,23 +112,7 @@ Roe<void> SqliteThreadDb::EnsureInitialized() const {
     return repair.error();
   }
   initialized_ = true;
-  return {};
-}
-
-Roe<void> SqliteThreadDb::WipeLegacyJsonIfPresent() const {
-  const std::filesystem::path index = std::filesystem::path(SqliteThreadsRoot(data_dir_)) / "index.json";
-  if (!std::filesystem::exists(index)) {
-    return {};
-  }
-  std::error_code ec;
-  for (const auto& entry : std::filesystem::directory_iterator(SqliteThreadsRoot(data_dir_), ec)) {
-    if (!entry.is_regular_file()) {
-      continue;
-    }
-    if (entry.path().extension() == ".json") {
-      std::filesystem::remove(entry.path(), ec);
-    }
-  }
+  chat_store_gate::MarkOpen(ProfileDbPath());
   return {};
 }
 
@@ -134,54 +133,51 @@ Roe<void> SqliteThreadDb::OpenProfileDb() const {
   return opened;
 }
 
+Error SqliteThreadDb::RecordOpenFailure(const ChatStoreProblem problem, std::string message) const {
+  log().error << message;
+  Error error = AppError::Storage(Err::Storage::Unavailable, message);
+  open_failure_ = error;
+  chat_store_gate::MarkFailed(ProfileDbPath(), ChatStoreOpenFailure{problem, std::move(message)});
+  return error;
+}
+
 Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
-  const bool created = !std::filesystem::exists(SqliteThreadProfileDbFile(data_dir_));
-  if (sqlite3_open(SqliteThreadProfileDbFile(data_dir_).c_str(), &profile_db_) != SQLITE_OK) {
+  const std::string path = SqliteThreadProfileDbFile(data_dir_);
+  if (sqlite3_open(path.c_str(), &profile_db_) != SQLITE_OK) {
     return Error("Failed to open profile.db");
   }
   if (auto cfg = SqliteThreadConfigureDb(profile_db_); !cfg) {
     return cfg.error();
   }
-  int user_version = 0;
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(profile_db_, "PRAGMA user_version;", -1, &stmt, nullptr) == SQLITE_OK) {
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-      user_version = sqlite3_column_int(stmt, 0);
-    }
-    sqlite3_finalize(stmt);
+  const ByteVector dek = CopyDek();
+  auto outcome = RunSqliteLadder(profile_db_, path, ProfileDbLadder(), &dek);
+  if (const auto problem = ChatStoreProblemFor(outcome)) {
+    return RecordOpenFailure(*problem, *problem == ChatStoreProblem::Newer
+                                           ? "Incompatible profile.db: it is from a newer version of the app "
+                                             "(newer than schema " +
+                                                 std::to_string(kSqliteThreadProfileUserVersion) + ")"
+                                           : "Your chats could not be upgraded: " + outcome.error().message);
   }
-  if (created || user_version == 0) {
-    if (auto schema = SqliteThreadExecSql(profile_db_, kSqliteThreadProfileSchemaV1); !schema) {
-      return schema.error();
-    }
-    if (auto version = SqliteThreadApplyUserVersion(profile_db_, kSqliteThreadProfileUserVersion); !version) {
-      return version.error();
-    }
-  } else if (user_version != kSqliteThreadProfileUserVersion) {
-    return Error("Incompatible profile.db (schema " + std::to_string(user_version) + ", expected " +
-                 std::to_string(kSqliteThreadProfileUserVersion) + ") — reset chats in Me → Storage");
+  if (*outcome == SqliteLadderOutcome::Migrated) {
+    log().info << "profile.db migrated to schema " << kSqliteThreadProfileUserVersion;
   }
-  // Additive threads column (an older profile.db lacks it: its threads are all listed).
-  (void)sqlite3_exec(profile_db_, "ALTER TABLE threads ADD COLUMN listed INTEGER NOT NULL DEFAULT 1;", nullptr, nullptr,
-                     nullptr);
-  // Additive chat_targets columns (an older profile.db lacks them; already there: the ALTER fails, ignored).
-  (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN auto_key_session_id TEXT;", nullptr, nullptr,
-                     nullptr);
-  (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN auto_key_init_pending TEXT;", nullptr, nullptr,
-                     nullptr);
-  (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN auto_key_peer_heard_ms INTEGER;", nullptr,
-                     nullptr, nullptr);
-  (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN restart_pending INTEGER NOT NULL DEFAULT 0;",
-                     nullptr, nullptr, nullptr);
-  SqliteGroupRosterStore roster_store(SqliteThreadProfileDbFile(data_dir_));
-  if (auto group_schema = roster_store.EnsureSchema(profile_db_); !group_schema) {
-    return group_schema.error();
+  if (*outcome != SqliteLadderOutcome::BelowFloor) {
+    return {};
   }
-  SqliteThreadLocalPrefsStore prefs_store(SqliteThreadProfileDbFile(data_dir_));
-  if (auto prefs_schema = prefs_store.EnsureSchema(profile_db_); !prefs_schema) {
-    return prefs_schema.error();
+  // Older than the floor: too old to upgrade. The whole chat store goes (its thread.db files belong to this
+  // catalog), as Me → Storage → Reset chats does; the account, contacts and settings live beside it.
+  sqlite3_close(profile_db_);
+  profile_db_ = nullptr;
+  log().error << "profile.db is from a version too old to upgrade (below schema " << kSqliteThreadProfileFloorVersion
+              << "): the chats were reset";
+  std::error_code ec;
+  std::filesystem::remove_all(SqliteThreadsRoot(data_dir_), ec);
+  if (ec) {
+    return Error("profile.db too old to upgrade, and the chats could not be reset: " + ec.message());
   }
-  return {};
+  std::filesystem::create_directories(SqliteThreadsRoot(data_dir_), ec);
+  NoteChatStoreReset(data_dir_, "profile.db");
+  return OpenProfileDbUnguarded(); // a new, empty file: created at the current schema
 }
 
 Roe<void> SqliteThreadDb::EnsureThreadDirectory(const std::string& thread_id) const {
@@ -207,49 +203,58 @@ Roe<sqlite3*> SqliteThreadDb::OpenThreadDb(const std::string& thread_id) const {
     if (auto dir = EnsureThreadDirectory(thread_id); !dir) {
       return dir.error();
     }
+    auto opened = OpenThreadDbFile(thread_id);
+    if (!opened) {
+      return opened.error();
+    }
     ThreadDbHandle handle;
-    if (sqlite3_open(SqliteThreadDbFile(data_dir_, thread_id).c_str(), &handle.db) != SQLITE_OK) {
-      const std::string detail = handle.db ? sqlite3_errmsg(handle.db) : "sqlite3_open failed";
-      if (handle.db) {
-        sqlite3_close(handle.db);
-        handle.db = nullptr;
-      }
-      return Error("Failed to open thread.db: " + thread_id + " (" + detail + ")");
-    }
-    if (auto cfg = SqliteThreadConfigureDb(handle.db); !cfg) {
-      sqlite3_close(handle.db);
-      return cfg.error();
-    }
-    int user_version = 0;
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(handle.db, "PRAGMA user_version;", -1, &stmt, nullptr) == SQLITE_OK) {
-      if (sqlite3_step(stmt) == SQLITE_ROW) {
-        user_version = sqlite3_column_int(stmt, 0);
-      }
-      sqlite3_finalize(stmt);
-    }
-    if (user_version == 0) {
-      if (auto schema = SqliteThreadExecSql(handle.db, kSqliteThreadSchemaV2); !schema) {
-        sqlite3_close(handle.db);
-        return schema.error();
-      }
-      if (auto version = SqliteThreadApplyUserVersion(handle.db, kSqliteThreadUserVersion); !version) {
-        sqlite3_close(handle.db);
-        return version.error();
-      }
-    } else if (user_version != kSqliteThreadUserVersion) {
-      sqlite3_close(handle.db);
-      return Error("Incompatible thread.db (schema " + std::to_string(user_version) + ", expected " +
-                   std::to_string(kSqliteThreadUserVersion) + ") — reset chats in Me → Storage");
-    }
-    // Additive messages column (M021; an older thread.db lacks it — already there: the ALTER fails, ignored).
-    (void)sqlite3_exec(handle.db, "ALTER TABLE messages ADD COLUMN sender_device TEXT;", nullptr, nullptr, nullptr);
+    handle.db = *opened;
     thread_dbs_[thread_id] = handle;
     it = thread_dbs_.find(thread_id);
   }
   TouchThreadLru(thread_id);
   EvictThreadDbsIfNeeded();
   return it->second.db;
+}
+
+Roe<sqlite3*> SqliteThreadDb::OpenThreadDbFile(const std::string& thread_id) const {
+  const std::string path = SqliteThreadDbFile(data_dir_, thread_id);
+  sqlite3* db = nullptr;
+  if (sqlite3_open(path.c_str(), &db) != SQLITE_OK) {
+    const std::string detail = db ? sqlite3_errmsg(db) : "sqlite3_open failed";
+    if (db) {
+      sqlite3_close(db);
+    }
+    return Error("Failed to open thread.db: " + thread_id + " (" + detail + ")");
+  }
+  if (auto cfg = SqliteThreadConfigureDb(db); !cfg) {
+    sqlite3_close(db);
+    return cfg.error();
+  }
+  const ByteVector dek = CopyDek();
+  auto outcome = RunSqliteLadder(db, path, ThreadDbLadder(), &dek);
+  if (!outcome || *outcome == SqliteLadderOutcome::Newer) {
+    sqlite3_close(db);
+    return Error((outcome ? std::string("Incompatible thread.db: it is from a newer version of the app")
+                          : outcome.error().message) +
+                 " (thread " + thread_id + ")");
+  }
+  if (*outcome == SqliteLadderOutcome::Migrated) {
+    log().info << "thread.db of " << thread_id << " migrated to schema " << kSqliteThreadUserVersion;
+  }
+  if (*outcome != SqliteLadderOutcome::BelowFloor) {
+    return db;
+  }
+  // Older than the floor: that chat's messages are reset; its place in the catalog stays.
+  sqlite3_close(db);
+  log().error << "thread.db of " << thread_id << " is from a version too old to upgrade (below schema "
+              << kSqliteThreadFloorVersion << "): its messages were reset";
+  std::error_code ec;
+  for (const char* suffix : {"", "-wal", "-shm", "-journal"}) {
+    std::filesystem::remove(path + suffix, ec);
+  }
+  NoteChatStoreReset(data_dir_, "thread.db " + thread_id);
+  return OpenThreadDbFile(thread_id); // a new, empty file: created at the current schema
 }
 
 void SqliteThreadDb::TouchThreadLru(const std::string& thread_id) const {

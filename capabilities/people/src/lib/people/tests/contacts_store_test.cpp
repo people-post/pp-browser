@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <gtest/gtest.h>
 #include <sstream>
 #include "common/PbrCompat.h"
@@ -152,54 +153,27 @@ TEST_F(ContactsStoreTest, AddFromDirectoryHitRequiresAccountId) {
   EXPECT_NE(result.error().message.find("Account ID"), std::string::npos);
 }
 
-TEST_F(ContactsStoreTest, SchemaVersionWrittenAndLegacyMigrated) {
+// A contacts file of another version than this build's is refused, older (or unversioned) as newer: pre-release,
+// no leftover contacts file is carried over.
+TEST_F(ContactsStoreTest, RejectsAnOlderOrUnversionedFile) {
   const auto path = data_dir_ / "contacts.json";
   std::filesystem::create_directories(data_dir_);
-  {
-    Object id_row;
-    id_row.set("kind", "relay_user");
-    id_row.set("value", "relay:alice");
-    id_row.set("primary", true);
-
-    Object contact;
-    contact.set("id", "c1");
-    contact.set("display_name", "Alice");
-    contact.set("server_nickname", "alice");
-    contact.set("ids", ArrayValue({ObjectValue(std::move(id_row))}));
-    contact.set("multiaddrs", ArrayValue({}));
-    contact.set("trust", "friendly");
-
-    Object legacy;
-    legacy.set("contacts", ArrayValue({ObjectValue(std::move(contact))}));
-    std::ofstream out(path);
-    ASSERT_TRUE(static_cast<bool>(out));
-    out << DumpJson(legacy, 2);
+  for (const std::optional<int64_t> version : {std::optional<int64_t>{}, std::optional<int64_t>{1}}) {
+    {
+      Object old;
+      if (version) {
+        old.set("schema_version", *version);
+      }
+      old.set("contacts", ArrayValue({}));
+      std::ofstream out(path);
+      ASSERT_TRUE(static_cast<bool>(out));
+      out << DumpJson(old, 2);
+    }
+    ContactsStore store(data_dir_.string());
+    auto listed = store.List();
+    ASSERT_FALSE(static_cast<bool>(listed));
+    EXPECT_NE(listed.error().message.find("schema"), std::string::npos) << listed.error().message;
   }
-
-  ContactsStore store(data_dir_.string());
-  auto listed = store.List();
-  ASSERT_TRUE(static_cast<bool>(listed)) << listed.error().message;
-  ASSERT_EQ(listed->size(), 1u);
-  EXPECT_EQ(listed->front().local.display_name, "Alice");
-  EXPECT_EQ(listed->front().remote.nickname, "alice");
-  EXPECT_EQ(listed->front().local.trust, TrustLevel::Friendly);
-
-  std::ifstream in(path);
-  ASSERT_TRUE(static_cast<bool>(in));
-  std::ostringstream ss;
-  ss << in.rdbuf();
-  auto rewritten = TryParseObject(ss.str());
-  ASSERT_TRUE(static_cast<bool>(rewritten));
-  ASSERT_TRUE(rewritten->contains("schema_version"));
-  EXPECT_EQ(static_cast<int>(rewritten->getIf<int64_t>("schema_version").value_or(-1)), ContactsStore::kSchemaVersion);
-  const Array* contacts = rewritten->getArray("contacts");
-  ASSERT_NE(contacts, nullptr);
-  ASSERT_EQ(contacts->elements.size(), 1u);
-  const Object* first = asObject(contacts->elements[0]);
-  ASSERT_NE(first, nullptr);
-  EXPECT_TRUE(first->contains("local"));
-  EXPECT_TRUE(first->contains("remote"));
-  EXPECT_TRUE(first->contains("overrides"));
 }
 
 TEST_F(ContactsStoreTest, RejectsNewerSchemaVersion) {
@@ -361,67 +335,6 @@ TEST_F(ContactsStoreTest, AddingAContactLeavesTheRemarkEmpty) {
   EXPECT_EQ(ContactEffectiveTitle(*renamed), "Ada Lovelace");
 }
 
-// Older builds copied the nickname into the remark when a contact was added. The first load of such a file
-// clears those copies once; remarks the user wrote are kept, including one written afterwards that happens
-// to equal the nickname.
-TEST_F(ContactsStoreTest, SeededRemarksAreClearedOnceOnLoad) {
-  std::filesystem::create_directories(data_dir_);
-  auto make = [](const std::string& id, const std::string& remark, const std::string& nickname) {
-    Contact c;
-    c.id = id;
-    c.local.display_name = remark;
-    c.remote.nickname = nickname;
-    c.remote.ids = {{mesh::ContactIdKind::Account, "account:" + id, true}};
-    SyncContactMirrors(c);
-    return ObjectValue(ContactToJson(c));
-  };
-  {
-    Object root;
-    root.set("schema_version", static_cast<int64_t>(1));
-    root.set("contacts",
-             ArrayValue({make("seeded", "Ada", "Ada"), make("own", "Ada-work", "Ada"), make("bare", "", "Bob")}));
-    std::ofstream out(data_dir_ / "contacts.json");
-    ASSERT_TRUE(static_cast<bool>(out));
-    out << DumpJson(root, 2);
-  }
-
-  {
-    ContactsStore store(data_dir_.string());
-    auto seeded = store.Get("seeded");
-    ASSERT_TRUE(static_cast<bool>(seeded) && seeded->has_value());
-    EXPECT_TRUE((*seeded)->local.display_name.empty());
-    EXPECT_TRUE((*seeded)->display_name.empty());
-    EXPECT_EQ(ContactEffectiveTitle(**seeded), "Ada");
-    auto own = store.Get("own");
-    ASSERT_TRUE(own->has_value());
-    EXPECT_EQ((*own)->local.display_name, "Ada-work");
-    EXPECT_EQ(ContactEffectiveTitle(**own), "Ada-work");
-
-    // The user now writes a remark equal to the nickname: it must survive the next load.
-    Contact edited = **own;
-    edited.local.display_name = "Ada";
-    SyncContactMirrors(edited);
-    ASSERT_TRUE(static_cast<bool>(store.Upsert(edited)));
-    store.Flush();
-  }
-
-  ContactsStore reloaded(data_dir_.string());
-  auto again = reloaded.Get("own");
-  ASSERT_TRUE(static_cast<bool>(again) && again->has_value());
-  EXPECT_EQ((*again)->local.display_name, "Ada");
-  auto cleared = reloaded.Get("seeded");
-  ASSERT_TRUE(cleared->has_value());
-  EXPECT_TRUE((*cleared)->local.display_name.empty());
-
-  // The cleanup was written back with the new version, so it does not run again.
-  std::ifstream in(data_dir_ / "contacts.json");
-  std::ostringstream ss;
-  ss << in.rdbuf();
-  auto root = TryParseObject(ss.str());
-  ASSERT_TRUE(static_cast<bool>(root));
-  EXPECT_EQ(static_cast<int>(root->getIf<int64_t>("schema_version").value_or(-1)), ContactsStore::kSchemaVersion);
-}
-
 TEST(SupportContactTest, NewSupportContactHasNoRemarkAndIsNamedByNickname) {
   const Contact contact = MakeSupportContact("c1", "account:support", "PP Support");
   EXPECT_TRUE(contact.local.display_name.empty());
@@ -442,13 +355,13 @@ TEST(SupportContactTest, OpeningTheEntryKeepsAUserRemarkAndRefreshesTheTitle) {
   EXPECT_FALSE(ApplySupportTitle(contact, "PP Support"));
 }
 
-TEST(SupportContactTest, ACopyOfTheTitleLeftByOlderBuildsIsCleared) {
+// A remark equal to the title is the user's like any other.
+TEST(SupportContactTest, ARemarkEqualToTheTitleStays) {
   Contact contact = MakeSupportContact("c1", "account:support", "PP Support");
   contact.local.display_name = "PP Support";
   SyncContactMirrors(contact);
-  EXPECT_TRUE(ApplySupportTitle(contact, "PP Support"));
-  EXPECT_TRUE(contact.local.display_name.empty());
-  EXPECT_EQ(ContactEffectiveTitle(contact), "PP Support");
+  EXPECT_FALSE(ApplySupportTitle(contact, "PP Support"));
+  EXPECT_EQ(contact.local.display_name, "PP Support");
 }
 
 } // namespace

@@ -483,7 +483,7 @@ run_nat_broadcast() {
 
   local bc_log="${LOG_DIR}/bcast.broadcaster.log"
   pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" /probes/${CALL_BIN_NAME} --role broadcaster \
-    --listen "${PP_HARD_NAT_BCAST_LISTEN:-/ip4/0.0.0.0/udp/47180/adp/1.0.0}" --advertise-host "${PEER_A_IP}" \
+    --listen "${PP_HARD_NAT_BCAST_LISTEN:-/ip4/0.0.0.0/udp/47180/adp/2}" --advertise-host "${PEER_A_IP}" \
     --warm-hop "${HOP_MA_PUBLIC}" --ready-file "/share/${ready}" --hold-seconds 90 --min-rx-frames 100 \
     > >(tee "${bc_log}") 2>&1 &
   local bc_pid=$!
@@ -506,7 +506,7 @@ run_nat_broadcast() {
     local v_log="${LOG_DIR}/bcast.viewer${v}.log"
     logs+=("${v_log}")
     pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" /probes/${CALL_BIN_NAME} --role viewer \
-      --listen "/ip4/0.0.0.0/udp/$((47182 + 2 * v))/adp/1.0.0" --advertise-host "${PEER_B_IP}" \
+      --listen "/ip4/0.0.0.0/udp/$((47182 + 2 * v))/adp/2" --advertise-host "${PEER_B_IP}" \
       --warm-hop "${HOP_MA_PUBLIC}" --announce-file "/share/${ready}" --timeout-ms 45000 \
       --min-rx-frames "${BCAST_MIN_RX}" > >(tee "${v_log}") 2>&1 &
     pids+=($!)
@@ -554,7 +554,7 @@ start_group_guest() {
   local extra=()
   [[ -n "${GROUP_EXTRA_HOP:-}" ]] && extra=(--extra-hop "${GROUP_EXTRA_HOP}")
   pp_hard_exec "${container}" /probes/${CALL_BIN_NAME} --role answerer --product-stack \
-    --listen "/ip4/0.0.0.0/udp/${port}/adp/1.0.0" --advertise-host "${ip}" \
+    --listen "/ip4/0.0.0.0/udp/${port}/adp/2" --advertise-host "${ip}" \
     --ready-file "/share/group-${name}.ready" --hold-seconds $((GROUP_HOLD_MS / 1000 + 90)) \
     --warm-hop "${GROUP_WARM_HOP:-${HOP_MA_PUBLIC}}" --signal-dir "${GROUP_SIG:-/share/sig-pp-hard-group-call-nat}" \
     --min-rx-frames 1 --rx-stall-ms "${GROUP_RX_STALL_MS}" --watch-ms $((GROUP_HOLD_MS - 3000)) \
@@ -724,17 +724,17 @@ run_phase() {
 
 if run_phase stack; then
   run_nat_call "B-HARD-CALL-NAT-STACK" "pp-hard-call-nat-stack" "call-nat-stack.ready" \
-    "${PP_HARD_NAT_STACK_LISTEN:-/ip4/0.0.0.0/udp/47166/adp/1.0.0}" stack
+    "${PP_HARD_NAT_STACK_LISTEN:-/ip4/0.0.0.0/udp/47166/adp/2}" stack
 fi
 
 if run_phase cold-dirty; then
   run_nat_call "B-HARD-CALL-NAT-COLD-DIRTY" "pp-hard-call-nat-cold-dirty" "call-nat-cold-dirty.ready" \
-    "${PP_HARD_NAT_COLD_DIRTY_LISTEN:-/ip4/0.0.0.0/udp/47170/adp/1.0.0}" cold-dirty
+    "${PP_HARD_NAT_COLD_DIRTY_LISTEN:-/ip4/0.0.0.0/udp/47170/adp/2}" cold-dirty
 fi
 
 if run_phase cold-await; then
   run_nat_call "B-HARD-CALL-NAT-COLD-AWAIT" "pp-hard-call-nat-cold-await" "call-nat-cold-await.ready" \
-    "${PP_HARD_NAT_COLD_AWAIT_LISTEN:-/ip4/0.0.0.0/udp/47172/adp/1.0.0}" cold-await
+    "${PP_HARD_NAT_COLD_AWAIT_LISTEN:-/ip4/0.0.0.0/udp/47172/adp/2}" cold-await
 fi
 
 if run_phase upgrade; then
@@ -742,7 +742,7 @@ if run_phase upgrade; then
   pp_hard_cgnat_block_p2p on
   set +e
   run_nat_call "B-HARD-CALL-NAT-UPGRADE" "pp-hard-call-nat-upgrade" "call-nat-upgrade.ready" \
-    "${PP_HARD_NAT_UPGRADE_LISTEN:-/ip4/0.0.0.0/udp/47174/adp/1.0.0}" cold-upgrade
+    "${PP_HARD_NAT_UPGRADE_LISTEN:-/ip4/0.0.0.0/udp/47174/adp/2}" cold-upgrade
   upgrade_rc=$?
   set -e
   pp_hard_cgnat_block_p2p off
@@ -755,7 +755,7 @@ if run_phase flip; then
   pp_hard_cgnat_block_p2p off
   set +e
   run_nat_call "B-HARD-CALL-NAT-FLIP" "pp-hard-call-nat-flip" "call-nat-flip.ready" \
-    "${PP_HARD_NAT_FLIP_LISTEN:-/ip4/0.0.0.0/udp/47178/adp/1.0.0}" cold-flip
+    "${PP_HARD_NAT_FLIP_LISTEN:-/ip4/0.0.0.0/udp/47178/adp/2}" cold-flip
   flip_rc=$?
   set -e
   pp_hard_cgnat_flip_peer_a_addr back
@@ -768,7 +768,7 @@ if run_phase private; then
   pp_hard_cgnat_block_p2p off
   set +e
   run_nat_call "B-HARD-CALL-NAT-PRIVATE" "pp-hard-call-nat-private" "call-nat-private.ready" \
-    "${PP_HARD_NAT_PRIVATE_LISTEN:-/ip4/0.0.0.0/udp/47206/adp/1.0.0}" cold-private
+    "${PP_HARD_NAT_PRIVATE_LISTEN:-/ip4/0.0.0.0/udp/47206/adp/2}" cold-private
   private_rc=$?
   set -e
   pp_hard_cgnat_set_nat symmetric

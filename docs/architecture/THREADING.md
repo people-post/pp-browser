@@ -27,7 +27,7 @@ Fixed **roles** with a **coordinator mailbox**, **MeshHost-owned Amp pump**, **o
 ```mermaid
 flowchart TB
   UI["1 · UI thread<br/>SDL · RmlUi · controllers"]
-  Pump["2 · Amp MeshPump<br/>MeshHost-owned · Drive on readiness, ≤5ms"]
+  Pump["2 · Amp MeshPump<br/>MeshHost-owned · Drive on readiness or deadline"]
   Coord["3 · Coordinator<br/>mailbox · timer wheel · policy"]
   Pool["5 · Worker pool 2–4<br/>Critical · Normal · Background"]
   Plat["6 · Platform I/O optional<br/>Linux D-Bus notifier"]
@@ -54,7 +54,7 @@ Contain unbounded item fan-out with **internal queues** on the shared pool (e.g.
 | # | Role | Owner | Blocking? | Responsibility |
 |---|------|-------|-----------|----------------|
 | **1** | **UI thread** | `Application` main loop | No | SDL events, RmlUi, controllers; drain UI mailbox via `RunUITasks()` |
-| **2** | **Amp MeshPump** | `MeshHost` (`MeshPumpThread`) | No — short `Drive` | `MeshRuntime::Drive()` as datagrams arrive (idle, it waits on the socket, at most 5 ms for timers; a full drain drives again at once), the runtime's only driver (`ClaimDriver`: a drive from another thread is refused); the mesh's io lane — L4 engines and mesh control; Amp has no async reactor / no libp2p `io_context` |
+| **2** | **Amp MeshPump** | `MeshHost` (`MeshPumpThread`) | No — short `Drive` | `MeshRuntime::Drive()` as datagrams arrive, when the runtime's next deadline comes (each drive says it: timers, resends, the link walk's keepalives and timeouts, io ticks; at most 1 s idle), or when another thread's change on the lane is due sooner (a post, a sooner timer, a reliable send, anything while it waits longer than the 50 ms housekeeping interval: `MeshRuntime::SetWakeHandler`); a full drain drives again at once. Before, an idle pump woke every 5 ms — 200 wakeups a second on an idle phone (#596). A wait that keeps ending for nothing (a socket "ready" with nothing to read) is never a spin: the pump waits plainly for a while, and a socket the poll sees hung up or closed is reported (a receive error checks and reopens it), the runtime's only driver (`ClaimDriver`: a drive from another thread is refused); the mesh's io lane — L4 engines and mesh control; Amp has no async reactor / no libp2p `io_context` |
 | **3** | **Coordinator** | `CoordinatorThread` | No — dispatcher only | Priority mailbox; timer wheel; relay poll + hub policy (~1s); posts blocking work to pool |
 | **4** | **Worker pool** | `WorkerPool` (2–4 threads) | Yes — only here for product HTTP/LLM/disk | libcurl HTTP, UPnP, Argon2, SQLite writes, LLM HTTP, attachment drain, L4 inbound handlers (chat / history / blob / announce / broadcast / DHT / directory) under MeshPump |
 | **5** | **Platform I/O** | `ILocalNotifier` impls | Platform-specific | Linux: D-Bus watch thread. Android: JNI → coordinator wake |

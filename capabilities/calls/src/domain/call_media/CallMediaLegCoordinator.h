@@ -102,7 +102,8 @@ public:
    * e.g. a punched direct link while the call runs on a relay). Either side may start one; if both
    * do at once the glare winner's goes ahead (offerer, then PeerId order). `done` gets OK once media
    * flows on the new path (the old one is then released), or why the call stayed where it was:
-   * peer refused / yielded / older peer (timeout), candidate lost. Runs on IO; `done` on the IO strand.
+   * peer refused / yielded / no answer (timeout: the `migrate` or its ack lost, or the peer gone), candidate lost.
+   * Runs on IO; `done` on the IO strand.
    */
   void MigrateLeg(CallMediaLegId id, pp::amp::LinkHandle link, LegFinished done);
   /** MigrateLeg onto the peer's Connected link of `kind` (direct ADP or relay carrier). */
@@ -110,7 +111,7 @@ public:
   /**
    * k6 (K003): bring the peer's Connected link of `kind` up as the call's warm standby — the same
    * handshake as a migration (`path_add`), but TX stays on the active path. Refused when the call
-   * already has a standby; a peer without k6 rejects it. `done` on the IO strand.
+   * already has a standby; unanswered, it times out like a migration. `done` on the IO strand.
    */
   void AddStandbyLegOfKind(CallMediaLegId id, CallMediaLinkKind kind, LegFinished done);
   CallMediaPathState PathState(CallMediaLegId id) const;
@@ -120,7 +121,7 @@ public:
    * a 10 s backoff (`kCallMediaAutoMigrateBackoffMs`). Off for tests that drive `MigrateLeg` themselves.
    */
   void SetAutoMigrateToDirect(bool enable);
-  /** Test: behave like a peer from before k3 (never answers `migrate`). */
+  /** Test: never answer `migrate` / `path_add` — as when the message is lost or the peer stops answering. */
   void SetIgnoreMigrateForTest(bool ignore);
   void SetMigrateTimeoutForTest(std::chrono::milliseconds timeout);
   /** Test: send nothing (media, heartbeats) on paths of `kind` — the path goes quiet, its link stays up. */

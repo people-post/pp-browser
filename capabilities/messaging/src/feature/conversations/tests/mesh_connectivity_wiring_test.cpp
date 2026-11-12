@@ -49,7 +49,7 @@ protected:
     contact.id = id;
     contact.local.trust = trust;
     contact.remote.ids = {{mesh::ContactIdKind::PeerId, peer_id, true}};
-    contact.remote.multiaddrs = {"/ip4/10.0.0.9/udp/4001/adp/1.0.0/p2p/" + peer_id};
+    contact.remote.multiaddrs = {"/ip4/10.0.0.9/udp/4001/adp/2/p2p/" + peer_id};
     SyncContactMirrors(contact);
     ASSERT_TRUE(contacts_->Upsert(contact));
   }
@@ -64,7 +64,7 @@ protected:
     in.list_directory_nodes = []() {
       mesh::MeshDirectoryNode node;
       node.peer_id = kVolunteer;
-      node.multiaddrs = {std::string("/ip4/198.51.100.7/udp/443/adp/1.0.0/p2p/") + kVolunteer};
+      node.multiaddrs = {std::string("/ip4/198.51.100.7/udp/443/adp/2/p2p/") + kVolunteer};
       node.circuit_relay = true;
       return std::vector<mesh::MeshDirectoryNode>{node};
     };
@@ -72,7 +72,7 @@ protected:
       // The Friendly contact's node publishes itself as a circuit relay; the plain contact is a phone.
       mesh::MeshDirectoryNode node;
       node.peer_id = kFriend;
-      node.multiaddrs = {std::string("/ip4/198.51.100.8/udp/443/adp/1.0.0/p2p/") + kFriend};
+      node.multiaddrs = {std::string("/ip4/198.51.100.8/udp/443/adp/2/p2p/") + kFriend};
       node.circuit_relay = true;
       return std::vector<mesh::MeshDirectoryNode>{node};
     };
@@ -81,8 +81,8 @@ protected:
   }
 
   static std::vector<std::string> OrgSeeds() {
-    return {std::string("/ip4/203.0.113.1/udp/443/adp/1.0.0/p2p/") + kSeedA,
-            std::string("/ip4/203.0.113.2/udp/443/adp/1.0.0/p2p/") + kSeedB};
+    return {std::string("/ip4/203.0.113.1/udp/443/adp/2/p2p/") + kSeedA,
+            std::string("/ip4/203.0.113.2/udp/443/adp/2/p2p/") + kSeedB};
   }
 
   static std::vector<std::string> Ids(const std::vector<mesh::MeshHopCandidate>& hops) {
@@ -150,7 +150,7 @@ TEST_F(MeshConnectivityWiringTest, TheRendezvousSurfaceDemotesLiarsSpreadsOperat
     node.peer_id = peer;
     node.account_id = account;
     node.node_version = version;
-    node.multiaddrs = {"/ip4/198.51.100.20/udp/443/adp/1.0.0/p2p/" + peer};
+    node.multiaddrs = {"/ip4/198.51.100.20/udp/443/adp/2/p2p/" + peer};
     node.circuit_relay = true;
     return node;
   };

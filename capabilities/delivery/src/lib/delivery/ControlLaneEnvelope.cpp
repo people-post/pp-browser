@@ -35,11 +35,8 @@ bool ControlLaneCarriesCard(const bool opens_session, const bool asked,
                      [card_at](const std::optional<int64_t>& told) { return !told || *told != card_at; });
 }
 
-bool ControlLaneUsesAccountCopy(const size_t peer_devices, const size_t own_devices) {
-  if (peer_devices == 0) {
-    return true; // no card for the peer: its account KEM opens a first contact (M021 §5)
-  }
-  return kControlLaneAccountCopyBetweenSingleDevices && peer_devices == 1 && own_devices == 1;
+bool ControlLaneUsesAccountCopy(const size_t peer_devices) {
+  return peer_devices == 0; // no card for the peer: its account KEM opens a first contact (M021 §5)
 }
 
 namespace {

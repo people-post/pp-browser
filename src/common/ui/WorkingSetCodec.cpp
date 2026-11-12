@@ -184,35 +184,4 @@ std::string MarkWorkingSetChipsUnavailable(const std::string& rml) {
   return out;
 }
 
-std::string StripInlinedWorkingSetActionSuggestions(const std::string& rml) {
-  if (rml.find("chat-suggestion") == std::string::npos || rml.find("send_chat_action") == std::string::npos) {
-    return rml;
-  }
-  std::string out;
-  out.reserve(rml.size());
-  size_t pos = 0;
-  while (pos < rml.size()) {
-    const size_t button_start = rml.find("<button", pos);
-    if (button_start == std::string::npos) {
-      out.append(rml, pos, std::string::npos);
-      break;
-    }
-    const size_t button_end = rml.find("</button>", button_start);
-    if (button_end == std::string::npos) {
-      out.append(rml, pos, std::string::npos);
-      break;
-    }
-    const std::string button = rml.substr(button_start, button_end + 9 - button_start);
-    const bool is_panel_action_dump = button.find("chat-suggestion") != std::string::npos &&
-                                      button.find("send_chat_action") != std::string::npos &&
-                                      button.find("chat-working-set-chip") == std::string::npos;
-    out.append(rml, pos, button_start - pos);
-    if (!is_panel_action_dump) {
-      out += button;
-    }
-    pos = button_end + 9;
-  }
-  return out;
-}
-
 } // namespace pbr

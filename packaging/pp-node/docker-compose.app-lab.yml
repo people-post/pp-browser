@@ -38,7 +38,7 @@ services:
       PP_NODE_LOG_LEVEL: ${PP_APP_LAB_HOP_LOG_LEVEL:-info}
       # Never the production seeds (the default when none is set): a lab hop probing them loads
       # them, and their dial-backs fill its pending-handshake slots. TEST-NET-3: nothing answers.
-      PP_NODE_BOOTSTRAP_PEERS: /ip4/203.0.113.1/udp/443/adp/1.0.0/p2p/QmW6e19wEv2FozTzQXxCee7USqQLE7HAvcF77es4brdSWd
+      PP_NODE_BOOTSTRAP_PEERS: /ip4/203.0.113.1/udp/443/adp/2/p2p/QmW6e19wEv2FozTzQXxCee7USqQLE7HAvcF77es4brdSWd
     networks:
       lab:
         ipv4_address: 198.51.100.10
@@ -62,7 +62,7 @@ services:
       PP_NODE_MESH_PUBLISH: ${PP_APP_LAB_HOP2_PUBLISH:-false}
       PP_NODE_REGISTRATION_BASE_URL: http://198.51.100.20:9097/api/relay
       PP_NODE_LOG_LEVEL: ${PP_APP_LAB_HOP_LOG_LEVEL:-info}
-      PP_NODE_BOOTSTRAP_PEERS: /ip4/203.0.113.1/udp/443/adp/1.0.0/p2p/QmW6e19wEv2FozTzQXxCee7USqQLE7HAvcF77es4brdSWd
+      PP_NODE_BOOTSTRAP_PEERS: /ip4/203.0.113.1/udp/443/adp/2/p2p/QmW6e19wEv2FozTzQXxCee7USqQLE7HAvcF77es4brdSWd
     networks:
       lab:
         ipv4_address: 198.51.100.30

@@ -18,7 +18,7 @@ struct CallControlFamilyPorts {
 };
 
 /**
- * Call control as a system-control family. Signaling (invite, accept, media keys, SDP / ICE, hop
+ * Call control as a system-control family. Signaling (invite, accept, media keys, reach hints, hop
  * moves, roster …) rides the control lane: applied once while fresh, never a transcript row. The
  * call's summary — one per call, sent by its starter into the call's thread — is the only call
  * message in the chat stream; its line is worded here, from the reader's side.

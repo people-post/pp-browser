@@ -52,9 +52,9 @@ TEST(NodeMeshServicesTest, QueryPeersDirectoryFirstDeduped) {
   dup.peer_id = "QmSeed1";
   mesh::MeshDirectoryNode empty;
   const std::vector<std::string> seeds = {
-      "/ip4/1.2.3.4/udp/443/adp/1.0.0/p2p/QmSeed1",
-      "/ip4/5.6.7.8/udp/443/adp/1.0.0/p2p/QmSeed2",
-      "/ip4/5.6.7.8/udp/443/adp/1.0.0",
+      "/ip4/1.2.3.4/udp/443/adp/2/p2p/QmSeed1",
+      "/ip4/5.6.7.8/udp/443/adp/2/p2p/QmSeed2",
+      "/ip4/5.6.7.8/udp/443/adp/2",
   };
   EXPECT_EQ(CollectNodeQueryPeerKeys(seeds, {a, dup, empty}),
             (std::vector<std::string>{"QmDirA", "QmSeed1", "QmSeed2"}));

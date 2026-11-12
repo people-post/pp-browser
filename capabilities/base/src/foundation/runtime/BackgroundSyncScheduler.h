@@ -33,8 +33,6 @@ public:
   static BackgroundSyncScheduler& Instance();
 
   void SetSyncHandler(SyncFn handler);
-  /** Legacy no-op — relay poll is coordinator-driven. */
-  void Tick();
   /**
    * FCM / WorkManager wake — force a sync even if interval not elapsed. In the background the
    * app's work resumes for kBackgroundWakeWindowMs, then pauses again (push only, for power).

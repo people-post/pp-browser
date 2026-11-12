@@ -223,7 +223,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     std::unique_lock<std::mutex> lock_;
   };
   InboundHandler inbound;
-  /** k3 test seams: a peer from before migration (ignores `migrate`), and a short migrate timeout. */
+  /** k3 test seams: a peer that does not answer `migrate` (lost, or gone silent), and a short migrate timeout. */
   std::atomic<bool> ignore_migrate_for_test{false};
   /** k4 test seam: this side sends nothing (media, heartbeats) on paths of this kind — a path gone quiet. */
   std::atomic<CallMediaLinkKind> silenced_kind_for_test{CallMediaLinkKind::Unknown};
@@ -2298,10 +2298,16 @@ void CallMediaLegCoordinator::Start() {
   impl_->runtime = &runtime_;
   impl_->clock = &timer_clock_;
   impl_->stopped.store(false, std::memory_order_release);
-  impl_->io_tick_id = runtime_.AddIoTick([weak = std::weak_ptr(impl_)] {
-    if (auto impl = weak.lock()) {
-      impl->TickDeadlines();
+  // At the runtime's cadence while a call holds a bundle (its deadlines and path checks); idle without one, so an
+  // idle app's pump is not woken for it.
+  impl_->io_tick_id = runtime_.AddIoDueTick([weak = std::weak_ptr(impl_)]() -> std::chrono::milliseconds {
+    auto impl = weak.lock();
+    if (!impl) {
+      return pp::amp::MeshRuntime::kIoTickIdle;
     }
+    impl->TickDeadlines();
+    std::lock_guard lock(impl->mu);
+    return impl->bundles.empty() ? pp::amp::MeshRuntime::kIoTickIdle : std::chrono::milliseconds(0);
   });
   runtime_.Links().SetProtocolHandler(
       kCallMediaDirectProtocolId,

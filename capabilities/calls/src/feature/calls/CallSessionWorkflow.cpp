@@ -397,10 +397,8 @@ Roe<CallInviteDetail> CallSessionWorkflow::BuildInvite(const CallSession& sessio
   invite.media_epoch = session.media_epoch;
   invite.media_key_id = session.media_key_id;
   if (auto key = key_exchange_.Current(call_id); key) {
-    // The key itself: the invite's lane copy is sealed for one device of the invitee's (M024). Its old form too,
-    // for an app before M024, while kMediaKeyAccountWrapBridge.
+    // The key itself: the invite's lane copy is sealed for one device of the invitee's (M024).
     invite.media_key_b64 = Base64Encode(key->key);
-    invite.wrapped_key_b64 = key_exchange_.WrapForPeer(call_id, *key, invitee_identity);
   }
   if (host_.reach.local_listen_multiaddrs && MayLearnOurAddress(invitee_identity)) {
     FillCallListenFields(host_.reach.local_listen_multiaddrs(), invite.libp2p_peer_id, invite.listen_multiaddrs);
@@ -558,11 +556,6 @@ Roe<PendingCallInvite> CallSessionWorkflow::LoadAcceptableInvite(const std::stri
     (void)sessions_.UpdateInviteStatus(call_id, local_identity, "expired");
     reports_.Emit(workflow_report::Changed{});
     return Error("Call invite expired");
-  }
-  if (IsBroadcastSession((*pending)->session_kind)) {
-    // Legacy rows only (pre-feature/broadcast builds): a live broadcast is watched from its
-    // announce through BroadcastHub, never accepted as a call.
-    return Error("Live broadcasts are watched from the announce, not accepted as calls");
   }
   return **pending;
 }
@@ -1327,7 +1320,7 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(
   }
   // Media key embedded in invite (preferred); CallMediaKey message remains a backup.
   (void)key_exchange_.TakeKey(invite->call_id, session->media_epoch, invite->media_key_id, invite->media_key_b64,
-                              invite->wrapped_key_b64, sender_identity, "CallInvite");
+                              sender_identity, "CallInvite");
   SeedInviteRoster(*invite, inviter, *session, local_identity);
   NoteInviterReach(*invite, inviter);
   if (CallDiagBudget::Shared().Allow(invite->call_id, CallDiagEvent::Signal)) {
@@ -1410,7 +1403,7 @@ void CallSessionWorkflow::SwallowCrossedInvite(const CallInviteDetail& invite, c
   session.call_id = invite.call_id;
   session.initiator_identity = inviter;
   session.media_mode = invite.media_mode;
-  session.video_allowed = CallSessionLogic::VideoAllowedFromInvite(invite);
+  session.video_allowed = invite.video_allowed;
   session.state = CallSessionState::Ended;
   session.created_at = util::NowUnixMs();
   session.ended_at = session.created_at;
@@ -1495,7 +1488,7 @@ Roe<CallSession> CallSessionWorkflow::StoreRingingInvite(const CallInviteDetail&
   // Always key pending rows to local identity so ListPendingInvitesForInvitee matches.
   pending.invitee_identity = local_identity;
   pending.media_mode = invite.media_mode;
-  pending.video_allowed = CallSessionLogic::VideoAllowedFromInvite(invite);
+  pending.video_allowed = invite.video_allowed;
   if (host_.wire.resolve_call_thread) {
     pending.origin_thread_id = host_.wire.resolve_call_thread(inviter, invite.origin_group_id);
   }
@@ -1513,7 +1506,7 @@ Roe<CallSession> CallSessionWorkflow::StoreRingingInvite(const CallInviteDetail&
   session.initiator_identity = inviter;
   session.origin_group_id = invite.origin_group_id;
   session.media_mode = invite.media_mode;
-  session.video_allowed = CallSessionLogic::VideoAllowedFromInvite(invite);
+  session.video_allowed = invite.video_allowed;
   session.state = CallSessionState::Ringing;
   session.created_at = pending.created_at;
   session.media_epoch = invite.media_epoch > 0 ? invite.media_epoch : 1;
@@ -1553,7 +1546,7 @@ void CallSessionWorkflow::SeedInviteRoster(const CallInviteDetail& invite, const
     }
     if (row.state == CallParticipantState::Joined) {
       // V050 gt2b: the inviter's stamp (one clock for everyone) — this device's receipt time only
-      // for peers that send none; it still precedes later acceptors (initiator detection).
+      // for a joined entry with none; it still precedes later acceptors (initiator detection).
       row.joined_at =
           entry.joined_at ? entry.joined_at : std::optional<int64_t>(CallSessionLogic::LocalJoinStampFallback(session));
     }
@@ -2522,7 +2515,7 @@ void CallSessionWorkflow::RecordMissedGroupCall(const CallInviteDetail& invite, 
     session.origin_thread_id = host_.wire.resolve_call_thread(inviter, invite.origin_group_id);
   }
   session.media_mode = invite.media_mode;
-  session.video_allowed = CallSessionLogic::VideoAllowedFromInvite(invite);
+  session.video_allowed = invite.video_allowed;
   session.state = CallSessionState::Ended; // nothing rings; the group's thread offers Join
   session.created_at = created_at;
   session.ended_at = created_at;

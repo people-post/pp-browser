@@ -5,7 +5,7 @@
 
 namespace pbr {
 
-void VideoArrivalStats::Note(const uint32_t seq, const int64_t now_ms) {
+void VideoArrivalStats::Note(const uint32_t seq, const int64_t now_ms, const bool keyframe) {
   ++summary_.frames;
   if (last_seq_ && seq > *last_seq_ + 1) {
     summary_.lost += seq - *last_seq_ - 1;
@@ -24,6 +24,11 @@ void VideoArrivalStats::Note(const uint32_t seq, const int64_t now_ms) {
     }
     if (gap < kBunchedMs) {
       ++summary_.bunched;
+    }
+    if (keyframe) {
+      ++summary_.keyframes;
+      summary_.keyframe_gap_total_ms += gap;
+      summary_.keyframe_gap_max_ms = std::max(summary_.keyframe_gap_max_ms, gap);
     }
   }
   last_arrival_ms_ = now_ms;

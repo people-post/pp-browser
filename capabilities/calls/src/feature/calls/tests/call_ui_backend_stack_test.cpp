@@ -243,7 +243,7 @@ protected:
     transport_ = std::make_unique<FakeCallMediaTransport>();
     dial_ = std::make_unique<FakeDialRegistry>();
     dial_->connected["account:peer"] = true;
-    dial_->endpoints["account:peer"] = "/ip4/127.0.0.1/udp/47100/adp/1.0.0/p2p/12D3KooWPeer";
+    dial_->endpoints["account:peer"] = "/ip4/127.0.0.1/udp/47100/adp/2/p2p/12D3KooWPeer";
     stack_->BindTestMediaPath(transport_.get(), dial_.get());
   }
 

@@ -58,23 +58,6 @@ CallMediaMode CallMediaModeFromString(const std::string& value) {
   return CallMediaMode::Voice;
 }
 
-std::string CallSessionKindToString(const CallSessionKind kind) {
-  switch (kind) {
-    case CallSessionKind::Broadcast:
-      return "broadcast";
-    case CallSessionKind::Group:
-      return "group";
-  }
-  return "group";
-}
-
-CallSessionKind CallSessionKindFromString(const std::string& value) {
-  if (value == "broadcast") {
-    return CallSessionKind::Broadcast;
-  }
-  return CallSessionKind::Group;
-}
-
 std::string CallSessionStateToString(const CallSessionState state) {
   switch (state) {
     case CallSessionState::Ringing:
@@ -152,10 +135,6 @@ std::string CallControlTypeToWire(const CallControlType type) {
       return "call_ended";
     case CallControlType::CallSummary:
       return "call_summary";
-    case CallControlType::CallSdp:
-      return "call_sdp";
-    case CallControlType::CallIce:
-      return "call_ice";
     case CallControlType::CallSfuAttach:
       return "call_sfu_attach";
     case CallControlType::CallSfuAttachFailed:
@@ -188,7 +167,7 @@ std::optional<CallControlType> CallControlTypeFromWire(const std::string& value)
   if (value == "call_invite") {
     return CallControlType::CallInvite;
   }
-  if (value == "call_accept" || value == "call_join") {
+  if (value == "call_accept") {
     return CallControlType::CallAccept;
   }
   if (value == "call_decline") {
@@ -211,12 +190,6 @@ std::optional<CallControlType> CallControlTypeFromWire(const std::string& value)
   }
   if (value == "call_summary") {
     return CallControlType::CallSummary;
-  }
-  if (value == "call_sdp") {
-    return CallControlType::CallSdp;
-  }
-  if (value == "call_ice") {
-    return CallControlType::CallIce;
   }
   if (value == "call_sfu_attach") {
     return CallControlType::CallSfuAttach;

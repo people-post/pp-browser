@@ -343,13 +343,13 @@ lab_hop_advertise() {
   local peer
   peer="$(lab_seed_peer 18718)"
   if [[ -n "${peer}" ]]; then
-    export PP_APP_LAB_HOP_ADVERTISE="/ip4/198.51.100.10/udp/18517/adp/1.0.0/p2p/${peer}"
+    export PP_APP_LAB_HOP_ADVERTISE="/ip4/198.51.100.10/udp/18517/adp/2/p2p/${peer}"
     export PP_APP_LAB_HOP_PUBLISH=true
   fi
   peer="$(lab_seed_peer 18728)"
   if [[ -n "${peer}" ]]; then
     # Not published: only the two-hop rows know it (as a bootstrap seed), so the other scenarios see one seed.
-    export PP_APP_LAB_HOP2_ADVERTISE="/ip4/198.51.100.30/udp/18517/adp/1.0.0/p2p/${peer}"
+    export PP_APP_LAB_HOP2_ADVERTISE="/ip4/198.51.100.30/udp/18517/adp/2/p2p/${peer}"
   fi
 }
 

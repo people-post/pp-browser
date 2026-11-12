@@ -60,5 +60,19 @@ TEST(MeshNetworkReactionTest, ALiveSocketOnANetworkChangeIsOneQuietDiagLine) {
   EXPECT_TRUE(dev->lines.empty());
 }
 
+// A receive that failed (iOS's defunct socket) asked for the check: support sees why (#596).
+TEST(MeshNetworkReactionTest, ACheckAReceiveErrorAskedForSaysSo) {
+  auto diag = std::make_shared<Capture>();
+  DiagLog().addHandler(diag);
+  logging::Logger log = logging::getLogger("MeshNetworkReactionTest.ReceiveError");
+  mesh::UdpSocketCheck check;
+  check.reason = mesh::UdpSocketCheckReason::ReceiveError;
+  check.reopened = check.alive = true;
+  ReportUdpSocketCheck(log, check);
+  ASSERT_FALSE(diag->lines.empty());
+  EXPECT_NE(diag->lines.back().second.find("reason=receive_error was_alive=0 reopened=1 alive=1"), std::string::npos)
+      << diag->lines.back().second;
+}
+
 } // namespace
 } // namespace pbr

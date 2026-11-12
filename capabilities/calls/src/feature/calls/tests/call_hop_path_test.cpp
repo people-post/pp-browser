@@ -1087,7 +1087,7 @@ TEST_F(CallHopPathTest, StaleInboundSfuAttachIgnoredWhenNotActiveCall) {
   CallSfuAttachDetail attach;
   attach.call_id = stale;
   attach.hop_peer_id = "12D3KooWPreferLocal";
-  attach.hop_multiaddr = "/ip4/192.168.1.132/udp/59286/adp/1.0.0/p2p/12D3KooWPreferLocal";
+  attach.hop_multiaddr = "/ip4/192.168.1.132/udp/59286/adp/2/p2p/12D3KooWPreferLocal";
   ASSERT_TRUE(topo_->OnInboundSfuAttach(stale, attach));
   EXPECT_EQ(relay_->attach_calls, 0);
   EXPECT_EQ(relay_->quote_calls, 0);
@@ -1178,13 +1178,13 @@ TEST_F(CallHopPathTest, InboundSfuAttachSkipsPrivateHopOffLan) {
   CallHopPath::MediaRelayDeps deps;
   deps.relay = relay_.get();
   deps.dial = dial_.get();
-  deps.local_listen_multiaddr = "/ip4/10.0.0.20/udp/4001/adp/1.0.0/p2p/12D3KooWGuest";
+  deps.local_listen_multiaddr = "/ip4/10.0.0.20/udp/4001/adp/2/p2p/12D3KooWGuest";
   SetRelayDeps(std::move(deps));
 
   CallSfuAttachDetail attach;
   attach.call_id = call_id;
   attach.hop_peer_id = "12D3KooWPreferLocal";
-  attach.hop_multiaddr = "/ip4/192.168.1.132/udp/59286/adp/1.0.0/p2p/12D3KooWPreferLocal";
+  attach.hop_multiaddr = "/ip4/192.168.1.132/udp/59286/adp/2/p2p/12D3KooWPreferLocal";
 
   ASSERT_TRUE(topo_->OnInboundSfuAttach(call_id, attach));
   EXPECT_EQ(relay_->attach_calls, 0);

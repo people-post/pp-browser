@@ -39,8 +39,6 @@ pp::common::Object ChatHistoryRequestToJson(const ChatHistoryRequest& request);
 pp::Roe<ChatHistoryRequest> ChatHistoryRequestFromJson(const pp::common::Object& json);
 /** HTTP query string for GET /v1/streams/messages (generic relay). */
 std::string StreamHistoryRequestToQueryString(const ChatHistoryRequest& request);
-/** @deprecated Use StreamHistoryRequestToQueryString */
-std::string ChatHistoryRequestToQueryString(const ChatHistoryRequest& request);
 pp::common::Object ChatHistoryRequestToStreamHistoryJson(const ChatHistoryRequest& request);
 pp::common::Object ChatHistoryResponseToJson(const ChatHistoryResponse& response);
 pp::Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const pp::common::Object& json);
