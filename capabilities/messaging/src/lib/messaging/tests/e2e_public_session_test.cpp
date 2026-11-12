@@ -182,13 +182,13 @@ struct Side {
   /**
    * A lane signal to `peer_account` as ControlLane::Send builds it (M024): one record with a copy per device on the
    * peer's card this side keeps, each in its device pair's session (opened when missing) — or, with no card for the
-   * peer (or both accounts on one device: the bridge), the account copy in the account pair's.
+   * peer, the account copy in the account pair's.
    */
   RelayEnvelope Lane(const std::string& peer_account, const std::string& signal = "test_signal") {
     auto card = cards.find(peer_account);
     const size_t peer_devices = card == cards.end() ? 0 : card->second.devices.size();
     std::vector<ControlLaneCopy> copies;
-    if (ControlLaneUsesAccountCopy(peer_devices, own_devices)) {
+    if (ControlLaneUsesAccountCopy(peer_devices)) {
       PeerSessionKey target = GroupE2ePayloadCodec::PairTargetKey(peer_account);
       auto session = ResolveE2ePublicSendSession(
           *psk, target, [this, &peer_account]() { return Base64Decode(peer_kem.at(peer_account)); });
@@ -475,8 +475,6 @@ struct Side {
   GroupCopyState copy_state;
   /** Carry our account card with a key_init (as the app does): `own_card` when set, else one listing this device. */
   bool carry_keys = false;
-  /** How many devices our own card lists (ControlLaneUsesAccountCopy). */
-  size_t own_devices = 1;
   std::optional<AccountCard> own_card;
 };
 
@@ -945,7 +943,6 @@ protected:
     phone_->Know(*bob_);
     laptop_->Know(*bob_);
     bob_->KnowAccount({phone_.get(), laptop_.get()});
-    phone_->own_devices = laptop_->own_devices = 2;
   }
 
   /** The thread's rows on `side` (its one thread). */
@@ -1181,25 +1178,12 @@ TEST_F(LinkedDevicesTest, AFirstContactStillGoesAsTheAccountCopy) {
   EXPECT_TRUE(laptop_->Receive(first));
 }
 
-// The bridge (one release, M024): between two single-device accounts the lane keeps the account copy an app before
-// M024 reads; as soon as either account has two devices, a copy per device.
-TEST(ControlLaneCopiesTest, TheAccountCopyOnlyForAFirstContactAndBetweenTwoSingleDevices) {
-  EXPECT_TRUE(ControlLaneUsesAccountCopy(0, 1)) << "no card for the peer";
-  EXPECT_TRUE(ControlLaneUsesAccountCopy(0, 3));
-  EXPECT_EQ(ControlLaneUsesAccountCopy(1, 1), kControlLaneAccountCopyBetweenSingleDevices);
-  EXPECT_FALSE(ControlLaneUsesAccountCopy(2, 1)) << "the peer has two devices";
-  EXPECT_FALSE(ControlLaneUsesAccountCopy(1, 2)) << "we have two: the peer must tell our devices apart";
-}
-
-TEST_F(E2ePublicSessionTest, BetweenTwoSingleDeviceAccountsTheLaneIsTheAccountCopyAnOlderAppReads) {
-  if (!kControlLaneAccountCopyBetweenSingleDevices) {
-    GTEST_SKIP() << "the M024 bridge is gone";
-  }
-  const RelayEnvelope invite = alice_->Lane(bob_->account);
-  ASSERT_EQ(invite.body.e2e.copies.size(), 1u);
-  EXPECT_TRUE(invite.recipient_device.empty()) << "one account copy: the only shape an app before M024 parses";
-  EXPECT_TRUE(bob_->Receive(invite));
-  EXPECT_TRUE(alice_->Receive(bob_->Lane(alice_->account)));
+// M024: the account copy only for a peer we hold no card for (a first contact); with a card, a copy per device —
+// however many devices either account has.
+TEST(ControlLaneCopiesTest, TheAccountCopyOnlyForAFirstContact) {
+  EXPECT_TRUE(ControlLaneUsesAccountCopy(0)) << "no card for the peer";
+  EXPECT_FALSE(ControlLaneUsesAccountCopy(1)) << "one device on its card";
+  EXPECT_FALSE(ControlLaneUsesAccountCopy(2));
 }
 
 // A device the sender did not know yet (the record has copies for its siblings only): it is told our card, so the
@@ -1294,7 +1278,6 @@ TEST_F(LinkedDevicesTest, ALaneMessageHeldForTheSendersCardLandsOnceTheCardComes
   DiagLog().addHandler(diag);
   Side tablet("alice-tablet", 0x30, phone_.get()); // no cards: just linked
   tablet.pipeline->SetOnSenderCard([&tablet](const AccountCard& card) { tablet.cards[card.keys.account_id] = card; });
-  tablet.own_devices = 3;
   bob_->KnowAccount({phone_.get(), laptop_.get(), &tablet});
 
   const RelayEnvelope accept = bob_->Lane(phone_->account);
@@ -1333,7 +1316,6 @@ TEST_F(LinkedDevicesTest, ALaneMessageFromADeviceNotOnTheCardWaitsForTheNewerCar
   DiagLog().addHandler(diag);
   Side bobs_tablet("bob-tablet", 0x50, bob_.get());
   bobs_tablet.KnowAccount({phone_.get(), laptop_.get()});
-  bobs_tablet.own_devices = 2;
   const RelayEnvelope signal = bobs_tablet.Lane(phone_->account);
   const RelayReceiveOutcome held = phone_->pipeline->ProcessEnvelope(signal, phone_->account);
   EXPECT_TRUE(held.held_for_card);
@@ -1352,7 +1334,6 @@ TEST_F(LinkedDevicesTest, ALaneMessageFromADeviceNotOnTheCardWaitsForTheNewerCar
 TEST_F(LinkedDevicesTest, AReplayThatStillCannotBeCheckedWaitsAgain) {
   Side bobs_tablet("bob-tablet", 0x50, bob_.get());
   bobs_tablet.KnowAccount({phone_.get(), laptop_.get()});
-  bobs_tablet.own_devices = 2;
   ASSERT_TRUE(phone_->pipeline->ProcessEnvelope(bobs_tablet.Lane(phone_->account), phone_->account).held_for_card);
   const auto replayed = phone_->pipeline->ReplayHeldControl(bob_->account, phone_->account);
   ASSERT_EQ(replayed.size(), 1u);
@@ -1378,7 +1359,6 @@ TEST_F(LinkedDevicesTest, ASignatureMismatchIsNotHeldAndSaysSo) {
 // A held message is still checked for freshness when it lands: its wait counts as time on its way.
 TEST_F(LinkedDevicesTest, AHeldMessageTooOldOnceItsCardCameIsStillDropped) {
   Side tablet("alice-tablet", 0x30, phone_.get());
-  tablet.own_devices = 3;
   bob_->KnowAccount({phone_.get(), laptop_.get(), &tablet});
   const int64_t max_age = SystemControlFamily{}.lane_max_age_ms;
   RelayEnvelope late = bob_->Lane(phone_->account);

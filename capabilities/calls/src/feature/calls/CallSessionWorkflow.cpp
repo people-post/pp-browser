@@ -397,10 +397,8 @@ Roe<CallInviteDetail> CallSessionWorkflow::BuildInvite(const CallSession& sessio
   invite.media_epoch = session.media_epoch;
   invite.media_key_id = session.media_key_id;
   if (auto key = key_exchange_.Current(call_id); key) {
-    // The key itself: the invite's lane copy is sealed for one device of the invitee's (M024). Its old form too,
-    // for an app before M024, while kMediaKeyAccountWrapBridge.
+    // The key itself: the invite's lane copy is sealed for one device of the invitee's (M024).
     invite.media_key_b64 = Base64Encode(key->key);
-    invite.wrapped_key_b64 = key_exchange_.WrapForPeer(call_id, *key, invitee_identity);
   }
   if (host_.reach.local_listen_multiaddrs && MayLearnOurAddress(invitee_identity)) {
     FillCallListenFields(host_.reach.local_listen_multiaddrs(), invite.libp2p_peer_id, invite.listen_multiaddrs);
@@ -1327,7 +1325,7 @@ Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(
   }
   // Media key embedded in invite (preferred); CallMediaKey message remains a backup.
   (void)key_exchange_.TakeKey(invite->call_id, session->media_epoch, invite->media_key_id, invite->media_key_b64,
-                              invite->wrapped_key_b64, sender_identity, "CallInvite");
+                              sender_identity, "CallInvite");
   SeedInviteRoster(*invite, inviter, *session, local_identity);
   NoteInviterReach(*invite, inviter);
   if (CallDiagBudget::Shared().Allow(invite->call_id, CallDiagEvent::Signal)) {

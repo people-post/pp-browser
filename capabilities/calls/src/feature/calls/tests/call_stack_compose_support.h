@@ -23,7 +23,6 @@
 #include "common/Utilities.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "feature/calls/tests/call_media_inbound_fake.h"
-#include "feature/calls/tests/seeded_session_key.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
@@ -180,7 +179,6 @@ struct StackSide {
   std::unique_ptr<InMemoryDeliveryStore> store;
   std::unique_ptr<ContactsStore> contacts;
   std::unique_ptr<IdentityStore> identity;
-  IPeerSessionStore* psk = nullptr; // the store's peer sessions (one row with its threads, as in the app)
   // Outlive the stack (connectivity first: the relay is built on it).
   std::unique_ptr<mesh::MeshConnectivity> connectivity = std::make_unique<mesh::MeshConnectivity>();
   std::unique_ptr<mesh::MeshMediaRelay> media_relay = std::make_unique<mesh::MeshMediaRelay>(*connectivity);
@@ -233,8 +231,6 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   side.local_identity = loaded->account_id;
   ASSERT_FALSE(side.local_identity.empty());
 
-  side.psk = side.store.get();
-
   side.stack = std::make_unique<CallStack>();
   ASSERT_TRUE(side.stack->InitializeStores(InMemoryCallStores()));
   side.ui = std::make_unique<CallUiBackend>(*side.stack);
@@ -244,10 +240,6 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   deps.transcript = side.store.get();
   deps.contacts = side.contacts.get();
   deps.account = side.identity.get();
-  deps.delivery.ensure_peer_session_key = [&side](const std::string& peer) {
-    return SeededSessionKey(*side.psk, peer);
-  };
-  deps.delivery.held_peer_session_key = deps.delivery.ensure_peer_session_key;
   deps.delivery.send_control = [&side](const std::string& peer, const ThreadMessage& control,
                                        bool /*urgent*/) -> Roe<void> {
     if (side.on_send) {
@@ -319,7 +311,6 @@ inline void SoftStopStackSide(StackSide& side) {
 
 /** Drop the stores and the profile dir (after AppRuntime shutdown joined the pool). */
 inline void DestroyStackSide(StackSide& side) {
-  side.psk = nullptr;
   side.identity.reset();
   side.contacts.reset();
   side.store.reset();

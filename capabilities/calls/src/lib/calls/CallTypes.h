@@ -245,8 +245,6 @@ struct CallInviteDetail {
   std::string media_key_id;
   /** The key itself (base64; M024): the lane copy it rides is sealed for one device of the invitee's. */
   std::string media_key_b64;
-  /** The old form: the key wrapped under the account pair's session (V015) — until kMediaKeyAccountWrapBridge goes. */
-  std::string wrapped_key_b64;
   /**
    * Inviter LAN listen multiaddrs (`/ip4/…/tcp/…/p2p/…`) for answerer reverse-dial when mDNS
    * has not populated the dial registry yet (desktop cross-OS dogfood).
@@ -366,8 +364,6 @@ struct CallMediaKeyDetail {
    * device pair's session (or the account copy in the account pair's): the copy is the wrap.
    */
   std::string media_key_b64;
-  /** The old form: the key wrapped under the account pair's session (V015) — until kMediaKeyAccountWrapBridge goes. */
-  std::string wrapped_key_b64;
 };
 
 struct CallEndedDetail {

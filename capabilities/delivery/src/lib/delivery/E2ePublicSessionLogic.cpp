@@ -2,7 +2,6 @@
 
 #include "lib/delivery/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "lib/delivery/SessionKeyDeriver.h"
 
 #include <sodium.h>
 
@@ -204,10 +203,6 @@ Roe<void> RestartE2ePublicSession(IPeerSessionStore& psk_store, const PeerSessio
   record.auto_key_peer_heard_ms.reset();
   record.restart_pending = false;
   return psk_store.Save(record);
-}
-
-Roe<ByteVector> DeriveE2ePublicSessionKey(const ByteVector& master_psk, const uint32_t session_epoch) {
-  return SessionKeyDeriver::Derive(master_psk, CryptoChannel::E2ePublic, session_epoch);
 }
 
 } // namespace pbr

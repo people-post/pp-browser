@@ -4,8 +4,6 @@
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "lib/calls/CallMediaKeyExchange.h"
-#include "lib/calls/ICallMediaKeyStore.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "foundation/crypto/CryptoUtil.h"
 
@@ -178,20 +176,6 @@ Roe<void> CallControlClient::FanOutToJoinedAndRinging(const std::string& call_id
   return {};
 }
 
-Roe<ByteVector> CallControlClient::SessionKeyWith(const std::string& peer_identity) const {
-  if (!delivery_.ensure_peer_session_key) {
-    return Error("Call delivery not bound");
-  }
-  return delivery_.ensure_peer_session_key(peer_identity);
-}
-
-Roe<ByteVector> CallControlClient::HeldSessionKeyWith(const std::string& peer_identity) const {
-  if (!delivery_.held_peer_session_key) {
-    return Error("Call delivery not bound");
-  }
-  return delivery_.held_peer_session_key(peer_identity);
-}
-
 Roe<void> CallControlClient::SendMediaKey(const std::string& call_id, const std::string& peer_identity,
                                           const uint32_t media_epoch, const std::string& media_key_id,
                                           const ByteVector& key_bytes) {
@@ -201,20 +185,6 @@ Roe<void> CallControlClient::SendMediaKey(const std::string& call_id, const std:
   key_detail.media_key_id = media_key_id;
   // The key itself: the lane copy each of the peer's devices reads is sealed in that device's session (M024).
   key_detail.media_key_b64 = Base64Encode(key_bytes);
-  if (kMediaKeyAccountWrapBridge) {
-    // The old form beside it, for an app before M024: wrapped under the account pair's session. Best effort — a
-    // device after M024 needs only the key itself.
-    auto session_key = SessionKeyWith(peer_identity);
-    auto wrapped = session_key
-                       ? ICallMediaKeyStore::WrapKeyB64(*session_key, key_bytes, call_id, media_epoch, media_key_id)
-                       : Roe<std::string>(session_key.error());
-    if (wrapped) {
-      key_detail.wrapped_key_b64 = *wrapped;
-    } else {
-      log().info << "media key's old form not wrapped call_id=" << call_id << " peer=" << peer_identity << ": "
-                 << wrapped.error().message;
-    }
-  }
   auto key_json = CallControlCodec::EncodeMediaKey(key_detail);
   if (!key_json) {
     return key_json.error();

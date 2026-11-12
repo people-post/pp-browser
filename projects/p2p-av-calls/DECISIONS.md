@@ -161,7 +161,7 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 ## V015 — Pairwise wrap AAD for `call_media_key`
 
 **Date:** 2026-07-28  
-**Status:** Superseded for calls by [multi-device M024](../multi-device-account/DECISIONS.md#m024--the-control-lane-goes-per-device-a-calls-media-key-rides-the-copy) (2026-11-08): the key rides the control-lane message itself (`media_key_b64`), each copy sealed for one device; this wrap, under the account pair's session, is sent beside it for one release only (`kMediaKeyAccountWrapBridge`) and still read from an older sender. Shipped form: [WIRE_SCHEMAS § Call media keys](../../docs/contracts/WIRE_SCHEMAS.md).  
+**Status:** Superseded for calls by [multi-device M024](../multi-device-account/DECISIONS.md#m024--the-control-lane-goes-per-device-a-calls-media-key-rides-the-copy) (2026-11-08): the key rides the control-lane message itself (`media_key_b64`), each copy sealed for one device; this wrap, under the account pair's session, went beside it for one bridge release; neither sent nor read since 2026-11-12 (no bridges pre-release; [COMPATIBILITY § Clean cutovers](../../docs/contracts/COMPATIBILITY.md#clean-cutovers-pre-release)). Shipped form: [WIRE_SCHEMAS § Call media keys](../../docs/contracts/WIRE_SCHEMAS.md).  
 **Decision:** Inner wrap of epoch key bytes uses `MessageCipher` under the peer's active pairwise session key (`SessionKeyDeriver` + `IPskSessionStore`), channel matching call DMs (`e2e_public` today). AAD string:
 
 `call_media_key|<call_id>|<media_epoch>|<media_key_id>`

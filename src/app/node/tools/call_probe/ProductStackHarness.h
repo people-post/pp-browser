@@ -202,7 +202,6 @@ private:
   std::string local_account_;
   std::string local_peer_id_;
   std::string advertise_ma_;
-  ByteVector shared_session_key_;
   /** Invite/Accept libp2p_peer_id → dial key (CallMediaHost map is private on CSM). */
   std::unordered_map<std::string, std::string> account_to_peer_id_;
   int rx_stall_ms_ = 0;

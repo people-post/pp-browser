@@ -16,8 +16,7 @@ namespace pbr {
 
 /**
  * The e2e_public sessions a control-lane send goes under: with one of a peer's devices (the device pair's, M021 —
- * the chat stream's own), or with the peer's account (the account pair's: an account copy, a first contact; the old
- * media-key wrap, M024). Opened on first use from the peer's KEM public key — the device's on its card, the
+ * the chat stream's own), or with the peer's account (the account pair's: an account copy, a first contact). Opened on first use from the peer's KEM public key — the device's on its card, the
  * account's from the directory (M015); a session opened now carries the key_init the first send attaches. Any
  * thread.
  */
@@ -40,16 +39,6 @@ public:
   Roe<Session> Resolve(const std::string& peer_identity);
   /** The device pair's session with `device` of `peer_identity`'s (as its newest card lists it), opened to its KEM. */
   Roe<Session> ResolveDevice(const std::string& peer_identity, const AccountCardDevice& device);
-  /**
-   * The account pair's current key (a call's media-key wrap in its old form, M024), opening the session if needed.
-   * An opener it made rides each account copy Resolve seals until the peer confirms it: the caller holds none.
-   */
-  Roe<ByteVector> Ensure(const std::string& peer_identity);
-  /**
-   * The account pair's current key when a session with `peer_identity` is held; an error when none is. Never opens
-   * one: reading a call media key's old form (M024) — a session opened now could not open what the peer wrapped.
-   */
-  Roe<ByteVector> Held(const std::string& peer_identity) const;
   /** The peer's account KEM public key (directory, M015). */
   Roe<ByteVector> PeerKemPublicKey(const PeerSessionKey& key) const;
 

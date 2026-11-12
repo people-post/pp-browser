@@ -27,8 +27,6 @@
 #include "lib/people/IdentityStore.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "lib/delivery/IPeerSessionStore.h"
-#include "lib/delivery/SessionKeyDeriver.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/media/MediaSessionsOwner.h"
 #include "common/Utilities.h"
@@ -40,7 +38,6 @@
 #include <atomic>
 #include <optional>
 #include "feature/calls/tests/call_media_inbound_fake.h"
-#include "feature/calls/tests/seeded_session_key.h"
 #include "feature/calls/tests/call_direct_driver_fake.h"
 
 #include <gtest/gtest.h>
@@ -71,31 +68,6 @@ ByteVector TestMediaKey() {
   }
   return key;
 }
-
-class MemoryPskStore final : public IPeerSessionStore {
-public:
-  void SeedMasterPsk(ByteVector master_psk) {
-    master_psk_ = std::move(master_psk);
-    master_psk_b64_ = Base64Encode(*master_psk_);
-  }
-
-  Roe<std::optional<PeerSessionRecord>> Load(const PeerSessionKey& /*key*/) const override {
-    if (!master_psk_) {
-      return std::optional<PeerSessionRecord>{};
-    }
-    PeerSessionRecord record;
-    record.session_epoch = 1;
-    record.master_psk_b64 = master_psk_b64_;
-    return std::optional<PeerSessionRecord>{std::move(record)};
-  }
-  Roe<std::vector<PeerSessionRecord>> List() const override { return std::vector<PeerSessionRecord>{}; }
-  Roe<void> Save(const PeerSessionRecord& /*record*/) override { return {}; }
-  Roe<uint64_t> AllocateSenderSeq(const PeerSessionKey& /*key*/) override { return uint64_t{1}; }
-
-private:
-  std::optional<ByteVector> master_psk_;
-  std::string master_psk_b64_;
-};
 
 class FakeDialRegistry final : public mesh::IDialRegistry {
 public:
@@ -218,7 +190,6 @@ protected:
     local_identity_ = loaded->account_id;
     ASSERT_FALSE(local_identity_.empty());
 
-    psk_ = std::make_unique<MemoryPskStore>();
     media_ = std::make_unique<MediaEngine>();
     media_->SetSkipDeviceOpenForTest(true);
     dial_ = std::make_unique<FakeDialRegistry>();
@@ -262,8 +233,6 @@ protected:
     };
     delivery.resolve_peer_thread = [](const std::string& peer) -> Roe<std::string> { return "dm:" + peer; };
     delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
-    delivery.ensure_peer_session_key = [this](const std::string& peer) { return test::SeededSessionKey(*psk_, peer); };
-    delivery.held_peer_session_key = delivery.ensure_peer_session_key;
     if (with_group_standing_) {
       // V062: the group's roster as this device holds it (`holds_roster_` false: a guest's device, none held).
       delivery.group_standing = [this](const std::string&,
@@ -316,7 +285,6 @@ protected:
     transport_.reset();
     dial_.reset();
     media_.reset();
-    psk_.reset();
     if (keys_) {
       keys_->ClearDek();
     }
@@ -496,7 +464,6 @@ protected:
   std::unique_ptr<InMemoryCallMediaKeyStore> keys_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
-  std::unique_ptr<MemoryPskStore> psk_;
   std::unique_ptr<MediaEngine> media_;
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
@@ -1236,13 +1203,7 @@ TEST_F(CallSessionInboundComposeTest, VoiceAnswerNarrowingFollowsTheCallOrigin) 
   EXPECT_FALSE(**direct_allowed) << "a direct call narrows even with a guest already invited";
 }
 
-TEST_F(CallSessionInboundComposeTest, InboundMediaKeyUnwrapsAndKicksAnswerer) {
-  ByteVector master(32);
-  for (size_t i = 0; i < master.size(); ++i) {
-    master[i] = static_cast<uint8_t>(0x40 + i);
-  }
-  psk_->SeedMasterPsk(master);
-
+TEST_F(CallSessionInboundComposeTest, InboundMediaKeyIsTakenAndKicksAnswerer) {
   const std::string call_id = "call:media-key";
   auto msg = MakeInviteMessage(call_id);
   ASSERT_TRUE(msg);
@@ -1257,24 +1218,19 @@ TEST_F(CallSessionInboundComposeTest, InboundMediaKeyUnwrapsAndKicksAnswerer) {
   // Accept without pre-seeded key → MediaPending / KeyWait.
   EXPECT_TRUE(device_->Live().MediaAttempted(call_id));
   if (media_->IsActive()) {
-    // Rare: key race; still exercise unwrap path below.
+    // Rare: key race; still exercise the inbound key below.
   } else {
     EXPECT_TRUE(device_->Live().Phase() == CallPhase::MediaPending ||
                 device_->Live().Phase() == CallPhase::JoinedLocal ||
                 device_->Live().Phase() == CallPhase::MediaConnecting);
   }
 
-  auto session_key = SessionKeyDeriver::Derive(master, CryptoChannel::E2ePublic, 1);
-  ASSERT_TRUE(session_key) << session_key.error().message;
   const ByteVector media_key = TestMediaKey();
-  auto wrapped = ICallMediaKeyStore::WrapKeyB64(*session_key, media_key, call_id, 1, "mk:1");
-  ASSERT_TRUE(wrapped);
-
   CallMediaKeyDetail key_detail;
   key_detail.call_id = call_id;
   key_detail.media_epoch = 1;
   key_detail.media_key_id = "mk:1";
-  key_detail.wrapped_key_b64 = *wrapped;
+  key_detail.media_key_b64 = Base64Encode(media_key);
   auto key_json = CallControlCodec::EncodeMediaKey(key_detail);
   ASSERT_TRUE(key_json);
   auto key_msg = CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallMediaKey, "Media key",
@@ -1764,14 +1720,8 @@ std::string DetailOf(const std::string& payload_json) {
   return payload ? payload->getString("detail").value_or("") : std::string();
 }
 
-// M024: an invite carries the media key itself — its lane copy is sealed for one device of the callee's — and, for
-// one release, its old form wrapped under the account pair's session, which is all an app before M024 reads.
-TEST_F(CallSessionInboundComposeTest, AnInviteCarriesTheKeyAndItsOldForm) {
-  ByteVector master(32);
-  for (size_t i = 0; i < master.size(); ++i) {
-    master[i] = static_cast<uint8_t>(0x50 + i);
-  }
-  psk_->SeedMasterPsk(master);
+// M024: an invite carries the media key itself — its lane copy is sealed for one device of the callee's.
+TEST_F(CallSessionInboundComposeTest, AnInviteCarriesTheKey) {
   Thread thread;
   thread.id = "thread-dm-key-forms";
   thread.kind = ThreadKind::Direct;
@@ -1785,22 +1735,12 @@ TEST_F(CallSessionInboundComposeTest, AnInviteCarriesTheKeyAndItsOldForm) {
 
   auto invite = CallControlCodec::DecodeInvite(DetailOf(last_sent_invite_payload_));
   ASSERT_TRUE(invite) << invite.error().message;
-  EXPECT_EQ(Base64Decode(invite->media_key_b64).value(), **key) << "the key itself, for a device that reads M024";
-  ASSERT_EQ(invite->wrapped_key_b64.empty(), !kMediaKeyAccountWrapBridge);
-  if (kMediaKeyAccountWrapBridge) {
-    // An app before M024: the old field, under the account pair's session.
-    auto session_key = SessionKeyDeriver::Derive(master, CryptoChannel::E2ePublic, 1);
-    ASSERT_TRUE(session_key);
-    auto unwrapped = ICallMediaKeyStore::UnwrapKeyB64(*session_key, invite->wrapped_key_b64, started->call_id, 1,
-                                                      invite->media_key_id);
-    ASSERT_TRUE(unwrapped) << unwrapped.error().message;
-    EXPECT_EQ(*unwrapped, **key);
-  }
+  EXPECT_EQ(Base64Decode(invite->media_key_b64).value(), **key) << "the key itself";
 }
 
-// M024: a device that reads its own lane copy takes the key it carries — no account pair's session needed, so a
-// callee whose account session went another device's way (B186) still has the key.
-TEST_F(CallSessionInboundComposeTest, AnInviteWithTheKeyItselfNeedsNoAccountSession) {
+// M024: a device that reads its own lane copy takes the key it carries — no session of the calls' own, so a callee
+// whose account session went another device's way (B186) still has the key.
+TEST_F(CallSessionInboundComposeTest, AnInvitesKeyIsTakenFromItsLaneCopy) {
   const std::string call_id = "call:key-in-copy";
   auto msg = MakeInviteMessage(call_id);
   ASSERT_TRUE(msg);
@@ -1809,7 +1749,6 @@ TEST_F(CallSessionInboundComposeTest, AnInviteWithTheKeyItselfNeedsNoAccountSess
   auto invite = CallControlCodec::DecodeInvite(payload->getString("detail").value_or(""));
   ASSERT_TRUE(invite);
   invite->media_key_b64 = Base64Encode(TestMediaKey());
-  invite->wrapped_key_b64 = "b2xkLWZvcm0tdGhhdC1kb2VzLW5vdC1vcGVu"; // an old form this device cannot open
   auto detail = CallControlCodec::EncodeInvite(*invite);
   ASSERT_TRUE(detail);
   auto with_key = CallControlCodec::BuildSystemMessage("", CallControlType::CallInvite, "Incoming voice call", *detail,
@@ -1817,7 +1756,7 @@ TEST_F(CallSessionInboundComposeTest, AnInviteWithTheKeyItselfNeedsNoAccountSess
   ASSERT_TRUE(with_key);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*with_key, "account:peer"); }));
   auto stored = keys_->LoadEpochKey(call_id, 1);
-  ASSERT_TRUE(stored && stored->has_value()) << "taken from the invite with no session seeded";
+  ASSERT_TRUE(stored && stored->has_value()) << "taken from the invite";
   EXPECT_EQ(**stored, TestMediaKey());
 }
 
