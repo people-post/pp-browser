@@ -145,7 +145,7 @@ TEST(GroupHopAtJoinTest, KeepsThePlannedHopUnlessSomeoneCannotReachIt) {
   in.planned_hop = "P";
   in.ranked_hops = {"X", "P", "Y"};
   in.reports["b"] = Report(true, {"P", "X"});
-  in.reports["c"] = Report(std::nullopt, {}); // old peer / probe not finished
+  in.reports["c"] = Report(std::nullopt, {}); // probe not finished
   const auto out = DecideGroupHopAtJoin(in);
   EXPECT_EQ(out.action, GroupHopAtJoin::UsePlanned);
   EXPECT_EQ(out.hop, "P");

@@ -5,7 +5,6 @@
 #include "foundation/crypto/EncryptedPayload.h"
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/MessageCipher.h"
-#include "lib/calls/MediaKeyWrap.h"
 #include "foundation/error/AppError.h"
 #include "lib/storage/SqliteCallSessionStore.h"
 #include "common/Utilities.h"

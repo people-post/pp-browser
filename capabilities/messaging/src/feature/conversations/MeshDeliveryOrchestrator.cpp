@@ -1040,14 +1040,6 @@ void MeshDeliveryOrchestrator::NoteMessageActivity(const std::string& thread_id,
   }
 }
 
-Roe<ByteVector> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(const std::string& peer_identity) {
-  return session_keys_.Ensure(peer_identity);
-}
-
-Roe<ByteVector> MeshDeliveryOrchestrator::HeldE2ePublicSessionKey(const std::string& peer_identity) const {
-  return session_keys_.Held(peer_identity);
-}
-
 Roe<ByteVector> MeshDeliveryOrchestrator::PeerKemPublicKey(const PeerSessionKey& key) const {
   if (key.peer_device.empty()) {
     return session_keys_.PeerKemPublicKey(key); // the account's (an account copy)

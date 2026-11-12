@@ -41,7 +41,7 @@ inline constexpr int64_t kControlLaneRelayTtlMs = 61 * 60 * 1000;
  * - **The chat stream** (default): end to end, ordered, stored as transcript rows — history the user
  *   reads (a call summary, a payment receipt).
  * - **The control lane** (`on_lane`): signaling with no place in a transcript (call invite, accept,
- *   media keys, SDP / ICE …). Same E2E session, outside the ordered stream; never stored; applied
+ *   media keys, reach hints …). Same E2E session, outside the ordered stream; never stored; applied
  *   at most once, and only while fresh.
  */
 struct SystemControlFamily {

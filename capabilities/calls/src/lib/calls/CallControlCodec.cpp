@@ -177,15 +177,10 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
     }
     json.set("participants", ArrayValue(std::move(participants)));
   }
-  if (!detail.media_key_b64.empty() || !detail.wrapped_key_b64.empty()) {
+  if (!detail.media_key_b64.empty()) {
     json.setJsonUInt("media_epoch", detail.media_epoch);
     json.set("media_key_id", detail.media_key_id);
-    if (!detail.media_key_b64.empty()) {
-      json.set("media_key_b64", detail.media_key_b64);
-    }
-    if (!detail.wrapped_key_b64.empty()) {
-      json.set("wrapped_key_b64", detail.wrapped_key_b64);
-    }
+    json.set("media_key_b64", detail.media_key_b64);
   }
   WriteStringArray(json, "listen_multiaddrs", detail.listen_multiaddrs);
   if (!detail.libp2p_peer_id.empty()) {
@@ -224,18 +219,13 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
   detail.media_epoch = static_cast<uint32_t>(json->getNonNegInt("media_epoch").value_or(1));
   detail.media_key_id = json->getString("media_key_id").value_or("");
   detail.media_key_b64 = json->getString("media_key_b64").value_or("");
-  detail.wrapped_key_b64 = json->getString("wrapped_key_b64").value_or("");
   detail.listen_multiaddrs = ReadStringArray(*json, "listen_multiaddrs");
   detail.libp2p_peer_id = json->getString("libp2p_peer_id").value_or("");
   detail.caps = ReadPeerCaps(*json);
   detail.offer_amount_minor = json->getIf<int64_t>("offer_amount_minor").value_or(0);
   detail.floor_minor = json->getIf<int64_t>("floor_minor").value_or(0);
   detail.currency = json->getString("currency").value_or(std::string(kPricingCurrencyId));
-  if (json->contains("video_allowed")) {
-    detail.video_allowed = json->getIf<bool>("video_allowed").value_or(false);
-  } else {
-    detail.video_allowed = detail.media_mode == CallMediaMode::Video;
-  }
+  detail.video_allowed = json->getIf<bool>("video_allowed").value_or(false);
   return detail;
 }
 
@@ -404,8 +394,6 @@ Roe<std::string> CallControlCodec::EncodeMediaKey(const CallMediaKeyDetail& deta
   if (!detail.media_key_b64.empty()) {
     json.set("media_key_b64", detail.media_key_b64);
   }
-  // An app before M024 reads this field only (and takes it even when empty: it then waits for a resend).
-  json.set("wrapped_key_b64", detail.wrapped_key_b64);
   return DumpJson(json);
 }
 
@@ -420,7 +408,6 @@ Roe<CallMediaKeyDetail> CallControlCodec::DecodeMediaKey(const std::string& deta
   detail.media_epoch = static_cast<uint32_t>(json->getNonNegInt("media_epoch").value_or(1));
   detail.media_key_id = json->getString("media_key_id").value_or("");
   detail.media_key_b64 = json->getString("media_key_b64").value_or("");
-  detail.wrapped_key_b64 = json->getString("wrapped_key_b64").value_or("");
   return detail;
 }
 
@@ -479,58 +466,6 @@ Roe<CallSummaryDetail> CallControlCodec::DecodeSummary(const std::string& detail
   detail.talk_started_at = json->getIf<int64_t>("talk_started_at");
   detail.group = json->getIf<bool>("group").value_or(false);
   detail.started = json->getIf<bool>("started").value_or(false);
-  return detail;
-}
-
-Roe<std::string> CallControlCodec::EncodeSdp(const CallSdpDetail& detail) {
-  Object json;
-  json.set("call_id", detail.call_id);
-  json.set("identity", detail.identity);
-  json.set("sdp_type", detail.sdp_type);
-  json.set("sdp", detail.sdp);
-  return DumpJson(json);
-}
-
-Roe<CallSdpDetail> CallControlCodec::DecodeSdp(const std::string& detail_json) {
-  auto json = TryParseObject(detail_json);
-  auto call_id = json ? json->getString("call_id") : std::nullopt;
-  if (!json || !call_id) {
-    return Error("Invalid call_sdp detail");
-  }
-  CallSdpDetail detail;
-  detail.call_id = *call_id;
-  detail.identity = json->getString("identity").value_or("");
-  detail.sdp_type = json->getString("sdp_type").value_or("");
-  detail.sdp = json->getString("sdp").value_or("");
-  if (detail.sdp_type.empty() || detail.sdp.empty()) {
-    return Error("call_sdp requires sdp_type and sdp");
-  }
-  return detail;
-}
-
-Roe<std::string> CallControlCodec::EncodeIce(const CallIceDetail& detail) {
-  Object json;
-  json.set("call_id", detail.call_id);
-  json.set("identity", detail.identity);
-  json.set("candidate", detail.candidate);
-  json.set("mid", detail.mid);
-  return DumpJson(json);
-}
-
-Roe<CallIceDetail> CallControlCodec::DecodeIce(const std::string& detail_json) {
-  auto json = TryParseObject(detail_json);
-  auto call_id = json ? json->getString("call_id") : std::nullopt;
-  if (!json || !call_id) {
-    return Error("Invalid call_ice detail");
-  }
-  CallIceDetail detail;
-  detail.call_id = *call_id;
-  detail.identity = json->getString("identity").value_or("");
-  detail.candidate = json->getString("candidate").value_or("");
-  detail.mid = json->getString("mid").value_or("audio");
-  if (detail.candidate.empty()) {
-    return Error("call_ice requires candidate");
-  }
   return detail;
 }
 

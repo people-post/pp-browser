@@ -62,9 +62,6 @@ public:
 
   static bool CanAcceptJoin(size_t current_joined_count, size_t max_joined = kCallEngineeringMaxJoined);
 
-  /** Wire compat: explicit video_allowed, else infer from legacy media_mode. */
-  static bool VideoAllowedFromInvite(const CallInviteDetail& invite);
-
   /**
    * video-voice-choice: a voice-only answer narrows the whole call only for a call started from a
    * direct thread (no origin group). Fixed at invite time on both sides — unlike the live participant
@@ -91,7 +88,7 @@ public:
   /** Join stamp the roster carries for `identity` (the sender's clock), if any. */
   static std::optional<int64_t> RosterJoinStamp(const std::vector<CallRosterEntry>& participants,
                                                 const std::string& identity);
-  /** Old peers send no stamps: this device's receipt time (still earlier than later acceptors). */
+  /** A joined entry the roster carries no stamp for: this device's receipt time (still earlier than later acceptors). */
   static int64_t LocalJoinStampFallback(const CallSession& session);
   /** Distinct invitees other than `local_identity` (empty ids skipped). */
   static size_t CountDistinctInvitees(const std::vector<std::string>& invitees, const std::string& local_identity);

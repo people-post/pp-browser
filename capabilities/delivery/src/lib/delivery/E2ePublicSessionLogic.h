@@ -88,6 +88,4 @@ Roe<void> ReconcileE2ePublicSession(IPeerSessionStore& psk_store, const PeerSess
 Roe<void> RestartE2ePublicSession(IPeerSessionStore& psk_store, const PeerSessionKey& target_key, uint32_t old_epoch,
                                   uint32_t new_epoch, int64_t now_ms);
 
-Roe<ByteVector> DeriveE2ePublicSessionKey(const ByteVector& master_psk, uint32_t session_epoch);
-
 } // namespace pbr

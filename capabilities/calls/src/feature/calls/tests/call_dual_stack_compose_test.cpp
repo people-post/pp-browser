@@ -704,7 +704,7 @@ TEST_F(CallDualStackComposeTest, APeersByeWithoutItsLeaveEndsTheCallAsTheirs) {
   EXPECT_EQ(end->call_id, call_id);
 }
 
-// K014: a call reconnecting after a lost path (an older peer's hang-up closes the stream bare) ends
+// K014: a call reconnecting after a lost path (the peer's `bye` lost with it) ends
 // as the peer's end when its leave arrives — not as a failed connection.
 TEST_F(CallDualStackComposeTest, ALeaveWhileReconnectingEndsTheCallAsTheirs) {
   Thread thread;

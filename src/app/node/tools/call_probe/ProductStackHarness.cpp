@@ -61,11 +61,6 @@ ByteVector ProbeDek() {
   return dek;
 }
 
-ByteVector SharedSessionKey() {
-  ByteVector key(32, 0x5a);
-  return key;
-}
-
 std::optional<std::string> PeerIdFromMa(const std::string& ma) {
   const auto pos = ma.rfind("/p2p/");
   if (pos == std::string::npos) {
@@ -101,7 +96,6 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(std::uniqu
   harness->clock_ = std::move(clock);
   harness->advertise_ma_ = std::move(advertise_ma);
   harness->local_peer_id_ = stack->LocalPeerId();
-  harness->shared_session_key_ = SharedSessionKey();
 
   harness->host_ = std::make_unique<mesh::MeshHost>(AppRuntimeMeshExecutors(), MetricsRegistry::Global());
   harness->host_->SetAppProtocols(ProductMeshProtocols());
@@ -216,10 +210,6 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   deps.prefetch_peer_reachability = [](const std::string&) {};
   deps.sync_mobile_ephemeral_listen = []() {};
   deps.delivery.sync_inbox_from_wake = [](bool) {};
-  deps.delivery.ensure_peer_session_key = [this](const std::string& /*peer*/) -> Roe<ByteVector> {
-    return shared_session_key_;
-  };
-  deps.delivery.held_peer_session_key = deps.delivery.ensure_peer_session_key;
   // Reach registers a peer's dialable listen address on the harness's Amp links.
   auto register_direct_endpoint = [this](const std::string& identity, const std::string& multiaddr) {
     if (!host_ || !host_->Amp()) {

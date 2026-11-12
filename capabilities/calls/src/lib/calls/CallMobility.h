@@ -13,7 +13,7 @@ namespace pbr {
  * motion: a still phone on cellular CGNAT rebinds; a laptop roaming between access points churns.
  */
 enum class MobilityClass {
-  /** Not classified yet, or an old peer without `caps.mobility`. */
+  /** Not classified yet (a peer's caps without `mobility`, or a value this build does not know). */
   Unknown,
   Stationary,
   Mobile,

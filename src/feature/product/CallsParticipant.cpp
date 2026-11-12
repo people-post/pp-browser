@@ -131,20 +131,6 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
         messaging->SyncInboxFromWake(force);
       }
     };
-    deps.delivery.ensure_peer_session_key = [&hub](const std::string& peer_identity) -> Roe<ByteVector> {
-      auto* messaging = hub.MeshMessagingOrNull();
-      if (!messaging) {
-        return Error("Messaging not ready");
-      }
-      return messaging->EnsureE2ePublicSessionKey(peer_identity);
-    };
-    deps.delivery.held_peer_session_key = [&hub](const std::string& peer_identity) -> Roe<ByteVector> {
-      auto* messaging = hub.MeshMessagingOrNull();
-      if (!messaging) {
-        return Error("Messaging not ready");
-      }
-      return messaging->HeldE2ePublicSessionKey(peer_identity);
-    };
     deps.delivery.catch_up_after_call = [&hub]() {
       if (auto* messaging = hub.MeshMessagingOrNull()) {
         messaging->SyncInboxFromWake(true);

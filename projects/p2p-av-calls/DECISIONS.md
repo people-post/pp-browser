@@ -161,7 +161,7 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 ## V015 — Pairwise wrap AAD for `call_media_key`
 
 **Date:** 2026-07-28  
-**Status:** Superseded for calls by [multi-device M024](../multi-device-account/DECISIONS.md#m024--the-control-lane-goes-per-device-a-calls-media-key-rides-the-copy) (2026-11-08): the key rides the control-lane message itself (`media_key_b64`), each copy sealed for one device; this wrap, under the account pair's session, is sent beside it for one release only (`kMediaKeyAccountWrapBridge`) and still read from an older sender. Shipped form: [WIRE_SCHEMAS § Call media keys](../../docs/contracts/WIRE_SCHEMAS.md).  
+**Status:** Superseded for calls by [multi-device M024](../multi-device-account/DECISIONS.md#m024--the-control-lane-goes-per-device-a-calls-media-key-rides-the-copy) (2026-11-08): the key rides the control-lane message itself (`media_key_b64`), each copy sealed for one device; this wrap, under the account pair's session, went beside it for one bridge release; neither sent nor read since 2026-11-12 (no bridges pre-release; [COMPATIBILITY § Clean cutovers](../../docs/contracts/COMPATIBILITY.md#clean-cutovers-pre-release)). Shipped form: [WIRE_SCHEMAS § Call media keys](../../docs/contracts/WIRE_SCHEMAS.md).  
 **Decision:** Inner wrap of epoch key bytes uses `MessageCipher` under the peer's active pairwise session key (`SessionKeyDeriver` + `IPskSessionStore`), channel matching call DMs (`e2e_public` today). AAD string:
 
 `call_media_key|<call_id>|<media_epoch>|<media_key_id>`
@@ -746,7 +746,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 ## V034 — Video on libp2p (video_lo; E2E; same streams)
 
 **Date:** 2026-08-18  
-**Status:** Accepted (**implementing**); the hop-queue rule ("never shed `ReliableOrdered`") is **superseded by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses)  
+**Status:** Accepted (**implementing**); the hop-queue rule ("never shed `ReliableOrdered`") is **superseded by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses); the frame row (v2, "decrypt v1 bodies as channel 0") by [adp A029](../adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H2 — one media frame, any other version refused ([WIRE_SCHEMAS § Media frames](../../docs/contracts/WIRE_SCHEMAS.md#media-frames))  
 **Decision:** Product **video** rides the existing libp2p voice path — not WebRTC. Capture/encode/decode/tiles stay the a3 SDL + platform HW H264 stack ([V017](#v017--video-codec-h264-via-platform-hw) / [V018](#v018--video-capture--render-path-in-sdl--rmlui-shell)). Transport is **encrypted H264 video_lo** on the same 1:1 duplex and the same blind `media_relay` hop as Opus.
 
 | Topic | Rule |

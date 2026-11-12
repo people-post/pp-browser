@@ -51,17 +51,6 @@ struct CallDeliveryPorts {
   CallGroupStandingFn group_standing;
   std::function<void(bool force)> sync_inbox_from_wake;
   /**
-   * The account pair's e2e_public session key, for the media key's old form (AutoKey if missing; M024 bridge — gone
-   * with kMediaKeyAccountWrapBridge). An opener it made rides the lane's account copies to that peer until confirmed
-   * (delivery's own doing).
-   */
-  std::function<pp::Roe<ByteVector>(const std::string& peer_identity)> ensure_peer_session_key;
-  /**
-   * The same key when a session with the peer is held — never opened: reading the media key's old form (a session
-   * opened then could not open what the peer wrapped). Gone with kMediaKeyAccountWrapRead.
-   */
-  std::function<pp::Roe<ByteVector>(const std::string& peer_identity)> held_peer_session_key;
-  /**
    * After the last local call ends — flush inbox + TailSync that were deferred while
    * HasActiveLocalCall. No-op while another call is still ActiveLocalCall.
    */

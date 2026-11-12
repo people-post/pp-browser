@@ -38,21 +38,7 @@ protected:
     session.media_epoch = 1;
     ASSERT_TRUE(sessions_->UpsertSession(session));
 
-    CallMediaKeyExchange::Transport transport;
-    transport.resolve_peer_session_key = [this](const std::string&) -> Roe<ByteVector> {
-      ++sessions_opened_or_used_;
-      if (!peer_session_ready_) {
-        return Error("no session with the peer yet");
-      }
-      return session_key_;
-    };
-    transport.held_peer_session_key = [this](const std::string&) -> Roe<ByteVector> {
-      if (!peer_session_ready_) {
-        return Error("no session held with the peer");
-      }
-      return session_key_;
-    };
-    exchange_ = std::make_unique<CallMediaKeyExchange>(*sessions_, *keys_, std::move(transport));
+    exchange_ = std::make_unique<CallMediaKeyExchange>(*sessions_, *keys_, CallMediaKeyExchange::Transport{});
   }
 
   void TearDown() override {
@@ -63,107 +49,51 @@ protected:
     std::filesystem::remove_all(dir_);
   }
 
-  /** The coordinator's CallMediaKey for `epoch`, wrapped under the pair's session key. */
-  std::string MediaKeyDetail(uint32_t epoch) {
-    CallMediaKeyDetail detail;
-    detail.call_id = kCall;
-    detail.media_epoch = epoch;
-    detail.media_key_id = "mk:" + std::to_string(epoch);
-    detail.wrapped_key_b64 = ICallMediaKeyStore::WrapKeyB64(session_key_, Bytes(static_cast<uint8_t>(0x40 + epoch)),
-                                                            kCall, epoch, detail.media_key_id)
-                                 .value();
-    return CallControlCodec::EncodeMediaKey(detail).value();
-  }
-
   static constexpr const char* kCall = "call:rotate";
   std::filesystem::path dir_;
   std::unique_ptr<InMemoryCallMediaKeyStore> keys_;
   std::unique_ptr<InMemoryCallSessionStore> sessions_;
   std::unique_ptr<CallMediaKeyExchange> exchange_;
-  ByteVector session_key_ = Bytes(0x10);
-  bool peer_session_ready_ = false;
-  /** Calls of the port that opens a session when missing: the wrap's, never the read's. */
-  int sessions_opened_or_used_ = 0;
 };
 
-// #381: a rotation's key that cannot be opened yet is not taken (the call stays on the epoch it has a key
-// for); the coordinator's resend is taken, and its key stored. Moving the call is the workflow's (the rows'
-// one writer): the exchange only says which key it took.
-TEST_F(CallMediaKeyExchangeTest, AKeyThatFailedToOpenIsTakenFromItsResend) {
-  if (!kMediaKeyAccountWrapRead) {
-    GTEST_SKIP() << "the old form is no longer read (M024 bridge, step 2)";
-  }
-  const std::string epoch2 = MediaKeyDetail(2);
-  auto first = exchange_->HandleInbound(epoch2, "account:coordinator");
-  ASSERT_TRUE(first);
-  EXPECT_FALSE(*first) << "no key for epoch 2 yet: nothing taken";
-  EXPECT_FALSE(keys_->LoadEpochKey(kCall, 2).value());
-
-  peer_session_ready_ = true;
-  auto resend = exchange_->HandleInbound(epoch2, "account:coordinator");
-  ASSERT_TRUE(resend);
-  ASSERT_TRUE(*resend);
-  EXPECT_EQ((*resend)->call_id, kCall);
-  EXPECT_EQ((*resend)->epoch, 2u);
-  EXPECT_EQ((*resend)->key_id, "mk:2");
-  auto stored = keys_->LoadEpochKey(kCall, 2);
-  ASSERT_TRUE(stored && *stored);
-  EXPECT_EQ(**stored, Bytes(0x42));
-  EXPECT_EQ(sessions_->LoadSession(kCall).value()->media_epoch, 1u) << "the exchange never writes the row";
-  EXPECT_EQ(sessions_opened_or_used_, 0) << "reading the old form never opens a session (M024)";
-}
-
-/** A CallMediaKey for `epoch` as a sender after M024 sends it: the key itself, and (the bridge) its old form. */
-std::string NewFormDetail(const char* call, uint32_t epoch, const ByteVector& key, const std::string& wrapped) {
+/** A CallMediaKey for `epoch`: the key itself (M024). */
+std::string MediaKeyDetail(const char* call, uint32_t epoch, const ByteVector& key) {
   CallMediaKeyDetail detail;
   detail.call_id = call;
   detail.media_epoch = epoch;
   detail.media_key_id = "mk:" + std::to_string(epoch);
   detail.media_key_b64 = Base64Encode(key);
-  detail.wrapped_key_b64 = wrapped;
   return CallControlCodec::EncodeMediaKey(detail).value();
 }
 
-// M024: the key itself rides the lane copy sealed for this device; it is taken with no account pair's session —
-// a callee whose account session went to a sibling's opener (B186) still gets it.
-TEST_F(CallMediaKeyExchangeTest, TheKeyItselfIsTakenWithNoAccountSession) {
-  peer_session_ready_ = false;
-  auto taken = exchange_->HandleInbound(NewFormDetail(kCall, 2, Bytes(0x77), ""), "account:caller");
+// M024: the key itself rides the lane copy sealed for this device; it is taken and stored. Moving the call to its
+// epoch is the workflow's (the rows' one writer, #381): the exchange only says which key it took.
+TEST_F(CallMediaKeyExchangeTest, TheKeyItselfIsTaken) {
+  auto taken = exchange_->HandleInbound(MediaKeyDetail(kCall, 2, Bytes(0x77)), "account:caller");
   ASSERT_TRUE(taken);
   ASSERT_TRUE(*taken);
+  EXPECT_EQ((*taken)->call_id, kCall);
+  EXPECT_EQ((*taken)->epoch, 2u);
+  EXPECT_EQ((*taken)->key_id, "mk:2");
   EXPECT_EQ(keys_->LoadEpochKey(kCall, 2).value().value(), Bytes(0x77));
+  EXPECT_EQ(sessions_->LoadSession(kCall).value()->media_epoch, 1u) << "the exchange never writes the row";
 }
 
-// A receiver after M024 prefers the key itself: an old form under a session it does not share does not stop it.
-TEST_F(CallMediaKeyExchangeTest, TheKeyItselfWinsOverAnOldFormThatDoesNotOpen) {
-  peer_session_ready_ = true; // the account pair's session we hold — not the one the sender wrapped under
-  const std::string wrapped = ICallMediaKeyStore::WrapKeyB64(Bytes(0x99), Bytes(0x55), kCall, 2, "mk:2").value();
-  auto taken = exchange_->HandleInbound(NewFormDetail(kCall, 2, Bytes(0x55), wrapped), "account:caller");
+// A CallMediaKey that carries no key is not taken: nothing stored, the call stays on the epoch it has a key for.
+TEST_F(CallMediaKeyExchangeTest, AMessageWithNoKeyIsNotTaken) {
+  CallMediaKeyDetail detail;
+  detail.call_id = kCall;
+  detail.media_epoch = 2;
+  detail.media_key_id = "mk:2";
+  auto taken = exchange_->HandleInbound(CallControlCodec::EncodeMediaKey(detail).value(), "account:caller");
   ASSERT_TRUE(taken);
-  EXPECT_TRUE(*taken);
-  EXPECT_EQ(keys_->LoadEpochKey(kCall, 2).value().value(), Bytes(0x55));
-}
-
-// For one release a sender after M024 still wraps the key under the account pair's session, the only form an app
-// before it reads (an old receiver ignores `media_key_b64`).
-TEST_F(CallMediaKeyExchangeTest, TheOldFormStillGoesForAnOlderApp) {
-  peer_session_ready_ = true;
-  const CallMediaKeyExchange::EpochKey key{1, "mk:1", Bytes(0x31)};
-  const std::string wrapped = exchange_->WrapForPeer(kCall, key, "account:old");
-  if (!kMediaKeyAccountWrapBridge) {
-    EXPECT_TRUE(wrapped.empty()) << "the bridge is gone";
-    return;
-  }
-  ASSERT_FALSE(wrapped.empty());
-  auto old_reader = CallControlCodec::DecodeMediaKey(NewFormDetail(kCall, 1, key.key, wrapped)).value();
-  old_reader.media_key_b64.clear(); // an app before M024 does not know the field
-  EXPECT_EQ(ICallMediaKeyStore::UnwrapKeyB64(session_key_, old_reader.wrapped_key_b64, kCall, 1, "mk:1").value(),
-            key.key);
+  EXPECT_FALSE(*taken);
+  EXPECT_FALSE(keys_->LoadEpochKey(kCall, 2).value());
 }
 
 // A key of the wrong size is refused, not stored, and the call stays on the epoch it has a key for (#381).
 TEST_F(CallMediaKeyExchangeTest, AMalformedKeyIsNotTaken) {
-  auto taken = exchange_->HandleInbound(NewFormDetail(kCall, 2, Bytes(0x10, 16), ""), "account:caller");
+  auto taken = exchange_->HandleInbound(MediaKeyDetail(kCall, 2, Bytes(0x10, 16)), "account:caller");
   ASSERT_TRUE(taken);
   EXPECT_FALSE(*taken);
   EXPECT_FALSE(keys_->LoadEpochKey(kCall, 2).value());
