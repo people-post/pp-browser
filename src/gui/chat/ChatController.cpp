@@ -63,6 +63,7 @@
 #include "foundation/platform/Platform.h"
 #include "common/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "lib/calls/CallControlFamily.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "lib/messaging/MentionAlert.h"
 #include "lib/messaging/AttachmentCache.h"
@@ -4058,6 +4059,14 @@ bool ChatController::IsContactCard(const std::string& message_id) const {
   }
   auto found = facade_->GetMessage(ActiveThreadId(), message_id);
   return found && found->has_value() && (*found)->content_type == ChatContentType::ContactCard;
+}
+
+bool ChatController::IsCallRecord(const std::string& message_id) const {
+  if (!facade_ || message_id.empty()) {
+    return false;
+  }
+  auto found = facade_->GetMessage(ActiveThreadId(), message_id);
+  return found && found->has_value() && CallSummaryRowOf(**found).has_value();
 }
 
 void ChatController::AddContactFromCard(const std::string& message_id) {

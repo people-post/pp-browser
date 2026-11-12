@@ -968,4 +968,58 @@ TEST_F(ContextMenuKeyboardTest, ADesktopRightClickMenuHoldsNoFocus) {
   EXPECT_EQ(msg_->GetLocalProperty("focus"), nullptr);
 }
 
+// Kenneth 2026-11-12: a call record row in a chat opens no menu; one tap on it calls back. The long press on it must
+// leave things as they were: no sheet, no click when the finger lifts (that would call back), and a keyboard that is
+// up stays up.
+namespace {
+class ClickCounter : public ui::EventListener {
+public:
+  void ProcessEvent(ui::Event&) override { ++clicks; }
+  int clicks = 0;
+};
+} // namespace
+
+TEST_F(ContextMenuKeyboardTest, AnEmptyMenuLongPressShowsNothingAndItsLiftIsNoTap) {
+  message_actions_ = [](const ContextMenuRequest&) { return std::vector<ContextMenuAction>{}; };
+  ClickCounter counter;
+  msg_->AddEventListener(ui::EventId::Click, &counter);
+  PressAndHoldMessage();
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_EQ(document_->GetElementById("context-menu-layer"), nullptr);
+  Lift();
+  for (int i = 0; i < 3; ++i) {
+    Frame();
+  }
+  EXPECT_EQ(counter.clicks, 0) << "the lift after a long press called back";
+  // The next plain tap is a tap again.
+  context_->ProcessTouchStart(ui::TouchList{touch_}, 0);
+  Frame();
+  Lift();
+  Frame();
+  EXPECT_EQ(counter.clicks, 1);
+  msg_->RemoveEventListener(ui::EventId::Click, &counter);
+}
+
+TEST_F(ContextMenuKeyboardTest, AnEmptyMenuLongPressWhileTypingLeavesTheKeyboardAndFocusAsTheyWere) {
+  message_actions_ = [](const ContextMenuRequest&) { return std::vector<ContextMenuAction>{}; };
+  StartTyping();
+  PressAndHoldMessage();
+  Lift();
+  for (int i = 0; i < 3; ++i) {
+    Frame();
+  }
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_EQ(keyboard_.deactivations, 0);
+  EXPECT_TRUE(keyboard_.up);
+  EXPECT_EQ(context_->GetFocusElement(), draft_);
+  EXPECT_EQ(msg_->GetLocalProperty("focus"), nullptr);
+  // No residue: a tap on the message still puts the keyboard away.
+  context_->ProcessTouchStart(ui::TouchList{touch_}, 0);
+  Frame();
+  Lift();
+  Frame();
+  EXPECT_EQ(keyboard_.deactivations, 1);
+  EXPECT_NE(context_->GetFocusElement(), draft_);
+}
+
 } // namespace pbr

@@ -167,6 +167,9 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   if (message_id.empty() || IsPendingUploadRowId(message_id) || host_.IsDeletedMessage(message_id)) {
     return actions; // a deleted message takes no reaction, reply, copy or second delete; a picture being sent is none
   }
+  if (host_.IsCallRecord(message_id)) {
+    return actions; // a call record is one tap (call back) and no menu (Kenneth 2026-11-12)
+  }
   // Reactions sit in the row above the message, the rest in the list below it: the user's last-used first.
   for (const std::string& emoji : QuickReactions(host_.RecentEmojis())) {
     ContextMenuAction react{"react_" + emoji, emoji, nullptr, [this, message_id, emoji]() {

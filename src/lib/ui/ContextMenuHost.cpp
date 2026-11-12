@@ -309,11 +309,53 @@ void ContextMenuHost::OnLongPress(ui::Vector2i position, ui::Element* target) {
   request.touch = true;
   ShowAt(request);
   HoldTypingFocus(target);
+  if (!IsOpen() && target && anchor_resolver_ && anchor_resolver_(target)) {
+    SwallowEmptyLongPressRelease(target);
+  }
+}
+
+void ContextMenuHost::SwallowEmptyLongPressRelease(ui::Element* target) {
+  // An item with no menu (a call record row): the finger's lift after the long press is no tap. Its click must not
+  // reach the row (it would call back), and the lift must not move the focus off a field being typed in (the
+  // keyboard would drop).
+  ReleaseGuardEnd();
+  ui::ElementDocument* document = target->GetOwnerDocument();
+  if (!document) {
+    return;
+  }
+  release_guard_document_ = document->GetObserverPtr();
+  document->AddEventListener(ui::EventId::Mousedown, this, true);
+  document->AddEventListener(ui::EventId::Mouseup, this, true);
+  document->AddEventListener(ui::EventId::Click, this, true);
+  release_guard_swallow_click_ = true;
+  HoldFocusFrom(target);
+}
+
+void ContextMenuHost::ReleaseGuardEnd() {
+  release_guard_swallow_click_ = false;
+  release_guard_done_ = false;
+  if (ui::Element* taker = held_focus_taker_.get()) {
+    taker->RemoveProperty("focus");
+  }
+  held_focus_taker_ = nullptr;
+  if (ui::Element* document = release_guard_document_.get()) {
+    document->RemoveEventListener(ui::EventId::Mousedown, this, true);
+    document->RemoveEventListener(ui::EventId::Mouseup, this, true);
+    document->RemoveEventListener(ui::EventId::Click, this, true);
+  }
+  release_guard_document_ = nullptr;
 }
 
 void ContextMenuHost::HoldTypingFocus(ui::Element* target) {
   // Only the phone's item sheet over a field being typed in: the desktop's menus and the keyboard-less case are as before.
-  if (!IsOpen() || presentation_ != Presentation::ActionSheet || !menu_anchor_ || !context_) {
+  if (!IsOpen() || presentation_ != Presentation::ActionSheet || !menu_anchor_) {
+    return;
+  }
+  HoldFocusFrom(target);
+}
+
+void ContextMenuHost::HoldFocusFrom(ui::Element* target) {
+  if (!context_) {
     return;
   }
   ui::Element* focus = context_->GetFocusElement();
@@ -970,6 +1012,9 @@ void ContextMenuHost::RequestDismiss(bool restore_focus) {
 }
 
 void ContextMenuHost::Update() {
+  if (release_guard_done_) {
+    ReleaseGuardEnd();
+  }
   if (dismiss_pending_) {
     Dismiss();
   }
@@ -1217,6 +1262,31 @@ bool ContextMenuHost::HandleSheetEvent(ui::Event& event) {
 }
 
 void ContextMenuHost::ProcessEvent(ui::Event& event) {
+  if (release_guard_document_) {
+    switch (event.GetId()) {
+      case ui::EventId::Mousedown:
+        // A new press: the long press's finger is gone already (cancelled), nothing left to swallow.
+        release_guard_swallow_click_ = false;
+        release_guard_done_ = true;
+        if (ui::Element* taker = held_focus_taker_.get()) {
+          taker->RemoveProperty("focus"); // this press picks its focus as ever
+        }
+        held_focus_taker_ = nullptr;
+        return;
+      case ui::EventId::Mouseup:
+        release_guard_done_ = true; // the click of this lift follows at once; Update() ends the guard after it
+        return;
+      case ui::EventId::Click:
+        if (release_guard_swallow_click_) {
+          release_guard_swallow_click_ = false;
+          event.StopPropagation();
+          return;
+        }
+        break;
+      default:
+        break;
+    }
+  }
   if (!layer_ || dismiss_pending_) {
     return;
   }

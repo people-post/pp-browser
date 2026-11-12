@@ -70,6 +70,8 @@ public:
   virtual bool IsDeletedMessage(const std::string& message_id) const = 0;
   /** What the user reads in a message of the active thread ("" when not found). */
   virtual std::string MessagePlainText(const std::string& message_id) const = 0;
+  /** A call record row (the result of a voice / video call): one tap calls back, no menu. */
+  virtual bool IsCallRecord(const std::string& message_id) const = 0;
   /** A contact card (someone's contact, shared in the chat). */
   virtual bool IsContactCard(const std::string& message_id) const = 0;
   /** *Add to contacts* on a contact card: checks it, adds the person, shows them. */

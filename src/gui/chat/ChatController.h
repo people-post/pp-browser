@@ -437,6 +437,7 @@ private:
   /** What the user reads in a message of the active thread ("" when not found). */
   std::string MessagePlainText(const std::string& message_id) const override;
   bool IsContactCard(const std::string& message_id) const override;
+  bool IsCallRecord(const std::string& message_id) const override;
   void AddContactFromCard(const std::string& message_id) override;
   /**
    * Reply / Ask AI: shows `text` as the quote bar above the composer; the next send carries it as a quote.

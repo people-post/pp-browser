@@ -148,6 +148,11 @@ private:
   /// A long press opened the phone's item sheet while a text field has the focus: the finger's lift must not move the
   /// focus to the pressed item (the keyboard would close under the sheet). Undone in Dismiss().
   void HoldTypingFocus(ui::Element* target);
+  /// The part both share: while a text field has the focus, the item `target` would take it from the lift is held.
+  void HoldFocusFrom(ui::Element* target);
+  /// A long press on an item that has no menu: the lift is no tap (no click, no focus move). Ended in Update().
+  void SwallowEmptyLongPressRelease(ui::Element* target);
+  void ReleaseGuardEnd();
 
   ui::Context* context_ = nullptr;
   ui::Context* menu_context_ = nullptr;
@@ -166,6 +171,10 @@ private:
   ui::ObserverPtr<ui::Element> focus_restore_;
   /// The pressed item held from taking the focus while the sheet is open (HoldTypingFocus).
   ui::ObserverPtr<ui::Element> held_focus_taker_;
+  /// SwallowEmptyLongPressRelease: the document the guard listens on, and where it stands.
+  ui::ObserverPtr<ui::Element> release_guard_document_;
+  bool release_guard_swallow_click_ = false;
+  bool release_guard_done_ = false;
   ui::Element* layer_ = nullptr;
   ui::Element* panel_ = nullptr;
   bool dismiss_pending_ = false;
