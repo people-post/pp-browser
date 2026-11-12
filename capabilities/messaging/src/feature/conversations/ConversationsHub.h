@@ -384,8 +384,10 @@ public:
   /**
    * B142: when the contact's last directory answer is older than ContactProfileRefresh::kStaleMs, looks it up
    * on a background worker and takes its new nickname and photo. Cheap and silent when fresh. Any thread.
+   * `force` skips the staleness check (a contact just added by QR code, whose relay id is still missing); a
+   * lookup made lately is still not repeated.
    */
-  void RefreshContactProfileIfStale(const std::string& contact_id);
+  void RefreshContactProfileIfStale(const std::string& contact_id, bool force = false);
   /** The same for every contact, one lookup at a time, at most one every half second; fresh ones cost nothing. */
   void RefreshStaleContactProfiles();
   void SetOnPeerIconsChanged(std::function<void()> callback);
@@ -574,7 +576,7 @@ private:
   void ScheduleContactIconFetch(const Contact& contact);
   void NotifyPeerIconsChanged();
   /** Blocking (a worker): refreshes one contact; true when a directory lookup was made. */
-  bool RefreshContactProfileNow(const std::string& contact_id);
+  bool RefreshContactProfileNow(const std::string& contact_id, bool force = false);
   void ContinueContactProfileSweep(std::shared_ptr<const std::vector<std::string>> contact_ids, size_t index);
 
   void SyncLanMdnsAdvertisement();

@@ -1660,23 +1660,25 @@ void ConversationsHub::EnsureContactIconCached(const Contact& contact) {
   ScheduleContactIconFetch(contact);
 }
 
-bool ConversationsHub::RefreshContactProfileNow(const std::string& contact_id) {
+bool ConversationsHub::RefreshContactProfileNow(const std::string& contact_id, const bool force) {
   if (!contact_profile_refresh_ || !AppRuntime::IsRunning() || shutdown_requested_.load(std::memory_order_acquire)) {
     return false;
   }
-  auto refreshed = contact_profile_refresh_->RefreshIfStale(contact_id, util::NowUnixMs());
+  auto refreshed = contact_profile_refresh_->RefreshIfStale(contact_id, util::NowUnixMs(), force);
   if (refreshed.updated) {
     EnsureContactIconCached(*refreshed.updated); // fetches the new photo and tells the screens when it is there
+    // A changed name or relay id shows on an open page even when no photo is fetched.
+    AppRuntime::PostUI([this]() { NotifyPeerIconsChanged(); });
   }
   return refreshed.looked_up;
 }
 
-void ConversationsHub::RefreshContactProfileIfStale(const std::string& contact_id) {
+void ConversationsHub::RefreshContactProfileIfStale(const std::string& contact_id, const bool force) {
   if (!contact_profile_refresh_ || !HasDirectory() || !AppRuntime::IsRunning() ||
-      !contact_profile_refresh_->NeedsRefresh(contact_id, util::NowUnixMs())) {
+      !contact_profile_refresh_->NeedsRefresh(contact_id, util::NowUnixMs(), force)) {
     return;
   }
-  AppRuntime::PostWorkerBackground([this, contact_id]() { RefreshContactProfileNow(contact_id); });
+  AppRuntime::PostWorkerBackground([this, contact_id, force]() { RefreshContactProfileNow(contact_id, force); });
 }
 
 void ConversationsHub::RefreshStaleContactProfiles() {

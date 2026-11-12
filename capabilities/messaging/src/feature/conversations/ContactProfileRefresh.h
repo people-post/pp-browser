@@ -16,9 +16,9 @@ namespace pbr {
  * Keeps a contact's nickname and profile photo current (B142): a contact whose last directory answer is older
  * than `kStaleMs` is looked up again by its Account ID (else its relay id) and only `remote.nickname`,
  * `remote.icon` and `remote.fetched_at` are updated (ContactsStore::ApplyProfileRefresh). A contact without a
- * relay id (added from a QR code) is looked up once whatever its last answer was and takes the relay id from an
- * answer that has one (ContactsStore::ApplyRemoteSnapshot). A lookup is not repeated within `kStaleMs`, answered
- * or not (kept in memory). Blocking: call it off the UI thread.
+ * relay id (added from a QR code) also takes the relay id from the answer, and nothing else (no devices). The
+ * scan itself asks once with `force`. A lookup is not repeated within `kStaleMs`, answered or not (kept in
+ * memory, from the moment it starts). Blocking: call it off the UI thread.
  */
 class ContactProfileRefresh {
 public:
@@ -34,13 +34,17 @@ public:
 
   ContactProfileRefresh(ContactsStore& contacts, mesh::IDirectoryClient& directory);
 
-  /** True when the contact is known, has an Account ID or a relay id, and a lookup is due at `now_ms`. */
-  bool NeedsRefresh(const std::string& contact_id, int64_t now_ms) const;
-  /** Looks the contact up and applies the answer when it is stale; a fresh or unknown contact costs no lookup. */
-  Result RefreshIfStale(const std::string& contact_id, int64_t now_ms);
+  /**
+   * True when the contact is known, has an Account ID or a relay id, and a lookup is due at `now_ms`: its last
+   * answer is stale, or `force` (a fresh QR scan, which has no relay id yet) skips that check. A lookup made
+   * lately is never repeated, forced or not.
+   */
+  bool NeedsRefresh(const std::string& contact_id, int64_t now_ms, bool force = false) const;
+  /** Looks the contact up and applies the answer when it is due; a fresh or unknown contact costs no lookup. */
+  Result RefreshIfStale(const std::string& contact_id, int64_t now_ms, bool force = false);
 
 private:
-  bool Due(const Contact& contact, int64_t now_ms) const;
+  bool Due(const Contact& contact, int64_t now_ms, bool force) const;
 
   ContactsStore& contacts_;
   mesh::IDirectoryClient& directory_;

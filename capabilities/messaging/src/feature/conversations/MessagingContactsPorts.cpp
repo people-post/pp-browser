@@ -76,7 +76,7 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
         return;
       }
       // The invite carries no relay id: ask the directory for it now (on a worker, never on this thread).
-      hub.RefreshContactProfileIfStale(added.value().contact.id);
+      hub.RefreshContactProfileIfStale(added.value().contact.id, /*force=*/true);
       done(std::make_pair(added.value().contact.id, added.value().keys_known));
     });
   };

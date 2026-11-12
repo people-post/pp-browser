@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include "common/MeshAlias.h"
@@ -27,6 +28,9 @@ public:
   Roe<mesh::DirectoryHit> LookupByAccount(const std::string& account_id) override {
     ++account_lookups;
     last_account_id = account_id;
+    if (on_account_lookup) {
+      on_account_lookup();
+    }
     if (fail) {
       return Error("not found");
     }
@@ -39,6 +43,7 @@ public:
   std::string last_relay_id;
   std::string last_account_id;
   mesh::DirectoryHit answer;
+  std::function<void()> on_account_lookup; // runs inside the lookup (an overlapping call)
 };
 
 class ContactProfileRefreshTest : public ::testing::Test {
@@ -182,6 +187,11 @@ protected:
     directory_.answer.ids = {{mesh::ContactIdKind::Account, "account:bob", true},
                              {mesh::ContactIdKind::RelayUser, "relay:bob", false}};
   }
+  void SetScannedFetchedAt(const int64_t fetched_at) {
+    Contact contact = **contacts_->Get("scanned");
+    contact.remote.fetched_at = fetched_at;
+    ASSERT_TRUE(static_cast<bool>(contacts_->Upsert(contact)));
+  }
   static bool HasRelay(const Contact& contact) {
     for (const mesh::ContactId& id : contact.remote.ids) {
       if (id.kind == mesh::ContactIdKind::RelayUser && id.value == "relay:bob") {
@@ -192,28 +202,60 @@ protected:
   }
 };
 
-TEST_F(ScannedContactRefreshTest, AContactWithoutARelayIdTakesItFromTheAnswerAndKeepsItsDevice) {
-  EXPECT_TRUE(refresh_->NeedsRefresh("scanned", kNow)) << "asked once even though it was just added";
-  auto result = refresh_->RefreshIfStale("scanned", kNow);
+TEST_F(ScannedContactRefreshTest, AFreshScannedContactIsNotDueByItselfButAForcedCallLooksItUp) {
+  EXPECT_FALSE(refresh_->NeedsRefresh("scanned", kNow)) << "fetched just now: not stale";
+  EXPECT_FALSE(refresh_->RefreshIfStale("scanned", kNow).looked_up);
+  EXPECT_EQ(directory_.account_lookups, 0);
+  EXPECT_TRUE(refresh_->NeedsRefresh("scanned", kNow, /*force=*/true));
+  auto result = refresh_->RefreshIfStale("scanned", kNow, /*force=*/true);
   EXPECT_TRUE(result.looked_up);
   EXPECT_EQ(directory_.account_lookups, 1);
   ASSERT_TRUE(result.updated.has_value());
   EXPECT_TRUE(HasRelay(*result.updated));
-  EXPECT_EQ(PrimaryIdOfKind(*result.updated, mesh::ContactIdKind::PeerId), "12D3KooWBob");
   EXPECT_EQ(result.updated->remote.nickname, "Bob B.");
-  EXPECT_FALSE(refresh_->NeedsRefresh("scanned", kNow + 1)) << "not asked again within kStaleMs";
+  EXPECT_FALSE(refresh_->NeedsRefresh("scanned", kNow + 1, true)) << "not asked again within kStaleMs";
 }
 
-TEST_F(ScannedContactRefreshTest, AnAnswerWithoutARelayIdOnlyUpdatesTheNickname) {
+TEST_F(ScannedContactRefreshTest, TheAutomaticPathTakesOnlyTheRelayIdNotTheAnswersDevices) {
+  directory_.answer.ids.push_back({mesh::ContactIdKind::PeerId, "12D3KooWOther", false});
+  directory_.answer.endpoints = {mesh::DirectoryEndpoint{.peer_id = "12D3KooWOther"}};
+  directory_.answer.multiaddrs = {"/ip4/9.9.9.9/tcp/9"};
+  const Contact before = **contacts_->Get("scanned");
+  auto result = refresh_->RefreshIfStale("scanned", kNow, true);
+  ASSERT_TRUE(result.updated.has_value());
+  EXPECT_TRUE(HasRelay(*result.updated));
+  EXPECT_EQ(PrimaryIdOfKind(*result.updated, mesh::ContactIdKind::PeerId), "12D3KooWBob");
+  for (const mesh::ContactId& id : result.updated->remote.ids) {
+    EXPECT_NE(id.value, "12D3KooWOther");
+  }
+  EXPECT_EQ(result.updated->remote.endpoints.size(), before.remote.endpoints.size());
+  EXPECT_EQ(result.updated->remote.multiaddrs, before.remote.multiaddrs);
+}
+
+TEST_F(ScannedContactRefreshTest, AnAnswerWithoutARelayIdOnlyUpdatesTheNicknameAndTheFetchTime) {
+  SetScannedFetchedAt(kNow - ContactProfileRefresh::kStaleMs - 1);
   directory_.answer.ids = {{mesh::ContactIdKind::Account, "account:bob", true}};
   auto result = refresh_->RefreshIfStale("scanned", kNow);
   ASSERT_TRUE(result.updated.has_value());
   EXPECT_FALSE(HasRelay(*result.updated));
   EXPECT_EQ(result.updated->remote.nickname, "Bob B.");
+  EXPECT_EQ(result.updated->remote.fetched_at, kNow);
   EXPECT_FALSE(refresh_->NeedsRefresh("scanned", kNow + 1));
+  EXPECT_FALSE(refresh_->NeedsRefresh("scanned", kNow + ContactProfileRefresh::kStaleMs - 1));
+  EXPECT_TRUE(refresh_->NeedsRefresh("scanned", kNow + ContactProfileRefresh::kStaleMs));
+}
+
+TEST_F(ScannedContactRefreshTest, OverlappingCallsDoOneLookup) {
+  ContactProfileRefresh::Result inner;
+  directory_.on_account_lookup = [&] { inner = refresh_->RefreshIfStale("scanned", kNow, true); };
+  auto outer = refresh_->RefreshIfStale("scanned", kNow, true);
+  EXPECT_TRUE(outer.looked_up);
+  EXPECT_FALSE(inner.looked_up);
+  EXPECT_EQ(directory_.account_lookups, 1);
 }
 
 TEST_F(ScannedContactRefreshTest, AFailedLookupIsNotRepeatedWithinSixHours) {
+  SetScannedFetchedAt(kNow - ContactProfileRefresh::kStaleMs - 1);
   directory_.fail = true;
   EXPECT_TRUE(refresh_->RefreshIfStale("scanned", kNow).looked_up);
   EXPECT_FALSE(refresh_->NeedsRefresh("scanned", kNow + 1000));
@@ -228,7 +270,7 @@ TEST_F(ScannedContactRefreshTest, AnAnswerForAnotherAccountFillsNothingIn) {
   directory_.answer.account_id = "account:mallory";
   directory_.answer.ids = {{mesh::ContactIdKind::Account, "account:mallory", true},
                            {mesh::ContactIdKind::RelayUser, "relay:bob", false}};
-  auto result = refresh_->RefreshIfStale("scanned", kNow);
+  auto result = refresh_->RefreshIfStale("scanned", kNow, true);
   EXPECT_TRUE(result.looked_up);
   EXPECT_FALSE(result.updated.has_value());
   EXPECT_FALSE(HasRelay(**contacts_->Get("scanned")));
