@@ -11,6 +11,7 @@
 #include "lib/media/DeviceVitals.h"
 #include "lib/media/ThreadCpu.h"
 #include "gui/UiFrameStats.h"
+#include "gui/shell/ShellBaseHide.h"
 #include "common/media/CallMediaHealth.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/CallHopAttachLogic.h"
@@ -641,7 +642,8 @@ void CallController::EmitPerfThreads(const int64_t now_ms) {
       .Add("icon_lookups", cost.icon_lookups)
       .Add("frame_copies", cost.frame_copies)
       .Add("frame_copies_stale", cost.frame_copies_stale)
-      .Add("video_wakes", cost.video_wakes);
+      .Add("video_wakes", cost.video_wakes)
+      .Add("base_hidden", ShellBaseHide::Hidden());
   for (size_t i = 0; i < top.size(); ++i) {
     line.Pick(kKeys[i], top[i].name, kKnownThreadNames).Add(kMsKeys[i], top[i].ms);
   }
