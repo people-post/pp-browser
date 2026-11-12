@@ -19,7 +19,7 @@
 #include "lib/people/AvatarGlyph.h"
 #include "lib/people/ContactTypes.h"
 #include "foundation/runtime/AppLifecycle.h"
-#include "foundation/runtime/FramePacing.h"
+#include "gui/CallVideoFrameWake.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
@@ -582,13 +582,19 @@ void CallController::BindVideoFrameWake(IMediaView& media) {
     return;
   }
   video_wake_bound_ = &media;
-  // Any thread (the camera's, a decoder's): a new frame to draw. Nothing else wakes the frame loop for it.
-  media.SetOnVideoFrame([last = std::make_shared<std::atomic<int64_t>>(0)]() {
-    if (TakeVideoFrameWake(*last, util::NowUnixMs())) {
-      UiCostCounters::Instance().AddVideoWake();
-      Backend::RequestForceFrame();
-    }
-  });
+  // Any thread (the camera's, a decoder's): a new frame to draw. Nothing else wakes the frame loop for it. At most
+  // one wake per frame at 15 fps; a frame held back in a window is woken for when it ends (a coordinator one-shot
+  // that holds only the gate, never this controller).
+  auto gate = CallVideoFrameWake::Create(
+      [] { return util::NowUnixMs(); },
+      [](const int64_t delay_ms, std::function<void()> fire) {
+        AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(delay_ms), std::move(fire));
+      },
+      [] {
+        UiCostCounters::Instance().AddVideoWake();
+        Backend::RequestForceFrame();
+      });
+  media.SetOnVideoFrame([gate = std::move(gate)]() { gate->OnFrame(); });
 }
 
 const DeviceVitals& CallController::Vitals(const int64_t now_ms) {

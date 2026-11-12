@@ -237,7 +237,7 @@ private:
    * ringback never Deactivates twice.
    */
   void StopRingback(CallUiBackend* backend);
-  /** Once per media view: its new video frames wake the frame loop (at most every kVideoWakeMinIntervalMs). */
+  /** Once per media view: its new video frames wake the frame loop (CallVideoFrameWake: at most every 66 ms). */
   void BindVideoFrameWake(IMediaView& media);
   CallLocalHold::Ports LocalHoldPorts();
   /** Hands the hold the OS's facts (each tick). */
