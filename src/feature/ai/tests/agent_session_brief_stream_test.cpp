@@ -836,12 +836,12 @@ protected:
 
 // The connect gets no answer (offline): the feed fails at once, no re-list wait on top of the connect.
 TEST_F(AgentSessionFeedRelistTest, AnUnreachableServerFailsTheFeedAtOnce) {
-  StartWithPromotedMcp(true, -1, std::chrono::milliseconds(5000));
-  const auto started = std::chrono::steady_clock::now();
+  // The re-list wait is a minute: a turn that waited it out would not end within WaitForTurn's 20 s (no wall-clock
+  // limit of its own: that is far from any scheduling jitter), and list_calls == 1 shows no re-list was made.
+  StartWithPromotedMcp(true, -1, std::chrono::seconds(60));
   SubmitArticles();
-  const auto events = WaitForTurn();
+  const auto events = WaitForTurn(std::chrono::seconds(20));
 
-  EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::milliseconds(1000));
   EXPECT_EQ(server_->list_calls.load(), 1); // the connect's only
   const auto errors = Of(events, AgentEventType::Error);
   ASSERT_EQ(errors.size(), 1u);
@@ -858,10 +858,9 @@ TEST_F(AgentSessionFeedRelistTest, AnUnreachableServerIsNotDialedAgainDuringTheC
   ASSERT_EQ(server_->init_calls.load(), 1);
   ASSERT_EQ(server_->list_calls.load(), 1);
 
-  const auto started = std::chrono::steady_clock::now();
+  // "Dials nothing" is shown by the call counts below, not by a time limit.
   SubmitArticles();
   const auto second = WaitForTurn();
-  EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::milliseconds(500));
   const auto errors = Of(second, AgentEventType::Error);
   ASSERT_EQ(errors.size(), 1u);
   EXPECT_EQ(errors[0].message, "Briefs are unavailable right now.");
@@ -882,12 +881,11 @@ TEST_F(AgentSessionFeedRelistTest, AnUnreachableServerIsNotDialedAgainDuringTheC
 // The server answers but does not offer the tool: no point in polling it for the rest of the wait.
 TEST_F(AgentSessionFeedRelistTest, ServerListingWithoutTheToolFailsAtOnce) {
   server_->tool_name = "other_tool";
-  StartWithPromotedMcp(true, 0, std::chrono::milliseconds(5000));
-  const auto started = std::chrono::steady_clock::now();
+  // As above: the minute-long wait is excluded by the turn ending within 20 s and by one re-list only.
+  StartWithPromotedMcp(true, 0, std::chrono::seconds(60));
   SubmitArticles();
-  const auto events = WaitForTurn();
+  const auto events = WaitForTurn(std::chrono::seconds(20));
 
-  EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::milliseconds(1000));
   EXPECT_EQ(server_->list_calls.load(), 2); // the turn's connect, then one re-list
   const auto errors = Of(events, AgentEventType::Error);
   ASSERT_EQ(errors.size(), 1u);

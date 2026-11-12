@@ -180,7 +180,7 @@ struct FakeMcpServer {
   std::atomic<long> last_list_timeout_s{-1};
   std::string tool_name = "blog_articles";      // what tools/list offers
   std::atomic<int> list_status{200};            // non-200: the server is up but answers tools/list with this status
-  std::atomic<bool> hold_list{false};           // tools/list waits (up to 2 s) until this is cleared
+  std::atomic<bool> hold_list{false};           // tools/list waits (safety stop 15 s) until this is cleared
   std::atomic<int> hold_from{0};                // ...from this call on (earlier ones answer at once)
   std::atomic<int> init_calls{0};               // initialize requests: one per connection
   std::atomic<int> fail_from{-1};               // >= 0: tools/list fails from this call on
@@ -197,7 +197,7 @@ inline HttpPostFn FakeMcpPost(std::shared_ptr<FakeMcpServer> server) {
       const int call = server->list_calls.fetch_add(1);
       const auto held = std::chrono::steady_clock::now();
       while (server->hold_list && call >= server->hold_from &&
-             std::chrono::steady_clock::now() - held < std::chrono::seconds(2)) {
+             std::chrono::steady_clock::now() - held < std::chrono::seconds(15)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
       }
       if (server->list_status != 200) {
@@ -218,7 +218,7 @@ inline HttpPostFn FakeMcpPost(std::shared_ptr<FakeMcpServer> server) {
     if (body.find("\"initialize\"") != std::string::npos) {
       ++server->init_calls;
       const auto held = std::chrono::steady_clock::now();
-      while (server->hold_init && std::chrono::steady_clock::now() - held < std::chrono::seconds(2)) {
+      while (server->hold_init && std::chrono::steady_clock::now() - held < std::chrono::seconds(15)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
       }
       if (server->throw_on_initialize) {
