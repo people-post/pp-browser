@@ -732,43 +732,82 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
     view.local_path =
         AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime, fields->filename);
   }
-  if (view.on_demand && IsAttachmentImageMime(fields->mime) && !profile_data_dir_.empty() &&
-      AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
-    // A large picture shows its low-res thumbnail (a tap opens the original); `on_demand` stays for that open.
-    view.local_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
-  }
-  if (IsAttachmentImageMime(fields->mime) && !view.local_path.empty()) {
-    // The bytes are a contact's: look at the declared size before the picture is decoded into an <img>.
-    auto cached = inline_image_ok_.find(view.local_path);
+  // The pixel-cap verdict and upright size of a picture file, read from its head once per file.
+  const auto image_facts = [this](const std::string& path) -> const InlineImageFacts& {
+    auto cached = inline_image_ok_.find(path);
     if (cached == inline_image_ok_.end()) {
       const uint64_t max_pixels = attachment_downloads_ ? attachment_downloads_->Limits().max_image_pixels
                                                         : DefaultAttachmentLimits().max_image_pixels;
       InlineImageFacts facts;
-      if (const auto header = ReadImageHeader(view.local_path)) {
+      if (const auto header = ReadImageHeader(path)) {
         facts.ok = static_cast<uint64_t>(header->width) * static_cast<uint64_t>(header->height) <= max_pixels;
         // Orientations 5..8 turn the picture a quarter: it shows with its sides swapped.
         const bool turned = header->exif_orientation >= 5 && header->exif_orientation <= 8;
         facts.width = turned ? header->height : header->width;
         facts.height = turned ? header->width : header->height;
       }
-      cached = inline_image_ok_.emplace(view.local_path, facts).first;
+      cached = inline_image_ok_.emplace(path, facts).first;
     }
-    view.inline_image_ok = cached->second.ok;
-    view.image_width = cached->second.width;
-    view.image_height = cached->second.height;
+    return cached->second;
+  };
+  bool wants_preview = false;
+  if (IsAttachmentImageMime(fields->mime)) {
+    // B203: a bubble shows the picture's preview (kImagePreviewMaxSide), the picture itself only when it is no longer
+    // than that, else a placeholder of its size until the preview is made; a picture whose preview cannot be made is
+    // a file card. A tap opens the full picture either way.
+    const std::string preview = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
+    const bool preview_exists = AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash);
+    const bool preview_failed =
+        attachment_downloads_ && attachment_downloads_->ChatPreviewFailed(message.thread_id, fields->content_hash);
+    if (!view.on_demand) {
+      if (!view.local_path.empty()) {
+        // The bytes are a contact's: look at the declared size before the picture is decoded into an <img>.
+        const InlineImageFacts& facts = image_facts(view.local_path);
+        view.inline_image_ok = facts.ok;
+        view.image_width = facts.width;
+        view.image_height = facts.height;
+        if (facts.ok && ImageNeedsPreview(facts.width, facts.height)) {
+          if (preview_exists) {
+            view.local_path = preview; // laid out with the picture's own size: the placeholder had it too
+          } else if (preview_failed) {
+            view.inline_image_ok = false; // a file card that opens the picture (`local_path` stays its view)
+          } else {
+            view.picture_placeholder = true;
+            view.local_path.clear();
+            wants_preview = true;
+          }
+        }
+      }
+    } else if (preview_exists) {
+      // A large picture: its size is the preview's (the large file is not decrypted to draw a bubble).
+      view.local_path = preview;
+      const InlineImageFacts& facts = image_facts(preview);
+      view.inline_image_ok = facts.ok;
+      view.image_width = facts.width;
+      view.image_height = facts.height;
+    } else if (preview_failed) {
+      view.inline_image_ok = false; // a file card with Open
+    } else {
+      // A view an earlier Open made is the full picture: never in the bubble. The placeholder until the preview.
+      view.local_path.clear();
+      view.picture_placeholder = true;
+      view.image_width = kPicturePlaceholderFallbackWidth;
+      view.image_height = kPicturePlaceholderFallbackHeight;
+      wants_preview = true;
+    }
   }
   if (attachment_downloads_) {
     view.state = attachment_downloads_->StateFor(message.thread_id, *fields);
     view.download_percent = attachment_downloads_->ProgressPercent(message.thread_id, fields->content_hash);
-    if (view.on_demand && view.state == AttachmentFetchWorkflow::DownloadState::Ready &&
-        IsAttachmentImageMime(fields->mime) && !profile_data_dir_.empty() &&
-        !AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
-      // A stored large picture whose thumbnail went with the view cache (wiped at every start): made again on a
-      // worker, never here; the card is a file row until the change notification re-renders it.
+    if (wants_preview && view.state == AttachmentFetchWorkflow::DownloadState::Ready) {
+      // Made on a worker, never here; only these rows are drawn again when it is done (the chat-preview callback).
       attachment_downloads_->RequestChatPreview(message.thread_id, *fields);
     }
-  } else if (!view.local_path.empty()) {
+  } else if (!view.local_path.empty() || view.picture_placeholder) {
     view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+  }
+  if (view.picture_placeholder && view.state != AttachmentFetchWorkflow::DownloadState::Ready) {
+    view.picture_placeholder = false; // not downloaded: the download card, as before
   }
   if (IsAttachmentVideoMime(fields->mime) && !profile_data_dir_.empty() &&
       AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {

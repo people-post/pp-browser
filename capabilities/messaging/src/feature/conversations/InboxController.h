@@ -44,6 +44,12 @@ struct TranscriptAttachmentView {
   int image_width = 0;
   int image_height = 0;
   /**
+   * A picture whose preview is not made yet (B203): the bubble is a placeholder of the picture's size (the fallback
+   * size, kPicturePlaceholderFallback*, when it is not known without decrypting) and `local_path` is empty; the
+   * preview has been asked for. A picture's bubble never shows the full picture once it is longer than the preview.
+   */
+  bool picture_placeholder = false;
+  /**
    * A file above the direct size: stored encrypted, shown as a file row (a video: a placeholder with its size)
    * with Open until an Open has made its view for this session. `local_path` is that view, empty before.
    */
@@ -51,6 +57,13 @@ struct TranscriptAttachmentView {
   /** Percent of a download in progress (0..100), -1 when not downloading or not yet known. */
   int download_percent = -1;
 };
+
+/**
+ * A large picture's placeholder size before its preview exists (its own size is read from the preview: the large file
+ * is not decrypted to draw a bubble): the bubble's width, 4:3.
+ */
+inline constexpr int kPicturePlaceholderFallbackWidth = 1600;
+inline constexpr int kPicturePlaceholderFallbackHeight = 1200;
 
 /** What a voice message's bubble shows while it plays (all zero when it is not the one playing). */
 struct VoiceBubbleState {

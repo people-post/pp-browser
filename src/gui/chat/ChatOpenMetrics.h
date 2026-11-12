@@ -3,8 +3,6 @@
 #include "lib/ui/ChatWidgetTypes.h"
 
 #include <cstddef>
-#include <string>
-#include <utility>
 #include <string_view>
 #include <vector>
 
@@ -25,37 +23,6 @@ inline size_t CountPictureBubbleRows(const std::vector<MessageDisplayRow>& rows)
     }
   }
   return count;
-}
-
-/**
- * PROBE (measurement only): the `src` of every `<img class="chat-attachment-image">` in the rows, unescaped (the
- * entities StructuredTextParser::EscapeText writes), in row order.
- */
-inline std::vector<std::string> PictureBubbleSources(const std::vector<MessageDisplayRow>& rows) {
-  static constexpr std::string_view kTag = "<img class=\"chat-attachment-image\" src=\"";
-  std::vector<std::string> out;
-  for (const MessageDisplayRow& row : rows) {
-    const std::string_view rml(row.content_rml.data(), row.content_rml.size());
-    size_t at = 0;
-    while ((at = rml.find(kTag, at)) != std::string_view::npos) {
-      at += kTag.size();
-      const size_t end = rml.find('"', at);
-      if (end == std::string_view::npos) {
-        break;
-      }
-      std::string src(rml.substr(at, end - at));
-      static constexpr std::pair<std::string_view, char> kEntities[] = {
-          {"&lt;", '<'}, {"&gt;", '>'}, {"&quot;", '"'}, {"&amp;", '&'}};
-      for (const auto& [from, to] : kEntities) {
-        for (size_t pos = 0; (pos = src.find(from, pos)) != std::string::npos; ++pos) {
-          src.replace(pos, from.size(), 1, to);
-        }
-      }
-      out.push_back(std::move(src));
-      at = end;
-    }
-  }
-  return out;
 }
 
 } // namespace pbr

@@ -25,6 +25,7 @@
 #include "foundation/platform/PickedFileName.h"
 #include "gui/chat/AttachmentBackfillPolicy.h"
 #include "gui/chat/ChatOpenMetrics.h"
+#include "gui/chat/ChatPictureTextures.h"
 #include "foundation/diagnostics/OsCurrentMemory.h"
 #include "common/Diag.h"
 #include "common/Metrics.h"
@@ -482,6 +483,7 @@ ChatController::ChatController()
       chat_.has_turns = true;
     }
     DirtyChatTurns();
+    SyncPictureTextures(); // rows trimmed off the page: their pictures' textures go
   });
   working_set_.SetWidgetLookup(
       [this](const std::string& entry_id) -> const TurnWidgetState* { return widgets_.Find(entry_id); });
@@ -639,6 +641,13 @@ void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
     // The server space is filling up: a plain line, said once per level (the hub counts).
     facade_->SetOnBlobSpaceWarning([this](const int percent) {
       ShowToast(Tr("chat.attachment.space_warning", {{"percent", std::to_string(percent)}}));
+    });
+    // A picture's preview came (or cannot come): only the rows showing its placeholder are redrawn (B203).
+    facade_->SetOnChatPreviewDone([this, alive = std::weak_ptr<int>(chat_window_alive_)](
+                                      const std::string& thread_id, const std::vector<uint8_t>& hash, const bool made) {
+      if (alive.lock()) {
+        OnChatPreviewDone(thread_id, hash, made);
+      }
     });
   }
   presenter_.BindFacade(facade);
@@ -896,11 +905,12 @@ void ChatController::SendSuggestionAction(const std::string& id) {
 }
 
 void ChatController::FinalizeThreadDisplay() {
-  // Measurement (chat.open): this open's display sync and the SyncLayout after it are the ones timed.
-  if (chat_showing_ && !probe_thread_.empty() && probe_thread_ != ActiveThreadId()) {
-    probe_release_paths_ = PictureBubbleSources(chat_.messages); // PROBE: still the rows of the chat being left
+  // The chat before (or this one, opened again): its preview requests not started go; this open asks for its own.
+  preview_batcher_.Clear();
+  if (facade_) {
+    facade_->CancelChatPreviews();
   }
-  probe_thread_ = ActiveThreadId();
+  // Measurement (chat.open): this open's display sync and the SyncLayout after it are the ones timed.
   open_probe_ = ChatOpenProbe{};
   open_probe_.armed = true;
   ++chat_exit_turn_; // back in a chat: a pending "left the chat" reading is void
@@ -1333,6 +1343,9 @@ void ChatController::OnPeerIconsChanged() {
 
 void ChatController::OnProfileDataReset() {
   CloseSearch();           // nothing decrypted from the old profile stays in memory
+  QueueTextureRelease(picture_textures_.UnmountAll()); // the old profile's pictures leave video memory
+  vault_locked_seen_ = false;
+  preview_batcher_.Clear();
   pending_uploads_.Drop(); // the lock check never sees this teardown: the plaintext thumbnail goes here
   AbandonPick();
   video_bubble_thread_.clear();
@@ -3378,13 +3391,14 @@ void ChatController::OpenGroupSender(const std::string& message_id) {
   }
 }
 
-void ChatController::OpenPicture(const std::string& message_id, const std::string& local_path) {
+void ChatController::OpenPicture(const std::string& message_id) {
   if (!messaging_ready_ || !facade_ || message_id.empty() || opening_message_ids_.count(message_id) != 0) {
     return;
   }
-  // The picture the bubble shows, full screen with a spinner, in this frame; the viewer opens over it.
-  if (!local_path.empty() && shell_feedback_.mount_photo_preview && photo_preview_.Begin(message_id)) {
-    shell_feedback_.mount_photo_preview(PhotoPreviewRml(local_path));
+  // A spinner in this frame (B203: no picture under it, the bubble only has the small preview); the system viewer
+  // opens over it with the full picture, which OpenAttachment finds from the message.
+  if (shell_feedback_.mount_photo_preview && photo_preview_.Begin(message_id)) {
+    shell_feedback_.mount_photo_preview(PhotoPreviewRml());
   }
   OpenAttachment(message_id);
 }
@@ -3589,6 +3603,7 @@ void ChatController::SyncDisplayFromThread() {
     open_probe_.build_ms = sync_ms; // the same stretch chat.sync_slow measures
     open_probe_.built_at = std::chrono::steady_clock::now();
   }
+  SyncPictureTextures(); // rows gone (deleted, another chat, trimmed): their pictures' textures go
   if (sync_ms >= kSlowDisplaySyncMs) {
     MetricsLine("chat.sync_slow")
         .Add("ms", static_cast<int64_t>(sync_ms))
@@ -5224,14 +5239,12 @@ bool ChatController::Setup(ui::Context* context) {
                                  }
                                  OpenAttachment(message_id);
                                }));
-        ctor.BindEventCallback(
-            "open_picture",
-            DataEvent<std::string, std::string>([this](const std::string& message_id, const std::string& local_path) {
-              if (IsPendingUploadRowId(message_id)) {
-                return;
-              }
-              OpenPicture(message_id, local_path);
-            }));
+        ctor.BindEventCallback("open_picture", DataEvent<std::string>([this](const std::string& message_id) {
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
+                                 }
+                                 OpenPicture(message_id);
+                               }));
         ctor.BindEventCallback("download_attachment", DataEvent<std::string>([this](const std::string& message_id) {
                                  if (IsPendingUploadRowId(message_id)) {
                                    return;
@@ -5471,6 +5484,32 @@ void ChatController::OnApplicationPause() {
 
 void ChatController::Update() {
   PollChatShowing();
+  ReleaseQueuedTextures();
+  // The vault locked: the view cache (previews, pictures) is wiped. Every chat picture becomes its placeholder first,
+  // so no drawing asks for a wiped file (the library would remember that load as failed), then their textures go:
+  // the decrypted pixels do not stay in video memory under the PIN page. Unlocked: the rows are drawn again.
+  if (messaging_ready_ && !MessagingReady()) {
+    if (!vault_locked_seen_) {
+      vault_locked_seen_ = true;
+      bool dropped = false;
+      for (MessageDisplayRow& row : chat_.messages) {
+        std::string rml = row.content_rml.c_str();
+        if (DropPictureImages(rml)) {
+          row.content_rml = rml.c_str();
+          dropped = true;
+        }
+      }
+      if (dropped) {
+        DirtyChatTurns();
+      }
+      preview_batcher_.Clear();
+      QueueTextureRelease(picture_textures_.UnmountAll());
+    }
+  } else if (vault_locked_seen_ && messaging_ready_) {
+    vault_locked_seen_ = false;
+    SyncDisplayFromThread();
+    DirtyChatTurns();
+  }
   if (pending_reply_) {
     PendingReply reply = std::move(*pending_reply_);
     pending_reply_.reset();
@@ -5559,8 +5598,140 @@ void ChatController::PollChatShowing() {
   }
   chat_showing_ = showing;
   if (!showing) {
-    probe_release_paths_ = PictureBubbleSources(chat_.messages); // PROBE
+    if (facade_) {
+      facade_->CancelChatPreviews(); // only the chat's requests not started; the storage grid's stay
+    }
     ScheduleChatWindowMetric(std::chrono::seconds(5), /*exited=*/true);
+    // The chat's picture textures go once it is off screen (after the page's slide-out: a texture taken while its row
+    // is still drawn is loaded again at once). Coming back first (FinalizeThreadDisplay) voids it.
+    const uint64_t turn = chat_exit_turn_;
+    AppRuntime::ScheduleCoordinatorOneShot(
+        std::chrono::seconds(1), [this, turn, alive = std::weak_ptr<int>(chat_window_alive_)]() {
+          AppRuntime::PostUI([this, turn, alive]() {
+            if (!alive.lock() || turn != chat_exit_turn_ || ChatShowing()) {
+              return;
+            }
+            QueueTextureRelease(picture_textures_.UnmountAll());
+          });
+        });
+  }
+}
+
+void ChatController::SyncPictureTextures() {
+  QueueTextureRelease(picture_textures_.Mount(chat_.messages));
+}
+
+void ChatController::QueueTextureRelease(std::vector<std::string> srcs) {
+  if (srcs.empty()) {
+    return;
+  }
+  textures_release_queued_.insert(textures_release_queued_.end(), std::make_move_iterator(srcs.begin()),
+                                  std::make_move_iterator(srcs.end()));
+  if (context_) {
+    context_->RequestNextUpdate(0.0); // released two frames on, also in an idle chat
+  }
+}
+
+void ChatController::ReleaseQueuedTextures() {
+  // Queued in an earlier frame, so the page has been updated since (Context::Update applied the rows): no element
+  // shows these files any more, and a texture taken from a drawn element would only be loaded again.
+  if (!textures_release_ready_.empty()) {
+    size_t called = 0;
+    size_t hit = 0;
+    for (const std::string& src : textures_release_ready_) {
+      if (picture_textures_.Count(src) > 0) {
+        continue; // back on the page meanwhile
+      }
+      ++called;
+      hit += ui::ReleaseTexture(TextureKeyForImageSrc(src)) ? 1 : 0;
+    }
+    if (called > 0) {
+      // No path: how many were asked and how many were loaded (a texture never drawn is not one).
+      log().info << "chat picture textures released: called=" << called << " hit=" << hit;
+    }
+  }
+  textures_release_ready_ = std::exchange(textures_release_queued_, {});
+  if (!textures_release_ready_.empty() && context_) {
+    context_->RequestNextUpdate(0.0);
+  }
+}
+
+void ChatController::OnChatPreviewDone(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                                       const bool made) {
+  if (!messaging_ready_ || thread_id != ActiveThreadId()) {
+    return; // another chat's: its rows ask again when drawn
+  }
+  const std::string hex = AttachmentHashHex(content_hash);
+  if (!made) {
+    previews_failed_.insert(hex); // a file card now: the card changes, not only its picture
+  }
+  const auto delay = preview_batcher_.Add(hex, std::chrono::steady_clock::now());
+  if (!delay) {
+    return; // a redraw is coming
+  }
+  auto redraw = [this, alive = std::weak_ptr<int>(chat_window_alive_)]() {
+    if (alive.lock()) {
+      RedrawPreviews();
+    }
+  };
+  if (delay->count() == 0) {
+    AppRuntime::PostUI(std::move(redraw));
+  } else {
+    AppRuntime::ScheduleCoordinatorOneShot(*delay, [redraw = std::move(redraw)]() { AppRuntime::PostUI(redraw); });
+  }
+}
+
+void ChatController::RedrawPreviews() {
+  const auto now = std::chrono::steady_clock::now();
+  const std::vector<std::string> ready = preview_batcher_.Take(now);
+  if (ready.empty() || !messaging_ready_ || !facade_ || ActiveThreadId().empty()) {
+    previews_failed_.clear();
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  bool whole = false;
+  bool changed = false;
+  const TranscriptFacts facts = facade_->TranscriptFactsFor();
+  for (MessageDisplayRow& row : chat_.messages) {
+    for (const std::string& hex : ready) {
+      if (!RowShowsPicturePlaceholder(row, hex)) {
+        continue;
+      }
+      if (previews_failed_.contains(hex)) {
+        whole = true; // its card becomes a file card
+        continue;
+      }
+      const std::string message_id = row.message_id.c_str();
+      auto message = facade_->GetMessage(thread_id, message_id);
+      if (!message || !*message || !facts.attachment) {
+        whole = true;
+        continue;
+      }
+      const TranscriptAttachmentView view = facts.attachment(**message);
+      if (view.picture_placeholder) {
+        continue; // gone again meanwhile (a lock): asked again, it comes later
+      }
+      if (view.local_path.empty() || !view.inline_image_ok) {
+        whole = true;
+        continue;
+      }
+      // Only this picture's clip: the row's element and the other rows stay as they are (data-rml resets this row's
+      // content only, as its RML is the only one that changed).
+      std::string rml = row.content_rml.c_str();
+      if (ReplacePictureClip(rml, message_id, PictureBubbleClipRml(message_id, hex, view))) {
+        row.content_rml = rml.c_str();
+        changed = true;
+      }
+    }
+  }
+  previews_failed_.clear();
+  if (whole) {
+    SyncDisplayFromThread(); // rare (a preview that cannot be made): the rows drawn again, data-rml resets the changed
+  } else if (changed) {
+    SyncPictureTextures();
+  }
+  if (whole || changed) {
+    DirtyChatTurns();
   }
 }
 
@@ -5588,21 +5759,6 @@ void ChatController::ScheduleChatWindowMetric(const std::chrono::milliseconds de
 }
 
 void ChatController::OnSyncLayoutMeasured(const int64_t ms) {
-  if (!probe_release_paths_.empty()) {
-    // PROBE: the left chat's rows are out of the page now; release their textures and see what the memory does.
-    const std::vector<std::string> paths = std::exchange(probe_release_paths_, {});
-    const CurrentMemoryMb before = ReadCurrentMemoryMb();
-    size_t released = 0;
-    size_t absolute = 0;
-    for (const std::string& path : paths) {
-      absolute += !path.empty() && path.front() == '/' ? 1 : 0;
-      released += ui::ReleaseTexture(path.c_str()) ? 1 : 0;
-    }
-    const CurrentMemoryMb after = ReadCurrentMemoryMb();
-    log().info << "probe: ReleaseTexture called=" << paths.size() << " true=" << released << " absolute=" << absolute
-               << " footprint_mb " << before.footprint_mb << "->" << after.footprint_mb << " rss_mb " << before.rss_mb
-               << "->" << after.rss_mb;
-  }
   if (!open_probe_.layout_pending) {
     return;
   }

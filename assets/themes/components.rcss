@@ -4801,7 +4801,7 @@ select selectbox option {
   z-index: 56;
 }
 
-/* Picture preview (tap on a picture): the bubble's picture fitted to the screen, a spinner over it. */
+/* A tap on a picture: a spinner on the dimmed screen until the system viewer is up (B203: no picture under it). */
 .photo-preview {
   position: absolute;
   top: 0;
@@ -4813,12 +4813,6 @@ select selectbox option {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.photo-preview-image {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
 }
 
 @keyframes photo-preview-spin {
@@ -12157,6 +12151,12 @@ input.checkbox {
 
 .shell-chat-overlay .chat-attachment-card--image .chat-attachment-clip--auto .chat-attachment-image {
   width: 292dp;
+}
+
+/* The picture's placeholder until its preview is made (B203; its colour per theme in colors-*.rcss): a tap opens the
+   picture as on the picture itself. */
+.chat-picture-placeholder {
+  cursor: pointer;
 }
 
 /* On a picture card the tail goes behind the card, so its inner half does not cover the picture's corner; the hook

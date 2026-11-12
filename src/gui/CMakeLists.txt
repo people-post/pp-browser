@@ -19,6 +19,7 @@ pp_browser_add_feature_library(pp_gui
     chat/ChatMentionPicker.cpp
     chat/ChatPeerSheet.cpp
     chat/ChatController.cpp
+    chat/ChatPictureTextures.cpp
     chat/ChatDataModel.cpp
     chat/ChatThreadChrome.cpp
     chat/ChatTranscriptScroller.cpp

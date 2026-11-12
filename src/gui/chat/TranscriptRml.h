@@ -44,6 +44,25 @@ inline constexpr int kPictureBubbleMinShortSideDp = 120;
 PictureBubbleSize FitPictureInBubble(int width_px, int height_px);
 
 /**
+ * A chat picture's clip box (B203), laid out for the picture's size (`view.image_width` x `image_height`): its preview
+ * (or the picture itself when no longer than the preview) at `view.local_path`, or, with `view.picture_placeholder`,
+ * an empty box of the same size (class chat-picture-placeholder) until the preview is made. A tap on either opens
+ * the full picture (open_picture with the message id only: the open path is found from the message, never from the
+ * bubble). The clip carries `pic-id` (the message) and `pic-hash` (its bytes, hex) for ReplacePictureClip.
+ */
+std::string PictureBubbleClipRml(const std::string& message_id, const std::string& hash_hex,
+                                 const TranscriptAttachmentView& view);
+/** Puts `clip_rml` in place of the picture clip of `message_id` in a row's RML; false when the row has none. */
+bool ReplacePictureClip(std::string& rml, const std::string& message_id, const std::string& clip_rml);
+/** The row shows the placeholder of the picture with these bytes (hex). */
+bool RowShowsPicturePlaceholder(const MessageDisplayRow& row, const std::string& hash_hex);
+/**
+ * Every chat picture in a row's RML becomes its placeholder (its <img> taken out): the lock wipes the files they
+ * show, and a drawing must not ask for them again. True when something changed.
+ */
+bool DropPictureImages(std::string& rml);
+
+/**
  * The picture being sent, drawn as our picture bubble while it uploads (DEV/PLAN-picture-upload-bubble.md): the same
  * card and clip box as the sent picture (FitPictureInBubble of `upload.pixels`), its thumbnail or a grey placeholder of
  * that size, and a 48dp dark disc in the middle — uploading: the ring fills with the percent, a ✕ cancels

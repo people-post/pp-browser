@@ -19,6 +19,8 @@
 #include "gui/chat/PendingUploadRows.h"
 #include "feature/presenters/AttachmentPicks.h"
 #include "gui/chat/PhotoPreview.h"
+#include "gui/chat/ChatPictureTextures.h"
+#include "gui/chat/PreviewRedrawBatcher.h"
 #include "gui/chat/VoiceComposer.h"
 #include "gui/chat/VoicePlayback.h"
 #include "gui/chat/ChatMentionPicker.h"
@@ -418,8 +420,11 @@ private:
   std::vector<MessageDisplayRow> BuildMessageRows(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
                                                   std::optional<int64_t> newest_inclusive);
   void OpenAttachment(const std::string& message_id);
-  /** A tap on a picture: full-screen preview with a spinner now, the viewer when the file is ready. */
-  void OpenPicture(const std::string& message_id, const std::string& local_path);
+  /**
+   * A tap on a picture (or its placeholder): a spinner now, then the system viewer with the full picture (found from
+   * the message, never the bubble's preview); its own share / save are the way out.
+   */
+  void OpenPicture(const std::string& message_id);
   /** Group chats: a tap on a member's avatar or name opens their page over the chat (contact or not). */
   void OpenGroupSender(const std::string& message_id);
   void DownloadAttachment(const std::string& message_id);
@@ -743,10 +748,26 @@ private:
   uint64_t chat_paged_turn_ = 0;
   std::shared_ptr<int> chat_window_alive_ = std::make_shared<int>(0);
   bool ChatShowing() const;
-  /** PROBE: the picture files of the rows of a chat just left, released once the shell has been laid out again. */
-  std::vector<std::string> probe_release_paths_;
-  std::string probe_thread_;
   void PollChatShowing();
+  /**
+   * B203: the chat pictures the page shows, counted per file. A file no row shows any more (trimmed, deleted, another
+   * chat; the chat left, the vault locked) is queued, and its texture is released (ui::ReleaseTexture) two frames
+   * later, once the page no longer has it.
+   */
+  ChatPictureTextures picture_textures_;
+  std::vector<std::string> textures_release_queued_;
+  std::vector<std::string> textures_release_ready_;
+  void SyncPictureTextures();
+  void QueueTextureRelease(std::vector<std::string> srcs);
+  void ReleaseQueuedTextures();
+  /** The vault was seen locked (the chat's pictures were turned into placeholders); unlocked, the rows are redrawn. */
+  bool vault_locked_seen_ = false;
+  /** B203: previews arriving are drawn into their rows at most every 250 ms, only the picture clips replaced. */
+  PreviewRedrawBatcher preview_batcher_;
+  std::unordered_set<std::string> previews_failed_;
+  void OnChatPreviewDone(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made);
+  void RedrawPreviews();
+
   void ScheduleChatWindowMetric(std::chrono::milliseconds delay, bool exited);
   bool mesh_ready_ = false;
   ChatTranscriptScroller scroller_;
