@@ -43,9 +43,13 @@ public:
   /** The edit open in `thread_id`, if any. */
   const EditingMessage* In(const std::string& thread_id) const;
 
-  /** What Send does with `composer_text`: nothing (unchanged), or send `text` (the whole new message text). */
+  /**
+   * What Send does with `composer_text`: nothing (unchanged), refuse it (`too_long`: `text` does not go out as one edit,
+   * EditFitsOnTheWire — nothing changes, still editing), or send `text` (the whole new message text).
+   */
   struct Submit {
     bool unchanged = false;
+    bool too_long = false;
     std::string text;
   };
   Submit Prepare(const std::string& thread_id, const std::string& composer_text) const;

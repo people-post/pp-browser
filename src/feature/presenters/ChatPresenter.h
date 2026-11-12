@@ -559,6 +559,8 @@ public:
       Sent,
       /** Past the 15 minutes: nothing sent; still editing, the composer untouched. */
       TooLate,
+      /** Too long to go out as an edit (ChatEdits::Submit::too_long): nothing changes; still editing, untouched. */
+      TooLong,
       /** The message is gone: editing ended (`composer`: EndTargetGone's text). */
       TargetGone,
       /** Refused before anything was stored (`error`); still editing, the composer untouched. */

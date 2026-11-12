@@ -2168,27 +2168,6 @@ Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_i
   return {};
 }
 
-namespace {
-
-/**
- * The edit's row after its send: what the send returned, or the row it left marked failed (`stored_unsent` set; the
- * message then shows the red mark).
- */
-Roe<ThreadMessage> EditRowAfterSend(IThreadStore& store, const std::string& thread_id, const std::string& edit_id,
-                                    Roe<ThreadMessage> sent, bool& stored_unsent) {
-  if (sent) {
-    return sent;
-  }
-  auto stored = store.GetMessage(thread_id, edit_id);
-  if (!stored || !*stored) {
-    return sent.error(); // refused before anything was stored: nothing changes here
-  }
-  stored_unsent = true;
-  return **stored;
-}
-
-} // namespace
-
 Roe<ThreadMessage> ConversationsHub::EditMessage(const std::string& thread_id, const std::string& message_id,
                                                  const std::string& new_text, const int64_t tapped_at_ms) {
   if (!IsInitialized()) {
@@ -2208,34 +2187,25 @@ Roe<ThreadMessage> ConversationsHub::EditMessage(const std::string& thread_id, c
   if (!found->has_value()) {
     return Error("Message not found");
   }
-  const ThreadMessage target = **found;
-  if (!CanEditMessage(target, (*thread)->kind, tapped_at_ms)) {
-    return Error("This message can no longer be edited");
-  }
-  if (new_text.empty() || new_text.size() > kMaxEditTextBytes) {
-    return Error("Edited text is empty or too long");
-  }
-  if (new_text == target.text) {
-    return target;
-  }
-  const std::string edit_id = util::GenerateUuid();
-  bool stored_unsent = false;
-  auto edit_row = EditRowAfterSend(
-      Store(), thread_id, edit_id,
-      MeshMessaging().SendEdit(thread_id, target.id, new_text, edit_id, EditSendTime(tapped_at_ms, target)),
-      stored_unsent);
-  if (!edit_row) {
-    return edit_row.error();
-  }
-  if (stored_unsent) {
-    log().warning << "edit stored but not sent (the message shows the red mark)";
-  }
-  auto edited = ApplyOwnEdit(Store(), target, *edit_row);
+  ThreadMessage target = **found;
+  target.thread_id = thread_id;
+  // Checked (an edit too long for one payload is refused here, before anything is stored), sent, applied here.
+  auto edited = EditOwnMessage(Store(), target, (*thread)->kind, new_text, tapped_at_ms, util::GenerateUuid(),
+                               [this, &thread_id, &target](const std::string& edit_id, const std::string& text,
+                                                           const int64_t sent_at_ms) {
+                                 return MeshMessaging().SendEdit(thread_id, target.id, text, edit_id, sent_at_ms);
+                               });
   if (!edited) {
     return edited.error();
   }
-  Inbox().AfterMessageEdited(thread_id, target, *edited);
-  return edited;
+  if (edited->unchanged) {
+    return edited->row;
+  }
+  if (edited->stored_unsent) {
+    log().warning << "edit stored but not sent (the message shows the red mark)";
+  }
+  Inbox().AfterMessageEdited(thread_id, target, edited->row);
+  return edited->row;
 }
 
 Roe<ThreadMessage> ConversationsHub::ResendEdit(const std::string& thread_id, const std::string& message_id) {

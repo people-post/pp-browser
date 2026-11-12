@@ -3,11 +3,13 @@
 #include "common/Error.h"
 #include "common/chat/MessagingLimits.h"
 #include "lib/delivery/SendRelayOptions.h"
+#include "common/thread/IThreadStore.h"
 #include "common/thread/IThreadTranscript.h"
 #include "common/thread/ThreadRecordTypes.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -28,6 +30,11 @@ inline constexpr int64_t kEditWindowMs = 15 * 60'000;
 inline constexpr int64_t kEditArrivalSlackMs = 60'000;
 /** The new text's limit: a typed message's. */
 inline constexpr size_t kMaxEditTextBytes = kMaxComposeTextBytes;
+/**
+ * Room left under kMaxE2ePlaintextBytes beside an edit's ChatPayload: a group copy wraps it with the group id, roster
+ * epoch and hash (GroupE2ePayloadCodec::EncodeCopyPlaintext), about a hundred bytes.
+ */
+inline constexpr size_t kEditPayloadHeadroomBytes = 1024;
 
 /** `payload_json` keys of an edited message row (DATA_LAYOUT.md). */
 inline constexpr const char* kEditedAtKey = "edited_at";
@@ -42,6 +49,14 @@ bool CanEditMessage(const ThreadMessage& message, ThreadKind thread_kind, int64_
 
 /** The edit annotation's JSON (any text: escaped as JSON, unlike the emoji-only reaction builder). */
 std::string BuildEditPayloadJson(const std::string& target_message_id, const std::string& text);
+
+/**
+ * Whether an edit of `target_message_id` to `text` goes out in one payload: at most kMaxEditTextBytes, and its ChatPayload
+ * as the send encodes it (ChatPayloadCodec::EncodeToRow: the text twice, top-level `text` and `value`) within
+ * kMaxE2ePlaintextBytes less kEditPayloadHeadroomBytes. A typed message near the limit, or a long quote reply (its quote
+ * is part of the text), fits as a message but not as an edit.
+ */
+bool EditFitsOnTheWire(const std::string& target_message_id, const std::string& text);
 
 /** An annotation of type edit (blanked or not). */
 bool IsEditAnnotation(const ThreadMessage& message);
@@ -127,5 +142,39 @@ SendRelayOptions EditSendOptions(const std::string& target_message_id, const std
  * (WithEdit) and every other edit row of it blanked. Returns the rewritten row.
  */
 Roe<ThreadMessage> ApplyOwnEdit(IThreadTranscript& store, const ThreadMessage& target, const ThreadMessage& edit_row);
+
+/**
+ * One edit's send as MeshDeliveryOrchestrator::SendEdit runs it (numbered, stored, queued): the edit's row as stored, or
+ * why it did not go out.
+ */
+using SendEditFn =
+    std::function<Roe<ThreadMessage>(const std::string& edit_id, const std::string& text, int64_t sent_at_ms)>;
+
+/**
+ * The edit's row after its send `sent`: what the send returned, or — the send failed after it stored the row — that row,
+ * marked failed (`stored_unsent` set; the message then shows the red mark). The send's error when nothing was stored.
+ */
+Roe<ThreadMessage> EditRowAfterSend(IThreadStore& store, const std::string& thread_id, const std::string& edit_id,
+                                    Roe<ThreadMessage> sent, bool& stored_unsent);
+
+/** What an edit of ours did here. */
+struct OwnEdit {
+  /** The message as it is now. */
+  ThreadMessage row;
+  /** The text was unchanged: nothing was sent. */
+  bool unchanged = false;
+  /** The edit's row was stored but its send failed: the message shows the red mark. */
+  bool stored_unsent = false;
+};
+
+/**
+ * ConversationsHub::EditMessage's steps for our message `target` (with its `thread_id`, in a chat of `thread_kind`) to
+ * `new_text`, as tapped at `tapped_at_ms`: checked — CanEditMessage at the tap, the text not empty and
+ * EditFitsOnTheWire — and refused before anything is stored or sent; unchanged text sends nothing; otherwise sent as
+ * `edit_id` (`send`, stamped EditSendTime) and applied here (ApplyOwnEdit).
+ */
+Roe<OwnEdit> EditOwnMessage(IThreadStore& store, const ThreadMessage& target, ThreadKind thread_kind,
+                            const std::string& new_text, int64_t tapped_at_ms, const std::string& edit_id,
+                            const SendEditFn& send);
 
 } // namespace pbr

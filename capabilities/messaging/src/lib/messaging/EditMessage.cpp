@@ -4,6 +4,7 @@
 #include "lib/delivery/ReactionTypes.h"
 
 #include "common/ValueJson.h"
+#include "common/chat/MessagingLimits.h"
 
 #include <algorithm>
 
@@ -30,6 +31,19 @@ std::string BuildEditPayloadJson(const std::string& target_message_id, const std
   payload.set("target_message_id", target_message_id);
   payload.set("value", text);
   return DumpJson(payload);
+}
+
+bool EditFitsOnTheWire(const std::string& target_message_id, const std::string& text) {
+  if (text.size() > kMaxEditTextBytes) {
+    return false;
+  }
+  ThreadMessage edit; // as the send puts it on the wire (EditSendOptions)
+  edit.content_type = ChatContentType::Annotation;
+  edit.text = text;
+  edit.target_message_id = target_message_id;
+  edit.payload_json = BuildEditPayloadJson(target_message_id, text);
+  auto row = ChatPayloadCodec::EncodeToRow(edit);
+  return row && row->size() + kEditPayloadHeadroomBytes <= kMaxE2ePlaintextBytes;
 }
 
 bool IsEditAnnotation(const ThreadMessage& message) {
@@ -210,6 +224,47 @@ Roe<ThreadMessage> ApplyOwnEdit(IThreadTranscript& store, const ThreadMessage& t
   }
   (void)BlankEditRowsFor(store, target.thread_id, target.id, edit_row.id);
   return edited;
+}
+
+Roe<ThreadMessage> EditRowAfterSend(IThreadStore& store, const std::string& thread_id, const std::string& edit_id,
+                                    Roe<ThreadMessage> sent, bool& stored_unsent) {
+  if (sent) {
+    return sent;
+  }
+  auto stored = store.GetMessage(thread_id, edit_id);
+  if (!stored || !*stored) {
+    return sent.error(); // refused before anything was stored: nothing changes here
+  }
+  stored_unsent = true;
+  return **stored;
+}
+
+Roe<OwnEdit> EditOwnMessage(IThreadStore& store, const ThreadMessage& target, const ThreadKind thread_kind,
+                            const std::string& new_text, const int64_t tapped_at_ms, const std::string& edit_id,
+                            const SendEditFn& send) {
+  if (!CanEditMessage(target, thread_kind, tapped_at_ms)) {
+    return Error("This message can no longer be edited");
+  }
+  if (new_text.empty() || !EditFitsOnTheWire(target.id, new_text)) {
+    return Error("Edited text is empty or too long");
+  }
+  OwnEdit result;
+  if (new_text == target.text) {
+    result.row = target;
+    result.unchanged = true;
+    return result;
+  }
+  auto edit_row = EditRowAfterSend(store, target.thread_id, edit_id,
+                                   send(edit_id, new_text, EditSendTime(tapped_at_ms, target)), result.stored_unsent);
+  if (!edit_row) {
+    return edit_row.error();
+  }
+  auto edited = ApplyOwnEdit(store, target, *edit_row);
+  if (!edited) {
+    return edited.error();
+  }
+  result.row = std::move(*edited);
+  return result;
 }
 
 } // namespace pbr

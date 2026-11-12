@@ -4213,6 +4213,9 @@ void ChatController::SendEditedMessage() {
     case Kind::TooLate:
       ShowToast(Tr("chat.edit.too_late")); // still editing: the words stay in the input
       return;
+    case Kind::TooLong:
+      ShowToast(Tr("chat.error.message_too_long")); // as a message too long to send; still editing, words kept
+      return;
     case Kind::Failed:
       UserFeedback::Fail(PaymentErrorUserMessage(result.error.value_or(Error("Send failed"))));
       return;

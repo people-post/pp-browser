@@ -1155,6 +1155,10 @@ ChatPresenter::EditSendResult ChatPresenter::SendEdit(const std::string& thread_
     result.composer = edits_.End(thread_id);
     return result;
   }
+  if (submit.too_long) {
+    result.kind = EditSendResult::Kind::TooLong; // refused before anything is stored: our text stays as it was
+    return result;
+  }
   const std::string message_id = editing->message_id;
   auto thread = facade_->GetThread(thread_id);
   auto found = facade_->GetMessage(thread_id, message_id);

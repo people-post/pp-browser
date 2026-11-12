@@ -41,6 +41,7 @@ ChatEdits::Submit ChatEdits::Prepare(const std::string& thread_id, const std::st
     return submit;
   }
   submit.text = typed + editing->quote_suffix;
+  submit.too_long = !EditFitsOnTheWire(editing->message_id, submit.text);
   return submit;
 }
 

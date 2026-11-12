@@ -90,6 +90,32 @@ TEST(ChatEditsTest, AQuoteReplyEditsOnlyItsReply) {
   EXPECT_EQ(parts->quote, "are you coming?");
 }
 
+// An edit carries its text twice, so text near a message's limit does not fit as an edit; a quote reply's quote is part
+// of the text sent. Prepare says so (Send then changes nothing and stays in the edit).
+TEST(ChatEditsTest, AnEditTooLongForOnePayloadIsRefusedQuoteIncluded) {
+  size_t fits = kMaxEditTextBytes;
+  while (fits > 0 && !EditFitsOnTheWire("m1", std::string(fits, 'a'))) {
+    --fits;
+  }
+  ASSERT_LT(fits, kMaxComposeTextBytes);
+  ChatEdits edits;
+  edits.Begin("chat-a", "m1", "see you at 8", "");
+  EXPECT_FALSE(edits.Prepare("chat-a", std::string(fits, 'a')).too_long) << "just fits: sent";
+  const ChatEdits::Submit over = edits.Prepare("chat-a", std::string(fits + 1, 'a'));
+  EXPECT_TRUE(over.too_long);
+  EXPECT_FALSE(over.unchanged);
+  ASSERT_NE(edits.In("chat-a"), nullptr) << "still editing";
+  edits.End("chat-a");
+
+  // A quote reply: what is typed fits on its own, but not with the quote that goes under it.
+  const std::string typed(fits - 100, 'a');
+  edits.Begin("chat-a", "m1", ComposeQuoteReply("yes", std::string(300, 'q')), "");
+  const ChatEdits::Submit with_quote = edits.Prepare("chat-a", typed);
+  EXPECT_TRUE(with_quote.too_long);
+  EXPECT_GT(with_quote.text.size(), typed.size());
+  EXPECT_TRUE(EditFitsOnTheWire("m1", typed));
+}
+
 TEST(ChatEditsTest, AClosedChatForgetsItsEdit) {
   ChatEdits edits;
   edits.Begin("chat-a", "m1", "see you at 8", "");
