@@ -208,6 +208,8 @@ const char* NoticeKindName(CallNotice::Kind kind) {
       return "call_back";
     case CallNotice::Kind::CallBlocked:
       return "call_blocked";
+    case CallNotice::Kind::Hint:
+      return "hint";
   }
   return "?";
 }

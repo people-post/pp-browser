@@ -43,6 +43,11 @@ struct CallNotice {
     CallBack,
     /** "Who can call me" dropped a call from `identity`: `key` (an i18n key) says which setting did (the pill). */
     CallBlocked,
+    /**
+     * The call on screen: one-way audio or a lost mic, said as a bottom pill (`key`, an i18n key; CallHintPrompt), in
+     * the error style when `alarm` (the user must act).
+     */
+    Hint,
   };
   Kind kind = Kind::Error;
   std::string key;
@@ -52,6 +57,7 @@ struct CallNotice {
   /** IncomingCall: it rings over a call this device is in, and answering ends `ending` (V064). CallBack: the call. */
   bool conflict = false;
   CallScreen::EndingCall ending;
+  bool alarm = false;
 };
 
 /** What pressing a call button led to. */

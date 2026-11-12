@@ -771,6 +771,13 @@ void CallPresenter::StepMedia(CallUiBackend& backend, const CallScreen& next, co
       }
       const CallMediaFacts facts = ReadMediaFacts(backend, next, now);
       const CallMediaScreen& frame = media_frame_.Step(next, facts);
+      if (!frame.pill_key.empty()) {
+        CallNotice notice;
+        notice.kind = CallNotice::Kind::Hint;
+        notice.key = frame.pill_key;
+        notice.alarm = frame.pill_alarm;
+        Notify(notice);
+      }
       ActOnMedia(backend, frame);
       LogMedia(facts, frame);
       return;
@@ -820,6 +827,7 @@ CallMediaFacts CallPresenter::ReadMediaFacts(CallUiBackend& backend, const CallS
   f.peer_frames_live = media.IsRemoteVideoLive(kPeerVideoLiveMs);
   f.ever_had_remote_video = media.EverHadRemoteVideo();
   f.local_on_hold = callbacks_.on_hold_here && callbacks_.on_hold_here();
+  f.mic_blocked = backend.DirectConnectMissingMic();
   f.engine = media.HealthSnapshot();
   f.hop = backend.HopHealth();
   f.reach_path_kind = backend.MediaPathKind();

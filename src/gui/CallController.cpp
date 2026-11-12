@@ -1174,6 +1174,13 @@ void CallController::ShowNotice(const CallNotice& notice) {
     case CallNotice::Kind::CallBlocked:
       UserFeedback::Note(Tr(notice.key));
       return;
+    case CallNotice::Kind::Hint:
+      if (notice.alarm) {
+        UserFeedback::Fail(Tr(notice.key));
+      } else {
+        UserFeedback::Note(Tr(notice.key));
+      }
+      return;
   }
 }
 
@@ -1877,7 +1884,8 @@ void CallController::ApplyStatusLine(const CallScreen& screen, const CallMediaSc
   in_call.elapsed = FormatTimer(frame.timer_since_ms, now_ms).c_str();
   in_call.subtitle = StatusLineText(frame.line, screen, now_ms).c_str();
   in_call.status_hint = StatusHintText(frame.line.hint, screen).c_str();
-  in_call.quality_hint = frame.hint_shown ? Tr(frame.hint_key).c_str() : "";
+  // The middle line as the presenter decided (a 1:1 call: never; the pills say it — DEV/PLAN-call-failed-redial.md 9).
+  in_call.quality_hint = frame.center_hint_key.empty() ? "" : Tr(frame.center_hint_key).c_str();
 }
 
 std::string CallController::StatusLineText(const CallStatusLine& line, const CallScreen& screen,
@@ -1958,8 +1966,10 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend& backend,
   const bool audio_fault = view.quality == CallPathQuality::NoAudio || view.asymmetry != CallAudioAsymmetry::None;
   if (audio_fault_gate_.Update(presenter_.ActiveCallId(), audio_fault, now_ms)) {
     if (!frame.hint_key.empty()) {
-      // The phone layout already shows this hint as the centered line; don't say it twice. The gate stays consumed.
-      if (CallAudioFaultToastGate::ShouldToastHint(frame.hint_shown, in_call.status_hint.empty())) {
+      // A 1:1 call's hint is the presenter's pill (hint_pilled). A group's: the phone layout already shows it as the
+      // centered line; don't say it twice. The gate stays consumed.
+      if (!frame.hint_pilled &&
+          CallAudioFaultToastGate::ShouldToastHint(frame.hint_shown, in_call.status_hint.empty())) {
         UserFeedback::Fail(Tr(frame.hint_key));
       }
     } else if (label_key && label_key[0]) {
