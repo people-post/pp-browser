@@ -340,9 +340,6 @@ std::vector<RecentCall> RecentCalls(const ICallSessionReader& sessions, const st
     return calls;
   }
   for (const CallSession& session : *listed) {
-    if (session.session_kind == CallSessionKind::Broadcast) {
-      continue;
-    }
     RecentCall call;
     call.call_id = session.call_id;
     call.thread_id = session.origin_thread_id.value_or("");

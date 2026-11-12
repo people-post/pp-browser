@@ -56,15 +56,9 @@ public:
    * an account: to any of its devices.
    */
   virtual bool IsPeerConnected(const std::string& peer_key) const { return false; }
-  virtual DirectSendRoe SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) = 0;
-
-  /** Prefer over SendEnvelope on product paths; default wraps sync SendEnvelope. */
+  /** Send `envelope`; `on_done` runs once, with the peer's ack or why the send failed. */
   virtual void SendEnvelopeAsync(const std::string& peer_relay_user_id, const RelayEnvelope& envelope,
-                                 std::function<void(DirectSendRoe)> on_done) {
-    if (on_done) {
-      on_done(SendEnvelope(peer_relay_user_id, envelope));
-    }
-  }
+                                 std::function<void(DirectSendRoe)> on_done) = 0;
 };
 
 } // namespace pbr

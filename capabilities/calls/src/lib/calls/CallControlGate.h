@@ -18,7 +18,7 @@ enum class CallControlSender {
   OfferedOrInCall,
   /** The call's initiator or a current participant. */
   InCall,
-  /** Nobody: not signaling here (the summary is chat history; SDP / ICE are legacy). */
+  /** Nobody: not signaling here (the summary is chat history). */
   Nobody,
 };
 

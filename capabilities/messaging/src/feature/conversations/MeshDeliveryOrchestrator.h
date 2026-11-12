@@ -314,13 +314,6 @@ public:
     transports_.SetClearWarm(std::move(clear));
   }
   /**
-   * The account pair's e2e_public session key with the peer (AutoKey if missing): a call media key's old form is
-   * wrapped under it (M024 bridge). An opener it made rides the lane's account copies to the peer until confirmed.
-   */
-  Roe<ByteVector> EnsureE2ePublicSessionKey(const std::string& peer_identity);
-  /** The same key when a session with the peer is held — never opened (reading a media key's old form, M024). */
-  Roe<ByteVector> HeldE2ePublicSessionKey(const std::string& peer_identity) const;
-  /**
    * Send `control` (an identified system message) to `peer_identity` on the control lane
    * (kRelayRouteControl): a copy per device on the peer's card, each E2E under that device pair's e2e_public
    * session (the account copy for a peer with no card, M024), not sequenced, never stored. Queued on the critical lane — relay when a route is known (retried

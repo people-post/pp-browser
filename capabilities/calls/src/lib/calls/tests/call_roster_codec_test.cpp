@@ -27,7 +27,7 @@ TEST(CallRosterCodecTest, HoldAndPausedCameraRoundTrip) {
   EXPECT_TRUE(back.participants[0].video_paused);
 }
 
-// Off, the fields stay off the wire; an older peer's roster (no fields) reads as neither.
+// Off, the fields stay off the wire; a roster without them reads as neither.
 TEST(CallRosterCodecTest, OffIsAbsentAndAbsentIsOff) {
   const std::string json = CallControlCodec::EncodeRoster(Roster(false, false)).value();
   EXPECT_EQ(json.find("on_hold"), std::string::npos);

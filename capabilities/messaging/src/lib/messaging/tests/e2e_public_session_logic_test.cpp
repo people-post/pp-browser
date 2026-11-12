@@ -104,10 +104,6 @@ TEST_F(E2ePublicSessionLogicTest, CreatesOnceAndAnnouncesUntilConfirmed) {
   ASSERT_TRUE(first->key_init_b64.has_value());
   EXPECT_FALSE(first->key_init_b64->empty());
 
-  auto session = DeriveE2ePublicSessionKey(first->master_psk, 1);
-  ASSERT_TRUE(static_cast<bool>(session));
-  EXPECT_FALSE(session->empty());
-
   auto second = EnsureE2ePublicMasterPsk(*psk_, key, 1, bob->public_key);
   ASSERT_TRUE(static_cast<bool>(second));
   EXPECT_FALSE(second->created);

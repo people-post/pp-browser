@@ -16,9 +16,7 @@ namespace pbr {
 
 /**
  * `/pp/rpc/chat/1.0.0` over AMP ChannelSession (PeerLinkManager::OpenChannel).
- * Product single-entry when MeshHost Amp is attached ([A020]); legacy path remains for tests/fallback.
- *
- * Prefer SendEnvelopeAsync when MeshPump + PostToIo are available; sync SendEnvelope parks.
+ * Product single-entry when MeshHost Amp is attached ([A020]). Sends are asynchronous (SendEnvelopeAsync).
  */
 class AmpDirectChatTransport : public IDirectMessageClient {
 public:
@@ -51,8 +49,6 @@ public:
 
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
   bool IsPeerConnected(const std::string& peer_key) const override;
-  DirectSendRoe SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) override;
-
   void SendEnvelopeAsync(const std::string& peer_relay_user_id, const RelayEnvelope& envelope,
                          std::function<void(DirectSendRoe)> on_done) override;
 

@@ -29,13 +29,6 @@ inline constexpr int64_t kCallInviteWireSkewSlackMs = 120'000;
 
 enum class CallMediaMode : uint8_t { Voice = 0, Video = 1 };
 
-/** Group SoftMigrate vs subscribe-only live broadcast (B001 / B0). */
-/**
- * Persisted session kind. `Broadcast` is read-only legacy (rows written before broadcast became its
- * own feature, media-client-layers l6): decoded so old stores load, never created, never accepted.
- */
-enum class CallSessionKind : uint8_t { Group = 0, Broadcast = 1 };
-
 enum class CallSessionState : uint8_t { Ringing = 0, Active = 1, Ended = 2 };
 
 enum class CallParticipantState : uint8_t {
@@ -60,10 +53,6 @@ enum class CallControlType {
    * normal chat-stream message — every other type is signaling on the control lane.
    */
   CallSummary,
-  /** WebRTC SDP offer/answer (a2). */
-  CallSdp,
-  /** Trickle ICE candidate (a2). */
-  CallIce,
   /** Soft-migrate onto media_relay hop (a4): hop peer id + stream map hint. */
   CallSfuAttach,
   /** Guest → owner: SFU attach failed; optional preferred durable hops (V029). */
@@ -74,40 +63,39 @@ enum class CallControlType {
   CallVideoRefresh,
   /**
    * H011 L3.1c: dialer announces chosen immediate circuit R1 PeerId so answerer can late-reserve.
-   * Additive plumbing — old peers ignore unknown control_type.
    */
   CallCircuitR1,
   /**
    * H012 / L3.25d: ACP punch candidates + sync window over call-control when Amp introducer
-   * is unavailable (B29). Additive — old peers ignore.
+   * is unavailable (B29).
    */
   CallPunchOffer,
   CallPunchAnswer,
   /**
-   * call-path-resilience K005: mid-call caps change (mobility class flipped). Additive — old peers
-   * ignore it and keep the caps from invite / accept.
+   * call-path-resilience K005: mid-call caps change (mobility class flipped); until one comes, the caps from
+   * invite / accept hold.
    */
   CallCapsUpdate,
   /**
    * V053: someone a group call was offered to (declined, missed, left) asks to join it while it
-   * lasts; a participant answers with a fresh CallInvite. Additive — old peers ignore it.
+   * lasts; a participant answers with a fresh CallInvite.
    */
   CallJoinRequest,
   /**
    * M021 d5: to our own other devices — this device took (or declined) an incoming call, so theirs stop ringing.
-   * Honoured only from our own account. Additive — old devices ignore it.
+   * Honoured only from our own account.
    */
   CallAnsweredElsewhere,
   /**
    * H013: the caller stopped trying to reach us for this call's media (its connect gave up), so the
-   * answerer stops waiting too and both screens leave "connecting" together. Additive — old peers
-   * ignore it and keep waiting until their own limit.
+   * answerer stops waiting too and both screens leave "connecting" together. Lost, the answerer waits until its own
+   * limit.
    */
   CallConnectGiveUp,
   /**
    * V062: the group's owner or an admin takes a guest out of the group's call; every participant checks it against
-   * the group's roster and takes it as the guest's leave (the key rotates without them). Additive — old peers ignore
-   * it, and the rotation cuts the guest off anyway.
+   * the group's roster and takes it as the guest's leave (the key rotates without them). Lost, the rotation cuts the
+   * guest off anyway.
    */
   CallRemove,
 };
@@ -151,7 +139,6 @@ struct CallSession {
   uint32_t media_epoch = 1;
   std::string media_key_id;
   std::optional<std::string> sfu_hint;
-  CallSessionKind session_kind = CallSessionKind::Group;
   /** V050: hop planned from the invite list (not the hop the call is on — that is `sfu_hint`). */
   std::optional<CallPlannedHop> planned_hop;
 };
@@ -186,7 +173,6 @@ struct PendingCallInvite {
    * inviter took the answerer's call-media hello as its accept (B30) before the CallAccept arrived.
    */
   std::string status = "pending";
-  CallSessionKind session_kind = CallSessionKind::Group;
 };
 
 struct CallRosterEntry {
@@ -194,19 +180,19 @@ struct CallRosterEntry {
   CallParticipantState state = CallParticipantState::Joined;
   bool audio_muted = false;
   bool video_enabled = false;
-  /** CallParticipantMedia's; on the wire only when set (older peers ignore them: off). */
+  /** CallParticipantMedia's; on the wire only when set (absent: off). */
   bool on_hold = false;
   bool video_paused = false;
   /** V062: a guest in a group's call — who brought them (on the wire as `guest: true` + `brought_by`, only when set). */
   std::string brought_by;
-  /** Sticky SoftMigrate initiator (earliest wins). Optional for wire compat with older peers. */
+  /** When the entry joined (sender's clock); sticky SoftMigrate initiator (earliest wins). None until joined. */
   std::optional<int64_t> joined_at;
 };
 
 /**
  * Additive peer capability advertisement on call invite/accept (V030).
  * `v` bumps only on semantic break; unknown newer `v` → treat as unusable for hop pick.
- * Missing `caps` on wire → old peer (present=false); SoftMigrate fail-closed for contacts.
+ * Missing `caps` on wire → present=false (no capabilities noted); SoftMigrate fail-closed for contacts.
  */
 inline constexpr int kCallPeerCapsVersion = 1;
 
@@ -235,7 +221,7 @@ struct CallInviteDetail {
   bool guest = false;
   std::string brought_by;
   std::optional<std::string> sfu_hint;
-  /** V050: planned hop (additive; old peers ignore). Distinct from `sfu_hint` = the hop in use. */
+  /** V050: planned hop (when one is planned). Distinct from `sfu_hint` = the hop in use. */
   std::optional<CallPlannedHop> planned_hop;
   std::optional<int64_t> expires_at;
   /** Full call roster at invite time: joined + ringing + every co-invitee (V050) + this invitee. */
@@ -245,8 +231,6 @@ struct CallInviteDetail {
   std::string media_key_id;
   /** The key itself (base64; M024): the lane copy it rides is sealed for one device of the invitee's. */
   std::string media_key_b64;
-  /** The old form: the key wrapped under the account pair's session (V015) — until kMediaKeyAccountWrapBridge goes. */
-  std::string wrapped_key_b64;
   /**
    * Inviter LAN listen multiaddrs (`/ip4/…/tcp/…/p2p/…`) for answerer reverse-dial when mDNS
    * has not populated the dial registry yet (desktop cross-OS dogfood).
@@ -257,11 +241,11 @@ struct CallInviteDetail {
    * without contacts or listen multiaddrs (group members need not be contacts).
    */
   std::string libp2p_peer_id;
-  /** Optional capability ads (additive; old peers ignore). */
+  /** Optional capability ads (absent: none). */
   CallPeerCaps caps;
   /**
    * Initiation offer (P001): pp_credit minor units the caller prepared before dial.
-   * Missing on wire → 0 (free / old peer).
+   * Missing on wire → 0 (free).
    */
   int64_t offer_amount_minor = 0;
   /** Peer's advertised floor used when preparing the offer (informational). */
@@ -287,8 +271,8 @@ struct BlockedCallInvite {
 };
 
 /**
- * V050 gt4: what an invitee found while ringing, carried in CallAccept (additive; old peers send
- * none). `planned_hop_ok` unset = unknown (no plan, or the probe had not finished).
+ * V050 gt4: what an invitee found while ringing, carried in CallAccept (absent: nothing found).
+ * `planned_hop_ok` unset = unknown (no plan, or the probe had not finished).
  */
 struct CallHopReport {
   std::optional<bool> planned_hop_ok;
@@ -307,13 +291,13 @@ struct CallAcceptDetail {
   std::vector<std::string> listen_multiaddrs;
   /** Answerer mesh PeerId (base58); same role as invite.libp2p_peer_id. */
   std::string libp2p_peer_id;
-  /** Optional capability ads (additive; old peers ignore). */
+  /** Optional capability ads (absent: none). */
   CallPeerCaps caps;
-  /** Recipient charge decision for initiation offer (P001); missing on the wire → waive (compat / free path). */
+  /** Recipient charge decision for initiation offer (P001); missing on the wire → waive (the free path). */
   InitiationChargeDecision charge_decision = InitiationChargeDecision::Waive;
   /** Echo of offer amount being waived or taken. */
   int64_t offer_amount_minor = 0;
-  /** Callee's answer mode: absent = unchanged (old peers, video answer); false = answered as voice
+  /** Callee's answer mode: absent = unchanged (a video answer); false = answered as voice
    *  only — a 1:1 caller narrows the call to voice. Never true on the wire. */
   std::optional<bool> video_allowed;
   /** V050 gt4: planned-hop reachability + reachable hops. */
@@ -366,8 +350,6 @@ struct CallMediaKeyDetail {
    * device pair's session (or the account copy in the account pair's): the copy is the wrap.
    */
   std::string media_key_b64;
-  /** The old form: the key wrapped under the account pair's session (V015) — until kMediaKeyAccountWrapBridge goes. */
-  std::string wrapped_key_b64;
 };
 
 struct CallEndedDetail {
@@ -403,21 +385,6 @@ struct CallSummaryDetail {
   bool group = false;
   /** Group: the writer started the call (a 1:1 summary is always its starter's). */
   bool started = false;
-};
-
-struct CallSdpDetail {
-  std::string call_id;
-  std::string identity;
-  /** "offer" | "answer" */
-  std::string sdp_type;
-  std::string sdp;
-};
-
-struct CallIceDetail {
-  std::string call_id;
-  std::string identity;
-  std::string candidate;
-  std::string mid;
 };
 
 /** a4 soft-migrate onto blind media_relay (V021). */
@@ -495,11 +462,6 @@ struct CallPunchDetail {
 std::string GenerateCallId();
 std::string CallMediaModeToString(CallMediaMode mode);
 CallMediaMode CallMediaModeFromString(const std::string& value);
-std::string CallSessionKindToString(CallSessionKind kind);
-CallSessionKind CallSessionKindFromString(const std::string& value);
-inline bool IsBroadcastSession(CallSessionKind kind) {
-  return kind == CallSessionKind::Broadcast;
-}
 std::string CallSessionStateToString(CallSessionState state);
 CallSessionState CallSessionStateFromString(const std::string& value);
 std::string CallParticipantStateToString(CallParticipantState state);

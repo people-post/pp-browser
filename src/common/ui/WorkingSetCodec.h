@@ -26,10 +26,4 @@ bool ContentRmlHasActiveWorkingSetChip(const std::string& rml);
  */
 std::string MarkWorkingSetChipsUnavailable(const std::string& rml);
 
-/**
- * Remove bubble-inlined Message/Add suggestion buttons that belong in the panel.
- * Use when the reply already has (or had) a working-set chip.
- */
-std::string StripInlinedWorkingSetActionSuggestions(const std::string& rml);
-
 } // namespace pbr

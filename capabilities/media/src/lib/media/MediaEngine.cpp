@@ -420,6 +420,8 @@ struct MediaEngine::Impl {
   std::atomic<uint64_t> playout_underruns_total{0};
   std::atomic<uint64_t> plc_frames_total{0};
   std::atomic<uint64_t> fec_frames_total{0};
+  /** Samples played from concealment or FEC (MediaEngineHealth::concealed_ms). */
+  std::atomic<uint64_t> concealed_samples_total{0};
 
   bool capture_available = false;
 #ifdef PP_BROWSER_CALL_DENOISE
@@ -786,6 +788,7 @@ struct MediaEngine::Impl {
     playout_underruns_total.store(0, std::memory_order_relaxed);
     plc_frames_total.store(0, std::memory_order_relaxed);
     fec_frames_total.store(0, std::memory_order_relaxed);
+    concealed_samples_total.store(0, std::memory_order_relaxed);
     vpio_underruns_closed = 0;
     last_rx_audio_ms.store(0, std::memory_order_relaxed);
     last_tx_audio_ms.store(0, std::memory_order_relaxed);
@@ -884,9 +887,10 @@ struct MediaEngine::Impl {
 
   /**
    * Appends one packet's audio to `track.decoded`: Packet decoded / FEC-on-Gap / PLC-on-Gap at the lost packet's
-   * length / PLC-on-Empty for one slot. When the buffer is over its adaptive target, a first-pass decoded Packet
-   * that turns out to be silence is dropped and the next one popped/decoded to catch up without an audible gap
-   * (adaptive jitter §2).
+   * length / PLC-on-Empty for one slot. Catch-up is never heard (V065): when the buffer is over its adaptive target, a
+   * decoded Packet that turns out to be silence is dropped and the next one popped/decoded instead — one per slot, or
+   * as many as the buffer holds past its cap. Over the cap with no silence at its head, speech is cut to the cap
+   * (oldest first, counted as speech drops).
    */
   void DecodeNextPacketLocked(RemoteAudioTrack& track) {
     std::vector<int16_t> pcm(static_cast<size_t>(kMaxPacketSamples), 0);
@@ -894,11 +898,13 @@ struct MediaEngine::Impl {
       const int n = opus_decode(track.decoder, nullptr, 0, pcm.data(), samples, 0);
       if (n > 0) {
         plc_frames_total.fetch_add(1, std::memory_order_relaxed);
+        concealed_samples_total.fetch_add(static_cast<uint64_t>(n), std::memory_order_relaxed);
       }
       return n;
     };
     int decoded = 0;
-    for (int pass = 0; pass < 2; ++pass) {
+    const size_t silence_skips = track.jitter.ExcessOverCap() + 1;
+    for (size_t pass = 0;; ++pass) {
       const uint64_t underruns_before = track.jitter.underruns();
       AudioPlayoutPop pop = track.jitter.PopForPlayout();
       decoded = 0;
@@ -922,6 +928,7 @@ struct MediaEngine::Impl {
             // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
             // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
             fec_frames_total.fetch_add(1, std::memory_order_relaxed);
+            concealed_samples_total.fetch_add(static_cast<uint64_t>(decoded), std::memory_order_relaxed);
           } else {
             decoded = plc(track.packet_samples);
           }
@@ -936,13 +943,14 @@ struct MediaEngine::Impl {
           }
           break;
       }
-      if (pass == 0 && pop.kind == AudioPlayoutPop::Kind::Packet && decoded > 0 && track.jitter.OverTarget() &&
-          IsCatchUpSilence(pcm, static_cast<size_t>(decoded))) {
+      if (pass < silence_skips && pop.kind == AudioPlayoutPop::Kind::Packet && decoded > 0 &&
+          track.jitter.OverTarget() && IsCatchUpSilence(pcm, static_cast<size_t>(decoded))) {
         track.jitter.NoteSilenceDrop();
         continue; // catch up: pop and decode the next packet instead of playing this silent one
       }
       break;
     }
+    track.jitter.CutToCap(); // still past the cap: no silence was left to skip
     if (decoded > 0) {
       track.decoded.insert(track.decoded.end(), pcm.begin(), pcm.begin() + decoded);
     }
@@ -2574,9 +2582,11 @@ void MediaEngine::OnInboundPacket(const MediaPacket& packet) {
       impl->OnRemoteOpusFrame(packet.stream_id, packet.seq, reinterpret_cast<const std::byte*>(packet.payload.data()),
                               packet.payload.size());
     } else if (mesh::IsVideoChannel(packet.channel_id)) {
-      impl->video_arrivals[packet.stream_id].Note(packet.seq, std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                                  std::chrono::steady_clock::now().time_since_epoch())
-                                                                  .count());
+      impl->video_arrivals[packet.stream_id].Note(
+          packet.seq,
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+              .count(),
+          packet.mark != 0);
       video_decoder = impl->RemoteDecoderLocked(packet.stream_id);
     }
   }
@@ -2629,6 +2639,7 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
   h.playout_underruns = impl->playout_underruns_total.load(std::memory_order_relaxed);
   h.plc_frames = impl->plc_frames_total.load(std::memory_order_relaxed);
   h.fec_frames = impl->fec_frames_total.load(std::memory_order_relaxed);
+  h.concealed_ms = impl->concealed_samples_total.load(std::memory_order_relaxed) * 1000 / kSampleRate;
   h.rx_audio_frames = impl->rx_audio_frames.load(std::memory_order_relaxed);
   h.tx_audio_frames = impl->tx_audio_frames.load(std::memory_order_relaxed);
   h.last_rx_audio_ms = impl->last_rx_audio_ms.load(std::memory_order_relaxed);
@@ -2676,6 +2687,7 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
           std::max(h.jitter_depth_ms, static_cast<int64_t>(track->jitter.size()) * track->jitter.PacketMs());
       h.jitter_silence_drops += track->jitter.silence_drops();
       h.jitter_speech_drops += track->jitter.speech_drops();
+      h.jitter_late_drops += track->jitter.drops_late();
     }
   }
   return h;

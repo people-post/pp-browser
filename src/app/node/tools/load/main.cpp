@@ -423,8 +423,8 @@ public:
       pp::mesh::MediaDataFrame frame;
       frame.stream_id = static_cast<uint32_t>(index_ + 1);
       frame.channel_id = channel;
-      frame.channel_type = channel == kAudioChannel ? pp::mesh::MediaChannelType::ReliableOrdered
-                                                    : pp::mesh::MediaChannelType::LatestLossy;
+      frame.channel_type =
+          channel == kAudioChannel ? pp::mesh::MediaChannelType::Forward : pp::mesh::MediaChannelType::LatestLossy;
       frame.seq = ++seq_;
       frame.mark = key ? 1 : 0;
       const size_t bytes = payload.size();

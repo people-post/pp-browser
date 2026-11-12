@@ -32,9 +32,9 @@ protected:
 
     // Each side treats the other as already connected for EnsurePeerReachable.
     offer_.dial->connected[answer_.local_identity] = true;
-    offer_.dial->endpoints[answer_.local_identity] = "/ip4/127.0.0.1/udp/47101/adp/1.0.0/p2p/12D3KooWAnswer";
+    offer_.dial->endpoints[answer_.local_identity] = "/ip4/127.0.0.1/udp/47101/adp/2/p2p/12D3KooWAnswer";
     answer_.dial->connected[offer_.local_identity] = true;
-    answer_.dial->endpoints[offer_.local_identity] = "/ip4/127.0.0.1/udp/47100/adp/1.0.0/p2p/12D3KooWOffer";
+    answer_.dial->endpoints[offer_.local_identity] = "/ip4/127.0.0.1/udp/47100/adp/2/p2p/12D3KooWOffer";
 
     // Answerer reverse-dial arms offerer inbound (product: stream lands on offerer before dial).
     answer_.transport->peer_inbound = [this](CallMediaDirectConnectParams params) {
@@ -704,7 +704,7 @@ TEST_F(CallDualStackComposeTest, APeersByeWithoutItsLeaveEndsTheCallAsTheirs) {
   EXPECT_EQ(end->call_id, call_id);
 }
 
-// K014: a call reconnecting after a lost path (an older peer's hang-up closes the stream bare) ends
+// K014: a call reconnecting after a lost path (the peer's `bye` lost with it) ends
 // as the peer's end when its leave arrives — not as a failed connection.
 TEST_F(CallDualStackComposeTest, ALeaveWhileReconnectingEndsTheCallAsTheirs) {
   Thread thread;

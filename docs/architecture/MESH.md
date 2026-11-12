@@ -125,7 +125,7 @@ hosting a circuit or media relay, a seed above all):
 
 | Relay | Bound |
 |-------|-------|
-| Circuit: target protocol | the call-media carrier, a media relay, a nested circuit, or a lab `/test/…` protocol — the far leg opens with the relay's identity, so nothing else (DHT, directory, chat) is reachable through it |
+| Circuit: target protocol | the carrier of a nested link (a call's peer, a media-relay hop), a nested circuit, or a lab `/test/…` protocol — the far leg opens with the relay's identity, so nothing else (DHT, directory, chat) is reachable through it |
 | Circuit: bridges / reservations | 4096 live bridges, 32 per dialer PeerId; 8192 parked reservations — past them, `Busy` |
 | Circuit: timeouts | a dialer's `timeout_ms` at most 30 s for bridge setup, 60 s for a reservation |
 | Circuit: new targets | 16 new target addresses a minute per dialer |

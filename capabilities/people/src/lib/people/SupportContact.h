@@ -21,24 +21,14 @@ inline Contact MakeSupportContact(const std::string& contact_id, const std::stri
   return contact;
 }
 
-/**
- * Keep the support title current in remote.nickname. A remark equal to the title is the copy older builds
- * wrote there, so it is cleared; any other remark is the user's and stays. Returns true when it changed.
- */
+/** Keep the support title current in remote.nickname; the remark is the user's and stays. True when it changed. */
 inline bool ApplySupportTitle(Contact& contact, const std::string& title) {
-  bool changed = false;
-  if (contact.remote.nickname != title) {
-    contact.remote.nickname = title;
-    changed = true;
+  if (contact.remote.nickname == title) {
+    return false;
   }
-  if (contact.local.display_name == title) {
-    contact.local.display_name.clear();
-    changed = true;
-  }
-  if (changed) {
-    SyncContactMirrors(contact);
-  }
-  return changed;
+  contact.remote.nickname = title;
+  SyncContactMirrors(contact);
+  return true;
 }
 
 } // namespace pbr

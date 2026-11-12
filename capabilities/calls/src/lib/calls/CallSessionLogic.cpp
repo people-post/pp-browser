@@ -97,10 +97,6 @@ bool CallSessionLogic::CanAcceptJoin(const size_t current_joined_count, const si
   return current_joined_count < max_joined;
 }
 
-bool CallSessionLogic::VideoAllowedFromInvite(const CallInviteDetail& invite) {
-  return invite.video_allowed;
-}
-
 bool CallSessionLogic::VoiceAnswerNarrowsCall(const CallSession& session) {
   return !session.origin_group_id || session.origin_group_id->empty();
 }

@@ -28,8 +28,8 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_BROWSER_PIN` | profile unlock | Required (or `--pin`). Secret — never bake into images. |
 | `PP_BROWSER_CONFIG` | config file path | Or `--config`. Without either, pp-node runs on defaults and these overlays — it never reads the desktop app's config file of the same user (`~/.config/pp-browser/config.json` and the like) |
 | `PP_NODE_DATA_DIR` | `data_dir` | Volume mount path |
-| `PP_NODE_AMP_UDP_PORT` | `libp2p.amp_udp_port` | Org seed should pin **443** to match default ADP bootstrap |
-| `PP_NODE_BOOTSTRAP_PEERS` | `libp2p.bootstrap_peers` | Comma-separated **ADP** multiaddrs (`/udp/…/adp/2/p2p/…`; the legacy `/adp/1.0.0/` still dials) |
+| `PP_NODE_AMP_UDP_PORT` | `mesh.amp_udp_port` | Org seed should pin **443** to match default ADP bootstrap |
+| `PP_NODE_BOOTSTRAP_PEERS` | `mesh.bootstrap_peers` | Comma-separated **ADP** multiaddrs (`/udp/…/adp/2/p2p/…`: the versionless `/adp/1.0.0/` form is refused) |
 | `PP_NODE_CAP_CIRCUIT_RELAY` | `capabilities.circuit_relay` | `true`/`1`/`yes`/`on` or `false`/`0`/`no`/`off` |
 | `PP_NODE_CAP_MEDIA_RELAY` | `capabilities.media_relay` | Same bool forms |
 | `PP_NODE_CAP_DHT` | `capabilities.dht` | Same bool forms (Node DHT participation; default off) |
@@ -37,9 +37,9 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_CAPACITY_LINKS` / `_RESERVATIONS` / `_BRIDGES` / `_GROUP_CALLS` | `mesh.capacity.*` | A positive count ([Node capacity](#node-capacity-meshcapacity)); anything else keeps the config's |
 | `PP_NODE_LAB_DHT_FIND` | — | `1`: status HTTP serves `GET /dht/find?peer_id=…` (starts a lookup). Labs only — leave unset on a reachable status port |
 | `PP_NODE_CAP_LEDGER_GATEWAY` | `capabilities.ledger_gateway` | Same bool forms (N029 Phase C prep; default off; no chain runtime yet) |
-| `PP_NODE_ADVERTISE_MULTIADDRS` | `libp2p.advertise_multiaddrs` | Comma-separated **public** multiaddrs for directory publish (never `0.0.0.0`) |
-| `PP_NODE_MESH_PUBLISH` | `libp2p.mesh_publish` | Register/renew as `entity_kind=mesh_node` (N027). Default on when advertise list is non-empty |
-| `PP_NODE_MESH_HEARTBEAT` | `libp2p.mesh_heartbeat` | Signed liveness heartbeat to the directory every 5 min (needs mesh publish). Default **off**: opt-in for org seeds (privacy P011) |
+| `PP_NODE_ADVERTISE_MULTIADDRS` | `mesh.advertise_multiaddrs` | Comma-separated **public** multiaddrs for directory publish (never `0.0.0.0`) |
+| `PP_NODE_MESH_PUBLISH` | `mesh.mesh_publish` | Register/renew as `entity_kind=mesh_node` (N027). Default on when advertise list is non-empty |
+| `PP_NODE_MESH_HEARTBEAT` | `mesh.mesh_heartbeat` | Signed liveness heartbeat to the directory every 5 min (needs mesh publish). Default **off**: opt-in for org seeds (privacy P011) |
 | `PP_NODE_REGISTRATION_BASE_URL` | `registration.base_url` | Mesh directory register/renew HTTP base (e.g. `https://backend.example.test/api/relay`) |
 | `PP_NODE_RELAY_CONTENT_SHA256` | `relay.content_sha256` | Same bool forms; send `x-amz-content-sha256` on relay POST/PUT (default off) |
 | `PP_NODE_IDENTITY_SEED` | deterministic identity | ≥32-byte hex master seed; HKDF `pp-node-identity-v1` → device ML-DSA + account ML-DSA + account ML-KEM. Empty volume mints stably; existing `identity.enc` **fail-closed** on mismatch |
@@ -171,7 +171,7 @@ On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloa
   "relay": { "base_url": "https://backend.example.test/api/relay" },
   "directory": { "base_url": "https://backend.example.test/api/relay" },
   "registration": { "base_url": "https://backend.example.test/api/relay" },
-  "libp2p": {
+  "mesh": {
     "node_enabled": true,
     "mesh_enabled": true,
     "amp_udp_port": 0,
@@ -190,10 +190,10 @@ On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloa
 
 - **`llm`** — default preset is **Brief** (API key issued on Profile registration, stored in `identity.enc`). **Cloud**, **Ollama**, and **Custom** remain available in Me → Assistant.
 - **`promoted_mcp`** — primary MCP endpoint (feeds, promoted infra tools). Blank URL uses [`PlatformDefaults`](../../src/foundation/data/PlatformDefaults.cpp).
-- **`mcp_servers`** — additional MCP servers (custom tool bucket). Legacy `"mcp"` key loads into `promoted_mcp`.
+- **`mcp_servers`** — additional MCP servers (custom tool bucket). (The pre-rename `"mcp"` key is not read.)
 - **`backend.env`** — `prod` (default) | `qa` | `custom`; set in Me → Network → Service. `prod` / `qa` derive every backend URL from the compiled origin and ignore the `relay` / `directory` / `registration` values (kept in the file, untouched by saves); `custom` uses them, and only then does Network show the URL fields. `qa` is offered only when the build has a QA origin (otherwise it loads as `prod`). The backend is fixed for a run: a change is saved at once and applies after a restart, and the settings row says so. Saving the switch also unbinds this device's push token from the running backend (best effort); switching back before the restart registers it again. A file with no `backend` key whose saved URLs differ from the defaults loads as `custom`. `PP_BROWSER_ORIGIN` overrides all of it.
 - **`relay` / `directory` / `registration`** — HTTP endpoints (the `custom` backend's); platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). `directory` may also list ordered `providers[]` for failover (N029 nd3); see [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
-- **`libp2p`** — mesh role and Amp underlay policy. `node_enabled` (desktop; ignored on mobile) selects Node vs Client hosting posture ([p2p-mesh N001](../../projects/p2p-mesh/DECISIONS.md)). **`mesh_enabled`** (default **true**) is required for the peer mesh: Amp UDP + MSH + channels ([adp D10](../../projects/adp/PHASES.md)). Amp bind/start failure **fails mesh start** (no TCP underlay fallback). Set `mesh_enabled=false` to leave peer mesh off. Optional **`amp_udp_port`** (0 = ephemeral; org seed should pin **443**). Empty `bootstrap_peers` fills the Brief ADP L0 seeds (`/udp/443/adp/2/…`, [N002](../../projects/p2p-mesh/DECISIONS.md#n002--seed-multiaddr-ip--443--peerid-no-dns)); a non-empty list overrides hardcoded. SoftMigrate / dial-back / circuit warm prefer HTTP `GET /v1/mesh/nodes` and last-good `{data_dir}/mesh_directory_nodes.json` ahead of config/hardcoded ([N027](../../projects/p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory)). LAN mDNS TXT includes `amp_udp=` so peers can build ADP multiaddrs. Org **`pp-node`** hosts Amp circuit/media-relay when capabilities are on. Me → Network shows Help-the-network, Amp listen, and Inbound via Amp dial-back (D8). Contacts may store dialable ADP `multiaddrs` (`/ip4/…/udp/…/adp/2/p2p/<PeerId>`). Optional **`mobility`** (`auto` default | `stationary` | `mobile`) pins this device's call-path mobility class (dogfood / hard lab; [CALLS.md § Call media paths](../architecture/CALLS.md#call-media-paths-11--call-path-resilience)); `--mobility=` overrides it. Prefer the modern **`mesh`** key (same schema); **`libp2p`** is a legacy alias at load time.
+- **`mesh`** — mesh role and Amp underlay policy. `node_enabled` (desktop; ignored on mobile) selects Node vs Client hosting posture ([p2p-mesh N001](../../projects/p2p-mesh/DECISIONS.md)). **`mesh_enabled`** (default **true**) is required for the peer mesh: Amp UDP + MSH + channels ([adp D10](../../projects/adp/PHASES.md)). Amp bind/start failure **fails mesh start** (no TCP underlay fallback). Set `mesh_enabled=false` to leave peer mesh off. Optional **`amp_udp_port`** (0 = ephemeral; org seed should pin **443**). Empty `bootstrap_peers` fills the Brief ADP L0 seeds (`/udp/443/adp/2/…`, [N002](../../projects/p2p-mesh/DECISIONS.md#n002--seed-multiaddr-ip--443--peerid-no-dns)); a non-empty list overrides hardcoded. SoftMigrate / dial-back / circuit warm prefer HTTP `GET /v1/mesh/nodes` and last-good `{data_dir}/mesh_directory_nodes.json` ahead of config/hardcoded ([N027](../../projects/p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory)). LAN mDNS announces the PeerId and wire version (TXT `peer=` `wire=`) and the Amp UDP port (SRV), so peers of our wire version build ADP multiaddrs. Org **`pp-node`** hosts Amp circuit/media-relay when capabilities are on. Me → Network shows Help-the-network, Amp listen, and Inbound via Amp dial-back (D8). Contacts may store dialable ADP `multiaddrs` (`/ip4/…/udp/…/adp/2/p2p/<PeerId>`). Optional **`mobility`** (`auto` default | `stationary` | `mobile`) pins this device's call-path mobility class (dogfood / hard lab; [CALLS.md § Call media paths](../architecture/CALLS.md#call-media-paths-11--call-path-resilience)); `--mobility=` overrides it. The pre-rename **`libp2p`** key is not read.
 
 ### Node capacity (`mesh.capacity`)
 

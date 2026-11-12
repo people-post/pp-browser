@@ -12,7 +12,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <future>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -323,29 +322,6 @@ void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_use
                   post_after_);
             });
       });
-}
-
-DirectSendRoe AmpDirectChatTransport::SendEnvelope(const std::string& peer_relay_user_id,
-                                                   const RelayEnvelope& envelope) {
-  auto result_promise = std::make_shared<std::promise<DirectSendRoe>>();
-  auto result_future = result_promise->get_future();
-  constexpr auto kSendTimeout = std::chrono::milliseconds(4000);
-  const auto deadline = Clock::now() + kSendTimeout;
-
-  SendEnvelopeAsync(peer_relay_user_id, envelope, [result_promise](DirectSendRoe value) {
-    try {
-      result_promise->set_value(std::move(value));
-    } catch (const std::future_error&) {
-    }
-  });
-
-  mesh::AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
-                     deadline, io_pump_);
-
-  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    return DirectSendFailure::Of(DirectSendErr::NotConfirmed, "amp direct chat send timed out");
-  }
-  return result_future.get();
 }
 
 } // namespace pbr

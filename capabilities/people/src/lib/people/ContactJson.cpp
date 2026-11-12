@@ -27,28 +27,6 @@ TrustLevel TrustLevelFromString(const std::string& value) {
   return TrustLevel::Unknown;
 }
 
-namespace {
-
-bool HasRelayUserId(const std::vector<mesh::ContactId>& ids, const std::string& relay_user_id) {
-  for (const mesh::ContactId& id : ids) {
-    if (id.kind == mesh::ContactIdKind::RelayUser && id.value == relay_user_id) {
-      return true;
-    }
-  }
-  return false;
-}
-
-bool HasPeerId(const std::vector<mesh::ContactId>& ids, const std::string& peer_id) {
-  for (const mesh::ContactId& id : ids) {
-    if (id.kind == mesh::ContactIdKind::PeerId && id.value == peer_id) {
-      return true;
-    }
-  }
-  return false;
-}
-
-} // namespace
-
 Object ContactToJson(const Contact& contact) {
   Contact mirrored = contact;
   SyncContactMirrors(mirrored);
@@ -111,38 +89,7 @@ Contact ContactFromJson(const Object& json) {
     return contact;
   }
 
-  // Legacy flat contact (pre local/remote split).
-  if (auto display_name = json.getString("display_name")) {
-    contact.local.display_name = *display_name;
-  }
-  if (auto server_nickname = json.getString("server_nickname")) {
-    contact.remote.nickname = *server_nickname;
-  } else if (auto nickname = json.getString("nickname")) {
-    contact.remote.nickname = *nickname;
-  }
-  if (auto trust = json.getString("trust")) {
-    contact.local.trust = TrustLevelFromString(*trust);
-  }
-  AppendContactIdsFromJson(json, contact.remote.ids);
-  if (auto relay_user_id = json.getString("relay_user_id")) {
-    if (!relay_user_id->empty() && !HasRelayUserId(contact.remote.ids, *relay_user_id)) {
-      contact.remote.ids.push_back({mesh::ContactIdKind::RelayUser, *relay_user_id, true});
-    }
-  } else if (auto relay_id = json.getString("relay_id")) {
-    if (!relay_id->empty() && !HasRelayUserId(contact.remote.ids, *relay_id)) {
-      contact.remote.ids.push_back({mesh::ContactIdKind::RelayUser, *relay_id, true});
-    }
-  }
-  if (auto peer_id = json.getString("peer_id")) {
-    if (!peer_id->empty() && !HasPeerId(contact.remote.ids, *peer_id)) {
-      contact.remote.ids.push_back({mesh::ContactIdKind::PeerId, *peer_id, contact.remote.ids.empty()});
-    }
-  }
-  if (const Array* multiaddrs = json.getArray("multiaddrs")) {
-    ParseMultiaddrsArray(*multiaddrs, contact.remote.multiaddrs);
-  } else if (auto multiaddr = json.getString("multiaddr")) {
-    contact.remote.multiaddrs.push_back(*multiaddr);
-  }
+  // A row without `local` (the flat form from before the local/remote split) is not read: only its id.
   contact.remote.fetched_at = 0;
   SyncContactMirrors(contact);
   return contact;

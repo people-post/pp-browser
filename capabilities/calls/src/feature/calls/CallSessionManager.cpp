@@ -222,7 +222,7 @@ Roe<void> CallSessionManager::SetLocalVideoPaused(const bool paused, const int d
     }
     (void)call_media->SetCamera(false, 0);
     video_paused_call_id_ = call_id;
-    media.video_enabled = false; // an older peer shows "camera off"
+    media.video_enabled = false; // the camera is off; `video_paused` says it comes back
     media.video_paused = true;
   } else {
     if (video_paused_call_id_ != call_id) {
@@ -600,10 +600,8 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       return HandleInboundEnded(detail_json, *local);
     case CallControlType::CallAnsweredElsewhere:
       return HandleAnsweredElsewhere(detail_json, sender_identity, *local);
-    case CallControlType::CallSdp:
-    case CallControlType::CallIce:
     case CallControlType::CallSummary:
-      return {}; // the gate dropped them (not signaling here)
+      return {}; // the gate dropped it (not signaling here)
     case CallControlType::CallConnectGiveUp:
       return HandleInboundConnectGiveUp(detail_json, sender_identity);
     case CallControlType::CallRemove:

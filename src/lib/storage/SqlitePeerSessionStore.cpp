@@ -1,4 +1,5 @@
 #include "lib/storage/SqlitePeerSessionStore.h"
+#include "lib/storage/SqliteChatStoreGate.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -243,6 +244,9 @@ Roe<sqlite3*> SqlitePeerSessionStore::OpenDb() const {
   std::lock_guard lock(mutex_);
   if (db_) {
     return db_;
+  }
+  if (auto gate = chat_store_gate::RequireOpen(profile_db_path_); !gate) {
+    return gate.error();
   }
   if (sqlite3_open(profile_db_path_.c_str(), &db_) != SQLITE_OK) {
     return Error("Failed to open profile.db for PSK store");

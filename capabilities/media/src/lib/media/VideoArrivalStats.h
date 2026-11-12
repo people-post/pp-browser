@@ -20,8 +20,8 @@ public:
   static constexpr int64_t kStallMs = 200;
   static constexpr int64_t kBunchedMs = 10;
 
-  /** A frame numbered `seq` by its sender arrived at `now_ms` (any monotonic clock). */
-  void Note(uint32_t seq, int64_t now_ms);
+  /** A frame numbered `seq` by its sender arrived at `now_ms` (any monotonic clock); `keyframe`: it was one. */
+  void Note(uint32_t seq, int64_t now_ms, bool keyframe = false);
   VideoArrivalSummary Summary() const;
 
 private:

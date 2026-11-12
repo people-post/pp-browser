@@ -173,7 +173,6 @@ void ApplyOrgSeedAdmission(mesh::MeshHost& mesh) {
       mesh::kRelayScopeShortTerm | static_cast<mesh::RelayScopeMask>(mesh::RelayScope::Public);
   if (auto* circuit = mesh.AmpCircuitServer()) {
     mesh::CircuitRelayAdmissionPolicy policy;
-    policy.prefer_contacts_only = false;
     policy.serve_scope_mask = org_serve;
     circuit->SetAdmissionPolicy(std::move(policy));
   }

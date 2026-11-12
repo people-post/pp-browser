@@ -51,19 +51,10 @@ public:
                                      const std::string& display, const std::string& skip_identity);
   /**
    * The call's media key to `peer_identity` (CallMediaKey): the key itself, its lane copies sealed per device of the
-   * peer's (M024); its old form beside it, wrapped under the account pair's session, while kMediaKeyAccountWrapBridge.
+   * peer's (M024).
    */
   Roe<void> SendMediaKey(const std::string& call_id, const std::string& peer_identity, uint32_t media_epoch,
                          const std::string& media_key_id, const ByteVector& key_bytes);
-
-  /**
-   * The account pair's e2e_public session key with `peer_identity` (delivery's: opened when missing) — the media
-   * key's old form is wrapped under it (M024 bridge). While the session is unconfirmed its opener rides every account
-   * copy the lane sends that peer (delivery's own: E2ePublicSessionKeys::Resolve); a send per device has no use for it.
-   */
-  Roe<ByteVector> SessionKeyWith(const std::string& peer_identity) const;
-  /** The same key when a session with `peer_identity` is held, never opening one: reading the old form. */
-  Roe<ByteVector> HeldSessionKeyWith(const std::string& peer_identity) const;
 
 private:
   IThreadTranscript& transcript_;

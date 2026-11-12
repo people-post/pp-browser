@@ -27,6 +27,8 @@ def ppApiUrlQa = System.getenv('PP_API_URL_QA') ?: ''
 if (ppApiUrlQa && !ppBrowserUiDemo) {
     ppBrowserCmakeArgs += ["-DPP_API_URL_QA=${ppApiUrlQa}"]
 }
+def ppRelayContentSha256 = (System.getenv('PP_RELAY_CONTENT_SHA256') ?: 'OFF').toUpperCase()
+ppBrowserCmakeArgs += ["-DPP_RELAY_CONTENT_SHA256=${ppRelayContentSha256}"]
 if (ppBrowserUiDemo) {
     ppBrowserCmakeArgs += ["-DPP_BROWSER_UI_DEMO=ON"]
 }

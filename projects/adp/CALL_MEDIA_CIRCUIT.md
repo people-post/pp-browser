@@ -13,9 +13,9 @@ Amp call-media ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshrunt
 | Role | Channel class | Why |
 |------|---------------|-----|
 | Control | Reliable `RealtimeControl` | Hello / glare / teardown |
-| Media | BestEffort `Realtime` | Opus / video; drop-oldest |
+| Media | BestEffort `Realtime` | Opus / video; sent as it comes |
 
-D9 step 5c installed Amp **media-relay** over circuit by adopting one opaque `ChannelSession` — correct because SoftMigrate’s client leg is already a single long-lived channel.
+D9 step 5c installed Amp **media-relay** over circuit by adopting one opaque `ChannelSession`. That channel was reliable and carried the media too (no data lane); since pp-cpp-mesh v7.0.0 a hop behind a circuit is reached by the same nested Session as a call's peer, and its control channel and data lane open on it ([V065](../p2p-av-calls/DECISIONS.md#v065--call-audio-keeps-a-delay-budget-audio-before-video) 6).
 
 ## Decision: nested end-to-end Session (A024)
 
@@ -33,10 +33,10 @@ A ══MSH════════════════ B  (inner Session ov
 | Piece | Location |
 |-------|----------|
 | Outer protocol | `kAmpCircuitCarrierProtocolId` (`/pp-amp/circuit-carrier/1.0.0`) |
-| Outer policy | `CircuitCarrierChannelPolicy` — BestEffort + FRAG-friendly queue (avoids ADP reliable_window stall) |
+| Outer policy | `CircuitCarrierChannelPolicy` — BestEffort (avoids ADP reliable_window stall) |
 | Carrier MSH | `PeerLink` carrier ctor + `MshAdpHandshake(chunked_wire=false)` |
 | Install / accept | `PeerLinkManager::EstablishNestedOverCarrier` / `EnableNestedCarrierAccept` |
-| Reach | `AmpCircuitHopReach::TryEnsurePeerReachable` (no `RegisterEndpoint`) |
+| Reach | `AmpCircuitHopReach::TryEnsurePeerReachable`, and `TryEnsureHopReachable` for a media-relay hop (no `RegisterEndpoint`) |
 | L4 | `CallMediaLegCoordinator` opens via Connected nested link without ADP endpoint |
 | Tests | `amp_circuit_call_media_compose_test.cpp` |
 

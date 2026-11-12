@@ -202,7 +202,7 @@ bool IsStoredGroupEventText(const std::string& preview) {
   return preview.rfind("Group renamed to ", 0) == 0;
 }
 
-std::optional<std::string> LegacySystemLineText(const std::string& stored) {
+std::optional<std::string> StoredSystemLineText(const std::string& stored) {
   static constexpr std::string_view kJoined = "You joined ";
   static constexpr std::string_view kDeclined = "You declined ";
   if (stored == "Accepted group invitation") {

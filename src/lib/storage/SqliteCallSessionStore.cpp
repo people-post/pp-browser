@@ -1,4 +1,5 @@
 #include "lib/storage/SqliteCallSessionStore.h"
+#include "lib/storage/SqliteChatStoreGate.h"
 
 #include "common/Logger.h"
 
@@ -20,7 +21,10 @@ CREATE TABLE IF NOT EXISTS call_sessions (
   ended_at INTEGER,
   media_epoch INTEGER NOT NULL DEFAULT 1,
   media_key_id TEXT NOT NULL DEFAULT '',
-  sfu_hint TEXT
+  sfu_hint TEXT,
+  planned_hop TEXT,
+  planned_hop_ma TEXT,
+  initiator_identity TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_call_sessions_state ON call_sessions(state);
 
@@ -131,19 +135,11 @@ CallSession SessionFromStmt(sqlite3_stmt* stmt) {
   session.media_epoch = static_cast<uint32_t>(sqlite3_column_int64(stmt, 8));
   session.media_key_id = ColumnText(stmt, 9);
   session.sfu_hint = ColumnOptText(stmt, 10);
-  // Optional additive column (idx 11) — missing on older SELECTs stays Group.
-  if (sqlite3_column_count(stmt) > 11) {
-    session.session_kind = CallSessionKindFromString(ColumnText(stmt, 11));
+  // V050 planned hop.
+  if (auto peer_id = ColumnOptText(stmt, 11); peer_id && !peer_id->empty()) {
+    session.planned_hop = CallPlannedHop{*peer_id, ColumnOptText(stmt, 12).value_or("")};
   }
-  // V050 planned hop (idx 12, 13).
-  if (sqlite3_column_count(stmt) > 13) {
-    if (auto peer_id = ColumnOptText(stmt, 12); peer_id && !peer_id->empty()) {
-      session.planned_hop = CallPlannedHop{*peer_id, ColumnOptText(stmt, 13).value_or("")};
-    }
-  }
-  if (sqlite3_column_count(stmt) > 14) {
-    session.initiator_identity = ColumnText(stmt, 14);
-  }
+  session.initiator_identity = ColumnText(stmt, 13);
   return session;
 }
 
@@ -153,6 +149,9 @@ SqliteCallSessionStore::SqliteCallSessionStore(std::string profile_db_path)
     : profile_db_path_(std::move(profile_db_path)) {}
 
 Roe<sqlite3*> SqliteCallSessionStore::OpenDb() const {
+  if (auto gate = chat_store_gate::RequireOpen(profile_db_path_); !gate) {
+    return gate.error();
+  }
   sqlite3* db = nullptr;
   if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
     return Error("Failed to open profile.db for call sessions");
@@ -178,27 +177,6 @@ Roe<void> SqliteCallSessionStore::EnsureSchema(sqlite3* profile_db) {
     sqlite3_free(err);
     return Error(message);
   }
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN video_allowed INTEGER NOT NULL DEFAULT 0;",
-                     nullptr, nullptr, nullptr);
-  (void)sqlite3_exec(profile_db,
-                     "ALTER TABLE pending_call_invites ADD COLUMN video_allowed INTEGER NOT NULL DEFAULT 0;", nullptr,
-                     nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'group';",
-                     nullptr, nullptr, nullptr);
-  (void)sqlite3_exec(profile_db,
-                     "ALTER TABLE pending_call_invites ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'group';", nullptr,
-                     nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN planned_hop TEXT;", nullptr, nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN planned_hop_ma TEXT;", nullptr, nullptr,
-                     nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN initiator_identity TEXT NOT NULL DEFAULT '';",
-                     nullptr, nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_participants ADD COLUMN on_hold INTEGER NOT NULL DEFAULT 0;",
-                     nullptr, nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_participants ADD COLUMN video_paused INTEGER NOT NULL DEFAULT 0;",
-                     nullptr, nullptr, nullptr);
-  (void)sqlite3_exec(profile_db, "ALTER TABLE call_participants ADD COLUMN brought_by TEXT NOT NULL DEFAULT '';",
-                     nullptr, nullptr, nullptr);
   return {};
 }
 
@@ -210,15 +188,15 @@ Roe<void> SqliteCallSessionStore::UpsertSession(const CallSession& session) cons
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO call_sessions (call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
-      "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind, planned_hop, planned_hop_ma, "
+      "created_at, ended_at, media_epoch, media_key_id, sfu_hint, planned_hop, planned_hop_ma, "
       "initiator_identity) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(call_id) DO UPDATE SET origin_thread_id=excluded.origin_thread_id, "
       "origin_group_id=excluded.origin_group_id, media_mode=excluded.media_mode, "
       "video_allowed=excluded.video_allowed, state=excluded.state, "
       "created_at=excluded.created_at, ended_at=excluded.ended_at, media_epoch=excluded.media_epoch, "
       "media_key_id=excluded.media_key_id, sfu_hint=excluded.sfu_hint, "
-      "session_kind=excluded.session_kind, planned_hop=excluded.planned_hop, "
+      "planned_hop=excluded.planned_hop, "
       "planned_hop_ma=excluded.planned_hop_ma, initiator_identity=excluded.initiator_identity;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
@@ -237,12 +215,10 @@ Roe<void> SqliteCallSessionStore::UpsertSession(const CallSession& session) cons
   sqlite3_bind_int64(stmt, 9, static_cast<sqlite3_int64>(session.media_epoch));
   sqlite3_bind_text(stmt, 10, session.media_key_id.c_str(), -1, SQLITE_TRANSIENT);
   BindOptText(stmt, 11, session.sfu_hint);
-  const std::string session_kind = CallSessionKindToString(session.session_kind);
-  sqlite3_bind_text(stmt, 12, session_kind.c_str(), -1, SQLITE_TRANSIENT);
-  BindOptText(stmt, 13, session.planned_hop ? std::optional<std::string>(session.planned_hop->peer_id) : std::nullopt);
-  BindOptText(stmt, 14,
+  BindOptText(stmt, 12, session.planned_hop ? std::optional<std::string>(session.planned_hop->peer_id) : std::nullopt);
+  BindOptText(stmt, 13,
               session.planned_hop ? std::optional<std::string>(session.planned_hop->multiaddr) : std::nullopt);
-  sqlite3_bind_text(stmt, 15, session.initiator_identity.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 14, session.initiator_identity.c_str(), -1, SQLITE_TRANSIENT);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     sqlite3_close(*db);
@@ -261,7 +237,7 @@ Roe<std::optional<CallSession>> SqliteCallSessionStore::LoadSession(const std::s
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(*db,
                          "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
-                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind, planned_hop, "
+                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, planned_hop, "
                          "planned_hop_ma, initiator_identity FROM call_sessions WHERE "
                          "call_id = ? LIMIT 1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
@@ -288,7 +264,7 @@ Roe<std::vector<CallSession>> SqliteCallSessionStore::ListActiveSessions() const
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(*db,
                          "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
-                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind, planned_hop, "
+                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, planned_hop, "
                          "planned_hop_ma, initiator_identity FROM call_sessions WHERE state "
                          "!= 'ended' ORDER BY created_at DESC;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
@@ -321,7 +297,7 @@ Roe<std::vector<CallSession>> SqliteCallSessionStore::ListSessionsForGroup(const
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(*db,
                          "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
-                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind, planned_hop, "
+                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, planned_hop, "
                          "planned_hop_ma, initiator_identity FROM call_sessions WHERE origin_group_id = ? "
                          "ORDER BY created_at DESC LIMIT ?;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
@@ -349,7 +325,7 @@ Roe<std::vector<CallSession>> SqliteCallSessionStore::ListRecentSessions(const s
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(*db,
                          "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
-                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind, planned_hop, "
+                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, planned_hop, "
                          "planned_hop_ma, initiator_identity FROM call_sessions ORDER BY created_at DESC LIMIT ?;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
@@ -497,14 +473,13 @@ Roe<void> SqliteCallSessionStore::UpsertPendingInvite(const PendingCallInvite& i
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO pending_call_invites (call_id, invitee_identity, inviter_identity, media_mode, video_allowed, "
-      "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status, session_kind) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(call_id, invitee_identity) DO UPDATE SET inviter_identity=excluded.inviter_identity, "
       "media_mode=excluded.media_mode, video_allowed=excluded.video_allowed, "
       "origin_thread_id=excluded.origin_thread_id, "
       "origin_group_id=excluded.origin_group_id, sfu_hint=excluded.sfu_hint, expires_at=excluded.expires_at, "
-      "created_at=excluded.created_at, status=excluded.status, "
-      "session_kind=excluded.session_kind;";
+      "created_at=excluded.created_at, status=excluded.status;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
     return Error("Failed to prepare pending call invite upsert");
@@ -521,8 +496,6 @@ Roe<void> SqliteCallSessionStore::UpsertPendingInvite(const PendingCallInvite& i
   BindOptInt64(stmt, 9, invite.expires_at);
   sqlite3_bind_int64(stmt, 10, static_cast<sqlite3_int64>(invite.created_at));
   sqlite3_bind_text(stmt, 11, invite.status.c_str(), -1, SQLITE_TRANSIENT);
-  const std::string session_kind = CallSessionKindToString(invite.session_kind);
-  sqlite3_bind_text(stmt, 12, session_kind.c_str(), -1, SQLITE_TRANSIENT);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     const std::string detail = sqlite3_errmsg(*db);
     sqlite3_finalize(stmt);
@@ -541,12 +514,11 @@ Roe<std::optional<PendingCallInvite>> SqliteCallSessionStore::LoadPendingInvite(
     return db.error();
   }
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(
-          *db,
-          "SELECT call_id, invitee_identity, inviter_identity, media_mode, video_allowed, "
-          "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status, session_kind FROM "
-          "pending_call_invites WHERE call_id = ? AND invitee_identity = ? LIMIT 1;",
-          -1, &stmt, nullptr) != SQLITE_OK) {
+  if (sqlite3_prepare_v2(*db,
+                         "SELECT call_id, invitee_identity, inviter_identity, media_mode, video_allowed, "
+                         "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status FROM "
+                         "pending_call_invites WHERE call_id = ? AND invitee_identity = ? LIMIT 1;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
     return Error("Failed to prepare pending call invite load");
   }
@@ -567,7 +539,6 @@ Roe<std::optional<PendingCallInvite>> SqliteCallSessionStore::LoadPendingInvite(
     invite.expires_at = ColumnOptInt64(stmt, 8);
     invite.created_at = static_cast<int64_t>(sqlite3_column_int64(stmt, 9));
     invite.status = ColumnText(stmt, 10);
-    invite.session_kind = CallSessionKindFromString(ColumnText(stmt, 11));
     result = std::move(invite);
   }
   WarnIfStepFailed("LoadPendingInvite", *db, rc);
@@ -583,13 +554,12 @@ Roe<std::vector<PendingCallInvite>> SqliteCallSessionStore::ListPendingInvitesFo
     return db.error();
   }
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(
-          *db,
-          "SELECT call_id, invitee_identity, inviter_identity, media_mode, video_allowed, "
-          "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status, session_kind FROM "
-          "pending_call_invites WHERE invitee_identity = ? AND status = 'pending' ORDER BY "
-          "created_at DESC;",
-          -1, &stmt, nullptr) != SQLITE_OK) {
+  if (sqlite3_prepare_v2(*db,
+                         "SELECT call_id, invitee_identity, inviter_identity, media_mode, video_allowed, "
+                         "origin_thread_id, origin_group_id, sfu_hint, expires_at, created_at, status FROM "
+                         "pending_call_invites WHERE invitee_identity = ? AND status = 'pending' ORDER BY "
+                         "created_at DESC;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
     return Error("Failed to prepare pending call invite list");
   }
@@ -609,7 +579,6 @@ Roe<std::vector<PendingCallInvite>> SqliteCallSessionStore::ListPendingInvitesFo
     invite.expires_at = ColumnOptInt64(stmt, 8);
     invite.created_at = static_cast<int64_t>(sqlite3_column_int64(stmt, 9));
     invite.status = ColumnText(stmt, 10);
-    invite.session_kind = CallSessionKindFromString(ColumnText(stmt, 11));
     rows.push_back(std::move(invite));
   }
   WarnIfStepFailed("ListPendingInvitesForInvitee", *db, rc);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature/ai/AgentSessions.h"
+#include "gui/ChatStoreRecovery.h"
 #include "app/ChatShellBridge.h"
 #include "app/ContactsShellBridge.h"
 #include "app/PeoplePickerShellBridge.h"
@@ -80,6 +81,8 @@ public:
    * reinitialize the hub; the account, keys, contacts and settings stay, and the vault stays open.
    */
   Roe<void> ResetChatData();
+  /** A chat store that did not open after unlock (D105): the start-up recovery, its Reset chats… action. */
+  void OfferChatStoreRecovery(const ChatStoreRecoveryPrompt& prompt);
 
   static std::string AssetsPath(const std::string& relative);
 
@@ -134,6 +137,8 @@ private:
   /** iOS: a push arrived and may have set the icon number itself. */
   AppLifecycle::ListenerId remote_notification_listener_ = 0;
   SessionStore store_;
+  /** The chat-store recovery is on screen (OfferChatStoreRecovery): not asked twice at once. */
+  bool chat_store_recovery_up_ = false;
   std::unique_ptr<ProfileSecretsEngine> secrets_;
   /** Typed API keys under the profile DEK (PB-034); registered with secrets_, serves store_. */
   std::unique_ptr<ConfigSecretsStore> config_secrets_;

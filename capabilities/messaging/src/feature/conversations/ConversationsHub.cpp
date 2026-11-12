@@ -156,7 +156,7 @@ MeshConnectivityWiringInputs ConversationsHub::MeshInputs() {
   reach.observe_node = [this](const std::string& peer_id) {
     ObservedNode seen;
     if (mesh_ && mesh_->Amp()) {
-      if (auto told = mesh_->Amp()->Links().RemoteCapabilityExtension(peer_id)) {
+      if (auto told = mesh_->Amp()->Links().RemoteCapability(peer_id)) {
         seen.told = true;
         seen.amp_wire = told->amp_wire;
         seen.node_version = told->node_version;
@@ -559,7 +559,6 @@ void ConversationsHub::ApplyMeshAdmissionPolicies() {
 
   if (mesh_ && mesh_->AmpCircuitServer()) {
     mesh::CircuitRelayAdmissionPolicy policy;
-    policy.prefer_contacts_only = limit_strangers;
     policy.serve_scope_mask = serve_mask;
     policy.contact_peer_ids = contact_ids;
     mesh_->AmpCircuitServer()->SetAdmissionPolicy(std::move(policy));
@@ -928,14 +927,6 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   payment_promises_ = std::make_unique<PaymentPromiseStore>(data_dir_);
   (void)payment_promises_->Load();
 
-  {
-    StartupPhase phase("ConversationsHub::ReconcileOutbox");
-    // Also the first open of profile.db: an unusable chat store shows here, not only at its first use.
-    if (auto reconciled = store_->ReconcileOutbox(); !reconciled) {
-      log().warning << "Chat store: " << reconciled.error().message;
-    }
-  }
-
   InstallOrgBackendClients(settings);
 
   // The account locker keeps every group (G013): republish it on any roster change.
@@ -1025,13 +1016,17 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
         secrets_->RegisterDekConsumer(consumer);
       }
     }
+    // Initialized while the vault is open (Reset chats): the new stores get the key now, so the chat store opens.
+    if (secrets_->IsUnlocked()) {
+      (void)secrets_->RedistributeUnlockedDek();
+    }
   }
   BindPricingFamilies();
   peer_cards_ = std::make_unique<PeerCards>(*peer_card_rows_);
   // The account locker keeps how new each account's newest card is (a restored device refuses older ones).
   peer_cards_->SetOnNewerCard([this]() { PublishAccountLockerSoon(); });
   account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
-  account_keys_->LoadKeptCards();
+  kept_cards_loaded_ = false; // read at the first EnsureMessagingReady (the cards are in the chat store)
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
   contact_cards_->SetCardFetcher(
@@ -1269,25 +1264,6 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
   return {};
 }
 
-Roe<void> ConversationsHub::BuildMessagingStack() {
-  // Legacy sync path (tests / callers that still want local+mesh together).
-  if (auto local = BuildLocalMessagingStack(); !local) {
-    return local.error();
-  }
-  if (auto mesh_start = StartMesh(config_); !mesh_start) {
-    if (shutdown_requested_.load(std::memory_order_acquire)) {
-      return mesh_start.error();
-    }
-    log().warning << "mesh host start failed: " << mesh_start.error().message
-                  << " (direct P2P unavailable; relay messaging may still work)";
-  }
-  if (shutdown_requested_.load(std::memory_order_acquire)) {
-    DiscardMessagingBringUp();
-    return Error("shutdown in progress");
-  }
-  return AttachAmpMessagingStack();
-}
-
 void ConversationsHub::ScheduleMeshBringUp() {
   if (mesh_bringup_scheduled_.exchange(true, std::memory_order_acq_rel)) {
     return;
@@ -1344,6 +1320,18 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   }
   if (secrets_ == nullptr || !secrets_->IsUnlocked()) {
     return AppError::Pin(Err::Pin::Required, "Profile vault is locked");
+  }
+  // The chat store opened with the data key (its ladder ran then, D105): the first reads of it are here, after
+  // unlock. One that could not be opened (newer than this build, a failed upgrade) stops messaging here.
+  {
+    StartupPhase reconcile_phase("ConversationsHub::ReconcileOutbox");
+    if (auto reconciled = store_->ReconcileOutbox(); !reconciled) {
+      return reconciled.error();
+    }
+  }
+  if (!kept_cards_loaded_) {
+    account_keys_->LoadKeptCards();
+    kept_cards_loaded_ = true;
   }
   if (auto identity = identity_->LoadOrCreate(); !identity) {
     return identity.error();
@@ -1433,7 +1421,7 @@ void ConversationsHub::TickMesh() {
   if (!messaging_ready_) {
     return;
   }
-  // Mesh UDP drain is MeshHost MeshPumpThread (~5ms). Policy stays on the 1s timer.
+  // Mesh UDP drain is MeshHost's MeshPumpThread (on datagrams and the mesh's own deadlines). Policy stays on the 1s timer.
   if (mesh_messaging_) {
     mesh_messaging_->TickMesh();
   }

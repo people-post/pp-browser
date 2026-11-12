@@ -19,7 +19,7 @@ class SqliteCallSessionStore : public ICallSessionStore {
 public:
   explicit SqliteCallSessionStore(std::string profile_db_path);
 
-  /** Create or extend the call tables in `profile_db` (idempotent; calls own them). */
+  /** The call tables at the current shape, where missing (a change to them is a ladder step: SqliteChatDbLadders.h). */
   static Roe<void> EnsureSchema(sqlite3* profile_db);
 
   Roe<void> UpsertSession(const CallSession& session) const override;
