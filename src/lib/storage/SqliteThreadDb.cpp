@@ -87,9 +87,6 @@ Roe<void> SqliteThreadDb::EnsureInitialized() const {
   }
   std::error_code ec;
   std::filesystem::create_directories(SqliteThreadsRoot(data_dir_), ec);
-  if (auto wipe = WipeLegacyJsonIfPresent(); !wipe) {
-    return wipe.error();
-  }
   if (auto open = OpenProfileDb(); !open) {
     return open.error();
   }
@@ -97,23 +94,6 @@ Roe<void> SqliteThreadDb::EnsureInitialized() const {
     return repair.error();
   }
   initialized_ = true;
-  return {};
-}
-
-Roe<void> SqliteThreadDb::WipeLegacyJsonIfPresent() const {
-  const std::filesystem::path index = std::filesystem::path(SqliteThreadsRoot(data_dir_)) / "index.json";
-  if (!std::filesystem::exists(index)) {
-    return {};
-  }
-  std::error_code ec;
-  for (const auto& entry : std::filesystem::directory_iterator(SqliteThreadsRoot(data_dir_), ec)) {
-    if (!entry.is_regular_file()) {
-      continue;
-    }
-    if (entry.path().extension() == ".json") {
-      std::filesystem::remove(entry.path(), ec);
-    }
-  }
   return {};
 }
 

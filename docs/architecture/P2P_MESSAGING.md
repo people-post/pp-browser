@@ -52,17 +52,7 @@ Special IDs: `local:self`, `ai:assistant`.
 
 ## Persistence
 
-Profile-scoped layout (see [DATA_LAYOUT.md](../contracts/DATA_LAYOUT.md)). **Legacy (today):**
-
-```
-{data_dir}/profiles/{profile_id}/
-  identity.json
-  contacts.json
-  threads/index.json
-  threads/{thread_id}.json
-```
-
-**Target (v2a+):** see [chat-storage-and-memory DESIGN.md](../../projects/chat-storage-and-memory/DESIGN.md) — `profile.db` (`threads` + `outbox` + `chat_targets`) + per-thread `thread.db`; no `index.json`.
+Profile-scoped layout: [DATA_LAYOUT.md](../contracts/DATA_LAYOUT.md) — `identity.enc`, `contacts.json`, `profile.db` (`threads` + `outbox` + `chat_targets`) and a `thread.db` per chat ([chat-storage-and-memory DESIGN.md](../../projects/chat-storage-and-memory/DESIGN.md)).
 
 Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux) or in-app **Me → Network**:
 
@@ -72,7 +62,7 @@ Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux
   "relay": { "base_url": "https://backend.example.test/api/relay" },
   "directory": { "base_url": "https://backend.example.test/api/relay" },
   "registration": { "base_url": "https://backend.example.test/api/relay" },
-  "libp2p": {
+  "mesh": {
     "node_enabled": true,
     "mesh_enabled": true,
     "amp_udp_port": 0,

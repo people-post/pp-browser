@@ -50,7 +50,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   secrets.enc               # typed model API key (llm_api_key) under DEK AEAD, AAD purpose "config-secrets", schema_version 1; absent when there are none (PB-034)
   initiation_billing.json   # per-peer initiation billing state (P001; schema_version 1)
   account_locker.json       # account locker sync state: highest_version_by_locker, contact_clock (plaintext; ACCOUNT_LOCKER.md § On disk)
-  contacts.json             # address book (schema_version 2: local + remote + overrides{}; v2 = remarks that copied the nickname are cleared once on load); unversioned legacy migrates on load
+  contacts.json             # address book (schema_version 2: local + remote + overrides{}); another version, or none, is refused
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
   home_brief.json           # phone Home "Today's briefs": the article feed's general headlines (schema_version 1; fetched_at_ms,
                             # feed cn|en, items[] of title / category (the site) / time_ms / url); plaintext, refetched when over
@@ -187,7 +187,7 @@ One Keychain generic-password item per profile: service `dev.pp-browser.secure-b
 
 Interactive unlock / chooser UX: [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md). Forgotten PIN → wipe the profile directory.
 
-Legacy flat `threads/index.json` and `{thread_id}.json` are removed on first run after the SQLite migration (development wipe — see [chat-storage D016](../../projects/chat-storage-and-memory/DECISIONS.md)). Plaintext `identity.json` is not migrated — wipe the profile and recreate. Overview: [COMPATIBILITY.md](COMPATIBILITY.md).
+Flat `threads/index.json` and `{thread_id}.json` from before the SQLite store are not read (nor removed); plaintext `identity.json` is not migrated — wipe the profile and recreate ([chat-storage D016](../../projects/chat-storage-and-memory/DECISIONS.md)). Overview: [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ### Per-backend profiles
 

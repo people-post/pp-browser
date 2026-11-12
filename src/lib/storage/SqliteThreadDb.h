@@ -55,7 +55,6 @@ private:
     sqlite3* db = nullptr;
   };
 
-  Roe<void> WipeLegacyJsonIfPresent() const;
   Roe<void> OpenProfileDb() const;
   Roe<void> OpenProfileDbUnguarded() const;
   Roe<void> EnsureThreadDirectory(const std::string& thread_id) const;
