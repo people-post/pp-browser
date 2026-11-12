@@ -155,11 +155,16 @@ private:
   void SetShowJumpToLatest(bool show);
   void ScrollMessagesToBottom();
   void MaybeLoadOlderLocalHistory();
-  /** `fill`: loaded by MaybeFillScreen (else the scroll reached the top); said in the page's reading. */
+  /**
+   * `fill`: loaded by MaybeFillScreen, kDefaultMessagesPageSize rows (else the scroll reached the top:
+   * kChatOlderPageMessages); said in the page's reading.
+   */
   /** True when a page was loaded (false: nothing older, not ready, or the store failed). */
   bool LoadOlderLocalHistory(bool fill = false);
   /** After the scroll to the bottom settled: rows that do not fill the screen get the page above. True if loaded. */
   bool MaybeFillScreen(float client_height, float scroll_height, float max_top);
+  /** Where `message_id`'s row sits in the transcript's content (offset from its top); -1 when it is not drawn. */
+  float RowContentOffset(ui::Element* el, const std::string& message_id) const;
   /**
    * The first screen's oldest row: `shown` messages back from the newest, counting the rows that show on their own (not
    * the annotations): `shown` rows first, then pages of 100, three reads at most; set in `oldest` for Ok (fewer in those
@@ -201,6 +206,9 @@ private:
   std::optional<int64_t> loaded_max_display_order_;
   std::optional<float> pending_scroll_height_before_;
   std::optional<float> pending_scroll_top_before_;
+  /** The page's anchor: the window's second row (its first when alone) before the page, and its content offset then. */
+  std::string pending_anchor_id_;
+  float pending_anchor_offset_ = 0.f;
   /** Where the person is reading (not pinned to the bottom), kept every frame so a remount can put it back. */
   std::optional<float> reading_scroll_top_;
   /** A remount's target offset, set each frame until the new rows are laid out and reach it. */

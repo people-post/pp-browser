@@ -93,6 +93,7 @@ void ChatTranscriptScroller::Reset() {
   loaded_max_display_order_.reset();
   pending_scroll_height_before_.reset();
   pending_scroll_top_before_.reset();
+  pending_anchor_id_.clear();
   reading_scroll_top_.reset();
   restore_scroll_top_.reset();
   last_messages_scroll_height_ = 0.f;
@@ -200,12 +201,19 @@ void ChatTranscriptScroller::ApplyPolicy() {
   }
 
   if (pending_scroll_height_before_.has_value() && pending_scroll_top_before_.has_value()) {
-    const float delta = el->GetScrollHeight() - *pending_scroll_height_before_;
+    // The anchor row (LoadOlderLocalHistory) stays where it was on screen. The height change says the same only when
+    // nothing left the window: a full window trims as many of its newest rows as the page added, and the content keeps
+    // its height.
+    float target = *pending_scroll_top_before_ + (el->GetScrollHeight() - *pending_scroll_height_before_);
+    if (const float offset = RowContentOffset(el, pending_anchor_id_); offset >= 0.f) {
+      target = *pending_scroll_top_before_ + (offset - pending_anchor_offset_);
+    }
     suppress_scroll_handler_ = true;
-    el->SetScrollTop(*pending_scroll_top_before_ + delta);
+    el->SetScrollTop(target);
     suppress_scroll_handler_ = false;
     pending_scroll_height_before_.reset();
     pending_scroll_top_before_.reset();
+    pending_anchor_id_.clear();
     last_messages_scroll_height_ = el->GetScrollHeight();
     if (page_reading_ && !page_reading_->fill && !page_reading_->frames_before_fix) {
       // A frame drawn between the page and this fix showed the rows at the old offset: the jump the person sees.
@@ -302,6 +310,19 @@ void ChatTranscriptScroller::ApplyPolicy() {
   last_messages_scroll_height_ = scroll_height;
 }
 
+float ChatTranscriptScroller::RowContentOffset(ui::Element* el, const std::string& message_id) const {
+  if (message_id.empty() || !context_ || context_->GetNumDocuments() == 0) {
+    return -1.f;
+  }
+  ui::Element* row = context_->GetDocument(0)->QuerySelector(("[message-id=\"" + message_id + "\"]").c_str());
+  if (!row) {
+    return -1.f;
+  }
+  // Where the row sits in the content, whatever the scroll offset: from the transcript's top edge, plus the offset.
+  return row->GetAbsoluteOffset(ui::BoxArea::Border).y - el->GetAbsoluteOffset(ui::BoxArea::Border).y +
+         el->GetScrollTop();
+}
+
 bool ChatTranscriptScroller::MaybeFillScreen(const float client_height, const float scroll_height,
                                              const float max_top) {
   // The rows end less than the top's paging threshold above the screen (a tall window, a tablet, short rows): no scroll
@@ -322,6 +343,7 @@ bool ChatTranscriptScroller::MaybeFillScreen(const float client_height, const fl
   // Back to the newest message the way an open lands there, not by the scroll-up position fix.
   pending_scroll_height_before_.reset();
   pending_scroll_top_before_.reset();
+  pending_anchor_id_.clear();
   // Pages of reactions and edits only add no row: after three in a row it waits for the person to scroll (a page that
   // adds rows, by either path, starts the count again: LoadOlderLocalHistory).
   if (view_.messages.size() <= rows_before) {
@@ -344,7 +366,17 @@ void ChatTranscriptScroller::MaybeLoadOlderLocalHistory() {
   if (max_top <= 1.f || el->GetScrollTop() > 72.f) {
     return;
   }
-  LoadOlderLocalHistory();
+  // A page of rows that do not show (reactions, edits) adds nothing and leaves the offset where it was: at the very top
+  // no further scroll event would come. Read on at once, three pages at most; then the next gesture goes on.
+  constexpr int kMaxPagesPerScroll = 3;
+  // Progress is an older first row: a full window keeps its 200 rows (the newest are trimmed), so the count says nothing.
+  for (int page = 0; page < kMaxPagesPerScroll; ++page) {
+    const int64_t front_before = view_.messages.front().display_order;
+    if (!LoadOlderLocalHistory() || view_.messages.empty() || view_.messages.front().display_order < front_before ||
+        !has_more_local_history_) {
+      return;
+    }
+  }
 }
 
 bool ChatTranscriptScroller::LoadOlderLocalHistory(const bool fill) {
@@ -356,7 +388,12 @@ bool ChatTranscriptScroller::LoadOlderLocalHistory(const bool fill) {
     return false;
   }
 
-  const int64_t oldest = view_.messages.front().display_order;
+  // From the window's lower bound when a page of rows that do not show moved it past the first row shown (else that
+  // page would be read again each time and the history never passed).
+  int64_t oldest = view_.messages.front().display_order;
+  if (loaded_min_display_order_ && *loaded_min_display_order_ < oldest) {
+    oldest = *loaded_min_display_order_;
+  }
   if (!HasMessagesBefore(thread_id, oldest)) {
     has_more_local_history_ = false;
     return false;
@@ -366,16 +403,28 @@ bool ChatTranscriptScroller::LoadOlderLocalHistory(const bool fill) {
   if (el) {
     pending_scroll_height_before_ = el->GetScrollHeight();
     pending_scroll_top_before_ = el->GetScrollTop();
+    // The second row: the first one changes shape once older rows of its day and sender come in (its date strip, the
+    // sender's name and the run's top margin go), the second only depends on the first, which stays. On a page that
+    // showed nothing the rows are unchanged, so a second page in the same gesture records the same row and offset.
+    const MessageDisplayRow& anchor = view_.messages.size() >= 2 ? view_.messages[1] : view_.messages.front();
+    const std::string anchor_id(anchor.message_id.c_str());
+    if (const float offset = RowContentOffset(el, anchor_id); offset >= 0.f) {
+      pending_anchor_id_ = anchor_id;
+      pending_anchor_offset_ = offset;
+    }
   }
 
   loading_older_local_ = true;
   const size_t rows_before = view_.messages.size();
-  auto older = MessagesPage(thread_id, oldest, kDefaultMessagesPageSize);
+  // A scroll to the top loads a short page (its frame is the one people feel); a fill keeps its 100-row arithmetic.
+  const size_t page_size = fill ? kDefaultMessagesPageSize : kChatOlderPageMessages;
+  auto older = MessagesPage(thread_id, oldest, static_cast<int>(page_size));
   if (!older || older->empty()) {
     has_more_local_history_ = false;
     loading_older_local_ = false;
     pending_scroll_height_before_.reset();
     pending_scroll_top_before_.reset();
+    pending_anchor_id_.clear();
     return false;
   }
   first_screen_pending_ = false;
@@ -688,13 +737,19 @@ void ChatTranscriptScroller::EndDisplaySync(bool thread_changed, const std::stri
       }
     }
     if (!view_.messages.empty()) {
-      loaded_min_display_order_ = view_.messages.front().display_order;
+      // A bound at or before the first row stays: paging may have passed rows that do not show (reactions, edits), and
+      // a sync (a new message, an AI answer streaming) must not send the next scroll back over them. Rows() draws the
+      // same rows from either. A bound after the first row (none yet, or the window moved) takes the first row.
+      const int64_t front = view_.messages.front().display_order;
+      if (!loaded_min_display_order_ || *loaded_min_display_order_ > front) {
+        loaded_min_display_order_ = front;
+      }
       if (!loaded_max_display_order_.has_value()) {
         // Tip-aligned window: max is the current tip (implicit).
       } else {
         loaded_max_display_order_ = view_.messages.back().display_order;
       }
-      has_more_local_history_ = HasMessagesBefore(ActiveThreadId(), view_.messages.front().display_order);
+      has_more_local_history_ = HasMessagesBefore(ActiveThreadId(), *loaded_min_display_order_);
     }
   } else {
     loaded_min_display_order_.reset();
@@ -739,6 +794,7 @@ void ChatTranscriptScroller::CaptureScrollBeforePrependIfUnpinned() {
   if (el && !pinned_to_bottom_) {
     pending_scroll_height_before_ = el->GetScrollHeight();
     pending_scroll_top_before_ = el->GetScrollTop();
+    pending_anchor_id_.clear(); // a peer's page: the height change, as before
   }
 }
 
