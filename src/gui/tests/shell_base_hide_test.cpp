@@ -1,5 +1,5 @@
-// Measurement switch (DEV/PLAN-call-frame-cost.md step 4): the layers a full-screen phone call page covers are hidden
-// only while the switch is on AND the call page is full-screen; the layers above the call page are never touched.
+// DEV/PLAN-call-frame-cost.md step 4: the layers a full-screen phone call page covers are hidden while it is full screen
+// (phones only); the layers above the call page are never touched; focus, drafts and scroll positions survive.
 #include "gui/shell/ShellBaseHide.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "lib/ui/ShellTypes.h"
@@ -48,15 +48,34 @@ ShellState PhoneStateWithCall(const CallChromeMode mode, const bool active = tru
   return state;
 }
 
-TEST(ShellBaseHideTest, HidesOnlyWithTheSwitchOnAndAFullScreenCallPage) {
-  EXPECT_TRUE(ShellBaseHide::ShouldHide(true, PhoneStateWithCall(CallChromeMode::Expanded)));
-  EXPECT_TRUE(ShellBaseHide::ShouldHide(true, PhoneStateWithCall(CallChromeMode::Immersive)));
-  EXPECT_FALSE(ShellBaseHide::ShouldHide(false, PhoneStateWithCall(CallChromeMode::Expanded))) << "switch off";
-  EXPECT_FALSE(ShellBaseHide::ShouldHide(true, PhoneStateWithCall(CallChromeMode::Minimized))) << "small window";
-  EXPECT_FALSE(ShellBaseHide::ShouldHide(true, PhoneStateWithCall(CallChromeMode::Expanded, false))) << "call ended";
+TEST(ShellBaseHideTest, HidesOnlyWhileThePhoneCallPageIsFullScreen) {
+  EXPECT_TRUE(ShellBaseHide::ShouldHide(PhoneStateWithCall(CallChromeMode::Expanded)));
+  EXPECT_TRUE(ShellBaseHide::ShouldHide(PhoneStateWithCall(CallChromeMode::Immersive)));
+  EXPECT_FALSE(ShellBaseHide::ShouldHide(PhoneStateWithCall(CallChromeMode::Minimized))) << "small window";
+  EXPECT_FALSE(ShellBaseHide::ShouldHide(PhoneStateWithCall(CallChromeMode::Expanded, false))) << "call ended";
+  EXPECT_FALSE(ShellBaseHide::ShouldHide(ShellState{})) << "call state cleared";
   ShellState desktop = PhoneStateWithCall(CallChromeMode::Expanded);
   desktop.layout_mode = LayoutMode::Expanded;
-  EXPECT_FALSE(ShellBaseHide::ShouldHide(true, desktop)) << "desktop's call bar covers nothing";
+  EXPECT_FALSE(ShellBaseHide::ShouldHide(desktop)) << "desktop / tablet: the call bar covers nothing";
+}
+
+TEST(ShellBaseHideTest, WhatShowsAboveTheCallPageDoesNotChangeIt) {
+  ShellState ring_only;
+  ring_only.layout_mode = LayoutMode::Compact;
+  ring_only.call_ring.active = true;
+  EXPECT_FALSE(ShellBaseHide::ShouldHide(ring_only)) << "an incoming call page alone: no call page under it";
+  ShellState ring_over_call = PhoneStateWithCall(CallChromeMode::Expanded);
+  ring_over_call.call_ring.active = true;
+  EXPECT_TRUE(ShellBaseHide::ShouldHide(ring_over_call)) << "a second call ringing over the call page";
+  ShellState ring_over_chip = PhoneStateWithCall(CallChromeMode::Minimized);
+  ring_over_chip.call_ring.active = true;
+  EXPECT_FALSE(ShellBaseHide::ShouldHide(ring_over_chip));
+  ShellState pin_over_call = PhoneStateWithCall(CallChromeMode::Expanded);
+  pin_over_call.pin_gate.active = true;
+  EXPECT_TRUE(ShellBaseHide::ShouldHide(pin_over_call)) << "the PIN page sits above the call page";
+  ShellState dialog_over_call = PhoneStateWithCall(CallChromeMode::Immersive);
+  dialog_over_call.dialog.active = true;
+  EXPECT_TRUE(ShellBaseHide::ShouldHide(dialog_over_call)) << "a dialog / choice page over the call (overlay layer)";
 }
 
 class ShellBaseHideDomTest : public testing::Test {
@@ -70,7 +89,12 @@ protected:
     ShellState state = PhoneStateWithCall(CallChromeMode::Expanded);
     std::string root = ShellLayoutRml(state, false, "").ShellRoot();
     root = std::regex_replace(root, std::regex("\\s+data-[a-z-]+=\"[^\"]*\""), ""); // no data models here
-    const std::string rml = "<rml><head></head><body><div id=\"shell-root\">" + root + "</div></body></rml>";
+    const std::string rml =
+        "<rml><head><style>body, div { display: block; } input { display: inline-block; width: 200px; height: 20px; }"
+        "#shell-root { position: absolute; top: 0; left: 0; width: 390px; height: 844px; }"
+        ".shell-layer { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }</style></head><body>"
+        "<div id=\"shell-root\">" +
+        root + "</div></body></rml>";
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
     document->Show();
@@ -97,6 +121,8 @@ protected:
 };
 
 TEST_F(ShellBaseHideDomTest, EveryCoveredLayerHidesAndComesBack) {
+  // By name: the base layer (tab / chat pages and the tab bar), the AI drawer host, the pushed-page layer.
+  ASSERT_EQ(std::size(ShellBaseHide::kLayerIds), 3u);
   for (const char* id : ShellBaseHide::kLayerIds) {
     EXPECT_TRUE(Shown(id)) << id << " before";
   }
@@ -129,6 +155,65 @@ TEST_F(ShellBaseHideDomTest, TheLayersAboveTheCallPageAreNotTouched) {
     EXPECT_TRUE(Shown(id)) << id;
   }
   ShellBaseHide::Apply(context, document, false);
+}
+
+// A chat in the base layer: a long transcript scrolled to the middle and a composer holding a draft, with the focus.
+struct ChatProbe {
+  ui::Element* transcript = nullptr;
+  ui::Element* composer = nullptr;
+};
+
+ChatProbe AddChat(ui::ElementDocument* document) {
+  ChatProbe chat;
+  ui::Element* base = document->GetElementById("shell-base-layer");
+  if (!base) {
+    return chat;
+  }
+  ui::ElementPtr transcript = document->CreateElement("div");
+  transcript->SetId("probe-transcript");
+  transcript->SetAttribute("style", "position: absolute; top: 0; left: 0; width: 390px; height: 600px; overflow-y: auto;");
+  transcript->SetInnerRML("<div style=\"height: 3000px;\"></div>");
+  chat.transcript = base->AppendChild(std::move(transcript));
+  ui::ElementPtr composer = document->CreateElement("input");
+  composer->SetId("probe-composer");
+  composer->SetAttribute("type", "text");
+  composer->SetAttribute("style", "position: absolute; top: 700px; left: 0;");
+  chat.composer = base->AppendChild(std::move(composer));
+  return chat;
+}
+
+TEST_F(ShellBaseHideDomTest, TheFocusLeavesTheLayersAsTheyHide) {
+  ChatProbe chat = AddChat(document);
+  ASSERT_NE(chat.composer, nullptr);
+  context->Update();
+  ASSERT_TRUE(chat.composer->Focus());
+  ASSERT_EQ(context->GetFocusElement(), chat.composer);
+  ShellBaseHide::Apply(context, document, true);
+  context->Update();
+  ui::Element* focus = context->GetFocusElement();
+  EXPECT_NE(focus, chat.composer) << "the composer (and the keyboard) let go";
+  EXPECT_FALSE(ShellBaseHide::InHiddenLayer(document, focus)) << "the focus is on nothing hidden";
+  EXPECT_TRUE(ShellBaseHide::InHiddenLayer(document, chat.composer)) << "so a later focus restore skips it";
+  ShellBaseHide::Apply(context, document, false);
+  EXPECT_FALSE(ShellBaseHide::InHiddenLayer(document, chat.composer));
+  EXPECT_NE(context->GetFocusElement(), chat.composer) << "the focus is not forced back";
+}
+
+TEST_F(ShellBaseHideDomTest, TheDraftAndTheScrollPositionSurvive) {
+  ChatProbe chat = AddChat(document);
+  ASSERT_NE(chat.transcript, nullptr);
+  context->Update();
+  chat.composer->SetAttribute("value", "half a sentence");
+  chat.transcript->SetScrollTop(1200.f); // the middle: neither the top nor the bottom
+  context->Update();
+  ASSERT_FLOAT_EQ(chat.transcript->GetScrollTop(), 1200.f);
+  ShellBaseHide::Apply(context, document, true);
+  context->Update();
+  ShellBaseHide::Apply(context, document, false);
+  context->Update();
+  EXPECT_EQ(document->GetElementById("probe-transcript"), chat.transcript) << "not remounted";
+  EXPECT_FLOAT_EQ(chat.transcript->GetScrollTop(), 1200.f);
+  EXPECT_EQ(chat.composer->GetAttribute<ui::String>("value", ""), "half a sentence");
 }
 
 } // namespace

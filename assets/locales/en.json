@@ -142,7 +142,6 @@
     "settings.appearance.reset_help": "Resets theme, language, transparency and what Home shows, and turns call diagnostics off.",
     "settings.call_diagnostics.label": "Call diagnostics",
     "settings.call_diagnostics.help": "Show technical details during calls.",
-    "settings.call_base_hide.label": "Hide the pages under a full-screen call (for measuring)",
     "settings.home_dynamic.label": "Show widgets page",
     "settings.home_dynamic.help": "Shows widgets like calls, mentions and new people on Home.",
     "settings.widgets.title": "Widgets",

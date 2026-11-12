@@ -1576,6 +1576,12 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
   const bool awaiting_changed = state_.call_ring.awaiting_invite != snapshot.ring.awaiting_invite;
   state_.call_ring = snapshot.ring;
   state_.call_in_progress = snapshot.in_progress;
+  // The call page is no longer full screen (ended, hung up, cleared, shrunk to its chip): the pages under it show at
+  // once, without waiting for the remount below. Hiding waits for the remount (ApplySafeAreaLayout), so the page is
+  // mounted before what it covers goes.
+  if (ShellBaseHide::Hidden() && !ShellBaseHide::ShouldHide(state_) && context_ && context_->GetNumDocuments() > 0) {
+    ShellBaseHide::Apply(context_, context_->GetDocument(0), false);
+  }
   ReconcileStartupCover(); // an active ring takes the logo cover away
   if (awaiting_changed && state_.pin_gate.active) {
     RemountPinGateChrome(); // its layer class (clear scrim, card on the bottom edge) follows the awaiting page
@@ -1687,8 +1693,11 @@ void ShellHost::RestoreFocus() {
     saved_focus_id_.clear();
     return;
   }
-  if (ui::Element* element = context_->GetDocument(0)->GetElementById(saved_focus_id_)) {
-    element->Focus();
+  ui::ElementDocument* doc = context_->GetDocument(0);
+  if (ui::Element* element = doc->GetElementById(saved_focus_id_)) {
+    if (!ShellBaseHide::InHiddenLayer(doc, element)) { // not under a full-screen call page: no keyboard over the call
+      element->Focus();
+    }
   }
   saved_focus_id_.clear();
 }
@@ -1914,8 +1923,9 @@ void ShellHost::ApplySafeAreaLayout() {
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface, bottom_chrome_open_);
   ui::ElementDocument* doc = context_->GetDocument(0);
-  // Measurement switch: from the switch and the call page now, every time the shell is synced or the call remounted.
-  ShellBaseHide::Apply(context_, doc, ShellBaseHide::ShouldHide(ShellBaseHide::SwitchOn(), state_));
+  // The layers under a full-screen phone call page: from the call page now, every time the shell is synced or the call
+  // remounted (never toggled on events).
+  ShellBaseHide::Apply(context_, doc, ShellBaseHide::ShouldHide(state_));
 
   auto set_dp = [](ui::Element* element, const char* property, float value_dp) {
     if (!element) {

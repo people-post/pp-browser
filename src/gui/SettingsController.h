@@ -232,8 +232,6 @@ private:
     ui::String language_label = "System";
     ui::String reduce_transparency = "off";
     ui::String call_diagnostics = "off";
-    /** Test options: hide the pages under a full-screen call (ShellBaseHide); not saved. */
-    ui::String call_base_hide = "off";
     ui::String home_show_dynamic = "off";
     ui::String home_animated_logo = "on";
     ui::String crash_reports_enabled = "off";
@@ -302,7 +300,6 @@ private:
   /** Me → Appearance → Transparency: flips the reduce_transparency pref (the switch shows it inverted). */
   void ToggleTransparency();
   void ToggleCallDiagnostics();
-  void ToggleCallBaseHide();
   void ToggleHomeShowDynamic();
   void ToggleShowAdvancedSettings();
   void OnTapVersion();
