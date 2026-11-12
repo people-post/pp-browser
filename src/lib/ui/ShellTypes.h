@@ -518,6 +518,8 @@ struct CallInProgressState {
   /** Couldn't connect / disconnected: the failure page (plain words, Try again / Close). */
   bool phone_failed = false;
   ui::String failed_text;
+  /** A 1:1 call that could not connect (OffersRedial): Call again / Try later, and the bar's retry icon calls again. */
+  bool offer_redial = false;
   /** Before connect: the moving line, the steps (0: calling, 1: answered) and the rotating tips (RCSS only). */
   bool story_active = false;
   int story_stage = 0;

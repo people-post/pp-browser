@@ -384,6 +384,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
                                    in_call.self_avatar_tone),
       .in_call_phone_failed = in_call.phone_failed,
       .in_call_failed_text = in_call.failed_text.c_str(),
+      .in_call_offer_redial = in_call.offer_redial,
       .in_call_story_active = in_call.story_active,
       .in_call_story_stage = in_call.story_stage,
       .in_call_story_steps = std::string(in_call.story_step1.c_str()) + "|" + in_call.story_step2.c_str() + "|" +
@@ -1625,6 +1626,10 @@ void CallController::RetryConnect() {
   presenter_.Retry();
 }
 
+void CallController::RedialCall() {
+  presenter_.Redial();
+}
+
 // On hold (another call has the audio) PP muted the mic and paused the camera itself; a tap on those buttons meanwhile
 // hands the choice to the user (the end of the hold then changes nothing) — never a locked button (Kenneth 2026-11-06:
 // if the OS never says the hold ended, the user must be able to unmute by hand).
@@ -2258,6 +2263,7 @@ void CallController::FillPhoneCallFields(const CallScreen& screen, const int64_t
   using Status = CallScreen::Status;
   in_call.phone_failed =
       !answering && (screen.status == Status::CouldntConnect || screen.status == Status::Disconnected);
+  in_call.offer_redial = !answering && OffersRedial(screen);
   if (screen.status == Status::Disconnected) {
     in_call.failed_text = Tr("call.status.disconnected").c_str();
   } else if (group || screen.hint_missing_mic) {

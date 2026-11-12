@@ -109,6 +109,8 @@ public:
   void EndDisconnectedCall(int64_t now_ms);
   std::string NoticeUserText(const CallNotice& notice) const;
   void RetryConnect();
+  /** A 1:1 failed page's "Call again" (CallPresenter::Redial). */
+  void RedialCall();
   void ToggleMute();
   void ToggleCamera();
   void FlipCamera();

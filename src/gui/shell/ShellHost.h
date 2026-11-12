@@ -330,6 +330,7 @@ private:
   void CallDecline();
   void CallLeave();
   void CallRetry();
+  void CallRedial();
   void CallMute();
   void CallCamera();
   void CallFlipCamera();

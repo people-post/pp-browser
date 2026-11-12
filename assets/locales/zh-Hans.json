@@ -1401,6 +1401,8 @@
     "call.control.leave": "离开",
     "call.failed.retry": "再试一次",
     "call.failed.close": "关闭",
+    "call.failed.redial": "重新呼叫",
+    "call.failed.later": "稍后再试",
     "call.ring.phone.voice": "PP 语音通话",
     "call.ring.phone.video": "PP 视频通话",
     "call.ring.phone.group_voice": "{name} 发起了语音通话",

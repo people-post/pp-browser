@@ -104,6 +104,7 @@ struct CallChromeLayer {
   std::string in_call_avatars; // the peer's and our own, as for ring_avatar
   bool in_call_phone_failed = false;
   std::string in_call_failed_text;
+  bool in_call_offer_redial = false;
   bool in_call_story_active = false;
   /** Bound (a stage advance, the step words and the list's scroll only dirty): the stage, the step words, the offset. */
   int in_call_story_stage = 0;

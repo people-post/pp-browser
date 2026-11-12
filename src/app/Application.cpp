@@ -1511,6 +1511,7 @@ void Application::WireCalls() {
     call_actions.decline_incoming = [this]() { call_->DeclineIncoming(); };
     call_actions.leave_active = [this]() { call_->LeaveActive(); };
     call_actions.retry_connect = [this]() { call_->RetryConnect(); };
+    call_actions.redial = [this]() { call_->RedialCall(); };
     call_actions.toggle_mute = [this]() { call_->ToggleMute(); };
     call_actions.toggle_camera = [this]() { call_->ToggleCamera(); };
     call_actions.flip_camera = [this]() { call_->FlipCamera(); };

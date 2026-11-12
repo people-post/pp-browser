@@ -341,10 +341,14 @@ void AppendControls(std::ostringstream& out, const CallInProgressState& call, co
                         "</span>");
     }
   };
-  // 1:1 couldn't connect but the page stays (the path may still move): Try again sits with the buttons, as on the
-  // old bar.
+  // Couldn't connect but the page stays (the path may still move): Try again sits with the buttons, as on the old bar;
+  // a 1:1 call calls again (DEV/PLAN-call-failed-redial.md 4).
   if (call.show_retry) {
-    AppendControl(out, "call_retry()", nullptr, "src=\"../icons/sync.svg\"", Tr("call.failed.retry"));
+    if (call.offer_redial) {
+      AppendControl(out, "call_redial()", nullptr, "src=\"../icons/sync.svg\"", Tr("call.failed.redial"));
+    } else {
+      AppendControl(out, "call_retry()", nullptr, "src=\"../icons/sync.svg\"", Tr("call.failed.retry"));
+    }
   }
   if (video_layout) {
     flip();
@@ -623,13 +627,22 @@ std::string CallPhoneRml(const ShellState& state) {
            "{{call_in_progress_status_hint}}</p>";
     out << "</div>";
     out << "<div class=\"call-phone-failed-actions\">";
-    if (call.show_retry) {
+    if (call.offer_redial) {
+      // A 1:1 call: call them again, or end it for now (DEV/PLAN-call-failed-redial.md 1); "Try later" is Close's End.
       out << "<button class=\"call-phone-pill-btn call-phone-pill-btn--primary\" type=\"button\" "
-             "data-event-click=\"call_retry()\">"
-          << Tr("call.failed.retry") << "</button>";
+             "data-event-click=\"call_redial()\">"
+          << Tr("call.failed.redial") << "</button>";
+      out << "<button class=\"call-phone-pill-btn\" type=\"button\" data-event-click=\"call_leave()\">"
+          << Tr("call.failed.later") << "</button>";
+    } else {
+      if (call.show_retry) {
+        out << "<button class=\"call-phone-pill-btn call-phone-pill-btn--primary\" type=\"button\" "
+               "data-event-click=\"call_retry()\">"
+            << Tr("call.failed.retry") << "</button>";
+      }
+      out << "<button class=\"call-phone-pill-btn\" type=\"button\" data-event-click=\"call_leave()\">"
+          << Tr("call.failed.close") << "</button>";
     }
-    out << "<button class=\"call-phone-pill-btn\" type=\"button\" data-event-click=\"call_leave()\">"
-        << Tr("call.failed.close") << "</button>";
     out << "</div></div></div>";
     return out.str();
   }
@@ -837,9 +850,11 @@ std::string CallInProgressRml(const ShellState& state) {
     out << "</button>";
   };
 
-  auto append_core_actions = [](std::ostringstream& out) {
+  // The retry icon: a 1:1 call that could not connect calls again; a group's call connects again.
+  auto append_core_actions = [](std::ostringstream& out, const CallInProgressState& call) {
     out << "<button class=\"shell-call-retry\" type=\"button\" data-if=\"call_in_progress_show_retry\" "
-           "data-event-click=\"call_retry()\">";
+           "data-event-click=\""
+        << (call.offer_redial ? "call_redial()" : "call_retry()") << "\">";
     out << "<svg src=\"../icons/sync.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
     out << "</button>";
     out << "<button class=\"shell-call-invite\" type=\"button\" data-if=\"call_in_progress_show_invite\" "
@@ -999,7 +1014,7 @@ std::string CallInProgressRml(const ShellState& state) {
     AppendGroupOffer(out, call, false);
     AppendGuestActions(out, call, false);
     out << "<div class=\"shell-call-bar-actions row\">";
-    append_core_actions(out);
+    append_core_actions(out, call);
     out << "</div>";
     append_cancel(out);
     out << "</div></div></div>";
@@ -1030,7 +1045,7 @@ std::string CallInProgressRml(const ShellState& state) {
   out << "</div>";
   append_quality_chip(out, "");
   out << "<div class=\"shell-call-bar-actions row\">";
-  append_core_actions(out);
+  append_core_actions(out, call);
   out << "</div></div>";
   AppendGroupOffer(out, call, false);
   AppendGuestActions(out, call, false);

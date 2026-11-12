@@ -1449,6 +1449,8 @@
     "call.control.leave": "Leave",
     "call.failed.retry": "Try again",
     "call.failed.close": "Close",
+    "call.failed.redial": "Call again",
+    "call.failed.later": "Try later",
     "call.ring.phone.voice": "PP voice call",
     "call.ring.phone.video": "PP video call",
     "call.ring.phone.group_voice": "{name} started a voice call",

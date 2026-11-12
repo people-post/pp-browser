@@ -67,17 +67,22 @@ CallUiBackend* CallPresenter::Backend() const {
 void CallPresenter::BindToMessaging() {
   if (!MessagingInitialized()) {
     bound_calls_ = nullptr;
+    ForgetFailedPage("locked");
     return;
   }
   auto* backend = Backend();
   if (!backend || !backend->Available()) {
     bound_calls_ = nullptr;
+    ForgetFailedPage("calls unavailable");
     return;
   }
   // CallSessionManager is recreated in BuildMessagingStack; rebind when the pointer changes.
   const void* identity = backend->SessionsIdentity();
   if (bound_calls_ == identity) {
     return;
+  }
+  if (bound_calls_ != nullptr) {
+    ForgetFailedPage("call stack rebuilt"); // another account, or the stack built again
   }
   // Ingest may run on IO; the screen is decided on UI.
   backend->SetOnRingChanged([this]() { AppRuntime::PostUI([this]() { Refresh(); }); });
@@ -86,6 +91,15 @@ void CallPresenter::BindToMessaging() {
   bound_calls_ = identity;
   // Pick up post-restart abandon / pending ring after stack rebuild.
   Refresh();
+}
+
+void CallPresenter::ForgetFailedPage(const char* why) {
+  redial_pending_since_ms_ = 0;
+  if (failed_page_) {
+    log().info << "kept failed page dropped (" << why << ") call_id=" << failed_page_->call_id;
+    failed_page_.reset();
+    Changed();
+  }
 }
 
 void CallPresenter::NoteMessagingReady() {
@@ -205,6 +219,10 @@ void CallPresenter::NotifyBlocked(const BlockedCallInvite& blocked) {
 
 void CallPresenter::Tick() {
   BindToMessaging();
+  if (RedialPending() && steady_ms_() - redial_pending_since_ms_ >= kRedialPendingMs) {
+    log().warning << "call again neither showed its call nor failed in " << kRedialPendingMs / 1000 << " s";
+    redial_pending_since_ms_ = 0;
+  }
   auto* backend = Backend();
   if (!backend) {
     return;
@@ -420,6 +438,10 @@ void CallPresenter::Refresh() {
     notice.kind = CallNotice::Kind::Error;
     notice.key = "call.status.ended_alone";
     Notify(notice);
+  }
+  if (RedialPending() && next.kind != CallScreen::Kind::None &&
+      (next.kind != CallScreen::Kind::InCall || next.call_id != redial_from_call_id_)) {
+    redial_pending_since_ms_ = 0; // the new call's page (or whatever took the screen) is up
   }
   WatchForNoMedia(*backend, next, now);
   OfferCallBack(next, surface);
@@ -1343,7 +1365,9 @@ std::string CallPresenter::Leave() {
     // Until the owner ran the leave, the engine (and the row) still read open: never taken back meanwhile.
     StartLeaving(call_id);
   }
-  // No call: a stale End button after Idle — the screen still clears, so nothing looks hung.
+  // No call: a stale End button after Idle — the screen still clears, so nothing looks hung. The kept failed page's "Try
+  // later" is this: the page goes, nothing is sent.
+  failed_page_.reset();
   active_call_id_.clear();
   ringing_call_id_.clear();
   ring_shown_ = false;
@@ -1388,6 +1412,45 @@ void CallPresenter::Retry() {
   }
   backend->Apply(CallLifecycleEvent::RetryClicked, call_id);
   Refresh(); // a refusal reads as the stack's last error, which Refresh reports
+}
+
+bool OffersRedial(const CallScreen& screen) {
+  return screen.kind == CallScreen::Kind::InCall && screen.status == CallScreen::Status::CouldntConnect &&
+         !screen.group;
+}
+
+void CallPresenter::Redial() {
+  if (RedialPending()) {
+    return; // its new call is on its way
+  }
+  CallFailedPage page;
+  if (OffersRedial(screen_)) {
+    page.call_id = screen_.call_id;
+    page.thread_id = screen_.thread_id;
+    page.video = screen_.video;
+  } else if (failed_page_ && screen_.kind == CallScreen::Kind::None) {
+    page = *failed_page_;
+  } else {
+    return; // a stale tap: the page is gone
+  }
+  if (page.thread_id.empty()) {
+    log().warning << "call again: the failed call has no chat call_id=" << page.call_id;
+    return;
+  }
+  // The page's own kind: CallFromChat's "a call goes on in this chat" rule is not asked (the failed call is still on
+  // record until its leave runs). Video this device cannot send goes voice, as from the chat.
+  const bool video = ChatCallAsksVideo(/*call_joinable=*/false, page.video, page.video && VideoCallAvailable());
+  redial_pending_since_ms_ = std::max<int64_t>(1, steady_ms_());
+  redial_from_call_id_ = page.call_id;
+  failed_page_.reset();
+  log().info << "call again call_id=" << page.call_id << " video=" << (video ? 1 : 0);
+  // StartCall leaves the failed call first (GuardNewCall), on the same owner queue as the new call.
+  (void)StartCall(page.thread_id, video, WhileAlive([this](const CallStartResult& result) {
+                    if (result.kind != CallStartResult::Kind::Started && RedialPending()) {
+                      log().info << "call again did not start";
+                      redial_pending_since_ms_ = 0;
+                    }
+                  }));
 }
 
 void CallPresenter::ToggleMute() {
