@@ -113,6 +113,14 @@ TEST(CheckEditTest, TheAuthorsEditWithinTheWindowPasses) {
   EXPECT_EQ(CheckEdit(Edit("e1", "x", kSentAt + 16 * kMinute + 1), Received()), EditRefusal::TooLate);
 }
 
+// An edit stamped before its own message: no sender of ours makes one (EditSendTime), so it is refused.
+TEST(CheckEditTest, AnEditStampedBeforeItsMessageIsRefused) {
+  EXPECT_EQ(CheckEdit(Edit("e1", "x", kSentAt), Received()), EditRefusal::None);
+  EXPECT_EQ(CheckEdit(Edit("e1", "x", kSentAt - 1), Received()), EditRefusal::TooEarly);
+  EXPECT_EQ(CheckEdit(Edit("e1", "x", kSentAt - 365LL * 24 * 60 * kMinute), Received()), EditRefusal::TooEarly);
+  EXPECT_STREQ(EditRefusalName(EditRefusal::TooEarly), "too_early");
+}
+
 TEST(CheckEditTest, OnlyFromTheMessagesOwnSenderInAChatOrAGroup) {
   EXPECT_EQ(CheckEdit(Edit("e1", "x", kSentAt, "account:mallory"), Received()), EditRefusal::NotFromAuthor);
   // A group: another member, or an admin / the owner, cannot edit a member's message.
@@ -167,6 +175,15 @@ TEST(EditSendTimeTest, NeverBeforeTheEditThisDeviceAlreadyHas) {
   const ThreadMessage edited = WithEdit(Sent(), Edit("e1", "nine", kSentAt + 5 * kMinute, kLocalSelfContactId));
   EXPECT_EQ(EditSendTime(kSentAt + 2 * kMinute, edited), kSentAt + 5 * kMinute + 1);
   EXPECT_EQ(EditSendTime(kSentAt + 9 * kMinute, edited), kSentAt + 9 * kMinute);
+}
+
+// This device's clock behind the message's send time (set back, or the message came from our other device): the edit
+// goes at the message's time, never before it, so its receivers do not refuse it.
+TEST(EditSendTimeTest, NeverBeforeTheMessageItself) {
+  EXPECT_TRUE(CanEditMessage(Sent(), ThreadKind::Direct, kSentAt - 3 * kMinute));
+  const int64_t at = EditSendTime(kSentAt - 3 * kMinute, Sent());
+  EXPECT_EQ(at, kSentAt);
+  EXPECT_EQ(CheckEdit(Edit("e1", "nine", at, kLocalSelfContactId), Sent()), EditRefusal::None);
 }
 
 TEST(WithEditTest, TheRowKeepsItsPlaceAndGetsTheNewTextAndTheMark) {

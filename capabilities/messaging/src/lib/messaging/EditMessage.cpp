@@ -99,6 +99,8 @@ const char* EditRefusalName(const EditRefusal refusal) {
       return "too_long";
     case EditRefusal::TooLate:
       return "too_late";
+    case EditRefusal::TooEarly:
+      return "too_early";
     case EditRefusal::NotNewer:
       return "not_newer";
   }
@@ -128,6 +130,9 @@ EditRefusal CheckEdit(const ThreadMessage& edit, const ThreadMessage& target) {
   if (edit.timestamp - target.timestamp > kEditWindowMs + kEditArrivalSlackMs) {
     return EditRefusal::TooLate;
   }
+  if (edit.timestamp < target.timestamp) {
+    return EditRefusal::TooEarly;
+  }
   if (const std::optional<EditMark> current = EditMarkOf(target)) {
     const bool newer = edit.timestamp > current->edited_at ||
                        (edit.timestamp == current->edited_at && edit.id > current->edited_by);
@@ -155,10 +160,11 @@ ThreadMessage BlankedEdit(ThreadMessage edit) {
 }
 
 int64_t EditSendTime(const int64_t now_ms, const ThreadMessage& target) {
+  const int64_t at = std::max(now_ms, target.timestamp); // a clock behind the message's: receivers refuse earlier
   if (const std::optional<EditMark> current = EditMarkOf(target)) {
-    return std::max(now_ms, current->edited_at + 1);
+    return std::max(at, current->edited_at + 1);
   }
-  return now_ms;
+  return at;
 }
 
 std::optional<ThreadMessage> NewestPassingEdit(const std::vector<ThreadMessage>& annotations,
