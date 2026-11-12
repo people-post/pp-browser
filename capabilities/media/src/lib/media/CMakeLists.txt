@@ -12,6 +12,7 @@ pp_browser_add_lib_library(pp_lib_media
     MediaEngine.cpp
     MicEndpoints.cpp
     NoiseSuppressor.cpp
+    ResumeRetryChain.cpp
     SdlMediaDeviceBackend.cpp
     SyntheticVideo.cpp
     ThreadCpu.cpp
