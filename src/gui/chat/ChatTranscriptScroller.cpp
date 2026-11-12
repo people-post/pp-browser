@@ -316,7 +316,9 @@ bool ChatTranscriptScroller::MaybeFillScreen(const float client_height, const fl
     return false;
   }
   const size_t rows_before = view_.messages.size();
-  LoadOlderLocalHistory(/*fill=*/true);
+  if (!LoadOlderLocalHistory(/*fill=*/true)) {
+    return false; // nothing loaded (has_more_local_history_ now says so): no landing again, nothing counted
+  }
   // Back to the newest message the way an open lands there, not by the scroll-up position fix.
   pending_scroll_height_before_.reset();
   pending_scroll_top_before_.reset();
@@ -345,19 +347,19 @@ void ChatTranscriptScroller::MaybeLoadOlderLocalHistory() {
   LoadOlderLocalHistory();
 }
 
-void ChatTranscriptScroller::LoadOlderLocalHistory(const bool fill) {
+bool ChatTranscriptScroller::LoadOlderLocalHistory(const bool fill) {
   if (loading_older_local_ || !messaging_ready_ || view_.messages.empty()) {
-    return;
+    return false;
   }
   const std::string thread_id = ActiveThreadId();
   if (thread_id.empty()) {
-    return;
+    return false;
   }
 
   const int64_t oldest = view_.messages.front().display_order;
   if (!HasMessagesBefore(thread_id, oldest)) {
     has_more_local_history_ = false;
-    return;
+    return false;
   }
 
   ui::Element* el = FindMessagesScrollElement();
@@ -374,7 +376,7 @@ void ChatTranscriptScroller::LoadOlderLocalHistory(const bool fill) {
     loading_older_local_ = false;
     pending_scroll_height_before_.reset();
     pending_scroll_top_before_.reset();
-    return;
+    return false;
   }
   first_screen_pending_ = false;
   loaded_min_display_order_ = older->front().display_order;
@@ -402,6 +404,7 @@ void ChatTranscriptScroller::LoadOlderLocalHistory(const bool fill) {
   if (on_older_loaded_) {
     on_older_loaded_();
   }
+  return true;
 }
 
 void ChatTranscriptScroller::OnMessagesScroll() {
@@ -595,14 +598,26 @@ bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id, cons
     unread_while_scrolled_ = 0;
     first_screen_ = FirstScreen::Miss;
     first_screen_pending_ = first_screen_messages > 0;
+    first_screen_retries_ = 0;
     fill_pages_without_rows_ = 0;
     page_reading_.reset(); // another chat's page
     RequestScrollToLatest();
   }
   // The first screen starts at the first_screen_messages-th newest message, decided once for the chat switched to. A
-  // read that did not happen (not ready, store error) is tried on the next sync while the window still ends at the
-  // newest message and the person has not scrolled up; a jump, back to the latest or a page loaded ends the wait.
-  if (first_screen_pending_ && pinned_to_bottom_ && !loaded_max_display_order_) {
+  // read that did not happen (not ready, store error) is tried on the next syncs, at most five, and only while the
+  // window still ends at the newest message and sits exactly on the bottom: cutting it under someone who moved, or with
+  // a jump or a remount restore pending, would move what they look at. Otherwise the first screen is given up (miss);
+  // a jump, back to the latest or a page loaded also ends the wait.
+  constexpr int kMaxFirstScreenRetries = 5;
+  if (first_screen_pending_ && !thread_changed) {
+    if (first_screen_retries_ >= kMaxFirstScreenRetries || !pinned_to_bottom_ || loaded_max_display_order_ ||
+        restore_scroll_top_ || !pending_jump_id_.empty() || !ViewOnTheBottom()) {
+      first_screen_pending_ = false;
+    } else {
+      ++first_screen_retries_;
+    }
+  }
+  if (first_screen_pending_) {
     std::optional<int64_t> oldest;
     first_screen_ = FirstScreenBound(thread_id, first_screen_messages, oldest);
     if (first_screen_ != FirstScreen::Miss) {
@@ -615,17 +630,29 @@ bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id, cons
   return thread_changed;
 }
 
+bool ChatTranscriptScroller::ViewOnTheBottom() const {
+  ui::Element* el = FindMessagesScrollElement();
+  if (!el || !el->IsVisible(true) || el->GetClientHeight() <= 0.f || pending_scroll_to_bottom_) {
+    return true; // not laid out or not shown (nothing moved yet), or still being held on the bottom
+  }
+  const float max_top = std::max(0.f, el->GetScrollHeight() - el->GetClientHeight());
+  return max_top - el->GetScrollTop() <= 1.f;
+}
+
 ChatTranscriptScroller::FirstScreen ChatTranscriptScroller::FirstScreenBound(const std::string& thread_id,
                                                                             const size_t shown,
                                                                             std::optional<int64_t>& oldest) const {
   if (!messaging_ready_) {
     return FirstScreen::Miss;
   }
-  constexpr int kMaxPages = 3;
+  // The first read takes only `shown` rows (all of them are shown in a chat of plain messages); short of shown
+  // messages, a page of 100 at a time further back. Three reads at most.
+  constexpr int kMaxReads = 3;
   size_t counted = 0;
   std::optional<int64_t> before;
-  for (int page = 0; page < kMaxPages; ++page) {
-    auto rows = MessagesPage(thread_id, before, static_cast<int>(kDefaultMessagesPageSize));
+  for (int read = 0; read < kMaxReads; ++read) {
+    const size_t limit = read == 0 ? shown : kDefaultMessagesPageSize;
+    auto rows = MessagesPage(thread_id, before, static_cast<int>(limit));
     if (!rows) {
       return FirstScreen::Miss;
     }
@@ -638,12 +665,12 @@ ChatTranscriptScroller::FirstScreen ChatTranscriptScroller::FirstScreenBound(con
         return FirstScreen::Ok;
       }
     }
-    if (rows->size() < kDefaultMessagesPageSize) {
+    if (rows->size() < limit) {
       return FirstScreen::Short; // the chat's beginning: all of it fits
     }
     before = rows->front().display_order;
   }
-  // Three pages short of `shown`: nearly all of it is rows that do not show. A bound at the oldest row read could leave
+  // Three reads short of `shown`: nearly all of it is rows that do not show. A bound at the oldest row read could leave
   // the screen blank with nothing to page from; the old first page (which reads on until something shows) is kept.
   return FirstScreen::Short;
 }

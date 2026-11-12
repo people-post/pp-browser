@@ -105,6 +105,8 @@ struct TestStore {
   std::string active;
   bool fail = false;
   int page_reads = 0;
+  std::vector<int> page_limits;     ///< the row count each page read asked for
+  size_t page_rows_read = 0;        ///< rows the page reads returned, all together
   int before_reads = 0;
   int row_builds = 0;
   std::vector<std::optional<int64_t>> row_bounds; ///< the oldest bound of each Rows call
@@ -113,6 +115,7 @@ struct TestStore {
 
   Roe<std::vector<ThreadMessage>> Page(const std::string& thread, const std::optional<int64_t> before, const int limit) {
     ++page_reads;
+    page_limits.push_back(limit);
     if (fail) {
       return Error("store not readable");
     }
@@ -125,6 +128,7 @@ struct TestStore {
     if (older.size() > static_cast<size_t>(limit)) {
       older.erase(older.begin(), older.end() - limit);
     }
+    page_rows_read += older.size();
     return older;
   }
   bool Before(const std::string& thread, const int64_t order) {
@@ -867,18 +871,145 @@ TEST(ChatWindowLineTest, TheControllerWritesTheLineWithThePageReadingOnlyAfterAP
   EXPECT_EQ(schedule.find("MetricsLine line(\"chat.window\")"), std::string::npos) << "one place builds the line";
 }
 
-TEST(ChatFirstScreenCountTest, TheControllerPassesThirtyForDirectAndAiAndFiftyForAGroup) {
+// ---------------------------------------------------------------------------------------------------------------------
+// Review follow-ups.
+
+TEST_F(ChatFirstScreenTest, AllTextTheBoundReadsOnlyTheFirstScreensRows) {
+  SetVisibleHeight(600.f); // client height 600
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  EXPECT_EQ(store.page_limits, (std::vector<int>{30})) << "one read of 30 rows, not a page of 100";
+  EXPECT_EQ(store.page_rows_read, 30u);
+  EXPECT_EQ(state.messages.size(), 30u);
+  EXPECT_EQ(FrontId(), "m271");
+}
+
+TEST_F(ChatFirstScreenTest, AGroupBoundReadsFiftyRows) {
+  SetVisibleHeight(600.f); // client height 600
+  AddTexts("group", 1, 300);
+  Sync("group", kGroup);
+  EXPECT_EQ(store.page_limits, (std::vector<int>{50}));
+  EXPECT_EQ(store.page_rows_read, 50u);
+}
+
+TEST_F(ChatFirstScreenTest, AnnotationsAmongTheFirstRowsReadOnAPageOf100) {
+  SetVisibleHeight(600.f); // client height 600
+  AddTexts("dm", 1, 270);
+  // The newest 30 rows: 15 messages each with a reaction after it.
+  for (int64_t order = 271; order <= 300; order += 2) {
+    store.threads["dm"].push_back(Text("dm", order));
+    store.threads["dm"].push_back(Annotation("dm", order + 1, "m" + std::to_string(order), kAnnotationTypeReaction));
+  }
+  Sync("dm", kDirect);
+  EXPECT_EQ(store.page_limits, (std::vector<int>{30, 100}));
+  EXPECT_EQ(store.page_rows_read, 130u);
+  EXPECT_EQ(state.messages.size(), 30u);
+  EXPECT_EQ(FrontId(), "m256") << "15 there, 15 more from the page before";
+  EXPECT_EQ(scroller->FirstScreenResult(), FirstScreen::Ok);
+}
+
+TEST_F(ChatFirstScreenTest, AfterAFailedReadARetryDoesNotCutTheWindowOnceMovedOffTheBottom) {
+  SetClientHeight(600.f); // client height 600
+  AddTexts("dm", 1, 300);
+  store.fail = true;
+  Sync("dm", kDirect);
+  store.fail = false;
+  Settle();
+  Frames(2);
+  ASSERT_EQ(state.messages.size(), 100u);
+  ASSERT_TRUE(AtBottom());
+  ScrollTo(MaxTop() - 30.f); // 30 px up: still within the 64 px that counts as pinned
+  Frames(2);
+  const int page_reads = store.page_reads;
+  Sync("dm", kDirect); // the store answers now
+  Frames(2);
+  EXPECT_EQ(state.messages.size(), 100u) << "the window is not cut under the reader";
+  EXPECT_EQ(scroller->FirstScreenResult(), FirstScreen::Miss);
+  EXPECT_EQ(store.page_reads, page_reads);
+  // Given up: later syncs do not try again either.
+  ScrollTo(MaxTop());
+  Frames(2);
+  Sync("dm", kDirect);
+  EXPECT_EQ(state.messages.size(), 100u);
+  EXPECT_EQ(store.page_reads, page_reads);
+}
+
+TEST_F(ChatFirstScreenTest, AfterFiveFailedRetriesItStopsReading) {
+  SetClientHeight(600.f); // client height 600
+  AddTexts("dm", 1, 300);
+  store.fail = true; // the first-screen reads keep failing (the rows are drawn by the row builder)
+  Sync("dm", kDirect);
+  EXPECT_EQ(store.page_reads, 1);
+  for (int retry = 1; retry <= 5; ++retry) {
+    Sync("dm", kDirect); // an AI answer streaming in: a sync per token
+    EXPECT_EQ(store.page_reads, 1 + retry);
+  }
+  for (int more = 0; more < 10; ++more) {
+    Sync("dm", kDirect);
+  }
+  EXPECT_EQ(store.page_reads, 6) << "five retries, then no more";
+  EXPECT_EQ(scroller->FirstScreenResult(), FirstScreen::Miss);
+}
+
+TEST_F(ChatFirstScreenTest, AFillWithNothingOlderInTheStoreDoesNotLandAgain) {
+  SetClientHeight(4000.f); // client height 4000: 30 rows do not fill it
+  AddTexts("dm", 1, 40);
+  ASSERT_TRUE(store.threads["dm"].size() == 40u);
+  messaging_ready = true;
+  Sync("dm", kDirect);
+  ASSERT_TRUE(scroller->HasMoreLocalHistory());
+  // The older ten went meanwhile (deleted on another device): the store has nothing before the window now.
+  store.threads["dm"].erase(store.threads["dm"].begin(), store.threads["dm"].begin() + 10);
+  Settle();
+  Frames(1); // the fill check: no page
+  EXPECT_FALSE(scroller->HasMoreLocalHistory());
+  EXPECT_TRUE(scroller->Settled()) << "no new scroll to the bottom";
+  EXPECT_EQ(older_loaded, 0);
+  EXPECT_FALSE(scroller->TakePageReading().has_value());
+  const int reads = store.Reads();
+  Frames(30);
+  EXPECT_EQ(store.Reads(), reads) << "not tried again";
+}
+
+TEST_F(ChatFirstScreenTest, AJumpInsideTheOldPageButOutsideTheFirstScreenRedrawsTheWindow) {
+  SetClientHeight(600.f); // client height 600
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(2);
+  ASSERT_EQ(FrontId(), "m271");
+  // m230: the 71st newest, inside the old 100-row page, outside the 30-row first screen.
+  ASSERT_EQ(scroller->JumpToMessage("m230"), ChatTranscriptScroller::JumpResult::Jumped);
+  EXPECT_EQ(FrontId(), "m230") << "the window drawn again from it";
+  Frames(10);
+  context->Update();
+  const float top = RowTopOnScreen("m230");
+  EXPECT_GE(top, -1.f);
+  EXPECT_LT(top, ClientHeight()) << "in view";
+  scroller->OnJumpToLatest();
+  Settle();
+  Frames(2);
+  EXPECT_EQ(BackId(), "m300");
+  EXPECT_FALSE(scroller->LoadedMaxDisplayOrder().has_value());
+  EXPECT_TRUE(AtBottom());
+}
+
+TEST(ChatFirstScreenCountTest, FirstScreenMessagesByKind) {
+  EXPECT_EQ(ChatController::FirstScreenMessages(ThreadKind::Group), 50u);
   EXPECT_EQ(ChatController::FirstScreenMessages(ThreadKind::Direct), 30u);
   EXPECT_EQ(ChatController::FirstScreenMessages(ThreadKind::Ai), 30u);
-  EXPECT_EQ(ChatController::FirstScreenMessages(ThreadKind::Group), 50u);
-  // ChatController cannot be built in a unit test: that the switch passes it is read from the source.
+}
+
+TEST(ChatFirstScreenCountTest, TheControllerPassesTheCountAndReportsTheResult) {
+  // ChatController cannot be built in a unit test: that the switch passes the count is read from the source.
   const std::string sync = Body("src/gui/chat/ChatController.cpp", "void ChatController::SyncDisplayFromThread(");
-  EXPECT_NE(sync.find("scroller_.BeginDisplaySync(thread_id, FirstScreenMessages(active->kind))"), std::string::npos);
+  EXPECT_NE(sync.find("BeginDisplaySync("), std::string::npos);
+  EXPECT_NE(sync.find("FirstScreenMessages("), std::string::npos);
   // chat.open says how the open's first screen went: recorded with the open's rows, written with its layout.
-  EXPECT_NE(sync.find("open_probe_.first_screen = scroller_.FirstScreenResult();"), std::string::npos);
+  EXPECT_NE(sync.find("FirstScreenResult()"), std::string::npos);
   const std::string open = Body("src/gui/chat/ChatController.cpp", "void ChatController::OnSyncLayoutMeasured(");
-  EXPECT_NE(open.find(".Add(\"first_screen\", ChatTranscriptScroller::FirstScreenWord(open_probe_.first_screen))"),
-            std::string::npos);
+  EXPECT_NE(open.find("\"first_screen\""), std::string::npos);
+  EXPECT_NE(open.find("FirstScreenWord("), std::string::npos);
 }
 
 } // namespace

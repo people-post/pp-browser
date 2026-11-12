@@ -156,14 +156,18 @@ private:
   void ScrollMessagesToBottom();
   void MaybeLoadOlderLocalHistory();
   /** `fill`: loaded by MaybeFillScreen (else the scroll reached the top); said in the page's reading. */
-  void LoadOlderLocalHistory(bool fill = false);
+  /** True when a page was loaded (false: nothing older, not ready, or the store failed). */
+  bool LoadOlderLocalHistory(bool fill = false);
   /** After the scroll to the bottom settled: rows that do not fill the screen get the page above. True if loaded. */
   bool MaybeFillScreen(float client_height, float scroll_height, float max_top);
   /**
    * The first screen's oldest row: `shown` messages back from the newest, counting the rows that show on their own (not
-   * the annotations), over at most three pages; set in `oldest` for Ok (fewer in those pages: Short, no bound).
+   * the annotations): `shown` rows first, then pages of 100, three reads at most; set in `oldest` for Ok (fewer in those
+   * reads: Short, no bound).
    */
   FirstScreen FirstScreenBound(const std::string& thread_id, size_t shown, std::optional<int64_t>& oldest) const;
+  /** The transcript sits exactly on its bottom (not the 64 px that count as pinned); true when not laid out or shown. */
+  bool ViewOnTheBottom() const;
   /** A pending JumpToMessage: scroll its row into view until the layout settles. True while it runs. */
   bool ApplyPendingJump(ui::Element* el);
 
@@ -184,6 +188,8 @@ private:
   /** The chat switched to has not had its first screen decided (read failed, or not ready): tried on the next sync. */
   bool first_screen_pending_ = false;
   FirstScreen first_screen_ = FirstScreen::Miss;
+  /** First-screen reads tried again after the switch's failed (at most five). */
+  int first_screen_retries_ = 0;
   /** The last local page's chat.window reading, and the frames drawn when it was loaded (UiFrameStats::DrawnFrames). */
   std::optional<ChatPageReading> page_reading_;
   int64_t page_frames_at_load_ = 0;
