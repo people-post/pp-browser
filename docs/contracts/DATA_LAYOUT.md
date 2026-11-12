@@ -130,7 +130,8 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
   object_index.db       # realm, content_id, mime, pins, published_from?, thread refs
   threads/{thread_id}/
     blobs_view/         # optional session plaintext materialization (not source of truth); wiped at start and on ClearDek;
-                        # a file above 4 MiB appears here only after an explicit Open
+                        # a file above 4 MiB appears here only after an explicit Open; {hash}.poster.jpg = a video's poster,
+                        # a sound file's cover, or a picture's preview (long side <= 640 px: what its chat bubble shows)
     # blobs/            # not used; durable bytes live in cas/private only
   picked/               # Android: <unique>/<name> = a copy of a content:// pick, made so decoders can read it; removed as soon as
                         # the attachment is prepared, and the whole folder at start (iOS keeps its own tmp/pp-picks)
