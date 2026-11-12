@@ -109,6 +109,8 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # and its payload_json (inside content_enc) carries edited_at (the applied edit's send time, ms) and edited_by
                             # (the applied edit's message id); no column, user_version unchanged. Its `edit` annotation rows stay; all but
                             # the applied one are blanked (value / text empty), and all of them once the message is deleted.
+                            # An edit of ours blanked before it went out keeps its row, seq and delivery state; its queued
+                            # send is cancelled, so it is never sent.
                             # Local-only System rows (sender local:self, delivery 'local', never sent or synced; text empty, the UI words
                             # them from the payload): payload_json {control_type: "receive_failure"|"send_failure", detail: <JSON string>}.
                             # `send_failure` (#182): a message of ours did not go out, one row per message, id "send-failure-<message_id>"
