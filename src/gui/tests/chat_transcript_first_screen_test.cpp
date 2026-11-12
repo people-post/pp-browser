@@ -1295,6 +1295,44 @@ TEST_F(ChatReopenTest, LeftOnTheNewestItOpensAgainWithTheFirstScreen) {
   EXPECT_EQ(state.messages.size(), 70u);
 }
 
+// A jump to a message (a search hit, a quote) lands between leaving and opening again: it is not pulled down to the
+// newest message and the window is not cut back to the first screen.
+TEST_F(ChatReopenTest, ARequestedJumpBeforeTheReopenIsNotOverridden) {
+  OpenAndPageUpTwice();
+  BackToTheBottom();
+  scroller->OnChatLeft();
+  Frames(3);
+  ASSERT_EQ(scroller->JumpToMessage("m100"), ChatTranscriptScroller::JumpResult::Jumped);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(5);
+  context->Update();
+  EXPECT_TRUE(std::any_of(state.messages.begin(), state.messages.end(),
+                          [](const MessageDisplayRow& row) { return row.message_id == "m100"; }));
+  const float top = RowTopOnScreen("m100");
+  EXPECT_GE(top, -1.f);
+  EXPECT_LT(top, ClientHeight()) << "the target is in view";
+  EXPECT_FALSE(AtBottom());
+}
+
+// The shell is rebuilt while the chat is away and something had moved off the bottom: its offset is put back.
+TEST_F(ChatReopenTest, ARestoredPositionBeforeTheReopenIsNotOverridden) {
+  OpenAndPageUpTwice();
+  BackToTheBottom();
+  scroller->OnChatLeft();
+  ScrollTo(MaxTop() / 2.f);
+  Frames(3);
+  const float top = Messages()->GetScrollTop();
+  ASSERT_TRUE(RmlMount::MountInner(document->GetElementById("pane-body-chat"), chat_body_rml));
+  scroller->OnShellRemounted();
+  Frames(6);
+  Sync("dm", kDirect);
+  Frames(6);
+  EXPECT_EQ(state.messages.size(), 110u);
+  EXPECT_NEAR(Messages()->GetScrollTop(), top, 1.f);
+  EXPECT_FALSE(AtBottom());
+}
+
 TEST_F(ChatReopenTest, LeftReadingOlderMessagesItComesBackWhereItWas) {
   OpenAndPageUpTwice();
   ScrollTo(MaxTop() / 2.f);

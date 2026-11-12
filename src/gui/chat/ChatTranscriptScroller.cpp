@@ -527,6 +527,7 @@ ChatTranscriptScroller::JumpResult ChatTranscriptScroller::JumpToMessage(const s
   }
   const int64_t order = (*message)->display_order;
   first_screen_pending_ = false;
+  first_screen_on_return_ = false; // the jump decides where the chat opens, not the first screen
   const JumpWindow window = WindowForJump(order, loaded_min_display_order_, loaded_max_display_order_);
   if (window.refetch) {
     loaded_min_display_order_ = window.loaded_min;
@@ -632,6 +633,7 @@ void ChatTranscriptScroller::OnShellRemounted() {
     // Reading older messages: the new DOM starts at the top (MountInner restores the offset before the rows exist).
     restore_scroll_top_ = reading_scroll_top_;
     restore_scroll_frames_ = 0;
+    first_screen_on_return_ = false; // the offset is put back, not the first screen
     last_client_height_ = 0.f; // the first reading of the new element is not a viewport resize
   }
   ApplyPolicy();
@@ -645,7 +647,11 @@ bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id, cons
   const bool thread_changed = thread_id != scroll_thread_id_;
   // The same chat opened again after it was left on its newest messages: its window goes back to the first screen
   // (only the window and the first-screen state; for everything else it is the same chat).
-  const bool reopened = !thread_changed && first_screen_on_return_;
+  // Not when a jump, a restored offset, a position off the bottom or a window short of the newest message came
+  // after the mark: that state is what the user asked for.
+  const bool moved_on = !pending_jump_id_.empty() || restore_scroll_top_ || !pinned_to_bottom_ ||
+                        loaded_max_display_order_.has_value();
+  const bool reopened = !thread_changed && first_screen_on_return_ && !moved_on;
   first_screen_on_return_ = false;
   if (reopened) {
     loaded_min_display_order_.reset();
