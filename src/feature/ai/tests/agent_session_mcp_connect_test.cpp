@@ -292,10 +292,12 @@ TEST_F(McpConnectOnFirstUseTest, StopWhileConnectingEndsTheTurnAtOnceAndTheNextR
   ASSERT_EQ(sessions_->SubmitToThread("t1", "Show me recent articles", std::string(kFeedPayload)),
             SubmitOutcome::Started);
   WaitForWaiters(1);
-  const auto stopped_at = std::chrono::steady_clock::now();
   sessions_->Cancel("t1");
   const auto stopped = WaitForTurns({"t1"})["t1"];
-  EXPECT_LT(std::chrono::steady_clock::now() - stopped_at, std::chrono::seconds(1));
+  // The turn ended while the fake server still holds the listing: it did not wait for the connect to finish or time
+  // out (an event-order proof, no wall-clock limit).
+  EXPECT_TRUE(server_->hold_list);
+  EXPECT_EQ(SharedMcpTools::RunningConnectsForTests(), 1u);
   EXPECT_EQ(Count(stopped, AgentEventType::Error), 0u);
   EXPECT_FALSE(sessions_->IsBusy("t1"));
 
@@ -337,9 +339,8 @@ TEST_F(McpConnectOnFirstUseTest, OfflineTheSecondQuestionDialsNothingDuringTheCo
   const int lists = server_->list_calls.load();
   ASSERT_EQ(inits, 1);
 
-  const auto started = std::chrono::steady_clock::now();
+  // "Dials nothing" is shown by the init / list counts below, not by a time limit.
   const auto second = AskFeed("t2"); // another session: the failure is shared too
-  EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::milliseconds(500));
   ASSERT_EQ(Count(second, AgentEventType::Error), 1u);
   for (const AgentEvent& event : second) {
     if (event.type == AgentEventType::Error) {
@@ -358,10 +359,9 @@ TEST_F(McpConnectOnFirstUseTest, DestroyingTheSessionsWhileConnectingReturnsAtOn
   ASSERT_EQ(sessions_->SubmitToThread("t1", "Show me recent articles", std::string(kFeedPayload)),
             SubmitOutcome::Started);
   WaitForWaiters(1);
-  const auto started = std::chrono::steady_clock::now();
   sessions_.reset();
-  EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds(1));
-  EXPECT_EQ(SharedMcpTools::RunningConnectsForTests(), 1u); // still in the network
+  // It returned while the connect thread is still held in the fake network: it did not wait for the connect.
+  EXPECT_EQ(SharedMcpTools::RunningConnectsForTests(), 1u);
   server_->hold_list = false;
   WaitForMcpConnects();
 }

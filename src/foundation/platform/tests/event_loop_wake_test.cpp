@@ -81,8 +81,12 @@ TEST_F(EventLoopWakeTest, ARequestBeforeTheTurnEndsOneWaitOnly) {
 }
 
 TEST_F(EventLoopWakeTest, ARequestDuringTheWaitEndsOneWaitOnly) {
+  // No observable says "the main thread is waiting" (only SetBeforeFinalDropForTest, which fires after the wait ends),
+  // so the waker sleeps long enough for the turn below to be inside its wait. If it were not, the wake would find the
+  // flag set on entry (c.flag == 1) and the assertion that it came during the wait would fail: a longer sleep only
+  // makes that rarer, never changes what is asserted.
   std::thread waker([] {
-    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
     EventLoopWake::Request();
   });
   const TurnResult first = Turn(kLong);
@@ -134,8 +138,10 @@ TEST_F(EventLoopWakeTest, RealEventsAreKeptInOrder) {
 }
 
 TEST_F(EventLoopWakeTest, ARealEventDuringTheWaitIsHandledWithItsWake) {
+  // As above, the sleep makes it likely that the turn is already waiting; if not, the key and the wake are simply
+  // taken without a wait: the asserted outcome (the key once, a woken turn) is the same on both branches.
   std::thread poster([] {
-    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
     SDL_Event ev{};
     ev.type = SDL_EVENT_KEY_DOWN;
     ev.key.key = SDLK_B;
