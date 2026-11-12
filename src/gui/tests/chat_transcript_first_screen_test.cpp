@@ -147,8 +147,26 @@ struct TestStore {
     if (!oldest && window.size() > kDefaultMessagesPageSize) {
       window.erase(window.begin(), window.end() - static_cast<std::ptrdiff_t>(kDefaultMessagesPageSize));
     }
+    std::vector<TranscriptRow> entries = AssembleTranscript(window, nullptr, ThreadKind::Direct);
+    // Without a bound, a page showing nothing goes back for older pages until something shows (at most 20 more).
+    for (int extra = 0; extra < 20 && entries.empty() && !oldest && !window.empty(); ++extra) {
+      std::vector<ThreadMessage> older;
+      for (const ThreadMessage& m : all) {
+        if (m.display_order < window.front().display_order) {
+          older.push_back(m);
+        }
+      }
+      if (older.empty()) {
+        break;
+      }
+      if (older.size() > kDefaultMessagesPageSize) {
+        older.erase(older.begin(), older.end() - static_cast<std::ptrdiff_t>(kDefaultMessagesPageSize));
+      }
+      window.insert(window.begin(), older.begin(), older.end());
+      entries = AssembleTranscript(window, nullptr, ThreadKind::Direct);
+    }
     std::vector<MessageDisplayRow> rows;
-    for (const TranscriptRow& entry : AssembleTranscript(window, nullptr, ThreadKind::Direct)) {
+    for (const TranscriptRow& entry : entries) {
       MessageDisplayRow row;
       row.message_id = entry.message.id.c_str();
       row.display_order = entry.message.display_order;
@@ -424,8 +442,9 @@ TEST_F(ChatFirstScreenTest, ANewestPageOfMostlyReactionsReadsASecondPage) {
   EXPECT_EQ(scroller->FirstScreenResult(), FirstScreen::Ok);
 }
 
-TEST_F(ChatFirstScreenTest, ThreePagesOfAnnotationsStopTheCount) {
+TEST_F(ChatFirstScreenTest, ThreePagesOfHiddenRowsKeepTheOldWindow) {
   SetVisibleHeight(600.f); // client height 600
+  // The newest 300 rows (101..400) are edits, which never show; messages 1..50 are older still.
   AddTexts("dm", 1, 50);
   for (int64_t order = 51; order <= 400; ++order) {
     store.threads["dm"].push_back(Annotation("dm", order, "m1", kAnnotationTypeEdit));
@@ -433,8 +452,39 @@ TEST_F(ChatFirstScreenTest, ThreePagesOfAnnotationsStopTheCount) {
   Sync("dm", kDirect);
   EXPECT_EQ(store.page_reads, 3) << "no fourth page";
   ASSERT_FALSE(store.row_bounds.empty());
-  EXPECT_EQ(store.row_bounds.back(), std::optional<int64_t>(101)) << "the oldest row read is the bound";
-  EXPECT_EQ(scroller->FirstScreenResult(), FirstScreen::Ok);
+  EXPECT_FALSE(store.row_bounds.back().has_value()) << "no bound: the old path";
+  EXPECT_EQ(scroller->FirstScreenResult(), FirstScreen::Short);
+  EXPECT_EQ(state.messages.size(), 50u) << "not blank: the old path goes back to the messages";
+  EXPECT_EQ(BackId(), "m50");
+  // Decided: the next sync does not read the first screen again.
+  const int page_reads = store.page_reads;
+  Frames(10);
+  Sync("dm", kDirect);
+  EXPECT_EQ(store.page_reads, page_reads);
+}
+
+TEST_F(ChatFirstScreenTest, ThreePagesWithOnly10MessagesKeepTheOldPage) {
+  SetVisibleHeight(600.f); // client height 600
+  // 1..200 messages; the newest 300 rows (201..500) hold 10 messages (every 30th) among edits.
+  AddTexts("dm", 1, 200);
+  for (int64_t order = 201; order <= 500; ++order) {
+    store.threads["dm"].push_back(order % 30 == 0 ? Text("dm", order) : Annotation("dm", order, "m1", kAnnotationTypeEdit));
+  }
+  Sync("dm", kDirect);
+  EXPECT_EQ(store.page_reads, 3);
+  EXPECT_FALSE(store.row_bounds.back().has_value()) << "no bound";
+  EXPECT_EQ(scroller->FirstScreenResult(), FirstScreen::Short);
+  std::vector<std::string> shown;
+  for (const MessageDisplayRow& row : state.messages) {
+    shown.emplace_back(row.message_id.c_str());
+  }
+  std::vector<std::string> old_page;
+  for (const MessageDisplayRow& row : store.Rows("dm", std::nullopt, std::nullopt)) {
+    old_page.emplace_back(row.message_id.c_str());
+  }
+  EXPECT_EQ(shown, old_page) << "the window the change found";
+  EXPECT_EQ(shown, (std::vector<std::string>{"m420", "m450", "m480"}));
+  EXPECT_TRUE(scroller->HasMoreLocalHistory());
 }
 
 TEST_F(ChatFirstScreenTest, AFailedReadSetsNoBoundAndTheNextSyncDoes) {

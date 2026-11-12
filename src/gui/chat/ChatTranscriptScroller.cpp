@@ -643,8 +643,9 @@ ChatTranscriptScroller::FirstScreen ChatTranscriptScroller::FirstScreenBound(con
     }
     before = rows->front().display_order;
   }
-  oldest = before; // three pages short of `shown`: from the oldest row read (the rest come a page at a time)
-  return FirstScreen::Ok;
+  // Three pages short of `shown`: nearly all of it is rows that do not show. A bound at the oldest row read could leave
+  // the screen blank with nothing to page from; the old first page (which reads on until something shows) is kept.
+  return FirstScreen::Short;
 }
 
 void ChatTranscriptScroller::EndDisplaySync(bool thread_changed, const std::string& prev_tail_id, size_t prev_count) {

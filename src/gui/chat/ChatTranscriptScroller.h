@@ -104,7 +104,7 @@ public:
 
   /**
    * The open chat's first screen (BeginDisplaySync): Ok — the window starts at its first_screen_messages-th newest shown
-   * message; Short — the chat has fewer, all shown; Miss — the store was not read (yet), the whole first page shown.
+   * message; Short — the chat has fewer (or its newest three pages do), the old first page shown; Miss — the store was not read (yet), the whole first page shown.
    */
   enum class FirstScreen { Ok, Short, Miss };
   FirstScreen FirstScreenResult() const { return first_screen_; }
@@ -161,7 +161,7 @@ private:
   bool MaybeFillScreen(float client_height, float scroll_height, float max_top);
   /**
    * The first screen's oldest row: `shown` messages back from the newest, counting the rows that show on their own (not
-   * the annotations), over at most three pages; set in `oldest` for Ok.
+   * the annotations), over at most three pages; set in `oldest` for Ok (fewer in those pages: Short, no bound).
    */
   FirstScreen FirstScreenBound(const std::string& thread_id, size_t shown, std::optional<int64_t>& oldest) const;
   /** A pending JumpToMessage: scroll its row into view until the layout settles. True while it runs. */
