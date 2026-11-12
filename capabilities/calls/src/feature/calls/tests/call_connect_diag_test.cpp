@@ -15,10 +15,10 @@ const char* kCall = "call:ddc19c94-a3a1-4f57-b5e6-a22c198cb406"; // the failed c
 std::vector<std::string> IphoneAdvertised() {
   // One private v4 (carrier NAT range) and fifteen global v6, as the iPhone advertised on cellular.
   std::vector<std::string> mas = {
-      "/ip4/10.0.0.7/udp/49733/adp/1.0.0/p2p/QmQ8NYJNCrpGNdzsafFpowL7Z5JzW1dSZzTuJfKP5piwVF"};
+      "/ip4/10.0.0.7/udp/49733/adp/2/p2p/QmQ8NYJNCrpGNdzsafFpowL7Z5JzW1dSZzTuJfKP5piwVF"};
   for (int i = 1; i <= 15; ++i) {
     mas.push_back("/ip6/2001:db8::" + std::to_string(i) +
-                  "/udp/49733/adp/1.0.0/p2p/QmQ8NYJNCrpGNdzsafFpowL7Z5JzW1dSZzTuJfKP5piwVF");
+                  "/udp/49733/adp/2/p2p/QmQ8NYJNCrpGNdzsafFpowL7Z5JzW1dSZzTuJfKP5piwVF");
   }
   return mas;
 }
@@ -27,8 +27,8 @@ TEST(CallConnectDiagTest, CountsAddressesByFamilyAndClass) {
   const AddrCounts phone = CountAddrs(IphoneAdvertised());
   EXPECT_EQ(phone, (AddrCounts{1, 0, 15, 0}));
   // Android on the home Wi-Fi: a private v4 and link-local v6 only — no global address.
-  const AddrCounts android = CountAddrs({"/ip4/192.168.0.105/udp/48569/adp/1.0.0", "/ip6/fe80::1/udp/48569/adp/1.0.0",
-                                         "/ip6/fd00::2/udp/48569/adp/1.0.0", "/ip4/203.0.113.9/udp/1/adp/1.0.0",
+  const AddrCounts android = CountAddrs({"/ip4/192.168.0.105/udp/48569/adp/2", "/ip6/fe80::1/udp/48569/adp/2",
+                                         "/ip6/fd00::2/udp/48569/adp/2", "/ip4/203.0.113.9/udp/1/adp/2",
                                          "/dns4/relay.example/udp/443"});
   EXPECT_EQ(android, (AddrCounts{1, 1, 0, 2}));
   EXPECT_EQ(CountAddrs({}), AddrCounts{});
@@ -54,7 +54,7 @@ TEST(CallConnectDiagTest, SignalLineCarriesThePeersAddressCountsAndTheWait) {
             "event=call.signal call=ddc19c94 phase=invite_in age_ms=0 implicit=0 v4_private=1 v4_public=0 v6_global=15 "
             "v6_other=0");
   EXPECT_EQ(
-      CallSignalLine("accept_in", kCall, {"/ip4/192.168.0.105/udp/48569/adp/1.0.0"}, 6200, false).str(),
+      CallSignalLine("accept_in", kCall, {"/ip4/192.168.0.105/udp/48569/adp/2"}, 6200, false).str(),
       "event=call.signal call=ddc19c94 phase=accept_in age_ms=6200 implicit=0 v4_private=1 v4_public=0 v6_global=0 "
       "v6_other=0");
   EXPECT_NE(CallSignalLine("accept_in", kCall, {}, -5, true).str().find("age_ms=0 implicit=1"), std::string::npos);

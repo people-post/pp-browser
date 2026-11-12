@@ -4127,7 +4127,7 @@ def seed_multiaddr(status_url, ip):
     import urllib.request
     with urllib.request.urlopen(status_url + "/status", timeout=5) as r:
         peer = json.load(r)["peer_id"]
-    return "/ip4/%s/udp/18517/adp/1.0.0/p2p/%s" % (ip, peer)
+    return "/ip4/%s/udp/18517/adp/2/p2p/%s" % (ip, peer)
 
 
 def run_scenario(args, name, fn):

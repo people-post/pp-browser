@@ -84,7 +84,7 @@ TEST(MeshHopPolicyTest, CircuitOrdersContactsDirectoryThenSeeds) {
   auto contacts = CollectContactHopCandidates({MakeContact("12D3KooWFriend")});
   mesh::MeshDirectoryNode dir;
   dir.peer_id = "12D3KooWNode";
-  dir.multiaddrs = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/12D3KooWNode"};
+  dir.multiaddrs = {"/ip4/9.9.9.9/udp/443/adp/2/p2p/12D3KooWNode"};
   dir.media_relay = true;
   auto directory = CollectDirectoryHopCandidates({dir});
   auto seeds =
@@ -100,7 +100,7 @@ TEST(MeshHopPolicyTest, CircuitOrdersContactsDirectoryThenSeeds) {
 TEST(MeshHopPolicyTest, BuildCircuitHopListSkipsSeedsWhenRequested) {
   mesh::MeshDirectoryNode dir;
   dir.peer_id = "12D3KooWNode";
-  dir.multiaddrs = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/12D3KooWNode"};
+  dir.multiaddrs = {"/ip4/9.9.9.9/udp/443/adp/2/p2p/12D3KooWNode"};
   auto hops = BuildCircuitHopList(
       {}, {dir}, {}, {"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"}, true, false);
   ASSERT_EQ(hops.size(), 1u);
@@ -189,8 +189,8 @@ TEST(MeshHopPolicyTest, ExcludeSelfHopDropsLocalPeerId) {
 TEST(MeshHopPolicyTest, DirectoryHopPrefersGlobalIpv6Multiaddr) {
   mesh::MeshDirectoryNode node;
   node.peer_id = "12D3KooWDir";
-  node.multiaddrs = {"/ip4/10.0.0.9/udp/443/adp/1.0.0/p2p/12D3KooWDir",
-                     "/ip6/2001:db8::5/udp/443/adp/1.0.0/p2p/12D3KooWDir"};
+  node.multiaddrs = {"/ip4/10.0.0.9/udp/443/adp/2/p2p/12D3KooWDir",
+                     "/ip6/2001:db8::5/udp/443/adp/2/p2p/12D3KooWDir"};
   auto hops = CollectDirectoryHopCandidates({node});
   ASSERT_EQ(hops.size(), 1u);
   EXPECT_EQ(hops[0].multiaddr.rfind("/ip6/", 0), 0u);
@@ -199,7 +199,7 @@ TEST(MeshHopPolicyTest, DirectoryHopPrefersGlobalIpv6Multiaddr) {
 TEST(MeshHopPolicyTest, DhtHopCandidatesUseDhtDiscoveredAffinity) {
   mesh::MeshDirectoryNode node;
   node.peer_id = "12D3KooWDht";
-  node.multiaddrs = {"/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/12D3KooWDht"};
+  node.multiaddrs = {"/ip4/8.8.8.8/udp/443/adp/2/p2p/12D3KooWDht"};
   node.media_relay = true;
   auto dht = CollectDhtHopCandidates({node});
   ASSERT_EQ(dht.size(), 1u);
@@ -210,10 +210,10 @@ TEST(MeshHopPolicyTest, DhtHopCandidatesUseDhtDiscoveredAffinity) {
 TEST(MeshHopPolicyTest, CircuitOrdersDirectoryBeforeDhtBeforeSeed) {
   mesh::MeshDirectoryNode dir;
   dir.peer_id = "12D3KooWDir";
-  dir.multiaddrs = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/12D3KooWDir"};
+  dir.multiaddrs = {"/ip4/9.9.9.9/udp/443/adp/2/p2p/12D3KooWDir"};
   mesh::MeshDirectoryNode dht_node;
   dht_node.peer_id = "12D3KooWDht";
-  dht_node.multiaddrs = {"/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/12D3KooWDht"};
+  dht_node.multiaddrs = {"/ip4/8.8.8.8/udp/443/adp/2/p2p/12D3KooWDht"};
   auto hops = BuildCircuitHopList({}, {dir}, {dht_node},
                                   {"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"},
                                   false, true);
@@ -226,10 +226,10 @@ TEST(MeshHopPolicyTest, CircuitOrdersDirectoryBeforeDhtBeforeSeed) {
 TEST(MeshHopPolicyTest, CollectLedgerGatewayFiltersCapability) {
   mesh::MeshDirectoryNode plain;
   plain.peer_id = "12D3KooWPlain";
-  plain.multiaddrs = {"/ip4/1.1.1.1/udp/443/adp/1.0.0/p2p/12D3KooWPlain"};
+  plain.multiaddrs = {"/ip4/1.1.1.1/udp/443/adp/2/p2p/12D3KooWPlain"};
   mesh::MeshDirectoryNode gateway;
   gateway.peer_id = "12D3KooWGw";
-  gateway.multiaddrs = {"/ip4/2.2.2.2/udp/443/adp/1.0.0/p2p/12D3KooWGw"};
+  gateway.multiaddrs = {"/ip4/2.2.2.2/udp/443/adp/2/p2p/12D3KooWGw"};
   gateway.ledger_gateway = true;
   auto hops = CollectLedgerGatewayHopCandidates({plain, gateway});
   ASSERT_EQ(hops.size(), 1u);
@@ -244,7 +244,7 @@ TEST(MeshHopPolicyTest, TrustedRelaysAreOrgSeedsAndFriendlyContacts) {
   Contact friendly = MakeContact("12D3KooWFriend");
   friendly.trust = TrustLevel::Friendly;
   const Contact plain = MakeContact("12D3KooWPlain");
-  const auto trusted = TrustedRelayPeerIds({friendly, plain}, {"/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/" + seed});
+  const auto trusted = TrustedRelayPeerIds({friendly, plain}, {"/ip4/3.208.41.58/udp/443/adp/2/p2p/" + seed});
   EXPECT_TRUE(trusted.contains(seed));
   EXPECT_TRUE(trusted.contains("12D3KooWFriend"));
   EXPECT_FALSE(trusted.contains("12D3KooWPlain"));
@@ -266,13 +266,13 @@ TEST(MeshHopPolicyTest, TrustedRelaysAreOrgSeedsAndFriendlyContacts) {
 TEST(MeshHopPolicyTest, DirectoryNodesKeepOnlyAddressesWorthDialling) {
   mesh::MeshDirectoryNode relay;
   relay.peer_id = "12D3KooWRelay";
-  relay.multiaddrs = {"/ip4/172.17.0.2/udp/443/adp/1.0.0/p2p/12D3KooWRelay",
-                      "/ip6/fd00::2/udp/443/adp/1.0.0/p2p/12D3KooWRelay",
-                      "/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/12D3KooWRelay",
-                      "/dns4/relay.example/udp/443/adp/1.0.0/p2p/12D3KooWRelay"};
+  relay.multiaddrs = {"/ip4/172.17.0.2/udp/443/adp/2/p2p/12D3KooWRelay",
+                      "/ip6/fd00::2/udp/443/adp/2/p2p/12D3KooWRelay",
+                      "/ip4/54.198.185.139/udp/443/adp/2/p2p/12D3KooWRelay",
+                      "/dns4/relay.example/udp/443/adp/2/p2p/12D3KooWRelay"};
   mesh::MeshDirectoryNode lan;
   lan.peer_id = "12D3KooWLan";
-  lan.multiaddrs = {"/ip4/192.168.1.5/udp/443/adp/1.0.0/p2p/12D3KooWLan"};
+  lan.multiaddrs = {"/ip4/192.168.1.5/udp/443/adp/2/p2p/12D3KooWLan"};
   const auto nodes = DirectoryNodesForDial({relay, lan});
   ASSERT_EQ(nodes.size(), 2u);
   EXPECT_EQ(nodes[0].multiaddrs, (std::vector<std::string>{relay.multiaddrs[2], relay.multiaddrs[3]}));
@@ -285,14 +285,14 @@ TEST(MeshHopPolicyTest, OnlyCircuitRelaysAreRendezvousCandidates) {
   const std::string seed = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
   mesh::MeshDirectoryNode relay;
   relay.peer_id = "12D3KooWRelay";
-  relay.multiaddrs = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/12D3KooWRelay"};
+  relay.multiaddrs = {"/ip4/9.9.9.9/udp/443/adp/2/p2p/12D3KooWRelay"};
   relay.circuit_relay = true;
   mesh::MeshDirectoryNode dht_only;
   dht_only.peer_id = "12D3KooWStranger";
-  dht_only.multiaddrs = {"/ip6/2001:db8::1/udp/443/adp/1.0.0/p2p/12D3KooWStranger"};
+  dht_only.multiaddrs = {"/ip6/2001:db8::1/udp/443/adp/2/p2p/12D3KooWStranger"};
   mesh::MeshDirectoryNode friend_node = relay;
   friend_node.peer_id = "12D3KooWFriendNode";
-  const std::vector<std::string> seeds = {"/ip4/1.2.3.4/udp/443/adp/1.0.0/p2p/" + seed};
+  const std::vector<std::string> seeds = {"/ip4/1.2.3.4/udp/443/adp/2/p2p/" + seed};
   const auto hops = BuildCircuitHopList({MakeContact("12D3KooWPhone"), MakeContact("12D3KooWFriendNode")}, {relay},
                                         {dht_only, friend_node}, seeds, true, true);
   const auto kept = KeepCircuitRelays(hops, {relay}, {dht_only, friend_node}, seeds);

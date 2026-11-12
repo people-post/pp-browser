@@ -62,7 +62,7 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   pbr::AppConfig config;
   config.mesh.node_enabled = false;
   config.mesh.bootstrap_peers = {
-      "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
+      "/ip4/3.208.41.58/udp/443/adp/2/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
   config.mesh.prefer_contacts_for_routing = false;
   config.mesh.direct_connections = pp::mesh::DirectAudience::Friendly;
   config.mesh.trusted_relays_only = true;

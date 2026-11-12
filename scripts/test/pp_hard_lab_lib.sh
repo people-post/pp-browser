@@ -63,7 +63,7 @@ assert p, "missing peer_id"; print(p)'
 pp_hard_hop_ma_for_ip() {
   local ip="$1"
   local peer="$2"
-  printf '/ip4/%s/udp/18517/adp/1.0.0/p2p/%s\n' "${ip}" "${peer}"
+  printf '/ip4/%s/udp/18517/adp/2/p2p/%s\n' "${ip}" "${peer}"
 }
 
 pp_hard_exec() {

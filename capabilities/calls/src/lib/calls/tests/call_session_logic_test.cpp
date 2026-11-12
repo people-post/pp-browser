@@ -332,14 +332,14 @@ TEST(CallControlCodecTest, InvitePlannedHopRoundTrip) {
   invite.call_id = "call:group";
   invite.inviter_identity = "account:a";
   invite.invitee_identity = "account:b";
-  invite.planned_hop = CallPlannedHop{"12D3KooWHop", "/ip4/198.18.117.2/udp/443/adp/1.0.0/p2p/12D3KooWHop"};
+  invite.planned_hop = CallPlannedHop{"12D3KooWHop", "/ip4/198.18.117.2/udp/443/adp/2/p2p/12D3KooWHop"};
   auto encoded = CallControlCodec::EncodeInvite(invite);
   ASSERT_TRUE(encoded);
   auto decoded = CallControlCodec::DecodeInvite(*encoded);
   ASSERT_TRUE(decoded);
   ASSERT_TRUE(decoded->planned_hop);
   EXPECT_EQ(decoded->planned_hop->peer_id, "12D3KooWHop");
-  EXPECT_EQ(decoded->planned_hop->multiaddr, "/ip4/198.18.117.2/udp/443/adp/1.0.0/p2p/12D3KooWHop");
+  EXPECT_EQ(decoded->planned_hop->multiaddr, "/ip4/198.18.117.2/udp/443/adp/2/p2p/12D3KooWHop");
   EXPECT_FALSE(decoded->sfu_hint);
 
   invite.planned_hop.reset();
@@ -439,7 +439,7 @@ TEST(CallControlTypeTest, PunchWireRoundTrip) {
   detail.epoch_id = "ep-1";
   detail.window_ms = 1500;
   detail.peer_id = "QmPunchPeer";
-  detail.addrs = {"/ip4/1.2.3.4/udp/1/adp/1.0.0/p2p/QmPunchPeer"};
+  detail.addrs = {"/ip4/1.2.3.4/udp/1/adp/2/p2p/QmPunchPeer"};
   auto encoded = CallControlCodec::EncodePunch(detail);
   ASSERT_TRUE(static_cast<bool>(encoded));
   auto decoded = CallControlCodec::DecodePunch(*encoded);

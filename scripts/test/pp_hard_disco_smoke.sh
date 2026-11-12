@@ -71,7 +71,7 @@ run_stale_addr() {
   local target_peer
   target_peer="$(head -n1 "${PP_HARD_SHARE_DIR}/${ready_name}" | tr -d '\n')"
   [[ -n "${target_peer}" ]] || pp_hard_die "empty peer id in ready-file"
-  local stale_ma="/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/${target_peer}"
+  local stale_ma="/ip4/10.255.255.1/udp/9/adp/2/p2p/${target_peer}"
   echo "stale_ma=${stale_ma}"
 
   pp_hard_exec "${PP_HARD_PEER_A}" /probes/${PROBE_BIN_NAME} --mode direct-expect-fail \

@@ -323,7 +323,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedHelloAndEncryptedAudioRoundT
 // arrives, so the accepted carrier is not aliased under it. B's call leg opens on that carrier
 // instead of waiting on the dead dial until the call times out.
 TEST_F(AmpCircuitCallMediaComposeTest, LegOpensOnTheCarrierWhileADeadDialHoldsTheKey) {
-  const std::string dead = "/ip4/192.0.2.1/udp/1/adp/1.0.0/p2p/" + harness_->peer_id_a;
+  const std::string dead = "/ip4/192.0.2.1/udp/1/adp/2/p2p/" + harness_->peer_id_a;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_b().RegisterEndpoint(harness_->peer_id_a, dead)));
   harness_->mgr_b().EnsureAssociation(harness_->peer_id_a, [](pp::amp::PeerLinkManager::LinkRoe) {});
   harness_->PumpAll();
@@ -1812,7 +1812,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyNestDoesNotPoisonRelayBookWithP
   a_assoc.PumpUntilDone(*harness_);
   ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
 
-  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/2/p2p/" + harness_->peer_id_b;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_b, private_ma)));
   ASSERT_EQ(harness_->mgr_a().PreferredMultiaddr(harness_->peer_id_b).value_or(""), private_ma);
 
@@ -1845,7 +1845,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrefersConnectedOverStalePrivat
   a_assoc.PumpUntilDone(*harness_);
   ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
 
-  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/2/p2p/" + harness_->peer_id_b;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_r().RegisterEndpoint(harness_->peer_id_b, private_ma)));
   ASSERT_EQ(harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b).value_or(""), private_ma);
   ASSERT_GT(harness_->mgr_r().CountConnectedLinksForPeerId(harness_->peer_id_b), 0);
@@ -1868,7 +1868,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrivatePreferredFastFailsWhenNo
 
   // Do not park B. Poison hop book with a private Preferred for B.
   ASSERT_EQ(harness_->mgr_r().CountConnectedLinksForPeerId(harness_->peer_id_b), 0u);
-  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/2/p2p/" + harness_->peer_id_b;
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_r().RegisterEndpoint(harness_->peer_id_b, private_ma)));
   ASSERT_EQ(harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b).value_or(""), private_ma);
 
@@ -1948,7 +1948,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, PrivateTargetMultiaddrPoisonsRelayBook) {
   a_assoc.PumpUntilDone(*harness_);
   ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
 
-  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  const std::string private_ma = "/ip4/10.255.255.1/udp/9/adp/2/p2p/" + harness_->peer_id_b;
   ASSERT_EQ(harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b).value_or(""), harness_->ma_b);
 
   mesh::CircuitBridgeTarget target;

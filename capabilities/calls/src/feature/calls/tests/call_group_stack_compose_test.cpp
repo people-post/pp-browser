@@ -42,10 +42,10 @@ using test::StartCallNow;
 
 // Not a built-in or retired org seed (NormalizeMeshConfig would swap those for the defaults).
 constexpr char kHopPeerId[] = "12D3KooWGroupCallComposeMediaRelayHop";
-constexpr char kHopMultiaddr[] = "/ip4/1.2.3.4/udp/443/adp/1.0.0/p2p/12D3KooWGroupCallComposeMediaRelayHop";
+constexpr char kHopMultiaddr[] = "/ip4/1.2.3.4/udp/443/adp/2/p2p/12D3KooWGroupCallComposeMediaRelayHop";
 // A second reachable hop (gt3): ranks first on A after StartCall; the planned hop must still win.
 constexpr char kOtherHopPeerId[] = "12D3KooWGroupCallComposeOtherHop";
-constexpr char kOtherHopMultiaddr[] = "/ip4/1.2.3.5/udp/443/adp/1.0.0/p2p/12D3KooWGroupCallComposeOtherHop";
+constexpr char kOtherHopMultiaddr[] = "/ip4/1.2.3.5/udp/443/adp/2/p2p/12D3KooWGroupCallComposeOtherHop";
 /** Audio packets (40 ms) each side must decode from each other publisher. */
 constexpr uint64_t kMinRxFrames = 25;
 
@@ -292,7 +292,7 @@ protected:
         }
         sides_[i].dial->connected[sides_[j].local_identity] = true;
         sides_[i].dial->endpoints[sides_[j].local_identity] =
-            "/ip4/127.0.0.1/udp/" + std::to_string(47200 + j) + "/adp/1.0.0/p2p/" + MeshPeerIdOf(j);
+            "/ip4/127.0.0.1/udp/" + std::to_string(47200 + j) + "/adp/2/p2p/" + MeshPeerIdOf(j);
       }
       // A 1:1 call-media dial lands on the dialed side's inbound handler.
       sides_[i].transport->peer_inbound = [this, i](CallMediaDirectConnectParams params) {

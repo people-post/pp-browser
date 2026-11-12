@@ -27,7 +27,7 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # An unroutable test address (TEST-NET-3), as the docker labs use: replaces the built-in seeds, dials nowhere.
-LAB_BOOTSTRAP = "/ip4/203.0.113.1/udp/443/adp/1.0.0/p2p/QmW6e19wEv2FozTzQXxCee7USqQLE7HAvcF77es4brdSWd"
+LAB_BOOTSTRAP = "/ip4/203.0.113.1/udp/443/adp/2/p2p/QmW6e19wEv2FozTzQXxCee7USqQLE7HAvcF77es4brdSWd"
 NODE_CONFIG = {
     "mesh": {
         "mesh_publish": False,
