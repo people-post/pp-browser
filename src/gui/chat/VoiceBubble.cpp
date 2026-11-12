@@ -128,7 +128,7 @@ std::string AudioFileBubbleRml(const std::string& message_id, const std::string&
   if (!face.cover_path.empty()) {
     html += "<img class=\"chat-audio-cover-image\" src=\"" + StructuredTextParser::EscapeText(face.cover_path) + "\"/>";
   } else {
-    html += "<svg class=\"chat-audio-cover-note\" src=\"../icons/v2/music.svg\" width=\"24\" height=\"24\"></svg>";
+    html += kAudioCoverNoteRml;
   }
   html += "</div><div class=\"chat-audio-meta\">";
   html += "<p class=\"text chat-audio-title\">" + StructuredTextParser::EscapeText(face.title) + "</p>";

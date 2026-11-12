@@ -57,8 +57,9 @@ bool ReplacePictureClip(std::string& rml, const std::string& message_id, const s
 /** The row shows the placeholder of the picture with these bytes (hex). */
 bool RowShowsPicturePlaceholder(const MessageDisplayRow& row, const std::string& hash_hex);
 /**
- * Every chat picture in a row's RML becomes its placeholder (its <img> taken out): the lock wipes the files they
- * show, and a drawing must not ask for them again. True when something changed.
+ * Every chat picture in a row's RML becomes its placeholder (its <img> taken out), a video's poster leaves its frame
+ * empty and a sound file's cover becomes the music note: the lock wipes the files they show, and a drawing must not
+ * ask for them again. True when something changed.
  */
 bool DropPictureImages(std::string& rml);
 

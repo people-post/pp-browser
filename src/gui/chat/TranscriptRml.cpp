@@ -466,6 +466,21 @@ bool DropPictureImages(std::string& rml) {
     rml.insert(begin + kClip.size(), " chat-picture-placeholder");
     changed = true;
   }
+  // A video's poster and a sound file's cover come from the same view cache. The poster's <img> goes and its frame
+  // stays empty (VideoBodyRml's frame without a poster); the cover becomes the music note it shows without one.
+  // An attribute value never holds "/>" (EscapeText escapes '>'), so the first one after the tag closes it.
+  const auto drop_tag = [&rml, &changed](const std::string& tag, const std::string& instead) {
+    for (size_t at = rml.find(tag); at != std::string::npos; at = rml.find(tag, at + instead.size())) {
+      const size_t end = rml.find("/>", at);
+      if (end == std::string::npos) {
+        return;
+      }
+      rml.replace(at, end + 2 - at, instead);
+      changed = true;
+    }
+  };
+  drop_tag("<img class=\"chat-attachment-video-poster\"", std::string());
+  drop_tag("<img class=\"chat-audio-cover-image\"", kAudioCoverNoteRml);
   return changed;
 }
 

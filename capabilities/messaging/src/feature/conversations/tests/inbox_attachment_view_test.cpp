@@ -457,5 +457,45 @@ TEST_F(InboxPicturePreviewTest, AnInterruptedPreviewIsAskedForAgainAndNeverTurns
   EXPECT_EQ(failed_.load(), 0);
 }
 
+// No drawing may name a file that is not there (the UI library remembers a failed load for the whole run): a video's
+// poster only when its file is there; and under the lock nothing of the view cache at all, even a file the lock's
+// wipe has not reached yet (the DEK goes first, the files after).
+TEST_F(InboxPicturePreviewTest, NoFileIsNamedThatIsNotThereOrUnderTheLock) {
+  const ThreadMessage picture = Stored("m1", PngHeader(1000, 800));
+  const ThreadMessage small = Stored("m2", PngHeader(600, 400));
+  const ThreadMessage video = Stored("v3", {'v', 'i', 'd', 'e', 'o'}, "video/mp4");
+  ASSERT_TRUE(Draw(picture).picture_placeholder);
+  ASSERT_TRUE(Settled([&] { return made_.load() == 1; }));
+  ASSERT_EQ(Draw(picture).local_path, PreviewOf("m1"));
+  const std::string small_view = Draw(small).local_path;
+  ASSERT_FALSE(small_view.empty());
+
+  EXPECT_TRUE(Draw(video).poster_path.empty()) << "no poster file: no poster";
+  const auto put = [](const std::string& path, const std::vector<uint8_t>& bytes) {
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+  };
+  put(PreviewOf("v3"), PngHeader(640, 360));
+  EXPECT_EQ(Draw(video).poster_path, PreviewOf("v3")) << "its file is there";
+
+  downloads_->ClearDek();
+  // The drawing raced the wipe: the files are still there.
+  put(PreviewOf("m1"), PngHeader(640, 512));
+  put(small_view, PngHeader(600, 400));
+  put(PreviewOf("v3"), PngHeader(640, 360));
+  for (const ThreadMessage* message : {&picture, &small}) {
+    const auto locked = Draw(*message);
+    EXPECT_TRUE(locked.local_path.empty()) << message->id << ": neither its preview nor its own view";
+    EXPECT_TRUE(locked.picture_placeholder) << message->id << ": its placeholder";
+    EXPECT_GT(locked.image_width, 0);
+  }
+  EXPECT_TRUE(Draw(video).poster_path.empty());
+
+  ASSERT_TRUE(downloads_->SetDek(TestDek())); // unlocked: shown again
+  EXPECT_EQ(Draw(picture).local_path, PreviewOf("m1"));
+  EXPECT_EQ(Draw(video).poster_path, PreviewOf("v3"));
+}
+
 } // namespace
 } // namespace pbr

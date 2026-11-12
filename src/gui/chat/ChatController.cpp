@@ -5491,26 +5491,20 @@ void ChatController::OnApplicationPause() {
 void ChatController::Update() {
   PollChatShowing();
   ReleaseQueuedTextures();
-  // The vault locked: the view cache (previews, pictures) is wiped. Every chat picture becomes its placeholder first,
-  // so no drawing asks for a wiped file (the library would remember that load as failed), then their textures go:
-  // the decrypted pixels do not stay in video memory under the PIN page. Unlocked: the rows are drawn again.
+  // The vault locked: the view cache (previews, pictures, posters, covers) is wiped. Every chat picture becomes its
+  // placeholder first (a poster its empty frame, a cover the music note), so no drawing asks for a wiped file (the
+  // library would remember that load as failed), then their textures go: the decrypted pixels do not stay in video
+  // memory under the PIN page. Unlocked: the rows are drawn again.
   if (messaging_ready_ && !MessagingReady()) {
     if (!vault_locked_seen_) {
       vault_locked_seen_ = true;
-      bool dropped = false;
-      for (MessageDisplayRow& row : chat_.messages) {
-        std::string rml = row.content_rml.c_str();
-        if (DropPictureImages(rml)) {
-          row.content_rml = rml.c_str();
-          dropped = true;
-        }
-      }
-      if (dropped) {
+      ChatPictureTextures::Locked locked = picture_textures_.DropAllForLock(chat_.messages);
+      if (locked.rows_changed) {
         DirtyChatTurns();
       }
       FinishPreviewsProbe();
       preview_batcher_.Clear();
-      QueueTextureRelease(picture_textures_.UnmountAll());
+      QueueTextureRelease(std::move(locked.gone));
     }
   } else if (vault_locked_seen_ && messaging_ready_) {
     vault_locked_seen_ = false;

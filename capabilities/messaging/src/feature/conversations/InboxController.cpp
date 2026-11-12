@@ -841,6 +841,21 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
       attachment_downloads_->RequestAudioTags(message.thread_id, fields->content_hash, view.local_path);
     }
   }
+  // Locked, or locking: the DEK goes before the view cache is wiped, so this is read after every file check above. No
+  // <img> may name a file of the view cache now (the UI library remembers a failed load for the whole run): a picture
+  // is its placeholder, a video or sound file has no cover.
+  if (attachment_downloads_ && !attachment_downloads_->HasDek()) {
+    view.poster_path.clear();
+    if (IsAttachmentImageMime(fields->mime) && view.inline_image_ok &&
+        view.state == AttachmentFetchWorkflow::DownloadState::Ready) {
+      view.local_path.clear();
+      view.picture_placeholder = true;
+      if (view.image_width <= 0 || view.image_height <= 0) {
+        view.image_width = kPicturePlaceholderFallbackWidth; // its own view could not be read: the fallback box
+        view.image_height = kPicturePlaceholderFallbackHeight;
+      }
+    }
+  }
   return view;
 }
 

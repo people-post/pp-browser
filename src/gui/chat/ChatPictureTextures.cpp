@@ -1,5 +1,7 @@
 #include "gui/chat/ChatPictureTextures.h"
 
+#include "gui/chat/TranscriptRml.h"
+
 #include <ui/base/SystemInterface.h>
 
 #include <string_view>
@@ -8,27 +10,31 @@
 namespace pbr {
 
 std::vector<std::string> PictureSources(const std::vector<MessageDisplayRow>& rows) {
-  static constexpr std::string_view kTag = "<img class=\"chat-attachment-image\" src=\"";
+  static constexpr std::string_view kTags[] = {"<img class=\"chat-attachment-image\" src=\"",
+                                               "<img class=\"chat-attachment-video-poster\" src=\"",
+                                               "<img class=\"chat-audio-cover-image\" src=\""};
   static constexpr std::pair<std::string_view, char> kEntities[] = {
       {"&lt;", '<'}, {"&gt;", '>'}, {"&quot;", '"'}, {"&amp;", '&'}}; // StructuredTextParser::EscapeText's
   std::vector<std::string> out;
   for (const MessageDisplayRow& row : rows) {
     const std::string_view rml(row.content_rml.data(), row.content_rml.size());
-    size_t at = 0;
-    while ((at = rml.find(kTag, at)) != std::string_view::npos) {
-      at += kTag.size();
-      const size_t end = rml.find('"', at);
-      if (end == std::string_view::npos) {
-        break;
-      }
-      std::string src(rml.substr(at, end - at));
-      for (const auto& [from, to] : kEntities) {
-        for (size_t pos = 0; (pos = src.find(from, pos)) != std::string::npos; ++pos) {
-          src.replace(pos, from.size(), 1, to);
+    for (const std::string_view tag : kTags) {
+      size_t at = 0;
+      while ((at = rml.find(tag, at)) != std::string_view::npos) {
+        at += tag.size();
+        const size_t end = rml.find('"', at);
+        if (end == std::string_view::npos) {
+          break;
         }
+        std::string src(rml.substr(at, end - at));
+        for (const auto& [from, to] : kEntities) {
+          for (size_t pos = 0; (pos = src.find(from, pos)) != std::string::npos; ++pos) {
+            src.replace(pos, from.size(), 1, to);
+          }
+        }
+        out.push_back(std::move(src));
+        at = end;
       }
-      out.push_back(std::move(src));
-      at = end;
     }
   }
   return out;
@@ -69,6 +75,19 @@ std::vector<std::string> ChatPictureTextures::UnmountAll() {
   }
   counts_.clear();
   return gone;
+}
+
+ChatPictureTextures::Locked ChatPictureTextures::DropAllForLock(std::vector<MessageDisplayRow>& rows) {
+  Locked out;
+  for (MessageDisplayRow& row : rows) {
+    std::string rml = row.content_rml.c_str();
+    if (DropPictureImages(rml)) {
+      row.content_rml = rml.c_str();
+      out.rows_changed = true;
+    }
+  }
+  out.gone = UnmountAll();
+  return out;
 }
 
 size_t ChatPictureTextures::Count(const std::string& src) const {

@@ -148,6 +148,38 @@ TEST(TranscriptPicturePreviewTest, TheLockTurnsEveryChatPictureIntoItsPlaceholde
   EXPECT_FALSE(DropPictureImages(text));
 }
 
+// A video or sound file whose cover is not there (AttachmentView gives no path for a missing file or under the lock)
+// draws no <img>: the video's frame without a poster, the music note.
+TEST(TranscriptPicturePreviewTest, NoCoverPathNoImg) {
+  for (const auto& [mime, name] : {std::pair<std::string, std::string>{"video/mp4", "a.mp4"}, {"audio/mpeg", "a.mp3"}}) {
+    TranscriptRow row = PictureRow("m1");
+    auto fields = ChatPayloadCodec::DecodeAttachmentJson(row.message.payload_json);
+    ASSERT_TRUE(fields);
+    fields->mime = mime;
+    fields->filename = name;
+    row.message.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(*fields);
+    TranscriptFacts facts;
+    facts.audio_files_play = true;
+    facts.attachment = [](const ThreadMessage&) {
+      TranscriptAttachmentView view = ReadyView();
+      view.local_path = "/views/aa.bin";
+      return view; // no poster_path
+    };
+    const auto rows = RenderTranscript({row}, facts);
+    ASSERT_EQ(rows.size(), 1u);
+    const std::string rml = rows[0].content_rml.c_str();
+    EXPECT_EQ(rml.find("<img"), std::string::npos) << mime << ": " << rml;
+  }
+}
+
+// A placeholder (no preview file, or locked) draws no <img> either.
+TEST(TranscriptPicturePreviewTest, APlaceholderNamesNoFile) {
+  TranscriptAttachmentView view = PlaceholderView();
+  const std::string rml = RenderOne(view);
+  EXPECT_EQ(rml.find("<img"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("poster"), std::string::npos) << rml;
+}
+
 TEST(TranscriptPicturePreviewTest, RedrawsAreAtMostOneEvery250Ms) {
   using Clock = PreviewRedrawBatcher::Clock;
   PreviewRedrawBatcher batcher;

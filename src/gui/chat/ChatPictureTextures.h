@@ -11,7 +11,8 @@ namespace pbr {
 
 /**
  * The `src` of every chat picture (`<img class="chat-attachment-image">`: a picture's preview or the picture itself,
- * the thumbnail of a picture being sent) in the rows, unescaped, in row order; a file on two rows is there twice.
+ * the thumbnail of a picture being sent), video poster (`chat-attachment-video-poster`) and sound file cover
+ * (`chat-audio-cover-image`) in the rows, unescaped, row by row; a file on two rows is there twice.
  */
 std::vector<std::string> PictureSources(const std::vector<MessageDisplayRow>& rows);
 
@@ -34,6 +35,16 @@ public:
   std::vector<std::string> Mount(const std::vector<MessageDisplayRow>& rows);
   /** Nothing of the chat is drawn any more (left, locked, torn down): every file counted. */
   std::vector<std::string> UnmountAll();
+  struct Locked {
+    bool rows_changed = false;     // the rows must be drawn again before the files' textures go
+    std::vector<std::string> gone; // every file counted (UnmountAll)
+  };
+  /**
+   * The vault locked (its view cache is wiped): every picture, poster and cover in `rows` is taken out of its row
+   * first (DropPictureImages), then every file counted is handed back. In that order: a texture released while an
+   * <img> still names its wiped file is loaded again from nothing, and the UI library remembers the failure.
+   */
+  Locked DropAllForLock(std::vector<MessageDisplayRow>& rows);
   /** How many rows show `src` now (0: none). */
   size_t Count(const std::string& src) const;
 
