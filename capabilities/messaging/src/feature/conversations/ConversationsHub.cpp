@@ -704,6 +704,7 @@ void ConversationsHub::DiscardMessagingBringUp() {
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
     inbox_->SetAttachmentDownloads(nullptr);
+    inbox_->SetCancelPendingSend(nullptr);
   }
   system_controls_.Unbind(kGroupRosterSyncFamily);
   system_controls_.Unbind(kCopyAskFamily);
@@ -960,12 +961,6 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   peer_labels_ = std::make_unique<PeerDisplayResolver>(
       *contacts_, PeerDisplaySourcesFrom(*directory_shadows_, group_roster_.get()));
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());
-  // A message deleted here takes an unsent edit of ours with it (the orchestrator is rebuilt on each unlock).
-  inbox_->SetCancelPendingSend([this](const std::string& message_id) {
-    if (mesh_messaging_) {
-      mesh_messaging_->CancelPendingSend(message_id);
-    }
-  });
   inbox_->SetSystemControls(&system_controls_);
   inbox_->SetThreadMentions(thread_mentions_.get());
   directory_shadows_->SetOnUpdated([this]() {
@@ -1153,6 +1148,12 @@ void ConversationsHub::BuildMessagingObjects() {
                                                                 *group_invite_gate_, *mesh_messaging_, *account_keys_);
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
+  // A message deleted here takes an unsent edit of ours with it (wired with each orchestrator, cleared with it).
+  inbox_->SetCancelPendingSend([this](const std::string& message_id) {
+    if (mesh_messaging_) {
+      mesh_messaging_->CancelPendingSend(message_id);
+    }
+  });
   BindGroupRosterSyncFamily();
   BindCopyAskFamily();
   BindCardAskFamily();
@@ -3362,6 +3363,7 @@ void ConversationsHub::Shutdown() {
   }
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
+    inbox_->SetCancelPendingSend(nullptr);
   }
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnTeardownStarting();
