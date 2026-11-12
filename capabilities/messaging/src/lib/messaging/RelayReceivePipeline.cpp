@@ -2362,7 +2362,7 @@ void RelayReceivePipeline::ApplyInboundRetract(const ThreadMessage& persisted, R
     // History placeholder for a message its sender deleted (ChatHistoryResponder): it fills the seq, and
     // shows as "This message was deleted".
     (void)store_.DeleteMessageContent(persisted.thread_id, persisted.id);
-    (void)BlankEditRowsFor(store_, persisted.thread_id, persisted.id);
+    (void)BlankEditRowsFor(store_, persisted.thread_id, persisted.id, {}, cancel_pending_send_);
     return;
   }
   auto found = store_.GetMessage(persisted.thread_id, *persisted.target_message_id);
@@ -2380,7 +2380,8 @@ void RelayReceivePipeline::ApplyInboundRetract(const ThreadMessage& persisted, R
   }
   auto deleted = store_.DeleteMessageContent(persisted.thread_id, target.id);
   if (deleted && *deleted) {
-    (void)BlankEditRowsFor(store_, persisted.thread_id, target.id); // no edited words outlive the message
+    // No edited words outlive the message; an edit of ours still queued is not sent (our delete, from another device).
+    (void)BlankEditRowsFor(store_, persisted.thread_id, target.id, {}, cancel_pending_send_);
   }
   if (deleted && *deleted && on_message_retracted_) {
     on_message_retracted_(persisted.thread_id, target);
@@ -2424,7 +2425,8 @@ void RelayReceivePipeline::PrepareEdits(ThreadMessage& persisted, RelayReceiveOu
   if (newest) {
     persisted = WithEdit(std::move(persisted), *newest);
   }
-  (void)BlankEditRowsFor(store_, persisted.thread_id, persisted.id, newest ? newest->id : std::string());
+  (void)BlankEditRowsFor(store_, persisted.thread_id, persisted.id, newest ? newest->id : std::string(),
+                         cancel_pending_send_);
 }
 
 void RelayReceivePipeline::ApplyInboundEdit(const ThreadMessage& persisted, RelayReceiveOutcome& outcome) {
@@ -2453,7 +2455,7 @@ void RelayReceivePipeline::ApplyInboundEdit(const ThreadMessage& persisted, Rela
     log().warning << "edit not applied: the message row was not updated";
     return;
   }
-  (void)BlankEditRowsFor(store_, persisted.thread_id, target.id, persisted.id);
+  (void)BlankEditRowsFor(store_, persisted.thread_id, target.id, persisted.id, cancel_pending_send_);
   if (on_message_edited_) {
     on_message_edited_(persisted.thread_id, target, edited);
   }

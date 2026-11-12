@@ -123,11 +123,18 @@ std::optional<ThreadMessage> NewestPassingEdit(const std::vector<ThreadMessage>&
                                                const ThreadMessage& target);
 
 /**
+ * Drops the queued send of one of our edits that will not go out now — its message deleted, or a newer edit made
+ * (MeshDeliveryOrchestrator::CancelPendingSend; DeliveryOutbox::Cancel: its queued sends, a group member's copies too).
+ */
+using CancelEditSendFn = std::function<void(const std::string& edit_id)>;
+
+/**
  * Blanks every edit row aimed at `target_id` that still has text, except `keep_id` (the one applied, "" for none — the
- * message was deleted). Returns how many rows were blanked.
+ * message was deleted). An edit of ours among them is not sent any more: `cancel_send` drops its queued send first (so
+ * words the user replaced or deleted never go out). Returns how many rows were blanked.
  */
 size_t BlankEditRowsFor(IThreadTranscript& store, const std::string& thread_id, const std::string& target_id,
-                        const std::string& keep_id = {});
+                        const std::string& keep_id = {}, const CancelEditSendFn& cancel_send = {});
 
 /**
  * How our edit of `target_message_id` goes out: an `edit` annotation carrying `text`, with the id and send time fixed
@@ -139,9 +146,11 @@ SendRelayOptions EditSendOptions(const std::string& target_message_id, const std
 
 /**
  * Our edit `edit_row` (as stored by the send) applied to our message `target` here at once: the row rewritten
- * (WithEdit) and every other edit row of it blanked. Returns the rewritten row.
+ * (WithEdit) and every other edit row of it blanked; an earlier edit of ours not sent yet is cancelled
+ * (`cancel_send`). Returns the rewritten row.
  */
-Roe<ThreadMessage> ApplyOwnEdit(IThreadTranscript& store, const ThreadMessage& target, const ThreadMessage& edit_row);
+Roe<ThreadMessage> ApplyOwnEdit(IThreadTranscript& store, const ThreadMessage& target, const ThreadMessage& edit_row,
+                                const CancelEditSendFn& cancel_send);
 
 /**
  * One edit's send as MeshDeliveryOrchestrator::SendEdit runs it (numbered, stored, queued): the edit's row as stored, or
@@ -171,11 +180,12 @@ struct OwnEdit {
  * ConversationsHub::EditMessage's steps for our message `target` (with its `thread_id`, in a chat of `thread_kind`) to
  * `new_text`, as tapped at `tapped_at_ms`: checked — CanEditMessage at the tap, the text not empty and
  * EditFitsOnTheWire — and refused before anything is stored or sent; unchanged text sends nothing; otherwise sent as
- * `edit_id` (`send`, stamped EditSendTime) and applied here (ApplyOwnEdit).
+ * `edit_id` (`send`, stamped EditSendTime) and applied here (ApplyOwnEdit: the edit it replaces, if not sent yet, is
+ * cancelled with `cancel_send`).
  */
 Roe<OwnEdit> EditOwnMessage(IThreadStore& store, const ThreadMessage& target, ThreadKind thread_kind,
                             const std::string& new_text, int64_t tapped_at_ms, const std::string& edit_id,
-                            const SendEditFn& send);
+                            const SendEditFn& send, const CancelEditSendFn& cancel_send);
 
 /** What a resend of our edit did. */
 struct ResentEdit {
@@ -191,8 +201,8 @@ struct ResentEdit {
  * ConversationsHub::ResendEdit's steps (the red mark on our edited message `message_id`, tapped): its edit that did not
  * go out (the one it carries, `edited_by`) is sent again as `edit_id` (`send`) with the same words and the same send
  * time, applied here (the message's `edited_by` becomes the new one, every other edit row blanked), and the unsent one
- * goes (`cancel_pending` drops its queued send, then its row is removed). Refused, nothing sent, when the message is not
- * an edited text of ours or its edit is not there, blank, or already went out (Relayed).
+ * goes (ApplyOwnEdit drops its queued send with `cancel_pending`, then its row is removed). Refused, nothing sent, when
+ * the message is not an edited text of ours or its edit is not there, blank, or already went out (Relayed).
  */
 Roe<ResentEdit> ResendOwnEdit(IThreadStore& store, const std::string& thread_id, const std::string& message_id,
                               const std::string& edit_id, const SendEditFn& send,

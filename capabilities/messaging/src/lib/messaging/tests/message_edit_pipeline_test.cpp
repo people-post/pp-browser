@@ -6,6 +6,7 @@
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/ControlLaneEnvelope.h"
 #include "lib/delivery/OutboundMessage.h"
+#include "lib/delivery/ReactionTypes.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/messaging/EditMessage.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
@@ -62,6 +63,50 @@ ThreadMessage Edit(const std::string& id, const std::string& target_id, const st
   edit.payload_json = BuildEditPayloadJson(target_id, text);
   return edit;
 }
+
+/** A delete for everyone of `target_id`, sent at `at`, as SendRetract puts it on the wire. */
+ThreadMessage Retract(const std::string& id, const std::string& target_id, const int64_t at) {
+  ThreadMessage retract = Text(id, "", at);
+  retract.content_type = ChatContentType::Annotation;
+  retract.target_message_id = target_id;
+  retract.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, target_id, "");
+  return retract;
+}
+
+/**
+ * The send queue as far as these cases need it (DeliveryOutbox): offline, a send is queued by its message id; Cancel
+ * drops a message's queued sends; back online, Retry sends what is queued, in order. `sent` is what went out.
+ */
+struct FakeOutbox {
+  void Send(const std::string& message_id, const RelayEnvelope& envelope) {
+    if (online) {
+      sent.push_back(envelope);
+    } else {
+      queued.emplace_back(message_id, envelope);
+    }
+  }
+  void Cancel(const std::string& message_id) {
+    std::erase_if(queued, [&](const auto& entry) { return entry.first == message_id; });
+  }
+  void Retry() {
+    online = true;
+    for (const auto& entry : queued) {
+      sent.push_back(entry.second);
+    }
+    queued.clear();
+  }
+  std::vector<std::string> SentIds() const {
+    std::vector<std::string> ids;
+    for (const RelayEnvelope& envelope : sent) {
+      ids.push_back(envelope.message_id);
+    }
+    return ids;
+  }
+
+  bool online = false;
+  std::vector<std::pair<std::string, RelayEnvelope>> queued;
+  std::vector<RelayEnvelope> sent;
+};
 
 /** One device: its keys, stores and receive pipeline. With `linked_to`: another device of that one's account. */
 struct Device {
@@ -524,7 +569,8 @@ TEST_F(PublicEditPipelineTest, AResentEditReplacesTheUnsentOneAndThePeerEndsWith
                                   row.delivery = MessageDelivery::Failed; // as FailOutbound leaves it
                                   EXPECT_TRUE(alice_->store->UpdateMessage(row));
                                   return Roe<ThreadMessage>(Error("relay unreachable"));
-                                });
+                                },
+                                {});
     ASSERT_TRUE(first) << first.error().message;
     EXPECT_TRUE(first->stored_unsent);
     EXPECT_EQ(EditMarkOf(alice_->Row(alice_chat_.id, said.id).value()).value_or(EditMark{}).edited_by, old_id);
@@ -563,11 +609,13 @@ TEST_F(PublicEditPipelineTest, AResentEditReplacesTheUnsentOneAndThePeerEndsWith
 // An edit that already went out is not sent again.
 TEST_F(PublicEditPipelineTest, AnEditThatWentOutIsNotSentAgain) {
   const ThreadMessage said = AliceSays("see you at 8");
-  auto edited = EditOwnMessage(*alice_->store, said, ThreadKind::Direct, "see you at 9", said.timestamp + kMin,
-                               "edit-1", [&](const std::string& edit_id, const std::string& text, const int64_t at) {
-                                 EXPECT_TRUE(AliceEdits(said, edit_id, text, at));
-                                 return Roe<ThreadMessage>(alice_->Row(alice_chat_.id, edit_id).value());
-                               });
+  auto edited =
+      EditOwnMessage(*alice_->store, said, ThreadKind::Direct, "see you at 9", said.timestamp + kMin, "edit-1",
+                     [&](const std::string& edit_id, const std::string& text, const int64_t at) {
+                       EXPECT_TRUE(AliceEdits(said, edit_id, text, at));
+                       return Roe<ThreadMessage>(alice_->Row(alice_chat_.id, edit_id).value());
+                     },
+                     {});
   ASSERT_TRUE(edited) << edited.error().message;
   ThreadMessage row = alice_->Row(alice_chat_.id, "edit-1").value();
   row.delivery = MessageDelivery::Relayed; // handed to the relay
@@ -588,6 +636,144 @@ TEST_F(PublicEditPipelineTest, AnEditThatWentOutIsNotSentAgain) {
   EXPECT_FALSE(cancelled);
   EXPECT_EQ(EditMarkOf(alice_->Row(alice_chat_.id, said.id).value()).value_or(EditMark{}).edited_by, "edit-1");
   EXPECT_TRUE(alice_->Row(alice_chat_.id, "edit-1"));
+}
+
+// ---- an edit of ours that is voided before it goes out is never sent ------------------------------------------------
+
+// Alice is offline: what she sends waits in the queue (FakeOutbox) until she is back.
+class UnsentEditPipelineTest : public PublicEditPipelineTest {
+protected:
+  /** Alice edits `target` to `text` at `at` as ConversationsHub::EditMessage does: queued, applied here. */
+  void AliceEditsOffline(const ThreadMessage& target, const std::string& edit_id, const std::string& text,
+                         const int64_t at) {
+    auto edited = EditOwnMessage(
+        *alice_->store, target, ThreadKind::Direct, text, at, edit_id,
+        [&](const std::string& id, const std::string& words, const int64_t sent_at) {
+          auto envelope = AliceEdits(target, id, words, sent_at);
+          EXPECT_TRUE(envelope) << envelope.error().message;
+          outbox_.Send(id, *envelope);
+          return Roe<ThreadMessage>(alice_->Row(alice_chat_.id, id).value());
+        },
+        [&](const std::string& id) { outbox_.Cancel(id); });
+    ASSERT_TRUE(edited) << edited.error().message;
+  }
+
+  /**
+   * Alice deletes `target` for everyone as ConversationsHub::DeleteMessageForEveryone does: its own queued send
+   * cancelled, the retract queued, then deleted here (InboxController::DeleteMessageForMe: the row, its edit rows).
+   */
+  void AliceDeletesForEveryone(const ThreadMessage& target, const std::string& retract_id) {
+    outbox_.Cancel(target.id);
+    SendRelayOptions options;
+    options.content_type = ChatContentType::Annotation;
+    options.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, target.id, "");
+    options.update_preview = false;
+    options.message_id = retract_id;
+    auto retract = alice_->Send(alice_chat_, *bob_, "", options);
+    ASSERT_TRUE(retract) << retract.error().message;
+    outbox_.Send(retract_id, *retract);
+    ASSERT_TRUE(alice_->store->DeleteMessageContent(alice_chat_.id, target.id));
+    (void)BlankEditRowsFor(*alice_->store, alice_chat_.id, target.id, {},
+                           [&](const std::string& id) { outbox_.Cancel(id); });
+  }
+
+  /** Bob takes in everything that went out. */
+  void BobReceivesWhatWentOut() {
+    for (const RelayEnvelope& envelope : outbox_.sent) {
+      EXPECT_TRUE(bob_->Receive(envelope).persisted) << envelope.message_id;
+    }
+  }
+
+  FakeOutbox outbox_;
+};
+
+TEST_F(UnsentEditPipelineTest, AnEditQueuedOfflineThenDeletedForEveryoneNeverGoesOut) {
+  const ThreadMessage said = AliceSays("see you at 8");
+  AliceEditsOffline(said, "edit-1", "meet me at the secret place", said.timestamp + kMin);
+  ASSERT_EQ(outbox_.queued.size(), 1u);
+  AliceDeletesForEveryone(alice_->Row(alice_chat_.id, said.id).value(), "retract-1");
+
+  outbox_.Retry();
+  EXPECT_EQ(outbox_.SentIds(), std::vector<std::string>{"retract-1"}) << "the delete only";
+  BobReceivesWhatWentOut();
+  EXPECT_EQ(bob_->Row(BobsChat(), said.id).value().content_type, ChatContentType::Deleted);
+  EXPECT_EQ(bob_->RowsHolding(BobsChat(), "secret place"), 0u);
+  EXPECT_EQ(alice_->RowsHolding(alice_chat_.id, "secret place"), 0u);
+}
+
+TEST_F(UnsentEditPipelineTest, TwoEditsQueuedOfflineSendOnlyTheSecond) {
+  const ThreadMessage said = AliceSays("see you at 8");
+  AliceEditsOffline(said, "edit-1", "see you at 9", said.timestamp + kMin);
+  AliceEditsOffline(alice_->Row(alice_chat_.id, said.id).value(), "edit-2", "see you at 10", said.timestamp + 2 * kMin);
+
+  outbox_.Retry();
+  EXPECT_EQ(outbox_.SentIds(), std::vector<std::string>{"edit-2"});
+  BobReceivesWhatWentOut();
+  const ThreadMessage bobs = bob_->Row(BobsChat(), said.id).value();
+  EXPECT_EQ(bobs.text, "see you at 10");
+  EXPECT_EQ(bob_->RowsHolding(BobsChat(), "at 9"), 0u);
+  EXPECT_EQ(alice_->RowsHolding(alice_chat_.id, "at 9"), 0u);
+}
+
+// Sent before the delete (handed to the relay): as before, the delete follows it and nothing is sent twice.
+TEST_F(UnsentEditPipelineTest, AnEditThatWentOutBeforeTheDeleteIsFollowedByTheDeleteOnly) {
+  outbox_.online = true;
+  const ThreadMessage said = AliceSays("see you at 8");
+  AliceEditsOffline(said, "edit-1", "see you at 9", said.timestamp + kMin);
+  ThreadMessage edit_row = alice_->Row(alice_chat_.id, "edit-1").value();
+  edit_row.delivery = MessageDelivery::Relayed;
+  ASSERT_TRUE(alice_->store->UpdateMessage(edit_row));
+  AliceDeletesForEveryone(alice_->Row(alice_chat_.id, said.id).value(), "retract-1");
+
+  outbox_.Retry();
+  EXPECT_EQ(outbox_.SentIds(), (std::vector<std::string>{"edit-1", "retract-1"}));
+  BobReceivesWhatWentOut();
+  EXPECT_EQ(bob_->Row(BobsChat(), said.id).value().content_type, ChatContentType::Deleted);
+  EXPECT_EQ(bob_->RowsHolding(BobsChat(), "at 9"), 0u);
+}
+
+// Our edit on this device waits in its queue; another of our devices deletes the message, or edits it again, and its
+// sent copy arrives first: the queued edit is not sent.
+class SentCopyUnsentEditTest : public SentCopyEditPipelineTest {
+protected:
+  void SetUp() override {
+    SentCopyEditPipelineTest::SetUp();
+    phone_->pipeline->SetCancelPendingSend([this](const std::string& id) { outbox_.Cancel(id); });
+    OurMessage(chat_, "mine-1");
+    const ThreadMessage mine = phone_->Row(chat_.id, "mine-1").value();
+    auto edited = EditOwnMessage(
+        *phone_->store, mine, ThreadKind::Direct, "the secret words", sent_ + kMin, "phone-edit",
+        [&](const std::string& id, const std::string& words, const int64_t at) {
+          auto envelope = phone_->Send(chat_, *bob_, words, EditSendOptions(mine.id, words, id, at));
+          EXPECT_TRUE(envelope) << envelope.error().message;
+          outbox_.Send(id, *envelope);
+          return Roe<ThreadMessage>(phone_->Row(chat_.id, id).value());
+        },
+        [&](const std::string& id) { outbox_.Cancel(id); });
+    ASSERT_TRUE(edited) << edited.error().message;
+    ASSERT_EQ(outbox_.queued.size(), 1u);
+  }
+
+  FakeOutbox outbox_;
+};
+
+TEST_F(SentCopyUnsentEditTest, OurDeleteFromTheOtherDeviceCancelsIt) {
+  ASSERT_TRUE(
+      phone_->Receive(mac_->SentCopyTo(*phone_, Retract("mac-delete", "mine-1", sent_ + 2 * kMin), ToBob())).persisted);
+  EXPECT_EQ(phone_->Row(chat_.id, "mine-1").value().content_type, ChatContentType::Deleted);
+  outbox_.Retry();
+  EXPECT_TRUE(outbox_.sent.empty()) << "the deleted message's edit is not sent";
+  EXPECT_EQ(phone_->RowsHolding(chat_.id, "secret words"), 0u);
+}
+
+TEST_F(SentCopyUnsentEditTest, ANewerEditFromTheOtherDeviceCancelsIt) {
+  ASSERT_TRUE(
+      phone_->Receive(mac_->SentCopyTo(*phone_, Edit("mac-edit", "mine-1", "see you at 9", sent_ + 2 * kMin), ToBob()))
+          .persisted);
+  EXPECT_EQ(phone_->Row(chat_.id, "mine-1").value().text, "see you at 9");
+  outbox_.Retry();
+  EXPECT_TRUE(outbox_.sent.empty()) << "the replaced edit is not sent (the other device sends its own)";
+  EXPECT_EQ(phone_->RowsHolding(chat_.id, "secret words"), 0u);
 }
 
 } // namespace

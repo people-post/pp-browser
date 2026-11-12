@@ -216,6 +216,13 @@ public:
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
   /** The unread-mention marker (G015): a thread's rows go when it is opened or deleted, a message's when it is. */
   void SetThreadMentions(IThreadMentionsStore* mentions) { mentions_ = mentions; }
+  /**
+   * Drops a message's queued send (MeshDeliveryOrchestrator::CancelPendingSend): an edit of ours not sent yet goes
+   * nowhere once its message is deleted here (DeleteMessageForMe).
+   */
+  void SetCancelPendingSend(std::function<void(const std::string& message_id)> cancel) {
+    cancel_pending_send_ = std::move(cancel);
+  }
 
 private:
   std::string ResolveSenderLabel(const std::string& sender_contact_id) const;
@@ -245,6 +252,7 @@ private:
    */
   std::mutex thread_row_mu_;
   IThreadMentionsStore* mentions_ = nullptr;
+  std::function<void(const std::string&)> cancel_pending_send_;
   ThreadChangedCallback on_thread_changed_;
 };
 

@@ -221,7 +221,7 @@ TEST_F(OutboundMessageTest, AnEditGoesOutAsAnEditAnnotationStampedAtTheTap) {
   EXPECT_TRUE(std::any_of(queued.begin(), queued.end(), [](const auto& entry) { return entry.first == "edit-1"; }))
       << "queued until it goes out, as any message";
 
-  auto edited = ApplyOwnEdit(*alice_->store, target, row);
+  auto edited = ApplyOwnEdit(*alice_->store, target, row, {});
   ASSERT_TRUE(edited) << edited.error().message;
   const ThreadMessage ours = alice_->store->GetMessage(thread.id, target.id).value().value();
   EXPECT_EQ(ours.text, "see you at 9");
@@ -281,7 +281,7 @@ TEST_F(OutboundMessageTest, AnEditTooLongForOnePayloadChangesNothingHereAndOneTh
   };
 
   auto too_long = EditOwnMessage(*alice_->store, target, ThreadKind::Direct, std::string(fits + 1, 'a'), tapped_at,
-                                 "edit-long", send);
+                                 "edit-long", send, {});
   ASSERT_FALSE(too_long);
   EXPECT_EQ(too_long.error().message, "Edited text is empty or too long");
   EXPECT_FALSE(sent) << "nothing sent";
@@ -291,8 +291,8 @@ TEST_F(OutboundMessageTest, AnEditTooLongForOnePayloadChangesNothingHereAndOneTh
   EXPECT_EQ(kept.text, "see you at 8");
   EXPECT_FALSE(EditMarkOf(kept));
 
-  auto just_fits =
-      EditOwnMessage(*alice_->store, target, ThreadKind::Direct, std::string(fits, 'a'), tapped_at, "edit-fits", send);
+  auto just_fits = EditOwnMessage(*alice_->store, target, ThreadKind::Direct, std::string(fits, 'a'), tapped_at,
+                                  "edit-fits", send, {});
   ASSERT_TRUE(just_fits) << just_fits.error().message;
   EXPECT_FALSE(just_fits->stored_unsent);
   EXPECT_EQ(just_fits->row.text, std::string(fits, 'a'));

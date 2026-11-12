@@ -199,6 +199,8 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(
   receive_pipeline_->SetOnMessageRetracted([this](const std::string& thread_id, const ThreadMessage& original) {
     inbox_.AfterMessageDeleted(thread_id, original);
   });
+  // Our other device deleted or edited again a message whose edit is still queued here: that edit is not sent.
+  receive_pipeline_->SetCancelPendingSend([this](const std::string& message_id) { outbox_.Cancel(message_id); });
   // A peer (or another of our devices) edited a message we hold: its preview, mention marker and summary follow.
   receive_pipeline_->SetOnMessageEdited(
       [this](const std::string& thread_id, const ThreadMessage& before, const ThreadMessage& after) {

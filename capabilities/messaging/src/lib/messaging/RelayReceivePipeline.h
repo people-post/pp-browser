@@ -262,6 +262,13 @@ public:
           callback) {
     on_message_edited_ = std::move(callback);
   }
+  /**
+   * Drops a message's queued send (MeshDeliveryOrchestrator::CancelPendingSend): an edit of ours not sent yet is not
+   * sent once something received here voids it (our delete or a newer edit, from another of our devices).
+   */
+  void SetCancelPendingSend(std::function<void(const std::string& message_id)> cancel) {
+    cancel_pending_send_ = std::move(cancel);
+  }
 
   RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                       bool authorized_older_backfill = false,
@@ -296,6 +303,7 @@ private:
   void ApplyInboundEdit(const ThreadMessage& persisted, RelayReceiveOutcome& outcome);
   std::function<void(const std::string&, const ThreadMessage&)> on_message_retracted_;
   std::function<void(const std::string&, const ThreadMessage&, const ThreadMessage&)> on_message_edited_;
+  std::function<void(const std::string&)> cancel_pending_send_;
   std::function<void(const AccountCard&)> on_sender_card_;
   std::function<void(const std::string&, const std::string&, int64_t)> on_sender_card_version_;
   std::function<void(const std::string&, const std::string&, int64_t)> on_unknown_sender_device_;

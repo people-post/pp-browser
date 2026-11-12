@@ -177,8 +177,27 @@ std::optional<ThreadMessage> NewestPassingEdit(const std::vector<ThreadMessage>&
   return newest;
 }
 
+namespace {
+
+/**
+ * Stored edit row `edit` (with text) blanked. Ours is not sent any more: its queued send is dropped first, whatever
+ * its row says, as a group member's copy can still be queued after another member's went out (a no-op when none is).
+ */
+bool BlankEditRow(IThreadTranscript& store, const std::string& thread_id, const ThreadMessage& edit,
+                  const CancelEditSendFn& cancel_send) {
+  if (cancel_send && edit.sender_contact_id == kLocalSelfContactId) {
+    cancel_send(edit.id);
+  }
+  ThreadMessage blank = BlankedEdit(edit);
+  blank.thread_id = thread_id;
+  auto updated = store.UpdateMessage(blank);
+  return updated && *updated;
+}
+
+} // namespace
+
 size_t BlankEditRowsFor(IThreadTranscript& store, const std::string& thread_id, const std::string& target_id,
-                        const std::string& keep_id) {
+                        const std::string& keep_id, const CancelEditSendFn& cancel_send) {
   auto annotations = store.GetAnnotationsForTarget(thread_id, target_id);
   if (!annotations) {
     return 0;
@@ -192,9 +211,7 @@ size_t BlankEditRowsFor(IThreadTranscript& store, const std::string& thread_id, 
     if (!text || (text->empty() && annotation.text.empty())) {
       continue;
     }
-    ThreadMessage blank = BlankedEdit(annotation);
-    blank.thread_id = thread_id;
-    if (auto updated = store.UpdateMessage(blank); updated && *updated) {
+    if (BlankEditRow(store, thread_id, annotation, cancel_send)) {
       ++blanked;
     }
   }
@@ -212,7 +229,8 @@ SendRelayOptions EditSendOptions(const std::string& target_message_id, const std
   return options;
 }
 
-Roe<ThreadMessage> ApplyOwnEdit(IThreadTranscript& store, const ThreadMessage& target, const ThreadMessage& edit_row) {
+Roe<ThreadMessage> ApplyOwnEdit(IThreadTranscript& store, const ThreadMessage& target, const ThreadMessage& edit_row,
+                                const CancelEditSendFn& cancel_send) {
   ThreadMessage edited = WithEdit(target, edit_row);
   edited.thread_id = target.thread_id;
   auto updated = store.UpdateMessage(edited);
@@ -222,7 +240,7 @@ Roe<ThreadMessage> ApplyOwnEdit(IThreadTranscript& store, const ThreadMessage& t
   if (!*updated) {
     return Error("The message to edit is gone");
   }
-  (void)BlankEditRowsFor(store, target.thread_id, target.id, edit_row.id);
+  (void)BlankEditRowsFor(store, target.thread_id, target.id, edit_row.id, cancel_send);
   return edited;
 }
 
@@ -241,7 +259,7 @@ Roe<ThreadMessage> EditRowAfterSend(IThreadStore& store, const std::string& thre
 
 Roe<OwnEdit> EditOwnMessage(IThreadStore& store, const ThreadMessage& target, const ThreadKind thread_kind,
                             const std::string& new_text, const int64_t tapped_at_ms, const std::string& edit_id,
-                            const SendEditFn& send) {
+                            const SendEditFn& send, const CancelEditSendFn& cancel_send) {
   if (!CanEditMessage(target, thread_kind, tapped_at_ms)) {
     return Error("This message can no longer be edited");
   }
@@ -259,7 +277,7 @@ Roe<OwnEdit> EditOwnMessage(IThreadStore& store, const ThreadMessage& target, co
   if (!edit_row) {
     return edit_row.error();
   }
-  auto edited = ApplyOwnEdit(store, target, *edit_row);
+  auto edited = ApplyOwnEdit(store, target, *edit_row, cancel_send);
   if (!edited) {
     return edited.error();
   }
@@ -295,11 +313,10 @@ Roe<ResentEdit> ResendOwnEdit(IThreadStore& store, const std::string& thread_id,
   if (!edit_row) {
     return edit_row.error();
   }
-  if (auto edited = ApplyOwnEdit(store, target, *edit_row); !edited) {
+  if (auto edited = ApplyOwnEdit(store, target, *edit_row, cancel_pending); !edited) {
     return edited.error();
   }
-  cancel_pending(old_edit.id);
-  auto removed = store.RemoveUnsentMessage(thread_id, old_edit.id);
+  auto removed = store.RemoveUnsentMessage(thread_id, old_edit.id); // its queued send dropped by ApplyOwnEdit
   result.unsent_removed = removed && *removed;
   result.edit_row = std::move(*edit_row);
   return result;

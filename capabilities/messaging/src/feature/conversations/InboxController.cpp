@@ -198,8 +198,9 @@ Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, cons
   if (!*deleted) {
     return Error("Message not found");
   }
-  // Its edit rows go blank too: no edited words outlive the message (DEV/PLAN-message-edit.md).
-  (void)BlankEditRowsFor(store_, thread_id, message_id);
+  // Its edit rows go blank too, and an edit of ours still queued is not sent: no edited words outlive the message
+  // (DEV/PLAN-message-edit.md).
+  (void)BlankEditRowsFor(store_, thread_id, message_id, {}, cancel_pending_send_);
   AfterMessageDeleted(thread_id, original);
   return {};
 }

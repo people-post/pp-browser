@@ -960,6 +960,12 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   peer_labels_ = std::make_unique<PeerDisplayResolver>(
       *contacts_, PeerDisplaySourcesFrom(*directory_shadows_, group_roster_.get()));
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());
+  // A message deleted here takes an unsent edit of ours with it (the orchestrator is rebuilt on each unlock).
+  inbox_->SetCancelPendingSend([this](const std::string& message_id) {
+    if (mesh_messaging_) {
+      mesh_messaging_->CancelPendingSend(message_id);
+    }
+  });
   inbox_->SetSystemControls(&system_controls_);
   inbox_->SetThreadMentions(thread_mentions_.get());
   directory_shadows_->SetOnUpdated([this]() {
@@ -2190,11 +2196,12 @@ Roe<ThreadMessage> ConversationsHub::EditMessage(const std::string& thread_id, c
   ThreadMessage target = **found;
   target.thread_id = thread_id;
   // Checked (an edit too long for one payload is refused here, before anything is stored), sent, applied here.
-  auto edited = EditOwnMessage(Store(), target, (*thread)->kind, new_text, tapped_at_ms, util::GenerateUuid(),
-                               [this, &thread_id, &target](const std::string& edit_id, const std::string& text,
-                                                           const int64_t sent_at_ms) {
-                                 return MeshMessaging().SendEdit(thread_id, target.id, text, edit_id, sent_at_ms);
-                               });
+  auto edited = EditOwnMessage(
+      Store(), target, (*thread)->kind, new_text, tapped_at_ms, util::GenerateUuid(),
+      [this, &thread_id, &target](const std::string& edit_id, const std::string& text, const int64_t sent_at_ms) {
+        return MeshMessaging().SendEdit(thread_id, target.id, text, edit_id, sent_at_ms);
+      },
+      [this](const std::string& unsent_id) { MeshMessaging().CancelPendingSend(unsent_id); });
   if (!edited) {
     return edited.error();
   }

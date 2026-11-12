@@ -630,5 +630,30 @@ TEST(InboxMessageEditTest, DeletingAnEditedMessageForMeBlanksItsEditRows) {
   }
 }
 
+// Deleted here (for me, or for everyone — which deletes it here too): an edit of ours still queued is not sent, and
+// an edit someone else made is only blanked (nothing of theirs is in our queue).
+TEST(InboxMessageEditTest, DeletingOurEditedMessageCancelsItsUnsentEdit) {
+  InboxTestEnv env("edit_delete_cancels");
+  std::vector<std::string> cancelled;
+  env.inbox->SetCancelPendingSend([&](const std::string& id) { cancelled.push_back(id); });
+  const Thread chat = EditChat(env, "thread-edit-cancel");
+  ThreadMessage ours = EditText(chat.id, "m1", "see you at 8", 1000);
+  ours.sender_contact_id = kLocalSelfContactId;
+  const ThreadMessage said = *env.store->AppendMessage(ours);
+  ThreadMessage unsent = EditOf(said, "e1", "see you at 9", 1500);
+  unsent.delivery = MessageDelivery::Pending;
+  ASSERT_TRUE(env.store->AppendMessage(unsent));
+  ASSERT_TRUE(env.store->UpdateMessage(WithEdit(said, unsent)));
+  const ThreadMessage theirs = *env.store->AppendMessage(EditText(chat.id, "m2", "later", 2000));
+  const ThreadMessage their_edit = *env.store->AppendMessage(EditOf(theirs, "e2", "later, edited", 2500));
+  ASSERT_TRUE(env.store->UpdateMessage(WithEdit(theirs, their_edit)));
+
+  ASSERT_TRUE(env.inbox->DeleteMessageForMe(chat.id, "m1"));
+  EXPECT_EQ(cancelled, std::vector<std::string>{"e1"});
+  ASSERT_TRUE(env.inbox->DeleteMessageForMe(chat.id, "m2"));
+  EXPECT_EQ(cancelled, std::vector<std::string>{"e1"}) << "not ours: nothing to cancel";
+  EXPECT_TRUE(EditTextOf(env.store->GetMessage(chat.id, "e1").value().value()).value().empty());
+}
+
 } // namespace
 } // namespace pbr
