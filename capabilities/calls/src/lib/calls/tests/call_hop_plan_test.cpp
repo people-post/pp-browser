@@ -126,8 +126,7 @@ TEST(CallHopPlanTest, LocalAdvertiseHasPublicTreatsGlobalIpv6) {
   // Link-local / loopback /ip6 must not count as publicly dialable PreferLocal.
   EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip6/fe80::1/udp/19001/adp/2/p2p/local"));
   EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip6/::1/udp/19001/adp/2/p2p/local"));
-  EXPECT_FALSE(
-      PreferLocalAllowedForScope(CallHopScope::Link, true, "/ip6/fe80::1/udp/19001/adp/2/p2p/local", true));
+  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Link, true, "/ip6/fe80::1/udp/19001/adp/2/p2p/local", true));
 }
 
 // --- V050 gt4: the hop a group forms on at the third join ---------------------------------------

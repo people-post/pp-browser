@@ -170,7 +170,7 @@ Validation (implementations MUST):
    key is its authenticated session key; otherwise `public_key_b64` must derive `peer_id` and the
    signature must verify under it. A record from anyone else without `public_key_b64` is dropped.
 3. Each `multiaddr` contains `/p2p/<peer_id>` consistent with `peer_id`.
-4. Prefer ADP multiaddrs (`/adp/<wire>/`, or the legacy `/adp/1.0.0/`) for dial; ignore undialable private addrs unless link-local policy applies.
+4. Prefer ADP multiaddrs (`/adp/<wire>/`, our wire version only) for dial; ignore undialable private addrs unless link-local policy applies.
 5. Reject when `issued_at + ttl_seconds` ≤ now (relay clock skew: allow 60s grace).
 6. Accept only if `seq` ≥ last seen seq for `(peer_id, record_key)`.
 

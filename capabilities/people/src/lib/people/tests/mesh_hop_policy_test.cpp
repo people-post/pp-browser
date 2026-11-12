@@ -189,8 +189,7 @@ TEST(MeshHopPolicyTest, ExcludeSelfHopDropsLocalPeerId) {
 TEST(MeshHopPolicyTest, DirectoryHopPrefersGlobalIpv6Multiaddr) {
   mesh::MeshDirectoryNode node;
   node.peer_id = "12D3KooWDir";
-  node.multiaddrs = {"/ip4/10.0.0.9/udp/443/adp/2/p2p/12D3KooWDir",
-                     "/ip6/2001:db8::5/udp/443/adp/2/p2p/12D3KooWDir"};
+  node.multiaddrs = {"/ip4/10.0.0.9/udp/443/adp/2/p2p/12D3KooWDir", "/ip6/2001:db8::5/udp/443/adp/2/p2p/12D3KooWDir"};
   auto hops = CollectDirectoryHopCandidates({node});
   ASSERT_EQ(hops.size(), 1u);
   EXPECT_EQ(hops[0].multiaddr.rfind("/ip6/", 0), 0u);
@@ -266,8 +265,7 @@ TEST(MeshHopPolicyTest, TrustedRelaysAreOrgSeedsAndFriendlyContacts) {
 TEST(MeshHopPolicyTest, DirectoryNodesKeepOnlyAddressesWorthDialling) {
   mesh::MeshDirectoryNode relay;
   relay.peer_id = "12D3KooWRelay";
-  relay.multiaddrs = {"/ip4/172.17.0.2/udp/443/adp/2/p2p/12D3KooWRelay",
-                      "/ip6/fd00::2/udp/443/adp/2/p2p/12D3KooWRelay",
+  relay.multiaddrs = {"/ip4/172.17.0.2/udp/443/adp/2/p2p/12D3KooWRelay", "/ip6/fd00::2/udp/443/adp/2/p2p/12D3KooWRelay",
                       "/ip4/54.198.185.139/udp/443/adp/2/p2p/12D3KooWRelay",
                       "/dns4/relay.example/udp/443/adp/2/p2p/12D3KooWRelay"};
   mesh::MeshDirectoryNode lan;

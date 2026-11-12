@@ -43,8 +43,8 @@ TEST(NodeEnvOverlayTest, ParsesBoolEnv) {
 }
 
 TEST(NodeEnvOverlayTest, ParsesBootstrapPeersCsv) {
-  const auto peers = pbr::ParsePpNodeBootstrapPeersCsv(
-      " /ip4/1.2.3.4/udp/443/adp/2/p2p/abc ,,/ip4/5.6.7.8/udp/443/adp/2/p2p/def ");
+  const auto peers =
+      pbr::ParsePpNodeBootstrapPeersCsv(" /ip4/1.2.3.4/udp/443/adp/2/p2p/abc ,,/ip4/5.6.7.8/udp/443/adp/2/p2p/def ");
   ASSERT_EQ(peers.size(), 2u);
   EXPECT_EQ(peers[0], "/ip4/1.2.3.4/udp/443/adp/2/p2p/abc");
   EXPECT_EQ(peers[1], "/ip4/5.6.7.8/udp/443/adp/2/p2p/def");

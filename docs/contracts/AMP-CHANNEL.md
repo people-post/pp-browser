@@ -98,14 +98,14 @@ Opened immediately after Session `Established`.
 
 **Dialer (outbound link) opens channel 0** and sends a capability payload; **responder OpenAcks and replies** with its own payload on the same channel ([A016](../../projects/adp/DECISIONS.md#a016--channel-0--capability--identify-plane)). Wired from `PeerLinkManager::OnLinkEstablished`.
 
-**Payload (Transactional / Control DATA):**
+**Payload (Transactional / Control DATA)**, leading byte `4` (`2` is session control; `1`, the payload before it said what the node runs, and `3`, that alone, are retired and refused):
 
 - `local_peer_id`
 - `listen_multiaddrs[]`
 - `protocols[]` supported (includes circuit / media-relay protocol ids when hosted)
-- `capabilities` object (circuit_relay, media_relay, … — mirrors today’s Identify extensions; v1 binary codec carries flags via `protocols[]` until an explicit flags field is added)
+- what the node runs ([N032](../../projects/p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes)): `amp_wire` (u8), `node_version` (len-prefixed UTF-8), `features[]` (string list). pp-node (and a desktop in the node role) fills `node_version` with its build's version; an app in the client role sends it empty. `RemoteCapability(peer_id)` reads a connected peer's.
 
-**Extension** ([N032](../../projects/p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes), pp-cpp-amp v4.1.0): after the payload above (the dialer on the responder's reply, the responder right after its reply), each side sends one more message on channel 0. Leading byte `3` (`1` is the payload above, `2` session control): `amp_wire` (u8), `node_version` (len-prefixed UTF-8), `features[]` (string list). A peer before it refuses it as an unknown payload version and drops it, after the exchange above has completed; a decoder ignores bytes past the fields it knows. pp-node (and a desktop in the node role) fills `node_version` with its build's version; an app in the client role sends it empty. `RemoteCapabilityExtension(peer_id)` reads a connected peer's.
+A decoder ignores bytes past the fields it knows (a later version's). Until 2026-11-12 the node's claims went as a second message (leading byte `3`) so a peer before them could drop it; with no bridges pre-release they ride the payload.
 
 Channel 0 may stay open (long-lived control) or close after exchange — implementation policy; default **long-lived, Reliable Control**.
 
@@ -296,10 +296,10 @@ For Amp **call-media** over circuit, the bridged channel is **not** the product 
 
 | Kind | Layout | Use |
 |------|--------|-----|
-| `0` Msh / `2` MshChunk | `[kind][msh type][body]` | inner handshake |
+| `0` Msh / `2` MshChunk | `[kind][msh type][body]` | inner handshake: a message that fits one frame as `Msh`, a larger one as `MshChunk` pieces (first send and resends alike) |
 | `1` Sealed / `5` SealedReliable | `[kind][number u32 LE][frame ciphertext][tag 16]` | inner data, sealed by the inner session ([AMP-SESSION.md § Sealing packets](AMP-SESSION.md#sealing-packets)): spaces CarrierBestEffort / CarrierReliable, `[kind][number]` the associated data |
 | `3` LaneData | `[kind][lane seq u32 LE][inner payload]` | the reliable lane around a SealedReliable packet |
-| `4` LaneAck | `[kind][cumulative u32][selective u64]` | lane acks; cumulative 0 + no bits = the lane probe |
+| `4` LaneAck | `[kind][cumulative u32][selective u64]` | lane acks (every nested link speaks the lane: no probe, no negotiation) |
 
 Each inner space keeps a replay window (best effort 128, reliable 1024): a relay between the ends could replay an inner packet, and the window turns it away. An inner frame is at most the nested link's budget (§ Fragmentation), so a sealed inner packet rides one outer DATA frame whole.
 

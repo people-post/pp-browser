@@ -14,8 +14,7 @@ const char* kCall = "call:ddc19c94-a3a1-4f57-b5e6-a22c198cb406"; // the failed c
 
 std::vector<std::string> IphoneAdvertised() {
   // One private v4 (carrier NAT range) and fifteen global v6, as the iPhone advertised on cellular.
-  std::vector<std::string> mas = {
-      "/ip4/10.0.0.7/udp/49733/adp/2/p2p/QmQ8NYJNCrpGNdzsafFpowL7Z5JzW1dSZzTuJfKP5piwVF"};
+  std::vector<std::string> mas = {"/ip4/10.0.0.7/udp/49733/adp/2/p2p/QmQ8NYJNCrpGNdzsafFpowL7Z5JzW1dSZzTuJfKP5piwVF"};
   for (int i = 1; i <= 15; ++i) {
     mas.push_back("/ip6/2001:db8::" + std::to_string(i) +
                   "/udp/49733/adp/2/p2p/QmQ8NYJNCrpGNdzsafFpowL7Z5JzW1dSZzTuJfKP5piwVF");
@@ -27,9 +26,9 @@ TEST(CallConnectDiagTest, CountsAddressesByFamilyAndClass) {
   const AddrCounts phone = CountAddrs(IphoneAdvertised());
   EXPECT_EQ(phone, (AddrCounts{1, 0, 15, 0}));
   // Android on the home Wi-Fi: a private v4 and link-local v6 only — no global address.
-  const AddrCounts android = CountAddrs({"/ip4/192.168.0.105/udp/48569/adp/2", "/ip6/fe80::1/udp/48569/adp/2",
-                                         "/ip6/fd00::2/udp/48569/adp/2", "/ip4/203.0.113.9/udp/1/adp/2",
-                                         "/dns4/relay.example/udp/443"});
+  const AddrCounts android =
+      CountAddrs({"/ip4/192.168.0.105/udp/48569/adp/2", "/ip6/fe80::1/udp/48569/adp/2", "/ip6/fd00::2/udp/48569/adp/2",
+                  "/ip4/203.0.113.9/udp/1/adp/2", "/dns4/relay.example/udp/443"});
   EXPECT_EQ(android, (AddrCounts{1, 1, 0, 2}));
   EXPECT_EQ(CountAddrs({}), AddrCounts{});
 }
