@@ -555,7 +555,7 @@ One frame for every path a call's or broadcast's media takes: through a hop's fa
 
 | Bytes | Field |
 |-------|-------|
-| 1 | version `3` (high nibble), `channel_type` << 2 (`0` ReliableOrdered: audio — a label, never resent; `1` LatestLossy: video, a hop drops it stale; `2` BestEffort), `mark` (bit 0: a keyframe) |
+| 1 | version `3` (high nibble), `channel_type` << 2 (`0` ReliableOrdered: audio — never resent, shed after video ([MEDIA_CHANNELS § Channel type](MEDIA_CHANNELS.md#channel-type-relay-qos)); `1` LatestLossy: video, a hop drops it stale; `2` BestEffort), `mark` (bit 0: a keyframe) |
 | 1 | `channel` ([MEDIA_CHANNELS](MEDIA_CHANNELS.md): audio `0x00`, video `0x10 \| level`) |
 | 4 | `stream_id`: the sender's (`PublisherStreamIdForIdentity`; `0` on a 1:1 call) |
 | 4 | `seq`: per sender instance and channel, from 1, only increasing |

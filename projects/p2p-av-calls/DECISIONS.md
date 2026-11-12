@@ -463,7 +463,7 @@ Open public directory; paid settle UI; pure `min(price)` sort; hardcoded N014 st
 
 **Date:** 2026-07-30  
 **Updated:** 2026-07-30 — policy applies to **1:1 P2P** as well as group/SFU  
-**Status:** Accepted; audio's "FIFO; even if late" / `reliable_ordered` is **superseded by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses) (best effort, the codec recovers)  
+**Status:** Accepted; audio's "FIFO; even if late" / `reliable_ordered` is **superseded by** [V065](#v065--call-audio-keeps-a-delay-budget-audio-before-video) (a delay budget: on time or concealed, never resent; the priority below stands)  
 **Decision:** One **adaptation policy** for all calls: priority **audio ≫ video_lo ≫ video_hi**, producer rate control first, prefer fluent low video over stalled high. **Transport backends differ**; do not force 1:1 through `media_relay` when P2P ICE works. Mesh hop framing: [N021](../p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types). **No new codec matrix** in a4 — reuse Opus + H264 HW (V017–V019).
 
 ### Same policy brain, two backends
@@ -699,7 +699,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 ## V032 — Media QoS enforcement, playout, SFU E2E
 
 **Date:** 2026-08-06  
-**Status:** Accepted (implementing); **amended by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses) — audio is best effort (no class priority in the hop's queue), and the receiver's jitter target is 60–400 ms adaptive with an 800 ms cap, not 60 / 200 ms  
+**Status:** Accepted (implementing); **amended by** [V065](#v065--call-audio-keeps-a-delay-budget-audio-before-video) — audio keeps a delay budget and goes before video where they queue together (a best-effort lane holds no queue to drop the oldest from; the reliable fallback drops a late frame instead of queueing it — V065 2), and the receiver's jitter target is 60–400 ms adaptive with an 800 ms cap, not 60 / 200 ms  
 **Decision:** Close the structural gaps between N019/N021/V024 **docs** and host/receiver **code** before further quality tuning. Policy matrix: [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md).
 
 | Area | Rule |
@@ -746,7 +746,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 ## V034 — Video on libp2p (video_lo; E2E; same streams)
 
 **Date:** 2026-08-18  
-**Status:** Accepted (**implementing**); the hop-queue rule ("never shed `ReliableOrdered`") is **superseded by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses)  
+**Status:** Accepted (**implementing**); the hop-queue rule stands as [V065](#v065--call-audio-keeps-a-delay-budget-audio-before-video) states it: video is shed before audio wherever they queue together (V063 had dropped it)  
 **Decision:** Product **video** rides the existing libp2p voice path — not WebRTC. Capture/encode/decode/tiles stay the a3 SDL + platform HW H264 stack ([V017](#v017--video-codec-h264-via-platform-hw) / [V018](#v018--video-capture--render-path-in-sdl--rmlui-shell)). Transport is **encrypted H264 video_lo** on the same 1:1 duplex and the same blind `media_relay` hop as Opus.
 
 | Topic | Rule |
@@ -1484,7 +1484,7 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 ## V063 — Call audio is best effort; the codec recovers losses
 
 **Date:** 2026-11-06
-**Status:** Accepted (Hongwei, 2026-11-06) — records what the code has done since 2026-08 (1:1) and 2026-11-03 (groups: pp-cpp-mesh v3.1.0, the hop's data lane). **Supersedes** audio's `reliable_ordered` / "FIFO; even if late" in V024 and N021 and the hop-queue rule in V032 / V034. The current rule: [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos).
+**Status:** **Superseded by [V065](#v065--call-audio-keeps-a-delay-budget-audio-before-video)** (2026-11-11): audio keeps a delay budget and goes before video wherever they queue together; "no class priority" was drift, not design. Was: Accepted (Hongwei, 2026-11-06), recording what the code had done since 2026-08 (1:1) and 2026-11-03 (groups: pp-cpp-mesh v3.1.0, the hop's data lane), superseding audio's `reliable_ordered` / "FIFO; even if late" in V024 and N021 and the hop-queue rule in V032 / V034. The current rule: [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos).
 
 **Context:** V024 and N021 put call audio on `reliable_ordered` (deliver in order, even if late), and V032 / V034 told the hop never to shed it for video. An audit while stress-testing pp-node (2026-11-06, [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)) found the code had moved on: audio is not resent on any normal path, and the stamp changes nothing.
 
@@ -1525,3 +1525,28 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 **Rationale:** The proposal's own alternative gets most of the value — no surprise that a call ends, and an easy way back — at no protocol or media cost; the system screen rule closes the one path where a call ended with no word at all.
 **Alternatives:** Hold & Accept now (four weeks, mostly the media stack); words on the system screen's ring (CallKit and Android's call style take a caller name, not a sentence, and Answer stays one tap).
+
+
+## V065 — Call audio keeps a delay budget; audio before video
+
+**Date:** 2026-11-11
+**Status:** Accepted (Hongwei, 2026-11-11) — **supersedes [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses)**. It restores the middle ground of V024 (audio ≫ video), N021, V032 (drop the oldest audio, never skip to the latest) and V034 (never shed audio to queue video), as a delay budget instead of "deliver even if late". The current rule: [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos).
+
+**Context:** V063 found that call audio was best effort on every normal path and that the hop's queues had no class priority, and made that the rule. That accepted drift as design. Plain best effort gives up "audio before video" wherever the two share a queue; strict reliability ("deliver even if late") makes a conversation lag behind itself. What a listener needs is audio on time, and its losses covered.
+
+**Decision:**
+
+1. **A delay budget.** Call audio aims at about 300 ms mouth to ear, and never more than 400 ms (ITU-T G.114: conversation stays usable to ~400 ms). Inside the budget audio comes first, and a loss is recovered where it can be: Opus in-band FEC, the jitter buffer waiting for a late packet. Past the budget a frame is concealed, never waited for.
+2. **Audio before video wherever they queue together.** Under congestion video is shed first; audio drops only its own oldest frames and never skips to the latest. Transports stay content-agnostic: if a link or a hop needs to know, it gets a generic rank per frame, never "audio" or "video" ([COMPOSITION_VOCABULARY](../../docs/architecture/COMPOSITION_VOCABULARY.md)). Where media waits today (audit 2026-11-11):
+   - **A best-effort lane holds nothing.** The 1:1 `Realtime` channel (direct or through a circuit) and a member's data lane to the hop, both ways, send in the same pump round, straight to the socket; the channel's 64-frame drop-oldest queue does not fill. Under overload frames are lost in the kernel: a node's receive buffer ([STRESS_LAB](../../docs/ops/STRESS_LAB.md)), a phone link's queue. Those are first in, first out, and the app cannot rank in them. There only the sender's rate acts (V024's ladder: video gives way first).
+   - **The reliable fallback queues** (media on a hop's control channel: a hop behind a circuit, or one older than the data lane), in its link's mux, waiting for window. There video is dropped once anything has waited 50 ms, audio once it has waited 150 ms. Frames already queued are numbered on the reliable channel and stay; a late audio frame is dropped instead of queued.
+3. **Catch-up is never heard.** The receiver never plays faster to catch up and never cuts speech to do it: silences go first.
+4. **No resends in this step.** NACK / resend inside the budget, Opus DRED, adaptive FEC and time-scaling are decisions of their own.
+5. **Measured by what users hear.** The app lab reports, per listener: concealed audio time (PLC and FEC), speech cut to catch up, packets that came after their slot, underruns (`heard_<name>`, [TEST_STRATEGY § Video](../../docs/ops/TEST_STRATEGY.md)).
+
+**Rationale:** Late audio is worse than lost audio, and lost audio is worse than lost video. A budget says when to stop waiting; "audio first" says what gives way before that. Both keep the hop blind.
+**Alternatives:** keep V063 (pure best effort: video can push audio out of a shared queue); reliable audio (N021: a conversation that falls behind); a separate lane per class (two lanes per member, for a queue that is not in userspace).
+**Open:**
+- The jitter buffer's cap is 800 ms, above the budget's 400 ms; its target already stops at 400 ms.
+- The buffer still cuts speech in two cases, both counted as speech drops: past its cap, and when a surplus held for 500 ms (it trims it whatever it holds). Decision 3 is not met there yet.
+- Audio first at the bottleneck itself (a phone's uplink, a member's downlink): the sender's rate and the subscriber's choice of video are the levers there.
