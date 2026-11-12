@@ -27,7 +27,10 @@ namespace pbr {
 
 // --- The message row --------------------------------------------------------------------------------
 
-/** A pending, relay-visible message from us (rich payload options applied). */
+/**
+ * A pending, relay-visible message from us (rich payload options applied). `options.message_id` / `timestamp_ms`, when
+ * set, win over `id` / `now_ms`.
+ */
 ThreadMessage NewOutboundMessage(const std::string& thread_id, const std::string& text, const SendRelayOptions& options,
                                  std::string id, int64_t now_ms);
 

@@ -8,6 +8,7 @@
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/delivery/ReactionTypes.h"
 #include "lib/messaging/RelayReceivePipeline.h"
+#include "lib/messaging/EditMessage.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "common/chat/MessagingLimits.h"
@@ -183,6 +184,56 @@ TEST_F(OutboundMessageTest, TheRowAndTheReactionCap) {
   retract.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, "msg-1", "");
   EXPECT_TRUE(AppendOutboundMessage(*alice_->store, NewOutboundMessage(thread.id, "", retract, "del", 1)))
       << "the cap never stops a delete";
+  EXPECT_TRUE(AppendOutboundMessage(*alice_->store,
+                                    NewOutboundMessage(thread.id, "x", EditSendOptions("msg-1", "x", "ed", 7), "id", 1)))
+      << "nor an edit";
+}
+
+// Our edit (DEV/PLAN-message-edit.md): it goes out as an `edit` annotation with the id and send time fixed at the tap,
+// numbered and queued as any message (its own row here is what history serves later), our message reads the new text
+// here at once, and the peer applies it.
+TEST_F(OutboundMessageTest, AnEditGoesOutAsAnEditAnnotationStampedAtTheTap) {
+  const Thread thread = alice_->DirectThreadTo(*bob_, ThreadChannel::E2ePublic);
+  auto original = alice_->Send(thread, *bob_, "see you at 8");
+  ASSERT_TRUE(original) << original.error().message;
+  ASSERT_TRUE(bob_->pipeline->ProcessEnvelope(*original, bob_->keys.account_id).persisted);
+  ThreadMessage target = alice_->store->GetMessage(thread.id, original->message_id).value().value();
+  target.delivery = MessageDelivery::Relayed; // it went out
+  ASSERT_TRUE(alice_->store->UpdateMessage(target));
+
+  const int64_t tapped_at = target.timestamp + 14 * 60'000;
+  ASSERT_TRUE(CanEditMessage(target, ThreadKind::Direct, tapped_at));
+  const int64_t sent_at = EditSendTime(tapped_at, target);
+  auto edit = alice_->Send(thread, *bob_, "see you at 9",
+                           EditSendOptions(target.id, "see you at 9", "edit-1", sent_at));
+  ASSERT_TRUE(edit) << edit.error().message;
+  EXPECT_EQ(edit->message_id, "edit-1");
+  EXPECT_EQ(edit->timestamp, sent_at) << "stamped at the tap, whenever it is delivered";
+  EXPECT_EQ(edit->sender_seq, original->sender_seq + 1) << "numbered as any message";
+
+  const ThreadMessage row = alice_->store->GetMessage(thread.id, "edit-1").value().value();
+  EXPECT_TRUE(IsEditAnnotation(row)) << "our own edit row stays here (history serves it)";
+  EXPECT_EQ(row.target_message_id, std::optional<std::string>(target.id));
+  EXPECT_EQ(EditTextOf(row), std::optional<std::string>("see you at 9"));
+  EXPECT_EQ(row.delivery, MessageDelivery::Pending);
+  const auto queued = alice_->store->ListPendingOutbox().value();
+  EXPECT_TRUE(std::any_of(queued.begin(), queued.end(), [](const auto& entry) { return entry.first == "edit-1"; }))
+      << "queued until it goes out, as any message";
+
+  auto edited = ApplyOwnEdit(*alice_->store, target, row);
+  ASSERT_TRUE(edited) << edited.error().message;
+  const ThreadMessage ours = alice_->store->GetMessage(thread.id, target.id).value().value();
+  EXPECT_EQ(ours.text, "see you at 9");
+  EXPECT_EQ(EditMarkOf(ours)->edited_by, "edit-1");
+
+  const RelayReceiveOutcome got = bob_->pipeline->ProcessEnvelope(*edit, bob_->keys.account_id);
+  EXPECT_TRUE(got.persisted) << got.receive_failure_detail;
+  EXPECT_TRUE(got.suppress_inbox_chrome);
+  auto bobs = bob_->store->GetMessages(bob_->DirectThreadTo(*alice_, ThreadChannel::E2ePublic).id).value();
+  const auto said = std::find_if(bobs.begin(), bobs.end(), [&](const ThreadMessage& m) { return m.id == target.id; });
+  ASSERT_NE(said, bobs.end());
+  EXPECT_EQ(said->text, "see you at 9");
+  EXPECT_TRUE(EditMarkOf(*said).has_value());
 }
 
 TEST(OutboundSendRulesTest, WhoMaySendAndHow) {

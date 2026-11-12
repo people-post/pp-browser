@@ -1,6 +1,8 @@
 #pragma once
 
+#include "common/Error.h"
 #include "common/chat/MessagingLimits.h"
+#include "lib/delivery/SendRelayOptions.h"
 #include "common/thread/IThreadTranscript.h"
 #include "common/thread/ThreadRecordTypes.h"
 
@@ -111,5 +113,19 @@ std::optional<ThreadMessage> NewestPassingEdit(const std::vector<ThreadMessage>&
  */
 size_t BlankEditRowsFor(IThreadTranscript& store, const std::string& thread_id, const std::string& target_id,
                         const std::string& keep_id = {});
+
+/**
+ * How our edit of `target_message_id` goes out: an `edit` annotation carrying `text`, with the id and send time fixed
+ * before the send (`message_id`, `sent_at_ms`) and no preview change. The send itself is the ordinary one: numbered,
+ * queued, retried with the same envelope, copied to our other devices (public chats and groups).
+ */
+SendRelayOptions EditSendOptions(const std::string& target_message_id, const std::string& text,
+                                 const std::string& message_id, int64_t sent_at_ms);
+
+/**
+ * Our edit `edit_row` (as stored by the send) applied to our message `target` here at once: the row rewritten
+ * (WithEdit) and every other edit row of it blanked. Returns the rewritten row.
+ */
+Roe<ThreadMessage> ApplyOwnEdit(IThreadTranscript& store, const ThreadMessage& target, const ThreadMessage& edit_row);
 
 } // namespace pbr

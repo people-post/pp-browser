@@ -141,6 +141,11 @@ public:
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id);
   /** Our own message, for everyone in the chat / group. Blocking (network): call off the UI thread. */
   Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
+  /** Edit our message (ConversationsHub::EditMessage); `tapped_at_ms`: when Send was tapped. */
+  Roe<ThreadMessage> EditMessage(const std::string& thread_id, const std::string& message_id,
+                                 const std::string& new_text, int64_t tapped_at_ms);
+  /** Send again the edit of our message that did not go out (ConversationsHub::ResendEdit). */
+  Roe<ThreadMessage> ResendEdit(const std::string& thread_id, const std::string& message_id);
   void MarkThreadRead(const std::string& thread_id);
   /** Per-thread local settings (pin / mute / archive); rows that differ from the defaults. */
   Roe<std::vector<ThreadLocalPrefs>> ListThreadLocalPrefs();

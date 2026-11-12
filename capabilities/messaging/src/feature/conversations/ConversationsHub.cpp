@@ -8,6 +8,7 @@
 #include "domain/attachments/AttachmentMetrics.h"
 #include "lib/delivery/AttachmentContentCipher.h"
 #include "lib/messaging/DeleteForEveryone.h"
+#include "lib/messaging/EditMessage.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 
 #include "lib/people/RecoveryBundle.h"
@@ -2165,6 +2166,120 @@ Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_i
   // Done for everyone once retracted and deleted here; the server copy is a separate, best-effort step.
   DeleteUploadedCopy(original);
   return {};
+}
+
+namespace {
+
+/**
+ * The edit's row after its send: what the send returned, or the row it left marked failed (`stored_unsent` set; the
+ * message then shows the red mark).
+ */
+Roe<ThreadMessage> EditRowAfterSend(IThreadStore& store, const std::string& thread_id, const std::string& edit_id,
+                                    Roe<ThreadMessage> sent, bool& stored_unsent) {
+  if (sent) {
+    return sent;
+  }
+  auto stored = store.GetMessage(thread_id, edit_id);
+  if (!stored || !*stored) {
+    return sent.error(); // refused before anything was stored: nothing changes here
+  }
+  stored_unsent = true;
+  return **stored;
+}
+
+} // namespace
+
+Roe<ThreadMessage> ConversationsHub::EditMessage(const std::string& thread_id, const std::string& message_id,
+                                                 const std::string& new_text, const int64_t tapped_at_ms) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  auto thread = Store().GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  auto found = Store().GetMessage(thread_id, message_id);
+  if (!found) {
+    return found.error();
+  }
+  if (!found->has_value()) {
+    return Error("Message not found");
+  }
+  const ThreadMessage target = **found;
+  if (!CanEditMessage(target, (*thread)->kind, tapped_at_ms)) {
+    return Error("This message can no longer be edited");
+  }
+  if (new_text.empty() || new_text.size() > kMaxEditTextBytes) {
+    return Error("Edited text is empty or too long");
+  }
+  if (new_text == target.text) {
+    return target;
+  }
+  const std::string edit_id = util::GenerateUuid();
+  bool stored_unsent = false;
+  auto edit_row = EditRowAfterSend(
+      Store(), thread_id, edit_id,
+      MeshMessaging().SendEdit(thread_id, target.id, new_text, edit_id, EditSendTime(tapped_at_ms, target)),
+      stored_unsent);
+  if (!edit_row) {
+    return edit_row.error();
+  }
+  if (stored_unsent) {
+    log().warning << "edit stored but not sent (the message shows the red mark)";
+  }
+  auto edited = ApplyOwnEdit(Store(), target, *edit_row);
+  if (!edited) {
+    return edited.error();
+  }
+  Inbox().AfterMessageEdited(thread_id, target, *edited);
+  return edited;
+}
+
+Roe<ThreadMessage> ConversationsHub::ResendEdit(const std::string& thread_id, const std::string& message_id) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  auto found = Store().GetMessage(thread_id, message_id);
+  if (!found || !found->has_value()) {
+    return Error("Message not found");
+  }
+  const ThreadMessage target = **found;
+  const std::optional<EditMark> mark = EditMarkOf(target);
+  if (target.sender_contact_id != kLocalSelfContactId || target.content_type != ChatContentType::Text || !mark) {
+    return Error("Not an edited message of ours");
+  }
+  auto unsent = Store().GetMessage(thread_id, mark->edited_by);
+  if (!unsent || !unsent->has_value()) {
+    return Error("Its edit is gone");
+  }
+  const ThreadMessage old_edit = **unsent;
+  const std::optional<std::string> text = EditTextOf(old_edit);
+  if (!text || text->empty() || old_edit.delivery == MessageDelivery::Relayed) {
+    return Error("Nothing to send again");
+  }
+  // Same words, same send time (the time its receivers judge); a new id, as a re-sent message has.
+  const std::string edit_id = util::GenerateUuid();
+  bool stored_unsent = false;
+  auto edit_row = EditRowAfterSend(Store(), thread_id, edit_id,
+                                   MeshMessaging().SendEdit(thread_id, target.id, *text, edit_id, old_edit.timestamp),
+                                   stored_unsent);
+  if (!edit_row) {
+    return edit_row.error();
+  }
+  if (stored_unsent) {
+    log().warning << "resent edit stored but not sent";
+  }
+  if (auto edited = ApplyOwnEdit(Store(), target, *edit_row); !edited) {
+    return edited.error();
+  }
+  MeshMessaging().CancelPendingSend(old_edit.id);
+  if (auto removed = Store().RemoveUnsentMessage(thread_id, old_edit.id); !removed || !*removed) {
+    log().warning << "resent edit: the unsent edit row was not removed";
+  }
+  return edit_row;
 }
 
 void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {

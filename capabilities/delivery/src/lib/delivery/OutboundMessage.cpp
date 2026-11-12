@@ -19,11 +19,11 @@ namespace pbr {
 ThreadMessage NewOutboundMessage(const std::string& thread_id, const std::string& text, const SendRelayOptions& options,
                                  std::string id, const int64_t now_ms) {
   ThreadMessage message;
-  message.id = std::move(id);
+  message.id = options.message_id ? *options.message_id : std::move(id);
   message.thread_id = thread_id;
   message.sender_contact_id = options.sender_contact_id.value_or(kLocalSelfContactId);
   message.text = text;
-  message.timestamp = now_ms;
+  message.timestamp = options.timestamp_ms.value_or(now_ms);
   message.delivery = MessageDelivery::Pending;
   message.relay_visible = true;
   message.transport = MessageTransport::Relay;

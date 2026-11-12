@@ -6,6 +6,7 @@
 #include "feature/conversations/AmpChatHistoryTransport.h"
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "lib/messaging/EditMessage.h"
 
 #include "common/Localized.h"
 
@@ -2092,6 +2093,26 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::ClearReaction(const std::string& th
 Roe<ThreadMessage> MeshDeliveryOrchestrator::SendRetract(const std::string& thread_id,
                                                          const std::string& target_message_id) {
   return SendAnnotationReaction(*this, store_, thread_id, target_message_id, std::string(), kAnnotationTypeRetract);
+}
+
+Roe<ThreadMessage> MeshDeliveryOrchestrator::SendEdit(const std::string& thread_id,
+                                                      const std::string& target_message_id, const std::string& text,
+                                                      const std::string& message_id, const int64_t sent_at_ms) {
+  if (target_message_id.empty() || text.empty()) {
+    return Error("Nothing to edit");
+  }
+  auto thread = store_.GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  const SendRelayOptions options = EditSendOptions(target_message_id, text, message_id, sent_at_ms);
+  if ((*thread)->kind == ThreadKind::Group) {
+    return SendGroupMessage(thread_id, text, options);
+  }
+  return SendUserMessage(thread_id, text, options);
 }
 
 void MeshDeliveryOrchestrator::CancelPendingSend(const std::string& message_id) {

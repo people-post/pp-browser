@@ -187,4 +187,29 @@ size_t BlankEditRowsFor(IThreadTranscript& store, const std::string& thread_id, 
   return blanked;
 }
 
+SendRelayOptions EditSendOptions(const std::string& target_message_id, const std::string& text,
+                                 const std::string& message_id, const int64_t sent_at_ms) {
+  SendRelayOptions options;
+  options.content_type = ChatContentType::Annotation;
+  options.payload_json = BuildEditPayloadJson(target_message_id, text);
+  options.update_preview = false;
+  options.message_id = message_id;
+  options.timestamp_ms = sent_at_ms;
+  return options;
+}
+
+Roe<ThreadMessage> ApplyOwnEdit(IThreadTranscript& store, const ThreadMessage& target, const ThreadMessage& edit_row) {
+  ThreadMessage edited = WithEdit(target, edit_row);
+  edited.thread_id = target.thread_id;
+  auto updated = store.UpdateMessage(edited);
+  if (!updated) {
+    return updated.error();
+  }
+  if (!*updated) {
+    return Error("The message to edit is gone");
+  }
+  (void)BlankEditRowsFor(store, target.thread_id, target.id, edit_row.id);
+  return edited;
+}
+
 } // namespace pbr
