@@ -1519,7 +1519,9 @@ void CallPresenter::Redial() {
   const bool video = ChatCallAsksVideo(/*call_joinable=*/false, page.video, page.video && VideoCallAvailable());
   redial_pending_since_ms_ = std::max<int64_t>(1, steady_ms_());
   redial_from_call_id_ = page.call_id;
-  failed_page_.reset();
+  if (std::exchange(failed_page_, std::nullopt)) {
+    Changed(); // the kept page goes now, whatever the start does
+  }
   log().info << "call again call_id=" << page.call_id << " video=" << (video ? 1 : 0);
   // StartCall leaves the failed call first (GuardNewCall), on the same owner queue as the new call.
   (void)StartCall(page.thread_id, video, WhileAlive([this](const CallStartResult& result) {

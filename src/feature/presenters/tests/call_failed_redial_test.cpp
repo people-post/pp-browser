@@ -32,6 +32,8 @@ struct Phone {
   StackSide side;
   std::unique_ptr<CallPresenter> presenter;
   std::vector<CallNotice> notices;
+  /** How often the screen said it changed (CallController draws again on each). */
+  int changed = 0;
   /** Call control on its way to this phone. */
   std::deque<ThreadMessage> inbox;
   /** Messages to this phone the "relay" keeps back while this returns true. */
@@ -139,6 +141,7 @@ protected:
     ports.get_thread = [&phone](const std::string& id) { return phone.side.store->GetThread(id); };
     CallPresenter::Callbacks callbacks;
     callbacks.notify = [&phone](const CallNotice& notice) { phone.notices.push_back(notice); };
+    callbacks.on_changed = [&phone]() { ++phone.changed; };
     phone.presenter->BindCallbacks(std::move(callbacks));
     phone.presenter->BindPorts(std::move(ports));
     phone.presenter->SetSteadyClockForTest([&phone]() { return phone.steady_ms; });
@@ -822,6 +825,21 @@ TEST_F(CallFailedRedialTest, ARedialThatCannotStartIsNoLongerPending) {
   (void)FailedCall(a_, b_);
   ASSERT_TRUE(a_.side.store->DeleteThread(a_.thread_id));
   a_.presenter->Redial();
+  Pump();
+  EXPECT_FALSE(a_.presenter->RedialPending());
+}
+
+// The kept page goes on Call again even when the call cannot start: the screen is told, so it is not left drawn.
+TEST_F(CallFailedRedialTest, CallAgainOnTheKeptPageThatCannotStartStillTakesThePageDown) {
+  (void)FailedCall(a_, b_);
+  (void)b_.presenter->Leave();
+  PumpUntil([&]() { return a_.presenter->FailedPage().has_value(); });
+  ASSERT_TRUE(a_.presenter->FailedPage().has_value());
+  ASSERT_TRUE(a_.side.store->DeleteThread(a_.thread_id));
+  const int changed = a_.changed;
+  a_.presenter->Redial();
+  EXPECT_FALSE(a_.presenter->FailedPage().has_value());
+  EXPECT_GT(a_.changed, changed) << "drawn again without the page";
   Pump();
   EXPECT_FALSE(a_.presenter->RedialPending());
 }
