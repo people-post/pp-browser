@@ -6,6 +6,7 @@
 #include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <functional>
 #include <string>
 #include <vector>
@@ -569,6 +570,79 @@ TEST_F(ContextMenuBottomInsetTest, ASameValueDoesNotLayTheSheetOutAgain) {
   EXPECT_EQ(PanelBottom(document_), "7px");
   ContextMenuHost::Instance().SetBottomInsetDp(0);
   ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
+namespace {
+
+float PanelHeightPx(ui::ElementDocument* document) {
+  ui::Element* panel = document->GetElementById("context-menu-panel");
+  const ui::Property* height = panel ? panel->GetProperty("height") : nullptr;
+  return height ? std::strtof(height->ToString().c_str(), nullptr) : -1.f;
+}
+
+} // namespace
+
+// Opens the compact sheet with a reactions row whose "+" expands it, then taps the "+".
+class ContextMenuExpandedInsetTest : public ContextMenuBottomInsetTest {
+protected:
+  void OpenExpanded(const int inset_dp) {
+    ContextMenuHost::Instance().SetCompactLayout(true);
+    ContextMenuHost::Instance().SetBottomInsetDp(inset_dp);
+    ContextMenuAction more;
+    more.id = "more";
+    more.label = "+";
+    more.quick = true;
+    more.run = [] {};
+    more.expand = [](ui::Element* mount, std::function<void()>) { mount->SetInnerRML("<div>X</div>"); };
+    ContextMenuAction reply;
+    reply.id = "reply";
+    reply.label = "Reply";
+    reply.run = [] {};
+    ContextMenuHost::Instance().ShowActions({10, 10}, {more, reply}, nullptr, "Message");
+    context_->Update();
+    ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+    ui::ElementList quicks;
+    document_->GetElementById("context-menu-layer")->GetElementsByClassName(quicks, "context-menu-sheet-quick");
+    ASSERT_FALSE(quicks.empty());
+    ui::Element* plus = quicks[0]->GetChild(quicks[0]->GetNumChildren() - 1);
+    plus->DispatchEvent(ui::EventId::Mousedown, Pointer(380, 300));
+    plus->DispatchEvent(ui::EventId::Mouseup, Pointer(380, 300));
+    plus->DispatchEvent(ui::EventId::Click, Pointer(380, 300));
+    ContextMenuHost::Instance().Update();
+    ASSERT_TRUE(document_->GetElementById("context-menu-panel")->IsClassSet("context-menu-sheet--expanded"));
+  }
+
+  void TearDown() override {
+    ContextMenuHost::Instance().SetBottomInsetDp(0);
+    ContextMenuHost::Instance().SetCompactLayout(false);
+    ContextMenuBottomInsetTest::TearDown();
+  }
+};
+
+TEST_F(ContextMenuExpandedInsetTest, TheExpandedSheetGrowsWhenTheKeyboardHides) {
+  OpenExpanded(100);
+  const float with_keyboard = PanelHeightPx(document_);
+  ASSERT_GT(with_keyboard, 0.f);
+  ContextMenuHost::Instance().SetBottomInsetDp(0);
+  EXPECT_GT(PanelHeightPx(document_), with_keyboard);
+  EXPECT_TRUE(document_->GetElementById("context-menu-panel")->IsClassSet("context-menu-sheet--expanded"));
+}
+
+TEST_F(ContextMenuExpandedInsetTest, TheExpandedSheetShrinksWhenTheKeyboardShows) {
+  OpenExpanded(0);
+  const float without_keyboard = PanelHeightPx(document_);
+  ASSERT_GT(without_keyboard, 0.f);
+  ContextMenuHost::Instance().SetBottomInsetDp(100);
+  EXPECT_LT(PanelHeightPx(document_), without_keyboard);
+  EXPECT_TRUE(document_->GetElementById("context-menu-panel")->IsClassSet("context-menu-sheet--expanded"));
+}
+
+TEST_F(ContextMenuExpandedInsetTest, ASameValueLeavesTheExpandedHeightAlone) {
+  OpenExpanded(100);
+  ui::Element* panel = document_->GetElementById("context-menu-panel");
+  panel->SetProperty("height", "7px");
+  ContextMenuHost::Instance().SetBottomInsetDp(100);
+  EXPECT_EQ(PanelHeightPx(document_), 7.f);
 }
 
 TEST_F(ContextMenuBottomInsetTest, ChangingTheInsetWithoutAnOpenMenuIsHarmless) {

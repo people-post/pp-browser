@@ -142,6 +142,8 @@ private:
   void HandleMenuAction(int index);
   /// The phone sheet grows for its `expand` action at `index` (see ContextMenuAction::expand).
   void ExpandSheet(int index);
+  /// Writes the grown sheet's height (the large stop minus the keyboard); on expanding and when the inset changes.
+  void ApplyExpandedSheetHeight();
   void RequestDismiss(bool restore_focus = false);
 
   ui::Context* context_ = nullptr;

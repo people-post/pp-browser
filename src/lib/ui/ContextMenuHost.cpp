@@ -426,6 +426,9 @@ void ContextMenuHost::SetBottomInsetDp(const int inset_dp) {
   // The sheet's `bottom` is a pixel value written at open time: write it again, or it hangs where the keyboard was.
   if (layer_ && presentation_ == Presentation::ActionSheet) {
     LayoutActionSheet();
+    if (sheet_expanded_) {
+      ApplyExpandedSheetHeight(); // the grown sheet's pixel height also took the keyboard off once
+    }
   }
 }
 
@@ -1009,6 +1012,16 @@ void ContextMenuHost::HandleMenuAction(int index) {
   }
 }
 
+void ContextMenuHost::ApplyExpandedSheetHeight() {
+  if (!panel_ || !context_) {
+    return;
+  }
+  const ui::Vector2i dims = context_->GetDimensions();
+  char height_buf[32];
+  std::snprintf(height_buf, sizeof(height_buf), "%.0fpx", std::max(0.f, dims.y * kSheetLargeShare - BottomInsetPx()));
+  panel_->SetProperty("height", height_buf);
+}
+
 void ContextMenuHost::ExpandSheet(const int index) {
   if (index < 0 || index >= static_cast<int>(active_actions_.size()) || !panel_ || !context_ || sheet_expanded_) {
     return;
@@ -1022,10 +1035,7 @@ void ContextMenuHost::ExpandSheet(const int index) {
   // The rows and the reactions give way to the action's body; the sheet stands at the large stop, its top edge where
   // a page sheet's is.
   panel_->SetClass("context-menu-sheet--expanded", true);
-  const ui::Vector2i dims = context_->GetDimensions();
-  char height_buf[32];
-  std::snprintf(height_buf, sizeof(height_buf), "%.0fpx", std::max(0.f, dims.y * kSheetLargeShare - BottomInsetPx()));
-  panel_->SetProperty("height", height_buf);
+  ApplyExpandedSheetHeight();
   expand(mount, [this]() {
     on_dismissed_ = nullptr; // chosen, not dismissed
     RequestDismiss();
