@@ -420,6 +420,8 @@ struct MediaEngine::Impl {
   std::atomic<uint64_t> playout_underruns_total{0};
   std::atomic<uint64_t> plc_frames_total{0};
   std::atomic<uint64_t> fec_frames_total{0};
+  /** Samples played from concealment or FEC (MediaEngineHealth::concealed_ms). */
+  std::atomic<uint64_t> concealed_samples_total{0};
 
   bool capture_available = false;
 #ifdef PP_BROWSER_CALL_DENOISE
@@ -786,6 +788,7 @@ struct MediaEngine::Impl {
     playout_underruns_total.store(0, std::memory_order_relaxed);
     plc_frames_total.store(0, std::memory_order_relaxed);
     fec_frames_total.store(0, std::memory_order_relaxed);
+    concealed_samples_total.store(0, std::memory_order_relaxed);
     vpio_underruns_closed = 0;
     last_rx_audio_ms.store(0, std::memory_order_relaxed);
     last_tx_audio_ms.store(0, std::memory_order_relaxed);
@@ -894,6 +897,7 @@ struct MediaEngine::Impl {
       const int n = opus_decode(track.decoder, nullptr, 0, pcm.data(), samples, 0);
       if (n > 0) {
         plc_frames_total.fetch_add(1, std::memory_order_relaxed);
+        concealed_samples_total.fetch_add(static_cast<uint64_t>(n), std::memory_order_relaxed);
       }
       return n;
     };
@@ -922,6 +926,7 @@ struct MediaEngine::Impl {
             // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
             // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
             fec_frames_total.fetch_add(1, std::memory_order_relaxed);
+            concealed_samples_total.fetch_add(static_cast<uint64_t>(decoded), std::memory_order_relaxed);
           } else {
             decoded = plc(track.packet_samples);
           }
@@ -2629,6 +2634,7 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
   h.playout_underruns = impl->playout_underruns_total.load(std::memory_order_relaxed);
   h.plc_frames = impl->plc_frames_total.load(std::memory_order_relaxed);
   h.fec_frames = impl->fec_frames_total.load(std::memory_order_relaxed);
+  h.concealed_ms = impl->concealed_samples_total.load(std::memory_order_relaxed) * 1000 / kSampleRate;
   h.rx_audio_frames = impl->rx_audio_frames.load(std::memory_order_relaxed);
   h.tx_audio_frames = impl->tx_audio_frames.load(std::memory_order_relaxed);
   h.last_rx_audio_ms = impl->last_rx_audio_ms.load(std::memory_order_relaxed);
@@ -2676,6 +2682,7 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
           std::max(h.jitter_depth_ms, static_cast<int64_t>(track->jitter.size()) * track->jitter.PacketMs());
       h.jitter_silence_drops += track->jitter.silence_drops();
       h.jitter_speech_drops += track->jitter.speech_drops();
+      h.jitter_late_drops += track->jitter.drops_late();
     }
   }
   return h;

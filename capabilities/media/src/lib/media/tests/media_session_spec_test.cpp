@@ -151,6 +151,28 @@ TEST_F(MediaSessionSpecTest, ReceivesTwentyAndFortyMsPackets) {
   EXPECT_EQ(health.rx_audio_frames, 10u);
 }
 
+// V065: what a listener hears is measured. Every slot played without its packet — a lost one (FEC or PLC), or none
+// queued (an underrun, PLC) — counts as concealed time; a packet that comes after its slot is a late drop.
+TEST_F(MediaSessionSpecTest, ConcealedTimeAndLatePacketsAreCounted) {
+  ASSERT_TRUE(engine_.Start("session:view", Spec::PlaybackOnly(), {}));
+  for (const uint32_t seq : {1u, 2u, 3u, 5u}) { // 4 is lost
+    Deliver(42, seq);
+  }
+  MediaEngineHealth h;
+  EXPECT_TRUE(WaitFor(
+      [&] {
+        h = engine_.HealthSnapshot();
+        return h.playout_underruns >= 2 && h.concealed_ms == 20 * (h.plc_frames + h.fec_frames);
+      },
+      std::chrono::seconds(3)))
+      << "concealed_ms=" << h.concealed_ms << " plc=" << h.plc_frames << " fec=" << h.fec_frames;
+  EXPECT_GE(h.plc_frames + h.fec_frames, h.playout_underruns + 1) << "the lost packet's slot, and each underrun's";
+  EXPECT_EQ(h.jitter_late_drops, 0u);
+
+  Deliver(42, 2); // long played
+  EXPECT_EQ(engine_.HealthSnapshot().jitter_late_drops, 1u);
+}
+
 // Broadcaster shape: capture → encode → send; inbound packets are not decoded.
 TEST_F(MediaSessionSpecTest, CaptureOnlySendsAndIgnoresInbound) {
   ASSERT_TRUE(engine_.Start("session:cast", Spec::CaptureOnly(), CountingSend()));

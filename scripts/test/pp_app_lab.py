@@ -1125,6 +1125,11 @@ PHONE_WEAK = {"delay": 150, "jitter": 20, "loss": 2, "loss_corr": 25, "up": 256,
 PHONE_LOSSY = {"delay": 60, "loss": 3, "up": 4000, "down": 8000}
 PHONE_JITTERY = {"delay": 60, "jitter": 40, "loss": 0, "up": 4000, "down": 8000}
 PHONE_NARROW = {"delay": 60, "loss": 0, "up": 600, "down": 2000}
+# Loss in bursts, as a cell fade or a busy Wi-Fi gives (netem's Gilbert-Elliott model): `burst` (p, r) in %, p the
+# chance a packet starts a burst and r that one ends it — bursts of 1/r packets (~10), p / (p + r) of them lost
+# (~3 %, as PHONE_LOSSY's independent loss). A burst hides two or three audio packets in a row, which FEC
+# (one packet back) cannot recover: what concealment is for.
+PHONE_BURSTY = {"delay": 60, "burst": (0.3, 10), "up": 4000, "down": 8000}
 # None of them: what a call puts on the wire when nothing holds it back.
 PHONE_WIDE = {"delay": 20, "loss": 0, "up": 8000, "down": 8000}
 # A long path and nothing else (a US <-> China call through a relay): 250 ms more round trip on each user's link.
@@ -1148,8 +1153,11 @@ def phone_link(u, profile):
     """The user's link behaves like a phone's: netem on its upload (its eth0) and on its download
     (its gateway's side of the NAT, which carries only this user)."""
     jitter = " %dms distribution normal" % profile["jitter"] if profile.get("jitter") else ""
-    netem = "netem limit %d delay %dms%s loss %s%% %s%%" % (
-        profile.get("limit", 1000), profile["delay"], jitter, profile["loss"], profile.get("loss_corr", 0))
+    if profile.get("burst"):
+        loss = "loss gemodel %s%% %s%%" % profile["burst"]
+    else:
+        loss = "loss %s%% %s%%" % (profile["loss"], profile.get("loss_corr", 0))
+    netem = "netem limit %d delay %dms%s %s" % (profile.get("limit", 1000), profile["delay"], jitter, loss)
     net(u, "tc qdisc replace dev eth0 root %s rate %dkbit" % (netem, profile["up"]))
     gw_net(u, "tc qdisc replace dev %s root %s rate %dkbit" % (gw_inner_dev(u), netem, profile["down"]))
 
@@ -3627,13 +3635,15 @@ def wait_sees_video(u, senders, timeout=60):
 
 def video_snapshot(users):
     """Now: each receiver's view of each sender's video {(receiver, sender): row} (VideoArrivalStats counters),
-    each one's video frames sent {"tx", name: n} and audio frames received {"audio", name: n}."""
+    each one's video frames sent {"tx", name: n}, audio frames received {"audio", name: n} and what it heard
+    {"heard", name: row} (the engine's audio counters over every stream it plays, `streams` of them)."""
     snap = {}
     for u in users:
         state = u.state()
         name = u.name.split("-")[0]
         snap[("tx", name)] = state.get("tx_video_frames", 0)
         snap[("audio", name)] = state.get("rx_audio_frames", 0)
+        snap[("heard", name)] = dict(state.get("audio_heard", {}), streams=len(users) - 1)
         for row in state.get("video_arrivals", []):
             sender = next((o.name.split("-")[0] for o in users if stream_id(o.account) == row["stream_id"]), "peer")
             snap[(name, sender)] = row
@@ -3684,12 +3694,25 @@ def link_report(before, after, seconds):
 def video_report(before, after, seconds):
     """How each one's frames reached each other one between two snapshots (before decoding): a 20 fps sender
     spaces them ~50 ms; a reliable lane stalls on a loss, then lets frames go together (bunched). The counters are
-    the window's; the gap percentiles and the max are the whole call's."""
+    the window's; the gap percentiles and the max are the whole call's. heard_<name> is what that one heard of all
+    the others: audio concealed (lost or late: PLC and FEC; % of the audio it played), speech cut to catch up,
+    packets that came too late, slots with nothing to play (underruns), and the jitter target at the end."""
     report = {}
     for kind in ("tx", "audio"):
         rates = {key[1]: round((n - before.get(key, 0)) / seconds, 1) for key, n in after.items() if key[0] == kind}
         report["video_sent_fps" if kind == "tx" else "audio_rx_fps"] = rates
-    for key, row in sorted((k, v) for k, v in after.items() if k[0] not in ("tx", "audio")):
+    for key, row in sorted((k, v) for k, v in after.items() if k[0] == "heard"):
+        was = before.get(key, {})
+        delta = {k: row.get(k, 0) - was.get(k, 0) for k in row if k not in ("streams", "jitter_target_ms")}
+        played_ms = max(seconds * 1000 * row["streams"], 1)
+        report["heard_%s" % key[1]] = (
+            "concealed=%dms (%.1f%%) speech_cuts=%d late=%d underruns=%d plc=%d fec=%d silence_skips=%d "
+            "jitter_target=%dms" % (
+                delta.get("concealed_ms", 0), 100.0 * delta.get("concealed_ms", 0) / played_ms,
+                delta.get("speech_drops", 0), delta.get("late_drops", 0), delta.get("underruns", 0),
+                delta.get("plc_frames", 0), delta.get("fec_frames", 0), delta.get("silence_drops", 0),
+                row.get("jitter_target_ms", 0)))
+    for key, row in sorted((k, v) for k, v in after.items() if k[0] not in ("tx", "audio", "heard")):
         was = before.get(key, {})
         frames = row["frames"] - was.get("frames", 0)
         bunched = row["bunched"] - was.get("bunched", 0)
@@ -3784,8 +3807,9 @@ def video_measurement(group, profile):
 
 VIDEO_MEASUREMENTS = [("video_%s_%s" % (kind, name), video_measurement(kind == "group", profile))
                       for kind in ("group", "pair")
-                      for name, profile in (("lossy", PHONE_LOSSY), ("jittery", PHONE_JITTERY),
-                                            ("narrow", PHONE_NARROW), ("wide", PHONE_WIDE))] + [
+                      for name, profile in (("lossy", PHONE_LOSSY), ("bursty", PHONE_BURSTY),
+                                            ("jittery", PHONE_JITTERY), ("narrow", PHONE_NARROW),
+                                            ("wide", PHONE_WIDE))] + [
     ("voice_%s_wide" % kind, voice_measurement(kind == "group", PHONE_WIDE)) for kind in ("group", "pair")]
 
 

@@ -57,6 +57,8 @@ struct MediaEngineHealth {
   uint64_t plc_frames = 0;
   /** Frames recovered from the next packet's Opus in-band FEC (spec §2). */
   uint64_t fec_frames = 0;
+  /** Audio played that did not arrive in time (ms): loss concealment and FEC, summed over streams (V065). */
+  uint64_t concealed_ms = 0;
   /** Live audio device path: "vpio" (OS voice processing / AEC), "sdl", or "none". */
   std::string audio_io = "none";
   /** The engine was started and not stopped (with or without audio devices). A sample taken after it
@@ -70,6 +72,8 @@ struct MediaEngineHealth {
   int64_t jitter_depth_ms = 0;
   uint64_t jitter_silence_drops = 0;
   uint64_t jitter_speech_drops = 0;
+  /** Packets that came after their playout slot had passed (dropped; their slot was concealed). */
+  uint64_t jitter_late_drops = 0;
   uint64_t rx_audio_frames = 0;
   uint64_t tx_audio_frames = 0;
   int64_t last_rx_audio_ms = 0;
