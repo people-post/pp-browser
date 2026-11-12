@@ -5929,12 +5929,7 @@ void ChatController::ScheduleChatWindowMetric(const std::chrono::milliseconds de
         return; // left and came back (or paged and left): the reading would not say what it is named for
       }
       const CurrentMemoryMb memory = ReadCurrentMemoryMb();
-      MetricsLine line("chat.window");
-      line.Add("rows", exited ? int64_t{0} : static_cast<int64_t>(chat_.messages.size()));
-      if (!exited) {
-        line.Add("pictures", static_cast<int64_t>(CountPictureBubbleRows(chat_.messages)));
-      }
-      line.Add("footprint_mb", memory.footprint_mb).Add("rss_mb", memory.rss_mb).Emit();
+      ChatWindowLine(chat_.messages, exited, exited ? std::nullopt : scroller_.TakePageReading(), memory).Emit();
     });
   });
 }

@@ -8,10 +8,12 @@
 #include "gui/UiFrameStats.h"
 #include "gui/chat/ChatController.h"
 #include "gui/chat/ChatDataModel.h"
+#include "gui/chat/ChatOpenMetrics.h"
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/ShellBaseHide.h"
+#include "foundation/diagnostics/OsCurrentMemory.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/delivery/ReactionTypes.h"
 #include "lib/messaging/TranscriptAssembly.h"
@@ -719,6 +721,100 @@ TEST_F(ChatFirstScreenTest, PagesWithNothingToShowStopAfterThree) {
   EXPECT_EQ(older_loaded, 4);
   EXPECT_EQ(store.page_reads - page_reads, 4);
   EXPECT_TRUE(NeverTrimmed());
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Step 3: chat.window says what a page cost. The scroller keeps the page's reading; ChatController writes it in the one
+// chat.window line a second after the page (ChatWindowLine).
+
+TEST_F(ChatFirstScreenTest, AScrolledPageLeavesOneReadingWithNoFrameBeforeTheFix) {
+  SetClientHeight(600.f); // client height 600
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(2);
+  ScrollTo(40.f);
+  EXPECT_EQ(older_loaded, 1) << "one chat.window per page";
+  Frames(1); // laid out, then the position fix, before any frame is drawn
+  Frames(3);
+  EXPECT_EQ(older_loaded, 1);
+  const std::optional<ChatPageReading> page = scroller->TakePageReading();
+  ASSERT_TRUE(page.has_value());
+  EXPECT_EQ(page->added, 100);
+  EXPECT_FALSE(page->fill);
+  EXPECT_EQ(page->frames_before_fix, std::optional<int64_t>(0));
+  EXPECT_FALSE(scroller->TakePageReading().has_value()) << "taken once";
+}
+
+TEST_F(ChatFirstScreenTest, AFrameDrawnBeforeTheFixIsCounted) {
+  SetClientHeight(600.f); // client height 600
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(2);
+  ScrollTo(40.f);
+  UiFrameStats::AddFrame(0, 0); // the main loop drew a frame before the scroll policy ran
+  Frames(1);
+  const std::optional<ChatPageReading> page = scroller->TakePageReading();
+  ASSERT_TRUE(page.has_value());
+  EXPECT_EQ(page->frames_before_fix, std::optional<int64_t>(1));
+}
+
+TEST_F(ChatFirstScreenTest, AFillPageIsReadAsFillWithoutAFix) {
+  SetClientHeight(4000.f); // client height 4000
+  AddTexts("dm", 1, 300);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(1);
+  ASSERT_EQ(state.messages.size(), 130u);
+  EXPECT_EQ(older_loaded, 1) << "one chat.window per page";
+  Settle();
+  Frames(3);
+  const std::optional<ChatPageReading> page = scroller->TakePageReading();
+  ASSERT_TRUE(page.has_value());
+  EXPECT_EQ(page->added, 100);
+  EXPECT_TRUE(page->fill);
+  EXPECT_FALSE(page->frames_before_fix.has_value()) << "lands on the bottom: no position fix";
+}
+
+TEST_F(ChatFirstScreenTest, ASwitchDropsTheLastChatsReading) {
+  SetClientHeight(600.f); // client height 600
+  AddTexts("dm", 1, 300);
+  AddTexts("other", 1, 300);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(2);
+  ScrollTo(40.f);
+  Frames(2);
+  Sync("other", kDirect);
+  EXPECT_FALSE(scroller->TakePageReading().has_value());
+}
+
+TEST(ChatWindowLineTest, APageLineKeepsTheOldFieldsAndAddsThePagesOnes) {
+  std::vector<MessageDisplayRow> rows(3);
+  rows[1].content_rml = "<div class=\"chat-attachment-clip\"><img class=\"chat-attachment-image\" src=\"/a.jpg\"/></div>";
+  const CurrentMemoryMb memory{.footprint_mb = 210, .rss_mb = 180};
+  EXPECT_EQ(ChatWindowLine(rows, /*exited=*/false, ChatPageReading{.added = 100, .fill = false, .frames_before_fix = 1},
+                           memory)
+                .str(),
+            "event=chat.window rows=3 pictures=1 footprint_mb=210 rss_mb=180 added=100 cause=scroll "
+            "frames_before_fix=1");
+  EXPECT_EQ(ChatWindowLine(rows, false, ChatPageReading{.added = 100, .fill = true}, memory).str(),
+            "event=chat.window rows=3 pictures=1 footprint_mb=210 rss_mb=180 added=100 cause=fill");
+  // A peer's older history page (no local page reading): the old line.
+  EXPECT_EQ(ChatWindowLine(rows, false, std::nullopt, memory).str(),
+            "event=chat.window rows=3 pictures=1 footprint_mb=210 rss_mb=180");
+  // Left the chat: no page fields.
+  EXPECT_EQ(ChatWindowLine(rows, /*exited=*/true, std::nullopt, memory).str(),
+            "event=chat.window rows=0 footprint_mb=210 rss_mb=180");
+}
+
+TEST(ChatWindowLineTest, TheControllerWritesTheLineWithThePageReadingOnlyAfterAPage) {
+  const std::string schedule =
+      Body("src/gui/chat/ChatController.cpp", "void ChatController::ScheduleChatWindowMetric(");
+  EXPECT_NE(schedule.find("ChatWindowLine(chat_.messages, exited,"), std::string::npos);
+  EXPECT_NE(schedule.find("exited ? std::nullopt : scroller_.TakePageReading()"), std::string::npos);
+  EXPECT_EQ(schedule.find("MetricsLine line(\"chat.window\")"), std::string::npos) << "one place builds the line";
 }
 
 TEST(ChatFirstScreenCountTest, TheControllerPassesThirtyForDirectAndAiAndFiftyForAGroup) {

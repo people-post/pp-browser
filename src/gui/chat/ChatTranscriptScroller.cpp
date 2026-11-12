@@ -6,6 +6,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "common/chat/MessagingLimits.h"
 #include "gui/shell/DataModelHost.h"
+#include "gui/UiFrameStats.h"
 #include "lib/ui/NavBadgeFormat.h"
 
 #include <ui/dom/Context.h>
@@ -206,6 +207,10 @@ void ChatTranscriptScroller::ApplyPolicy() {
     pending_scroll_height_before_.reset();
     pending_scroll_top_before_.reset();
     last_messages_scroll_height_ = el->GetScrollHeight();
+    if (page_reading_ && !page_reading_->fill && !page_reading_->frames_before_fix) {
+      // A frame drawn between the page and this fix showed the rows at the old offset: the jump the person sees.
+      page_reading_->frames_before_fix = UiFrameStats::DrawnFrames() > page_frames_at_load_ ? 1 : 0;
+    }
   }
 
   KeepJumpFlash();
@@ -311,7 +316,7 @@ bool ChatTranscriptScroller::MaybeFillScreen(const float client_height, const fl
     return false;
   }
   const size_t rows_before = view_.messages.size();
-  LoadOlderLocalHistory();
+  LoadOlderLocalHistory(/*fill=*/true);
   // Back to the newest message the way an open lands there, not by the scroll-up position fix.
   pending_scroll_height_before_.reset();
   pending_scroll_top_before_.reset();
@@ -340,7 +345,7 @@ void ChatTranscriptScroller::MaybeLoadOlderLocalHistory() {
   LoadOlderLocalHistory();
 }
 
-void ChatTranscriptScroller::LoadOlderLocalHistory() {
+void ChatTranscriptScroller::LoadOlderLocalHistory(const bool fill) {
   if (loading_older_local_ || !messaging_ready_ || view_.messages.empty()) {
     return;
   }
@@ -387,6 +392,9 @@ void ChatTranscriptScroller::LoadOlderLocalHistory() {
   if (view_.messages.size() > rows_before) {
     fill_pages_without_rows_ = 0;
   }
+  page_reading_ = ChatPageReading{
+      .added = static_cast<int64_t>(view_.messages.size()) - static_cast<int64_t>(rows_before), .fill = fill};
+  page_frames_at_load_ = UiFrameStats::DrawnFrames();
   if (dirty_turns_) {
     dirty_turns_();
   }
@@ -588,6 +596,7 @@ bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id, cons
     first_screen_ = FirstScreen::Miss;
     first_screen_pending_ = first_screen_messages > 0;
     fill_pages_without_rows_ = 0;
+    page_reading_.reset(); // another chat's page
     RequestScrollToLatest();
   }
   // The first screen starts at the first_screen_messages-th newest message, decided once for the chat switched to. A
@@ -709,6 +718,7 @@ void ChatTranscriptScroller::ExpandLoadedMinFromOlderPage(const std::string& thr
   auto older = MessagesPage(thread_id, before_display_order, kDefaultMessagesPageSize);
   if (older && !older->empty()) {
     loaded_min_display_order_ = older->front().display_order;
+    page_reading_.reset(); // a peer's page: chat.window without a local page's fields
     if (on_older_loaded_) {
       on_older_loaded_(); // the chat redraws its rows with them next (the caller's refresh)
     }

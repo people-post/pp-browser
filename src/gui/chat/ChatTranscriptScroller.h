@@ -1,5 +1,6 @@
 #pragma once
 
+#include "gui/chat/ChatOpenMetrics.h"
 #include "lib/ui/ChatWidgetTypes.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "common/ShareableLine.h"
@@ -11,6 +12,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ui {
@@ -95,6 +97,8 @@ public:
 
   const std::optional<int64_t>& LoadedMinDisplayOrder() const { return loaded_min_display_order_; }
   const std::optional<int64_t>& LoadedMaxDisplayOrder() const { return loaded_max_display_order_; }
+  /** The last page of older rows loaded (chat.window), once: empty after a take, a peer's page or a chat switch. */
+  std::optional<ChatPageReading> TakePageReading() { return std::exchange(page_reading_, std::nullopt); }
   /** The store holds messages older than the window's first row (scrolling up loads them). */
   bool HasMoreLocalHistory() const { return has_more_local_history_; }
 
@@ -151,7 +155,8 @@ private:
   void SetShowJumpToLatest(bool show);
   void ScrollMessagesToBottom();
   void MaybeLoadOlderLocalHistory();
-  void LoadOlderLocalHistory();
+  /** `fill`: loaded by MaybeFillScreen (else the scroll reached the top); said in the page's reading. */
+  void LoadOlderLocalHistory(bool fill = false);
   /** After the scroll to the bottom settled: rows that do not fill the screen get the page above. True if loaded. */
   bool MaybeFillScreen(float client_height, float scroll_height, float max_top);
   /**
@@ -179,6 +184,9 @@ private:
   /** The chat switched to has not had its first screen decided (read failed, or not ready): tried on the next sync. */
   bool first_screen_pending_ = false;
   FirstScreen first_screen_ = FirstScreen::Miss;
+  /** The last local page's chat.window reading, and the frames drawn when it was loaded (UiFrameStats::DrawnFrames). */
+  std::optional<ChatPageReading> page_reading_;
+  int64_t page_frames_at_load_ = 0;
   /** Pages loaded in a row to fill the screen that added no row (MaybeFillScreen). */
   int fill_pages_without_rows_ = 0;
   std::string scroll_thread_id_;
