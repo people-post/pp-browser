@@ -267,4 +267,42 @@ Roe<OwnEdit> EditOwnMessage(IThreadStore& store, const ThreadMessage& target, co
   return result;
 }
 
+Roe<ResentEdit> ResendOwnEdit(IThreadStore& store, const std::string& thread_id, const std::string& message_id,
+                              const std::string& edit_id, const SendEditFn& send,
+                              const std::function<void(const std::string&)>& cancel_pending) {
+  auto found = store.GetMessage(thread_id, message_id);
+  if (!found || !found->has_value()) {
+    return Error("Message not found");
+  }
+  const ThreadMessage target = **found;
+  const std::optional<EditMark> mark = EditMarkOf(target);
+  if (target.sender_contact_id != kLocalSelfContactId || target.content_type != ChatContentType::Text || !mark) {
+    return Error("Not an edited message of ours");
+  }
+  auto unsent = store.GetMessage(thread_id, mark->edited_by);
+  if (!unsent || !unsent->has_value()) {
+    return Error("Its edit is gone");
+  }
+  const ThreadMessage old_edit = **unsent;
+  const std::optional<std::string> text = EditTextOf(old_edit);
+  if (!text || text->empty() || old_edit.delivery == MessageDelivery::Relayed) {
+    return Error("Nothing to send again");
+  }
+  // Same words, same send time (the time its receivers judge); a new id, as a re-sent message has.
+  ResentEdit result;
+  auto edit_row =
+      EditRowAfterSend(store, thread_id, edit_id, send(edit_id, *text, old_edit.timestamp), result.stored_unsent);
+  if (!edit_row) {
+    return edit_row.error();
+  }
+  if (auto edited = ApplyOwnEdit(store, target, *edit_row); !edited) {
+    return edited.error();
+  }
+  cancel_pending(old_edit.id);
+  auto removed = store.RemoveUnsentMessage(thread_id, old_edit.id);
+  result.unsent_removed = removed && *removed;
+  result.edit_row = std::move(*edit_row);
+  return result;
+}
+
 } // namespace pbr

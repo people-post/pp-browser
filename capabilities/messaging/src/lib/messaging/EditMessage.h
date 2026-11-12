@@ -177,4 +177,25 @@ Roe<OwnEdit> EditOwnMessage(IThreadStore& store, const ThreadMessage& target, Th
                             const std::string& new_text, int64_t tapped_at_ms, const std::string& edit_id,
                             const SendEditFn& send);
 
+/** What a resend of our edit did. */
+struct ResentEdit {
+  /** The new edit's row. */
+  ThreadMessage edit_row;
+  /** It was stored but its send failed again. */
+  bool stored_unsent = false;
+  /** The unsent edit's row was taken away. */
+  bool unsent_removed = false;
+};
+
+/**
+ * ConversationsHub::ResendEdit's steps (the red mark on our edited message `message_id`, tapped): its edit that did not
+ * go out (the one it carries, `edited_by`) is sent again as `edit_id` (`send`) with the same words and the same send
+ * time, applied here (the message's `edited_by` becomes the new one, every other edit row blanked), and the unsent one
+ * goes (`cancel_pending` drops its queued send, then its row is removed). Refused, nothing sent, when the message is not
+ * an edited text of ours or its edit is not there, blank, or already went out (Relayed).
+ */
+Roe<ResentEdit> ResendOwnEdit(IThreadStore& store, const std::string& thread_id, const std::string& message_id,
+                              const std::string& edit_id, const SendEditFn& send,
+                              const std::function<void(const std::string& message_id)>& cancel_pending);
+
 } // namespace pbr

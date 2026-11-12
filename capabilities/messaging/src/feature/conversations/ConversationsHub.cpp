@@ -2212,44 +2212,22 @@ Roe<ThreadMessage> ConversationsHub::ResendEdit(const std::string& thread_id, co
   if (!IsInitialized()) {
     return Error("Messaging hub not initialized");
   }
-  auto found = Store().GetMessage(thread_id, message_id);
-  if (!found || !found->has_value()) {
-    return Error("Message not found");
+  auto resent = ResendOwnEdit(
+      Store(), thread_id, message_id, util::GenerateUuid(),
+      [this, &thread_id, &message_id](const std::string& edit_id, const std::string& text, const int64_t sent_at_ms) {
+        return MeshMessaging().SendEdit(thread_id, message_id, text, edit_id, sent_at_ms);
+      },
+      [this](const std::string& unsent_id) { MeshMessaging().CancelPendingSend(unsent_id); });
+  if (!resent) {
+    return resent.error();
   }
-  const ThreadMessage target = **found;
-  const std::optional<EditMark> mark = EditMarkOf(target);
-  if (target.sender_contact_id != kLocalSelfContactId || target.content_type != ChatContentType::Text || !mark) {
-    return Error("Not an edited message of ours");
-  }
-  auto unsent = Store().GetMessage(thread_id, mark->edited_by);
-  if (!unsent || !unsent->has_value()) {
-    return Error("Its edit is gone");
-  }
-  const ThreadMessage old_edit = **unsent;
-  const std::optional<std::string> text = EditTextOf(old_edit);
-  if (!text || text->empty() || old_edit.delivery == MessageDelivery::Relayed) {
-    return Error("Nothing to send again");
-  }
-  // Same words, same send time (the time its receivers judge); a new id, as a re-sent message has.
-  const std::string edit_id = util::GenerateUuid();
-  bool stored_unsent = false;
-  auto edit_row = EditRowAfterSend(Store(), thread_id, edit_id,
-                                   MeshMessaging().SendEdit(thread_id, target.id, *text, edit_id, old_edit.timestamp),
-                                   stored_unsent);
-  if (!edit_row) {
-    return edit_row.error();
-  }
-  if (stored_unsent) {
+  if (resent->stored_unsent) {
     log().warning << "resent edit stored but not sent";
   }
-  if (auto edited = ApplyOwnEdit(Store(), target, *edit_row); !edited) {
-    return edited.error();
-  }
-  MeshMessaging().CancelPendingSend(old_edit.id);
-  if (auto removed = Store().RemoveUnsentMessage(thread_id, old_edit.id); !removed || !*removed) {
+  if (!resent->unsent_removed) {
     log().warning << "resent edit: the unsent edit row was not removed";
   }
-  return edit_row;
+  return resent->edit_row;
 }
 
 void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {
