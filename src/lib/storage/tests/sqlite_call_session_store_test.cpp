@@ -429,10 +429,15 @@ TEST_F(CallSessionStoreTest, AnOpenWriteTransactionElsewhereNeitherHoldsUpAReadN
             SQLITE_OK);
   ASSERT_EQ(writer.Exec("UPDATE call_sessions SET state = 'ended' WHERE call_id = 'call:before';"), SQLITE_OK);
 
+  // The shared connection answers each read without a busy wait or a reopen. Measured on the Mac: ~10 us a pair of
+  // reads on the shared connection, ~220 us with a store (so a connection) opened per pair. That gap is too small for
+  // a time limit on a busy machine, so a reopen per read is shown by the open count; the time bound only catches a
+  // read held up by the writer's uncommitted transaction, which would wait out the 5 s busy timeout.
+  constexpr int kReads = 100;
+  constexpr int64_t kBlockedBoundUs = 2'500'000; // half the 5 s busy timeout, far from any scheduling jitter
   int reads = 0;
   int64_t slowest_us = 0;
-  const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-  while (std::chrono::steady_clock::now() < until) {
+  for (int round = 0; round < kReads; ++round) {
     const auto started = std::chrono::steady_clock::now();
     auto active = calls_->ListActiveSessions();
     auto fresh = calls_->LoadSession("call:new");
@@ -445,10 +450,10 @@ TEST_F(CallSessionStoreTest, AnOpenWriteTransactionElsewhereNeitherHoldsUpAReadN
     ASSERT_TRUE(fresh);
     EXPECT_FALSE(fresh->has_value());
     ++reads;
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  EXPECT_LT(slowest_us, 50'000) << "two reads took " << slowest_us << " us";
-  EXPECT_GT(reads, 50);
+  EXPECT_LT(slowest_us, kBlockedBoundUs) << "two reads took " << slowest_us << " us";
+  EXPECT_EQ(reads, kReads);
+  EXPECT_EQ(calls_->ReadConnectionOpensForTest(), 1u) << "every read used the one connection";
 
   ASSERT_EQ(writer.Exec("COMMIT;"), SQLITE_OK);
   auto active = calls_->ListActiveSessions().value();
