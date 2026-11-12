@@ -29,6 +29,7 @@
 #include "gui/shell/MascotLook.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
+#include "gui/shell/ShellBaseHide.h"
 #include "gui/shell/ShellCallChromeRml.h"
 #include "gui/shell/ShellFeedback.h"
 #include "lib/ui/ShellInterruption.h"
@@ -1911,6 +1912,8 @@ void ShellHost::ApplySafeAreaLayout() {
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface, bottom_chrome_open_);
   ui::ElementDocument* doc = context_->GetDocument(0);
+  // Measurement switch: from the switch and the call page now, every time the shell is synced or the call remounted.
+  ShellBaseHide::Apply(context_, doc, ShellBaseHide::ShouldHide(ShellBaseHide::SwitchOn(), state_));
 
   auto set_dp = [](ui::Element* element, const char* property, float value_dp) {
     if (!element) {

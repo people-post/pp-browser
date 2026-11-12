@@ -400,6 +400,7 @@ data-value="server.url"	1	integrations	advanced	advanced;;advanced	integrations
 {{reachability_status_label}}	1	-	advanced	advanced;;show_connection_card	network	
 {{reachability_summary}}	1	-	advanced	advanced;;show_connection_card	network	
 {{tool_permissions_summary}}	1	-	advanced	advanced;;advanced	security	
+data-class-settings-switch--on="call_base_hide == 'on'"	1	-	tester	advanced	tester	
 data-class-settings-switch--on="call_diagnostics == 'on'"	1	-	tester	advanced	appearance	
 data-event-change="on_network_field_changed()"	3	network	tester	advanced;;advanced;;backend_is_custom	network	
 data-event-click="clear_undelivered_older_than()"	1	security	tester	advanced;;advanced	security	
@@ -416,6 +417,7 @@ data-event-click="share_cas_publicly(item_index)"	1	storage	tester	advanced;;adv
 data-event-click="simulate_chats_link_connecting()"	1	-	tester	advanced;;dev_tools_available	about	
 data-event-click="simulate_chats_link_offline()"	1	-	tester	advanced;;dev_tools_available	about	
 data-event-click="simulate_chats_link_online()"	1	-	tester	advanced;;dev_tools_available	about	
+data-event-click="toggle_call_base_hide()"	1	-	tester	advanced	tester	
 data-event-click="toggle_call_diagnostics()"	1	appearance	tester	advanced	appearance	
 data-event-click="unpublish_cas(item_index)"	1	storage	tester	advanced;;advanced;;item.can_unpublish	storage	
 data-value="directory_base_url"	1	network	tester	advanced;;advanced;;backend_is_custom	network	
@@ -430,6 +432,7 @@ data-value="relay_base_url"	1	network	tester	advanced;;advanced;;backend_is_cust
 {{i18n:dev.link.sim_offline}}	1	-	tester	advanced;;dev_tools_available	about	
 {{i18n:dev.link.sim_online}}	1	-	tester	advanced;;dev_tools_available	about	
 {{i18n:dev.perf.row}}	1	-	tester	advanced;;dev_tools_available	about	
+{{i18n:settings.call_base_hide.label}}	1	-	tester	advanced	tester	
 {{i18n:settings.call_diagnostics.help}}	1	-	tester	advanced	appearance	
 {{i18n:settings.call_diagnostics.label}}	1	-	tester	advanced	appearance	
 {{i18n:settings.network.backend.help}}	1	-	tester	advanced;;show_backend_switch	network	

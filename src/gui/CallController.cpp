@@ -11,6 +11,7 @@
 #include "lib/media/DeviceVitals.h"
 #include "lib/media/ThreadCpu.h"
 #include "gui/UiFrameStats.h"
+#include "gui/shell/ShellBaseHide.h"
 #include "common/media/CallMediaHealth.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/CallHopAttachLogic.h"
@@ -584,6 +585,7 @@ void CallController::BindVideoFrameWake(IMediaView& media) {
   // Any thread (the camera's, a decoder's): a new frame to draw. Nothing else wakes the frame loop for it.
   media.SetOnVideoFrame([last = std::make_shared<std::atomic<int64_t>>(0)]() {
     if (TakeVideoFrameWake(*last, util::NowUnixMs())) {
+      UiCostCounters::Instance().AddVideoWake();
       Backend::RequestForceFrame();
     }
   });
@@ -612,6 +614,7 @@ void CallController::EmitPerfThreads(const int64_t now_ms) {
   perf_proc_cpu_s_ = vitals.cpu_s;
   perf_sample_ms_ = now_ms;
   const UiFrameTotals frames = UiFrameStats::TakeAndReset();
+  const UiCostTotals cost = UiCostCounters::Instance().TakeAndReset();
   if (prev_sample_ms == 0) {
     return; // the first sample only sets the baseline
   }
@@ -628,7 +631,19 @@ void CallController::EmitPerfThreads(const int64_t now_ms) {
       .Add("remote_video", in_call_.remote_video)
       .Add("frames", frames.frames)
       .Add("layout_ms", static_cast<double>(frames.layout_us) / 1000.0)
-      .Add("render_ms", static_cast<double>(frames.render_us) / 1000.0);
+      .Add("render_ms", static_cast<double>(frames.render_us) / 1000.0)
+      .Add("call_tick_ms", static_cast<double>(cost.call_tick_us) / 1000.0)
+      .Add("chat_update_ms", static_cast<double>(cost.chat_update_us) / 1000.0)
+      .Add("shell_update_ms", static_cast<double>(cost.shell_update_us) / 1000.0)
+      .Add("ctx_update_ms", static_cast<double>(cost.ctx_update_us) / 1000.0)
+      .Add("roster_ms", static_cast<double>(cost.roster_us) / 1000.0)
+      .Add("tiles_ms", static_cast<double>(cost.tiles_us) / 1000.0)
+      .Add("roster_builds", cost.roster_builds)
+      .Add("icon_lookups", cost.icon_lookups)
+      .Add("frame_copies", cost.frame_copies)
+      .Add("frame_copies_stale", cost.frame_copies_stale)
+      .Add("video_wakes", cost.video_wakes)
+      .Add("base_hidden", ShellBaseHide::Hidden());
   for (size_t i = 0; i < top.size(); ++i) {
     line.Pick(kKeys[i], top[i].name, kKnownThreadNames).Add(kMsKeys[i], top[i].ms);
   }
@@ -1359,6 +1374,8 @@ void CallController::FillInCallFromScreen(const CallScreen& screen, const int64_
 }
 
 void CallController::FillRoster(CallInProgressState& in_call, const CallScreen& screen) {
+  UiCostTimer cost_timer(&UiCostCounters::AddRosterUs);
+  UiCostCounters::Instance().AddRosterBuild();
   in_call.roster.clear();
   in_call.roster.reserve(screen.members.size());
   for (const CallScreen::Member& member : screen.members) {
@@ -1403,6 +1420,7 @@ void CallController::ResetChromeForCall(const std::string& call_id, const bool f
 }
 
 std::string CallController::IconPath(const std::string& identity) const {
+  UiCostCounters::Instance().AddIconLookup();
   return call_ports_.identity_icon_local_path && !identity.empty() ? call_ports_.identity_icon_local_path(identity)
                                                                    : std::string();
 }
@@ -1679,8 +1697,11 @@ void CallController::ApplyVideo(IMediaView& media, CallUiBackend& backend, const
   if (!in_call.remote_video) {
     CallVideoTileRenderer::Instance().ClearRemote();
   }
-  SubmitVideoTiles(media, now_ms);
-  SubmitRosterTiles(media);
+  {
+    UiCostTimer cost_timer(&UiCostCounters::AddTilesUs);
+    SubmitVideoTiles(media, now_ms);
+    SubmitRosterTiles(media);
+  }
   ApplySpotlightToState(in_call); // the spotlight / strip copies take the rows' new video flags
   RequestVideoRefreshes(media, backend, frame.media, now_ms);
   in_call.stage_visible = frame.media.stage_visible || in_call.local_preview;
@@ -1696,11 +1717,13 @@ void CallController::SubmitVideoTiles(IMediaView& media, const int64_t now_ms) {
   bool peer_new = false;
   if (in_call.local_preview) {
     self_new = local_tile.seq != last_shown_self_seq_;
+    UiCostCounters::Instance().AddFrameCopy(!self_new);
     last_shown_self_seq_ = local_tile.seq;
     CallVideoTileRenderer::Instance().SubmitLocalFrame(TileFrame(std::move(local_tile)));
   }
   if (IMediaView::VideoTileFrame remote_tile; in_call.remote_video && media.CopyRemoteVideoFrame(remote_tile)) {
     peer_new = remote_tile.seq != last_shown_peer_seq_;
+    UiCostCounters::Instance().AddFrameCopy(!peer_new);
     last_shown_peer_seq_ = remote_tile.seq;
     CallVideoTileRenderer::Instance().SubmitRemoteFrame(TileFrame(std::move(remote_tile)));
   }
@@ -1721,10 +1744,17 @@ void CallController::SubmitRosterTiles(IMediaView& media) {
     }
     live_peer_streams.push_back(stream);
     if (IMediaView::VideoTileFrame peer_tile; media.CopyRemoteVideoFrameForStream(stream, peer_tile)) {
+      // Counting only: the sequence number shown last time on this stream (not used for what is submitted).
+      const auto seen = counted_stream_seq_.find(stream);
+      UiCostCounters::Instance().AddFrameCopy(seen != counted_stream_seq_.end() && seen->second == peer_tile.seq);
+      counted_stream_seq_[stream] = peer_tile.seq;
       CallVideoTileRenderer::Instance().SubmitPeerFrame(stream, TileFrame(std::move(peer_tile)));
     }
   }
   CallVideoTileRenderer::Instance().RetainPeers(live_peer_streams);
+  std::erase_if(counted_stream_seq_, [&](const auto& kv) {
+    return std::find(live_peer_streams.begin(), live_peer_streams.end(), kv.first) == live_peer_streams.end();
+  });
 }
 
 void CallController::RequestVideoRefreshes(IMediaView& media, CallUiBackend& backend, const CallMediaDecision& media_d,

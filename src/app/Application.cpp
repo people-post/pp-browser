@@ -2636,13 +2636,25 @@ void Application::Run() {
     if (shell_->State().nav_tab == NavTab::Contacts || contacts_->DetailSheetOpen()) {
       contacts_->Tick();
     }
-    call_->Tick();
+    {
+      UiCostTimer timer(&UiCostCounters::AddCallTickUs);
+      call_->Tick();
+    }
     qr_scan_->Tick();
     avatar_crop_->Tick();
-    chat_->Update();
+    {
+      UiCostTimer timer(&UiCostCounters::AddChatUpdateUs);
+      chat_->Update();
+    }
     ContextMenuHost::Instance().Update();
-    shell_->Update(context);
-    context->Update();
+    {
+      UiCostTimer timer(&UiCostCounters::AddShellUpdateUs);
+      shell_->Update(context);
+    }
+    {
+      UiCostTimer timer(&UiCostCounters::AddCtxUpdateUs);
+      context->Update();
+    }
     const auto layout_done = std::chrono::steady_clock::now();
     chat_->AfterLayout();
     // After Context::Update (which resets next_update_timeout): arm power-save for shell timers.

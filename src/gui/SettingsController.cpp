@@ -23,6 +23,7 @@
 #include "feature/settings/SettingsPages.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "gui/shell/DataModelHost.h"
+#include "gui/shell/ShellBaseHide.h"
 #include "gui/shell/MascotLook.h"
 #include "gui/ProfileSettingsSection.h"
 #include "gui/shell/RmlMount.h"
@@ -676,6 +677,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("language_label", &controller.bindings_.language_label);
     ctor.Bind("reduce_transparency", &controller.bindings_.reduce_transparency);
     ctor.Bind("call_diagnostics", &controller.bindings_.call_diagnostics);
+    ctor.Bind("call_base_hide", &controller.bindings_.call_base_hide);
     ctor.Bind("home_show_dynamic", &controller.bindings_.home_show_dynamic);
     ctor.Bind("home_animated_logo", &controller.bindings_.home_animated_logo);
     ctor.Bind("crash_reports_enabled", &controller.bindings_.crash_reports_enabled);
@@ -777,6 +779,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
                            }));
     ctor.BindEventCallback("toggle_transparency", DataEvent<>([this]() { ToggleTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
+    ctor.BindEventCallback("toggle_call_base_hide", DataEvent<>([this]() { ToggleCallBaseHide(); }));
     ctor.BindEventCallback("toggle_home_show_dynamic", DataEvent<>([this]() { ToggleHomeShowDynamic(); }));
     ctor.BindEventCallback("toggle_home_animated_logo", DataEvent<>([this]() { ToggleHomeAnimatedLogo(); }));
     ctor.BindEventCallback("open_ui_perf_test", DataEvent<>([this]() {
@@ -916,6 +919,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "language_label");
   host.Dirty("settings", "reduce_transparency");
   host.Dirty("settings", "call_diagnostics");
+  host.Dirty("settings", "call_base_hide");
   host.Dirty("settings", "home_show_dynamic");
   host.Dirty("settings", "home_animated_logo");
   host.Dirty("settings", "crash_reports_enabled");
@@ -2182,6 +2186,13 @@ void SettingsController::ToggleCallDiagnostics() {
   bindings_.call_diagnostics = bindings_.call_diagnostics == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("appearance", /*show_toast=*/false);
+  DirtyAll();
+}
+
+void SettingsController::ToggleCallBaseHide() {
+  // Measurement only (PLAN-call-frame-cost step 4): process-wide, not a pref; ShellHost reads it on the next sync.
+  ShellBaseHide::SetSwitch(!ShellBaseHide::SwitchOn());
+  bindings_.call_base_hide = ShellBaseHide::SwitchOn() ? "on" : "off";
   DirtyAll();
 }
 
