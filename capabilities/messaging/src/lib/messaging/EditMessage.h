@@ -90,6 +90,8 @@ enum class EditRefusal {
   TooLong,
   /** 4. Sent more than kEditWindowMs + kEditArrivalSlackMs after the message. */
   TooLate,
+  /** 4. Sent before the message (EditSendTime never stamps one so). */
+  TooEarly,
   /** 5. Not newer than the edit the message already carries. */
   NotNewer,
 };
@@ -111,7 +113,8 @@ ThreadMessage BlankedEdit(ThreadMessage edit);
 
 /**
  * The send time of a new edit of `target`: `now_ms`, but never before the edit this device already applied to it (+1 ms),
- * so an edit made after receiving our other device's edit wins whatever this device's clock says.
+ * so an edit made after receiving our other device's edit wins whatever this device's clock says; and never before
+ * `target` itself, which its receivers refuse (TooEarly).
  */
 int64_t EditSendTime(int64_t now_ms, const ThreadMessage& target);
 

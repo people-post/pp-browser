@@ -1204,6 +1204,18 @@ TEST(MessagingCrossCuttingTest, AnEditSentTooLateIsIgnored) {
   EXPECT_EQ(harness.RowsHolding("late words"), 0u);
 }
 
+// Stamped before the message it edits: ignored, its words not kept.
+TEST(MessagingCrossCuttingTest, AnEditStampedBeforeItsMessageIsIgnored) {
+  PipelineHarness harness("edit_early", ThreadChannel::E2e);
+  ReceiveOriginal(harness);
+  ASSERT_TRUE(harness.pipeline
+                  .ProcessEnvelope(harness.MakeEdit("edit-1", 2, "peer-1", "early words", kSent - kMin),
+                                   harness.local_account_id)
+                  .persisted);
+  EXPECT_EQ(harness.Stored("peer-1")->text, "see you at 8");
+  EXPECT_EQ(harness.RowsHolding("early words"), 0u);
+}
+
 // No text, or too long: ignored.
 TEST(MessagingCrossCuttingTest, AnEmptyOrOverlongEditIsIgnored) {
   PipelineHarness harness("edit_text_limits", ThreadChannel::E2e);
