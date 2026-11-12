@@ -1552,3 +1552,4 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 **Open:**
 - Audio first at the bottleneck itself (a phone's uplink, a member's downlink): the sender's rate and the subscriber's choice of video are the levers there. On a 600 kbit/s uplink with no loss, listeners lose 0.6–1.6 % of the audio (lab, 2026-11-11), most likely behind video keyframes in the phone's own queue.
 - Speech is still cut when a burst past the cap starts with speech (counted as speech drops).
+- The lower top costs concealment where audio waits behind video in a phone's uplink: lab `group_video_on_the_road` 7.4 → 11–14 % concealed, `video_group_narrow` 1.6 → 6 % (2026-11-11), with no speech cut. The knob is how long an underrun waits (the target's top now; up to the cap would conceal less and add delay).
