@@ -243,7 +243,7 @@ Circuit may keep simpler N014-style preference in **nf**. Peer `message_relay` r
 ## N021 — Generic `media_relay` framing; QoS channel types
 
 **Date:** 2026-07-30  
-**Status:** Accepted; the `reliable_ordered` behaviour ("deliver even if late") is **superseded by** [V065](../p2p-av-calls/DECISIONS.md#v065--call-audio-keeps-a-delay-budget-audio-before-video) — audio keeps a delay budget, is never resent, and goes before `latest_lossy` wherever the two queue together. Now: [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos)  
+**Status:** Accepted; the `reliable_ordered` behaviour ("deliver even if late") is **superseded by** [V065](../p2p-av-calls/DECISIONS.md#v065--call-audio-keeps-a-delay-budget-audio-before-video) — audio keeps a delay budget, is never resent, and goes before `latest_lossy` wherever the two queue together; the type is now `Forward` (V065 7), and `best_effort` is gone. Now: [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos)  
 **Decision:** The `media_relay` hop is a **content-agnostic multiplexed datagram forwarder**. It must not assume audio/video or decode payloads. Clear **framing metadata** enables subscribe, byte accounting, and QoS. Call A/V **policy** (1:1 P2P and SFU) and role→type mapping: [V024](../p2p-av-calls/DECISIONS.md#v024--adaptive-call-media-11-p2p-and-sfu-generic-relay-channels). Future non-call apps may reuse the same hop.
 
 ### Packet / frame header (illustrative)

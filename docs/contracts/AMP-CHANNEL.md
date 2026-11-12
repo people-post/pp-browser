@@ -138,17 +138,19 @@ Max reassembled size defaults match today’s stream caps:
 
 Core factories: pp-cpp-amp `amp/L3/ChannelPolicy.h` (Amp owns Bulk class + size). Product L4 factories: pp-cpp-mesh `mesh/l4/shared/ProductChannelPolicies.h` (product-only extras + `read_once` / timeouts). See [pp-cpp-amp OWNERSHIP](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/OWNERSHIP.md).
 
-| Factory | Class | `max_outbound` | Drop | `read_once` | Read timeout | Home |
-|---------|-------|----------------|------|-------------|--------------|------|
-| `CallMediaChannelPolicy` | Realtime | 64 | Oldest | no | off | core |
-| `CallMediaControlChannelPolicy` | RealtimeControl | 1 | Never | no | off | product |
-| `MediaRelayHopChannelPolicy` | Realtime | 2 | Oldest | no | off | product |
-| `MediaRelayClientChannelPolicy` | RealtimeControl | 6 | Never | no | off | product |
-| `CircuitTunnelChannelPolicy` | Control | 1 | Never | no | off | product |
-| `CircuitCarrierChannelPolicy` | Realtime | 64 | Oldest | no | off | core |
-| `ControlJsonChannelPolicy` | Control | 1 | Never | yes | 8 s (callers pass their deadline) | core |
-| `MakeBulkChannelPolicy` / `BulkChannelPolicy()` | Bulk | 1 | Never | no | off | **core** |
-| `BulkChannelPolicy(bool)` (wrap + timeout) | Bulk | 1 | Never | configurable | 8 s (client: remaining operation time; inbound: 15 s) | product |
+| Factory | Class | `read_once` | Read timeout | Home |
+|---------|-------|-------------|--------------|------|
+| `CallMediaChannelPolicy` | Realtime | no | off | core |
+| `CallMediaControlChannelPolicy` | RealtimeControl | no | off | product |
+| `MediaRelayDataChannelPolicy` | Realtime | no | off | product |
+| `MediaRelayClientChannelPolicy` | RealtimeControl | no | off | product |
+| `CircuitTunnelChannelPolicy` | Control | no | off | product |
+| `CircuitCarrierChannelPolicy` | Realtime | no | off | core |
+| `ControlJsonChannelPolicy` | Control | yes | 8 s (callers pass their deadline) | core |
+| `MakeBulkChannelPolicy` / `BulkChannelPolicy()` | Bulk | no | off | **core** |
+| `BulkChannelPolicy(bool)` (wrap + timeout) | Bulk | configurable | 8 s (client: remaining operation time; inbound: 15 s) | product |
+
+No policy queues or drops outbound (pp-cpp-amp after v5.9.0): a session sends each payload to its mux at once; a reliable frame waits there for window space, a best-effort one goes to the link. The drop-oldest caps (64 call-media, 2 hop, 6 client, 1 control) never filled and are gone.
 
 **Read timeout is enforced** (pp-cpp-amp v2.15.0+): a channel with nothing *inbound*
 for that long is reset (`read-timeout` to the local side, RESET to the peer); the clock
@@ -290,7 +292,7 @@ For Amp **call-media** over circuit, the bridged channel is **not** the product 
 
 1. A and B run **inner MSH** over the carrier (`PeerLink` carrier mode; non-chunked `AmpAdpCarrier` MSH/sealed frames as ChannelSession DATA).
 2. Inner `Session` + `ChannelMux` becomes a normal PeerLink; `OpenChannel` opens A021 control+media on that mux.
-3. Outer policy: `CircuitCarrierChannelPolicy` (BestEffort Realtime, large outbound queue) so media FRAG bursts are not stalled by ADP `reliable_window`.
+3. Outer policy: `CircuitCarrierChannelPolicy` (BestEffort Realtime) so media FRAG bursts are not stalled by ADP `reliable_window`.
 
 **Carrier payloads** (one per carrier DATA message, first byte the kind):
 
@@ -303,7 +305,7 @@ For Amp **call-media** over circuit, the bridged channel is **not** the product 
 
 Each inner space keeps a replay window (best effort 128, reliable 1024): a relay between the ends could replay an inner packet, and the window turns it away. An inner frame is at most the nested link's budget (§ Fragmentation), so a sealed inner packet rides one outer DATA frame whole.
 
-Media-relay SoftMigrate continues to adopt one opaque channel (5c); nested Session is call-media only. See [CALL_MEDIA_CIRCUIT.md](../../projects/adp/CALL_MEDIA_CIRCUIT.md).
+A media-relay hop reachable only through a circuit is reached the same way: a nested Session, on which the hop's control channel and its data lane open as on a direct link (pp-cpp-mesh after v6.10.0; the single adopted tunnel channel of D9 5c is gone). See [CALL_MEDIA_CIRCUIT.md](../../projects/adp/CALL_MEDIA_CIRCUIT.md).
 
 ## Three objects (do not collapse)
 
@@ -351,7 +353,7 @@ PeerLinkManager                 // owns PeerLink by key; elects/drops links (A02
 | QoS map | Reliable channel never sends BE ADP |
 | Fragmentation | loss, reorder, dup, timeout |
 | ch0 | capability round-trip |
-| Policy | drop oldest, read_once, 8 s timeout |
+| Policy | read_once, 8 s timeout; a best-effort session sends at once (no queue) |
 | Isolate | RESET does not kill sibling channel |
 | Ownership canaries | DualDial call-media (`CallMediaLeg*`); media-relay adopt + `Subscribe` after attach (`LocalHopFanoutRoundTrip`) |
 

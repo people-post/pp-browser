@@ -98,7 +98,7 @@
 |------|-------|
 | Protocol | `/pp-mesh/datagram-relay/1.0.0` (`MediaRelayService`) |
 | Framing | N021 binary frames: `stream_id \| channel_id \| channel_type \| seq \| mark` + opaque payload |
-| QoS | `reliable_ordered` (audio: never resent, shed after video), `latest_lossy` (stale-dropped, shed first), `best_effort` — audio keeps a delay budget ([V065](../p2p-av-calls/DECISIONS.md#v065--call-audio-keeps-a-delay-budget-audio-before-video)) |
+| QoS | `Forward` (audio: as it came, never resent), `LatestLossy` (stale-dropped, shed first); media only on each member's best-effort data lane, direct or through a circuit — [V065](../p2p-av-calls/DECISIONS.md#v065--call-audio-keeps-a-delay-budget-audio-before-video) |
 | Session | quote → accept → attach; subscribe `(stream_id, channel_id)`; ↑/↓ budget defaults; volunteer rate 0 |
 | Auth stub | `auth` must equal `call_id` (a4 will supply roster proof) |
 | Config | `capabilities.media_relay` **default on**; `pricing.media_relay`; `media_relay_budget` |

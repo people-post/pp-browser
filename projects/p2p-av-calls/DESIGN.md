@@ -188,7 +188,7 @@ Invitees who are not in the origin group still use **direct** E2E only.
 | Backend | `/pp/realtime/1.0.0` (direct / circuit) | N021 `media_relay` channels |
 | Producer | audio; then lo/hi by uplink | same |
 | Receiver demand | health / focus | subscribe `(stream_id, channel_id)` |
-| Path QoS | local rate + playout; drop stale video; audio within a delay budget, before video ([V065](DECISIONS.md#v065--call-audio-keeps-a-delay-budget-audio-before-video)) | relay `latest_lossy` (stale-dropped, shed first; audio's `reliable_ordered` is never resent) |
+| Path QoS | local rate + playout; drop stale video; audio within a delay budget, before video ([V065](DECISIONS.md#v065--call-audio-keeps-a-delay-budget-audio-before-video)) | relay `LatestLossy` (stale-dropped, shed first); audio `Forward`, never resent |
 
 | Layer | Role |
 |-------|------|
