@@ -48,7 +48,7 @@ ctl wait-tables --min-contacts 3 --timeout 120
 # The callee publishes its record while the seed is up, then waits for a call.
 call_id="pp-dht-lab-call"
 docker exec pp-dht-lab-callee /probes/pp-call-probe --role answerer --product-stack \
-  --listen /ip4/0.0.0.0/udp/18600/adp/1.0.0 --advertise-host 10.78.21.10 \
+  --listen /ip4/0.0.0.0/udp/18600/adp/2 --advertise-host 10.78.21.10 \
   --ready-file /share/callee.ready --signal-dir /share/sig --call-id "${call_id}" --hold-seconds 600 \
   --dht "${SEED_MA}" --dht-k "${K}" > "${SHARE_DIR}/callee.log" 2>&1 &
 callee_pid=$!
@@ -68,7 +68,7 @@ echo "N-DHT PASSED"
 
 echo "=== N-DHT-CALL: the caller knows the callee's PeerId only; the DHT gives the address ==="
 NODE_MA="$(ctl seed-ma --host dht-1 --timeout 30)"
-dead_ma="/ip4/192.0.2.1/udp/9/adp/1.0.0/p2p/${callee_ma##*/p2p/}"  # TEST-NET: never answers
+dead_ma="/ip4/192.0.2.1/udp/9/adp/2/p2p/${callee_ma##*/p2p/}"  # TEST-NET: never answers
 docker exec pp-dht-lab-caller /probes/pp-call-probe --role offerer --product-stack \
   --peer "${dead_ma}" --peer-account "${callee_account}" --via-hop "${NODE_MA}" \
   --call-id "${call_id}" --signal-dir /share/sig --hold-ms 5000 --timeout-ms 60000 \

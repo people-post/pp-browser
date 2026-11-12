@@ -31,7 +31,7 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_media_relay_participants` | gauge | | Across those sessions |
 | `pp_media_relay_frames_total` | counter | `direction` = `received` \| `forwarded` | Data frames (forwarded counts each recipient) |
 | `pp_media_relay_bytes_total` | counter | `direction` | Data frame bytes |
-| `pp_media_relay_dropped_frames_total` | counter | `reason` = `stale` \| `not_carried` | Stale latest-lossy frames; a channel not agreed for the sender — video of another level, or a reserved kind ([MEDIA_CHANNELS](MEDIA_CHANNELS.md)) |
+| `pp_media_relay_dropped_frames_total` | counter | `reason` = `stale` \| `not_carried` \| `not_attached` \| `no_lane` \| `control_channel` | Stale latest-lossy frames; a channel not agreed for the sender — video of another level, or a reserved kind; a lane frame from a peer not attached; a member whose data lane is not open; media sent on a control channel ([MEDIA_CHANNELS § Channel type](MEDIA_CHANNELS.md#channel-type-relay-qos)) |
 | `pp_media_relay_quotes_total` | counter | `result` = `issued` \| `refused_admission` \| `refused_video_level` \| `refused_busy` | |
 | `pp_media_relay_attaches_total` | counter | `result` = `ok` \| `refused` | |
 | `pp_amp_datagrams_total` | counter | `direction` = `sent` \| `received` | Amp UDP datagrams |

@@ -92,6 +92,7 @@ pp_browser_add_feature_library(pp_gui
     shell/ShellDrawerOpenGesture.cpp
     shell/SessionSwipeGesture.cpp
     BlobQuotaRecoveryFlow.cpp
+    ChatStoreRecovery.cpp
     UserFeedback.cpp
   PUBLIC_LIBS
     pp_feature_settings

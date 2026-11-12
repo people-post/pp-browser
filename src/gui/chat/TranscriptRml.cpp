@@ -163,9 +163,9 @@ std::optional<std::string> SendFailureLine(const ThreadMessage& message) {
   return SendFailureText(SendFailureFromWire(*reason).value_or(SendFailure::Unknown));
 }
 
-/** A system row's stored text; a line stored in English before shows in the UI language. */
+/** A system row's stored text; a line its writer stores in English shows in the UI language. */
 std::string StoredSystemText(const ThreadMessage& message) {
-  return LegacySystemLineText(message.text).value_or(message.text);
+  return StoredSystemLineText(message.text).value_or(message.text);
 }
 
 /** The words of a call summary row: the duration, or the outcome's word; a group call says so first. */
@@ -841,10 +841,6 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     }
     const bool has_snapshot = message.working_set_json && !message.working_set_json->empty() &&
                               !WorkingSetCandidatesFromJson(*message.working_set_json).empty();
-    // Legacy bug: panel row actions were dumped into the bubble as chat-suggestion chips.
-    if (ContentRmlHasWorkingSetChip(rml) || has_snapshot) {
-      rml = StripInlinedWorkingSetActionSuggestions(rml);
-    }
     if (ContentRmlHasActiveWorkingSetChip(rml) && !has_snapshot) {
       rml = MarkWorkingSetChipsUnavailable(rml);
     }

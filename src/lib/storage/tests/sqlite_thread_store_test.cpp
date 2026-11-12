@@ -1,6 +1,7 @@
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/messaging/ConversationSummaryCodec.h"
 #include "lib/messaging/EditMessage.h"
+#include "lib/storage/SqliteThreadSchema.h"
 #include "lib/storage/SqliteThreadStore.h"
 
 #include <filesystem>
@@ -599,7 +600,9 @@ TEST_F(IncompatibleProfileDbTest, FailsEveryCallNotJustTheFirst) {
   {
     sqlite3* db = nullptr;
     ASSERT_EQ(sqlite3_open(profile_db.string().c_str(), &db), SQLITE_OK);
-    ASSERT_EQ(sqlite3_exec(db, "PRAGMA user_version = 1;", nullptr, nullptr, nullptr), SQLITE_OK);
+    // Newer than this build's (an older one is migrated or reset: sqlite_migrations_test).
+    const std::string newer = "PRAGMA user_version = " + std::to_string(kSqliteThreadProfileUserVersion + 1) + ";";
+    ASSERT_EQ(sqlite3_exec(db, newer.c_str(), nullptr, nullptr, nullptr), SQLITE_OK);
     sqlite3_close(db);
   }
 

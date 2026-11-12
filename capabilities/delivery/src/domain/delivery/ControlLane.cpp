@@ -95,7 +95,7 @@ Roe<ControlLaneCopy> ControlLane::AccountCopyFor(const std::string& peer_identit
   if (!session) {
     return session.error();
   }
-  // The session's opener while unconfirmed — whoever opened it (a send, a call's old-form media-key wrap).
+  // The session's opener while unconfirmed.
   return ControlLaneCopy{.session_epoch = session->epoch,
                          .master_psk = std::move(session->master_psk),
                          .key_init_b64 = std::move(session->key_init_b64)};
@@ -106,11 +106,7 @@ Roe<std::vector<ControlLaneCopy>> ControlLane::CopiesFor(const std::string& peer
   if (auto kept = peer_cards_.Kept(peer_identity); kept && kept->has_value() && (*kept)->newest_card) {
     devices = (*kept)->newest_card->devices;
   }
-  size_t own_devices = 0;
-  if (auto own = own_keys_.Devices(); own) {
-    own_devices = own->devices.size();
-  }
-  if (ControlLaneUsesAccountCopy(devices.size(), own_devices)) {
+  if (ControlLaneUsesAccountCopy(devices.size())) {
     auto copy = AccountCopyFor(peer_identity);
     if (!copy) {
       return copy.error();

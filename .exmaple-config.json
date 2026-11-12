@@ -4,7 +4,7 @@
         "model": "qwen3.5:9b",
         "require_api_key": false
     },
-    "mcp": {
+    "promoted_mcp": {
         "url": "https://backend.example.test/mcp"
     },
     "search": {

@@ -747,10 +747,6 @@ std::string StreamHistoryRequestToQueryString(const ChatHistoryRequest& request)
   return out.str();
 }
 
-std::string ChatHistoryRequestToQueryString(const ChatHistoryRequest& request) {
-  return StreamHistoryRequestToQueryString(request);
-}
-
 Object ChatHistoryRequestToStreamHistoryJson(const ChatHistoryRequest& request) {
   Object json;
   json.set("requester_contact_id", request.requester_identity_value);

@@ -117,7 +117,7 @@ TEST_F(ProductMeshTest, TheLastRunsGoodRelaysReachTheParkFromTheStart) {
   EXPECT_EQ(mesh_.LastGoodRelays(), (std::vector<std::string>{kSeed, "12D3KooWNoLongerListed"}));
 
   MeshConfig cfg;
-  cfg.bootstrap_peers = {std::string("/ip4/203.0.113.1/udp/443/adp/1.0.0/p2p/") + kSeed};
+  cfg.bootstrap_peers = {std::string("/ip4/203.0.113.1/udp/443/adp/2/p2p/") + kSeed};
   MeshConnectivityWiringInputs inputs;
   inputs.mesh = [mesh = *started]() { return mesh; };
   inputs.mesh_config = [cfg]() { return std::make_shared<const MeshConfig>(cfg); };

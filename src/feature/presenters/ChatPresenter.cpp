@@ -642,10 +642,10 @@ std::optional<SendFailure> ChatPresenter::SendFailureReasonOf(const std::string&
 std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::string& local_account) {
   // The latest row is a system line stored in English (a joined invitation, a blocked inviter, a rotate notice):
   // the same words as its transcript line, in the UI language. Only a System row: a person may type these words.
-  if (LegacySystemLineText(thread.preview)) {
+  if (StoredSystemLineText(thread.preview)) {
     auto page = facade_->GetMessagesPage(thread.id, std::nullopt, 1);
     if (page && !page->empty() && page->back().content_type == ChatContentType::System) {
-      if (auto line = LegacySystemLineText(page->back().text)) {
+      if (auto line = StoredSystemLineText(page->back().text)) {
         return *line;
       }
     }

@@ -1,4 +1,5 @@
 #include "domain/delivery/AmpDirectChatTransport.h"
+#include "DirectSendWait.h"
 
 #include "common/chat/MessagingJson.h"
 #include "lib/delivery/RelayWirePayload.h"
@@ -233,7 +234,8 @@ TEST_F(AmpDirectChatCircuitNestedTest, NestedConnectedWithoutEndpointIsReachable
     cv.notify_one();
   });
 
-  const auto sent = a_chat_->SendEnvelope(harness_->peer_id_b, MakeTestEnvelope("msg-nested", "via hop"));
+  const auto sent = test::SendAndWait(*a_chat_, harness_->peer_id_b, MakeTestEnvelope("msg-nested", "via hop"),
+                                      [this] { harness_->PumpAll(); });
   ASSERT_TRUE(sent) << sent.error().message;
 
   {

@@ -808,8 +808,8 @@ TEST_F(CallMediaLegCoordinatorTest, FailAfterDetachDoesNotCallOnFailed) {
 }
 
 TEST_F(CallMediaLegCoordinatorTest, ConnectTimeoutReturnsIdle) {
-  ASSERT_TRUE(static_cast<bool>(
-      harness_->mgr_a().RegisterEndpoint("blackhole", "/ip4/10.0.0.99/udp/59999/adp/1.0.0/p2p/QmBob")));
+  ASSERT_TRUE(
+      static_cast<bool>(harness_->mgr_a().RegisterEndpoint("blackhole", "/ip4/10.0.0.99/udp/59999/adp/2/p2p/QmBob")));
 
   CallMediaDirectConnectParams params;
   params.peer_key = "blackhole";

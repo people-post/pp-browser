@@ -21,9 +21,7 @@ TEST(CallControlGateTest, EachTypeHasItsSenders) {
         CallControlType::CallCapsUpdate, CallControlType::CallConnectGiveUp}) {
     EXPECT_EQ(WhoMaySend(type), CallControlSender::InCall) << static_cast<int>(type) << " steers a call: in it only";
   }
-  for (const auto type : {CallControlType::CallSummary, CallControlType::CallSdp, CallControlType::CallIce}) {
-    EXPECT_EQ(WhoMaySend(type), CallControlSender::Nobody) << static_cast<int>(type) << " is not signaling here";
-  }
+  EXPECT_EQ(WhoMaySend(CallControlType::CallSummary), CallControlSender::Nobody) << "the summary is chat history";
 }
 
 } // namespace

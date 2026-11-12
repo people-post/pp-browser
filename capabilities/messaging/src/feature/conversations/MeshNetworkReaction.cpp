@@ -14,10 +14,25 @@ mesh::LocalNetworkChange ToLocalNetworkChange(const NetworkChange& change) {
   return local;
 }
 
+namespace {
+
+ShareWord CheckReasonWord(const mesh::UdpSocketCheckReason reason) {
+  switch (reason) {
+    case mesh::UdpSocketCheckReason::NetworkChange:
+      return ShareWord("network");
+    case mesh::UdpSocketCheckReason::ReceiveError:
+      return ShareWord("receive_error");
+    case mesh::UdpSocketCheckReason::Requested:
+      break;
+  }
+  return ShareWord("foreground");
+}
+
+} // namespace
+
 void ReportUdpSocketCheck(logging::Logger& log, const mesh::UdpSocketCheck& check) {
   DiagLine("mesh.udp_socket")
-      .Add("reason",
-           check.reason == mesh::UdpSocketCheckReason::NetworkChange ? ShareWord("network") : ShareWord("foreground"))
+      .Add("reason", CheckReasonWord(check.reason))
       .Add("was_alive", check.was_alive)
       .Add("reopened", check.reopened)
       .Add("alive", check.alive)

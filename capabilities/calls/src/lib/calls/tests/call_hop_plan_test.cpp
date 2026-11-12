@@ -19,7 +19,7 @@ TEST(CallHopPlanTest, MissingRemoteMasIsWide) {
 TEST(CallHopPlanTest, SameSlash24IsLink) {
   std::unordered_map<std::string, std::vector<std::string>> remotes;
   remotes["account:B"] = {"/ip4/10.0.0.2/tcp/1/p2p/b"};
-  remotes["account:C"] = {"/ip4/10.0.0.3/udp/4001/adp/1.0.0/p2p/c"};
+  remotes["account:C"] = {"/ip4/10.0.0.3/udp/4001/adp/2/p2p/c"};
   EXPECT_EQ(InferCallHopScope({"/ip4/10.0.0.1/tcp/18517/p2p/local"}, remotes), CallHopScope::Link);
 }
 
@@ -118,16 +118,15 @@ TEST(CallHopPlanTest, GuestMayDialPrivateHopRejectsWhenLocalHasPublic) {
 }
 
 TEST(CallHopPlanTest, LocalAdvertiseHasPublicTreatsGlobalIpv6) {
-  EXPECT_TRUE(LocalAdvertiseHasPublicIpv4({"/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"}));
-  EXPECT_FALSE(LocalAdvertiseHasPublicIpv4({"/ip6/fe80::1/udp/19001/adp/1.0.0/p2p/local"}));
+  EXPECT_TRUE(LocalAdvertiseHasPublicIpv4({"/ip6/2001:db8::1/udp/19001/adp/2/p2p/local"}));
+  EXPECT_FALSE(LocalAdvertiseHasPublicIpv4({"/ip6/fe80::1/udp/19001/adp/2/p2p/local"}));
   EXPECT_FALSE(
-      GuestMayDialPrivateHopMa("/ip4/192.168.1.132/udp/1/p2p/hop", {"/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"}));
-  EXPECT_TRUE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip6/2001:db8::1/udp/19001/adp/1.0.0/p2p/local"));
+      GuestMayDialPrivateHopMa("/ip4/192.168.1.132/udp/1/p2p/hop", {"/ip6/2001:db8::1/udp/19001/adp/2/p2p/local"}));
+  EXPECT_TRUE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip6/2001:db8::1/udp/19001/adp/2/p2p/local"));
   // Link-local / loopback /ip6 must not count as publicly dialable PreferLocal.
-  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip6/fe80::1/udp/19001/adp/1.0.0/p2p/local"));
-  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip6/::1/udp/19001/adp/1.0.0/p2p/local"));
-  EXPECT_FALSE(
-      PreferLocalAllowedForScope(CallHopScope::Link, true, "/ip6/fe80::1/udp/19001/adp/1.0.0/p2p/local", true));
+  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip6/fe80::1/udp/19001/adp/2/p2p/local"));
+  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Wide, true, "/ip6/::1/udp/19001/adp/2/p2p/local"));
+  EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Link, true, "/ip6/fe80::1/udp/19001/adp/2/p2p/local", true));
 }
 
 // --- V050 gt4: the hop a group forms on at the third join ---------------------------------------
@@ -146,7 +145,7 @@ TEST(GroupHopAtJoinTest, KeepsThePlannedHopUnlessSomeoneCannotReachIt) {
   in.planned_hop = "P";
   in.ranked_hops = {"X", "P", "Y"};
   in.reports["b"] = Report(true, {"P", "X"});
-  in.reports["c"] = Report(std::nullopt, {}); // old peer / probe not finished
+  in.reports["c"] = Report(std::nullopt, {}); // probe not finished
   const auto out = DecideGroupHopAtJoin(in);
   EXPECT_EQ(out.action, GroupHopAtJoin::UsePlanned);
   EXPECT_EQ(out.hop, "P");

@@ -38,12 +38,12 @@ pp_hard_ensure_up "${SKIP_UP}"
 label="B-HARD-CALL"
 call_id="pp-hard-call"
 READY_NAME="call.ready"
-LISTEN="${PP_HARD_CALL_LISTEN:-/ip4/0.0.0.0/udp/47150/adp/1.0.0}"
+LISTEN="${PP_HARD_CALL_LISTEN:-/ip4/0.0.0.0/udp/47150/adp/2}"
 if [[ "${WITH_CHAT}" -eq 1 ]]; then
   label="B-HARD-MSG+CALL"
   call_id="pp-hard-call-msg"
   READY_NAME="call-msg.ready"
-  LISTEN="${PP_HARD_CALL_MSG_LISTEN:-/ip4/0.0.0.0/udp/47151/adp/1.0.0}"
+  LISTEN="${PP_HARD_CALL_MSG_LISTEN:-/ip4/0.0.0.0/udp/47151/adp/2}"
 fi
 
 echo "=== assert isolation still holds ==="

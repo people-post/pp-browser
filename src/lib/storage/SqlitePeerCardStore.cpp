@@ -1,4 +1,5 @@
 #include "lib/storage/SqlitePeerCardStore.h"
+#include "lib/storage/SqliteChatStoreGate.h"
 
 #include "common/ValueJson.h"
 
@@ -26,6 +27,9 @@ std::optional<PeerCardRecord> RecordOf(sqlite3_stmt* stmt) {
 SqlitePeerCardStore::SqlitePeerCardStore(std::string profile_db_path) : profile_db_path_(std::move(profile_db_path)) {}
 
 Roe<sqlite3*> SqlitePeerCardStore::OpenDb() const {
+  if (auto gate = chat_store_gate::RequireOpen(profile_db_path_); !gate) {
+    return gate.error();
+  }
   sqlite3* db = nullptr;
   if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
     sqlite3_close(db);

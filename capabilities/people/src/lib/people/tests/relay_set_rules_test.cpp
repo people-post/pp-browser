@@ -42,7 +42,7 @@ mesh::MeshDirectoryNode Row(const std::string& peer, const std::string& account,
 
 RelaySetContext Context(const std::vector<mesh::MeshDirectoryNode>& rows, const std::string& floor = {},
                         const MeshNodeReputation* reputation = nullptr, int64_t now = 1000) {
-  return MakeRelaySetContext({}, rows, {"/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/" + kSeed}, floor, reputation, now);
+  return MakeRelaySetContext({}, rows, {"/ip4/3.208.41.58/udp/443/adp/2/p2p/" + kSeed}, floor, reputation, now);
 }
 
 // N032 rule 7: one relay per operator before a second of any; an anchor (org seed) is exempt.

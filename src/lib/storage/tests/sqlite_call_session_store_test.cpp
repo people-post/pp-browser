@@ -153,12 +153,12 @@ TEST_F(CallSessionStoreTest, PlannedHopPersists) {
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_FALSE((*loaded)->planned_hop);
 
-  session.planned_hop = CallPlannedHop{"12D3KooWHop", "/ip4/198.18.117.2/udp/443/adp/1.0.0/p2p/12D3KooWHop"};
+  session.planned_hop = CallPlannedHop{"12D3KooWHop", "/ip4/198.18.117.2/udp/443/adp/2/p2p/12D3KooWHop"};
   ASSERT_TRUE(calls_->UpsertSession(session));
   loaded = calls_->LoadSession(session.call_id);
   ASSERT_TRUE(loaded && loaded->has_value() && (*loaded)->planned_hop);
   EXPECT_EQ((*loaded)->planned_hop->peer_id, "12D3KooWHop");
-  EXPECT_EQ((*loaded)->planned_hop->multiaddr, "/ip4/198.18.117.2/udp/443/adp/1.0.0/p2p/12D3KooWHop");
+  EXPECT_EQ((*loaded)->planned_hop->multiaddr, "/ip4/198.18.117.2/udp/443/adp/2/p2p/12D3KooWHop");
   auto active = calls_->ListActiveSessions();
   ASSERT_TRUE(active && !active->empty());
   ASSERT_TRUE(active->front().planned_hop);

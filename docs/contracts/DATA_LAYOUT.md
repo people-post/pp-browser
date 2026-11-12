@@ -50,15 +50,15 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   secrets.enc               # typed model API key (llm_api_key) under DEK AEAD, AAD purpose "config-secrets", schema_version 1; absent when there are none (PB-034)
   initiation_billing.json   # per-peer initiation billing state (P001; schema_version 1)
   account_locker.json       # account locker sync state: highest_version_by_locker, contact_clock (plaintext; ACCOUNT_LOCKER.md § On disk)
-  contacts.json             # address book (schema_version 2: local + remote + overrides{}; v2 = remarks that copied the nickname are cleared once on load); unversioned legacy migrates on load
+  contacts.json             # address book (schema_version 2: local + remote + overrides{}); another version, or none, is refused
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
   home_brief.json           # phone Home "Today's briefs": the article feed's general headlines (schema_version 1; fetched_at_ms,
                             # feed cn|en, items[] of title / category (the site) / time_ms / url); plaintext, refetched when over
                             # 3 h old while the widget is on; device-only, never synced; optional
   threads/
-    profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4;
-                            # restart_pending: a public session kept through Reset chats starts its next epoch on the next send — additive);
-                            # thread_local_prefs (pin / mute / archive per thread — device-only, plaintext, additive: no user_version bump)
+    profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 5, floor 4 — § Schema
+                            # versions; restart_pending: a public session kept through Reset chats starts its next epoch on the next send);
+                            # thread_local_prefs (pin / mute / archive per thread — device-only, plaintext)
                             # thread_mentions (thread_id, message_id, created_at; PRIMARY KEY (thread_id, message_id)) — a live group message
                             # that mentions this account, unread: a row on arrival (or when a held mention is decided, G015), all of a thread's
                             # rows dropped when it is opened, a message's row when that message is deleted (for everyone or here), the thread's
@@ -67,9 +67,9 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # when the thread is opened (its newest unread row, if newer), dropped with that message or the thread / its
                             # history; Home's Mentions widget reads the newest over both tables to stay up 7 days (additive)
                             # thread_local_prefs.mute_mentions INTEGER NOT NULL DEFAULT 0 (1: while the thread is muted, mentions are silent too;
-                            # G015. Added on open when missing — user_version unchanged)
+                            # G015.)
                             # thread_local_prefs.share_ai_confirmed INTEGER NOT NULL DEFAULT 0 (1: "don't ask again" before sharing this chat
-                            # with the AI; cleared by the session menu or clearing the chat. Added on open when missing — user_version unchanged)
+                            # with the AI; cleared by the session menu or clearing the chat.)
                             # peer_cards (checked account cards per account — public keys and devices, plaintext, additive; ACCOUNT_CARD.md)
                             # peer_card_floors (account_id, issued_at — restored from the account locker: no older account card is taken)
                             # group_metadata.policy_json: {"preset": "open"|"managed"} (group-chat G017; older keys ignored)
@@ -92,7 +92,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # floor, is deleted; an ended group (G016) keeps none. line_shown: the group's chat has the change's line.
                             # Not in the account locker (a restored device gets them from the member check, G013). Additive table
                             # group_rosters.added_by TEXT NOT NULL DEFAULT '' (G019: who brought the member in; empty for the group's
-                            # first members. Added on open when missing — user_version unchanged)
+                            # first members.)
                             # group_invite_links (link_id PRIMARY KEY, group_id, secret_enc, maker, expires_at, max_uses, created_at;
                             # group-chat G021): the invite links this device made, kept to show again (text, QR) — secret_enc the
                             # link's 16-byte secret under the profile DEK (FileCipher, AAD purpose "group_link_secret"), the rest
@@ -101,11 +101,11 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # device of the account answers by the roster, and cannot show the link again). Additive table
                             # pending_group_invites.owner_identity TEXT NOT NULL DEFAULT '' (G019: the group's owner a member's invite
                             # names, which the join bundle's statement must verify for; empty: the inviter. outbound = 1 for an invite
-                            # this device sent, as owner or member. Added on open when missing — user_version unchanged)
+                            # this device sent, as owner or member.)
     {thread_id}/
-      thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
+      thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 3, floor 2 — D102, § Schema versions)
                             # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)
-                            # An edited text (D105): the row is rewritten in place (same id / seq / order / timestamp, the new text, no spans)
+                            # An edited text (D106): the row is rewritten in place (same id / seq / order / timestamp, the new text, no spans)
                             # and its payload_json (inside content_enc) carries edited_at (the applied edit's send time, ms) and edited_by
                             # (the applied edit's message id); no column, user_version unchanged. Its `edit` annotation rows stay; all but
                             # the applied one are blanked (value / text empty), and all of them once the message is deleted.
@@ -194,7 +194,7 @@ One Keychain generic-password item per profile: service `dev.pp-browser.secure-b
 
 Interactive unlock / chooser UX: [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md). Forgotten PIN → wipe the profile directory.
 
-Legacy flat `threads/index.json` and `{thread_id}.json` are removed on first run after the SQLite migration (development wipe — see [chat-storage D016](../../projects/chat-storage-and-memory/DECISIONS.md)). Plaintext `identity.json` is not migrated — wipe the profile and recreate. Overview: [COMPATIBILITY.md](COMPATIBILITY.md).
+Flat `threads/index.json` and `{thread_id}.json` from before the SQLite store are not read (nor removed); plaintext `identity.json` is not migrated — wipe the profile and recreate ([chat-storage D016](../../projects/chat-storage-and-memory/DECISIONS.md)). Overview: [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ### Per-backend profiles
 
@@ -212,9 +212,23 @@ Saving a backend switch also removes the device's push bindings from the running
 
 There is no account-switcher UI: the profile follows the backend. Use `--profile NAME` for dev isolation. A `mesh_directory_nodes.json` left at the data root by older builds is no longer read.
 
-## Schema versioning
+## Schema versions
 
-All JSON stores include `schema_version` (or `config_version` for config). Unsupported newer versions fail with a clear error. Forward migrators can be registered for future v1→v2 changes during development.
+**SQLite: a ladder per database** ([chat-storage D105](../../projects/chat-storage-and-memory/DECISIONS.md#d105--disk-schemas-move-up-a-ladder-from-a-floor)). `profile.db` and each `thread.db` say their schema in `PRAGMA user_version`; `SqliteMigrations` (`lib/storage`) brings one to this build's when it opens (`SqliteChatDbLadders`: `ProfileDbLadder`, `ThreadDbLadder`), before any store uses it. It opens **after unlock**: the thread store gets the profile's data key, opens profile.db and runs its ladder with the key in the step context (a step may rewrite encrypted columns); before that nothing opens, creates or migrates either database ([AT_REST_ENCRYPTION § Unlock flow](AT_REST_ENCRYPTION.md#unlock-flow) step 8):
+
+| Found | What happens |
+|-------|--------------|
+| `0` (a new file) | The current schema is created and the version set |
+| The current version | Nothing |
+| Between the floor and the current version | The file is copied beside itself (`*.pre-migration`, SQLite's backup API, so the write-ahead log is in it); each step runs in its own transaction, which sets `user_version` to its target at its end; the copy is deleted. A step that fails is rolled back and the copy restored: the database stays at the version it had and stays shut; the app shows the start-up recovery ("Your chats could not be upgraded": Reset chats…) |
+| Below the floor | Too old to upgrade: the store is reset — `profile.db`: the whole chat store (`threads/`, as Me → Storage → Reset chats; the account, contacts and settings stay); a `thread.db`: that chat's messages (its place in the catalog stays). An error line is logged and `chat_store_reset` is written beside `threads/`; the app takes it once after start-up and says "your chats were reset" |
+| Newer than this build's | Left alone and shut; the app shows the start-up recovery ("This data is from a newer version of the app": update the app, or Reset chats…) |
+
+Today: `profile.db` 5 (floor 4), `thread.db` 3 (floor 2). The step 4 → 5 (and 2 → 3) is the **baseline**: a tester's database at today's schema got its later columns added on every open before the ladder, so it has some, all or none of them; the step adds each where its table lacks it, and drops calls' dead `session_kind`. A store still creates a table that is new to it (`CREATE TABLE IF NOT EXISTS`, at the current shape); any change to a table that may already exist is a ladder step, never an `ALTER` on open.
+
+**Changing a schema:** bump the version, add the step from the old one (it must run on every shape that version had), keep the floor. The **floor** is the oldest version the latest app still upgrades. Phones install only the latest app — a user cannot step through the versions in between on iOS or Android — so the latest app carries every step from the floor up; the floor moves only at a milestone (a release a user is expected to have opened), and moving it resets the chats of anyone below it. These migrations are this device's own data: they are not a bridge to older peers ([COMPATIBILITY § No bridges](COMPATIBILITY.md#no-bridges-pre-release)), and no step reads an older wire form.
+
+**JSON stores** include `schema_version` (or `config_version` for config) and have one version each, with no steps today: a file of an unsupported version is refused with a clear error — a newer one always; `contacts.json` and `identity.enc` an older one too (their floor is the current version), while the config takes an older `config_version` as is. A change follows the same rule as the SQLite ladder: bump the version and add a step in the store's loader from the version below, keeping a floor.
 
 **No legacy import:** older flat layouts (e.g. `identity.json` at data root) are not migrated. Delete the data directory when the layout changes during development. See [COMPATIBILITY.md](COMPATIBILITY.md) for dirty-folder and newer-peer policy.
 

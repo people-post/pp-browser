@@ -89,7 +89,7 @@ private:
    * left out (logged).
    */
   Roe<std::vector<ControlLaneCopy>> CopiesFor(const std::string& peer_identity);
-  /** The account copy to `peer_identity` (a first contact, the single-device bridge). */
+  /** The account copy to `peer_identity` (a first contact: we hold no card for it). */
   Roe<ControlLaneCopy> AccountCopyFor(const std::string& peer_identity);
   /** The ids of the devices on `peer_identity`'s newest card we hold (none: no card). */
   std::vector<std::string> CardDevicesOf(const std::string& peer_identity);

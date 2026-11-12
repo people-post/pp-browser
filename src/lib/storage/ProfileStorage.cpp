@@ -49,10 +49,9 @@ uint64_t SqliteMessageStoreBytes(const std::string& profile_data_dir) {
 } // namespace
 
 Roe<ProfileStores> OpenSqliteProfileStores(const std::string& profile_data_dir, const std::string& profile_id) {
+  // Nothing is opened yet: the chat store opens (and its ladder runs) when the profile's data key arrives at unlock;
+  // until then every store on the file refuses (chat_store_gate).
   auto threads = std::make_unique<SqliteThreadStore>(profile_data_dir);
-  if (auto opened = threads->Open(); !opened) {
-    return opened.error();
-  }
   ProfileStores stores;
   stores.profile_db_path = threads->ProfileDbPath();
   auto peer_sessions = std::make_unique<SqlitePeerSessionStore>(stores.profile_db_path, profile_id);

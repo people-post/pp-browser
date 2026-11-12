@@ -147,7 +147,7 @@ TEST_F(BroadcasterWorkflowTest, GoLivePublishesSealedFramesAndAnnounces) {
   const auto frame = relay_.SentFrames().front();
   EXPECT_EQ(frame.stream_id, stream);
   EXPECT_EQ(frame.channel_id, mesh::kMediaChannelAudio);
-  EXPECT_EQ(frame.channel_type, mesh::MediaChannelType::ReliableOrdered) << "the relay QoS class follows the channel";
+  EXPECT_EQ(frame.channel_type, mesh::MediaChannelType::Forward) << "the relay QoS class follows the channel";
   EXPECT_NE(frame.instance, 0u) << "the engine's sender instance rides in the clear header";
   auto opened = mesh::OpenMediaFrame(key_, BroadcastMediaFrameContext(kProgram, status.join_handle), 1, frame);
   EXPECT_TRUE(opened) << "viewers open it with the broadcast label";

@@ -1,4 +1,5 @@
 #include "lib/media/MediaEngine.h"
+#include "lib/media/AudioPlayout.h"
 #include "mesh/types/MediaChannel.h"
 #include "lib/media/DecodeStallPolicy.h"
 #include "lib/media/IVideoCodec.h"
@@ -8,6 +9,7 @@
 #include <opus.h>
 
 #include <atomic>
+#include <cmath>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -149,6 +151,102 @@ TEST_F(MediaSessionSpecTest, ReceivesTwentyAndFortyMsPackets) {
   const auto health = engine_.HealthSnapshot();
   EXPECT_EQ(health.stream_count, 2u);
   EXPECT_EQ(health.rx_audio_frames, 10u);
+}
+
+// V065: what a listener hears is measured. Every slot played without its packet — a lost one (FEC or PLC), or none
+// queued (an underrun, PLC) — counts as concealed time; a packet that comes after its slot is a late drop.
+TEST_F(MediaSessionSpecTest, ConcealedTimeAndLatePacketsAreCounted) {
+  ASSERT_TRUE(engine_.Start("session:view", Spec::PlaybackOnly(), {}));
+  for (const uint32_t seq : {1u, 2u, 3u, 5u}) { // 4 is lost
+    Deliver(42, seq);
+  }
+  // The lost packet's slot is concealed, and so is each underrun's. The playout thread counts an underrun just
+  // before its concealment, so one snapshot can read one ahead (Windows CI: 2 underruns, 2 concealed): wait for a
+  // snapshot that shows it, and fail only if none does.
+  MediaEngineHealth h;
+  EXPECT_TRUE(WaitFor(
+      [&] {
+        h = engine_.HealthSnapshot();
+        return h.playout_underruns >= 2 && h.concealed_ms == 20 * (h.plc_frames + h.fec_frames) &&
+               h.plc_frames + h.fec_frames >= h.playout_underruns + 1;
+      },
+      std::chrono::seconds(3)))
+      << "concealed_ms=" << h.concealed_ms << " plc=" << h.plc_frames << " fec=" << h.fec_frames
+      << " underruns=" << h.playout_underruns;
+  EXPECT_EQ(h.jitter_late_drops, 0u);
+
+  Deliver(42, 2); // long played
+  EXPECT_EQ(engine_.HealthSnapshot().jitter_late_drops, 1u);
+}
+
+/** `n` real 20 ms Opus frames of a loud tone: decoded, never catch-up silence. */
+std::vector<std::vector<uint8_t>> OpusToneFrames(int n) {
+  int err = 0;
+  OpusEncoder* enc = opus_encoder_create(48000, 1, OPUS_APPLICATION_VOIP, &err);
+  EXPECT_EQ(err, OPUS_OK);
+  std::vector<std::vector<uint8_t>> frames;
+  int t = 0;
+  for (int f = 0; f < n; ++f) {
+    std::vector<int16_t> pcm(960);
+    for (auto& sample : pcm) {
+      sample = static_cast<int16_t>(12000 * std::sin(2.0 * 3.14159265 * 440.0 * (t++) / 48000.0));
+    }
+    std::vector<unsigned char> out(4000);
+    const int len = opus_encode(enc, pcm.data(), 960, out.data(), static_cast<int>(out.size()));
+    EXPECT_GT(len, 0);
+    frames.emplace_back(out.begin(), out.begin() + std::max(len, 0));
+  }
+  opus_encoder_destroy(enc);
+  return frames;
+}
+
+// V065: catch-up is never heard. A burst past the 400 ms cap sheds the silence at its head first — as much as the
+// excess — and no speech; a burst of speech alone is cut to the cap.
+TEST_F(MediaSessionSpecTest, CatchUpPastTheCapSkipsSilenceBeforeCuttingSpeech) {
+  ASSERT_TRUE(engine_.Start("session:view", Spec::PlaybackOnly(), {}));
+  const auto tone = OpusToneFrames(10);
+  uint32_t seq = 1;
+  for (int i = 0; i < 30; ++i) { // 600 ms of silence, then 200 ms of speech: 800 ms queued at once
+    Deliver(42, seq++);
+  }
+  for (const auto& frame : tone) {
+    MediaEngine::MediaPacket pkt;
+    pkt.stream_id = 42;
+    pkt.channel_id = mesh::kMediaChannelAudio;
+    pkt.seq = seq++;
+    pkt.payload = frame;
+    engine_.OnInboundPacket(pkt);
+  }
+  MediaEngineHealth h;
+  EXPECT_TRUE(WaitFor(
+      [&] {
+        h = engine_.HealthSnapshot();
+        return h.jitter_depth_ms <= AudioJitterBuffer::kMaxDelayMs && h.jitter_silence_drops >= 20;
+      },
+      std::chrono::seconds(2)))
+      << "depth=" << h.jitter_depth_ms << " silence=" << h.jitter_silence_drops;
+  EXPECT_EQ(h.jitter_speech_drops, 0u) << "silence was there to skip";
+
+  engine_.Stop();
+  ASSERT_TRUE(engine_.Start("session:view", Spec::PlaybackOnly(), {}));
+  const auto speech = OpusToneFrames(40);
+  seq = 1;
+  for (const auto& frame : speech) { // 800 ms of speech at once
+    MediaEngine::MediaPacket pkt;
+    pkt.stream_id = 43;
+    pkt.channel_id = mesh::kMediaChannelAudio;
+    pkt.seq = seq++;
+    pkt.payload = frame;
+    engine_.OnInboundPacket(pkt);
+  }
+  EXPECT_TRUE(WaitFor(
+      [&] {
+        h = engine_.HealthSnapshot();
+        return h.jitter_speech_drops > 0;
+      },
+      std::chrono::seconds(2)));
+  EXPECT_LE(h.jitter_depth_ms, AudioJitterBuffer::kMaxDelayMs);
+  EXPECT_EQ(h.jitter_silence_drops, 0u) << "no silence to skip: speech was cut to the cap";
 }
 
 // Broadcaster shape: capture → encode → send; inbound packets are not decoded.

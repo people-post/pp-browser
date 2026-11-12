@@ -21,7 +21,8 @@ class SqliteGroupRosterStore : public IGroupRosterStore {
 public:
   explicit SqliteGroupRosterStore(std::string profile_db_path);
 
-  Roe<void> EnsureSchema(sqlite3* profile_db) const;
+  /** Its tables at the current shape, where missing (a change to them is a ladder step: SqliteChatDbLadders.h). */
+  static Roe<void> EnsureSchema(sqlite3* profile_db);
 
   void SetOnChanged(std::function<void(const GroupRosterChange& change)> on_changed) override;
 

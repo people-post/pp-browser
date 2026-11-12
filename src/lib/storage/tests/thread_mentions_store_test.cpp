@@ -4,6 +4,7 @@
 
 #include "common/Utilities.h"
 #include "lib/storage/SqliteThreadStore.h"
+#include "UnlockedThreadStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -16,7 +17,7 @@ protected:
   void SetUp() override {
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_thread_mentions_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
-    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    store_ = test::MakeUnlockedThreadStore(data_dir_.string());
     ASSERT_TRUE(store_->ListThreads());
     mentions_ = std::make_unique<SqliteThreadMentionsStore>(store_->ProfileDbPath());
   }

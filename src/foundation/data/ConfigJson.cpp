@@ -706,8 +706,6 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
   }
   if (const Object* promoted_mcp = object.getObject("promoted_mcp")) {
     config.promoted_mcp = ParseMcpObject(*promoted_mcp);
-  } else if (const Object* mcp = object.getObject("mcp")) {
-    config.promoted_mcp = ParseMcpObject(*mcp);
   }
   if (const Array* mcp_servers = object.getArray("mcp_servers")) {
     config.mcp_servers.clear();
@@ -753,8 +751,6 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
   }
   if (const Object* mesh = object.getObject("mesh")) {
     MeshConfigFromObject(*mesh, config.mesh);
-  } else if (const Object* legacy = object.getObject("libp2p")) {
-    MeshConfigFromObject(*legacy, config.mesh);
   }
 }
 

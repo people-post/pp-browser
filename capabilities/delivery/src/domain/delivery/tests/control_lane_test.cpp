@@ -269,7 +269,7 @@ TEST_F(ControlLaneTest, APeerWithACardGetsACopyPerDevice) {
   ASSERT_TRUE(account_keys_->AddAccountCard(card, util::NowUnixMs(), "test"));
   routes_->NoteAccountRoute(bob.account_id, "relay:bob");
 
-  auto account_pair = keys_->Resolve(bob.account_id); // a call's old-form media-key wrap opened it (M024 bridge)
+  auto account_pair = keys_->Resolve(bob.account_id); // opened while we held no card for Bob (a first contact)
   ASSERT_TRUE(account_pair && account_pair->key_init_b64) << (account_pair ? "" : account_pair.error().message);
   const std::string account_opener = *account_pair->key_init_b64;
   ControlSend invite = To(bob.account_id);
@@ -306,10 +306,9 @@ TEST_F(ControlLaneTest, APeerWithACardGetsACopyPerDevice) {
 }
 
 // No card for the peer (a first contact): the account copy, carrying the account pair's opener while unconfirmed —
-// one a call's old-form media-key wrap made (E2ePublicSessionKeys::Ensure) too, so no caller has to carry it.
+// the one the session was opened with, not a second session.
 TEST_F(ControlLaneTest, APeerWithNoCardGetsTheAccountCopy) {
   routes_->NoteAccountRoute("account:stranger", "relay:stranger");
-  ASSERT_TRUE(keys_->Ensure("account:stranger"));
   auto opened = keys_->Resolve("account:stranger");
   ASSERT_TRUE(opened && opened->key_init_b64);
   ControlSend first = To("account:stranger");
@@ -324,7 +323,7 @@ TEST_F(ControlLaneTest, APeerWithNoCardGetsTheAccountCopy) {
   ASSERT_EQ(copies.size(), 1u);
   EXPECT_TRUE(copies.front().recipient_device.empty());
   ASSERT_TRUE(copies.front().key_init_b64) << "opened to the account KEM";
-  EXPECT_EQ(*copies.front().key_init_b64, *opened->key_init_b64) << "the wrap's opener, not a second session";
+  EXPECT_EQ(*copies.front().key_init_b64, *opened->key_init_b64) << "the session's opener, not a second session";
 }
 
 // #555: our card went to Bob's account once — then Bob linked a tablet. Its first record from us carries the card
@@ -349,28 +348,6 @@ TEST_F(ControlLaneTest, ADeviceLinkedAfterWeToldTheAccountGetsOurCard) {
   EXPECT_TRUE(std::none_of(copies.begin(), copies.end(), [](const RelayCopy& c) { return c.key_init_b64; }));
   ASSERT_TRUE(to_tablet_too.body.e2e.sender_card) << "the tablet was never told our card";
   EXPECT_FALSE(SendQuiet(bob.account_id).body.e2e.sender_card) << "once: now every device was told";
-}
-
-// The single-device bridge (an account copy): a device that replaced the peer's only one was told nothing either.
-TEST_F(ControlLaneTest, AnAccountCopyCarriesOurCardToADeviceNewOnThePeersCard) {
-  if (!kControlLaneAccountCopyBetweenSingleDevices) {
-    GTEST_SKIP() << "the M024 bridge is gone";
-  }
-  ASSERT_TRUE(own_->Card(util::NowUnixMs())) << "our card, listing this one device";
-  const test::TestAccount bob = test::TestAccount::Make();
-  KeepCard(bob, {bob.device.Entry()}, 1);
-  routes_->NoteAccountRoute(bob.account_id, "relay:bob");
-  const RelayEnvelope first = SendQuiet(bob.account_id);
-  ASSERT_TRUE(RelayCopiesOf(first).front().recipient_device.empty()) << "two single devices: the account copy";
-  HeardUnderEverySession(bob.account_id);
-  EXPECT_FALSE(SendQuiet(bob.account_id).body.e2e.sender_card);
-
-  const test::TestDevice reinstalled = test::TestDevice::Make(); // Bob's one device, linked anew
-  KeepCard(bob, {reinstalled.Entry()}, 2);
-  const RelayEnvelope after = SendQuiet(bob.account_id);
-  ASSERT_TRUE(RelayCopiesOf(after).front().recipient_device.empty());
-  EXPECT_FALSE(RelayCopiesOf(after).front().key_init_b64) << "the account pair's session goes on";
-  EXPECT_TRUE(after.body.e2e.sender_card) << "the new device reads the account copy, and holds no card of ours";
 }
 
 TEST_F(ControlLaneTest, ASendToNobodyIsDoneAtOnce) {

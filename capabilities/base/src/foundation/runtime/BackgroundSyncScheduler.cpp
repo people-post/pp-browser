@@ -70,10 +70,6 @@ bool BackgroundSyncScheduler::ConsumeUrgentWake() {
   return was;
 }
 
-void BackgroundSyncScheduler::Tick() {
-  // Relay poll cadence is driven by the coordinator timer wheel.
-}
-
 void BackgroundSyncScheduler::RunScheduledSync(bool force) {
   if (!handler_) {
     return;
