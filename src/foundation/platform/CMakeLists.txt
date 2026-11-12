@@ -255,6 +255,7 @@ set(_pp_platform_ui_sources
   ui/renderer/CallVideoTileRenderer.cpp
   ui/renderer/ElementCallVideoTile.cpp
   ui/host/BrowserHost.cpp
+  ui/host/EventLoopWake.cpp
   ui/host/TouchSimOverlay.cpp
 )
 

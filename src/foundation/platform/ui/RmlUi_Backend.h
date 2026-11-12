@@ -51,13 +51,24 @@ void RequestExit();
 /** Hide the product window immediately (close feel); SDL destroy still happens in Shutdown. */
 void HideWindow();
 
-// Thread-safe: push an SDL user event (always push; do not coalesce-drop).
+// Thread-safe: end the idle wait (always pushes a wake event; do not coalesce-drop). Also sets the wake flag:
+// the wait ignores a wake event whose flag is not set (EventLoopWake.h).
 void WakeEventLoop();
 // Thread-safe UI delivery: skip the next power-save idle wait + WakeEventLoop.
 // AppRuntime::PostUI should call this (via SetUIWakeCallback), not WakeEventLoop alone.
 void RequestForceFrame();
 // perf.threads: RequestForceFrame calls (from any thread) since the last take; the take starts again from zero.
 long long TakeForceFrameRequests();
+// perf.threads: why ProcessEvents returned, since the last take (the take starts again from zero).
+struct ProcessEventsCounts {
+  long long flag = 0;           // pe_flag: the wake flag was set on entry
+  long long event_first = 0;    // pe_event_first: the first poll already had an event
+  long long event_waited = 0;   // pe_event_waited: an event arrived after waiting
+  long long timeout = 0;        // pe_timeout: the idle wait ran to its deadline
+  long long flag_waited = 0;    // pe_flag_waited: the wake flag was set while waiting
+  long long wake_swallowed = 0; // pe_wake_swallowed: our own wake events dropped
+};
+ProcessEventsCounts TakeProcessEventsCounts();
 
 void BeginFrame();
 void PresentFrame();

@@ -616,6 +616,7 @@ void CallController::EmitPerfThreads(const int64_t now_ms) {
   const UiFrameTotals frames = UiFrameStats::TakeAndReset();
   const UiCostTotals cost = UiCostCounters::Instance().TakeAndReset();
   const long long force_frame_requests = Backend::TakeForceFrameRequests();
+  const Backend::ProcessEventsCounts pe = Backend::TakeProcessEventsCounts();
   if (prev_sample_ms == 0) {
     return; // the first sample only sets the baseline
   }
@@ -651,6 +652,12 @@ void CallController::EmitPerfThreads(const int64_t now_ms) {
       .Add("ui_tasks", cost.ui_tasks)
       .Add("loops", cost.loops)
       .Add("force_frame_requests", static_cast<int64_t>(force_frame_requests))
+      .Add("pe_flag", static_cast<int64_t>(pe.flag))
+      .Add("pe_event_first", static_cast<int64_t>(pe.event_first))
+      .Add("pe_event_waited", static_cast<int64_t>(pe.event_waited))
+      .Add("pe_timeout", static_cast<int64_t>(pe.timeout))
+      .Add("pe_flag_waited", static_cast<int64_t>(pe.flag_waited))
+      .Add("pe_wake_swallowed", static_cast<int64_t>(pe.wake_swallowed))
       .Add("base_hidden", ShellBaseHide::Hidden());
   for (size_t i = 0; i < top.size(); ++i) {
     line.Pick(kKeys[i], top[i].name, kKnownThreadNames).Add(kMsKeys[i], top[i].ms);
