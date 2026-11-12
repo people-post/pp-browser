@@ -106,6 +106,7 @@ struct TestStore {
   bool fail = false;
   int page_reads = 0;
   std::vector<int> page_limits;     ///< the row count each page read asked for
+  std::vector<std::optional<int64_t>> page_befores; ///< where each page read started (exclusive)
   size_t page_rows_read = 0;        ///< rows the page reads returned, all together
   int before_reads = 0;
   int row_builds = 0;
@@ -116,6 +117,7 @@ struct TestStore {
   Roe<std::vector<ThreadMessage>> Page(const std::string& thread, const std::optional<int64_t> before, const int limit) {
     ++page_reads;
     page_limits.push_back(limit);
+    page_befores.push_back(before);
     if (fail) {
       return Error("store not readable");
     }
@@ -1076,6 +1078,85 @@ TEST_F(ChatFirstScreenTest, ThreeScrolledPagesOfHiddenRowsWaitForTheNextGesture)
   EXPECT_EQ(store.page_reads - page_reads, 1);
   EXPECT_EQ(state.messages.size(), 100u);
   EXPECT_EQ(FrontId(), "m71");
+}
+
+TEST_F(ChatFirstScreenTest, AFullWindowLoadsOnePagePerGesture) {
+  SetClientHeight(600.f); // client height 600
+  AddTexts("dm", 1, 400);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(2);
+  for (int page = 1; page <= 5; ++page) {
+    ScrollTo(40.f);
+    Frames(2);
+  }
+  ASSERT_EQ(state.messages.size(), kMaxMessagesDomWindow);
+  ASSERT_EQ(FrontId(), "m171");
+  // The sixth and seventh gestures: each page is trimmed back to 200 rows, the window moves 40 older, one read each.
+  for (const char* front : {"m131", "m91"}) {
+    const std::string looked_at = FrontId();
+    const int page_reads = store.page_reads;
+    ScrollTo(40.f);
+    const float before = RowTopOnScreen(looked_at); // the old layout
+    Frames(1);
+    context->Update();
+    EXPECT_EQ(store.page_reads - page_reads, 1) << "one page for a gesture";
+    EXPECT_EQ(state.messages.size(), kMaxMessagesDomWindow);
+    EXPECT_EQ(FrontId(), front);
+    EXPECT_NEAR(RowTopOnScreen(looked_at), before, 1.f) << "the message looked at stays where it was";
+    Frames(1);
+  }
+}
+
+TEST_F(ChatFirstScreenTest, ASyncKeepsTheBoundPastHiddenRows) {
+  SetClientHeight(600.f); // client height 600
+  // 1..100 messages, 400 edits (101..500), 501..600 messages.
+  AddTexts("dm", 1, 100);
+  for (int64_t order = 101; order <= 500; ++order) {
+    store.threads["dm"].push_back(Annotation("dm", order, "m1", kAnnotationTypeEdit));
+  }
+  AddTexts("dm", 501, 100);
+  Sync("dm", kDirect);
+  Settle();
+  Frames(2);
+  ScrollTo(40.f); // 531..570
+  Frames(2);
+  ScrollTo(40.f); // 491..530: 501..530 shown
+  Frames(2);
+  ASSERT_EQ(FrontId(), "m501");
+  ScrollTo(30.f); // 451..490, 411..450, 371..410: nothing shown, it stops at three
+  Frames(2);
+  ASSERT_EQ(scroller->LoadedMinDisplayOrder(), std::optional<int64_t>(371));
+  std::vector<std::string> before_sync;
+  for (const MessageDisplayRow& row : state.messages) {
+    before_sync.emplace_back(row.message_id.c_str());
+  }
+  // A new message arrives (or an AI answer streams in): the display sync.
+  store.threads["dm"].push_back(Text("dm", 601));
+  Sync("dm", kDirect);
+  Frames(2);
+  std::vector<std::string> after_sync;
+  for (const MessageDisplayRow& row : state.messages) {
+    after_sync.emplace_back(row.message_id.c_str());
+  }
+  before_sync.push_back("m601");
+  EXPECT_EQ(after_sync, before_sync) << "the same rows, and the new one";
+  EXPECT_EQ(scroller->LoadedMinDisplayOrder(), std::optional<int64_t>(371)) << "the bound stays past the edits";
+  EXPECT_TRUE(scroller->HasMoreLocalHistory());
+  // The next gesture goes on from there; with a sync before each, it still gets through to the older messages.
+  const size_t reads_before = store.page_befores.size();
+  ScrollTo(20.f);
+  Frames(2);
+  ASSERT_GT(store.page_befores.size(), reads_before);
+  EXPECT_EQ(store.page_befores[reads_before], std::optional<int64_t>(371)) << "not read again from 501";
+  for (int gesture = 0; gesture < 4 && FrontId() != "m91"; ++gesture) {
+    store.threads["dm"].push_back(Text("dm", 602 + gesture));
+    Sync("dm", kDirect);
+    Frames(2);
+    ScrollTo(gesture % 2 == 0 ? 35.f : 25.f);
+    Frames(2);
+  }
+  EXPECT_EQ(FrontId(), "m91");
 }
 
 TEST(ChatFirstScreenCountTest, FirstScreenMessagesByKind) {
