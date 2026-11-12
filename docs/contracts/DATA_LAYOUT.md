@@ -207,15 +207,15 @@ There is no account-switcher UI: the profile follows the backend. Use `--profile
 
 ## Schema versions
 
-**SQLite: a ladder per database** ([chat-storage D105](../../projects/chat-storage-and-memory/DECISIONS.md#d105--disk-schemas-move-up-a-ladder-from-a-floor)). `profile.db` and each `thread.db` say their schema in `PRAGMA user_version`; `SqliteMigrations` (`lib/storage`) brings one to this build's when it opens (`SqliteChatDbLadders`: `ProfileDbLadder`, `ThreadDbLadder`), before any store uses it:
+**SQLite: a ladder per database** ([chat-storage D105](../../projects/chat-storage-and-memory/DECISIONS.md#d105--disk-schemas-move-up-a-ladder-from-a-floor)). `profile.db` and each `thread.db` say their schema in `PRAGMA user_version`; `SqliteMigrations` (`lib/storage`) brings one to this build's when it opens (`SqliteChatDbLadders`: `ProfileDbLadder`, `ThreadDbLadder`), before any store uses it. It opens **after unlock**: the thread store gets the profile's data key, opens profile.db and runs its ladder with the key in the step context (a step may rewrite encrypted columns); before that nothing opens, creates or migrates either database ([AT_REST_ENCRYPTION § Unlock flow](AT_REST_ENCRYPTION.md#unlock-flow) step 8):
 
 | Found | What happens |
 |-------|--------------|
 | `0` (a new file) | The current schema is created and the version set |
 | The current version | Nothing |
-| Between the floor and the current version | The file is copied beside itself (`*.pre-migration`, SQLite's backup API, so the write-ahead log is in it); each step runs in its own transaction, which sets `user_version` to its target at its end; the copy is deleted. A step that fails is rolled back and the copy restored: the database stays at the version it had, and is refused (start-up stops with the error) |
+| Between the floor and the current version | The file is copied beside itself (`*.pre-migration`, SQLite's backup API, so the write-ahead log is in it); each step runs in its own transaction, which sets `user_version` to its target at its end; the copy is deleted. A step that fails is rolled back and the copy restored: the database stays at the version it had and stays shut; the app shows the start-up recovery ("Your chats could not be upgraded": Reset chats…) |
 | Below the floor | Too old to upgrade: the store is reset — `profile.db`: the whole chat store (`threads/`, as Me → Storage → Reset chats; the account, contacts and settings stay); a `thread.db`: that chat's messages (its place in the catalog stays). An error line is logged and `chat_store_reset` is written beside `threads/`; the app takes it once after start-up and says "your chats were reset" |
-| Newer than this build's | Refused (start-up stops with the error) |
+| Newer than this build's | Left alone and shut; the app shows the start-up recovery ("This data is from a newer version of the app": update the app, or Reset chats…) |
 
 Today: `profile.db` 5 (floor 4), `thread.db` 3 (floor 2). The step 4 → 5 (and 2 → 3) is the **baseline**: a tester's database at today's schema got its later columns added on every open before the ladder, so it has some, all or none of them; the step adds each where its table lacks it, and drops calls' dead `session_kind`. A store still creates a table that is new to it (`CREATE TABLE IF NOT EXISTS`, at the current shape); any change to a table that may already exist is a ladder step, never an `ALTER` on open.
 

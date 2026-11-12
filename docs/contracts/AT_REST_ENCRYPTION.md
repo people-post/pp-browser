@@ -115,12 +115,13 @@ AEAD AAD (`identity|{profile_id}|1`) is independent of the plaintext `schema_ver
 5. Optional automation: `--pin` or `PP_BROWSER_PIN` unlocks at bootstrap for tests/CI (takes precedence over silent default unlock).
 6. **Change PIN:** Me → Security when unlocked (`ProfileSecretsEngine::ChangePin` → `DataKeyVault::ChangePin`, then the grace window is forgotten); clears `pin_is_default`.
 7. Lock on exit clears DEK (`sodium_memzero`) in the vault and all registered `IDekConsumer`s.
+8. **The chat store opens at unlock, not before** ([chat-storage D105](../../projects/chat-storage-and-memory/DECISIONS.md#d105--disk-schemas-move-up-a-ladder-from-a-floor)). Until `SqliteThreadStore` gets the DEK, nothing opens, creates or migrates `profile.db` or a `thread.db`: the thread store refuses, and every other store on `profile.db` (rosters, thread preferences, mentions, cards, sessions, calls, …) asks `chat_store_gate` first and is refused too. Its `SetDek` opens the store and runs its ladder with the DEK in the step context (DATA_LAYOUT § Schema versions), so a step may rewrite encrypted columns; the hub's first reads (the outbox, the kept cards) are in `EnsureMessagingReady`, after unlock. Why: a migration of encrypted rows needs the key, and a store read before the PIN would be a store opened with no one to say whether to upgrade it. A store that cannot be opened (newer than this build, or an upgrade that failed and was rolled back) does **not** fail the unlock: the vault opens, the store stays shut and says why (`chat_store_gate::OpenFailure`), and the app shows the start-up recovery — "This data is from a newer version of the app" (update the app, or Reset chats…) or "Your chats could not be upgraded" (Reset chats…) — whose reset is Me → Storage's and goes on into the normal start-up. pp-node opens no chat store (only `identity.enc`); a `--pin` unlock at a desktop bootstrap that meets such a store still stops start-up with the error.
 
 Default PIN is intentionally weak — offline disk theft with `pin_is_default` true is trivial. Users who want real protection should set or change their PIN in Me → Security.
 
 ### DEK consumers
 
-[`ProfileSecretsEngine`](../../capabilities/base/src/foundation/crypto/ProfileSecretsEngine.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../capabilities/base/src/foundation/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePeerSessionStore`, `SqliteThreadStore`, `ICallMediaKeyStore`, `AttachmentFetchWorkflow`, `Libp2pChatBlobService` (registered from `ConversationsHub`). To add a new encrypted store:
+[`ProfileSecretsEngine`](../../capabilities/base/src/foundation/crypto/ProfileSecretsEngine.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../capabilities/base/src/foundation/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePeerSessionStore`, `SqliteThreadStore` (whose `SetDek` opens the chat store, step 8), `ICallMediaKeyStore`, `AttachmentFetchWorkflow`, `Libp2pChatBlobService` (registered from `ConversationsHub`). To add a new encrypted store:
 
 1. Implement `IDekConsumer`; encrypt with `FileCipher` and a unique AAD purpose (`purpose|profile_id|schema`).
 2. Register via `ProfileSecretsEngine::RegisterDekConsumer` during init (typically from the feature that owns the store).
@@ -175,7 +176,7 @@ The key never sits next to the ciphertext in the clear. Plaintext of a sent or r
 
 ## Test fixtures
 
-Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePeerSessionStore::SetDek` / `SqliteThreadStore::SetDek` with a fixed DEK, or pass `--pin` / `PP_BROWSER_PIN`. New `IDekConsumer` stores should accept the same direct `SetDek` injection in tests.
+Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePeerSessionStore::SetDek` / `SqliteThreadStore::SetDek` with a fixed DEK, or pass `--pin` / `PP_BROWSER_PIN`. A thread store must get its DEK before anything reads the chat store (`MakeUnlockedThreadStore` in the storage tests). New `IDekConsumer` stores should accept the same direct `SetDek` injection in tests.
 
 
 Unlock + `EnsureMessagingReady` exposes local messaging without waiting on Amp mesh; see [SERVICE_CAPABILITIES.md](../architecture/SERVICE_CAPABILITIES.md).
