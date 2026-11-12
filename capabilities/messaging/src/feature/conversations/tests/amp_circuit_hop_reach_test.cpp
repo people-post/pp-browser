@@ -570,7 +570,7 @@ TEST_F(AmpCircuitHopReachTest, HopEnsureFallsThroughToCircuitAfterPunchWindowExp
   WarmAnswererAndOfferer("relay");
 
   ASSERT_FALSE(recording_->GetLinkSnapshot(harness_->peer_id_b).has_endpoint);
-  ASSERT_FALSE(hops_->Find(harness_->peer_id_b, mesh::kMediaRelayProtocolId).has_value());
+  ASSERT_FALSE(hops_->Find(harness_->peer_id_b, pp::amp::kAmpCircuitCarrierProtocolId).has_value());
 
   auto punch_calls = std::make_shared<int>(0);
   mesh::AmpCircuitHopReach reach(
@@ -588,9 +588,12 @@ TEST_F(AmpCircuitHopReachTest, HopEnsureFallsThroughToCircuitAfterPunchWindowExp
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_EQ(*punch_calls, 1);
-  EXPECT_TRUE(hops_->Find(harness_->peer_id_b, mesh::kMediaRelayProtocolId).has_value())
-      << "circuit fallback must Install media_relay hop after punch window expiry";
-  // resolved_multiaddr may be empty on loopback; SoftMigrate dialability is the hop Install.
+  // V065: a hop behind a circuit is reached by a link nested through it (its control channel and data lane open on
+  // it); it was a tunnel of the media-relay protocol alone, with no lane.
+  EXPECT_TRUE(hops_->Find(harness_->peer_id_b, pp::amp::kAmpCircuitCarrierProtocolId).has_value())
+      << "circuit fallback must nest a link to the hop after punch window expiry";
+  EXPECT_FALSE(hops_->Find(harness_->peer_id_b, mesh::kMediaRelayProtocolId).has_value());
+  EXPECT_TRUE(recording_->IsConnectedRelayed(harness_->peer_id_b));
 }
 
 } // namespace
