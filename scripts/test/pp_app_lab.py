@@ -332,6 +332,8 @@ class Lab:
         return {
             "config_version": 1,
             "data_dir": data_dir,
+            # The lab relay is a backend of its own: say so (a config without `backend` is on the default one).
+            "backend": {"env": "custom"},
             "relay": {"base_url": self.user_relay},
             # directory=False: a directory nobody answers (an empty one means the built-in default).
             "directory": {"base_url": self.user_relay if directory else NO_DIRECTORY},
