@@ -39,8 +39,8 @@ profiles/{id}/
   identity.enc    # AEAD(identity JSON) under DEK
   contacts.json   # plaintext (atomic write)
   threads/
-    profile.db    # PSK columns + preview_enc ciphertext; other columns plaintext (user_version 4)
-    {thread_id}/thread.db   # content_enc + value_enc ciphertext; metadata plaintext (user_version 2 — D102)
+    profile.db    # PSK columns + preview_enc ciphertext; other columns plaintext (user_version 5 — DATA_LAYOUT § Schema versions)
+    {thread_id}/thread.db   # content_enc + value_enc ciphertext; metadata plaintext (user_version 3 — D102)
 ```
 
 ### `vault.bin` (v1)
