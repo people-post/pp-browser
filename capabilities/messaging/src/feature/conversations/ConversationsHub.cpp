@@ -1324,7 +1324,7 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   // The chat store opened with the data key (its ladder ran then, D105): the first reads of it are here, after
   // unlock. One that could not be opened (newer than this build, a failed upgrade) stops messaging here.
   {
-    StartupPhase phase("ConversationsHub::ReconcileOutbox");
+    StartupPhase reconcile_phase("ConversationsHub::ReconcileOutbox");
     if (auto reconciled = store_->ReconcileOutbox(); !reconciled) {
       return reconciled.error();
     }
