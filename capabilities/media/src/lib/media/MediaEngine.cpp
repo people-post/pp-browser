@@ -887,9 +887,10 @@ struct MediaEngine::Impl {
 
   /**
    * Appends one packet's audio to `track.decoded`: Packet decoded / FEC-on-Gap / PLC-on-Gap at the lost packet's
-   * length / PLC-on-Empty for one slot. When the buffer is over its adaptive target, a first-pass decoded Packet
-   * that turns out to be silence is dropped and the next one popped/decoded to catch up without an audible gap
-   * (adaptive jitter §2).
+   * length / PLC-on-Empty for one slot. Catch-up is never heard (V065): when the buffer is over its adaptive target, a
+   * decoded Packet that turns out to be silence is dropped and the next one popped/decoded instead — one per slot, or
+   * as many as the buffer holds past its cap. Over the cap with no silence at its head, speech is cut to the cap
+   * (oldest first, counted as speech drops).
    */
   void DecodeNextPacketLocked(RemoteAudioTrack& track) {
     std::vector<int16_t> pcm(static_cast<size_t>(kMaxPacketSamples), 0);
@@ -902,7 +903,8 @@ struct MediaEngine::Impl {
       return n;
     };
     int decoded = 0;
-    for (int pass = 0; pass < 2; ++pass) {
+    const size_t silence_skips = track.jitter.ExcessOverCap() + 1;
+    for (size_t pass = 0;; ++pass) {
       const uint64_t underruns_before = track.jitter.underruns();
       AudioPlayoutPop pop = track.jitter.PopForPlayout();
       decoded = 0;
@@ -941,13 +943,14 @@ struct MediaEngine::Impl {
           }
           break;
       }
-      if (pass == 0 && pop.kind == AudioPlayoutPop::Kind::Packet && decoded > 0 && track.jitter.OverTarget() &&
-          IsCatchUpSilence(pcm, static_cast<size_t>(decoded))) {
+      if (pass < silence_skips && pop.kind == AudioPlayoutPop::Kind::Packet && decoded > 0 &&
+          track.jitter.OverTarget() && IsCatchUpSilence(pcm, static_cast<size_t>(decoded))) {
         track.jitter.NoteSilenceDrop();
         continue; // catch up: pop and decode the next packet instead of playing this silent one
       }
       break;
     }
+    track.jitter.CutToCap(); // still past the cap: no silence was left to skip
     if (decoded > 0) {
       track.decoded.insert(track.decoded.end(), pcm.begin(), pcm.begin() + decoded);
     }
