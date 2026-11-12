@@ -36,6 +36,16 @@ std::string AttachmentMimeFromFilename(const std::string& filename);
  */
 std::string AttachmentExtensionFromContent(const std::vector<uint8_t>& head);
 
+/**
+ * The long side, in pixels, of a picture's preview (B203): what a chat bubble shows instead of the picture, and the
+ * storage grid's cell (the same file, AttachmentPosterPath). One place to change it.
+ */
+inline constexpr int kImagePreviewMaxSide = 640;
+/** A picture longer than the preview on its long side gets a preview; a smaller one is shown from its own file. */
+inline bool ImageNeedsPreview(const int width, const int height) {
+  return width > kImagePreviewMaxSide || height > kImagePreviewMaxSide;
+}
+
 bool IsAttachmentImageMime(const std::string& mime);
 bool IsAttachmentVideoMime(const std::string& mime);
 bool AttachmentOpenNeedsConfirm(const std::string& mime);

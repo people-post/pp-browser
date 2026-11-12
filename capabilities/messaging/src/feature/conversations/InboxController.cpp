@@ -765,7 +765,7 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
         !AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
       // A stored large picture whose thumbnail went with the view cache (wiped at every start): made again on a
       // worker, never here; the card is a file row until the change notification re-renders it.
-      attachment_downloads_->RequestImageThumbnail(message.thread_id, *fields);
+      attachment_downloads_->RequestChatPreview(message.thread_id, *fields);
     }
   } else if (!view.local_path.empty()) {
     view.state = AttachmentFetchWorkflow::DownloadState::Ready;

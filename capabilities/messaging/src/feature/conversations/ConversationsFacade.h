@@ -397,6 +397,14 @@ public:
   /** Called on the UI thread when a storage-grid cell's thumbnail (RequestGridThumbnail) is made. */
   void SetOnGridThumbnailReady(
       std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback);
+  /**
+   * Called on the UI thread when a chat picture's preview (asked for by drawing its placeholder) is made (`made`) or
+   * cannot be made (its row is then a file card).
+   */
+  void SetOnChatPreviewDone(
+      std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made)> callback);
+  /** The chat page was left: its preview requests not started yet are dropped. */
+  void CancelChatPreviews();
   /** Send bytes the picker already prepared (a shrunk picture, an original with its location removed). */
   void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                            std::function<void(Roe<ThreadMessage>)> on_done,

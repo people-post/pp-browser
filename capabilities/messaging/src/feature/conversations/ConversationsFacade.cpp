@@ -1197,6 +1197,15 @@ void ConversationsFacade::CancelGridThumbnails(const uint64_t page_generation) {
   hub_.CancelGridThumbnails(page_generation);
 }
 
+void ConversationsFacade::SetOnChatPreviewDone(
+    std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made)> callback) {
+  hub_.SetOnChatPreviewDone(std::move(callback));
+}
+
+void ConversationsFacade::CancelChatPreviews() {
+  hub_.CancelChatPreviews();
+}
+
 std::string ConversationsFacade::GridThumbnailPath(const std::string& thread_id,
                                                    const std::vector<uint8_t>& content_hash) {
   return hub_.GridThumbnailPath(thread_id, content_hash);

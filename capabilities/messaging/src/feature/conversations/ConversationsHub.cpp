@@ -1615,6 +1615,12 @@ void ConversationsHub::SetOnGridThumbnailReady(
   on_grid_thumbnail_ready_ = std::move(callback);
 }
 
+void ConversationsHub::SetOnChatPreviewDone(
+    std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made)> callback) {
+  std::lock_guard lock(storage_callbacks_mu_);
+  on_chat_preview_done_ = std::move(callback);
+}
+
 void ConversationsHub::SetOnPeerIconsChanged(std::function<void()> callback) {
   on_peer_icons_changed_ = std::move(callback);
 }
@@ -2637,6 +2643,18 @@ void ConversationsHub::WireAttachmentDownloads() {
           callback(thread_id, content_hash);
         }
       }));
+  // A chat picture's preview: only the rows showing it are redrawn (no whole-chat re-render).
+  attachment_downloads_->SetOnChatPreviewDone(storage_callbacks_lifetime_.Bind(
+      [this](const std::string& thread_id, const std::vector<uint8_t>& content_hash, const bool made) {
+        std::function<void(const std::string&, const std::vector<uint8_t>&, bool)> callback;
+        {
+          std::lock_guard lock(storage_callbacks_mu_);
+          callback = on_chat_preview_done_;
+        }
+        if (callback) {
+          callback(thread_id, content_hash, made);
+        }
+      }));
   if (inbox_) {
     inbox_->SetProfileDataDir(data_dir_);
     inbox_->SetAttachmentDownloads(attachment_downloads_.get());
@@ -2711,6 +2729,12 @@ void ConversationsHub::RequestGridThumbnail(const std::string& thread_id, const 
 void ConversationsHub::CancelGridThumbnails(const uint64_t page_generation) {
   if (attachment_downloads_) {
     attachment_downloads_->CancelGridThumbnails(page_generation);
+  }
+}
+
+void ConversationsHub::CancelChatPreviews() {
+  if (attachment_downloads_) {
+    attachment_downloads_->CancelChatPreviews();
   }
 }
 

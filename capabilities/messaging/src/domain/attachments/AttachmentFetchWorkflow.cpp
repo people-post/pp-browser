@@ -16,6 +16,7 @@
 #include "lib/voice/AudioFileTags.h"
 #include "domain/attachments/AttachmentFetch.h"
 #include "common/runtime/AppRuntime.h"
+#include "common/ImageMetadata.h"
 
 #include <sodium.h>
 
@@ -27,7 +28,7 @@
 namespace pbr {
 namespace {
 
-/** Storage-grid thumbnails made at once. */
+/** Storage-grid thumbnails and chat previews made at once (one limit for both). */
 constexpr size_t kMaxGridThumbnailJobs = 2;
 
 /** Content hashes a message refers to (attachment, AI image). */
@@ -235,6 +236,11 @@ void AttachmentFetchWorkflow::SetOnChanged(ChangedCallback callback) {
 void AttachmentFetchWorkflow::SetOnGridThumbnailReady(GridThumbnailCallback callback) {
   std::lock_guard lock(mutex_);
   on_grid_thumbnail_ready_ = std::move(callback);
+}
+
+void AttachmentFetchWorkflow::SetOnChatPreviewDone(ChatPreviewCallback callback) {
+  std::lock_guard lock(mutex_);
+  on_chat_preview_done_ = std::move(callback);
 }
 
 Roe<void> AttachmentFetchWorkflow::SetDek(ByteVector dek) {
@@ -814,6 +820,21 @@ void AttachmentFetchWorkflow::NotifyGridThumbnailReady(const std::string& thread
       [callback = std::move(callback), thread_id, content_hash]() { callback(thread_id, content_hash); });
 }
 
+void AttachmentFetchWorkflow::NotifyChatPreviewDone(const std::string& thread_id,
+                                                    const std::vector<uint8_t>& content_hash, const bool made) {
+  ChatPreviewCallback callback;
+  {
+    std::lock_guard lock(mutex_);
+    callback = on_chat_preview_done_;
+  }
+  if (!callback) {
+    return;
+  }
+  AppRuntime::PostUI([callback = std::move(callback), thread_id, content_hash, made]() {
+    callback(thread_id, content_hash, made);
+  });
+}
+
 AttachmentFetchWorkflow::DownloadState AttachmentFetchWorkflow::StateFor(const std::string& thread_id,
                                                                          const ChatAttachmentFields& fields) const {
   const std::vector<uint8_t>& content_hash = fields.content_hash;
@@ -1088,6 +1109,16 @@ void AttachmentFetchWorkflow::CancelJobsLocked(const std::function<bool(const st
   std::erase_if(throttled_, [&](const std::string& key) { return matches(key); });
   std::erase_if(waiting_for_network_, [&](const auto& entry) { return matches(entry.first); });
   std::erase_if(progress_, [&](const auto& entry) { return matches(entry.first); });
+  // The chat's preview requests not started yet go with them (one being made sees the delete and takes it back).
+  std::erase_if(chat_queue_, [&](const GridThumbnailJob& job) {
+    const std::string key = JobKey(job.thread_id, job.content_hash);
+    if (!matches(key)) {
+      return false;
+    }
+    chat_preview_keys_.erase(key);
+    return true;
+  });
+  std::erase_if(chat_preview_failed_, [&](const std::string& key) { return matches(key); });
 }
 
 void AttachmentFetchWorkflow::MaybeBuildPoster(const std::string& thread_id, const ChatAttachmentFields& fields,
@@ -1109,9 +1140,16 @@ void AttachmentFetchWorkflow::MaybeBuildPoster(const std::string& thread_id, con
 
 void AttachmentFetchWorkflow::MaybeBuildImageThumbnail(const std::string& thread_id, const ChatAttachmentFields& fields,
                                                        const ByteVector& plaintext) {
-  if (!IsAttachmentImageMime(fields.mime) || fields.byte_length <= kMaxDirectAttachmentBytes || profile_dir_.empty() ||
-      thread_id.empty()) {
-    return; // a small image is shown from its own view
+  if (!IsAttachmentImageMime(fields.mime) || profile_dir_.empty() || thread_id.empty()) {
+    return;
+  }
+  if (fields.byte_length <= kMaxDirectAttachmentBytes) {
+    // Its size is read from the bytes in hand: a picture no longer than the preview is shown from its own view (and
+    // one whose head cannot be read is a file card, never decoded for a bubble).
+    const auto header = ReadImageHeaderBytes(plaintext);
+    if (!header || !ImageNeedsPreview(header->width, header->height)) {
+      return;
+    }
   }
   if (!HasDek()) {
     return; // locked: nothing derived from the plaintext is kept on disk
@@ -1119,53 +1157,51 @@ void AttachmentFetchWorkflow::MaybeBuildImageThumbnail(const std::string& thread
   (void)EnsureAttachmentImageThumbnail(profile_dir_, thread_id, fields.content_hash, fields.mime, plaintext);
 }
 
-void AttachmentFetchWorkflow::RequestImageThumbnail(const std::string& thread_id, const ChatAttachmentFields& fields) {
-  if (!IsAttachmentImageMime(fields.mime) || fields.byte_length <= kMaxDirectAttachmentBytes || profile_dir_.empty() ||
-      thread_id.empty() || fields.content_hash.size() != kAttachmentContentHashSize || !AppRuntime::IsRunning()) {
+void AttachmentFetchWorkflow::RequestChatPreview(const std::string& thread_id, const ChatAttachmentFields& fields) {
+  if (!IsAttachmentImageMime(fields.mime) || profile_dir_.empty() || thread_id.empty() ||
+      fields.content_hash.size() != kAttachmentContentHashSize || !AppRuntime::IsRunning()) {
     return; // never on the caller's (render) thread
   }
   const std::string key = JobKey(thread_id, fields.content_hash);
+  size_t workers = 0;
   {
     std::lock_guard lock(mutex_);
-    if (dek_.empty() || !content_ || !thumbnails_requested_.insert(key).second) {
-      return; // locked, or being made already (or it failed this session)
+    if (!content_ || chat_preview_failed_.contains(key) || deleting_.contains(AttachmentHashHex(fields.content_hash))) {
+      return;
     }
+    const auto queued = std::find_if(chat_queue_.begin(), chat_queue_.end(), [&](const GridThumbnailJob& job) {
+      return JobKey(job.thread_id, job.content_hash) == key;
+    });
+    if (queued != chat_queue_.end()) {
+      // Asked again (the rows drawn again, oldest first): it goes to the front with the others in their new order.
+      GridThumbnailJob job = std::move(*queued);
+      chat_queue_.erase(queued);
+      chat_queue_.push_back(std::move(job));
+      return;
+    }
+    if (!chat_preview_keys_.insert(key).second) {
+      return; // being made
+    }
+    chat_queue_.push_back(GridThumbnailJob{.thread_id = thread_id, .content_hash = fields.content_hash, .mime = fields.mime});
+    workers = ClaimGridWorkersLocked(); // none while locked: the job waits for SetDek
   }
-  AppRuntime::PostWorkerBackground([this, key, thread_id, hash = fields.content_hash, mime = fields.mime]() {
-    const ByteVector dek = CopyDek();
-    const std::shared_ptr<CasStore> content = Content();
-    const std::string hex = AttachmentHashHex(hash);
-    {
-      std::lock_guard lock(mutex_);
-      if (dek.empty() || !content || deleting_.contains(hex)) {
-        thumbnails_requested_.erase(key); // locked or being deleted meanwhile: asked again when it shows again
-        return;
-      }
-      ++thumbnails_in_progress_[hex]; // a delete of these bytes waits for it
-    }
-    // No lock held: the picture is decrypted once into memory and decoded downsampled, which takes a while.
-    auto made = EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content, thread_id, hash, mime, dek);
-    bool taken_back = false;
-    {
-      std::lock_guard lock(mutex_);
-      if (made && (dek_.empty() || deleting_.contains(hex) || !AttachmentBlobExists(*content, hash))) {
-        // Locked (its view cache wiped) or the message deleted meanwhile: nothing made from it stays.
-        std::error_code ec;
-        std::filesystem::remove(*made, ec);
-        taken_back = true;
-      }
-      if (made) {
-        thumbnails_requested_.erase(key); // made: asked again only if it is wiped later
-      }
-      if (--thumbnails_in_progress_[hex] <= 0) {
-        thumbnails_in_progress_.erase(hex);
-      }
-    }
-    delete_cv_.notify_all();
-    if (made && !taken_back) {
-      NotifyChanged(); // the transcript re-renders with the thumbnail
-    }
-  });
+  for (size_t i = 0; i < workers; ++i) {
+    AppRuntime::PostWorkerBackground([this]() { RunGridThumbnails(); });
+  }
+}
+
+void AttachmentFetchWorkflow::CancelChatPreviews() {
+  std::lock_guard lock(mutex_);
+  for (const GridThumbnailJob& job : chat_queue_) {
+    chat_preview_keys_.erase(JobKey(job.thread_id, job.content_hash));
+  }
+  chat_queue_.clear();
+}
+
+bool AttachmentFetchWorkflow::ChatPreviewFailed(const std::string& thread_id,
+                                                const std::vector<uint8_t>& content_hash) const {
+  std::lock_guard lock(mutex_);
+  return chat_preview_failed_.contains(JobKey(thread_id, content_hash));
 }
 
 std::optional<AttachmentFetchWorkflow::AudioCardTags> AttachmentFetchWorkflow::AudioTags(
@@ -1467,7 +1503,13 @@ void AttachmentFetchWorkflow::DeleteLocalAttachments(IThreadStore& store, std::v
     std::erase_if(grid_queue_, [&](const GridThumbnailJob& job) {
       return target_hex.contains(AttachmentHashHex(job.content_hash));
     });
-    std::erase_if(thumbnails_requested_, [&keys](const std::string& key) { return keys.contains(key); });
+    std::erase_if(chat_queue_, [&](const GridThumbnailJob& job) {
+      if (!target_hex.contains(AttachmentHashHex(job.content_hash))) {
+        return false;
+      }
+      chat_preview_keys_.erase(JobKey(job.thread_id, job.content_hash));
+      return true;
+    });
     std::erase_if(grid_failed_, [&keys](const std::string& key) { return keys.contains(key); });
     std::erase_if(audio_tags_, [&keys](const auto& entry) { return keys.contains(entry.first); });
     std::erase_if(audio_tags_requested_, [&keys](const std::string& key) { return keys.contains(key); });
@@ -1620,7 +1662,7 @@ size_t AttachmentFetchWorkflow::ClaimGridWorkersLocked() {
     return 0;
   }
   const size_t free = grid_running_ < kMaxGridThumbnailJobs ? kMaxGridThumbnailJobs - grid_running_ : 0;
-  const size_t claimed = std::min(free, grid_queue_.size());
+  const size_t claimed = std::min(free, grid_queue_.size() + chat_queue_.size());
   grid_running_ += claimed;
   return claimed;
 }
@@ -1641,19 +1683,30 @@ std::string AttachmentFetchWorkflow::GridThumbnailPath(const std::string& thread
 void AttachmentFetchWorkflow::RunGridThumbnails() {
   for (;;) {
     GridThumbnailJob job;
+    bool chat = false;
     std::string hex;
     ByteVector dek;
     uint64_t dek_generation = 0;
     {
       std::lock_guard lock(mutex_);
-      if (grid_queue_.empty() || dek_.empty()) {
-        --grid_running_; // locked: the jobs left wait in the queue for SetDek
+      if ((grid_queue_.empty() && chat_queue_.empty()) || dek_.empty()) {
+        --grid_running_; // locked: the jobs left wait in the queues for SetDek
         return;
       }
-      job = std::move(grid_queue_.front());
-      grid_queue_.pop_front();
+      if (!chat_queue_.empty()) {
+        // The chat first, its newest request first: those are the pictures on screen.
+        job = std::move(chat_queue_.back());
+        chat_queue_.pop_back();
+        chat = true;
+      } else {
+        job = std::move(grid_queue_.front());
+        grid_queue_.pop_front();
+      }
       hex = AttachmentHashHex(job.content_hash);
       if (deleting_.contains(hex)) {
+        if (chat) {
+          chat_preview_keys_.erase(JobKey(job.thread_id, job.content_hash));
+        }
         continue;
       }
       ++thumbnails_in_progress_[hex]; // started: a delete of these bytes waits for it
@@ -1662,11 +1715,11 @@ void AttachmentFetchWorkflow::RunGridThumbnails() {
     }
     const std::string key = JobKey(job.thread_id, job.content_hash);
     const std::shared_ptr<CasStore> content = Content();
+    const bool exists_already = AttachmentPosterExists(profile_dir_, job.thread_id, job.content_hash);
     const bool attempt = content && AttachmentBlobExists(*content, job.content_hash) &&
-                         !SuppressedIn(job.thread_id, job.content_hash) &&
-                         !AttachmentPosterExists(profile_dir_, job.thread_id, job.content_hash);
+                         !SuppressedIn(job.thread_id, job.content_hash) && !exists_already;
     // No lock held: decrypted once into memory (not through the plaintext memory cache: a large picture is not worth
-    // keeping there), only the small JPEG is written (the large-image thumbnail's path).
+    // keeping there), only the small JPEG is written (the preview's path).
     bool decrypted = false;
     Roe<std::string> made = Error("Nothing to thumbnail");
     if (attempt) {
@@ -1677,6 +1730,7 @@ void AttachmentFetchWorkflow::RunGridThumbnails() {
     }
     sodium_memzero(dek.data(), dek.size());
     bool notify = false;
+    bool failed = false;
     {
       std::lock_guard lock(mutex_);
       const bool deleting = deleting_.contains(hex);
@@ -1691,18 +1745,32 @@ void AttachmentFetchWorkflow::RunGridThumbnails() {
           notify = true;
         }
       } else if (decrypted && !key_changed && !deleting) {
-        grid_failed_.insert(key); // the hook could not thumbnail valid bytes: not tried again until the next unlock
+        // The hook could not thumbnail valid bytes: not tried again (the grid's until the next unlock, the chat's this
+        // run: its row becomes a file card).
+        failed = true;
+        (chat ? chat_preview_failed_ : grid_failed_).insert(key);
+      } else if (chat && exists_already && !deleting && !key_changed) {
+        notify = true; // made meanwhile (the download, the grid): the placeholder can take it
       }
-      // A missing blob, a failed decrypt or a delete: not remembered, asked again when the cell shows again.
-      if (key_changed && !deleting && attempt && !notify) {
-        grid_queue_.push_front(job);
+      // A missing blob, a failed decrypt or a delete: not remembered, asked again when the row or cell shows again.
+      const bool again = key_changed && !deleting && attempt && !notify;
+      if (again) {
+        if (chat) {
+          chat_queue_.push_back(job);
+        } else {
+          grid_queue_.push_front(job);
+        }
+      } else if (chat) {
+        chat_preview_keys_.erase(key);
       }
       if (--thumbnails_in_progress_[hex] <= 0) {
         thumbnails_in_progress_.erase(hex);
       }
     }
     delete_cv_.notify_all();
-    if (notify) {
+    if (chat && (notify || failed)) {
+      NotifyChatPreviewDone(job.thread_id, job.content_hash, notify);
+    } else if (notify) {
       NotifyGridThumbnailReady(job.thread_id, job.content_hash);
     }
   }

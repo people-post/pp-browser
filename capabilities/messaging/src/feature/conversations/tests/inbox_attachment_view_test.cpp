@@ -196,7 +196,8 @@ TEST_F(InboxAttachmentViewTest, AStoredLargePictureWithoutItsThumbnailGetsItMade
   downloads.SetContent(content);
   ASSERT_TRUE(downloads.SetDek(TestDek()));
   std::atomic<int> changed{0};
-  downloads.SetOnChanged([&changed]() { ++changed; });
+  downloads.SetOnChatPreviewDone(
+      [&changed](const std::string&, const std::vector<uint8_t>&, const bool made) { changed += made ? 1 : 0; });
   inbox_->SetAttachmentDownloads(&downloads);
 
   std::vector<uint8_t> plain(static_cast<size_t>(kMaxDirectAttachmentBytes) + 1000, 0x37);

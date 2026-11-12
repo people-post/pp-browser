@@ -324,6 +324,11 @@ public:
   /** Me → Storage: the thumbnail of a grid cell (RequestGridThumbnail) was made. Called on the UI thread. */
   void SetOnGridThumbnailReady(
       std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback);
+  /** The chat: a picture's preview was made (`made`) or cannot be made. Called on the UI thread. */
+  void SetOnChatPreviewDone(
+      std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made)> callback);
+  /** The chat page was left: its preview requests not started yet go (AttachmentFetchWorkflow::CancelChatPreviews). */
+  void CancelChatPreviews();
   /**
    * "Delete for everyone": only our own message in a chat or group. Sends the retract, then deletes the
    * message here like "delete for me", then (best effort) the uploaded copy on the relay. Blocking: call
@@ -727,6 +732,8 @@ private:
   std::mutex storage_callbacks_mu_;
   std::function<void()> on_stored_attachments_changed_;
   std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> on_grid_thumbnail_ready_;
+  std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash, bool made)>
+      on_chat_preview_done_;
   /** Guards the workflow's change reports and their UI posts: invalidated at Shutdown and when the hub goes. */
   pp::Lifetime storage_callbacks_lifetime_;
   std::function<void()> on_messaging_ready_;
