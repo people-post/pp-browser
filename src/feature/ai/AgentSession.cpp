@@ -1063,6 +1063,9 @@ AgentSession::FeedRelist AgentSession::RelistMissingFeedTools(const std::shared_
       if (wanted.empty()) {
         return FeedRelist::Listed; // a Configure() that ran meanwhile listed them
       }
+      if (state->mcp_connection && state->mcp_connection->unreachable) {
+        return FeedRelist::Unavailable; // this turn's connect got no answer (or is cooling down): no second wait
+      }
       McpClient* promoted = state->mcp_connection ? state->mcp_connection->runtime.PromotedPtr() : nullptr;
       if (!promoted || !promoted->IsRunning()) {
         return FeedRelist::Unavailable; // disabled or not configured: nothing to wait for
@@ -1959,23 +1962,6 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     return;
   }
 
-  const bool local_action_payload = state->pending_user_payload && [&] {
-    const auto doc = TryParseObject(*state->pending_user_payload);
-    return doc && doc->getString("type").value_or("") == "local_action";
-  }();
-  if (!BriefStreamAvailable(state) && !local_action_payload) {
-    // A payload plan or the model pipeline reads the MCP tools; a streamed brief turn and an app action do not, so
-    // they never wait for a connection (B210).
-    EnsureMcpTools(state);
-    if (StaleStep(state, "mcp")) {
-      return;
-    }
-    if (state->cancelled) {
-      FinishTurn(state);
-      return;
-    }
-  }
-
   if (state->turn_mode == AgentTurnMode::Thread) {
     if (!state->thread_store) {
       PushError(state, "Thread store not configured");
@@ -2010,6 +1996,9 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       state->pending_entry_id = appended->id;
     } else {
       state->pending_entry_id = user_message.id;
+    }
+    if (!PrepareMcpTools(state)) {
+      return;
     }
 
     auto messages = state->thread_store->GetMessagesForContext(state->pending_thread_id, state->config.context);
@@ -2069,6 +2058,9 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     }
 
     state->pending_entry_id = util::GenerateUuid();
+    if (!PrepareMcpTools(state)) {
+      return;
+    }
 
     // Only the question goes out; the chat transcript stays on the device (plan decision 11).
     ThreadContextPolicy policy(state->config.context);
@@ -2111,6 +2103,9 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
 
   TranscriptEntry& entry = state->conversation.AppendUser(state->pending_user_text, state->pending_user_payload);
   state->pending_entry_id = entry.id;
+  if (!PrepareMcpTools(state)) {
+    return;
+  }
 
   const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->Tools()->SummaryForPrompt(),
                                                                               ResolvePreset(state->config) == "brief");
@@ -2176,7 +2171,7 @@ void AgentSession::EnsureMcpTools(const std::shared_ptr<Impl>& state) {
   const AppConfig config = state->ConfigCopy();
   std::shared_ptr<McpConnection> connection = state->shared->mcp_tools.Acquire(config, &state->cancelled);
   if (!connection) {
-    return; // stopped while another turn connected
+    return; // stopped while it connected; the connect goes on for the next turn
   }
   std::lock_guard work_lock(state->configure_work_mutex);
   // A stopped turn writes nothing: the turn that replaced it may already read the registry.
@@ -2185,7 +2180,7 @@ void AgentSession::EnsureMcpTools(const std::shared_ptr<Impl>& state) {
   }
   const bool current = generation == state->configure_generation;
   if (connection == state->mcp_connection) {
-    // Already attached: no rebuild.
+    // Already attached (a failed connection handed out again while it cools down): no rebuild.
     state->mcp_attached = connection->complete && current;
     return;
   }
@@ -2217,6 +2212,29 @@ void AgentSession::EnsureMcpTools(const std::shared_ptr<Impl>& state) {
   state->mcp_connection = std::move(connection);
   // A Configure that ran meanwhile rebuilt the registry for another configuration: the next turn attaches again.
   state->mcp_attached = state->mcp_connection->complete && current;
+}
+
+bool AgentSession::PrepareMcpTools(const std::shared_ptr<Impl>& state) {
+  if (BriefStreamAvailable(state)) {
+    return true; // a streamed brief turn reads no MCP tool
+  }
+  if (state->pending_user_payload) {
+    if (const auto doc = TryParseObject(*state->pending_user_payload);
+        doc && doc->getString("type").value_or("") == "local_action") {
+      return true; // an app-action button: no MCP tool either
+    }
+  }
+  // The question is stored by now: say "thinking" again so the chat shows it before any wait for a connect.
+  PushLoading(state, true);
+  EnsureMcpTools(state);
+  if (StaleStep(state, "mcp")) {
+    return false;
+  }
+  if (state->cancelled) {
+    FinishTurn(state);
+    return false;
+  }
+  return true;
 }
 
 void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {

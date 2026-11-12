@@ -183,6 +183,10 @@ struct FakeMcpServer {
   std::atomic<bool> hold_list{false};      // tools/list waits (up to 2 s) until this is cleared
   std::atomic<int> hold_from{0};           // ...from this call on (earlier ones answer at once)
   std::atomic<int> init_calls{0};          // initialize requests: one per connection
+  std::atomic<int> fail_from{-1};          // >= 0: tools/list fails from this call on
+  std::string first_list_tool;             // set: the first tools/list offers this tool instead of tool_name
+  std::atomic<bool> throw_on_initialize{false}; // initialize throws (a bug in the transport)
+  std::atomic<bool> hold_init{false};           // initialize waits (up to 2 s) until this is cleared
 };
 
 inline HttpPostFn FakeMcpPost(std::shared_ptr<FakeMcpServer> server) {
@@ -199,17 +203,27 @@ inline HttpPostFn FakeMcpPost(std::shared_ptr<FakeMcpServer> server) {
       if (server->list_status != 200) {
         return HttpResponse{.status_code = server->list_status, .body = "Service Unavailable"};
       }
-      if (server->failing_lists < 0 || call < server->failing_lists) {
+      if (server->failing_lists < 0 || call < server->failing_lists ||
+          (server->fail_from >= 0 && call >= server->fail_from)) {
         return Error("connection refused");
       }
+      const std::string& offered = call == 0 && !server->first_list_tool.empty() ? server->first_list_tool
+                                                                                  : server->tool_name;
       return HttpResponse{
           .status_code = 200,
           .body =
-              R"({"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":")" + server->tool_name +
+              R"({"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":")" + offered +
               R"(","description":"articles","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}}]}})"};
     }
     if (body.find("\"initialize\"") != std::string::npos) {
       ++server->init_calls;
+      const auto held = std::chrono::steady_clock::now();
+      while (server->hold_init && std::chrono::steady_clock::now() - held < std::chrono::seconds(2)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+      if (server->throw_on_initialize) {
+        throw std::runtime_error("transport bug");
+      }
     }
     if (body.find("\"tools/call\"") != std::string::npos) {
       return HttpResponse{.status_code = 200,
@@ -219,6 +233,15 @@ inline HttpPostFn FakeMcpPost(std::shared_ptr<FakeMcpServer> server) {
     }
     return HttpResponse{.status_code = 200, .body = R"({"jsonrpc":"2.0","id":0,"result":{}})"};
   };
+}
+
+/** Waits (up to 3 s) until no MCP connect thread runs (SharedMcpTools), before what it may touch goes away. */
+inline void WaitForMcpConnects() {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  while (SharedMcpTools::RunningConnectsForTests() > 0 && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  EXPECT_EQ(SharedMcpTools::RunningConnectsForTests(), 0u);
 }
 
 inline AgentImageTurn TestImage(const std::string& message_id = {}) {

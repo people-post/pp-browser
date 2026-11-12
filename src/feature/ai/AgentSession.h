@@ -268,6 +268,11 @@ private:
    * session's registry, connecting first when no connection is kept. Turn thread; blocks while it connects.
    */
   static void EnsureMcpTools(const std::shared_ptr<Impl>& state);
+  /**
+   * StartTurn, once the question is stored: EnsureMcpTools when this turn reads MCP tools (not a streamed brief turn,
+   * not an app-action button). False: the turn was stopped (ended here) or replaced meanwhile; nothing more to do.
+   */
+  static bool PrepareMcpTools(const std::shared_ptr<Impl>& state);
   /** Submit worker: true to start the turn now; false when ConfigureOnIO will start it, or (configure failed) it ended. */
   static bool StartNowOrWhenConfigured(const std::shared_ptr<Impl>& state);
   static void StartTurn(const std::shared_ptr<Impl>& state);

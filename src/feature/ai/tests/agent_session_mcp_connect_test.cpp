@@ -29,10 +29,24 @@ public:
     std::lock_guard lock(mu_);
     return MemoryThreadStore::UpdateMessage(message);
   }
+  bool HasText(const std::string& text) const {
+    std::lock_guard lock(mu_);
+    return std::any_of(messages.begin(), messages.end(),
+                       [&text](const ThreadMessage& message) { return message.text == text; });
+  }
 
 private:
   mutable std::mutex mu_;
 };
+
+/** Waits (up to 2 s) until `n` callers wait in SharedMcpTools::Acquire for a connect. */
+void WaitForConnectWaiters(const size_t n) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (SharedMcpTools::WaitersForTests() < n && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  ASSERT_GE(SharedMcpTools::WaitersForTests(), n);
+}
 
 constexpr const char* kFeedPayload = R"({"tool":"blog_articles","brf_domain":"en","brf_language":"en","size":2})";
 
@@ -41,6 +55,10 @@ protected:
   void SetUp() override {
     AppRuntime::Initialize(AppRuntimeConfig{});
     McpClient::SetHttpPost(FakeMcpPost(server_)); // before any configure: the sessions keep it (SetHttpPostIfUnset)
+    LlmClient::SetRequestObserverForTests([this](const std::string& body) {
+      std::lock_guard lock(mu_);
+      llm_bodies_.push_back(body);
+    });
   }
   void TearDown() override {
     server_->hold_list = false;
@@ -49,9 +67,13 @@ protected:
       sessions_->WaitForConfigureIdle();
     }
     sessions_.reset();
+    WaitForMcpConnects();
     AppRuntime::Shutdown();
     McpClient::SetHttpPost(nullptr);
+    LlmClient::SetRequestObserverForTests(nullptr);
   }
+
+  static void WaitForWaiters(const size_t n) { WaitForConnectWaiters(n); }
 
   /** The brief preset with the promoted MCP server on (the fake answers it). */
   static AppConfig McpConfig(const std::string& preset = "brief") {
@@ -122,6 +144,8 @@ protected:
   LockedThreadStore store_;
   std::shared_ptr<FakeMcpServer> server_ = std::make_shared<FakeMcpServer>();
   std::unique_ptr<AgentSessions> sessions_;
+  std::mutex mu_;
+  std::vector<std::string> llm_bodies_;
 };
 
 // Launch, then unlock applying the key (a second configure), then a new configuration: Home and the spare are
@@ -195,11 +219,7 @@ TEST_F(McpConnectOnFirstUseTest, ConcurrentFirstQuestionsConnectOnce) {
             SubmitOutcome::Started);
   ASSERT_EQ(sessions_->SubmitToThread("t2", "Show me recent articles", std::string(kFeedPayload)),
             SubmitOutcome::Started);
-  const auto started = std::chrono::steady_clock::now();
-  while (server_->list_calls.load() < 1 && std::chrono::steady_clock::now() - started < std::chrono::seconds(2)) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-  std::this_thread::sleep_for(std::chrono::milliseconds(100)); // the second turn reaches the connect meanwhile
+  WaitForWaiters(2); // both turns wait for the one connect
   server_->hold_list = false;
   auto events = WaitForTurns({"t1", "t2"});
 
@@ -209,7 +229,7 @@ TEST_F(McpConnectOnFirstUseTest, ConcurrentFirstQuestionsConnectOnce) {
   EXPECT_EQ(server_->list_calls.load(), 1);
 }
 
-// The server answers tools/list with an error (a deploy's 503): the question ends with the feed's failure at once,
+// The server answers tools/list with an error (a deploy's 503) — it answered, so no cooldown: the question ends with the feed's failure at once,
 // the failed connection is not kept, and the next question connects again and shows the feed.
 TEST_F(McpConnectOnFirstUseTest, FailedConnectFailsTheQuestionAndTheNextConnectsAgain) {
   Make();
@@ -254,9 +274,181 @@ TEST_F(McpConnectOnFirstUseTest, AModelPresetConnectsOnItsFirstQuestionOnly) {
   ASSERT_EQ(sessions_->SubmitToThread("t1", "hello"), SubmitOutcome::Started);
   WaitForTurns({"t1"});
   EXPECT_EQ(server_->init_calls.load(), 1);
+  {
+    std::lock_guard lock(mu_);
+    ASSERT_FALSE(llm_bodies_.empty()); // the planner's request (its server is unreachable here)
+    EXPECT_NE(llm_bodies_.front().find("blog_articles"), std::string::npos) << "the model was not offered the MCP tool";
+  }
   ASSERT_EQ(sessions_->SubmitToThread("t1", "hello again"), SubmitOutcome::Started);
   WaitForTurns({"t1"});
   EXPECT_EQ(server_->init_calls.load(), 1);
+}
+
+// Stop while the connect hangs: the turn ends at once (no error, "thinking" off), the connect finishes in the
+// background, and the next question uses it without connecting again.
+TEST_F(McpConnectOnFirstUseTest, StopWhileConnectingEndsTheTurnAtOnceAndTheNextReusesTheConnection) {
+  Make();
+  server_->hold_list = true;
+  ASSERT_EQ(sessions_->SubmitToThread("t1", "Show me recent articles", std::string(kFeedPayload)),
+            SubmitOutcome::Started);
+  WaitForWaiters(1);
+  const auto stopped_at = std::chrono::steady_clock::now();
+  sessions_->Cancel("t1");
+  const auto stopped = WaitForTurns({"t1"})["t1"];
+  EXPECT_LT(std::chrono::steady_clock::now() - stopped_at, std::chrono::seconds(1));
+  EXPECT_EQ(Count(stopped, AgentEventType::Error), 0u);
+  EXPECT_FALSE(sessions_->IsBusy("t1"));
+
+  server_->hold_list = false;
+  WaitForMcpConnects();
+  EXPECT_TRUE(ShowedTheFeed(AskFeed("t1")));
+  EXPECT_EQ(server_->init_calls.load(), 1);
+  EXPECT_EQ(server_->list_calls.load(), 1);
+}
+
+// A new configuration while a connect hangs: that connect's result is not kept, the next question connects again.
+TEST_F(McpConnectOnFirstUseTest, AConnectOverTakenByANewConfigurationIsNotKept) {
+  Make();
+  server_->hold_list = true;
+  ASSERT_EQ(sessions_->SubmitToThread("t1", "Show me recent articles", std::string(kFeedPayload)),
+            SubmitOutcome::Started);
+  WaitForWaiters(1);
+  AppConfig other = McpConfig();
+  other.llm.api_key = "brf_llm_other";
+  sessions_->Configure(other);
+  server_->hold_list = false;
+  WaitForTurns({"t1"});
+  sessions_->WaitForConfigureIdle();
+  WaitForMcpConnects();
+  ASSERT_EQ(server_->init_calls.load(), 1);
+
+  EXPECT_TRUE(ShowedTheFeed(AskFeed("t1")));
+  EXPECT_EQ(server_->init_calls.load(), 2);
+}
+
+// Offline: the first question's connect gets no answer; the second, within the cooldown, sends nothing at all and
+// fails at once with the same words.
+TEST_F(McpConnectOnFirstUseTest, OfflineTheSecondQuestionDialsNothingDuringTheCooldown) {
+  Make();
+  server_->failing_lists = -1;
+  ASSERT_EQ(Count(AskFeed("t1"), AgentEventType::Error), 1u);
+  WaitForMcpConnects();
+  const int inits = server_->init_calls.load();
+  const int lists = server_->list_calls.load();
+  ASSERT_EQ(inits, 1);
+
+  const auto started = std::chrono::steady_clock::now();
+  const auto second = AskFeed("t2"); // another session: the failure is shared too
+  EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::milliseconds(500));
+  ASSERT_EQ(Count(second, AgentEventType::Error), 1u);
+  for (const AgentEvent& event : second) {
+    if (event.type == AgentEventType::Error) {
+      EXPECT_EQ(event.message, "Briefs are unavailable right now.");
+    }
+  }
+  EXPECT_EQ(server_->init_calls.load(), inits);
+  EXPECT_EQ(server_->list_calls.load(), lists);
+}
+
+// Quitting (or a profile reset) while the connect hangs: the sessions go at once, the connect thread ends later on
+// its own without touching them.
+TEST_F(McpConnectOnFirstUseTest, DestroyingTheSessionsWhileConnectingReturnsAtOnce) {
+  Make();
+  server_->hold_list = true;
+  ASSERT_EQ(sessions_->SubmitToThread("t1", "Show me recent articles", std::string(kFeedPayload)),
+            SubmitOutcome::Started);
+  WaitForWaiters(1);
+  const auto started = std::chrono::steady_clock::now();
+  sessions_.reset();
+  EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds(1));
+  EXPECT_EQ(SharedMcpTools::RunningConnectsForTests(), 1u); // still in the network
+  server_->hold_list = false;
+  WaitForMcpConnects();
+}
+
+// The question shows in the chat before the turn waits for the connect.
+TEST_F(McpConnectOnFirstUseTest, TheQuestionIsStoredBeforeTheConnectWait) {
+  Make();
+  server_->hold_list = true;
+  ASSERT_EQ(sessions_->SubmitToThread("t1", "Show me recent articles", std::string(kFeedPayload)),
+            SubmitOutcome::Started);
+  WaitForWaiters(1);
+  EXPECT_TRUE(store_.HasText("Show me recent articles"));
+  server_->hold_list = false;
+  EXPECT_TRUE(ShowedTheFeed(WaitForTurns({"t1"})["t1"]));
+}
+
+// --- SharedMcpTools on its own.
+
+class SharedMcpToolsTest : public ::testing::Test {
+protected:
+  void SetUp() override { McpClient::SetHttpPost(FakeMcpPost(server_)); }
+  void TearDown() override {
+    server_->hold_list = false;
+    WaitForMcpConnects();
+    McpClient::SetHttpPost(nullptr);
+  }
+
+  static AppConfig Config() {
+    AppConfig config = MakeConfig("brief");
+    config.promoted_mcp.id = "brief";
+    config.promoted_mcp.enabled = true;
+    return config;
+  }
+
+  std::shared_ptr<FakeMcpServer> server_ = std::make_shared<FakeMcpServer>();
+};
+
+// The connect throws (a transport bug): every waiter gets an empty connection, nobody hangs, and the next Acquire
+// connects again (no cooldown: the server never said it was down).
+TEST_F(SharedMcpToolsTest, AThrowingConnectReleasesEveryWaiter) {
+  SharedMcpTools tools;
+  server_->throw_on_initialize = true;
+  server_->hold_init = true;
+  std::shared_ptr<McpConnection> first;
+  std::shared_ptr<McpConnection> other;
+  std::thread starter([&] { first = tools.Acquire(Config()); });
+  WaitForConnectWaiters(1);
+  std::thread waiter([&] { other = tools.Acquire(Config()); });
+  WaitForConnectWaiters(2);
+  server_->hold_init = false;
+  starter.join();
+  waiter.join();
+  ASSERT_TRUE(first);
+  ASSERT_TRUE(other);
+  EXPECT_EQ(first, other); // one connect for both
+  EXPECT_FALSE(first->complete);
+  EXPECT_TRUE(first->tools.Tools().empty());
+  EXPECT_EQ(server_->init_calls.load(), 1);
+
+  server_->throw_on_initialize = false;
+  EXPECT_TRUE(tools.Acquire(Config())->complete);
+  EXPECT_EQ(server_->init_calls.load(), 2);
+}
+
+TEST_F(SharedMcpToolsTest, AnUnreachableServerIsDialedAgainAfterTheCooldown) {
+  SharedMcpTools tools;
+  tools.SetRetryCooldownForTests(std::chrono::milliseconds(150));
+  server_->failing_lists = -1;
+  const auto failed = tools.Acquire(Config());
+  EXPECT_TRUE(failed->unreachable);
+  EXPECT_EQ(tools.Acquire(Config()), failed); // cooling down: the same answer, nothing sent
+  EXPECT_EQ(server_->init_calls.load(), 1);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  server_->failing_lists = 0;
+  EXPECT_TRUE(tools.Acquire(Config())->complete);
+  EXPECT_EQ(server_->init_calls.load(), 2);
+}
+
+TEST_F(SharedMcpToolsTest, InvalidateEndsTheCooldown) {
+  SharedMcpTools tools;
+  server_->failing_lists = -1;
+  EXPECT_TRUE(tools.Acquire(Config())->unreachable);
+  tools.Invalidate();
+  server_->failing_lists = 0;
+  EXPECT_TRUE(tools.Acquire(Config())->complete);
+  EXPECT_EQ(server_->init_calls.load(), 2);
 }
 
 } // namespace
