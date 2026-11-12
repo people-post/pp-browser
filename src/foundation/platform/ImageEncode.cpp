@@ -71,6 +71,21 @@ Roe<std::vector<uint8_t>> EncodePngBytes(SDL_Surface* surface) {
   return bytes;
 }
 
+SDL_Surface* FlattenOntoWhite(SDL_Surface* source) {
+  if (!source || (!SurfaceHasAlpha(source) && !SDL_SurfaceHasColorKey(source))) {
+    return source;
+  }
+  SDL_Surface* out = SDL_CreateSurface(source->w, source->h, SDL_PIXELFORMAT_XRGB8888);
+  const bool ok = out && SDL_FillSurfaceRect(out, nullptr, SDL_MapSurfaceRGB(out, 255, 255, 255)) &&
+                  SDL_SetSurfaceBlendMode(source, SDL_BLENDMODE_BLEND) && SDL_BlitSurface(source, nullptr, out, nullptr);
+  SDL_DestroySurface(source);
+  if (!ok) {
+    SDL_DestroySurface(out);
+    return nullptr;
+  }
+  return out;
+}
+
 SDL_Surface* ScaleToMaxDimension(SDL_Surface* source, const int max_dimension) {
   if (!source) {
     return nullptr;

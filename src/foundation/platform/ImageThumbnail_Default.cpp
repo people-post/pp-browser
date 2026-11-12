@@ -43,6 +43,10 @@ Roe<std::vector<uint8_t>> MakeImageThumbnailJpeg(const std::vector<uint8_t>& ima
   if (!scaled) {
     return Error("Failed to rotate image");
   }
+  scaled = FlattenOntoWhite(scaled); // a JPEG has no alpha: a transparent PNG's background is white, not black
+  if (!scaled) {
+    return Error("Failed to flatten image");
+  }
   auto jpeg = EncodeJpegBytes(scaled, kThumbnailJpegQuality);
   SDL_DestroySurface(scaled);
   return jpeg;
