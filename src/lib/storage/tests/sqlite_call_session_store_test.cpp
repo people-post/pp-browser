@@ -701,5 +701,35 @@ TEST_F(CallSessionStoreTest, TheReadConnectionCannotWrite) {
   EXPECT_EQ(calls_->ReadConnectionOpensForTest(), 1u);
 }
 
+// A failed prepare says why (SQLite's own words), not just which read it was.
+TEST_F(CallSessionStoreTest, AFailedPrepareCarriesSqlitesMessage) {
+  ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:x")));
+  ASSERT_TRUE(calls_->ListActiveSessions()); // the shared read connection is open
+  {
+    OtherConnection other(data_dir_ / "profile.db");
+    ASSERT_EQ(other.Exec("DROP TABLE call_participants;"), SQLITE_OK);
+  }
+  auto listed = calls_->ListParticipants("call:x");
+  ASSERT_FALSE(listed);
+  EXPECT_NE(listed.error().message.find("no such table"), std::string::npos) << listed.error().message;
+}
+
+// The reset flows delete profile.db only after the hub shut the stores down: a store that is gone leaves no handle,
+// and a store made afterwards reads the new file, not the deleted one.
+TEST_F(CallSessionStoreTest, ADestroyedStoreLeavesProfileDbFreeToReplace) {
+  const std::filesystem::path db = data_dir_ / "profile.db";
+  ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:old")));
+  ASSERT_EQ(calls_->ListActiveSessions().value().size(), 1u);
+  calls_.reset();
+  std::error_code ec;
+  ASSERT_TRUE(std::filesystem::remove(db, ec)) << ec.message();
+  calls_ = std::make_unique<SqliteCallSessionStore>(db.string());
+  EXPECT_TRUE(calls_->ListActiveSessions().value().empty());
+  ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:new")));
+  const auto active = calls_->ListActiveSessions().value();
+  ASSERT_EQ(active.size(), 1u);
+  EXPECT_EQ(active[0].call_id, "call:new");
+}
+
 } // namespace
 } // namespace pbr
