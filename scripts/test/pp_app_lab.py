@@ -4053,6 +4053,10 @@ OPT_IN = ({name for name, _ in VIDEO_MEASUREMENTS + CALL_PATH_MATRIX} - CALL_PAT
 # Scenarios that take the hop away: behind NATs there is then no path between users at all, so with
 # --nat they run only when named.
 NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
+# Scenarios whose seed link must go cold when idle: behind NATs a call rides a circuit over the seed, and the peer
+# stays warm for 10 min after it (#577), so the seed link carrying that nested link keeps its keepalive tier
+# (pp-cpp-amp v5.5.0) and never drops. With --nat they run only when named.
+NEEDS_COLD_SEED_LINK = {"call_during_seed_churn"}
 # Scenarios that change a user's network: they need a container per user (--nat).
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
              "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
@@ -4097,7 +4101,7 @@ def main():
         except OSError:
             args.hop2 = None  # a lab without the second seed: the two-hop rows fail, the rest run
 
-    skipped = OPT_IN | (NEEDS_DIRECT_PATH if args.nat else NEEDS_NAT)
+    skipped = OPT_IN | (NEEDS_DIRECT_PATH | NEEDS_COLD_SEED_LINK if args.nat else NEEDS_NAT)
     selected = [(n, f) for n, f in SCENARIOS if n in args.only or (not args.only and n not in skipped)]
     if not selected:
         sys.exit("no scenario matches %s" % args.only)
