@@ -46,7 +46,7 @@ There is no method that takes free text, so a name, a message, a search query, a
 |-------|------|-------|
 | `network.baseline` | `online`, `transport` (NetworkTransport int), `expensive` | `MeshNetworkReaction` |
 | `network.change` | `gen`, `was_online`, `online`, `was_transport`, `transport`, `expensive`, `attachment_changed` | `MeshNetworkReaction` |
-| `mesh.udp_socket` | `reason` (`network` / `foreground`), `was_alive`, `reopened`, `alive` — the mesh's UDP socket check (#416; a dead one is reopened on its port) | `MeshNetworkReaction` (`ReportUdpSocketCheck`) |
+| `mesh.udp_socket` | `reason` (`network` / `foreground` / `receive_error`: a receive failed, e.g. iOS's defunct socket, #596), `was_alive`, `reopened`, `alive` — the mesh's UDP socket check (#416; a dead one is reopened on its port) | `MeshNetworkReaction` (`ReportUdpSocketCheck`) |
 | `relay.http_failed` | `action` (`send` / `poll`), `status` | `HttpRelayClient` |
 | `relay.poll_failed` | `error` | `MeshDeliveryOrchestrator` |
 | `relay.poll_too_large` | `n` | `MeshDeliveryOrchestrator` |
