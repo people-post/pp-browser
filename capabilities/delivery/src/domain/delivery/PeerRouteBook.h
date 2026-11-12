@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
@@ -44,6 +45,18 @@ public:
   /** As ResolveWithDirectory, for an account with no thread of its own here (a group member). */
   std::optional<std::string> ResolveAccountWithDirectory(const std::string& account_id);
 
+  /**
+   * Drops everything cached about `account_id`'s route (learned, directory cache) and stops trusting the relay id a
+   * contact stores for it; the next ResolveWithDirectory asks the directory. In memory: the contact is not rewritten.
+   */
+  void Forget(const std::string& account_id);
+  /**
+   * The backend changed under us: every cached relay id belongs to the old registry. Drops all learned routes and
+   * directory-cache entries and distrusts every contact-stored relay id: a route is then learned from the directory or a
+   * verified envelope, for the rest of the process.
+   */
+  void ForgetAll();
+
 private:
   ContactsStore& contacts_;
   DirectoryShadowCache* shadows_ = nullptr;
@@ -51,6 +64,10 @@ private:
   mutable std::mutex mutex_;
   /** Inbound-learned Account ID → Brief `relay:` (non-contact call / message). */
   std::unordered_map<std::string, std::string> account_to_relay_;
+  /** Accounts whose contact-stored relay id is not used (Forget): learned and directory answers stand in. */
+  std::unordered_set<std::string> distrusted_contact_routes_;
+  /** ForgetAll: no contact-stored relay id is used. */
+  bool distrust_all_contact_routes_ = false;
 };
 
 } // namespace pbr

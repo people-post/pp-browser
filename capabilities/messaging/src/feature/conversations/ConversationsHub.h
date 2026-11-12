@@ -536,6 +536,8 @@ private:
   /** Undo BuildMessagingStack / StartMesh without a full hub Shutdown (shutdown race). */
   void DiscardMessagingBringUp();
   void ApplyMeshAdmissionPolicies();
+  /** Drops cached peer routes when the identity registered at another backend than the one in use. */
+  void ForgetPeerRoutesOnBackendChange();
   /** Republish who may learn our address (setting + contacts; projects/privacy T1). UI thread. */
   void PublishAddressDisclosure();
   /** The audience in force: the setting, or everyone in the Node role (P004). */

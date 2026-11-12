@@ -353,10 +353,16 @@ namespace {
 /** The relay refused the request itself (#391): the same bytes would be refused again. */
 bool RelayRefused(const Error& failure) {
   return AppError::CategoryOf(failure) == ErrorCategory::Network &&
-         static_cast<Err::Network>(failure.code) == Err::Network::HttpRejected;
+         (static_cast<Err::Network>(failure.code) == Err::Network::HttpRejected ||
+          static_cast<Err::Network>(failure.code) == Err::Network::HttpNotFound);
 }
 
 } // namespace
+
+bool RelayRecipientUnknown(const Error& failure) {
+  return AppError::CategoryOf(failure) == ErrorCategory::Network &&
+         static_cast<Err::Network>(failure.code) == Err::Network::HttpNotFound;
+}
 
 bool OutboxRetryAgain(const int attempts, const Error& failure) {
   return !RelayRefused(failure) && attempts < kMaxOutboxRetryAttempts;

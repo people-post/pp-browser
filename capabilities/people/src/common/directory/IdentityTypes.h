@@ -68,6 +68,11 @@ struct LocalIdentity {
   /** ISO-8601 expiry from register/finish; empty until registered or if server omitted it. */
   std::string registration_expires_at;
   /**
+   * The normalized registration base URL the identity registered at (RegisteredAtBackend). Empty for a registration
+   * recorded before this field existed; either way the registration is renewed once against the current backend.
+   */
+  std::string registered_backend_url;
+  /**
    * Own initiation floor (pp_credit minor units, P001). Default 0.
    * Dogfood via AppConfig.initiation_floor; published on register/renew when server supports it.
    */

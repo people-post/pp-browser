@@ -20,7 +20,8 @@ std::string UserFeedback::UserMessage(const Error& err) {
 std::string UserFeedback::UserMessage(const Error& err, const bool device_offline) {
   if (device_offline && AppError::CategoryOf(err) == ErrorCategory::Network &&
       err.code != static_cast<int32_t>(Err::Network::HttpError) &&
-      err.code != static_cast<int32_t>(Err::Network::HttpRejected)) {
+      err.code != static_cast<int32_t>(Err::Network::HttpRejected) &&
+      err.code != static_cast<int32_t>(Err::Network::HttpNotFound)) {
     return Tr("errors.network.offline");
   }
   return UserMessage(err);

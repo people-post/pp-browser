@@ -21,6 +21,8 @@ class ThinHttpRegistrationClient : public IRegistrationClient {
 public:
   explicit ThinHttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}
 
+  std::string BaseUrl() const override { return base_url_; }
+
   Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
                                                  const std::string& signature_alg,
                                                  const std::string& kem_public_key_b64, const std::string& peer_id,

@@ -46,7 +46,7 @@ Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registratio
                                                 const RegistrationPublishOpts& publish = {});
 
 /**
- * If ShouldRenew and auto_renew_enabled, finish+persist registration.
+ * If ShouldRenew (incl. registered at another backend than `registration`'s) and auto_renew_enabled, finish+persist registration.
  * Returns true if renewed, false if no renew needed or preference off.
  */
 Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, IdentityStore& identity,

@@ -32,6 +32,10 @@ public:
   void EnsureLookup(const std::string& identity);
 
   void Put(const mesh::DirectoryHit& hit);
+  /** Drops the entry for `identity` (an Account ID or `relay:` id) together with its other index key. */
+  void Remove(const std::string& identity);
+  /** Drops every cached hit. */
+  void Clear();
 
 private:
   mesh::IDirectoryClient& directory_;

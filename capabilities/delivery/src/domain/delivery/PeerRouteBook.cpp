@@ -35,11 +35,22 @@ void PeerRouteBook::RememberFromEnvelope(const RelayEnvelope& envelope, const bo
 
 std::optional<std::string> PeerRouteBook::Resolve(const Thread& thread) const {
   std::unordered_map<std::string, std::string> learned;
+  bool contact_route_distrusted = false;
   {
     std::lock_guard lock(mutex_);
     learned = account_to_relay_;
+    contact_route_distrusted =
+        IsAccountIdentityValue(thread.peer_identity_value) &&
+        (distrust_all_contact_routes_ || distrusted_contact_routes_.count(thread.peer_identity_value) != 0);
   }
-  if (auto from_local = ResolvePeerBriefRoute(thread, contacts_, learned)) {
+  if (contact_route_distrusted) {
+    // The contact's stored relay id may name an account of a registry we no longer use: only what was learned
+    // since (a verified envelope, the directory) counts.
+    const auto it = learned.find(thread.peer_identity_value);
+    if (it != learned.end() && !it->second.empty()) {
+      return it->second;
+    }
+  } else if (auto from_local = ResolvePeerBriefRoute(thread, contacts_, learned)) {
     return from_local;
   }
   if (shadows_ && IsAccountIdentityValue(thread.peer_identity_value)) {
@@ -50,6 +61,28 @@ std::optional<std::string> PeerRouteBook::Resolve(const Thread& thread) const {
     }
   }
   return std::nullopt;
+}
+
+void PeerRouteBook::Forget(const std::string& account_id) {
+  {
+    std::lock_guard lock(mutex_);
+    account_to_relay_.erase(account_id);
+    distrusted_contact_routes_.insert(account_id);
+  }
+  if (shadows_) {
+    shadows_->Remove(account_id);
+  }
+}
+
+void PeerRouteBook::ForgetAll() {
+  {
+    std::lock_guard lock(mutex_);
+    account_to_relay_.clear();
+    distrust_all_contact_routes_ = true;
+  }
+  if (shadows_) {
+    shadows_->Clear();
+  }
 }
 
 namespace {

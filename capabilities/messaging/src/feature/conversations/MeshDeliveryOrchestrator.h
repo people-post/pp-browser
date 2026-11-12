@@ -306,6 +306,8 @@ public:
    * Shadows: cached directory hits; directory: sync LookupByAccount on send miss.
    */
   void SetPeerRouteSources(DirectoryShadowCache* shadows, mesh::IDirectoryClient* directory);
+  /** The backend changed: every cached relay id is from the old registry (PeerRouteBook::ForgetAll). */
+  void ForgetPeerRoutes();
   /** Learn Account→`relay:` from inbound `sender_contact_id` + `sender_relay_id`. */
   void NoteAccountRelayRoute(const std::string& account_id, const std::string& relay_user_id);
   /** D052 — fetch one older-history page when scrolled to top. */

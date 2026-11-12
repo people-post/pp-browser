@@ -71,6 +71,7 @@ SendFailure SendFailureFromRelay(const Error& error) {
       switch (static_cast<Err::Network>(error.code)) {
         case Err::Network::HttpError:
         case Err::Network::HttpRejected:
+        case Err::Network::HttpNotFound:
           return SendFailure::RelayRejected;
         default:
           return SendFailure::RelayUnreachable;
