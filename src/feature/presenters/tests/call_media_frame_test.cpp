@@ -528,18 +528,79 @@ TEST(CallHintPromptTest, ALostMicAfterConnectRaisesAnAlarmPillAtOnceThenEveryThi
   EXPECT_TRUE(pills.empty()) << "back: no more";
 }
 
-TEST(CallHintPromptTest, NotSendingSaysWhyWhenTheMicIsBlockedElseRestart) {
+CallMediaHealthView NotSending() {
+  return Health("direct", CallPathQuality::Good, CallAudioAsymmetry::ReceivingOnly);
+}
+
+TEST(CallHintPromptTest, NotSendingForFourSecondsSaysWhyWhenTheMicIsBlockedElseRestart) {
   for (const bool blocked : {true, false}) {
     CallMediaFrame frame;
     CallMediaFacts facts = LiveFacts(0);
     facts.mic_blocked = blocked;
-    const auto pills = PillsOver(frame, InCallScreen(), facts, 300'000, 301'000, [](int64_t) {
-      return Health("direct", CallPathQuality::Good, CallAudioAsymmetry::ReceivingOnly);
-    });
-    ASSERT_EQ(pills.size(), 1u);
+    const auto pills = PillsOver(frame, InCallScreen(), facts, 300'000, 335'000, [](int64_t) { return NotSending(); });
+    ASSERT_EQ(pills.size(), 2u) << "at four seconds, then again at 34";
     EXPECT_EQ(pills[0].key, blocked ? "hints.mic_blocked" : "call.quality.hint.not_sending_restart");
     EXPECT_TRUE(pills[0].alarm);
-    EXPECT_EQ(pills[0].at_ms, 300'000) << "at once";
+    EXPECT_EQ(pills[0].at_ms, 304'000) << "after four seconds of it";
+    EXPECT_EQ(pills[1].at_ms, 334'000) << "still so 30 s later";
+  }
+}
+
+// A mic still opening right after connect, or a route change (Bluetooth): a short gap in sending is not said.
+TEST(CallHintPromptTest, NotSendingThatClearsWithinFourSecondsRaisesNoPill) {
+  CallMediaFrame frame;
+  const auto pills = PillsOver(frame, InCallScreen(), LiveFacts(0), 300'000, 320'000,
+                               [](const int64_t t) { return t < 303'900 ? NotSending() : Health(); });
+  EXPECT_TRUE(pills.empty());
+}
+
+TEST(CallHintPromptTest, NotSendingCountsFromTheStepsGoing) {
+  CallMediaFrame frame;
+  EXPECT_TRUE(PillsOver(frame, ConnectingScreen(), ConnectingFacts(0), 200'000, 209'000, [](int64_t) {
+                return NotSending();
+              }).empty());
+  CallMediaFacts facts = LiveFacts(0);
+  facts.live_since_ms = 209'100;
+  CallScreen live = InCallScreen();
+  live.was_connected = false;
+  int64_t steps_gone_at = 0;
+  int64_t pill_at = 0;
+  for (int64_t t = 209'100; t <= 230'000 && pill_at == 0; t += 100) {
+    facts.now_ms = t;
+    const CallMediaScreen& v = frame.Step(live, facts, NotSending());
+    if (!v.story.connecting && steps_gone_at == 0) {
+      steps_gone_at = t;
+    }
+    if (!v.pill_key.empty()) {
+      pill_at = t;
+    }
+  }
+  ASSERT_NE(steps_gone_at, 0);
+  EXPECT_EQ(pill_at, steps_gone_at + kOneWayPillAfterMs) << "four seconds after the steps went";
+}
+
+// The failed page and a reconnecting call say what they say themselves: no pill over them.
+TEST(CallHintPromptTest, NoPillOnACallThatCouldNotConnectOrIsReconnecting) {
+  CallMediaFacts lost = LiveFacts(0);
+  lost.engine.capture_lost = true;
+  {
+    CallMediaFrame frame;
+    CallScreen failed = InCallScreen(Status::CouldntConnect);
+    failed.was_connected = false;
+    failed.media_connected = false;
+    CallMediaFacts f = lost;
+    f.media_chrome_live = false;
+    f.direct_connect_failed = true;
+    f.live_since_ms = 0;
+    EXPECT_TRUE(PillsOver(frame, failed, f, 300'000, 340'000, [](int64_t) { return NotSending(); }).empty());
+  }
+  {
+    CallMediaFrame frame;
+    CallMediaFacts f = lost;
+    f.media_status = CallMediaStatus::Reconnecting;
+    EXPECT_TRUE(PillsOver(frame, InCallScreen(Status::Reconnecting), f, 300'000, 340'000, [](int64_t) {
+                  return OneWay();
+                }).empty());
   }
 }
 
