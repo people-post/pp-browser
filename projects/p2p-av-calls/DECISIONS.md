@@ -1530,7 +1530,7 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 ## V065 — Call audio keeps a delay budget; audio before video
 
 **Date:** 2026-11-11
-**Status:** Accepted (Hongwei, 2026-11-11) — **supersedes [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses)**. It restores the middle ground of V024 (audio ≫ video), N021, V032 (drop the oldest audio, never skip to the latest) and V034 (never shed audio to queue video), as a delay budget instead of "deliver even if late". Decisions 6–8 were taken the same day, after the audit in decision 2 (pp-cpp-mesh after v6.10.0, pp-cpp-amp after v5.9.0). The current rule: [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos).
+**Status:** Accepted (Hongwei, 2026-11-11) — **supersedes [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses)**. It restores the middle ground of V024 (audio ≫ video), N021, V032 (drop the oldest audio, never skip to the latest) and V034 (never shed audio to queue video), as a delay budget instead of "deliver even if late". Decisions 6–8 were taken the same day, after the audit in decision 2 (pp-cpp-mesh v7.0.0, pp-cpp-amp v6.0.0). The current rule: [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos).
 
 **Context:** V063 found that call audio was best effort on every normal path and that the hop's queues had no class priority, and made that the rule. That accepted drift as design. Plain best effort gives up "audio before video" wherever the two share a queue; strict reliability ("deliver even if late") makes a conversation lag behind itself. What a listener needs is audio on time, and its losses covered.
 

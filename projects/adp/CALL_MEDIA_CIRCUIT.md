@@ -15,7 +15,7 @@ Amp call-media ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshrunt
 | Control | Reliable `RealtimeControl` | Hello / glare / teardown |
 | Media | BestEffort `Realtime` | Opus / video; sent as it comes |
 
-D9 step 5c installed Amp **media-relay** over circuit by adopting one opaque `ChannelSession`. That channel was reliable and carried the media too (no data lane); since pp-cpp-mesh after v6.10.0 a hop behind a circuit is reached by the same nested Session as a call's peer, and its control channel and data lane open on it ([V065](../p2p-av-calls/DECISIONS.md#v065--call-audio-keeps-a-delay-budget-audio-before-video) 6).
+D9 step 5c installed Amp **media-relay** over circuit by adopting one opaque `ChannelSession`. That channel was reliable and carried the media too (no data lane); since pp-cpp-mesh v7.0.0 a hop behind a circuit is reached by the same nested Session as a call's peer, and its control channel and data lane open on it ([V065](../p2p-av-calls/DECISIONS.md#v065--call-audio-keeps-a-delay-budget-audio-before-video) 6).
 
 ## Decision: nested end-to-end Session (A024)
 

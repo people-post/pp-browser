@@ -150,7 +150,7 @@ Core factories: pp-cpp-amp `amp/L3/ChannelPolicy.h` (Amp owns Bulk class + size)
 | `MakeBulkChannelPolicy` / `BulkChannelPolicy()` | Bulk | no | off | **core** |
 | `BulkChannelPolicy(bool)` (wrap + timeout) | Bulk | configurable | 8 s (client: remaining operation time; inbound: 15 s) | product |
 
-No policy queues or drops outbound (pp-cpp-amp after v5.9.0): a session sends each payload to its mux at once; a reliable frame waits there for window space, a best-effort one goes to the link. The drop-oldest caps (64 call-media, 2 hop, 6 client, 1 control) never filled and are gone.
+No policy queues or drops outbound (pp-cpp-amp v6.0.0): a session sends each payload to its mux at once; a reliable frame waits there for window space, a best-effort one goes to the link. The drop-oldest caps (64 call-media, 2 hop, 6 client, 1 control) never filled and are gone.
 
 **Read timeout is enforced** (pp-cpp-amp v2.15.0+): a channel with nothing *inbound*
 for that long is reset (`read-timeout` to the local side, RESET to the peer); the clock
@@ -305,7 +305,7 @@ For Amp **call-media** over circuit, the bridged channel is **not** the product 
 
 Each inner space keeps a replay window (best effort 128, reliable 1024): a relay between the ends could replay an inner packet, and the window turns it away. An inner frame is at most the nested link's budget (§ Fragmentation), so a sealed inner packet rides one outer DATA frame whole.
 
-A media-relay hop reachable only through a circuit is reached the same way: a nested Session, on which the hop's control channel and its data lane open as on a direct link (pp-cpp-mesh after v6.10.0; the single adopted tunnel channel of D9 5c is gone). See [CALL_MEDIA_CIRCUIT.md](../../projects/adp/CALL_MEDIA_CIRCUIT.md).
+A media-relay hop reachable only through a circuit is reached the same way: a nested Session, on which the hop's control channel and its data lane open as on a direct link (pp-cpp-mesh v7.0.0; the single adopted tunnel channel of D9 5c is gone). See [CALL_MEDIA_CIRCUIT.md](../../projects/adp/CALL_MEDIA_CIRCUIT.md).
 
 ## Three objects (do not collapse)
 

@@ -29,7 +29,7 @@ Senders set the relay frame's `channel_type` from the kind: audio → `Forward` 
 
 **The receiver's jitter buffer** holds at most **400 ms**; its adaptive target runs 60–300 ms. Above the target it catches up by skipping decoded silence, never by playing faster. Past 400 ms it skips silence first, as much as the excess, and cuts speech to 400 ms only when the head of the buffer is speech (counted as speech drops). An outage is not jitter: a packet later than the target's top could hold, and the backlog behind it, do not raise the target. An underrun waits up to the target's top, then conceals; the packets of the concealed slots are late drops when they come.
 
-**Two lanes on every connection (pp-cpp-mesh after v6.10.0).**
+**Two lanes on every connection (pp-cpp-mesh v7.0.0).**
 - **The data lane** (`/pp-mesh/media-relay-data/1.0.0`, best effort) carries a participant's media to and from the hop, both ways. **The control channel** (`/pp-mesh/datagram-relay/1.0.0`, reliable) carries quote, accept, attach and subscribe — never media. A hop drops media that comes on a control channel (`pp_media_relay_dropped_frames_total{reason="control_channel"}`).
 - **Both ride the same link**, direct or, for a hop reachable only through a circuit, a link nested through the relay ([A024](../../projects/adp/CALL_MEDIA_CIRCUIT.md), as a 1:1 call's).
 - **The attach is done once its lane is open.** A lane that is not open yet, or ended, is tried again (1, 2, 4, 8, then every 10 s); a frame sent meanwhile is dropped (client health `lane_wait_drops`), and a hop has nothing for a member without one (`reason="no_lane"`).
