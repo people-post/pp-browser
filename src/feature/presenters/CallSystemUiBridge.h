@@ -150,8 +150,11 @@ private:
   bool handing_back_ = false;
   /** Since when the hand-back's conditions have held (Reevaluate's samples); nothing: they do not now. */
   std::optional<int64_t> visible_since_ms_;
-  /** The call whose notification was posted with the full-screen intent: later ones for it are plain. */
-  std::string full_screen_call_id_;
+  /**
+   * The ring the user has seen: its notification raised the app (full-screen intent), or the app rang it in front.
+   * Later notifications for it are plain.
+   */
+  std::string seen_ring_call_id_;
 };
 
 } // namespace pbr

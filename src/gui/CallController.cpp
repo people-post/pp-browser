@@ -221,6 +221,10 @@ void CallController::SyncLocalHold() {
 }
 
 void CallController::OnAppBackground() {
+  // The app rings and the user left: the phone's call screen takes the ring now, not only at the next timer tick (a
+  // UI thread paused in the background never runs it). Not IsVisible(): it clears only after this listener (Android
+  // sends both at onPause, and only Android has the phone's call screen).
+  system_call_screen_.Reevaluate(false);
   auto* backend = Backend();
   if (!Platform::IsMobile() || !backend || !backend->Available() || presenter_.ActiveCallId().empty()) {
     return;

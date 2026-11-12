@@ -634,6 +634,19 @@ TEST_F(CallSystemUiBridgeTest, LeftWhileTheAppRingsItTheNotificationReturnsWitho
   }
 }
 
+// The app rang it in front from the start (no notification yet), then the user pressed Home: the notification that
+// takes it must not raise the app either — the user has seen this call already.
+TEST_F(CallSystemUiBridgeTest, RungInFrontFromTheStartThenLeftTheNotificationDoesNotRaiseTheApp) {
+  bridge_.Sync(Ring("c1"), "", /*app_foreground=*/true);
+  TicksFor(3 * kTickMs, true);
+  ASSERT_TRUE(ui_.log.empty()) << "the app rings it";
+
+  bridge_.Reevaluate(false); // Home
+  ASSERT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice no-full-screen", "system rings c1"}));
+  EXPECT_TRUE(bridge_.SystemRings("c1"));
+  EXPECT_TRUE(did.empty());
+}
+
 TEST_F(CallSystemUiBridgeTest, ANewCallsFirstNotificationRaisesTheAppAgain) {
   bridge_.Sync(Ring("c1"), "", false);
   TicksFor(2 * kTickMs, true);

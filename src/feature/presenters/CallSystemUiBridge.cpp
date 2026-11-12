@@ -112,15 +112,17 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
   // A ring for the system screen.
   if (ring && TakesRing(app_foreground, screen.conflict)) {
     (void)TakeRing(screen);
+  } else if (ring && shown_.empty()) {
+    seen_ring_call_id_ = screen.ring_call_id; // the app rings it where the user sees it
   }
 }
 
 bool CallSystemUiBridge::TakeRing(const CallScreen& screen) {
   const bool declined = ChoiceLive(decline_pending_at_ms_);
   const bool answered = ChoiceLive(answer_pending_at_ms_);
-  // Only a call's first notification raises the app: again after a hand-back (the user left the app while it rang),
-  // it rings without pulling the app back up.
-  const bool full_screen = screen.ring_call_id != full_screen_call_id_;
+  // Only a call the user has not seen yet raises the app: once the app has rung it in front (from the start, or after
+  // a hand-back) and the user left, it rings without pulling the app back up.
+  const bool full_screen = screen.ring_call_id != seen_ring_call_id_;
   if (full_screen) {
     Note("ring_found");
   } else {
@@ -134,7 +136,7 @@ bool CallSystemUiBridge::TakeRing(const CallScreen& screen) {
   }
   const std::string name = actions_.display_name ? actions_.display_name(screen.caller_identity) : std::string();
   ui_.ReportIncoming(screen.ring_call_id, name, screen.ring_video, full_screen);
-  full_screen_call_id_ = screen.ring_call_id;
+  seen_ring_call_id_ = screen.ring_call_id;
   shown_ = screen.ring_call_id;
   shown_answered_ = false;
   shown_taken_ = false;
