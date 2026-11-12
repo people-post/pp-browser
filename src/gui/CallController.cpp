@@ -21,6 +21,7 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "gui/CallVideoFrameWake.h"
 #include "gui/CallRosterCache.h"
+#include "gui/CallVideoTiles.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
@@ -466,16 +467,6 @@ std::string ComposeGroupCallStatusHint() {
   return Tr("call.hint.group_media");
 }
 
-/** An engine frame as the tiles take it. */
-CallVideoTileRenderer::Frame TileFrame(IMediaView::VideoTileFrame&& tile) {
-  CallVideoTileRenderer::Frame frame;
-  frame.width = tile.width;
-  frame.height = tile.height;
-  frame.seq = tile.seq;
-  frame.rgba = std::move(tile.rgba);
-  return frame;
-}
-
 /** The remote stage's words where there is no picture ("": none). */
 const char* PlaceholderKey(const CallStagePlaceholder placeholder) {
   switch (placeholder) {
@@ -489,10 +480,6 @@ const char* PlaceholderKey(const CallStagePlaceholder placeholder) {
       break;
   }
   return "";
-}
-
-uint32_t RowStream(const CallRosterParticipantState& row) {
-  return static_cast<uint32_t>(std::strtoul(row.stream_id.c_str(), nullptr, 10));
 }
 
 } // namespace
@@ -1717,50 +1704,14 @@ void CallController::ApplyVideo(IMediaView& media, CallUiBackend& backend, const
 
 void CallController::SubmitVideoTiles(IMediaView& media, const int64_t now_ms) {
   auto& in_call = in_call_;
-  IMediaView::VideoTileFrame local_tile;
-  in_call.local_preview = media.CopyLocalVideoFrame(local_tile);
-  bool self_new = false;
-  bool peer_new = false;
-  if (in_call.local_preview) {
-    self_new = local_tile.seq != last_shown_self_seq_;
-    UiCostCounters::Instance().AddFrameCopy(!self_new);
-    last_shown_self_seq_ = local_tile.seq;
-    CallVideoTileRenderer::Instance().SubmitLocalFrame(TileFrame(std::move(local_tile)));
-  }
-  if (IMediaView::VideoTileFrame remote_tile; in_call.remote_video && media.CopyRemoteVideoFrame(remote_tile)) {
-    peer_new = remote_tile.seq != last_shown_peer_seq_;
-    UiCostCounters::Instance().AddFrameCopy(!peer_new);
-    last_shown_peer_seq_ = remote_tile.seq;
-    CallVideoTileRenderer::Instance().SubmitRemoteFrame(TileFrame(std::move(remote_tile)));
-  }
-  metrics_.NoteVideoFrame(in_call.local_preview, self_new, in_call.remote_video, peer_new, now_ms);
+  // Copied only when the tile does not already hold the frame (CallVideoTiles.h): most frames find nothing new.
+  const CallVideoTilesShown shown = SubmitCallVideoTiles(media, CallVideoTileRenderer::Instance(), in_call.remote_video);
+  in_call.local_preview = shown.local_preview;
+  metrics_.NoteVideoFrame(in_call.local_preview, shown.self_new, in_call.remote_video, shown.peer_new, now_ms);
 }
 
 void CallController::SubmitRosterTiles(IMediaView& media) {
-  std::vector<uint32_t> live_peer_streams;
-  for (CallRosterParticipantState& row : in_call_.roster) {
-    if (row.is_local) {
-      row.has_remote_video = false;
-      continue;
-    }
-    const uint32_t stream = RowStream(row);
-    row.has_remote_video = stream != 0 && media.HasRemoteVideoForStream(stream);
-    if (!row.has_remote_video) {
-      continue;
-    }
-    live_peer_streams.push_back(stream);
-    if (IMediaView::VideoTileFrame peer_tile; media.CopyRemoteVideoFrameForStream(stream, peer_tile)) {
-      // Counting only: the sequence number shown last time on this stream (not used for what is submitted).
-      const auto seen = counted_stream_seq_.find(stream);
-      UiCostCounters::Instance().AddFrameCopy(seen != counted_stream_seq_.end() && seen->second == peer_tile.seq);
-      counted_stream_seq_[stream] = peer_tile.seq;
-      CallVideoTileRenderer::Instance().SubmitPeerFrame(stream, TileFrame(std::move(peer_tile)));
-    }
-  }
-  CallVideoTileRenderer::Instance().RetainPeers(live_peer_streams);
-  std::erase_if(counted_stream_seq_, [&](const auto& kv) {
-    return std::find(live_peer_streams.begin(), live_peer_streams.end(), kv.first) == live_peer_streams.end();
-  });
+  SubmitCallRosterTiles(media, CallVideoTileRenderer::Instance(), in_call_.roster);
 }
 
 void CallController::RequestVideoRefreshes(IMediaView& media, CallUiBackend& backend, const CallMediaDecision& media_d,

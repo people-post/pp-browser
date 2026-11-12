@@ -360,11 +360,6 @@ private:
   /** The call members' names and avatar paths, kept for the call (read again every 5 s; cleared in ClearInCall). */
   CallRosterCache roster_cache_;
   int64_t last_video_refresh_ms_ = 0;
-  /** The last self-view / peer frame sent to the screen (call.summary shown_*_fps counts new ones). */
-  uint64_t last_shown_self_seq_ = 0;
-  uint64_t last_shown_peer_seq_ = 0;
-  /** perf.threads only (frame_copies_stale): the sequence number last copied for each roster stream. */
-  std::unordered_map<uint32_t, uint64_t> counted_stream_seq_;
 
   // --- Metrics and logs.
   /** Operational metrics for the current call (Metrics channel; no identities). */

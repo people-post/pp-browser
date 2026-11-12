@@ -234,6 +234,11 @@ public:
   bool CopyRemoteVideoFrame(VideoTileFrame& out) const override;
   /** Group: copy decoded frame for a publisher stream_id (0 = primary remote). */
   bool CopyRemoteVideoFrameForStream(uint32_t stream_id, VideoTileFrame& out) const override;
+  /** Copy only when the frame's seq differs from `last_seq` (IMediaView::FrameRead). */
+  FrameRead CopyLocalVideoFrameIfNew(uint64_t last_seq, VideoTileFrame& out) const override;
+  FrameRead CopyRemoteVideoFrameIfNew(uint64_t last_seq, VideoTileFrame& out) const override;
+  FrameRead CopyRemoteVideoFrameForStreamIfNew(uint32_t stream_id, uint64_t last_seq,
+                                               VideoTileFrame& out) const override;
   bool HasRemoteVideoForStream(uint32_t stream_id) const override;
 
 private:

@@ -25,8 +25,8 @@ struct UiCostTotals {
   int64_t tiles_us = 0;  // inside call_tick_us
   int64_t roster_builds = 0;
   int64_t icon_lookups = 0;
-  int64_t frame_copies = 0;
-  int64_t frame_copies_stale = 0; // copies whose sequence number was the one shown last time
+  int64_t frame_copies = 0;       // frames copied out of the engine (only new ones since CallVideoTiles.h)
+  int64_t frame_copies_stale = 0; // copies whose sequence number was the one shown last time (now none expected)
   int64_t video_wakes = 0;
   // ApplyCallChromeSnapshot's closing RequestForceFrame, by the kind of update it pushed.
   int64_t chrome_force_frames_remount = 0;

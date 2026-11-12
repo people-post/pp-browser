@@ -101,6 +101,21 @@ public:
   virtual bool CopyRemoteVideoFrame(VideoTileFrame& out) const = 0;
   /** Group: the decoded frame for a publisher stream_id (0 = primary remote). */
   virtual bool CopyRemoteVideoFrameForStream(uint32_t stream_id, VideoTileFrame& out) const = 0;
+  /** What a copy-if-new read found. */
+  enum class FrameRead {
+    None, // no frame (out untouched)
+    Same, // the frame's seq equals `last_seq`: the caller already has it (out untouched, nothing copied)
+    New,  // a different frame (any other seq, smaller too: numbering restarts when frames are cleared): copied
+  };
+  /**
+   * The reads above, but the frame is copied only when its seq differs from `last_seq` (the caller's last copied
+   * one; 0 when it has none — frames are numbered from 1). Compared under the frame lock before anything is copied:
+   * the UI reads every frame and most of its reads find the frame it already has.
+   */
+  virtual FrameRead CopyLocalVideoFrameIfNew(uint64_t last_seq, VideoTileFrame& out) const = 0;
+  virtual FrameRead CopyRemoteVideoFrameIfNew(uint64_t last_seq, VideoTileFrame& out) const = 0;
+  virtual FrameRead CopyRemoteVideoFrameForStreamIfNew(uint32_t stream_id, uint64_t last_seq,
+                                                       VideoTileFrame& out) const = 0;
   /** Drain the stream ids whose video needs a key frame (decode fail / first gap). */
   virtual std::vector<uint32_t> TakePendingVideoRefreshStreamIds() = 0;
 

@@ -39,6 +39,11 @@ public:
   void ClearPeer(uint32_t stream_id);
   /** Drop peer GPU tiles whose stream_id is not in `keep`. */
   void RetainPeers(const std::vector<uint32_t>& keep);
+  /**
+   * The seq of the frame a tile holds (0: none — never submitted, or let go by a Clear*, RetainPeers or a GPU reset).
+   * The UI copies a frame out of the engine only when it differs from this one.
+   */
+  uint64_t HeldSeq(CallVideoTileKind kind, uint32_t stream_id = 0) const;
 
   /** Upload if needed and letterbox-draw into `element`. UI thread, GL context current. */
   /**

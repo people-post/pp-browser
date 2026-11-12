@@ -3018,6 +3018,46 @@ bool MediaEngine::CopyRemoteVideoFrameForStream(uint32_t stream_id, VideoTileFra
   return true;
 }
 
+namespace {
+
+/** Under the frame lock: `frame` copied to `out` only when it is not the caller's `last_seq`. */
+IMediaView::FrameRead CopyFrameIfNewLocked(const IMediaView::VideoTileFrame& frame, const uint64_t last_seq,
+                                           IMediaView::VideoTileFrame& out) {
+  if (frame.rgba.empty()) {
+    return IMediaView::FrameRead::None;
+  }
+  if (frame.seq == last_seq) {
+    return IMediaView::FrameRead::Same;
+  }
+  out = frame;
+  return IMediaView::FrameRead::New;
+}
+
+} // namespace
+
+IMediaView::FrameRead MediaEngine::CopyLocalVideoFrameIfNew(const uint64_t last_seq, VideoTileFrame& out) const {
+  const std::shared_ptr<Impl> impl = Session();
+  std::lock_guard lock(impl->video_frame_mutex);
+  return CopyFrameIfNewLocked(impl->local_video_frame, last_seq, out);
+}
+
+IMediaView::FrameRead MediaEngine::CopyRemoteVideoFrameIfNew(const uint64_t last_seq, VideoTileFrame& out) const {
+  const std::shared_ptr<Impl> impl = Session();
+  std::lock_guard lock(impl->video_frame_mutex);
+  return CopyFrameIfNewLocked(impl->remote_video_frame, last_seq, out);
+}
+
+IMediaView::FrameRead MediaEngine::CopyRemoteVideoFrameForStreamIfNew(const uint32_t stream_id, const uint64_t last_seq,
+                                                                      VideoTileFrame& out) const {
+  const std::shared_ptr<Impl> impl = Session();
+  std::lock_guard lock(impl->video_frame_mutex);
+  auto it = impl->remote_video_by_stream.find(stream_id);
+  if (it == impl->remote_video_by_stream.end()) {
+    return FrameRead::None;
+  }
+  return CopyFrameIfNewLocked(it->second, last_seq, out);
+}
+
 bool MediaEngine::HasRemoteVideoForStream(uint32_t stream_id) const {
   const std::shared_ptr<Impl> impl = Session();
   std::lock_guard lock(impl->video_frame_mutex);
