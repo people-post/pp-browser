@@ -1,10 +1,18 @@
 #include "lib/storage/SqliteCallSessionStore.h"
 #include "common/Utilities.h"
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <mutex>
 #include <sqlite3.h>
+#include <thread>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -256,7 +264,10 @@ TEST_F(CallSessionStoreTest, AFailedStepOfTheParticipantsReadIsAnError) {
   ASSERT_TRUE(calls_->UpsertParticipant(Joined("call:damaged", "account:alice")));
   ASSERT_TRUE(calls_->UpsertParticipant(Joined("call:damaged", "account:bob")));
   ASSERT_TRUE(calls_->ListParticipants("call:damaged")) << "readable before the damage";
+  // A live store keeps its read connection (and the pages it has read): damage the closed file, read with a new store.
+  calls_.reset();
   ASSERT_NO_FATAL_FAILURE(ZeroTableRootPage(data_dir_ / "profile.db", "call_participants"));
+  calls_ = std::make_unique<SqliteCallSessionStore>((data_dir_ / "profile.db").string());
 
   auto parts = calls_->ListParticipants("call:damaged");
   ASSERT_FALSE(parts) << "read " << parts->size() << " rows";
@@ -269,12 +280,425 @@ TEST_F(CallSessionStoreTest, AFailedStepOfTheParticipantsReadIsAnError) {
 TEST_F(CallSessionStoreTest, AFailedStepOfTheActiveCallsReadIsAnError) {
   ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:damaged")));
   ASSERT_TRUE(calls_->ListActiveSessions()) << "readable before the damage";
+  calls_.reset();
   ASSERT_NO_FATAL_FAILURE(ZeroTableRootPage(data_dir_ / "profile.db", "call_sessions"));
+  calls_ = std::make_unique<SqliteCallSessionStore>((data_dir_ / "profile.db").string());
 
   auto active = calls_->ListActiveSessions();
   ASSERT_FALSE(active) << "read " << active->size() << " rows";
   EXPECT_NE(active.error().message.find("ListActiveSessions"), std::string::npos) << active.error().message;
   EXPECT_NE(active.error().message.find("rc=11"), std::string::npos) << active.error().message; // SQLITE_CORRUPT
+}
+
+// DEV/PLAN-call-frame-cost.md step 5: the reads share one read-only connection kept open (a call read the store seven
+// times a frame, each time opening profile.db again); the writes still open their own. profile.db is WAL in the app.
+
+/** Puts the (not yet created) file `db_path` in WAL mode, as SqliteThreadDb has profile.db. */
+void UseWal(const std::filesystem::path& db_path) {
+  sqlite3* db = nullptr;
+  ASSERT_EQ(sqlite3_open(db_path.string().c_str(), &db), SQLITE_OK);
+  sqlite3_stmt* stmt = nullptr;
+  ASSERT_EQ(sqlite3_prepare_v2(db, "PRAGMA journal_mode=WAL;", -1, &stmt, nullptr), SQLITE_OK);
+  ASSERT_EQ(sqlite3_step(stmt), SQLITE_ROW);
+  const std::string mode = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+  sqlite3_finalize(stmt);
+  ASSERT_EQ(sqlite3_close(db), SQLITE_OK);
+  ASSERT_EQ(mode, "wal");
+}
+
+/** Another connection on the same file (SqliteThreadDb's, a short-lived store's). */
+class OtherConnection {
+public:
+  explicit OtherConnection(const std::filesystem::path& db_path) {
+    EXPECT_EQ(sqlite3_open(db_path.string().c_str(), &db_), SQLITE_OK);
+    sqlite3_busy_timeout(db_, 5000);
+  }
+  OtherConnection(const OtherConnection&) = delete;
+  OtherConnection& operator=(const OtherConnection&) = delete;
+  ~OtherConnection() { sqlite3_close(db_); }
+  int Exec(const std::string& sql) { return sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, nullptr); }
+
+private:
+  sqlite3* db_ = nullptr;
+};
+
+PendingCallInvite Invite(const std::string& call_id, const std::string& invitee) {
+  PendingCallInvite invite;
+  invite.call_id = call_id;
+  invite.inviter_identity = "account:alice";
+  invite.invitee_identity = invitee;
+  invite.created_at = 1000;
+  invite.status = "pending";
+  return invite;
+}
+
+/** Waits for `finished` to reach `count`, then joins; a deadlock never gets there, so the binary ends instead. */
+void JoinWithin(std::vector<std::thread>& threads, const std::atomic<int>& finished, const std::chrono::seconds limit) {
+  const auto deadline = std::chrono::steady_clock::now() + limit;
+  while (finished.load() < static_cast<int>(threads.size())) {
+    if (std::chrono::steady_clock::now() > deadline) {
+      std::fprintf(stderr, "threads not done after %lld s: deadlock\n", static_cast<long long>(limit.count()));
+      std::abort();
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  for (std::thread& thread : threads) {
+    thread.join();
+  }
+}
+
+TEST_F(CallSessionStoreTest, ReadsShareOneConnectionOpenedOnce) {
+  ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:x")));
+  ASSERT_TRUE(calls_->UpsertParticipant(Joined("call:x", "account:alice")));
+  ASSERT_TRUE(calls_->UpsertPendingInvite(Invite("call:x", "account:me")));
+  EXPECT_EQ(calls_->ReadConnectionOpensForTest(), 0u) << "writes do not open the read connection";
+  for (int i = 0; i < 1000; ++i) {
+    switch (i % 9) {
+      case 0:
+        ASSERT_TRUE(calls_->LoadSession("call:x").value().has_value());
+        break;
+      case 1:
+        ASSERT_EQ(calls_->ListActiveSessions().value().size(), 1u);
+        break;
+      case 2:
+        ASSERT_TRUE(calls_->ListSessionsForGroup("group:none"));
+        break;
+      case 3:
+        ASSERT_EQ(calls_->ListRecentSessions(5).value().size(), 1u);
+        break;
+      case 4:
+        ASSERT_EQ(calls_->ListParticipants("call:x").value().size(), 1u);
+        break;
+      case 5:
+        ASSERT_TRUE(calls_->FindParticipant("call:x", "account:alice").value().has_value());
+        break;
+      case 6:
+        ASSERT_EQ(calls_->CountJoined("call:x").value(), 1u);
+        break;
+      case 7:
+        ASSERT_TRUE(calls_->LoadPendingInvite("call:x", "account:me").value().has_value());
+        break;
+      default:
+        ASSERT_EQ(calls_->ListPendingInvitesForInvitee("account:me").value().size(), 1u);
+        break;
+    }
+    if (i % 100 == 0) {
+      ASSERT_TRUE(calls_->UpsertParticipant(Joined("call:x", "account:alice")));
+    }
+  }
+  EXPECT_EQ(calls_->ReadConnectionOpensForTest(), 1u);
+}
+
+// A read stopped on its one row (LoadSession, LoadPendingInvite) and not finalized would keep the connection on that
+// snapshot: every later read would miss what others wrote.
+TEST_F(CallSessionStoreTest, AWriteCommittedElsewhereIsSeenByTheNextRead) {
+  ASSERT_NO_FATAL_FAILURE(UseWal(data_dir_ / "profile.db"));
+  ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:x")));
+  ASSERT_TRUE(calls_->UpsertPendingInvite(Invite("call:x", "account:me")));
+  ASSERT_EQ(calls_->LoadSession("call:x").value()->state, CallSessionState::Active);
+  ASSERT_EQ(calls_->LoadPendingInvite("call:x", "account:me").value()->status, "pending");
+
+  OtherConnection other(data_dir_ / "profile.db");
+  ASSERT_EQ(other.Exec("UPDATE call_sessions SET state = 'ended' WHERE call_id = 'call:x';"), SQLITE_OK);
+  EXPECT_EQ(calls_->LoadSession("call:x").value()->state, CallSessionState::Ended);
+  EXPECT_TRUE(calls_->ListActiveSessions().value().empty());
+  ASSERT_EQ(other.Exec("UPDATE pending_call_invites SET status = 'accepted' WHERE call_id = 'call:x';"), SQLITE_OK);
+  EXPECT_EQ(calls_->LoadPendingInvite("call:x", "account:me").value()->status, "accepted");
+  EXPECT_TRUE(calls_->ListPendingInvitesForInvitee("account:me").value().empty());
+
+  {
+    // A short-lived store (Application's recent-calls reader, the demo seeder) writing on its own.
+    const SqliteCallSessionStore temporary((data_dir_ / "profile.db").string());
+    ASSERT_TRUE(temporary.UpsertParticipant(Joined("call:x", "account:carol")));
+  }
+  EXPECT_EQ(calls_->ListParticipants("call:x").value().size(), 1u);
+  ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:y")));
+  EXPECT_EQ(calls_->ListActiveSessions().value().size(), 1u) << "this store's own write";
+  EXPECT_EQ(calls_->ReadConnectionOpensForTest(), 1u);
+}
+
+// The UI thread reads every frame: a writer holding its lock (uncommitted) elsewhere must not make it wait.
+TEST_F(CallSessionStoreTest, AnOpenWriteTransactionElsewhereNeitherHoldsUpAReadNorShowsInIt) {
+  ASSERT_NO_FATAL_FAILURE(UseWal(data_dir_ / "profile.db"));
+  ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:before")));
+  ASSERT_EQ(calls_->ListActiveSessions().value().size(), 1u);
+
+  OtherConnection writer(data_dir_ / "profile.db");
+  ASSERT_EQ(writer.Exec("BEGIN IMMEDIATE;"), SQLITE_OK);
+  ASSERT_EQ(writer.Exec("INSERT INTO call_sessions (call_id, state, created_at) VALUES ('call:new', 'active', 2000);"),
+            SQLITE_OK);
+  ASSERT_EQ(writer.Exec("UPDATE call_sessions SET state = 'ended' WHERE call_id = 'call:before';"), SQLITE_OK);
+
+  int reads = 0;
+  int64_t slowest_us = 0;
+  const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  while (std::chrono::steady_clock::now() < until) {
+    const auto started = std::chrono::steady_clock::now();
+    auto active = calls_->ListActiveSessions();
+    auto fresh = calls_->LoadSession("call:new");
+    const int64_t took_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count();
+    slowest_us = std::max(slowest_us, took_us);
+    ASSERT_TRUE(active) << active.error().message;
+    ASSERT_EQ(active->size(), 1u);
+    EXPECT_EQ(active->front().call_id, "call:before") << "the content before the commit";
+    ASSERT_TRUE(fresh);
+    EXPECT_FALSE(fresh->has_value());
+    ++reads;
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_LT(slowest_us, 50'000) << "two reads took " << slowest_us << " us";
+  EXPECT_GT(reads, 50);
+
+  ASSERT_EQ(writer.Exec("COMMIT;"), SQLITE_OK);
+  auto active = calls_->ListActiveSessions().value();
+  ASSERT_EQ(active.size(), 1u);
+  EXPECT_EQ(active.front().call_id, "call:new");
+}
+
+TEST_F(CallSessionStoreTest, AReadAfterAFailedPrepareSeesLaterWrites) {
+  ASSERT_NO_FATAL_FAILURE(UseWal(data_dir_ / "profile.db"));
+  ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:x")));
+  ASSERT_TRUE(calls_->UpsertParticipant(Joined("call:x", "account:alice")));
+  ASSERT_EQ(calls_->ListParticipants("call:x").value().size(), 1u);
+
+  {
+    OtherConnection other(data_dir_ / "profile.db");
+    ASSERT_EQ(other.Exec("DROP TABLE call_participants;"), SQLITE_OK);
+  }
+  // The first read finds the schema changed under it; the next one cannot even prepare (the table is gone).
+  EXPECT_FALSE(calls_->ListParticipants("call:x"));
+  EXPECT_FALSE(calls_->ListParticipants("call:x"));
+  EXPECT_FALSE(calls_->CountJoined("call:x"));
+  {
+    const SqliteCallSessionStore again((data_dir_ / "profile.db").string()); // makes the table again
+    ASSERT_TRUE(again.UpsertParticipant(Joined("call:x", "account:bob")));
+  }
+  auto parts = calls_->ListParticipants("call:x");
+  ASSERT_TRUE(parts) << parts.error().message;
+  ASSERT_EQ(parts->size(), 1u);
+  EXPECT_EQ(parts->front().identity, "account:bob");
+  EXPECT_EQ(calls_->ReadConnectionOpensForTest(), 1u) << "the same connection, not a reopened one";
+}
+
+TEST_F(CallSessionStoreTest, AReadAfterAFailedStepSeesLaterWrites) {
+  ASSERT_NO_FATAL_FAILURE(UseWal(data_dir_ / "profile.db"));
+  ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:x")));
+  ASSERT_TRUE(calls_->UpsertParticipant(Joined("call:x", "account:alice")));
+  calls_.reset();
+  ASSERT_NO_FATAL_FAILURE(ZeroTableRootPage(data_dir_ / "profile.db", "call_sessions"));
+  calls_ = std::make_unique<SqliteCallSessionStore>((data_dir_ / "profile.db").string());
+
+  auto active = calls_->ListActiveSessions();
+  ASSERT_FALSE(active);
+  EXPECT_NE(active.error().message.find("rc=11"), std::string::npos) << active.error().message;
+  {
+    OtherConnection other(data_dir_ / "profile.db");
+    ASSERT_EQ(other.Exec("INSERT INTO call_participants (call_id, identity, state) VALUES "
+                         "('call:x', 'account:bob', 'joined');"),
+              SQLITE_OK);
+  }
+  auto parts = calls_->ListParticipants("call:x");
+  ASSERT_TRUE(parts) << parts.error().message;
+  EXPECT_EQ(parts->size(), 2u) << "bob, written after the failed read, is there";
+  EXPECT_EQ(calls_->CountJoined("call:x").value(), 2u);
+}
+
+// The call's own thread writes while the UI thread and a worker read (CallStack's store). Run with --gtest_repeat=20.
+TEST_F(CallSessionStoreTest, TwoReadersAndAWriterRunTogether) {
+  ASSERT_NO_FATAL_FAILURE(UseWal(data_dir_ / "profile.db"));
+  ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:busy")));
+  ASSERT_TRUE(calls_->UpsertPendingInvite(Invite("call:busy", "account:me")));
+  constexpr int kTimes = 2000;
+  std::mutex failures_mutex;
+  std::vector<std::string> failures;
+  const auto note = [&](const std::string& what) {
+    std::lock_guard<std::mutex> lock(failures_mutex);
+    failures.push_back(what);
+  };
+  const SqliteCallSessionStore* store = calls_.get();
+  std::atomic<int> finished{0};
+  std::vector<std::thread> threads;
+  for (int reader = 0; reader < 2; ++reader) {
+    threads.emplace_back([&, store]() {
+      for (int i = 0; i < kTimes; ++i) {
+        if (auto parts = store->ListParticipants("call:busy"); !parts) {
+          note(parts.error().message);
+        }
+        if (auto active = store->ListActiveSessions(); !active || active->size() != 1) {
+          note(active ? "active calls: " + std::to_string(active->size()) : active.error().message);
+        }
+        if (auto loaded = store->LoadSession("call:busy"); !loaded || !loaded->has_value()) {
+          note(loaded ? "call:busy not found" : loaded.error().message);
+        }
+        if (auto pending = store->ListPendingInvitesForInvitee("account:me"); !pending) {
+          note(pending.error().message);
+        }
+      }
+      ++finished;
+    });
+  }
+  threads.emplace_back([&, store]() {
+    for (int i = 0; i < kTimes; ++i) {
+      const std::string who = "account:p" + std::to_string(i % 10);
+      if (auto put = store->UpsertParticipant(Joined("call:busy", who)); !put) {
+        note("write: " + put.error().message);
+      }
+      if (i % 50 == 0) {
+        if (auto put = store->UpsertSession(ActiveSession("call:busy")); !put) {
+          note("write: " + put.error().message);
+        }
+      }
+    }
+    ++finished;
+  });
+  JoinWithin(threads, finished, std::chrono::seconds(120));
+
+  for (const std::string& failure : failures) {
+    ADD_FAILURE() << failure;
+  }
+  EXPECT_EQ(calls_->CountJoined("call:busy").value(), 10u);
+  EXPECT_EQ(calls_->ReadConnectionOpensForTest(), 1u);
+}
+
+// A read in flight holds the connection: destroying the store meanwhile lets that read finish on it, and then the
+// connection is closed and the files can go. Run with --gtest_repeat=50.
+TEST_F(CallSessionStoreTest, DestroyingTheStoreWhileAReadIsInFlightLetsTheReadFinish) {
+  ASSERT_NO_FATAL_FAILURE(UseWal(data_dir_ / "profile.db"));
+  ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:x")));
+  ASSERT_TRUE(calls_->UpsertParticipant(Joined("call:x", "account:alice")));
+  constexpr int kPausedRead = 200;
+  std::mutex mutex;
+  std::condition_variable changed;
+  bool holding = false;
+  bool destroyed = false;
+  std::atomic<int> reads{0};
+  SqliteCallSessionStore::SetReadHookForTest([&]() {
+    if (++reads != kPausedRead) {
+      return;
+    }
+    std::unique_lock<std::mutex> lock(mutex);
+    holding = true;
+    changed.notify_all();
+    changed.wait_for(lock, std::chrono::seconds(10), [&]() { return destroyed; });
+  });
+  const SqliteCallSessionStore* store = calls_.get();
+  std::atomic<int> finished{0};
+  std::atomic<int> failed{0};
+  std::atomic<bool> paused_read_ok{false};
+  std::vector<std::thread> threads;
+  threads.emplace_back([&, store]() {
+    // Reads back to back; the last one is paused by the hook (holding the connection) while the store goes.
+    for (int i = 1; i <= kPausedRead; ++i) {
+      auto parts = store->ListParticipants("call:x");
+      const bool ok = parts && parts->size() == 1;
+      if (i == kPausedRead) {
+        paused_read_ok = ok;
+      } else if (!ok) {
+        ++failed;
+      }
+    }
+    ++finished;
+  });
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    ASSERT_TRUE(changed.wait_for(lock, std::chrono::seconds(10), [&]() { return holding; }));
+  }
+  calls_.reset();
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    destroyed = true;
+  }
+  changed.notify_all();
+  JoinWithin(threads, finished, std::chrono::seconds(30));
+  SqliteCallSessionStore::SetReadHookForTest(nullptr);
+
+  EXPECT_EQ(failed.load(), 0);
+  EXPECT_TRUE(paused_read_ok.load()) << "the read in flight finished on the open connection";
+  for (const char* suffix : {"", "-wal", "-shm"}) {
+    const std::filesystem::path file = data_dir_ / (std::string("profile.db") + suffix);
+    std::error_code ec;
+    std::filesystem::remove(file, ec);
+    EXPECT_FALSE(ec) << file << ": " << ec.message();
+    EXPECT_FALSE(std::filesystem::exists(file)) << file;
+  }
+}
+
+TEST_F(CallSessionStoreTest, TheFirstReadOfAFreshProfileIsEmpty) {
+  ASSERT_FALSE(std::filesystem::exists(data_dir_ / "profile.db"));
+  auto active = calls_->ListActiveSessions();
+  ASSERT_TRUE(active) << active.error().message;
+  EXPECT_TRUE(active->empty());
+  EXPECT_FALSE(calls_->LoadSession("call:x").value().has_value());
+  EXPECT_TRUE(calls_->ListSessionsForGroup("group:g").value().empty());
+  EXPECT_TRUE(calls_->ListRecentSessions(5).value().empty());
+  EXPECT_TRUE(calls_->ListParticipants("call:x").value().empty());
+  EXPECT_EQ(calls_->CountJoined("call:x").value(), 0u);
+  EXPECT_FALSE(calls_->LoadPendingInvite("call:x", "account:me").value().has_value());
+  EXPECT_TRUE(calls_->ListPendingInvitesForInvitee("account:me").value().empty());
+
+  ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:x")));
+  ASSERT_TRUE(calls_->UpsertParticipant(Joined("call:x", "account:alice")));
+  EXPECT_EQ(calls_->ListActiveSessions().value().size(), 1u);
+  EXPECT_EQ(calls_->ListParticipants("call:x").value().size(), 1u);
+  EXPECT_EQ(calls_->ReadConnectionOpensForTest(), 1u);
+}
+
+// After the last connection closes a WAL file has no -wal / -shm beside it; the read-only connection still opens it.
+TEST_F(CallSessionStoreTest, AWalProfileWithoutItsSideFilesOpensForReading) {
+  ASSERT_NO_FATAL_FAILURE(UseWal(data_dir_ / "profile.db"));
+  {
+    const SqliteCallSessionStore earlier((data_dir_ / "profile.db").string());
+    ASSERT_TRUE(earlier.UpsertSession(ActiveSession("call:x")));
+    ASSERT_EQ(earlier.ListActiveSessions().value().size(), 1u);
+  }
+  {
+    // A read-only connection closing last cannot checkpoint, so it leaves the side files (nothing is lost: the next
+    // read-write open recovers them). A read-write connection closing last folds them in and removes them.
+    OtherConnection last(data_dir_ / "profile.db");
+    ASSERT_EQ(last.Exec("SELECT count(*) FROM call_sessions;"), SQLITE_OK);
+  }
+  ASSERT_FALSE(std::filesystem::exists(data_dir_ / "profile.db-shm"));
+  ASSERT_FALSE(std::filesystem::exists(data_dir_ / "profile.db-wal"));
+  auto active = calls_->ListActiveSessions();
+  ASSERT_TRUE(active) << active.error().message;
+  EXPECT_EQ(active->size(), 1u);
+}
+
+TEST_F(CallSessionStoreTest, AProfileWhoseTablesCannotBeMadeIsAnErrorOnEveryRead) {
+  // Not a database: the open succeeds, making the tables fails.
+  const std::filesystem::path garbage = data_dir_ / "garbage.db";
+  {
+    std::ofstream file(garbage, std::ios::binary);
+    file << std::string(8192, 'x');
+  }
+  const SqliteCallSessionStore not_a_db(garbage.string());
+  const SqliteCallSessionStore no_dir((data_dir_ / "missing" / "profile.db").string());
+  for (const SqliteCallSessionStore* broken : {&not_a_db, &no_dir}) {
+    for (int i = 0; i < 3; ++i) {
+      EXPECT_FALSE(broken->ListActiveSessions());
+      EXPECT_FALSE(broken->LoadSession("call:x"));
+      EXPECT_FALSE(broken->ListParticipants("call:x"));
+      EXPECT_FALSE(broken->CountJoined("call:x"));
+      EXPECT_FALSE(broken->ListPendingInvitesForInvitee("account:me"));
+      EXPECT_FALSE(broken->UpsertSession(ActiveSession("call:x")));
+    }
+    EXPECT_EQ(broken->ReadConnectionOpensForTest(), 0u);
+  }
+  ASSERT_TRUE(calls_->UpsertSession(ActiveSession("call:x")));
+  EXPECT_EQ(calls_->ListActiveSessions().value().size(), 1u) << "a store on a good file is unaffected";
+}
+
+// Every read goes through the read-only connection: a read method that wrote would fail there, never write.
+TEST_F(CallSessionStoreTest, TheReadConnectionCannotWrite) {
+  ASSERT_TRUE(calls_->ListActiveSessions());
+  auto wrote = calls_->ExecOnReadConnectionForTest(
+      "INSERT INTO call_sessions (call_id, state, created_at) VALUES ('call:sneaked', 'active', 1);");
+  ASSERT_FALSE(wrote);
+  EXPECT_NE(wrote.error().message.find("readonly"), std::string::npos) << wrote.error().message;
+  EXPECT_FALSE(calls_->LoadSession("call:sneaked").value().has_value());
+  EXPECT_TRUE(calls_->ListActiveSessions().value().empty());
+  EXPECT_EQ(calls_->ReadConnectionOpensForTest(), 1u);
 }
 
 } // namespace
