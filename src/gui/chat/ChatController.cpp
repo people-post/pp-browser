@@ -4230,17 +4230,17 @@ void ChatController::SendEditedMessage() {
 
 void ChatController::EndEditIfTargetGone() {
   const std::string thread_id = CurrentDraftKey();
-  if (thread_id.empty() || !presenter_.EditingIn(thread_id)) {
-    return;
+  if (!thread_id.empty() && presenter_.EditingIn(thread_id)) {
+    if (const auto composer = presenter_.EndEditIfTargetGone(thread_id, chat_.draft.c_str())) {
+      ShowToast(Tr("chat.edit.target_deleted"));
+      chat_.draft = composer->c_str();
+      DataModelHost::Instance().Dirty("chat", "draft");
+    }
   }
-  const auto composer = presenter_.EndEditIfTargetGone(thread_id, chat_.draft.c_str());
-  if (!composer) {
-    return;
+  // Also when the chat shown changed without a draft hand-over (a new chat): the bar follows the chat shown.
+  if (chat_.editing_message != (presenter_.EditingIn(CurrentDraftKey()) != nullptr)) {
+    SyncEditingState();
   }
-  ShowToast(Tr("chat.edit.target_deleted"));
-  chat_.draft = composer->c_str();
-  DataModelHost::Instance().Dirty("chat", "draft");
-  SyncEditingState();
 }
 
 void ChatController::SyncEditingState() {

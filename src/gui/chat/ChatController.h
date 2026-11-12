@@ -450,7 +450,10 @@ private:
   void CancelEditMessage();
   /** Send while editing: unchanged → just ends; too late → a pill, still editing; sent → ends, the draft comes back. */
   void SendEditedMessage();
-  /** The edited message was deleted meanwhile (another device): editing ends with a pill (in the open chat). */
+  /**
+   * The edited message was deleted meanwhile (another device): editing ends with a pill (in the open chat). The edit bar
+   * then follows the chat shown.
+   */
   void EndEditIfTargetGone();
   /** The edit bar and the attach / voice lock follow the open chat's edit state. */
   void SyncEditingState();
