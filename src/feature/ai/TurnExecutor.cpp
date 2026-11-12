@@ -50,10 +50,8 @@ void ParsePeopleToolJson(const std::string& raw, std::vector<mesh::DirectoryHit>
     }
     if (item->contains("hit_id")) {
       hits.push_back(DirectoryHitFromJson(*item));
-    } else if (item->contains("id") &&
-               (item->contains("display_name") || item->contains("local") || item->contains("remote"))) {
-      // ContactsToJson uses nested local/remote; legacy flat rows still have display_name.
-      contacts.push_back(ContactFromJson(*item));
+    } else if (item->contains("id") && (item->contains("local") || item->contains("remote"))) {
+      contacts.push_back(ContactFromJson(*item)); // ContactsToJson's nested local/remote rows
     }
   }
 }
