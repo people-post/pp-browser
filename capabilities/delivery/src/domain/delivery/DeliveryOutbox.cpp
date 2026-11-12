@@ -375,8 +375,15 @@ void DeliveryOutbox::Retry() {
       return;
     }
     auto still_pending = std::make_shared<std::vector<Pending>>();
+    // Held by this call and by each send still in flight; it reaches itself only weakly. A strong
+    // self-capture was a cycle that kept every batch's closure alive after it ended.
     auto process = std::make_shared<std::function<void(size_t)>>();
-    *process = [this, pending = std::move(pending), still_pending, process](size_t index) mutable {
+    *process = [this, pending = std::move(pending), still_pending,
+                weak_process = std::weak_ptr<std::function<void(size_t)>>(process)](size_t index) mutable {
+      const auto process = weak_process.lock();
+      if (!process) {
+        return;
+      }
       if (index >= pending.size()) {
         if (!still_pending->empty()) {
           std::lock_guard lock(mutex_);

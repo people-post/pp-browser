@@ -85,6 +85,7 @@ jobs:
         env:
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
+          PP_RELAY_CONTENT_SHA256: ${{ vars.PP_RELAY_CONTENT_SHA256 }}
         run: |
           cmake -B build -S . \
             -DCMAKE_BUILD_TYPE=Release \
@@ -94,7 +95,8 @@ jobs:
             -DPP_BROWSER_RELEASE_VERSION="${PP_RELEASE_VERSION}" \
             -DPP_BROWSER_PACKAGED_BUILD=ON \
             -DPP_API_URL_PROD="${PP_API_URL_PROD}" \
-            -DPP_API_URL_QA="${PP_API_URL_QA}"
+            -DPP_API_URL_QA="${PP_API_URL_QA}" \
+            -DPP_RELAY_CONTENT_SHA256="${PP_RELAY_CONTENT_SHA256:-OFF}"
 
       - name: Build
         run: cmake --build build --config Release -j 4
@@ -251,6 +253,7 @@ jobs:
         env:
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
+          PP_RELAY_CONTENT_SHA256: ${{ vars.PP_RELAY_CONTENT_SHA256 }}
         run: |
           cmake -B build -S . \
             -G Ninja \
@@ -261,7 +264,8 @@ jobs:
             -DPP_BROWSER_RELEASE_VERSION="${PP_RELEASE_VERSION}" \
             -DPP_BROWSER_PACKAGED_BUILD=ON \
             -DPP_API_URL_PROD="${PP_API_URL_PROD}" \
-            -DPP_API_URL_QA="${PP_API_URL_QA}"
+            -DPP_API_URL_QA="${PP_API_URL_QA}" \
+            -DPP_RELAY_CONTENT_SHA256="${PP_RELAY_CONTENT_SHA256:-OFF}"
 
       - name: Build
         run: cmake --build build --config Release -j 4
@@ -408,6 +412,7 @@ jobs:
           PP_BROWSER_RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
+          PP_RELAY_CONTENT_SHA256: ${{ vars.PP_RELAY_CONTENT_SHA256 }}
         run: ./scripts/platform/android_build.sh apk-release
 
       - name: Disk usage (post-build)

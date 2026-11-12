@@ -36,6 +36,21 @@ elseif(NOT PP_BROWSER_PACKAGED_BUILD AND EXISTS "${_pp_ui_sibling}/CMakeLists.tx
   # Development only (PB-001): a release build compiles the pinned tag, whatever sits beside it.
   set(_pp_ui_src "${_pp_ui_sibling}")
   message(STATUS "pp-browser: using sibling pp-cpp-ui at ${_pp_ui_src}")
+  # A sibling behind the pin builds an older engine than CI does: tests of newer engine work fail here and
+  # pass there (FontWeightsTest, 2026-11-12: the sibling lacked v0.6.3's fallback by weight).
+  find_package(Git QUIET)
+  if(GIT_FOUND)
+    execute_process(
+      COMMAND "${GIT_EXECUTABLE}" -C "${_pp_ui_sibling}" merge-base --is-ancestor "${PP_CPP_UI_GIT_TAG}" HEAD
+      RESULT_VARIABLE _pp_ui_has_pin OUTPUT_QUIET ERROR_QUIET)
+    if(_pp_ui_has_pin EQUAL 1)
+      message(WARNING "pp-browser: the sibling pp-cpp-ui does not contain the pinned ${PP_CPP_UI_GIT_TAG}; "
+                      "update it (git -C ${_pp_ui_sibling} pull), or this build differs from CI's")
+    elseif(NOT _pp_ui_has_pin EQUAL 0)
+      message(WARNING "pp-browser: cannot tell whether the sibling pp-cpp-ui contains the pinned "
+                      "${PP_CPP_UI_GIT_TAG} (fetch its tags: git -C ${_pp_ui_sibling} fetch --tags)")
+    endif()
+  endif()
 else()
   set(_pp_ui_src "")
 endif()
