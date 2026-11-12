@@ -907,6 +907,37 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
   return updated;
 }
 
+Roe<bool> SqliteThreadStore::UpdateMessageDelivery(const std::string& thread_id, const std::string& message_id,
+                                                  const MessageDelivery delivery,
+                                                  const std::optional<MessageTransport> transport,
+                                                  const bool unless_delivered) {
+  auto thread_db = db_.OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql = "UPDATE messages SET delivery = ?, transport = COALESCE(?, transport) WHERE id = ? "
+                    "AND (? = 0 OR delivery != ?);";
+  if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare delivery update");
+  }
+  sqlite3_bind_text(stmt, 1, MessageDeliveryToString(delivery).c_str(), -1, SQLITE_TRANSIENT);
+  if (transport) {
+    sqlite3_bind_text(stmt, 2, MessageTransportToString(*transport).c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 2);
+  }
+  sqlite3_bind_text(stmt, 3, message_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 4, unless_delivered ? 1 : 0);
+  sqlite3_bind_text(stmt, 5, MessageDeliveryToString(MessageDelivery::Relayed).c_str(), -1, SQLITE_TRANSIENT);
+  const bool updated = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(*thread_db) > 0;
+  sqlite3_finalize(stmt);
+  if (updated && delivery != MessageDelivery::Pending) {
+    (void)RemoveOutboxRow(message_id); // as UpdateMessage does
+  }
+  return updated;
+}
+
 Roe<std::optional<ThreadMessage>> SqliteThreadStore::GetMessage(const std::string& thread_id,
                                                                 const std::string& message_id) const {
   auto thread_db = db_.OpenThreadDb(thread_id);
