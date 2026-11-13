@@ -48,3 +48,21 @@
 **Rationale:**
 - A card is about 13 KB plus about 4 KB per device; four relays add at most about 0.6 KB, so no path that carries a card comes near its limit.
 - The QR code is the only tight one: it carries no card, and one origin of about 40 bytes keeps it readable.
+
+## MR005 — Strangers pay the receiver's price; contacts carry a grant
+
+**Date:** 2026-11-12
+**Status:** Accepted (Hongwei, 2026-11-12: "factor in our design in pricing project … more effective and efficient"). Not built. Amends [pricing P001](../pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet) item 7: the floor is published in the account card, not at directory registration.
+**Decision:**
+- The receiver's `initiation_floor` is a field of the signed account card.
+- A recipient's app gives each accepted contact a grant: a signed statement that this sender may write to it, expiring in 30 days and renewed while they stay a contact. The sender attaches it to its sends, and a relay checks it with the recipient's key.
+- **A send without a grant is a stranger's.** With a floor above 0, it must carry an opening offer of at least the floor; until payment rails exist, the relay refuses it with `payment_required`. With a floor of 0, it gets a small first-contact quota per recipient and raises no message alert.
+- **Safety limits apply to everyone:** per sender account, per client address for unverified senders (configurable), and the mailbox caps.
+**Rationale:**
+- Rate limits only bound the damage. A price on first contact removes the incentive, and the receiver chooses it, as pricing P001 already intends.
+- The relay cannot read mail or see contact lists. A grant gives it the one fact it needs, checked with a key it already holds, without uploading anyone's contacts.
+- "Registered here or foreign" then stops mattering for abuse.
+**Alternatives rejected:**
+- Rate limits alone (a new account costs nothing).
+- Uploading each user's allow-list to their relays (the relay learns the contact graph).
+- Treating foreign senders as suspect and local ones as trusted (abuse does not depend on where the sender registered).

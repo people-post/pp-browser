@@ -67,14 +67,34 @@
   - a sender registered on this relay is checked against its stored key, as now;
   - **a foreign sender** (not registered here) sends its ML-DSA public key with the message. The relay checks that the key hashes to `sender_account_id`, then checks the signature;
   - the relay may cache a verified foreign key by Account ID, so later sends can leave it out.
-- **Abuse limits:**
-  - the existing per-sender send rate, now per sender account;
-  - a per-IP rate for foreign senders;
-  - the mailbox caps that already exist;
-  - a recipient's "contacts only" inbox is later work ([privacy](../privacy/)).
+- **Abuse:** the relay tells contacts from strangers, not "registered here" from "foreign" ([MR005](DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant); below).
 - **Receiving:** polling, ack and clear are signed by the recipient's account (as the requester) and address the inbox by Account ID.
 - **Push:** devices register their push tokens on every relay the account uses, so any relay holding mail can wake the phone.
 - **Not built:** forwarding between relays (federation). A sender posts straight into the recipient's relay.
+
+## Strangers and contacts: the receiver's price
+
+[MR005](DECISIONS.md#mr005--strangers-pay-the-receivers-price-contacts-carry-a-grant), with [pricing P001](../pricing/DECISIONS.md#p001--initiation-floor--media-quote-gates-no-payment-rails-yet).
+
+A relay cannot read a message, and it does not know who a user's contacts are. It needs one signal it can check: whether the sender has a grant from the recipient.
+
+- **The receiver's price is in the account card:** `initiation_floor`, in `pp_credit` minor units, the one price for opening a chat or a call with them (P001). It is signed with the card, so every relay and every sender reads the same price. It replaces the floor sent at directory registration.
+- **A contact carries a grant.** When a recipient accepts someone, the recipient's app issues a grant and gives it to the sender over the control lane. "Accepts" means: adds them, accepts their opening offer, or waives it. The grant is signed by the recipient's account key, under domain `pp-browser:relay-grant-v1`, over:
+  - `recipient_account_id`;
+  - `sender_account_id`;
+  - `issued_at`;
+  - `expires_at` (30 days, renewed while they stay a contact).
+
+  The sender attaches it to every send into the recipient's relays, and the relay checks it with the recipient's key, which it holds.
+  - No contact list is uploaded to any relay. A relay sees only the pairs that send through it, as it does today.
+  - Blocking stops renewal. Until the grant expires, the recipient's app drops that sender's mail.
+- **A relay treats a send without a grant as a stranger's,** whether the sender is registered here or not:
+  - **floor above 0:** the send must carry an opening offer of at least the floor. Until payment rails exist, no offer can be honoured, so the relay refuses it (`payment_required`). That matches P001's outbound block, and spares the recipient the spam altogether.
+  - **floor 0:** the send is accepted within a first-contact quota per recipient (a few per stranger, a bounded number per hour for all strangers together). It raises no message alert; a call wake is allowed within the per-pair limit.
+- **Safety limits apply to everyone:**
+  - per sender account;
+  - per client address for senders the relay has not verified before (configurable: carrier-grade NAT puts many phones behind one address);
+  - the mailbox caps.
 
 ## App
 
@@ -102,6 +122,7 @@
   - Keys are accepted only when they verify against the Account ID; name and photo come from the newest answer.
   - It runs on a worker, shows for every contact, says what changed and what could not be reached, and shows the preferred relay with its reachability.
 - **Our own sends:** the sender signs with its account key. A send to a relay we are registered on goes as a registered sender; to any other relay, as a foreign sender with its key.
+- **Grants:** the app issues one to each accepted contact, renews it before it expires, keeps the grants it was given, attaches the matching one to each send, and stops renewing a blocked contact's. A send that gets `payment_required` shows the receiver's price (P001's pay-or-alternatives UI).
 
 ## Privacy
 
