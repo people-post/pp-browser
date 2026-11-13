@@ -4,10 +4,10 @@ Order of work. Status is in [CURRENT_STATE.md](CURRENT_STATE.md).
 
 ## R0 — The refresh button, app only (no wire change)
 
-- [ ] Off the UI thread: the button posts to a worker, and the result comes back through `AppRuntime::PostUI`.
-- [ ] Ask the contact's devices first (the card exchange), then the directory by Account ID; accept keys only when they verify against the Account ID.
-- [ ] Show the button for every contact (not only those with a `relay:` id); say what changed and what could not be reached.
-- [ ] Tests: the order of sources, key verification, the worker path.
+- [x] Off the UI thread: the button posts to a worker, and the result comes back through `AppRuntime::PostUI`.
+- [x] Ask the contact's devices first (the card exchange), then the directory by Account ID; accept keys only when they verify against the Account ID.
+- [x] Show the button for every contact (not only those with a `relay:` id); say what changed and what could not be reached.
+- [x] Tests: the order of sources, key verification, the worker path.
 
 ## R1 — Relays: inboxes by Account ID, account-signed sends (relay first: `www`, `messenger`)
 
