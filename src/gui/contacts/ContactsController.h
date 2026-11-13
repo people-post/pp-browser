@@ -192,6 +192,13 @@ public:
     bool starred = false;
     /** Its Refresh runs (the button reads "Refreshing…" and a press does nothing). */
     bool refreshing = false;
+    /** "Share with others" (a friend's page): the id the account text names (relay, else account), the locator the
+     *  QR code and the text carry (empty without an Account ID), and which of the two choices exist. The friend's own
+     *  nickname goes into both, never the remark. */
+    std::string share_account_id;
+    std::string share_locator;
+    bool can_share_account = false;
+    bool can_share_qr = false;
   };
 
   bool RegisterModel(ui::Context* context);
@@ -315,6 +322,14 @@ public:
   /** Which buttons the page shows (tests): the share button, and the save button's words (empty: hidden). */
   bool QrPageCanShare() const { return qr_can_share_; }
   std::string QrPageSaveLabel() const { return qr_save_label_.c_str(); }
+  /** The selected friend's QR code in the same page (his own nickname under it); a toast when he has no account. */
+  void OpenSelectedFriendQr();
+  /** The friend page's "Share with others" sheet: account text, card into a chat, QR code (each only when it can be). */
+  std::vector<ContextMenuAction> ShareFriendActions(ui::Vector2i position);
+  /** The text "Share account" hands over for the selected friend (his nickname and Account ID, never the remark). */
+  std::string FriendShareText() const;
+  /** Share it through the system sheet; copied with a pill where there is none. */
+  void OnShareFriendAccount();
   /** The QR page's buttons: the picture through the system sheet, or saved (photos / a file). */
   void OnShareQrImage(ShareAnchor anchor);
   void OnSaveQrImage();
@@ -362,6 +377,7 @@ private:
   void DirtyAddContact();
   void CloseAddContactPage();
   void OpenMyQrPage();
+  void OnShareFriend(ui::Vector2i position);
   void OnMyQrDismissed();
   /** A directory hit chosen (or the only hit of a typed query): already a contact, ask first, or add. */
   void OfferHit(const mesh::DirectoryHit& hit, const std::string& query);

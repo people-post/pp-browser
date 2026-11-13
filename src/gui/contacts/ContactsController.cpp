@@ -265,6 +265,15 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   }
   detail.trust = TrustDisplayLabel(contact.trust).c_str();
   detail.trust_key = TrustLevelToString(contact.trust).c_str();
+  {
+    // "Share with others": the id the account text names is the relay id like the user's own invite (else the account
+    // id); the locator needs the Account ID. Both carry the friend's own nickname, never the remark.
+    const std::string relay_id = detail.relay_id.c_str();
+    detail.share_account_id = !relay_id.empty() ? relay_id : ContactAccountId(contact).value_or("");
+    detail.share_locator = ContactShareLocator(contact);
+    detail.can_share_account = !detail.share_account_id.empty();
+    detail.can_share_qr = !detail.share_locator.empty();
+  }
   if (ports.contact_icon_local_path) {
     const std::string path = ports.contact_icon_local_path(contact);
     if (!path.empty()) {
@@ -614,6 +623,8 @@ bool ContactsController::RegisterModel(ui::Context* context) {
           detail_handle.RegisterMember("member_preview", &ContactDetail::member_preview);
           detail_handle.RegisterMember("member_from_dm", &ContactDetail::member_from_dm);
           detail_handle.RegisterMember("starred", &ContactDetail::starred);
+          detail_handle.RegisterMember("can_share_account", &ContactDetail::can_share_account);
+          detail_handle.RegisterMember("can_share_qr", &ContactDetail::can_share_qr);
         }
         ctor.Bind("contacts", &controller.contacts_);
         ctor.Bind("contact_sections", &controller.contact_sections_);
@@ -661,6 +672,9 @@ bool ContactsController::RegisterModel(ui::Context* context) {
         ctor.BindEventCallback("block_member", DataEvent<>([this]() { OnBlockMember(); }));
         ctor.BindEventCallback("copy_contact_id", &ContactsController::CopyIdCallback);
         ctor.BindEventCallback("share_contact", &ContactsController::ShareContactCallback);
+        ctor.BindEventCallback("share_friend", [](ui::DataModelHandle, ui::Event& ev, const ui::VariantList&) {
+          Instance().OnShareFriend(MenuPositionBelowEvent(ev));
+        });
         ctor.BindEventCallback("share_qr_image",
                                DataEventAt([this](ui::Event& ev) { OnShareQrImage(ShareAnchorFromEvent(ev)); }));
         ctor.BindEventCallback("save_qr_image", DataEvent<>([this]() { OnSaveQrImage(); }));
@@ -3046,6 +3060,69 @@ void ContactsController::OnQrImageSaved(const ImageSaveResult result) {
     case ImageSaveResult::Cancelled:
       break;
   }
+}
+
+// A friend's QR code in the same sheet: his Account ID and his own nickname (never the remark), so a scan adds him.
+void ContactsController::OpenSelectedFriendQr() {
+  if (selected_.id.empty() || !selected_.can_share_qr) {
+    ShowToast(Tr("contacts.share.no_account"));
+    return;
+  }
+  const std::string name =
+      selected_.nickname.empty() ? std::string(selected_.short_id.c_str()) : std::string(selected_.nickname.c_str());
+  OpenQrPage(QrOwner::Friend, name, selected_.share_locator, Tr("contacts.friend_qr_hint"));
+}
+
+std::string ContactsController::FriendShareText() const {
+  return FriendInviteText(selected_.nickname.c_str(), selected_.share_account_id, selected_.share_locator);
+}
+
+void ContactsController::OnShareFriendAccount() {
+  if (!selected_.can_share_account) {
+    ShowToast(Tr("contacts.share.no_account"));
+    return;
+  }
+  ShareInviteOrCopy(
+      FriendShareText(),
+      [](const std::string& text, const ShareAnchor at) { return PlatformShareText(Backend::GetWindow(), text, at); },
+      {},
+      [](const std::string& text) {
+        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+          system->SetClipboardText(text.c_str());
+        }
+      });
+}
+
+std::vector<ContextMenuAction> ContactsController::ShareFriendActions(const ui::Vector2i position) {
+  std::vector<ContextMenuAction> actions;
+  if (selected_.id.empty()) {
+    return actions;
+  }
+  if (selected_.can_share_account) {
+    actions.push_back({.id = "share_friend_account",
+                       .label = Tr("contacts.share_others.account"),
+                       .run = []() { ContactsController::Instance().OnShareFriendAccount(); },
+                       .detail = Tr("contacts.share_others.account_detail")});
+  }
+  actions.push_back({.id = "share_friend_card",
+                     .label = Tr("contacts.share_others.card"),
+                     .run = [position]() { ContactsController::Instance().OnShareContact(position); },
+                     .detail = Tr("contacts.share_others.card_detail")});
+  if (selected_.can_share_qr) {
+    actions.push_back({.id = "share_friend_qr",
+                       .label = Tr("contacts.share_others.qr"),
+                       .run = []() { ContactsController::Instance().OpenSelectedFriendQr(); },
+                       .detail = Tr("contacts.share_others.qr_detail")});
+  }
+  return actions;
+}
+
+void ContactsController::OnShareFriend(const ui::Vector2i position) {
+  std::vector<ContextMenuAction> actions = ShareFriendActions(position);
+  if (actions.empty()) {
+    return;
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, Tr("contacts.share_others.title"));
 }
 
 void ContactsController::OnMyQrDismissed() {

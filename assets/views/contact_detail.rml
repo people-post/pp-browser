@@ -155,9 +155,9 @@
             </button>
           </span>
         </div>
-        <button class="cd-row" type="button" data-event-click="share_contact()">
+        <button class="cd-row" type="button" data-event-click="share_friend()">
           <span class="cd-row-body">
-            <span class="cd-row-text">{{i18n:common.share}}</span>
+            <span class="cd-row-text">{{i18n:contacts.share_others.row}}</span>
             <svg class="cd-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
           </span>
         </button>
