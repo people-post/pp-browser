@@ -1263,7 +1263,7 @@
     "ask_ai.open_in_chat": "Open in AI chat",
     "ask_ai.privacy": "What you type and the pictures you pick go to the AI. Your chats are not sent along.",
     "ask_ai.reminder": "What you send to the AI leaves your device. Keep private things to yourself.",
-    "ask_ai.intro.body": "Chats with friends are private. The AI is different: what you send it leaves your device. To keep something private, don't tell it passwords, your recovery phrase or anything you'd rather nobody knew.",
+    "ask_ai.intro.body": "Chats with friends are private. The AI is different: what you send it leaves your device. To keep something private, don't tell it passwords, your recovery phrase or anything you'd rather nobody knew. For more privacy you can switch to your own AI (one you host, or one running on your own computer). Just ask the AI how.",
     "ask_ai.intro.ok": "Got it",
     "ask_ai.once_title": "About this setting",
     "ask_ai.empty": "Ask anything, without leaving this page.",
