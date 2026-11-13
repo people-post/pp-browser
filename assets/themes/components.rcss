@@ -8122,6 +8122,42 @@ input.checkbox {
   padding: 0 16dp;
 }
 
+/* Chats' large title row holds your avatar (40dp, in a 44dp tap area; its left edge is on the 16dp margin). */
+.shell-layer-compact .sidebar-sessions .chat-me {
+  display: block;
+  width: 44dp;
+  height: 44dp;
+  margin: 4dp 0 0 -2dp;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.chat-me-avatar,
+.pane-nav-me-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.chat-me-avatar {
+  width: 40dp;
+  height: 40dp;
+  margin: 2dp;
+  border-radius: 20dp;
+}
+
+.chat-me-image {
+  width: 40dp;
+  height: 40dp;
+}
+
+.chat-me-avatar .avatar-letter {
+  font-size: 17dp;
+}
+
 .shell-layer-compact .chat-search {
   position: relative;
   display: flex;
@@ -14955,6 +14991,45 @@ textarea:composing ~ .prompt-composer-label,
   top: 2dp;
   right: 12dp;
   height: 52dp;
+}
+
+/* Chats' small bar: your 28dp avatar on the left (44dp tap area) fades in with the bar once the large one has scrolled
+   away; while clear it must not catch taps. */
+.shell-layer-compact .pane-nav-me {
+  position: absolute;
+  top: 6dp;
+  left: 12dp;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s cubic-out;
+}
+
+.shell-nav-page.large-title-collapsed .pane-nav-me {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pane-nav-me-avatar {
+  width: 28dp;
+  height: 28dp;
+  margin: 8dp;
+  border-radius: 14dp;
+}
+
+.pane-nav-me-image {
+  width: 28dp;
+  height: 28dp;
+}
+
+.pane-nav-me-avatar .avatar-letter {
+  font-size: 12dp;
 }
 
 .shell-layer-compact .pane-nav-back,

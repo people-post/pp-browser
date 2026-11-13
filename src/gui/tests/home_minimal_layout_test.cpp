@@ -274,9 +274,10 @@ TEST_F(HomeMinimalLayoutTest, BlockReturnsWhenTheKeyboardOrEmojiSheetGoesAway) {
   }
 }
 
-// The Chats header (sidebar.rml's .pane-nav) on a phone: a 56dp bar holding the compose button at the right, and the
-// scroller's content under it starting with the large title ("Chats") and then the search box. Chrome rules: the avatar,
-// the name and the link status are not on this page (they live in the AI drawer's "you" row). Bindings stripped.
+// The Chats header (sidebar.rml's .pane-nav) on a phone: a 56dp bar holding the compose button at the right and your
+// small avatar at the left, and the scroller's content under it starting with the large title row (your 40dp avatar,
+// no words) and then the search box. The name and the link status are not on this page (they live in the AI drawer's
+// "you" row). Bindings stripped.
 class ChatsHeaderTest : public HomeMinimalLayoutTest {
 protected:
   void LoadChats(const int top_inset_dp) {
@@ -291,14 +292,19 @@ protected:
     std::string bar = sidebar.substr(bar_begin, sidebar.find("<div class=\"sidebar-header row\">") - bar_begin);
     bar = std::regex_replace(bar, std::regex("<!--[\\s\\S]*?-->"), "");
     bar = std::regex_replace(bar, std::regex("\\s+data-[a-z-]+=\"[^\"]*\""), "");
-    bar = std::regex_replace(bar, std::regex("\\{\\{[^}]*\\}\\}"), "Chats");
+    bar = std::regex_replace(bar, std::regex("\\{\\{[^}]*\\}\\}"), "C");
+    const size_t title_begin = sidebar.find("<div class=\"large-title\">");
+    std::string title = sidebar.substr(title_begin, sidebar.find("<div class=\"chat-search\">") - title_begin);
+    title = std::regex_replace(title, std::regex("<!--[\\s\\S]*?-->"), "");
+    title = std::regex_replace(title, std::regex("\\s+data-[a-z-]+=\"[^\"]*\""), "");
+    title = std::regex_replace(title, std::regex("\\{\\{[^}]*\\}\\}"), "C");
     const std::string rml =
         "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
         Asset("themes/colors-light.rcss") +
         "</style></head><body style=\"padding: 0;\">"
         "<div class=\"shell-layer-compact\" style=\"position: absolute; left: 0dp; width: 390dp; height: 800dp; top: " +
         std::to_string(top_inset_dp) + "dp;\"><div class=\"sidebar-panel\">" + bar +
-        "<div class=\"sidebar-sessions root-scroll\"><p class=\"large-title\">Chats</p>"
+        "<div class=\"sidebar-sessions root-scroll\">" + title +
         "<div class=\"chat-search\"><input type=\"text\" class=\"chat-search-input\"/></div>"
         "</div></div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml);
@@ -315,15 +321,76 @@ protected:
   static ui::Vector2f SizeOf(ui::Element* e) { return e->GetBox().GetSize(ui::BoxArea::Border); }
 };
 
-TEST_F(ChatsHeaderTest, HasNoAvatarNameOrStatusLine) {
+TEST_F(ChatsHeaderTest, TitleRowIsYourAvatarButtonAndNothingElse) {
   const std::string rml = Asset("views/sidebar.rml");
-  const std::string bar = rml.substr(0, rml.find("<div class=\"sidebar-header row\">"));
-  for (const char* gone :
-       {"pane-nav-avatar", "shell-circle-avatar", "profile_nickname", "chats_link_state", "pane-nav-plus"}) {
+  const size_t bar_end = rml.find("<div class=\"sidebar-header row\">");
+  const std::string bar = rml.substr(0, bar_end);
+  for (const char* gone : {"pane-nav-avatar", "shell-circle-avatar", "profile_nickname", "chats_link_state",
+                           "pane-nav-plus", "pane-nav-title", "nav.sessions"}) {
     EXPECT_EQ(bar.find(gone), std::string::npos) << gone;
   }
   EXPECT_NE(bar.find("open_new_session_menu()"), std::string::npos);
   EXPECT_NE(bar.find("compose.svg"), std::string::npos);
+
+  const size_t title = rml.find("<div class=\"large-title\">", bar_end);
+  const size_t search = rml.find("<div class=\"chat-search\">", bar_end);
+  ASSERT_NE(title, std::string::npos);
+  ASSERT_LT(title, search);
+  const std::string row = rml.substr(title, search - title);
+  EXPECT_NE(row.find("<button class=\"chat-me\" type=\"button\" data-model=\"window\" "
+                     "data-event-click=\"open_settings_from_avatar()\">"),
+            std::string::npos)
+      << "the button is in the window model, where the event lives";
+  EXPECT_NE(row.find("class=\"chat-me-avatar\" data-model=\"settings\""), std::string::npos);
+  EXPECT_NE(row.find("profile_icon_src"), std::string::npos);
+  EXPECT_NE(row.find("profile_avatar_letter"), std::string::npos);
+  EXPECT_EQ(row.find("nav.sessions"), std::string::npos) << "no words in the title row";
+  EXPECT_EQ(row.find("profile_nickname"), std::string::npos);
+  EXPECT_EQ(row.find("chats_link"), std::string::npos);
+  EXPECT_EQ(row.find("<p class=\"large-title\">"), std::string::npos);
+}
+
+TEST_F(ChatsHeaderTest, SmallBarHoldsTheAvatarNotTheTitle) {
+  const std::string rml = Asset("views/sidebar.rml");
+  const std::string bar = rml.substr(0, rml.find("<div class=\"sidebar-header row\">"));
+  EXPECT_NE(bar.find("<button class=\"pane-nav-me\" type=\"button\" data-model=\"window\" "
+                     "data-event-click=\"open_settings_from_avatar()\">"),
+            std::string::npos);
+  EXPECT_NE(bar.find("class=\"pane-nav-me-avatar\" data-model=\"settings\""), std::string::npos);
+  const std::string css = Asset("themes/components.rcss");
+  const size_t rule = css.find(".shell-layer-compact .pane-nav-me {");
+  ASSERT_NE(rule, std::string::npos);
+  const std::string block = css.substr(rule, css.find('}', rule) - rule);
+  EXPECT_NE(block.find("opacity: 0;"), std::string::npos);
+  EXPECT_NE(block.find("pointer-events: none;"), std::string::npos) << "not tappable while clear";
+  const size_t shown = css.find(".shell-nav-page.large-title-collapsed .pane-nav-me {");
+  ASSERT_NE(shown, std::string::npos);
+  const std::string shown_block = css.substr(shown, css.find('}', shown) - shown);
+  EXPECT_NE(shown_block.find("opacity: 1;"), std::string::npos);
+  EXPECT_NE(shown_block.find("pointer-events: auto;"), std::string::npos);
+}
+
+TEST_F(ChatsHeaderTest, AvatarSizesAndPlaces) {
+  LoadChats(0);
+  ui::Element* big = One("chat-me");
+  ui::Element* big_face = One("chat-me-avatar");
+  ui::Element* small = One("pane-nav-me");
+  ui::Element* small_face = One("pane-nav-me-avatar");
+  ASSERT_NE(big, nullptr);
+  ASSERT_NE(big_face, nullptr);
+  ASSERT_NE(small, nullptr);
+  ASSERT_NE(small_face, nullptr);
+  EXPECT_FLOAT_EQ(SizeOf(big).x, 44.f);
+  EXPECT_FLOAT_EQ(SizeOf(big).y, 44.f);
+  EXPECT_FLOAT_EQ(SizeOf(big_face).x, 40.f);
+  EXPECT_FLOAT_EQ(SizeOf(big_face).y, 40.f);
+  EXPECT_FLOAT_EQ(big_face->GetAbsoluteOffset(ui::BoxArea::Border).x, 16.f) << "the avatar is on the 16dp margin";
+  EXPECT_FLOAT_EQ(SizeOf(small).x, 44.f);
+  EXPECT_FLOAT_EQ(SizeOf(small).y, 44.f);
+  EXPECT_FLOAT_EQ(SizeOf(small_face).x, 28.f);
+  EXPECT_FLOAT_EQ(SizeOf(small_face).y, 28.f);
+  EXPECT_LT(small->GetAbsoluteOffset(ui::BoxArea::Border).x, 20.f) << "at the left of the bar";
+  EXPECT_EQ(small->GetComputedValues().opacity(), 0.f) << "clear until the large avatar has scrolled away";
 }
 
 TEST_F(ChatsHeaderTest, ComposeButtonSitsAtTheTopRight) {
@@ -358,7 +425,7 @@ TEST_F(ChatsHeaderTest, BarIs56dpAndTheLargeTitleThenTheSearchBoxScrollUnderIt) 
     EXPECT_FLOAT_EQ(scroller->GetComputedValues().padding_top().value, 56.f) << "the list clears the bar";
     const float bar_bottom = bar->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(bar).y;
     EXPECT_GE(title->GetAbsoluteOffset(ui::BoxArea::Border).y, bar_bottom - 0.5f) << "the title starts below the bar";
-    EXPECT_FLOAT_EQ(title->GetComputedValues().font_size(), 34.f);
+    EXPECT_FLOAT_EQ(SizeOf(title).y, 52.f) << "the title row keeps its height (the collapse threshold)";
     EXPECT_GE(search->GetAbsoluteOffset(ui::BoxArea::Border).y,
               title->GetAbsoluteOffset(ui::BoxArea::Border).y + SizeOf(title).y - 0.5f)
         << "the search box is under the title";

@@ -2,7 +2,21 @@
   <div class="pane-nav">
     <div class="pane-nav-bg"></div>
     <div class="bar-fade"></div>
-    <p class="pane-nav-title">{{i18n:nav.sessions}}</p>
+    <!-- You: the small bar's avatar fades in at the left once the large one has scrolled away; Settings (not tappable while clear). -->
+    <button class="pane-nav-me" type="button" data-model="window" data-event-click="open_settings_from_avatar()">
+      <div class="pane-nav-me-avatar" data-model="settings"
+           data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
+           data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
+           data-class-avatar-tone-2="!profile_has_icon && profile_avatar_tone == 2"
+           data-class-avatar-tone-3="!profile_has_icon && profile_avatar_tone == 3"
+           data-class-avatar-tone-4="!profile_has_icon && profile_avatar_tone == 4"
+           data-class-avatar-tone-5="!profile_has_icon && profile_avatar_tone == 5"
+           data-class-avatar-tone-6="!profile_has_icon && profile_avatar_tone == 6"
+           data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
+        <img class="pane-nav-me-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
+        <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
+      </div>
+    </button>
     <div class="pane-nav-actions row">
       <button class="pane-nav-btn" type="button" data-event-click="open_new_session_menu()">
         <svg src="../icons/v2/compose.svg" width="24" height="24"></svg>
@@ -18,7 +32,23 @@
     </div>
   </div>
   <div id="sidebar-sessions" class="sidebar-sessions root-scroll" data-event-scroll="sessions_scroll()">
-    <p class="large-title">{{i18n:nav.sessions}}</p>
+    <!-- You: your avatar where the large "Chats" title was (no name, no status line) → Settings. -->
+    <div class="large-title">
+      <button class="chat-me" type="button" data-model="window" data-event-click="open_settings_from_avatar()">
+        <div class="chat-me-avatar" data-model="settings"
+           data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
+           data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
+           data-class-avatar-tone-2="!profile_has_icon && profile_avatar_tone == 2"
+           data-class-avatar-tone-3="!profile_has_icon && profile_avatar_tone == 3"
+           data-class-avatar-tone-4="!profile_has_icon && profile_avatar_tone == 4"
+           data-class-avatar-tone-5="!profile_has_icon && profile_avatar_tone == 5"
+           data-class-avatar-tone-6="!profile_has_icon && profile_avatar_tone == 6"
+           data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
+        <img class="chat-me-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
+        <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
+      </div>
+      </button>
+    </div>
     <div class="chat-search">
       <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
       <input class="chat-search-input" type="text" data-value="sessions_query"

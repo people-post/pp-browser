@@ -215,17 +215,20 @@ TEST(NewChatPageTest, PageIsTheGroupedLookWithTwoCardsAndRoundedGroups) {
   EXPECT_NE(rml.find("class=\"nc-group\""), std::string::npos);
 }
 
-// The Chats bar is the plain large-title layout: small title (shown once collapsed), compose button, and a large title
-// at the top of the list; no avatar or nickname.
+// The Chats bar is the large-title layout with your avatar in place of the words: the small bar has your small avatar
+// (shown once collapsed) and the compose button; the title row has your avatar button; no name anywhere.
 TEST(NewChatPageTest, ChatsBarIsTheLargeTitleLayout) {
   const std::string rml = ReadAsset("views/sidebar.rml");
   const size_t bar_end = rml.find("<div class=\"sidebar-header row\">");
   const std::string bar = rml.substr(0, bar_end);
-  EXPECT_NE(bar.find("class=\"pane-nav-title\""), std::string::npos);
+  EXPECT_NE(bar.find("class=\"pane-nav-me\""), std::string::npos);
+  EXPECT_EQ(bar.find("class=\"pane-nav-title\""), std::string::npos);
   EXPECT_NE(bar.find("open_new_session_menu()"), std::string::npos);
   EXPECT_EQ(bar.find("pane-nav-avatar"), std::string::npos);
   EXPECT_EQ(bar.find("{{profile_nickname}}"), std::string::npos);
-  EXPECT_NE(rml.find("<p class=\"large-title\">{{i18n:nav.sessions}}</p>"), std::string::npos);
+  EXPECT_NE(rml.find("<div class=\"large-title\">"), std::string::npos);
+  EXPECT_NE(rml.find("class=\"chat-me\""), std::string::npos);
+  EXPECT_EQ(rml.find("<p class=\"large-title\">"), std::string::npos);
 }
 
 TEST(NewChatPageTest, ColoursComeFromTokensOnly) {

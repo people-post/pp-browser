@@ -73,7 +73,7 @@ TEST(LargeTitleRules, ThresholdCanBeOverriddenPerScroller) {
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   }();
   EXPECT_EQ(rml.find("collapse-at"), std::string::npos) << "Chats uses the default threshold";
-  EXPECT_NE(rml.find("<p class=\"large-title\">"), std::string::npos) << "Chats has a large title to collapse";
+  EXPECT_NE(rml.find("<div class=\"large-title\">"), std::string::npos) << "Chats has a large title row to collapse";
 }
 
 TEST_F(LargeTitleTest, ValueChangesAndTheNavPageFollows) {
