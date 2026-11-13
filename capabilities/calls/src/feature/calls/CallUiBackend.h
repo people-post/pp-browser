@@ -103,7 +103,7 @@ public:
   /** Reads the display rotation here, on UI (L012), and hands it to the owner. */
   void SetLocalVideoEnabled(bool enabled, std::function<void(Roe<void>)> on_done = {});
   /** CallSessionManager::SetLocalOnHold / SetLocalVideoPaused (the rotation read here, as for the camera). */
-  void SetLocalOnHold(bool on_hold, std::function<void(Roe<void>)> on_done = {});
+  void SetLocalOnHold(bool on_hold, std::optional<bool> muted, std::function<void(Roe<void>)> on_done = {});
   void SetLocalVideoPaused(bool paused, std::function<void(Roe<void>)> on_done = {});
 
   // --- Durable state (stores, read-only) ---------------------------------------------------------

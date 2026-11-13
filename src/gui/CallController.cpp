@@ -192,13 +192,13 @@ CallLocalHold::Ports CallController::LocalHoldPorts() {
     auto* backend = Backend();
     return backend && backend->Available() && backend->Media().IsCameraEnabled();
   };
-  ports.publish_hold = [this](const bool on_hold, std::function<void(Roe<void>)> done) {
+  ports.publish_hold = [this](const bool on_hold, const std::optional<bool> mute, std::function<void(Roe<void>)> done) {
     auto* backend = Backend();
     if (!backend || !backend->Available()) {
       done(Error("calls unavailable"));
       return;
     }
-    backend->SetLocalOnHold(on_hold, std::move(done));
+    backend->SetLocalOnHold(on_hold, mute, std::move(done));
   };
   ports.set_mic_muted = [this](const bool muted) {
     if (auto* backend = Backend(); backend && backend->Available()) {

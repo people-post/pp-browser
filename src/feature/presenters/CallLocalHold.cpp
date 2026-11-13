@@ -1,5 +1,6 @@
 #include "feature/presenters/CallLocalHold.h"
 
+#include <optional>
 #include <utility>
 
 namespace pbr {
@@ -18,7 +19,7 @@ void CallLocalHold::Sync(const Facts& facts) {
     WatchUserUnmute();
   }
   if (held != on_hold_) {
-    Transition(held, in_call, facts.foreground);
+    Transition(held, in_call, facts.foreground, facts.now_ms);
   }
   PublishIfOwed(in_call, facts.now_ms);
 }
@@ -41,7 +42,7 @@ void CallLocalHold::WatchUserUnmute() {
   }
 }
 
-void CallLocalHold::Transition(const bool held, const bool in_call, const bool foreground) {
+void CallLocalHold::Transition(const bool held, const bool in_call, const bool foreground, const int64_t now_ms) {
   on_hold_ = held;
   hold_mute_seen_applied_ = false;
   next_publish_ms_ = 0; // a change is told at once
@@ -53,10 +54,23 @@ void CallLocalHold::Transition(const bool held, const bool in_call, const bool f
   log().info << "call on hold=" << (held ? 1 : 0) << " (the OS " << (held ? "took" : "gave back") << " the audio)";
   // Privacy: nothing of the other call may reach this one through our mic; a mute the user made before stays.
   if (const auto mute = hold_mute_.Next(held, in_call && ports_.mic_muted()); mute && in_call) {
-    ports_.set_mic_muted(*mute);
+    // B221: the mic change and the hold reach the others as ONE roster (rosters carry no version, so two sent back to
+    // back can land in either order, and the stale one would keep the peer on "away"). It rides on the hold's publish
+    // when that goes out now; otherwise (one still in flight, or nothing to tell) the mic is changed at once — a mute
+    // never waits.
+    if (!publishing_ && told_on_hold_ != held) {
+      pending_mute_ = mute;
+    } else {
+      ports_.set_mic_muted(*mute);
+    }
     if (!*mute) {
       ports_.note("call.status.on_hold_ended"); // the hold opened the mic again: say so
     }
+  }
+  // Told before the camera moves: every roster that leaves after this already says the final on_hold.
+  PublishIfOwed(in_call, now_ms);
+  if (pending_mute_) { // the publish did not go out after all
+    ports_.set_mic_muted(*std::exchange(pending_mute_, std::nullopt));
   }
   // The camera rests meanwhile, as in the background; still in the background at the end, OnAppForeground brings it.
   if (held && !camera_paused_ && ports_.camera_on()) {
@@ -75,18 +89,20 @@ void CallLocalHold::PublishIfOwed(const bool in_call, const int64_t now_ms) {
   publishing_ = true;
   next_publish_ms_ = now_ms + kPublishRetryMs;
   const bool on_hold = on_hold_;
-  ports_.publish_hold(on_hold, [this, weak = std::weak_ptr<int>(alive_), gen = call_gen_, on_hold](Roe<void> told) {
-    if (!weak.lock() || gen != call_gen_) {
-      return; // gone, or about another call
-    }
-    publishing_ = false;
-    if (told) {
-      told_on_hold_ = on_hold;
-    } else {
-      // No call media yet (ringing out): the next tick past the retry time tells it again.
-      log().debug << "call on hold=" << (on_hold ? 1 : 0) << " not told yet: " << told.error().message;
-    }
-  });
+  const std::optional<bool> mute = std::exchange(pending_mute_, std::nullopt);
+  ports_.publish_hold(
+      on_hold, mute, [this, weak = std::weak_ptr<int>(alive_), gen = call_gen_, on_hold](Roe<void> told) {
+        if (!weak.lock() || gen != call_gen_) {
+          return; // gone, or about another call
+        }
+        publishing_ = false;
+        if (told) {
+          told_on_hold_ = on_hold;
+        } else {
+          // No call media yet (ringing out): the next tick past the retry time tells it again.
+          log().debug << "call on hold=" << (on_hold ? 1 : 0) << " not told yet: " << told.error().message;
+        }
+      });
 }
 
 void CallLocalHold::OnAppBackground() {
