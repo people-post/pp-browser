@@ -13604,9 +13604,48 @@ textarea:composing ~ .prompt-composer-label,
 
 .shell-layer-compact .settings-mock .me-profile-head {
   display: flex;
-  flex-direction: row;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
   margin: 8dp 16dp 0 16dp;
+}
+
+/* Under the big photo (mockup 35, plan A): the blue "Change photo" text (a 44dp target), the big name, one grey line.
+   Colours: colors.rcss.tmpl. */
+.shell-layer-compact .settings-mock .me-profile-phone-head {
+  width: 100%;
+  text-align: center;
+}
+
+.shell-layer-compact .settings-mock .me-profile-change {
+  display: inline-block;
+  height: 44dp;
+  margin: 4dp 0 0 0;
+  padding: 0 16dp;
+  border: 0;
+  background-color: transparent;
+  font-size: 17dp;
+  line-height: 44dp;
+  cursor: pointer;
+}
+
+.shell-layer-compact .settings-mock .me-profile-name {
+  margin: 6dp 16dp 0 16dp;
+  font-size: 22dp;
+  line-height: 28dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .settings-mock .me-profile-name--empty {
+  font-weight: normal;
+}
+
+.shell-layer-compact .settings-mock .me-profile-caption {
+  margin: 4dp 16dp 0 16dp;
+  font-size: 13dp;
+  line-height: 18dp;
 }
 
 /* The nickname row: label at the left, the field at the right (the mockup's edit row). */

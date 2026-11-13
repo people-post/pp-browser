@@ -25,8 +25,23 @@
           </button>
           </div>
         </div>
+        <div class="me-profile-phone-head settings-phone-only">
+          <button class="me-profile-change" type="button" data-event-click="pick_profile_icon()"
+                  data-attrif-disabled="profile_icon_uploading">{{i18n:settings.profile.change_photo}}</button>
+          <p class="me-profile-name" data-if="profile_nickname != ''">{{profile_nickname}}</p>
+          <p class="me-profile-name me-profile-name--empty" data-if="profile_nickname == ''">{{i18n:settings.profile.nickname_placeholder}}</p>
+          <p class="me-profile-caption">{{i18n:settings.profile.name_caption}}</p>
         </div>
-        <div class="group-card">
+        </div>
+        <div class="group-card settings-phone-only">
+          <div class="group-row group-row--static">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.nickname}}</span></span>
+              <span class="group-row-value">{{profile_nickname}}</span>
+            </span>
+          </div>
+        </div>
+        <div class="group-card settings-desktop-only">
           <label class="settings-field group-row group-row--field">
             <span class="group-row-body group-row-body--field">
               <span class="settings-label group-row-text">{{i18n:settings.nickname}}</span>
@@ -37,6 +52,7 @@
             </span>
           </label>
         </div>
+        <p class="text group-head settings-phone-only">{{i18n:settings.profile.account_group}}</p>
         <div class="group-card settings-phone-only">
           <div class="group-row group-row--static">
             <span class="group-row-body">
@@ -45,21 +61,6 @@
               <span class="group-row-value" data-if="profile_relay_id == ''">{{i18n:settings.profile.id_none}}</span>
             </span>
           </div>
-          <button class="group-row" type="button" data-event-click="copy_profile_id()">
-            <span class="group-row-body">
-              <span class="group-row-label"><span class="group-row-text">{{i18n:contacts.copy_id}}</span></span>
-            </span>
-          </button>
-          <div class="group-row group-row--static" data-if="advanced && profile_peer_id != ''">
-            <span class="group-row-body">
-              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.profile.node_id_row}}</span></span>
-              <span class="group-row-value">{{profile_peer_id}}</span>
-            </span>
-          </div>
-        </div>
-        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.profile.id_help}}</p>
-        <p class="text group-head settings-phone-only">{{i18n:settings.profile.account_group}}</p>
-        <div class="group-card settings-phone-only">
           <div class="group-row group-row--static">
             <span class="group-row-body">
               <span class="group-row-label"><span class="group-row-text">{{i18n:settings.profile.registration_row}}</span></span>
@@ -82,7 +83,14 @@
               </button>
             </span>
           </div>
+          <div class="group-row group-row--static" data-if="advanced && profile_peer_id != ''">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.profile.node_id_row}}</span></span>
+              <span class="group-row-value">{{profile_peer_id}}</span>
+            </span>
+          </div>
         </div>
+        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.profile.id_foot}}</p>
         <div class="group-card group-card--pad settings-desktop-only">
         <p class="text muted me-profile-meta group-note" data-if="advanced && profile_peer_id != ''">
           {{i18n:settings.profile.peer_id_label}} <span>{{profile_peer_id}}</span>

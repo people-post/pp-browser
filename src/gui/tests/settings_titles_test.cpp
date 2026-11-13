@@ -152,15 +152,12 @@ TEST(SettingsTitlesTest, TheMeCardTextIsLabelledInBothLanguages) {
 TEST(SettingsTitlesTest, TheProfilePageFollowsTheMockupAndKeepsItsAccountGates) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
   EXPECT_NE(rml.find("settings-section--grouped settings-mock stack"), std::string::npos);
-  // The id group on the phone: the id, then Copy; Share and the QR code moved to the Me card's tiles. The desktop's
-  // own button row keeps its Copy, Share and QR buttons.
-  const size_t id = rml.find("{{i18n:settings.profile.id_row}}");
-  const size_t copy = rml.find("copy_profile_id()", id);
-  ASSERT_NE(id, std::string::npos);
-  EXPECT_LT(id, copy);
+  // The phone's blocks have no Copy row any more (the Me card has Copy, Share and QR); the desktop's own button row
+  // keeps its Copy, Share and QR buttons.
   const size_t desktop = rml.find("<div class=\"me-profile-actions row\">");
   ASSERT_NE(desktop, std::string::npos);
   const std::string phone_part = rml.substr(0, desktop);
+  EXPECT_EQ(phone_part.find("copy_profile_id()"), std::string::npos);
   EXPECT_EQ(phone_part.find("share_profile()"), std::string::npos);
   EXPECT_EQ(phone_part.find("toggle_profile_qr()"), std::string::npos);
   EXPECT_EQ(phone_part.find("profile_qr_svg_rml"), std::string::npos) << "no inline QR on the phone page";
@@ -172,7 +169,8 @@ TEST(SettingsTitlesTest, TheProfilePageFollowsTheMockupAndKeepsItsAccountGates) 
   EXPECT_LT(d_share, d_qr);
   EXPECT_NE(rml.find("settings-desktop-only", d_qr - 300), std::string::npos);
   EXPECT_EQ(rml.find("group-id-btn"), std::string::npos);
-  EXPECT_NE(rml.find("{{i18n:settings.profile.id_help}}"), std::string::npos);
+  EXPECT_NE(rml.find("{{i18n:settings.profile.id_foot}}"), std::string::npos);
+  EXPECT_EQ(rml.find("settings.profile.id_help"), std::string::npos);
   // The account group keeps today's gates: status for everyone, expiry and auto-renew behind the advanced flag,
   // the register button behind its own binding; nothing was un-gated.
   EXPECT_NE(rml.find("data-if=\"advanced && profile_registration_expires != ''\""), std::string::npos);

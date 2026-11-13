@@ -3804,6 +3804,19 @@ input.checkbox:checked {
   image-color: #ffffff;
 }
 
+.me-profile-change {
+  color: #0a84ff;
+}
+
+.me-profile-change:disabled {
+  color: #ebebf54c;
+}
+
+.me-profile-name--empty,
+.me-profile-caption {
+  color: #ebebf599;
+}
+
 .avatar-view-bg {
   background-color: #000000;
 }

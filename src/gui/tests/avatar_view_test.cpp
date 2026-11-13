@@ -47,7 +47,7 @@ TEST(AvatarViewMarkupTest, TheViewerShowsTheSquareAsStoredNotCircular) {
   EXPECT_EQ(rule.find("border-radius"), std::string::npos) << "no circular mask";
 }
 
-TEST(AvatarViewMarkupTest, TheProfilePhotoTapsTheViewerOrMenuAndTheCameraBadgeIsTheOnlyChangeButton) {
+TEST(AvatarViewMarkupTest, TheProfilePhotoTapsTheViewerOrMenuAndTheCameraBadgeAndChangePhotoAreTheOnlyChangeButtons) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
   EXPECT_NE(rml.find("<div class=\"me-profile-avatar-frame\" data-event-click=\"tap_profile_avatar()\""),
             std::string::npos);
@@ -57,8 +57,14 @@ TEST(AvatarViewMarkupTest, TheProfilePhotoTapsTheViewerOrMenuAndTheCameraBadgeIs
   EXPECT_NE(tag.find("data-event-click=\"pick_profile_icon()\""), std::string::npos);
   EXPECT_NE(tag.find("data-attrif-disabled=\"profile_icon_uploading\""), std::string::npos);
   EXPECT_NE(rml.find("../icons/v2/camera.svg"), std::string::npos);
-  // The camera badge is the only visible way to change the photo: no "Change photo" button any more.
-  EXPECT_EQ(rml.find("settings.profile.change_photo"), std::string::npos);
+  // The phone's blue "Change photo" text opens the same menu and is disabled while a photo uploads.
+  const size_t change = rml.find("<button class=\"me-profile-change\"");
+  ASSERT_NE(change, std::string::npos);
+  const std::string change_tag = rml.substr(change, rml.find('>', change) - change);
+  EXPECT_NE(change_tag.find("data-event-click=\"pick_profile_icon()\""), std::string::npos);
+  EXPECT_NE(change_tag.find("data-attrif-disabled=\"profile_icon_uploading\""), std::string::npos);
+  EXPECT_NE(rml.find("{{i18n:settings.profile.change_photo}}", change), std::string::npos);
+  EXPECT_EQ(rml.find("<button class=\"me-profile-change\"", change + 1), std::string::npos) << "only one such button";
   EXPECT_EQ(rml.find("me-profile-avatar-btn"), std::string::npos);
 }
 
