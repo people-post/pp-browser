@@ -62,6 +62,17 @@ SettingsProfileActions::SettingsProfileActions(SettingsHost& host, const Setting
 void SettingsProfileActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("profile_qr_svg_rml", &qr_svg_rml_);
   ctor.Bind("profile_show_qr", &show_qr_);
+  ctor.Bind("profile_share_card_shown", &share_card_shown_);
+  ctor.BindEventCallback("show_my_qr", DataEvent<>([this]() {
+                           if (show_my_qr_) {
+                             show_my_qr_();
+                           }
+                         }));
+  ctor.BindEventCallback("share_profile_card", DataEvent<>([this]() {
+                           if (share_own_card_) {
+                             share_own_card_();
+                           }
+                         }));
   ctor.BindEventCallback("register_profile", DataEvent<>([this]() { Register(); }));
   ctor.BindEventCallback("rotate_brief_llm_key", DataEvent<>([this]() { RotateBriefLlmKey(); }));
   ctor.BindEventCallback("copy_profile_id", DataEvent<>([this]() { CopyId(); }));
@@ -124,6 +135,16 @@ Error ReconnectFailure(Error error) {
 
 void SettingsProfileActions::BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run) {
   run_when_registration_idle_ = std::move(run);
+}
+
+void SettingsProfileActions::BindShowMyQr(std::function<void()> show) {
+  show_my_qr_ = std::move(show);
+}
+
+void SettingsProfileActions::BindShareOwnCard(std::function<void()> share) {
+  share_own_card_ = std::move(share);
+  share_card_shown_ = static_cast<bool>(share_own_card_);
+  DataModelHost::Instance().Dirty("settings", "profile_share_card_shown");
 }
 
 void SettingsProfileActions::Register(const bool quiet_success, std::function<void(bool ok)> done) {

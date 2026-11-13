@@ -101,18 +101,65 @@ TEST(SettingsTitlesTest, PhoneHomeIsTextRowsWithAVersionLineAndTheAccountId) {
   EXPECT_NE(css.find(".shell-layer-compact .settings-mock .group-row-body {\n  min-height: 52dp;"), std::string::npos);
 }
 
+TEST(SettingsTitlesTest, TheMeCardHasThreeTilesShareAccountShareCardAndQr) {
+  // DEV/PLAN-fewer-taps-2.md commit 1: at the right end of the card's single row, in this order, each tile in the settings model with its event.
+  const std::string rml = ReadAsset("views/settings.rml");
+  const size_t row = rml.find("<div class=\"me-card-acts row\">");
+  ASSERT_NE(row, std::string::npos);
+  const size_t end = rml.find("</div>", row);
+  const std::string tiles = rml.substr(row, end - row);
+  const size_t account = tiles.find("data-event-click=\"share_profile()\"");
+  const size_t card = tiles.find("data-event-click=\"share_profile_card()\"");
+  const size_t qr = tiles.find("data-event-click=\"show_my_qr()\"");
+  ASSERT_NE(account, std::string::npos);
+  ASSERT_NE(card, std::string::npos);
+  ASSERT_NE(qr, std::string::npos);
+  EXPECT_LT(account, card);
+  EXPECT_LT(card, qr);
+  EXPECT_NE(tiles.find("{{i18n:settings.card.share_account}}"), std::string::npos);
+  EXPECT_NE(tiles.find("{{i18n:settings.card.share_card}}"), std::string::npos);
+  EXPECT_NE(tiles.find("{{i18n:settings.profile.show_qr}}"), std::string::npos);
+  // The card tile stays hidden until something sends my card (commit 2); the other two always show.
+  EXPECT_NE(tiles.find("data-if=\"profile_share_card_shown\" data-event-click=\"share_profile_card()\""),
+            std::string::npos);
+  // The old small share icon beside the name is gone; the copy icon stays.
+  EXPECT_EQ(rml.substr(0, row).find("share_profile()"), std::string::npos);
+  EXPECT_NE(rml.substr(0, row).find("copy_profile_id()"), std::string::npos);
+}
+
+TEST(SettingsTitlesTest, TheMeCardTilesAreLabelledInBothLanguages) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("settings.card.share_account"), "分享账号");
+  EXPECT_EQ(Tr("settings.card.share_card"), "分享名片");
+  EXPECT_EQ(Tr("settings.profile.show_qr"), "二维码");
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  EXPECT_EQ(Tr("settings.card.share_account"), "Share account");
+  EXPECT_EQ(Tr("settings.card.share_card"), "Share my card");
+}
+
 TEST(SettingsTitlesTest, TheProfilePageFollowsTheMockupAndKeepsItsAccountGates) {
   const std::string rml = ReadAsset("views/settings_section_profile.rml");
   EXPECT_NE(rml.find("settings-section--grouped settings-mock stack"), std::string::npos);
-  // The id group: the id, then Copy, Share and QR rows (the icon buttons are gone), the id help under it.
+  // The id group on the phone: the id, then Copy; Share and the QR code moved to the Me card's tiles. The desktop's
+  // own button row keeps its Copy, Share and QR buttons.
   const size_t id = rml.find("{{i18n:settings.profile.id_row}}");
   const size_t copy = rml.find("copy_profile_id()", id);
-  const size_t share = rml.find("share_profile()", copy);
-  const size_t qr = rml.find("toggle_profile_qr()", share);
   ASSERT_NE(id, std::string::npos);
   EXPECT_LT(id, copy);
-  EXPECT_LT(copy, share);
-  EXPECT_LT(share, qr);
+  const size_t desktop = rml.find("<div class=\"me-profile-actions row\">");
+  ASSERT_NE(desktop, std::string::npos);
+  const std::string phone_part = rml.substr(0, desktop);
+  EXPECT_EQ(phone_part.find("share_profile()"), std::string::npos);
+  EXPECT_EQ(phone_part.find("toggle_profile_qr()"), std::string::npos);
+  EXPECT_EQ(phone_part.find("profile_qr_svg_rml"), std::string::npos) << "no inline QR on the phone page";
+  const size_t d_copy = rml.find("copy_profile_id()", desktop);
+  const size_t d_share = rml.find("share_profile()", d_copy);
+  const size_t d_qr = rml.find("toggle_profile_qr()", d_share);
+  ASSERT_NE(d_copy, std::string::npos);
+  EXPECT_LT(d_copy, d_share);
+  EXPECT_LT(d_share, d_qr);
+  EXPECT_NE(rml.find("settings-desktop-only", d_qr - 300), std::string::npos);
   EXPECT_EQ(rml.find("group-id-btn"), std::string::npos);
   EXPECT_NE(rml.find("{{i18n:settings.profile.id_help}}"), std::string::npos);
   // The account group keeps today's gates: status for everyone, expiry and auto-renew behind the advanced flag,

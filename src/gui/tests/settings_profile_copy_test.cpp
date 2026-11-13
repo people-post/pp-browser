@@ -78,7 +78,10 @@ protected:
                                                    [this](ui::DataModelConstructor& ctor) { actions->Bind(ctor); }));
     document = context->LoadDocumentFromMemory(
         "<rml><body><div data-model=\"settings\"><button id=\"copy\" "
-        "data-event-click=\"copy_profile_id()\">x</button></div></body></rml>");
+        "data-event-click=\"copy_profile_id()\">x</button>"
+        "<button id=\"qr\" data-event-click=\"show_my_qr()\">x</button>"
+        "<button id=\"card\" data-if=\"profile_share_card_shown\" data-event-click=\"share_profile_card()\">x</button>"
+        "</div></body></rml>");
     ASSERT_NE(document, nullptr);
     document->Show();
     context->Update();
@@ -129,6 +132,32 @@ TEST_F(SettingsProfileCopyTest, WithoutAnAccountNothingIsCopiedAndTheUserIsToldT
   EXPECT_EQ(system.clipboard, "") << "the node ID is never put on the clipboard in its place";
   ASSERT_EQ(toasts.size(), 1u);
   EXPECT_EQ(toasts[0], "还没有账号，先开通账号。");
+}
+
+// The Me card's "QR code" tile is in the settings model next to the other tiles, and opens the My QR code page.
+TEST_F(SettingsProfileCopyTest, TheQrTileOpensTheMyQrPage) {
+  int opened = 0;
+  actions->BindShowMyQr([&]() { ++opened; });
+  document->GetElementById("qr")->DispatchEvent(ui::EventId::Click, {});
+  EXPECT_EQ(opened, 1);
+}
+
+TEST_F(SettingsProfileCopyTest, TheQrTileWithNothingBoundDoesNothing) {
+  document->GetElementById("qr")->DispatchEvent(ui::EventId::Click, {});
+  SUCCEED();
+}
+
+// Commit 1 of the plan: nothing sends my card yet, so its tile is not in the page; binding the sender shows it.
+TEST_F(SettingsProfileCopyTest, TheShareCardTileIsHiddenUntilSomethingSendsTheCard) {
+  context->Update();
+  ASSERT_NE(document->GetElementById("card"), nullptr);
+  EXPECT_FALSE(document->GetElementById("card")->IsVisible());
+  int sent = 0;
+  actions->BindShareOwnCard([&]() { ++sent; });
+  context->Update();
+  EXPECT_TRUE(document->GetElementById("card")->IsVisible());
+  document->GetElementById("card")->DispatchEvent(ui::EventId::Click, {});
+  EXPECT_EQ(sent, 1);
 }
 
 // B216: the reconnect never reads the settings page. Its fields may be empty (page never opened) or stale.

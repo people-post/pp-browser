@@ -1354,6 +1354,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
 
   chat_->BindShellNavigation(shell_navigation);
   chat_->BindShellFeedback(shared_feedback);
+  settings_->BindShowMyQr([this]() { contacts_->OpenMyQr(); });
   settings_->BindOpenHomeEdit([this]() { chat_->OpenHomeEdit(); });
   chat_->BindOpenSettingsSection([this](const std::string& section_id) { settings_->OpenSection(section_id); });
   // B216: the chats list's reconnect row and alert register through Me → Profile's action; a registration the user
@@ -2226,6 +2227,7 @@ bool Application::MountPresenters(ui::Context* context) {
     contacts_->BindContactsPorts({});
     chat_->BindRefreshContact({});
     contacts_->BindSessionStore(nullptr);
+    settings_->BindShowMyQr({});
     settings_->BindOpenHomeEdit({});
     chat_->BindShellNavigation({});
     chat_->BindShellFeedback({});

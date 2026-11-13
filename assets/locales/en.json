@@ -156,6 +156,8 @@
         "My PP account: {name} (account ID {id}). Search my name or enter this ID to add me.",
     "settings.profile.invite_locator": "Or paste this into Add contact: {locator}",
     "settings.profile.show_qr": "QR code",
+    "settings.card.share_account": "Share account",
+    "settings.card.share_card": "Share my card",
     "settings.profile.qr_help": "Friends can scan this in PP to add you.",
     "settings.profile.nickname_placeholder": "Your display name",
     "settings.profile.no_peer_id": "No account yet — set it up first.",

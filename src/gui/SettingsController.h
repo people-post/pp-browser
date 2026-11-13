@@ -159,6 +159,10 @@ public:
   void ReconnectAccount(std::function<void(bool ok)> done = {});
   /** A registration waits for the automatic renewal in flight (ChatController::RunWhenRegistrationIdle). */
   void BindRunWhenRegistrationIdle(std::function<void(std::function<void()>)> run);
+  /** The Me card's "QR code" tile opens the full-page My QR code. */
+  void BindShowMyQr(std::function<void()> show);
+  /** The Me card's "Share my card" tile (hidden while unbound). */
+  void BindShareOwnCard(std::function<void()> share);
   /** Refresh reachability Connection card via SettingsCommands ports. */
   void SyncReachability();
   /** Persist skip/ack for the Me → Network reachability nudge (condition-keyed). */
