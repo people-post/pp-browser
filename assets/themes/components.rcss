@@ -8020,6 +8020,19 @@ input.checkbox {
   text-overflow: ellipsis;
 }
 
+/* A call record's state icon before its short words (ChatSessionRow::preview_icon); desktop and phone. */
+.chat-row-preview-icon {
+  display: block;
+  flex-shrink: 0;
+  width: 14dp;
+  height: 14dp;
+}
+
+.shell-layer-compact .chat-row-preview-icon {
+  width: 16dp;
+  height: 16dp;
+}
+
 .sidebar-session-icon {
   flex-shrink: 0;
   display: flex;

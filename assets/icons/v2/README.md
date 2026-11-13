@@ -37,6 +37,10 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | paperclip | 07-SetPrivacyHelp; §8.5 | drawn | `attach.svg` |
 | phone | 01-chat, 03-home-edit, 04-contact-detail, 05-WideChats (+9 more); §8.12 / 8.6 | drawn | `phone.svg` |
 | phone-hangup-fill | 06-CallGroupRing, 06-CallGroupVideo, 06-CallGroupVoice, 06-CallRing (+2 more); §8.12 | drawn | `phone-hangup.svg` |
+| phone-declined | chat transcript call record + chat list preview (declined / did not connect) | drawn | - |
+| phone-incoming | chat transcript call record + chat list preview (call you received) | drawn | - |
+| phone-missed | chat transcript call record + chat list preview (missed call) | drawn | - |
+| phone-outgoing | chat transcript call record + chat list preview (call you made) | drawn | - |
 | play-fill | 01-chat, 05-WideChats, WideChats | drawn | `play.svg` |
 | plus | 01-chat, 04-contacts, 04-contacts-add, 05-WideChats (+10 more); §8.5 / 8.1 | drawn | `plus.svg` |
 | qr-code | 07-Me | drawn | `qr-scan.svg` |

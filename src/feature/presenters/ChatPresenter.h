@@ -39,6 +39,8 @@ struct ChatSessionRow {
   /** The title is the stored default of a new AI chat: the renderer shows it in the UI language. */
   bool title_is_default_ai = false;
   std::string preview;
+  /** A small state icon before `preview` (a call record: file stem under assets/icons/v2/, e.g. "phone-missed"); empty: none. */
+  std::string preview_icon;
   /** The thread has no message text yet: `preview` holds the localised placeholder instead of an empty second line. */
   bool preview_empty = false;
   /** Visual chat type: ai | private | public | group. */
@@ -639,7 +641,7 @@ public:
 
 private:
   /** A group's list preview: its latest membership line in the transcript's words, else the stored preview. */
-  std::string GroupEventPreviewOr(const Thread& thread, const std::string& local_account);
+  std::string GroupEventPreviewOr(const Thread& thread, const std::string& local_account, std::string& icon);
   /**
    * Pin / mute / archive / marked-unread of every thread that has any set: read once when the store
    * can be listed, then kept in step with every write. Empty, and read again next time, while it

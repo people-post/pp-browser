@@ -1739,7 +1739,8 @@ input.checkbox:checked {
   image-color: #ebebf54c;
 }
 
-.chat-row-blocked {
+.chat-row-blocked,
+.chat-row-preview-icon {
   image-color: #ebebf599;
 }
 

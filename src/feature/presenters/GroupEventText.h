@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/thread/ThreadTypes.h"
+#include "lib/calls/CallControlFamily.h"
 
 #include <functional>
 #include <optional>
@@ -36,10 +37,28 @@ bool IsStoredGroupEventText(const std::string& preview);
 bool IsStoredCallPreview(const std::string& preview);
 
 /**
- * A call summary row's words for the chat list's preview, in the reader's language: the line the transcript's family
- * draws (missed, declined, duration …), or the call's title when the record does not decode. None: not a System row
- * holding the stand-in text — a person may type "Voice call", and that stays their message.
+ * How a call record looks, in the transcript and in the chat list (Kenneth 2026-11-13): the icon carries the
+ * meaning (direction, missed, declined), the words stay short. `icon` is a file stem under `assets/icons/v2/`:
+ * phone-outgoing | phone-incoming | phone-missed | phone-declined. `text` is "1:05" or one short word; a group call
+ * leads with "Group call", a video call with "Video" (the four phone icons serve voice and video alike).
  */
-std::optional<std::string> StoredCallPreviewText(const ThreadMessage& latest);
+struct CallRowLook {
+  std::string icon;
+  std::string text;
+};
+CallRowLook CallRowLookOf(const CallSummaryRow& row);
+
+/** A call summary's chat-list preview: its short words and the state icon (empty when the record does not decode). */
+struct CallPreview {
+  std::string text;
+  std::string icon;
+};
+
+/**
+ * A call summary row's preview for the chat list, in the reader's language: the same icon and short words the
+ * transcript draws, or the call's title (no icon) when the record does not decode. None: not a System row holding
+ * the stand-in text — a person may type "Voice call", and that stays their message.
+ */
+std::optional<CallPreview> StoredCallPreview(const ThreadMessage& latest);
 
 } // namespace pbr

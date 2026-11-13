@@ -207,14 +207,59 @@ bool IsStoredCallPreview(const std::string& preview) {
   return preview == "Voice call" || preview == "Video call";
 }
 
-std::optional<std::string> StoredCallPreviewText(const ThreadMessage& latest) {
+CallRowLook CallRowLookOf(const CallSummaryRow& row) {
+  using Outcome = CallSummaryRow::Outcome;
+  CallRowLook look;
+  std::string outcome;
+  switch (row.outcome) {
+    case Outcome::Connected:
+      look.icon = row.ours ? "phone-outgoing" : "phone-incoming";
+      outcome = row.duration;
+      break;
+    case Outcome::NoAnswer:
+      look.icon = "phone-outgoing";
+      outcome = Tr("call.row.no_answer");
+      break;
+    case Outcome::Cancelled:
+      look.icon = "phone-outgoing";
+      outcome = Tr("call.row.cancelled");
+      break;
+    case Outcome::Missed:
+      look.icon = "phone-missed";
+      outcome = Tr("call.row.missed");
+      break;
+    case Outcome::Declined:
+      look.icon = "phone-declined";
+      outcome = Tr("call.row.declined");
+      break;
+    case Outcome::DeclinedByPeer:
+      look.icon = "phone-declined";
+      outcome = Tr("call.row.declined_by_peer");
+      break;
+    case Outcome::Failed:
+      look.icon = "phone-declined";
+      outcome = Tr("call.row.failed");
+      break;
+  }
+  look.text = outcome;
+  if (row.video) {
+    look.text = Tr("call.row.video") + " · " + look.text;
+  }
+  if (row.group) {
+    look.text = Tr("call.row.group") + " · " + look.text;
+  }
+  return look;
+}
+
+std::optional<CallPreview> StoredCallPreview(const ThreadMessage& latest) {
   if (latest.content_type != ChatContentType::System || !IsStoredCallPreview(latest.text)) {
     return std::nullopt;
   }
-  if (auto line = CallSummaryLine(latest, SystemControlLabels{})) {
-    return line;
+  if (const auto row = CallSummaryRowOf(latest)) {
+    const CallRowLook look = CallRowLookOf(*row);
+    return CallPreview{look.text, look.icon};
   }
-  return Tr(latest.text == "Video call" ? "call.title.video" : "call.title.voice");
+  return CallPreview{Tr(latest.text == "Video call" ? "call.title.video" : "call.title.voice"), std::string()};
 }
 
 std::optional<std::string> StoredSystemLineText(const std::string& stored) {

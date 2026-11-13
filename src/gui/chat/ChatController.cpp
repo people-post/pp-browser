@@ -1589,6 +1589,7 @@ SessionDisplayRow ToSessionDisplayRow(const ChatSessionRow& from) {
   row.id = from.id.c_str();
   row.title = from.title_is_default_ai ? Tr("chat.new_chat").c_str() : from.title.c_str();
   row.preview = from.preview.c_str();
+  row.preview_icon = from.preview_icon.c_str();
   row.preview_empty = from.preview_empty;
   row.avatar_letter = from.avatar_letter.c_str();
   row.avatar_tone = from.avatar_tone;
@@ -1606,6 +1607,7 @@ SessionDisplayRow ToSessionDisplayRow(const ChatSessionRow& from) {
   row.blocked = from.blocked;
   if (from.blocked) {
     row.preview = Tr("sidebar.blocked_preview").c_str();
+    row.preview_icon = "";
   }
   return row;
 }

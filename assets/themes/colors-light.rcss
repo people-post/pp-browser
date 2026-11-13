@@ -1740,7 +1740,8 @@ input.checkbox:checked {
   image-color: #3c3c434c;
 }
 
-.chat-row-blocked {
+.chat-row-blocked,
+.chat-row-preview-icon {
   image-color: #3c3c4399;
 }
 

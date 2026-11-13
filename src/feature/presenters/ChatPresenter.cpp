@@ -430,12 +430,14 @@ void ChatPresenter::Refresh() {
     row.from_stranger = IsStrangerChat(thread.kind, label);
     // The stored default AI title is English; the renderer shows it in the UI language.
     row.title_is_default_ai = thread.kind == ThreadKind::Ai && row.title == "New chat";
-    const std::string text = GroupEventPreviewOr(thread, local_account);
+    std::string preview_icon;
+    const std::string text = GroupEventPreviewOr(thread, local_account, preview_icon);
     // A new thread has no preview yet; an empty second line would collapse the row, so say so in words.
     SessionPreviewShown preview = ResolveSessionPreview(
         SessionPreviewLine(callbacks_.prose ? callbacks_.prose(text) : text), Tr("sidebar.preview_empty"));
     row.preview = std::move(preview.text);
     row.preview_empty = preview.placeholder;
+    row.preview_icon = std::move(preview_icon);
     row.kind = ChatSessionKindName(thread);
     row.unread_count = thread.unread_count;
     row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);
@@ -691,7 +693,8 @@ std::optional<SendFailure> ChatPresenter::SendFailureReasonOf(const std::string&
   return SendFailureReason(row ? *row : std::nullopt, group_thread);
 }
 
-std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::string& local_account) {
+std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::string& local_account,
+                                               std::string& icon) {
   // The latest row is a system line stored in English (a joined invitation, a blocked inviter, a rotate notice):
   // the same words as its transcript line, in the UI language. Only a System row: a person may type these words.
   if (StoredSystemLineText(thread.preview)) {
@@ -706,8 +709,9 @@ std::string ChatPresenter::GroupEventPreviewOr(const Thread& thread, const std::
   if (IsStoredCallPreview(thread.preview)) {
     auto page = facade_->GetMessagesPage(thread.id, std::nullopt, 1);
     if (page && !page->empty()) {
-      if (auto line = StoredCallPreviewText(page->back())) {
-        return *line;
+      if (auto call = StoredCallPreview(page->back())) {
+        icon = std::move(call->icon);
+        return std::move(call->text);
       }
     }
   }
